@@ -74,8 +74,9 @@ const DECIDED = {
 // rows, claimed by the card though no registry field is theirs. `floor`: the card IS its raw-JSON row on the inspector's
 // floor (Reactions, Captions, Stage), so the floor keeps the key. `writeDp`: the decimals an edit is rounded to on the wire
 // (a field's ui.wdp overrides it). `hand`: the card's rows and writes are editschema's own (HAND), not built from this table.
-// `ui.closed`: an enum whose row lists the whole vocabulary (the authority refuses anything else), so an edit outside it is
-// refused before it is sent; an enum without it is open (grabbable.who takes the world's own roles) and the door judges it.
+// `ui.closed` is derived, never written here: an enum row is closed exactly where the registry names the field's enum
+// (componentspec `enums`; the authority refuses anything else), so an edit outside it is refused before it is sent; an enum
+// the registry leaves open (grabbable.who takes the world's own roles) is the door's to judge.
 const MOTION = {
   Pendulum: { type: 'pendulum', show: ['part', 'axis', 'amp', 'period', 'damp', 'maxAmp', 'phase', 'pivot'],
     editor: { amp: { wire: AMP, ui: { ...DEG, min: 0, softMax: Math.PI, def: false, clears: ['amplitude'] } }, period: { ui: { ...SEC, absent: 3.5 } }, damp: { ui: { t: 'num', step: 0.01, dp: 3, min: 0, softMax: 2, absent: 0 } }, phase: { ui: PHASE } } },
@@ -85,7 +86,7 @@ const MOTION = {
   Bob: { type: 'bob', show: ['part', 'axis', 'amp', 'period', 'phase'],
     editor: { amp: { wire: AMP, ui: { t: 'num', step: 0.05, dp: 2, min: 0, unit: 'm', clears: ['amplitude'] } }, period: { ui: SEC }, phase: { ui: PHASE } } },
   Path: { type: 'path', show: ['part', 'points', 'speed', 'duration', 'loop', 'face'],
-    editor: { speed: { ui: { t: 'num', step: 0.1, dp: 2, min: 0, unit: 'm/s' } }, duration: { ui: { t: 'num', step: 0.5, dp: 1, min: 0.1, unit: 's', def: false } }, loop: { ui: { t: 'enum', def: false, closed: true } }, face: { ui: { t: 'check' } } } },
+    editor: { speed: { ui: { t: 'num', step: 0.1, dp: 2, min: 0, unit: 'm/s' } }, duration: { ui: { t: 'num', step: 0.5, dp: 1, min: 0.1, unit: 's', def: false } }, loop: { ui: { t: 'enum', def: false } }, face: { ui: { t: 'check' } } } },
 };
 const MOTION_EDITOR = { axis: { wire: AXIS, ui: { t: 'enum', def: false, own: true } }, degPerSec: { param: 'rate', wire: RATE, ui: { ...RATE_UI, clears: ['rpm', 'period'] } } };
 const CARDS = {
@@ -122,9 +123,9 @@ const CARDS = {
   Story: { key: 'story', editor: { title: { ui: { t: 'text' } }, text: { ui: { t: 'text' } }, marks: { ui: { t: 'text' } } } },
   Text: { key: 'text', show: ['text', 'size', 'width', 'align', 'color', 'outline', 'outlineColor', 'background', 'billboard', 'lit'], writeDp: 3, extra: ['plate'],
     editor: { text: { ui: { t: 'text' } }, size: { ui: { t: 'num', step: 0.01, dp: 2, min: 0.02, max: 2, unit: 'm' } }, width: { ui: { t: 'num', step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm' } },
-      align: { ui: { t: 'enum', closed: true } }, color: { ui: { t: 'color' } }, outline: { ui: { t: 'check' } }, outlineColor: { ui: { t: 'color' } }, background: { ui: { t: 'color', def: false } }, billboard: { ui: { t: 'enum', closed: true } }, lit: { ui: { t: 'enum', closed: true } } } },
+      align: { ui: { t: 'enum' } }, color: { ui: { t: 'color' } }, outline: { ui: { t: 'check' } }, outlineColor: { ui: { t: 'color' } }, background: { ui: { t: 'color', def: false } }, billboard: { ui: { t: 'enum' } }, lit: { ui: { t: 'enum' } } } },
   LookAt: { key: 'look-at', show: ['target', 'mode', 'forward', 'up', 'yaw', 'pitch', 'speed', 'range', 'offset'], writeDp: 3, extra: ['target@'],
-    editor: { target: { ui: { t: 'ref' } }, mode: { ui: { t: 'enum', closed: true } }, forward: { ui: { t: 'enum', closed: true } },
+    editor: { target: { ui: { t: 'ref' } }, mode: { ui: { t: 'enum' } }, forward: { ui: { t: 'enum' } },
       speed: { ui: { t: 'num', step: 30, dp: 0, min: 0, max: 3600, unit: '°/s' } }, range: { ui: { t: 'num', step: 1, dp: 1, min: 0.1, max: 100, unit: 'm' } } } },
   Lock: { key: 'lock', whole: 'value' },
   Hidden: { key: 'hidden', whole: 'value' },
@@ -145,7 +146,8 @@ function build(card, c) {
     if (!(path in typed) && !(def.defaults && path in def.defaults)) throw new Error(`descriptors: ${card}.${path} is not a field of ${c.key}`);
     const e = c.editor?.[path] ?? {};
     const decided = DECIDED[`${card}.${path}`];
-    fields.push({ k: e.k ?? path, param: e.param ?? e.k ?? path, t: typed[path] ?? TYPEOF[typeof def.defaults[path]] ?? 'any', path, ...(e.wire ? { wire: e.wire } : {}), ...(e.ui ? { ui: Object.freeze({ ...e.ui }) } : {}), ...(decided ? { absent: decided } : {}) });
+    const ui = e.ui ? { ...e.ui, ...(e.ui.t === 'enum' && def.enums?.[path] ? { closed: true } : {}) } : null;
+    fields.push({ k: e.k ?? path, param: e.param ?? e.k ?? path, t: typed[path] ?? TYPEOF[typeof def.defaults[path]] ?? 'any', path, ...(e.wire ? { wire: e.wire } : {}), ...(ui ? { ui: Object.freeze(ui) } : {}), ...(decided ? { absent: decided } : {}) });
   }
   return Object.freeze({ key: c.key, card, ...(c.type ? { type: c.type } : {}), fields: Object.freeze(fields.map(Object.freeze)), extra: Object.freeze([...(c.extra ?? [])]), ...(c.floor ? { floor: true } : {}), ...(c.hand ? { hand: true } : {}), ...(c.writeDp !== undefined ? { writeDp: c.writeDp } : {}) });
 }

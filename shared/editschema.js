@@ -35,7 +35,7 @@ import { mediaTier, tierWords } from './mediasrc.js';
 import { graphemes } from './text.js';
 import { ESSENTIAL_NAMES, instanceOf, effectFor, effectBlobName, modernize, instanceProblem, paramShown } from './particle_effects.js';
 import { readOut, readLine } from './a11y.js';
-import { COMPONENTS as SPEC, registered } from './protocol/componentspec.js';
+import { COMPONENTS as SPEC, registered, outOfRange, rangeWords } from './protocol/componentspec.js';
 import { LOCK_LEVELS, lockLevel } from './protocol/roles.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ, MESH_SHAPES } from './components.js';
 import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
@@ -1169,8 +1169,8 @@ export function fieldAt(schema, key) {
 }
 
 /** Turn edits into the fewest door ops that commit them (one gesture = one batch = one act). Numbers may be
- *  relative expressions; a field's hard min/max clamp; disabled fields
- *  refuse. Pure: never sends, never mutates `ent`. */
+ *  relative expressions; a number is written as typed, or refused (nothing written) where the door's range refuses it:
+ *  a row's min/max bound its slider, never the value. Disabled fields refuse. Pure: never sends, never mutates `ent`. */
 export function editOps(ent, id, edits, live = {}) {
   ent = recordOf(ent, id);
   const schema = inspectSchema(ent, id, live);
@@ -1207,13 +1207,22 @@ export function editOps(ent, id, edits, live = {}) {
     let n = parseEntry(f.deg && typeof v === 'string' ? v : v, f.deg ? cur * R2D : cur);
     if (n == null) { errors.push(`${f.label ?? f.k}: not a number (${JSON.stringify(v)})`); return null; }
     if (f.deg) n = n / R2D;
-    n = Math.min(f.max ?? Infinity, Math.max(f.min ?? -Infinity, n));
     return n;
   };
+  // the door's range (componentspec ranges) on the value as the wire carries it, refused in the door's words (the
+  // authority's schemaCheck); a degree row reads its bounds in degrees
+  const outOfDoor = (comp, path, x, key, deg = false) => {
+    const r = SPEC[comp]?.ranges?.[path]; if (!r || r.maxLen !== undefined || r.maxItems !== undefined) return false;
+    const bad = Array.isArray(x) ? x.some((n) => typeof n === 'number' && outOfRange(r, n)) : typeof x === 'number' && outOfRange(r, x);
+    if (!bad) return false;
+    const fmt = deg ? (b) => `${+(b * R2D).toFixed(2)}°` : undefined; const shown = deg && typeof x === 'number' ? `${+(x * R2D).toFixed(2)}°` : JSON.stringify(x);
+    errors.push(`${key} is ${shown}; ${Array.isArray(x) ? 'each' : 'it'} must be ${rangeWords(r, fmt)}`);
+    return true;
+  };
   const bool = (v) => (typeof v === 'string' ? !/^(false|0|no|off)$/i.test(v) : !!v);
-  // a descriptor field's write (shared/protocol/descriptors.js): parsed by its widget, bounded by its row, rounded to the
-  // card's writeDp, put on the wire through its translation; a sparse field is deleted at its default, and a write retires
-  // the spellings it clears. false = not a field the table writes (the card's own code does: an axis, a text, a button)
+  // a descriptor field's write (shared/protocol/descriptors.js): parsed by its widget, rounded to the card's writeDp, put
+  // on the wire through its translation and held to the door's range there; a sparse field is deleted at its default, and
+  // a write retires the spellings it clears. false = not a field the table writes (the card's own code does: an axis, a text, a button)
   const writeField = (card, k, key, f, raw, next) => {
     const d = fieldOf(card, k); const ui = d?.ui; if (!d || d.path == null || !ui || ui.own || !['num', 'check', 'color', 'enum'].includes(ui.t)) return false;
     let v;
@@ -1222,7 +1231,9 @@ export function editOps(ent, id, edits, live = {}) {
     else if (ui.t === 'color') { const n = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/i, ''), 16) : +raw; if (!Number.isInteger(n) || n < 0 || n > 0xffffff) { errors.push(`${key}: a colour 0xRRGGBB`); return true; } v = n; }
     else { if (raw === '' || raw == null) return false; v = String(raw);
       if (ui.closed && f?.options && !f.options.some((o) => o.v === v)) { errors.push(`${key}: one of ${f.options.map((o) => o.v).join(', ')} (got ${JSON.stringify(v)})`); return true; } }
-    if (ui.sparse && v === editorDefault(card, k)) delete next[d.path]; else next[d.path] = toWire(card, k, v);
+    const w = toWire(card, k, v);
+    if (ui.t === 'num' && outOfDoor(DESCRIPTORS[card].key, d.path, w, key, !!ui.deg)) return true;
+    if (ui.sparse && v === editorDefault(card, k)) delete next[d.path]; else next[d.path] = w;
     for (const old of ui.clears ?? []) delete next[old];
     return true;
   };
@@ -1317,7 +1328,7 @@ export function editOps(ent, id, edits, live = {}) {
       }
       case 'mesh': {
         if (k === 'shape') { if (!MESH_SHAPES.includes(raw)) { errors.push(`mesh.shape: one of ${MESH_SHAPES.join(', ')}`); break; } writeField('Mesh', k, key, f, raw, bag('mesh', () => ({ shape: 'box', size: [1, 1, 1] }))); }
-        else if (/^size\.[xyz]$/.test(k)) { const n = num(f, raw); if (n == null) break; const b = bag('mesh', () => ({ shape: 'box', size: [1, 1, 1] })); b.size = [...(Array.isArray(b.size) && b.size.length === 3 ? b.size : [1, 1, 1])]; b.size['xyz'.indexOf(k.slice(5))] = +n.toFixed(3); }
+        else if (/^size\.[xyz]$/.test(k)) { const n = num(f, raw); if (n == null || outOfDoor('mesh', 'size', +n.toFixed(3), key)) break; const b = bag('mesh', () => ({ shape: 'box', size: [1, 1, 1] })); b.size = [...(Array.isArray(b.size) && b.size.length === 3 ? b.size : [1, 1, 1])]; b.size['xyz'.indexOf(k.slice(5))] = +n.toFixed(3); }
         break;
       }
       case 'motion': {
@@ -1400,7 +1411,7 @@ export function editOps(ent, id, edits, live = {}) {
         const b = bag('picture', () => ({})); if (!b) { errors.push('picture: taken down in this same edit'); break; }
         if (!['part', 'src', 'alt', 'lit', 'flip', 'width'].includes(k)) { errors.push(`${key}: no such field`); break; }
         if (writeField('Picture', k, key, f, raw, b)) break;
-        if (k === 'width') { const n = num({ value: b.width ?? 1, min: 0.05, max: 20 }, raw); if (n == null) break; b.width = round(n); }   // no row yet: the picture is being made
+        if (k === 'width') { const n = num({ value: b.width ?? 1 }, raw); if (n == null || outOfDoor('picture', 'width', round(n), key)) break; b.width = round(n); }   // no row yet: the picture is being made
         else { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'alt' || k === 'part') delete b[k]; else b[k] = v; }
         break;
       }
@@ -1417,8 +1428,8 @@ export function editOps(ent, id, edits, live = {}) {
         if (k === 'play') { b.playing = true; delete b.t0; }
         else if (k === 'pause') { b.playing = false; }
         else if (writeField('Sound', k, key, f, raw, b)) { /* written */ }
-        else if (['volume', 'radius', 'near', 'pitch'].includes(k)) { const lim = { volume: [0, 1, 0.8], radius: [1, SOUND_MAX_RADIUS, 12], near: [0.1, SOUND_MAX_RADIUS, 1.5], pitch: [0.5, 2, 1] }[k];   // no row yet: the sound is being made
-          const n = num({ value: b[k] ?? lim[2], min: lim[0], max: lim[1] }, raw); if (n == null) break; b[k] = round(n); }
+        else if (['volume', 'radius', 'near', 'pitch'].includes(k)) { const was = { volume: 0.8, radius: 12, near: 1.5, pitch: 1 }[k];   // no row yet: the sound is being made
+          const n = num({ value: b[k] ?? was }, raw); if (n == null || outOfDoor('sound', k, round(n), key)) break; b[k] = round(n); }
         else if (k === 'src' || k === 'alt') { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'alt') delete b.alt; else b[k] = v; }
         else errors.push(`${key}: no such field`);
         break;
@@ -1450,7 +1461,7 @@ export function editOps(ent, id, edits, live = {}) {
         if (fk === 'target' || fk === 'target@') { if (raw == null || raw === '') { if (fk === 'target') { comps.set(ck, null); break; } else break; } next.target = String(raw); }
         else if (writeField('LookAt', fk, key, f, raw, next)) { /* written */ }
         else if (fk === 'up') next.up = String(raw);
-        else if (fk === 'speed' || fk === 'range') { const n = num({ value: next[fk] ?? (fk === 'speed' ? 240 : 12), min: fk === 'speed' ? 0 : 0.1, max: fk === 'speed' ? 3600 : 100 }, raw); if (n == null) break; next[fk] = round(n); }   // no row yet: the look-at is being made
+        else if (fk === 'speed' || fk === 'range') { const n = num({ value: next[fk] ?? (fk === 'speed' ? 240 : 12) }, raw); if (n == null || outOfDoor('look-at', fk, round(n), key)) break; next[fk] = round(n); }   // no row yet: the look-at is being made
         else { errors.push(`${key}: no such field`); break; }
         comps.set(ck, next); break;
       }

@@ -390,4 +390,9 @@ export function pinBreaks(pin, now = pinOf()) {
   return out;
 }
 
+/** A field's range ({min?, gt?, max?}) as the door judges a number against it, and the words it refuses with. `fmt`
+ *  writes each bound (the editor's degrees); without it the bounds read as the door has always written them. */
+export const outOfRange = (r, n) => (r.min !== undefined && n < r.min) || (r.gt !== undefined && n <= r.gt) || (r.max !== undefined && n > r.max);
+export const rangeWords = (r, fmt) => [r.gt !== undefined ? `> ${fmt ? fmt(r.gt) : r.gt}` : r.min !== undefined ? `≥ ${fmt ? fmt(r.min) : r.min}` : "", r.max !== undefined ? `≤ ${fmt ? fmt(r.max) : +r.max.toFixed(4)}` : ""].filter(Boolean).join(" and ");
+
 export const PENDULUM = { type: "pendulum", axis: [1, 0, 0], amp: 0, period: 2.4, damp: 0.08, maxAmp: 0.9, phase: 0 };

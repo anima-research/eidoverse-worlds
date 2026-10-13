@@ -12,7 +12,7 @@ import { checkSockets } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
 import { mintId, PERSON_ID } from "./ids.js";
-import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs } from "./componentspec.js";
+import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, outOfRange, rangeWords } from "./componentspec.js";
 import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
 import { dec } from "./names.js";
 import { READ_ONLY, GHOST_OK } from "./verbclasses.js";
@@ -780,9 +780,8 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
       if (cap !== undefined && n > cap) refuse("bounds", `${at}.${k} is ${n.toLocaleString("en")} ${typeof x === "string" ? "characters" : "items"}; it must be ≤ ${cap}`, def.help);
       continue; }
     // a vector's range holds for each element (mesh.size)
-    const out = (n) => (r.min !== undefined && n < r.min) || (r.gt !== undefined && n <= r.gt) || (r.max !== undefined && n > r.max);
-    const bad = Array.isArray(x) ? x.some((n) => typeof n === "number" && out(n)) : out(x);
-    if (bad) refuse("bounds", `${at}.${k} is ${JSON.stringify(x)}; ${Array.isArray(x) ? "each" : "it"} must be ${[r.gt !== undefined ? `> ${r.gt}` : r.min !== undefined ? `≥ ${r.min}` : "", r.max !== undefined ? `≤ ${+r.max.toFixed(4)}` : ""].filter(Boolean).join(" and ")}`, def.help); }
+    const bad = Array.isArray(x) ? x.some((n) => typeof n === "number" && outOfRange(r, n)) : outOfRange(r, x);
+    if (bad) refuse("bounds", `${at}.${k} is ${JSON.stringify(x)}; ${Array.isArray(x) ? "each" : "it"} must be ${rangeWords(r)}`, def.help); }
   if (name === "script" && v.scope) unknownKeys(`${at}.scope`, v.scope, Object.keys(def.scopeFields), "a script's scope");
   // batch 2: words everyone reads are checked once, here (shared/text.js): no direction overrides, no hidden controls, no zalgo
   for (const [k, how] of Object.entries(def.clean ?? {})) if (typeof v[k] === "string") { const bad = cleanText(v[k], { lines: how === "lines" });
