@@ -40,7 +40,11 @@ console.log('tree building from a world\'s view');
 {
   const D = scratchWorld('hierarchy').seed({
     table: { lib: LIB, pos: [0, 0, 0] },
-    lamp: { lib: 'eidoverse/assets/models/lamp_brass_desk.glb', pos: [0, 0.8, 0], parent: { to: 'table', offset: [0, 0.8, 0] }, comp: { light: { color: 0xffd9a0, intensity: 8, range: 4 } } },
+    // one place per thing (R 10-11, authority.js:1213): a model and a light never share an entity, so the lamp is
+    // the model and `bulb` under it carries the light — which is what the rule prescribes. (A fresh `create` of
+    // both on one thing refuses `one-place`; only an old log or an import still folds that shape, so the hint for
+    // it is checked below on a literal record instead of through the door.)
+    lamp: { lib: 'eidoverse/assets/models/lamp_brass_desk.glb', pos: [0, 0.8, 0], parent: { to: 'table', offset: [0, 0.8, 0] } },
     bulb: { pos: [0, 1.2, 0], parent: { to: 'lamp', offset: [0, 0.4, 0] }, comp: { light: { color: 0xffd9a0, intensity: 8, range: 4 } } },   // an Empty with a light
     porch: { pos: [5, 2, 0], comp: { light: { color: 0xffffff, intensity: 10, range: 6 } } },
     marker: { pos: [7, 0, 0] },                                                                                                           // a bare Empty
@@ -60,8 +64,13 @@ console.log('tree building from a world\'s view');
   check('a filter with no match is empty', treeRows(W, { matches: m('zzz') }).length === 0);
   const ex = treeRows(W, { extra: (id: string) => (id === 'chair' ? [{ id: 'rider:ann', match: true }] : []) });
   check('extra rows (a seated person) nest under their carrier and count as children', ex[1]?.id === 'rider:ann' && ex[1].depth === 1 && ex[0].kids === 1, JSON.stringify(ex.slice(0, 2)));
-  check('kind hints: model stem, a model with a light, an Empty with a light (a lamp), a bare Empty', kindHint(W.table) === 'table oak round' && kindHint(W.lamp) === 'lamp brass desk + light' && kindHint(W.bulb) === 'light' && kindHint(W.porch) === 'light' && kindHint(W.marker) === 'empty',
+  check('kind hints: model stem, an Empty with a light, a bare Empty', kindHint(W.table) === 'table oak round' && kindHint(W.lamp) === 'lamp brass desk' && kindHint(W.bulb) === 'light' && kindHint(W.porch) === 'light' && kindHint(W.marker) === 'empty',
     JSON.stringify(['table', 'lamp', 'bulb', 'porch', 'marker'].map((k) => kindHint(W[k]))));
+  // kindHint is a pure function on a record, so the LEGACY shape (a model and a light on one thing) is checked
+  // here directly: one-place refuses it at the door now, but old logs keep folding it ("the fold never refuses")
+  // and the Hierarchy must still name what it finds.
+  const legacy = { lib: 'eidoverse/assets/models/lamp_brass_desk.glb', comp: { light: { color: 0xffd9a0, intensity: 8, range: 4 } } };
+  check('…and a legacy model-with-a-light (an old log, which the fold never refuses) is still named', kindHint(legacy) === 'lamp brass desk + light', kindHint(legacy));
   check('childrenOf / ancestors read the view', childrenOf(W, 'lamp').join() === 'bulb' && ancestors(W, 'bulb').join() === 'lamp,table');
   // a loop written by hand (the door refuses one; a hand-edited log file need not): both members are roots, nothing vanishes
   const loop: any = { a: { pos: [0, 0, 0], parent: { to: 'b' } }, b: { pos: [1, 0, 0], parent: { to: 'a' } }, c: { pos: [0, 0, 0], parent: { to: 'a' } } };
