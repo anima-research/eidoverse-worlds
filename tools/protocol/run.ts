@@ -63,6 +63,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["soundclock", "soundclock-check.ts", 1], // a sound's shared playhead is on the server's clock (serverNow), never Date.now
   ["eidomodel", "eidomodel-check.ts", 1], // review 10-07 H3: a translated world's models are eido:sha256 addresses; the index, /eido/, /library/eido/, the client's mapping
   ["party-probe", "party-probe.ts", 1], // the editor's party blockers (review 10-07 B1–B5, S1/S4/S5/S7, lock levels, moderation commands) with real mouse and keys
+  ["client-tools", "../run-client.ts --import-only", 14], // refactor plan 2 D5: every tools/*-{test,check} loads (a stub missing an export, a moved module); the full run is `bun tools/run-client.ts`
 ];
 const only = process.argv.slice(2);
 const env = { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }; // a cached transpile once hid a stale module (bun cache poison)
@@ -73,7 +74,8 @@ for (const [name, file, tail] of SUITES) {
   const t = performance.now();
   // the browser suite runs under the house guards when this host has them (one headless Chrome at a time, perf-guard,
   // no boot re-encoder: memory reference_browser_probe_hygiene); a host with no Chrome skips it, and says so
-  let cmd = ["bun", ENGINE + "tools/protocol/" + file]; let senv: Record<string, string | undefined> = env;
+  const [script, ...scriptArgs] = file.split(" ");
+  let cmd = ["bun", ENGINE + "tools/protocol/" + script, ...scriptArgs]; let senv: Record<string, string | undefined> = env;
   if (name === "client" || name === "client-b2" || name === "build-client" || name === "shiplist-probe" || name === "xss-probe" || name === "party-probe") {   // the browser suites
     const home = process.env.HOME ?? "";
     const chrome = process.env.CHROME ?? [`${home}/.local/chrome153/chrome-linux64/chrome`, "/usr/bin/google-chrome", "/usr/bin/chromium"].find((p) => existsSync(p));
