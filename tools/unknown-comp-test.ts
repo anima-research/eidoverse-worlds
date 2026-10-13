@@ -55,7 +55,7 @@ const settle = async () => { for (let i = 0; i < 8; i++) await sleep(15); };
 const { inspectSchema, editOps, fieldAt } = await import('../shared/editschema.js');
 const { scratchWorld } = await import('./protocol/scratchworld.ts');
 
-const TYPE = 'weathervane';                 // a type no evaluator in this tree knows
+const TYPE = 'example.org/weathervane';     // a type no evaluator in this tree knows, in someone's own namespace (a bare name is refused at the door, PROTOCOL §4)
 const D1 = { points: 'north', vanes: [1, 2, { deep: true }], note: 'a cockerel' };
 const D2 = { points: 'south' };
 const LIB = 'eidoverse/assets/models/crate_large_red.glb';
@@ -140,7 +140,7 @@ check('…and an emptied field removes it (delete)', jeq(del.ops, [{ verb: 'dele
   check('the authority keeps an unknown component verbatim', jeq(W.rec('crate').comp?.[TYPE], D1), JSON.stringify(W.rec('crate').comp));
   const r1 = W.send(set.ops[0]);
   check('…the edit replaces it wholesale (no merge with the old keys), and the door says it knows no evaluator for it',
-    r1.ok && jeq(W.rec('crate').comp?.[TYPE], { points: 'east' }) && (r1.notes ?? []).some((n: any) => n.component === TYPE && /isn't a component/.test(n.why)), JSON.stringify([r1.refused, r1.notes, W.rec('crate').comp]));
+    r1.ok && jeq(W.rec('crate').comp?.[TYPE], { points: 'east' }) && (r1.notes ?? []).some((n: any) => n.component === TYPE && /doesn't know/.test(n.why)), JSON.stringify([r1.refused, r1.notes, W.rec('crate').comp]));
   const r2 = W.send(del.ops[0]);
   check('…and the delete removes it', r2.ok && W.rec('crate').comp?.[TYPE] === undefined, JSON.stringify([r2.refused, W.rec('crate').comp]));
 }

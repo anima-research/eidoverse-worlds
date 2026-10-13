@@ -91,3 +91,15 @@ export const deselectSeat = () => {};
 export const seatMouseDown = () => false;
 export const seatKeyDown = () => false;
 export const updateSeatDrag = () => {};
+
+// ---- xrask.js (editwrites): a headset is never presenting
+export const xrActive = () => false;
+export const chooseXR = async () => null;
+// ---- realize/structure.js (structure_ui): the cutaway switch, inert
+export const setCutaway = () => {};
+// ---- net.js / ui.js (editwrites): no replica, no request answered, hints as text
+export const replica = { st: null };
+export const replicaActive = () => false;
+export const sendRequest = async () => ({ ok: false, refused: { code: 'not-joined', reason: 'not in a world' } });
+export const toast = (t) => { hints.push(String(t)); };
+export { html } from '../client/lib/markup.js';

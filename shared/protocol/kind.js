@@ -6,7 +6,7 @@
 // light the same way. A light component counts only as a plain object; a mesh only as a plain object whose shape is one the
 // registry names (componentspec `mesh`; a malformed mesh is absent, the thing an Empty, never a throw — review primitives S2):
 // anything else is an annotation on an Empty.
-// A view record never carries `kind` (translate-v1 rewrites a v1 light to c.light and drops the field; viewOf emits none):
+// A view record never carries `kind` (the old-world importer rewrites an old light to c.light and drops the field; viewOf emits none):
 // readers that branch on `ent.kind === 'light'` are reading a field that is never there.
 import { COMPONENTS } from "./componentspec.js";
 const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
