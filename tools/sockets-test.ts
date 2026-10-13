@@ -8,6 +8,9 @@ import { scratchWorld } from './protocol/scratchworld.ts';
 import * as OP from '../shared/protocol/requests.js';
 import { checkSockets, evalPose, choosePose, mayLeave, reachWins, describeBody, NEAR_M } from '../shared/sockbody.js';
 import { socketSignals, cycleOf, travelOf } from '../client/lib/socksignals.js';
+import { socketId } from '../shared/protocol/authority/sockets.js';
+import { opsOf } from '../shared/protocol/fold.js';
+import { worldPose } from '../shared/protocol/simlayer.js';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail: any = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail !== '' ? `  — ${JSON.stringify(detail).slice(0, 300)}` : ''}`); };
@@ -20,7 +23,11 @@ const C = () => ent()?.comp ?? {};
 const plan = (edits: Record<string, any>) => editOps(ent(), 'rocket', edits);
 const send = (p: any) => W.sendAll(p.ops);
 
-let r = send(plan({ 'sockets.seat|pos|1': 0.4 }));
+let r: any;
+// until the Inspector writes socket children (PLAN §10 12b), these read a `sockets` map the door no longer stores: a throw
+// here is a red, not the end of the file
+try {
+r = send(plan({ 'sockets.seat|pos|1': 0.4 }));
 check('a new socket slot from the inspector is a seat (a person attaches) and the door takes it', r.ok && !!bodyOf(C().sockets?.seat), [r.refused, C().sockets]);
 check('…with no rotation stored (identity)', C().sockets.seat.q === undefined, C().sockets.seat);
 
@@ -53,6 +60,7 @@ const world = W.view().entities;
 const L = localOf(world.flag, world);
 check('a thing attached at a tilted socket rides it with the socket\'s rotation', !!L?.q && near(L.q, [-0.5, 0.5, 0.5, 0.5], 1e-4)   /* heading 90 then pitch -90: qY(90)·qX(-90) */, L);
 
+} catch (e) { check('the Inspector\'s socket section ran to its end', false, String(e)); }
 
 // ===================================================================== the body block (shared/sockbody.js)
 // the whole shape: closed keys at every level, ranges, enums, the one-driver rule (the door refuses with these words)
@@ -171,6 +179,7 @@ check('…an explicit socket is honoured, an unknown one refused with its name',
   && W.call('use', { id: 'car', action: 'drive', args: { socket: 'trunk' } }).refused?.code === 'no-action');
 
 // the inspector: rows for the common fields, edits through the planner and the door
+try {
 const carRows = () => inspectSchema(W.rec('car'), 'car').groups.find((g: any) => g.group === 'sockets')?.fields ?? [];
 const has = (k: string) => carRows().some((f: any) => f.k === k);
 check('the Sockets card has rows for anchor, pose, leave by, who, input, look and reach', ['driver|anchor', 'driver|pose', 'driver|leaveBy', 'driver|who', 'driver|input|move', 'driver|input|look', 'driver|look|yaw|0', 'driver|look|up', 'driver|reach'].every(has),
@@ -184,6 +193,70 @@ const planBad = cplan({ 'sockets.back|input|move': 'drive' });
 check('…and refuses what the door would, in its words (a second driver)', planBad.ops.length === 0 && planBad.errors.some((e: string) => /only one socket may drive/.test(e)), planBad.errors);
 r = W.sendAll(cplan({ 'sockets.back|anchor': 'root', 'sockets.back|leaveBy': 'any' }).ops);
 check('…and a default leaves the key out', r.ok && W.rec('car').comp.sockets.back.body.anchor === undefined && W.rec('car').comp.sockets.back.body.leaveBy === undefined, W.rec('car').comp.sockets.back);
+
+} catch (e) { check('the Inspector\'s Sockets card section ran to its end', false, String(e)); }
+
+// ===================================================================== the old spelling, lifted at the door (PLAN §3)
+// LS1: a `sockets` map written by anyone (an old agent, an old doc) is stored as socket children, never as the map
+{ const L = scratchWorld('lift').seed({ bench: { lib: 'crate', pos: [0, 0, 0] } });
+  const r1 = L.call('set', { id: 'bench', component: 'sockets', value: { seat: { pos: [0, 0.5, 0], body: { action: 'sit' } }, hook: { pos: [0.4, 0.8, 0], accepts: ['coat'] } } });
+  const kids = () => Object.entries(L.state().entities).filter(([, e]: any) => e.c.parent?.to === 'bench' && e.c.socket).map(([k, e]: any) => [k, e.c.socket.name]);
+  const stored = () => L.entries().some((e: any) => e.kind === 'change' && opsOf(e).some((o: any) => o.comp === 'sockets'));
+  const seatId = socketId('bench', 'seat');
+  check('LS1 set sockets {seat, hook} is taken, and the log holds no sockets component', r1.ok && !stored() && L.state().entities.bench.c.sockets === undefined, r1.refused);
+  check('LS1 …each slot is a socket child (a deterministic id from host and slot), its pose its transform', JSON.stringify(kids()) === JSON.stringify([[seatId, 'seat'], [socketId('bench', 'hook'), 'hook']])
+    && JSON.stringify(L.state().entities[seatId].c.transform) === '{"pos":[0,0.5,0],"q":[0,0,0,1],"scale":[1,1,1]}' && L.state().entities[seatId].c.socket.body?.action === 'sit', kids());
+  check('LS1 …and the reply says what it wrote (a legacy note naming each child)', r1.notes?.some((n: any) => n.legacy === 'sockets' && n.wrote?.seat === seatId), r1.notes);
+  L.call('set', { id: 'bench', component: 'sockets', value: { seat: { pos: [0, 0.5, 0], body: { action: 'sit' } }, hook: { pos: [0.4, 0.8, 0], q: [0, 0.7071068, 0, 0.7071068], accepts: ['coat'] } } });
+  L.call('create', { id: 'coat', model: 'ball', components: { parent: { to: 'bench', socket: 'hook' }, transform: { pos: [0.4, 0.8, 0.1] } } });
+  const coat0 = worldPose(L.state(), 'coat');
+  const r2 = L.call('set', { id: 'bench', component: 'sockets', value: { seat: { pos: [0, 0.6, 0], body: { action: 'sit' } } } });
+  const coat1 = worldPose(L.state(), 'coat');
+  check('LS1 …what sat on the hook stays with the bench, where it was in the world', L.state().entities.coat.c.parent?.to === 'bench' && coat1.pos.every((v: number, i: number) => Math.abs(v - coat0.pos[i]) < 1e-8) && coat1.q.every((v: number, i: number) => Math.abs(v - coat0.q[i]) < 1e-8), [L.state().entities.coat.c.parent, coat0, coat1]);
+  check('LS1 a second map is a diff: the seat child is moved in place (same id), the hook child is deleted', r2.ok && JSON.stringify(kids()) === JSON.stringify([[seatId, 'seat']]) && L.state().entities[seatId].c.transform.pos[1] === 0.6 && !stored(), kids());
+  const r3 = L.call('delete', { id: 'bench', component: 'sockets' });
+  check('LS1 delete sockets deletes the socket children', r3.ok && !kids().length && !L.state().entities[seatId], r3.refused);
+  check('LS1 …and with none left, it is refused as nothing there (not-found)', L.call('delete', { id: 'bench', component: 'sockets' }).refused?.code === 'not-found');
+  check('LS1 a malformed map is still refused in the old words (schema, did-you-mean)', L.call('set', { id: 'bench', component: 'sockets', value: { s: { pos: [0, 1, 0], pose: 'sit' } } }).refused?.code === 'schema'); }
+
+// LS3: parent {to: host, socket} is parent {to: <the socket child>}, and the thing stays where it was in the world
+{ const L = scratchWorld('lift3').seed({ rock: { lib: 'crate', pos: [1, 0.2, -2], scale3: [2, 1, 3], q: [0, 0.3826834, 0, 0.9238795] } });
+  const qs = [0.1830127, 0.6830127, -0.1830127, 0.6830127];   // a tilted, turned socket
+  L.call('set', { id: 'rock', component: 'sockets', value: { perch: { pos: [0.3, 0.5, -0.2], q: qs } } });
+  const perch = socketId('rock', 'perch');
+  const pq = L.state().entities[perch]?.c.transform.q, n = Math.hypot(...qs);
+  check('LS3 the socket child holds the slot\'s whole rotation (its q, normalized)', !!pq && pq.every((v: number, i: number) => Math.abs(v - qs[i] / n) < 1e-12), pq);
+  const tx = { pos: [0.05, 0.1, 0.02], q: [0, 0, Math.sin(Math.PI / 8), Math.cos(Math.PI / 8)], scale: [1, 1, 1] };
+  const r = L.call('create', { id: 'cup', model: 'ball', components: { parent: { to: 'rock', socket: 'perch' }, transform: tx } });
+  const st = L.state(); const c = st.entities.cup?.c;
+  const old = { entities: { rock: st.entities.rock, cup: { c: { parent: { to: 'rock' }, transform: tx } } } };   // what the old spelling meant: in the host's frame
+  const a = worldPose(st, 'cup'), b = worldPose(old, 'cup');
+  const close = (x: number[], y: number[]) => x.every((v, i) => Math.abs(v - y[i]) < 1e-8);
+  check('LS3 a create with parent {to, socket} rides the socket child: parent {to: <its id>}, no socket field', r.ok && c?.parent?.to === perch && !('socket' in c.parent), [r.refused, c?.parent]);
+  check('LS3 …at the same world pose, within 1e-8 (a turned, non-uniformly scaled host; a tilted socket)', close(a.pos, b.pos) && (close(a.q, b.q) || close(a.q, b.q.map((v: number) => -v))), [a, b]);
+  L.call('create', { id: 'mug', model: 'ball', components: { transform: { pos: [5, 0, 5] } } });
+  const rb = L.sendAll([{ verb: 'set', args: { id: 'mug', component: 'parent', value: { to: 'rock', socket: 'perch' } } }, { verb: 'set', args: { id: 'mug', component: 'transform', value: tx } }]);
+  const st2 = L.state(); const a2 = worldPose(st2, 'mug'); const b2 = worldPose({ entities: { rock: st2.entities.rock, mug: { c: { parent: { to: 'rock' }, transform: tx } } } }, 'mug');
+  check('LS3 a batch of parent {to, socket} then a transform (the old planner\'s gesture): the transform is read in the host\'s frame, and lands the same', rb.ok && st2.entities.mug.c.parent.to === perch && close(a2.pos, b2.pos), [rb.refused, a2, b2]);
+  check('LS3 a socket the host doesn\'t have is refused not-found', L.call('set', { id: 'mug', component: 'parent', value: { to: 'rock', socket: 'nope' } }).refused?.code === 'not-found');
+  const hm0 = L.call('create', { id: 'pin', model: 'ball', components: { home: { pos: [0.05, 0.1, 0.02], parent: { to: 'rock', socket: 'perch' } } } });
+  const hm = hm0.ok ? L.call('set', { id: 'pin', component: 'grabbable', value: { who: 'visitor', release: 'return', home: { pos: [0.05, 0.1, 0.02], q: [0, 0, 0, 1], parent: { to: 'rock', socket: 'perch' } } } }) : hm0;
+  const pin = L.state().entities.pin?.c;
+  const homeAt = (h: any) => worldPose({ entities: { rock: L.state().entities.rock, [perch]: L.state().entities[perch], x: { c: { parent: h.parent, transform: { pos: h.pos, q: h.q ?? [0, 0, 0, 1] } } } } }, 'x').pos;
+  const homeWas = worldPose({ entities: { rock: L.state().entities.rock, x: { c: { parent: { to: 'rock' }, transform: { pos: [0.05, 0.1, 0.02] } } } } }, 'x').pos;
+  check('LS3 a home (and a grabbable\'s home) naming a socket goes home to the socket child, to the same place', hm.ok && pin?.home?.parent?.to === perch && !('socket' in pin.home.parent) && pin.grabbable?.home?.parent?.to === perch && close(homeAt(pin.home), homeWas) && close(homeAt(pin.grabbable.home), homeWas), [hm.refused, pin?.home, pin?.grabbable?.home]);
+  check('LS3 the log holds no parent.socket', !L.entries().some((e: any) => e.kind === 'change' && opsOf(e).some((o: any) => o.comp === 'parent' && o.value?.socket !== undefined))); }
+
+// LS4: a catalogue model that declares seats (the lab chair) makes them as children when it is created
+{ const L = scratchWorld('lift4');
+  const r = L.call('create', { id: 'chair1', model: 'chair' });
+  const seat = socketId('chair1', 'seat'); const c = L.state().entities[seat]?.c;
+  check('LS4 create {model: chair} makes its seat child (its model\'s socket, every number in the log)', r.ok && c?.parent?.to === 'chair1' && c.socket?.name === 'seat' && c.socket.body?.pose === 'sitchair' && JSON.stringify(c.transform.pos) === '[0,0.45,0]', [r.refused, c]);
+  const u = L.call('use', { id: 'chair1', action: 'sit' });
+  check('LS4 …and use {sit} attaches there', u.ok && u.attach?.to === seat, u);
+  const d = L.call('create', { from: 'chair1', id: 'chair2' });
+  const kids2 = Object.entries(L.state().entities).filter(([, e]: any) => e.c.parent?.to === 'chair2' && e.c.socket);
+  check('LS4 a duplicate copies its seat child once (the model\'s seats aren\'t made again)', d.ok && kids2.length === 1, kids2.map(([k]) => k)); }
 
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

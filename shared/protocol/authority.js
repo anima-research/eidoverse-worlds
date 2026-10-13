@@ -35,7 +35,7 @@ import { reachTo, massOf, shoveCap, feetOn, sweptCovers } from "../shove.js";
 import { r3, noNeg0, unNegZero } from "./round.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 import { CTX } from "./authority/ctx.js";
-import { isSocketC, socketRules, socketsOf, allSockets, socketPoint, socketRole } from "./authority/sockets.js";
+import { isSocketC, socketRules, socketsOf, allSockets, socketPoint, socketRole, liftOps } from "./authority/sockets.js";
 import { Refusal, refuse, said } from "./authority/refuse.js";
 import { LAB_CATALOGUE, modelOf, geomOf, boxOfM, geomE, withCatalogue, meshShape } from "./authority/catalogue.js";
 export { LAB_CATALOGUE, withCatalogue, MESH_SIZE, meshSize, meshGeom, meshShape } from "./authority/catalogue.js";
@@ -217,7 +217,7 @@ function spokenOf(a, now) {
 const RATE = { n: 60, says: 20, ms: 10000, bytes: 256 * 1024, anonBytes: 32 * 1024 };
 const SAY_MAX = 8192;
 const bytesOf = (e) => e.bytes ?? JSON.stringify(e).length;
-class Admitted { constructor(who, ops, after) { this.who = who; this.ops = ops; this.after = after; Object.freeze(this); } }
+class Admitted { constructor(who, ops, after, notes = []) { this.who = who; this.ops = ops; this.after = after; this.notes = notes; Object.freeze(this); } }
 // L7 rate, per actor, over EVERYTHING the actor makes the log hold (acts and says), by the authority's clock. One function:
 // admit calls it for state writes, and every word that logs without a state write (say, grab's lift, throw, drop, a
 // teleport) calls it before appending. The lab has no agents (`for` is unwritten until keys, L4), so "that actor's
@@ -241,6 +241,7 @@ function rateOf(w, actor) {
 function admit(w, st, who, ops) {
   const { actor, cap } = who;
   if (!cap || cap.kind === "reaction" || cap.kind === "handle") rateCheck(w, actor);
+  const lifted = liftOps(st, ops, w.everIds()); ops = lifted.ops;
   if (!ops.length) refuse("nothing", "that changes nothing", "");
   const role = roleOf(st, actor);
   const keysMade = new Set(); // keyed components this very write brings into being (their creator is the asker)
@@ -310,7 +311,7 @@ function admit(w, st, who, ops) {
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
   if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§7: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
   if (cap?.kind === "rest") restCheck(w, cap, s);
-  return new Admitted(who, norm, s);
+  return new Admitted(who, norm, s, lifted.notes);
 }
 // How much a world holds (review 10-06 S0-2, security pass 2): at most @world.capacity.things things (default 2 000: the
 // size tools/protocol/scale-check.ts holds every request under 50 ms at, and already past what a standalone headset's browser
@@ -850,7 +851,7 @@ function commit(w, actor, verb, args, build) {
   const st = w.state();
   const ctx = { st, actor, w, notes: [], refs: new Set() };
   const ops = stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, build(ctx)))));
-  const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops);
+  const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops); ctx.notes.push(...plan.notes);
   if (args.dry) return { ok: true, dry: true, would: plan.ops, notes: ctx.notes, ...warnOrNot(warnings(plan.after, [...ctx.refs])) };
   const actE = actOf(w, actor, verb, sent, ctx.actExtra);
   w.fits(actE, changeShape(plan, w.entries.length, w)); // both lines fit, or neither is written
@@ -1142,7 +1143,8 @@ function buildDelete(ctx, a) {
       const wt = worldT(ctx.st, a.id); ctx.refs.add(a.id);
       return [delOp(a.id, "parent"), setOp(a.id, "transform", { ...wt, pos: wt.pos.map(r3) })];
     }
-    if (!(a.component in e.c)) refuse("not-found", `${a.id} has no ${a.component}`, `it has: ${Object.keys(e.c).join(", ")}`);
+    // the old spelling's `delete sockets` still means "its sockets" (the door deletes its socket children)
+    if (!(a.component in e.c) && !(a.component === "sockets" && socketsOf(ctx.st, a.id).some((x) => x.id))) refuse("not-found", `${a.id} has no ${a.component}`, `it has: ${Object.keys(e.c).join(", ")}`);
     ctx.refs.add(a.id);
     return [delOp(a.id, a.component)];
   }

@@ -111,7 +111,7 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   ok(same.ok && openWorld(root, W).entries.length - n1 === 2 && !(same.notes ?? []).some((n) => n.fell), "SE14 re-asserting the plinth's mesh value re-drops nothing: 2 rows, no fell note (r2 S2.1)", { rows: openWorld(root, W).entries.length - n1, notes: same.notes });
   const grow = call(W, "rowan", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.5, 1.5] } }); T += 8000; call(W, "vic", "look", {});
   const cup = st(W).entities.cup.c;
-  ok(grow.ok && (grow.notes ?? []).some((n) => n.fell?.includes("crate")) && !(grow.notes ?? []).some((n) => n.fell?.includes("cup")) && cup.parent?.socket === "perch", "SE15 the crate re-drops on a resize, the cup on the perch socket stays on it (r2 S2.2)", { notes: grow.notes, cup: cup.parent });
+  ok(grow.ok && (grow.notes ?? []).some((n) => n.fell?.includes("crate")) && !(grow.notes ?? []).some((n) => n.fell?.includes("cup")) && st(W).entities[cup.parent?.to]?.c.socket?.name === "perch" && st(W).entities[cup.parent.to].c.parent?.to === "plinth", "SE15 the crate re-drops on a resize, the cup on the perch socket stays on it (r2 S2.2; the perch is the plinth's socket child since the cut)", { notes: grow.notes, cup: cup.parent });
   call(W, "rowan", "delete", { id: "cup" });   // (the engine stands a socketed child at its host's origin: pre-existing, simlayer worldPose reads no sockets; out of the crate's way)
   const del = call(W, "rowan", "delete", { id: "plinth", component: "mesh" }); T += 8000; call(W, "vic", "look", {});
   const c5 = st(W).entities.crate.c;

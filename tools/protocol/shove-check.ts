@@ -240,7 +240,7 @@ const cases: Case[] = [
       return { r: code(r), reason: r?.refused?.reason }; },
     good: (o) => o.r === "out-of-reach" && /wall/.test(o.reason ?? "") },
   { id: "S20", what: "a socket is part of its host, never a thing: a shove or kick of a chair's seat socket is not-a-thing, naming its host, and the log gains no launch", run(s) { cast(s);
-      s.call("olive", "create", { id: "chair", model: "chair", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [4, 0] } });
+      s.call("olive", "create", { id: "chair", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [4, 0] } });
       s.call("olive", "create", { id: "chair-seat", components: { parent: { to: "chair" }, transform: { pos: [0, 0.45, 0] }, socket: { name: "seat", body: { action: "sit" } } } });
       s.call("vic", "move", { to: [4, 0, -0.6] });
       const sh = s.call("vic", "punt", { id: "chair-seat", v: [0, 0.2, 1.5], shove: true }), kick = s.call("vic", "punt", { id: "chair-seat", power: 3 });

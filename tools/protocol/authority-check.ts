@@ -27,6 +27,7 @@ import { openLive } from "../../server/livehost.ts";
 import { v1FoldBuild, v1FoldFiles } from "./import-v1/build.ts";
 import { emptyState as v1Empty, foldEntry as v1fold } from "./import-v1/fold.js";
 import { worldPose } from "../../shared/hierarchy.js";
+import { worldPose as worldT } from "../../shared/protocol/simlayer.js";
 
 const root = scratch("door");
 // lab worlds name people by bare test names; the directory a real server has would know them (roles:<key> checks it)
@@ -779,7 +780,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   R("ann", "create", { id: "chair1", model: "chair" });
   const sit = R("bob", "use", { id: "chair1", action: "sit" });
-  ok(sit.ok && sit.recorded === false && sit.attach?.to === "chair1" && sit.attach.socket === "seat" && sit.attach.pose === "sitchair", "SK1 a chair's model socket: use {sit} attaches you (presence), at its seat, in its pose", sit);
+  ok(sit.ok && sit.recorded === false && sit.attach?.host === "chair1" && openWorld(root, "sockets").state().entities[sit.attach.to]?.c.socket?.name === "seat" && sit.attach.socket === "seat" && sit.attach.pose === "sitchair", "SK1 a chair's model socket: use {sit} attaches you (presence), at its seat child (made when the chair was), in its pose", sit);
   ok(R("ann", "create", { id: "horse", model: "crate", components: { sockets: { saddle: { pos: [0, 1.2, 0], body: { action: "ride", pose: "sit", exit: [0.8, 0, 0] } }, pannier: { pos: [0.4, 0.8, 0] } } } }).ok, "SK2 sockets with and without a body are taken");
   const look = R("bob", "inspect", { id: "horse" });
   const offers = JSON.stringify(look);
@@ -980,12 +981,13 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   call("bob", "create", { id: "plinth", components: { mesh: { shape: "box", size: [1.5, 0.8, 1.5] }, sockets: { perch: { pos: [0.5, 0.8, 0.5] } }, transform: { pos: [0, 0, 0] } } });
   const c = call("bob", "create", { id: "crate", model: "crate", components: { physics: { kind: "dynamic" } }, place: { on: "plinth" } });
   call("bob", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic" }, parent: { to: "plinth", socket: "perch" }, transform: { pos: [0, 0, 0] } } });
+  const perch = Object.keys(W().state().entities).find((k) => E(k)?.parent?.to === "plinth" && E(k)?.socket?.name === "perch"); const cup0 = JSON.stringify(E("cup")?.transform);
   ok(c.ok && E("crate")?.parent?.to === "plinth" && Math.abs(wy("crate") - 0.8) < 1e-3, "MS10 a crate placed on the plinth rides it at 0.8", { c: c.refused ?? null, y: wy("crate"), parent: E("crate")?.parent });
   const s1 = call("bob", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } });
   ok(s1.ok && Math.abs(wy("crate") - 0.3) < 1e-3 && (s1.notes ?? []).some((n) => n.setDown?.includes("crate")), "MS10a shrunk to 0.3: the crate is set down to 0.3 (no engine)", { y: wy("crate"), notes: s1.notes });
   const s2 = call("bob", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 1.0, 1.5] } });
   ok(s2.ok && Math.abs(wy("crate") - 1.0) < 1e-3 && E("crate")?.parent?.to === "plinth", "MS10b grown to 1.0: the crate is set down from ABOVE the new top, at 1.0, not buried inside (r2 S1.1)", { y: wy("crate"), notes: s2.notes });
-  ok(E("cup")?.parent?.socket === "perch" && JSON.stringify(E("cup")?.transform?.pos) === "[0,0,0]", "MS10c the cup on the perch socket was never a rider: it stays on its socket (r2 S2.2)", E("cup"));
+  ok(!!perch && E("cup")?.parent?.to === perch && JSON.stringify(E("cup")?.transform) === cup0, "MS10c the cup on the perch socket was never a rider: it stays on its socket (r2 S2.2; the socket is the plinth's perch child since the cut)", E("cup"));
   const n0 = W().entries.length; const s3 = call("bob", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 1.0, 1.5] } });
   ok(s3.ok && W().entries.length - n0 === 2 && !(s3.notes ?? []).some((n) => n.setDown || n.fell), "MS10d re-asserting the same mesh value writes 2 rows and re-drops nothing (r2 S2.1)", { rows: W().entries.length - n0, notes: s3.notes });
   const d = call("bob", "delete", { id: "plinth", component: "mesh" });
@@ -1047,6 +1049,46 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(R("bob", "use", { id: "sofa", action: "sit" }).attach?.to === "sofa-r", "SKE9 a switched-off socket is a closed seat: use picks the next");
   R("bob", "move", { to: [0, 0, 0.8] }); const g = R("bob", "grab", { id: "sofa-r" });
   ok(code(g) === "not-a-thing" && /sofa/.test(g.refused?.reason), "SKE10 grab of a socket is not-a-thing, naming its host", g); }
+
+// LS2: a world written before the cut (translate-v1 still writes the old spelling): undoing its last sockets edit lands
+// on socket children. The door lifts the host first (its stored map to children, the bell on its perch into the perch's
+// child, where it was), then the old value is a diff against them.
+{ const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+    { seq: 1, ts: 2, actor: "ann", verb: "spawn", args: { id: "tbl", lib: "table", pos: [2, 0, 3], yaw: 0.7 } },
+    { seq: 2, ts: 3, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 } } } },
+    { seq: 3, ts: 4, actor: "ann", verb: "spawn", args: { id: "bell", lib: "bell", pos: [-5, 0, -5] } },
+    { seq: 4, ts: 5, actor: "ann", verb: "mount", args: { id: "bell", to: "tbl", slot: "perch" } },
+    { seq: 5, ts: 6, actor: "ann", verb: "spawn", args: { id: "rack", lib: "crate", pos: [-2, 0, 1] } },
+    { seq: 6, ts: 7, actor: "ann", verb: "comp", args: { id: "rack", type: "sockets", data: { hook: { pos: [0, 0.8, 0.1] } } } },
+    { seq: 7, ts: 8, actor: "ann", verb: "spawn", args: { id: "coin", lib: "ball", pos: [3, 0, 3] } },
+    { seq: 8, ts: 9, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 }, seat: { pos: [0, 0.5, 0], sit: true } } } }];
+  const r = translate(old, DOORKEYS());
+  // a home naming a socket, as a pre-cut door stored it (v1 had no homes: written as that door wrote it, an act and its change)
+  // (before the last sockets edit, which stays the latest act: the one the undo below takes back)
+  const home = { pos: [0.1, 0, 0], q: [0, 0, 0, 1], parent: { to: "tbl", socket: "perch" } }; const wid = r.out[1].world; const n = r.out.length - 2;
+  const last = r.out.splice(n, 2); last[1] = { ...last[1], cause: last[1].cause + 2 };
+  r.out.push({ world: wid, kind: "act", actor: "ann", verb: "set", body: { request: { id: "coin", component: "home", value: home } }, ts: last[0].ts }, { world: wid, kind: "change", actor: "ann", cause: n, verb: "batch", body: { ops: [{ verb: "set", id: "coin", comp: "home", value: home }, { verb: "set", id: "coin", comp: "grabbable", value: { who: "visitor", home } }] }, ts: last[0].ts }, ...last);
+  fs.writeFileSync(root + "worlds/tr-lift.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const tc = (verb, args) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "tr-lift"), "ann", verb, args); };
+  const homeAt = (st, h) => worldT({ entities: { ...st.entities, x: { c: { parent: { to: h.parent.to }, transform: { pos: h.pos, q: h.q } } } } }, "x").pos;
+  const home0 = homeAt(openWorld(root, "tr-lift").state(), home);
+  const S = () => openWorld(root, "tr-lift").state();
+  const was = worldT(S(), "bell");
+  ok(S().entities.tbl.c.sockets?.seat && S().entities.bell.c.parent?.socket === "perch", "LS2 (the fixture) the translated world stores the old spelling: tbl.sockets {perch, seat}, bell on parent {to: tbl, socket: perch}", [S().entities.tbl.c.sockets, S().entities.bell.c.parent]);
+  const u = tc("undo", {});
+  const st = S(); const socks = Object.entries(st.entities).filter(([, e]) => e.c.parent?.to === "tbl" && e.c.socket).map(([k, e]) => [k, e.c.socket.name]);
+  const now = worldT(st, "bell"); const near = (a, b, e = 1e-8) => a.every((v, i) => Math.abs(v - b[i]) < e);
+  ok(u.ok && st.entities.tbl.c.sockets === undefined && JSON.stringify(socks.map((x) => x[1])) === '["perch"]', "LS2 undo of the pre-cut sockets edit lands on the children: tbl stores no map and has one socket child, perch (the seat it added is gone)", [u.refused, st.entities.tbl.c.sockets, socks]);
+  ok(st.entities.bell.c.parent?.to === socks[0]?.[0] && !("socket" in st.entities.bell.c.parent) && near(now.pos, was.pos) && near(now.q, was.q), "LS2 …and the bell rides the perch's child, where it was in the world (within 1e-8)", [st.entities.bell.c.parent, was, now]);
+  const ch = st.entities.coin.c.home;
+  const gh = st.entities.coin.c.grabbable?.home;
+  ok(ch?.parent?.to === socks[0]?.[0] && !("socket" in ch.parent) && near(homeAt(st, ch), home0) && gh?.parent?.to === socks[0]?.[0] && near(homeAt(st, gh), home0), "LS2 …a stored home (and grabbable.home) naming the perch now names its child, the same place in the world", [ch, gh, home0]);
+  const coin0 = worldT(S(), "coin"); const pc = tc("set", { id: "coin", component: "parent", value: { to: "rack", socket: "hook" } }); const s2 = S();
+  const hook = Object.keys(s2.entities).find((k) => s2.entities[k].c.parent?.to === "rack" && s2.entities[k].c.socket?.name === "hook");
+  ok(pc.ok && s2.entities.rack.c.sockets === undefined && !!hook && s2.entities.coin.c.parent?.to === hook && near(worldT(s2, "coin").pos, coin0.pos), "LS2 a parent {to, socket} on a host still holding its map lifts that host first: rack's hook is a child, and the coin rides it where it was", [pc.refused, s2.entities.rack.c.sockets, s2.entities.coin.c.parent]);
+  ok(!openWorld(root, "tr-lift").entries.slice(r.out.length).some((e) => e.kind === "change" && opsOf(e).some((o) => o.comp === "sockets" && o.verb === "set" || (o.comp === "parent" && o.value?.socket !== undefined))), "LS2 …and nothing written after the cut holds the old spelling");
+}
 
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
