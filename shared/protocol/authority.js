@@ -1253,7 +1253,10 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
     refuse("shape", `${at} must be {min: [x,y,z], max: [x,y,z]} with min < max on every axis (a box with room inside)`, "e.g. {min: [-20, 0, -20], max: [20, 12, 20]}"); }
   if (comp === "parent") { if (!obj || typeof v.to !== "string") refuse("shape", `${at} must be {to: <id>}`, "");
     if (!s.entities[v.to]) refuse("not-found", `no thing called '${v.to}'`, "", { didYouMean: guess(v.to, Object.keys(s.entities)) });
-    if (v.to === id || ancestors(s, v.to).includes(id) || ancestors(s, id).length >= 32) refuse("loop", `${id} can't be inside ${v.to}: that makes a loop`, ""); }
+    if (v.to === id || ancestors(s, v.to).includes(id)) refuse("loop", `${id} can't be inside ${v.to}: that makes a loop`, "");
+    // A chain 32 deep is a LIMIT, not a loop, and saying "loop" sent people hunting a cycle that isn't there
+    // (the walk in `ancestors` stops at 32, so this is where the engine stops following a parent chain).
+    if (ancestors(s, id).length >= 32) refuse("deep", `${id} is already 32 deep; a parent chain stops there`, "attach it higher up, or flatten part of the chain", { depth: ancestors(s, id).length }); }
   if (comp === "model" && !modelOf(v)) refuse("shape", `no model called '${v}'`, "find {kind: 'model', query} lists models", { didYouMean: guess(String(v), CAT.list(String(v).split("/").pop().replace(/\.[a-z0-9]+$/i, "").slice(0, 12)).map(([k]) => k).slice(0, 200)) });
   if (comp === "pivot" && (!obj || !nums(v.pos, 3, 1e4) || Object.keys(v).some((k) => k !== "pos"))) refuse("shape", `${at} must be {pos: [x,y,z]} in its own frame (metres, before scale)`, "e.g. {pos: [0, 0.5, 0]}; delete it to turn about the origin again");
   if (comp === "lock" && v !== true && !(obj && Object.keys(v).length === 1 && LOCK_LEVELS.includes(v.rank)))

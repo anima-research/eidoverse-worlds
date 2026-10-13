@@ -201,6 +201,15 @@ const oracles = [
       return { made, locked, changed, stale: !!base, probe, leaked: JSON.stringify(probe?.refused ?? {}).includes("Kittycat") }; },
     // asserted: a probe with a CURRENT base never reaches the stale branch and proves nothing
     baseBad: (o) => o.leaked === true, nowGood: (o) => ok(o.made) && ok(o.locked) && ok(o.changed) && o.stale && refused(o.probe) && o.leaked === false },
+  { id: "H5d", what: "a 32-deep parent chain refuses as a LIMIT, not as a loop (a guard: the message must tell the truth)", guard: true, run(s) { cast(s);
+      // one batch: 40 creates, then 39 parentings. The engine's own walk (`ancestors`) stops at 32, so the 33rd
+      // link is refused — it is a depth limit and nothing is a cycle, which "loop" used to claim.
+      const made = s.call("olive", "batch", { ops: Array.from({ length: 40 }, (_, i) => ({ verb: "create", args: { id: "n" + i, model: "crate", components: { transform: { pos: [i * 3, 0, 0] } } } })) });
+      const par = s.call("olive", "batch", { ops: Array.from({ length: 39 }, (_, i) => ({ verb: "set", args: { id: "n" + (i + 1), component: "parent", value: { to: "n" + i } } })) });
+      // and a REAL cycle still says loop
+      const cyc = s.call("olive", "set", { id: "n0", component: "parent", value: { to: "n0" } });
+      return { made, par, cyc }; },
+    nowGood: (o) => ok(o.made) && o.par.refused?.code === "deep" && !/loop/.test(String(o.par.refused?.reason)) && o.cyc.refused?.code === "loop" },
   { id: "H5b", what: "and the honest conflict signal still works (a guard)", guard: true, run(s) { cast(s);
       s.call("olive", "create", { id: "lamp", model: "crate", place: { at: [4, 4] } });
       s.call("bob", "set", { id: "lamp", component: "label", value: "bob was here" });
