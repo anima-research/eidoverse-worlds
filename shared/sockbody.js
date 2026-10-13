@@ -326,6 +326,18 @@ function near(k, allowed) {
   return allowed.filter((a) => { const y = a.toLowerCase(); return (x.length > 2 && (y.startsWith(x) || x.startsWith(y))) || lev(x, y) <= Math.max(1, Math.floor(y.length / 3)); }).slice(0, 3);
 }
 
+/** A seat named in a presence frame, as a socket id: {to: <socket id>} passes; the old frame {to: <host>, slot} (one
+ *  release: clients from before sockets were entities) names the host's socket child of that name. `world` is a fold
+ *  state or a view (its entities' c or comp). Null when there is no such socket. */
+export function resolveSeat(world, seat) {
+  const E = world?.entities ?? {}; const C = (id) => E[id]?.c ?? E[id]?.comp ?? null; const sk = (c) => (isObj(c?.socket) ? c.socket : null);
+  if (!isObj(seat) || typeof seat.to !== 'string') return null;
+  if (sk(C(seat.to))) return { to: seat.to };
+  if (typeof seat.slot !== 'string') return null;
+  const kid = Object.keys(E).find((k) => sk(C(k))?.name === seat.slot && (C(k)?.parent?.to ?? E[k]?.parent?.to) === seat.to);
+  return kid ? { to: kid } : null;
+}
+
 /** One line saying what a body does at a socket, for people and agents alike (the agent's look, the sit reply). */
 export function describeBody(slot, b) {
   if (!b) return `${slot}: an attach point (things only)`;

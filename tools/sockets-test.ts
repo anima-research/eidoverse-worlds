@@ -6,7 +6,7 @@ import { bodyOf, socketQ } from '../shared/components.js';
 import { localOf } from '../shared/hierarchy.js';
 import { scratchWorld } from './protocol/scratchworld.ts';
 import * as OP from '../shared/protocol/requests.js';
-import { checkSockets, evalPose, choosePose, mayLeave, reachWins, describeBody, NEAR_M } from '../shared/sockbody.js';
+import { checkSockets, evalPose, choosePose, mayLeave, reachWins, describeBody, NEAR_M, resolveSeat } from '../shared/sockbody.js';
 import { socketSignals, cycleOf, travelOf } from '../client/lib/socksignals.js';
 import { socketId } from '../shared/protocol/authority/sockets.js';
 import { opsOf } from '../shared/protocol/fold.js';
@@ -257,6 +257,13 @@ check('…and a default leaves the key out', r.ok && W.rec('car').comp.sockets.b
   const d = L.call('create', { from: 'chair1', id: 'chair2' });
   const kids2 = Object.entries(L.state().entities).filter(([, e]: any) => e.c.parent?.to === 'chair2' && e.c.socket);
   check('LS4 a duplicate copies its seat child once (the model\'s seats aren\'t made again)', d.ok && kids2.length === 1, kids2.map(([k]) => k)); }
+
+// OC3: a presence frame's seat, old or new, as a socket id (receivers take the old {to: host, slot} for one release)
+{ const view = { entities: { bench: { comp: {} }, 'bench-seat': { parent: { to: 'bench' }, comp: { socket: { name: 'seat' } } }, other: { comp: {} } } };
+  const fold = { entities: { bench: { c: {} }, 'bench-seat': { c: { parent: { to: 'bench' }, socket: { name: 'seat' } } } } };
+  check('OC3 resolveSeat: {to: <socket>} passes; {to: host, slot} names its socket child (a view or a fold state); unknown is null', JSON.stringify(resolveSeat(view, { to: 'bench-seat' })) === '{"to":"bench-seat"}'
+    && JSON.stringify(resolveSeat(view, { to: 'bench', slot: 'seat' })) === '{"to":"bench-seat"}' && JSON.stringify(resolveSeat(fold, { to: 'bench', slot: 'seat' })) === '{"to":"bench-seat"}'
+    && resolveSeat(view, { to: 'other', slot: 'seat' }) === null && resolveSeat(view, { to: 'bench', slot: 'nope' }) === null && resolveSeat(view, null) === null); }
 
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

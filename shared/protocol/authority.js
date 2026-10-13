@@ -878,6 +878,7 @@ function commit(w, actor, verb, args, build) {
       if (!after.entities[id] || !ancestors(after, id).some((p) => offed.includes(p))) continue;
       delete w.presence.holds[id]; let_go = true; heldEvent(w, "release", id, { by: h.by, how: "edited", seq: act }); ctx.notes.push({ id, tookFromHand: h.by, why: "what it hangs under was switched off, so it left the hand that held it" }); }
     if (let_go) w.savePresence(); }
+  for (const who of Object.keys(w.presence.seats ?? {})) if (!seatOf(w, after, who)) { clearSeat(w, who); ctx.notes.push({ who, unseated: true, why: "the socket they sat on was switched off or removed" }); }
   return { ok: true, seq, head: w.headAt(seq), act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
     after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
 }
@@ -1420,7 +1421,9 @@ function buildUse(ctx, a) {
       if (!may(named)) refuse("rights", `only a ${named.body.who} may ${action} ${a.id} (${socket})`, "ask someone who can"); }
     const ok = socks.filter(may);
     if (!ok.length) refuse("rights", `only a ${socks[0].body.who} may ${action} ${a.id}`, "ask someone who can");
-    const pick = socket != null ? ok.find((x) => x.slot === socket) : ok[0];
+    const taken = (x) => (ctx.w ? sitterOn(ctx.w, ctx.st, x.id, ctx.actor) : null);
+    const pick = socket != null ? ok.find((x) => x.slot === socket) : ok.find((x) => !taken(x)) ?? ok[0];
+    { const t = taken(pick); if (t) refuse("occupied", `${t.who ? said(t.who) : t.thing} ${t.who ? "sits" : "is"} in ${pick.host}'s ${pick.slot}${socket == null && ok.length > 1 ? `, and its other ${action} sockets are taken too` : ""}`, "one body per socket: wait till it's free, or pick another (args: {socket})", t.who ? { by: t.who } : { thing: t.thing }); }
     // attaching is presence (your frames say where you're attached; nothing is recorded), so the authority only answers: where,
     // and what the body does there (the socket's body block read with its defaults: shared/sockbody.js bodyOf)
     const { clip, ...body } = pick.body;
@@ -2576,17 +2579,27 @@ function pathBlocked(w, st, from, to) {
   return null;
 }
 // A body that walks more than a metre from its seat has stood up (a seated client sends no steps; standing, it walks)
+// Who sits where (presence, never logged: review 10-12 S1-1): {to: <socket id>}. A seat whose socket is gone or switched
+// off is no seat (its occupant was let go by every client), so a reader never sees one.
+function seatOf(w, st, who) { const s = w.presence.seats?.[who];
+  return s && typeof s.to === "string" && isSocketC(st.entities[s.to]?.c) && !offChain(st, s.to) ? s : null; }
+const setSeat = (w, who, to) => { (w.presence.seats ??= {})[who] = { to }; w.presenceDirty = true; };
+const clearSeat = (w, who) => { if (w.presence.seats?.[who]) { delete w.presence.seats[who]; w.presenceDirty = true; } };
+// another present body seated on this socket (one body per socket: VRChat Station, Roblox Seat), or the thing sitting in it
+function sitterOn(w, st, sock, actor) {
+  for (const who of Object.keys(w.presence.seats ?? {})) if (who !== actor && w.presence.bodies[who] && seatOf(w, st, who)?.to === sock) return { who };
+  const thing = Object.keys(st.entities).find((k) => st.entities[k].c.parent?.to === sock); return thing ? { thing } : null; }
 function leftSeat(w, st, actor, to) {
-  const s = w.presence.seats?.[actor]; if (!s) return;
-  const p = st.entities[s.to] ? worldT(st, s.to).pos : null;
-  if (!p || Math.hypot(to[0] - p[0], to[2] - p[2]) > 1) delete w.presence.seats[actor];
+  const s = seatOf(w, st, actor); if (!s) return clearSeat(w, actor);
+  const p = worldT(st, s.to).pos;
+  if (Math.hypot(to[0] - p[0], to[2] - p[2]) > 1) clearSeat(w, actor);
 }
 // Who a hand or a foot acting on `id` would move with it: another present body seated on it or on anything riding it, or
 // standing on it or on anything riding it (review 10-12 S1-1/S1-2: a kick, a shove, a grab or a throw went round body
 // consent through the chair). Bodies are presence and never things, so this is the only way one is moved by moving a thing.
 function occupant(w, st, id, actor) {
   const fam = new Set([id, ...descendants(st, id)]);
-  for (const [who, s] of Object.entries(w.presence.seats ?? {})) if (who !== actor && fam.has(s.to)) return { who, how: "sits on" };
+  for (const who of Object.keys(w.presence.seats ?? {})) { const s = seatOf(w, st, who); if (who !== actor && s && fam.has(s.to)) return { who, how: "sits on" }; }
   const boxes = [...fam].map((k) => aabb(st, k)).filter(Boolean);
   for (const [who, b] of Object.entries(w.presence.bodies)) if (who !== actor && Array.isArray(b?.at) && boxes.some((x) => feetOn(x, b.at))) return { who, how: "is standing on" };
   return null;
@@ -2742,7 +2755,7 @@ const PHYSICS_VERBS = {
         return { ok: true, act, seq: back.seq, settled: { id: a.id, home: g.home }, handled: h.handled, release: "return", notes: [{ id: a.id, why: "its grabbable.release is return: it went home" }] }; }
     }
     // a socket that accepts it, within that socket's radius of where it's let go (Resonite Snapper, XRI Socket)
-    const snap = snapTarget(st, a.id, g, a.pos ?? h.pose.pos);
+    const snap = snapTarget(st, a.id, g, a.pos ?? h.pose.pos, w);
     if (snap.to) { const x = snap.to;
       // it sits at the socket's own pose (identity under it); its size in the world is kept
       const hs = worldT(st, x.id).scale; const scale = t.scale.map((v, i) => r3(v / hs[i]));
@@ -2864,7 +2877,7 @@ const PHYSICS_VERBS = {
       const st = w.state(); if (st.entities[id] && st.entities["@world"]?.c["physics-engine"]) { const t = st.entities[id].c.transform;
         if (t) { const p = admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]);
           changeEntry(w, p, w.append(actEntry(w, "system", "return-held", { id, holder: actor, why: r.refused?.code }))); } } }
-    delete w.presence.bodies[actor]; if (w.presence.seats) delete w.presence.seats[actor]; w.savePresence();
+    delete w.presence.bodies[actor]; clearSeat(w, actor); w.savePresence();
     return { ok: true, left: true, dropped: out.map(({ id, r }) => ({ id, ok: r.ok, ...(r.refused ? { refused: r.refused.reason } : {}) })) };
   },
   wait(w) {
@@ -2955,7 +2968,7 @@ const fliesIn = (st, id) => !!st.entities["@world"]?.c["physics-engine"] && st.e
 // is within the socket's radius of where it's let go. A socket something already sits in, or one on a locked thing, is
 // passed over (and said so). Its transform becomes the socket's pose in the host's frame (a child's transform is
 // local to its parent; the slot names which socket it's in).
-function snapTarget(st, id, g, p) {
+function snapTarget(st, id, g, p, w = null) {
   const out = { to: null, notes: [] }; if (!g?.fits?.length || !Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite)) return out;
   const fam = new Set([id, ...descendants(st, id)]);
   for (const x of allSockets(st)) {
@@ -2966,6 +2979,7 @@ function snapTarget(st, id, g, p) {
     const d = dist(socketPoint(st, x), p); if (d > socketRadius(sk)) continue;
     const where = { to: x.id };
     if (Object.entries(st.entities).some(([k, y]) => k !== id && y.c.parent?.to === x.id)) { out.notes.push({ passedOver: where, why: "something already sits in that socket" }); continue; }
+    const sat = w ? sitterOn(w, st, x.id, null) : null; if (sat?.who) { out.notes.push({ passedOver: where, why: `${said(sat.who)} sits in that socket` }); continue; }
     const lk = [at, ...ancestors(st, at)].find((k) => lockedC(st.entities[k]?.c)); if (lk) { out.notes.push({ passedOver: where, why: `${lk} is locked` }); continue; }
     if (!out.to || d < out.to.d) out.to = { ...x, d, where };
   }
@@ -3396,7 +3410,7 @@ const VERBS = {
     if (probe.presence) {
       // a seat is presence (nothing recorded), but the authority keeps who sits where: a thing someone sits on, or anything
       // carrying it, isn't kicked, shoved, grabbed or thrown out from under them (occupant)
-      if (probe.attach?.to) { (w.presence.seats ??= {})[actor] = { to: probe.attach.to, socket: probe.attach.socket ?? null }; w.presenceDirty = true; }
+      if (probe.attach?.to) setSeat(w, actor, probe.attach.to);
       return { ok: true, recorded: false, ...(probe.attach ? { attach: probe.attach } : {}), note: probe.note };   // attach: where your frames now say you are
     }
     if (probe.script) { // L7 (41 §3.6): the visitor's use is ITS act, on its own rate; the behaviour runs with its sponsor's rights
