@@ -65,7 +65,7 @@ import { describeCaptions } from "../shared/captions.js";
 import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
-import { createShover, shoveable, footprint, contactOf, SHOVE_FEEL } from "../shared/shove.js";
+import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, SHOVE_FEEL } from "../shared/shove.js";
 import { SHOVE } from "../shared/protocol/physconst.js";
 import { colliderFor } from "../client/lib/bodyscale.js";
 
@@ -80,7 +80,7 @@ const PERMIT_STEP = 2, PERMIT_AHEAD = 1;
  *  reaches it without shoving it (or is refused) stops as any refused walk does after SHOVE_WAIT_MS. */
 const SHOVE_TRIES = 5, SHOVE_WAIT_MS = 2500, SHOVE_SETTLE_MS = 800;
 type Blocker = { id: string; ref: any; phase: "approach" | "pushed"; until: number };
-type WalkGate = { mode: "sync" | "tracked" | "open"; permit: number[] | null; busy: boolean; blocker?: Blocker | null; shoves?: number; slow?: number; waitUntil?: number };
+type WalkGate = { mode: "sync" | "tracked" | "open"; permit: number[] | null; busy: boolean; blocker?: Blocker | null; shoves?: number; slow?: number; waitUntil?: number; hold?: number; retrackAt?: number };
 /** Quiet window for world-change narration, per (entity, component). Tuning a
  *  live emitter is a burst of `comp` entries; this is how long they fold into
  *  one line. Long enough to swallow a slider drag, short enough that "puts the
@@ -245,6 +245,12 @@ export class WorldAgent {
   private simFlying = new Set<string>();
   /** body shove (shared/shove.js): this body's walk pushes loose things it walks into, through the same punt a person's client sends */
   private shover = createShover();
+  /** off for the session when this server doesn't know shove (an older deployment answers unknown-arg) */
+  private shoveOff = false;
+  /** who holds what, as the authority's presence plane broadcasts it (a held thing, and what rides it, isn't shoved) */
+  private holdsNow: Record<string, any> = {};
+  /** a shove gave a thing this body's momentum: for a moment it walks at most what it kept (shared/shove.js keptOf) */
+  private walkCap: { v: number; until: number } | null = null;
   entities = new Map<string, Entity>();
   /** who/what rides what: mount verbs, keyed by the rider (body or thing) */
   /** Every mount's full wire shape — offset/yaw OVERRIDE socket defaults in
@@ -722,6 +728,9 @@ export class WorldAgent {
           // speaking into a void and cannot tell.
           case "voice-moderated":
             this.onMedia?.(msg);
+            break;
+          case "holds":
+            this.holdsNow = (msg as any).holds && typeof (msg as any).holds === "object" ? (msg as any).holds : {};
             break;
           case "your-rights":
             // The sequencer recomputes this participant's effective rights
@@ -1804,14 +1813,15 @@ export class WorldAgent {
           this.walkDone?.(true); this.walkDone = null;
         }
       } else {
-        const sp = this.target.run ? RUN : WALK;
+        const capped = this.walkCap && Date.now() < this.walkCap.until ? this.walkCap.v : Infinity;
+        const sp = Math.min(this.target.run ? RUN : WALK, capped);
         const g = this.walkGate;
         let step = g?.mode === "sync" ? 0 : Math.min(dist, sp * dt);   // 'sync': the authority doesn't know where we stand yet
         if (g?.mode === "tracked") {
           // walk only as far as the authority has accepted (E1): the permit is a point on this leg it said yes to
           const room = g.permit ? Math.hypot(g.permit[0] - this.pos.x, g.permit[2] - this.pos.z) : 0;
           step = Math.min(step, room);
-          if (!g.busy && room < PERMIT_AHEAD && !this.permitAtTarget(g) && !this.blockerHolds(g)) this.extendPermit(g);
+          if (!g.busy && !(g.hold! > 0) && room < PERMIT_AHEAD && !this.permitAtTarget(g) && !this.blockerHolds(g)) this.extendPermit(g);
         }
         this.speed = step > 0 ? sp : 0; this.clip = this.target.run ? "run" : "walk";
         this.yaw = Math.atan2(dx, dz);
@@ -2626,8 +2636,9 @@ export class WorldAgent {
       g.busy = false;
       if (!r?.ok && r?.refused?.code === "solid" && this.walkUpTo(g, from, T, r.refused)) return;
       // a shove's re-track (shoveNow) spends the track's speed allowance: too fast is "not yet", asked again shortly
-      if (!r?.ok && r?.refused?.code === "too-fast" && (g.slow = (g.slow ?? 0) + 1) <= 5) { g.waitUntil = Date.now() + 400; return; }
+      if (!r?.ok && r?.refused?.code === "too-fast" && Date.now() - (g.retrackAt ?? -Infinity) < 3000 && (g.slow = (g.slow ?? 0) + 1) <= 5) { g.waitUntil = Date.now() + 400; return; }
       if (!r?.ok) { this.refuseWalk(r?.refused ?? { code: "no-answer", reason: "the authority didn't answer" }); return; }
+      g.slow = 0;
       this.trackAt = Array.isArray(r.at) ? r.at : to;
       g.permit = last && this.target === T ? [T.x, to[1], T.z] : this.trackAt;   // the leg's exact end (the track rounds to mm)
     });
@@ -2638,27 +2649,31 @@ export class WorldAgent {
    *  the authority for a stretch (the track would move under the punt's reach check). */
   private tickShove() {
     const st = this.replica?.st, canon = this.replica?.sim, g = this.walkGate;
-    if (!st || !canon?.sim || canon.foreign || !this.target || this.draggedBy || this.clip === "ragdoll" || this.flight || this.mySeat) return;
+    if (this.shoveOff || !st || !canon?.sim || canon.foreign || !this.target || this.draggedBy || this.clip === "ragdoll" || this.flight || this.mySeat) return;
     if (!g || g.mode === "sync" || g.busy) return;
     const dx = this.target.x - this.pos.x, dz = this.target.z - this.pos.z, d = Math.hypot(dx, dz); if (d < 1e-6) return;
     const sp = this.target.run ? RUN : WALK, cap = colliderFor(1);
+    const mounted = new Set<string>(), bodies: number[][] = [];
+    for (const p of this.people.values()) { const seat = (p.pose as any)?.seat?.to; if (typeof seat === "string") mounted.add(seat);
+      const at = (p.pose as any)?.p; if (Array.isArray(at) && at.length === 3 && at.every(Number.isFinite)) bodies.push(at); }
+    const rank = Number.isFinite(this.myRights?.rank) ? this.myRights.rank : null;
     const go = this.shover.step({ st, feet: [this.pos.x, this.pos.y, this.pos.z], vel: [dx / d * sp, dz / d * sp], r: cap.r, tall: cap.tall, now: Date.now(),
-      skip: (id: string) => !!canon.sim.bodies?.[id] });
-    for (const { id, v } of go) void this.shoveNow(g, id, v);
+      rank, holds: this.holdsNow, mounted, bodies, skip: (id: string) => !!canon.sim.bodies?.[id] });
+    for (const p of go) { this.walkCap = { v: p.kept, until: Date.now() + p.keepMs }; void this.shoveNow(g, p.id, p.v); }
   }
   private async shoveNow(g: WalkGate, id: string, v: number[]) {
     const here = [r3(this.pos.x), r3(this.pos.y), r3(this.pos.z)], box = footprint(this.replica?.st, id), at = this.trackAt;
     const far = !at || !box || Math.hypot(Math.min(box.max[0], Math.max(box.min[0], at[0])) - at[0], Math.min(box.max[2], Math.max(box.min[2], at[2])) - at[2]) > SHOVE.reach - 0.15;
-    // the gate holds still from the re-track to the punt's answer: a stretch asked for between them would carry the
-    // authority's body back out of the punt's reach
-    const hold = g.mode === "tracked"; if (hold) g.busy = true;
+    // the gate holds still from the re-track to the punt's answer (counted: two shoves in one tick each hold it): a stretch
+    // asked for between them would carry the authority's body back out of the punt's reach
+    const hold = g.mode === "tracked"; if (hold) g.hold = (g.hold ?? 0) + 1;
     let r: any;
     try {
-      if (hold && far) { const m = await this.request("move", { to: here });
+      if (hold && far) { g.retrackAt = Date.now(); const m = await this.request("move", { to: here });
         if (this.walkGate === g && m?.ok) { this.trackAt = Array.isArray(m.at) ? m.at : here; g.permit = this.trackAt; } }
       r = await this.request("punt", { id, v, shove: true });
-    } finally { if (hold && this.walkGate === g) g.busy = false; }
-    if (!r?.ok) this.shover.refused(id, Date.now(), r?.refused?.code);
+    } finally { if (hold) g.hold = Math.max(0, (g.hold ?? 1) - 1); }
+    if (!r?.ok) { this.shover.refused(id, Date.now(), r?.refused?.code); if (r?.refused?.code === "unknown-arg") this.shoveOff = true; }
     if (this.walkGate !== g || g.blocker?.id !== id) return;
     if (r?.ok) { g.blocker.phase = "pushed"; g.blocker.until = Date.now() + SHOVE_SETTLE_MS; }
     else this.refuseWalk(g.blocker.ref);
@@ -2668,10 +2683,10 @@ export class WorldAgent {
   private walkUpTo(g: WalkGate, from: number[], T: { x: number; z: number }, ref: any): boolean {
     const id = ref?.blocker, st = this.replica?.st;
     if (typeof id !== "string" || !st || !this.replica?.sim?.sim || (g.shoves ?? 0) >= SHOVE_TRIES || !shoveable(st, id)) return false;
-    const box = footprint(st, id); if (!box) return false;
+    const obb = obbOf(st, id); if (!obb) return false; const thing = { obb, box: aabbOfObb(obb) };
     const cap = colliderFor(1), dx = T.x - from[0], dz = T.z - from[2], d = Math.hypot(dx, dz); if (d < 1e-6) return false;
     let s = 0; const STEP = 0.05;
-    const touches = (k: number) => !!contactOf([from[0] + dx / d * k, from[1], from[2] + dz / d * k], cap.r, cap.tall, box, SHOVE_FEEL.slack / 2);
+    const touches = (k: number) => !!contactOf([from[0] + dx / d * k, from[1], from[2] + dz / d * k], cap.r, cap.tall, thing, SHOVE_FEEL.slack / 2);
     while (s < d && !touches(s)) s = Math.min(d, s + STEP);
     if (!touches(s)) return false;   // the leg never reaches it: something else about it is solid
     g.shoves = (g.shoves ?? 0) + 1;
@@ -2694,7 +2709,8 @@ export class WorldAgent {
     const now = Date.now(); if (now < (g.waitUntil ?? 0)) return true;
     const b = g.blocker; if (!b) return false;
     if (b.phase === "approach") { if (now > b.until) queueMicrotask(() => { if (this.walkGate === g && g.blocker === b) this.refuseWalk(b.ref); }); return true; }
-    if (now < b.until || this.replica?.sim?.sim?.bodies?.[b.id]) return true;
+    const body = this.replica?.sim?.sim?.bodies?.[b.id];   // at rest is settled, logged or not (an unsettled rest stays a body)
+    if (now < b.until || (body && !body.resting)) return true;
     g.blocker = null; return false;
   }
   /** The authority refused this body the next stretch: it stops where the authority has it, and the walk says why. */

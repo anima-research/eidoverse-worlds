@@ -68,9 +68,10 @@ try {
   const HEP = ag.cut?.you;
   ok(/^u-/.test(HEP ?? "") && ag.replica?.active, "(setup) the agent joins and folds the world");
   ok((await ann.req("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } })).ok, "(setup) the yard runs eidosim");
-  const crate = (id, model, pos, extra = {}) => ann.req("create", { id, model, components: { transform: { pos, q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", who: "visitor" }, ...extra } });
-  for (const [id, model, pos, extra] of [["low", "test/lowcrate.glb", [0, 0, 2]], ["tall", "test/tallcrate.glb", [6, 0, 2]], ["still", "test/lowcrate.glb", [12, 0, 2]], ["locked", "test/lowcrate.glb", [18, 0, 2], { lock: true }]] as any) {
-    const r = await crate(id, model, pos, extra); ok(r.ok, `(setup) ${id} crate`, r); }
+  // empty crates (20 and 30 kg): a body's push (BODY_MASS 70 kg, elastic) sends them well along; a full one wouldn't budge much
+  const crate = (id, model, pos, extra = {}, mass = 20) => ann.req("create", { id, model, components: { transform: { pos, q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", who: "visitor", mass }, ...extra } });
+  for (const [id, model, pos, extra, mass] of [["low", "test/lowcrate.glb", [0, 0, 2]], ["tall", "test/tallcrate.glb", [6, 0, 2], {}, 30], ["still", "test/lowcrate.glb", [12, 0, 2]], ["locked", "test/lowcrate.glb", [18, 0, 2], { lock: true }]] as any) {
+    const r = await crate(id, model, pos, extra, mass); ok(r.ok, `(setup) ${id} crate`, r); }
   for (let i = 0; i < 80 && !["low", "tall", "still", "locked"].every((id) => ag.replica?.st?.entities?.[id]?.c?.physics?.shape); i++) await sleep(50);
   ok(["low", "tall", "still", "locked"].every((id) => Array.isArray(ag.replica?.st?.entities?.[id]?.c?.physics?.shape)), "(setup) the authority measured each crate's shape (the agent folds it)");
   const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name);
