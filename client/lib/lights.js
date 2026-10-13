@@ -28,10 +28,12 @@ export function makeLightGizmo(color = 0xffd9a0) {
   m.castShadow = m.receiveShadow = false;
   m.userData.noWet = true;          // a glowing bulb does not get rained dark —
   m.userData.noCloudShadow = true;  // and the sweep must not recompile it
+  m.userData.isGizmo = true;            // a thing's box is its model's, not its bulb's (realize/models.js boxOf)
+  m.userData.noMaterialOverride = true; // the bulb is no material slot a `material` component may recolour
   return m;
 }
 
 // ---- the inspector ------------------------------------------------------------
 // The fields are declared once, for every surface, in shared/editschema.js; a light is a thing's `light` component and
 // commits through the shared edit path (one door request on release). This module adds only what the panel shows.
-export const lightCasting = (obj) => (obj?.userData?.rigKey ? isCasting(obj.userData.rigKey) : undefined);
+export const lightCasting = (id) => isCasting(`complight:${id}`);   // realize/models.js syncCompLight's request key

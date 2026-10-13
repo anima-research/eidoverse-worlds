@@ -177,11 +177,6 @@ function collect() {
         }
         continue;
       }
-      if (p.userData?.perfscopeSubject) {              // bodies tag themselves (below)
-        rec = subjects.get(`p:${p.userData.perfscopeSubject}`);
-        if (!rec) { rec = freshRec(`p:${p.userData.perfscopeSubject}`, 'person', p.userData.perfscopeSubject); subjects.set(rec.key, rec); }
-        continue;
-      }
       // avatar roots stamp themselves (avatar.js: userData.who on every body).
       // isBody alone is not enough — gaze / drag-nail meshes wear it too.
       if (p.userData?.who) {

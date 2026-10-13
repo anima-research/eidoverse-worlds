@@ -35,6 +35,8 @@ import { inspectSchema, editOps, fieldAt } from '../../shared/editschema.js';
 import { namedParts } from './parts.js';
 import { sameRotation } from '../../shared/euler.js';
 import { localOf } from '../../shared/hierarchy.js';
+import { kindOf } from '../../shared/protocol/kind.js';
+import { lightOf } from '../../shared/components.js';
 import { WORLD_ID, worldSchema, worldEditOps } from '../../shared/worldentity.js';
 import * as Edits from './editwrites.js';   // slice 3b: component edits are requests
 import { effectLookup } from './emitters.js';
@@ -81,9 +83,9 @@ function eulerHint(id, rec) {
 }
 /** What only a live client knows about a thing: the schema AND the commit path read the same. */
 export function liveFor(id) {
-  const obj = entities.get(id);
-  const light = !!obj?.userData?.isLight;
-  return { casting: light ? hooks.casting?.(obj) : undefined, parts: obj && !light ? namedParts(obj) : undefined, materials: obj && !light ? materialsOf(obj) : undefined,
+  const obj = entities.get(id); const rec = foldRecord(id);
+  const light = kindOf(rec) === 'light';
+  return { casting: lightOf(rec) ? hooks.casting?.(id) : undefined, parts: obj && !light ? namedParts(obj) : undefined, materials: obj && !light ? materialsOf(obj) : undefined,
     euler: eulerHint(id, foldRecord(id)),
     // the hierarchy reads the whole fold: a child's local pose, its parent's
     // socket, the Parent field's children, and the in-place parenting maths

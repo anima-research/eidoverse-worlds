@@ -135,17 +135,17 @@ check('grey scope: the edit frame re-points --brand to the grey', await evalJson
 
 console.log('\nediting through the channel box reaches the light:');
 await evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === 'brightness').querySelector('.sp-num'); i.value = '+=4'; i.dispatchEvent(new Event('change')); return true; })()`);
-check('brightness is 20 on the light', await waitFor(`import('/lib/world.js').then((m) => m.entities.get('benchlamp')?.userData?.lightParams?.intensity === 20)`));
+check('brightness is 20 on the light', await waitFor(`import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.light?.intensity === 20)`));
 // was "…and the light group agrees (same declaration, two lanes)": the channel strip AND the light
 // group each drew brightness. B retired the second lane (one card owns each field), so the same
 // behaviour now reads: exactly ONE brightness row, and it shows the committed 20.
 check('…and the Light card\'s one brightness row shows 20 (one lane: B drew it twice before)', await waitFor(`(() => { const R = [...${insp}.querySelectorAll('.sp-f-num')].filter((r) => /brightness/.test(r.querySelector('.sp-label').textContent)); return R.length === 1 && R[0].querySelector('.sp-num').value === '20'; })()`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('.sp-f-num')].map((r) => r.querySelector('.sp-label').textContent + '=' + r.querySelector('.sp-num').value)`)));
 await sleep(1500);   // past EDIT_COMMIT_MS and the echo: a refusal would have rolled it back by now
-check('…and it stayed (the verb was accepted, not rolled back)', (await evalJson(`import('/lib/world.js').then((m) => m.entities.get('benchlamp')?.userData?.lightParams?.intensity)`)) === 20);
+check('…and it stayed (the verb was accepted, not rolled back)', (await evalJson(`import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.light?.intensity)`)) === 20);
 
 console.log('\nundo: Ctrl+Z after a light edit restores the fold value:');
 await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ', ctrlKey: true, bubbles: true })), true`);
-check('brightness back to 16', await waitFor(`import('/lib/world.js').then((m) => m.entities.get('benchlamp')?.userData?.lightParams?.intensity === 16)`));
+check('brightness back to 16', await waitFor(`import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.light?.intensity === 16)`));
 
 // early on purpose: headless leaks heap with time (see editworkspace-bench's header), and checks added at the
 // end of this long bench ran it into perf-guard's memory floor (10-02)
@@ -326,7 +326,7 @@ console.log('\nEsc mid-scrub, in a real browser (the key lands on the document, 
   check('Esc restores the face — and the fold, if a live commit had already gone out', await waitFor(`${inp}.value === '10' && import('/lib/state.js').then((m) => m.state.st.entities.benchlamp.range === 10)`, 4000), 'face=' + await evalJson(`${inp}.value`) + ' channels=' + JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('.sp-f-num')].map((r) => r.querySelector('.sp-label').textContent + '=' + r.querySelector('.sp-num').value)`)) + ' fold=' + JSON.stringify(await evalJson(`import('/lib/state.js').then((m) => { const e = m.state.st.entities.benchlamp; return { intensity: e?.intensity, range: e?.range }; })`)));
   await evalJson(`${inp}.dispatchEvent(${pe('pointerup', 160)}), true`);
   await sleep(700);
-  check('…and the light never left 10 (nothing committed)', (await evalJson(`import('/lib/world.js').then((m) => m.entities.get('benchlamp')?.userData?.lightParams?.range)`)) === 10);
+  check('…and the light never left 10 (nothing committed)', (await evalJson(`import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.light?.range)`)) === 10);
 }
 
 console.log('\nmotion: a bob on the light — a Bob card, driven channels, an edit that keeps t0:');

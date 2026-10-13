@@ -128,7 +128,7 @@ function paintScene(force = false) {
     const meta = metaOf(selected);
     const bag = bagOf(selected);
     const pos = obj ? obj.getWorldPosition(_wp) : null;
-    const isLight = !!obj?.userData?.isLight;
+    const isLight = meta?.kind === 'light' && bag?.light?.kind !== 'spot';   // a spot shines along its -Z: its yaw is its aim
 
     // generic transform editor — every entity has a pose; yaw/scale make no
     // sense on a bulb. Values are the entity's LOCAL frame (labelled when
