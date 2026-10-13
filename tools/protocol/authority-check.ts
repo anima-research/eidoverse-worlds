@@ -1090,6 +1090,58 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(!openWorld(root, "tr-lift").entries.slice(r.out.length).some((e) => e.kind === "change" && opsOf(e).some((o) => o.comp === "sockets" && o.verb === "set" || (o.comp === "parent" && o.value?.socket !== undefined))), "LS2 …and nothing written after the cut holds the old spelling");
 }
 
+// SR1 (review 10-12 S1-1): a socket child is part of its host. Creating one, re-parenting one, or setting its socket or
+// transform is an edit of the host's seats: the host's rights (a builder without editOthers can't seat ann's car) and the
+// locks over the host's chain, in either spelling (the legacy map lifts to creates, and those are judged the same).
+{ T += 100; process.env.PROTOCOL_NOW = String(T); const W = () => openWorld(root, "seatrights");
+  const R = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); return request(W(), actor, verb, args); };
+  const E = (id) => W().state().entities[id]?.c;
+  R("ann", "create-world", { title: "seatrights" });
+  R("ann", "set", { id: "@world", component: "role-defs", value: { builder: { can: { editOthers: false } }, crew: { name: "Crew", rank: 150, can: { build: true, editOthers: true } } } });
+  R("ann", "set", { id: "@world", component: "roles:dee", value: { role: "crew" } });
+  R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } }); R("ann", "set", { id: "@world", component: "roles:cy", value: { role: "owner" } });
+  R("ann", "create", { id: "car", model: "crate", components: { sockets: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } } });
+  const kids = (h) => Object.keys(W().state().entities).filter((k) => E(k)?.parent?.to === h && E(k)?.socket).map((k) => E(k).socket.name).sort();
+  const drv = { name: "drv", body: { action: "drive", input: { move: "drive" } } };
+  // 1. a foreign drive seat: neither spelling, and bob can't drive ann's car
+  const nat = R("bob", "create", { id: "bobdrv", components: { parent: { to: "car" }, transform: { pos: [0, 0.6, 0.3] }, socket: drv } });
+  const leg = R("bob", "set", { id: "car", component: "sockets", value: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } }, drv: { pos: [0, 0.6, 0.3], body: { action: "drive", input: { move: "drive" } } } } });
+  R("bob", "move", { to: [0, 0, 0.8] }); const dr = R("bob", "use", { id: "car", action: "drive" });
+  ok(code(nat) === "rights" && code(leg) === "rights" && code(dr) !== undefined && JSON.stringify(kids("car")) === '["seat"]', "SR1a a builder without editOthers can't add a drive seat to the owner's car (native and legacy map), so can't drive it", [nat.refused, leg.refused, dr.attach ?? dr.refused, kids("car")]);
+  // 2. under an owner-level lock: a builder and another owner are both refused a new socket
+  R("ann", "create", { id: "chair", model: "crate", components: { sockets: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } } });
+  R("ann", "set", { id: "chair", component: "lock", value: { rank: "owner" } });
+  R("ann", "create", { id: "cyshelf", model: "crate" }); R("ann", "set", { id: "cyshelf", component: "lock", value: { rank: "owner" } });
+  const lb = R("dee", "create", { id: "deeseat", components: { parent: { to: "chair" }, socket: { name: "s2", body: { action: "sit" } } } });
+  const lc = R("cy", "create", { id: "cyseat", components: { parent: { to: "chair" }, socket: { name: "s3", body: { action: "sit" } } } });
+  const lm = R("cy", "set", { id: "chair", component: "sockets", value: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } }, s5: { pos: [0, 1, 0] } } });
+  ok(code(lb) === "locked" && code(lc) === "locked" && code(lm) === "locked" && JSON.stringify(kids("chair")) === '["seat"]', "SR1b an owner-locked host refuses a new socket: a builder with editOthers, another owner, and the legacy map alike", [lb.refused, lc.refused, lm.refused, kids("chair")]);
+  // 3. squatting a name or the one driver on someone else's host: refused, so the owner's own later seat is taken
+  R("bob", "create", { id: "bobcrate", model: "crate", components: { transform: { pos: [4, 0, 0] } } });
+  const mine = R("bob", "create", { id: "bobhook", components: { parent: { to: "bobcrate" }, socket: { name: "drv", body: { action: "drive", input: { move: "drive" } } } } });
+  const re = R("bob", "set", { id: "bobhook", component: "parent", value: { to: "car" } });
+  const own = R("ann", "create", { id: "anndrv", components: { parent: { to: "car" }, socket: drv } });
+  ok(mine.ok && code(re) === "rights" && own.ok && E("anndrv")?.socket?.name === "drv", "SR1c re-parenting your own socket onto someone else's host is refused (rights), so it can't squat a name or the driver: the owner's own drv is taken", [mine.refused, re.refused, own.refused]);
+  const mk = R("bob", "create", { id: "bobmark", components: { parent: { to: "car" }, transform: { pos: [0, 1, 0] } } });
+  const be = R("bob", "set", { id: "bobmark", component: "socket", value: { name: "mark", accepts: ["key"] } });
+  ok(mk.ok && code(be) === "rights" && !E("bobmark")?.socket, "SR1c …nor make a bare thing of yours, hung on someone else's host, into a socket of it", [mk.refused, be.refused]);
+  const rl = R("cy", "create", { id: "cyhook", components: { parent: { to: "car" }, socket: { name: "cyh" } } });
+  const rl2 = R("cy", "set", { id: "cyhook", component: "parent", value: { to: "cyshelf" } });
+  ok(rl.ok && code(rl2) === "locked" && E("cyhook")?.parent?.to === "car", "SR1c …and onto a host locked above you (locked)", [rl.refused, rl2.refused]);
+  // 4. accepts capture: a foreign snap point on your thing, or a foreign socket's accepts rewritten
+  R("ann", "create", { id: "rack", model: "crate", components: { transform: { pos: [-4, 0, 0] } } });
+  const ac = R("bob", "create", { id: "bobsnap", components: { parent: { to: "rack" }, transform: { pos: [0, 1, 0] }, socket: { name: "grab", accepts: ["key"] } } });
+  R("ann", "create", { id: "rack-hook", components: { parent: { to: "rack" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook", accepts: ["coat"] } } });
+  const as = R("bob", "set", { id: "rack-hook", component: "socket", value: { name: "hook", accepts: ["key"] } });
+  const at = R("bob", "set", { id: "rack-hook", component: "transform", value: { pos: [0, 2, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
+  ok(code(ac) === "rights" && code(as) === "rights" && code(at) === "rights" && JSON.stringify(E("rack-hook")?.socket?.accepts) === '["coat"]', "SR1d a builder without editOthers can't hang a snap point (accepts) on the owner's thing, nor rewrite or move the owner's socket", [ac.refused, as.refused, at.refused]);
+  // the host's owner still may: bob seats his own crate, in either spelling; ann (owner) seats hers
+  const ob = R("bob", "create", { id: "bobseat2", components: { parent: { to: "bobcrate" }, socket: { name: "back", body: { action: "sit" } } } });
+  const om = R("bob", "set", { id: "bobcrate", component: "sockets", value: { drv: { pos: [0, 0.6, 0], body: { action: "drive", input: { move: "drive" } } }, back: { pos: [0, 0.5, 0], body: { action: "sit" } }, side: { pos: [0.5, 0.5, 0] } } });
+  const hm = R("bob", "create", { id: "bobnew", model: "crate", components: { transform: { pos: [6, 0, 0] } } }) && R("bob", "batch", { ops: [{ verb: "create", args: { id: "bobnew2", model: "crate" } }, { verb: "create", args: { id: "bobnew2-s", components: { parent: { to: "bobnew2" }, socket: { name: "s" } } } }] });
+  ok(ob.ok && om.ok && hm.ok && JSON.stringify(kids("bobcrate")) === '["back","drv","side"]', "SR1e the host's own builder still adds seats (natively, by the legacy map, and on a host made in the same batch)", [ob.refused, om.refused, hm.refused, kids("bobcrate")]);
+}
+
 // LG1 (a grep-pin, as nonumber-check is): past the door nothing reads the old spelling. The authority's state readers name
 // socket children; only authority/sockets.js (the translator and the load's lift) reads a stored `sockets` map, a
 // parent {to, socket} or a home's socket
