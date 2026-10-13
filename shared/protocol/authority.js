@@ -35,7 +35,7 @@ import { reachTo, massOf, shoveCap, feetOn, sweptCovers } from "../shove.js";
 import { r3, noNeg0, unNegZero } from "./round.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 import { CTX } from "./authority/ctx.js";
-import { SOCKETS_PER_HOST, isSocketC, socketRules, socketsOf, allSockets, socketPoint, socketRole, liftOps, legacyHosts, liftHostOps, modelSocketNames } from "./authority/sockets.js";
+import { SOCKETS_PER_HOST, isLegacyParent, isSocketC, socketRules, socketsOf, allSockets, socketPoint, socketRole, liftOps, legacyHosts, liftHostOps, modelSocketNames } from "./authority/sockets.js";
 import { Refusal, refuse, said } from "./authority/refuse.js";
 import { LAB_CATALOGUE, modelOf, geomOf, boxOfM, geomE, withCatalogue, meshShape } from "./authority/catalogue.js";
 export { LAB_CATALOGUE, withCatalogue, MESH_SIZE, meshSize, meshGeom, meshShape } from "./authority/catalogue.js";
@@ -2151,8 +2151,19 @@ function buildUndo(ctx, a, w) {
   const madeHere = new Set(flat.filter((o) => o.verb === "create").map((o) => o.id)); // undone as one unit: the whole thing goes
   for (const o of flat) { if (madeHere.has(o.id) && o.verb !== "create") continue;
     const k = o.id + "|" + (o.verb === "set" || (o.verb === "delete" && o.comp !== undefined) ? o.comp : "*"); if (!keys.has(k)) keys.set(k, o); }
+  const paired = new Set();
   for (const [, o] of [...keys].reverse()) {
     const { id, comp } = o; const whole = o.verb === "create" || (o.verb === "delete" && comp === undefined);
+    // where a thing sat on a socket before the cut, its transform was in the HOST's frame (review 10-12 S2-1): its parent
+    // and its transform go back as one group, so the door lifts the parent and re-expresses the pose in the socket child's
+    // frame (liftOps' `via`); a bare transform would be read in the socket's frame and land it elsewhere
+    const ob = !whole && (comp === "transform" || comp === "parent") ? before(id) : null;
+    if (ob && isLegacyParent(ob.c.parent)) { if (paired.has(id)) continue; paired.add(id);
+      const by = touchedBy(id, "parent") ?? touchedBy(id, "transform");
+      if (by) { skipped.push({ id, component: comp, why: `${said(by)} changed it since`, by }); continue; }
+      if (ob.c.transform === PURGED) { skipped.push({ id, component: "transform", why: "its old value was purged" }); continue; }
+      if (now.entities[id]) groups.push([setOp(id, "parent", ob.c.parent), ...(ob.c.transform ? [setOp(id, "transform", ob.c.transform)] : [])]);
+      ctx.refs.add(id); continue; }
     const by = touchedBy(id, whole ? undefined : comp);
     if (by) { skipped.push({ id, component: comp, why: `${said(by)} changed it since`, by }); continue; }
     // undoing a create: what others hung on it since is THEIR work. It stays, let go where it is (round-1 F3), never

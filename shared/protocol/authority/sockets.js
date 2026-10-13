@@ -94,6 +94,9 @@ function overSocket(st, host, sockT, t) {
   return { ...t, pos: d, ...(t.q ? { q: qmul(sockT.q, t.q) } : {}) };
 }
 const legacyParent = (v) => bag(v) && typeof v.to === "string" && typeof v.socket === "string";
+/** Is this a parent in the old spelling ({to, socket})? Undo reads it from before the cut, to put back a parent and a
+ *  transform written in the host's frame as one group (the door then re-expresses the pose in the socket child's). */
+export const isLegacyParent = legacyParent;
 const legacyHome = (v) => bag(v) && legacyParent(v.parent);
 
 /** Does this write carry the old spelling anywhere? (The common write doesn't, and costs one pass.) */

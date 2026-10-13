@@ -1187,6 +1187,31 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const st = openWorld(root, "sockcap-lift").state(); const n = Object.values(st.entities).filter((e) => e.c.parent?.to === "wall" && e.c.socket).length;
   ok(!threw && n === 70 && st.entities.wall.c.sockets === undefined, "SR2e the load's lift is a carry: a pre-cut host of 70 slots lifts whole, past the per-host ceiling", { threw, n }); }
 
+// SRU (review 10-12 S2): undo across the load's lift. A pre-cut world: tbl has sockets {perch}, the bell is mounted on the
+// perch. Its writer is the door's own (translate-v1, then acts appended as a pre-cut door stored them); the load lifts it.
+const precut = (name, extra = [], acts = []) => {
+  const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "bob", role: "owner" } },
+    { seq: 2, ts: 2, actor: "ann", verb: "spawn", args: { id: "tbl", lib: "table", pos: [2, 0, 3], yaw: 0.7 } },
+    { seq: 3, ts: 3, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 } } } },
+    { seq: 4, ts: 4, actor: "ann", verb: "spawn", args: { id: "bell", lib: "bell", pos: [-5, 0, -5] } },
+    { seq: 5, ts: 5, actor: "ann", verb: "mount", args: { id: "bell", to: "tbl", slot: "perch" } }, ...extra];
+  const out = translate(old, DOORKEYS()).out; const wid = out[1].world;
+  for (const [actor, ops] of acts) { const n = out.length; const ts = out[n - 1].ts + 1;   // an act and its change, as a pre-cut door wrote them
+    out.push({ world: wid, kind: "act", actor, verb: ops.length > 1 ? "batch" : "set", body: { request: ops.length > 1 ? { ops } : { id: ops[0].id, component: ops[0].comp, value: ops[0].value } }, ts },
+      { world: wid, kind: "change", actor, cause: n, verb: "batch", body: { ops: ops.map((o) => ({ verb: "set", ...o })) }, ts }); }
+  fs.writeFileSync(root + `worlds/${name}.jsonl`, out.map((e) => JSON.stringify(e)).join("\n") + "\n"); return out; };
+const nearly = (a, b, e = 1e-8) => !!a && !!b && a.every((v, i) => Math.abs(v - b[i]) < e);
+// SRU1 (S2-1): a pre-cut act moved the bell up 0.2 m on its perch (the transform in the HOST's frame, as stored then)
+{ const W = () => openWorld(root, "sru1"); precut("sru1");
+  const b0 = fold(readLog(fs.readFileSync(root + "worlds/sru1.jsonl"))).entities.bell.c;
+  const moved = { pos: [b0.transform.pos[0], b0.transform.pos[1] + 0.2, b0.transform.pos[2]], q: b0.transform.q, scale: b0.transform.scale };
+  precut("sru1", [], [["ann", [{ id: "bell", comp: "transform", value: moved }]]]);
+  const before = worldT(fold(readLog(fs.readFileSync(root + "worlds/sru1.jsonl")).slice(0, -2)), "bell");
+  liftWorld(W()); T += 100; process.env.PROTOCOL_NOW = String(T); const u = request(W(), "ann", "undo", {});
+  const st = W().state(); const after = worldT(st, "bell"); const on = st.entities[st.entities.bell.c.parent?.to]?.c.socket?.name;
+  ok(u.ok && !(u.skipped?.length) && nearly(after.pos, before.pos) && nearly(after.q, before.q) && on === "perch", "SRU1 undo of a pre-cut move of cargo on a socket puts the bell back exactly (within 1e-8), still on the perch", { u: u.refused ?? u.skipped, before: before.pos, after: after.pos, on }); }
+
 // LG1 (a grep-pin, as nonumber-check is): past the door nothing reads the old spelling. The authority's state readers name
 // socket children; only authority/sockets.js (the translator and the load's lift) reads a stored `sockets` map, a
 // parent {to, socket} or a home's socket
