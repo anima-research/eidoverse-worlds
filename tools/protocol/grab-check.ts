@@ -61,11 +61,11 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["returnAfter: not while held", "protocol/authority.js", "if (!g?.home || w.presence.holds[id]) continue;", "if (!g?.home) continue;", ["R4"]],
   ["returnAfter: only a hand or physics moving it counts", "protocol/authority.js", "const byHand = (c.kind === \"act\" && (HAND_VERBS.has(c.verb)", "const byHand = true || (c.kind === \"act\" && (HAND_VERBS.has(c.verb)", ["R4"]],
   ["returnAfter: the time", "protocol/authority.js", "now - r.ts < g.returnAfter * 1000 ||", "", ["R4"]],
-  ["snapping", "protocol/authority.js", "const snap = snapTarget(st, a.id, g, a.pos ?? h.pose.pos);", "const snap = { to: null, notes: [] };", ["R5", "R6", "R7", "R9"]],
-  ["snapping: within the radius", "protocol/authority.js", "if (d > socketRadius(sk)) continue;", "", ["R5"]],
-  ["snapping: fits meets accepts", "protocol/authority.js", "if (!fitsSocket(g, sk) || !Array.isArray(sk.pos)) continue;", "if (!Array.isArray(sk.pos)) continue;", ["R6"]],
-  ["snapping: an occupied socket is passed over", "protocol/authority.js", "if (Object.entries(st.entities).some(([k, x]) => k !== id && x.c.parent?.to === hid && x.c.parent?.socket === slot)) {", "if (false) {", ["R6"]],
-  ["snapping: a locked host is passed over", "protocol/authority.js", "if (lk) { out.notes.push({ passedOver: { to: hid, socket: slot }, why: `${lk} is locked` }); continue; }", "", ["R6"]],
+  ["snapping", "protocol/authority.js", "const snap = snapTarget(st, a.id, g, a.pos ?? h.pose.pos);", "const snap = { to: null, notes: [] };", ["R5", "R5s", "R6", "R7", "R9"]],
+  ["snapping: within the radius", "protocol/authority.js", "if (d > socketRadius(sk)) continue;", "", ["R5", "R5s"]],
+  ["snapping: fits meets accepts", "protocol/authority.js", "if (!fitsSocket(g, sk) || !(x.id || Array.isArray(sk.pos))) continue;", "if (!(x.id || Array.isArray(sk.pos))) continue;", ["R6"]],
+  ["snapping: an occupied socket is passed over", "protocol/authority.js", "if (Object.entries(st.entities).some(([k, y]) => k !== id && (x.id ? y.c.parent?.to === x.id : y.c.parent?.to === x.host && y.c.parent?.socket === x.name))) {", "if (false) {", ["R6"]],
+  ["snapping: a locked host is passed over", "protocol/authority.js", "if (lk) { out.notes.push({ passedOver: where, why: `${lk} is locked` }); continue; }", "", ["R6"]],
   ["snapping: a drop in a physics world snaps instead of flying", "protocol/authority.js", "|| (g && w.presence.holds[a.id]?.by === actor && snapTarget(st, a.id, g, a.pos ?? w.presence.holds[a.id].pose.pos).to);", ";", ["R9"]],
   ["sockets.accepts/radius are checked", "sockbody.js", "if ((r = checkAccepts(sk, sat))) return r;", "", ["R8"]],
   ["the hold record keeps hand and grip or offset", "protocol/authority.js", "scale: t.scale }, handled, ...how };", "scale: t.scale }, handled };", ["H1", "H4"]],
@@ -358,6 +358,17 @@ const cases: Case[] = [
       /* a builder's own put (a visitor's put is a settlement their rank can't undo) */ const u = s.call("bob", "undo", {}); const after = { parent: comp(s, "key", "parent") ?? null, pos: tf(s, "key").pos };
       return { far: show(far), farPar, d: show(d), snapped: d.notes?.some((n: any) => n.snapped), par, t, act: since(s, n0), u: show(u), after }; },
     good: (o) => o.far === "ok" && o.farPar === null && o.d === "ok" && o.snapped && o.par?.to === "rack" && o.par?.socket === "hook" && JSON.stringify(o.t.pos) === "[0,0.8,0]" && o.u === "ok" && o.after.parent === null && JSON.stringify(o.after.pos) === "[0.65,0,0.1]" },
+  { id: "R5s", what: "a socket child: a key let go within its radius snaps in with parent {to: <the socket>} and an identity transform; settled says in: <the socket>", run(s) { cast(s);
+      s.call("olive", "create", { id: "rack", model: "crate", place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "rack-hook", components: { parent: { to: "rack" }, transform: { pos: [0, 0.8, 0], q: [0, 0.7071068, 0, 0.7071068] }, socket: { name: "hook", accepts: ["key"], radius: 0.3 } } });
+      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "visitor", fits: ["key"] } }, place: { at: [1, 0] } });
+      s.call("bob", "move", { to: [0.8, 0, 0.6] }); s.call("bob", "grab", { id: "key" });
+      const far = s.call("bob", "drop", { id: "key", pos: [0.65, 0.8, 0.1] }); const farPar = comp(s, "key", "parent") ?? null; s.call("bob", "grab", { id: "key" });
+      const d = s.call("bob", "drop", { id: "key", pos: [0.1, 0.75, 0.05] });
+      const W = s.w().state(); const wp = SL.worldPose(W, "key");
+      return { far: show(far), farPar, d: show(d), settled: d.settled, par: comp(s, "key", "parent"), t: tf(s, "key"), at: wp?.pos, snapped: d.notes?.find((n: any) => n.snapped)?.snapped }; },
+    good: (o) => o.far === "ok" && o.farPar === null && o.d === "ok" && o.par?.to === "rack-hook" && !("socket" in (o.par ?? {})) && JSON.stringify(o.t.pos) === "[0,0,0]" && JSON.stringify(o.t.q) === "[0,0,0,1]" && o.settled?.in === "rack-hook" && !("socket" in (o.settled ?? {}))
+      && o.snapped?.to === "rack-hook" && Math.abs(o.at[1] - 0.8) < 1e-9 && Math.abs(o.at[0]) < 1e-9 },
   { id: "R6", what: "…an occupied socket, one on a locked thing and a key that doesn't fit are passed over (it's set down, and the reply says why)", run(s) { cast(s);
       s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "safe", model: "crate", components: { lock: true, sockets: { slot: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [3, 0] } });

@@ -35,7 +35,7 @@ import { reachTo, massOf, shoveCap, feetOn, sweptCovers } from "../shove.js";
 import { r3, noNeg0, unNegZero } from "./round.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 import { CTX } from "./authority/ctx.js";
-import { isSocketC, socketRules } from "./authority/sockets.js";
+import { isSocketC, socketRules, socketsOf, allSockets, socketPoint, socketRole } from "./authority/sockets.js";
 import { Refusal, refuse, said } from "./authority/refuse.js";
 import { LAB_CATALOGUE, modelOf, geomOf, boxOfM, geomE, withCatalogue, meshShape } from "./authority/catalogue.js";
 export { LAB_CATALOGUE, withCatalogue, MESH_SIZE, meshSize, meshGeom, meshShape } from "./authority/catalogue.js";
@@ -1038,6 +1038,9 @@ function historyDiff(w, id, at, ops) {
 
 // a switched-off thing (componentspec disabled, itself or what it hangs under) can't be handled: it's a link in the record
 function offRefuse(st, id, what) { const k = offChain(st, id); if (k) refuse("disabled", k === id ? `${id} is switched off, so it can't be ${what}` : `${id} hangs under ${k}, which is switched off, so it can't be ${what}`, `an editor switches it back on: delete {id: '${k}', component: 'disabled'}`); }
+// a socket is part of its host, never a thing a hand or a foot moves on its own
+function notAThing(st, id, what) { const c = st.entities[id]?.c;
+  if (isSocketC(c)) refuse("not-a-thing", `${id} is a socket on ${c.parent?.to}, so it can't be ${what}`, `use {id: '${id}'} to sit or attach there, or let go of a thing that fits near it to snap it in`); }
 function needThing(ctx, id) {
   const e = ctx.st.entities[id];
   if (!e) refuse("not-found", `no thing called '${id}'`, "look lists what's here", { didYouMean: guess(String(id), Object.keys(ctx.st.entities)) });
@@ -1416,7 +1419,7 @@ function buildUse(ctx, a) {
     // attaching is presence (your frames say where you're attached; nothing is recorded), so the authority only answers: where,
     // and what the body does there (the socket's body block read with its defaults: shared/sockbody.js bodyOf)
     const { clip, ...body } = pick.body;
-    return { presence: true, attach: { to: a.id, socket: pick.slot, ...body }, note: `you ${action} on ${a.id} (${pick.slot}): presence — your frames carry it; nothing recorded${body.leaveBy === "script" ? " (this seat lets you go only when a script does)" : ""}` };
+    return { presence: true, attach: { to: pick.id ?? pick.host, ...(pick.id ? { host: pick.host } : {}), socket: pick.slot, ...body }, note: `you ${action} on ${pick.host} (${pick.slot}): presence — your frames carry it; nothing recorded${body.leaveBy === "script" ? " (this seat lets you go only when a script does)" : ""}` };
   }
   const h = handlerOf(e, action);
   if (h?.who && rankOf(ctx.st, ctx.actor) < whoRank(ctx.st, h.who)) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
@@ -1491,9 +1494,9 @@ const objOf = (v) => (v && typeof v === "object" && !Array.isArray(v) && v !== P
 // the whole value (a plain boolean component). `unless` names a field of the same component that, when true, bars it.
 const toggleOf = (h) => { const comp = h.component ?? "openable"; return { comp, field: h.field ?? (comp === "openable" ? "open" : undefined) }; };   // toggling an openable opens/closes it, named or not (10-07 merge)
 const barredBy = (e, h) => !!h?.unless && objOf(e.c[toggleOf(h).comp])[h.unless] === true;
-// the sockets a person can attach to: the thing's own, else its model's
-const bodySockets = (st, id) => { const e = st.entities[id]; const S = e?.c.sockets ?? modelOf(e?.c.model)?.sockets ?? {};
-  return Object.entries(S).map(([slot, s]) => ({ slot, body: bodyOf(s) })).filter((x) => x.body); };
+// the sockets a person can attach to: a host's (socketsOf), or a socket's own when it is the one asked
+const bodySockets = (st, id) => { const e = st.entities[id]; const host = isSocketC(e?.c) ? e.c.parent?.to : id;
+  return socketsOf(st, host).filter((x) => host === id || x.id === id).map((x) => ({ ...x, slot: x.name, body: bodyOf(x.sock) })).filter((x) => x.body); };
 // an openable thing with nothing that opens it offers 'open' on its own: the implicit toggle of openable.open (R 10-11
 // 23:17: the gym door had only `openable`; clicking it did nothing, and inspect said "nothing here opens it")
 const IMPLICIT_OPEN = Object.freeze({ kind: "toggle", component: "openable", field: "open" });
@@ -2397,9 +2400,10 @@ function describe(st, id, live = {}, holds = {}, { full = false } = {}) {
   return { id, name, ...(desc ? { description: desc } : {}), ...(ax.can.length ? { can: ax.can } : {}), ...(ax.state.length ? { state: ax.state } : {}), at: t.pos.map((n) => Math.round(n * 100) / 100),
     ...(live[id] ? { moving: live[id] } : {}), ...(holds[id] ? { heldBy: holds[id].by, heldAt: holds[id].pose.pos.map((n) => Math.round(n * 100) / 100), ...(holds[id].hand ? { heldIn: holds[id].hand } : {}) } : {}),
     ...(g ? { grab: describeGrab(g, typeof name === "string" ? name : id) } : {}),
-    ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(lockedC(e.c) ? { lock: e.c.lock === true ? true : { rank: lockLevel(e.c.lock) } } : {}), ...(e.c.openable && typeof e.c.openable === "object" ? { openable: e.c.openable } : {}),
+    ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...socketsLine(st, id), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(lockedC(e.c) ? { lock: e.c.lock === true ? true : { rank: lockLevel(e.c.lock) } } : {}), ...(e.c.openable && typeof e.c.openable === "object" ? { openable: e.c.openable } : {}),
     ...sayOf(st, e.c) };
 }
+const socketsLine = (st, id) => { const socks = socketsOf(st, id).filter((x) => x.id); return socks.length ? { sockets: socks.map((x) => ({ id: x.id, name: x.name, as: socketRole(st.entities[x.id].c) })) } : {}; };
 // batch 2: what its words and media say (shared/says.js, the same lines mcpl's look prints); things it names by their names
 const sayOf = (st, c) => { const lines = saysOf(c, { nameOf: (x) => (st.entities[x] ? st.entities[x].c.label ?? modelOf(st.entities[x].c.model)?.label ?? x : said(x)), now: CTX.mintW?.now?.() ?? null });
   return lines.length ? { says: lines } : {}; };
@@ -2601,7 +2605,7 @@ const PHYSICS_VERBS = {
     if (typeof a.id === "string" && a.id.startsWith("body:")) return BODY_VERBS.body(w, actor, { to: a.id, kind: "drag" }); // a body is presence, never an entity (§2.3)
     const me = body(w, actor); const sf = w.sim(); const st = w.state(); const e = st.entities[a.id];
     if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here", { didYouMean: guess(a.id, Object.keys(st.entities)) });
-    offRefuse(st, a.id, "picked up");
+    notAThing(st, a.id, "picked up"); offRefuse(st, a.id, "picked up");
     const held = w.presence.holds[a.id];
     if (a.hand !== undefined && !["left", "right"].includes(a.hand)) refuse("shape", "hand is left or right", "");
     if (a.offset !== undefined && !offsetOk(a.offset)) refuse("shape", "offset is {pos: [x, y, z] (within 2 m), q: [x, y, z, w]}: where it sits in your hand", "a VR hand sends where it took hold");
@@ -2711,13 +2715,15 @@ const PHYSICS_VERBS = {
     }
     // a socket that accepts it, within that socket's radius of where it's let go (Resonite Snapper, XRI Socket)
     const snap = snapTarget(st, a.id, g, a.pos ?? h.pose.pos);
-    if (snap.to) {
-      const hs = worldT(st, snap.to.to).scale;
-      const ops = [setOp(a.id, "parent", { to: snap.to.to, socket: snap.to.slot, order: "a0" }), setOp(a.id, "transform", { pos: snap.to.sock.pos.slice(), q: qr3(socketQ(snap.to.sock)), scale: t.scale.map((v, i) => r3(v / hs[i])) })];
+    if (snap.to) { const x = snap.to;
+      // under a socket child it sits at the socket's own pose (identity); its size in the world is kept
+      const hs = worldT(st, x.id ?? x.host).scale; const scale = t.scale.map((v, i) => r3(v / hs[i]));
+      const ops = x.id ? [setOp(a.id, "parent", { to: x.id, order: "a0" }), setOp(a.id, "transform", { pos: [0, 0, 0], q: [0, 0, 0, 1], scale })]
+        : [setOp(a.id, "parent", { to: x.host, socket: x.name, order: "a0" }), setOp(a.id, "transform", { pos: x.sock.pos.slice(), q: qr3(socketQ(x.sock)), scale })];
       const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
-      const act = w.append(actOf(w, actor, "put", a, { ...facts(), release: "snap", socket: { to: snap.to.to, socket: snap.to.slot } }));
-      const seq = changeEntry(w, plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "snap", to: snap.to.to, socket: snap.to.slot, seq: act });
-      return { ok: true, seq, act, settled: { id: a.id, in: snap.to.to, socket: snap.to.slot }, handled: h.handled, release: "snap", notes: [{ id: a.id, snapped: { to: snap.to.to, socket: snap.to.slot }, why: `it fits ${snap.to.to}'s ${snap.to.slot} socket (accepts ${snap.to.sock.accepts.join(", ")})` }, ...snap.notes] };
+      const act = w.append(actOf(w, actor, "put", a, { ...facts(), release: "snap", socket: x.where }));
+      const seq = changeEntry(w, plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "snap", to: x.host, socket: x.name, ...(x.id ? { in: x.id } : {}), seq: act });
+      return { ok: true, seq, act, settled: x.id ? { id: a.id, in: x.id } : { id: a.id, in: x.host, socket: x.name }, handled: h.handled, release: "snap", notes: [{ id: a.id, snapped: x.where, why: `it fits ${x.host}'s ${x.name} socket (accepts ${x.sock.accepts.join(", ")})` }, ...snap.notes] };
     }
     // stay: where the hand let go (a put with no pos), and never called floating (the builder said it hangs there)
     const stay = g?.release === "stay";
@@ -2760,6 +2766,7 @@ const PHYSICS_VERBS = {
   // grabbable.throw scales the velocity (0: it can only be dropped); release: return sends it home instead of flying.
   throw(w, actor, a) {
     if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "throw needs v: [x, y, z] in m/s", "e.g. v: [0, 3, 4] tosses it up and forward (+z)");
+    notAThing(w.state(), a.id, "thrown");
     const g = grabOf(w.state().entities[a.id]?.c);
     const why = !fliesIn(w.state(), a.id) ? (w.state().entities["@world"]?.c["physics-engine"] ? `${a.id} isn't physics {kind: 'dynamic'}, so it doesn't fly: it was set down` : "this world doesn't run physics, so it was set down")
       : g?.throw === 0 ? `${a.id} can't be thrown (its grabbable.throw is 0): it was let go` : g?.release === "return" ? null : undefined;
@@ -2790,7 +2797,7 @@ const PHYSICS_VERBS = {
   punt(w, actor, a) {
     const me = body(w, actor); const st = w.state(); const e = st.entities[a.id];
     if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here", { didYouMean: guess(a.id, Object.keys(st.entities)) });
-    offRefuse(st, a.id, "punted");
+    notAThing(st, a.id, "punted"); offRefuse(st, a.id, "punted");
     const spec = flyingWorld(st);
     const ph = e.c.physics;
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${a.id} isn't something you can punt`, `a builder can make it so: set {id: '${a.id}', component: 'physics', value: {kind: 'dynamic'}}`);
@@ -2924,17 +2931,16 @@ const fliesIn = (st, id) => !!st.entities["@world"]?.c["physics-engine"] && st.e
 function snapTarget(st, id, g, p) {
   const out = { to: null, notes: [] }; if (!g?.fits?.length || !Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite)) return out;
   const fam = new Set([id, ...descendants(st, id)]);
-  for (const [hid, he] of Object.entries(st.entities)) {
-    if (hid === "@world" || fam.has(hid) || offChain(st, hid)) continue;   // a switched-off host has no sockets to snap into (review 5d5eef5c #7)
-    const socks = he.c.sockets ?? modelOf(he.c.model)?.sockets; if (!socks || typeof socks !== "object") continue;
-    for (const [slot, sk] of Object.entries(socks)) {
-      if (!fitsSocket(g, sk) || !Array.isArray(sk.pos)) continue;
-      const ht = worldT(st, hid); const off = qrot(ht.q, sk.pos.map((v, i) => v * ht.scale[i])); const sp = ht.pos.map((v, i) => v + off[i]);
-      const d = dist(sp, p); if (d > socketRadius(sk)) continue;
-      if (Object.entries(st.entities).some(([k, x]) => k !== id && x.c.parent?.to === hid && x.c.parent?.socket === slot)) { out.notes.push({ passedOver: { to: hid, socket: slot }, why: "something already sits in that socket" }); continue; }
-      const lk = [hid, ...ancestors(st, hid)].find((k) => lockedC(st.entities[k]?.c)); if (lk) { out.notes.push({ passedOver: { to: hid, socket: slot }, why: `${lk} is locked` }); continue; }
-      if (!out.to || d < out.to.d) out.to = { to: hid, slot, d, sock: sk };
-    }
+  for (const x of allSockets(st)) {
+    const at = x.id ?? x.host;   // a switched-off host (or socket) has nothing to snap into (review 5d5eef5c #7)
+    if (x.host === "@world" || fam.has(x.host) || fam.has(at) || offChain(st, at)) continue;
+    const sk = x.sock;
+    if (!fitsSocket(g, sk) || !(x.id || Array.isArray(sk.pos))) continue;
+    const d = dist(socketPoint(st, x), p); if (d > socketRadius(sk)) continue;
+    const where = x.id ? { to: x.id } : { to: x.host, socket: x.name };
+    if (Object.entries(st.entities).some(([k, y]) => k !== id && (x.id ? y.c.parent?.to === x.id : y.c.parent?.to === x.host && y.c.parent?.socket === x.name))) { out.notes.push({ passedOver: where, why: "something already sits in that socket" }); continue; }
+    const lk = [at, ...ancestors(st, at)].find((k) => lockedC(st.entities[k]?.c)); if (lk) { out.notes.push({ passedOver: where, why: `${lk} is locked` }); continue; }
+    if (!out.to || d < out.to.d) out.to = { ...x, d, where };
   }
   return out;
 }
@@ -3268,7 +3274,8 @@ const VERBS = {
     const live = livePoses(w.sim());
     // the tree in the same order as ever, through the index's children map; only what's shown is described (review 10-06:
     // a child scan per node and a description of every thing made look O(N²) on a big world)
-    const kids = kidsMap(st); const order = []; const tree = (id, d, n = 0) => { if (n > 64) return; order.push([id, d]); for (const k of kids.get(id) ?? []) tree(k, d + 1, n + 1); };
+    // a socket is listed with its host (describe's sockets), not as a thing; what sits in it shows at its place
+    const kids = kidsMap(st); const order = []; const tree = (id, d, n = 0) => { if (n > 64) return; const sock = isSocketC(st.entities[id]?.c); if (!sock) order.push([id, d]); for (const k of kids.get(id) ?? []) tree(k, sock ? d : d + 1, n + 1); };
     ids.forEach((id) => tree(id, 0));
     const all = order.slice(0, lim).map(([id, d]) => ({ ...describe(st, id, live, w.presence.holds), depth: d })); const total = order.length;
     // a ghost's body is unseen by everyone else (review 10-07)

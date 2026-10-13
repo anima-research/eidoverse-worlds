@@ -1025,5 +1025,28 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(third.ok && sockAtCap.ok && code(full) === "full" && full.refused?.things === 4, "SKE7 capacity counts things, never their sockets (ruling 4): with 3 things and 5 sockets a limit of 4 takes a 4th thing and a socket on it, and refuses a 5th thing", [third.refused, sockAtCap.refused, full.refused]);
 }
 
+// SKE8-10: the verbs read socket children (socketsOf): use, look, inspect; and a socket is never a thing a hand takes
+{ T += 100; process.env.PROTOCOL_NOW = String(T); const R = (actor, verb, args) => request(openWorld(root, "socketuse"), actor, verb, args);
+  R("ann", "create-world", { title: "socketuse" }); R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  R("ann", "create", { id: "sofa", model: "crate" });
+  R("ann", "create", { id: "sofa-l", components: { parent: { to: "sofa" }, transform: { pos: [-0.4, 0.5, 0] }, socket: { name: "left", body: { action: "sit", anchor: "hips" } } } });
+  R("ann", "create", { id: "sofa-r", components: { parent: { to: "sofa" }, transform: { pos: [0.4, 0.5, 0] }, socket: { name: "right", body: { action: "sit" } } } });
+  R("ann", "create", { id: "sofa-hook", components: { parent: { to: "sofa" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook", accepts: ["coat"] } } });
+  const u = R("bob", "use", { id: "sofa", action: "sit" });
+  ok(u.ok && u.attach?.to === "sofa-l" && u.attach.host === "sofa" && u.attach.socket === "left" && u.attach.anchor === "hips", "SKE8 use {id: host} sits on its first seat child: attach {to: <the socket>, host, socket: its name}", u);
+  const ur = R("bob", "use", { id: "sofa", action: "sit", args: { socket: "right" } });
+  ok(ur.ok && ur.attach?.to === "sofa-r", "SKE8 …args.socket names a child by its name", ur);
+  const us = R("bob", "use", { id: "sofa-r" });
+  ok(us.ok && us.attach?.to === "sofa-r" && us.attach.host === "sofa", "SKE8 use {id: <a socket>} is the direct form (its one action)", us);
+  ok(code(R("bob", "use", { id: "sofa-hook" })) === "no-action", "SKE8 …a socket with no body offers nothing to use");
+  const ins = R("bob", "inspect", { id: "sofa" });
+  ok(JSON.stringify(ins.actions) === '["sit"]' && JSON.stringify(ins.sockets?.map((x) => [x.id, x.name, x.as])) === '[["sofa-l","left","seat"],["sofa-r","right","seat"],["sofa-hook","hook","snap"]]', "SKE9 inspect {host}: its actions come from its seats, and it lists its sockets (id, name, seat | snap | attach)", [ins.actions, ins.sockets]);
+  const lk = R("bob", "look", {});
+  ok(lk.things.some((t) => t.id === "sofa" && t.sockets?.length === 3) && !lk.things.some((t) => ["sofa-l", "sofa-r", "sofa-hook"].includes(t.id)), "SKE9 look lists the host with its sockets, never a socket as a thing", lk.things.map((t) => t.id));
+  R("ann", "set", { id: "sofa-l", component: "disabled", value: true });
+  ok(R("bob", "use", { id: "sofa", action: "sit" }).attach?.to === "sofa-r", "SKE9 a switched-off socket is a closed seat: use picks the next");
+  R("bob", "move", { to: [0, 0, 0.8] }); const g = R("bob", "grab", { id: "sofa-r" });
+  ok(code(g) === "not-a-thing" && /sofa/.test(g.refused?.reason), "SKE10 grab of a socket is not-a-thing, naming its host", g); }
+
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
