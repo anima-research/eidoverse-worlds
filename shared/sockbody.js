@@ -13,7 +13,8 @@
 //   body: {
 //     action   'sit'            the verb `use` calls it AND the default posture (sit | lie | stand | ride | kneel | …)
 //     anchor   'hips'           which body point lands on the socket: hips | feet | head | root (the default: where
-//                               every seat put a body before anchors existed, so no existing seat moves)
+//                               every seat put a body before anchors existed, so no existing seat moves) | surface (the
+//                               socket IS the seat's support plane: the body's measured seat contact lands on it)
 //     pose     'sitchair'       a clip; {clip, time?, offset?}; or a blend {by, clips, time?, offset?}
 //     poses    {lean: …}        a menu of named poses (pose is the default); the occupant picks one
 //     sync     'sofa'           sockets sharing a sync group switch same-named poses together (AVsitter SYNC)
@@ -36,7 +37,8 @@ import { HUMANOID_BONES } from './humanoid.js';
 import { checkAccepts } from './grab.js';
 import { BUILTIN_IDS, isRoleId } from './protocol/roles.js';
 
-export const ANCHORS = ['hips', 'feet', 'head', 'root'];
+// surface (D14, R 10-12): the seat authors its support plane; a body's profiled seat contact lands on it (client/lib/seatcore.js)
+export const ANCHORS = ['hips', 'feet', 'head', 'root', 'surface'];
 export const LEAVE_BY = ['jump', 'menu', 'script'];
 export const MOVES = ['none', 'drive', 'walk'];
 export const LOOKS = ['free', 'aim', 'locked'];
@@ -379,7 +381,7 @@ export function describeBody(slot, b) {
   const pose = typeof b.pose === 'string' ? `holds ${b.pose}`
     : Array.isArray(b.pose?.clips) ? `blends ${b.pose.clips.map((r) => r[1]).join('/')} by ${[].concat(b.pose.by).join('+')}`
     : b.pose?.time === 'phase' ? `plays ${b.pose.clip} in step with its motion` : `holds ${b.clip}`;
-  const bits = [pose, `${b.anchor} on the socket`];
+  const bits = [pose, b.anchor === 'surface' ? 'seated on its surface (by the body\'s seat profile)' : `${b.anchor} on the socket`];
   const menu = Object.keys(b.poses ?? {}); if (menu.length) bits.push(`poses: ${menu.join(', ')}${b.sync ? ` (in step with the ${b.sync} group)` : ''}`);
   const limbs = Object.keys(b.reach ?? {}); if (limbs.length) bits.push(`${limbs.join(' and ')} on the thing`);
   if (b.input.move === 'drive') bits.push('drives it (movement is throttle/steer)'); else if (b.input.move === 'walk') bits.push('movement shapes your pose');

@@ -221,12 +221,13 @@ try {
   const seatL = { pos: [0, 1, 0], body: { action: "sit", pose: "sitchair" } };
   const legacy = await ag.request("set", { id: "crate1", component: "sockets", value: { seatL } });
   check("…and gives it a (legacy) seat", legacy?.ok === true, JSON.stringify(legacy?.refused ?? legacy));
-  // the seat-profile correction keys on a socket that authors its support plane: seatAnchor "surface" (client
-  // seatcore.js socketAnchor, world.js). KNOWN GAP (2026-10-07): the authority's sockets schema has no seatAnchor (a socket
-  // takes pos, q, part, body, accepts, radius), so this seat can't be authored on a world and every check below that
-  // sits on seatS stays red until the schema carries it (or the anchor moves into body).
-  const surface = await ag.request("set", { id: "crate1", component: "sockets", value: { seatL, seatS: { pos: [0, 1, 0], seatAnchor: "surface", body: { action: "sit", pose: "sitchair" } } } });
-  check("…and a seat that authors its support plane (seatAnchor: surface)", surface?.ok === true, JSON.stringify(surface?.refused ?? surface));
+  // the seat-profile correction keys on a socket that authors its support plane: its body anchors at the surface
+  // (D14, R 10-12: body.anchor 'surface', one enum; client seatcore.js socketAnchor, world.js). Until the anchor carried it
+  // (2026-10-07: a sibling seatAnchor the door never took) this seat couldn't be authored on a world at all.
+  // (two of them: one body per socket since 10-12, R's ruling 7, and seatbot is still on seatS when probebot sits below)
+  const seatS = { pos: [0, 1, 0], body: { action: "sit", pose: "sitchair", anchor: "surface" } };
+  const surface = await ag.request("set", { id: "crate1", component: "sockets", value: { seatL, seatS, seatS2: seatS } });
+  check("…and a seat that authors its support plane (body.anchor: surface)", surface?.ok === true, JSON.stringify(surface?.refused ?? surface));
   await sleep(600);
 
   await HANDLERS.attach(ag as any, { to: "crate1", socket: "seatL" }, {} as any, "attach");
@@ -283,7 +284,7 @@ try {
       avatar: "eidoverse/assets/vrms/seatprobe.vrm" });
     await probeAg.connect();
     await sleep(400);
-    await HANDLERS.attach(probeAg as any, { to: "crate1", socket: "seatS" }, {} as any, "attach");
+    await HANDLERS.attach(probeAg as any, { to: "crate1", socket: "seatS2" }, {} as any, "attach");
     const seated = await until(() => { const l = probeAg!.look(); return /ground height 0\.79m/.test(l) ? l : null; }, 12000);
     check("probebot seats corrected under its accepted profile", !!seated, probeAg.look().split("\n")[0]);
 
