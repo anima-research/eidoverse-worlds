@@ -315,7 +315,7 @@ export async function uploadPicture(file) {
 }
 
 registerEditor(({ id, obj, meta, bag, commit }) => {
-  if (!obj || obj.userData?.isLight) return null;   // a bulb has no part to texture
+  if (!obj || meta?.kind === 'light') return null;   // a bulb has no part to texture
   const parts = namedParts(obj);
   if (!parts.length) return null;                     // nothing to hang on — the generic JSON row still exists
   const cur = bag?.picture && typeof bag.picture === 'object' ? bag.picture : null;

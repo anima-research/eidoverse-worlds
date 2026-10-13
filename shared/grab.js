@@ -36,10 +36,11 @@
 import { HUMANOID_BONES } from './humanoid.js';
 import { REACH } from './protocol/physconst.js';
 import { materialize } from './protocol/componentspec.js';
+import { BUILTIN_IDS, isRoleId } from './protocol/roles.js';
 
-export const WHO = ['visitor', 'builder', 'moderator', 'owner'];
-// a `who` may also name a world's custom role (roles.js): the shape is checked here, existence by the authority (whoRank)
-const isWho = (x) => WHO.includes(x) || (typeof x === 'string' && /^[a-z][a-z0-9-]{0,23}$/.test(x) && !['none', 'guest', 'everyone', 'ghost', 'banned'].includes(x));
+export const WHO = BUILTIN_IDS;
+// a `who` may also name a world's custom role: the shape is roles.js's, existence the authority's (whoRank)
+const isWho = isRoleId;
 export const HOLDS = ['auto', 'press', 'toggle'];
 export const POSES = ['hand', 'carry', 'torch', 'pistol', 'two-hand', 'shoulder'];
 export const HANDS = ['left', 'right', 'either'];

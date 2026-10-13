@@ -235,7 +235,7 @@ export async function uploadSound(file) {
 }
 
 registerEditor(({ id, obj, meta, bag, commit }) => {
-  if (!obj || obj.userData?.isLight) return null;
+  if (!obj || meta?.kind === 'light') return null;
   const cur = bag?.sound && typeof bag.sound === 'object' ? bag.sound : null;
   const vol = Number(cur?.volume ?? 0.8), rad = Number(cur?.radius ?? 12);   // numbers into markup: never a string from the world
   return {

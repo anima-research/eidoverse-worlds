@@ -12,7 +12,7 @@ import { checkSockets } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
 import { mintId, PERSON_ID } from "./ids.js";
-import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs } from "./componentspec.js";
+import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, outOfRange, rangeWords } from "./componentspec.js";
 import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
 import { dec } from "./names.js";
 import { READ_ONLY, GHOST_OK } from "./verbclasses.js";
@@ -676,7 +676,7 @@ function mediaCheck(s, id, comp, v, at, obj) {
     for (const f of ["yaw", "pitch"]) if (v[f] !== undefined) { const lim = f === "yaw" ? 180 : 90;
       if (!(Array.isArray(v[f]) && v[f].length === 2 && v[f].every((x) => isNum(x) && Math.abs(x) <= lim) && v[f][0] <= v[f][1])) refuse("bounds", `${at}.${f} is [min, max] degrees from rest, each within ±${lim}, min ≤ max`, `e.g. ${f}: [-45, 45]`); }
     if (Array.isArray(v.offset) && v.offset.some((x) => Math.abs(x) > 50)) refuse("bounds", `${at}.offset is within ±50 m on each axis`, "");
-    for (const f of ["forward", "up"]) if (typeof v[f] === "string" && !["x", "y", "z", "-x", "-y", "-z"].includes(v[f])) refuse("shape", `${at}.${f} is an axis: x|y|z|-x|-y|-z or [x, y, z]`, ""); }
+    for (const f of ["forward", "up"]) if (typeof v[f] === "string" && !["x", "y", "z"].includes(v[f])) refuse("shape", `${at}.${f} is an axis: x|y|z or [x, y, z] (a negative one is a vector: [0, 0, -1])`, ""); }
   // one driver per node (a socket's "one drive per thing", catalogue sockets): a node turned by a rotating motion can't
   // also turn to face something, and a dynamic thing's rotation is the sim's
   if ((isLookAt(comp) || comp === "motion" || comp.startsWith("motion:")) && obj) {
@@ -780,9 +780,8 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
       if (cap !== undefined && n > cap) refuse("bounds", `${at}.${k} is ${n.toLocaleString("en")} ${typeof x === "string" ? "characters" : "items"}; it must be ≤ ${cap}`, def.help);
       continue; }
     // a vector's range holds for each element (mesh.size)
-    const out = (n) => (r.min !== undefined && n < r.min) || (r.gt !== undefined && n <= r.gt) || (r.max !== undefined && n > r.max);
-    const bad = Array.isArray(x) ? x.some((n) => typeof n === "number" && out(n)) : out(x);
-    if (bad) refuse("bounds", `${at}.${k} is ${JSON.stringify(x)}; ${Array.isArray(x) ? "each" : "it"} must be ${[r.gt !== undefined ? `> ${r.gt}` : r.min !== undefined ? `≥ ${r.min}` : "", r.max !== undefined ? `≤ ${+r.max.toFixed(4)}` : ""].filter(Boolean).join(" and ")}`, def.help); }
+    const bad = Array.isArray(x) ? x.some((n) => typeof n === "number" && outOfRange(r, n)) : outOfRange(r, x);
+    if (bad) refuse("bounds", `${at}.${k} is ${JSON.stringify(x)}; ${Array.isArray(x) ? "each" : "it"} must be ${rangeWords(r)}`, def.help); }
   if (name === "script" && v.scope) unknownKeys(`${at}.scope`, v.scope, Object.keys(def.scopeFields), "a script's scope");
   // batch 2: words everyone reads are checked once, here (shared/text.js): no direction overrides, no hidden controls, no zalgo
   for (const [k, how] of Object.entries(def.clean ?? {})) if (typeof v[k] === "string") { const bad = cleanText(v[k], { lines: how === "lines" });

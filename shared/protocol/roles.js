@@ -73,7 +73,10 @@ export const BUILTIN = Object.freeze({
 
 const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
 export const CUSTOM_ID = /^[a-z][a-z0-9-]{0,23}$/;
-const RESERVED_IDS = new Set(["owner", "none", "guest", "everyone", "ghost", "banned"]);
+export const RESERVED_IDS = Object.freeze(new Set(["owner", "none", "guest", "everyone", "ghost", "banned"]));
+/** A role a `who` may name: a built-in, or an id a world's owner could define (CUSTOM_ID, not a reserved word). Whether
+ *  this world defines it is the authority's to say (roleDef). */
+export const isRoleId = (x) => BUILTIN_IDS.includes(x) || (typeof x === "string" && CUSTOM_ID.test(x) && !RESERVED_IDS.has(x));
 
 /** A world's role definitions: @world.role-defs (or {} ). */
 export const defsOf = (wc) => (isObj(wc?.["role-defs"]) ? wc["role-defs"] : {});

@@ -1737,6 +1737,17 @@ body.touch #touch { display: block; }
 .sp-unit { color: var(--dim); font-size: 11px; margin-left: 2px; }
 .sp-enum { background: var(--panel); border: 1px solid var(--edge); color: var(--fg); border-radius: 4px; padding: 2px 4px; font: inherit; }
 .sp-color { width: 34px; height: 22px; padding: 0; border: 1px solid var(--edge); border-radius: 4px; background: none; }
+.sp-f-color.sp-row { flex-wrap: wrap; }
+.sp-color-sw { cursor: pointer; box-sizing: border-box; }
+.sp-color-sw.open { outline: 2px solid var(--accent, #5fa8ff); outline-offset: 1px; }
+.sp-picker { order: 99; flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; padding: 4px 0 2px; }
+.sp-picker[hidden], .sp-pick-recent[hidden] { display: none; }
+.sp-pick-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px; }
+.sp-pick-row { display: flex; gap: 2px; }
+.sp-pick-recent .sp-pick-cell { width: calc((100% - 22px) / 12); flex: none; }
+.sp-pick-cell { aspect-ratio: 1; min-height: 16px; border-radius: 3px; cursor: pointer; box-sizing: border-box; border: 1px solid rgba(0,0,0,.25); }
+.sp-pick-cell.on { outline: 2px solid currentColor; outline-offset: 1px; position: relative; z-index: 1; }
+.sp-pick-hex { width: 7.5em; font: inherit; font-family: ui-monospace, monospace; }
 .sp-tree-row .sp-item-label { font-weight: 500; }
 /* ---- edit mode: the look (DESIGN-SPEC 2026-09-30, for R: "dark gray, utilitarian — Resonite/Godot/
    Blender/Maya"). The chrome is grey; the WORLD is the only colour. Colour in the chrome means one of:
@@ -1839,7 +1850,8 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 /* select: a field with a chevron */
 .frame.edit .sp-enum { appearance: none; -webkit-appearance: none; padding-right: 22px; min-width: 96px;
   background: var(--e-well) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e96' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") right 6px center / 12px no-repeat; }
-.frame.edit .sp-color { width: 40px; height: 22px; border: 1px solid var(--e-line); border-radius: 3px; background: var(--e-well); padding: 2px; }
+.frame.edit .sp-color { width: 40px; height: 22px; border: 1px solid var(--e-line); border-radius: 3px; padding: 2px; background-clip: content-box; }
+.frame.edit .sp-pick-cell.on { outline-color: var(--e-accent, #5fa8ff); }
 /* button — default: press fill, text colour, radius 3, 24px. quiet: no fill, dim, hover fill. danger: quiet + danger */
 .frame.edit .sp-btn { background: var(--e-press); color: var(--e-text); border: none; border-radius: 3px; height: 24px; padding: 0 10px; font: 500 12px var(--font); box-shadow: none; }
 .frame.edit .sp-btn:hover { background: var(--e-press); filter: brightness(1.18); }
