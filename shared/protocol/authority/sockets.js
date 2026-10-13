@@ -18,6 +18,9 @@ export const isSocketC = (c) => bag(c?.socket);
 export const socketRole = (c) => (bag(c?.socket?.body) ? "seat" : Array.isArray(c?.socket?.accepts) ? "snap" : "attach");
 // what a socket may carry besides its pose and its name: what reads it (label, description), what switches or freezes it
 // (disabled, lock, hidden), a motion of its own (R 10-12 20:44), and the blueprint mark every placed part carries
+// one host holds at most this many sockets (review 10-12 S1-2): a seat map past it is several things. No setting raises it;
+// the world's own socket budget is @world.capacity.sockets (authority.js CAPACITY)
+export const SOCKETS_PER_HOST = 64;
 export const ON_A_SOCKET = new Set(["transform", "parent", "socket", "label", "description", "disabled", "lock", "hidden", "motion", "copy-of"]);
 const UNIT = (sc) => sc === undefined || (Array.isArray(sc) && sc.length === 3 && sc.every((x) => x === 1));
 

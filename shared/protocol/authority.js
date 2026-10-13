@@ -35,7 +35,7 @@ import { reachTo, massOf, shoveCap, feetOn, sweptCovers } from "../shove.js";
 import { r3, noNeg0, unNegZero } from "./round.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 import { CTX } from "./authority/ctx.js";
-import { isSocketC, socketRules, socketsOf, allSockets, socketPoint, socketRole, liftOps, legacyHosts, liftHostOps, modelSocketNames } from "./authority/sockets.js";
+import { SOCKETS_PER_HOST, isSocketC, socketRules, socketsOf, allSockets, socketPoint, socketRole, liftOps, legacyHosts, liftHostOps, modelSocketNames } from "./authority/sockets.js";
 import { Refusal, refuse, said } from "./authority/refuse.js";
 import { LAB_CATALOGUE, modelOf, geomOf, boxOfM, geomE, withCatalogue, meshShape } from "./authority/catalogue.js";
 export { LAB_CATALOGUE, withCatalogue, MESH_SIZE, meshSize, meshGeom, meshShape } from "./authority/catalogue.js";
@@ -345,26 +345,45 @@ function seatRights(w, st, s, who, role, norm, made) {
 // draws at frame rate; an owner may raise it to 5 000), and the world's guests TOGETHER at most capacity.guestThings standing
 // things they made (default 200): a guest is a fresh identity per connection, so no per-identity budget stopped one from
 // filling a world. Only a write that adds things is refused (full); deleting, and every other change, stay open at the cap.
-export const CAPACITY = { things: 2000, guestThings: 200 };
+export const CAPACITY = { things: 2000, guestThings: 200, sockets: 4000, guestSockets: 400 };
+// Sockets aren't things (R 10-12 20:44, ruling 4), so they have a budget of their own (review 10-12 S1-2: uncounted, a
+// pool of guests made 800 described sockets on one crate in a world capped at 10 things): capacity.sockets for the world
+// (default 4 000; the server's ceiling is its range's max, 4 × the things ceiling), capacity.guestSockets for guests
+// together, and SOCKETS_PER_HOST on one host (authority/sockets.js), which no setting raises.
 const capacityOf = (st) => { const v = st.entities["@world"]?.c.capacity; const ok = (x) => Number.isInteger(x) && x >= 0;
-  return { things: ok(v?.things) ? v.things : CAPACITY.things, guestThings: ok(v?.guestThings) ? v.guestThings : CAPACITY.guestThings }; };
-// the things standing that a guest's rights made (a log view, kept incrementally like everIds)
+  return Object.fromEntries(Object.keys(CAPACITY).map((k) => [k, ok(v?.[k]) ? v[k] : CAPACITY[k]])); };
+// what a guest's rights made that still stands, things and sockets apart (a log view, kept incrementally like everIds)
 function guestMade(w, st) {
   const G = (w.__guests ??= { n: 0, ids: new Set() });
   for (; G.n < w.entries.length; G.n++) { const e = w.entries[G.n]; if (!isE(e) || e.kind !== "change") continue; let by = null;
     for (const o of opsQuiet(e)) { if (o.verb === "create") { by ??= entryBy(w, e).rights; if (CTX.isAnon(by)) G.ids.add(o.id); } else if (o.verb === "delete" && o.comp === undefined) G.ids.delete(o.id); } }
-  let n = 0; for (const id of G.ids) if (st.entities[id] && !isSocketC(st.entities[id].c)) n++; return n;
+  let things = 0, sockets = 0; for (const id of G.ids) if (st.entities[id]) { if (isSocketC(st.entities[id].c)) sockets++; else things++; } return { things, sockets };
 }
-// a socket is a part of its host, not a thing of its own: it never counts (R 10-12 20:44)
+// a socket is a part of its host, not a thing of its own: it never counts as one (R 10-12 20:44)
 const thingCount = (st) => { let n = 0; for (const id in st.entities) if (id !== "@world" && !isSocketC(st.entities[id].c)) n++; return n; };
+const socketCount = (st) => { let n = 0; for (const id in st.entities) if (isSocketC(st.entities[id].c)) n++; return n; };
 function capacityCheck(w, st, s, who, norm) {
-  const made = norm.filter((o) => o.verb === "create" && s.entities[o.id] && !isSocketC(s.entities[o.id].c)).length; if (!made) return;
-  const cap = capacityOf(s); const before = thingCount(st), after = thingCount(s);
-  if (after > before && after > cap.things) refuse("full", `this world holds ${before} things and its limit is ${cap.things} (@world.capacity.things): ${after - before} more won't fit`, `delete something first; the world's owner may raise it: set {id: '@world', component: 'capacity', value: {things: <n>}} (at most ${COMPONENTS.capacity.ranges.things.max})`, { limit: cap.things, things: before });
+  const made = norm.filter((o) => o.verb === "create" && s.entities[o.id] && !isSocketC(s.entities[o.id].c)).length;
+  // sockets this write adds (made, or a thing made one), and the hosts they join; the load's lift carries what the log holds
+  const joined = new Map(); let added = 0;
+  if (!who.lifting) for (const id of new Set(norm.map((o) => o.id))) { const now = s.entities[id]?.c, was = st.entities[id]?.c;
+    if (!isSocketC(now)) continue; if (!isSocketC(was)) added++;
+    const h = now.parent?.to; if (h && (!isSocketC(was) || was.parent?.to !== h)) joined.set(h, (joined.get(h) ?? 0) + 1); }
+  if (!made && !joined.size) return;
+  const cap = capacityOf(s);
+  if (made) { const before = thingCount(st), after = thingCount(s);
+    if (after > before && after > cap.things) refuse("full", `this world holds ${before} things and its limit is ${cap.things} (@world.capacity.things): ${after - before} more won't fit`, `delete something first; the world's owner may raise it: set {id: '@world', component: 'capacity', value: {things: <n>}} (at most ${COMPONENTS.capacity.ranges.things.max})`, { limit: cap.things, things: before }); }
+  if (joined.size) { const per = new Map([...joined.keys()].map((h) => [h, [0, 0]]));
+    for (const [id, e] of Object.entries(s.entities)) { const h = isSocketC(e.c) ? e.c.parent?.to : null; if (per.has(h)) per.get(h)[1]++; }
+    for (const [id, e] of Object.entries(st.entities)) { const h = isSocketC(e.c) ? e.c.parent?.to : null; if (per.has(h)) per.get(h)[0]++; }
+    for (const [h, [before, after]] of per) if (after > before && after > SOCKETS_PER_HOST) refuse("full", `${h} has ${before} sockets, and one thing holds at most ${SOCKETS_PER_HOST}: ${after - before} more won't fit`, "a thing with that many seats is several things: split it, or delete some of its sockets", { limit: SOCKETS_PER_HOST, sockets: before, host: h }); }
+  if (added) { const before = socketCount(st), after = socketCount(s);
+    if (after > before && after > cap.sockets) refuse("full", `this world holds ${before} sockets and its limit is ${cap.sockets} (@world.capacity.sockets): ${after - before} more won't fit`, `delete some first; the world's owner may raise it: set {id: '@world', component: 'capacity', value: {sockets: <n>}} (at most ${COMPONENTS.capacity.ranges.sockets.max})`, { limit: cap.sockets, sockets: before }); }
   const holder = who.cap?.kind === "reaction" ? who.cap.author : who.cap?.kind === "script" ? who.cap.sponsor : who.actor;
   if (!CTX.isAnon(holder)) return;
   const g = guestMade(w, st);
-  if (g + made > cap.guestThings) refuse("full", `guests (people without an account) have ${g} things standing here, and this world lets guests have ${cap.guestThings} (@world.capacity.guestThings), all of them together`, "sign in to build more, or ask the world's owner to raise capacity.guestThings", { limit: cap.guestThings, things: g });
+  if (made && g.things + made > cap.guestThings) refuse("full", `guests (people without an account) have ${g.things} things standing here, and this world lets guests have ${cap.guestThings} (@world.capacity.guestThings), all of them together`, "sign in to build more, or ask the world's owner to raise capacity.guestThings", { limit: cap.guestThings, things: g.things });
+  if (added && g.sockets + added > cap.guestSockets) refuse("full", `guests (people without an account) have ${g.sockets} sockets standing here, and this world lets guests have ${cap.guestSockets} (@world.capacity.guestSockets), all of them together`, "sign in to build more, or ask the world's owner to raise capacity.guestSockets", { limit: cap.guestSockets, sockets: g.sockets });
 }
 // A lock binds everyone, the locker and owners included (§5). `throughLock: true` on the request lets anyone who may
 // remove that lock act through it, and the log records only the edit (the act carries the request as sent, flag and
