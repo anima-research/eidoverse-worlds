@@ -33,7 +33,7 @@ import { normalizePicture, PICTURE_LIT, PICTURE_ALT_MAX, ALT_HINT } from './pict
 import { normalizeSound, SOUND_ALT_MAX, SOUND_MAX_RADIUS } from './sound.js';
 import { mediaTier, tierWords } from './mediasrc.js';
 import { graphemes } from './text.js';
-import { ESSENTIAL_NAMES, instanceOf, effectFor, modernize, instanceProblem, paramShown } from './particle_effects.js';
+import { ESSENTIAL_NAMES, instanceOf, effectFor, effectBlobName, modernize, instanceProblem, paramShown } from './particle_effects.js';
 import { readOut, readLine } from './a11y.js';
 import { COMPONENTS as SPEC, registered } from './protocol/componentspec.js';
 import { LOCK_LEVELS, lockLevel } from './protocol/roles.js';
@@ -1174,13 +1174,28 @@ export function editOps(ent, id, edits, live = {}) {
     if (ui.t === 'num') { if (!f) return false; const n = num(f, raw); if (n == null) return true; const dp = ui.wdp ?? DESCRIPTORS[card].writeDp; v = dp == null ? n : round(n, dp); }
     else if (ui.t === 'check') v = bool(raw);
     else if (ui.t === 'color') { const n = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/i, ''), 16) : +raw; if (!Number.isInteger(n) || n < 0 || n > 0xffffff) { errors.push(`${key}: a colour 0xRRGGBB`); return true; } v = n; }
-    else { if (raw === '' || raw == null) return false; v = String(raw); }
+    else { if (raw === '' || raw == null) return false; v = String(raw);
+      if (ui.closed && f?.options && !f.options.some((o) => o.v === v)) { errors.push(`${key}: one of ${f.options.map((o) => o.v).join(', ')} (got ${JSON.stringify(v)})`); return true; } }
     if (ui.sparse && v === editorDefault(card, k)) delete next[d.path]; else next[d.path] = toWire(card, k, v);
     for (const old of ui.clears ?? []) delete next[old];
     return true;
   };
 
+  // A key that reports an error writes NOTHING: whatever it began (a bag, a coalesced place, a component's next value) is
+  // put back as the edit's earlier keys left it, so a refused value never travels as an op carrying the old one (F2
+  // 10-12: a mistyped light colour sent `set light` with the colour it already had). The edit's other keys still commit.
+  const plans = [comps, motions, bags];
+  const keep = () => ({ errs: errors.length, ops: ops.length, place: structuredClone(place), maps: plans.map((m) => structuredClone([...m])) });
+  const undoKey = (was) => {
+    ops.length = was.ops; place = was.place;
+    plans.forEach((m, i) => { m.clear(); for (const [k, v] of was.maps[i]) m.set(k, v); });
+  };
   for (const [key, raw] of Object.entries(edits ?? {})) {
+    const was = keep();
+    editKey(key, raw);
+    if (errors.length > was.errs) undoKey(was);
+  }
+  function editKey(key, raw) {
     const f = fieldAt(schema, key);
     const dot = key.indexOf('.'); const group = key.slice(0, dot); const k = key.slice(dot + 1);
     // components (B): add.<Component> = value is a part name / annotation type; remove.<comp key>
@@ -1189,16 +1204,16 @@ export function editOps(ent, id, edits, live = {}) {
       errors.push(...r.errors); ops.push(...r.ops);
       if (r.choice) asks.push({ kind: 'choice', ...r.choice, key });
       if (r.confirm) asks.push({ kind: 'confirm', ...r.confirm, comp: r.confirm.key, key });   // key = the address to answer on
-      continue;
+      return;
     }
     // actions and creations that have no field row: comp.<any>, sockets.del,
     // a socket slot that does not exist yet (sockets.<new>|pos|1 declares it)
     const known = f || group === 'parent' || (group === 'pivot' && ['x', 'y', 'z', 'centre', 'base', 'reset'].includes(k)) || (group === 'comp' && k) || (group === 'sockets' && (k === 'del' || k.includes('|')))
       || ((group === 'picture' || group === 'sound') && !['upload'].includes(k));   // creation needs no row
-    if (key === 'flags.guard') { errors.push('flags.guard: `guard` is merged into `lock` (PROTOCOL §5): set flags.lock'); continue; }   // an old habit, taught
-    if (!known) { errors.push(`${key}: no such field on ${id}`); continue; }
-    if (f?.disabled) { errors.push(`${key}: ${f.hint ?? 'read-only'}`); continue; }
-    if (f?.client) { errors.push(`${key}: a viewport gesture, not a value — set the fields it would have set`); continue; }
+    if (key === 'flags.guard') { errors.push('flags.guard: `guard` is merged into `lock` (PROTOCOL §5): set flags.lock'); return; }   // an old habit, taught
+    if (!known) { errors.push(`${key}: no such field on ${id}`); return; }
+    if (f?.disabled) { errors.push(`${key}: ${f.hint ?? 'read-only'}`); return; }
+    if (f?.client) { errors.push(`${key}: a viewport gesture, not a value — set the fields it would have set`); return; }
     switch (group) {
       case 'pos': {
         basePlace();
@@ -1270,7 +1285,6 @@ export function editOps(ent, id, edits, live = {}) {
           for (const p of Object.keys(next)) if (!['type', 'axis', 'pivot', 'phase', 't0', 'part'].includes(p)) delete next[p];
           next.type = raw;
         }
-        else if (param === 'loop') next.loop = raw;
         else if (!writeField({ pendulum: 'Pendulum', spin: 'Spin', orbit: 'Orbit', bob: 'Bob', path: 'Path' }[prev.type] ?? 'Spin', param, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
         motions.set(mkey, next);
         break;
@@ -1323,8 +1337,9 @@ export function editOps(ent, id, edits, live = {}) {
         else if (k === 'part') { const v = String(raw ?? '').trim(); if (v) next.part = v; else delete next.part; }
         else if (k === 'effect') { if (String(raw) !== next.effect) { next.effect = String(raw); delete next.params; } }   // another effect's knobs aren't these
         else if (!writeField('Particles', k, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
-        // the authority's rules, here first (a known effect: an Essential, or a stored one the viewer has)
-        const doc = effectFor(next.effect, live.effects ?? (() => null)); const bad = doc || ESSENTIAL_NAMES.includes(next.effect) ? instanceProblem(next, doc) : null;
+        // the authority's rules, here first: a known effect (an Essential, or a stored one the viewer has), or a name that is
+        // neither an Essential nor an address; an address the viewer hasn't loaded is the door's to judge
+        const doc = effectFor(next.effect, live.effects ?? (() => null)); const bad = doc || ESSENTIAL_NAMES.includes(next.effect) || !effectBlobName(next.effect) ? instanceProblem(next, doc) : null;
         if (bad) { errors.push(`particles.${k}: ${bad}`); break; }
         comps.set('particles', next);
         break;
