@@ -175,8 +175,28 @@ const forgeries = {
       P4: JSON.stringify(doors.now.sim.restsOf(P4)[0].at) !== JSON.stringify(doors.now.sim.simFold(P4, w.now()).st.entities.ball.c.transform.pos) }; },
 };
 
+// H5 (review 10-13): a refusal must not be a read oracle. expect (§3a) is checked before the handler, so before
+// admit/rights/lacks/lockCheck, and a dry request is never logged — so whatever its refusal carries is readable by
+// anyone, about anything, without a trace. The value itself must not be in it.
+const oracles = [
+  { id: "H5a", what: "read oracle: a stranger reads a locked sign's text from a dry expect refusal", run(s) { cast(s);
+      const made = s.call("olive", "create", { id: "diary", model: "crate", place: { at: [3, 3] }, components: { text: { text: "Janus's Kept Kittycat" } } });
+      const locked = s.call("olive", "set", { id: "diary", component: "lock", value: true });
+      // zed holds no role at all. A wrong guess must say "changed", never what it actually is.
+      const probe = s.call("zed", "set", { id: "diary", component: "text", value: { text: "guess" }, dry: true, expect: [{ id: "diary", component: "text", value: { text: "guess" } }] });
+      return { made, locked, probe, leaked: JSON.stringify(probe?.refused ?? {}).includes("Kittycat") }; },
+    // the setup is asserted: a probe of a thing that was never made leaks nothing and proves nothing
+    baseBad: (o) => o.leaked === true, nowGood: (o) => ok(o.made) && ok(o.locked) && refused(o.probe) && o.leaked === false },
+  { id: "H5b", what: "and the honest conflict signal still works (a guard)", guard: true, run(s) { cast(s);
+      s.call("olive", "create", { id: "lamp", model: "crate", place: { at: [4, 4] } });
+      s.call("bob", "set", { id: "lamp", component: "label", value: "bob was here" });
+      const r = s.call("olive", "set", { id: "lamp", component: "label", value: "mine", expect: [{ id: "lamp", component: "label", value: "stale" }] });
+      return { r, says: r?.refused?.code === "changed", names: r?.refused?.by === "bob" }; },
+    nowGood: (o) => o.says && o.names },
+];
+
 let bad = 0;
-for (const a of attacks) {
+for (const a of [...attacks, ...oracles]) {
   const ob = !B ? { control: "skipped" } : a.run ? a.run(session(doors.baseline, `atk-${a.id}`)) : a.baseOut();
   const on = a.run ? a.run(session(doors.now, `atk-${a.id}`)) : a.nowOut();
   const bb = a.guard || !B ? true : !!a.baseBad(ob); let ng; try { ng = !!a.nowGood(on); } catch { ng = false; }
@@ -194,6 +214,6 @@ for (const a of attacks) {
        now:      ${k === "P4" ? (on[k] ? "view and world disagree" : "one value: view and world agree") : on[k] ? "caught" : "NOT caught"}`); } }
 fs.rmSync(root, { recursive: true, force: true }); if (B) fs.rmSync(B, { recursive: true, force: true });
 console.log(controlNote());
-const G = attacks.filter((a) => a.guard).length;
-console.log(`${attacks.length + 5} attacks (${G} of them guards that must still work): ${bad ? `${bad} FAILED` : (B ? "every attack worked on the baseline (P1a: already caught there) and is refused or caught now; every guard works" : "every attack is refused or caught now (baseline not run); every guard works")}`);
+const G = [...attacks, ...oracles].filter((a) => a.guard).length;
+console.log(`${attacks.length + oracles.length + 5} attacks (${G} of them guards that must still work): ${bad ? `${bad} FAILED` : (B ? "every attack worked on the baseline (P1a: already caught there) and is refused or caught now; every guard works" : "every attack is refused or caught now (baseline not run); every guard works")}`);
 process.exit(bad ? 1 : 0);

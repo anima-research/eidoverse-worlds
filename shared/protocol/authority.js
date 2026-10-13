@@ -816,8 +816,13 @@ function expectCheck(w, list) {
     if (same) continue;
     const lt = lastTouch(w, x.id, x.component);
     const why = !e ? `${x.id} is gone` : lt ? `${said(lt.actor)} changed it at ${lt.seq}` : "it isn't what you started from";
+    // The refusal says THAT it changed, never WHAT it is now: expect is checked before the handler, so before
+    // admit/rights/lacks/lockCheck, and a dry request is never logged (logRefusal) — a value echoed here would be
+    // readable by anyone, about any component of anything, without a trace (review 10-13, attack-check H5a).
+    // `expected` was the asker's own input, so it told them nothing either. The client needs only the signal:
+    // editwrites.js reverts and shows the reason; nothing reads a value back.
     refuse("changed", `${x.id}.${x.component} changed since you started: ${why}`, "look again and redo it (nothing was written); or send it without expect to overwrite what's there",
-      { id: x.id, component: x.component, expected: "value" in x ? x.value : null, current: cur === undefined ? null : cur, ...(lt ? { by: lt.actor, at: lt.seq } : {}) });
+      { id: x.id, component: x.component, ...(lt ? { by: lt.actor, at: lt.seq } : {}) });
   }
 }
 function guess(s, opts) {
