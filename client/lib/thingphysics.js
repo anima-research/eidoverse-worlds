@@ -34,7 +34,8 @@ import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
 import { register as registerAction } from './actions.js';
 import { setPressFx, pressFxOn } from './emitters.js';
-import { advanceSim, tickOf, ENGINES, engineViewM } from '../../shared/protocol/simlayer.js';
+import { advanceSim, tickOf, ENGINES, engineViewM, worldPose } from '../../shared/protocol/simlayer.js';
+import { createShover, footprint, contactOf } from '../../shared/shove.js';
 import { simEntry } from '../../shared/sim.js';
 import { planLaunch } from '../../shared/protocol/launchplan.js';
 import { REACH, HAND_Y, KICK } from '../../shared/protocol/physconst.js';
@@ -174,9 +175,9 @@ const worldHasPhysics = () => { const es = replica.st?.entities; if (!es) return
 bus.on('cut-adopted', () => { arrived = false; trackedAt = null; holds = {}; stuck = null; arriveFails = 0; });   // a fresh cut: try at once
 // R 10-10 ("Couldn't grab: your body isn't in the world yet", after a rename): the authority had no body for me while
 // this client thought it had arrived. Whatever the cause, the refusal says so: re-arrive once and send it again.
-let lagMs = 0;   // lab knob (physicsApi.lag): delay a throw/drop request by this much, as a slow round trip would
+let lagMs = 0;   // lab knob (physicsApi.lag): delay a throw/drop/punt request by this much, as a slow round trip would
 async function sendRequest(verb, args) {
-  if (lagMs && (verb === 'throw' || verb === 'drop')) await new Promise((res) => setTimeout(res, lagMs));
+  if (lagMs && (verb === 'throw' || verb === 'drop' || verb === 'punt')) await new Promise((res) => setTimeout(res, lagMs));
   const r = await rawSend(verb, args);
   if (verb === 'move' || r?.refused?.code !== 'not-here') return r;
   arrived = false; trackedAt = null; arriveFails = 0; stuck = null;
@@ -502,6 +503,7 @@ function frame(wall) {
   drawSettles(now);
   drawPressFx();
   tickTrack(now);
+  tickShove(now);
   const ms = performance.now() - now; stats.frames++; stats.ms += ms; if (ms > stats.maxMs) stats.maxMs = ms;
 }
 
@@ -652,6 +654,39 @@ export async function punt(arg) {
   const r = await sendRequest('punt', { id, power });
   if (!r?.ok) return refused('punt', r, id);
   flashHint(`you punt ${id}${r.volley ? ' (a volley)' : ''}`);
+  return r;
+}
+
+// ---------------------------------------------------------------- body shove (shared/shove.js)
+// Walking into a loose thing pushes it: MY body only (a remote's client shoves for its own body, an agent's process for
+// its), one punt {shove: true} per contact, predicted like a throw so the crate leaves at once. A refusal is quiet (nobody
+// asked for this push in words); shover.refused keeps it from repeating.
+const shover = createShover();
+let shoveOn = true;          // lab knob (physicsApi.shove.on(false))
+const shoveLog = [];         // the last shoves sent and how they were answered (probe surface)
+function tickShove(now) {
+  if (!shoveOn || !replica.active || !net.joined || !arrived) return;
+  const canon = replica.sim; if (!canon?.sim || canon.foreign) return;
+  const st = hooks?.myState?.(), me = hooks?.me?.(), f = feet();
+  if (!st || !me || !f || hooks?.seated?.() || st.clip === 'ragdoll') return;
+  const cap = colliderFor(me.userScale), sp = Number.isFinite(st.speed) ? st.speed : 0;
+  const rank = Number.isFinite(net.myRights?.rank) ? net.myRights.rank : null;
+  const go = shover.step({ st: replica.st, ids: dynamicIds(), feet: f, vel: [Math.sin(st.yaw) * sp, Math.cos(st.yaw) * sp], r: cap.r, tall: cap.tall, now, rank, holds,
+    skip: (id) => flying(id) || settles.has(id) || pending.has(id) || !entities.has(id) });
+  for (const { id, v } of go) void shove(id, v, now);
+}
+function planPunt(id, v) {
+  const canon = replica.sim; if (!predictOn || !canon?.sim || canon.foreign || clockRtt() === null) return null;
+  const wp = worldPose(replica.st, id); if (!wp) return null;
+  const { notes: _n, ...entry } = planLaunch({ id, p: wp.pos, q: wp.q, v }, null, ENGINES[canon.spec?.engine]?.maxSpeed, 'punt');
+  return entry;
+}
+async function shove(id, v, now) {
+  const plan = planPunt(id, v); if (plan) predict(plan);
+  await track(true);
+  const r = await sendRequest('punt', { id, v, shove: true });
+  shoveLog.push({ id, v, t: now, ok: !!r?.ok, code: r?.refused?.code ?? null }); if (shoveLog.length > 32) shoveLog.shift();
+  if (!r?.ok) { shover.refused(id, performance.now(), r?.refused?.code); if (pending.delete(id)) presV = -1; bus.emit('shove-refused', { id, refused: r?.refused ?? null }); }
   return r;
 }
 
@@ -820,6 +855,10 @@ const inReach = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p &
 const canPunt = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p && atFeet(p, f) !== null; };
 const whereFromMe = (id) => { const f = feet(), p = whereIs(id); return f && p ? { at: p, flat: Math.hypot(p[0] - f[0], p[2] - f[2]) } : null; };
 export const physicsApi = { grab, put, drop, throw: throwHeld, punt, canPunt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, pending: pendingNow, swaps: () => stats.swaps, predict: (on) => (predictOn = on !== false), lag: (ms) => (lagMs = Math.max(0, ms | 0)), settle: (ms) => (SETTLE_MS = Math.max(0, ms | 0)), settling: () => [...settles.keys()], whereIs, inReach, whereFromMe, canPutAt,
+  /** body shove: the lab knob, the shoves sent (and how each was answered), the things my body is against now */
+  shove: { on: (on) => (shoveOn = on !== false), log: () => shoveLog.slice(), touching: () => shover.touching(), feel: () => shover.feel,
+    against: () => { const f = feet(), cap = colliderFor(hooks?.me?.()?.userScale); if (!f || !replica.st) return [];
+      return dynamicIds().filter((id) => { const b = footprint(replica.st, id); return b && contactOf(f, cap.r, cap.tall, b, shover.feel.slack); }); } },
   /** the held things whose fx this client is drawing now (grabbable's presence tier) */
   fx: () => pressFxOn(),
   /** what a hand may do with a thing (shared/grab.js grabOf over this client's fold), or null */
