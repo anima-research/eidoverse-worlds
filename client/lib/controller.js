@@ -105,6 +105,10 @@ function flightGround(x, z) {
 }
 
 export const flying = () => !!flight;
+// a shove gave something my walk's momentum (thingphysics.js, shared/shove.js keptOf): for a moment my speed is at most what
+// I kept (a heavy crate stops me, a ball barely slows me)
+let speedCap = null;
+export function capSpeed(v, ms) { if (Number.isFinite(v) && ms > 0) speedCap = { v: Math.max(0, v), until: performance.now() + ms }; }
 
 // THE VIGIL POSTURE (spec section 1 fold_down, section 2 FOLDED, T6).
 //
@@ -660,6 +664,7 @@ export function updateMe(dt, me) {
   // the chosen size (Profile › Avatar, bodyscale.js): stride grows with the legs, so a 150% body walks 150% as fast
   const target = moving ? scaledSpeed(xrIntent.active ? vrSpeed : (creeping ? 0.55 : running ? 4.0 : 1.55) * mag, me.userScale) : 0;
   myState.speed = THREE.MathUtils.lerp(myState.speed, target, 1 - Math.exp(-10 * dt));
+  if (speedCap && performance.now() < speedCap.until) myState.speed = Math.min(myState.speed, speedCap.v); else speedCap = null;
   if (myState.speed < 0.02) myState.speed = 0;
 
   // first person: the body faces where I look, standing still too (R, 10-10). Others see which way I'm looking, and what I

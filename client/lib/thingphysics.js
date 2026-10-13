@@ -35,7 +35,8 @@ import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
 import { register as registerAction } from './actions.js';
 import { setPressFx, pressFxOn } from './emitters.js';
-import { advanceSim, tickOf, ENGINES, engineViewM } from '../../shared/protocol/simlayer.js';
+import { advanceSim, tickOf, ENGINES, engineViewM, worldPose } from '../../shared/protocol/simlayer.js';
+import { createShover, obbOf, aabbOfObb, contactOf, smoother } from '../../shared/shove.js';
 import { simEntry } from '../../shared/sim.js';
 import { planLaunch } from '../../shared/protocol/launchplan.js';
 import { REACH, HAND_Y, KICK } from '../../shared/protocol/physconst.js';
@@ -175,9 +176,9 @@ const worldHasPhysics = () => { const es = replica.st?.entities; if (!es) return
 bus.on('cut-adopted', () => { arrived = false; trackedAt = null; holds = {}; stuck = null; arriveFails = 0; });   // a fresh cut: try at once
 // R 10-10 ("Couldn't grab: your body isn't in the world yet", after a rename): the authority had no body for me while
 // this client thought it had arrived. Whatever the cause, the refusal says so: re-arrive once and send it again.
-let lagMs = 0;   // lab knob (physicsApi.lag): delay a throw/drop request by this much, as a slow round trip would
+let lagMs = 0;   // lab knob (physicsApi.lag): delay a throw/drop/punt request by this much, as a slow round trip would
 async function sendRequest(verb, args) {
-  if (lagMs && (verb === 'throw' || verb === 'drop')) await new Promise((res) => setTimeout(res, lagMs));
+  if (lagMs && (verb === 'throw' || verb === 'drop' || verb === 'punt')) await new Promise((res) => setTimeout(res, lagMs));
   const r = await rawSend(verb, args);
   if (verb === 'move' || r?.refused?.code !== 'not-here') return r;
   arrived = false; trackedAt = null; arriveFails = 0; stuck = null;
@@ -185,7 +186,7 @@ async function sendRequest(verb, args) {
 }
 export { sendRequest as requestWithBody };
 /** Bring the authority's track of my body to where I stand. Resolves true when it's there (or close enough to act). */
-async function track(force = false) {
+async function track(force = false, { noTeleport = false } = {}) {
   if (!replica.active || !net.joined) return false;
   const to = feet(); if (!to) return false;
   if (moving) { await moving; if (!force) return arrived; }
@@ -219,7 +220,7 @@ async function track(force = false) {
     // the authority lost me (flew faster than a body walks, or through something it calls solid): re-arrive, an act on the
     // record, which it refuses while I hold something (a teleport can't carry things)
     // (at most once in 3 s: each is an act on the record, and flying fast would otherwise write one per step)
-    if (['too-fast', 'solid'].includes(r?.refused?.code) && !myHolds().length && (force || performance.now() - lastTeleport > 3000)) {
+    if (!noTeleport && ['too-fast', 'solid'].includes(r?.refused?.code) && !myHolds().length && (force || performance.now() - lastTeleport > 3000)) {
       lastTeleport = performance.now();
       r = await sendRequest('move', { to: to.map(r3), teleport: true }); lastMove = { teleport: true, ok: !!r?.ok, refused: r?.refused?.code, reason: r?.refused?.reason };
       if (r?.ok) { trackedAt = r.at ?? to; stuck = null; return true; }
@@ -503,6 +504,7 @@ function frame(wall) {
   drawSettles(now);
   drawPressFx();
   tickTrack(now);
+  tickShove(now);
   const ms = performance.now() - now; stats.frames++; stats.ms += ms; if (ms > stats.maxMs) stats.maxMs = ms;
 }
 
@@ -656,6 +658,54 @@ export async function punt(arg) {
   const r = await sendRequest('punt', { id, power });
   if (!r?.ok) return refused('punt', r, id);
   flashHint(`you punt ${id}${r.volley ? ' (a volley)' : ''}`);
+  return r;
+}
+
+// ---------------------------------------------------------------- body shove (shared/shove.js)
+// Walking into a loose thing pushes it: MY body only (a remote's client shoves for its own body, an agent's process for
+// its), one punt {shove: true} per contact, predicted like a throw so the crate leaves at once. A refusal is quiet (nobody
+// asked for this push in words); shover.refused keeps it from repeating.
+const shover = createShover();
+let shoveOn = true;          // lab knob (physicsApi.shove.on(false)); off for the session when the server doesn't know shove
+const shoveLog = [];         // the last shoves sent and how they were answered (probe surface)
+const headV = smoother();    // VR room-scale: the head's smoothed walking speed (shared/shove.js)
+const _hw = new THREE.Vector3();
+let dynIds = { st: null, head: -2, ids: [] };   // per fold, as grabbableIds
+const dynamicCached = () => { const st = replica.st; if (dynIds.st !== st || dynIds.head !== replica.head) dynIds = { st, head: replica.head, ids: dynamicIds() }; return dynIds.ids; };
+function tickShove(now) {
+  if (!shoveOn || !replica.active || !net.joined || !arrived) return;
+  const canon = replica.sim; if (!canon?.sim || canon.foreign) return;
+  const st = hooks?.myState?.(), me = hooks?.me?.(); let f = feet();
+  // my own body only, walking: not in edit mode (R 10-12: a builder arranging crates nudges them), seated, down or flying
+  if (!st || !me || !f || hooks?.editing?.() || hooks?.seated?.() || hooks?.flying?.() || st.clip === 'ragdoll') { headV.reset(); return; }
+  const cap = colliderFor(me.userScale), sp = Number.isFinite(st.speed) ? st.speed : 0;
+  let vel = [Math.sin(st.yaw) * sp, Math.cos(st.yaw) * sp];
+  // VR room-scale: walking the room moves the head, not the body's root; it shoves by the head's smoothed motion only above
+  // vrSpeed (leaning over a table or tracking jitter never does). A stick walk is the ordinary intent above.
+  if (presenting() && hooks?.camera) { hooks.camera.getWorldPosition(_hw); const hv = headV.step([_hw.x, f[1], _hw.z], now);
+    if (sp < shover.feel.minSpeed && Math.hypot(hv[0], hv[1]) >= shover.feel.vrSpeed) { f = [_hw.x, f[1], _hw.z]; vel = hv; } }
+  else headV.reset();
+  if (Math.hypot(vel[0], vel[1]) < shover.feel.minSpeed) { shover.step({ st: replica.st, feet: f, vel: [0, 0], r: cap.r, now }); return; }
+  const rank = Number.isFinite(net.myRights?.rank) ? net.myRights.rank : null;
+  const mounted = new Set(); for (const [, m] of hooks?.mounts?.() ?? []) if (m?.to) mounted.add(m.to);
+  const bodies = []; for (const r of remotes.values()) { const p = r.avatar?.root?.position; if (p) bodies.push([p.x, p.y, p.z]); }
+  const go = shover.step({ st: replica.st, ids: dynamicCached(), feet: f, vel, r: cap.r, tall: cap.tall, now, rank, holds, mounted, bodies,
+    skip: (id) => flying(id) || settles.has(id) || pending.has(id) || !entities.has(id) });
+  for (const p of go) { hooks?.capSpeed?.(p.kept, p.keepMs); void shove(p.id, p.v, now); }
+}
+function planPunt(id, v) {
+  const canon = replica.sim; if (!predictOn || !canon?.sim || canon.foreign || clockRtt() === null) return null;
+  const wp = worldPose(replica.st, id); if (!wp) return null;
+  const { notes: _n, ...entry } = planLaunch({ id, p: wp.pos, q: wp.q, v }, null, ENGINES[canon.spec?.engine]?.maxSpeed, 'punt');
+  return entry;
+}
+async function shove(id, v, now) {
+  const plan = planPunt(id, v); if (plan) predict(plan);
+  await track(true, { noTeleport: true });   // a shove never re-arrives the body (the teleport limiter is for walking)
+  const r = await sendRequest('punt', { id, v, shove: true });
+  shoveLog.push({ id, v, t: now, ok: !!r?.ok, code: r?.refused?.code ?? null }); if (shoveLog.length > 32) shoveLog.shift();
+  if (!r?.ok) { shover.refused(id, performance.now(), r?.refused?.code); if (pending.delete(id)) presV = -1; bus.emit('shove-refused', { id, refused: r?.refused ?? null });
+    if (r?.refused?.code === 'unknown-arg') shoveOn = false; }   // a server from before shove: stop asking
   return r;
 }
 
@@ -824,6 +874,10 @@ const inReach = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p &
 const canPunt = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p && atFeet(p, f) !== null; };
 const whereFromMe = (id) => { const f = feet(), p = whereIs(id); return f && p ? { at: p, flat: Math.hypot(p[0] - f[0], p[2] - f[2]) } : null; };
 export const physicsApi = { grab, put, drop, throw: throwHeld, punt, canPunt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, pending: pendingNow, swaps: () => stats.swaps, predict: (on) => (predictOn = on !== false), lag: (ms) => (lagMs = Math.max(0, ms | 0)), settle: (ms) => (SETTLE_MS = Math.max(0, ms | 0)), settling: () => [...settles.keys()], whereIs, inReach, whereFromMe, canPutAt,
+  /** body shove: the lab knob, the shoves sent (and how each was answered), the things my body is against now */
+  shove: { on: (on) => (shoveOn = on !== false), log: () => shoveLog.slice(), touching: () => shover.touching(), feel: () => shover.feel,
+    against: () => { const f = feet(), cap = colliderFor(hooks?.me?.()?.userScale); if (!f || !replica.st) return [];
+      return dynamicIds().filter((id) => { const obb = obbOf(replica.st, id); return obb && contactOf(f, cap.r, cap.tall, { obb, box: aabbOfObb(obb) }, shover.feel.slack); }); } },
   /** the held things whose fx this client is drawing now (grabbable's presence tier) */
   fx: () => pressFxOn(),
   /** what a hand may do with a thing (shared/grab.js grabOf over this client's fold), or null */
