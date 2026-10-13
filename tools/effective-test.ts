@@ -41,13 +41,32 @@ function offlineAgent(): WorldAgent {
   return a;
 }
 let seqN = 0;
+/** A socket child's id here: "<host>.<slot>" (the door mints its own; any stable id serves a fixture). */
+const SID = (host: string, slot: string) => `${host}.${slot}`;
+/** The scenes are old-protocol entries, so a seat arrives as a `sockets` map and cargo as mount {to, slot}. Every world is
+ *  lifted into socket children (PLAN-sockets-entities: the door at load); this does the same to the folded records — a
+ *  socket child {pos, yaw/q, comp: {socket: {name, …}}, parent: {to: host, offset, yaw/q}}, and cargo on a slot rides it
+ *  (no offset: on the socket itself) — so the agent reads exactly what a lifted world gives it. */
+function liftV1(E: Record<string, any>) {
+  for (const [id, e] of Object.entries<any>({ ...E })) {
+    const S = e.comp?.sockets; if (!S) continue;
+    for (const [slot, sk] of Object.entries<any>(S)) {
+      const { pos = [0, 0, 0], yaw, q, ...rest } = sk;
+      const turn = q ? { q } : { yaw: yaw ?? 0 };
+      E[SID(id, slot)] = { pos, ...turn, comp: { socket: { name: slot, ...rest } }, parent: { to: id, offset: pos, ...turn } };
+    }
+    delete e.comp.sockets; if (!Object.keys(e.comp).length) delete e.comp;
+  }
+  for (const e of Object.values<any>(E)) if (e.parent?.slot) { const { slot, ...p } = e.parent; e.parent = { ...p, to: SID(p.to, slot) }; }
+  return E;
+}
 const fold = (a: WorldAgent, entry: { verb: string; args: any; actor?: string }, live = false) => {
   const A = a as any;
-  // a body sitting is presence, never the fold: the agent's own seat
-  if ((entry.verb === "mount" || entry.verb === "dismount") && entry.args?.id === A.name) { A.setSeat(entry.verb === "mount" ? { to: entry.args.to, slot: entry.args.slot } : null); A.reconcileFromFold(); return; }
+  // a body sitting is presence, never the fold: the agent's own seat (a socket child's id)
+  if ((entry.verb === "mount" || entry.verb === "dismount") && entry.args?.id === A.name) { A.setSeat(entry.verb === "mount" ? { to: entry.args.slot ? SID(entry.args.to, entry.args.slot) : entry.args.to } : null); A.reconcileFromFold(); return; }
   const was = entry.args?.id != null ? A.entities.get(entry.args.id) : undefined;
   const st = scenes.get(a); foldEntry(st, { seq: ++seqN, ts: T0, actor: entry.actor ?? "t", ...entry });
-  A.st = { ...A.st, entities: structuredClone(st.entities) };
+  A.st = { ...A.st, entities: liftV1(structuredClone(st.entities)) };
   A.reconcileFromFold();
   for (const id of Object.keys(st.entities)) A.trackSupport?.(A.syncSupport?.(id));
   // a change seen live: the agent's own change handler (what a door write it watched would run)
@@ -75,13 +94,20 @@ if (!EFF) {
     check("static parent + offset: composed, not stale", r.ok && near3(r.pos, [10, 0.55, 10]), JSON.stringify(r));
   }
 
-  // socket default; then mount offset/yaw OVERRIDING socket defaults
+  // a socket is a child entity (PLAN-sockets-entities): cargo on it lands on the socket's own frame; its own local pose
+  // composes in that frame
   {
-    const ents = { swing: { pos: [0, 0, 0], yaw: 0, comp: { sockets: { seat: { pos: [0, 1, 0], yaw: 1 } } } }, crate: { pos: [9, 9, 9], yaw: 0 } };
-    const bySock = eff("crate", view(ents, { crate: { to: "swing", slot: "seat" } }), T0);
+    const ents = { swing: { pos: [0, 0, 0], yaw: 0 }, "swing.seat": { pos: [0, 1, 0], yaw: 1, comp: { socket: { name: "seat" } } }, crate: { pos: [9, 9, 9], yaw: 0 } };
+    const sock = { "swing.seat": { to: "swing", offset: [0, 1, 0], yaw: 1 } };
+    const bySock = eff("crate", view(ents, { ...sock, crate: { to: "swing.seat" } }), T0);
     check("socket supplies the local frame", bySock.ok && near3(bySock.pos, [0, 1, 0]) && near(bySock.yaw, 1), JSON.stringify(bySock));
-    const byMount = eff("crate", view(ents, { crate: { to: "swing", slot: "seat", offset: [0, 2, 0], yaw: 0.5 } }), T0);
-    check("mount offset/yaw override socket defaults", byMount.ok && near3(byMount.pos, [0, 2, 0]) && near(byMount.yaw, 0.5), JSON.stringify(byMount));
+    const byMount = eff("crate", view(ents, { ...sock, crate: { to: "swing.seat", offset: [0, 1, 0], yaw: 0.5 } }), T0);
+    check("the cargo's own local pose composes in the socket's frame", byMount.ok && near3(byMount.pos, [0, 2, 0]) && near(byMount.yaw, 1.5), JSON.stringify(byMount));
+    // a tilted socket (a rocket's seat on its back: pitch −90°): its whole rotation carries what rides it — [0, 0, 1] in
+    // the socket's frame is world up (Rx(−90°)·[0,0,1] = [0, 1, 0])
+    const tilt = { "swing.seat": { to: "swing", offset: [0, 1, 0], q: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2] } };
+    const byTilt = eff("crate", view(ents, { ...tilt, crate: { to: "swing.seat", offset: [0, 0, 1] } }), T0);
+    check("a tilted socket's whole rotation carries its cargo (q, not just a heading)", byTilt.ok && near3(byTilt.pos, [0, 2, 0]), JSON.stringify(byTilt));
   }
 
   // parent yaw + non-1 scalar scale: offset [1,0,0] under yaw π/2, scale 2
@@ -102,11 +128,11 @@ if (!EFF) {
   {
     const ents = {
       swing: { pos: [10, 0, 10], yaw: 0, comp: {
-        sockets: { seat: { pos: [0, 0.55, 0] } },
         motion: { type: "pendulum", axis: "x", pivot: [0, 2.4, 0], amp: 0.5, period: 4, damp: 0, t0: T0 } } },
+      "swing.seat": { pos: [0, 0.55, 0], comp: { socket: { name: "seat" } } },
       crate: { pos: [3, 0, 3], yaw: 0 },
     };
-    const v = view(ents, { crate: { to: "swing", slot: "seat" } });
+    const v = view(ents, { "swing.seat": { to: "swing", offset: [0, 0.55, 0] }, crate: { to: "swing.seat" } });
     const r1 = eff("crate", v, T0);
     const r2 = eff("crate", v, T0 + 1000);
     const y1 = 2.4 - 1.85 * Math.cos(0.5), z1 = 10 - 1.85 * Math.sin(0.5);
@@ -129,10 +155,11 @@ if (!EFF) {
     check("nested mounts compose recursively", r.ok && near3(r.pos, [5, 2, 0]) && near(r.yaw, Math.PI / 2), JSON.stringify(r));
   }
 
-  // a body seat: no entity record → the browser's [0, 0.5, 0] body default
+  // a body seat: no entity record, on a socket child → the socket itself (the browser's mountTransform)
   {
-    const r = eff("rider", view({ bench: { pos: [4, 0, 4], yaw: 0 } }, { rider: { to: "bench" } }), T0);
-    check("a mounted body defaults to the seat offset", r.ok && near3(r.pos, [4, 0.5, 4]), JSON.stringify(r));
+    const r = eff("rider", view({ bench: { pos: [4, 0, 4], yaw: 0 }, "bench.seat": { pos: [0, 0.5, 0], comp: { socket: { name: "seat", body: {} } } } },
+      { "bench.seat": { to: "bench", offset: [0, 0.5, 0] }, rider: { to: "bench.seat" } }), T0);
+    check("a mounted body sits on its socket", r.ok && near3(r.pos, [4, 0.5, 4]), JSON.stringify(r));
   }
 
   // refusals: every bad link is named, no number escapes
@@ -152,8 +179,8 @@ if (!EFF) {
     check("non-finite offset: refused, never substituted", !nan.ok && /non-finite/.test((nan as any).why), JSON.stringify(nan));
 
     const part = eff("crate", view(
-      { swing: { pos: [0, 0, 0], comp: { sockets: { seat: { pos: [0, -0.83, 0], part: "plank" } } } }, crate: { pos: [0, 0, 0] } },
-      { crate: { to: "swing", slot: "seat" } }), T0);
+      { swing: { pos: [0, 0, 0] }, "swing.seat": { pos: [0, -0.83, 0], comp: { socket: { name: "seat", part: "plank" } } }, crate: { pos: [0, 0, 0] } },
+      { "swing.seat": { to: "swing", offset: [0, -0.83, 0] }, crate: { to: "swing.seat" } }), T0);
     check("part socket: honestly unsupported in slice one", !part.ok && /part "plank"/.test((part as any).why), JSON.stringify(part));
 
     const wig = eff("crate", view(
@@ -185,7 +212,7 @@ const distOf = (line: string) => { const m = line.match(/:\s*([\d.]+)m\s+(\w+)\s
   const line = crateLine(a.look(T0));
   check("mounted cargo reports the carrier's frame", line.includes("at (10.0, 0.6, 10.0)"), line);
   check("the stale pre-mount coordinate is GONE", !line.includes("(3.0, 0.0, 3.0)"), line);
-  check("still says what it rides", line.includes("mounted on swing1"), line);
+  check("still says what it rides", line.includes("mounted on swing1 (seat)"), line);
 
   // dismount stamps an authoritative absolute — perception returns to it
   await fold(a, { verb: "dismount", args: { id: "crate1", pos: [1, 2, 3], yaw: 0.7 } });
@@ -232,7 +259,7 @@ const distOf = (line: string) => { const m = line.match(/:\s*([\d.]+)m\s+(\w+)\s
   await fold(a, { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [3, 0, 3], yaw: 0 } });
   await fold(a, { verb: "mount", args: { id: "crate1", to: "swing2", slot: "seat" } });
   const line = crateLine(a.look(T0));
-  check("part socket: coordinate withheld, frame named", line.includes("position rides swing2") && !/at \(/.test(line), line);
+  check("part socket: coordinate withheld, frame named", line.includes("position rides swing2 (seat)") && !/at \(/.test(line), line);
   check("part socket: the reason is spoken", /part "plank"/.test(line), line);
 
   await fold(a, { verb: "spawn", args: { id: "ufo1", lib: "models/ufo.glb", pos: [8, 0, 8], yaw: 0 } });
@@ -251,6 +278,22 @@ const distOf = (line: string) => { const m = line.match(/:\s*([\d.]+)m\s+(\w+)\s
   const head = a.look(T0).split("\n")[0];
   check("self position rides the seat", head.includes("at (10.0, 10.0)"), head);
   check("the seat is named", head.includes("seated on swing1"), head);
+  a.close();
+}
+
+// another body's seat rides its presence frame as a socket id; an older client's {to: host, slot} names that host's
+// socket child of that name (shared/sockbody.js resolveSeat, one release) — and its line says where, by name
+{
+  const a = offlineAgent();
+  await fold(a, { verb: "spawn", args: { id: "swing1", lib: "models/bench.glb", pos: [10, 0, 10], yaw: 0 } });
+  await fold(a, { verb: "comp", args: { id: "swing1", type: "sockets", data: { seat: { pos: [0, 0.55, 0], body: {} } } } });
+  const A = a as any;
+  A.notePose("bob", { p: [10, 0, 10], yaw: 0, speed: 0, clip: "sitchair", seat: { to: "swing1", slot: "seat" } }, T0);
+  const old = A.mounts.get("bob")?.to;
+  A.notePose("cal", { p: [10, 0, 10], yaw: 0, speed: 0, clip: "sitchair", seat: { to: "swing1.seat" } }, T0);
+  check("a presence seat: {to: <socket id>} as sent; the old {to: host, slot} resolves to that socket child", old === "swing1.seat" && A.mounts.get("cal")?.to === "swing1.seat", JSON.stringify([old, A.mounts.get("cal")]));
+  const pl = a.look(T0).split("\n").find((l) => l.includes("- bob:")) ?? "";
+  check("…and look says where they sit: the thing and its seat's name", /on swing1 \(seat\)/.test(pl), pl);
   a.close();
 }
 
@@ -396,10 +439,13 @@ console.log("\n━━ body size: a profiled seat lowers a scaled rider in propor
 if (EFF) {
   // chair at the origin, unscaled; a surface socket 0.5 up; contact plane 0.45
   // below the rider root at authored size → root y = 0.5 − 0.45·u
-  const chair = { pos: [0, 0, 0], yaw: 0, scale: 1, comp: { sockets: { seat: { pos: [0, 0.5, 0], seatAnchor: "surface", pose: "sitchair" } } } };
+  // the seat: a socket child that authors its support plane (seatcore.js socketAnchor's word for it)
+  const chair = { pos: [0, 0, 0], yaw: 0, scale: 1 };
+  const seat = { pos: [0, 0.5, 0], yaw: 0, comp: { socket: { name: "seat", seatAnchor: "surface", pose: "sitchair" } } };
+  const seatMount = { to: "chair", offset: [0, 0.5, 0] };
   const view = (riderScale?: (id: string) => number) => ({
-    entity: (id: string) => (id === "chair" ? chair : undefined),
-    mount: (id: string) => (id === "rider" ? { to: "chair", slot: "seat" } : undefined),
+    entity: (id: string) => (id === "chair" ? chair : id === "chair.seat" ? seat : undefined),
+    mount: (id: string) => (id === "rider" ? { to: "chair.seat" } : id === "chair.seat" ? seatMount : undefined),
     seatVerdict: () => ({ status: "countersigned", pose: "sitchair", contactY: 0.45 }),
     ...(riderScale ? { riderScale } : {}),
   });
@@ -414,7 +460,9 @@ if (EFF) {
   // (clamped; absent = 1) — the seam the text tier's seated perception reads
   const a = offlineAgent() as any;
   a.entities.set("chair", { id: "chair", lib: "x.glb", actor: "t", ...chair });
-  a.mounts.set("rider", { to: "chair", slot: "seat" });
+  a.entities.set("chair.seat", { id: "chair.seat", lib: "", actor: "t", ...seat });
+  a.mounts.set("chair.seat", seatMount);
+  a.mounts.set("rider", { to: "chair.seat" });
   a.seatVerdictFor = () => ({ status: "countersigned", pose: "sitchair", contactY: 0.45 });
   a.people.set("rider", { id: "rider", avatar: "", pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "sitchair", scale: 2 } });
   const big = a.eff("rider", T0);

@@ -6,7 +6,7 @@
 
 import { bodyOf } from "../shared/components.js";
 import { kindOf } from "../shared/protocol/kind.js";
-import { describeBody, mayLeave } from "../shared/sockbody.js";
+import { describeBody, mayLeave, resolveSeat, socketsUnder } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
 import { r3 } from "../shared/protocol/round.js";
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
@@ -256,17 +256,32 @@ export class WorldAgent {
   /** Every mount's full wire shape — offset/yaw OVERRIDE socket defaults in
    *  the world transform (#82), so dropping them here made the composed
    *  position disagree with every renderer. */
-  mounts = new Map<string, { to: string; slot?: string; offset?: number[]; yaw?: number; q?: number[] }>();
+  mounts = new Map<string, { to: string; offset?: number[]; yaw?: number; q?: number[] }>();
   /** Bodies' seats are PRESENCE (bodies aren't entities, nothing is logged): a body's pose frame carries
-   *  `seat: {to, slot}` while it sits. Others' come from their frames; mine rides my frames. */
-  bodySeats = new Map<string, { to: string; slot?: string }>();
-  mySeat: { to: string; slot?: string; pose?: string; at?: number } | null = null;
+   *  `seat: {to: <socket id>}` while it sits (an older client's {to: host, slot} is read as that host's socket of that
+   *  name: resolveSeat). Others' come from their frames; mine rides my frames. */
+  bodySeats = new Map<string, { to: string }>();
+  mySeat: { to: string; pose?: string; at?: number } | null = null;
+  /** A host's sockets: its socket children (PLAN-sockets-entities), [{id, name, sock}] in child order — the one reader
+   *  look, attach and the seat lines share. */
+  socketsOf(host: string) {
+    // the same records the composition reads (entities, and mounts: a thing's fold parent)
+    const kids = (h: string) => [...this.mounts.entries()].filter(([k, m]) => m.to === h && this.entities.has(k)).map(([k]) => k).sort();
+    return socketsUnder(host, kids, (k) => this.entities.get(k)?.comp ?? null);
+  }
+  /** A socket child as a seat reads it: {id, host, name, sock}, or null when `id` isn't a socket here. */
+  seatOf(id: string | null | undefined) {
+    const sock = id == null ? null : this.entities.get(id)?.comp?.socket;
+    return sock && typeof sock === "object" ? { id: String(id), host: this.mounts.get(String(id))?.to ?? null, name: String(sock.name ?? ""), sock } : null;
+  }
+  /** "host (name)" for a seat or a socket — how a person reads where someone sits; the bare id for anything else. */
+  seatName(id: string) { const s = this.seatOf(id); return s ? `${s.host} (${s.name})` : id; }
   /** My seat's body block (shared/sockbody.js), or null standing. */
-  mySeatBody() { const m = this.mySeat; return m ? bodyOf(this.entities.get(m.to)?.comp?.sockets?.[m.slot ?? ""]) : null; }
+  mySeatBody() { const m = this.mySeat; return m ? bodyOf(this.seatOf(m.to)?.sock) : null; }
   /** May I leave my seat this way? (its leaveBy: a 'script' seat lets go only when the world does) */
-  mayLeaveSeat(kind: "move" | "jump" | "menu" | "script") { const b: any = this.mySeatBody(); return !b || mayLeave(b, kind) || !this.entities.get(this.mySeat!.to)?.comp?.sockets?.[this.mySeat!.slot ?? ""]; }
-  /** sit on a thing's seat socket (presence: my frames carry it), or stand (null) */
-  setSeat(seat: { to: string; slot?: string; pose?: string; at?: number } | null) {
+  mayLeaveSeat(kind: "move" | "jump" | "menu" | "script") { const b: any = this.mySeatBody(); return !b || mayLeave(b, kind) || !this.seatOf(this.mySeat!.to); }
+  /** sit on a thing's seat socket (presence: my frames carry {to: <socket id>}), or stand (null) */
+  setSeat(seat: { to: string; pose?: string; at?: number } | null) {
     this.mySeat = seat;
     if (seat) this.mounts.set(this.name, { ...seat }); else this.mounts.delete(this.name);
   }
@@ -362,7 +377,7 @@ export class WorldAgent {
   private clipClockStarted = 0;
   private bodyClip() {
     const mount = this.mounts.get(this.name);
-    return mount ? bodyOf(this.entities.get(mount.to)?.comp?.sockets?.[mount.slot ?? ""])?.clip ?? "sitchair" : this.clip;
+    return mount ? bodyOf(this.seatOf(mount.to)?.sock)?.clip ?? "sitchair" : this.clip;
   }
   private noteClipClock() {
     const slot = this.bodyClip();
@@ -1014,8 +1029,7 @@ export class WorldAgent {
     if (!mount || !observation.pose) return observation;
     const effective = this.eff(observation.who, this.serverNow());
     if (!effective.ok) return { ...observation, error: `body mount cannot be composed: ${effective.why}` };
-    const socket = mount.slot ? this.entities.get(mount.to)?.comp?.sockets?.[mount.slot] : null;
-    const clip = bodyOf(socket)?.clip ?? "sitchair";
+    const clip = bodyOf(this.seatOf(mount.to)?.sock)?.clip ?? "sitchair";
     return { ...observation, frame: { source: "mount", to: mount.to, seat: effective.seat ?? null },
       pose: { ...observation.pose, p: effective.pos, yaw: effective.yaw, clip,
         ...(clip === (observation.pose.clipTimeSlot ?? observation.pose.clip) ? {} : { clipTime: undefined }) } };
@@ -1063,7 +1077,8 @@ export class WorldAgent {
     const prev = p.pose;
     p.pose = pose; p.observedAt = now;
     { const seat = (pose as any)?.seat;   // a seat rides the frame while it holds (presence)
-      if (seat?.to) { const st = { to: String(seat.to), ...(seat.slot ? { slot: String(seat.slot) } : {}) }; this.bodySeats.set(id, st); this.mounts.set(id, st); }
+      const to = seat?.to ? resolveSeat(this.st, { to: String(seat.to), ...(typeof seat.slot === "string" ? { slot: seat.slot } : {}) })?.to : null;
+      if (to) { const st = { to }; this.bodySeats.set(id, st); this.mounts.set(id, st); }
       else if (this.bodySeats.delete(id)) this.mounts.delete(id); }
     p.bodyGeneration ??= ++this.bodyGenerationCounter;
     this.people.set(id, p);
@@ -1331,7 +1346,7 @@ export class WorldAgent {
     this.mounts.clear();
     for (const [id, e] of Object.entries(this.st.entities)) {
       const p = (e as any).parent;
-      if (p) this.mounts.set(id, { to: p.to, slot: p.socket,   // the mount view keeps presence's word (a seat's slot)
+      if (p) this.mounts.set(id, { to: p.to,
         ...(p.offset != null ? { offset: p.offset } : {}),
         ...(p.yaw != null ? { yaw: p.yaw } : {}),
         ...(p.q != null ? { q: p.q } : {}) });   // the relative orientation (PROTOCOL §9.1): foldRecord's parent must not lose it
@@ -3237,8 +3252,8 @@ export class WorldAgent {
   /** The declared-approximation suffix for a seated person's line (#101):
    *  the same reason string the browser consoles and the nameplate ≈ carry —
    *  one contract, three declarations. Empty when the seat is profiled. */
-  private seatSuffix(id: string, ride: { to: string; slot?: string }): string {
-    const sock = ride.slot ? this.entities.get(ride.to)?.comp?.sockets?.[ride.slot] : undefined;
+  private seatSuffix(id: string, ride: { to: string }): string {
+    const sock = this.seatOf(ride.to)?.sock;
     const g = seatGateCore({ sock, verdict: this.seatVerdictFor(id), pose: bodyOf(sock)?.clip ?? "sitchair" });
     return g.apply ? "" : ` (seat approximate: ${g.reason})`;
   }
@@ -3261,7 +3276,7 @@ export class WorldAgent {
     // #101: an uncorrected seat composition is never silent — the same
     // "(seat approximate: reason)" every renderer consumer declares.
     const selfSeatNote = selfEff?.ok && selfEff.seat?.state === "approximate" ? ` (seat approximate: ${selfEff.seat.reason})` : "";
-    const seated = selfRide ? `, seated on ${selfRide.to}${selfEff?.ok && selfEff.moving ? ` (riding its ${selfEff.moving})` : ""}${selfSeatNote}` : "";
+    const seated = selfRide ? `, seated on ${this.seatName(selfRide.to)}${selfEff?.ok && selfEff.moving ? ` (riding its ${selfEff.moving})` : ""}${selfSeatNote}` : "";
     if (meKnown) {
       L.push(`You are "${this.name}" in world "${this.world}" at (${me.x.toFixed(1)}, ${me.z.toFixed(1)}), ground height ${me.y.toFixed(2)}m, facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}.`);
     } else {
@@ -3317,11 +3332,12 @@ export class WorldAgent {
       const posed = held ? `, holding a pose (${Object.keys(held).length} bones)` : "";
       const winged = p.pose.wingsFolded === true ? ", wings folded" : "";
       const ride = this.mounts.get(p.id);
-      const riding = ride ? ` — on ${ride.to}${ride.slot ? ` (${ride.slot})` : ""}${this.seatSuffix(p.id, ride)}` : "";
+      const riding = ride ? ` — on ${this.seatName(ride.to)}${this.seatSuffix(p.id, ride)}` : "";
       L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${winged}${riding}${voiceNote(p.pose)}`);
     }
 
-    const ents = [...this.entities.values()];
+    // a socket is part of its host (a seat, a hook): listed under the host, never as a thing of its own
+    const ents = [...this.entities.values()].filter((e) => e.kind !== "socket");
     L.push(ents.length ? `\nThings (${ents.length}):` : "\nNo placed things yet.");
     // one composition per entity per look, shared by the sort and the line.
     // Resolved things sort by their EFFECTIVE distance; unresolved ones make
@@ -3359,11 +3375,13 @@ export class WorldAgent {
       // a declared collider (the collider component)
       const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
       if (col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its exact shape");
-      if (c.sockets) {
-        // each socket a person can use says what the body does there (shared/sockbody.js describeBody), and who's on it
-        const on = new Map([...this.mounts.entries()].filter(([, m]) => m.to === e.id).map(([rid, m]) => [m.slot ?? "", rid]));
-        const lines = Object.entries<any>(c.sockets).map(([slot, s]) => { const b = bodyOf(s); return b ? `${describeBody(slot, b)}${on.has(slot) ? ` — ${on.get(slot)} is on it` : ""}` : null; }).filter(Boolean);
-        const things = Object.keys(c.sockets).filter((k) => !bodyOf(c.sockets[k]));
+      const socks = this.socketsOf(e.id);
+      if (socks.length) {
+        // each socket a person can use says what the body does there (shared/sockbody.js describeBody), and who's on it;
+        // an attach point says what it holds
+        const on = (sid: string) => [...this.mounts.entries()].filter(([, m]) => m.to === sid).map(([rid]) => rid);
+        const lines = socks.map((x) => { const b = bodyOf(x.sock); const who = on(x.id); return b ? `${describeBody(x.name, b)}${who.length ? ` — ${who.join(", ")} is on it` : ""}` : null; }).filter(Boolean);
+        const things = socks.filter((x) => !bodyOf(x.sock)).map((x) => { const held = on(x.id); return `${x.name}${held.length ? ` (holding ${held.join(", ")})` : ""}`; });
         if (lines.length) aff.push(`use it (attach {to: "${e.id}", socket}): ${lines.join(" · ")}`);
         if (things.length) aff.push(`attach points: ${things.join(", ")}`); }
       if (c.reactions) { const acts = Object.keys(c.reactions).filter((a) => a !== openAction(c)); if (acts.length) aff.push(`reacts to: ${acts.join(", ")}`); }
@@ -3404,15 +3422,17 @@ export class WorldAgent {
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const spoken = ["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
+      const spoken = ["sockets", "socket", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
       if (copy) spoken.push("blueprint");
       if (lit) spoken.push("light");   // described above; a malformed one stays listed
       if (col === "exact" || col === "box") spoken.push("collider");
       const extra = Object.keys(c).filter((k) => !spoken.includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
-      if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);
-      const riders = [...this.mounts.entries()].filter(([, m]) => m.to === e.id).map(([rid, m]) => `${rid}${m.slot ? ` (${m.slot})` : ""}`);
+      if (ride) aff.push(`mounted on ${this.seatName(ride.to)}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);
+      // who and what ride it: on it directly, or in one of its sockets (said with the socket's name)
+      const sockIds = new Set(socks.map((x) => x.id));
+      const riders = [...this.mounts.entries()].filter(([rid, m]) => !sockIds.has(rid) && (m.to === e.id || sockIds.has(m.to))).map(([rid, m]) => `${rid}${sockIds.has(m.to) ? ` (${this.seatOf(m.to)?.name})` : ""}`);
       if (riders.length) aff.push(`carrying: ${riders.join(", ")}`);
       if (f.ok) {
         // the EFFECTIVE position — mount chain and motion composed at nowMs.
@@ -3425,11 +3445,11 @@ export class WorldAgent {
         // composed (a part socket, an unknown motion type, a malformed link),
         // perception says whose frame the thing rides and why the coordinate
         // is withheld — never the stale pre-mount pos next to "mounted on".
-        const where = ride ? `position rides ${ride.to}` : `position unavailable`;
+        const where = ride ? `position rides ${this.seatName(ride.to)}` : `position unavailable`;
         L.push(`  - [${e.id}] ${short}: ${where} — ${f.why}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
       }
     }
-    if (ents.some((e) => e.comp?.sockets || e.comp?.reactions)) {
+    if (ents.some((e) => e.comp?.reactions) || [...this.entities.values()].some((e) => e.kind === "socket")) {
       L.push(`  (use a thing: act {verb: "use", args: {id, action?}} · sit or ride: attach {to: id, socket?} — both open to everyone; detach, or walking, gets you off)`);
     }
 

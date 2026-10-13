@@ -59,8 +59,10 @@ try{
  // Exercise the existing folded mount view at the body read seam. Root pose
  // packets keep pre-mount positions; the socket/motion fold governs rendering.
  b.releaseReach();a.releaseReach();
- const seat={id:'seat',lib:'fixture',pos:[4,1,2],yaw:Math.PI/2,comp:{sockets:{seat:{pos:[0,.5,0],pose:'sitchair'}}}};
- for(const ag of [a,b]){ag.entities.set('seat',seat);ag.mounts.set(b.name,{to:'seat',slot:'seat'});}
+ // the seat is a socket child of its thing (PLAN-sockets-entities): the body rides the socket's id
+ const seat={id:'seat',lib:'fixture',pos:[4,1,2],yaw:Math.PI/2};
+ const sock={id:'seat.s',lib:'',pos:[0,.5,0],yaw:0,comp:{socket:{name:'seat',body:{pose:'sitchair'}}}};
+ for(const ag of [a,b]){ag.entities.set('seat',seat);ag.entities.set('seat.s',sock);ag.mounts.set('seat.s',{to:'seat',offset:[0,.5,0]});ag.mounts.set(b.name,{to:'seat.s'});}
  b.tick();await until(()=>a.people.get(b.name)?.pose?.clipTimeSlot==='sitchair');
  const mounted=await read(a,{who:b.name});
  check('mounted readback uses the live socket frame and posture',mounted.ok&&near(mounted.root.position,[4,1.5,2])&&mounted.posture==='sitchair'&&mounted.frame.source==='mount');

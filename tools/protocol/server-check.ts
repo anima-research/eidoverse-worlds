@@ -219,7 +219,9 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     throne: { pos: [0, 0.5, 0], body: { who: "owner" } },
     box: { pos: [0.6, 0.5, 0], body: { action: "drive", input: { move: "drive" }, leaveBy: "script" } },
     rumble: { pos: [-0.6, 0.5, 0], body: { action: "ride", leaveBy: "menu" } } } } })).ok, "S5e (Ann builds a carriage: an owner's throne, a driver's box that holds you, a rumble seat)");
-  for (let i = 0; i < 40 && !ag.entities.get("carriage")?.comp?.sockets; i++) await sleep(50);
+  // its seats are socket children (PLAN-sockets-entities: the map is lifted at the door): wait for all three
+  for (let i = 0; i < 40 && ag.socketsOf("carriage").length < 3; i++) await sleep(50);
+  const seatId = (n: string) => ag.socketsOf("carriage").find((x: any) => x.name === n)?.id;
   const lk = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
   ok(/box: drive \(.*drives it.*lets you go only when the world does/.test(lk) && /throne: sit \([^·]*owners only/.test(lk), "S5e look says what each seat does (box drives and holds you; the throne is owners only)", lk.split("\n").filter((l) => /carriage/.test(l)));
   // grabbable (slice 5): look says what a hand may do with a thing, the authority's own reading (shared/grab.js describeGrab)
@@ -227,14 +229,17 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   for (let i = 0; i < 40 && !ag.entities.get("lantern")?.comp?.grabbable; i++) await sleep(50);
   const lk2 = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
   ok(/lantern[^\n]*Take the lantern \(anyone may pick it up;[^\n]*use while held: light;[^\n]*goes home when let go\)[^\n]*act \{verb: "grab", args: \{id: "lantern"\}\}/.test(lk2), "S5g look says a grabbable thing can be picked up, by whom, what using it does and where it goes", lk2.split("\n").filter((l) => /lantern/.test(l)));
+  ok(["throne", "box", "rumble"].every((n) => !!seatId(n) && !lk.includes(seatId(n)!)) && /Things \(\d+\)/.test(lk), "S5e look lists the seats under the carriage by name, never as things of their own (nor as things it carries)", lk.split("\n").filter((l) => /carriage|empty|throne/.test(l)));
+  const thId = await HANDLERS.attach(ag, { to: seatId("throne") }, {} as any, "attach");
+  ok(thId.isError && /rights/.test(thId.content[0].text) && !ag.mySeat, "S5e attach takes a socket's own id too (the throne's: the authority still refuses a builder)", thId.content[0].text);
   const th = await HANDLERS.attach(ag, { to: "carriage", socket: "throne" }, {} as any, "attach");
   ok(th.isError && /rights/.test(th.content[0].text) && !ag.mySeat, "S5e attach to the owner's throne: the authority refuses a builder", th.content[0].text);
   const dv = await HANDLERS.attach(ag, { to: "carriage", action: "drive" }, {} as any, "attach");
-  ok(!dv.isError && ag.mySeat?.slot === "box", "S5e attach {action: 'drive'} picks the driver's box", [dv.content[0].text, ag.mySeat]);
+  ok(!dv.isError && !!seatId("box") && ag.mySeat?.to === seatId("box"), "S5e attach {action: 'drive'} picks the driver's box (my seat is its socket child)", [dv.content[0].text, ag.mySeat]);
   const up = await HANDLERS.detach(ag, {}, {} as any, "detach"), wk = await HANDLERS.move(ag, { to: [0, 0, 0] }, {} as any, "move");
-  ok(up.isError && wk.isError && ag.mySeat?.slot === "box", "S5e …it holds you (leaveBy script): neither detaching nor walking gets you off", [up.content[0].text, wk.content[0].text]);
+  ok(up.isError && wk.isError && ag.mySeat?.to === seatId("box"), "S5e …it holds you (leaveBy script): neither detaching nor walking gets you off", [up.content[0].text, wk.content[0].text]);
   const hop = await HANDLERS.attach(ag, { to: "carriage", socket: "rumble" }, {} as any, "attach");
-  ok(hop.isError && /from another seat/.test(hop.content[0].text) && ag.mySeat?.slot === "box", "S5e …and the rumble seat doesn't take you straight from another (no fromSeat)", hop.content[0].text);
+  ok(hop.isError && /from another seat/.test(hop.content[0].text) && ag.mySeat?.to === seatId("box"), "S5e …and the rumble seat doesn't take you straight from another (no fromSeat)", hop.content[0].text);
   ag.close(); }
 
 // (Bob's own socket was taken over by S5's agent, which joined as Bob: Vic and the watcher are the bystanders here)
