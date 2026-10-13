@@ -33,7 +33,7 @@ plugin({
   name: 'unknown-comp-stub',
   setup(b) {
     // the realizer's cone (realize/ imports ../x.js) and motion.js's (./x.js)
-    for (const f of ['^\\.\\./(core|assets|colliders|lightrig|lights|world)\\.js$',
+    for (const f of ['^\\.\\./(core|assets|colliders|lightrig|lights|world|materials)\\.js$',
       '^\\./(core|world|colliders|remotes)\\.js$']) {
       b.onResolve({ filter: new RegExp(f) }, () => ({ path: STUB }));
     }
