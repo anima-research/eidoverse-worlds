@@ -42,7 +42,7 @@ export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
       // the realizer (three.js, the GPU paths) is not under test: inspect.js asks it only for a model's box
       b.onResolve({ filter: /^\.\/realize\/models\.js$/ }, (a) => (a.importer.endsWith("/client/lib/inspect.js") ? { path: "realize-models", namespace: "inspect-harness" } : undefined));
       b.onLoad({ filter: /.*/, namespace: "inspect-harness" }, (a) => {
-        if (a.path === "realize-models") return { contents: "export const boxOf = () => null;", loader: "js" };
+        if (a.path === "realize-models") return { contents: "export const boxOf = () => null; export const previewMesh = () => {};", loader: "js" };
         const m = a.path.match(/(world|state|net|panels|ui|confirmcenter|xrask|core|emitters|matoverride)/)[1];
         // every name client/lib imports from these modules exists (no-ops where the edit path never calls them)
         const noop = (names) => names.map((n) => `export const ${n} = () => {};`).join(" ");
@@ -58,9 +58,9 @@ export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
             ${noop(["requestDebug", "requestHistory", "say", "sendAnim", "sendBodyDrag", "sendLease", "sendRelayCredRequest", "sendTyping", "sendVoiceConsent"])}`,
           panels: `export const SCRUB_SPEEDS = {}; ${noop(["renderDOM", "getScrubFeel", "hitRegion", "makeSchemaFrame", "renderCanvas", "resolveDelta", "setScrubFeel"])}`,
           ui: `const H = globalThis.__ih; export const flashHint = (t) => H.hints.push(t); export const toast = (t) => H.toasts.push(t); export const escapeHtml = (s) => String(s); export const isOverlayOpen = () => false;
-            ${noop(["collapseAll", "dockPins", "makeSection", "paintRangesIn", "panelFrame", "setAmbientHint"])}`,
+            export const claimStatus = (k, s) => H.toasts.push(s?.content); ${noop(["collapseAll", "dockPins", "makeSection", "paintRangesIn", "panelFrame", "releaseStatus", "setAmbientHint"])}`,
           confirmcenter: "const H = globalThis.__ih; export const chooseCenter = async (q) => { H.asked.push(q); return H.choose; }; export const confirmCenter = async () => false;",
-          core: `import * as THREE_ from '${path.join(ROOT, "client/node_modules/three/build/three.module.js")}'; export const THREE = THREE_; export const scene = new THREE_.Scene(); export const camera = new THREE_.PerspectiveCamera();
+          core: `import * as THREE_ from '${path.join(ROOT, "client/node_modules/three/build/three.module.js")}'; export const THREE = { ...THREE_, MeshBasicNodeMaterial: THREE_.MeshBasicMaterial }; export const scene = new THREE_.Scene(); export const camera = new THREE_.PerspectiveCamera();
             export const renderer = { info: { memory: { total: 0 } }, domElement: null, xr: {} }; export const canvas = null; export const CONFIG = {}; export const report = () => {}; export const sun = null; export const ground = null; export const TSL = {}; export const BASE_PIXEL_RATIO = 1; export const XR_BOOT = false;`,
           emitters: "export const effectLookup = () => null;",
           matoverride: "export const materialsOf = () => [];",
