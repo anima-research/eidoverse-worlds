@@ -336,5 +336,36 @@ console.log("\nMaterial, the draft hesperus/material (docs/COMPONENT-LADDER.md):
   check("HM2 editing it writes the whole home: the new height, a level half turn, the rest kept", v?.pos?.[1] === 2 && v?.pos?.[0] === 6 && Math.abs(v?.q?.[1] - 1) < 1e-6 && v?.scale?.[0] === 0.25, JSON.stringify(r));
 }
 
+// F2 (10-12): a refused value writes NOTHING. Since C8a a mistyped light colour came back as an error AND a `set light`
+// carrying the colour it already had (inspect.js sends whenever there are ops). Every descriptor field the table writes, on
+// a thing that has its component: a value it refuses is an error and no op. A refused key in an edit with valid ones drops
+// alone; the others still commit (an agent's multi-field edit keeps what was right).
+{
+  const { DESCRIPTORS, materializedOf } = await import("../shared/protocol/descriptors.js");
+  const BAD: Record<string, string> = { num: "zz", color: "zz", enum: "no-such-option" };
+  const tried: string[] = [], rowless: string[] = [], wrong: string[] = [];
+  for (const [card, d] of Object.entries<any>(DESCRIPTORS)) {
+    for (const fd of d.fields) {
+      const ui = fd.ui; if (fd.path == null || !ui || ui.own || !BAD[ui.t] || (ui.t === "enum" && !ui.closed)) continue;
+      const v = materializedOf(card); if (card === "Path") v.points = [[0, 0, 0], [0, 0, 4]];
+      const ent = { lib: "crate.glb", pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, comp: { [d.key]: v } };
+      const g = inspectSchema(ent, "x").groups.find((gr: any) => gr.group !== "pos" && gr.fields.some((x: any) => x.k === fd.k && x.t === ui.t));
+      if (!g) { rowless.push(`${card}.${fd.k}`); continue; }
+      const r = editOps(ent, "x", { [`${g.group}.${fd.k}`]: BAD[ui.t] });
+      tried.push(`${g.group}.${fd.k}`);
+      if (r.ops.length || !r.errors.length) wrong.push(`${card}.${fd.k}: ${JSON.stringify(r)}`);
+    }
+  }
+  check(`F2a every descriptor field refuses a bad value with an error and NO op (${tried.length} fields; no row on a bare seed: ${rowless.join(", ") || "none"})`,
+    tried.length >= 30 && !wrong.length, wrong.join("\n      "));
+  const both = editOps(lamp, "l", { "light.color": "zz", "light.intensity": 5 });
+  check("F2b a refused field drops alone: the valid field in the same edit still commits, the old colour untouched",
+    both.errors.length === 1 && sets(both, "light").length === 1 && val(both, "light").intensity === 5 && val(both, "light").color === 0xff8800, JSON.stringify(both));
+  const pos = editOps(chair, "c", { "pos.x": "zz" });
+  check("F2c the same for the transform: a bad number is an error and no `set transform` of the pose it already had", !pos.ops.length && pos.errors.length === 1, JSON.stringify(pos));
+  const pe = editOps({ lib: "brazier.glb", pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, comp: { particles: { effect: "fire" } } }, "b", { "particles.effect": "fireworkz" });
+  check("F2d a particles effect that is neither an Essential nor an address is refused here, with the door's words", !pe.ops.length && /isn't an Essentials effect/.test(pe.errors.join(" ")), JSON.stringify(pe));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
