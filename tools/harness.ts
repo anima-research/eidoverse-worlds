@@ -7,7 +7,10 @@ export const ROOT = resolve(import.meta.dir, "..");
 const BROWSER_CANDIDATES: Record<string, string[]> = {
   darwin: ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"],
   win32: ["C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe", "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"],
-  linux: ["/usr/bin/google-chrome", "/usr/bin/chromium"],
+  // chromium-browser is the Debian/Ubuntu spelling (and what WSL has); the other three benches already list it.
+  // Without it every harness that imports CHROME from here falls through to the literal "chrome" and dies
+  // "no browser at chrome" on a box that has a working one.
+  linux: ["/usr/bin/google-chrome", "/usr/bin/microsoft-edge", "/usr/bin/chromium-browser", "/usr/bin/chromium"],
 };
 export const CHROME = process.env.CHROME
   ?? (BROWSER_CANDIDATES[process.platform] ?? []).find((p) => existsSync(p)) ?? "chrome";

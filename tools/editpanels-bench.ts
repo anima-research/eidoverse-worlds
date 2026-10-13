@@ -20,7 +20,11 @@ import { scratchBench, mkCheck, sleep } from './harness.ts';
 // check's verb landed 13th was a timing lottery — the degree-channel flake, seen beside "slow down
 // — verb rate limit". Proven 09-23 by squeezing it (BENCH_VERB_RATE=4 fails deterministically).
 // The bench tests the editor, not the limiter; a person editing still meets the real limit.
-const { cdp, cws, evalJson, cleanup, die, BASE, SCRATCH } = await scratchBench('editpanels', { serverEnv: { VERB_RATE: process.env.BENCH_VERB_RATE ?? '1000' } });
+// The bench joins ?world=editbench as `editbot`, and joining never founds a world (RFC-005 §3.2.7 — a name with
+// no world behind it is refused; security review 10-06 H3), so found it first, owned by the name the client joins
+// with. Without this every edit refused "there's no world called editbench here".
+const { cdp, cws, evalJson, cleanup, die, BASE, SCRATCH } = await scratchBench('editpanels',
+  { serverEnv: { VERB_RATE: process.env.BENCH_VERB_RATE ?? '1000' }, worlds: ['editbench'], owner: 'editbot' });
 const { check, tally } = mkCheck();
 
 // Headless Chrome (no working swap chain) delivers rAF callbacks late — the
@@ -102,11 +106,21 @@ await evalJson(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Esca
 check('Esc closes the menu (computed, not the attribute)', await evalJson(`[...document.querySelectorAll('.edit-menu-pop')].every((p) => getComputedStyle(p).display === 'none')`));
 
 console.log('\na placed light lands in the tree and the inspector:');
-await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('light', { id: 'benchlamp', pos: [1, 1, 1], color: 0xffd9a0, intensity: 16, range: 10 })), true`);
+// The `light` verb is gone (one-place: it isn't in VERBS any more) — a light is an ordinary thing carrying a
+// `light` component, made the way the client makes one. Its defaults live in componentspec, so send only what
+// this bench asserts on (brightness 16, range 10) and let the rest default.
+// Two things moved since this bench last ran. (1) net.sendVerb is gone: the client composes ops and sends them
+// through editwrites (Edits.sendOps + OP.create), which is also what a person's edit takes. (2) The `light` verb
+// is gone (one-place: not in VERBS) — a light is an ordinary thing carrying a `light` component, and OP.create
+// folds `transform` into `components` for us (requests.js:27), which is the only shape `create` accepts
+// (verbspec.js:46 has no top-level transform arg; and `place` wants a model or mesh for a size, which a bare
+// light hasn't). Its other light fields default in componentspec; send only what this bench asserts on.
+await evalJson(`Promise.all([import('/lib/editwrites.js'), import('/shared/protocol/requests.js')]).then(([E, OP]) =>
+  E.sendOps([OP.create('benchlamp', { transform: { pos: [1, 1, 1] }, components: { light: { color: 0xffd9a0, intensity: 16, range: 10 } } })], { what: 'the bench lamp', expect: false })).then(() => true)`);
 {
   let ok = false;
   for (let i = 0; i < 30 && !ok; i++) { ok = await evalJson(`import('/lib/world.js').then((m) => !!m.entities.get('benchlamp'))`); if (!ok) await sleep(200); }
-  check('the light folded locally', ok);
+  check('the light folded locally', ok, 'refused=' + JSON.stringify(await evalJson(`window.__refused`)) + ' errs=' + JSON.stringify(await evalJson(`(window.__errs ?? []).slice(-3)`)));
 }
 check('tree row appears (after the coalesced repaint)', await waitFor(`[...document.querySelectorAll('.frame.edit .sp-tree-row .sp-item-label')].some((l) => /benchlamp/.test(l.textContent))`));
 await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('benchlamp')), true`);
