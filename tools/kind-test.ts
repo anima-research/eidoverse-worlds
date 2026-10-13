@@ -58,6 +58,7 @@ console.log("1. one answer per fixture, headless");
   check("kindOf(view) mesh = mesh", kindOf(MESH_VIEW) === "mesh", kindOf(MESH_VIEW));
   check("kindHint mesh says its shape", kindHint(MESH_VIEW) === "box", kindHint(MESH_VIEW));
   check("a light that is not an object is not a light", kindOf({ c: { light: true } }) === "empty" && kindOf({ comp: { light: 3 } }) === "empty");
+  check("a socket is decided first: kindOf({c}) and kindOf(view) say socket, whatever else it carries", kindOf({ c: { socket: { name: "seat" }, model: TABLE, light: LIGHT } }) === "socket" && kindOf({ lib: TABLE, comp: { socket: { name: "seat" } } }) === "socket" && kindOf({ c: { socket: "seat" } }) === "empty");
   check("nothing is an Empty", kindOf(null) === "empty" && kindOf({}) === "empty" && kindOf({ c: {} }) === "empty");
   check("viewOf of each fixture's record is the same kind as the record", Object.keys(WANT).every((id) => kindOf(viewOf(id, S[id].c)) === kindOf(S[id])));
 }

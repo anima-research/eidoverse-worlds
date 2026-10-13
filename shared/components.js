@@ -506,6 +506,10 @@ export const ONE_PLACE = {
   fix: (id, has, wants) => (wants === 'light' ? `create {id: '${id}-light', components: {light: {…}, parent: {to: '${id}'}, transform: {pos: [0, 1, 0]}}}`
     : wants === 'mesh' ? (has === 'light' ? 'create the mesh as its own thing and parent this light to it' : `create {id: '${id}-mesh', components: {mesh: {…}, parent: {to: '${id}'}}}, or delete its model first`)
     : has === 'light' ? 'create the model as its own thing and parent this light to it' : 'create the model as its own thing, or delete the mesh first'),
+  socket: {
+    reason: (id, comp) => `${id} is a socket (an attachment point); a ${comp} goes on its host, or on its own thing attached to it`,
+    fix: (id, comp) => `put the ${comp} on the thing the socket belongs to, or create a thing with parent {to: '${id}'} and give it the ${comp}`,
+  },
 };
 export const MESH_SHAPES = COMPONENTS.mesh.enums.shape;
 export function compRefusal(type, data, ent = null) {

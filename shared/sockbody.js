@@ -53,6 +53,8 @@ export const SIGNALS = ['speed', 'turn', 'phase', 'swing', 'throttle', 'steer', 
 export const BODY_KEYS = ['action', 'anchor', 'pose', 'poses', 'sync', 'approach', 'enter', 'leave', 'exit', 'reach', 'hold', 'look', 'input', 'leaveBy', 'fromSeat', 'who'];
 // accepts/radius (shared/grab.js): a free socket takes a released thing whose grabbable.fits shares a keyword, within radius
 export const SOCKET_KEYS = ['pos', 'q', 'part', 'body', 'accepts', 'radius'];
+// a socket entity's own component: its pose is the entity's transform, so pos and q aren't here
+export const SOCKET_ENTITY_KEYS = ['name', 'part', 'body', 'accepts', 'radius'];
 export const REACH_KEYS = ['at', 'q', 'part', 'hint', 'vr'];
 export const LOOK_KEYS = ['yaw', 'pitch', 'up'];
 export const INPUT_KEYS = ['move', 'look'];
@@ -216,6 +218,18 @@ export function checkSockets(v, at = 'sockets') {
     if (sk.body.input?.move === 'drive') drivers.push(k);
   }
   if (drivers.length > 1) return bad('shape', `${at}: only one socket may drive (${drivers.join(', ')} all have input.move 'drive')`, "one driver per thing (a vehicle has one wheel); passengers' input can still shape their own pose: input.move 'walk'");
+  return null;
+}
+
+/** One socket entity's `socket` component, checked as one slot of the old map is (closed keys, the body block, accepts):
+ *  null when good. The rules that need its siblings (a unique name, one driver) are the door's. */
+export function checkSocket(v, at = 'socket') {
+  if (!isObj(v)) return bad('shape', `${at} must be {name, part?, body?, accepts?, radius?}`);
+  let r = keys(at, v, SOCKET_ENTITY_KEYS, 'a socket'); if (r) return r;
+  if (!(typeof v.name === 'string' && NAME_RE.test(v.name))) return bad('shape', `${at}.name is letters, digits, - and _ (up to 32): the name use {args: {socket}} calls it by`);
+  if (v.part !== undefined && !(typeof v.part === 'string' && v.part)) return bad('shape', `${at}.part names a node of its host's model`);
+  if ((r = checkAccepts(v, at))) return r;
+  if (v.body !== undefined && (r = checkBody(v.body, `${at}.body`))) return r;
   return null;
 }
 

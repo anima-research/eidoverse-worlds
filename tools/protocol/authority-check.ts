@@ -992,5 +992,38 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(d.ok && !E("crate")?.parent && Math.abs(wy("crate")) < 1e-3 && !(d.notes ?? []).some((n) => n.stamped), "MS10e deleting the plinth's mesh frees the crate to the world and sets it on the ground; the reply doesn't say 'stamped' (r2 S2.3)", { y: wy("crate"), parent: E("crate")?.parent ?? null, notes: d.notes });
 }
 
+// SKE: a socket is a child entity {transform, parent: {to: host}, socket: {name, …}} (PLAN-sockets-entities 2026-10-12 §1)
+{ T += 100; process.env.PROTOCOL_NOW = String(T); const R = (actor, verb, args) => request(openWorld(root, "socketents"), actor, verb, args);
+  const E = (id) => openWorld(root, "socketents").state().entities[id]?.c;
+  R("ann", "create-world", { title: "socketents" });
+  R("ann", "create", { id: "bench", model: "crate" });
+  const sock = (id, extra = {}, socket = {}) => R("ann", "create", { id, components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "seat", body: { action: "sit" }, ...socket }, ...extra } });
+  const s1 = sock("bench-seat");
+  ok(s1.ok && E("bench-seat")?.socket?.name === "seat" && E("bench-seat")?.parent?.to === "bench", "SKE1 a socket child of a thing is taken", s1.refused ?? E("bench-seat"));
+  ok(code(sock("bench-lamp", { light: { kind: "point" } }, { name: "lamp" })) === "one-place" && code(sock("bench-crate", { model: "crate" }, { name: "c2" })) === "one-place" && code(sock("bench-phys", { physics: { kind: "dynamic" } }, { name: "p2" })) === "one-place", "SKE2 a socket carries no model, light or physics: one-place");
+  ok(sock("bench-swing", { motion: { type: "bob", amp: 0.1, period: 2 } }, { name: "swing" }).ok, "SKE2 …but a motion of its own is allowed (R 10-12 20:44)");
+  const dup = sock("bench-seat2");
+  ok(code(dup) === "name-taken" && dup.refused?.taken === "bench-seat", "SKE3 a second socket called 'seat' on the same host is refused: name-taken, naming the first", dup);
+  ok(R("ann", "create", { id: "stool", model: "crate" }).ok && R("ann", "create", { id: "stool-seat", components: { parent: { to: "stool" }, socket: { name: "seat" } } }).ok, "SKE3 …the same name on another host is fine");
+  const root0 = R("ann", "create", { id: "loose", components: { socket: { name: "seat" } } });
+  ok(code(root0) === "shape" && /needs a host/.test(root0.refused?.reason), "SKE4 a socket with no host (a root socket) is refused", root0);
+  ok(code(R("ann", "delete", { id: "bench-seat", component: "parent" })) === "shape" && E("bench-seat")?.parent?.to === "bench", "SKE4 …and a socket can't be unparented to the root");
+  ok(code(R("ann", "create", { id: "nested", components: { parent: { to: "bench-seat" }, socket: { name: "inner" } } })) === "shape", "SKE4 …nor hang under another socket");
+  ok(code(R("ann", "set", { id: "bench-seat", component: "transform", value: { pos: [0, 0.5, 0], q: [0, 0, 0, 1], scale: [2, 2, 2] } })) === "shape", "SKE5 a socket's scale is [1, 1, 1]: scale 2 is refused");
+  const drive = (id, name) => R("ann", "create", { id, components: { parent: { to: "stool" }, socket: { name, body: { input: { move: "drive" } } } } });
+  ok(drive("stool-d1", "d1").ok && code(drive("stool-d2", "d2")) === "shape", "SKE6 one driver among a host's sockets: a second drive socket is refused");
+  ok(code(R("ann", "create", { id: "badsock", components: { parent: { to: "stool" }, socket: { name: "x", pos: [0, 1, 0] } } })) === "schema", "SKE6 a socket's pose is its transform: socket.pos is an unknown key (did you mean)");
+  ok(code(R("ann", "create", { id: "badbody", components: { parent: { to: "stool" }, socket: { name: "z", body: { anchr: "hips" } } } })) === "schema" && code(R("ann", "create", { id: "badname", components: { parent: { to: "stool" }, socket: { name: "two words" } } })) === "shape", "SKE6 the body block is checked whole (an unknown body key; a name that isn't one)");
+  R("ann", "create", { id: "bench-arm", components: { parent: { to: "bench" } } }); R("ann", "create", { id: "bench-arm-rest", components: { parent: { to: "bench-arm" }, socket: { name: "rest" } } });
+  ok(code(R("ann", "set", { id: "bench-arm", component: "socket", value: { name: "arm" } })) === "shape" && !E("bench-arm")?.socket, "SKE4 …nor may a thing holding a socket become a socket itself");
+  ok(code(R("ann", "create", { id: "badwho", components: { parent: { to: "stool" }, socket: { name: "y", body: { who: "king" } } } })) === "shape", "SKE6 body.who is a role here");
+  // R 10-12 20:44 ruling 4: sockets don't count toward capacity.things
+  R("ann", "set", { id: "@world", component: "capacity", value: { things: 4 } });
+  const third = R("ann", "create", { id: "third", model: "crate" });
+  const sockAtCap = R("ann", "create", { id: "third-seat", components: { parent: { to: "third" }, socket: { name: "seat" } } });
+  const full = R("ann", "create", { id: "fourth", model: "crate" });
+  ok(third.ok && sockAtCap.ok && code(full) === "full" && full.refused?.things === 4, "SKE7 capacity counts things, never their sockets (ruling 4): with 3 things and 5 sockets a limit of 4 takes a 4th thing and a socket on it, and refuses a 5th thing", [third.refused, sockAtCap.refused, full.refused]);
+}
+
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
