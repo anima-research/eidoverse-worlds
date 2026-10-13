@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import { readLog, fold, digest, worldIdOf, parseLine } from "../../shared/protocol/fold.js";
 import { ENGINE, LAB, scratch, controlNote } from "./common.ts";
+import * as AU from "../../shared/protocol/authority.js";
 
 const root = scratch("hostile");
 const basePath = root + "baseline-fold.mjs";
@@ -157,6 +158,14 @@ const probes = [
   { id: "S23", src: "PROTOCOL §2.3", what: "a state op on `body:<identity>` (bodies are presence)",
     base: () => run(() => keys(base.fold([bGen, bst(1, "create", { id: "body:vic", components: {} })]).entities)), baseBad: (r) => r.ok && r.v.includes("body:vic"),
     now: () => now(logOf(st("create", { id: "body:vic" }))), nowGood: (s) => codes(s).includes("2:malformed:entity-id") },
+  { id: "S24", src: "PLAN-sockets-entities §3", what: "a hand-written line in the old spelling (a host's sockets map, a thing on parent {to, socket}) folds as written, and the load lifts it",
+    base: () => ({ ok: true, v: "(the lift is the engine's)" }), held: true,
+    now: () => { const text = logOf(st("batch", { ops: [{ verb: "create", id: "chair" }, { verb: "set", id: "chair", comp: "sockets", value: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } },
+      { verb: "create", id: "cat" }, { verb: "set", id: "cat", comp: "parent", value: { to: "chair", socket: "seat" } }, { verb: "set", id: "cat", comp: "transform", value: { pos: [0, 0.5, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } }] }));
+      const s0 = now(text); const lines = []; const w = AU.worldOf({ name: "h", entries: readLog(text).map(AU.posAt), getBlob: () => { throw new Error(); }, putBlob: () => "", writeLine: (l) => lines.push(l), now: () => 10 });
+      AU.liftWorld(w); const s1 = now(text + lines.map((l) => l + "\n").join("")); return { s0, s1, s: s1 }; },
+    nowGood: (r) => r.s0.status === "ok" && !!r.s0.entities.chair.c.sockets && r.s1.status === "ok" && !r.s1.entities.chair.c.sockets && Object.values(r.s1.entities).some((e) => e.c.socket?.name === "seat" && e.c.parent?.to === "chair")
+      && r.s1.entities[r.s1.entities.cat.c.parent?.to]?.c.socket?.name === "seat" && !("socket" in r.s1.entities.cat.c.parent) },
 ];
 
 let bad = 0;

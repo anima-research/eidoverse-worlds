@@ -35,7 +35,7 @@ import { reachTo, massOf, shoveCap, feetOn, sweptCovers } from "../shove.js";
 import { r3, noNeg0, unNegZero } from "./round.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 import { CTX } from "./authority/ctx.js";
-import { isSocketC, socketRules, socketsOf, allSockets, socketPoint, socketRole, liftOps, legacyHosts, liftHostOps } from "./authority/sockets.js";
+import { isSocketC, socketRules, socketsOf, allSockets, socketPoint, socketRole, liftOps, legacyHosts, liftHostOps, modelSocketNames } from "./authority/sockets.js";
 import { Refusal, refuse, said } from "./authority/refuse.js";
 import { LAB_CATALOGUE, modelOf, geomOf, boxOfM, geomE, withCatalogue, meshShape } from "./authority/catalogue.js";
 export { LAB_CATALOGUE, withCatalogue, MESH_SIZE, meshSize, meshGeom, meshShape } from "./authority/catalogue.js";
@@ -608,6 +608,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   if (comp === "bounds") { if (!obj || !nums(v.min, 3) || !nums(v.max, 3) || Object.keys(v).some((k) => !["min", "max"].includes(k)) || v.min.some((x, i) => x >= v.max[i]))
     refuse("shape", `${at} must be {min: [x,y,z], max: [x,y,z]} with min < max on every axis (a box with room inside)`, "e.g. {min: [-20, 0, -20], max: [20, 12, 20]}"); }
   if (comp === "parent") { if (!obj || typeof v.to !== "string") refuse("shape", `${at} must be {to: <id>}`, "");
+    if (v.socket !== undefined) refuse("legacy", `${at}.socket is the old spelling: a socket is a child entity now`, `parent {to: <the socket's id>} (inspect {id: '${v.to}'} lists its sockets)`);
     if (!s.entities[v.to]) refuse("not-found", `no thing called '${v.to}'`, "", { didYouMean: guess(v.to, Object.keys(s.entities)) });
     if (v.to === id || ancestors(s, v.to).includes(id) || ancestors(s, id).length >= 32) refuse("loop", `${id} can't be inside ${v.to}: that makes a loop`, ""); }
   if (comp === "model" && !modelOf(v)) refuse("shape", `no model called '${v}'`, "find {kind: 'model', query} lists models", { didYouMean: guess(String(v), CTX.cat.list(String(v).split("/").pop().replace(/\.[a-z0-9]+$/i, "").slice(0, 12)).map(([k]) => k).slice(0, 200)) });
@@ -657,6 +658,8 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
     if (!Array.isArray(v.mm) || v.mm.length !== g.tile ** 2 || !v.mm.every(Number.isInteger)) refuse("shape", `${at}.mm must be ${g.tile ** 2} integers (millimetres)`, "");
     const lo = -(g.limits?.lower ?? Infinity), hi = g.limits?.raise ?? Infinity;
     if (v.mm.some((n) => n < lo || n > hi)) refuse("bounds", `${at} goes outside the grid's limits (−${g.limits.lower} … +${g.limits.raise} mm)`, "terrain-grid.limits (SL's raise/lower)"); }
+  // well-shaped and still here: the translator didn't see it (the door stores no old spelling)
+  if (comp === "sockets") refuse("legacy", `${at} is the old spelling: each socket is a child entity now`, "create {components: {parent: {to: <host>}, transform: {pos}, socket: {name, …}}}");
 }
 // batch 2 (10-07): pictures, sounds, stories, signs and look-at, beyond their catalogue shape
 const LOOK_WORDS = ["@viewer", "@nearest"];
@@ -891,9 +894,9 @@ function resettleRiders(w, actor, ops, before, after0, act, notes) { let after =
   const geomKey = (st, id) => { const e = st.entities[id]; const m = e ? geomE(e) : null; return JSON.stringify([m ? boxOfM(m) : null, e?.c.transform?.scale ?? [1, 1, 1]]); };
   const hosts = new Set(ops.filter((o) => (o.verb === "set" || o.verb === "delete") && before.entities[o.id] && after.entities[o.id] && (o.comp === "mesh" || o.comp === "model" || o.comp === "transform") && geomKey(before, o.id) !== geomKey(after, o.id)).map((o) => o.id));
   if (!hosts.size) return;
-  // a child on a SOCKET rides the socket, not the top: it is never a rider (r2 S2.2: a cup on its perch was torn off and dropped)
+  // a child on a SOCKET is the socket's child, which has no top: never a rider (r2 S2.2: a cup on its perch was torn off and dropped)
   const riders = Object.keys(after.entities).filter((k) => { const c = after.entities[k].c;
-    return hosts.has(c.parent?.to) && !c.parent.socket && c.physics?.kind === "dynamic" && !lockedC(c) && !w.presence.holds[k] && !w.presence.holds[c.parent.to] && !after.entities[k].c.disabled && aabb(after, k); });
+    return hosts.has(c.parent?.to) && c.physics?.kind === "dynamic" && !lockedC(c) && !w.presence.holds[k] && !w.presence.holds[c.parent.to] && !after.entities[k].c.disabled && aabb(after, k); });
   if (!riders.length) return;
   const spec = after.entities["@world"]?.c["physics-engine"];
   if (spec && carried(spec)) {
@@ -1421,7 +1424,7 @@ function buildUse(ctx, a) {
     // attaching is presence (your frames say where you're attached; nothing is recorded), so the authority only answers: where,
     // and what the body does there (the socket's body block read with its defaults: shared/sockbody.js bodyOf)
     const { clip, ...body } = pick.body;
-    return { presence: true, attach: { to: pick.id ?? pick.host, ...(pick.id ? { host: pick.host } : {}), socket: pick.slot, ...body }, note: `you ${action} on ${pick.host} (${pick.slot}): presence — your frames carry it; nothing recorded${body.leaveBy === "script" ? " (this seat lets you go only when a script does)" : ""}` };
+    return { presence: true, attach: { to: pick.id, host: pick.host, socket: pick.slot, ...body }, note: `you ${action} on ${pick.host} (${pick.slot}): presence — your frames carry it; nothing recorded${body.leaveBy === "script" ? " (this seat lets you go only when a script does)" : ""}` };
   }
   const h = handlerOf(e, action);
   if (h?.who && rankOf(ctx.st, ctx.actor) < whoRank(ctx.st, h.who)) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
@@ -2741,14 +2744,13 @@ const PHYSICS_VERBS = {
     // a socket that accepts it, within that socket's radius of where it's let go (Resonite Snapper, XRI Socket)
     const snap = snapTarget(st, a.id, g, a.pos ?? h.pose.pos);
     if (snap.to) { const x = snap.to;
-      // under a socket child it sits at the socket's own pose (identity); its size in the world is kept
-      const hs = worldT(st, x.id ?? x.host).scale; const scale = t.scale.map((v, i) => r3(v / hs[i]));
-      const ops = x.id ? [setOp(a.id, "parent", { to: x.id, order: "a0" }), setOp(a.id, "transform", { pos: [0, 0, 0], q: [0, 0, 0, 1], scale })]
-        : [setOp(a.id, "parent", { to: x.host, socket: x.name, order: "a0" }), setOp(a.id, "transform", { pos: x.sock.pos.slice(), q: qr3(socketQ(x.sock)), scale })];
+      // it sits at the socket's own pose (identity under it); its size in the world is kept
+      const hs = worldT(st, x.id).scale; const scale = t.scale.map((v, i) => r3(v / hs[i]));
+      const ops = [setOp(a.id, "parent", { to: x.id, order: "a0" }), setOp(a.id, "transform", { pos: [0, 0, 0], q: [0, 0, 0, 1], scale })];
       const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
       const act = w.append(actOf(w, actor, "put", a, { ...facts(), release: "snap", socket: x.where }));
-      const seq = changeEntry(w, plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "snap", to: x.host, socket: x.name, ...(x.id ? { in: x.id } : {}), seq: act });
-      return { ok: true, seq, act, settled: x.id ? { id: a.id, in: x.id } : { id: a.id, in: x.host, socket: x.name }, handled: h.handled, release: "snap", notes: [{ id: a.id, snapped: x.where, why: `it fits ${x.host}'s ${x.name} socket (accepts ${x.sock.accepts.join(", ")})` }, ...snap.notes] };
+      const seq = changeEntry(w, plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "snap", to: x.host, socket: x.name, in: x.id, seq: act });
+      return { ok: true, seq, act, settled: { id: a.id, in: x.id }, handled: h.handled, release: "snap", notes: [{ id: a.id, snapped: x.where, why: `it fits ${x.host}'s ${x.name} socket (accepts ${x.sock.accepts.join(", ")})` }, ...snap.notes] };
     }
     // stay: where the hand let go (a put with no pos), and never called floating (the builder said it hangs there)
     const stay = g?.release === "stay";
@@ -2957,13 +2959,13 @@ function snapTarget(st, id, g, p) {
   const out = { to: null, notes: [] }; if (!g?.fits?.length || !Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite)) return out;
   const fam = new Set([id, ...descendants(st, id)]);
   for (const x of allSockets(st)) {
-    const at = x.id ?? x.host;   // a switched-off host (or socket) has nothing to snap into (review 5d5eef5c #7)
+    const at = x.id;   // a switched-off host (or socket) has nothing to snap into (review 5d5eef5c #7)
     if (x.host === "@world" || fam.has(x.host) || fam.has(at) || offChain(st, at)) continue;
     const sk = x.sock;
-    if (!fitsSocket(g, sk) || !(x.id || Array.isArray(sk.pos))) continue;
+    if (!fitsSocket(g, sk)) continue;
     const d = dist(socketPoint(st, x), p); if (d > socketRadius(sk)) continue;
-    const where = x.id ? { to: x.id } : { to: x.host, socket: x.name };
-    if (Object.entries(st.entities).some(([k, y]) => k !== id && (x.id ? y.c.parent?.to === x.id : y.c.parent?.to === x.host && y.c.parent?.socket === x.name))) { out.notes.push({ passedOver: where, why: "something already sits in that socket" }); continue; }
+    const where = { to: x.id };
+    if (Object.entries(st.entities).some(([k, y]) => k !== id && y.c.parent?.to === x.id)) { out.notes.push({ passedOver: where, why: "something already sits in that socket" }); continue; }
     const lk = [at, ...ancestors(st, at)].find((k) => lockedC(st.entities[k]?.c)); if (lk) { out.notes.push({ passedOver: where, why: `${lk} is locked` }); continue; }
     if (!out.to || d < out.to.d) out.to = { ...x, d, where };
   }
@@ -2994,7 +2996,7 @@ function lastRelease(w, id) {
 }
 const sameHome = (st, id, home) => { const e = st.entities[id]; const t = e?.c.transform; if (!t || !home) return false;
   const near = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-3);
-  return near(t.pos, home.pos) && near(t.q, home.q) && (e.c.parent?.to ?? null) === (home.parent?.to ?? null) && (e.c.parent?.socket ?? null) === (home.parent?.socket ?? null); };
+  return near(t.pos, home.pos) && near(t.q, home.q) && (e.c.parent?.to ?? null) === (home.parent?.to ?? null); };
 // returnAfter (research §3): at the first request after a thing has been unheld that long since a hand or physics last
 // moved it, the authority sends it home: the same kind of lazy write as a rest. Once: the return is the last thing that
 // moved it, and a return isn't a release.
@@ -3020,7 +3022,7 @@ const homeScale = (st, id, home) => { if (home.scale !== undefined) return vec3s
   const world = chainScale(st, id), under = home.parent?.to ? chainScale(st, home.parent.to) : [1, 1, 1];
   return world.map((x, i) => +(x / (under[i] || 1)).toFixed(6)); };
 const homeHere = (st, id) => { const c = st.entities[id]?.c ?? {}; const t = { ...COMPONENTS.transform.defaults, ...(c.transform ?? {}) };
-  return { pos: t.pos.slice(), q: t.q.slice(), ...(c.parent?.to ? { parent: { to: c.parent.to, ...(c.parent.socket ? { socket: c.parent.socket } : {}) } } : {}) }; };
+  return { pos: t.pos.slice(), q: t.q.slice(), ...(c.parent?.to ? { parent: { to: c.parent.to } } : {}) }; };
 // a reset handler being written: each target with no home of its own gets one where it stands now (it can be moved with
 // "set home here", i.e. a write of home). Not under a capability: a script or reaction writes only what it names.
 function stampResetHomes(ctx, ops) {
@@ -3326,7 +3328,7 @@ const VERBS = {
     const q = (a.query ?? "").toLowerCase();
     if (a.kind === "blueprint") { const lib = w.state().entities["@world"]?.c ?? {};
       return { ok: true, blueprints: Object.entries(lib).filter(([k]) => k.startsWith(BLUEPRINTS)).map(([k, v]) => ({ hash: `sha256:${k.slice(BLUEPRINTS.length)}`, ...v, by: creatorOf(w, "@world", k)?.rights ?? null })).filter((b) => String(b.name ?? "").toLowerCase().includes(q)) }; }
-    return { ok: true, models: CTX.cat.list(q).slice(0, 50).map(([k, m]) => ({ model: k, ...(m.size ? { size: m.size } : { size: null, note: "not measured here" }), about: m.label, surfaces: (m.surfaces ?? []).map((s) => s.y), ...(m.sockets ? { seats: Object.keys(m.sockets) } : {}) })) };
+    return { ok: true, models: CTX.cat.list(q).slice(0, 50).map(([k, m]) => ({ model: k, ...(m.size ? { size: m.size } : { size: null, note: "not measured here" }), about: m.label, surfaces: (m.surfaces ?? []).map((s) => s.y), ...(modelSocketNames(m) ? { seats: modelSocketNames(m) } : {}) })) };
   },
   lint(w, actor, a) { const st = w.state(); return { ok: true, warnings: warnings(st, a.id ? [a.id] : Object.keys(st.entities), true) }; },
   history(w, actor, a) {

@@ -32,7 +32,7 @@ export function tf(c) {
 /** The fold record's parent as readers hold it: {to (names.dec'd), socket?}, or null when it stands on its own. */
 export function parentOf(c) {
   const p = c?.parent;
-  return p && typeof p.to === "string" ? { to: idOut(p.to), ...(typeof p.socket === "string" ? { socket: p.socket } : {}) } : null;
+  return p && typeof p.to === "string" ? { to: idOut(p.to) } : null;
 }
 /** Is this key of a fold record a component (not its model/transform/parent, not an imported:* field)? */
 export const isCompKey = (k) => k !== "model" && k !== "transform" && k !== "parent" && !k.startsWith(IMP);

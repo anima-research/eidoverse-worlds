@@ -47,29 +47,23 @@ export function socketRules(s, ids) {
 }
 
 /** A host's sockets, in its children's order: [{id, name, sock, host}]. A socket switched off on its own is a closed seat:
- *  not listed. Until every world is lifted, a host's stored `sockets` map (else its model's, when it has no socket
- *  children) is read here too, with id null: the one reader of the old spelling. */
+ *  not listed. */
 export function socketsOf(st, host) {
-  const e = st.entities[host]; if (!e) return [];
+  if (!st.entities[host]) return [];
   const out = [];
   for (const k of kidsMap(st).get(host) ?? []) { const c = st.entities[k]?.c; if (isSocketC(c) && c.disabled !== true) out.push({ id: k, name: c.socket.name, sock: c.socket, host }); }
-  const old = bag(e.c.sockets) ? e.c.sockets : out.length ? null : modelOf(e.c.model)?.sockets;
-  if (bag(old)) for (const [name, sk] of Object.entries(old)) if (bag(sk)) out.push({ id: null, name, sock: sk, host });
   return out;
 }
 /** Every socket in the world, as socketsOf lists them. */
 export function allSockets(st) {
   const out = [];
-  for (const [k, e] of Object.entries(st.entities)) {
-    if (isSocketC(e.c)) { if (e.c.disabled !== true && e.c.parent?.to) out.push({ id: k, name: e.c.socket.name, sock: e.c.socket, host: e.c.parent.to }); }
-    else if (bag(e.c.sockets) || modelOf(e.c.model)?.sockets) out.push(...socketsOf(st, k).filter((x) => !x.id)); }
+  for (const [k, e] of Object.entries(st.entities)) if (isSocketC(e.c) && e.c.disabled !== true && e.c.parent?.to) out.push({ id: k, name: e.c.socket.name, sock: e.c.socket, host: e.c.parent.to });
   return out;
 }
 /** Where a socket is in the world. */
-export function socketPoint(st, x) {
-  if (x.id) return worldT(st, x.id).pos;
-  const ht = worldT(st, x.host); const off = qrot(ht.q, x.sock.pos.map((v, i) => v * ht.scale[i])); return ht.pos.map((v, i) => v + off[i]);
-}
+export const socketPoint = (st, x) => worldT(st, x.id).pos;
+/** The names of the seats a catalogue entry declares (find's answer; they're made as children when the model is). */
+export const modelSocketNames = (m) => (bag(m?.sockets) ? Object.keys(m.sockets) : null);
 
 // ---------- the old spelling, lifted at the door (PLAN §3) ----------
 // Every write enters through admit, so admit is where `sockets` maps and parent {to, socket} edges become socket
