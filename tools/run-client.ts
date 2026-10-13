@@ -36,6 +36,7 @@ const SLOW: Record<string, string> = {
   "support-lifecycle-test.ts": "a real server, support by support",
   "lite-weight-test.mjs": "a headless browser bundle",
   "transport-check.mjs": "real sockets, reconnect timers",
+  "contact-mutation-test.ts": "nine mutations, each a full run of a reach/walk suite (~minutes)",
 };
 
 const isTest = (n: string) => /-(test|check)\.(ts|mjs|js)$/.test(n);
@@ -89,6 +90,10 @@ const run = (file: string): Promise<Res> => new Promise((done) => {
     if (timedOut) return done({ file, kind: "timeout", why: `still running at ${TIMEOUT_S} s`, ms, tail });
     if (code === 0) return done({ file, kind: "pass", ms });
     if (code === 2 && /no browser|no chrome|chromium|no gpu|webgpu/i.test(out)) return done({ file, kind: "env", why: tail.split("\n").pop(), ms, tail });
+    // the avatar corpus is gitignored (assets/opt/eidoverse/assets/vrms): a worktree has none until it is linked, and no
+    // host here has every rig a suite names (princess0)
+    const corpus = /ENOENT[^\n]*assets\/opt\/eidoverse|(\w+) fixture required/.exec(out);
+    if (corpus) return done({ file, kind: "env", why: corpus[1] ? `the avatar corpus lacks ${corpus[1]}` : "no avatar corpus: ln -s <an asset root>/assets assets/opt/eidoverse/assets", ms, tail });
     done({ file, kind: "red", why: `exit ${code}`, ms, tail });
   });
 });
