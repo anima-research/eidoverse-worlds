@@ -187,6 +187,20 @@ const oracles = [
       return { made, locked, probe, leaked: JSON.stringify(probe?.refused ?? {}).includes("Kittycat") }; },
     // the setup is asserted: a probe of a thing that was never made leaks nothing and proves nothing
     baseBad: (o) => o.leaked === true, nowGood: (o) => ok(o.made) && ok(o.locked) && refused(o.probe) && o.leaked === false },
+  { id: "H5c", what: "read oracle: the same, through set's `base` (a direct read, not even a guess)", run(s) { cast(s);
+      const made = s.call("olive", "create", { id: "diary", model: "crate", place: { at: [3, 3] }, components: { text: { text: "Janus's Kept Kittycat" } } });
+      // The base a stale refusal needs is free: inspect returns `versions` for every component, and history is
+      // READ_ONLY + GHOST_OK. It must be genuinely OLD (the check is lt.seq > base), so read a version, change the
+      // text, and ask with the version from before: zed never needs rights to learn the new value. The lock goes on
+      // LAST — a locked thing refuses even its owner's edit, so locking first would make the setup, not the door, fail.
+      const v = s.call("zed", "inspect", { id: "diary" });
+      const base = v?.versions?.text;
+      const changed = s.call("olive", "set", { id: "diary", component: "text", value: { text: "Janus's Kept Kittycat (v2)" } });
+      const locked = s.call("olive", "set", { id: "diary", component: "lock", value: true });
+      const probe = s.call("zed", "set", { id: "diary", component: "text", value: { text: "x" }, base, dry: true });
+      return { made, locked, changed, stale: !!base, probe, leaked: JSON.stringify(probe?.refused ?? {}).includes("Kittycat") }; },
+    // asserted: a probe with a CURRENT base never reaches the stale branch and proves nothing
+    baseBad: (o) => o.leaked === true, nowGood: (o) => ok(o.made) && ok(o.locked) && ok(o.changed) && o.stale && refused(o.probe) && o.leaked === false },
   { id: "H5b", what: "and the honest conflict signal still works (a guard)", guard: true, run(s) { cast(s);
       s.call("olive", "create", { id: "lamp", model: "crate", place: { at: [4, 4] } });
       s.call("bob", "set", { id: "lamp", component: "label", value: "bob was here" });
