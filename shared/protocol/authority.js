@@ -30,7 +30,7 @@ import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND,
 import { livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
 import { trustRefusal } from "../drafts.js";
 import { planLaunch } from "./launchplan.js";
-import { REACH, HAND_Y, MAX_HELD, KICK, BODY_REACH } from "./physconst.js";
+import { REACH, HAND_Y, MAX_HELD, KICK, SHOVE, BODY_REACH } from "./physconst.js";
 import { r3, noNeg0, unNegZero } from "./round.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 import { CTX } from "./authority/ctx.js";
@@ -2562,7 +2562,7 @@ const PHYSICS_VERBS = {
     const d = dist(me.at, to); const tokens = Math.min(TRACK.cap, (me.tokens ?? TRACK.cap) + TRACK.speed * Math.max(0, now - (me.ts ?? now)) / 1000);
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${TRACK.speed} m/s, ${TRACK.cap} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
     const block = pathBlocked(w, st, me.at, to);
-    if (block) refuse("solid", `${block} is in the way`, "walk around it (or through a door someone opens)", { at: me.at });
+    if (block) refuse("solid", `${block} is in the way`, "walk around it (or through a door someone opens)", { at: me.at, blocker: block });
     const prev = me.at; w.presence.bodies[actor] = { ...me, at: to, ts: now, tokens: tokens - d };
     const carrying = [];
     for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === actor) { h.pose.pos = h.pose.pos.map((n, i) => n + to[i] - prev[i]); carrying.push(id); }
@@ -2773,7 +2773,8 @@ const PHYSICS_VERBS = {
     const sf = w.sim(); const b = sf.sim?.bodies[a.id]; const flying = !!(sf.launched[a.id] && b && !b.resting);
     const t = worldT(st, a.id); const here = flying ? b.p : t.pos;
     const dx = here[0] - me.at[0], dz = here[2] - me.at[2], dh = Math.hypot(dx, dz), dy = here[1] - me.at[1];
-    if (dh > KICK.reach || dy < KICK.below || dy > KICK.above) refuse("out-of-reach", `${a.id} is ${r3(dh)} m from your feet${dy > KICK.above ? `, ${r3(dy)} m up` : ""}; a punt reaches ${KICK.reach} m`, `move {to: [${r3(here[0] - (dh > 1e-6 ? dx / dh : 0) * 0.5)}, ${me.at[1]}, ${r3(here[2] - (dh > 1e-6 ? dz / dh : 1) * 0.5)}]} first`);
+    if (a.shove !== undefined) shoveGate(st, me, a, flying);
+    else if (dh > KICK.reach || dy < KICK.below || dy > KICK.above) refuse("out-of-reach", `${a.id} is ${r3(dh)} m from your feet${dy > KICK.above ? `, ${r3(dy)} m up` : ""}; a punt reaches ${KICK.reach} m`, `move {to: [${r3(here[0] - (dh > 1e-6 ? dx / dh : 0) * 0.5)}, ${me.at[1]}, ${r3(here[2] - (dh > 1e-6 ? dz / dh : 1) * 0.5)}]} first`);
     let v;
     if (a.v !== undefined) { if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "punt's v is [x, y, z] in m/s", "e.g. v: [0, 2, 4]"); v = a.v.slice(); }
     else { const p = a.power ?? 4; if (!Number.isFinite(p) || p <= 0) refuse("shape", "power is a speed in m/s, above 0", "e.g. power: 4 (a hop), 10 (hard)");
@@ -2825,6 +2826,26 @@ function recentRests(w, now) {
   return out.reverse();
 }
 // the punt's reach, from the feet: a thing at your feet, or in the air beside you (a volley)
+// A shove (shared/shove.js: a walking body ran into it) is a punt with its own gate, in place of the kick's reach: a thing at
+// rest, from a body standing against its footprint (SHOVE.reach from the feet, measured to its box, not its origin: a wide
+// crate's middle is far from the side you walk into), neither under the feet nor over the head, pushed away from the feet
+// along the ground at a walk's speed. Everything else is the punt's: physics.who, locks, a hand on it, the engine's cap.
+function shoveGate(st, me, a, flying) {
+  if (a.shove !== true) refuse("shape", "shove is true or left out", "");
+  if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "a shove carries v: [x, y, z] in m/s (never power)", "e.g. punt {id, v: [1.5, 0.2, 0], shove: true}");
+  if (flying) refuse("in-flight", `${a.id} is already moving; a shove pushes what stands still`, "walk into it again once it comes to rest");
+  const [vx, vy, vz] = a.v, vh = Math.hypot(vx, vz), sp = Math.hypot(vx, vy, vz);
+  if (sp > SHOVE.maxV) refuse("too-fast", `a shove is a walking body's push: ${r3(sp)} m/s is more than ${SHOVE.maxV}`, `at most ${SHOVE.maxV} m/s; a kick (punt without shove) goes harder`);
+  if (vh < 1e-6 || vy < 0 || vy > SHOVE.lift * vh + 1e-9) refuse("shape", `a shove pushes along the ground: its v rises at most ${SHOVE.lift} × its speed along the ground, and never falls`, "e.g. v: [1.5, 0.2, 0]");
+  const f = me.at, b = aabb(st, a.id) ?? { min: worldT(st, a.id).pos, max: worldT(st, a.id).pos };
+  if (b.max[1] <= f[1] + SHOVE.underfoot) refuse("underfoot", `${a.id} is under your feet; a body walks over it, it doesn't shove it`, "step off it, or punt it (no shove)");
+  if (b.min[1] >= f[1] + SHOVE.above) refuse("out-of-reach", `${a.id} is over your head (${r3(b.min[1] - f[1])} m up); a shove is from a body against it`, "");
+  const cx = Math.min(b.max[0], Math.max(b.min[0], f[0])), cz = Math.min(b.max[2], Math.max(b.min[2], f[2]));
+  const d = Math.hypot(cx - f[0], cz - f[2]);
+  if (d > SHOVE.reach) refuse("out-of-reach", `${a.id} is ${r3(d)} m from your feet; a shove comes from a body against it (${SHOVE.reach} m)`, "walk up to it first");
+  const mx = (b.min[0] + b.max[0]) / 2 - f[0], mz = (b.min[2] + b.max[2]) / 2 - f[2];
+  if (mx * vx + mz * vz <= 0) refuse("wrong-way", `that would push ${a.id} toward you; a shove pushes it away from your feet`, "");
+}
 // The hold record (research §3, presence): which hand, and by which grip (snapped to it: VRChat ExactGrip, Unity Attach
 // Transform) or at which offset (held where it was grabbed: Unreal Free, Unity dynamic attach). A thing with grips is held
 // by one; a named grip must exist and suit the hand. Every client derives where it's drawn from the holder's hand bone and
