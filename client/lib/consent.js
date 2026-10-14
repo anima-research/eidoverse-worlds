@@ -17,11 +17,14 @@ export function posable() { return _posable; }
 export function setPosable(v) { _posable = v; localStorage.setItem('ew-posable', v ? '1' : '0'); changed(); }
 
 // Being SHOVED is a separate consent from being POSED. Posing is directorial —
-// someone else deciding what your body expresses — and stays opt-in. A shove
-// is the world's rough-and-tumble: it moves you without speaking for you, so
-// it defaults ON (the first one tells you how to refuse). Both are still only
-// requests: my client applies them to my body, or doesn't.
-let _pushable = localStorage.getItem('ew-pushable') !== '0';
+// someone else deciding what your body expresses. A shove is the world's
+// rough-and-tumble: it moves you without speaking for you. Both are OPT-IN
+// (R, 10-12: no one is shove-able by default): a stranger starts at the
+// server's Normal — shove/move/pose nobody — and only its owner opens it.
+// Friends are untouched by this switch (it sends the strangers tier only), so
+// Normal's friends row (shove everyone, move ask) still applies. Both are
+// still only requests: my client applies them to my body, or doesn't.
+let _pushable = localStorage.getItem('ew-pushable') === '1';
 export function pushable() { return _pushable; }
 export function setPushable(v) { _pushable = v; localStorage.setItem('ew-pushable', v ? '1' : '0'); changed(); }
 
