@@ -75,7 +75,7 @@ const { HANDLERS, TOOLS, toolList } = await import("../../mcpl/tools.ts");
   ok(/light/.test(desc.create) && /\bat\b/.test(desc.create), "AT6 create documents a light and at");
   const { resolveTool, handleTool } = await import("../../mcpl/tools.ts");
   ok(resolveTool("set_avatar")?.name === "set_avatar" && resolveTool("wear") === null && resolveTool("walk_to")?.name === "move", "AT6 set_avatar keeps its name (R: unambiguous; wear could mean a hat), the old renames still alias");
-  ok(/limp: true/.test(desc.pose) && !/shove \{target/.test(desc.pose) && /shove \{target/.test(desc.act), "AT6 pose documents limp (ragdoll: a body going limp); the push's form (shove {target…}) is act's alone");
+  ok(/ragdoll: true/.test(desc.pose) && !/limp: true/.test(desc.pose) && !/shove \{target/.test(desc.pose) && /shove \{target/.test(desc.act), "AT6 pose documents ragdoll (one vocabulary with the browser: a body going limp); the push's form (shove {target…}) is act's alone");
   ok(resolveTool("take_off") === null && resolveTool("kick") === null, "AT6 a folded tool does not resolve to a handler (it folded, it was not renamed)");
   const gone = await handleTool({ agent: null } as any, "take_off", {});
   ok(gone.isError && /move \{mode: "fly"/.test(gone.content[0].text), "AT6 calling a folded name teaches where it went", gone.content[0].text);
@@ -207,13 +207,13 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   const posed = await call("pose", { bones: { head: [0, 0.2, 0, 0.98] }, hold: true });
   const cleared = await call("pose", { clear: true });
   ok(!posed.isError && !cleared.isError && /released/.test(T(cleared)) && ag.heldPose == null, "AT6e pose {clear: true} releases a held pose (clear_pose folded)", [T(posed).slice(0, 80), T(cleared), ag.heldPose]);
-  // ragdoll = a body going limp: pose {limp: true} (R 10-14: shoving is moving someone else; going limp is a body state)
-  const limp = await call("pose", { limp: true });
-  ok(!limp.isError && /limp|down/.test(T(limp)) && ag.clip === "ragdoll", "AT6p pose {limp: true} drops your own body limp (clip ragdoll)", [T(limp), ag.clip]);
+  // ragdoll = a body going limp: pose {ragdoll: true} (R 10-14: one vocabulary with the browser;: shoving is moving someone else; going limp is a body state)
+  const limp = await call("pose", { ragdoll: true });
+  ok(!limp.isError && /limp|down/.test(T(limp)) && ag.clip === "ragdoll", "AT6p pose {ragdoll: true} drops your own body limp (clip ragdoll)", [T(limp), ag.clip]);
   const up = await call("pose", { posture: "stand" });
   ok(!up.isError && ag.clip !== "ragdoll", "AT6p …and standing picks it back up", [T(up), ag.clip]);
-  const k2 = vic.msgs.length; const theirs = await call("pose", { limp: true, target: "Vic" }); await sleep(300);
-  ok(!theirs.isError && vic.msgs.slice(k2).some((m) => m.type === "puppet" && m.ragdoll === true), "AT6q pose {limp: true, target} asks THEIR body to go limp (an undirected ragdoll, not a shove)", [T(theirs), vic.msgs.slice(k2).map((m) => m.type)]);
+  const k2 = vic.msgs.length; const theirs = await call("pose", { ragdoll: true, target: "Vic" }); await sleep(300);
+  ok(!theirs.isError && vic.msgs.slice(k2).some((m) => m.type === "puppet" && m.ragdoll === true), "AT6q pose {ragdoll: true, target} asks THEIR body to go limp (an undirected ragdoll, not a shove)", [T(theirs), vic.msgs.slice(k2).map((m) => m.type)]);
   const wings = await call("pose", { wings: "fold" });
   ok(!wings.isError && /wings/.test(T(wings)), "AT6f pose {wings: \"fold\"} reaches the wing posture (this body: none to fold, said)", T(wings));
   const letgo = await call("reach", { release: true });

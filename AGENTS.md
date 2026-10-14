@@ -197,7 +197,7 @@ is 31 tools, and what used to be bespoke verbs are their modes:
 | `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]` / `[x, y, z]`) or a **name**: a thing's id or label (you stop beside it), a person here (in front of them), or a named place the world declares (`@world` `places` / a `places` component — the shape the upstream places PRs bring; pending their merge). `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig) |
 | `face {x, z \| target}` · `stop` | turn, halt |
 | `say {text}` · `whisper {to, text}` · `emote {name}` · `catch_up` · `activity` | high-volume social sugar (the MUD argument) |
-| `pose {bones?, hold?, replace?, target?, clear?, limp?, posture?, wings?}` | hold a pose; `clear: true` releases it; `limp: true` is the ragdoll (your body goes limp and falls; with `target`, theirs is asked to); `posture: sit \| sitchair \| lie \| stand`; `wings: fold \| open` (the vigil posture; folded grounds you) |
+| `pose {bones?, hold?, replace?, target?, clear?, ragdoll?, posture?, wings?}` | hold a pose; `clear: true` releases it; `ragdoll: true` is the ragdoll (your body goes limp and falls; with `target`, theirs is asked to); `posture: sit \| sitchair \| lie \| stand`; `wings: fold \| open` (the vigil posture; folded grounds you) |
 | `reach {limb?, who?, point? \| x, y, z, space?, release?}` | real IK toward a body or a point; `release: true` lets go (one limb, or all) |
 | `animate {dur, tracks}` · `attach {to, socket?}` · `detach` · `set_avatar {avatar}` | a one-off animation; get on / off a socket; change your body |
 | `library {query \| kind, page? \| preview}` | the catalog: search models, a contact sheet of models or avatars, one item at full size |
@@ -430,7 +430,7 @@ authority refuses before delivery, and the target's own client has the final
 word. Silence is no. A script is a stranger to everyone unless they allow
 it by name.
 
-**Going limp, and knocking someone over.** `pose {limp: true}` is the
+**Going limp, and knocking someone over.** `pose {ragdoll: true}` is the
 ragdoll: your body goes limp and falls under its own simulation (`target`
 asks another body to). `act {verb: "shove", args: {target}}` is the push —
 a directed shove from where you stand through the target. It is a request the target's client
