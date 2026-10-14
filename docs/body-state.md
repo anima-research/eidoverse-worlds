@@ -123,11 +123,13 @@ Examples:
   `overrides.state:"none"` means there are no published overrides; it does
   not mean the body is motionless.
 - `unmappedBones` names published bones this rig's humanoid skeleton lacks,
-  and `unreadableBones` names published bones whose value the pose tool
-  itself would refuse: nothing usable in it, a rotation with no length, or
-  a scale at or below 0 (see `poseChannels` and `normalizePoseValue` in
-  `shared/humanoid.js`). Either costs only that bone: the rest of the pose
-  is still evaluated. Every reply carries `unreadableBones`, and the
+  and `unreadableBones` names published bones the reader can't lay as the
+  renderer draws them: nothing usable in the value (see `poseChannels` in
+  `shared/humanoid.js`, which both read a bone with), or a scale at or
+  below 0, which collapses or mirrors the bone and which the reader leaves
+  out while laying the rest of that bone's value. Either costs only that
+  bone: the rest of the pose is still evaluated. Every reply carries
+  `unreadableBones` (null when the pose can't be read at all), and the
   summary names them.
 - Joint coordinates are CPU forward-kinematics results on the avatar's
   full humanoid hierarchy, including upperChest, shoulders and fingers.
@@ -139,7 +141,8 @@ Examples:
   adds to its offset from its parent, and a scale acts in the bone's own
   rest axes on everything hanging from it, as the renderer lays them after
   its reach solve: a scaled arm's hand is drawn where the scale puts it,
-  not where the reach aimed it. Clip
+  not where the reach aimed it. A limp (ragdoll) body draws neither, nor a
+  head pitch. Clip
   crossfades, one-shot emotes, gaze, wing/springbone motion and rendering
   interpolation are not reproduced, so this is not final-frame pixel parity.
 - Contact positions/normals are labeled `anatomical_estimate`. The anatomical
