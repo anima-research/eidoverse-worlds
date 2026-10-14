@@ -8,6 +8,7 @@
 // read and wrote files here; that part is server/disk.js now, so this module has no node: imports and no
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf, socketQ, ONE_PLACE } from "../components.js";
+import { TRACK, bodyBox, sweep, tokensAfter } from "../mover.js";
 import { checkSockets } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
@@ -3179,8 +3180,8 @@ function holdOf(w, actor, id) {
 // its sender, visibly). Arriving, or `teleport: true`, is a teleport: an ACT on the record (it resets the track), refused
 // while holding anything, refused inside a solid, and (for visitors) refused away from @world.spawn when the world
 // declares one. Every settlement (grab, put, throw) measures reach from the track and records the presence it used.
-const TRACK = { speed: 6, cap: 4, step: 0.8, radius: 0.2, height: 1.7, spawnR: 2 };
-function bodyBox(p) { return { min: [p[0] - TRACK.radius, p[1] + TRACK.step, p[2] - TRACK.radius], max: [p[0] + TRACK.radius, p[1] + TRACK.height, p[2] + TRACK.radius] }; }
+// The numbers and the body's box are the MOVER's (shared/mover.js): the one walker the agent and the client step with,
+// so a step the mover takes is one this track accepts, and this track's refusal is the mover's own answer.
 // both ask the spatial index: only what the body's box (or the whole step's swept box) meets is tested (review 10-06 S0-2)
 function solidAt(w, st, p, except = new Set(), cands = null) {
   const box = bodyBox(p); const held = w.presence.holds; const ix = cands && spatial(st);
@@ -3197,8 +3198,7 @@ function pathBlocked(w, st, from, to) {
   const already = new Set(); const b0 = bodyBox(from); // a body already inside something may walk out of it
   for (const id of near(st, b0.min, b0.max)) if (hitsIx(st, b0, id, 0.01)) already.add(id);
   const b1 = bodyBox(to); const swept = near(st, b0.min.map((v, i) => Math.min(v, b1.min[i])), b0.max.map((v, i) => Math.max(v, b1.max[i])));
-  const n = Math.max(1, Math.ceil(dist(from, to) / 0.05));
-  for (let k = 1; k <= n; k++) { const p = from.map((v, i) => v + (to[i] - v) * k / n); const hit = solidAt(w, st, p, already, swept); if (hit) return hit; }
+  for (const p of sweep(from, to)) { const hit = solidAt(w, st, p, already, swept); if (hit) return hit; }
   return null;
 }
 // review 10-07 M3: hand acts (grab, put, drop, throw, punt) record the request about the THING (and who handled it), never
@@ -3225,7 +3225,7 @@ const PHYSICS_VERBS = {
       w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(a.client ? { client: String(a.client) } : {}) }; w.savePresence();
       return { ok: true, at: to, ...(act !== undefined ? { recorded: true, act } : {}) };
     }
-    const d = dist(me.at, to); const tokens = Math.min(TRACK.cap, (me.tokens ?? TRACK.cap) + TRACK.speed * Math.max(0, now - (me.ts ?? now)) / 1000);
+    const d = dist(me.at, to); const tokens = tokensAfter(me.tokens, now - (me.ts ?? now));
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${TRACK.speed} m/s, ${TRACK.cap} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
     const block = pathBlocked(w, st, me.at, to);
     if (block) refuse("solid", `${block} is in the way`, "walk around it (or through a door someone opens)", { at: me.at });

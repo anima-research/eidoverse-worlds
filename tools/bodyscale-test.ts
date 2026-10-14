@@ -108,13 +108,13 @@ console.log('the maths:');
   check('a garbage size composes as 1 (never a zero-scale rig)', xrScales(NaN, 0.9)?.rig === 1, J(xrScales(NaN, 0.9)));
   check('desktop eye: 1.45 m × size', near(fn(BS, 'deskEyeY')(1.5), 1.45 * 1.5) && near(fn(BS, 'deskEyeY')(undefined), 1.45));
   check('stride: speed × size', near(fn(BS, 'scaledSpeed')(1.55, 0.7), 1.55 * 0.7));
-  check('collider: radius and height × size', J(fn(BS, 'colliderFor')(0.5)) === J({ r: 0.16, tall: 0.95 }), J(fn(BS, 'colliderFor')(0.5)));
+  check('collider: radius and height × size (the mover\'s body, shared/mover.js: 0.2 × 1.7)', J(fn(BS, 'colliderFor')(0.5)) === J({ r: 0.1, tall: 0.85 }), J(fn(BS, 'colliderFor')(0.5)));
   check('clip cadence: a 2× body walking 2× as fast plays the walk at its natural rate', near(fn(BS, 'clipRate')(3.1, 1.55, 2), 1) && near(fn(BS, 'clipRate')(1.55, 1.55, 1), 1)
     && near(fn(BS, 'clipRate')(1.55, 1.55, 2), 0.6), `${fn(BS, 'clipRate')(3.1, 1.55, 2)}`);
   // the mantle (review 09-30 N1): a ledge is climbable relative to the body — a 50% body (0.95 m) no longer mantles 1.7 m
   const canMantle = fn(BS, 'canMantle');
-  check('mantle: a 100% body climbs 0.3–1.7 m ledges', canMantle(1.0, 1) === true && canMantle(1.7, 1) === true && canMantle(1.8, 1) === false && canMantle(0.3, 1) === false);
-  check('mantle: a 50% body climbs 0.15–0.85 m, a 200% body 0.6–3.4 m', canMantle(1.2, 0.5) === false && canMantle(0.8, 0.5) === true
+  check('mantle: a 100% body climbs ledges over the mover\'s step (0.8 m) up to 1.7 m', canMantle(1.0, 1) === true && canMantle(1.7, 1) === true && canMantle(1.8, 1) === false && canMantle(0.3, 1) === false);
+  check('mantle: a 50% body climbs 0.4–0.85 m, a 200% body 1.6–3.4 m', canMantle(1.2, 0.5) === false && canMantle(0.8, 0.5) === true
     && canMantle(3.0, 2) === true && canMantle(0.5, 2) === false);
   check('mantle: the controller asks canMantle with the body\'s size, and steps on by a scaled 0.6 m',
     /canMantle\(reach, me\.userScale\)/.test(await Bun.file(here('../client/lib/controller.js')).text())

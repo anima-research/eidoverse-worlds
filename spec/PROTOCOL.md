@@ -330,6 +330,20 @@ request moves a copy to a newer version, keeping its own overrides.
   disconnect settles at the last accepted state. (A world whose scripts
   listen for `enter`/`leave` records who triggered each activation, as every
   script act does; that is the world's choice, visible in its scripts.)
+- **One mover.** A body has one mover (shared/mover.js) and the mover has
+  modes — `walk` today; `fly` (shared/flight.js's integrator, the same
+  function in every runtime), `swim` and `drive` join the same table without
+  renaming anything. Every runtime steps a body with it: a person's client
+  strides with it, an agent's tick strides with it, and the authority asks it
+  where a body may go. Its numbers (a walk 1.55 m/s, a run 4 m/s; a body
+  0.2 m in radius and 1.7 m tall; a 0.8 m step it walks onto without a
+  mantle; a track of 6 m/s and 4 m at most in one step; arrival within
+  0.01 m, up to 0.4) live there and nowhere else: a client or an agent
+  carrying its own is non-conforming, because two walkers that drift by a
+  centimetre are two bodies. The authority's refusal of a step — too fast,
+  into a solid, up a ledge over a step — is the mover's own answer about the
+  same input, and a step the mover takes is one the authority accepts at
+  the same millimetre.
 - **One clock.** Frames carry the world's authority clock (the one that
   stamps entries' `ts`, never behind the log), and a client measures it by
   round trip (`clock {t0}` → `{t0, t}`). A presence sample may carry its own

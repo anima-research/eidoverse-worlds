@@ -24,6 +24,7 @@ import {
   foldDown as flightFold, unfold as flightUnfold,
   bestGlide, glideRange,
 } from "../shared/flight.js";
+import { MOVER, TRACK, walkToward, toleranceOf } from "../shared/mover.js";
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
 import { inspectBody } from "../shared/flightbody.js";
 import { wingFoldPresence } from "../shared/wingpresence.js";
@@ -66,10 +67,11 @@ import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/li
 
 (globalThis as any).THREE = Object.assign({}, THREE_W, TSL);
 
-const WALK = 1.55, RUN = 4.0, TICK_MS = 100, ARRIVE = 0.01;
-/** E1: a walk asks the authority for the next stretch (PERMIT_STEP m; its track takes 4 m at most at once) when the body is
- *  within PERMIT_AHEAD m of the end of what it has accepted, so a walk at RUN never waits on a local server. */
-const PERMIT_STEP = 2, PERMIT_AHEAD = 1;
+/** The body's clock: one stride of shared/mover.js (the one walker: the client's and the authority's too) per tick. */
+const TICK_MS = 100;
+/** E1: a walk asks the authority for the next stretch (PERMIT_STEP m; its track takes TRACK.cap m at most at once) when the
+ *  body is within PERMIT_AHEAD m of the end of what it has accepted, so a run never waits on a local server. */
+const PERMIT_STEP = TRACK.cap / 2, PERMIT_AHEAD = 1;
 type WalkGate = { mode: "sync" | "tracked" | "open"; permit: number[] | null; busy: boolean };
 /** Quiet window for world-change narration, per (entity, component). Tuning a
  *  live emitter is a burst of `comp` entries; this is how long they fold into
@@ -1777,33 +1779,35 @@ export class WorldAgent {
       void this.settleFromDrag(null);        // — and my own sim settles it
     }
     if (!this.draggedBy && this.target) {
-      const dx = this.target.x - this.pos.x, dz = this.target.z - this.pos.z;
-      const dist = Math.hypot(dx, dz);
-      if (dist <= (this.target.tolerance ?? ARRIVE)) {
+      const T = this.target, g = this.walkGate;
+      // walk only as far as the authority has accepted (E1): the permit is a point on this leg it said yes to;
+      // 'sync': the authority doesn't know where we stand yet
+      let room = Infinity;
+      if (g?.mode === "sync") room = 0;
+      else if (g?.mode === "tracked") {
+        room = g.permit ? Math.hypot(g.permit[0] - this.pos.x, g.permit[2] - this.pos.z) : 0;
+        if (!g.busy && room < PERMIT_AHEAD && !this.permitAtTarget(g)) this.extendPermit(g);
+      }
+      // ONE stride of the shared mover (shared/mover.js): the same stride the client takes and the authority checks.
+      // The floor is the terrain (placed floors reach this body through the sim's support boxes, not its walk); what
+      // blocks is the authority's permit, asked above.
+      const r = walkToward({ pos: [this.pos.x, this.pos.y, this.pos.z], target: [T.x, T.z], dt, run: T.run, tolerance: T.tolerance ?? MOVER.arrive.tolerance, room },
+        { floorAt: (x: number, z: number) => this.heightAt(x, z) });
+      if (r.arrived) {
         // A route through a building arrives in legs. Only the LAST one
         // finishes the walk; the rest hand off to the next waypoint, so a body
         // rounds a doorway instead of driving at the wall behind it.
         const next = this.legs.shift();
         if (next) {
-          this.target = { x: next.x, z: next.z, run: this.target.run, tolerance: this.target.tolerance };
+          this.target = { x: next.x, z: next.z, run: T.run, tolerance: T.tolerance };
         } else {
           this.target = null; this.speed = 0; this.clip = "idle";
           this.walkDone?.(true); this.walkDone = null;
         }
       } else {
-        const sp = this.target.run ? RUN : WALK;
-        const g = this.walkGate;
-        let step = g?.mode === "sync" ? 0 : Math.min(dist, sp * dt);   // 'sync': the authority doesn't know where we stand yet
-        if (g?.mode === "tracked") {
-          // walk only as far as the authority has accepted (E1): the permit is a point on this leg it said yes to
-          const room = g.permit ? Math.hypot(g.permit[0] - this.pos.x, g.permit[2] - this.pos.z) : 0;
-          step = Math.min(step, room);
-          if (!g.busy && room < PERMIT_AHEAD && !this.permitAtTarget(g)) this.extendPermit(g);
-        }
-        this.speed = step > 0 ? sp : 0; this.clip = this.target.run ? "run" : "walk";
-        this.yaw = Math.atan2(dx, dz);
-        this.pos.x += (dx / dist) * step;
-        this.pos.z += (dz / dist) * step;
+        this.speed = r.moved > 0 ? r.moved / dt : 0; this.clip = T.run ? "run" : "walk";
+        if (r.yaw !== null) this.yaw = r.yaw;
+        this.pos.x = r.pos[0]; this.pos.z = r.pos[2];
       }
     }
     // a tumbling, lying, dragged, nailed or FLYING body owns its own y — the
@@ -2487,8 +2491,8 @@ export class WorldAgent {
     ].join("\n");
   }
 
-  walkTo(x: number, z: number, run = false, timeoutMs = 90_000, tolerance = ARRIVE): Promise<boolean> {
-    if (![x, z, tolerance].every(Number.isFinite) || tolerance < 0 || tolerance > 0.4) return Promise.resolve(false);
+  walkTo(x: number, z: number, run = false, timeoutMs = 90_000, tolerance: number = MOVER.arrive.tolerance): Promise<boolean> {
+    if (![x, z].every(Number.isFinite) || toleranceOf(tolerance) === null) return Promise.resolve(false);
     this.walkDone?.(false); // cancel a previous walk
     if (this.draggedBy) {   // deciding to walk IS breaking the dragger's hold
       this.ws?.send(JSON.stringify({ type: "bodydrag", target: this.draggedBy, end: true }));

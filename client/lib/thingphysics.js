@@ -29,6 +29,8 @@ import { remotes, serverNow } from './remotes.js';
 import { colliders, suspendCollider } from './colliders.js';
 import { pushHostHook } from './autohooks.js';
 import { colliderFor } from './bodyscale.js';
+import { TRACK } from '../../shared/mover.js';
+const CHUNK = TRACK.cap - 0.5;   // one step of the authority's body toward mine
 import { replica, net, sendRequest as rawSend, identities } from './net.js';
 import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
@@ -153,8 +155,9 @@ async function track(force = false) {
     }
     const d = trackedAt ? Math.hypot(to[0] - trackedAt[0], to[1] - trackedAt[1], to[2] - trackedAt[2]) : Infinity;
     if (!force && d < TRACK_MIN) return true;
-    // walk the authority's body toward mine in steps it accepts (6 m/s, 4 m at most at once: the authority's TRACK)
-    const k = d > 3.5 ? 3.5 / d : 1; const step = trackedAt ? trackedAt.map((v, i) => r3(v + (to[i] - v) * k)) : to.map(r3);
+    // walk the authority's body toward mine in steps it accepts (TRACK.speed m/s, TRACK.cap m at most at once: the
+    // mover's track, shared/mover.js; half a metre under the cap so a rounding never tips a step over it)
+    const k = d > CHUNK ? CHUNK / d : 1; const step = trackedAt ? trackedAt.map((v, i) => r3(v + (to[i] - v) * k)) : to.map(r3);
     let r = await sendRequest('move', { to: step }); lastMove = { to: step, ok: !!r?.ok, refused: r?.refused?.code, reason: r?.refused?.reason };
     if (r?.ok) { trackedAt = r.at ?? step; return true; }
     if (r?.refused?.at) trackedAt = r.refused.at;
