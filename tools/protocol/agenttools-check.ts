@@ -48,7 +48,7 @@ const { HANDLERS, TOOLS, toolList } = await import("../../mcpl/tools.ts");
   const by = Object.fromEntries(TOOLS.map((t) => [t.name, t.annotations ?? {}]));
   const reads = ["look", "inspect", "measure", "world_history", "world_debug", "hierarchy", "blueprints", "whois", "body_state", "screenshot", "library", "worlds", "catch_up"];
   ok(reads.every((n) => by[n]?.readOnlyHint === true && by[n]?.destructiveHint === false), "AT4 the reads are read-only and not destructive", reads.filter((n) => !(by[n]?.readOnlyHint === true && by[n]?.destructiveHint === false)));
-  const writes = ["move", "create", "place", "edit", "act", "say", "attach", "travel", "wear", "pose", "reach"];
+  const writes = ["move", "create", "place", "edit", "act", "say", "attach", "travel", "set_avatar", "pose", "reach"];
   ok(writes.every((n) => by[n]?.readOnlyHint === false), "AT4 everything that changes the world or a body is not read-only", writes.filter((n) => by[n]?.readOnlyHint !== false));
   ok(["act", "edit"].every((n) => by[n]?.destructiveHint === true) && ["create", "say", "move"].every((n) => by[n]?.destructiveHint === false), "AT4 act (delete, kick, ban…) and editing in place are destructive; making, saying and walking are not",
     Object.fromEntries(["act", "edit", "create", "say", "move"].map((n) => [n, by[n]?.destructiveHint])));
@@ -63,10 +63,10 @@ const { HANDLERS, TOOLS, toolList } = await import("../../mcpl/tools.ts");
   // ---- AT6: the surface itself ----
   const names = TOOLS.map((t) => t.name);
   const folded = ["take_off", "climb_to", "glide_to", "land_at", "rehearse_down", "rehearse_recover", "fold_wings", "unfold_wings", "flight_status",
-    "clear_pose", "clear_reach", "posture", "ragdoll", "set_avatar", "library_sheet", "library_preview", "list_library", "light", "remove", "blueprint_place", "kick", "ban", "unban", "list_bans"];
+    "clear_pose", "clear_reach", "posture", "ragdoll", "library_sheet", "library_preview", "list_library", "light", "remove", "blueprint_place", "kick", "ban", "unban", "list_bans"];
   ok(names.length <= 32 && names.length >= 28, `AT6 the table is ~30 tools (${names.length})`, names);
   ok(!folded.some((n) => names.includes(n)), "AT6 none of the folded names is a tool of its own", folded.filter((n) => names.includes(n)));
-  ok(["move", "act", "pose", "reach", "library", "wear", "create", "edit", "body_state"].every((n) => names.includes(n)), "AT6 the general tools they folded into exist");
+  ok(["move", "act", "pose", "reach", "library", "set_avatar", "create", "edit", "body_state"].every((n) => names.includes(n)), "AT6 the general tools they folded into exist");
   ok(/mode/.test(desc.move) && /fly/.test(desc.move) && /altitude/.test(desc.move) && /name/.test(desc.move), "AT6 move documents mode: \"fly\" (altitude) and to: <a name>", desc.move.slice(0, 300));
   ok(/land/.test(desc.act) && /kick/.test(desc.act) && /\bbans\b/.test(desc.act) && /delete/.test(desc.act), "AT6 act documents land, kick/ban/unban/bans and delete", desc.act.slice(0, 200));
   ok(/posture/.test(desc.pose) && /wings/.test(desc.pose) && /clear/.test(desc.pose), "AT6 pose documents posture, wings and clear");
@@ -74,7 +74,8 @@ const { HANDLERS, TOOLS, toolList } = await import("../../mcpl/tools.ts");
   ok(/query/.test(desc.library) && /preview/.test(desc.library) && /sheet|page/.test(desc.library), "AT6 library documents query, preview and the sheet");
   ok(/light/.test(desc.create) && /\bat\b/.test(desc.create), "AT6 create documents a light and at");
   const { resolveTool, handleTool } = await import("../../mcpl/tools.ts");
-  ok(resolveTool("set_avatar")?.name === "wear" && resolveTool("walk_to")?.name === "move", "AT6 the renamed tools alias to the new names");
+  ok(resolveTool("set_avatar")?.name === "set_avatar" && resolveTool("wear") === null && resolveTool("walk_to")?.name === "move", "AT6 set_avatar keeps its name (R: unambiguous; wear could mean a hat), the old renames still alias");
+  ok(/limp: true/.test(desc.pose) && !/shove \{target/.test(desc.pose) && /shove \{target/.test(desc.act), "AT6 pose documents limp (ragdoll: a body going limp); the push's form (shove {target…}) is act's alone");
   ok(resolveTool("take_off") === null && resolveTool("kick") === null, "AT6 a folded tool does not resolve to a handler (it folded, it was not renamed)");
   const gone = await handleTool({ agent: null } as any, "take_off", {});
   ok(gone.isError && /move \{mode: "fly"/.test(gone.content[0].text), "AT6 calling a folded name teaches where it went", gone.content[0].text);
@@ -206,6 +207,13 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   const posed = await call("pose", { bones: { head: [0, 0.2, 0, 0.98] }, hold: true });
   const cleared = await call("pose", { clear: true });
   ok(!posed.isError && !cleared.isError && /released/.test(T(cleared)) && ag.heldPose == null, "AT6e pose {clear: true} releases a held pose (clear_pose folded)", [T(posed).slice(0, 80), T(cleared), ag.heldPose]);
+  // ragdoll = a body going limp: pose {limp: true} (R 10-14: shoving is moving someone else; going limp is a body state)
+  const limp = await call("pose", { limp: true });
+  ok(!limp.isError && /limp|down/.test(T(limp)) && ag.clip === "ragdoll", "AT6p pose {limp: true} drops your own body limp (clip ragdoll)", [T(limp), ag.clip]);
+  const up = await call("pose", { posture: "stand" });
+  ok(!up.isError && ag.clip !== "ragdoll", "AT6p …and standing picks it back up", [T(up), ag.clip]);
+  const k2 = vic.msgs.length; const theirs = await call("pose", { limp: true, target: "Vic" }); await sleep(300);
+  ok(!theirs.isError && vic.msgs.slice(k2).some((m) => m.type === "puppet" && m.ragdoll === true), "AT6q pose {limp: true, target} asks THEIR body to go limp (an undirected ragdoll, not a shove)", [T(theirs), vic.msgs.slice(k2).map((m) => m.type)]);
   const wings = await call("pose", { wings: "fold" });
   ok(!wings.isError && /wings/.test(T(wings)), "AT6f pose {wings: \"fold\"} reaches the wing posture (this body: none to fold, said)", T(wings));
   const letgo = await call("reach", { release: true });

@@ -197,9 +197,9 @@ is 31 tools, and what used to be bespoke verbs are their modes:
 | `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]` / `[x, y, z]`) or a **name**: a thing's id or label (you stop beside it), a person here (in front of them), or a named place the world declares (`@world` `places` / a `places` component — the shape the upstream places PRs bring; pending their merge). `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig) |
 | `face {x, z \| target}` · `stop` | turn, halt |
 | `say {text}` · `whisper {to, text}` · `emote {name}` · `catch_up` · `activity` | high-volume social sugar (the MUD argument) |
-| `pose {bones?, hold?, replace?, target?, clear?, posture?, wings?}` | hold a pose; `clear: true` releases it; `posture: sit \| sitchair \| lie \| stand`; `wings: fold \| open` (the vigil posture; folded grounds you) |
+| `pose {bones?, hold?, replace?, target?, clear?, limp?, posture?, wings?}` | hold a pose; `clear: true` releases it; `limp: true` is the ragdoll (your body goes limp and falls; with `target`, theirs is asked to); `posture: sit \| sitchair \| lie \| stand`; `wings: fold \| open` (the vigil posture; folded grounds you) |
 | `reach {limb?, who?, point? \| x, y, z, space?, release?}` | real IK toward a body or a point; `release: true` lets go (one limb, or all) |
-| `animate {dur, tracks}` · `attach {to, socket?}` · `detach` · `wear {avatar}` | a one-off animation; get on / off a socket; change your body |
+| `animate {dur, tracks}` · `attach {to, socket?}` · `detach` · `set_avatar {avatar}` | a one-off animation; get on / off a socket; change your body |
 | `library {query \| kind, page? \| preview}` | the catalog: search models, a contact sheet of models or avatars, one item at full size |
 | `create {id?, model?, components?, place? \| at?, from?}` | the authority's create; nowhere said = 2 m ahead; a **light** is `create {components: {light: {…}}}` (no model, eye height); `from: "sha256:<hash>"` (a unique prefix will do) places a blueprint copy, `from: <id>` duplicates |
 | `place {id, on \| beside \| hang \| against \| near \| at, …}` · `edit {id, set}` · `inspect {id}` · `hierarchy` · `measure {id \| lib}` · `blueprints` | the authority's place; the inspector (fields by address, `"light.intensity": 24` dims a light); the scene tree; geometry; the blueprint library |
@@ -209,7 +209,7 @@ is 31 tools, and what used to be bespoke verbs are their modes:
 The old names (`take_off`, `fold_wings`, `clear_pose`, `posture`, `ragdoll`,
 `light`, `remove`, `blueprint_place`, `kick`, `list_bans`, `library_sheet`…)
 are refused with the call that does it now; `walk_to`/`snapshot`/`spawn`/
-`world_verb`/`set_avatar` are plain renames and still run. Every tool that
+`world_verb` are plain renames and still run. Every tool that
 writes waits for the authority and reports its refusal in its words.
 
 **The inspector, for you — `inspect` · `edit` · `hierarchy`.** What can be
@@ -430,8 +430,10 @@ authority refuses before delivery, and the target's own client has the final
 word. Silence is no. A script is a stranger to everyone unless they allow
 it by name.
 
-**Knocking someone over.** `act {verb: "shove", args: {target}}` is a
-directed shove from where you stand through the target. It is a request the target's client
+**Going limp, and knocking someone over.** `pose {limp: true}` is the
+ragdoll: your body goes limp and falls under its own simulation (`target`
+asks another body to). `act {verb: "shove", args: {target}}` is the push —
+a directed shove from where you stand through the target. It is a request the target's client
 honours or declines (humans have `/push` for the same, and
 `/pushable off` refuses). Each body tumbles under its own simulation,
 streamed like any pose — agent bodies too: a headless client runs the
