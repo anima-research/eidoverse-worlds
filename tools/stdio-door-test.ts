@@ -72,9 +72,8 @@ try {
   const list = await rpc('tools/list');
   const names: string[] = (list.result?.tools ?? []).map((t: any) => t.name);
   check('the shared table serves this door (≥26 tools)', names.length >= 26, `${names.length}: ${names.join(',')}`);
-  const gained = ['pose', 'clear_pose', 'reach', 'clear_reach', 'emote', 'animate', 'posture',
-    'ragdoll', 'measure', 'world_history', 'world_debug', 'library_sheet', 'library_preview',
-    'set_avatar', 'light', 'catch_up', 'activity', 'whisper'];
+  const gained = ['pose', 'reach', 'emote', 'animate', 'measure', 'world_history', 'world_debug',
+    'library', 'wear', 'catch_up', 'activity', 'whisper'];   // the surface fold (10-14): clear_*/posture/ragdoll/light are modes
   const missing = gained.filter((n) => !names.includes(n));
   check('every formerly-missing tool is listed', missing.length === 0, missing.join(' '));
   check('pending_pings (the polling wake surface) is listed', names.includes('pending_pings'));
@@ -90,8 +89,8 @@ try {
   check('say lands', toolText(say) === 'said', toolText(say));
 
   // a tool the OLD door never had: the shared dispatcher answers it now
-  const posture = await rpc('tools/call', { name: 'posture', arguments: { kind: 'sit' } });
-  check('posture (gained in the unification) answers', /sit down/.test(toolText(posture)), toolText(posture));
+  const posture = await rpc('tools/call', { name: 'pose', arguments: { posture: 'sit' } });
+  check('pose {posture} (gained in the unification) answers', /sit down/.test(toolText(posture)), toolText(posture));
 
   const pose = await rpc('tools/call', { name: 'pose', arguments: { bones: { leftUpperArm: [0, 0, -0.9, 0.44] } } });
   check('pose (gained) validates and reports', /posed 1 bone\(s\); now holding 1 bone/.test(toolText(pose)), toolText(pose));

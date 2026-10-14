@@ -9,6 +9,11 @@
 //        says agents are performers by default (every body is Normal)
 //   AT4  every advertised tool carries a title and honest MCP annotations (readOnly / destructive / idempotent / openWorld)
 //   AT5  look points at a real tool where one exists (lock and hidden are edit fields), not at the act hatch
+//   AT6  the surface after the fold (REPOINT-PLAN 10-14 §4; R's standard 09:47: a name intuitive to everyone AND useful in
+//        general situations, or it is an alias): ~30 tools; the flight nine are move {mode: "fly"} + act land; the body
+//        sugar is pose {posture|wings|clear} / reach {release} / act shove; three library tools are one; moderation is
+//        act {kick|ban|unban|bans}; light/remove/blueprint_place are create / act delete / create {from}; a folded name
+//        still answers, teaching where it went
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -38,23 +43,44 @@ const { HANDLERS, TOOLS, toolList } = await import("../../mcpl/tools.ts");
 { const listed = [...toolList({ travel: true }), ...toolList({ travel: false })];
   const HINTS = ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"];
   const bad = listed.filter((t) => typeof t.title !== "string" || !t.title.trim() || !t.annotations || HINTS.some((h) => typeof t.annotations[h] !== "boolean"));
-  ok(listed.length > 40 && !bad.length, "AT4 every advertised tool has a title and all four annotation hints", bad.map((t) => t.name));
+  ok(listed.length > 28 && !bad.length, "AT4 every advertised tool has a title and all four annotation hints", bad.map((t) => t.name));
   ok(TOOLS.every((t) => t.annotations?.title === undefined || t.annotations.title === t.title), "AT4 (a title said once: the tool's own, not a second one in annotations)");
   const by = Object.fromEntries(TOOLS.map((t) => [t.name, t.annotations ?? {}]));
-  const reads = ["look", "inspect", "measure", "world_history", "world_debug", "hierarchy", "blueprints", "whois", "list_bans", "body_state", "screenshot", "list_library", "library_sheet", "library_preview", "worlds", "flight_status", "catch_up"];
+  const reads = ["look", "inspect", "measure", "world_history", "world_debug", "hierarchy", "blueprints", "whois", "body_state", "screenshot", "library", "worlds", "catch_up"];
   ok(reads.every((n) => by[n]?.readOnlyHint === true && by[n]?.destructiveHint === false), "AT4 the reads are read-only and not destructive", reads.filter((n) => !(by[n]?.readOnlyHint === true && by[n]?.destructiveHint === false)));
-  const writes = ["move", "create", "place", "edit", "remove", "act", "say", "ragdoll", "kick", "ban", "light", "blueprint_place", "attach", "travel"];
+  const writes = ["move", "create", "place", "edit", "act", "say", "attach", "travel", "wear", "pose", "reach"];
   ok(writes.every((n) => by[n]?.readOnlyHint === false), "AT4 everything that changes the world or a body is not read-only", writes.filter((n) => by[n]?.readOnlyHint !== false));
-  ok(["remove", "act", "edit", "kick", "ban"].every((n) => by[n]?.destructiveHint === true) && ["create", "say", "move", "unban"].every((n) => by[n]?.destructiveHint === false), "AT4 deleting, editing in place and removing people are destructive; making, saying and walking are not",
-    Object.fromEntries(["remove", "act", "edit", "kick", "ban", "create", "say", "move", "unban"].map((n) => [n, by[n]?.destructiveHint])));
-  ok(["say", "whisper", "ragdoll", "kick"].every((n) => by[n]?.openWorldHint === true) && ["look", "inspect", "move"].every((n) => by[n]?.openWorldHint === false), "AT4 what reaches other people is open-world; reading the world and walking in it are not");
+  ok(["act", "edit"].every((n) => by[n]?.destructiveHint === true) && ["create", "say", "move"].every((n) => by[n]?.destructiveHint === false), "AT4 act (delete, kick, ban…) and editing in place are destructive; making, saying and walking are not",
+    Object.fromEntries(["act", "edit", "create", "say", "move"].map((n) => [n, by[n]?.destructiveHint])));
+  ok(["say", "whisper", "act", "pose"].every((n) => by[n]?.openWorldHint === true) && ["look", "inspect", "move"].every((n) => by[n]?.openWorldHint === false), "AT4 what reaches other people is open-world; reading the world and walking in it are not");
   // the stdio host adds one tool of its own (mcpl/server.ts can't be imported here: it connects at load)
   const src = fs.readFileSync(path.join(ENGINE, "mcpl/server.ts"), "utf8");
   const pp = src.slice(src.indexOf("const PENDING_PINGS_TOOL"), src.indexOf("};", src.indexOf("const PENDING_PINGS_TOOL")));
   ok(/title:/.test(pp) && HINTS.every((h) => new RegExp(`${h}:\\s*(true|false)`).test(pp)), "AT4 …and the stdio host's own pending_pings tool too", pp.slice(0, 400));
   // AT3 / AT2 descriptions
   const desc = Object.fromEntries(TOOLS.map((t) => [t.name, t.description]));
-  ok(!/default for agent performers/.test(desc.ragdoll) && /Normal/.test(desc.ragdoll) && /shove/.test(desc.ragdoll), "AT3 the ragdoll description says every body starts Normal (no agent default) and names the class", desc.ragdoll);
+  ok(!/default for agent performers/.test(desc.act) && /Normal/.test(desc.act) && /shove \{target/.test(desc.act), "AT3 act's shove says every body starts Normal (no agent default) and names the class", desc.act.slice(0, 200));
+  // ---- AT6: the surface itself ----
+  const names = TOOLS.map((t) => t.name);
+  const folded = ["take_off", "climb_to", "glide_to", "land_at", "rehearse_down", "rehearse_recover", "fold_wings", "unfold_wings", "flight_status",
+    "clear_pose", "clear_reach", "posture", "ragdoll", "set_avatar", "library_sheet", "library_preview", "list_library", "light", "remove", "blueprint_place", "kick", "ban", "unban", "list_bans"];
+  ok(names.length <= 32 && names.length >= 28, `AT6 the table is ~30 tools (${names.length})`, names);
+  ok(!folded.some((n) => names.includes(n)), "AT6 none of the folded names is a tool of its own", folded.filter((n) => names.includes(n)));
+  ok(["move", "act", "pose", "reach", "library", "wear", "create", "edit", "body_state"].every((n) => names.includes(n)), "AT6 the general tools they folded into exist");
+  ok(/mode/.test(desc.move) && /fly/.test(desc.move) && /altitude/.test(desc.move) && /name/.test(desc.move), "AT6 move documents mode: \"fly\" (altitude) and to: <a name>", desc.move.slice(0, 300));
+  ok(/land/.test(desc.act) && /kick/.test(desc.act) && /\bbans\b/.test(desc.act) && /delete/.test(desc.act), "AT6 act documents land, kick/ban/unban/bans and delete", desc.act.slice(0, 200));
+  ok(/posture/.test(desc.pose) && /wings/.test(desc.pose) && /clear/.test(desc.pose), "AT6 pose documents posture, wings and clear");
+  ok(/release/.test(desc.reach), "AT6 reach documents release");
+  ok(/query/.test(desc.library) && /preview/.test(desc.library) && /sheet|page/.test(desc.library), "AT6 library documents query, preview and the sheet");
+  ok(/light/.test(desc.create) && /\bat\b/.test(desc.create), "AT6 create documents a light and at");
+  const { resolveTool, handleTool } = await import("../../mcpl/tools.ts");
+  ok(resolveTool("set_avatar")?.name === "wear" && resolveTool("walk_to")?.name === "move", "AT6 the renamed tools alias to the new names");
+  ok(resolveTool("take_off") === null && resolveTool("kick") === null, "AT6 a folded tool does not resolve to a handler (it folded, it was not renamed)");
+  const gone = await handleTool({ agent: null } as any, "take_off", {});
+  ok(gone.isError && /move \{mode: "fly"/.test(gone.content[0].text), "AT6 calling a folded name teaches where it went", gone.content[0].text);
+  const gone2 = await handleTool({ agent: null } as any, "kick", {});
+  ok(gone2.isError && /act \{verb: "kick"/.test(gone2.content[0].text), "AT6 …kick too", gone2.content[0].text);
+  ok(!names.some((n) => /^rehearse_/.test(n)) && !/ag\.flightBody(Down|Recovered)\(/.test(fs.readFileSync(path.join(ENGINE, "mcpl/tools.ts"), "utf8")), "AT6 the rehearsal hooks are gone from the tool surface: no tool, no call into the trusted seam (a bench calls the agent's flightBodyDown directly)");
   ok(/create \{from: "[^"]+", at: \[/.test(desc.create) && !/with at: \[x, z\]\)/.test(desc.create), "AT2 create's description has a duplicate example in the shape the tool takes", desc.create); }
 
 // ---- the server ----
@@ -97,20 +123,27 @@ ok((await ann.req("create", { id: "mug", model: "test/cup.glb", components: { tr
 for (let i = 0; i < 60 && !(ag.entities.has("wall") && ag.entities.has("mug")); i++) await sleep(50);
 const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name);
 
-// ---- AT5: the light tool's id (port of upstream #216) ----
-// id omitted or null = a new light; an id that IS given must be a non-empty string — "" or "   " used to be minted
-// over silently, and a non-string went to the wire to bounce off the grammar in the grammar's words, not the tool's.
+// ---- AT5: a light is create {components: {light}} (the light tool folded; #216's id rule rides create's own) ----
 { const before = [...ag.entities.keys()].length;
   for (const id of ["", "   ", 4, [], {}]) {
-    const r = await call("light", { id, x: 1, z: 1 });
-    ok(r.isError && /id/.test(T(r)) && /non-empty string|omit/.test(T(r)), `AT5a light refuses a given id that isn't a non-empty string, in its own words: ${JSON.stringify(id)}`, T(r));
+    const r = await call("create", { id, components: { light: { intensity: 8 } } });
+    ok(r.isError && /id/.test(T(r)), `AT5a create refuses a given id that isn't a non-empty string, in its own words: ${JSON.stringify(id)}`, T(r));
   }
   await sleep(300);
   ok([...ag.entities.keys()].length === before, "AT5a …and minted nothing for them", [...ag.entities.keys()].length - before);
   const b2 = [...ag.entities.keys()].length;
-  const r = await call("light", { id: null, x: 1, z: 1 });
+  const r = await call("create", { components: { light: { intensity: 8 } } });
   for (let i = 0; i < 40 && [...ag.entities.keys()].length === b2; i++) await sleep(50);
-  ok(!r.isError && [...ag.entities.keys()].length === b2 + 1, "AT5b id: null is 'omitted' — one new light", T(r)); }
+  const lid = (T(r).match(/\[([a-z0-9-]+)\]/) ?? [])[1];
+  const lrec = lid ? ag.foldRecord(lid) : null;
+  ok(!r.isError && [...ag.entities.keys()].length === b2 + 1 && lrec?.comp?.light?.intensity === 8 && Number.isFinite(lrec?.pos?.[1]) && lrec.pos[1] > 1, "AT5b create {components: {light}} with nowhere said: one new light, in front of you at about eye height", [T(r), lrec?.pos]);
+  const r2 = await call("create", { components: { light: { color: 0xff5533 } }, at: [1, 2.5, 1] }); await sleep(200);
+  const lid2 = (T(r2).match(/\[([a-z0-9-]+)\]/) ?? [])[1]; const p2 = lid2 ? ag.foldRecord(lid2)?.pos : null;
+  ok(!r2.isError && Array.isArray(p2) && Math.abs(p2[0] - 1) < 0.01 && Math.abs(p2[1] - 2.5) < 0.01 && Math.abs(p2[2] - 1) < 0.01, "AT5c create {…, at: [x, y, z]} puts it exactly there (no model, so no place solve)", [T(r2), p2]);
+  const e = await call("edit", { id: lid2, set: { "light.intensity": 24 } }); await sleep(200);
+  ok(!e.isError && ag.foldRecord(lid2)?.comp?.light?.intensity === 24 && ag.foldRecord(lid2)?.comp?.light?.color === 0xff5533, "AT5d edit {\"light.intensity\"} dims it and keeps its colour (the old light-update path)", [T(e), ag.foldRecord(lid2)?.comp?.light]);
+  const del = await call("act", { verb: "delete", args: { id: lid2 } }); await sleep(200);
+  ok(!del.isError && !ag.foldRecord(lid2), "AT5e act delete removes it (the remove tool folded)", T(del).slice(0, 200)); }
 
 // ---- AT1: one body ----
 { const thru = await call("move", { to: [0, 6], run: true });
@@ -151,11 +184,60 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
 // ---- AT3: a refused shove is an error ----
 { const vic = await sock("Vic"); await sleep(200);
   vic.at(ag.pos.x + 1, ag.pos.z); await sleep(300);   // in reach (shove: 3 m)
-  const no = await call("ragdoll", { target: "Vic" });
-  ok(no.isError && /shove/.test(T(no)) && /consent|nobody/.test(T(no)), "AT3a Vic's body is Normal: the shove is refused, and the tool says so as an error naming the class", T(no));
+  const no = await call("act", { verb: "shove", args: { target: "Vic" } });
+  ok(no.isError && /shove/.test(T(no)) && /consent|nobody/.test(T(no)), "AT3a Vic's body is Normal: act shove is refused, and the tool says so as an error naming the class", T(no));
   ok((await vic.req("consent", { set: { class: "shove", tier: "strangers", mode: "everyone" } })).ok, "(AT3 setup) Vic opens shove to strangers");
-  const k = vic.msgs.length; const yes = await call("ragdoll", { target: "Vic" }); await sleep(300);
+  const k = vic.msgs.length; const yes = await call("act", { verb: "shove", args: { target: "Vic" } }); await sleep(300);
   ok(!yes.isError && vic.msgs.slice(k).some((m) => m.type === "puppet" && m.ragdoll), "AT3b once Vic allows it, the shove goes through and reports no error", [T(yes), vic.msgs.slice(k).map((m) => m.type)]);
+
+  // ---- AT6: the folded modes, live ----
+  // flight: this body wears no winged rig and holds no fly grant, so the honest answer is the refusal — through the MODE
+  const fly = await call("move", { mode: "fly", altitude: 10 });
+  ok(fly.isError && /cannot fly here/.test(T(fly)), "AT6a move {mode: \"fly\"} dispatches to the flight door (refused here: no grant, no wings — said in the integrator's words)", T(fly));
+  const land = await call("act", { verb: "land", args: { to: [1, 1] } });
+  ok(land.isError && /ground|cannot fly/.test(T(land)), "AT6b act land answers from the body (on the ground already), not the authority's 'unknown verb'", T(land));
+  const bs = await call("body_state", {});
+  ok(!bs.isError && /"flight"/.test(T(bs)) && /on the ground/.test(T(bs)), "AT6c body_state carries the flight status (flight_status folded)", T(bs).slice(0, 300));
+  // the body cluster
+  const sit = await call("pose", { posture: "sit" });
+  ok(!sit.isError && /sit down/.test(T(sit)) && ag.clip === "sit", "AT6d pose {posture: \"sit\"} sits (posture folded)", [T(sit), ag.clip]);
+  const stand = await call("pose", { posture: "stand" });
+  ok(!stand.isError && /stand up/.test(T(stand)), "AT6d …and stand", T(stand));
+  const posed = await call("pose", { bones: { head: [0, 0.2, 0, 0.98] }, hold: true });
+  const cleared = await call("pose", { clear: true });
+  ok(!posed.isError && !cleared.isError && /released/.test(T(cleared)) && ag.heldPose == null, "AT6e pose {clear: true} releases a held pose (clear_pose folded)", [T(posed).slice(0, 80), T(cleared), ag.heldPose]);
+  const wings = await call("pose", { wings: "fold" });
+  ok(!wings.isError && /wings/.test(T(wings)), "AT6f pose {wings: \"fold\"} reaches the wing posture (this body: none to fold, said)", T(wings));
+  const letgo = await call("reach", { release: true });
+  ok(!letgo.isError && /releas|let go|weren't reaching/.test(T(letgo)), "AT6g reach {release: true} lets go (clear_reach folded; nothing held: said)", T(letgo));
+  // the library
+  // the sequencer's search walks eidoverse/assets/models only (server/routes.ts /library-models), and this scratch OPT_DIR
+  // has none there: the honest answers are "no matches" and an empty sheet — the dispatch is what this bench can prove
+  const lib = await call("library", { query: "cup" });
+  ok(!lib.isError && /no matches|\.glb/.test(T(lib)), "AT6h library {query} searches models (list_library folded)", T(lib));
+  const sheet = await call("library", { kind: "models" });
+  ok(!sheet.isError && (sheet.content.some((c) => c.type === "image") || /0 models/.test(T(sheet))), "AT6i library {kind} is the contact sheet (library_sheet folded)", T(sheet));
+  const none = await call("library", {});
+  ok(none.isError && /query/.test(T(none)) && /preview/.test(T(none)), "AT6i …and library with nothing teaches its three forms", T(none));
+  const prev = await call("library", { preview: "test/cup.glb" });
+  ok(!prev.isError && (prev.content.some((c) => c.type === "image") || /no preview/.test(T(prev))), "AT6j library {preview} is one item (library_preview folded)", T(prev));
+  // walking by name (socketteer's walk-by-place-name, as move {to: <name>}): a thing's id walks you up to it
+  const mp = ag.foldRecord("mug")?.pos;
+  const byName = await call("move", { to: "mug" });   // walking: a run this long rides the authority's token bucket at its edge (walkTo pacing, not this tool's)
+  ok(!byName.isError && /arrived/.test(T(byName)) && Math.hypot(ag.pos.x - mp[0], ag.pos.z - mp[2]) < 1.2 && Math.hypot(ag.pos.x - mp[0], ag.pos.z - mp[2]) > 0.3, "AT6k move {to: \"mug\"} walks up to the thing and stops beside it", [T(byName), ag.pos, mp]);
+  const noName = await call("move", { to: "no-such-thing" });
+  ok(noName.isError && /no-such-thing/.test(T(noName)), "AT6k …and an unknown name is an error naming it", T(noName));
+  // moderation through act: the agent becomes an owner, kicks Vic by NAME (resolved to an identity), reads what's in force, unbans
+  ok((await ann.req("set", { id: "@world", component: `roles:${HEP}`, value: { role: "owner" } })).ok, "(AT6 setup) Ann makes the agent an owner");
+  await sleep(300);
+  const kicked = await call("act", { verb: "kick", args: { who: "Vic", minutes: 5, reason: "test" } }); await sleep(300);
+  ok(!kicked.isError && /done|kick/.test(T(kicked)) && /u-/.test(T(kicked)), "AT6l act kick {who: a name} resolves the name to an identity and the authority does it", T(kicked));
+  const inforce = await call("act", { verb: "bans" });
+  ok(!inforce.isError && /Vic|cooling/.test(T(inforce)), "AT6m act bans lists the cooldown in force (list_bans folded)", T(inforce));
+  const lifted = await call("act", { verb: "unban", args: { who: "Vic" } });
+  ok(!lifted.isError && /done|unban/.test(T(lifted)), "AT6n act unban lifts it (a kick's cooldown too)", T(lifted));
+  const nobody = await call("act", { verb: "ban", args: { who: "Nobody-Here" } });
+  ok(nobody.isError && /Nobody-Here/.test(T(nobody)), "AT6o act ban of a name the world never saw is an error naming it", T(nobody));
   vic.close(); }
 
 // ---- AT5: look points at the real tool ----

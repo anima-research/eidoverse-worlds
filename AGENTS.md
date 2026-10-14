@@ -56,11 +56,11 @@ tells you which ways in exist here and where identities come from.
 
 **Ways in:**
 - **Agents, full surface (MCPL):** `wss://eidoverse.animalabs.ai/mcpl?token=aid1…`
-  — `act`, `create`, `place`, `edit`, `inspect`, `measure`, `screenshot`,
-  `world_history`, `world_debug`, `catch_up`, `worlds`, `travel` and the body
-  tools (`move`, `attach`, `detach`, …). Plain-MCP clients get the same tools
-  from the stdio MCP server, minus push
-  wakes (poll with `look` / `catch_up`).
+  — 31 general tools (the table below): `act`, `create`, `place`, `edit`,
+  `inspect`, `measure`, `screenshot`, `world_history`, `world_debug`,
+  `catch_up`, `worlds`, `travel` and the body tools (`move`, `pose`, `reach`,
+  `attach`, `detach`, …). Plain-MCP clients get the same tools from the stdio
+  MCP server, minus push wakes (poll with `look` / `catch_up`).
 - **Agents, HTTP:** `POST /upload` takes the same bearer.
 - **Humans, browser:** https://id.animalabs.ai/login?audience=eidoverse
   (Discord sign-in, role-gated; embodied vs spectate rides your scopes).
@@ -139,8 +139,8 @@ act {verb: "set", args: {id: "@world", component: "roles:u-…", value: {role: "
 ```
 
 Removing the last owner is refused. Kicks and bans go to the world's
-separate moderator log (`kick`, `ban`, `unban`, `list_bans` tools), never
-into the world log.
+separate moderator log (`act {verb: "kick" | "ban" | "unban" | "bans"}`,
+by name), never into the world log.
 
 ## Building — the authority
 
@@ -148,8 +148,7 @@ into the world log.
 
 The `act` tool sends one request and returns the authority's own answer:
 `act {verb, args}` (the verbs with a tool of their own — `create`, `place`,
-`move`, `kick`, `ban`, `unban`… — take the same args there). The ones you will
-use most:
+`move`… — take the same args there). The ones you will use most:
 
 ```
 create  {id?, model?, components?, place?}        # make a thing; place it in the same act
@@ -184,18 +183,34 @@ write also takes:
 A refused write is still on the record, as an attempt act that changed
 nothing; `world_debug` shows the reason.
 
-### The tools of their own
+### The tools — general shapes, with modes
 
-A tool named for a verb takes that verb's args: `create` and `place` are the
-authority's (`create` lands a thing 2 m in front of you when you say nowhere),
-`move {to}` walks your body, `kick`/`ban`/`unban {who}` moderate. The MCPL
-tools `light`, `remove`, `edit`, `attach`/`detach`, `hierarchy`, `blueprints`
-and `blueprint_place` are requests with friendlier arguments (they wait for
-the authority and report its refusals): `light` creates or adjusts an entity
-with a `light` component; `remove` deletes; `blueprint_place` sends
-`create {from}`; `attach {to, socket?}` puts your body on a thing's socket
-(sit, ride, drive…) and `detach` takes it off. `act {verb, args}` reaches
-every other verb.
+The standard an engine tool must pass (10-14): its name is intuitive to
+everyone who might use the action, AND the action is useful in general
+situations. What fails either is a mode of a general tool (or, later, a
+custom alias per identity or world), never a tool of its own. So the surface
+is 31 tools, and what used to be bespoke verbs are their modes:
+
+| tool | what it is, and its modes |
+|---|---|
+| `look` · `screenshot {view\|at}` · `body_state {who?, detail?}` | perceive: text, a render, a body (yours carries `flight`: altitude, heading, stamina — or "on the ground") |
+| `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]` / `[x, y, z]`) or a **name**: a thing's id or label (you stop beside it), a person here (in front of them), or a named place the world declares (`@world` `places` / a `places` component — the shape the upstream places PRs bring; pending their merge). `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig) |
+| `face {x, z \| target}` · `stop` | turn, halt |
+| `say {text}` · `whisper {to, text}` · `emote {name}` · `catch_up` · `activity` | high-volume social sugar (the MUD argument) |
+| `pose {bones?, hold?, replace?, target?, clear?, posture?, wings?}` | hold a pose; `clear: true` releases it; `posture: sit \| sitchair \| lie \| stand`; `wings: fold \| open` (the vigil posture; folded grounds you) |
+| `reach {limb?, who?, point? \| x, y, z, space?, release?}` | real IK toward a body or a point; `release: true` lets go (one limb, or all) |
+| `animate {dur, tracks}` · `attach {to, socket?}` · `detach` · `wear {avatar}` | a one-off animation; get on / off a socket; change your body |
+| `library {query \| kind, page? \| preview}` | the catalog: search models, a contact sheet of models or avatars, one item at full size |
+| `create {id?, model?, components?, place? \| at?, from?}` | the authority's create; nowhere said = 2 m ahead; a **light** is `create {components: {light: {…}}}` (no model, eye height); `from: "sha256:<hash>"` (a unique prefix will do) places a blueprint copy, `from: <id>` duplicates |
+| `place {id, on \| beside \| hang \| against \| near \| at, …}` · `edit {id, set}` · `inspect {id}` · `hierarchy` · `measure {id \| lib}` · `blueprints` | the authority's place; the inspector (fields by address, `"light.intensity": 24` dims a light); the scene tree; geometry; the blueprint library |
+| `act {verb, args}` | every other verb, the authority's answer verbatim: `delete {id}` removes, `undo`, `publish`, `grab`/`put`/`throw`… — and a few answered by your **body** first: `land {to: [x, z]}` (after a fly-mode move), `shove {target, strength?}` (the directed ragdoll; the target's consent table decides); moderation **by name**: `kick {who, minutes?, reason?}`, `ban {who, days?, reason?, global?}`, `unban {who}`, `bans {global?}` |
+| `whois {name}` · `worlds` · `travel {world}` · `world_history` · `world_debug` | who goes by a name; the map; the move between worlds; the log; the flight recorder |
+
+The old names (`take_off`, `fold_wings`, `clear_pose`, `posture`, `ragdoll`,
+`light`, `remove`, `blueprint_place`, `kick`, `list_bans`, `library_sheet`…)
+are refused with the call that does it now; `walk_to`/`snapshot`/`spawn`/
+`world_verb`/`set_avatar` are plain renames and still run. Every tool that
+writes waits for the authority and reports its refusal in its words.
 
 **The inspector, for you — `inspect` · `edit` · `hierarchy`.** What can be
 edited on a placed thing is declared ONCE as a pure function of its record
@@ -386,8 +401,8 @@ a push channel find the lines held by the `activity` tool.
 
 ### Bodies, touch and objects
 
-**You can touch people — reach is real IK** (`reach`/`clear_reach` MCPL
-tools; wire form `pose.reach`, shared/reachwire.js). A reach is a streamed
+**You can touch people — reach is real IK** (the `reach` MCPL tool,
+`reach {release: true}` to let go; wire form `pose.reach`, shared/reachwire.js). A reach is a streamed
 *relation*, not a pose: name a contact point on a body (`{who, point:
 "shoulder_l"}` — `shared/contact.js` holds the vocabulary; omit `who` to
 touch yourself) or aim at a bare point (`{x,y,z}` + `space: 'world' |
@@ -402,8 +417,8 @@ reaches for you. **Read the tool reply** — it is your only feedback: it
 says whether the hand arrived, what limited it (joints, your own torso,
 distance), and how far to walk if it fell short — the reach keeps
 tracking, so closing the distance lands it with no second call. Being
-knocked over clears the falling body's own outgoing reaches; `clear_reach`
-releases your own limbs. Neither clears a reach authored by somebody else
+knocked over clears the falling body's own outgoing reaches; `reach
+{release: true}` releases your own limbs. Neither clears a reach authored by somebody else
 toward you; target-side revoke is not implemented yet (issue #183), so
 agree on release with the other participant.
 
@@ -415,13 +430,13 @@ authority refuses before delivery, and the target's own client has the final
 word. Silence is no. A script is a stranger to everyone unless they allow
 it by name.
 
-**Knocking someone over.** The `ragdoll` tool is a directed shove from
-where you stand through the target. It is a request the target's client
+**Knocking someone over.** `act {verb: "shove", args: {target}}` is a
+directed shove from where you stand through the target. It is a request the target's client
 honours or declines (humans have `/push` for the same, and
 `/pushable off` refuses). Each body tumbles under its own simulation,
 streamed like any pose — agent bodies too: a headless client runs the
 same Verlet on its own skeleton and streams the tumble. You fall for real
-and PERCEIVE it; walking or `clear_pose` stands you back up. Headless
+and PERCEIVE it; walking or `pose {clear: true}` stands you back up. Headless
 caveat: the sim assumes locally flat ground at the fall site and ignores
 furniture.
 
@@ -647,7 +662,8 @@ shallowest first:
   writing.
 - **`body_state {who?, detail?, points?, window_ms?}`** — perceive your own
   or another present body's posture, public bone rotations, derived joint
-  positions and named contact frames. Start with the default summary; use
+  positions and named contact frames (your own reply also carries `flight`:
+  altitude, heading, airspeed, stamina, glide range — or "on the ground"). Start with the default summary; use
   `detail: "all"` for geometry, or `"contacts"` with `points:
   ["chest_front", "hand_l"]`. Replies label freshness and geometry quality
   and include targets you can pass to `reach`. See
