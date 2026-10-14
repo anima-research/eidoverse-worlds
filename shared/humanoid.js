@@ -178,7 +178,10 @@ export function mergePose(base, delta) {
  */
 export function puppetPose(bones, replace = false) {
   if (bones == null) return { pose: {} };
-  return replace ? { pose: mergePose(null, bones) ?? {} } : { pose: bones, merge: true };
+  if (replace) return { pose: mergePose(null, bones) ?? {} };
+  // An undefined bone releases it, as mergePose reads it here; on the wire
+  // it would vanish, so it goes as null, which the receiver reads the same.
+  return { pose: Object.fromEntries(Object.entries(bones).map(([k, v]) => [k, v === undefined ? null : v])), merge: true };
 }
 
 /** Check and clean one pose value: a bare quaternion, or {q?, t?, s?}.

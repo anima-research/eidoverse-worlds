@@ -1921,10 +1921,10 @@ export class WorldAgent {
     // knocked over is a fact about the blow, not about our readiness to
     // simulate it; the canned slump holds the shape until the sim produces a
     // real pose, exactly as it does when there is no sim at all.
-    // The fall starts from the pose this body held when the blow landed,
-    // whoever authored it, as a browser's sim starts from the bones it draws
-    // (a kneel falls from kneeling height), not from the canned slump put up
-    // below.
+    // A fall starts from the pose the body is drawn in, as a browser's sim
+    // starts from the bones it draws (a kneel falls from kneeling height):
+    // what it holds when the fall begins (tumble). This is what it held when
+    // the blow landed, for when that is still the canned slump put up below.
     const held = this.heldPose;
     this.clip = "ragdoll";
     this.heldPose ??= DOWNED_POSE;

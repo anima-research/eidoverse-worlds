@@ -146,7 +146,10 @@ Examples:
   interpolation are not reproduced, so this is not final-frame pixel parity.
 - Contact positions/normals are labeled `anatomical_estimate`. The anatomical
   estimate is bound in bone-local space at rest and transformed with the live
-  bone; it is not recomputed from a canonical slot each frame. Mesh raycasting
+  bone (a normal through its inverse transpose); it is not recomputed from a
+  canonical slot each frame. On a bone that a scale with a 0 in it has
+  collapsed, a contact sits where the collapse draws it and faces as it
+  would unscaled. Mesh raycasting
   remains browser-specific. Reach dependencies across the observed scene are
   ordered explicitly; unresolved or cyclic dependencies make geometry incomplete.
 - `reaches` carries the owner's held relations and arrival attestations;

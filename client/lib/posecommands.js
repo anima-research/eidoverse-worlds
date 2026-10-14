@@ -42,7 +42,7 @@ function consoleOptions(verb, rest) {
   if (!opts || typeof opts !== 'object' || Array.isArray(opts)) throw new TypeError(`${verb}: ${want}`);
   const odd = Object.keys(opts).filter((k) => !keys.includes(k));
   if (odd.length) throw new TypeError(`${verb}: no option ${odd.map((k) => `"${k}"`).join(', ')}; ${want}`);
-  if ('target' in opts && !name(opts.target)) throw new TypeError(`${verb}: target is ${opts.target === '' ? 'empty' : typeof opts.target}, not a name; ${want}`);
+  if ('target' in opts && !name(opts.target)) throw new TypeError(`${verb}: target is ${opts.target === '' ? 'empty' : opts.target === null ? 'null' : typeof opts.target}, not a name; ${want}`);
   if (opts.replace !== undefined && typeof opts.replace !== 'boolean') throw new TypeError(`${verb}: replace is true or false`);
   return opts;
 }
@@ -69,7 +69,7 @@ export function poseCommands({ state, sendPuppet, play }) {
       return state.pose;
     },
     clearPose: (...rest) => {
-      if (rest.length && !name(rest[0])) throw new TypeError("EW.clearPose: a target's name, or no argument for your own pose");
+      if (rest.length > 1 || (rest.length && !name(rest[0]))) throw new TypeError("EW.clearPose: a target's name, or no argument for your own pose");
       if (rest.length) sendPuppet(rest[0], puppetPose(null)); else state.pose = null;
     },
     animate: (data, ...rest) => {

@@ -288,6 +288,15 @@ try {
     const m1 = new THREE.Matrix3().setFromMatrix4(node.matrixWorld), n1 = new THREE.Vector3(...body.contact("forearm_l", 0)!.normal);
     const off = Math.max(...local.map((t) => Math.abs(n1.dot(t.clone().applyMatrix3(m1).normalize()))));
     check("a contact's normal on a scaled bone stays perpendicular to its surface", off < 1e-9, `cosine to the surface ${off.toExponential(2)}`);
+    // A scale with a 0 in it collapses the surface: the contact sits where the
+    // collapse draws it, and faces as the bone would unscaled.
+    body.poseAt([0, 0, 0], 0, null);
+    const unscaled = body.contact("forearm_l", 0)!;
+    body.poseAt([0, 0, 0], 0, { leftLowerArm: { s: [1, 0, 1] } });
+    const flat = body.contact("forearm_l", 0)!;
+    check("a contact on a collapsed bone faces as it would unscaled, where the collapse draws it",
+      new THREE.Vector3(...flat.normal).distanceTo(new THREE.Vector3(...unscaled.normal)) < 1e-9 && Math.abs(new THREE.Vector3(...flat.normal).length() - 1) < 1e-9
+      && new THREE.Vector3(...flat.pos).distanceTo(new THREE.Vector3(...unscaled.pos)) > 1e-3, JSON.stringify({ flat, unscaled }));
   }
 } finally {
   server.stop(true);

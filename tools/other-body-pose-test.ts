@@ -62,6 +62,8 @@ check("replace sends the whole pose, and a replace with nothing left is a releas
     ["clearPose with null", () => EW.clearPose(null as any)],
     ["clearPose with an empty name", () => EW.clearPose("")],
     ["an argument after the options", () => EW.pose(null, { replace: true }, "someone" as any)],
+    ["a function where the options go", () => EW.pose(arm, (() => "someone") as any)],
+    ["clearPose with an argument after the name", () => (EW.clearPose as any)("someone", "else")],
     ["a name where the animation goes", () => EW.animate("someone" as any)],
     ["a list where the animation goes", () => EW.animate([{ dur: 1, tracks: {} }] as any)],
     ["an animation's replace that isn't true or false", () => EW.animate({ dur: 1, tracks: {}, replace: "yes" } as any)],
@@ -120,8 +122,15 @@ try {
   check("...and it hears a release", await until(() => heard.includes("(released your pose)")), heard.join(" | "));
   EW.pose(arm, { target: held.name });
   const posedAgain = await until(() => eq(held.heldPose, arm));
+  const head = [0, 0.2, 0, Math.sqrt(0.96)], spine = [0.1, 0, 0, Math.sqrt(0.99)];
+  EW.pose({ head }, held.name);
+  check("EW.pose by name merges over what that body holds", posedAgain && await until(() => eq(held.heldPose, { ...arm, head })), JSON.stringify(held.heldPose));
+  EW.pose({ head: undefined }, held.name);
+  check("...an undefined bone releases it there, as it would on the caller", await until(() => eq(held.heldPose, arm)), JSON.stringify(held.heldPose));
+  EW.pose({ spine }, { target: held.name, replace: true });
+  check("...and replace makes the named bones its whole pose", await until(() => eq(held.heldPose, { spine })), JSON.stringify(held.heldPose));
   EW.clearPose(held.name);
-  check("EW.clearPose(name) lets that body go", posedAgain && await until(() => held.heldPose == null), JSON.stringify(held.heldPose));
+  check("EW.clearPose(name) lets that body go", await until(() => held.heldPose == null), JSON.stringify(held.heldPose));
   heard.length = 0;
   EW.animate({ dur: 1, tracks: { head: [{ t: 0, q: [0, 0, 0, 1] }] } }, held.name);
   check("EW.animate with a name alone animates that body, and it hears so", await until(() => heard.includes("(posed you with an animation)")), heard.join(" | "));

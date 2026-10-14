@@ -727,8 +727,17 @@ export class ReachBody {
     if (!mark) return null;
     const p = mark.node.localToWorld(mark.offset.clone());
     // A normal goes through the inverse transpose, which a held non-uniform
-    // scale makes differ from the bone's own matrix.
-    const n = mark.normal.clone().applyMatrix3(new this.m.THREE.Matrix3().getNormalMatrix(mark.node.matrixWorld)).normalize();
+    // scale makes differ from the bone's own matrix. A scale with a 0 in it,
+    // on this bone or above it, collapses the surface, and the inverse then
+    // says nothing about which way it faces: all zeros, or, a rounding away
+    // from that, the collapsed axis. Then it faces as it would unscaled,
+    // which is how the reach solver sees the bone.
+    const T = this.m.THREE;
+    const facing = () => mark.normal.clone().applyMatrix3(new T.Matrix3().getNormalMatrix(mark.node.matrixWorld));
+    const m = new T.Matrix3().setFromMatrix4(mark.node.matrixWorld), e = m.elements;
+    const widest = Math.max(Math.hypot(e[0], e[1], e[2]), Math.hypot(e[3], e[4], e[5]), Math.hypot(e[6], e[7], e[8]));
+    const collapsed = Math.abs(m.determinant()) <= 1e-9 * widest ** 3;
+    const n = (collapsed ? this.solverView(facing) : facing()).normalize();
     return { pos: p.addScaledVector(n, standoff).toArray(), normal: n.toArray() };
   }
 
