@@ -24,7 +24,7 @@ ok('recovery drops ?xr and ?why, keeps world/name/key', recoveryUrl('https://h:1
   ok('…and 0 for nothing or garbage', recentGpuLosses(store(null), now) === 0 && recentGpuLosses(store('{bad'), now) === 0 && recentGpuLosses({}, now) === 0); }
 // 10-08: Chrome reports reason 'destroyed' for a device it destroyed itself (headless: the swap chain's shared image
 // failed, "GPU state invalid") — no JS called destroy(). Ignoring every 'destroyed' left the page rendering into a dead
-// device, throwing each frame (and three's callDepth climbing: ~50 MB/s of shader builds). Only OUR destroy is deliberate.
+// device, throwing each frame (and three's callDepth climbing: a fresh shader build per frame). Only OUR destroy is deliberate.
 { const fakeWin = () => ({ sessionStorage: { getItem: () => '[]', setItem: () => {} }, localStorage: { removeItem: () => {} }, location: { href: 'https://h/?world=w', search: '?world=w', replace: () => {} }, setTimeout: () => {} });
   const fakeDevice = () => { let res; const d = { lost: new Promise((r) => { res = r; }), destroy() { res({ reason: 'destroyed', message: 'Device was destroyed.' }); } }; d.loseExternally = () => res({ reason: 'destroyed', message: 'Device was destroyed.' }); return d; };
   const d1 = fakeDevice(); const r1 = installGpuLostRecovery({ renderer: { backend: { device: d1 } }, win: fakeWin() });

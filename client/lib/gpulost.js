@@ -65,7 +65,9 @@ export function installGpuLostRecovery({ canvas, renderer, tee = () => {}, onSto
   // 'destroyed' is deliberate only when WE called destroy(): Chrome also reports it for a device it tore down itself
   // (10-08, headless: the swap chain's shared image failed). Ignoring that left the page rendering into a dead device,
   // throwing every frame — and each throw skips three's callDepth--, so every frame was a new render context and a
-  // fresh shader build for everything after the throw (~50 MB/s, until the tab died).
+  // fresh shader build for everything after the throw, until the tab died. (three's own device.lost handler ignores
+  // 'destroyed' the same way, so renderer.onDeviceLost never fires here.) three's dispose() calls destroy() through
+  // this same object, so it counts as ours.
   const device = renderer?.backend?.device;
   let destroyedByUs = false;
   if (device?.destroy) { const d0 = device.destroy; device.destroy = function (...a) { destroyedByUs = true; return d0.apply(this, a); }; }

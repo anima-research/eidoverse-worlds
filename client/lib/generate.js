@@ -16,7 +16,7 @@
 // (select: "starred"): candidates render as thumbnails, clicking one stars
 // it, the chain resumes into mesh generation.
 //
-// ?orrery=<url> (or localStorage ew-orrery-url) overrides the service for
+// ?orrery=<http(s) base: origin + path> (or localStorage ew-orrery-url) overrides the service for
 // dev — a MOCK_APIS Orrery instance makes the whole flow testable offline.
 
 import { enc } from '../../shared/protocol/names.js';
@@ -29,14 +29,20 @@ import { net } from './net.js';
 import { holdGhost } from './build.js';
 import { logChat } from './chat.js';
 
-// a self-hosted Orrery may be named by ?orrery= (remembered); only an http(s) ORIGIN is taken — the value lands in
-// markup and in fetches, and a link someone sends you must not smuggle anything else in (security pass 3). The
-// server's CSP connect-src must also name it (CSP_CONNECT_EXTRA), or the browser refuses the fetch.
-const DEFAULT_ORRERY = 'https://orrery.animalabs.ai';
-const originOf = (v) => { try { const u = new URL(String(v ?? '')); return /^https?:$/.test(u.protocol) && !u.username && !u.password ? u.origin : null; } catch { return null; } };
+// A self-hosted Orrery may be named by ?orrery= (remembered). Only an http(s) BASE is taken — origin plus path, as the
+// URL parser re-serialises them (a path of plain segments only; no query, hash or credentials): the value is interpolated into this
+// panel's markup and into fetches, and a link someone sends you must not be able to smuggle markup or a javascript:
+// URL in through it (it was a reflected XSS that also persisted via localStorage). An Orrery served under a path
+// (https://host/orrery) keeps its path (review of 4098ff7, Oscar-1808 #4).
+export const originOf = (v) => {
+  try { const u = new URL(String(v ?? '')); if (!/^https?:$/.test(u.protocol) || u.username || u.password) return null;
+    const path = u.pathname.replace(/\/$/, ''); return /^(\/[A-Za-z0-9._-]+)*$/.test(path) ? u.origin + path : u.origin; }   // a path of plain segments rides; anything else is dropped to the origin
+  catch { return null; }
+};
 const asked = originOf(CONFIG.params.get('orrery'));
-const ORRERY = asked ?? originOf(localStorage.getItem('ew-orrery-url')) ?? DEFAULT_ORRERY;
+const ORRERY = asked ?? originOf(localStorage.getItem('ew-orrery-url')) ?? 'https://orrery.animalabs.ai';
 if (asked) localStorage.setItem('ew-orrery-url', asked);
+const isHttpUrl = (v) => { try { return /^https?:$/.test(new URL(String(v)).protocol); } catch { return false; } };
 
 const api = async (path, opts = {}) => {
   const r = await fetch(`${ORRERY}${path}`, {
@@ -163,7 +169,8 @@ async function paint(body) {
     body.querySelector('#cj-connect').onclick = async () => {
       try {
         const cfg = await api('/api/auth/config');
-        const w = /^https?:\/\//i.test(String(cfg.login_url ?? '')) ? window.open(cfg.login_url, 'orrery-auth', 'width=520,height=680') : null;   // never a javascript: URL from a service
+        if (!isHttpUrl(cfg.login_url)) throw new Error('orrery sent a login link that is not http(s)');
+        const w = window.open(cfg.login_url, 'orrery-auth', 'width=520,height=680');
         // 🔴 DO NOT DEPEND ON postMessage FROM THE POPUP (2026-08-16). Under
         // COOP `same-origin` — which cross-origin isolation requires, and which
         // this server now sends so wasm gets its threads — a cross-origin popup

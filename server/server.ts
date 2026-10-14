@@ -382,7 +382,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // M3: format characters (zero-width, bidi overrides) and compatibility forms are how one name passes for another
     c.id = c.id.normalize("NFKC").replace(/\p{Cf}/gu, "").trim();
     // security pass 3 (H1): no markup characters in a name — a typed one is refused in words, one the identity service
-    // gave loses them (server/names.ts)
+    // gave becomes a look-alike (‹ › ″; server/names.ts)
     {
       const n = nameAtDoor(c.id, { typed: !auth });
       if (n.refused) {

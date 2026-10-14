@@ -464,7 +464,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     ok(!!j.snapshot, `NM …and an ordinary name with & ' or an emoji still gets in (${JSON.stringify(good)})`, j.errors);
     g.close(); }
   const { nameAtDoor } = await import("../../server/names.ts");
-  ok(nameAtDoor("Ann<b>", { typed: true }).refused && nameAtDoor("Ann<b>", { typed: false }).name === "Annb", "NM a name the identity service gave (not typed here) loses the characters instead of its owner being turned away",
+  ok(nameAtDoor("Ann<b>", { typed: true }).refused && nameAtDoor("Ann<b>", { typed: false }).name === "Ann\u2039b\u203A", "NM a name the identity service gave (not typed here) gets look-alikes (\u2039 \u203A) instead of its owner being turned away — never deleted, which could empty it or make a reserved name (upstream #224 review)",
     [nameAtDoor("Ann<b>", { typed: true }), nameAtDoor("Ann<b>", { typed: false })]); }
 
 // ---- M3: the perf beacon keeps no raw address (security pass 3) ----
