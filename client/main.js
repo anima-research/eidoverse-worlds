@@ -45,7 +45,7 @@ import {
   net, connect, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendWhisper, sendTyping,
   setPoseOverride, sendPuppet, sendAnim,
 } from './lib/net.js';
-import { mergePose, puppetPose } from '../shared/humanoid.js';
+import { poseCommands } from './lib/posecommands.js';
 import { updateBuild, toggleEditMode, isEditing } from './lib/build.js';
 import { initPalette } from './lib/palette.js';
 import { setRightsSink } from './lib/state.js';
@@ -830,44 +830,12 @@ globalThis.whyIsItSilent = () => {
   return { ...s, detail: a };
 };
 
-// The console's options for a verb that can act on someone else: an object,
-// or a name alone as the target. Destructuring a name found no target, so a
-// pose or release meant for someone else landed on the caller, silently.
-function consoleOptions(verb, opts) {
-  if (opts == null) return {};
-  if (typeof opts === 'string') return { target: opts };
-  if (typeof opts !== 'object') throw new TypeError(`${verb}: the second argument is { replace, target }, or a target's name`);
-  return opts;
-}
-
 const EW = globalThis.EW = {
   me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus,
   skyArgs, sendVerb, setPosable, get posable() { return posable(); },
-  // POSING from the console — the same verbs an agent's tools have. A value
-  // per bone is [x,y,z,w] or {q, t, s} (shared/humanoid.js poseChannels).
-  //   EW.pose({ leftUpperArm: [...] })          only these bones, over what you hold; null releases one
-  //   EW.pose({ ... }, { replace: true })       the WHOLE pose: every bone not named goes back to normal
-  //   EW.pose({ ... }, { target: 'mythos' })    ask someone else (their client decides);
-  //   EW.pose({ ... }, 'mythos')                a name alone is the target too
-  //   EW.pose(null)  /  EW.clearPose()          release the whole pose; with a target, theirs
-  //   EW.clearPose('mythos')
-  //   EW.animate(anim, { replace, target })     one-off animation; merge plays over your pose and any
-  //                                             other animation, replace ends them first
-  pose: (bones, opts) => {
-    const { replace = false, target = null } = consoleOptions('EW.pose', opts);
-    if (target) return sendPuppet(target, puppetPose(bones, replace));
-    myState.pose = bones == null ? null : mergePose(replace ? null : myState.pose, bones);
-    return myState.pose;
-  },
-  clearPose: (target = null) => { if (target) sendPuppet(target, puppetPose(null)); else myState.pose = null; },
-  animate: (data, opts) => {
-    const { replace = data?.replace === true, target = null } = consoleOptions('EW.animate', opts);   // replace may ride in the data too
-    const a = { ...data, replace: !!replace };
-    if (target) return sendPuppet(target, { anim: a });
-    if (replace) myState.pose = null;
-    getMe()?.playAnimation(a);
-    sendAnim(a);
-  },
+  // POSING from the console — the same verbs an agent's tools have:
+  // EW.pose, EW.clearPose and EW.animate (client/lib/posecommands.js says how).
+  ...poseCommands({ state: myState, sendPuppet, play: (a) => { getMe()?.playAnimation(a); sendAnim(a); } }),
   setPushable, get pushable() { return pushable(); }, dragState,
   // reach: aim a hand at a world point, or at anything that moves. Pass a
   // function and it re-solves every frame; `EW.reach('leftHand', () =>

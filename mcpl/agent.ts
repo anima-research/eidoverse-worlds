@@ -795,23 +795,24 @@ export class WorldAgent {
             // posed BY someone = authored. merge: only the bones sent, over an
             // authored held pose (null releases one); otherwise the pose is
             // theirs whole, and an empty one releases.
-            // Say what the request did, as the browser's hint does: a release
-            // isn't a pose, and a request that carried nothing (a knock-over
-            // has its own line) did nothing to say.
-            let did: string | null = null;
+            // Say what the request asked of this body, as the browser's hint
+            // does: whether it leaves a pose held or released it, and any
+            // animation. A request that carried no pose and no animation (a
+            // knock-over has its own line above) says nothing.
+            let posed: string | null = null;
             if (msg.pose) {
               const next = msg.merge ? mergePose(this.heldPoseAuthored ? this.heldPose : null, msg.pose)
                 : (Object.keys(msg.pose).length ? msg.pose : null);
               this.heldPose = next; this.heldPoseAuthored = next != null;
-              did = next ? "posed you" : "released your pose";
+              posed = next ? "posed you" : "released your pose";
             }
             if (msg.anim) {
               const anim = { ...msg.anim, replace: (msg.anim as { replace?: boolean }).replace !== false };
               if (anim.replace) { this.heldPose = null; this.heldPoseAuthored = false; }
               this.ws?.send(JSON.stringify({ type: "anim", ...anim }));
-              did = "posed you with an animation";
             }
-            if (did) this.onEvent?.({ ts: Date.now(), kind: "say", who: msg.by, text: `(${did})` } as any);
+            if (posed || msg.anim) this.onEvent?.({ ts: Date.now(), kind: "say", who: msg.by,
+              text: `(${posed ?? "posed you"}${msg.anim ? `${posed ? "," : ""} with an animation` : ""})` } as any);
             break;
           case "bodydrag":
             // A renderer-backed dragger runs the physics this headless body
@@ -1920,11 +1921,15 @@ export class WorldAgent {
     // knocked over is a fact about the blow, not about our readiness to
     // simulate it; the canned slump holds the shape until the sim produces a
     // real pose, exactly as it does when there is no sim at all.
+    // The fall starts from the pose this body held when the blow landed, as
+    // a browser's sim starts from the bones it draws (a kneel falls from
+    // kneeling height), not from the canned slump put up below.
+    const held = this.heldPoseAuthored ? this.heldPose : null;
     this.clip = "ragdoll";
     this.heldPose ??= DOWNED_POSE;
     this.reaches.clear();   // a knocked-over body's reach is gone — the arms are the ragdoll's now
     this.onEvent?.({ ts: Date.now(), kind: "say", who: by, text: notice } as any);
-    void this.tumble(lean);
+    void this.tumble(lean, held);
   }
 
   private async ensureBody(): Promise<HeadlessBody | null> {
@@ -1946,7 +1951,7 @@ export class WorldAgent {
    *  that finds it changed abandons itself. */
   private bodyEpoch = 0;
 
-  private async tumble(lean: number[] | null) {
+  private async tumble(lean: number[] | null, held: Record<string, PoseValue> | null = null) {
     const epoch = ++this.bodyEpoch;
     const body = await this.ensureBody();
     if (this.bodyEpoch !== epoch) return;
@@ -1976,6 +1981,7 @@ export class WorldAgent {
       yaw: this.yaw,
       // no direction given = the browser default: you fall the way you face
       lean: lean ?? [Math.sin(this.yaw) * 0.9, 0, Math.cos(this.yaw) * 0.9],
+      pose: held,
       pins: [...this.pins].map(([j, at]) => ({ j, at })),
     });
     this.clip = "ragdoll";
