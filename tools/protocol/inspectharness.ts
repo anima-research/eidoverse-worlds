@@ -22,7 +22,7 @@ export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
   const W = scratchWorld(tag, { owner: "olive" });
   W.call("set", { id: "@world", component: "roles:bob", value: { role: "builder" } });   // the "someone else" of H.other
   const H = globalThis.__ih = {
-    W, actor, sent: [], toasts: [], hints: [], asked: [], drags: [], choose: "cancel",
+    W, actor, sent: [], toasts: [], hints: [], status: [], asked: [], drags: [], choose: "cancel",
     entities: new Map(), state: { st: viewState(W.state()) }, replica: { st: W.state() },
     sync() { H.state.st = viewState(W.state()); H.replica.st = W.state(); },
     /** settle the async sends (sendRequest answers at once; the lock dialog is a promise) */
@@ -39,7 +39,7 @@ export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
       b.onResolve({ filter: /^\.\/realize\/models\.js$/ }, (a) => (a.importer.endsWith("/client/lib/inspect.js") ? { path: "realize-models", namespace: "inspect-harness" } : undefined));
       b.onResolve({ filter: /^\.\.\/\.\.\/shared\/structure\.js$/ }, (a) => (a.importer.includes("/client/lib/realize/") ? { path: path.join(ROOT, "shared/structure.js") } : undefined));
       b.onLoad({ filter: /.*/, namespace: "inspect-harness" }, (a) => {
-        if (a.path === "realize-models") return { contents: "export const boxOf = () => null;", loader: "js" };
+        if (a.path === "realize-models") return { contents: "export const boxOf = () => null; export const previewMesh = () => false;", loader: "js" };
         const m = a.path.match(/(world|state|net|panels|ui|confirmcenter)/)[1];
         // every name client/lib imports from these modules exists (no-ops where the edit path never calls them)
         const noop = (names) => names.map((n) => `export const ${n} = () => {};`).join(" ");
@@ -55,6 +55,7 @@ export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
             ${noop(["requestDebug", "requestHistory", "say", "sendAnim", "sendBodyDrag", "sendLease", "sendRelayCredRequest", "sendTyping", "sendVoiceConsent"])}`,
           panels: `export const SCRUB_SPEEDS = {}; ${noop(["renderDOM", "getScrubFeel", "hitRegion", "makeSchemaFrame", "renderCanvas", "resolveDelta", "setScrubFeel"])}`,
           ui: `const H = globalThis.__ih; export const flashHint = (t) => H.hints.push(t); export const toast = (t) => H.toasts.push(t); export const escapeHtml = (s) => String(s); export const isOverlayOpen = () => false;
+            export const claimStatus = (id, o = {}) => H.status.push({ id, ...o }); export const releaseStatus = (id) => { H.status = H.status.filter((c) => c.id !== id) }; export const statusShown = () => H.status.at(-1)?.id ?? null;
             ${noop(["collapseAll", "dockPins", "makeSection", "paintRangesIn", "panelFrame", "setAmbientHint"])}`,
           confirmcenter: "const H = globalThis.__ih; export const chooseCenter = async (q) => { H.asked.push(q); return H.choose; }; export const confirmCenter = async () => false;",
         }[m];
