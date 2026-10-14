@@ -45,7 +45,7 @@ import {
   net, connect, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendWhisper, sendTyping,
   setPoseOverride, sendPuppet, sendAnim,
 } from './lib/net.js';
-import { mergePose } from '../shared/humanoid.js';
+import { mergePose, puppetPose } from '../shared/humanoid.js';
 import { updateBuild, toggleEditMode, isEditing } from './lib/build.js';
 import { initPalette } from './lib/palette.js';
 import { setRightsSink } from './lib/state.js';
@@ -838,15 +838,16 @@ const EW = globalThis.EW = {
   //   EW.pose({ leftUpperArm: [...] })          only these bones, over what you hold; null releases one
   //   EW.pose({ ... }, { replace: true })       the WHOLE pose: every bone not named goes back to normal
   //   EW.pose({ ... }, { target: 'mythos' })    ask someone else (their client decides)
-  //   EW.clearPose()  /  EW.clearPose('mythos')
+  //   EW.pose(null)  /  EW.clearPose()          release the whole pose; with a target, theirs
+  //   EW.clearPose('mythos')
   //   EW.animate(anim, { replace, target })     one-off animation; merge plays over your pose and any
   //                                             other animation, replace ends them first
   pose: (bones, { replace = false, target = null } = {}) => {
-    if (target) return sendPuppet(target, { pose: bones, merge: !replace });
-    myState.pose = mergePose(replace ? null : myState.pose, bones);
+    if (target) return sendPuppet(target, puppetPose(bones, replace));
+    myState.pose = bones == null ? null : mergePose(replace ? null : myState.pose, bones);
     return myState.pose;
   },
-  clearPose: (target = null) => { if (target) sendPuppet(target, { pose: {} }); else myState.pose = null; },
+  clearPose: (target = null) => { if (target) sendPuppet(target, puppetPose(null)); else myState.pose = null; },
   animate: (data, { replace = data?.replace === true, target = null } = {}) => {   // replace may ride in the data too
     const a = { ...data, replace: !!replace };
     if (target) return sendPuppet(target, { anim: a });

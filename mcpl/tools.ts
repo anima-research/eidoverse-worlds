@@ -23,7 +23,7 @@
 
 import { readdirSync } from "node:fs";
 import sharp from "sharp";
-import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose } from "../shared/humanoid.js";
+import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose, puppetPose } from "../shared/humanoid.js";
 import { rigBonesFor } from "./rigbones.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { rawShapeError } from "./shape.ts";
@@ -447,7 +447,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // Otherwise merge over what is already held — mergePose, the same rule
       // a browser applies when it is posed.
       if (target) {
-        ag.puppet(target, { pose: replace ? mergePose(null, v.pose) ?? {} : v.pose, merge: !replace });
+        ag.puppet(target, puppetPose(v.pose, replace));
         return text(`asked ${target} to ${replace ? "hold a pose (replacing theirs)" : "pose"} ${what}`
           + `${note ? ` — ${note}` : ""}. They decide whether to take it.`);
       }
@@ -462,7 +462,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   clear_pose: async (ag, a, ctx, name) => {
-      if (a.target) { ag.puppet(String(a.target), { pose: {} }); return text(`released ${a.target}'s pose`); }
+      if (a.target) { ag.puppet(String(a.target), puppetPose(null)); return text(`released ${a.target}'s pose`); }
       ag.setPose(null);
       return text("released pose");
 

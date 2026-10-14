@@ -795,18 +795,23 @@ export class WorldAgent {
             // posed BY someone = authored. merge: only the bones sent, over an
             // authored held pose (null releases one); otherwise the pose is
             // theirs whole, and an empty one releases.
+            // Say what the request did, as the browser's hint does: a release
+            // isn't a pose, and a request that carried nothing (a knock-over
+            // has its own line) did nothing to say.
+            let did: string | null = null;
             if (msg.pose) {
               const next = msg.merge ? mergePose(this.heldPoseAuthored ? this.heldPose : null, msg.pose)
                 : (Object.keys(msg.pose).length ? msg.pose : null);
               this.heldPose = next; this.heldPoseAuthored = next != null;
+              did = next ? "posed you" : "released your pose";
             }
             if (msg.anim) {
               const anim = { ...msg.anim, replace: (msg.anim as { replace?: boolean }).replace !== false };
               if (anim.replace) { this.heldPose = null; this.heldPoseAuthored = false; }
               this.ws?.send(JSON.stringify({ type: "anim", ...anim }));
+              did = "posed you with an animation";
             }
-            this.onEvent?.({ ts: Date.now(), kind: "say", who: msg.by,
-              text: `(posed you${msg.anim ? " with an animation" : ""})` } as any);
+            if (did) this.onEvent?.({ ts: Date.now(), kind: "say", who: msg.by, text: `(${did})` } as any);
             break;
           case "bodydrag":
             // A renderer-backed dragger runs the physics this headless body

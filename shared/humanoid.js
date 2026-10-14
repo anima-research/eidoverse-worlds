@@ -166,6 +166,21 @@ export function mergePose(base, delta) {
   return Object.keys(out).length ? out : null;
 }
 
+/**
+ * What a request to pose SOMEONE ELSE carries, from either seat: the agent's
+ * pose and clear_pose tools, and the browser console's EW.pose and
+ * EW.clearPose. `replace` makes the named bones their whole pose; otherwise
+ * they merge over what the target holds. A null pose releases theirs whole,
+ * as clear_pose does and as posing yourself with null does. It used to go
+ * out as `pose: null`, which both receivers read as a request with no pose
+ * in it, so someone letting go of another body that way got no release and
+ * no error.
+ */
+export function puppetPose(bones, replace = false) {
+  if (bones == null) return { pose: {} };
+  return replace ? { pose: mergePose(null, bones) ?? {} } : { pose: bones, merge: true };
+}
+
 /** Check and clean one pose value: a bare quaternion, or {q?, t?, s?}.
  *  Returns {value, renormalized} or {why}. The value comes back in the
  *  smallest form that says it — a bare array when only q was given. */
