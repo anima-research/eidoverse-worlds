@@ -54,6 +54,7 @@ check("replace sends the whole pose, and a replace with nothing left is a releas
     ["a target that isn't a name", () => EW.pose(arm, { target: 7 as any })],
     ["replace that isn't true or false", () => EW.pose(arm, { replace: "yes" as any })],
     ["a name where the bones go", () => EW.pose("someone" as any)],
+    ["a list where the bones go", () => EW.pose([[0, 0, 0, 1]] as any)],
     ["a target among the bones", () => EW.pose({ ...arm, target: "someone" } as any)],
     ["a target inside the animation", () => EW.animate({ dur: 1, tracks: {}, target: "someone" } as any)],
     ["clearPose with options", () => EW.clearPose({ target: "someone" } as any)],
