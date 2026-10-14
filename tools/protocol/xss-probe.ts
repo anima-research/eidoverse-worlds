@@ -46,7 +46,11 @@ try {
   if (secs < 4) await die(1, "the page never booted");
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
   check("boot: a world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
-  check("boot: default settings — pushable (the reviewer's victim)", await evalJson(`import('/lib/consent.js').then((m) => m.pushable())`));
+  // R 10-12: nobody is shove-able by default (3b84e149). The exploit under test is the HTML-rendered NAME, which needs the
+  // knock to land — so the victim opts in explicitly below; the default itself is asserted first.
+  check("boot: default settings — NOT pushable (R 10-12; the reviewer's victim opts in next)", !(await evalJson(`import('/lib/consent.js').then((m) => m.pushable())`)));
+  await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable?.(true), true)).catch(() => true)`);
+  check("boot: the victim opted in to being knocked over", await evalJson(`import('/lib/consent.js').then((m) => m.pushable())`));
   const me = await evalJson(`import('/lib/base.js').then((m) => m.CONFIG.name)`);
   check("boot: my body is in (a knock-over needs one)", await waitFor(`import('/lib/mybody.js').then((m) => !!m.getMe())`, 30000));
   check("boot: no CSP violation from the client itself", (await evalJson(`__csp`)).length === 0, await evalJson(`__csp`));
@@ -107,7 +111,7 @@ try {
     check("M1 html`` renders its literal markup and escapes its value", await waitFor(`(() => { const h = document.getElementById('hintbar'); return !!h.querySelector('kbd') && !h.querySelector('b') && h.textContent === 'press M for <b>x</b>'; })()`, 2000),
       await evalJson(`document.getElementById('hintbar')?.innerHTML`));
     await evalJson(`import('/lib/base.js').then((m) => (m.bus.emit('esc-quiet', 'closed'), true))`);
-    check("M2 a built-in hint (Esc put the panels away) still shows its key", await waitFor(`!!document.getElementById('hintbar').querySelector('kbd') && /Esc/.test(document.getElementById('hintbar').textContent)`, 2000));
+    check("M2 a built-in hint (the panels were put away) still shows its key — Tab brings them back (R 10-11)", await waitFor(`!!document.getElementById('hintbar').querySelector('kbd') && /Tab/.test(document.getElementById('hintbar').textContent)`, 2000));
     await evalJson(`import('/lib/base.js').then((m) => (m.bus.emit('esc-quiet', 'restored'), true))`);
   });
 
