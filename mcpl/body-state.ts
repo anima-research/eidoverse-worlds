@@ -4,11 +4,12 @@ import * as THREE from "three";
 import { glbJson, humanBones, worldPositions, worldRotations, isVrm0 } from "./rig.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { normalizeReachBag, TOUCH_GAP, sameReach } from "../shared/reachwire.js";
-import { ReachBody, standInUnread } from "./physics.ts";
+import { ReachBody } from "./physics.ts";
 import { PoseClips } from "./pose-clips.ts";
 import { CLIP_SLOTS } from "../shared/clipdefs.js";
 import { planReaches, reachKey } from "../shared/reachorder.js";
 import { clampBodyScale } from "../shared/presencewire.js";
+import { poseChannels } from "../shared/humanoid.js";
 
 export type PublicPose = {
   p: number[]; yaw: number; speed: number; clip: string;
@@ -197,7 +198,7 @@ export class BodyStateReader {
       const f = freshness(o), p = o.pose, valid = !validate(o);
       const bones = p?.pose ?? {}, reaches = normalizeReachBag(p?.reach);
       const count = valid ? Object.keys(bones).length : null;
-      const unreadable = valid ? Object.entries(bones).filter(([, v]) => standInUnread(v)).map(([n]) => n) : [];
+      const unreadable = valid ? Object.entries(bones).filter(([, v]) => !poseChannels(v)).map(([n]) => n) : [];
       const wing = p?.wingsFolded === true ? ", wings folded" : p?.wingsFolded === false ? ", wings open" : "";
       return {
         ok: f.status === "current", who, avatar: o.avatar || null, self: o.self,

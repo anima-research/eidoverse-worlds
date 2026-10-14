@@ -1982,9 +1982,11 @@ export class WorldAgent {
       yaw: this.yaw,
       // no direction given = the browser default: you fall the way you face
       lean: lean ?? [Math.sin(this.yaw) * 0.9, 0, Math.cos(this.yaw) * 0.9],
-      // A pose someone gave this body while the skeleton loaded is the one
-      // it now holds; otherwise the one it held when the blow landed.
-      pose: this.heldPoseAuthored ? this.heldPose : held,
+      // What the body holds now: a pose given or released while the fall
+      // waited counts. Only the canned slump the blow itself put up isn't a
+      // pose the body was drawn in before it, so then the one it held when
+      // the blow landed.
+      pose: this.heldPose === DOWNED_POSE ? held : this.heldPose,
       // where it stands, on a floor or a support, not the terrain under it
       rootY: this.pos.y,
       pins: [...this.pins].map(([j, at]) => ({ j, at })),

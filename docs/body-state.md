@@ -122,15 +122,14 @@ Examples:
   published it: per bone a quaternion, or `{q, t, s}`.
   `overrides.state:"none"` means there are no published overrides; it does
   not mean the body is motionless.
-- `unmappedBones` names published bones this rig's humanoid skeleton lacks,
-  and `unreadableBones` names published bones the reader can't lay as the
-  renderer draws them: nothing usable in the value (see `poseChannels` in
-  `shared/humanoid.js`, which both read a bone with), or a scale at or
-  below 0, which collapses or mirrors the bone and which the reader leaves
-  out while laying the rest of that bone's value. Either costs only that
-  bone: the rest of the pose is still evaluated. Every reply carries
-  `unreadableBones` (null when the pose can't be read at all), and the
-  summary names them.
+- Each published bone is read as the renderer reads it (`poseChannels` in
+  `shared/humanoid.js`, which both use): a rotation of no length is the
+  bone's rest, and a scale at or below 0 collapses or mirrors what hangs
+  from the bone, as drawn. `unmappedBones` names published bones this rig's
+  humanoid skeleton lacks, and `unreadableBones` names published bones with
+  nothing usable in their value. Either costs only that bone: the rest of
+  the pose is still evaluated. Every reply carries `unreadableBones` (null
+  when the pose can't be read at all), and the summary names them.
 - Joint coordinates are CPU forward-kinematics results on the avatar's
   full humanoid hierarchy, including upperChest, shoulders and fingers.
   Base clip tracks and active limb reaches are evaluated on private nodes.

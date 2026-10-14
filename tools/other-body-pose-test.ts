@@ -61,10 +61,17 @@ check("replace sends the whole pose, and a replace with nothing left is a releas
     ["clearPose with undefined", () => EW.clearPose(undefined as any)],
     ["clearPose with null", () => EW.clearPose(null as any)],
     ["clearPose with an empty name", () => EW.clearPose("")],
+    ["an argument after the options", () => EW.pose(null, { replace: true }, "someone" as any)],
+    ["a name where the animation goes", () => EW.animate("someone" as any)],
+    ["an animation's replace that isn't true or false", () => EW.animate({ dur: 1, tracks: {}, replace: "yes" } as any)],
   ];
   const slipped = refused.filter(([, f]) => !threw(f)).map(([what]) => what);
   check("every call that could land on the caller by mistake throws instead", !slipped.length && eq(state.pose, arm) && !sent.length && !played.length,
     slipped.length ? `didn't throw: ${slipped.join(", ")}` : "");
+  EW.pose({ head: [0, 0, 0, 1] }, { replace: undefined });
+  check("a replace left undefined is no replace", eq(state.pose, { ...arm, head: [0, 0, 0, 1] }) && !sent.length);
+  EW.pose({ head: null });
+  check("EW.pose({}, name) merges nothing over theirs, so it sends nothing", EW.pose({}, "someone") === undefined && !sent.length);
   EW.animate({ dur: 1, tracks: {} });
   check("EW.animate plays on the caller, merging over its pose", played.length === 1 && played[0].replace === false && eq(state.pose, arm) && !sent.length);
   EW.animate({ dur: 1, tracks: {} }, { replace: true });
@@ -157,14 +164,31 @@ try {
   const again = await knock();
   check("a body knocked over falls from the pose it was drawn in, whoever authored it",
     Number.isFinite(again) && eq(begun.at(-1)?.pose, slumped), JSON.stringify(begun.at(-1)?.pose)?.slice(0, 120));
-  // A pose given while the fall waits on its skeleton and ground is the one
-  // it starts from (tumble's waits always yield, so this lands before begin).
+  // While the fall waits on its skeleton and ground (tumble's waits always
+  // yield, so what is done right after the blow lands before begin): a pose
+  // given then is the one it starts from, a release lets it start standing,
+  // and a second blow starts it from the slump the first one put up, which
+  // is what the body was drawn in by then.
+  const waited = async (during: () => void) => {
+    const before = kneeler.body?.rd, count = begun.length;
+    kneeler.knockDown(poser.name, null, "(knocked over)");
+    during();
+    await until(() => kneeler.body?.rd && kneeler.body.rd !== before, 15_000);
+    return { pose: begun.at(-1)?.pose, begins: begun.length - count };
+  };
   kneeler.setPose(null);
-  const before = kneeler.body?.rd, given = { hips: { t: [0, -0.2, 0] }, head: [0, 0.2, 0, Math.sqrt(0.96)] };
-  kneeler.knockDown(poser.name, null, "(knocked over)");
-  kneeler.setPose(given);
-  await until(() => kneeler.body?.rd && kneeler.body.rd !== before, 15_000);
-  check("...and from a pose given while the fall waited to start", eq(begun.at(-1)?.pose, given), JSON.stringify(begun.at(-1)?.pose)?.slice(0, 120));
+  const given = { hips: { t: [0, -0.2, 0] }, head: [0, 0.2, 0, Math.sqrt(0.96)] };
+  const g = await waited(() => kneeler.setPose(given));
+  check("...and from a pose given while the fall waited to start", eq(g.pose, given), JSON.stringify(g.pose)?.slice(0, 120));
+  kneeler.setPose(null);
+  kneeler.setPose({ hips: { t: [0, -0.3, 0] } });
+  const r = await waited(() => { kneeler.heldPose = null; kneeler.heldPoseAuthored = false; });   // what a release does (the puppet handler)
+  check("...from standing when its pose was released while it waited", r.pose === null, JSON.stringify(r.pose)?.slice(0, 120));
+  kneeler.setPose(null);
+  let slump: unknown;
+  const twice = await waited(() => { slump = structuredClone(kneeler.heldPose); kneeler.knockDown(poser.name, null, "(knocked over)"); });
+  check("...and once, from the first blow's slump, when a second blow lands while it waits", twice.begins === 1 && !!slump && eq(twice.pose, slump),
+    `${twice.begins} begin(s), ${JSON.stringify(twice.pose)?.slice(0, 80)}`);
   kneeler.setPose(null);
   kneeler.pos.y = 0.5;     // standing on something above the terrain
   const raised = await knock();

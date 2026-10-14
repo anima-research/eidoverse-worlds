@@ -130,6 +130,7 @@ const poses: Record<string, Record<string, unknown>> = {
   "non-uniform scale": { leftUpperArm: { s: [1, 1.6, 1] }, rightUpperLeg: { s: [1.3, 1, 0.8] }, chest: { s: [1.2, 0.9, 1] } },
   "all channels together, and a rotation of no length": { hips: { t: [0, -0.2, 0] }, chest: { q: [0, 0.2, 0, 0.98], s: [1.2, 1, 1] }, rightLowerArm: { q: [0, 0, 0.3, 0.954], t: [0, 0.03, 0] }, head: { s: 1.4 }, neck: [0, 0, 0, 0] },
   "every channel on hips and on a forearm": { hips: { q: [0, 0.1, 0, 0.995], t: [0.05, -0.25, 0.02], s: [1.1, 0.9, 1.2] }, leftLowerArm: { q: [0.2, 0, 0, 0.98], t: [0, 0.02, 0.01], s: [0.8, 1.3, 1] } },
+  "a scale that mirrors and one that collapses": { leftLowerArm: { s: [1, -1, 1] }, rightUpperArm: { q: [0, 0, 0.3, 0.954], s: [0.5, 0, 1] } },
 };
 
 try {
@@ -249,22 +250,16 @@ try {
     && Math.abs((kept.armLength("leftHand") ?? NaN) - (fresh.armLength("leftHand") ?? NaN)) < 1e-12,
     `posed ${posed.distanceTo(hand(fresh)).toFixed(3)} m away, then ${hand(kept).distanceTo(hand(fresh)).toExponential(1)} m`);
 
-  // A scale at or below 0 (it would collapse or mirror the bone) is left out,
-  // and the rest of the bone's value is still laid.
+  // A rotation of no length normalizes to identity in the renderer, the
+  // bone's rest, replacing whatever the clip left; and so here.
   {
-    const a = await ReachBody.create(base, "turned-vrm1.vrm"), b = await ReachBody.create(base, "turned-vrm1.vrm");
-    if (!a || !b) throw new Error("no reach body");
+    const a = await ReachBody.create(base, "turned-vrm1.vrm");
+    if (!a) throw new Error("no reach body");
     const q = [0, 0, 0.3, Math.sqrt(0.91)];
-    a.poseAt([0, 0, 0], 0, { leftLowerArm: { q, s: [1, -1, 1] }, rightLowerArm: { s: [1, 0, 1] } });
-    b.poseAt([0, 0, 0], 0, { leftLowerArm: q });
-    const off = Math.max(...["leftHand", "rightHand"].map((k) => a.av.nodes[k].getWorldPosition(new THREE.Vector3()).distanceTo(b.av.nodes[k].getWorldPosition(new THREE.Vector3()))));
-    check("a scale at or below 0 is left out, and the bone's rotation is still laid", off < 1e-12, `${off}`);
-    // A rotation of no length normalizes to none in the renderer, replacing
-    // whatever the clip left, and so here.
     a.poseAt([0, 0, 0], 0, null);
     a.av.nodes.spine.quaternion.set(q[0], q[1], q[2], q[3]);   // as a clip would leave it
     a.holdPose({ spine: [0, 0, 0, 0] });
-    check("a rotation of no length is no rotation, as the renderer reads it", a.av.nodes.spine.quaternion.equals(new THREE.Quaternion()),
+    check("a rotation of no length puts the bone at rest, over the clip, as the renderer reads it", a.av.nodes.spine.quaternion.equals(new THREE.Quaternion()),
       JSON.stringify(a.av.nodes.spine.quaternion.toArray()));
   }
 

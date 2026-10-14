@@ -83,22 +83,21 @@ try {
   check("the pose tool's kneeling example is read, not refused", knelt.ok && eq(knelt.publishedRotations, kneel) && eq(knelt.unreadableBones, []), knelt.error);
   check("kneeling lowers every joint by 0.5 m and moves none sideways", !!standing.joints && Object.entries(standing.joints).every(([k, j]: [string, any]) =>
     near(knelt.joints?.[k]?.position, [j.position[0], j.position[1] - 0.5, j.position[2]])));
-  // Bones read as the renderer reads them, beside ones the reader can't lay
-  // as drawn (nothing usable; a scale at or below 0, which it leaves out
-  // while laying the bone's rotation): each of those costs only itself, and
-  // a rotation with no length is no rotation, as in the renderer.
+  // Every bone is read as the renderer reads it (a rotation of no length is
+  // the bone's rest, a scale at or below 0 collapses or mirrors it); a bone
+  // with nothing usable in it costs only itself, and every reply names it.
   const turned = [0, 0, 0.2, Math.sqrt(0.96)];
   const mixed = { leftUpperArm: turned, rightUpperArm: { q: [0, 0] }, spine: [0, 0, 0, 0], leftLowerArm: { s: [1, 0, 1] }, rightLowerArm: { q: turned, s: [1, -1, 1] } };
   owner.setPose(mixed as any); owner.tick();
   await until(() => eq(peer.people.get(owner.name)?.pose?.pose, mixed));
   const partial = await read(peer, { who: owner.name, detail: "bones" });
-  check("a bone the reader can't lay as drawn is named, and the rest of the pose is read", partial.ok
-    && eq(partial.unreadableBones, ["rightUpperArm", "leftLowerArm", "rightLowerArm"]) && near(partial.joints?.leftUpperArm?.rotation, turned)
+  check("a bone with nothing usable is named, and the rest of the pose is read", partial.ok
+    && eq(partial.unreadableBones, ["rightUpperArm"]) && near(partial.joints?.leftUpperArm?.rotation, turned)
     && near(partial.joints?.rightLowerArm?.rotation, turned) && near(partial.joints?.spine?.rotation, [0, 0, 0, 1]),
     JSON.stringify({ ok: partial.ok, error: partial.error, unreadable: partial.unreadableBones }));
   const brief = await read(peer, { who: owner.name });
-  check("...and the summary names them too", eq(brief.unreadableBones, ["rightUpperArm", "leftLowerArm", "rightLowerArm"])
-    && brief.summary.includes("3 unreadable: rightUpperArm, leftLowerArm, rightLowerArm"), brief.summary);
+  check("...and the summary names it too", eq(brief.unreadableBones, ["rightUpperArm"])
+    && brief.summary.includes("1 unreadable: rightUpperArm"), brief.summary);
   owner.setPose(null); owner.tick();
   await until(() => !peer.people.get(owner.name)?.pose?.pose);
   peer.clip = "sit"; peer.tick();

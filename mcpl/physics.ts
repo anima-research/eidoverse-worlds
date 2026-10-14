@@ -298,24 +298,6 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
   }
 }
 
-/** One bone of a held pose as the stand-ins read it: the channels the
- *  renderer reads (shared/humanoid.js poseChannels; a rotation of no length
- *  normalizes to none, as there), less a scale with a component at or below
- *  0, which collapses or mirrors the bone and which the stand-in leaves out.
- *  Null when nothing usable is left. */
-export function standInChannels(v: unknown) {
-  const c = poseChannels(v);
-  if (!c || !c.s || c.s.every((x: number) => x > 0)) return c;
-  return c.q || c.t ? { ...c, s: null } : null;
-}
-
-/** Whether the stand-in can't lay a published bone as the renderer draws it:
- *  nothing usable in its value, or a scale it leaves out (standInChannels). */
-export function standInUnread(v: unknown) {
-  const c = poseChannels(v);
-  return !c || (!!c.s && !c.s.every((x: number) => x > 0));
-}
-
 /** One headless body's physics: a stand-in skeleton plus whichever Ragdoll is
  *  currently running on it. The caller owns cadence (call step from its own
  *  ticker) and streaming (read pose/root after each step). */
@@ -357,7 +339,7 @@ export class HeadlessBody {
     for (const n of Object.values(this.av.nodes) as any[]) n.quaternion.identity();
     if (pose) {
       for (const [j, v] of Object.entries(pose)) {
-        const n = this.av.nodes[j], q = standInChannels(v)?.q;
+        const n = this.av.nodes[j], q = poseChannels(v)?.q;
         if (n && q) n.quaternion.set(q[0], q[1], q[2], q[3]).normalize();
       }
     }
@@ -388,7 +370,7 @@ export class HeadlessBody {
     // the fall starts where the body was drawn, not at standing height. The
     // drop is in the frame the normalized hips moves in, vrm.scene, which
     // for a VRM0 body is turned half round; this stand-in has no such pivot.
-    const hipsT = standInChannels(opts.pose?.hips)?.t;
+    const hipsT = poseChannels(opts.pose?.hips)?.t;
     if (hipsT) {
       const drop = new this.m.THREE.Vector3(hipsT[0], hipsT[1], hipsT[2]);
       if (this.vrm0) drop.set(-drop.x, drop.y, -drop.z);
@@ -655,14 +637,17 @@ export class ReachBody {
    *    after the IK and vrm.update: any other bone's `t` adds to its offset
    *    from its parent, in the parent's rest axes turned by the parent's
    *    pose, and `s` scales what hangs from the bone in its own rest axes.
-   *  A limp body draws no raw layer (avatar.js: _applyRawPose doesn't run
-   *  while limp), so `raw: false` leaves it out. A bone the stand-in lacks,
-   *  or a value standInChannels can't read, is skipped; body_state names
-   *  both. */
+   *  Each bone is read as the renderer reads it (shared/humanoid.js
+   *  poseChannels): a rotation of no length normalizes to identity, the
+   *  bone's rest, and a scale at or below 0 collapses or mirrors what hangs
+   *  from the bone, as drawn. A limp body draws no raw layer (avatar.js:
+   *  _applyRawPose doesn't run while limp), so `raw: false` leaves it out. A
+   *  bone the stand-in lacks, or a value with nothing usable in it, is
+   *  skipped; body_state names both. */
   holdPose(pose: Record<string, unknown>, { raw = true } = {}) {
     const T = this.m.THREE;
     for (const [j, v] of Object.entries(pose)) {
-      const n = this.av.nodes[j], c = standInChannels(v);
+      const n = this.av.nodes[j], c = poseChannels(v);
       if (!n || !c) continue;
       if (c.q) n.quaternion.set(c.q[0], c.q[1], c.q[2], c.q[3]).normalize();
       if (c.t && j === "hips") n.position.add(new T.Vector3(c.t[0], c.t[1], c.t[2]));
