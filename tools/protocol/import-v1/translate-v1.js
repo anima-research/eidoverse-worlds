@@ -10,6 +10,7 @@
 // imports; the browser may import this file), and the lab's CLI is tools/protocol/sweep.ts.
 import { emptyState as v1Empty, foldEntry } from "./fold.js";
 import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, DIALECT, VERSION } from "../../../shared/protocol/fold.js";
+import { unNegZero } from "../../../shared/protocol/round.js";
 import { enc, encName, dec } from "../../../shared/protocol/names.js";
 import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
@@ -303,7 +304,7 @@ export const canon = (o) => JSON.stringify(o, (k, v) => (v && typeof v === "obje
 // one entry in the §2.4 envelope; the authority's re-read discipline applies: what we emit must parse back unchanged
 export const changeBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => ({ verb, body }))(ops[0]) : { verb: "batch", body: { ops } });
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
-export const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
+export { unNegZero };
 
 export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace, content } = {}) {
   const ns = namespace === undefined ? NAMESPACE : namespaceOf(namespace);

@@ -100,17 +100,18 @@ console.log("status verdict");
 // ---- B1: the socket's word -------------------------------------------------
 console.log("socket anchor (B1)");
 {
-  check("absent → legacy-root", socketAnchor({ pos: [0, 0.5, 0] }) === "legacy-root");
-  check("explicit legacy-root → legacy-root", socketAnchor({ seatAnchor: "legacy-root" }) === "legacy-root");
-  check("surface → surface", socketAnchor({ seatAnchor: "surface" }) === "surface");
-  check("typo/nonsense never becomes surface", socketAnchor({ seatAnchor: "Surface" }) === "legacy-root" && socketAnchor({ seatAnchor: 1 as any }) === "legacy-root");
+  check("absent → legacy-root", socketAnchor({ name: "seat", body: {} }) === "legacy-root");
+  check("another anchor (hips) → legacy-root", socketAnchor({ name: "seat", body: { anchor: "hips" } }) === "legacy-root");
+  check("body.anchor surface → surface (D14: the anchor enum, one field)", socketAnchor({ name: "seat", body: { anchor: "surface" } }) === "surface");
+  check("typo/nonsense never becomes surface", socketAnchor({ body: { anchor: "Surface" } }) === "legacy-root" && socketAnchor({ body: { anchor: 1 as any } }) === "legacy-root");
+  check("the old sibling spelling (seatAnchor) is not read: one field, never two", socketAnchor({ seatAnchor: "surface", body: {} } as any) === "legacy-root");
   check("no socket at all → legacy-root", socketAnchor(undefined) === "legacy-root");
 }
 
 // ---- B3: the runtime gate --------------------------------------------------
 console.log("runtime gate (B3)");
 {
-  const surface = { seatAnchor: "surface", pos: [0, 0.5, 0] };
+  const surface = { name: "seat", body: { anchor: "surface" } };
   const accepted = { status: "accepted", pose: "sitchair", contactY: 0.2055 };
   const base = { sock: surface, verdict: accepted, currentSlot: "sitchair", loadedClipSha256: C_SHA, currentClipSha256: C_SHA };
   check("full gate open → apply with contactY",
@@ -259,7 +260,7 @@ console.log("verdict cache (shared browser/agent implementation)");
   check("vector 2: the held verdict demotes to pending the moment the event lands",
     cache.get("claude")?.status === "pending");
   check("vector 2: the gate refuses pending with its own reason",
-    (() => { const gte = seatGateCore({ sock: { seatAnchor: "surface" }, verdict: cache.get("claude") }); return !gte.apply && gte.reason === "profile update pending"; })());
+    (() => { const gte = seatGateCore({ sock: { body: { anchor: "surface" } }, verdict: cache.get("claude") }); return !gte.apply && gte.reason === "profile update pending"; })());
   check("vector 4: the other name's verdict is untouched by claude's update",
     cache.get("aletheia")?.status === "accepted");
 

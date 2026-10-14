@@ -40,7 +40,7 @@
 // the same meadow.
 
 import { THREE, TSL, sun, ground, renderer } from './core.js';
-import { report, CONFIG } from './base.js';
+import { report, CONFIG, bus } from './base.js';
 import { registerFoliage } from './foliage.js';
 import { state } from './state.js';
 import { effectiveSky } from '../../shared/forecast.js';
@@ -48,8 +48,17 @@ import { effectiveSky } from '../../shared/forecast.js';
 const {
   Fn, If, uniform, texture, float, vec2, vec3, vec4, mix, clamp, smoothstep,
   fract, floor, dot, length, positionWorld, positionView, normalWorld,
-  materialColor, materialRoughness, materialMetalness,
+  materialColor, materialRoughness, materialMetalness, screenCoordinate, bool,
 } = TSL;
+
+// ---- the caster fade ---------------------------------------------------------
+// A caster entering or leaving the distance budget (lightrig casterPass) dithers its shadow in over ~300 ms instead
+// of popping (R 10-11). Materials are SHARED across clones (draw_batches groups by material.id), so the amount comes
+// from the OBJECT being drawn: one uniform, re-read per object in the shadow pass. One module-level node so every
+// material's depth pass has the SAME WGSL shape; the material is marked so lightrig knows the mesh can fade (a
+// non-node material hard-flips as before). Interleaved-gradient noise, in shadow-map pixels.
+const uShadowFade = uniform(1).onObjectUpdate(({ object }) => object?.userData?.shadowFade ?? 1);
+const FADE_MASK = fract(float(52.9829189).mul(fract(dot(screenCoordinate.xy, vec2(0.06711056, 0.00583715))))).lessThan(uShadowFade);
 
 // ---- the shared uniform state -----------------------------------------------
 // One set for the whole scene, exactly like upstream's: every wrapped
@@ -366,6 +375,12 @@ export function prepareMaterial(mat, receiver = null) {
   const pbr = mat.isMeshStandardNodeMaterial || mat.isMeshPhysicalNodeMaterial
     || (mat.roughness !== undefined && mat.metalness !== undefined);
   wrapMaterial(mat, receiver, pbr);
+  // a clone of a prepared material (matoverride) carries the node AND the flag: never compose the fade with itself
+  if (!mat.userData.shadowFade) {
+    const mask = mat.maskShadowNode ?? mat.maskNode;   // maskShadowNode wins over maskNode in three's depth pass
+    mat.maskShadowNode = mask ? FADE_MASK.and(bool(mask)) : FADE_MASK;
+    mat.userData.shadowFade = true;
+  }
   stats.wrapped++;
   return true;
 }
@@ -412,11 +427,12 @@ export const BODY_NO_CAST = /^(GOLD|wings)/;
 // AFTER assets.js has already prepared the scene. At prepare time nobody knows
 // yet whether this body glows.
 //
-// castShadow/receiveShadow are in NO pipeline cache key (TEL0S_NOTES SS12.1),
-// so flipping them here costs nothing at the graph level. What it DOES cost is
-// a depth pipeline per material on the first shadow render, compiled in-frame,
-// because bodies never go through warmqueue's warmDepth -- that is the measured
-// risk when this widens past one body, and the reason it has not.
+// castShadow is in NO pipeline cache key (TEL0S_NOTES SS12.1) — but receiveShadow
+// IS (three 0.186 RenderObject.js:856/:945: the shadow taps are only generated
+// for an object that receives), so flipping it here costs a LIT pipeline per
+// material plus a depth pipeline per material on the first shadow render, both
+// compiled in-frame unless warmed first (warmqueue warmLit + warmDepth — the
+// own-body pref below does; the lamp gate at load still pays inside loading).
 //
 // GOLD and the wings are excluded: see BODY_NO_CAST.
 export function setBodyShadows(root, on = true) {
@@ -429,6 +445,39 @@ export function setBodyShadows(root, on = true) {
     n++;
   });
   return n;
+}
+
+// MY BODY CASTS A REAL SHADOW — a Video setting, own avatar only (R 10-11 wishlist). The lamp gate above stays
+// the default for everyone; this is the one body the viewer pays for by choice. Remotes never pass through here:
+// mybody.js calls it from setMe (the own-body hook), and a remote's pref value is not this browser's.
+export const PREF_MY_SHADOW = 'ew-my-shadow';
+export function myShadowPref() { try { return localStorage.getItem(PREF_MY_SHADOW) === '1'; } catch { return false; } }
+export function setMyShadowPref(on) {
+  try { localStorage.setItem(PREF_MY_SHADOW, on ? '1' : '0'); } catch { /* private window */ }
+  bus.emit('my-shadow', !!on);
+}
+/** Decide and apply the own body's shadows: the pref OR its lamp. Before a flip ON, `lit(label, getMeshes)` warms
+ *  the lit+shadow pipelines (receiveShadow is in the cache key) and `warm(label, getMeshes)` the depth pass — both
+ *  off the frame, through the conductor; bodies never reach the caster budget's warm. `pref` may be a getter: the
+ *  decision is re-read AFTER the warms (a toggle while a warm was pending ends where the pref is, not where it was);
+ *  `still()` says whether the body is still the one worn. */
+export async function applyOwnBodyShadow(av, { pref = myShadowPref, warm = null, lit = null, still = () => true } = {}) {
+  const root = av?.vrm?.scene;
+  if (!root?.traverse) return false;
+  const read = () => (typeof pref === 'function' ? !!pref() : !!pref) || !!av._lamps?.length;
+  if (read() && !av._bodyWarm && (warm || lit)) {
+    const meshes = [];
+    root.traverse((o) => { if (o.isMesh && !BODY_NO_CAST.test(o.name || '')) meshes.push(o); });
+    let ran = false;
+    const get = () => { if (!still()) return []; ran = true; return meshes; };
+    if (lit) await lit('lit me', get);
+    if (warm) await warm('depth me', get);
+    if (ran) av._bodyWarm = true;
+    if (!still()) return false;
+  }
+  const want = read();
+  setBodyShadows(root, want);
+  return want;
 }
 
 export function prepareObject(root, { kind = 'model', foliage = true } = {}) {

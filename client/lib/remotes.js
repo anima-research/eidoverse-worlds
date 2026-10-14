@@ -399,7 +399,7 @@ export function updateRemotes(dt, now = performance.now()) {
         // transition — an unprofiled seat renders where it always did, but
         // never silently.
         r.avatar.setSeatApprox(sw.seatState === 'approximate');
-        declareSeatState(r.id, sw.to, avatarMounts.get(r.id)?.slot, sw.seatState, sw.seatReason);
+        declareSeatState(r.id, sw.host ?? sw.to, sw.slot, sw.seatState, sw.seatReason);
         // The seat owns WHERE the body is and its base clip — never its
         // expressiveness. The newest presence sample still delivers emotes
         // (one-shots layer over the sit; setClip is emote-aware and won't

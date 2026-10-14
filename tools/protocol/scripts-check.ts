@@ -56,7 +56,9 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["say needs scope.say", "authority.js", "if (res.says.length && !v.scope?.say) return mark(\"scope\"", "if (false) return mark(\"scope\"", ["B21"]],
   ["create needs scope.create", "authority.js", "if (!cap.create) refuse(\"scope\", `${cap.key} doesn't declare create: true`", "if (false) refuse(\"scope\", `${cap.key} doesn't declare create: true`", ["B22"]],
   ["created things stay in the subtree", "authority.js", "if (cap?.kind === \"script\") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some(", "if (false) for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some(", ["B22"]],
-  ["a script's body effect meets consent", "authority.js", "const g = bodyGate(w, `script:${id}`, b.to, b.act, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason);", "const g = { ok: true, consent: \"standing\", deliver: () => {} };", ["C1"]],
+  ["a script's body effect meets consent", "authority.js", "const g = bodyGate(w, `script:${id}`, b.to, b.kind, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason);", "const g = { ok: true, consent: \"standing\", deliver: () => {} };", ["C1"]],
+  ["the beat drains scripts", "authority.js", "drainScripts(w); drainHeld(w);   // what the beat logged reaches scripts", "/* mutant */   // what the beat logged reaches scripts", ["E6"]],
+  ["enter() restores the outer call's queues", "authority.js", "Object.assign(CTX, outer); w.changedQ = wq.changedQ; w.sayQ = wq.sayQ;", "Object.assign(CTX, outer); w.sayQ = wq.sayQ;", ["E5"]],
   ["bodies need scope.bodies", "authority.js", "for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.kind)) return mark(\"scope\"", "for (const b of res.bodies) if (false) return mark(\"scope\"", ["C2"]],
   ["sponsor-wide body allowance", "authority.js", "&& C.tableOf(P, to).overrides[`scripts-by:${extra.sponsor}`]?.[cls]) d = C.decide(P, `scripts-by:${extra.sponsor}`, to, cls, now);", "&& false) d = null;", ["C3"]],
   ["frozen clock", "sandbox.js", "FrozenDate.now = () => NOW;", "FrozenDate.now = () => RealDate.now();", ["D2"]],
@@ -71,14 +73,14 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["changed:<comp> cascades", "authority.js", "if (hit) activate(w, id, name, { on: `changed:${hit.comp}`", "if (false) activate(w, id, name, { on: `changed:${hit.comp}`", ["E3", "B8"]],
   ["say events", "authority.js", "activate(w, id, name, { on: \"say\", by: e.actor", "void (w, id, name, { on: \"say\", by: e.actor", ["E1"]],
   ["a script never hears its own say", "authority.js", "if (!(Array.isArray(v.on) && v.on.includes(\"say\")) || e.actor === `script:${id}`) continue;", "if (!(Array.isArray(v.on) && v.on.includes(\"say\"))) continue;", ["E1"]],
-  ["use of an imported binding says re-install", "authority.js", "if (old || (isE(ce) && ce.kind === \"act\" && ce.verb === \"legacy\"))", "if (false)", ["V1"]],
+  ["use of an imported binding says re-install", "authority.js", "if (old || (isE(ce) && ce.kind === \"act\" && ce.verb === \"imported\"))", "if (false)", ["V1"]],
   ["imported behaviours are listed", "authority.js", "...(id && id !== \"@world\" ? {} : { imported: importedBehaviours(w, st) })", "...{}", ["V1"]],
   ["UTC inside the sandbox", "sandbox.js", "P.getTimezoneOffset = function getTimezoneOffset() { return 0; };", "", ["D3"]],
   ["local-time methods are UTC", "sandbox.js", "P[\"get\" + k] = P[\"getUTC\" + k];", "", ["D3"]],
   ["runs per script per minute", "authority.js", "if (runs >= cfg.runs) return", "if (false) return", ["B23"]],
   ["cpu per sponsor per minute", "authority.js", "if (ms >= cfg.cpu) return", "if (false) return", ["B23"]],
   ["a guest sponsor is a guest", "authority.js", "const n = needOf(op); const eff = effective(st, holder);", "const n = needOf(op); const eff = effective(st, holder, false);", ["B24"]],
-  ["upload rate", "authority.js", "if (U.length >= SR.LIMITS.uploads) refuse(\"rate\"", "if (false) refuse(\"rate\"", ["H5"]],
+  ["upload rate", "authority.js", "if (U.length >= SR.LIMITS.uploads) refuse(\"rate\", `${said(actor)} has uploaded ${U.length} sources", "if (false) refuse(\"rate\", `${said(actor)} has uploaded ${U.length} sources", ["H5"]],
   ["acts point at a say's text, never copy it", "authority.js", "const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq !== undefined ? rest : ev; };", "const recorded = (ev) => ev;", ["E1"]],
   ["the auditor reads a say's text from the say", "scriptaudit.js", "event.text = trig.body.text;", "", ["E1"]],
   ["an authority runs activations isolated (in a killable process)", "sandbox.js", "run: (x) => (canIsolate() ? runIsolated(x) : runScript(x))", "run: (x) => runScript(x)", ["I1", "I2"]],
@@ -207,6 +209,13 @@ function bell(s: any, who: string) { s.call(who, "create", { id: "bell1", model:
 const NAMES: Record<string, string> = { vic: "Vic" }; // a stand-in for the authority's directory (M1)
 const onUse = (body: string) => `world.on("use", (e) => {\n${body}\n});\n`;
 
+// E5's stand-in for the sandbox: a host whose script callback re-enters the authority with a request of its own (the shape
+// enter() guards: a nested call must not reset the outer call's queues under it)
+const HOSTCB: any = { w: null, nested: null, checkSyntax: () => null,
+  run({ self, key, event }: any) {
+    const ops = key === "script:hear" ? ((HOSTCB.nested = D.request(HOSTCB.w, "bob", "set", { id: "lamp", component: "t/n", value: 1 })), [{ verb: "set", id: self, comp: "t/released", value: { by: event.by } }])
+      : key === "script:glow" ? [{ verb: "set", id: self, comp: "t/moved", value: true }] : [];
+    return { ok: true, ran: true, ops, says: [], bodies: [], reads: null, logs: [], fuel: 0 }; } };
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean; server?: boolean; opts?: any };
 const cases: Case[] = [
   // ---------------- B: behaviours on sponsor rights ----------------
@@ -682,6 +691,27 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       for (let i = 0; i < 3; i++) { s.advance(10000); for (const r of s.tick()) evs.push(r.status); }
       return { asleep, evs, woke: comp(s, "clock", "t/woke"), n: comp(s, "clock", "t/n") }; },
     good: (o) => o.asleep === 0 && JSON.stringify(o.evs) === '["ran","ran","ran"]' && o.woke >= 3590 && o.woke <= 3610 && o.n === 2 },
+  { id: "E5", what: "re-entrancy: a host callback inside an activation sends a nested request; the outer request's queues come back after it, so the second script still hears the outer entry (enter() restores the whole per-call state)", opts: { scripts: HOSTCB },
+    run(s) { cast(s); HOSTCB.w = s.w(); HOSTCB.nested = null;
+      s.call("bob", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("bob", "create", { id: "lamp", model: "crate", place: { at: [3, 0] } });
+      install(s, "bob", "ball", "hear", "// host callback\n", { scope: { ids: "self", comps: ["t/released"] }, on: ["release"] });
+      install(s, "bob", "ball", "glow", "// host callback\n", { scope: { ids: "self", comps: ["t/moved"] }, on: ["changed:transform"] });
+      const mv = s.call("vic", "move", { to: [0, 0, 0.3] }), gr = s.call("vic", "grab", { id: "ball" }), dr = s.call("vic", "drop", { id: "ball" });
+      return { setup: [show(mv), show(gr), show(dr)], nested: show(HOSTCB.nested), lamp: comp(s, "lamp", "t/n"), released: comp(s, "ball", "t/released"), moved: comp(s, "ball", "t/moved") }; },
+    good: (o) => o.setup.every((x: string) => x === "ok") && o.nested === "ok" && o.lamp === 1 && o.released?.by === "vic" && o.moved === true },
+  { id: "E6", what: "the beat reaches scripts: a rest the heartbeat logs (settle, no request) fires changed:transform (second review 10-11 S2-2)", run(s) { cast(s);
+      if (!D.settle) return { absent: true };
+      s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("bob", "create", { id: "mat", model: "crate", place: { at: [3, 0] } });
+      install(s, "bob", "mat", "land", `world.on("changed:transform", (e) => world.set("self", "t/landed", { id: e.id, by: e.by }));\n`, { scope: { ids: ["self", "ball"], comps: ["t/landed"] }, on: ["changed:transform"] });
+      const mv = s.call("vic", "move", { to: [0, 0, 0.3] }), gr = s.call("vic", "grab", { id: "ball" }), th = s.call("vic", "throw", { id: "ball", v: [0, 6, 0] });
+      const n0 = s.entries().length; let beats = 0, wrote = 0;
+      for (let k = 0; k < 200 && !wrote; k++) { s.advance(66); wrote = D.settle(s.w()); beats++; }
+      const rest = s.entries().slice(n0).find((e: any) => e.kind === "change" && e.actor === "sim");
+      return { setup: [show(mv), show(gr), show(th)], beats, wrote, rest: !!rest, landed: comp(s, "mat", "t/landed") }; },
+    good: (o) => o.setup.every((x: string) => x === "ok") && o.wrote > 0 && o.rest && o.landed?.id === "ball" && o.landed?.by === "vic" },
   // ---------------- P: param.<name> ----------------
   { id: "P1", what: "param.<name>: a script writes a signal into a component's data (a seat pose reads it); the schema keeps the rest of the value checked", run(s) { cast(s);
       s.call("bob", "create", { id: "swing", components: { label: "swing", transform: { pos: [0, 0, 0] } } });   // a light is its own thing (one place per thing, 10-11): no model here

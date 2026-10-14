@@ -17,6 +17,7 @@
 import { inspectHarness } from "./protocol/inspectharness.ts";
 import { qFromEuler, sameRotation } from "../shared/euler.js";
 import { qFromYaw } from "../shared/rot.js";
+import { socketMapIn } from "../shared/sockbody.js";
 const H = inspectHarness("editcommit");
 const { commitEdit, registerHandler, endGesture, schemaFor } = await import("../client/lib/inspect.js");
 const Edits = await import("../client/lib/editwrites.js");
@@ -29,8 +30,11 @@ const check = (name: string, ok: boolean, detail = "") => {
 const previews: any[] = [];
 registerHandler("light", (id: string, _obj: any, k: string, v: any, opts: any) => { if (!opts?.live) return false; previews.push({ id, k, v }); return true; });
 registerHandler("sockets", (_id: string, _obj: any, k: string) => k === "add");   // a viewport gesture: handled, never sent
-const realized = () => ({ position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } });
+const { Object3D } = await import("../client/node_modules/three/build/three.module.js");
+const realized = () => new Object3D();   // a pos edit is a live drag for everyone else: inspect.js reads the object's world pose
 const c = (id: string) => H.W.state().entities[id]?.c;
+// a thing's sockets are its socket children (PLAN-sockets-entities), read as the card's map
+const socks = (id: string) => socketMapIn(H.W.state().entities, id) ?? {};
 const last = () => H.sent.at(-1);
 const expectOf = (req: any, comp: string) => req?.args?.expect?.find((x: any) => x.component === comp);
 
@@ -63,8 +67,8 @@ console.log("\na gesture belongs to one id:");
   commitEdit("c1", "sockets.seat|rot|1", 1);                   // …and c1 is edited before it ends (heading 1 rad)
   await H.flush();
   const req = last();
-  check("c1's expect is computed from c1's own record (its sockets as they were)", req?.args.id === "c1" && expectOf(req, "sockets")?.value?.seat?.q === undefined && !!expectOf(req, "sockets")?.value?.seat && req.args.expect.every((x: any) => x.id === "c1"), JSON.stringify(req));
-  check("…and the sent sockets merged from the record (yaw 1, pos kept), accepted", Math.abs(req.args.value.seat.q?.[1] - Math.sin(0.5)) < 1e-6 && req.args.value.seat.pos[1] === 0.5 && Math.abs(c("c1").sockets.seat.q?.[1] - Math.sin(0.5)) < 1e-6, JSON.stringify(c("c1")));
+  check("c1's expect is computed from c1's own record (it stores no sockets map: its seats are children)", req?.args.id === "c1" && !!expectOf(req, "sockets") && !("value" in expectOf(req, "sockets")) && req.args.expect.every((x: any) => x.id === "c1"), JSON.stringify(req));
+  check("…and the sent sockets merged from the record (yaw 1, pos kept), accepted", Math.abs(req.args.value.seat.q?.[1] - Math.sin(0.5)) < 1e-6 && req.args.value.seat.pos[1] === 0.5 && Math.abs(socks("c1").seat?.q?.[1] - Math.sin(0.5)) < 1e-6, JSON.stringify(socks("c1")));
   endGesture();
   H.other("set", { id: "lamp", component: "light", value: { ...c("lamp").light, range: 7 } });
   commitEdit("lamp", "light.range", 9);
@@ -85,14 +89,15 @@ console.log("\nrefusals, gestures, and the door's undo of the other edits:");
   H.W.call("delete", { id: "c1", component: "lock" }); H.sync();
   const rz = commitEdit("zz", "pos.x", 1);
   check("an id not in the fold refuses", !rz.ok && /not in the fold/.test(rz.errors[0]));
-  commitEdit("c1", "comp.recipe", '{"wood":2}');
+  // a component of my own carries a namespace (PROTOCOL §4): a bare name is refused at the door
+  commitEdit("c1", "comp.example.org/recipe", '{"wood":2}');
   await H.flush();
-  check("a new comp: one set recipe whose expect says it was ABSENT (no value)", last().args.component === "recipe" && expectOf(last(), "recipe") && !("value" in expectOf(last(), "recipe")) && c("c1").recipe?.wood === 2, JSON.stringify(last()));
-  commitEdit("c1", "comp.recipe", null);   // what the 'remove recipe' button sends
+  check("a new comp: one set recipe whose expect says it was ABSENT (no value)", last().args.component === "example.org/recipe" && expectOf(last(), "example.org/recipe") && !("value" in expectOf(last(), "example.org/recipe")) && c("c1")["example.org/recipe"]?.wood === 2, JSON.stringify(last()));
+  commitEdit("c1", "comp.example.org/recipe", null);   // what the 'remove recipe' button sends
   await H.flush();
-  check("removing it: delete recipe", last().verb === "delete" && last().args.component === "recipe" && c("c1").recipe === undefined, JSON.stringify(last()));
+  check("removing it: delete recipe", last().verb === "delete" && last().args.component === "example.org/recipe" && c("c1")["example.org/recipe"] === undefined, JSON.stringify(last()));
   const u = await Edits.undo();
-  check("…and Ctrl+Z (the door's undo of that act) restores {wood: 2}", u.ok && c("c1").recipe?.wood === 2, JSON.stringify([u.refused, c("c1")]));
+  check("…and Ctrl+Z (the door's undo of that act) restores {wood: 2}", u.ok && c("c1")["example.org/recipe"]?.wood === 2, JSON.stringify([u.refused, c("c1")]));
   H.W.call("set", { id: "c1", component: "motion", value: { type: "spin", degPerSec: 30, t0: 5 } }); H.sync();
   commitEdit("c1", "motion.rest", 1);
   await H.flush();
@@ -101,9 +106,9 @@ console.log("\nrefusals, gestures, and the door's undo of the other edits:");
   H.W.call("set", { id: "c1", component: "sockets", value: { seat: { pos: [0, 0.5, 0], body: {} } } }); H.sync();
   commitEdit("c1", "sockets.seat|rot|1", Math.PI / 2);   // the panel commits RADIANS (heading)
   await H.flush();
-  check("a numeric deg value from the panel is radians: π/2 lands as π/2, not π/2/57", Math.abs(c("c1").sockets.seat.q?.[1] - Math.SQRT1_2) < 1e-3, JSON.stringify(c("c1").sockets.seat));
-  const rc = commitEdit("c1", "comp.recipe", "");
-  check("a cleared JSON box refuses instead of removing (the button is the deliberate act)", !rc.ok && /remove recipe/.test(rc.errors[0]));
+  check("a numeric deg value from the panel is radians: π/2 lands as π/2, not π/2/57", Math.abs(socks("c1").seat?.q?.[1] - Math.SQRT1_2) < 1e-3, JSON.stringify(socks("c1").seat));
+  const rc = commitEdit("c1", "comp.example.org/recipe", "");
+  check("a cleared JSON box refuses instead of removing (the button is the deliberate act)", !rc.ok && /remove example.org\/recipe/.test(rc.errors[0]));
   check("schemaFor reads the fold record", schemaFor("lamp").groups.some((g: any) => g.group === "light") && schemaFor("nope").groups.length === 0);
 }
 

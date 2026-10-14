@@ -49,7 +49,7 @@ stub.entities.set('radio1', radio);
 stub.entityMeta.set('radio1', { actor: 'ra', kind: 'model', ts: 1, placer: { ...PLACER } });   // the owner's partial update moved actor; the placer stays
 stub.comps.set('radio1', { guard: true, sound: { src: 'store/audio/0123456789abcdef.mp3', look: 'rain on the awning', playing: true, volume: 0.6, radius: 12, loop: true } });
 const as = (id: string, sub: string, role: string) => { const n = stub.net; n.myId = id; n.mySub = sub; n.myRights = { role }; };
-const render = () => editor({ id: 'radio1', obj: radio, meta: stub.entityMeta.get('radio1'), bag: stub.comps.get('radio1'), commit() {}, esc: (t: string) => t })?.html ?? '';
+const render = () => editor({ id: 'radio1', obj: radio, meta: stub.entityMeta.get('radio1'), bag: stub.bagOf('radio1'), commit() {}, esc: (t: string) => t })?.html ?? '';
 
 const VIEWERS = [
   { who: 'the stranger', id: 'carol', sub: SUB_CAROL, role: 'builder', may: false },
@@ -75,7 +75,7 @@ as('bobbie-renamed', SUB_BOB, 'builder');
 html = render();
 check('the placer under a new display id keeps the form', /data-se-root/.test(html), html.slice(0, 300));
 // no guard at all: everyone gets the form
-stub.comps.set('radio1', { sound: stub.comps.get('radio1').sound });
+stub.comps.set('radio1', { sound: stub.bagOf('radio1').sound });
 as('carol', SUB_CAROL, 'builder');
 check('unguarded: the stranger gets the form too', /data-se-root/.test(render()));
 

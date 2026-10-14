@@ -6,7 +6,8 @@
 // (a click selects there), not in a headset, not over a person (bodydrag's capture listener takes that press first).
 // The cursor is an open hand over what a click would pick up, a pointing finger over any other use.
 import { THREE, camera, canvas } from './core.js';
-import { comps, entities } from './world.js';
+import { outOfMyView } from './myview.js';
+import { bagOf, entities, socketsOn } from './world.js';
 import { contextMenu, closeContextMenu } from './panels.js';
 import { flashHint } from './ui.js';
 import { xrActive } from './xrask.js';
@@ -23,14 +24,14 @@ export function initClickUse(h) { hooks = h; }
 const off = () => !hooks || hooks.editing?.() || hooks.busy?.() || xrActive();
 
 const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
-const seatOf = (id) => { const s = comps.get(id)?.sockets; if (!isBag(s)) return null; const k = Object.keys(s).find((k) => bodyOf(s[k])); return k ? bodyOf(s[k]) : null; };   // a socket a body may take (localbody's rule)
+const seatOf = (id) => { for (const x of socketsOn(id)) { const b = bodyOf(x.sock); if (b) return b; } return null; };   // a socket child a body may take (localbody's rule)
 const canGrab = (id) => !!physicsApi.grabbable(id)?.enabled;
 
 /** What a thing offers, most likely first: [{k, label, run}]. The first is what a left-click does. */
 /** spot: where the click landed (the context menu passes it), for "put X on Y" there. */
 export function offersOf(id, { spot = null } = {}) {
   // its name as its builder wrote it, no quotes: the menu draws it in the accent colour (R, 10-10)
-  const L = comps.get(id)?.label, name = typeof L === 'string' && L.trim() ? L.trim().slice(0, 40) : (nameOf(id) ?? id), held = physicsApi.mine().includes(id);
+  const L = bagOf(id)?.label, name = typeof L === 'string' && L.trim() ? L.trim().slice(0, 40) : (nameOf(id) ?? id), held = physicsApi.mine().includes(id);
   // every offer that needs me near it carries `reach`: the click walks me there first (R 10-11 23:32: "the walk-to rule
   // should probably apply to any use action"); without one the offer runs where I stand
   const near = () => physicsApi.inReach(id), out = [], add = (k, pre, post, run, reach = null) => out.push({ k, label: `${pre}${name}${post}`, parts: [pre, name, post], run, ...(reach ? { reach } : {}) });
@@ -39,13 +40,13 @@ export function offersOf(id, { spot = null } = {}) {
   // holding something else, on another thing: set it down on that thing where the click landed (R, 10-10: "you can't click
   // to place it down on another grabbable object ... 'Put down [held item] on [clicked-on item]' at the place that was clicked")
   const inHand = physicsApi.mine().find((h) => h !== id);
-  if (!held && inHand && spot) { const H = comps.get(inHand)?.label, hn = typeof H === 'string' && H.trim() ? H.trim().slice(0, 40) : (nameOf(inHand) ?? inHand);
+  if (!held && inHand && spot) { const H = bagOf(inHand)?.label, hn = typeof H === 'string' && H.trim() ? H.trim().slice(0, 40) : (nameOf(inHand) ?? inHand);
     out.push({ k: 'puton', label: `put ${hn} on ${name}`, parts: [`put ${hn} on `, name, ''], run: () => putAtSpot(inHand, onTop(id, spot)) }); }
   else if (canGrab(id)) add('grab', 'pick up ', '', () => physicsApi.grab(id), near);
   for (const a of actionsOf(id)) add(`use:${a.action}`, `${a.verb} `, a.barred ? ` (${a.barred})` : '', () => useThing(id, a.action, a.verb), near);
   const seat = seatOf(id);
   if (seat) add('sit', `${seat.action ?? 'sit'} on `, '', () => trySitOn(id), near);
-  if (!held && comps.get(id)?.physics?.kind === 'dynamic') add('punt', 'kick ', '', () => physicsApi.punt(id), () => physicsApi.canPunt(id));
+  if (!held && bagOf(id)?.physics?.kind === 'dynamic') add('punt', 'kick ', '', () => physicsApi.punt(id), () => physicsApi.canPunt(id));
   return out;
 }
 
@@ -57,11 +58,11 @@ export function thingAt(clientX, clientY) {
   ray.setFromCamera(ndc, camera);
   const targets = [];
   // clickthrough (componentspec): a click passes through it to whatever is behind (R 10-11: a per-thing switch)
-  const through = (id) => comps.get(id)?.clickthrough === true;
+  const through = (id) => bagOf(id)?.clickthrough === true;
   for (const [id, o] of entities) if (o && !through(id) && (canGrab(id) || actionsOf(id).length || seatOf(id) || physicsApi.mine().includes(id))) targets.push(o);
   if (!targets.length) return null;
   // not a surface the camera is standing in (an orbit camera pulled up against a gate saw only the gate, 7 cm away)
-  let root = ray.intersectObjects(targets, true).find((h) => h.distance > NEAR)?.object;
+  let root = ray.intersectObjects(targets, true).find((h) => h.distance > NEAR && !outOfMyView(h.object))?.object;
   while (root && !root.userData.entityId) root = root.parent;
   return root?.userData.entityId ?? null;
 }
@@ -88,7 +89,7 @@ export function aimPoint(clientX = lastXY?.[0], clientY = lastXY?.[1]) {
   if (lock) aimNdc.set(0, 0); else if (clientX == null) return null; else aimNdc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   aimRay.setFromCamera(aimNdc, camera);
   const mine = new Set(physicsApi.mine()), targets = []; for (const [id, o] of entities) if (o && !mine.has(id)) targets.push(o);
-  const h = aimRay.intersectObjects(targets, true).find((x) => x.distance > NEAR);
+  const h = aimRay.intersectObjects(targets, true).find((x) => x.distance > NEAR);   // a thing hidden in my view still catches a put: it is solid for everyone
   const feetY = hooks?.myPos?.()?.y ?? 0; aimPlane.constant = -feetY;
   const g = aimRay.ray.intersectPlane(aimPlane, aimHit) ? aimHit.clone() : null;
   const p = h && (!g || h.distance < aimRay.ray.origin.distanceTo(g)) ? h.point : g;

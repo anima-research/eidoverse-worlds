@@ -246,6 +246,9 @@ await C("D7", "no default lives only in help text: every 'default …' a help st
     for (const m of h.matchAll(/(\b[a-zA-Z]+)\??:? ?\(([^()]*\bdefault\b[^()]*)\)/g)) { const f = m[1]; if (DYN.has(`${name}.${f}`) || DYN.has(`${def.on === "world" ? name : name}.${f}`)) continue;
       if (!(f in all) && Object.keys(def.fields ?? {}).includes(f)) bad.push(`${name}.${f}: "${m[0].slice(0, 60)}"`); } }
   return [!bad.length && typeof CAT.defaultsOf === "function", bad]; });
+await C("D8s", "the old spelling of sockets is marked, not changed: sockets is lifted to socket children, parent.socket a legacy field; the pin holds (a mark is not a meaning)", () => {
+  const pin = JSON.parse(read("spec/registry-pin.json")); const breaks = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? ["no pinBreaks"];
+  return [typeof CAT.COMPONENTS.sockets?.lifted === "string" && /socket children/.test(CAT.COMPONENTS.sockets.lifted) && (CAT.COMPONENTS.parent?.legacy ?? []).includes("socket") && CAT.COMPONENTS.parent.fields.socket === "string" && !breaks.length && !!CAT.COMPONENTS.socket, { lifted: CAT.COMPONENTS.sockets?.lifted, legacy: CAT.COMPONENTS.parent?.legacy, breaks }]; });
 await C("D8", "a definition's meaning is pinned: a changed default, type or enum is caught (spec/registry-pin.json); additions are fine", () => {
   const pin = JSON.parse(read("spec/registry-pin.json")); const now = CAT.pinOf?.(); const g = CAT.pinBreaks?.(pin, now) ?? ["no pinBreaks"];
   const was = CAT.COMPONENTS.light.defaults.intensity; CAT.COMPONENTS.light.defaults.intensity = 17;

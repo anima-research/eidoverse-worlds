@@ -21,8 +21,9 @@ import { seatGateCore, applySeatCorrection } from "../client/lib/seatcore.js";
 export type EffectiveView = {
   /** The folded entity, or undefined when `id` is not a thing (a body, or unknown). */
   entity(id: string): { pos: number[]; yaw?: number; scale?: number; comp?: Record<string, any> } | undefined;
-  /** The live mount record for `id` (thing OR body), or undefined when unmounted. */
-  mount(id: string): { to: string; slot?: string; offset?: number[]; yaw?: number } | undefined;
+  /** The live mount record for `id` (thing OR body), or undefined when unmounted. A body's seat is a socket entity
+   *  ({to: <socket id>}: PLAN-sockets-entities); a thing's mount is its fold parent (offset/q local to it). */
+  mount(id: string): { to: string; offset?: number[]; yaw?: number; q?: number[] } | undefined;
   /** The SERVER-JUDGED seat verdict for this body's current avatar (#101) —
    *  the same value /avatars hands every consumer. Absent method or absent
    *  verdict both read as "no profile": this module never defaults a contact
@@ -48,10 +49,11 @@ export type Effective =
 const fin3 = (v: unknown): v is [number, number, number] =>
   Array.isArray(v) && v.length === 3 && v.every(Number.isFinite);
 
-/** Default local offset when neither the mount nor a socket provides one.
- *  Mirrors the browser exactly: world.js applyMount uses [0,0,0] for cargo,
- *  mountTransform uses [0,0.5,0] for a seated body. */
-const defaultOffset = (isBody: boolean): [number, number, number] => (isBody ? [0, 0.5, 0] : [0, 0, 0]);
+/** Default local offset when the mount gives none: the parent's origin — for a body on a socket, the socket itself
+ *  (the browser: world.js mountTransform reads the socket's own frame; realize/models.js execMount [0,0,0]). */
+const DEFAULT_OFFSET: [number, number, number] = [0, 0, 0];
+const socketOf = (e: { comp?: Record<string, any> } | undefined) => {
+  const s = e?.socket; return s && typeof s === "object" && !Array.isArray(s) ? s : undefined; };
 
 export function effectiveWorldTransform(
   id: string, view: EffectiveView, nowMs: number, maxDepth = 8,
@@ -67,6 +69,13 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
   const e = view.entity(id);
   const m = view.mount(id);
 
+  // A socket that rides a model part: the browser carries it in the part's node (animated from loaded geometry, part
+  // rest transforms this side does not possess). Refusing is the honest option — slice one of #82; part support follows
+  // when the geometry does. Everything on it (a sitter, cargo) inherits the refusal through the chain.
+  const ownSock = socketOf(e);
+  if (ownSock && typeof ownSock.part === "string")
+    return { ok: false, why: `socket "${ownSock.name}" rides part "${ownSock.part}" of ${m?.to ?? "its host"} — part geometry unavailable here`, link: m?.to ?? id };
+
   // ---- mounted: the parent's frame is the truth, recursively -----------------
   // A mounted entity's OWN root motion is deliberately inert here — the
   // renderer does exactly this (motion.js tickMotion: `if (!obj ||
@@ -78,22 +87,17 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
     const parent = resolve(m.to, view, nowMs, depth - 1, seen);
     if (!parent.ok) return parent;                     // the FIRST unsupported link names itself
 
-    const sock = m.slot ? view.entity(m.to)?.sockets?.[m.slot] : undefined;
-    if (sock && typeof sock.part === "string") {
-      // The seat rides a model part the browser animates from loaded geometry
-      // (part rest transforms) this side does not possess. Refusing is the
-      // honest option — slice one of #82; part support follows when the
-      // geometry does.
-      return { ok: false, why: `socket "${m.slot}" rides part "${sock.part}" of ${m.to} — part geometry unavailable here`, link: m.to };
-    }
+    // what it rides: a socket (a seat), whose body block says how a body sits there — or any thing
+    const sock = socketOf(view.entity(m.to));
 
-    // mount overrides beat socket defaults beat the kind's default — the
-    // browser's exact precedence (world.js applyMount / mountTransform)
+    // the mount's own local pose (local to what it rides: the browser's execMount), else the parent's origin
     const isBody = !e;
-    const rawOff = m.offset ?? sock?.pos ?? defaultOffset(isBody);
+    const rawOff = m.offset ?? DEFAULT_OFFSET;
     if (!fin3(rawOff)) return { ok: false, why: "non-finite mount/socket offset", link: id };
-    const rawYaw = m.yaw ?? sock?.yaw ?? 0;
+    const rawYaw = m.yaw ?? 0;
     if (!Number.isFinite(rawYaw)) return { ok: false, why: "non-finite mount/socket yaw", link: id };
+    const rawQ = Array.isArray(m.q) && m.q.length === 4 ? m.q : null;
+    if (rawQ && !rawQ.every(Number.isFinite)) return { ok: false, why: "non-finite mount rotation", link: id };
     const ownScale = e?.scale ?? 1;
     if (!Number.isFinite(ownScale)) return { ok: false, why: "non-finite scale", link: id };
 
@@ -123,7 +127,8 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
         else seat = { state: "approximate", reason: "non-finite correction" };
       } else seat = { state: "approximate", reason: g.reason };
     }
-    const quat = qMul(parent.quat, qAxisAngle([0, 1, 0], rawYaw)) as [number, number, number, number];
+    // the whole relative rotation where the mount carries one (a tilted socket, cargo at an angle), else its heading
+    const quat = qMul(parent.quat, rawQ ?? qAxisAngle([0, 1, 0], rawYaw)) as [number, number, number, number];
     const yaw = yawOfQuat(quat);
     if (!fin3(pos) || !Number.isFinite(yaw)) return { ok: false, why: "composed transform is non-finite", link: id };
     return { ok: true, pos, yaw, quat, scale: parent.scale * ownScale, moving: parent.moving, ...(seat ? { seat } : {}) };

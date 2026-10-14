@@ -11,7 +11,7 @@ import path from "node:path";
 import { KEYHINTS } from "../client/lib/keyhints.js";
 
 const ROOT = path.resolve(import.meta.dir, "..");
-const FILES = ["build", "gizmo", "panels", "editpanels", "editlayout", "seatedit", "structure_ui", "edittabs", "editpaint"]
+const FILES = ["build", "gizmo", "panels", "editpanels", "editlayout", "seatedit", "structure_ui", "edittabs", "editpaint", "widgets"]
   .map((f) => `client/lib/${f}.js`).filter((f) => fs.existsSync(path.join(ROOT, f)));
 const MOD = /\be\.(shiftKey|ctrlKey|altKey|metaKey)\b|\bkey\s*===\s*['"](Control|Shift|Alt|Meta)['"]/;
 let pass = 0, fail = 0;

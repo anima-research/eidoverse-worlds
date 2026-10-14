@@ -28,7 +28,7 @@
 import { PERF_THRESHOLDS, TIER_NAMES, TIER_COLORS, rankOf } from '../../shared/perfrank.js';
 import { THREE, scene, camera, renderer, canvas } from './core.js';
 import { positionLocal, normalLocal, positionWorld, cameraPosition, modelScale } from 'three/tsl';
-import { entities, entityMeta } from './world.js';
+import { entities, metaOf } from './world.js';
 import * as icons from './icons.js';
 // the fill icon set is optional: without it the loupe button is its word
 const fsvg = (name, size) => (typeof icons.fsvg === 'function' ? icons.fsvg(name, size) : '');
@@ -171,15 +171,10 @@ function collect() {
       if (id !== undefined) {
         rec = subjects.get(`e:${id}`);
         if (!rec) {
-          const meta = entityMeta.get(id);
+          const meta = metaOf(id);
           rec = freshRec(`e:${id}`, 'entity', id + (meta?.model ? `  (${String(meta.model).split('/').pop()})` : ''));
           subjects.set(rec.key, rec);
         }
-        continue;
-      }
-      if (p.userData?.perfscopeSubject) {              // bodies tag themselves (below)
-        rec = subjects.get(`p:${p.userData.perfscopeSubject}`);
-        if (!rec) { rec = freshRec(`p:${p.userData.perfscopeSubject}`, 'person', p.userData.perfscopeSubject); subjects.set(rec.key, rec); }
         continue;
       }
       // avatar roots stamp themselves (avatar.js: userData.who on every body).

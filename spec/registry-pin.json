@@ -327,6 +327,22 @@
  "sockets": {
   "on": "thing"
  },
+ "socket": {
+  "fields": {
+   "name": "string",
+   "part": "string",
+   "body": "object",
+   "accepts": "array",
+   "radius": "number"
+  },
+  "absentMeans": {
+   "part": "it rides its host's root, not a moving node of the host's model",
+   "body": "things only: no person attaches here",
+   "accepts": "nothing snaps in by fits",
+   "radius": "0.15 m (read only with accepts)"
+  },
+  "on": "thing"
+ },
  "home": {
   "fields": {
    "pos": "vec3",

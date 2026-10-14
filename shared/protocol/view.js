@@ -6,6 +6,7 @@
 //                      light, … — plus the DERIVED conveniences every reader wants: pos / q / yaw (q's heading) / scale
 //                      (one number) / scale3 (non-uniform, when it is) / parent {to, socket?, offset, q} (the local
 //                      transform said as an offset). DERIVED names the derived set; recordComponents(rec) is the rest.
+//   tf(c) / parentOf(c) / compOf(c)  the accessors every reader of a fold record shares (C7): its transform, its parent, its bag
 //   viewState(folded) the whole world: {entities, sky, terrain, grass, assets, roles, bans, …}
 //   - ids, roles and parent targets come back through names.dec (an imported world's x-- escapes undone);
 //   - imported:<field> (a field an imported world's translation carried) → that field;
@@ -26,18 +27,53 @@ export const DERIVED = new Set(["id", "pos", "q", "yaw", "scale", "scale3", "bor
 export const recordComponents = (rec) => { const out = {}; for (const k in rec ?? {}) if (!DERIVED.has(k)) out[k] = rec[k]; return out; };
 export const emptyView = () => ({ entities: {}, terrain: null, grass: null, sky: null, assets: [], recentChat: [], chatTotal: 0, roles: {}, bans: {} });
 
+/** The fold record's transform as readers hold it: {pos, q, yaw, scale (one number), scale3? ([x,y,z] when non-uniform)}.
+ *  A missing or malformed part is its default (the origin, no turn, unit scale), never undefined. */
+export function tf(c) {
+  const t = c?.transform ?? {};
+  const pos = Array.isArray(t.pos) && t.pos.length === 3 ? t.pos.slice() : [0, 0, 0];
+  const q = qNorm(t.q) ?? [0, 0, 0, 1];
+  const s = Array.isArray(t.scale) && t.scale.length === 3 ? t.scale : [1, 1, 1];
+  const uniform = s[0] === s[1] && s[1] === s[2];
+  return { pos, q, yaw: qHeading(q), scale: uniform ? s[0] : s[1], ...(uniform ? {} : { scale3: s.slice() }) };
+}
+/** The fold record's parent as readers hold it: {to (names.dec'd), socket?}, or null when it stands on its own. */
+export function parentOf(c) {
+  const p = c?.parent;
+  return p && typeof p.to === "string" ? { to: idOut(p.to) } : null;
+}
+/** Is this key of a fold record a component (not its model/transform/parent, not an imported:* field)? */
+export const isCompKey = (k) => k !== "model" && k !== "transform" && k !== "parent" && !k.startsWith(IMP);
+/** The record's component keys, as the fold spells them. */
+export const compKeys = (c) => Object.keys(c ?? {}).filter(isCompKey);
+/** …and its [key, value] pairs. */
+export const compEntries = (c) => Object.entries(c ?? {}).filter(([k]) => isCompKey(k));
+/** The record's component bag (every key but model/transform/parent/imported:*), keys names.dec'd, values cloned; undefined when empty. */
+export function compOf(c) {
+  let comp;
+  for (const [k, v] of Object.entries(c ?? {})) {
+    if (!isCompKey(k)) continue;
+    (comp ??= {})[idOut(k)] = clone(v);
+  }
+  return comp;
+}
+
+/** The one-line adapter the editor's entry points stand behind (C7b): a fold record `c` ({transform?, model?, parent?,
+ *  …components}) reads as its view; a view record (the suites' fixtures, an agent's foldRecord) passes through. A view
+ *  is told by ITS invariant — viewOf always writes `pos` — never by the fold's spelling: the authority accepts
+ *  `delete {component: "transform"}`, so a record may be {label} alone (review S2-1). The limit: a world naming a
+ *  component `pos` (the door refuses the bare name: DERIVED) would be misread. */
+export const isFoldRecord = (x) => !!x && typeof x === "object" && !Array.isArray(x) && x.pos === undefined;
+export const recordOf = (x, id = "") => (isFoldRecord(x) ? viewOf(id, x) : x);
+
 /** One entity's components as the record readers use. */
 export function viewOf(id, c) {
   const rec = {};
-  const t = c.transform ?? {};
-  rec.pos = Array.isArray(t.pos) && t.pos.length === 3 ? t.pos.slice() : [0, 0, 0];
-  const qn = qNorm(t.q) ?? [0, 0, 0, 1];
-  rec.yaw = qHeading(qn); rec.q = qn;
-  const s = Array.isArray(t.scale) && t.scale.length === 3 ? t.scale : [1, 1, 1];
-  rec.scale = s[0] === s[1] && s[1] === s[2] ? s[0] : s[1];
-  if (!(s[0] === s[1] && s[1] === s[2])) rec.scale3 = s.slice();
-  const p = c.parent;
-  if (p && typeof p.to === "string") rec.parent = { to: idOut(p.to), ...(typeof p.socket === "string" ? { socket: p.socket } : {}), offset: rec.pos.slice(), q: qn.slice() };
+  const t = tf(c);
+  rec.pos = t.pos; rec.yaw = t.yaw; rec.q = t.q; rec.scale = t.scale;
+  if (t.scale3) rec.scale3 = t.scale3;
+  const p = parentOf(c);
+  if (p) rec.parent = { ...p, offset: t.pos.slice(), q: t.q.slice() };
   for (const [k, v] of Object.entries(c)) {
     if (k === "transform" || k === "parent") continue;
     if (k.startsWith(IMP)) { rec[idOut(k.slice(IMP.length))] = clone(v); continue; }

@@ -11,6 +11,7 @@
 // stop at whatever this host happens to have on disk), but it has no size: the authority says it can't place or collide
 // it. A name that isn't a library path at all is refused (no model called …).
 import { resolveLibFile } from "./libfile.ts";
+import { r3 } from "../shared/protocol/round.js";
 import { isEido, eidoHex } from "../shared/eido.js";
 import { eidoRel } from "./eidoindex.ts";
 import { summarizeGlb } from "./geometry.ts";
@@ -28,7 +29,6 @@ export function libraryCredits(): Record<string, any> {
   try { CREDITS = JSON.parse(readFileSync(join(ROOT, "defs", "library", "credits.json"), "utf8")); } catch { CREDITS = {}; }
   return CREDITS!;
 }
-const r3 = (n: number) => Math.round(n * 1000) / 1000;
 const cache = new Map<string, Entry>();
 const pending = new Map<string, Promise<void>>();
 /** What a library path looks like (resolveLibFile's own rule, plus the content store's names). */

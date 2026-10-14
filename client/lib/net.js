@@ -27,7 +27,9 @@ import { markPhase } from './boot.js';
 // locally; edit mode sends requests (editwrites.js) and waits for the authority.
 import { makeReplica } from '../../shared/protocol/replica.js';
 import { actorName } from '../../shared/protocol/names.js';
-export const replica = makeReplica();
+// the fold's records are frozen on a dev host (a reader that writes into one throws where it stands, C7); a visitor's
+// browser skips the walk
+export const replica = makeReplica({ freeze: CONFIG.dev });
 /** Is this client in a world (it has adopted the authority's cut)? */
 export const replicaActive = () => replica.active;
 // ui.js is the desktop shell and reaches the engine through its panels (videopanel,
@@ -380,11 +382,11 @@ export function sendPose(now) {
   // receiver re-solves it live. Rides while active; absence means let go.
   const reach = myReachBag();
   if (reach !== undefined) pose.reach = reach;
-  // my seat rides every frame while I sit (presence; world.js setBodySeat): absence means standing
+  // my seat rides every frame while I sit (presence; world.js setBodySeat): {to: <socket id>}; absence means standing
   const seat = avatarMounts.get(CONFIG.name);
   // …with the pose I chose from its menu (and when: a sync group follows the latest), and my input where the socket
   // routes it (throttle/steer, aimYaw/aimPitch: signals every client computes my pose from; client/lib/socksignals.js)
-  if (seat?.to) pose.seat = { to: seat.to, ...(seat.slot ? { slot: seat.slot } : {}), ...(seat.pose ? { pose: seat.pose, at: seat.at ?? 0 } : {}),
+  if (seat?.to) pose.seat = { to: seat.to, ...(seat.pose ? { pose: seat.pose, at: seat.at ?? 0 } : {}),
     ...(seat.in && Object.keys(seat.in).length ? { in: Object.fromEntries(Object.entries(seat.in).map(([k, v]) => [k, Math.round(v * 1000) / 1000])) } : {}) };
   if (clockRtt() !== null) pose.t = Math.round(serverNow());
   pose.seq = ++poseSeq;

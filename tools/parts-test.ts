@@ -35,6 +35,7 @@ const CORE = fileURLToPath(new URL('./core-stub.mjs', import.meta.url));
 const PARTS = fileURLToPath(new URL('./parts-stub.mjs', import.meta.url));
 const COLLIDERS = fileURLToPath(new URL('./colliders-stub.mjs', import.meta.url));
 const LOADWORK = fileURLToPath(new URL('./loadwork-stub.mjs', import.meta.url));
+const REMOTES = fileURLToPath(new URL('./remotes-stub.mjs', import.meta.url));
 plugin({
   name: 'parts-stub',
   setup(build) {
@@ -49,6 +50,8 @@ plugin({
     // requestAnimationFrame at module scope and dies headless. avatar-test
     // already carries a stub for exactly this; share it.
     build.onResolve({ filter: /^\.\/loadwork\.js$/ }, () => ({ path: LOADWORK }));
+    // motion.js reads one clock from remotes.js, whose own cone is every remote body (avatar.js, the renderer)
+    build.onResolve({ filter: /^\.\/remotes\.js$/ }, () => ({ path: REMOTES }));
   },
 });
 

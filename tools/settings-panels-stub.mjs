@@ -89,3 +89,12 @@ export const flipXr = rec('flipXr');
 
 // base.js's 'avatar-worn' normaliser — profile.js → bodies.js reads it through this stub (VR PR)
 export { wornNameOf } from '../client/lib/base.js';
+// the casters row (b3a63651) and 'my body casts a real shadow' (feat/shadow-fade)
+export const CASTER_CHOICES = [6, 12, 24, 48, 96];
+let ceiling = 24;
+export const getCasterCeiling = () => ceiling;
+export const setCasterCeiling = (k) => { calls.push(['setCasterCeiling', k]); ceiling = +k; };
+let myShadow = false;
+export const myShadowPref = () => myShadow;
+export const setMyShadowPref = (on) => { calls.push(['setMyShadowPref', on]); myShadow = !!on; };
+export const applyOwnBodyShadow = async () => false;

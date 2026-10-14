@@ -13,6 +13,7 @@
 
 import { THREE } from './core.js';
 import { MOVER } from '../../shared/mover.js';
+import { bus } from './base.js';
 import { MeshBVH, estimateMemoryInBytes } from 'three-mesh-bvh';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { gridAccumulator, decideSupportClass, validTopGrid, LIE_GRID } from './supportclass.js';
@@ -472,6 +473,8 @@ export function refitCollider(id) {
   decide(e, e.obj.scale?.x || 1);
   if (!suspended.has(id)) bucketAdd(id, e);
 }
+// the realizer's word that a realized object is going (realize/lifecycle.js): its collider goes with it
+bus.on('realized', ({ id }) => removeCollider(id));
 export function removeCollider(id) {
   suspended.delete(id);
   const e = colliders.get(id);
@@ -651,6 +654,9 @@ export function raySegment(origin, dir, far) {
 
 let blockedTop = null;
 export const lastBlockedTop = () => blockedTop;
+const touched = new Set();
+/** The collider entries the last resolveColliders call pushed against or stood on (read right after the call). */
+export const lastContacts = () => touched;
 
 const _local = new THREE.Vector3();
 const _push = new THREE.Vector3();
@@ -704,7 +710,7 @@ export function frameOf(e) {
 }
 
 export function resolveColliders(pos, terrainAt, r = MOVER.body.radius, tall = MOVER.body.height, climbs = tall >= MOVER.body.height) {
-  blockedTop = null;
+  blockedTop = null; touched.clear();
   let ground = terrainAt(pos.x, pos.z);
   // Everything below is written for a body of SOME height standing at `pos`.
   // The avatar is a 1.9m capsule on its feet; a ragdoll joint is a 3cm bead.
@@ -737,7 +743,7 @@ export function resolveColliders(pos, terrainAt, r = MOVER.body.radius, tall = M
       if (_local.x > box.min.x && _local.x < box.max.x
           && _local.z > box.min.z && _local.z < box.max.z) {
         const topY = obj.position.y + box.max.y * ss;
-        if (topY <= pos.y + step && topY > ground) ground = topY;
+        if (topY <= pos.y + step && topY > ground) { ground = topY; touched.add(e0); }
       }
       continue;
     }
@@ -756,7 +762,7 @@ export function resolveColliders(pos, terrainAt, r = MOVER.body.radius, tall = M
         const top = grid.tops[gz * grid.n + gx];
         if (top !== null) {
           const gy = obj.position.y + top * gs;
-          if (gy <= pos.y + step && gy > ground) ground = gy;
+          if (gy <= pos.y + step && gy > ground) { ground = gy; touched.add(e0); }
         }
       }
       continue; // support only — never box-test a grid entry (no false walls)
@@ -773,7 +779,7 @@ export function resolveColliders(pos, terrainAt, r = MOVER.body.radius, tall = M
       const hit = exact.bvh.raycastFirst(_ray, THREE.DoubleSide);
       if (hit) {
         const gy = obj.position.y + hit.point.y * s;
-        if (gy <= pos.y + step && gy > ground) ground = gy;
+        if (gy <= pos.y + step && gy > ground) { ground = gy; touched.add(e0); }
       }
       // walls: closest triangle to a mid-body probe pushes the capsule out
       _hip.set(_local.x, localY + probeY / s, _local.z);
@@ -785,7 +791,7 @@ export function resolveColliders(pos, terrainAt, r = MOVER.body.radius, tall = M
         if (dh < r && dy < spanY && dh > 1e-6) {
           _push.set(dx / dh, 0, dz / dh).applyAxisAngle(UP, yaw)
             .multiplyScalar(r - dh);
-          pos.x += _push.x; pos.z += _push.z;
+          pos.x += _push.x; pos.z += _push.z; touched.add(e0);
         }
       }
       continue; // never box-test an exact entity — that would seal interiors
@@ -812,7 +818,7 @@ export function resolveColliders(pos, terrainAt, r = MOVER.body.radius, tall = M
     if (pos.y >= topY - 0.08) {
       // at/above the top: the box is floor, not wall
       if (_local.x > minX && _local.x < maxX && _local.z > minZ && _local.z < maxZ) {
-        ground = Math.max(ground, topY);
+        ground = Math.max(ground, topY); touched.add(e0);
       }
       continue;
     }
@@ -841,7 +847,7 @@ export function resolveColliders(pos, terrainAt, r = MOVER.body.radius, tall = M
     if (bottomY > ground + 0.05
         && (pos.y + tall) - bottomY <= Math.max(0.05, tall * 0.08)) continue;
     _push.set(best.x, 0, best.z).applyAxisAngle(UP, yaw).multiplyScalar(best.d * bs);
-    pos.x += _push.x; pos.z += _push.z;
+    pos.x += _push.x; pos.z += _push.z; touched.add(e0);
     // pillars aren't mantleable — and neither is anything, to a body that
     // cannot climb. The ragdoll runs this routine once per JOINT per frame;
     // without the height test it would leave the controller's mantle probe
@@ -858,14 +864,14 @@ export function resolveColliders(pos, terrainAt, r = MOVER.body.radius, tall = M
 /** Nearest sittable surface to a point: a horizontal top at chair-ish height
  *  within `range`. This is DESIGN.md's `seatOn` — no authoring, no metadata,
  *  the geometry IS the affordance. Returns {y, x, z, yaw, id} or null. */
-export function findSeat(pos, range = 1.2) {
+export function findSeat(pos, range = 1.2, skip = null) {   // skip(entry): a surface the caller won't offer
   let best = null;
   // grid-bounded (§14.2 6a): a chair within `range` has its footprint cells
   // inside the query disc — the old full-map scan ran on every X press and
   // the 0.45s seat-hint beat
   for (const [id, e0] of nearColliders(pos.x, pos.z, range)) {
     const { obj, mask } = e0; const { yaw, box, exact, pillar, grid } = frameOf(e0);
-    if (mask) continue;
+    if (mask || skip?.(e0)) continue;
     if (pillar || exact) continue; // interiors aren't chairs; furniture inside them is
     if (grid) continue; // a heightfield's box top is the lie we exist to avoid — no phantom seat offers (#11)
     const sc = obj.scale?.x || 1;

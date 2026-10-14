@@ -12,7 +12,7 @@
 // own motion lands on the seat (motion warping, Unreal's name for it, done as a time-lock rather than root motion).
 
 import { THREE } from './core.js';
-import { avatarMounts, mountTransform, comps, entities, findPart } from './world.js';
+import { avatarMounts, mountTransform, bagOf, entities, findPart, seatSocket } from './world.js';
 import { bodyOf, evalPose, choosePose, reachWins } from '../../shared/sockbody.js';
 import { socketSignals } from './socksignals.js';
 import { xrHandWorld } from './xrbody.js';
@@ -31,11 +31,12 @@ const _m = new THREE.Matrix4(), _mv = new THREE.Vector3(), _mq = new THREE.Quate
  *  whose socket shares the group — all from presence, so every client gathers the same list. */
 export function seatChoices(riderId, m, body) {
   if (!body?.sync) return m?.pose ? [{ name: m.pose, at: m.at ?? 0 }] : [];
-  const S = comps.get(m.to)?.sockets ?? {};
+  const host = seatSocket(m.to)?.host;
   const out = [];
   for (const [id, o] of avatarMounts) {
-    if (o.to !== m.to || !o.pose) continue;
-    if (id !== riderId && bodyOf(S[o.slot])?.sync !== body.sync) continue;
+    if (!o.pose) continue;
+    const s = o.to === m.to ? null : seatSocket(o.to);   // another seat on the same thing, in the same group
+    if (id !== riderId && (!s || s.host !== host || bodyOf(s.sock)?.sync !== body.sync)) continue;
     out.push({ name: o.pose, at: o.at ?? 0 });
   }
   return out;
@@ -67,11 +68,12 @@ function thingPoint(id, at, part, out, qIn = null, qOut = null) {
 export function driveSeat(av, riderId, { dt, nowMs, path = null, local = false, xr = null }) {
   const m = avatarMounts.get(riderId);
   if (!m || !av) return null;
-  const comp = comps.get(m.to);
-  const sock = comp?.sockets?.[m.slot];
+  const seat = seatSocket(m.to);   // m.to is the socket; what it hangs on carries the motion, the reach and exit frames
+  const sock = seat?.sock;
   const body = bodyOf(sock);
-  if (!body) return null;
-  const obj = entities.get(m.to);
+  if (!body || seat.host == null) return null;
+  const comp = bagOf(seat.host);
+  const obj = entities.get(seat.host);
   const base = obj?.userData?.base ?? (obj ? { pos: obj.position.toArray(), yaw: obj.rotation.y } : null);
   // the occupant's input counts only where the socket routes it: movement (throttle/steer) when input.move takes the
   // keys, the look (aimYaw/aimPitch) unless the view is locked — the same filter on every client
@@ -83,7 +85,7 @@ export function driveSeat(av, riderId, { dt, nowMs, path = null, local = false, 
   if (!sw) return null;
 
   // ---- getting on (the transition starts the first frame this client sees the body on this seat)
-  const key = `${m.to}/${m.slot}`;
+  const key = m.to;
   let st = av._seatState;
   if (!st || st.key !== key) {
     if (st) releaseLimbs(av, st);
@@ -145,7 +147,7 @@ export function driveSeat(av, riderId, { dt, nowMs, path = null, local = false, 
   av._seatArms ??= {};
   for (const [limb, r] of Object.entries(body.reach)) {
     const side = limb === 'leftHand' ? 'left' : limb === 'rightHand' ? 'right' : null;
-    const target = thingPoint(m.to, r.at, r.part, new THREE.Vector3());
+    const target = thingPoint(seat.host, r.at, r.part, new THREE.Vector3());
     if (!target) continue;
     let hand = null;
     if (side && local) hand = xrHandWorld(side, new THREE.Vector3())?.toArray() ?? null;
@@ -159,7 +161,7 @@ export function driveSeat(av, riderId, { dt, nowMs, path = null, local = false, 
     if (!wins) { if (cur?.owner === 'seat') { av.clearReach(limb); st.reach.delete(limb); } continue; }
     if (cur && cur.owner !== 'seat' && cur.wantWeight > 0) continue;   // the person's own reach outranks the seat's
     if (!cur || cur.wantWeight === 0 || !st.reach.has(limb)) {
-      const to = m.to, at = r.at, part = r.part, rq = r.q, hint = r.hint;
+      const to = seat.host, at = r.at, part = r.part, rq = r.q, hint = r.hint;
       const tq = new THREE.Quaternion(), tp = new THREE.Vector3(), hp = new THREE.Vector3();
       av.setReach(limb, () => {
         if (!thingPoint(to, at, part, tp, rq, rq ? tq : null)) return null;

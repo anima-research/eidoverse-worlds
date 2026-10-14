@@ -34,7 +34,8 @@ mock.module(base+'core.js', () => ({
 mock.module(base+'base.js', () => ({ ...realBase, CONFIG: BENCH_CONFIG, bus, report() {} }));
 mock.module(base+'terrain.js', () => ({ heightAt:()=>0 }));
 mock.module(base+'colliders.js', () => ({ resolveColliders:()=>{}, lastBlockedTop:0, findSeat:()=>null, raySegment:()=>null }));
-mock.module(base+'assets.js', () => ({ forgetBytes() {} }));
+mock.module(base+'assets.js', () => ({ forgetBytes() {}, primeFiles: async () => {} }));
+mock.module(base+'world.js', () => ({ avatarMounts:new Map() }));   // net.js reads the mounts; the realizer behind world.js is not under test
 mock.module(base+'state.js', () => ({ state: { st: { entities: {}, roles: {}, recentChat: [] }, lastSeq: -1, hydrated: false }, hydrate() {}, applyView() {}, reset() {}, onWorldChange: () => () => {} }));
 mock.module(base+'scheduler.js', () => ({ pending:new Map(), P:{} }));
 mock.module(base+'remotes.js', () => ({ remotes:new Map(), ensureRemote:async()=>null, dropRemote:()=>null, pushPose() {}, noteServerTime() {}, noteSpeaking() {} }));
@@ -42,7 +43,8 @@ mock.module(base+'reachnet.js', () => ({ myReachBag:()=>undefined }));
 mock.module(base+'chat.js', () => ({ chat:{}, logChat() {}, logWhisper() {}, noteTyping() {}, noteHistoryContext() {} }));
 mock.module(base+'fp_view.js', () => ({ resolveFirstPersonAnchor:()=>null, FP_FORWARD:0, FP_EYE_LIFT:0, FP_GAZE_AHEAD:0, FP_GAZE_DROP:0, composeFirstPerson() {} }));
 mock.module(base+'boot.js', () => ({ markPhase() {} }));
-mock.module(base+'ui.js', () => ({ isOverlayOpen:()=>false, flashHint:(s:string)=>hints.push(s), toast() {} }));
+const { html } = await import(base+'markup.js');
+mock.module(base+'ui.js', () => ({ isOverlayOpen:()=>false, flashHint:(s:any)=>hints.push(String(s)), toast() {}, html }));
 
 const controller:any = await import('../client/lib/controller.js');
 const netmod:any = await import('../client/lib/net.js');

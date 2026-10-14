@@ -16,12 +16,11 @@
 import { WORLDS_DIR } from "./config.ts";
 import { LIMITS } from "./limits.ts";
 import { sanePose } from "./posecheck.ts";
+import { BODY_RANGE } from "../shared/protocol/physconst.js";
 import { currentIncarnation } from "./transport.ts";
 import { isOperator } from "./operators.ts";
 import { directoryFor } from "./directory.ts";
 import { actorOf as actorIdOf, whois } from "./requestwire.ts";
-// the authority's role ladder (shared/protocol/authority.js RANK), for the presence gates that mirror a door rule
-const ROLE_RANK: Record<string, number> = { none: -1, visitor: 0, builder: 1, owner: 2 };
 import { qNorm } from "../shared/rot.js";
 import { decide as consentDecide } from "../shared/protocol/consent.js";
 import { worlds, type World, type Client, authorityNow } from "./world.ts";
@@ -51,7 +50,7 @@ const ACTOR_ID = /^u-[a-z2-7]{20}$/;
  *  one is Normal: strangers' shove, pose and move are nobody) and a sane range, BEFORE it's forwarded. The target's
  *  client still has the last word; this is so a stranger's packet never reaches a body that said no. 'ask' is refused
  *  with how to ask (the authority's `body` verb asks and delivers). Returns the refusal, or null to forward. */
-export const BODY_RANGE: Record<string, number> = { shove: 3, move: 3, pose: 10 };   // m between the two bodies' last frames
+export { BODY_RANGE };   // m between the two bodies' last frames
 function bodyRefusal(c: Client, tc: Client, cls: "shove" | "pose" | "move", kind: string): string | null {
   if (c.actorId && c.actorId === tc.actorId) return null;            // your own body
   const live = c.world?.log?.live;

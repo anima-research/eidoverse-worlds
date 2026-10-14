@@ -22,7 +22,8 @@
 // HTTP surface, which is exactly what makes it transport-agnostic.
 
 import { bodyOf } from "../shared/components.js";
-import { describeBody } from "../shared/sockbody.js";
+import { kindOf } from "../shared/protocol/kind.js";
+import { describeBody, socketRole } from "../shared/sockbody.js";
 import { dec as decName } from "../shared/protocol/names.js";
 import { actorName } from "../shared/protocol/names.js";
 import { refusalText, warningText, touchWords } from "../shared/protocol/refusal.js";
@@ -425,37 +426,39 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   attach: async (ag, a) => {
-      // a body on a seat is PRESENCE (bodies aren't entities; nothing is logged): my frames carry it while I sit.
-      // The thing must declare the seat (a sockets component with a body block, shared/sockbody.js). The authority is asked
-      // first (use {id, action, args: {socket}}): it checks who may. The seat's leaveBy decides how I get
-      // off, and fromSeat whether I may move to it without standing.
-      const on = String(a.to ?? "").trim();
+      // a body on a seat is PRESENCE (bodies aren't entities; nothing is logged): my frames carry {to: <socket id>} while
+      // I sit. A seat is a socket child with a body block (PLAN-sockets-entities; shared/sockbody.js). `to` is the thing
+      // (pick by `socket` name or by `action`), or a socket's own id. The authority is asked first (use {id: <socket>,
+      // action}): it checks who may, and that nobody sits there. The seat's leaveBy decides how I get off, and fromSeat
+      // whether I may move to it without standing.
+      const want = String(a.to ?? "").trim();
       const mine = ag.mySeat;
-      if (!on) return { content: [{ type: "text", text: "attach needs to: the thing to get on (detach gets you off)" }], isError: true };
-      const rec: any = ag.foldRecord(on);
-      if (!rec) return { content: [{ type: "text", text: `attach: nothing here called "${on}"` }], isError: true };
-      const all = Object.entries<any>(rec?.sockets ?? {}).map(([slot, s]) => [slot, bodyOf(s)] as const).filter(([, b]) => b);   // only sockets a person can attach to
-      const taken = new Set([...ag.mounts.entries()].filter(([id, m]) => id !== ag.name && m.to === on).map(([, m]) => m.slot ?? ""));
-      const fits = all.filter(([slot, b]: any) => (a.socket == null || slot === String(a.socket)) && (a.action == null || b.action === String(a.action)));
-      const pick: any = fits.find(([slot]) => !taken.has(slot)) ?? null;
+      if (!want) return { content: [{ type: "text", text: "attach needs to: the thing to get on (detach gets you off)" }], isError: true };
+      const direct = ag.seatOf(want);   // a socket's own id
+      const on = direct ? String(direct.host ?? "") : want;
+      if (!ag.foldRecord(on)) return { content: [{ type: "text", text: `attach: nothing here called "${want}"` }], isError: true };
+      const all = (direct ? [direct] : ag.socketsOf(on)).map((x: any) => ({ id: x.id, slot: x.name, body: bodyOf(x.sock) })).filter((x: any) => x.body);   // only sockets a person can attach to
+      const taken = new Set([...ag.mounts.entries()].filter(([id]) => id !== ag.name).map(([, m]) => m.to));
+      const fits = all.filter((x: any) => (a.socket == null || x.slot === String(a.socket)) && (a.action == null || x.body.action === String(a.action)));
+      const pick: any = fits.find((x: any) => !taken.has(x.id)) ?? null;
       if (!pick) {
         const why = !all.length ? "declares no seat" : !fits.length ? `has no ${a.action != null ? `'${a.action}' ` : ""}seat${a.socket != null ? ` called "${a.socket}"` : ""}` : "has every such seat taken";
-        return { content: [{ type: "text", text: `attach: ${on} ${why} (its seats: ${all.map(([slot, b]: any) => `${slot} (${b.action})`).join(", ") || "none"})${all.length ? "" : ` — a builder can add one: edit {"sockets.seat|pos|1": 0.5}`}` }], isError: true };
+        return { content: [{ type: "text", text: `attach: ${on} ${why} (its seats: ${all.map((x: any) => `${x.slot} (${x.body.action})`).join(", ") || "none"})${all.length ? "" : ` — a builder can add one: edit {"sockets.seat|pos|1": 0.5}`}` }], isError: true };
       }
-      const [slot, body] = pick;
-      if (mine && !(mine.to === on && mine.slot === slot)) {
-        if (!body.fromSeat) return { content: [{ type: "text", text: `attach: you're on ${mine.to} (${mine.slot}); ${on} (${slot}) doesn't take you straight from another seat — detach first` }], isError: true };
+      const { id: sid, slot, body } = pick;
+      if (mine && mine.to !== sid) {
+        if (!body.fromSeat) return { content: [{ type: "text", text: `attach: you're on ${ag.seatName(mine.to)}; ${on} (${slot}) doesn't take you straight from another seat — detach first` }], isError: true };
       }
       if (a.pose != null && body.poses[String(a.pose)] === undefined) return { content: [{ type: "text", text: `attach: ${on} (${slot}) has no pose "${a.pose}" (its poses: ${Object.keys(body.poses).join(", ") || "only its own"})` }], isError: true };
-      { const r = await ag.request("use", { id: on, action: body.action, args: { socket: slot } });
+      { const r = await ag.request("use", { id: sid, action: body.action });
         if (!r?.ok) return { content: [{ type: "text", text: `attach: the authority refused (${r?.refused?.code}): ${r?.refused?.reason ?? ""}${r?.refused?.fix ? ` — ${r.refused.fix}` : ""}` }], isError: true }; }
-      ag.setSeat({ to: on, slot, ...(a.pose != null ? { pose: String(a.pose), at: Date.now() } : {}) });
+      ag.setSeat({ to: sid, ...(a.pose != null ? { pose: String(a.pose), at: Date.now() } : {}) });
       return text(`you ${body.action} on ${on} — ${describeBody(slot, body)}`);
   },
   detach: async (ag) => {
       const mine = ag.mySeat;
       if (!mine) return text("you're not attached to anything");
-      if (!ag.mayLeaveSeat("menu")) return { content: [{ type: "text", text: `you can't get off ${mine.to} (${mine.slot}): it lets you go only when the world does (a script, or the seat being taken away)` }], isError: true };
+      if (!ag.mayLeaveSeat("menu")) return { content: [{ type: "text", text: `you can't get off ${ag.seatName(mine.to)}: it lets you go only when the world does (a script, or the seat being taken away)` }], isError: true };
       ag.setSeat(null); return text("you get off");
   },
   library: async (ag, a, ctx, name) => {
@@ -515,7 +518,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   move: async (ag, a, ctx, name) => {
-      if (ag.mySeat && !ag.mayLeaveSeat("menu")) return { content: [{ type: "text", text: `you're held on ${ag.mySeat.to} (${ag.mySeat.slot}): it lets you go only when the world does` }], isError: true };
+      if (ag.mySeat && !ag.mayLeaveSeat("menu")) return { content: [{ type: "text", text: `you're held on ${ag.seatName(ag.mySeat.to)}: it lets you go only when the world does` }], isError: true };
       const mode = a.mode == null ? "walk" : String(a.mode);
       if (mode !== "walk" && mode !== "fly") return { content: [{ type: "text", text: `move: mode is "walk" (default) or "fly"` }], isError: true };
       // to: [x, y, z] as the authority's move takes it ([x, z]: on the ground), or a NAME (a thing, a person, a place)
@@ -977,8 +980,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const schema = inspectSchema(rec, id, { world, box: rec.model ? await ag.modelBox(String(rec.model)) : null });
       if (a.json) return text(JSON.stringify(schema));
       const kids = childrenOf(world, id);
-      const head = `[${id}] ${rec.kind === "light" ? "light" : rec.model == null ? "empty" : String(rec.model).split("/").pop()}${rec?.label ? ` "${rec.label}"` : ""}`
-        + `\nparent: ${rec.parent ? `${rec.parent.to}${rec.parent.socket ? ` (socket ${rec.parent.socket})` : ""} — its Transform below is LOCAL to ${rec.parent.to}` : "none (a root: its Transform is the world's)"}`
+      const head = `[${id}] ${kindOf(rec) === "model" ? String(rec.model).split("/").pop() : kindOf(rec)}${rec?.label ? ` "${rec.label}"` : ""}`
+        + `\nparent: ${rec.parent ? `${ag.seatName(rec.parent.to)} — its Transform below is LOCAL to ${rec.parent.to}` : "none (a root: its Transform is the world's)"}`
         + `\nchildren: ${kids.length ? kids.join(", ") : "none"}`
         + (() => { const h = String((rec as any)?.["copy-of"]?.hash ?? "").replace(/^sha256:/, ""); if (!h) return ""; const b = ag.worldBlueprints()[h]; return `\nblueprint: a copy of \"${b?.name ?? "?"}\" (${h.slice(0, 12)})`; })();
       // where each component's value came from (the authority's touched; the Inspector's card tooltips say the same words)
@@ -1021,11 +1024,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const kids = new Map<string, string[]>(); const roots: string[] = [];
       for (const e of ents) { const p = ag.mounts.get(e.id)?.to; if (p && ag.entities.has(p)) { (kids.get(p) ?? kids.set(p, []).get(p)!).push(e.id); } else roots.push(e.id); }
       const riders = new Map<string, string[]>();
-      for (const [who, m] of ag.mounts) if (!ag.entities.has(who)) (riders.get(m.to) ?? riders.set(m.to, []).get(m.to)!).push(m.slot ? `${who} (${m.slot})` : who);
+      for (const [who, m] of ag.mounts) if (!ag.entities.has(who)) (riders.get(m.to) ?? riders.set(m.to, []).get(m.to)!).push(who);   // under the socket they sit in
       const line = (e: any) => {
         const c = recordComponents(e);
-        const comps = Object.keys(c).filter((k) => k !== "lock" && k !== "label").map((k) => (k === "motion" || k.startsWith("motion:")) ? `${k}(${c[k]?.type ?? "…"})` : k === "sockets" ? `sockets(${Object.keys(c.sockets ?? {}).join(",")})` : k);
-        return `[${e.id}]${c.label ? ` "${c.label}"` : ""} ${e.model === "(light)" ? "light" : !e.model ? "empty" : String(e.model).split("/").pop()}${comps.length ? ` · ${comps.join(" · ")}` : ""}${c.lock ? " · 🔒" : ""}${c.hidden ? " · hidden" : ""}`;
+        const comps = Object.keys(c).filter((k) => k !== "lock" && k !== "label").map((k) => (k === "motion" || k.startsWith("motion:")) ? `${k}(${c[k]?.type ?? "…"})` : k === "socket" ? `socket(${c.socket?.name ?? ""}: ${socketRole(c)})` : k);
+        return `[${e.id}]${c.label ? ` "${c.label}"` : ""} ${e.kind === "model" ? String(e.model).split("/").pop() : e.kind}${comps.length ? ` · ${comps.join(" · ")}` : ""}${c.lock ? " · 🔒" : ""}${c.hidden ? " · hidden" : ""}`;
       };
       const hit = (e: any) => !q || [e.id, e.model, e?.label ?? "", ...Object.keys(recordComponents(e))].join(" ").toLowerCase().includes(q);
       const L: string[] = [];

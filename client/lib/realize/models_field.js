@@ -10,18 +10,20 @@
 
 import { P } from '../scheduler.js';
 import { COMPONENTS } from '../../../shared/protocol/componentspec.js';
+import { kindOf, isMeshBag } from '../../../shared/protocol/kind.js';
+export { kindOf, isMeshBag };
 
 /** What the realizer needs to know about a realized id to detect identity
- *  drift. kind: 'model' | 'light'; lib only meaningful for models.
- *  @typedef {{ kind: 'model'|'light', lib?: string }} RealizedView */
+ *  drift. kind: kindOf's word; lib only meaningful for models.
+ *  @typedef {{ kind: 'model'|'mesh'|'light'|'empty', lib?: string }} RealizedView */
 
 /** Diff folded entities against the realized view.
  *
  *  Identity rules:
  *  - an id in state but not realized → create
  *  - realized but gone from state → retire
- *  - realized as one kind, folded as the other (a `light` verb landing on a
- *    model id, or a spawn replacing a light — the id namespace is flat) →
+ *  - realized as one kind, folded as another (a light component landing on an
+ *    Empty's id, or a model replacing a light — the id namespace is flat) →
  *    rebuild (retire + create)
  *  - a model whose `lib` changed → rebuild. The fold OVERWRITES a same-id
  *    spawn (that is what the reference fold does; the realizer projects
@@ -34,19 +36,13 @@ import { COMPONENTS } from '../../../shared/protocol/componentspec.js';
  *  @param {Record<string, any>} stEntities  state.st.entities
  *  @param {Map<string, RealizedView>} realized
  *  @returns {{ create: {id: string, ent: any}[], retire: string[] }} */
-/** What the realizer builds for a folded entity: a legacy `light`-verb light,
- *  an Empty (a spawn with no lib — PROTOCOL §3.2: an invisible Object3D), or a
- *  model. One answer for planReconcile and models.js alike. */
-// a thing with both a model and a mesh exists only by carry (an imported old log, a fork): it is its model, as the hierarchy and the
-// Inspector read it (review S3: three readers disagreed)
-export const kindOf = (ent) => (ent?.kind === 'light' ? 'light' : ent?.model == null ? (isMeshBag(ent?.mesh) ? 'mesh' : 'empty') : 'model');
-
-/** The registered `mesh` component (shared/protocol/componentspec.js), read as a client reads it: a malformed value is
+/** (kindOf — what the realizer builds for a folded entity — is shared/protocol/kind.js's, one answer for every reader;
+ *  a thing with both a model and a mesh exists only by carry and is its model, review S3.)
+ *  The registered `mesh` component (shared/protocol/componentspec.js), read as a client reads it: a malformed value is
  *  absent (the thing is an Empty), never a throw. A field outside its range is clamped to it; a capsule is at least its
  *  diameter tall (the authority's meshSize says the same). */
 export const MESH_SHAPES = COMPONENTS.mesh.enums.shape;
 const { min: SMIN, max: SMAX } = COMPONENTS.mesh.ranges.size;
-export const isMeshBag = (m) => !!m && typeof m === 'object' && !Array.isArray(m) && MESH_SHAPES.includes(m.shape);
 export function readMesh(m) {
   if (!isMeshBag(m)) return null;
   const n = (x) => (typeof x === 'number' && Number.isFinite(x) ? Math.min(SMAX, Math.max(SMIN, x)) : 1);
@@ -98,14 +94,11 @@ export function bandForDistance(d) {
  *  that cannot execute yet simply stays visible in the fold until both ends
  *  are live. */
 export function mountsTouching(stEntities, touchedId, childrenOf = null) {
-  // `childrenOf` (parent id -> Set of child ids, the hosted half's
-  // fold-parent index, §16.2.C) answers the carrier direction in
-  // O(children) instead of O(world); membership is identical to the scan
-  // below by construction (the index is maintained on every parent write).
+  // `childrenOf(id)` (the fold's own index, world.js) answers the carrier direction in O(children) instead of
+  // O(world); membership is the scan's below by construction (the index is kept at every ingest).
   if (childrenOf) {
     const out = stEntities[touchedId]?.parent ? [touchedId] : [];
-    const kids = childrenOf.get(touchedId);
-    if (kids) for (const cid of kids) out.push(cid);
+    for (const cid of childrenOf(touchedId)) out.push(cid);
     return out;
   }
   const out = [];

@@ -21,16 +21,18 @@ import { worldHistoryRows, historyView, HISTORY_MODES } from './historyrows.js';
 import { creditLine } from '../../shared/libcredits.js';
 import { THREE, scene } from './core.js';
 import { bus, CONFIG } from './base.js';
-import { entities, entityMeta, comps, avatarMounts } from './world.js';
+import { entities, bagOf, avatarMounts } from './world.js';
+import { compEntries, compKeys } from '../../shared/protocol/view.js';
 import { requestDebug, sendRequest, replica, net } from './net.js';
 import { flashHint, html } from './ui.js';
 import { openGripEditor } from './gripedit.js';
 import { makeSchemaFrame, resolveDelta, getScrubFeel, setScrubFeel, SCRUB_SPEEDS } from './panels.js';
 import { registerXRPanel } from './xrpanels.js';
 import { treeData, sceneSelected, sceneSelect } from './scenegraph.js';
+import * as Sel from './edit/selection.js';
 import { state, onWorldChange } from './state.js';
 import { treeRows, kindHint, ancestors } from '../../shared/hierarchy.js';
-import { refreshOutline, setRemoveHook, holdGhost, holdBlueprint, getTool as transformTool, setTool as setTransformTool, deselectAll } from './build.js';
+import { refreshOutline, setRemoveHook, holdGhost, holdBlueprint, getTool as transformTool, setTool as setTransformTool } from './build.js';
 import { armSeatPlacement, seatArmed, cancelSeatArm } from './seatedit.js';
 import { defsRegistry } from './defs.js';
 import { WORLD_ID, describeWorld, worldPick, worldChoice } from '../../shared/worldentity.js';
@@ -54,10 +56,10 @@ import * as Edits from './editwrites.js';
 import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';
 import { agoWords, touchWords } from '../../shared/protocol/refusal.js';
 import { recordComponents } from '../../shared/protocol/view.js';
-import { KEYHINTS } from './keyhints.js';   // slice 3b: these panels' writes are requests
+import { RANK, lockLevel, lockRank } from '../../shared/protocol/roles.js';
+import { KEYHINTS, withKeys } from './keyhints.js';   // slice 3b: these panels' writes are requests
 
 const _wp = new THREE.Vector3();
-const short = (meta) => (meta?.model ?? meta?.mesh ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '').split('_').slice(0, 3).join(' ');
 const round = (v, dp = 3) => +(+v).toFixed(dp);
 
 // collapsed groups remembered per LIB (a chair's Components stays open for
@@ -65,7 +67,7 @@ const round = (v, dp = 3) => +(+v).toFixed(dp);
 const FOLD_LS = 'ew-insp-fold';
 let folds = {};
 try { folds = JSON.parse(localStorage.getItem(FOLD_LS) || '{}'); } catch { /* fresh */ }
-const foldKey = (id) => (id === WORLD_ID ? WORLD_ID : `${entityMeta.get(id)?.model ?? '?'}`);
+const foldKey = (id) => (id === WORLD_ID ? WORLD_ID : `${bagOf(id)?.model ?? '?'}`);
 const isOpen = (id, g) => !(folds[foldKey(id)]?.[g]);
 function toggleFold(id, g) {
   const k = foldKey(id); folds[k] ??= {}; folds[k][g] = !folds[k][g];
@@ -107,20 +109,20 @@ let visibleRows = [];          // the rows as last painted, for ↑/↓
 // `@world` (design §3, shared/worldentity.js) is not in `entities` — it is the
 // fold's sky / terrain / grass read as one entity — so it has no outline and no
 // scenegraph selection. Selecting it clears the thing selection and shows its
-// components in the Inspector; selecting any thing clears it again.
-let worldSel = false;
+// components in the Inspector; selecting any thing clears it again. Both live in edit/selection.js
+// (kind 'world', or 'env:<key>' with one of its environment cards in focus).
+const worldSel = () => { const k = Sel.selection().kind; return k === 'world' || String(k).startsWith('env:'); };
+const envFocus = () => { const k = Sel.selection().kind; return String(k).startsWith('env:') ? k.slice(4) : null; };
 /** Create ▸ Environment (editlayout.js): select the world with one of its cards open and the Build tab's World presets
  *  in view — the same places a click on the World row and on Build ▸ World lead to. */
 export function openWorldCard(key) {
   const g = key === 'weather' ? 'weather' : key; if (g && !isOpen(WORLD_ID, g)) toggleFold(WORLD_ID, g);
   if (buildFolds.world) buildFolds.world = false;
-  envFocus = key ?? null; selectWorld();
+  selectWorld(key);
 }
-function selectWorld() {
+function selectWorld(env = null) {
   arming = null; armingRef = null;
-  if (sceneSelected()) deselectAll();   // sg:selected(null) — which leaves worldSel alone
-  clearExtras();
-  worldSel = true;
+  Sel.set([WORLD_ID], env ? `env:${env}` : 'world');
   repaintAll();
 }
 // the palettes the World tiles offer — defs (defs/sky/_presets.json, defs/ground/_palette.json),
@@ -133,7 +135,7 @@ function loadWorldDefs() {
 const worldName = () => replica.st?.entities?.['@world']?.c?.about?.name || CONFIG.world || 'World';
 // R, 10-10: "make it clear what the 'World' is in the Hierarchy. Either World: (gym, in this case) or at least tooltip
 // the world entity, or maybe put the 'world' icon in-line with it": all three.
-const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, icon: 'globe', kind: 'World', label: worldName(), sub: describeWorld(state.st, Date.now(), { presets: skyPresets, clock: false }), active: worldSel,
+const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, icon: 'globe', kind: 'World', label: worldName(), sub: describeWorld(state.st, Date.now(), { presets: skyPresets, clock: false }), active: worldSel(),
   title: 'the world itself: its sky, weather, rules and settings. Click to edit them in the Inspector.' }, ...envRows()] });
 // R 10-11: "no way to get rid of the weather, sky, or terrain once created… We really need those components or entities
 // to appear under the world entity in the Hierarchy… so they can be deleted". Unreal's Outliner lists the sky and the
@@ -158,30 +160,33 @@ function removeEnv(key) {
 function envRows() {
   const may = mayShape() !== false;
   return ENV.filter((e) => (e.key === 'weather' ? wxOf() && wxOf() !== 'clear' : state.st[e.key] != null)).map((e) => ({
-    id: `env:${e.key}`, icon: e.icon, label: e.label, indent: true, active: worldSel && envFocus === e.key,
+    id: `env:${e.key}`, icon: e.icon, label: e.label, indent: true, active: worldSel() && envFocus() === e.key,
     sub: e.key === 'weather' ? wxOf() : undefined,
     title: `the world's ${e.label.toLowerCase()}: click to edit it in the Inspector${may ? `; ✕ removes it (${e.gone})` : ''}`,
     actions: may ? [{ k: 'envdel', label: '✕', danger: true, hover: true, title: `remove: ${e.gone}` }] : [] }));
 }
-let envFocus = null;
 // HIERARCHY VIEW OPTIONS (R, 10-10: "the list in the hierarchy is still hella busy. I would only have the name in the
 // list proper, more info (like id) when you hover over it, and a drop-down ... 'display by id', checkboxes for 'list
 // components'"). Off by default; kept per browser.
 const HOPTS = { ids: 'show ids', kinds: 'show kinds', comps: 'list components' };
-let hopts = { ids: false, kinds: false, comps: false };
+let hopts = { ids: false, kinds: false, comps: false, only: null };
+// the row filters (R 10-12 10:58: the three row surfaces come with filters); a match keeps its ancestors, like the text filter
+const ONLY = {
+  all: { label: 'show every row', test: null },
+  off: { label: 'only switched off', none: 'is switched off', test: (id, w) => w[id]?.disabled === true },
+  mine: { label: 'only hidden in my view', none: 'is hidden in your view', test: (id) => isMineHidden(id) },
+  locked: { label: 'only locked', none: 'is locked', test: (id) => !!bagOf(id)?.lock },
+};
 try { Object.assign(hopts, JSON.parse(localStorage.getItem('ew.hierarchy.view') ?? '{}')); } catch { /* a private window, or a bad value: the defaults */ }
 const saveHopts = () => { try { localStorage.setItem('ew.hierarchy.view', JSON.stringify(hopts)); } catch { /* no storage */ } };
 
 // ---------------------------------------------------------------- multi-selection
-// The PRIMARY selection stays exactly what build.js/scenegraph own (one id,
-// the outline, every existing path). A Shift/Ctrl-click in the tree or a
-// Ctrl-click in the viewport EXTENDS it with more ids, held here. The
-// inspector then shows the channels every selected thing has (Godot's
-// MultiNodeEdit intersects), typing writes the value to each, and the undo
+// One store (edit/selection.js): ids ordered, the PRIMARY first (the outline, every
+// single-thing path). A Shift/Ctrl-click in the tree or a Ctrl-click in the viewport
+// toggles more ids into it. The inspector then shows the channels every selected thing
+// has (Godot's MultiNodeEdit intersects), typing writes the value to each, and the undo
 // is one compound step. A plain click anywhere collapses back to one.
-const extra = new Set();
-let extending = false;         // true while an extend re-primaries: the sg:selected it emits must not clear the set
-const outlines = new Map();    // id → BoxHelper for the extras (the primary keeps build.js's outline)
+const outlines = new Map();    // id → BoxHelper for the non-primary ids (the primary keeps build.js's outline)
 /** Find a painted field by its dispatch key (`ed:look.target`, `ch:pos.x`). */
 function fieldByKey(fields, action) { return (fields ?? []).find((f) => f.k === action); }
 /** Complete an armed ref pick: commit the target id into the waiting field.
@@ -199,26 +204,16 @@ function completeRefPick(targetId) {
 }
 /** Every selected id, primary first, live things only. */
 export function selection() {
-  const p = sceneSelected();
-  const ids = p && entities.get(p) ? [p] : [];
-  for (const id of extra) if (id !== p && entities.get(id)) ids.push(id);
-  return ids;
+  const s = Sel.selection();
+  return s.kind === 'things' ? s.ids.filter((id) => entities.get(id)) : [];
 }
 function extendSelection(id) {
   if (!entities.get(id)) return;
-  const p = sceneSelected();
-  if (!p) { sceneSelect(id); return; }
-  if (id === p) {                       // un-primary: promote the next extra, or clear
-    const next = [...extra][0];
-    if (next) { extra.delete(next); extending = true; sceneSelect(next); extending = false; }
-    else return;
-  } else if (extra.has(id)) extra.delete(id);
-  else extra.add(id);
-  syncOutlines(); repaintAll();
+  Sel.toggle(id);   // taking the primary out promotes the next and keeps the rest, in one event
 }
-function clearExtras() { if (!extra.size) return; extra.clear(); syncOutlines(); }
 function syncOutlines() {
-  for (const [id, h] of outlines) if (!extra.has(id) || !entities.get(id)) { scene.remove(h); h.dispose?.(); outlines.delete(id); }
+  const extra = new Set(selection().slice(1));
+  for (const [id, h] of outlines) if (!extra.has(id)) { scene.remove(h); h.dispose?.(); outlines.delete(id); }
   for (const id of extra) {
     const obj = entities.get(id); if (!obj) continue;
     let h = outlines.get(id);
@@ -247,11 +242,11 @@ async function refreshBehaviors() {
 
 function badgesFor(id) {
   const out = [];
-  const bag = comps.get(id) ?? {};
-  for (const [type, data] of Object.entries(bag)) {
+  for (const [type, data] of compEntries(bagOf(id))) {
     if (type === 'lock' || type === 'hidden' || type === 'label') continue;   // lock has its glyph, label IS the row's name, hidden is added once below
     if (type === 'motion' || type.startsWith('motion:')) out.push(`${type}(${data?.type ?? '…'})`);
-    else if (type === 'sockets' || type === 'reactions') out.push(`${type}(${Object.keys(data ?? {}).join(',')})`);
+    else if (type === 'reactions') out.push(`${type}(${Object.keys(data ?? {}).join(',')})`);
+    else if (type === 'socket') out.push(`socket(${data?.name ?? ''})`);
     else out.push(type);
   }
   for (const b of behaviors) if (b.attach === id) out.push(`📜${b.id}`);
@@ -268,39 +263,46 @@ function hierarchyFields() {
   const world = state.st.entities ?? {};
   const sel = sceneSelected();
   const q = filter.trim().toLowerCase();
-  const nameOnly = (id) => { const l = comps.get(id)?.label ?? world[id]?.label; return typeof l === 'string' && l ? l : null; };
+  // a socket's row is its name (a seat, a hook: kindHint says which), unless someone labelled it
+  const nameOnly = (id) => { const c = bagOf(id); const l = c?.label; return typeof l === 'string' && l ? l : typeof c?.socket?.name === 'string' ? c.socket.name : null; };
   const labelOf = (id) => { const l = nameOnly(id); return l ? (hopts.ids ? `${l}  (${id})` : l) : id; };
-  const matches = q ? (id) => [id, world[id]?.label ?? '', world[id]?.model ?? '', kindHint(world[id]), ...Object.keys(recordComponents(world[id]))].join(' ').toLowerCase().includes(q) : null;
-  const ridersOf = (id) => (riders.get(id) ?? []).map((r) => ({ id: `rider:${r}`, match: !q || r.toLowerCase().includes(q) }));
+  const only = ONLY[hopts.only]?.test ?? null;
+  const textHit = (id) => [id, world[id]?.label ?? '', world[id]?.model ?? '', kindHint(world[id]), ...Object.keys(recordComponents(world[id]))].join(' ').toLowerCase().includes(q);
+  const matches = q || only ? (id) => (!q || textHit(id)) && (!only || only(id, world)) : null;
+  // a rider's or a component's row matches only where its thing passes the row filter too (review 10-12 S3-2)
+  const underOk = (id) => !only || only(id, world);
+  const ridersOf = (id) => (riders.get(id) ?? []).map((r) => ({ id: `rider:${r}`, match: (q ? r.toLowerCase().includes(q) : !only) && underOk(id) }));
   // with 'list components' on, a thing's components are greyed rows under it (they fold with it, like its children)
-  const compsOfRow = (id) => (hopts.comps ? Object.keys(comps.get(id) ?? recordComponents(world[id])).filter((k) => k !== 'label').sort().map((k) => ({ id: `comp:${id}:${k}`, match: !q || k.toLowerCase().includes(q) })) : []);
+  const compsOfRow = (id) => (hopts.comps ? compKeys(bagOf(id)).filter((k) => k !== 'label').sort().map((k) => ({ id: `comp:${id}:${k}`, match: (q ? k.toLowerCase().includes(q) : !only) && underOk(id) })) : []);
   const underOf = (id) => [...ridersOf(id), ...compsOfRow(id)];
   const rows = treeRows(world, { collapsed: { has: isFolded }, matches, extra: underOf }).map((t) => {
     if (t.extra && t.id.startsWith('comp:')) return { id: t.id, label: t.id.slice(t.id.lastIndexOf(':') + 1), depth: t.depth, noDrag: true, dim: true, title: `a component of ${t.id.slice(5, t.id.lastIndexOf(':'))}: click to select it` };
     if (t.extra) return { id: t.id, label: `🧍 ${t.id.slice(6)}`, depth: t.depth, noDrag: true };
-    const id = t.id; const bag = comps.get(id) ?? recordComponents(world[id]);
+    const id = t.id; const bag = bagOf(id) ?? {};
     const badges = hopts.kinds ? badgesFor(id) : [];   // what it carries (grabbable · physics) is 'show kinds'; state badges below always show
     const off = offIn(world, id);   // switched off (itself or above): not loaded, so not 'loading…'
     if (!entities.get(id) && !off) badges.unshift('loading…');
     if (bag.hidden === true) badges.push('hidden');
     if (claimsByOthers[id]) badges.push(`editing: ${claimsByOthers[id]}`);   // a live drag by someone else (build.js claims)
-    if (off) badges.push(world[id]?.disabled === true ? 'off' : 'off (above)');
+    const selfOff = world[id]?.disabled === true;
+    if (off && !selfOff) badges.push('off (above)');   // its own box is ticked; what it hangs under is not
     const bpLink = world[id]?.['copy-of'];
     const sub = bpLink && typeof bpLink === 'object' ? `${kindHint(world[id])} · ${bpLink.hash ? `${bpLink.name ?? 'blueprint'} copy` : `part ${bpLink.part}`}` : kindHint(world[id]);
     // a child of a locked thing is held by that lock (the authority refuses moving it: "it rides X, which is locked"), so
     // its row says so instead of showing an open padlock (review 10-07 S3)
-    let heldBy = null; for (let p = world[id]?.parent?.to, n = 0; p && n < 32 && !heldBy; p = world[p]?.parent?.to, n++) if ((comps.get(p) ?? recordComponents(world[p])).lock) heldBy = p;
+    let heldBy = null; for (let p = world[id]?.parent?.to, n = 0; p && n < 32 && !heldBy; p = world[p]?.parent?.to, n++) if (bagOf(p)?.lock) heldBy = p;
     // the row says the name; the rest is on hover (and in the row with 'show ids' / 'show kinds')
     const title = [nameOnly(id) ? `${nameOnly(id)}  (id ${id})` : `id ${id}`, sub].filter(Boolean).join(' — ');
-    return { id, label: labelOf(id), ...(hopts.kinds ? { sub } : {}), title, depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock, mine: isMineHidden(id),
+    return { id, label: labelOf(id), ...(hopts.kinds ? { sub } : {}), title, depth: t.depth, active: id === sel, multi: id !== sel && Sel.isSelected(id), badges, locked: !!bag.lock, mine: isMineHidden(id),
       ...(bag.lock ? { lockLevel: lockLevelOf(bag.lock) } : {}), ...(heldBy && !bag.lock ? { heldBy, heldByLabel: labelOf(heldBy) } : {}),
       lockable: Edits.mayLift() && (!bag.lock || mayLiftLevel(id, bag.lock)),   // §5: only builders and owners lock and unlock; a lock above your rank isn't yours to lift
-      kids: t.kids, open: t.open, ...(t.dim || off ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open; a switched-off row is dim too
+      enabled: !selfOff, ...(off ? { off: true } : {}),
+      kids: t.kids, open: t.open, ...(t.dim ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open
   });
   for (const r of rows) {
     if (String(r.id).startsWith('rider:') || String(r.id).startsWith('comp:')) continue;
     const mounted = !!world[r.id]?.parent;
-    const lab = comps.get(r.id)?.label;
+    const lab = bagOf(r.id)?.label;
     r.rename = typeof lab === 'string' ? lab : '';   // the label comp; empty = the row shows its id
     r.menu = [
       { k: 'rename', label: 'rename  (F2)' },
@@ -309,8 +311,8 @@ function hierarchyFields() {
       { k: 'attach', label: arming === r.id ? 'cancel parent pick' : 'parent to…' },
       ...(mounted ? [{ k: 'detach', label: 'unparent' }] : []),
       ...(r.lockable === false ? [] : [{ k: 'lock', label: r.locked ? 'unlock' : 'lock in place' }]),
-      { k: 'myhide', label: r.mine ? 'show in my view' : 'hide in my view (only you)' },
-      { k: 'hide', label: comps.get(r.id)?.hidden === true ? 'make visible to everyone' : 'make invisible to everyone' },
+      { k: 'myhide', label: r.mine ? 'show in my view (only you)' : 'hide in my view (only you)' },
+      { k: 'hide', label: bagOf(r.id)?.hidden === true ? 'make visible to everyone' : 'make invisible to everyone' },
       { k: 'off', label: world[r.id]?.disabled === true ? 'switch on' : 'switch off (for everyone)' },
       { k: 'remove', label: 'remove  (X)', danger: true },
     ];
@@ -320,8 +322,11 @@ function hierarchyFields() {
     { t: 'text', k: 'filter', label: '', value: filter, placeholder: 'filter — id, label, lib, component ⏎', hint: 'non-matches hide; a match keeps its ancestors' },
     // Options ▾ (R, 10-10: the 'View: ids' face was drawn twice and the list carried a search box and a 'recent'
     // group for three switches; Maya's Outliner calls its two menus Display and Show, which read as one thing: one menu here)
-    { t: 'pop', k: 'hopts', label: 'Options ▾', plain: true, deskOnly: true, bar: true, hint: 'what each row shows: names only, unless you turn more on',
-      items: [...Object.keys(HOPTS).map((k) => ({ k: `hopt:${k}`, label: `${hopts[k] ? '✓' : ' '} ${HOPTS[k]}` })), { k: 'fold:all-open', label: '  expand all' }, { k: 'fold:all-shut', label: '  collapse all' }] },
+    // an active row filter says so on the bar: a filter nobody can see is the trap research 51 R3 names (review 10-12 S3-3)
+    { t: 'pop', k: 'hopts', label: only ? `Options ▾ · ${ONLY[hopts.only].label}` : 'Options ▾', plain: true, deskOnly: true, bar: true, hint: 'what each row shows: names only, unless you turn more on',
+      items: [...Object.keys(HOPTS).map((k) => ({ k: `hopt:${k}`, label: `${hopts[k] ? '✓' : ' '} ${HOPTS[k]}` })),
+        ...Object.entries(ONLY).map(([k, o]) => ({ k: `honly:${k}`, label: `${(hopts.only ?? 'all') === k ? '✓' : ' '} ${o.label}` })),
+        { k: 'fold:all-open', label: '  expand all' }, { k: 'fold:all-shut', label: '  collapse all' }] },
     // never lose track of what you hid (research 51 R3: Unity's eye confuses because nothing says it's on). On the Options
     // line, not a line of its own: appearing and vanishing with the first and last hidden thing, a line of its own pushed
     // every row down and back (R 10-11 01:00: "the scroll jumps up and if I click it again the scroll jumps down")
@@ -330,21 +335,28 @@ function hierarchyFields() {
     // since R 10-11 ("move the 'world' in the Hierarchy under the filter line, just to make it more clear that you can
     // interact with it like an ordinary entity"): Blender's Outliner starts its tree with the Scene Collection the same way
     worldRowFields(),
-    { t: 'tree', k: 'sel', rows, rootDrop: 'drop here: no parent', empty: q ? `nothing matches "${filter}"` : 'nothing placed yet — press B in the world to place things' },
+    { t: 'tree', k: 'sel', rows, settle: enabledSettle, rootDrop: 'drop here: no parent', empty: q ? `nothing matches "${filter}"` : only ? `nothing ${ONLY[hopts.only].none}` : 'nothing placed yet — press B in the world to place things' },
   ];
+}
+function myHide(id) {
+  const on = toggleMineHidden(id);
+  flashHint(on ? html`${thingName(id)} hidden in <b>your</b> view only: not drawn, not clickable, still solid. Nobody else is affected` : `${thingName(id)} shown again`, 2400);
+  repaintAll();
 }
 function hierarchyDispatch(action, payload, _field, opts = {}) {
   let sel = sceneSelected();
   switch (action) {
     case 'hopt:ids': case 'hopt:kinds': case 'hopt:comps': { const k = action.slice(5); hopts[k] = !hopts[k]; saveHopts(); repaintAll(); return; }
-    case 'myhide': { const on = toggleMineHidden(payload); flashHint(on ? html`${payload} hidden in <b>your</b> view only — nobody else is affected` : `${payload} shown again`, 2400); repaintAll(); return; }
+    case 'honly:all': case 'honly:off': case 'honly:mine': case 'honly:locked': { const k = action.slice(6); hopts.only = k === 'all' ? null : k; saveHopts(); repaintAll(); return; }
+    case 'myhide': myHide(payload); return;
+    case 'enable': { const id = payload?.id ?? payload; if (id) setEnabled(id, payload?.on ?? state.st.entities[id]?.disabled === true); return; }
     case 'myshowall': { const n = showAllMine(); flashHint(`${n} shown again`, 2000); repaintAll(); return; }
     case 'wsel': {   // the pinned World row, and its environment rows (env:<key>)
       if (arming || armingRef) { arming = null; armingRef = null; flashHint('the world is not a thing to point at — pick a thing; a drop on the root strip unparents', 4000); break; }
-      envFocus = String(payload ?? '').startsWith('env:') ? String(payload).slice(4) : null;
-      if (envFocus) { const g = envFocus === 'weather' ? 'weather' : envFocus; if (!isOpen(WORLD_ID, g)) toggleFold(WORLD_ID, g); }
-      selectWorld();
-      if (envFocus) requestAnimationFrame(() => document.querySelector(`#ew-inspector [data-group="${envFocus}"], .sp-group[data-k="${envFocus}"]`)?.scrollIntoView?.({ block: 'nearest' }));
+      const env = String(payload ?? '').startsWith('env:') ? String(payload).slice(4) : null;
+      if (env) { const g = env === 'weather' ? 'weather' : env; if (!isOpen(WORLD_ID, g)) toggleFold(WORLD_ID, g); }
+      selectWorld(env);
+      if (env) requestAnimationFrame(() => document.querySelector(`#ew-inspector [data-group="${env}"], .sp-group[data-k="${env}"]`)?.scrollIntoView?.({ block: 'nearest' }));
       return;
     }
     case 'envdel': removeEnv(String(payload ?? '').slice(4)); return;   // ✕ on an environment row
@@ -372,13 +384,13 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
       break;
     }
     case 'detach': reparent(payload ?? sel, null); break;
-    case 'remove': { const ids = payload && !extra.has(payload) && payload !== sel ? [payload] : selection(); if (ids.length) removeMany(ids); break; }
+    case 'remove': { const ids = payload && !Sel.isSelected(payload) ? [payload] : selection(); if (ids.length) removeMany(ids); break; }
     case 'drop': reparent(payload?.id, payload?.onto); break;
     case 'filter': filter = String(payload ?? ''); break;
     case 'open': { const id = typeof payload === 'object' ? payload?.id : payload, deep = typeof payload === 'object' && !!payload?.deep;
       const was = isFolded(id); for (const k of deep ? [id, ...descendantsOf(id)] : [id]) setFolded(k, !was); saveFolds(); break; }
     case 'fold:all-open': case 'fold:all-shut': { const shut = action.endsWith('shut'); for (const k of Object.keys(state.st.entities ?? {})) setFolded(k, shut); saveFolds(); repaintAll(); return; }
-    case 'hide': { const id = payload ?? sel; if (id) commitEdit(id, 'flags.hidden', comps.get(id)?.hidden !== true); break; }
+    case 'hide': { const id = payload ?? sel; if (id) commitEdit(id, 'flags.hidden', bagOf(id)?.hidden !== true); break; }
     case 'off': { const id = payload ?? sel; if (id) commitEdit(id, 'flags.disabled', state.st.entities[id]?.disabled !== true); break; }
     case 'duplicate': duplicate(payload ?? sel); break;
     case 'step': {   // ↑/↓ through the rows as painted
@@ -426,13 +438,12 @@ function duplicate(id) {
 
 // lock levels (R, 10-07): who may lift a lock is its level and up, or whoever set it (the authority decides; this only
 // keeps the padlock honest about it)
-const lockLevelOf = (v) => (v && typeof v === 'object' && ['builder', 'moderator', 'owner'].includes(v.rank) ? v.rank : 'builder');
-const LEVEL_RANK = { builder: 100, moderator: 200, owner: 255 };
-const myRank = () => (Number.isFinite(net.myRights?.rank) ? net.myRights.rank : net.myRights?.role === 'owner' ? 255 : net.myRights?.role === 'moderator' ? 200 : 100);
+const lockLevelOf = lockLevel;
+const myRank = () => (Number.isFinite(net.myRights?.rank) ? net.myRights.rank : RANK[net.myRights?.role] ?? RANK.builder);
 const lockerOf = (id) => authorityInspect(id)?.touched?.lock?.by ?? null;
-const mayLiftLevel = (id, v) => myRank() >= LEVEL_RANK[lockLevelOf(v)] || (!!net.you && lockerOf(id) === net.you);
+const mayLiftLevel = (id, v) => myRank() >= lockRank(v) || (!!net.you && lockerOf(id) === net.you);
 async function toggleLock(id) {
-  const lk = comps.get(id)?.lock;
+  const lk = bagOf(id)?.lock;
   if (!Edits.mayLift()) { flashHint('only builders and owners can lock or unlock things here'); return; }
   if (!lk) { Edits.lock(id, true); return; }
   // unlocking someone else's lock is a click-through, as moving a locked thing is: say whose it is and at what level
@@ -474,7 +485,7 @@ let gesture = null;    // { before } while a transform drag is in flight (the lo
 /** Is a whole-entity motion composing onto this thing's rest pose? */
 function drivenBy(id, obj) {
   if (obj?.userData?.mountedTo) return null;
-  const m = comps.get(id)?.motion;
+  const m = bagOf(id)?.motion;
   return m?.type && !m.part ? 'motion' : null;
 }
 /** The pose `place` edits — the FOLD's, which is the rest pose by definition. */
@@ -501,7 +512,7 @@ function multiFields(ids) {
   }
   f.push({ t: 'group', k: 'flags', label: 'Flags', open: true });
   for (const k of ['lock', 'hidden']) {
-    const vals = ids.map((id) => comps.get(id)?.[k] === true);
+    const vals = ids.map((id) => bagOf(id)?.[k] === true);
     const on = vals.every(Boolean), mixed = vals.some(Boolean) && !on;
     f.push({ t: 'check', k: `ed:flags.${k}`, label: `${k === 'lock' ? 'locked in place' : 'hidden'}${mixed ? ' ≠' : ''}`, value: on, hint: mixed ? 'differs — checking sets all' : undefined });
   }
@@ -617,7 +628,7 @@ function authorityInspect(id) {
   sendRequest('inspect', { id }).then((r) => { if (inspectCache.get(id)?.key === key && r?.ok) { inspectCache.set(id, { key, reply: r }); repaintAll(); } }).catch(() => inspectCache.delete(id));
   return c?.reply ?? null;
 }
-function placedBy(id, meta) {
+function placedBy(id) {
   const r = authorityInspect(id);
   return r ? (r.derived?.madeBy ? Edits.nameOf(r.derived.madeBy) : 'unknown') : '…';
 }
@@ -632,30 +643,37 @@ function lastChange(id) {
   return v.created ? `made by ${Edits.nameOf(v.by)} · ${ago(v.ts)}` : `${Edits.nameOf(v.by)} · ${sec?.title ?? comp} · ${ago(v.ts)}`;
 }
 
-const thingName = (id) => { const l = comps.get(id)?.label ?? state.st.entities[id]?.label; return typeof l === 'string' && l ? l : id; };
+const thingName = (id) => { const l = bagOf(id)?.label; return typeof l === 'string' && l ? l : id; };
+/** The ENABLED box that leads every thing's Inspector header (Unity's and Resonite's convention; R 10-12): ticked = on.
+ *  It is the `disabled` component (5d5eef5c) read the other way round, so it is there whether the thing is on or off. */
+const enabledBox = (id) => { const on = state.st.entities[id]?.disabled !== true;
+  const words = on ? 'Enabled. Untick to switch it off for everyone: it stays in the Hierarchy, but nobody downloads, sees or touches it, and it has no physics (what hangs under it goes with it).'
+    : 'Switched off for everyone: nobody downloads, sees or touches it. Tick to switch it back on.';
+  return { t: 'check', k: 'henabled', label: '', vrLabel: 'enabled', value: on, settle: enabledSettle, bar: true, cls: 'sp-enabled', path: 'flags.disabled',
+    hint: withKeys(words, 'toggleEnabled') }; };
 function inspectorFields() {
-  if (worldSel) return worldFields();
+  if (worldSel()) return worldFields();
   const id = sceneSelected();
   if (!id || (!entities.has(id) && !offIn(state.st.entities, id))) return [{ t: 'info', label: 'selection', value: 'nothing selected — click a thing, a row in the hierarchy, or World for the sky and ground' }];
   const ids = selection();
   if (ids.length > 1) return multiFields(ids);
-  const obj = entities.get(id); const meta = entityMeta.get(id) ?? {}; const bag = comps.get(id) ?? {};
+  const obj = entities.get(id); const bag = bagOf(id) ?? {};
   // the fold knows the thing before its model arrives: entities holds null
   // while the GLB loads (scenegraph guards the same seam)
   const schema = schemaFor(id);           // ONE declaration: shared/editschema.js
   const idRow = { t: 'info', label: 'id', value: id, dim: true, hint: 'its permanent id: the log, scripts and agents point at this, so it never changes, even when you rename it (like a Maya node\'s UUID)' };
   if (!obj && offIn(state.st.entities, id)) {   // switched off: nothing loaded, so no transform to show; the way back on
     const self = state.st.entities[id]?.disabled === true; let up = id; if (!self) for (let k = state.st.entities[id]?.parent?.to; k; k = state.st.entities[k]?.parent?.to) if (state.st.entities[k]?.disabled === true) { up = k; break; }
-    return [{ t: 'info', label: 'name', value: thingName(id) }, idRow,
+    return [enabledBox(id), { t: 'info', label: '', vrLabel: 'name', value: thingName(id), bar: true, cls: 'sp-title' }, idRow,
       { t: 'info', label: 'state', value: self ? 'switched off: nobody downloads, sees or touches it' : `switched off with ${thingName(up)}, which it hangs under` },
-      ...(self ? [{ t: 'btn', k: 'hoff', label: 'switch it back on', icon: 'power' }] : [{ t: 'btn', k: `selup:${up}`, label: `select ${thingName(up)}` }])]; }
+      ...(self ? [] : [{ t: 'btn', k: `selup:${up}`, label: `select ${thingName(up)}` }])]; }
   if (!obj) return [idRow, { t: 'info', label: 'state', value: 'loading…', hint: 'its model is still downloading' }];
   const locked = !!bag.lock;
   const wp = obj.getWorldPosition(_wp);
 
   const f = [
     idRow,
-    { t: 'info', label: 'placed by', value: placedBy(id, meta), hint: 'who first made it' },
+    { t: 'info', label: 'placed by', value: placedBy(id), hint: 'who first made it' },
     { t: 'info', label: 'world', value: `(${wp.x.toFixed(1)}, ${wp.y.toFixed(1)}, ${wp.z.toFixed(1)}) · ${wp.distanceTo(myState.pos).toFixed(0)}m away`, hint: 'where it is in the world, and how far from you' },
   ];
 
@@ -667,16 +685,15 @@ function inspectorFields() {
     // title? The eye and lock and disable icons can be on this line to the right"): the name as a title, then the eye
     // (hidden in MY view only; the Hierarchy's eye is the same switch) and the padlock. 'disable' waits on its rules.
     let nameRow = null;
-    for (const a of schema.sections.header ?? []) { const r = cardRow(schema, id, a); if (r && !a.startsWith('parent.') && a !== 'flags.hidden') { if (a === 'flags.label') nameRow = r; else f.push(r); } }
-    { const mine = isMineHidden(id), lk = comps.get(id)?.lock, offNow = state.st.entities[id]?.disabled === true;
+    for (const a of schema.sections.header ?? []) { const r = cardRow(schema, id, a); if (r && !a.startsWith('parent.') && a !== 'flags.hidden' && a !== 'flags.disabled') { if (a === 'flags.label') nameRow = r; else f.push(r); } }   // flags.disabled: the ENABLED box leads the header (one switch, one place)
+    { const mine = isMineHidden(id), lk = bagOf(id)?.lock;
       const line = [
+        enabledBox(id),
         ...(nameRow ? [{ ...nameRow, label: '', bar: true, cls: 'sp-title', placeholder: 'name it', vrLabel: 'name' }] : []),
-        { t: 'btn', k: 'myhide', icon: mine ? 'eye-slash' : 'eye', label: '', on: mine, bar: true, deskOnly: true, cls: 'sp-iconbtn',
-          hint: mine ? 'Hidden in YOUR view only; everyone else still sees it. Click to show it again.' : 'Hide it in YOUR view only. Nobody else is affected (the eye in the Hierarchy is the same switch).' },
+        { t: 'btn', k: 'myhide', icon: mine ? 'eyeOff' : 'eye', label: '', on: mine, bar: true, deskOnly: true, cls: 'sp-iconbtn sp-mine',
+          hint: mine ? 'Only you: hidden in YOUR view (not drawn, not clickable, still solid). Everyone else still sees it. Click to show it again.' : 'Only you: hide it in YOUR view. Nobody else is affected (the eye in the Hierarchy is the same switch).' },
         { t: 'btn', k: 'hlock', icon: lk ? 'lock' : 'lockOpen', label: '', on: !!lk, bar: true, deskOnly: true, cls: 'sp-iconbtn',
           hint: lk ? 'Locked: nobody moves, replaces or removes it until it is unlocked. Click to unlock.' : 'Lock it: nobody moves, replaces or removes it until it is unlocked (sitting on it and content edits stay open).' },
-        { t: 'btn', k: 'hoff', icon: 'power', label: '', on: offNow, bar: true, deskOnly: true, cls: 'sp-iconbtn',
-          hint: offNow ? 'Switched off: nobody downloads, sees or touches it, and it has no physics. Click to switch it back on.' : 'Switch it off for everyone: it stays in the Hierarchy as a link, but nobody downloads, sees or touches it until it is switched on again (what hangs under it goes with it).' },
       ];
       f.unshift(...line); }   // parenting is the Hierarchy's job (R, 10-04); agents keep parent.* in edit
     if (pendingAsk?.id === id) {
@@ -757,8 +774,19 @@ function inspectorFields() {
   return shown;
 }
 
+// bumped when a switch has its answer: the ENABLED boxes drop the click they were holding and show the record
+let enabledSettle = 0;
+function setEnabled(id, on) {
+  if ((state.st.entities[id]?.disabled !== true) === on) { enabledSettle++; repaintAll(); return; }
+  const r = commitEdit(id, 'flags.disabled', !on);
+  if (r?.errors?.length) { flashHint(r.errors.join(' · '), 5000, 'attn'); enabledSettle++; repaintAll(); return; }
+  // the hint waits for the authority: a refusal says its own words (editwrites), and the boxes go back to the record
+  Promise.resolve(r?.reply).then((x) => {
+    if (x?.ok) flashHint(on ? `${thingName(id)} switched back on` : `${thingName(id)} switched off for everyone (Ctrl+Z switches it back on)`, 2600);
+  }).finally(() => { enabledSettle++; repaintAll(); });
+}
 function inspectorDispatch(action, payload, field, opts = {}) {
-  const id = worldSel ? WORLD_ID : sceneSelected(); const obj = entities.get(id);
+  const id = worldSel() ? WORLD_ID : sceneSelected(); const obj = entities.get(id);
   if (action === 'fold') { toggleFold(id, payload); repaintAll(); return; }
   // a scrubbed RUN of channels (Maya's channel box): one edit for all of them, FACE values, one Ctrl+Z (panels.js commitRun)
   if (action === '__run' && id && id !== WORLD_ID && payload && typeof payload === 'object') {
@@ -775,11 +803,10 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     return;
   }
   if (action === 'ifilter') { ifilter = String(payload ?? ''); repaintAll(); return; }
-  if (action === 'hlock' && id && id !== WORLD_ID) { commitEdit(id, 'flags.lock', !comps.get(id)?.lock); return; }
+  if (action === 'hlock' && id && id !== WORLD_ID) { commitEdit(id, 'flags.lock', !bagOf(id)?.lock); return; }
   if (action.startsWith('selup:')) { sceneSelect(action.slice(6)); return; }
-  if (action === 'hoff' && id && id !== WORLD_ID) { const on = state.st.entities[id]?.disabled === true; const r = commitEdit(id, 'flags.disabled', !on);
-    if (r?.errors?.length) flashHint(r.errors.join(' · '), 5000, 'attn'); else flashHint(on ? `${thingName(id)} switched back on` : `${thingName(id)} switched off for everyone (Ctrl+Z switches it back on)`, 2600); return; }
-  if (action === 'myhide' && id && id !== WORLD_ID) { const on = toggleMineHidden(id); flashHint(on ? html`${id} hidden in <b>your</b> view only — nobody else is affected` : `${id} shown again`, 2400); repaintAll(); return; }
+  if (action === 'henabled' && id && id !== WORLD_ID) { setEnabled(id, payload !== false); return; }
+  if (action === 'myhide' && id && id !== WORLD_ID) { myHide(id); return; }
   if (action === 'ed:grabbable.gripedit') { openGripEditor(id); return; }
   if (action === 'ed:home.sethere') { void Edits.setHomeHere([id]); return; }   // the Home card's button: where it is now (editwrites)   // the grip editor (gripedit.js)
   if (id === WORLD_ID && WORLD_PICKS[action]) { pickWorld(action, payload); repaintAll(); return; }   // the Terrain card's shape tiles (S15)
@@ -937,7 +964,7 @@ function removeMany(ids) {
   // a locked thing is asked about by the authority's refusal ("This is locked. Delete anyway?"), not filtered out here
   const go = ids.filter((id) => entities.get(id));
   if (!go.length) return false;
-  Edits.del(go); clearExtras(); return true;   // one request: delete, or a batch of them (one act)
+  Edits.del(go); if (selection().length > 1) Sel.set([selection()[0]]); return true;   // one request: delete, or a batch of them (one act)
 }
 
 // ---------------------------------------------------------------- build
@@ -1134,11 +1161,11 @@ function histLoad(id, more = false) {
   }).catch(() => { hist.loading = false; });
 }
 function historyFields() {
-  const id = worldSel ? null : sceneSelected() ?? null;
+  const id = worldSel() ? null : sceneSelected() ?? null;
   // re-read when the selection changes or the thing does (its components), or the world log moves (nothing selected)
   const key = id ? `${id}|${JSON.stringify(Edits.compsOf(id))}` : `@|${entities.size}|${Math.floor(Date.now() / 3000)}`;
   if (key !== hist.key) { hist.key = key; if (hist.id !== id) { hist.entries = []; hist.next = null; hist.who = null; } hist.id = id; histLoad(id); }
-  const f = [{ t: 'info', label: id ? 'history of' : 'history', value: id ? (comps.get(id)?.label ?? id) : 'the whole world, newest first — select a thing for its own', hint: 'from the world log: who did what, when' }];
+  const f = [{ t: 'info', label: id ? 'history of' : 'history', value: id ? (bagOf(id)?.label ?? id) : 'the whole world, newest first — select a thing for its own', hint: 'from the world log: who did what, when' }];
   const view = historyView(hist.entries, Edits.nameOf, { mode: hist.mode, who: hist.who });
   const people = historyView(hist.entries, Edits.nameOf, { mode: 'top' }).people ?? [];
   f.push({ t: 'enum', k: 'mode', label: 'show', value: hist.mode, options: HISTORY_MODES.map(([v, label]) => ({ v, label })), hint: 'the same log, seen four ways: who made this what it is (the Credits) is "biggest contributors"' });
@@ -1168,9 +1195,9 @@ function historyDispatch(action, value) {
 // parent, whether it is hidden for EVERYONE, and every component as JSON.
 let attrPainted = [];
 function attributesFields() {
-  const id = worldSel ? null : sceneSelected();
+  const id = worldSel() ? null : sceneSelected();
   if (!id || !entities.has(id)) { attrPainted = [{ t: 'info', label: 'selection', value: 'nothing selected — Attributes lists everything about the selected thing, including what the Inspector leaves out' }]; return attrPainted; }
-  const schema = schemaFor(id); const bag = comps.get(id) ?? {}; const f = [];
+  const schema = schemaFor(id); const bag = bagOf(id) ?? {}; const f = [];
   f.push({ t: 'info', label: 'id', value: id, dim: true, hint: 'its permanent id: the log, scripts and agents point at this' });
   const hid = cardRow(schema, id, 'flags.hidden');
   if (hid) f.push({ ...hid, label: 'hidden for all', hint: 'Hidden from EVERYONE in this world (a world edit). The eye in the Inspector and the Hierarchy hides it in your view only.' });
@@ -1183,7 +1210,7 @@ function attributesFields() {
   const parentSec = schema.sections?.list?.find((s) => s.type === 'Parent');
   if (parentSec) { f.push({ t: 'group', k: 'a:parent', label: 'Parent', open: isOpen(id, 'a:parent') }); for (const addr of parentSec.fields) { const r = cardRow(schema, id, addr); if (r) f.push(r); } }
   f.push({ t: 'group', k: 'a:json', label: 'Components as JSON', open: isOpen(id, 'a:json'), hint: 'every component on it, as it is stored. A saved edit replaces that component whole.' });
-  for (const type of Object.keys(bag).sort()) {
+  for (const type of compKeys(bag).sort()) {
     if (bag[type] === undefined) continue;
     f.push({ t: 'json', k: `ed:comp.${type}`, path: `comp.${type}`, label: type, value: JSON.stringify(bag[type], null, 2), collapsed: true, hint: `the whole ${type} component as JSON` });
   }
@@ -1244,22 +1271,23 @@ export function initEditPanels() {
     if (p.id === 'inspector') scrubFeelButtons(sf.frame.el);
     frames.set(p.id, sf);
   }
-  bus.on('sg:selected', (id) => { if (id) { revealPath(id); worldSel = false; } });   // before the paint: a selected child shows, its ancestors unfold (design §5)
-  for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'sg:selected', 'structure-tool', 'tool', 'your-rights', 'log-applied']) bus.on(ev, repaintAll);   // log-applied: a world's library lives on @world, which the realizers never touch
+  bus.on('selection', () => { const id = sceneSelected(); if (id) revealPath(id); });   // before the paint: a selected child shows, its ancestors unfold (design §5)
+  for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'selection', 'structure-tool', 'tool', 'your-rights', 'log-applied']) bus.on(ev, repaintAll);   // log-applied: a world's library lives on @world, which the realizers never touch
   // the world entity's components are the fold's sky / terrain / grass: repaint when a world verb folds
   // …and the Build panel's saved blueprints when a record is published
   const WORLD_KEYS = new Set(['sky', 'terrain', 'grass', 'blueprints'])
   onWorldChange((ev) => { if (ev.type !== 'change' && (ev.type !== 'world' || WORLD_KEYS.has(ev.key))) repaintAll(); });
   loadWorldDefs(); bus.on('defs-updated', loadWorldDefs);
-  bus.on('sg:selected', () => { gesture = null; pendingAsk = null; endGesture(); if (!extending) clearExtras(); });   // a plain select collapses the set; a drag's `before` never outlives its selection
+  // a drag's `before` never outlives its primary; the extras' outlines follow the set
+  let lastPrimary = null;
+  bus.on('selection', () => { const p = sceneSelected(); if (p !== lastPrimary) { lastPrimary = p; gesture = null; pendingAsk = null; endGesture(); } syncOutlines(); });
   bus.on('edit-extend', (id) => extendSelection(id));   // Ctrl-click in the viewport (build.js)
   // a box drawn in the viewport (Shift-drag on bare space, build.js): ADD each to the selection (never toggles one off)
-  bus.on('edit-select-add', (ids) => { const list = (ids ?? []).filter((id) => entities.get(id)); if (!list.length) return;
-    let p = sceneSelected(); if (!p) { sceneSelect(list[0]); p = list[0]; }
-    for (const id of list) if (id !== p) extra.add(id); syncOutlines(); repaintAll(); });
-  // an armed attach completes on a VIEWPORT pick too: build.js select → sceneSelect
+  bus.on('edit-select-add', (ids) => { const list = (ids ?? []).filter((id) => entities.get(id)); if (list.length) Sel.extend(list); });
+  // an armed attach completes on a VIEWPORT pick too: build.js select → the store
   // → this. The child is re-selected after, so the inspector shows what moved.
-  bus.on('sg:selected', (id) => {
+  bus.on('selection', ({ ids, kind }) => {
+    const id = kind === 'things' ? ids[0] ?? null : null;
     // a ref pick armed from the inspector: the world-clicked id is the target.
     // Re-select the entity being edited so the inspector stays on it.
     if (armingRef && id && id !== armingRef.id && !String(id).startsWith('rider:')) {
@@ -1271,9 +1299,10 @@ export function initEditPanels() {
     reparent(child, id);
     sceneSelect(child);
   });
-  bus.on('entity', () => { if (extra.size) syncOutlines(); });
+  bus.on('entity', () => { if (outlines.size) syncOutlines(); });
   bus.on('disabled-changed', () => repaintAll());   // switched off or on: the Inspector and the Hierarchy say so at once
-  bus.on('edit-mode', (on) => { if (!on) { clearExtras(); armingRef = null; worldSel = false; } });
+  // leaving edit mode keeps the primary thing (the look-mode scene panel shows it) and drops the rest
+  bus.on('edit-mode', (on) => { if (!on) { armingRef = null; const p = sceneSelected(); if (p) Sel.set([p]); else Sel.clear(); } });
   setEditHooks({ casting: lightCasting });
   // Del / Backspace / X act on what the inspector shows — every selected thing, one undo
   setRemoveHook(() => removeMany(selection()));
@@ -1282,6 +1311,14 @@ export function initEditPanels() {
   bus.on('key', (e) => {   // Ctrl+D duplicates (Maya, Unity, Godot; R 10-04), Alt+D as well; preventDefault stops the bookmark
     if (!shown || e.code !== 'KeyD' || !(e.ctrlKey || e.metaKey || e.altKey)) return;   // keys: duplicate
     if (sceneSelected()) { e.preventDefault(); hierarchyDispatch('duplicate', sceneSelected()); }
+  });
+  bus.on('key', (e) => {   // Alt+Shift+A: the selection's ENABLED box (Unity's toggle active); the primary decides which way
+    if (!shown || e.code !== 'KeyA' || !(e.altKey && e.shiftKey)) return;   // keys: toggleEnabled
+    const sel = Sel.selection();   // not selection(): that keeps live things only, and a switched-off thing is still selected
+    const ids = sel.kind === 'things' ? sel.ids.filter((id) => id !== WORLD_ID && state.st.entities[id]) : []; if (!ids.length) return;
+    e.preventDefault();
+    const on = state.st.entities[ids[0]]?.disabled === true;
+    for (const id of ids) setEnabled(id, on);
   });
   // ↑/↓ walk the tree ONLY while the tree has focus — on the window they are
   // walking keys (controller.js: ArrowUp is forward). The frame listener runs
@@ -1304,7 +1341,7 @@ export function initEditPanels() {
       hierarchyDispatch('step', e.code === 'ArrowUp' ? -1 : 1);
     });
   }
-  bus.on('sg:selected', () => { if (shown) refreshBehaviors(); });
+  bus.on('selection', () => { if (shown) refreshBehaviors(); });
   repaintAll();
   globalThis.__editPanels = editPanelsDebug;   // harness window (probes read it, nothing else does)
   globalThis.__editStep = (d) => { const sel = sceneSelected(); const i = visibleRows.indexOf(sel); hierarchyDispatch('step', d); return { sel, i, rows: [...visibleRows], after: sceneSelected(), has: entities.has(visibleRows[i + d]) }; };
@@ -1326,7 +1363,8 @@ export function initEditPanels() {
 /** harness window */
 export const editPanelsDebug = () => ({
   hierarchy: hierarchyFields().length, hierFields: () => hierarchyFields(), inspector: inspectorFields().length, inspFields: () => inspectorFields(),
-  build: buildFields().length, buildFields: () => buildFields(), buildVR: buildVRFields().length, buildVRFields: () => buildVRFields(), buildVRDo: (a, v) => buildVRDispatch(a, v), worldSel, selected: sceneSelected(), arming,
+  inspDo: (a, v) => inspectorDispatch(a, v), hierDo: (a, v) => hierarchyDispatch(a, v),
+  build: buildFields().length, buildFields: () => buildFields(), buildVR: buildVRFields().length, buildVRFields: () => buildVRFields(), buildVRDo: (a, v) => buildVRDispatch(a, v), worldSel: worldSel(), selected: sceneSelected(), arming,
   groups: sceneSelected() ? schemaFor(sceneSelected()).groups.map((g) => g.group) : [], behaviors: behaviors.length, rows: visibleRows, selection: selection(),
   watching, consoleLines: watchLog?.lines?.length ?? 0,
 });

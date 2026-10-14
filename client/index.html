@@ -1737,6 +1737,17 @@ body.touch #touch { display: block; }
 .sp-unit { color: var(--dim); font-size: 11px; margin-left: 2px; }
 .sp-enum { background: var(--panel); border: 1px solid var(--edge); color: var(--fg); border-radius: 4px; padding: 2px 4px; font: inherit; }
 .sp-color { width: 34px; height: 22px; padding: 0; border: 1px solid var(--edge); border-radius: 4px; background: none; }
+.sp-f-color.sp-row { flex-wrap: wrap; }
+.sp-color-sw { cursor: pointer; box-sizing: border-box; }
+.sp-color-sw.open { outline: 2px solid var(--accent, #5fa8ff); outline-offset: 1px; }
+.sp-picker { order: 99; flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; padding: 4px 0 2px; }
+.sp-picker[hidden], .sp-pick-recent[hidden] { display: none; }
+.sp-pick-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px; }
+.sp-pick-row { display: flex; gap: 2px; }
+.sp-pick-recent .sp-pick-cell { width: calc((100% - 22px) / 12); flex: none; }
+.sp-pick-cell { aspect-ratio: 1; min-height: 16px; border-radius: 3px; cursor: pointer; box-sizing: border-box; border: 1px solid rgba(0,0,0,.25); }
+.sp-pick-cell.on { outline: 2px solid currentColor; outline-offset: 1px; position: relative; z-index: 1; }
+.sp-pick-hex { width: 7.5em; font: inherit; font-family: ui-monospace, monospace; }
 .sp-tree-row .sp-item-label { font-weight: 500; }
 /* ---- edit mode: the look (DESIGN-SPEC 2026-09-30, for R: "dark gray, utilitarian — Resonite/Godot/
    Blender/Maya"). The chrome is grey; the WORLD is the only colour. Colour in the chrome means one of:
@@ -1749,7 +1760,7 @@ body.edit-workspace, .frame.edit {
   --e-hover: #2c2c31; --e-press: #36363c; --e-text: #d8d8dc; --e-dim: #8e8e96; --e-faint: #5e5e66;
   --e-accent: #4d8ae0; --e-accent-bg: rgba(77,138,224,.18);
   --e-x: #e06a62; --e-y: #82c45e; --e-z: #5f95e8; --e-danger: #e07a72; --e-driven: #c9a24a;
-  --e-driven-edge: rgba(201,162,74,.45);
+  --e-driven-edge: rgba(201,162,74,.45); --e-mine: #b08ad8;
 }
 /* Flat gray in edit mode, every panel (R, 10-04: "flat gray is better for an editor — colors can't clash"). --panel
    must be RE-DECLARED here: a custom property resolves its var()s where it is declared, so :root's --panel stays
@@ -1839,7 +1850,8 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 /* select: a field with a chevron */
 .frame.edit .sp-enum { appearance: none; -webkit-appearance: none; padding-right: 22px; min-width: 96px;
   background: var(--e-well) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e96' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") right 6px center / 12px no-repeat; }
-.frame.edit .sp-color { width: 40px; height: 22px; border: 1px solid var(--e-line); border-radius: 3px; background: var(--e-well); padding: 2px; }
+.frame.edit .sp-color { width: 40px; height: 22px; border: 1px solid var(--e-line); border-radius: 3px; padding: 2px; background-clip: content-box; }
+.frame.edit .sp-pick-cell.on { outline-color: var(--e-accent, #5fa8ff); }
 /* button — default: press fill, text colour, radius 3, 24px. quiet: no fill, dim, hover fill. danger: quiet + danger */
 .frame.edit .sp-btn { background: var(--e-press); color: var(--e-text); border: none; border-radius: 3px; height: 24px; padding: 0 10px; font: 500 12px var(--font); box-shadow: none; }
 .frame.edit .sp-btn:hover { background: var(--e-press); filter: brightness(1.18); }
@@ -1895,6 +1907,15 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit .sp-tree .sp-lock:disabled { cursor: default; opacity: .55; background: none; }
 .frame.edit .sp-tree .sp-lock.inherited { opacity: .5; }   /* held by a locked parent: a lock, dimmed */
 .frame.edit .sp-tree .sp-mini:hover { background: var(--e-hover); }
+/* the row's columns (R 10-12): [☑ enabled][name …][👁 only you][🔒]. The box is state, so it always shows; a row without
+   one keeps its width, so names line up. The eye's tint and dot say "only you": nobody else's view changes */
+.sp-tree-row .sp-row-on, .frame.edit .sp-tree-row input.sp-row-on { flex: none; width: 14px; height: 14px; margin: 0 6px 0 0; cursor: pointer; align-self: center; }
+.sp-tree-row .sp-row-on.gap { display: inline-block; visibility: hidden; }
+.sp-tree-row .sp-row-on:disabled { cursor: default; opacity: .55; }
+.sp-tree-row.off .sp-item-label, .sp-tree-row.off .sp-item-sub { opacity: .45; }
+.sp-tree .sp-eye.on { position: relative; }
+.frame.edit .sp-tree .sp-eye.on { color: var(--e-mine); }
+.sp-tree .sp-eye.on::after { content: ''; position: absolute; right: 1px; bottom: 1px; width: 5px; height: 5px; border-radius: 50%; background: var(--e-mine, #b08ad8); }
 .frame.edit .sp-empty { color: var(--e-dim); font-style: normal; }
 body.edit-workspace [data-frame="emotes"] { display: none !important; }
 .sp-log { margin: 2px 0; padding: 6px 8px; width: 100%; box-sizing: border-box; max-height: 150px; overflow: auto; background: var(--well); border-radius: 4px;
@@ -1981,7 +2002,7 @@ body.edit-workspace #dock button.edit-overflow { display: none !important; }
   background: var(--e-bg1, #1e1e21); border: 1px solid var(--e-line, #2f2f35); color: var(--e-text, #d8d8dc); font: 12px var(--font); box-shadow: 0 2px 8px rgb(0 0 0 / 0.35); }   /* solid (R 10-10 23:32: readable over any view) */
 .edit-viewbar[hidden] { display: none; }
 /* the Inspector's name line: the name as a title, the eye and padlock beside it (R 10-10 23:48) */
-.frame.edit .sp-row.sp-title { width: calc(100% - 84px); margin-right: 0 !important; }
+.frame.edit .sp-row.sp-title { width: calc(100% - 78px); margin-right: 0 !important; }   /* the ☑ before it, the eye and padlock after */
 .frame.edit .sp-row.sp-iconbtn { margin-left: 0 !important; margin-right: 0 !important; }
 .frame.edit .sp-row.sp-title .sp-label { display: none; }
 .frame.edit .sp-row.sp-title input, .frame.edit .sp-row.sp-title .sp-text { width: 100%; font-size: 15px; font-weight: 600; background: transparent !important; border-color: transparent !important; box-shadow: none !important; padding-left: 2px; }
@@ -1989,6 +2010,11 @@ body.edit-workspace #dock button.edit-overflow { display: none !important; }
 .frame.edit .sp-row.sp-iconbtn .sp-btn { width: 26px; height: 24px; padding: 0; display: inline-grid; place-items: center; background: none; border-color: transparent; color: var(--e-dim); }
 .frame.edit .sp-row.sp-iconbtn .sp-btn:hover { color: var(--e-text); background: var(--e-hover); }
 .frame.edit .sp-row.sp-iconbtn .sp-btn.on { color: var(--e-accent); }
+.frame.edit .sp-row.sp-iconbtn.sp-mine .sp-btn.on, .frame.edit .sp-row.sp-iconbtn.sp-mine .sp-btn.on:hover { color: var(--e-mine); }
+.frame.edit .sp-row.sp-enabled { margin-right: 0 !important; align-items: center; }
+.frame.edit .sp-row.sp-enabled .sp-label { display: none; }
+.frame.edit .sp-row.sp-enabled input[type="checkbox"] { width: 15px; height: 15px; margin: 4px 3px 0 2px; accent-color: var(--e-accent); cursor: pointer; }
+.frame.edit .sp-row.sp-title .sp-info { font-size: 15px; font-weight: 600; padding-left: 2px; }
 .edit-marquee { position: fixed; z-index: 30; pointer-events: none; border: 1px dashed var(--e-accent, #4d8ae0); background: color-mix(in srgb, var(--e-accent, #4d8ae0) 12%, transparent); }
 /* the grip editor's panel: floats under the viewport bar (gripedit.js) */
 .gripedit { position: fixed; z-index: 29; width: 236px; display: flex; flex-direction: column; gap: 6px; padding: 6px 7px; border-radius: 6px;

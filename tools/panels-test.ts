@@ -17,7 +17,7 @@ GlobalRegistrator.register();
 (Element.prototype as any).setPointerCapture = function (id: number) { (this as any).__cap = id; };
 (Element.prototype as any).releasePointerCapture = function (id: number) { (this as any).__cap = undefined; };
 
-const { parseEntry, shapeKey, renderDOM, makeSchemaFrame, resolveDelta } = await import("../client/lib/panels.js");
+const { parseEntry, shapeKey, renderDOM, makeSchemaFrame, resolveDelta, getScrubFeel, setScrubFeel, scrubTravel } = await import("../client/lib/panels.js");
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -53,11 +53,11 @@ console.log("\nin-place update — same shape keeps the same nodes:");
   const body = sf.frame.body.querySelector(".schema-scroll")!;
   const num1 = body.querySelector(".sp-num") as HTMLInputElement;
   const chk1 = body.querySelector("input[type=checkbox]") as HTMLInputElement;
-  check("first paint renders the number", num1?.value === "1.00", num1?.value);
+  check("first paint renders the number", num1?.value === "1", num1?.value);
   sf.set(B, edit);
   const num2 = body.querySelector(".sp-num") as HTMLInputElement;
   check("same-shape repaint keeps the SAME input node", num2 === num1);
-  check("…and lands the new value", num2.value === "99.00", num2.value);
+  check("…and lands the new value", num2.value === "99", num2.value);
   check("…and the new label", body.querySelector(".sp-label")?.textContent === "x!");
   check("…and the checkbox state", (body.querySelector("input[type=checkbox]") as HTMLInputElement) === chk1 && chk1.checked === false);
   sf.set(C, edit);
@@ -84,6 +84,11 @@ const pe = (type: string, x: number, extra: any = {}) =>
 
 console.log("\ndrag-to-scrub — absolute from origin, live then one commit:");
 {
+  const feel = getScrubFeel();
+  check("the default scrub feel accelerates (R 10-04): 50 px travels further than 50 steps of perPx", feel.accel === true && scrubTravel(50) > 50, JSON.stringify(feel));
+  setScrubFeel({ speed: "medium", accel: false });   // the laws below are pinned on the linear feel
+}
+{
   const host = document.createElement("div");
   const calls: any[] = [];
   renderDOM(host, [{ t: "num", k: "px", value: 2, step: 0.1, dp: 2 }], (...a: any[]) => calls.push(a));
@@ -98,7 +103,7 @@ console.log("\ndrag-to-scrub — absolute from origin, live then one commit:");
   check("every move previews live", lives.length === 3, String(lives.length));
   // perPx = step*0.2 = 0.02 → +50px = +1.00; the wander back lands EXACTLY on it
   check("value is start + step×distance (not accumulated)", near(lives[2][1], 3, 1e-9), String(lives[2][1]));
-  check("the face tracks the drag", inp.value === "3.00", inp.value);
+  check("the face tracks the drag", inp.value === "3", inp.value);
   inp.dispatchEvent(pe("pointerup", 150));
   const finals = calls.filter((c) => !c[3]?.live);
   check("release commits exactly once", finals.length === 1, String(finals.length));
@@ -113,14 +118,14 @@ console.log("\nEsc mid-drag restores the start and commits nothing:");
   const inp = host.querySelector(".sp-num") as HTMLInputElement;
   inp.dispatchEvent(pe("pointerdown", 100));
   inp.dispatchEvent(pe("pointermove", 160));
-  check("previewed away from start", inp.value === "3.20", inp.value);
+  check("previewed away from start", inp.value === "3.2", inp.value);
   // the input was BLURRED when the drag armed: a real browser delivers the key
   // to the document, so that is where the test sends it (an element-targeted
   // dispatch here would pass on a listener the browser never reaches)
   check("arming blurred the input", document.activeElement !== inp);
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   const last = calls[calls.length - 1];
-  check("face restored", inp.value === "2.00", inp.value);
+  check("face restored", inp.value === "2", inp.value);
   check("a live restore was dispatched (the preview must snap back)", last[3]?.live && near(last[1], 2));
   inp.dispatchEvent(pe("pointerup", 160));
   check("no commit after Esc", calls.every((c) => c[3]?.live));

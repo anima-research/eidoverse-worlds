@@ -7,7 +7,7 @@
 // num with a dotted address; editOps turns dotted edits into the FEWEST
 // door requests (three transform channels = one whole `set transform`; two
 // socket fields = one merged `set sockets`), honours relative math on the face
-// scale (degrees), hard limits, read-only fields, and never mutates the record
+// scale (degrees), the door's ranges (a value it takes is written as typed), read-only fields, and never mutates the record
 // it reads. Where the old test checked what an edit DOES (a pose, a lock), the
 // ops go through the real door on a scratch world (tools/protocol/scratchworld.ts)
 // and the state is read back as the view.
@@ -17,10 +17,11 @@
 // door refuses the move (code `locked`), so that is now checked at the door.
 
 import { inspectSchema, channels, editOps, describeSchema, fieldAt, parseEntry } from "../shared/editschema.js";
-import { scratchWorld, flat } from "./protocol/scratchworld.ts";
+import { scratchWorld, flat, foldRecordOf } from "./protocol/scratchworld.ts";
 import { qHeading } from "../shared/rot.js";
 import { registerDraft } from "../shared/drafts.js";
 import { worldSchema, worldEditOps } from "../shared/worldentity.js";
+import { componentsOf } from "../shared/components.js";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -39,6 +40,24 @@ const chair = { model: "furniture/chair.glb", pos: [1, 0, 2], yaw: 1.5708, actor
 const lamp = { pos: [0, 2, 0], yaw: 0, actor: "r", ts: 1, light: { color: 0xff8800, intensity: 20, range: 6, important: true } };
 const swing = { model: "swing.glb", pos: [5, 0, 5], yaw: 0, actor: "r", ts: 1, motion: { type: "pendulum", axis: [1, 0, 0], amp: 0.4, period: 3, t0: 123 }, "motion:plank": { type: "spin", rpm: 10 } };
 const cargo = { model: "crate.glb", pos: [9, 9, 9], yaw: 0, actor: "r", ts: 1, parent: { to: "truck", offset: [0, 1, 0] } };
+
+console.log("\nthe fold record is the one input (C7b): every fixture read as `c` gives the schema its view gives");
+{
+  // (a fixture written with a yaw reaches the ops through qFromYaw once on the view path and twice on the fold path: 1 ulp)
+  const J = (v: any) => JSON.stringify(v, (_k, x) => (typeof x === "number" ? +x.toFixed(9) : x));
+  for (const [name, rec] of Object.entries({ chair, lamp, swing, cargo })) {
+    const c = foldRecordOf(rec);
+    check(`${name}: inspectSchema(c) ≡ inspectSchema(view)`, J(inspectSchema(c, name)) === J(inspectSchema(rec, name)));
+    check(`${name}: editOps(c) ≡ editOps(view) for a pose + a flag edit`, J(editOps(c, name, { "pos.x": "+=1", "flags.lock": true })) === J(editOps(rec, name, { "pos.x": "+=1", "flags.lock": true })));
+  }
+  // the authority accepts `delete {component: "transform"}` (review S2-1): a label-only Empty's record is {label} alone —
+  // no transform, no model — and must still read as the fold record it is, never as a view
+  const bare = Object.assign(Object.create(null), { label: "an empty" });
+  check("a record with no transform and no model (transform deleted) is still a fold record: its name reads", fieldAt(inspectSchema(bare, "e1"), "flags.label")?.value === "an empty", JSON.stringify(fieldAt(inspectSchema(bare, "e1"), "flags.label")));
+  check("…and componentsOf keeps its Label", componentsOf(bare).components.some((c: any) => c.type === "Label" && c.params.text === "an empty"), JSON.stringify(componentsOf(bare).components.map((c: any) => c.type)));
+  const frozen = foldRecordOf(swing); const deep = (x: any) => { if (x && typeof x === "object") { Object.freeze(x); for (const k of Object.keys(x)) deep(x[k]); } }; deep(frozen);
+  check("a FROZEN fold record (the client's replica in dev) reads without a throw", (() => { try { inspectSchema(frozen, "s"); editOps(frozen, "s", { "motion.amp": 0.5 }); return true; } catch (e) { return false; } })());
+}
 
 console.log("\nschema is a function of the record:");
 {
@@ -105,7 +124,7 @@ console.log("\nedits → the fewest door ops:");
   check("rest → delete motion", dels(rR, "motion").length === 1 && flat(rR.ops).length === 1, JSON.stringify(rR));
   const rF = editOps(swing, "s", { "flags.label": "  the swing ", "flags.hidden": "yes", "comp.+": "notice", "comp.nope": "{bad json" });
   check("label trimmed, hidden as comp true, + adds an empty comp, bad JSON reported", val(rF, "label") === "the swing" && val(rF, "hidden") === true && JSON.stringify(val(rF, "notice")) === "{}" && rF.errors.some((e: string) => /comp\.nope/.test(e)), JSON.stringify(rF));
-  check("hard min clamps (scale 0.01)", JSON.stringify(val(editOps({ ...chair }, "c1", { "pos.scale": -3 }), "transform")?.scale) === "[0.01,0.01,0.01]");
+  check("a scale below the slider's 0.01 is written as typed (a mirror, which the door takes)", JSON.stringify(val(editOps({ ...chair }, "c1", { "pos.scale": -3 }), "transform")?.scale) === "[-3,-3,-3]");
   check("an unknown field is an error, not an op", (() => { const x = editOps(chair, "c1", { "light.intensity": 3 }); return x.errors.length === 1 && !x.ops.length; })());
   check("a viewport gesture (sockets.add) is refused with guidance", /gesture/.test(editOps(chair, "c1", { "sockets.add": 1 }).errors[0] ?? ""));
   const before = JSON.stringify(chair);
@@ -153,7 +172,7 @@ console.log("\nthe survivors of the mutation sweep, bound:");
   // R 10-07: an older value is written back in today's shape on its first edit: origin is at, the knobs are the effect's params
   const pr = editOps(fire, "c1", { "particles.at|1": "+=0.5", "particles.param|count": 900, "particles.param|quality": "low" });
   const pv = sets(pr, "particles");
-  check("particles: an older value is edited in today's shape (at, params), count hard-capped at 600, quality passes through — ONE set", pv.length === 1 && flat(pr.ops).length === 1 && pv[0].args.value.at[1] === 0.75 && fire.particles.origin[1] === 0.25 && pv[0].args.value.params.count === 600 && pv[0].args.value.params.quality === "low" && pv[0].args.value.effect === "fire" && !("preset" in pv[0].args.value), JSON.stringify(pv));
+  check("particles: an older value is edited in today's shape (at, params), a count past the door's 600 refused in its words (the old 150 stays), quality passes through — ONE set", pv.length === 1 && flat(pr.ops).length === 1 && pv[0].args.value.at[1] === 0.75 && fire.particles.origin[1] === 0.25 && pv[0].args.value.params.count === 150 && pr.errors.length === 1 && /count is a number 1\.\.600/.test(pr.errors[0]) && pv[0].args.value.params.quality === "low" && pv[0].args.value.effect === "fire" && !("preset" in pv[0].args.value), JSON.stringify(pv));
   const sw = sets(editOps({ ...chair, particles: { effect: "fire", params: { count: 90 } } }, "c1", { "particles.effect": "smoke" }), "particles");
   check("particles: changing the effect drops the old effect's params (another effect's knobs aren't these)", sw[0]?.args.value.effect === "smoke" && sw[0]?.args.value.params === undefined, JSON.stringify(sw));
   const st = sets(editOps({ ...chair, particles: { effect: "fire" } }, "c1", { "particles.playing": false }), "particles");
@@ -229,7 +248,8 @@ console.log("\npicture + sound: schema groups, validated before any op:");
   const playing = { ...crate, sound: { src: MP3, playing: true, loop: true, volume: 0.8, radius: 12, t0: 5000 } };
   const vol = editOps(playing, "c", { "sound.volume": "*=0.5" }, { now: 9000 });
   check("tuning a PLAYING sound keeps its t0 (nobody's playhead jumps)", val(vol, "sound")?.t0 === 5000 && val(vol, "sound").volume === 0.4, JSON.stringify(vol));
-  check("volume clamps to 1", val(editOps(playing, "c", { "sound.volume": 3 }), "sound")?.volume === 1);
+  { const r = editOps(playing, "c", { "sound.volume": 3 });
+    check("a volume past the door's 1 is refused in its words, nothing sent", !r.ops.length && /sound\.volume is 3; it must be ≥ 0 and ≤ 1/.test(r.errors[0] ?? ""), JSON.stringify(r)); }
   const pause = val(editOps(playing, "c", { "sound.pause": true }), "sound");
   check("pause keeps t0 (batch 2: a resume restarts on the door's clock)", pause?.playing === false && pause.t0 === 5000);
   check("silence → delete sound", dels(editOps(playing, "c", { "sound.silence": true }), "sound").length === 1);
@@ -330,7 +350,7 @@ console.log("\nmesh (a parametric body with no model):");
   const r = editOps(cube, "m1", { "mesh.size.x": "+=0.5", "mesh.shape": "cylinder" });
   const v = val(r, "mesh");
   check("mesh edits = ONE set mesh: size x 1.5, shape cylinder, the rest kept", sets(r, "mesh").length === 1 && flat(r.ops).length === 1 && v?.shape === "cylinder" && JSON.stringify(v?.size) === "[1.5,2,3]", JSON.stringify(v));
-  check("a size below 0.05 clamps to the hard min; an unknown shape is an error, not an op", val(editOps(cube, "m1", { "mesh.size.z": "0" }), "mesh")?.size[2] === 0.05 && /one of/.test(editOps(cube, "m1", { "mesh.shape": "cone" }).errors[0] ?? "") && editOps(cube, "m1", { "mesh.shape": "cone" }).ops.length === 0);
+  check("a size below the door's 0.05 is refused in its words, nothing sent; an unknown shape is an error, not an op", !editOps(cube, "m1", { "mesh.size.z": "0" }).ops.length && /must be ≥ 0\.05/.test(editOps(cube, "m1", { "mesh.size.z": "0" }).errors[0] ?? "") && /one of/.test(editOps(cube, "m1", { "mesh.shape": "cone" }).errors[0] ?? "") && editOps(cube, "m1", { "mesh.shape": "cone" }).ops.length === 0);
   const addL = editOps(cube, "m1", { "comp.+": "Light" });
   check("Add Component ▸ Light on a mesh thing makes a CHILD light (one place per thing), as on a model", flat(addL.ops).some((o: any) => o.verb === "create" && o.args.id === "m1-light" && o.args.components?.parent?.to === "m1"), JSON.stringify(addL));
   const addM = editOps(chair, "c1", { "comp.+": "Mesh" });
@@ -384,6 +404,37 @@ console.log("\ntrusted drafts (the ladder's second rung):");
   check("TW2 an owner has a remove button per name; a non-owner has none; none trusted says so", wg({ trusted: ["mica/heart"], mayTrust: true }).some((f: any) => f.k === "remove|mica/heart") && !wg({ trusted: ["mica/heart"] }).some((f: any) => f.t === "btn") && wg({ trusted: [] }).some((f: any) => f.t === "info" && /none/.test(f.value)), JSON.stringify([wg({ trusted: ["mica/heart"], mayTrust: true }), wg({ trusted: ["mica/heart"] })]));
   const wr = worldEditOps({ sky: null, terrain: null, grass: null }, { "trusted.remove|mica/heart": true }, { trusted: ["hesperus/material", "mica/heart"], mayTrust: true });
   check("TW3 remove writes the list without that name", JSON.stringify(flat(wr.ops)[0]?.args) === JSON.stringify({ id: "@world", component: "trusted", value: { components: ["hesperus/material"] } }) && wr.errors.length === 0, JSON.stringify(wr));
+}
+
+// F2 (10-12): a refused value writes NOTHING. Since C8a a mistyped light colour came back as an error AND a `set light`
+// carrying the colour it already had (inspect.js sends whenever there are ops). Every descriptor field the table writes, on
+// a thing that has its component: a value it refuses is an error and no op. A refused key in an edit with valid ones drops
+// alone; the others still commit (an agent's multi-field edit keeps what was right).
+{
+  const { DESCRIPTORS, materializedOf } = await import("../shared/protocol/descriptors.js");
+  const BAD: Record<string, string> = { num: "zz", color: "zz", enum: "no-such-option" };
+  const tried: string[] = [], rowless: string[] = [], wrong: string[] = [];
+  for (const [card, d] of Object.entries<any>(DESCRIPTORS)) {
+    for (const fd of d.fields) {
+      const ui = fd.ui; if (fd.path == null || !ui || ui.own || !BAD[ui.t] || (ui.t === "enum" && !ui.closed)) continue;
+      const v = materializedOf(card); if (card === "Path") v.points = [[0, 0, 0], [0, 0, 4]];
+      const ent = { model: "crate.glb", pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, [d.key]: v };
+      const g = inspectSchema(ent, "x").groups.find((gr: any) => gr.group !== "pos" && gr.fields.some((x: any) => x.k === fd.k && x.t === ui.t));
+      if (!g) { rowless.push(`${card}.${fd.k}`); continue; }
+      const r = editOps(ent, "x", { [`${g.group}.${fd.k}`]: BAD[ui.t] });
+      tried.push(`${g.group}.${fd.k}`);
+      if (r.ops.length || !r.errors.length) wrong.push(`${card}.${fd.k}: ${JSON.stringify(r)}`);
+    }
+  }
+  check(`F2a every descriptor field refuses a bad value with an error and NO op (${tried.length} fields; no row on a bare seed: ${rowless.join(", ") || "none"})`,
+    tried.length >= 30 && !wrong.length, wrong.join("\n      "));
+  const both = editOps(lamp, "l", { "light.color": "zz", "light.intensity": 5 });
+  check("F2b a refused field drops alone: the valid field in the same edit still commits, the old colour untouched",
+    both.errors.length === 1 && sets(both, "light").length === 1 && val(both, "light").intensity === 5 && val(both, "light").color === 0xff8800, JSON.stringify(both));
+  const pos = editOps(chair, "c", { "pos.x": "zz" });
+  check("F2c the same for the transform: a bad number is an error and no `set transform` of the pose it already had", !pos.ops.length && pos.errors.length === 1, JSON.stringify(pos));
+  const pe = editOps({ model: "brazier.glb", pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, particles: { effect: "fire" } }, "b", { "particles.effect": "fireworkz" });
+  check("F2d a particles effect that is neither an Essential nor an address is refused here, with the door's words", !pe.ops.length && /isn't an Essentials effect/.test(pe.errors.join(" ")), JSON.stringify(pe));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

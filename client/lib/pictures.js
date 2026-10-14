@@ -23,7 +23,7 @@
 import { THREE } from './core.js';
 import { bus } from './base.js';
 import { primeFiles } from './assets.js';
-import { entities, findPart, comps } from './world.js';
+import { entities, findPart, bags, bagOf } from './world.js';
 import { CONFIG } from './base.js';
 import { registerEditor, registerHandler, commitEdit } from './inspect.js';
 import { namedParts } from './parts.js';
@@ -270,7 +270,7 @@ function reconcileNote(id, data) {
 
 bus.on('world-reset', () => clearPictures());
 // the viewer changed what their browser may fetch: every picture is read again under the new rule
-bus.on('media:trust', () => { for (const [id, c] of comps) if (c?.picture) applyFrom(id, c.picture); });
+bus.on('media:trust', () => { for (const [id, c] of bags()) if (c?.picture) applyFrom(id, c.picture); });
 
 export function clearPictures() {
   pending.clear();
@@ -315,7 +315,7 @@ export async function uploadPicture(file) {
 }
 
 registerEditor(({ id, obj, meta, bag, commit }) => {
-  if (!obj || obj.userData?.isLight) return null;   // a bulb has no part to texture
+  if (!obj || meta?.kind === 'light') return null;   // a bulb has no part to texture
   const parts = namedParts(obj);
   if (!parts.length) return null;                     // nothing to hang on — the generic JSON row still exists
   const cur = bag?.picture && typeof bag.picture === 'object' ? bag.picture : null;
@@ -348,7 +348,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
       // `about` is the bag this line describes: what a gesture committed, or
       // (omitted) the bag as it stands now. Survives the repaint; the DOM
       // below does not — and is retired by any echo that disagrees with it.
-      const msg = (t, warn = false, about = comps.get(id)?.picture ?? null) => {
+      const msg = (t, warn = false, about = bagOf(id)?.picture ?? null) => {
         notes.set(id, { text: t, warn, about: pictureKey(about) });
         const m = q('msg'); if (m) { m.textContent = t; m.style.color = warn ? 'var(--warn, #e8a33d)' : 'var(--dim)'; }
       };

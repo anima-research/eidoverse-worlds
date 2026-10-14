@@ -45,13 +45,13 @@ stub.entities.set('console', model);
 stub.entityMeta.set('console', { actor: 'ra', kind: 'model', ts: 1 });
 stub.comps.set('console', {});
 const committed: any[] = [];
-const ctx = () => ({ id: 'console', obj: model, meta: stub.entityMeta.get('console'), bag: stub.comps.get('console'), commit: (v: string, a: unknown) => committed.push([v, a]), esc: (t: string) => t });
+const ctx = () => ({ id: 'console', obj: model, meta: stub.entityMeta.get('console'), bag: stub.bagOf('console'), commit: (v: string, a: unknown) => committed.push([v, a]), esc: (t: string) => t });
 const host = document.createElement('div'); document.body.appendChild(host);
 /** the scene panel's repaint: a fresh block from a fresh render */
 const paint = () => { const r = editor(ctx()); host.innerHTML = r.html; r.wire(host); return host.querySelector('[data-pe="msg"]')?.textContent ?? ''; };
 const q = (k: string) => host.querySelector(`[data-pe="${k}"]`) as any;
 /** the world moving: comps first, then the echo, as world.js does */
-const echo = (data: unknown) => { const bag = stub.comps.get('console'); if (data == null) delete bag.picture; else bag.picture = data; stub.bus.emit('comp', { id: 'console', type: 'picture', data }); };
+const echo = (data: unknown) => { const bag = stub.bagOf('console'); if (data == null) delete bag.picture; else bag.picture = data; stub.bus.emit('comp', { id: 'console', type: 'picture', data }); };
 const refuse = () => { q('src').value = 'https://example.com/x.png'; q('hang').click(); return q('msg').textContent; };
 
 console.log('\n1. a line survives a repaint');

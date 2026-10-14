@@ -33,17 +33,20 @@ import { normalizePicture, PICTURE_LIT, PICTURE_ALT_MAX, ALT_HINT } from './pict
 import { normalizeSound, SOUND_ALT_MAX, SOUND_MAX_RADIUS } from './sound.js';
 import { mediaTier, tierWords } from './mediasrc.js';
 import { graphemes } from './text.js';
-import { ESSENTIAL_NAMES, instanceOf, effectFor, modernize, instanceProblem, paramShown } from './particle_effects.js';
+import { ESSENTIAL_NAMES, instanceOf, effectFor, effectBlobName, modernize, instanceProblem, paramShown } from './particle_effects.js';
 import { readOut, readLine } from './a11y.js';
-import { COMPONENTS as SPEC, registered } from './protocol/componentspec.js';
+import { COMPONENTS as SPEC, registered, outOfRange, rangeWords } from './protocol/componentspec.js';
+import { LOCK_LEVELS, lockLevel } from './protocol/roles.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ, MESH_SHAPES } from './components.js';
 import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
-import { checkSockets, ANCHORS, ACTION_DEFAULTS } from './sockbody.js';
+import { checkSockets, ANCHORS, ACTION_DEFAULTS, socketMapIn, socketsIn } from './sockbody.js';
 import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, POSES as GRAB_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
 import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE, setEulerChannel } from './euler.js';
 import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { localOf, parentOps, childrenOf, worldPose } from './hierarchy.js';
+import { recordOf } from './protocol/view.js';
+import { DESCRIPTORS, fieldOf, claimOf, CLAIMED_KEYS, editorDefault, toWire } from './protocol/descriptors.js';
 
 import { recordComponents } from './protocol/view.js';
 const R2D = 180 / Math.PI;
@@ -99,6 +102,19 @@ function axisName(m, def) {
   return def;
 }
 const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
+/** A card's row from its descriptor (shared/protocol/descriptors.js): the widget facts (ui), the value read through the
+ *  wire translation with the registry's default (or the field's `absent` reading) behind it, and `def` where the row
+ *  offers a reset. `over` is the prose and anything the card knows better (a softMax that follows the value). A field the
+ *  descriptor doesn't name still draws (its value from `over`), and no card claims it: components-inspector-test says so. */
+function rowOf(card, k, bag, over = {}) {
+  const f = fieldOf(card, k); const { def: offersDef, absent, sparse: _s, clears: _c, own: _o, wdp: _w, ...widget } = f?.ui ?? {};
+  const t = over.t ?? widget.t;
+  const def = f ? editorDefault(card, k) : undefined;
+  let value = f && f.path != null ? (f.wire ? f.wire.from(bag?.[f.path], bag) : bag?.[f.path]) : undefined;
+  if (t === 'check') value = def ? value !== false : value === true;   // a check offers no reset: its box is the reset
+  else value = value ?? absent ?? def;
+  return { ...widget, t, k, value, ...(def !== undefined && offersDef !== false && t !== 'check' ? { def } : {}), ...over };
+}
 // The light component (PROTOCOL §4, 2026-10-01): a lamp is a thing with a `light` component.
 const compLight = (ent) => isBag(ent?.light);
 const compMesh = (ent) => isBag(ent?.mesh) && ent.model == null && MESH_SHAPES.includes(ent.mesh.shape);
@@ -109,9 +125,208 @@ const compMesh = (ent) => isBag(ent?.mesh) && ent.model == null && MESH_SHAPES.i
 const uprightHint = (ent) => (ent?.q && Math.abs(ent.q[0]) < 1e-12 && Math.abs(ent.q[2]) < 1e-12 ? [0, ent.yaw ?? 0, 0] : null);
 const motionKeys = (ent) => Object.keys(recordComponents(ent)).filter((k) => (k === 'motion' || k.startsWith('motion:')) && ent[k] && typeof ent[k] === 'object');
 
+// ---------------------------------------------------------------- the hand-written cards
+// The four the descriptor table marks `hand` (shared/protocol/descriptors.js HAND_CARDS): their rows are not built from
+// the table — a Transform's channels are an editor's reading of one pose, a Sockets' rows are per slot, a Material's are
+// the model's own slots, and a Grabbable's registry fields ride beside the hand's own (pose, carries, fits, use, prompt,
+// grips). Each keeps a `read` (its rows) and a `write` (its edits); the inspector and editOps call them where the card
+// stands. Transform's hooks are inline in inspectSchema/editOps (its edits coalesce into the one place every channel
+// shares); HAND.Transform names where.
+// A host's sockets are its socket children (PLAN-sockets-entities); until the Parts UI (PLAN §10 12b) the Sockets card
+// still reads and writes them as the one map it was built on: the children, read as `sockets.<name>` (shared/sockbody.js
+// socketMapIn); a write of the whole map is translated into the children at the door (authority/sockets.js liftOps).
+// Needs the world (live.world); without it a record shows the sockets it carries itself (none, after the cut).
+function withSocketMap(ent, id, live) {
+  if (!ent || !live?.world || ent.sockets) return ent;
+  const map = socketMapIn(live.world, id);
+  return map ? { ...ent, sockets: map } : ent;
+}
+const HAND = {
+  Transform: { read: 'inspectSchema: the pos and rot groups', write: 'editOps: case pos, case rot, and the compose after the loop' },
+  Sockets: {
+    // the list, then per slot its channels and its body block (shared/sockbody.js); the component's JSON hatch reaches the rest
+    read(c) {
+      const slots = Object.keys(c.sockets);
+      const fields = [{ t: 'list', k: 'slots', empty: 'no anchors yet', rows: slots.map((slot) => {
+        const s = c.sockets[slot] ?? {}; const p = s.pos ?? [0, 0.5, 0];
+        const b = bodyOf(s);
+        return { id: slot, label: slot, sub: `(${p.map((v) => (+v).toFixed(2)).join(', ')}) · ${sockRot(s).map((v) => Math.round(v * R2D)).join('/')}°${s.part ? ` · rides ${s.part}` : ''} · ${b ? `${b.action} (${typeof b.pose === 'string' ? b.pose : 'a blend'}, ${b.anchor})${b.input.move === 'drive' ? ' · drives' : ''}${b.leaveBy === 'script' ? ' · held' : ''}` : 'things attach'}`, actions: [{ k: 'del', label: '✕', danger: true }] };
+      }) }];
+      for (const slot of slots) {
+        const s = c.sockets[slot] ?? {}; const p = s.pos ?? [0, 0.5, 0];
+        ['x', 'y', 'z'].forEach((ax, i) => fields.push({ t: 'num', k: `${slot}|pos|${i}`, label: `${slot} ${ax}`, value: p[i], step: 0.05, dp: 2, unit: 'm' }));
+        // its whole rotation (Unreal sockets): heading, then pitch and roll — a rocket's seat lies on its back
+        const e = sockRot(s);
+        [['heading', 1], ['pitch', 0], ['roll', 2]].forEach(([nm, ax]) => fields.push({ t: 'num', k: `${slot}|rot|${ax}`, label: `${slot} ${nm}`, value: round(e[ax], 6), step: 5, deg: true }));
+        // a socket a PERSON attaches to by using it (VRChat Station, Roblox Seat): a chair, a saddle, a car seat
+        const b = bodyOf(s);
+        fields.push({ t: 'check', k: `${slot}|body`, label: `${slot}: people attach`, value: !!b, hint: 'a person attaches here by using it (sit, ride…); off: an attachment point for things only' });
+        if (b) {
+          // the body block (shared/sockbody.js): the common fields as rows, the structured ones (reach) as JSON; the
+          // component's own JSON hatch below reaches everything else (poses, sync, approach, exit, hold)
+          const raw = s.body ?? {}; const d = ACTION_DEFAULTS[b.action] ?? ACTION_DEFAULTS.sit;
+          fields.push({ t: 'text', k: `${slot}|action`, label: `${slot} action`, value: b.action, hint: "what using it is called: sit, ride, lie, stand, drive… (it also picks the default pose and anchor)" });
+          fields.push({ t: 'enum', k: `${slot}|anchor`, label: `${slot} anchor`, value: b.anchor, def: d.anchor, options: ANCHORS.map((v) => ({ v, label: v })), hint: 'the body point that lands on the socket: hips (a seat), feet (a place to stand), head, or the root' });
+          if (typeof b.pose === 'string') fields.push({ t: 'enum', k: `${slot}|pose`, label: `${slot} pose`, value: b.pose, def: d.pose, options: [...new Set([...SOCKET_POSES, b.pose])].map((v) => ({ v, label: v })), hint: 'the clip the body holds (any animation-library name; a blend or a phase-locked clip: edit as JSON)' });
+          else fields.push({ t: 'json', k: `${slot}|pose`, label: `${slot} pose`, value: JSON.stringify(b.pose, null, 2), hint: '{clip, time: "phase"} or a blend {by: "speed", clips: [[0, "idle"], [2, "walk"]]}; a clip name string makes it one clip again' });
+          fields.push({ t: 'enum', k: `${slot}|leaveBy`, label: `${slot} leave by`, value: b.leaveBy, def: 'any', options: [['any', 'moving, jumping or X'], ['jump', 'jump or X'], ['menu', 'X only'], ['script', 'only the world (a script)']].map(([v, label]) => ({ v, label })) });
+          fields.push({ t: 'enum', k: `${slot}|who`, label: `${slot} who`, value: b.who ?? 'anyone', def: 'anyone', options: [['anyone', 'anyone'], ['builder', 'builders'], ['owner', 'owners']].map(([v, label]) => ({ v, label })) });
+          fields.push({ t: 'check', k: `${slot}|fromSeat`, label: `${slot}: hop from another seat`, value: b.fromSeat, hint: 'someone seated elsewhere may move here without standing up' });
+          fields.push({ t: 'text', k: `${slot}|enter`, label: `${slot} enter clip`, value: b.enter ?? '', hint: "one-shot clip while you're carried on (stand_to_sit); empty: ease on" });
+          fields.push({ t: 'text', k: `${slot}|leave`, label: `${slot} leave clip`, value: b.leave ?? '', hint: "one-shot clip while you're carried off (sit_to_stand); empty: step off" });
+          fields.push({ t: 'enum', k: `${slot}|input|move`, label: `${slot} movement keys`, value: b.input.move, def: 'none', options: [['none', 'get you off'], ['drive', 'drive the thing (one per thing)'], ['walk', 'steer your own pose']].map(([v, label]) => ({ v, label })), hint: 'drive publishes throttle/steer for the thing; walk publishes them for this body\'s pose only' });
+          fields.push({ t: 'enum', k: `${slot}|input|look`, label: `${slot} looking`, value: b.input.look, def: 'free', options: [['free', 'look around'], ['aim', 'look aims (aimYaw/aimPitch)'], ['locked', 'view locked forward']].map(([v, label]) => ({ v, label })) });
+          const lk = raw.look ?? {};
+          [['yaw', 0, 'left', -180, 180], ['yaw', 1, 'right', -180, 180], ['pitch', 0, 'down', -90, 90], ['pitch', 1, 'up', -90, 90]].forEach(([ax, i, nm, lo, hi]) =>
+            fields.push({ t: 'num', k: `${slot}|look|${ax}|${i}`, label: `${slot} look ${nm}`, value: (Array.isArray(lk[ax]) ? lk[ax][i] : b.look[ax][i]), step: 5, dp: 0, unit: '°', min: lo, max: hi, hint: ax === 'yaw' ? 'how far the head turns (yaw, degrees, + = left)' : 'how far the head tilts (pitch, degrees, + = up)' }));
+          fields.push({ t: 'enum', k: `${slot}|look|up`, label: `${slot} view up`, value: b.look.up, def: 'world', options: [['world', 'the horizon stays level'], ['socket', 'the view rolls with it']].map(([v, label]) => ({ v, label })) });
+          fields.push({ t: 'json', k: `${slot}|reach`, label: `${slot} reach`, value: JSON.stringify(raw.reach ?? {}, null, 2), collapsed: !raw.reach, hint: '{leftHand: {at: [x,y,z], q?, part?, hint?, vr: snap|track|near}}: hands (or feet) on the thing, in its frame; with part they move with it' });
+        }
+      }
+      fields.push({ t: 'btn', k: 'add', label: '+ seat here', hint: 'click the spot on the thing where a sitter goes', client: true });
+      return { group: 'sockets', label: 'sockets', types: ['sockets'], fields };
+    },
+    write({ id, k, raw, f, c, comps, errors, num, bool }) {
+      const next = comps.get('sockets') ?? JSON.parse(JSON.stringify(c.sockets ?? {}));
+      if (k === 'del' && !next[raw]) { errors.push(`sockets.del: no slot ${JSON.stringify(raw)} on ${id}`); return; }
+      if (k === 'del') { delete next[raw]; comps.set('sockets', Object.keys(next).length ? next : null); return; }
+      const [slot, what, idx, sub] = k.split('|');
+      const cur = next[slot] ?? (next[slot] = { pos: [0, 0.5, 0], body: {} });   // a new slot is a seat, as '+ seat' makes
+      if (what === 'body') { if (bool(raw)) cur.body = cur.body ?? {}; else delete cur.body; comps.set('sockets', next); return; }
+      if (what === 'action') { const v = String(raw).trim().toLowerCase(); if (!/^[a-z][a-z0-9-]{0,31}$/.test(v)) { errors.push(`sockets.${slot}|action: a verb in lower case (sit, ride)`); return; }
+        cur.body = { ...(cur.body ?? {}), action: v }; if (v === 'sit') delete cur.body.action; comps.set('sockets', next); return; }
+      // the rest of the body block: each field written the way the authority reads it (shared/sockbody.js), a default left
+      // out, and the result checked with the authority's own check, so a refusal here reads as the authority's would
+      const BODY = ['anchor', 'pose', 'leaveBy', 'who', 'fromSeat', 'enter', 'leave', 'input', 'look', 'reach', 'hold', 'poses', 'sync', 'approach', 'exit'];
+      if (BODY.includes(what)) {
+        const b = cur.body = { ...(cur.body ?? {}) };
+        const d = ACTION_DEFAULTS[b.action ?? 'sit'] ?? ACTION_DEFAULTS.sit;
+        const json = (v) => { if (v == null || v === '') return undefined; if (typeof v !== 'string') return v; const t = v.trim(); if (!/^[[{"]/.test(t)) return t; try { return JSON.parse(t); } catch (e) { errors.push(`sockets.${slot}|${what}: not valid JSON (${e.message})`); return null; } };
+        const put = (key, v, dflt) => { if (v === undefined || v === dflt || (v && typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length)) delete b[key]; else b[key] = v; };
+        if (what === 'anchor') put('anchor', String(raw), d.anchor);
+        else if (what === 'pose') { const v = json(raw); if (v === null) return; put('pose', v, d.pose); }
+        else if (what === 'leaveBy') put('leaveBy', String(raw), 'any');
+        else if (what === 'who') { const v = String(raw); put('who', v === 'visitor' ? 'anyone' : v, 'anyone'); }
+        else if (what === 'fromSeat') put('fromSeat', bool(raw) || undefined, undefined);
+        else if (what === 'enter' || what === 'leave' || what === 'sync') put(what, String(raw ?? '').trim() || undefined, undefined);
+        else if (what === 'input') { const inp = { ...(b.input ?? {}) }; if (!['move', 'look'].includes(idx)) { errors.push(`sockets.${slot}|input|${idx}: input is move or look`); return; }
+          inp[idx] = String(raw); if (inp[idx] === (idx === 'move' ? 'none' : 'free')) delete inp[idx]; put('input', inp, undefined); }
+        else if (what === 'look') { const lk = { ...(b.look ?? {}) };
+          if (idx === 'up') { lk.up = String(raw); if (lk.up === 'world') delete lk.up; }
+          else if (idx === 'yaw' || idx === 'pitch') { const lim = idx === 'yaw' ? 180 : 90; const n = num(f ?? { value: (lk[idx] ?? [-lim, lim])[+sub] ?? 0, k }, raw); if (n == null) return;
+            const r = [...(lk[idx] ?? [-lim, lim])]; r[+sub] = round(n, 2); lk[idx] = r; if (r[0] === -lim && r[1] === lim) delete lk[idx]; }
+          else { errors.push(`sockets.${slot}|look|${idx}: look is yaw|0..1, pitch|0..1, up`); return; }
+          put('look', lk, undefined); }
+        else { const v = json(raw); if (v === null) return; put(what, v, undefined); }
+        const bad = checkSockets(next);
+        if (bad) { errors.push(`sockets.${slot}|${what}: ${bad.reason}${bad.fix ? ` — ${bad.fix}` : ''}`); return; }
+        comps.set('sockets', next); return;
+      }
+      const n = num(f ?? { value: what === 'rot' ? sockRot(cur)[+idx] : (cur.pos ?? [0, 0.5, 0])[+idx] ?? 0, deg: what === 'rot', k }, raw); if (n == null) return;
+      if (what === 'pos') { cur.pos = [...(cur.pos ?? [0, 0.5, 0])]; cur.pos[+idx] = round(n); }
+      else if (what === 'rot') { const q = setEulerChannel(socketQ(cur), 'ZXY', sockRot(cur), +idx, n).q.map((v) => round(v, 6)); delete cur.yaw;
+        if (Math.abs(q[3]) > 1 - 1e-12) delete cur.q; else cur.q = q; }
+      else { errors.push(`sockets.${slot}|${what}: not a socket field (pos|0..2, rot|0..2, body, action, anchor, pose, leaveBy, who, fromSeat, enter, leave, input|move, input|look, look|yaw|0..1, look|pitch|0..1, look|up, reach, hold, poses, sync, approach, exit)`); return; }
+      comps.set('sockets', next);
+    },
+  },
+  Material: {
+    // the DRAFT hesperus/material (docs/COMPONENT-LADDER.md rung 1): the model's own materials (live.materials, read-only
+    // swatches), then the overrides — `hesperus/material` every slot, `hesperus/material:<slot>` one
+    read(c, live) {
+      const MATK = 'hesperus/material'; const ov = c[MATK] && typeof c[MATK] === 'object' ? c[MATK] : null;
+      const own = Array.isArray(live.materials) ? live.materials : [];
+      const label = (m, i) => matLabel(m?.name, i);
+      const fields = own.slice(0, 12).map((m, i) => ({ t: 'color', k: `own|${m.slot}`, label: label(m, i), value: m.color ?? 0xffffff, disabled: true,
+        hint: `The model's own material "${m.name}": roughness ${m.roughness ?? '—'}, metalness ${m.metalness ?? '—'}.` }));
+      if (!own.length) fields.push({ t: 'info', k: 'own|none', label: 'model', value: 'its materials show once the model has loaded' });
+      const block = (pre, o, base, title) => {
+        const num = (k, lab, hint, hi = 1) => ({ t: 'text', k: `${pre}${k}`, label: lab, value: typeof o[k] === 'number' ? String(o[k]) : '', placeholder: base?.[k] != null ? `model's: ${base[k]}` : "model's own", hint: `${hint} 0 to ${hi}; blank keeps the model's own.` });
+        if (title) fields.push({ t: 'info', k: `${pre}head`, label: '', value: title });
+        fields.push({ t: 'color', k: `${pre}color`, label: 'colour', value: Number.isInteger(o.color) ? o.color : (base?.color ?? 0xffffff), hint: "Its base colour." },
+          num('roughness', 'roughness', '0 is mirror-smooth, 1 is matte:'),
+          num('metalness', 'metalness', '0 is plastic, wood, paint; 1 is bare metal:'),
+          { t: 'color', k: `${pre}emissive`, label: 'glow', value: Number.isInteger(o.emissive) ? o.emissive : 0x000000, hint: 'The colour it glows with, lit or not. Black is no glow.' },
+          num('emissiveStrength', 'glow amount', 'How bright the glow is:', 20),
+          num('opacity', 'opacity', '1 is solid, 0 is invisible:'),
+          { t: 'btn', k: `${pre}reset`, label: "back to the model's own", hint: 'Removes this override.' }); };
+      if (ov) block('', ov, own[0], own.length > 1 ? 'every material' : null);
+      const slotKeys = Object.keys(c).filter((k) => k.startsWith(`${MATK}:`) && c[k] && typeof c[k] === 'object');
+      for (const k of slotKeys) { const slot = k.slice(MATK.length + 1); const at = own.findIndex((m) => m.slot === slot);
+        if (own.length && at < 0) fields.push({ t: 'info', k: `slot|${slot}|gone`, label: slot.slice(0, 18), value: "this model has no such material any more: the override does nothing", hint: `hesperus/material:${slot}` },
+          { t: 'btn', k: `slot|${slot}|reset`, label: 'remove it', hint: 'Removes the override for a material this model no longer has.' });
+        else block(`slot|${slot}|`, c[k], own[at], `${label(own[at], at)} only`); }
+      if (!ov) fields.push({ t: 'btn', k: 'override', label: own.length > 1 ? 'change every material…' : 'override its look…', hint: "Change its colour, roughness, metalness, glow or opacity. Fields you leave blank keep the model's own." });
+      if (own.length > 1) for (const [i, m] of own.slice(0, 12).entries()) if (!slotKeys.includes(`${MATK}:${m.slot}`))
+        fields.push({ t: 'btn', k: `slot|${m.slot}|add`, label: `change ${label(m, i)} only…`, hint: `Override just the model's material "${m.name}".` });
+      // the ladder's second rung (R 10-12): the world's owner may trust this draft here; everyone else sees only the chip
+      if (live.mayTrust === true) fields.push(isTrusted(MATK, live.trusted)
+        ? { t: 'btn', k: 'trust', label: 'stop trusting it in this world', hint: 'Takes hesperus/material off this world\'s trusted list: back to a draft (amber), offered under "drafts". Nothing stored changes.' }
+        : { t: 'btn', k: 'trust', label: 'trust this in this world', hint: 'Not engine-official, but used and trusted in this world: the owner\'s word (@world.trusted). It moves into the main Add Component list with a blue chip. The engine still doesn\'t read it.' });
+      return { group: 'hmat', label: 'Material', types: [...(ov ? [MATK] : []), ...slotKeys], fields };
+    },
+    write({ k, raw, c, comps, errors, ops = [], live = {} }) {
+      const MATK = 'hesperus/material';
+      const m = /^slot\|([^|]+)\|(.+)$/.exec(k); const ck = m ? `${MATK}:${m[1]}` : MATK; const fk = m ? m[2] : k;
+      if (m && !/^[a-z][a-z0-9-]{0,47}$/.test(m[1])) { errors.push(`material: '${m[1]}' isn't a slot name`); return; }
+      if (fk === 'override' || fk === 'add') { if (c[ck] == null) comps.set(ck, {}); return; }
+      if (fk === 'reset') { comps.set(ck, null); return; }
+      if (fk === 'trust') { ops.push(trustOp(MATK, live)); return; }   // the second rung: @world.trusted toggled (trustOp below)
+      const next = comps.get(ck) ?? JSON.parse(JSON.stringify(c[ck] ?? {}));
+      if (fk === 'color' || fk === 'emissive') { const n = typeof raw === 'number' ? raw : parseInt(String(raw ?? '').replace(/^#/, ''), 16);
+        if (raw === null || raw === '') delete next[fk]; else if (Number.isInteger(n) && n >= 0 && n <= 0xffffff) next[fk] = n; else { errors.push(`material.${fk}: a colour`); return; } }
+      else if (['roughness', 'metalness', 'opacity', 'emissiveStrength'].includes(fk)) {
+        const t = String(raw ?? '').trim(); const hi = fk === 'emissiveStrength' ? 20 : 1;
+        if (!t) delete next[fk]; else { const n = Number(t); if (!Number.isFinite(n) || n < 0 || n > hi) { errors.push(`material.${fk}: a number from 0 to ${hi}, or blank`); return; } next[fk] = round(n, 3); } }
+      else { errors.push(`${key}: no such field`); return; }
+      comps.set(ck, next);
+    },
+  },
+  Grabbable: {
+    read(c) {
+      const g = grabOf({ grabbable: c.grabbable }) ?? grabOf({ grabbable: {} }); const raw = c.grabbable;
+      const G = (k, over) => rowOf('Grabbable', k, g, over);
+      const opts = (list) => list.map((v) => ({ v, label: v }));
+      const grips = Object.keys(g.grips);
+      return { group: 'grabbable', label: 'grabbable', types: ['grabbable'], fields: [
+        G('enabled', { label: 'can be picked up', hint: 'Off: nobody can pick it up for now. (A loose ball can still be kicked.)' }),
+        G('who', { label: 'who may', options: GRAB_WHO.map((v) => ({ v, label: v === 'visitor' ? 'anyone' : `${v}s` })) }),
+        G('steal', { label: 'can be taken from a hand', hint: 'On: someone else can grab it out of your hands. Off: it stays with whoever holds it until they let go (a world owner can still take it).' }),
+        G('range', { label: 'reach', hint: 'How far away your hand can pick it up from. Arm\'s reach is 1.5 m; set it further and the thing flies to your hand when grabbed.' }),
+        G('priority', { label: 'priority', hint: 'When several things are in reach, the one with the highest number is picked up first. Give small things on big things a higher number: the key, not the table it sits on.' }),
+        G('hold', { label: 'hold', options: [['auto', 'auto: while gripping in VR, sticky on desktop'], ['press', 'only while gripping'], ['toggle', 'sticky everywhere (a tool)']].map(([v, label]) => ({ v, label })) }),
+        { t: 'enum', k: 'pose', label: 'body pose', value: raw.pose ?? 'by size', def: 'by size', options: opts(['by size', ...GRAB_POSES]), hint: 'How an avatar on desktop (no tracked hands) holds it: in one hand, carried in both arms, like a torch, like a pistol, in two hands, or on the shoulder. "by size" picks one hand for small things and both arms for big ones.' },
+        G('twoHanded', { label: 'two-handed', hint: 'On: it can be held in both hands at once, like a rifle or a broom. The first hand carries it and the second hand aims it. Off: only one hand holds it, so grabbing it with your other hand moves it to that hand.' }),
+        { t: 'check', k: 'carries', label: 'can carry other entities', value: g.carries, hint: 'On: picking it up brings along whatever is resting on it, like a tray of food. Off: only it comes up, and what was on it falls off, like taking a book out of a pile.' },
+        G('throw', { label: 'throw', hint: 'How hard it flies when thrown: 1 is normal, 2 is twice as fast, 0 means it can only be dropped.' }),
+        G('release', { label: 'let go', options: [['drop', 'it falls, or is set down'], ['stay', 'it stays where you let go'], ['return', 'it goes home']].map(([v, label]) => ({ v, label })) }),
+        G('returnAfter', { label: 'goes home after', hint: 'Left lying around for this many seconds, it returns to its home spot. 0 = it never returns on its own.' }),
+        { t: 'text', k: 'fits', label: 'fits sockets', value: g.fits.join(', '), placeholder: 'key, sword…', hint: 'Words that say what it is (key, sword…). Let go near a socket that accepts one of these words and it snaps into the socket.' },
+        { t: 'text', k: 'use', label: 'use while held', value: g.use ? [g.use.down ?? '', g.use.up ?? ''].filter((x, i) => x || i === 0).join(' / ') : '', placeholder: 'action, or down / up', hint: 'What happens when you press the use button while holding it: the name of one of this thing\'s actions. Two names as "down / up" run one on press and the other on release.' },
+        { t: 'text', k: 'prompt', label: 'hover text', value: g.prompt ?? '', placeholder: 'Pick up…', hint: 'The words shown when you point at it, in place of "pick up …". Up to 40 characters.' },
+        { t: 'btn', k: 'gripedit', label: grips.length ? `edit grips (${grips.length}): ${grips.join(', ')}` : 'add grips…', hint: 'Where the hand takes hold of it, and how. Opens a see-through hand you drag into place; mirror it for the other hand, then try it.' },
+      ] };
+    },
+    // the registry fields through the table (writeField); the hand's own as it reads them; every edit checked by the same
+    // checkGrabbable the authority refuses with
+    write({ k, key, f, raw, c, comps, errors, writeField }) {
+      const next = comps.get('grabbable') ?? JSON.parse(JSON.stringify(c.grabbable ?? {}));
+      if (k === 'carries') next.carries = typeof raw === 'string' ? !/^(false|0|no|off)$/i.test(raw) : !!raw;
+      else if (k === 'pose') { if (raw === 'by size' || raw == null || raw === '') delete next.pose; else next.pose = String(raw); }
+      else if (k === 'fits') { const w = String(raw ?? '').split(/[,\s]+/).map((x) => x.trim()).filter(Boolean); if (w.length) next.fits = w; else delete next.fits; }
+      else if (k === 'use') { const [d, u] = String(raw ?? '').split('/').map((x) => x.trim()); if (!d && !u) delete next.use; else next.use = u ? { ...(d ? { down: d } : {}), up: u } : d; }
+      else if (k === 'prompt') { const v = String(raw ?? '').trim(); if (v) next.prompt = v; else delete next.prompt; }
+      else if (!writeField('Grabbable', k, key, f, raw, next)) next[k] = raw;
+      const bad = checkGrabbable(next);
+      if (bad) { errors.push(`grabbable.${k}: ${bad.reason}${bad.fix ? ` — ${bad.fix}` : ''}`); return; }
+      comps.set('grabbable', next);
+    },
+  },
+};
+
 // ---------------------------------------------------------------- schema
 
-/** @param ent   the folded entity record (shared/fold.js), or null
+/** @param ent   the fold record (shared/protocol/fold.js `c`) — or, through recordOf, the view record (view.js viewOf) — or null
  *  @param id    its id
  *  @param live  optional viewer extras: { casting?: boolean,
  *               parts?: string[] (the model's named mesh parts — a picture's `part`
@@ -119,6 +334,7 @@ const motionKeys = (ent) => Object.keys(recordComponents(ent)).filter((k) => (k 
  *               Who may change it is the authority's to decide (it refuses, saying why). */
 export function inspectSchema(ent, id, live = {}) {
   if (!ent) return { id, groups: [] };
+  ent = withSocketMap(recordOf(ent, id), id, live);
   const c = recordComponents(ent);
   const mounted = !!ent.parent;
   const locked = !!c.lock;
@@ -216,7 +432,7 @@ export function inspectSchema(ent, id, live = {}) {
     // out from its components (shared/a11y.js), shown below as everyone who reads it gets it
     { t: 'text', k: 'description', label: 'description', value: typeof c.description === 'string' ? c.description : '', multiline: true, placeholder: 'what it is and looks like, for people who can\'t see it and for agents',
       hint: `${graphemes(typeof c.description === 'string' ? c.description : '')} / ${SPEC.description.maxLen}. Don't list what it does: that is read from its components. A visible nameplate is a child thing with a sign (Text, billboard yaw)` },
-    { t: 'info', k: 'reads', label: 'reads as', value: (() => { const r = readOut(c, { name: typeof c.label === 'string' ? c.label : null }); return [r.name ? `«${r.name}»` : '(no name)', readLine(r, { max: 120 })].filter(Boolean).join(': ') || '—'; })() },
+    { t: 'info', k: 'reads', label: 'reads as', value: (() => { const r = readOut(c, { name: typeof c.label === 'string' ? c.label : null, sockets: live.world ? socketsIn(live.world, id) : null }); return [r.name ? `«${r.name}»` : '(no name)', readLine(r, { max: 120 })].filter(Boolean).join(': ') || '—'; })() },
   ] });
 
   // pivot (research 52): where it turns and scales from, in its own frame (before scale). The buttons snap it to the
@@ -241,31 +457,34 @@ export function inspectSchema(ent, id, live = {}) {
   // fields addressed `look-at.<k>` for the whole thing and `look-at.<part>|<k>` for a part's
   const laKeys = Object.keys(c).filter((k) => (k === 'look-at' || k.startsWith('look-at:')) && isBag(c[k]));
   if (laKeys.length) {
-    const AX = ['z', 'x', 'y', '-z', '-x', '-y'];
+    // the door's axis letters (componentspec `axis`: x, y, z or a vector); a stored vector shows as itself
+    const AX = ['z', 'x', 'y'];
+    const fwdOf = (f) => (typeof f === 'string' ? f : Array.isArray(f) ? JSON.stringify(f) : 'z');
     const fields = [];
     for (const key of laKeys) {
       const la = c[key]; const pre = key === 'look-at' ? '' : `${key.slice(8)}|`; const nm = key === 'look-at' ? '' : `${key.slice(8)} `;
       const T = typeof la.target === 'string' ? la.target : null;
-      fields.push({ t: 'ref', k: `${pre}target`, label: `${nm}faces`, value: T && !T.startsWith('@') && !/^u-/.test(T) ? T : null, words: { '@viewer': 'the viewer', '@nearest': 'nearest person' }, word: T?.startsWith('@') || /^u-/.test(T ?? '') ? T : null,
-          hint: 'what it turns to face: pick a thing (a row, or the thing in the world), or "the viewer" (each viewer sees it face them) or "nearest person"' },
+      const LA = (p, over = {}) => rowOf('LookAt', p, la, { ...over, k: `${pre}${p}`, label: `${nm}${over.label ?? p}` });
+      fields.push(LA('target', { label: 'faces', value: T && !T.startsWith('@') && !/^u-/.test(T) ? T : null, words: { '@viewer': 'the viewer', '@nearest': 'nearest person' }, word: T?.startsWith('@') || /^u-/.test(T ?? '') ? T : null,
+          hint: 'what it turns to face: pick a thing (a row, or the thing in the world), or "the viewer" (each viewer sees it face them) or "nearest person"' }),
         { t: 'enum', k: `${pre}target@`, label: `${nm}or`, value: T?.startsWith('@') ? T : '', options: [{ v: '', label: '(a thing)' }, { v: '@viewer', label: 'the viewer' }, { v: '@nearest', label: 'nearest person' }] },
-        { t: 'enum', k: `${pre}mode`, label: `${nm}turns`, value: la.mode === 'aim' ? 'aim' : 'yaw', def: 'yaw', options: [{ v: 'yaw', label: 'around its up (stays upright)' }, { v: 'aim', label: 'fully (tilts too)' }] },
-        { t: 'enum', k: `${pre}forward`, label: `${nm}front`, value: typeof la.forward === 'string' ? la.forward : 'z', def: 'z', options: AX.map((v) => ({ v, label: v === 'z' ? '+z (its front)' : v })), hint: 'which of its own axes points at the target' },
-        { t: 'num', k: `${pre}speed`, label: `${nm}speed`, value: la.speed ?? 240, def: 240, step: 30, dp: 0, min: 0, max: 3600, unit: '°/s', hint: '0 = turns at once' },
-        { t: 'num', k: `${pre}range`, label: `${nm}range`, value: la.range ?? 12, def: 12, step: 1, dp: 1, min: 0.1, max: 100, unit: 'm', hint: 'a person further than this: it turns back to rest' });
+        LA('mode', { label: 'turns', value: la.mode === 'aim' ? 'aim' : 'yaw', options: [{ v: 'yaw', label: 'around its up (stays upright)' }, { v: 'aim', label: 'fully (tilts too)' }] }),
+        LA('forward', { label: 'front', value: fwdOf(la.forward), options: [...AX, ...(AX.includes(fwdOf(la.forward)) ? [] : [fwdOf(la.forward)])].map((v) => ({ v, label: v === 'z' ? '+z (its front)' : v })), hint: 'which of its own axes points at the target' }),
+        LA('speed', { hint: '0 = turns at once' }),
+        LA('range', { hint: 'a person further than this: it turns back to rest' }));
     }
     groups.push({ group: 'look-at', label: 'look at', types: laKeys, fields });
   }
 
   // the `light` group: `light.intensity` is the same address to the panel, the VR quad and the agent's edit tool
   if (compLight(ent)) {
-    const src = c.light;
+    const src = c.light; const L = (k, over) => rowOf('Light', k, src, over);
     const fields = [
-      { t: 'color', k: 'color', label: 'color', value: src.color ?? 0xffd9a0, def: 0xffd9a0 },
-      { t: 'num', k: 'intensity', label: 'brightness', value: src.intensity ?? 16, def: 16, step: 1, dp: 0, min: 0, softMax: Math.max(64, src.intensity ?? 16) },
-      { t: 'num', k: 'range', label: 'range', value: src.range ?? 10, def: 10, step: 1, dp: 0, min: 1, softMax: Math.max(40, src.range ?? 10), unit: 'm' },
-      { t: 'check', k: 'important', label: 'important', value: src.important === true, hint: 'always casts: first claim on a light slot, never governor-shed' },
-      { t: 'check', k: 'noon', label: 'burns at noon', value: src.day === false, hint: 'opts out of the day cycle' },
+      L('color', { label: 'color' }),
+      L('intensity', { label: 'brightness', softMax: Math.max(64, src.intensity ?? 16) }),
+      L('range', { label: 'range', softMax: Math.max(40, src.range ?? 10) }),
+      L('important', { label: 'important', hint: 'always casts: first claim on a light slot, never governor-shed' }),
+      L('noon', { label: 'burns at noon', hint: 'opts out of the day cycle' }),
     ];
     if (live.casting === false) fields.push({ t: 'info', label: '', value: 'glow-only right now (slot pool spent) — it may still cast for others' });
     groups.push({ group: 'light', label: 'light', types: ['light'], fields });
@@ -277,8 +496,9 @@ export function inspectSchema(ent, id, live = {}) {
     const m = c.mesh; const size = Array.isArray(m.size) && m.size.length === 3 ? m.size : [1, 1, 1];
     const meaning = { sphere: ['diameter', '(unused)', '(unused)'], cylinder: ['diameter', 'height', '(unused)'], capsule: ['diameter', 'height, at least the diameter', '(unused)'], plane: ['width', '(unused)', 'depth'], box: ['width', 'height', 'depth'] }[MESH_SHAPES.includes(m.shape) ? m.shape : 'box'];
     const fields = [
-      { t: 'enum', k: 'shape', label: 'shape', value: MESH_SHAPES.includes(m.shape) ? m.shape : 'box', def: 'box', options: MESH_SHAPES.map((v) => ({ v, label: v })), hint: 'box, sphere, cylinder, plane (flat on the ground, drawn on both sides) or capsule; it stands on its own origin' },
-      ...['x', 'y', 'z'].map((ax, i) => ({ t: 'num', k: `size.${ax}`, label: `size ${ax}`, axis: ax, value: +(+size[i]).toFixed(2), def: 1, step: 0.1, dp: 2, min: 0.05, max: 200, unit: 'm', hint: `${meaning[i]}, in metres (0.05 to 200)` })),
+      rowOf('Mesh', 'shape', m, { label: 'shape', options: MESH_SHAPES.map((v) => ({ v, label: v })), hint: 'box, sphere, cylinder, plane (flat on the ground, drawn on both sides) or capsule; it stands on its own origin' }),
+      // the size's three channels are the card's own rows (descriptors.js Mesh extra), as a pivot's are: one vec3 on the wire
+      ...['x', 'y', 'z'].map((ax, i) => ({ t: 'num', k: `size.${ax}`, label: `size ${ax}`, axis: ax, value: +(+size[i]).toFixed(2), def: 1, step: 0.1, dp: 2, min: SPEC.mesh.ranges.size.min, max: SPEC.mesh.ranges.size.max, unit: 'm', hint: `${meaning[i]}, in metres (${SPEC.mesh.ranges.size.min} to ${SPEC.mesh.ranges.size.max})` })),
     ];
     groups.push({ group: 'mesh', label: 'mesh', types: ['mesh'], fields });
   }
@@ -290,9 +510,9 @@ export function inspectSchema(ent, id, live = {}) {
     const shape = isBag(c.collider) ? c.collider.shape : ent.collide;
     const opts = ['exact', 'box', 'sphere'];
     groups.push({ group: 'collider', label: 'collider', ...(isBag(c.collider) ? { types: ['collider'] } : {}), fields: [
-      { t: 'enum', k: 'shape', label: 'shape', value: shape, options: (opts.includes(shape) ? opts : [...opts, String(shape)]).map((v) => ({ v, label: v })),
+      rowOf('Collider', 'shape', isBag(c.collider) ? c.collider : { shape }, { label: 'shape', options: (opts.includes(shape) ? opts : [...opts, String(shape)]).map((v) => ({ v, label: v })),
         hint: isBag(c.collider) ? 'exact = its triangles, box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide'
-          : 'set by its spawn; changing it here writes a collider component, which takes precedence' },
+          : 'set by its spawn; changing it here writes a collider component, which takes precedence' }),
     ] });
   }
 
@@ -312,33 +532,29 @@ export function inspectSchema(ent, id, live = {}) {
         const opts = ['x', 'y', 'z'].map((v) => ({ v, label: v }));
         fields.push({ t: 'enum', k: k('axis'), label: `${P}axis`, value: ax, options: opts.some((o) => o.v === ax) ? opts : [...opts, { v: ax, label: ax }] });
       }
+      const card = { pendulum: 'Pendulum', spin: 'Spin', orbit: 'Orbit', bob: 'Bob', path: 'Path' }[m.type];
+      const M = (p, over = {}) => rowOf(card, p, m, { ...over, k: k(p), label: `${P}${over.label ?? p}` });
       switch (m.type) {
         case 'pendulum':
-          fields.push({ t: 'num', k: k('amp'), label: `${P}amp`, value: m.amp ?? m.amplitude ?? 0, step: 5, deg: true, min: 0, softMax: Math.PI });
-          fields.push({ t: 'num', k: k('period'), label: `${P}period`, value: m.period ?? 3.5, def: 3.5, step: 0.1, dp: 2, min: 0.05, unit: 's' });
-          fields.push({ t: 'num', k: k('phase'), label: `${P}phase`, value: m.phase ?? 0, step: 5, deg: true });
-          fields.push({ t: 'num', k: k('damp'), label: `${P}damp`, value: m.damp ?? 0, def: 0, step: 0.01, dp: 3, min: 0, softMax: 2, hint: '0 swings forever; friction is opt-in' });
+          fields.push(M('amp'));
+          // def is what a reset writes: the registry's (componentspec.js; tools/descriptor-defaults-test.ts). The value's
+          // fallback (the descriptor's `absent`) is how a value written before the authority materialized one is drawn (client/lib/motioneval.js)
+          fields.push(M('period'), M('phase'), M('damp', { hint: '0 swings forever' }));
           break;
         case 'spin':
-          fields.push({ t: 'num', k: k('degPerSec'), label: `${P}rate`, value: rateOf(m, 36), def: 36, step: 5, dp: 1, unit: '°/s' });
-          fields.push({ t: 'num', k: k('phase'), label: `${P}phase`, value: m.phase ?? 0, step: 5, deg: true });
+          fields.push(M('degPerSec', { label: 'rate' }), M('phase'));
           break;
         case 'orbit':
-          fields.push({ t: 'num', k: k('radius'), label: `${P}radius`, value: m.radius ?? 1, def: 1, step: 0.1, dp: 2, min: 0, unit: 'm' });
-          fields.push({ t: 'num', k: k('degPerSec'), label: `${P}rate`, value: rateOf(m, 12), def: 12, step: 5, dp: 1, unit: '°/s', hint: 'degrees a second (a lap of 30 s is 12°/s)' });
-          fields.push({ t: 'check', k: k('face'), label: `${P}face along`, value: m.face !== false });
+          fields.push(M('radius'), M('degPerSec', { label: 'rate', hint: 'degrees a second (a lap of 30 s is 12°/s)' }), M('face', { label: 'face along' }));
           break;
         case 'bob':
-          fields.push({ t: 'num', k: k('amp'), label: `${P}amp`, value: m.amp ?? m.amplitude ?? 0.3, def: 0.3, step: 0.05, dp: 2, min: 0, unit: 'm' });
-          fields.push({ t: 'num', k: k('period'), label: `${P}period`, value: m.period ?? 4, def: 4, step: 0.1, dp: 2, min: 0.05, unit: 's' });
-          fields.push({ t: 'num', k: k('phase'), label: `${P}phase`, value: m.phase ?? 0, step: 5, deg: true });
+          fields.push(M('amp'), M('period'), M('phase'));
           break;
         case 'path':
           fields.push({ t: 'info', label: `${P}points`, value: `${Array.isArray(m.points) ? m.points.length : 0} points — edit as JSON (comp.${key})` });
-          if (m.duration != null && m.speed == null) fields.push({ t: 'num', k: k('duration'), label: `${P}duration`, value: m.duration, step: 0.5, dp: 1, min: 0.1, unit: 's' });
-          else fields.push({ t: 'num', k: k('speed'), label: `${P}speed`, value: m.speed ?? 1, def: 1, step: 0.1, dp: 2, min: 0, unit: 'm/s' });
-          fields.push({ t: 'enum', k: k('loop'), label: `${P}loop`, value: m.loop ?? 'loop', options: ['loop', 'pingpong', 'once'].map((v) => ({ v, label: v })) });
-          fields.push({ t: 'check', k: k('face'), label: `${P}face along`, value: m.face !== false });
+          if (m.duration != null && m.speed == null) fields.push(M('duration'));
+          else fields.push(M('speed'));
+          fields.push(M('loop', { options: ['loop', 'pingpong', 'once'].map((v) => ({ v, label: v })) }), M('face', { label: 'face along' }));
           break;
       }
       fields.push({ t: 'btn', k: k('rest'), label: P ? `${P.trim()} come to rest` : 'come to rest', danger: true });
@@ -346,67 +562,27 @@ export function inspectSchema(ent, id, live = {}) {
     groups.push({ group: 'motion', label: 'motion', types: mk, fields });
   }
 
-  if (c.sockets && typeof c.sockets === 'object') {
-    const slots = Object.keys(c.sockets);
-    const fields = [{ t: 'list', k: 'slots', empty: 'no anchors yet', rows: slots.map((slot) => {
-      const s = c.sockets[slot] ?? {}; const p = s.pos ?? [0, 0.5, 0];
-      const b = bodyOf(s);
-      return { id: slot, label: slot, sub: `(${p.map((v) => (+v).toFixed(2)).join(', ')}) · ${sockRot(s).map((v) => Math.round(v * R2D)).join('/')}°${s.part ? ` · rides ${s.part}` : ''} · ${b ? `${b.action} (${typeof b.pose === 'string' ? b.pose : 'a blend'}, ${b.anchor})${b.input.move === 'drive' ? ' · drives' : ''}${b.leaveBy === 'script' ? ' · held' : ''}` : 'things attach'}`, actions: [{ k: 'del', label: '✕', danger: true }] };
-    }) }];
-    for (const slot of slots) {
-      const s = c.sockets[slot] ?? {}; const p = s.pos ?? [0, 0.5, 0];
-      ['x', 'y', 'z'].forEach((ax, i) => fields.push({ t: 'num', k: `${slot}|pos|${i}`, label: `${slot} ${ax}`, value: p[i], step: 0.05, dp: 2, unit: 'm' }));
-      // its whole rotation (Unreal sockets): heading, then pitch and roll — a rocket's seat lies on its back
-      const e = sockRot(s);
-      [['heading', 1], ['pitch', 0], ['roll', 2]].forEach(([nm, ax]) => fields.push({ t: 'num', k: `${slot}|rot|${ax}`, label: `${slot} ${nm}`, value: round(e[ax], 6), step: 5, deg: true }));
-      // a socket a PERSON attaches to by using it (VRChat Station, Roblox Seat): a chair, a saddle, a car seat
-      const b = bodyOf(s);
-      fields.push({ t: 'check', k: `${slot}|body`, label: `${slot}: people attach`, value: !!b, hint: 'a person attaches here by using it (sit, ride…); off: an attachment point for things only' });
-      if (b) {
-        // the body block (shared/sockbody.js): the common fields as rows, the structured ones (reach) as JSON; the
-        // component's own JSON hatch below reaches everything else (poses, sync, approach, exit, hold)
-        const raw = s.body ?? {}; const d = ACTION_DEFAULTS[b.action] ?? ACTION_DEFAULTS.sit;
-        fields.push({ t: 'text', k: `${slot}|action`, label: `${slot} action`, value: b.action, hint: "what using it is called: sit, ride, lie, stand, drive… (it also picks the default pose and anchor)" });
-        fields.push({ t: 'enum', k: `${slot}|anchor`, label: `${slot} anchor`, value: b.anchor, def: d.anchor, options: ANCHORS.map((v) => ({ v, label: v })), hint: 'the body point that lands on the socket: hips (a seat), feet (a place to stand), head, or the root' });
-        if (typeof b.pose === 'string') fields.push({ t: 'enum', k: `${slot}|pose`, label: `${slot} pose`, value: b.pose, def: d.pose, options: [...new Set([...SOCKET_POSES, b.pose])].map((v) => ({ v, label: v })), hint: 'the clip the body holds (any animation-library name; a blend or a phase-locked clip: edit as JSON)' });
-        else fields.push({ t: 'json', k: `${slot}|pose`, label: `${slot} pose`, value: JSON.stringify(b.pose, null, 2), hint: '{clip, time: "phase"} or a blend {by: "speed", clips: [[0, "idle"], [2, "walk"]]}; a clip name string makes it one clip again' });
-        fields.push({ t: 'enum', k: `${slot}|leaveBy`, label: `${slot} leave by`, value: b.leaveBy, def: 'any', options: [['any', 'moving, jumping or X'], ['jump', 'jump or X'], ['menu', 'X only'], ['script', 'only the world (a script)']].map(([v, label]) => ({ v, label })) });
-        fields.push({ t: 'enum', k: `${slot}|who`, label: `${slot} who`, value: b.who ?? 'anyone', def: 'anyone', options: [['anyone', 'anyone'], ['builder', 'builders'], ['owner', 'owners']].map(([v, label]) => ({ v, label })) });
-        fields.push({ t: 'check', k: `${slot}|fromSeat`, label: `${slot}: hop from another seat`, value: b.fromSeat, hint: 'someone seated elsewhere may move here without standing up' });
-        fields.push({ t: 'text', k: `${slot}|enter`, label: `${slot} enter clip`, value: b.enter ?? '', hint: "one-shot clip while you're carried on (stand_to_sit); empty: ease on" });
-        fields.push({ t: 'text', k: `${slot}|leave`, label: `${slot} leave clip`, value: b.leave ?? '', hint: "one-shot clip while you're carried off (sit_to_stand); empty: step off" });
-        fields.push({ t: 'enum', k: `${slot}|input|move`, label: `${slot} movement keys`, value: b.input.move, def: 'none', options: [['none', 'get you off'], ['drive', 'drive the thing (one per thing)'], ['walk', 'steer your own pose']].map(([v, label]) => ({ v, label })), hint: 'drive publishes throttle/steer for the thing; walk publishes them for this body\'s pose only' });
-        fields.push({ t: 'enum', k: `${slot}|input|look`, label: `${slot} looking`, value: b.input.look, def: 'free', options: [['free', 'look around'], ['aim', 'look aims (aimYaw/aimPitch)'], ['locked', 'view locked forward']].map(([v, label]) => ({ v, label })) });
-        const lk = raw.look ?? {};
-        [['yaw', 0, 'left', -180, 180], ['yaw', 1, 'right', -180, 180], ['pitch', 0, 'down', -90, 90], ['pitch', 1, 'up', -90, 90]].forEach(([ax, i, nm, lo, hi]) =>
-          fields.push({ t: 'num', k: `${slot}|look|${ax}|${i}`, label: `${slot} look ${nm}`, value: (Array.isArray(lk[ax]) ? lk[ax][i] : b.look[ax][i]), step: 5, dp: 0, unit: '°', min: lo, max: hi, hint: ax === 'yaw' ? 'how far the head turns (yaw, degrees, + = left)' : 'how far the head tilts (pitch, degrees, + = up)' }));
-        fields.push({ t: 'enum', k: `${slot}|look|up`, label: `${slot} view up`, value: b.look.up, def: 'world', options: [['world', 'the horizon stays level'], ['socket', 'the view rolls with it']].map(([v, label]) => ({ v, label })) });
-        fields.push({ t: 'json', k: `${slot}|reach`, label: `${slot} reach`, value: JSON.stringify(raw.reach ?? {}, null, 2), collapsed: !raw.reach, hint: '{leftHand: {at: [x,y,z], q?, part?, hint?, vr: snap|track|near}}: hands (or feet) on the thing, in its frame; with part they move with it' });
-      }
-    }
-    fields.push({ t: 'btn', k: 'add', label: '+ seat here', hint: 'click the spot on the thing where a sitter goes', client: true });
-    groups.push({ group: 'sockets', label: 'sockets', types: ['sockets'], fields });
-  }
+  if (c.sockets && typeof c.sockets === 'object') groups.push(HAND.Sockets.read(c));
 
   // openable (R 10-07; shared/protocol/componentspec.js): open and locked are its state; it turns `angle` about its pivot (or slides
   // `slide` in its own frame) over `time`. The hinge buttons put the pivot on an edge of the model's own box (live.box).
   if (isBag(c.openable)) {
-    const o = c.openable; const slides = Array.isArray(o.slide); const box = live.box;
+    const o = c.openable; const slides = Array.isArray(o.slide); const box = live.box; const O = (p, over) => rowOf('Openable', p, o, over);
     const fields = [
-      { t: 'check', k: 'open', label: 'open', value: o.open === true, hint: 'its state now; anyone using it flips this (its reactions)' },
-      { t: 'check', k: 'locked', label: 'door locked', value: o.locked === true, hint: "bars opening while on (an open handler with unless: 'locked'): the door's own lock, for the people using it. Pinning it in place is the Lock component's" },
+      O('open', { label: 'open', hint: 'its state now; anyone using it flips this (its reactions)' }),
+      O('locked', { label: 'door locked', hint: "bars opening while on (an open handler with unless: 'locked'): the door's own lock, for the people using it. Pinning it in place is the Lock component's" }),
       { t: 'enum', k: 'by', label: 'opens by', value: slides ? 'slide' : 'turn', def: 'turn', options: [['turn', 'turning about its pivot (a hinge)'], ['slide', 'sliding']].map(([v, label]) => ({ v, label })) },
     ];
     if (slides) ['x', 'y', 'z'].forEach((a, i) => fields.push({ t: 'num', k: `slide|${i}`, label: `slide ${a}`, value: +o.slide[i] || 0, def: 0, step: 0.05, dp: 2, min: -10, max: 10, unit: 'm', hint: 'how far it moves when open, in its own frame' }));
     else {
-      fields.push({ t: 'num', k: 'angle', label: 'turns', value: Number.isFinite(o.angle) ? o.angle : Math.PI / 2, def: Math.PI / 2, step: 15, deg: true, min: -Math.PI, max: Math.PI, hint: 'how far it turns when open; negative turns the other way' });
-      fields.push({ t: 'enum', k: 'axis', label: 'hinge axis', value: axisName(o, 'y'), def: 'y', options: Object.keys(AXES).map((v) => ({ v, label: v })), hint: 'y: an upright hinge (a door); x: a lid or a hatch' });
+      fields.push(O('angle', { label: 'turns', value: Number.isFinite(o.angle) ? o.angle : Math.PI / 2, hint: 'how far it turns when open; negative turns the other way' }));
+      fields.push(O('axis', { label: 'hinge axis', value: axisName(o, 'y'), options: Object.keys(AXES).map((v) => ({ v, label: v })), hint: 'y: an upright hinge (a door); x: a lid or a hatch' }));
       if (Array.isArray(box) && !o.part) {
         fields.push({ t: 'btn', k: 'hingeL', label: 'hinge on its left edge', hint: 'puts its pivot on the -x edge of its box (it turns about the pivot)' });
         fields.push({ t: 'btn', k: 'hingeR', label: 'hinge on its right edge', hint: 'puts its pivot on the +x edge of its box' });
       }
     }
-    fields.push({ t: 'num', k: 'time', label: 'takes', value: Number.isFinite(o.time) ? o.time : 1, def: 1, step: 0.1, dp: 2, min: 0, max: 10, unit: 's', hint: 'seconds to open or close' });
+    fields.push(O('time', { label: 'takes', value: Number.isFinite(o.time) ? o.time : 1, hint: 'seconds to open or close' }));
     if (o.part) fields.push({ t: 'info', label: 'moves', value: `the part ${o.part} (about the part's own origin)` });
     groups.push({ group: 'openable', label: 'openable', types: ['openable'], fields });
   }
@@ -414,27 +590,7 @@ export function inspectSchema(ent, id, live = {}) {
   // grabbable (shared/grab.js): the common fields as rows, read with their defaults; grips, home and fx through its JSON
   // hatch below. Every edit is checked by the same checkGrabbable the authority refuses with.
   if (c.grabbable && typeof c.grabbable === 'object') {
-    const g = grabOf({ grabbable: c.grabbable }) ?? grabOf({ grabbable: {} }); const raw = c.grabbable;
-    const opts = (list) => list.map((v) => ({ v, label: v }));
-    const grips = Object.keys(g.grips);
-    groups.push({ group: 'grabbable', label: 'grabbable', types: ['grabbable'], fields: [
-      { t: 'check', k: 'enabled', label: 'can be picked up', value: g.enabled, hint: 'Off: nobody can pick it up for now. (A loose ball can still be kicked.)' },
-      { t: 'enum', k: 'who', label: 'who may', value: g.who, def: GRAB_DEFAULTS.who, options: GRAB_WHO.map((v) => ({ v, label: v === 'visitor' ? 'anyone' : `${v}s` })) },
-      { t: 'check', k: 'steal', label: 'can be taken from a hand', value: g.steal, hint: 'On: someone else can grab it out of your hands. Off: it stays with whoever holds it until they let go (a world owner can still take it).' },
-      { t: 'num', k: 'range', label: 'reach', value: g.range, def: GRAB_DEFAULTS.range, step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm', hint: 'How far away your hand can pick it up from. Arm\'s reach is 1.5 m; set it further and the thing flies to your hand when grabbed.' },
-      { t: 'num', k: 'priority', label: 'priority', value: g.priority, def: 0, step: 1, dp: 0, min: -10, max: 10, hint: 'When several things are in reach, the one with the highest number is picked up first. Give small things on big things a higher number: the key, not the table it sits on.' },
-      { t: 'enum', k: 'hold', label: 'hold', value: g.hold, def: GRAB_DEFAULTS.hold, options: [['auto', 'auto: while gripping in VR, sticky on desktop'], ['press', 'only while gripping'], ['toggle', 'sticky everywhere (a tool)']].map(([v, label]) => ({ v, label })) },
-      { t: 'enum', k: 'pose', label: 'body pose', value: raw.pose ?? 'by size', def: 'by size', options: opts(['by size', ...GRAB_POSES]), hint: 'How an avatar on desktop (no tracked hands) holds it: in one hand, carried in both arms, like a torch, like a pistol, in two hands, or on the shoulder. "by size" picks one hand for small things and both arms for big ones.' },
-      { t: 'check', k: 'twoHanded', label: 'two-handed', value: g.twoHanded, hint: 'On: it can be held in both hands at once, like a rifle or a broom. The first hand carries it and the second hand aims it. Off: only one hand holds it, so grabbing it with your other hand moves it to that hand.' },
-      { t: 'check', k: 'carries', label: 'can carry other entities', value: g.carries, hint: 'On: picking it up brings along whatever is resting on it, like a tray of food. Off: only it comes up, and what was on it falls off, like taking a book out of a pile.' },
-      { t: 'num', k: 'throw', label: 'throw', value: g.throw, def: GRAB_DEFAULTS.throw, step: 0.1, dp: 2, min: 0, max: 3, unit: '×', hint: 'How hard it flies when thrown: 1 is normal, 2 is twice as fast, 0 means it can only be dropped.' },
-      { t: 'enum', k: 'release', label: 'let go', value: g.release, def: GRAB_DEFAULTS.release, options: [['drop', 'it falls, or is set down'], ['stay', 'it stays where you let go'], ['return', 'it goes home']].map(([v, label]) => ({ v, label })) },
-      { t: 'num', k: 'returnAfter', label: 'goes home after', value: g.returnAfter, def: 0, step: 5, dp: 0, min: 0, max: 3600, unit: 's', hint: 'Left lying around for this many seconds, it returns to its home spot. 0 = it never returns on its own.' },
-      { t: 'text', k: 'fits', label: 'fits sockets', value: g.fits.join(', '), placeholder: 'key, sword…', hint: 'Words that say what it is (key, sword…). Let go near a socket that accepts one of these words and it snaps into the socket.' },
-      { t: 'text', k: 'use', label: 'use while held', value: g.use ? [g.use.down ?? '', g.use.up ?? ''].filter((x, i) => x || i === 0).join(' / ') : '', placeholder: 'action, or down / up', hint: 'What happens when you press the use button while holding it: the name of one of this thing\'s actions. Two names as "down / up" run one on press and the other on release.' },
-      { t: 'text', k: 'prompt', label: 'hover text', value: g.prompt ?? '', placeholder: 'Pick up…', hint: 'The words shown when you point at it, in place of "pick up …". Up to 40 characters.' },
-      { t: 'btn', k: 'gripedit', label: grips.length ? `edit grips (${grips.length}): ${grips.join(', ')}` : 'add grips…', hint: 'Where the hand takes hold of it, and how. Opens a see-through hand you drag into place; mirror it for the other hand, then try it.' },
-    ] });
+    groups.push(HAND.Grabbable.read(c));
   }
 
   // physics (R 10-10: 'hard to interact with unless you know code'): what a builder tunes, as fields; the measured shape as
@@ -478,38 +634,7 @@ export function inspectSchema(ent, id, live = {}) {
   // Material: the DRAFT hesperus/material (docs/COMPONENT-LADDER.md rung 1). Every thing with a model shows the card:
   // its model's own materials (live.materials: a swatch each, read-only), then the overrides. `hesperus/material` changes
   // every slot; `hesperus/material:<slot>` one (keyed by the model's material name; a key the model no longer has is said).
-  if (ent.model || compMesh(ent)) {   // every thing with meshes: a model's, or a mesh thing's one 'surface'
-    const MATK = 'hesperus/material'; const ov = c[MATK] && typeof c[MATK] === 'object' ? c[MATK] : null;
-    const own = Array.isArray(live.materials) ? live.materials : [];
-    const label = (m, i) => matLabel(m?.name, i);
-    const fields = own.slice(0, 12).map((m, i) => ({ t: 'color', k: `own|${m.slot}`, label: label(m, i), value: m.color ?? 0xffffff, disabled: true,
-      hint: `The model's own material "${m.name}": roughness ${m.roughness ?? '—'}, metalness ${m.metalness ?? '—'}.` }));
-    if (!own.length) fields.push({ t: 'info', k: 'own|none', label: 'model', value: 'its materials show once the model has loaded' });
-    const block = (pre, o, base, title) => {
-      const num = (k, lab, hint, hi = 1) => ({ t: 'text', k: `${pre}${k}`, label: lab, value: typeof o[k] === 'number' ? String(o[k]) : '', placeholder: base?.[k] != null ? `model's: ${base[k]}` : "model's own", hint: `${hint} 0 to ${hi}; blank keeps the model's own.` });
-      if (title) fields.push({ t: 'info', k: `${pre}head`, label: '', value: title });
-      fields.push({ t: 'color', k: `${pre}color`, label: 'colour', value: Number.isInteger(o.color) ? o.color : (base?.color ?? 0xffffff), hint: "Its base colour." },
-        num('roughness', 'roughness', '0 is mirror-smooth, 1 is matte:'),
-        num('metalness', 'metalness', '0 is plastic, wood, paint; 1 is bare metal:'),
-        { t: 'color', k: `${pre}emissive`, label: 'glow', value: Number.isInteger(o.emissive) ? o.emissive : 0x000000, hint: 'The colour it glows with, lit or not. Black is no glow.' },
-        num('emissiveStrength', 'glow amount', 'How bright the glow is:', 20),
-        num('opacity', 'opacity', '1 is solid, 0 is invisible:'),
-        { t: 'btn', k: `${pre}reset`, label: "back to the model's own", hint: 'Removes this override.' }); };
-    if (ov) block('', ov, own[0], own.length > 1 ? 'every material' : null);
-    const slotKeys = Object.keys(c).filter((k) => k.startsWith(`${MATK}:`) && c[k] && typeof c[k] === 'object');
-    for (const k of slotKeys) { const slot = k.slice(MATK.length + 1); const at = own.findIndex((m) => m.slot === slot);
-      if (own.length && at < 0) fields.push({ t: 'info', k: `slot|${slot}|gone`, label: slot.slice(0, 18), value: "this model has no such material any more: the override does nothing", hint: `hesperus/material:${slot}` },
-        { t: 'btn', k: `slot|${slot}|reset`, label: 'remove it', hint: 'Removes the override for a material this model no longer has.' });
-      else block(`slot|${slot}|`, c[k], own[at], `${label(own[at], at)} only`); }
-    if (!ov) fields.push({ t: 'btn', k: 'override', label: own.length > 1 ? 'change every material…' : 'override its look…', hint: "Change its colour, roughness, metalness, glow or opacity. Fields you leave blank keep the model's own." });
-    if (own.length > 1) for (const [i, m] of own.slice(0, 12).entries()) if (!slotKeys.includes(`${MATK}:${m.slot}`))
-      fields.push({ t: 'btn', k: `slot|${m.slot}|add`, label: `change ${label(m, i)} only…`, hint: `Override just the model's material "${m.name}".` });
-    // the ladder's second rung (R 10-12): the world's owner may trust this draft here; everyone else sees only the chip
-    if (live.mayTrust === true) fields.push(isTrusted(MATK, live.trusted)
-      ? { t: 'btn', k: 'trust', label: 'stop trusting it in this world', hint: 'Takes hesperus/material off this world\'s trusted list: back to a draft (amber), offered under "drafts". Nothing stored changes.' }
-      : { t: 'btn', k: 'trust', label: 'trust this in this world', hint: 'Not engine-official, but used and trusted in this world: the owner\'s word (@world.trusted). It moves into the main Add Component list with a blue chip. The engine still doesn\'t read it.' });
-    groups.push({ group: 'hmat', label: 'Material', types: [...(ov ? [MATK] : []), ...slotKeys], fields });
-  }
+  if (ent.model || compMesh(ent)) groups.push(HAND.Material.read(c, live));   // every thing with meshes: a model's, or a mesh thing's one 'surface'
 
   if (c.particles && typeof c.particles === 'object') {
     // R 10-07: the instance is {effect, part?, at?, seed?, playing?, scale?, params?}; the knobs are the effect's own params
@@ -524,12 +649,13 @@ export function inspectSchema(ent, id, live = {}) {
       if (p.type === 'bool') return [{ t: 'check', k, label: name, value: v === true, hint }];
       if (p.type === 'color') return [{ t: 'color', k, label: name, value: v ?? 0xffffff, hint }];
       return [{ t: 'text', k, label: name, value: v ?? '', placeholder: p.type === 'texture' ? 'eidoverse/assets/particle_textures/….png' : '', hint }]; });
+    const PA = (p, over) => rowOf('Particles', p, inst, over);
     groups.push({ group: 'particles', label: 'particles', types: ['particles'], fields: [
-      { t: 'enum', k: 'effect', label: 'effect', value: inst.effect, options: effects.map((v) => ({ v, label: v.startsWith('sha256:') || v.startsWith('eido:') ? `${doc?.name ?? 'stored'} (${v.slice(0, 15)}…)` : v })), hint: 'an Essential, or a stored effect document (upload {effect})' },
-      { t: 'check', k: 'playing', label: 'playing', value: inst.playing !== false, hint: 'off: no new particles; the living finish' },
-      { t: 'num', k: 'scale', label: 'scale', value: inst.scale ?? 1, def: 1, step: 0.1, dp: 2, min: 0.01, max: 100 },
+      PA('effect', { label: 'effect', options: effects.map((v) => ({ v, label: v.startsWith('sha256:') || v.startsWith('eido:') ? `${doc?.name ?? 'stored'} (${v.slice(0, 15)}…)` : v })), hint: 'an Essential, or a stored effect document (upload {effect})' }),
+      PA('playing', { label: 'playing', hint: 'off: no new particles; the living finish' }),
+      PA('scale', { label: 'scale' }),
       ...[0, 1, 2].map((i) => ({ t: 'num', k: `at|${i}`, label: `at ${'xyz'[i]}`, value: at[i], step: 0.05, dp: 2, min: -8, max: 8, unit: 'm' })),
-      { t: 'text', k: 'part', label: 'part', value: inst.part ?? '', placeholder: 'a node of its model (optional)', hint: 'emit from one part of its model' },
+      PA('part', { label: 'part', value: inst.part ?? '', placeholder: 'a node of its model (optional)', hint: 'emit from one part of its model' }),
       ...params,
       { t: 'btn', k: 'out', label: 'put it out', danger: true },
     ] });
@@ -541,15 +667,16 @@ export function inspectSchema(ent, id, live = {}) {
     const p = c.picture; const parts = live.parts ?? [];
     const partOpts = [{ v: '', label: '(its own: a framed picture)' }, ...[...new Set([...(p.part && !parts.includes(p.part) ? [p.part] : []), ...parts])].map((v) => ({ v, label: v }))];
     const tier = mediaTier(p.src, 'image');
+    const PI = (k, over) => rowOf('Picture', k, p, over);
     const fields = [
-      { t: 'text', k: 'src', label: 'image', value: p.src ?? '', placeholder: 'upload, or store/images/…, or an https link', hint: tier.tier === 'bad' ? 'a file in the store, or an https link' : tierWords(tier, 'image') },
+      PI('src', { label: 'image', value: p.src ?? '', placeholder: 'upload, or store/images/…, or an https link', hint: tier.tier === 'bad' ? 'a file in the store, or an https link' : tierWords(tier, 'image') }),
       ...(tier.tier === 'link' && live.untrusted === false ? [{ t: 'info', label: '', value: '🛡 you don\'t see this: it links to a site that isn\'t trusted (Settings › 🛡 safety)' }] : []),
       { t: 'btn', k: 'upload', label: 'upload image…', client: true, hint: 'PNG, JPEG or WebP into this server\'s store; the path fills in. Make sure you own the rights to it before you upload it' },
-      { t: 'enum', k: 'part', label: 'where', value: p.part ?? '', options: partOpts, hint: 'on its own (a picture facing its front, sized by width), or on one of its model\'s parts' },
-      ...(p.part ? [] : [{ t: 'num', k: 'width', label: 'width', value: p.width ?? 1, def: 1, step: 0.1, dp: 2, min: 0.05, max: 20, unit: 'm', hint: 'its height follows the image' }]),
-      { t: 'text', k: 'alt', label: 'alt text', value: p.alt ?? '', placeholder: 'what it shows, in words', hint: `${ALT_HINT} (≤${PICTURE_ALT_MAX})` },
-      { t: 'enum', k: 'lit', label: 'lit', value: p.lit === 'self' ? 'self' : 'scene', options: Object.entries(PICTURE_LIT).map(([v, label]) => ({ v, label })) },
-      { t: 'check', k: 'flip', label: 'flip', value: p.flip === true, hint: 'for a part whose UVs were exported upside down' },
+      PI('part', { label: 'where', value: p.part ?? '', options: partOpts, hint: 'on its own (a picture facing its front, sized by width), or on one of its model\'s parts' }),
+      ...(p.part ? [] : [PI('width', { label: 'width', hint: 'its height follows the image' })]),
+      PI('alt', { label: 'alt text', value: p.alt ?? '', placeholder: 'what it shows, in words', hint: `${ALT_HINT} (≤${PICTURE_ALT_MAX})` }),
+      PI('lit', { label: 'lit', value: p.lit === 'self' ? 'self' : 'scene', options: Object.entries(PICTURE_LIT).map(([v, label]) => ({ v, label })) }),
+      PI('flip', { label: 'flip', hint: 'for a part whose UVs were exported upside down' }),
     ];
     const n = normalizePicture(p);
     if (!n.ok) fields.unshift({ t: 'info', label: '', value: `⚠ not shown: ${n.why}` });
@@ -564,17 +691,18 @@ export function inspectSchema(ent, id, live = {}) {
     const d = c.sound; const playing = d.playing !== false;
     const tier = mediaTier(d.src, 'audio');
     const rings = isBag(c.reactions) && Object.values(c.reactions).some((h) => h?.kind === 'play');
+    const SO = (k, over) => rowOf('Sound', k, d, over);
     const fields = [
       { t: 'info', label: 'state', value: playing ? (d.loop === false ? '▶ played (one-shot)' : '▶ playing') : '⏸ paused' },
-      { t: 'text', k: 'src', label: 'file', value: d.src ?? '', placeholder: 'upload, or store/audio/…, or an https link', hint: tier.tier === 'bad' ? 'a file in the store, or an https link' : tierWords(tier, 'audio') },
+      SO('src', { label: 'file', value: d.src ?? '', placeholder: 'upload, or store/audio/…, or an https link', hint: tier.tier === 'bad' ? 'a file in the store, or an https link' : tierWords(tier, 'audio') }),
       { t: 'btn', k: 'upload', label: 'upload audio…', client: true, hint: 'MP3, Ogg, WAV, WebM or M4A into this server\'s store; the path fills in. Make sure you own the rights to it before you upload it' },
-      { t: 'text', k: 'alt', label: 'alt text', value: d.alt ?? '', placeholder: 'what is playing, in words', hint: `Alternative text: describes this for people who can't hear it, and for agents (≤${SOUND_ALT_MAX})` },
-      { t: 'num', k: 'volume', label: 'volume', value: d.volume ?? 0.8, def: 0.8, step: 0.05, dp: 2, min: 0, max: 1 },
-      { t: 'num', k: 'pitch', label: 'pitch', value: d.pitch ?? 1, def: 1, step: 0.05, dp: 2, min: 0.5, max: 2, hint: 'playback rate: 2 = an octave up and twice as fast' },
-      { t: 'num', k: 'near', label: 'full volume within', value: d.near ?? 1.5, def: 1.5, step: 0.5, dp: 1, min: 0.1, max: SOUND_MAX_RADIUS, unit: 'm' },
-      { t: 'num', k: 'radius', label: 'silent beyond', value: d.radius ?? 12, def: 12, step: 1, dp: 0, min: 1, max: SOUND_MAX_RADIUS, unit: 'm', hint: 'nobody further than this hears it at all' },
-      { t: 'check', k: 'spatial', label: 'positional', value: d.spatial !== false, hint: 'off: heard evenly everywhere inside its radius (room tone, music in a hall)' },
-      { t: 'check', k: 'loop', label: 'loop', value: d.loop !== false },
+      SO('alt', { label: 'alt text', value: d.alt ?? '', placeholder: 'what is playing, in words', hint: `Alternative text: describes this for people who can't hear it, and for agents (≤${SOUND_ALT_MAX})` }),
+      SO('volume', { label: 'volume' }),
+      SO('pitch', { label: 'pitch', hint: 'playback rate: 2 = an octave up and twice as fast' }),
+      SO('near', { label: 'full volume within', max: SOUND_MAX_RADIUS }),
+      SO('radius', { label: 'silent beyond', max: SOUND_MAX_RADIUS, hint: 'nobody further than this hears it at all' }),
+      SO('spatial', { label: 'positional', hint: 'off: heard evenly everywhere inside its radius (room tone, music in a hall)' }),
+      SO('loop', { label: 'loop' }),
       // this viewer's own (client: never a value on the wire): a sound you never want to hear here again
       ...(live.mutedForMe !== undefined ? [{ t: 'check', k: 'mute', label: 'mute for me', value: !!live.mutedForMe, client: true, hint: 'only you stop hearing it; nobody else is affected, and nothing is recorded' }] : []),
       ...(tier.tier === 'link' && live.untrusted === false ? [{ t: 'info', label: '', value: '🛡 you don\'t hear this: it links to a site that isn\'t trusted (Settings › 🛡 safety)' }] : []),
@@ -591,10 +719,11 @@ export function inspectSchema(ent, id, live = {}) {
   // story (batch 2): why it's here, a museum label. Shown on Inspect and read by agents
   if (isBag(c.story)) {
     const st = c.story;
+    const ST = (k, over) => rowOf('Story', k, st, over);
     groups.push({ group: 'story', label: 'story', types: ['story'], fields: [
-      { t: 'text', k: 'title', label: 'title', value: st.title ?? '', placeholder: 'its headline', hint: `≤${SPEC.story.ranges.title.maxLen} characters (${graphemes(st.title ?? '')} now)` },
-      { t: 'text', k: 'text', label: 'text', value: st.text ?? '', multiline: true, placeholder: 'why it is here', hint: `plain text, a blank line between paragraphs; ${graphemes(st.text ?? '')} / ${SPEC.story.ranges.text.maxLen}` },
-      { t: 'text', k: 'marks', label: 'marks', value: Array.isArray(st.marks) ? st.marks.join(', ') : '', placeholder: 'ids, comma-separated', hint: 'what it marks or commemorates (up to 8 things)' },
+      ST('title', { label: 'title', value: st.title ?? '', placeholder: 'its headline', hint: `≤${SPEC.story.ranges.title.maxLen} characters (${graphemes(st.title ?? '')} now)` }),
+      ST('text', { label: 'text', value: st.text ?? '', multiline: true, placeholder: 'why it is here', hint: `plain text, a blank line between paragraphs; ${graphemes(st.text ?? '')} / ${SPEC.story.ranges.text.maxLen}` }),
+      ST('marks', { label: 'marks', value: Array.isArray(st.marks) ? st.marks.join(', ') : '', placeholder: 'ids, comma-separated', hint: 'what it marks or commemorates (up to 8 things)' }),
     ] });
   }
 
@@ -602,18 +731,20 @@ export function inspectSchema(ent, id, live = {}) {
   if (isBag(c.text)) {
     const tx = c.text; const D = SPEC.text.defaults;
     const lumaInt = (c) => (0.2126 * ((c >> 16) & 255) + 0.7152 * ((c >> 8) & 255) + 0.0722 * (c & 255)) / 255;   // as texts.js picks the edge
+    const TX = (k, over) => rowOf('Text', k, tx, over);
+    const edge = lumaInt(Number.isInteger(tx.color) ? tx.color : D.color) > 0.5 ? 0x000000 : 0xffffff;   // the descriptor's absent reading of outlineColor, computed
     groups.push({ group: 'text', label: 'text', types: ['text'], fields: [
-      { t: 'text', k: 'text', label: 'says', value: tx.text ?? '', multiline: true, hint: `${graphemes(tx.text ?? '')} / ${SPEC.text.ranges.text.maxLen} characters, ≤ 16 lines` },
-      { t: 'num', k: 'size', label: 'size', value: tx.size ?? D.size, def: D.size, step: 0.01, dp: 2, min: 0.02, max: 2, unit: 'm', hint: 'the height of a line' },
-      { t: 'num', k: 'width', label: 'width', value: tx.width ?? D.width, def: D.width, step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm', hint: 'where lines wrap' },
-      { t: 'enum', k: 'align', label: 'align', value: tx.align ?? D.align, def: D.align, options: ['left', 'center', 'right'].map((v) => ({ v, label: v })) },
-      { t: 'color', k: 'color', label: 'colour', value: Number.isInteger(tx.color) ? tx.color : D.color, def: D.color },
-      { t: 'check', k: 'outline', label: 'outline', value: tx.outline !== false, hint: 'an edge around the letters, so they read on any background' },
-      ...(tx.outline !== false ? [{ t: 'color', k: 'outlineColor', label: 'outline colour', value: Number.isInteger(tx.outlineColor) ? tx.outlineColor : (lumaInt(Number.isInteger(tx.color) ? tx.color : D.color) > 0.5 ? 0x000000 : 0xffffff), def: lumaInt(Number.isInteger(tx.color) ? tx.color : D.color) > 0.5 ? 0x000000 : 0xffffff, hint: 'left alone, the one that contrasts with the text colour' }] : []),
+      TX('text', { label: 'says', value: tx.text ?? '', multiline: true, hint: `${graphemes(tx.text ?? '')} / ${SPEC.text.ranges.text.maxLen} characters, ≤ 16 lines` }),
+      TX('size', { label: 'size', hint: 'the height of a line' }),
+      TX('width', { label: 'width', hint: 'where lines wrap' }),
+      TX('align', { label: 'align', options: ['left', 'center', 'right'].map((v) => ({ v, label: v })) }),
+      TX('color', { label: 'colour', value: Number.isInteger(tx.color) ? tx.color : D.color }),
+      TX('outline', { label: 'outline', hint: 'an edge around the letters, so they read on any background' }),
+      ...(tx.outline !== false ? [TX('outlineColor', { label: 'outline colour', value: Number.isInteger(tx.outlineColor) ? tx.outlineColor : edge, def: edge, hint: 'left alone, the one that contrasts with the text colour' })] : []),
       { t: 'check', k: 'plate', label: 'plate', value: Number.isInteger(tx.background), hint: 'a plate behind the words' },
-      ...(Number.isInteger(tx.background) ? [{ t: 'color', k: 'background', label: 'plate colour', value: tx.background }] : []),
-      { t: 'enum', k: 'billboard', label: 'faces', value: tx.billboard ?? D.billboard, def: D.billboard, options: [{ v: 'off', label: 'flat (readable from both sides)' }, { v: 'yaw', label: 'turns to face you' }, { v: 'full', label: 'always faces you' }] },
-      { t: 'enum', k: 'lit', label: 'lit', value: tx.lit ?? D.lit, def: D.lit, options: [{ v: 'self', label: 'glows (unlit)' }, { v: 'scene', label: 'takes the scene\'s light' }] },
+      ...(Number.isInteger(tx.background) ? [TX('background', { label: 'plate colour' })] : []),
+      TX('billboard', { label: 'faces', options: [{ v: 'off', label: 'flat (readable from both sides)' }, { v: 'yaw', label: 'turns to face you' }, { v: 'full', label: 'always faces you' }] }),
+      TX('lit', { label: 'lit', options: [{ v: 'self', label: 'glows (unlit)' }, { v: 'scene', label: 'takes the scene\'s light' }] }),
     ] });
   }
 
@@ -634,9 +765,11 @@ export function inspectSchema(ent, id, live = {}) {
 
   // every type no group speaks for: raw JSON, the blind fold's UI twin —
   // a type invented this morning is editable today
-  const claimed = new Set(['lock', 'hidden', 'disabled', 'clickthrough', 'label', 'sockets', 'grabbable', ...(c.home && typeof c.home === 'object' && Array.isArray(c.home.pos) ? ['home'] : []), 'hesperus/material', LAYER_KEY, ...Object.keys(c).filter((k) => k.startsWith('hesperus/material:')), ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
-    ...(compLight(ent) ? ['light'] : []), ...(compMesh(ent) ? ['mesh'] : []), ...(isBag(c.collider) ? ['collider'] : [])]);
-  const rest = Object.keys(c).filter((t) => !claimed.has(t));
+  // the descriptor table's typed cards (CLAIMED_KEYS: the floor cards keep their key), their keyed spellings (motion:<part>,
+  // look-at:<part>), and the client's own flags and draft cards — a key here is a card's, never raw JSON. A light or
+  // collider that isn't a bag, a home with no pos, a physics that isn't a bag: raw, as the card didn't draw
+  const claimed = new Set([...CLAIMED_KEYS.filter((k) => !(k === 'light' && !compLight(ent)) && !(k === 'mesh' && !compMesh(ent)) && !(k === 'collider' && !isBag(c.collider))), 'disabled', 'clickthrough', ...(c.home && typeof c.home === 'object' && Array.isArray(c.home.pos) ? ['home'] : []), 'hesperus/material', LAYER_KEY, ...Object.keys(c).filter((k) => k.startsWith('hesperus/material:')), ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), ...laKeys, ...mk, ...scriptKeys]);
+  const rest = Object.keys(c).filter((t) => !claimed.has(t) && t !== 'model' && t !== 'parent');   // flat on the record (view.js): the header's and the Parent card's, never raw JSON
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
   // Add Component (Unity's pattern) for the kinds that need a gesture to begin:
   // a picture needs an image and a part, a sound a file. Both are uploads.
@@ -670,8 +803,9 @@ const MOTION_GROUP = { Pendulum: 1, Spin: 1, Orbit: 1, Bob: 1, Path: 1 };
 // R1 sends every offered entry to the real door: all must be accepted.
 const NOT_OFFERED = new Set();
 // a lock's level as the inspector reads it: true (a plain lock) is builder level
-const LOCK_LEVEL = (v) => (v && typeof v === 'object' && ['builder', 'moderator', 'owner'].includes(v.rank) ? v.rank : 'builder');
-const LOCK_LEVEL_OPTIONS = [['builder', 'builders and up'], ['moderator', 'moderators and up'], ['owner', 'owners only']].map(([v, label]) => ({ v, label }));
+const LOCK_LEVEL = lockLevel;
+const LOCK_LEVEL_WORDS = { builder: 'builders and up', moderator: 'moderators and up', owner: 'owners only' };
+const LOCK_LEVEL_OPTIONS = LOCK_LEVELS.map((v) => ({ v, label: LOCK_LEVEL_WORDS[v] }));
 /** The words people search Add Component with that aren't in a component's name or summary (review 10-07 S9: "seat"
  *  found nothing; the seat is Sockets). Shared so an agent's surface can use the same words. */
 export const ADD_WORDS = Object.freeze({
@@ -712,6 +846,9 @@ function componentSections(ent, groups, live = {}, id = '?') {
   const have = new Set(components.map((c) => c.type));
   const g = (name) => groups.find((x) => x.group === name);
   const refs = (group, pred = () => true) => (g(group)?.fields ?? []).filter((f) => f.k != null && pred(f)).map((f) => `${group}.${f.k}`);
+  // a descriptor card claims the rows its descriptor names (a field, or one of the card's own derived rows), and the
+  // group's buttons, notes and JSON hatch; a value row it doesn't name is in no card (components-inspector-test)
+  const claims = (card, group, pred = () => true) => refs(group, (f) => pred(f) && (['btn', 'info', 'json'].includes(f.t) || !!claimOf(card, f.k)));
   const out = [];
   let partOrdinal = 0;
   for (const inst of components) {
@@ -734,40 +871,44 @@ function componentSections(ent, groups, live = {}, id = '?') {
       // keyed = the component; keyless = the legacy spawn `collide`, which owns
       // the collider group only when no component overrides it
       case 'Collider':
-        if (inst.key != null || !isBag(ent?.collider)) sec.fields = refs('collider');
+        if (inst.key != null || !isBag(ent?.collider)) sec.fields = claims('Collider', 'collider');
         else sec.info = [['shape', `${String(ent.collide)} (overridden by the collider component)`]];
         sec.removable = inst.key != null;
         break;
-      case 'Parent': sec.info = ent.parent?.socket ? [['socket', String(ent.parent.socket)]] : []; sec.fields = refs('parent', (f) => f.k !== 'children'); break;   // children are the Hierarchy's (R, 10-04)   // the Parent card (R, 10-04: a component, named as engines name it)
+      // on a socket: the socket is the parent (a child entity of its host, PLAN-sockets-entities), named with its host
+      case 'Parent': { const on = live.world?.[ent.parent?.to]; const sk = on?.c?.socket ?? on?.socket;
+        sec.info = sk && typeof sk === 'object' ? [['socket', `${String(sk.name)} on ${String(on.parent?.to ?? on.c?.parent?.to ?? '?')}`]] : []; }
+        sec.fields = refs('parent', (f) => f.k !== 'children'); break;   // children are the Hierarchy's (R, 10-04)   // the Parent card (R, 10-04: a component, named as engines name it)
       case 'Light':
         // keyless = the light-verb light (the light group is its); keyed = the
         // component: the group when it is the entity's light, raw JSON when a
         // hand-written log put one beside a legacy light
-        if (inst.key == null || compLight(ent)) sec.fields = refs('light');
+        if (inst.key == null || compLight(ent)) sec.fields = claims('Light', 'light');
         else sec.fields = [`comp.${inst.key}`];
         sec.removable = inst.key != null;
         break;
       case 'Label': case 'Hidden': case 'Description': continue;       // the header's, like Unity's name and active box
       case 'Lock': sec.fields = refs('flags', (f) => f.k === inst.key || f.k === 'lockLevel'); sec.removable = true; break;
       case 'Sockets': sec.fields = refs('sockets'); sec.removable = true; break;
-      case 'Grabbable': sec.fields = refs('grabbable'); sec.removable = true; break;
-      case 'Openable': sec.fields = refs('openable'); sec.removable = true; break;
-      case 'Particles': sec.fields = refs('particles', (f) => f.k !== 'out'); sec.removable = true; break;
-      case 'Picture': sec.fields = refs('picture', (f) => f.k !== 'down'); sec.removable = true; break;
-      case 'Sound': sec.fields = refs('sound', (f) => f.k !== 'silence'); sec.removable = true; break;
+      case 'Grabbable': sec.fields = claims('Grabbable', 'grabbable'); sec.removable = true; break;
+      case 'Openable': sec.fields = claims('Openable', 'openable'); sec.removable = true; break;
+      case 'Particles': sec.fields = claims('Particles', 'particles', (f) => f.k !== 'out'); sec.removable = true; break;
+      case 'Picture': sec.fields = claims('Picture', 'picture', (f) => f.k !== 'down'); sec.removable = true; break;
+      case 'Sound': sec.fields = claims('Sound', 'sound', (f) => f.k !== 'silence'); sec.removable = true; break;
       case 'LookAt': { const pre = inst.key === 'look-at' ? '' : `${inst.key.slice(8)}|`;
-        sec.fields = refs('look-at', (f) => f.t !== 'json' ? (pre ? f.k.startsWith(pre) : !f.k.includes('|')) : f.k === `json|${inst.key}`); sec.removable = true;
+        sec.fields = claims('LookAt', 'look-at', (f) => f.t !== 'json' ? (pre ? f.k.startsWith(pre) : !f.k.includes('|')) : f.k === `json|${inst.key}`); sec.removable = true;
         if (pre) sec.title = `LookAt · ${partLabel(inst.key.slice(8), live.parts)}`; break; }
-      case 'Story': sec.fields = refs('story'); sec.removable = true; break;
-      case 'Text': sec.fields = refs('text'); sec.removable = true; break;
-      case 'Pivot': sec.fields = refs('pivot'); sec.removable = true; break;
+      case 'Story': sec.fields = claims('Story', 'story'); sec.removable = true; break;
+      case 'Text': sec.fields = claims('Text', 'text'); sec.removable = true; break;
+      case 'Pivot': sec.fields = claims('Pivot', 'pivot'); sec.removable = true; break;
+      case 'Mesh': sec.fields = claims('Mesh', 'mesh'); sec.removable = true; break;
       default:
         if (MOTION_GROUP[inst.type]) {
           const part = inst.key === 'motion' ? (inst.params.part ?? null) : inst.key.slice(7);
           if (part) { sec.title = `${inst.type} · ${partLabel(part, live.parts, ++partOrdinal)}`; sec.part = part; }
           // the type is the card, not a field: changing it is remove + add
           const own = (f) => (inst.key === 'motion' ? !f.k.includes('|') : f.k.startsWith(`${inst.key.slice(7)}|`));
-          sec.fields = refs('motion', (f) => own(f) && !/(^|\|)(type|rest)$/.test(f.k));
+          sec.fields = claims(inst.type, 'motion', (f) => own(f) && !/(^|\|)(type|rest)$/.test(f.k));
           sec.removable = true;
         } else if (inst.type === 'Annotation' && inst.key.startsWith('script:') && g('script')) {
           const name = inst.key.slice(7);            // a script: its switch first, then its JSON (src, scope, on, knobs)
@@ -779,6 +920,8 @@ function componentSections(ent, groups, live = {}, id = '?') {
           if (isTrusted(inst.key, live.trusted)) sec.trusted = true;   // …blue once the world's owner trusts it here
         } else if (inst.key === 'physics' && g('physics')) {
           sec.title = 'Physics'; sec.fields = refs('physics'); sec.removable = true;   // its own fields (R 10-10), not raw JSON
+        } else if (inst.key === 'home' && g('home')) {
+          sec.title = 'Home'; sec.fields = refs('home'); sec.removable = true;   // its own fields (R 10-11); the card named comp.home, a row the floor no longer held, until C8's every-card pin (10-12)
         } else {
           sec.fields = [`comp.${inst.key}`];         // the raw-JSON floor (Annotation, Structure, Reactions, Captions, Stage)
           sec.removable = inst.type !== 'Captions';
@@ -825,7 +968,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
   const lib = model != null ? String(model) : null;
   // parenting lives on the Parent card (R, 10-04), not the header
   return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden' || f.k === 'disabled' || f.k === 'clickthrough' || f.k === 'description' || f.k === 'reads'), list: out, add,
-    lib, libLabel: lib != null ? libLabel(lib) : isBag(ent?.mesh) && MESH_SHAPES.includes(ent.mesh.shape) ? ent.mesh.shape : ent?.light ? 'light' : 'empty' };
+    model: lib, libLabel: lib != null ? libLabel(lib) : isBag(ent?.mesh) && MESH_SHAPES.includes(ent.mesh.shape) ? ent.mesh.shape : ent?.light ? 'light' : 'empty' };
 }
 
 /** The one request the "trust this in this world" button sends: @world.trusted with `name` toggled; an emptied list
@@ -857,7 +1000,7 @@ const NEEDS = {
     met: (ent) => ent?.motion?.type === 'pendulum',
     plan: (ent, id, name) => {
       const m = ent?.motion;
-      const ops = [OP.set(id, 'motion', { type: 'pendulum', amp: 0, period: 3.5 })];
+      const ops = [OP.set(id, 'motion', { type: 'pendulum', amp: 0 })];   // the authority writes its period, damp and maxAmp (componentspec.js)
       if (!m) return { ops, brings: 'a Pendulum at rest, for it to push' };
       return { choice: { need: 'Pendulum', prompt: `${name} pushes a pendulum, and ${id} already moves as a whole (${m.type ?? 'a motion'}) — replace that with a Pendulum?`,
         options: [{ v: 'replace', label: `replace its ${m.type ?? 'motion'} with a Pendulum`, ops }] } };
@@ -866,12 +1009,14 @@ const NEEDS = {
 };
 /** Is `need` met on this entity? The NEEDS table's reading, else a component of that type. */
 export function needMet(need, ent) {
+  ent = recordOf(ent);
   return NEEDS[need] ? NEEDS[need].met(ent) : componentsOf(ent).components.some((c) => c.type === need);
 }
 /** Plan the needs of adding `name`: { ops } to prepend, `brings` (what is
  *  added for you), or a `choice` (unresolved). `value` resolves a choice when
  *  it names one of its options ("replace", or {choose: "replace"}). */
 export function planNeeds(ent, id, name, value) {
+  ent = recordOf(ent, id);
   const ops = []; const brings = [];
   const pick = typeof value === 'string' ? value : value?.choose;
   for (const need of RECORDS[name]?.needs ?? []) {
@@ -893,6 +1038,7 @@ export function planNeeds(ent, id, name, value) {
  *  part motion, the type name for an Annotation, or a need's choice. Returns
  *  { ops, errors, choice? } — a `choice` sends nothing and asks. */
 export function addOps(ent, id, name, value) {
+  ent = recordOf(ent, id);
   if (readsDraft(name)) { if (ent?.[name] != null) return { ops: [], errors: [`${id} already has ${name}`] }; return { ops: [OP.set(id, name, draftsRead().find((d) => d.name === name).blank)], errors: [] }; }
   const np = planNeeds(ent, id, name, value);
   if (np.choice) return { ops: [], errors: np.choice.options.length ? [] : [np.choice.prompt], choice: np.choice };
@@ -904,7 +1050,8 @@ function addOwnOps(ent, id, name, value) {
   const c = recordComponents(ent);
   // a path's points are in its parent's frame (as the renderer reads them): it starts where it stands and goes 2 m on
   const p0 = (Array.isArray(ent?.parent?.offset) ? ent.parent.offset : Array.isArray(ent?.pos) ? ent.pos : [0, 0, 0]).map((v) => round(+v || 0, 4));
-  const motion = { Pendulum: { type: 'pendulum', amp: 0.26, period: 3.5 }, Spin: { type: 'spin', degPerSec: 36 }, Orbit: { type: 'orbit', radius: 1, degPerSec: 12 }, Bob: { type: 'bob', amp: 0.3, period: 4 }, Path: { type: 'path', points: [p0, [p0[0], p0[1], round(p0[2] + 2, 4)]], speed: 1 } };
+  // a motion seed states what makes it visible (a swing of 15°, a 1 m orbit); the rest the authority writes (componentspec.js)
+  const motion = { Pendulum: { type: 'pendulum', amp: 0.26 }, Spin: { type: 'spin', degPerSec: 36 }, Orbit: { type: 'orbit', radius: 1, degPerSec: 12 }, Bob: { type: 'bob', amp: 0.3, period: 4 }, Path: { type: 'path', points: [p0, [p0[0], p0[1], round(p0[2] + 2, 4)]], speed: 1 } };
   if (motion[name]) {
     const part = typeof value === 'string' && value.trim() ? value.trim() : null;
     if (part) { const key = `motion:${part}`; if (c[key]) return { ops: [], errors: [`${id} already has a motion on ${part}`] }; return { ops: [OP.set(id, key, motion[name])], errors: [] }; }
@@ -967,6 +1114,7 @@ function addOwnOps(ent, id, name, value) {
  *  `confirm`, and removing again with value "both" removes them too, in the
  *  same step. */
 export function removeOps(ent, id, key, value) {
+  ent = recordOf(ent, id);
   const c = recordComponents(ent);
   if (c[key] != null) {
     const after = Object.fromEntries(Object.entries(ent).filter(([k]) => k !== key));
@@ -1004,6 +1152,7 @@ function removeOwnOps(ent, id, key) {
  *  yaw-only thing, which stays a heading (pos.yaw, degrees) so its history
  *  keeps its bytes. */
 export function poseEdits(ent, id, mode, { pos, q, scale } = {}, live = {}) {
+  ent = recordOf(ent, id);
   const sc = inspectSchema(ent, id, live);
   const out = {};
   if (mode === 'move' && pos) ['x', 'y', 'z'].forEach((k, i) => { if (fieldAt(sc, `pos.${k}`)) out[`pos.${k}`] = +(+pos[i]).toFixed(3); });
@@ -1035,9 +1184,10 @@ export function fieldAt(schema, key) {
 }
 
 /** Turn edits into the fewest door ops that commit them (one gesture = one batch = one act). Numbers may be
- *  relative expressions; a field's hard min/max clamp; disabled fields
- *  refuse. Pure: never sends, never mutates `ent`. */
+ *  relative expressions; a number is written as typed, or refused (nothing written) where the door's range refuses it:
+ *  a row's min/max bound its slider, never the value. Disabled fields refuse. Pure: never sends, never mutates `ent`. */
 export function editOps(ent, id, edits, live = {}) {
+  ent = withSocketMap(recordOf(ent, id), id, live);
   const schema = inspectSchema(ent, id, live);
   const errors = [];
   const ops = [];
@@ -1072,12 +1222,52 @@ export function editOps(ent, id, edits, live = {}) {
     let n = parseEntry(f.deg && typeof v === 'string' ? v : v, f.deg ? cur * R2D : cur);
     if (n == null) { errors.push(`${f.label ?? f.k}: not a number (${JSON.stringify(v)})`); return null; }
     if (f.deg) n = n / R2D;
-    n = Math.min(f.max ?? Infinity, Math.max(f.min ?? -Infinity, n));
     return n;
   };
+  // the door's range (componentspec ranges) on the value as the wire carries it, refused in the door's words (the
+  // authority's schemaCheck); a degree row reads its bounds in degrees
+  const outOfDoor = (comp, path, x, key, deg = false) => {
+    const r = SPEC[comp]?.ranges?.[path]; if (!r || r.maxLen !== undefined || r.maxItems !== undefined) return false;
+    const bad = Array.isArray(x) ? x.some((n) => typeof n === 'number' && outOfRange(r, n)) : typeof x === 'number' && outOfRange(r, x);
+    if (!bad) return false;
+    const fmt = deg ? (b) => `${+(b * R2D).toFixed(2)}°` : undefined; const shown = deg && typeof x === 'number' ? `${+(x * R2D).toFixed(2)}°` : JSON.stringify(x);
+    errors.push(`${key} is ${shown}; ${Array.isArray(x) ? 'each' : 'it'} must be ${rangeWords(r, fmt)}`);
+    return true;
+  };
   const bool = (v) => (typeof v === 'string' ? !/^(false|0|no|off)$/i.test(v) : !!v);
+  // a descriptor field's write (shared/protocol/descriptors.js): parsed by its widget, rounded to the card's writeDp, put
+  // on the wire through its translation and held to the door's range there; a sparse field is deleted at its default, and
+  // a write retires the spellings it clears. false = not a field the table writes (the card's own code does: an axis, a text, a button)
+  const writeField = (card, k, key, f, raw, next) => {
+    const d = fieldOf(card, k); const ui = d?.ui; if (!d || d.path == null || !ui || ui.own || !['num', 'check', 'color', 'enum'].includes(ui.t)) return false;
+    let v;
+    if (ui.t === 'num') { if (!f) return false; const n = num(f, raw); if (n == null) return true; const dp = ui.wdp ?? DESCRIPTORS[card].writeDp; v = dp == null ? n : round(n, dp); }
+    else if (ui.t === 'check') v = bool(raw);
+    else if (ui.t === 'color') { const n = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/i, ''), 16) : +raw; if (!Number.isInteger(n) || n < 0 || n > 0xffffff) { errors.push(`${key}: a colour 0xRRGGBB`); return true; } v = n; }
+    else { if (raw === '' || raw == null) return false; v = String(raw);
+      if (ui.closed && f?.options && !f.options.some((o) => o.v === v)) { errors.push(`${key}: one of ${f.options.map((o) => o.v).join(', ')} (got ${JSON.stringify(v)})`); return true; } }
+    const w = toWire(card, k, v);
+    if (ui.t === 'num' && outOfDoor(DESCRIPTORS[card].key, d.path, w, key, !!ui.deg)) return true;
+    if (ui.sparse && v === editorDefault(card, k)) delete next[d.path]; else next[d.path] = w;
+    for (const old of ui.clears ?? []) delete next[old];
+    return true;
+  };
 
+  // A key that reports an error writes NOTHING: whatever it began (a bag, a coalesced place, a component's next value) is
+  // put back as the edit's earlier keys left it, so a refused value never travels as an op carrying the old one (F2
+  // 10-12: a mistyped light colour sent `set light` with the colour it already had). The edit's other keys still commit.
+  const plans = [comps, motions, bags];
+  const keep = () => ({ errs: errors.length, ops: ops.length, place: structuredClone(place), maps: plans.map((m) => structuredClone([...m])) });
+  const undoKey = (was) => {
+    ops.length = was.ops; place = was.place;
+    plans.forEach((m, i) => { m.clear(); for (const [k, v] of was.maps[i]) m.set(k, v); });
+  };
   for (const [key, raw] of Object.entries(edits ?? {})) {
+    const was = keep();
+    editKey(key, raw);
+    if (errors.length > was.errs) undoKey(was);
+  }
+  function editKey(key, raw) {
     const f = fieldAt(schema, key);
     const dot = key.indexOf('.'); const group = key.slice(0, dot); const k = key.slice(dot + 1);
     // components (B): add.<Component> = value is a part name / annotation type; remove.<comp key>
@@ -1086,16 +1276,16 @@ export function editOps(ent, id, edits, live = {}) {
       errors.push(...r.errors); ops.push(...r.ops);
       if (r.choice) asks.push({ kind: 'choice', ...r.choice, key });
       if (r.confirm) asks.push({ kind: 'confirm', ...r.confirm, comp: r.confirm.key, key });   // key = the address to answer on
-      continue;
+      return;
     }
     // actions and creations that have no field row: comp.<any>, sockets.del,
     // a socket slot that does not exist yet (sockets.<new>|pos|1 declares it)
     const known = f || group === 'parent' || (group === 'pivot' && ['x', 'y', 'z', 'centre', 'base', 'reset'].includes(k)) || (group === 'comp' && k) || (group === 'sockets' && (k === 'del' || k.includes('|')))
       || ((group === 'picture' || group === 'sound') && !['upload'].includes(k));   // creation needs no row
-    if (key === 'flags.guard') { errors.push('flags.guard: `guard` is merged into `lock` (PROTOCOL §5): set flags.lock'); continue; }   // an old habit, taught
-    if (!known) { errors.push(`${key}: no such field on ${id}`); continue; }
-    if (f?.disabled) { errors.push(`${key}: ${f.hint ?? 'read-only'}`); continue; }
-    if (f?.client) { errors.push(`${key}: a viewport gesture, not a value — set the fields it would have set`); continue; }
+    if (key === 'flags.guard') { errors.push('flags.guard: `guard` is merged into `lock` (PROTOCOL §5): set flags.lock'); return; }   // an old habit, taught
+    if (!known) { errors.push(`${key}: no such field on ${id}`); return; }
+    if (f?.disabled) { errors.push(`${key}: ${f.hint ?? 'read-only'}`); return; }
+    if (f?.client) { errors.push(`${key}: a viewport gesture, not a value — set the fields it would have set`); return; }
     switch (group) {
       case 'pos': {
         basePlace();
@@ -1135,7 +1325,7 @@ export function editOps(ent, id, edits, live = {}) {
       }
       case 'flags': {
         if (k === 'lock') flagsComp('lock', bool(raw) ? (c.lock && c.lock !== true ? c.lock : true) : null);   // re-checking keeps its level
-        else if (k === 'lockLevel') { const v = String(raw ?? ''); if (!['builder', 'moderator', 'owner'].includes(v)) { errors.push(`flags.lockLevel: builder, moderator or owner (got ${JSON.stringify(raw)})`); break; } flagsComp('lock', v === 'builder' ? true : { rank: v }); }
+        else if (k === 'lockLevel') { const v = String(raw ?? ''); if (!LOCK_LEVELS.includes(v)) { errors.push(`flags.lockLevel: ${LOCK_LEVELS.join(', ')} (got ${JSON.stringify(raw)})`); break; } flagsComp('lock', v === 'builder' ? true : { rank: v }); }
         else if (k === 'hidden') flagsComp('hidden', bool(raw) ? true : null);
         else if (k === 'clickthrough') flagsComp('clickthrough', bool(raw) ? true : null);
         else if (k === 'disabled') flagsComp('disabled', bool(raw) ? true : null);
@@ -1148,15 +1338,12 @@ export function editOps(ent, id, edits, live = {}) {
         // the light component: merge into its bag, important/day stored only in their non-default state, validated once at
         // the end like picture/sound
         const b = bag('light', () => ({}));
-        if (f.t === 'num') { const n = num(f, raw); if (n == null) break; b[k] = n; }
-        else if (k === 'color') b.color = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/, ''), 16) : raw;
-        else if (k === 'important') { if (bool(raw)) b.important = true; else delete b.important; }
-        else if (k === 'noon') { if (bool(raw)) b.day = false; else delete b.day; }
+        if (!writeField('Light', k, key, f, raw, b)) errors.push(`${key}: no such field`);
         break;
       }
       case 'mesh': {
-        if (k === 'shape') { if (!MESH_SHAPES.includes(raw)) { errors.push(`mesh.shape: one of ${MESH_SHAPES.join(', ')}`); break; } bag('mesh', () => ({ shape: 'box', size: [1, 1, 1] })).shape = raw; }
-        else if (/^size\.[xyz]$/.test(k)) { const n = num(f, raw); if (n == null) break; const b = bag('mesh', () => ({ shape: 'box', size: [1, 1, 1] })); b.size = [...(Array.isArray(b.size) && b.size.length === 3 ? b.size : [1, 1, 1])]; b.size['xyz'.indexOf(k.slice(5))] = +n.toFixed(3); }
+        if (k === 'shape') { if (!MESH_SHAPES.includes(raw)) { errors.push(`mesh.shape: one of ${MESH_SHAPES.join(', ')}`); break; } writeField('Mesh', k, key, f, raw, bag('mesh', () => ({ shape: 'box', size: [1, 1, 1] }))); }
+        else if (/^size\.[xyz]$/.test(k)) { const n = num(f, raw); if (n == null || outOfDoor('mesh', 'size', +n.toFixed(3), key)) break; const b = bag('mesh', () => ({ shape: 'box', size: [1, 1, 1] })); b.size = [...(Array.isArray(b.size) && b.size.length === 3 ? b.size : [1, 1, 1])]; b.size['xyz'.indexOf(k.slice(5))] = +n.toFixed(3); }
         break;
       }
       case 'motion': {
@@ -1175,86 +1362,23 @@ export function editOps(ent, id, edits, live = {}) {
           for (const p of Object.keys(next)) if (!['type', 'axis', 'pivot', 'phase', 't0', 'part'].includes(p)) delete next[p];
           next.type = raw;
         }
-        else if (param === 'loop') next.loop = raw;
-        else if (f.t === 'check') next[param] = bool(raw);
-        else { const n = num(f, raw); if (n == null) break; next[param] = round(n, 4); if (param === 'degPerSec') { delete next.rpm; delete next.period; } if (param === 'amp') delete next.amplitude; }
+        else if (!writeField({ pendulum: 'Pendulum', spin: 'Spin', orbit: 'Orbit', bob: 'Bob', path: 'Path' }[prev.type] ?? 'Spin', param, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
         motions.set(mkey, next);
         break;
       }
-      case 'sockets': {
-        const next = comps.get('sockets') ?? JSON.parse(JSON.stringify(c.sockets ?? {}));
-        if (k === 'del' && !next[raw]) { errors.push(`sockets.del: no slot ${JSON.stringify(raw)} on ${id}`); break; }
-        if (k === 'del') { delete next[raw]; comps.set('sockets', Object.keys(next).length ? next : null); break; }
-        const [slot, what, idx, sub] = k.split('|');
-        const cur = next[slot] ?? (next[slot] = { pos: [0, 0.5, 0], body: {} });   // a new slot is a seat, as '+ seat' makes
-        if (what === 'body') { if (bool(raw)) cur.body = cur.body ?? {}; else delete cur.body; comps.set('sockets', next); break; }
-        if (what === 'action') { const v = String(raw).trim().toLowerCase(); if (!/^[a-z][a-z0-9-]{0,31}$/.test(v)) { errors.push(`sockets.${slot}|action: a verb in lower case (sit, ride)`); break; }
-          cur.body = { ...(cur.body ?? {}), action: v }; if (v === 'sit') delete cur.body.action; comps.set('sockets', next); break; }
-        // the rest of the body block: each field written the way the authority reads it (shared/sockbody.js), a default left
-        // out, and the result checked with the authority's own check, so a refusal here reads as the authority's would
-        const BODY = ['anchor', 'pose', 'leaveBy', 'who', 'fromSeat', 'enter', 'leave', 'input', 'look', 'reach', 'hold', 'poses', 'sync', 'approach', 'exit'];
-        if (BODY.includes(what)) {
-          const b = cur.body = { ...(cur.body ?? {}) };
-          const d = ACTION_DEFAULTS[b.action ?? 'sit'] ?? ACTION_DEFAULTS.sit;
-          const json = (v) => { if (v == null || v === '') return undefined; if (typeof v !== 'string') return v; const t = v.trim(); if (!/^[[{"]/.test(t)) return t; try { return JSON.parse(t); } catch (e) { errors.push(`sockets.${slot}|${what}: not valid JSON (${e.message})`); return null; } };
-          const put = (key, v, dflt) => { if (v === undefined || v === dflt || (v && typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length)) delete b[key]; else b[key] = v; };
-          if (what === 'anchor') put('anchor', String(raw), d.anchor);
-          else if (what === 'pose') { const v = json(raw); if (v === null) break; put('pose', v, d.pose); }
-          else if (what === 'leaveBy') put('leaveBy', String(raw), 'any');
-          else if (what === 'who') { const v = String(raw); put('who', v === 'visitor' ? 'anyone' : v, 'anyone'); }
-          else if (what === 'fromSeat') put('fromSeat', bool(raw) || undefined, undefined);
-          else if (what === 'enter' || what === 'leave' || what === 'sync') put(what, String(raw ?? '').trim() || undefined, undefined);
-          else if (what === 'input') { const inp = { ...(b.input ?? {}) }; if (!['move', 'look'].includes(idx)) { errors.push(`sockets.${slot}|input|${idx}: input is move or look`); break; }
-            inp[idx] = String(raw); if (inp[idx] === (idx === 'move' ? 'none' : 'free')) delete inp[idx]; put('input', inp, undefined); }
-          else if (what === 'look') { const lk = { ...(b.look ?? {}) };
-            if (idx === 'up') { lk.up = String(raw); if (lk.up === 'world') delete lk.up; }
-            else if (idx === 'yaw' || idx === 'pitch') { const lim = idx === 'yaw' ? 180 : 90; const n = num(f ?? { value: (lk[idx] ?? [-lim, lim])[+sub] ?? 0, k }, raw); if (n == null) break;
-              const r = [...(lk[idx] ?? [-lim, lim])]; r[+sub] = round(n, 2); lk[idx] = r; if (r[0] === -lim && r[1] === lim) delete lk[idx]; }
-            else { errors.push(`sockets.${slot}|look|${idx}: look is yaw|0..1, pitch|0..1, up`); break; }
-            put('look', lk, undefined); }
-          else { const v = json(raw); if (v === null) break; put(what, v, undefined); }
-          const bad = checkSockets(next);
-          if (bad) { errors.push(`sockets.${slot}|${what}: ${bad.reason}${bad.fix ? ` — ${bad.fix}` : ''}`); break; }
-          comps.set('sockets', next); break;
-        }
-        const n = num(f ?? { value: what === 'rot' ? sockRot(cur)[+idx] : (cur.pos ?? [0, 0.5, 0])[+idx] ?? 0, deg: what === 'rot', k }, raw); if (n == null) break;
-        if (what === 'pos') { cur.pos = [...(cur.pos ?? [0, 0.5, 0])]; cur.pos[+idx] = round(n); }
-        else if (what === 'rot') { const q = setEulerChannel(socketQ(cur), 'ZXY', sockRot(cur), +idx, n).q.map((v) => round(v, 6)); delete cur.yaw;
-          if (Math.abs(q[3]) > 1 - 1e-12) delete cur.q; else cur.q = q; }
-        else { errors.push(`sockets.${slot}|${what}: not a socket field (pos|0..2, rot|0..2, body, action, anchor, pose, leaveBy, who, fromSeat, enter, leave, input|move, input|look, look|yaw|0..1, look|pitch|0..1, look|up, reach, hold, poses, sync, approach, exit)`); break; }
-        comps.set('sockets', next);
-        break;
-      }
+      case 'sockets': HAND.Sockets.write({ id, k, raw, f, c, comps, errors, num, bool }); break;
       case 'openable': {
         const next = comps.get('openable') ?? JSON.parse(JSON.stringify(c.openable ?? {}));
         if (k === 'hingeL' || k === 'hingeR') { const box = live.box; if (!Array.isArray(box)) { errors.push(`${key}: its box isn't known yet`); break; }
           comps.set('pivot', { pos: [round(k === 'hingeL' ? box[0][0] : box[1][0], 4), round(box[0][1], 4), round((box[0][2] + box[1][2]) / 2, 4)] }); break; }
-        if (k === 'open' || k === 'locked') next[k] = bool(raw);
-        else if (k === 'by') { if (raw === 'slide') { delete next.angle; delete next.axis; next.slide = Array.isArray(next.slide) ? next.slide : [0.9, 0, 0]; } else if (raw === 'turn') { delete next.slide; next.angle = Number.isFinite(next.angle) ? next.angle : round(Math.PI / 2, 6); } else { errors.push(`${key}: turn or slide`); break; } }
+        if (k === 'by') { if (raw === 'slide') { delete next.angle; delete next.axis; next.slide = Array.isArray(next.slide) ? next.slide : [0.9, 0, 0]; } else if (raw === 'turn') { delete next.slide; next.angle = Number.isFinite(next.angle) ? next.angle : round(Math.PI / 2, 6); } else { errors.push(`${key}: turn or slide`); break; } }
         else if (k === 'axis') { if (!AXES[String(raw).toLowerCase()]) { errors.push(`${key}: axis must be one of ${Object.keys(AXES).join(' ')}`); break; } next.axis = String(raw).toLowerCase(); }
         else if (k.startsWith('slide|')) { const n = num(f, raw); if (n == null) break; next.slide = [...(Array.isArray(next.slide) ? next.slide : [0, 0, 0])]; next.slide[+k.slice(6)] = round(n, 4); }
-        else if (k === 'angle' || k === 'time') { const n = num(f, raw); if (n == null) break; next[k] = round(n, 6); }
-        else { errors.push(`${key}: no such field`); break; }
+        else if (!writeField('Openable', k, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
         comps.set('openable', next);
         break;
       }
-      case 'hmat': {
-        const MATK = 'hesperus/material';
-        const m = /^slot\|([^|]+)\|(.+)$/.exec(k); const ck = m ? `${MATK}:${m[1]}` : MATK; const fk = m ? m[2] : k;
-        if (m && !/^[a-z][a-z0-9-]{0,47}$/.test(m[1])) { errors.push(`material: '${m[1]}' isn't a slot name`); break; }
-        if (fk === 'override' || fk === 'add') { if (c[ck] == null) comps.set(ck, {}); break; }
-        if (fk === 'reset') { comps.set(ck, null); break; }
-        if (fk === 'trust') { ops.push(trustOp(MATK, live)); break; }
-        const next = comps.get(ck) ?? JSON.parse(JSON.stringify(c[ck] ?? {}));
-        if (fk === 'color' || fk === 'emissive') { const n = typeof raw === 'number' ? raw : parseInt(String(raw ?? '').replace(/^#/, ''), 16);
-          if (raw === null || raw === '') delete next[fk]; else if (Number.isInteger(n) && n >= 0 && n <= 0xffffff) next[fk] = n; else { errors.push(`material.${fk}: a colour`); break; } }
-        else if (['roughness', 'metalness', 'opacity', 'emissiveStrength'].includes(fk)) {
-          const t = String(raw ?? '').trim(); const hi = fk === 'emissiveStrength' ? 20 : 1;
-          if (!t) delete next[fk]; else { const n = Number(t); if (!Number.isFinite(n) || n < 0 || n > hi) { errors.push(`material.${fk}: a number from 0 to ${hi}, or blank`); break; } next[fk] = round(n, 3); } }
-        else { errors.push(`${key}: no such field`); break; }
-        comps.set(ck, next);
-        break;
-      }
+      case 'hmat': HAND.Material.write({ k, raw, c, comps, errors, ops, live }); break;
       case 'home': {
         const next = comps.get('home') ?? JSON.parse(JSON.stringify(c.home ?? {}));
         const n = num(f, raw); if (n == null) break;   // (home.sethere is the client's: it reads where the thing is now)
@@ -1279,20 +1403,7 @@ export function editOps(ent, id, edits, live = {}) {
         comps.set('physics', next);
         break;
       }
-      case 'grabbable': {
-        const next = comps.get('grabbable') ?? JSON.parse(JSON.stringify(c.grabbable ?? {}));
-        if (['enabled', 'steal', 'twoHanded', 'carries'].includes(k)) next[k] = bool(raw);
-        else if (['range', 'priority', 'throw', 'returnAfter'].includes(k)) { const n = num(f, raw); if (n == null) break; next[k] = k === 'priority' ? Math.round(n) : round(n); }
-        else if (k === 'pose') { if (raw === 'by size' || raw == null || raw === '') delete next.pose; else next.pose = String(raw); }
-        else if (k === 'fits') { const w = String(raw ?? '').split(/[,\s]+/).map((x) => x.trim()).filter(Boolean); if (w.length) next.fits = w; else delete next.fits; }
-        else if (k === 'use') { const [d, u] = String(raw ?? '').split('/').map((x) => x.trim()); if (!d && !u) delete next.use; else next.use = u ? { ...(d ? { down: d } : {}), up: u } : d; }
-        else if (k === 'prompt') { const v = String(raw ?? '').trim(); if (v) next.prompt = v; else delete next.prompt; }
-        else next[k] = raw;
-        const bad = checkGrabbable(next);
-        if (bad) { errors.push(`grabbable.${k}: ${bad.reason}${bad.fix ? ` — ${bad.fix}` : ''}`); break; }
-        comps.set('grabbable', next);
-        break;
-      }
+      case 'grabbable': HAND.Grabbable.write({ k, key, f, raw, c, comps, errors, writeField }); break;
       case 'particles': {
         if (k === 'out') { comps.set('particles', null); break; }
         const next = modernize(comps.get('particles') ?? { ...c.particles });   // an older value is written back in today's shape
@@ -1300,13 +1411,12 @@ export function editOps(ent, id, edits, live = {}) {
         else if (k.startsWith('param|')) { const name = k.slice(6); const v = f?.t === 'num' ? num(f, raw) : f?.t === 'check' ? bool(raw) : f?.t === 'color' ? (typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/i, ''), 16) : +raw) : String(raw ?? '').trim();
           if (v == null || v === '') { const { [name]: _, ...rest } = next.params ?? {}; if (Object.keys(rest).length) next.params = rest; else delete next.params; }
           else next.params = { ...(next.params ?? {}), [name]: f?.t === 'num' ? round(v) : v }; }
-        else if (k === 'scale') { const n = num(f, raw); if (n == null) break; next.scale = round(n); }
-        else if (k === 'playing') next.playing = bool(raw);
         else if (k === 'part') { const v = String(raw ?? '').trim(); if (v) next.part = v; else delete next.part; }
         else if (k === 'effect') { if (String(raw) !== next.effect) { next.effect = String(raw); delete next.params; } }   // another effect's knobs aren't these
-        else { errors.push(`${key}: no such field`); break; }
-        // the authority's rules, here first (a known effect: an Essential, or a stored one the viewer has)
-        const doc = effectFor(next.effect, live.effects ?? (() => null)); const bad = doc || ESSENTIAL_NAMES.includes(next.effect) ? instanceProblem(next, doc) : null;
+        else if (!writeField('Particles', k, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
+        // the authority's rules, here first: a known effect (an Essential, or a stored one the viewer has), or a name that is
+        // neither an Essential nor an address; an address the viewer hasn't loaded is the door's to judge
+        const doc = effectFor(next.effect, live.effects ?? (() => null)); const bad = doc || ESSENTIAL_NAMES.includes(next.effect) || !effectBlobName(next.effect) ? instanceProblem(next, doc) : null;
         if (bad) { errors.push(`particles.${k}: ${bad}`); break; }
         comps.set('particles', next);
         break;
@@ -1315,8 +1425,8 @@ export function editOps(ent, id, edits, live = {}) {
         if (k === 'down') { bags.set('picture', null); break; }
         const b = bag('picture', () => ({})); if (!b) { errors.push('picture: taken down in this same edit'); break; }
         if (!['part', 'src', 'alt', 'lit', 'flip', 'width'].includes(k)) { errors.push(`${key}: no such field`); break; }
-        if (k === 'flip') b.flip = bool(raw);
-        else if (k === 'width') { const n = num(f ?? { value: b.width ?? 1, min: 0.05, max: 20 }, raw); if (n == null) break; b.width = round(n); }
+        if (writeField('Picture', k, key, f, raw, b)) break;
+        if (k === 'width') { const n = num({ value: b.width ?? 1 }, raw); if (n == null || outOfDoor('picture', 'width', round(n), key)) break; b.width = round(n); }   // no row yet: the picture is being made
         else { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'alt' || k === 'part') delete b[k]; else b[k] = v; }
         break;
       }
@@ -1332,9 +1442,9 @@ export function editOps(ent, id, edits, live = {}) {
         // play and restart send no t0: the authority stamps it (shared/protocol/authority.js stampMedia), on its clock, for everyone
         if (k === 'play') { b.playing = true; delete b.t0; }
         else if (k === 'pause') { b.playing = false; }
-        else if (k === 'loop' || k === 'spatial') b[k] = bool(raw);
-        else if (['volume', 'radius', 'near', 'pitch'].includes(k)) { const lim = { volume: [0, 1, 0.8], radius: [1, SOUND_MAX_RADIUS, 12], near: [0.1, SOUND_MAX_RADIUS, 1.5], pitch: [0.5, 2, 1] }[k];
-          const n = num(f ?? { value: b[k] ?? lim[2], min: lim[0], max: lim[1] }, raw); if (n == null) break; b[k] = round(n); }
+        else if (writeField('Sound', k, key, f, raw, b)) { /* written */ }
+        else if (['volume', 'radius', 'near', 'pitch'].includes(k)) { const was = { volume: 0.8, radius: 12, near: 1.5, pitch: 1 }[k];   // no row yet: the sound is being made
+          const n = num({ value: b[k] ?? was }, raw); if (n == null || outOfDoor('sound', k, round(n), key)) break; b[k] = round(n); }
         else if (k === 'src' || k === 'alt') { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'alt') delete b.alt; else b[k] = v; }
         else errors.push(`${key}: no such field`);
         break;
@@ -1364,8 +1474,9 @@ export function editOps(ent, id, edits, live = {}) {
         const ck = part ? `look-at:${part}` : 'look-at';
         const next = { ...(comps.get(ck) ?? (isBag(c[ck]) ? c[ck] : {})) };
         if (fk === 'target' || fk === 'target@') { if (raw == null || raw === '') { if (fk === 'target') { comps.set(ck, null); break; } else break; } next.target = String(raw); }
-        else if (fk === 'mode' || fk === 'forward' || fk === 'up') next[fk] = String(raw);
-        else if (fk === 'speed' || fk === 'range') { const n = num(f ?? { value: next[fk] ?? (fk === 'speed' ? 240 : 12), min: fk === 'speed' ? 0 : 0.1, max: fk === 'speed' ? 3600 : 100 }, raw); if (n == null) break; next[fk] = round(n); }
+        else if (writeField('LookAt', fk, key, f, raw, next)) { /* written */ }
+        else if (fk === 'up') next.up = String(raw);
+        else if (fk === 'speed' || fk === 'range') { const n = num({ value: next[fk] ?? (fk === 'speed' ? 240 : 12) }, raw); if (n == null || outOfDoor('look-at', fk, round(n), key)) break; next[fk] = round(n); }   // no row yet: the look-at is being made
         else { errors.push(`${key}: no such field`); break; }
         comps.set(ck, next); break;
       }
@@ -1373,11 +1484,8 @@ export function editOps(ent, id, edits, live = {}) {
         const next = { ...(comps.get(group) ?? (isBag(c[group]) ? c[group] : {})) };
         if (group === 'story' && k === 'marks') { const ids = String(raw ?? '').split(/[\s,]+/).filter(Boolean); if (ids.length) next.marks = ids; else delete next.marks; }
         else if (k === 'title' || k === 'text') next[k] = String(raw ?? '');
-        else if (group === 'text' && (k === 'size' || k === 'width')) { const n = num(f, raw); if (n == null) break; next[k] = round(n); }
-        else if (group === 'text' && (k === 'color' || k === 'background' || k === 'outlineColor')) { const n = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/i, ''), 16) : +raw; if (!Number.isInteger(n) || n < 0 || n > 0xffffff) { errors.push(`${key}: a colour 0xRRGGBB`); break; } next[k] = n; }
         else if (group === 'text' && k === 'plate') { if (bool(raw)) next.background = Number.isInteger(next.background) ? next.background : 0x202020; else delete next.background; }
-        else if (group === 'text' && k === 'outline') next.outline = bool(raw);
-        else if (group === 'text' && ['align', 'billboard', 'lit'].includes(k)) next[k] = String(raw);
+        else if (group === 'text' && writeField('Text', k, key, f, raw, next)) { /* written */ }
         else { errors.push(`${key}: no such field`); break; }
         // the authority's rules, here first (the same catalogue): a refusal is a hint before any round-trip
         const lim = SPEC[group].ranges; for (const [fk, r] of Object.entries(lim)) if (typeof next[fk] === 'string' && r.maxLen && graphemes(next[fk]) > r.maxLen) errors.push(`${group}.${fk}: ${graphemes(next[fk])} characters; at most ${r.maxLen}`);

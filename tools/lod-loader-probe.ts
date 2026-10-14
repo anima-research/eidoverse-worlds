@@ -38,9 +38,12 @@ if (!(globalThis as any).ProgressEvent) {
 const background: string[] = [];
 process.on('unhandledRejection', (e: any) => { background.push(String(e?.stack ?? e).split('\n').slice(0, 3).join(' | ')); });
 
-// the network seam: relative → the child; /version minus one field, when asked
+// the network seam: relative → the child; /version minus one field, when asked. three's FileLoader builds a Request
+// before it fetches (0.186), and a Request has no page to resolve a relative path against: the same seam, one step earlier.
 const fetched: string[] = [];
 const realFetch = globalThis.fetch;
+const RealRequest = globalThis.Request;
+globalThis.Request = class extends RealRequest { constructor(input: any, init?: any) { super(typeof input === 'string' && input.startsWith('/') ? BASE + input : input, init); } } as any;
 globalThis.fetch = (async (input: any, init?: any) => {
   let url: string = typeof input === 'string' ? input : input.url;
   if (url.startsWith('/')) url = BASE + url;

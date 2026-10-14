@@ -12,7 +12,7 @@
 
 import { THREE } from './core.js';
 import { bus } from './base.js';
-import { entities, comps } from './world.js';
+import { entities, bagOf } from './world.js';
 import { prepareMaterial } from './materials.js';
 import { registerDraft } from '../../shared/drafts.js';
 
@@ -84,7 +84,7 @@ function write(clone, orig, o) {
 /** Make a thing's meshes show its override (or their own materials again). Returns how many slots carry one. */
 export function applyMaterials(id) {
   const obj = entities.get(id); if (!obj) return 0;
-  const bag = comps.get(id); let n = 0; const slots = slotsOf(obj);
+  const bag = bagOf(id); let n = 0; const slots = slotsOf(obj);
   for (const mesh of meshes(obj)) {
     const orig = origOf(mesh); const clones = (mesh.userData.__matClones ??= []);
     const next = orig.map((mat, i) => {
@@ -103,7 +103,7 @@ export function applyMaterials(id) {
 export function initMaterialOverrides() {
   bus.on('comp', ({ id, type }) => { if (type === MAT || String(type).startsWith(`${MAT}:`)) applyMaterials(id); });
   // a model that arrives (or is swapped in by residency) after its component: the bag is re-announced, but be sure
-  bus.on('entity', ({ id, kind }) => { if (kind === 'spawn' || kind === 'place') { const bag = comps.get(id); if (bag && Object.keys(bag).some((k) => k === MAT || k.startsWith(`${MAT}:`))) requestAnimationFrame(() => applyMaterials(id)); } });
+  bus.on('entity', ({ id, kind }) => { if (kind === 'spawn' || kind === 'place') { const bag = bagOf(id); if (bag && Object.keys(bag).some((k) => k === MAT || k.startsWith(`${MAT}:`))) requestAnimationFrame(() => applyMaterials(id)); } });
   // a deleted override: the bag no longer has it, and nothing announces a deleted type by name everywhere; re-read on any comp change of a thing that had one
   bus.on('comp', ({ id }) => { const obj = entities.get(id); if (obj && meshes(obj).some((m) => m.userData.__matClones?.some(Boolean))) applyMaterials(id); });
   globalThis.__matoverride = { applyMaterials, materialsOf: (id) => materialsOf(entities.get(id)) };

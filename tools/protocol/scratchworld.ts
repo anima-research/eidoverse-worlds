@@ -4,7 +4,7 @@
 // request(openWorld(root, name), actor, verb, args), a `create-world` first to found the world (its founder is its owner).
 // @ts-nocheck
 import { scratch } from "./common.ts";
-import { request, LAB_CATALOGUE } from "../../shared/protocol/authority.js";
+import { request, LAB_CATALOGUE, liftWorld } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { viewState } from "../../shared/protocol/view.js";
 import { enc, encName } from "../../shared/protocol/names.js";
@@ -16,7 +16,7 @@ let T = 1800000000000;
 // the engine's catalogue is the library's GLB paths (server/modelcatalogue.ts); a scratch world names any path the tests
 // use: the lab's measured models where they exist, else a model the authority can name but not measure (no `size`)
 const ANY_MODEL = Object.freeze({ get: (n) => LAB_CATALOGUE.get(n) ?? (typeof n === "string" && n ? { label: n, surfaces: [] } : undefined), list: (q) => LAB_CATALOGUE.list(q) });
-const open = (root, name) => { const w = openWorld(root, name); w.catalogue = ANY_MODEL; return w; };
+const open = (root, name) => { const w = openWorld(root, name); w.catalogue = ANY_MODEL; liftWorld(w); return w; };
 let n = 0;
 const roots = new Map();
 
@@ -72,6 +72,21 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch" 
     },
   };
   return W;
+}
+
+/** A VIEW-form record ({model?, pos, …components flat}) as the fold holds it (`c`: {model?, transform, parent?, …components}, names encoded) — what seed()
+ *  writes, read back without the authority: the suites run their fixtures through the editor as fold records (C7b). */
+export function foldRecordOf(r, recs = null) {
+  const L = r.parent ? localOf(r, recs) : null;   // a child's transform is LOCAL to its parent (as seed writes it)
+  const pos = L?.mounted ? L.pos : r.pos ?? [0, 0, 0];
+  const q = (L?.mounted ? L.q : null) ?? qNorm(r.q) ?? qFromYaw((L?.mounted ? L.yaw : r.yaw) ?? 0);
+  const s = r.scale3 ?? (Number.isFinite(r.scale) ? [r.scale, r.scale, r.scale] : [1, 1, 1]);
+  const c = Object.create(null);
+  if (r.model) c.model = r.model;
+  c.transform = { pos, q, scale: s };
+  if (r.parent?.to) c.parent = { to: enc(r.parent.to), ...(r.parent.socket ? { socket: r.parent.socket } : {}) };
+  for (const [k, v] of Object.entries(recordComponents(r))) if (v !== undefined && k !== 'model' && k !== 'parent') c[encName(k)] = JSON.parse(JSON.stringify(v));   // the view's flat components (its model and parent are written above)
+  return c;
 }
 
 /** a request's ops, flattened (a batch's ops, or the one op) */

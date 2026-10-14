@@ -11,7 +11,7 @@
 //                    wholesale, removed by delete {id, component}
 //   3. the browser   client/lib/realize/models.js + state.js + the real bus, over tools/lod-client-stub.mjs's cone
 //                    (no renderer, no network), fed the views a client folds (hydrate the cut's view, then
-//                    applyView after each write): the bag is mirrored and announced, nobody claims it, nothing is
+//                    applyView after each write): the bag is announced, nobody claims it, nothing is
 //                    reported; motion.js's frame loop skips it
 //   4. the inspector shared/editschema.js — a raw-JSON field, editable by a door `set`; the edit's ops go through the
 //                    real authority on a scratch world and are read back
@@ -33,7 +33,7 @@ plugin({
   name: 'unknown-comp-stub',
   setup(b) {
     // the realizer's cone (realize/ imports ../x.js) and motion.js's (./x.js)
-    for (const f of ['^\\.\\./(core|assets|colliders|lightrig|lights|world)\\.js$',
+    for (const f of ['^\\.\\./(core|assets|colliders|lightrig|lights|world|materials)\\.js$',
       '^\\./(core|world|colliders|remotes)\\.js$']) {
       b.onResolve({ filter: new RegExp(f) }, () => ({ path: STUB }));
     }
@@ -55,7 +55,7 @@ const settle = async () => { for (let i = 0; i < 8; i++) await sleep(15); };
 const { inspectSchema, editOps, fieldAt } = await import('../shared/editschema.js');
 const { scratchWorld } = await import('./protocol/scratchworld.ts');
 
-const TYPE = 'weathervane';                 // a type no evaluator in this tree knows
+const TYPE = 'example.org/weathervane';     // a type no evaluator in this tree knows, in someone's own namespace (a bare name is refused at the door, PROTOCOL §4)
 const D1 = { points: 'north', vanes: [1, 2, { deep: true }], note: 'a cockerel' };
 const D2 = { points: 'south' };
 const LIB = 'eidoverse/assets/models/crate_large_red.glb';
@@ -98,8 +98,7 @@ for (let i = 0; i < 4; i++) { M.residencySweep?.(); await settle(); }
 const obj = stub.entities.get('crate');
 check('the entity realizes normally (an unknown comp blocks nothing)', !!obj && typeof obj.traverse === 'function',
   `entities.get('crate') = ${obj}`);
-check('the bag is mirrored into the comps map evaluators read, verbatim', jeq(stub.comps.get('crate')?.[TYPE], D1), JSON.stringify(stub.comps.get('crate')));
-check('…as a CLONE, never an alias of the folded state', stub.comps.get('crate')?.[TYPE] !== S.state.st.entities.crate?.[TYPE]);
+check('the record evaluators read (world.js bagOf: the fold\'s own, no mirror to fill) carries it verbatim', jeq(stub.bagOf('crate')?.[TYPE], D1), JSON.stringify(stub.bagOf('crate')));
 check('the join announces it on the bus like any component ({id, type, data})',
   heard.some((h) => h.id === 'crate' && h.type === TYPE && jeq(h.data, D1)), JSON.stringify(heard));
 
@@ -110,7 +109,7 @@ await settle();
 const live = heard.filter((h) => h.id === 'crate' && h.type === TYPE);
 check('a live replace and a live removal are each announced (data, then null)',
   live.length === 2 && jeq(live[0].data, D2) && live[1].data === null, JSON.stringify(heard));
-check('after the removal the comps map holds nothing for the entity', !stub.comps.has('crate'), JSON.stringify(stub.comps.get('crate')));
+check('after the removal the record evaluators read no longer carries it', stub.bagOf('crate')?.[TYPE] === undefined, JSON.stringify(stub.bagOf('crate')));
 check('the realizer reported nothing at any point (no error path was taken)', spy.reports.length === 0, JSON.stringify(spy.reports));
 
 // motion.js's per-frame loop walks the same map: an unknown key, and an
@@ -141,7 +140,7 @@ check('…and an emptied field removes it (delete)', jeq(del.ops, [{ verb: 'dele
   check('the authority keeps an unknown component verbatim', jeq(W.rec('crate')?.[TYPE], D1), JSON.stringify(W.rec('crate').comp));
   const r1 = W.send(set.ops[0]);
   check('…the edit replaces it wholesale (no merge with the old keys), and the door says it knows no evaluator for it',
-    r1.ok && jeq(W.rec('crate')?.[TYPE], { points: 'east' }) && (r1.notes ?? []).some((n: any) => n.component === TYPE && /isn't a component/.test(n.why)), JSON.stringify([r1.refused, r1.notes, W.rec('crate').comp]));
+    r1.ok && jeq(W.rec('crate')?.[TYPE], { points: 'east' }) && (r1.notes ?? []).some((n: any) => n.component === TYPE && /doesn't know/.test(n.why)), JSON.stringify([r1.refused, r1.notes, W.rec('crate')]));
   const r2 = W.send(del.ops[0]);
   check('…and the delete removes it', r2.ok && W.rec('crate')?.[TYPE] === undefined, JSON.stringify([r2.refused, W.rec('crate').comp]));
 }
