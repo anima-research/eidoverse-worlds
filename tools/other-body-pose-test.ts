@@ -40,11 +40,34 @@ check("replace sends the whole pose, and a replace with nothing left is a releas
   check("EW.clearPose() releases the caller's pose", state.pose === null && !sent.length);
   const threw = (f: () => unknown) => { try { f(); return false; } catch (e) { return e instanceof TypeError; } };
   EW.pose(arm);
-  check("a misspelled option throws rather than pose the caller", threw(() => EW.pose(null, { taget: "someone" })) && eq(state.pose, arm) && !sent.length);
-  check("options of another kind throw", threw(() => EW.pose(arm, 7 as any)) && threw(() => EW.animate({ dur: 1, tracks: {} }, ["x"] as any)) && !sent.length);
-  check("EW.clearPose takes a name or nothing", threw(() => EW.clearPose({ target: "someone" } as any)) && eq(state.pose, arm) && !sent.length);
+  // Every way a call meant for someone else could land on the caller throws,
+  // and the caller keeps its pose.
+  const refused: Array<[string, () => unknown]> = [
+    ["a misspelled option", () => EW.pose(null, { taget: "someone" })],
+    ["options of another kind", () => EW.pose(arm, 7 as any)],
+    ["options as a list", () => EW.animate({ dur: 1, tracks: {} }, ["x"] as any)],
+    ["options passed as undefined", () => EW.pose(null, undefined)],
+    ["options passed as null", () => EW.animate({ dur: 1, tracks: {} }, null as any)],
+    ["an empty name", () => EW.pose(null, "")],
+    ["an empty target", () => EW.pose(null, { target: "" })],
+    ["a target given as undefined", () => EW.pose(null, { target: undefined })],
+    ["a target that isn't a name", () => EW.pose(arm, { target: 7 as any })],
+    ["replace that isn't true or false", () => EW.pose(arm, { replace: "yes" as any })],
+    ["a name where the bones go", () => EW.pose("someone" as any)],
+    ["a target among the bones", () => EW.pose({ ...arm, target: "someone" } as any)],
+    ["a target inside the animation", () => EW.animate({ dur: 1, tracks: {}, target: "someone" } as any)],
+    ["clearPose with options", () => EW.clearPose({ target: "someone" } as any)],
+    ["clearPose with undefined", () => EW.clearPose(undefined as any)],
+    ["clearPose with null", () => EW.clearPose(null as any)],
+    ["clearPose with an empty name", () => EW.clearPose("")],
+  ];
+  const slipped = refused.filter(([, f]) => !threw(f)).map(([what]) => what);
+  check("every call that could land on the caller by mistake throws instead", !slipped.length && eq(state.pose, arm) && !sent.length && !played.length,
+    slipped.length ? `didn't throw: ${slipped.join(", ")}` : "");
   EW.animate({ dur: 1, tracks: {} });
   check("EW.animate plays on the caller, merging over its pose", played.length === 1 && played[0].replace === false && eq(state.pose, arm) && !sent.length);
+  EW.animate({ dur: 1, tracks: {} }, { replace: true });
+  check("...and a replacing animation ends the caller's pose first", played.length === 2 && played[1].replace === true && state.pose === null && !sent.length);
 }
 
 const lib = mkdtempSync(join(tmpdir(), "other-body-library-"));
@@ -123,6 +146,21 @@ try {
   const kneeling = await knock();
   check("a body knocked over while kneeling falls from its kneel", Math.abs(kneeling - standing + 0.3) < 1e-6,
     `rest hips y: standing ${standing}, kneeling ${kneeling}`);
+  // What each fall starts from, as begin() is handed it.
+  const begun: any[] = [], body = kneeler.body, begin = body.begin.bind(body);
+  body.begin = (o: any) => { begun.push(structuredClone(o)); return begin(o); };
+  kneeler.setPose(null);
+  // A pose no one authored, as a fall's own frames are.
+  const slumped = { spine: [0.3, 0, 0, Math.sqrt(0.91)], leftUpperArm: [0, 0, 0.5, Math.sqrt(0.75)] };
+  kneeler.heldPose = slumped; kneeler.heldPoseAuthored = false;
+  const again = await knock();
+  check("a body knocked over falls from the pose it was drawn in, whoever authored it",
+    Number.isFinite(again) && eq(begun.at(-1)?.pose, slumped), JSON.stringify(begun.at(-1)?.pose)?.slice(0, 120));
+  kneeler.setPose(null);
+  kneeler.pos.y = 0.5;     // standing on something above the terrain
+  const raised = await knock();
+  check("...and from the height it stood at, not the terrain under it",
+    begun.at(-1)?.rootY === 0.5 && Math.abs(raised - standing - 0.5) < 1e-6, `rootY ${begun.at(-1)?.rootY}, rest hips y ${raised}`);
 } catch (e) {
   process.exitCode = 1;
   throw e;
