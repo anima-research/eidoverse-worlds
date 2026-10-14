@@ -156,6 +156,14 @@ try {
   const again = await knock();
   check("a body knocked over falls from the pose it was drawn in, whoever authored it",
     Number.isFinite(again) && eq(begun.at(-1)?.pose, slumped), JSON.stringify(begun.at(-1)?.pose)?.slice(0, 120));
+  // A pose given while the fall waits on its skeleton and ground is the one
+  // it starts from (tumble's waits always yield, so this lands before begin).
+  kneeler.setPose(null);
+  const before = kneeler.body?.rd, given = { hips: { t: [0, -0.2, 0] }, head: [0, 0.2, 0, Math.sqrt(0.96)] };
+  kneeler.knockDown(poser.name, null, "(knocked over)");
+  kneeler.setPose(given);
+  await until(() => kneeler.body?.rd && kneeler.body.rd !== before, 15_000);
+  check("...and from a pose given while the fall waited to start", eq(begun.at(-1)?.pose, given), JSON.stringify(begun.at(-1)?.pose)?.slice(0, 120));
   kneeler.setPose(null);
   kneeler.pos.y = 0.5;     // standing on something above the terrain
   const raised = await knock();
