@@ -6,7 +6,7 @@ import { client, sleep, show, arrive, walk, settleAll, transformOf, copyWorlds, 
 import { openLive } from "../server/livehost.ts";
 import { request, settle } from "../shared/protocol/authority.js";
 import { restsOf, digestOf, simFold, livePoses } from "../shared/protocol/simlayer.js";
-const SRC = "/home/claude/eido/scratch-worlds/v4-garden", TREE = path.resolve(import.meta.dir, "..");
+const SRC = "/home/claude/eido/scratch-worlds/garden", TREE = path.resolve(import.meta.dir, "..");
 const SCR = process.env.SCR ?? "/tmp/claude-1000/-mnt-c-Users-Claude/59761a5f-1639-4fa8-8de1-0926d6c2903a/scratchpad/atk-own";
 const PH = (process.env.PHASE ?? "q").split(",");
 const say = (k, r) => console.log(k.padEnd(36), show(r));

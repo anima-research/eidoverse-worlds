@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { scratchBench, sleep } from "../tools/harness.ts";
 process.env.TRUST_NAMES = "1";
-const SRC = "/home/claude/eido/scratch-worlds/v4-garden";
+const SRC = "/home/claude/eido/scratch-worlds/garden";
 const { evalJson, cleanup, BASE, cdp } = await scratchBench("hintbar", {
   prepare: (scratch) => { const w = path.join(scratch, "worlds"); fs.mkdirSync(w, { recursive: true });
     for (const f of [".custody.json", ".directory.json"]) fs.copyFileSync(path.join(SRC, f), path.join(w, f));

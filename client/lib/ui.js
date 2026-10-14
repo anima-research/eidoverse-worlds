@@ -166,7 +166,10 @@ bus.on('esc-quiet', (did) => {
  *  didn't happen, and why (R, 10-10: "an 'attention' color feedback in the status bar at the bottom that fades away
  *  after a few seconds"), every time you ask — it outranks everything and holds while pointed at. */
 export function flashHint(line, ms = 2600, tone = null) {
-  claimStatus('flash', { priority: tone === 'attn' ? 1 : 3, content: line, tone, ttl: ms, hold: tone === 'attn' });
+  // the bar's order: attn 1 · keys 2 (a hand is on something NOW) · flash 2.5 (what just happened) · warn/hint 3. A flash
+  // beats the authority's warning on the same reply — what I did outranks the caveat, which shows once the flash ends
+  // (10-14 CD3: the warning claimed first and ate the copy notice) — but never the engaged gesture's keys (KH2)
+  claimStatus('flash', { priority: tone === 'attn' ? 1 : 2.5, content: line, tone, ttl: ms, hold: tone === 'attn' });
 }
 function endFlash() { releaseStatus('flash'); }
 el.hint.onpointerenter = () => { hovering = true; };
