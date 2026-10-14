@@ -500,8 +500,12 @@ async function sameAsBase() {
   if (!qs.length) return { same: false, replies: a.length, why: "no written rotation to check (the scan would be vacuous)" };
   const notUnit = qs.find((q) => Math.abs(Math.hypot(...q) - 1) > 1e-9);   // ours must BE unit, not merely compare as one
   if (notUnit) return { same: false, replies: a.length, notUnit };
+  // 2026-10-14: a refusal's code and its fix's shape are the contract; the metres inside its prose are a measurement of
+  // where a body ended up ('mug is 6.316 m from you' here vs 6.349 at the base — put-down-in-front-of-the-body, 2fdadb70,
+  // moved it 3 cm). Prose is compared with its decimals blanked, so a changed number in a reason is not a changed reply.
   const noA11y = (x: any) => JSON.stringify(x, (k, v) => (k === "can" || k === "state" || k === "description" ? undefined
-    : k === "q" && Array.isArray(v) && v.length === 4 && v.every(Number.isFinite) ? unitQ(v) : v));
+    : k === "q" && Array.isArray(v) && v.length === 4 && v.every(Number.isFinite) ? unitQ(v)
+    : (k === "reason" || k === "fix") && typeof v === "string" ? v.replace(/-?\d+(\.\d+)?/g, "#") : v));
   const diff = a.findIndex((x: any, i: number) => noA11y(x) !== noA11y(b[i]));
   return { same: diff < 0 && a.length === b.length, replies: a.length, ...(diff >= 0 ? { at: diff, here: JSON.stringify(a[diff]).slice(0, 300), base: JSON.stringify(b[diff]).slice(0, 300) } : {}) };
 }
