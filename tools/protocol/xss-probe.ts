@@ -189,6 +189,19 @@ try {
     await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable(false), true))`);
     check("K2 switching pushable off closes shove and move at the authority", await waitFor(`${table}.then((t) => t && t.shove === 'nobody' && t.move === 'nobody')`, 5000), await evalJson(table));
     await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable(true), true))`);
+    // 10-14: the client speaks the WHOLE table, not two bits. A cell no switch ever reached (friends' touch, Normal says
+    // everyone; strangers' near, Normal says ask) set in the browser is read back from the authority's view of my body.
+    const full = `import('/lib/net.js').then((m) => m.sendRequest('consent', {})).then((r) => r?.table ?? null)`;
+    check("K3 the client holds every cell: friends' touch is Normal's 'everyone' before I change it", await waitFor(`${full}.then((t) => t && t.friends.touch === 'everyone' && t.strangers.near === 'ask')`, 5000), await evalJson(full));
+    check("K3 (setup) setCell exists and takes a friends-tier cell", await evalJson(`import('/lib/consent.js').then((m) => m.setCell?.('friends', 'touch', 'nobody') === true).catch(() => false)`));
+    check("K4 a friends-tier cell set in the browser lands at the authority (friends' touch → nobody; strangers untouched)", await waitFor(`${full}.then((t) => t && t.friends.touch === 'nobody' && t.friends.shove === 'everyone' && t.strangers.shove === 'everyone')`, 5000), await evalJson(full));
+    await evalJson(`import('/lib/consent.js').then((m) => (m.setCell('strangers', 'near', 'everyone'), m.setCell('strangers', 'intimate', 'ask'), true))`);
+    check("K5 strangers' near → everyone and intimate → ask (cells the old two switches never reached) round-trip", await waitFor(`${full}.then((t) => t && t.strangers.near === 'everyone' && t.strangers.intimate === 'ask' && t.friends.touch === 'nobody')`, 5000), await evalJson(full));
+    check("K6 the choice is persisted under ew-consent", await evalJson(`(() => { try { const s = JSON.parse(localStorage.getItem('ew-consent')); return s.friends.touch === 'nobody' && s.strangers.near === 'everyone'; } catch { return false; } })()`));
+    check("K7 a preset resets every cell at the authority too", await evalJson(`import('/lib/consent.js').then((m) => m.applyPreset('normal'))`) === true && await waitFor(`${full}.then((t) => t && t.friends.touch === 'everyone' && t.strangers.near === 'ask' && t.strangers.shove === 'nobody')`, 5000), await evalJson(full));
+    await evalJson(`(async () => { (await import('/lib/windows.js')).getFrame('settings')?.show(); document.getElementById('sec-body-tab')?.click(); return true; })()`);   // a section paints when opened
+    check("K8 Settings has a body section with one select per cell, reading the table", await evalJson(`(() => { const sels = document.querySelectorAll('#sec-body select[data-tier]'); return sels.length === 16 && [...sels].every((s) => s.value === 'everyone' || s.value === 'ask' || s.value === 'nobody'); })()`), await evalJson(`document.querySelectorAll('#sec-body select[data-tier]').length`));
+    await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable(true), true))`);
   });
 
   // ---- C: the page's own policy refuses inline script ----

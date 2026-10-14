@@ -1,8 +1,72 @@
-// Consent over my body — who may pose it, who may shove it. Deliberately a
-// leaf with ZERO lib imports: consent is consulted from the puppet path, the
-// drag path, and the command surface, and a yes/no question should not drag
-// anyone's module graph along to get answered. localStorage-backed so a
-// choice survives the session it was made in.
+// Consent over my body — who may stand near it, follow it, touch it, pose it,
+// shove it, drag it, speak at it. Deliberately a leaf with ZERO lib imports:
+// consent is consulted from the puppet path, the drag path, and the command
+// surface, and a yes/no question should not drag anyone's module graph along
+// to get answered. (shared/protocol/consent.js is pure data + functions, the
+// SAME file the authority runs; importing it is what keeps the two tables one
+// vocabulary.) localStorage-backed so a choice survives the session it was
+// made in.
+//
+// The table is the authority's (PROTOCOL L6): every CLASS × every TIER, each
+// cell everyone | ask | nobody. Until 10-14 the client could only say two bits
+// (pushable, posable) and the server filled the other 13 cells with Normal.
+// Now the client holds the whole table and the two old switches are a PRESET
+// over it — setPushable/setPosable still exist, still mean what they meant
+// (strangers' shove+move / strangers' pose), so /pushable, bodydrag and the
+// puppet path are untouched.
+import { CLASSES, PRESETS, DEFAULT_PRESET } from '../../shared/protocol/consent.js';
+
+export { CLASSES };
+export const TIERS = ['strangers', 'friends'];
+export const MODES = ['everyone', 'ask', 'nobody'];
+// what each class means, for a settings row (the server's words, PROTOCOL §5)
+export const CLASS_WORDS = {
+  near: 'stand close to me', follow: 'follow me around', touch: 'touch me (hands, shoulders, back)',
+  intimate: 'touch me intimately (chest, waist, hips)', pose: 'pose my body', shove: 'knock me over',
+  move: 'drag or carry me', voice: 'speak into my ear',
+};
+
+const KEY = 'ew-consent';
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
+const fresh = (preset = DEFAULT_PRESET) => ({ strangers: { ...PRESETS[preset].strangers }, friends: { ...PRESETS[preset].friends } });
+const isMode = (m) => MODES.includes(m);
+
+// Load: the full table if one was saved; else the two OLD keys (ew-pushable,
+// ew-posable — the pre-10-14 switches) laid over Normal, so nobody's earlier
+// choice is lost by the upgrade. Every cell is validated: a stale or edited
+// store never puts a word the server would refuse into the table.
+function load() {
+  const t = fresh();
+  const saved = lsGet(KEY);
+  if (saved) {
+    try { const s = JSON.parse(saved);
+      for (const tier of TIERS) for (const c of CLASSES) if (isMode(s?.[tier]?.[c])) t[tier][c] = s[tier][c];
+      return t;
+    } catch { /* fall through to the old keys */ }
+  }
+  if (lsGet('ew-pushable') === '1') { t.strangers.shove = 'everyone'; t.strangers.move = 'everyone'; }
+  if (lsGet('ew-posable') === '1') t.strangers.pose = 'everyone';
+  return t;
+}
+let _table = load();
+const save = () => lsSet(KEY, JSON.stringify(_table));
+
+// The table, read-only by convention (a copy: nobody edits it behind the listeners' backs).
+export function table() { return { strangers: { ...(_table.strangers) }, friends: { ...(_table.friends) } }; }
+export function cell(tier, cls) { return _table[tier]?.[cls]; }
+function put(tier, cls, mode) {
+  if (!TIERS.includes(tier) || !CLASSES.includes(cls) || !isMode(mode)) return null;
+  if (_table[tier][cls] === mode) return false;
+  _table[tier][cls] = mode; return true;
+}
+export function setCell(tier, cls, mode) { const r = put(tier, cls, mode); if (r) { save(); changed(); } return r !== null; }
+// A whole preset (the server's: normal, open, friends-only, performer), replacing every cell.
+export function applyPreset(name) {
+  if (!Object.hasOwn(PRESETS, name)) return false;
+  _table = fresh(name); save(); changed(); return true;
+}
+export const PRESET_NAMES = Object.keys(PRESETS);
 
 // Being posed by someone else.
 //
@@ -12,29 +76,33 @@
 // and re-send as mine. Humans opt in (a director staging a scene is welcome; a
 // stranger yanking your limbs is not); agents accept by default, since being
 // directed is the point of a performer.
-let _posable = localStorage.getItem('ew-posable') === '1';
-export function posable() { return _posable; }
-export function setPosable(v) { _posable = v; localStorage.setItem('ew-posable', v ? '1' : '0'); changed(); }
+//
+// The client's final word reads the STRANGERS row: it cannot tell a friend
+// from a stranger (friendship is the authority's, mutual, stamped), so it
+// takes the narrower answer. The server has already refused what the friends
+// row forbids before anything arrives here.
+export function posable() { return _table.strangers.pose === 'everyone'; }
+export function setPosable(v) { setCell('strangers', 'pose', v ? 'everyone' : 'nobody'); }
 
 // Being SHOVED is a separate consent from being POSED. Posing is directorial —
 // someone else deciding what your body expresses. A shove is the world's
 // rough-and-tumble: it moves you without speaking for you. Both are OPT-IN
 // (R, 10-12: no one is shove-able by default): a stranger starts at the
 // server's Normal — shove/move/pose nobody — and only its owner opens it.
-// Friends are untouched by this switch (it sends the strangers tier only), so
-// Normal's friends row (shove everyone, move ask) still applies. Both are
-// still only requests: my client applies them to my body, or doesn't.
-let _pushable = localStorage.getItem('ew-pushable') === '1';
-export function pushable() { return _pushable; }
-export function setPushable(v) { _pushable = v; localStorage.setItem('ew-pushable', v ? '1' : '0'); changed(); }
+// Pushable covers being shoved and being dragged (bodydrag asks the same
+// switch). Both are still only requests: my client applies them to my body,
+// or doesn't.
+export function pushable() { return _table.strangers.shove === 'everyone'; }
+export function setPushable(v) { const m = v ? 'everyone' : 'nobody'; const a = put('strangers', 'shove', m), b = put('strangers', 'move', m); if (a || b) { save(); changed(); } }
 
-// The same two answers, as the authority's consent table (PROTOCOL L6, shared/protocol/consent.js) — the server checks it
-// before it forwards a stranger's knock-over, pose or grab (security pass 3; a body that never sends one is Normal,
-// where strangers' shove, pose and move are nobody). localbody.js sends it on every arrival and whenever it changes.
-// Pushable covers being shoved and being dragged (bodydrag asks the same switch); posable covers being posed.
+// The table as the authority takes it (consent verb, shared/protocol/consent.js setConsent): ONE preset, then one
+// `set {class, tier, mode}` per cell that differs from it. The preset sent is always Normal — the server's own default,
+// so a body that never sent anything and one that sent this agree — and the sets are the person's departures from it.
+// localbody.js sends this on every arrival and whenever a cell changes.
 export function bodyTable() {
-  const push = _pushable ? 'everyone' : 'nobody', pose = _posable ? 'everyone' : 'nobody';
-  return [['shove', push], ['move', push], ['pose', pose]];
+  const base = PRESETS[DEFAULT_PRESET], sets = [];
+  for (const tier of TIERS) for (const c of CLASSES) if (_table[tier][c] !== base[tier][c]) sets.push({ class: c, tier, mode: _table[tier][c] });
+  return { preset: DEFAULT_PRESET, sets };
 }
 const listeners = new Set();
 export function onConsentChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
