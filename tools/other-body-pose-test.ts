@@ -33,6 +33,7 @@ check("replace sends the whole pose, and a replace with nothing left is a releas
   EW.pose(arm);
   check("EW.pose poses the caller", eq(state.pose, arm) && !sent.length);
   check("EW.pose() with nothing named changes nothing and sends nothing", eq(EW.pose(), arm) && eq(state.pose, arm) && !sent.length);
+  check("...nor with a target: nothing named is no release of theirs", EW.pose(undefined, "someone") === undefined && !sent.length);
   EW.pose(null);
   check("EW.pose(null) releases the caller's pose", state.pose === null && !sent.length);
   EW.pose(arm); EW.clearPose();
