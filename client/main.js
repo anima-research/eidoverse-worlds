@@ -14,7 +14,7 @@ import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
 import { CONFIG, bus, report, tee, colorFor } from './lib/base.js';
 import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, EMOTE_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
-import { setSkyArgsSource, entities, buildsPending, avatarMounts, roleOf, worldHasOwner, comps } from './lib/world.js';
+import { setSkyArgsSource, entities, buildsPending, avatarMounts, roleOf, worldHasOwner, bagOf, bags, seatSocket, socketsOn } from './lib/world.js';
 import { presence } from './lib/presence.js';
 import { initWorldQuad } from './lib/worldquad.js';
 import { foldParity } from './lib/parity.js';
@@ -35,11 +35,12 @@ import { tickTexts } from './lib/texts.js';      // batch 2: signs (the text com
 import { tickOpenables } from './lib/openable.js';
 import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
-  setRightsHook, setMeHook, setFolded, photoMode, setBoundsHook,
+  setRightsHook, setMeHook, setFolded, photoMode, setBoundsHook, flying as flyingNow, capSpeed,
 } from './lib/controller.js';
 import { initUsePrompt } from './lib/useprompt.js';
 import { initClickUse, clickUseApi } from './lib/clickuse.js';
 import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js';
+import { initSeats } from './lib/seats.js';
 // The whole module as one object: net.js takes the participant registry by injection
 // now (it must carry the protocol for lite.js, which has no bodies to register), and
 // this is the real, body-building implementation of that interface.
@@ -437,6 +438,8 @@ wireNet({
 
 bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 
+initSeats();   // seat-profile verdicts (#101): fetch on boot, refresh on the two update events
+
 // ---------------------------------------------------------------- my body
 // The avatar swap + avatar-updated wiring rides mybody.js's import; the
 // physics of being a body here (ragdoll, seats, drag, pins, shoves) is
@@ -452,7 +455,7 @@ setMeHook(() => getMe());        // the fold pose is written onto the avatar
 
 // physics in a world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
 setBoundsHook(() => replica.st?.entities?.['@world']?.c?.bounds ?? null);
-initThingPhysics({ aim: () => clickUseApi.aimPoint(), myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState });
+initThingPhysics({ aim: () => clickUseApi.aimPoint(), myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState, flying: () => flyingNow(), capSpeed: (v, ms) => capSpeed(v, ms), mounts: () => avatarMounts });
 initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isEditing(), busy: () => photoMode || isDowned() });   // E: use what's in front of you
 initClickUse({ editing: () => isEditing(), busy: () => photoMode || isDowned(), myPos: () => myState.pos });   // the mouse: left-click a thing's primary use, right-click its menu
 // reach descriptors resolve against the same bodies everyone renders; my own
@@ -863,7 +866,8 @@ globalThis.whyIsItSilent = () => {
 
 const EW = globalThis.EW = {
   me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus, sendRequest,
-  avatarMounts, serverNow, comps,   // who sits where (presence), the sequencer's clock the seats' signals read, the component bags
+  avatarMounts, serverNow, bagOf, bags,   // who sits where (presence), the sequencer's clock the seats' signals read, a thing's fold record / every thing's
+  seatSocket, socketsOn,   // a seat ({to: <socket id>}) as {id, host, name, sock}; a thing's sockets (its socket children)
   skyArgs, setPosable, get posable() { return posable(); },
   // POSING from the console — the same verbs an agent's tools have. A value
   // per bone is [x,y,z,w] or {q, t, s} (shared/humanoid.js poseChannels).

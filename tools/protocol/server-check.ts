@@ -16,7 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import { readLog, fold, digest } from "../../shared/protocol/fold.js";
-import { makeReplica, stateFromView } from "../../shared/protocol/replica.js";
+import { makeReplica, stateFromWire } from "../../shared/protocol/replica.js";
 import { viewState } from "../../shared/protocol/view.js";
 import { enc } from "../../shared/protocol/names.js";
 import { worldPose } from "../../shared/hierarchy.js";
@@ -219,7 +219,9 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     throne: { pos: [0, 0.5, 0], body: { who: "owner" } },
     box: { pos: [0.6, 0.5, 0], body: { action: "drive", input: { move: "drive" }, leaveBy: "script" } },
     rumble: { pos: [-0.6, 0.5, 0], body: { action: "ride", leaveBy: "menu" } } } } })).ok, "S5e (Ann builds a carriage: an owner's throne, a driver's box that holds you, a rumble seat)");
-  for (let i = 0; i < 40 && !ag.entities.get("carriage")?.sockets; i++) await sleep(50);
+  // its seats are socket children (PLAN-sockets-entities: the map is lifted at the door): wait for all three
+  for (let i = 0; i < 40 && ag.socketsOf("carriage").length < 3; i++) await sleep(50);
+  const seatId = (n: string) => ag.socketsOf("carriage").find((x: any) => x.name === n)?.id;
   const lk = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
   ok(/box: drive \(.*drives it.*lets you go only when the world does/.test(lk) && /throne: sit \([^·]*owners only/.test(lk), "S5e look says what each seat does (box drives and holds you; the throne is owners only)", lk.split("\n").filter((l) => /carriage/.test(l)));
   // grabbable (slice 5): look says what a hand may do with a thing, the authority's own reading (shared/grab.js describeGrab)
@@ -227,14 +229,17 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   for (let i = 0; i < 40 && !ag.entities.get("lantern")?.grabbable; i++) await sleep(50);
   const lk2 = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
   ok(/lantern[^\n]*Take the lantern \(anyone may pick it up;[^\n]*use while held: light;[^\n]*goes home when let go\)[^\n]*act \{verb: "grab", args: \{id: "lantern"\}\}/.test(lk2), "S5g look says a grabbable thing can be picked up, by whom, what using it does and where it goes", lk2.split("\n").filter((l) => /lantern/.test(l)));
+  ok(["throne", "box", "rumble"].every((n) => !!seatId(n) && !lk.includes(seatId(n)!)) && /Things \(\d+\)/.test(lk), "S5e look lists the seats under the carriage by name, never as things of their own (nor as things it carries)", lk.split("\n").filter((l) => /carriage|empty|throne/.test(l)));
+  const thId = await HANDLERS.attach(ag, { to: seatId("throne") }, {} as any, "attach");
+  ok(thId.isError && /rights/.test(thId.content[0].text) && !ag.mySeat, "S5e attach takes a socket's own id too (the throne's: the authority still refuses a builder)", thId.content[0].text);
   const th = await HANDLERS.attach(ag, { to: "carriage", socket: "throne" }, {} as any, "attach");
   ok(th.isError && /rights/.test(th.content[0].text) && !ag.mySeat, "S5e attach to the owner's throne: the authority refuses a builder", th.content[0].text);
   const dv = await HANDLERS.attach(ag, { to: "carriage", action: "drive" }, {} as any, "attach");
-  ok(!dv.isError && ag.mySeat?.slot === "box", "S5e attach {action: 'drive'} picks the driver's box", [dv.content[0].text, ag.mySeat]);
+  ok(!dv.isError && !!seatId("box") && ag.mySeat?.to === seatId("box"), "S5e attach {action: 'drive'} picks the driver's box (my seat is its socket child)", [dv.content[0].text, ag.mySeat]);
   const up = await HANDLERS.detach(ag, {}, {} as any, "detach"), wk = await HANDLERS.move(ag, { to: [0, 0, 0] }, {} as any, "move");
-  ok(up.isError && wk.isError && ag.mySeat?.slot === "box", "S5e …it holds you (leaveBy script): neither detaching nor walking gets you off", [up.content[0].text, wk.content[0].text]);
+  ok(up.isError && wk.isError && ag.mySeat?.to === seatId("box"), "S5e …it holds you (leaveBy script): neither detaching nor walking gets you off", [up.content[0].text, wk.content[0].text]);
   const hop = await HANDLERS.attach(ag, { to: "carriage", socket: "rumble" }, {} as any, "attach");
-  ok(hop.isError && /from another seat/.test(hop.content[0].text) && ag.mySeat?.slot === "box", "S5e …and the rumble seat doesn't take you straight from another (no fromSeat)", hop.content[0].text);
+  ok(hop.isError && /from another seat/.test(hop.content[0].text) && ag.mySeat?.to === seatId("box"), "S5e …and the rumble seat doesn't take you straight from another (no fromSeat)", hop.content[0].text);
   ag.close(); }
 
 // (Bob's own socket was taken over by S5's agent, which joined as Bob: Vic and the watcher are the bystanders here)
@@ -401,15 +406,19 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   // what a person SEES: each thing's world pose as the renderer composes it (shared/hierarchy.js). A riding thing's own
   // v1 pos is its unused pre-mount pose, so comparing raw `pos` would compare a hidden field (translate-v1@2 DROPPED)
   const r6 = (v) => v.map((n) => Math.round(n * 1e6) / 1e6);
-  const E = (s) => Object.fromEntries(Object.entries(s.entities).map(([id, e]) => { const p = worldPose(s.entities, id);
-    return [id, { model: e.model ?? e.lib, at: r6(p.pos), q: r6(p.q), label: e?.label ?? e?.comp?.label, parent: e.parent?.to, socket: e.parent?.socket }]; }));   // the old server still says lib / comp.label
-  const neuView = viewState(stateFromView(neu.snapshot.cut.state));   // what the page draws: the view of its own fold of the cut
+  // (since sockets are entities, the served world is lifted at its first load: a thing at a socket rides that socket's child,
+  // so "at a socket" reads as the host and the child's name; the socket child itself is no thing of v1's)
+  const E = (s) => Object.fromEntries(Object.entries(s.entities).filter(([, e]) => !e?.socket).map(([id, e]) => { const p = worldPose(s.entities, id);
+    const via = s.entities[e.parent?.to]?.socket ? s.entities[e.parent.to] : null;
+    return [id, { model: e.model, at: r6(p.pos), q: r6(p.q), label: e?.label, parent: via ? via.parent?.to : e.parent?.to, socket: via ? via.socket.name : e.parent?.socket }]; }));
+  const neuView = viewState(stateFromWire(neu.snapshot.cut.state));   // what the page draws: the view of its own fold of the cut
   // the old server's records keep the old spelling (lib, comp.*): lift them to today's flat record so worldPose reads both sides the same way
   const lift = (s) => ({ ...s, entities: Object.fromEntries(Object.entries(s.entities).map(([id, e]) => { const { comp, lib, ...rest } = e; return [id, { ...rest, ...(lib !== undefined ? { model: lib } : {}), ...(comp ?? {}) }]; })) });
-  ok(JSON.stringify(E(lift(old.snapshot.state))) === JSON.stringify(E(neuView)), "S6 the new copy shows the same things to today's client, where they are (mounted at an offset and at a socket)", [E(old.snapshot.state), E(neuView)]);
+  ok(JSON.stringify(E(lift(old.snapshot.state))) === JSON.stringify(E(neuView)), "S6 the new copy shows the same things to today's client, where they are (mounted at an offset and at a socket)", [E(lift(old.snapshot.state)), E(neuView)]);
   const replica = fold(readLog(fs.readFileSync(path.join(W4, "oldtown-new", "world.jsonl")))).entities;
-  ok(JSON.stringify(replica[enc("mug_1")].c.parent) === JSON.stringify({ to: enc("lamp_1"), order: "a0", socket: "seat" }) && JSON.stringify(replica[enc("mug_1")].c.transform.pos) === "[0.3,0.75,0.1]",
-    "S6 a translated mount is in the authority's shape: transform local to the parent (here the socket's pos), parent {to, order, socket}", [replica[enc("mug_1")].c.parent, replica[enc("mug_1")].c.transform]);
+  const seatC = replica[replica[enc("mug_1")].c.parent?.to]?.c;
+  ok(seatC?.socket?.name === "seat" && seatC.parent?.to === enc("lamp_1") && JSON.stringify(seatC.transform.pos) === "[0.3,0.75,0.1]" && !("socket" in replica[enc("mug_1")].c.parent) && replica[enc("mug_1")].c.transform.pos.every((v) => Math.abs(v) < 1e-9),
+    "S6 a translated mount is in the authority's shape once the world is loaded: the socket is lamp_1's child at the socket's pos, and the mug rides it (parent {to: <the socket>}, at its origin)", [replica[enc("mug_1")].c.parent, replica[enc("mug_1")].c.transform, seatC]);
   ok(neu.snapshot.cut?.dialect === "eidoverse-log" && neu.snapshot.cut?.v === 4 && neu.snapshot.yourRights?.role === "owner" && !old.snapshot.cut, "S6 the new copy says {dialect, v}, and Ann still owns it (the original log is read only by the translator)", [neu.snapshot.yourRights, old.snapshot.cut]);
   ok(neu.snapshot.state.recentChat?.some((m) => m.text === "hello from v1"), "S6 the chat window comes across");
   const ed = await neu.req("set", { id: enc("lamp_1"), component: "label", value: "the new table" });
@@ -547,6 +556,31 @@ srv.proc.kill();
   ok(after.includes("system:act:return-held:ball") && after.includes("system:act:return-home:torch"), "SK1 after the restart, the authority settled both: the ball where the log had it (return-held), the torch home (release: return)", after);
   ok(!Object.keys(c.snapshot?.cut?.holds ?? {}).length && bodies.includes("ball") && bodies.includes("torch"), "SK2 …nobody holds them, and a joiner's engine has them back (colliders again)", [c.snapshot?.cut?.holds, bodies]);
   c.close(); srvB.proc.kill(); }
+
+// ================= SL: the load's socket lift, per host, said to the flight recorder (review 10-12 S2-3) =================
+// A world stored in the old spelling, by hand, with one host the door can't lift (a slot called "front seat": a socket's
+// name is one word, and the name is a shape, not a value the lift carries) before a healthy one. WorldLog lifts at construction: the healthy host lifts, the bad one is
+// left as it was, and attaching the world says it to its flight recorder (world_debug, /debug), with the host's id.
+{ const WS = scratch("srvlift"); const script = path.join(WS, "lift.ts");
+  fs.writeFileSync(script, `// @ts-nocheck
+import fs from "node:fs"; import path from "node:path";
+const W = process.env.WORLDS_DIR, E = process.env.ENGINE;
+const { custodyAt } = await import(E + "/server/custody.ts"); const { custodyFileIn } = await import(E + "/server/keyfiles.ts");
+const { translate } = await import(E + "/tools/protocol/import-v1/translate-v1.js");
+const cu = custodyAt(custodyFileIn(W)); const keys = { key: cu.sequencer(), operator: cu.operator() };
+const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+  { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "a-cart", lib: "crate", pos: [0, 0, 0] } }, { seq: 3, ts: 4, actor: "ann", verb: "spawn", args: { id: "b-bench", lib: "crate", pos: [3, 0, 0] } },
+  { seq: 4, ts: 5, actor: "ann", verb: "comp", args: { id: "a-cart", type: "sockets", data: { "front seat": { pos: [0, 0.5, 0], body: { action: "sit" } } } } },
+  { seq: 5, ts: 6, actor: "ann", verb: "comp", args: { id: "b-bench", type: "sockets", data: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } } }];
+fs.mkdirSync(path.join(W, "liftw"), { recursive: true }); fs.writeFileSync(path.join(W, "liftw", "world.jsonl"), translate(old, keys).out.map((e) => JSON.stringify(e)).join("\\n") + "\\n");
+const { WorldLog } = await import(E + "/server/worldlog.ts");
+const log = new WorldLog("liftw"); const notes = []; log.attach({ broadcast() {}, rightsChanged() {}, debug: (k, d) => notes.push({ kind: k, ...d }) });
+const st = log.live.state(); const kids = (h) => Object.values(st.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
+console.log("SL " + JSON.stringify({ notes, a: kids("a-cart"), aMap: !!st.entities["a-cart"].c.sockets, b: kids("b-bench") }));
+`);
+  const r = Bun.spawnSync(["bun", script], { env: { ...process.env, WORLDS_DIR: path.join(WS, "worlds"), ENGINE }, stdout: "pipe", stderr: "pipe" });
+  const line = String(r.stdout).split("\n").find((l) => l.startsWith("SL ")); const got = line ? JSON.parse(line.slice(3)) : null;
+  ok(!!got && got.b === 1 && got.a === 0 && got.aMap && got.notes.some((n) => n.kind === "lift-sockets" && n.host === "a-cart" && n.code === "shape"), "SL1 at load, a host the lift can't write is left as it was and said to the flight recorder (lift-sockets, its id and why); the healthy host after it lifts", got ?? String(r.stderr).slice(-400)); }
 
 console.log(`[server-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

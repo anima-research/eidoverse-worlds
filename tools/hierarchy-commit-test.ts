@@ -83,7 +83,7 @@ console.log("\nunparent (drag to the root zone, the ✕ on Parent, or `unparent`
   await H.flush();
   const req = H.sent.at(-1);
   // the book is scaled 0.8, so the lamp's world size is 0.8 of its own: the world transform carries it
-  check("ONE request: delete parent, then its WORLD transform (scale 0.8 kept), one act", r.ok && H.sent.length === 1 && req.verb === "batch" && req.args.ops[0].tool === "delete" && req.args.ops[0].args.component === "parent"
+  check("ONE request: delete parent, then its WORLD transform (scale 0.8 kept), one act", r.ok && H.sent.length === 1 && req.verb === "batch" && req.args.ops[0].verb === "delete" && req.args.ops[0].args.component === "parent"
     && near(req.args.ops[1].args.value.pos, W0.pos, 2e-3) && near(req.args.ops[1].args.value.scale, [0.8, 0.8, 0.8], 1e-9), JSON.stringify(H.sent));
   check("the door: a root, same world pose and size", !W().lamp.parent && near(worldPose(W(), "lamp")!.pos, W0.pos, 2e-3) && Math.abs(worldPose(W(), "lamp")!.scale - W0.scale) < 1e-9, JSON.stringify(W().lamp));
   const u = await Edits.undo();

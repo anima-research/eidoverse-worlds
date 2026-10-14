@@ -29,6 +29,8 @@ process.on("exit", () => {
   for (const c of children) { try { c.kill(); } catch { /* gone */ } }
   for (const n of nonces) { try { rmSync(n); } catch { /* ok */ } }
 });
+// a runner's time limit (tools/run-client.ts) ends it with SIGTERM: leave by the exit path, so the nonces go too
+process.on("SIGTERM", () => process.exit(143));
 
 async function freePort(): Promise<number> {
   for (let i = 0; i < 20; i++) {

@@ -9,7 +9,9 @@
 import { THREE, camera, canvas } from './core.js';
 import { CONFIG, angleDelta, bus } from './base.js';
 import { heightAt } from './terrain.js';
-import { resolveColliders, lastBlockedTop, findSeat, raySegment } from './colliders.js';
+import { resolveColliders, lastBlockedTop, lastContacts, findSeat, raySegment } from './colliders.js';
+import { bumpTick } from './hiddenbump.js';
+import { outOfMyView } from './myview.js';
 import { colliderFor, deskEyeY, canMantle, mantleStep } from './bodyscale.js';   // this body's chosen size: capsule, eye, mantle
 // ONE walker (shared/mover.js): the stride, its speeds and the body's size are the mover's, the same the agent steps
 // with and the authority checks; this file keeps the keys, the camera and the collider pass.
@@ -106,6 +108,10 @@ function flightGround(x, z) {
 }
 
 export const flying = () => !!flight;
+// a shove gave something my walk's momentum (thingphysics.js, shared/shove.js keptOf): for a moment my speed is at most what
+// I kept (a heavy crate stops me, a ball barely slows me)
+let speedCap = null;
+export function capSpeed(v, ms) { if (Number.isFinite(v) && ms > 0) speedCap = { v: Math.max(0, v), until: performance.now() + ms }; }
 
 // THE VIGIL POSTURE (spec section 1 fold_down, section 2 FOLDED, T6).
 //
@@ -370,7 +376,7 @@ const BODY_KEYS = [
 ];
 for (const { code, ...a } of BODY_KEYS) registerAction({ ...a, id: `body:${a.id}`, group: 'body' });
 
-// Declared seats (the `sockets` component — mount verb, rides motion) live in
+// Declared seats (socket children with a body block — use verb, rides motion) live in
 // main.js with the rest of the world vocabulary; the controller only knows
 // postures. main.js registers a hook so X reaches BOTH systems: sockets get
 // first claim (a swing that carries you beats sitting frozen mid-air where
@@ -384,7 +390,7 @@ function toggleSit() {
   if (posture === 'sit') { posture = null; myState.seat = null; return; }
   // Layer-0: if there's a real seat pan within reach, sit ON it. The geometry
   // is the affordance — a scanned stool is sittable the moment it arrives.
-  const seat = findSeat(myState.pos);
+  const seat = findSeat(myState.pos, undefined, (e) => !!outOfMyView(e.obj));   // a surface I hid is no seat offer
   if (seat) {
     myState.pos.set(seat.x, seat.y, seat.z);
     myState.yaw = seat.yaw;
@@ -602,7 +608,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 
 export function updateMe(dt, me) {
   if (!me) return;
-  if (photoMode) { updatePhotoCamera(dt); return; }
+  if (photoMode) { updatePhotoCamera(dt); bumpTick(null, dt); return; }   // no body moving: a mark already up still fades
 
   let fwd = Number(held(MOVE_KEYS.fwd)) - Number(held(MOVE_KEYS.back));
   let strafe = Number(held(MOVE_KEYS.right)) - Number(held(MOVE_KEYS.left));
@@ -661,6 +667,7 @@ export function updateMe(dt, me) {
   const full = walkSpeed({ run: running, creep: creeping, scale: me.userScale });   // the mover's speed for these keys
   const target = moving ? (xrIntent.active ? stickSpeed(mag, me.userScale) : full * mag) : 0;
   myState.speed = easeSpeed(myState.speed, target, dt);
+  if (speedCap && performance.now() < speedCap.until) myState.speed = Math.min(myState.speed, speedCap.v); else speedCap = null;
 
   // first person: the body faces where I look, standing still too (R, 10-10). Others see which way I'm looking, and what I
   // throw or set down "ahead" goes where my eyes are. Not on a seat, not while the edit camera is off on its own.
@@ -684,6 +691,7 @@ export function updateMe(dt, me) {
   const cap = colliderFor(me.userScale);   // the walking capsule grows and shrinks with the body; it still climbs
   const ground = resolveColliders(myState.pos, heightAt, cap.r, cap.tall, true);
   const blockedTop = lastBlockedTop();
+  bumpTick(lastContacts(), dt);   // a thing I hid stays solid: bumping it shows its outline (hiddenbump.js)
   // FLIGHT OWNS THE BODY while it lasts -- position, heading and clip -- the
   // same way a mantle or a ragdoll does. Walking resumes the moment she lands.
   if (flight) {

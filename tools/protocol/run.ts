@@ -30,6 +30,25 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["conformance", "compare.ts", 3],     // the JS fold vs the Python reference reader (+ its own tests)
   ["sweep", "sweep.ts", 4],             // the old-world importer (tools/protocol/import-v1/) on every local old world log + her dialect-3 goldens + pins
   ["browser", "browser-check.ts", 1],   // the shared core imported by headless Chromium, byte-for-byte with bun
+  ["descriptors", "../descriptor-defaults-test.ts", 1], // C5 (DEBT 10-12 #3a): every record and inspector default is the registry's, through the editor translation
+  ["light-readers", "../light-readers-test.ts", 1], // D2 (DEBT-2 #5): a light is found by kindOf and the rig's complight key, its gizmo is no box or material slot
+  ["ghost-mesh-size", "../ghost-mesh-size-test.ts", 1], // D1: every shape × scale the build ghost sends passes the door's mesh check (the plane at 1/1.1 did not)
+  ["boot-init", "../boot-init-test.ts", 1], // D3: every client init* has a caller (initSeats had none)
+  ["editor-range", "../editor-range-test.ts", 1], // D4a: the editor writes what was typed inside the door's range, and refuses outside it with nothing sent
+  ["lookat-forward", "../lookat-forward-check.ts", 1], // D7: the authority and the door give one verdict on every LookAt.forward
+  ["role-grammar", "../role-grammar-test.ts", 1], // D7: one role-id grammar (grab, sockbody, rolespanels, commands)
+  ["lock-level", "../lock-level-test.ts", 1], // D7: the lock ladders and the role ranks agree (messages.ts had no moderator)
+  ["rot", "../rot-test.ts", 1], // shared/rot.js: quaternion orientation, and no host transcendental (R1: lyingFrame had three)
+  ["build-gate", "../build-gate-test.ts", 1], // edit mode is gated at the chokepoint, never trapping a demoted builder (revived D6)
+  ["capsule-recovery", "../capsule-recovery-test.mjs", 1], // a remote's capsule fallback: bounded retries, the identity guard across takeovers (revived D6)
+  ["debug-tabs", "../debug-tabs-test.ts", 1], // the debug window builds only the chosen tab's groups (revived D6)
+  ["governor-xr", "../governor-xr-test.ts", 1], // in a headset the frame governor never moves the pixel ratio (revived D6)
+  ["unknown-comp", "../unknown-comp-test.ts", 1], // an unknown component blocks nothing, from the door to the realizer to the inspector (revived D6)
+  ["reach-order", "../reach-order-test.ts", 1], // reach chains solve in dependency order, cycles refuse and release cleanly (revived D6; needs the avatar corpus at assets/opt/eidoverse)
+  ["editcommit", "../editcommit-test.ts", 1], // inspect.js commitEdit against the real authority: a live call previews, the final one sends ONE request (revived by D2)
+  ["hierarchy-commit", "../hierarchy-commit-test.ts", 1], // a Hierarchy drag is ONE undo step, through commitEdit and the door, and Ctrl+Z takes it back (revived by D2)
+  ["verbclasses", "verbclasses-check.ts", 1], // one home for READ_ONLY/GHOST_OK/WIRE_READS/PERSON_ACTS (DEBT 10-12 #10); classes pinned as of 10-12
+  ["authority-layers", "authority-layers-check.ts", 1], // C11 (DEBT 10-12 #4b): the authority split is a DAG — a leaf under shared/protocol/authority/ never imports the gate or a leaf above it
   ["authority", "authority-check.ts", 1],
   ["directory", "directory-check.ts", 1],
   ["keyhints", "../keyhints-check.ts", 1], // R 10-04: no hidden keys in edit mode (every modifier tagged and shown)
@@ -39,6 +58,9 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["fork-reset", "fork-reset-check.ts", 1], // world fork (a new world naming its source) and reset (archived, re-founded by its owners)
   ["scripts", "scripts-check.ts", 1],   // research 41: scripts in QuickJS on sponsor rights; use → script; a timer through a real server
   ["grab", "grab-check.ts", 1],         // grabbable (research grab 10-06): the gate, release modes, the hold record, use while held
+  ["shove", "shove-check.ts", 1],       // body shove at the authority: punt {shove: true}'s own gate (a body against it, at a walk's speed, away from the feet, at rest)
+  ["shove-walker", "../shove-test.ts", 1], // …the walker's side (shared/shove.js): one punt per contact, bounded, none standing still or for what may not be shoved
+  ["agentshove", "agentshove-check.ts", 1], // …an agent's walk shoves too, through the same punt (a real WorldAgent on a real server)
   ["hands", "hands-check.ts", 1],       // what is in a hand and where a put lands: held things are not ground, no perching, an edit takes it from the hand, two hands
   ["reset", "reset-check.ts", 1],       // a reset button: reactions kind reset, the home component
   ["settle", "settle-check.ts", 1],
@@ -63,6 +85,8 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["soundclock", "soundclock-check.ts", 1], // a sound's shared playhead is on the server's clock (serverNow), never Date.now
   ["eidomodel", "eidomodel-check.ts", 1], // review 10-07 H3: a translated world's models are eido:sha256 addresses; the index, /eido/, /library/eido/, the client's mapping
   ["party-probe", "party-probe.ts", 1], // the editor's party blockers (review 10-07 B1–B5, S1/S4/S5/S7, lock levels, moderation commands) with real mouse and keys
+  ["colour-picker", "../colour-picker-bench.ts", 1], // the Inspector's colour field is a picker of solid cells a headset quad can click (R 10-12), in headless Chromium (one browser, guarded)
+  ["client-tools", "../run-client.ts --import-only", 14], // refactor plan 2 D5: every tools/*-{test,check} loads (a stub missing an export, a moved module); the full run is `bun tools/run-client.ts`
 ];
 const only = process.argv.slice(2);
 const env = { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }; // a cached transpile once hid a stale module (bun cache poison)
@@ -73,8 +97,9 @@ for (const [name, file, tail] of SUITES) {
   const t = performance.now();
   // the browser suite runs under the house guards when this host has them (one headless Chrome at a time, perf-guard,
   // no boot re-encoder: memory reference_browser_probe_hygiene); a host with no Chrome skips it, and says so
-  let cmd = ["bun", ENGINE + "tools/protocol/" + file]; let senv: Record<string, string | undefined> = env;
-  if (name === "client" || name === "client-b2" || name === "build-client" || name === "shiplist-probe" || name === "xss-probe" || name === "party-probe") {   // the browser suites
+  const [script, ...scriptArgs] = file.split(" ");
+  let cmd = ["bun", ENGINE + "tools/protocol/" + script, ...scriptArgs]; let senv: Record<string, string | undefined> = env;
+  if (name === "client" || name === "client-b2" || name === "build-client" || name === "shiplist-probe" || name === "xss-probe" || name === "party-probe" || name === "colour-picker") {   // the browser suites
     const home = process.env.HOME ?? "";
     const chrome = process.env.CHROME ?? [`${home}/.local/chrome153/chrome-linux64/chrome`, "/usr/bin/google-chrome", "/usr/bin/chromium"].find((p) => existsSync(p));
     if (!chrome) { console.log(`\n== ${name} (${file}) SKIPPED: no Chrome on this host (set CHROME)`); continue; }

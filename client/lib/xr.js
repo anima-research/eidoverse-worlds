@@ -18,6 +18,7 @@
 // foveation 1 standalone / 0 PC (Basis split; ?fov=), local-floor, and the settled law: NEVER navigate mid-session.
 
 import { confirmCenter } from './confirmcenter.js';
+import { outOfMyView } from './myview.js';
 import { installRenderListTolerance, THREE, renderer, camera, scene, XR_BOOT, PREF_HEADSET_SEEN, xrPixelRatio } from './core.js';
 import { decideEntryFailure } from './xr_entry_policy.js';   // what a failed session request MEANS (#197 B1)
 import { withXREyes } from './xrpass.js';   // a warm needs THREE'S two eyes: xr.getCamera() has none before a session
@@ -32,7 +33,7 @@ import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsAt, xrPanelsPress, x
 import { TEXT_SEL, domQuadsScroll, domQuadResizeBegin, domQuadResizeMove, domQuadResizeEnd, domQuadsRevealOnly, domQuadMesh } from './domquad.js';
 import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from './controller.js';
 import { ringEmoteEntries } from './emotebar.js';
-import { entities, comps } from './world.js';
+import { entities, bagOf, socketsOn } from './world.js';
 import { xrHand as grabHand, bindPresenting as bindGrabPresenting } from './thingphysics.js';   // world grabbing: the grabbable component's VR hands
 import { flashHint, toast } from './ui.js';
 import { vrMicPreflight } from './vrmic.js';
@@ -437,11 +438,11 @@ function rayHitEntity(handRay, far = 24) {
   _rc.ray.direction.set(0, 0, -1).applyMatrix4(_m);
   _rc.far = far;
   const roots = [...entities.values()].filter(Boolean);
-  const hit = _rc.intersectObjects(roots, true)[0];
+  const hit = _rc.intersectObjects(roots, true).find((h) => !outOfMyView(h.object));   // what isn't drawn for me isn't pointed at
   let n = hit?.object;
   while (n && !n.userData.entityId) n = n.parent;
   const normal = hit?.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : null;   // for the surface dot
-  return n ? { id: n.userData.entityId, dist: hit.distance, point: hit.point, normal, interactable: interactable(comps.get(n.userData.entityId)) } : null;
+  return n ? { id: n.userData.entityId, dist: hit.distance, point: hit.point, normal, interactable: interactable(bagOf(n.userData.entityId), socketsOn(n.userData.entityId).length) } : null;
 }
 
 

@@ -53,7 +53,10 @@ export const makeLightGizmo = () => new THREE.Object3D();
 export const findPart = () => null;
 export const entities = new Map();
 export const entityMeta = new Map();
-export const comps = new Map();
+export const comps = new Map();   // the suite's driver: what bagOf answers
+export const bagOf = (id) => comps.get(id) ?? null;
+export function* bags() { yield* comps; }
+export const metaOf = (id) => entityMeta.get(id) ?? null;
 export const editHolds = new Map();
 export const reindexCollider = () => {};
 export const heightAt = () => 0;
@@ -88,3 +91,19 @@ export const deselectSeat = () => {};
 export const seatMouseDown = () => false;
 export const seatKeyDown = () => false;
 export const updateSeatDrag = () => {};
+
+// ---- xrask.js (editwrites): a headset is never presenting
+export const xrActive = () => false;
+export const chooseXR = async () => null;
+// ---- realize/structure.js (structure_ui): the cutaway switch, inert
+export const setCutaway = () => {};
+// ---- net.js / ui.js (editwrites): no replica, no request answered, hints as text
+export const replica = { st: null };
+export const replicaActive = () => false;
+export const sendRequest = async () => ({ ok: false, refused: { code: 'not-joined', reason: 'not in a world' } });
+export const toast = (t) => { hints.push(String(t)); };
+// ui.js's one status bar (claimStatus/releaseStatus, DESIGN-status-bar.md): build.js claims the selection line, editwrites
+// claims 'warn' for a refusal. A text claim is a hint the suite reads, as flashHint's are; a node claim (the selection) is not.
+export const claimStatus = (id, { content = null } = {}) => { if (content != null) hints.push(String(content)); };
+export const releaseStatus = () => {};
+export { html } from '../client/lib/markup.js';

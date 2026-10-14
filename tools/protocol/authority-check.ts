@@ -13,9 +13,9 @@
 // @ts-nocheck
 import fs from "node:fs";
 import { scratch } from "./common.ts";
-import { request, creatorOf, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore } from "../../shared/protocol/authority.js";
+import { request, creatorOf, liftWorld, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore } from "../../shared/protocol/authority.js";
 import { fold, readLog, digest, opsOf, PURGED } from "../../shared/protocol/fold.js";
-import { makeReplica, stateView, stateFromView } from "../../shared/protocol/replica.js";
+import { makeReplica, wireState, stateFromWire } from "../../shared/protocol/replica.js";
 import { simFold, digestOf, restsOf } from "../../shared/protocol/simlayer.js";
 import { MODELS } from "../../shared/protocol/labmodels.js";
 import { enc, encName, dec } from "../../shared/protocol/names.js";
@@ -28,6 +28,7 @@ import { v1FoldBuild, v1FoldFiles } from "./import-v1/build.ts";
 import { emptyState as v1Empty, foldEntry as v1fold } from "./import-v1/fold.js";
 import { worldPose } from "../../shared/hierarchy.js";
 import { viewState } from "../../shared/protocol/view.js";
+import { worldPose as worldT } from "../../shared/protocol/simlayer.js";
 
 const root = scratch("door");
 // lab worlds name people by bare test names; the directory a real server has would know them (roles:<key> checks it)
@@ -435,7 +436,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   call("ann", "create-world", { title: "client" }); call("ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
   const c = makeReplica();
-  c.adopt(JSON.parse(JSON.stringify({ state: stateView(w.state()), head: w.entries.length - 1, worldId: w.worldId })));
+  c.adopt(JSON.parse(JSON.stringify({ state: wireState(w.state()), head: w.entries.length - 1, worldId: w.worldId })));
   let steps = 0, bad = null; const same = (a, b) => { const d = diffView(a, b); return !d.things.length && !d.world.length; };
   const step = (what, actor, verb, args) => { const from = w.entries.length; const r = call(actor, verb, args);
     const fresh = JSON.parse(JSON.stringify(w.entries.slice(from))); // over the wire: plain JSON
@@ -462,11 +463,11 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("ann", "create", { id: "gap-1", model: "crate", place: { at: [3, 3] } }); c.ingest(JSON.parse(JSON.stringify(w.entries.slice(c.head + 1))), c.head + 1);
   call("ann", "set", { id: "gap-1", component: "label", value: "x" }); const from = w.entries.length; ok(call("ann", "set", { id: "gap-1", component: "label", value: "y" }).ok, "K4 (precondition) the edit after the missed one is written");
   ok(c.ingest(JSON.parse(JSON.stringify(w.entries.slice(from))), from).resync, "K4 a gap (a missed entry) asks for a fresh snapshot, never folds past it");
-  const c2 = makeReplica(); c2.adopt(JSON.parse(JSON.stringify({ state: stateView(w.state()), head: w.entries.length - 1 })));
+  const c2 = makeReplica(); c2.adopt(JSON.parse(JSON.stringify({ state: wireState(w.state()), head: w.entries.length - 1 })));
   now += 100; w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: from + 1 }] } });
   ok(c2.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1).resync, "K5 a purge (retroactive, L1) asks for a fresh snapshot");
-  const sv = stateFromView(JSON.parse(JSON.stringify(stateView(w.state()))));
-  ok(digest(sv) === digest(w.state()) && sv.entities["gap-1"]?.c.label === PURGED, "K6 stateView survives the wire both ways, a purged value still purged (not a value)", sv.entities["gap-1"]?.c); }
+  const sv = stateFromWire(JSON.parse(JSON.stringify(wireState(w.state()))));
+  ok(digest(sv) === digest(w.state()) && sv.entities["gap-1"]?.c.label === PURGED, "K6 wireState survives the wire both ways, a purged value still purged (not a value)", sv.entities["gap-1"]?.c); }
 
 // ---- C: an off-centre catalogue box and measured surfaces ----
 { const cat = { get: (n) => ({ "lib/desk.glb": { label: "desk", box: [[-0.5, -0.4, -0.3], [0.7, 0.35, 0.5]], size: [1.2, 0.75, 0.8], surfaces: [{ y: 0.35, x: [-0.4, 0.6], z: [-0.2, 0.4] }] },
@@ -780,7 +781,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   R("ann", "create", { id: "chair1", model: "chair" });
   const sit = R("bob", "use", { id: "chair1", action: "sit" });
-  ok(sit.ok && sit.recorded === false && sit.attach?.to === "chair1" && sit.attach.socket === "seat" && sit.attach.pose === "sitchair", "SK1 a chair's model socket: use {sit} attaches you (presence), at its seat, in its pose", sit);
+  ok(sit.ok && sit.recorded === false && sit.attach?.host === "chair1" && openWorld(root, "sockets").state().entities[sit.attach.to]?.c.socket?.name === "seat" && sit.attach.socket === "seat" && sit.attach.pose === "sitchair", "SK1 a chair's model socket: use {sit} attaches you (presence), at its seat child (made when the chair was), in its pose", sit);
   ok(R("ann", "create", { id: "horse", model: "crate", components: { sockets: { saddle: { pos: [0, 1.2, 0], body: { action: "ride", pose: "sit", exit: [0.8, 0, 0] } }, pannier: { pos: [0.4, 0.8, 0] } } } }).ok, "SK2 sockets with and without a body are taken");
   const look = R("bob", "inspect", { id: "horse" });
   const offers = JSON.stringify(look);
@@ -890,7 +891,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(b(s2).t0 >= now + 100 - 300_000 && b(s2).utt === 4, "CP8 …t0 is clamped into the 5-minute utterance window", b(s2));
   ok(b(s5).t0 <= now + 600 && b(s5).t0 >= now, "CP8 …a t0 in the future is clamped to now", b(s5));
   ok(!("spoken" in b(s3)) && !("utt" in b(s3)) && !("t0" in b(s3)) && !("utt" in b(s4)), "CP8 …a malformed trio (utt -1, or no spoken) leaves a plain say", [b(s3), b(s4)]);
-  const k = makeReplica(); k.adopt({ state: stateView(fold(E.slice(0, s1.seq))), head: s1.seq - 1 });
+  const k = makeReplica(); k.adopt({ state: wireState(fold(E.slice(0, s1.seq))), head: s1.seq - 1 });
   const got = k.ingest([E[s1.seq]], s1.seq).says[0];
   ok(got?.spoken === true && got.utt === 3 && got.t0 === now - 1000, "CP8 …and a client's fold hands it on with the chat line", got); }
 // ---- CA: captions (one line of what a screen said). The rights live on the SCREEN (captioners {ids}); the tool writes
@@ -981,17 +982,302 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   call("bob", "create", { id: "plinth", components: { mesh: { shape: "box", size: [1.5, 0.8, 1.5] }, sockets: { perch: { pos: [0.5, 0.8, 0.5] } }, transform: { pos: [0, 0, 0] } } });
   const c = call("bob", "create", { id: "crate", model: "crate", components: { physics: { kind: "dynamic" } }, place: { on: "plinth" } });
   call("bob", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic" }, parent: { to: "plinth", socket: "perch" }, transform: { pos: [0, 0, 0] } } });
+  const perch = Object.keys(W().state().entities).find((k) => E(k)?.parent?.to === "plinth" && E(k)?.socket?.name === "perch"); const cup0 = JSON.stringify(E("cup")?.transform);
   ok(c.ok && E("crate")?.parent?.to === "plinth" && Math.abs(wy("crate") - 0.8) < 1e-3, "MS10 a crate placed on the plinth rides it at 0.8", { c: c.refused ?? null, y: wy("crate"), parent: E("crate")?.parent });
   const s1 = call("bob", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } });
   ok(s1.ok && Math.abs(wy("crate") - 0.3) < 1e-3 && (s1.notes ?? []).some((n) => n.setDown?.includes("crate")), "MS10a shrunk to 0.3: the crate is set down to 0.3 (no engine)", { y: wy("crate"), notes: s1.notes });
   const s2 = call("bob", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 1.0, 1.5] } });
   ok(s2.ok && Math.abs(wy("crate") - 1.0) < 1e-3 && E("crate")?.parent?.to === "plinth", "MS10b grown to 1.0: the crate is set down from ABOVE the new top, at 1.0, not buried inside (r2 S1.1)", { y: wy("crate"), notes: s2.notes });
-  ok(E("cup")?.parent?.socket === "perch" && JSON.stringify(E("cup")?.transform?.pos) === "[0,0,0]", "MS10c the cup on the perch socket was never a rider: it stays on its socket (r2 S2.2)", E("cup"));
+  ok(!!perch && E("cup")?.parent?.to === perch && JSON.stringify(E("cup")?.transform) === cup0, "MS10c the cup on the perch socket was never a rider: it stays on its socket (r2 S2.2; the socket is the plinth's perch child since the cut)", E("cup"));
   const n0 = W().entries.length; const s3 = call("bob", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 1.0, 1.5] } });
   ok(s3.ok && W().entries.length - n0 === 2 && !(s3.notes ?? []).some((n) => n.setDown || n.fell), "MS10d re-asserting the same mesh value writes 2 rows and re-drops nothing (r2 S2.1)", { rows: W().entries.length - n0, notes: s3.notes });
   const d = call("bob", "delete", { id: "plinth", component: "mesh" });
   ok(d.ok && !E("crate")?.parent && Math.abs(wy("crate")) < 1e-3 && !(d.notes ?? []).some((n) => n.stamped), "MS10e deleting the plinth's mesh frees the crate to the world and sets it on the ground; the reply doesn't say 'stamped' (r2 S2.3)", { y: wy("crate"), parent: E("crate")?.parent ?? null, notes: d.notes });
 }
+
+// SKE: a socket is a child entity {transform, parent: {to: host}, socket: {name, …}} (PLAN-sockets-entities 2026-10-12 §1)
+{ T += 100; process.env.PROTOCOL_NOW = String(T); const R = (actor, verb, args) => request(openWorld(root, "socketents"), actor, verb, args);
+  const E = (id) => openWorld(root, "socketents").state().entities[id]?.c;
+  R("ann", "create-world", { title: "socketents" });
+  R("ann", "create", { id: "bench", model: "crate" });
+  const sock = (id, extra = {}, socket = {}) => R("ann", "create", { id, components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "seat", body: { action: "sit" }, ...socket }, ...extra } });
+  const s1 = sock("bench-seat");
+  ok(s1.ok && E("bench-seat")?.socket?.name === "seat" && E("bench-seat")?.parent?.to === "bench", "SKE1 a socket child of a thing is taken", s1.refused ?? E("bench-seat"));
+  ok(code(sock("bench-lamp", { light: { kind: "point" } }, { name: "lamp" })) === "one-place" && code(sock("bench-crate", { model: "crate" }, { name: "c2" })) === "one-place" && code(sock("bench-phys", { physics: { kind: "dynamic" } }, { name: "p2" })) === "one-place", "SKE2 a socket carries no model, light or physics: one-place");
+  ok(sock("bench-swing", { motion: { type: "bob", amp: 0.1, period: 2 } }, { name: "swing" }).ok, "SKE2 …but a motion of its own is allowed (R 10-12 20:44)");
+  const dup = sock("bench-seat2");
+  ok(code(dup) === "name-taken" && dup.refused?.taken === "bench-seat", "SKE3 a second socket called 'seat' on the same host is refused: name-taken, naming the first", dup);
+  ok(R("ann", "create", { id: "stool", model: "crate" }).ok && R("ann", "create", { id: "stool-seat", components: { parent: { to: "stool" }, socket: { name: "seat" } } }).ok, "SKE3 …the same name on another host is fine");
+  const root0 = R("ann", "create", { id: "loose", components: { socket: { name: "seat" } } });
+  ok(code(root0) === "shape" && /needs a host/.test(root0.refused?.reason), "SKE4 a socket with no host (a root socket) is refused", root0);
+  ok(code(R("ann", "delete", { id: "bench-seat", component: "parent" })) === "shape" && E("bench-seat")?.parent?.to === "bench", "SKE4 …and a socket can't be unparented to the root");
+  ok(code(R("ann", "create", { id: "nested", components: { parent: { to: "bench-seat" }, socket: { name: "inner" } } })) === "shape", "SKE4 …nor hang under another socket");
+  ok(code(R("ann", "set", { id: "bench-seat", component: "transform", value: { pos: [0, 0.5, 0], q: [0, 0, 0, 1], scale: [2, 2, 2] } })) === "shape", "SKE5 a socket's scale is [1, 1, 1]: scale 2 is refused");
+  const drive = (id, name) => R("ann", "create", { id, components: { parent: { to: "stool" }, socket: { name, body: { input: { move: "drive" } } } } });
+  ok(drive("stool-d1", "d1").ok && code(drive("stool-d2", "d2")) === "shape", "SKE6 one driver among a host's sockets: a second drive socket is refused");
+  ok(code(R("ann", "create", { id: "badsock", components: { parent: { to: "stool" }, socket: { name: "x", pos: [0, 1, 0] } } })) === "schema", "SKE6 a socket's pose is its transform: socket.pos is an unknown key (did you mean)");
+  ok(code(R("ann", "create", { id: "badbody", components: { parent: { to: "stool" }, socket: { name: "z", body: { anchr: "hips" } } } })) === "schema" && code(R("ann", "create", { id: "badname", components: { parent: { to: "stool" }, socket: { name: "two words" } } })) === "shape", "SKE6 the body block is checked whole (an unknown body key; a name that isn't one)");
+  R("ann", "create", { id: "bench-arm", components: { parent: { to: "bench" } } }); R("ann", "create", { id: "bench-arm-rest", components: { parent: { to: "bench-arm" }, socket: { name: "rest" } } });
+  ok(code(R("ann", "set", { id: "bench-arm", component: "socket", value: { name: "arm" } })) === "shape" && !E("bench-arm")?.socket, "SKE4 …nor may a thing holding a socket become a socket itself");
+  ok(code(R("ann", "create", { id: "badwho", components: { parent: { to: "stool" }, socket: { name: "y", body: { who: "king" } } } })) === "shape", "SKE6 body.who is a role here");
+  // R 10-12 20:44 ruling 4: sockets don't count toward capacity.things
+  R("ann", "set", { id: "@world", component: "capacity", value: { things: 4 } });
+  const third = R("ann", "create", { id: "third", model: "crate" });
+  const sockAtCap = R("ann", "create", { id: "third-seat", components: { parent: { to: "third" }, socket: { name: "seat" } } });
+  const full = R("ann", "create", { id: "fourth", model: "crate" });
+  ok(third.ok && sockAtCap.ok && code(full) === "full" && full.refused?.things === 4, "SKE7 capacity counts things, never their sockets (ruling 4): with 3 things and 5 sockets a limit of 4 takes a 4th thing and a socket on it, and refuses a 5th thing", [third.refused, sockAtCap.refused, full.refused]);
+}
+
+// SKE8-10: the verbs read socket children (socketsOf): use, look, inspect; and a socket is never a thing a hand takes
+{ T += 100; process.env.PROTOCOL_NOW = String(T); const R = (actor, verb, args) => request(openWorld(root, "socketuse"), actor, verb, args);
+  R("ann", "create-world", { title: "socketuse" }); R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  R("ann", "create", { id: "sofa", model: "crate" });
+  R("ann", "create", { id: "sofa-l", components: { parent: { to: "sofa" }, transform: { pos: [-0.4, 0.5, 0] }, socket: { name: "left", body: { action: "sit", anchor: "hips" } } } });
+  R("ann", "create", { id: "sofa-r", components: { parent: { to: "sofa" }, transform: { pos: [0.4, 0.5, 0] }, socket: { name: "right", body: { action: "sit" } } } });
+  R("ann", "create", { id: "sofa-hook", components: { parent: { to: "sofa" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook", accepts: ["coat"] } } });
+  const u = R("bob", "use", { id: "sofa", action: "sit" });
+  ok(u.ok && u.attach?.to === "sofa-l" && u.attach.host === "sofa" && u.attach.socket === "left" && u.attach.anchor === "hips", "SKE8 use {id: host} sits on its first seat child: attach {to: <the socket>, host, socket: its name}", u);
+  const ur = R("bob", "use", { id: "sofa", action: "sit", args: { socket: "right" } });
+  ok(ur.ok && ur.attach?.to === "sofa-r", "SKE8 …args.socket names a child by its name", ur);
+  const us = R("bob", "use", { id: "sofa-r" });
+  ok(us.ok && us.attach?.to === "sofa-r" && us.attach.host === "sofa", "SKE8 use {id: <a socket>} is the direct form (its one action)", us);
+  ok(code(R("bob", "use", { id: "sofa-hook" })) === "no-action", "SKE8 …a socket with no body offers nothing to use");
+  const ins = R("bob", "inspect", { id: "sofa" });
+  ok(JSON.stringify(ins.actions) === '["sit"]' && JSON.stringify(ins.sockets?.map((x) => [x.id, x.name, x.as])) === '[["sofa-l","left","seat"],["sofa-r","right","seat"],["sofa-hook","hook","snap"]]', "SKE9 inspect {host}: its actions come from its seats, and it lists its sockets (id, name, seat | snap | attach)", [ins.actions, ins.sockets]);
+  const lk = R("bob", "look", {});
+  ok(lk.things.some((t) => t.id === "sofa" && t.sockets?.length === 3) && !lk.things.some((t) => ["sofa-l", "sofa-r", "sofa-hook"].includes(t.id)), "SKE9 look lists the host with its sockets, never a socket as a thing", lk.things.map((t) => t.id));
+  R("ann", "set", { id: "sofa-l", component: "disabled", value: true });
+  ok(R("bob", "use", { id: "sofa", action: "sit" }).attach?.to === "sofa-r", "SKE9 a switched-off socket is a closed seat: use picks the next");
+  R("bob", "move", { to: [0, 0, 0.8] }); const g = R("bob", "grab", { id: "sofa-r" });
+  ok(code(g) === "not-a-thing" && /sofa/.test(g.refused?.reason), "SKE10 grab of a socket is not-a-thing, naming its host", g); }
+
+// LS2: a world written before the cut (translate-v1 still writes the old spelling): undoing its last sockets edit lands
+// on socket children. The door lifts the host first (its stored map to children, the bell on its perch into the perch's
+// child, where it was), then the old value is a diff against them.
+{ const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+    { seq: 1, ts: 2, actor: "ann", verb: "spawn", args: { id: "tbl", lib: "table", pos: [2, 0, 3], yaw: 0.7 } },
+    { seq: 2, ts: 3, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 } } } },
+    { seq: 3, ts: 4, actor: "ann", verb: "spawn", args: { id: "bell", lib: "bell", pos: [-5, 0, -5] } },
+    { seq: 4, ts: 5, actor: "ann", verb: "mount", args: { id: "bell", to: "tbl", slot: "perch" } },
+    { seq: 5, ts: 6, actor: "ann", verb: "spawn", args: { id: "rack", lib: "crate", pos: [-2, 0, 1] } },
+    { seq: 6, ts: 7, actor: "ann", verb: "comp", args: { id: "rack", type: "sockets", data: { hook: { pos: [0, 0.8, 0.1] } } } },
+    { seq: 7, ts: 8, actor: "ann", verb: "spawn", args: { id: "coin", lib: "ball", pos: [3, 0, 3] } },
+    { seq: 8, ts: 9, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 }, seat: { pos: [0, 0.5, 0], sit: true } } } }];
+  const r = translate(old, DOORKEYS());
+  // a home naming a socket, as a pre-cut door stored it (v1 had no homes: written as that door wrote it, an act and its change)
+  // (before the last sockets edit, which stays the latest act: the one the undo below takes back)
+  const home = { pos: [0.1, 0, 0], q: [0, 0, 0, 1], parent: { to: "tbl", socket: "perch" } }; const wid = r.out[1].world; const n = r.out.length - 2;
+  const last = r.out.splice(n, 2); last[1] = { ...last[1], cause: last[1].cause + 2 };
+  r.out.push({ world: wid, kind: "act", actor: "ann", verb: "set", body: { request: { id: "coin", component: "home", value: home } }, ts: last[0].ts }, { world: wid, kind: "change", actor: "ann", cause: n, verb: "batch", body: { ops: [{ verb: "set", id: "coin", comp: "home", value: home }, { verb: "set", id: "coin", comp: "grabbable", value: { who: "visitor", home } }] }, ts: last[0].ts }, ...last);
+  fs.writeFileSync(root + "worlds/tr-lift.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const tc = (verb, args) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "tr-lift"), "ann", verb, args); };
+  const homeAt = (st, h) => worldT({ entities: { ...st.entities, x: { c: { parent: { to: h.parent.to }, transform: { pos: h.pos, q: h.q } } } } }, "x").pos;
+  const home0 = homeAt(openWorld(root, "tr-lift").state(), home);
+  const S = () => openWorld(root, "tr-lift").state();
+  const was = worldT(S(), "bell");
+  ok(S().entities.tbl.c.sockets?.seat && S().entities.bell.c.parent?.socket === "perch", "LS2 (the fixture) the translated world stores the old spelling: tbl.sockets {perch, seat}, bell on parent {to: tbl, socket: perch}", [S().entities.tbl.c.sockets, S().entities.bell.c.parent]);
+  const u = tc("undo", {});
+  const st = S(); const socks = Object.entries(st.entities).filter(([, e]) => e.c.parent?.to === "tbl" && e.c.socket).map(([k, e]) => [k, e.c.socket.name]);
+  const now = worldT(st, "bell"); const near = (a, b, e = 1e-8) => a.every((v, i) => Math.abs(v - b[i]) < e);
+  ok(u.ok && st.entities.tbl.c.sockets === undefined && JSON.stringify(socks.map((x) => x[1])) === '["perch"]', "LS2 undo of the pre-cut sockets edit lands on the children: tbl stores no map and has one socket child, perch (the seat it added is gone)", [u.refused, st.entities.tbl.c.sockets, socks]);
+  ok(st.entities.bell.c.parent?.to === socks[0]?.[0] && !("socket" in st.entities.bell.c.parent) && near(now.pos, was.pos) && near(now.q, was.q), "LS2 …and the bell rides the perch's child, where it was in the world (within 1e-8)", [st.entities.bell.c.parent, was, now]);
+  const ch = st.entities.coin.c.home;
+  const gh = st.entities.coin.c.grabbable?.home;
+  ok(ch?.parent?.to === socks[0]?.[0] && !("socket" in ch.parent) && near(homeAt(st, ch), home0) && gh?.parent?.to === socks[0]?.[0] && near(homeAt(st, gh), home0), "LS2 …a stored home (and grabbable.home) naming the perch now names its child, the same place in the world", [ch, gh, home0]);
+  const coin0 = worldT(S(), "coin"); const pc = tc("set", { id: "coin", component: "parent", value: { to: "rack", socket: "hook" } }); const s2 = S();
+  const hook = Object.keys(s2.entities).find((k) => s2.entities[k].c.parent?.to === "rack" && s2.entities[k].c.socket?.name === "hook");
+  ok(pc.ok && s2.entities.rack.c.sockets === undefined && !!hook && s2.entities.coin.c.parent?.to === hook && near(worldT(s2, "coin").pos, coin0.pos), "LS2 a parent {to, socket} on a host still holding its map lifts that host first: rack's hook is a child, and the coin rides it where it was", [pc.refused, s2.entities.rack.c.sockets, s2.entities.coin.c.parent]);
+  ok(!openWorld(root, "tr-lift").entries.slice(r.out.length).some((e) => e.kind === "change" && opsOf(e).some((o) => o.comp === "sockets" && o.verb === "set" || (o.comp === "parent" && o.value?.socket !== undefined))), "LS2 …and nothing written after the cut holds the old spelling");
+}
+
+// SR1 (review 10-12 S1-1): a socket child is part of its host. Creating one, re-parenting one, or setting its socket or
+// transform is an edit of the host's seats: the host's rights (a builder without editOthers can't seat ann's car) and the
+// locks over the host's chain, in either spelling (the legacy map lifts to creates, and those are judged the same).
+{ T += 100; process.env.PROTOCOL_NOW = String(T); const W = () => openWorld(root, "seatrights");
+  const R = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); return request(W(), actor, verb, args); };
+  const E = (id) => W().state().entities[id]?.c;
+  R("ann", "create-world", { title: "seatrights" });
+  R("ann", "set", { id: "@world", component: "role-defs", value: { builder: { can: { editOthers: false } }, crew: { name: "Crew", rank: 150, can: { build: true, editOthers: true } } } });
+  R("ann", "set", { id: "@world", component: "roles:dee", value: { role: "crew" } });
+  R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } }); R("ann", "set", { id: "@world", component: "roles:cy", value: { role: "owner" } });
+  R("ann", "create", { id: "car", model: "crate", components: { sockets: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } } });
+  const kids = (h) => Object.keys(W().state().entities).filter((k) => E(k)?.parent?.to === h && E(k)?.socket).map((k) => E(k).socket.name).sort();
+  const drv = { name: "drv", body: { action: "drive", input: { move: "drive" } } };
+  // 1. a foreign drive seat: neither spelling, and bob can't drive ann's car
+  const nat = R("bob", "create", { id: "bobdrv", components: { parent: { to: "car" }, transform: { pos: [0, 0.6, 0.3] }, socket: drv } });
+  const leg = R("bob", "set", { id: "car", component: "sockets", value: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } }, drv: { pos: [0, 0.6, 0.3], body: { action: "drive", input: { move: "drive" } } } } });
+  R("bob", "move", { to: [0, 0, 0.8] }); const dr = R("bob", "use", { id: "car", action: "drive" });
+  ok(code(nat) === "rights" && code(leg) === "rights" && code(dr) !== undefined && JSON.stringify(kids("car")) === '["seat"]', "SR1a a builder without editOthers can't add a drive seat to the owner's car (native and legacy map), so can't drive it", [nat.refused, leg.refused, dr.attach ?? dr.refused, kids("car")]);
+  // 2. under an owner-level lock: a builder and another owner are both refused a new socket
+  R("ann", "create", { id: "chair", model: "crate", components: { sockets: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } } });
+  R("ann", "set", { id: "chair", component: "lock", value: { rank: "owner" } });
+  R("ann", "create", { id: "cyshelf", model: "crate" }); R("ann", "set", { id: "cyshelf", component: "lock", value: { rank: "owner" } });
+  const lb = R("dee", "create", { id: "deeseat", components: { parent: { to: "chair" }, socket: { name: "s2", body: { action: "sit" } } } });
+  const lc = R("cy", "create", { id: "cyseat", components: { parent: { to: "chair" }, socket: { name: "s3", body: { action: "sit" } } } });
+  const lm = R("cy", "set", { id: "chair", component: "sockets", value: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } }, s5: { pos: [0, 1, 0] } } });
+  ok(code(lb) === "locked" && code(lc) === "locked" && code(lm) === "locked" && JSON.stringify(kids("chair")) === '["seat"]', "SR1b an owner-locked host refuses a new socket: a builder with editOthers, another owner, and the legacy map alike", [lb.refused, lc.refused, lm.refused, kids("chair")]);
+  // 3. squatting a name or the one driver on someone else's host: refused, so the owner's own later seat is taken
+  R("bob", "create", { id: "bobcrate", model: "crate", components: { transform: { pos: [4, 0, 0] } } });
+  const mine = R("bob", "create", { id: "bobhook", components: { parent: { to: "bobcrate" }, socket: { name: "drv", body: { action: "drive", input: { move: "drive" } } } } });
+  const re = R("bob", "set", { id: "bobhook", component: "parent", value: { to: "car" } });
+  const own = R("ann", "create", { id: "anndrv", components: { parent: { to: "car" }, socket: drv } });
+  ok(mine.ok && code(re) === "rights" && own.ok && E("anndrv")?.socket?.name === "drv", "SR1c re-parenting your own socket onto someone else's host is refused (rights), so it can't squat a name or the driver: the owner's own drv is taken", [mine.refused, re.refused, own.refused]);
+  const mk = R("bob", "create", { id: "bobmark", components: { parent: { to: "car" }, transform: { pos: [0, 1, 0] } } });
+  const be = R("bob", "set", { id: "bobmark", component: "socket", value: { name: "mark", accepts: ["key"] } });
+  ok(mk.ok && code(be) === "rights" && !E("bobmark")?.socket, "SR1c …nor make a bare thing of yours, hung on someone else's host, into a socket of it", [mk.refused, be.refused]);
+  const rl = R("cy", "create", { id: "cyhook", components: { parent: { to: "car" }, socket: { name: "cyh" } } });
+  const rl2 = R("cy", "set", { id: "cyhook", component: "parent", value: { to: "cyshelf" } });
+  ok(rl.ok && code(rl2) === "locked" && E("cyhook")?.parent?.to === "car", "SR1c …and onto a host locked above you (locked)", [rl.refused, rl2.refused]);
+  // 4. accepts capture: a foreign snap point on your thing, or a foreign socket's accepts rewritten
+  R("ann", "create", { id: "rack", model: "crate", components: { transform: { pos: [-4, 0, 0] } } });
+  const ac = R("bob", "create", { id: "bobsnap", components: { parent: { to: "rack" }, transform: { pos: [0, 1, 0] }, socket: { name: "grab", accepts: ["key"] } } });
+  R("ann", "create", { id: "rack-hook", components: { parent: { to: "rack" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook", accepts: ["coat"] } } });
+  const as = R("bob", "set", { id: "rack-hook", component: "socket", value: { name: "hook", accepts: ["key"] } });
+  const at = R("bob", "set", { id: "rack-hook", component: "transform", value: { pos: [0, 2, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
+  ok(code(ac) === "rights" && code(as) === "rights" && code(at) === "rights" && JSON.stringify(E("rack-hook")?.socket?.accepts) === '["coat"]', "SR1d a builder without editOthers can't hang a snap point (accepts) on the owner's thing, nor rewrite or move the owner's socket", [ac.refused, as.refused, at.refused]);
+  // the host's owner still may: bob seats his own crate, in either spelling; ann (owner) seats hers
+  const ob = R("bob", "create", { id: "bobseat2", components: { parent: { to: "bobcrate" }, socket: { name: "back", body: { action: "sit" } } } });
+  const om = R("bob", "set", { id: "bobcrate", component: "sockets", value: { drv: { pos: [0, 0.6, 0], body: { action: "drive", input: { move: "drive" } } }, back: { pos: [0, 0.5, 0], body: { action: "sit" } }, side: { pos: [0.5, 0.5, 0] } } });
+  const hm = R("bob", "create", { id: "bobnew", model: "crate", components: { transform: { pos: [6, 0, 0] } } }) && R("bob", "batch", { ops: [{ verb: "create", args: { id: "bobnew2", model: "crate" } }, { verb: "create", args: { id: "bobnew2-s", components: { parent: { to: "bobnew2" }, socket: { name: "s" } } } }] });
+  ok(ob.ok && om.ok && hm.ok && JSON.stringify(kids("bobcrate")) === '["back","drv","side"]', "SR1e the host's own builder still adds seats (natively, by the legacy map, and on a host made in the same batch)", [ob.refused, om.refused, hm.refused, kids("bobcrate")]);
+}
+
+// SR2 (review 10-12 S1-2): sockets aren't things (ruling 4), so they have a budget of their own: capacity.sockets (a world
+// setting, under the server's ceiling), guests' sockets together (capacity.guestSockets: a guest is a fresh identity per
+// connection), and at most SOCKETS_PER_HOST on one host. Only a write that adds sockets is refused (full).
+{ const W = () => openWorld(root, "sockcap"); const R = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); const w = W(); w.kindOf = (id) => (id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
+  const nSock = () => Object.values(W().state().entities).filter((e) => e.c.socket).length;
+  R("ann", "create-world", { title: "sockcap" }); R("ann", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
+  R("ann", "set", { id: "@world", component: "capacity", value: { guestThings: 2, things: 10 } });
+  // the review's C1: fresh guest identities, one batch of 20 described sockets each, onto one guest's crate
+  R("g1", "create", { id: "gbox", model: "crate" }); let n = 0, last = null;
+  for (let i = 0; i < 40; i++) { const x = R(`g${i + 2}`, "batch", { ops: Array.from({ length: 20 }, (_, j) => ({ verb: "create", args: { id: `gs-${i}-${j}`, components: { parent: { to: "gbox" }, socket: { name: `n${i}x${j}` }, description: "x".repeat(500) } } })) }); if (x.ok) n += 20; else { last = x; break; } }
+  ok(code(last) === "full" && n <= 64 && nSock() === n, "SR2a the review's C1 (a pool of guests, 20 described sockets a batch onto one crate) is refused full, at the host's ceiling", { n, last: last?.refused, sockets: nSock() });
+  // the guests' pool, across hosts
+  R("ann", "set", { id: "@world", component: "capacity", value: { guestThings: 20, things: 100, guestSockets: 30 } });
+  let gn = 0, glast = null;
+  for (let i = 0; i < 10; i++) { const host = `gh${i}`; R("ann", "create", { id: host, model: "crate", components: { transform: { pos: [i * 2, 0, 5] } } });
+    const x = R(`g${100 + i}`, "batch", { ops: Array.from({ length: 8 }, (_, j) => ({ verb: "create", args: { id: `gp-${i}-${j}`, components: { parent: { to: host }, socket: { name: `p${j}` } } } })) }); if (x.ok) gn += 8; else { glast = x; break; } }
+  const guestNow = Object.keys(W().state().entities).filter((k) => /^g[sp]-/.test(k)).length;
+  ok(code(glast) === "full" && /guestSockets/.test(glast?.refused?.reason ?? "") && guestNow <= 30 + n, "SR2b guests together have at most capacity.guestSockets sockets standing, across hosts (each a fresh identity)", { gn, glast: glast?.refused, guestNow });
+  const acct = R("ann", "create", { id: "acct-s", components: { parent: { to: "gh0" }, socket: { name: "a" } } });
+  ok(acct.ok, "SR2b …an account still adds one", acct.refused);
+  // the world's own socket budget, and deleting frees room
+  const have = nSock(); R("ann", "set", { id: "@world", component: "capacity", value: { sockets: have + 1 } });
+  R("ann", "create", { id: "w-host", model: "crate", components: { transform: { pos: [0, 0, -5] } } });
+  const one = R("ann", "create", { id: "w-s1", components: { parent: { to: "w-host" }, socket: { name: "a" } } });
+  const two = R("ann", "create", { id: "w-s2", components: { parent: { to: "w-host" }, socket: { name: "b" } } });
+  R("ann", "delete", { id: "w-s1" }); const three = R("ann", "create", { id: "w-s3", components: { parent: { to: "w-host" }, socket: { name: "c" } } });
+  ok(one.ok && code(two) === "full" && /capacity\.sockets/.test(two.refused?.reason ?? "") && three.ok, "SR2c capacity.sockets caps the world's sockets (an owner sets it); a delete frees room", [one.refused, two.refused, three.refused]);
+  ok(code(R("ann", "set", { id: "@world", component: "capacity", value: { sockets: 1e6 } })) !== undefined && W().state().entities["@world"].c.capacity.sockets === have + 1, "SR2c …under the server's ceiling: an owner can't raise it past it");
+  // one host's ceiling: an owner too
+  R("ann", "set", { id: "@world", component: "capacity", value: { sockets: 5000 } });
+  R("ann", "create", { id: "big", model: "crate", components: { transform: { pos: [0, 0, -9] } } });
+  const fill = R("ann", "batch", { ops: Array.from({ length: 64 }, (_, j) => ({ verb: "create", args: { id: `big-${j}`, components: { parent: { to: "big" }, socket: { name: `s${j}` } } } })) });
+  const over = R("ann", "create", { id: "big-64", components: { parent: { to: "big" }, socket: { name: "s64" } } });
+  const map = R("ann", "set", { id: "w-host", component: "sockets", value: Object.fromEntries(Array.from({ length: 70 }, (_, j) => [`m${j}`, { pos: [0, 1, 0] }])) });
+  ok(fill.ok && code(over) === "full" && over.refused?.limit === 64 && code(map) === "full", "SR2d one host holds at most 64 sockets (SOCKETS_PER_HOST), whoever asks and in either spelling", [fill.refused, over.refused, map.refused]);
+}
+// SR2e: the load's lift carries what the log already holds: a pre-cut host with 70 slots keeps all 70 (a carry, not a request)
+{ const slots = Object.fromEntries(Array.from({ length: 70 }, (_, j) => [`m${j}`, { pos: [0, 1, j * 0.01] }]));
+  const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+    { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "wall", lib: "crate", pos: [0, 0, 0] } }, { seq: 3, ts: 4, actor: "ann", verb: "comp", args: { id: "wall", type: "sockets", data: slots } }];
+  fs.writeFileSync(root + "worlds/sockcap-lift.jsonl", translate(old, DOORKEYS()).out.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const lw = openWorld(root, "sockcap-lift"); let threw = null; try { liftWorld(lw); } catch (x) { threw = String(x?.message ?? x); }
+  const st = openWorld(root, "sockcap-lift").state(); const n = Object.values(st.entities).filter((e) => e.c.parent?.to === "wall" && e.c.socket).length;
+  ok(!threw && n === 70 && st.entities.wall.c.sockets === undefined, "SR2e the load's lift is a carry: a pre-cut host of 70 slots lifts whole, past the per-host ceiling", { threw, n }); }
+
+// SRU (review 10-12 S2): undo across the load's lift. A pre-cut world: tbl has sockets {perch}, the bell is mounted on the
+// perch. Its writer is the door's own (translate-v1, then acts appended as a pre-cut door stored them); the load lifts it.
+const precut = (name, extra = [], acts = []) => {
+  const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "bob", role: "owner" } },
+    { seq: 2, ts: 2, actor: "ann", verb: "spawn", args: { id: "tbl", lib: "table", pos: [2, 0, 3], yaw: 0.7 } },
+    { seq: 3, ts: 3, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 } } } },
+    { seq: 4, ts: 4, actor: "ann", verb: "spawn", args: { id: "bell", lib: "bell", pos: [-5, 0, -5] } },
+    { seq: 5, ts: 5, actor: "ann", verb: "mount", args: { id: "bell", to: "tbl", slot: "perch" } }, ...extra];
+  const out = translate(old, DOORKEYS()).out; const wid = out[1].world;
+  for (const [actor, ops] of acts) { const n = out.length; const ts = out[n - 1].ts + 1;   // an act and its change, as a pre-cut door wrote them
+    out.push({ world: wid, kind: "act", actor, verb: ops.length > 1 ? "batch" : "set", body: { request: ops.length > 1 ? { ops } : { id: ops[0].id, component: ops[0].comp, value: ops[0].value } }, ts },
+      { world: wid, kind: "change", actor, cause: n, verb: "batch", body: { ops: ops.map((o) => ({ verb: "set", ...o })) }, ts }); }
+  fs.writeFileSync(root + `worlds/${name}.jsonl`, out.map((e) => JSON.stringify(e)).join("\n") + "\n"); return out; };
+const nearly = (a, b, e = 1e-8) => !!a && !!b && a.every((v, i) => Math.abs(v - b[i]) < e);
+// SRU1 (S2-1): a pre-cut act moved the bell up 0.2 m on its perch (the transform in the HOST's frame, as stored then)
+{ const W = () => openWorld(root, "sru1"); precut("sru1");
+  const b0 = fold(readLog(fs.readFileSync(root + "worlds/sru1.jsonl"))).entities.bell.c;
+  const moved = { pos: [b0.transform.pos[0], b0.transform.pos[1] + 0.2, b0.transform.pos[2]], q: b0.transform.q, scale: b0.transform.scale };
+  precut("sru1", [], [["ann", [{ id: "bell", comp: "transform", value: moved }]]]);
+  const before = worldT(fold(readLog(fs.readFileSync(root + "worlds/sru1.jsonl")).slice(0, -2)), "bell");
+  liftWorld(W()); T += 100; process.env.PROTOCOL_NOW = String(T); const u = request(W(), "ann", "undo", {});
+  const st = W().state(); const after = worldT(st, "bell"); const on = st.entities[st.entities.bell.c.parent?.to]?.c.socket?.name;
+  ok(u.ok && !(u.skipped?.length) && nearly(after.pos, before.pos) && nearly(after.q, before.q) && on === "perch", "SRU1 undo of a pre-cut move of cargo on a socket puts the bell back exactly (within 1e-8), still on the perch", { u: u.refused ?? u.skipped, before: before.pos, after: after.pos, on }); }
+
+// SRU2 (S2-2): ann's pre-cut `set tbl.sockets {perch, seat}`; after the cut nobody writes that key, so other people's work on
+// tbl's seats is creates and sets on its socket children. Undoing ann's edit must skip, as base did, not retire bob's work.
+for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "delete"]]) {
+  const W = () => openWorld(root, name);
+  precut(name, [{ seq: 6, ts: 6, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 }, seat: { pos: [0, 0.5, 0], sit: true } } } }]);
+  liftWorld(W()); const R = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); return request(W(), actor, verb, args); };
+  const kidOf = (n) => { const st = W().state(); return Object.keys(st.entities).find((k) => st.entities[k].c.parent?.to === "tbl" && st.entities[k].c.socket?.name === n); };
+  const perch = kidOf("perch"), seat = kidOf("seat");
+  const b = work === "hook" ? R("bob", "create", { id: "bobhook", components: { parent: { to: "tbl" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } })
+    : work === "perch" ? R("bob", "set", { id: perch, component: "transform", value: { pos: [0.45, 0.95, 0.25], q: W().state().entities[perch].c.transform.q, scale: [1, 1, 1] } })
+    : R("bob", "delete", { id: seat });
+  const snap = JSON.stringify(Object.keys(W().state().entities).filter((k) => W().state().entities[k].c.parent?.to === "tbl").sort().map((k) => [k, W().state().entities[k].c]));
+  const u = R("ann", "undo", {}); const st = W().state();
+  const kept = JSON.stringify(Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === "tbl").sort().map((k) => [k, st.entities[k].c])) === snap;
+  ok(b.ok && kept && (code(u) === "conflict" || (u.notes ?? []).some((n) => n.skipped?.some((x) => x.id === "tbl" && x.component === "sockets" && x.by === "bob"))), `SRU2 ${work === "hook" ? "bob adds a socket" : work === "perch" ? "bob moves the perch" : "bob deletes the seat"} after the cut; ann's undo of her pre-cut sockets edit skips (bob changed it since), and every child of tbl is as bob left it`, { b: b.refused, u: u.ok ? { ok: true, skipped: u.skipped, notes: u.notes } : u.refused, kept }); }
+
+// SRW (S2-3): the load's lift of a host the door would refuse today. Pre-cut: role-defs crew; a-chair's seat has body.who
+// 'crew'; b-chair has a plain seat; crew is deleted. The lift re-spells what the log holds (a carry: no re-judging
+// historical values), and one host that fails anyway doesn't stop the hosts after it: it's said, per host, to the caller.
+{ const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+    { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "a-chair", lib: "crate", pos: [0, 0, 0] } }, { seq: 3, ts: 4, actor: "ann", verb: "spawn", args: { id: "b-chair", lib: "crate", pos: [3, 0, 0] } },
+    { seq: 4, ts: 5, actor: "ann", verb: "spawn", args: { id: "c-chair", lib: "crate", pos: [6, 0, 0] } }];
+  const write = (name, ops) => { const out = translate(old, DOORKEYS()).out; const wid = out[1].world;
+    for (const o of ops) { const n = out.length; const ts = out[n - 1].ts + 1; const req = o.verb === "delete" ? { id: o.id, component: o.comp } : { id: o.id, component: o.comp, value: o.value };
+      out.push({ world: wid, kind: "act", actor: "ann", verb: o.verb, body: { request: req }, ts }, { world: wid, kind: "change", actor: "ann", cause: n, verb: o.verb, body: { id: o.id, comp: o.comp, ...(o.verb === "set" ? { value: o.value } : {}) }, ts }); }
+    fs.writeFileSync(root + `worlds/${name}.jsonl`, out.map((e) => JSON.stringify(e)).join("\n") + "\n"); };
+  const seat = (extra = {}) => ({ seat: { pos: [0, 0.5, 0], body: { action: "sit", ...extra } } });
+  write("srw1", [{ verb: "set", id: "@world", comp: "role-defs", value: { crew: { name: "Crew", rank: 150, can: { build: true } } } },
+    { verb: "set", id: "a-chair", comp: "sockets", value: seat({ who: "crew" }) }, { verb: "set", id: "b-chair", comp: "sockets", value: seat() }, { verb: "delete", id: "@world", comp: "role-defs" }]);
+  let threw = null, out = null; try { out = liftWorld(openWorld(root, "srw1")); } catch (x) { threw = String(x?.message ?? x).slice(0, 200); }
+  const st = openWorld(root, "srw1").state(); const kids = (h) => Object.values(st.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
+  T += 100; process.env.PROTOCOL_NOW = String(T); const sit = request(openWorld(root, "srw1"), "ann", "use", { id: "b-chair", action: "sit" });
+  ok(!threw && kids("a-chair") === 1 && kids("b-chair") === 1 && !st.entities["a-chair"].c.sockets && !st.entities["b-chair"].c.sockets && sit.ok, "SRW1 a seat whose who names a role since deleted lifts anyway (the lift is a carry), and so does the healthy host after it", { threw, out, a: kids("a-chair"), b: kids("b-chair"), sit: sit.refused });
+  // a host the lift can't write at all (here: the first append for it throws, as a full disk would) is said and
+  // skipped, and the hosts after it still lift: liftWorld never throws for one host
+  write("srw2", [{ verb: "set", id: "a-chair", comp: "sockets", value: seat() }, { verb: "set", id: "b-chair", comp: "sockets", value: seat() }, { verb: "set", id: "c-chair", comp: "sockets", value: seat() }]);
+  const w2 = openWorld(root, "srw2"); const real = w2.append.bind(w2); let n = 0; w2.append = (e, ...more) => { if (e.kind === "act" && e.verb === "lift-sockets" && e.body?.id === "a-chair" && !n++) throw new Error("disk full"); return real(e, ...more); };
+  let t2 = null, o2 = null; try { o2 = liftWorld(w2); } catch (x) { t2 = String(x?.message ?? x); }
+  const s2 = openWorld(root, "srw2").state(); const k2 = (h) => Object.values(s2.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
+  const failed = (o2 ?? []).find((x) => x.host === "a-chair" && x.failed);
+  ok(!t2 && !!failed && /disk full/.test(failed.failed.reason ?? "") && k2("b-chair") === 1 && k2("c-chair") === 1 && !!s2.entities["a-chair"].c.sockets, "SRW2 a host whose lift fails is reported ({host, failed}) and left as it was; the hosts after it lift", { t2, o2, b: k2("b-chair"), c: k2("c-chair") });
+  const again = liftWorld(openWorld(root, "srw2")); const s3 = openWorld(root, "srw2").state();
+  ok(again.some((x) => x.host === "a-chair" && x.made) && Object.values(s3.entities).filter((e) => e.c.parent?.to === "a-chair" && e.c.socket).length === 1, "SRW2 …and the next load lifts it", again); }
+
+// LG1 (a grep-pin, as nonumber-check is): past the door nothing reads the old spelling. The authority's state readers name
+// socket children; only authority/sockets.js (the translator and the load's lift) reads a stored `sockets` map, a
+// parent {to, socket} or a home's socket
+{ const dir = new URL("../../shared/protocol/", import.meta.url).pathname;
+  const files = ["authority.js", ...fs.readdirSync(dir + "authority").filter((f) => f.endsWith(".js") && f !== "sockets.js").map((f) => `authority/${f}`)];
+  const OLD = /\bc\??\.sockets\b|\bparent\??\.socket\b|\bhome\??\.parent\??\.socket\b|\.sockets\?\.\[|modelOf\([^)]*\)\??\.sockets\b|\bm\??\.sockets\b/;
+  const hits = files.flatMap((f) => fs.readFileSync(dir + f, "utf8").split("\n").map((l, i) => [f, i + 1, l.replace(/^\s*\/\/.*$/, "").replace(/\s\/\/ .*$/, "")]).filter(([, , l]) => OLD.test(l)));
+  ok(!hits.length, `LG1 no reader of the old spelling outside authority/sockets.js (${files.length} files)`, hits.map(([f, n, l]) => `${f}:${n}: ${String(l).trim().slice(0, 100)}`)); }
+// LG1b (review 10-12 S3-4): …nor anywhere a client, an agent or a shared reader looks: shared/, client/lib, mcpl. The few
+// that read a map on purpose are named, each with why: the Inspector's Sockets card reads (and writes) the map that
+// socketMapIn builds FROM the children until the Parts UI (12b); a blueprint's own records keep their spelling (11/12);
+// hierarchy.js socketOf/localOf read a record in the old spelling (a v1 fold's: the M checks draw v1 by it; a blueprint's
+// parts); grab.js's home shape check accepts the old field (the door lifts it first)
+{ const root = new URL("../../", import.meta.url).pathname;
+  const walk = (d) => fs.readdirSync(root + d, { withFileTypes: true }).flatMap((x) => x.isDirectory() ? (x.name === "node_modules" || x.name === "vendor" ? [] : walk(`${d}/${x.name}`)) : /\.(js|mjs|ts)$/.test(x.name) ? [`${d}/${x.name}`] : []);
+  const files = [...walk("shared"), ...walk("client/lib"), ...walk("mcpl")].filter((f) => f !== "shared/protocol/authority/sockets.js");
+  const OLD = /\b(c|comp|m)\??\.sockets\b|\.sockets\?\.\[|modelOf\([^)]*\)\??\.sockets\b|\b(parent|rel)\??\.socket\b|\bhome\??\.parent\??\.socket\b/;
+  const ON_PURPOSE = [["shared/editschema.js", /withSocketMap|ent\.comp\?\.sockets\)|c\.sockets\b/], ["shared/blueprint.js", /rel\.socket/], ["shared/hierarchy.js", /rel\??\.socket/], ["shared/grab.js", /h\.parent\.socket/]];
+  const hits = files.flatMap((f) => fs.readFileSync(root + f, "utf8").split("\n").map((l, i) => [f, i + 1, l.replace(/^\s*(\/\/|\*|\/\*\*).*$/, "").replace(/\s\/\/ .*$/, "")])
+    .filter(([, , l]) => OLD.test(l) && !ON_PURPOSE.some(([pf, re]) => pf === f && re.test(l))));
+  ok(files.length > 100 && !hits.length, `LG1b no reader of the old spelling in shared/, client/lib or mcpl but the named ones (${files.length} files)`, hits.map(([f, n, l]) => `${f}:${n}: ${String(l).trim().slice(0, 100)}`)); }
 
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

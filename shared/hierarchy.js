@@ -20,15 +20,18 @@ import * as OP from './protocol/requests.js';
 import { enc } from './protocol/names.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { qNorm, qMul, qRotate, qFromYaw, qHeading } from './rot.js';
-import { socketQ } from './components.js';
+import { socketQ, lightOf } from './components.js';
+import { kindOf } from './protocol/kind.js';
+import { socketRole } from './sockbody.js';
+import { r9 } from './protocol/round.js';
 
 const conj = (q) => [-q[0], -q[1], -q[2], q[3]];
-const r3 = (v) => +(+v).toFixed(4);
-const r9 = (v) => +(+v).toFixed(9);
 /** A pure turn about +Y (no tilt): such an orientation travels as a bare yaw. */
 const upright = (q) => Math.abs(q[0]) < 1e-9 && Math.abs(q[2]) < 1e-9;
 
-/** The socket a mount names, resolved on its carrier — or null. */
+/** The socket a mount names, resolved on its carrier — or null. Only a record in the old spelling has one: a v1 fold's
+ *  (tools/protocol/import-v1/fold.js, which authority-check's M checks draw v1 by) and a blueprint's own published parts
+ *  (blueprint.js). A live record's socket is a child entity, and its mount names that entity (PLAN-sockets-entities). */
 export function socketOf(world, rel) {
   if (!rel?.socket) return null;
   const s = world?.[rel.to]?.sockets?.[rel.socket];
@@ -118,13 +121,14 @@ export function childrenOf(world, id) {
   return Object.keys(world ?? {}).filter((k) => world[k]?.parent?.to === id).sort();
 }
 
-/** What a row says a thing IS, in a word or two: a light, an Empty, or its model's file stem. */
+/** What a row says a thing IS, in a word or two: kindOf's word, or a model's file stem (+ light for an imported lamp). */
 export function kindHint(ent) {
   if (!ent) return '?';
-  const lit = ent?.light && typeof ent.light === 'object';
-  const mesh = ent?.mesh && typeof ent.mesh === 'object' ? ent.mesh.shape : null;
-  if (ent.model == null) return typeof mesh === 'string' ? `${mesh}${lit ? ' + light' : ''}` : lit ? 'light' : 'empty';
-  const plus = lit ? ' + light' : '';
+  const kind = kindOf(ent);
+  if (kind === 'socket') return socketRole(ent.c ?? ent);   // what it is for: seat, snap or attach (never stored)
+  const plus = lightOf(ent) ? ' + light' : '';
+  if (kind === 'mesh') return `${(ent.c ?? ent).mesh.shape}${plus}`;
+  if (kind !== 'model') return kind;
   return `${String(ent.model).split('/').pop().replace(/\.glb$/, '').split('_').slice(0, 3).join(' ')}${plus}`;
 }
 

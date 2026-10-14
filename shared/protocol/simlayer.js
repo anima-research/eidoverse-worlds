@@ -17,6 +17,7 @@ import { fold, opsOf, applyOps, applyInPlace, emptyState, Malformed, PURGED } fr
 import { MODELS } from "./labmodels.js";
 import * as eidosim from "../sim.js";
 import { isBoxShape, shapeError } from "./shapes.js";
+import { r3, r2 } from "./round.js";
 
 // Determinism is per binary (18b), so an engine is named AND hashed. This build carries one:
 // sha256(sim.js ‖ NUL ‖ eidosim.js ‖ NUL ‖ simmath.js ‖ NUL ‖ terrainmath.js), first 16 hex.
@@ -279,7 +280,7 @@ export function restsOf(entries) {
 export function livePoses(sf) {
   const out = {};
   if (!sf.sim) return out;
-  for (const [id, b] of Object.entries(sf.sim.bodies)) if (!b.resting && sf.launched[id]) out[id] = { pos: b.p.map((n) => Math.round(n * 1000) / 1000), v: b.v.map((n) => Math.round(n * 100) / 100) };
+  for (const [id, b] of Object.entries(sf.sim.bodies)) if (!b.resting && sf.launched[id]) out[id] = { pos: b.p.map(r3), v: b.v.map(r2) };
   return out;
 }
 /** The sim's cut for a joiner (the authority's side of simFolder's opts.from), as plain JSON: where the engine stands at the

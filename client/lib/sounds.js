@@ -48,7 +48,7 @@
 //  10. Mute for me (mediaprefs.js): a muted thing's sound is gain 0, never logged.
 import { THREE, camera } from './core.js';
 import { bus, CONFIG } from './base.js';
-import { entities, comps } from './world.js';
+import { entities, bags, bagOf } from './world.js';
 import { audioContext } from './audioctx.js';
 import { serverNow } from './serverclock.js';
 import { playWhenAllowed } from './audiounlock.js';
@@ -217,7 +217,7 @@ bus.on('comp', ({ id, type, data }) => { if (type === 'sound') applyFrom(id, dat
 bus.on('entity', ({ id, kind }) => { if (kind === 'remove') { blocked.delete(id); teardown(id); } });   // demote/promote: the tick re-finds the root
 bus.on('world-reset', () => clearSounds());
 // the viewer changed what their browser may fetch: every sound is read again under the new rule
-bus.on('media:trust', () => { for (const [id, c] of comps) if (c?.sound) applyFrom(id, c.sound); });
+bus.on('media:trust', () => { for (const [id, c] of bags()) if (c?.sound) applyFrom(id, c.sound); });
 export function clearSounds() { blocked.clear(); for (const id of [...playing.keys()]) teardown(id); }
 
 // ---- the editor block: how a HUMAN puts a sound on a thing ------------------
@@ -235,7 +235,7 @@ export async function uploadSound(file) {
 }
 
 registerEditor(({ id, obj, meta, bag, commit }) => {
-  if (!obj || obj.userData?.isLight) return null;
+  if (!obj || meta?.kind === 'light') return null;
   const cur = bag?.sound && typeof bag.sound === 'object' ? bag.sound : null;
   const vol = Number(cur?.volume ?? 0.8), rad = Number(cur?.radius ?? 12);   // numbers into markup: never a string from the world
   return {
@@ -284,7 +284,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
         ev.target.blur();
       });
       q('pause')?.addEventListener('click', (ev) => {
-        const norm = normalizeSound({ ...bagFrom(false), ...(comps.get(id)?.sound?.t0 ? { t0: comps.get(id).sound.t0 } : {}) });
+        const norm = normalizeSound({ ...bagFrom(false), ...(bagOf(id)?.sound?.t0 ? { t0: bagOf(id).sound.t0 } : {}) });
         if (!norm.ok) { msg(norm.why, true); return; }
         commit('sound', norm.sound); msg('paused'); ev.target.blur();
       });

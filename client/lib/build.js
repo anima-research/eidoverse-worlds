@@ -23,11 +23,12 @@ import { THREE, scene, camera, canvas } from './core.js';
 import { bus, report } from './base.js';
 import { loadGLB, libLabels } from './assets.js';
 import { makeLightGizmo } from './lights.js';
-import { entities, entityMeta, comps, editHolds } from './world.js';
+import { entities, metaOf, bagOf, editHolds } from './world.js';
 import { reindexCollider } from './colliders.js';
 import { heightAt } from './terrain.js';
 import { net, sendDrag } from './net.js';
 import { scaleOf } from '../../shared/scale3.js';
+import { MESH_DEFAULT, ghostMeshSize } from './meshghost.js';
 import { engage, release } from './keyhints.js';
 import { placeRefusal } from '../../shared/blueprint.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
@@ -35,7 +36,8 @@ import { flashHint, collapseAll, panelFrame, html, claimStatus, releaseStatus } 
 import { paint, escapeHtml } from './markup.js';
 import { pushHostHook } from './autohooks.js';
 import { clickable } from './selectmask.js';
-import { sceneSelect, sceneSelected, sceneDeselect } from './scenegraph.js';
+import { outOfMyView } from './myview.js';
+import * as Sel from './edit/selection.js';
 import { claimEscape } from './windows.js';
 import { currentTool as structureTool, setTool as setStructureTool } from './structure_ui.js';   // an armed building tool is Esc's first rung
 import { state } from './state.js';   // one rule for who may author (and one name for them), shared with the scene panel
@@ -50,7 +52,7 @@ const _hit = new THREE.Vector3();
 // ============================================================ state
 
 let ghost = null;         // { obj, lib, yaw, scale, bp? } — a thing not yet placed (bp: a blueprint copy, {hash, record})
-let selected = null;      // { id, obj, box } — a placed thing under edit
+let selected = null;      // { id, obj } — the selection's primary thing, resolved to its object (edit/selection.js is the truth)
 let dragging = null;      // { id, offset, plane } while moving a selection
 
 // Editing is a MODE.
@@ -188,7 +190,7 @@ export function setInspectorHtml(line) {   // text, or markup built with html`` 
   showSelbar();
 }
 function showInspector(id) {
-  const meta = entityMeta.get(id) ?? {};
+  const meta = metaOf(id) ?? {};
   ensureInspector();
   // its NAME first (R 10-11: the bar said 'crate_large_blue'), then the model's library label, its file, its id
   const own = Edits.compsOf(id)?.label;
@@ -213,48 +215,41 @@ function showInspector(id) {
 }
 export function hideInspector() { releaseStatus('selection'); }
 
+/** The selection's primary thing, when it is a thing. */
+const primaryThing = () => { const s = Sel.selection(); return s.kind === 'things' ? s.ids[0] ?? null : null; };
 export function select(id) {
-  const obj = entities.get(id);
-  if (!obj) return;
-  selected = { id, obj };
-  // the residency sweep must never demote what someone is editing — id-based
-  // because promotion swaps the object out from under a userData flag
-  editHolds.add(id);
-  outline.box.setFromObject(obj);
-  outline.visible = true;
+  if (!entities.get(id)) return;
+  // one store (edit/selection.js); the panels, the gizmo and this file's outline all follow its event
+  Sel.set([id]);
   showInspector(id);
-  // the scene panel follows the mouse: selecting a thing opens its row —
-  // transform fields, semantic editors, comp bag — scrolled into view
-  sceneSelect(id);
 }
-/** The deliberate deselect (Esc, Edit ▸ deselect): the viewport pick AND what the
- *  inspector shows. Plain deselect() stays viewport-only — undo calls it, and an undo
- *  must not throw away the selection you are working on. */
-export function deselectAll() { deselect(); sceneDeselect(); }
+/** The deliberate deselect (Esc, Edit ▸ deselect): the selection itself. Plain deselect() drops the gesture and the
+ *  helper strip and re-reads the selection — undo calls it, and an undo must not throw away the selection you are
+ *  working on. */
+export function deselectAll() { deselect(); Sel.clear(); }
 export function deselect() {
-  if (selected) editHolds.delete(selected.id);
-  selected = null;
   dragging = null;
-  outline.visible = false;
   hideInspector();
+  followSelection();
 }
 export function refreshOutline() {
   if (selected) outline.box.setFromObject(selected.obj);
 }
 // ONE selection (R 10-11 01:13: "make sure the same entities that are selected agree with each other in the hierarchy and
 // the viewport"; 00:57: after undos, clicking away no longer deselected; 00:41: "Can the bounding box on moving objects
-// update as the objects translate?"). The scene selection (scenegraph) is the truth; each edit-mode frame the viewport's
-// pick follows it (a Hierarchy click, an undo, a model swapped under it) and its box is re-measured, so it tracks a thing
-// that moves.
-function syncSelection() {
-  if (!editMode) return;
-  const sid = sceneSelected(); const obj = sid != null ? entities.get(sid) : null;
+// update as the objects translate?"). edit/selection.js is the truth; `selected` is its primary resolved to an object,
+// set on its event and re-resolved each edit-mode frame (a model swapped under it, a thing gone) with the box
+// re-measured, so it tracks a thing that moves. The residency sweep must never demote what someone is editing —
+// editHolds is id-based because promotion swaps the object out from under a userData flag.
+function followSelection() {
+  const sid = editMode ? primaryThing() : null; const obj = sid != null ? entities.get(sid) : null;
   if (obj) {
     if (!selected || selected.id !== sid || selected.obj !== obj) { if (selected && selected.id !== sid) editHolds.delete(selected.id); selected = { id: sid, obj }; editHolds.add(sid); }
     obj.updateWorldMatrix(true, true); outline.box.setFromObject(obj); outline.visible = true;
   } else if (selected && !dragging) { editHolds.delete(selected.id); selected = null; outline.visible = false; }
 }
-pushHostHook(syncSelection);
+bus.on('selection', followSelection);
+pushHostHook(followSelection);
 /** For probes: what the viewport shows as selected (its outline box). */
 export const selectionView = () => ({ id: selected?.id ?? null, visible: !!outline.visible, min: outline.box.min.toArray(), max: outline.box.max.toArray() });
 // the echo of a place (ours from the inspector, or anyone's) moves the mesh; the box follows
@@ -277,7 +272,6 @@ function ghostify(obj) {
 // Create ▸ Box/Sphere/Cylinder/Plane/Capsule (R 10-12): a mesh thing (componentspec `mesh`), held as its own grey ghost and
 // placed with a click, standing on the floor (its origin is its base centre, the authority's boxOfM). Q/E turn it; ,/. scale
 // its default size. The lib is '@mesh:<shape>'.
-export const MESH_DEFAULT = { box: [1, 1, 1], sphere: [1, 1, 1], cylinder: [1, 1, 1], plane: [2, 0.05, 2], capsule: [0.5, 1.5, 0.5] };
 const meshOf = (lib) => (typeof lib === 'string' && lib.startsWith('@mesh:') ? lib.slice(6) : null);
 function meshGhost(shape, [x, y, z]) {
   const r = x / 2;
@@ -403,6 +397,8 @@ function aimPoint(skipId = null) {
   // thing being dragged under the pointer (and it would climb toward the camera). Skip its whole subtree.
   const skipObj = skipId != null ? entities.get(skipId) : null;
   if (skipObj) hits = hits.filter((h) => { for (let o = h.object; o; o = o.parent) if (o === skipObj) return false; return true; });
+  // a thing hidden in MY view still catches what I place: it is solid for everyone, and my private view must never shape a
+  // shared write (review 10-12 S3-5)
   if (hits.length) {
     const h = hits[0];
     // only treat near-horizontal faces as placement surfaces — a wall should
@@ -534,7 +530,7 @@ function commitSpawn() {
   let sent;
   if (ghost.bp) sent = Edits.copyBlueprint(ghost.bp.hash, { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], ...(ghost.scale !== 1 ? { scale: Array(3).fill(+(rootScale() * ghost.scale).toFixed(4)) } : {}) });
   else if (ghost.lib === '@empty') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z] }, components: { label: 'empty' } })], { what: 'place an empty', expect: false });
-  else if (meshOf(ghost.lib)) { const shape = meshOf(ghost.lib); const size = (MESH_DEFAULT[shape] ?? [1, 1, 1]).map((v) => +(v * ghost.scale).toFixed(3));
+  else if (meshOf(ghost.lib)) { const shape = meshOf(ghost.lib); const size = ghostMeshSize(shape, ghost.scale);
     sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)] }, components: { mesh: { shape, size }, label: shape } })], { what: `place a ${shape}`, expect: false }); }
   else if (ghost.lib === '@light') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y + 0.9, p.z] }, components: { light: { color: 0xffd9a0, intensity: 16, range: 10 } } })], { what: 'place a light', expect: false });   // a touch off the floor: a hanging bulb
   else sent = Edits.sendOps([OP.create(id, { model: ghost.lib, transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], scale: ghost.scale } })], { what: `place ${libLabels.get(ghost.lib) ?? ghost.lib}`, expect: false });
@@ -552,7 +548,7 @@ function commitSpawn() {
 }
 function selectWhenHere(id, ms = 3000) {
   const t0 = performance.now();
-  const go = () => { if (entities.has(id)) { if (editMode) sceneSelect(id); return; } if (performance.now() - t0 < ms) setTimeout(go, 60); };
+  const go = () => { if (entities.has(id)) { if (editMode) Sel.set([id]); return; } if (performance.now() - t0 < ms) setTimeout(go, 60); };
   go();
 }
 
@@ -561,7 +557,7 @@ function selectWhenHere(id, ms = 3000) {
 // on a locked id for everyone, locker included); these guards keep the local
 // gesture honest — no preview that would have to snap back on refusal, and a
 // hint that teaches the unlock instead of a silent dead hand.
-function isLocked(id) { return !!comps.get(id)?.lock; }
+function isLocked(id) { return !!bagOf(id)?.lock; }
 function commitPlace(before) {
   if (!selected) return;
   const o = selected.obj;
@@ -589,7 +585,7 @@ export function undo() {
 let removeHook = null;
 export function setRemoveHook(fn) { removeHook = fn; }
 /** What the keys act on: the inspector's selection, else the viewport's. */
-const keyTarget = () => sceneSelected() ?? selected?.id ?? null;
+const keyTarget = () => primaryThing();
 /** Edit ▸ delete: the same act as the Del key. */
 export function removeKeyTargets() { if (keyTarget()) removeTargets(); }
 function removeTargets() {
@@ -621,11 +617,24 @@ function marqueeEnd(e) { const m = marquee; marquee = null; if (!m) return; m.el
   if (Math.hypot(e.clientX - m.x, e.clientY - m.y) < 5) return;
   const x0 = Math.min(m.x, e.clientX), x1 = Math.max(m.x, e.clientX), y0 = Math.min(m.y, e.clientY), y1 = Math.max(m.y, e.clientY); const ids = [];
   const W = state.st?.entities ?? {};
-  for (const [id, o] of entities) { if (!o || !o.visible || !clickable(W, id)) continue; _mb.setFromObject(o); if (_mb.isEmpty()) continue;
+  for (const [id, o] of entities) { if (!o || !o.visible || outOfMyView(o) || !clickable(W, id)) continue; _mb.setFromObject(o); if (_mb.isEmpty()) continue;
     _mb.getCenter(_mc).project(camera); if (_mc.z > 1) continue;
     const sx = (_mc.x + 1) / 2 * innerWidth, sy = (1 - _mc.y) / 2 * innerHeight; if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) ids.push(id); }
   if (ids.length) bus.emit('edit-select-add', ids); }
 export const marqueeActive = () => !!marquee;
+
+/** The nearest hit under a viewport point (NDC) on a thing MY selection layers let me click (selectmask.js; the floor is
+ *  'environment', off at first) and that is in my view (a thing hidden with the eye is not drawn, so not clicked). */
+function pickHit(nx, ny) {
+  mouse.set(nx, ny);
+  raycaster.setFromCamera(mouse, camera);
+  const targets = [];
+  for (const o of entities.values()) if (o) targets.push(o);
+  const W = state.st?.entities ?? {};   // the editor's world view (lib, comp, parent), as editpanels reads it
+  return raycaster.intersectObjects(targets, true).find((h) => { let r = h.object; while (r && !r.userData.entityId) r = r.parent; return r && clickable(W, r.userData.entityId) && !outOfMyView(h.object); }) ?? null;
+}
+/** What a viewport click at NDC (nx, ny) would select: its id, or null. */
+export function pickAt(nx, ny) { let r = pickHit(nx, ny)?.object; while (r && !r.userData.entityId) r = r.parent; return r?.userData.entityId ?? null; }
 
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !editMode) return;  // outside edit mode the canvas is for looking
@@ -641,13 +650,7 @@ canvas.addEventListener('mousedown', (e) => {
   // left `mouse` in the right place works for a real pointer and fails for
   // anything that presses without moving first — a touch, a synthetic click,
   // a tab that regained focus under the cursor.
-  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
-  raycaster.setFromCamera(mouse, camera);
-  const targets = [];
-  for (const o of entities.values()) if (o) targets.push(o);
-  // the nearest hit on a thing MY selection layers let me click (selectmask.js; the floor is 'environment', off at first)
-  const W = state.st?.entities ?? {};   // the editor's world view (lib, comp, parent), as editpanels reads it
-  const hit = raycaster.intersectObjects(targets, true).find((h) => { let r = h.object; while (r && !r.userData.entityId) r = r.parent; return r && clickable(W, r.userData.entityId); });
+  const hit = pickHit((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   // a press on nothing: a DRAG from here orbits the camera; only a click that didn't travel deselects (an orbit that
   // threw away the selection every time would make looking around a thing impossible)
   if (!hit && e.shiftKey) { const d = document.createElement('div');   // keys: selectExtend
@@ -665,7 +668,7 @@ canvas.addEventListener('mousedown', (e) => {
   if (e.ctrlKey || e.metaKey) { bus.emit('edit-extend', id); e.preventDefault(); return; }   // keys: selectExtend
   // Shift: a click adds it to (or takes it from) the selection, as in the tree (R 10-11); a Shift press that TRAVELS is
   // still the vertical drag, so the thing is selected only once it starts to move
-  const shiftPick = e.shiftKey && !!sceneSelected() && sceneSelected() !== id;   // keys: selectExtend
+  const shiftPick = e.shiftKey && !!primaryThing() && primaryThing() !== id;   // keys: selectExtend
   if (!shiftPick) select(id);
   // A press is a SELECT. It only becomes a drag once the pointer actually
   // travels — otherwise clicking a thing to look at its label moved it.
@@ -757,7 +760,7 @@ bus.on('key', (e) => {
     else if (cancelSeatArm()) { /* an armed placement is the most transient state */ }
     else if (ghost) cancelGhost();
     else if (seatSelected()) deselectSeat();
-    else if (selected || sceneSelected()) deselectAll();
+    else if (primaryThing()) deselectAll();
     else if (editMode) setEditMode(false);
     return;
   }

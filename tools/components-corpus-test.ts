@@ -84,18 +84,18 @@ for (const [name, ent, want] of cases) {
   check(`${name}: reads as ${['Transform:', ...want].join(' + ')} and round-trips`,
     canon(back) === canon(ent) && canon(got) === canon(['Transform:', ...want]), `got ${got.join(' + ')} / ${canon(back)}`);
 }
-check('lightOf reads both spellings with the fold\'s defaults; the legacy one wins when both',
-  canon(lightOf({ model: L, light: {} })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, important: false, day: true })
-  && lightOf({ kind: 'light', color: 1, intensity: 2, range: 3, day: false, light: { color: 4 } })?.color === 1
-  && lightOf({ kind: 'light', color: 1, intensity: 2, range: 3, day: false })?.day === false
+check('lightOf reads comp.light with the fold\'s defaults; a v1 kind:"light" record is not a spelling the view has',
+  canon(lightOf({ model: L, light: {} })) === canon({ color: 0xffd9a0, intensity: 16, range: 10, important: false, day: true })
+  && lightOf({ light: { color: 1, intensity: 2, range: 3, day: false } })?.day === false
+  && lightOf({ kind: 'light', color: 1, intensity: 2, range: 3, day: false }) === null
   && lightOf({ model: L, light: 'on' }) === null && lightOf({ model: L }) === null);
 check('lightOf never lets a bad field reach the rig (NaN, string, negative → default)',
-  canon(lightOf({ light: { color: 'red', intensity: -1, range: NaN, important: 'yes' } })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, important: false, day: true }));
+  canon(lightOf({ light: { color: 'red', intensity: -1, range: NaN, important: 'yes' } })) === canon({ color: 0xffd9a0, intensity: 16, range: 10, important: false, day: true }));
 check('colliderOf: comp.collider wins, a bad shape falls back to legacy collide, absent = undefined',
   colliderOf({ collide: 'box', collider: { shape: 'exact' } }) === 'exact'
   && colliderOf({ collide: 'box', collider: { shape: 'mesh' } }) === 'box'
   && colliderOf({ model: L }) === undefined);
-check('isEmpty: no lib and not a legacy light', isEmpty({ pos: [0, 0, 0] }) && !isEmpty({ model: L }) && !isEmpty({ kind: 'light' }) && !isEmpty(null));
+check('isEmpty: no model, no light, no mesh (a malformed mesh — no registered shape — is an Empty, as the realizer reads it)', isEmpty({ pos: [0, 0, 0] }) && !isEmpty({ model: L }) && !isEmpty({ light: {} }) && !isEmpty({ mesh: { shape: 'box', size: [1, 1, 1] } }) && isEmpty({ mesh: {} }) && !isEmpty(null));
 check('a lamp (Model + comp.light) cannot add a second Light; an Empty can add one; Collider still needs a Model',
   !addable(componentsOf({ model: L, light: {} }).components).some((a) => a.name === 'Light')
   && addable(componentsOf({ pos: [0, 0, 0] }).components).some((a) => a.name === 'Light')

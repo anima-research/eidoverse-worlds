@@ -13,7 +13,8 @@
 //   body: {
 //     action   'sit'            the verb `use` calls it AND the default posture (sit | lie | stand | ride | kneel | …)
 //     anchor   'hips'           which body point lands on the socket: hips | feet | head | root (the default: where
-//                               every seat put a body before anchors existed, so no existing seat moves)
+//                               every seat put a body before anchors existed, so no existing seat moves) | surface (the
+//                               socket IS the seat's support plane: the body's measured seat contact lands on it)
 //     pose     'sitchair'       a clip; {clip, time?, offset?}; or a blend {by, clips, time?, offset?}
 //     poses    {lean: …}        a menu of named poses (pose is the default); the occupant picks one
 //     sync     'sofa'           sockets sharing a sync group switch same-named poses together (AVsitter SYNC)
@@ -34,17 +35,19 @@
 import { REACH_CHAINS } from './joints.js';
 import { HUMANOID_BONES } from './humanoid.js';
 import { checkAccepts } from './grab.js';
+import { BUILTIN_IDS, isRoleId } from './protocol/roles.js';
 
-export const ANCHORS = ['hips', 'feet', 'head', 'root'];
+// surface (D14, R 10-12): the seat authors its support plane; a body's profiled seat contact lands on it (client/lib/seatcore.js)
+export const ANCHORS = ['hips', 'feet', 'head', 'root', 'surface'];
 export const LEAVE_BY = ['jump', 'menu', 'script'];
 export const MOVES = ['none', 'drive', 'walk'];
 export const LOOKS = ['free', 'aim', 'locked'];
 export const UPS = ['world', 'socket'];
 export const VR_POLICIES = ['snap', 'track', 'near'];
 export const TIMES = ['loop', 'phase'];
-export const WHO = ['visitor', 'builder', 'moderator', 'owner'];
-// a `who` may also name a world's custom role (roles.js): the shape is checked here, existence by the authority (whoRank)
-const isWho = (x) => WHO.includes(x) || (typeof x === 'string' && /^[a-z][a-z0-9-]{0,23}$/.test(x) && !['none', 'guest', 'everyone', 'ghost', 'banned'].includes(x));
+export const WHO = BUILTIN_IDS;
+// a `who` may also name a world's custom role: the shape is roles.js's, existence the authority's (whoRank)
+const isWho = isRoleId;
 /** The closed set of signals a pose may blend by. Every client computes each one the same way: speed/turn/phase/swing
  *  from the thing's motion component (closed forms, client/lib/socksignals.js), throttle/steer/aimYaw/aimPitch from the
  *  occupant's input (riding their presence), and param.<name> from the thing's `params` component (scripts write it). */
@@ -52,6 +55,8 @@ export const SIGNALS = ['speed', 'turn', 'phase', 'swing', 'throttle', 'steer', 
 export const BODY_KEYS = ['action', 'anchor', 'pose', 'poses', 'sync', 'approach', 'enter', 'leave', 'exit', 'reach', 'hold', 'look', 'input', 'leaveBy', 'fromSeat', 'who'];
 // accepts/radius (shared/grab.js): a free socket takes a released thing whose grabbable.fits shares a keyword, within radius
 export const SOCKET_KEYS = ['pos', 'q', 'part', 'body', 'accepts', 'radius'];
+// a socket entity's own component: its pose is the entity's transform, so pos and q aren't here
+export const SOCKET_ENTITY_KEYS = ['name', 'part', 'body', 'accepts', 'radius'];
 export const REACH_KEYS = ['at', 'q', 'part', 'hint', 'vr'];
 export const LOOK_KEYS = ['yaw', 'pitch', 'up'];
 export const INPUT_KEYS = ['move', 'look'];
@@ -218,6 +223,18 @@ export function checkSockets(v, at = 'sockets') {
   return null;
 }
 
+/** One socket entity's `socket` component, checked as one slot of the old map is (closed keys, the body block, accepts):
+ *  null when good. The rules that need its siblings (a unique name, one driver) are the door's. */
+export function checkSocket(v, at = 'socket') {
+  if (!isObj(v)) return bad('shape', `${at} must be {name, part?, body?, accepts?, radius?}`);
+  let r = keys(at, v, SOCKET_ENTITY_KEYS, 'a socket'); if (r) return r;
+  if (!(typeof v.name === 'string' && NAME_RE.test(v.name))) return bad('shape', `${at}.name is letters, digits, - and _ (up to 32): the name use {args: {socket}} calls it by`);
+  if (v.part !== undefined && !(typeof v.part === 'string' && v.part)) return bad('shape', `${at}.part names a node of its host's model`);
+  if ((r = checkAccepts(v, at))) return r;
+  if (v.body !== undefined && (r = checkBody(v.body, `${at}.body`))) return r;
+  return null;
+}
+
 function checkBody(b, at) {
   if (!isObj(b)) return bad('shape', `${at} must be {action?, anchor?, pose?, …}`);
   let r = keys(at, b, BODY_KEYS, "a socket's body"); if (r) return r;
@@ -311,13 +328,60 @@ function near(k, allowed) {
   return allowed.filter((a) => { const y = a.toLowerCase(); return (x.length > 2 && (y.startsWith(x) || x.startsWith(y))) || lev(x, y) <= Math.max(1, Math.floor(y.length / 3)); }).slice(0, 3);
 }
 
+/** A seat named in a presence frame, as a socket id: {to: <socket id>} passes; the old frame {to: <host>, slot} (one
+ *  release: clients from before sockets were entities) names the host's socket child of that name. `world` is a fold
+ *  state or a view (its entities' c, or the view's flat record). Null when there is no such socket. */
+export function resolveSeat(world, seat) {
+  const E = world?.entities ?? {}; const C = (id) => E[id]?.c ?? E[id] ?? null; const sk = (c) => (isObj(c?.socket) ? c.socket : null);
+  if (!isObj(seat) || typeof seat.to !== 'string') return null;
+  if (sk(C(seat.to))) return { to: seat.to };
+  if (typeof seat.slot !== 'string') return null;
+  const kid = Object.keys(E).find((k) => sk(C(k))?.name === seat.slot && (C(k)?.parent?.to ?? E[k]?.parent?.to) === seat.to);
+  return kid ? { to: kid } : null;
+}
+
+/** What a socket is for, read from what it has (never stored): a seat if body, a snap point if accepts, else an attach
+ *  point. `c` is the socket's record (a fold `c` or a view's `comp`). */
+export const socketRole = (c) => (isObj(c?.socket?.body) ? 'seat' : Array.isArray(c?.socket?.accepts) ? 'snap' : 'attach');
+/** A host's sockets, as its socket children (PLAN-sockets-entities §1): [{id, name, sock}] in `kids` order. `kids(host)`
+ *  lists a thing's child ids; `rec(id)` is a record's components (a fold `c`, or a view's `comp`). A socket switched off
+ *  on its own is a closed seat: not listed. The one reader every client and agent surface shares (the authority's own is
+ *  authority/sockets.js socketsOf, over its children index). */
+export function socketsUnder(host, kids, rec, { all = false } = {}) {
+  const out = [];
+  for (const k of kids(host) ?? []) { const c = rec(k); if (isObj(c?.socket) && (all || c.disabled !== true)) out.push({ id: k, name: c.socket.name, sock: c.socket }); }
+  return out;
+}
+/** …in a world: a fold state's or a view's `entities` ({id: {c}} or the view's flat {id: {socket?, parent?, …}}). O(things): readers that ask
+ *  for many hosts build their own children index and call socketsUnder. */
+export function socketsIn(entities, host, opts) {
+  const E = entities ?? {}; const recC = (k) => E[k]?.c ?? E[k] ?? null; const up = (k) => E[k]?.c?.parent?.to ?? E[k]?.parent?.to;
+  return socketsUnder(host, (h) => Object.keys(E).filter((k) => up(k) === h), recC, opts);
+}
+/** A socket child as the old `sockets.<name>` entry read ({pos, q?, part?, body?, accepts?, radius?}): its pose is its own
+ *  transform, local to its host. For the readers still written against the map (the Inspector's Sockets card and the
+ *  seat gizmos, until the Parts UI: PLAN §10 12b); writing one back as a map is translated at the door. `t` is the
+ *  socket's transform ({pos, q}). */
+export function slotOf(sock, t) {
+  const { name, ...rest } = sock ?? {};
+  const q = Array.isArray(t?.q) && t.q.length === 4 && !(t.q[0] === 0 && t.q[1] === 0 && t.q[2] === 0 && t.q[3] === 1) ? { q: t.q.slice() } : {};
+  return { pos: Array.isArray(t?.pos) ? t.pos.slice() : [0, 0, 0], ...q, ...JSON.parse(JSON.stringify(rest)) };
+}
+/** A host's socket children as the old `sockets` map ({name: slotOf…}), switched-off ones included (a map written back
+ *  must not drop them), or null when it has none. `entities` as socketsIn. */
+export function socketMapIn(entities, host) {
+  const E = entities ?? {}; const out = {};
+  for (const x of socketsIn(E, host, { all: true })) { const e = E[x.id]; out[x.name] = slotOf(x.sock, e?.c ? e.c.transform : { pos: e?.pos, q: e?.q }); }
+  return Object.keys(out).length ? out : null;
+}
+
 /** One line saying what a body does at a socket, for people and agents alike (the agent's look, the sit reply). */
 export function describeBody(slot, b) {
   if (!b) return `${slot}: an attach point (things only)`;
   const pose = typeof b.pose === 'string' ? `holds ${b.pose}`
     : Array.isArray(b.pose?.clips) ? `blends ${b.pose.clips.map((r) => r[1]).join('/')} by ${[].concat(b.pose.by).join('+')}`
     : b.pose?.time === 'phase' ? `plays ${b.pose.clip} in step with its motion` : `holds ${b.clip}`;
-  const bits = [pose, `${b.anchor} on the socket`];
+  const bits = [pose, b.anchor === 'surface' ? 'seated on its surface (by the body\'s seat profile)' : `${b.anchor} on the socket`];
   const menu = Object.keys(b.poses ?? {}); if (menu.length) bits.push(`poses: ${menu.join(', ')}${b.sync ? ` (in step with the ${b.sync} group)` : ''}`);
   const limbs = Object.keys(b.reach ?? {}); if (limbs.length) bits.push(`${limbs.join(' and ')} on the thing`);
   if (b.input.move === 'drive') bits.push('drives it (movement is throttle/steer)'); else if (b.input.move === 'walk') bits.push('movement shapes your pose');

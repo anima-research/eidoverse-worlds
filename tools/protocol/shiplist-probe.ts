@@ -339,7 +339,7 @@ try {
     b.setEditMode(true); await new Promise((z) => setTimeout(z, 500)); sg.sceneSelect('hdsign'); await new Promise((z) => setTimeout(z, 700));
     base.bus.emit('edit-righttab', 'attributes'); await new Promise((z) => setTimeout(z, 600));
     const box = () => { const at = document.querySelector('[data-frame="attributes"]'); const row = [...at.querySelectorAll('.sp-row')].find((r) => /hidden for all/.test(r.textContent)); return row?.querySelector('input[type=checkbox]'); };
-    const sample = async (ms) => { const out = []; for (let t = 0; t <= ms; t += 100) { const o = w.entities.get('hdsign'); out.push([t, !!box()?.checked, !!o?.visible, w.comps.get('hdsign')?.hidden === true]); await new Promise((z) => setTimeout(z, 100)); } return out; };
+    const sample = async (ms) => { const out = []; for (let t = 0; t <= ms; t += 100) { const o = w.entities.get('hdsign'); out.push([t, !!box()?.checked, !!o?.visible, w.bagOf('hdsign')?.hidden === true]); await new Promise((z) => setTimeout(z, 100)); } return out; };
     // HD2: in a busy world every frame repaints (each physics rest is a 'comp'); repaint before the authority has answered
     const early = []; box()?.click(); for (let i = 0; i < 6; i++) { base.bus.emit('comp', { id: 'some-other-thing', type: 'transform' }); await new Promise((z) => requestAnimationFrame(z)); early.push(!!box()?.checked); }
     await sample(1500); box()?.click(); await sample(1500);
@@ -466,9 +466,9 @@ try {
   const before = await evalJson(`(() => { const line = ${insp}.querySelector('.sp-row.sp-title'), lb = ${lockBtn}, eb = [...${insp}.querySelectorAll('.sp-iconbtn button')].find((b) => /YOUR view/.test(b.title));
     return { title: line?.querySelector('input')?.value ?? null, sameLine: !!line && !!lb && !!eb && Math.abs(line.getBoundingClientRect().top - lb.getBoundingClientRect().top) < 8 && Math.abs(eb.getBoundingClientRect().top - lb.getBoundingClientRect().top) < 4, svg: lb?.querySelector('svg')?.innerHTML ?? null }; })()`);
   await evalJson(`(${lockBtn}?.click(), true)`);
-  const locked = await waitFor(`import('/lib/world.js').then((m) => !!m.comps.get('nlbox')?.lock)`);
+  const locked = await waitFor(`import('/lib/world.js').then((m) => !!m.bagOf('nlbox')?.lock)`);
   await sleep(400); const svg1 = await evalJson(`${lockBtn}?.querySelector('svg')?.innerHTML ?? null`);
-  await evalJson(`(${lockBtn}?.click(), true)`); await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('nlbox')?.lock)`);
+  await evalJson(`(${lockBtn}?.click(), true)`); await waitFor(`import('/lib/world.js').then((m) => !m.bagOf('nlbox')?.lock)`);
   await page(`(await import('/lib/build.js')).setEditMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'nlbox' }); return true;`).catch(() => null);
   check("NL1 the Inspector's first line is the name as a title, with the eye and the padlock on it; the padlock locks it, and its icon changes", before.title === "Name box" && before.sameLine && locked && !!svg1 && svg1 !== before.svg, { before: { ...before, svg: !!before.svg }, locked, iconChanged: !!svg1 && svg1 !== before.svg });
   });
@@ -513,24 +513,29 @@ try {
   // 1.2 m ahead and 0.7 m to the side: the full run leaves WG's crate straight ahead of me, and a click found that instead
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'ctbox', model: '${CRATE}', components: { label: 'Through', grabbable: { enabled: true }, transform: { pos: [${me[0]} + Math.sin(${me[2]}) * 1.2 + Math.cos(${me[2]}) * 0.7, 0.9, ${me[1]} + Math.cos(${me[2]}) * 1.2 - Math.sin(${me[2]}) * 0.7], scale: 0.3 } } });`);
   check("(setup) a crate in front of me", made?.ok, made);
-  const seen = await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('ctbox') && !!m.comps.get('ctbox'))`, 15000); await sleep(600);   // realized, not just listed (the map holds null until the model is in)
-  const dbg = await page(`const w = await import('/lib/world.js'); return { has: w.entities.has('ctbox'), comps: w.comps.get('ctbox') ?? null, n: w.entities.size };`);
+  const seen = await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('ctbox') && !!m.bagOf('ctbox'))`, 15000); await sleep(600);   // realized, not just listed (the map holds null until the model is in)
+  const dbg = await page(`const w = await import('/lib/world.js'); return { has: w.entities.has('ctbox'), comps: w.bagOf('ctbox') ?? null, n: w.entities.size };`);
   check("(setup) the crate is realized in the page", seen && dbg?.has, { seen, dbg });
   const at = () => page(`const c = await import('/lib/core.js'), cu = await import('/lib/clickuse.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('ctbox'); o.updateWorldMatrix(true, true);
     const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera), r = c.canvas.getBoundingClientRect(); return cu.thingAt(r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height);`);
+  const pixel = await page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('ctbox'); o.updateWorldMatrix(true, true);
+    const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera), r = c.canvas.getBoundingClientRect(); return [r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height];`);
   const before = await at();
   check("CT0 a click on it finds it", before === 'ctbox', before);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('set', { id: 'ctbox', component: 'clickthrough', value: true });`); await sleep(600);
   const after = await at();
-  check("CT1 with clickthrough set, the same click passes through it (to whatever is behind, or nothing)", after !== 'ctbox', after);   // a full run leaves other stages' crates behind it
-  await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'ctbox' });`).catch(() => null); await sleep(300);
+  // what lies behind it is the earlier stages' business (the full run leaves box1 there): the same pixel with ctbox gone
+  await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'ctbox' });`).catch(() => null);
+  await waitFor(`import('/lib/world.js').then((m) => !m.entities.has('ctbox'))`, 8000); await sleep(300);
+  const behind = await page(`const cu = await import('/lib/clickuse.js'); return cu.thingAt(${pixel[0]}, ${pixel[1]});`);
+  check("CT1 with clickthrough set, the same click passes through it to whatever is behind (as if it were gone)", after !== 'ctbox' && after === behind, { after, behind });
   });
   // ---- CL: a live drag by someone else is a claim: an amber box and 'editing: <name>' in the Hierarchy, gone on end ----
   await stage("CL", async () => {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'clbox', model: '${CRATE}', components: { label: 'Claimed', transform: { pos: [${me[0]} + 1.5, 0, ${me[1]} + 1], scale: 0.3 } } });`);
   check("(setup) a crate to be dragged by someone else", made?.ok, made);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('clbox') && !!m.comps.get('clbox'))`, 15000); await sleep(400);
+  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('clbox') && !!m.bagOf('clbox'))`, 15000); await sleep(400);
   await key("KeyE"); await sleep(600);   // edit mode: the Hierarchy is up
   const seen = await page(`const b = await import('/lib/base.js'); b.bus.emit('drag', { id: 'clbox', pos: [${me[0]} + 1.6, 0, ${me[1]} + 1], yaw: 0, by: 'Zed' }); await new Promise((r) => setTimeout(r, 350));
     const bd = await import('/lib/build.js'); const rows = [...document.querySelectorAll('[data-frame="hierarchy"] .schema-scroll *')].map((e) => e.textContent).filter((t) => /editing: Zed/.test(t)).length;
@@ -648,19 +653,19 @@ try {
   await waitFor(`import('/lib/world.js').then((m) => m.entities.has('getool'))`); await sleep(700);
   const opened = await page(`(await import('/lib/build.js')).setEditMode(true); await new Promise((z) => setTimeout(z, 400)); (await import('/lib/gripedit.js')).openGripEditor('getool');
     const p = globalThis.__gripeditTest(); const add = [...p.panel.querySelectorAll('button')].find((b) => b.textContent === '+ grip'); add.click(); await new Promise((z) => setTimeout(z, 1500));
-    const w = await import('/lib/world.js'); return { grips: Object.keys(w.comps.get('getool')?.grabbable?.grips ?? {}), start: w.comps.get('getool')?.grabbable?.grips?.grip1?.pos ?? null, ed: globalThis.__gripedit(), gizmo: globalThis.__gizmo?.().attached ?? null };`);
+    const w = await import('/lib/world.js'); return { grips: Object.keys(w.bagOf('getool')?.grabbable?.grips ?? {}), start: w.bagOf('getool')?.grabbable?.grips?.grip1?.pos ?? null, ed: globalThis.__gripedit(), gizmo: globalThis.__gizmo?.().attached ?? null };`);
   check("GE1 the grabbable card's grip editor adds a grip and shows a ghost hand on it (and the main gizmo steps aside)", opened.grips.includes("grip1") && opened.ed?.name === "grip1" && opened.ed?.ghost && !opened.gizmo, opened);
   const dragged = await page(`const t = globalThis.__gripeditTest(); t.proxy.position.y += 0.1; t.proxy.rotateZ(Math.PI / 2); t.controls.dispatchEvent({ type: 'dragging-changed', value: false }); await new Promise((z) => setTimeout(z, 1500));
-    const g = (await import('/lib/world.js')).comps.get('getool').grabbable.grips.grip1; return g;`);
+    const g = (await import('/lib/world.js')).bagOf('getool').grabbable.grips.grip1; return g;`);
   check("GE2 a drag of the ghost writes the grip in the thing's frame (0.1 m up at scale 0.25 is 0.4; a quarter turn about the palm's Z)", Math.abs(dragged.pos[1] - opened.start[1] - 0.4) < 0.01 && Math.abs(dragged.pos[0] - opened.start[0]) < 0.01 && Math.abs(Math.abs(dragged.q[2]) - Math.SQRT1_2) < 0.01, { start: opened.start, dragged });
   const mirrored = await page(`const p = globalThis.__gripeditTest().panel; [...p.querySelectorAll('button')].find((b) => b.textContent === 'mirror').click(); await new Promise((z) => setTimeout(z, 1500));
-    const gs = (await import('/lib/world.js')).comps.get('getool').grabbable.grips; return gs;`);
+    const gs = (await import('/lib/world.js')).bagOf('getool').grabbable.grips; return gs;`);
   const L = mirrored["grip1-left"], Rg = mirrored.grip1;
   check("GE3 mirror writes the left hand's grip: x negated, the same palm-out (Z) after the reflection", !!L && L.hand === "left" && Math.abs(L.pos[0] + Rg.pos[0]) < 1e-3 && Math.abs(L.pos[1] - Rg.pos[1]) < 1e-3, { L, R: Rg });
   const tried = await page(`const c = await import('/lib/controller.js'), w = await import('/lib/world.js'), { THREE: T } = await import('/lib/core.js'), tp = await import('/lib/thingphysics.js'), n = await import('/lib/net.js');
     const ge = await import('/lib/gripedit.js'); const tc = globalThis.__gripeditTest(); [...tc.panel.querySelectorAll('.gripedit-row')].find((r) => r.textContent.startsWith('grip1') && !r.textContent.includes('left')).click();
     await new Promise((z) => setTimeout(z, 300)); const r = await [...tc.panel.querySelectorAll('button')].find((b) => b.textContent === 'try it').onclick();
-    await new Promise((z) => setTimeout(z, 2500)); const o = w.entities.get('getool'); o.updateWorldMatrix(true, false); const g = w.comps.get('getool').grabbable.grips.grip1;
+    await new Promise((z) => setTimeout(z, 2500)); const o = w.entities.get('getool'); o.updateWorldMatrix(true, false); const g = w.bagOf('getool').grabbable.grips.grip1;
     const gp = new T.Vector3(...g.pos).applyMatrix4(o.matrixWorld); const P = { p: new T.Vector3(), q: new T.Quaternion() }; const palm = tp.palmOf(n.net.you, 'right', P);
     return { ok: r?.ok ?? null, why: r?.refused?.reason ?? null, gap: palm ? +gp.distanceTo(P.p).toFixed(4) : null };`);
   check("GE4 try it: it is picked up by that grip, and the palm sits on the grip point (within 1 cm)", tried.ok && tried.gap !== null && tried.gap < 0.01, tried);
@@ -721,7 +726,7 @@ try {
     const at = document.querySelector('[data-frame="attributes"]'); const al = [...at.querySelectorAll('.sp-label')].map((l) => l.textContent.trim());
     const ag = [...at.querySelectorAll('.sp-group')].map((g) => g.textContent.slice(2).trim()); const ig = [...insp.querySelectorAll('.sp-group')].map((g) => g.textContent.slice(2).trim());
     (await import('/lib/base.js')).bus.emit('edit-righttab', 'inspector'); await new Promise((z) => setTimeout(z, 300));   // back to the Inspector whatever happens (VM2b measures it)
-    let removed = null; if (spinX) { spinX.click(); await new Promise((z) => setTimeout(z, 1500)); removed = !(await import('/lib/world.js')).comps.get('atbox')?.motion; }
+    let removed = null; if (spinX) { spinX.click(); await new Promise((z) => setTimeout(z, 1500)); removed = !(await import('/lib/world.js')).bagOf('atbox')?.motion; }
     (await import('/lib/build.js')).setEditMode(false);
     return { ag, ig, hiddenCheckbox: labels.includes('hidden'), parentInInspector: labels.includes('parent'), eye: eye?.title ?? null, hasEyeIcon, attr: al, spinX: !!spinX, removed };`);
   check("AT1 the Inspector has the my-view eye (with its icon) and no 'hidden' checkbox or parent row; Attributes has id, hidden for all, parent and every component as JSON", !r.hiddenCheckbox && !r.parentInInspector && r.eye && r.hasEyeIcon && ["id", "hidden for all", "parent", "motion", "label"].every((x) => r.attr.includes(x)), r);
@@ -815,7 +820,10 @@ try {
   await pick("show ids");
   const r1 = await row();
   const face = await evalJson(`(() => { const b = ${H}.querySelector('.sp-pop-btn'), r = b.closest('.sp-row'); b.click(); const pop = document.querySelector('.sp-pop'); const o = { btn: b.textContent, rowText: r.textContent, items: [...document.querySelectorAll('.sp-pop-item')].map((x) => x.textContent.trim()), search: (() => { const i = pop?.querySelector('.sp-pop-search'); return i ? i.getBoundingClientRect().height : 0; })() }; document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return o; })()`);
-  check("HQ2b the switches live under ONE 'Options' button (said once), a plain list: each switch once, then expand all / collapse all, no search box", face?.btn === "Options ▾" && face.rowText === "Options ▾" && face.items.length === 5 && face.items.filter((t) => /expand all|collapse all/.test(t)).length === 2 && face.search < 2, face);
+  check("HQ2b the switches live under ONE 'Options' button (said once), a plain list: each switch once, then expand all / collapse all, no search box", face?.btn === "Options ▾" && face.rowText === "Options ▾"
+    // read off the menu, not counted (the row filters joined it 10-12): each line once, the three view switches among them
+    && new Set(face.items).size === face.items.length && ["show ids", "show kinds", "list components"].every((w) => face.items.some((t) => t.endsWith(w)))
+    && face.items.filter((t) => /expand all|collapse all/.test(t)).length === 2 && face.search < 2, face);
   check("HQ3 Options ▸ show ids: the row carries its id again", /Clicker\s+\(cuball\)/.test(r1?.label ?? ""), r1);
   await pick("list components");
   // R 10-11 00:03: with components listed, things start FOLDED; opening one shows its components

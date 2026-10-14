@@ -13,6 +13,7 @@ import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdir
 import { sfuDiag } from "./sfuadapter.ts";
 import { join, normalize, dirname, basename } from "node:path";
 import { hexOfLibRel } from "../shared/eido.js";
+import { kindOf } from "../shared/protocol/kind.js";
 import { eidoFile, eidoRel } from "./eidoindex.ts";
 import { randomBytes } from "node:crypto";
 import { creditsFor } from "../shared/libcredits.js";
@@ -593,18 +594,15 @@ const ROUTES: Route[] = [
         return j({ error: "no such world" }, 404);
       }
       const w = getWorld(wname);
-      // A folded q is the full orientation — yaw is then its heading.
-      const poseOf = (_eid: string, e: { pos: number[]; yaw?: number; q?: number[] }) =>
-        ({ pos: e.pos, yaw: e.yaw ?? 0, ...(e.q ? { q: e.q } : {}) });
+      // the view record (shared/protocol/view.js viewOf) verbatim — scale3, q, every component — never a projection of it
+      const record = (eid: string, e: Record<string, unknown>) => ({ id: eid, ...e, model: e.model ?? null, parent: e.parent ?? null });
       const id = url.searchParams.get("id");
       if (id) {
         const e = w.state.entities[id];
         if (!e) return j({ error: `no entity "${id}" in ${wname}` }, 404);
         const file = e.model ? resolveLibFile(e.model) : null;
         const sum = file ? await summarizeGlb(file) : null;
-        const at = poseOf(id, e);
-        return j({ id, model: e.model ?? null, pos: at.pos, yaw: at.yaw, ...(at.q ? { q: at.q } : {}), scale: e.scale ?? 1,
-          parent: e.parent ?? null, ...recordComponents(e),
+        return j({ ...record(id, e),
           geometry: sum,   // local frame — compose with pos/q-or-yaw/scale for world space
           note: "geometry coords are the MODEL's local frame; sockets use the same frame, so a topSurface center is a socket pos verbatim" });
       }
@@ -613,11 +611,7 @@ const ROUTES: Route[] = [
       for (const [eid, e] of Object.entries(w.state.entities)) {
         const file = withBoxes && e.model ? resolveLibFile(e.model) : null;
         const sum = file ? await summarizeGlb(file) : null;
-        const at = poseOf(eid, e);
-        out.push({ id: eid, model: e.model ?? null, kind: e?.light ? "light" : "thing",
-          pos: at.pos, yaw: at.yaw, ...(at.q ? { q: at.q } : {}), scale: e.scale ?? 1,
-          parent: e.parent ?? null, ...recordComponents(e),
-          ...(sum ? { bbox: sum.bbox, tris: sum.tris } : {}) });
+        out.push({ ...record(eid, e), kind: kindOf(e), ...(sum ? { bbox: sum.bbox, tris: sum.tris } : {}) });
       }
       return j({ world: wname, entities: out });
     },

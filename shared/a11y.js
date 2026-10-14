@@ -25,9 +25,10 @@ export function openAction(c) {
 
 /**
  * {name, description, can: [phrases], state: [phrases]} for a thing's components c. opts: {name (a fallback name: its
- * model's), heldBy (who holds it now, a display name), lookup (stored particle effects)}.
+ * model's), heldBy (who holds it now, a display name), lookup (stored particle effects), sockets (its socket children,
+ * [{name, sock}]: a thing's seats are children, never a component of its own)}.
  */
-export function readOut(c, { name = null, heldBy = null, lookup = () => null } = {}) {
+export function readOut(c, { name = null, heldBy = null, lookup = () => null, sockets = null } = {}) {
   c = isObj(c) ? c : {};
   const out = { name: typeof c.label === 'string' && c.label ? c.label : name, description: null, can: [], state: [] };
   if (typeof c.description === 'string' && c.description.trim()) out.description = c.description;
@@ -36,8 +37,9 @@ export function readOut(c, { name = null, heldBy = null, lookup = () => null } =
   if (isObj(c.openable)) out.can.push(open ? `opens and shuts (use '${open}')` : 'opens and shuts (nothing here opens it)');
   const gr = grabOf(c);
   if (gr) out.can.push(!gr.enabled ? "can't be picked up now" : gr.who === 'visitor' ? 'can be picked up' : `${gr.who}s can pick it up`);
-  if (isObj(c.sockets)) {
-    const seats = Object.entries(c.sockets).map(([slot, s]) => [slot, bodyOf(s)]).filter(([, b]) => b);
+  // its seats are its socket children ([{name, sock}], the caller's socketsOf / socketsIn: switched-off ones aren't offered)
+  if (Array.isArray(sockets)) {
+    const seats = sockets.map((x) => [x.name, bodyOf(x.sock)]).filter(([, b]) => b);
     const acts = [...new Set(seats.map(([, b]) => b.action))];
     for (const a of acts) { const slots = seats.filter(([, b]) => b.action === a).map(([s]) => s); out.can.push(`can be ${a === 'sit' ? 'sat on' : `used to ${a}`} (${slots.join(', ')})`); }
   }

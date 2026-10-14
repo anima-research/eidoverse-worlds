@@ -17,7 +17,7 @@
 import { plugin } from 'bun';
 const here = (f: string) => new URL(f, import.meta.url).pathname;
 plugin({ name: 'settings-stubs', setup(b) {
-  for (const m of ['core', 'base', 'governor', 'lightrig', 'xrpanels', 'net', 'catalog', 'avatar', 'controller', 'capnotice', 'assets', 'mictoggle'])
+  for (const m of ['core', 'base', 'governor', 'lightrig', 'materials', 'xrpanels', 'net', 'catalog', 'avatar', 'controller', 'capnotice', 'assets', 'mictoggle'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./settings-panels-stub.mjs') }));
 } });
 
@@ -270,7 +270,7 @@ console.log('TABS — every registered section is a tab; choosing one shows its 
 { const actions = await import('../client/lib/actions.js');
   const frame = ui.settingsFrame() as any;
   const strip = frame.strip as HTMLElement;
-  const ids = ['style', 'video'];
+  const ids = ['style', 'video', 'safety'];
   check('the settings frame carries a tab strip with one tab per section, in registration order',
     [...strip.querySelectorAll('.pf-tab')].map((b) => b.id).join() === ids.map((i) => `sec-${i}-tab`).join(),
     [...strip.querySelectorAll('.pf-tab')].map((b) => b.id).join());
@@ -292,7 +292,7 @@ console.log('TABS — every registered section is a tab; choosing one shows its 
   ui.collapseAll(); await tick();
   check('collapseAll folds the pane away (placing a ghost wants the view)', !ids.some((i) => document.getElementById(`sec-${i}`)!.classList.contains('open')), state());
   frame.hide(); frame.show(); await tick();
-  check('shown again with nothing chosen, the frame opens its last tab (video)', state() === 'style:-/-/false video:open/on/true', state());
+  check('shown again with nothing chosen, the frame opens its last tab (the last of them)', state() === ids.map((i) => (i === ids.at(-1) ? `${i}:open/on/true` : `${i}:-/-/false`)).join(' '), state());
 
   // a mod's section may share a built-in's label (mods.js passes no id): removing the mod's
   // must not take the built-in's lantern row with it

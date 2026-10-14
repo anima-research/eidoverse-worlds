@@ -5,8 +5,10 @@
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
 import { bodyOf } from "../shared/components.js";
-import { describeBody, mayLeave } from "../shared/sockbody.js";
+import { kindOf } from "../shared/protocol/kind.js";
+import { describeBody, mayLeave, resolveSeat, socketsUnder } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
+import { r3 } from "../shared/protocol/round.js";
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegex } from "./mention.ts";
 import { mergePose } from "../shared/humanoid.js";
@@ -64,6 +66,9 @@ import { describeCaptions } from "../shared/captions.js";
 import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
+import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, SHOVE_FEEL } from "../shared/shove.js";
+import { SHOVE } from "../shared/protocol/physconst.js";
+import { colliderFor } from "../client/lib/bodyscale.js";
 
 import { recordComponents } from "../shared/protocol/view.js";
 (globalThis as any).THREE = Object.assign({}, THREE_W, TSL);
@@ -73,7 +78,12 @@ const TICK_MS = 100;
 /** E1: a walk asks the authority for the next stretch (PERMIT_STEP m; its track takes TRACK.cap m at most at once) when the
  *  body is within PERMIT_AHEAD m of the end of what it has accepted, so a run never waits on a local server. */
 const PERMIT_STEP = TRACK.cap / 2, PERMIT_AHEAD = 1;
-type WalkGate = { mode: "sync" | "tracked" | "open"; permit: number[] | null; busy: boolean };
+/** A loose thing in the way of a walk (the authority's "solid" naming a shoveable blocker): the walk goes up against it,
+ *  the body's contact shoves it, and the walk asks again once it has moved. At most SHOVE_TRIES per walk; a body that
+ *  reaches it without shoving it (or is refused) stops as any refused walk does after SHOVE_WAIT_MS. */
+const SHOVE_TRIES = 5, SHOVE_WAIT_MS = 2500, SHOVE_SETTLE_MS = 800;
+type Blocker = { id: string; ref: any; phase: "approach" | "pushed"; until: number };
+type WalkGate = { mode: "sync" | "tracked" | "open"; permit: number[] | null; busy: boolean; blocker?: Blocker | null; shoves?: number; slow?: number; waitUntil?: number; hold?: number; retrackAt?: number };
 /** Quiet window for world-change narration, per (entity, component). Tuning a
  *  live emitter is a burst of `comp` entries; this is how long they fold into
  *  one line. Long enough to swallow a slider drag, short enough that "puts the
@@ -82,7 +92,8 @@ const EMITTER_COALESCE_MS = Number(process.env.EW_EMITTER_COALESCE_SEC ?? 4) * 1
 
 type Vec2 = { x: number; z: number };
 type Pose = PublicPose;
-type Entity = { id: string; model: string; pos: number[]; yaw: number; actor: string; scale?: number;
+type Kind = ReturnType<typeof kindOf>;
+type Entity = { id: string; model: string; kind: Kind; pos: number[]; yaw: number; actor: string; scale?: number;
   /** component bag (sockets, reactions, motion, …) — what a thing can DO;
    *  this is how affordances reach text-tier perception */
   comp?: Record<string, any> };
@@ -235,22 +246,45 @@ export class WorldAgent {
   /** Things the world's physics has brought to rest, so a rest re-registers their support once (see tick). */
   private simRested = new Set<string>();
   private simFlying = new Set<string>();
+  /** body shove (shared/shove.js): this body's walk pushes loose things it walks into, through the same punt a person's client sends */
+  private shover = createShover();
+  /** off for the session when this server doesn't know shove (an older deployment answers unknown-arg) */
+  private shoveOff = false;
+  /** who holds what, as the authority's presence plane broadcasts it (a held thing, and what rides it, isn't shoved) */
+  private holdsNow: Record<string, any> = {};
+  /** a shove gave a thing this body's momentum: for a moment it walks at most what it kept (shared/shove.js keptOf) */
+  private walkCap: { v: number; until: number } | null = null;
   entities = new Map<string, Entity>();
   /** who/what rides what: mount verbs, keyed by the rider (body or thing) */
   /** Every mount's full wire shape — offset/yaw OVERRIDE socket defaults in
    *  the world transform (#82), so dropping them here made the composed
    *  position disagree with every renderer. */
-  mounts = new Map<string, { to: string; slot?: string; offset?: number[]; yaw?: number; q?: number[] }>();
+  mounts = new Map<string, { to: string; offset?: number[]; yaw?: number; q?: number[] }>();
   /** Bodies' seats are PRESENCE (bodies aren't entities, nothing is logged): a body's pose frame carries
-   *  `seat: {to, slot}` while it sits. Others' come from their frames; mine rides my frames. */
-  bodySeats = new Map<string, { to: string; slot?: string }>();
-  mySeat: { to: string; slot?: string; pose?: string; at?: number } | null = null;
+   *  `seat: {to: <socket id>}` while it sits (an older client's {to: host, slot} is read as that host's socket of that
+   *  name: resolveSeat). Others' come from their frames; mine rides my frames. */
+  bodySeats = new Map<string, { to: string }>();
+  mySeat: { to: string; pose?: string; at?: number } | null = null;
+  /** A host's sockets: its socket children (PLAN-sockets-entities), [{id, name, sock}] in child order — the one reader
+   *  look, attach and the seat lines share. */
+  socketsOf(host: string) {
+    // the same records the composition reads (entities, and mounts: a thing's fold parent)
+    const kids = (h: string) => [...this.mounts.entries()].filter(([k, m]) => m.to === h && this.entities.has(k)).map(([k]) => k).sort();
+    return socketsUnder(host, kids, (k) => { const e = this.entities.get(k); return e ? recordComponents(e) : null; });
+  }
+  /** A socket child as a seat reads it: {id, host, name, sock}, or null when `id` isn't a socket here. */
+  seatOf(id: string | null | undefined) {
+    const sock = id == null ? null : this.entities.get(id)?.socket;
+    return sock && typeof sock === "object" ? { id: String(id), host: this.mounts.get(String(id))?.to ?? null, name: String(sock.name ?? ""), sock } : null;
+  }
+  /** "host (name)" for a seat or a socket — how a person reads where someone sits; the bare id for anything else. */
+  seatName(id: string) { const s = this.seatOf(id); return s ? `${s.host} (${s.name})` : id; }
   /** My seat's body block (shared/sockbody.js), or null standing. */
-  mySeatBody() { const m = this.mySeat; return m ? bodyOf(this.entities.get(m.to)?.sockets?.[m.slot ?? ""]) : null; }
+  mySeatBody() { const m = this.mySeat; return m ? bodyOf(this.seatOf(m.to)?.sock) : null; }
   /** May I leave my seat this way? (its leaveBy: a 'script' seat lets go only when the world does) */
-  mayLeaveSeat(kind: "move" | "jump" | "menu" | "script") { const b: any = this.mySeatBody(); return !b || mayLeave(b, kind) || !this.entities.get(this.mySeat!.to)?.sockets?.[this.mySeat!.slot ?? ""]; }
-  /** sit on a thing's seat socket (presence: my frames carry it), or stand (null) */
-  setSeat(seat: { to: string; slot?: string; pose?: string; at?: number } | null) {
+  mayLeaveSeat(kind: "move" | "jump" | "menu" | "script") { const b: any = this.mySeatBody(); return !b || mayLeave(b, kind) || !this.seatOf(this.mySeat!.to); }
+  /** sit on a thing's seat socket (presence: my frames carry {to: <socket id>}), or stand (null) */
+  setSeat(seat: { to: string; pose?: string; at?: number } | null) {
     this.mySeat = seat;
     if (seat) this.mounts.set(this.name, { ...seat }); else this.mounts.delete(this.name);
   }
@@ -346,7 +380,7 @@ export class WorldAgent {
   private clipClockStarted = 0;
   private bodyClip() {
     const mount = this.mounts.get(this.name);
-    return mount ? bodyOf(this.entities.get(mount.to)?.sockets?.[mount.slot ?? ""])?.clip ?? "sitchair" : this.clip;
+    return mount ? bodyOf(this.seatOf(mount.to)?.sock)?.clip ?? "sitchair" : this.clip;
   }
   private noteClipClock() {
     const slot = this.bodyClip();
@@ -713,6 +747,9 @@ export class WorldAgent {
           case "voice-moderated":
             this.onMedia?.(msg);
             break;
+          case "holds":
+            this.holdsNow = (msg as any).holds && typeof (msg as any).holds === "object" ? (msg as any).holds : {};
+            break;
           case "your-rights":
             // The sequencer recomputes this participant's effective rights
             // after every grant. Consume the answer rather than trying to
@@ -995,8 +1032,7 @@ export class WorldAgent {
     if (!mount || !observation.pose) return observation;
     const effective = this.eff(observation.who, this.serverNow());
     if (!effective.ok) return { ...observation, error: `body mount cannot be composed: ${effective.why}` };
-    const socket = mount.slot ? this.entities.get(mount.to)?.sockets?.[mount.slot] : null;
-    const clip = bodyOf(socket)?.clip ?? "sitchair";
+    const clip = bodyOf(this.seatOf(mount.to)?.sock)?.clip ?? "sitchair";
     return { ...observation, frame: { source: "mount", to: mount.to, seat: effective.seat ?? null },
       pose: { ...observation.pose, p: effective.pos, yaw: effective.yaw, clip,
         ...(clip === (observation.pose.clipTimeSlot ?? observation.pose.clip) ? {} : { clipTime: undefined }) } };
@@ -1044,7 +1080,8 @@ export class WorldAgent {
     const prev = p.pose;
     p.pose = pose; p.observedAt = now;
     { const seat = (pose as any)?.seat;   // a seat rides the frame while it holds (presence)
-      if (seat?.to) { const st = { to: String(seat.to), ...(seat.slot ? { slot: String(seat.slot) } : {}) }; this.bodySeats.set(id, st); this.mounts.set(id, st); }
+      const to = seat?.to ? resolveSeat(this.st, { to: String(seat.to), ...(typeof seat.slot === "string" ? { slot: seat.slot } : {}) })?.to : null;
+      if (to) { const st = { to }; this.bodySeats.set(id, st); this.mounts.set(id, st); }
       else if (this.bodySeats.delete(id)) this.mounts.delete(id); }
     p.bodyGeneration ??= ++this.bodyGenerationCounter;
     this.people.set(id, p);
@@ -1296,7 +1333,7 @@ export class WorldAgent {
       seen.add(id);
       this.entities.set(id, {
         id,
-        model: (e as any).kind === "light" ? "(light)" : String((e as any).model ?? ""),
+        model: String((e as any).model ?? ""), kind: kindOf(e),
         pos: (e as any).pos, yaw: (e as any).yaw ?? 0,
         ...((e as any).scale != null ? { scale: (e as any).scale } : {}),
         ...(Array.isArray((e as any).scale3) ? { scale3: (e as any).scale3 } : {}),   // a stretched thing stays stretched
@@ -1312,7 +1349,7 @@ export class WorldAgent {
     this.mounts.clear();
     for (const [id, e] of Object.entries(this.st.entities)) {
       const p = (e as any).parent;
-      if (p) this.mounts.set(id, { to: p.to, slot: p.socket,   // the mount view keeps presence's word (a seat's slot)
+      if (p) this.mounts.set(id, { to: p.to,
         ...(p.offset != null ? { offset: p.offset } : {}),
         ...(p.yaw != null ? { yaw: p.yaw } : {}),
         ...(p.q != null ? { q: p.q } : {}) });   // the relative orientation (PROTOCOL §9.1): foldRecord's parent must not lose it
@@ -1652,7 +1689,7 @@ export class WorldAgent {
 
   private async syncSupport(id: string) {
     const before = this.entities.get(id);
-    if (!before || !before.model || before.model === "(light)") return;  // lights carry no collider
+    if (!before?.model) return;  // only a model carries a collider
     // A moving thing supports nothing here — and stops supporting the moment
     // it starts moving, so this is the drop path as well as the skip path.
     // Mounted cargo is the same story told by a different verb: it rides a
@@ -1787,8 +1824,11 @@ export class WorldAgent {
       if (g?.mode === "sync") room = 0;
       else if (g?.mode === "tracked") {
         room = g.permit ? Math.hypot(g.permit[0] - this.pos.x, g.permit[2] - this.pos.z) : 0;
-        if (!g.busy && room < PERMIT_AHEAD && !this.permitAtTarget(g)) this.extendPermit(g);
+        if (!g.busy && !(g.hold! > 0) && room < PERMIT_AHEAD && !this.permitAtTarget(g) && !this.blockerHolds(g)) this.extendPermit(g);
       }
+      // a loose thing just shoved (shoveNow): for a moment the walk keeps the speed the shove left it, as a cap on the stride
+      const capped = this.walkCap && Date.now() < this.walkCap.until ? this.walkCap.v : Infinity;
+      if (capped < Infinity) room = Math.min(room, Math.max(0, capped) * dt);
       // ONE stride of the shared mover (shared/mover.js): the same stride the client takes and the authority checks.
       // The floor is the terrain (placed floors reach this body through the sim's support boxes, not its walk); what
       // blocks is the authority's permit, asked above.
@@ -1811,6 +1851,7 @@ export class WorldAgent {
         this.pos.x = r.pos[0]; this.pos.z = r.pos[2];
       }
     }
+    this.tickShove();
     // a tumbling, lying, dragged, nailed or FLYING body owns its own y — the
     // terrain clamp is for FEET, and none of those states is standing on them
     if (!this.draggedBy && this.pins.size === 0 && this.clip !== "ragdoll" && !this.flight) {
@@ -2576,7 +2617,6 @@ export class WorldAgent {
    *  drag, a seat moved this body without walking it), as a person's client does. A visitor in a world with a spawn arrives
    *  at the spawn, as a person does. {open} = this authority keeps no body track: walk as before. */
   private async trackHere(): Promise<{ ok: true } | { ok: false; refused: any } | { open: true }> {
-    const r3 = (n: number) => Math.round(n * 1000) / 1000;
     const to = [r3(this.pos.x), r3(this.pos.y), r3(this.pos.z)];
     const take = (r: any, at: number[]) => { this.trackArrived = true; this.trackAt = Array.isArray(r?.at) ? r.at : at; return { ok: true as const }; };
     if (this.trackArrived && this.trackAt && Math.hypot(this.trackAt[0] - to[0], this.trackAt[1] - to[1], this.trackAt[2] - to[2]) < 0.05) return { ok: true };
@@ -2611,16 +2651,89 @@ export class WorldAgent {
     if (d < 1e-3) { g.permit = [T.x, from[1], T.z]; return; }   // the authority already has it at this leg's end
     const last = d <= PERMIT_STEP;
     const nx = last ? T.x : from[0] + dx * PERMIT_STEP / d, nz = last ? T.z : from[2] + dz * PERMIT_STEP / d;
-    const r3 = (n: number) => Math.round(n * 1000) / 1000;
     const to = [r3(nx), r3(this.heightAt(nx, nz)), r3(nz)];
     g.busy = true;
     void this.request("move", { to }).then((r: any) => {
       if (this.walkGate !== g) return;
       g.busy = false;
+      if (!r?.ok && r?.refused?.code === "solid" && this.walkUpTo(g, from, T, r.refused)) return;
+      // a shove's re-track (shoveNow) spends the track's speed allowance: too fast is "not yet", asked again shortly
+      if (!r?.ok && r?.refused?.code === "too-fast" && Date.now() - (g.retrackAt ?? -Infinity) < 3000 && (g.slow = (g.slow ?? 0) + 1) <= 5) { g.waitUntil = Date.now() + 400; return; }
       if (!r?.ok) { this.refuseWalk(r?.refused ?? { code: "no-answer", reason: "the authority didn't answer" }); return; }
+      g.slow = 0;
       this.trackAt = Array.isArray(r.at) ? r.at : to;
       g.permit = last && this.target === T ? [T.x, to[1], T.z] : this.trackAt;   // the leg's exact end (the track rounds to mm)
     });
+  }
+  /** Body shove: while this body walks, the loose things it walks into are punted along its walk (shared/shove.js decides
+   *  which and how hard; the authority admits each as any shove). The push is the walk's intent toward its target, so a
+   *  body standing against a crate at the end of what the authority granted still pushes it. Not while the gate is asking
+   *  the authority for a stretch (the track would move under the punt's reach check). */
+  private tickShove() {
+    const st = this.replica?.st, canon = this.replica?.sim, g = this.walkGate;
+    if (this.shoveOff || !st || !canon?.sim || canon.foreign || !this.target || this.draggedBy || this.clip === "ragdoll" || this.flight || this.mySeat) return;
+    if (!g || g.mode === "sync" || g.busy) return;
+    const dx = this.target.x - this.pos.x, dz = this.target.z - this.pos.z, d = Math.hypot(dx, dz); if (d < 1e-6) return;
+    const sp = this.target.run ? MOVER.walk.run : MOVER.walk.speed, cap = colliderFor(1);
+    const mounted = new Set<string>(), bodies: number[][] = [];
+    for (const p of this.people.values()) { const seat = (p.pose as any)?.seat?.to; if (typeof seat === "string") mounted.add(seat);
+      const at = (p.pose as any)?.p; if (Array.isArray(at) && at.length === 3 && at.every(Number.isFinite)) bodies.push(at); }
+    const rank = Number.isFinite(this.myRights?.rank) ? this.myRights.rank : null;
+    const go = this.shover.step({ st, feet: [this.pos.x, this.pos.y, this.pos.z], vel: [dx / d * sp, dz / d * sp], r: cap.r, tall: cap.tall, now: Date.now(),
+      rank, holds: this.holdsNow, mounted, bodies, skip: (id: string) => !!canon.sim.bodies?.[id] });
+    for (const p of go) { this.walkCap = { v: p.kept, until: Date.now() + p.keepMs }; void this.shoveNow(g, p.id, p.v); }
+  }
+  private async shoveNow(g: WalkGate, id: string, v: number[]) {
+    const here = [r3(this.pos.x), r3(this.pos.y), r3(this.pos.z)], box = footprint(this.replica?.st, id), at = this.trackAt;
+    const far = !at || !box || Math.hypot(Math.min(box.max[0], Math.max(box.min[0], at[0])) - at[0], Math.min(box.max[2], Math.max(box.min[2], at[2])) - at[2]) > SHOVE.reach - 0.15;
+    // the gate holds still from the re-track to the punt's answer (counted: two shoves in one tick each hold it): a stretch
+    // asked for between them would carry the authority's body back out of the punt's reach
+    const hold = g.mode === "tracked"; if (hold) g.hold = (g.hold ?? 0) + 1;
+    let r: any;
+    try {
+      if (hold && far) { g.retrackAt = Date.now(); const m = await this.request("move", { to: here });
+        if (this.walkGate === g && m?.ok) { this.trackAt = Array.isArray(m.at) ? m.at : here; g.permit = this.trackAt; } }
+      r = await this.request("punt", { id, v, shove: true });
+    } finally { if (hold) g.hold = Math.max(0, (g.hold ?? 1) - 1); }
+    if (!r?.ok) { this.shover.refused(id, Date.now(), r?.refused?.code); if (r?.refused?.code === "unknown-arg") this.shoveOff = true; }
+    if (this.walkGate !== g || g.blocker?.id !== id) return;
+    if (r?.ok) { g.blocker.phase = "pushed"; g.blocker.until = Date.now() + SHOVE_SETTLE_MS; }
+    else this.refuseWalk(g.blocker.ref);
+  }
+  /** The authority called the next stretch solid because of `ref.blocker`: when that is a loose thing this body may shove,
+   *  walk up against it (a shorter stretch) instead of stopping, and hold the walk until the shove has moved it. */
+  private walkUpTo(g: WalkGate, from: number[], T: { x: number; z: number }, ref: any): boolean {
+    const id = ref?.blocker, st = this.replica?.st;
+    if (typeof id !== "string" || !st || !this.replica?.sim?.sim || (g.shoves ?? 0) >= SHOVE_TRIES || !shoveable(st, id)) return false;
+    const obb = obbOf(st, id); if (!obb) return false; const thing = { obb, box: aabbOfObb(obb) };
+    const cap = colliderFor(1), dx = T.x - from[0], dz = T.z - from[2], d = Math.hypot(dx, dz); if (d < 1e-6) return false;
+    let s = 0; const STEP = 0.05;
+    const touches = (k: number) => !!contactOf([from[0] + dx / d * k, from[1], from[2] + dz / d * k], cap.r, cap.tall, thing, SHOVE_FEEL.slack / 2);
+    while (s < d && !touches(s)) s = Math.min(d, s + STEP);
+    if (!touches(s)) return false;   // the leg never reaches it: something else about it is solid
+    g.shoves = (g.shoves ?? 0) + 1;
+    g.blocker = { id, ref, phase: "approach", until: Date.now() + SHOVE_WAIT_MS + (s / MOVER.walk.speed) * 1000 };
+    if (s < 1e-6) { g.permit = from; return true; }   // already against it
+    const nx = from[0] + dx / d * s, nz = from[2] + dz / d * s, to = [r3(nx), r3(this.heightAt(nx, nz)), r3(nz)];
+    g.busy = true;
+    void this.request("move", { to }).then((r: any) => {
+      if (this.walkGate !== g) return;
+      g.busy = false;
+      if (!r?.ok) { this.refuseWalk(r?.refused ?? ref); return; }
+      this.trackAt = Array.isArray(r.at) ? r.at : to; g.permit = this.trackAt;
+    });
+    return true;
+  }
+  /** Does something hold this walk? A "not yet" from the track's speed allowance, for a moment. A blocker: while approaching it or while what was shoved is still moving: yes. Pushed and
+   *  settled: no (the walk asks again; still solid, it walks up again, up to SHOVE_TRIES). Approached and never shoved: the
+   *  walk stops with the authority's refusal. */
+  private blockerHolds(g: WalkGate): boolean {
+    const now = Date.now(); if (now < (g.waitUntil ?? 0)) return true;
+    const b = g.blocker; if (!b) return false;
+    if (b.phase === "approach") { if (now > b.until) queueMicrotask(() => { if (this.walkGate === g && g.blocker === b) this.refuseWalk(b.ref); }); return true; }
+    const body = this.replica?.sim?.sim?.bodies?.[b.id];   // at rest is settled, logged or not (an unsettled rest stays a body)
+    if (now < b.until || (body && !body.resting)) return true;
+    g.blocker = null; return false;
   }
   /** The authority refused this body the next stretch: it stops where the authority has it, and the walk says why. */
   private refuseWalk(ref: any) {
@@ -3146,8 +3259,8 @@ export class WorldAgent {
   /** The declared-approximation suffix for a seated person's line (#101):
    *  the same reason string the browser consoles and the nameplate ≈ carry —
    *  one contract, three declarations. Empty when the seat is profiled. */
-  private seatSuffix(id: string, ride: { to: string; slot?: string }): string {
-    const sock = ride.slot ? this.entities.get(ride.to)?.sockets?.[ride.slot] : undefined;
+  private seatSuffix(id: string, ride: { to: string }): string {
+    const sock = this.seatOf(ride.to)?.sock;
     const g = seatGateCore({ sock, verdict: this.seatVerdictFor(id), pose: bodyOf(sock)?.clip ?? "sitchair" });
     return g.apply ? "" : ` (seat approximate: ${g.reason})`;
   }
@@ -3170,7 +3283,7 @@ export class WorldAgent {
     // #101: an uncorrected seat composition is never silent — the same
     // "(seat approximate: reason)" every renderer consumer declares.
     const selfSeatNote = selfEff?.ok && selfEff.seat?.state === "approximate" ? ` (seat approximate: ${selfEff.seat.reason})` : "";
-    const seated = selfRide ? `, seated on ${selfRide.to}${selfEff?.ok && selfEff.moving ? ` (riding its ${selfEff.moving})` : ""}${selfSeatNote}` : "";
+    const seated = selfRide ? `, seated on ${this.seatName(selfRide.to)}${selfEff?.ok && selfEff.moving ? ` (riding its ${selfEff.moving})` : ""}${selfSeatNote}` : "";
     if (meKnown) {
       L.push(`You are "${this.name}" in world "${this.world}" at (${me.x.toFixed(1)}, ${me.z.toFixed(1)}), ground height ${me.y.toFixed(2)}m, facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}.`);
     } else {
@@ -3226,11 +3339,12 @@ export class WorldAgent {
       const posed = held ? `, holding a pose (${Object.keys(held).length} bones)` : "";
       const winged = p.pose.wingsFolded === true ? ", wings folded" : "";
       const ride = this.mounts.get(p.id);
-      const riding = ride ? ` — on ${ride.to}${ride.slot ? ` (${ride.slot})` : ""}${this.seatSuffix(p.id, ride)}` : "";
+      const riding = ride ? ` — on ${this.seatName(ride.to)}${this.seatSuffix(p.id, ride)}` : "";
       L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${winged}${riding}${voiceNote(p.pose)}`);
     }
 
-    const ents = [...this.entities.values()];
+    // a socket is part of its host (a seat, a hook): listed under the host, never as a thing of its own
+    const ents = [...this.entities.values()].filter((e) => e.kind !== "socket");
     L.push(ents.length ? `\nThings (${ents.length}):` : "\nNo placed things yet.");
     // one composition per entity per look, shared by the sort and the line.
     // Resolved things sort by their EFFECTIVE distance; unresolved ones make
@@ -3268,11 +3382,13 @@ export class WorldAgent {
       // a declared collider (the collider component)
       const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
       if (col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its exact shape");
-      if (c.sockets) {
-        // each socket a person can use says what the body does there (shared/sockbody.js describeBody), and who's on it
-        const on = new Map([...this.mounts.entries()].filter(([, m]) => m.to === e.id).map(([rid, m]) => [m.slot ?? "", rid]));
-        const lines = Object.entries<any>(c.sockets).map(([slot, s]) => { const b = bodyOf(s); return b ? `${describeBody(slot, b)}${on.has(slot) ? ` — ${on.get(slot)} is on it` : ""}` : null; }).filter(Boolean);
-        const things = Object.keys(c.sockets).filter((k) => !bodyOf(c.sockets[k]));
+      const socks = this.socketsOf(e.id);
+      if (socks.length) {
+        // each socket a person can use says what the body does there (shared/sockbody.js describeBody), and who's on it;
+        // an attach point says what it holds
+        const on = (sid: string) => [...this.mounts.entries()].filter(([, m]) => m.to === sid).map(([rid]) => rid);
+        const lines = socks.map((x) => { const b = bodyOf(x.sock); const who = on(x.id); return b ? `${describeBody(x.name, b)}${who.length ? ` — ${who.join(", ")} is on it` : ""}` : null; }).filter(Boolean);
+        const things = socks.filter((x) => !bodyOf(x.sock)).map((x) => { const held = on(x.id); return `${x.name}${held.length ? ` (holding ${held.join(", ")})` : ""}`; });
         if (lines.length) aff.push(`use it (attach {to: "${e.id}", socket}): ${lines.join(" · ")}`);
         if (things.length) aff.push(`attach points: ${things.join(", ")}`); }
       if (c.reactions) { const acts = Object.keys(c.reactions).filter((a) => a !== openAction(c)); if (acts.length) aff.push(`reacts to: ${acts.join(", ")}`); }
@@ -3313,15 +3429,17 @@ export class WorldAgent {
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const spoken = ["model", "parent", "sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
+      const spoken = ["model", "parent", "sockets", "socket", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
       if (copy) spoken.push("blueprint");
-      if (lit?.spelling === "comp") spoken.push("light");   // described above; a malformed one stays listed
+      if (lit) spoken.push("light");   // described above; a malformed one stays listed
       if (col === "exact" || col === "box") spoken.push("collider");
       const extra = Object.keys(c).filter((k) => !spoken.includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
-      if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);
-      const riders = [...this.mounts.entries()].filter(([, m]) => m.to === e.id).map(([rid, m]) => `${rid}${m.slot ? ` (${m.slot})` : ""}`);
+      if (ride) aff.push(`mounted on ${this.seatName(ride.to)}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);
+      // who and what ride it: on it directly, or in one of its sockets (said with the socket's name)
+      const sockIds = new Set(socks.map((x) => x.id));
+      const riders = [...this.mounts.entries()].filter(([rid, m]) => !sockIds.has(rid) && (m.to === e.id || sockIds.has(m.to))).map(([rid, m]) => `${rid}${sockIds.has(m.to) ? ` (${this.seatOf(m.to)?.name})` : ""}`);
       if (riders.length) aff.push(`carrying: ${riders.join(", ")}`);
       if (f.ok) {
         // the EFFECTIVE position — mount chain and motion composed at nowMs.
@@ -3334,11 +3452,11 @@ export class WorldAgent {
         // composed (a part socket, an unknown motion type, a malformed link),
         // perception says whose frame the thing rides and why the coordinate
         // is withheld — never the stale pre-mount pos next to "mounted on".
-        const where = ride ? `position rides ${ride.to}` : `position unavailable`;
+        const where = ride ? `position rides ${this.seatName(ride.to)}` : `position unavailable`;
         L.push(`  - [${e.id}] ${short}: ${where} — ${f.why}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
       }
     }
-    if (ents.some((e) => e?.sockets || e?.reactions)) {
+    if (ents.some((e) => e?.reactions) || [...this.entities.values()].some((e) => e.kind === "socket")) {
       L.push(`  (use a thing: act {verb: "use", args: {id, action?}} · sit or ride: attach {to: id, socket?} — both open to everyone; detach, or walking, gets you off)`);
     }
 

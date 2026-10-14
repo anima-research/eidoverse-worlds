@@ -12,7 +12,7 @@
 // The authority's geometry (placing, colliders, what stands on what) uses the logged transform, never the turned one.
 import { THREE, camera } from './core.js';
 import { bus } from './base.js';
-import { entities, comps, findPart } from './world.js';
+import { entities, bags, findPart } from './world.js';
 import { remotes } from './remotes.js';
 import { evalLookAt } from '../../shared/lookat.js';
 
@@ -42,7 +42,7 @@ export function tickLookAt() {
   const now = performance.now(); const dt = Math.min(0.25, (now - last) / 1000); last = now;
   const seen = new Set();
   camera.getWorldPosition(_eye);
-  for (const [id, bag] of comps) {
+  for (const [id, bag] of bags()) {
     for (const key in bag) {
       if (key !== 'look-at' && !key.startsWith('look-at:')) continue;
       const la = bag[key]; if (!la || typeof la !== 'object' || typeof la.target !== 'string') continue;

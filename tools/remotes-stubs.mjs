@@ -37,6 +37,10 @@ export const mountTransform = () => null;
 // thing's components, objects and parts. Empty here — the lifecycle under test is bodies, not seats
 export const setBodySeat = () => {};
 export const comps = new Map();
+export const entityMeta = new Map();
+export const bagOf = (id) => comps.get(id) ?? null;
+export function* bags() { yield* comps; }
+export const metaOf = (id) => entityMeta.get(id) ?? null;
 export const entities = new Map();
 export const findPart = () => null;
 

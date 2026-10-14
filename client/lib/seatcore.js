@@ -133,10 +133,13 @@ export function profileStatus(profile, currentAvatarSha256, currentClipSha256) {
 
 /** Legacy sockets were authored under root-at-socket and may encode either a
  *  physical plane or an empirically-placed root target — nothing infers which.
- *  Only the exact authored string "surface" consumes a profile; everything
- *  else (absent, "legacy-root", typos, numbers) is legacy by construction. */
+ *  Only a body block that says so — `body.anchor: 'surface'` (D14: one enum,
+ *  shared/sockbody.js ANCHORS, so a socket can't say "surface" and "hips" at
+ *  once) — consumes a profile; everything else (absent, another anchor, typos,
+ *  numbers) is legacy by construction. `sock` is the socket component
+ *  ({name, body, …}: PLAN-sockets-entities). */
 export function socketAnchor(sock) {
-  return sock?.seatAnchor === "surface" ? "surface" : "legacy-root";
+  return sock?.body?.anchor === "surface" ? "surface" : "legacy-root";
 }
 
 // ---- rider scale (B5) -------------------------------------------------------

@@ -25,6 +25,7 @@
 import { THREE } from './core.js';
 import { bus } from './base.js';
 import { entities } from './world.js';
+import { outOfMyView } from './myview.js';
 import { remotes, serverNow } from './remotes.js';
 import { colliders, suspendCollider } from './colliders.js';
 import { pushHostHook } from './autohooks.js';
@@ -36,9 +37,12 @@ import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
 import { register as registerAction } from './actions.js';
 import { setPressFx, pressFxOn } from './emitters.js';
-import { advanceSim, tickOf, ENGINES, engineViewM } from '../../shared/protocol/simlayer.js';
+import { advanceSim, tickOf, ENGINES, engineViewM, worldPose } from '../../shared/protocol/simlayer.js';
+import { createShover, obbOf, aabbOfObb, contactOf, smoother } from '../../shared/shove.js';
 import { simEntry } from '../../shared/sim.js';
-import { planVelocity } from '../../shared/protocol/launchplan.js';
+import { planLaunch } from '../../shared/protocol/launchplan.js';
+import { REACH, HAND_Y, KICK } from '../../shared/protocol/physconst.js';
+import { r3 } from '../../shared/protocol/round.js';
 import { clockRtt } from './serverclock.js';
 import { onWorldChange } from './state.js';
 import { plain, nameOf } from './plainwords.js';
@@ -46,8 +50,6 @@ import { html } from './markup.js';
 import { xrActive } from './xrask.js';
 import { grabOf, holdPoseOf, fingerPose, armPose, bothArms, pickGrip, HAND_REACH, NEAR_GRAB } from '../../shared/grab.js';
 
-const REACH = 1.5, HAND_Y = 1.1;                  // the authority's: a hand reaches 1.5 m from feet + 1.1 m (authority.js)
-const KICK = { reach: 1.6, below: -0.5, above: 2.0 }; // the authority's punt reach, from the feet
 const TRACK_MS = 200, TRACK_MIN = 0.05;           // the body track: at most 5 moves a second, only when moved
 const THROW = { speed: 8, arc: 0.45, lob: 0.6 };   // a desktop throw with no aim: the way my body faces, ~26° up; aimed: a lob of ~34° or steeper
 const PUNT_POWER = 4;                             // physobj's default: a barrel hops a couple of metres
@@ -69,7 +71,10 @@ let holds = {};     // id -> the authority's hold record: { by: identity, hand?,
 const pulls = new Map();   // id -> { from: Vector3, t0, dur }: a new hold eases from where the thing was into the hand
 bus.on('holds', (h) => {
   const before = holds; holds = h && typeof h === 'object' ? h : {};
-  for (const id of Object.keys(before)) if (!holds[id]) { released(id); pulls.delete(id); }
+  for (const id of Object.keys(before)) if (!holds[id]) { released(id); pulls.delete(id);
+    // a hold that ends with no row moving the thing (a put back to the very pose it had: the fold didn't change, so no
+    // change event ever re-asserts it): ask the realizer for the fold's pose and ease to it, as a put does
+    if (!flying(id) && entities.has(id) && !compsOf(id)?.motion) { startSettle(id); bus.emit('pose-revert', { id }); } }
   for (const id of Object.keys(holds)) if (!before[id] || before[id].by !== holds[id].by) { suspendCollider(id, true); startPull(id); }
   // a use still pressed on a thing that has left my hand (taken, dropped with the button down): its up goes now (the authority
   // takes it from whoever pressed down), and the press stops riding my presence (review 10-06)
@@ -87,9 +92,63 @@ function startPull(id) {
 // the hand is empty (server order: the log, then presence). From that entry on the fold has it: stop drawing it in the
 // hand, or a frame between the two messages would leave it drawn there after the realizer placed it.
 onWorldChange((ev) => {
-  if (ev.type === 'change' && holds[ev.id] && ['pose', 'parent', 'gone', 'born'].includes(ev.what)) { const { [ev.id]: _, ...rest } = holds; holds = rest; released(ev.id); }
-  else if (ev.type === 'reset') holds = {};
+  if (ev.type === 'change' && holds[ev.id] && ['pose', 'parent', 'gone', 'born'].includes(ev.what)) { const { [ev.id]: _, ...rest } = holds; holds = rest; released(ev.id);
+    if (ev.what === 'pose' || ev.what === 'parent') startSettle(ev.id); }
+  else if (ev.type === 'change' && settles.has(ev.id)) { if (ev.what === 'pose' || ev.what === 'parent') startSettle(ev.id); else if (ev.what === 'gone' || ev.what === 'born') endSettle(ev.id, false); }
+  else if (ev.type === 'reset') { holds = {}; settles.clear(); }
 });
+// ---- settling: the way out of a hand (R 10-11 23:17, "lerp on put/attach"). A put, a place onto something, a mount:
+// the row moves the thing from the hand to its rest in one frame. The truth takes it at once (the fold, the object's own
+// transform, whereIs, the collider's place); what is DRAWN eases from where the hand had it over SETTLE_MS, the pull's
+// own ease the other way round (startPull: the thing comes to the hand; this: the hand's place lets it go). Rotation too.
+// The next row for the thing restarts the ease from what is drawn; a grab hands it to the pull; gone ends it. Presence
+// only: nothing sent, nothing logged; the collider sits the ease out (as a flight's does) and comes back at the truth.
+// A launch (throw, drop) is the engine's flight, not this.
+let SETTLE_MS = 120;   // lab knob (physicsApi.settle(ms))
+// the engine has it: the presentation copy lags a frame behind the canonical fold, which has a launch's body before the
+// holds message lands (review round 2 S1: a throw by anyone asked the realizer for the pre-grab pose on every client)
+const flying = (id) => presOwns(id) || !!replica.sim?.sim?.bodies?.[id];
+const settles = new Map();   // id -> { from: {p, q} world, drawn: {p, q} world, t0, dur, truth: {p, q} local | null (read on the first frame, after the realizer wrote it) }
+const drawnHeld = new Map();   // id -> {p, q} world: where drawHeld last put a held thing (the hand's place, as drawn)
+function startSettle(id) {
+  const obj = entities.get(id); if (!obj || flying(id) || compsOf(id)?.motion) return;
+  const s = settles.get(id); const at = s?.drawn ?? drawnHeld.get(id);
+  if (!at) return;   // no hand this client drew it in (the holder's body not here yet, a joiner mid-hold): the snap, never a slide from the old rest (round 2 S2.1)
+  if (s?.truth) { obj.position.copy(s.truth.p); obj.quaternion.copy(s.truth.q); }   // the realizer's write lands on the truth, never on a drawn pose
+  const from = { p: at.p.clone(), q: at.q.clone() };
+  settles.set(id, { from, drawn: { p: from.p.clone(), q: from.q.clone() }, t0: performance.now(), dur: SETTLE_MS, truth: null });
+  drawnHeld.delete(id);
+}
+function endSettle(id, restore = true) {
+  const s = settles.get(id); if (!s) return; settles.delete(id);
+  const obj = entities.get(id);
+  if (restore && obj && s.truth) { obj.position.copy(s.truth.p); obj.quaternion.copy(s.truth.q); obj.updateWorldMatrix(true, false); }
+  if (s.truth && !holds[id] && !presOwns(id)) suspendCollider(id, false);
+}
+const easeOut = (k) => 1 - (1 - k) ** 3;
+const _sp = new THREE.Vector3(), _sq = new THREE.Quaternion(), _st = new THREE.Quaternion();
+function drawSettles(now) {
+  for (const [id, s] of settles) {
+    const obj = entities.get(id);
+    if (!obj || holds[id] || presOwns(id)) { endSettle(id, false); continue; }
+    if (!s.truth) { s.truth = { p: obj.position.clone(), q: obj.quaternion.clone() }; suspendCollider(id, true); }
+    const k = s.dur > 0 ? Math.min(1, (now - s.t0) / s.dur) : 1;
+    if (k >= 1) { endSettle(id); continue; }
+    obj.position.copy(s.truth.p); obj.quaternion.copy(s.truth.q); obj.updateWorldMatrix(true, false);
+    obj.getWorldPosition(_sp); obj.getWorldQuaternion(_st);
+    const e = easeOut(k);
+    _sp.lerpVectors(s.from.p, _sp, e); _sq.copy(s.from.q).slerp(_st, e);
+    setWorldPose(obj, _sp, _sq); s.drawn.p.copy(_sp); s.drawn.q.copy(_sq);
+  }
+}
+/** The truth's world position of a settling thing (what a request may read: Covenant III), or null when it isn't one. */
+function settledTruth(id) {
+  const s = settles.get(id), obj = entities.get(id); if (!s?.truth || !obj) return null;
+  const p = obj.position.clone(), q = obj.quaternion.clone();
+  obj.position.copy(s.truth.p); obj.quaternion.copy(s.truth.q); obj.updateWorldMatrix(true, false); const w = obj.getWorldPosition(new THREE.Vector3());
+  obj.position.copy(p); obj.quaternion.copy(q); obj.updateWorldMatrix(true, false);
+  return w;
+}
 export const holdsNow = () => holds;
 /** What I hold, per the authority. */
 // newest first: what I picked up last is what I put down, throw or use first (R, 10-10: "you drop the last thing you
@@ -114,15 +173,14 @@ function presenceIdOf(actorId) {
 // ---------------------------------------------------------------- the body the authority tracks
 let arrived = false, moving = null, lastTrack = 0, trackedAt = null, lastMove = null, lastTeleport = 0, arriveFails = 0;
 const feet = () => { const p = hooks?.myPos(); return p ? [p.x, p.y, p.z] : null; };
-const r3 = (n) => Math.round(n * 1000) / 1000;
 const worldHasPhysics = () => { const es = replica.st?.entities; if (!es) return false; if (es['@world']?.c['physics-engine']) return true;
   for (const id in es) if (es[id].c.physics?.kind === 'dynamic' || es[id].c.grabbable) return true; return false; };
 bus.on('cut-adopted', () => { arrived = false; trackedAt = null; holds = {}; stuck = null; arriveFails = 0; });   // a fresh cut: try at once
 // R 10-10 ("Couldn't grab: your body isn't in the world yet", after a rename): the authority had no body for me while
 // this client thought it had arrived. Whatever the cause, the refusal says so: re-arrive once and send it again.
-let lagMs = 0;   // lab knob (physicsApi.lag): delay a throw/drop request by this much, as a slow round trip would
+let lagMs = 0;   // lab knob (physicsApi.lag): delay a throw/drop/punt request by this much, as a slow round trip would
 async function sendRequest(verb, args) {
-  if (lagMs && (verb === 'throw' || verb === 'drop')) await new Promise((res) => setTimeout(res, lagMs));
+  if (lagMs && (verb === 'throw' || verb === 'drop' || verb === 'punt')) await new Promise((res) => setTimeout(res, lagMs));
   const r = await rawSend(verb, args);
   if (verb === 'move' || r?.refused?.code !== 'not-here') return r;
   arrived = false; trackedAt = null; arriveFails = 0; stuck = null;
@@ -130,7 +188,7 @@ async function sendRequest(verb, args) {
 }
 export { sendRequest as requestWithBody };
 /** Bring the authority's track of my body to where I stand. Resolves true when it's there (or close enough to act). */
-async function track(force = false) {
+async function track(force = false, { noTeleport = false } = {}) {
   if (!replica.active || !net.joined) return false;
   const to = feet(); if (!to) return false;
   if (moving) { await moving; if (!force) return arrived; }
@@ -165,7 +223,7 @@ async function track(force = false) {
     // the authority lost me (flew faster than a body walks, or through something it calls solid): re-arrive, an act on the
     // record, which it refuses while I hold something (a teleport can't carry things)
     // (at most once in 3 s: each is an act on the record, and flying fast would otherwise write one per step)
-    if (['too-fast', 'solid'].includes(r?.refused?.code) && !myHolds().length && (force || performance.now() - lastTeleport > 3000)) {
+    if (!noTeleport && ['too-fast', 'solid'].includes(r?.refused?.code) && !myHolds().length && (force || performance.now() - lastTeleport > 3000)) {
       lastTeleport = performance.now();
       r = await sendRequest('move', { to: to.map(r3), teleport: true }); lastMove = { teleport: true, ok: !!r?.ok, refused: r?.refused?.code, reason: r?.refused?.reason };
       if (r?.ok) { trackedAt = r.at ?? to; stuck = null; return true; }
@@ -307,9 +365,12 @@ function drawHeld() {
         if (!r) { r = bq.clone().invert().multiply(obj.getWorldQuaternion(new THREE.Quaternion())); heldTurn.set(key, r); }
         at.q = bq.clone().multiply(r); } }
     const pull = pulls.get(id);
-    if (pull) { const k = Math.min(1, (now - pull.t0) / pull.dur); if (k >= 1) pulls.delete(id); else { const e = 1 - (1 - k) ** 3; at.p.lerpVectors(pull.from, at.p, e); } }
+    if (pull) { const k = Math.min(1, (now - pull.t0) / pull.dur); if (k >= 1) pulls.delete(id); else at.p.lerpVectors(pull.from, at.p, easeOut(k)); }
     setWorldPose(obj, at.p, at.q);
+    let d = drawnHeld.get(id); if (!d) drawnHeld.set(id, (d = { p: new THREE.Vector3(), q: new THREE.Quaternion() }));
+    obj.updateWorldMatrix(true, false); obj.getWorldPosition(d.p); obj.getWorldQuaternion(d.q);
   }
+  for (const id of drawnHeld.keys()) if (!holds[id]) drawnHeld.delete(id);
   poseHolders();
 }
 // What holding does to each holder's body (avatar.js setHoldPose): the grip's finger preset on each holding hand, and,
@@ -360,9 +421,9 @@ const swapFrom = new Map();  // id -> drawn world position before a copy swap (t
 function planRelease(id, pos, v, w) {
   const canon = replica.sim; if (!predictOn || !canon?.sim || canon.foreign || !pos || clockRtt() === null) return null;
   const obj = entities.get(id); if (!obj) return null;
-  const vv = planVelocity(v, grabOf(compsOf(id)), ENGINES[canon.spec?.engine]?.maxSpeed, 'throw').v;   // the authority's own arithmetic (launchplan.js)
   const q = obj.getWorldQuaternion(new THREE.Quaternion()).normalize().toArray();
-  return { id, p: pos, q, v: vv, ...(w ? { w } : {}) };
+  const { notes: _n, ...entry } = planLaunch({ id, p: pos, q, v, ...(w ? { w } : {}) }, grabOf(compsOf(id)), ENGINES[canon.spec?.engine]?.maxSpeed, 'throw');   // the authority's own arithmetic (launchplan.js)
+  return entry;
 }
 function predict(args) {
   if (presV !== replica.simVersion || !pres) { pres = replica.simClone(); presV = replica.simVersion; tickSeen = -1; stats.clones++; if (!pres) return false; }
@@ -443,8 +504,10 @@ function frame(wall) {
   const now = performance.now();
   drawFlights(wall ?? serverNow(), now);
   drawHeld();
+  drawSettles(now);
   drawPressFx();
   tickTrack(now);
+  tickShove(now);
   const ms = performance.now() - now; stats.frames++; stats.ms += ms; if (ms > stats.maxMs) stats.maxMs = ms;
 }
 
@@ -473,13 +536,17 @@ const dynamicIds = () => { const es = replica.st?.entities ?? {}; return Object.
 /** Where the thing is now, as the authority sees it: someone's hand, the air (the engine), or the log. */
 function whereIs(id) {
   const b = pres?.bodies?.[id]; if (b && !b.resting) return b.p;
+  const st = settledTruth(id); if (st) return st.toArray();
   const obj = entities.get(id); if (obj) { obj.updateWorldMatrix(true, false); return obj.getWorldPosition(new THREE.Vector3()).toArray(); }
   return null;
 }
+// what I hid with the eye (or isolated out) is offered no verb by proximity: no hint, no T, no kick, no hand (R 10-12 17:33).
+// Naming it still works (grab(name)), the Hierarchy row's equivalent
+const hiddenToMe = (id) => { const o = entities.get(id); return !!o && !!outOfMyView(o); };
 // the nearest a test accepts; for grabbing, the highest grabbable.priority first (the key, not the table: Resonite)
 function nearest(ok, ids = dynamicIds(), prio = () => 0) {
   const f = feet(); if (!f) return null; let best = null, bd = Infinity, bp = -Infinity;
-  for (const id of ids) { if (holds[id]) continue; const p = whereIs(id); if (!p) continue; const d = ok(p, f, id); if (d === null) continue;
+  for (const id of ids) { if (holds[id] || hiddenToMe(id)) continue; const p = whereIs(id); if (!p) continue; const d = ok(p, f, id); if (d === null) continue;
     const pr = prio(id); if (pr > bp || (pr === bp && d < bd)) { bd = d; bp = pr; best = id; } }
   return best;
 }
@@ -567,7 +634,7 @@ export async function throwHeld(arg) {
  *  that point and of the authority's hand. The same request the desktop key sends. */
 export async function grabNear(at, within = 0.6) {
   const f = feet(); if (!f) return null; let best = null, bd = within;
-  for (const id of grabbableIds()) { if (holds[id]) continue; const obj = entities.get(id); if (!obj) continue;
+  for (const id of grabbableIds()) { if (holds[id]) continue; const obj = entities.get(id); if (!obj || outOfMyView(obj)) continue;
     const c = obj.getWorldPosition(new THREE.Vector3()).add(localCentre(id, obj).applyQuaternion(obj.getWorldQuaternion(_cq))); const d = Math.hypot(c.x - at[0], c.y - at[1], c.z - at[2]);
     if (d < bd && inHand(c.toArray(), f, id) !== null) { bd = d; best = id; } }
   return best ? grab(best) : null;
@@ -594,6 +661,54 @@ export async function punt(arg) {
   const r = await sendRequest('punt', { id, power });
   if (!r?.ok) return refused('punt', r, id);
   flashHint(`you punt ${id}${r.volley ? ' (a volley)' : ''}`);
+  return r;
+}
+
+// ---------------------------------------------------------------- body shove (shared/shove.js)
+// Walking into a loose thing pushes it: MY body only (a remote's client shoves for its own body, an agent's process for
+// its), one punt {shove: true} per contact, predicted like a throw so the crate leaves at once. A refusal is quiet (nobody
+// asked for this push in words); shover.refused keeps it from repeating.
+const shover = createShover();
+let shoveOn = true;          // lab knob (physicsApi.shove.on(false)); off for the session when the server doesn't know shove
+const shoveLog = [];         // the last shoves sent and how they were answered (probe surface)
+const headV = smoother();    // VR room-scale: the head's smoothed walking speed (shared/shove.js)
+const _hw = new THREE.Vector3();
+let dynIds = { st: null, head: -2, ids: [] };   // per fold, as grabbableIds
+const dynamicCached = () => { const st = replica.st; if (dynIds.st !== st || dynIds.head !== replica.head) dynIds = { st, head: replica.head, ids: dynamicIds() }; return dynIds.ids; };
+function tickShove(now) {
+  if (!shoveOn || !replica.active || !net.joined || !arrived) return;
+  const canon = replica.sim; if (!canon?.sim || canon.foreign) return;
+  const st = hooks?.myState?.(), me = hooks?.me?.(); let f = feet();
+  // my own body only, walking: not in edit mode (R 10-12: a builder arranging crates nudges them), seated, down or flying
+  if (!st || !me || !f || hooks?.editing?.() || hooks?.seated?.() || hooks?.flying?.() || st.clip === 'ragdoll') { headV.reset(); return; }
+  const cap = colliderFor(me.userScale), sp = Number.isFinite(st.speed) ? st.speed : 0;
+  let vel = [Math.sin(st.yaw) * sp, Math.cos(st.yaw) * sp];
+  // VR room-scale: walking the room moves the head, not the body's root; it shoves by the head's smoothed motion only above
+  // vrSpeed (leaning over a table or tracking jitter never does). A stick walk is the ordinary intent above.
+  if (presenting() && hooks?.camera) { hooks.camera.getWorldPosition(_hw); const hv = headV.step([_hw.x, f[1], _hw.z], now);
+    if (sp < shover.feel.minSpeed && Math.hypot(hv[0], hv[1]) >= shover.feel.vrSpeed) { f = [_hw.x, f[1], _hw.z]; vel = hv; } }
+  else headV.reset();
+  if (Math.hypot(vel[0], vel[1]) < shover.feel.minSpeed) { shover.step({ st: replica.st, feet: f, vel: [0, 0], r: cap.r, now }); return; }
+  const rank = Number.isFinite(net.myRights?.rank) ? net.myRights.rank : null;
+  const mounted = new Set(); for (const [, m] of hooks?.mounts?.() ?? []) if (m?.to) mounted.add(m.to);
+  const bodies = []; for (const r of remotes.values()) { const p = r.avatar?.root?.position; if (p) bodies.push([p.x, p.y, p.z]); }
+  const go = shover.step({ st: replica.st, ids: dynamicCached(), feet: f, vel, r: cap.r, tall: cap.tall, now, rank, holds, mounted, bodies,
+    skip: (id) => flying(id) || settles.has(id) || pending.has(id) || !entities.has(id) });
+  for (const p of go) { hooks?.capSpeed?.(p.kept, p.keepMs); void shove(p.id, p.v, now); }
+}
+function planPunt(id, v) {
+  const canon = replica.sim; if (!predictOn || !canon?.sim || canon.foreign || clockRtt() === null) return null;
+  const wp = worldPose(replica.st, id); if (!wp) return null;
+  const { notes: _n, ...entry } = planLaunch({ id, p: wp.pos, q: wp.q, v }, null, ENGINES[canon.spec?.engine]?.maxSpeed, 'punt');
+  return entry;
+}
+async function shove(id, v, now) {
+  const plan = planPunt(id, v); if (plan) predict(plan);
+  await track(true, { noTeleport: true });   // a shove never re-arrives the body (the teleport limiter is for walking)
+  const r = await sendRequest('punt', { id, v, shove: true });
+  shoveLog.push({ id, v, t: now, ok: !!r?.ok, code: r?.refused?.code ?? null }); if (shoveLog.length > 32) shoveLog.shift();
+  if (!r?.ok) { shover.refused(id, performance.now(), r?.refused?.code); if (pending.delete(id)) presV = -1; bus.emit('shove-refused', { id, refused: r?.refused ?? null });
+    if (r?.refused?.code === 'unknown-arg') shoveOn = false; }   // a server from before shove: stop asking
   return r;
 }
 
@@ -663,7 +778,7 @@ function nearest4(side, at, scale) {
   const R = NEAR_GRAB * (scale || 1); let best = null;
   for (const id of grabbableIds()) {
     if (holds[id]?.by === net.you && (holds[id].hand === side || holds[id].second?.hand === side)) continue;   // already in this hand
-    const obj = entities.get(id); if (!obj) continue;
+    const obj = entities.get(id); if (!obj || outOfMyView(obj)) continue;
     const d = _bx.setFromObject(obj).distanceToPoint(at); if (d > R) continue;
     const g = grabOf(compsOf(id)); const k = [g.priority, pickGrip(g, side) ? 1 : 0, -d];
     if (!best || k[0] > best.k[0] || (k[0] === best.k[0] && (k[1] > best.k[1] || (k[1] === best.k[1] && k[2] > best.k[2])))) best = { id, k };
@@ -761,7 +876,11 @@ const inReach = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p &
 /** Where it is and how far along the floor from my feet: {at: [x, y, z], flat} or null. */
 const canPunt = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p && atFeet(p, f) !== null; };
 const whereFromMe = (id) => { const f = feet(), p = whereIs(id); return f && p ? { at: p, flat: Math.hypot(p[0] - f[0], p[2] - f[2]) } : null; };
-export const physicsApi = { grab, put, drop, throw: throwHeld, punt, canPunt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, pending: pendingNow, swaps: () => stats.swaps, predict: (on) => (predictOn = on !== false), lag: (ms) => (lagMs = Math.max(0, ms | 0)), inReach, whereFromMe, canPutAt,
+export const physicsApi = { grab, put, drop, throw: throwHeld, punt, canPunt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, pending: pendingNow, swaps: () => stats.swaps, predict: (on) => (predictOn = on !== false), lag: (ms) => (lagMs = Math.max(0, ms | 0)), settle: (ms) => (SETTLE_MS = Math.max(0, ms | 0)), settling: () => [...settles.keys()], whereIs, inReach, whereFromMe, canPutAt,
+  /** body shove: the lab knob, the shoves sent (and how each was answered), the things my body is against now */
+  shove: { on: (on) => (shoveOn = on !== false), log: () => shoveLog.slice(), touching: () => shover.touching(), feel: () => shover.feel,
+    against: () => { const f = feet(), cap = colliderFor(hooks?.me?.()?.userScale); if (!f || !replica.st) return [];
+      return dynamicIds().filter((id) => { const obb = obbOf(replica.st, id); return obb && contactOf(f, cap.r, cap.tall, { obb, box: aabbOfObb(obb) }, shover.feel.slack); }); } },
   /** the held things whose fx this client is drawing now (grabbable's presence tier) */
   fx: () => pressFxOn(),
   /** what a hand may do with a thing (shared/grab.js grabOf over this client's fold), or null */
