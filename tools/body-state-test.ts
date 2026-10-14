@@ -76,24 +76,29 @@ try {
   // Every channel of a held pose, through owner -> server -> peer -> tool. The
   // pose tool's own kneeling example used to refuse the whole body.
   const standing = await read(peer, { who: owner.name, detail: "bones" });
-  const kneel = { hips: { t: [0, -0.3, 0] } };
+  const kneel = { hips: { t: [0, -0.5, 0] } };   // the pose tool's own example (mcpl/tools.ts)
   owner.setPose(kneel as any); owner.tick();
   await until(() => eq(peer.people.get(owner.name)?.pose?.pose, kneel));
   const knelt = await read(peer, { who: owner.name, detail: "bones" });
   check("the pose tool's kneeling example is read, not refused", knelt.ok && eq(knelt.publishedRotations, kneel) && eq(knelt.unreadableBones, []), knelt.error);
-  check("kneeling lowers every joint by 0.3 m and moves none sideways", !!standing.joints && Object.entries(standing.joints).every(([k, j]: [string, any]) =>
-    near(knelt.joints?.[k]?.position, [j.position[0], j.position[1] - 0.3, j.position[2]])));
-  // Bones the reader can't use (nothing usable, a rotation with no length, a
-  // scale at 0), beside one it can: each costs itself, never the body.
-  const mixed = { leftUpperArm: [0, 0, 0.2, Math.sqrt(0.96)], rightUpperArm: { q: [0, 0] }, spine: [0, 0, 0, 0], leftLowerArm: { s: [1, 0, 1] } };
+  check("kneeling lowers every joint by 0.5 m and moves none sideways", !!standing.joints && Object.entries(standing.joints).every(([k, j]: [string, any]) =>
+    near(knelt.joints?.[k]?.position, [j.position[0], j.position[1] - 0.5, j.position[2]])));
+  // Bones read as the renderer reads them, beside ones the reader can't lay
+  // as drawn (nothing usable; a scale at or below 0, which it leaves out
+  // while laying the bone's rotation): each of those costs only itself, and
+  // a rotation with no length is no rotation, as in the renderer.
+  const turned = [0, 0, 0.2, Math.sqrt(0.96)];
+  const mixed = { leftUpperArm: turned, rightUpperArm: { q: [0, 0] }, spine: [0, 0, 0, 0], leftLowerArm: { s: [1, 0, 1] }, rightLowerArm: { q: turned, s: [1, -1, 1] } };
   owner.setPose(mixed as any); owner.tick();
   await until(() => eq(peer.people.get(owner.name)?.pose?.pose, mixed));
   const partial = await read(peer, { who: owner.name, detail: "bones" });
-  check("an unusable bone is named and dropped, and the rest of the pose is read", partial.ok && eq(partial.unreadableBones, ["rightUpperArm", "spine", "leftLowerArm"])
-    && near(partial.joints?.leftUpperArm?.rotation, mixed.leftUpperArm), JSON.stringify({ ok: partial.ok, error: partial.error, unreadable: partial.unreadableBones }));
+  check("a bone the reader can't lay as drawn is named, and the rest of the pose is read", partial.ok
+    && eq(partial.unreadableBones, ["rightUpperArm", "leftLowerArm", "rightLowerArm"]) && near(partial.joints?.leftUpperArm?.rotation, turned)
+    && near(partial.joints?.rightLowerArm?.rotation, turned) && near(partial.joints?.spine?.rotation, [0, 0, 0, 1]),
+    JSON.stringify({ ok: partial.ok, error: partial.error, unreadable: partial.unreadableBones }));
   const brief = await read(peer, { who: owner.name });
-  check("...and the summary names them too", eq(brief.unreadableBones, ["rightUpperArm", "spine", "leftLowerArm"])
-    && brief.summary.includes("3 unreadable: rightUpperArm, spine, leftLowerArm"), brief.summary);
+  check("...and the summary names them too", eq(brief.unreadableBones, ["rightUpperArm", "leftLowerArm", "rightLowerArm"])
+    && brief.summary.includes("3 unreadable: rightUpperArm, leftLowerArm, rightLowerArm"), brief.summary);
   owner.setPose(null); owner.tick();
   await until(() => !peer.people.get(owner.name)?.pose?.pose);
   peer.clip = "sit"; peer.tick();

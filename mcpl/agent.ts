@@ -1921,10 +1921,11 @@ export class WorldAgent {
     // knocked over is a fact about the blow, not about our readiness to
     // simulate it; the canned slump holds the shape until the sim produces a
     // real pose, exactly as it does when there is no sim at all.
-    // The fall starts from the pose this body held when the blow landed, as
-    // a browser's sim starts from the bones it draws (a kneel falls from
-    // kneeling height), not from the canned slump put up below.
-    const held = this.heldPoseAuthored ? this.heldPose : null;
+    // The fall starts from the pose this body held when the blow landed,
+    // whoever authored it, as a browser's sim starts from the bones it draws
+    // (a kneel falls from kneeling height), not from the canned slump put up
+    // below.
+    const held = this.heldPose;
     this.clip = "ragdoll";
     this.heldPose ??= DOWNED_POSE;
     this.reaches.clear();   // a knocked-over body's reach is gone — the arms are the ragdoll's now
@@ -1981,7 +1982,11 @@ export class WorldAgent {
       yaw: this.yaw,
       // no direction given = the browser default: you fall the way you face
       lean: lean ?? [Math.sin(this.yaw) * 0.9, 0, Math.cos(this.yaw) * 0.9],
-      pose: held,
+      // A pose someone gave this body while the skeleton loaded is the one
+      // it now holds; otherwise the one it held when the blow landed.
+      pose: this.heldPoseAuthored ? this.heldPose : held,
+      // where it stands, on a floor or a support, not the terrain under it
+      rootY: this.pos.y,
       pins: [...this.pins].map(([j, at]) => ({ j, at })),
     });
     this.clip = "ragdoll";
@@ -2915,13 +2920,14 @@ export class WorldAgent {
     const body = this.reachBodySync(path);
     if (body === undefined) return undefined;
     if (!body) return { err: `${t.who}'s skeleton could not be read` };
-    if (self) body.poseAt([this.pos.x, this.pos.y, this.pos.z], this.yaw, this.heldPose ?? null);
+    // A limp body draws no raw layer, so its contacts have none either.
+    if (self) body.poseAt([this.pos.x, this.pos.y, this.pos.z], this.yaw, this.heldPose ?? null, 1, this.clip !== "ragdoll");
     else {
       const pose = person!.pose;
       const pp = posePosition(pose);
       if (!pp) return { err: `${t.who} has no known position yet` };
       // their chosen size (absent = 1): contacts scale about their root, as in every browser
-      body.poseAt(pp, pose?.yaw ?? 0, (pose as { pose?: Record<string, number[]> | null })?.pose ?? null, pose?.scale);
+      body.poseAt(pp, pose?.yaw ?? 0, (pose as { pose?: Record<string, number[]> | null })?.pose ?? null, pose?.scale, pose?.clip !== "ragdoll");
     }
     const c = body.contact(t.point!, t.standoff ?? 0.02);
     if (!c) return { err: `${t.who}'s rig has no ${t.point}` };

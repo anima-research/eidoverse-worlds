@@ -22,9 +22,10 @@ import * as THREE from "../client/node_modules/three/build/three.module.js";
 import { GLTFLoader } from "../client/node_modules/three/examples/jsm/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, VRMUtils } from "../client/node_modules/@pixiv/three-vrm/lib/three-vrm.module.js";
 import { poseChannels } from "../shared/humanoid.js";
+import { parsePoseAnimation, retargetPoseAnimation } from "../client/lib/poseclips.js";
 import { BodyStateReader } from "../mcpl/body-state.ts";
 import { HeadlessBody, ReachBody } from "../mcpl/physics.ts";
-import { fixture } from "./body-fixture.ts";
+import { fixture, postureFixture } from "./body-fixture.ts";
 import { mkCheck } from "./harness.ts";
 const { check, tally } = mkCheck();
 
@@ -50,8 +51,15 @@ if (library) {
   const dir = join(library, "eidoverse/assets/vrms");
   for (const n of readdirSync(dir).filter(n => n.endsWith(".vrm") && !n.endsWith(".ktx2.vrm"))) files.set("/library/" + n, readFileSync(join(dir, n)));
 }
+// A standing body plays a clip under its held pose: the fixture's idle, at
+// its first frame on both sides.
+const idleBytes = postureFixture("idle");
+files.set("/library/__corpus/idle.vrma", idleBytes);
+const idle = await parsePoseAnimation(idleBytes.buffer.slice(idleBytes.byteOffset, idleBytes.byteOffset + idleBytes.byteLength));
 const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch(req) {
-  const f = files.get(decodeURIComponent(new URL(req.url).pathname));
+  const path = decodeURIComponent(new URL(req.url).pathname);
+  if (path === "/animations") return Response.json([{ name: "idle", path: "__corpus/idle.vrma" }]);
+  const f = files.get(path);
   return f ? new Response(f) : new Response("missing", { status: 404 });
 } });
 const base = `http://127.0.0.1:${server.port}`;
@@ -75,9 +83,20 @@ async function loadVrm(bytes: Uint8Array) {
   return { vrm, root };
 }
 
-/** avatar.js, at full weight. */
-function drawHeld(vrm: any, bones: Record<string, unknown>) {
+/** avatar.js, at full weight. A standing body: the clip's frame, the head
+ *  pitch, the held pose's normalized layer, vrm.update, then its raw layer.
+ *  A limp one (remotes.js sets a ragdoll limp): no clip under the sim's
+ *  bones, no pitch and no raw layer. `clip: false` leaves out the clip alone,
+ *  for the agent's reach body, which plays none. */
+function drawHeld(vrm: any, bones: Record<string, unknown>, { limp = false, clip = true, pitch = 0 } = {}) {
   const h = vrm.humanoid, rest = vrm.userData.boneRest;
+  if (!limp && clip) {
+    const mixer = new THREE.AnimationMixer(vrm.scene);
+    mixer.clipAction(retargetPoseAnimation(idle, vrm)).play();
+    mixer.setTime(0);
+  }
+  if (!limp && pitch) h.getNormalizedBoneNode("head").quaternion.premultiply(
+    new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.max(-0.5, Math.min(0.6, pitch))));
   const raw: any[] = [];
   let hipsT: any = null;
   for (const [n, v] of Object.entries(bones)) {            // setPose
@@ -91,7 +110,7 @@ function drawHeld(vrm: any, bones: Record<string, unknown>) {
   }
   if (hipsT) h.getNormalizedBoneNode("hips").position.add(hipsT);   // update: hips translation, then vrm.update
   h.update();
-  for (const e of raw) {                                   // _applyRawPose, with _rawRest's parent frame
+  for (const e of limp ? [] : raw) {                       // _applyRawPose, with _rawRest's parent frame
     const local = (o: any) => { const r = rest[o.name]; return new THREE.Matrix4().compose(new THREE.Vector3().fromArray(r.p), new THREE.Quaternion().fromArray(r.q), new THREE.Vector3().fromArray(r.s)); };
     const P = new THREE.Matrix4();
     let o = e.node.parent;
@@ -104,29 +123,29 @@ function drawHeld(vrm: any, bones: Record<string, unknown>) {
 }
 
 const poses: Record<string, Record<string, unknown>> = {
-  "kneeling (the pose tool's example)": { hips: { t: [0, -0.3, 0] } },
+  "kneeling (the pose tool's example)": { hips: { t: [0, -0.5, 0] } },
   "rotations over a kneel": { hips: { q: [0.1, 0, 0, 0.995], t: [0, -0.3, 0.05] }, leftUpperArm: [0, 0, -0.5, 0.866], spine: [0.08, 0, 0, 0.997] },
   "translation on an arm": { leftLowerArm: { t: [0.02, 0.05, 0] } },
   "uniform scale": { leftUpperArm: { s: 1.5 } },
   "non-uniform scale": { leftUpperArm: { s: [1, 1.6, 1] }, rightUpperLeg: { s: [1.3, 1, 0.8] }, chest: { s: [1.2, 0.9, 1] } },
-  "all channels together": { hips: { t: [0, -0.2, 0] }, chest: { q: [0, 0.2, 0, 0.98], s: [1.2, 1, 1] }, rightLowerArm: { q: [0, 0, 0.3, 0.954], t: [0, 0.03, 0] }, head: { s: 1.4 } },
+  "all channels together, and a rotation of no length": { hips: { t: [0, -0.2, 0] }, chest: { q: [0, 0.2, 0, 0.98], s: [1.2, 1, 1] }, rightLowerArm: { q: [0, 0, 0.3, 0.954], t: [0, 0.03, 0] }, head: { s: 1.4 }, neck: [0, 0, 0, 0] },
   "every channel on hips and on a forearm": { hips: { q: [0, 0.1, 0, 0.995], t: [0.05, -0.25, 0.02], s: [1.1, 0.9, 1.2] }, leftLowerArm: { q: [0.2, 0, 0, 0.98], t: [0, 0.02, 0.01], s: [0.8, 1.3, 1] } },
 };
 
 try {
   const reader = new BodyStateReader(base);
-  for (const path of [...files.keys()].map(k => k.slice("/library/".length))) {
+  for (const path of [...files.keys()].filter(k => k.endsWith(".vrm")).map(k => k.slice("/library/".length))) {
     let worst = 0, where = "", compared = 0, unread = 0, skipped = 0, worstTurn = 0, turnWhere = "";
-    for (const [label, bones] of Object.entries(poses)) {
+    for (const [pose, bones] of Object.entries(poses)) for (const limp of [false, true]) {
+      const label = `${pose}, ${limp ? "limp" : "standing"}`;
       const { vrm, root } = await loadVrm(files.get("/library/" + path)!);
       root.position.set(2, 0.5, -1); root.rotation.y = 0.6;
       root.updateMatrixWorld(true);
-      drawHeld(vrm, bones);
+      drawHeld(vrm, bones, { limp, pitch: 0.4 });
       root.updateMatrixWorld(true);
-      // A limp (ragdoll) body: the renderer draws it with no head pitch, so a
-      // pitch it publishes changes nothing.
+      // Both publish a head pitch, which only the standing body draws.
       const o: any = { who: path, avatar: path, generation: 1, self: true, connected: true, source: "unknown",
-        pose: { p: [2, 0.5, -1], yaw: 0.6, pitch: 0.4, speed: 0, clip: "ragdoll", pose: bones } };
+        pose: { p: [2, 0.5, -1], yaw: 0.6, pitch: 0.4, speed: 0, pose: bones, ...(limp ? { clip: "ragdoll" } : { clip: "idle", clipTime: 0 }) } };
       const r = await reader.read(path, "bones", undefined, () => ({ ...o, receivedAt: Date.now() }));
       if (!r.ok) { unread++; check(`${path}, ${label}: body_state reads it`, false, r.error); continue; }
       for (const [k, j] of Object.entries(r.joints) as [string, any][]) {
@@ -148,17 +167,18 @@ try {
   {
     const bad = await reader.read("bad", "bones", undefined, () => ({ who: "bad", avatar: "vrm1.vrm", generation: 1, self: true, connected: true,
       source: "unknown", receivedAt: Date.now(), pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "ragdoll", pose: [[0, 0, 0, 1]] } } as any));
-    check("a published pose that isn't a map of bones is refused whole", !bad.ok && bad.error === "published pose is not a map of bones", bad.error);
+    check("a published pose that isn't a map of bones is refused whole, with no claim about its bones",
+      !bad.ok && bad.error === "published pose is not a map of bones" && bad.unreadableBones === null, bad.error);
   }
 
   // The reach solver sees the held pose's normalized layer only: the
   // renderer solves its IK before it lays a held translation on an arm or a
   // scale (avatar.js update), so the solve is the same with or without them,
-  // and only the drawn hand moves. A ragdoll clip only so no clip is loaded.
+  // and only the drawn hand moves.
   {
     const reaching = (bones: Record<string, unknown>) => reader.read("reacher", "bones", undefined, () => ({ who: "reacher", avatar: "turned-vrm1.vrm",
       generation: 1, self: true, connected: true, source: "unknown", receivedAt: Date.now(),
-      pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "ragdoll", pose: bones, reach: { leftHand: { t: { p: [1.4, 1.3, 0.4] } } } } } as any));   // out of reach, so the gap is the arm's shortfall
+      pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "idle", clipTime: 0, pose: bones, reach: { leftHand: { t: { p: [1.4, 1.3, 0.4] } } } } } as any));   // out of reach, so the gap is the arm's shortfall
     const plain = await reaching({ head: [0, 0, 0, 1] });
     // A translation on the upper arm and a scale on the chest would move the
     // shoulder, and a scale on the upper arm would lengthen the arm, for a
@@ -202,10 +222,25 @@ try {
   const stretched = { hips: { t: [0, -0.3, 0] }, leftUpperArm: { s: [1, 2, 1] }, leftLowerArm: { t: [0, 0.04, 0] } };
   kept.poseAt([1, 0, 2], 0.3, stretched);
   const posed = hand(kept);
-  const read = await new BodyStateReader(base).read("reach", "bones", undefined, () => ({ who: "reach", avatar: "turned-vrm1.vrm", generation: 1,
-    self: true, connected: true, source: "unknown", receivedAt: Date.now(), pose: { p: [1, 0, 2], yaw: 0.3, speed: 0, clip: "ragdoll", pose: stretched } } as any));
-  check("the reach solver's body puts a held pose's hand where body_state does",
-    !!read.ok && posed.distanceTo(new THREE.Vector3(...read.joints.leftHand.position)) < 1e-9, read.error ?? "");
+  // The agent's reach body plays no clip, so it's held to the renderer with none.
+  {
+    const { vrm, root } = await loadVrm(files.get("/library/turned-vrm1.vrm")!);
+    root.position.set(1, 0, 2); root.rotation.y = 0.3; root.updateMatrixWorld(true);
+    drawHeld(vrm, stretched, { clip: false });
+    root.updateMatrixWorld(true);
+    const drawn = vrm.humanoid.getRawBoneNode("leftHand").getWorldPosition(new THREE.Vector3());
+    check("the agent's reach body puts a held pose's hand where the renderer draws it", posed.distanceTo(drawn) < 1e-5,
+      `${(posed.distanceTo(drawn) * 1000).toFixed(4)} mm`);
+    const limp = await loadVrm(files.get("/library/turned-vrm1.vrm")!);
+    limp.root.position.set(1, 0, 2); limp.root.rotation.y = 0.3; limp.root.updateMatrixWorld(true);
+    drawHeld(limp.vrm, stretched, { limp: true });
+    limp.root.updateMatrixWorld(true);
+    kept.poseAt([1, 0, 2], 0.3, stretched, 1, false);
+    const drawnLimp = limp.vrm.humanoid.getRawBoneNode("leftHand").getWorldPosition(new THREE.Vector3());
+    check("...and a limp one's where the renderer draws a limp body's, with no raw layer",
+      hand(kept).distanceTo(drawnLimp) < 1e-5 && drawnLimp.distanceTo(drawn) > 0.1, `${(hand(kept).distanceTo(drawnLimp) * 1000).toFixed(4)} mm`);
+    kept.poseAt([1, 0, 2], 0.3, stretched);
+  }
   kept.poseAt([1, 0, 2], 0.3, null);
   const near = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) < 1e-9;
   const ck = kept.contact("hand_l", 0), cf = fresh.contact("hand_l", 0);

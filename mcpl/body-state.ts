@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { glbJson, humanBones, worldPositions, worldRotations, isVrm0 } from "./rig.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { normalizeReachBag, TOUCH_GAP, sameReach } from "../shared/reachwire.js";
-import { ReachBody, standInChannels } from "./physics.ts";
+import { ReachBody, standInUnread } from "./physics.ts";
 import { PoseClips } from "./pose-clips.ts";
 import { CLIP_SLOTS } from "../shared/clipdefs.js";
 import { planReaches, reachKey } from "../shared/reachorder.js";
@@ -197,7 +197,7 @@ export class BodyStateReader {
       const f = freshness(o), p = o.pose, valid = !validate(o);
       const bones = p?.pose ?? {}, reaches = normalizeReachBag(p?.reach);
       const count = valid ? Object.keys(bones).length : null;
-      const unreadable = valid ? Object.entries(bones).filter(([, v]) => !standInChannels(v)).map(([n]) => n) : [];
+      const unreadable = valid ? Object.entries(bones).filter(([, v]) => standInUnread(v)).map(([n]) => n) : [];
       const wing = p?.wingsFolded === true ? ", wings folded" : p?.wingsFolded === false ? ", wings open" : "";
       return {
         ok: f.status === "current", who, avatar: o.avatar || null, self: o.self,
@@ -211,7 +211,7 @@ export class BodyStateReader {
           sourceBasis: o.self ? "owner state" : o.source === "physics" ? "ragdoll clip; original author unknown" : "producer does not publish provenance" },
         // Published bones with nothing the stand-in can use: they cost
         // themselves, never the body, and every reply names them.
-        unreadableBones: unreadable,
+        unreadableBones: valid ? unreadable : null,
         reaches: reaches ?? {},
         stability: { status: "unmeasured", reason: "single observation; use window_ms to measure reconstructed joint motion" },
         ...(f.status !== "current" ? { error: validate(o) ?? "body observation is stale; wait for a fresh presence sample" } : {}),
@@ -273,7 +273,8 @@ export class BodyStateReader {
         // A limp body draws no head pitch (avatar.js update: not while limp).
         if (Number.isFinite(o.pose!.pitch) && o.pose!.clip !== "ragdoll" && item.body.av.nodes.head) item.body.av.nodes.head.quaternion.premultiply(
           new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.max(-.5, Math.min(.6, o.pose!.pitch!))));
-        item.body.holdPose(mapped);
+        // A limp body draws no raw layer (remotes.js sets a ragdoll limp).
+        item.body.holdPose(mapped, { raw: o.pose!.clip !== "ragdoll" });
         item.body.av.root.updateMatrixWorld(true);
       }
       const own = loaded.get(who)!;

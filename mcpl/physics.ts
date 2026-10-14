@@ -298,15 +298,22 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
   }
 }
 
-/** One bone of a held pose as the stand-ins read it: its channels
- *  (shared/humanoid.js poseChannels), or null when the value is one the pose
- *  tool itself refuses (shared/humanoid.js normalizePoseValue): nothing usable
- *  in it, a rotation with no length, or a scale with a component at or below
- *  0, which collapses or mirrors the bone. */
+/** One bone of a held pose as the stand-ins read it: the channels the
+ *  renderer reads (shared/humanoid.js poseChannels; a rotation of no length
+ *  normalizes to none, as there), less a scale with a component at or below
+ *  0, which collapses or mirrors the bone and which the stand-in leaves out.
+ *  Null when nothing usable is left. */
 export function standInChannels(v: unknown) {
   const c = poseChannels(v);
-  if (!c || (c.q && Math.hypot(...c.q) < 1e-9) || (c.s && !c.s.every((x: number) => x > 0))) return null;
-  return c;
+  if (!c || !c.s || c.s.every((x: number) => x > 0)) return c;
+  return c.q || c.t ? { ...c, s: null } : null;
+}
+
+/** Whether the stand-in can't lay a published bone as the renderer draws it:
+ *  nothing usable in its value, or a scale it leaves out (standInChannels). */
+export function standInUnread(v: unknown) {
+  const c = poseChannels(v);
+  return !c || (!!c.s && !c.s.every((x: number) => x > 0));
 }
 
 /** One headless body's physics: a stand-in skeleton plus whichever Ragdoll is
@@ -620,7 +627,7 @@ export class ReachBody {
    *  stands for vrm.scene, never the root — so the root keeps its position and
    *  yaw, every joint and contact scales about it, and root-frame points
    *  (reach `space`) stay in unscaled metres like reachnet.js's localToWorld. */
-  poseAt(p: number[], yaw: number, pose: Record<string, unknown> | null, scale: unknown = 1) {
+  poseAt(p: number[], yaw: number, pose: Record<string, unknown> | null, scale: unknown = 1, raw = true) {
     const u = clampBodyScale(scale);
     if (this.av.pivot.scale.x !== u) {
       this.av.pivot.scale.setScalar(u);
@@ -634,7 +641,7 @@ export class ReachBody {
       n.quaternion.identity(); n.position.copy(this.restPositions.get(name));
       n.userData.heldT = null; n.userData.heldScale = null;
     }
-    if (pose) this.holdPose(pose);
+    if (pose) this.holdPose(pose, { raw });
     this.av.root.updateMatrixWorld(true);
   }
 
@@ -648,16 +655,19 @@ export class ReachBody {
    *    after the IK and vrm.update: any other bone's `t` adds to its offset
    *    from its parent, in the parent's rest axes turned by the parent's
    *    pose, and `s` scales what hangs from the bone in its own rest axes.
-   *  A bone the stand-in lacks, or a value standInChannels can't read, is
-   *  skipped; body_state names both. */
-  holdPose(pose: Record<string, unknown>) {
+   *  A limp body draws no raw layer (avatar.js: _applyRawPose doesn't run
+   *  while limp), so `raw: false` leaves it out. A bone the stand-in lacks,
+   *  or a value standInChannels can't read, is skipped; body_state names
+   *  both. */
+  holdPose(pose: Record<string, unknown>, { raw = true } = {}) {
     const T = this.m.THREE;
     for (const [j, v] of Object.entries(pose)) {
       const n = this.av.nodes[j], c = standInChannels(v);
       if (!n || !c) continue;
       if (c.q) n.quaternion.set(c.q[0], c.q[1], c.q[2], c.q[3]).normalize();
       if (c.t && j === "hips") n.position.add(new T.Vector3(c.t[0], c.t[1], c.t[2]));
-      else if (c.t) n.userData.heldT = new T.Vector3(c.t[0], c.t[1], c.t[2]);
+      if (!raw) continue;
+      if (c.t && j !== "hips") n.userData.heldT = new T.Vector3(c.t[0], c.t[1], c.t[2]);
       if (c.s) {
         const axes = new T.Matrix4().makeRotationFromQuaternion(new T.Quaternion().fromArray(this.restAxes[j] ?? [0, 0, 0, 1]));
         n.userData.heldScale = axes.clone().multiply(new T.Matrix4().makeScale(c.s[0], c.s[1], c.s[2])).multiply(axes.invert());
