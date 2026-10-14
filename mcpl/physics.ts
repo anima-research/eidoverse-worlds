@@ -55,7 +55,7 @@ let simMods: {
   Ragdoll: any;
   Body: any;                 // the engine that actually runs: AmmoRagdoll or Ragdoll
   engine: string;
-  rig: { glbJson: any; humanBones: any; worldPositions: any; makeAvatar: any };
+  rig: { glbJson: any; humanBones: any; worldPositions: any; worldRotations: any; makeAvatar: any };
   THREE: any;
   terrain: any;
   colliders: any;
@@ -221,9 +221,9 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
     const g = m.rig.glbJson(buf);
     const bones = m.rig.humanBones(g);
     if (!bones) throw new Error("no humanoid extension");
-    const wp = m.rig.worldPositions(g);
-    const P: Record<string, any> = {};
-    for (const [b, n] of Object.entries(bones)) if (g.nodes[n as number]) P[b] = wp(n);
+    const wp = m.rig.worldPositions(g), wr = m.rig.worldRotations(g);
+    const P: Record<string, any> = {}, restAxes: Record<string, number[]> = {};
+    for (const [b, n] of Object.entries(bones)) if (g.nodes[n as number]) { P[b] = wp(n); restAxes[b] = wr(n).toArray(); }
     if (!P.hips) throw new Error("no hips bone");
     // Hair chains too, with their real parenting.
     //
@@ -288,6 +288,7 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
     // the shipped rigs). The ragdoll never asked, so this rides as a
     // non-enumerable rider rather than a change to its P contract.
     Object.defineProperty(P, "__vrm0", { value: !!g.extensions?.VRM, enumerable: false });
+    Object.defineProperty(P, "__restAxes", { value: restAxes, enumerable: false });
     skeletons.set(key, P);
     return P;
   } catch (e) {
@@ -297,16 +298,37 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
   }
 }
 
+/** One bone of a held pose as the stand-ins read it: its channels
+ *  (shared/humanoid.js poseChannels), or null when nothing in it is usable,
+ *  a rotation with no length included. */
+export function standInChannels(v: unknown) {
+  const c = poseChannels(v);
+  return c && !(c.q && Math.hypot(...c.q) < 1e-9) ? c : null;
+}
+
+/** A stand-in node's local matrix with its held scale. The scale acts in the
+ *  bone's own rest axes, which a rig rarely aligns with the model's, so it
+ *  can't ride Object3D.scale (always in the node's normalized axes); it is
+ *  applied after the bone's rotation, to everything hanging from it, as a
+ *  raw bone's scale is. Its own position and rotation stay unscaled. */
+function heldUpdateMatrix(this: any) {
+  this.matrix.compose(this.position, this.quaternion, this.scale);
+  if (this.userData.heldScale) this.matrix.multiply(this.userData.heldScale);
+  this.matrixWorldNeedsUpdate = true;
+}
+
 /** One headless body's physics: a stand-in skeleton plus whichever Ragdoll is
  *  currently running on it. The caller owns cadence (call step from its own
  *  ticker) and streaming (read pose/root after each step). */
 export class HeadlessBody {
   private m: NonNullable<typeof simMods>;
   private av: any;
+  private vrm0: boolean;
   rd: any = null;
 
   private constructor(m: NonNullable<typeof simMods>, P: Record<string, any>) {
     this.m = m;
+    this.vrm0 = !!(P as any).__vrm0;
     // realParent carries the NON-HUMANOID chains -- hair, and now wings.
     // Without it makeAvatar drops any bone that is not in its humanoid PARENT
     // table, which is every one of them.
@@ -325,16 +347,19 @@ export class HeadlessBody {
   }
 
   /** Reset the stand-in to a pose at a place, standing on the live ground.
-   *  `pose` is a sparse bone->quat map (a streamed pose — e.g. where a
-   *  dragger's hand left this body); null means standing. */
+   *  `pose` is a sparse bone map (a streamed pose — e.g. where a dragger's
+   *  hand left this body — or the pose it held); null means standing. Only
+   *  rotations: a limp body in the browser drops a held pose's translations
+   *  and scales too (avatar.js _applyRawPose), except a hips drop, which
+   *  begin() moves onto the root. */
   private pose(x: number, z: number, yaw: number, pose: Record<string, unknown> | null) {
     this.av.root.position.set(x, this.m.terrain.heightAt(x, z), z);
     this.av.root.rotation.y = yaw;
     for (const n of Object.values(this.av.nodes) as any[]) n.quaternion.identity();
     if (pose) {
       for (const [j, v] of Object.entries(pose)) {
-        const n = this.av.nodes[j], q = poseChannels(v)?.q;   // rotation only: this stand-in has no t/s
-        if (n && q) n.quaternion.set(q[0], q[1], q[2], q[3]);
+        const n = this.av.nodes[j], q = standInChannels(v)?.q;
+        if (n && q) n.quaternion.set(q[0], q[1], q[2], q[3]).normalize();
       }
     }
     this.av.root.updateMatrixWorld(true);
@@ -355,6 +380,18 @@ export class HeadlessBody {
     this.pose(opts.x, opts.z, opts.yaw, opts.pose ?? null);
     if (opts.rootY != null) {
       this.av.root.position.y = opts.rootY;
+      this.av.root.updateMatrixWorld(true);
+    }
+    // A held pose that lowers the hips (kneeling) hands its drop to the root,
+    // as the browser does before its own sim (avatar.js bakeHipsIntoRoot):
+    // the fall starts where the body was drawn, not at standing height. The
+    // drop is in the frame the normalized hips moves in, vrm.scene, which
+    // for a VRM0 body is turned half round; this stand-in has no such pivot.
+    const hipsT = standInChannels(opts.pose?.hips)?.t;
+    if (hipsT) {
+      const drop = new this.m.THREE.Vector3(hipsT[0], hipsT[1], hipsT[2]);
+      if (this.vrm0) drop.set(-drop.x, drop.y, -drop.z);
+      this.av.root.position.add(drop.applyMatrix3(new this.m.THREE.Matrix3().setFromMatrix4(this.av.pivot.matrixWorld)));
       this.av.root.updateMatrixWorld(true);
     }
     const lean = Array.isArray(opts.lean) && opts.lean.length === 3
@@ -525,6 +562,7 @@ export class ReachBody {
   av: any;
   private chains = new Map<string, any>();
   private restPositions = new Map<string, any>();
+  private restAxes: Record<string, number[]>;
   private landmarks = new Map<string, { node: any; offset: any; normal: any }>();
 
   private constructor(m: NonNullable<typeof simMods>, P: Record<string, any>, realParent: Record<string, string | null> | null = null) {
@@ -533,7 +571,11 @@ export class ReachBody {
     // humanoid ancestry (shoulders, upperChest, fingers); chain measurement
     // still refuses a lower limb that is not its upper limb's direct child.
     this.av = m.rig.makeAvatar(P, { vrm0: !!(P as any).__vrm0, realParent });
-    for (const [name, n] of Object.entries(this.av.nodes) as [string, any][]) this.restPositions.set(name, n.position.clone());
+    this.restAxes = (P as any).__restAxes ?? {};
+    for (const [name, n] of Object.entries(this.av.nodes) as [string, any][]) {
+      this.restPositions.set(name, n.position.clone());
+      n.updateMatrix = heldUpdateMatrix;
+    }
     for (const point of Object.keys(CONTACT_POINTS)) {
       const frame = this.estimateContact(point);
       const node = this.av.nodes[(CONTACT_POINTS as any)[point].bone];
@@ -578,14 +620,34 @@ export class ReachBody {
     }
     this.av.root.position.set(p[0], p[1] ?? 0, p[2]);
     this.av.root.rotation.y = yaw ?? 0;
-    for (const [name, n] of Object.entries(this.av.nodes) as [string, any][]) { n.quaternion.identity(); n.position.copy(this.restPositions.get(name)); }
-    if (pose) {
-      for (const [j, v] of Object.entries(pose)) {
-        const n = this.av.nodes[j], q = poseChannels(v)?.q;   // rotation only: this stand-in has no t/s
-        if (n && q) n.quaternion.set(q[0], q[1], q[2], q[3]);
+    for (const [name, n] of Object.entries(this.av.nodes) as [string, any][]) {
+      n.quaternion.identity(); n.position.copy(this.restPositions.get(name)); n.userData.heldScale = null;
+    }
+    if (pose) this.holdPose(pose);
+    this.av.root.updateMatrixWorld(true);
+  }
+
+  /** Lay a held pose over the stand-in as it stands (after poseAt, and after
+   *  any clip), channel by channel, as the renderer does (avatar.js setPose
+   *  and _applyRawPose). `q` replaces the bone's rotation. `t` adds to the
+   *  bone's offset from its parent: in the parent's rest axes turned by the
+   *  parent's pose, which for hips is the frame the normalized hips moves in
+   *  (the pivot: vrm.scene, a VRM0 half-turn and the body's size included).
+   *  `s` scales what hangs from the bone in the bone's own rest axes, as the
+   *  renderer's scale on the raw bone does. A bone the stand-in lacks, or a
+   *  value standInChannels can't read, is skipped; body_state names both. */
+  holdPose(pose: Record<string, unknown>) {
+    const T = this.m.THREE;
+    for (const [j, v] of Object.entries(pose)) {
+      const n = this.av.nodes[j], c = standInChannels(v);
+      if (!n || !c) continue;
+      if (c.q) n.quaternion.set(c.q[0], c.q[1], c.q[2], c.q[3]).normalize();
+      if (c.t) n.position.add(new T.Vector3(c.t[0], c.t[1], c.t[2]));
+      if (c.s) {
+        const axes = new T.Matrix4().makeRotationFromQuaternion(new T.Quaternion().fromArray(this.restAxes[j] ?? [0, 0, 0, 1]));
+        n.userData.heldScale = axes.clone().multiply(new T.Matrix4().makeScale(c.s[0], c.s[1], c.s[2])).multiply(axes.invert());
       }
     }
-    this.av.root.updateMatrixWorld(true);
   }
 
   private chain(limb: string) {

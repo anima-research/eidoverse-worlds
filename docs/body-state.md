@@ -118,13 +118,22 @@ Examples:
 
 ## What the readings mean
 
-- `publishedRotations` preserves the sparse normalized-bone quaternions
-  received or held by the body. `overrides.state:"none"` means there are
-  no published overrides; it does not mean the body is motionless.
+- `publishedRotations` preserves the sparse held pose as the body
+  published it: per bone a quaternion, or `{q, t, s}`.
+  `overrides.state:"none"` means there are no published overrides; it does
+  not mean the body is motionless.
+- `unmappedBones` names published bones this rig's humanoid skeleton lacks,
+  and `unreadableBones` names published bones whose value has nothing
+  usable in it (see `poseChannels` in `shared/humanoid.js`). Either costs
+  only that bone: the rest of the pose is still evaluated.
 - Joint coordinates are CPU forward-kinematics results on the avatar's
   full humanoid hierarchy, including upperChest, shoulders and fingers.
   Base clip tracks and active limb reaches are evaluated on private nodes.
-  Published head pitch and bone overrides are composed over the clip. Clip
+  Published head pitch and bone overrides are composed over the clip, as
+  the renderer composes them: a rotation replaces the bone's, a translation
+  adds to its offset from its parent (on hips, the body's: kneeling lowers
+  every joint), and a scale acts in the bone's own rest axes on everything
+  hanging from it. Clip
   crossfades, one-shot emotes, gaze, wing/springbone motion and rendering
   interpolation are not reproduced, so this is not final-frame pixel parity.
 - Contact positions/normals are labeled `anatomical_estimate`. The anatomical
