@@ -26,7 +26,7 @@ export const COMMANDS = [
   { name: 'touch', help: '/touch [name] [point] [left|right] — reach out and rest a hand on someone (nearest person, their shoulder, your right hand by default); the hand tracks them until /letgo' },
   { name: 'letgo', aliases: ['release'], help: 'let go — lower your reaching hand (or just one: /letgo left|right)' },
   { name: 'eyes', help: '/eyes close|open — hold your eyes shut, if your rig has eyelid bones' },
-  { name: 'pushable', help: '/pushable on|off — whether shoves can knock you over (on by default)' },
+  { name: 'pushable', help: '/pushable on|off — whether a stranger’s shove can knock you over (off by default; Settings ▸ body has the whole table)' },
   { name: 'kick', help: '/kick <name> [reason] — moderation: remove someone from this world (owner). Objects fly with /punt' },
   { name: 'punt', aliases: ['boot'], help: '/punt [thing|person] [power] — kick a thing at your feet into flight (C); a person\'s name is the ragdoll shove (their client decides)' },
   { name: 'grab', aliases: ['pickup', 'take'], help: '/grab [thing] — pick up the nearest thing you can carry, or the one named (T)' },

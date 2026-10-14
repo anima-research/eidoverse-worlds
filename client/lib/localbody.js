@@ -509,10 +509,14 @@ function applyShove(lean, by) {
 export function initLocalBody({ logChat: logChatFn }) {
   logChat = logChatFn;
 
-  // my two switches, as the authority's consent table for my body: the server checks it before it forwards anyone's
-  // knock-over, pose or grab (consent.js bodyTable). Every arrival (a world's presence plane is its own), every change.
+  // my whole consent table (every class × strangers/friends), as the authority takes it: the server checks it before
+  // it forwards anyone's knock-over, pose, grab or touch (consent.js bodyTable). The preset first — it resets the
+  // server's cells to Normal — then one set per cell that departs from it, in order on one socket. Every arrival (a
+  // world's presence plane is its own), every change.
   const syncConsent = () => { if (CONFIG.renderer || CONFIG.spectate) return;
-    for (const [cls, mode] of bodyTable()) sendRequest('consent', { set: { class: cls, tier: 'strangers', mode } }).catch?.(() => {}); };
+    const { preset, sets } = bodyTable();
+    sendRequest('consent', { preset }).catch?.(() => {});
+    for (const set of sets) sendRequest('consent', { set }).catch?.(() => {}); };
   bus.on('hydrated', syncConsent); onConsentChange(syncConsent);
 
   // X reaches the socket system through the controller's hook: mounted → get

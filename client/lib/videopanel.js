@@ -17,6 +17,7 @@ import { CONFIG, bus } from './base.js';
 import { FOLIAGE_MODES, getFoliageMode, setFoliageMode } from './foliage.js';
 import { registerXRPanel } from './xrpanels.js';
 import { allowUntrusted, setAllowUntrusted, UNTRUSTED_WORDS } from './mediaprefs.js';
+import { initConsentPanel } from './consentpanel.js';
 
 // same markup contract as the audio section (label right of centre, control
 // left of it — index.html owns .row.wide / .nm / .ctl)
@@ -193,4 +194,5 @@ export function initVideoPanel() {
     const p = document.createElement('div'); p.style.cssText = 'display:block;width:100%;box-sizing:border-box;padding:2px 8px 6px;font-size:11px;color:var(--dim);line-height:1.4';
     p.textContent = UNTRUSTED_WORDS.hint; body.appendChild(p);
   }, { id: 'safety', host: 'settings' });
+  initConsentPanel();
 }
