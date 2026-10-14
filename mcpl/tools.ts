@@ -792,6 +792,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   light: async (ag, a, ctx, name) => {
+      // #216 (ported 10-14): an id, when given, is a non-empty string; null/omitted means a new light. The wire doesn't
+      // refuse a bad id — it ESCAPES it (x--…), so "" and {} used to mint junk lights with no word said.
+      if (a.id !== undefined && a.id !== null && (typeof a.id !== "string" || !a.id.trim()))
+        return { content: [{ type: "text", text: `light's id, when given, is a non-empty string naming a light to update; omit it (or pass null) to place a new one` }], isError: true };
       if (a.id && ag.entities.has(a.id)) {
         // UPDATE: send only what was given — the fold merges, so absent
         // fields keep their prior value (stamping defaults here would reset

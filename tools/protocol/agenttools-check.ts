@@ -97,6 +97,21 @@ ok((await ann.req("create", { id: "mug", model: "test/cup.glb", components: { tr
 for (let i = 0; i < 60 && !(ag.entities.has("wall") && ag.entities.has("mug")); i++) await sleep(50);
 const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name);
 
+// ---- AT5: the light tool's id (port of upstream #216) ----
+// id omitted or null = a new light; an id that IS given must be a non-empty string — "" or "   " used to be minted
+// over silently, and a non-string went to the wire to bounce off the grammar in the grammar's words, not the tool's.
+{ const before = [...ag.entities.keys()].length;
+  for (const id of ["", "   ", 4, [], {}]) {
+    const r = await call("light", { id, x: 1, z: 1 });
+    ok(r.isError && /id/.test(T(r)) && /non-empty string|omit/.test(T(r)), `AT5a light refuses a given id that isn't a non-empty string, in its own words: ${JSON.stringify(id)}`, T(r));
+  }
+  await sleep(300);
+  ok([...ag.entities.keys()].length === before, "AT5a …and minted nothing for them", [...ag.entities.keys()].length - before);
+  const b2 = [...ag.entities.keys()].length;
+  const r = await call("light", { id: null, x: 1, z: 1 });
+  for (let i = 0; i < 40 && [...ag.entities.keys()].length === b2; i++) await sleep(50);
+  ok(!r.isError && [...ag.entities.keys()].length === b2 + 1, "AT5b id: null is 'omitted' — one new light", T(r)); }
+
 // ---- AT1: one body ----
 { const thru = await call("move", { to: [0, 6], run: true });
   ok(thru.isError && /solid|in the way/.test(T(thru)) && /wall/.test(T(thru)), "AT1a walking at a wall: the authority's solid stops the agent, and the tool says so (an error naming the wall)", T(thru));
