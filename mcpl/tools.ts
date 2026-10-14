@@ -26,7 +26,6 @@ import { describeBody } from "../shared/sockbody.js";
 import { dec as decName } from "../shared/protocol/names.js";
 import { actorName } from "../shared/protocol/names.js";
 import { refusalText, warningText, touchWords } from "../shared/protocol/refusal.js";
-import { mintId } from "../shared/protocol/ids.js";
 import { readdirSync } from "node:fs";
 import sharp from "sharp";
 import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose } from "../shared/humanoid.js";

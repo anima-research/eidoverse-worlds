@@ -274,9 +274,13 @@ await C("I1", "the authority mints ids with 128+ random bits (<slug>-<26 base32>
   const W = world(); const ids = []; for (let i = 0; i < 40; i++) { const r = W.call("create", { model: "crate" }); ids.push(r.refs?.[0]?.id); }
   const dup = W.call("create", { from: ids[0] }); const dupId = dup.refs?.[0]?.id;
   return [ids.every((x) => typeof x === "string" && RAND.test(x) && FOLD.isEntityId(x)) && new Set(ids).size === ids.length && RAND.test(dupId ?? ""), [ids.slice(0, 3), dupId]]; });
-await C("I2", "every client and agent mints through one helper (shared/protocol/ids.js); no 8-hex or coordinate ids remain", () => {
-  const files = ["client/lib/build.js", "client/lib/worldquad.js", "client/lib/structure_ui.js", "mcpl/tools.ts"];
+await C("I2", "every client mints through one helper (shared/protocol/ids.js), the agent door mints nothing (the authority does); no 8-hex or coordinate ids remain", () => {
+  const files = ["client/lib/build.js", "client/lib/worldquad.js", "client/lib/structure_ui.js"];
+  // the agent door mints NOTHING since the 10-14 tools rewrite: create {id omitted} lets the authority mint (mcpl/tools.ts #216
+  // note). A client-side mint reappearing there — by any spelling — is the regression this guards.
+  const doorMints = /mintId\(|randomUUID\(|randomPart\(|Math\.random\(\)\.toString\(36\)/.test(read("mcpl/tools.ts"));
   const bad = files.filter((f) => /randomUUID\(\)\.slice\(0, 8\)|`house-\$\{Math\.floor/.test(read(f)) || !/mintId\(/.test(read(f)));
+  if (doorMints) bad.push("mcpl/tools.ts (mints client-side; the authority mints)");
   return [!bad.length && fs.existsSync(path.join(T, "shared/protocol/ids.js")), bad]; });
 await C("I3", "mintId: 26 base32 characters of randomness, a slug prefix cut so the id stays within the grammar's 64", async () => {
   const I = await imp("shared/protocol/ids.js"); const xs = Array.from({ length: 2000 }, () => I.mintId("a".repeat(80)));
