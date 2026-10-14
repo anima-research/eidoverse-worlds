@@ -315,7 +315,8 @@ console.log('\n7. the text tier — blueprints, blueprint_place, look() (mcpl), 
   const ag: any = new WorldAgent({ name: 'eye' });
   const sync = () => { ag.st = W.view(); ag.replica = { st: W.state(), active: true }; ag.reconcileFromFold(); };
   sync();
-  ag.door = async (verb: string, args: any) => { const r = W.call(verb, args); sync(); return r; };
+  // every handler reaches the authority through request() (10-14: there is no door()); here that is the in-process world
+  ag.request = async (verb: string, args: any) => { const r = W.call(verb, args); sync(); return r; };
   ag.pos = { x: 0, y: 0, z: 0 }; ag.yaw = 0; ag.heightAt = () => 0;
   const txt = (r: any) => r.content.map((c: any) => c.text).join('\n');
   const list = txt(await HANDLERS.blueprints(ag, {}));

@@ -137,12 +137,12 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   for (let i = 0; i < 40 && [...ag.entities.keys()].length === b2; i++) await sleep(50);
   const lid = (T(r).match(/\[([a-z0-9-]+)\]/) ?? [])[1];
   const lrec = lid ? ag.foldRecord(lid) : null;
-  ok(!r.isError && [...ag.entities.keys()].length === b2 + 1 && lrec?.comp?.light?.intensity === 8 && Number.isFinite(lrec?.pos?.[1]) && lrec.pos[1] > 1, "AT5b create {components: {light}} with nowhere said: one new light, in front of you at about eye height", [T(r), lrec?.pos]);
+  ok(!r.isError && [...ag.entities.keys()].length === b2 + 1 && lrec?.light?.intensity === 8 && Number.isFinite(lrec?.pos?.[1]) && lrec.pos[1] > 1, "AT5b create {components: {light}} with nowhere said: one new light, in front of you at about eye height", [T(r), lrec?.pos]);
   const r2 = await call("create", { components: { light: { color: 0xff5533 } }, at: [1, 2.5, 1] }); await sleep(200);
   const lid2 = (T(r2).match(/\[([a-z0-9-]+)\]/) ?? [])[1]; const p2 = lid2 ? ag.foldRecord(lid2)?.pos : null;
   ok(!r2.isError && Array.isArray(p2) && Math.abs(p2[0] - 1) < 0.01 && Math.abs(p2[1] - 2.5) < 0.01 && Math.abs(p2[2] - 1) < 0.01, "AT5c create {…, at: [x, y, z]} puts it exactly there (no model, so no place solve)", [T(r2), p2]);
   const e = await call("edit", { id: lid2, set: { "light.intensity": 24 } }); await sleep(200);
-  ok(!e.isError && ag.foldRecord(lid2)?.comp?.light?.intensity === 24 && ag.foldRecord(lid2)?.comp?.light?.color === 0xff5533, "AT5d edit {\"light.intensity\"} dims it and keeps its colour (the old light-update path)", [T(e), ag.foldRecord(lid2)?.comp?.light]);
+  ok(!e.isError && ag.foldRecord(lid2)?.light?.intensity === 24 && ag.foldRecord(lid2)?.light?.color === 0xff5533, "AT5d edit {\"light.intensity\"} dims it and keeps its colour (the old light-update path)", [T(e), ag.foldRecord(lid2)?.light]);
   const del = await call("act", { verb: "delete", args: { id: lid2 } }); await sleep(200);
   ok(!del.isError && !ag.foldRecord(lid2), "AT5e act delete removes it (the remove tool folded)", T(del).slice(0, 200)); }
 
