@@ -506,10 +506,16 @@ async function sameAsBase() {
   // 2026-10-14: a refusal's code and its fix's shape are the contract; the metres inside its prose are a measurement of
   // where a body ended up ('mug is 6.316 m from you' here vs 6.349 at the base — put-down-in-front-of-the-body, 2fdadb70,
   // moved it 3 cm). Prose is compared with its decimals blanked, so a changed number in a reason is not a changed reply.
-  const noA11y = (x: any) => JSON.stringify(x, (k, v) => (k === "can" || k === "state" || k === "description" ? undefined
+  // 2026-10-14 (sockets → child entities, feat/sockets-entities LS4): a create that lands a model with sockets also mints
+  // the socket children, and `after` carries them; the base minted none. Compared without any `after` entry that IS a
+  // socket (a minted id, a `socket` component) — the host's own record still has to match the base's exactly.
+  const noA11y = (x: any) => JSON.stringify(x, (k, v) => (k === "can" || k === "state" || k === "description" || k === "sockets" ? undefined   // `sockets` on a look row: the children, listed (same addition)
+    : k === "after" && v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([, e]: any) => !(e && typeof e === "object" && "socket" in e)))
+    : k === "notes" && Array.isArray(v) ? v.filter((e: any) => !(e && typeof e === "object" && "legacy" in e))   // the note saying it minted them
     : k === "q" && Array.isArray(v) && v.length === 4 && v.every(Number.isFinite) ? unitQ(v)
     : (k === "reason" || k === "fix") && typeof v === "string" ? v.replace(/-?\d+(\.\d+)?/g, "#") : v));
   const diff = a.findIndex((x: any, i: number) => noA11y(x) !== noA11y(b[i]));
+  if (diff >= 0) { if (process.env.G3_DUMP) { fs.writeFileSync(process.env.G3_DUMP + ".here.json", noA11y(a[diff])); fs.writeFileSync(process.env.G3_DUMP + ".base.json", noA11y(b[diff])); } return { same: false, replies: a.length, at: diff, here: noA11y(a[diff]).slice(0, 300), base: noA11y(b[diff]).slice(0, 300) }; }
   return { same: diff < 0 && a.length === b.length, replies: a.length, ...(diff >= 0 ? { at: diff, here: JSON.stringify(a[diff]).slice(0, 300), base: JSON.stringify(b[diff]).slice(0, 300) } : {}) };
 }
 if (argv.includes("--scenario")) { console.log(JSON.stringify(scenario())); process.exit(0); }
