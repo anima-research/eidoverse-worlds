@@ -18,6 +18,7 @@ import { qFromEuler, eulerFromQ, ROT_ORDERS, sameRotation } from '../shared/eule
 import { qHeading, qRotate, qFromYaw } from '../shared/rot.js';
 import { scratchWorld, flat } from './protocol/scratchworld.ts';
 import { encName } from '../shared/protocol/names.js';
+import { recordComponents } from "../shared/protocol/view.js";
 const ROT_ORDER = encName('rotOrder');   // camelCase isn't a component name: requests.js escapes it once, the view decodes it
 
 let pass = 0, fail = 0;
@@ -39,11 +40,11 @@ const seedOne = (ent: any) => { const id = `e${++nth}`; W.seed({ [id]: ent }); r
 const viaDoor = (ent: any, r: any, id: string) => { const res = W.sendAll(r.ops); return { res, after: W.rec(id) }; };
 const doorEdit = (ent: any, edits: any, live: any = {}) => { const id = seedOne(ent); const before = W.rec(id); const r = editOps(ent, id, edits, live); return { r, before, id, ...viaDoor(ent, r, id) }; };
 const rotOf = (ent: any, live: any = {}) => ['x', 'y', 'z'].map((k) => fieldAt(inspectSchema(ent, 'e', live), `rot.${k}`)?.value);
-const withOrder = (ent: any, order: string) => (order === 'XYZ' ? ent : { ...ent, comp: { ...(ent.comp ?? {}), rotOrder: order } });
+const withOrder = (ent: any, order: string) => (order === 'XYZ' ? ent : { ...ent, ...recordComponents(ent), rotOrder: order });
 
 console.log('the channels a yaw-only thing shows');
 {
-  const crate = { lib: LIB, pos: [1, 0, 2], yaw: 2.5, scale: 1, actor: 'o', ts: 1 };
+  const crate = { model: LIB, pos: [1, 0, 2], yaw: 2.5, scale: 1, actor: 'o', ts: 1 };
   const s = inspectSchema(crate, 'e');
   check('Maya\'s labels: translate x/y/z, rotate x/y/z, scale x/y/z, rotate order',
     ['pos.x:translate x', 'pos.y:translate y', 'pos.z:translate z', 'rot.x:rotate x', 'rot.y:rotate y', 'rot.z:rotate z', 'pos.sx:scale x', 'pos.sy:scale y', 'pos.sz:scale z', 'pos.scale:scale', 'rot.order:rotate order'].every((p) => { const [a, l] = p.split(':'); return fieldAt(s, a)?.label === l; }));
@@ -65,7 +66,7 @@ console.log('the channels a yaw-only thing shows');
 
 console.log('one Rotate edit on a yaw-only thing');
 {
-  const crate = { lib: LIB, pos: [1, 0, 2], yaw: 0.4, actor: 'o', ts: 1 };
+  const crate = { model: LIB, pos: [1, 0, 2], yaw: 0.4, actor: 'o', ts: 1 };
   for (const order of ROT_ORDERS) {
     const ent = withOrder(crate, order);
     const { r, after } = doorEdit(ent, { 'rot.y': 120 });
@@ -88,7 +89,7 @@ console.log('an upright thing that carries a q (every record does)');
 {
   for (const order of ROT_ORDERS) {
     const q = [0, Math.sin(1.1), 0, Math.cos(1.1)];   // a 126° turn about +Y
-    const r = rotOf(withOrder({ lib: LIB, pos: [0, 0, 0], q, yaw: qHeading(q), actor: 'o', ts: 1 }, order));
+    const r = rotOf(withOrder({ model: LIB, pos: [0, 0, 0], q, yaw: qHeading(q), actor: 'o', ts: 1 }, order));
     check(`${order}: reads (0, yaw, 0) like its yaw-only twin, not the far branch`, close(r[0], 0, 1e-12) && close(r[1], 2.2, 1e-12) && close(r[2], 0, 1e-12), JSON.stringify(r.map((v) => v / D)));
   }
 }
@@ -99,7 +100,7 @@ console.log('one Rotate edit on a thing with q: the other two read back unchange
   for (const order of ROT_ORDERS) for (let i = 0; i < 60; i++) {
     const e0 = [(rnd() * 2 - 1) * 170 * D, (rnd() * 2 - 1) * 80 * D, (rnd() * 2 - 1) * 170 * D];
     const q0 = qFromEuler(e0, order);
-    const ent = withOrder({ lib: LIB, pos: [0, 0, 0], q: q0, yaw: qHeading(q0), actor: 'o', ts: 1 }, order);
+    const ent = withOrder({ model: LIB, pos: [0, 0, 0], q: q0, yaw: qHeading(q0), actor: 'o', ts: 1 }, order);
     const before = rotOf(ent);   // a fresh viewer's reading
     const id = seedOne(ent);
     for (const ax of [0, 1, 2]) {
@@ -128,14 +129,14 @@ console.log('one Rotate edit on a thing with q: the other two read back unchange
 console.log('the Quaternion row');
 {
   const q0 = qFromEuler([10 * D, 20 * D, 30 * D], 'XYZ');
-  const ent = { lib: LIB, pos: [0, 0, 0], q: q0, yaw: qHeading(q0), actor: 'o', ts: 1 };
+  const ent = { model: LIB, pos: [0, 0, 0], q: q0, yaw: qHeading(q0), actor: 'o', ts: 1 };
   const r = editOps(ent, 'e', { 'rot.qw': 2 });
   const q = tfOf(r)?.q;
   check('editing w alone normalizes the whole q on commit (the others kept in proportion)', !!q && Math.abs(Math.hypot(...q) - 1) < 1e-15 && Math.abs(q[0] / q[1] - q0[0] / q0[1]) < 1e-12, JSON.stringify(q));
   check('…clamped to the field\'s range first (w ≤ 1), so 2 is read as 1', Math.abs(q[3] - 1 / Math.hypot(q0[0], q0[1], q0[2], 1)) < 1e-12);
   const z = editOps(ent, 'e', { 'rot.qx': 0, 'rot.qy': 0, 'rot.qz': 0, 'rot.qw': 0 });
   check('a zero quaternion is refused, nothing sent', z.ops.length === 0 && /zero length/.test(z.errors[0] ?? ''), JSON.stringify(z));
-  const yawOnly = editOps({ lib: LIB, pos: [0, 0, 0], yaw: 1, actor: 'o', ts: 1 }, 'e', { 'rot.qx': 0.3 });
+  const yawOnly = editOps({ model: LIB, pos: [0, 0, 0], yaw: 1, actor: 'o', ts: 1 }, 'e', { 'rot.qx': 0.3 });
   check('a quaternion edit on a yaw-only thing writes a tilted q', !!tfOf(yawOnly)?.q && !upright(tfOf(yawOnly).q), JSON.stringify(yawOnly));
 }
 
@@ -144,39 +145,39 @@ console.log('rotate order: changing it never changes q');
   for (const from of ROT_ORDERS) for (const to of [...ROT_ORDERS, 'quat']) {
     if (from === to) continue;
     const q0 = qFromEuler([(rnd() - 0.5) * 300 * D, (rnd() - 0.5) * 150 * D, (rnd() - 0.5) * 300 * D], from);
-    const ent = withOrder({ lib: LIB, pos: [3, 0, 3], q: q0, yaw: qHeading(q0), actor: 'o', ts: 1 }, from);
+    const ent = withOrder({ model: LIB, pos: [3, 0, 3], q: q0, yaw: qHeading(q0), actor: 'o', ts: 1 }, from);
     const { r, before, after, res } = doorEdit(ent, { 'rot.order': to });
     const o = flat(r.ops);
     const want = to === 'XYZ' ? { verb: 'delete', component: 'rotOrder' } : { verb: 'set', component: 'rotOrder', value: to };
     check(`${from} → ${to}: one set/delete of rotOrder, no transform (the object never moves)`, o.length === 1 && o[0].verb === want.verb && o[0].args.component === ROT_ORDER && (to === 'XYZ' || o[0].args.value === to), JSON.stringify(r.ops));
-    check(`${from} → ${to}: q is bit-identical after the door writes it`, res.ok && JSON.stringify(after.q) === JSON.stringify(before.q) && after.yaw === before.yaw && (to === 'XYZ' ? after.comp?.rotOrder === undefined : after.comp?.rotOrder === to), JSON.stringify([res.refused, before.q, after.q, after.comp]));
+    check(`${from} → ${to}: q is bit-identical after the door writes it`, res.ok && JSON.stringify(after.q) === JSON.stringify(before.q) && after.yaw === before.yaw && (to === 'XYZ' ? after?.rotOrder === undefined : after?.rotOrder === to), JSON.stringify([res.refused, before.q, after.q, after.comp]));
     if (to !== 'quat') {
       const rd = rotOf(after);
       check(`${from} → ${to}: the channels now read q in ${to} (recomposing them gives q)`, sameRotation(qFromEuler(rd, to), q0, 1e-10), JSON.stringify(rd));
     }
   }
-  const ent = { lib: LIB, pos: [0, 0, 0], yaw: 0, comp: { rotOrder: 'ZXY' }, actor: 'o', ts: 1 };
+  const ent = { model: LIB, pos: [0, 0, 0], yaw: 0, rotOrder: 'ZXY', actor: 'o', ts: 1 };
   check('choosing the order it already has sends nothing', editOps(ent, 'e', { 'rot.order': 'ZXY' }).ops.length === 0);
   check('XYZ is written as the comp\'s removal (absent means XYZ; nothing writes XYZ)', JSON.stringify(editOps(ent, 'e', { 'rot.order': 'XYZ' }).ops) === JSON.stringify([{ verb: 'delete', args: { id: 'e', component: ROT_ORDER } }]));
   check('a bad order is refused by name', /one of XYZ XZY YXZ YZX ZXY ZYX quat/.test(editOps(ent, 'e', { 'rot.order': 'xyz' }).errors[0] ?? ''));
-  const q = inspectSchema({ ...ent, comp: { rotOrder: 'quat' } }, 'e');
+  const q = inspectSchema({ ...ent, rotOrder: 'quat' }, 'e');
   const card = q.sections.list.find((c: any) => c.type === 'Transform');
   check('quaternion mode: the Rotate channels are hidden, the Quaternion row is shown open', !fieldAt(q, 'rot.x') && !!fieldAt(q, 'rot.qw') && card.quatOpen === true);
-  const locked = inspectSchema({ ...ent, comp: { rotOrder: 'ZXY', lock: true } }, 'e');
+  const locked = inspectSchema({ ...ent, rotOrder: 'ZXY', lock: true }, 'e');
   check('locked: Rotate and Quaternion stay editable and say moving it asks first (the door decides, §5); the order is open',
     !fieldAt(locked, 'rot.x')!.disabled && !fieldAt(locked, 'rot.qw')!.disabled && /locked — moving it asks first/.test(fieldAt(locked, 'rot.x')!.hint) && !fieldAt(locked, 'rot.order')!.disabled);
   // a lock binds the turn at the door, and the order change (it moves nothing) passes it
-  const L = { ...ent, comp: { rotOrder: 'ZXY', lock: true } };
+  const L = { ...ent, rotOrder: 'ZXY', lock: true };
   const turn = doorEdit(L, { 'rot.y': 45 });
   check('locked: the door refuses a Rotate edit `locked` and the thing keeps its q', turn.res.ok === false && turn.res.refused?.code === 'locked' && JSON.stringify(turn.after.q) === JSON.stringify(turn.before.q), JSON.stringify(turn.res));
   const reorder = W.send(editOps(L, turn.id, { 'rot.order': 'XYZ' }).ops[0]);
-  check('locked: …but the door takes a rotate-order change (it moves nothing)', reorder.ok && W.rec(turn.id).comp.rotOrder === undefined && W.rec(turn.id).comp.lock === true, JSON.stringify(reorder));
+  check('locked: …but the door takes a rotate-order change (it moves nothing)', reorder.ok && W.rec(turn.id).rotOrder === undefined && W.rec(turn.id).lock === true, JSON.stringify(reorder));
   // step 4: a child's Rotate reads its RELATIVE orientation (the mount's), editable; only a part-socket rider is read-only
   const mounted = inspectSchema({ ...ent, parent: { to: 'cart', yaw: 0.5 } }, 'e');
   check('mounted: Rotate reads the mount\'s relative turn, editable', !fieldAt(mounted, 'rot.y')!.disabled && Math.abs(fieldAt(mounted, 'rot.y')!.value - 0.5) < 1e-9);
-  const riding = inspectSchema({ ...ent, parent: { to: 'cart', socket: 'deck' } }, 'e', { world: { e: ent, cart: { lib: 'cart.glb', pos: [0, 0, 0], comp: { sockets: { deck: { pos: [0, 1, 0], part: 'plank' } } } } } });
+  const riding = inspectSchema({ ...ent, parent: { to: 'cart', socket: 'deck' } }, 'e', { world: { e: ent, cart: { model: 'cart.glb', pos: [0, 0, 0], sockets: { deck: { pos: [0, 1, 0], part: 'plank' } } } } });
   check('a part-socket rider: Rotate is read-only and names the carrier and part', fieldAt(riding, 'rot.y')!.disabled && /cart/.test(fieldAt(riding, 'rot.y')!.hint) && /plank/.test(fieldAt(riding, 'rot.y')!.hint));
-  const swing = inspectSchema({ ...ent, comp: { motion: { type: 'pendulum', amp: 0.3 } } }, 'e');
+  const swing = inspectSchema({ ...ent, motion: { type: 'pendulum', amp: 0.3 } }, 'e');
   check('a whole-entity motion: Rotate is the rest pose, tinted driven', fieldAt(swing, 'rot.x')!.driven === 'motion');
 }
 
@@ -186,7 +187,7 @@ console.log('gimbal lock (middle axis at ±90°)');
     const [ia, ib, ic] = [...order].map((c) => 'XYZ'.indexOf(c));
     const e0 = [0, 0, 0]; e0[ia] = 25 * D; e0[ib] = 90 * D; e0[ic] = -40 * D;
     const q0 = qFromEuler(e0, order);
-    const ent = withOrder({ lib: LIB, pos: [0, 0, 0], q: q0, yaw: qHeading(q0), actor: 'o', ts: 1 }, order);
+    const ent = withOrder({ model: LIB, pos: [0, 0, 0], q: q0, yaw: qHeading(q0), actor: 'o', ts: 1 }, order);
     const s = inspectSchema(ent, 'e');
     const card = s.sections.list.find((c: any) => c.type === 'Transform');
     check(`${order}: the Transform card says it is in gimbal lock`, /gimbal lock/.test(JSON.stringify(card.info ?? '')), JSON.stringify(card.info));
@@ -205,7 +206,7 @@ console.log('gimbal lock (middle axis at ±90°)');
 console.log('the heading alias and moves');
 {
   const tilt = qFromEuler([90 * D, 0, 0], 'XYZ');
-  const ent = { lib: LIB, pos: [0, 0, 0], q: tilt, yaw: qHeading(tilt), scale: 2, actor: 'o', ts: 1 };
+  const ent = { model: LIB, pos: [0, 0, 0], q: tilt, yaw: qHeading(tilt), scale: 2, actor: 'o', ts: 1 };
   const { after } = doorEdit(ent, { 'pos.yaw': 90 });
   check('pos.yaw on a tilted thing turns it about +Y and keeps the tilt: still tilted, now heading 90° (through the door)', Math.abs(qRotate(after.q, [0, 1, 0])[1] - qRotate(tilt, [0, 1, 0])[1]) < 1e-12 && Math.abs(qHeading(after.q) - Math.PI / 2) < 1e-4, JSON.stringify(after.q));
   const m = editOps(ent, 'e', { 'pos.x': 5 });
@@ -216,7 +217,7 @@ console.log('the heading alias and moves');
 
 console.log('the rotate gizmo: any axis, committed as q (poseEdits → editOps → the door)');
 {
-  const crate = { lib: LIB, pos: [1, 0, 2], yaw: 0.4, scale: 1.5, actor: 'o', ts: 1 };
+  const crate = { model: LIB, pos: [1, 0, 2], yaw: 0.4, scale: 1.5, actor: 'o', ts: 1 };
   const tq = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3, 0.4, -0.2, 'ZYX'));   // what TransformControls leaves on the object
   const set = poseEdits(crate, 'e', 'rotate', { pos: [9, 9, 9], q: [tq.x, tq.y, tq.z, tq.w], scale: 7 });
   check('rotate sends the orientation only (not the position or scale it did not touch)', Object.keys(set).sort().join() === 'rot.qw,rot.qx,rot.qy,rot.qz', JSON.stringify(set));
@@ -233,7 +234,7 @@ console.log('the rotate gizmo: any axis, committed as q (poseEdits → editOps �
   const mv = editOps(tilted, 'e', poseEdits(tilted, 'e', 'move', { pos: [4, 0, 4], q: [0, 0, 0, 1], scale: 3 }));
   check('move on a tilted thing sends the position and keeps its q, up to normalization (no stray heading from the object\'s Euler y)', sameRotation(tfOf(mv).q, tilted.q, 1e-12) && tfOf(mv).pos[0] === 4 && JSON.stringify(tfOf(mv).scale) === '[1.5,1.5,1.5]', JSON.stringify(mv.ops));
   check('scale sends the scale only (three channels)', Object.keys(poseEdits(crate, 'e', 'scale', { pos: [9, 9, 9], q: [0, 0, 0, 1], scale: 2 })).join() === 'pos.sx,pos.sy,pos.sz');
-  const lk = doorEdit({ ...crate, comp: { lock: true } }, set);
+  const lk = doorEdit({ ...crate, lock: true }, set);
   check('a locked thing\'s rotate is refused by the door `locked`, and it keeps its heading', lk.res.ok === false && lk.res.refused?.code === 'locked' && JSON.stringify(lk.after.q) === JSON.stringify(lk.before.q), JSON.stringify(lk.res));
 }
 

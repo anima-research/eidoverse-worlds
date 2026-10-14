@@ -47,8 +47,8 @@ let ghost = null;
 
 /** Every structure entity in the world. */
 const buildings = () => Object.entries(state.st.entities ?? {})
-  .filter(([, e]) => e?.comp?.structure)
-  .map(([id, e]) => ({ id, ent: e, data: e.comp.structure }));
+  .filter(([, e]) => e?.structure)
+  .map(([id, e]) => ({ id, ent: e, data: e.structure }));
 
 /** The floor plane's height in the building's frame (planStructure's levels[0].y, without planning it: this runs per
  *  building per mousemove). */

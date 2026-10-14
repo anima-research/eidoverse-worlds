@@ -69,7 +69,7 @@ function collider(sim, ent) {
     const k = Math.max(sc[0], sc[1], sc[2]), r = sh.radius * k, at = vec3ok(sh.pos) ? sh.pos : [0, 0, 0];
     return { shape: 'sphere', radius: r, half: [r, r, r], off: [at[0] * k, at[1] * k, at[2] * k] };
   }
-  const box = typeof ent.lib === 'string' ? sim.boxes[ent.lib] : null; if (!box) return null;
+  const box = typeof ent.model === 'string' ? sim.boxes[ent.model] : null; if (!box) return null;
   return { shape: 'box', ...geometry(box, sc) };
 }
 const centreOf = (pos, q, off) => { const r = qrot(q, off); return [pos[0] + r[0], pos[1] + r[1], pos[2] + r[2]]; };

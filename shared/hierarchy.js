@@ -31,7 +31,7 @@ const upright = (q) => Math.abs(q[0]) < 1e-9 && Math.abs(q[2]) < 1e-9;
 /** The socket a mount names, resolved on its carrier — or null. */
 export function socketOf(world, rel) {
   if (!rel?.socket) return null;
-  const s = world?.[rel.to]?.comp?.sockets?.[rel.socket];
+  const s = world?.[rel.to]?.sockets?.[rel.socket];
   return s && typeof s === 'object' ? s : null;
 }
 
@@ -121,11 +121,11 @@ export function childrenOf(world, id) {
 /** What a row says a thing IS, in a word or two: a light, an Empty, or its model's file stem. */
 export function kindHint(ent) {
   if (!ent) return '?';
-  const lit = ent.comp?.light && typeof ent.comp.light === 'object';
-  const mesh = ent.comp?.mesh && typeof ent.comp.mesh === 'object' ? ent.comp.mesh.shape : null;
-  if (ent.lib == null) return typeof mesh === 'string' ? `${mesh}${lit ? ' + light' : ''}` : lit ? 'light' : 'empty';
+  const lit = ent?.light && typeof ent.light === 'object';
+  const mesh = ent?.mesh && typeof ent.mesh === 'object' ? ent.mesh.shape : null;
+  if (ent.model == null) return typeof mesh === 'string' ? `${mesh}${lit ? ' + light' : ''}` : lit ? 'light' : 'empty';
   const plus = lit ? ' + light' : '';
-  return `${String(ent.lib).split('/').pop().replace(/\.glb$/, '').split('_').slice(0, 3).join(' ')}${plus}`;
+  return `${String(ent.model).split('/').pop().replace(/\.glb$/, '').split('_').slice(0, 3).join(' ')}${plus}`;
 }
 
 /** { roots, kids } from the fold: a thing whose carrier is absent, or whose
@@ -134,7 +134,7 @@ export function kindHint(ent) {
 export function treeOf(world) {
   const kids = new Map(); const roots = [];
   // ordered by the name a person sees, numbers as numbers (R 10-10: 'domino 11, domino 12, domino 3')
-  const nm = (id) => { const l = world[id]?.comp?.label; return typeof l === 'string' && l ? l : id; };
+  const nm = (id) => { const l = world[id]?.label; return typeof l === 'string' && l ? l : id; };
   const order = Object.keys(world ?? {}).sort((a, b) => nm(a).localeCompare(nm(b), 'en', { numeric: true, sensitivity: 'base' }) || (a < b ? -1 : a > b ? 1 : 0));
   for (const id of order) {
     const to = world[id]?.parent?.to;

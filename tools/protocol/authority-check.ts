@@ -27,6 +27,7 @@ import { openLive } from "../../server/livehost.ts";
 import { v1FoldBuild, v1FoldFiles } from "./import-v1/build.ts";
 import { emptyState as v1Empty, foldEntry as v1fold } from "./import-v1/fold.js";
 import { worldPose } from "../../shared/hierarchy.js";
+import { viewState } from "../../shared/protocol/view.js";
 
 const root = scratch("door");
 // lab worlds name people by bare test names; the directory a real server has would know them (roles:<key> checks it)
@@ -296,8 +297,8 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     "M2 its transform is local: the offset, or (no offset) its socket's pos, and the socket is kept (v1's slot)", [r.final.translated.box.transform, r.final.translated.bell.transform, r.final.translated.bell.parent]);
   const near = (a, b) => a && b && a.every((x, i) => Math.abs(x - b[i]) < 1e-6);
   // v1's mount names its socket `slot`; shared/hierarchy.js (the renderer's reading) speaks the protocol's `socket`
-  const v1Translated = Object.fromEntries(Object.entries(v1.entities).map(([k, e]) => [k, e.parent && "slot" in e.parent ? { ...e, parent: (({ slot, ...p }) => ({ ...p, socket: slot }))(e.parent) } : e]));
-  for (const id of ["box", "bell", "stray", "jar"]) { const i = tc("inspect", { id }); const want = worldPose(v1Translated, id);
+  const drawn = viewState(openWorld(root, "tr-mounts").state()).entities;   // what the renderer draws: the door's fold, as the view says it (10-14: one vocabulary)
+  for (const id of ["box", "bell", "stray", "jar"]) { const i = tc("inspect", { id }); const want = worldPose(drawn, id);
     ok(near(i.world?.pos, want.pos) && near(i.world?.q, want.q), `M3 the authority sees ${id} where v1 draws it (world pose)`, [i.world, want]); }
   const p = tc("create", { id: "ball2", model: "ball", place: { on: "tbl" } }); const at = p.notes?.find((n) => n.placed)?.placed;
   const loc = openWorld(root, "tr-mounts").state().entities.ball2?.c.transform.pos; // local to tbl (it rides the table)
@@ -559,7 +560,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(code(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [1, 2] } })) === "shape" && code(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [0, 0, 0], q: [0, 0, 0, 1] } })) === "shape", "P2 …and refuses a bad one (two numbers; an extra field), saying the shape");
   const tr = openWorld(root, "pivots").state().entities.gate.c.transform;
   ok(JSON.stringify(tr.pos) === "[0,0,0]", "P3 setting a pivot never moved the thing", tr);
-  const ent = { lib: "x.glb", pos: [0, 0, 0], comp: { pivot: { pos: [0.3, 0, 0] } } };
+  const ent = { model: "x.glb", pos: [0, 0, 0], pivot: { pos: [0.3, 0, 0] } };
   const sortK = (v) => (Array.isArray(v) ? v.map(sortK) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortK(v[k])])) : v);
   ok(JSON.stringify(sortK(entityOf(componentsOf(ent)))) === JSON.stringify(sortK(ent)), "P4 pivot round-trips through the component view (componentsOf ∘ entityOf)", entityOf(componentsOf(ent)));
   const live = { box: [[2, 0, -0.4], [3.2, 0.75, 0.4]], doorLocks: true };
@@ -571,15 +572,15 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(c3?.verb === "delete" && c3.args.component === "pivot", "P7 'origin' removes it (turn about the origin again)", c3);
   const sc = inspectSchema(ent, "g", live);
   ok(sc.sections.list.some((c) => c.type === "Pivot" && c.fields.includes("pivot.x")), "P8 the Inspector draws a Pivot card with its channels");
-  const a = addOps({ lib: "x.glb", pos: [0, 0, 0] }, "g", "Pivot");
+  const a = addOps({ model: "x.glb", pos: [0, 0, 0] }, "g", "Pivot");
   ok(a.ops[0]?.args?.component === "pivot" && JSON.stringify(a.ops[0].args.value) === '{"pos":[0,0,0]}', "P9 Add Component ▸ Pivot starts at the origin (then centre/base)", a);
-  const bare = { lib: "x.glb", pos: [0, 0, 0] };
+  const bare = { model: "x.glb", pos: [0, 0, 0] };
   const c4 = editOps(bare, "g", { "pivot.centre": true }, live);
   ok(!c4.errors.length && JSON.stringify(val(c4)) === JSON.stringify({ pos: [2.6, 0.375, 0] }), "P10 pivot.centre works on a thing with NO pivot yet (Hazel: needed a dummy pivot first)", c4);
   const c5 = editOps(bare, "g", { "pivot.y": 1.5 }, live);
   ok(!c5.errors.length && JSON.stringify(val(c5)) === JSON.stringify({ pos: [0, 1.5, 0] }), "P11 …as does pivot.y", c5);
   // the channel edits honour the pivot too (Maya's channel box; agent lab round 2, Rowan: 'edit rot.y +=90' swung the gate about its origin)
-  const gate = { lib: "x.glb", pos: [10, 0, 10], yaw: 0, comp: { pivot: { pos: [1, 0, 0] } } };
+  const gate = { model: "x.glb", pos: [10, 0, 10], yaw: 0, pivot: { pos: [1, 0, 0] } };
   const placeOf = (r) => r.ops.find((o) => o.verb === "set" && o.args.component === "transform")?.args.value;   // the whole transform
   const r1 = placeOf(editOps(gate, "g", { "rot.y": 90 }, live));
   ok(r1 && Math.abs(r1.pos[0] - 11) < 1e-6 && Math.abs(r1.pos[2] - 11) < 1e-6, "P12 rot.y = 90 on a pivoted thing turns it ABOUT the pivot: its origin goes to (11, 0, 11)", r1);
@@ -587,7 +588,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(r2 && Math.abs(r2.pos[0] - 9) < 1e-6 && Math.abs(r2.pos[2] - 10) < 1e-6, "P13 …and scale 2 grows it about the pivot (the pivot stays at 11): origin to (9, 0, 10)", r2);
   const r3 = placeOf(editOps(gate, "g", { "rot.y": 90, "pos.x": 5 }, live));
   ok(r3 && r3.pos[0] === 5 && r3.pos[2] === 10, "P14 …but a typed translate in the same edit wins (the pivot never second-guesses it)", r3);
-  const r4 = placeOf(editOps({ lib: "x.glb", pos: [10, 0, 10], yaw: 0 }, "g", { "rot.y": 90 }, live));
+  const r4 = placeOf(editOps({ model: "x.glb", pos: [10, 0, 10], yaw: 0 }, "g", { "rot.y": 90 }, live));
   ok(r4 && r4.pos[0] === 10 && r4.pos[2] === 10, "P15 …and with no pivot, a turn stays about the origin, as before", r4); }
 
 // ---- TN: turn {id, axis, deg, space, about} — the gizmo's rotate for agents (agent lab: Juniper #3) ----

@@ -45,6 +45,7 @@ import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { localOf, parentOps, childrenOf, worldPose } from './hierarchy.js';
 
+import { recordComponents } from './protocol/view.js';
 const R2D = 180 / Math.PI;
 export const AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
 /** Which channels a whole-entity motion moves: { t: Set of translate axes, r: Set of rotate axes }. */
@@ -99,14 +100,14 @@ function axisName(m, def) {
 }
 const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 // The light component (PROTOCOL §4, 2026-10-01): a lamp is a thing with a `light` component.
-const compLight = (ent) => isBag(ent?.comp?.light);
-const compMesh = (ent) => isBag(ent?.comp?.mesh) && ent.lib == null && MESH_SHAPES.includes(ent.comp.mesh.shape);
+const compLight = (ent) => isBag(ent?.light);
+const compMesh = (ent) => isBag(ent?.mesh) && ent.model == null && MESH_SHAPES.includes(ent.mesh.shape);
 // The reading a viewer with no hint gets: canonical (middle axis within ±90°,
 // shared/euler.js) — except an UPRIGHT thing with a q (a pure turn about +Y,
 // which every lease release and settle writes), which reads (0, yaw, 0) in
 // every order, exactly as the same thing without a q does.
 const uprightHint = (ent) => (ent?.q && Math.abs(ent.q[0]) < 1e-12 && Math.abs(ent.q[2]) < 1e-12 ? [0, ent.yaw ?? 0, 0] : null);
-const motionKeys = (ent) => Object.keys(ent?.comp ?? {}).filter((k) => (k === 'motion' || k.startsWith('motion:')) && ent.comp[k] && typeof ent.comp[k] === 'object');
+const motionKeys = (ent) => Object.keys(recordComponents(ent)).filter((k) => (k === 'motion' || k.startsWith('motion:')) && ent[k] && typeof ent[k] === 'object');
 
 // ---------------------------------------------------------------- schema
 
@@ -118,7 +119,7 @@ const motionKeys = (ent) => Object.keys(ent?.comp ?? {}).filter((k) => (k === 'm
  *               Who may change it is the authority's to decide (it refuses, saying why). */
 export function inspectSchema(ent, id, live = {}) {
   if (!ent) return { id, groups: [] };
-  const c = ent.comp ?? {};
+  const c = recordComponents(ent);
   const mounted = !!ent.parent;
   const locked = !!c.lock;
   // a lock doesn't make the pose read-only here: the authority refuses the move, and a person (or agent) who may lift the lock
@@ -477,7 +478,7 @@ export function inspectSchema(ent, id, live = {}) {
   // Material: the DRAFT hesperus/material (docs/COMPONENT-LADDER.md rung 1). Every thing with a model shows the card:
   // its model's own materials (live.materials: a swatch each, read-only), then the overrides. `hesperus/material` changes
   // every slot; `hesperus/material:<slot>` one (keyed by the model's material name; a key the model no longer has is said).
-  if (ent.lib || compMesh(ent)) {   // every thing with meshes: a model's, or a mesh thing's one 'surface'
+  if (ent.model || compMesh(ent)) {   // every thing with meshes: a model's, or a mesh thing's one 'surface'
     const MATK = 'hesperus/material'; const ov = c[MATK] && typeof c[MATK] === 'object' ? c[MATK] : null;
     const own = Array.isArray(live.materials) ? live.materials : [];
     const label = (m, i) => matLabel(m?.name, i);
@@ -660,8 +661,8 @@ const WIRE_BLOCKED = {
   Structure: () => 'start a building from Create ▸ Structure',
   Parent: () => 'give it a parent: drag its row onto another in the Hierarchy, or pick one in this card',
   // the authority's one-turner rule (look-at vs a rotating motion, or physics turning it): said here, not refused there
-  LookAt: (_have, ent) => { const m = ent?.comp?.motion; if (m && ['pendulum', 'spin'].includes(m.type)) return `it already turns by its ${m.type}; one thing turns at a time — remove that first, or add LookAt to a part`;
-    return ent?.comp?.physics?.kind === 'dynamic' ? 'physics turns it (it is dynamic): make it static, or add LookAt to a part' : null; },
+  LookAt: (_have, ent) => { const m = ent?.motion; if (m && ['pendulum', 'spin'].includes(m.type)) return `it already turns by its ${m.type}; one thing turns at a time — remove that first, or add LookAt to a part`;
+    return ent?.physics?.kind === 'dynamic' ? 'physics turns it (it is dynamic): make it static, or add LookAt to a part' : null; },
 };
 const MOTION_GROUP = { Pendulum: 1, Spin: 1, Orbit: 1, Bob: 1, Path: 1 };
 // not offered by Add Component: what the authority refuses today (none: LookAt writes `look-at` since batch 2, and the
@@ -729,11 +730,11 @@ function componentSections(ent, groups, live = {}, id = '?') {
         if (rot?.gimbal) sec.info = [...(sec.info ?? []), ['gimbal lock', 'the middle axis is at ±90°, so the first and last axes turn about the same line — a turn on either shows on the last; the Quaternion row is exact']];
         break;
       }
-      case 'Model': sec.info = [['model', String(ent.lib)]]; break;
+      case 'Model': sec.info = [['model', String(ent.model)]]; break;
       // keyed = the component; keyless = the legacy spawn `collide`, which owns
       // the collider group only when no component overrides it
       case 'Collider':
-        if (inst.key != null || !isBag(ent.comp?.collider)) sec.fields = refs('collider');
+        if (inst.key != null || !isBag(ent?.collider)) sec.fields = refs('collider');
         else sec.info = [['shape', `${String(ent.collide)} (overridden by the collider component)`]];
         sec.removable = inst.key != null;
         break;
@@ -789,7 +790,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
   }
   // R 10-10: every thing with a model shows a Material card, its model's own materials, even with no override yet
   if (g('hmat') && !components.some((x) => x.key === 'hesperus/material')) {
-    const anySlot = Object.keys(ent.comp ?? {}).some((k) => k.startsWith('hesperus/material:'));
+    const anySlot = Object.keys(recordComponents(ent)).some((k) => k.startsWith('hesperus/material:'));
     out.push({ type: 'Material', key: null, title: 'Material', hash: null, category: 'Look', summary: "its model's own materials, and an override", fields: refs('hmat'), removable: false, present: anySlot, draft: true, ...(isTrusted('hesperus/material', live.trusted) ? { trusted: true } : {}) });
   }
   // a root still shows its Parent card, empty: picking a parent there is the no-drag path (a headset, a trackpad), and
@@ -813,7 +814,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
   // the ladder's drafts (docs/COMPONENT-LADDER.md): only what this client has a reader for, where it applies, once.
   // Trusted here (the owner's @world.trusted): the main list, blue. A plain draft: under "drafts", amber, unproven.
   for (const d of draftsRead()) {
-    if (ent?.comp?.[d.name] != null || !d.applies(ent)) continue;
+    if (ent?.[d.name] != null || !d.applies(ent)) continue;
     const trusted = isTrusted(d.name, live.trusted);
     add.push({ name: d.name, label: d.title, category: trusted ? d.category : 'drafts', summary: d.summary, hash: null, draft: true, chip: trusted ? 'blue' : 'amber',
       ...(trusted ? { trusted: true } : { hint: UNPROVEN_HINT }) });
@@ -824,7 +825,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
   const lib = model != null ? String(model) : null;
   // parenting lives on the Parent card (R, 10-04), not the header
   return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden' || f.k === 'disabled' || f.k === 'clickthrough' || f.k === 'description' || f.k === 'reads'), list: out, add,
-    lib, libLabel: lib != null ? libLabel(lib) : isBag(ent?.comp?.mesh) && MESH_SHAPES.includes(ent.comp.mesh.shape) ? ent.comp.mesh.shape : ent?.comp?.light ? 'light' : 'empty' };
+    lib, libLabel: lib != null ? libLabel(lib) : isBag(ent?.mesh) && MESH_SHAPES.includes(ent.mesh.shape) ? ent.mesh.shape : ent?.light ? 'light' : 'empty' };
 }
 
 /** The one request the "trust this in this world" button sends: @world.trusted with `name` toggled; an emptied list
@@ -846,16 +847,16 @@ const NEEDS = {
   // a model is placed from the Library (spawn on the id would replace this
   // entity wholesale: its components, its placer, its born)
   Model: {
-    met: (ent) => ent?.lib != null || compMesh(ent),   // a mesh thing has a body to act on, as the authority reads it (review S2.2)
+    met: (ent) => ent?.model != null || compMesh(ent),   // a mesh thing has a body to act on, as the authority reads it (review S2.2)
     plan: (ent, id, name) => ({ choice: { need: 'Model', options: [],
       prompt: `${article(name)} ${name.toLowerCase()} needs a model to act on (${id} has none) — place a model from the Library and add the ${name} to it, or put ${id} under one` } }),
   },
   // reactions push the WHOLE entity's pendulum (server/reactions.ts): a part's
   // pendulum does not count, and a whole-entity spin is in the way
   Pendulum: {
-    met: (ent) => ent?.comp?.motion?.type === 'pendulum',
+    met: (ent) => ent?.motion?.type === 'pendulum',
     plan: (ent, id, name) => {
-      const m = ent?.comp?.motion;
+      const m = ent?.motion;
       const ops = [OP.set(id, 'motion', { type: 'pendulum', amp: 0, period: 3.5 })];
       if (!m) return { ops, brings: 'a Pendulum at rest, for it to push' };
       return { choice: { need: 'Pendulum', prompt: `${name} pushes a pendulum, and ${id} already moves as a whole (${m.type ?? 'a motion'}) — replace that with a Pendulum?`,
@@ -892,7 +893,7 @@ export function planNeeds(ent, id, name, value) {
  *  part motion, the type name for an Annotation, or a need's choice. Returns
  *  { ops, errors, choice? } — a `choice` sends nothing and asks. */
 export function addOps(ent, id, name, value) {
-  if (readsDraft(name)) { if (ent?.comp?.[name] != null) return { ops: [], errors: [`${id} already has ${name}`] }; return { ops: [OP.set(id, name, draftsRead().find((d) => d.name === name).blank)], errors: [] }; }
+  if (readsDraft(name)) { if (ent?.[name] != null) return { ops: [], errors: [`${id} already has ${name}`] }; return { ops: [OP.set(id, name, draftsRead().find((d) => d.name === name).blank)], errors: [] }; }
   const np = planNeeds(ent, id, name, value);
   if (np.choice) return { ops: [], errors: np.choice.options.length ? [] : [np.choice.prompt], choice: np.choice };
   const own = addOwnOps(ent, id, name, np.ops.length ? undefined : value);
@@ -900,7 +901,7 @@ export function addOps(ent, id, name, value) {
   return { ops: [...np.ops, ...own.ops], errors: [], ...(np.brings ? { brings: np.brings } : {}) };
 }
 function addOwnOps(ent, id, name, value) {
-  const c = ent?.comp ?? {};
+  const c = recordComponents(ent);
   // a path's points are in its parent's frame (as the renderer reads them): it starts where it stands and goes 2 m on
   const p0 = (Array.isArray(ent?.parent?.offset) ? ent.parent.offset : Array.isArray(ent?.pos) ? ent.pos : [0, 0, 0]).map((v) => round(+v || 0, 4));
   const motion = { Pendulum: { type: 'pendulum', amp: 0.26, period: 3.5 }, Spin: { type: 'spin', degPerSec: 36 }, Orbit: { type: 'orbit', radius: 1, degPerSec: 12 }, Bob: { type: 'bob', amp: 0.3, period: 4 }, Path: { type: 'path', points: [p0, [p0[0], p0[1], round(p0[2] + 2, 4)]], speed: 1 } };
@@ -922,7 +923,7 @@ function addOwnOps(ent, id, name, value) {
     // metre up, so its pose is its own and the gizmo moves one thing
     // on a mesh thing the bulb hangs half a metre over its top (a plane's at 0.55, a 5 m box's at 5.5), not at a fixed metre
     const top = compMesh(ent) ? (c.mesh.shape === 'plane' ? 0.05 : c.mesh.shape === 'sphere' ? +c.mesh.size?.[0] || 1 : c.mesh.shape === 'capsule' ? Math.max(+c.mesh.size?.[0] || 1, +c.mesh.size?.[1] || 1) : +c.mesh.size?.[1] || 1) : null;
-    if (c.model != null || ent?.lib != null || c.mesh != null) return { ops: [OP.create(`${id}-light`, { transform: { pos: [0, top == null ? 1 : round(top + 0.5, 3), 0] }, components: { label: 'light', parent: { to: id }, light: { ...LIGHT_DEFAULTS } } })], errors: [] };
+    if (c.model != null || ent?.model != null || c.mesh != null) return { ops: [OP.create(`${id}-light`, { transform: { pos: [0, top == null ? 1 : round(top + 0.5, 3), 0] }, components: { label: 'light', parent: { to: id }, light: { ...LIGHT_DEFAULTS } } })], errors: [] };
     return { ops: [OP.set(id, 'light', { ...LIGHT_DEFAULTS })], errors: [] };
   }
   if (name === 'Mesh') {
@@ -932,7 +933,7 @@ function addOwnOps(ent, id, name, value) {
     return { ops: [OP.set(id, 'mesh', { shape, size: [1, 1, 1] })], errors: [] };
   }
   if (name === 'Collider') {
-    if (ent?.lib == null && !compMesh(ent)) return { ops: [], errors: [`a collider needs a model or a mesh to collide as (${id} has none)`] };
+    if (ent?.model == null && !compMesh(ent)) return { ops: [], errors: [`a collider needs a model or a mesh to collide as (${id} has none)`] };
     if (c.collider != null) return { ops: [], errors: [`${id} already has a collider`] };
     const shape = value === 'box' || value === 'sphere' ? value : value == null || value === '' || value === 'exact' ? 'exact' : null;
     if (!shape) return { ops: [], errors: ['a collider shape is "exact", "box" or "sphere"'] };
@@ -966,9 +967,9 @@ function addOwnOps(ent, id, name, value) {
  *  `confirm`, and removing again with value "both" removes them too, in the
  *  same step. */
 export function removeOps(ent, id, key, value) {
-  const c = ent?.comp ?? {};
+  const c = recordComponents(ent);
   if (c[key] != null) {
-    const after = { ...ent, comp: Object.fromEntries(Object.entries(c).filter(([k]) => k !== key)) };
+    const after = Object.fromEntries(Object.entries(ent).filter(([k]) => k !== key));
     const deps = componentsOf(ent).components.filter((inst) => inst.key != null && inst.key !== key
       && (RECORDS[inst.type]?.needs ?? []).some((n) => needMet(n, ent) && !needMet(n, after)));
     if (deps.length) {
@@ -984,7 +985,7 @@ export function removeOps(ent, id, key, value) {
   return removeOwnOps(ent, id, key);
 }
 function removeOwnOps(ent, id, key) {
-  const c = ent?.comp ?? {};
+  const c = recordComponents(ent);
   if (key === 'motion' && c.motion) return { ops: [OP.unset(id, 'motion')], errors: [] };
   if (key === 'openable' && c.openable != null && isBag(c.reactions)) {
     const keep = Object.fromEntries(Object.entries(c.reactions).filter(([, h]) => !((h?.kind === 'toggle' && (h.component ?? 'openable') === 'openable') || (h?.kind === 'set' && h.component === 'openable'))));
@@ -1040,7 +1041,7 @@ export function editOps(ent, id, edits, live = {}) {
   const schema = inspectSchema(ent, id, live);
   const errors = [];
   const ops = [];
-  const c = ent?.comp ?? {};
+  const c = recordComponents(ent);
   let place = null;                 // coalesced full pose
   // a child's channels are LOCAL to its parent (inspectSchema): the pose they
   // edit is the mount's, and a translate/rotate on it is written as a mount

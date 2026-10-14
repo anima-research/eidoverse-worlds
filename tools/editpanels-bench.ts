@@ -247,10 +247,10 @@ console.log('\nBlueprints — placing a copy (design §3, step 6b):');
   check('picking it carries a copy as the ghost (edit mode, the whole tree)', await waitFor(`import('/lib/build.js').then((m) => m.hasGhost() && m.isEditing())`));
   const before = await evalJson(`import('/lib/state.js').then((m) => Object.keys(m.state.st.entities).length)`);
   await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: innerWidth / 2, clientY: innerHeight * 0.7 })), true))`);
-  const rootQ = `Object.entries(m.state.st.entities).find(([, e]) => e.comp?.blueprint?.hash === '${H}')?.[0]`;
-  check('a click places it: the root holds the link {hash, name}', await waitFor(`import('/lib/state.js').then((m) => { const r = ${rootQ}; const e = r && m.state.st.entities[r]; return !!e && e.lib === ${JSON.stringify(lib)} && e.comp.blueprint.name === 'Bench lamp' && e.comp.label === 'bench lamp'; })`, 8000));
+  const rootQ = `Object.entries(m.state.st.entities).find(([, e]) => e?.blueprint?.hash === '${H}')?.[0]`;
+  check('a click places it: the root holds the link {hash, name}', await waitFor(`import('/lib/state.js').then((m) => { const r = ${rootQ}; const e = r && m.state.st.entities[r]; return !!e && e.model === ${JSON.stringify(lib)} && e.blueprint.name === 'Bench lamp' && e.label === 'bench lamp'; })`, 8000));
   const root = await evalJson(`import('/lib/state.js').then((m) => ${rootQ} ?? null)`);
-  check('…the bulb rides it at its local pose, an Empty with comp.light (not the light verb), marked as part "bulb"', await waitFor(`import('/lib/state.js').then((m) => { const b = m.state.st.entities['${root}-bulb']; return !!b && b.parent?.to === '${root}' && JSON.stringify(b.parent.offset) === '[0,1.2,0]' && b.kind == null && b.lib == null && b.comp?.light?.intensity === 4 && b.comp?.blueprint?.part === 'bulb'; })`), await evalJson(`import('/lib/state.js').then((m) => JSON.stringify(m.state.st.entities['${root}-bulb'] ?? null))`));
+  check('…the bulb rides it at its local pose, an Empty with comp.light (not the light verb), marked as part "bulb"', await waitFor(`import('/lib/state.js').then((m) => { const b = m.state.st.entities['${root}-bulb']; return !!b && b.parent?.to === '${root}' && JSON.stringify(b.parent.offset) === '[0,1.2,0]' && b.kind == null && b.model == null && b.comp?.light?.intensity === 4 && b.comp?.blueprint?.part === 'bulb'; })`), await evalJson(`import('/lib/state.js').then((m) => JSON.stringify(m.state.st.entities['${root}-bulb'] ?? null))`));
   check('…the ghost is put down', await evalJson(`import('/lib/build.js').then((m) => !m.hasGhost())`));
   check('read back in the page: the copy is its record (no overrides)', await evalJson(`Promise.all([import('/lib/state.js'), import('/shared/blueprint.js')]).then(([s, b]) => { const t = b.copyTree(s.state.st.entities, '${root}', s.state.st.blueprints['${H}'].record); return !!t && b.overridesOf(t.tree, s.state.st.blueprints['${H}'].record).length === 0 && t.parts.bulb === '${root}-bulb'; })`));
   check('the Hierarchy marks the copy and its part', await waitFor(`(() => { const t = document.querySelector('[data-frame="hierarchy"]').textContent; return t.includes('Bench lamp copy') && t.includes('part bulb'); })()`), await evalJson(`document.querySelector('[data-frame="hierarchy"]').textContent.slice(0, 300)`));
@@ -272,7 +272,7 @@ console.log('\nBlueprints — placing a copy (design §3, step 6b):');
   await waitFor(`import('/lib/state.js').then((m) => !!m.state.st.blueprints?.['${HB}'])`);
   const paced = await evalJson(`Promise.all([import('/lib/build.js'), import('/lib/state.js'), import('/lib/net.js')]).then(([b, s, n]) => { const p = b.placeBlueprint('${HB}', s.state.st.blueprints['${HB}'].record, { id: 'row1', pos: [4, 0, -4], yaw: 0 }); return { verbs: p?.verbs.length, pending: n.verbPace().pending }; })`);
   check(`a big copy is paced: ${paced?.verbs} verbs, ${paced?.pending} waiting at once`, paced?.verbs > 20 && paced?.pending > 0, JSON.stringify(paced));
-  check('…and every part lands, mounted, in order', await waitFor(`import('/lib/state.js').then((m) => [0, 1, 2, 3, 4, 5].every((i) => m.state.st.entities['row1-post' + i]?.parent?.to === 'row1' && m.state.st.entities['row1-post' + i]?.comp?.blueprint?.part === 'post' + i))`, 25000));
+  check('…and every part lands, mounted, in order', await waitFor(`import('/lib/state.js').then((m) => [0, 1, 2, 3, 4, 5].every((i) => m.state.st.entities['row1-post' + i]?.parent?.to === 'row1' && m.state.st.entities['row1-post' + i]?.blueprint?.part === 'post' + i))`, 25000));
   check('…with nothing refused on the way', await evalJson(`!(window.__refused ?? []).some((e) => /slow down|row1/.test(e))`), JSON.stringify(await evalJson(`window.__refused`)));
   await evalJson(`import('/lib/build.js').then((m) => (m.undo(), true))`);
   check('…and its undo (7 removes, paced behind it) takes all of it away', await waitFor(`import('/lib/state.js').then((m) => !Object.keys(m.state.st.entities).some((k) => k.startsWith('row1')))`, 15000));
@@ -458,11 +458,11 @@ check('move tool + a selection → the gizmo is attached to it in translate mode
 check('the helper is in the scene', await evalJson(`import('/lib/core.js').then((m) => !!m.scene.getObjectByName('edit-gizmo'))`));
 await evalJson(`import('/lib/build.js').then((m) => m.setTool('rotate')), true`);
 check('rotate tool on a LIGHT → still no gizmo (a point light has no facing: no rot.qw to drag)', await waitFor(`globalThis.__gizmo?.().attached === null`), JSON.stringify(await evalJson(`(() => { const g = globalThis.__gizmo?.(); return g && { attached: g.attached, mode: g.mode }; })()`)));
-await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('spawn', { id: 'crate1', lib: 'eidoverse/assets/models/unit_quad_picture_plane.glb', pos: [3, 0, 3], yaw: 0 })), true`);
+await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('spawn', { id: 'crate1', model: 'eidoverse/assets/models/unit_quad_picture_plane.glb', pos: [3, 0, 3], yaw: 0 })), true`);
 await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('crate1'))`, 8000);
 await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('crate1')), true`);
 // was "only the Y ring (the log has no pitch/roll)": B stores the full q, so all three rings show (design §5)
-check('rotate tool on a MODEL → rotate mode with ALL three rings (q is stored, not only yaw)', await waitFor(`globalThis.__gizmo?.().attached === 'crate1' && globalThis.__gizmo().mode === 'rotate' && globalThis.__gizmo().controls.showX && globalThis.__gizmo().controls.showY && globalThis.__gizmo().controls.showZ`), JSON.stringify(await evalJson(`(() => { const g = globalThis.__gizmo?.(); return g && { attached: g.attached, mode: g.mode, lib: null }; })()`)) + ' lib=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.entityMeta.get('crate1')?.lib)`)));
+check('rotate tool on a MODEL → rotate mode with ALL three rings (q is stored, not only yaw)', await waitFor(`globalThis.__gizmo?.().attached === 'crate1' && globalThis.__gizmo().mode === 'rotate' && globalThis.__gizmo().controls.showX && globalThis.__gizmo().controls.showY && globalThis.__gizmo().controls.showZ`), JSON.stringify(await evalJson(`(() => { const g = globalThis.__gizmo?.(); return g && { attached: g.attached, mode: g.mode, model: null }; })()`)) + ' lib=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.entityMeta.get('crate1')?.model)`)));
 {
   // a tilt on the X ring, driven through the controls' own events (as the translate drag below):
   // release commits ONE place carrying the full q, pos untouched; undo goes back to the yaw-only record
@@ -610,7 +610,7 @@ await sleep(1500);   // verb window
   check('…one undo puts it back', await waitFor(`import('/lib/state.js').then((m) => m.state.st.entities.lamp3?.parent?.to === 'benchlamp')`));
   await sleep(1500);
   // a scaled, turned carrier: the dragged child keeps its world position AND size (mount + a scale place, one undo)
-  await evalJson(`import('/lib/net.js').then((m) => { m.sendVerb('place', { id: 'crate1', pos: [3, 0.5, 3], q: [0.2, 0.3, 0.1, 0.93], scale: 2 }); m.sendVerb('spawn', { id: 'cup1', lib: 'eidoverse/assets/models/unit_quad_picture_plane.glb', pos: [4, 1.2, 3.5], yaw: 0.7, scale: 0.5 }); }), true`);
+  await evalJson(`import('/lib/net.js').then((m) => { m.sendVerb('place', { id: 'crate1', pos: [3, 0.5, 3], q: [0.2, 0.3, 0.1, 0.93], scale: 2 }); m.sendVerb('spawn', { id: 'cup1', model: 'eidoverse/assets/models/unit_quad_picture_plane.glb', pos: [4, 1.2, 3.5], yaw: 0.7, scale: 0.5 }); }), true`);
   await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('cup1') && Math.abs(m.entities.get('crate1').scale.x - 2) < 1e-6)`, 8000);
   const WP = `import('/lib/world.js').then((m) => { const o = m.entities.get('cup1'); o.updateWorldMatrix(true, false); const p = new o.position.constructor(), s = new o.position.constructor(); o.getWorldPosition(p); o.getWorldScale(s); return [p.x, p.y, p.z, s.x]; })`;
   const w0 = await evalJson(WP);

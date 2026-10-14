@@ -119,8 +119,8 @@ export class WorldClient {
         this.open = true;
         if (msg.cut?.state) this.replica.adopt(msg.cut);
         const ent = this.screen();
-        this.stageSpeaker = ent?.comp?.stage?.speaker;
-        const me = msg.cut?.you; this.you = me ?? null; const listed = Array.isArray(ent?.comp?.captioners?.ids) && ent.comp.captioners.ids.includes(me);
+        this.stageSpeaker = ent?.stage?.speaker;
+        const me = msg.cut?.you; this.you = me ?? null; const listed = Array.isArray(ent?.captioners?.ids) && ent.captioners.ids.includes(me);
         this.log(`joined "${this.opts.world}" as ${this.opts.actor} (${me ?? '?'}, ${msg.yourRights?.role ?? '?'}${listed ? `, a captioner of ${this.opts.screenId}` : `, NOT one of ${this.opts.screenId}'s captioners — ask whoever may edit it: set {id: "${this.opts.screenId}", component: "captioners", value: {ids: ["${me}"]}}`}); screen ${this.opts.screenId} ${ent ? 'present' : 'NOT PRESENT — place it first'}`);
         this.schedule();
       } else if (msg.type === 'error') {
@@ -128,7 +128,7 @@ export class WorldClient {
       } else if (msg.type === 'log') {
         const r = this.replica.ingest(msg.entries ?? [], msg.from ?? -1, msg.names);
         if (r.resync) { this.ws?.close(); return; }   // a gap: rejoin for a fresh cut (onclose reconnects)
-        const sp = this.screen()?.comp?.stage?.speaker;
+        const sp = this.screen()?.stage?.speaker;
         if (sp !== this.stageSpeaker) { this.stageSpeaker = sp; this.log(`stage cue: speaker = ${sp ?? '(none)'}`); }
       } else if (msg.type === 'reply' && msg.id === this.inflightId) {
         const p = this.inflight; this.inflightId = null;

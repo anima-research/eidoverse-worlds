@@ -68,6 +68,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { recordComponents } from "../shared/protocol/view.js";
 const args = process.argv.slice(2);
 const has = (n: string) => args.includes(`--${n}`);
 const HEADED = has("headed");
@@ -544,7 +545,7 @@ async function runPass(name: string, extraParams: string): Promise<boolean> {
   // "3 entities checked, 0 diffs" only means something if one of those three
   // carried a real component bag and a body was really in its seat.
   const eye = await joinSocket(world, "parityeye", { spectate: true }).catch(() => null);
-  const bag = eye?.snapshot?.entities?.bench1?.comp ?? {};
+  const bag = eye?.snapshot?.entities?.recordComponents(bench1);
   const bagKeys = Object.keys(bag).sort();
   const seated = eye?.snapshot?.mounts?.paritydriver?.to === "bench1";
   const cargo = eye?.snapshot?.entities?.crate1?.parent?.to === "bench1";

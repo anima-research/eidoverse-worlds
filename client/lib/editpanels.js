@@ -53,10 +53,11 @@ import { reindexCollider } from './colliders.js';
 import * as Edits from './editwrites.js';
 import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';
 import { agoWords, touchWords } from '../../shared/protocol/refusal.js';
+import { recordComponents } from '../../shared/protocol/view.js';
 import { KEYHINTS } from './keyhints.js';   // slice 3b: these panels' writes are requests
 
 const _wp = new THREE.Vector3();
-const short = (meta) => (meta?.lib ?? meta?.mesh ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '').split('_').slice(0, 3).join(' ');
+const short = (meta) => (meta?.model ?? meta?.mesh ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '').split('_').slice(0, 3).join(' ');
 const round = (v, dp = 3) => +(+v).toFixed(dp);
 
 // collapsed groups remembered per LIB (a chair's Components stays open for
@@ -64,7 +65,7 @@ const round = (v, dp = 3) => +(+v).toFixed(dp);
 const FOLD_LS = 'ew-insp-fold';
 let folds = {};
 try { folds = JSON.parse(localStorage.getItem(FOLD_LS) || '{}'); } catch { /* fresh */ }
-const foldKey = (id) => (id === WORLD_ID ? WORLD_ID : `${entityMeta.get(id)?.lib ?? '?'}`);
+const foldKey = (id) => (id === WORLD_ID ? WORLD_ID : `${entityMeta.get(id)?.model ?? '?'}`);
 const isOpen = (id, g) => !(folds[foldKey(id)]?.[g]);
 function toggleFold(id, g) {
   const k = foldKey(id); folds[k] ??= {}; folds[k][g] = !folds[k][g];
@@ -267,28 +268,28 @@ function hierarchyFields() {
   const world = state.st.entities ?? {};
   const sel = sceneSelected();
   const q = filter.trim().toLowerCase();
-  const nameOnly = (id) => { const l = comps.get(id)?.label ?? world[id]?.comp?.label; return typeof l === 'string' && l ? l : null; };
+  const nameOnly = (id) => { const l = comps.get(id)?.label ?? world[id]?.label; return typeof l === 'string' && l ? l : null; };
   const labelOf = (id) => { const l = nameOnly(id); return l ? (hopts.ids ? `${l}  (${id})` : l) : id; };
-  const matches = q ? (id) => [id, world[id]?.comp?.label ?? '', world[id]?.lib ?? '', kindHint(world[id]), ...Object.keys(world[id]?.comp ?? {})].join(' ').toLowerCase().includes(q) : null;
+  const matches = q ? (id) => [id, world[id]?.label ?? '', world[id]?.model ?? '', kindHint(world[id]), ...Object.keys(recordComponents(world[id]))].join(' ').toLowerCase().includes(q) : null;
   const ridersOf = (id) => (riders.get(id) ?? []).map((r) => ({ id: `rider:${r}`, match: !q || r.toLowerCase().includes(q) }));
   // with 'list components' on, a thing's components are greyed rows under it (they fold with it, like its children)
-  const compsOfRow = (id) => (hopts.comps ? Object.keys(comps.get(id) ?? world[id]?.comp ?? {}).filter((k) => k !== 'label').sort().map((k) => ({ id: `comp:${id}:${k}`, match: !q || k.toLowerCase().includes(q) })) : []);
+  const compsOfRow = (id) => (hopts.comps ? Object.keys(comps.get(id) ?? recordComponents(world[id])).filter((k) => k !== 'label').sort().map((k) => ({ id: `comp:${id}:${k}`, match: !q || k.toLowerCase().includes(q) })) : []);
   const underOf = (id) => [...ridersOf(id), ...compsOfRow(id)];
   const rows = treeRows(world, { collapsed: { has: isFolded }, matches, extra: underOf }).map((t) => {
     if (t.extra && t.id.startsWith('comp:')) return { id: t.id, label: t.id.slice(t.id.lastIndexOf(':') + 1), depth: t.depth, noDrag: true, dim: true, title: `a component of ${t.id.slice(5, t.id.lastIndexOf(':'))}: click to select it` };
     if (t.extra) return { id: t.id, label: `🧍 ${t.id.slice(6)}`, depth: t.depth, noDrag: true };
-    const id = t.id; const bag = comps.get(id) ?? world[id]?.comp ?? {};
+    const id = t.id; const bag = comps.get(id) ?? recordComponents(world[id]);
     const badges = hopts.kinds ? badgesFor(id) : [];   // what it carries (grabbable · physics) is 'show kinds'; state badges below always show
     const off = offIn(world, id);   // switched off (itself or above): not loaded, so not 'loading…'
     if (!entities.get(id) && !off) badges.unshift('loading…');
     if (bag.hidden === true) badges.push('hidden');
     if (claimsByOthers[id]) badges.push(`editing: ${claimsByOthers[id]}`);   // a live drag by someone else (build.js claims)
-    if (off) badges.push(world[id]?.comp?.disabled === true ? 'off' : 'off (above)');
-    const bpLink = world[id]?.comp?.['copy-of'];
+    if (off) badges.push(world[id]?.disabled === true ? 'off' : 'off (above)');
+    const bpLink = world[id]?.['copy-of'];
     const sub = bpLink && typeof bpLink === 'object' ? `${kindHint(world[id])} · ${bpLink.hash ? `${bpLink.name ?? 'blueprint'} copy` : `part ${bpLink.part}`}` : kindHint(world[id]);
     // a child of a locked thing is held by that lock (the authority refuses moving it: "it rides X, which is locked"), so
     // its row says so instead of showing an open padlock (review 10-07 S3)
-    let heldBy = null; for (let p = world[id]?.parent?.to, n = 0; p && n < 32 && !heldBy; p = world[p]?.parent?.to, n++) if ((comps.get(p) ?? world[p]?.comp ?? {}).lock) heldBy = p;
+    let heldBy = null; for (let p = world[id]?.parent?.to, n = 0; p && n < 32 && !heldBy; p = world[p]?.parent?.to, n++) if ((comps.get(p) ?? recordComponents(world[p])).lock) heldBy = p;
     // the row says the name; the rest is on hover (and in the row with 'show ids' / 'show kinds')
     const title = [nameOnly(id) ? `${nameOnly(id)}  (id ${id})` : `id ${id}`, sub].filter(Boolean).join(' — ');
     return { id, label: labelOf(id), ...(hopts.kinds ? { sub } : {}), title, depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock, mine: isMineHidden(id),
@@ -310,7 +311,7 @@ function hierarchyFields() {
       ...(r.lockable === false ? [] : [{ k: 'lock', label: r.locked ? 'unlock' : 'lock in place' }]),
       { k: 'myhide', label: r.mine ? 'show in my view' : 'hide in my view (only you)' },
       { k: 'hide', label: comps.get(r.id)?.hidden === true ? 'make visible to everyone' : 'make invisible to everyone' },
-      { k: 'off', label: world[r.id]?.comp?.disabled === true ? 'switch on' : 'switch off (for everyone)' },
+      { k: 'off', label: world[r.id]?.disabled === true ? 'switch on' : 'switch off (for everyone)' },
       { k: 'remove', label: 'remove  (X)', danger: true },
     ];
   }
@@ -378,7 +379,7 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
       const was = isFolded(id); for (const k of deep ? [id, ...descendantsOf(id)] : [id]) setFolded(k, !was); saveFolds(); break; }
     case 'fold:all-open': case 'fold:all-shut': { const shut = action.endsWith('shut'); for (const k of Object.keys(state.st.entities ?? {})) setFolded(k, shut); saveFolds(); repaintAll(); return; }
     case 'hide': { const id = payload ?? sel; if (id) commitEdit(id, 'flags.hidden', comps.get(id)?.hidden !== true); break; }
-    case 'off': { const id = payload ?? sel; if (id) commitEdit(id, 'flags.disabled', state.st.entities[id]?.comp?.disabled !== true); break; }
+    case 'off': { const id = payload ?? sel; if (id) commitEdit(id, 'flags.disabled', state.st.entities[id]?.disabled !== true); break; }
     case 'duplicate': duplicate(payload ?? sel); break;
     case 'step': {   // ↑/↓ through the rows as painted
       const i = visibleRows.indexOf(sel);
@@ -417,7 +418,7 @@ function duplicate(id) {
   const rec = foldRecord(id); const obj = entities.get(id);
   if (!rec || !obj) return;
   const n = (dupCount.get(id) ?? 0) + 1; dupCount.set(id, n);
-  const nudge = n === 2 && !rec.comp?.['copy-of'] ? html` · copies are <b>independent</b>: for copies that stay in step, <b>Save as blueprint</b> and place them from Build ▸ Blueprints` : '';
+  const nudge = n === 2 && !rec?.['copy-of'] ? html` · copies are <b>independent</b>: for copies that stay in step, <b>Save as blueprint</b> and place them from Build ▸ Blueprints` : '';
   // the authority copies it, and what's attached to it: create {from: id}, one act
   Edits.duplicate(id).then((r) => { const nid = r.ok && r.refs?.[0]?.id; if (!nid) return;
     const out = Edits.idOut(nid); flashHint(html`<b>${out}</b> — a copy of ${id}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
@@ -631,7 +632,7 @@ function lastChange(id) {
   return v.created ? `made by ${Edits.nameOf(v.by)} · ${ago(v.ts)}` : `${Edits.nameOf(v.by)} · ${sec?.title ?? comp} · ${ago(v.ts)}`;
 }
 
-const thingName = (id) => { const l = comps.get(id)?.label ?? state.st.entities[id]?.comp?.label; return typeof l === 'string' && l ? l : id; };
+const thingName = (id) => { const l = comps.get(id)?.label ?? state.st.entities[id]?.label; return typeof l === 'string' && l ? l : id; };
 function inspectorFields() {
   if (worldSel) return worldFields();
   const id = sceneSelected();
@@ -644,7 +645,7 @@ function inspectorFields() {
   const schema = schemaFor(id);           // ONE declaration: shared/editschema.js
   const idRow = { t: 'info', label: 'id', value: id, dim: true, hint: 'its permanent id: the log, scripts and agents point at this, so it never changes, even when you rename it (like a Maya node\'s UUID)' };
   if (!obj && offIn(state.st.entities, id)) {   // switched off: nothing loaded, so no transform to show; the way back on
-    const self = state.st.entities[id]?.comp?.disabled === true; let up = id; if (!self) for (let k = state.st.entities[id]?.parent?.to; k; k = state.st.entities[k]?.parent?.to) if (state.st.entities[k]?.comp?.disabled === true) { up = k; break; }
+    const self = state.st.entities[id]?.disabled === true; let up = id; if (!self) for (let k = state.st.entities[id]?.parent?.to; k; k = state.st.entities[k]?.parent?.to) if (state.st.entities[k]?.disabled === true) { up = k; break; }
     return [{ t: 'info', label: 'name', value: thingName(id) }, idRow,
       { t: 'info', label: 'state', value: self ? 'switched off: nobody downloads, sees or touches it' : `switched off with ${thingName(up)}, which it hangs under` },
       ...(self ? [{ t: 'btn', k: 'hoff', label: 'switch it back on', icon: 'power' }] : [{ t: 'btn', k: `selup:${up}`, label: `select ${thingName(up)}` }])]; }
@@ -667,7 +668,7 @@ function inspectorFields() {
     // (hidden in MY view only; the Hierarchy's eye is the same switch) and the padlock. 'disable' waits on its rules.
     let nameRow = null;
     for (const a of schema.sections.header ?? []) { const r = cardRow(schema, id, a); if (r && !a.startsWith('parent.') && a !== 'flags.hidden') { if (a === 'flags.label') nameRow = r; else f.push(r); } }
-    { const mine = isMineHidden(id), lk = comps.get(id)?.lock, offNow = state.st.entities[id]?.comp?.disabled === true;
+    { const mine = isMineHidden(id), lk = comps.get(id)?.lock, offNow = state.st.entities[id]?.disabled === true;
       const line = [
         ...(nameRow ? [{ ...nameRow, label: '', bar: true, cls: 'sp-title', placeholder: 'name it', vrLabel: 'name' }] : []),
         { t: 'btn', k: 'myhide', icon: mine ? 'eye-slash' : 'eye', label: '', on: mine, bar: true, deskOnly: true, cls: 'sp-iconbtn',
@@ -776,7 +777,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
   if (action === 'ifilter') { ifilter = String(payload ?? ''); repaintAll(); return; }
   if (action === 'hlock' && id && id !== WORLD_ID) { commitEdit(id, 'flags.lock', !comps.get(id)?.lock); return; }
   if (action.startsWith('selup:')) { sceneSelect(action.slice(6)); return; }
-  if (action === 'hoff' && id && id !== WORLD_ID) { const on = state.st.entities[id]?.comp?.disabled === true; const r = commitEdit(id, 'flags.disabled', !on);
+  if (action === 'hoff' && id && id !== WORLD_ID) { const on = state.st.entities[id]?.disabled === true; const r = commitEdit(id, 'flags.disabled', !on);
     if (r?.errors?.length) flashHint(r.errors.join(' · '), 5000, 'attn'); else flashHint(on ? `${thingName(id)} switched back on` : `${thingName(id)} switched off for everyone (Ctrl+Z switches it back on)`, 2600); return; }
   if (action === 'myhide' && id && id !== WORLD_ID) { const on = toggleMineHidden(id); flashHint(on ? html`${id} hidden in <b>your</b> view only — nobody else is affected` : `${id} shown again`, 2400); repaintAll(); return; }
   if (action === 'ed:grabbable.gripedit') { openGripEditor(id); return; }
@@ -1085,7 +1086,7 @@ function buildDispatch(action, payload) {
       // asked, as Roblox's "Save to Roblox" and SL's Take name what they keep (review 10-07 S5: it saved as "4177f489").
       // The offer is a person's word for it: its label, else its model's name (the inspector's header), else its id
       const one = ids.length === 1 ? foldRecord(ids[0]) : null;
-      const offer = ids.length === 1 ? String(one?.comp?.label ?? (one?.lib != null ? libLabels.get(one.lib) ?? libLabel(one.lib) : ids[0])) : `${ids.length} things`;
+      const offer = ids.length === 1 ? String(one?.label ?? (one?.model != null ? libLabels.get(one.model) ?? libLabel(one.model) : ids[0])) : `${ids.length} things`;
       (xrActive() ? Promise.resolve(offer) : askCenter({ title: 'Save as blueprint', body: 'A name for it in Blueprints › saved here, where you place copies of it.', value: offer, ok: 'Save' }))
         .then((name) => { if (!name) return;
           Edits.publish(ids, name).then((r) => { if (r.ok) flashHint(html`saved <b>${name}</b> as a blueprint — it's in Blueprints › saved here`, 4000); repaintAll(); }); });

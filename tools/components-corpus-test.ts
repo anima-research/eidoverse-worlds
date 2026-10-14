@@ -45,7 +45,7 @@ check(`every record has a distinct 64-hex hash (${hashes.length} records)`, hash
   check('a parameter that is NAMED hint or note still counts', tweak(P, (x) => { x.params.note = { t: 'text', default: 'a' }; }) !== tweak(P, (x) => { x.params.note = { t: 'text', default: 'b' }; }));
 }
 check('Pendulum is not addable twice on a part-less basis but motion types repeat', addable([{ type: 'Transform' }, { type: 'Pendulum' }]).some((a) => a.name === 'Pendulum'));
-check('a tilted entity keeps q through the view', (() => { const e = { lib: 'x.glb', pos: [0, 1, 0], q: [0.2588, 0, 0, 0.9659], yaw: 0, comp: { lock: true } }; return canon(entityOf(componentsOf(e))) === canon(e); })());
+check('a tilted entity keeps q through the view', (() => { const e = { model: 'x.glb', pos: [0, 1, 0], q: [0.2588, 0, 0, 0.9659], yaw: 0, lock: true }; return canon(entityOf(componentsOf(e))) === canon(e); })());
 // batch 2 (R 10-07): no part = a picture of its own, so Picture is offered on any thing, a model or not
 check('Picture is offered on any thing (batch 2: quad mode)', addable([{ type: 'Transform' }, { type: 'Light' }]).some((a) => a.name === 'Picture') && addable([{ type: 'Transform' }, { type: 'Model' }]).some((a) => a.name === 'Picture'));
 
@@ -58,26 +58,24 @@ const L = 'eidoverse/assets/models/lamp.glb';
 const st0 = { actor: 'a', ts: 1, born: 1 };
 const cases: [string, any, string[]][] = [
   // [name, folded entity, expected "Type:key" list after Transform]
-  ['a lamp: a Model and a comp.light on one entity', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { color: 0xff8800, intensity: 20, range: 8 } }, ...st0 }, ['Model:', 'Light:light']],
-  ['comp.light burning at noon (day:false ⇄ burnsAtNoon)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { day: false, important: true } }, ...st0 }, ['Model:', 'Light:light']],
-  ['comp.light with day:true kept verbatim', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { day: true } }, ...st0 }, ['Model:', 'Light:light']],
-  ['comp.light with a key no record names (extra, not lost)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { color: 1, flicker: 0.3, burnsAtNoon: 'x' } }, ...st0 }, ['Model:', 'Light:light']],
-  ['an empty comp.light {} (all defaults)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: {} }, ...st0 }, ['Model:', 'Light:light']],
-  ['a comp.light that is not an object stays an Annotation', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: 'on' }, ...st0 }, ['Model:', 'Annotation:light']],
-  ['comp.collider box', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { collider: { shape: 'box' } }, ...st0 }, ['Model:', 'Collider:collider']],
-  ['legacy collide AND comp.collider together', { lib: L, pos: [0, 0, 0], yaw: 0, collide: 'box', comp: { collider: { shape: 'exact' } }, ...st0 }, ['Model:', 'Collider:', 'Collider:collider']],
-  ['a comp.collider array stays an Annotation', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { collider: ['box'] }, ...st0 }, ['Model:', 'Annotation:collider']],
-  ['legacy kind:"light" AND comp.light (hand-written log)', { kind: 'light', pos: [0, 1, 0], color: 1, intensity: 2, range: 3, comp: { light: { color: 4 } }, ...st0 }, ['Light:', 'Light:light']],
+  ['a lamp: a Model and a comp.light on one entity', { model: L, pos: [0, 0, 0], yaw: 0, light: { color: 0xff8800, intensity: 20, range: 8 }, ...st0 }, ['Model:', 'Light:light']],
+  ['comp.light burning at noon (day:false ⇄ burnsAtNoon)', { model: L, pos: [0, 0, 0], yaw: 0, light: { day: false, important: true }, ...st0 }, ['Model:', 'Light:light']],
+  ['comp.light with day:true kept verbatim', { model: L, pos: [0, 0, 0], yaw: 0, light: { day: true }, ...st0 }, ['Model:', 'Light:light']],
+  ['comp.light with a key no record names (extra, not lost)', { model: L, pos: [0, 0, 0], yaw: 0, light: { color: 1, flicker: 0.3, burnsAtNoon: 'x' }, ...st0 }, ['Model:', 'Light:light']],
+  ['an empty comp.light {} (all defaults)', { model: L, pos: [0, 0, 0], yaw: 0, light: {}, ...st0 }, ['Model:', 'Light:light']],
+  ['a comp.light that is not an object stays an Annotation', { model: L, pos: [0, 0, 0], yaw: 0, light: 'on', ...st0 }, ['Model:', 'Annotation:light']],
+  ['comp.collider box', { model: L, pos: [0, 0, 0], yaw: 0, collider: { shape: 'box' }, ...st0 }, ['Model:', 'Collider:collider']],
+  ['a comp.collider array stays an Annotation', { model: L, pos: [0, 0, 0], yaw: 0, collider: ['box'], ...st0 }, ['Model:', 'Annotation:collider']],
   ['an Empty: nothing but a Transform', { pos: [1, 2, 3], yaw: 0.5, ...st0 }, []],
-  ['an Empty with a scale, a q and a comp.light', { pos: [1, 2, 3], yaw: 0, q: [0, 0, 0, 1], scale: 2, comp: { light: { intensity: 4 } }, placer: { id: 'p' }, ...st0 }, ['Light:light']],
+  ['an Empty with a scale, a q and a comp.light', { pos: [1, 2, 3], yaw: 0, q: [0, 0, 0, 1], scale: 2, light: { intensity: 4 }, placer: { id: 'p' }, ...st0 }, ['Light:light']],
   // step 3: the Transform's rotation order rides comp.rotOrder (design §3)
-  ['a rotation order is part of the Transform, not a component of its own', { lib: L, pos: [0, 0, 0], yaw: 0, q: [0, 0.38, 0, 0.92], comp: { rotOrder: 'ZXY', lock: true }, ...st0 }, ['Model:', 'Lock:lock']],
-  ['quaternion mode, on an Empty', { pos: [0, 0, 0], yaw: 0, comp: { rotOrder: 'quat' }, ...st0 }, []],
-  ['a rotOrder that is not one of the seven names stays an Annotation (bytes kept)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { rotOrder: 'zxy' }, ...st0 }, ['Model:', 'Annotation:rotOrder']],
-  ['…as does a non-string one', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { rotOrder: { order: 'XYZ' } }, ...st0 }, ['Model:', 'Annotation:rotOrder']],
+  ['a rotation order is part of the Transform, not a component of its own', { model: L, pos: [0, 0, 0], yaw: 0, q: [0, 0.38, 0, 0.92], rotOrder: 'ZXY', lock: true, ...st0 }, ['Model:', 'Lock:lock']],
+  ['quaternion mode, on an Empty', { pos: [0, 0, 0], yaw: 0, rotOrder: 'quat', ...st0 }, []],
+  ['a rotOrder that is not one of the seven names stays an Annotation (bytes kept)', { model: L, pos: [0, 0, 0], yaw: 0, rotOrder: 'zxy', ...st0 }, ['Model:', 'Annotation:rotOrder']],
+  ['…as does a non-string one', { model: L, pos: [0, 0, 0], yaw: 0, rotOrder: { order: 'XYZ' }, ...st0 }, ['Model:', 'Annotation:rotOrder']],
 ];
 check('the Transform reads its rotOrder (absent = no key at all, so XYZ is never written back)',
-  componentsOf({ pos: [0, 0, 0], comp: { rotOrder: 'YZX' } }).components[0].params.rotOrder === 'YZX'
+  componentsOf({ pos: [0, 0, 0], rotOrder: 'YZX' }).components[0].params.rotOrder === 'YZX'
   && !('rotOrder' in componentsOf({ pos: [0, 0, 0] }).components[0].params) && !('comp' in entityOf(componentsOf({ pos: [0, 0, 0], yaw: 0 }))));
 for (const [name, ent, want] of cases) {
   const view = componentsOf(ent);
@@ -87,19 +85,19 @@ for (const [name, ent, want] of cases) {
     canon(back) === canon(ent) && canon(got) === canon(['Transform:', ...want]), `got ${got.join(' + ')} / ${canon(back)}`);
 }
 check('lightOf reads both spellings with the fold\'s defaults; the legacy one wins when both',
-  canon(lightOf({ lib: L, comp: { light: {} } })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, important: false, day: true })
-  && lightOf({ kind: 'light', color: 1, intensity: 2, range: 3, day: false, comp: { light: { color: 4 } } })?.color === 1
+  canon(lightOf({ model: L, light: {} })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, important: false, day: true })
+  && lightOf({ kind: 'light', color: 1, intensity: 2, range: 3, day: false, light: { color: 4 } })?.color === 1
   && lightOf({ kind: 'light', color: 1, intensity: 2, range: 3, day: false })?.day === false
-  && lightOf({ lib: L, comp: { light: 'on' } }) === null && lightOf({ lib: L }) === null);
+  && lightOf({ model: L, light: 'on' }) === null && lightOf({ model: L }) === null);
 check('lightOf never lets a bad field reach the rig (NaN, string, negative → default)',
-  canon(lightOf({ comp: { light: { color: 'red', intensity: -1, range: NaN, important: 'yes' } } })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, important: false, day: true }));
+  canon(lightOf({ light: { color: 'red', intensity: -1, range: NaN, important: 'yes' } })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, important: false, day: true }));
 check('colliderOf: comp.collider wins, a bad shape falls back to legacy collide, absent = undefined',
-  colliderOf({ collide: 'box', comp: { collider: { shape: 'exact' } } }) === 'exact'
-  && colliderOf({ collide: 'box', comp: { collider: { shape: 'mesh' } } }) === 'box'
-  && colliderOf({ lib: L }) === undefined);
-check('isEmpty: no lib and not a legacy light', isEmpty({ pos: [0, 0, 0] }) && !isEmpty({ lib: L }) && !isEmpty({ kind: 'light' }) && !isEmpty(null));
+  colliderOf({ collide: 'box', collider: { shape: 'exact' } }) === 'exact'
+  && colliderOf({ collide: 'box', collider: { shape: 'mesh' } }) === 'box'
+  && colliderOf({ model: L }) === undefined);
+check('isEmpty: no lib and not a legacy light', isEmpty({ pos: [0, 0, 0] }) && !isEmpty({ model: L }) && !isEmpty({ kind: 'light' }) && !isEmpty(null));
 check('a lamp (Model + comp.light) cannot add a second Light; an Empty can add one; Collider still needs a Model',
-  !addable(componentsOf({ lib: L, comp: { light: {} } }).components).some((a) => a.name === 'Light')
+  !addable(componentsOf({ model: L, light: {} }).components).some((a) => a.name === 'Light')
   && addable(componentsOf({ pos: [0, 0, 0] }).components).some((a) => a.name === 'Light')
   && !addable(componentsOf({ pos: [0, 0, 0] }).components).some((a) => a.name === 'Collider'));
 

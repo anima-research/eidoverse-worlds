@@ -187,8 +187,8 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const lib = s.call("olive", "set", { id: "@world", component: `blueprints:${String(h).replace(/^sha256:/, "")}`, value: { name: "table", parts: 3 } });
       const p1 = s.call("bob", "create", { from: h, at: { pos: [20, 0, 0] } }), p2 = s.call("bob", "create", { from: h, at: { pos: [24, 0, 0] } });
       const st = s.w().state(); const copies = Object.keys(st.entities).filter((x) => st.entities[x].c["copy-of"]?.from === h);
-      return { lib: show(lib), p1: show(p1), p2: show(p2), n: copies.length, kids: copies.filter((x) => st.entities[x].c.parent).map((x) => st.entities[x].c.parent.to) }; },
-    good: (o) => o.lib === "ok" && o.p1 === "ok" && o.p2 === "ok" && o.n === 6 && o.kids.length === 4 },
+      return { model: show(lib), p1: show(p1), p2: show(p2), n: copies.length, kids: copies.filter((x) => st.entities[x].c.parent).map((x) => st.entities[x].c.parent.to) }; },
+    good: (o) => o.model === "ok" && o.p1 === "ok" && o.p2 === "ok" && o.n === 6 && o.kids.length === 4 },
   { id: "N4", what: "a group holding a thing whose id is 'root' (the key a group's own root takes): every part keeps a key of its own, and it places", run(s) { cast(s);
       s.call("bob", "create", { id: "root", model: "crate", components: { transform: T0([0, 0, 0]) } });
       s.call("bob", "create", { id: "stool", model: "crate", components: { transform: T0([2, 0, 0]) } });

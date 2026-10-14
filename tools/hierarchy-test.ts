@@ -39,16 +39,16 @@ const tfOf = (r: any) => flat(r.ops).find((o: any) => o.verb === 'set' && o.args
 console.log('tree building from a world\'s view');
 {
   const D = scratchWorld('hierarchy').seed({
-    table: { lib: LIB, pos: [0, 0, 0] },
+    table: { model: LIB, pos: [0, 0, 0] },
     // one place per thing (R 10-11, authority.js:1213): a model and a light never share an entity, so the lamp is
     // the model and `bulb` under it carries the light — which is what the rule prescribes. (A fresh `create` of
     // both on one thing refuses `one-place`; only an old log or an import still folds that shape, so the hint for
     // it is checked below on a literal record instead of through the door.)
-    lamp: { lib: 'eidoverse/assets/models/lamp_brass_desk.glb', pos: [0, 0.8, 0], parent: { to: 'table', offset: [0, 0.8, 0] } },
-    bulb: { pos: [0, 1.2, 0], parent: { to: 'lamp', offset: [0, 0.4, 0] }, comp: { light: { color: 0xffd9a0, intensity: 8, range: 4 } } },   // an Empty with a light
-    porch: { pos: [5, 2, 0], comp: { light: { color: 0xffffff, intensity: 10, range: 6 } } },
+    lamp: { model: 'eidoverse/assets/models/lamp_brass_desk.glb', pos: [0, 0.8, 0], parent: { to: 'table', offset: [0, 0.8, 0] } },
+    bulb: { pos: [0, 1.2, 0], parent: { to: 'lamp', offset: [0, 0.4, 0] }, light: { color: 0xffd9a0, intensity: 8, range: 4 } },   // an Empty with a light
+    porch: { pos: [5, 2, 0], light: { color: 0xffffff, intensity: 10, range: 6 } },
     marker: { pos: [7, 0, 0] },                                                                                                           // a bare Empty
-    chair: { lib: 'eidoverse/assets/models/chair.glb', pos: [2, 0, 0] },
+    chair: { model: 'eidoverse/assets/models/chair.glb', pos: [2, 0, 0] },
   });
   const W = D.view().entities;
   const rows = treeRows(W);
@@ -69,7 +69,7 @@ console.log('tree building from a world\'s view');
   // kindHint is a pure function on a record, so the LEGACY shape (a model and a light on one thing) is checked
   // here directly: one-place refuses it at the door now, but old logs keep folding it ("the fold never refuses")
   // and the Hierarchy must still name what it finds.
-  const legacy = { lib: 'eidoverse/assets/models/lamp_brass_desk.glb', comp: { light: { color: 0xffd9a0, intensity: 8, range: 4 } } };
+  const legacy = { model: 'eidoverse/assets/models/lamp_brass_desk.glb', light: { color: 0xffd9a0, intensity: 8, range: 4 } };
   check('…and a legacy model-with-a-light (an old log, which the fold never refuses) is still named', kindHint(legacy) === 'lamp brass desk + light', kindHint(legacy));
   check('childrenOf / ancestors read the view', childrenOf(W, 'lamp').join() === 'bulb' && ancestors(W, 'bulb').join() === 'lamp,table');
   // a loop written by hand (the door refuses one; a hand-edited log file need not): both members are roots, nothing vanishes
@@ -85,8 +85,8 @@ console.log('tree building from a world\'s view');
 console.log('cycle refusal');
 {
   const D = scratchWorld('hierarchy').seed({
-    table: { lib: LIB, pos: [0, 0, 0] },
-    lamp: { lib: LIB, pos: [0, 1, 0], parent: { to: 'table', offset: [0, 1, 0] } },
+    table: { model: LIB, pos: [0, 0, 0] },
+    lamp: { model: LIB, pos: [0, 1, 0], parent: { to: 'table', offset: [0, 1, 0] } },
     bulb: { pos: [0, 2, 0], parent: { to: 'lamp', offset: [0, 1, 0] } },
   });
   const W = D.view().entities;
@@ -154,9 +154,9 @@ function threeWorld(W: any, id: string) {
     if (bs !== 1) scaled++;
     const childTilt = i % 4 !== 0;
     D.seed({
-      [base]: { lib: LIB, pos: randPos(), ...(tilt ? { q: randQ() } : { yaw: (rnd() - 0.5) * 6 }), scale: bs },
-      [arm]: { lib: LIB, pos: randPos(), parent: { to: base, offset: randPos(), q: randQ() }, scale: 0.5 + rnd() },   // a nested carrier
-      [cup]: { lib: LIB, pos: randPos(), ...(childTilt ? { q: randQ() } : { yaw: (rnd() - 0.5) * 6 }), scale: 0.3 + rnd() * 2 },
+      [base]: { model: LIB, pos: randPos(), ...(tilt ? { q: randQ() } : { yaw: (rnd() - 0.5) * 6 }), scale: bs },
+      [arm]: { model: LIB, pos: randPos(), parent: { to: base, offset: randPos(), q: randQ() }, scale: 0.5 + rnd() },   // a nested carrier
+      [cup]: { model: LIB, pos: randPos(), ...(childTilt ? { q: randQ() } : { yaw: (rnd() - 0.5) * 6 }), scale: 0.3 + rnd() * 2 },
     });
     const to = i % 2 ? arm : base;
     const V0 = D.view().entities;
@@ -192,7 +192,7 @@ function threeWorld(W: any, id: string) {
 }
 {
   // one gesture is one request: set parent + the LOCAL transform (pos, q and scale), as one batch
-  const W: any = { box: { lib: LIB, pos: [1, 0, 0], q: qNorm([0.3, 0.2, 0.1, 0.9]), scale: 2 }, ball: { lib: LIB, pos: [1, 1, 0], yaw: 0, scale: 1 } };
+  const W: any = { box: { model: LIB, pos: [1, 0, 0], q: qNorm([0.3, 0.2, 0.1, 0.9]), scale: 2 }, ball: { model: LIB, pos: [1, 1, 0], yaw: 0, scale: 1 } };
   const pv = parentOps(W, 'ball', 'box');
   const o = flat(pv.ops);
   check('parenting: ONE batch, set parent {to} then a whole local transform (scale local: 1/2 under a ×2 box)', pv.ops.length === 1 && pv.ops[0].verb === 'batch' && o.length === 2 && o[0].args.component === 'parent' && o[0].args.value.to === 'box'
@@ -202,7 +202,7 @@ function threeWorld(W: any, id: string) {
   check('an id that needs escaping is encoded once in the parent target', flat(parentOps({ Box: W.box, ball: W.ball }, 'ball', 'Box').ops)[0].args.value.to === enc('Box'));
   const L = localOf({ ...W.ball, parent: { to: 'box', yaw: 0.5 } }, W);
   check('localOf a yaw-only mount: q null, yaw the relative turn', L.q === null && L.yaw === 0.5 && L.mounted);
-  const S = localOf({ ...W.ball, parent: { to: 'chair', socket: 'seat' } }, { ...W, chair: { lib: LIB, pos: [0, 0, 0], comp: { sockets: { seat: { pos: [0, 0.5, 0], yaw: 3 } } } } });
+  const S = localOf({ ...W.ball, parent: { to: 'chair', socket: 'seat' } }, { ...W, chair: { model: LIB, pos: [0, 0, 0], sockets: { seat: { pos: [0, 0.5, 0], yaw: 3 } } } });
   check('localOf a socket mount: the socket\'s pos and yaw', near(S.pos, [0, 0.5, 0], 0) && S.yaw === 3);
 }
 
@@ -210,7 +210,7 @@ function threeWorld(W: any, id: string) {
 console.log("a child's channel box: local, and an edit writes one local transform");
 {
   const D = scratchWorld('hierarchy').seed({
-    lamp: { lib: LIB, pos: [10, 0, 10], yaw: 1 },
+    lamp: { model: LIB, pos: [10, 0, 10], yaw: 1 },
     bulb: { pos: [3, 3, 3], yaw: 0, scale: 1, parent: { to: 'lamp', offset: [0, 1.5, 0.2], yaw: 0.25 } },
   });
   const W = D.view().entities;
@@ -244,7 +244,7 @@ console.log("a child's channel box: local, and an edit writes one local transfor
   const e5 = editOps(W.lamp, 'lamp', { 'pos.x': 11 }, { world: W });
   check('a root writes its world transform', flat(e5.ops).length === 1 && tfOf(e5).pos[0] === 11 && tfOf(e5).pos[2] === 10);
   // a part-socket rider: read-only, says why
-  const ride: any = { cart: { lib: LIB, pos: [0, 0, 0], comp: { sockets: { deck: { pos: [0, 1, 0], part: 'plank' } } } }, box: { lib: LIB, pos: [0, 0, 0], parent: { to: 'cart', socket: 'deck' } } };
+  const ride: any = { cart: { model: LIB, pos: [0, 0, 0], sockets: { deck: { pos: [0, 1, 0], part: 'plank' } } }, box: { model: LIB, pos: [0, 0, 0], parent: { to: 'cart', socket: 'deck' } } };
   const e6 = editOps(ride.box, 'box', { 'pos.x': 1 }, { world: ride });
   check('a rider of a moving part: translate refused with the reason', e6.ops.length === 0 && /moving part plank/.test(e6.errors.join()));
 }
@@ -254,9 +254,9 @@ console.log('a parent edit undoes to exactly what it was (the door\'s undo)');
 {
   for (const start of ['root', 'other']) {
     const D = scratchWorld('hierarchy').seed({
-      shelf: { lib: LIB, pos: [4, 1, -2], q: qNorm([0.1, 0.4, 0, 0.9]), scale: 2 },
-      desk: { lib: LIB, pos: [-3, 0, 5], yaw: 2 },
-      book: { lib: LIB, pos: [1, 1.5, 1], q: qNorm([0.2, 0, 0.3, 0.9]), scale: 0.8, ...(start === 'other' ? { parent: { to: 'desk', offset: [0.2, 0.9, 0], yaw: 0.3 } } : {}) },
+      shelf: { model: LIB, pos: [4, 1, -2], q: qNorm([0.1, 0.4, 0, 0.9]), scale: 2 },
+      desk: { model: LIB, pos: [-3, 0, 5], yaw: 2 },
+      book: { model: LIB, pos: [1, 1.5, 1], q: qNorm([0.2, 0, 0.3, 0.9]), scale: 0.8, ...(start === 'other' ? { parent: { to: 'desk', offset: [0.2, 0.9, 0], yaw: 0.3 } } : {}) },
     });
     const W = D.view().entities;
     const snap = D.state().entities.book.c;   // the components as they stood
@@ -272,13 +272,13 @@ console.log('a parent edit undoes to exactly what it was (the door\'s undo)');
       JSON.stringify({ u: u.refused, back, snap }));
     check(`(${start}) …and the world pose`, near(worldPose(D.view().entities, 'book')!.pos, W0.pos, 1e-6));
   }
-  const W: any = { a: { lib: LIB, pos: [0, 0, 0] } };
+  const W: any = { a: { model: LIB, pos: [0, 0, 0] } };
   check('unparent on a root is an error, not an op', editOps(W.a, 'a', { 'parent.unparent': true }, { world: W }).errors.some((e: string) => /no parent/.test(e)));
   check('a parent edit without the world records says so (old callers)', editOps(W.a, 'a', { 'parent.to': 'b' }).errors.some((e: string) => /world/.test(e)));
 }
 
 { // R 10-11: 'domino 11, domino 12, domino 3': ordered by the name a person sees, numbers as numbers, unnamed by id
-  const w = { 'domino-3': { comp: { label: 'domino 3' } }, 'domino-11': { comp: { label: 'domino 11' } }, 'domino-2': { comp: { label: 'domino 2' } }, 'zz': { comp: { label: 'Apple' } }, 'b-7': { comp: {} } };
+  const w = { 'domino-3': { label: 'domino 3' }, 'domino-11': { label: 'domino 11' }, 'domino-2': { label: 'domino 2' }, 'zz': { label: 'Apple' }, 'b-7': {  } };
   const order = treeOf(w).roots;
   check('things are ordered by their names, numbers as numbers (Apple, b-7, domino 2, domino 3, domino 11)', JSON.stringify(order) === JSON.stringify(['zz', 'b-7', 'domino-2', 'domino-3', 'domino-11']), JSON.stringify(order));
 }

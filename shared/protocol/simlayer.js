@@ -20,7 +20,7 @@ import { isBoxShape, shapeError } from "./shapes.js";
 
 // Determinism is per binary (18b), so an engine is named AND hashed. This build carries one:
 // sha256(sim.js ‖ NUL ‖ eidosim.js ‖ NUL ‖ simmath.js ‖ NUL ‖ terrainmath.js), first 16 hex.
-export const EIDOSIM_BUILD = "be543899cfedf430";
+export const EIDOSIM_BUILD = "6026f46935023c00";   // 10-14: sim.js reads the engine view's `model` (was `lib`), one vocabulary
 export const EIDOSIM_FILES = ["shared/sim.js", "shared/eidosim.js", "shared/simmath.js", "shared/terrainmath.js"];
 export const ENGINES = { [eidosim.SIM_ID]: { build: EIDOSIM_BUILD, module: eidosim, rotates: true, maxSpeed: 20,
   about: "eidosim: rigid boxes and spheres that tumble and roll, soft contacts (after Box3D), swept against what rests, terrain; free dynamic things at rest can be knocked" } };
@@ -74,7 +74,7 @@ function engineEntity(st, id, models = MODELS, fixed = null) {
   if (offChain(st, id)) return null;
   const t = worldPose(st, id);
   const sh = e.c.physics?.shape;   // a tagged shape rides along (eidosim reads a sphere from it)
-  return { pos: t.pos, yaw: yawOf(t.q), q: t.q, lib: libOf(e), scale: t.scale[1], scale3: t.scale, ...(sh && !isBoxShape(sh) ? { shape: sh } : {}),
+  return { pos: t.pos, yaw: yawOf(t.q), q: t.q, model: libOf(e), scale: t.scale[1], scale3: t.scale, ...(sh && !isBoxShape(sh) ? { shape: sh } : {}),
     ...(e.c.physics?.kind === "dynamic" && !(fixed ?? fixedSet(st)).has(id) ? { kind: "dynamic" } : {}) };
 }
 export function engineViewM(st, models = MODELS) {

@@ -48,7 +48,7 @@ const FIRE = {
 
 // ---- author -----------------------------------------------------------------
 const author = await connect("probe-author");
-send(author, "spawn", { id: "hearth", lib: "deco/bench.glb", pos: [0, 0, 0], yaw: 0 });
+send(author, "spawn", { id: "hearth", model: "deco/bench.glb", pos: [0, 0, 0], yaw: 0 });
 send(author, "comp", { id: "hearth", type: "particles", data: FIRE });
 await sleep(400);
 

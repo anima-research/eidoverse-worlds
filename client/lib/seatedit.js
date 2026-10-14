@@ -106,7 +106,7 @@ export function selectSeat(pick) {
   refreshSeatHighlight();
   engage('seatTurn');
   const meta = entityMeta.get(pick.id) ?? {};
-  const label = libLabels.get(meta.lib) ?? meta.lib?.split('/').pop()?.replace(/\.glb$/, '') ?? pick.id;
+  const label = libLabels.get(meta.model) ?? meta.model?.split('/').pop()?.replace(/\.glb$/, '') ?? pick.id;
   setInspectorHtml(
     html`<span><b>${pick.slot}</b> anchor on <b>${label.slice(0, 24)}</b></span><span style="color:var(--dim)">drag move · <kbd>Q</kbd><kbd>E</kbd> face · <kbd>Del</kbd> remove · <kbd>Esc</kbd> done</span>`);   // one html``: markup + markup would concatenate to a plain (text) string
 }

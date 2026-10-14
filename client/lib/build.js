@@ -192,7 +192,7 @@ function showInspector(id) {
   ensureInspector();
   // its NAME first (R 10-11: the bar said 'crate_large_blue'), then the model's library label, its file, its id
   const own = Edits.compsOf(id)?.label;
-  const label = (typeof own === 'string' && own) || (libLabels.get(meta.lib) ?? meta.lib?.split('/').pop()?.replace(/\.glb$/, '') ?? id);
+  const label = (typeof own === 'string' && own) || (libLabels.get(meta.model) ?? meta.model?.split('/').pop()?.replace(/\.glb$/, '') ?? id);
   const locked = isLocked(id);
   inspector.innerHTML =
     `<span><b>${escapeHtml(label.slice(0, 34))}</b></span>` +   // a thing's label or model path: world content, text

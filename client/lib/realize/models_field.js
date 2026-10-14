@@ -39,7 +39,7 @@ import { COMPONENTS } from '../../../shared/protocol/componentspec.js';
  *  model. One answer for planReconcile and models.js alike. */
 // a thing with both a model and a mesh exists only by carry (an imported old log, a fork): it is its model, as the hierarchy and the
 // Inspector read it (review S3: three readers disagreed)
-export const kindOf = (ent) => (ent?.kind === 'light' ? 'light' : ent?.lib == null ? (isMeshBag(ent?.comp?.mesh) ? 'mesh' : 'empty') : 'model');
+export const kindOf = (ent) => (ent?.kind === 'light' ? 'light' : ent?.model == null ? (isMeshBag(ent?.mesh) ? 'mesh' : 'empty') : 'model');
 
 /** The registered `mesh` component (shared/protocol/componentspec.js), read as a client reads it: a malformed value is
  *  absent (the thing is an Empty), never a throw. A field outside its range is clamped to it; a capsule is at least its
@@ -55,11 +55,11 @@ export function readMesh(m) {
   return { shape: m.shape, size };
 }
 /** One string per distinct geometry: a changed shape or size is a rebuild (planReconcile), as a changed lib is. */
-export const meshKeyOf = (ent) => { const m = readMesh(ent?.comp?.mesh); return m ? `${m.shape}|${m.size.join(',')}` : null; };
+export const meshKeyOf = (ent) => { const m = readMesh(ent?.mesh); return m ? `${m.shape}|${m.size.join(',')}` : null; };
 
 /** Switched off (componentspec `disabled`), itself or anything it hangs under: not loaded, not drawn, no collider (R 10-11:
  *  "present in the world as links, but not downloaded… until someone re-enables it"). Same rule as the engine's offChain. */
-export function offIn(stEntities, id) { for (let k = id, n = 0; k && n < 33; k = stEntities[k]?.parent?.to, n++) if (stEntities[k]?.comp?.disabled === true) return true; return false; }
+export function offIn(stEntities, id) { for (let k = id, n = 0; k && n < 33; k = stEntities[k]?.parent?.to, n++) if (stEntities[k]?.disabled === true) return true; return false; }
 
 export function planReconcile(stEntities, realized) {
   const create = [];
@@ -68,7 +68,7 @@ export function planReconcile(stEntities, realized) {
     const ent = stEntities[id];
     if (!ent || offIn(stEntities, id)) { retire.push(id); continue; }
     const foldedKind = kindOf(ent);
-    if (view.kind !== foldedKind || (foldedKind === 'model' && view.lib !== ent.lib) || (foldedKind === 'mesh' && view.mesh !== meshKeyOf(ent))) {
+    if (view.kind !== foldedKind || (foldedKind === 'model' && view.model !== ent.model) || (foldedKind === 'mesh' && view.mesh !== meshKeyOf(ent))) {
       retire.push(id);
       create.push({ id, ent });
     }
@@ -133,5 +133,5 @@ export function mountsTouching(stEntities, touchedId, childrenOf = null) {
  *  @param {any} ent   the folded entity record
  *  @param {boolean} mounted  whether the scene object rides a carrier */
 export function collisionOwnedElsewhere(ent, mounted = false) {
-  return !!mounted || !!ent?.comp?.structure;
+  return !!mounted || !!ent?.structure;
 }

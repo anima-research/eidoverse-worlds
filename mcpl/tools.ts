@@ -225,6 +225,7 @@ export const TOOLS = TOOL_ROWS.map((t) => {
 for (const n of Object.keys(ANNOTATIONS)) if (!TOOL_ROWS.some((t) => t.name === n)) throw new Error(`[tools] annotations for "${n}", which isn't a tool`);
 
 import { readdirSync } from "node:fs";
+import { recordComponents } from "../shared/protocol/view.js";
 // §24k R0 (survey A5): this fallback used to be a hardcoded developer home
 // directory — the SAME bug mcpl/server.ts:120 fixed with an incident note
 // ("hardcoded Mac path threw for everyone else"); this copy never got the
@@ -390,7 +391,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!on) return { content: [{ type: "text", text: "attach needs to: the thing to get on (detach gets you off)" }], isError: true };
       const rec: any = ag.foldRecord(on);
       if (!rec) return { content: [{ type: "text", text: `attach: nothing here called "${on}"` }], isError: true };
-      const all = Object.entries<any>(rec.comp?.sockets ?? {}).map(([slot, s]) => [slot, bodyOf(s)] as const).filter(([, b]) => b);   // only sockets a person can attach to
+      const all = Object.entries<any>(rec?.sockets ?? {}).map(([slot, s]) => [slot, bodyOf(s)] as const).filter(([, b]) => b);   // only sockets a person can attach to
       const taken = new Set([...ag.mounts.entries()].filter(([id, m]) => id !== ag.name && m.to === on).map(([, m]) => m.slot ?? ""));
       const fits = all.filter(([slot, b]: any) => (a.socket == null || slot === String(a.socket)) && (a.action == null || b.action === String(a.action)));
       const pick: any = fits.find(([slot]) => !taken.has(slot)) ?? null;
@@ -887,7 +888,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!g?.bbox) return text("no geometry available for that (parsing offline, or a light)");
       const L: string[] = [];
       const s = g.bbox.size;
-      L.push(`${a.id ? `[${d.id}] ${d.lib ?? ""}` : d.lib} — ${s[0]}×${s[1]}×${s[2]}m, ${g.tris} tris${g.sampled ? " (sampled)" : ""}`);
+      L.push(`${a.id ? `[${d.id}] ${d.model ?? ""}` : d.model} — ${s[0]}×${s[1]}×${s[2]}m, ${g.tris} tris${g.sampled ? " (sampled)" : ""}`);
       if (a.id) L.push(`placed at (${d.pos.map((n: number) => n.toFixed(2)).join(", ")}) yaw ${d.yaw.toFixed(2)}${d.scale !== 1 ? ` scale ${d.scale}` : ""}${d.parent ? ` — mounted on ${d.parent.to}` : ""}`);
       if (g.topSurfaces?.length) {
         L.push(`flat zones (local frame, biggest first) — a center is a socket pos verbatim:`);
@@ -898,7 +899,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       } else L.push("no up-facing flat zones found (nothing seat-like)");
       if (g.nodes?.length) L.push(`named parts: ${g.nodes.slice(0, 12).map((n: any) => `${n.name} @[${n.center.join(",")}]`).join(" · ")}`);
       if (g.orphans?.length) L.push(`⚠ orphan nodes in the FILE, rendered by NOBODY (broken export — do not target): ${g.orphans.join(", ")}`);
-      if (a.id && Object.keys(d.comp ?? {}).length) L.push(`components already on it: ${Object.keys(d.comp).join(", ")}`);
+      if (a.id && Object.keys(recordComponents(d)).length) L.push(`components already on it: ${Object.keys(recordComponents(d)).join(", ")}`);
       return text(L.join("\n"));
 
   },
@@ -919,13 +920,13 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const rec = ag.foldRecord(id) as any;
       if (!rec) return text(`inspect: no placed thing "${id}" here (ids are in look() and hierarchy)`);
       const world = foldWorld(ag);
-      const schema = inspectSchema(rec, id, { world, box: rec.lib ? await ag.modelBox(String(rec.lib)) : null });
+      const schema = inspectSchema(rec, id, { world, box: rec.model ? await ag.modelBox(String(rec.model)) : null });
       if (a.json) return text(JSON.stringify(schema));
       const kids = childrenOf(world, id);
-      const head = `[${id}] ${rec.kind === "light" ? "light" : rec.lib == null ? "empty" : String(rec.lib).split("/").pop()}${rec.comp?.label ? ` "${rec.comp.label}"` : ""}`
+      const head = `[${id}] ${rec.kind === "light" ? "light" : rec.model == null ? "empty" : String(rec.model).split("/").pop()}${rec?.label ? ` "${rec.label}"` : ""}`
         + `\nparent: ${rec.parent ? `${rec.parent.to}${rec.parent.socket ? ` (socket ${rec.parent.socket})` : ""} — its Transform below is LOCAL to ${rec.parent.to}` : "none (a root: its Transform is the world's)"}`
         + `\nchildren: ${kids.length ? kids.join(", ") : "none"}`
-        + (() => { const h = String((rec as any)?.comp?.["copy-of"]?.hash ?? "").replace(/^sha256:/, ""); if (!h) return ""; const b = ag.worldBlueprints()[h]; return `\nblueprint: a copy of \"${b?.name ?? "?"}\" (${h.slice(0, 12)})`; })();
+        + (() => { const h = String((rec as any)?.["copy-of"]?.hash ?? "").replace(/^sha256:/, ""); if (!h) return ""; const b = ag.worldBlueprints()[h]; return `\nblueprint: a copy of \"${b?.name ?? "?"}\" (${h.slice(0, 12)})`; })();
       // where each component's value came from (the authority's touched; the Inspector's card tooltips say the same words)
       let prov = "";
       { const r = await ag.request("inspect", { id }).catch(() => null);
@@ -939,7 +940,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!rec && id !== WORLD_ID) return text(`edit: no placed thing "${id}" here`);
       const { ops, errors, asks } = id === WORLD_ID
         ? { ...worldEditOps(ag.worldFold(), (a.set ?? {}) as Record<string, unknown>, { now: Date.now() }), asks: undefined }
-        : editOps(rec, id, (a.set ?? {}) as Record<string, unknown>, { world: foldWorld(ag), box: rec.lib ? await ag.modelBox(String(rec.lib)) : null });   // pivot.centre / pivot.base snap to it, as a person's do
+        : editOps(rec, id, (a.set ?? {}) as Record<string, unknown>, { world: foldWorld(ag), box: rec.model ? await ag.modelBox(String(rec.model)) : null });   // pivot.centre / pivot.base snap to it, as a person's do
       const L: string[] = [];
       for (const e of errors) L.push(`refused: ${e}`);
       // needs (design §3): a choice to make or a remove-both to confirm sends nothing and says how to answer
@@ -968,11 +969,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const riders = new Map<string, string[]>();
       for (const [who, m] of ag.mounts) if (!ag.entities.has(who)) (riders.get(m.to) ?? riders.set(m.to, []).get(m.to)!).push(m.slot ? `${who} (${m.slot})` : who);
       const line = (e: any) => {
-        const c = e.comp ?? {};
+        const c = recordComponents(e);
         const comps = Object.keys(c).filter((k) => k !== "lock" && k !== "label").map((k) => (k === "motion" || k.startsWith("motion:")) ? `${k}(${c[k]?.type ?? "…"})` : k === "sockets" ? `sockets(${Object.keys(c.sockets ?? {}).join(",")})` : k);
-        return `[${e.id}]${c.label ? ` "${c.label}"` : ""} ${e.lib === "(light)" ? "light" : !e.lib ? "empty" : String(e.lib).split("/").pop()}${comps.length ? ` · ${comps.join(" · ")}` : ""}${c.lock ? " · 🔒" : ""}${c.hidden ? " · hidden" : ""}`;
+        return `[${e.id}]${c.label ? ` "${c.label}"` : ""} ${e.model === "(light)" ? "light" : !e.model ? "empty" : String(e.model).split("/").pop()}${comps.length ? ` · ${comps.join(" · ")}` : ""}${c.lock ? " · 🔒" : ""}${c.hidden ? " · hidden" : ""}`;
       };
-      const hit = (e: any) => !q || [e.id, e.lib, e.comp?.label ?? "", ...Object.keys(e.comp ?? {})].join(" ").toLowerCase().includes(q);
+      const hit = (e: any) => !q || [e.id, e.model, e?.label ?? "", ...Object.keys(recordComponents(e))].join(" ").toLowerCase().includes(q);
       const L: string[] = [];
       const walk = (id: string, depth: number): boolean => {
         const e = ag.entities.get(id) as any; if (!e) return false;
@@ -1000,8 +1001,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // the authority stamps every part of a copy copy-of {from: sha256:<hash>, key}; the copy itself is the part whose parent
       // isn't a part of the same copy
       const W = foldWorld(ag) as Record<string, any>;
-      for (const [id, e] of Object.entries(W)) { const f = e?.comp?.["copy-of"]?.from; if (typeof f !== "string") continue;
-        const up = e.parent?.to ? W[e.parent.to] : null; if (up?.comp?.["copy-of"]?.from === f) continue;
+      for (const [id, e] of Object.entries(W)) { const f = e?.["copy-of"]?.from; if (typeof f !== "string") continue;
+        const up = e.parent?.to ? W[e.parent.to] : null; if (up?.["copy-of"]?.from === f) continue;
         (copies[f.replace(/^sha256:/, "")] ??= []).push(id); }
       const hashes = Object.keys(lib);
       const want = String(a.hash ?? "").trim().toLowerCase();

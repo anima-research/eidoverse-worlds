@@ -35,8 +35,8 @@ const last = () => H.sent.at(-1);
 const expectOf = (req: any, comp: string) => req?.args?.expect?.find((x: any) => x.component === comp);
 
 H.W.seed({
-  lamp: { pos: [0, 2, 0], comp: { light: { color: 0xff8800, intensity: 16, range: 6 } } },
-  c1: { lib: "chair.glb", pos: [1, 0, 2], yaw: 0, comp: { sockets: { seat: { pos: [0, 0.5, 0], body: {} } } } },
+  lamp: { pos: [0, 2, 0], light: { color: 0xff8800, intensity: 16, range: 6 } },
+  c1: { model: "chair.glb", pos: [1, 0, 2], yaw: 0, sockets: { seat: { pos: [0, 0.5, 0], body: {} } } },
 });
 H.sync();
 H.entities.set("lamp", realized()); H.entities.set("c1", realized());
@@ -109,7 +109,7 @@ console.log("\nrefusals, gestures, and the door's undo of the other edits:");
 
 console.log("\nthe channel box (step 3): rotations undo by q, and the editor reads back what it typed:");
 {
-  H.W.seed({ t1: { lib: "crate.glb", pos: [0, 0, 0], yaw: 0.5 } }); H.sync();
+  H.W.seed({ t1: { model: "crate.glb", pos: [0, 0, 0], yaw: 0.5 } }); H.sync();
   H.entities.set("t1", realized());
   const was = JSON.stringify(c("t1").transform);
   const r = commitEdit("t1", "rot.x", 30 * Math.PI / 180);   // the panel speaks radians for a deg field
@@ -130,7 +130,7 @@ console.log("\nthe channel box (step 3): rotations undo by q, and the editor rea
   H.other("set", { id: "t1", component: "transform", value: { ...c("t1").transform, q: qFromEuler([0, Math.PI / 2, 0.7], "XYZ") } });
   check("…and is void once someone else's turn lands (inner channel back to 0)", val("x") === 0, String(val("x")));
   // a compound edit (remove-both: two ops) is ONE request, so ONE act and one Ctrl+Z
-  H.W.seed({ r1: { lib: "swing.glb", pos: [0, 0, 0], yaw: 0, comp: { motion: { type: "pendulum", amp: 0, period: 3.5 }, reactions: { push: { kind: "impulse", strength: 0.5 } } } } }); H.sync();
+  H.W.seed({ r1: { model: "swing.glb", pos: [0, 0, 0], yaw: 0, motion: { type: "pendulum", amp: 0, period: 3.5 }, reactions: { push: { kind: "impulse", strength: 0.5 } } } }); H.sync();
   H.entities.set("r1", realized());
   const before = Edits.stacks().undo.length;
   const rr = commitEdit("r1", "remove.motion", "both");

@@ -21,6 +21,7 @@
 
 import { ROT_MODES } from './euler.js';
 import { COMPONENTS } from './protocol/componentspec.js';
+import { recordComponents } from './protocol/view.js';
 import { qNorm, qFromYaw } from './rot.js';
 import { WEATHERS, CLOUDS } from './forecast.js';
 
@@ -299,7 +300,7 @@ export function componentsOf(ent) {
   // rotOrder rides the comp bag (written by `comp`, so it folds blind on every
   // client and replays; design §3) but belongs to the Transform: a valid one is
   // read here, and anything else under that key stays an Annotation below
-  const ro = ent.comp?.rotOrder;
+  const ro = ent?.rotOrder;
   const hasOrder = typeof ro === 'string' && ROT_MODES.includes(ro);
   if (hasOrder) tf.rotOrder = ro;
   out.push({ type: 'Transform', params: tf });
@@ -310,12 +311,13 @@ export function componentsOf(ent) {
     // the fold stores `day` only as false; any other stored value is kept as-is
     out.push({ type: 'Light', params: p, ...(ent.day !== undefined && ent.day !== false ? { wire: { day: ent.day } } : {}) });
   }
-  if (ent.lib !== undefined) out.push({ type: 'Model', params: { lib: ent.lib } });
+  if (ent.model !== undefined) out.push({ type: 'Model', params: { lib: ent.model } });
   if (ent.collide !== undefined) out.push({ type: 'Collider', params: { shape: ent.collide } });
   if (ent.parent !== undefined) out.push({ type: 'Parent', params: { ...ent.parent } });
-  const c = ent.comp ?? {};
+  const c = recordComponents(ent);
   for (const key of Object.keys(c)) {
     const data = c[key];
+    if (key === 'model' || key === 'parent') continue;   // lifted above (Model, Parent): the record is flat, so they are in c too
     if (key === 'rotOrder' && hasOrder) continue;   // the Transform's (above)
     if (key in FLAG) { out.push({ type: FLAG[key], key, params: {}, wire: { value: data } }); continue; }
     if (key === 'hidden') { out.push({ type: 'Hidden', key, params: {}, wire: { value: data } }); continue; }
@@ -392,7 +394,7 @@ export function entityOf({ components, stamps = {} }) {
         else if (inst.wire?.day !== undefined) ent.day = inst.wire.day;
         break;
       }
-      case 'Model': ent.lib = p.lib; break;
+      case 'Model': ent.model = p.lib; break;
       // keyed = comp.collider (step 2); keyless = the spawn verb's legacy `collide`
       case 'Collider': if (inst.key != null) comp[inst.key] = compBag(inst); else ent.collide = p.shape; break;
       case 'Parent': ent.parent = { ...p }; break;
@@ -434,7 +436,7 @@ export function entityOf({ components, stamps = {} }) {
       default: throw new Error(`entityOf: no alias for ${inst.type}`);
     }
   }
-  if (Object.keys(comp).length) ent.comp = comp;
+  Object.assign(ent, comp);   // components sit flat on the record (view.js, 10-14): no bag
   return { ...ent, ...stamps };
 }
 
@@ -477,7 +479,7 @@ const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 export function lightOf(ent) {
   if (!ent || typeof ent !== 'object') return null;
   const legacy = ent.kind === 'light';
-  const src = legacy ? ent : (isBag(ent.comp?.light) ? ent.comp.light : null);
+  const src = legacy ? ent : (isBag(ent?.light) ? ent.light : null);
   if (!src) return null;
   return {
     spelling: legacy ? 'kind' : 'comp',
@@ -498,14 +500,14 @@ export function lightOf(ent) {
  *  the browser always passed it), else undefined (= decide by size). "sphere" is a physics request (PHYSICS §3.1): to
  *  walk on, a ball is what its size decides. */
 export function colliderOf(ent) {
-  const s = isBag(ent?.comp?.collider) ? ent.comp.collider.shape : undefined;
+  const s = isBag(ent?.collider) ? ent.collider.shape : undefined;
   if (s === 'exact' || s === 'box') return s;
   return ent?.collide;
 }
 
 /** An Empty: an entity with nothing but a Transform (and whatever comps it
  *  carries) — no model, not a legacy light. A pivot, a group parent, a target. */
-export const isEmpty = (ent) => !!ent && typeof ent === 'object' && ent.kind !== 'light' && ent.lib == null;
+export const isEmpty = (ent) => !!ent && typeof ent === 'object' && ent.kind !== 'light' && ent.model == null;
 
 /** Why a `comp` of type light/collider would be refused, or null. The authority
  *  (server/verbs.ts vComp) and the inspector ask the same question, so a
@@ -525,15 +527,15 @@ export const MESH_SHAPES = COMPONENTS.mesh.enums.shape;
 export function compRefusal(type, data, ent = null) {
   if (data == null) return null;
   if (type === 'mesh') {
-    if (ent?.lib != null || ent?.comp?.model != null) return `${ONE_PLACE.reason('this thing', 'model', 'mesh')} (one place per thing) — ${ONE_PLACE.fix('it', 'model', 'mesh')}`;
-    if (isBag(ent?.comp?.light)) return `${ONE_PLACE.reason('this thing', 'light', 'mesh')} (one place per thing) — ${ONE_PLACE.fix('it', 'light', 'mesh')}`;
+    if (ent?.model != null || ent?.model != null) return `${ONE_PLACE.reason('this thing', 'model', 'mesh')} (one place per thing) — ${ONE_PLACE.fix('it', 'model', 'mesh')}`;
+    if (isBag(ent?.light)) return `${ONE_PLACE.reason('this thing', 'light', 'mesh')} (one place per thing) — ${ONE_PLACE.fix('it', 'light', 'mesh')}`;
     if (!isBag(data) || !MESH_SHAPES.includes(data.shape)) return `a mesh component is {shape: ${MESH_SHAPES.join('|')}, size: [x, y, z]}`;
     if (data.size !== undefined && !(Array.isArray(data.size) && data.size.length === 3 && data.size.every((x) => finite(x) && x >= 0.05 && x <= 200))) return 'mesh size is [x, y, z] in metres, each 0.05 to 200';
     return null;
   }
   if (type === 'light') {
     if (ent?.kind === 'light') return 'this is already a light (made with the light verb) — change it with light {id, …}; a light component is for things that are not lights yet (a lamp model, an Empty)';
-    if (isBag(ent?.comp?.mesh)) return `${ONE_PLACE.reason('this thing', 'mesh', 'light')} (one place per thing) — Add Component ▸ Light makes that child`;
+    if (isBag(ent?.mesh)) return `${ONE_PLACE.reason('this thing', 'mesh', 'light')} (one place per thing) — Add Component ▸ Light makes that child`;
     if (!isBag(data)) return 'a light component is an object: {color?, intensity?, range?, important?, day?}';
     if (data.color !== undefined && !(Number.isInteger(data.color) && data.color >= 0 && data.color <= 0xffffff)) return 'light color is an integer 0…0xffffff (e.g. 16767392 for 0xffd9a0)';
     if (data.intensity !== undefined && !(finite(data.intensity) && data.intensity >= 0)) return 'light intensity is a number ≥ 0';

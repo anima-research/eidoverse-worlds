@@ -106,7 +106,7 @@ function paintScene(force = false) {
   const rows = [];
   const row = (id, depth) => {
     const meta = entityMeta.get(id);
-    const short = (meta?.lib ?? meta?.mesh ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '')
+    const short = (meta?.model ?? meta?.mesh ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '')
       .split('_').slice(0, 3).join(' ');
     const badges = badgesFor(id);
     const scripts = behaviorRows.filter((b) => b.attach === id).map((b) => `📜${b.id}`);
@@ -175,7 +175,7 @@ function paintScene(force = false) {
       : `<div><button data-ce-add title="attach a component — any type folds, evaluators give known ones behavior">+ component</button></div>`;
 
     inspector = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
-      <div><b>${esc(selected)}</b> <span style="color:var(--dim)">${esc(meta?.lib ?? '')}</span></div>
+      <div><b>${esc(selected)}</b> <span style="color:var(--dim)">${esc(meta?.model ?? '')}</span></div>
       <div style="color:var(--dim)">${pos ? `at (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})` : 'loading'}${obj?.userData?.mountedTo ? ` · mounted on ${esc(obj.userData.mountedTo)}` : ''}</div>
       ${transform}
       ${eds.map((e) => e.html).join('')}

@@ -360,9 +360,9 @@ const cases: Case[] = [
       return { a: code(a), aWhy: a.refused?.reason, b: code(b), c: show(c), d: show(d), e: code(e) }; },
     good: (o) => o.a === "conflict" && /spin/.test(o.aWhy) && o.b === "conflict" && o.c === "ok" && o.d === "ok" && o.e === "conflict" },
   { id: "L5", what: "the editor's Add Component › LookAt writes look-at (it wrote look, which the authority refuses); its card shows the target", run() {
-      const ent = { lib: "crate", pos: [0, 0, 0], comp: {} };
+      const ent = { model: "crate", pos: [0, 0, 0] };
       const add = ES.addOps(ent, "statue", "LookAt");
-      const sch = ES.inspectSchema({ ...ent, comp: { "look-at": { target: "lamp", mode: "yaw", forward: "z", up: "y", speed: 240, range: 12 } } }, "statue");
+      const sch = ES.inspectSchema({ ...ent, "look-at": { target: "lamp", mode: "yaw", forward: "z", up: "y", speed: 240, range: 12 } }, "statue");
       const card = sch.sections?.list?.find((x: any) => x.type === "LookAt");
       return { comp: add.ops?.[0]?.args?.component, card: !!card, fields: card?.fields ?? [] }; },
     good: (o) => o.comp === "look-at" && o.card && o.fields.includes("look-at.target") },

@@ -143,7 +143,7 @@ bob.send({ type: "verb", verb: "remove", args: { id: "cup" } }); await sleep(300
   ok(vr?.ok === false && readLog(fs.readFileSync(path.join(W4, "garden", "world.jsonl"))).length === headBefore && bob.ws.readyState === 1,
     "S3 an old-style request (a v1 verb message, or a request in the old {tool} spelling with no verb) writes nothing, and the connection stays up", vr); }
 { const { editOps } = await import("../../shared/editschema.js");
-  const r = editOps({ pos: [0, 0.75, 0], q: [0, 0, 0, 1], scale: 1, lib: "test/cup.glb", comp: {} }, "cup", { "flags.guard": true });
+  const r = editOps({ pos: [0, 0.75, 0], q: [0, 0, 0, 1], scale: 1, model: "test/cup.glb" }, "cup", { "flags.guard": true });
   ok(!r.ops.length && /merged into `lock`/.test(r.errors.join(" ")), "S3 the old guard flag is refused by name by the shared planner every surface plans with: guard merged into lock (§5)", r); }
 ok((await vic.req("create", { id: "vics", model: "test/cup.glb" })).refused?.code === "rights", "S3 a visitor's create is refused (rights)");
 ok((await spec.req("create", { id: "x" })).refused?.code === "spectator" && (await spec.req("look")).ok, "S3 a spectator may read, not write");
@@ -219,12 +219,12 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     throne: { pos: [0, 0.5, 0], body: { who: "owner" } },
     box: { pos: [0.6, 0.5, 0], body: { action: "drive", input: { move: "drive" }, leaveBy: "script" } },
     rumble: { pos: [-0.6, 0.5, 0], body: { action: "ride", leaveBy: "menu" } } } } })).ok, "S5e (Ann builds a carriage: an owner's throne, a driver's box that holds you, a rumble seat)");
-  for (let i = 0; i < 40 && !ag.entities.get("carriage")?.comp?.sockets; i++) await sleep(50);
+  for (let i = 0; i < 40 && !ag.entities.get("carriage")?.sockets; i++) await sleep(50);
   const lk = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
   ok(/box: drive \(.*drives it.*lets you go only when the world does/.test(lk) && /throne: sit \([^·]*owners only/.test(lk), "S5e look says what each seat does (box drives and holds you; the throne is owners only)", lk.split("\n").filter((l) => /carriage/.test(l)));
   // grabbable (slice 5): look says what a hand may do with a thing, the authority's own reading (shared/grab.js describeGrab)
   ok((await ann.req("create", { id: "lantern", model: "test/cup.glb", place: { at: [9, 7] }, components: { grabbable: { who: "visitor", use: { down: "light" }, release: "return", prompt: "Take the lantern" } } })).ok, "S5g (Ann makes a lantern anyone may carry)");
-  for (let i = 0; i < 40 && !ag.entities.get("lantern")?.comp?.grabbable; i++) await sleep(50);
+  for (let i = 0; i < 40 && !ag.entities.get("lantern")?.grabbable; i++) await sleep(50);
   const lk2 = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
   ok(/lantern[^\n]*Take the lantern \(anyone may pick it up;[^\n]*use while held: light;[^\n]*goes home when let go\)[^\n]*act \{verb: "grab", args: \{id: "lantern"\}\}/.test(lk2), "S5g look says a grabbable thing can be picked up, by whom, what using it does and where it goes", lk2.split("\n").filter((l) => /lantern/.test(l)));
   const th = await HANDLERS.attach(ag, { to: "carriage", socket: "throne" }, {} as any, "attach");
@@ -402,9 +402,11 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   // v1 pos is its unused pre-mount pose, so comparing raw `pos` would compare a hidden field (translate-v1@2 DROPPED)
   const r6 = (v) => v.map((n) => Math.round(n * 1e6) / 1e6);
   const E = (s) => Object.fromEntries(Object.entries(s.entities).map(([id, e]) => { const p = worldPose(s.entities, id);
-    return [id, { lib: e.lib, at: r6(p.pos), q: r6(p.q), label: e.comp?.label, parent: e.parent?.to, socket: e.parent?.socket }]; }));
+    return [id, { model: e.model ?? e.lib, at: r6(p.pos), q: r6(p.q), label: e?.label ?? e?.comp?.label, parent: e.parent?.to, socket: e.parent?.socket }]; }));   // the old server still says lib / comp.label
   const neuView = viewState(stateFromView(neu.snapshot.cut.state));   // what the page draws: the view of its own fold of the cut
-  ok(JSON.stringify(E(old.snapshot.state)) === JSON.stringify(E(neuView)), "S6 the new copy shows the same things to today's client, where they are (mounted at an offset and at a socket)", [E(old.snapshot.state), E(neuView)]);
+  // the old server's records keep the old spelling (lib, comp.*): lift them to today's flat record so worldPose reads both sides the same way
+  const lift = (s) => ({ ...s, entities: Object.fromEntries(Object.entries(s.entities).map(([id, e]) => { const { comp, lib, ...rest } = e; return [id, { ...rest, ...(lib !== undefined ? { model: lib } : {}), ...(comp ?? {}) }]; })) });
+  ok(JSON.stringify(E(lift(old.snapshot.state))) === JSON.stringify(E(neuView)), "S6 the new copy shows the same things to today's client, where they are (mounted at an offset and at a socket)", [E(old.snapshot.state), E(neuView)]);
   const replica = fold(readLog(fs.readFileSync(path.join(W4, "oldtown-new", "world.jsonl")))).entities;
   ok(JSON.stringify(replica[enc("mug_1")].c.parent) === JSON.stringify({ to: enc("lamp_1"), order: "a0", socket: "seat" }) && JSON.stringify(replica[enc("mug_1")].c.transform.pos) === "[0.3,0.75,0.1]",
     "S6 a translated mount is in the authority's shape: transform local to the parent (here the socket's pos), parent {to, order, socket}", [replica[enc("mug_1")].c.parent, replica[enc("mug_1")].c.transform]);
@@ -484,10 +486,10 @@ await sleep(200);
   for (let i = 0; i < 40 && bot.pendingCount; i++) await sleep(100);
   bot.caption({ t0: 1, t1: 2, text: "and after" } as any);
   for (let i = 0; i < 40 && bot.pendingCount; i++) await sleep(100);
-  const bag = heldBy(own)?.view()?.entities?.screen1?.comp?.captions;
+  const bag = heldBy(own)?.view()?.entities?.screen1?.captions;
   ok(bot.acked === 2 && bag?.window?.map((l: any) => l.text).join("|") === "before the list|and after" && bag.title === "the talk" && bag.gen > 0, "CB once listed, the held line and the next land in order; the bag carries the server-stamped leg generation", [bot.acked, bag]);
   const forged = await own.req("caption", { id: "screen1", session: bag?.session, n: 9, t0: 2, t1: 3, text: "x", gen: 999999999999 });
-  ok(!forged.ok && /newer leg/.test(forged.refused?.reason ?? "") && heldBy(own)?.view()?.entities?.screen1?.comp?.captions?.gen < 999999999999, "CB a client's own gen is ignored: the server stamps its connection's (the owner's older leg is refused as superseded, however large a gen she sends)", [forged.refused, heldBy(own)?.view()?.entities?.screen1?.comp?.captions?.gen]);
+  ok(!forged.ok && /newer leg/.test(forged.refused?.reason ?? "") && heldBy(own)?.view()?.entities?.screen1?.captions?.gen < 999999999999, "CB a client's own gen is ignored: the server stamps its connection's (the owner's older leg is refused as superseded, however large a gen she sends)", [forged.refused, heldBy(own)?.view()?.entities?.screen1?.captions?.gen]);
   bot.close(); own.close(); await sleep(200); }
 
 // ================= S7: joining never founds a world (security review 10-06 H3) =================

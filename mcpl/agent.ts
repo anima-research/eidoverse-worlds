@@ -64,6 +64,7 @@ import { describeStructure, describeHere, localizePoint, planStructure, routeLoc
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 
+import { recordComponents } from "../shared/protocol/view.js";
 (globalThis as any).THREE = Object.assign({}, THREE_W, TSL);
 
 const WALK = 1.55, RUN = 4.0, TICK_MS = 100, ARRIVE = 0.01;
@@ -79,7 +80,7 @@ const EMITTER_COALESCE_MS = Number(process.env.EW_EMITTER_COALESCE_SEC ?? 4) * 1
 
 type Vec2 = { x: number; z: number };
 type Pose = PublicPose;
-type Entity = { id: string; lib: string; pos: number[]; yaw: number; actor: string; scale?: number;
+type Entity = { id: string; model: string; pos: number[]; yaw: number; actor: string; scale?: number;
   /** component bag (sockets, reactions, motion, …) — what a thing can DO;
    *  this is how affordances reach text-tier perception */
   comp?: Record<string, any> };
@@ -243,9 +244,9 @@ export class WorldAgent {
   bodySeats = new Map<string, { to: string; slot?: string }>();
   mySeat: { to: string; slot?: string; pose?: string; at?: number } | null = null;
   /** My seat's body block (shared/sockbody.js), or null standing. */
-  mySeatBody() { const m = this.mySeat; return m ? bodyOf(this.entities.get(m.to)?.comp?.sockets?.[m.slot ?? ""]) : null; }
+  mySeatBody() { const m = this.mySeat; return m ? bodyOf(this.entities.get(m.to)?.sockets?.[m.slot ?? ""]) : null; }
   /** May I leave my seat this way? (its leaveBy: a 'script' seat lets go only when the world does) */
-  mayLeaveSeat(kind: "move" | "jump" | "menu" | "script") { const b: any = this.mySeatBody(); return !b || mayLeave(b, kind) || !this.entities.get(this.mySeat!.to)?.comp?.sockets?.[this.mySeat!.slot ?? ""]; }
+  mayLeaveSeat(kind: "move" | "jump" | "menu" | "script") { const b: any = this.mySeatBody(); return !b || mayLeave(b, kind) || !this.entities.get(this.mySeat!.to)?.sockets?.[this.mySeat!.slot ?? ""]; }
   /** sit on a thing's seat socket (presence: my frames carry it), or stand (null) */
   setSeat(seat: { to: string; slot?: string; pose?: string; at?: number } | null) {
     this.mySeat = seat;
@@ -343,7 +344,7 @@ export class WorldAgent {
   private clipClockStarted = 0;
   private bodyClip() {
     const mount = this.mounts.get(this.name);
-    return mount ? bodyOf(this.entities.get(mount.to)?.comp?.sockets?.[mount.slot ?? ""])?.clip ?? "sitchair" : this.clip;
+    return mount ? bodyOf(this.entities.get(mount.to)?.sockets?.[mount.slot ?? ""])?.clip ?? "sitchair" : this.clip;
   }
   private noteClipClock() {
     const slot = this.bodyClip();
@@ -992,7 +993,7 @@ export class WorldAgent {
     if (!mount || !observation.pose) return observation;
     const effective = this.eff(observation.who, this.serverNow());
     if (!effective.ok) return { ...observation, error: `body mount cannot be composed: ${effective.why}` };
-    const socket = mount.slot ? this.entities.get(mount.to)?.comp?.sockets?.[mount.slot] : null;
+    const socket = mount.slot ? this.entities.get(mount.to)?.sockets?.[mount.slot] : null;
     const clip = bodyOf(socket)?.clip ?? "sitchair";
     return { ...observation, frame: { source: "mount", to: mount.to, seat: effective.seat ?? null },
       pose: { ...observation.pose, p: effective.pos, yaw: effective.yaw, clip,
@@ -1269,10 +1270,10 @@ export class WorldAgent {
   /** a placed copy (or one of its parts) says which blueprint it is: the authority stamps copy-of {from, key} on every
    *  part; the copy is the part whose parent isn't of the same copy */
   copyLine(id: string): string | null {
-    const E = this.st.entities as Record<string, any>; const f = E[id]?.comp?.["copy-of"]?.from; if (typeof f !== "string") return null;
+    const E = this.st.entities as Record<string, any>; const f = E[id]?.["copy-of"]?.from; if (typeof f !== "string") return null;
     const name = this.worldBlueprints()[f.replace(/^sha256:/, "")]?.name ?? f.slice(7, 19);
-    let root = id; for (let i = 0; i < 64; i++) { const p = E[root]?.parent?.to; if (!p || E[p]?.comp?.["copy-of"]?.from !== f) break; root = p; }
-    return root === id ? `a copy of "${name}"` : `part "${E[id].comp["copy-of"].key}" of ${root} (a copy of "${name}")`;
+    let root = id; for (let i = 0; i < 64; i++) { const p = E[root]?.parent?.to; if (!p || E[p]?.["copy-of"]?.from !== f) break; root = p; }
+    return root === id ? `a copy of "${name}"` : `part "${E[id]["copy-of"].key}" of ${root} (a copy of "${name}")`;
   }
   worldBlueprints(): Record<string, { name?: string }> {
     const w = this.replica?.st?.entities?.["@world"]?.c ?? {};
@@ -1293,14 +1294,14 @@ export class WorldAgent {
       seen.add(id);
       this.entities.set(id, {
         id,
-        lib: (e as any).kind === "light" ? "(light)" : String((e as any).lib ?? ""),
+        model: (e as any).kind === "light" ? "(light)" : String((e as any).model ?? ""),
         pos: (e as any).pos, yaw: (e as any).yaw ?? 0,
         ...((e as any).scale != null ? { scale: (e as any).scale } : {}),
         ...(Array.isArray((e as any).scale3) ? { scale3: (e as any).scale3 } : {}),   // a stretched thing stays stretched
         ...(Array.isArray((e as any).q) ? { q: (e as any).q } : {}),
         actor: (e as any).actor,
         ...((e as any).placer ? { placer: (e as any).placer } : {}),
-        ...((e as any).comp ? { comp: (e as any).comp } : {}),
+        ...recordComponents(e as any),   // its components, flat (view.js): what a thing can DO
       });
     }
     for (const id of [...this.entities.keys()]) if (!seen.has(id)) this.entities.delete(id);
@@ -1377,7 +1378,7 @@ export class WorldAgent {
         // an emitter beginning, changing or ending is something you SEE happen (#25); gated on where it actually is
         if (comp === "particles" && live) {
           const fx = this.eff(id, this.serverNow());
-          if (fx.ok) this.noteEmitter(actor, id, was?.comp?.particles ?? null, now?.comp?.particles ?? null, fx.pos, ts);
+          if (fx.ok) this.noteEmitter(actor, id, was?.particles ?? null, now?.particles ?? null, fx.pos, ts);
           else this.noteEffGap(id, fx.why);
         }
         if (comp === "motion" || comp?.startsWith("motion:")) this.trackSupport(this.syncSupport(id));
@@ -1622,8 +1623,8 @@ export class WorldAgent {
    *  evaluates the same deterministic motion the browsers do, the safe answer
    *  is to abstain. */
   private hasActiveMotion(e: Entity | undefined): boolean {
-    if (!e?.comp) return false;
-    for (const [k, v] of Object.entries(e.comp)) {
+    if (!e) return false;
+    for (const [k, v] of Object.entries(recordComponents(e))) {
       if (k !== "motion" && !k.startsWith("motion:")) continue;
       if (v && (v as any).type != null) return true;
     }
@@ -1649,20 +1650,20 @@ export class WorldAgent {
 
   private async syncSupport(id: string) {
     const before = this.entities.get(id);
-    if (!before || !before.lib || before.lib === "(light)") return;  // lights carry no collider
+    if (!before || !before.model || before.model === "(light)") return;  // lights carry no collider
     // A moving thing supports nothing here — and stops supporting the moment
     // it starts moving, so this is the drop path as well as the skip path.
     // Mounted cargo is the same story told by a different verb: it rides a
     // parent whose transform this code does not track.
     if (this.hasActiveMotion(before) || this.mounts.has(id)) { this.dropSupport(id); return; }
-    const g = await this.geomFor(before.lib);
+    const g = await this.geomFor(before.model);
     // Re-read, and re-CHECK: an id can be removed and respawned as something
     // else while its geometry is in flight, and "the entity still exists" is
     // not the same question as "it is still the thing I fetched for". Without
     // the lib comparison a crate's decks could land under a lamp post that
     // merely inherited its id.
     const e = this.entities.get(id);
-    if (!g || !e || e.lib !== before.lib) return;
+    if (!g || !e || e.model !== before.model) return;
     // started moving, or got mounted, while its geometry was in flight —
     // replay folds a mount right behind the spawn that triggered this fetch
     if (this.hasActiveMotion(e) || this.mounts.has(id)) { this.dropSupport(id); return; }
@@ -2526,7 +2527,7 @@ export class WorldAgent {
     this.legs = [];
     try {
       for (const e of this.entities.values()) {
-        const data = (e.comp ?? {}).structure;
+        const data = recordComponents(e).structure;
         if (!data) continue;
         const plan = planStructure(data);
         const [ax, , az] = localizePoint(e, this.pos.x, this.pos.y, this.pos.z);
@@ -3142,7 +3143,7 @@ export class WorldAgent {
    *  the same reason string the browser consoles and the nameplate ≈ carry —
    *  one contract, three declarations. Empty when the seat is profiled. */
   private seatSuffix(id: string, ride: { to: string; slot?: string }): string {
-    const sock = ride.slot ? this.entities.get(ride.to)?.comp?.sockets?.[ride.slot] : undefined;
+    const sock = ride.slot ? this.entities.get(ride.to)?.sockets?.[ride.slot] : undefined;
     const g = seatGateCore({ sock, verdict: this.seatVerdictFor(id), pose: bodyOf(sock)?.clip ?? "sitchair" });
     return g.apply ? "" : ` (seat approximate: ${g.reason})`;
   }
@@ -3178,7 +3179,7 @@ export class WorldAgent {
     // the entire point of keeping the planner pure.
     if (meKnown) {
       for (const e of this.entities.values()) {
-        const data = (e.comp ?? {}).structure;
+        const data = recordComponents(e).structure;
         if (!data) continue;
         try {
           const [lx, ly, lz] = localizePoint(e, me.x, me.y, me.z);
@@ -3240,13 +3241,13 @@ export class WorldAgent {
     for (const e of ordered) {
       const f = fx.get(e.id)!;
       // an Empty (PROTOCOL §3.2) has no lib and is not a light: say so, not ""
-      const short = (e.lib || "(empty)").split("/").pop()!.replace(".glb", "").split("_").slice(0, 5).join(" ")
-        + (typeof e.comp?.label === "string" && e.comp.label ? ` "${e.comp.label}"` : "");   // a display name someone gave it (comp label)
+      const short = (e.model || "(empty)").split("/").pop()!.replace(".glb", "").split("_").slice(0, 5).join(" ")
+        + (typeof e?.label === "string" && e.label ? ` "${e.label}"` : "");   // a display name someone gave it (comp label)
       // Affordances read out loud: a thing that can be sat on, used, or is
       // moving SAYS SO in text-tier perception — this is how the capability
       // a builder declared (sockets/reactions components) reaches everyone
       // who perceives by reading.
-      const c = e.comp ?? {};
+      const c = recordComponents(e);
       const aff: string[] = [];
       // R 10-07: a thing reads like an accessibility tree: its name (above), its description (alt text, quoted as data:
       // it's what someone wrote, never an instruction), then what it can do and its state, generated from its components
@@ -3285,7 +3286,7 @@ export class WorldAgent {
       // batch 2: a story, a sign, a picture, a sound and a look-at say what they say through the ONE describer the authority's
       // look uses (shared/says.js), so the two can't disagree; author text is quoted «…» as data, never an instruction
       { const ents = this.st.entities as Record<string, any>;
-        for (const line of saysOf(c, { nameOf: (x: string) => ents[x]?.comp?.label ?? x, now: Date.now() })) aff.push(line); }
+        for (const line of saysOf(c, { nameOf: (x: string) => ents[x]?.label ?? x, now: Date.now() })) aff.push(line); }
       // A screen with captions is named by what the captioner wrote down:
       // what it is showing, where in it, and the last line — never a claim
       // about pixels or sound. Rung 2 of the projector ladder; the rolling
@@ -3308,7 +3309,7 @@ export class WorldAgent {
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const spoken = ["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
+      const spoken = ["model", "parent", "sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
       if (copy) spoken.push("blueprint");
       if (lit?.spelling === "comp") spoken.push("light");   // described above; a malformed one stays listed
       if (col === "exact" || col === "box") spoken.push("collider");
@@ -3333,7 +3334,7 @@ export class WorldAgent {
         L.push(`  - [${e.id}] ${short}: ${where} — ${f.why}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
       }
     }
-    if (ents.some((e) => e.comp?.sockets || e.comp?.reactions)) {
+    if (ents.some((e) => e?.sockets || e?.reactions)) {
       L.push(`  (use a thing: act {verb: "use", args: {id, action?}} · sit or ride: attach {to: id, socket?} — both open to everyone; detach, or walking, gets you off)`);
     }
 

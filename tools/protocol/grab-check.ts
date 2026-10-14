@@ -502,7 +502,7 @@ const cases: Case[] = [
     good: (o) => JSON.stringify(o.a) === '{"id":"hose","hand":"left"}' && o.b === "dropped" && o.c === "dropped" },
   // ---------------- I: the inspector's Grabbable card (shared/editschema.js, shared/components.js) ----------------
   { id: "I1", what: "Add Component › Grabbable writes the component with its defaults spelled out from shared/grab.js (the data), and the authority takes that value as it is", run(s) { cast(s);
-      const ent = { lib: "book", pos: [0, 0, 0], comp: {} };
+      const ent = { model: "book", pos: [0, 0, 0] };
       const add = ES.inspectSchema(ent, "b1").sections.add.find((a: any) => a.name === "Grabbable");
       const r = ES.addOps(ent, "b1", "Grabbable");
       s.call("olive", "create", { id: "b1", model: "book", place: { at: [0, 0] } });
@@ -510,7 +510,7 @@ const cases: Case[] = [
       return { offered: !!add && !add.blocked, ops: r.ops, errors: r.errors, put: show(put), stored: comp(s, "b1", "grabbable") }; },
     good: (o) => o.offered && o.ops.length === 1 && JSON.stringify(o.ops[0].args?.value) === JSON.stringify({ enabled: true, who: "visitor", steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 }) && o.put === "ok" && o.stored?.who === "visitor" },
   { id: "I2", what: "its card edits the common fields (who, let go, fits, use down / up) into one value, and refuses what the authority would (a malformed use)", run(s) {
-      const ent = { lib: "book", pos: [0, 0, 0], comp: { grabbable: { who: "builder" } } };
+      const ent = { model: "book", pos: [0, 0, 0], grabbable: { who: "builder" } };
       const sch = ES.inspectSchema(ent, "b1"); const card = sch.sections.list.find((x: any) => x.type === "Grabbable");
       const ok1 = ES.editOps(ent, "b1", { "grabbable.who": "visitor", "grabbable.release": "stay", "grabbable.fits": "key, hook", "grabbable.use": "fire / cease", "grabbable.pose": "torch" });
       const bad = ES.editOps(ent, "b1", { "grabbable.use": "not an action!" });
@@ -518,7 +518,7 @@ const cases: Case[] = [
     good: (o) => Array.isArray(o.card) && o.card.includes("grabbable.who") && o.card.includes("grabbable.release") && !o.errors.length
       && JSON.stringify(o.value) === JSON.stringify({ who: "visitor", release: "stay", fits: ["key", "hook"], use: { down: "fire", up: "cease" }, pose: "torch" }) && /grabbable\.use: .*names a reactions action/.test(o.bad.join(" ")) },
   { id: "I3", what: "…its JSON hatch reaches grips (and is refused, like the authority, when a grip has no pos)", run(s) {
-      const ent = { lib: "book", pos: [0, 0, 0], comp: { grabbable: { who: "builder" } } };
+      const ent = { model: "book", pos: [0, 0, 0], grabbable: { who: "builder" } };
       const hatch = ES.inspectSchema(ent, "b1").groups.find((g: any) => g.group === "grabbable")?.fields.find((f: any) => f.t === "json")?.commit;
       const good = ES.editOps(ent, "b1", { "comp.grabbable": JSON.stringify({ who: "visitor", grips: { h: { pos: [0, 0.1, 0] } } }) });
       const bad = ES.editOps(ent, "b1", { "comp.grabbable": JSON.stringify({ grips: { h: {} } }) });

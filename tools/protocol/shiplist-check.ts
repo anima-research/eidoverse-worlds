@@ -21,6 +21,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
+import { recordComponents } from "../../shared/protocol/view.js";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -37,7 +38,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["openable: the catalogue's ranges", "shared/protocol/componentspec.js", "ranges: { angle: { min: -Math.PI, max: Math.PI }, time: { min: 0, max: 10 } },", "", ["O2"]],
   ["`door` is called openable", "shared/protocol/authority.js", "if (name === \"door\") refuse(", "if (false) refuse(", ["O1"]],
   ["look shows the openable", "shared/protocol/authority.js", "...(e.c.openable && typeof e.c.openable === \"object\" ? { openable: e.c.openable } : {}) };", "};", ["O4"]],
-  ["the importer renames door", "tools/protocol/import-v1/translate-v1.js", "c[encName(k === \"door\" && !e.comp.openable ? \"openable\" : k)]", "c[encName(k)]", ["O5"]],
+  ["the importer renames door", "tools/protocol/import-v1/translate-v1.js", "c[encName(k === \"door\" && !e.openable ? \"openable\" : k)]", "c[encName(k)]", ["O5"]],
   ["the importer renames a reaction's door", "tools/protocol/import-v1/translate-v1.js", "} else if (h && typeof h === \"object\" && h.component === \"door\") out[k] = { ...h, component: \"openable\" };", "}", ["O5"]],
   ["a turn keeps the hinge", "client/lib/motioneval.js", "const shift = qApply(q0, [pv[0] - rp[0], pv[1] - rp[1], pv[2] - rp[2]]);\n  return { pos: base.pos.map((v, i) => v + shift[i]), q: qMul(q0, q) };", "return { pos: [...base.pos], q: qMul(q0, q) };", ["O6"]],
   ["the tween eases from where it was", "client/lib/motioneval.js", "return tw.from + (tw.to - tw.from) * u * u * (3 - 2 * u);", "return tw.to;", ["O6"]],
@@ -181,13 +182,13 @@ await C("O6", "every client's pose: a quarter turn about a hinge keeps the hinge
   return [hingeStill && turned && slid && ease, { hingeStill, turned, slid, sl, ease }];
 });
 await C("O7", "the editor: Add Component offers Openable; it writes the openable and its open action (the authority takes them, a visitor opens it); the card has its fields; a hinge button puts the pivot on an edge; removing it takes its action along", () => {
-  const ent = { lib: "door", pos: [0, 0, 0], comp: {} }; const sc = ES.inspectSchema(ent, "gate", {});
+  const ent = { model: "door", pos: [0, 0, 0] }; const sc = ES.inspectSchema(ent, "gate", {});
   const offered = (sc.sections?.add ?? []).some((a: any) => a.name === "Openable" && !a.blocked);
   const add = ES.addOps(ent, "gate", "Openable");
   const W = world(); W.call("create", { id: "gate", model: "door", place: { at: [0, 0] } });
   const sent = W.sendAll(add.ops); const used = W.call("use", { id: "gate" }, "vic");
   const opened = W.state().entities.gate.c.openable?.open === true;
-  const rec = { lib: "door", pos: [0, 0, 0], comp: { openable: W.state().entities.gate.c.openable, reactions: W.state().entities.gate.c.reactions } };
+  const rec = { model: "door", pos: [0, 0, 0], openable: W.state().entities.gate.c.openable, reactions: W.state().entities.gate.c.reactions };
   const box = [[-0.45, 0, -0.03], [0.45, 2.1, 0.03]];
   const card = ES.inspectSchema(rec, "gate", { box }); const g = card.groups.find((x: any) => x.group === "openable");
   const keys = (g?.fields ?? []).map((f: any) => f.k);
@@ -211,12 +212,12 @@ await C("O8", "a body walks through an open door, not a shut one (the authority'
 // ---- R: reactions ----
 await C("R1", "every entry Add Component offers (a modelled thing; a swinging one; a part) is one the authority takes", () => {
   const out: any[] = [];
-  for (const [label, ent, value] of [["plain", { lib: "crate", pos: [0, 0, 0], comp: {} }, undefined], ["swing", { lib: "crate", pos: [0, 0, 0], comp: { motion: { type: "pendulum", amp: 0, period: 3.5 } } }, undefined]] as any) {
+  for (const [label, ent, value] of [["plain", { model: "crate", pos: [0, 0, 0] }, undefined], ["swing", { model: "crate", pos: [0, 0, 0], motion: { type: "pendulum", amp: 0, period: 3.5 } }, undefined]] as any) {
     const sc = ES.inspectSchema(ent, "thing", { box: [[-0.3, 0, -0.3], [0.3, 0.6, 0.3]], parts: ["lid"] });
     for (const a of sc.sections.add) { if (a.blocked) continue;
       const v = a.name === "Annotation" ? "local/recipe" : a.name === "Label" ? "x" : value;
       const r0 = ES.addOps(ent, "thing", a.name, a.asks ? (a.asks === "Pendulum" ? "replace" : v) : v); if (r0.choice || r0.errors.length) continue;
-      const W = world("r1"); const made = W.call("create", { id: "thing", model: "crate", components: Object.fromEntries(Object.entries(ent.comp)), place: { at: [0, 0] } });
+      const W = world("r1"); const made = W.call("create", { id: "thing", model: "crate", components: Object.fromEntries(Object.entries(recordComponents(ent)).filter(([k]) => k !== "pos")), place: { at: [0, 0] } });
       const r = W.sendAll(r0.ops); if (!r.ok) out.push(`${label}/${a.name}: ${why(r)}`); }
   }
   return [!out.length, out];
@@ -288,7 +289,7 @@ await C("M3", "an orbit's period sets its speed (a 4 s lap turns 90° in 1 s), e
   const quarter = Math.abs(o.pos[0] - 1) < 1e-6 && Math.abs(o.pos[2]) < 1e-6;   // sin(90°), cos(90°)
   const s = ME.evalWholeMotion(base, { type: "spin", period: 4, t0: T0 }, T0 + 1000);
   const spin = Math.abs(Math.abs(ME.yawOfQuat(s.quat)) - Math.PI / 2) < 1e-6;
-  const sc = ES.inspectSchema({ lib: "crate", pos: [0, 0, 0], comp: { motion: { type: "orbit", radius: 1, period: 4 } } }, "m", {});
+  const sc = ES.inspectSchema({ model: "crate", pos: [0, 0, 0], motion: { type: "orbit", radius: 1, period: 4 } }, "m", {});
   const rate = sc.groups.find((g: any) => g.group === "motion")?.fields.find((f: any) => f.k === "degPerSec")?.value;
   return [quarter && spin && rate === 90, { o: o.pos, spin, rate }];
 });
@@ -303,9 +304,9 @@ await C("M4", "the importer: spin rpm → degPerSec (× 6); orbit center/face/pe
     && v.cart.motion.points?.length === 2 && v.cart.motion.loop === "pingpong" && !imported.length && made.every((x) => x === "ok"), { fan: v.fan.motion, boat: v.boat.motion, cart: v.cart.motion, imported, made, div: r.stats.divergences }];
 });
 await C("M5", "the editor: a rate typed on an orbit drops its period (one speed); Add Path starts where the thing stands", () => {
-  const ent = { lib: "crate", pos: [3, 0, -2], comp: { motion: { type: "orbit", radius: 1, period: 4 } } };
+  const ent = { model: "crate", pos: [3, 0, -2], motion: { type: "orbit", radius: 1, period: 4 } };
   const e = ES.editOps(ent, "m", { "motion.degPerSec": 30 }); const m = e.ops.find((o: any) => o.args.component === "motion")?.args.value;
-  const p = ES.addOps({ lib: "crate", pos: [3, 0, -2], comp: {} }, "m", "Path").ops[0]?.args.value;
+  const p = ES.addOps({ model: "crate", pos: [3, 0, -2] }, "m", "Path").ops[0]?.args.value;
   return [m?.degPerSec === 30 && !("period" in m) && JSON.stringify(p?.points?.[0]) === "[3,0,-2]", { m, p }];
 });
 

@@ -35,6 +35,7 @@ import { canon, sha256hex, entityOf, componentsOf, compRefusal, RECORDS, socketQ
 import { worldPose, childrenOf, socketOf } from './hierarchy.js';
 import { qNorm, qHeading } from './rot.js';
 
+import { recordComponents } from './protocol/view.js';
 export const BLUEPRINT_KIND = 'eido.blueprint';
 /** What the door accepts. A component is written to the world as one `comp`
  *  (≤ 8 KB, PROTOCOL §3), so one instance may not exceed that either. */
@@ -383,7 +384,7 @@ const r9 = (v) => +(+v).toFixed(9);
 const upright = (q) => Math.abs(q[0]) < 1e-9 && Math.abs(q[2]) < 1e-9;
 const slug = (s) => String(s).replace(/[^A-Za-z0-9_.-]+/g, '_').slice(0, 24) || 'part';
 /** The comp entries a component writes, as `[key, data]` (entityOf's bytes). */
-const compEntries = (inst) => Object.entries(entityOf({ components: [inst] }).comp ?? {});
+const compEntries = (inst) => Object.entries(recordComponents(entityOf({ components: [inst] }))).filter(([k]) => k !== 'model' && k !== 'parent');
 const RULES = new Set(['lock', 'guard']);   // written last: a lock refuses the mount; guard last for symmetry
 
 /** Why this record cannot be placed as ordinary verbs, or null. The shape is
@@ -520,7 +521,7 @@ export function copyOf(world, id) {
   const seen = new Set();
   for (let cur = id; cur != null && world?.[cur] && !seen.has(cur); cur = world[cur].parent?.to) {
     seen.add(cur);
-    const b = world[cur].comp?.[LINK_KEY];
+    const b = world[cur]?.[LINK_KEY];
     if (isLink(b)) return { root: cur, path, link: { hash: b.hash, name: typeof b.name === 'string' ? b.name : null } };
     if (!isPartMarker(b)) return null;
     path.unshift(b.part);
@@ -565,7 +566,7 @@ export function localComponents(world, ent) {
  *  part carrying its own link (nested copies are not v1). */
 export function copyTree(world, rootId, rec = null) {
   const root = world?.[rootId];
-  const link = root?.comp?.[LINK_KEY];
+  const link = root?.[LINK_KEY];
   if (!isLink(link)) return null;
   const parts = { '': rootId };
   const seen = new Set([rootId]);
@@ -577,7 +578,7 @@ export function copyTree(world, rootId, rec = null) {
       if (seen.has(cid)) continue;   // a hand-written cycle: never twice
       seen.add(cid);
       const ent = world[cid];
-      const b = ent.comp?.[LINK_KEY];
+      const b = ent?.[LINK_KEY];
       let id = isPartMarker(b) && !ids.has(b.part) ? b.part : cid;
       for (let n = 2; ids.has(id); n++) id = `${cid}~${n}`;
       ids.add(id);
@@ -600,7 +601,7 @@ export function copyTree(world, rootId, rec = null) {
 export function copiesOf(world) {
   const out = {};
   for (const id of Object.keys(world ?? {}).sort()) {
-    const b = world[id]?.comp?.[LINK_KEY];
+    const b = world[id]?.[LINK_KEY];
     if (isLink(b)) (out[b.hash] ??= []).push(id);
   }
   return out;

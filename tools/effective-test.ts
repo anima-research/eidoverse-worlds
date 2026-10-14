@@ -77,7 +77,7 @@ if (!EFF) {
 
   // socket default; then mount offset/yaw OVERRIDING socket defaults
   {
-    const ents = { swing: { pos: [0, 0, 0], yaw: 0, comp: { sockets: { seat: { pos: [0, 1, 0], yaw: 1 } } } }, crate: { pos: [9, 9, 9], yaw: 0 } };
+    const ents = { swing: { pos: [0, 0, 0], yaw: 0, sockets: { seat: { pos: [0, 1, 0], yaw: 1 } } }, crate: { pos: [9, 9, 9], yaw: 0 } };
     const bySock = eff("crate", view(ents, { crate: { to: "swing", slot: "seat" } }), T0);
     check("socket supplies the local frame", bySock.ok && near3(bySock.pos, [0, 1, 0]) && near(bySock.yaw, 1), JSON.stringify(bySock));
     const byMount = eff("crate", view(ents, { crate: { to: "swing", slot: "seat", offset: [0, 2, 0], yaw: 0.5 } }), T0);
@@ -101,9 +101,8 @@ if (!EFF) {
   //   t=1s (¼ period of 4s): θ = 0.5·cos(π/2) ≈ 0 → crate at rest point (10, 0.55, 10)
   {
     const ents = {
-      swing: { pos: [10, 0, 10], yaw: 0, comp: {
-        sockets: { seat: { pos: [0, 0.55, 0] } },
-        motion: { type: "pendulum", axis: "x", pivot: [0, 2.4, 0], amp: 0.5, period: 4, damp: 0, t0: T0 } } },
+      swing: { pos: [10, 0, 10], yaw: 0, sockets: { seat: { pos: [0, 0.55, 0] } },
+        motion: { type: "pendulum", axis: "x", pivot: [0, 2.4, 0], amp: 0.5, period: 4, damp: 0, t0: T0 } },
       crate: { pos: [3, 0, 3], yaw: 0 },
     };
     const v = view(ents, { crate: { to: "swing", slot: "seat" } });
@@ -121,7 +120,7 @@ if (!EFF) {
   // Offsets [0,1,0] are yaw-invariant → pallet (5,1,0), crate (5,2,0).
   {
     const ents = {
-      ferry: { pos: [0, 0, 0], yaw: 0, comp: { motion: { type: "path", points: [[0, 0, 0], [10, 0, 0]], speed: 1, loop: "once", t0: T0 } } },
+      ferry: { pos: [0, 0, 0], yaw: 0, motion: { type: "path", points: [[0, 0, 0], [10, 0, 0]], speed: 1, loop: "once", t0: T0 } },
       pallet: { pos: [90, 0, 90], yaw: 0 }, crate: { pos: [80, 0, 80], yaw: 0 },
     };
     const v = view(ents, { pallet: { to: "ferry", offset: [0, 1, 0] }, crate: { to: "pallet", offset: [0, 1, 0] } });
@@ -152,19 +151,19 @@ if (!EFF) {
     check("non-finite offset: refused, never substituted", !nan.ok && /non-finite/.test((nan as any).why), JSON.stringify(nan));
 
     const part = eff("crate", view(
-      { swing: { pos: [0, 0, 0], comp: { sockets: { seat: { pos: [0, -0.83, 0], part: "plank" } } } }, crate: { pos: [0, 0, 0] } },
+      { swing: { pos: [0, 0, 0], sockets: { seat: { pos: [0, -0.83, 0], part: "plank" } } }, crate: { pos: [0, 0, 0] } },
       { crate: { to: "swing", slot: "seat" } }), T0);
     check("part socket: honestly unsupported in slice one", !part.ok && /part "plank"/.test((part as any).why), JSON.stringify(part));
 
     const wig = eff("crate", view(
-      { ufo: { pos: [0, 0, 0], comp: { motion: { type: "wiggle", t0: T0 } } }, crate: { pos: [0, 0, 0] } },
+      { ufo: { pos: [0, 0, 0], motion: { type: "wiggle", t0: T0 } }, crate: { pos: [0, 0, 0] } },
       { crate: { to: "ufo" } }), T0);
     check("unknown motion type on a link: refused and named", !wig.ok && /wiggle/.test((wig as any).why), JSON.stringify(wig));
   }
 
   // part-frame motion does not displace the root (and reports the chain still)
   {
-    const r = eff("mill", view({ mill: { pos: [7, 0, 7], yaw: 0.3, comp: { motion: { type: "spin", part: "blades", t0: T0 } } } }, {}), T0 + 9000);
+    const r = eff("mill", view({ mill: { pos: [7, 0, 7], yaw: 0.3, motion: { type: "spin", part: "blades", t0: T0 } } }, {}), T0 + 9000);
     check("part motion leaves the root at base", r.ok && near3(r.pos, [7, 0, 7]) && r.moving === null, JSON.stringify(r));
   }
 }
@@ -396,7 +395,7 @@ console.log("\n━━ body size: a profiled seat lowers a scaled rider in propor
 if (EFF) {
   // chair at the origin, unscaled; a surface socket 0.5 up; contact plane 0.45
   // below the rider root at authored size → root y = 0.5 − 0.45·u
-  const chair = { pos: [0, 0, 0], yaw: 0, scale: 1, comp: { sockets: { seat: { pos: [0, 0.5, 0], seatAnchor: "surface", pose: "sitchair" } } } };
+  const chair = { pos: [0, 0, 0], yaw: 0, scale: 1, sockets: { seat: { pos: [0, 0.5, 0], seatAnchor: "surface", pose: "sitchair" } } };
   const view = (riderScale?: (id: string) => number) => ({
     entity: (id: string) => (id === "chair" ? chair : undefined),
     mount: (id: string) => (id === "rider" ? { to: "chair", slot: "seat" } : undefined),
@@ -413,7 +412,7 @@ if (EFF) {
   // the agent's own view feeds riderScale from the rider's presence sample
   // (clamped; absent = 1) — the seam the text tier's seated perception reads
   const a = offlineAgent() as any;
-  a.entities.set("chair", { id: "chair", lib: "x.glb", actor: "t", ...chair });
+  a.entities.set("chair", { id: "chair", model: "x.glb", actor: "t", ...chair });
   a.mounts.set("rider", { to: "chair", slot: "seat" });
   a.seatVerdictFor = () => ({ status: "countersigned", pose: "sitchair", contactY: 0.45 });
   a.people.set("rider", { id: "rider", avatar: "", pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "sitchair", scale: 2 } });

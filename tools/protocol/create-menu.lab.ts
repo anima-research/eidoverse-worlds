@@ -28,7 +28,7 @@ try {
   const c = await evalJson(`(() => { const r = document.querySelector('canvas').getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height * 0.7)]; })()`);
   for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await cdp.send("Input.dispatchMouseEvent", { type, x: c[0], y: c[1], button: "left", clickCount: 1 });
   await sleep(2500);
-  const made = await page(`const s = (await import('/lib/state.js')).state.st.entities; return Object.entries(s).filter(([k, e]) => e?.comp?.label === 'empty' && e.lib == null).map(([k]) => k);`);
+  const made = await page(`const s = (await import('/lib/state.js')).state.st.entities; return Object.entries(s).filter(([k, e]) => e?.label === 'empty' && e.model == null).map(([k]) => k);`);
   check("CM3 Create ▸ Empty, then a click on the world, places a bare entity labelled 'empty'", made.length === 1, { before, made });
   await page(`const b = [...document.querySelectorAll('.edit-menus button, .edit-menus .edit-menu-btn')].find((x) => /^Create/.test(x.textContent.trim())); b?.click(); await new Promise((z) => setTimeout(z, 300));
     [...document.querySelectorAll('.edit-menu-pop .edit-menu-item')].find((x) => x.textContent.trim() === 'Terrain')?.click(); return 1;`); await sleep(1000);
@@ -41,9 +41,9 @@ try {
   for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await cdp.send("Input.dispatchMouseEvent", { type, x: c2[0], y: c2[1], button: "left", clickCount: 1 });
   await sleep(2500);
   const box = await page(`const s = (await import('/lib/state.js')).state.st.entities; const W = await import('/lib/world.js'); const C = await import('/lib/colliders.js'); const { scene } = await import('/lib/core.js');
-    const ids = Object.entries(s).filter(([k, e]) => e?.comp?.mesh?.shape === 'box' && e.lib == null).map(([k]) => k); const id = ids[0]; const obj = id && W.entities.get(id);
+    const ids = Object.entries(s).filter(([k, e]) => e?.mesh?.shape === 'box' && e.model == null).map(([k]) => k); const id = ids[0]; const obj = id && W.entities.get(id);
     let inScene = false; scene.traverse((o) => { if (o.isMesh && o.userData?.entityId === id) inScene = true; });
-    return { ids, mesh: id && s[id].comp.mesh, isMesh: !!obj?.isMesh, inScene, collider: !!C.colliders.get(id), matName: obj?.material?.name ?? null, y: obj?.position?.y ?? null };`);
+    return { ids, mesh: id && s[id].mesh, isMesh: !!obj?.isMesh, inScene, collider: !!C.colliders.get(id), matName: obj?.material?.name ?? null, y: obj?.position?.y ?? null };`);
   check("CM5 Create ▸ Box + a click places a mesh thing: comp.mesh {box, [1,1,1]} in the fold, a THREE.Mesh in the scene with userData.entityId, a collider, its material named 'surface'", box.ids.length === 1 && box.mesh?.shape === "box" && JSON.stringify(box.mesh?.size) === "[1,1,1]" && box.isMesh && box.inScene && box.collider && box.matName === "surface", box);
   const bid = box.ids[0];
   await page(`(await import('/lib/scenegraph.js')).sceneSelect(${JSON.stringify(bid)}); return 1;`); await sleep(800);
@@ -60,7 +60,7 @@ try {
     I.commitEdit(${JSON.stringify(bid)}, 'mesh.size.x', 2, {}); await new Promise((z) => setTimeout(z, 1500));
     const dlg = document.querySelector('.cc-no'); const asked = !!dlg; dlg?.click();   // the lock's "move anyway?" card: cancel it (nothing written, the preview reverts)
     await new Promise((z) => setTimeout(z, 1500));
-    const S = await import('/lib/state.js'); return { before, during, asked, after: w(), fold: S.state.st.entities[${JSON.stringify(bid)}]?.comp?.mesh?.size, lock: S.state.st.entities[${JSON.stringify(bid)}]?.comp?.lock };`);
+    const S = await import('/lib/state.js'); return { before, during, asked, after: w(), fold: S.state.st.entities[${JSON.stringify(bid)}]?.mesh?.size, lock: S.state.st.entities[${JSON.stringify(bid)}]?.lock };`);
   check("CM7 a size scrub previews 2 m wide; the lock asks and the edit is cancelled: the geometry goes back to the fold's 1 m (review S2.1)", scrub.before === 1 && scrub.during === 2 && scrub.asked && scrub.after === 1 && JSON.stringify(scrub.fold) === "[1,1,1]", scrub);
 } catch (e) { console.log("ERR", e?.message ?? e); fail++; }
 finally { await cleanup(0); }

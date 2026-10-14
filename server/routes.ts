@@ -72,6 +72,7 @@ try { mkdirSync(CLIENTLOG_DIR, { recursive: true }); } catch (e) { console.warn(
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 
+import { recordComponents } from "../shared/protocol/view.js";
 /** What the routes need from Bun's server object, structurally: the WS
  *  upgrade and the socket address (X-Real-IP's fallback). */
 export type Srv = {
@@ -599,23 +600,23 @@ const ROUTES: Route[] = [
       if (id) {
         const e = w.state.entities[id];
         if (!e) return j({ error: `no entity "${id}" in ${wname}` }, 404);
-        const file = e.lib ? resolveLibFile(e.lib) : null;
+        const file = e.model ? resolveLibFile(e.model) : null;
         const sum = file ? await summarizeGlb(file) : null;
         const at = poseOf(id, e);
-        return j({ id, lib: e.lib ?? null, pos: at.pos, yaw: at.yaw, ...(at.q ? { q: at.q } : {}), scale: e.scale ?? 1,
-          parent: e.parent ?? null, comp: e.comp ?? {},
+        return j({ id, model: e.model ?? null, pos: at.pos, yaw: at.yaw, ...(at.q ? { q: at.q } : {}), scale: e.scale ?? 1,
+          parent: e.parent ?? null, ...recordComponents(e),
           geometry: sum,   // local frame — compose with pos/q-or-yaw/scale for world space
           note: "geometry coords are the MODEL's local frame; sockets use the same frame, so a topSurface center is a socket pos verbatim" });
       }
       const withBoxes = url.searchParams.get("boxes") !== "0";
       const out = [];
       for (const [eid, e] of Object.entries(w.state.entities)) {
-        const file = withBoxes && e.lib ? resolveLibFile(e.lib) : null;
+        const file = withBoxes && e.model ? resolveLibFile(e.model) : null;
         const sum = file ? await summarizeGlb(file) : null;
         const at = poseOf(eid, e);
-        out.push({ id: eid, lib: e.lib ?? null, kind: e.comp?.light ? "light" : "thing",
+        out.push({ id: eid, model: e.model ?? null, kind: e?.light ? "light" : "thing",
           pos: at.pos, yaw: at.yaw, ...(at.q ? { q: at.q } : {}), scale: e.scale ?? 1,
-          parent: e.parent ?? null, comp: e.comp ?? {},
+          parent: e.parent ?? null, ...recordComponents(e),
           ...(sum ? { bbox: sum.bbox, tris: sum.tris } : {}) });
       }
       return j({ world: wname, entities: out });

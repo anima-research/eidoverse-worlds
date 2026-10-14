@@ -11,6 +11,7 @@ import { enc, encName } from "../../shared/protocol/names.js";
 import { localOf } from "../../shared/hierarchy.js";
 import { qNorm, qFromYaw } from "../../shared/rot.js";
 
+import { recordComponents } from "../../shared/protocol/view.js";
 let T = 1800000000000;
 // the engine's catalogue is the library's GLB paths (server/modelcatalogue.ts); a scratch world names any path the tests
 // use: the lab's measured models where they exist, else a model the authority can name but not measure (no `size`)
@@ -62,9 +63,9 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch" 
         const q = (L?.mounted ? L.q : null) ?? qNorm(r.q) ?? qFromYaw((L?.mounted ? L.yaw : r.yaw) ?? 0);
         const s = r.scale3 ?? (Number.isFinite(r.scale) ? [r.scale, r.scale, r.scale] : [1, 1, 1]);
         const components = { transform: { pos, q, scale: s } };
-        for (const [k, v] of Object.entries(r.comp ?? {})) if (v !== undefined) components[encName(k)] = v;
+        for (const [k, v] of Object.entries(recordComponents(r))) if (v !== undefined) components[encName(k)] = v;
         if (r.parent?.to) components.parent = { to: enc(r.parent.to), ...(r.parent.socket ? { socket: r.parent.socket } : {}) };
-        const res = call("create", { id: enc(id), ...(r.lib ? { model: r.lib } : {}), components });
+        const res = call("create", { id: enc(id), ...(r.model ? { model: r.model } : {}), components });
         if (!res.ok) throw new Error(`seed ${id}: ${JSON.stringify(res.refused)}`);
       }
       return W;

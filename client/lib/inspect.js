@@ -47,7 +47,7 @@ export function registerHandler(group, fn) { if (!handlers.has(group)) handlers.
 // a mesh card scrub (size x/y/z, shape) shows on the thing before release; the commit goes through editOps as any field's
 registerHandler('mesh', (id, _obj, k, value, opts) => {
   if (!opts?.live) return false;
-  const cur = { ...(foldRecord(id)?.comp?.mesh ?? {}) }; const n = Number(value);
+  const cur = { ...(foldRecord(id)?.mesh ?? {}) }; const n = Number(value);
   if (k === 'shape') cur.shape = String(value); else if (/^size\.[xyz]$/.test(k) && Number.isFinite(n)) { cur.size = [...(Array.isArray(cur.size) ? cur.size : [1, 1, 1])]; cur.size['xyz'.indexOf(k.slice(5))] = n; } else return false;
   return previewMesh(id, cur);
 });
@@ -68,7 +68,7 @@ const eulerHints = new Map();   // id → { order, e, q }
 function eulerHint(id, rec) {
   const h = eulerHints.get(id);
   if (!h) return undefined;
-  const order = rec?.comp?.rotOrder ?? 'XYZ';
+  const order = rec?.rotOrder ?? 'XYZ';
   // a child's channels read its RELATIVE q (the mount's), so that is the q the hint is for
   const q = rec ? localOf(rec, state.st.entities).q : null;
   // not deleted on a mismatch: the repaint right after a commit reads the fold

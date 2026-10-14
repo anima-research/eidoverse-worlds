@@ -40,6 +40,7 @@ import { schedule, cancelOwner } from '../scheduler.js';
 import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, kindOf, offIn, readMesh, meshKeyOf } from './models_field.js';
 import { prepareMaterial } from '../materials.js';
 
+import { recordComponents } from '../../../shared/protocol/view.js';
 import { R_BASE, residencyRadiusFor } from '../../../shared/lod-distance.js';   // shared with the server's LOD budget
 
 // Orientation (PROTOCOL §9 amendment): the fold's q when the thing is more
@@ -79,7 +80,7 @@ const libGeom = new Map();   // lib -> {bbox} — fed by the 'geom' message
  *  join-time geom never covered) measured here from the loaded meshes. null while nothing has loaded. */
 const _ib = new THREE.Matrix4(), _bx = new THREE.Box3(), _mb = new THREE.Box3();
 export function boxOf(id) {
-  const ent = state.st.entities?.[id]; const known = ent?.lib ? libBox(ent.lib) : null; if (known) return known;
+  const ent = state.st.entities?.[id]; const known = ent?.model ? libBox(ent.model) : null; if (known) return known;
   const obj = entities.get(id); if (!obj) return null;
   obj.updateWorldMatrix(true, true); _ib.copy(obj.matrixWorld).invert(); _bx.makeEmpty();
   const walk = (m) => {   // its own meshes only: a rider (another entity mounted here) is a child in three, not part of it
@@ -123,7 +124,7 @@ function makePlaceholder(id, ent, g) {
 function maybePlaceholder(id) {
   if (entities.get(id) !== null) return;   // realized, placeholdered, or unknown
   const ent = state.st.entities[id];
-  const g = ent?.lib ? libGeom.get(ent.lib) : null;
+  const g = ent?.model ? libGeom.get(ent.model) : null;
   if (!ent || ent.kind === 'light' || !g?.bbox) return;
   const grp = makePlaceholder(id, ent, g);
   entities.set(id, grp);
@@ -230,7 +231,7 @@ function indexSceneMount(id, to) {
 
 function createModel(id, ent) {
   const gen = nextGen++;
-  tracked.set(id, { kind: 'model', lib: ent.lib, gen });
+  tracked.set(id, { kind: 'model', model: ent.model, gen });
   entities.set(id, null);   // reservation — the contract every consumer knows
   maybePlaceholder(id);     // …upgraded to a sized stand-in when geom is known
   syncCompLight(id);        // a lamp lights its folded spot before (and beyond) its load
@@ -264,7 +265,7 @@ function scheduleLoad(id, ent, gen, tier = null) {
       await negotiationReady;
       if (signal.aborted) return;
       const want = tier ?? tierFor(ent, null);
-      const obj = await loadGLB(ent.lib, { tier: want });
+      const obj = await loadGLB(ent.model, { tier: want });
       const cur = state.st.entities[id];
       const t = tracked.get(id);
       if (t?.gen === gen) t.loading = false;
@@ -272,7 +273,7 @@ function scheduleLoad(id, ent, gen, tier = null) {
       // by a light, re-spawned with a different lib (its own job follows),
       // demoted-then-reset, or this whole realizer generation was reset
       if (signal.aborted || t?.gen !== gen) return;
-      if (!cur || cur.kind === 'light' || cur.lib !== ent.lib) {
+      if (!cur || cur.kind === 'light' || cur.model !== ent.model) {
         clearReservation(id);
         if (tracked.get(id)?.gen === gen) tracked.delete(id);
         return;
@@ -351,8 +352,8 @@ function realizeModel(id, cur, obj) {
     if (!isPlaceholder(stand)) teardownRealized(id, stand);
     (stand.parent ?? scene).remove(stand);   // the real thing takes the spot
   }
-  retainGLB(obj.userData.glbKey ?? cur.lib);   // the proto is worn — eviction must not undress it
-  obj.userData.lib = cur.lib;
+  retainGLB(obj.userData.glbKey ?? cur.model);   // the proto is worn — eviction must not undress it
+  obj.userData.lib = cur.model;
   obj.userData.tier = obj.userData.tierServed ?? 'full';   // the server's word, not the request
   // tierAsked rides along from loadGLB: a lod ask the server answered with the
   // original (not baked yet, or honestly refused — 'already light') wears
@@ -365,7 +366,7 @@ function realizeModel(id, cur, obj) {
   if (sc) applyScale(obj, sc);
   obj.userData.base = restOf(obj, cur);
   entities.set(id, obj);
-  entityMeta.set(id, { actor: cur.actor, lib: cur.lib, ts: cur.ts, ...(cur.placer ? { placer: cur.placer } : {}) });
+  entityMeta.set(id, { actor: cur.actor, model: cur.model, ts: cur.ts, ...(cur.placer ? { placer: cur.placer } : {}) });
   scene.add(obj);
   applyHidden(id);   // a thing hidden before its model arrived stays hidden
   bus.emit('entity', { id, kind: 'spawn' });
@@ -391,18 +392,18 @@ const promoteTail = new Map();
  *  clone was cut. Everything else builds per-entity — correctness beats
  *  sharing (§16.2.C). */
 function shareableLib(id, cur) {
-  if (!cur?.lib) return null;
+  if (!cur?.model) return null;
   const kids = sceneChildren.get(id);
   if (kids) for (const cid of kids) {
     const cobj = entities.get(cid);
     if (cobj && cobj.parent && cobj.parent !== scene) return null;
   }
-  const bag = cur.comp;
+  const bag = recordComponents(cur);
   if (bag) {
     if (bag.motion?.part) return null;
     for (const k in bag) if (k.startsWith('motion:')) return null;
   }
-  return cur.lib;
+  return cur.model;
 }
 
 function runPromoteTail(id, obj) {
@@ -541,7 +542,7 @@ function meshMaterial(shape) {
   return mat;
 }
 function createMesh(id, ent) {
-  const m = readMesh(ent.comp?.mesh);
+  const m = readMesh(ent?.mesh);
   tracked.set(id, { kind: 'mesh', mesh: meshKeyOf(ent), gen: nextGen++ });
   const obj = new THREE.Mesh(meshGeometry(m), meshMaterial(m.shape));
   obj.castShadow = true; obj.receiveShadow = true;
@@ -564,7 +565,7 @@ function createMesh(id, ent) {
 }
 function rebuildMesh(id) {
   const ent = state.st.entities[id]; const obj = entities.get(id); const t = tracked.get(id);
-  const m = readMesh(ent?.comp?.mesh); if (!obj || !t || t.kind !== 'mesh' || !m) return;
+  const m = readMesh(ent?.mesh); if (!obj || !t || t.kind !== 'mesh' || !m) return;
   const key = meshKeyOf(ent); if (key === t.mesh) return;
   obj.geometry.dispose(); obj.geometry = meshGeometry(m); obj.userData.meshSize = m.size;
   if (obj.userData.meshShape !== m.shape) { obj.userData.meshShape = m.shape; for (const mat of [obj.material, ...(obj.userData.__matClones ?? [])]) if (mat) mat.side = m.shape === 'plane' ? THREE.DoubleSide : THREE.FrontSide; }
@@ -790,8 +791,8 @@ function retire(id) {
 /** Mirror the folded bag into the comps map every evaluator reads. Cloned:
  *  evaluators must never alias (and accidentally mutate) shadow state. */
 function syncComps(id) {
-  const bag = state.st.entities[id]?.comp;
-  if (bag && Object.keys(bag).length) comps.set(id, structuredClone(bag));
+  const bag = recordComponents(state.st.entities[id]);
+  if (Object.keys(bag).length) comps.set(id, structuredClone(bag));
   else comps.delete(id);
 }
 
@@ -862,7 +863,7 @@ function execMount(id) {
   const child = entities.get(id);
   const parent = entities.get(rel.to);
   if (!child || !parent) return;
-  const sock = rel.socket ? state.st.entities[rel.to]?.comp?.sockets?.[rel.socket] : null;
+  const sock = rel.socket ? state.st.entities[rel.to]?.sockets?.[rel.socket] : null;
   // the RESOLVED socket is part of the linkage's identity: a socket authored
   // after the mount must re-seat the rider, not be ignored (review S5)
   const relKey = JSON.stringify([rel, sock ?? null]);
@@ -933,7 +934,7 @@ function tierFor(ent, current = null) {
   // lodNegotiable: transcoder + key + recipe + a .glb) — elsewhere the
   // policy sees no recipe, and nothing is asked or reported as asked
   return chooseTier({ dist: entDist(ent), radius: residencyRadius(ent), quality: modelQuality.quality,
-    recipe: lodNegotiable(ent?.lib) ? lodRecipe : null, pressure: gpuPressure(), shed: modelQuality.shed, current, scale: ent?.scale ?? 1 });
+    recipe: lodNegotiable(ent?.model) ? lodRecipe : null, pressure: gpuPressure(), shed: modelQuality.shed, current, scale: ent?.scale ?? 1 });
 }
 /** The models⚙ row's whole behaviour — skypanel.js binds it to the row and
  *  shows what it returns: set the resident's dial, and say honestly whether
@@ -959,7 +960,7 @@ const DIAG_DEFAULT = 12; // assumed bbox diagonal (m) before the geom
 const resStats = { demotes: 0, promotes: 0, retiers: 0, retiersRefused: 0 };
 
 function residencyRadius(ent) {
-  const s = ent?.lib ? libGeom.get(ent.lib)?.bbox?.size : null;
+  const s = ent?.model ? libGeom.get(ent.model)?.bbox?.size : null;
   const diag = s ? Math.hypot(s[0] ?? 0, s[1] ?? 0, s[2] ?? 0) : DIAG_DEFAULT;
   return residencyRadiusFor(diag);
 }
@@ -988,10 +989,10 @@ function entDist(ent) {
 /** The audit's three impossibles plus the edit hold — things whose demote
  *  has no clean undo. All are cheap fold-truth predicates. */
 function canDemote(id, ent) {
-  if (!ent || ent.kind === 'light' || ent.parent || ent.lib == null) return false;   // lights are cheap; mounted children ride carriers; a mesh has no bytes to shed
+  if (!ent || ent.kind === 'light' || ent.parent || ent.model == null) return false;   // lights are cheap; mounted children ride carriers; a mesh has no bytes to shed
   const obj = entities.get(id);
   if (!obj || isPlaceholder(obj) || editHolds.has(id)) return false;
-  if (!libGeom.get(ent.lib)?.bbox) return false;    // nothing honest to stand in
+  if (!libGeom.get(ent.model)?.bbox) return false;    // nothing honest to stand in
   // a carrier: children mounted on it would need the cargo step-off, which
   // is semantically a removal (it re-stamps fold poses) — refuse instead.
   // foldChildren holds exactly the ids the old Object.values scan matched
@@ -1002,7 +1003,7 @@ function canDemote(id, ent) {
   // (avatarMounts is rider-keyed and bounded by bodies present, not
   // entities — the scan stays)
   for (const rel of avatarMounts.values()) if (rel.to === id) return false;
-  const bag = state.st.entities[id]?.comp;
+  const bag = recordComponents(state.st.entities[id]);
   if (bag) {
     // part motions and part sockets need named nodes a placeholder lacks
     // (mbase is per-clone; findPart on a box is null). Whole-entity motion
@@ -1020,7 +1021,7 @@ function demote(id) {
   const obj = entities.get(id);
   teardownRealized(id, obj);   // a demoted stand-in must not inherit the real model's collider/lamps
   (obj.parent ?? scene).remove(obj);
-  const grp = makePlaceholder(id, ent, libGeom.get(ent.lib));
+  const grp = makePlaceholder(id, ent, libGeom.get(ent.model));
   entities.set(id, grp);
   scene.add(grp);
   applyHidden(id);   // hidden survives the stand-in box (placeholder / demote)
@@ -1118,7 +1119,7 @@ function reconcileId(id) {
   if (!ent || offIn(state.st.entities, id)) { if (t || entities.has(id)) retire(id); return; }
   const kind = kindOf(ent);
   if (!t) { CREATE[kind](id, ent); return; }
-  if (t.kind !== kind || (kind === 'model' && t.lib !== ent.lib)) {
+  if (t.kind !== kind || (kind === 'model' && t.model !== ent.model)) {
     retire(id);
     CREATE[kind](id, ent);
     return;
@@ -1131,7 +1132,7 @@ function reconcileId(id) {
 /** Full idempotent pass — hydration, reconnect. reconcile ∘ reconcile =
  *  reconcile is the contract (§11.4). */
 export function reconcileModels() {
-  const view = new Map([...tracked].map(([id, t]) => [id, { kind: t.kind, lib: t.lib, mesh: t.mesh }]));
+  const view = new Map([...tracked].map(([id, t]) => [id, { kind: t.kind, model: t.model, mesh: t.mesh }]));
   const { create, retire: dead } = planReconcile(state.st.entities, view);
   for (const id of dead) retire(id);
   const created = new Set(create.map((c) => c.id));
@@ -1211,7 +1212,7 @@ export function initModelsRealizer() {
     // a refused or cancelled mesh scrub previewed a geometry the fold never took (review S2.1): back to the fold's, collider too
     if (tracked.get(id)?.kind === 'mesh') { tracked.get(id).mesh = null; rebuildMesh(id); }
     if (obj.userData.mountedTo && ent.parent) {
-      const sock = ent.parent.socket ? state.st.entities[ent.parent.to]?.comp?.sockets?.[ent.parent.socket] : null;
+      const sock = ent.parent.socket ? state.st.entities[ent.parent.to]?.sockets?.[ent.parent.socket] : null;
       obj.position.set(...(ent.parent.offset ?? sock?.pos ?? [0, 0, 0]));
       if (Array.isArray(ent.parent.q) && ent.parent.q.length === 4) obj.quaternion.set(...ent.parent.q);
       if (ent.scale != null) applyScale(obj, entScale(ent));

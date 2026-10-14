@@ -49,7 +49,7 @@ export const setTransform = (ent, id, patch) => set(id, "transform", transformOf
  *  has is just the pose. `world` is the view ({entities}). */
 export function parent(world, id, to, { socket = null, pos = null, q = null, yaw = null } = {}) {
   const ent = world?.entities?.[id] ?? null;
-  const sock = socket ? world?.entities?.[to]?.comp?.sockets?.[socket] : null;
+  const sock = socket ? world?.entities?.[to]?.sockets?.[socket] : null;
   const local = {
     pos: finite3(pos) ? pos : finite3(sock?.pos) ? sock.pos : [0, 0, 0],
     q: qNorm(q) ?? (Number.isFinite(yaw) ? qFromYaw(yaw) : sock ? socketQ(sock) : [0, 0, 0, 1]),

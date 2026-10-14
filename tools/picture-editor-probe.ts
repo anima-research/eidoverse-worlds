@@ -103,7 +103,7 @@ try {
   // the hang's own echo agrees with what the line said, so the repaint it
   // queued (the one that produced `down`) carried the line through
   check('C. …and the block\'s line survives the echo that agrees with it', s.msg === 'hung on screenplane', JSON.stringify({ msg: s.msg }));
-  check('C. …with the normalized bag in the fold (src, part, look, lit)', s.comp?.src === uploaded && s.comp?.part === 'screenplane' && s.comp?.look === 'a red square, hung by hand' && s.comp?.lit === 'self' && s.comp?.flip === false, JSON.stringify(s.comp));
+  check('C. …with the normalized bag in the fold (src, part, look, lit)', s?.src === uploaded && s?.part === 'screenplane' && s?.look === 'a red square, hung by hand' && s?.lit === 'self' && s?.flip === false, JSON.stringify(s.comp));
 
   // D. a URL typed into src is refused in the block, and no comp goes out
   const seqBefore = await pg.evaluate(() => import('/lib/world.js').then((m: any) => JSON.stringify(m.comps.get('console')?.picture)));
@@ -146,7 +146,7 @@ try {
   // not through the block: the verb, as another actor's hand would be
   await pg.evaluate((src) => import('/lib/net.js').then((n: any) => n.sendVerb('comp', { id: 'console', type: 'picture', data: { src, part: 'screenplane', look: 'hung by someone else' } })), uploaded);
   s = await until(pg, (x) => x.hung && x.down);
-  check('G. …the outside hang lands and the block repaints with take down', s.hung && s.down && s.comp?.look === 'hung by someone else', JSON.stringify({ hung: s.hung, down: s.down, look: s.comp?.look }));
+  check('G. …the outside hang lands and the block repaints with take down', s.hung && s.down && s?.look === 'hung by someone else', JSON.stringify({ hung: s.hung, down: s.down, look: s?.look }));
   check('G. …and the refusal line is gone: it was about a bag the world moved past', (s.msg ?? '') === '', JSON.stringify({ msg: s.msg }));
   check('no page errors across the cycle', errs.length === 0, errs.join(' | '));
 } catch (e: any) {

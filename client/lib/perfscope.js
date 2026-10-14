@@ -172,7 +172,7 @@ function collect() {
         rec = subjects.get(`e:${id}`);
         if (!rec) {
           const meta = entityMeta.get(id);
-          rec = freshRec(`e:${id}`, 'entity', id + (meta?.lib ? `  (${String(meta.lib).split('/').pop()})` : ''));
+          rec = freshRec(`e:${id}`, 'entity', id + (meta?.model ? `  (${String(meta.model).split('/').pop()})` : ''));
           subjects.set(rec.key, rec);
         }
         continue;

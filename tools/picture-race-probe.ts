@@ -81,7 +81,7 @@ async function hold(pg: any, src: string) {
 
 try {
   const pg = await joinAs('raceprobe');
-  await verb(pg, 'spawn', { id: 'console', lib: LIB, pos: [1.3, 0.5, -2.2], yaw: 0.6 });
+  await verb(pg, 'spawn', { id: 'console', model: LIB, pos: [1.3, 0.5, -2.2], yaw: 0.6 });
   let s = await until(pg, (x) => x.part);
   check('the model spawned with its screenplane', s.part, JSON.stringify(s));
 
@@ -132,7 +132,7 @@ try {
   }
   // D. remove + respawn (a new subtree) under a held load.
   {
-    await verb(pg, 'spawn', { id: 'console', lib: LIB, pos: [1.3, 0.5, -2.2], yaw: 0.6 });
+    await verb(pg, 'spawn', { id: 'console', model: LIB, pos: [1.3, 0.5, -2.2], yaw: 0.6 });
     await until(pg, (x) => x.part);
     const img = fresh();
     const h = await hold(pg, img);
@@ -141,7 +141,7 @@ try {
     check('D. the hold engaged', h.heldCount() > 0);
     await verb(pg, 'remove', { id: 'console' });
     await until(pg, (x) => !x.entity);
-    await verb(pg, 'spawn', { id: 'console', lib: LIB, pos: [1.3, 0.5, -2.2], yaw: 0.6 });
+    await verb(pg, 'spawn', { id: 'console', model: LIB, pos: [1.3, 0.5, -2.2], yaw: 0.6 });
     await until(pg, (x) => x.part);
     await h.release();
     await settle();
@@ -164,7 +164,7 @@ try {
   }
   // F. the gate refuses only STALE loads.
   {
-    await verb(pg, 'spawn', { id: 'console', lib: LIB, pos: [1.3, 0.5, -2.2], yaw: 0.6 });
+    await verb(pg, 'spawn', { id: 'console', model: LIB, pos: [1.3, 0.5, -2.2], yaw: 0.6 });
     await until(pg, (x) => x.part);
     const img = fresh();
     await comp(pg, img);

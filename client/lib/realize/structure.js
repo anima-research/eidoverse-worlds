@@ -184,7 +184,7 @@ export function setCutaway(on) {
 export const isCutaway = () => cutaway;
 
 /** The structure component, or null for entities that aren't buildings. */
-const structOf = (ent) => (ent?.comp && typeof ent.comp === 'object' ? ent.comp.structure ?? null : null);
+const structOf = (ent) => (ent && typeof ent === 'object' ? ent.structure ?? null : null);
 
 const transformOf = (ent) => ({
   position: Array.isArray(ent?.pos) && ent.pos.length === 3 && ent.pos.every(Number.isFinite)

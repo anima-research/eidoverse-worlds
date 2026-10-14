@@ -73,7 +73,7 @@ console.log("— 2. perception —");
 const { agentOnDoor } = await import("./agent-scratch.ts");
 const ag = new WorldAgent({ name: "reader" });
 const { seed, act } = agentOnDoor(ag, "picture");
-await seed({ console: { lib: "scif_cyberpunk_crt_retro_computer_monitor_screen_keyboard_tower.glb", pos: [1, 0, 1] } });
+await seed({ console: { model: "scif_cyberpunk_crt_retro_computer_monitor_screen_keyboard_tower.glb", pos: [1, 0, 1] } });
 const r1 = await act("set", { id: "console", component: "picture", value: { src: GOOD, part: "screenplane", alt: "a print of the hearth at dusk" } }, { who: "antra" });
 let out = ag.look();
 check("the door takes a well-formed picture", r1.ok, JSON.stringify(r1.refused));

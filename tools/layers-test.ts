@@ -4,17 +4,17 @@ import { layerOf, defaultLayer } from "../shared/layers.js";
 import { inspectSchema, editOps } from "../shared/editschema.js";
 let pass = 0, fail = 0; const check = (n, ok, d = "") => { if (ok) pass++; else { fail++; console.log("  ✗", n, d); } };
 const W = {
-  floor: { lib: "m/floor.glb", comp: { physics: { kind: "static", shape: [[-1, 0, -1], [1, 0.1, 1]] }, transform: { pos: [0, 0, 0], scale: [30, 1, 30] } } },
-  crate: { lib: "m/crate.glb", comp: { physics: { kind: "dynamic", shape: [[-1, 0, -1], [1, 2, 1]] }, transform: { pos: [0, 0, 0], scale: [0.25, 0.25, 0.25] } } },
-  lamp: { lib: null, comp: { light: { kind: "point" } } },
-  sign: { lib: null, comp: { text: { text: "hi" } } },
-  npc: { lib: "avatars/bee.vrm", comp: {} },
-  hat: { lib: "m/hat.glb", comp: {}, parent: { to: "npc" } },
-  wall: { lib: null, comp: { structure: { tile: 1 } } },
-  told: { lib: "m/crate.glb", comp: { "hesperus/layer": "environment" } },
+  floor: { model: "m/floor.glb", physics: { kind: "static", shape: [[-1, 0, -1], [1, 0.1, 1]] }, transform: { pos: [0, 0, 0], scale: [30, 1, 30] } },
+  crate: { model: "m/crate.glb", physics: { kind: "dynamic", shape: [[-1, 0, -1], [1, 2, 1]] }, transform: { pos: [0, 0, 0], scale: [0.25, 0.25, 0.25] } },
+  lamp: { model: null, light: { kind: "point" } },
+  sign: { model: null, text: { text: "hi" } },
+  npc: { model: "avatars/bee.vrm" },
+  hat: { model: "m/hat.glb", parent: { to: "npc" } },
+  wall: { model: null, structure: { tile: 1 } },
+  told: { model: "m/crate.glb", "hesperus/layer": "environment" },
   // review S3 (primitives): a mesh thing is sized like a model, not filed with the Empties
-  ground: { lib: null, comp: { mesh: { shape: "plane", size: [200, 0.05, 200] }, physics: { kind: "static", shape: [[-100, 0, -100], [100, 0.05, 100]] }, transform: { pos: [0, 0, 0] } } },
-  cube: { lib: null, comp: { mesh: { shape: "box", size: [1, 1, 1] }, physics: { kind: "static", shape: [[-0.5, 0, -0.5], [0.5, 1, 0.5]] }, transform: { pos: [0, 0, 0] } } },
+  ground: { model: null, mesh: { shape: "plane", size: [200, 0.05, 200] }, physics: { kind: "static", shape: [[-100, 0, -100], [100, 0.05, 100]] }, transform: { pos: [0, 0, 0] } },
+  cube: { model: null, mesh: { shape: "box", size: [1, 1, 1] }, physics: { kind: "static", shape: [[-0.5, 0, -0.5], [0.5, 1, 0.5]] }, transform: { pos: [0, 0, 0] } },
 };
 const got = Object.fromEntries(Object.keys(W).map((k) => [k, layerOf(W, k)]));
 check("defaults by kind: a 60 m floor is environment, a crate props, a lone light lights, text signs, an avatar people, a structure structure",

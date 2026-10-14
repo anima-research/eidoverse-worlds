@@ -305,7 +305,7 @@ let GEN = 0;
  *  long before any GLB. */
 function sendGeomFollowup(w: World, c: Client) {
   const libs = new Set<string>();
-  for (const e of Object.values(w.state.entities)) if (e.lib && e.kind !== "light") libs.add(e.lib);
+  for (const e of Object.values(w.state.entities)) if (e.model && e.kind !== "light") libs.add(e.model);
   if (!libs.size) return;
   (async () => {
     const geom: Record<string, { bbox: unknown }> = {};

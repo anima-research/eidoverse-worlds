@@ -121,7 +121,7 @@ function agent() {
   agents.push(a); a.joined = true; return a;
 }
 function entity(data=house, id="house", pos=[0,0,0], yaw=0, scale=1): any {
-  return { id, lib: "", pos, yaw, scale, comp: { structure: data } };
+  return { id, model: "", pos, yaw, scale, structure: data };
 }
 function worldPoint(e: any, p: P): P {
   const c=Math.cos(e.yaw),s=Math.sin(e.yaw);

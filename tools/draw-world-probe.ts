@@ -79,7 +79,7 @@ try {
     meanChannelError:sum/(a.width*a.height*3),batching:after.stats,foldParity:after.parity.ok};
   console.log(JSON.stringify(result,null,2));
   if(after.diagnostics.render.drawCalls!==after.draws
-    || !after.diagnostics.sources.libraries.some((row)=>row.lib.endsWith('crate_large_blue.glb')&&row.materialGroups===32)) {
+    || !after.diagnostics.sources.libraries.some((row)=>row.model.endsWith('crate_large_blue.glb')&&row.materialGroups===32)) {
     throw Error('draw diagnostics did not describe the rendered view');
   }
   if(after.draws>=before.draws*0.75 || result.over2Fraction>0.001 || result.meanChannelError>0.05

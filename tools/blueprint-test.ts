@@ -18,6 +18,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { recordComponents } from "../shared/protocol/view.js";
 // config.ts makes WORLDS_DIR at import: keep the bench out of the repo's worlds/
 const SCRATCH = mkdtempSync(join(tmpdir(), 'ew-blueprint-'));
 process.env.WORLDS_DIR = join(SCRATCH, 'worlds');
@@ -119,14 +120,14 @@ console.log('\n3. the copy link (expand, overridesOf, rebase)');
 // included) and the bulb as a child entity (a Parent the world added)
 const copyOf = (rec: any, at: number[]) => {
   const x = expand(rec);
-  const root = componentsOf({ ...x.entity, pos: at, yaw: 0.5, comp: { ...(x.entity.comp ?? {}), blueprint: linkOf(rec) } }).components;
+  const root = componentsOf({ ...x.entity, pos: at, yaw: 0.5, ...(recordComponents(x.entity)), blueprint: linkOf(rec) }).components;
   const kid = (k: any) => ({ id: k.id, components: componentsOf({ ...k.entity, parent: { to: 'lamp-1', offset: [0, 1.2, 0] } }).components, children: k.children.map(kid) });
   return { components: root, children: x.children.map(kid) };
 };
 {
   const x = expand(lampV1);
-  check('expand: the root writes wire bytes with no placement and no stamps', x.entity.lib === LAMP && x.entity.comp?.light?.intensity === 16 && !('pos' in x.entity) && !('actor' in x.entity), J(x.entity));
-  check('expand: children by id, each with its own bytes (the bulb\'s local pos)', x.children.length === 1 && x.children[0].id === 'bulb' && J(x.children[0].entity.pos) === J([0, 1.2, 0]) && x.children[0].entity.comp?.light?.range === 3, J(x.children));
+  check('expand: the root writes wire bytes with no placement and no stamps', x.entity.model === LAMP && x.entity?.light?.intensity === 16 && !('pos' in x.entity) && !('actor' in x.entity), J(x.entity));
+  check('expand: children by id, each with its own bytes (the bulb\'s local pos)', x.children.length === 1 && x.children[0].id === 'bulb' && J(x.children[0].entity.pos) === J([0, 1.2, 0]) && x.children[0].entity?.light?.range === 3, J(x.children));
   x.components[1].params.lib = 'mutated';
   check('expand: components are copies (editing them leaves the record alone)', lampV1.root.components[1].params.lib === LAMP);
   check('linkOf: {hash, name}', J(linkOf(lampV1)) === J({ hash: H1, name: 'Lamp' }));
@@ -209,8 +210,8 @@ const lampWorld = () => {
   // model+light (old blueprints must keep expanding), which is why lampV1 above is left alone and the pure
   // expand() tests still assert the root's light.
   W.seed({
-    lamp: { lib: LAMP, pos: [7, 0, 7], yaw: 1, comp: { label: 'a lamp' } },
-    bulb: { pos: [0, 0, 0], parent: { to: 'lamp', offset: [0, 1.2, 0], yaw: 0 }, comp: { light: { color: 0xffffff, intensity: 4, range: 3 } } },
+    lamp: { model: LAMP, pos: [7, 0, 7], yaw: 1, label: 'a lamp' },
+    bulb: { pos: [0, 0, 0], parent: { to: 'lamp', offset: [0, 1.2, 0], yaw: 0 }, light: { color: 0xffffff, intensity: 4, range: 3 } },
   });
   return W;
 };
@@ -244,12 +245,12 @@ let HV = '';   // the record's hash, "sha256:<hex>"
   check('create {id, from: hash, at}: one act, the copy\'s parts named from its id', c1.ok && !!E()['lamp-1'] && !!E()['lamp-1-bulb'], J([c1.refused, Object.keys(E())]));
   const root = E()['lamp-1'], bulb = E()['lamp-1-bulb'];
   check('…the root at `at` (pos and turn) with its model, light and label; the bulb an Empty with its light',
-    root.lib === LAMP && near(root.pos, [3, 0, 4], 0) && Math.abs(root.yaw - 0.5) < 1e-6 && root.comp?.label === 'a lamp'
-    && bulb.lib === undefined && bulb.comp?.light?.range === 3, J({ root, bulb }));
+    root.model === LAMP && near(root.pos, [3, 0, 4], 0) && Math.abs(root.yaw - 0.5) < 1e-6 && root?.label === 'a lamp'
+    && bulb.model === undefined && bulb?.light?.range === 3, J({ root, bulb }));
   check('…the bulb rides the copy\'s root at its LOCAL pose (as the record says)', bulb.parent?.to === 'lamp-1' && near(bulb.pos, [0, 1.2, 0], 0), J(bulb));
   const Wb = worldPose(E(), 'lamp-1-bulb')!;
   check('…so its world pose is the root\'s pose composed with it: [3, 1.2, 4]', near(Wb.pos, [3, 1.2, 4]), J(Wb));
-  check('…every part carries the link: copy-of {from: hash, key}', J(root.comp?.['copy-of']) === J({ from: HV, key: 'lamp' }) && J(bulb.comp?.['copy-of']) === J({ from: HV, key: 'bulb' }), J([root.comp?.['copy-of'], bulb.comp?.['copy-of']]));
+  check('…every part carries the link: copy-of {from: hash, key}', J(root?.['copy-of']) === J({ from: HV, key: 'lamp' }) && J(bulb?.['copy-of']) === J({ from: HV, key: 'bulb' }), J([root?.['copy-of'], bulb?.['copy-of']]));
   const c2 = W.call('create', { id: 'lamp-1', from: HV, at }, 'bld');
   check('an id in use is refused (`exists`), nothing written', c2.ok === false && c2.refused?.code === 'exists', J(c2));
   const c3 = W.call('create', { from: 'sha256:' + '0'.repeat(64) }, 'bld');
@@ -263,7 +264,7 @@ let HV = '';   // the record's hash, "sha256:<hex>"
   W.call('create', { id: 'lamp-2', from: HV, at: { pos: [0, 0, 0] } }, 'bld');
   W.call('create', { id: 'lamp-3', from: HV, at: { pos: [2, 0, 0] } }, 'bld');
   W.call('set', { id: 'lamp-2-bulb', component: 'light', value: { color: 0xffffff, intensity: 2, range: 3 } }, 'bld');
-  check('an edit to one copy\'s part changes that copy only, and the record stays as published', E()['lamp-2-bulb'].comp.light.intensity === 2 && E()['lamp-3-bulb'].comp.light.intensity === 4 && W.getBlob(HV).parts[1].components.light.intensity === 4);
+  check('an edit to one copy\'s part changes that copy only, and the record stays as published', E()['lamp-2-bulb'].light.intensity === 2 && E()['lamp-3-bulb'].light.intensity === 4 && W.getBlob(HV).parts[1].components.light.intensity === 4);
 }
 {
   // a deeper design: a scaled base with a box collider, a tilted half-scale arm, a locked shade with a rotation order
@@ -275,10 +276,10 @@ let HV = '';   // the record's hash, "sha256:<hex>"
   const W = scratchWorld('blueprint');
   const tilt = [0.3826834323650898, 0, 0, 0.9238795325112867];
   W.seed({
-    desk: { lib: LAMP, pos: [50, 0, 50], scale: 2, comp: { collider: { shape: 'box' } } },
-    arm: { lib: LAMP, parent: { to: 'desk', offset: [0.2, 0.5, 0], q: tilt }, scale: 0.5 },
-    shade: { lib: LAMP, parent: { to: 'arm', offset: [0, 1, 0] }, comp: { 'hesperus/rot-order': 'ZXY', motion: { type: 'spin', axis: 'y', degPerSec: 20 }, lock: true } },
-    glow: { parent: { to: 'shade', offset: [0, -0.1, 0] }, comp: { light: { color: 0xff8800, intensity: 6, range: 4, day: false } } },
+    desk: { model: LAMP, pos: [50, 0, 50], scale: 2, collider: { shape: 'box' } },
+    arm: { model: LAMP, parent: { to: 'desk', offset: [0.2, 0.5, 0], q: tilt }, scale: 0.5 },
+    shade: { model: LAMP, parent: { to: 'arm', offset: [0, 1, 0] }, 'hesperus/rot-order': 'ZXY', motion: { type: 'spin', axis: 'y', degPerSec: 20 }, lock: true },
+    glow: { parent: { to: 'shade', offset: [0, -0.1, 0] }, light: { color: 0xff8800, intensity: 6, range: 4, day: false } },
   });
   const p = W.call('publish', { from: 'desk', name: 'Desk' });
   const HD = p.notes?.find((n: any) => n.record)?.record;
@@ -286,14 +287,14 @@ let HV = '';   // the record's hash, "sha256:<hex>"
   const yaw90 = [0, 0.7071067811865476, 0, 0.7071067811865476];
   const c = W.call('create', { id: 'desk2', from: HD, at: { pos: [10, 0, -2], q: yaw90 } });
   const E = W.view().entities;
-  const id = (k: string) => Object.keys(E).find((x) => E[x].comp?.['copy-of']?.from === HD && E[x].comp['copy-of'].key === k && x.startsWith('desk2'));
+  const id = (k: string) => Object.keys(E).find((x) => E[x]?.['copy-of']?.from === HD && E[x]['copy-of'].key === k && x.startsWith('desk2'));
   check('the copy lands as one act: four parts', c.ok && ['desk', 'arm', 'shade', 'glow'].every((k) => !!id(k)), J([c.refused, Object.keys(E)]));
   const arm = worldPose(E, id('arm')!)!;
   check('the tilted arm (root turned 90°, root scale 2; local offset, tilt and scale ½) stands at its composed pose: [10, 1, -2.4], scale 1, tilted',
     near(arm.pos, [10, 1, -2.4]) && Math.abs(arm.scale - 1) < 1e-6 && Math.abs(E[id('arm')!].q[0]) > 0.1, J(arm));
   const shade = E[id('shade')!], glow = E[id('glow')!];
-  check('the shade is locked, spins, and keeps its rotation order', shade.comp?.lock === true && shade.comp?.motion?.type === 'spin' && shade.comp?.['hesperus/rot-order'] === 'ZXY', J(shade.comp));
-  check('the glow is an Empty whose light burns at noon; the base collides as a box', glow.lib === undefined && glow.comp?.light?.day === false && glow.comp.light.color === 0xff8800 && E.desk2.comp?.collider?.shape === 'box', J([glow, E.desk2.comp]));
+  check('the shade is locked, spins, and keeps its rotation order', shade?.lock === true && shade?.motion?.type === 'spin' && shade?.['hesperus/rot-order'] === 'ZXY', J(shade.comp));
+  check('the glow is an Empty whose light burns at noon; the base collides as a box', glow.model === undefined && glow?.light?.day === false && glow.light.color === 0xff8800 && E.desk2?.collider?.shape === 'box', J([glow, E.desk2.comp]));
   // a lock binds removal (§5), and undoing a create removes: the door refuses the bare undo `locked` (v1's inverses
   // unlocked first). The person is asked "Move anyway?" (editwrites: undo offers through, not unlock); throughLock takes it.
   const u0 = W.call('undo', {});
@@ -331,7 +332,7 @@ console.log('\n7. the text tier — blueprints, blueprint_place, look() (mcpl), 
   // without "sha256:" — and the door reads a from without that prefix as a THING id to duplicate: "no thing called…"
   check('blueprint_place (dry): the door answers it would place a copy, and nothing is written (KNOWN BUG: from lacks "sha256:")', !(dry as any).isError && /would place a copy of "Lamp"/.test(txt(dry)) && Object.keys(W.view().entities).length === before, txt(dry));
   const live = await HANDLERS.blueprint_place(ag, { hash: hex.slice(0, 10), x: 5, z: 5 });
-  check('blueprint_place: places a copy 5,5 as one act (KNOWN BUG above)', !(live as any).isError && Object.values(W.view().entities).filter((e: any) => e.comp?.['copy-of']?.from === H && e.comp['copy-of'].key === 'lamp').length === 2, txt(live));
+  check('blueprint_place: places a copy 5,5 as one act (KNOWN BUG above)', !(live as any).isError && Object.values(W.view().entities).filter((e: any) => e?.['copy-of']?.from === H && e['copy-of'].key === 'lamp').length === 2, txt(live));
   const r = await HANDLERS.blueprint_place(ag, { hash: 'ffff' });
   check('blueprint_place: an unknown hash is an error that points at blueprints', (r as any).isError && /blueprints tool lists them/.test(txt(r)));
   const look = ag.look();

@@ -21,6 +21,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { ENGINE, scratch } from "./common.ts";
+import { CAPACITY } from "../../shared/protocol/authority.js";
 const require = createRequire(import.meta.url);
 
 const argv = process.argv.slice(2);
@@ -231,7 +232,7 @@ await C("D5", "a physics thing that flies says who may punt it (visitor); world 
   W.call("set", { id: "@world", component: "capacity", value: { things: 100 } }); W.call("set", { id: "@world", component: "script-settings", value: { max: 3 } });
   W.call("set", { id: "@world", component: "default-role", value: { role: "builder" } });
   const w = W.state().entities["@world"].c, ss = w["script-settings"];
-  return [stored(W, "p", "physics")?.who === "visitor" && w.capacity?.guestThings === 200 && ss?.budget === 600 && ss?.rate === 6 && ss?.run === true && ss?.install === "builder" && W.call("set", { id: "@world", component: "default-role", value: { role: "none" } }).ok,
+  return [stored(W, "p", "physics")?.who === "visitor" && w.capacity?.guestThings === CAPACITY.guestThings && ss?.budget === 600 && ss?.rate === 6 && ss?.run === true && ss?.install === "builder" && W.call("set", { id: "@world", component: "default-role", value: { role: "none" } }).ok,
     [stored(W, "p", "physics"), w.capacity, ss, w["default-role"]]]; });
 await C("D6", "the registry's defaults are the authority's own: script-settings and capacity agree with what it enforces when they're absent", () => {
   const ss = CAT.COMPONENTS["script-settings"].defaults, cap = CAT.COMPONENTS.capacity.defaults;

@@ -164,7 +164,7 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   const line = T(await call("look")).split("\n").find((l) => /\[post\]/.test(l)) ?? "";
   ok(/locked/.test(line) && /edit \{id: "post", set: \{"flags\.lock": false\}\}/.test(line) && /edit \{id: "post", set: \{"flags\.hidden": false\}\}/.test(line) && !/act \{verb: "delete"/.test(line), "AT5 look teaches edit flags.lock / flags.hidden, not act delete", line);
   const un = await call("edit", { id: "post", set: { "flags.lock": false, "flags.hidden": false } }); await sleep(200);
-  ok(!un.isError && !ag.foldRecord("post")?.comp?.lock && !ag.foldRecord("post")?.comp?.hidden, "AT5 …and what it teaches works", T(un)); }
+  ok(!un.isError && !ag.foldRecord("post")?.lock && !ag.foldRecord("post")?.hidden, "AT5 …and what it teaches works", T(un)); }
 
 ag.close(); ann.close();
 console.log(`agenttools: ${pass} pass, ${fail} fail`);

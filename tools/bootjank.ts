@@ -535,7 +535,7 @@ let wideFailed = 0;
 if (WIDE) {
   console.log(`\n${bold("── far-city gate")}`);
   const fetched = new Set(resources.map((r) => r.name.split("?")[0]));
-  const base = (lib: string) => lib.split("/").at(-1)!.slice(0, 60);
+  const base = (model: string) => lib.split("/").at(-1)!.slice(0, 60);
   for (const lib of FAR_LIBS) {
     const hit = fetched.has(base(lib));
     if (hit) wideFailed++;

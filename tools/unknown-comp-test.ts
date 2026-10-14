@@ -62,7 +62,7 @@ const LIB = 'eidoverse/assets/models/crate_large_red.glb';
 
 // ---- 1. the door -------------------------------------------------------------
 console.log('\n1. the door (shared/protocol/authority.js, a scratch world)');
-const W = scratchWorld('unknowncomp').seed({ crate: { lib: LIB, pos: [1, 0, 1] } });
+const W = scratchWorld('unknowncomp').seed({ crate: { model: LIB, pos: [1, 0, 1] } });
 const r0 = W.call('set', { id: 'crate', component: TYPE, value: D1 });
 check('an unknown type is accepted: the set is not refused', r0.ok === true, JSON.stringify(r0.refused));
 check('…and the door says it knows no evaluator for it (a note, not a refusal)',
@@ -70,15 +70,15 @@ check('…and the door says it knows no evaluator for it (a note, not a refusal)
 
 // ---- 2. the fold -------------------------------------------------------------
 console.log('\n2. the fold (the door\'s state, as the view clients read)');
-check('folded verbatim into the view: entities[id].comp[type]', jeq(W.rec('crate')?.comp?.[TYPE], D1), JSON.stringify(W.rec('crate')?.comp));
+check('folded verbatim into the view: entities[id][type]', jeq(W.rec('crate')?.[TYPE], D1), JSON.stringify(W.rec('crate')?.comp));
 const snapView = structuredClone(W.view());  // what a late joiner adopts (the cut's view)
 const views: any[] = [];                     // the views after each later write, as a joined client folds them
 const r1 = W.call('set', { id: 'crate', component: TYPE, value: D2 });
 views.push(structuredClone(W.view()));
-check('a second set of the same type REPLACES the data wholesale (no merge)', r1.ok && jeq(W.rec('crate').comp?.[TYPE], D2), JSON.stringify(W.rec('crate').comp));
+check('a second set of the same type REPLACES the data wholesale (no merge)', r1.ok && jeq(W.rec('crate')?.[TYPE], D2), JSON.stringify(W.rec('crate').comp));
 const r2 = W.call('delete', { id: 'crate', component: TYPE });
 views.push(structuredClone(W.view()));
-check('delete {id, component} removes it, and the thing stays', r2.ok && W.rec('crate') && W.rec('crate').comp?.[TYPE] === undefined, JSON.stringify(W.rec('crate')));
+check('delete {id, component} removes it, and the thing stays', r2.ok && W.rec('crate') && W.rec('crate')?.[TYPE] === undefined, JSON.stringify(W.rec('crate')));
 
 // ---- 3. the browser realizer ----------------------------------------------------
 console.log('\n3. the browser realizer (client/lib/realize/models.js, real bus + state)');
@@ -99,7 +99,7 @@ const obj = stub.entities.get('crate');
 check('the entity realizes normally (an unknown comp blocks nothing)', !!obj && typeof obj.traverse === 'function',
   `entities.get('crate') = ${obj}`);
 check('the bag is mirrored into the comps map evaluators read, verbatim', jeq(stub.comps.get('crate')?.[TYPE], D1), JSON.stringify(stub.comps.get('crate')));
-check('…as a CLONE, never an alias of the folded state', stub.comps.get('crate')?.[TYPE] !== S.state.st.entities.crate?.comp?.[TYPE]);
+check('…as a CLONE, never an alias of the folded state', stub.comps.get('crate')?.[TYPE] !== S.state.st.entities.crate?.[TYPE]);
 check('the join announces it on the bus like any component ({id, type, data})',
   heard.some((h) => h.id === 'crate' && h.type === TYPE && jeq(h.data, D1)), JSON.stringify(heard));
 
@@ -125,7 +125,7 @@ stub.comps.delete('crate');
 
 // ---- 4. the inspector --------------------------------------------------------
 console.log('\n4. the inspector (shared/editschema.js)');
-const ent = { lib: 'x.glb', pos: [0, 0, 0], yaw: 0, comp: { [TYPE]: D1 } };
+const ent = { model: 'x.glb', pos: [0, 0, 0], yaw: 0, [TYPE]: D1 };
 const schema = inspectSchema(ent, 'crate');
 const f = fieldAt(schema, `comp.${TYPE}`);
 check('an unknown type gets a raw-JSON field in the Components group', f?.t === 'json' && jeq(JSON.parse(f.value), D1), JSON.stringify(f));
@@ -138,12 +138,12 @@ check('…and an emptied field removes it (delete)', jeq(del.ops, [{ verb: 'dele
   // through the real authority: the unknown type is kept verbatim (the door notes it knows no evaluator), replaced
   // wholesale by the edit, removed by the delete
   const W = scratchWorld('unknowncomp').seed({ crate: ent });
-  check('the authority keeps an unknown component verbatim', jeq(W.rec('crate').comp?.[TYPE], D1), JSON.stringify(W.rec('crate').comp));
+  check('the authority keeps an unknown component verbatim', jeq(W.rec('crate')?.[TYPE], D1), JSON.stringify(W.rec('crate').comp));
   const r1 = W.send(set.ops[0]);
   check('…the edit replaces it wholesale (no merge with the old keys), and the door says it knows no evaluator for it',
-    r1.ok && jeq(W.rec('crate').comp?.[TYPE], { points: 'east' }) && (r1.notes ?? []).some((n: any) => n.component === TYPE && /isn't a component/.test(n.why)), JSON.stringify([r1.refused, r1.notes, W.rec('crate').comp]));
+    r1.ok && jeq(W.rec('crate')?.[TYPE], { points: 'east' }) && (r1.notes ?? []).some((n: any) => n.component === TYPE && /isn't a component/.test(n.why)), JSON.stringify([r1.refused, r1.notes, W.rec('crate').comp]));
   const r2 = W.send(del.ops[0]);
-  check('…and the delete removes it', r2.ok && W.rec('crate').comp?.[TYPE] === undefined, JSON.stringify([r2.refused, W.rec('crate').comp]));
+  check('…and the delete removes it', r2.ok && W.rec('crate')?.[TYPE] === undefined, JSON.stringify([r2.refused, W.rec('crate').comp]));
 }
 
 rmSync(SCRATCH, { recursive: true, force: true });

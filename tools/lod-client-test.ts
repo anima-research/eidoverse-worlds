@@ -108,7 +108,7 @@ const spawnAt = (id: string, z: number, variant = true) => {
   door('create', { id, model: lib(id), components: { transform: { pos: [0, 0, z] } } });
 };
 const obj = (id: string) => stub.entities.get(id);
-const loadsOf = (id: string) => stub.loads.filter((l: any) => l.lib === lib(id));
+const loadsOf = (id: string) => stub.loads.filter((l: any) => l.model === lib(id));
 const drain = () => { for (let i = 0; i < 50 && M.promoteTailPending() > 0; i++) M.drainPromoteTail(); };
 const res = () => M.residencyDebug();
 
@@ -205,7 +205,7 @@ async function heldSwap(id: string, dep: null | ((id: string) => void)) {
   stub.setHold(true);
   door('set', { id, component: 'transform', value: { pos: [0, 0, 10] }, merge: true });   // walked toward: 10m < the inner edge (29m) → the sweep wants full
   M.residencySweep(); await settle();
-  const h = stub.held.find((x: any) => x.lib === lib(id));
+  const h = stub.held.find((x: any) => x.model === lib(id));
   // per-placement: other placements may legitimately re-tier in the same beat (a browser that
   // regained KTX2 re-asks its far ones), so count THIS lib's loads, not the global counter
   check(`${id}: the FULL load is in flight, held`, !!h && h.tier === 'full' && loadsOf(id).length === 2 && res().retiers > retiersBefore,

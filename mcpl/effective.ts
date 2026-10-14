@@ -78,7 +78,7 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
     const parent = resolve(m.to, view, nowMs, depth - 1, seen);
     if (!parent.ok) return parent;                     // the FIRST unsupported link names itself
 
-    const sock = m.slot ? view.entity(m.to)?.comp?.sockets?.[m.slot] : undefined;
+    const sock = m.slot ? view.entity(m.to)?.sockets?.[m.slot] : undefined;
     if (sock && typeof sock.part === "string") {
       // The seat rides a model part the browser animates from loaded geometry
       // (part rest transforms) this side does not possess. Refusing is the
@@ -136,9 +136,9 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
   const scale = e.scale ?? 1;
   if (!Number.isFinite(yaw0) || !Number.isFinite(scale)) return { ok: false, why: "non-finite folded transform", link: id };
 
-  const motion = e.comp?.motion;
+  const motion = e?.motion;
   if (motion && motion.type != null) {
-    const pv = (e.comp as any)?.pivot?.pos; const s3 = Array.isArray((e as any).scale3) ? (e as any).scale3 : [scale, scale, scale];
+    const pv = (e as any)?.pivot?.pos; const s3 = Array.isArray((e as any).scale3) ? (e as any).scale3 : [scale, scale, scale];
     const r = evalWholeMotion({ pos: e.pos, yaw: yaw0, ...(Array.isArray(pv) && pv.length === 3 ? { pivot: pv.map((v: number, i: number) => v * s3[i]) } : {}) }, motion, nowMs);   // the same hinge the renderer swings about
     if (!r.ok) return { ok: false, why: r.why, link: id };
     // part-carrying motion returns the base unmoved (parts swing, roots

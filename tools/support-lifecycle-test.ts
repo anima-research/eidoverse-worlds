@@ -102,7 +102,7 @@ const HTTP = URL_.replace(/^ws/, "http").replace(/\/ws$/, "");
  *  this rather than assuming a model is centred on its origin — the crate is,
  *  the watchtower emphatically is not (its deck sits 5m off in x and 32m off
  *  in z), and a hardcoded drop point silently tests empty air. */
-async function geom(lib: string) {
+async function geom(model: string) {
   const r = await fetch(`${HTTP}/geom?lib=${encodeURIComponent(lib)}`);
   if (!r.ok) throw new Error(`/geom ${lib}: ${r.status}`);
   return r.json() as Promise<any>;

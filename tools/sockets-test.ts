@@ -14,7 +14,7 @@ const check = (name: string, ok: boolean, detail: any = '') => { if (ok) pass++;
 const near = (a: number[], b: number[], e = 1e-5) => a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < e);
 
 // a rocket: a crate with one seat, built through the inspector the way a person would
-const W = scratchWorld('sockets').seed({ rocket: { lib: 'crate', pos: [0, 0, 0] } });
+const W = scratchWorld('sockets').seed({ rocket: { model: 'crate', pos: [0, 0, 0] } });
 const ent = () => W.rec('rocket');
 const C = () => ent()?.comp ?? {};
 const plan = (edits: Record<string, any>) => editOps(ent(), 'rocket', edits);
@@ -150,7 +150,7 @@ check('one meaning of phase: 0 is the positive extreme for a pendulum (θ = amp�
   && near1(cycleOf({ type: 'bob', amp: 0.3, period: 4, t0: 0 }, 1000).swing, 1) && near1(cycleOf(pend, 0).phase, 0) && near1(cycleOf(pend, 0).swing, 1));
 const orb = travelOf({ pos: [0, 0, 0], yaw: 0 }, { type: 'orbit', radius: 2, degPerSec: 36, center: [0, 0, 0], t0: 0 }, 5000);
 check('speed and turn of an orbit: 2πr/period m/s, its angular rate', near1(orb.speed, 2 * Math.PI * 2 / 10, 1e-3) && near1(orb.turn, 36 * Math.PI / 180, 1e-3), orb);
-const sg = socketSignals({ comp: { 'motion:plank': pend, params: { lean: 0.3, junk: 'x' } }, sock: { part: 'plank' }, base: { pos: [0, 0, 0], yaw: 0 }, nowMs: 500, input: { throttle: 4, steer: -0.5, aimYaw: 0.2 } });
+const sg = socketSignals({ 'motion:plank': pend, params: { lean: 0.3, junk: 'x' }, sock: { part: 'plank' }, base: { pos: [0, 0, 0], yaw: 0 }, nowMs: 500, input: { throttle: 4, steer: -0.5, aimYaw: 0.2 } });
 check('a socket riding a part reads that part\'s motion; input is clamped; params come through', near1(sg.phase, 0.25) && sg.throttle === 1 && sg.steer === -0.5 && sg.aimYaw === 0.2 && sg['param.lean'] === 0.3 && !('param.junk' in sg), sg);
 
 // describeBody: one line for people and agents
@@ -178,12 +178,12 @@ check('the Sockets card has rows for anchor, pose, leave by, who, input, look an
 const cplan = (edits: any) => editOps(W.rec('car'), 'car', edits);
 r = W.sendAll(cplan({ 'sockets.back|anchor': 'feet', 'sockets.back|leaveBy': 'menu', 'sockets.back|input|look': 'locked', 'sockets.back|look|yaw|0': -45, 'sockets.back|look|up': 'socket',
   'sockets.back|reach': '{"rightHand": {"at": [0.3, 1, 0.2], "vr": "track"}}' }).ops);
-const back = bodyOf(W.rec('car').comp.sockets.back);
-check('…the planner writes them and the door takes them', r.ok && back.anchor === 'feet' && back.leaveBy === 'menu' && back.input.look === 'locked' && back.look.yaw[0] === -45 && back.look.up === 'socket' && back.reach.rightHand?.vr === 'track', [r.refused, W.rec('car').comp.sockets.back]);
+const back = bodyOf(W.rec('car').sockets.back);
+check('…the planner writes them and the door takes them', r.ok && back.anchor === 'feet' && back.leaveBy === 'menu' && back.input.look === 'locked' && back.look.yaw[0] === -45 && back.look.up === 'socket' && back.reach.rightHand?.vr === 'track', [r.refused, W.rec('car').sockets.back]);
 const planBad = cplan({ 'sockets.back|input|move': 'drive' });
 check('…and refuses what the door would, in its words (a second driver)', planBad.ops.length === 0 && planBad.errors.some((e: string) => /only one socket may drive/.test(e)), planBad.errors);
 r = W.sendAll(cplan({ 'sockets.back|anchor': 'root', 'sockets.back|leaveBy': 'any' }).ops);
-check('…and a default leaves the key out', r.ok && W.rec('car').comp.sockets.back.body.anchor === undefined && W.rec('car').comp.sockets.back.body.leaveBy === undefined, W.rec('car').comp.sockets.back);
+check('…and a default leaves the key out', r.ok && W.rec('car').sockets.back.body.anchor === undefined && W.rec('car').sockets.back.body.leaveBy === undefined, W.rec('car').sockets.back);
 
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

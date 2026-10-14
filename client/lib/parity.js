@@ -7,6 +7,7 @@ import { state } from './state.js';
 import { kindOf } from './realize/models_field.js';
 import { entities, entityMeta, comps } from './world.js';
 
+import { recordComponents } from '../../shared/protocol/view.js';
 const jstr = (v) => JSON.stringify(v ?? null);
 
 export function foldParity() {
@@ -24,7 +25,7 @@ export function foldParity() {
     if (!legacyIds.has(id)) continue;
     out.checked++;
     const legacyBag = comps.get(id) ?? null;
-    const shadowBag = shadow.entities[id].comp ?? null;
+    const shadowBag = shadow.entities[id] ? recordComponents(shadow.entities[id]) : null;
     if (jstr(legacyBag) !== jstr(shadowBag)) {
       out.compDiffs.push({ id, legacy: legacyBag, shadow: shadowBag });
     }
@@ -36,9 +37,9 @@ export function foldParity() {
       const ent = shadow.entities[id];
       const sceneKind = meta.kind === 'light' ? 'light' : meta.kind === 'mesh' ? 'mesh' : 'model';
       const foldKind = kindOf(ent) === 'empty' ? 'model' : kindOf(ent);
-      if (sceneKind !== foldKind || (foldKind === 'model' && meta.lib !== ent.lib)) {
-        out.identityDiffs.push({ id, legacy: { kind: sceneKind, lib: meta.lib },
-          shadow: { kind: foldKind, lib: ent.lib } });
+      if (sceneKind !== foldKind || (foldKind === 'model' && meta.model !== ent.model)) {
+        out.identityDiffs.push({ id, legacy: { kind: sceneKind, model: meta.model },
+          shadow: { kind: foldKind, model: ent.model } });
       }
     }
   }
@@ -58,7 +59,7 @@ export function foldParity() {
     const want = rel?.to ?? null;
     if (want !== got) { out.parentDiffs.push({ id, legacy: got, shadow: want }); continue; }
     if (rel && got) {
-      const sock = rel.socket ? shadow.entities[rel.to]?.comp?.sockets?.[rel.socket] : null;
+      const sock = rel.socket ? shadow.entities[rel.to]?.sockets?.[rel.socket] : null;
       if (!sock?.part) {
         const off = rel.offset ?? sock?.pos ?? [0, 0, 0];
         const d = Math.hypot(obj.position.x - off[0], obj.position.y - off[1], obj.position.z - off[2]);

@@ -81,17 +81,17 @@ for (const [id, e] of ents) {
   const bad: string[] = []; let titled = 0, lamps = 0; const rawTitles: string[] = [];
   for (const [id, e] of ents) {
     const sec = inspectSchema(e, id).sections;
-    const want = e.lib != null ? String(e.lib) : null;
-    if (!want && e.comp?.light) lamps++;
-    if (sec.lib !== want) bad.push(`${id}: lib ${sec.lib} vs ${want}`);
-    if (sec.libLabel !== (want ? libLabel(want) : e.comp?.light ? 'light' : 'empty') || /\?/.test(sec.libLabel)) bad.push(`${id}: label ${sec.libLabel}`);
+    const want = e.model != null ? String(e.model) : null;
+    if (!want && e?.light) lamps++;
+    if (sec.model !== want) bad.push(`${id}: lib ${sec.model} vs ${want}`);
+    if (sec.libLabel !== (want ? libLabel(want) : e?.light ? 'light' : 'empty') || /\?/.test(sec.libLabel)) bad.push(`${id}: label ${sec.libLabel}`);
     for (const c of sec.list) if (c.part) { titled++; if (/tripo_|_fused_|^mesh_\d/.test(c.title.split(' · ')[1] ?? '')) rawTitles.push(`${id}: ${c.title}`); }
   }
   check(`the header's lib line is the Model component's, on every entity (an Empty says empty, a lamp with no model says light; ${lamps} such lamps)`, bad.length === 0, bad.slice(0, 6).join(' | '));
   check(`no part-scoped card is titled with a generator's node name (${titled} part cards in the corpus)`, rawTitles.length === 0, rawTitles.slice(0, 6).join(' | '));
 }
 {
-  const sw = { lib: 'store/swing.glb', pos: [0, 0, 0], comp: { 'motion:tripo_part_fused_0': { type: 'pendulum', amp: 0.2 }, 'motion:tripo_part_fused_3': { type: 'spin' }, 'motion:seat_plank': { type: 'bob' }, 'motion:mesh7': { type: 'bob' } } };
+  const sw = { model: 'store/swing.glb', pos: [0, 0, 0], 'motion:tripo_part_fused_0': { type: 'pendulum', amp: 0.2 }, 'motion:tripo_part_fused_3': { type: 'spin' }, 'motion:seat_plank': { type: 'bob' }, 'motion:mesh7': { type: 'bob' } };
   const titles = (live: any = {}) => inspectSchema(sw, 's', live).sections.list.filter((c: any) => c.part).map((c: any) => c.title);
   check('part cards: "Pendulum · part 1" for tripo_part_fused_0 (its number + 1), the modeller\'s own word kept ("seat plank"), mesh7 → part 8',
     JSON.stringify(titles()) === JSON.stringify(['Pendulum · part 1', 'Spin · part 4', 'Bob · seat plank', 'Bob · part 8']), JSON.stringify(titles()));
@@ -102,27 +102,27 @@ for (const [id, e] of ents) {
 check(`every entity: a card per component (label and hidden in the header), every card field real, owned once, every field reachable (${cards} cards)`, probs.length === 0, '\n   ' + [...new Set(probs)].slice(0, 15).join('\n   '));
 
 // add / remove: the door requests, and what they DO through the real door
-const crate = { lib: 'store/x.glb', pos: [0, 1, 0], comp: { motion: { type: 'pendulum', axis: 'z', amp: 0.24, period: 3.4, t0: 1 }, lock: true } };
+const crate = { model: 'store/x.glb', pos: [0, 1, 0], motion: { type: 'pendulum', axis: 'z', amp: 0.24, period: 3.4, t0: 1 }, lock: true };
 const v = (set: Record<string, unknown>, e: any = crate) => editOps(e, 'c1', set);
 // a lock covers everything on the thing (b1d9c7dd, R 10-11): motion and light edits go to an UNLOCKED copy; the lock checks keep the locked one
-const open = { ...crate, comp: { motion: crate.comp.motion } };
+const open = { ...crate, motion: crate.motion };
 const through = (set: Record<string, unknown>, e: any = crate) => { const W = scratchWorld('compinspector').seed({ c1: e }); const r = v(set); const res = W.sendAll(r.ops); return { r, res, after: W.rec('c1') }; };
 {
   const a = through({ 'add.Spin': 'arm' }, open);
   check('add.Spin on a part → set motion:arm {spin 36°/s}', JSON.stringify(a.r.ops) === JSON.stringify([{ verb: 'set', args: { id: 'c1', component: 'motion:arm', value: { type: 'spin', degPerSec: 36 } } }]), JSON.stringify(a.r.ops));
-  check('…through the door: the part spins, the whole-entity pendulum is untouched', a.res.ok && a.after.comp['motion:arm']?.type === 'spin' && a.after.comp['motion:arm'].degPerSec === 36 && a.after.comp.motion?.type === 'pendulum', JSON.stringify([a.res.refused, a.after.comp]));
+  check('…through the door: the part spins, the whole-entity pendulum is untouched', a.res.ok && a.after['motion:arm']?.type === 'spin' && a.after['motion:arm'].degPerSec === 36 && a.after.motion?.type === 'pendulum', JSON.stringify([a.res.refused, a.after.comp]));
 }
 check('add.Spin with a whole motion present → refused, says why', v({ 'add.Spin': '' }).ops.length === 0 && /already moves as a whole/.test(v({ 'add.Spin': '' }).errors[0] ?? ''));
 {
   const m = through({ 'remove.motion': null }, open);
-  check('remove.motion → delete motion; through the door it no longer moves', JSON.stringify(m.r.ops) === JSON.stringify([{ verb: 'delete', args: { id: 'c1', component: 'motion' } }]) && m.res.ok && m.after.comp?.motion === undefined, JSON.stringify([m.r.ops, m.res.refused]));
+  check('remove.motion → delete motion; through the door it no longer moves', JSON.stringify(m.r.ops) === JSON.stringify([{ verb: 'delete', args: { id: 'c1', component: 'motion' } }]) && m.res.ok && m.after?.motion === undefined, JSON.stringify([m.r.ops, m.res.refused]));
   const l = through({ 'remove.lock': null });
-  check('remove.lock → delete lock; through the door it is unlocked (any builder may unlock)', JSON.stringify(l.r.ops) === JSON.stringify([{ verb: 'delete', args: { id: 'c1', component: 'lock' } }]) && l.res.ok && l.after.comp?.lock === undefined, JSON.stringify([l.r.ops, l.res.refused]));
+  check('remove.lock → delete lock; through the door it is unlocked (any builder may unlock)', JSON.stringify(l.r.ops) === JSON.stringify([{ verb: 'delete', args: { id: 'c1', component: 'lock' } }]) && l.res.ok && l.after?.lock === undefined, JSON.stringify([l.r.ops, l.res.refused]));
   // step 2 (design §6, revised 10-11: one place per thing): a lamp is a Model with a Light CHILD, a metre up
   const L = through({ 'add.Light': null }, open);
   { const o: any = L.r.ops[0]; const cc = o?.args?.components ?? {};
     check('add.Light on a model → ONE create: a child light a metre up, under c1, with its fields spelled out (write-new-on-edit)', L.r.ops.length === 1 && o.verb === 'create' && o.args.id === 'c1-light' && cc.parent?.to === 'c1' && JSON.stringify(cc.transform?.pos) === '[0,1,0]' && JSON.stringify(cc.light) === JSON.stringify({ color: 0xffd9a0, intensity: 16, range: 10 }), JSON.stringify(L.r.ops)); }
-  check('…through the door the child is lit with exactly those values, under c1', L.res.ok && L.after.comp?.light === undefined, JSON.stringify(L.res));
+  check('…through the door the child is lit with exactly those values, under c1', L.res.ok && L.after?.light === undefined, JSON.stringify(L.res));
 }
 check('Add Component lists blocked entries with a reason; Light and Collider are no longer among them', (() => { const s = inspectSchema(crate, 'c1'); const st = s.sections.add.find((a: any) => a.name === 'Structure'); const ok = (n: string) => s.sections.add.some((a: any) => a.name === n && !a.blocked); return !!st?.blocked && ok('Particles') && ok('Light') && ok('Collider'); })());
 // KNOWN BUG (reported 2026-10-06, not fixed here): guard is merged into lock, but shared/components.js RECORDS
@@ -135,7 +135,7 @@ check('Add Component does not offer Guard as addable (merged into Lock) (KNOWN B
 // the world carries it; the schema read with that list flips the chip amber → blue and the offer moves out of "drafts";
 // a builder's same button is refused by the door
 {
-  registerDraft('hesperus/material', { title: 'Material', summary: 'override its look', category: 'Look', applies: (e: any) => e?.lib != null });
+  registerDraft('hesperus/material', { title: 'Material', summary: 'override its look', category: 'Look', applies: (e: any) => e?.model != null });
   const W = scratchWorld('compinspector').seed({ c1: crate });
   W.call('set', { id: '@world', component: 'roles:bob', value: { role: 'builder' } });
   const liveAt = (mayTrust: boolean) => ({ materials: [], mayTrust, trusted: trustedOf(W.state().entities['@world']?.c) });

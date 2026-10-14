@@ -65,7 +65,7 @@ async function receive(verb:string,args:any) {
  await (agent as any).applyEntry(entry,false);
  return entry;
 }
-const data=()=>agent.entities.get("house")?.comp?.structure;
+const data=()=>agent.entities.get("house")?.structure;
 const cached=(d:any)=>(agent as any).planOf(d);
 async function planned(target:[number,number]) {
  const promise=agent.walkTo(...target,true,1000,0);

@@ -4,7 +4,7 @@
 // (A.applyEntry({verb, args}) of hand-written log entries), which went with the v1 reader.
 //
 //   const { act, seed } = agentOnDoor(agent, "tag");
-//   await seed({ console: { lib, pos: [1, 0, 1], comp: {...} } });      // the world as it stood at join (not live)
+//   await seed({ console: { lib, pos: [1, 0, 1], ... } });      // the world as it stood at join (not live)
 //   await act("set", { id: "console", component: "picture", value }, { who: "antra" });   // a live write, by antra
 //   await act("sky", { hours: 12 }, { at: T0 + 20 * 60e3 });            // …at a chosen door time
 //
@@ -20,6 +20,7 @@ import { enc, encName } from "../shared/protocol/names.js";
 import { qNorm, qFromYaw } from "../shared/rot.js";
 import { makeReplica, stateView } from "../shared/protocol/replica.js";
 
+import { recordComponents } from "../shared/protocol/view.js";
 // any model path the tests name: the lab's measured models where they exist, else one the door can name, unmeasured
 const ANY_MODEL = Object.freeze({ get: (n) => LAB_CATALOGUE.get(n) ?? (typeof n === "string" && n ? { label: n, surfaces: [] } : undefined), list: (q) => LAB_CATALOGUE.list(q) });
 let worldN = 0;
@@ -52,8 +53,8 @@ export function agentOnDoor(agent: any, tag = "agent", { owner = "olive", start 
     seed: async (recs: Record<string, any>) => {
       for (const [id, r] of Object.entries(recs)) {
         const components: any = { transform: { pos: r.pos ?? [0, 0, 0], q: qNorm(r.q) ?? qFromYaw(r.yaw ?? 0), scale: Number.isFinite(r.scale) ? [r.scale, r.scale, r.scale] : [1, 1, 1] } };
-        for (const [k, v] of Object.entries(r.comp ?? {})) components[encName(k)] = v;
-        const res = call("create", { id: enc(id), ...(r.lib ? { model: r.lib } : {}), components });
+        for (const [k, v] of Object.entries(recordComponents(r))) components[encName(k)] = v;
+        const res = call("create", { id: enc(id), ...(r.model ? { model: r.model } : {}), components });
         if (!res.ok) throw new Error(`seed ${id}: ${JSON.stringify(res.refused)}`);
       }
       await sync(false);

@@ -22,22 +22,23 @@ export function near(a, b) {
 }
 
 const POSE = ["pos", "q", "scale", "scale3"];
-// fields the diff reads itself, or that are stamps rather than state
-const OWN = new Set([...POSE, "lib", "kind", "yaw", "parent", "comp", "born", "actor", "ts", "placer"]);
+// fields the diff reads itself (the derived ones, view.js DERIVED), or that are stamps rather than state; every other key on
+// a record is a component (model, parent and the rest sit flat, in the protocol's names)
+const OWN = new Set([...POSE, "model", "kind", "yaw", "parent", "born", "actor", "ts", "placer"]);
+// a component only a rebuild can show: the thing becomes another thing when it changes
+const REBUILDS = new Set(["model", "kind", "mesh"]);
 const NOT_WORLD = new Set(["entities", "recentChat", "chatTotal"]);
 const MAPS = new Set(["roles", "bans", "behaviors"]);
 
 /** One thing's change from `p` to `n` (either may be undefined), appended to `out`. */
 export function diffThing(id, p, n, out) {
   if (!n) { if (p) out.push({ id, what: "gone" }); return; }
-  const other = (r) => Object.keys(r ?? {}).filter((k) => !OWN.has(k));
-  const fresh = !p || (p.lib ?? null) !== (n.lib ?? null) || (p.kind ?? null) !== (n.kind ?? null)
-    || [...new Set([...other(p), ...other(n)])].some((k) => !near(p[k], n[k]));
+  const fresh = !p || [...REBUILDS].some((k) => !near(p[k] ?? null, n[k] ?? null));
   if (fresh) { if (p) out.push({ id, what: "gone" }); out.push({ id, what: "born" }); return; }
   if (POSE.some((k) => !near(p[k], n[k]))) out.push({ id, what: "pose" });
   if (!near(p.parent, n.parent)) out.push({ id, what: "parent" });
-  const pc = p.comp ?? {}, nc = n.comp ?? {};
-  for (const comp of new Set([...Object.keys(pc), ...Object.keys(nc)])) if (!near(pc[comp], nc[comp])) out.push({ id, what: "comp", comp });
+  const comps = (r) => Object.keys(r ?? {}).filter((k) => !OWN.has(k));
+  for (const comp of new Set([...comps(p), ...comps(n)])) if (!near(p[comp], n[comp])) out.push({ id, what: "comp", comp });
 }
 
 export function diffView(prev, next) {

@@ -41,7 +41,7 @@ const redTex = new THREE.DataTexture(null, 2000, 2000, THREE.RedFormat);
 // a compressed texture bills its real mip payloads: 3,000,000 + 600,000 B
 const ktxTex = new THREE.CompressedTexture([{ data: new Uint8Array(3_000_000), width: 2048, height: 2048 }, { data: new Uint8Array(600_000), width: 1024, height: 1024 }], 2048, 2048);
 
-const entity = (id: string, lib: string, ...meshes: any[]) => { const g = new THREE.Group(); g.name = id; g.add(...meshes); scene.add(g); entities.set(id, g); entityMeta.set(id, { lib }); return g; };
+const entity = (id: string, model: string, ...meshes: any[]) => { const g = new THREE.Group(); g.name = id; g.add(...meshes); scene.add(g); entities.set(id, g); entityMeta.set(id, { lib }); return g; };
 const fountainMesh = new THREE.Mesh(box(), new THREE.MeshStandardMaterial({ map: bigTex }));
 const fountain = entity('fountain', 'library/fountain.glb', fountainMesh);
 const ktxMesh = new THREE.Mesh(box(), new THREE.MeshStandardMaterial({ map: ktxTex }));

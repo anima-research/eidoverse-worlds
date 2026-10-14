@@ -25,7 +25,7 @@ const del = (comp: string) => ({ verb: 'delete', args: { id: 's', component: com
 // through the door: the thing as `s` in a fresh world (hung from a frame, so a pendulum has something to swing from),
 // the planned ops sent as ONE request; the world handle comes back for follow-ups
 const door = (ent: any, ops: any[]) => {
-  const W = scratchWorld('needs').seed({ frame: { lib: 'eidoverse/assets/models/frame.glb', pos: [0, 0, 0] } });
+  const W = scratchWorld('needs').seed({ frame: { model: 'eidoverse/assets/models/frame.glb', pos: [0, 0, 0] } });
   W.call('create', { id: 'frame-top', model: 'crate', components: { transform: { pos: [0, 3, 0] } } });   // a measured box above it (the lab catalogue's crate)
   W.seed({ s: { ...ent, parent: { to: 'frame-top', offset: [0, -2.5, 0] } } });
   const res = W.sendAll(ops);
@@ -35,7 +35,7 @@ const addList = (ent: any) => inspectSchema(ent, 's').sections.add;
 
 console.log('a need with one sensible default is added for you, as real door ops');
 {
-  const swing = { lib: LIB, pos: [0, 0, 0], yaw: 0, actor: 'o', ts: 1 };
+  const swing = { model: LIB, pos: [0, 0, 0], yaw: 0, actor: 'o', ts: 1 };
   check('the record says it: Reactions needs Pendulum', J(RECORDS.Reactions.needs) === '["Pendulum"]');
   const r = addOps(swing, 's', 'Reactions');
   check('add.Reactions on a thing that does not move: a Pendulum at rest, then the reaction (the swing recipe)',
@@ -46,23 +46,23 @@ console.log('a need with one sensible default is added for you, as real door ops
   // door's reactions take {<action>: {kind: 'toggle'|'set'|'impulse', …}} and refuse a handler with no kind
   // ("reactions.push: no handler kind 'undefined'"), so Add Component ▸ Reactions is refused in every world.
   check('…the door takes the recipe as ONE request (KNOWN BUG: v1 handler shape refused)', d.res.ok, J(d.res.refused));
-  check('…written: the thing now has both, and the need is met (rides on the KNOWN BUG above)', d.after.comp?.motion?.type === 'pendulum' && !!d.after.comp?.reactions?.push && needMet('Pendulum', d.after), J(d.after?.comp));
+  check('…written: the thing now has both, and the need is met (rides on the KNOWN BUG above)', d.after?.motion?.type === 'pendulum' && !!d.after?.reactions?.push && needMet('Pendulum', d.after), J(d.after?.comp));
   const use = d.W.call('use', { id: 's', action: 'push' });
-  check('…and a use pushes it: the door\'s push swings the pendulum (amp > 0) (rides on the KNOWN BUG above)', use.ok && d.W.rec('s').comp?.motion?.amp > 0, J([use.refused, d.W.rec('s')?.comp?.motion]));
+  check('…and a use pushes it: the door\'s push swings the pendulum (amp > 0) (rides on the KNOWN BUG above)', use.ok && d.W.rec('s')?.motion?.amp > 0, J([use.refused, d.W.rec('s')?.motion]));
   const e = editOps(swing, 's', { 'add.Reactions': null });
   check('editOps carries the same two ops (one call = one request = one undo step on every surface)', e.ops.length === 2 && !e.asks && J(e.ops) === J(r.ops), J(e));
   const entry = addList(swing).find((a: any) => a.name === 'Reactions');
   check('the Add Component entry is offered, not blocked, and says what it brings', !!entry && !entry.blocked && /Pendulum/.test(entry.brings ?? ''), J(entry));
-  const pend = { ...swing, comp: { motion: { type: 'pendulum', amp: 0.2, period: 3, t0: 5 } } };
+  const pend = { ...swing, motion: { type: 'pendulum', amp: 0.2, period: 3, t0: 5 } };
   const pr = addOps(pend, 's', 'Reactions');
   check('with a whole-entity pendulum already there, nothing extra is added (just the reaction)', pr.ops.length === 1 && pr.ops[0].args.component === 'reactions', J(pr));
-  const partOnly = { ...swing, comp: { 'motion:seat': { type: 'pendulum', amp: 0.2 } } };
+  const partOnly = { ...swing, 'motion:seat': { type: 'pendulum', amp: 0.2 } };
   check('a PART\'s pendulum does not meet it (reactions push the whole entity) — the default is added', addOps(partOnly, 's', 'Reactions').ops[0]?.args.component === 'motion');
 }
 
 console.log('a need that requires a choice asks, and sends nothing until answered');
 {
-  const spinner = { lib: LIB, pos: [0, 0, 0], yaw: 0, comp: { motion: { type: 'spin', degPerSec: 30, t0: 5 } }, actor: 'o', ts: 1 };
+  const spinner = { model: LIB, pos: [0, 0, 0], yaw: 0, motion: { type: 'spin', degPerSec: 30, t0: 5 }, actor: 'o', ts: 1 };
   const r = addOps(spinner, 's', 'Reactions');
   check('add.Reactions on a spinning thing: no ops, no error, a choice naming the need and the option',
     r.ops.length === 0 && r.errors.length === 0 && r.choice?.need === 'Pendulum' && r.choice.options.length === 1 && r.choice.options[0].v === 'replace' && /already moves as a whole \(spin\)/.test(r.choice.prompt), J(r));
@@ -75,7 +75,7 @@ console.log('a need that requires a choice asks, and sends nothing until answere
   // the motion half alone (the need's own op) through the door: the spin is gone and the need met — this half doesn't
   // ride on the reactions handler shape (the KNOWN BUG above)
   const half = door(spinner, [ans.ops[0]]);
-  check('…sent to the door, the spin is replaced by the pendulum and the need is met', half.res.ok && needMet('Pendulum', half.after) && half.after.comp?.motion?.type === 'pendulum' && half.after.comp.motion.degPerSec === undefined, J([half.res.refused, half.after?.comp]));
+  check('…sent to the door, the spin is replaced by the pendulum and the need is met', half.res.ok && needMet('Pendulum', half.after) && half.after?.motion?.type === 'pendulum' && half.after.motion.degPerSec === undefined, J([half.res.refused, half.after?.comp]));
   const entry = addList(spinner).find((a: any) => a.name === 'Reactions');
   check('the Add Component entry is offered and marked as asking', !!entry && !entry.blocked && entry.asks === 'Pendulum', J(entry));
 }
@@ -92,19 +92,19 @@ console.log('a need that cannot be met in place is explained (a Model comes from
     const entry = addList(empty).find((a: any) => a.name === name);
     check(`…its Add Component entry is listed BLOCKED with that reason (blocked entries show why)`, !!entry && /needs a model/.test(entry.blocked ?? ''), J(entry));
   }
-  const lamp = { pos: [0, 2, 0], comp: { light: { color: 1, intensity: 2, range: 3 } }, actor: 'o', ts: 1 };
+  const lamp = { pos: [0, 2, 0], light: { color: 1, intensity: 2, range: 3 }, actor: 'o', ts: 1 };
   check('a lamp with no model has no model either', /needs a model/.test(addOps(lamp, 'L', 'Collider').errors[0] ?? ''));
-  const col = addOps({ lib: LIB, pos: [0, 0, 0] }, 's', 'Collider');
+  const col = addOps({ model: LIB, pos: [0, 0, 0] }, 's', 'Collider');
   check('on a model the Model need is met: add.Collider just adds it', J(col.ops) === J([set('collider', { shape: 'exact' })]), J(col));
-  const cd = door({ lib: LIB, pos: [0, 0, 0] }, col.ops);
-  check('…and the door writes it', cd.res.ok && cd.after.comp?.collider?.shape === 'exact', J([cd.res.refused, cd.after?.comp]));
+  const cd = door({ model: LIB, pos: [0, 0, 0] }, col.ops);
+  check('…and the door writes it', cd.res.ok && cd.after?.collider?.shape === 'exact', J([cd.res.refused, cd.after?.comp]));
   check('addable() without {unmet} is unchanged (needs met only)', !addable(componentsOf(empty).components).some((a: any) => a.name === 'Collider') && addable(componentsOf(empty).components, { unmet: true }).find((a: any) => a.name === 'Collider')?.unmet?.[0] === 'Model');
 }
 
 console.log('removing something another component needs names the dependant and offers remove-both');
 {
   // a swing: its reactions are the door's own impulse handler (so the door holds what it removes)
-  const swing = { lib: LIB, pos: [0, 0, 0], yaw: 0, comp: { motion: { type: 'pendulum', amp: 0, period: 3.5, t0: 5 }, reactions: { push: { kind: 'impulse', strength: 0.5 } } }, actor: 'o', ts: 1 };
+  const swing = { model: LIB, pos: [0, 0, 0], yaw: 0, motion: { type: 'pendulum', amp: 0, period: 3.5, t0: 5 }, reactions: { push: { kind: 'impulse', strength: 0.5 } }, actor: 'o', ts: 1 };
   const r = removeOps(swing, 's', 'motion');
   check('remove.motion under a Reactions: nothing sent, a confirm naming Reactions', r.ops.length === 0 && r.errors.length === 0 && r.confirm?.dependants?.[0]?.type === 'Reactions' && /Reactions needs this Pendulum — remove both\?/.test(r.confirm.prompt), J(r));
   const e = editOps(swing, 's', { 'remove.motion': null });
@@ -112,15 +112,15 @@ console.log('removing something another component needs names the dependant and 
   const both = editOps(swing, 's', { 'remove.motion': 'both' });
   check('"both": the dependant goes first, then the pendulum — one call', J(both.ops) === J([del('reactions'), del('motion')]), J(both));
   const d = door(swing, both.ops);
-  check('…sent to the door as one request, both are gone', d.res.ok && !d.after.comp?.motion && !d.after.comp?.reactions, J([d.res.refused, d.after?.comp]));
+  check('…sent to the door as one request, both are gone', d.res.ok && !d.after?.motion && !d.after?.reactions, J([d.res.refused, d.after?.comp]));
   const u = d.W.call('undo', {});
-  check('…and the door\'s undo brings both back (one act)', u.ok && d.W.rec('s').comp?.motion?.type === 'pendulum' && d.W.rec('s').comp?.reactions?.push?.kind === 'impulse', J([u.refused, d.W.rec('s')?.comp]));
+  check('…and the door\'s undo brings both back (one act)', u.ok && d.W.rec('s')?.motion?.type === 'pendulum' && d.W.rec('s')?.reactions?.push?.kind === 'impulse', J([u.refused, d.W.rec('s')?.comp]));
   check('removing the Reactions itself needs no confirm', J(removeOps(swing, 's', 'reactions').ops) === J([del('reactions')]));
-  const parts = { ...swing, comp: { ...swing.comp, 'motion:seat': { type: 'pendulum', amp: 0.1 } } };
+  const parts = { ...swing, ...swing.comp, 'motion:seat': { type: 'pendulum', amp: 0.1 } };
   check('removing a PART\'s pendulum is not something Reactions needs — no confirm', removeOps(parts, 's', 'motion:seat').ops.length === 1);
-  const noPend = { ...swing, comp: { reactions: swing.comp.reactions, lock: true } };
+  const noPend = { ...swing, reactions: swing.reactions, lock: true };
   check('a need that was already unmet is not "broken" by an unrelated removal', removeOps(noPend, 's', 'lock').ops.length === 1);
-  check('remove.motion on a thing without reactions: one delete motion', J(removeOps({ ...swing, comp: { motion: swing.comp.motion } }, 's', 'motion').ops) === J([del('motion')]));
+  check('remove.motion on a thing without reactions: one delete motion', J(removeOps((({ reactions: _r, ...rest }) => rest)(swing), 's', 'motion').ops) === J([del('motion')]));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

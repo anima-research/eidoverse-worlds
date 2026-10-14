@@ -18,7 +18,7 @@ import { registerDraft } from '../../shared/drafts.js';
 
 export const MAT = 'hesperus/material';
 // Add Component offers it where this reader applies (every thing with meshes), as a draft or, once trusted here, in the main list
-registerDraft(MAT, { title: 'Material', summary: "override its look: colour, roughness, metalness, glow, opacity (a draft this client reads)", category: 'Look', blank: {}, applies: (ent) => ent?.lib != null || (ent?.comp?.mesh && typeof ent.comp.mesh === 'object') });
+registerDraft(MAT, { title: 'Material', summary: "override its look: colour, roughness, metalness, glow, opacity (a draft this client reads)", category: 'Look', blank: {}, applies: (ent) => ent?.model != null || (ent?.mesh && typeof ent.mesh === 'object') });
 export const slotKey = (name, i = 0) => {
   const k = String(name ?? '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
   return /^[a-z]/.test(k) ? k : `slot-${i}${k ? `-${k}` : ''}`.slice(0, 48);

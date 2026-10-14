@@ -29,9 +29,9 @@ const W = () => H.state.st.entities;
 const comps = (id: string) => JSON.stringify(H.W.state().entities[id].c);
 
 H.W.seed({
-  shelf: { lib: LIB, pos: [4, 1, -2], q: qNorm([0.1, 0.4, 0, 0.91]), scale: 2 },
-  book: { lib: LIB, pos: [1, 1.5, 1], yaw: 0.5, scale: 0.8 },
-  lamp: { lib: LIB, pos: [0, 0, 3], yaw: 0, parent: { to: "book", offset: [0, 0.3, 0], yaw: 0 } },
+  shelf: { model: LIB, pos: [4, 1, -2], q: qNorm([0.1, 0.4, 0, 0.91]), scale: 2 },
+  book: { model: LIB, pos: [1, 1.5, 1], yaw: 0.5, scale: 0.8 },
+  lamp: { model: LIB, pos: [0, 0, 3], yaw: 0, parent: { to: "book", offset: [0, 0.3, 0], yaw: 0 } },
 });
 H.sync();
 // the realized objects: what revertPose reads when a refused or cancelled gesture puts a thing back
@@ -68,7 +68,7 @@ console.log("\nrefusals send nothing; a lock is the door's question:");
   H.choose = "through";
   commitEdit("book", "parent.to", "shelf");
   await H.flush();
-  check("…answering \"move anyway\" re-sends the same request throughLock: parented, lock kept, one act", W().book.parent?.to === "shelf" && W().book.comp?.lock === true && H.sent.at(-1).args.throughLock === true && Edits.stacks().undo.length === stack + 1, JSON.stringify(H.sent.at(-1)));
+  check("…answering \"move anyway\" re-sends the same request throughLock: parented, lock kept, one act", W().book.parent?.to === "shelf" && W().book?.lock === true && H.sent.at(-1).args.throughLock === true && Edits.stacks().undo.length === stack + 1, JSON.stringify(H.sent.at(-1)));
   const asked = H.asked.length;
   await Edits.undo();   // the lock binds the undo too: I'm asked again, and "move anyway" (still H.choose) takes it back
   H.W.call("delete", { id: "book", component: "lock" }); H.sync();

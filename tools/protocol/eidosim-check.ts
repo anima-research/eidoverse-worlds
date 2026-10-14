@@ -23,7 +23,7 @@ const schedules = (mkf: () => any, T: number) => {
   return [j, t, c, s].map((x) => J(S.simSnapshot(x)));
 };
 { // the reviewer's case: a rests at tick 24 while b still flies toward it
-  const ents = { a: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1 }, b: { pos: [3, 0, 0], yaw: 0, lib: "crate", scale: 1 } };
+  const ents = { a: { pos: [0, 0, 0], yaw: 0, model: "crate", scale: 1 }, b: { pos: [3, 0, 0], yaw: 0, model: "crate", scale: 1 } };
   const L = [{ id: "a", p: [0, 0.3, 0], v: [0, 0, 0] }, { id: "b", p: [-3, 0.3, 0], v: [2.2, 6, 0.01], w: [0.5, 1, 2] }];
   for (const T of [36, 120, 200]) { const [j, t, c, s] = schedules(() => mk(ents, L), T);
     ok(j === t && t === c && c === s, `S1 one rests while another flies: every schedule agrees at tick ${T}`, { jumpEqTicks: j === t, cloneEqTicks: c === t, splitEqTicks: s === t }); }
@@ -42,7 +42,7 @@ const schedules = (mkf: () => any, T: number) => {
   ok(bad === 0, `S1 fuzz: ${runs} multi-body flights, every schedule agrees`, { bad });
 }
 { // S2: spin is capped by the law, like v (review #2): a corner never moves faster than 20 m/s at launch
-  const ents = { a: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1 } };
+  const ents = { a: { pos: [0, 0, 0], yaw: 0, model: "crate", scale: 1 } };
   const sim = mk(ents, [{ id: "a", p: [0, 0.6, 0], v: [0, 0, 0], w: [1000, 0, 0] }]); const b = sim.bodies.a;
   const rim = Math.hypot(...b.w) * Math.hypot(...b.half);
   ok(rim <= 20 + 1e-9 && rim > 19.9, "S2 a 1000 rad/s throw is held to a 20 m/s rim speed", { w: b.w, rim });
@@ -52,8 +52,8 @@ const schedules = (mkf: () => any, T: number) => {
   ok(J(slow.bodies.a.w) === J([0, 6, 0]), "S2 a gentle spin is kept as sent", slow.bodies.a.w);
 }
 { // S3: a mirrored thing is the same box (review #5): scale [-2,1,1] collides as [2,1,1]
-  const a = mk({ m: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1, scale3: [-2, 1, 1] } }, [{ id: "m", p: [0, 1, 0], v: [0, 0, 0] }]);
-  const b = mk({ m: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1, scale3: [2, 1, 1] } }, [{ id: "m", p: [0, 1, 0], v: [0, 0, 0] }]);
+  const a = mk({ m: { pos: [0, 0, 0], yaw: 0, model: "crate", scale: 1, scale3: [-2, 1, 1] } }, [{ id: "m", p: [0, 1, 0], v: [0, 0, 0] }]);
+  const b = mk({ m: { pos: [0, 0, 0], yaw: 0, model: "crate", scale: 1, scale3: [2, 1, 1] } }, [{ id: "m", p: [0, 1, 0], v: [0, 0, 0] }]);
   ok(J(a.bodies.m.half) === J(b.bodies.m.half) && a.bodies.m.half[0] === 0.5, "S3 negative scale sizes the collider by its magnitude", { mirrored: a.bodies.m.half, plain: b.bodies.m.half });
 }
 { // S4: culling statics a flyer can't reach is exact (review #4): bit-identical to a world holding every static, every
@@ -65,7 +65,7 @@ const schedules = (mkf: () => any, T: number) => {
   let seed = 11; const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
   const run = (opt: any) => { let bad = 0; seed = 11;
     for (let n = 0; n < 12; n++) { const ents: any = {}, L: any[] = [], ns = 20 + Math.floor(rnd() * 150), R = 2 + rnd() * 10;
-      for (let i = 0; i < ns; i++) ents["s" + i] = { pos: [rnd() * 2 * R - R, rnd() < 0.2 ? rnd() * 1.5 : 0, rnd() * 2 * R - R], yaw: rnd() * 6.28, lib: ["crate", "crate", "plank", "slab"][Math.floor(rnd() * 4)], scale: 1 };
+      for (let i = 0; i < ns; i++) ents["s" + i] = { pos: [rnd() * 2 * R - R, rnd() < 0.2 ? rnd() * 1.5 : 0, rnd() * 2 * R - R], yaw: rnd() * 6.28, model: ["crate", "crate", "plank", "slab"][Math.floor(rnd() * 4)], scale: 1 };
       const k = 1 + Math.floor(rnd() * 4);
       for (let i = 0; i < k; i++) { const p = ents["s" + i].pos; L.push({ id: "s" + i, p: [p[0], 0.5 + rnd() * 3, p[2]], v: [rnd() * 16 - 8, rnd() * 8, rnd() * 16 - 8], w: [rnd() * 8 - 4, rnd() * 8 - 4, rnd() * 8 - 4] }); }
       const terr = rnd() < 0.5 ? { amplitude: 0 } : { amplitude: 0.4, seed: n };
@@ -80,12 +80,12 @@ const schedules = (mkf: () => any, T: number) => {
 }
 { // S5: a stamped sphere is a sphere (it rolls), not its model's box. Bars set before the first run.
   const SPH = { type: "sphere", radius: 0.2, pos: [0, 0.2, 0] };
-  const flat = mk({ b: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1, shape: SPH } }, [{ id: "b", p: [0, 0.5, 0], v: [0, 0, 0] }]);
+  const flat = mk({ b: { pos: [0, 0, 0], yaw: 0, model: "crate", scale: 1, shape: SPH } }, [{ id: "b", p: [0, 0.5, 0], v: [0, 0, 0] }]);
   for (let k = 0; k < 400 && !flat.bodies.b.resting; k++) S.advanceSim(flat, flat.tick + 1);
   ok(flat.bodies.b.resting && flat.bodies.b.shape === "sphere" && Math.abs(flat.bodies.b.c[1] - 0.2) < 0.006, "S5a a dropped sphere rests with its centre at its radius", { c: flat.bodies.b.c, shape: flat.bodies.b.shape });
   // launched sliding at v0 with no spin on flat ground: friction spins it up until it rolls, at 5/7·v0 with w·r = v.
   // the same thing as a box just stops (μg ≈ 5.9 m/s², from 3 m/s in ~0.5 s)
-  const slide = (shape: any, T: number) => { const sim = mk({ b: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1, ...(shape ? { shape } : {}) } },
+  const slide = (shape: any, T: number) => { const sim = mk({ b: { pos: [0, 0, 0], yaw: 0, model: "crate", scale: 1, ...(shape ? { shape } : {}) } },
       [{ id: "b", p: [0, 0.001, 0], v: [3, 0, 0] }]); S.advanceSim(sim, T);
     const b = sim.bodies.b; return { v: b.v[0], w: b.w[2], resting: b.resting, x: b.c[0] }; };
   const r = slide(SPH, 5);   // ~0.17 s: rolling by then; rolling resistance slows it after
@@ -95,12 +95,12 @@ const schedules = (mkf: () => any, T: number) => {
   ok(Math.abs(bx.v) < 0.05 && bx.x < 1, "S5c the same thing as a box slides to a stop", bx);
   // ...and then it slows by its rolling resistance (0.05: μr·g/1.4 = 0.350 m/s²) and comes to rest, rather than rolling
   // until the runaway backstop holds the world in flight
-  { const s5 = mk({ b: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1, shape: SPH } }, [{ id: "b", p: [0, 0.001, 0], v: [3, 0, 0] }]);
+  { const s5 = mk({ b: { pos: [0, 0, 0], yaw: 0, model: "crate", scale: 1, shape: SPH } }, [{ id: "b", p: [0, 0.001, 0], v: [3, 0, 0] }]);
     S.advanceSim(s5, 30); const v30 = s5.bodies.b.v[0]; S.advanceSim(s5, 60); const a = (v30 - s5.bodies.b.v[0]) / (30 * 0.033);
     let k = 60; while (!s5.bodies.b.resting && k < 1000) S.advanceSim(s5, ++k);
     ok(Math.abs(a - 0.05 * 9.81 / 1.4) / (0.05 * 9.81 / 1.4) < 0.1 && s5.bodies.b.resting && k * 0.033 < 15,
       "S5e a rolling ball slows by its rolling resistance and comes to rest", { decel: a, restsAfter_s: k * 0.033, at: s5.bodies.b.c }); }
-  const ents = { a: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1, shape: SPH }, c: { pos: [1, 0, 0], yaw: 0, lib: "crate", scale: 1 } };
+  const ents = { a: { pos: [0, 0, 0], yaw: 0, model: "crate", scale: 1, shape: SPH }, c: { pos: [1, 0, 0], yaw: 0, model: "crate", scale: 1 } };
   const L = [{ id: "a", p: [-2, 1, 0], v: [3, 2, 0], w: [0, 0, -4] }];
   for (const T of [40, 120]) { const [j, t, c, s2] = schedules(() => mk(ents, L), T);
     ok(j === t && t === c && c === s2, `S5d spheres: every schedule agrees at tick ${T}`); }
@@ -130,7 +130,7 @@ const schedules = (mkf: () => any, T: number) => {
 }
 { // S8 stage 2: what flies knocks what rests. A dynamic thing at rest is a sleeping body the engine wakes on contact; it
   // flies under the launch that woke it and rests as that launch's. A static-kind one is a collider and never moves.
-  const sc = (kind: any) => ({ a: { pos: [2, 0, 0], yaw: 0, lib: "crate", scale: 1, ...(kind ? { kind } : {}) }, b: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1, kind: "dynamic" } });
+  const sc = (kind: any) => ({ a: { pos: [2, 0, 0], yaw: 0, model: "crate", scale: 1, ...(kind ? { kind } : {}) }, b: { pos: [0, 0, 0], yaw: 0, model: "crate", scale: 1, kind: "dynamic" } });
   const L = [{ id: "b", p: [-1, 0.6, 0], v: [6, 1, 0] }];   // mk numbers launches seq 1..
   const run = (kind: any) => { const s2: any = mk(sc(kind), L); let woke: any = null;
     for (let t = 1; t <= 600; t++) { S.advanceSim(s2, t); if (!woke && s2.bodies.a && !s2.bodies.a.resting) woke = { t, seq: s2.bodies.a.seq };
@@ -141,8 +141,8 @@ const schedules = (mkf: () => any, T: number) => {
   let seed = 3; const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
   let bad = 0, sched = 0, knocked = 0;
   for (let n = 0; n < 8; n++) { const ents: any = {}, Ls: any[] = [], ns = 10 + Math.floor(rnd() * 50), R = 2 + rnd() * 4;
-    for (let i = 0; i < ns; i++) ents["s" + i] = { pos: [rnd() * 2 * R - R, 0, rnd() * 2 * R - R], yaw: rnd() * 6.28, lib: "crate", scale: 1, ...(rnd() < 0.7 ? { kind: "dynamic" } : {}) };
-    for (const [k, y] of [["st1", 0], ["st2", 0.5], ["st3", 1]] as const) ents[k] = { pos: [0, y, 0], yaw: 0, lib: "crate", scale: 1, kind: "dynamic" };
+    for (let i = 0; i < ns; i++) ents["s" + i] = { pos: [rnd() * 2 * R - R, 0, rnd() * 2 * R - R], yaw: rnd() * 6.28, model: "crate", scale: 1, ...(rnd() < 0.7 ? { kind: "dynamic" } : {}) };
+    for (const [k, y] of [["st1", 0], ["st2", 0.5], ["st3", 1]] as const) ents[k] = { pos: [0, y, 0], yaw: 0, model: "crate", scale: 1, kind: "dynamic" };
     for (let i = 0; i < 2; i++) { const p = ents["s" + i].pos; Ls.push({ id: "s" + i, p: [p[0], 1, p[2]], v: [-p[0] * 2 + rnd() - 0.5, 2, -p[2] * 2 + rnd() - 0.5], w: [rnd() * 4 - 2, rnd() * 4 - 2, rnd() * 4 - 2] }); }
     const a = mk(ents, Ls), b = mk(ents, Ls); let div = false;
     for (let t = 1; t <= 200; t++) { S._cull.off = true; S.advanceSim(a, t); S._cull.off = false; S.advanceSim(b, t); if (!div && J(S.simSnapshot(a)) !== J(S.simSnapshot(b))) { bad++; div = true; } }
@@ -151,20 +151,20 @@ const schedules = (mkf: () => any, T: number) => {
   ok(bad === 0 && sched === 0 && knocked >= 6, "S8 crate fields: culled = whole world every tick, one jump = ticks, and things get knocked", { bad, sched, knocked, of: 8 });
 }
 { // S9 (review of 8377ec52 #7): a woken thing is the launch's that reached it, not the newest launch anywhere
-  const ents: any = { vase: { pos: [2, 0, 0], yaw: 0, lib: "crate", scale: 1, kind: "dynamic" }, a: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1, kind: "dynamic" }, c: { pos: [0, 0, 40], yaw: 0, lib: "crate", scale: 1, kind: "dynamic" } };
+  const ents: any = { vase: { pos: [2, 0, 0], yaw: 0, model: "crate", scale: 1, kind: "dynamic" }, a: { pos: [0, 0, 0], yaw: 0, model: "crate", scale: 1, kind: "dynamic" }, c: { pos: [0, 0, 40], yaw: 0, model: "crate", scale: 1, kind: "dynamic" } };
   const sim: any = mk(ents, [{ id: "a", p: [-1, 0.6, 0], v: [6, 1, 0] }, { id: "c", p: [0, 3, 40], v: [0, 4, 0] }]);   // seq 1: at the vase; seq 2: 40 m away
   let seqAt = -1; for (let t = 1; t <= 60 && seqAt < 0; t++) { S.advanceSim(sim, t); if (sim.bodies.vase && !sim.bodies.vase.resting) seqAt = sim.bodies.vase.seq; }
   ok(seqAt === 1, "S9 a crate knocked by A's throw is A's (launch 1), not C's toss 40 m away (2)", { seqAt }); }
 { // S10 (#8): a scaled sphere sits on the ground (its centre scales with its radius)
   const SPH = { type: "sphere", radius: 0.11, pos: [0, 0.11, 0] }, ys: number[] = [];
-  for (const sc of [[1, 1, 1], [3, 1, 1], [1, 3, 1]]) { const sim: any = S.emptySim(), view = { entities: { b: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: sc[1], scale3: sc, shape: SPH, kind: "dynamic" } }, terrain: { amplitude: 0 } };
+  for (const sc of [[1, 1, 1], [3, 1, 1], [1, 3, 1]]) { const sim: any = S.emptySim(), view = { entities: { b: { pos: [0, 0, 0], yaw: 0, model: "crate", scale: sc[1], scale3: sc, shape: SPH, kind: "dynamic" } }, terrain: { amplitude: 0 } };
     S.simEntry(sim, { seq: 0, ts: 0, verb: "epoch", args: { sim: S.SIM_ID, tickMs: 33, boxes: { crate: BOX } } }, view);
     S.simEntry(sim, { seq: 1, ts: 0, verb: "launch", args: { id: "b", p: [0, 0, 0], v: [0, 0, 0] } }, view);
     let k = 0; while (!sim.bodies.b.resting && k < 500) S.advanceSim(sim, ++k); ys.push(sim.bodies.b.p[1]); }
   ok(ys.every((y) => Math.abs(y) < 0.006), "S10 a sphere at scale 1, [3,1,1] and [1,3,1] rests with its bottom on the ground", ys); }
 { // S11 (#2): a fast ball doesn't pass through a resting knockable wall
   const THIN = [[-0.05, 0, -1], [0.05, 1, 1]];
-  const run = (kind: any) => { const sim: any = S.emptySim(), view = { entities: { wall: { pos: [0, 0, 0], yaw: 0, lib: "thin", scale: 1, ...(kind ? { kind } : {}) }, ball: { pos: [-3, 0, 0], yaw: 0, lib: "crate", scale: 1, shape: { type: "sphere", radius: 0.1, pos: [0, 0.1, 0] } } }, terrain: { amplitude: 0 } };
+  const run = (kind: any) => { const sim: any = S.emptySim(), view = { entities: { wall: { pos: [0, 0, 0], yaw: 0, model: "thin", scale: 1, ...(kind ? { kind } : {}) }, ball: { pos: [-3, 0, 0], yaw: 0, model: "crate", scale: 1, shape: { type: "sphere", radius: 0.1, pos: [0, 0.1, 0] } } }, terrain: { amplitude: 0 } };
     S.simEntry(sim, { seq: 0, ts: 0, verb: "epoch", args: { sim: S.SIM_ID, tickMs: 33, boxes: { thin: THIN, crate: BOX } } }, view);
     S.simEntry(sim, { seq: 5, ts: 0, verb: "launch", args: { id: "ball", p: [-3, 0.4, 0], v: [20, 0, 0] } }, view);
     for (let k = 1; k <= 15; k++) S.advanceSim(sim, k); return sim; };
@@ -172,7 +172,7 @@ const schedules = (mkf: () => any, T: number) => {
   ok(st.bodies.ball.p[0] < 0 && dy.bodies.ball.p[0] < 0.5 && !!dy.bodies.wall, "S11 a 20 m/s ball stops at a 10 cm wall, static or knockable (and knocks the knockable one)", { static: st.bodies.ball.p[0], dynamic: dy.bodies.ball.p[0], wallMoved: !!dy.bodies.wall }); }
 { // S11 (Covenant IV, review physics.md #11b): a CASCADE advanced with a JSON round trip between every tick equals the
   // straight advance, and no state number is ever -0 (JSON drops the sign: a -0 would diverge on the first round trip).
-  const ents: any = {}; for (let i = 0; i < 24; i++) ents["d" + i] = { pos: [i * 0.7, 0, 0], yaw: 0, lib: "crate", scale: 1, kind: "dynamic" };
+  const ents: any = {}; for (let i = 0; i < 24; i++) ents["d" + i] = { pos: [i * 0.7, 0, 0], yaw: 0, model: "crate", scale: 1, kind: "dynamic" };
   const Ls = [{ id: "d0", p: [-1, 0.6, 0], v: [7, 1.5, 0], w: [0, 0, -3] }];
   const a = mk(ents, Ls), b = mk(ents, Ls); let diverged = -1, negZero = 0, woken = 0;
   const scan = (x: any) => { if (typeof x === "number") { if (Object.is(x, -0)) negZero++; } else if (x && typeof x === "object") for (const v of Object.values(x)) scan(v); };

@@ -10,9 +10,9 @@ const stem = (lib) => String(lib).split('/').pop().replace(/\.glb$/i, '').replac
 export function nameOf(id) {
   const rec = state.st?.entities?.[id];
   if (!rec && !entities.has(id) && !comps.has(id)) return null;
-  const L = comps.get(id)?.label ?? rec?.comp?.label;
+  const L = comps.get(id)?.label ?? rec?.label;
   if (typeof L === 'string' && L.trim()) return `“${L.trim().slice(0, 40)}”`;
-  const lib = rec?.lib;
+  const lib = rec?.model;
   return lib ? `the ${stem(lib)}` : 'that thing';
 }
 /** A door refusal for a person. */
