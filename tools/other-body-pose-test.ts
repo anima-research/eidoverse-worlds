@@ -63,6 +63,7 @@ check("replace sends the whole pose, and a replace with nothing left is a releas
     ["clearPose with an empty name", () => EW.clearPose("")],
     ["an argument after the options", () => EW.pose(null, { replace: true }, "someone" as any)],
     ["a name where the animation goes", () => EW.animate("someone" as any)],
+    ["a list where the animation goes", () => EW.animate([{ dur: 1, tracks: {} }] as any)],
     ["an animation's replace that isn't true or false", () => EW.animate({ dur: 1, tracks: {}, replace: "yes" } as any)],
   ];
   const slipped = refused.filter(([, f]) => !threw(f)).map(([what]) => what);
