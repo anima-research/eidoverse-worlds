@@ -830,6 +830,16 @@ globalThis.whyIsItSilent = () => {
   return { ...s, detail: a };
 };
 
+// The console's options for a verb that can act on someone else: an object,
+// or a name alone as the target. Destructuring a name found no target, so a
+// pose or release meant for someone else landed on the caller, silently.
+function consoleOptions(verb, opts) {
+  if (opts == null) return {};
+  if (typeof opts === 'string') return { target: opts };
+  if (typeof opts !== 'object') throw new TypeError(`${verb}: the second argument is { replace, target }, or a target's name`);
+  return opts;
+}
+
 const EW = globalThis.EW = {
   me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus,
   skyArgs, sendVerb, setPosable, get posable() { return posable(); },
@@ -837,18 +847,21 @@ const EW = globalThis.EW = {
   // per bone is [x,y,z,w] or {q, t, s} (shared/humanoid.js poseChannels).
   //   EW.pose({ leftUpperArm: [...] })          only these bones, over what you hold; null releases one
   //   EW.pose({ ... }, { replace: true })       the WHOLE pose: every bone not named goes back to normal
-  //   EW.pose({ ... }, { target: 'mythos' })    ask someone else (their client decides)
+  //   EW.pose({ ... }, { target: 'mythos' })    ask someone else (their client decides);
+  //   EW.pose({ ... }, 'mythos')                a name alone is the target too
   //   EW.pose(null)  /  EW.clearPose()          release the whole pose; with a target, theirs
   //   EW.clearPose('mythos')
   //   EW.animate(anim, { replace, target })     one-off animation; merge plays over your pose and any
   //                                             other animation, replace ends them first
-  pose: (bones, { replace = false, target = null } = {}) => {
+  pose: (bones, opts) => {
+    const { replace = false, target = null } = consoleOptions('EW.pose', opts);
     if (target) return sendPuppet(target, puppetPose(bones, replace));
     myState.pose = bones == null ? null : mergePose(replace ? null : myState.pose, bones);
     return myState.pose;
   },
   clearPose: (target = null) => { if (target) sendPuppet(target, puppetPose(null)); else myState.pose = null; },
-  animate: (data, { replace = data?.replace === true, target = null } = {}) => {   // replace may ride in the data too
+  animate: (data, opts) => {
+    const { replace = data?.replace === true, target = null } = consoleOptions('EW.animate', opts);   // replace may ride in the data too
     const a = { ...data, replace: !!replace };
     if (target) return sendPuppet(target, { anim: a });
     if (replace) myState.pose = null;
