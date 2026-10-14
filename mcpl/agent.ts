@@ -795,10 +795,11 @@ export class WorldAgent {
             // posed BY someone = authored. merge: only the bones sent, over an
             // authored held pose (null releases one); otherwise the pose is
             // theirs whole, and an empty one releases.
-            // Say what the request asked of this body, as the browser's hint
-            // does: whether it leaves a pose held or released it, and any
-            // animation. A request that carried no pose and no animation (a
-            // knock-over has its own line above) says nothing.
+            // Say what the request leaves this body holding, as the browser's
+            // hint does: a pose, or its pose released, whether by the pose it
+            // carried or by a replacing animation, which ends a held pose
+            // too; and any animation. A request that carried no pose and no
+            // animation (a knock-over has its own line above) says nothing.
             let posed: string | null = null;
             if (msg.pose) {
               const next = msg.merge ? mergePose(this.heldPoseAuthored ? this.heldPose : null, msg.pose)
@@ -808,7 +809,10 @@ export class WorldAgent {
             }
             if (msg.anim) {
               const anim = { ...msg.anim, replace: (msg.anim as { replace?: boolean }).replace !== false };
-              if (anim.replace) { this.heldPose = null; this.heldPoseAuthored = false; }
+              if (anim.replace) {
+                if (this.heldPoseAuthored && this.heldPose) posed = "released your pose";
+                this.heldPose = null; this.heldPoseAuthored = false;
+              }
               this.ws?.send(JSON.stringify({ type: "anim", ...anim }));
             }
             if (posed || msg.anim) this.onEvent?.({ ts: Date.now(), kind: "say", who: msg.by,

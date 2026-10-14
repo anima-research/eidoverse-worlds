@@ -148,6 +148,13 @@ try {
   heard.length = 0;
   poser.puppet(held.name, { pose: {}, anim: { dur: 1, tracks: { head: [{ t: 0, q: [0, 0, 0, 1] }] } } });
   check("a release with an animation is told as both", await until(() => heard.includes("(released your pose, with an animation)")), heard.join(" | "));
+  // A replacing animation ends a held pose too, and the body is told so.
+  await tool(poser, "pose", { bones: arm, target: held.name });
+  const posedFirst = await until(() => eq(held.heldPose, arm));
+  heard.length = 0;
+  EW.animate({ dur: 1, tracks: { head: [{ t: 0, q: [0, 0, 0, 1] }] } }, { target: held.name, replace: true });
+  check("a replacing animation that ends a held pose is told as a release", posedFirst
+    && await until(() => heard.includes("(released your pose, with an animation)")) && held.heldPose == null, heard.join(" | "));
 
   // Knocked over while kneeling: the fall starts from the kneel, as a
   // browser's does (its sim starts from the bones it draws). The ragdoll's

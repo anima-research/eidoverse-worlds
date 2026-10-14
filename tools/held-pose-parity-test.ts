@@ -192,25 +192,32 @@ try {
     check("...and the hand is drawn where they put it", moved > 0.01, `${(moved * 1000).toFixed(1)} mm`);
   }
 
-  // The ragdoll's start: a held hips drop moves onto the root, as the
-  // browser's bakeHipsIntoRoot moves it, so the fall begins where the body
-  // was drawn. Same fall with and without the held drop; only the root moves.
-  for (const path of ["vrm1.vrm", "vrm0.vrm"]) {
-    const t = [0.1, -0.3, 0.05], yaw = 0.6;
-    const starts: any[] = [];
-    for (const pose of [null, { hips: { t } }]) {
-      const body = await HeadlessBody.create(base, path);
-      if (!body) throw new Error("the headless sim is unavailable");
-      body.begin({ x: 2, z: -1, yaw, pose, rootY: 0.5 });
-      starts.push(body.rd.p.hips.clone());
-    }
+  // The ragdoll's start: every joint where the browser draws the body as its
+  // own sim starts, limp, its held rotations laid and its hips drop moved
+  // onto the root (avatar.js bakeHipsIntoRoot). A VRM0 body falls in the
+  // half-turned frame three-vrm gives it, as the browser's does.
+  for (const path of ["vrm1.vrm", "vrm0.vrm", "turned-vrm0.vrm"]) {
+    const t = [0.1, -0.3, 0.05], yaw = 0.6, rootY = 0.5;
+    const held = { hips: { q: turn(1, 0, 0, 40), t }, spine: turn(0, 0, 1, 25), leftUpperArm: turn(0, 1, 1, 70), rightLowerLeg: turn(1, 0, 0, -60) };
+    const body = await HeadlessBody.create(base, path);
+    if (!body) throw new Error("the headless sim is unavailable");
+    body.begin({ x: 2, z: -1, yaw, pose: held, rootY });
     const { vrm, root } = await loadVrm(files.get("/library/" + path)!);
-    root.rotation.y = yaw; root.updateMatrixWorld(true);
+    root.position.set(2, rootY, -1); root.rotation.y = yaw; root.updateMatrixWorld(true);
     const hips = vrm.humanoid.getNormalizedBoneNode("hips");
-    const drop = new THREE.Vector3(...t).applyMatrix3(new THREE.Matrix3().setFromMatrix4(hips.parent.matrixWorld));
-    const moved = new THREE.Vector3().subVectors(starts[1], starts[0]);
-    check(`${path}: a fall from a held hips drop starts where the browser starts it`, moved.distanceTo(drop) < 1e-6,
-      `moved (${moved.toArray().map((v: number) => v.toFixed(4)).join(", ")}), browser (${drop.toArray().map((v: number) => v.toFixed(4)).join(", ")})`);
+    root.position.add(new THREE.Vector3(...t).applyMatrix3(new THREE.Matrix3().setFromMatrix4(hips.parent.matrixWorld)));   // the bake
+    drawHeld(vrm, Object.fromEntries(Object.entries(held).map(([k, v]: [string, any]) => [k, k === "hips" ? v.q : v])), { limp: true });
+    root.updateMatrixWorld(true);
+    let worst = 0, where = "", compared = 0;
+    for (const [j, p] of Object.entries(body.rd.p) as [string, any][]) {
+      const drawn = vrm.humanoid.getRawBoneNode(j);
+      if (!drawn) continue;
+      const gap = p.distanceTo(drawn.getWorldPosition(new THREE.Vector3()));
+      compared++;
+      if (gap > worst) { worst = gap; where = j; }
+    }
+    check(`${path}: a fall from a held pose starts every joint where the browser draws it`, compared >= 10 && worst < 1e-5,
+      `${compared} joints, worst ${(worst * 1000).toFixed(4)} mm (${where})`);
   }
 
   // An agent's own reach body is kept and posed again for each solve

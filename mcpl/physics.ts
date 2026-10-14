@@ -313,9 +313,11 @@ export class HeadlessBody {
     // realParent carries the NON-HUMANOID chains -- hair, and now wings.
     // Without it makeAvatar drops any bone that is not in its humanoid PARENT
     // table, which is every one of them.
+    // vrm0: three-vrm's half-turn as the pivot the bones hang from, so a
+    // VRM0 body faces, holds its pose and falls in the browser's frame.
     const hp = (P as any).__hairParent;
-    this.av = hp ? m.rig.makeAvatar(P, { realParent: { ...(m.rig as any).PARENT, ...hp } })
-      : m.rig.makeAvatar(P);
+    this.av = hp ? m.rig.makeAvatar(P, { vrm0: this.vrm0, realParent: { ...(m.rig as any).PARENT, ...hp } })
+      : m.rig.makeAvatar(P, { vrm0: this.vrm0 });
   }
 
   /** null when physics is unavailable for this process or this VRM. */
@@ -368,12 +370,11 @@ export class HeadlessBody {
     // A held pose that lowers the hips (kneeling) hands its drop to the root,
     // as the browser does before its own sim (avatar.js bakeHipsIntoRoot):
     // the fall starts where the body was drawn, not at standing height. The
-    // drop is in the frame the normalized hips moves in, vrm.scene, which
-    // for a VRM0 body is turned half round; this stand-in has no such pivot.
+    // drop is in the frame the normalized hips moves in: the pivot, vrm.scene,
+    // turned half round for a VRM0 body.
     const hipsT = poseChannels(opts.pose?.hips)?.t;
     if (hipsT) {
       const drop = new this.m.THREE.Vector3(hipsT[0], hipsT[1], hipsT[2]);
-      if (this.vrm0) drop.set(-drop.x, drop.y, -drop.z);
       this.av.root.position.add(drop.applyMatrix3(new this.m.THREE.Matrix3().setFromMatrix4(this.av.pivot.matrixWorld)));
       this.av.root.updateMatrixWorld(true);
     }
