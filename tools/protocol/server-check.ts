@@ -184,8 +184,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ag.verb = () => { throw new Error("a world's building tool must not fire-and-forget"); };
   const sp = await HANDLERS.create(ag, { model: "test/cup.glb", place: { at: [2, 2] }, id: "agentcup" }, {} as any, "create");
   ok(!sp.isError && /created \[agentcup\]/.test(sp.content[0].text), "S5 the agent's create waits for the authority and says what it made", sp.content[0].text);
-  const rm = await HANDLERS.remove(ag, { id: "cup" }, {} as any, "remove");
-  ok(rm.isError && /locked/.test(rm.content[0].text), "S5 the agent's remove of a locked thing comes back as an error naming the lock (PARITY (d)1)", rm.content[0].text);
+  const rm = await HANDLERS.act(ag, { verb: "delete", args: { id: "cup" } }, {} as any, "act");
+  ok(rm.isError && /locked/.test(rm.content[0].text), "S5 the agent's act delete of a locked thing comes back as an error naming the lock (PARITY (d)1)", rm.content[0].text);
   const dr = await HANDLERS.act(ag, { verb: "place", args: { id: "agentcup", on: "tbl" } }, {} as any, "act");
   ok(!dr.isError && /"ok": true/.test(dr.content[0].text), "S5 the act tool exposes the protocol's vocabulary (relational place)", dr.content[0].text.slice(0, 200));
   const un0 = await HANDLERS.act(ag, { verb: "undo", args: {} }, {} as any, "act");
@@ -310,7 +310,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   await oz.connect(); for (let i = 0; i < 40 && !oz.replica?.active; i++) await sleep(50);
   ok((await ann.req("set", { id: "@world", component: `roles:${oz.replica?.you}`, value: { role: "owner" } })).ok, "CM4 (Ann makes the agent Oz an owner)");
   const nb2 = vic.of("moderated").length;
-  const ban = await HANDLERS.ban(oz, { who: "Zed", reason: "test" }, {} as any, "ban");
+  const ban = await HANDLERS.act(oz, { verb: "ban", args: { who: "Zed", reason: "test" } }, {} as any, "act");   // moderation rides act, by name (10-14)
   ok(!ban.isError && /done/.test(T(ban)), "CM4 the agent bans Zed, who isn't here, by name (it needed a u-… id it had no way to find)", T(ban));
   const back = await client(srv.port, "garden", "Zed", REPLICA);
   ok(!back.snapshot && back.of("error").some((m) => /banned/.test(m.error)), "CM4 …and Zed can't come back", back.msgs.map((m) => m.type)); back.close();
@@ -318,11 +318,11 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(vic.of("moderated").at(-1)?.text === "Oz banned Zed from this world", "CM4 …bystanders were told", vic.of("moderated").slice(nb2));
   const wi = HANDLERS.whois ? await HANDLERS.whois(oz, { name: "zed" }, {} as any, "whois") : { isError: true, content: [{ type: "text", text: "(no whois tool)" }] };
   ok(!wi.isError && new RegExp(`${ZED}: person, visitor here, not here, BANNED`).test(T(wi)), "CM4 the agent's whois tool reads it back", T(wi));
-  const kk = await HANDLERS.kick(oz, { who: "Zed" }, {} as any, "kick");
+  const kk = await HANDLERS.act(oz, { verb: "kick", args: { who: "Zed" } }, {} as any, "act");
   ok(kk.isError && /isn't here/.test(T(kk)), "CM4 kicking someone absent says they aren't here", T(kk));
-  const ub = await HANDLERS.unban(oz, { who: "Zed" }, {} as any, "unban");
+  const ub = await HANDLERS.act(oz, { verb: "unban", args: { who: "Zed" } }, {} as any, "act");
   ok(!ub.isError && await wait(() => vic.of("moderated").some((m) => m.text === "Oz lifted the ban on Zed")), "CM4 …and unban by name works, told to bystanders", [T(ub), vic.of("moderated").slice(-2)]);
-  const nU = vic.of("moderated").length; ok(!(await HANDLERS.unban(oz, { who: "Zed" }, {} as any, "unban")).isError, "CM4 (Oz unbans Zed again)"); await sleep(250);
+  const nU = vic.of("moderated").length; ok(!(await HANDLERS.act(oz, { verb: "unban", args: { who: "Zed" } }, {} as any, "act")).isError, "CM4 (Oz unbans Zed again)"); await sleep(250);
   ok(vic.of("moderated").length === nU, "CM4 …a second unban changes nothing, and tells nobody anything", vic.of("moderated").slice(nU));
   // CM5 a refusal reaches the flight recorder (world_debug, /debug), with the authority's reason
   await vic.req("create", { id: "vics2", model: "test/cup.glb" });

@@ -147,8 +147,8 @@ const reachMsg = feed.find((f) => f.text.includes("reaches toward your shoulder_
 check("the door delivers the reach addressed + tagged",
   reachMsg?.mentioned === true && !!reachMsg?.tags?.includes("eidoverse:reach"), JSON.stringify(reachMsg));
 bystander.releaseReach(null);
-const clearRes = await conn.sendToolsCall("clear_reach", {});
-check("clear_reach lets go in words", JSON.stringify(clearRes).includes("released"), JSON.stringify(clearRes));
+const clearRes = await conn.sendToolsCall("reach", { release: true });
+check("reach {release} lets go in words", JSON.stringify(clearRes).includes("released"), JSON.stringify(clearRes));
 
 console.log("\n━━ activity tool — the agent tunes their own ambient sense ━━");
 const actGet = await conn.sendToolsCall("activity", {});

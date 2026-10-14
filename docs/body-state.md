@@ -97,7 +97,7 @@ This composes two existing limb reaches. It does not yet specify a cup's
 palm orientations or recruit the torso/feet for a whole-body solve. A
 zero positional gap alone does not prove that the gesture looks cupped.
 
-Release one of your own hands or both with `clear_reach` (browser: `/letgo left`,
+Release one of your own hands or both with `reach {release: true, limb?}` (browser: `/letgo left`,
 `/letgo right`, or `/letgo`). Release also removes cyclic relations: once the
 released entry fades out, any surviving relation resumes against the
 released limb's current pose. A cycle cannot indefinitely prevent cleanup.

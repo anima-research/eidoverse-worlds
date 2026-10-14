@@ -327,14 +327,13 @@ console.log('\n7. the text tier — blueprints, blueprint_place, look() (mcpl), 
   check('blueprints {hash: a prefix}: that one record', one.startsWith(`[${hex.slice(0, 12)}] "Lamp"`) && one.split('\n').length === 2, one);
   check('…an unknown prefix says so', /none here starts "zz"/.test(txt(await HANDLERS.blueprints(ag, { hash: 'zz' }))));
   const before = Object.keys(W.view().entities).length;
-  const dry = await HANDLERS.blueprint_place(ag, { hash: hex.slice(0, 10), id: 'lampb', dry: true });
-  // KNOWN BUG (reported 2026-10-06, mcpl/tools.ts blueprint_place): it sends create {from: <hex>} — the library key
-  // without "sha256:" — and the door reads a from without that prefix as a THING id to duplicate: "no thing called…"
-  check('blueprint_place (dry): the door answers it would place a copy, and nothing is written (KNOWN BUG: from lacks "sha256:")', !(dry as any).isError && /would place a copy of "Lamp"/.test(txt(dry)) && Object.keys(W.view().entities).length === before, txt(dry));
-  const live = await HANDLERS.blueprint_place(ag, { hash: hex.slice(0, 10), x: 5, z: 5 });
-  check('blueprint_place: places a copy 5,5 as one act (KNOWN BUG above)', !(live as any).isError && Object.values(W.view().entities).filter((e: any) => e?.['copy-of']?.from === H && e['copy-of'].key === 'lamp').length === 2, txt(live));
-  const r = await HANDLERS.blueprint_place(ag, { hash: 'ffff' });
-  check('blueprint_place: an unknown hash is an error that points at blueprints', (r as any).isError && /blueprints tool lists them/.test(txt(r)));
+  // blueprint_place folded into create {from: "sha256:<hash>"} (10-14): a unique prefix of the hash will do
+  const dry = await HANDLERS.create(ag, { from: `sha256:${hex.slice(0, 10)}`, id: 'lampb', dry: true }, {} as any, 'create');
+  check('create {from: a blueprint prefix} (dry): the door answers it would create, and nothing is written', !(dry as any).isError && /would create/.test(txt(dry)) && Object.keys(W.view().entities).length === before, txt(dry));
+  const live = await HANDLERS.create(ag, { from: `sha256:${hex.slice(0, 10)}`, at: [5, 5] }, {} as any, 'create');
+  check('create {from: a blueprint, at}: places a copy at 5,5 as one act', !(live as any).isError && Object.values(W.view().entities).filter((e: any) => e?.['copy-of']?.from === H && e['copy-of'].key === 'lamp').length === 2, txt(live));
+  const r = await HANDLERS.create(ag, { from: 'sha256:ffff' }, {} as any, 'create');
+  check('create {from}: an unknown hash is an error that points at blueprints', (r as any).isError && /blueprints tool lists them/.test(txt(r)));
   const look = ag.look();
   const line = (id: string) => look.split('\n').find((l: string) => l.includes(`[${id}]`)) ?? '';
   // KNOWN BUG (reported 2026-10-06, mcpl/agent.ts look → shared/blueprint.js copyLine): copyLine reads v1's link

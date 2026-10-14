@@ -716,14 +716,16 @@ console.log('\nREVIEW cea3c3c -- blockers 4 and 6');
   // mcpl/tools.ts (TEL0S_NOTES §24r — one table, one dispatcher, a load-time
   // advertise⇔handle assertion); net-server.ts is a pure transport.
   const ns = readFileSync('mcpl/tools.ts', 'utf8');
-  // B4: DOWN is involuntary; a pilot must not be able to cry wolf. Naming a
-  // tool "REHEARSAL ONLY" in its description did not stop it being callable.
-  check('rehearsal is env-gated and DEFAULT OFF',
-        /REHEARSAL_ENABLED = process\.env\.EIDO_FLIGHT_REHEARSAL === "1"/.test(ns));
-  check('...filtered out of tools/list when off',
-        /REHEARSAL_ENABLED \|\| !REHEARSAL_TOOLS\.has\(t\.name\)/.test(ns));
-  check('...AND refused at dispatch, not merely hidden',
-        /if \(!REHEARSAL_ENABLED\) return text\("no such tool"\)/.test(ns));
+  // B4: DOWN is involuntary; a pilot must not be able to cry wolf. The rehearsal
+  // hooks were tools behind an env gate; since the surface fold (10-14) they are
+  // no tool at all: a bench calls the agent's trusted seam directly (as this
+  // file does), and the tool table never names it.
+  check('no rehearsal tool is declared',
+        !/name: "rehearse_/.test(ns));
+  check('...and the tool table never calls the trusted seam',
+        !/ag\.flightBody(Down|Recovered)\(/.test(ns));
+  check('...the old names are refused with where they went, not aliased',
+        /rehearse_down: "no tool/.test(ns));
 
   // B5: infrastructure must not speak in the resident's voice.
   const ag = readFileSync('mcpl/agent.ts', 'utf8');
@@ -741,8 +743,8 @@ console.log('\nREVIEW cea3c3c -- blockers 4 and 6');
   // B7: the perch economy is not advertised by anything that cannot perform it.
   check('flight_status does not advertise a perch refill',
         !/on a perch\)/.test(ag));
-  check('climb_to does not promise perches either',
-        !/or on a perch \(2\/s\)/.test(ns) && /perches are NOT implemented/i.test(ns));
+  check('the fly mode (climb) does not promise perches either',
+        !/or on a perch \(2\/s\)/.test(ns) && /refilled only on the ground/i.test(ns));
 }
 
 // ------------------------------------------------------- T6: the vigil posture

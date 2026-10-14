@@ -2287,7 +2287,7 @@ export class WorldAgent {
       return fold ? `wings are already folded` : `wings are already open`;
     }
     this.wingsFolded = fold;
-    if (fold) return "wings folded — the vigil posture; take_off refuses until you unfold";
+    if (fold) return "wings folded — the vigil posture; a fly-mode move refuses until you open them (pose {wings: \"open\"})";
     if (!body.canAnimateWings) return "folded-wing posture released — this body has no wings";
     const cap = this.flightAllowed();
     return cap.ok ? "wings open — the sky is available again"
@@ -2300,7 +2300,7 @@ export class WorldAgent {
     const cap = this.flightAllowed();
     if (!cap.ok) return `you cannot fly here — ${cap.why}`;
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
-      return "you are on the ground — take_off first";
+      return "you are on the ground — move {mode: \"fly\"} first";
     }
     const f = this.flight;
     const reach = glideRange(this.flightCfg, f.pos.y);
@@ -2355,7 +2355,7 @@ export class WorldAgent {
     const cap = this.flightAllowed();
     if (!cap.ok) return `you cannot fly here — ${cap.why}`;
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
-      return "you are on the ground — take_off first";
+      return "you are on the ground — move {mode: \"fly\"} first";
     }
     const f = this.flight, cfg = this.flightCfg;
     const from = f.pos.y;
@@ -2897,7 +2897,7 @@ export class WorldAgent {
       return { ok: true, text: `${limbW} reaching toward ${what} — streamed, but unverified: ${why}` };
     }
     if (res.reached) {
-      return { ok: true, text: `${limbW} reaching ${what} (endpoint gap ${Math.round(res.gap * 1000)}mm). The target stays tracked until clear_reach or knockdown; this is an endpoint measurement, not a stability measurement.` };
+      return { ok: true, text: `${limbW} reaching ${what} (endpoint gap ${Math.round(res.gap * 1000)}mm). The target stays tracked until reach {release: true} or knockdown; this is an endpoint measurement, not a stability measurement.` };
     }
     const short = Number.isFinite(res.gap) ? `${res.gap.toFixed(2)}m short` : "not arriving";
     const why = res.bound.length ? ` (limited by: ${res.bound.join(", ")})` : "";
