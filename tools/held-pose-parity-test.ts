@@ -199,7 +199,7 @@ try {
   if (!kept || !fresh) throw new Error("no reach body");
   const hand = (b: any) => b.av.nodes.leftHand.getWorldPosition(new THREE.Vector3());
   fresh.poseAt([1, 0, 2], 0.3, null);
-  const stretched = { hips: { t: [0, -0.3, 0] }, leftUpperArm: { s: [1, 2, 1] } };
+  const stretched = { hips: { t: [0, -0.3, 0] }, leftUpperArm: { s: [1, 2, 1] }, leftLowerArm: { t: [0, 0.04, 0] } };
   kept.poseAt([1, 0, 2], 0.3, stretched);
   const posed = hand(kept);
   const read = await new BodyStateReader(base).read("reach", "bones", undefined, () => ({ who: "reach", avatar: "turned-vrm1.vrm", generation: 1,
