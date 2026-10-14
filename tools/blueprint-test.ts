@@ -203,9 +203,13 @@ const lampWorld = () => {
   const W = scratchWorld('blueprint');
   W.call('set', { id: '@world', component: 'roles:bld', value: { role: 'builder' } });
   W.call('set', { id: '@world', component: 'roles:vis', value: { role: 'visitor' } });
-  // a lamp: a model with a light and a label, and a bulb child (an Empty with its own light) 1.2 m up
+  // a lamp: a model with a label, and a bulb child (an Empty with its own light) 1.2 m up. One place per thing
+  // (authority.js:1213, R 10-11): a model and a light never share an entity, so the LIGHT lives on the bulb —
+  // which is the shape the rule prescribes, and what the door will accept. The record FORMAT can still express
+  // model+light (old blueprints must keep expanding), which is why lampV1 above is left alone and the pure
+  // expand() tests still assert the root's light.
   W.seed({
-    lamp: { lib: LAMP, pos: [7, 0, 7], yaw: 1, comp: { light: { color: 0xffd9a0, intensity: 16, range: 10 }, label: 'a lamp' } },
+    lamp: { lib: LAMP, pos: [7, 0, 7], yaw: 1, comp: { label: 'a lamp' } },
     bulb: { pos: [0, 0, 0], parent: { to: 'lamp', offset: [0, 1.2, 0], yaw: 0 }, comp: { light: { color: 0xffffff, intensity: 4, range: 3 } } },
   });
   return W;
@@ -224,11 +228,11 @@ let HV = '';   // the record's hash, "sha256:<hex>"
   check('the record: the thing and what is attached, root at the origin (its place is the copy\'s), parts keyed, the publisher named',
     rec.name === 'Lamp' && rec.root === 'lamp' && rec.by === 'bld' && J(rec.parts.map((p: any) => p.key)) === J(['lamp', 'bulb'])
     && J(rec.parts[0].components.transform.pos) === J([0, 0, 0]) && !rec.parts[0].components.parent && rec.parts[1].components.parent?.to === 'lamp'
-    && near(rec.parts[1].components.transform.pos, [0, 1.2, 0], 0) && rec.parts[0].components.light.intensity === 16, J(rec));
+    && near(rec.parts[1].components.transform.pos, [0, 1.2, 0], 0) && rec.parts[0].components.label === 'a lamp', J(rec));
   check('…the world is untouched by publishing (the lamp stays where it stands)', near(W.rec('lamp').pos, [7, 0, 7], 0) && W.rec('bulb').parent?.to === 'lamp');
   const again = W.call('publish', { from: 'lamp', name: 'Lamp' }, 'bld');
   check('content-addressed: the same publisher re-publishing the same thing gets the same hash', again.ok && again.notes?.find((n: any) => n.record)?.record === HV, J(again.notes));
-  W.call('set', { id: 'lamp', component: 'light', value: { color: 0xffd9a0, intensity: 24, range: 10 } }, 'bld');
+  W.call('set', { id: 'bulb', component: 'light', value: { color: 0xffffff, intensity: 24, range: 3 } }, 'bld');
   const v2 = W.call('publish', { from: 'lamp', name: 'Lamp' }, 'bld');
   const H2v = v2.notes?.find((n: any) => n.record)?.record;
   check('…meaning moves it: a brighter lamp is a new record beside the first (nothing replaced)', v2.ok && H2v !== HV && Object.keys(libOf(W)).length === 2, J(libOf(W)));
@@ -240,7 +244,7 @@ let HV = '';   // the record's hash, "sha256:<hex>"
   check('create {id, from: hash, at}: one act, the copy\'s parts named from its id', c1.ok && !!E()['lamp-1'] && !!E()['lamp-1-bulb'], J([c1.refused, Object.keys(E())]));
   const root = E()['lamp-1'], bulb = E()['lamp-1-bulb'];
   check('…the root at `at` (pos and turn) with its model, light and label; the bulb an Empty with its light',
-    root.lib === LAMP && near(root.pos, [3, 0, 4], 0) && Math.abs(root.yaw - 0.5) < 1e-6 && root.comp?.light?.intensity === 16 && root.comp?.label === 'a lamp'
+    root.lib === LAMP && near(root.pos, [3, 0, 4], 0) && Math.abs(root.yaw - 0.5) < 1e-6 && root.comp?.label === 'a lamp'
     && bulb.lib === undefined && bulb.comp?.light?.range === 3, J({ root, bulb }));
   check('…the bulb rides the copy\'s root at its LOCAL pose (as the record says)', bulb.parent?.to === 'lamp-1' && near(bulb.pos, [0, 1.2, 0], 0), J(bulb));
   const Wb = worldPose(E(), 'lamp-1-bulb')!;
@@ -263,13 +267,17 @@ let HV = '';   // the record's hash, "sha256:<hex>"
 }
 {
   // a deeper design: a scaled base with a box collider, a tilted half-scale arm, a locked shade with a rotation order
+  // (rotOrder is a CLIENT editor preference riding the comp bag — shared/components.js:299, never a registered
+  // protocol component — so it carries a namespace now that the registry refuses unregistered bare names. Note the
+  // spelling: component names are lowercase-with-hyphens, so a capital in `rotOrder` is escaped to x--<hex> by
+  // encName and lands back as an unregistered bare name — `hesperus/rot-order` passes through as itself.)
   // and a spin, and a glow (an Empty with a light that burns at noon)
   const W = scratchWorld('blueprint');
   const tilt = [0.3826834323650898, 0, 0, 0.9238795325112867];
   W.seed({
     desk: { lib: LAMP, pos: [50, 0, 50], scale: 2, comp: { collider: { shape: 'box' } } },
     arm: { lib: LAMP, parent: { to: 'desk', offset: [0.2, 0.5, 0], q: tilt }, scale: 0.5 },
-    shade: { lib: LAMP, parent: { to: 'arm', offset: [0, 1, 0] }, comp: { rotOrder: 'ZXY', motion: { type: 'spin', axis: 'y', degPerSec: 20 }, lock: true } },
+    shade: { lib: LAMP, parent: { to: 'arm', offset: [0, 1, 0] }, comp: { 'hesperus/rot-order': 'ZXY', motion: { type: 'spin', axis: 'y', degPerSec: 20 }, lock: true } },
     glow: { parent: { to: 'shade', offset: [0, -0.1, 0] }, comp: { light: { color: 0xff8800, intensity: 6, range: 4, day: false } } },
   });
   const p = W.call('publish', { from: 'desk', name: 'Desk' });
@@ -284,7 +292,7 @@ let HV = '';   // the record's hash, "sha256:<hex>"
   check('the tilted arm (root turned 90°, root scale 2; local offset, tilt and scale ½) stands at its composed pose: [10, 1, -2.4], scale 1, tilted',
     near(arm.pos, [10, 1, -2.4]) && Math.abs(arm.scale - 1) < 1e-6 && Math.abs(E[id('arm')!].q[0]) > 0.1, J(arm));
   const shade = E[id('shade')!], glow = E[id('glow')!];
-  check('the shade is locked, spins, and keeps its rotation order', shade.comp?.lock === true && shade.comp?.motion?.type === 'spin' && shade.comp?.rotOrder === 'ZXY', J(shade.comp));
+  check('the shade is locked, spins, and keeps its rotation order', shade.comp?.lock === true && shade.comp?.motion?.type === 'spin' && shade.comp?.['hesperus/rot-order'] === 'ZXY', J(shade.comp));
   check('the glow is an Empty whose light burns at noon; the base collides as a box', glow.lib === undefined && glow.comp?.light?.day === false && glow.comp.light.color === 0xff8800 && E.desk2.comp?.collider?.shape === 'box', J([glow, E.desk2.comp]));
   // a lock binds removal (§5), and undoing a create removes: the door refuses the bare undo `locked` (v1's inverses
   // unlocked first). The person is asked "Move anyway?" (editwrites: undo offers through, not unlock); throughLock takes it.
