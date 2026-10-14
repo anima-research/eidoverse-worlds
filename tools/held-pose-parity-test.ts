@@ -249,6 +249,25 @@ try {
     && Math.abs((kept.armLength("leftHand") ?? NaN) - (fresh.armLength("leftHand") ?? NaN)) < 1e-12,
     `posed ${posed.distanceTo(hand(fresh)).toFixed(3)} m away, then ${hand(kept).distanceTo(hand(fresh)).toExponential(1)} m`);
 
+  // A scale at or below 0 (it would collapse or mirror the bone) is left out,
+  // and the rest of the bone's value is still laid.
+  {
+    const a = await ReachBody.create(base, "turned-vrm1.vrm"), b = await ReachBody.create(base, "turned-vrm1.vrm");
+    if (!a || !b) throw new Error("no reach body");
+    const q = [0, 0, 0.3, Math.sqrt(0.91)];
+    a.poseAt([0, 0, 0], 0, { leftLowerArm: { q, s: [1, -1, 1] }, rightLowerArm: { s: [1, 0, 1] } });
+    b.poseAt([0, 0, 0], 0, { leftLowerArm: q });
+    const off = Math.max(...["leftHand", "rightHand"].map((k) => a.av.nodes[k].getWorldPosition(new THREE.Vector3()).distanceTo(b.av.nodes[k].getWorldPosition(new THREE.Vector3()))));
+    check("a scale at or below 0 is left out, and the bone's rotation is still laid", off < 1e-12, `${off}`);
+    // A rotation of no length normalizes to none in the renderer, replacing
+    // whatever the clip left, and so here.
+    a.poseAt([0, 0, 0], 0, null);
+    a.av.nodes.spine.quaternion.set(q[0], q[1], q[2], q[3]);   // as a clip would leave it
+    a.holdPose({ spine: [0, 0, 0, 0] });
+    check("a rotation of no length is no rotation, as the renderer reads it", a.av.nodes.spine.quaternion.equals(new THREE.Quaternion()),
+      JSON.stringify(a.av.nodes.spine.quaternion.toArray()));
+  }
+
   // An arm's length is the solver's: a held scale on it doesn't lengthen it.
   {
     const scaled = await ReachBody.create(base, "turned-vrm1.vrm");
