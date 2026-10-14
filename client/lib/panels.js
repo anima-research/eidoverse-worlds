@@ -329,7 +329,7 @@ function stepper(value, f, commit) {
   const bindScrub = (src, onClick) => {
   src.addEventListener('pointerdown', (e) => {
     if (disabled || e.button !== 0) return;
-    if ((e.shiftKey || e.ctrlKey || e.metaKey) && wrap.onSelectKey) { e.preventDefault(); wrap.onSelectKey(e); return; }   // Shift/Ctrl-click a value box: select, as on its name (keys: selectExtend)
+    if ((e.shiftKey || e.ctrlKey || e.metaKey) && wrap.onSelectKey) { e.preventDefault(); wrap.onSelectKey(e); return; }   // keys: selectExtend — Shift/Ctrl-click a value box: select, as on its name (keys: selectExtend)
     drag = { id: e.pointerId, x0: e.clientX, lastX: e.clientX, w0: wire, face0: +toFace(wire), dist: 0, armed: false, src, onClick, peers: [] };
   });
   src.addEventListener('pointermove', (e) => {
@@ -356,7 +356,7 @@ function stepper(value, f, commit) {
     drag.cur = w; wire = w; show(w);
     commit(w, { live: true });
     drag.dFace = face - drag.face0;
-    for (const q of drag.peers) q.p.peer.to(e.ctrlKey || e.metaKey ? Math.round(q.face0 + drag.dFace) : q.face0 + drag.dFace, true);
+    for (const q of drag.peers) q.p.peer.to(e.ctrlKey || e.metaKey ? Math.round(q.face0 + drag.dFace) : q.face0 + drag.dFace, true);   // keys: scrub
   });
   const endDrag = (e) => {
     if (!drag || drag.src !== src) return;

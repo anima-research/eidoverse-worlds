@@ -37,7 +37,7 @@ import { COMPONENTS } from '../../../shared/protocol/componentspec.js';
 /** What the realizer builds for a folded entity: a legacy `light`-verb light,
  *  an Empty (a spawn with no lib — PROTOCOL §3.2: an invisible Object3D), or a
  *  model. One answer for planReconcile and models.js alike. */
-// a thing with both a model and a mesh exists only by carry (a v1 import, a fork): it is its model, as the hierarchy and the
+// a thing with both a model and a mesh exists only by carry (an imported old log, a fork): it is its model, as the hierarchy and the
 // Inspector read it (review S3: three readers disagreed)
 export const kindOf = (ent) => (ent?.kind === 'light' ? 'light' : ent?.lib == null ? (isMeshBag(ent?.comp?.mesh) ? 'mesh' : 'empty') : 'model');
 
