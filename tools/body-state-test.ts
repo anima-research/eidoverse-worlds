@@ -83,13 +83,17 @@ try {
   check("the pose tool's kneeling example is read, not refused", knelt.ok && eq(knelt.publishedRotations, kneel) && eq(knelt.unreadableBones, []), knelt.error);
   check("kneeling lowers every joint by 0.3 m and moves none sideways", !!standing.joints && Object.entries(standing.joints).every(([k, j]: [string, any]) =>
     near(knelt.joints?.[k]?.position, [j.position[0], j.position[1] - 0.3, j.position[2]])));
-  // One bone the reader can't use, beside one it can: it costs that bone, never the body.
-  const mixed = { leftUpperArm: [0, 0, 0.2, Math.sqrt(0.96)], rightUpperArm: { q: [0, 0] }, spine: [0, 0, 0, 0] };
+  // Bones the reader can't use (nothing usable, a rotation with no length, a
+  // scale at 0), beside one it can: each costs itself, never the body.
+  const mixed = { leftUpperArm: [0, 0, 0.2, Math.sqrt(0.96)], rightUpperArm: { q: [0, 0] }, spine: [0, 0, 0, 0], leftLowerArm: { s: [1, 0, 1] } };
   owner.setPose(mixed as any); owner.tick();
   await until(() => eq(peer.people.get(owner.name)?.pose?.pose, mixed));
   const partial = await read(peer, { who: owner.name, detail: "bones" });
-  check("an unusable bone is named and dropped, and the rest of the pose is read", partial.ok && eq(partial.unreadableBones, ["rightUpperArm", "spine"])
+  check("an unusable bone is named and dropped, and the rest of the pose is read", partial.ok && eq(partial.unreadableBones, ["rightUpperArm", "spine", "leftLowerArm"])
     && near(partial.joints?.leftUpperArm?.rotation, mixed.leftUpperArm), JSON.stringify({ ok: partial.ok, error: partial.error, unreadable: partial.unreadableBones }));
+  const brief = await read(peer, { who: owner.name });
+  check("...and the summary names them too", eq(brief.unreadableBones, ["rightUpperArm", "spine", "leftLowerArm"])
+    && brief.summary.includes("3 unreadable: rightUpperArm, spine, leftLowerArm"), brief.summary);
   owner.setPose(null); owner.tick();
   await until(() => !peer.people.get(owner.name)?.pose?.pose);
   peer.clip = "sit"; peer.tick();

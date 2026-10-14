@@ -299,22 +299,14 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
 }
 
 /** One bone of a held pose as the stand-ins read it: its channels
- *  (shared/humanoid.js poseChannels), or null when nothing in it is usable,
- *  a rotation with no length included. */
+ *  (shared/humanoid.js poseChannels), or null when the value is one the pose
+ *  tool itself refuses (shared/humanoid.js normalizePoseValue): nothing usable
+ *  in it, a rotation with no length, or a scale with a component at or below
+ *  0, which collapses or mirrors the bone. */
 export function standInChannels(v: unknown) {
   const c = poseChannels(v);
-  return c && !(c.q && Math.hypot(...c.q) < 1e-9) ? c : null;
-}
-
-/** A stand-in node's local matrix with its held scale. The scale acts in the
- *  bone's own rest axes, which a rig rarely aligns with the model's, so it
- *  can't ride Object3D.scale (always in the node's normalized axes); it is
- *  applied after the bone's rotation, to everything hanging from it, as a
- *  raw bone's scale is. Its own position and rotation stay unscaled. */
-function heldUpdateMatrix(this: any) {
-  this.matrix.compose(this.position, this.quaternion, this.scale);
-  if (this.userData.heldScale) this.matrix.multiply(this.userData.heldScale);
-  this.matrixWorldNeedsUpdate = true;
+  if (!c || (c.q && Math.hypot(...c.q) < 1e-9) || (c.s && !c.s.every((x: number) => x > 0))) return null;
+  return c;
 }
 
 /** One headless body's physics: a stand-in skeleton plus whichever Ragdoll is
@@ -365,15 +357,17 @@ export class HeadlessBody {
     this.av.root.updateMatrixWorld(true);
   }
 
-  /** Start a tumble: from standing (pose null) with a topple lean, or from a
-   *  given pose (a drag release) falling free. Everything is WORLD y —
-   *  `rootY`, pins, the seed — and the sim clamps against the live height
-   *  field and registered supports as it runs. */
+  /** Start a tumble: from standing (pose null), or from a given pose (the
+   *  pose held when the blow landed, or where a drag release left the body),
+   *  with a topple lean or falling free. Everything is WORLD y — `rootY`,
+   *  pins, the seed — and the sim clamps against the live height field and
+   *  registered supports as it runs. A held hips drop in `pose` lowers the
+   *  root from `rootY` (or the ground) before the sim starts. */
   begin(opts: {
     x: number; z: number; yaw: number;
     lean?: number[] | null;
     pose?: Record<string, unknown> | null;
-    rootY?: number;                          // world y of the root at start (a lifted drop)
+    rootY?: number;                          // world y of the root before any held hips drop (a lifted drop)
     pins?: Array<{ j: string; at: number[] }>;
     sim?: { j: string[]; p: number[]; v: number[] } | null;   // a handover
   }) {
@@ -564,6 +558,9 @@ export class ReachBody {
   private restPositions = new Map<string, any>();
   private restAxes: Record<string, number[]>;
   private landmarks = new Map<string, { node: any; offset: any; normal: any }>();
+  /** Whether the held pose's raw layer (holdPose) is in the nodes' matrices:
+   *  on for what is drawn (joints, contacts), off while the solver runs. */
+  private drawn = true;
 
   private constructor(m: NonNullable<typeof simMods>, P: Record<string, any>, realParent: Record<string, string | null> | null = null) {
     this.m = m;
@@ -572,9 +569,22 @@ export class ReachBody {
     // still refuses a lower limb that is not its upper limb's direct child.
     this.av = m.rig.makeAvatar(P, { vrm0: !!(P as any).__vrm0, realParent });
     this.restAxes = (P as any).__restAxes ?? {};
+    // A node's local matrix carries the held pose's raw layer while it is
+    // drawn: a translation added to the bone's offset from its parent, and a
+    // scale in the bone's own rest axes, which a rig rarely aligns with the
+    // model's, so it can't ride Object3D.scale (always the node's normalized
+    // axes). It is applied after the bone's rotation, to everything hanging
+    // from it, as a raw bone's scale is.
+    const body = this, at = new m.THREE.Vector3();
+    const updateMatrix = function (this: any) {
+      const raw = body.drawn ? this.userData : null;
+      this.matrix.compose(raw?.heldT ? at.copy(this.position).add(raw.heldT) : this.position, this.quaternion, this.scale);
+      if (raw?.heldScale) this.matrix.multiply(raw.heldScale);
+      this.matrixWorldNeedsUpdate = true;
+    };
     for (const [name, n] of Object.entries(this.av.nodes) as [string, any][]) {
       this.restPositions.set(name, n.position.clone());
-      n.updateMatrix = heldUpdateMatrix;
+      n.updateMatrix = updateMatrix;
     }
     for (const point of Object.keys(CONTACT_POINTS)) {
       const frame = this.estimateContact(point);
@@ -621,28 +631,33 @@ export class ReachBody {
     this.av.root.position.set(p[0], p[1] ?? 0, p[2]);
     this.av.root.rotation.y = yaw ?? 0;
     for (const [name, n] of Object.entries(this.av.nodes) as [string, any][]) {
-      n.quaternion.identity(); n.position.copy(this.restPositions.get(name)); n.userData.heldScale = null;
+      n.quaternion.identity(); n.position.copy(this.restPositions.get(name));
+      n.userData.heldT = null; n.userData.heldScale = null;
     }
     if (pose) this.holdPose(pose);
     this.av.root.updateMatrixWorld(true);
   }
 
-  /** Lay a held pose over the stand-in as it stands (after poseAt, and after
-   *  any clip), channel by channel, as the renderer does (avatar.js setPose
-   *  and _applyRawPose). `q` replaces the bone's rotation. `t` adds to the
-   *  bone's offset from its parent: in the parent's rest axes turned by the
-   *  parent's pose, which for hips is the frame the normalized hips moves in
-   *  (the pivot: vrm.scene, a VRM0 half-turn and the body's size included).
-   *  `s` scales what hangs from the bone in the bone's own rest axes, as the
-   *  renderer's scale on the raw bone does. A bone the stand-in lacks, or a
-   *  value standInChannels can't read, is skipped; body_state names both. */
+  /** Lay a held pose over the stand-in as it stands, once, after poseAt and
+   *  after any clip. Its two layers are the renderer's (avatar.js):
+   *  - the normalized layer, which the reach solver sees, as _applyPoseSlot
+   *    lays it before the IK: `q` replaces the bone's rotation, and hips `t`
+   *    adds to the hips' offset in the frame the normalized hips moves in
+   *    (the pivot: vrm.scene, a VRM0 half-turn and the body's size included);
+   *  - the raw layer, which only what is drawn sees, as _applyRawPose lays it
+   *    after the IK and vrm.update: any other bone's `t` adds to its offset
+   *    from its parent, in the parent's rest axes turned by the parent's
+   *    pose, and `s` scales what hangs from the bone in its own rest axes.
+   *  A bone the stand-in lacks, or a value standInChannels can't read, is
+   *  skipped; body_state names both. */
   holdPose(pose: Record<string, unknown>) {
     const T = this.m.THREE;
     for (const [j, v] of Object.entries(pose)) {
       const n = this.av.nodes[j], c = standInChannels(v);
       if (!n || !c) continue;
       if (c.q) n.quaternion.set(c.q[0], c.q[1], c.q[2], c.q[3]).normalize();
-      if (c.t) n.position.add(new T.Vector3(c.t[0], c.t[1], c.t[2]));
+      if (c.t && j === "hips") n.position.add(new T.Vector3(c.t[0], c.t[1], c.t[2]));
+      else if (c.t) n.userData.heldT = new T.Vector3(c.t[0], c.t[1], c.t[2]);
       if (c.s) {
         const axes = new T.Matrix4().makeRotationFromQuaternion(new T.Quaternion().fromArray(this.restAxes[j] ?? [0, 0, 0, 1]));
         n.userData.heldScale = axes.clone().multiply(new T.Matrix4().makeScale(c.s[0], c.s[1], c.s[2])).multiply(axes.invert());
@@ -650,8 +665,21 @@ export class ReachBody {
     }
   }
 
+  /** Run `fn` on the normalized layer alone, as the renderer's IK runs
+   *  before the raw layer is laid (avatar.js update: _applyReach, then
+   *  vrm.update, then _applyRawPose). Limb lengths and every solve see the
+   *  skeleton the browser's solver sees, whatever the held pose moves or
+   *  scales afterwards. */
+  private solverView<R>(fn: () => R): R {
+    if (!this.drawn) return fn();
+    this.drawn = false;
+    this.av.root.updateMatrixWorld(true);
+    try { return fn(); }
+    finally { this.drawn = true; this.av.root.updateMatrixWorld(true); }
+  }
+
   private chain(limb: string) {
-    if (!this.chains.has(limb)) this.chains.set(limb, this.m.reachbone.measureChain(this.av, limb));
+    if (!this.chains.has(limb)) this.chains.set(limb, this.solverView(() => this.m.reachbone.measureChain(this.av, limb)));
     return this.chains.get(limb);
   }
 
@@ -664,6 +692,10 @@ export class ReachBody {
   /** Solve one limb toward a world target at the CURRENT pose. Returns plain
    *  data — the same verdict fields the browser's reachStatus reports. */
   solve(limb: string, target: number[] | { pos: number[]; normal?: number[] }, opts: { palm?: boolean; apply?: boolean; history?: any; dt?: number } = {}) {
+    return this.solverView(() => this.solveNormalized(limb, target, opts));
+  }
+
+  private solveNormalized(limb: string, target: number[] | { pos: number[]; normal?: number[] }, opts: { palm?: boolean; apply?: boolean; history?: any; dt?: number }) {
     const ch = this.chain(limb);
     if (!ch) return { ok: false as const, why: `no measurable ${limb} chain on this rig` };
     const tw = Array.isArray(target) ? target : target.pos;
@@ -699,7 +731,9 @@ export class ReachBody {
     const mark = this.landmarks.get(point);
     if (!mark) return null;
     const p = mark.node.localToWorld(mark.offset.clone());
-    const n = mark.normal.clone().transformDirection(mark.node.matrixWorld);
+    // A normal goes through the inverse transpose, which a held non-uniform
+    // scale makes differ from the bone's own matrix.
+    const n = mark.normal.clone().applyMatrix3(new this.m.THREE.Matrix3().getNormalMatrix(mark.node.matrixWorld)).normalize();
     return { pos: p.addScaledVector(n, standoff).toArray(), normal: n.toArray() };
   }
 

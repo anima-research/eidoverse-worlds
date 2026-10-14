@@ -176,7 +176,7 @@ export class BodyStateReader {
       maxEndpointResidualM: measuredEndpoints ? maxResidual : null, branchFlips: null,
       scope: "sampled headless reconstruction; browser-only motion and between-sample changes are unobserved; solver supplies no branch identity" };
     if (detail === "summary") {
-      delete last.publishedRotations; delete last.joints; delete last.contacts; delete last.unmappedBones; delete last.unreadableBones;
+      delete last.publishedRotations; delete last.joints; delete last.contacts; delete last.unmappedBones;
     } else if (detail === "bones") delete last.contacts;
     else if (detail === "contacts") delete last.joints;
     return last;
@@ -197,17 +197,21 @@ export class BodyStateReader {
       const f = freshness(o), p = o.pose, valid = !validate(o);
       const bones = p?.pose ?? {}, reaches = normalizeReachBag(p?.reach);
       const count = valid ? Object.keys(bones).length : null;
+      const unreadable = valid ? Object.entries(bones).filter(([, v]) => !standInChannels(v)).map(([n]) => n) : [];
       const wing = p?.wingsFolded === true ? ", wings folded" : p?.wingsFolded === false ? ", wings open" : "";
       return {
         ok: f.status === "current", who, avatar: o.avatar || null, self: o.self,
         bodyGeneration: { scope: "this observer", value: o.generation }, freshness: f,
         frame: o.frame ?? { source: "presence" },
-        summary: `${who}: ${f.status}; ${valid ? `${p!.clip || "posture unknown"}${wing}${clampBodyScale(p!.scale) !== 1 ? `, ${clampBodyScale(p!.scale)}× size` : ""} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s), ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
+        summary: `${who}: ${f.status}; ${valid ? `${p!.clip || "posture unknown"}${wing}${clampBodyScale(p!.scale) !== 1 ? `, ${clampBodyScale(p!.scale)}× size` : ""} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s)${unreadable.length ? ` (${unreadable.length} unreadable: ${unreadable.join(", ")})` : ""}, ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
         root: valid ? { position: [...p!.p], yaw: p!.yaw, forward: [Math.sin(p!.yaw), 0, Math.cos(p!.yaw)] } : null,
         scale: clampBodyScale(p?.scale),
         posture: p?.clip ?? null, wingsFolded: typeof p?.wingsFolded === "boolean" ? p.wingsFolded : null,
         overrides: { state: valid ? count ? "held" : "none" : "unknown", count, source: o.source,
           sourceBasis: o.self ? "owner state" : o.source === "physics" ? "ragdoll clip; original author unknown" : "producer does not publish provenance" },
+        // Published bones with nothing the stand-in can use: they cost
+        // themselves, never the body, and every reply names them.
+        unreadableBones: unreadable,
         reaches: reaches ?? {},
         stability: { status: "unmeasured", reason: "single observation; use window_ms to measure reconstructed joint motion" },
         ...(f.status !== "current" ? { error: validate(o) ?? "body observation is stale; wait for a fresh presence sample" } : {}),
@@ -266,7 +270,8 @@ export class BodyStateReader {
         const mapped = Object.fromEntries(Object.entries(o.pose!.pose ?? {}).filter(([name]) => Object.hasOwn(item.body.av.nodes, name)));
         item.body.poseAt(o.pose!.p, o.pose!.yaw, null, o.pose!.scale);
         if (item.animation) this.clips.apply(item.animation, item.body, hasClipPhase(o.pose!) ? o.pose!.clipTime! : 0, item.rigKey);
-        if (Number.isFinite(o.pose!.pitch) && item.body.av.nodes.head) item.body.av.nodes.head.quaternion.premultiply(
+        // A limp body draws no head pitch (avatar.js update: not while limp).
+        if (Number.isFinite(o.pose!.pitch) && o.pose!.clip !== "ragdoll" && item.body.av.nodes.head) item.body.av.nodes.head.quaternion.premultiply(
           new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.max(-.5, Math.min(.6, o.pose!.pitch!))));
         item.body.holdPose(mapped);
         item.body.av.root.updateMatrixWorld(true);
@@ -277,7 +282,6 @@ export class BodyStateReader {
       out.poseEvaluation = { clip: pose.clip, source: own.animation ? "vrma" : pose.clip === "ragdoll" ? "published_physics" : "rest_pose_estimate",
         time: hasClipPhase(pose) ? pose.clipTime : 0, phase: hasClipPhase(pose) ? "published" : "initial_frame_estimate" };
       out.unmappedBones = Object.keys(pose.pose ?? {}).filter(n => !Object.hasOwn(own.body.av.nodes, n));
-      out.unreadableBones = Object.entries(pose.pose ?? {}).filter(([, v]) => !standInChannels(v)).map(([n]) => n);
       out.reachEvaluation = {};
       const entries: any[] = [];
       for (const [owner, item] of loaded) for (const [limb, e] of Object.entries(normalizeReachBag(item.observation.pose?.reach) ?? {}) as [string, any][]) {

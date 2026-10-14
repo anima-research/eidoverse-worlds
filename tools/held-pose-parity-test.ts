@@ -3,9 +3,12 @@
 // drawn by the renderer, must put every joint in the same place. The renderer
 // side is client/lib/avatar.js transcribed (setPose, the hips step of its
 // update, vrm.update, _applyRawPose and _rawRest at full weight; the ragdoll's
-// start is bakeHipsIntoRoot), on a VRM loaded by three-vrm exactly as the
-// client loads it (assets.js records boneRest before anything moves a bone).
-// When those change, this transcription changes with them.
+// start transcribes bakeHipsIntoRoot's drop), on a VRM loaded by three-vrm
+// exactly as the client loads it (assets.js records boneRest before anything
+// moves a bone). When those change, this transcription changes with them.
+// The reach solver sees only the held pose's normalized layer, as the
+// renderer's IK runs before its raw layer is laid; contacts and joints are
+// read with both.
 //
 // Rigs: the self-contained fixture, VRM1 and VRM0, scaled, and with bones
 // turned at rest the way real rigs turn them (a scale acts in the bone's own
@@ -25,11 +28,15 @@ import { fixture } from "./body-fixture.ts";
 import { mkCheck } from "./harness.ts";
 const { check, tally } = mkCheck();
 
-const half = (deg: number) => Math.sin(deg * Math.PI / 360), cos = (deg: number) => Math.cos(deg * Math.PI / 360);
+// A rotation of `deg` degrees about an axis, as [x, y, z, w].
+const turn = (x: number, y: number, z: number, deg: number) => {
+  const s = Math.sin(deg * Math.PI / 360) / Math.hypot(x, y, z);
+  return [x * s, y * s, z * s, Math.cos(deg * Math.PI / 360)];
+};
 const turns = {
-  leftUpperArm: [0, 0, half(126), cos(126)],
-  rightUpperLeg: [half(180), 0, 0, cos(180)],
-  chest: [0, half(40), half(25), Math.sqrt(1 - half(40) ** 2 - half(25) ** 2)],
+  hips: turn(0, 1, 0, 30), spine: turn(1, 0, 0, 20), chest: turn(0, 1, 1, 47), head: turn(0, 0, 1, 15),
+  leftUpperArm: turn(0, 0, 1, 126), leftLowerArm: turn(1, 1, 0, 90), rightLowerArm: turn(0, 1, 0, -70), rightHand: turn(1, 0, 1, 60),
+  rightUpperLeg: turn(1, 0, 0, 180), leftFoot: turn(0, 1, 0, 45),
 };
 const files = new Map<string, Uint8Array>([
   ["/library/vrm1.vrm", fixture()],
@@ -103,32 +110,65 @@ const poses: Record<string, Record<string, unknown>> = {
   "uniform scale": { leftUpperArm: { s: 1.5 } },
   "non-uniform scale": { leftUpperArm: { s: [1, 1.6, 1] }, rightUpperLeg: { s: [1.3, 1, 0.8] }, chest: { s: [1.2, 0.9, 1] } },
   "all channels together": { hips: { t: [0, -0.2, 0] }, chest: { q: [0, 0.2, 0, 0.98], s: [1.2, 1, 1] }, rightLowerArm: { q: [0, 0, 0.3, 0.954], t: [0, 0.03, 0] }, head: { s: 1.4 } },
+  "every channel on hips and on a forearm": { hips: { q: [0, 0.1, 0, 0.995], t: [0.05, -0.25, 0.02], s: [1.1, 0.9, 1.2] }, leftLowerArm: { q: [0.2, 0, 0, 0.98], t: [0, 0.02, 0.01], s: [0.8, 1.3, 1] } },
 };
 
 try {
   const reader = new BodyStateReader(base);
   for (const path of [...files.keys()].map(k => k.slice("/library/".length))) {
-    let worst = 0, where = "", compared = 0, unread = 0;
+    let worst = 0, where = "", compared = 0, unread = 0, skipped = 0, worstTurn = 0, turnWhere = "";
     for (const [label, bones] of Object.entries(poses)) {
       const { vrm, root } = await loadVrm(files.get("/library/" + path)!);
       root.position.set(2, 0.5, -1); root.rotation.y = 0.6;
       root.updateMatrixWorld(true);
       drawHeld(vrm, bones);
       root.updateMatrixWorld(true);
+      // A limp (ragdoll) body: the renderer draws it with no head pitch, so a
+      // pitch it publishes changes nothing.
       const o: any = { who: path, avatar: path, generation: 1, self: true, connected: true, source: "unknown",
-        pose: { p: [2, 0.5, -1], yaw: 0.6, speed: 0, clip: "ragdoll", pose: bones } };
+        pose: { p: [2, 0.5, -1], yaw: 0.6, pitch: 0.4, speed: 0, clip: "ragdoll", pose: bones } };
       const r = await reader.read(path, "bones", undefined, () => ({ ...o, receivedAt: Date.now() }));
       if (!r.ok) { unread++; check(`${path}, ${label}: body_state reads it`, false, r.error); continue; }
       for (const [k, j] of Object.entries(r.joints) as [string, any][]) {
         const drawn = vrm.humanoid.getRawBoneNode(k);
-        if (!drawn) continue;
+        if (!drawn) { skipped++; continue; }
         const gap = new THREE.Vector3(...j.position).distanceTo(drawn.getWorldPosition(new THREE.Vector3()));
         compared++;
         if (gap > worst) { worst = gap; where = `${label}, ${k}`; }
+        const norm = vrm.humanoid.getNormalizedBoneNode(k).quaternion;   // the rotation the pose set, in the same normalized frame
+        const turned = 2 * Math.acos(Math.min(1, Math.abs(new THREE.Quaternion(...j.rotation).dot(norm))));
+        if (turned > worstTurn) { worstTurn = turned; turnWhere = `${label}, ${k}`; }
       }
     }
-    check(`${path}: body_state's joints are where the renderer draws them, for every held pose`, !unread && compared > 0 && worst < 1e-5,
-      `${compared} joints compared, ${unread} pose(s) unread, worst ${(worst * 1000).toFixed(4)} mm (${where})`);
+    check(`${path}: body_state's joints are where the renderer draws them, for every held pose`, !unread && !skipped && compared > 0 && worst < 1e-5 && worstTurn < 1e-6,
+      `${compared} joints compared, ${skipped} without a drawn bone, ${unread} pose(s) unread, worst ${(worst * 1000).toFixed(4)} mm (${where}), ${worstTurn.toExponential(1)} rad (${turnWhere})`);
+  }
+
+  // Only a pose that isn't a map of bones is unusable whole.
+  {
+    const bad = await reader.read("bad", "bones", undefined, () => ({ who: "bad", avatar: "vrm1.vrm", generation: 1, self: true, connected: true,
+      source: "unknown", receivedAt: Date.now(), pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "ragdoll", pose: [[0, 0, 0, 1]] } } as any));
+    check("a published pose that isn't a map of bones is refused whole", !bad.ok && bad.error === "published pose is not a map of bones", bad.error);
+  }
+
+  // The reach solver sees the held pose's normalized layer only: the
+  // renderer solves its IK before it lays a held translation on an arm or a
+  // scale (avatar.js update), so the solve is the same with or without them,
+  // and only the drawn hand moves. A ragdoll clip only so no clip is loaded.
+  {
+    const reaching = (bones: Record<string, unknown>) => reader.read("reacher", "bones", undefined, () => ({ who: "reacher", avatar: "turned-vrm1.vrm",
+      generation: 1, self: true, connected: true, source: "unknown", receivedAt: Date.now(),
+      pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "ragdoll", pose: bones, reach: { leftHand: { t: { p: [1.4, 1.3, 0.4] } } } } } as any));   // out of reach, so the gap is the arm's shortfall
+    const plain = await reaching({ head: [0, 0, 0, 1] });
+    // A translation on the upper arm and a scale on the chest would move the
+    // shoulder, and a scale on the upper arm would lengthen the arm, for a
+    // solver that saw them.
+    const held = await reaching({ head: [0, 0, 0, 1], chest: { s: [1.3, 1, 1] }, leftUpperArm: { t: [0, 0.08, 0], s: [1, 1.6, 1] }, leftLowerArm: { t: [0, 0.05, 0] } });
+    const a = plain.reachEvaluation?.leftHand, b = held.reachEvaluation?.leftHand;
+    check("a held arm's translation and scale don't change its reach solve, as the renderer's IK never sees them",
+      plain.ok && held.ok && a?.ok && b?.ok && a.gap > 0.1 && Math.abs(a.gap - b.gap) < 1e-9, JSON.stringify({ plain: a?.gap, held: b?.gap, error: held.error }));
+    const moved = plain.ok && held.ok ? new THREE.Vector3(...plain.joints.leftHand.position).distanceTo(new THREE.Vector3(...held.joints.leftHand.position)) : NaN;
+    check("...and the hand is drawn where they put it", moved > 0.01, `${(moved * 1000).toFixed(1)} mm`);
   }
 
   // The ragdoll's start: a held hips drop moves onto the root, as the
@@ -167,9 +207,39 @@ try {
   check("the reach solver's body puts a held pose's hand where body_state does",
     !!read.ok && posed.distanceTo(new THREE.Vector3(...read.joints.leftHand.position)) < 1e-9, read.error ?? "");
   kept.poseAt([1, 0, 2], 0.3, null);
+  const near = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) < 1e-9;
+  const ck = kept.contact("hand_l", 0), cf = fresh.contact("hand_l", 0);
   check("a reach body posed again drops the last pose's translation and scale",
-    posed.distanceTo(hand(fresh)) > 0.1 && hand(kept).distanceTo(hand(fresh)) < 1e-9,
+    posed.distanceTo(hand(fresh)) > 0.1 && hand(kept).distanceTo(hand(fresh)) < 1e-9 && !!ck && !!cf && near(ck.pos, cf.pos) && near(ck.normal, cf.normal)
+    && Math.abs((kept.armLength("leftHand") ?? NaN) - (fresh.armLength("leftHand") ?? NaN)) < 1e-12,
     `posed ${posed.distanceTo(hand(fresh)).toFixed(3)} m away, then ${hand(kept).distanceTo(hand(fresh)).toExponential(1)} m`);
+
+  // An arm's length is the solver's: a held scale on it doesn't lengthen it.
+  {
+    const scaled = await ReachBody.create(base, "turned-vrm1.vrm");
+    if (!scaled) throw new Error("no reach body");
+    scaled.poseAt([1, 0, 2], 0.3, { leftUpperArm: { s: [1, 1.6, 1] } });
+    check("a held scale doesn't change the arm length the solver measures",
+      Math.abs((scaled.armLength("leftHand") ?? NaN) - (fresh.armLength("leftHand") ?? NaN)) < 1e-12,
+      `${scaled.armLength("leftHand")} vs ${fresh.armLength("leftHand")}`);
+  }
+
+  // A contact's normal under a held non-uniform scale stays perpendicular to
+  // the surface it marks, as a normal on the drawn mesh does: it goes through
+  // the bone's inverse transpose, not its matrix.
+  {
+    const body = await ReachBody.create(base, "turned-vrm1.vrm");
+    if (!body) throw new Error("no reach body");
+    const node = body.av.nodes.leftLowerArm;
+    body.poseAt([0, 0, 0], 0, null);
+    const m0 = new THREE.Matrix3().setFromMatrix4(node.matrixWorld), n0 = new THREE.Vector3(...body.contact("forearm_l", 0)!.normal);
+    const t1 = new THREE.Vector3(1, 0, 0).cross(n0).normalize(), t2 = n0.clone().cross(t1);
+    const local = [t1, t2].map((t) => t.clone().applyMatrix3(m0.clone().invert()));
+    body.poseAt([0, 0, 0], 0, { leftLowerArm: { s: [1, 1.8, 0.6] } });
+    const m1 = new THREE.Matrix3().setFromMatrix4(node.matrixWorld), n1 = new THREE.Vector3(...body.contact("forearm_l", 0)!.normal);
+    const off = Math.max(...local.map((t) => Math.abs(n1.dot(t.clone().applyMatrix3(m1).normalize()))));
+    check("a contact's normal on a scaled bone stays perpendicular to its surface", off < 1e-9, `cosine to the surface ${off.toExponential(2)}`);
+  }
 } finally {
   server.stop(true);
 }
