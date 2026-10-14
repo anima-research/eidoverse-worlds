@@ -12,6 +12,7 @@
 // is, by the same data, sittable and placeable-on. Nobody authors that.
 
 import { THREE } from './core.js';
+import { MOVER } from '../../shared/mover.js';
 import { MeshBVH, estimateMemoryInBytes } from 'three-mesh-bvh';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { gridAccumulator, decideSupportClass, validTopGrid, LIE_GRID } from './supportclass.js';
@@ -27,9 +28,9 @@ export const colliders = new Map(); // entity id -> { obj, box, pillar, exact?, 
 //   floor = downward raycast (step-up capped), walls = closest-point at hip
 //   height. Auto-applied when footprint ≥ 16 m² AND height ≥ 2.2 m; the spawn
 //   verb can force either way with collide: "exact" | "box".
-const STEP = 0.55;   // max mantle-less step-up, metres — one comfortable stair
+// The body's size — radius, height and the step it walks onto without a mantle — is the MOVER's (shared/mover.js:
+// MOVER.body), the one set the agent and the authority read too; only the wall-probe height is this file's.
 const HIP = 0.95;    // wall-probe height: floors stay > r away, walls don't
-const TALL = 1.9;    // default body height above `pos` — an avatar on its feet
 
 function buildExact(obj) {
   obj.updateMatrixWorld(true);
@@ -672,7 +673,7 @@ const _cp = {};
 
 // `climbs`: may this body mantle what blocks it (sets lastBlockedTop)? Defaults to "a full-height body", which is what
 // the old `tall >= TALL` test meant; the walking avatar passes true explicitly, so a SMALLER chosen size (bodyscale.js
-// colliderFor: tall = 1.9 × size) keeps its mantle while a ragdoll joint still never climbs.
+// colliderFor: tall = the mover's height × size) keeps its mantle while a ragdoll joint still never climbs.
 // ---- a thing's frame for the yaw-only readers below ----------------------------
 // Every reader here works in "root-local, yaw only": subtract position, un-rotate
 // by a yaw, divide by scale, and test the root-local box. That is exact while a
@@ -702,16 +703,17 @@ export function frameOf(e) {
   return f;
 }
 
-export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL, climbs = tall >= TALL) {
+export function resolveColliders(pos, terrainAt, r = MOVER.body.radius, tall = MOVER.body.height, climbs = tall >= MOVER.body.height) {
   blockedTop = null;
   let ground = terrainAt(pos.x, pos.z);
   // Everything below is written for a body of SOME height standing at `pos`.
   // The avatar is a 1.9m capsule on its feet; a ragdoll joint is a 3cm bead.
   // Sharing one routine between them means the vertical numbers cannot be
-  // constants — a 55cm step-up allowance applied to a hand teleports it onto
+  // constants — the mover's step-up allowance applied to a hand teleports it onto
   // the nearest crate, and a hip-height wall probe applied to a wrist lying on
   // the floor measures the wall a metre above the wrist.
-  const step = Math.min(STEP, tall * 0.3);   // a ragdoll does not climb stairs
+  // a climbing body's step is the mover's, in proportion to its size; a ragdoll joint does not climb stairs
+  const step = climbs ? MOVER.body.step * (tall / MOVER.body.height) : Math.min(MOVER.body.step, tall * 0.3);
   const probeY = Math.min(HIP, tall * 0.5);  // mid-body, not "hip"
   const spanY = Math.max(r, tall * 0.26);    // how far up/down a wall hit counts
   for (const e0 of near(pos.x, pos.z)) {

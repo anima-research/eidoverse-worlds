@@ -10,7 +10,10 @@ import { THREE, camera, canvas } from './core.js';
 import { CONFIG, angleDelta, bus } from './base.js';
 import { heightAt } from './terrain.js';
 import { resolveColliders, lastBlockedTop, findSeat, raySegment } from './colliders.js';
-import { scaledSpeed, colliderFor, deskEyeY, canMantle, mantleStep } from './bodyscale.js';   // this body's chosen size: stride, capsule, eye
+import { colliderFor, deskEyeY, canMantle, mantleStep } from './bodyscale.js';   // this body's chosen size: capsule, eye, mantle
+// ONE walker (shared/mover.js): the stride, its speeds and the body's size are the mover's, the same the agent steps
+// with and the authority checks; this file keeps the keys, the camera and the collider pass.
+import { walkSpeed, stickSpeed, easeSpeed, stepWalk } from '../../shared/mover.js';
 import { chat } from './chat.js';
 import { isOverlayOpen, flashHint, html } from './ui.js';
 import { selectClip } from './locomotion_clip.js';
@@ -652,13 +655,12 @@ export function updateMe(dt, me) {
   // want it at 1.55 m/s is a fight.
   const creeping = keys.has('AltLeft') || keys.has('AltRight');
   const mag = Math.min(1, Math.hypot(fwd, strafe));
-  // VR stick (owner, 09-06 12:53): half deflection = walking speed, full = sprint — the stick IS the shift key.
-  // Piecewise: 0→0.5 ramps to walk (1.55), 0.5→1 ramps walk→run (4.0). Desktop keeps shift/alt.
-  const vrSpeed = mag <= 0.5 ? 1.55 * (mag / 0.5) : 1.55 + (4.0 - 1.55) * ((mag - 0.5) / 0.5);
-  // the chosen size (Profile › Avatar, bodyscale.js): stride grows with the legs, so a 150% body walks 150% as fast
-  const target = moving ? scaledSpeed(xrIntent.active ? vrSpeed : (creeping ? 0.55 : running ? 4.0 : 1.55) * mag, me.userScale) : 0;
-  myState.speed = THREE.MathUtils.lerp(myState.speed, target, 1 - Math.exp(-10 * dt));
-  if (myState.speed < 0.02) myState.speed = 0;
+  // VR stick (owner, 09-06 12:53): half deflection = walking speed, full = sprint — the stick IS the shift key
+  // (mover.stickSpeed ramps walk→run). Desktop keeps shift/alt (mover.walkSpeed). The chosen size (Profile › Avatar):
+  // the stride grows with the legs, so a 150% body walks 150% as fast — the mover scales it.
+  const full = walkSpeed({ run: running, creep: creeping, scale: me.userScale });   // the mover's speed for these keys
+  const target = moving ? (xrIntent.active ? stickSpeed(mag, me.userScale) : full * mag) : 0;
+  myState.speed = easeSpeed(myState.speed, target, dt);
 
   // first person: the body faces where I look, standing still too (R, 10-10). Others see which way I'm looking, and what I
   // throw or set down "ahead" goes where my eyes are. Not on a seat, not while the edit camera is off on its own.
@@ -667,7 +669,11 @@ export function updateMe(dt, me) {
     _dir.set(strafe, 0, -fwd).normalize().applyAxisAngle(UP, camYaw);
     const targetYaw = Math.atan2(_dir.x, _dir.z);
     myState.yaw += angleDelta(myState.yaw, targetYaw) * Math.min(1, 12 * dt); myState.yaw = Math.atan2(Math.sin(myState.yaw), Math.cos(myState.yaw));   // the accumulator wraps too (the owner's recorder: root 7.62 = 1.34 + 2π after setCamYaw already wrapped)
-    myState.pos.addScaledVector(_dir, myState.speed * dt);
+    // the stride is the mover's: my eased speed as a fraction of its full one, so the metres per frame are exactly what
+    // an agent's tick covers and the authority's track accepts. The floor and what pushes back are the collider pass
+    // below (resolveColliders), which answers the mover's floor rule from the drawn geometry.
+    const stride = stepWalk({ pos: [myState.pos.x, myState.pos.y, myState.pos.z], dir: [_dir.x, _dir.z], dt, run: running, creep: creeping, scale: me.userScale, gain: myState.speed / full });
+    myState.pos.x = stride.pos[0]; myState.pos.z = stride.pos[2];
     keepInBounds();
     const R = 78; // stay on the island
     const r = Math.hypot(myState.pos.x, myState.pos.z);
