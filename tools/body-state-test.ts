@@ -113,6 +113,20 @@ try {
   const stand = await read(peer, { who: owner.name, detail: "bones" });
   check("...and treading moves the feet off where standing puts them", tread.joints?.rightLowerLeg && stand.joints?.rightLowerLeg
     && Math.hypot(...tread.joints.rightFoot.position.map((v: number, i: number) => v - stand.joints.rightFoot.position[i])) > 0.05, JSON.stringify([tread.joints?.rightFoot?.position, stand.joints?.rightFoot?.position]));
+  // A swimmer's held pose wins the bones it names, as the browser lays the
+  // stroke under the held pose (avatar.js _swimLayer); the stroke still moves
+  // the bones the pose leaves.
+  const heldArm = { leftUpperArm: turned };
+  owner.clip = "tread"; owner.setPose(heldArm as any); owner.tick();
+  await until(() => peer.people.get(owner.name)?.pose?.clip === "tread" && eq(peer.people.get(owner.name)?.pose?.pose, heldArm));
+  const posedSwimmer = await read(peer, { who: owner.name, detail: "bones" });
+  check("a treading body's held pose wins the bone it names, and the stroke still moves the others", posedSwimmer.ok
+    && near(posedSwimmer.joints?.leftUpperArm?.rotation, turned)
+    && !!posedSwimmer.joints?.rightUpperArm?.rotation && !!stand.joints?.rightUpperArm?.rotation
+    && !near(posedSwimmer.joints.rightUpperArm.rotation, stand.joints.rightUpperArm.rotation),
+    JSON.stringify([posedSwimmer.joints?.leftUpperArm?.rotation, posedSwimmer.joints?.rightUpperArm?.rotation, stand.joints?.rightUpperArm?.rotation]));
+  owner.clip = "idle"; owner.setPose(null); owner.tick();
+  await until(() => peer.people.get(owner.name)?.pose?.clip === "idle" && !peer.people.get(owner.name)?.pose?.pose);
   peer.clip = "sit"; peer.tick();
   await until(() => owner.people.get(peer.name)?.pose?.clip === "sit");
   owner.reaches.set("rightHand", { t: { who: peer.name, point: "knee_r" } });
