@@ -236,7 +236,8 @@ await C("D5", "a physics thing that flies says who may punt it (visitor); world 
     [stored(W, "p", "physics"), w.capacity, ss, w["default-role"]]]; });
 await C("D6", "the registry's defaults are the authority's own: script-settings and capacity agree with what it enforces when they're absent", () => {
   const ss = CAT.COMPONENTS["script-settings"].defaults, cap = CAT.COMPONENTS.capacity.defaults;
-  return [!!ss && !!cap && cap.things === D.CAPACITY.things && cap.guestThings === D.CAPACITY.guestThings && D.SCRIPT_DEFAULTS && Object.entries(D.SCRIPT_DEFAULTS).every(([k, v]) => ss[k] === v), [ss, cap, D.SCRIPT_DEFAULTS]]; });
+  const cap2 = CAT.COMPONENTS["capacity@2"].defaults;   // 10-14: the new name's defaults are CAPACITY2, the old name's stay CAPACITY
+  return [!!ss && !!cap && cap.things === D.CAPACITY.things && cap.guestThings === D.CAPACITY.guestThings && cap2.things === D.CAPACITY2.things && cap2.guestThings === D.CAPACITY2.guestThings && cap2.sockets === D.CAPACITY2.sockets && D.SCRIPT_DEFAULTS && Object.entries(D.SCRIPT_DEFAULTS).every(([k, v]) => ss[k] === v), [ss, cap, D.SCRIPT_DEFAULTS]]; });
 await C("D7", "no default lives only in help text: every 'default …' a help string names for a field is in the definition's data", () => {
   // defaults that aren't a fixed number: where it stands, a size-chosen pose; and nested ones (a socket's, a handler's args)
   // default-role.guests: absent is visitor whatever the role, which no stored value can say under a role of none (known gap)

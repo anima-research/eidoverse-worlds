@@ -351,13 +351,18 @@ function seatRights(w, st, s, who, role, norm, made) {
 // draws at frame rate; an owner may raise it to 5 000), and the world's guests TOGETHER at most capacity.guestThings standing
 // things they made (default 200): a guest is a fresh identity per connection, so no per-identity budget stopped one from
 // filling a world. Only a write that adds things is refused (full); deleting, and every other change, stay open at the cap.
-export const CAPACITY = { things: 2000, guestThings: 200, sockets: 4000, guestSockets: 400 };
+export const CAPACITY = { things: 2000, guestThings: 200, sockets: 4000, guestSockets: 400 };   // `capacity`'s meaning, kept (§4)
+// capacity@2 (R 10-14): the defaults a world founded today gets; C2 fills 10 000 under budget. A world that has written
+// `capacity` and never `capacity@2` keeps the old numbers — a changed default is a changed meaning, so it is a new name.
+export const CAPACITY2 = { things: 10000, guestThings: 500, sockets: 40000, guestSockets: 4000 };
 // Sockets aren't things (R 10-12 20:44, ruling 4), so they have a budget of their own (review 10-12 S1-2: uncounted, a
 // pool of guests made 800 described sockets on one crate in a world capped at 10 things): capacity.sockets for the world
 // (default 4 000; the server's ceiling is its range's max, 4 × the things ceiling), capacity.guestSockets for guests
 // together, and SOCKETS_PER_HOST on one host (authority/sockets.js), which no setting raises.
-const capacityOf = (st) => { const v = st.entities["@world"]?.c.capacity; const ok = (x) => Number.isInteger(x) && x >= 0;
-  return Object.fromEntries(Object.keys(CAPACITY).map((k) => [k, ok(v?.[k]) ? v[k] : CAPACITY[k]])); };
+const capacityOf = (st) => { const c = st.entities["@world"]?.c; const ok = (x) => Number.isInteger(x) && x >= 0;
+  // capacity@2 on @world wins outright; else a written `capacity` keeps its old meaning; else a new world gets @2's defaults
+  const [v, D] = c?.["capacity@2"] ? [c["capacity@2"], CAPACITY2] : c?.capacity ? [c.capacity, CAPACITY] : [null, CAPACITY2];
+  return Object.fromEntries(Object.keys(D).map((k) => [k, ok(v?.[k]) ? v[k] : D[k]])); };
 // what a guest's rights made that still stands, things and sockets apart (a log view, kept incrementally like everIds)
 function guestMade(w, st) {
   const G = (w.__guests ??= { n: 0, ids: new Set() });

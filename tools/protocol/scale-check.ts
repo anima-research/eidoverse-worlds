@@ -26,7 +26,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 
-import { CAPACITY } from "../../shared/protocol/authority.js";
+import { CAPACITY, CAPACITY2 } from "../../shared/protocol/authority.js";
 import { COMPONENTS } from "../../shared/protocol/componentspec.js";
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -285,15 +285,22 @@ const cases: Case[] = [
       const one = s.call("bob", "create", { id: "t-13", model: "crate", components: { transform: T0([0, 0, 3]) } }, 2000);
       return { made: [...new Set(made)], over: code(over), why: over.refused?.reason, set: code(set), batch: code(batch), one: code(one), things: Object.keys(s.w().state().entities).length - 1 }; },
     good: (o) => JSON.stringify(o.made) === '["ok"]' && o.over === "full" && /limit is 10/.test(o.why ?? "") && o.set === "ok" && o.batch === "full" && o.one === "ok" && o.things === 10 },
-  { id: "C2", what: `unset, a world holds ${CAPACITY.things} things (the registry's default); the owner may raise it, never past the registry's max`, run(s) { cast(s);
-      const MAX = COMPONENTS.capacity.ranges.things.max;
-      const f = fill(s, CAPACITY.things); const over = s.call("bob", "create", { id: "x", model: "crate" }, 20000);
-      const raise = s.call("olive", "set", { id: "@world", component: "capacity", value: { things: CAPACITY.things + 100 } }, 20000);
+  { id: "C2", what: `unset, a fresh world holds ${CAPACITY2.things} things (capacity@2's default, 10-14); the owner may raise it, never past capacity@2's max`, run(s) { cast(s);
+      const MAX = COMPONENTS["capacity@2"].ranges.things.max;
+      const f = fill(s, CAPACITY2.things); const over = s.call("bob", "create", { id: "x", model: "crate" }, 20000);
+      const raise = s.call("olive", "set", { id: "@world", component: "capacity@2", value: { things: CAPACITY2.things + 100 } }, 20000);
       const now = s.call("bob", "create", { id: "y", model: "crate", components: { transform: T0([400, 0, 400]) } }, 20000);
-      const tooHigh = s.call("olive", "set", { id: "@world", component: "capacity", value: { things: MAX + 1000 } }, 20000);
-      const builder = s.call("bob", "set", { id: "@world", component: "capacity", value: { things: CAPACITY.things + 1000 } }, 20000);
+      const tooHigh = s.call("olive", "set", { id: "@world", component: "capacity@2", value: { things: MAX + 1000 } }, 20000);
+      const builder = s.call("bob", "set", { id: "@world", component: "capacity@2", value: { things: CAPACITY2.things + 1000 } }, 20000);
       return { fill: show(f), over: code(over), raise: code(raise), now: code(now), tooHigh: code(tooHigh), builder: code(builder) }; },
     good: (o) => o.fill === "ok" && o.over === "full" && o.raise === "ok" && o.now === "ok" && o.tooHigh === "bounds" && o.builder === "rights" },
+  { id: "C2a", what: `a world that wrote the old \`capacity\` keeps its meaning (§4): {things: ${CAPACITY.things + 400}} written → the ${CAPACITY.things + 401}th thing is refused; writing capacity@2 beside it then wins outright`, run(s) { cast(s);
+      s.call("olive", "set", { id: "@world", component: "capacity", value: { things: CAPACITY.things + 400 } }, 20000);
+      const f = fill(s, CAPACITY.things + 400); const over = s.call("bob", "create", { id: "x", model: "crate" }, 20000);
+      const two = s.call("olive", "set", { id: "@world", component: "capacity@2", value: { things: CAPACITY.things + 500 } }, 20000);
+      const now = s.call("bob", "create", { id: "y", model: "crate", components: { transform: T0([400, 0, 400]) } }, 20000);
+      return { fill: show(f), over: code(over), two: code(two), now: code(now) }; },
+    good: (o) => o.fill === "ok" && o.over === "full" && o.two === "ok" && o.now === "ok" },
   { id: "C3", what: "guests together have at most capacity.guestThings things standing (a fresh guest identity per connection gets no fresh share); an account still builds; a guest's delete frees room", run(s) {
       const sess = session({ kindOf: (id: string) => (id.startsWith("g") ? "anon" : "human") }); s = sess;
       s.call("olive", "create-world", { title: "guests" });
