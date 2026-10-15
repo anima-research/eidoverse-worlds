@@ -902,7 +902,15 @@
    "origin": "array",
    "format": "string",
    "segments": "int",
-   "layers": "any"
+   "layers": "any",
+   "features": "array",
+   "heightmap": "object",
+   "water": "any"
+  },
+  "absentMeans": {
+   "features": "no placed shapes: the base alone is the ground",
+   "heightmap": "no image: the noise (or raster) is the base",
+   "water": "no water: dry ground everywhere"
   },
   "on": "world"
  },
