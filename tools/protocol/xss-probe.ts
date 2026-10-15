@@ -273,6 +273,6 @@ try {
 } catch (e) {
   check("the probe threw", false, String(e?.stack ?? e));
 }
-console.log(`[xss-probe] ${tally.passed} passed, ${tally.failed} failed`);
+console.log(`[xss-probe] ${tally.passed} passed, ${tally.failed} failed${tally.note()}`);
 await cleanup(tally.failed ? 1 : 0);
 process.exit(tally.failed ? 1 : 0);

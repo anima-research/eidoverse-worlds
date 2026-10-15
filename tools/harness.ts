@@ -1,6 +1,6 @@
 // Shared scratch sequencer/browser ownership and failure evidence for benches.
 import { existsSync, mkdtempSync, rmSync, appendFileSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, loadavg, cpus } from "node:os";
 import { join, resolve } from "node:path";
 
 export const ROOT = resolve(import.meta.dir, "..");
@@ -60,12 +60,27 @@ export function saysIn(msgs: any[]) {
 }
 
 let failedChecks = 0;
+// Headless Chromes that are NOT this process's descendants: another suite's or an agent's browser sharing the box.
+// Five gate reds on 2026-10-14 were rows green solo; each cost a solo re-run to classify. The tally line now says so.
+function foreignHeadless(): number {
+  try {
+    const out = Bun.spawnSync(["ps", "-eo", "pid,ppid,args"]).stdout.toString();
+    // String.split with a limit TRUNCATES (the third piece is one word, not "the rest"): parse pid/ppid and keep the whole command
+    const rows = out.split("\n").slice(1).map((l) => /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(l)).filter((m): m is RegExpExecArray => !!m).map((m) => [m[1], m[2], m[3]] as [string, string, string]);
+    const parent = new Map(rows.map(([pid, ppid]) => [Number(pid), Number(ppid)]));
+    const mine = (pid: number) => { for (let p = pid, i = 0; p > 1 && i < 64; p = parent.get(p) ?? 0, i++) if (p === process.pid) return true; return false; };
+    return rows.filter(([pid, , args]) => /chrom(e|ium).*--headless/.test(args) && !/--type=/.test(args) && !mine(Number(pid))).length;   // browsers, not their renderer/gpu children
+  } catch { return -1; }
+}
 export function mkCheck() {
-  const t = { passed: 0, failed: 0 };
+  const t = { passed: 0, failed: 0, load0: loadavg()[0], foreign0: foreignHeadless(), note: () => "" };
   const check = (name: string, ok: boolean, detail = "") => {
     console.log(`  ${ok ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m"} ${name}${detail ? dim(`  ${detail}`) : ""}`);
     if (ok) t.passed++; else { t.failed++; failedChecks++; }
   };
+  // "· load 1.2→9.4 (16 cores) · 2 foreign headless chromes" — the box's state at start→end, so a red can be read as load without a re-run
+  t.note = () => { const l1 = loadavg()[0], f1 = foreignHeadless(), cores = cpus().length, hot = Math.max(t.load0, l1) > cores || Math.max(t.foreign0, f1) > 0;
+    return ` · load ${t.load0.toFixed(1)}→${l1.toFixed(1)} (${cores} cores) · ${Math.max(t.foreign0, f1)} foreign headless chrome${Math.max(t.foreign0, f1) === 1 ? "" : "s"}${hot ? " · UNDER LOAD: a red here may be timing" : ""}`; };
   return { check, tally: t };
 }
 

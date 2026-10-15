@@ -740,6 +740,6 @@ try {
   check("errors: no reader threw into a frozen record (console.error carries what the catch-alls swallow)", await evalJson(`__cerr.length === 0`), await evalJson(`__cerr.slice(0, 3)`));
   bob.close();
 } catch (e) { check("the run threw", false, String(e?.stack ?? e)); }
-console.log(`[client-check] ${tally.passed} passed, ${tally.failed} failed`);
+console.log(`[client-check] ${tally.passed} passed, ${tally.failed} failed${tally.note()}`);
 await cleanup(tally.failed ? 1 : 0);
 process.exit(tally.failed ? 1 : 0);
