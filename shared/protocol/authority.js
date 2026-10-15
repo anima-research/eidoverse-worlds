@@ -363,7 +363,7 @@ const capacityOf = (st) => { const ok = (x) => Number.isInteger(x) && x >= 0;
   // the registry's one versioned-name reader (§4): the newest written capacity@n wins, a written `capacity` keeps its meaning,
   // a fresh world gets the newest defaults. CAPACITY/CAPACITY2 mirror those defaults (pretrans D6 pins they agree).
   const { name, value: v } = resolveVersioned(st.entities["@world"]?.c, "capacity"); const D = name === "capacity" ? CAPACITY : CAPACITY2;
-  return Object.fromEntries(Object.keys(D).map((k) => [k, ok(v?.[k]) ? v[k] : D[k]])); };
+  return { ...Object.fromEntries(Object.keys(D).map((k) => [k, ok(v?.[k]) ? v[k] : D[k]])), name }; };   // name: the registry key the world is read under, for refusals to cite
 // what a guest's rights made that still stands, things and sockets apart (a log view, kept incrementally like everIds)
 function guestMade(w, st) {
   const G = (w.__guests ??= { n: 0, ids: new Set() });
@@ -384,13 +384,13 @@ function capacityCheck(w, st, s, who, norm) {
   if (!made && !joined.size) return;
   const cap = capacityOf(s);
   if (made) { const before = thingCount(st), after = thingCount(s);
-    if (after > before && after > cap.things) refuse("full", `this world holds ${before} things and its limit is ${cap.things} (@world.capacity.things): ${after - before} more won't fit`, `delete something first; the world's owner may raise it: set {id: '@world', component: 'capacity', value: {things: <n>}} (at most ${COMPONENTS.capacity.ranges.things.max})`, { limit: cap.things, things: before }); }
+    if (after > before && after > cap.things) refuse("full", `this world holds ${before} things and its limit is ${cap.things} (@world.${cap.name}.things): ${after - before} more won't fit`, `delete something first; the world's owner may raise it: set {id: '@world', component: '${cap.name}', value: {things: <n>}} (at most ${COMPONENTS[cap.name].ranges.things.max})`, { limit: cap.things, things: before }); }
   if (joined.size) { const per = new Map([...joined.keys()].map((h) => [h, [0, 0]]));
     for (const [id, e] of Object.entries(s.entities)) { const h = isSocketC(e.c) ? e.c.parent?.to : null; if (per.has(h)) per.get(h)[1]++; }
     for (const [id, e] of Object.entries(st.entities)) { const h = isSocketC(e.c) ? e.c.parent?.to : null; if (per.has(h)) per.get(h)[0]++; }
     for (const [h, [before, after]] of per) if (after > before && after > SOCKETS_PER_HOST) refuse("full", `${h} has ${before} sockets, and one thing holds at most ${SOCKETS_PER_HOST}: ${after - before} more won't fit`, "a thing with that many seats is several things: split it, or delete some of its sockets", { limit: SOCKETS_PER_HOST, sockets: before, host: h }); }
   if (added) { const before = socketCount(st), after = socketCount(s);
-    if (after > before && after > cap.sockets) refuse("full", `this world holds ${before} sockets and its limit is ${cap.sockets} (@world.capacity.sockets): ${after - before} more won't fit`, `delete some first; the world's owner may raise it: set {id: '@world', component: 'capacity', value: {sockets: <n>}} (at most ${COMPONENTS.capacity.ranges.sockets.max})`, { limit: cap.sockets, sockets: before }); }
+    if (after > before && after > cap.sockets) refuse("full", `this world holds ${before} sockets and its limit is ${cap.sockets} (@world.${cap.name}.sockets): ${after - before} more won't fit`, `delete some first; the world's owner may raise it: set {id: '@world', component: '${cap.name}', value: {sockets: <n>}} (at most ${COMPONENTS[cap.name].ranges.sockets.max})`, { limit: cap.sockets, sockets: before }); }
   const holder = who.cap?.kind === "reaction" ? who.cap.author : who.cap?.kind === "script" ? who.cap.sponsor : who.actor;
   if (!CTX.isAnon(holder)) return;
   const g = guestMade(w, st);

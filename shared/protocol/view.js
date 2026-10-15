@@ -64,6 +64,11 @@ export function compOf(c) {
  *  `delete {component: "transform"}`, so a record may be {label} alone (review S2-1). The limit: a world naming a
  *  component `pos` (the door refuses the bare name: DERIVED) would be misread. */
 export const isFoldRecord = (x) => !!x && typeof x === "object" && !Array.isArray(x) && x.pos === undefined;
+/** A record either way: a fold record (component keys flat on it) is projected through viewOf; anything else — the OLD test
+ *  shape, {pos, yaw, lib, comp: {...}} — is returned as it is. This is a TEST-CORPUS adapter, not a protocol one: at 2026-10-14
+ *  18 files under tools/ still build the old shape by hand, and this line is what keeps them loading (complexity sweep 10-14,
+ *  "vocab-check skips tools/"). Retire it by flattening those fixtures, then deleting the fallback; nothing at runtime takes
+ *  the old shape (vocab-check pins that for shared/ client/ server/ mcpl/). */
 export const recordOf = (x, id = "") => (isFoldRecord(x) ? viewOf(id, x) : x);
 
 /** One entity's components as the record readers use. */
