@@ -86,9 +86,9 @@ function body(entity:any,height:(x:number,z:number)=>number,from:[number,number]
  a.entities.set(entity.id,entity);(a as any).terrain={heightAt:height};
  a.pos={x:from[0],y:height(...from),z:from[1]};return a;
 }
-async function walk(a:WorldAgent,to:[number,number]) {
+async function walk(a:WorldAgent,to:[number,number],run=true) {
  const points=[[a.pos.x,a.pos.y,a.pos.z]];
- const promise=a.walkTo(...to,true,10000,0);
+ const promise=a.walkTo(...to,run,10000,0);
  for(let i=0;i<1000&&(a as any).target;i++){(a as any).tick();points.push([a.pos.x,a.pos.y,a.pos.z]);}
  if((a as any).target){a.stop();throw new Error("bounded tick limit");}
  return {arrived:await promise,points};
@@ -99,14 +99,14 @@ function transform(e:any,x:number,z:number):[number,number] {
 }
 try{
  for(const e of [
-  {id:"world",pos:[0,0,0],yaw:0,scale:1,comp:{structure:{levels:[basement,ground]}}},
-  {id:"shift",pos:[10,2,-5],yaw:Math.PI/3,scale:2,comp:{structure:{levels:[ground,basement]}}},
+  {id:"world",pos:[0,0,0],yaw:0,scale:1,structure:{levels:[basement,ground]}},
+  {id:"shift",pos:[10,2,-5],yaw:Math.PI/3,scale:2,structure:{levels:[ground,basement]}},
  ]) {
   const a=body(e,()=>e.pos[1],transform(e,.5,.5));
   const r=await walk(a,transform(e,3.5,.5));
   check(r.arrived&&r.points.every(p=>p[1]===e.pos[1]),"real terrain-mode body exits ground above basement with translated/scaled frame");
  }
- const e={id:"overhead",pos:[10,1,-5],yaw:.6,scale:2,comp:{structure:{levels:[upper]}}};
+ const e={id:"overhead",pos:[10,1,-5],yaw:.6,scale:2,structure:{levels:[upper]}};
  const a=body(e,()=>1,transform(e,.5,.5));
  check((await walk(a,transform(e,2.5,.5))).arrived,"real ground body walks beneath translated/scaled overhead floor without confinement");
 
@@ -114,19 +114,21 @@ try{
  // stands on its level's slab top, 0.1 local metres up, so at scale 2 on an
  // entity at y 0.4 its base is 0.4 + 0.1×2 = 0.6 m above the terrain at 0:
  // over a 0.5 m band, though a 0.5-local (1 m) band would reach it.
- const raised={id:"band",pos:[0,.4,0],yaw:0,scale:2,comp:{structure:wall}};
+ const raised={id:"band",pos:[0,.4,0],yaw:0,scale:2,structure:wall};
  const b=body(raised,()=>0,[0,1]);
  const r=await walk(b,[4,1]);
  check(r.arrived&&r.points.every(p=>Math.abs(p[2]-1)<1e-10),"world-scaled step band leaves a 0.6m raised wall above a terrain walk");
 
- const sole={id:"sole",pos:[0,0,0],yaw:0,scale:1,comp:{structure:{levels:[upper]}}};
+ const sole={id:"sole",pos:[0,0,0],yaw:0,scale:1,structure:{levels:[upper]}};
  const soleBody=body(sole,()=>0,[.5,.5]);soleBody.pos.y=3.1;
  const soleWalk=await walk(soleBody,[2.5,.5]);
  check(soleWalk.arrived && soleBody.pos.y===0,"current standing implementation supplies terrain, not elevated support, for a sole raised floor");
- const slope={id:"slope",pos:[10,2,-5],yaw:Math.PI/2,scale:2,comp:{structure:wall}};
+ const slope={id:"slope",pos:[10,2,-5],yaw:Math.PI/2,scale:2,structure:wall};
  const highAtCross=(wx:number,wz:number)=>{const [lx]=localizePoint(slope,wx,0,wz);return 2+8*lx;};
  const c=body(slope,highAtCross,transform(slope,0,.5));
- const high=await walk(c,transform(slope,2,.5));
+ // Walked, not run: the one walker (shared/mover.js) refuses a stride rising more than a step (0.8 m), and a run's
+ // 0.4 m stride up this 4 m-per-metre slope rises 1.6 m. A walk's 0.155 m stride rises 0.62 m.
+ const high=await walk(c,transform(slope,2,.5),false);
  check(high.arrived&&high.points.every(p=>Math.abs(localizePoint(slope,p[0],p[1],p[2])[2]-.5)<1e-8),
    "transformed real body uses terrain at wall crossing rather than origin height");
  console.log("PASS "+n+" support-basis checks");

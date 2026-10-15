@@ -10,7 +10,7 @@ const make=(heightAt:(x:number,z:number)=>number=()=>0)=>{
  const a=new WorldAgent({name:"walker",world:"support",avatar:""});
  agents.push(a);a.joined=true;(a as any).terrain={heightAt};return a;
 };
-const ent=(id:string,structure:any)=>({id,lib:"",pos:[0,0,0],yaw:0,scale:1,comp:{structure}} as any);
+const ent=(id:string,structure:any)=>({id,model:"",pos:[0,0,0],yaw:0,scale:1,structure} as any);
 async function finish(a:WorldAgent,p:Promise<boolean>,each?:(i:number)=>void){
  const points=[{...a.pos}];
  for(let i=0;i<1000&&(a as any).target;i++){each?.(i);(a as any).tick();points.push({...a.pos});}
@@ -109,16 +109,20 @@ try{
  const g=make();g.entities.set("sealed",ent("sealed",sealed));
  const sent:any[]=[];(g as any).ws={send:(m:string)=>sent.push(JSON.parse(m)),close(){}};
  const seated=()=>{
-  g.pos={x:.5,y:1.2,z:.5};g.mounts.set(g.name,{to:"chair"});g.pins.set("hand_l",[1,1,1]);
+  g.pos={x:.5,y:1.2,z:.5};g.setSeat({to:"chair"});g.pins.set("hand_l",[1,1,1]);
   g.heldPose={chest:[0,0,0,1]};g.clip="ragdoll";g.speed=0;
  };
  seated();
- const state=()=>JSON.stringify({pos:g.pos,pins:[...g.pins],pose:g.heldPose,clip:g.clip,epoch:(g as any).bodyEpoch});
+ const state=()=>JSON.stringify({pos:g.pos,seat:g.mySeat,pins:[...g.pins],pose:g.heldPose,clip:g.clip,epoch:(g as any).bodyEpoch});
  const before=state();
  check(!(await g.walkTo(8.5,.5,true,LONG,0))&&g.walkRefusal?.includes("[sealed]"),"a walk into a sealed room is refused");
  check(state()===before&&sent.length===0,"and the refused walk leaves the seated, pinned, posed, tumbling body as it was, sending nothing");
  const up=g.walkTo(1.5,.5,true,LONG,0);
- check(g.pins.size===0&&g.heldPose===null&&g.pos.y===0&&sent.some(m=>m.verb==="dismount"),"an accepted walk gets the body up: unpinned, unposed, dismounted, on the ground");
+ check(g.pins.size===0&&g.heldPose===null&&g.pos.y===0&&g.mySeat===null&&!g.mounts.has(g.name),"an accepted walk gets the body up: unpinned, unposed, dismounted, on the ground");
+ // …and the world hears it: a seat is presence (the pose frame's `seat`), so the next frame carries none.
+ (g as any).tick();
+ const frame=sent.filter(m=>m.type==="pose").at(-1);
+ check(frame&&!("seat" in frame.pose),"and the world hears it: the next pose frame carries no seat");
  g.stop();await up;
  console.log("PASS "+checks+" active-support lifecycle checks");
 }finally{for(const a of agents)a.close();}
