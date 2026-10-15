@@ -301,6 +301,15 @@ const cases: Case[] = [
       const now = s.call("bob", "create", { id: "y", model: "crate", components: { transform: T0([400, 0, 400]) } }, 20000);
       return { fill: show(f), over: code(over), two: code(two), now: code(now) }; },
     good: (o) => o.fill === "ok" && o.over === "full" && o.two === "ok" && o.now === "ok" },
+  { id: "C3b", what: "the guest refusal names the component the world actually reads (capacity@2 on a fresh world), so an owner who follows its fix doesn't re-cap it under old `capacity` (review 10-14 C6/M9)", run(s) {
+      const sess = session({ kindOf: (id: string) => (id.startsWith("g") ? "anon" : "human") }); s = sess;
+      s.call("olive", "create-world", { title: "guests2" });
+      s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
+      s.call("olive", "set", { id: "@world", component: "capacity@2", value: { guestThings: 1 } });
+      s.call("g1", "create", { id: "g1-0", model: "crate" }, 2000);
+      const r = s.call("g1", "create", { id: "g1-1", model: "crate" }, 2000);
+      return { code: code(r), text: `${r?.refused?.reason} | ${r?.refused?.fix}` }; },
+    good: (o) => o.code === "full" && /capacity@2\.guestThings/.test(o.text) && !/[^@\w]capacity\.guestThings/.test(o.text) },
   { id: "C3", what: "guests together have at most capacity.guestThings things standing (a fresh guest identity per connection gets no fresh share); an account still builds; a guest's delete frees room", run(s) {
       const sess = session({ kindOf: (id: string) => (id.startsWith("g") ? "anon" : "human") }); s = sess;
       s.call("olive", "create-world", { title: "guests" });

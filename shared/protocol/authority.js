@@ -394,8 +394,8 @@ function capacityCheck(w, st, s, who, norm) {
   const holder = who.cap?.kind === "reaction" ? who.cap.author : who.cap?.kind === "script" ? who.cap.sponsor : who.actor;
   if (!CTX.isAnon(holder)) return;
   const g = guestMade(w, st);
-  if (made && g.things + made > cap.guestThings) refuse("full", `guests (people without an account) have ${g.things} things standing here, and this world lets guests have ${cap.guestThings} (@world.capacity.guestThings), all of them together`, "sign in to build more, or ask the world's owner to raise capacity.guestThings", { limit: cap.guestThings, things: g.things });
-  if (added && g.sockets + added > cap.guestSockets) refuse("full", `guests (people without an account) have ${g.sockets} sockets standing here, and this world lets guests have ${cap.guestSockets} (@world.capacity.guestSockets), all of them together`, "sign in to build more, or ask the world's owner to raise capacity.guestSockets", { limit: cap.guestSockets, sockets: g.sockets });
+  if (made && g.things + made > cap.guestThings) refuse("full", `guests (people without an account) have ${g.things} things standing here, and this world lets guests have ${cap.guestThings} (@world.${cap.name}.guestThings), all of them together`, "sign in to build more, or ask the world's owner to raise ${cap.name}.guestThings", { limit: cap.guestThings, things: g.things });
+  if (added && g.sockets + added > cap.guestSockets) refuse("full", `guests (people without an account) have ${g.sockets} sockets standing here, and this world lets guests have ${cap.guestSockets} (@world.${cap.name}.guestSockets), all of them together`, "sign in to build more, or ask the world's owner to raise ${cap.name}.guestSockets", { limit: cap.guestSockets, sockets: g.sockets });
 }
 // A lock binds everyone, the locker and owners included (§5). `throughLock: true` on the request lets anyone who may
 // remove that lock act through it, and the log records only the edit (the act carries the request as sent, flag and
