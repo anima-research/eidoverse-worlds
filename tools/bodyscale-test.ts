@@ -24,6 +24,7 @@ plugin({
     b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: here('./core-stub.mjs') }));
     b.onResolve({ filter: /^\.\/assets\.js$/ }, () => ({ path: here('./assets-stub.mjs') }));
     b.onResolve({ filter: /^\.\/loadwork\.js$/ }, () => ({ path: here('./loadwork-stub.mjs') }));
+    b.onResolve({ filter: /^\.\/world\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));   // seatbody.js imports seatSocket from world.js since sockets (10-14); world.js wants a DOM this unit test never had
   },
 });
 
