@@ -27,7 +27,8 @@ const srv = Bun.spawn([process.execPath, join(import.meta.dir, "..", "server", "
   stdout: "ignore", stderr: "ignore",
 });
 let up = false;
-for (let i = 0; i < 80 && !up; i++) { try { up = (await fetch(`${HTTP}/worlds`)).ok; } catch {} if (!up) await sleep(150); }
+// up = the door answers at all: with JOIN_TOKEN set, /worlds is behind the door (401) — public reads are gated since 10-14
+for (let i = 0; i < 80 && !up; i++) { try { up = (await fetch(`${HTTP}/worlds`)).status < 500; } catch {} if (!up) await sleep(150); }
 
 let passed = 0, failed = 0;
 function check(name: string, ok: boolean, detail = "") {

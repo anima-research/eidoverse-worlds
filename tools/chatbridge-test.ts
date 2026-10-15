@@ -19,7 +19,7 @@ const srv = Bun.spawn([process.execPath, "server/server.ts"], { cwd: ROOT,
 let bridge: Bun.Subprocess<"pipe", "pipe", "pipe"> | null = null;
 const done = (code: number) => { try { bridge?.kill(); } catch {} try { srv.kill(); } catch {} rmSync(W, { recursive: true, force: true }); process.exit(code); };
 let up = false;
-for (let i = 0; i < 80 && !up; i++) { try { up = (await fetch(`http://127.0.0.1:${PORT}/worlds`)).ok; } catch {} if (!up) await sleep(150); }
+for (let i = 0; i < 80 && !up; i++) { try { up = (await fetch(`http://127.0.0.1:${PORT}/worlds`)).status < 500   /* up = the door answers; with JOIN_TOKEN /worlds is 401 (public reads gated 10-14) */; } catch {} if (!up) await sleep(150); }
 if (!up) { console.error("scratch server never came up"); done(2); }
 
 const join_ = (id: string) => new Promise<{ ws: WebSocket; msgs: any[] }>((res, rej) => {
