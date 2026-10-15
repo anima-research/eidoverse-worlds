@@ -133,7 +133,10 @@ const compMesh = (ent) => isBag(ent?.mesh) && ent.model == null && MESH_SHAPES.i
 // which every lease release and settle writes), which reads (0, yaw, 0) in
 // every order, exactly as the same thing without a q does.
 const uprightHint = (ent) => (ent?.q && Math.abs(ent.q[0]) < 1e-12 && Math.abs(ent.q[2]) < 1e-12 ? [0, ent.yaw ?? 0, 0] : null);
-const motionKeys = (ent) => Object.keys(recordComponents(ent)).filter((k) => (k === 'motion' || k.startsWith('motion:')) && ent[k] && typeof ent[k] === 'object');
+// A motion key is a Motion only when its value names a motion type. A `motion` holding something else — a reaction's
+// {cause, by} stamp with no `type` (components-inspector-test's swing1) — is not one: it falls to the raw-JSON floor, where
+// the card and the field agree, instead of a Motion card naming a comp.motion field nobody emits.
+const motionKeys = (ent) => Object.keys(recordComponents(ent)).filter((k) => (k === 'motion' || k.startsWith('motion:')) && ent[k] && typeof ent[k] === 'object' && MOTION_TYPES.includes(ent[k].type));
 
 // ---------------------------------------------------------------- the hand-written cards
 // The four the descriptor table marks `hand` (shared/protocol/descriptors.js HAND_CARDS): their rows are not built from
@@ -777,7 +780,7 @@ export function inspectSchema(ent, id, live = {}) {
   // the descriptor table's typed cards (CLAIMED_KEYS: the floor cards keep their key), their keyed spellings (motion:<part>,
   // look-at:<part>), and the client's own flags and draft cards — a key here is a card's, never raw JSON. A light or
   // collider that isn't a bag, a home with no pos, a physics that isn't a bag: raw, as the card didn't draw
-  const claimed = new Set([...CLAIMED_KEYS.filter((k) => !(k === 'light' && !compLight(ent)) && !(k === 'mesh' && !compMesh(ent)) && !(k === 'collider' && !isBag(c.collider))), 'disabled', 'clickthrough', ...(c.home && typeof c.home === 'object' && Array.isArray(c.home.pos) ? ['home'] : []), 'hesperus/material', LAYER_KEY, ...Object.keys(c).filter((k) => k.startsWith('hesperus/material:')), ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), ...laKeys, ...mk, ...scriptKeys]);
+  const claimed = new Set([...CLAIMED_KEYS.filter((k) => !(k === 'light' && !compLight(ent)) && !(k === 'mesh' && !compMesh(ent)) && !(k === 'collider' && !isBag(c.collider)) && !(k === 'motion' && !motionKeys(ent).includes('motion'))), 'disabled', 'clickthrough', ...(c.home && typeof c.home === 'object' && Array.isArray(c.home.pos) ? ['home'] : []), 'hesperus/material', LAYER_KEY, ...Object.keys(c).filter((k) => k.startsWith('hesperus/material:')), ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), ...laKeys, ...mk, ...scriptKeys]);
   const rest = Object.keys(c).filter((t) => !claimed.has(t) && t !== 'model' && t !== 'parent');   // flat on the record (view.js): the header's and the Parent card's, never raw JSON
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
   // Add Component (Unity's pattern) for the kinds that need a gesture to begin:
