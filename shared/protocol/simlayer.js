@@ -194,6 +194,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         // world; any other physical write to a held thing (its physics, its model) leaves it in the hand (review 64d26822 #1–#2)
         if (out.lifted.has(o.id)) { if (whole || (RELEASES.has(o.comp) && !(o.comp === "disabled" && !(o.verb === "set" && o.value === true)))) out.lifted.delete(o.id); else continue; }
         const ids = [o.id, ...Object.keys(st.entities).filter((k) => isUnder(st, k, o.id))];
+        const view = engineView(st);   // one view per op (review 10-14 C4: it was rebuilt per affected id — 51 views for a shelf of 50)
         for (const id of ids) {
           // in someone's hand (lifted or caught, not yet put down or thrown): its record still stands where it was taken, under
           // whatever it rested on, and a move of that thing must not put a body back there (R 10-11: a crate she caught was
@@ -202,7 +203,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
           // a thing under it that a launch set moving is the engine's until its own rest is LOGGED (L6), flying or come to
           // rest unlogged: its parent's rest or a write to its parent doesn't cancel it (review of 8377ec52 #6)
           if (id !== o.id && out.launched[id] && out.sim.bodies[id]) continue;
-          const view = engineView(st); const gone = !view.entities[id];
+          const gone = !view.entities[id];
           SE(out.sim, { seq, ts: clock, actor: e.actor, verb: gone ? "remove" : "place", args: { id } }, view);
           if (out.launched[id]) delete out.launched[id];
         }

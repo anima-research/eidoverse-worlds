@@ -177,6 +177,7 @@ export class World {
    *  the archive directory. */
   resetWorld(): string {
     const arch = resetWorld(this.log);
+    this.log.retire();           // a request still awaiting warm() on the old log refuses instead of writing into the new file
     this.scripts.disposeAll();   // the old world's scripts stop with it: the fresh world has none
     this.log = this.openLog();
     this.scripts = new WorldScripts(this.log);

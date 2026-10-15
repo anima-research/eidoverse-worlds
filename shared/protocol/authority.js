@@ -920,7 +920,10 @@ function commit(w, actor, verb, args, build) {
   const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops); ctx.notes.push(...plan.notes);
   if (args.dry) return { ok: true, dry: true, would: plan.ops, notes: ctx.notes, ...warnOrNot(warnings(plan.after, [...ctx.refs])) };
   const actE = actOf(w, actor, verb, sent, ctx.actExtra);
-  w.fits(actE, changeShape(plan, w.entries.length, w)); // both lines fit, or neither is written
+  const changeE = changeShape(plan, w.entries.length, w);
+  w.fits(actE, changeE); // both lines fit, or neither is written
+  // the budget counts THIS write too, not only what came before it (review 10-14 C0: a 300 KiB batch in an empty window passed a 256 KiB cap)
+  if (!ctx.cap || ctx.cap.kind === "reaction" || ctx.cap.kind === "handle") rateCheck(w, actor, "act", JSON.stringify(actE).length + JSON.stringify(changeE).length);
   const act = w.append(actE);
   const seq = changeEntry(w, plan, act);
   const after = w.state();
@@ -3228,7 +3231,7 @@ function launch(w, actor, a, verb, g = null) {
 // The authority keeps every body's table (consent.js) beside `bodies` and `holds`, refuses BEFORE delivery, and keeps an
 // unlogged attempt ring. Delivery in the lab is the target's `inbox` (a stand-in for the relay to its client).
 const ringPush = (P, r) => { (P.ring ??= []).push(r); if (P.ring.length > 200) P.ring.shift(); };
-const inboxPush = (P, who, m) => { ((P.inbox ??= {})[who] ??= []).push(m); };
+const inboxPush = (P, who, m) => { const q = (P.inbox ??= {})[who] ??= []; q.push(m); if (q.length > 200) q.shift(); };   // bounded like ring (review 10-14 C2: browsers never drain it)
 const bodyRef = (x) => (typeof x === "string" ? x.replace(/^body:/, "") : x);
 function expireAsks(w) { const P = w.presence, now = w.now();
   for (const [id, k] of Object.entries(P.asks ?? {})) if (k.expires <= now) { delete P.asks[id]; coolDown(P, k, now); inboxPush(P, k.from, { type: "body-reply", ask: id, ok: false, why: "no answer in 20 s: silence is no" }); w.presenceDirty = true; } }
@@ -3254,6 +3257,7 @@ function bodyGate(w, from, to, kind, extra = {}) {
     if (isScriptActor(from)) return result("refused", { ok: false, code: "consent", class: cls, reason: `${to}'s ${cls} is 'ask'; a behaviour can't wait for an answer`, fix: `${to} may allow ${from} by name` });
     const key = `${from}>${to}:${cls}`; if (P.cool?.[key]?.until > now) return result("refused", { ok: false, code: "cool-down", class: cls, reason: `${to} said no (or didn't answer); you may ask again in ${Math.ceil((P.cool[key].until - now) / 60000)} min`, fix: "the wait doubles each time" });
     if (Object.values(P.asks ?? {}).some((k) => k.from === from && k.to === to)) return result("refused", { ok: false, code: "pending", class: cls, reason: `you already have an ask waiting with ${to}`, fix: "one at a time" });
+    for (const [k, t] of Object.entries(P.asked ?? {})) if (now - t.ts >= 60000) delete P.asked[k];   // only ever grew (review 10-14 C2)
     if (Object.values(P.asked ?? {}).filter((t) => t.from === from && now - t.ts < 60000).length >= 2) return result("refused", { ok: false, code: "rate", class: cls, reason: "at most 2 asks a minute", fix: "" });
     const id = `ask-${now}-${Object.keys(P.asks ?? {}).length}`; (P.asks ??= {})[id] = { id, from, to, kind, cls, spec: extra.spec ?? null, why: extra.why ?? null, expires: now + C.ASK_MS };
     (P.asked ??= {})[id] = { from, ts: now };
@@ -3584,7 +3588,9 @@ const VERBS = {
     { const m = muteOf(w, actor, "chat"); if (m)
       refuse("muted", `you're muted in this world's chat${m.until !== undefined ? ` until ${new Date(m.until).toISOString()}` : ""}${m.reason ? ` (${m.reason})` : ""}`, "you may still whisper to a moderator (/w <name>)", { until: m.until ?? null }); }
     if (typeof a.text !== "string" || a.text.length > SAY_MAX) refuse("too-big", `a say is at most ${SAY_MAX} characters (this one is ${String(a.text).length})`, "split it, or put a long text in a blob");
-    rateCheck(w, actor, "say", a.text.length); const seq = w.append({ kind: "say", actor, verb: "say", body: { text: a.text, ...(a.to ? { to: a.to } : {}), ...spokenOf(a, w.now()) } }); (w.sayQ ??= []).push(seq); return { ok: true, seq }; }, // w.append refuses too-big before writing
+    if (a.to !== undefined && (typeof a.to !== "string" || a.to.length > 64)) refuse("shape", "say.to names one person: a string of at most 64 characters", "say {text, to: '<identity>'}");
+    const body = { text: a.text, ...(a.to ? { to: a.to } : {}), ...spokenOf(a, w.now()) };
+    rateCheck(w, actor, "say", JSON.stringify(body).length); const seq = w.append({ kind: "say", actor, verb: "say", body }); (w.sayQ ??= []).push(seq); return { ok: true, seq }; }, // w.append refuses too-big before writing
   undo: (w, actor, a) => commit(w, actor, "undo", a, (ctx) => buildUndo(ctx, a, w)),
   // ---- captions: one line of what a screen said (a captioner bot, live subtitles). Rights live on the SCREEN: its
   // `captioners {ids}` names who may caption it (anyone who may edit the screen may too); nobody else, and no `set` by

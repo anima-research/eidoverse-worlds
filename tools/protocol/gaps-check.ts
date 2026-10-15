@@ -266,6 +266,22 @@ const cases = [
   { id: "R6b", what: "33 C2: say with 1.1 MB of text throws inside the authority instead of refusing", run(s) { cast(s);
       const r = s.call("vic", "say", { text: "y".repeat(1100000) }); return { r: show(r) }; },
     baseBad: (o) => /CRASH/.test(o.r), nowGood: (o) => /refused too-big/.test(o.r) },
+  // ---------------- review 10-14 night C0/C2: the byte budget is post-paid; say.to unvalidated; the body inbox unbounded ----------------
+  { id: "G3f", guard: true, what: "say.to is a short identity, never a 100 KiB payload", run(s) { cast(s);
+      const r = s.call("vic", "say", { text: "hi", to: "x".repeat(100000) }); return { r: show(r), code: code(r) }; },
+    nowGood: (o) => o.code === "shape" },
+  { id: "G3g", guard: true, what: "one 300 KiB batch in an empty window is over the 256 KiB budget: refused, not written", run(s) { cast(s);
+      s.call("bob", "create", { id: "c", model: "crate", place: { at: [0, 0] } });
+      const before = s.world().entries.length;
+      const r = s.call("bob", "batch", { ops: Array.from({ length: 600 }, (_, i) => ({ verb: "set", args: { id: "c", component: "description", value: `${i} ` + "d".repeat(490) } })) }, 10000);
+      return { r: show(r), code: code(r), written: s.world().entries.length - before }; },
+    nowGood: (o) => o.code === "rate" && o.written === 0 },
+  { id: "G3h", guard: true, what: "300 allowed body acts leave at most 200 in the target's inbox", run(s) { cast(s);
+      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] });
+      const allow = s.call("bob", "consent", { allow: "vic", class: "pose" });
+      const rs = Array.from({ length: 300 }, () => s.call("vic", "body", { to: "bob", kind: "anim" }, 10));
+      return { allow, okCount: rs.filter(ok).length, first: show(rs[0]), inbox: s.world().presence?.inbox?.bob?.length ?? 0 }; },
+    nowGood: (o) => ok(o.allow) && o.okCount === 300 && o.inbox <= 200 && o.inbox > 0 },
 ];
 function phys(s) { cast(s); s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
   for (const [i, x] of [[1, -2], [2, 0], [3, 2]]) s.call("olive", "create", { id: `ball-${i}`, model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [x, 0] } }); }

@@ -77,6 +77,11 @@ export class WorldLog {
   private host: LogHost | null = null;
   /** counters, for /tick-style inspection and the tests */
   stats = { requests: 0, writes: 0 };
+  /** Set by World.resetWorld before the fresh log takes this one's place: a request that was awaiting warm() must not
+   *  append the old world's line into the new world's file (review 10-14 C1). */
+  retired = false;
+  retire() { this.retired = true; }
+  private static RESET = { ok: false, refused: { code: "reset", reason: "this world was reset while the request waited; it is a new world now", fix: "reload, then send it again" } };
   /** every actor this log names (opaque ids): clients are sent their display names, from the directory (§2.3) */
   private actors = new Set<string>();
   private names(ids: Iterable<string>) { return directoryFor(WORLDS_DIR).names(ids); }
@@ -141,6 +146,7 @@ export class WorldLog {
     return this.requestSync(actor, verb, args);
   }
   requestSync(actor: string, verb: string, args: Record<string, unknown> = {}) {
+    if (this.retired) return WorldLog.RESET;
     this.stats.requests++;
     const from = this.live.entries.length; const held = this.holdsKey();
     const t0 = performance.now(); const r = authorityRequest(this.live, actor, verb, args); if (r && typeof r === "object") authorityTime.set(r, performance.now() - t0);
@@ -180,6 +186,7 @@ export class WorldLog {
   /** Scripts (research 41): the authority's timers on this server's clock (server.ts calls World.scripts.tick once a second). What
    *  they write goes out like any write. */
   tickScripts() {
+    if (this.retired) return;
     if (this.live.state().status !== "ok") return;
     const from = this.live.entries.length;
     try { authorityTick(this.live); } finally { if (this.live.entries.length > from) this.afterWrite(from); }
@@ -187,6 +194,7 @@ export class WorldLog {
   /** The engine's heartbeat (server.ts `physics`): rests log at tick cadence with nobody asking, and requests no longer
    *  carry the settling (DESIGN-physics-responsiveness §1; STRIKES PH-S1-2: 150–500 ms per request during a cascade). */
   settle() {
+    if (this.retired) return;
     if (this.live.state().status !== "ok") return;
     const from = this.live.entries.length; const held = this.holdsKey();
     try { authoritySettle(this.live); }
@@ -194,6 +202,7 @@ export class WorldLog {
   }
   /** Someone arrived or left: scripts that listen for enter / leave hear it (by their identity). */
   presenceScripts(kind: "enter" | "leave", who: string) {
+    if (this.retired) return;
     if (this.live.state().status !== "ok") return;
     const from = this.live.entries.length;
     try { presenceEvent(this.live, kind, who); } finally { if (this.live.entries.length > from) this.afterWrite(from); }

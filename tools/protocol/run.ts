@@ -55,7 +55,8 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["client", "client-check.ts", 1],     // slice 3b: edit mode in headless Chromium against a scratch server (one browser, guarded)
   ["server", "server-check.ts", 1],     // the server: real processes, real WebSockets, scratch ports
   ["identity", "identity-check.ts", 1], // who a joiner is: C1-C3, H1, H3-H5 (security review 10-06), one identity per account
-  ["fork-reset", "fork-reset-check.ts", 1], // world fork (a new world naming its source) and reset (archived, re-founded by its owners)
+  ["fork-reset", "fork-reset-check.ts", 1],
+  ["reset-race", "reset-race-check.ts", 1], // review 10-14 C1: a request awaiting warm() across a reset refuses instead of writing the old log's line into the new file // world fork (a new world naming its source) and reset (archived, re-founded by its owners)
   ["scripts", "scripts-check.ts", 1],   // research 41: scripts in QuickJS on sponsor rights; use → script; a timer through a real server
   ["grab", "grab-check.ts", 1],         // grabbable (research grab 10-06): the gate, release modes, the hold record, use while held
   ["shove", "shove-check.ts", 1],       // body shove at the authority: punt {shove: true}'s own gate (a body against it, at a walk's speed, away from the feet, at rest)
