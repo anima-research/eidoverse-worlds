@@ -147,7 +147,7 @@ try{
  agent.pos={x:.5,y:0,z:.5};
  check(detour(await planned([1.5,.5])),"cached wall produces a real walk detour");
  await receive("place",{id:"house",pos:[10,0,0]});
- check(data()===undone&&cached(data())===undonePlan,"entity translation preserves authored-cache identity");
+ check(same(data(),undone)&&cached(data())===undonePlan,"entity translation preserves authored-cache identity");
  check(straight(await planned([1.5,.5]),[1.5,.5]),"new walk uses fresh translation rather than an old transformed checker");
  await receive("place",{id:"house",pos:[10,1,-5],yaw:Math.PI/2,scale:2});
  (agent as any).terrain={heightAt:()=>1};agent.pos={x:11,y:1,z:-6};

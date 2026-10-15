@@ -119,6 +119,10 @@ try{
  check(state()===before&&sent.length===0,"and the refused walk leaves the seated, pinned, posed, tumbling body as it was, sending nothing");
  const up=g.walkTo(1.5,.5,true,LONG,0);
  check(g.pins.size===0&&g.heldPose===null&&g.pos.y===0&&g.mySeat===null&&!g.mounts.has(g.name),"an accepted walk gets the body up: unpinned, unposed, dismounted, on the ground");
+ // …and the world hears it: a seat is presence (the pose frame's `seat`), so the next frame carries none.
+ (g as any).tick();
+ const frame=sent.filter(m=>m.type==="pose").at(-1);
+ check(frame&&!("seat" in frame.pose),"and the world hears it: the next pose frame carries no seat");
  g.stop();await up;
  console.log("PASS "+checks+" active-support lifecycle checks");
 }finally{for(const a of agents)a.close();}

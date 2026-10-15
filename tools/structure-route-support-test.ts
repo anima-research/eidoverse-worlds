@@ -86,9 +86,9 @@ function body(entity:any,height:(x:number,z:number)=>number,from:[number,number]
  a.entities.set(entity.id,entity);(a as any).terrain={heightAt:height};
  a.pos={x:from[0],y:height(...from),z:from[1]};return a;
 }
-async function walk(a:WorldAgent,to:[number,number]) {
+async function walk(a:WorldAgent,to:[number,number],run=true) {
  const points=[[a.pos.x,a.pos.y,a.pos.z]];
- const promise=a.walkTo(...to,true,10000,0);
+ const promise=a.walkTo(...to,run,10000,0);
  for(let i=0;i<1000&&(a as any).target;i++){(a as any).tick();points.push([a.pos.x,a.pos.y,a.pos.z]);}
  if((a as any).target){a.stop();throw new Error("bounded tick limit");}
  return {arrived:await promise,points};
@@ -126,7 +126,9 @@ try{
  const slope={id:"slope",pos:[10,2,-5],yaw:Math.PI/2,scale:2,structure:wall};
  const highAtCross=(wx:number,wz:number)=>{const [lx]=localizePoint(slope,wx,0,wz);return 2+8*lx;};
  const c=body(slope,highAtCross,transform(slope,0,.5));
- const high=await walk(c,transform(slope,2,.5));
+ // Walked, not run: the one walker (shared/mover.js) refuses a stride rising more than a step (0.8 m), and a run's
+ // 0.4 m stride up this 4 m-per-metre slope rises 1.6 m. A walk's 0.155 m stride rises 0.62 m.
+ const high=await walk(c,transform(slope,2,.5),false);
  check(high.arrived&&high.points.every(p=>Math.abs(localizePoint(slope,p[0],p[1],p[2])[2]-.5)<1e-8),
    "transformed real body uses terrain at wall crossing rather than origin height");
  console.log("PASS "+n+" support-basis checks");

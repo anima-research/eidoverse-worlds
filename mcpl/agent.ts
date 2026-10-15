@@ -122,7 +122,7 @@ export const WALK_ARGS_REASON = "move needs a finite destination and a tolerance
 
 /** Component revisions a walk has skipped as unplannable, so the operator's
  *  log names each once (walkStructures). */
-const UNPLANNABLE_LOGGED = new WeakSet<object>();
+const UNPLANNABLE_LOGGED = new Map<string, string>();   // "<agent>\0<id>" → the revision's JSON last logged
 
 /** How far a body standing in a wall looks for a clear point to step out
  *  to, nearest first, and in how many directions (planWalk). */
@@ -1402,20 +1402,7 @@ export class WorldAgent {
     return m ? { ...e, parent: m } : { ...e };
   }
 
-  /** The view's entities as this body reads them. `changes` (diffView's things, from the last view to this one): a
-   *  component the diff doesn't name as changed keeps the object the last view held, so a received revision has ONE
-   *  identity until the fold changes it, and what is keyed by it (planOf, a walk's structure plans) is reused across
-   *  views — the view itself clones every value every time (view.js viewOf). Absent: every value is the fresh one. */
-  private reconcileFromFold(changes?: { id: string; what: string; comp?: string }[]) {
-    const fresh = new Set<string>(), touched = new Set<string>();
-    if (changes) for (const { id, what, comp: key } of changes) { if (what === "comp") touched.add(id + "\0" + key); else if (what === "born" || what === "gone") fresh.add(id); }
-    const carry = (id: string, comps: Record<string, unknown>) => {
-      const was = this.entities.get(id) as Record<string, unknown> | undefined;
-      if (!changes || !was || fresh.has(id)) return comps;
-      // model and parent aren't components to the diff (it says 'born' and 'parent' for them): always the fresh value
-      for (const k of Object.keys(comps)) if (k !== "model" && k !== "parent" && k in was && !touched.has(id + "\0" + k)) comps[k] = was[k];
-      return comps;
-    };
+  private reconcileFromFold() {
     const seen = new Set<string>();
     for (const [id, e] of Object.entries(this.st.entities)) {
       seen.add(id);
@@ -1428,10 +1415,12 @@ export class WorldAgent {
         ...(Array.isArray((e as any).q) ? { q: (e as any).q } : {}),
         actor: (e as any).actor,
         ...((e as any).placer ? { placer: (e as any).placer } : {}),
-        ...carry(id, recordComponents(e as any)),   // its components, flat (view.js): what a thing can DO
+        ...recordComponents(e as any),   // its components, flat (view.js): what a thing can DO
       });
     }
     for (const id of [...this.entities.keys()]) if (!seen.has(id)) this.entities.delete(id);
+    // a structure's cached plan goes with the structure (a re-attached one is planned afresh)
+    for (const id of [...this.plans.keys()]) if (!(this.entities.get(id) as any)?.structure) this.plans.delete(id);
     // both mount species land in one view, as the old fold kept them:
     // entity cargo rides ent.parent, bodies ride st.mounts
     this.mounts.clear();
@@ -1465,10 +1454,7 @@ export class WorldAgent {
     const was = new Map<string, any>();
     for (const c of d.things) if (!was.has(c.id)) was.set(c.id, this.entities.get(c.id));
     this.st = next;
-    // Which components this view leaves as they were: every one the diff names unchanged (a born thing is all new).
-    // A non-live view's percept diff is from nothing, so it's diffed from the last view for this.
-    const kept = live ? d : diffView(prev, next);
-    this.reconcileFromFold(kept.things);
+    this.reconcileFromFold();
     for (const c of d.things) {
       try { this.onThingChange(c, was.get(c.id), live, actor ?? "world", ts ?? this.serverNow()); }
       catch (e) { console.error(`[agent] ${c.what} ${c.id}:`, e); }
@@ -1684,16 +1670,26 @@ export class WorldAgent {
     return this.terrain ? this.terrain.heightAt(x, z) : 0;
   }
 
-  /** A received structure revision's pure local plan, keyed by the revision's object identity. The view keeps a
-   *  component's object while the fold leaves it unchanged (reconcileFromFold), and any received change is a new
-   *  object; entity transforms and each walk's support basis stay outside this cache. */
-  private static readonly plans = new WeakMap<object, ReturnType<typeof planStructure>>();
-  private planOf(data: unknown): ReturnType<typeof planStructure> {
-    // Opaque primitive components normalize as empty but cannot be WeakMap keys.
+  /** Each structure's plan, per entity id, for the revision it holds now: the same object is a hit without a read;
+   *  else the same content (JSON) is (the view clones every component every view, view.js viewOf, so a received
+   *  revision's object doesn't outlive the next log entry); else it is planned afresh. Entity transforms and each
+   *  walk's support basis stay outside this cache. */
+  private plans = new Map<string, { data: object; json: string; plan: ReturnType<typeof planStructure> }>();
+  private planFor(id: string, data: unknown): ReturnType<typeof planStructure> {
+    // Opaque primitive components normalize as empty and are planned afresh each time.
     if (typeof data !== "object" || data === null) return planStructure(data);
-    let plan = WorldAgent.plans.get(data);
-    if (!plan) { plan = planStructure(data); WorldAgent.plans.set(data, plan); }
+    const had = this.plans.get(id);
+    if (had?.data === data) return had.plan;
+    const json = JSON.stringify(data);
+    if (had && had.json === json) { had.data = data; return had.plan; }
+    const plan = planStructure(data);
+    this.plans.set(id, { data, json, plan });
     return plan;
+  }
+  /** The plan of whichever known thing holds `data` as its structure (planFor), or an uncached plan. */
+  private planOf(data: unknown): ReturnType<typeof planStructure> {
+    for (const e of this.entities.values()) if ((e as any).structure === data) return this.planFor(e.id, data);
+    return planStructure(data);
   }
 
   // ---- support surfaces (#17) ----------------------------------------------
@@ -2660,8 +2656,10 @@ export class WorldAgent {
       const data = recordComponents(e).structure;
       if (!data) continue;
       const skip = (why: string) => {
-        if (typeof data !== "object" || UNPLANNABLE_LOGGED.has(data)) return;
-        UNPLANNABLE_LOGGED.add(data);
+        if (typeof data !== "object") return;
+        const key = this.name + "\0" + e.id, json = JSON.stringify(data);
+        if (UNPLANNABLE_LOGGED.get(key) === json) return;
+        UNPLANNABLE_LOGGED.set(key, json);
         console.warn(`[${this.name}] move skips structure [${e.id}], which can't be checked: ${why}`);
       };
       // Where it is now, carried or moving included, as every other spatial
@@ -2676,7 +2674,7 @@ export class WorldAgent {
       const local = (p: Vec2): [number, number] => { const [lx, , lz] = localizePoint(place, p.x, 0, p.z); return [lx, lz]; };
       let route: ReturnType<typeof prepareRouteLocal>;
       try {
-        const plan = this.planOf(data);
+        const plan = this.planFor(e.id, data);
         route = prepareRouteLocal(plan, support.kind === "terrain" ? {
           kind: "terrain", step: ROUTE_STEP_METRES / sc, scale: sc,
           // The live terrain, as the walk's ticks read it.
@@ -3537,7 +3535,7 @@ export class WorldAgent {
         if (!data) continue;
         try {
           const [lx, ly, lz] = localizePoint(e, me.x, me.y, me.z);
-          const here = describeHere(this.planOf(data), lx, lz, ly);
+          const here = describeHere(this.planFor(e.id, data), lx, lz, ly);
           if (here) { L.push(`${here} (inside [${e.id}]; sides are the building's own compass.)`); break; }
         } catch { /* one malformed house must not cost the whole percept */ }
       }
