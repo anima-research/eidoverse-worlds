@@ -43,6 +43,10 @@ export function* bags() { yield* comps; }
 export const metaOf = (id) => entityMeta.get(id) ?? null;
 export const entities = new Map();
 export const findPart = () => null;
+/* world.js grew these in the sockets merge (10-14); seatbody.js imports seatSocket, so the shared stub must offer it (headless: no sockets) */
+export const seatSocket = () => null;
+export const socketsOn = () => [];
+export const parentIdOf = () => null;
 
 // chat / ui / boot / fp_view
 export const logChat = () => {};
