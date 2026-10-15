@@ -89,6 +89,15 @@ const { HANDLERS, TOOLS, toolList } = await import("../../mcpl/tools.ts");
     const sayTool = toolsSrc.slice(toolsSrc.indexOf('name: "say"'), toolsSrc.indexOf('name: "say"') + 1200);
     ok(/\bto: \{ type: "string"/.test(sayTool) && /say\(text: string, extra\?: \{[^}]*\bto\?: string/.test(agentSrc), "AT7c say takes `to` on both the tool's schema and ag.say (the client sends it; the authority logs it)");
   }
+  { // AT8 (parity sweep 10-14, verified 19:19): kick/ban/unban resolved a person by NAME through whois, while mute/unmute/
+    // warn/ghost/unghost went through bare `act` and took only a raw identity — two ways to say who. One resolver, used by
+    // both the kick family and `act` for every verb whose arguments name a `who`.
+    const toolsSrc = fs.readFileSync(path.join(ENGINE, "mcpl/tools.ts"), "utf8");
+    ok(/async function resolveWho\(/.test(toolsSrc), "AT8a tools.ts has ONE resolveWho (name or u-… → identity, via whois)");
+    ok((toolsSrc.match(/await ag\.request\("whois", \{ name/g) ?? []).length === 2, "AT8b whois-by-name is called from exactly two places — the resolver and the whois tool itself — not once per verb");
+    ok(/BODY_VERBS\[verb\]\) return[\s\S]{0,400}resolveWho\(/.test(toolsSrc.slice(toolsSrc.indexOf("act: async"))), "AT8c `act` resolves args.who through the resolver before sending a who-taking verb");
+    ok(!/sky, weather, terrain and grass verbs/.test(toolsSrc), "AT8d inspect's description no longer cites the sky/weather/terrain/grass verbs (they are `edit {id: \"@world\"}` now)");
+  }
   ok(!names.some((n) => /^rehearse_/.test(n)) && !/ag\.flightBody(Down|Recovered)\(/.test(fs.readFileSync(path.join(ENGINE, "mcpl/tools.ts"), "utf8")), "AT6 the rehearsal hooks are gone from the tool surface: no tool, no call into the trusted seam (a bench calls the agent's flightBodyDown directly)");
   ok(/create \{from: "[^"]+", at: \[/.test(desc.create) && !/with at: \[x, z\]\)/.test(desc.create), "AT2 create's description has a duplicate example in the shape the tool takes", desc.create); }
 
