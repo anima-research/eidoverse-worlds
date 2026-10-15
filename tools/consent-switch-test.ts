@@ -75,5 +75,41 @@ const run = async (reply: (n: number) => any) => {
   check('a bodiless client sends no table', sent.length === 0);
 }
 
+// 3. the ask round-trip (10-14, R: wire `ask`): a body-inbox message holds the ask; answering sends consent {answer, yes}
+// and the ask is gone; an ask nobody answers expires locally with no send (the authority already took it as a no).
+// Mutation (must go red): in client/lib/consentinbox.js drop the `delete` in answer(), or the expiry in sweep().
+{
+  const { makeConsentInbox } = await import('../client/lib/consentinbox.js');
+  let t = 1000; const sent: any[] = [], changes: any[] = [];
+  const box = makeConsentInbox({ now: () => t, onChange: (ev: any) => changes.push(ev) });
+  const ask = { id: 'ask-1000-0', from: 'u-wren', kind: 'pose', summary: 'u-wren asks to pose', why: null, expires: 21000 };
+  box.take([{ type: 'body-ask', ask }]);
+  check('a body-ask lands as a pending ask, keyed by id, with its class derived from the kind', box.asks().length === 1 && box.asks()[0].id === ask.id && box.asks()[0].from === 'u-wren' && box.asks()[0].cls === 'pose' && box.asks()[0].kind === 'pose', JSON.stringify(box.asks()));
+  check('askFrom finds it by the asker\'s identity', box.askFrom('u-wren')?.id === ask.id && box.askFrom('u-nobody') === null);
+  check('the arrival is heard (added)', changes.length === 1 && changes[0].added?.[0]?.id === ask.id, JSON.stringify(changes));
+  check('the same ask twice is held once', (box.take([{ type: 'body-ask', ask }]), box.asks().length === 1));
+  const send = async (verb: string, args: any) => { sent.push([verb, args]); return { ok: true, answered: args.answer, yes: args.yes }; };
+  const r = await box.answer(ask.id, true, send);
+  check('answering yes sends consent {answer: <id>, yes: true}', sent.length === 1 && sent[0][0] === 'consent' && sent[0][1].answer === ask.id && sent[0][1].yes === true, JSON.stringify(sent));
+  check('…and the ask is gone', r?.ok === true && box.asks().length === 0 && box.askFrom('u-wren') === null);
+  check('answering an ask that isn\'t there sends nothing', (await box.answer('ask-nope', false, send)) === null && sent.length === 1);
+  // a second ask, refused
+  box.take([{ type: 'body-ask', ask: { ...ask, id: 'ask-1001-0', kind: 'drag' } }]);
+  check('a drag ask is the move class', box.askFrom('u-wren')?.cls === 'move', JSON.stringify(box.asks()));
+  await box.answer('ask-1001-0', false, send);
+  check('answering no sends consent {answer, yes: false}', sent.length === 2 && sent[1][1].yes === false && box.asks().length === 0, JSON.stringify(sent));
+  // a third ask nobody answers: gone at its expiry, nothing sent
+  box.take([{ type: 'body-ask', ask: { ...ask, id: 'ask-1002-0', expires: 21000 } }]);
+  t = 20999; box.sweep();
+  check('before its expiry it is still there', box.asks().length === 1);
+  t = 21000; const gone = box.sweep();
+  check('at its expiry it is gone, and nothing was sent', gone.length === 1 && gone[0] === 'ask-1002-0' && box.asks().length === 0 && sent.length === 2, JSON.stringify({ gone, sent: sent.length }));
+  check('the expiry is heard (removed)', changes.some((c) => c.removed?.includes('ask-1002-0')), JSON.stringify(changes));
+  // replies and acts land in a short ring, in the authority's words
+  box.take([{ type: 'body-reply', ask: 'ask-9', ok: false, why: 'u-x said no' }, { type: 'body', from: 'u-wren', kind: 'pose', cls: 'pose', consent: 'asked' }, { type: 'body-revoked', by: 'u-x', class: 'pose' }]);
+  check('replies, acts and revocations are kept in the ring (not as asks)', box.ring().length === 3 && box.asks().length === 0, JSON.stringify(box.ring()));
+  check('a malformed inbox is ignored', (box.take(null as any), box.take([{ type: 'body-ask' }, 7, { type: 'body-ask', ask: { id: 42 } }]), box.asks().length === 0));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

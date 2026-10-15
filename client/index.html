@@ -850,6 +850,10 @@ input[type=range]:disabled { accent-color: color-mix(in srgb, var(--control) 40%
 .who-row .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .who-row .d { color: var(--dim); flex: none; }
 .who-row.self .n { color: var(--fg); }
+/* a pending ask (consentinbox.js): this person asked to touch / pose / move me and waits up to 20 s for an answer */
+.who-row .who-ask { flex: none; margin-left: 4px; width: 16px; height: 16px; line-height: 16px; border-radius: 999px; text-align: center;
+  font-size: 11px; font-weight: 700; color: #000; background: var(--attn, #e8b84a); animation: who-ask-pulse 1.2s ease-in-out infinite; }
+@keyframes who-ask-pulse { 50% { opacity: .45; } }
 
 /* --------------------------------------------------------------- fixed hud */
 /* the ∃ mark — anchor of the whole chrome. Carries connection truth: full
