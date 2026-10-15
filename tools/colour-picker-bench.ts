@@ -30,7 +30,7 @@ for (let i = 0; i < 40 && !made?.ok; i++) {
   made = await evalJson(`import('/lib/net.js').then((m) => m.sendRequest('create', { id: '${lamp}', components: { transform: { pos: [1, 1, 1] }, light: { color: 0xffd9a0, intensity: 16, range: 10 } } }))`);
   if (!made?.ok) await sleep(500);
 }
-const lampColour = `import('/lib/state.js').then((m) => m.state.st.entities['${lamp}']?.comp?.light?.color)`;
+const lampColour = `import('/lib/state.js').then((m) => m.state.st.entities['${lamp}']?.light?.color)`;
 check('a light Empty folds', await waitFor(`${lampColour}.then((c) => c === 0xffd9a0)`), JSON.stringify(made));
 await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB' })), true`);
 await evalJson(`import('/lib/edit/selection.js').then((m) => (m.set(['${lamp}']), true))`);

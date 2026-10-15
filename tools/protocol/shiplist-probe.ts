@@ -448,7 +448,9 @@ try {
     return await m.sendRequest('create', { id: 'stlow', model: '${CRATE}', components: { label: 'Low seat', transform: { pos: [${me[0]} - 2.2, 0, ${me[1]}], scale: 0.2 }, sockets: { seat: { pos: [0, 2.2, 0], body: {} } } } });`);
   await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('sthigh') && !!m.entities.get('stlow'))`); await sleep(1200);
   const r = await page(`const lb = await import('/lib/localbody.js'), w = await import('/lib/world.js'); const did = lb.trySitOn(); await new Promise((z) => setTimeout(z, 1500));
-    const on = w.avatarMounts?.get?.((await import('/lib/base.js')).CONFIG.name) ?? null; return { did, on: on ? on.to : null };`);
+    const on = w.avatarMounts?.get?.((await import('/lib/base.js')).CONFIG.name) ?? null;
+    const host = on ? (w.parentIdOf?.(on.to) ?? on.to) : null;   // sockets are child entities (10-14): the mount names the seat, the seat's parent is the thing
+    return { did, on: host };`);
   await page(`const lb = await import('/lib/localbody.js'); lb.standUp?.(); (await import('/lib/base.js')).bus.emit('key', new KeyboardEvent('keydown', { code: 'KeyX' })); return true;`).catch(() => null); await sleep(800);
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('delete', { id: 'sthigh' }); await m.sendRequest('delete', { id: 'stlow' }); return true;`).catch(() => null);
   check("ST1 X with a seat 3 m up beside me and one at the ground 2.2 m away: I sit on the one I could climb onto", r?.on === "stlow", r);
