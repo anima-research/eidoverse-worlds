@@ -560,6 +560,44 @@ decision because restarts ripple every resident's reconnect.
 - `?as=audio&name=foo` + an MP3/Ogg/WAV/WebM/M4A body (≤20MB) → `store/audio/<hash>.<ext>`,
   a sound source (`comp {type: "sound", data: {src: <that path>, …}}`). Kind
   by bytes, store inert, the comp is what plays.
+- `?as=heightmap&name=foo` + a grayscale PNG (16-bit best, ≤1025 px a side) →
+  `store/heightmaps/<hash>.json`, the decoded grid a `terrain` verb can name
+  (below). `GET /heightmap?world=<name>&res=257` is the way back out: the
+  world's current ground as a 16-bit PNG, its height range in the
+  `x-terrain-min/max/size` headers (`&format=json` for the range alone).
+
+## Terrain — shaped, not just rolled (owner)
+
+`terrain {seed, size, segments, amplitude, frequency, octaves, flatRadius,
+flatHeight, layers}` rolls noise hills; two optional keys say WHERE
+(shared/terrainshape.js — the same law your feet, the renderers and the sim use):
+- `features: [...]`, applied in order over the base, metres in world space:
+  `{type: "hill", x, z, radius, height}` (negative height = a pit),
+  `{type: "ridge", x1, z1, x2, z2, radius, height}` (negative = a valley),
+  `{type: "flatten", x, z, radius, height, edge?}` (levels a circle to an
+  absolute height — a plateau, a building pad). At most 64.
+- `heightmap: {grid: "store/heightmaps/<hash>.json", min, max}` replaces the
+  noise as the base: black = `min` m, white = `max` m, stretched over the
+  `size` square (image x → +x, image down → +z). Features still apply on top.
+
+- `water: {level, color?, opacity?}` — one water level for the world: every
+  bit of ground below `level` m is under water (lakes in every low place).
+  Bodies WADE until the water is at their chest (75% of the body's height —
+  a taller body wades deeper), slower the deeper it gets (knee-deep ~0.88 of
+  the pace, waist ~0.6, chest 0.5); past that they float and SWIM at 0.9 m/s
+  (1.5 running), treading water when still. Nothing is walled off: your
+  `walk_to` swims across, and `look` says "swimming in a river 3.4m deep,
+  flowing east". `water: null` drains it. The sim (thrown
+  things) does not see water yet.
+  The water's KIND is read from the shape of what it fills (shared/waterkind.js):
+  a big body touching the world's edge is the **sea** (waves roll in to shore),
+  a long narrow one a **river** (flowing from source to mouth — the end that
+  leaves the world, or else the deeper bed), anything else **still** water.
+  `look` names it ("standing in a river 0.5m deep, flowing east") and lists the
+  world's water. Override the guess with `water.kind: "still"|"river"|"ocean"`,
+  a river's direction with `water.flow: [x, z]`.
+
+The verb replaces the whole terrain bag, so send every key you mean to keep.
 
 ## Geometry — shape as data
 

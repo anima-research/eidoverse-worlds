@@ -13,7 +13,7 @@ import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
 import { CONFIG, bus, report, tee, colorFor } from './lib/base.js';
 import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, EMOTE_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
-import { setSkyArgsSource, entities, buildsPending, avatarMounts, roleOf, worldHasOwner } from './lib/world.js';
+import { setSkyArgsSource, entities, buildsPending, avatarMounts, roleOf, worldHasOwner, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
 import { presence } from './lib/presence.js';
 import { initWorldQuad } from './lib/worldquad.js';
 import { foldParity } from './lib/parity.js';
@@ -39,6 +39,7 @@ import { remotes, updateRemotes, updateGaze } from './lib/remotes.js';
 // now (it must carry the protocol for lite.js, which has no bodies to register), and
 // this is the real, body-building implementation of that interface.
 import * as participants from './lib/remotes.js';
+import { setWaveClock } from './lib/water.js';
 import { snapshot } from './lib/net_snap.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
@@ -81,7 +82,7 @@ import { initPhysObj, tickPhysObj, leaseApi } from './lib/physobj.js';
 import { initMods, tickMods, modsApi } from './lib/mods.js';
 import { initBoot, markPhase, finishBoot, bootDone, setBootAssets } from './lib/boot.js';
 import { protoStats, forgetBytes, loadingItems, bootBytes } from './lib/assets.js';
-import { grassTiles } from './lib/terrain.js';
+import { grassTiles, heightAt, hasTerrain } from './lib/terrain.js';
 import { grassDiag } from './lib/grassdiag.js';
 import { warmStats } from './lib/warmqueue.js';
 import { budgetStats } from './lib/framebudget.js';
@@ -830,12 +831,30 @@ globalThis.whyIsItSilent = () => {
   return { ...s, detail: a };
 };
 
+// the water's waves run on the world's synced clock, so the swell a swimmer rises on is the one everyone sees
+setWaveClock(() => participants.serverNow());
+
 const EW = globalThis.EW = {
   me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus,
   skyArgs, sendVerb, setPosable, get posable() { return posable(); },
   // POSING from the console — the same verbs an agent's tools have:
   // EW.pose, EW.clearPose and EW.animate (client/lib/posecommands.js says how).
   ...poseCommands({ state: myState, sendPuppet, play: (a) => { getMe()?.playAnimation(a); sendAnim(a); } }),
+  // TERRAIN (owner): EW.terrain(patch) edits the world's CURRENT terrain bag rather than replacing it, so
+  //   EW.terrain({ features: [{ type: 'hill', x: 30, z: -20, radius: 18, height: 9 }] })
+  // keeps the seed, size and tint. Feature types (shared/terrainshape.js): hill {x,z,radius,height} (negative
+  // = pit), ridge {x1,z1,x2,z2,radius,height} (negative = valley), flatten {x,z,radius,height,edge?}.
+  // Heightmaps: the 🌿 ground panel's ⬇ export / ⬆ import, or GET /heightmap?world=<name>.
+  terrain: (patch = {}) => {
+    const cur = terrainEditBase() ?? { seed: 7, size: 160, segments: 200, amplitude: 2.6, flatRadius: 16 };
+    const next = noteTerrainSent({ ...cur, ...patch });   // a second quick edit composes with this one
+    sendVerb('terrain', next);
+    return next;
+  },
+  get terrainArgs() { return currentTerrainArgs(); },
+  // the ground as walking reads it, and whether a heightmap terrain is still waiting on its image
+  groundAt: (x, z) => heightAt(x, z), get hasTerrain() { return hasTerrain(); },
+  get terrainPending() { return terrainPending(); },
   setPushable, get pushable() { return pushable(); }, dragState,
   // reach: aim a hand at a world point, or at anything that moves. Pass a
   // function and it re-solves every frame; `EW.reach('leftHand', () =>

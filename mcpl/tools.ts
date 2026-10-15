@@ -327,7 +327,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const walking = ag.walkTo(x, z, Boolean(a.run), 90_000, tolerance);
       const refusal = ag.walkRefusal; // capture this request's synchronous plan
       const arrived = await walking;
-      return text(arrived ? `arrived at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}); ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m from requested destination` : refusal ?? "walk interrupted or timed out");
+      return text(arrived ? `arrived at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}); ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m from requested destination` : refusal ?? ag.walkStopReason ?? "walk interrupted or timed out");
 
   },
   face: async (ag, a, ctx, name) => {
