@@ -36,6 +36,7 @@ export const camera = { position: new V3(), quaternion: {} };
 export const canvas = { addEventListener() {}, removeEventListener() {}, style: {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) };
 
 const handlers = new Map();
+export const CONFIG = {};   // base.js's CONFIG: chat/catalog/audiopanel read it (sockets merge 10-14)
 export const bus = {
   on(t, f) { (handlers.get(t) ?? handlers.set(t, []).get(t)).push(f); },
   emit(t, p) { for (const f of handlers.get(t) ?? []) f(p); },

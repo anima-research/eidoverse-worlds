@@ -103,7 +103,9 @@ function shoot(W, who = "vic", v = [0, -1, 6]) {   // a visitor throws crate-1 a
   c("rowan", "create", { id: "key", model: "book", components: { grabbable: { who: "visitor", fits: ["key"] } }, place: { at: [1, 0] } });
   c("rowan", "move", { to: [0.8, 0, 0.6] }); c("rowan", "grab", { id: "key" }); const d = c("rowan", "drop", { id: "key", pos: [0.1, 0.75, 0.05] });
   const kq = w.state().entities.key?.c.transform?.q; const kp = w.state().entities.key?.c.parent?.to;
-  ok(d.ok && kp === "rack" && Array.isArray(kq) && Math.abs(Math.hypot(...kq) - 1) < 1e-12, "K8 a thing snapped into a turned socket is written with a unit rotation", { ok: d.ok ?? d.refused, parent: kp, q: kq, n: kq && Math.hypot(...kq) });
+  // sockets are child entities (10-14): a snapped thing's parent is the SOCKET, whose parent is the host
+  const onRack = kp === "rack" || w.state().entities[kp]?.c.parent?.to === "rack";
+  ok(d.ok && onRack && Array.isArray(kq) && Math.abs(Math.hypot(...kq) - 1) < 1e-12, "K8 a thing snapped into a turned socket is written with a unit rotation", { ok: d.ok ?? d.refused, parent: kp, q: kq, n: kq && Math.hypot(...kq) });
   c("rowan", "move", { to: [0, 0, 12] });
   // the shelf on clear ground (review r7: K8's crate was under it, and the default passed by a float tie-break)
   c("rowan", "create", { id: "sh", model: "shelf", place: { at: [-6, 0], lying: true } }); c("rowan", "create", { id: "fr", model: "swing-frame", place: { at: [6, 0], lying: true } });

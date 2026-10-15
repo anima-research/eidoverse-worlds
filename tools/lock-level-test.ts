@@ -23,13 +23,13 @@ const cases: [string, any, string][] = [
 ];
 for (const [name, v, want] of cases) {
   const roles = R.lockLevel(v), auth = A.lockLevel(v);
-  const schema = inspectSchema({ comp: { lock: v } }, 'x');
+  const schema = inspectSchema({ lock: v }, 'x');
   const shown = fieldAt(schema, 'flags.lockLevel')?.value;
   check(`${name}: roles ${roles} = authority ${auth} = inspector ${shown} = ${want}`, roles === want && auth === want && shown === want);
   check(`${name}: lockRank is RANK[level]`, R.lockRank(v) === R.RANK[want] && A.lockRank === R.lockRank);
 }
 check('LOCK_LEVELS is the authority\'s', A.LOCK_LEVELS === R.LOCK_LEVELS && R.LOCK_LEVELS.every((l: string) => typeof R.RANK[l] === 'number'));
-check('inspector offers exactly the LOCK_LEVELS', JSON.stringify(fieldAt(inspectSchema({ comp: { lock: true } }, 'x'), 'flags.lockLevel')?.options.map((o: any) => o.v)) === JSON.stringify(R.LOCK_LEVELS));
+check('inspector offers exactly the LOCK_LEVELS', JSON.stringify(fieldAt(inspectSchema({ lock: true }, 'x'), 'flags.lockLevel')?.options.map((o: any) => o.v)) === JSON.stringify(R.LOCK_LEVELS));
 
 // the client readers restate nothing: no level list, no rank number, and the symbols come from roles.js
 const src = (p: string) => readFileSync(join(import.meta.dir, '..', p), 'utf8');

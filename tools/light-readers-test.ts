@@ -60,7 +60,7 @@ console.log("\nlight readers — a lit Empty is found by what it is\n");
 }
 
 {
-  H.W.seed({ bulb: { pos: [0, 2, 0], comp: { light: { color: 0xff8800, intensity: 16, range: 6 } } }, box: { pos: [1, 0, 0] } });
+  H.W.seed({ bulb: { pos: [0, 2, 0], light: { color: 0xff8800, intensity: 16, range: 6 } }, box: { pos: [1, 0, 0] } });
   H.sync();
   H.entities.set("bulb", litEmpty("bulb")); H.entities.set("box", Object.assign(new Group(), { userData: { entityId: "box", empty: true } }));
   setEditHooks({ casting: lightCasting });

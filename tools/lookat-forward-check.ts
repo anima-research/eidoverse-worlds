@@ -42,7 +42,7 @@ for (const w of said) for (const letter of named(w)) if (!inRefusals.has(letter)
 for (const [letter, w] of inRefusals) check(`a refusal names '${letter}', and the door takes it`, verdict("forward", letter).ok, w);
 
 // the Inspector offers only what the door takes
-const s = inspectSchema({ pos: [0, 0, 0], yaw: 0, comp: { "look-at": { target: "lamp" } } }, "post");
+const s = inspectSchema({ pos: [0, 0, 0], yaw: 0, "look-at": { target: "lamp" } }, "post");
 const offered = (fieldAt(s, "look-at.forward")?.options ?? []).map((o: any) => o.v);
 check("the Inspector offers a forward row", offered.length > 0, JSON.stringify(offered));
 for (const v of offered) check(`the Inspector offers forward '${v}', and the door takes it`, verdict("forward", v).ok);

@@ -20,6 +20,9 @@ export function setBodySeat() {}
 export function entityMeta() { return null; }
 export function findPart() { return null; }
 export function socketWorldPos() { return null; }
+export function seatSocket() { return null; }   // world.js: the seat socket child of a thing, or null (sockets merge 10-14)
+export function socketsOn() { return []; }
+export function parentIdOf() { return null; }
 // seats.js
 export function declareSeatState() {}
 export function clearSeatState() {}
