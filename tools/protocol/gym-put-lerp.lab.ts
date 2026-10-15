@@ -46,7 +46,7 @@ const PUT = (settleMs: number) => `const t = await import('/lib/thingphysics.js'
   return { grab: !!g?.ok, put: !!r?.ok, refused: r?.refused ?? null, spot, hand, truth, samples, after, parent: w.parentIdOf('${ID}') ?? null, y: after[1] };`;
 const dist = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 try {
-  await cdp.send("Page.navigate", { url: `${BASE}/?name=${SRC ? "Riannon" : ME}&world=${SRC ? "gym" : WORLD}` });
+  await cdp.send("Page.navigate", { url: `${BASE}/?name=${SRC ? "Marigold" : ME}&world=${SRC ? "gym" : WORLD}` });
   let secs = 0; for (let i = 0; i < 160 && secs < 4; i++) { secs = (await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0; if (secs < 4) await sleep(500); }
   check("boot: a world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`, 30000));
   await sleep(3000);

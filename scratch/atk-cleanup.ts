@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { sock } from "./atk-access-lib.ts";
-let s=await sock(); await s.join("gym","riannon");
+let s=await sock(); await s.join("gym","marigold");
 const look=await s.req("look",{});
 const atk=(look?.things||[]).filter(t=>/^atk-/.test(t.id));
 for (const t of atk) console.log("leftover entity:", t.id, "->", (await s.req("delete",{id:t.id}))?.ok?"deleted":"?");

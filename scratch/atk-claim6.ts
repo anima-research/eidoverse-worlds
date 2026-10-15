@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { sock, show } from "./atk-access-lib.ts";
-let s0=await sock(); await s0.join("gym","riannon");
+let s0=await sock(); await s0.join("gym","marigold");
 const BM=(await s0.req("find",{kind:"model",query:"ball"}))?.models?.[0]?.model;
 const BALL="atk-nosteal-"+Date.now().toString(36);
 const log=(t,r)=>console.log(`  ${t.padEnd(46)} ${show(r)}`);
@@ -23,10 +23,10 @@ if (insp?.components) await C.req("put",{id:BALL});
 B.close(); C.close();
 // stuck DRAG claim: builder drags, drops socket w/o end; can another builder place it?
 let DB=await sock(); let dj=await DB.join("gym","atk-dragger"); const dId=dj.snapshot?.cut?.you;
-let og=await sock(); await og.join("gym","riannon"); await og.req("set",{id:"@world",component:"roles:"+dId,value:{role:"builder"}}); og.close();
+let og=await sock(); await og.join("gym","marigold"); await og.req("set",{id:"@world",component:"roles:"+dId,value:{role:"builder"}}); og.close();
 DB.raw({type:"drag",id:BALL,pos:[3,0,8],yaw:0}); await new Promise(r=>setTimeout(r,250)); DB.close();
 await new Promise(r=>setTimeout(r,500));
 let E=await sock(); await E.join("gym","atk-dragger");
 log("builder place after stuck drag", await E.req("place",{id:BALL,at:[1.2,8]}));
 E.close();
-let o2=await sock(); await o2.join("gym","riannon"); await o2.req("delete",{id:BALL}); await o2.req("delete",{id:"@world",component:"roles:"+dId}); o2.close();
+let o2=await sock(); await o2.join("gym","marigold"); await o2.req("delete",{id:BALL}); await o2.req("delete",{id:"@world",component:"roles:"+dId}); o2.close();

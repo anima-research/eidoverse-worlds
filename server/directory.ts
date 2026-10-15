@@ -105,7 +105,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
 export type Directory = ReturnType<typeof directoryAt>;
 
 /** A display name folded for comparison: Unicode-compatibility normalized, case-folded, format characters (zero-width,
- *  bidi controls) and separators removed — so "Ríannon", "riannon", "Ri​annon" are the same claim (M3). */
+ *  bidi controls) and separators removed — so "Marígold", "marigold", "Mari​gold" are the same claim (M3). */
 export function foldName(s: string): string {
   return String(s).normalize("NFKC").toLowerCase().replace(/[\p{Cf}\p{Z}\p{P}\p{S}_]/gu, "");
 }

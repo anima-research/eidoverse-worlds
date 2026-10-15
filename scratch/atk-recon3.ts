@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { sock, show } from "./atk-access-lib.ts";
 const s = await sock();
-await s.join("gym", "riannon");
+await s.join("gym", "marigold");
 const help = await s.req("help", {});
 console.log("WRITE verbs:", JSON.stringify(help?.verbs?.write||[]));
 console.log("ACT verbs:", JSON.stringify(help?.verbs?.act||help?.verbs?.presence||[]));

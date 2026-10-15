@@ -11,7 +11,7 @@ const { cdp, evalJson, cleanup, BASE } = await scratchBench("gymeye", { prepare:
 const page = (js) => evalJson(`(async () => { ${js} })()`);
 try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1500, height: 820, deviceScaleFactor: 1, mobile: false });
-  await cdp.send("Page.navigate", { url: `${BASE}/?name=Riannon&world=gym` }); await sleep(1500);
+  await cdp.send("Page.navigate", { url: `${BASE}/?name=Marigold&world=gym` }); await sleep(1500);
   if (process.env.COMPS) { await evalJson(`(localStorage.setItem('ew.hierarchy.view', JSON.stringify({ comps: true })), localStorage.setItem('ew.hierarchy.opencomps', JSON.stringify(['desk', 'desk-crate-1', 'desk-crate-0', 'domino-3', 'free-crate'])), true)`); await cdp.send("Page.reload", {}); }
   for (let i = 0; i < 160; i++) { if (((await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0) >= 4) break; await sleep(500); }
   for (let i = 0; i < 60; i++) { if (await evalJson(`import('/lib/net.js').then((m) => m.replicaActive())`).catch(() => false)) break; await sleep(300); }

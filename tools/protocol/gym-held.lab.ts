@@ -10,7 +10,7 @@ const { cdp, evalJson, cleanup, BASE } = await scratchBench("gymheld", { prepare
   for (const f of [".custody.json", ".directory.json"]) fs.copyFileSync(path.join(SRC, f), path.join(w, f)); fs.cpSync(path.join(SRC, "gym"), path.join(w, "gym"), { recursive: true }); } });
 const page = (js) => evalJson(`(async () => { ${js} })()`);
 try {
-  await cdp.send("Page.navigate", { url: `${BASE}/?name=Riannon&world=gym` });
+  await cdp.send("Page.navigate", { url: `${BASE}/?name=Marigold&world=gym` });
   for (let i = 0; i < 160; i++) { if (((await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0) >= 4) break; await sleep(500); }
   for (let i = 0; i < 60; i++) { if (await evalJson(`import('/lib/net.js').then((m) => m.replicaActive())`).catch(() => false)) break; await sleep(300); }
   await sleep(5000);

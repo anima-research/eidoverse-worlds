@@ -13,7 +13,7 @@ const { cdp, evalJson, cleanup, BASE } = await scratchBench("gymfloat", {
 });
 const page = (js: string) => evalJson(`(async () => { ${js} })()`);
 try {
-  await cdp.send("Page.navigate", { url: `${BASE}/?name=Riannon&world=gym&avatar=tigerbee` });
+  await cdp.send("Page.navigate", { url: `${BASE}/?name=Marigold&world=gym&avatar=tigerbee` });
   for (let i = 0; i < 160; i++) { if (((await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0) >= 4) break; await sleep(500); }
   for (let i = 0; i < 60; i++) { if (await evalJson(`import('/lib/net.js').then((m) => m.replicaActive())`).catch(() => false)) break; await sleep(300); }
   await sleep(7000);

@@ -5,7 +5,7 @@ const log = (t, r) => console.log(`  ${t.padEnd(46)} ${show(r)}`);
 // attacker ids + builder grants for drag relay test
 let a = await sock(); let aj = await a.join("gym","atk-drag-1"); const d1=aj.snapshot?.cut?.you; a.close();
 
-let o = await sock(); await o.join("gym","riannon");
+let o = await sock(); await o.join("gym","marigold");
 await o.req("delete",{id:"atk-ball"});
 log("create grabbable ball (dynamic, who:visitor)", await o.req("create",{id:"atk-ball",model:M,components:{physics:{kind:"dynamic",who:"visitor"},grabbable:{who:"visitor"}},place:{at:[6,6]}}));
 log("grant atk-drag-1 builder", await o.req("set",{id:"@world",component:"roles:"+d1,value:{role:"builder"}}));
@@ -28,7 +28,7 @@ await C.req("put",{id:"atk-ball"}); B.close(); C.close();
 let OBS = await sock(); await OBS.join("gym","atk-obs");
 let D = await sock(); await D.join("gym","atk-drag-1"); // builder, so drags relay
 const before = OBS.msgs.length;
-D.raw({ type:"drag", id:"atk-ball", pos:[7,0,7], yaw:0, by:"riannon", byActor:"u-d2xrjjiu64qwaz2a7plp" });
+D.raw({ type:"drag", id:"atk-ball", pos:[7,0,7], yaw:0, by:"marigold", byActor:"u-d2xrjjiu64qwaz2a7plp" });
 await new Promise(r=>setTimeout(r,400));
 const drags = OBS.msgs.slice(before).filter(m=>m.type==="drag");
 console.log("  forged-by drag observed as:", JSON.stringify(drags.map(m=>({by:m.by,byActor:m.byActor,id:m.id}))));
@@ -39,4 +39,4 @@ V.raw({ type:"drag", id:"atk-ball", pos:[8,0,8], yaw:0, by:"atk-vis" });
 await new Promise(r=>setTimeout(r,400));
 console.log("  visitor drag relayed?", OBS.msgs.slice(vb).some(m=>m.type==="drag"));
 OBS.close(); D.close(); V.close();
-let o2=await sock(); await o2.join("gym","riannon"); await o2.req("delete",{id:"atk-ball"}); await o2.req("delete",{id:"@world",component:"roles:"+d1}); o2.close();
+let o2=await sock(); await o2.join("gym","marigold"); await o2.req("delete",{id:"atk-ball"}); await o2.req("delete",{id:"@world",component:"roles:"+d1}); o2.close();

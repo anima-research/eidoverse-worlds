@@ -9,7 +9,7 @@
 //       connection, so reconnecting as a fresh guest is refused
 //   H5  an owner can't demote the founder; default-role can't be owner; an owner can't be banned
 //   ID  one account is the same identity in every world on the authority (per-world ids, review M6, withdrawn: R 10-06)
-//   HB  presence is keyed by identity, never a display name (pass 2 H-B): a second account asking to be "Riannon" is shown
+//   HB  presence is keyed by identity, never a display name (pass 2 H-B): a second account asking to be "Marigold" is shown
 //       with a disambiguator (pass 3 H2), and gets neither the first
 //       one's held whisper nor her remembered pose; the real one gets both
 //   MA  a pose past the size cap isn't relayed or remembered; one websocket message past the cap closes the socket
@@ -77,7 +77,7 @@ async function sock(port, headers = undefined) {
 const you = (j) => j.snapshot?.cut?.you;
 
 // ---- C3: a bare name in WORLD_ADMIN refuses to boot (accounts only) ----
-{ const s = await start({ WORLD_ADMIN: "Riannon" });
+{ const s = await start({ WORLD_ADMIN: "Marigold" });
   const err = fs.existsSync(s.log + ".err") ? fs.readFileSync(s.log + ".err", "utf8") : "";
   ok(s.dead && /isn't an account|aren't accounts/.test(err), "C3 WORLD_ADMIN=<a display name> refuses to boot, saying why", err.slice(-300));
   try { s.proc.kill(); } catch {} }
@@ -416,11 +416,11 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok(you(ja) && you(ja) === you(jb), "ID one account is the same identity in every world on the authority", [you(ja), you(jb)]);
   a.close(); b.close(); }
 
-// ---- HB: presence by identity (pass 2 H-B). Riannon (an aid1 human) leaves; a guest whispers to "Riannon"; a different
+// ---- HB: presence by identity (pass 2 H-B). Marigold (an aid1 human) leaves; a guest whispers to "Marigold"; a different
 // account (TRUST_NAMES: a typed name is local:<name>) joins wearing her name: no whisper, no remembered pose ----
-{ const tokR = () => mint({ kind: "agent", name: "Riannon", sub: "agent:riannon@home.test" });   // an aid1 account (an agent: a person signs in by cookie)
+{ const tokR = () => mint({ kind: "agent", name: "Marigold", sub: "agent:marigold@home.test" });   // an aid1 account (an agent: a person signs in by cookie)
   const r1 = await sock(srv.port); const j1 = await r1.join("garden", "x", { agentToken: tokR() });
-  const name = j1.snapshot?.you ?? "riannon";
+  const name = j1.snapshot?.you ?? "marigold";
   r1.raw({ type: "pose", pose: { p: [7, 0, -3], yaw: 0.5, speed: 0, clip: "idle" } }); await sleep(250); r1.close(); await sleep(300);
   const g = await sock(srv.port); await g.join("garden", "Tansy");
   g.raw({ type: "whisper", to: name, text: "the authority code is 4471" }); await sleep(250);
@@ -433,7 +433,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok(!jo.snapshot?.restore, "HB …nor inherit her remembered pose", jo.snapshot?.restore);
   other.close(); await sleep(300);
   const r2 = await sock(srv.port); const j2 = await r2.join("garden", "x", { agentToken: tokR() }); await sleep(250);
-  ok(r2.msgs.some((m) => m.type === "whisper" && m.text === "the authority code is 4471"), "HB the real Riannon gets the whisper held for her", r2.msgs.filter((m) => m.type === "whisper"));
+  ok(r2.msgs.some((m) => m.type === "whisper" && m.text === "the authority code is 4471"), "HB the real Marigold gets the whisper held for her", r2.msgs.filter((m) => m.type === "whisper"));
   ok(Array.isArray(j2.snapshot?.restore?.p) && j2.snapshot.restore.p[0] === 7, "HB …and wakes where she stood", j2.snapshot?.restore);
   r2.close(); g.close(); }
 

@@ -2,7 +2,7 @@
 // see the same words for the same refusal (PARITY: "refusals show the same text the agents get"). The authority's reply is
 // {ok: false, refused: {code, reason, fix, …}}; `what` names the request ("place", "undo", "move crate-1").
 //
-// Names: an identity or id outside the §2.3 grammar ("Riannon", "Lamp") is stored escaped (x--5269…). These words are
+// Names: an identity or id outside the §2.3 grammar ("Marigold", "Lamp") is stored escaped (x--5269…). These words are
 // read by people and by agents' tools (which take plain names), so an escaped name is read back as it is spelled. A
 // hashed name (h--) can't be read back and stays. The authority tool's raw JSON reply is untouched: its ids are the ones to
 // send back, and the authority says people's names readably itself (with the id in `by`).

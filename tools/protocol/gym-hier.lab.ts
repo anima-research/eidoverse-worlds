@@ -9,7 +9,7 @@ const { cdp, evalJson, cleanup, BASE } = await scratchBench("gymhier", { prepare
 const page = (js) => evalJson(`(async () => { ${js} })()`);
 try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1600, height: 900, deviceScaleFactor: 1, mobile: false });
-  await cdp.send("Page.navigate", { url: `${BASE}/?name=Riannon&world=gym&webgl=1` });
+  await cdp.send("Page.navigate", { url: `${BASE}/?name=Marigold&world=gym&webgl=1` });
   for (let i = 0; i < 160; i++) { if (((await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0) >= 4) break; await sleep(500); }
   for (let i = 0; i < 60; i++) { if (await evalJson(`import('/lib/net.js').then((m) => m.replicaActive())`).catch(() => false)) break; await sleep(300); }
   await sleep(5000);

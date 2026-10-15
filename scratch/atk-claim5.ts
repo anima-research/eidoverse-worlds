@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { sock, show } from "./atk-access-lib.ts";
-let s0=await sock(); await s0.join("gym","riannon");
+let s0=await sock(); await s0.join("gym","marigold");
 const BM=(await s0.req("find",{kind:"model",query:"ball"}))?.models?.[0]?.model;
 const BALL="atk-ball-"+Date.now().toString(36);
 const log=(t,r)=>console.log(`  ${t.padEnd(44)} ${show(r)}`);
@@ -22,4 +22,4 @@ log("C grab after A dropped socket (EXPIRY)", await C.req("grab",{id:BALL}));
 log("C put", await C.req("put",{id:BALL}));
 log("B grab now (A gone,C put)", await B.req("grab",{id:BALL}));
 await B.req("put",{id:BALL}); B.close(); C.close();
-let o2=await sock(); await o2.join("gym","riannon"); await o2.req("delete",{id:BALL}); o2.close();
+let o2=await sock(); await o2.join("gym","marigold"); await o2.req("delete",{id:BALL}); o2.close();

@@ -2,7 +2,7 @@
 import { sock, show } from "./atk-access-lib.ts";
 const M = "eidoverse/assets/models/crate_large_blue.glb";
 const log = (t, r) => console.log(`  ${t.padEnd(44)} ${show(r)}`);
-let o = await sock(); await o.join("gym","riannon");
+let o = await sock(); await o.join("gym","marigold");
 await o.req("delete",{id:"atk-ball"});
 log("create grabbable ball", await o.req("create",{id:"atk-ball",model:M,components:{physics:{kind:"dynamic",who:"visitor"},grabbable:{who:"visitor"}},place:{at:[6,6]}}));
 o.close();
@@ -22,4 +22,4 @@ log("C put", await C.req("put",{id:"atk-ball"}));
 log("B grab now (A gone, C put)", await B.req("grab",{id:"atk-ball"}));
 log("B put", await B.req("put",{id:"atk-ball"}));
 B.close(); C.close();
-let o2=await sock(); await o2.join("gym","riannon"); await o2.req("delete",{id:"atk-ball"}); o2.close();
+let o2=await sock(); await o2.join("gym","marigold"); await o2.req("delete",{id:"atk-ball"}); o2.close();

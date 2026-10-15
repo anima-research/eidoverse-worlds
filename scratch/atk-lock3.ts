@@ -4,7 +4,7 @@ const M = "eidoverse/assets/models/crate_large_blue.glb";
 const log = (t, r) => console.log(`  ${t.padEnd(48)} ${show(r)}`);
 let a = await sock(); let aj = await a.join("gym", "atk-lock-1"); const atk1 = aj.snapshot?.cut?.you; a.close();
 
-let o = await sock(); await o.join("gym", "riannon");
+let o = await sock(); await o.join("gym", "marigold");
 await o.req("delete", { id: "atk-s" });
 await o.req("create", { id: "atk-s", model: M, place: { at: [12,12] } });
 log("install state-only reaction (label)", await o.req("set", { id: "atk-s", component: "reactions", value: { tag: { kind: "set", component: "label", value: "rung" } } }));
@@ -20,6 +20,6 @@ log("use TRANSFORM handler 'mv' (spec: blocked)", await b.req("use", { id: "atk-
 const i = await b.req("inspect", { id: "atk-s" });
 console.log("   label=", JSON.stringify(i?.components?.label), " pos=", JSON.stringify(i?.components?.transform?.pos));
 b.close();
-let o2 = await sock(); await o2.join("gym", "riannon");
+let o2 = await sock(); await o2.join("gym", "marigold");
 await o2.req("delete", { id: "atk-s" }); await o2.req("delete", { id: "@world", component: "roles:"+atk1 });
 o2.close();

@@ -33,7 +33,7 @@ import { globalBans, saveGlobalBans } from "./moderation.ts";
 // routes.ts's pendingCaptures.
 export const pendingWhispers = new Map<string, unknown[]>();
 /** Held whispers are keyed by the recipient's IDENTITY (their actor id), never a display name: anyone can join wearing an
- *  absent person's name (security review 10-06 pass 2, H-B: a second "Riannon" received the first one's whisper). */
+ *  absent person's name (security review 10-06 pass 2, H-B: a second "Marigold" received the first one's whisper). */
 export const whisperKey = (world: string, recipientId: string) => `${world}\u0000${recipientId}`;
 export const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
 

@@ -1,8 +1,8 @@
 // @ts-nocheck
 import { sock, show } from "./atk-access-lib.ts";
 const s = await sock();
-const j = await s.join("gym", "riannon");
-console.log("riannon join:", j.snapshot ? "snapshot ok, you="+j.snapshot.you : "NO SNAP", j.errors);
+const j = await s.join("gym", "marigold");
+console.log("marigold join:", j.snapshot ? "snapshot ok, you="+j.snapshot.you : "NO SNAP", j.errors);
 const rights = await s.req("your-rights", {});
 console.log("your-rights:", JSON.stringify(rights).slice(0,300));
 const look = await s.req("look", {});

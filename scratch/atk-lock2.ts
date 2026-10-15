@@ -9,7 +9,7 @@ let a2 = await sock(); let aj2 = await a2.join("gym", "atk-lock-2"); const atk2 
 console.log("atk1=",atk1,"atk2=",atk2);
 
 // owner setup: thing with a relocating reaction written BEFORE lock, then locked at owner rank
-let o = await sock(); await o.join("gym", "riannon");
+let o = await sock(); await o.join("gym", "marigold");
 await o.req("delete", { id: "atk-rel" });
 console.log("create atk-rel   :", show(await o.req("create", { id: "atk-rel", model: M, place: { at: [10,10] } })));
 // a handler that sets a STATE comp (label) — allowed through a lock; and one that moves it — not allowed
@@ -38,7 +38,7 @@ log("DIFFERENT builder lifts builder-lock", await c.req("delete", { id: "atk-own
 log("different builder edits after lift", await c.req("set", { id: "atk-own", component: "label", value: "taken" }));
 c.close();
 // cleanup
-let o2 = await sock(); await o2.join("gym", "riannon");
+let o2 = await sock(); await o2.join("gym", "marigold");
 await o2.req("delete", { id: "atk-rel" }); await o2.req("delete", { id: "atk-own" });
 await o2.req("delete", { id: "atk-tgt" }); await o2.req("delete", { id: "atk-child" });
 await o2.req("delete", { id: "@world", component: "roles:"+atk1 }); await o2.req("delete", { id: "@world", component: "roles:"+atk2 });

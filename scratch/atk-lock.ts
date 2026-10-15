@@ -8,7 +8,7 @@ let a = await sock(); let aj = await a.join("gym", "atk-lock-1");
 const atkId = aj.snapshot?.cut?.you; console.log("atk-lock-1 id =", atkId); a.close();
 
 // 2) owner sets up: target, child under it, reaction that relocates, then lock; grant attacker builder
-let o = await sock(); await o.join("gym", "riannon");
+let o = await sock(); await o.join("gym", "marigold");
 await o.req("delete", { id: "atk-tgt" }); await o.req("delete", { id: "atk-child" });
 console.log("setup create tgt:", show(await o.req("create", { id: "atk-tgt", model: M, place: { at: [9, 9] } })));
 console.log("setup reaction   :", show(await o.req("set", { id: "atk-tgt", component: "reactions", value: { shove: { kind: "set", component: "transform", value: { pos: [0,0,0] } } } })));
