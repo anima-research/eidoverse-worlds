@@ -17,6 +17,8 @@
 //   --keep-ui            leave the DOM chrome (panels, chat, HUD) in frame — by default only the canvas is compared
 //   --no-pin-clock       let the page's Date.now() run real; by default it is pinned (see "probe hooks")
 //   --no-control         skip the second boot of the old tree that measures the noise floor
+//   --timeout <s>        how long a client may take to settle and draw (default 150; SwiftShader on WSL is slow)
+//   --only <world>       just one of commons|gym
 //   --headed             a window you can watch
 //
 // PREPARE, DON'T PRETEND. Headless Chromium under WSL has been unreliable here all week, so this script asserts every
@@ -48,7 +50,7 @@
 //
 // Browser hygiene it leans on (memory: browser-probe-hygiene): teardown in finally and on signals; every gate prints
 // its stage on green and red; waits are on conditions (frames drawn, loads idle) not clocks; evaluate is raced against
-// a clock (harness.ts cdpOn: 60 s); frames are PROVED (renderCensus.frames advances) not assumed; the sky guard
+// a clock (harness.ts cdpOn: 60 s); frames are PROVED (a renderer.render call counter advances) not assumed; the sky guard
 // (ew-cloud-quality=off) and the GPU-loss guard (sessionStorage ew-gpu-lost) from tools/harness.ts:220-226 are applied
 // to every page. One Chromium at a time: run under code/scripts/eido-probe.sh or `flock /home/claude/eido/.headless.lock`.
 import { existsSync, mkdirSync, readFileSync, writeFileSync, cpSync, copyFileSync, mkdtempSync, rmSync, symlinkSync, readdirSync } from "node:fs";
@@ -67,7 +69,8 @@ const NEW = resolve(opt("new", resolve(import.meta.dir, "../..")));
 const OLD_TAG = "pre-repoint-20261014";
 const OLD = resolve(opt("old", process.env.SURFACE_OLD_TREE ?? "/tmp/eido-pre-parity"));
 const CHECK = has("check"), HEADED = has("headed"), KEEP_UI = has("keep-ui"), PIN = !has("no-pin-clock"), CONTROL = !has("no-control");
-const THRESHOLD = Number(opt("threshold", "0.5")), TOLERANCE = Number(opt("tolerance", "16"));
+const THRESHOLD = Number(opt("threshold", "0.5")), TOLERANCE = Number(opt("tolerance", "16")), READY_S = Number(opt("timeout", "150"));
+const ONLY = opt("only");   // one world (commons|gym) for a quicker run
 const STAMP = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const OUT = resolve(opt("out", join(NEW, "notes", "surface-parity", STAMP)));
 const WORLDS: Record<string, string> = {
@@ -298,18 +301,26 @@ async function boot(s: Server, world: string): Promise<string> {
   // loads idle (assets.js loadingItems) → builds settled (world.js anyBuildsPending) → sky not busy → frames ADVANCING
   const stage = () => page(`
     const n = await import('/lib/net.js'); if (!n.replicaActive()) return 'joined:false';
-    const a = await import('/lib/assets.js'); const L = a.loadingItems(); if (L.length) return 'loading:' + L.length;
+    const a = await import('/lib/assets.js'); const L = a.loadingItems(); if (L.length) return 'loading:' + L.length + ' ' + JSON.stringify(L.map((x) => x.label + (x.total ? ' ' + x.done + '/' + x.total : '')).slice(0, 8));
     const w = await import('/lib/world.js'); if (w.anyBuildsPending()) return 'builds:' + w.anyBuildsPending();
     const sk = await import('/lib/sky.js'); if (sk.skyBusy?.() || sk.skyRendering?.()) return 'sky:busy';
-    const r = await import('/lib/render.js'); return 'frames:' + r.renderCensus.frames;`);
+    if (globalThis.__gpuLost?.fired) return 'gpu:lost';
+    return 'frames:' + (await globalThis.__spFrames());`);
+  // the frame counter (probe hook): render.js's renderCensus only ticks in XR (xr.js:1174) and frameloop.js keeps its
+  // frameNo private, so the probe counts renderer.render calls itself — batches.render → renderer.render once per drawn
+  // frame on both trees and both backends. Installed once per page; a lost GPU draws nothing (render.js:112) and the
+  // count then stands still, which is the honest reading.
+  await page(`globalThis.__spFrames = async () => { const { renderer } = await import('/lib/core.js');
+    if (renderer.__spCount === undefined) { renderer.__spCount = 0; const o = renderer.render.bind(renderer); renderer.render = function (...a) { renderer.__spCount++; return o(...a); }; }
+    return renderer.__spCount; }; return true;`);
   const t0 = Date.now(); let last = "", frames0 = -1;
-  while (Date.now() - t0 < 150_000) {
+  while (Date.now() - t0 < READY_S * 1000) {
     last = await stage().catch((e) => `evaluate:${String(e).slice(0, 80)}`);
     const m = last.match(/^frames:(\d+)$/);
     if (m) { const f = +m[1]; if (frames0 < 0) frames0 = f; else if (f - frames0 >= 12) return last; }   // a dozen frames AFTER settle: drawn, not promised
     await sleep(400);
   }
-  return missing(`client ready: ${world} on ${s.label}`, `the client did not reach a settled, frame-drawing state in 150 s; last stage: ${last}`,
+  return missing(`client ready: ${world} on ${s.label}`, `the client did not reach a settled, frame-drawing state in ${READY_S} s (--timeout); last stage: ${last}`,
     pageErrors.length ? `page exceptions:` : `no page exceptions`, ...pageErrors.slice(0, 6), `sequencer log tail:`, ...tail(s.log, 8));
 }
 
@@ -319,8 +330,10 @@ async function frame(s: Server, world: string, cam: Cam, file: string) {
   const aim = `const { camera } = await import('/lib/core.js'); camera.position.set(${cam.pos.join(",")}); camera.lookAt(${cam.look.join(",")}); camera.updateMatrixWorld(true); return true;`;
   await page(aim);
   // a few drawn frames with the camera in place, then read it back: the controller (updateSpectator) must not have moved it
-  const f0 = await page(`return (await import('/lib/render.js')).renderCensus.frames;`);
-  for (let i = 0; i < 50; i++) { await sleep(100); if ((await page(`return (await import('/lib/render.js')).renderCensus.frames;`)) - f0 >= 6) break; }
+  const f0 = await page(`return await globalThis.__spFrames();`);
+  let drawn = 0;
+  for (let i = 0; i < 100; i++) { await sleep(100); drawn = (await page(`return await globalThis.__spFrames();`)) - f0; if (drawn >= 6) break; }
+  if (drawn < 6) await missing(`frames after aim: ${world}/${cam.name} on ${s.label}`, `only ${drawn} frame(s) drew in 10 s after placing the camera${await page(`return globalThis.__gpuLost?.fired ? ' — the GPU is lost' : '';`)}`);
   const got = await page(`const { camera } = await import('/lib/core.js'); return camera.position.toArray();`) as number[];
   const drift = Math.hypot(got[0] - cam.pos[0], got[1] - cam.pos[1], got[2] - cam.pos[2]);
   if (drift > 0.01) await missing(`camera honoured: ${world}/${cam.name} on ${s.label}`, `asked for ${cam.pos.join(",")}, the camera is at ${got.map((v) => v.toFixed(3)).join(",")} after 6 frames (drift ${drift.toFixed(3)} m) — something is driving it`);
@@ -356,6 +369,7 @@ type Row = { world: string; cam: string; diff: Diff; noise: Diff | null; verdict
 const rows: Row[] = [];
 try {
   for (const world of Object.keys(WORLDS)) {
+    if (ONLY && world !== ONLY) continue;
     const cams = CAMERAS[world] ?? [];
     const dir = join(OUT, world); mkdirSync(dir, { recursive: true });
     const oldPNG = new Map<string, PNG>(), newPNG = new Map<string, PNG>();

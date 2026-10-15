@@ -34,7 +34,7 @@ order they are checked:
 | old server / new server | each tree's `server/server.ts` answers `/health` with the nonce *we* started it with | `server/routes.ts:1165` (`BENCH_NONCE`) — a stranger's sequencer on the port is refused |
 | world opens: ‹world› on ‹tree› | a spectator join gets a snapshot (not an error), its cut folds to > 0 entities, and `present[]` is empty | `server/server.ts:744` buildSnapshot; `shared/protocol/replica.js:150` clientCutOf |
 | browser page target | the Chromium we spawned exposes *our* page on *our* debug port | as `tools/harness.ts:187-203` |
-| client ready: ‹world› on ‹tree› | joined → loads idle → builds settled → sky not busy → **≥ 12 frames drawn after that** | `net.js replicaActive`, `assets.js loadingItems`, `world.js anyBuildsPending`, `sky.js skyBusy`, `render.js renderCensus.frames` (all exported on both trees) |
+| client ready: ‹world› on ‹tree› | joined → loads idle → builds settled → sky not busy → **≥ 12 frames drawn after that** | `net.js replicaActive`, `assets.js loadingItems`, `world.js anyBuildsPending`, `sky.js skyBusy`, a `renderer.render` call counter the probe installs (`render.js renderCensus` ticks only in XR) |
 | camera honoured | after 6 drawn frames the camera is still where it was put (< 1 cm drift) | `controller.js:1035 updateSpectator` only moves a spectator's camera to follow a remote body |
 | frame drawn | the capture has more than a handful of distinct colours | a blank canvas is a failed capture, not a surface |
 
