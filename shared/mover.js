@@ -168,15 +168,18 @@ export function waterCost(level, ground, height = MOVER.body.height) {
 
 /** env.waterAt(x, z) → the water surface's y there, or null where there is none. With it, a step in water wades (slower)
  *  or swims (floats at the chest, its own speed, never refused by a ledge); the reply's `stance` is what the renderer
- *  needs to pick a clip (swim / tread vs walk). Without it (no water law in this world), nothing here changes. */
-export function stepWalk({ pos, dir, dt, run = false, creep = false, scale = 1, gain = 1, cap = Infinity, mode = "walk" }, env = {}) {
+ *  needs to pick a clip (swim / tread vs walk). Without it (no water law in this world), nothing here changes.
+ *  `height` (m) is the body's own stature where the caller has measured it (a short avatar swims sooner); absent, the
+ *  mover's body height for its `scale`. It moves only where the water reaches on the body, never the stride. */
+export function stepWalk({ pos, dir, dt, run = false, creep = false, scale = 1, gain = 1, cap = Infinity, mode = "walk", height = undefined }, env = {}) {
   const here = [pos[0], pos[1], pos[2]];
   if (mode !== "walk") return { pos: here, moved: 0, blocked: { by: `mode:${mode}` }, stance: null };
   const len = Math.hypot(dir[0], dir[1]);
   if (!(len > 0) || !(dt > 0) || !(gain > 0)) return { pos: here, moved: 0, blocked: null, stance: null };
   // the stance is judged where the body IS (the step's speed), and re-judged where it lands (its y)
+  const H = typeof height === "number" && height > 0 ? height : MOVER.body.height * scaleOf(scale);
   const ground0 = env.floorAt ? env.floorAt(pos[0], pos[2], pos[1]) : NaN;
-  const st0 = env.waterAt ? waterStance(env.waterAt(pos[0], pos[2]), Number.isFinite(ground0) ? ground0 : pos[1], MOVER.body.height * scaleOf(scale)) : null;
+  const st0 = env.waterAt ? waterStance(env.waterAt(pos[0], pos[2]), Number.isFinite(ground0) ? ground0 : pos[1], H) : null;
   const speed = st0?.swimming ? (run ? MOVER.swim.run : MOVER.swim.speed) * scaleOf(scale) : walkSpeed({ run, creep, scale }) * (st0?.speedFactor ?? 1);
   const d = Math.min(cap, speed * gain * dt);
   if (!(d > 0)) return { pos: here, moved: 0, blocked: null, stance: st0 };
@@ -185,7 +188,7 @@ export function stepWalk({ pos, dir, dt, run = false, creep = false, scale = 1, 
   if (env.floorAt) {
     const f = env.floorAt(nx, nz, pos[1]);
     if (Number.isFinite(f)) {
-      const st = env.waterAt ? waterStance(env.waterAt(nx, nz), f, MOVER.body.height * scaleOf(scale)) : null;
+      const st = env.waterAt ? waterStance(env.waterAt(nx, nz), f, H) : null;
       if (st?.swimming) { ny = st.y; stance = st; }   // afloat: the ground under the water is no ledge
       // a swimmer climbs out from where it floats (the chest), not from the bottom: a shelf within a step of the surface is land
       else { if (!floorOk(st0?.swimming ? st0.y : pos[1], f, scale)) return { pos: here, moved: 0, blocked: { by: "ledge", top: f }, stance: st0 }; ny = f; if (st) stance = st; }
@@ -198,10 +201,10 @@ export function stepWalk({ pos, dir, dt, run = false, creep = false, scale = 1, 
 
 /** A stride toward a target [x, z]: arrives (no move) within `tolerance`, else steps at most the distance left (and
  *  `room`, a permit's cap). → {pos, arrived, moved, yaw, blocked}; yaw is atan2(dx, dz), the renderers' heading. */
-export function walkToward({ pos, target, dt, run = false, scale = 1, tolerance = MOVER.arrive.tolerance, room = Infinity, gain = 1 }, env = {}) {
+export function walkToward({ pos, target, dt, run = false, scale = 1, tolerance = MOVER.arrive.tolerance, room = Infinity, gain = 1, height = undefined }, env = {}) {
   const dx = target[0] - pos[0], dz = target[1] - pos[2], dist = Math.hypot(dx, dz);
   const yaw = dist > 0 ? Math.atan2(dx, dz) : null;
   if (dist <= tolerance) return { pos: [pos[0], pos[1], pos[2]], arrived: true, moved: 0, yaw, blocked: null };
-  const r = stepWalk({ pos, dir: [dx, dz], dt, run, scale, gain, cap: Math.min(dist, room) }, env);
+  const r = stepWalk({ pos, dir: [dx, dz], dt, run, scale, gain, cap: Math.min(dist, room), height }, env);
   return { ...r, arrived: false, yaw };
 }

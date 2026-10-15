@@ -162,6 +162,10 @@ if (M) {
   const high = { floorAt: (x) => (x > 0.5 ? 2.6 : 0), waterAt: () => 3 };
   const no = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, high); ok(no.blocked?.by === "ledge", "W3 one step higher than the float is a ledge", no);
   const same = stepWalk({ pos: [0, 0, 0.95], dir: [0, 1], dt: 0.1 }, { floorAt: (x, z) => (z > 1 ? 0.9 : 0) }); ok(same.blocked?.by === "ledge", "W4 without waterAt, the ledge rule is exactly what it was", same);
+  // a caller's measured stature (REPOINT-2, 10-15: main's per-avatar statureFor / bodyHeight) moves where the water reaches, never the stride
+  const tall = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, pool(1.0)), short = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1, height: 1.2 }, pool(1.0));
+  const dryShort = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1, height: 1.2 }, pool(null));
+  ok(!tall.stance.swimming && short.stance.swimming && near(short.pos[1], 1.0 - 0.75 * 1.2) && near(short.moved, 0.9) && near(dryShort.moved, 1.55), "W5 height: a 1.2 m body swims in 1 m of water a 1.7 m one wades; dry, its stride is the mover's", { tall: tall.stance, short: short.stance, dryShort: dryShort.moved });
 }
 console.log(`mover: ${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);

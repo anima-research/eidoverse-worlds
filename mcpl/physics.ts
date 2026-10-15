@@ -133,6 +133,14 @@ export async function setHeightField(fn: ((x: number, z: number) => number) | nu
   m.terrain.setTerrain(fn ? { mesh: null, heightAt: fn } : null);
 }
 
+/** Hand the sim the world's water, so a body that falls in floats (ammodoll.js, via terrain.js's seam):
+ *  {level, sample(x, z), time()} — the agent's own water analysis and wave clock — or null. */
+export async function setWaterField(f: { level: number; sample: (x: number, z: number) => unknown; time: () => number } | null) {
+  const m = await loadSim();
+  if (!m) return;
+  m.terrain.setWaterField(f);
+}
+
 // Who is currently claiming each support box.
 //
 // Support ids are world/entity scoped, which is right — two agents in one
@@ -315,6 +323,10 @@ export class HeadlessBody {
       : m.rig.makeAvatar(P);
   }
 
+  /** This body's water, read on every step it floats (ammodoll.js _water) — set by its agent, so a body
+   *  floats on its own world's water whatever another agent in the process last handed setWaterField. */
+  waterSource: (() => { level: number; sample: (x: number, z: number) => unknown; time: () => number } | null) | null = null;
+
   /** null when physics is unavailable for this process or this VRM. */
   static async create(httpBase: string, avatarPath: string): Promise<HeadlessBody | null> {
     const m = await loadSim();
@@ -381,6 +393,7 @@ export class HeadlessBody {
     // when the body already finished and freed itself.
     this.rd?.dispose?.();
     this.rd = new this.m.Body(this.av, lean, this.av.restBonePositions(), seed);
+    if (this.rd) this.rd.waterSource = this.waterSource;   // its own world's water, read live each step
     for (const p of opts.pins ?? []) this.setPin(p.j, p.at);
     // hipsOffset is how far the render root hangs below the hips — a property
     // of the RIG, so it must read the same on every build of the same body.

@@ -32,7 +32,7 @@ mock.module(base+'core.js', () => ({
 // the bench's bus must be the one base.js hands out, or a pressed G reaches
 // nobody. The real module's other exports ride along untouched.
 mock.module(base+'base.js', () => ({ ...realBase, CONFIG: BENCH_CONFIG, bus, report() {} }));
-mock.module(base+'terrain.js', () => ({ heightAt:()=>0 }));
+mock.module(base+'terrain.js', () => ({ heightAt:()=>0, setWaterField() {} }));   // water.js (upstream #242) hands the water to terrain.js
 mock.module(base+'colliders.js', () => ({ resolveColliders:()=>{}, lastBlockedTop:0, findSeat:()=>null, raySegment:()=>null,
   frameOf:()=>null, lastContacts:()=>[], colliders:new Map() }));   // hiddenbump.js / controller.js / debug.js import these now (10-14)
 mock.module(base+'assets.js', () => ({ forgetBytes() {}, primeFiles: async () => {} }));

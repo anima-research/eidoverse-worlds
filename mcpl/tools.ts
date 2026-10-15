@@ -566,7 +566,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // E1: the authority walks this body too; a stretch it refused (a wall, out of bounds) stopped it, and says why
       const no = ag.lastWalkRefusal;
       if (!arrived && no) return { content: [{ type: "text", text: `${refusalText("move", { refused: no })}\nyou stopped at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}), ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m short${note}${what}` }], isError: true };
-      return text(arrived ? `arrived at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}); ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m from requested destination${note}${what}` : "walk interrupted or timed out");
+      return text(arrived ? `arrived at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}); ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m from requested destination${note}${what}` : ag.walkStopReason ?? "walk interrupted or timed out");
 
   },
   face: async (ag, a, ctx, name) => {

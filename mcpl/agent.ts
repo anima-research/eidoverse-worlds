@@ -13,12 +13,17 @@ import { r3 } from "../shared/protocol/round.js";
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegex } from "./mention.ts";
 import { mergePose } from "../shared/humanoid.js";
+import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, shapeReady, waterParams } from "../shared/terrainshape.js";
+import { bodyHeightFor } from "./rigbones.ts";
+import { surfaceOffset, waveClock } from "../shared/waves.js";
+import { floatStep, footprintSurface } from "../shared/buoyancy.js";
+import { analyzeWater, compass, waterGridSeg } from "../shared/waterkind.js";
 import * as THREE_W from "three/webgpu";
 import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
   APPROACH_DWELL_MS, APPROACH_STILL_MPS, APPROACH_MAX_WAIT_MS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
-import { HeadlessBody, ReachBody, setHeightField, registerSupport, registerSupportGrid, removeSupport } from "./physics.ts";
+import { HeadlessBody, ReachBody, setHeightField, setWaterField, registerSupport, registerSupportGrid, removeSupport } from "./physics.ts";
 // FLIGHT. The same deterministic integrator the browser bench and the capture
 // path run -- one function, every runtime, per the spec's Q2 ruling.
 import {
@@ -27,7 +32,7 @@ import {
   foldDown as flightFold, unfold as flightUnfold,
   bestGlide, glideRange,
 } from "../shared/flight.js";
-import { MOVER, TRACK, walkToward, toleranceOf } from "../shared/mover.js";
+import { MOVER, TRACK, walkToward, toleranceOf, waterStance } from "../shared/mover.js";
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
 import { inspectBody } from "../shared/flightbody.js";
 import { wingFoldPresence } from "../shared/wingpresence.js";
@@ -85,6 +90,7 @@ const PERMIT_STEP = TRACK.cap / 2, PERMIT_AHEAD = 1;
 const SHOVE_TRIES = 5, SHOVE_WAIT_MS = 2500, SHOVE_SETTLE_MS = 800;
 type Blocker = { id: string; ref: any; phase: "approach" | "pushed"; until: number };
 type WalkGate = { mode: "sync" | "tracked" | "open"; permit: number[] | null; busy: boolean; blocker?: Blocker | null; shoves?: number; slow?: number; waitUntil?: number; hold?: number; retrackAt?: number };
+const STATURE_FALLBACK = MOVER.body.height;   // an ordinary adult (the mover's body), while a body's own height is being read (main #242)
 /** Quiet window for world-change narration, per (entity, component). Tuning a
  *  live emitter is a burst of `comp` entries; this is how long they fold into
  *  one line. Long enough to swallow a slider drag, short enough that "puts the
@@ -249,6 +255,23 @@ export class WorldAgent {
    * this immediately after walkTo() so a later replacement walk cannot change
    * its refusal receipt. */
   walkRefusal: string | null = null;
+  /** This body's standing height (rigbones.ts bodyHeightFor) — what water depth is measured against. */
+  bodyH: number | null = null;
+  /** Which avatar `bodyH` is (being) measured for, and the measurement's generation: a body swap starts a
+   *  new one, and a reply for an older body is dropped — the stature always belongs to the CURRENT body. */
+  private statureFor: string | null = null;
+  private statureGen = 0;
+  /** What `water` was when the float state last made sense: a change of water (drained, refilled, a new
+   *  level) ends the float, so no position or velocity crosses from one water to the next. */
+  private waterKey: string | null = null;
+  /** A swimming body's buoyant column (shared/buoyancy.js) — on the same swell everyone's water draws. */
+  private float = { on: false, y: 0, vy: 0 };
+  /** Why the last walk stopped short, when something stopped it mid-way. */
+  walkStopReason: string | null = null;
+  /** The world's water (shared/terrainshape.js), from the terrain bag; null when it has none. */
+  water: { level: number } | null = null;
+  /** What kind of water lies where (shared/waterkind.js) — the same reading the renderers draw from. */
+  private waterKinds: ReturnType<typeof analyzeWater> | null = null;
   /** A held custom pose — sparse humanoid-bone quaternions. Presence only:
    *  it rides the pose packet and is never a log verb, because it is a moment,
    *  not a change to the world. `null` clears. */
@@ -1654,17 +1677,78 @@ export class WorldAgent {
     return out;
   }
 
+  private terrainRev = 0;
+  /** A heightmap terrain received but not yet buildable — its grid has not arrived. The last ground stands
+   *  (never noise in its place); tick() retries the grid, and the arrival builds THIS bag, once. */
+  private pendingTerrain: { args: any; rev: number; grid: string } | null = null;
   private async buildTerrain(args: any) {
+    // Builds can overlap (a grid fetch is slow, a terrain edit is not): only the newest one may commit.
+    const rev = ++this.terrainRev;
     if (!this.terrainSrc) {
       const r = await fetch(`${this.httpBase}/library/eidoverse/terrain.js`);
       this.terrainSrc = await r.text();
       (0, eval)(this.terrainSrc);
     }
-    this.terrain = (globalThis as any).makeTerrain({ ...args, layers: [] });
+    // Placed features and heightmaps (shared/terrainshape.js): the agent stands on the same shaped law the
+    // client's mesh and the sim use. A heightmap's grid is fetched first; until it is here, the last ground
+    // stands (pendingTerrain) — never noise in the heightmap's place.
+    const shape = shapeParams(args);
+    if (shape?.heightmap) {
+      const base = this.httpBase;
+      setGridFetcher(async (ref: string) => { const g = await fetch(`${base}/library/${ref}`); if (!g.ok) throw new Error(`${g.status}`); return g.json(); });
+      const g = await requestGrid(shape.heightmap.grid);
+      if (rev !== this.terrainRev) return;   // a newer terrain arrived while this one's grid was in flight
+      if (!g) {
+        // not here (yet): keep the ground we have rather than commit noise as this world's ground
+        this.pendingTerrain = { args, rev, grid: shape.heightmap.grid };
+        return;
+      }
+    }
+    if (rev !== this.terrainRev) return;   // a newer terrain arrived while this one's grid was in flight
+    this.pendingTerrain = null;
+    const t = (globalThis as any).makeTerrain({ ...args, layers: [] });
+    this.terrain = shape ? { heightAt: shapedHeightAt(t.heightAt, args) } : t;
+    this.water = waterParams(args);
+    const waterKey = this.water ? JSON.stringify([this.water.level, args.size, args.water]) : null;
+    if (waterKey !== this.waterKey) { this.waterKey = waterKey; this.endFloat(); }
+    if (this.water && this.statureFor !== this.avatar) this.measureStature();
+    const size = typeof args?.size === "number" ? args.size : 80;
+    this.waterKinds = this.water
+      ? analyzeWater((x, z) => this.heightAt(x, z), size, { level: this.water.level, kind: args.water?.kind, flow: args.water?.flow },
+        waterGridSeg(size))   // the browser's grid, so both read the same water
+      : null;
+    // …and a body that falls in floats on the same water, rising and falling on the same waves
+    void setWaterField(this.waterFieldNow());
     // the settle sim clamps against the SAME ground the walking clamp reads —
     // not one height sampled at the fall site (#17)
     void setHeightField((x, z) => this.heightAt(x, z));
   }
+
+  /** The standing height the water is measured against: the current body's, once measured; until then an
+   *  ordinary adult's (the measurement is one small read of the avatar's header). */
+  stature(): number { return this.bodyH ?? STATURE_FALLBACK; }
+  /** Measure the current body's height (rigbones.ts bodyHeightFor), guarded by generation so a slow reply
+   *  for a body since replaced is never applied. Resolves once this measurement is settled. */
+  measureStature(): Promise<void> {
+    const gen = ++this.statureGen, avatar = this.avatar;
+    this.statureFor = avatar; this.bodyH = null;
+    return bodyHeightFor(this.httpBase, avatar).catch(() => null).then((h) => {
+      if (gen === this.statureGen) this.bodyH = h ?? STATURE_FALLBACK;
+    });
+  }
+  /** Leave the floating column: the next float starts from wherever the body then is. */
+  private endFloat() { this.float = { on: false, y: 0, vy: 0 }; }
+
+  /** This world's water for the ragdoll sim (physics.ts setWaterField) — asserted before every run, like the
+   *  ground, because the sim module is process state and one process can host agents in several worlds. */
+  private waterFieldNow() {
+    const A = this.waterKinds, level = this.water?.level;
+    if (!A || level == null) return null;
+    if (this.waterFieldMemo?.A !== A || this.waterFieldMemo.f.level !== level)   // read every physics step: build it once
+      this.waterFieldMemo = { A, f: { level, sample: (x: number, z: number) => A.sample(x, z), time: () => waveClock(this.serverNow()) } };
+    return this.waterFieldMemo.f;
+  }
+  private waterFieldMemo: { A: unknown; f: { level: number; sample: (x: number, z: number) => unknown; time: () => number } } | null = null;
 
   heightAt(x: number, z: number): number {
     return this.terrain ? this.terrain.heightAt(x, z) : 0;
@@ -1886,7 +1970,19 @@ export class WorldAgent {
     // The world's physics (@world.physics-engine): stamp where each flying thing IS into the entity view — the same engine state
     // every renderer draws (shared/protocol/replica.js simAt, advanced to the authority's clock) — so look() sees a punted crate
     // where it is, and, at rest, where it came to rest. Support rebuilds when a thing comes to rest.
-    const sim = this.replica?.simAt?.(this.serverNow());
+    // a heightmap terrain waiting on its grid: ask again (requestGrid backs off by itself), and build the
+    // waiting bag — only if it is still the newest — the moment the grid is here
+    const pend = this.pendingTerrain;
+    if (pend && pend.rev === this.terrainRev) {
+      void requestGrid(pend.grid).then((g) => {
+        if (g && this.pendingTerrain === pend && pend.rev === this.terrainRev) { this.pendingTerrain = null; void this.buildTerrain(pend.args); }
+      });
+    }
+    // a heightmap world's engine waits for its grid (as the browser's does, thingphysics.js): noise ground would diverge
+    const simShape = this.replica?.sim?.sim?.terrain?.shape;
+    const simReady = shapeReady(simShape);
+    if (!simReady) void requestGrid(simShape.heightmap.grid);
+    const sim = simReady ? this.replica?.simAt?.(this.serverNow()) : null;
     if (sim?.bodies) {
       for (const sid in sim.bodies) {
         const b = sim.bodies[sid]; const id = idOut(sid);
@@ -1936,8 +2032,12 @@ export class WorldAgent {
       // placed floors otherwise reach this body through the sim's support boxes, not its walk); what blocks is the
       // authority's permit, asked above, and the route the walk was planned on (walkTo).
       const floorAt = this.walkHeightAt ?? ((x: number, z: number) => this.heightAt(x, z));
-      const r = walkToward({ pos: [this.pos.x, this.pos.y, this.pos.z], target: [T.x, T.z], dt, run: T.run, tolerance: T.tolerance ?? MOVER.arrive.tolerance, room },
-        { floorAt });
+      // WATER (upstream #242) is the mover's too: handed the world's level (env.waterAt) and this body's measured stature,
+      // the stride wades (dragged) or swims (a stroke's pace, afloat at the chest) — no water arithmetic here.
+      const water = this.water;
+      const r = walkToward({ pos: [this.pos.x, this.pos.y, this.pos.z], target: [T.x, T.z], dt, run: T.run, tolerance: T.tolerance ?? MOVER.arrive.tolerance, room,
+        ...(water ? { height: this.stature() } : {}) },
+        water ? { floorAt, waterAt: () => water.level } : { floorAt });
       if (r.arrived) {
         // A route through a building arrives in legs. Only the LAST one
         // finishes the walk; the rest hand off to the next waypoint, so a body
@@ -1950,7 +2050,7 @@ export class WorldAgent {
           this.walkDone?.(true); this.walkDone = null;
         }
       } else {
-        this.speed = r.moved > 0 ? r.moved / dt : 0; this.clip = T.run ? "run" : "walk";
+        this.speed = r.moved > 0 ? r.moved / dt : 0; this.clip = r.stance?.swimming ? "swim" : T.run ? "run" : "walk";
         if (r.yaw !== null) this.yaw = r.yaw;
         this.pos.x = r.pos[0]; this.pos.z = r.pos[2];
       }
@@ -1959,8 +2059,23 @@ export class WorldAgent {
     // a tumbling, lying, dragged, nailed or FLYING body owns its own y — the
     // terrain clamp is for FEET, and none of those states is standing on them
     if (!this.draggedBy && this.pins.size === 0 && this.clip !== "ragdoll" && !this.flight) {
-      this.pos.y = admittedHeight ? admittedHeight(this.pos.x, this.pos.z) : this.heightAt(this.pos.x, this.pos.z);
-    }
+      const groundY = admittedHeight ? admittedHeight(this.pos.x, this.pos.z) : this.heightAt(this.pos.x, this.pos.z);
+      if (this.water) {
+        // feet on the bed, or floating with the chest at the surface; a body standing still out of its
+        // depth treads water
+        const st = waterStance(this.water.level, groundY, this.stature());
+        if (st.swimming) {
+          // float on the moving surface, the browser's law and clock (controller.js does the same)
+          if (!this.float.on) { this.float = { on: true, y: this.pos.y, vy: 0 }; }
+          const t = waveClock(this.serverNow()), level = this.water.level, A = this.waterKinds;
+          const surf = footprintSurface((x, z) => level + surfaceOffset(A?.sample(x, z) ?? null, x, z, t), this.pos.x, this.pos.z);
+          floatStep(this.float, surf, this.stature(), dt, groundY);
+          this.pos.y = this.float.y;
+        } else { this.endFloat(); this.pos.y = st.y; }
+        if (st.swimming && !this.target && (this.clip === "idle" || this.clip === "walk" || this.clip === "run" || this.clip === "swim")) this.clip = "tread";
+        else if (!st.swimming && (this.clip === "tread" || this.clip === "swim")) this.clip = this.target ? "walk" : "idle";
+      } else { this.endFloat(); this.pos.y = groundY; }
+    } else this.endFloat();   // a ragdoll, a drag, a nail or a flight has the body: a later float starts afresh
     // FLIGHT: one fixed-step integration of shared/flight.js per tick, and the
     // body's position is whatever it says. The integrator is the same function
     // the browser bench and the capture path run -- authority here is the
@@ -2026,6 +2141,7 @@ export class WorldAgent {
   private async ensureBody(): Promise<HeadlessBody | null> {
     if (this.body !== undefined) return this.body;
     this.body = await HeadlessBody.create(this.httpBase, this.avatar);
+    if (this.body) this.body.waterSource = () => this.waterFieldNow();   // its own world's water, always
     return this.body;
   }
 
@@ -2063,7 +2179,7 @@ export class WorldAgent {
     if (this.draggedBy) return;   // a hand arrived while the skeleton loaded
     // the sim's ground is process state — assert OURS before every run
     // (see physics.ts's declared seam)
-    await setHeightField((x, z) => this.heightAt(x, z));
+    await setHeightField((x, z) => this.heightAt(x, z)); await setWaterField(this.waterFieldNow());
     if (this.bodyEpoch !== epoch) return;
     await this.supportReady();    // don't fall through a floor still in flight
     if (this.bodyEpoch !== epoch || this.draggedBy) return;
@@ -2072,6 +2188,9 @@ export class WorldAgent {
       yaw: this.yaw,
       // no direction given = the browser default: you fall the way you face
       lean: lean ?? [Math.sin(this.yaw) * 0.9, 0, Math.cos(this.yaw) * 0.9],
+      // a swimmer goes limp where it floats, not on the bed under it (a browser's doll starts from its live
+      // skeleton; a headless one is stood on the ground unless told otherwise)
+      ...(this.float.on ? { rootY: this.pos.y } : {}),
       pins: [...this.pins].map(([j, at]) => ({ j, at })),
     });
     this.clip = "ragdoll";
@@ -2087,7 +2206,7 @@ export class WorldAgent {
     if (!body) { this.heldPose = pose ?? this.heldPose ?? DOWNED_POSE; this.heldPoseAuthored = false; this.clip = "ragdoll"; return; }
     if (this.draggedBy) return;
     // the sim's ground is process state — assert OURS before every run
-    await setHeightField((x, z) => this.heightAt(x, z));
+    await setHeightField((x, z) => this.heightAt(x, z)); await setWaterField(this.waterFieldNow());
     if (this.bodyEpoch !== epoch) return;
     // A release (or a 1.2s dragger silence) can land in the first moment of a
     // join, while replayed spawns are still fetching their geometry. Settling
@@ -2595,7 +2714,7 @@ export class WorldAgent {
     const epoch = ++this.bodyEpoch;
     const body = await this.ensureBody();
     if (this.bodyEpoch !== epoch || !body) return;
-    await setHeightField((x, z) => this.heightAt(x, z));
+    await setHeightField((x, z) => this.heightAt(x, z)); await setWaterField(this.waterFieldNow());
     if (this.bodyEpoch !== epoch) return;
     await this.supportReady();
     if (this.bodyEpoch !== epoch) return;
@@ -2776,7 +2895,7 @@ export class WorldAgent {
     // A new request supersedes the walk under way, whether or not it can be walked.
     if (this.walkDone || this.target) this.abandonWalk();
     this.walkRefusal = null;
-    this.lastWalkRefusal = null; this.lastWalkNote = null;
+    this.lastWalkRefusal = null; this.lastWalkNote = null; this.walkStopReason = null;
     // Plan before touching the body, from the ground under it: a refused walk
     // leaves it seated, pinned, dragged, posed or tumbling as it was, and sends nothing.
     const support = this.walkSupport();
@@ -2841,7 +2960,7 @@ export class WorldAgent {
   private abandonWalk() {
     const done = this.walkDone;
     this.walkDone = null; this.target = null; this.legs = []; this.walkHeightAt = null; this.walkGate = null; this.speed = 0;
-    if (this.clip === "walk" || this.clip === "run") this.clip = "idle";
+    if (this.clip === "walk" || this.clip === "run" || this.clip === "swim") this.clip = "idle";   // a swimmer then treads
     done?.(false);
   }
 
@@ -3363,6 +3482,9 @@ export class WorldAgent {
     this.avatar = path;
     this.selfBodyGeneration = ++this.bodyGenerationCounter;
     this.bodyReader?.forget(this.name);
+    // a new body has its own height: re-measure (a reply for the old body is dropped), and float afresh
+    this.endFloat();
+    if (this.water) void this.measureStature(); else { this.statureFor = null; this.bodyH = null; ++this.statureGen; }
     if (this.joined && this.ws?.readyState === 1) {
       this.ws.send(JSON.stringify(this.joinMsg()));
     }
@@ -3501,6 +3623,37 @@ export class WorldAgent {
   }
 
 
+  /** ", standing in a river 0.6m deep, flowing east" / ", swimming in the sea, 4.2m deep, …" — or "" on
+   *  dry ground. Depth is over the BED (a swimmer's feet are not on it). */
+  private waterHere(x: number, z: number, y: number): string {
+    if (!this.water || this.flight) return "";
+    const st = waterStance(this.water.level, this.heightAt(x, z), this.stature());
+    if (st.depth <= 0.02) return "";
+    // a body held clear of the water — flying over it, seated on a pier or a boat — is not in it: its feet
+    // are above the surface (a floating body's feet hang well below it, a wader's are on the bed)
+    if (!this.float.on && y > this.water.level + 0.05) return "";
+    const d = st.depth.toFixed(1), w = this.waterKinds?.sample(x, z), verb = st.swimming ? "swimming" : "standing";
+    if (w?.kind === "river" && w.flow) return `, ${verb} in a river ${d}m deep, flowing ${compass(w.flow[0], w.flow[1])}`;
+    if (w?.kind === "ocean" && w.toShore) return `, ${verb} in the sea ${d}m deep, the waves coming in from the ${compass(-w.toShore[0], -w.toShore[1])}`;
+    if (w?.kind === "still") return `, ${verb} in still water ${d}m deep`;
+    return `, ${verb} in water ${d}m deep`;
+  }
+
+  /** One line on the world's water bodies, largest first, for `look`. */
+  private waterSummary(): string | null {
+    const A = this.waterKinds;
+    if (!A?.bodies.length) return null;
+    const big = [...A.bodies].filter((b) => b.area >= 20).sort((a, b) => b.area - a.area).slice(0, 4);
+    if (!big.length) return null;
+    const at = (k: number) => { const i = k % A.n, j = (k - i) / A.n, h = (A.n - 1) * A.cell / 2; return `(${(i * A.cell - h).toFixed(0)}, ${(j * A.cell - h).toFixed(0)})`; };
+    const say = (b: (typeof A.bodies)[number]) => {
+      if (b.kind === "river") return `a river ${b.width.toFixed(0)}m wide flowing ${compass(b.flowDir[0], b.flowDir[1])} from ${at(b.source)} to ${at(b.mouth)}`;
+      if (b.kind === "ocean") return `the sea, along the world's edge (${Math.round(b.area)}m²)`;
+      return `${b.area > 1500 ? "a lake" : "a pond"} (${Math.round(b.area)}m²) around ${at(b.cells[Math.floor(b.cells.length / 2)])}`;
+    };
+    return `Water: ${big.map(say).join("; ")}${A.bodies.length > big.length ? `; and ${A.bodies.length - big.length} smaller puddles` : ""}. Bodies wade to their chest (slower the deeper), then swim (slower still).`;
+  }
+
   look(nowMs = this.serverNow()): string {
     const L: string[] = [];
     // The agent's own seat rides its parent too: seated on a moving ferry,
@@ -3520,10 +3673,12 @@ export class WorldAgent {
     const selfSeatNote = selfEff?.ok && selfEff.seat?.state === "approximate" ? ` (seat approximate: ${selfEff.seat.reason})` : "";
     const seated = selfRide ? `, seated on ${this.seatName(selfRide.to)}${selfEff?.ok && selfEff.moving ? ` (riding its ${selfEff.moving})` : ""}${selfSeatNote}` : "";
     if (meKnown) {
-      L.push(`You are "${this.name}" in world "${this.world}" at (${me.x.toFixed(1)}, ${me.z.toFixed(1)}), ground height ${me.y.toFixed(2)}m, facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}.`);
+      L.push(`You are "${this.name}" in world "${this.world}" at (${me.x.toFixed(1)}, ${me.z.toFixed(1)}), ground height ${(this.float.on ? this.heightAt(me.x, me.z) : me.y).toFixed(2)}m${this.waterHere(me.x, me.z, me.y)}, facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}.`);
     } else {
       L.push(`You are "${this.name}" in world "${this.world}", position unknown (${selfEff && !selfEff.ok ? selfEff.why : "seat unresolved"}), facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}. Distances are withheld until your seat resolves — sit with no \`on\` (or walking) gets you up, back to a stamped position.`);
     }
+    { const ws = this.waterSummary(); if (ws) L.push(ws); }
+    if (this.pendingTerrain) L.push(`The world's ground is a heightmap that has not loaded yet: heights here are the last ground you had${this.terrain ? "" : " (flat)"}, until it does.`);
     // WHERE YOU ARE, ARCHITECTURALLY. A conjured building can only ever be
     // "a mesh 4m away"; a griddled one knows its own rooms, so standing inside
     // one is a fact perception can state. Derived from folded state alone —
