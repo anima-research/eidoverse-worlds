@@ -61,6 +61,7 @@ export const MOVER = Object.freeze({
     speed: 0.9,    // m/s, a steady stroke
     run: 1.5,      // m/s, swimming hard
     at: 0.75,      // of body height: the chest; deeper water at the feet floats the body
+    climb: 0.5,    // m above the SURFACE a swimmer can haul out onto (a quay, a pool's edge); higher is a wall from the water
   }),
 });
 /** The modes that step here. `fly` is shared/flight.js's integrator until its state moves in. */
@@ -180,8 +181,11 @@ export function stepWalk({ pos, dir, dt, run = false, creep = false, scale = 1, 
   const H = typeof height === "number" && height > 0 ? height : MOVER.body.height * scaleOf(scale);
   const ground0 = env.floorAt ? env.floorAt(pos[0], pos[2], pos[1]) : NaN;
   const st0 = env.waterAt ? waterStance(env.waterAt(pos[0], pos[2]), Number.isFinite(ground0) ? ground0 : pos[1], H) : null;
-  const speed = st0?.swimming ? (run ? MOVER.swim.run : MOVER.swim.speed) * scaleOf(scale) : walkSpeed({ run, creep, scale }) * (st0?.speedFactor ?? 1);
-  const d = Math.min(cap, speed * gain * dt);
+  // swimming: the dry speed asked for (keys, stick, run flag, gain) maps onto the stroke, so a stick ramp never goes
+  // backwards at the run threshold (review 10-15 #3): below a walk, a fraction of the stroke; walk→run, stroke→hard
+  const s = scaleOf(scale), dry = walkSpeed({ run, creep, scale }) * gain;
+  const stroke = (q) => (q <= MOVER.walk.speed ? MOVER.swim.speed * (q / MOVER.walk.speed) : MOVER.swim.speed + (MOVER.swim.run - MOVER.swim.speed) * Math.min(1, (q - MOVER.walk.speed) / (MOVER.walk.run - MOVER.walk.speed)));
+  const d = Math.min(cap, (st0?.swimming ? stroke(dry / s) * s : dry * (st0?.speedFactor ?? 1)) * dt);
   if (!(d > 0)) return { pos: here, moved: 0, blocked: null, stance: st0 };
   const nx = pos[0] + (dir[0] / len) * d, nz = pos[2] + (dir[1] / len) * d;
   let ny = pos[1], stance = st0;
@@ -190,8 +194,14 @@ export function stepWalk({ pos, dir, dt, run = false, creep = false, scale = 1, 
     if (Number.isFinite(f)) {
       const st = env.waterAt ? waterStance(env.waterAt(nx, nz), f, H) : null;
       if (st?.swimming) { ny = st.y; stance = st; }   // afloat: the ground under the water is no ledge
-      // a swimmer climbs out from where it floats (the chest), not from the bottom: a shelf within a step of the surface is land
-      else { if (!floorOk(st0?.swimming ? st0.y : pos[1], f, scale)) return { pos: here, moved: 0, blocked: { by: "ledge", top: f }, stance: st0 }; ny = f; if (st) stance = st; }
+      else if (st0?.swimming) {
+        // a swimmer hauls out: any ground under the surface is land (it floats above it), and so is a bank up to `climb`
+        // above the water; higher is a wall (review 10-15 #1: judging it from the chest trapped swimmers in every dug pool)
+        const level = env.waterAt(pos[0], pos[2]);
+        if (f > level + MOVER.swim.climb * s) return { pos: here, moved: 0, blocked: { by: "ledge", top: f }, stance: st0 };
+        ny = f; if (st) stance = st;
+      }
+      else { if (!floorOk(pos[1], f, scale)) return { pos: here, moved: 0, blocked: { by: "ledge", top: f }, stance: st0 }; ny = f; if (st) stance = st; }
     }
   }
   const to = [nx, ny, nz];

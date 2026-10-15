@@ -2049,6 +2049,13 @@ export class WorldAgent {
           this.target = null; this.walkHeightAt = null; this.walkGate = null; this.speed = 0; this.clip = "idle";
           this.walkDone?.(true); this.walkDone = null;
         }
+      } else if (r.blocked) {
+        // the stride was refused (a ledge, a wall, a mode): the walk ends here and says why, instead of pushing at it for
+        // 90 s and reporting "interrupted or timed out" (review 10-15 #4; the ledge hang was older than the water)
+        this.walkStopReason = r.blocked.by === "ledge" ? `a ledge ${Number.isFinite(r.blocked.top) ? `${(r.blocked.top - this.pos.y).toFixed(2)} m` : ""} too high to step onto at (${this.pos.x.toFixed(2)}, ${this.pos.z.toFixed(2)})` : `blocked by ${r.blocked.by}`;
+        this.target = null; this.legs.length = 0; this.walkHeightAt = null; this.walkGate = null; this.speed = 0;
+        this.clip = r.stance?.swimming ? "tread" : "idle";
+        this.walkDone?.(false); this.walkDone = null;
       } else {
         this.speed = r.moved > 0 ? r.moved / dt : 0; this.clip = r.stance?.swimming ? "swim" : T.run ? "run" : "walk";
         if (r.yaw !== null) this.yaw = r.yaw;

@@ -696,8 +696,11 @@ export function updateMe(dt, me) {
     // In water the mover also needs the floor (the stance is judged on it): the collider pass's own answer, probed as the
     // move itself will be. Dry, it is not asked — the collider pass below is the floor, as it always was.
     const wcap = wl == null ? null : colliderFor(me.userScale);
+    const groundHere = wl == null ? Infinity : groundUnder(myState.pos, wcap);
     const stride = stepWalk({ pos: [myState.pos.x, myState.pos.y, myState.pos.z], dir: [_dir.x, _dir.z], dt, run: fast, creep: creeping, scale: me.userScale, gain: myState.speed / full, height: wadeH || undefined },
-      wl == null ? {} : { floorAt: (x, z, y) => groundUnder(_wp.set(x, y, z), wcap), waterAt: () => wl });
+      // the mover's floor (and so its ledge rule) only where the stride touches water: on dry ground the collider pass
+      // owns y as before, so a pond somewhere never changes how a hill walks (review 10-15 #2)
+      wl == null ? {} : { floorAt: (x, z, y) => { const g = groundUnder(_wp.set(x, y, z), wcap); return g < wl || groundHere < wl ? g : NaN; }, waterAt: () => wl });
     myState.pos.x = stride.pos[0]; myState.pos.z = stride.pos[2];
     keepInBounds();
     const R = 78; // stay on the island

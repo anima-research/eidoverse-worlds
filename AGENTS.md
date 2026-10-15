@@ -653,7 +653,8 @@ sim use):
   the pace, waist-deep ~0.66, 0.5 by ~1.25 m); past that they float and SWIM
   at 0.9 m/s (1.5 running), treading water when still. This is the one
   walker's law (shared/mover.js `waterStance`), the same for your feet and a
-  person's. Nothing is walled off: your `move {to}` swims across, and `look`
+  person's. Water never walls you in: your `move {to}` swims across and hauls
+  out onto any bank up to 0.5 m above the surface (higher is a wall), and `look`
   says "swimming in a river 3.4m deep, flowing east". `water: null` drains
   it. The sim (thrown things) does not see water yet.
   The water's KIND is read from the shape of what it fills (shared/waterkind.js):
