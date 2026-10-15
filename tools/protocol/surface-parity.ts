@@ -214,7 +214,9 @@ async function spawnServer(tree: string, label: string): Promise<Server> {
   const p = Bun.spawn([process.execPath, join(tree, "server", "server.ts")], {
     cwd: tree,
     env: { ...process.env, PORT: String(port), JOIN_TOKEN: "", TRUST_NAMES: "1", WORLDS_DIR: worldsDir, RELAY_STATE_DIR: join(scratch, label),
-      EIDOVERSE_DIR, BENCH_NONCE: nonce, SKIP_OPT_SWEEP: "1", RECORD_FRAMES: "0", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" },
+      EIDOVERSE_DIR, BENCH_NONCE: nonce, SKIP_OPT_SWEEP: "1", RECORD_FRAMES: "0", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
+      // one content store for both trees: blobs are by hash, and a tag's export has no store/ (Commons sat at loading:6 on old, 10-15)
+      OPT_DIR: process.env.SURFACE_OPT_DIR ?? join(NEW, "assets", "opt") },
     stdout: Bun.file(log), stderr: Bun.file(log),
   });
   procs.push(p);
