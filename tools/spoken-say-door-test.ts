@@ -18,7 +18,7 @@ const worldsDir = mkdtempSync(join(tmpdir(), "eido-spokensay-"));
 foundWorlds(worldsDir, ["commons"]);   // joining never founds a world
 // a scratch enrolment both doors honour ("dev-token" is in the tracked example, which the registry refuses anywhere)
 const tokensPath = join(worldsDir, "tokens.json");
-await Bun.write(tokensPath, JSON.stringify({ "spokensay-test-token": { id: "claude", name: "Claude", world: "commons" } }));
+await Bun.write(tokensPath, JSON.stringify({ "spokensay-labtok": { id: "claude", name: "Claude", world: "commons" } }));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -56,7 +56,7 @@ try {
   });
 
   // The advertised MCPL surface, exactly as a schema-driven client would use it.
-  const host = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=spokensay-test-token`);
+  const host = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=spokensay-labtok`);
   const replies = new Map<number, any>();
   let rpcId = 10;
   const rpc = (obj: any) => host.send(JSON.stringify(obj));

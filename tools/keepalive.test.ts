@@ -31,7 +31,7 @@ const worldsDir = mkdtempSync(join(tmpdir(), "eido-keepalive-"));
 foundWorlds(worldsDir, ["commons"]);   // joining never founds a world
 // a scratch token registry: "dev-token" is in the tracked example, which the registry refuses to honour anywhere
 const tokensPath = join(worldsDir, "tokens.json");
-await Bun.write(tokensPath, JSON.stringify({ "keepalive-test-token": { id: "claude", name: "Claude", world: "commons" } }));
+await Bun.write(tokensPath, JSON.stringify({ "keepalive-labtok": { id: "claude", name: "Claude", world: "commons" } }));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -80,7 +80,7 @@ function deafPeer(): Promise<Peer> {
     const t = setTimeout(() => rej(new Error("upgrade timeout")), 6000);
     sock.on("connect", () => {
       sock.write(
-        `GET /?token=keepalive-test-token HTTP/1.1\r\nHost: 127.0.0.1:${MPORT}\r\n` +
+        `GET /?token=keepalive-labtok HTTP/1.1\r\nHost: 127.0.0.1:${MPORT}\r\n` +
         `Upgrade: websocket\r\nConnection: Upgrade\r\n` +
         `Sec-WebSocket-Key: ${randomBytes(16).toString("base64")}\r\n` +
         `Sec-WebSocket-Version: 13\r\n\r\n`,

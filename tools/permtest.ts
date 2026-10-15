@@ -18,7 +18,7 @@ const scratch = mkdtempSync(join(tmpdir(), "ew-permtest-"));
 const worlds = join(scratch, "worlds");
 foundWorlds(worlds, ["permtest"]);
 const tokensPath = join(scratch, "tokens.json");
-await Bun.write(tokensPath, JSON.stringify({ "permtest-claude-bearer": { id: "claude" } }));
+await Bun.write(tokensPath, JSON.stringify({ "permtest-cl-bearer": { id: "claude" } }));
 const PORT = freePort(9440);
 const HTTP = `http://127.0.0.1:${PORT}`;
 const srv = Bun.spawn([process.execPath, join(import.meta.dir, "..", "server", "server.ts")], {
@@ -50,7 +50,7 @@ try {
   {
     const fake = await open({ id: "claude" });
     check("an enrolled agent's name without its bearer is refused", fake.closedWith === 4004 || fake.errors.some((e) => e.includes("reserved")), JSON.stringify([fake.closedWith, fake.errors]));
-    const real = await open({ id: "claude", agentToken: "permtest-claude-bearer", agent: true });
+    const real = await open({ id: "claude", agentToken: "permtest-cl-bearer", agent: true });
     const snap = real.msgs.find((m) => m.type === "snapshot");
     check("the enrolled agent with its own bearer joins under its name", snap?.you === "claude", JSON.stringify(snap?.you ?? real.errors));
     check("…and is flagged an agent with a directory identity", /^u-/.test(snap?.cut?.you ?? ""), snap?.cut?.you);
@@ -64,7 +64,7 @@ try {
     const glb = new Uint8Array(16); new DataView(glb.buffer).setUint32(0, 0x46546c67, true);   // a glTF header
     const up = (q: string) => fetch(`${HTTP}/upload?${q}`, { method: "POST", body: glb });
     check("a wrong token is refused (401)", (await up("token=wrong")).status === 401);
-    const agent = await up("token=permtest-claude-bearer&by=claude");
+    const agent = await up("token=permtest-cl-bearer&by=claude");
     check("an enrolled agent's bearer is accepted", agent.status === 200, `${agent.status}`);
     const door = await up(`token=${DOOR}`);
     check("the door key is accepted", door.status === 200, `${door.status}`);
