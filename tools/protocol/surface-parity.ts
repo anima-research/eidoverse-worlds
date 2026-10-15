@@ -198,8 +198,7 @@ if (availMB !== null && availMB < MEM_FLOOR) await missing("memory", `MemAvailab
 ok("memory", availMB === null ? "not readable here (not Linux) — skipped" : `${availMB} MB available`);
 
 // ---- 5+6. one sequencer per tree, each serving copies of both worlds -------------------------------------------------
-scratch = mkdtempSync(join(tmpdir(), "ew-surface-"));
-mkdirSync(OUT, { recursive: true });
+scratch = mkdtempSync(join(tmpdir(), "ew-surface-"));   // OUT is made at the first frame, so a failed self-check leaves no empty folder
 const EIDOVERSE_DIR = process.env.EIDOVERSE_DIR ?? (existsSync(join(NEW, "..", "eidoverse-video")) ? resolve(NEW, "..", "eidoverse-video") : "/home/claude/eido/eidoverse-video");
 if (!existsSync(join(EIDOVERSE_DIR, "eidoverse", "assets"))) await missing("asset library", `${EIDOVERSE_DIR}/eidoverse/assets is not there — set EIDOVERSE_DIR`);
 type Server = { tree: string; label: string; port: number; base: string; nonce: string; log: string; worldsDir: string };
