@@ -81,6 +81,14 @@ const { HANDLERS, TOOLS, toolList } = await import("../../mcpl/tools.ts");
   ok(gone.isError && /move \{mode: "fly"/.test(gone.content[0].text), "AT6 calling a folded name teaches where it went", gone.content[0].text);
   const gone2 = await handleTool({ agent: null } as any, "kick", {});
   ok(gone2.isError && /act \{verb: "kick"/.test(gone2.content[0].text), "AT6 …kick too", gone2.content[0].text);
+  { // AT7 (parity sweep 10-14): an agent is a body under the same consent as a person. It sends its table on join (the
+    // server's default preset by NAME, never a literal), carries no private "pushable" flag, and can whisper through say.
+    const agentSrc = fs.readFileSync(path.join(ENGINE, "mcpl/agent.ts"), "utf8"), toolsSrc = fs.readFileSync(path.join(ENGINE, "mcpl/tools.ts"), "utf8");
+    ok(!/\bpushable\b/.test(agentSrc), "AT7a agent.ts has no `pushable` flag: the authority's consent table is the one answer to a shove");
+    ok(/this\.request\("consent", \{ preset: DEFAULT_PRESET \}\)/.test(agentSrc) && /import \{[^}]*\bDEFAULT_PRESET\b[^}]*\} from "\.\.\/shared\/protocol\/consent\.js"/.test(agentSrc), "AT7b agent.ts sends consent {preset: DEFAULT_PRESET} (the server's name for it) after joining");
+    const sayTool = toolsSrc.slice(toolsSrc.indexOf('name: "say"'), toolsSrc.indexOf('name: "say"') + 1200);
+    ok(/\bto: \{ type: "string"/.test(sayTool) && /say\(text: string, extra\?: \{[^}]*\bto\?: string/.test(agentSrc), "AT7c say takes `to` on both the tool's schema and ag.say (the client sends it; the authority logs it)");
+  }
   ok(!names.some((n) => /^rehearse_/.test(n)) && !/ag\.flightBody(Down|Recovered)\(/.test(fs.readFileSync(path.join(ENGINE, "mcpl/tools.ts"), "utf8")), "AT6 the rehearsal hooks are gone from the tool surface: no tool, no call into the trusted seam (a bench calls the agent's flightBodyDown directly)");
   ok(/create \{from: "[^"]+", at: \[/.test(desc.create) && !/with at: \[x, z\]\)/.test(desc.create), "AT2 create's description has a duplicate example in the shape the tool takes", desc.create); }
 

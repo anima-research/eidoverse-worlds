@@ -5,6 +5,7 @@
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
 import { bodyOf } from "../shared/components.js";
+import { DEFAULT_PRESET } from "../shared/protocol/consent.js";
 import { kindOf } from "../shared/protocol/kind.js";
 import { describeBody, mayLeave, resolveSeat, socketsUnder } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
@@ -220,7 +221,6 @@ export class WorldAgent {
   draggedBy: string | null = null;   // whose takeover sim drives this body (bodydrag)
   dragAt = 0;                        // last drag sample, for the silence timeout
   pins = new Map<string, number[]>(); // persistent bodydrag nails: joint -> [x,y,z]
-  pushable = true;                   // rough-and-tumble consent — accepted by default, like being posed
   body: HeadlessBody | null | undefined = undefined; // the REAL ragdoll (undefined = not tried yet)
   private simTicker: ReturnType<typeof setInterval> | null = null;
   private walkDone: ((arrived: boolean) => void) | null = null;
@@ -803,6 +803,9 @@ export class WorldAgent {
             await this.applyView(false, null, null);
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             this.joined = true;
+            // my consent table, as a person's client sends it on every arrival (consentsync.js): the server's default preset by
+            // name; absent, the server already holds me at that default and refuses in my name (parity sweep 10-14)
+            this.request("consent", { preset: DEFAULT_PRESET }).catch(() => { /* the server's default stands */ });
             this.seatCache.init().catch(() => { /* declared-approximate until it lands */ });
             if (!this.ticker) this.ticker = setInterval(() => this.tick(), TICK_MS);
             clearTimeout(timeout);
@@ -1900,7 +1903,7 @@ export class WorldAgent {
    *  VRM the sim cannot serve. Either way the event lands: being knocked over
    *  is something that happens TO this body, not just to its pixels. */
   knockDown(by: string, lean: number[] | null, notice: string) {
-    if (!this.pushable || this.draggedBy) return;
+    if (this.draggedBy) return;   // consent is the authority's: a shove my table refuses never reaches me (it sends the table on join)
     if (this.target) { this.walkDone?.(false); this.walkDone = null; this.target = null; this.legs = []; }
     this.speed = 0;
     // Down NOW, not when the physics finishes loading. tumble() awaits the
@@ -2843,9 +2846,9 @@ export class WorldAgent {
   // still let an internal caller send utt:-1 or t0:NaN — two layers that
   // disagree on well-formed are one layer). Malformed trio → plain say: an
   // internal caller's bug must not silently ride protocol keys.
-  say(text: string, extra?: { spoken?: boolean; utt?: number; t0?: number }): Promise<any> {
+  say(text: string, extra?: { spoken?: boolean; utt?: number; t0?: number; to?: string }): Promise<any> {
     this._typingUntil = 0;
-    const args: Record<string, unknown> = { text };
+    const args: Record<string, unknown> = { text, ...(typeof extra?.to === "string" && extra.to ? { to: extra.to } : {}) };
     if (extra?.spoken === true && Number.isSafeInteger(extra.utt) && (extra.utt as number) >= 0) {
       args.spoken = true;
       args.utt = extra.utt;
