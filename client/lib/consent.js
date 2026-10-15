@@ -22,7 +22,7 @@ export const MODES = ['everyone', 'ask', 'nobody'];
 // what each class means, for a settings row (the server's words, PROTOCOL §5)
 export const CLASS_WORDS = {
   near: 'stand close to me', follow: 'follow me around', touch: 'touch me (hands, shoulders, back)',
-  intimate: 'touch me intimately (chest, waist, hips)', pose: 'pose my body', shove: 'knock me over',
+  intimate: 'touch me intimately (face, eyes, chest, waist, hips)', pose: 'pose my body', shove: 'knock me over',
   move: 'drag or carry me', voice: 'speak into my ear',
 };
 

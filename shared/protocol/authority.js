@@ -13,7 +13,7 @@ import { checkSockets, checkSocket } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
 import { mintId, PERSON_ID } from "./ids.js";
-import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, outOfRange, rangeWords } from "./componentspec.js";
+import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, outOfRange, rangeWords, resolveVersioned } from "./componentspec.js";
 import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
 import { dec } from "./names.js";
 import { READ_ONLY, GHOST_OK } from "./verbclasses.js";
@@ -359,9 +359,10 @@ export const CAPACITY2 = { things: 10000, guestThings: 500, sockets: 40000, gues
 // pool of guests made 800 described sockets on one crate in a world capped at 10 things): capacity.sockets for the world
 // (default 4 000; the server's ceiling is its range's max, 4 × the things ceiling), capacity.guestSockets for guests
 // together, and SOCKETS_PER_HOST on one host (authority/sockets.js), which no setting raises.
-const capacityOf = (st) => { const c = st.entities["@world"]?.c; const ok = (x) => Number.isInteger(x) && x >= 0;
-  // capacity@2 on @world wins outright; else a written `capacity` keeps its old meaning; else a new world gets @2's defaults
-  const [v, D] = c?.["capacity@2"] ? [c["capacity@2"], CAPACITY2] : c?.capacity ? [c.capacity, CAPACITY] : [null, CAPACITY2];
+const capacityOf = (st) => { const ok = (x) => Number.isInteger(x) && x >= 0;
+  // the registry's one versioned-name reader (§4): the newest written capacity@n wins, a written `capacity` keeps its meaning,
+  // a fresh world gets the newest defaults. CAPACITY/CAPACITY2 mirror those defaults (pretrans D6 pins they agree).
+  const { name, value: v } = resolveVersioned(st.entities["@world"]?.c, "capacity"); const D = name === "capacity" ? CAPACITY : CAPACITY2;
   return Object.fromEntries(Object.keys(D).map((k) => [k, ok(v?.[k]) ? v[k] : D[k]])); };
 // what a guest's rights made that still stands, things and sockets apart (a log view, kept incrementally like everIds)
 function guestMade(w, st) {

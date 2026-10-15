@@ -177,8 +177,11 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   (a typo of a registered one with a "did you mean"). The registered components,
   their fields, defaults and meanings are in `shared/protocol/componentspec.js`; a
   authority answers `schema {component?}` with the same. Among them: `transform
-  {pos, q, scale}`, `model` (a library path), `label`, `description`, `parent {to, socket?}`,
-  `pivot`, `light`, `mesh`, `motion`, `sockets`, `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
+  {pos, q, scale}`, `model` (a library path), `label`, `description`, `parent {to, order?}`,
+  `pivot`, `light`, `mesh`, `motion`, `socket {name, part?, body?, accepts?, radius?}` (a socket is a
+  child entity of the thing it is on, carrying `parent {to: <host>}`; `sockets`, the old map spelling, is
+  lifted into socket children by the authority on write and at a stored world's first load),
+  `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
   `openable`, `physics`, `grabbable`, `particles`, `script:<name>`,
   `joint:<name>` (reserved: refused until an engine carries joints), and on
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
@@ -200,7 +203,8 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   registered bare by a change to the registry, which lists the namespaced
   spelling in the definition's `aliases`: both spellings then mean that one
   definition, are checked the same way, and old values keep working.
-- **A changed meaning is a new name**, `<name>@<n>` (`light@2`), registered
+- **A changed meaning is a new name**, `<name>@<n>` (`light@2`; the first real one is `capacity@2`, whose
+  defaults changed), registered
   before anyone writes it, whose definition says what it `supersedes`. Old
   names are read forever. No component may change how another is read.
 - **Every parameter is written down.** The authority writes a component's

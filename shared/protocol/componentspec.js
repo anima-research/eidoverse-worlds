@@ -352,6 +352,16 @@ export const defOf = (comp) => { const r = registered(baseOf(comp)); return r ? 
 export const canonicalName = (comp) => { const b = baseOf(comp), r = registered(b); return r && r !== b ? r + String(comp).slice(b.length) : String(comp); };
 /** What a versioned name replaces (light@2 → light), from its definition; null if it says nothing. */
 export const supersedes = (comp) => defOf(comp)?.supersedes ?? null;
+/** The ONE reader of a versioned name (§4; first use capacity@2, 10-14). For a base name on a record's components `c`:
+ *  the newest registered `<name>@<n>` that is WRITTEN on c wins; else a written `<name>` keeps its own meaning; else the
+ *  newest registered definition's defaults. Returns {name, value, def}: `value` is what's written (or null), `def` the
+ *  definition whose defaults fill the gaps. Readers never hand-code `c["x@2"] ?? c.x`: a second @n would copy the chain. */
+export function resolveVersioned(c, base) {
+  const versions = Object.keys(COMPONENTS).filter((k) => k === base || k.startsWith(base + "@"))
+    .sort((a, b) => (Number(a.split("@")[1] ?? 0)) - (Number(b.split("@")[1] ?? 0)));   // base, @2, @3 …
+  for (let i = versions.length - 1; i >= 0; i--) { const k = versions[i]; if (c && c[k] != null) return { name: k, value: c[k], def: COMPONENTS[k] }; }
+  const newest = versions[versions.length - 1]; return { name: newest, value: null, def: COMPONENTS[newest] };
+}
 
 // ---- references (PROTOCOL §4, "References are typed"; review 10-07 H5) ----
 // A field that names another thing or a person says so in its type, so copy, publish and a merge can find every
