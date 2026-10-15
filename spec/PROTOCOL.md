@@ -184,7 +184,8 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
   `openable`, `physics`, `grabbable`, `particles`, `script:<name>`,
   `joint:<name>` (reserved: refused until an engine carries joints), and on
-  `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
+  `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`, `training-consent` and
+  `training-consent:<identity>` (may the log, or one person's entries in it, train models: both must say yes; absent is no),
   `sky`, `terrain`, `terrain-grid`, `terrain-tile:<i>-<j>`, `grass`, `physics-engine`, `surface:<name>`,
   `script-settings`, `blueprints:<hash>`, `assets:<key>`, `capacity`, `schemas:<name>`.
 - **A mesh is a body without a model.** `mesh {shape, size}` draws a

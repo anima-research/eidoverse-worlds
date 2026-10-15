@@ -15,7 +15,7 @@
 // Mutation that MUST go red: write `min: 1` into the Light descriptor's range ui → "Light.range states min here".
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { COMPONENTS, materialize } from "../shared/protocol/componentspec.js";
+import { COMPONENTS, materialize, trainingAllowed } from "../shared/protocol/componentspec.js";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => { if (ok) pass++; else fail++; console.log(`${ok ? "✓" : "✗"} ${name}${!ok && detail ? `  — ${detail}` : ""}`); };
@@ -144,6 +144,14 @@ const regUnit = (key: string, path: string, type?: string) => { const u = COMPON
   for (const d of Object.values<any>(DESCRIPTORS)) for (const f of d.fields) if (f.path != null && !COMPONENTS[d.key].docs?.[f.path] && d.key !== "pivot" && d.key !== "transform") bad.push(`${d.key}.${f.path}`);
   check("every field a card shows has a one-line doc in the registry (what `schema` tells an agent)", !bad.length, bad.join(", "));
 }
+
+// training-consent (R 10-14): the world AND the person must both say yes; absent either is no. The reader is the one place the rule lives.
+{ const W = { "training-consent": { allow: true }, "training-consent:ann": { allow: true }, "training-consent:bo": { allow: false } };
+  check("training-consent: world yes + person yes → allowed", trainingAllowed(W, "ann") === true);
+  check("training-consent: world yes + person no → not", trainingAllowed(W, "bo") === false);
+  check("training-consent: world yes + person absent → not", trainingAllowed(W, "cy") === false);
+  check("training-consent: world absent + person yes → not", trainingAllowed({ "training-consent:ann": { allow: true } }, "ann") === false);
+  check("training-consent: no @world components at all → not", trainingAllowed(undefined, "ann") === false); }
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

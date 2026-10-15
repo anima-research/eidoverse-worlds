@@ -820,6 +820,17 @@
   "keyed": true,
   "on": "world"
  },
+ "training-consent": {
+  "fields": {
+   "allow": "bool",
+   "note": "string"
+  },
+  "defaults": {
+   "allow": false
+  },
+  "keyed": "optional",
+  "on": "world"
+ },
  "default-role": {
   "fields": {
    "role": "string",
