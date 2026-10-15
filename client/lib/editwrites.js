@@ -151,7 +151,13 @@ export async function sendOps(ops, { what, base = null, expect = true, revert = 
 }
 
 // ---- undo / redo: the authority's undo-by-act, of my own acts only ----
-export async function undo() {
+// one press at a time: two quick Ctrl+Z's both read the same top act, the second is refused "already undone", and the
+// refusal pop then threw away the act BELOW it, never undone (review 10-14 K1). Presses queue; a drop checks the top.
+let turn = Promise.resolve();
+const inTurn = (fn) => { const r = turn.then(fn, fn); turn = r.catch(() => {}); return r; };
+export function undo() { return inTurn(undo1); }
+export function redo() { return inTurn(redo1); }
+async function undo1() {
   await settled();
   const act = undoStack.at(-1);
   if (act === undefined) { flashHint('nothing of yours to undo here'); return { ok: false, refused: { code: 'nothing' } }; }
@@ -159,16 +165,16 @@ export async function undo() {
   if (r.ok) { undoStack.pop(); redoStack.push(r.act); flashHint(`undid your act ${act}${r.notes?.some((n) => n.skipped) ? ' (some of it had been changed since: kept theirs)' : ''}`); }
   // a refusal that can never change (already undone, or everything changed since) drops it, so the next Ctrl+Z reaches
   // the act before it; a lock or a rate limit leaves it for another try
-  else if (['nothing', 'conflict', 'physical', 'founding'].includes(r.refused?.code)) undoStack.pop();
+  else if (['nothing', 'conflict', 'physical', 'founding'].includes(r.refused?.code) && undoStack.at(-1) === act) undoStack.pop();
   return r;
 }
-export async function redo() {
+async function redo1() {
   await settled();
   const act = redoStack.at(-1);
   if (act === undefined) { flashHint('nothing to redo'); return { ok: false, refused: { code: 'nothing' } }; }
   const r = await send({ verb: 'undo', args: { act } }, { what: 'redo', record: false });
   if (r.ok) { redoStack.pop(); undoStack.push(r.act); flashHint('redone'); }
-  else if (['nothing', 'conflict'].includes(r.refused?.code)) redoStack.pop();
+  else if (['nothing', 'conflict'].includes(r.refused?.code) && redoStack.at(-1) === act) redoStack.pop();
   return r;
 }
 

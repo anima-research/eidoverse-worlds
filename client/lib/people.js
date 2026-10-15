@@ -160,7 +160,8 @@ export function closeSheet() { if (!sh) return; sh.root.classList.remove('open')
 function roleMenu(display, surface) {
   const me = myself(), them = personOf(display);
   const roles = R.grantableRoles(wc(), me).filter((r) => r.id !== 'none');
-  const pick = (rid) => run('set', { id: '@world', component: `roles:${them.id}`, value: { role: rid } }, `make ${display} ${rid}`);
+  // merge when the entry exists: the role menu must not wipe the person's exceptions/note (review 10-14 K3)
+  const pick = (rid) => run('set', { id: '@world', component: `roles:${them.id}`, value: { role: rid }, ...(wc()[`roles:${them.id}`] ? { merge: true } : {}) }, `make ${display} ${rid}`);
   const items = [...roles.map((r) => ({ k: r.id, label: `${r.id === them.role ? '✓ ' : ''}${r.name}` })), ...(me.role === 'owner' || me.permissions.includes('grantRoles') ? [{ k: '::can', label: 'Exceptions…' }] : [])];
   const choose = (k) => (k === '::can' ? openCanForm(display, surface) : pick(k));
   if (surface === 'card') { const r = document.querySelector('.sp-ctx')?.getBoundingClientRect(); contextMenu(r ? r.left + 8 : innerWidth / 2, r ? r.top + 8 : innerHeight / 3, items, choose); return; }

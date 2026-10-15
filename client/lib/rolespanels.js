@@ -161,7 +161,7 @@ function paintRoles(body) {
     if (rank <= lo || rank >= hi) return toast('no room there: move another role first', 'warn');
     const d = defsValue(); d[rid] = { ...d[rid], rank }; writeDefs(d, `place ${rid} above ${below.name}`).then(() => paintRoles(body)); }; });
   body.querySelectorAll('select.rp-change').forEach((s) => { s.onchange = () => { const v = s.value; if (!v) return; const who = s.dataset.who;
-    (v === '::remove' ? act('delete', { id: '@world', component: `roles:${who}` }, `${nameOf(who)}: back to the default role`) : act('set', { id: '@world', component: `roles:${who}`, value: { role: v } }, `make ${nameOf(who)} ${v}`)).then(() => paintRoles(body)); }; });
+    (v === '::remove' ? act('delete', { id: '@world', component: `roles:${who}` }, `${nameOf(who)}: back to the default role`) : act('set', { id: '@world', component: `roles:${who}`, value: { role: v }, ...(wc()[`roles:${who}`] ? { merge: true } : {}) }, `make ${nameOf(who)} ${v}`)).then(() => paintRoles(body)); }; });
   body.querySelectorAll('button[data-del]').forEach((b) => { b.onclick = () => deleteRole(b.dataset.del, body); });
   body.querySelector('button[data-add]')?.addEventListener('click', () => addRole(body));
 }
@@ -195,7 +195,7 @@ function deleteRole(rid, body) {
   body.querySelector('.rp-actions').before(box);
   box.querySelector('.pm-cancel').onclick = () => box.remove();
   box.querySelector('.pm-go').onclick = () => { const to = box.querySelector('select').value;
-    const ops = [...ids.map((id) => ({ verb: 'set', args: { id: '@world', component: `roles:${id}`, value: { role: to } } })),
+    const ops = [...ids.map((id) => ({ verb: 'set', args: { id: '@world', component: `roles:${id}`, value: { role: to }, merge: true } })),   // they hold the role, so each entry exists: keep its exceptions (K3)
       ...(wc()['default-role']?.role === rid ? [{ verb: 'set', args: { id: '@world', component: 'default-role', value: { ...wc()['default-role'], role: to } } }] : []),
       { verb: 'set', args: { id: '@world', component: 'role-defs', value: d } }];
     act('batch', { ops, label: `delete role ${rid}` }, `move ${ids.length} to ${to} and delete ${rid}`).then(() => paintRoles(body)); };

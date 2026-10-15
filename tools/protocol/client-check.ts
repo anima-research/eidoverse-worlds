@@ -137,6 +137,19 @@ try {
   await key("KeyZ", { ctrlKey: true, shiftKey: true });
   check("U6 …and redo again", await waitDisk(() => myActs().at(-1).e.body.request.act === undo2 && Math.abs(disk().entities[crate].c.transform.pos[0] - (start.pos[0] + 1)) < 1e-3), myActs().at(-1)?.e.body);
   await waitFor(`import('/lib/net.js').then((m) => Math.abs(m.replica.st.entities['${crate}'].c.transform.pos[0] - ${start.pos[0] + 1}) < 1e-3)`);
+  // U7 (review 10-14 K1): two quick Ctrl+Z's undo TWO acts (Y then X) — the second press must not read the same top act,
+  // be refused "already undone", and drop the act below it unseen
+  { const p0 = disk().entities[crate].c.transform.pos[0]; const k = myActs().length;
+    await drag(1); await waitDisk(() => myActs().length === k + 1); const x = myActs().at(-1).seq;
+    await waitFor(`globalThis.__editWrites().undo.at(-1) === ${x}`);
+    await drag(1); await waitDisk(() => myActs().length === k + 2); const y = myActs().at(-1).seq;
+    await waitFor(`globalThis.__editWrites().undo.at(-1) === ${y}`);
+    // both presses in ONE tick (key-repeat): awaiting between them let the local authority reply in between, which hid the bug
+    await evalJson(`(() => { for (let i = 0; i < 2; i++) { dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ', key: 'z', ctrlKey: true, bubbles: true })); dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyZ', key: 'z', ctrlKey: true, bubbles: true })); } return true; })()`);
+    const both = await waitDisk(() => myActs().length >= k + 4 && myActs().slice(k + 2).filter((a) => a.e.verb === "undo" && a.e.body?.refused === undefined).length === 2);
+    const reqs = myActs().slice(k + 2).map((a) => a.e.body?.request?.act);
+    check("U7 two quick Ctrl+Z's undo both acts (Y, then X), nothing dropped", both && JSON.stringify(reqs) === JSON.stringify([y, x]) && Math.abs(disk().entities[crate].c.transform.pos[0] - p0) < 1e-3, { reqs, pos: disk().entities[crate].c.transform.pos[0], p0 });
+    await waitFor(`globalThis.__editWrites().redo.length >= 2`); }
 
   // ---- Q: a Ctrl+Z pressed in the same tick as the release undoes THAT release (it waits for the authority's reply) ----
   { n0 = myActs().length; const before = JSON.stringify(disk().entities[crate].c.transform);
@@ -722,6 +735,17 @@ try {
       check("CW5 World › physics on sets @world.physics-engine {engine}; off deletes it", peOn && peOff, { pe: disk().entities["@world"]?.c["physics-engine"] ?? null, refused: await evalJson(`__refused.map((x) => x.text).slice(-2)`) });
       await evalJson(`(document.getElementById('__w')?.remove(), true)`); }
     // CB1 World Settings › Places: empty Bounds fields write NO bounds (they read as 0 and saved a zero box that refused every move, audit 10-09)
+    // RK1 (review 10-14 K3): picking a role from the Roles panel keeps the person's exceptions — the set merges when the entry exists
+    { const grant = await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder', can: { pauseScripts: true } } })).ok;`);
+      await waitDisk(() => disk().entities["@world"]?.c[`roles:${BOB}`]?.can?.pauseScripts === true);
+      await page(`const m = await import('/lib/rolespanels.js'); document.getElementById('__rk')?.remove(); const b = document.createElement('div'); b.id = '__rk'; document.body.append(b); m._test.paintRoles(b); return true;`);
+      await sleep(800);
+      const picked = await evalJson(`(() => { const s = [...document.querySelectorAll('#__rk select.rp-change')].find((x) => x.dataset.who === '${BOB}'); if (!s) return 'no-select'; s.value = 'visitor'; s.onchange(); return true; })()`);
+      const moved = await waitDisk(() => disk().entities["@world"]?.c[`roles:${BOB}`]?.role === "visitor");
+      const after = disk().entities["@world"]?.c[`roles:${BOB}`];
+      check("RK1 Roles › picking a role from the panel keeps the person's `can` exceptions (merge when the entry exists)", grant && picked === true && moved && after?.can?.pauseScripts === true, { picked, after });
+      await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`);   // restore for the rows below
+      await waitDisk(() => disk().entities["@world"]?.c[`roles:${BOB}`]?.role === "builder"); }
     { await page(`const m = await import('/lib/rolespanels.js'); const b = document.createElement('div'); b.id = '__pl'; document.body.append(b); m._test.paintPlaces(b); return true;`);
       const before = JSON.stringify(disk().entities["@world"]?.c.bounds ?? null);
       await evalJson(`(() => { const q = (s) => document.querySelectorAll('#__pl ' + s); q('[data-k=min],[data-k=max]').forEach((x) => (x.value = '')); const sp = q('[data-k=spawn]'); [3, 0.5, -2].forEach((v, i) => (sp[i].value = String(v))); q('[data-k=radius]')[0].value = ''; q('[data-save]')[0].click(); return true; })()`);
