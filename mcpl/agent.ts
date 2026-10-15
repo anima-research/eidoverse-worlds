@@ -2035,6 +2035,10 @@ export class WorldAgent {
       // WATER (upstream #242) is the mover's too: handed the world's level (env.waterAt) and this body's measured stature,
       // the stride wades (dragged) or swims (a stroke's pace, afloat at the chest) — no water arithmetic here.
       const water = this.water;
+      // feet on the live ground BEFORE the stride: terrain that loads late or changes under the walker lifts the body here, so
+      // the mover judges a ledge AHEAD against where the feet now stand — not against a y the ground has since left (the
+      // lifecycle test's mid-walk terrain swap; before 10-15 one refused stride, then the feet clamp, then on)
+      if (!this.flight && !this.draggedBy && this.pins.size === 0) { const g0 = floorAt(this.pos.x, this.pos.z); if (Number.isFinite(g0) && (!water || g0 >= water.level)) this.pos.y = g0; }
       const r = walkToward({ pos: [this.pos.x, this.pos.y, this.pos.z], target: [T.x, T.z], dt, run: T.run, tolerance: T.tolerance ?? MOVER.arrive.tolerance, room,
         ...(water ? { height: this.stature() } : {}) },
         water ? { floorAt, waterAt: () => water.level } : { floorAt });
