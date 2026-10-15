@@ -36,7 +36,7 @@ translation is a shape error wearing a helpful note — that was `walk_to {x, z}
       browser uses (`shared/mover.js`, `shared/grab.js`) — `agenttools-check` AT1 is the "two bodies" guard.
 - [ ] **Its live row**: an `AT` row in `tools/protocol/agenttools-check.ts` that calls it on a real `WorldAgent` against a
       real sequencer and checks the world, not the text. Watch it fail first (stash the handler).
-- [ ] **Its words in AGENTS.md**: the tools table (`### The tools — general shapes, with modes`), in v4 words. `vocab-check`
+- [ ] **Its words in AGENTS.md**: the tools table (`### The tools — general shapes, with modes`), in the protocol's words. `vocab-check`
       reads AGENTS.md too.
 - [ ] **If it replaces a name**: `TOOL_ALIASES` + `TOOL_ALIAS_ARGS` (rename) or `TOOL_FOLDS` (became a mode) — and
       `mcpl/alias-test.ts` gets the translation row. Never delete a name without one of the two.

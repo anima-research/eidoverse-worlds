@@ -1157,7 +1157,7 @@ export const TOOL_FOLDS: Record<string, string> = {
 export const TOOL_ALIAS_ARGS: Record<string, (a: Record<string, any>) => Record<string, any> | { refuse: string }> = {
   walk_to: (a) => ({ to: [a.x, a.z], ...(a.run !== undefined ? { run: a.run } : {}), ...(a.tolerance !== undefined ? { tolerance: a.tolerance } : {}) }),
   snapshot: (a) => a,
-  world_verb: (a) => a,
+  world_verb: (a) => a,   // TOOL_ALIAS_ARGS: act takes the same {verb, args}
   spawn: (a) => {
     if (!a.lib) return { refuse: a.query ? `spawn {query} has no one-step form now: library {query: ${JSON.stringify(a.query)}} finds the model, then create {model}` : "spawn needs lib (a library path); it is create {model} now" };
     const hasXZ = Number.isFinite(a.x) && Number.isFinite(a.z);

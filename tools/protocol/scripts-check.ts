@@ -572,7 +572,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
     good: (o) => o.ms < DUTY0.maxMs + 500 + 400 && o.rs.some((x: string) => /refused (busy|rate)/.test(x)) },
   { id: "I5", what: "review r2 #2: the authority's own work in a host call stays small: on a big world (1500 things with 300-number arrays), 32 writes then a read cost no whole-world copies", run(s) { cast(s);
       const big = Array.from({ length: 300 }, (_, i) => i);
-      for (let b = 0; b < 15; b++) s.call("olive", "batch", { ops: Array.from({ length: 100 }, (_, i) => ({ verb: "create", args: { id: `t${b}-${i}`, components: { "t/data": { xs: big } } } })) }, 6000); // under the byte rate
+      for (let b = 0; b < 15; b++) s.call("olive", "batch", { ops: Array.from({ length: 100 }, (_, i) => ({ verb: "create", args: { id: `t${b}-${i}`, components: { "t/data": { xs: big } } } })) }, 11000); // each batch alone in the 10 s byte window: the charge is PRE-paid since C0 (10-15), so 6 s steps held two batches and tripped the cap
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "box", "heavy", onUse(`for (let i = 0; i < 31; i++) world.set("self", "t/n", i); world.get("self"); world.set("self", "t/m", world.ids().length); world.children("box");`), { scope: { ids: "self", comps: ["t/n", "t/m"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "heavy" } } });

@@ -58,6 +58,8 @@ const UNRELATED = [
 // the wire rules' own exceptions, each with why
 const RULES_EXEMPT: [string, RegExp, string][] = [   // (the first eidosim's entries retired 2026-10-09: it lives in the importer now)
   ["mcpl/tools.ts", /TOOL_ALIASES|renamed with no alias|is now called/, "the alias table: an old tool name still answers, and says what it is now called (STRIKES A-S1-2)"],
+  ["mcpl/tools.ts", /TOOL_ALIAS_ARGS/, "the alias ARGUMENT table (10-15): an old name's old argument shape translates to the new tool's"],
+  ["mcpl/alias-test.ts", /TOOL_ALIAS_ARGS|is now called/, "the alias test drives each old name and its old shape"],
 ];
 const IMPORTS = [
   /(?:from\s+|import\s*\(\s*|import\s+|require\s*\(\s*)["'`](\.{1,2}\/[^"'`$]+)["'`]/g,     // static, side-effect, dynamic, template (up to a ${), require
