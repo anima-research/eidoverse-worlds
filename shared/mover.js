@@ -54,6 +54,14 @@ export const MOVER = Object.freeze({
     tolerance: 0.01,   // m: this close to the target is arrived (short positioning moves are honoured)
     max: 0.4,          // m: the widest tolerance a caller may ask for
   }),
+  // WATER (upstream #242's law, moved here 2026-10-15 so the client and the agent share one walker in water too):
+  // wading drags — knee-deep ~0.86 of the pace, waist-deep ~0.5; deeper than `at` of the body's height at the feet, the
+  // body floats at the chest and swims. Swimming is never refused a step (a ledge under water isn't a ledge).
+  swim: Object.freeze({
+    speed: 0.9,    // m/s, a steady stroke
+    run: 1.5,      // m/s, swimming hard
+    at: 0.75,      // of body height: the chest; deeper water at the feet floats the body
+  }),
 });
 /** The modes that step here. `fly` is shared/flight.js's integrator until its state moves in. */
 export const MODES = Object.freeze(["walk"]);
@@ -142,22 +150,50 @@ export function sweep(from, to, spacing = MOVER.track.sweep) {
  *  spot comes from env.floorAt (absent: y is kept); a floor more than a step up is a wall and the body stays put;
  *  env.blocked (absent: nothing blocks) is asked with the body's box at the new spot and refuses the step.
  *  → {pos, moved, blocked}. Never mutates its inputs. */
+const sm01 = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
+/** Where a body stands in water of surface `level` over ground `ground`: {y, depth, swimming, speedFactor}. speedFactor
+ *  is the wading drag (1 dry, ~0.5 waist-deep); null when swimming (the stroke has its own speeds). `level` null = dry. */
+export function waterStance(level, ground, height = MOVER.body.height) {
+  if (level == null || !Number.isFinite(level)) return { y: ground, depth: 0, swimming: false, speedFactor: 1 };
+  const depth = level - ground, floatY = level - MOVER.swim.at * height;
+  if (ground < floatY) return { y: floatY, depth, swimming: true, speedFactor: null };
+  const f = (depth > 0 ? depth : 0) / height;
+  return { y: ground, depth, swimming: false, speedFactor: 1 - 0.5 * sm01((f - 0.08) / 0.67) };
+}
+/** How much longer a metre takes here than on dry ground (a planner's price for water): 1 dry, ~2 chest-deep, ~1.7 swimming. */
+export function waterCost(level, ground, height = MOVER.body.height) {
+  const s = waterStance(level, ground, height);
+  return s.swimming ? MOVER.walk.speed / MOVER.swim.speed : 1 / s.speedFactor;
+}
+
+/** env.waterAt(x, z) → the water surface's y there, or null where there is none. With it, a step in water wades (slower)
+ *  or swims (floats at the chest, its own speed, never refused by a ledge); the reply's `stance` is what the renderer
+ *  needs to pick a clip (swim / tread vs walk). Without it (no water law in this world), nothing here changes. */
 export function stepWalk({ pos, dir, dt, run = false, creep = false, scale = 1, gain = 1, cap = Infinity, mode = "walk" }, env = {}) {
   const here = [pos[0], pos[1], pos[2]];
-  if (mode !== "walk") return { pos: here, moved: 0, blocked: { by: `mode:${mode}` } };
+  if (mode !== "walk") return { pos: here, moved: 0, blocked: { by: `mode:${mode}` }, stance: null };
   const len = Math.hypot(dir[0], dir[1]);
-  if (!(len > 0) || !(dt > 0) || !(gain > 0)) return { pos: here, moved: 0, blocked: null };
-  const d = Math.min(cap, walkSpeed({ run, creep, scale }) * gain * dt);
-  if (!(d > 0)) return { pos: here, moved: 0, blocked: null };
+  if (!(len > 0) || !(dt > 0) || !(gain > 0)) return { pos: here, moved: 0, blocked: null, stance: null };
+  // the stance is judged where the body IS (the step's speed), and re-judged where it lands (its y)
+  const ground0 = env.floorAt ? env.floorAt(pos[0], pos[2], pos[1]) : NaN;
+  const st0 = env.waterAt ? waterStance(env.waterAt(pos[0], pos[2]), Number.isFinite(ground0) ? ground0 : pos[1], MOVER.body.height * scaleOf(scale)) : null;
+  const speed = st0?.swimming ? (run ? MOVER.swim.run : MOVER.swim.speed) * scaleOf(scale) : walkSpeed({ run, creep, scale }) * (st0?.speedFactor ?? 1);
+  const d = Math.min(cap, speed * gain * dt);
+  if (!(d > 0)) return { pos: here, moved: 0, blocked: null, stance: st0 };
   const nx = pos[0] + (dir[0] / len) * d, nz = pos[2] + (dir[1] / len) * d;
-  let ny = pos[1];
+  let ny = pos[1], stance = st0;
   if (env.floorAt) {
     const f = env.floorAt(nx, nz, pos[1]);
-    if (Number.isFinite(f)) { if (!floorOk(pos[1], f, scale)) return { pos: here, moved: 0, blocked: { by: "ledge", top: f } }; ny = f; }
+    if (Number.isFinite(f)) {
+      const st = env.waterAt ? waterStance(env.waterAt(nx, nz), f, MOVER.body.height * scaleOf(scale)) : null;
+      if (st?.swimming) { ny = st.y; stance = st; }   // afloat: the ground under the water is no ledge
+      // a swimmer climbs out from where it floats (the chest), not from the bottom: a shelf within a step of the surface is land
+      else { if (!floorOk(st0?.swimming ? st0.y : pos[1], f, scale)) return { pos: here, moved: 0, blocked: { by: "ledge", top: f }, stance: st0 }; ny = f; if (st) stance = st; }
+    }
   }
   const to = [nx, ny, nz];
-  if (env.blocked) { const hit = env.blocked(bodyBox(to, scale), { from: here, to }); if (hit) return { pos: here, moved: 0, blocked: { by: hit } }; }
-  return { pos: to, moved: d, blocked: null };
+  if (env.blocked) { const hit = env.blocked(bodyBox(to, scale), { from: here, to }); if (hit) return { pos: here, moved: 0, blocked: { by: hit }, stance: st0 }; }
+  return { pos: to, moved: d, blocked: null, stance };
 }
 
 /** A stride toward a target [x, z]: arrives (no move) within `tolerance`, else steps at most the distance left (and

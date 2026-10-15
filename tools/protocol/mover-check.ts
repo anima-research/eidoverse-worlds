@@ -138,5 +138,30 @@ if (M) {
     ok(BS.canMantle === canMantle && canMantle(0.8, 1) === false && canMantle(0.81, 1) === true && canMantle(1.7, 1) === true && canMantle(1.71, 1) === false, "A5 the client's mantle starts where the mover's step ends (0.8 m) and reaches its height (1.7 m)");
   }
 }
+{ // W: water in the one walker (upstream #242's law, mover-hosted 10-15)
+  const { waterStance, waterCost, stepWalk } = await import("../../shared/mover.js");
+  const dry = waterStance(null, 0); ok(dry.speedFactor === 1 && !dry.swimming && dry.y === 0, "W1 no water: dry, full pace");
+  const knee = waterStance(0.5, 0), waist = waterStance(0.85, 0), chest = waterStance(1.3, 0);
+  ok(near(knee.speedFactor, 1 - 0.5 * (() => { const t = (0.5 / 1.7 - 0.08) / 0.67; return t * t * (3 - 2 * t); })()) && knee.speedFactor > 0.8 && knee.speedFactor < 0.9, "W1 knee-deep (0.5 m) wades at ~0.86", knee);
+  ok(waist.speedFactor > 0.6 && waist.speedFactor < 0.7 && !waist.swimming && waterStance(1.25, 0).speedFactor < 0.52, "W1 waist-deep (0.85 m) wades at ~0.66; ~0.5 by 1.25 m (main's curve, not a round number)", waist);
+  ok(chest.swimming && near(chest.y, 1.3 - 0.75 * 1.7) && chest.speedFactor === null, "W1 deeper than the chest floats the body at level − 0.75·height and swims", chest);
+  ok(near(waterCost(null, 0), 1) && near(waterCost(1.3, 0), 1.55 / 0.9) && waterCost(0.85, 0) > 1.4 && waterCost(0.85, 0) < 1.6 && waterCost(1.25, 0) > 1.9, "W1 waterCost: 1 dry, 1.72 swimming, ~1.5 waist-deep, ~2 chest-deep", { swim: waterCost(1.3, 0), waist: waterCost(0.85, 0) });
+  const pool = (level) => ({ floorAt: () => 0, waterAt: () => level });
+  const d0 = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, pool(null)); ok(near(d0.moved, 1.55) && d0.stance?.speedFactor === 1, "W2 waterAt null: a dry walk, full pace, stance dry", d0);
+  const w = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, pool(0.85)); ok(near(w.moved, 1.55 * waist.speedFactor) && near(w.pos[1], 0) && !w.stance.swimming, "W2 waist-deep: the stride is dragged, feet on the ground", w);
+  const sw = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, pool(1.3)); ok(near(sw.moved, 0.9) && near(sw.pos[1], 1.3 - 0.75 * 1.7) && sw.stance.swimming, "W2 chest-deep: a 0.9 m/s stroke, afloat at the chest", sw);
+  const swr = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1, run: true }, pool(1.3)); ok(near(swr.moved, 1.5), "W2 swimming hard is 1.5 m/s, not a 4 m/s run", swr);
+  const drop = { floorAt: (x) => (x > 0.5 ? -3 : 0), waterAt: () => 1.3 };
+  const off = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, drop); ok(off.blocked === null && near(off.pos[1], 1.3 - 0.75 * 1.7), "W3 swimming over a 3 m drop: no ledge, still afloat at the chest", off);
+  const cliff = { floorAt: (x) => (x > 0.5 ? 2 : 0), waterAt: () => 1.3 };
+  const up = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, cliff); ok(up.blocked?.by === "ledge", "W3 a 2 m wall under the water is still a wall (the body would have to climb out)", up);
+  // afloat in 3 m water over y=0 the body hangs at y = 3 − 0.75·1.7 = 1.725: a step up from THERE reaches 2.525, so a 2.4 m shelf is land
+  // (from the bottom it would be a 2.4 m wall) and a 2.6 m one is not
+  const shore = { floorAt: (x) => (x > 0.5 ? 2.4 : 0), waterAt: () => 3 };
+  const out = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, shore); ok(out.blocked === null && near(out.pos[1], 2.4) && !out.stance.swimming, "W3 a shelf within a step of where it floats: the swimmer stands up on it (its y is the shelf)", out);
+  const high = { floorAt: (x) => (x > 0.5 ? 2.6 : 0), waterAt: () => 3 };
+  const no = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, high); ok(no.blocked?.by === "ledge", "W3 one step higher than the float is a ledge", no);
+  const same = stepWalk({ pos: [0, 0, 0.95], dir: [0, 1], dt: 0.1 }, { floorAt: (x, z) => (z > 1 ? 0.9 : 0) }); ok(same.blocked?.by === "ledge", "W4 without waterAt, the ledge rule is exactly what it was", same);
+}
 console.log(`mover: ${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);
