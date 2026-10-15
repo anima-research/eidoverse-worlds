@@ -809,6 +809,11 @@ async function handle(msg) {
       bus.emit('lib-geom', msg.geom ?? {});
       break;
 
+    case 'body-inbox':
+      // the authority's body inbox (PROTOCOL L6): asks waiting for me, replies to my asks, acts delivered, revocations.
+      // people.js holds them (consentinbox.js), marks the asker's row in People Here and offers Allow / Not now / Never.
+      bus.emit('body-inbox', msg);
+      break;
     case 'log': onLog(msg); break;
     case 'reply': onReply(msg); break;
 

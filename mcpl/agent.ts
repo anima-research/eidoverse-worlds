@@ -5,7 +5,7 @@
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
 import { bodyOf } from "../shared/components.js";
-import { DEFAULT_PRESET } from "../shared/protocol/consent.js";
+import { DEFAULT_PRESET, KIND_CLASS } from "../shared/protocol/consent.js";
 import { kindOf } from "../shared/protocol/kind.js";
 import { describeBody, mayLeave, resolveSeat, socketsUnder } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
@@ -937,6 +937,22 @@ export class WorldAgent {
           case "debug": {
             const p = this.pendingDebug.get(msg.reqId);
             if (p) { this.pendingDebug.delete(msg.reqId); p(msg); }
+            break;
+          }
+          case "body-inbox": {
+            // the authority's body inbox (PROTOCOL L6), pushed by the server as it fills: an ask waiting for ME (someone's
+            // act met an `ask` cell of my table; 20 s, silence is no) is said with how to answer it through `act`; the
+            // replies to my own asks, acts delivered to my body and revocations are said in the authority's words.
+            for (const m of Array.isArray(msg.messages) ? msg.messages : []) {
+              if (!m || typeof m !== "object") continue;
+              const ts = Date.now(); let text: string | null = null;
+              if (m.type === "body-ask" && m.ask) { const a = m.ask; const left = typeof a.expires === "number" ? Math.max(1, Math.round((a.expires - ts) / 1000)) : 20;
+                text = `${a.summary ?? `${a.from} asks to ${a.kind}`}${a.why ? ` — "${a.why}"` : ""} (consent class ${KIND_CLASS[a.kind] ?? a.kind}; about ${left} s to answer, silence is no): act {verb: "consent", args: {answer: ${JSON.stringify(a.id)}, yes: true}} allows it this once, yes: false refuses`; }
+              else if (m.type === "body-reply") text = m.ok ? `your ask ${m.ask} was allowed${m.applied ? " and done" : ""}` : `your ask ${m.ask} was refused: ${m.why ?? "no"}`;
+              else if (m.type === "body") text = `${m.from} ${m.kind === "touch" ? "touched" : m.kind === "shove" ? "knocked over" : m.kind === "drag" || m.kind === "carry" ? "moved" : m.kind === "seat" ? "seated" : "posed"} you${m.spec?.point ? ` (${m.spec.point})` : ""} (consent: ${m.consent})`;
+              else if (m.type === "body-revoked") text = `${m.by} withdrew consent for ${m.class}: what you were doing to their body has ended`;
+              if (text) { this.inbox.push({ ts, kind: "act", who: m.type === "body-ask" ? String(m.ask?.from ?? "world") : String(m.from ?? m.by ?? "world"), text }); this.onEvent?.({ ts, kind: "act", who: String(m.ask?.from ?? m.from ?? m.by ?? "world"), text, mention: m.type === "body-ask" }); }
+            }
             break;
           }
           case "whisper": {
