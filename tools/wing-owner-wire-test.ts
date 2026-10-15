@@ -33,7 +33,8 @@ mock.module(base+'core.js', () => ({
 // nobody. The real module's other exports ride along untouched.
 mock.module(base+'base.js', () => ({ ...realBase, CONFIG: BENCH_CONFIG, bus, report() {} }));
 mock.module(base+'terrain.js', () => ({ heightAt:()=>0 }));
-mock.module(base+'colliders.js', () => ({ resolveColliders:()=>{}, lastBlockedTop:0, findSeat:()=>null, raySegment:()=>null }));
+mock.module(base+'colliders.js', () => ({ resolveColliders:()=>{}, lastBlockedTop:0, findSeat:()=>null, raySegment:()=>null,
+  frameOf:()=>null, lastContacts:()=>[], colliders:new Map() }));   // hiddenbump.js / controller.js / debug.js import these now (10-14)
 mock.module(base+'assets.js', () => ({ forgetBytes() {}, primeFiles: async () => {} }));
 mock.module(base+'world.js', () => ({ avatarMounts:new Map() }));   // net.js reads the mounts; the realizer behind world.js is not under test
 mock.module(base+'state.js', () => ({ state: { st: { entities: {}, roles: {}, recentChat: [] }, lastSeq: -1, hydrated: false }, hydrate() {}, applyView() {}, reset() {}, onWorldChange: () => () => {} }));
