@@ -74,7 +74,7 @@ const ONLY = opt("only");   // one world (commons|gym) for a quicker run
 const STAMP = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const OUT = resolve(opt("out", join(NEW, "notes", "surface-parity", STAMP)));
 const WORLDS: Record<string, string> = {
-  commons: resolve(opt("commons", "/home/claude/eido/scratch-worlds/nov1-e2e/commons")),
+  commons: resolve(opt("commons", "/home/claude/eido/staging/worlds/commons-v4")) /* the live Commons (world.jsonl, v4): the nov1-e2e copy is pre-names v4.jsonl and neither tree opens it */,
   gym: resolve(opt("gym", "/home/claude/eido/scratch-worlds/garden/gym")),
 };
 type Cam = { name: string; pos: [number, number, number]; look: [number, number, number] };
@@ -176,7 +176,7 @@ ok("new tree", `${describe(NEW)}`);
 // (server.ts:351) on BOTH trees, so it is named here, before any server starts.
 const genesisOf = (file: string) => { try { return JSON.parse(readFileSync(file, "utf8").split("\n", 1)[0]); } catch { return null; } };
 const entriesOf = (file: string) => { try { return readFileSync(file, "utf8").split("\n").filter(Boolean).length; } catch { return 0; } };
-for (const [w, dir] of Object.entries(WORLDS)) {
+for (const [w, dir] of Object.entries(WORLDS)) { if (ONLY && w !== ONLY) continue;
   if (!existsSync(dir)) await missing(`world copy: ${w}`, `${dir} does not exist`, `pass --${w} <dir>`);
   const log = join(dir, "world.jsonl"), g = genesisOf(log);
   if (!g || g.body?.dialect !== "eidoverse-log" || g.body?.v !== 4) {
@@ -206,7 +206,7 @@ async function spawnServer(tree: string, label: string): Promise<Server> {
   const worldsDir = join(scratch, label, "worlds"); mkdirSync(worldsDir, { recursive: true });
   // the world copies — and the custody/directory files beside the source (the sequencer's keys, the identity directory),
   // as gym-env.lab.ts:220 copies them; a copy with no custody is served read-only-ish, which is all a spectator needs
-  for (const [w, dir] of Object.entries(WORLDS)) {
+  for (const [w, dir] of Object.entries(WORLDS)) { if (ONLY && w !== ONLY) continue;
     cpSync(dir, join(worldsDir, w), { recursive: true });
     for (const f of [".custody.json", ".directory.json"]) { const src = join(dir, "..", f); if (existsSync(src) && !existsSync(join(worldsDir, f))) copyFileSync(src, join(worldsDir, f)); }
   }
@@ -247,7 +247,7 @@ async function spectate(s: Server, world: string): Promise<{ entities: number; p
     ws.onerror = () => { clearTimeout(t); rej(new Error("socket error")); };
   });
 }
-for (const s of [oldS, newS]) for (const w of Object.keys(WORLDS)) {
+for (const s of [oldS, newS]) for (const w of Object.keys(WORLDS)) { if (ONLY && w !== ONLY) continue;
   const r = await spectate(s, w).catch((e) => e as Error);
   if (r instanceof Error) await missing(`world opens: ${w} on ${s.label}`, `join refused: ${r.message}`, `sequencer log tail:`, ...tail(s.log));
   if (r.entities === 0) await missing(`world opens: ${w} on ${s.label}`, `the snapshot's cut folds to ZERO entities — a frame of this would be a blank floor; is the copy complete?`);
