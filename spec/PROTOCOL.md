@@ -117,7 +117,14 @@ The fold yields a **status** (`ok`, `no-world`, or `unknown-version`), a
 
 Readers MAY start from a **checkpoint** — a folded view whose digest the
 log records — and verify it by folding forward; the digest is never itself
-folded.
+folded. A checkpoint that readers may *trust* rather than merely start from
+is a `sequencer` entry (§12) on the chain: `body {at: <seq>, head, digest}`,
+the fold digest at that entry and the head it summarises, signed like any
+chain point. A replica holding the sequencer's key MAY adopt such a
+checkpoint without folding from genesis; one that doesn't MUST still fold
+forward from an entry it trusts. This is the log's trust anchor: a world
+ten years old is otherwise verifiable only from entry 0. (Not yet written
+by any sequencer; the shape is fixed here so the chain never grows a gap.)
 
 ## 3. State operations and their fold semantics (normative)
 
@@ -440,6 +447,71 @@ the fold.
 **Moderation** (kicks, bans and their reasons) lives in a separate
 moderator log written by the same authority, never in the world log; a world
 reader never folds it. Only its effects reach the world, through the gate.
+
+## 7a. Who may do what to whom (the capability algebra)
+
+Every refusal the authority issues comes from one of five questions, asked
+in this order. This section names them in one place so a new verb cites a
+rule rather than inventing one. Each is **normative** where the code already
+enforces it; the two marked *intended* are gaps found 2026-10-14 and are
+owed before this section is complete.
+
+**The parties.** The *operator* (runs the sequencer; genesis names them,
+§13). The *owner* (the role, §6: the world's). A *builder* (anyone whose
+role holds `build`). The *invoker* (whoever's request this is). The
+*affected participant* (whoever's body a request touches). A *sponsor*
+(whoever's rights a script acts with, §8).
+
+**1. Standing: what a role may do.** A role is a set of named permissions,
+each one sentence (`roles.js`): `build` (make things; change or delete what
+you made; publish blueprints), `editOthers` (change or delete what others
+made), `editWorld` (sky, weather, ground, the card, spawn, bounds), `generate`
+(add models or pictures: the world's credit), `fly`, `scripts` (install and
+edit scripts: they act with your rights), `pauseScripts` (pause scripts whose
+sponsor ranks below you), `mute`, `kick`, `grantRoles` (give or take roles
+below yours, with only permissions you hold), `caption`. An owner holds all
+of them. A guest (no account) is at most the world's `default-role`.
+
+**2. The thing: who made it.** For a change to an entity the authority asks,
+in order (`lacks()`): an owner may; else the verb's own need (`owner`,
+`grant`, or a named permission) must be held; else `build` must be held;
+else the change is allowed if the holder has `editOthers`, is creating, or
+**made the thing** (its first `create` was admitted under their rights).
+Three gates stand above this: an imported world's carried records are
+written by no one but an owner; a screen's captions are written only by the
+caption request; a `paused` write needs `pauseScripts`, not edit rights.
+
+**3. The lock: what the owner has nailed down.** `lock` (§4) binds
+*everyone*, owners included, until lifted by someone the lock's level names.
+It is the one rule that tells an owner no; it has a documented override
+(lifting it) and no silent one.
+
+**4. The body: what the affected participant permits.** A request that
+reaches another person's body — standing close, following, touching
+(plainly or intimately), posing, knocking over, carrying, speaking into the
+ear — is decided by **their** consent table (§5): per class, per tier
+(strangers / friends), `everyone` | `ask` | `nobody`, with `ask` filing a
+20-second question they answer or let lapse (silence is no), and a per-person
+`deny` that outlasts the answer for the stay. No role, including owner,
+overrides a consent refusal: this is the one veto standing *outside* the
+role ladder, and it is the affected party's, never the installer's or the
+invoker's. *Intended, not yet enforced:* the grab / put / throw / punt path
+checks rank only and must pass through the same gate.
+
+**5. The sponsor: whose rights a script spends.** A script acts with its
+sponsor's rights, not its author's; it may do nothing its sponsor could not;
+it goes dormant with a demoted sponsor and suspended with a banned one (§8).
+
+**Revoke and the past.** Taking a permission, a role, or consent away stops
+*future* acts; what landed stays in the log and in history. Undo is a
+person's own gesture over their own acts; reverting someone else's act is a
+deliberate `undo {act}` from history, judged by rule 2 at the time it is
+asked. Nothing is silently lost on either side.
+
+**Bodies, in short** (*intended*; the avatar design): an owner may remove a
+body from their world (`kick`, `ban`, refusing an avatar) and may never
+*edit* one. The only person who edits a body is its wearer and whoever the
+wearer has given builder-consent on it.
 
 ## 8. Scripts
 
