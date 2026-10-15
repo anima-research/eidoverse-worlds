@@ -72,6 +72,15 @@ export const MOTION_TYPES = ['pendulum', 'spin', 'orbit', 'bob', 'path'];
 const rateOf = (m, def) => (Number.isFinite(m.degPerSec) ? m.degPerSec : Number.isFinite(m.period) && m.period > 0 ? 360 / m.period : Number.isFinite(m.rpm) ? m.rpm * 6 : def);
 export const PARTICLE_PRESETS = ESSENTIAL_NAMES;   // the Essentials (shared/particle_effects.js): the effects every world has by name
 const round = (v, dp = 3) => +(+v).toFixed(dp);
+/** A row's hard limits ({min?, max?}) and unit from the registry (componentspec ranges / units): the one place a field's
+ *  limits are written. A card's own channel rows (a vec3's x/y/z, a physics number typed as text) read them through this. */
+export function limitsOf(comp, field) {
+  const r = SPEC[comp]?.ranges?.[field]; const u = SPEC[comp]?.units?.[field];
+  const out = {};
+  if (r && r.maxLen === undefined && r.maxItems === undefined) { if (r.min !== undefined) out.min = r.min; else if (r.gt !== undefined) out.min = r.gt; if (r.max !== undefined) out.max = r.max; }
+  if (typeof u === 'string') out.unit = u;
+  return out;
+}
 
 /** Typed entry → number, with Maya's relative operators. null = not a number. */
 export function parseEntry(text, current) {
@@ -113,7 +122,8 @@ function rowOf(card, k, bag, over = {}) {
   let value = f && f.path != null ? (f.wire ? f.wire.from(bag?.[f.path], bag) : bag?.[f.path]) : undefined;
   if (t === 'check') value = def ? value !== false : value === true;   // a check offers no reset: its box is the reset
   else value = value ?? absent ?? def;
-  return { ...widget, t, k, value, ...(def !== undefined && offersDef !== false && t !== 'check' ? { def } : {}), ...over };
+  // the row's hint is the registry's one-line doc (componentspec `docs`, through the descriptor) unless the card says more
+  return { ...widget, t, k, value, ...(def !== undefined && offersDef !== false && t !== 'check' ? { def } : {}), ...(f?.doc && over.hint === undefined ? { hint: f.doc } : {}), ...over };
 }
 // The light component (PROTOCOL §4, 2026-10-01): a lamp is a thing with a `light` component.
 const compLight = (ent) => isBag(ent?.light);
@@ -498,7 +508,7 @@ export function inspectSchema(ent, id, live = {}) {
     const fields = [
       rowOf('Mesh', 'shape', m, { label: 'shape', options: MESH_SHAPES.map((v) => ({ v, label: v })), hint: 'box, sphere, cylinder, plane (flat on the ground, drawn on both sides) or capsule; it stands on its own origin' }),
       // the size's three channels are the card's own rows (descriptors.js Mesh extra), as a pivot's are: one vec3 on the wire
-      ...['x', 'y', 'z'].map((ax, i) => ({ t: 'num', k: `size.${ax}`, label: `size ${ax}`, axis: ax, value: +(+size[i]).toFixed(2), def: 1, step: 0.1, dp: 2, min: SPEC.mesh.ranges.size.min, max: SPEC.mesh.ranges.size.max, unit: 'm', hint: `${meaning[i]}, in metres (${SPEC.mesh.ranges.size.min} to ${SPEC.mesh.ranges.size.max})` })),
+      ...['x', 'y', 'z'].map((ax, i) => ({ t: 'num', k: `size.${ax}`, label: `size ${ax}`, axis: ax, value: +(+size[i]).toFixed(2), def: 1, step: 0.1, dp: 2, ...limitsOf('mesh', 'size'), hint: `${meaning[i]}, in metres (${SPEC.mesh.ranges.size.min} to ${SPEC.mesh.ranges.size.max})` })),
     ];
     groups.push({ group: 'mesh', label: 'mesh', types: ['mesh'], fields });
   }
@@ -573,7 +583,7 @@ export function inspectSchema(ent, id, live = {}) {
       O('locked', { label: 'door locked', hint: "bars opening while on (an open handler with unless: 'locked'): the door's own lock, for the people using it. Pinning it in place is the Lock component's" }),
       { t: 'enum', k: 'by', label: 'opens by', value: slides ? 'slide' : 'turn', def: 'turn', options: [['turn', 'turning about its pivot (a hinge)'], ['slide', 'sliding']].map(([v, label]) => ({ v, label })) },
     ];
-    if (slides) ['x', 'y', 'z'].forEach((a, i) => fields.push({ t: 'num', k: `slide|${i}`, label: `slide ${a}`, value: +o.slide[i] || 0, def: 0, step: 0.05, dp: 2, min: -10, max: 10, unit: 'm', hint: 'how far it moves when open, in its own frame' }));
+    if (slides) ['x', 'y', 'z'].forEach((a, i) => fields.push({ t: 'num', k: `slide|${i}`, label: `slide ${a}`, value: +o.slide[i] || 0, def: 0, step: 0.05, dp: 2, ...limitsOf('openable', 'slide'), hint: SPEC.openable.docs.slide }));
     else {
       fields.push(O('angle', { label: 'turns', value: Number.isFinite(o.angle) ? o.angle : Math.PI / 2, hint: 'how far it turns when open; negative turns the other way' }));
       fields.push(O('axis', { label: 'hinge axis', value: axisName(o, 'y'), options: Object.keys(AXES).map((v) => ({ v, label: v })), hint: 'y: an upright hinge (a door); x: a lid or a hatch' }));
@@ -601,14 +611,13 @@ export function inspectSchema(ent, id, live = {}) {
     const sh = ph.shape; const box = Array.isArray(sh) && sh.length === 2 && sh.every((p) => Array.isArray(p) && p.length === 3) ? sh[1].map((v, i) => Math.abs(v - sh[0][i])) : null;
     const shapeWords = box ? `a box ${box.map((v) => v.toFixed(2)).join(' × ')} m` : sh == null ? 'none yet: measured when its model loads' : (typeof sh === 'object' && sh.kind ? `${sh.kind}` : 'measured');
     groups.push({ group: 'physics', label: 'physics', types: ['physics'], fields: [
-      { t: 'enum', k: 'kind', label: 'body', value: ph.kind ?? 'dynamic', def: 'dynamic', options: [['dynamic', 'dynamic'], ['static', 'static'], ['kinematic', 'kinematic'], ['none', 'none']].map(([v, label]) => ({ v, label })),
-        hint: 'How the physics treats it. Dynamic: falls, tumbles, can be pushed. Static: solid, never moves (walls, floors). Kinematic: moves only when its motion or a script moves it, and pushes others. None: no collisions at all.' },
-      ...((ph.kind ?? 'dynamic') === 'dynamic' ? [{ t: 'enum', k: 'who', label: 'pushed by', value: ph.who ?? 'visitor', def: 'visitor', options: [['visitor', 'anyone'], ['builder', 'builders'], ['owner', 'owners']].map(([v, label]) => ({ v, label })), hint: 'Who can kick it or knock it around.' }] : []),
-      { t: 'text', k: 'mass', label: 'mass (kg)', value: opt(ph.mass), placeholder: 'from its size', hint: 'How heavy it is. Leave it blank and it is worked out from its size, as if it were as dense as water.' },
-      { t: 'text', k: 'friction', label: 'friction', value: opt(ph.friction), placeholder: 'engine default', hint: 'How much it grips what it slides on: 0 is ice, 1 is rubber (up to 10).' },
-      { t: 'text', k: 'restitution', label: 'bounciness', value: opt(ph.restitution), placeholder: 'engine default', hint: 'How much it bounces: 0 lands dead, 1 bounces back as high as it fell.' },
-      { t: 'check', k: 'ccd', label: 'fast mover', value: ph.ccd === true, hint: 'On for small things that fly fast (a thrown ball, a bullet), so they don\'t pass through thin walls. Costs a little more.' },
-      { t: 'info', label: 'shape', value: shapeWords, hint: 'Its collision shape, measured from its model by the server. To change how it bumps into things, use a Collider component.' },
+      { t: 'enum', k: 'kind', label: 'body', value: ph.kind ?? 'dynamic', def: 'dynamic', options: SPEC.physics.enums.kind.map((v) => ({ v, label: v })), hint: SPEC.physics.docs.kind },
+      ...((ph.kind ?? 'dynamic') === 'dynamic' ? [{ t: 'enum', k: 'who', label: 'pushed by', value: ph.who ?? 'visitor', def: 'visitor', options: [['visitor', 'anyone'], ['builder', 'builders'], ['owner', 'owners']].map(([v, label]) => ({ v, label })), hint: SPEC.physics.docs.who }] : []),
+      { t: 'text', k: 'mass', label: `mass (${SPEC.physics.units.mass})`, value: opt(ph.mass), placeholder: 'from its size', hint: SPEC.physics.docs.mass },
+      { t: 'text', k: 'friction', label: 'friction', value: opt(ph.friction), placeholder: 'engine default', hint: SPEC.physics.docs.friction },
+      { t: 'text', k: 'restitution', label: 'bounciness', value: opt(ph.restitution), placeholder: 'engine default', hint: SPEC.physics.docs.restitution },
+      { t: 'check', k: 'ccd', label: 'fast mover', value: ph.ccd === true, hint: SPEC.physics.docs.ccd },
+      { t: 'info', label: 'shape', value: shapeWords, hint: `${SPEC.physics.docs.shape}. To change how it bumps into things, use a Collider component` },
     ] });
   }
 
@@ -621,7 +630,7 @@ export function inspectSchema(ent, id, live = {}) {
     const level = Math.abs(q[0]) < 1e-4 && Math.abs(q[2]) < 1e-4;
     const sc = h.scale == null ? null : Array.isArray(h.scale) ? h.scale : [h.scale, h.scale, h.scale];
     const fields = [
-      ...['x', 'y', 'z'].map((ax, i) => ({ t: 'num', k: `pos.${ax}`, label: `position ${ax}`, axis: ax, value: round(h.pos[i] ?? 0), def: 0, step: 0.05, dp: 3, unit: 'm', compact: true, hint: `Where the reset puts it back, along ${ax}${h.parent ? ` (in ${h.parent}'s frame)` : ''}.` })),
+      ...['x', 'y', 'z'].map((ax, i) => ({ t: 'num', k: `pos.${ax}`, label: `position ${ax}`, axis: ax, value: round(h.pos[i] ?? 0), def: 0, step: 0.05, dp: 3, ...limitsOf('home', 'pos'), compact: true, hint: `Where the reset puts it back, along ${ax}${h.parent ? ` (in ${h.parent}'s frame)` : ''}.` })),
       { t: 'num', k: 'turn', label: 'turn', value: round(yaw, 1), def: 0, step: 5, dp: 1, unit: '°', compact: true, hint: level ? 'Which way it faces when it goes home, turned about up.' : 'Which way it faces when it goes home. Its home is tilted too: editing this sets a level turn.' },
       ...(sc ? (sc[0] === sc[1] && sc[1] === sc[2] ? [{ t: 'num', k: 'scale', label: 'size', value: round(sc[0]), def: 1, step: 0.05, dp: 3, compact: true, hint: 'Its size at home (1 is the model as made).' }]
         : ['x', 'y', 'z'].map((ax, i) => ({ t: 'num', k: `scale.${ax}`, label: `size ${ax}`, axis: ax, value: round(sc[i]), def: 1, step: 0.05, dp: 3, compact: true }))) : []),
@@ -654,7 +663,7 @@ export function inspectSchema(ent, id, live = {}) {
       PA('effect', { label: 'effect', options: effects.map((v) => ({ v, label: v.startsWith('sha256:') || v.startsWith('eido:') ? `${doc?.name ?? 'stored'} (${v.slice(0, 15)}…)` : v })), hint: 'an Essential, or a stored effect document (upload {effect})' }),
       PA('playing', { label: 'playing', hint: 'off: no new particles; the living finish' }),
       PA('scale', { label: 'scale' }),
-      ...[0, 1, 2].map((i) => ({ t: 'num', k: `at|${i}`, label: `at ${'xyz'[i]}`, value: at[i], step: 0.05, dp: 2, min: -8, max: 8, unit: 'm' })),
+      ...[0, 1, 2].map((i) => ({ t: 'num', k: `at|${i}`, label: `at ${'xyz'[i]}`, value: at[i], step: 0.05, dp: 2, ...limitsOf('particles', 'at'), hint: SPEC.particles.docs.at })),
       PA('part', { label: 'part', value: inst.part ?? '', placeholder: 'a node of its model (optional)', hint: 'emit from one part of its model' }),
       ...params,
       { t: 'btn', k: 'out', label: 'put it out', danger: true },
@@ -1396,8 +1405,8 @@ export function editOps(ent, id, edits, live = {}) {
         else if (k === 'ccd') { if (bool(raw)) next.ccd = true; else delete next.ccd; }
         else if (['mass', 'friction', 'restitution'].includes(k)) {
           const t = String(raw ?? '').trim(); if (!t) { delete next[k]; }
-          else { const n = Number(t); const lim = { mass: [1e-6, 1e6], friction: [0, 10], restitution: [0, 1] }[k];
-            if (!Number.isFinite(n) || n < lim[0] || n > lim[1]) { errors.push(`physics.${k}: a number from ${k === 'mass' ? 'just above 0' : lim[0]} to ${lim[1]}, or blank`); break; }
+          else { const n = Number(t); const r = SPEC.physics.ranges[k];
+            if (!Number.isFinite(n) || outOfRange(r, n)) { errors.push(`physics.${k}: a number ${rangeWords(r)}, or blank`); break; }
             next[k] = round(n, 4); } }
         else { errors.push(`${key}: no such field`); break; }
         comps.set('physics', next);

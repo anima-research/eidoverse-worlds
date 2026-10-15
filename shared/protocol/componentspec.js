@@ -6,12 +6,20 @@
 // `when` rule ({if: {field: value}, absent: [fields], set: {…}}) when it holds. So a renderer never supplies a number the
 // log doesn't hold, and changing a default here never changes an old world. A default that lives only in help text or a
 // renderer is a bug (pretrans-check D7); a changed default, type or enum is a changed meaning (spec/registry-pin.json, D8).
+//
+// ONE description, derived readers (review 10-14 §3.4, R: "fix"): a field's type (`fields`), default (`defaults`/`when`),
+// limits (`ranges`), unit (`units`) and one-line doc (`docs`) are written HERE and nowhere else. shared/protocol/descriptors.js
+// derives the inspector's rows from them (keeping only widget facts: step, decimals, soft maxima, which rows a card shows),
+// shared/components.js derives its records' params, shared/editschema.js and shared/worldentity.js read limits from here, and
+// the agent's `schema` request returns this table. tools/schema-layers-test.ts holds every reader to it. `units` and `docs`
+// are prose about a field, not its meaning: they aren't pinned, and rewording one is not a new version.
 
 // how two touching surfaces' coefficients combine: the modes PhysX, Unity and Rapier name (Jolt and Box2D take any rule as a
 // callback), so every engine can carry them; when two differ, the later in this list wins (PhysX's and Unity's priority)
 export const COMBINE = ["average", "min", "multiply", "max"];
 export const COMPONENTS = {
-  transform: { on: "thing", fields: { pos: "vec3", q: "array", scale: "vec3" }, defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, help: "where it is: pos (m), q (unit quaternion), scale" },
+  transform: { on: "thing", fields: { pos: "vec3", q: "array", scale: "vec3" }, defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, units: { pos: "m" },
+    docs: { pos: "where it stands, [x, y, z] in metres (a child's: local to its parent)", q: "its orientation, a unit quaternion [x, y, z, w]", scale: "its size, [x, y, z] (1 = as made)" }, help: "where it is: pos (m), q (unit quaternion), scale" },
   model:     { on: "thing", type: "string", help: "which model it shows: a name from find {kind: 'model'}, or its content address eido:sha256/<64 hex> (spec/EIDO-URIS.md; a glTF binary by its role)" },
   label:     { type: "string", maxLen: 80, help: "its display name, a short string (its name to every reader: the accessible name; description says what it is)" },
   // R 10-07 (our answer to upstream PR #168's label {name, description, visibility, offset}): the accessibility model's
@@ -25,21 +33,24 @@ export const COMPONENTS = {
   // registry's (PROTOCOL §4), with the meaning it already had
   // the collision shape every client and the authority's solids honour (shared/editschema.js Collider): its triangles or
   // its box; and the caption bot's speaker mark (shared/components.js Stage). Registered 10-07 with the meanings they had
-  collider:  { on: "thing", fields: { shape: "string" }, enums: { shape: ["exact", "box", "sphere"] }, help: "how it collides: {shape: exact (its triangles) | box (its bounding box) | sphere (a ball: under an engine that carries spheres it rolls; the authority fits one to its box)}; absent, its size decides" },
-  stage:     { on: "thing", fields: { speaker: "any" }, help: "the caption bot's stage mark: {speaker?: who is speaking here}" },
+  collider:  { on: "thing", fields: { shape: "string" }, enums: { shape: ["exact", "box", "sphere"] }, docs: { shape: "exact = its triangles, box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide" }, help: "how it collides: {shape: exact (its triangles) | box (its bounding box) | sphere (a ball: under an engine that carries spheres it rolls; the authority fits one to its box)}; absent, its size decides" },
+  stage:     { on: "thing", fields: { speaker: "any" }, docs: { speaker: "who is speaking here (the caption bot's mark)" }, help: "the caption bot's stage mark: {speaker?: who is speaking here}" },
   hidden:    { on: "thing", type: "bool", help: "true: not drawn by any client (it's still there: it collides, look and inspect list it). Delete it to show the thing again" },
   clickthrough: { on: "thing", type: "bool", help: "true: a pointer click passes through it to whatever is behind (it is still drawn, collides, and can be grabbed by a hand or a tool; the editor still selects it). Delete it to make it a click target again" },
   disabled:  { on: "thing", type: "bool", help: "true: switched off. It stays in the record and the Hierarchy, but no client loads or draws it, it has no collider and no physics, and nothing may grab, punt, use or sit on it; what hangs under it is switched off with it. Delete it to switch the thing back on" },
   pivot:     { on: "thing", help: "{pos: [x,y,z]}: where it turns and scales from, in its own frame before scale ([0,0,0] = its origin). Never moves it or changes how it draws" },
   // attaching to a NAMED point on the parent is general (Unreal AttachToComponent's SocketName, Roblox Attachment,
   // Godot BoneAttachment3D): socket names one of the parent's sockets
-  parent:    { on: "thing", fields: { to: "ref", order: "string", socket: "string" }, defaults: { order: "a0" }, legacy: ["socket"], help: "{to: id}; its transform becomes local to the parent. To attach at a socket, parent to the socket (a child entity of its host). socket: the old spelling, read in old logs and lifted at the door" },
+  parent:    { on: "thing", fields: { to: "ref", order: "string", socket: "string" }, defaults: { order: "a0" }, legacy: ["socket"], docs: { to: "the thing it rides: its transform becomes local to this parent", socket: "the old spelling of a socket attachment: parent to the socket child instead" }, help: "{to: id}; its transform becomes local to the parent. To attach at a socket, parent to the socket (a child entity of its host). socket: the old spelling, read in old logs and lifted at the door" },
   // the punctual light every engine shares (glTF KHR_lights_punctual, Godot OmniLight3D/SpotLight3D, Unity Light,
   // three.js): kind, color, intensity, range; a spot adds its cone as HALF-angles in radians (glTF outer/innerConeAngle,
   // Godot spot_angle, three.js angle/penumbra) and shines along the thing's local -Z (glTF, Godot)
   light:     { fields: { kind: "string", color: "int", intensity: "number", range: "number", angle: "number", inner: "number", shadows: "bool", important: "bool", day: "bool" }, defaults: { kind: "point", color: 0xffd9a0, intensity: 16, range: 10, shadows: false, important: false, day: true }, enums: { kind: ["point", "spot"] },
     when: [{ if: { kind: "spot" }, set: { angle: Math.PI / 4, inner: 0 } }],
     ranges: { color: { min: 0, max: 0xffffff }, intensity: { min: 0 }, range: { gt: 0 }, angle: { gt: 0, max: Math.PI / 2 }, inner: { min: 0, max: Math.PI / 2 } },
+    units: { range: "m", angle: "rad", inner: "rad" },
+    docs: { kind: "point (shines every way) or spot (a cone along its -Z)", color: "its colour, 0xRRGGBB", intensity: "how bright it is", range: "how far it reaches, in metres", angle: "a spot's cone half-angle, radians",
+      inner: "where a spot's edge starts to soften, radians", shadows: "it casts shadows", important: "always casts: first claim on a light slot, never governor-shed", day: "false: it burns at noon too (opts out of the day cycle)" },
     help: "a light on this thing: {kind: point|spot, color (0xRRGGBB), intensity, range (m), shadows}; a spot shines along the thing's -Z with angle (its cone's half-angle, rad, default π/4) and inner (where the edge starts to soften, rad, default 0)" },
   // a parametric body on a model-less thing (R 10-12: Create ▸ Box/Sphere/…, as Create ▸ Light is an Empty with a light).
   // Base-centred like a measured model (boxOfM): y runs 0..size[1], so a mesh thing stands on its own origin. Registered
@@ -47,6 +58,7 @@ export const COMPONENTS = {
   // colour: its one material slot is 'surface', and hesperus/material colours it as it colours a model's.
   mesh:      { on: "thing", fields: { shape: "string", size: "vec3" }, defaults: { shape: "box", size: [1, 1, 1] }, enums: { shape: ["box", "sphere", "cylinder", "plane", "capsule"] },
     ranges: { size: { min: 0.05, max: 200 } },   // a vec3's range holds for each element (valueCheck)
+    units: { size: "m" }, docs: { shape: "box, sphere, cylinder, plane (flat on the ground, drawn on both sides) or capsule; it stands on its own origin", size: "its size [x, y, z] in metres; a sphere reads x as its diameter, a cylinder or capsule x as diameter and y as height, a plane x × z" },
     help: "a parametric body drawn without a model: {shape: box|sphere|cylinder|plane|capsule, size: [x, y, z] (m, each 0.05..200)}. Its origin is the centre of its base (it stands on its own pos, as a model does). A sphere reads size[0] as its diameter; a cylinder and a capsule read size[0] as diameter and size[1] as height (a capsule is at least its diameter tall); a plane is size[0] × size[2] on the ground plane, 0.05 thick (it collides as a thin slab; things rest on it at 0.05), drawn on both sides. Never on a thing with a model or a light (one place per thing: give it a child). Its one material slot is 'surface' (hesperus/material:surface)" },
   // the closed forms every client and the agent evaluate (client/lib/motioneval.js). Rates are degrees a second (Unreal's
   // RotatingMovementComponent RotationRate, Unity's Rotate) or a period in seconds; a path is control points with a speed
@@ -61,10 +73,15 @@ export const COMPONENTS = {
                fields: { type: "string", axis: "axis", amp: "number", period: "number", damp: "number", maxAmp: "number", phase: "number", t0: "number", part: "string", radius: "number", degPerSec: "number", amplitude: "number", pivot: "vec3",
                  center: "vec3", face: "bool", points: "array", speed: "number", duration: "number", loop: "string" }, enums: { type: ["pendulum", "spin", "orbit", "bob", "path"], loop: ["loop", "pingpong", "once"] },
                ranges: { period: { gt: 0, max: 3600 }, degPerSec: { min: -36000, max: 36000 }, radius: { min: 0, max: 10000 }, speed: { min: 0, max: 1000 }, duration: { gt: 0, max: 36000 } },
+               units: { amp: { pendulum: "rad", bob: "m" }, period: "s", degPerSec: "°/s", radius: "m", speed: "m/s", duration: "s", pivot: "m", center: "m", phase: "rad" },
+               docs: { type: "pendulum | spin | orbit | bob | path", axis: "the axis it moves about or along, in its own frame: x, y, z or [x, y, z]", amp: "how far it swings (a pendulum: radians) or rises (a bob: metres)", period: "seconds for one swing, one turn or one lap",
+                 damp: "how fast a swing dies down; 0 swings forever", maxAmp: "the most a push may swing it, radians", phase: "where in its cycle it starts, radians", t0: "when it started (the authority stamps it)", part: "a node of its model that moves instead of the whole thing",
+                 radius: "the circle's radius, metres", degPerSec: "degrees a second (a lap of 30 s is 12°/s)", amplitude: "the first protocol's spelling of amp", pivot: "the point it turns about, in its own frame (absent: its Pivot component, else its origin)", center: "what it circles, in its parent's frame (absent: where it stands)",
+                 face: "turns to face along the way it moves", points: "the path's control points, 2–64, in its parent's frame", speed: "metres a second along the path", duration: "seconds for the whole path (instead of speed)", loop: "loop | pingpong | once" },
                help: "{type, …} (the authority stamps t0): pendulum {axis [x,y,z] (local), amp (rad), period (s), damp, maxAmp, phase} swings about the point it hangs from; spin {axis, degPerSec (degrees a second) or period (s a turn), pivot?, phase} turns steadily; orbit {radius (m), center? [x,y,z] (in its parent's frame; default where it stands), period (s a lap) or degPerSec, face? (false: keeps its own heading), phase} circles; bob {axis, amp (m), period (s), phase} floats; path {points [[x,y,z], …] (2–64, in its parent's frame), speed (m/s) or duration (s), loop?: loop|pingpong|once, face?} follows its points. part: a node of its model that moves instead (motion:<part>)" },
   // lock levels (R, 10-07): true is a builder-level lock (the first protocol's); {rank} names the level. A plain true is
   // never rewritten (materialize fills objects only), so every existing lock keeps its value and its meaning
-  lock:      { fields: { rank: "string" }, defaults: { rank: "builder" }, enums: { rank: ["builder", "moderator", "owner"] },
+  lock:      { fields: { rank: "string" }, defaults: { rank: "builder" }, enums: { rank: ["builder", "moderator", "owner"] }, docs: { rank: "who may unlock it, change it or move it anyway: builders and up, moderators and up, or owners only" },
                help: "an edit lock (PROTOCOL §7, Locks): true (builder level, the first protocol's lock) or {rank: 'builder' | 'moderator' | 'owner'}. Nobody, its locker and owners included, may move, replace or delete it, or anything attached to it; edits that don't relocate it (label, light, motion, reactions…) stay open. Whoever set it, or anyone at its level or above, may unlock it (delete {id, component: 'lock'}), change it, or act through it by sending a request with throughLock: true; nobody sets a lock above their own rank. An owner-level lock is 'not this piece': builders and moderators can't lift it or act through it. Not on @world. A door's gameplay lock is `openable.locked`, not this" },
   // a named attachment point on the thing (Unreal sockets, Roblox Attachment). With `body`, a PERSON can attach there by
   // using it (VRChat Station, Roblox Seat): chairs, swings, saddles, a car's seats. Things attach with parent {to, socket}.
@@ -77,7 +94,8 @@ export const COMPONENTS = {
   // the numbers a thing exposes to the bodies on it (a pose blends by `param.<name>`); scripts write them
   // where a thing goes back to when a reset sends it home (R 10-10): {pos, q, parent?: {to, socket?}} in its parent's frame.
   // grabbable.home (older) means the same for a grabbable; a reset reads home first.
-  home:      { on: "thing", refPaths: { "parent.to": "ref" }, fields: { pos: "vec3", q: "array", scale: "any", parent: "any" }, absentMeans: { scale: "its size in the world is kept as it is when the reset runs" }, help: "where it goes back to when a reset sends it home: {pos: [x,y,z], q?: [x,y,z,w], scale? (else its size in the world is kept), parent?: {to, socket?}} (its parent's frame). Stamped where it stands when a reset handler naming it is written" },
+  home:      { on: "thing", refPaths: { "parent.to": "ref" }, fields: { pos: "vec3", q: "array", scale: "any", parent: "any" }, absentMeans: { scale: "its size in the world is kept as it is when the reset runs" }, units: { pos: "m" },
+               docs: { pos: "where the reset puts it back, [x, y, z] in its parent's frame", q: "which way it faces at home, [x, y, z, w]", scale: "its size at home (1 is the model as made)", parent: "what it hangs under at home: {to, socket?}" }, help: "where it goes back to when a reset sends it home: {pos: [x,y,z], q?: [x,y,z,w], scale? (else its size in the world is kept), parent?: {to, socket?}} (its parent's frame). Stamped where it stands when a reset handler naming it is written" },
   params:    { on: "thing", map: "number", help: "{<name>: number}: values a socket's pose can blend by (param.<name>); scripts write them" },
   reactions: { help: "{<action>: handler}: what happens when someone uses it. Each handler may add who: 'builder'|'owner' (who may use it) and fix: text (shown on refusal).",
     handlers: {
@@ -104,7 +122,11 @@ export const COMPONENTS = {
   // pivot) or a slide, tweened over a time (Roblox TweenInfo's default 1 s). `open` is the state; every client animates to it
   openable:  { on: "thing", fields: { open: "bool", locked: "bool", angle: "number", axis: "axis", slide: "vec3", time: "number", part: "string" },
                defaults: { open: false, locked: false, time: 1 }, when: [{ absent: ["slide"], set: { angle: Math.PI / 2, axis: [0, 1, 0] } }],
-               ranges: { angle: { min: -Math.PI, max: Math.PI }, time: { min: 0, max: 10 } },
+               ranges: { angle: { min: -Math.PI, max: Math.PI }, time: { min: 0, max: 10 }, slide: { min: -10, max: 10 } },
+               units: { angle: "rad", slide: "m", time: "s" },
+               docs: { open: "its state now; anyone using it flips this (its reactions)", locked: "bars opening while on (an open handler with unless: 'locked'): the door's own lock for the people using it; pinning it in place is the Lock component's",
+                 angle: "how far it turns when open, radians; negative turns the other way", axis: "the hinge axis in its own frame: y an upright hinge (a door), x a lid or a hatch", slide: "how far it moves when open, [x, y, z] metres in its own frame (instead of turning)",
+                 time: "seconds to open or close", part: "a node of its model that moves instead of the whole thing" },
                help: "it opens and closes when someone uses it: a door, a gate, a lid, a hatch. {open: true/false (its state), locked? (true bars an open handler with unless: 'locked'; the edit lock is the separate `lock`), angle? (rad it turns when open, default π/2; negative turns the other way), axis? (its own frame, default [0,1,0]: an upright hinge), slide? [x,y,z] (m it moves in its own frame when open, instead of turning), time? (s to open or close, 0–10, default 1), part? (a node of its model that moves instead of the whole thing)}. It turns about its pivot (pivot {pos}: put it on the hinge edge). Usable with reactions {open: {kind: 'toggle', unless: 'locked'}} (toggle's default flips openable.open)" },
   // spec/PHYSICS.md §3.1–§3.2 (research physics-seeds 10-07, seeds 3–4): shape has a grammar (shared/protocol/shapes.js),
   // and the physical properties are named now, with units and what absence means, so the first engine that reads them
@@ -119,6 +141,10 @@ export const COMPONENTS = {
     when: [{ if: { kind: "dynamic" }, set: { who: "visitor" } }],   // shared/grab.js DEFAULT_WHO, written down
     ranges: { mass: { gt: 0, max: 1e6 }, density: { gt: 0, max: 1e5 }, friction: { min: 0, max: 10 }, restitution: { min: 0, max: 1 }, linearDamping: { min: 0, max: 1000 }, angularDamping: { min: 0, max: 1000 },
               layers: { min: 0, max: 0xffffffff }, mask: { min: 0, max: 0xffffffff }, material: { maxLen: 64 } },
+    units: { mass: "kg", density: "kg/m³", linearDamping: "1/s", angularDamping: "1/s", centerOfMass: "m" },
+    docs: { kind: "dynamic (falls, tumbles, can be pushed) | static (solid, never moves) | kinematic (moves only by its motion or a script, pushes others) | none (no collisions)", who: "who may punt it (and pick it up when it has no grabbable): visitor, builder or owner",
+      mass: "how heavy it is, kg; blank: worked out from its size as if as dense as water", friction: "how much it grips what it slides on: 0 is ice, 1 is rubber (up to 10)", restitution: "how much it bounces: 0 lands dead, 1 bounces back as high as it fell",
+      ccd: "on for small fast things (a thrown ball) so they don't pass through thin walls; costs a little more", shape: "its collision shape, measured from its model by the authority (you never send it)" },
     absentMeans: {
       shape: "no measured shape: the thing is no body to the engine (it neither flies nor collides)",
       mass: "kg; absent, density × the volume of its stamped shape (shapes.js shapeVolume; a convex, mesh or compound shape's baked geometry). Never a constant",
@@ -139,7 +165,14 @@ export const COMPONENTS = {
   // check). Its own component, apart from dynamics: a lantern, a key, a book can be carried in a world with no physics.
   // shared/grab.js DEFAULTS, written down: the ones absent by meaning (no grips, no home, no use, a size-chosen pose)
   // stay absent. grab-check pins that these equal grab.js's own.
-  grabbable: { on: "thing", refPaths: { "home.parent.to": "ref" }, defaults: { enabled: true, who: "visitor", steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 }, help: "it can be picked up and carried (grab, put, drop, throw; a VR hand's grip; desktop T): {who?: visitor|builder|owner (default visitor), enabled? (false: not now), steal? (false: nobody takes it from a hand; owners may), range? (m from the hand, 0.1..10, default 1.5; past 1.5 it flies to you), priority? (-10..10: wins when several are in reach), hold?: auto|press|toggle, pose?: hand|carry|torch|pistol|two-hand|shoulder (a body without tracked hands; default by size), grips? {<name>: {pos, q?, hand?: left|right|either, role?: primary|secondary, fingers?: fist|pinch|point|flat|open|trigger, hold?, part?}} (where the palm goes, in its own frame; none: held where grabbed), twoHanded?, throw? (0..3, ×the release velocity; 0: drop only), release?: drop|stay|return, returnAfter? (s unheld, then it goes home), home? (stamped by the authority), fits? [keywords] (snaps into a socket whose accepts shares one), use? (a reactions action, or {down, up}: what the use button fires while held), prompt? (hover text), fx? {particles, at?} (drawn while its holder presses use: presence, never logged)}. Grabbable makes it carryable; physics {kind: 'dynamic'} makes it fall. A dynamic thing with no grabbable is carryable by physics.who" },
+  grabbable: { on: "thing", refPaths: { "home.parent.to": "ref" }, defaults: { enabled: true, who: "visitor", steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 },
+    // the hand's own rules (shared/grab.js checkGrabbable) refuse outside these; written here so the inspector reads one source
+    ranges: { range: { min: 0.1, max: 10 }, priority: { min: -10, max: 10 }, throw: { min: 0, max: 3 }, returnAfter: { min: 0, max: 3600 } }, units: { range: "m", throw: "×", returnAfter: "s" },
+    docs: { enabled: "off: nobody can pick it up for now (a loose ball can still be kicked)", who: "who may pick it up: visitor (anyone), builder or owner", steal: "on: someone else can take it out of a hand; off: it stays with its holder (owners may still take it)",
+      range: "how far from the hand it can be picked up, metres; past arm's reach (1.5) it flies to the hand", priority: "when several things are in reach the highest wins: the key, not the table it sits on", hold: "auto (grip in VR, sticky on desktop) | press (only while gripping) | toggle (sticky everywhere: a tool)",
+      twoHanded: "on: both hands may hold it at once (a rifle, a broom): the first carries, the second aims", throw: "how hard it flies when thrown: 1 is normal, 2 twice as fast, 0 can only be dropped", release: "drop (it falls or is set down) | stay (where you let go) | return (it goes home)",
+      returnAfter: "left unheld this many seconds it goes home; 0 never" },
+    help: "it can be picked up and carried (grab, put, drop, throw; a VR hand's grip; desktop T): {who?: visitor|builder|owner (default visitor), enabled? (false: not now), steal? (false: nobody takes it from a hand; owners may), range? (m from the hand, 0.1..10, default 1.5; past 1.5 it flies to you), priority? (-10..10: wins when several are in reach), hold?: auto|press|toggle, pose?: hand|carry|torch|pistol|two-hand|shoulder (a body without tracked hands; default by size), grips? {<name>: {pos, q?, hand?: left|right|either, role?: primary|secondary, fingers?: fist|pinch|point|flat|open|trigger, hold?, part?}} (where the palm goes, in its own frame; none: held where grabbed), twoHanded?, throw? (0..3, ×the release velocity; 0: drop only), release?: drop|stay|return, returnAfter? (s unheld, then it goes home), home? (stamped by the authority), fits? [keywords] (snaps into a socket whose accepts shares one), use? (a reactions action, or {down, up}: what the use button fires while held), prompt? (hover text), fx? {particles, at?} (drawn while its holder presses use: presence, never logged)}. Grabbable makes it carryable; physics {kind: 'dynamic'} makes it fall. A dynamic thing with no grabbable is carryable by physics.who" },
   "physics-engine": { on: "world", fields: { engine: "string", build: "any", tickMs: "int" }, help: "on @world only (owner): the physics engine this world runs: {engine: 'eidosim@1.0.0', tickMs?}. The authority stamps the exact build. Delete it to turn physics off (refused while things are in flight)" },
   // spec/PHYSICS.md §3.2: a world's named surface materials (Marrow's Surface Data Cards: one name bundles a surface's
   // physical numbers; SLZ's format names materials, not raw per-object numbers). physics.material names one
@@ -160,17 +193,25 @@ export const COMPONENTS = {
   sound:      { on: "thing", fields: { src: "string", playing: "bool", loop: "bool", volume: "number", pitch: "number", near: "number", radius: "number", spatial: "bool", t0: "number", alt: "string" },
                 defaults: { playing: true, loop: true, volume: 0.8, pitch: 1, near: 1.5, radius: 12, spatial: true }, required: ["src"],
                 ranges: { volume: { min: 0, max: 1 }, pitch: { min: 0.5, max: 2 }, near: { gt: 0, max: 100 }, radius: { min: 1, max: 100 }, src: { maxLen: 2048 }, alt: { maxLen: 200 } }, clean: { alt: "line" },
+                units: { near: "m", radius: "m" },
+                docs: { src: "the sound file: store/audio/…, eidoverse/assets/…, or an https link", playing: "it plays now (false: paused)", loop: "plays again when it ends", volume: "0 silent to 1 full", pitch: "playback rate: 2 = an octave up and twice as fast",
+                  near: "full volume within this many metres", radius: "silent at and beyond this many metres: nobody further hears it at all", spatial: "positional; off: heard evenly everywhere inside its radius (room tone, music in a hall)", t0: "when it started (the authority stamps it)",
+                  alt: "what is playing, in words: for people who can't hear it and for agents" },
                 help: "a sound this thing plays: {src (store/audio/…, eidoverse/assets/…, or an https link: an allowlisted host's plays for everyone, any other only for viewers who allow untrusted links), playing? (default true), loop?, volume? 0..1, pitch? 0.5..2 (playback rate), near? m (full volume inside it), radius? m (≤ 100: silent at and beyond it), spatial? (false: heard evenly inside radius, no panning), t0? (stamped by the authority when it starts), alt? (what is playing, in words: what agents and people who can't hear it read)}. A reaction {kind: 'play'} plays it again from the top" },
   // an image on a thing (shared/picture.js; batch 2): with no part it's a framed quad of its own (width m, height from the
   // image's aspect, facing +Z), with part it textures that model node's material. src as sound's, for images
   picture:    { on: "thing", fields: { src: "string", part: "string", width: "number", alt: "string", lit: "string", flip: "bool" },
                 defaults: { lit: "scene", flip: false, width: 1 }, required: ["src"], enums: { lit: ["scene", "self"] },
                 ranges: { width: { gt: 0, max: 20 }, part: { maxLen: 64 }, src: { maxLen: 2048 }, alt: { maxLen: 200 } }, clean: { alt: "line" },
+                units: { width: "m" },
+                docs: { src: "the image: store/images/…, eidoverse/assets/…, or an https link", part: "a node of its model to texture; absent: a picture of its own, a quad facing its front", width: "the quad's width, metres; its height follows the image", alt: "what it shows, in words: for people who can't see it and for agents",
+                  lit: "scene (takes the scene's light) | self (a screen, unlit)", flip: "for a part whose UVs were exported upside down" },
                 help: "an image on this thing: {src (store/images/…, eidoverse/assets/…, or an https link: see sound), part? (a model node to texture; absent = a picture of its own, a quad facing +Z), width? m (the quad's; its height follows the image), alt? (alternative text: what it shows, for people who can't see it and for agents), lit?: scene|self (self = a screen, unlit), flip?}" },
   // why a thing is here (batch 2; R: {title, text, marks?}): a museum label's title and text. Who wrote it is a view over
   // the log (History), never stored. The world's own blurb is @world.about
   story:      { on: "thing", fields: { title: "string", text: "string", marks: "refs" }, required: ["title", "text"],
                 ranges: { title: { maxLen: 80 }, text: { maxLen: 1000 }, marks: { maxItems: 8 } }, clean: { title: "line", text: "lines" },
+                docs: { title: "its headline, ≤ 80 characters", text: "why it is here, ≤ 1000 characters of plain text, a blank line between paragraphs", marks: "what it marks or commemorates: up to 8 things' ids" },
                 help: "why this thing is here, a museum label: {title (≤ 80), text (≤ 1000; plain text, a blank line between paragraphs), marks? [ids] (≤ 8: what it marks or commemorates)}. Shown on Inspect and in look" },
   // words in the world (batch 2): signage, on the canvas text path (a browser font stack: CJK, RTL and emoji). Long-form
   // text (a book, a library) will be its own component; this one stays a sign
@@ -178,17 +219,24 @@ export const COMPONENTS = {
                 absentMeans: { outlineColor: "the edge takes the colour that contrasts with the text colour: black behind light text, white behind dark" },
                 defaults: { size: 0.15, width: 2, align: "center", color: 0xffffff, outline: true, billboard: "off", lit: "self" }, required: ["text"],
                 enums: { align: ["left", "center", "right"], billboard: ["off", "yaw", "full"], lit: ["self", "scene"] },
-                ranges: { text: { maxLen: 400 }, size: { min: 0.02, max: 2 }, width: { min: 0.1, max: 10 }, color: { min: 0, max: 0xffffff }, background: { min: 0, max: 0xffffff } }, clean: { text: "lines" },
+                ranges: { text: { maxLen: 400 }, size: { min: 0.02, max: 2 }, width: { min: 0.1, max: 10 }, color: { min: 0, max: 0xffffff }, background: { min: 0, max: 0xffffff }, outlineColor: { min: 0, max: 0xffffff } }, clean: { text: "lines" },
+                units: { size: "m", width: "m" },
+                docs: { text: "what it says, ≤ 400 characters and ≤ 16 lines", size: "the height of a line, metres", width: "where lines wrap, metres", align: "left | center | right", color: "the letters' colour, 0xRRGGBB", outline: "an edge around the letters, so they read on any background",
+                  outlineColor: "the edge's colour, 0xRRGGBB; left alone, the one that contrasts with the text colour", background: "a plate behind the words, 0xRRGGBB; absent: none", billboard: "off (flat, readable from both sides) | yaw (turns to face each viewer) | full (always faces each viewer)", lit: "self (glows, unlit) | scene (takes the scene's light)" },
                 help: "a sign: {text (≤ 400 characters, ≤ 16 lines), size? (line height, m; 0.02..2), width? (wrap width, m; 0.1..10), align?: left|center|right, color? 0xRRGGBB, outline? (a contrasting edge), background? 0xRRGGBB (a plate behind it; absent = none), billboard?: off (flat, facing +Z, readable from both sides) | yaw (turns about up toward each viewer) | full (faces each viewer, kept upright), lit?: self|scene}" },
   // a thing (or one part, look-at:<part>) turns to face something (batch 2; Unity AimConstraint, Blender Locked/Damped
   // Track, Resonite LookAt). State is logged; the turn is a view each client computes, like motion
   "look-at":  { on: "thing", keyed: "optional", fields: { target: "target", mode: "string", forward: "axis", up: "axis", yaw: "array", pitch: "array", speed: "number", range: "number", offset: "vec3" },
                 defaults: { mode: "yaw", forward: "z", up: "y", speed: 240, range: 12 }, required: ["target"], enums: { mode: ["yaw", "aim"] },
                 ranges: { speed: { min: 0, max: 3600 }, range: { gt: 0, max: 100 } },
+                units: { speed: "°/s", range: "m", offset: "m" },
+                docs: { target: "what it turns to face: a thing's id, @viewer (each viewer's own eyes), @nearest (whoever is nearest within range), or a person's identity", mode: "yaw (turns about its up only, stays upright) | aim (tilts too)", forward: "which of its own axes points at the target: x, y, z or [x, y, z]; z is its front",
+                  up: "its up axis", yaw: "[min, max] degrees it may turn from rest", pitch: "[min, max] degrees it may tilt from rest", speed: "degrees a second; 0 = turns at once", range: "a person further than this many metres: it turns back to rest", offset: "a point in the target thing's frame to aim at" },
                 help: "it turns to face something: {target (a thing's id, @viewer: each viewer's own eyes, @nearest: whoever is nearest within range, or a person's identity u-…), mode?: yaw (turns about up only, stays upright) | aim (tilts too), forward? (its local axis that points: x|y|z or [x, y, z], default z, its front; a negative one is a vector, [0, 0, -1]), up?, yaw? [min, max]° and pitch? [min, max]° (limits from rest), speed? °/s (0 = at once), range? m (a person beyond it: back to rest), offset? [x,y,z] (a point in the target thing's frame)}. look-at:<part> turns one model part" },
   // captions (a screen's live subtitles): written only by the caption request, a line at a time (shared/captions.js);
   // who may caption a screen is the screen's own captioners list (R leaned that way, 10-06, as the roles branch's CAPTION_ON_SCREENS does)
-  captions:   { on: "thing", fields: { session: "string", n: "int", gen: "number", title: "string", mediaTime: "number", window: "array" }, help: "a screen's captions, written by the caption request only: {session, n, gen, title?, mediaTime, window: [{t0, t1, text, speaker?}]}" },
+  captions:   { on: "thing", fields: { session: "string", n: "int", gen: "number", title: "string", mediaTime: "number", window: "array" },
+                docs: { session: "the captioning session's id", n: "the line's number in its session", gen: "the generation of the feed", title: "what is playing", mediaTime: "the media's playhead, seconds", window: "the lines on screen: [{t0, t1, text, speaker?}]" }, help: "a screen's captions, written by the caption request only: {session, n, gen, title?, mediaTime, window: [{t0, t1, text, speaker?}]}" },
   captioners: { on: "thing", fields: { ids: "people" }, help: "who may caption this screen with the caption request: {ids: [<identity u-…>]}; anyone who may edit the screen may caption it too" },
   // round-2 review R8 (2026-10-05): names the engine reads, carried by imported worlds, registered with their old
   // meaning so it's fixed (L5). Fields from every old world log on Burrow, translated. A name not here is a world's own
@@ -196,7 +244,8 @@ export const COMPONENTS = {
   sky:       { on: "world", fields: { hours: "number", rate: "number", ts: "number", azimuth: "number", clouds: "string", weather: "string", forecast: "object", override: "object", weatherK: "number", clock: "string", tz: "string", dormantRated: "object", weatherSeconds: "number", fog: "number", exposure: "number", ambient: "number", sun: "number", fill: "number", world: "string" }, help: "on @world: the sky and its clock {hours, rate, weather, clouds, forecast, fog…}" },
   grass:     { on: "world", fields: { width: "number", depth: "number", center: "array", bladeHeight: "number", wind: "number", spacing: "number", perCell: "number", color: "any", colorTip: "number", species: "string", height: "number", density: "number", preset: "string", rows: "object", corn: "object" },
                ranges: { width: { gt: 0, max: 1000 }, depth: { gt: 0, max: 1000 }, bladeHeight: { gt: 0, max: 5 }, height: { gt: 0, max: 10 }, density: { min: 0, max: 4 },
-                         spacing: { min: 0.05, max: 10 }, perCell: { min: 1, max: 32 }, wind: { min: 0, max: 10 } }, help: "a grass or crop field {width, depth, center, species, density…}" },
+                         spacing: { min: 0.05, max: 10 }, perCell: { min: 1, max: 32 }, wind: { min: 0, max: 10 } }, units: { width: "m", depth: "m", bladeHeight: "m", height: "m", spacing: "m" },
+               docs: { width: "the field's width, metres", depth: "the field's depth, metres", density: "how thickly it grows (0..4)", height: "blade height, metres", species: "what grows", preset: "a planting by name" }, help: "a grass or crop field {width, depth, center, species, density…}" },
   structure: { on: "thing", fields: { tile: "number", wallH: "number", wallT: "number", slabT: "number", labels: "object", levels: "array" }, help: "a built structure's plan {tile, wallH, wallT, levels, labels}" },
   // R 10-07: "not the kitchen sink style for particles". The instance is tiny and names an effect document (the
   // Niagara / Godot / bevy_hanabi shape; shared/particle_effects.js): an Essentials name or a stored document's content
@@ -207,7 +256,10 @@ export const COMPONENTS = {
                  effect: "string", part: "string", at: "vec3", playing: "bool", scale: "number", params: "object" },
                defaults: { playing: true, scale: 1 },
                legacy: ["preset", "origin", "count", "quality", "size", "area", "texture", "speed", "opacity", "lifetime"],
-               ranges: { scale: { min: 0.01, max: 100 }, part: { maxLen: 64 }, effect: { maxLen: 80 } },
+               ranges: { scale: { min: 0.01, max: 100 }, part: { maxLen: 64 }, effect: { maxLen: 80 }, at: { min: -8, max: 8 } },
+               units: { at: "m" },
+               docs: { effect: "an Essential (fire, sparks, embers, smoke, dust, snow, magic, stars, muzzle) or a stored effect document's address", part: "a node of its model it emits from", at: "where it emits, [x, y, z] metres in its own frame, each within ±8", seed: "the random seed; absent: derived from its id",
+                 playing: "off: no new particles; the living finish", scale: "its size, 0.01..100", params: "the effect's own knobs {<name>: value}" },
                absentMeans: {
                  effect: "an older value (the first protocol's): its preset names the effect, and its count, size, opacity, speed, lifetime, area, texture and quality are that effect's params of the same names",
                  part: "it emits from the thing itself, not one node of its model",
@@ -242,6 +294,8 @@ export const COMPONENTS = {
                // what every visitor's client can build: past these a single write freezes or breaks everyone (review T0)
                ranges: { size: { gt: 0, max: 4096 }, segments: { min: 2, max: 512 }, octaves: { min: 1, max: 8 }, frequency: { gt: 0, max: 64 },
                          amplitude: { min: -500, max: 500 }, flatRadius: { min: 0, max: 4096 }, w: { min: 2, max: 4096 }, h: { min: 2, max: 4096 }, spacing: { gt: 0, max: 64 } },
+               units: { size: "m", amplitude: "m", flatRadius: "m", flatHeight: "m", spacing: "m" },
+               docs: { seed: "the noise seed", size: "the ground's size, metres", amplitude: "its relief: how high the ground rises, metres", segments: "samples per side", flatRadius: "flat within this many metres of the centre", octaves: "noise octaves (1–8)", frequency: "noise frequency" },
                help: "the ground's base: {kind: 'noise', seed, size, amplitude, octaves, frequency, flatRadius, flatHeight} or {kind: 'raster', blob, w, h, spacing, origin: [x, z], format: 'i32-mm-le'}" },
   "terrain-grid": { on: "world", fields: { spacing: "number", tile: "int", origin: "array", extent: "array", limits: "object" }, help: "the sculpt grid: {spacing (m), tile (samples per side), origin [x, z], extent [nx, nz] tiles, limits {raise, lower} (mm)}; fixed while any terrain-tile exists" },
   "terrain-tile": { on: "world", keyed: true, key: "partition", fields: { mm: "array" }, help: "keyed <i>-<j>: {mm: [tile² integer millimetres, row-major]}, a delta over the base; written whole by sculpt" },
