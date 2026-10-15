@@ -273,6 +273,23 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   const un = await call("edit", { id: "post", set: { "flags.lock": false, "flags.hidden": false } }); await sleep(200);
   ok(!un.isError && !ag.foldRecord("post")?.lock && !ag.foldRecord("post")?.hidden, "AT5 …and what it teaches works", T(un)); }
 
+// ---- AT7: an alias runs the new tool with the OLD argument shape (review 10-15 #5: walk_to {x, z} was a shape error) ----
+{ const { handleTool } = await import("../../mcpl/tools.ts");
+  const ctx = { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } };
+  const x0 = ag.pos.x, z0 = ag.pos.z;
+  const w = await handleTool(ctx as any, "walk_to", { x: x0 + 1.5, z: z0, tolerance: 0.2 });
+  ok(!w.isError && /is now called move/.test(T(w)) && Math.abs(ag.pos.x - (x0 + 1.5)) < 0.25, "AT7 walk_to {x, z, tolerance} walks the body (move {to}), and says the new name", { text: T(w).slice(0, 160), x: ag.pos.x, x0 });
+  const n0 = ag.entities.size;
+  const sp = await handleTool(ctx as any, "spawn", { lib: "test/cup.glb", x: x0 + 3, z: z0 + 3, id: "alias-cup" });
+  for (let i = 0; i < 60 && !ag.entities.has("alias-cup"); i++) await sleep(50);
+  ok(!sp.isError && ag.entities.has("alias-cup") && ag.entities.size === n0 + 1, "AT7 spawn {lib, x, z, id} creates the thing (create {model, id, at})", T(sp).slice(0, 200));
+  const sq = await handleTool(ctx as any, "spawn", { query: "cup" });
+  ok(sq.isError && /library \{query/.test(T(sq)), "AT7 spawn {query} is refused with the two calls that do it now", T(sq).slice(0, 200));
+  const wv = await handleTool(ctx as any, "world_verb", { verb: "say", args: { text: "alias says" } });
+  ok(!wv.isError && /is now called act/.test(T(wv)), "AT7 world_verb {verb, args} runs act", T(wv).slice(0, 160));
+  const sn = await handleTool(ctx as any, "snapshot", { view: "third" });
+  ok(/is now called screenshot/.test(T(sn)) && !/\bto\b.*required|shape/i.test(T(sn)), "AT7 snapshot {view} reaches screenshot with its own shape (no spectator here is fine; a shape error is not)", T(sn).slice(0, 160)); }
+
 ag.close(); ann.close();
 console.log(`agenttools: ${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);

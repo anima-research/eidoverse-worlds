@@ -1151,6 +1151,20 @@ export const TOOL_FOLDS: Record<string, string> = {
   blueprint_place: 'create {from: "sha256:<hash>", at?}', kick: 'act {verb: "kick", args: {who, minutes?, reason?}}', ban: 'act {verb: "ban", args: {who, days?, reason?, global?}}',
   unban: 'act {verb: "unban", args: {who, global?}}', list_bans: 'act {verb: "bans", args: {global?}}',
 };
+/** An alias carries the OLD argument shape too (review 10-15 #5: walk_to {x, z} reached move, which takes {to}, and got a shape
+ *  error — the alias ran the right tool with the wrong words). Each translates the old schema to the new one, or says what to
+ *  call instead when the old call has no one-to-one new form. */
+export const TOOL_ALIAS_ARGS: Record<string, (a: Record<string, any>) => Record<string, any> | { refuse: string }> = {
+  walk_to: (a) => ({ to: [a.x, a.z], ...(a.run !== undefined ? { run: a.run } : {}), ...(a.tolerance !== undefined ? { tolerance: a.tolerance } : {}) }),
+  snapshot: (a) => a,
+  world_verb: (a) => a,
+  spawn: (a) => {
+    if (!a.lib) return { refuse: a.query ? `spawn {query} has no one-step form now: library {query: ${JSON.stringify(a.query)}} finds the model, then create {model}` : "spawn needs lib (a library path); it is create {model} now" };
+    const hasXZ = Number.isFinite(a.x) && Number.isFinite(a.z);
+    const at = !hasXZ ? undefined : a.yaw !== undefined ? { pos: [a.x, Number.isFinite(a.y) ? a.y : 0, a.z], yaw: a.yaw } : Number.isFinite(a.y) ? [a.x, a.y, a.z] : [a.x, a.z];
+    return { model: a.lib, ...(a.id !== undefined ? { id: a.id } : {}), ...(at !== undefined ? { at } : {}) };
+  },
+};
 export function resolveTool(name: string): { name: string; note?: string } | null {
   if (HANDLERS[name]) return { name };
   const to = TOOL_ALIASES[name]; if (to && HANDLERS[to]) return { name: to, note: `(${name} is now called ${to}; this ran ${to})` };
@@ -1163,6 +1177,7 @@ export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, a
   const r = resolveTool(name);
   if (!r && TOOL_FOLDS[name]) return { content: [{ type: "text", text: `${name} folded into a general tool: ${TOOL_FOLDS[name]} — nothing ran` }], isError: true };
   if (!r) { const near = nearestTool(name); return { content: [{ type: "text", text: `Unknown tool: ${name}${near && near[1] <= 4 ? ` (did you mean ${near[0]}?)` : ""}` }], isError: true }; }
+  if (r.note && TOOL_ALIAS_ARGS[name]) { const t = TOOL_ALIAS_ARGS[name](a ?? {}); if ("refuse" in t) return { content: [{ type: "text", text: `${r.note}\n${t.refuse}` }], isError: true }; a = t; }
   const out = await HANDLERS[r.name](ctx.agent, a, ctx, r.name);
   if (r.note && Array.isArray((out as any)?.content) && (out as any).content[0]?.type === "text") (out as any).content[0] = { ...(out as any).content[0], text: `${r.note}\n${(out as any).content[0].text}` };
   return out;
