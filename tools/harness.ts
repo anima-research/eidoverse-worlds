@@ -70,6 +70,9 @@ export function mkCheck() {
 }
 
 export type Cdp = { send<T = any>(m: string, p?: unknown): Promise<T> };
+/** One CDP call's budget. SwiftShader can pin a page's main thread past 60 s on a full world (Commons, 10-15), so a
+ *  probe that needs to wait sets CDP_CALL_MS; the default is the old 60 s. */
+const CDP_CALL_MS = Math.max(1000, Number(process.env.CDP_CALL_MS) || 60_000);
 export function cdpOn(ws: WebSocket): Cdp {
   let id = 0;
   return {
@@ -87,7 +90,7 @@ export function cdpOn(ws: WebSocket): Cdp {
           if (m.id === myId) finish(m.error ? new Error(`${method}: ${m.error.message}`) : undefined, m.result);
         };
         const onClose = () => finish(new Error(`${method}: browser connection closed`));
-        const timer = setTimeout(() => finish(new Error(`${method}: timed out`)), 60_000);
+        const timer = setTimeout(() => finish(new Error(`${method}: timed out`)), CDP_CALL_MS);
         ws.addEventListener("message", onMsg);
         ws.addEventListener("close", onClose);
         try { ws.send(JSON.stringify({ id: myId, method, params })); }
