@@ -53,7 +53,7 @@
 // a clock (harness.ts cdpOn: 60 s); frames are PROVED (a renderer.render call counter advances) not assumed; the sky guard
 // (ew-cloud-quality=off) and the GPU-loss guard (sessionStorage ew-gpu-lost) from tools/harness.ts:220-226 are applied
 // to every page. One Chromium at a time: run under code/scripts/eido-probe.sh or `flock /home/claude/eido/.headless.lock`.
-import { existsSync, mkdirSync, readFileSync, writeFileSync, cpSync, copyFileSync, mkdtempSync, rmSync, symlinkSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, cpSync, copyFileSync, mkdtempSync, rmSync, symlinkSync, readdirSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join, resolve, basename } from "node:path";
 import { PNG } from "pngjs";
@@ -318,8 +318,13 @@ async function boot(s: Server, world: string): Promise<string> {
     if (renderer.__spCount === undefined) { renderer.__spCount = 0; const o = renderer.render.bind(renderer); renderer.render = function (...a) { renderer.__spCount++; return o(...a); }; }
     return renderer.__spCount; }; return true;`);
   const t0 = Date.now(); let last = "", frames0 = -1, framesAt = 0, stillSince = 0;
+  // every poll goes to <out>/<world>-<tree>.ready.log (elapsed s, stage): a hang leaves a trail, not a last line (run 6, 10-15)
+  const readyLog = join(OUT, `${world}-${s.label}.ready.log`); const seen: string[] = [];
   while (Date.now() - t0 < READY_S * 1000) {
+    const tp = Date.now();
     last = await stage().catch((e) => `evaluate:${String(e).slice(0, 80)}`);
+    appendFileSync(readyLog, `${((tp - t0) / 1000).toFixed(1)}s +${((Date.now() - tp) / 1000).toFixed(1)}s ${last}\n`);
+    if (seen[seen.length - 1] !== last.replace(/\d+/g, "#")) seen.push(last.replace(/\d+/g, "#"));
     const m = last.match(/^frames:(\d+)\b/);
     if (m) { const f = +m[1]; if (frames0 < 0) frames0 = f; else if (f - frames0 >= 12) return last;   /* a dozen frames AFTER settle: drawn, not promised */
       if (f !== framesAt) { framesAt = f; stillSince = Date.now(); } }
@@ -328,7 +333,7 @@ async function boot(s: Server, world: string): Promise<string> {
   /* name the stall: every upstream condition held and the renderer.render count stood still — an on-demand render loop with
      nothing dirty, or a lost GPU (render.js:112) — so the reader is not left guessing which link of the ladder failed */
   const stalled = last.startsWith("frames:") && stillSince ? ` — the frame count stood at ${framesAt} for ${((Date.now() - stillSince) / 1000).toFixed(0)} s after loads/builds/sky settled: nothing redrew (on-demand loop with nothing dirty, or GPU lost)` : "";
-  return missing(`client ready: ${world} on ${s.label}`, `the client did not reach a settled, frame-drawing state in ${READY_S} s (--timeout); last stage: ${last}${stalled}`,
+  return missing(`client ready: ${world} on ${s.label}`, `the client did not reach a settled, frame-drawing state in ${READY_S} s (--timeout); last stage: ${last}${stalled}; stages seen: ${seen.slice(-6).join(" → ")}; trail: ${readyLog}`,
     pageErrors.length ? `page exceptions:` : `no page exceptions`, ...pageErrors.slice(0, 6), `sequencer log tail:`, ...tail(s.log, 8));
 }
 
