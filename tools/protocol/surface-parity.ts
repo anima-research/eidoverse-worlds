@@ -304,7 +304,10 @@ async function boot(s: Server, world: string): Promise<string> {
     const w = await import('/lib/world.js'); if (w.anyBuildsPending()) return 'builds:' + w.anyBuildsPending();
     const sk = await import('/lib/sky.js'); if (sk.skyBusy?.() || sk.skyRendering?.()) return 'sky:busy';
     if (globalThis.__gpuLost?.fired) return 'gpu:lost';
-    return 'frames:' + (await globalThis.__spFrames());`);
+    return 'frames:' + (await globalThis.__spFrames()) + ' vis:' + document.visibilityState + ' focus:' + document.hasFocus() + ' timers:' + (globalThis.__spTicks ?? -1);`);
+  /* a timer-driven counter beside the rAF one: if timers advance while frames stand still, rAF is paused (a hidden/occluded
+     headless page), not the page; if both stand still the main thread is pinned */
+  await page(`if (globalThis.__spTicks === undefined) { globalThis.__spTicks = 0; setInterval(() => { globalThis.__spTicks++; }, 100); } return true;`);
   // the frame counter (probe hook): render.js's renderCensus only ticks in XR (xr.js:1174) and frameloop.js keeps its
   // frameNo private, so the probe counts renderer.render calls itself — batches.render → renderer.render once per drawn
   // frame on both trees and both backends. Installed once per page; a lost GPU draws nothing (render.js:112) and the
@@ -312,14 +315,18 @@ async function boot(s: Server, world: string): Promise<string> {
   await page(`globalThis.__spFrames = async () => { const { renderer } = await import('/lib/core.js');
     if (renderer.__spCount === undefined) { renderer.__spCount = 0; const o = renderer.render.bind(renderer); renderer.render = function (...a) { renderer.__spCount++; return o(...a); }; }
     return renderer.__spCount; }; return true;`);
-  const t0 = Date.now(); let last = "", frames0 = -1;
+  const t0 = Date.now(); let last = "", frames0 = -1, framesAt = 0, stillSince = 0;
   while (Date.now() - t0 < READY_S * 1000) {
     last = await stage().catch((e) => `evaluate:${String(e).slice(0, 80)}`);
-    const m = last.match(/^frames:(\d+)$/);
-    if (m) { const f = +m[1]; if (frames0 < 0) frames0 = f; else if (f - frames0 >= 12) return last; }   // a dozen frames AFTER settle: drawn, not promised
+    const m = last.match(/^frames:(\d+)\b/);
+    if (m) { const f = +m[1]; if (frames0 < 0) frames0 = f; else if (f - frames0 >= 12) return last;   /* a dozen frames AFTER settle: drawn, not promised */
+      if (f !== framesAt) { framesAt = f; stillSince = Date.now(); } }
     await sleep(400);
   }
-  return missing(`client ready: ${world} on ${s.label}`, `the client did not reach a settled, frame-drawing state in ${READY_S} s (--timeout); last stage: ${last}`,
+  /* name the stall: every upstream condition held and the renderer.render count stood still — an on-demand render loop with
+     nothing dirty, or a lost GPU (render.js:112) — so the reader is not left guessing which link of the ladder failed */
+  const stalled = last.startsWith("frames:") && stillSince ? ` — the frame count stood at ${framesAt} for ${((Date.now() - stillSince) / 1000).toFixed(0)} s after loads/builds/sky settled: nothing redrew (on-demand loop with nothing dirty, or GPU lost)` : "";
+  return missing(`client ready: ${world} on ${s.label}`, `the client did not reach a settled, frame-drawing state in ${READY_S} s (--timeout); last stage: ${last}${stalled}`,
     pageErrors.length ? `page exceptions:` : `no page exceptions`, ...pageErrors.slice(0, 6), `sequencer log tail:`, ...tail(s.log, 8));
 }
 
