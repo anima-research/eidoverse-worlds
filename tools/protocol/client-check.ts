@@ -676,6 +676,51 @@ try {
       const cleared = await waitDisk(() => { const a = disk().entities["@world"]?.c.access; return !!a && !("minAccountDays" in a); });
       await evalJson(`(document.getElementById('__acc')?.remove(), true)`);
       check("CA1 World Settings › Access: 'Accounts at least N days old' (0–365) sets access.minAccountDays; emptying it removes it", shown && set && cleared, { shown, set, cleared, access: disk().entities["@world"]?.c.access, refused: await evalJson(`__refused.map((x) => x.text).slice(-2)`) }); }
+    // CW World Settings › World (R 10-14 14:13): capacity@2, physics, the bare training-consent — owner-gated, and opening it
+    // WRITES NOTHING (componentspec prefers a written capacity@2, so defaults written on open would re-cap an old world)
+    { const W = `document.querySelector('#__w')`;
+      const paint = () => page(`const m = await import('/lib/rolespanels.js'); document.getElementById('__w')?.remove(); const b = document.createElement('div'); b.id = '__w'; document.body.append(b); m._test.paintWorld(b); return true;`);
+      // the world runs on the OLD name: capacity {things: 7}, and no capacity@2
+      const oldOk = await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'capacity', value: { things: 7 } })).ok;`);
+      await waitDisk(() => disk().entities["@world"]?.c.capacity?.things === 7);
+      // CW1 a visitor sees no dials; the owner sees them with the world's values
+      await page(`const n = await import('/lib/net.js'); globalThis.__wasRights = n.net.myRights; n.net.myRights = { ...n.net.myRights, role: 'visitor', permissions: [] }; return true;`);
+      await paint();
+      const vis = await evalJson(`({ inputs: ${W}.querySelectorAll('input').length, ro: !!${W}.querySelector('.rp-ro'), things: ${W}.textContent.includes('Things 7') })`);
+      await page(`const n = await import('/lib/net.js'); n.net.myRights = globalThis.__wasRights; return true;`);
+      const n0 = myActs().length, r0 = myRefused();
+      await paint(); await sleep(1500);
+      const own = await evalJson(`(() => { const t = ${W}.querySelector('[data-cap=things]'); return { inputs: ${W}.querySelectorAll('input[data-cap]').length, min: t?.min, max: t?.max, value: t?.value, placeholder: t?.placeholder, old: /older/.test(${W}.textContent), phys: ${W}.querySelector('[data-phys]')?.checked, tc: ${W}.querySelector('[data-tc=allow]')?.checked }; })()`);
+      check("CW1 World › a visitor sees the numbers and no dials; the owner sees four capacity fields with the registry's range", oldOk && vis.inputs === 0 && vis.ro && vis.things && own.inputs === 4 && own.min === "1" && own.max === "50000" && own.phys === false && own.tc === false, { vis, own });
+      // CW2 FRESH OPEN WRITES NOTHING, and what it shows is the OLD capacity's cap (the authority's real one), not capacity@2's default
+      check("CW2 World › opening it as owner on a world with old `capacity` sends no set, and shows the old cap (7) as the effective value", myActs().length === n0 && myRefused() === r0 && own.value === "" && own.placeholder === "7" && own.old && !disk().entities["@world"]?.c["capacity@2"], { acts: myActs().slice(n0).map((a) => a.e.body?.request?.component), own, cap2: disk().entities["@world"]?.c["capacity@2"] ?? null });
+      // CW3 an in-range edit: ONE set, component capacity@2, merge, the value — and the first write carries today's other numbers
+      await evalJson(`(() => { const x = ${W}.querySelector('[data-cap=things]'); x.value = '12'; x.onchange(); return true; })()`);
+      const wrote = await waitDisk(() => disk().entities["@world"]?.c["capacity@2"]?.things === 12);
+      const req = myActs().slice(n0).map((a) => a.e.body?.request);
+      check("CW3 World › things = 12 sends one set {component: 'capacity@2', merge: true}; the first write carries the old cap's other numbers (guestThings 200, sockets 4000, guestSockets 400)", wrote && req.length === 1 && req[0]?.component === "capacity@2" && req[0]?.merge === true && req[0]?.value?.things === 12 && req[0]?.value?.guestThings === 200 && req[0]?.value?.sockets === 4000 && req[0]?.value?.guestSockets === 400, { req, cap2: disk().entities["@world"]?.c["capacity@2"] });
+      await waitFor(`${W}.querySelector('[data-cap=things]')?.value === '12'`, 4000);
+      // CW3b out of range: nothing sent, the panel says why in the registry's words
+      const n1 = myActs().length, r1 = myRefused();
+      await evalJson(`(() => { const x = ${W}.querySelector('[data-cap=things]'); x.value = '99999'; x.onchange(); return true; })()`);
+      await sleep(800);
+      const noteTxt = await evalJson(`${W}.querySelector('.rp-cap-note')?.hidden === false ? ${W}.querySelector('.rp-cap-note').textContent : null`);
+      check("CW3b World › things = 99999 sends nothing and the panel shows the refusal (≤ 50000)", myActs().length === n1 && myRefused() === r1 && /≤ 50000/.test(noteTxt ?? "") && await evalJson(`${W}.querySelector('[data-cap=things]').value === '12'`), { noteTxt, acts: myActs().slice(n1).map((a) => a.e.body?.request) });
+      // CW4 training-consent: the bare key only; the wire never carries training-consent:<id>
+      await evalJson(`(() => { const x = ${W}.querySelector('[data-tc=allow]'); x.checked = true; x.onchange(); return true; })()`);
+      const tcWrote = await waitDisk(() => disk().entities["@world"]?.c["training-consent"]?.allow === true);
+      const keyed = entries().filter((e: any) => e?.kind === "act" && String(e.body?.request?.component ?? "").startsWith("training-consent:")).length;
+      const tcReq = myActs().slice(n1).map((a) => a.e.body?.request);
+      check("CW4 World › 'may train' writes set {component: 'training-consent', value: {allow: true}} and nothing keyed by an identity", tcWrote && tcReq.length === 1 && tcReq[0]?.component === "training-consent" && tcReq[0]?.value?.allow === true && keyed === 0 && !Object.keys(disk().entities["@world"]?.c ?? {}).some((k) => k.startsWith("training-consent:")), { tcReq, keyed });
+      // CW5 physics: on writes {engine} as the gym does (the authority stamps build and tick); off deletes it
+      await waitFor(`${W}.querySelector('[data-tc=allow]')?.checked === true`, 4000);
+      await evalJson(`(() => { const x = ${W}.querySelector('[data-phys]'); x.checked = true; x.onchange(); return true; })()`);
+      const peOn = await waitDisk(() => !!disk().entities["@world"]?.c["physics-engine"]?.engine);
+      await waitFor(`${W}.querySelector('[data-phys]')?.checked === true`, 4000);
+      await evalJson(`(() => { const x = ${W}.querySelector('[data-phys]'); x.checked = false; x.onchange(); return true; })()`);
+      const peOff = await waitDisk(() => !disk().entities["@world"]?.c["physics-engine"]);
+      check("CW5 World › physics on sets @world.physics-engine {engine}; off deletes it", peOn && peOff, { pe: disk().entities["@world"]?.c["physics-engine"] ?? null, refused: await evalJson(`__refused.map((x) => x.text).slice(-2)`) });
+      await evalJson(`(document.getElementById('__w')?.remove(), true)`); }
     // CB1 World Settings › Places: empty Bounds fields write NO bounds (they read as 0 and saved a zero box that refused every move, audit 10-09)
     { await page(`const m = await import('/lib/rolespanels.js'); const b = document.createElement('div'); b.id = '__pl'; document.body.append(b); m._test.paintPlaces(b); return true;`);
       const before = JSON.stringify(disk().entities["@world"]?.c.bounds ?? null);

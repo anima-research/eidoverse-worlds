@@ -11,6 +11,9 @@
 //              Narrow (a phone, or the panel squeezed): one role at a time.
 //     Access   who can come in, what arrivals and guests are, how many at once; a warning when the default role holds
 //              moderation powers or generate.
+//     World    capacity@2 (things, sockets, guests'), physics on/off, the world's training-consent policy (R 10-14 14:13:
+//              "not being able to edit these things would annoy people"). Opening it writes NOTHING: the effective value
+//              (componentspec.resolveVersioned, the authority's own reader) is shown grey; a set goes out only on an edit.
 //     Card     the world's name and blurb (@world.about).   Places  spawn and bounds.   Old world  what translation carried.
 // Rows here are DOM like every panel; in a headset they are the same frame as a quad (domquad.js XR_FRAMES), rows stay
 // rows, and every control is a button or a select (no hover, no long-press).
@@ -18,6 +21,8 @@ import { bus, report } from './base.js';
 import { net, sendRequest, replica, identities } from './net.js';
 import { makeSection, moderationFrame, worldSettingsFrame, setDockEntry, toast } from './ui.js';
 import * as R from '../../shared/protocol/roles.js';
+import { COMPONENTS, resolveVersioned, rangeWords, outOfRange } from '../../shared/protocol/componentspec.js';
+import { SIM_ID } from '../../shared/sim.js';
 
 const wc = () => replica.st?.entities?.['@world']?.c ?? {};
 const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -215,6 +220,54 @@ function paintAccess(body) {
       else if (k === 'minAccountDays') { const d = Math.round(Number(x.value)); if (x.value && d > 0) v.minAccountDays = Math.min(365, d); else delete v.minAccountDays; } else v[k] = x.value;
       act('set', { id: '@world', component: 'access', value: v }, 'access').then(() => paintAccess(body)); } }; });
 }
+// World: the owner's dials over @world components that already exist (capacity@2, physics-engine, bare training-consent).
+// The ONE hard rule: write only on an explicit edit. componentspec prefers capacity@2 when it is written, so a panel that
+// wrote defaults on open would silently re-cap a world that still runs on the older `capacity`. Everyone reads; owners edit.
+const CAP = 'capacity@2', CAP_FIELDS = ['things', 'guestThings', 'sockets', 'guestSockets'];
+const CAP_WORDS = { things: 'Things', guestThings: "Guests' things (all together)", sockets: 'Sockets', guestSockets: "Guests' sockets (all together)" };
+/** what the authority enforces today (its reader: the newest written capacity@n, else a written `capacity`, else the newest defaults) */
+function effectiveCapacity() { const { name, value, def } = resolveVersioned(wc(), 'capacity');
+  const ok = (x) => Number.isInteger(x) && x >= 0;
+  return { name, written: value, eff: Object.fromEntries(CAP_FIELDS.map((k) => [k, ok(value?.[k]) ? value[k] : def.defaults[k]])) }; }
+function paintWorld(body) {
+  const edit = isOwner(); const c = wc(); const cap = effectiveCapacity(); const R2 = COMPONENTS[CAP].ranges;
+  const pe = c['physics-engine'] ?? null; const tc = c['training-consent'] ?? {};
+  const old = cap.name === 'capacity';   // this world still runs on the older name: the authority reads it until capacity@2 is written
+  const capRow = (k) => edit
+    ? `<label class="rp-field">${esc(CAP_WORDS[k])} <input type="number" step="1" min="${R2[k].min}" max="${R2[k].max}" data-cap="${k}" value="${c[CAP]?.[k] ?? ''}" placeholder="${cap.eff[k]}" aria-label="${esc(CAP_WORDS[k])}"> <span class="rp-dim">now ${cap.eff[k].toLocaleString('en')} · ${esc(rangeWords(R2[k]))}</span></label>`
+    : `<div class="rp-row"><div class="rp-main">${esc(CAP_WORDS[k])} <b>${cap.eff[k].toLocaleString('en')}</b></div></div>`;
+  body.innerHTML = `<h4 class="rp-h">Capacity</h4>`
+    + `<p class="rp-dim">gates against a world nobody can load, not targets${old ? ` · this world still runs on the older <code>capacity</code>${edit ? `: a change here writes <code>${CAP}</code> carrying today's numbers, and the world reads only that from then on` : ''}` : cap.written ? '' : ' · nothing written: the defaults'}</p>`
+    + CAP_FIELDS.map(capRow).join('') + `<p class="rp-cap-note rp-warn" hidden></p>`
+    + `<h4 class="rp-h">Physics</h4>`
+    + (edit ? `<label class="rp-field"><input type="checkbox" data-phys ${pe ? 'checked' : ''}> things fly and fall (${esc(SIM_ID)})</label>` : `<div class="rp-row"><div class="rp-main">${pe ? `on: ${esc(pe.engine)}` : 'off'}</div></div>`)
+    + `<p class="rp-dim">${pe ? `running ${esc(pe.engine)}${pe.tickMs ? ` at a ${pe.tickMs} ms tick` : ''}${pe.build ? ` · build ${esc(pe.build)}` : ''}` : 'off: nothing moves on its own'}${edit ? ' · turning it off is refused while anything is in flight' : ''}</p>`
+    + `<h4 class="rp-h">Training</h4>`
+    + (edit ? `<label class="rp-field"><input type="checkbox" data-tc="allow" ${tc.allow === true ? 'checked' : ''}> this world's log may train models</label>`
+      + `<label class="rp-field rp-wide">why, in your words <input data-tc="note" maxlength="400" value="${esc(tc.note ?? '')}" placeholder="optional"></label>`
+      : `<div class="rp-row"><div class="rp-main">${tc.allow === true ? 'the world allows training on its log' : 'no training on this log (the default)'}</div>${tc.note ? `<div class="rp-sub">${esc(tc.note)}</div>` : ''}</div>`)
+    + `<p class="rp-dim">the world's policy only: each person's own consent is theirs, and the stricter answer wins</p>`
+    + (edit ? '' : ro());
+  if (!edit) return;
+  const note = body.querySelector('.rp-cap-note'); const say = (t) => { note.textContent = t; note.hidden = !t; };
+  body.querySelectorAll('input').forEach((x) => x.addEventListener('keydown', (e) => e.stopPropagation()));
+  body.querySelectorAll('input[data-cap]').forEach((x) => { x.onchange = () => {
+    const k = x.dataset.cap; const raw = x.value.trim();
+    if (raw === '') { say(''); x.value = wc()[CAP]?.[k] ?? ''; return; }   // emptied: nothing to say; the field goes back to what is written
+    const n = Number(raw); const r = R2[k];
+    if (!Number.isInteger(n) || outOfRange(r, n)) { say(`${CAP_WORDS[k]}: ${raw} isn't allowed; it must be a whole number ${rangeWords(r)}. Nothing was changed.`); toast(`${CAP_WORDS[k]}: must be ${rangeWords(r)}`, 'warn', 8000); x.value = wc()[CAP]?.[k] ?? ''; return; }
+    say('');
+    // the first write of capacity@2 carries every field the world enforces today: a merge of one key onto nothing would
+    // hand the other three to the new defaults, and the world would be re-capped under the owner's hand
+    const value = wc()[CAP] ? { [k]: n } : { ...effectiveCapacity().eff, [k]: n };
+    act('set', { id: '@world', component: CAP, value, merge: true }, `${CAP_WORDS[k]}: ${n}`).then((r) => { paintWorld(body);
+      if (r && !r.ok) { const n2 = body.querySelector('.rp-cap-note'); n2.textContent = `${CAP_WORDS[k]}: ${r.refused?.reason ?? 'refused'}`; n2.hidden = false; } }); }; });
+  body.querySelector('[data-phys]').onchange = () => { const on = body.querySelector('[data-phys]').checked;
+    (on ? act('set', { id: '@world', component: 'physics-engine', value: { engine: SIM_ID } }, 'physics on') : act('delete', { id: '@world', component: 'physics-engine' }, 'physics off')).then(() => paintWorld(body)); };
+  body.querySelectorAll('input[data-tc]').forEach((x) => { x.onchange = () => {
+    const allow = body.querySelector('[data-tc=allow]').checked, nt = body.querySelector('[data-tc=note]').value.trim();
+    act('set', { id: '@world', component: 'training-consent', value: { allow, ...(nt ? { note: nt } : {}) } }, `training: ${allow ? 'allowed' : 'no'}`).then(() => paintWorld(body)); }; });
+}
 function paintCard(body) {
   const ab = wc().about ?? {}; const edit = has('editWorld');
   body.innerHTML = `<label class="rp-field">Name <input data-k="name" maxlength="80" value="${esc(ab.name ?? '')}" ${edit ? '' : 'disabled'}></label>`
@@ -267,9 +320,10 @@ export function initRolesPanels() {
   worldSettingsFrame();
   setDockEntry({ id: 'world-settings', icon: 'flag', pinOnce: true }, true);
   const ws = [makeSection('Roles', (b) => paintRoles(b), { id: 'ws-roles', host: 'world-settings' }), makeSection('Access', (b) => paintAccess(b), { id: 'ws-access', host: 'world-settings' }),
+    makeSection('World', (b) => paintWorld(b), { id: 'ws-world', host: 'world-settings' }),
     makeSection('Card', (b) => paintCard(b), { id: 'ws-card', host: 'world-settings' }), makeSection('Places', (b) => paintPlaces(b), { id: 'ws-places', host: 'world-settings' }),
     makeSection('Old world', (b) => paintOld(b), { id: 'ws-old', host: 'world-settings' })];
-  const PAINT = { 'ws-roles': paintRoles, 'ws-access': paintAccess, 'ws-card': paintCard, 'ws-places': paintPlaces, 'ws-old': paintOld };
+  const PAINT = { 'ws-roles': paintRoles, 'ws-access': paintAccess, 'ws-world': paintWorld, 'ws-card': paintCard, 'ws-places': paintPlaces, 'ws-old': paintOld };
   // a role or a setting changed (anyone's write lands in the fold): repaint what's open, unless someone is typing in it
   let t = 0; const repaint = () => { clearTimeout(t); t = setTimeout(() => {
     for (const s of ws) if (s.isOpen && !s.body.contains(document.activeElement)) PAINT[s.key]?.(s.body);
@@ -279,4 +333,4 @@ export function initRolesPanels() {
   bus.on('roster', () => { if (sections.bans?.isOpen) paintBans(sections.bans.body); });
   syncModeration();
 }
-export const _test = { paintRoles, paintAccess, paintPlaces, syncModeration, sections };
+export const _test = { paintRoles, paintAccess, paintWorld, paintPlaces, syncModeration, sections };
