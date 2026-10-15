@@ -12,6 +12,13 @@ import { makeGrassQuality, GRASS_QUALITY } from './grass_quality.js';
 let current = null;
 
 export const heightAt = (x, z) => (current ? current.heightAt(x, z) : 0);
+// THE WATER, for whatever floats in it (the ragdolls — ammodoll.js). The same seam as the ground and for the
+// same reason: the browser and the agents' headless bodies both load this module, and each hands it its
+// own water — the browser from client/lib/water.js, an agent from mcpl/physics.ts setWaterField.
+// {level, sample(x, z) → shared/waterkind.js sample | null, time() → wave seconds} or null for no water.
+let water = null;
+export const waterField = () => water;
+export function setWaterField(f) { water = f ?? null; }
 export const hasTerrain = () => current !== null;
 /** §22m diag: the terrain mesh, for cost-attribution phases. */
 export const getTerrainMesh = () => current?.mesh ?? null;

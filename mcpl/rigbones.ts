@@ -4,7 +4,7 @@
 // the rigs that have them, and a pose naming one a rig lacks does nothing on
 // every renderer, silently. So the check needs the rig, and the rig is in the
 // file's JSON chunk — the header bytes, not the multi-megabyte body.
-import { glbJson, humanBones } from "./rig.ts";
+import { glbJson, humanBones, worldPositions } from "./rig.ts";
 
 export type RigBones = {
   /** every skin joint and humanoid bone, by node name */
@@ -64,4 +64,34 @@ export function rigFromGltf(g: any): RigBones | null {
   }
   const bones = [...idx].map((i) => nodes[i]?.name).filter((n): n is string => typeof n === "string" && !!n);
   return bones.length ? { bones: [...new Set(bones)], humanoidOf, aboveHips } : null;
+}
+
+// ---- stature ------------------------------------------------------------------
+const heights = new Map<string, Promise<number | null>>();
+
+/** A body's standing height in metres — the head joint at rest plus a forehead, the same rule the
+ *  browser's Avatar.bodyHeight uses — from the same header bytes. What water depth is measured against
+ *  (shared/terrainshape.js waterStance). Null when the file has no humanoid head. */
+export function bodyHeightFor(httpBase: string, avatarPath: string): Promise<number | null> {
+  const key = avatarPath.split("?")[0];
+  if (!key) return Promise.resolve(null);
+  let p = heights.get(key);
+  if (!p) {
+    p = (async () => {
+      const head = await fetch(`${httpBase}/library/${key}`, { headers: { Range: "bytes=0-19" } });
+      if (!head.ok) return null;
+      let buf = new Uint8Array(await head.arrayBuffer());
+      if (head.status === 206) {
+        const len = new DataView(buf.buffer, buf.byteOffset).getUint32(12, true);
+        buf = new Uint8Array(await (await fetch(`${httpBase}/library/${key}`, { headers: { Range: `bytes=0-${19 + len}` } })).arrayBuffer());
+      }
+      const g = glbJson(buf), hb = humanBones(g);
+      if (!hb || !Number.isInteger(hb.head)) return null;
+      const wp = worldPositions(g), y = wp(hb.head as number).y + 0.13;
+      return y > 0.5 && y < 4 ? y : null;
+    })().catch(() => null);
+    heights.set(key, p);
+    p.then((h) => { if (h == null) heights.delete(key); });
+  }
+  return p;
 }

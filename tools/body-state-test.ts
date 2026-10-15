@@ -73,6 +73,19 @@ try {
   owner.clip = "idle"; owner.setPose(null); owner.tick();
   await until(() => peer.people.get(owner.name)?.pose?.clip === "idle");
   check("standing again restores contact estimates", (await read(peer, { who: owner.name, detail: "contacts", points: ["knee_r"] })).contacts?.knee_r?.quality === "anatomical_estimate");
+  for (const clip of ["swim", "tread"]) {
+    owner.clip = clip; owner.tick();
+    await until(() => peer.people.get(owner.name)?.pose?.clip === clip);
+    const seen = await read(peer, { who: owner.name, detail: "all", points: ["knee_r"] });
+    check(`${clip}: a swimmer's body is read (the procedural stroke over idle), not withheld`,
+      seen.ok && seen.contacts?.knee_r?.quality === "anatomical_estimate" && seen.poseEvaluation?.source === "procedural_swim", JSON.stringify(seen.geometry ?? seen.error));
+  }
+  owner.clip = "tread"; owner.tick(); await until(() => peer.people.get(owner.name)?.pose?.clip === "tread");
+  const tread = await read(peer, { who: owner.name, detail: "bones" });
+  owner.clip = "idle"; owner.tick(); await until(() => peer.people.get(owner.name)?.pose?.clip === "idle");
+  const stand = await read(peer, { who: owner.name, detail: "bones" });
+  check("...and treading moves the feet off where standing puts them", tread.joints?.rightLowerLeg && stand.joints?.rightLowerLeg
+    && Math.hypot(...tread.joints.rightFoot.position.map((v: number, i: number) => v - stand.joints.rightFoot.position[i])) > 0.05, JSON.stringify([tread.joints?.rightFoot?.position, stand.joints?.rightFoot?.position]));
   peer.clip = "sit"; peer.tick();
   await until(() => owner.people.get(peer.name)?.pose?.clip === "sit");
   owner.reaches.set("rightHand", { t: { who: peer.name, point: "knee_r" } });

@@ -40,6 +40,7 @@ import { setPressFx, pressFxOn } from './emitters.js';
 import { advanceSim, tickOf, ENGINES, engineViewM, worldPose } from '../../shared/protocol/simlayer.js';
 import { createShover, obbOf, aabbOfObb, contactOf, smoother } from '../../shared/shove.js';
 import { simEntry } from '../../shared/sim.js';
+import { shapeReady, requestGrid } from '../../shared/terrainshape.js';
 import { planLaunch } from '../../shared/protocol/launchplan.js';
 import { REACH, HAND_Y, KICK } from '../../shared/protocol/physconst.js';
 import { r3 } from '../../shared/protocol/round.js';
@@ -459,6 +460,11 @@ function drawFlights(wall, now) {
     for (const [id, pd] of pending) { if (canon.launched[id] || wall - pd.sentAt > PENDING_MS) pending.delete(id); else applyPending(id); }
     for (const id of was) if (!pres.bodies[id] && !holds[id]) suspendCollider(id, false);   // its rest is the fold's now
   }
+  // A heightmap world's ground is the grid: until it has arrived the law would answer with noise, and a body stepped
+  // on that would disagree with the authority. Hold the drawing (bodies stand at their last word) and catch up to the
+  // clock once the grid lands. (upstream #237's hold in the old simworld.js, carried here: this file replaced it.)
+  const shape = pres.terrain?.shape;
+  if (!shapeReady(shape)) { void requestGrid(shape.heightmap.grid); return; }
   const target = tickOf(pres, wall);
   if (pres.tick !== tickSeen) prev.clear();
   if (pres.tick < target) {

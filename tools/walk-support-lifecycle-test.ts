@@ -37,6 +37,13 @@ try{
  check(one.arrived&&one.points.slice(1,swapped).every(p=>Math.abs(p.y-slope(p.x))<1e-12),"a terrain walk's feet follow the terrain under them each tick");
  check(one.points.slice(swapped).every(p=>Math.abs(p.y-2-slope(p.x))<1e-12)&&one.points.length>swapped+1,"terrain that changes mid-walk is the terrain the next tick stands on");
  check((a as any).walkHeightAt===null,"arrival releases the walk's basis");
+ // A ledge AHEAD (not ground moving under the feet) ends the walk at once, with its reason (review 10-15 #4: before, the
+ // stride was refused every tick for the walk's whole timeout and the tool said "interrupted or timed out")
+ { const cliff=make((x)=>x>1.5?2:0);cliff.pos={x:0,y:0,z:0};
+   const t0=Date.now();const r=await finish(cliff,cliff.walkTo(3,0,false,LONG,0));
+   check(!r.arrived&&Date.now()-t0<LONG/10,"a 2 m ledge across the way ends the walk now, not at the walk's timeout");
+   check(/ledge/.test((cliff as any).walkStopReason??"")&&cliff.pos.x<1.6&&Math.abs(cliff.pos.y)<1e-9,"…with a reason naming the ledge, the body stopped short of it: "+(cliff as any).walkStopReason);
+   check((cliff as any).target===null&&(cliff as any).walkHeightAt===null&&cliff.clip==="idle","…and the walk's basis is released, the body idle"); }
  // A wall the start's height would pass under, and the crossing's height meets.
  const b=make((x)=>x);b.pos={x:0,y:0,z:.5};
  b.entities.set("raised",ent("raised",{levels:[{y:.6,tiles:[],walls:[[1,1,0]],apertures:[]}]}));

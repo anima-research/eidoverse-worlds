@@ -139,7 +139,7 @@ if (M) {
   }
 }
 { // W: water in the one walker (upstream #242's law, mover-hosted 10-15)
-  const { waterStance, waterCost, stepWalk } = await import("../../shared/mover.js");
+  const { waterStance, waterCost, stepWalk, walkSpeed } = await import("../../shared/mover.js");
   const dry = waterStance(null, 0); ok(dry.speedFactor === 1 && !dry.swimming && dry.y === 0, "W1 no water: dry, full pace");
   const knee = waterStance(0.5, 0), waist = waterStance(0.85, 0), chest = waterStance(1.3, 0);
   ok(near(knee.speedFactor, 1 - 0.5 * (() => { const t = (0.5 / 1.7 - 0.08) / 0.67; return t * t * (3 - 2 * t); })()) && knee.speedFactor > 0.8 && knee.speedFactor < 0.9, "W1 knee-deep (0.5 m) wades at ~0.86", knee);
@@ -155,13 +155,30 @@ if (M) {
   const off = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, drop); ok(off.blocked === null && near(off.pos[1], 1.3 - 0.75 * 1.7), "W3 swimming over a 3 m drop: no ledge, still afloat at the chest", off);
   const cliff = { floorAt: (x) => (x > 0.5 ? 2 : 0), waterAt: () => 1.3 };
   const up = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, cliff); ok(up.blocked?.by === "ledge", "W3 a 2 m wall under the water is still a wall (the body would have to climb out)", up);
-  // afloat in 3 m water over y=0 the body hangs at y = 3 − 0.75·1.7 = 1.725: a step up from THERE reaches 2.525, so a 2.4 m shelf is land
-  // (from the bottom it would be a 2.4 m wall) and a 2.6 m one is not
-  const shore = { floorAt: (x) => (x > 0.5 ? 2.4 : 0), waterAt: () => 3 };
-  const out = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, shore); ok(out.blocked === null && near(out.pos[1], 2.4) && !out.stance.swimming, "W3 a shelf within a step of where it floats: the swimmer stands up on it (its y is the shelf)", out);
-  const high = { floorAt: (x) => (x > 0.5 ? 2.6 : 0), waterAt: () => 3 };
-  const no = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, high); ok(no.blocked?.by === "ledge", "W3 one step higher than the float is a ledge", no);
+  // hauling out (review 10-15 #1): afloat in 3 m water over y=0, any shelf under the surface is land (the body floats above it),
+  // a bank up to 0.5 m above the water is land, 0.6 m above is a wall from the water
+  const shelf = { floorAt: (x) => (x > 0.5 ? 2.6 : 0), waterAt: () => 3 };
+  const onto = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, shelf); ok(onto.blocked === null && near(onto.pos[1], 2.6) && !onto.stance.swimming, "W3 a shelf 0.4 m under the surface: the swimmer stands up on it", onto);
+  const quay = { floorAt: (x) => (x > 0.5 ? 3.5 : 0), waterAt: () => 3 };
+  const outq = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, quay); ok(outq.blocked === null && near(outq.pos[1], 3.5), "W3 a quay 0.5 m above the water: hauled out (from the chest alone it would be 1.775 m, a wall — the trap)", outq);
+  const wall = { floorAt: (x) => (x > 0.5 ? 3.6 : 0), waterAt: () => 3 };
+  const noq = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, wall); ok(noq.blocked?.by === "ledge", "W3 0.6 m above the water is a wall from the water", noq);
+  const dug = { floorAt: (x) => (x > 0.5 ? 0 : -2), waterAt: () => 0 };   // a dug pool: water at ground level, the rim AT the surface
+  const rim = stepWalk({ pos: [0, -2, 0], dir: [1, 0], dt: 1 }, dug); ok(rim.blocked === null && near(rim.pos[1], 0), "W6 a dug pool's rim at the waterline: out (the reviewer's trap case)", rim);
+  // the stroke never goes backwards as the stick ramps through the run threshold (review 10-15 #3). The controller hands the
+  // mover run = stick past half and gain = its eased speed / walkSpeed({run}) — so at 0.51 the gain drops to ~0.4 of a RUN,
+  // which with "run picks the stroke" made the swim fall 0.90 → 0.60 m/s
+  const { stickSpeed } = await import("../../shared/mover.js");
+  const deep = { floorAt: () => 0, waterAt: () => 3 }; let prev = -1, mono = true, dip = null;
+  for (let mag = 0.05; mag <= 1.0001; mag += 0.01) { const run = mag > 0.5, gain = stickSpeed(mag) / walkSpeed({ run });
+    const r = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1, run, gain }, deep); if (r.moved < prev - 1e-9) { mono = false; dip ??= { mag: +mag.toFixed(2), from: prev, to: r.moved }; } prev = r.moved; }
+  ok(mono && near(prev, 1.5), "W7 a VR stick ramp 0→1 swims monotonically up to 1.5 m/s (the controller's own run/gain mapping)", dip ?? { last: prev });
+  ok(near(stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1, gain: 0.5 }, deep).moved, 0.45), "W7 half a walk asked for is half a stroke", null);
   const same = stepWalk({ pos: [0, 0, 0.95], dir: [0, 1], dt: 0.1 }, { floorAt: (x, z) => (z > 1 ? 0.9 : 0) }); ok(same.blocked?.by === "ledge", "W4 without waterAt, the ledge rule is exactly what it was", same);
+  // a caller's measured stature (REPOINT-2, 10-15: main's per-avatar statureFor / bodyHeight) moves where the water reaches, never the stride
+  const tall = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, pool(1.0)), short = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1, height: 1.2 }, pool(1.0));
+  const dryShort = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1, height: 1.2 }, pool(null));
+  ok(!tall.stance.swimming && short.stance.swimming && near(short.pos[1], 1.0 - 0.75 * 1.2) && near(short.moved, 0.9) && near(dryShort.moved, 1.55), "W5 height: a 1.2 m body swims in 1 m of water a 1.7 m one wades; dry, its stride is the mover's", { tall: tall.stance, short: short.stance, dryShort: dryShort.moved });
 }
 console.log(`mover: ${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);

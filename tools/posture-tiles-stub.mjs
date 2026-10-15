@@ -71,6 +71,7 @@ export function setGrass() {}
 export function setGrassDensity() {}
 export function setGrassQuality() {}
 export function setTerrain() {}
+export function setWaterField() {}   // water.js hands the browser's water to terrain.js (upstream #242, merged 10-15)
 // colliders.js
 export const colliders = new Map();
 export function frameOf() { return null; }

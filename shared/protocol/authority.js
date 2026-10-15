@@ -782,6 +782,40 @@ function guessKey(k, allowed) {
     return [a, pre ? Math.abs(y.length - x.length) / 100 : lev(x, y)]; })
     .filter(([a, d]) => d < 1 || d <= Math.max(1, Math.floor(Math.max(k.length, a.length) / 3))).sort((p, q) => p[1] - q[1]).slice(0, 3).map(([a]) => a);
 }
+// upstream #237/#242's shaped terrain and water, bounded at the door (review 10-15 #5): the readers (shared/terrainshape.js)
+// clamp features and water but pass a heightmap's min/max through raw, so one write of ±1e308 made every client's,
+// agent's and the sim's ground NaN. A world's ground is everyone's: the same ±500 m as amplitude, min below max.
+const GRID_REF = /^store\/heightmaps\/[0-9a-f]{16}\.json$/, FEATURE_TYPES = ["hill", "ridge", "flatten"], HEX = /^#[0-9a-f]{6}$/i;
+const fin = (x) => typeof x === "number" && Number.isFinite(x);
+function terrainShapeCheck(at, v, def) {
+  if (Array.isArray(v.features)) v.features.forEach((f, i) => {
+    const here = `${at}.features[${i}]`;
+    if (!f || typeof f !== "object" || !FEATURE_TYPES.includes(f.type)) refuse("shape", `${here} must be {type: hill | ridge | flatten, …}`, def.help);
+    const pts = f.type === "ridge" ? ["x1", "z1", "x2", "z2"] : ["x", "z"];
+    for (const k of [...pts, "radius", "height", ...(f.edge !== undefined ? ["edge"] : [])]) if (!fin(f[k])) refuse("shape", `${here}.${k} must be a finite number`, def.help);
+    if (!(f.radius > 0.05 && f.radius <= 2000)) refuse("bounds", `${here}.radius is ${f.radius}; it must be 0.05 < radius ≤ 2000 (m)`, def.help);
+    if (Math.abs(f.height) > 500) refuse("bounds", `${here}.height is ${f.height}; it must be within ±500 (m)`, def.help);
+    for (const k of pts) if (Math.abs(f[k]) > 100000) refuse("bounds", `${here}.${k} is ${f[k]}; it must be within ±100000 (m)`, def.help); });
+  const h = v.heightmap;
+  if (h != null) {
+    if (typeof h !== "object" || Array.isArray(h)) refuse("shape", `${at}.heightmap must be {grid, min, max} or null`, def.help);
+    if (typeof h.grid !== "string" || !GRID_REF.test(h.grid)) refuse("shape", `${at}.heightmap.grid must be store/heightmaps/<16 hex>.json (POST /upload?as=heightmap)`, def.help);
+    for (const k of ["min", "max"]) if (h[k] !== undefined && !fin(h[k])) refuse("shape", `${at}.heightmap.${k} must be a finite number`, def.help);
+    const min = h.min ?? 0, max = h.max ?? 10;
+    if (Math.abs(min) > 500 || Math.abs(max) > 500) refuse("bounds", `${at}.heightmap min/max are ${min}/${max}; each must be within ±500 (m), the ground every client builds`, def.help);
+    if (!(min < max)) refuse("bounds", `${at}.heightmap.min (${min}) must be below max (${max})`, def.help);
+  }
+  const w = v.water;
+  if (w != null) {
+    if (typeof w !== "object" || Array.isArray(w)) refuse("shape", `${at}.water must be {level, color?, opacity?, kind?, flow?} or null`, def.help);
+    if (!fin(w.level)) refuse("shape", `${at}.water.level must be a finite number (m)`, def.help);
+    if (Math.abs(w.level) > 500) refuse("bounds", `${at}.water.level is ${w.level}; it must be within ±500 (m)`, def.help);
+    if (w.opacity !== undefined && !(fin(w.opacity) && w.opacity >= 0.1 && w.opacity <= 1)) refuse("bounds", `${at}.water.opacity must be 0.1..1`, def.help);
+    if (w.color !== undefined && !(typeof w.color === "string" && HEX.test(w.color))) refuse("shape", `${at}.water.color must be #rrggbb`, def.help);
+    if (w.kind !== undefined && !["still", "river", "ocean"].includes(w.kind)) refuse("schema", `${at}.water.kind must be still | river | ocean`, def.help);
+    if (w.flow !== undefined && !(Array.isArray(w.flow) && w.flow.length === 2 && w.flow.every(fin))) refuse("shape", `${at}.water.flow must be [x, z]`, def.help);
+  }
+}
 function unknownKeys(at, v, allowed, what) {
   for (const k of Object.keys(v)) if (!allowed.includes(k)) { const dym = guessKey(k, allowed);
     refuse("schema", `${at}: unknown key '${k}'${dym.length ? `; did you mean '${dym[0]}'?` : ""}`, `${what} takes: ${allowed.join(", ")}`, { didYouMean: dym }); }
@@ -844,7 +878,7 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
   const kind = v.kind ?? def.defaultKind; // an imported world's terrain never named its kind: it is noise
   if (def.byKind) { if (!def.byKind[kind]) refuse("schema", `${at}.kind must be one of ${Object.keys(def.byKind).join(" | ")}, got ${JSON.stringify(v.kind)}`, def.help, { didYouMean: guess(String(v.kind), Object.keys(def.byKind)) });
     unknownKeys(at, v, def.byKind[kind], `${name} {kind: '${kind}'}`); }
-  for (const [k, t] of Object.entries(def.fields)) if (v[k] !== undefined && !TYPES[t](v[k])) refuse("shape", `${at}.${k} must be ${t}, got ${JSON.stringify(v[k]).slice(0, 40)}`, def.help);
+  for (const [k, t] of Object.entries(def.fields)) if (v[k] !== undefined && !(v[k] === null && def.nullable?.includes(k)) && !TYPES[t](v[k])) refuse("shape", `${at}.${k} must be ${t}, got ${JSON.stringify(v[k]).slice(0, 40)}`, def.help);
   for (const k of def.required ?? []) if (v[k] === undefined) refuse("schema", `${at} needs ${k}`, def.help);
   // a field's grammar narrows its pinned type (physics.shape is `any` in every value ever stored): spec/PHYSICS.md §3.1
   for (const [k, g] of Object.entries(def.grammar ?? {})) if (v[k] !== undefined && g === "shape") { const why = shapeError(v[k]);
@@ -859,6 +893,7 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
     const bad = Array.isArray(x) ? x.some((n) => typeof n === "number" && outOfRange(r, n)) : outOfRange(r, x);
     if (bad) refuse("bounds", `${at}.${k} is ${JSON.stringify(x)}; ${Array.isArray(x) ? "each" : "it"} must be ${rangeWords(r)}`, def.help); }
   if (name === "script" && v.scope) unknownKeys(`${at}.scope`, v.scope, Object.keys(def.scopeFields), "a script's scope");
+  if (name === "terrain") terrainShapeCheck(at, v, def);
   // batch 2: words everyone reads are checked once, here (shared/text.js): no direction overrides, no hidden controls, no zalgo
   for (const [k, how] of Object.entries(def.clean ?? {})) if (typeof v[k] === "string") { const bad = cleanText(v[k], { lines: how === "lines" });
     if (bad) refuse("shape", `${at}.${k} ${bad.why}`, bad.fix); }

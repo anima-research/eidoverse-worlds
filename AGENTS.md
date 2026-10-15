@@ -624,6 +624,49 @@ id). The worlds dir's key files are renamed to `.custody.json` /
   `store/audio/<hash>.<ext>`, a sound source for a `sound` component.
 - Scripts don't go through HTTP: `act {verb: "upload", args: {text}}`
   stores the source as a blob and returns its `src`.
+- `?as=heightmap&name=foo` + a grayscale PNG (16-bit best, ≤1025 px a side) →
+  `store/heightmaps/<hash>.json`, the decoded grid the world's `terrain`
+  component can name (below). `GET /heightmap?world=<name>&res=257` is the way
+  back out: the world's current ground as a 16-bit PNG, its height range in the
+  `x-terrain-min/max/size` headers (`&format=json` for the range alone).
+
+## Terrain — shaped, not just rolled (owner)
+
+The ground is `@world`'s `terrain` component: `set {id: "@world", component:
+"terrain", value: {seed, size, segments, amplitude, frequency, octaves,
+flatRadius, flatHeight, layers}}` rolls noise hills; two optional keys say
+WHERE (shared/terrainshape.js — the same law your feet, the renderers and the
+sim use):
+- `features: [...]`, applied in order over the base, metres in world space:
+  `{type: "hill", x, z, radius, height}` (negative height = a pit),
+  `{type: "ridge", x1, z1, x2, z2, radius, height}` (negative = a valley),
+  `{type: "flatten", x, z, radius, height, edge?}` (levels a circle to an
+  absolute height — a plateau, a building pad). At most 64.
+- `heightmap: {grid: "store/heightmaps/<hash>.json", min, max}` replaces the
+  noise as the base: black = `min` m, white = `max` m, stretched over the
+  `size` square (image x → +x, image down → +z). Features still apply on top.
+
+- `water: {level, color?, opacity?}` — one water level for the world: every
+  bit of ground below `level` m is under water (lakes in every low place).
+  Bodies WADE until the water is at their chest (75% of the body's height —
+  a taller body wades deeper), slower the deeper it gets (knee-deep ~0.86 of
+  the pace, waist-deep ~0.66, 0.5 by ~1.25 m); past that they float and SWIM
+  at 0.9 m/s (1.5 running), treading water when still. This is the one
+  walker's law (shared/mover.js `waterStance`), the same for your feet and a
+  person's. Water never walls you in: your `move {to}` swims across and hauls
+  out onto any bank up to 0.5 m above the surface (higher is a wall), and `look`
+  says "swimming in a river 3.4m deep, flowing east". `water: null` drains
+  it. The sim (thrown things) does not see water yet.
+  The water's KIND is read from the shape of what it fills (shared/waterkind.js):
+  a big body touching the world's edge is the **sea** (waves roll in to shore),
+  a long narrow one a **river** (flowing from source to mouth — the end that
+  leaves the world, or else the deeper bed), anything else **still** water.
+  `look` names it ("standing in a river 0.5m deep, flowing east") and lists the
+  world's water. Override the guess with `water.kind: "still"|"river"|"ocean"`,
+  a river's direction with `water.flow: [x, z]`.
+
+A `set` replaces the whole terrain component, so send every key you mean to
+keep (`merge: true` patches only the fields you name).
 
 ## Geometry — shape as data
 

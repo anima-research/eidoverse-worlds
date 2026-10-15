@@ -61,8 +61,8 @@ check(worst.kind==="blocked"&&worst.reason==="no walkable connection between the
 const base:any={levels:[{y:0,tiles:[[0,0],[1,0]],walls:[[1,1,0]],apertures:[]}],labels:{}};
 const agent=new WorldAgent({name:"cache-test",avatar:"",world:"cache-test"});
 (agent as any).syncSupport=async()=>{}; // the fold/cache, not remote asset support, is under test
-// v1 fed hand-written log entries to agent.applyEntry; v4's agent folds the authority's log itself (its replica), so each
-// v1 entry is the v4 write that does the same (spawn → create, comp → set/delete a component, place → set transform)
+// the old format fed hand-written log entries to agent.applyEntry; the current agent folds the authority's log itself (its replica), so each
+// old entry is the current write that does the same (spawn → create, comp → set/delete a component, place → set transform)
 // through the real door, and the agent takes its next view (tools/agent-scratch.ts agentOnDoor).
 const door=agentOnDoor(agent,"route-prep");
 async function receive(verb:string,args:any) {
@@ -72,18 +72,18 @@ async function receive(verb:string,args:any) {
  let r:any;
  if(verb==="spawn"){
   if(now){
-   // v1 spawn over an id replaced the thing. v4 never reuses an id: the old thing is deleted, and the door refuses the
+   // the old spawn over an id replaced the thing. the authority never reuses an id: the old thing is deleted, and the door refuses the
    // id's return ("reused"), so nothing can come back under it, structure or not.
    const gone=await door.act("delete",{id:a.id});
    if(!gone.ok) throw new Error("delete refused: "+JSON.stringify(gone.refused));
    r=door.call("create",{id:a.id,model:a.lib,components:{transform:tf(a)}});
-   if(r.ok||r.refused?.code!=="reused") throw new Error("v4 let an id be reused: "+JSON.stringify(r));
+   if(r.ok||r.refused?.code!=="reused") throw new Error("the authority let an id be reused: "+JSON.stringify(r));
    return {verb,args:a};
   }
   r=await door.act("create",{id:a.id,model:a.lib,components:{transform:tf(a)}});
  } else if(verb==="comp") r=await door.act(a.data===null?"delete":"set",a.data===null?{id:a.id,component:a.type}:{id:a.id,component:a.type,value:a.data});
  else if(verb==="place") r=await door.act("set",{id:a.id,component:"transform",value:tf(a)});
- else throw new Error("no v4 write for v1 "+verb);
+ else throw new Error("no current write for old "+verb);
  if(!r.ok) throw new Error(verb+" refused: "+JSON.stringify(r.refused));
  return {verb,args:a};
 }

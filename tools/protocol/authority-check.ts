@@ -817,6 +817,21 @@ const w0 = () => openWorld(root, "tier0");
   ok(S("@world", "terrain", { kind: "noise", segments: 100000 }) === "bounds", "T0a terrain segments past 512 (10^10 vertices on every client) is refused");
   ok(S("@world", "terrain", { kind: "noise", size: 0 }) === "bounds", "T0a a terrain of size 0 is refused");
   ok(S("@world", "terrain", { kind: "noise", octaves: 0 }) === "bounds", "T0a terrain octaves outside 1–8 is refused (the engine clamps; the authority agrees)");
+  // T0b (review 10-15 #5, after upstream #237/#242): the shaped-terrain and water keys are bounded at the door — the readers clamp
+  // features and water but passed a heightmap's min/max through raw, and ±1e308 made everyone's ground NaN
+  const grid = "store/heightmaps/" + "a".repeat(16) + ".json";
+  ok(S("@world", "terrain", { kind: "noise", heightmap: { grid, min: -1e308, max: 1e308 } }) === "bounds", "T0b a heightmap with min/max ±1e308 (NaN ground for every client) is refused");
+  ok(S("@world", "terrain", { kind: "noise", heightmap: { grid, min: 10, max: 0 } }) === "bounds", "T0b heightmap min above max is refused");
+  ok(S("@world", "terrain", { kind: "noise", heightmap: { grid: "../../etc/passwd", min: 0, max: 10 } }) === "shape", "T0b a heightmap grid that isn't a store/heightmaps/<hash>.json ref is refused");
+  ok(S("@world", "terrain", { kind: "noise", heightmap: { grid, min: 0, max: 10 } }) === undefined, "T0b a sane heightmap is accepted");
+  ok(S("@world", "terrain", { kind: "noise", heightmap: null, water: null }) === undefined, "T0b heightmap: null and water: null are accepted (removed; a merge patch can take one away)");
+  ok(S("@world", "terrain", { kind: "noise", water: { level: 1e9 } }) === "bounds", "T0b water a billion metres deep is refused");
+  ok(S("@world", "terrain", { kind: "noise", water: { level: "deep" } }) === "shape", "T0b water.level must be a number");
+  ok(S("@world", "terrain", { kind: "noise", water: { level: 2, kind: "lava" } }) === "schema", "T0b water.kind must be still | river | ocean");
+  ok(S("@world", "terrain", { kind: "noise", features: Array.from({ length: 65 }, () => ({ type: "hill", x: 0, z: 0, radius: 5, height: 2 })) }) === "bounds", "T0b 65 features is refused (64 is the readers' cap)");
+  ok(S("@world", "terrain", { kind: "noise", features: [{ type: "hill", x: 0, z: 0, radius: 5, height: 1e6 }] }) === "bounds", "T0b a feature a million metres high is refused");
+  ok(S("@world", "terrain", { kind: "noise", features: [{ type: "volcano", x: 0, z: 0, radius: 5, height: 2 }] }) === "shape", "T0b an unknown feature type is refused (the readers would drop it silently)");
+  ok(S("@world", "terrain", { kind: "noise", features: [{ type: "ridge", x1: 0, z1: 0, x2: 10, z2: 10, radius: 3, height: 2 }, { type: "flatten", x: 0, z: 0, radius: 8, height: 1, edge: 2 }] }) === undefined, "T0b sane features are accepted");
   ok(S("@world", "grass", { width: 1e9, depth: 10 }) === "bounds", "T0b a grass field a million km wide is refused");
   // R 10-07: the knobs are the effect's params now (an Essential's: count, size, opacity, lifetime…), with the same bounds
   ok(S("hearth", "particles", { effect: "fire", params: { count: 1e9 } }) === "bounds", "T0c a billion particles is refused (600 is the renderer's ceiling)");

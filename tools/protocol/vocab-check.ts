@@ -39,6 +39,7 @@ const EXEMPT: [string, RegExp, string][] = [
   ["shared/protocol/authority.js", /out\.comp = op\.comp|\bh\.comp\b|toggleOf\(h\)\.comp/, "an op being shaped (out) and a reaction handler (h) name the OP's component"],
   ["shared/protocol/authority.js", /activate\(w, id, name, \{ on: `changed:/, "a reaction's activation record names the OP's component (PROTOCOL §3), not a record's bag"],
   ["shared/sim.js", /sim\.boxes\[/, "the first eidosim's box table, keyed by library path (retires with it)"],
+  ["client/lib/water.js", /\bA\.comp\[/, "the water analysis's connected-component labels (shared/waterkind.js analyzeWater), an array, not a record's bag"],
 ];
 const offences: string[] = [];
 const exempt = (rel: string, line: string) => EXEMPT.some(([f, re]) => (rel === f || rel.startsWith(f)) && re.test(line));
