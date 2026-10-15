@@ -14,8 +14,10 @@
 // from: wire → editor; both take (value, bag)). materialize(key, {type}) through `from` is what a field's default IS;
 // tools/descriptor-defaults-test.ts holds RECORDS and editschema to it.
 //
-// `ui` is the row's widget facts (C8): t the widget (num, check, enum, color, text), step/dp/unit/min/max/softMax/deg as
-// panels.js reads them; def: false = the row offers no reset (the inspector never did); absent = what an UNWRITTEN value is
+// `ui` is the row's widget facts (C8): t the widget (num, check, enum, color, text), step/dp/softMin/softMax/deg as
+// panels.js reads them. A row's HARD limits (min, max) and its unit are never written here: build() reads them from the
+// registry's `ranges` and `units` (schema layers, 10-14: one description), and a soft slider end a card wants below or
+// above them is softMin/softMax (never enforced; the door's range is). def: false = the row offers no reset (the inspector never did); absent = what an UNWRITTEN value is
 // drawn as where it differs from the registry's default (a pendulum written before the authority materialized a period
 // swings at the first protocol's 3.5 s: client/lib/motioneval.js); sparse = written only off its default (a light's
 // important/day); clears = the wire's other spellings a write retires (degPerSec retires rpm and period); own = the card's
@@ -52,8 +54,8 @@ const AMP = { to: (v) => v, from: (v, m) => v ?? m?.amplitude };   // the first 
 // the widget facts (ui) shared by the cards
 const PHASE = { t: 'num', step: 5, deg: true, def: false };
 const DEG = { t: 'num', step: 5, deg: true };
-const SEC = { t: 'num', step: 0.1, dp: 2, min: 0.05, unit: 's' };
-const RATE_UI = { t: 'num', step: 5, dp: 1, unit: '°/s' };
+const SEC = { t: 'num', step: 0.1, dp: 2, softMin: 0.05 };
+const RATE_UI = { t: 'num', step: 5, dp: 1 };
 
 /** The eight yellows (C5): where RECORDS states a default the registry never writes. Each decided as `absent` prose — the
  *  record's number is what a reader DOES when the key is absent, not what the authority writes — and none registered:
@@ -79,14 +81,14 @@ const DECIDED = {
 // the registry leaves open (grabbable.who takes the world's own roles) is the door's to judge.
 const MOTION = {
   Pendulum: { type: 'pendulum', show: ['part', 'axis', 'amp', 'period', 'damp', 'maxAmp', 'phase', 'pivot'],
-    editor: { amp: { wire: AMP, ui: { ...DEG, min: 0, softMax: Math.PI, def: false, clears: ['amplitude'] } }, period: { ui: { ...SEC, absent: 3.5 } }, damp: { ui: { t: 'num', step: 0.01, dp: 3, min: 0, softMax: 2, absent: 0 } }, phase: { ui: PHASE } } },
+    editor: { amp: { wire: AMP, ui: { ...DEG, softMin: 0, softMax: Math.PI, def: false, clears: ['amplitude'] } }, period: { ui: { ...SEC, absent: 3.5 } }, damp: { ui: { t: 'num', step: 0.01, dp: 3, softMin: 0, softMax: 2, absent: 0 } }, phase: { ui: PHASE } } },
   Spin: { type: 'spin', show: ['part', 'axis', 'degPerSec', 'pivot', 'phase'], editor: { phase: { ui: PHASE } } },
   Orbit: { type: 'orbit', show: ['part', 'radius', 'center', 'degPerSec', 'phase', 'face'],
-    editor: { radius: { ui: { t: 'num', step: 0.1, dp: 2, min: 0, unit: 'm' } }, phase: { ui: PHASE }, face: { ui: { t: 'check' } } } },
+    editor: { radius: { ui: { t: 'num', step: 0.1, dp: 2 } }, phase: { ui: PHASE }, face: { ui: { t: 'check' } } } },
   Bob: { type: 'bob', show: ['part', 'axis', 'amp', 'period', 'phase'],
-    editor: { amp: { wire: AMP, ui: { t: 'num', step: 0.05, dp: 2, min: 0, unit: 'm', clears: ['amplitude'] } }, period: { ui: SEC }, phase: { ui: PHASE } } },
+    editor: { amp: { wire: AMP, ui: { t: 'num', step: 0.05, dp: 2, softMin: 0, clears: ['amplitude'] } }, period: { ui: SEC }, phase: { ui: PHASE } } },
   Path: { type: 'path', show: ['part', 'points', 'speed', 'duration', 'loop', 'face'],
-    editor: { speed: { ui: { t: 'num', step: 0.1, dp: 2, min: 0, unit: 'm/s' } }, duration: { ui: { t: 'num', step: 0.5, dp: 1, min: 0.1, unit: 's', def: false } }, loop: { ui: { t: 'enum', def: false } }, face: { ui: { t: 'check' } } } },
+    editor: { speed: { ui: { t: 'num', step: 0.1, dp: 2 } }, duration: { ui: { t: 'num', step: 0.5, dp: 1, softMin: 0.1, def: false } }, loop: { ui: { t: 'enum', def: false } }, face: { ui: { t: 'check' } } } },
 };
 const MOTION_EDITOR = { axis: { wire: AXIS, ui: { t: 'enum', def: false, own: true } }, degPerSec: { param: 'rate', wire: RATE, ui: { ...RATE_UI, clears: ['rpm', 'period'] } } };
 const CARDS = {
@@ -97,41 +99,41 @@ const CARDS = {
   // one vec3 on the wire, as a pivot's are
   Mesh: { key: 'mesh', show: ['shape'], extra: ['size.x', 'size.y', 'size.z'], editor: { shape: { ui: { t: 'enum' } } } },
   Light: { key: 'light', show: ['color', 'intensity', 'range', 'important', 'day'], writeDp: null,
-    editor: { color: { ui: { t: 'color' } }, intensity: { ui: { t: 'num', step: 1, dp: 0, min: 0, softMax: 64 } }, range: { ui: { t: 'num', step: 1, dp: 0, min: 1, softMax: 40, unit: 'm' } },
+    editor: { color: { ui: { t: 'color' } }, intensity: { ui: { t: 'num', step: 1, dp: 0, softMax: 64 } }, range: { ui: { t: 'num', step: 1, dp: 0, softMin: 1, softMax: 40 } },
       important: { ui: { t: 'check', sparse: true } }, day: { k: 'noon', param: 'burnsAtNoon', wire: NOON, ui: { t: 'check', sparse: true } } } },
   ...Object.fromEntries(Object.entries(MOTION).map(([card, m]) => [card, { key: 'motion', type: m.type, show: m.show, writeDp: 4, editor: { ...MOTION_EDITOR, ...m.editor } }])),
   Sockets: { key: 'sockets', whole: 'slots', hand: true },
   // the hand-written four (hand: true): Transform, Sockets, Grabbable and Material (a draft, unregistered: no descriptor) keep
   // read/write hooks in editschema.js (HAND); Grabbable's registry fields still draw and write through the table
   Grabbable: { key: 'grabbable', whole: 'spec', hand: true, show: ['enabled', 'who', 'steal', 'range', 'priority', 'hold', 'twoHanded', 'throw', 'release', 'returnAfter'], writeDp: 3, extra: ['pose', 'carries', 'fits', 'use', 'prompt'],
-    editor: { enabled: { ui: { t: 'check' } }, who: { ui: { t: 'enum' } }, steal: { ui: { t: 'check' } }, range: { ui: { t: 'num', step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm' } },
-      priority: { ui: { t: 'num', step: 1, dp: 0, min: -10, max: 10, wdp: 0 } }, hold: { ui: { t: 'enum' } }, twoHanded: { ui: { t: 'check' } }, throw: { ui: { t: 'num', step: 0.1, dp: 2, min: 0, max: 3, unit: '×' } },
-      release: { ui: { t: 'enum' } }, returnAfter: { ui: { t: 'num', step: 5, dp: 0, min: 0, max: 3600, unit: 's' } } } },
+    editor: { enabled: { ui: { t: 'check' } }, who: { ui: { t: 'enum' } }, steal: { ui: { t: 'check' } }, range: { ui: { t: 'num', step: 0.1, dp: 2 } },
+      priority: { ui: { t: 'num', step: 1, dp: 0, wdp: 0 } }, hold: { ui: { t: 'enum' } }, twoHanded: { ui: { t: 'check' } }, throw: { ui: { t: 'num', step: 0.1, dp: 2 } },
+      release: { ui: { t: 'enum' } }, returnAfter: { ui: { t: 'num', step: 5, dp: 0 } } } },
   Openable: { key: 'openable', whole: 'spec', show: ['open', 'locked', 'angle', 'axis', 'slide', 'time', 'part'], writeDp: 6, extra: ['by'],
-    editor: { open: { ui: { t: 'check' } }, locked: { ui: { t: 'check' } }, angle: { ui: { t: 'num', step: 15, deg: true, min: -Math.PI, max: Math.PI } }, axis: { wire: AXIS, ui: { t: 'enum', own: true } },
-      time: { ui: { t: 'num', step: 0.1, dp: 2, min: 0, max: 10, unit: 's' } } } },
+    editor: { open: { ui: { t: 'check' } }, locked: { ui: { t: 'check' } }, angle: { ui: { t: 'num', step: 15, deg: true } }, axis: { wire: AXIS, ui: { t: 'enum', own: true } },
+      time: { ui: { t: 'num', step: 0.1, dp: 2 } } } },
   Parent: { key: 'parent', show: ['to', 'socket'], editor: { socket: { param: 'slot' } } },
   Reactions: { key: 'reactions', whole: 'actions', floor: true },
   Particles: { key: 'particles', show: ['effect', 'part', 'at', 'seed', 'playing', 'scale', 'params'], writeDp: 3, extra: ['param'],
-    editor: { effect: { ui: { t: 'enum', def: false } }, playing: { ui: { t: 'check' } }, scale: { ui: { t: 'num', step: 0.1, dp: 2, min: 0.01, max: 100 } }, part: { ui: { t: 'text' } } } },
+    editor: { effect: { ui: { t: 'enum', def: false } }, playing: { ui: { t: 'check' } }, scale: { ui: { t: 'num', step: 0.1, dp: 2 } }, part: { ui: { t: 'text' } } } },
   Picture: { key: 'picture', show: ['src', 'part', 'width', 'alt', 'lit', 'flip'], writeDp: 3,
-    editor: { src: { ui: { t: 'text' } }, part: { ui: { t: 'enum', def: false } }, width: { ui: { t: 'num', step: 0.1, dp: 2, min: 0.05, max: 20, unit: 'm' } }, alt: { ui: { t: 'text' } }, lit: { ui: { t: 'enum', def: false } }, flip: { ui: { t: 'check' } } } },
+    editor: { src: { ui: { t: 'text' } }, part: { ui: { t: 'enum', def: false } }, width: { ui: { t: 'num', step: 0.1, dp: 2, softMin: 0.05 } }, alt: { ui: { t: 'text' } }, lit: { ui: { t: 'enum', def: false } }, flip: { ui: { t: 'check' } } } },
   Sound: { key: 'sound', show: ['src', 'playing', 'loop', 'volume', 'pitch', 'near', 'radius', 'spatial', 't0', 'alt'], writeDp: 3, extra: ['rings', 'mute'],
     editor: { src: { ui: { t: 'text' } }, alt: { ui: { t: 'text' } }, loop: { ui: { t: 'check' } }, spatial: { ui: { t: 'check' } },
-      volume: { ui: { t: 'num', step: 0.05, dp: 2, min: 0, max: 1 } }, pitch: { ui: { t: 'num', step: 0.05, dp: 2, min: 0.5, max: 2 } },
-      near: { ui: { t: 'num', step: 0.5, dp: 1, min: 0.1, max: 100, unit: 'm' } }, radius: { ui: { t: 'num', step: 1, dp: 0, min: 1, max: 100, unit: 'm' } } } },
+      volume: { ui: { t: 'num', step: 0.05, dp: 2 } }, pitch: { ui: { t: 'num', step: 0.05, dp: 2 } },
+      near: { ui: { t: 'num', step: 0.5, dp: 1, softMin: 0.1 } }, radius: { ui: { t: 'num', step: 1, dp: 0 } } } },
   Story: { key: 'story', editor: { title: { ui: { t: 'text' } }, text: { ui: { t: 'text' } }, marks: { ui: { t: 'text' } } } },
   Text: { key: 'text', show: ['text', 'size', 'width', 'align', 'color', 'outline', 'outlineColor', 'background', 'billboard', 'lit'], writeDp: 3, extra: ['plate'],
-    editor: { text: { ui: { t: 'text' } }, size: { ui: { t: 'num', step: 0.01, dp: 2, min: 0.02, max: 2, unit: 'm' } }, width: { ui: { t: 'num', step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm' } },
+    editor: { text: { ui: { t: 'text' } }, size: { ui: { t: 'num', step: 0.01, dp: 2 } }, width: { ui: { t: 'num', step: 0.1, dp: 2 } },
       align: { ui: { t: 'enum' } }, color: { ui: { t: 'color' } }, outline: { ui: { t: 'check' } }, outlineColor: { ui: { t: 'color' } }, background: { ui: { t: 'color', def: false } }, billboard: { ui: { t: 'enum' } }, lit: { ui: { t: 'enum' } } } },
   LookAt: { key: 'look-at', show: ['target', 'mode', 'forward', 'up', 'yaw', 'pitch', 'speed', 'range', 'offset'], writeDp: 3, extra: ['target@'],
     editor: { target: { ui: { t: 'ref' } }, mode: { ui: { t: 'enum' } }, forward: { ui: { t: 'enum' } },
-      speed: { ui: { t: 'num', step: 30, dp: 0, min: 0, max: 3600, unit: '°/s' } }, range: { ui: { t: 'num', step: 1, dp: 1, min: 0.1, max: 100, unit: 'm' } } } },
-  Lock: { key: 'lock', whole: 'value' },
+      speed: { ui: { t: 'num', step: 30, dp: 0 } }, range: { ui: { t: 'num', step: 1, dp: 1, softMin: 0.1 } } } },
+  Lock: { key: 'lock', whole: 'value', show: [] },   // true | {rank}: the whole value is the row; its level is the Flags card's lockLevel
   Hidden: { key: 'hidden', whole: 'value' },
   Label: { key: 'label', whole: 'text' },
   Description: { key: 'description', whole: 'text' },
-  Captions: { key: 'captions', whole: 'feed', floor: true },
+  Captions: { key: 'captions', whole: 'feed', show: [], floor: true },
   Stage: { key: 'stage', floor: true },
 };
 
@@ -143,11 +145,19 @@ function build(card, c) {
   const fields = [];
   if (c.whole) fields.push({ k: c.whole, param: c.whole, t: def.type ?? def.map ?? 'object', path: null });
   for (const path of names) {
-    if (!(path in typed) && !(def.defaults && path in def.defaults)) throw new Error(`descriptors: ${card}.${path} is not a field of ${c.key}`);
+    // a registry field, or (a name typed by its defaults alone: grabbable) a default it writes
+    if (!(path in typed) && !(!def.fields && def.defaults && path in def.defaults)) throw new Error(`descriptors: ${card}.${path} is not a field of ${c.key}`);
     const e = c.editor?.[path] ?? {};
     const decided = DECIDED[`${card}.${path}`];
-    const ui = e.ui ? { ...e.ui, ...(e.ui.t === 'enum' && def.enums?.[path] ? { closed: true } : {}) } : null;
-    fields.push({ k: e.k ?? path, param: e.param ?? e.k ?? path, t: typed[path] ?? TYPEOF[typeof def.defaults[path]] ?? 'any', path, ...(e.wire ? { wire: e.wire } : {}), ...(ui ? { ui: Object.freeze(ui) } : {}), ...(decided ? { absent: decided } : {}) });
+    for (const k of ['min', 'max', 'unit', 'hint']) if (e.ui && k in e.ui) throw new Error(`descriptors: ${card}.${path} states ${k} here; a field's limits, unit and doc are the registry's (componentspec ${c.key}.ranges / units / docs)`);
+    // the registry's limits, as the door judges them (gt reads as the slider's floor: editschema refuses the bound itself
+    // before sending), its unit (per motion type where a field's differs: motion.amp) and its one-line doc
+    const r = def.ranges?.[path]; const u = def.units?.[path];
+    const lim = r && r.maxLen === undefined && r.maxItems === undefined ? { ...(r.min !== undefined ? { min: r.min } : r.gt !== undefined ? { min: r.gt } : {}), ...(r.max !== undefined ? { max: r.max } : {}) } : {};
+    const unit = u == null ? undefined : typeof u === 'string' ? (u.includes('|') ? null : u) : (u[c.type] ?? null);
+    const doc = def.docs?.[path];
+    const ui = e.ui ? { ...e.ui, ...lim, ...(unit && !e.ui.deg ? { unit } : {}), ...(e.ui.t === 'enum' && def.enums?.[path] ? { closed: true } : {}) } : null;
+    fields.push({ k: e.k ?? path, param: e.param ?? e.k ?? path, t: typed[path] ?? TYPEOF[typeof def.defaults[path]] ?? 'any', path, ...(e.wire ? { wire: e.wire } : {}), ...(ui ? { ui: Object.freeze(ui) } : {}), ...(decided ? { absent: decided } : {}), ...(doc ? { doc } : {}), ...(lim.min !== undefined || lim.max !== undefined ? { range: Object.freeze(lim) } : {}), ...(unit ? { unit } : {}) });
   }
   return Object.freeze({ key: c.key, card, ...(c.type ? { type: c.type } : {}), fields: Object.freeze(fields.map(Object.freeze)), extra: Object.freeze([...(c.extra ?? [])]), ...(c.floor ? { floor: true } : {}), ...(c.hand ? { hand: true } : {}), ...(c.writeDp !== undefined ? { writeDp: c.writeDp } : {}) });
 }

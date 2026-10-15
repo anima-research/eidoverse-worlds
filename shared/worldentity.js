@@ -23,7 +23,7 @@ import * as OP from './protocol/requests.js';
 import { RECORDS } from './components.js';
 import { WEATHERS, CLOUDS, hoursAt, effectiveSky } from './forecast.js';
 import { terrainArgs, grassArgs, groundChoice, paletteDefaults } from './grounddefs.js';
-import { fieldAt, parseEntry } from './editschema.js';
+import { fieldAt, parseEntry, limitsOf } from './editschema.js';
 import { TRUSTED } from './drafts.js';
 
 export const WORLD_ID = '@world';
@@ -206,12 +206,14 @@ export function worldSchema(st, live = {}) {
   // Terrain
   const t = isBag(terrain) ? terrain : null;
   const layerColor = colorInt(Array.isArray(t?.layers) ? t.layers[0]?.color : null);
+  // hard limits and units are the registry's (componentspec terrain / grass, through limitsOf); the slider's soft ends are this card's
+  const T = (k) => limitsOf('terrain', k), G = (k) => limitsOf('grass', k);
   const terrainFields = t ? [
-    { t: 'num', k: 'amplitude', label: 'relief', value: t.amplitude ?? 0, def: 0, min: 0, softMax: 12, step: 0.1, dp: 1, unit: 'm', ...ro },
+    { t: 'num', k: 'amplitude', label: 'relief', value: t.amplitude ?? 0, def: 0, ...T('amplitude'), softMin: 0, softMax: 12, step: 0.1, dp: 1, ...ro },
     { t: 'num', k: 'seed', label: 'seed', value: t.seed ?? 0, step: 1, dp: 0, ...ro },
-    { t: 'num', k: 'size', label: 'size', value: t.size ?? 160, min: 1, softMax: 1000, step: 10, dp: 0, unit: 'm', ...ro },
-    { t: 'num', k: 'segments', label: 'segments', value: t.segments ?? 200, min: 2, max: 512, step: 1, dp: 0, ...ro },
-    { t: 'num', k: 'flatRadius', label: 'flat within', value: t.flatRadius ?? 0, min: 0, softMax: 200, step: 1, dp: 0, unit: 'm', ...ro },
+    { t: 'num', k: 'size', label: 'size', value: t.size ?? 160, ...T('size'), softMin: 1, softMax: 1000, step: 10, dp: 0, ...ro },
+    { t: 'num', k: 'segments', label: 'segments', value: t.segments ?? 200, ...T('segments'), step: 1, dp: 0, ...ro },
+    { t: 'num', k: 'flatRadius', label: 'flat within', value: t.flatRadius ?? 0, ...T('flatRadius'), softMax: 200, step: 1, dp: 0, ...ro },
     ...(layerColor != null ? [{ t: 'color', k: 'color', label: 'colour', value: layerColor, ...ro }] : []),
   ] : [{ t: 'info', label: '', value: 'no terrain authored: the default flat ground. Pick a shape in Build ▸ World' }];
   if (terrain != null) terrainFields.push({ t: 'btn', k: 'remove', label: 'remove the terrain', danger: true, hint: 'back to the default flat ground', ...ro });
@@ -221,10 +223,10 @@ export function worldSchema(st, live = {}) {
   const g = isBag(grass) ? grass : null;
   const grassFields = g ? [
     { t: 'info', label: 'planting', value: String(g.preset ?? g.species ?? '?') },
-    { t: 'num', k: 'density', label: 'density', value: g.density ?? 1, def: 1, min: 0.05, softMax: 3, step: 0.05, dp: 2, ...ro },
-    ...(g.height != null ? [{ t: 'num', k: 'height', label: 'blade height', value: g.height, min: 0.02, softMax: 2, step: 0.01, dp: 2, unit: 'm', ...ro }] : []),
-    ...(g.width != null ? [{ t: 'num', k: 'width', label: 'width', value: g.width, min: 1, softMax: 400, step: 1, dp: 0, unit: 'm', ...ro }] : []),
-    ...(g.depth != null ? [{ t: 'num', k: 'depth', label: 'depth', value: g.depth, min: 1, softMax: 400, step: 1, dp: 0, unit: 'm', ...ro }] : []),
+    { t: 'num', k: 'density', label: 'density', value: g.density ?? 1, def: 1, ...G('density'), softMin: 0.05, softMax: 3, step: 0.05, dp: 2, ...ro },
+    ...(g.height != null ? [{ t: 'num', k: 'height', label: 'blade height', value: g.height, ...G('height'), softMin: 0.02, softMax: 2, step: 0.01, dp: 2, ...ro }] : []),
+    ...(g.width != null ? [{ t: 'num', k: 'width', label: 'width', value: g.width, ...G('width'), softMin: 1, softMax: 400, step: 1, dp: 0, ...ro }] : []),
+    ...(g.depth != null ? [{ t: 'num', k: 'depth', label: 'depth', value: g.depth, ...G('depth'), softMin: 1, softMax: 400, step: 1, dp: 0, ...ro }] : []),
     { t: 'btn', k: 'mow', label: 'mow', danger: true, ...ro },
   ] : [{ t: 'info', label: '', value: 'nothing growing. Pick a planting in Build ▸ World' }];
   groups.push({ group: 'grass', label: 'Grass', fields: grassFields });

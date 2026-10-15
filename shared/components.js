@@ -23,6 +23,8 @@ import { ROT_MODES } from './euler.js';
 import { kindOf } from './protocol/kind.js';
 import { recordOf, recordComponents } from './protocol/view.js';
 import { materialize, COMPONENTS } from './protocol/componentspec.js';
+import { DESCRIPTORS, editorDefault, AXES } from './protocol/descriptors.js';
+import { ESSENTIAL_NAMES } from './particle_effects.js';
 import { qNorm, qFromYaw } from './rot.js';
 import { WEATHERS, CLOUDS } from './forecast.js';
 
@@ -79,122 +81,157 @@ export function sha256hexBytes(bytes) {
 }
 
 // ------------------------------------------------------------ the records
-// Param types: num (unit, min, max, softMax, deg), bool, vec3, color, text,
-// asset (a library path), ref (another entity's id), choice (a closed set that
-// IS a set — a particle preset, a loop mode — not a type switch), list, json.
-// `default` is the value the engine's realizer applies when the key is absent;
-// where today's code applies two different defaults by scope, the record says
-// both (`partDefault`) rather than pretending there is one.
-const deg = { t: 'num', deg: true, step: 5 };
-const axis = (d) => ({ t: 'choice', options: ['x', 'y', 'z', '-x', '-y', '-z'], default: d, custom: 'vec3' });
-const part = { t: 'text', default: null, hint: 'a named node of the model; empty = the whole thing' };
+// Param types: num (unit, min, max), bool, vec3, color, text, asset (a library path), ref (another entity's id), choice (a
+// closed set that IS a set — a particle preset, a loop mode — not a type switch), list, json.
+//
+// ONE description (schema layers, 10-14): a registered component's params are DERIVED here from the registry
+// (shared/protocol/componentspec.js: fields, defaults, ranges, units, docs) through its descriptor (shared/protocol/
+// descriptors.js: which fields the card shows, the editor's spellings — rate, burnsAtNoon, slot — and its translations).
+// This file adds no type, limit, unit or doc of its own for a registered field: paramsOf() throws if a hand entry tries.
+// What a record may still say by hand is the ALIAS LAYER's own: a param the wire doesn't spell as a field (Transform's
+// yaw and rotOrder, a Model's lib, Sockets' slots, a card's whole-value json), and READS — the value a reader uses when
+// the key is absent and the registry writes nothing (a pendulum's pivot, a path's points): the descriptor's `absent` prose
+// says the same in words (tools/descriptor-defaults-test.ts), and `partDefault` where a part's reading differs.
+const UNIT_OF = { vec3: 'vec3', bool: 'bool', number: 'num', int: 'num', string: 'text', array: 'json', object: 'json', ref: 'ref', refs: 'list', target: 'ref', axis: 'choice', any: 'json', people: 'list', person: 'ref' };
+const WIDGET_OF = { color: 'color', check: 'bool', enum: 'choice', ref: 'ref', text: 'text', num: 'num' };
+const AXIS_LETTERS = Object.keys(AXES);
+/** A record's params from its descriptor: every shown field with the registry's type, default (through the editor's
+ *  translation), limits, unit and doc. `hand` adds the alias layer's own entries and READS (see above); it may not restate
+ *  a derived fact (type, min, max, unit, hint) for a registry field. */
+function paramsOf(card, hand = {}) {
+  const d = DESCRIPTORS[card]; if (!d) return hand;
+  const def = COMPONENTS[d.key]; const out = {};
+  for (const f of d.fields) {
+    if (f.path == null) { out[f.param] = hand[f.param] ?? { t: 'json', default: {} }; continue; }   // the whole-value field (spec, slots, text…) is the hand's
+    const h = hand[f.param] ?? {};
+    for (const k of ['min', 'max', 'unit', 'hint']) if (k in h) throw new Error(`components: ${card}.${f.param} restates ${k}; it is the registry's (componentspec ${d.key}.${f.path})`);
+    // the alias layer may REFINE a registry type into its own vocabulary (a string that is a library path: asset; an array
+    // of vectors: list of vec3), never contradict it
+    if ('t' in h && !((h.t === 'asset' && f.t === 'string') || (h.t === 'list' && f.t === 'array'))) throw new Error(`components: ${card}.${f.param} restates t; it is the registry's (componentspec ${d.key}.${f.path})`);
+    const dflt = editorDefault(card, f.k);
+    const p = { t: h.t ?? (f.ui?.t ? WIDGET_OF[f.ui.t] ?? f.ui.t : UNIT_OF[f.t] ?? 'json'), default: dflt !== undefined ? dflt : (h.default ?? null) };
+    if (h.of) p.of = h.of;
+    if (f.t === 'vec3' && !h.t) p.t = 'vec3';   // a vec3's rows are the card's own channels; the param is the vector
+    if (f.t === 'axis') { p.t = 'choice'; p.options = AXIS_LETTERS; p.custom = 'vec3'; }
+    else if (def.enums?.[f.path]) { p.t = 'choice'; p.options = [...def.enums[f.path]]; }
+    if ((def.required ?? []).includes(f.path)) p.required = true;
+    if (f.range) Object.assign(p, f.range);
+    if (f.unit) p.unit = f.unit;
+    if (f.doc) p.hint = f.doc;
+    for (const k of ['default', 'partDefault', 'wire', 'options', 'custom']) if (k in h && !(k === 'default' && dflt !== undefined)) p[k] = h[k];
+    out[f.param] = p;
+  }
+  for (const [k, v] of Object.entries(hand)) if (!(k in out)) out[k] = v;   // the alias layer's own params (yaw, rotOrder, …)
+  return out;
+}
+/** A world record's params from the registry's world component (sky, terrain, grass): type, limits, unit, doc; the
+ *  defaults are the renderer's READS of absence (the world verbs fold wholesale; the registry writes none). */
+function worldParams(key, hand) {
+  const def = COMPONENTS[key]; const out = {};
+  for (const [name, h] of Object.entries(hand)) {
+    const t = def.fields?.[name];
+    for (const k of ['t', 'min', 'max', 'unit', 'hint']) if (t && k in h) throw new Error(`components: ${key}.${name} restates ${k}; it is the registry's`);
+    const p = { ...h, t: h.t ?? (t ? UNIT_OF[t] ?? 'json' : 'json') };
+    if (h.options) p.t = 'choice';
+    const r = def.ranges?.[name]; if (r && r.maxLen === undefined) { if (r.min !== undefined) p.min = r.min; else if (r.gt !== undefined) p.min = r.gt; if (r.max !== undefined) p.max = r.max; }
+    if (def.units?.[name]) p.unit = def.units[name]; if (def.docs?.[name]) p.hint = def.docs[name];
+    out[name] = p;
+  }
+  return out;
+}
+const deg = { t: 'num', deg: true };
+const part = { default: null };
 
 const DEFS = [
   { name: 'Transform', category: 'Core', builtin: true, summary: 'where it is: position, heading, size',
-    params: { pos: { t: 'vec3', unit: 'm', default: [0, 0, 0] }, q: { t: 'quat', default: [0, 0, 0, 1], hint: 'full orientation (shared/rot.js); yaw is its friendly subset' }, yaw: { ...deg, default: 0 }, scale: { t: 'num', default: 1, min: 0.01, softMax: 12, step: 0.05 },
-      rotOrder: { t: 'choice', options: ROT_MODES, default: 'XYZ', wire: 'comp.rotOrder', hint: 'how the Rotate channels read q (Maya\'s rotateOrder: XYZ = X applied first); quat = edit the quaternion. Never moves the thing' } },
+    params: paramsOf('Transform', { yaw: { ...deg, default: 0 }, rotOrder: { t: 'choice', options: ROT_MODES, default: 'XYZ', wire: 'comp.rotOrder', hint: 'how the Rotate channels read q (Maya\'s rotateOrder: XYZ = X applied first); quat = edit the quaternion. Never moves the thing' } }),
     fallback: { text: 'at (x, y, z)' } },
   // Pivot (research 52, Roblox's PivotOffset): where it turns and scales from, in its own frame before scale. It never
   // moves the thing or changes how it draws: only the handles, the turn and the size go about it.
   { name: 'Pivot', category: 'Core', summary: 'where it turns and scales from (its own frame); never moves it',
-    params: { pos: { t: 'vec3', unit: 'm', default: [0, 0, 0], hint: 'in its own frame, before scale: [0, 0, 0] is its origin' } },
+    params: paramsOf('Pivot', { pos: { default: [0, 0, 0] } }),
     fallback: { text: 'turns about <pos>' } },
   { name: 'Model', category: 'Rendering', summary: 'a 3D model from the library',
     params: { lib: { t: 'asset', default: null, required: true } },
     fallback: { visual: 'placeholder box until the model loads', text: 'a <file stem>' } },
   { name: 'Collider', category: 'Physics', needs: ['Model'], summary: 'how bodies bump into it',
-    params: { shape: { t: 'choice', options: ['exact', 'box'], default: 'exact' } },
+    params: paramsOf('Collider', { shape: { default: 'exact' } }),
     fallback: { text: '(none)' }, note: 'wire: comp.collider {shape} (written by comp), or the spawn verb\'s legacy `collide`; comp.collider wins when both are present. Absent = the browser decides by size' },
   { name: 'Light', category: 'Rendering', summary: 'a point light',
-    params: { color: { t: 'color', default: 0xffd9a0 }, intensity: { t: 'num', default: 16, min: 0, softMax: 64, step: 1 }, range: { t: 'num', unit: 'm', default: 10, min: 1, softMax: 40, step: 1 },
-      important: { t: 'bool', default: false, hint: 'always casts: first claim on a light slot, never shed by the governor' }, burnsAtNoon: { t: 'bool', default: false, hint: 'opts out of the day cycle (wire: day:false)' } },
+    params: paramsOf('Light'),
     fallback: { visual: 'a glowing gizmo when the slot pool is spent', text: '(light)' },
     note: 'wire: comp.light {color, intensity, range, important, day} on any entity (an imported lamp is a Model and a Light)' },
-  // period, damp and maxAmp are the registry's (componentspec.js motion, pendulum): tools/descriptor-defaults-test.ts holds them there
+  // the motions' READS: a pendulum swings about [0, 2, 0] (a part about its own origin), an orbit's part circles at 1 m
   { name: 'Pendulum', category: 'Motion', summary: 'swings back and forth about an axis',
-    params: { part, axis: axis('x'), amp: { ...deg, default: 0, min: 0 }, period: { t: 'num', unit: 's', default: 2.4, min: 0.05, step: 0.1 }, pivot: { t: 'vec3', unit: 'm', default: [0, 2, 0], partDefault: [0, 0, 0], hint: 'the point it swings about, in its own frame' }, phase: { ...deg, default: 0 }, damp: { t: 'num', default: 0.08, min: 0, softMax: 2, step: 0.01 }, maxAmp: { t: 'num', default: 0.9, hint: 'cap on a push (server reaction only), radians' } },
+    params: paramsOf('Pendulum', { part, pivot: { default: [0, 2, 0], partDefault: [0, 0, 0] } }),
     fallback: { visual: 'stands still', text: 'in motion (pendulum)' } },
   { name: 'Spin', category: 'Motion', summary: 'turns steadily about an axis',
-    params: { part, axis: axis('y'), rate: { t: 'num', unit: '°/s', default: 36, step: 5 }, pivot: { t: 'vec3', unit: 'm', default: [0, 0, 0] }, phase: { ...deg, default: 0 } },
+    params: paramsOf('Spin', { part, pivot: { default: [0, 0, 0] } }),
     fallback: { visual: 'stands still', text: 'in motion (spin)' } },
   { name: 'Orbit', category: 'Motion', summary: 'circles a point',
-    params: { part, radius: { t: 'num', unit: 'm', default: 3, partDefault: 1, min: 0, step: 0.1 }, center: { t: 'vec3', unit: 'm', default: null, hint: 'what it circles; absent = where it stands' }, rate: { t: 'num', unit: '°/s', default: 12, step: 5 }, phase: { ...deg, default: 0 }, face: { t: 'bool', default: true, hint: 'face along the circle' } },
+    params: paramsOf('Orbit', { part, radius: { partDefault: 1 }, center: { default: null } }),
     fallback: { visual: 'stands still', text: 'in motion (orbit)' } },
   { name: 'Bob', category: 'Motion', summary: 'floats up and down',
-    params: { part, axis: axis('y'), amp: { t: 'num', unit: 'm', default: 0.3, min: 0, step: 0.05 }, period: { t: 'num', unit: 's', default: 4, min: 0.05, step: 0.1 }, phase: { ...deg, default: 0 } },
+    params: paramsOf('Bob', { part }),
     fallback: { visual: 'stands still', text: 'in motion (bob)' } },
   { name: 'Path', category: 'Motion', summary: 'follows a list of points',
-    params: { part, points: { t: 'list', of: 'vec3', default: [] }, speed: { t: 'num', unit: 'm/s', default: 1, min: 0 }, duration: { t: 'num', unit: 's', default: null, hint: 'instead of speed' },
-      loop: { t: 'choice', options: ['loop', 'pingpong', 'once'], default: 'loop' }, face: { t: 'bool', default: true } },
+    params: paramsOf('Path', { part, points: { t: 'list', of: 'vec3', default: [] }, duration: { default: null } }),
     fallback: { visual: 'stands still', text: 'in motion (path)' } },
   { name: 'Sockets', category: 'Interaction', needs: ['Model'], summary: 'attachment points: a person attaches by using one (a chair, a swing, a saddle); things attach by parent',
-    params: { slots: { t: 'list', of: 'seat', default: {}, hint: 'slot → {pos, yaw?, part?, body?: {action, pose, exit, who}}' } },
+    params: paramsOf('Sockets', { slots: { t: 'list', of: 'seat', default: {}, hint: 'slot → {pos, yaw?, part?, body?: {action, pose, exit, who}}' } }),
     seat: { bodyDefault: [0, 0.5, 0], cargoDefault: [0, 0, 0], pose: 'sitchair' }, fallback: { text: 'attach points: <slots>' } },
   // grabbable (shared/grab.js; research RESEARCH-grab-2026-10-06): its own component, apart from physics. The spec is the
   // component's whole value; the inspector's card edits its fields, and its JSON hatch reaches grips, home and fx
   { name: 'Grabbable', category: 'Interaction', needs: ['Model'], summary: 'it can be picked up and carried: who may, how it is held (grips), where it goes when let go, what using it while held does',
-    params: { spec: { t: 'json', default: {}, hint: '{who, enabled, steal, range, priority, hold, pose, grips, twoHanded, throw, release, returnAfter, home, fits, use, prompt, fx}' } },
+    params: paramsOf('Grabbable', { spec: { t: 'json', default: {}, hint: '{who, enabled, steal, range, priority, hold, pose, grips, twoHanded, throw, release, returnAfter, home, fits, use, prompt, fx}' } }),
     fallback: { text: 'can be picked up' }, note: 'wire: the grabbable component; a dynamic thing with no grabbable is carryable by physics.who (the migration fallback)' },
   // openable (R 10-07; shared/protocol/componentspec.js): it opens and closes when used. The spec is the component's whole value; the
   // card edits open, locked, how it opens and how long it takes; its JSON hatch reaches the rest (part)
   { name: 'Openable', category: 'Interaction', summary: 'opens and closes when someone uses it: a door, a gate, a lid, a hatch',
-    params: { spec: { t: 'json', default: {}, hint: '{open, locked, angle, axis, slide, time, part}' } },
+    params: paramsOf('Openable', { spec: { t: 'json', default: {}, hint: '{open, locked, angle, axis, slide, time, part}' } }),
     fallback: { visual: 'drawn closed until a client animates it', text: 'opens (open or shut)' } },
   { name: 'Parent', category: 'Interaction', summary: 'what it rides: its parent (wire: parent, written by mount)',
-    params: { to: { t: 'ref', default: null, required: true }, slot: { t: 'text', default: null }, offset: { t: 'vec3', default: null }, yaw: { ...deg, default: null } },
+    params: paramsOf('Parent', { to: { default: null }, slot: { default: null }, offset: { t: 'vec3', default: null }, yaw: { ...deg, default: null } }),
     fallback: { text: 'on <to>' } },
   { name: 'Reactions', category: 'Interaction', needs: ['Pendulum'], summary: 'what a `use` does (added here: a push that swings it; an Openable brings its own)',
-    params: { actions: { t: 'json', default: {} } }, fallback: { text: 'reacts to: <actions>' } },
+    params: paramsOf('Reactions', { actions: { t: 'json', default: {} } }), fallback: { text: 'reacts to: <actions>' } },
   // R 10-07 (v2 of Particles, a new hash, L5): the instance names an effect document (shared/particle_effects.js) and sets
   // its params; the first protocol's flat knobs are params of the Essentials now, and an older bag round-trips through
   // `extra` as every unknown key does
   { name: 'Particles', category: 'Effects', summary: 'an effect: fire, smoke, sparks… or a stored effect document',
-    params: { effect: { t: 'choice', options: ['fire', 'sparks', 'embers', 'smoke', 'dust', 'snow', 'magic', 'stars', 'muzzle'], default: null, required: true, hint: 'an Essential, or a stored effect\'s address (sha256:…)' },
-      part: { t: 'text', default: null, hint: 'a node of its model it emits from' }, at: { t: 'vec3', unit: 'm', default: [0, 0, 0], min: -8, max: 8 },
-      seed: { t: 'num', default: null, hint: 'from the id when absent' }, playing: { t: 'bool', default: true }, scale: { t: 'num', default: 1, min: 0.01, max: 100 },
-      params: { t: 'json', default: null, hint: 'the effect\'s own knobs {<name>: value}' } },
+    params: paramsOf('Particles', { effect: { options: [...ESSENTIAL_NAMES], default: null }, part: { default: null }, at: { default: [0, 0, 0] }, seed: { default: null }, params: { default: null } }),
     fallback: { visual: 'an effect this client doesn\'t know draws nothing', text: 'described by its effect' } },
   // batch 2 (10-07): v2 of Picture and Sound (new hashes, L5): a picture needs no model (no part = a quad of its own),
   // `look` became `alt`; a sound is silent at radius (cap 100), with near, pitch and spatial
   { name: 'Picture', category: 'Rendering', summary: 'an image: on a part of its model, or a framed picture of its own',
-    params: { src: { t: 'asset', default: null, required: true, hint: 'store/images/…, eidoverse/assets/…, or an https link' }, part: { t: 'text', default: null, hint: 'absent = a picture of its own (a quad facing its front)' },
-      width: { t: 'num', unit: 'm', default: 1, min: 0.01, max: 20 }, alt: { t: 'text', default: null, max: 200, hint: 'Alternative text: describes this for people who can\'t see it, and for agents' },
-      lit: { t: 'choice', options: ['scene', 'self'], default: 'scene' }, flip: { t: 'bool', default: false } },
+    params: paramsOf('Picture', { src: { t: 'asset', default: null }, part: { default: null }, alt: { default: null } }),
     fallback: { visual: 'nothing hung', text: 'not shown: <why>' } },
   { name: 'Sound', category: 'Audio', summary: 'positional audio, silent past its radius',
-    params: { src: { t: 'asset', default: null, required: true, hint: 'store/audio/…, eidoverse/assets/…, or an https link' }, playing: { t: 'bool', default: true }, loop: { t: 'bool', default: true }, volume: { t: 'num', default: 0.8, min: 0, max: 1 },
-      pitch: { t: 'num', default: 1, min: 0.5, max: 2 }, near: { t: 'num', unit: 'm', default: 1.5, min: 0.01, max: 100, hint: 'full volume inside it' },
-      radius: { t: 'num', unit: 'm', default: 12, min: 1, max: 100, hint: 'silent at and beyond it' }, spatial: { t: 'bool', default: true, hint: 'off: heard evenly inside radius, no panning' },
-      t0: { t: 'num', default: null, hint: 'shared playhead start (stamped by the authority)' },
-      alt: { t: 'text', default: null, max: 200, hint: 'Alternative text: describes this for people who can\'t hear it, and for agents' } },
+    params: paramsOf('Sound', { src: { t: 'asset', default: null }, t0: { default: null }, alt: { default: null } }),
     fallback: { visual: 'silent', text: 'not heard: <why>' } },
   { name: 'Story', category: 'Info', summary: 'why it is here: a title and a few paragraphs (shown on Inspect, read by agents)',
-    params: { title: { t: 'text', default: null, required: true, max: 80 }, text: { t: 'text', default: null, required: true, max: 1000 }, marks: { t: 'list', of: 'ref', default: null, hint: 'what it marks or commemorates (≤ 8)' } },
+    params: paramsOf('Story', { title: { default: null }, text: { default: null }, marks: { default: null } }),
     fallback: { text: 'story «<title>»' } },
   { name: 'Text', category: 'Rendering', summary: 'words in the world: a sign',
-    params: { text: { t: 'text', default: null, required: true, max: 400 }, size: { t: 'num', unit: 'm', default: 0.15, min: 0.02, max: 2 }, width: { t: 'num', unit: 'm', default: 2, min: 0.1, max: 10 },
-      align: { t: 'choice', options: ['left', 'center', 'right'], default: 'center' }, color: { t: 'color', default: 0xffffff }, outline: { t: 'bool', default: true },
-      background: { t: 'color', default: null }, billboard: { t: 'choice', options: ['off', 'yaw', 'full'], default: 'off' }, lit: { t: 'choice', options: ['self', 'scene'], default: 'self' } },
+    params: paramsOf('Text', { text: { default: null }, background: { default: null }, outlineColor: { default: null } }),
     fallback: { visual: 'a placeholder plate', text: 'a sign reading «<text>»' } },
   { name: 'Structure', category: 'Building', summary: 'walls, floors, doors and windows on a grid',
     params: { plan: { t: 'json', default: { levels: [] } } },
     fallback: { visual: 'the anchor crate', text: 'a building' }, note: 'rides a hidden anchor model today; ignores motion, mount and hidden' },
   { name: 'LookAt', category: 'Interaction', summary: 'turns to face something: a thing, the viewer, whoever is nearest',
-    params: { target: { t: 'ref', default: null, required: true }, mode: { t: 'choice', options: ['yaw', 'aim'], default: 'yaw' }, forward: { t: 'choice', options: ['x', 'y', 'z', '-x', '-y', '-z'], default: 'z' },
-      up: { t: 'choice', options: ['x', 'y', 'z', '-x', '-y', '-z'], default: 'y' }, yaw: { t: 'json', default: null }, pitch: { t: 'json', default: null },
-      speed: { t: 'num', unit: '°/s', default: 240, min: 0, max: 3600 }, range: { t: 'num', unit: 'm', default: 12, min: 0.01, max: 100 }, offset: { t: 'vec3', default: [0, 0, 0] } },
+    params: paramsOf('LookAt', { target: { default: null }, yaw: { default: null }, pitch: { default: null }, offset: { default: [0, 0, 0] } }),
     fallback: { visual: 'stays at rest', text: 'turns to face <target>' } },
   { name: 'Lock', category: 'Rules', summary: 'nailed down: nobody can move, replace or remove it', params: {}, fallback: { text: '🔒 locked' } },
   { name: 'Hidden', category: 'Rendering', summary: 'not drawn, still there', params: {}, fallback: { text: '(hidden)' } },
-  { name: 'Label', category: 'Core', summary: 'a display name people see', params: { text: { t: 'text', default: '', max: 80 } }, fallback: { text: 'the label' } },
+  { name: 'Label', category: 'Core', summary: 'a display name people see', params: paramsOf('Label', { text: { t: 'text', default: '', max: COMPONENTS.label.maxLen } }), fallback: { text: 'the label' } },
   // R 10-07: how it is described to anyone who reads rather than sees (alt text); the header's, beside its name
-  { name: 'Description', category: 'Core', summary: 'how it is described to anyone who reads it (alt text)', params: { text: { t: 'text', default: '', max: 500 } }, fallback: { text: 'the description' } },
-  { name: 'Captions', category: 'Media', readOnly: true, summary: 'live captions (written by the caption verb)', params: { feed: { t: 'json', default: null } }, fallback: { text: 'captions' } },
-  { name: 'Stage', category: 'Media', summary: 'who is speaking (captionbot)', params: { speaker: { t: 'text', default: null } }, fallback: { text: 'components: stage' } },
+  { name: 'Description', category: 'Core', summary: 'how it is described to anyone who reads it (alt text)', params: paramsOf('Description', { text: { t: 'text', default: '', max: COMPONENTS.description.maxLen } }), fallback: { text: 'the description' } },
+  { name: 'Captions', category: 'Media', readOnly: true, summary: 'live captions (written by the caption verb)', params: paramsOf('Captions', { feed: { t: 'json', default: null } }), fallback: { text: 'captions' } },
+  { name: 'Stage', category: 'Media', summary: 'who is speaking (captionbot)', params: paramsOf('Stage', { speaker: { default: null } }), fallback: { text: 'components: stage' } },
   // R 10-12 (primitives): a parametric body on a thing with no model, registered bare (componentspec `mesh`); one place per
   // thing with a model and a light, as the authority refuses
   { name: 'Mesh', category: 'Rendering', summary: 'a parametric body with no model: a box, sphere, cylinder, plane or capsule, sized in metres',
-    params: { shape: { t: 'enum', options: ['box', 'sphere', 'cylinder', 'plane', 'capsule'], default: 'box' }, size: { t: 'vec3', default: [1, 1, 1], hint: 'metres; a sphere reads x as its diameter, a cylinder/capsule x as diameter and y as height, a plane x × z' } },
+    params: paramsOf('Mesh', { size: { default: [1, 1, 1] } }),
     fallback: { visual: 'a grey body', text: '(a <shape>)' },
     note: 'wire: comp.mesh {shape, size}; never beside a model or a light on one thing (give it a child). Its one material slot is \'surface\'' },
   { name: 'Annotation', category: 'Data', summary: 'any other data a world invents (recipe, notice, story…)',
@@ -202,25 +239,28 @@ const DEFS = [
   // The world entity's components (design §3, shared/worldentity.js): `@world`
   // is ONE entity whose bag is these four, aliased both ways onto the fold's
   // state.sky / state.terrain / state.grass. `world: true` keeps them off every
-  // other entity's Add Component; the world has exactly one of each.
+  // other entity's Add Component; the world has exactly one of each. Their
+  // defaults are the renderer's READS of absence (the sky, terrain and grass
+  // verbs fold wholesale; the registry writes none); types, limits, units and
+  // docs are the registry's (worldParams).
   { name: 'Sky', category: 'World', world: true, summary: 'the time of day, the clock, clouds and light',
-    params: { hours: { t: 'num', unit: 'h', default: 12, min: 0, max: 24 }, rate: { t: 'num', default: 0, min: 0, softMax: 48, hint: 'world hours per real hour; 0 = the sun stands still' },
-      clock: { t: 'choice', options: ['real'], default: null, hint: 'real = the hour IS a timezone\'s wall hour' }, tz: { t: 'text', default: null },
-      clouds: { t: 'choice', options: [...CLOUDS], default: 'cumulus' },
-      azimuth: { t: 'num', unit: '°', default: 180 }, sun: { t: 'num', default: 1 }, ambient: { t: 'num', default: 1 }, fill: { t: 'num', default: 1 },
-      exposure: { t: 'num', default: 1 }, fog: { t: 'num', default: 1 }, dormantRated: { t: 'json', default: null, hint: 'the rated clock parked under a real clock' } },
+    params: worldParams('sky', { hours: { default: 12 }, rate: { default: 0 },
+      clock: { options: ['real'], default: null }, tz: { default: null },
+      clouds: { options: [...CLOUDS], default: 'cumulus' },
+      azimuth: { default: 180 }, sun: { default: 1 }, ambient: { default: 1 }, fill: { default: 1 },
+      exposure: { default: 1 }, fog: { default: 1 }, dormantRated: { default: null } }),
     fallback: { text: 'the sky at <hour>' }, note: 'wire: the sky verb, folded wholesale into state.sky; presets are authoring conveniences (defs/sky/_presets.json), never logged by name' },
   { name: 'Weather', category: 'World', world: true, summary: 'what the sky is doing: rain, storm, clear — or a forecast policy',
-    params: { weather: { t: 'choice', options: [...WEATHERS], default: null },
-      weatherK: { t: 'num', default: 1 }, weatherSeconds: { t: 'num', unit: 's', default: null }, forecast: { t: 'json', default: null }, override: { t: 'json', default: null, hint: 'a manual weather inside a forecast segment (stamped by the fold)' } },
+    params: worldParams('sky', { weather: { options: [...WEATHERS], default: null },
+      weatherK: { default: 1 }, weatherSeconds: { default: null }, forecast: { default: null }, override: { default: null } }),
     fallback: { text: 'weather <state>' }, note: 'wire: the weather verb (merges onto state.sky), and the sky verb\'s forecast policy' },
   { name: 'Terrain', category: 'World', world: true, summary: 'the terrain: its shape, size and colour',
-    params: { seed: { t: 'num', default: 7 }, size: { t: 'num', unit: 'm', default: 160 }, segments: { t: 'num', default: 200 }, amplitude: { t: 'num', unit: 'm', default: 0 },
-      flatRadius: { t: 'num', unit: 'm', default: 16 }, layers: { t: 'json', default: [] } },
+    params: worldParams('terrain', { seed: { default: 7 }, size: { default: 160 }, segments: { default: 200 }, amplitude: { default: 0 },
+      flatRadius: { default: 16 }, layers: { default: [] } }),
     fallback: { text: 'the ground' }, note: 'wire: the terrain verb, folded wholesale into state.terrain' },
   { name: 'Grass', category: 'World', world: true, summary: 'what grows on the ground',
-    params: { species: { t: 'text', default: null }, preset: { t: 'text', default: null }, width: { t: 'num', unit: 'm', default: null }, depth: { t: 'num', unit: 'm', default: null },
-      density: { t: 'num', default: 1 }, height: { t: 'num', unit: 'm', default: null } },
+    params: worldParams('grass', { species: { default: null }, preset: { default: null }, width: { default: null }, depth: { default: null },
+      density: { default: 1 }, height: { default: null } }),
     fallback: { text: 'grass' }, note: 'wire: the grass verb, folded wholesale into state.grass; grass {clear:true} mows it' },
 ];
 
