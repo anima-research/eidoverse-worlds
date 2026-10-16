@@ -25,7 +25,8 @@ import { summarizeGlb } from "./geometry.ts";
 // sweep below stays HERE: waking scripted worlds with the server is boot
 // policy, not world mechanics.
 import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wireRights, authorityNow } from "./world.ts";
-import { isWorldSaved, isPreNamesSaved } from "./worldlog.ts";
+import { isWorldSaved } from "./worldlog.ts";
+import { oldWorldAt, bootNotice } from "./oldworlds.ts";
 import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
 import { requestHandler, actorOf as actorIdOf, gagged, guestSanctionByAddress } from "./requestwire.ts";
 import { MOD_POWERS } from "../shared/protocol/roles.js";
@@ -278,6 +279,9 @@ try {
   }
   if (woken) console.log(`[boot] ${woken} scripted world(s) woken — their scripts run without visitors`);
 } catch (err) { console.error("[boot] world sweep failed", err); }
+// Old-format worlds are not served, and the operator is TOLD (they were skipped in silence above): one block per world with
+// the translator's command, this WORLDS_DIR filled in (server/oldworlds.ts).
+try { const notice = bootNotice(WORLDS_DIR); if (notice) console.log(notice); } catch (err) { console.error("[boot] old-world notice failed", err); }
 
 /** Whispers waiting for someone who wasn't here. Memory only, deliberately:
  *  see the `whisper` message case.
@@ -348,14 +352,14 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // Joining never FOUNDS a world (security review 10-06 H3; RFC-005 §3.2.7 "founding is not joining"): a name with no
     // world behind it is refused, and only a world is served (the old protocol has no runtime here: an old log is
     // translated once, by the operator, into a new world).
-    if (worldExists(wname) && !isWorldSaved(wname)) {   // a world saved in the old format: it is translated once, by the operator
-      // a log saved before the 2026-10-07 names pass (an older file name, kind state, actor door, its number in its own
-      // genesis field…) is refounded, or re-translated
-      // from its original log (the Commons); its old spelling isn't read
-      const preNames = isPreNamesSaved(wname);
-      ws.send(JSON.stringify({ type: "error", error: preNames ? `"${wname}" was saved before this server's protocol names changed (2026-10-07) — its operator refounds it, or re-translates it from its original log`
-        : `"${wname}" is saved in an old format this server no longer opens — its operator translates it once (bun tools/protocol/world.ts translate)` }));
-      c.ws.close?.(4005, "old-format world");
+    if (worldExists(wname) && !isWorldSaved(wname)) {   // a world saved in an old format: it is translated once, by the operator
+      // (server/oldworlds.ts: a first-protocol log.jsonl is translatable; a log saved before the 2026-10-07 names pass is
+      // re-translated from its original log, or refounded). The visitor is told in plain words that nothing is lost and
+      // who converts it; the command line is the operator's, in the boot notice. A directory holding no old log at all
+      // (an empty one) is no world: it is refused as one.
+      const old = oldWorldAt(WORLDS_DIR, wname);
+      ws.send(JSON.stringify({ type: "error", error: old ? old.visitor : `there's no world called "${wname}" here — check the link that brought you here` }));
+      c.ws.close?.(4005, old ? "old-format world" : "no such world");
       return null;
     }
     if (!worldExists(wname)) {
