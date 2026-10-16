@@ -211,9 +211,8 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   registered bare by a change to the registry, which lists the namespaced
   spelling in the definition's `aliases`: both spellings then mean that one
   definition, are checked the same way, and old values keep working.
-- **A changed meaning is a new name**, `<name>@<n>` (`light@2`; the first real one is `capacity@2`, whose
-  defaults changed), registered
-  before anyone writes it, whose definition says what it `supersedes`. Old
+- **A changed meaning is a new name**, `<name>@<n>` (e.g. a hypothetical
+  `light@2`), registered before anyone writes it, whose definition says what it `supersedes`. Old
   names are read forever. No component may change how another is read.
 - **Every parameter is written down.** The authority writes a component's
   defaults into the stored value when it is created or set, so a reader never

@@ -960,32 +960,15 @@
    "things": "int",
    "guestThings": "int",
    "sockets": "int",
-   "guestSockets": "int"
-  },
-  "defaults": {
-   "things": 2000,
-   "guestThings": 200,
-   "sockets": 4000,
-   "guestSockets": 400
-  },
-  "absentMeans": {
-   "sockets": "the default, 4000: sockets aren't things, and a capacity written before they had a budget of their own never named one",
-   "guestSockets": "the default, 400"
-  },
-  "on": "world"
- },
- "capacity@2": {
-  "fields": {
-   "things": "int",
-   "guestThings": "int",
-   "sockets": "int",
-   "guestSockets": "int"
+   "guestSockets": "int",
+   "avatar": "int"
   },
   "defaults": {
    "things": 10000,
    "guestThings": 500,
    "sockets": 40000,
-   "guestSockets": 4000
+   "guestSockets": 4000,
+   "avatar": 500
   },
   "on": "world"
  },

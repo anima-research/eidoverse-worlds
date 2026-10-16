@@ -11,7 +11,7 @@
 //              Narrow (a phone, or the panel squeezed): one role at a time.
 //     Access   who can come in, what arrivals and guests are, how many at once; a warning when the default role holds
 //              moderation powers or generate.
-//     World    capacity@2 (things, sockets, guests'), physics on/off, the world's training-consent policy (R 10-14 14:13:
+//     World    capacity (things, sockets, guests', avatar), physics on/off, the world's training-consent policy (R 10-14 14:13:
 //              "not being able to edit these things would annoy people"). Opening it writes NOTHING: the effective value
 //              (componentspec.resolveVersioned, the authority's own reader) is shown grey; a set goes out only on an edit.
 //     Card     the world's name and blurb (@world.about).   Places  spawn and bounds.   Old world  what translation carried.
@@ -220,24 +220,23 @@ function paintAccess(body) {
       else if (k === 'minAccountDays') { const d = Math.round(Number(x.value)); if (x.value && d > 0) v.minAccountDays = Math.min(365, d); else delete v.minAccountDays; } else v[k] = x.value;
       act('set', { id: '@world', component: 'access', value: v }, 'access').then(() => paintAccess(body)); } }; });
 }
-// World: the owner's dials over @world components that already exist (capacity@2, physics-engine, bare training-consent).
-// The ONE hard rule: write only on an explicit edit. componentspec prefers capacity@2 when it is written, so a panel that
-// wrote defaults on open would silently re-cap a world that still runs on the older `capacity`. Everyone reads; owners edit.
-const CAP = 'capacity@2', CAP_FIELDS = ['things', 'guestThings', 'sockets', 'guestSockets'];
-const CAP_WORDS = { things: 'Things', guestThings: "Guests' things (all together)", sockets: 'Sockets', guestSockets: "Guests' sockets (all together)" };
-/** what the authority enforces today (its reader: the newest written capacity@n, else a written `capacity`, else the newest defaults) */
+// World: the owner's dials over @world components that already exist (capacity, physics-engine, bare training-consent).
+// The ONE hard rule: write only on an explicit edit, never on open: a panel that wrote defaults on open would put numbers
+// in the log the owner never chose. Everyone reads; owners edit.
+const CAP = 'capacity', CAP_FIELDS = ['things', 'guestThings', 'sockets', 'guestSockets', 'avatar'];
+const CAP_WORDS = { things: 'Things', guestThings: "Guests' things (all together)", sockets: 'Sockets', guestSockets: "Guests' sockets (all together)", avatar: 'Things one avatar may wear' };
+/** what the authority enforces today (its reader: what is written, else the defaults) */
 function effectiveCapacity() { const { name, value, def } = resolveVersioned(wc(), 'capacity');
   const ok = (x) => Number.isInteger(x) && x >= 0;
   return { name, written: value, eff: Object.fromEntries(CAP_FIELDS.map((k) => [k, ok(value?.[k]) ? value[k] : def.defaults[k]])) }; }
 function paintWorld(body) {
   const edit = isOwner(); const c = wc(); const cap = effectiveCapacity(); const R2 = COMPONENTS[CAP].ranges;
   const pe = c['physics-engine'] ?? null; const tc = c['training-consent'] ?? {};
-  const old = cap.name === 'capacity';   // this world still runs on the older name: the authority reads it until capacity@2 is written
   const capRow = (k) => edit
     ? `<label class="rp-field">${esc(CAP_WORDS[k])} <input type="number" step="1" min="${R2[k].min}" max="${R2[k].max}" data-cap="${k}" value="${c[CAP]?.[k] ?? ''}" placeholder="${cap.eff[k]}" aria-label="${esc(CAP_WORDS[k])}"> <span class="rp-dim">now ${cap.eff[k].toLocaleString('en')} · ${esc(rangeWords(R2[k]))}</span></label>`
     : `<div class="rp-row"><div class="rp-main">${esc(CAP_WORDS[k])} <b>${cap.eff[k].toLocaleString('en')}</b></div></div>`;
   body.innerHTML = `<h4 class="rp-h">Capacity</h4>`
-    + `<p class="rp-dim">gates against a world nobody can load, not targets${old ? ` · this world still runs on the older <code>capacity</code>${edit ? `: a change here writes <code>${CAP}</code> carrying today's numbers, and the world reads only that from then on` : ''}` : cap.written ? '' : ' · nothing written: the defaults'}</p>`
+    + `<p class="rp-dim">gates against a world nobody can load, not targets${cap.written ? '' : ' · nothing written: the defaults'}</p>`
     + CAP_FIELDS.map(capRow).join('') + `<p class="rp-cap-note rp-warn" hidden></p>`
     + `<h4 class="rp-h">Physics</h4>`
     + (edit ? `<label class="rp-field"><input type="checkbox" data-phys ${pe ? 'checked' : ''}> things fly and fall (${esc(SIM_ID)})</label>` : `<div class="rp-row"><div class="rp-main">${pe ? `on: ${esc(pe.engine)}` : 'off'}</div></div>`)
@@ -257,8 +256,8 @@ function paintWorld(body) {
     const n = Number(raw); const r = R2[k];
     if (!Number.isInteger(n) || outOfRange(r, n)) { say(`${CAP_WORDS[k]}: ${raw} isn't allowed; it must be a whole number ${rangeWords(r)}. Nothing was changed.`); toast(`${CAP_WORDS[k]}: must be ${rangeWords(r)}`, 'warn', 8000); x.value = wc()[CAP]?.[k] ?? ''; return; }
     say('');
-    // the first write of capacity@2 carries every field the world enforces today: a merge of one key onto nothing would
-    // hand the other three to the new defaults, and the world would be re-capped under the owner's hand
+    // the first write carries every field the world enforces today: a merge of one key onto nothing would leave the
+    // others to whatever the defaults are when it is next read, not what the owner saw here
     const value = wc()[CAP] ? { [k]: n } : { ...effectiveCapacity().eff, [k]: n };
     act('set', { id: '@world', component: CAP, value, merge: true }, `${CAP_WORDS[k]}: ${n}`).then((r) => { paintWorld(body);
       if (r && !r.ok) { const n2 = body.querySelector('.rp-cap-note'); n2.textContent = `${CAP_WORDS[k]}: ${r.refused?.reason ?? 'refused'}`; n2.hidden = false; } }); }; });

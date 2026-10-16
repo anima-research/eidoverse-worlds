@@ -689,29 +689,28 @@ try {
       const cleared = await waitDisk(() => { const a = disk().entities["@world"]?.c.access; return !!a && !("minAccountDays" in a); });
       await evalJson(`(document.getElementById('__acc')?.remove(), true)`);
       check("CA1 World Settings › Access: 'Accounts at least N days old' (0–365) sets access.minAccountDays; emptying it removes it", shown && set && cleared, { shown, set, cleared, access: disk().entities["@world"]?.c.access, refused: await evalJson(`__refused.map((x) => x.text).slice(-2)`) }); }
-    // CW World Settings › World (R 10-14 14:13): capacity@2, physics, the bare training-consent — owner-gated, and opening it
-    // WRITES NOTHING (componentspec prefers a written capacity@2, so defaults written on open would re-cap an old world)
+    // CW World Settings › World (R 10-14 14:13): capacity, physics, the bare training-consent — owner-gated, and opening it
+    // WRITES NOTHING (defaults written on open would put numbers in the log the owner never chose)
     { const W = `document.querySelector('#__w')`;
       const paint = () => page(`const m = await import('/lib/rolespanels.js'); document.getElementById('__w')?.remove(); const b = document.createElement('div'); b.id = '__w'; document.body.append(b); m._test.paintWorld(b); return true;`);
-      // the world runs on the OLD name: capacity {things: 7}, and no capacity@2
-      const oldOk = await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'capacity', value: { things: 7 } })).ok;`);
-      await waitDisk(() => disk().entities["@world"]?.c.capacity?.things === 7);
+      // the world has written no capacity: what the panel shows is the registry's defaults
+      const fresh = !disk().entities["@world"]?.c.capacity;
       // CW1 a visitor sees no dials; the owner sees them with the world's values
       await page(`const n = await import('/lib/net.js'); globalThis.__wasRights = n.net.myRights; n.net.myRights = { ...n.net.myRights, role: 'visitor', permissions: [] }; return true;`);
       await paint();
-      const vis = await evalJson(`({ inputs: ${W}.querySelectorAll('input').length, ro: !!${W}.querySelector('.rp-ro'), things: ${W}.textContent.includes('Things 7') })`);
+      const vis = await evalJson(`({ inputs: ${W}.querySelectorAll('input').length, ro: !!${W}.querySelector('.rp-ro'), things: ${W}.textContent.includes('Things 10,000'), avatar: ${W}.textContent.includes('Things one avatar may wear 500') })`);
       await page(`const n = await import('/lib/net.js'); n.net.myRights = globalThis.__wasRights; return true;`);
       const n0 = myActs().length, r0 = myRefused();
       await paint(); await sleep(1500);
-      const own = await evalJson(`(() => { const t = ${W}.querySelector('[data-cap=things]'); return { inputs: ${W}.querySelectorAll('input[data-cap]').length, min: t?.min, max: t?.max, value: t?.value, placeholder: t?.placeholder, old: /older/.test(${W}.textContent), phys: ${W}.querySelector('[data-phys]')?.checked, tc: ${W}.querySelector('[data-tc=allow]')?.checked }; })()`);
-      check("CW1 World › a visitor sees the numbers and no dials; the owner sees four capacity fields with the registry's range", oldOk && vis.inputs === 0 && vis.ro && vis.things && own.inputs === 4 && own.min === "1" && own.max === "50000" && own.phys === false && own.tc === false, { vis, own });
-      // CW2 FRESH OPEN WRITES NOTHING, and what it shows is the OLD capacity's cap (the authority's real one), not capacity@2's default
-      check("CW2 World › opening it as owner on a world with old `capacity` sends no set, and shows the old cap (7) as the effective value", myActs().length === n0 && myRefused() === r0 && own.value === "" && own.placeholder === "7" && own.old && !disk().entities["@world"]?.c["capacity@2"], { acts: myActs().slice(n0).map((a) => a.e.body?.request?.component), own, cap2: disk().entities["@world"]?.c["capacity@2"] ?? null });
-      // CW3 an in-range edit: ONE set, component capacity@2, merge, the value — and the first write carries today's other numbers
+      const own = await evalJson(`(() => { const t = ${W}.querySelector('[data-cap=things]'); const a = ${W}.querySelector('[data-cap=avatar]'); return { inputs: ${W}.querySelectorAll('input[data-cap]').length, min: t?.min, max: t?.max, value: t?.value, placeholder: t?.placeholder, avatar: a && { min: a.min, max: a.max, value: a.value, placeholder: a.placeholder }, phys: ${W}.querySelector('[data-phys]')?.checked, tc: ${W}.querySelector('[data-tc=allow]')?.checked }; })()`);
+      check("CW1 World › a visitor sees the numbers (avatar's too) and no dials; the owner sees five capacity fields with the registry's ranges (avatar 1–5000)", fresh && vis.inputs === 0 && vis.ro && vis.things && vis.avatar && own.inputs === 5 && own.min === "1" && own.max === "50000" && own.avatar?.min === "1" && own.avatar?.max === "5000" && own.phys === false && own.tc === false, { fresh, vis, own });
+      // CW2 FRESH OPEN WRITES NOTHING: the defaults are shown grey (placeholders), never written
+      check("CW2 World › opening it as owner on a world with no capacity sends no set, and shows the defaults (10000, avatar 500) as placeholders", myActs().length === n0 && myRefused() === r0 && own.value === "" && own.placeholder === "10000" && own.avatar?.value === "" && own.avatar?.placeholder === "500" && !disk().entities["@world"]?.c.capacity, { acts: myActs().slice(n0).map((a) => a.e.body?.request?.component), own, cap: disk().entities["@world"]?.c.capacity ?? null });
+      // CW3 an in-range edit: ONE set, component capacity, merge, the value — and the first write carries the other numbers shown
       await evalJson(`(() => { const x = ${W}.querySelector('[data-cap=things]'); x.value = '12'; x.onchange(); return true; })()`);
-      const wrote = await waitDisk(() => disk().entities["@world"]?.c["capacity@2"]?.things === 12);
+      const wrote = await waitDisk(() => disk().entities["@world"]?.c.capacity?.things === 12);
       const req = myActs().slice(n0).map((a) => a.e.body?.request);
-      check("CW3 World › things = 12 sends one set {component: 'capacity@2', merge: true}; the first write carries the old cap's other numbers (guestThings 200, sockets 4000, guestSockets 400)", wrote && req.length === 1 && req[0]?.component === "capacity@2" && req[0]?.merge === true && req[0]?.value?.things === 12 && req[0]?.value?.guestThings === 200 && req[0]?.value?.sockets === 4000 && req[0]?.value?.guestSockets === 400, { req, cap2: disk().entities["@world"]?.c["capacity@2"] });
+      check("CW3 World › things = 12 sends one set {component: 'capacity', merge: true}; the first write carries the other numbers shown (guestThings 500, sockets 40000, guestSockets 4000, avatar 500)", wrote && req.length === 1 && req[0]?.component === "capacity" && req[0]?.merge === true && req[0]?.value?.things === 12 && req[0]?.value?.guestThings === 500 && req[0]?.value?.sockets === 40000 && req[0]?.value?.guestSockets === 4000 && req[0]?.value?.avatar === 500, { req, cap: disk().entities["@world"]?.c.capacity });
       await waitFor(`${W}.querySelector('[data-cap=things]')?.value === '12'`, 4000);
       // CW3b out of range: nothing sent, the panel says why in the registry's words
       const n1 = myActs().length, r1 = myRefused();
