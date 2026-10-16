@@ -25,7 +25,7 @@ fs.mkdirSync(process.env.WORLDS_DIR, { recursive: true });
 const { foundWorld } = await import("../../server/worldlog.ts");
 const { World } = await import("../../server/world.ts");
 const { MESSAGES } = await import("../../server/messages.ts");
-const { REACH_NOTE_MS } = await import("../../shared/protocol/consent.js");
+const { REACH_NOTE_MS, refusalWords } = await import("../../shared/protocol/consent.js");
 let pass = 0, fail = 0;
 const ok = (c, what, d?) => { if (c) { pass++; console.log(`  ok   ${what}`); } else { fail++; console.log(`  FAIL ${what}${d !== undefined ? " — " + JSON.stringify(d).slice(0, 500) : ""}`); } };
 
@@ -189,7 +189,9 @@ const pat = person("Pat", "p", [10, 0, 0]), quin = person("Quin", "q", [10.6, 0,
 const lu = person("Lu", "l", [0, 0, -10]), mo = person("Mo", "m", [0.6, 0, -10]);
 const ned = person("Ned", "n", [-0.6, 0, -10]), kit = person("Kit", "k", [0.3, 0, -9.5]);
 const said = () => { const v = rf(req(lu, "reach", { who: mo.actorId, point: "chest_front" })); const g = w.log.reachAdmits(lu.actorId, mo.actorId, "intimate", { point: "chest_front" });
-  return { verb: v?.reason, verbFix: v?.fix, relay: g.reason, relayFix: g.fix, pose: rf(req(lu, "body", { to: mo.actorId, kind: "pose" }))?.reason }; };
+  const k = lu.got.length; MESSAGES["puppet"]({ c: lu, ws: lu.ws, now: Date.now(), expel: () => {} }, { type: "puppet", target: "Mo", pose: { head: [0, 0, 0, 1] } });
+  const puppet = lu.got.slice(k).find((m) => m.type === "error")?.error;   // the relay's own puppet path (server/messages.ts bodyRefusal), not the authority's body verb
+  return { verb: v?.reason, verbFix: v?.fix, relay: g.reason, relayFix: g.fix, pose: rf(req(lu, "body", { to: mo.actorId, kind: "pose" }))?.reason, puppet }; };
 let tierNobody, perPerson, paused;
 { tierNobody = said();                                                       // Normal: strangers' intimate is nobody
   req(mo, "consent", { set: { class: "intimate", tier: "strangers", mode: "everyone" } }); req(mo, "consent", { set: { class: "pose", tier: "strangers", mode: "everyone" } });
@@ -200,7 +202,8 @@ let tierNobody, perPerson, paused;
   ok(same("verb") && same("verbFix"), "RL1 the reach verb's refusal is byte-identical for tier nobody, a per-person deny and a pause", { tierNobody, perPerson, paused });
   ok(same("relay") && same("relayFix"), "RL1 …so is what the relay tells a stripped reacher", { tierNobody, perPerson, paused });
   ok(same("pose"), "RL1 …and the body verb's (pose)", { tierNobody, perPerson, paused });
-  ok(![tierNobody, perPerson, paused].some((s) => /paus|said no|strangers|friends|from Lu|u-l/.test(JSON.stringify(s))), "RL1 …none of them mentions a pause, a per-person no, or a tier", paused);
+  ok(same("puppet") && paused.puppet === refusalWords("Mo", "pose"), "RL1 …and the relay's puppet path (posing someone: server/messages.ts bodyRefusal) says the one uniform sentence", { tierNobody, perPerson, paused, want: refusalWords("Mo", "pose") });
+  ok(![tierNobody, perPerson, paused].some((s) => /paus|said no|strangers|friends|from Lu|u-l|from you|their consent/.test(JSON.stringify(s))), "RL1 …none of them mentions a pause, a per-person no, or a tier", paused);
   const att = rf(req(mo, "consent", {}))?.attempts ?? [];
   ok(att.some((a) => /paused/.test(a.why ?? "")) && att.some((a) => /said no/.test(a.why ?? "")) && att.some((a) => /strangers is nobody/.test(a.why ?? "")),
     "RL2 Mo's own attempt ring still records the real cause of each", att.map((a) => a.why)); }

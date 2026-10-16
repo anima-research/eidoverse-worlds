@@ -23,7 +23,7 @@ import { isOperator } from "./operators.ts";
 import { directoryFor } from "./directory.ts";
 import { actorOf as actorIdOf, whois } from "./requestwire.ts";
 import { qNorm } from "../shared/rot.js";
-import { decide as consentDecide } from "../shared/protocol/consent.js";
+import { decide as consentDecide, refusalWords } from "../shared/protocol/consent.js";
 import { worlds, type World, type Client, authorityNow } from "./world.ts";
 import { stateSampleError } from "../shared/presencewire.js";
 import { pendingCaptures } from "./routes.ts";
@@ -57,7 +57,7 @@ function bodyRefusal(c: Client, tc: Client, cls: "shove" | "pose" | "move", kind
   const live = c.world?.log?.live;
   if (!live || !c.actorId || !tc.actorId) return `${tc.id}'s body isn't taking ${cls} right now`;
   const d = consentDecide(live.presence, c.actorId, tc.actorId, cls, live.now());
-  if (d.mode === "nobody") return `${tc.id} isn't taking ${cls} from you (their consent says nobody)`;
+  if (d.mode === "nobody") return refusalWords(tc.id, cls);   // one sentence whatever the cause (a pause, a per-person no, a tier): the real cause is theirs, not yours
   if (d.mode === "ask") return `${tc.id} asks first for ${cls}: ask with the body request — body {to: "${tc.actorId}", kind: "${kind}"}`;
   const a = c.lastPose?.p, b = tc.lastPose?.p, r = BODY_RANGE[cls];
   if (!Array.isArray(a) || !Array.isArray(b)) return `can't tell where you and ${tc.id} are yet — try again in a moment`;
