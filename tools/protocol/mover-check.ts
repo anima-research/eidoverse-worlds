@@ -350,6 +350,8 @@ if (M) {
   ok(!bnd({ height: "tall" }).ok && !bnd({ scale: -1 }).ok && !bnd({ scale: NaN }).ok && !bnd({ height: 0 }).ok, "G6 a height or scale that isn't a positive number is refused (shape)", [bnd({ height: "tall" }).refused?.code, bnd({ scale: -1 }).refused?.code]);
   { const r = call("shelf", "lia", "move", { to: [0, 0, 5.5], teleport: true, scale: 50 }), up = r.ok && call("shelf", "lia", "move", { to: [0, 2, 6.3] });
     ok(r.ok && up && !up.ok && up.refused.code === "solid" && /ground/.test(up.refused.blocker ?? ""), "G6 a claimed scale of 50 is the mover's largest body (2): a 2 m terrain ledge is still a wall (its step is 1.6 m)", { r, up }); }
+  { const r = call("shelf", "lia", "move", { to: [0, 0, 5.5], teleport: true, height: 0.1 }), kept = openWorld(root, "shelf").presence.bodies.lia?.size?.height;
+    ok(r.ok && kept === 0.5, "G6 a claimed height of 0.1 m is kept as 0.5 m: the walker's own floor (the browser's bodyHeight and the agent's rigbones bound 0.5-4) (review r4 F7)", { r: r.refused, kept }); }
 
   // ---- G7 the two branches no row reached (holes r3 F8). (a) A teleport into the water beside the 0.5 m dock (where a swim
   // to its side is accepted, G4): the swimmer's box (from 0.5 m above the surface) passes; a walker's box at the claim would

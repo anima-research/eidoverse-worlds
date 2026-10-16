@@ -2801,14 +2801,15 @@ function bodyAt(st, p) {   // where a body claimed at p stands: {y (feet), groun
 // THE BODY'S OWN SIZE (holes r3 F2): the mover judges water by the body's stature and a ledge by its scale, so the authority
 // judges each body with the height and scale it sends with its moves (kept on its presence record; absent, the mover's
 // 1.7 m at scale 1). Bounded as the walker bounds them: scale 0.5-2 (mover.js bodyScale, the size slider's range), height
-// 0.3-4 m. A claim buys only what that range of honest bodies may do: a step up to 1.6 m and a haul-out up to 1 m above the
-// water (scale 2; its box then starts 1.6 m up and is 3.4 m tall and 0.8 m wide), a box 0.85 m tall and 0.2 m wide (0.5;
-// its step 0.4 m), and in water, swimming or wading where a body 0.3-4 m tall would.
-const BODY_H = Object.freeze({ min: 0.3, max: 4 });
+// 0.5-4 m (the browser's avatar.js bodyHeight and the agent's rigbones bodyHeightFor: measured at the body's size, so the
+// height bound is already on the product; the slider couples nothing further — a 0.25 m avatar at scale 2 is 0.5 m).
+// A claim buys only what that range of honest bodies may do: a step up to 1.6 m and a haul-out up to 1 m above the water (scale 2; its box then starts 1.6 m up and is 3.4 m tall and 0.8 m wide), a box 0.85 m tall and 0.2 m wide (0.5;
+// its step 0.4 m), and in water, swimming or wading where a body 0.5-4 m tall would.
+const BODY_H = Object.freeze({ min: 0.5, max: 4 });
 function sizeOf(a, prev) {
   const out = { ...(prev ?? {}) };
   for (const k of ["height", "scale"]) if (a[k] !== undefined && !(typeof a[k] === "number" && Number.isFinite(a[k]) && a[k] > 0))
-    refuse("shape", `move's ${k} is a positive number (${k === "height" ? "your body's standing height in metres, 0.3-4" : "your body's size, 0.5-2"})`, "send the number your walker uses, or leave it out");
+    refuse("shape", `move's ${k} is a positive number (${k === "height" ? "your body's standing height in metres, 0.5-4" : "your body's size, 0.5-2"})`, "send the number your walker uses, or leave it out");
   if (a.height !== undefined) out.height = Math.min(BODY_H.max, Math.max(BODY_H.min, a.height));
   if (a.scale !== undefined) { const sc = bodyScale(a.scale); if (sc === 1) delete out.scale; else out.scale = sc; }
   return Object.keys(out).length ? out : undefined;
@@ -3205,9 +3206,12 @@ function shoveGate(w, st, me, a, flying, actor) {
   if (R.d > SHOVE.reach) refuse("out-of-reach", `${a.id} is ${r3(R.d)} m from your feet; a shove comes from a body against it (${SHOVE.reach} m)`, "walk up to it first");
   const dir = R.n ?? (() => { const cx = R.c[0] - f[0], cz = R.c[2] - f[2], l = Math.hypot(cx, cz); return l > 1e-6 ? [cx / l, cz / l] : null; })();
   if (!dir || vx * dir[0] + vz * dir[1] < 0.5 * vh) refuse("wrong-way", `that doesn't push ${a.id} away from your feet; a shove pushes it within 60° of straight away`, "");
-  // not through a wall: the body's way to the point it touches is clear of anything solid but the thing and what rides it
-  if (R.d > 0.05 && R.n) { const fam = new Set([a.id, ...descendants(st, a.id)]); const L = Math.max(0, R.d - 0.2), n = Math.ceil(L / 0.05);
-    for (let k = 1; k <= n; k++) { const p = [f[0] + R.n[0] * L * k / n, f[1], f[2] + R.n[1] * L * k / n]; const hit = solidAt(w, st, p, fam);
+  // not through a wall: the body's way to the point it touches is clear of anything solid but the thing and what rides it,
+  // judged with this body's own box (its kept size, as its walk is: review r4 F7). SHOVE.reach is already the largest
+  // body's radius plus the track's lag, so it stays one number.
+  if (R.d > 0.05 && R.n) { const fam = new Set([a.id, ...descendants(st, a.id)]); const s = lawOf(me.size).scale;
+    const L = Math.max(0, R.d - MOVER.body.radius * s), n = Math.ceil(L / 0.05);
+    for (let k = 1; k <= n; k++) { const p = [f[0] + R.n[0] * L * k / n, f[1], f[2] + R.n[1] * L * k / n]; const hit = solidAt(w, st, p, fam, null, bodyBox(p, s));
       if (hit) refuse("out-of-reach", `${hit} is between you and ${a.id}`, "walk round to it"); } }
   // never into someone: what it slides through until friction stops it is clear of every other body (S2-1)
   for (const [who, bd] of Object.entries(w.presence.bodies)) if (who !== actor && Array.isArray(bd?.at) && sweptCovers(b, a.v, bd.at))

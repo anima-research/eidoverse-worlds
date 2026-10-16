@@ -287,6 +287,12 @@ const cases: Case[] = [
       s.call("bob", "move", { to: [0, 0, 3.3] }); const sit = s.call("bob", "use", { id: "post" });
       return { snapped: d.settled?.in, sit: code(sit), thing: sit.refused?.thing }; },
     good: (o) => o.snapped === "post-hook" && o.sit === "occupied" && o.thing === "key" },
+  { id: "S25", what: "not through a wall, judged at the body's own size (review r4 F7): a 1.2 m barrier between vic and the crate is in a scale-1 body's way, under a scale-2 body's box (it starts 1.6 m up)", run(s) { cast(s);
+      s.call("olive", "create", { id: "bar", model: "crate", components: { lock: true, transform: { pos: [-0.55, 0, 0], scale: [0.25, 2, 6] } } });
+      s.call("vic", "move", { to: [-1.05, 0, 0] }); const one = s.call("vic", "punt", { id: "crate", v: [0.5, 0.05, 0], shove: true });
+      const big = s.call("vic", "move", { to: [-1.05, 0, 0], scale: 2, teleport: true }); const two = s.call("vic", "punt", { id: "crate", v: [0.5, 0.05, 0], shove: true });
+      return { one: code(one), why: one?.refused?.reason, big: show(big), two: show(two) }; },
+    good: (o) => o.one === "out-of-reach" && /bar is between you/.test(o.why ?? "") && o.big === "ok" && o.two === "ok" },
 ];
 
 let pass = 0, fail = 0;
