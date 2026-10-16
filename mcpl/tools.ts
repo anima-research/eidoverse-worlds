@@ -599,7 +599,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // E1: the authority walks this body too; a stretch it refused (a wall, out of bounds) stopped it, and says why
       const no = ag.lastWalkRefusal;
       if (!arrived && no) return { content: [{ type: "text", text: `${refusalText("move", { refused: no })}\nyou stopped at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}), ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m short${note}${what}` }], isError: true };
-      if (!arrived) return text(ag.walkStall ?? ag.walkStopReason ?? "walk interrupted or timed out");
+      if (!arrived) return text(ag.walkStopReason ?? ag.walkStall ?? "walk interrupted or timed out");   // main #241: the stride's own stop reason first
       // which floor it chose, when the y asked for wasn't one (#236 y, owner 22:40)
       const floorNote = y != null && Math.abs(ag.pos.y - y) > 0.1 ? `; no floor at ${y.toFixed(2)} m there — you're on the floor at ${ag.pos.y.toFixed(2)} m` : "";
       // which named room you're in now (#239)

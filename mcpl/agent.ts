@@ -108,6 +108,13 @@ const STALL_PROGRESS = 0.2, STALL_TICKS = 15;
 const GRAVITY = 16;
 /** How far below its supporting surface a settled ragdoll's root lies. */
 const RAGDOLL_ROOT_DROP = 0.7;   // client/lib/controller.js: vy -= 16 * dt
+/** Why fold_wings can't judge a body whose bones haven't been read. */
+const BONES_NOT_KNOWN = "this body's bones aren't known (its model hasn't loaded, or couldn't be read), so whether it has wings can't be checked";
+/** shared/flight.js's refusals (main #245) name the fix as an act — "unfold them first", "land first" — and the browser
+ *  has those acts by those names; here they are other tools' presets, so the reply names the call that does it. */
+const flightFixInOurTools = (reason: string) => String(reason)
+  .replace(/unfold them first/, 'open them first (pose {wings: "open"})')
+  .replace(/land first/, 'land first (act {verb: "land", args: {to}})');
 /** Quiet window for world-change narration, per (entity, component). Tuning a
  *  live emitter is a burst of `comp` entries; this is how long they fold into
  *  one line. Long enough to swallow a slider drag, short enough that "puts the
@@ -1794,7 +1801,8 @@ export class WorldAgent {
     return out;
   }
 
-  private terrainRev = 0;
+  private terrainRev = 0;       // build generation: bumped when a terrain request starts
+  private navTerrainRev = 0;    // committed terrain generation: route grids key on this
   /** A heightmap terrain received but not yet buildable — its grid has not arrived. The last ground stands
    *  (never noise in its place); tick() retries the grid, and the arrival builds THIS bag, once. */
   private pendingTerrain: { args: any; rev: number; grid: string } | null = null;
@@ -1825,6 +1833,7 @@ export class WorldAgent {
     this.pendingTerrain = null;
     const t = (globalThis as any).makeTerrain({ ...args, layers: [] });
     this.terrain = shape ? { heightAt: shapedHeightAt(t.heightAt, args) } : t;
+    this.navTerrainRev++;       // only committed ground invalidates a route grid
     this.water = waterParams(args);
     const waterKey = this.water ? JSON.stringify([this.water.level, args.size, args.water]) : null;
     if (waterKey !== this.waterKey) { this.waterKey = waterKey; this.endFloat(); }
@@ -2526,7 +2535,10 @@ export class WorldAgent {
     // and re-fetched on an avatar change -- the capability binds to the rig,
     // not to a hash, so a re-export with the same load-bearing names keeps
     // flying and a swap to a wingless commons avatar stops it.
-    const bones = this.bodyBoneNames ?? [];
+    // Unknown stays unknown: until the worn body's bones have been read, the
+    // provider is given no list, which it answers as such, rather than an
+    // empty list, which it would read as a body with no hips, spine or head.
+    const bones = this.bodyBoneNames;
     // THE WORLD'S GRANT, or an explicitly injected one for a bench. What is
     // gone is the third option -- a self-authorizing dev provider conjured
     // when neither was present, which was every production path (mica,
@@ -2536,27 +2548,37 @@ export class WorldAgent {
     return { ok: r.enabled === true, why: r.enabled ? "" : (r.reason ?? "denied") };
   }
 
-  /** Bone names of the worn body, for the capability's rig check. */
+  /** Bone names of the worn body, for the capability's rig check; null
+   *  while they aren't known: until the worn model has been read, after a
+   *  read failed, and from an avatar change until the new body is read. */
   bodyBoneNames: string[] | null = null;
   private bodyBonesFor: string | null = null;
 
-  /** Read the worn VRM's bone list. Cheap and cached per avatar path. */
-  async loadBodyBones(): Promise<string[]> {
-    if (this.bodyBoneNames && this.bodyBonesFor === this.avatar) return this.bodyBoneNames;
+  /** Read the worn VRM's bone list, once per avatar. A failed read keeps
+   *  nothing, so the list stays unknown and the next flight act reads again.
+   *  A read that lands while another body is worn is dropped: its bones are
+   *  that other body's. */
+  async loadBodyBones(): Promise<string[] | null> {
+    const avatar = this.avatar;
+    if (this.bodyBoneNames && this.bodyBonesFor === avatar) return this.bodyBoneNames;
     try {
-      const res = await fetch(`${this.httpBase}/library/${this.avatar}`);
+      const res = await fetch(`${this.httpBase}/library/${avatar}`);
       if (!res.ok) throw new Error(String(res.status));
       const buf = new Uint8Array(await res.arrayBuffer());
       const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
       const jlen = dv.getUint32(12, true);
       const g = JSON.parse(new TextDecoder().decode(buf.subarray(20, 20 + jlen)));
-      this.bodyBoneNames = (g.nodes ?? []).filter((n: any) => n?.name).map((n: any) => n.name);
-      this.bodyBonesFor = this.avatar;
+      const names = (g.nodes ?? []).filter((n: any) => n?.name).map((n: any) => n.name);
+      if (this.avatar === avatar) {
+        this.bodyBoneNames = names;
+        this.bodyBonesFor = avatar;
+      }
     } catch (e) {
-      this.bodyBoneNames = [];
-      this.bodyBonesFor = this.avatar;
+      // Nothing is kept: a list another read stored for this body stands, and
+      // an unknown list stays unknown.
+      console.warn(`[door] couldn't read the bones of ${avatar}: ${(e as Error).message}`);
     }
-    return this.bodyBoneNames!;
+    return this.bodyBoneNames;
   }
 
   private flightBegin() {
@@ -2702,7 +2724,7 @@ export class WorldAgent {
     // Wing posture is carried independently of an active flight state. A body
     // can fold without a propulsion grant, so the sky door checks the public
     // posture before it constructs a fresh integrator.
-    if (this.wingsFolded) return `still standing — wings folded`;
+    if (this.wingsFolded) return `still standing — your wings are folded; open them first (pose {wings: "open"})`;   // main #245's words, our tool
     // START FROM THE BODY, ALWAYS. A stale flight state -- LANDED after a
     // glide, or RAGDOLL after a cut -- carried the old position and phase into
     // the new launch, so take_off "worked" and the next verb found her back on
@@ -2715,7 +2737,7 @@ export class WorldAgent {
     this.flight = flightTakeOff(this.flightCfg, this.flight,
       { groundY: this.heightAt(this.pos.x, this.pos.z) });
     const ev = this.flight.events.find((e: any) => e.kind === "takeoff.refused");
-    if (ev) { return `still standing — ${ev.reason}`; }
+    if (ev) { return `still standing — ${flightFixInOurTools(ev.reason)}`; }
     return `took off — ${this.flight.pos.y.toFixed(1)}m, stamina ${this.flight.stamina.toFixed(0)}/100`;
   }
 
@@ -2752,7 +2774,13 @@ export class WorldAgent {
     // `fly` while the person still closes or opens wings they visibly wear.
     // The rig check prevents a wingless body from claiming a silhouette it
     // cannot render; take_off remains separately grant-gated.
-    const body = inspectBody(this.bodyBoneNames ?? []);
+    // The rig decides a fold, and an unfold when nothing is folded. Releasing a
+    // folded posture never needs it, so unknown bones don't hold a body folded.
+    const bones = this.bodyBoneNames;
+    if (bones == null && (fold || !this.wingsFolded)) {
+      return `wings unchanged — ${BONES_NOT_KNOWN}; calling again reads the model again`;
+    }
+    const body = inspectBody(bones ?? []);
     if (fold && !body.canAnimateWings) return `this body has no animatable wings to fold`;
     if (!fold && !body.canAnimateWings && !this.wingsFolded)
       return `this body has no folded-wing posture to release`;
@@ -2767,12 +2795,13 @@ export class WorldAgent {
       this.flight = fold ? flightFold(this.flightCfg, this.flight)
                          : flightUnfold(this.flightCfg, this.flight);
       const ref = this.flight.events.find((e: any) => /refused$/.test(e.kind));
-      if (ref) return `wings stay ${before.toLowerCase()} — ${ref.reason}`;
+      if (ref) return `wings stay ${before.toLowerCase()} — ${flightFixInOurTools(ref.reason)}`;
     } else if (this.wingsFolded === fold) {
       return fold ? `wings are already folded` : `wings are already open`;
     }
     this.wingsFolded = fold;
     if (fold) return "wings folded — the vigil posture; a fly-mode move refuses until you open them (pose {wings: \"open\"})";
+    if (bones == null) return `folded-wing posture released — ${BONES_NOT_KNOWN}`;
     if (!body.canAnimateWings) return "folded-wing posture released — this body has no wings";
     const cap = this.flightAllowed();
     return cap.ok ? "wings open — the sky is available again"
@@ -3174,8 +3203,9 @@ export class WorldAgent {
       // a loose thing this body would shove is walked into, not round (R's queue: "walking into a loose thing pushes
       // it"): its collider is out of the planner's world while it plans — the feet and the authority still meet it
       const { ids, colliders: passable } = this.passableColliders(run); passIds = ids;
-      // a grid is good until the colliders, the terrain, or what it may walk into change
-      const navKey = `${collidersGeneration()}|${this.terrainRev}|${passable.join(",")}`;
+      // a grid is good until the colliders, the COMMITTED terrain (navTerrainRev, main 5106691c: a pending heightmap
+      // keeps the old ground and its grid), or what it may walk into change
+      const navKey = `${collidersGeneration()}|${this.navTerrainRev}|${passable.join(",")}`;
       if (this.navGrid?.gen !== navKey) this.navGrid = { gen: navKey, grid: makeNavGrid(probe) };
       const grid = this.navGrid.grid;
       const nav = inWorld(this.world, () => {
@@ -4264,6 +4294,9 @@ export class WorldAgent {
    *  pose, and identity all carry over; only the body changes. */
   setAvatar(path: string) {
     this.avatar = path;
+    // The new body's bones are read before its next flight act or fold.
+    this.bodyBoneNames = null;
+    this.bodyBonesFor = null;
     this.selfBodyGeneration = ++this.bodyGenerationCounter;
     this.bodyReader?.forget(this.name);
     // a new body has its own height: re-measure (a reply for the old body is dropped), and float afresh

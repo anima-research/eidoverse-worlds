@@ -41,16 +41,31 @@ const hm = (seed: number, grid: string) => ({ seed, size: 40, heightmap: { grid,
 const ground = () => a.heightAt(3, 4);
 const tickUntil = async (ok: () => boolean, ms = 6000) => { const end = Date.now() + ms; while (!ok() && Date.now() < end) { a.tick(); await sleep(50); } return ok(); };
 
+const routeGrid = () => {
+  // A real walk constructs/reuses the shipping navgrid. Stop at once: this
+  // test owns cache identity, not locomotion.
+  const p = a.walkTo(a.pos.x + 1, a.pos.z, false, 1_000, 0.01);
+  const grid = a.navGrid?.grid;
+  a.stop(); void p;
+  return grid;
+};
+
 console.log("\na grid that fails, then arrives");
 {
   await a.buildTerrain({ seed: 1, size: 40 });
   check("a plain terrain builds", ground() === 1 && builds === 1);
+  await sleep(0); // let setHeightField's support generation settle before caching the baseline route
+  const beforePending = routeGrid();
   await a.buildTerrain(hm(2, ref(0xa1)));
   check("a heightmap whose grid failed is NOT committed: the last ground stands", ground() === 1 && builds === 1, `ground ${ground()}`);
+  const whilePending = routeGrid();
+  check("pending grid does not invalidate a route grid on the still-standing ground", whilePending === beforePending);
   check("...it is pending, and the shared readiness law agrees", !!a.pendingTerrain && !shapeReady(shapeParams(hm(2, ref(0xa1)))));
   check("...and look says so", a.look().includes("has not loaded yet"));
   const arrived = await tickUntil(() => ground() === 10);
   check("once the grid comes, that terrain is built — on its grid, not noise", arrived && ground() === 10, `ground ${ground()}`);
+  const afterCommit = routeGrid();
+  check("the committed grid invalidates the old-ground route grid", afterCommit !== whilePending);
   await tickUntil(() => false, 300);
   check("...exactly once", builds === 2 && !a.pendingTerrain && !a.look().includes("has not loaded yet"), `builds ${builds}`);
 }
