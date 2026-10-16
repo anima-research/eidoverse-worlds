@@ -11,7 +11,7 @@
 //              Narrow (a phone, or the panel squeezed): one role at a time.
 //     Access   who can come in, what arrivals and guests are, how many at once; a warning when the default role holds
 //              moderation powers or generate.
-//     World    capacity (entities, guests' entities together, largest avatar), physics on/off, the world's training-consent policy (R 10-14 14:13:
+//     World    capacity (entities, guests' entities together, largest avatar), physics on/off (R 10-14 14:13:
 //              "not being able to edit these things would annoy people"). Opening it writes NOTHING: the effective value
 //              (componentspec.resolveVersioned, the authority's own reader) is shown grey; a set goes out only on an edit.
 //     Card     the world's name and blurb (@world.about).   Places  spawn and bounds.   Old world  what translation carried.
@@ -220,7 +220,7 @@ function paintAccess(body) {
       else if (k === 'minAccountDays') { const d = Math.round(Number(x.value)); if (x.value && d > 0) v.minAccountDays = Math.min(365, d); else delete v.minAccountDays; } else v[k] = x.value;
       act('set', { id: '@world', component: 'access', value: v }, 'access').then(() => paintAccess(body)); } }; });
 }
-// World: the owner's dials over @world components that already exist (capacity, physics-engine, bare training-consent).
+// World: the owner's dials over @world components that already exist (capacity, physics-engine).
 // The ONE hard rule: write only on an explicit edit, never on open: a panel that wrote defaults on open would put numbers
 // in the log the owner never chose. Everyone reads; owners edit.
 const CAP = 'capacity', CAP_FIELDS = ['entities', 'guestEntities', 'avatar'];
@@ -232,7 +232,7 @@ function effectiveCapacity() { const { name, value, def } = resolveVersioned(wc(
   return { name, written: value, eff: Object.fromEntries(CAP_FIELDS.map((k) => [k, ok(value?.[k]) ? value[k] : def.defaults[k]])) }; }
 function paintWorld(body) {
   const edit = isOwner(); const c = wc(); const cap = effectiveCapacity(); const R2 = COMPONENTS[CAP].ranges;
-  const pe = c['physics-engine'] ?? null; const tc = c['training-consent'] ?? {};
+  const pe = c['physics-engine'] ?? null;
   const capRow = (k) => edit
     ? `<label class="rp-field" title="${esc(CAP_DOCS[k] ?? '')}">${esc(CAP_WORDS[k])} <input type="number" step="1" min="${R2[k].min}" max="${R2[k].max}" data-cap="${k}" value="${c[CAP]?.[k] ?? ''}" placeholder="${cap.eff[k]}" aria-label="${esc(CAP_WORDS[k])}"> <span class="rp-dim">now ${cap.eff[k].toLocaleString('en')} · ${esc(rangeWords(R2[k]))}</span></label>`
     : `<div class="rp-row" title="${esc(CAP_DOCS[k] ?? '')}"><div class="rp-main">${esc(CAP_WORDS[k])} <b>${cap.eff[k].toLocaleString('en')}</b></div></div>`;
@@ -242,11 +242,6 @@ function paintWorld(body) {
     + `<h4 class="rp-h">Physics</h4>`
     + (edit ? `<label class="rp-field"><input type="checkbox" data-phys ${pe ? 'checked' : ''}> things fly and fall (${esc(SIM_ID)})</label>` : `<div class="rp-row"><div class="rp-main">${pe ? `on: ${esc(pe.engine)}` : 'off'}</div></div>`)
     + `<p class="rp-dim">${pe ? `running ${esc(pe.engine)}${pe.tickMs ? ` at a ${pe.tickMs} ms tick` : ''}${pe.build ? ` · build ${esc(pe.build)}` : ''}` : 'off: nothing moves on its own'}${edit ? ' · turning it off is refused while anything is in flight' : ''}</p>`
-    + `<h4 class="rp-h">Training</h4>`
-    + (edit ? `<label class="rp-field"><input type="checkbox" data-tc="allow" ${tc.allow === true ? 'checked' : ''}> this world's log may train models</label>`
-      + `<label class="rp-field rp-wide">why, in your words <input data-tc="note" maxlength="400" value="${esc(tc.note ?? '')}" placeholder="optional"></label>`
-      : `<div class="rp-row"><div class="rp-main">${tc.allow === true ? 'the world allows training on its log' : 'no training on this log (the default)'}</div>${tc.note ? `<div class="rp-sub">${esc(tc.note)}</div>` : ''}</div>`)
-    + `<p class="rp-dim">the world's policy only: each person's own consent is theirs, and the stricter answer wins</p>`
     + (edit ? '' : ro());
   if (!edit) return;
   const note = body.querySelector('.rp-cap-note'); const say = (t) => { note.textContent = t; note.hidden = !t; };
@@ -264,9 +259,6 @@ function paintWorld(body) {
       if (r && !r.ok) { const n2 = body.querySelector('.rp-cap-note'); n2.textContent = `${CAP_WORDS[k]}: ${r.refused?.reason ?? 'refused'}`; n2.hidden = false; } }); }; });
   body.querySelector('[data-phys]').onchange = () => { const on = body.querySelector('[data-phys]').checked;
     (on ? act('set', { id: '@world', component: 'physics-engine', value: { engine: SIM_ID } }, 'physics on') : act('delete', { id: '@world', component: 'physics-engine' }, 'physics off')).then(() => paintWorld(body)); };
-  body.querySelectorAll('input[data-tc]').forEach((x) => { x.onchange = () => {
-    const allow = body.querySelector('[data-tc=allow]').checked, nt = body.querySelector('[data-tc=note]').value.trim();
-    act('set', { id: '@world', component: 'training-consent', value: { allow, ...(nt ? { note: nt } : {}) } }, `training: ${allow ? 'allowed' : 'no'}`).then(() => paintWorld(body)); }; });
 }
 function paintCard(body) {
   const ab = wc().about ?? {}; const edit = has('editWorld');

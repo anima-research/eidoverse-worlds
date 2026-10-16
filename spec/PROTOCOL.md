@@ -193,8 +193,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   thing's own frame; on `@world`, world coordinates),
   `openable`, `physics`, `grabbable`, `particles`, `script:<name>`,
   `joint:<name>` (reserved: refused until an engine carries joints), and on
-  `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`, `training-consent` and
-  `training-consent:<identity>` (may the log, or one person's entries in it, train models: both must say yes; absent is no),
+  `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
   `sky`, `terrain`, `terrain-grid`, `terrain-tile:<i>-<j>`, `grass`, `physics-engine`, `surface:<name>`,
   `script-settings`, `blueprints:<hash>`, `assets:<key>`, `capacity`, `schemas:<name>`.
 - **A mesh is a body without a model.** `mesh {shape, size}` draws a
@@ -460,8 +459,7 @@ between builder and owner where the roles ladder is enabled): changing any
 component of an entity needs builder; changing `@world` needs owner, except
 `blueprints:*` (publishing a blueprint: build), `assets:*` (generate), the
 world's look (`about`, `sky`, `terrain*`, `grass`, `bounds`, `spawn`:
-editWorld), `roles:*` (the grant rule), and `training-consent:<identity>`,
-which only the identity it names may write or delete, never an owner. Removing the last owner is
+editWorld), and `roles:*` (the grant rule). Removing the last owner is
 refused, and a world with no owner gives nobody more than visitor. **Two
 owner lists, never confused:** governance keys in genesis (§13) decide who
 may sign handoffs; roles decide rights inside the world.
@@ -517,8 +515,7 @@ you hold). Captions are granted per screen (`captioners`), not by role. An owner
 of them. A guest (no account) is at most the world's `default-role`.
 
 **2. The thing: who made it.** For a change to an entity the authority asks,
-in order (`lacks()`): a person's own word (`training-consent:<identity>`)
-is theirs alone; then an owner may; else the verb's own need (`owner`,
+in order (`lacks()`): an owner may; else the verb's own need (`owner`,
 `grant`, or a named permission) must be held; else `build` must be held;
 else the change is allowed if the holder has `editOthers`, is creating, or
 **made the thing** (its first `create` was admitted under their rights).

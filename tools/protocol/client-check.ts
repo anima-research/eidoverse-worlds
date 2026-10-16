@@ -702,7 +702,7 @@ try {
       const cleared = await waitDisk(() => { const a = disk().entities["@world"]?.c.access; return !!a && !("minAccountDays" in a); });
       await evalJson(`(document.getElementById('__acc')?.remove(), true)`);
       check("CA1 World Settings › Access: 'Accounts at least N days old' (0–365) sets access.minAccountDays; emptying it removes it", shown && set && cleared, { shown, set, cleared, access: disk().entities["@world"]?.c.access, refused: await evalJson(`__refused.map((x) => x.text).slice(-2)`) }); }
-    // CW World Settings › World (R 10-14 14:13): capacity, physics, the bare training-consent — owner-gated, and opening it
+    // CW World Settings › World (R 10-14 14:13): capacity and physics — owner-gated, and opening it
     // WRITES NOTHING (defaults written on open would put numbers in the log the owner never chose)
     { const W = `document.querySelector('#__w')`;
       const paint = () => page(`const m = await import('/lib/rolespanels.js'); document.getElementById('__w')?.remove(); const b = document.createElement('div'); b.id = '__w'; document.body.append(b); m._test.paintWorld(b); return true;`);
@@ -715,7 +715,7 @@ try {
       await page(`const n = await import('/lib/net.js'); n.net.myRights = globalThis.__wasRights; return true;`);
       const n0 = myActs().length, r0 = myRefused();
       await paint(); await sleep(1500);
-      const own = await evalJson(`(() => { const t = ${W}.querySelector('[data-cap=entities]'); const a = ${W}.querySelector('[data-cap=avatar]'); return { keys: [...${W}.querySelectorAll('input[data-cap]')].map((x) => x.dataset.cap), inputs: ${W}.querySelectorAll('input[data-cap]').length, min: t?.min, max: t?.max, value: t?.value, placeholder: t?.placeholder, avatar: a && { min: a.min, max: a.max, value: a.value, placeholder: a.placeholder }, phys: ${W}.querySelector('[data-phys]')?.checked, tc: ${W}.querySelector('[data-tc=allow]')?.checked }; })()`);
+      const own = await evalJson(`(() => { const t = ${W}.querySelector('[data-cap=entities]'); const a = ${W}.querySelector('[data-cap=avatar]'); return { keys: [...${W}.querySelectorAll('input[data-cap]')].map((x) => x.dataset.cap), inputs: ${W}.querySelectorAll('input[data-cap]').length, min: t?.min, max: t?.max, value: t?.value, placeholder: t?.placeholder, avatar: a && { min: a.min, max: a.max, value: a.value, placeholder: a.placeholder }, phys: ${W}.querySelector('[data-phys]')?.checked, tc: !!${W}.querySelector('[data-tc]') }; })()`);
       check("CW1 World › a visitor sees the numbers (guests' and avatar's too) and no dials; the owner sees three capacity fields (entities, guestEntities, avatar) with the registry's ranges (avatar 1–5000)", fresh && vis.inputs === 0 && vis.ro && vis.entities && vis.guests && vis.avatar && own.inputs === 3 && JSON.stringify(own.keys) === '["entities","guestEntities","avatar"]' && own.min === "1" && own.max === "50000" && own.avatar?.min === "1" && own.avatar?.max === "5000" && own.phys === false && own.tc === false, { fresh, vis, own });
       // CW2 FRESH OPEN WRITES NOTHING: the defaults are shown grey (placeholders), never written
       check("CW2 World › opening it as owner on a world with no capacity sends no set, and shows the defaults (10000, avatar 2000) as placeholders", myActs().length === n0 && myRefused() === r0 && own.value === "" && own.placeholder === "10000" && own.avatar?.value === "" && own.avatar?.placeholder === "2000" && !disk().entities["@world"]?.c.capacity, { acts: myActs().slice(n0).map((a) => a.e.body?.request?.component), own, cap: disk().entities["@world"]?.c.capacity ?? null });
@@ -731,14 +731,10 @@ try {
       await sleep(800);
       const noteTxt = await evalJson(`${W}.querySelector('.rp-cap-note')?.hidden === false ? ${W}.querySelector('.rp-cap-note').textContent : null`);
       check("CW3b World › entities = 99999 sends nothing and the panel shows the refusal (≤ 50000)", myActs().length === n1 && myRefused() === r1 && /≤ 50000/.test(noteTxt ?? "") && await evalJson(`${W}.querySelector('[data-cap=entities]').value === '12'`), { noteTxt, acts: myActs().slice(n1).map((a) => a.e.body?.request) });
-      // CW4 training-consent: the bare key only; the wire never carries training-consent:<id>
-      await evalJson(`(() => { const x = ${W}.querySelector('[data-tc=allow]'); x.checked = true; x.onchange(); return true; })()`);
-      const tcWrote = await waitDisk(() => disk().entities["@world"]?.c["training-consent"]?.allow === true);
-      const keyed = entries().filter((e: any) => e?.kind === "act" && String(e.body?.request?.component ?? "").startsWith("training-consent:")).length;
-      const tcReq = myActs().slice(n1).map((a) => a.e.body?.request);
-      check("CW4 World › 'may train' writes set {component: 'training-consent', value: {allow: true}} and nothing keyed by an identity", tcWrote && tcReq.length === 1 && tcReq[0]?.component === "training-consent" && tcReq[0]?.value?.allow === true && keyed === 0 && !Object.keys(disk().entities["@world"]?.c ?? {}).some((k) => k.startsWith("training-consent:")), { tcReq, keyed });
+      // CW4 training consent is gone (R 10-16 14:16: a server's terms, not a component): the panel has no Training block
+      const tcGone = await evalJson(`!${W}.querySelector('[data-tc]') && ![...${W}.querySelectorAll('h4')].some((h) => /training/i.test(h.textContent))`);
+      check("CW4 World › no Training block (training-consent isn't a component)", tcGone === true, { tcGone });
       // CW5 physics: on writes {engine} as the gym does (the authority stamps build and tick); off deletes it
-      await waitFor(`${W}.querySelector('[data-tc=allow]')?.checked === true`, 4000);
       await evalJson(`(() => { const x = ${W}.querySelector('[data-phys]'); x.checked = true; x.onchange(); return true; })()`);
       const peOn = await waitDisk(() => !!disk().entities["@world"]?.c["physics-engine"]?.engine);
       await waitFor(`${W}.querySelector('[data-phys]')?.checked === true`, 4000);

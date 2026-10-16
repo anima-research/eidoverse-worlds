@@ -279,11 +279,6 @@ export const COMPONENTS = {
   roles:     { on: "world", keyed: true, key: "instance", fields: { role: "string", can: "object", note: "string", sub: "any" }, help: "on @world, keyed by identity: {role: visitor|builder|moderator|owner|<a custom role>, can?: {<permission>: true|false} (exceptions on top of the role), note? (≤ 80)}. A grantRoles holder may give roles ranked below their own, with only permissions they hold" },
   // guests isn't written down: absent means visitor whatever the role (roles.js guestRoleOf), and a written visitor is
   // refused above a default role of none (guests never above role). Pinned as a known gap (pretrans D7)
-  // training-consent (R 10-14 15:59 / 18:08: says are training data and cultural history; consent is BOTH the world's and each
-  // person's, deny by default, the stricter wins — a world owner can't consent for you, you can't override a world that refuses)
-  "training-consent": { on: "world", keyed: "optional", key: "instance", fields: { allow: "bool", note: "string" }, defaults: { allow: false },
-               docs: { allow: "may this world's log (bare) / my own entries in it (keyed by my identity) be used to train models; absent = no", note: "why, in your words" },
-               help: "on @world: bare, the world's policy for its whole log; training-consent:<identity>, one person's for their own entries. Both default to no. A reader (componentspec.trainingAllowed) says yes only when the world's AND the person's both say yes — the stricter wins, so no owner consents on your behalf and no one overrides a world that refuses. Nothing in the engine reads it yet: it is the recorded fact a future exporter must honour (PROTOCOL §12 redaction is how a refused say is withheld)." },
   "default-role": { on: "world", fields: { role: "string", can: "object", guests: "string" }, help: "on @world (owner): the role of anyone without roles:<id> (absent = visitor): any role but owner; can? {<permission>: true|false} on top of that role for everyone who holds it this way (not guests); guests (people without an account) get guests (default visitor), never above role" },
   "role-defs": { on: "world", help: "on @world (owner): {<role id>: {name, rank (custom: 1–254, unique), can: {<permission>: true|false}, note?}}. Built-ins visitor, builder, moderator may be renamed and their permissions edited (rank fixed); owner holds every permission and isn't listed. Permissions: build, editOthers, editWorld, generate, fly, scripts, pauseScripts, mute, kick, ban, grantRoles" },
   access:    { on: "world", fields: { join: "string", max: "int", soft: "int", minAccountDays: "int" }, enums: { join: ["anyone", "signed-in", "listed"] }, ranges: { max: { min: 1, max: 200 }, soft: { min: 1, max: 200 }, minAccountDays: { min: 0, max: 365 } }, help: "on @world (owner): who may come in {join: anyone|signed-in|listed (only people with a roles:<id>), max? (1–200 at once), soft? (≤ max: the recommended capacity), minAccountDays? (0–365: a person's account must be at least this many days old; a guest is then refused, an enrolled agent is exempt; 0 or absent = off)}; moderators and owners always get in" },
@@ -361,10 +356,6 @@ export const supersedes = (comp) => defOf(comp)?.supersedes ?? null;
  *  the newest registered `<name>@<n>` that is WRITTEN on c wins; else a written `<name>` keeps its own meaning; else the
  *  newest registered definition's defaults. Returns {name, value, def}: `value` is what's written (or null), `def` the
  *  definition whose defaults fill the gaps. Readers never hand-code `c["x@2"] ?? c.x`: a second @n would copy the chain. */
-/** The ONE reader of training-consent (R 10-14): the world's bare component AND the person's keyed one must both say
- *  allow: true. Absent either, no. Never hand-code the rule in an exporter. */
-export const trainingAllowed = (worldC, identity) =>
-  worldC?.["training-consent"]?.allow === true && worldC?.[`training-consent:${identity}`]?.allow === true;
 export function resolveVersioned(c, base) {
   const versions = Object.keys(COMPONENTS).filter((k) => k === base || k.startsWith(base + "@"))
     .sort((a, b) => (Number(a.split("@")[1] ?? 0)) - (Number(b.split("@")[1] ?? 0)));   // base, @2, @3 …

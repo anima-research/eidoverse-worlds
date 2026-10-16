@@ -1317,42 +1317,25 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
     .filter(([, , l]) => OLD.test(l) && !ON_PURPOSE.some(([pf, re]) => pf === f && re.test(l))));
   ok(files.length > 100 && !hits.length, `LG1b no reader of the old spelling in shared/, client/lib or mcpl but the named ones (${files.length} files)`, hits.map(([f, n, l]) => `${f}:${n}: ${String(l).trim().slice(0, 100)}`)); }
 
-// ---- TC: training-consent:<identity> is that person's own word (design review 10-15 item 2; componentspec: "no owner consents
-// on your behalf"). Keyed: written and deleted by exactly that identity, whatever their role; never by an owner. Bare: owner.
+// ---- TC: training-consent is gone (R 10-16 14:16: what a server may do with a world's log is that server's terms, not a
+// component). The name is refused like any unregistered bare name, keyed or bare, for everyone; an owner's rollback of a
+// person takes back all of their work (no own-word skip remains).
 { const name = "trainconsent";
   const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
   const c = () => openWorld(root, name).state().entities["@world"]?.c ?? {};
   call("olive", "create-world", { title: "consent" });
   call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "visitor" } });
-  call("olive", "set", { id: "@world", component: "roles:val", value: { role: "visitor" } });
-  const own = call("vic", "set", { id: "@world", component: "training-consent:vic", value: { allow: true, note: "mine to give" } });
-  ok(own.ok && c()["training-consent:vic"]?.allow === true, "TC1 a visitor (no build rights) writes their own training-consent:<identity>", own);
-  const other = call("vic", "set", { id: "@world", component: "training-consent:val", value: { allow: true } });
-  ok(code(other) === "rights" && c()["training-consent:val"] === undefined, "TC2 a visitor can't write someone else's", other);
-  const owner = call("olive", "set", { id: "@world", component: "training-consent:val", value: { allow: true } });
-  ok(code(owner) === "rights" && c()["training-consent:val"] === undefined, "TC3 an owner can't write anyone's keyed consent (no owner consents on your behalf)", owner);
-  const ownerOver = call("olive", "set", { id: "@world", component: "training-consent:vic", value: { allow: false } });
-  ok(code(ownerOver) === "rights" && c()["training-consent:vic"]?.allow === true, "TC3 …nor overwrite one a person wrote", ownerOver);
-  const ownerDel = call("olive", "delete", { id: "@world", component: "training-consent:vic" });
-  ok(code(ownerDel) === "rights" && c()["training-consent:vic"]?.allow === true, "TC3 …nor delete it", ownerDel);
   const bare = call("olive", "set", { id: "@world", component: "training-consent", value: { allow: true } });
-  ok(bare.ok && c()["training-consent"]?.allow === true, "TC4 the owner writes the bare training-consent (the world's policy)", bare);
-  const bareVis = call("vic", "set", { id: "@world", component: "training-consent", value: { allow: false } });
-  ok(code(bareVis) === "rights" && c()["training-consent"]?.allow === true, "TC4 …which a visitor can't", bareVis);
-  const ownSelf = call("olive", "set", { id: "@world", component: "training-consent:olive", value: { allow: true } });
-  ok(ownSelf.ok, "TC5 an owner writes their own keyed consent like anyone", ownSelf);
-  const back = call("vic", "delete", { id: "@world", component: "training-consent:vic" });
-  ok(back.ok && c()["training-consent:vic"] === undefined, "TC5 a person deletes their own (withdraws it)", back);
-  // review r2 F2: a griefer's own consent write can't shield their junk from the owner's rollback. The rollback skips the
-  // inverse on their training-consent:<id> (never undone by another person) and takes back the rest.
+  const own = call("vic", "set", { id: "@world", component: "training-consent:vic", value: { allow: true } });
+  const ownerKeyed = call("olive", "set", { id: "@world", component: "training-consent:olive", value: { allow: true } });
+  ok(code(bare) === "schema" && code(ownerKeyed) === "schema" && !own.ok && !Object.keys(c()).some((k) => k.startsWith("training-consent")),
+    "TC1 training-consent isn't a component: bare or keyed, by an owner or by the person it names, it's refused", [bare.refused, own.refused, ownerKeyed.refused]);
   call("olive", "set", { id: "@world", component: "default-role", value: { role: "builder" } });
   const mark = call("olive", "set", { id: "@world", component: "about", value: { name: "mark", text: "" } });
   for (let i = 0; i < 3; i++) call("gil", "create", { id: `junk-${i}`, model: "crate" });
-  const gc = call("gil", "set", { id: "@world", component: "training-consent:gil", value: { allow: false } });
   const rb = call("olive", "undo", { actor: "gil", since: { seq: mark.seq, head: mark.head } });
   const left = Object.keys(openWorld(root, name).state().entities).filter((k) => k.startsWith("junk-"));
-  ok(gc.ok && rb.ok && !left.length && c()["training-consent:gil"]?.allow === false && JSON.stringify(rb).includes("training-consent:gil"),
-    "TC6 the owner's rollback of someone takes back their junk and skips (and says so) their own training consent", [gc.refused, rb.refused ?? rb.notes, left]); }
+  ok(rb.ok && !left.length && !JSON.stringify(rb).includes("skipped"), "TC2 the owner's rollback of someone takes back all their work, nothing skipped", [rb.refused ?? rb.notes, left]); }
 
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
