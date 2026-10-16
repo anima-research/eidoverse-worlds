@@ -1,5 +1,6 @@
 {
  "transform": {
+  "status": "trial",
   "fields": {
    "pos": "vec3",
    "q": "array",
@@ -26,17 +27,23 @@
   "on": "thing"
  },
  "model": {
+  "status": "trial",
   "type": "string",
   "on": "thing"
  },
  "label": {
-  "type": "string"
+  "status": "trial",
+  "type": "string",
+  "maxLen": 80
  },
  "description": {
+  "status": "trial",
   "type": "string",
+  "maxLen": 500,
   "on": "thing"
  },
  "collider": {
+  "status": "trial",
   "fields": {
    "shape": "string"
   },
@@ -50,27 +57,33 @@
   "on": "thing"
  },
  "stage": {
+  "status": "trial",
   "fields": {
    "speaker": "any"
   },
   "on": "thing"
  },
  "hidden": {
+  "status": "trial",
   "type": "bool",
   "on": "thing"
  },
  "clickthrough": {
+  "status": "trial",
   "type": "bool",
   "on": "thing"
  },
  "disabled": {
+  "status": "trial",
   "type": "bool",
   "on": "thing"
  },
  "pivot": {
+  "status": "trial",
   "on": "thing"
  },
  "parent": {
+  "status": "trial",
   "fields": {
    "to": "ref",
    "order": "string",
@@ -82,6 +95,7 @@
   "on": "thing"
  },
  "light": {
+  "status": "trial",
   "fields": {
    "kind": "string",
    "color": "int",
@@ -118,9 +132,30 @@
     "point",
     "spot"
    ]
+  },
+  "ranges": {
+   "color": {
+    "min": 0,
+    "max": 16777215
+   },
+   "intensity": {
+    "min": 0
+   },
+   "range": {
+    "gt": 0
+   },
+   "angle": {
+    "gt": 0,
+    "max": 1.5707963267948966
+   },
+   "inner": {
+    "min": 0,
+    "max": 1.5707963267948966
+   }
   }
  },
  "mesh": {
+  "status": "trial",
   "fields": {
    "shape": "string",
    "size": "vec3"
@@ -142,9 +177,16 @@
     "capsule"
    ]
   },
+  "ranges": {
+   "size": {
+    "min": 0.05,
+    "max": 200
+   }
+  },
   "on": "thing"
  },
  "motion": {
+  "status": "trial",
   "fields": {
    "type": "string",
    "axis": "axis",
@@ -306,10 +348,33 @@
     "once"
    ]
   },
+  "ranges": {
+   "period": {
+    "gt": 0,
+    "max": 3600
+   },
+   "degPerSec": {
+    "min": -36000,
+    "max": 36000
+   },
+   "radius": {
+    "min": 0,
+    "max": 10000
+   },
+   "speed": {
+    "min": 0,
+    "max": 1000
+   },
+   "duration": {
+    "gt": 0,
+    "max": 36000
+   }
+  },
   "keyed": "optional",
   "on": "thing"
  },
  "lock": {
+  "status": "trial",
   "fields": {
    "rank": "string"
   },
@@ -325,9 +390,11 @@
   }
  },
  "sockets": {
+  "status": "trial",
   "on": "thing"
  },
  "socket": {
+  "status": "trial",
   "fields": {
    "name": "string",
    "part": "string",
@@ -335,6 +402,9 @@
    "accepts": "array",
    "radius": "number"
   },
+  "required": [
+   "name"
+  ],
   "absentMeans": {
    "part": "it rides its host's root, not a moving node of the host's model",
    "body": "things only: no person attaches here",
@@ -344,6 +414,7 @@
   "on": "thing"
  },
  "home": {
+  "status": "trial",
   "fields": {
    "pos": "vec3",
    "q": "array",
@@ -355,12 +426,20 @@
   },
   "on": "thing"
  },
- "places": {},
+ "places": {
+  "status": "trial"
+ },
  "params": {
+  "status": "trial",
+  "keyPattern": "^[a-z][a-zA-Z0-9_-]{0,31}$",
+  "maxKeys": 64,
   "on": "thing"
  },
- "reactions": {},
+ "reactions": {
+  "status": "trial"
+ },
  "openable": {
+  "status": "trial",
   "fields": {
    "open": "bool",
    "locked": "bool",
@@ -390,9 +469,24 @@
     }
    }
   ],
+  "ranges": {
+   "angle": {
+    "min": -3.141592653589793,
+    "max": 3.141592653589793
+   },
+   "time": {
+    "min": 0,
+    "max": 10
+   },
+   "slide": {
+    "min": -10,
+    "max": 10
+   }
+  },
   "on": "thing"
  },
  "physics": {
+  "status": "trial",
   "fields": {
    "kind": "string",
    "who": "string",
@@ -444,6 +538,43 @@
     "max"
    ]
   },
+  "ranges": {
+   "mass": {
+    "gt": 0,
+    "max": 1000000
+   },
+   "density": {
+    "gt": 0,
+    "max": 100000
+   },
+   "friction": {
+    "min": 0,
+    "max": 10
+   },
+   "restitution": {
+    "min": 0,
+    "max": 1
+   },
+   "linearDamping": {
+    "min": 0,
+    "max": 1000
+   },
+   "angularDamping": {
+    "min": 0,
+    "max": 1000
+   },
+   "layers": {
+    "min": 0,
+    "max": 4294967295
+   },
+   "mask": {
+    "min": 0,
+    "max": 4294967295
+   },
+   "material": {
+    "maxLen": 64
+   }
+  },
   "absentMeans": {
    "shape": "no measured shape: the thing is no body to the engine (it neither flies nor collides)",
    "mass": "kg; absent, density × the volume of its stamped shape (shapes.js shapeVolume; a convex, mesh or compound shape's baked geometry). Never a constant",
@@ -466,6 +597,7 @@
   "on": "thing"
  },
  "grabbable": {
+  "status": "trial",
   "defaults": {
    "enabled": true,
    "who": "visitor",
@@ -478,9 +610,28 @@
    "release": "drop",
    "returnAfter": 0
   },
+  "ranges": {
+   "range": {
+    "min": 0.1,
+    "max": 10
+   },
+   "priority": {
+    "min": -10,
+    "max": 10
+   },
+   "throw": {
+    "min": 0,
+    "max": 3
+   },
+   "returnAfter": {
+    "min": 0,
+    "max": 3600
+   }
+  },
   "on": "thing"
  },
  "physics-engine": {
+  "status": "trial",
   "fields": {
    "engine": "string",
    "build": "any",
@@ -489,6 +640,7 @@
   "on": "world"
  },
  "surface": {
+  "status": "trial",
   "fields": {
    "friction": "number",
    "restitution": "number",
@@ -511,10 +663,28 @@
     "max"
    ]
   },
+  "ranges": {
+   "friction": {
+    "min": 0,
+    "max": 10
+   },
+   "restitution": {
+    "min": 0,
+    "max": 1
+   },
+   "density": {
+    "gt": 0,
+    "max": 100000
+   },
+   "label": {
+    "maxLen": 80
+   }
+  },
   "keyed": true,
   "on": "world"
  },
  "joint": {
+  "status": "reserved",
   "fields": {
    "to": "ref",
    "type": "string",
@@ -534,17 +704,32 @@
     "spring"
    ]
   },
+  "ranges": {
+   "breakForce": {
+    "gt": 0
+   }
+  },
   "keyed": true,
   "on": "thing"
  },
  "copy-of": {
+  "status": "trial",
   "fields": {
    "from": "string",
    "key": "string"
   },
+  "required": [
+   "from",
+   "key"
+  ],
+  "writtenBy": "server",
+  "grammar": {
+   "from": "sha256"
+  },
   "on": "thing"
  },
  "sound": {
+  "status": "trial",
   "fields": {
    "src": "string",
    "playing": "bool",
@@ -566,9 +751,37 @@
    "radius": 12,
    "spatial": true
   },
+  "ranges": {
+   "volume": {
+    "min": 0,
+    "max": 1
+   },
+   "pitch": {
+    "min": 0.5,
+    "max": 2
+   },
+   "near": {
+    "gt": 0,
+    "max": 100
+   },
+   "radius": {
+    "min": 1,
+    "max": 100
+   },
+   "src": {
+    "maxLen": 2048
+   },
+   "alt": {
+    "maxLen": 200
+   }
+  },
+  "required": [
+   "src"
+  ],
   "on": "thing"
  },
  "picture": {
+  "status": "trial",
   "fields": {
    "src": "string",
    "part": "string",
@@ -588,17 +801,52 @@
     "self"
    ]
   },
+  "ranges": {
+   "width": {
+    "gt": 0,
+    "max": 20
+   },
+   "part": {
+    "maxLen": 64
+   },
+   "src": {
+    "maxLen": 2048
+   },
+   "alt": {
+    "maxLen": 200
+   }
+  },
+  "required": [
+   "src"
+  ],
   "on": "thing"
  },
  "story": {
+  "status": "trial",
   "fields": {
    "title": "string",
    "text": "string",
    "marks": "refs"
   },
+  "ranges": {
+   "title": {
+    "maxLen": 80
+   },
+   "text": {
+    "maxLen": 1000
+   },
+   "marks": {
+    "maxItems": 8
+   }
+  },
+  "required": [
+   "title",
+   "text"
+  ],
   "on": "thing"
  },
  "text": {
+  "status": "trial",
   "fields": {
    "text": "string",
    "size": "number",
@@ -636,12 +884,41 @@
     "scene"
    ]
   },
+  "ranges": {
+   "text": {
+    "maxLen": 400
+   },
+   "size": {
+    "min": 0.02,
+    "max": 2
+   },
+   "width": {
+    "min": 0.1,
+    "max": 10
+   },
+   "color": {
+    "min": 0,
+    "max": 16777215
+   },
+   "background": {
+    "min": 0,
+    "max": 16777215
+   },
+   "outlineColor": {
+    "min": 0,
+    "max": 16777215
+   }
+  },
+  "required": [
+   "text"
+  ],
   "absentMeans": {
    "outlineColor": "the edge takes the colour that contrasts with the text colour: black behind light text, white behind dark"
   },
   "on": "thing"
  },
  "look-at": {
+  "status": "trial",
   "fields": {
    "target": "target",
    "mode": "string",
@@ -666,10 +943,24 @@
     "aim"
    ]
   },
+  "ranges": {
+   "speed": {
+    "min": 0,
+    "max": 3600
+   },
+   "range": {
+    "gt": 0,
+    "max": 100
+   }
+  },
+  "required": [
+   "target"
+  ],
   "keyed": "optional",
   "on": "thing"
  },
  "captions": {
+  "status": "trial",
   "fields": {
    "session": "string",
    "n": "int",
@@ -681,12 +972,14 @@
   "on": "thing"
  },
  "captioners": {
+  "status": "trial",
   "fields": {
    "ids": "people"
   },
   "on": "thing"
  },
  "sky": {
+  "status": "trial",
   "fields": {
    "hours": "number",
    "rate": "number",
@@ -711,6 +1004,7 @@
   "on": "world"
  },
  "grass": {
+  "status": "trial",
   "fields": {
    "width": "number",
    "depth": "number",
@@ -728,9 +1022,44 @@
    "rows": "object",
    "corn": "object"
   },
+  "ranges": {
+   "width": {
+    "gt": 0,
+    "max": 1000
+   },
+   "depth": {
+    "gt": 0,
+    "max": 1000
+   },
+   "bladeHeight": {
+    "gt": 0,
+    "max": 5
+   },
+   "height": {
+    "gt": 0,
+    "max": 10
+   },
+   "density": {
+    "min": 0,
+    "max": 4
+   },
+   "spacing": {
+    "min": 0.05,
+    "max": 10
+   },
+   "perCell": {
+    "min": 1,
+    "max": 32
+   },
+   "wind": {
+    "min": 0,
+    "max": 10
+   }
+  },
   "on": "world"
  },
  "structure": {
+  "status": "trial",
   "fields": {
    "tile": "number",
    "wallH": "number",
@@ -742,6 +1071,7 @@
   "on": "thing"
  },
  "particles": {
+  "status": "trial",
   "fields": {
    "preset": "string",
    "seed": "number",
@@ -765,6 +1095,22 @@
    "playing": true,
    "scale": 1
   },
+  "ranges": {
+   "scale": {
+    "min": 0.01,
+    "max": 100
+   },
+   "part": {
+    "maxLen": 64
+   },
+   "effect": {
+    "maxLen": 80
+   },
+   "at": {
+    "min": -8,
+    "max": 8
+   }
+  },
   "absentMeans": {
    "effect": "an older value (the first protocol's): its preset names the effect, and its count, size, opacity, speed, lifetime, area, texture and quality are that effect's params of the same names",
    "part": "it emits from the thing itself, not one node of its model",
@@ -774,16 +1120,8 @@
    "params": "none: the effect's own defaults (in an older value, its own knobs: see effect)"
   }
  },
- "imported-epoch": {
-  "fields": {
-   "sim": "string",
-   "tickMs": "number",
-   "ts": "number",
-   "seq": "number"
-  },
-  "on": "world"
- },
  "imported-behavior": {
+  "status": "trial",
   "fields": {
    "src": "string",
    "attach": "string",
@@ -797,6 +1135,7 @@
   "on": "world"
  },
  "assets": {
+  "status": "trial",
   "fields": {
    "name": "string",
    "path": "string"
@@ -805,34 +1144,26 @@
   "on": "world"
  },
  "imported": {
+  "status": "trial",
   "keyed": true
  },
  "imported-bans": {
+  "status": "trial",
   "keyed": true,
   "on": "world"
  },
  "roles": {
+  "status": "trial",
   "fields": {
    "role": "string",
    "can": "object",
-   "note": "string",
-   "sub": "any"
+   "note": "string"
   },
   "keyed": true,
   "on": "world"
  },
- "training-consent": {
-  "fields": {
-   "allow": "bool",
-   "note": "string"
-  },
-  "defaults": {
-   "allow": false
-  },
-  "keyed": "optional",
-  "on": "world"
- },
  "default-role": {
+  "status": "trial",
   "fields": {
    "role": "string",
    "can": "object",
@@ -841,9 +1172,11 @@
   "on": "world"
  },
  "role-defs": {
+  "status": "trial",
   "on": "world"
  },
  "access": {
+  "status": "trial",
   "fields": {
    "join": "string",
    "max": "int",
@@ -857,29 +1190,64 @@
     "listed"
    ]
   },
+  "ranges": {
+   "max": {
+    "min": 1,
+    "max": 200
+   },
+   "soft": {
+    "min": 1,
+    "max": 200
+   },
+   "minAccountDays": {
+    "min": 0,
+    "max": 365
+   }
+  },
   "on": "world"
  },
  "about": {
+  "status": "trial",
   "fields": {
    "name": "string",
    "text": "string"
   },
+  "ranges": {
+   "name": {
+    "maxLen": 80
+   },
+   "text": {
+    "maxLen": 2000
+   }
+  },
   "on": "world"
  },
  "trusted": {
+  "status": "trial",
   "fields": {
    "components": "array"
+  },
+  "ranges": {
+   "components": {
+    "maxItems": 64
+   }
   },
   "on": "world"
  },
  "bounds": {
+  "status": "trial",
   "fields": {
    "min": "vec3",
    "max": "vec3"
   },
+  "required": [
+   "min",
+   "max"
+  ],
   "on": "world"
  },
  "spawn": {
+  "status": "trial",
   "fields": {
    "pos": "vec3",
    "radius": "number"
@@ -887,6 +1255,7 @@
   "on": "world"
  },
  "terrain": {
+  "status": "trial",
   "fields": {
    "kind": "string",
    "seed": "int",
@@ -908,6 +1277,47 @@
    "heightmap": "object",
    "water": "any"
   },
+  "ranges": {
+   "size": {
+    "gt": 0,
+    "max": 4096
+   },
+   "segments": {
+    "min": 2,
+    "max": 512
+   },
+   "octaves": {
+    "min": 1,
+    "max": 8
+   },
+   "frequency": {
+    "gt": 0,
+    "max": 64
+   },
+   "amplitude": {
+    "min": -500,
+    "max": 500
+   },
+   "flatRadius": {
+    "min": 0,
+    "max": 4096
+   },
+   "features": {
+    "maxItems": 64
+   },
+   "w": {
+    "min": 2,
+    "max": 4096
+   },
+   "h": {
+    "min": 2,
+    "max": 4096
+   },
+   "spacing": {
+    "gt": 0,
+    "max": 64
+   }
+  },
   "absentMeans": {
    "features": "no placed shapes: the base alone is the ground",
    "heightmap": "no image: the noise (or raster) is the base",
@@ -916,6 +1326,7 @@
   "on": "world"
  },
  "terrain-grid": {
+  "status": "reserved",
   "fields": {
    "spacing": "number",
    "tile": "int",
@@ -926,6 +1337,7 @@
   "on": "world"
  },
  "terrain-tile": {
+  "status": "reserved",
   "fields": {
    "mm": "array"
   },
@@ -933,6 +1345,7 @@
   "on": "world"
  },
  "script": {
+  "status": "trial",
   "fields": {
    "src": "string",
    "scope": "object",
@@ -942,61 +1355,106 @@
    "knobs": "object",
    "paused": "bool"
   },
+  "ranges": {
+   "every": {
+    "min": 5
+   }
+  },
+  "required": [
+   "src",
+   "scope"
+  ],
+  "itemEnums": {
+   "on": [
+    "use",
+    "say",
+    "enter",
+    "leave",
+    "grab",
+    "release",
+    "changed:*"
+   ],
+   "scope.bodies": [
+    "shove",
+    "pose"
+   ]
+  },
+  "scopeFields": {
+   "ids": "scope",
+   "comps": "array",
+   "create": "bool",
+   "say": "bool",
+   "bodies": "array"
+  },
+  "grammar": {
+   "src": "sha256"
+  },
   "keyed": true
  },
  "schemas": {
+  "status": "reserved",
   "keyed": true,
   "on": "world"
  },
  "blueprints": {
+  "status": "trial",
   "keyed": true,
   "on": "world"
  },
  "terrain-paint": {
+  "status": "reserved",
   "keyed": true,
   "on": "world"
  },
  "capacity": {
+  "status": "trial",
   "fields": {
    "entities": "int",
    "guestEntities": "int",
    "avatar": "int"
   },
-  "defaults": {
-   "entities": 10000,
-   "guestEntities": 500,
-   "avatar": 2000
+  "ranges": {
+   "entities": {
+    "min": 1
+   },
+   "guestEntities": {
+    "min": 0
+   },
+   "avatar": {
+    "min": 1
+   }
+  },
+  "absentMeans": {
+   "entities": "this server's current default (schema reports it); it may change",
+   "guestEntities": "this server's current default (schema reports it); it may change",
+   "avatar": "this server's current default (schema reports it); it may change. Not enforced yet"
   },
   "on": "world"
  },
  "script-settings": {
+  "status": "trial",
   "fields": {
    "run": "bool",
-   "install": "string",
    "max": "int",
    "budget": "int",
-   "rate": "int",
-   "depth": "int",
-   "fails": "int",
-   "cpu": "int",
-   "runs": "int"
+   "cpu": "int"
   },
-  "defaults": {
-   "run": true,
-   "install": "builder",
-   "max": 12,
-   "budget": 600,
-   "rate": 6,
-   "depth": 8,
-   "fails": 5,
-   "cpu": 2000,
-   "runs": 60
+  "ranges": {
+   "max": {
+    "min": 0
+   },
+   "budget": {
+    "min": 0
+   },
+   "cpu": {
+    "min": 0
+   }
   },
-  "enums": {
-   "install": [
-    "builder",
-    "owner"
-   ]
+  "absentMeans": {
+   "run": "true: scripts run",
+   "max": "this server's current default (schema reports it)",
+   "budget": "this server's current default (schema reports it)",
+   "cpu": "this server's current default (schema reports it)"
   },
   "on": "world"
  }
