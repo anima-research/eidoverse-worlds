@@ -180,7 +180,15 @@ bus.on('cut-adopted', () => { arrived = false; trackedAt = null; holds = {}; stu
 // R 10-10 ("Couldn't grab: your body isn't in the world yet", after a rename): the authority had no body for me while
 // this client thought it had arrived. Whatever the cause, the refusal says so: re-arrive once and send it again.
 let lagMs = 0;   // lab knob (physicsApi.lag): delay a throw/drop/punt request by this much, as a slow round trip would
+// holes r3 F2: the authority judges my body with the height and scale my walker uses (controller.js hands stepWalk
+// height: bodyHeight() in water and scale: userScale), so every move carries them; it keeps the last it was sent
+function bodyArgs() {
+  const me = hooks?.me?.(); if (!me) return {};
+  const h = me.bodyHeight?.(), s = me.userScale;
+  return { ...(typeof h === 'number' && Number.isFinite(h) && h > 0 ? { height: h } : {}), ...(typeof s === 'number' && Number.isFinite(s) && s > 0 ? { scale: s } : {}) };   // always (1 too): absent, the authority keeps the last size it was sent
+}
 async function sendRequest(verb, args) {
+  if (verb === 'move') args = { ...args, ...bodyArgs() };
   if (lagMs && (verb === 'throw' || verb === 'drop' || verb === 'punt')) await new Promise((res) => setTimeout(res, lagMs));
   const r = await rawSend(verb, args);
   if (verb === 'move' || r?.refused?.code !== 'not-here') return r;

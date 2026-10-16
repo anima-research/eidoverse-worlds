@@ -78,6 +78,9 @@ export const TRACK = Object.freeze({
 /** A size multiplier's clamp, as shared/presencewire.js keeps it (0.5–2; a non-number is 1). Re-stated here rather
  *  than imported so this file stays leaf-level, as flight.js is. */
 const scaleOf = (u) => (typeof u === "number" && Number.isFinite(u) ? Math.min(2, Math.max(0.5, u)) : 1);
+/** A body's size as every caller of this file reads it (0.5-2, the size slider's range; anything else is 1): the authority
+ *  bounds a size a body claims with this, so it never judges a body this file wouldn't walk. */
+export const bodyScale = scaleOf;
 
 /** Walking speed for the flags a caller holds: run outranks creep; the stride grows with the body. */
 export function walkSpeed({ run = false, creep = false, scale = 1 } = {}) {
