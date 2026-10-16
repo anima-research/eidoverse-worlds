@@ -1001,8 +1001,9 @@ function resettleRiders(w, actor, ops, before, after0, act, notes) { let after =
     return hosts.has(c.parent?.to) && c.physics?.kind === "dynamic" && !lockedC(c) && !w.presence.holds[k] && !w.presence.holds[c.parent.to] && !after.entities[k].c.disabled && aabb(after, k); });
   if (!riders.length) return;
   const spec = after.entities["@world"]?.c["physics-engine"];
-  // the ground still loading: a fall would rest on a guessed height (review r4 F2) — they stay where they stand, said so
-  if (!groundReady(after)) { notes.push({ kept: riders, why: "they were resting on a thing whose shape changed, but this world's ground is still loading: they stay where they stand rather than fall onto a guessed height" }); return; }
+  // the ground still loading: a fall would rest on a guessed height (review r4 F2) — they are left as they are on the host
+  // (its local pose kept: a rescaled host carries them with it, r5 F6), said so
+  if (!groundReady(after)) { notes.push({ kept: riders, why: "they were resting on a thing whose shape changed, but this world's ground is still loading: they are left as they are on it (a rescaled host carries them with it) rather than fall onto a guessed height" }); return; }
   if (spec && carried(spec)) {
     const flying = new Set(Object.keys(w.sim?.()?.launched ?? {}));
     const dropped = riders.filter((k) => !flying.has(k));
@@ -2994,6 +2995,9 @@ const PHYSICS_VERBS = {
         return setOp(k, "transform", { ...tk, pos: [tk.pos[0], r3(tk.pos[1] - (b.min[1] - below.y)), tk.pos[2]] }); });
       plan = admit(w, st, { actor, cap: { kind: "system", ids: dependents, comps: ["transform"] } }, ops);
     }
+    // what would fall is launched from rest by the engine, and with the ground still loading it would come to rest on a
+    // guessed height (review r5 F2, as flyingWorld refuses a throw): refused before anything is written
+    if (dependents.length && spec && carried(spec) && !groundReady(st)) groundOf(st).height(0, 0);   // refuses ground-loading, in the ground's own words
     // picking a thing up takes it out of the world's physics (no collider left at its old spot), and that changes the
     // sim, so it goes through the log (Covenant III: presence never feeds the sim otherwise)
     let act = null;
