@@ -452,7 +452,7 @@ const WORLD_LOOK = new Set(["about", "sky", "terrain", "terrain-grid", "grass", 
 // training-consent:<identity> is that person's own word (componentspec: "no owner consents on your behalf"; design review
 // 10-15 item 2): written and deleted by exactly the identity it names, whatever their role, and by nobody else: not an owner,
 // not a capability. The bare training-consent (the world's policy) is the owner's like the rest of @world.
-const ownWordOf = (op) => { if (op.id !== "@world" || typeof op.comp !== "string") return null; const i = op.comp.indexOf(":");
+export const ownWordOf = (op) => { if (op.id !== "@world" || typeof op.comp !== "string") return null; const i = op.comp.indexOf(":");
   return i > 0 && op.comp.slice(0, i).replace(/@\d+$/, "") === "training-consent" ? op.comp.slice(i + 1) : null; };
 const needOf = (op) => {
   if (op.id !== "@world") return "thing";
