@@ -402,7 +402,25 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const v1Translated = (st: any) => ({ ...st, entities: Object.fromEntries(Object.entries<any>(st.entities).map(([id, e]) => [id, e.parent && "slot" in e.parent ? { ...e, parent: (({ slot, ...p }) => ({ ...p, socket: slot }))(e.parent) } : e])) });
   const old = { snapshot: { state: v1Translated(v1st) } }, neu = await client(srv.port, "oldtown-new", "Ann", REPLICA);
   const oldv1 = await client(srv.port, "oldtown", "Ann");
-  ok(!oldv1.snapshot && oldv1.of("error").some((m) => /"oldtown" is saved in an old format/.test(m.error)), "S6 the server doesn't serve the old world itself (it says the world is saved in the old format, to be translated once)", oldv1.msgs.map((m) => m.type === "error" ? m.error : m.type)); oldv1.close();
+  for (let i = 0; i < 40 && oldv1.ws.readyState !== 3; i++) await sleep(50);
+  const OLD_SAY = `"oldtown" was saved by an older version of Eidoverse and needs a one-time conversion by whoever runs this server. Nothing is lost — the world's log is kept as it was.`;
+  ok(!oldv1.snapshot && oldv1.of("error").some((m) => m.error === OLD_SAY) && oldv1.ws.readyState === 3, "S6 the server doesn't serve the old world itself: the visitor is told, in plain words, that it needs a one-time conversion and nothing is lost (owner 10-15)", oldv1.msgs.map((m) => m.type === "error" ? m.error : m.type));
+  ok(oldv1.of("error").every((m) => !/\bbun\b|tools\/|world\.ts/.test(m.error)), "S6 …with no command line a visitor can't run", oldv1.of("error").map((m) => m.error)); oldv1.close();
+  { const { WorldAgent } = await import("../../mcpl/agent.ts");   // an agent is told the same, as its join's error (not a join timeout)
+    const ag: any = new WorldAgent({ url: `ws://127.0.0.1:${srv.port}/ws`, name: "Bob", world: "oldtown", avatar: "" });
+    let why = ""; try { await ag.connect(); } catch (e) { why = String((e as Error).message); } try { ag.close(); } catch {}
+    ok(why === OLD_SAY, "S6 an agent joining the old world is refused with the same words (its connect rejects with them; mcpl travel reports them)", why); }
+  // a log of this protocol's family saved before the 2026-10-07 names pass: its genesis stated its number in its own field
+  ok(tool(["found", "prenamed", "--owner", "Ann"]).code === 0, "S6 a world to age into a pre-names one");
+  { const fp = path.join(W4, "prenamed", "world.jsonl"); const lines = fs.readFileSync(fp, "utf8").split("\n");
+    const g = JSON.parse(lines[0]); const { v, ...rest } = g.body; g.body = { ...rest, version: v }; lines[0] = JSON.stringify(g); fs.writeFileSync(fp, lines.join("\n")); }
+  const pre = await client(srv.port, "prenamed", "Ann", REPLICA); for (let i = 0; i < 40 && pre.ws.readyState !== 3; i++) await sleep(50);
+  const preSay = pre.of("error").at(-1)?.error ?? "";
+  ok(!pre.snapshot && /^"prenamed" /.test(preSay) && /whoever runs this server/.test(preSay) && /kept as it was/.test(preSay) && !/\bbun\b|tools\/|world\.ts|translate /.test(preSay) && preSay !== OLD_SAY.replace("oldtown", "prenamed"),
+    "S6 a pre-names world is refused in its own plain words (no command line)", preSay); pre.close();
+  fs.mkdirSync(path.join(W4, "hollow"));   // a directory with no log in it: no world, not an old one
+  const hol = await client(srv.port, "hollow", "Ann", REPLICA);
+  ok(!hol.snapshot && /no world called "hollow"/.test(hol.of("error").at(-1)?.error ?? ""), "S6 an empty directory is no world (it was told it was an old-format one)", hol.of("error").map((m) => m.error)); hol.close();
   // what a person SEES: each thing's world pose as the renderer composes it (shared/hierarchy.js). A riding thing's own
   // v1 pos is its unused pre-mount pose, so comparing raw `pos` would compare a hidden field (translate-v1@2 DROPPED)
   const r6 = (v) => v.map((n) => Math.round(n * 1e6) / 1e6);
@@ -516,6 +534,10 @@ srv.proc.kill();
 { const lines = 50; const w = path.join(W4, "garden");
   const N0 = readLog(fs.readFileSync(path.join(w, "world.jsonl"))).filter((e) => e.kind === "say").length;
   const srvA = await startServer(ENGINE, W4, OPT, "sh");
+  { const boot = fs.readFileSync(srvA.log, "utf8");   // the boot sweep TELLS the operator about the old worlds left on disk by S6 (owner 10-15)
+    ok(boot.includes(`[boot] old-format world "oldtown" (oldtown/log.jsonl) is NOT being served.`) && boot.includes(`WORLDS_DIR=${W4} bun tools/protocol/world.ts translate oldtown oldtown-2 --founder-key <the founder's ed25519 key>`)
+      && boot.includes(`[boot] old-format world "prenamed" (prenamed/world.jsonl) is NOT being served.`) && /\[boot\] 2 world\(s\) need translating — see above/.test(boot) && !/"hollow"/.test(boot),
+      "SH0 at boot the operator is told, per old world, that it isn't served and the exact command (this WORLDS_DIR), and how many", boot.split("\n").filter((l) => /old-format|need translating|translate /.test(l))); }
   const t = await client(srvA.port, "garden", "Ann", REPLICA);
   let said = 0; for (let i = 0; i < lines; i++) { const r = await t.req("say", { text: `line ${i}` }); if (r.ok) said++; else { await sleep(1100); i--; } }
   t.close(); srvA.proc.kill(); await sleep(300);
