@@ -3771,11 +3771,14 @@ export class WorldAgent {
     if (Array.isArray(ref?.at)) this.trackAt = ref.at;
     const done = this.walkDone; this.walkDone = null;
     this.abandonWalk(); this.clip = "idle";
+    // every end of the re-planned walk but "refused before a step" goes through abandonWalk and bumps the ticket: a stop,
+    // a timeout, a stall, a refusal, a newer walk (whose state walkTo has just cleared) — none of them is this answer's
+    const ticket = this.walkTicket;
     const note = `${id} wouldn't move for your shove: you walked round it`;
     this.lastWalkNote = note;
     void this.walkNow(plan.x, plan.z, plan.run, plan.timeoutMs, plan.tolerance, plan.y, plan.near, true).then((arrived) => {
       // planned round it and refused before a step: what stopped the first plan is still this walk's answer
-      if (!arrived && !this.lastWalkRefusal && !this.walkStall && !this.walkStopReason) {
+      if (!arrived && this.walkTicket === ticket && !this.lastWalkRefusal && !this.walkStall && !this.walkStopReason) {
         if (ref) this.lastWalkRefusal = { code: String(ref.code), reason: String(ref.reason ?? ""), ...(ref.fix ? { fix: String(ref.fix) } : {}) };
         else this.walkStopReason = `${id} is in the way and wouldn't move for your shove, and no route round it: ${this.walkRefusal ?? "none found"}`;
         if (this.lastWalkNote === note) this.lastWalkNote = null;

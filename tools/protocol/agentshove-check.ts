@@ -13,6 +13,8 @@
 //        the path: routed round as AS5's is — no shove, the walk arrives off the straight line (review r4 F1a)
 //   AS7  a light crate, passable when the walk is planned, locked while the body walks to it: the authority calls it
 //        solid, and the walk re-plans once with it as an obstacle and arrives round it (review r4 F1b)
+//   AS8  AS7's re-planned walk superseded by a new move, which is then stopped: neither walk reports the first walk's
+//        crate (the re-plan's answer is written only while it is still the walk under way; review r5 F1)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -153,5 +155,24 @@ try {
     ok(/^arrived/.test(t), "AS7 a crate made un-shoveable mid-walk: the walk re-plans round it and arrives", t);
     ok(/late wouldn't move for your shove/.test(t), "AS7 …and says why it went round", t);
     ok(off > 0.3, "AS7 …the body left the straight line", { off }); }
+  // AS8
+  { const r = await crate("late2", "test/tallcrate.glb", [0, 0, -10], {}, 30); ok(r.ok, "(AS8 setup) a light tall crate", r);
+    for (let i = 0; i < 80 && !Array.isArray(ag.replica?.st?.entities?.late2?.c?.physics?.shape); i++) await sleep(50);
+    await sleep(1500);
+    const m0 = await call("move", { to: [0, -12] }); ok(!m0.isError, "(AS8 setup) the agent stands south of it", T(m0));
+    const wA = call("move", { to: [0, -7] });
+    for (let i = 0; i < 100 && !ag.target; i++) await sleep(10);
+    const lk = await ann.req("set", { id: "late2", component: "lock", value: true });
+    for (let i = 0; i < 400 && !/late2 wouldn't move/.test(ag.lastWalkNote ?? ""); i++) await sleep(10);
+    ok(lk.ok && /late2 wouldn't move/.test(ag.lastWalkNote ?? ""), "(AS8 setup) locked mid-walk: the re-planned walk is under way", { lk, note: ag.lastWalkNote });
+    const wB = call("move", { to: [6, -12] });
+    await sleep(50);
+    const state = { lastWalkRefusal: ag.lastWalkRefusal, walkStopReason: ag.walkStopReason };
+    ok(!state.lastWalkRefusal && !state.walkStopReason, "AS8 a move superseding the re-planned walk carries none of its answer", state);
+    const tA = T(await wA);
+    await call("stop", {});
+    const tB = T(await wB);
+    ok(!/late2/.test(tB), "AS8 …and stopped, it does not report the first walk's crate", tB);
+    ok(!/solid|late2 is in the way/.test(tA), "AS8 …nor does the superseded walk claim the authority refused it", tA); }
 } catch (e) { ok(false, "threw", String(e?.stack ?? e).slice(0, 600)); }
 done(fail ? 1 : 0);
