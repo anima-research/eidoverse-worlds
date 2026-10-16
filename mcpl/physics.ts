@@ -321,6 +321,17 @@ export function standOn(pos: { x: number; y: number; z: number }, heightAt: (x: 
   return ground;
 }
 
+/** Run `fn` with the colliders `ids` out of every query (colliders.suspendCollider: out of the grid, the entry kept) and
+ *  put back after — those already out (a thing in a hand) stay as they were. The route planner's passable things: a loose
+ *  thing this body would shove is walked INTO, not round (agent.ts walkNow). Synchronous, so no other query sees the gap. */
+export function withoutColliders<T>(ids: Iterable<string>, fn: () => T): T {
+  const C = simMods?.colliders;
+  if (!C?.suspendCollider) return fn();
+  const out: string[] = [];
+  for (const id of ids) if (C.colliders?.has(id) && !C.isSuspended(id)) { C.suspendCollider(id, true); out.push(id); }
+  try { return fn(); } finally { for (const id of out) C.suspendCollider(id, false); }
+}
+
 /** The route planner's view of the world (mcpl/navgrid.ts): the same
  *  surfaceUnder and resolveColliders, with the same walking capsule, that the
  *  feet will be moved by. null while the sim is not loaded. */

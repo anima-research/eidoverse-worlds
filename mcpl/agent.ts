@@ -23,7 +23,7 @@ import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
   APPROACH_DWELL_MS, APPROACH_STILL_MPS, APPROACH_MAX_WAIT_MS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
-import { HeadlessBody, ReachBody, setHeightField, setWaterField, registerSupport, registerSupportGrid, registerMeshSupport, removeSupport, standOn, collidersReady, navProbe, collidersGeneration, inWorld, lineOfSight } from "./physics.ts";
+import { HeadlessBody, ReachBody, setHeightField, setWaterField, registerSupport, registerSupportGrid, registerMeshSupport, removeSupport, standOn, collidersReady, navProbe, collidersGeneration, inWorld, lineOfSight, withoutColliders } from "./physics.ts";
 import { makeNavGrid, NAV_SUBSTEP, NAV_NUDGE, type NavTarget } from "./navgrid.ts";
 import { placesOf, inRegion, names, destinationOf, toLocal, type Place, type Destination, type PlaceHolder } from "./places.ts";
 import { collisionTriangles } from "../server/geometry.ts";
@@ -3143,13 +3143,16 @@ export class WorldAgent {
       // plan from the floor under the body, not its root: a tumbling or
       // seated body's y is not where its feet will be
       const feet = { x: this.pos.x, y: this.pos.y, z: this.pos.z };
-      // a grid is good until the colliders or the terrain change
-      const navKey = `${collidersGeneration()}|${this.terrainRev}`;
+      // a loose thing this body would shove is walked into, not round (R's queue: "walking into a loose thing pushes
+      // it"): its collider is out of the planner's world while it plans — the feet and the authority still meet it
+      const passable = this.passableColliders();
+      // a grid is good until the colliders, the terrain, or what it may walk into change
+      const navKey = `${collidersGeneration()}|${this.terrainRev}|${passable.join(",")}`;
       if (this.navGrid?.gen !== navKey) this.navGrid = { gen: navKey, grid: makeNavGrid(probe) };
       const grid = this.navGrid.grid;
       const nav = inWorld(this.world, () => {
         const fy = standOn(feet, (wx, wz) => this.heightAt(wx, wz)) ?? this.pos.y;
-        return grid.route({ x: this.pos.x, y: fy, z: this.pos.z }, { x, z, y, ...near });
+        return withoutColliders(passable, () => grid.route({ x: this.pos.x, y: fy, z: this.pos.z }, { x, z, y, ...near }));
       });
       if ("refusal" in nav) { this.walkRefusal = nav.refusal; return Promise.resolve(false); }
       // griddled structures keep their walls out of the headless colliders,
@@ -3604,6 +3607,21 @@ export class WorldAgent {
       this.trackAt = Array.isArray(r.at) ? r.at : to;
       g.permit = last && this.target === T ? [T.x, to[1], T.z] : this.trackAt;   // the leg's exact end (the track rounds to mm)
     });
+  }
+  /** May this body's walk shove it? The shover's own gate (shared/shove.js shoveable: dynamic, a box, nothing locked over
+   *  it, in no hand, physics.who within this body's rank) on a world whose canon simulates here — the same reading
+   *  tickShove's step makes. Anything else stays solid. */
+  private mayShove(id: string): boolean {
+    const st = this.replica?.st, canon = this.replica?.sim;
+    if (this.shoveOff || !st || !canon?.sim || canon.foreign) return false;
+    const rank = Number.isFinite(this.myRights?.rank) ? this.myRights.rank : null;
+    return shoveable(st, id, { rank, holds: this.holdsNow });
+  }
+  /** The registered colliders of the things this body may shove (sorted): the walk planner routes through them. */
+  private passableColliders(): string[] {
+    const out: string[] = [];
+    for (const [id, bids] of this.supportIds) if (this.mayShove(id)) out.push(...bids);
+    return out.sort();
   }
   /** Body shove: while this body walks, the loose things it walks into are punted along its walk (shared/shove.js decides
    *  which and how hard; the authority admits each as any shove). The push is the walk's intent toward its target, so a

@@ -7,6 +7,8 @@
 //        again; bounded tries, then it stops as any refused walk does
 //   AS3  walking along a crate's face and standing still beside it: no punt
 //   AS4  a locked crate in the path: no punt (walked through: it is low)
+//   AS5  a STATIC tall crate (the same size as AS2's) in the path: the planner routes round it — no punt, it stays put,
+//        the walk arrives, and the body left the straight line to get there (the navgrid's value for what isn't shoveable)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -105,5 +107,19 @@ try {
   { const m0 = await call("move", { to: [18, 0] }); ok(!m0.isError, "(AS4 setup) the agent stands south of the locked crate", T(m0));
     const w = await call("move", { to: [18, 4] }); await sleep(800);
     ok(anyPunt("locked").length === 0, "AS4 a locked crate in the path: no punt (not even a refused one)", anyPunt("locked").map((e) => e.body)); }
+  // AS5
+  { const r = await ann.req("create", { id: "fixed", model: "test/tallcrate.glb", components: { transform: { pos: [-6, 0, 2], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
+    ok(r.ok, "(AS5 setup) a static tall crate", r);
+    for (let i = 0; i < 80 && !Array.isArray(ag.replica?.st?.entities?.fixed?.c?.physics?.shape); i++) await sleep(50);
+    await sleep(1500);   // its collider is fitted (the mesh is fetched) before the walk plans
+    const m0 = await call("move", { to: [-6, 0] }); ok(!m0.isError, "(AS5 setup) the agent stands south of the static crate", T(m0));
+    const p0 = posOf("fixed"); let off = 0, walking = true;
+    const w = call("move", { to: [-6, 5] }).finally(() => { walking = false; });
+    while (walking) { off = Math.max(off, Math.abs(ag.pos.x + 6)); await sleep(30); }
+    const t = T(await w), p = posOf("fixed");
+    ok(anyPunt("fixed").length === 0, "AS5 a static crate of the same size in the path: no punt", anyPunt("fixed").map((e) => e.body));
+    ok(JSON.stringify(p) === JSON.stringify(p0), "AS5 …it stays put", { p0, p });
+    ok(/^arrived/.test(t), "AS5 …the walk arrives", t);
+    ok(off > 0.3, "AS5 …routed round it: the body left the straight line", { off }); }
 } catch (e) { ok(false, "threw", String(e?.stack ?? e).slice(0, 600)); }
 done(fail ? 1 : 0);
