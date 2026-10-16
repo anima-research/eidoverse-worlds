@@ -20,6 +20,12 @@ const BASE = "c9b4a67";
 const B = labAt(BASE, ["door.js", "fold.js", "simlayer.js", "catalogue.js", "toolspec.js", "legacy"], "gaps");
 const doors = { baseline: B ? { ...(await import(B + "authority.js")), root: B } : null, now: { ...doorNow, openWorld: openNow, root, sim: simNow } };
 const nowFold = (buf) => foldNow(readNow(buf));
+// a real WorldLog for G3h (delivery, not the authority's array): its config reads WORLDS_DIR at import, so it is pointed at
+// scratch first, and checked (nothing above may have loaded server/config.ts with the checkout's own worlds/)
+const WL_DIR = `${root}wl`; fs.mkdirSync(WL_DIR, { recursive: true }); process.env.WORLDS_DIR = WL_DIR; process.env.OPT_DIR ??= `${root}opt`; process.env.SKIP_OPT_SWEEP = "1";
+const WL = await import("../../server/worldlog.ts"); const { WORLDS_DIR: WL_SEEN } = await import("../../server/config.ts");
+if (WL_SEEN !== (await import("node:path")).resolve(WL_DIR)) throw new Error(`gaps G3h: server/config.ts was loaded before WORLDS_DIR pointed at scratch (${WL_SEEN})`);
+let g3hRuns = 0;
 let T = 1800000000000;
 function session(d, name) {
   for (const f of [`${name}.jsonl`, `${name}.presence.json`]) fs.rmSync(`${d.root}worlds/${f}`, { force: true });
@@ -276,12 +282,25 @@ const cases = [
       const r = s.call("bob", "batch", { ops: Array.from({ length: 600 }, (_, i) => ({ verb: "set", args: { id: "c", component: "description", value: `${i} ` + "d".repeat(490) } })) }, 10000);
       return { r: show(r), code: code(r), written: s.world().entries.length - before }; },
     nowGood: (o) => o.code === "rate" && o.written === 0 },
-  { id: "G3h", guard: true, what: "300 allowed body acts leave at most 200 in the target's inbox", run(s) { cast(s);
-      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] });
-      const allow = s.call("bob", "consent", { allow: "vic", class: "pose" });
-      const rs = Array.from({ length: 300 }, () => s.call("vic", "body", { to: "bob", kind: "anim" }, 10));
-      return { allow, okCount: rs.filter(ok).length, first: show(rs[0]), inbox: s.world().presence?.inbox?.bob?.length ?? 0 }; },
-    nowGood: (o) => ok(o.allow) && o.okCount === 300 && o.inbox <= 200 && o.inbox > 0 },
+  // H1 (holes review 10-15): the cap above kept the authority's array at 200, and forwardInbox forwarded by array LENGTH,
+  // so a browser that never drains its queue stuck at 200 and heard nothing more, ever (every ask to it expired "silence is
+  // no"). This row reads DELIVERY: a real WorldLog (server/worldlog.ts) with a toActor sink that never calls `inbox`.
+  // Mutation (must go red): forward by msgs.length again in forwardInbox, or drop the `n` stamp in authority.js inboxPush.
+  { id: "G3h", guard: true, what: "300 allowed body acts: at most 200 kept in the target's inbox, and all 300 reach their socket (a browser never drains it)", run() {
+      const name = `g3h-${++g3hRuns}`; const { owner } = WL.foundWorld(`${WL_DIR}/${name}`, name, "olive");
+      const log = new WL.WorldLog(name); const got = [];
+      log.attach({ broadcast() {}, rightsChanged() {}, debug() {}, toActor(who, msg) { if (who === "bob" && msg?.type === "body-inbox") got.push(...msg.messages); return true; } });
+      const call = (actor, verb, args = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T); return log.requestSync(actor, verb, args); };
+      for (const [who, role] of [["bob", "builder"], ["vic", "visitor"]]) call(owner, "set", { id: "@world", component: `roles:${who}`, value: { role } });
+      call("bob", "move", { to: [0, 0, 0] }); call("vic", "move", { to: [0.5, 0, 0] });
+      const allow = call("bob", "consent", { allow: "vic", class: "pose" });
+      const rs = Array.from({ length: 300 }, () => call("vic", "body", { to: "bob", kind: "anim" }, 10));
+      const kept = log.live.presence?.inbox?.bob?.length ?? 0, sent300 = got.length;
+      // an agent that polls drains it; what comes after still reaches the socket
+      const drained = call("bob", "inbox", {}).messages?.length ?? -1; call("vic", "body", { to: "bob", kind: "anim" }, 10);
+      return { allow: show(allow), okCount: rs.filter(ok).length, kept, delivered: sent300, afterDrain: got.length - sent300, drained,
+        acts: got.filter((m) => m.type === "body" && m.from === "vic").length }; },
+    nowGood: (o) => o.allow === "ok" && o.okCount === 300 && o.kept <= 200 && o.kept > 0 && o.delivered === 300 && o.acts === 301 && o.drained === o.kept && o.afterDrain === 1 },
 ];
 function phys(s) { cast(s); s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
   for (const [i, x] of [[1, -2], [2, 0], [3, 2]]) s.call("olive", "create", { id: `ball-${i}`, model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [x, 0] } }); }

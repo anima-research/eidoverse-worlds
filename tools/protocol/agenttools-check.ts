@@ -283,6 +283,15 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   const sp = await handleTool(ctx as any, "spawn", { lib: "test/cup.glb", x: x0 + 3, z: z0 + 3, id: "alias-cup" });
   for (let i = 0; i < 60 && !ag.entities.has("alias-cup"); i++) await sleep(50);
   ok(!sp.isError && ag.entities.has("alias-cup") && ag.entities.size === n0 + 1, "AT7 spawn {lib, x, z, id} creates the thing (create {model, id, at})", T(sp).slice(0, 200));
+  // M1 (holes review 10-15): with a yaw the alias builds at {pos, yaw}, which buildCreate never read: ok, at the origin.
+  // Mutation (must go red): drop the `a.at` branch in authority.js buildCreate.
+  const spAt = async (args, id) => { const r = await handleTool(ctx as any, "spawn", { lib: "test/cup.glb", ...args, id }); for (let i = 0; i < 60 && !ag.foldRecord(id); i++) await sleep(50); return { r, rec: ag.foldRecord(id) as any }; };
+  const near = (p, x, z) => Array.isArray(p) && Math.abs(p[0] - x) < 0.05 && Math.abs(p[2] - z) < 0.05;
+  const xz = await spAt({ x: x0 - 3, z: z0 + 3 }, "alias-cup-xz");
+  ok(!xz.r.isError && near(xz.rec?.pos, x0 - 3, z0 + 3), "AT7 spawn {lib, x, z} lands at x, z (not the origin)", [T(xz.r).slice(0, 200), xz.rec?.pos]);
+  const yw = await spAt({ x: x0 - 3, z: z0 - 3, yaw: 1 }, "alias-cup-yaw");
+  const qy = [0, Math.sin(0.5), 0, Math.cos(0.5)];
+  ok(!yw.r.isError && near(yw.rec?.pos, x0 - 3, z0 - 3) && Array.isArray(yw.rec?.q) && yw.rec.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3), "AT7 spawn {lib, x, z, yaw} lands at x, z facing yaw (create {at: {pos, yaw}})", [T(yw.r).slice(0, 200), yw.rec?.pos, yw.rec?.q]);
   const sq = await handleTool(ctx as any, "spawn", { query: "cup" });
   ok(sq.isError && /library \{query/.test(T(sq)), "AT7 spawn {query} is refused with the two calls that do it now", T(sq).slice(0, 200));
   const wv = await handleTool(ctx as any, "world_verb", { verb: "say", args: { text: "alias says" } });

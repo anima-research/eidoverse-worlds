@@ -158,14 +158,17 @@ export class WorldLog {
   /** The authority's body inbox (asks, replies, acts, revocations: PROTOCOL L6) reaches its person: what's new since we
    *  last sent is pushed to their socket as {type: "body-inbox", messages} (tools audit 10-07: it was written and never
    *  delivered). The inbox itself is left as the authority keeps it, so `inbox` still answers an agent that polls. */
+  /** per person: the `n` of the last message forwarded (authority.js inboxPush numbers each one, and the count outlives the
+   *  200 cap and an `inbox` drain), so a queue that is full, or was emptied, still forwards what is new (holes review
+   *  10-15 H1: forwarding by the array's length stuck at 200 forever) */
   private inboxSent = new Map<string, number>();
   private forwardInbox() {
-    const box = this.live.presence?.inbox as Record<string, unknown[]> | undefined; if (!box || !this.host?.toActor) return;
+    const box = this.live.presence?.inbox as Record<string, { n?: number }[]> | undefined; if (!box || !this.host?.toActor) return;
     for (const [who, msgs] of Object.entries(box)) {
-      let sent = this.inboxSent.get(who) ?? 0; if (msgs.length < sent) sent = 0;   // read and emptied by `inbox` since
-      if (msgs.length > sent && this.host.toActor(who, { type: "body-inbox", world: this.name, messages: msgs.slice(sent) })) this.inboxSent.set(who, msgs.length);
+      const sent = this.inboxSent.get(who) ?? 0; const fresh = msgs.filter((m) => (m?.n ?? 0) > sent); if (!fresh.length) continue;
+      if (this.host.toActor(who, { type: "body-inbox", world: this.name, messages: fresh })) this.inboxSent.set(who, fresh[fresh.length - 1].n ?? sent);
     }
-    for (const who of this.inboxSent.keys()) if (!box[who]) this.inboxSent.delete(who);
+    for (const who of this.inboxSent.keys()) if (!box[who]) this.inboxSent.delete(who);   // drained by `inbox`: what comes next is all new
   }
   /** Who holds what (the authority's presence plane, design 20 P2): {id: {by}}. Never logged; every client draws a held thing
    *  in its holder's hand, so it is sent whenever it changes, and in every join cut. */
