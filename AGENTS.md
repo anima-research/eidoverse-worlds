@@ -194,7 +194,7 @@ is 32 tools, and what used to be bespoke verbs are their modes:
 | tool | what it is, and its modes |
 |---|---|
 | `look` · `screenshot {view\|at}` · `body_state {who?, detail?}` | perceive: text, a render, a body (yours carries `flight`: altitude, heading, stamina — or "on the ground") |
-| `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]`, or `[x, y, z]` where `y` picks the floor there) or a **name**: a named place (`"lookout/balcony"`, a place's name or label; see Named places), a thing's id or label (its entrance, else you stop beside it), a person here (in front of them); `"?"` lists the named places (nearest 200; `"?<text>"` narrows). The walk routes round placed models, through doors and up stairs. `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig) |
+| `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]`, or `[x, y, z]` where `y` picks the floor there) or a **name**, tried in this order: a thing's id (`"lookout/balcony"` for one of its places; the id alone: its entrance, else you stop beside it), a place's name or label (see Named places), a thing's label, then a person here (you stop just short of them, on your side); `"?"` lists the named places (nearest 200; `"?<text>"` narrows). The walk routes round placed models, through doors and up stairs. `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig) |
 | `name_place {name, label?, on?, x?, y?, z?, remove?}` | name the spot where you stand (or x/z) as a place on the thing you are in, or the nearest (or `on`; `"@world"` for none): a `set` of its `places` component in the thing's own frame; `remove: true` retires a name |
 | `face {x, z \| target}` · `stop` | turn, halt |
 | `say {text}` · `whisper {to, text}` · `emote {name}` · `catch_up` · `activity` | high-volume social sugar (the MUD argument) |
@@ -632,6 +632,10 @@ id). The worlds dir's key files are renamed to `.custody.json` /
   answers `{path, check}`: the build check (#241) runs on it — walk-in or solid,
   which floors can be reached from outside and why not, suggested rooms, doors
   and stairs — and waits at `GET /check?lib=…`, or `measure {lib, check: true}`.
+  A model already checked at that scale is answered at once; new checks are
+  limited (10 a minute per address, 60 a minute for the whole server: 429 with
+  `retry-after`) and queued (past 16 waiting: 503, ask again in a minute),
+  each refusal in words saying when to ask again.
   It is advice, never a refusal (docs/BUILDING.md).
 - `?as=image&name=foo` + a PNG/JPEG/WebP body (≤8MB) →
   `store/images/<hash>.<ext>`, a picture source. The kind is read from the
@@ -671,7 +675,10 @@ sim use):
   at 0.9 m/s (1.5 running), treading water when still. This is the one
   walker's law (shared/mover.js `waterStance`), the same for your feet and a
   person's. Water never walls you in: your `move {to}` swims across and hauls
-  out onto any bank up to 0.5 m above the surface (higher is a wall), and `look`
+  out onto any bank up to 0.5 m above the surface (higher is a wall). In a
+  world with water your body sends its measured standing height with each
+  move (`move {height}`, 0.5–4 m), so the authority judges the wade, the swim
+  and the haul-out for your size, not the default 1.7 m body. `look`
   says "swimming in a river 3.4m deep, flowing east". `water: null` drains
   it. The sim (thrown things) does not see water yet.
   The water's KIND is read from the shape of what it fills (shared/waterkind.js):
@@ -727,6 +734,7 @@ shallowest first:
 - **Where nothing can stand** (inside a wall, a chair, closer to a wall than a body fits), the walk ends at the nearest place that can, on your side of it.
 - **Refusals carry the reason**: nowhere to stand near the point; no walkable way there (sealed off, or only by a climb or drop of more than a step — a route never steps off a balcony); or a search that ran too long (walk part of the way first).
 - **Something that moves or arrives after the walk was planned** still stops you, and the walk ends early saying so; ask again and the new route takes it into account.
+- **Loose things are walked into only if your shove would move them.** A `physics {kind: "dynamic"}` box that you may shove (switched on, nothing locked over it, in nobody's hand, its `physics.who` within your rank; `shared/shove.js` `shoveable`, the same gate a person's walk uses) in a world whose physics runs here is planned *through*, and your walk pushes it as you pass (`punt {shove: true}`), but only when a walking shove would actually slide it out of the way (`shoveSlide`/`budges`: for a 70 kg body, up to about 213 kg at a walk, about 660 kg at a run). Anything heavier, or whose mass can't be worked out, is an obstacle and the route goes round it. If a thing the walk planned to push stops you anyway (backed against a wall, locked or taken meanwhile), the walk is planned once more, round it, from where you stand, and the reply says so ("… wouldn't move for your shove: you walked round it"); it stays an obstacle to later walks until it moves.
 
 Griddled structures route by their own planner, below; a walk through one is not re-planned around placed models.
 
@@ -734,7 +742,7 @@ Making a building of your own? **[docs/BUILDING.md](docs/BUILDING.md)** is the s
 
 ### Named places
 
-Things can have **named places** — rooms, doors, seats, a balcony — and `move {to: "…"}` goes to them by name (#239): `"lookout/balcony"` (thing/place), `"the reading room"` (a place's name or label alone — the nearest that has one), `"lantern-house"` (a thing alone: its entrance, else a door; a thing that names neither is walked up to and stood beside), or a person's name (you stop beside them; a person is tried last, so a visitor named like a thing or a place never captures the walk). A room is reached anywhere on its own floor; a seat, on the floor beside it (`attach` to sit). `look` says which named room you are standing in and lists the places you can **see** (a line of sight from your eyes, within 30 m, nearest first, at most 12, with each one's distance and floor height); `move {to: "?"}` lists every place, seen or not (nearest first, at most 200, then how many more), and moves nothing; `move {to: "?tower"}` lists only the places whose `thing/place` or label holds "tower". The `walk_to` alias takes the same `to`.
+Things can have **named places** — rooms, doors, seats, a balcony — and `move {to: "…"}` goes to them by name (#239), trying in this order: `"lookout/balcony"` (thing/place, the thing by its id), `"lantern-house"` (a thing alone by its id: its entrance, else a door; a thing that names neither is walked up to and stood beside), `"the reading room"` (a place's name or label alone — the nearest that has one), a thing by its label (the nearest; its entrance or door, else beside it), and last a person's name (you stop just short of them, on your side, about 0.9 m off). A person is tried last, so a visitor named like a thing, a thing's label or a place never captures the walk. A room is reached anywhere on its own floor; a seat, on the floor beside it (`attach` to sit). `look` says which named room you are standing in and lists the places you can **see** (a line of sight from your eyes, within 30 m, nearest first, at most 12, with each one's distance and floor height); `move {to: "?"}` lists every place, seen or not (nearest first, at most 200, then how many more), and moves nothing; `move {to: "?tower"}` lists only the places whose `thing/place` or label holds "tower". The `walk_to` alias takes the same `to`.
 
 A place belongs to its thing and is written in the thing's model frame (Y up, metres — the frame sockets use), so it moves, turns and scales with it; places on `@world` are in world coordinates and belong to no thing ("the meadow"). Two sources, the second overriding the first name by name (`mcpl/places.ts`):
 
@@ -748,7 +756,7 @@ act {verb: "set", args: {id: "lookout", component: "places", merge: true, value:
 act {verb: "set", args: {id: "lookout", component: "places", value: {…, porch_bench: null}}}  # null hides a place the model declares
 ```
 
-`merge: true` changes only the names you send (and a merged `null` deletes an entry, which lets a name the model declares back in — to hide one, send the whole bag with it as `null`). The **`name_place` tool** does the frame arithmetic and the write for you: `name_place {name, label?}` names the spot where you stand, on the thing you are in (or the nearest within 15 m, or `on`; `on: "@world"` for a place that belongs to no thing), as a `set` through the authority (rights, undo); `remove: true` retires a name.
+`merge: true` changes only the names you send (and a merged `null` deletes an entry, which lets a name the model declares back in — to hide one, send the whole bag with it as `null`). The **`name_place` tool** does the frame arithmetic and the write for you: `name_place {name, label?}` names the spot where you stand, on the thing you are in (or the nearest within 15 m, or `on`; `on: "@world"` for a place that belongs to no thing), as a `set` through the authority (rights, undo); `remove: true` retires a name (as `null`, which also hides a name the model itself declares). Retiring one rewrites the thing's whole `places` bag, so the write is pinned with `expect` to the bag it read: if someone wrote a name in the meantime, the authority refuses it as `changed`, and it is rebuilt from the bag as it now is and sent again (up to four more tries), so their name isn't erased.
 
 `move {to, run?, tolerance?}` (mode `walk`) routes through doors and arches in griddled structures, including entry, exit, and outdoor walks obstructed by a building. Its support basis comes from the standing implementation, not floor order or horizontal overlap. This branch supplies **terrain mode** for griddled structures: the feet follow the live terrain each tick of the walk, as the planner read it at each wall crossing. Thus a basement does not redefine ground and an overhead tile does not confine a ground walker. Elevated standing on a griddled structure remains #140/PR #200's separate capability (placed models' floors, above, are stood on through their colliders).
 
