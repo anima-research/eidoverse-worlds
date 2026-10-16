@@ -39,7 +39,7 @@ export function applyShared(st: Any, ops: Any[], seq: number) {
   return applyInPlace({ ...st, entities, diagnostics: st.diagnostics }, ops, seq);
 }
 
-export type LiveOpts = { now?: () => number; catalogue?: Any; simModels?: Any; onAppend?: (seq: number, e: Any) => void;
+export type LiveOpts = { now?: () => number; /** the speed track's elapsed-time clock (ms); default: performance.now, or `now` when given */ pace?: () => number; catalogue?: Any; simModels?: Any; onAppend?: (seq: number, e: Any) => void;
   /** the authority's governance keys file (§2.4); default <worlds dir>/.custody.json, shared by every world in it */ custodyFile?: string;
   /** id → display name (the authority directory, server/directory.ts); default: that worlds dir's directory */ nameOf?: (id: string) => string | null;
   /** id → human|agent|anon|legacy (the directory); default: that worlds dir's directory */ kindOf?: (id: string) => string | null;
@@ -68,9 +68,13 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   for (let i = entries.length - 1; i >= 0; i--) if (isE(entries[i]) && Number.isInteger(entries[i].ts)) { lastNow = entries[i].ts; break; }
   const wall = opts.now ?? (() => Date.now());
   const now = () => (lastNow = Math.max(lastNow, Math.floor(wall())));
+  // the speed track's pace: elapsed time from the monotonic clock. The wall is stepped back by NTP or a VM's host sync (WSL2
+  // pulls Burrow's back ~1.4 s every ~30 s), and `now` then holds still until the wall catches up — right for ts, but a body's
+  // allowance would refill nothing meanwhile. A host that brings its own clock (a lab pinning time) is paced by it.
+  const pace = opts.pace ?? (opts.now ? now : () => performance.now());
 
   const w: Any = worldOf({
-    name, entries, getBlob, putBlob, now, catalogue: opts.catalogue,
+    name, entries, getBlob, putBlob, now, pace, catalogue: opts.catalogue,
     scripts: opts.scripts === undefined ? SANDBOX : opts.scripts, present: opts.present,
     writeLine: (line: string) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {} }, savePresence: () => {},

@@ -2899,7 +2899,11 @@ const PHYSICS_VERBS = {
     if (!Array.isArray(a.to) || a.to.length !== 3 || a.to.some((n) => !Number.isFinite(n))) refuse("shape", "move needs to: [x, y, z]", "");
     const st = w.state(); const B = boundsOf(st);
     if (B && outsideWorld(B, a.to)) refuse("out-of-bounds", `[${a.to.join(", ")}] is outside this world (x ${B.min[0]}…${B.max[0]}, up to y ${B.max[1]}, z ${B.min[2]}…${B.max[2]})`, "pick a spot inside the bounds");
-    const me = w.presence.bodies[actor]; const now = w.now(); const to = a.to.slice();
+    const me = w.presence.bodies[actor]; const to = a.to.slice();
+    // the speed track's clock is elapsed time (w.pace: a host's monotonic clock), never the log's: a wall clock stepped back
+    // (NTP, a VM's host sync) holds the log's clock still — it never goes backwards — and the bucket would refill nothing
+    // until the wall caught up, refusing a plain run too-fast (gate 18 navgrid/places). A host without one paces by w.now
+    const now = w.pace ? w.pace() : w.now();
     const size = sizeOf(a, me?.size);   // this body's height and scale: what it sends now, else what it sent last
     if (!me || a.teleport === true) { // a teleport (arriving is one): an act, so the track's reset is on the record
       const mine = Object.entries(w.presence.holds).filter(([, h]) => h.by === actor).map(([id]) => id);
