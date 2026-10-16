@@ -26,8 +26,8 @@ not exit on its own. It stays out of the gate.
 ## The four negative controls
 
 **1. Bypass the support wait** (#235). The agent must not plan or walk before the placed world's colliders exist
-(`mcpl/agent.ts` `supportReady()`, the barrier a walk waits on). Make the walk skip it, then run
-`agent-mesh-collision`:
+(`mcpl/agent.ts` `supportReady()`, the barrier a walk waits on). Make the walk skip it — in `supportReady`, replace
+`if (!this.supportPending.size) return now();` with `return now();` — then run `agent-mesh-collision`:
 
 ```
 ✗ a pen spawned just now, its shape still downloading: a walk into it waits for it, then is refused — never passes
@@ -39,7 +39,7 @@ walked outside the founded world's bounds, and the authority's own solids stoppe
 row was changed to require that the walk's **plan** refuses it, not the authority (`211c8b67`).
 
 **2. Remove the mesh governor** (#235). At most `MESH_CONCURRENCY` (3) models decode at once
-(`mcpl/agent.ts`). Raise it past the burst, then run `agent-mesh-collision`:
+(`mcpl/agent.ts`, `const MESH_CONCURRENCY = 3`). Raise it past the burst (`= 64`), then run `agent-mesh-collision`:
 
 ```
 ✗ 64 unique models replayed at once download a few at a time, and all decode  at most 64 at once (governor 64)

@@ -66,7 +66,7 @@ its own small entity with its origin at the hinge and open it by `place`-ing a
 new yaw.
 
 **Loose things.** A small thing with `physics {kind: "dynamic"}` and a box
-shape (a crate, a barrel) is not furniture to an agent's walk: if the walker
+shape (a crate, a barrel) is not furniture to an agent's walk in a world running physics: if the walker
 may shove it and a walking shove would slide it out of the way (for a 70 kg
 body, up to about 213 kg at a walk, about 660 kg at a run: `shared/shove.js`
 `budges`), the route goes through it and the walk pushes it aside. Anything
