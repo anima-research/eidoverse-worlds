@@ -35,7 +35,7 @@ import { mediaTier, tierWords } from './mediasrc.js';
 import { graphemes } from './text.js';
 import { ESSENTIAL_NAMES, instanceOf, effectFor, effectBlobName, modernize, instanceProblem, paramShown } from './particle_effects.js';
 import { readOut, readLine } from './a11y.js';
-import { COMPONENTS as SPEC, registered, outOfRange, rangeWords } from './protocol/componentspec.js';
+import { COMPONENTS as SPEC, registered, outOfRange, rangeWords, statusOf } from './protocol/componentspec.js';
 import { LOCK_LEVELS, lockLevel } from './protocol/roles.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ, MESH_SHAPES } from './components.js';
 import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
@@ -867,6 +867,8 @@ function componentSections(ent, groups, live = {}, id = '?') {
     const rec = RECORDS[inst.type];
     // every card's title starts with a capital (R 10-10: 'physics' was the only one that didn't)
     const sec = { type: inst.type, key: inst.key ?? null, title: String(inst.type).charAt(0).toUpperCase() + String(inst.type).slice(1), hash: rec.hash, category: rec.category, summary: rec.summary, fields: [], removable: false };
+    // the registry's status (componentspec STATUSES: trial during the alpha), shown on the card; a draft has none
+    { const st = statusOf(String(inst.key ?? inst.type).toLowerCase()); if (st) sec.status = st; }
     switch (inst.type) {
       case 'Transform': {
         // the channel box: Translate, Rotate, Scale, the order, and the

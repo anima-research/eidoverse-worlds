@@ -271,6 +271,22 @@ await C("D10", "grabbable's written defaults are shared/grab.js's own (the hand'
 await C("D9", "§4 explains schemas: optional, and why the stamped parameters and the pinned registry make old worlds safe without them", () => {
   const g = SPEC.slice(SPEC.indexOf("## 4."), SPEC.indexOf("### 4.1")); return [/schemas:<name>/.test(g) && /optional/i.test(g) && /registry-pin/.test(g), g.slice(g.indexOf("Meaning travels"), g.indexOf("Meaning travels") + 300)]; });
 
+// ---- ST: status (shape audit 10-16; R: every component trial for the alpha) ----
+const RESERVED_NAMES = ["joint", "schemas", "terrain-grid", "terrain-tile", "terrain-paint"];
+await C("ST1", "every registered name has a status: the five held names are reserved, every other one trial, none stable (v1 promises none)", () => {
+  const bad = Object.entries<any>(CAT.COMPONENTS).filter(([k, d]) => d.status !== (RESERVED_NAMES.includes(k) ? "reserved" : "trial")).map(([k, d]) => `${k}: ${d.status}`);
+  return [!bad.length && typeof CAT.STATUSES?.trial === "string" && typeof CAT.statusOf === "function" && CAT.statusOf("script:bell") === "trial" && CAT.statusOf("joint:h") === "reserved" && CAT.statusOf("example.org/heart") === null, bad]; });
+await C("ST2", "a write of any reserved name is refused at the door, one code and one wording for all of them (an owner's too); joint's fix still says what to use", () => {
+  const W = world(); mk(W);
+  const tries = [["@world", "schemas:light", "sha256:" + "0".repeat(64)], ["@world", "terrain-grid", { spacing: 1, tile: 8, origin: [0, 0], extent: [1, 1] }], ["@world", "terrain-tile:0-0", { mm: [0] }],
+    ["@world", "terrain-paint:0-0", {}], ["box", "joint:h", { to: "@world", type: "hinge" }]];
+  const rs = tries.map(([id, component, value]) => W.call("set", { id, component, value }));
+  const words = rs.map((r) => r.refused?.reason?.replace(/^\S+: '[^']+'/, "X"));
+  return [rs.every((r) => !r.ok && r.refused.code === "reserved") && new Set(words).size === 1 && /parent \{to\}/.test(rs[4].refused.fix), rs.map((r) => r.refused ?? r)]; });
+await C("ST3", "schema says each name's status and what the statuses mean", () => {
+  const W = world(); const r = W.call("schema", {}); const one = W.call("schema", { component: "joint" });
+  return [r.ok && r.components.light.status === "trial" && one.components.joint.status === "reserved" && typeof r.statuses?.reserved === "string", [r.statuses, one.components?.joint?.status]]; });
+
 // ---- I: ids (H5) ----
 const RAND = /-[a-z2-7]{26}$/;
 await C("I1", "the authority mints ids with 128+ random bits (<slug>-<26 base32>), never <slug>-<count>", () => {

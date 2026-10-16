@@ -89,7 +89,7 @@ function playground() {
 }
 { const { call, w } = playground();
   const j = call("rowan", "set", { id: "ball", component: "joint:hinge", value: { to: "@world", type: "hinge", axis: [0, 1, 0] } });
-  ok("PH7", !j.ok && j.refused?.code === "unsupported" && /joint/.test(j.refused?.reason ?? ""), "the authority refuses a joint until the world's engine carries joints (says so, rather than storing a dead value)", j.refused ?? j);
+  ok("PH7", !j.ok && j.refused?.code === "reserved" && /joint/.test(j.refused?.reason ?? "") && /parent \{to\}/.test(j.refused?.fix ?? ""), "the authority refuses a joint: a reserved name (one refusal for every reserved name; its fix says what to use meanwhile), rather than storing a dead value", j.refused ?? j);
   const k = call("rowan", "create", { id: "lift", model: "crate", components: { physics: { kind: "kinematic" } }, place: { at: [3, 3] } });
   const kp = w.state().entities.lift?.c.physics;
   ok("PH8", k.ok && kp?.kind === "kinematic" && Array.isArray(kp.shape) && call("rowan", "punt", { id: "lift" }).refused?.code === "not-dynamic",

@@ -13,7 +13,7 @@ import { checkSockets, checkSocket } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
 import { mintId, PERSON_ID } from "./ids.js";
-import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, outOfRange, rangeWords, resolveVersioned } from "./componentspec.js";
+import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, outOfRange, rangeWords, resolveVersioned, statusOf, canonicalName, STATUSES } from "./componentspec.js";
 import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
 import { dec } from "./names.js";
 import { READ_ONLY, GHOST_OK } from "./verbclasses.js";
@@ -274,6 +274,11 @@ function admit(w, st, who, ops) {
     else if (op.verb === "delete" && op.comp === undefined && op.id === "@world") refuse("world", "@world can't be deleted", "§2: delete or change its components instead (owners only)");
     else if (op.verb === "delete" && op.comp !== undefined && !(op.comp in e.c)) refuse("not-found", `${op.id} has no ${op.comp}`, `it has: ${Object.keys(e.c).join(", ")}`);
     else if (op.verb === "set" && !("value" in op)) refuse("shape", `set ${at} needs a value`, "");
+    // a reserved name (componentspec STATUSES) is held, never written: one refusal for every reserved name, before rights
+    // (nobody may write it, so who is asking doesn't matter). A carried value (a fork's copy, the load's lift) keeps what it
+    // holds: the refusal is about new writes, not about what an older log stored
+    if (op.verb === "set" && statusOf(op.comp) === "reserved" && !(CTX.forking || who.lifting)) { const b = canonicalName(baseOf(op.comp));
+      refuse("reserved", `${at}: '${b}' is a reserved name: it is held for a shape that isn't settled yet, and nothing may write it`, COMPONENTS[b].instead ?? `schema {component: '${b}'} says what it is held for`, { status: "reserved" }); }
     const pause = op.verb === "set" && op.comp.startsWith("script:") && pauseOnly(op.value, s.entities[op.id]?.c[op.comp]);
     rights(w, st, s, who, role, op, at, made, pause);
     keyRights(w, st, s, who, op, at, keysMade, pause);
@@ -694,10 +699,6 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   mediaCheck(s, id, comp, v, at, obj);
   for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(":")[0]]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
   schemaCheck(at, comp, v, { carry });
-  // spec/PHYSICS.md §3.3: joint:<name> is reserved until the world's engine carries joints (ENGINES[…].joints); stored
-  // now it would be a value nothing honours, and the first engine to read it would inherit whatever builders guessed
-  if (baseOf(comp) === "joint" && !ENGINES[s.entities["@world"]?.c["physics-engine"]?.engine]?.joints)
-    refuse("unsupported", `${at}: this world's engine doesn't carry joints (none this server carries does yet), so a joint would do nothing`, "joint:<name> is reserved (PHYSICS §3.3). parent {to} attaches rigidly; openable animates a door, lid or gate; motion swings a pendulum");
   // §3.2: a material names one of this world's surfaces
   if (comp === "physics" && obj && typeof v.material === "string" && !carry && !s.entities["@world"]?.c[`surface:${v.material}`]) { const have = Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("surface:")).map((k) => k.slice(8));
     refuse("not-found", `${at}.material: this world has no surface '${v.material}'${have.length ? ` (it has ${have.join(", ")})` : " (it has none)"}`, "the owner adds one: set {id: '@world', component: 'surface:<name>', value: {friction, restitution, density}}", { didYouMean: guess(v.material, have) }); }
@@ -3710,7 +3711,8 @@ const VERBS = {
     return { ok: true, entries: out, ...(more ? a.after !== undefined ? { next: out.at(-1).seq, more: "send after: next for newer" } : { next: out[0].seq, more: "send before: next for older" } : {}) }; },
   // particles names an effect: its schema also lists the Essentials and each one's params (the knobs an instance sets), so
   // an agent can write one without a second question; effect {name} returns a whole document
-  schema(w, actor, a) { return { ok: true, components: a.component ? { [a.component]: COMPONENTS[a.component] } : COMPONENTS,
+  // every definition carries its status (trial | reserved | stable); statuses says what each means
+  schema(w, actor, a) { return { ok: true, components: a.component ? { [a.component]: COMPONENTS[a.component] } : COMPONENTS, statuses: STATUSES,
     ...(a.component === "particles" ? { effects: Object.fromEntries(ESSENTIAL_NAMES.map((k) => { const d = effectFor(k); return [k, { reads: d.reads, params: Object.fromEntries(Object.entries(d.params ?? {}).map(([n, p]) => [n, { type: p.type, ...(p.min !== undefined ? { min: p.min } : {}), ...(p.max !== undefined ? { max: p.max } : {}), ...(p.values ? { values: p.values } : {}), ...(p.help ? { help: p.help } : {}) }])) }]; })) } : {}) }; },
   create: (w, actor, a) => commit(w, actor, "create", a, (ctx) => buildCreate(ctx, a)),
   set: (w, actor, a) => commit(w, actor, "set", a, (ctx) => buildSet(ctx, a)),
