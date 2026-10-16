@@ -21,6 +21,9 @@ export const PRESETS = {
 };
 export const DEFAULT_PRESET = "normal"; // for every new body: never a property of being an agent (42 §4.3)
 export const ASK_MS = 20000, COOL_MS = 600000, MAX_ALLOW_MS = 30 * 24 * 3600000;
+// a reach descriptor the relay strips (server/reachgate.ts → authority.js reachAdmits) is said to the reacher once per
+// (reacher, target, class) per this long: a stream of frames is one attempt, never one message a frame
+export const REACH_NOTE_MS = 15000;
 export const KIND_CLASS = { pose: "pose", anim: "pose", shove: "shove", drag: "move", seat: "move", carry: "move", touch: "touch" };
 // Touch is judged by where a hand is, not how it was aimed (42 P8): named points split social / intimate.
 export const INTIMATE_POINTS = new Set(["chest_front", "waist_l", "waist_r", "hip_l", "hip_r"]);

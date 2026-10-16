@@ -15,7 +15,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
-import { forkCopy, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld } from "../shared/protocol/authority.js";
+import { forkCopy, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { clientCutOf, spokenOf } from "../shared/protocol/replica.js";
 import { viewState } from "../shared/protocol/view.js";
@@ -153,6 +153,14 @@ export class WorldLog {
     if (this.live.entries.length > from) this.afterWrite(from);
     if (this.holdsKey() !== held) this.host?.broadcast({ type: "holds", world: this.name, holds: this.holds() });
     this.forwardInbox();
+    return r;
+  }
+  /** The relay's per-packet question for a reach descriptor aimed at another body (authority.js reachAdmits): presence only,
+   *  never a request (nothing appended, no ask made). A refusal it noted goes straight to the reacher's socket. */
+  reachAdmits(from: string, to: string, cls: string, extra: { point?: string | null; limb?: string } = {}) {
+    if (this.retired) return { ok: false, code: "reset", reason: "this world was reset", noted: false };
+    const r = reachAdmits(this.live, from, to, cls, extra);
+    if (r.noted) this.forwardInbox();
     return r;
   }
   /** The authority's body inbox (asks, replies, acts, revocations: PROTOCOL L6) reaches its person: what's new since we

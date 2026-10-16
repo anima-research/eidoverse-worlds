@@ -16,6 +16,7 @@
 import { WORLDS_DIR } from "./config.ts";
 import { LIMITS } from "./limits.ts";
 import { sanePose } from "./posecheck.ts";
+import { gateReach } from "./reachgate.ts";
 import { BODY_RANGE } from "../shared/protocol/physconst.js";
 import { currentIncarnation } from "./transport.ts";
 import { isOperator } from "./operators.ts";
@@ -435,6 +436,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
         console.log(`[world:${c.world.name}] dropped non-finite pose from ${c.id} (×${cc.badPose})`);
       return;
     }
+    gateReach(c, pose);                           // a hand on another body relays only with their consent (reachgate.ts)
     c.lastPose = pose;
     // presence: batched into stage frames by the tick loop, never persisted
     c.world.dirty.set(c.id, pose);

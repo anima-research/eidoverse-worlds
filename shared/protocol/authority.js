@@ -3296,6 +3296,32 @@ function bodyGate(w, from, to, kind, extra = {}) {
     return result("asked", { ok: true, asked: true, ask: id }); }
   return { ok: true, consent: d.standing === "allow" ? "allowed" : "standing", deliver: () => { ringPush(P, { ts: now, from, to, cls, verdict: "allowed" }); deliver(w, from, to, kind, cls, extra, "standing"); } };
 }
+// The relay's question about a reach DESCRIPTOR (shared/reachwire.js: a hand streamed in a pose toward another body, design
+// review 10-15 item 1): may `from`'s hand rest on `to` as `cls` (touch | intimate) right now? Asked per presence packet, so it
+// is presence only: nothing is appended, no ask is made (the relay can't wait; the `reach` verb asks), and the refusal
+// counter that leads to a moderator-log cool-down is NOT fed (a stream of frames is one attempt, not fifty). Admitted when
+// `to`'s table says everyone (a standing allow included), or when the `reach` verb already admitted this touch (an ask
+// answered yes: P.reaches, which revokeAfter clears when the table closes). A refusal is said to the reacher in the body
+// inbox, and to the target's attempt ring, once per (from, to, cls) per C.REACH_NOTE_MS; `noted` says whether it was now.
+export function reachAdmits(w, from, to, cls, { point = null, limb = null } = {}) {
+  const P = w.presence, now = w.now();
+  if (from === to) return { ok: true, consent: "self" };
+  if (!C.ENFORCED.includes(cls) || (cls !== "touch" && cls !== "intimate")) return { ok: false, code: "shape", class: cls, reason: `a reach is touch or intimate, not '${cls}'` };
+  const granted = P.reaches?.[from]; if (granted && granted.to === to && (granted.cls === cls || (granted.cls === "intimate" && cls === "touch"))) return { ok: true, consent: "asked" };
+  let r;
+  if (P.throttle?.[`${from}:${cls}`] > now) r = { code: "cool-down", reason: `${from} is on a cool-down for ${cls} after repeated refusals (moderator log)`, fix: "ask people first; this lifts by itself" };
+  else { const d = C.decide(P, from, to, cls, now);
+    if (d.mode === "everyone") return { ok: true, consent: d.standing === "allow" ? "allowed" : "standing" };
+    r = d.mode === "ask"
+      ? { code: "consent", reason: `${to}'s ${cls} for you is ask: a hand isn't streamed onto them until they say yes`, fix: `ask first with the reach request: reach {who: "${to}", point: "${point ?? "<point>"}"} (they have 20 s; silence is no)` }
+      : { code: "consent", reason: d.why, fix: `${to} isn't taking ${cls} from you; their shield says so (look)` }; }
+  const key = `${from}>${to}:${cls}`, notes = (P.reachNotes ??= {});
+  for (const [k, t] of Object.entries(notes)) if (now - t >= C.REACH_NOTE_MS) delete notes[k];
+  const noted = !(notes[key] > now - C.REACH_NOTE_MS);
+  if (noted) { notes[key] = now; ringPush(P, { ts: now, from, to, cls, verdict: "refused (reach not relayed)" });
+    inboxPush(P, from, { type: "reach-refused", to, class: cls, ...(point ? { point } : {}), ...(typeof limb === "string" ? { limb } : {}), why: r.reason, fix: r.fix, code: r.code }); w.presenceDirty = true; }
+  return { ok: false, class: cls, ...r, noted };
+}
 function deliver(w, from, to, kind, cls, extra, consent) {
   const P = w.presence, b = P.bodies[to];
   if (cls === "pose") { b.pose = extra.spec ?? {}; b.poseBy = from; }

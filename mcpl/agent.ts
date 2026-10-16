@@ -5,7 +5,7 @@
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
 import { bodyOf } from "../shared/components.js";
-import { DEFAULT_PRESET, KIND_CLASS } from "../shared/protocol/consent.js";
+import { DEFAULT_PRESET, KIND_CLASS, REACH_NOTE_MS, INTIMATE_POINTS } from "../shared/protocol/consent.js";
 import { kindOf } from "../shared/protocol/kind.js";
 import { describeBody, mayLeave, resolveSeat, socketsUnder } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
@@ -1030,6 +1030,12 @@ export class WorldAgent {
               else if (m.type === "body-reply") text = m.ok ? `your ask ${m.ask} was allowed${m.applied ? " and done" : ""}` : `your ask ${m.ask} was refused: ${m.why ?? "no"}`;
               else if (m.type === "body") text = `${m.from} ${m.kind === "touch" ? "touched" : m.kind === "shove" ? "knocked over" : m.kind === "drag" || m.kind === "carry" ? "moved" : m.kind === "seat" ? "seated" : "posed"} you${m.spec?.point ? ` (${m.spec.point})` : ""} (consent: ${m.consent})`;
               else if (m.type === "body-revoked") text = `${m.by} withdrew consent for ${m.class}: what you were doing to their body has ended`;
+              else if (m.type === "reach-refused") {   // the relay took a hand of mine out of my pose: nobody saw it (server/reachgate.ts)
+                const to = String(m.to ?? ""), who = this.nameOfActor(to) ?? to;
+                this.reachRefusals.push({ to, cls: String(m.class ?? "touch"), why: String(m.why ?? "their consent refused it"), ...(m.fix ? { fix: String(m.fix) } : {}), ...(typeof m.limb === "string" ? { limb: m.limb } : {}), ts });
+                if (this.reachRefusals.length > 20) this.reachRefusals.shift();
+                const dropped = this.dropReachesAt(to, typeof m.limb === "string" ? m.limb : undefined);
+                text = `your hand toward ${who}${m.point ? `'s ${m.point}` : ""} was not shown to anyone (consent class ${m.class}): ${m.why}${m.fix ? ` — ${m.fix}` : ""}${dropped.length ? `. Withdrawn: ${dropped.join(", ")}` : ""}`; }
               if (text) { this.inbox.push({ ts, kind: "act", who: m.type === "body-ask" ? String(m.ask?.from ?? "world") : String(m.from ?? m.by ?? "world"), text }); this.onEvent?.({ ts, kind: "act", who: String(m.ask?.from ?? m.from ?? m.by ?? "world"), text, mention: m.type === "body-ask" }); }
             }
             break;
@@ -3123,6 +3129,27 @@ export class WorldAgent {
   }
   /** present people's identities, by display name (their arrival carries it) */
   actorIds = new Map<string, string>();
+  /** Reaches the relay refused to show (server/reachgate.ts; the authority says so once per target and class per
+   *  REACH_NOTE_MS), newest last: what reach() reads to tell the truth about a hand nobody saw. */
+  reachRefusals: { to: string; cls: string; why: string; fix?: string; limb?: string; ts: number }[] = [];
+  private nameOfActor(actor: string): string | null { for (const [n, a] of this.actorIds) if (a === actor) return n; return null; }
+  /** Stop streaming the limbs a refusal names (the relay strips them anyway): the one it named, and any aimed at that body. */
+  private dropReachesAt(actor: string, limb?: string): string[] {
+    const name = this.nameOfActor(actor), out: string[] = [];
+    for (const [l, e] of [...this.reaches]) if (l === limb || (name && (e.t?.who === name || e.t?.space === name))) { this.reaches.delete(l); out.push(WorldAgent.LIMB_WORD[l] ?? l); }
+    return out;
+  }
+  /** After streaming a reach at another body: did the relay refuse it? A fresh refusal (waits a few frames for one), or one
+   *  said within REACH_NOTE_MS (the relay won't say it again that soon, so silence then is not a yes). */
+  private async reachRefusalFor(limb: string, actor: string, cls: string | null, since: number) {
+    for (let i = 0; i < 16 && this.joined && !this.closed; i++) {
+      const r = this.reachRefusals.find((x) => x.ts >= since && x.to === actor && (x.limb ?? limb) === limb);
+      if (r) return { r, fresh: true };
+      await new Promise((res) => setTimeout(res, 50));
+    }
+    const r = [...this.reachRefusals].reverse().find((x) => x.to === actor && (!cls || x.cls === cls) && x.ts > Date.now() - REACH_NOTE_MS);
+    return r ? { r, fresh: false } : null;
+  }
   /** A gesture's ops (shared/protocol/requests.js) as ONE request — one act, the authority's answer — sent after the previous one
    *  was answered (its log arrived first), so a follow-up plans against that write. `extra` rides the request
    *  (dry, expect, throughLock). The same requests a person's edit sends: one vocabulary, both audiences. */
@@ -3364,12 +3391,26 @@ export class WorldAgent {
       if (!this.joined) await this.reachBodyFor(person.avatar || WorldAgent.DEFAULT_BODY);
     }
     const entry: { t: any; palm?: false; reached?: true } = { t, ...(opts.palm === false ? { palm: false as const } : {}) };
+    const since = Date.now();
     this.reaches.set(limb, entry);
     if (this.joined) await this.refreshReachReading();
     const res = this.solveReachEntry(limb, entry);
     if (res.state === "ok" && res.reached) entry.reached = true;
     const limbW = WorldAgent.LIMB_WORD[limb];
     const what = describeTarget(t, this.name);
+    // a hand on another body is shown only with their consent: the relay strips it otherwise and says why (reachgate.ts)
+    const otherName = t.who !== undefined ? t.who : t.space !== undefined && t.space !== "self" ? t.space : null;
+    const otherActor = otherName && otherName !== this.name ? this.actorIds.get(otherName) : undefined;
+    if (otherActor && this.joined) {
+      const refused = await this.reachRefusalFor(limb, otherActor, t.who !== undefined ? (INTIMATE_POINTS.has(t.point) ? "intimate" : "touch") : null, since);
+      if (refused) {
+        if (this.reaches.get(limb) === entry) this.reaches.delete(limb);
+        const { r } = refused, ago = Math.round((Date.now() - r.ts) / 1000);
+        return { ok: false, text: `${limbW} toward ${what}: not shown to anyone — ${otherName}'s consent refused it (class ${r.cls}): ${r.why}${r.fix ? ` — ${r.fix}` : ""}. `
+          + (refused.fresh ? "The reach is withdrawn; nobody saw your hand there."
+            : `That was said ${ago}s ago, and the world says it once per ${REACH_NOTE_MS / 1000}s, so the reach is withdrawn without streaming it again; if they have changed their table since, reach again in ${Math.max(1, Math.ceil((REACH_NOTE_MS - (Date.now() - r.ts)) / 1000))}s.`) };
+      }
+    }
     if (res.state !== "ok") {
       const why = res.state === "err" ? res.err : "skeletons still loading; the verdict follows on the next check";
       return { ok: true, text: `${limbW} reaching toward ${what} — streamed, but unverified: ${why}` };
