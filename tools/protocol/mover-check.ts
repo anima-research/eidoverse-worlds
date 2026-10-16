@@ -9,6 +9,14 @@
 //   A   agreement: every spot the mover walks an agent-shaped body to is a `move` the real authority accepts at the
 //       same millimetre; the ledge and the wall the mover refuses are the ones the authority refuses; the client's
 //       capsule and mantle are the mover's body
+//   W   water in the one walker (wade, swim, haul out), the mover alone
+//   G   THE GROUND (10-15, holes review H2): the same strides through stepWalk AND the real authority's move, on terrain and
+//       in water — a terrain hill (up, over, down at a run), wading (and into a stone a wader's box meets), swimming (and
+//       standing up on a sunk rock), hauling out onto a dock 0.5 m above the surface (both accept) / 0.6 m (both refuse,
+//       same stride), a dug pit's rim at the waterline (both accept) / a terrain bank 0.6 m above the water (both refuse);
+//       each with the mover's y and with the bed's (the agent's permit). GP: place {at}, create {at: [x, z]} and the spawn
+//       alias seat a model's bottom on the heightfield (±1 cm), y 0 on a flat world. Red first: before the fix 19 G rows
+//       failed (G3 bed, G4, G5 bank, GP1-3, GP5); G1/G2-stone/G5-rim/GP4 were seen red under mutations (see the commit)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -179,6 +187,135 @@ if (M) {
   const tall = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1 }, pool(1.0)), short = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1, height: 1.2 }, pool(1.0));
   const dryShort = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1, height: 1.2 }, pool(null));
   ok(!tall.stance.swimming && short.stance.swimming && near(short.pos[1], 1.0 - 0.75 * 1.2) && near(short.moved, 0.9) && near(dryShort.moved, 1.55), "W5 height: a 1.2 m body swims in 1 m of water a 1.7 m one wades; dry, its stride is the mover's", { tall: tall.stance, short: short.stance, dryShort: dryShort.moved });
+}
+{ // G: THE GROUND (owner 22:34, holes review H2). The authority judges a body on the same ground the walker walks on: the
+  // terrain heightfield (shared/terrainmath.js over @world's terrain) and the water (the mover's own water law). Every row
+  // runs the SAME stride through stepWalk and through the real authority's `move`, and requires the same verdict: what the
+  // mover accepts is accepted at the same millimetre; the stride the mover refuses is refused. Then placement on the hill.
+  const { stepWalk, walkToward, MOVER } = await import(ENGINE + "shared/mover.js");
+  const { terrainParams, makeHeightField } = await import(ENGINE + "shared/terrainmath.js");
+  const { request } = await import(ENGINE + "shared/protocol/authority.js");
+  const { openWorld } = await import(ENGINE + "server/filehost.ts");
+  const root = scratch("ground"); let T = 1_800_000_000_000;
+  const call = (world, actor, verb, args = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, world), actor, verb, args); };
+  const r3 = (n) => Math.round(n * 1000) / 1000;
+  const fieldOf = (terrain) => makeHeightField(terrainParams(terrain));
+  // a box {min, max} of a mesh box placed by its bottom centre (as A0's), and the authority's own overlap rule (a touch is not a hit)
+  const meshBox = (p, s) => ({ min: [p[0] - s[0] / 2, p[1], p[2] - s[2] / 2], max: [p[0] + s[0] / 2, p[1] + s[1], p[2] + s[2] / 2] });
+  const hits = (a, b, eps = 0.01) => [0, 1, 2].every((i) => Math.min(a.max[i], b.max[i]) - Math.max(a.min[i], b.min[i]) > eps);
+  const inXZ = (b, x, z) => x >= b.min[0] && x <= b.max[0] && z >= b.min[2] && z <= b.max[2];
+  // the agent's env: the floor is the terrain, or a placed top under the body's centre (its colliders' answer); the water is
+  // the world's level; what blocks is a placed solid meeting the box the MOVER hands it (its stance's box)
+  const envOf = (h, level, solids) => ({
+    floorAt: (x, z) => solids.reduce((f, s) => (inXZ(s.box, x, z) ? Math.max(f, s.box.max[1]) : f), h(x, z)),
+    ...(level != null ? { waterAt: () => level } : {}),
+    blocked: (box) => solids.find((s) => hits(box, s.box))?.id ?? null,
+  });
+  // walk from `from` toward `target`, one stride per authority move; claim: "mover" sends the mover's y, "bed" the ground's
+  // (the agent's permit: heightAt, never the float). → {strides, accepted (all at the same mm), agree, moverRef, authRef, seen}
+  function agree(world, actor, from, target, env, { claim = "mover", run = false, max = 400, h } = {}) {
+    const y0 = claim === "bed" ? h(from[0], from[1]) : env.floorAt(from[0], from[1]);
+    let p = [from[0], y0, from[1]];
+    if (env.waterAt) { const st = stepWalk({ pos: p, dir: [1, 0], dt: 1e-9 }, env).stance; if (st?.swimming && claim === "mover") p = [p[0], st.y, p[2]]; }
+    const tp = call(world, actor, "move", { to: p.map(r3), teleport: true });
+    if (!tp.ok) return { start: tp.refused };
+    let strides = 0, mism = null, moverRef = null, authRef = null; const seen = { swim: false, wade: false, dry: false, maxY: -Infinity, minY: Infinity, ys: [] };
+    for (let i = 0; i < max; i++) {
+      const r = walkToward({ pos: p, target, dt: 0.1, run }, env);
+      if (r.arrived) break;
+      const dir = [target[0] - p[0], target[1] - p[2]], L = Math.hypot(dir[0], dir[1]);
+      // the refused stride's length: the same step with the floor known only where the body stands (no ledge, no wall)
+      const d = r.blocked ? stepWalk({ pos: p, dir, dt: 0.1, run, cap: L }, { ...env, blocked: undefined, floorAt: (x, z) => (x === p[0] && z === p[2] ? env.floorAt(x, z) : NaN) }).moved : r.moved;
+      const nx = p[0] + dir[0] / L * d, nz = p[2] + dir[1] / L * d;
+      const y = claim === "bed" ? h(nx, nz) : r.blocked ? env.floorAt(nx, nz) : r.pos[1];
+      const to = [r3(nx), r3(y), r3(nz)];
+      const m = call(world, actor, "move", { to }, 100);
+      if (r.blocked) { moverRef = r.blocked; authRef = m.ok ? { ok: true, at: m.at } : m.refused; break; }
+      strides++;
+      if (!m.ok) { authRef = m.refused; mism = { stride: strides, to, refused: m.refused, stance: r.stance }; break; }
+      if (!(near(m.at[0], to[0]) && near(m.at[1], to[1]) && near(m.at[2], to[2]))) { mism = { to, at: m.at }; break; }
+      const st = r.stance; if (st?.swimming) seen.swim = true; else if (st && st.depth > 0.05) seen.wade = true; else seen.dry = true;
+      seen.maxY = Math.max(seen.maxY, r.pos[1]); seen.minY = Math.min(seen.minY, r.pos[1]); if (!seen.ys.includes(r3(r.pos[1]))) seen.ys.push(r3(r.pos[1]));
+      p = r.pos;
+    }
+    return { strides, accepted: !mism && !moverRef, mism, moverRef, authRef, seen, at: p.map(r3) };
+  }
+
+  // ---- G1 terrain: a hill (2.5 m, radius 6) on flat ground; up it, over its top and down the far side
+  const HILL = { amplitude: 0, size: 80, features: [{ type: "hill", x: 10, z: 0, radius: 6, height: 2.5 }] };
+  call("hill", "olive", "create-world", { title: "hill" });
+  ok(call("hill", "olive", "set", { id: "@world", component: "terrain", value: HILL }).ok, "G0 the hill world's terrain");
+  const hH = fieldOf(HILL), envH = envOf(hH, null, []);
+  ok(call("hill", "ann", "move", { to: [0, 0, 0], client: "agent" }).ok, "G0 ann arrives");
+  for (const claim of ["mover", "bed"]) {
+    const up = agree("hill", "ann", [2, 0], [10, 0], envH, { claim, h: hH });
+    ok(up.accepted && up.strides > 30 && near(up.seen.maxY, 2.5, 0.05), `G1 [${claim}] up a terrain slope to the hilltop: every stride the mover takes, the authority accepts at the same mm`, up);
+    const over = agree("hill", "ann", [10, 0], [19, 0.5], envH, { claim, h: hH, run: true });
+    ok(over.accepted && over.strides > 15 && over.seen.minY < 0.01, `G1 [${claim}] down the far side at a run: the same`, over);
+  }
+  // a terrain wall a stride can't climb: (both say no is not asked here: the mover's ledge on continuous ground depends on its
+  // stride length, which the authority never sees; see the report's out-of-scope list)
+
+  // ---- G2–G5 water: a dug pool. A bowl 3 m deep (radius 8) under level 0, a 0.5 m dock and a 0.6 m one in it, a pit with a
+  // vertical rim AT the waterline, and a pond whose bank stands 0.6 m above its water
+  const POOL = { amplitude: 0, size: 120, features: [{ type: "hill", x: 0, z: 0, radius: 8, height: -3 }, { type: "flatten", x: 14, z: 12, radius: 4, height: -2, edge: 0.01 }], water: { level: 0 } };
+  call("pool", "olive", "create-world", { title: "pool" });
+  ok(call("pool", "olive", "set", { id: "@world", component: "terrain", value: POOL }).ok, "G0 the pool world's terrain and water");
+  // …and a rock under the swim (its top 0.8 m under the surface: a swimmer stands up on it) and a stone in the shallows
+  // (its top 0.4 m above the water: a wader walks into it, where a swimmer's box would pass over)
+  const D5 = { id: "dock5", p: [4, -3.2, 0], s: [4, 3.7, 2] }, D6 = { id: "dock6", p: [0, -3.2, 4], s: [2, 3.8, 4] };
+  const ROCK = { id: "rock", p: [-3.5, -3.2, -0.5], s: [1, 2.4, 1.2] }, STONE = { id: "stone", p: [-5.5, -1, -3], s: [1, 1.4, 1] };
+  for (const d of [D5, D6, ROCK, STONE]) ok(call("pool", "olive", "create", { id: d.id, components: { mesh: { shape: "box", size: d.s }, transform: { pos: d.p } } }).ok, `G0 ${d.id}: its top ${r3(d.p[1] + d.s[1])} m, the water at 0`);
+  const solids = [D5, D6, ROCK, STONE].map((d) => ({ id: d.id, box: meshBox(d.p, d.s) }));
+  const hP = fieldOf(POOL), envP = envOf(hP, 0, solids);
+  ok(call("pool", "ann", "move", { to: [-12, 0, 0], client: "agent" }).ok, "G0 ann arrives at the pool's edge");
+  for (const claim of ["mover", "bed"]) {
+    const wade = agree("pool", "ann", [-12, 0], [-6.2, 0], envP, { claim, h: hP });
+    ok(wade.accepted && wade.seen.wade && !wade.seen.swim, `G2 [${claim}] wading in down the bowl's side: the same verdict, stride for stride`, wade);
+    const stone = agree("pool", "ann", [-5.5, -0.5], [-5.5, -3.4], envP, { claim, h: hP });
+    ok(stone.moverRef?.by === "stone" && stone.authRef && !stone.authRef.ok && /stone/.test(stone.authRef.reason) && stone.mism === null && stone.seen.wade && !stone.seen.swim,
+      `G2 [${claim}] wading into a stone 0.4 m above the water: a wader's box is a walker's, and both refuse the same stride`, stone);
+    const swim = agree("pool", "ann", [-6.2, 0], [-1, -1], envP, { claim, h: hP });
+    ok(swim.accepted && swim.seen.swim && swim.seen.ys.includes(-0.8), `G3 [${claim}] swimming out over 3 m of water, standing up on a rock 0.8 m under the surface on the way: the same`, swim);
+    const out5 = agree("pool", "ann", [-1, 0], [5, 0], envP, { claim, h: hP });
+    ok(out5.accepted && out5.seen.swim && near(out5.seen.maxY, 0.5, 1e-6) && out5.at[0] > 4.9, `G4 [${claim}] hauling out onto a dock 0.5 m above the surface: accepted by both (H2: the authority called it solid)`, out5);
+    const out6 = agree("pool", "ann", [-1, 0], [0, 5], envP, { claim, h: hP });
+    ok(out6.moverRef && out6.authRef && !out6.authRef.ok && out6.authRef.code === "solid" && /dock6/.test(out6.authRef.reason) && out6.mism === null, `G4 [${claim}] a dock 0.6 m above the surface: refused by both, at the same stride`, out6);
+    const rim = agree("pool", "ann", [14, 12], [19.5, 12], envP, { claim, h: hP });
+    ok(rim.accepted && rim.seen.swim && rim.at[0] > 19.4 && near(rim.seen.maxY, 0, 1e-3), `G5 [${claim}] out of a dug pit over a vertical rim AT the waterline (2 m of terrain wall): accepted by both`, rim);
+  }
+  // a pond whose terrain bank stands 0.6 m above its water: a wall from the water, to the mover AND the authority
+  const POND = { amplitude: 0, size: 80, features: [{ type: "flatten", x: 0, z: 0, radius: 4, height: -2.6, edge: 0.01 }], water: { level: -0.6 } };
+  call("pond", "olive", "create-world", { title: "pond" });
+  ok(call("pond", "olive", "set", { id: "@world", component: "terrain", value: POND }).ok, "G0 the pond's terrain and water");
+  const hQ = fieldOf(POND), envQ = envOf(hQ, -0.6, []);
+  ok(call("pond", "ann", "move", { to: [0, -2.6, 0], client: "agent" }).ok, "G0 ann arrives in the pond");
+  for (const claim of ["mover", "bed"]) {
+    const bank = agree("pond", "ann", [0, 0], [6, 0], envQ, { claim, h: hQ });
+    ok(bank.moverRef?.by === "ledge" && bank.authRef && !bank.authRef.ok && /ledge|terrain|bank/.test(`${bank.authRef.code} ${bank.authRef.reason}`) && bank.mism === null && bank.strides > 10,
+      `G5 [${claim}] a terrain bank 0.6 m above the water: the mover refuses the stride (a ledge) and so does the authority`, bank);
+  }
+
+  // ---- GP placement: on the hill, place {at}, create {at: [x, z]} and the spawn alias seat a model's BOTTOM on the heightfield
+  const { TOOL_ALIAS_ARGS } = await import(ENGINE + "mcpl/tools.ts");
+  call("flat", "olive", "create-world", { title: "flat" });
+  const bottom = (world, id) => { const e = openWorld(root, world).state().entities[id]; return e?.c.transform?.pos?.[1]; };   // a crate's origin is its bottom
+  // every crate its own spot (a second one at the same x, z would land on the first: GP5): the hilltop, its sides, its foot
+  const spot = (k) => [7 + (k % 4) * 1.5, -3 + Math.floor(k / 4) * 1.5];   // a 1.5 m grid over the hill; k = 10 is its top
+  for (let i = 0; i < 3; i++) {
+    const [px, pz] = spot(4 * i), [cx, cz] = spot(4 * i + 1), [sx, sz] = spot(4 * i + 2), [yx, yz] = spot(4 * i + 3);
+    ok(call("hill", "olive", "create", { id: `pc${i}`, model: "crate" }).ok && call("hill", "olive", "place", { id: `pc${i}`, at: [px, pz] }).ok, `GP0 pc${i} placed`);
+    ok(near(bottom("hill", `pc${i}`), hH(px, pz), 0.01), `GP1 place {at: [${r3(px)}, ${r3(pz)}]} on the hill: the crate's bottom is the terrain's height there (${r3(hH(px, pz))} m) ±1 cm`, { got: bottom("hill", `pc${i}`), terrain: hH(px, pz) });
+    ok(call("hill", "olive", "create", { id: `cc${i}`, model: "crate", at: [cx, cz] }).ok && near(bottom("hill", `cc${i}`), hH(cx, cz), 0.01), `GP2 create {at: [${r3(cx)}, ${r3(cz)}]} on the hill: the same (${r3(hH(cx, cz))} m)`, { got: bottom("hill", `cc${i}`), terrain: hH(cx, cz) });
+    const sp = TOOL_ALIAS_ARGS.spawn({ lib: "crate", x: sx, z: sz, id: `sp${i}` }), spy = TOOL_ALIAS_ARGS.spawn({ lib: "crate", x: yx, z: yz, yaw: 0.7, id: `sy${i}` });
+    ok(call("hill", "olive", "create", sp).ok && near(bottom("hill", `sp${i}`), hH(sx, sz), 0.01), `GP3 the spawn alias {lib, x, z} on the hill: the same (${r3(hH(sx, sz))} m)`, { args: sp, got: bottom("hill", `sp${i}`) });
+    ok(call("hill", "olive", "create", spy).ok && near(bottom("hill", `sy${i}`), hH(yx, yz), 0.01), `GP3 the spawn alias with a yaw (place {at, facing}): the same (${r3(hH(yx, yz))} m)`, { args: spy, got: bottom("hill", `sy${i}`) });
+    ok(call("flat", "olive", "create", { id: `fc${i}`, model: "crate", at: [cx, cz] }).ok && bottom("flat", `fc${i}`) === 0 && call("flat", "olive", "create", TOOL_ALIAS_ARGS.spawn({ lib: "crate", x: sx, z: sz, id: `fs${i}` })).ok && bottom("flat", `fs${i}`) === 0
+      && call("flat", "olive", "create", { id: `fp${i}`, model: "crate" }).ok && call("flat", "olive", "place", { id: `fp${i}`, at: [px, pz] }).ok && bottom("flat", `fp${i}`) === 0,
+      `GP4 on a flat world (no terrain component) place {at}, create {at} and the alias are y 0, as they always were`, [bottom("flat", `fc${i}`), bottom("flat", `fs${i}`), bottom("flat", `fp${i}`)]);
+  }
+  // a crate already on the hill is what a second one lands on (a thing's top still outranks the ground under it)
+  ok(call("hill", "olive", "create", { id: "stack", model: "crate", at: [10, 0] }).ok && near(bottom("hill", "stack"), hH(10, 0) + 0.6, 0.01), "GP5 create {at} where a crate already sits on the hill: on the crate's top", bottom("hill", "stack"));
 }
 console.log(`mover: ${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);
