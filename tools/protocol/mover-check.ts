@@ -17,6 +17,11 @@
 //       each with the mover's y and with the bed's (the agent's permit). GP: place {at}, create {at: [x, z]} and the spawn
 //       alias seat a model's bottom on the heightfield (±1 cm), y 0 on a flat world. Red first: before the fix 19 G rows
 //       failed (G3 bed, G4, G5 bank, GP1-3, GP5); G1/G2-stone/G5-rim/GP4 were seen red under mutations (see the commit)
+//   G6  the body's own size (holes r3 F2): 1.2 m / 2.2 m / scale 2 / scale 0.5 bodies, the same verdict from stepWalk and from
+//       the authority (which is sent the height and scale with the moves); a size's bounds
+//   G7  the teleport's swimmer box beside a dock, and a stride up a sloped rim judged from where it last swam (holes r3 F8:
+//       each red with its branch removed)
+//   GH  a heightmap whose grid isn't here: no ground committed (refused with words, nothing logged); seated once it lands (F3)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -344,6 +349,29 @@ if (M) {
   ok(!bnd({ height: "tall" }).ok && !bnd({ scale: -1 }).ok && !bnd({ scale: NaN }).ok && !bnd({ height: 0 }).ok, "G6 a height or scale that isn't a positive number is refused (shape)", [bnd({ height: "tall" }).refused?.code, bnd({ scale: -1 }).refused?.code]);
   { const r = call("shelf", "lia", "move", { to: [0, 0, 5.5], teleport: true, scale: 50 }), up = r.ok && call("shelf", "lia", "move", { to: [0, 2, 6.3] });
     ok(r.ok && up && !up.ok && up.refused.code === "solid" && /ground/.test(up.refused.blocker ?? ""), "G6 a claimed scale of 50 is the mover's largest body (2): a 2 m terrain ledge is still a wall (its step is 1.6 m)", { r, up }); }
+
+  // ---- G7 the two branches no row reached (holes r3 F8). (a) A teleport into the water beside the 0.5 m dock (where a swim
+  // to its side is accepted, G4): the swimmer's box (from 0.5 m above the surface) passes; a walker's box at the claim would
+  // meet the dock's side. (b) One stride from swimming up a sloped rim (a 20 cm edge, the bank 0.5 m above the water):
+  // the mover takes it in one stride (a swimmer hauls out up to 0.5 m above the surface); the authority's sweep judges a
+  // point part-way up (ground -1.5, wading), from which the bank is a 1.5 m ledge: judged from where it last swam, as the
+  // mover's one stride is, it is accepted
+  for (const [claim, y] of [["mover", -1.275], ["bed", r3(hP(1.9, 0))]]) {
+    const tp = call("pool", "max", "move", { to: [1.9, y, 0], teleport: true, client: "agent" });
+    ok(tp.ok, `G7 [${claim}] a teleport into the water 0.1 m from the dock's side: the swimmer's box, accepted (a walker's box meets the dock)`, tp.refused);
+  }
+  { const SLOPE = { amplitude: 0, size: 80, features: [{ type: "flatten", x: 0, z: 0, radius: 4, height: -3, edge: 0.2 }], water: { level: -0.5 } };
+    call("slope", "olive", "create-world", { title: "slope" });
+    ok(call("slope", "olive", "set", { id: "@world", component: "terrain", value: SLOPE }).ok, "G0 a pit with a sloped rim (20 cm edge), water 0.5 m below its bank");
+    const hL = fieldOf(SLOPE), envL = envOf(hL, -0.5, []), from = [4.0, -0.5 - 0.75 * 1.7, 0];
+    const m = stepWalk({ pos: from, dir: [1, 0], dt: 0.25, cap: 0.2 }, envL);
+    ok(m.blocked === null && near(m.pos[0], 4.2) && near(m.pos[1], 0, 1e-6) && hL(4.1, 0) < -0.5 - 0.8 && hL(4.1, 0) > from[1], "G7 the mover: one stride from swimming at the rim's foot onto the bank (the sweep's mid point stands at ~-1.5, wading)", { m, mid: hL(4.1, 0) });
+    for (const [claim, y] of [["mover", 0], ["bed", r3(hL(4.2, 0))]]) {
+      ok(call("slope", "nia", "move", { to: from.map(r3), teleport: true, client: "agent" }).ok, `G7 [${claim}] nia afloat at the rim's foot`);
+      const r = call("slope", "nia", "move", { to: [4.2, y, 0] });
+      ok(r.ok, `G7 [${claim}] the authority: the same stride up the sloped rim, accepted (judged from where it last swam)`, r.refused);
+    }
+  }
 
   // ---- GH a heightmap whose grid isn't here (holes r3 F3): the height law would fall back to noise (amplitude 3 here: a
   // phantom metre and more), so the authority commits NO ground until the grid is here (terrainshape's own rule; the
