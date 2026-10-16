@@ -44,6 +44,7 @@ const foldWorld = (ag: any): Record<string, any> => {
   return out;
 };
 import { type WorldAgent, WALK_ARGS_REASON } from "./agent.ts";
+import type { Destination } from "./places.ts";
 
 /** The slice of WorldAgent the tools touch — typed loosely on purpose: the
  *  agent's surface is the contract, not this file's re-declaration of it. */
@@ -547,6 +548,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // NAME: a named place (#239: "thing/place", a place's name or label, a thing's entrance), a thing, a person
       let x: number, z: number, y: number | undefined, what = "", label: string | null = null;
       let near: { reach?: number; above?: number; below?: number; inside?: (x: number, z: number) => boolean } = {};
+      let orBeside: Destination | undefined;   // a thing on another's top: the spot beside what holds it up (review r6 L1)
       const tolerance = a.tolerance ?? 0.01;
       if (typeof a.to === "string") {
         const q = a.to.trim();
@@ -554,7 +556,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         // a named place (it carries its own floor and reach), a thing (its entrance, else up to it and beside it), a
         // person (stopping short): destination() alone; only a place in the older upstream shape is read here besides
         const d = ag.destination(q);
-        if (!("refusal" in d)) { ({ x, z } = d); y = d.y; near = { reach: d.reach, above: d.above, below: d.below, inside: d.inside }; label = d.label; }
+        if (!("refusal" in d)) { ({ x, z } = d); y = d.y; near = { reach: d.reach, above: d.above, below: d.below, inside: d.inside }; label = d.label; orBeside = d.orBeside; }
         else {
           const r = legacyPlace(ag, q);
           if (!r) return { content: [{ type: "text", text: `move: ${d.refusal}` }], isError: true };
@@ -584,14 +586,27 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // this request's own refusal (receipt): its plan may wait for placed geometry still loading (#235), so walkRefusal,
       // read straight after the call, could belong to a later walk
       let receipt = { refusal: null as string | null };
-      let arrived = await ag.walkTo(x, z, Boolean(a.run), 90_000, tolerance, y, near, receipt);
-      // a y no floor matches (mid-air, or under every floor there): the nearest place to stand at any height, said so
-      if (!arrived && y != null && near.above == null && /^nowhere to stand/.test(receipt.refusal ?? "")) {
-        const first = receipt.refusal;
+      const attempt = async () => {
         receipt = { refusal: null };
-        arrived = await ag.walkTo(x, z, Boolean(a.run), 90_000, tolerance, y, { ...near, above: Infinity }, receipt);
-        if (!arrived && !receipt.refusal) receipt.refusal = first;
+        let ok = await ag.walkTo(x, z, Boolean(a.run), 90_000, tolerance, y, near, receipt);
+        // a y no floor matches (mid-air, or under every floor there): the nearest place to stand at any height, said so
+        if (!ok && y != null && near.above == null && /^nowhere to stand/.test(receipt.refusal ?? "")) {
+          const first = receipt.refusal;
+          receipt = { refusal: null };
+          ok = await ag.walkTo(x, z, Boolean(a.run), 90_000, tolerance, y, { ...near, above: Infinity }, receipt);
+          if (!ok && !receipt.refusal) receipt.refusal = first;
+        }
+        return ok;
+      };
+      let arrived = await attempt();
+      // refused before a step, and the thing stands on another's top (a cup on a table, a walk that can't climb onto it):
+      // beside what holds it up instead, on its floor; the first refusal is the one said if none of them is walked
+      const firstRefusal = receipt.refusal;
+      for (let alt = orBeside; !arrived && receipt.refusal && alt; alt = alt.orBeside) {
+        ({ x, z } = alt); y = alt.y; near = { reach: alt.reach, above: alt.above, below: alt.below, inside: alt.inside };
+        arrived = await attempt();
       }
+      if (!arrived && receipt.refusal) receipt.refusal = firstRefusal;
       const planned = receipt.refusal;
       // no route (a sealed room, a structure over the search limit, two that conflict): refused before a step, and why
       if (!arrived && planned) return { content: [{ type: "text", text: `move refused before a step: ${planned}\nyou stand at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)})${what}` }], isError: true };

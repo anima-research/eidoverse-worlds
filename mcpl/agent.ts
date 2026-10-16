@@ -3449,7 +3449,7 @@ export class WorldAgent {
 
   /** A thing with no entrance or door, as a walk aims at it: up to it and beside it, on this body's side — THING_STANDOFF
    *  out from the nearest point of its footprint (its origin where the footprint isn't known, THING_STOP short of it). */
-  private besideThing(x: Entity, now = Date.now()): Destination {
+  private besideThing(x: Entity, now = Date.now(), depth = 0): Destination {
     const me = this.pos, box = footprint(this.replica?.st, x.id), at = this.worldPosOf(x, now);
     let px = at[0], pz = at[2], off = THING_STOP;
     if (box) {
@@ -3457,7 +3457,27 @@ export class WorldAgent {
       if (Math.hypot(me.x - nx, me.z - nz) > 1e-6) { px = nx; pz = nz; off = THING_STANDOFF; }
     }
     const d = Math.hypot(me.x - px, me.z - pz), back = d > 0.01 ? Math.min(off, d) / d : 0;
-    return { x: px + (me.x - px) * back, y: box ? box.min[1] : at[1], z: pz + (me.z - pz) * back, reach: 0.6, label: `[${x.id}]` };
+    const dest: Destination = { x: px + (me.x - px) * back, y: box ? box.min[1] : at[1], z: pz + (me.z - pz) * back, reach: 0.6, label: `[${x.id}]` };
+    // a thing standing on another (a cup on a table): the spot beside it may be on that other's top, where a walk can't
+    // climb — then the spot beside what holds it up, on ITS floor, is walked to instead (review r6 L1)
+    const under = box && depth < 4 ? this.supportOf(x.id, box) : null;
+    if (under) dest.orBeside = { ...this.besideThing(under, now, depth + 1), label: dest.label };
+    return dest;
+  }
+
+  /** The placed thing a thing rests on: the highest top (its footprint's) under the thing's footprint, within a couple of
+   *  centimetres of its base — never the thing itself nor anything riding on it. Null when it stands on the ground. */
+  private supportOf(id: string, box: { min: number[]; max: number[] }): Entity | null {
+    const st = this.replica?.st;
+    const rides = (k: string) => { for (let c: string | undefined = k, n = 0; c && n < 33; n++) { if (c === id) return true; const p: unknown = st?.entities?.[c]?.c?.parent?.to; c = typeof p === "string" ? p : undefined; } return false; };
+    let best: Entity | null = null, top = -Infinity;
+    for (const e of this.entities.values()) {
+      if (rides(e.id)) continue;
+      const b = footprint(st, e.id);
+      if (!b || b.max[0] <= box.min[0] || b.min[0] >= box.max[0] || b.max[2] <= box.min[2] || b.min[2] >= box.max[2]) continue;
+      if (Math.abs(b.max[1] - box.min[1]) <= 0.03 && b.max[1] > top) { best = e; top = b.max[1]; }
+    }
+    return best;
   }
 
   /** Where a thing stands in the world now: its effective transform (a child's parent chain, any motion), its saved `pos`

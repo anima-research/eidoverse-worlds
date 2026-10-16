@@ -132,7 +132,9 @@ export type Destination = { x: number; y: number; z: number; reach: number; labe
   /** how far below y it may be (unbounded when absent) */
   below?: number;
   /** a region: only places to stand inside it count, anywhere in it */
-  inside?: (x: number, z: number) => boolean };
+  inside?: (x: number, z: number) => boolean;
+  /** where to walk instead when no walk reaches this spot: beside what the thing stands on (a cup on a table: review r6 L1) */
+  orBeside?: Destination };
 
 /** How far a named room's walkable floor may sit from its declared height —
  *  in world metres, the walking body's tolerance: the body does not scale
