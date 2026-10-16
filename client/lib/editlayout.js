@@ -188,7 +188,7 @@ function build() {
   const wire = el('button', 'edit-vbtn'); wire.innerHTML = iconSvg('box', 16); wire.title = 'wireframe'; wire.dataset.view = 'wire';
   wire.onclick = () => { setShade(shade === 'wire' ? 'shaded' : 'wire'); };
   shadeBtn = wire;
-  const full = el('button', 'edit-vbtn'); full.innerHTML = iconSvg('maximize', 16); full.title = 'full screen: F11 or this button toggles it; Esc leaves it'; full.dataset.view = 'full';
+  const full = el('button', 'edit-vbtn'); full.innerHTML = iconSvg('maximize', 16); full.title = KEYHINTS.fullscreen.before; full.dataset.view = 'full';
   full.onclick = toggleFullscreen;
   document.addEventListener('fullscreenchange', () => full.classList.toggle('on', !!document.fullscreenElement));
   // Body | Free: whose camera this is (controller.js FREE CAMERA)
@@ -293,7 +293,7 @@ register({ id: 'view:fullscreen', title: 'full screen', key: 'F11', group: 'view
 // browser's own F11 full screen sets no fullscreenElement and only F11 leaves it, so Esc did nothing the page could see.
 // The page's full screen is the Fullscreen API's, which the browser's Esc leaves. Always taken, even in a field (F11 types nothing).
 addEventListener('keydown', (e) => {
-  if (e.key !== 'F11' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+  if (e.key !== 'F11' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;   // keys: fullscreen (a modified F11 is the browser's, not ours)
   e.preventDefault();
   if (!e.repeat) toggleFullscreen();   // a held F11 is one toggle
 });
