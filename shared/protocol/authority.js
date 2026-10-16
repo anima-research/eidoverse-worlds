@@ -446,10 +446,17 @@ function shapeOneOrRefuse(verb, op, i) {
 //   the world's look  editWorld: about, sky (and weather), terrain, terrain-grid, terrain-tile:*, grass, terrain-paint:*,
 //                     bounds, spawn (EDIT_WORLD_PERMISSION; off = owner)
 //   @world.roles:*    the grant rule (grantCheck): an owner, or grantRoles below your rank with only permissions you hold
+//   @world.training-consent:<id>  the identity it names, and only them (never an owner, never a capability)
 //   the rest of @world (role-defs, default-role, access, physics-engine, script-settings, schemas, imported records…): owner, never a permission
 const WORLD_LOOK = new Set(["about", "sky", "terrain", "terrain-grid", "grass", "bounds", "spawn"]);
+// training-consent:<identity> is that person's own word (componentspec: "no owner consents on your behalf"; design review
+// 10-15 item 2): written and deleted by exactly the identity it names, whatever their role, and by nobody else: not an owner,
+// not a capability. The bare training-consent (the world's policy) is the owner's like the rest of @world.
+const ownWordOf = (op) => { if (op.id !== "@world" || typeof op.comp !== "string") return null; const i = op.comp.indexOf(":");
+  return i > 0 && op.comp.slice(0, i).replace(/@\d+$/, "") === "training-consent" ? op.comp.slice(i + 1) : null; };
 const needOf = (op) => {
   if (op.id !== "@world") return "thing";
+  if (ownWordOf(op) !== null) return "self";
   const base = String(op.comp ?? "").split(":")[0];
   if (base === "blueprints") return "build";
   if (base === "assets") return "generate";
@@ -461,6 +468,7 @@ const needOf = (op) => {
  *  creates. A capability's holder (a handler's author, a script's sponsor) is judged by the same rule; for them a
  *  roles:* write needs owner (a script never grants). */
 function lacks(w, st, holder, op, made, { viaCap = false } = {}) {
+  if (needOf(op) === "self") return !viaCap && ownWordOf(op) === holder ? null : "self";   // before the owner's pass: theirs isn't
   if (roleOf(st, holder) === "owner") return null;
   const n = needOf(op); const eff = effective(st, holder);
   if (n === "owner" || (n === "grant" && viaCap)) return "owner";
@@ -471,7 +479,7 @@ function lacks(w, st, holder, op, made, { viaCap = false } = {}) {
   const c = creatorOf(w, op.id); return c && c.rights === holder ? null : "editOthers";
 }
 // the words a refusal uses for what was missing (kept "needs owner" / "needs builder" where those were the words)
-const needWords = (n) => (n === "owner" ? "owner" : n === "build" ? "builder" : n === "grantRoles" ? "owner or grantRoles" : `the ${n} permission`);
+const needWords = (n) => (n === "self" ? "being the person it names" : n === "owner" ? "owner" : n === "build" ? "builder" : n === "grantRoles" ? "owner or grantRoles" : `the ${n} permission`);
 function rights(w, st, s, who, role, op, at, made, pause) {
   const { actor, cap } = who;
   // a screen's captions are written by the caption request only (its session, order and generation rules), never set by
@@ -490,6 +498,7 @@ function rights(w, st, s, who, role, op, at, made, pause) {
     // a pause write (only `paused` changes) by a pauseScripts holder needs no edit rights on the thing: keyRights judges it
     if (pause && may(st, actor, "pauseScripts")) return;
     const n = lacks(w, st, actor, op, made); if (!n) { if (needOf(op) === "grant") grantCheck(w, st, s, actor, op, at); return; }
+    if (n === "self") refuse("rights", `${at} is ${said(ownWordOf(op))}'s own training consent: only they may write or withdraw it (no owner consents on anyone's behalf)`, `yours is training-consent:${actor}; the world's own policy is the bare training-consent (owner)`, { needs: "self" });
     refuse("rights", `changing ${at} needs ${needWords(n)}; you are ${role}`, n === "owner" ? "ask the world's owner (say {text, to: <owner>}); help shows your role and permissions" : `ask a moderator or an owner for ${n}; help shows your role and permissions`, { needs: n });
   }
   if (cap.kind === "script") return scriptRights(w, st, cap, op, at, made);
@@ -579,6 +588,8 @@ function keyRights(w, st, s, who, op, at, keysMade, pause = false) {
   // roles:<id> is changed under the grant rule (grantCheck: rank and permissions), not its creator's: a moderator may
   // change the role an owner gave a visitor. A capability never reaches here for roles (lacks: owner).
   if (!cap && op.comp.startsWith("roles:")) return;
+  // training-consent:<identity> is its identity's, whoever wrote this life of the key (rights() already let only them through)
+  if (!cap && ownWordOf(op) === actor) return;
   // research §6 (scripts): a pause made by someone who outranks you can be lifted only by them, or at their rank or above
   if (pause && op.value?.paused !== true && s.entities[op.id]?.c[op.comp]?.paused === true) {
     const pb = pausedBy(w, op.id, op.comp);
@@ -3359,6 +3370,32 @@ function bodyGate(w, from, to, kind, extra = {}) {
     inboxPush(P, to, { type: "body-ask", ask: { id, from, kind, summary: `${from} asks to ${kind}${extra.spec?.point ? ` (${extra.spec.point})` : ""}`, why: extra.why ?? null, expires: now + C.ASK_MS } });
     return result("asked", { ok: true, asked: true, ask: id }); }
   return { ok: true, consent: d.standing === "allow" ? "allowed" : "standing", deliver: () => { ringPush(P, { ts: now, from, to, cls, verdict: "allowed" }); deliver(w, from, to, kind, cls, extra, "standing"); } };
+}
+// The relay's question about a reach DESCRIPTOR (shared/reachwire.js: a hand streamed in a pose toward another body, design
+// review 10-15 item 1): may `from`'s hand rest on `to` as `cls` (touch | intimate) right now? Asked per presence packet, so it
+// is presence only: nothing is appended, no ask is made (the relay can't wait; the `reach` verb asks), and the refusal
+// counter that leads to a moderator-log cool-down is NOT fed (a stream of frames is one attempt, not fifty). Admitted when
+// `to`'s table says everyone (a standing allow included), or when the `reach` verb already admitted this touch (an ask
+// answered yes: P.reaches, which revokeAfter clears when the table closes). A refusal is said to the reacher in the body
+// inbox, and to the target's attempt ring, once per (from, to, cls) per C.REACH_NOTE_MS; `noted` says whether it was now.
+export function reachAdmits(w, from, to, cls, { point = null, limb = null } = {}) {
+  const P = w.presence, now = w.now();
+  if (from === to) return { ok: true, consent: "self" };
+  if (!C.ENFORCED.includes(cls) || (cls !== "touch" && cls !== "intimate")) return { ok: false, code: "shape", class: cls, reason: `a reach is touch or intimate, not '${cls}'` };
+  const granted = P.reaches?.[from]; if (granted && granted.to === to && (granted.cls === cls || (granted.cls === "intimate" && cls === "touch"))) return { ok: true, consent: "asked" };
+  let r;
+  if (P.throttle?.[`${from}:${cls}`] > now) r = { code: "cool-down", reason: `${from} is on a cool-down for ${cls} after repeated refusals (moderator log)`, fix: "ask people first; this lifts by itself" };
+  else { const d = C.decide(P, from, to, cls, now);
+    if (d.mode === "everyone") return { ok: true, consent: d.standing === "allow" ? "allowed" : "standing" };
+    r = d.mode === "ask"
+      ? { code: "consent", reason: `${to}'s ${cls} for you is ask: a hand isn't streamed onto them until they say yes`, fix: `ask first with the reach request: reach {who: "${to}", point: "${point ?? "<point>"}"} (they have 20 s; silence is no)` }
+      : { code: "consent", reason: d.why, fix: `${to} isn't taking ${cls} from you; their shield says so (look)` }; }
+  const key = `${from}>${to}:${cls}`, notes = (P.reachNotes ??= {});
+  for (const [k, t] of Object.entries(notes)) if (now - t >= C.REACH_NOTE_MS) delete notes[k];
+  const noted = !(notes[key] > now - C.REACH_NOTE_MS);
+  if (noted) { notes[key] = now; ringPush(P, { ts: now, from, to, cls, verdict: "refused (reach not relayed)" });
+    inboxPush(P, from, { type: "reach-refused", to, class: cls, ...(point ? { point } : {}), ...(typeof limb === "string" ? { limb } : {}), why: r.reason, fix: r.fix, code: r.code }); w.presenceDirty = true; }
+  return { ok: false, class: cls, ...r, noted };
 }
 function deliver(w, from, to, kind, cls, extra, consent) {
   const P = w.presence, b = P.bodies[to];
