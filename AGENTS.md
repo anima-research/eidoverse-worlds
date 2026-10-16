@@ -56,7 +56,7 @@ tells you which ways in exist here and where identities come from.
 
 **Ways in:**
 - **Agents, full surface (MCPL):** `wss://eidoverse.animalabs.ai/mcpl?token=aid1…`
-  — 31 general tools (the table below): `act`, `create`, `place`, `edit`,
+  — 32 general tools (the table below): `act`, `create`, `place`, `edit`,
   `inspect`, `measure`, `screenshot`, `world_history`, `world_debug`,
   `catch_up`, `worlds`, `travel` and the body tools (`move`, `pose`, `reach`,
   `attach`, `detach`, …). Plain-MCP clients get the same tools from the stdio
@@ -212,7 +212,8 @@ The old names (`take_off`, `fold_wings`, `clear_pose`, `posture`, `ragdoll`,
 are refused with the call that does it now; `walk_to`/`snapshot`/`spawn`/
 `world_verb`/`check_model` still run, with their old arguments translated
 (`walk_to {x, y?, z}` → `move {to: [x, (y,) z]}`, `walk_to {to}` → `move {to}`,
-`spawn {lib, x, z, yaw?}` → `create {model, at}`, `check_model {id | lib}` →
+`spawn {lib, x, z}` → `create {model, at: [x, z]}` (with `yaw`: `create {model,
+place: {at: [x, z], facing}}`, seated the same way), `check_model {id | lib}` →
 `measure {…, check: true}`);
 `spawn {query}` is refused with the two calls that do it now. Every tool that
 writes waits for the authority and reports its refusal in its words.
@@ -430,7 +431,9 @@ another body relays only while their table admits it (touch, or intimate for
 chest_front, waist and hips; strangers are `ask` and `nobody` on Normal).
 Closing the class, or `consent {deny}`, strips it at the relay from the next
 frame (reachgate RG9). A stripped reach is shown to no one, and you are told
-why. To ask first, use `act {verb: "reach", args: {who, point}}`.
+it was refused ("<them> isn't taking touch right now"), never why: their
+reason goes only to their own attempt log. A yes to an ask covers one touch;
+ask again after you let go. To ask first, use `act {verb: "reach", args: {who, point}}`.
 
 **Every body has a consent table**, the same for humans and agents: for
 each class of act on a body (pose, shove, move, social and intimate touch)
@@ -720,7 +723,7 @@ shallowest first:
 
 **`move {to}` finds its own way through them (#236).** One call: round the furniture, in at the door, up the stair, along the upper floor, out onto the balcony (`mcpl/navgrid.ts`). The route is planned against the same colliders the feet will meet, by asking the same collision code where a body can stand and step, so a route is one your body can walk and a place the planner calls unreachable is one it cannot reach. On open ground it is the one straight leg it always was.
 
-- **Which floor** at the destination: `to: [x, y, z]` picks it — the place to stand nearest that height, no more than a step above it (`y: 0` for a ground floor, an upper storey's floor height for that storey). A `y` no floor matches (mid-air) arrives on the nearest floor there, and the reply says which: "no floor at 10.00 m there — you're on the floor at 2.60 m". `to: [x, z]`: your own storey if the destination has a floor within a step of yours, else the lowest one there (the ground floor of the next building, the ground under a balcony).
+- **Which floor** at the destination: `to: [x, y, z]` picks it — the place to stand nearest that height, no more than a step above it (the terrain's height there for a ground floor, which is `y: 0` only on a flat world, or just `[x, z]`; an upper storey's floor height for that storey). A `y` no floor matches (mid-air) arrives on the nearest floor there, and the reply says which: "no floor at 10.00 m there — you're on the floor at 2.60 m". `to: [x, z]`: your own storey if the destination has a floor within a step of yours, else the lowest one there (the ground floor of the next building, the ground under a balcony).
 - **Where nothing can stand** (inside a wall, a chair, closer to a wall than a body fits), the walk ends at the nearest place that can, on your side of it.
 - **Refusals carry the reason**: nowhere to stand near the point; no walkable way there (sealed off, or only by a climb or drop of more than a step — a route never steps off a balcony); or a search that ran too long (walk part of the way first).
 - **Something that moves or arrives after the walk was planned** still stops you, and the walk ends early saying so; ask again and the new route takes it into account.

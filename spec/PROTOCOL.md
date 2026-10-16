@@ -189,6 +189,8 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   child entity of the thing it is on, carrying `parent {to: <host>}`; `sockets`, the old map spelling, is
   lifted into socket children by the authority on write and at a stored world's first load),
   `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
+  `collider {shape}` (exact, box or sphere; absent, its size decides), `places` (named places to walk to, in the
+  thing's own frame; on `@world`, world coordinates),
   `openable`, `physics`, `grabbable`, `particles`, `script:<name>`,
   `joint:<name>` (reserved: refused until an engine carries joints), and on
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`, `training-consent` and
@@ -309,8 +311,15 @@ request moves a copy to a newer version, keeping its own overrides.
   frame, or a world point inside their capsule) relays only if that body's
   consent table admits it as `touch`, or `intimate` for `chest_front`, the
   waist and the hips. Otherwise the limb is stripped from the packet and
-  from the pose kept for late joiners, and the reacher is told why
-  (server/reachgate.ts → the authority's `reachAdmits`). Semantic rig
+  from the pose kept for late joiners, and the reacher is told only that
+  it was refused, in one sentence whatever the cause (`<them> isn't taking
+  <class> right now`: a tier at `nobody`, a per-person deny, a pause, an ask
+  answered no or left to expire all read the same; a cell at `ask` says to
+  ask). The cause goes only to the target's own attempt ring, which
+  `consent {}` shows them as `attempts` (server/reachgate.ts → the
+  authority's `reachAdmits`; shared/protocol/consent.js `refusalWords`). A
+  yes to an ask is one touch: it ends when the hand lets go, when either
+  body leaves, when the target closes that class, or after 10 minutes. Semantic rig
   state travels the same way: `pose.wingsFolded` is a boolean intent, never
   implementation-specific wing quaternions; each renderer applies it
   through the worn rig's own fold path. The same packet carries a body's
@@ -360,7 +369,17 @@ request moves a copy to a newer version, keeping its own overrides.
   centimetre are two bodies. The authority's refusal of a step — too fast,
   into a solid, up a ledge over a step — is the mover's own answer about the
   same input, and a step the mover takes is one the authority accepts at
-  the same millimetre.
+  the same millimetre. The floor law is one function, `floorStep`
+  (shared/mover.js): `stepWalk` calls it, and so does the authority on each
+  point of a move's sweep. The authority reads the same ground the walker
+  does: `@world`'s `terrain` through shared/terrainmath.js (features and
+  heightmaps through shared/terrainshape.js; built once per terrain value)
+  and its water level. So a body is supported by the terrain under it or a
+  top within a step, a swimmer is tested as a swimmer (its box a step below
+  the haul-out line), and a ground ledge over a step is refused as solid
+  (`blocker: "ground"`). `place {at}`, `create {at: [x, z]}` and the spawn
+  alias seat a model's bottom on the highest ground under its footprint. A
+  world with no `terrain` is flat at y 0 and dry.
 - **One clock.** Frames carry the world's authority clock (the one that
   stamps entries' `ts`, never behind the log), and a client measures it by
   round trip (`clock {t0}` → `{t0, t}`). A presence sample may carry its own
@@ -718,7 +737,8 @@ argument will be short.
 
 The first protocol (an untyped verb log) is retired. An old world's log can
 be translated once, one way, into a new world
-(`bun tools/protocol/world.ts translate <old> <new>`); the old log is read, never
+(`bun tools/protocol/world.ts translate <old> <new> --founder-key <key>`, or
+`--no-founder-key` to leave tier 0 empty for ever, §13); the old log is read, never
 written. Each old entry appears in the new log as an `act` with verb
 `imported` (`body {verb, args, from}`) or as a `say`, followed by the change it
 produced; fields with no component in this protocol ride along as `imported:<name>`. A

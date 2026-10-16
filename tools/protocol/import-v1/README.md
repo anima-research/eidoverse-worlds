@@ -9,17 +9,23 @@ it and nothing at runtime can load it; `tools/protocol/nov1-check.ts` (in `bun r
 | file | what it is |
 | --- | --- |
 | `fold.js` | the old fold (how a v1 entry changed the world), trimmed to what the translators read |
-| `translate-v1.js` | v1/v2 log → v4 log: each old entry becomes a `legacy` act (its verb and args, kept as provenance) and one change entry that brings the v4 fold to the same place, checked after every entry |
-| `translate-d3.js` | the name her four dialect-3 goldens are checked under (sweep §3): a thin wrapper over `translate-v1.js`, which since @10 runs her sim (`shared/sim.js`) beside the v1 fold whenever a log enters a physics `epoch` — a punt becomes a logged launch with its exact state, every rest a logged result, the epoch `@world physics-engine` and each collider's stamped box its `physics.shape`. A log with no epoch translates byte-for-byte as @9 did |
+| `translate-v1.js` | v1/v2 log → v4 log: each old entry becomes an `imported` act (`body {verb, args, from}`: its verb and args, kept as provenance) or a `say`, and one change entry that brings the v4 fold to the same place, checked after every entry |
+| `translate-d3.js` | the name her four dialect-3 goldens are checked under (sweep §3): a thin wrapper over `translate-v1.js`, which since @10 runs her sim (the first eidosim, `eidosim-v1.js` here) beside the v1 fold whenever a log enters a physics `epoch` — a punt becomes a logged launch with its exact state, every rest a logged result, the epoch `@world physics-engine` and each collider's stamped box its `physics.shape`. A log with no epoch translates byte-for-byte as @9 did |
+| `eidosim-v1.js` | the first eidosim (dialect 3), kept here so the translator, the sweep and the directory check can read what a physics-era v1 log's punts did; nothing at runtime loads it (the server runs `eidosim@1.0.0`) |
+| `eidosim-v1-test.ts` | its covenant tests (self-agreement, schedule independence, quantization), run on the copy kept here |
 | `build.ts` | the old fold's build hash, stamped into a translated world's `translated` act |
 | `world.ts` | `translateV1World(src, dest)`: reads `src/log.jsonl` (never writes it), translates, re-reads the result with the strict reader (and, for a physics-era log, the authority's own sim layer, which re-checks every rest), maps every old name to a door identity, then writes `dest/world.jsonl` |
 | `snapshot-oracle.ts` | the translator against the OLD ENGINE (suite `oracle`): every old world whose `snapshot.json` is a complete fold of its log (seq and bytes match) is translated for real, and its fold (and the server's lifted load) compared with the snapshot, through the translator's mapping and also field by field off the snapshot. Incomplete snapshots are skipped, never compared. `OPT_DIR=<serving checkout>/assets/opt` gives store models their real addresses |
 
-The operator runs it: `WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <old world> <new name>`. To cut a world over
+The operator runs it: `WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <old world> <new name> --founder-key <ed25519:…>`
+(or `--no-founder-key`, which leaves the world's top governance tier empty for ever; see the ceremony below). To cut a world over
 under its own name (the Commons), move the old directory aside first, then translate it into the name:
-`mv worlds/commons worlds/commons-v1 && bun tools/protocol/world.ts translate commons-v1 commons` (the old directory is read,
-never written; its remembered places come across keyed by identity). Until then, joining the name says it is saved in
-the old format. The sweep
+`mv worlds/commons worlds/commons-v1 && bun tools/protocol/world.ts translate commons-v1 commons --founder-key <KEY>` (the old directory is read,
+never written; its remembered places come across keyed by identity). Until then the server serves nothing under that
+name. At boot it prints, for each old world, the exact command, with `WORLDS_DIR` filled in, a free new name and a
+placeholder for the founder key (`server/oldworlds.ts` `bootNotice`). A visitor is told in plain words that the world
+needs a one-time conversion by whoever runs the server and that nothing is lost (`visitorText`; the browser keeps that
+sentence on its splash, suite `refusedjoin`). The sweep
 (`tools/protocol/sweep.ts`, in `test:protocol`) translates every old world log it can find and requires zero divergences.
 
 **This directory is temporary.** It stays only until the live Commons has been cut over to v4 (decided 2026-10-06); a

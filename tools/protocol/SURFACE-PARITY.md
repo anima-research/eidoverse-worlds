@@ -13,6 +13,11 @@ BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/surface-parity.ts --commo
 Each world is a directory holding a current-format `world.jsonl`. Both `--commons` and `--gym` are required unless
 `--only <world>` picks one; `--world <name>=<dir>` (repeatable) adds others. There are no default world paths.
 
+**Both trees must read the current world format.** `main`'s server reads only the first protocol's `log.jsonl`, so until
+this protocol is on `main`, `--old-ref main` (the default) cannot open a current world and the run stops at "world
+opens: ‹world› on old". The comparisons that work today are between two commits of this branch: name one with
+`--old-ref` (the 10-14 gym run used `pre-repoint-20261014`, 3b84e149).
+
 The old tree is a detached worktree of `--old-ref <ref>` (default `main`, env `SURFACE_OLD_REF`), created in the temp
 directory if missing; `--old <tree>` points at a checkout you already have instead. Run one headless browser at a time.
 
@@ -27,10 +32,10 @@ checked:
 | browser binary | a real Chromium exists at `CHROME` or one of the paths the other probes use (and is not a shell stub: on some distros `/usr/bin/chromium-browser` is a 2 KB snap stub that *exists*) | `tools/harness.ts:15`, `tools/probe-harness.mjs:8` (Playwright's build) |
 | old tree / new tree | both are checkouts; the old one is made as a detached worktree of `--old-ref` if missing; they are different commits; each has `node_modules` and `client/node_modules` (linked from a sibling checkout only when the manifests are byte-identical) | the server warns "browsers will hang at the splash" without `client/node_modules` |
 | clock pin | the old tree's commit time is readable (the default pin) | `git log -1 --format=%ct` in the old tree |
-| world copy: ‹world› | a directory was given, and it holds `world.jsonl` whose line 0 is a `{dialect:"eidoverse-log", v}` genesis with the current protocol's `v` | `server/livehost.ts:141 isWorldDir`; `server/server.ts:351` refuses anything else at the door |
+| world copy: ‹world› | a directory was given, and it holds `world.jsonl` whose line 0 is a `{dialect:"eidoverse-log", v}` genesis with the current protocol's `v` | `server/livehost.ts:141 isWorldDir`; `server/server.ts:355-363` refuses anything else at the door, naming `server/oldworlds.ts` |
 | memory | `MemAvailable` ≥ 1200 MB (`SURFACE_MEM_FLOOR_MB`) | two sequencers + a SwiftShader Chromium; an OOM can take a small VM down with it |
-| old server / new server | each tree's `server/server.ts` answers `/health` with the nonce *we* started it with | `server/routes.ts:1165` (`BENCH_NONCE`) — a stranger's sequencer on the port is refused |
-| world opens: ‹world› on ‹tree› | a spectator join gets a snapshot (not an error), its cut folds to > 0 entities, and `present[]` is empty | `server/server.ts:744` buildSnapshot; `shared/protocol/replica.js:150` clientCutOf |
+| old server / new server | each tree's `server/server.ts` answers `/health` with the nonce *we* started it with | `server/routes.ts:1209-1213` (`BENCH_NONCE`) — a stranger's sequencer on the port is refused |
+| world opens: ‹world› on ‹tree› | a spectator join gets a snapshot (not an error), its cut folds to > 0 entities, and `present[]` is empty | `server/server.ts:747` buildSnapshot; `shared/protocol/replica.js:150` clientCutOf |
 | browser page target | the Chromium we spawned exposes *our* page on *our* debug port | as `tools/harness.ts:187-203` |
 | client ready: ‹world› on ‹tree› | joined → loads idle → builds settled → sky not busy → **≥ 12 frames drawn after that** | `net.js replicaActive`, `assets.js loadingItems`, `world.js anyBuildsPending`, `sky.js skyBusy`, a `renderer.render` call counter the probe installs (`render.js renderCensus` ticks only in XR) |
 | camera honoured | after 6 drawn frames the camera is still where it was put (< 1 cm drift) | `controller.js:1035 updateSpectator` only moves a spectator's camera to follow a remote body |
