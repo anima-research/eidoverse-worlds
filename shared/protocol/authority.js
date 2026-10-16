@@ -2306,7 +2306,11 @@ function buildUndo(ctx, a, w) {
     if (!acts.length) refuse("nothing", `${said(a.actor)} has made no change since act ${from} that's still in force`, "");
     if (acts.length > 20 && a.confirm !== true && a.dry !== true) refuse("confirm", `that rolls back ${acts.length} acts by ${said(a.actor)} since act ${from}`, "dry: true lists them; confirm: true does it", { acts: acts.length });
     let st = ctx.st; const all = []; const skippedAll = [], done = [];
-    for (const q of acts) { const { groups, skipped } = inverseOf(E[q], result(q), st); const ops = groups.flat();
+    // training-consent:<id> is that person's own word, never undone by another person (review r2 F2): a rollback skips the
+    // inverse on it and takes back the rest, so writing your own consent doesn't shield your other work from an owner
+    for (const q of acts) { const { groups, skipped } = inverseOf(E[q], result(q), st);
+      const ops = groups.flat().filter((o) => { const who = ownWordOf(o); if (who === null || who === ctx.actor) return true;
+        skipped.push({ id: o.id, component: o.comp, why: `that's ${said(who)}'s own training consent: only they may write or withdraw it`, by: who }); return false; });
       skippedAll.push(...skipped); if (ops.length) { all.push(...ops); st = scratch(st, ops); done.push(q); } }
     if (!all.length) refuse("conflict", `everything ${said(a.actor)} did since then has been changed by others since`, "their later work stands");
     if (skippedAll.length) ctx.notes.push({ skipped: skippedAll });

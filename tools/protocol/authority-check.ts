@@ -1332,7 +1332,17 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const ownSelf = call("olive", "set", { id: "@world", component: "training-consent:olive", value: { allow: true } });
   ok(ownSelf.ok, "TC5 an owner writes their own keyed consent like anyone", ownSelf);
   const back = call("vic", "delete", { id: "@world", component: "training-consent:vic" });
-  ok(back.ok && c()["training-consent:vic"] === undefined, "TC5 a person deletes their own (withdraws it)", back); }
+  ok(back.ok && c()["training-consent:vic"] === undefined, "TC5 a person deletes their own (withdraws it)", back);
+  // review r2 F2: a griefer's own consent write can't shield their junk from the owner's rollback. The rollback skips the
+  // inverse on their training-consent:<id> (never undone by another person) and takes back the rest.
+  call("olive", "set", { id: "@world", component: "default-role", value: { role: "builder" } });
+  const mark = call("olive", "set", { id: "@world", component: "about", value: { name: "mark", text: "" } });
+  for (let i = 0; i < 3; i++) call("gil", "create", { id: `junk-${i}`, model: "crate" });
+  const gc = call("gil", "set", { id: "@world", component: "training-consent:gil", value: { allow: false } });
+  const rb = call("olive", "undo", { actor: "gil", since: { seq: mark.seq, head: mark.head } });
+  const left = Object.keys(openWorld(root, name).state().entities).filter((k) => k.startsWith("junk-"));
+  ok(gc.ok && rb.ok && !left.length && c()["training-consent:gil"]?.allow === false && JSON.stringify(rb).includes("training-consent:gil"),
+    "TC6 the owner's rollback of someone takes back their junk and skips (and says so) their own training consent", [gc.refused, rb.refused ?? rb.notes, left]); }
 
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
