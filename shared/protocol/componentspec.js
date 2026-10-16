@@ -356,7 +356,7 @@ export const COMPONENTS = {
 // Every registered name has one. trial: admitted and written, but its shape may still change during the alpha (about a
 // year); where it changes we translate or repair stored values where we can. reserved: the name is held (nobody else may
 // take it) but the authority refuses every write of it, with one wording (authority.js, the write door); `instead` says
-// what to use meanwhile. stable: promised, additions only (none at v1). A ladder DRAFT (a namespaced name the authority
+// what to use meanwhile. stable: promised, additions only (none yet). A ladder DRAFT (a namespaced name the authority
 // doesn't know) has no status here: it isn't admitted at all. The pin records each status (spec/registry-pin.json); a
 // change to a trial or reserved entry is allowed only with an acknowledgement (pretrans --pin --ack), a stable one never.
 export const STATUSES = {
