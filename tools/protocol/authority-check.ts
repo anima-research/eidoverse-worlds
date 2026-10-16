@@ -417,6 +417,19 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const d4 = call("bob", "undo", { act: d1.act });
   ok(d4.ok && !w.state().entities[copy] && !w.state().entities[kid], "D4 undoing the duplicate removes both parts", d4.refused);
   ok(code(call("bob", "create", { from: "nope" })) === "not-found", "D5 duplicating nothing is not-found");
+  // M1 (holes review 10-15): create {at} without from was never read; the thing landed at the origin with ok.
+  // Mutation (must go red): drop the `a.at` branch in buildCreate.
+  { const r = call("bob", "create", { id: "at-yaw", model: "crate", at: { pos: [-6, 0, -6], yaw: 1 } }); const t = w.state().entities["at-yaw"]?.c.transform; const qy = [0, Math.sin(0.5), 0, Math.cos(0.5)];
+    ok(r.ok && t && t.pos.join() === "-6,0,-6" && t.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3), "CA1 create {at: {pos, yaw}} (no from) puts it there, facing yaw", [r.refused, t]);
+    const r3 = call("bob", "create", { id: "at-xyz", model: "crate", at: [-8, 0, -6] }); const t3 = w.state().entities["at-xyz"]?.c.transform;
+    ok(r3.ok && t3 && t3.pos.join() === "-8,0,-6", "CA2 create {at: [x, y, z]} puts its origin exactly there", [r3.refused, t3]);
+    const r2 = call("bob", "create", { id: "at-xz", model: "crate", at: [-6, -9] }); const t2 = w.state().entities["at-xz"]?.c.transform;
+    ok(r2.ok && t2 && t2.pos[0] === -6 && t2.pos[2] === -9, "CA3 create {at: [x, z]} sets it on the ground there (place {at})", [r2.refused, t2]);
+    const bad = [{ pos: [1, 2] }, { pos: [0, 0, 0], yaw: "north" }, { colour: 1 }, {}, "here", [1, 2, 3, 4], { pos: [0, 0, 0], yaw: 1, q: [0, 0, 0, 1] }];
+    const codes = bad.map((at, i) => code(call("bob", "create", { id: `at-bad-${i}`, model: "crate", at })));
+    ok(codes.every((c) => c === "shape") && bad.every((_, i) => !w.state().entities[`at-bad-${i}`]), "CA4 a malformed at is a shape refusal, and nothing is made", codes);
+    ok(code(call("bob", "create", { id: "at-both", model: "crate", at: [1, 1], place: { at: [2, 2] } })) === "shape", "CA5 at and place together is a shape refusal (one way of saying where)");
+    ok(code(call("bob", "create", { from: "tbl", at: [1, 2, 3] })) === "shape", "CA6 with from, at is {pos, yaw|q}: an array is a shape refusal (never spread into the transform)"); }
   // redo = undo of my undo (Figma's rule: never back over someone's later work)
   call("ann", "delete", { id: "tbl", component: "lock" });
   const a1 = call("bob", "set", { id: "cup", component: "label", value: "one" });

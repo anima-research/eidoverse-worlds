@@ -1195,10 +1195,28 @@ function merge7396(target, patch) {
 function mint(st, base) { const ever = CTX.mintW?.everIds() ?? new Set(); let id;
   do id = mintId(slug(base)); while (st.entities[id] || ever.has(id)); return id; }
 
+// create {at} without from (holes review 10-15 M1: it was never read, and the thing landed at the origin with ok):
+// [x, z] is on the ground there (place {at}: returned, for buildCreate to place); [x, y, z] is its origin exactly; {pos?,
+// yaw|q?, scale?} replaces those fields of its transform, as with from (resolve turns a yaw into q, as place does).
+// Anything else is a shape refusal, and so is at with place: one way of saying where.
+const AT_FIX = "at: [x, z] on the ground, [x, y, z] exactly, or {pos: [x, y, z], yaw} (or q); or place {…} instead";
+function createAt(a, comps) {
+  const at = a.at; if (at === undefined) return null;
+  if (a.place) refuse("shape", "create takes at or place, not both", AT_FIX);
+  const nums = (v, n) => Array.isArray(v) && v.length === n && v.every(Number.isFinite);
+  if (nums(at, 2)) return [at[0], at[1]];
+  if (nums(at, 3)) { comps.transform = { ...(comps.transform ?? {}), pos: [...at] }; return null; }
+  const keys = at && typeof at === "object" && !Array.isArray(at) ? Object.keys(at) : null;
+  if (!keys?.length || keys.some((k) => !["pos", "yaw", "q", "scale"].includes(k)) || (at.pos !== undefined && !nums(at.pos, 3))
+    || (at.yaw !== undefined && !Number.isFinite(at.yaw)) || (at.yaw !== undefined && at.q !== undefined))
+    refuse("shape", `create's at is a point or {pos, yaw}: got ${JSON.stringify(at).slice(0, 80)}`, AT_FIX);
+  comps.transform = { ...(comps.transform ?? {}), ...at }; return null;
+}
 function buildCreate(ctx, a) {
   if (a.from) return buildCreateFrom(ctx, a);
   const comps = { ...(a.components ?? {}) };
   if (a.model) comps.model = a.model;
+  const placeAt = createAt(a, comps);
   const id = a.id ?? mint(ctx.st, comps.model ?? "thing");
   if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§3.1: a–z, 0–9 and '-', up to 64; or leave id out and the authority mints one");
   if (ctx.st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id, or leave id out and the server mints one");
@@ -1208,9 +1226,10 @@ function buildCreate(ctx, a) {
   if (!out.transform) out.transform = resolve(ctx, id, "transform", {});
   ctx.refs.add(id); // who made it is the create entry's actor: a view, never a stored `placer` (L2)
   const made = createOps(id, out);
-  if (!a.place) return made;
+  const place = placeAt ? { at: placeAt } : a.place;
+  if (!place) return made;
   admit(ctx.w, ctx.st, { actor: ctx.actor }, made);   // the one gate before place solves (security pass 2 H-A); again on the whole write after
-  const placed = buildPlace({ ...ctx, st: scratch(ctx.st, made) }, { ...a.place, id, __made: true });
+  const placed = buildPlace({ ...ctx, st: scratch(ctx.st, made) }, { ...place, id, __made: true });
   return [...made.filter((o) => !(o.verb === "set" && (o.comp === "transform" || o.comp === "parent"))), ...placed.filter((o) => o.verb === "set")];
 }
 
@@ -2492,6 +2511,7 @@ function buildUpdate(ctx, a, w) {
 }
 // L1: a copy is expanded by the authority into an explicit batch. The fold never reads the record.
 function buildCreateFrom(ctx, a) {
+  if (a.at !== undefined && (!a.at || typeof a.at !== "object" || Array.isArray(a.at))) refuse("shape", `with from, at is {pos, yaw|q}: got ${JSON.stringify(a.at).slice(0, 80)}`, "create {from, at: {pos: [x, y, z], yaw}}");
   if (typeof a.from === "string" && !a.from.startsWith("sha256:")) return buildDuplicate(ctx, a);
   const w = ctx.w; let rec;
   try { rec = w.getBlob(a.from); } catch { refuse("not-found", `no blueprint ${a.from}`, "find {kind: 'blueprint'} lists this world's blueprints"); }
