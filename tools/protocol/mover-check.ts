@@ -151,6 +151,25 @@ if (M) {
     ok(near(c1.r, m1.r) && near(c1.tall, m1.tall) && near(c2.r, m2.r) && near(c2.tall, m2.tall) && near(c1.r, 0.2) && near(c1.tall, 1.7), "A5 the client's walking capsule is the mover's body (0.2 × 1.7, scaled)", { c1, m1 });
     ok(BS.canMantle === canMantle && canMantle(0.8, 1) === false && canMantle(0.81, 1) === true && canMantle(1.7, 1) === true && canMantle(1.71, 1) === false, "A5 the client's mantle starts where the mover's step ends (0.8 m) and reaches its height (1.7 m)");
   }
+  // A6 the speed track is paced by elapsed time, not by the wall clock (gate 18 navgrid/places too-fast): a host whose wall
+  // clock is stepped back (WSL2's sync pulls it back ~1.4 s every ~30 s on Burrow; NTP does it anywhere) froze the running
+  // server's clock — never backwards — and with it the bucket's refill, so a run's permits were refused too-fast. Run as the
+  // real server opens a world (openLive with no clock of its own), the wall stepped back 1.5 s after the arrival; 2 m every
+  // 0.4 s (5 m/s: under the track's 6) must each be accepted. Red before the fix at the third step (0.0 m left).
+  { const { request } = await import(ENGINE + "shared/protocol/authority.js");
+    const { openLive } = await import(ENGINE + "server/livehost.ts");
+    const root = scratch("mover-pace"), dir = path.join(root, "worlds", "pace"); fs.mkdirSync(dir, { recursive: true });
+    const w = openLive(dir, "pace", { custodyFile: path.join(root, "custody.json"), nameOf: () => null, kindOf: () => "human", scripts: null });
+    const realNow = Date.now; const pinned = process.env.PROTOCOL_NOW; delete process.env.PROTOCOL_NOW;
+    const steps = []; let arrived = null;
+    try {
+      ok(request(w, "olive", "create-world", { title: "pace" }).ok, "A6 a live world");
+      arrived = request(w, "ann", "move", { to: [0, 0, 0], client: "agent" });
+      const back = 1500; Date.now = () => realNow() - back;   // the host's clock sync steps the wall back
+      for (let i = 1; i <= 4; i++) { await new Promise((r) => setTimeout(r, 400)); const m = request(w, "ann", "move", { to: [0, 0, 2 * i] }); steps.push(m.ok ? "ok" : m.refused?.reason); }
+    } finally { Date.now = realNow; if (pinned !== undefined) process.env.PROTOCOL_NOW = pinned; }
+    ok(arrived?.ok && steps.length === 4 && steps.every((s) => s === "ok"), "A6 a wall clock stepped back doesn't freeze the speed track: 2 m every 0.4 s is accepted throughout", { arrived: arrived?.refused, steps });
+  }
 }
 { // W: water in the one walker (upstream #242's law, mover-hosted 10-15)
   const { waterStance, waterCost, stepWalk, walkSpeed } = await import("../../shared/mover.js");

@@ -22,7 +22,8 @@ export const posAt = (e, i) => { if (e && typeof e === "object") Object.definePr
  *   entries: what readLog returned for the log so far, each with its seq attached by posAt (unenumerable).
  *   getBlob must verify a blob against its name and throw if it doesn't match (§2.2).
  *   writeLine appends one already-checked line (no trailing LF) to durable storage.
- *   now: the authority's clock in ms (§2.1 ts); presence: the unlogged presence plane (P1, P2).
+ *   now: the authority's clock in ms (§2.1 ts); pace (optional): a monotonic ms clock the speed track measures elapsed
+ *   time by (a stepped-back wall clock holds `now` still); presence: the unlogged presence plane (P1, P2).
  */
 export function worldOf(io) {
   const { name, entries, getBlob, putBlob } = io;
@@ -32,6 +33,8 @@ export function worldOf(io) {
   w.kindOf = io.kindOf ?? null; // id → human|agent|anon|legacy (the directory): an anonymous identity gets a smaller budget
   w.nameOf = io.nameOf ?? null; // id → display name (the authority's directory, §2.3); null = old escaped ids only
   w.now = io.now;
+  // presence pacing (the speed track): a clock of elapsed ms that no wall-clock step moves; null = pace by w.now
+  w.pace = io.pace ?? null;
   // scripts (research 41): the sandbox is injected ({run, checkSyntax, available}: shared/protocol/sandbox.js), never imported
   // here (browsers import this file). No sandbox: scripts install, and every activation says "unavailable".
   w.scripts = io.scripts ?? null;
