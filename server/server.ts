@@ -541,9 +541,11 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       if (acc && !accessBypass(w, c.actorId)) {
         const here = [...w.clients].filter((o) => !o.spectator && (o.surface ?? "world") === "world" && o.actorId !== c.actorId).length;
         const why = acc.join === "signed-in" && c.anonymous ? `"${w.name}" is for signed-in people` : acc.join === "listed" && !w.log.listedHere(c.actorId) ? `"${w.name}" admits only people with a role here` :
-          accountAgeRefusal({ world: w.name, minDays: acc.minAccountDays, account: c.account, anonymous: !!c.anonymous, now: Date.now() }) ??
-          (Number.isInteger(acc.max) && !c.spectator && (c.surface ?? "world") === "world" && here >= acc.max ? `"${w.name}" is full (${acc.max} at once)` : null);
-        if (why) { ws.send(JSON.stringify({ type: "error", error: why })); c.ws.close?.(4005, "access"); return null; }
+          accountAgeRefusal({ world: w.name, minDays: acc.minAccountDays, account: c.account, anonymous: !!c.anonymous, now: Date.now() });
+        const full = !why && Number.isInteger(acc.max) && !c.spectator && (c.surface ?? "world") === "world" && here >= acc.max ? `"${w.name}" is full (${acc.max} at once)` : null;
+        // "full" is its own close reason: it is transient (someone leaves), so a client waits and tries again rather than
+        // showing it as the answer (review r3 F6); the other access refusals won't change by retrying
+        if (why || full) { ws.send(JSON.stringify({ type: "error", error: why ?? full })); c.ws.close?.(4005, why ? "access" : "full"); return null; }
       }
       // a guest is a fresh identity per connection: a mute or ghost a guest was given here is also filed against their
       // hashed address (moderation.ts), and every new guest from that address is given it too, written to the moderator

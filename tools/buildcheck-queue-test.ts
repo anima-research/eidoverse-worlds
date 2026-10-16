@@ -101,6 +101,51 @@ setInterval(() => {}, 1000);`);
     const r = await outcome(Q.checkFile(f2));
     check("the next ordinary check runs and answers", r.ok && Array.isArray((r as any).r.levels), JSON.stringify(r).slice(0, 160));
   }
+  console.log("\nbounded (review r3 F1): a public door can't fill the disk or the queue:");
+  {
+    const { readdirSync } = await import("node:fs");
+    const jobsDir = join(dir, "opt", "checks", "jobs");
+    // a worker that waits to be let go: the queue holds still while we look at it
+    const gate = join(dir, "gate");
+    Q.checkConfig.runner = worker("held", `const g = ${JSON.stringify(gate)}; while (!require("node:fs").existsSync(g)) await Bun.sleep(20); console.log(JSON.stringify({ levels: [], scale: Number(process.argv[3]) }));`);
+    const big = join(dir, "big.glb");
+    writeFileSync(big, new Uint8Array(1 << 20).fill(7));
+    Q.resetCheckBudget();
+    // one address, a burst of distinct scales: the first CHECK_PER_ADDRESS are taken, the next is refused
+    const burst = Array.from({ length: Q.CHECK_PER_ADDRESS + 1 }, (_, i) => outcome(Q.checkFile(big, 0.05 + i * 0.01, undefined, { address: "10.9.9.9" })));
+    await Bun.sleep(300);
+    const snaps = readdirSync(jobsDir).length;
+    check("queued jobs of one model share ONE snapshot on disk, whatever their scales", snaps === 1, `${snaps} snapshot files for ${Q.CHECK_PER_ADDRESS} queued scales of one model`);
+    // (never wait on the held worker: a refusal is at once, an accepted ask waits behind the gate; which ask of the
+    // burst is the one past the limit is whichever finished reading the file last)
+    const settled: any[] = [];
+    burst.forEach((p) => p.then((r) => settled.push(r)));
+    await Bun.sleep(200);
+    const limited = settled.filter((r) => !r.ok);
+    check(`a burst from one address: the one ask past ${Q.CHECK_PER_ADDRESS} a minute is refused, in words, with a retry`,
+      limited.length === 1 && /rate limit .* try again in \d+s/.test(limited[0].e), JSON.stringify(settled));
+    // many addresses: the queue fills to its cap, then 503s
+    const more: Promise<any>[] = [];
+    for (let i = 0; i < Q.checkConfig.queueMax + 4; i++) more.push(Q.checkFile(big, 5 + i * 0.01, undefined, { address: `10.8.0.${i}` }).then((r) => ({ ok: true, r }), (e: any) => ({ ok: false, e: e.message, status: e.status })));
+    await Bun.sleep(100);
+    writeFileSync(gate, "go");
+    const all = await Promise.all([...burst, ...more]);
+    const full = all.filter((r: any) => !r.ok && r.status === 503);
+    check("the queue has a cap: past it a check is refused 503, saying the queue is full", full.length > 0 && full.every((r: any) => /queue is full/.test(r.e)), JSON.stringify(full[0] ?? all.slice(-1)));
+    check("...and the jobs it took all answered", all.filter((r: any) => r.ok).length >= Q.CHECK_PER_ADDRESS, `${all.filter((r: any) => r.ok).length} answered`);
+    check("an address that was refused is still answered from the cache (a cached answer is never refused)",
+      (await outcome(Q.checkFile(big, (all.find((r: any) => r.ok && r.r.scale < 1) as any).r.scale, undefined, { address: "10.9.9.9" }))).ok);
+    // the report cache is bounded: fill past the cap, memory and disk stay under it
+    const memoMax = Q.checkConfig.memoMax, diskMax = Q.checkConfig.diskMax;
+    Q.checkConfig.memoMax = 5; Q.checkConfig.diskMax = 8;
+    Q.checkConfig.runner = worker("quick", `console.log(JSON.stringify({ levels: [] }));`);
+    for (let i = 0; i < 14; i++) await outcome(Q.checkFile(big, 12 + i * 0.01));
+    const onDisk = readdirSync(join(dir, "opt", "checks")).filter((n) => n.endsWith(".json")).length;
+    check("the report cache stays under its bound: in memory and on disk", Q.checkStats().memo <= 5 && onDisk <= 8, JSON.stringify({ ...Q.checkStats(), onDisk }));
+    Q.checkConfig.memoMax = memoMax; Q.checkConfig.diskMax = diskMax;
+    Q.checkConfig.runner = real;
+  }
+
   const { readdirSync } = await import("node:fs");
   const left = readdirSync(join(dir, "opt", "checks", "jobs"));
   check("no job snapshots are left behind, finished or failed", left.length === 0, left.join(","));
