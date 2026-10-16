@@ -193,9 +193,11 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   their fields, defaults and meanings are in `shared/protocol/componentspec.js`; a
   authority answers `schema {component?}` with the same. Among them: `transform
   {pos, q, scale}`, `model` (a library path), `label`, `description`, `parent {to, order?}`,
-  `pivot`, `light`, `mesh`, `motion`, `socket {name, part?, body?, accepts?, radius?}` (a socket is a
-  child entity of the thing it is on, carrying `parent {to: <host>}`; `sockets`, the old map spelling, is
-  lifted into socket children by the authority on write and at a stored world's first load),
+  `pivot`, `light`, `mesh`, `motion`, `socket {name, part?, accepts?, radius?}` (an attach point: a
+  child entity of the thing it is on, carrying `parent {to: <host>}`), `station {action, pose, anchor,
+  exit?, leaveBy?, who?}` (what a person's body does at that socket, on the same entity; `sockets`, the old
+  map spelling, is reserved and lift-only: the authority lifts it into socket children with their stations
+  on write and at a stored world's first load, and a socket's old `body` block into its station),
   `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
   `collider {shape}` (exact, box or sphere; absent, its size decides), `places` (named places to walk to, in the
   thing's own frame; on `@world`, world coordinates),
@@ -479,7 +481,7 @@ refused, and a world with no owner gives nobody more than visitor. **Two
 owner lists, never confused:** governance keys in genesis (§13) decide who
 may sign handoffs; roles decide rights inside the world.
 
-**Locks.** `lock: true` on an entity binds everyone, its locker and owners
+**Locks.** `lock {rank}` on an entity (a write of `true` is stored as `{rank: 'builder'}`) binds everyone, its locker and owners
 included: no write may change it or anything attached to it — no component
 set, added or removed, no move, no new parent, no new model, no removal —
 except the lock itself (by someone who may lift it). Use stays open: a

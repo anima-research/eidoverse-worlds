@@ -14,7 +14,16 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
   translate or repair stored values where we can. Every registered component is trial at v1.
 - **reserved**: the name is held (nobody else may take it) but every write is refused, with one refusal for all reserved
   names (code `reserved`; the definition's `instead` says what to use meanwhile). Today: `joint`, `schemas`,
-  `terrain-grid`, `terrain-tile`, `terrain-paint`.
+  `terrain-grid`, `terrain-tile`, `terrain-paint`; `sockets` (the old map: lift-only, the door turns a write of it into
+  socket children); and the names R held for shapes not settled yet (shape audit 10-16): `material`, `anim-clip`,
+  `anim-states`, `camera`, `zone`, `video`, `spring-joint`, `link`, `tags`.
+- **reserved inside a trial component**: a field or a kind can be held the same way, refused with code `reserved` while
+  its name is kept for an addition later (the registry's `reservedFields` / `reservedKinds`, pinned):
+  - `station`: `poses`, `sync`, `approach`, `enter`, `leave`, `reach`, `look`, `input`, `fromSeat` (researched in
+    RESEARCH-socket-body-2026-10-06, built in shared/sockbody.js's reader, unused in any stored world; each comes back
+    with its `absentMeans`). `hold` (bone overrides over the pose) is cut, not held.
+  - `grabbable`: `fx` (presence-only particles while use is held). A grip's `hold` is cut.
+  - `reactions`: the handler kind `impulse` (it returns with its general meaning when an engine carries impulses).
 - **stable**: promised. Its meaning never changes; it only grows by additions, and a changed meaning is a new versioned
   name (rung 4). None is stable at v1.
 
