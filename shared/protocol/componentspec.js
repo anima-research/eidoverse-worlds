@@ -91,13 +91,14 @@ export const COMPONENTS = {
   socket:    { on: "thing", fields: { name: "string", part: "string", body: "object", accepts: "array", radius: "number" }, required: ["name"],
                absentMeans: { part: "it rides its host's root, not a moving node of the host's model", body: "things only: no person attaches here", accepts: "nothing snaps in by fits", radius: "0.15 m (read only with accepts)" },
                help: "an attachment point on its parent (its host): {name (letters, digits, - and _, unique among the host's sockets; what use {args: {socket}} names), part? (a node of the host's model it rides), accepts? [keywords] + radius? (m; absent, 0.15): a thing released within radius whose grabbable.fits shares a keyword snaps in, body?: what a person's body does there (as sockets.<name>.body)}. Its pose is its transform (local to the host; scale 1). It carries nothing else but label, description, disabled, lock and motion. Things attach with parent {to: <its id>}" },
-  // the numbers a thing exposes to the bodies on it (a pose blends by `param.<name>`); scripts write them
+  // the numbers a thing exposes to the bodies on it, the ONE signal store (shape audit 10-16: no `param.*` keys in other
+  // components): a seat pose blends by the signal param.<name>; scripts write them with world.param(id, name, n)
   // where a thing goes back to when a reset sends it home (R 10-10): {pos, q, parent?: {to, socket?}} in its parent's frame.
   // grabbable.home (older) means the same for a grabbable; a reset reads home first.
   home:      { on: "thing", refPaths: { "parent.to": "ref" }, fields: { pos: "vec3", q: "array", scale: "any", parent: "any" }, absentMeans: { scale: "its size in the world is kept as it is when the reset runs" }, units: { pos: "m" },
                docs: { pos: "where the reset puts it back, [x, y, z] in its parent's frame", q: "which way it faces at home, [x, y, z, w]", scale: "its size at home (1 is the model as made)", parent: "what it hangs under at home: {to, socket?}" }, help: "where it goes back to when a reset sends it home: {pos: [x,y,z], q?: [x,y,z,w], scale? (else its size in the world is kept), parent?: {to, socket?}} (its parent's frame). Stamped where it stands when a reset handler naming it is written" },
   places:    { map: "any", help: "{<name>: {at: [x, y, z]} | {min: [x, y, z], max: [x, y, z]} | null}, each with label? (how it reads, ≤ 80) and kind? (seat | door): named places to walk to (move {to: '<thing>/<name>'}, or the name alone), in the thing's own frame so they move with it (on @world: world coordinates, places that belong to no thing). at is a spot to stand (its y the floor there); min/max a room (its min y its floor; look says which room you're in); null hides a place the model's own file declares (its glTF extras `building`). name_place {name} names the spot where you stand. An entry that fits none of these is kept and names nothing" },
-  params:    { on: "thing", map: "number", help: "{<name>: number}: values a socket's pose can blend by (param.<name>); scripts write them" },
+  params:    { on: "thing", map: "number", keyPattern: "^[a-z][a-zA-Z0-9_-]{0,31}$", maxKeys: 64, help: "{<name>: number}: up to 64 named numbers this thing exposes (a name: a lowercase letter, then letters, digits, _ or -, up to 32). A socket's pose blends by one as the signal param.<name>; a script writes one with world.param(id, name, number)" },
   reactions: { help: "{<action>: handler}: what happens when someone uses it. Each handler may add who: 'builder'|'owner' (who may use it) and fix: text (shown on refusal).",
     handlers: {
       toggle: { args: { component: "the component to flip (default 'openable')", field: "the true/false field inside it to flip (default 'open' for openable; leave both out for an openable). A named component with no field flips its whole value. The component must be on the thing when the handler is written", unless: "a field of the same component that, when true, bars it (e.g. 'locked')" }, example: { open: { kind: "toggle", component: "openable", field: "open", unless: "locked" } } },
@@ -479,6 +480,8 @@ export function pinOf() {
     if (d.ranges) p.ranges = copy(d.ranges);
     if (d.maxLen !== undefined) p.maxLen = d.maxLen;
     if (d.required) p.required = [...d.required];
+    if (d.keyPattern) p.keyPattern = d.keyPattern;
+    if (d.maxKeys !== undefined) p.maxKeys = d.maxKeys;
     if (d.absentMeans) p.absentMeans = { ...d.absentMeans };
     if (d.grammar) p.grammar = { ...d.grammar };
     if (d.keyed !== undefined) p.keyed = d.keyed;
@@ -512,6 +515,8 @@ export function pinBreakList(pin, now = pinOf()) {
     if (p.status !== undefined) for (const f of new Set([...Object.keys(p.ranges ?? {}), ...Object.keys(n.ranges ?? {})])) { const why = narrows(p.ranges?.[f], n.ranges?.[f]);
       if (why && Object.hasOwn(p.fields ?? {}, f)) push(`${name}.${f}: its range narrowed (${why}): ${j(p.ranges?.[f] ?? {})} → ${j(n.ranges?.[f])}`); }
     if (p.status !== undefined && n.maxLen !== undefined && (p.maxLen === undefined || n.maxLen < p.maxLen)) push(`${name}: maxLen ${p.maxLen ?? "none"} → ${n.maxLen}`);
+    if (p.status !== undefined && n.keyPattern !== undefined && n.keyPattern !== p.keyPattern) push(`${name}: keys ${p.keyPattern ?? "any"} → ${n.keyPattern}`);
+    if (p.status !== undefined && n.maxKeys !== undefined && (p.maxKeys === undefined || n.maxKeys < p.maxKeys)) push(`${name}: maxKeys ${p.maxKeys ?? "none"} → ${n.maxKeys}`);
     if (p.status !== undefined) for (const f of n.required ?? []) if (!(p.required ?? []).includes(f) && Object.hasOwn(p.fields ?? {}, f)) push(`${name}.${f}: now required`);
     for (const [f, m] of Object.entries(p.absentMeans ?? {})) if (n.absentMeans?.[f] !== m) push(`${name}.${f}: its meaning of absence ${j(m)} → ${j(n.absentMeans?.[f]) ?? "gone"}`);
     for (const [f, g] of Object.entries(p.grammar ?? {})) if (n.grammar?.[f] !== g) push(`${name}.${f}: grammar ${g} → ${n.grammar?.[f] ?? "gone"}`);

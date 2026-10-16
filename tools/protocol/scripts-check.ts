@@ -9,7 +9,7 @@
 // Cases:
 //   B   behaviours on sponsor rights (41 §7, lab 46 B1–B20)        D   determinism and the reader's audit (41 §3.7)
 //   R   runaway work: fuel, stack, memory, reads (41 §7 #9)       U   `use` → script: who did what, in the log
-//   E   events: say, enter/leave, changed, wake                    P   param.<name> (seat poses read it)
+//   E   events: say, enter/leave, changed, wake                    P   params (seat poses read param.<name>)
 //   C   a script's body effects meet each body's consent (L6)      V   translated v1 behaviours say they need re-installing
 //   H   source hygiene and syntax at upload and install            S   the server: no v1 BehaviorHost; timers tick; use → script
 // @ts-nocheck
@@ -68,8 +68,8 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["fuel", "sandbox.js", "if (fuel > L.fuel) {", "if (false) {", ["R1"]],
   ["host-call cap", "sandbox.js", "if (++calls > L.calls) {", "if (false) {", ["R4"]],
   ["write cap", "sandbox.js", "if (ops.length >= L.ops) {", "if (false) {", ["R5"]],
-  ["param values are numbers (schema)", "authority.js", "if (!isNum(v[k])) refuse(\"shape\", `${at}.${k} is a number (a signal)", "if (false) refuse(\"shape\", `${at}.${k} is a number (a signal)", ["P2"]],
-  ["param keys pass the schema", "authority.js", "v = Object.fromEntries(Object.entries(v).filter(([k]) => !k.startsWith(\"param.\")));", "", ["P1"]],
+  ["params keys have a grammar", "authority.js", "if (bad !== undefined) refuse(\"shape\", `${at}: '${bad}' isn't a name here", "if (false) refuse(\"shape\", `${at}: '${bad}' isn't a name here", ["P2"]],
+  ["params holds at most maxKeys", "authority.js", "if (def.maxKeys !== undefined && Object.keys(v).length > def.maxKeys)", "if (false)", ["P2"]],
   ["changed:<comp> cascades", "authority.js", "if (hit) activate(w, id, name, { on: `changed:${hit.comp}`", "if (false) activate(w, id, name, { on: `changed:${hit.comp}`", ["E3", "B8"]],
   ["say events", "authority.js", "activate(w, id, name, { on: \"say\", by: e.actor", "void (w, id, name, { on: \"say\", by: e.actor", ["E1"]],
   ["a script never hears its own say", "authority.js", "if (!(Array.isArray(v.on) && v.on.includes(\"say\")) || e.actor === `script:${id}`) continue;", "if (!(Array.isArray(v.on) && v.on.includes(\"say\"))) continue;", ["E1"]],
@@ -714,24 +714,27 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const rest = s.entries().slice(n0).find((e: any) => e.kind === "change" && e.actor === "sim");
       return { setup: [show(mv), show(gr), show(th)], beats, wrote, rest: !!rest, landed: comp(s, "mat", "t/landed") }; },
     good: (o) => o.setup.every((x: string) => x === "ok") && o.wrote > 0 && o.rest && o.landed?.id === "ball" && o.landed?.by === "vic" },
-  // ---------------- P: param.<name> ----------------
-  { id: "P1", what: "param.<name>: a script writes a signal into a component's data (a seat pose reads it); the schema keeps the rest of the value checked", run(s) { cast(s);
+  // ---------------- P: params (the one signal store; shape audit 10-16) ----------------
+  { id: "P1", what: "world.param(id, name, n) writes params.<name> (merged into what's there; a seat pose reads it as param.<name>); a param.<name> key in any other component is refused like any unknown key", run(s) { cast(s);
       s.call("bob", "create", { id: "swing", components: { label: "swing", transform: { pos: [0, 0, 0] } } });   // a light is its own thing (one place per thing, 10-11): no model here
       s.call("bob", "set", { id: "swing", component: "light", value: { kind: "point", intensity: 1 } });
-      install(s, "bob", "swing", "pump", onUse(`world.param("self", "light", "lean", 0.25); world.param("self", "t/pose", "lean", -1);`), { scope: { ids: "self", comps: ["light", "t/pose"] }, on: ["use"] });
+      s.call("bob", "set", { id: "swing", component: "params", value: { tilt: 2 } });
+      install(s, "bob", "swing", "pump", onUse(`world.param("self", "lean", 0.25); world.param("self", "push", -1);`), { scope: { ids: "self", comps: ["params"] }, on: ["use"] });
       s.call("bob", "set", { id: "swing", component: "reactions", value: { pump: { kind: "script", script: "pump" } } });
       const r = s.call("vic", "use", { id: "swing", action: "pump" });
-      const typo = s.call("bob", "set", { id: "swing", component: "light", value: { kind: "point", intensty: 2, "param.lean": 1 } });
-      return { r: st(s, r), light: comp(s, "swing", "light"), pose: comp(s, "swing", "t/pose"), typo: code(typo) }; },
-    good: (o) => o.r === "ran" && o.light?.["param.lean"] === 0.25 && o.light?.intensity === 1 && o.pose?.["param.lean"] === -1 && o.typo === "schema" },
-  { id: "P2", what: "param values are numbers: a direct set of param.lean = 'far' is refused, as is a bad parameter name, and world.param('x', 't/on') throws in the script", run(s) { cast(s);
-      s.call("bob", "create", { id: "seatl", components: { label: "seat light", transform: { pos: [1, 0, 0] } } });   // light-only (one place per thing)
-      const str = s.call("bob", "set", { id: "seatl", component: "light", value: { kind: "point", "param.lean": "far" } });
-      const name = s.call("bob", "set", { id: "seatl", component: "light", value: { kind: "point", "param.9": 1 } });
-      install(s, "bob", "seatl", "p", onUse(`world.param("self", "light", "lean", "far");`), { scope: { ids: "self", comps: ["light"] }, on: ["use"] });
+      const back = s.call("bob", "set", { id: "swing", component: "light", value: { kind: "point", intensity: 2, "param.lean": 1 } });
+      return { r: st(s, r), params: comp(s, "swing", "params"), light: comp(s, "swing", "light"), back: code(back) }; },
+    good: (o) => o.r === "ran" && JSON.stringify(o.params) === '{"tilt":2,"lean":0.25,"push":-1}' && o.light?.intensity === 1 && !("param.lean" in (o.light ?? {})) && o.back === "schema" },
+  { id: "P2", what: "params are named numbers, at most 64: a string value, a bad name and a 65th key are refused; world.param with a string throws in the script", run(s) { cast(s);
+      s.call("bob", "create", { id: "seatl", components: { label: "seat light", transform: { pos: [1, 0, 0] } } });
+      const str = s.call("bob", "set", { id: "seatl", component: "params", value: { lean: "far" } });
+      const name = s.call("bob", "set", { id: "seatl", component: "params", value: { "9lives": 1 } });
+      const many = s.call("bob", "set", { id: "seatl", component: "params", value: Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`p${i}`, i])) });
+      const full = s.call("bob", "set", { id: "seatl", component: "params", value: Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`p${i}`, i])) });
+      install(s, "bob", "seatl", "p", onUse(`world.param("self", "lean", "far");`), { scope: { ids: "self", comps: ["params"] }, on: ["use"] });
       s.call("bob", "set", { id: "seatl", component: "reactions", value: { p: { kind: "script", script: "p" } } });
-      return { str: code(str), name: code(name), script: st(s, s.call("vic", "use", { id: "seatl", action: "p" })) }; },
-    good: (o) => o.str === "shape" && o.name === "shape" && o.script === "failed thrown" },
+      return { str: code(str), name: code(name), many: code(many), full: ok(full) ? "ok" : code(full), script: st(s, s.call("vic", "use", { id: "seatl", action: "p" })) }; },
+    good: (o) => o.str === "shape" && o.name === "shape" && o.many === "bounds" && o.full === "ok" && o.script === "failed thrown" },
   // ---------------- C: body effects meet consent ----------------
   { id: "C1", what: "41 #13 / §3d M4: a script `shove`s a visitor whose table says no (a behaviour is a stranger): refused where it lands, nothing logged; once vic allows it by name, it lands and the act records the consent used", run(s) { cast(s);
       s.call("bob", "create", { id: "trap", model: "crate", place: { at: [0, 0] } });

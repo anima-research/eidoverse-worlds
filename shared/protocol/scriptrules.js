@@ -68,5 +68,6 @@ export function elide(st, ops) {
   return out;
 }
 
-export const PARAM = /^param\.[a-z][a-zA-Z0-9_-]{0,31}$/;
-export const isParamKey = (k) => typeof k === "string" && PARAM.test(k);
+// a params key (componentspec params.keyPattern): the signal a seat pose reads is param.<this>
+export const PARAM_NAME = /^[a-z][a-zA-Z0-9_-]{0,31}$/;
+export const isParamName = (k) => typeof k === "string" && PARAM_NAME.test(k);

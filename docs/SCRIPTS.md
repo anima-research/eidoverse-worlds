@@ -97,7 +97,7 @@ Refusals show on the card in these same words. (shared/protocol/newscript.js pla
 | `world.set(id, comp, value)` | propose a write (must be inside `scope`) |
 | `world.delete(id, comp?)` | propose a delete (a whole thing only if this activation created it) |
 | `world.create(components, id?)` | propose a new thing (needs `scope.create`); returns its id |
-| `world.param(id, comp, name, number)` | write `param.<name>` into a component's data: a signal something else reads (a seat pose that blends by signals) |
+| `world.param(id, name, number)` | write `params.<name>` on a thing (merged into what's there; needs `params` in the scope's comps): a signal something else reads (a seat pose blends by `param.<name>`) |
 | `world.say(text)` | a say entry (needs `scope.say`) |
 | `world.shove(who)`, `world.pose(who, spec)` | effects on a person (needs `scope.bodies`, then their consent) |
 | `console.log(...parts)` | its console (`scripts {id}` shows the last lines; never logged). `world.log` is the old spelling, kept for one version |

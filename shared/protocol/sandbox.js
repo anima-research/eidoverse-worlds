@@ -24,7 +24,7 @@
 // held the authority's thread for 1–13 s (review, 2026-10-06). The host side stays on the authority's thread, so an activation is
 // still one synchronous step. runScript (in-process) is for auditors and tools, which may take their time.
 import { jcs, isEntityId, isComponent } from "./fold.js";
-import { LIMITS, isParamKey } from "./scriptrules.js";
+import { LIMITS, isParamName } from "./scriptrules.js";
 import { materialize } from "./componentspec.js";
 
 let Q = null, unavailable = null;
@@ -84,7 +84,7 @@ const PRELUDE = String.raw`"use strict";
     count() { return call(["count"]); },
     name(id) { return call(["name", String(id)]); },
     set(id, comp, value) { call(["set", String(id), String(comp), JSON.parse(enc(value, "world.set " + comp))]); },
-    param(id, comp, name, value) { call(["param", String(id), String(comp), String(name), JSON.parse(enc(value, "world.param " + name))]); },
+    param(id, name, value) { call(["param", String(id), String(name), JSON.parse(enc(value, "world.param " + name))]); },
     delete(id, comp) { call(["delete", String(id), comp === undefined ? null : String(comp)]); },
     create(components, id) { return call(["create", JSON.parse(enc(components ?? {}, "world.create")), id === undefined ? null : String(id)]); },
     say(text) { call(["say", String(text)]); },
@@ -159,11 +159,12 @@ export function makeHost(x) {
       // every parameter written down (PROTOCOL §4): a script's value gets its definition's defaults here, in the host, so the
       // logged batch is what an auditor's re-run makes too (and a re-asserted value equal to the stored one is elided)
       case "set": { write(); const id = wantId(self(a[0]), "world.set"), comp = wantComp(a[1], "world.set"); const op = { verb: "set", id, comp, value: materialize(comp, a[2]).value }; ops.push(op); apply(op); return null; }
-      case "param": { write(); const id = wantId(self(a[0]), "world.param"), comp = wantComp(a[1], "world.param"), key = `param.${a[2]}`;
-        if (!isParamKey(key)) throw new HostError(`world.param: '${a[2]}' isn't a parameter name (a letter, then letters, digits, _ or -, up to 32)`);
-        if (typeof a[3] !== "number") throw new HostError(`world.param: ${key} is a number (a signal), got ${JSON.stringify(a[3])}`);
-        const was = entOf(id)?.c[comp]; const prev = was && typeof was === "object" && !Array.isArray(was) ? copy(was) : {};
-        const op = { verb: "set", id, comp, value: { ...prev, [key]: a[3] } }; ops.push(op); apply(op); return null; }
+      // a signal into the thing's params (the one store: a seat pose blends by param.<name>); merged into what's there
+      case "param": { write(); const id = wantId(self(a[0]), "world.param"), name = a[1];
+        if (!isParamName(name)) throw new HostError(`world.param: '${name}' isn't a parameter name (a lowercase letter, then letters, digits, _ or -, up to 32)`);
+        if (typeof a[2] !== "number") throw new HostError(`world.param: ${name} is a number (a signal), got ${JSON.stringify(a[2])}`);
+        const was = entOf(id)?.c.params; const prev = was && typeof was === "object" && !Array.isArray(was) ? copy(was) : {};
+        const op = { verb: "set", id, comp: "params", value: { ...prev, [name]: a[2] } }; ops.push(op); apply(op); return null; }
       case "delete": { write(); const id = wantId(self(a[0]), "world.delete"); const op = a[1] === null ? { verb: "delete", id } : { verb: "delete", id, comp: wantComp(a[1], "world.delete") }; ops.push(op); apply(op); return null; }
       case "create": { const comps = a[0]; if (!comps || typeof comps !== "object" || Array.isArray(comps)) throw new HostError("world.create(components, id?): components is an object");
         // a minted id carries 128 bits of the activation's seed (review 10-07 H5: 32 bits collided across forks), so a re-run mints it again

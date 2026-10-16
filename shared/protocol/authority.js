@@ -831,14 +831,6 @@ export function schemaRefusal(comp, v) { try { schemaCheck(comp, comp, v);
     return null; } catch (e) { if (e instanceof Refusal) return `${e.code}: ${e.reason}`; throw e; } }
 function schemaCheck(at, comp, v, { carry = false } = {}) {
   const base = baseOf(comp), name = registered(base) ?? base, def = COMPONENTS[name];
-  // `param.<name>`: a number a script writes into a component for something else to read (seat poses that blend by
-  // signals). Any object component may carry them at its top level; the rest of the value is checked as usual.
-  if (v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).some((k) => k.startsWith("param."))) {
-    for (const k of Object.keys(v)) if (k.startsWith("param.")) {
-      if (!SR.isParamKey(k)) refuse("shape", `${at}: '${k}' isn't a parameter name`, "param.<name>: a letter, then letters, digits, _ or -, up to 32 (e.g. param.lean)");
-      if (!isNum(v[k])) refuse("shape", `${at}.${k} is a number (a signal), got ${JSON.stringify(v[k]).slice(0, 40)}`, "a script writes it with world.param(id, component, name, number)"); }
-    v = Object.fromEntries(Object.entries(v).filter(([k]) => !k.startsWith("param.")));
-  }
   // PROTOCOL §4 (review 10-07 H1, R's ruling): a bare name is the registry's. An unregistered one is refused: a typo of
   // a registered name says "did you mean"; a versioned one (light@2) says a new meaning is registered first; anything
   // else is someone's own component, which carries a namespace (example.org/heart). Before this they were admitted, and
@@ -865,7 +857,10 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
   if (name === "socket") { const bad = checkSocket(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.socket.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
   // what a hand may do with it (shared/grab.js: closed keys, ranges, enums, grips), in its own words
   if (name === "grabbable") { const bad = checkGrabbable(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.grabbable.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
-  if (def.map) { if (!(v && typeof v === "object" && !Array.isArray(v)) || Object.values(v).some((x) => !TYPES[def.map](x))) refuse("shape", `${at} must be {<name>: ${def.map}}`, def.help ?? ""); }
+  if (def.map) { if (!(v && typeof v === "object" && !Array.isArray(v)) || Object.values(v).some((x) => !TYPES[def.map](x))) refuse("shape", `${at} must be {<name>: ${def.map}}`, def.help ?? "");
+    // a keyed map's grammar and size (params: shape audit 10-16): its keys are names, and there are at most maxKeys of them
+    if (def.keyPattern) { const re = new RegExp(def.keyPattern); const bad = Object.keys(v).find((k) => !re.test(k)); if (bad !== undefined) refuse("shape", `${at}: '${bad}' isn't a name here (${def.keyPattern})`, def.help ?? ""); }
+    if (def.maxKeys !== undefined && Object.keys(v).length > def.maxKeys) refuse("bounds", `${at} has ${Object.keys(v).length} entries; at most ${def.maxKeys}`, def.help ?? ""); }
   if (!def.fields) return;
   if (name === "lock" && v === true) return;   // a plain lock is true (builder level); its {rank} form is checked as an object below
   const fields = Object.keys(def.fields);
