@@ -21,7 +21,8 @@
 //       the authority (which is sent the height and scale with the moves); a size's bounds
 //   G7  the teleport's swimmer box beside a dock, and a stride up a sloped rim judged from where it last swam (holes r3 F8:
 //       each red with its branch removed)
-//   GH  a heightmap whose grid isn't here: no ground committed (refused with words, nothing logged); seated once it lands (F3)
+//   GH  a heightmap whose grid isn't here: no ground committed (refused with words, nothing logged); seated once it lands (F3);
+//       nothing launched (throw, drop, punt, shove) and no put {pos} judged on it (r4 F2/F3)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -392,8 +393,29 @@ if (M) {
     ok(arr.ok, "GH2 an arrival on dry ground reads no ground: it lands", arr.refused);
     const wk = call("hm", "ann", "move", { to: [0.5, 0, 0] });
     ok(!wk.ok && wk.refused?.code === "ground-loading" && /loading/.test(wk.refused.reason), "GH2 a walk with the grid missing: refused with words (the authority won't judge it on noise)", wk.refused);
+    // GH4 (review r4 F2/F3): nothing flies, and nothing is put, on a guessed height. A launch (throw, drop, punt, a walk's
+    // shove) would come to rest on the noise law's ground, and that rest is logged; a put {pos} is a claim judged against
+    // the ground (floating, sunk), so with no ground to judge it on it is refused, never waved through
+    ok(call("hm", "olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } }).ok, "(GH4 setup) the world runs eidosim");
+    ok(call("hm", "olive", "move", { to: [0, 0, 2], client: "agent" }).ok, "(GH4 setup) olive arrives");
+    for (const [id, model, pos, extra] of [["hb", "ball", [0.5, 1, 2.4], {}], ["hk", "ball", [-0.5, 0.2, 2.4], {}], ["hp", "crate", [0.5, 0, 1.4], { grabbable: {} }]] as any)
+      ok(call("hm", "olive", "create", { id, model, components: { transform: { pos }, ...(model === "ball" ? { physics: { kind: "dynamic", who: "visitor" } } : {}), ...extra } }).ok, `(GH4 setup) ${id}`);
+    const n4 = openWorld(root, "hm").entries.length;
+    ok(call("hm", "olive", "grab", { id: "hb" }).ok, "(GH4 setup) olive holds a ball");
+    const loading = (r) => !r.ok && r.refused?.code === "ground-loading" && /still loading/.test(r.refused.reason ?? "");
+    for (const [what, verb, args] of [["a throw", "throw", { id: "hb", v: [0, 2, 2] }], ["a drop (it would fall)", "drop", { id: "hb" }],
+      ["a punt", "punt", { id: "hk", power: 2 }], ["a walk's shove", "punt", { id: "hk", v: [0, 0.1, -1], shove: true }]] as any) {
+      const r = call("hm", "olive", verb, args);
+      ok(loading(r), `GH4 ${what} with the grid missing: refused ground-loading, with the same words`, r.refused ?? r); }
+    ok(call("hm", "olive", "drop", { id: "hb" }).refused?.code === "ground-loading" && openWorld(root, "hm").entries.slice(n4).every((e) => !(e.kind === "sim" && e.verb === "launch")),
+      "GH4 …and nothing was launched (no sim launch logged), the ball still in the hand", openWorld(root, "hm").entries.slice(n4).filter((e) => e.kind === "sim").map((e) => e.verb));
+    ok(call("hm", "olive", "grab", { id: "hp" }).ok, "(GH4 setup) olive holds a crate that doesn't fly");
+    const pf = call("hm", "olive", "put", { id: "hp", pos: [0.5, 1.4, 2.4] });
+    ok(loading(pf) && near(openWorld(root, "hm").state().entities.hp.c.transform.pos[1], 0), "GH4 put {pos} 1.4 m up with the grid missing: refused ground-loading (no ground to judge floating on), nothing logged", { refused: pf.refused, pos: openWorld(root, "hm").state().entities.hp.c.transform.pos });
     registerGrid(REF, { w: 2, h: 2, data: new Uint16Array([65535, 65535, 65535, 65535]) });
     const hHM = fieldOf(HM);
+    const pf2 = call("hm", "olive", "put", { id: "hp", pos: [0.5, 1.4, 2.4] });
+    ok(!pf2.ok && pf2.refused?.code === "implausible" && /floating/.test(pf2.refused.reason), "GH4 the grid here: the same put {pos} is judged — floating, refused implausible", pf2.refused);
     const c3 = call("hm", "olive", "create", { id: "hc3", model: "crate", at: [12, -7] });
     ok(c3.ok && near(yOf("hc3"), hHM(12, -7), 0.01) && hHM(12, -7) <= 0.0101 && hHM(12, -7) >= 0, "GH3 the grid here: create {at} seats the crate on the heightmap (0..0.01 m), not on noise", { got: yOf("hc3"), field: hHM(12, -7) });
     ok(call("hm", "ann", "move", { to: [0.5, r3(hHM(0.5, 0)), 0] }).ok, "GH3 the grid here: the walk is accepted", null);

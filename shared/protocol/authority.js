@@ -1001,6 +1001,8 @@ function resettleRiders(w, actor, ops, before, after0, act, notes) { let after =
     return hosts.has(c.parent?.to) && c.physics?.kind === "dynamic" && !lockedC(c) && !w.presence.holds[k] && !w.presence.holds[c.parent.to] && !after.entities[k].c.disabled && aabb(after, k); });
   if (!riders.length) return;
   const spec = after.entities["@world"]?.c["physics-engine"];
+  // the ground still loading: a fall would rest on a guessed height (review r4 F2) — they stay where they stand, said so
+  if (!groundReady(after)) { notes.push({ kept: riders, why: "they were resting on a thing whose shape changed, but this world's ground is still loading: they stay where they stand rather than fall onto a guessed height" }); return; }
   if (spec && carried(spec)) {
     const flying = new Set(Object.keys(w.sim?.()?.launched ?? {}));
     const dropped = riders.filter((k) => !flying.has(k));
@@ -1483,7 +1485,10 @@ function buildPlace(ctx, a) {
 // after it's written, end with an `unchecked` entry instead (a write is never refused after it lands).
 function warnings(st, ids, strict = false) {
   const out = []; const ix = spatial(st); const pairs = new Map();   // id → the things it was already said to overlap
-  const B = boundsOf(st), ground = groundReady(st); let k = 0; const was = CTX.work.what;   // ground loading: no sunk/floating advice (r3 F3) CTX.work.what = ids.length === 1 ? `checking ${ids[0]}` : `checking ${ids.length} things`;
+  // the ground still loading (r3 F3): no sunk/floating advice; a strict check (a put's claim) has nothing to judge it on and
+  // is refused ground-loading below, never waved through (r4 F3)
+  const B = boundsOf(st), ground = groundReady(st); let k = 0; const was = CTX.work.what;
+  CTX.work.what = ids.length === 1 ? `checking ${ids[0]}` : `checking ${ids.length} things`;
   try {
   for (; k < ids.length; k++) { const id = ids[k];
     const g = ix.rec.get(id); const b = g?.box; if (!b) continue;
@@ -1496,7 +1501,8 @@ function warnings(st, ids, strict = false) {
         spend(satCost(mine[i], go.obbs[j])); const p = satDepth(mine[i], go.obbs[j]); if (p > 0.02 && p > deepest) deepest = p; }
       if (deepest > -Infinity && !pairs.get(o)?.has(id)) { spend(10); out.push({ id, kind: "overlap", with: o, by: r3(deepest) }); let m = pairs.get(id); if (!m) pairs.set(id, (m = new Set())); m.add(o); } }
     const cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2;
-    if (!ground) { if (B && (outsideWorld(B, b.min) || outsideWorld(B, b.max))) out.push({ id, kind: "out-of-bounds", bounds: B }); continue; }
+    if (!ground) { if (strict) groundOf(st).height(cx, cz);   // refuses ground-loading, in the ground's own words
+      if (B && (outsideWorld(B, b.min) || outsideWorld(B, b.max))) out.push({ id, kind: "out-of-bounds", bounds: B }); continue; }
     const sup = supportBelow(st, cx, cz, b.min[1], fam);
     const hungFrom = ancestors(st, id).find((p) => { const pb = ix.rec.get(p)?.box; return pb && pb.max[1] > b.max[1]; });
     if (!hungFrom && sup.y - b.min[1] > 0.005 && sup.y - b.min[1] < 0.3) out.push({ id, kind: "sunk", depth: r3(sup.y - b.min[1]), into: sup.id });
@@ -3349,6 +3355,9 @@ function flyingWorld(st) {
   if (!spec) refuse("no-physics", "this world has no physics running, so nothing flies", "put it down instead (put {id}); the owner can turn physics on: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@1.0.0'}}");
   if (!carried(spec)) refuse("foreign-engine", `this world runs ${spec.engine} (build ${spec.build}), which this server doesn't carry`,
     `put it down instead; the owner can move the world to an engine this server carries: set {id: '@world', component: 'physics-engine', value: {engine: '${Object.keys(ENGINES)[0]}'}}`);
+  // the ground still loading (a heightmap whose grid isn't here): the engine would land it on the noise law's ground, and
+  // its rest is logged for good (review r4 F2). Nothing flies until the ground is here: a throw, a drop, a punt, a shove.
+  if (!groundReady(st)) groundOf(st).height(0, 0);   // refuses ground-loading, in the ground's own words
   return spec;
 }
 // a thing with no stamped shape is no body in the engine (stampShapes): launched, it would never fly or rest
