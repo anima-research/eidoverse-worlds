@@ -156,6 +156,19 @@ try {
   const d = Math.hypot(a.pos.x - friend.pos.x, a.pos.z - friend.pos.z);
   check("walk_to a person stops short of them, beside them", /arrived at friend/.test(r) && d > 0.5 && d < 1.3, `${r} — ${d.toFixed(2)}m apart`);
 
+  // review r3 F4: a person whose name is a thing's doesn't capture the walk — things and places come first
+  {
+    const squatter: any = new WorldAgent({ name: "Tower", world: "places", url: URL_ });
+    try {
+      await squatter.connect();
+      await squatter.walkTo(-15, -15, true);
+      for (let i = 0; i < 40 && ![...a.people.keys()].some((k: string) => k.toLowerCase() === "tower"); i++) await sleep(50);
+      check("(a visitor named \"Tower\" is here)", [...a.people.keys()].some((k: string) => k.toLowerCase() === "tower"), [...a.people.keys()].join(","));
+      r = await tool("walk_to", { to: "tower", run: true });
+      check("move {to: \"tower\"} goes to the tower's entrance, not to the person called Tower", /arrived at tower\/entrance/.test(r), `${r} ${at()}`);
+    } finally { try { squatter.close(); } catch { /* gone */ } }
+  }
+
   // the nearest of two
   await tool("walk_to", { x: 30, z: 7, run: true });
   r = await tool("walk_to", { to: "the hall", run: true });
@@ -210,6 +223,24 @@ try {
   const pl = a.entities.get("rug").places;
   check("two name_place calls at once both land — the second does not erase the first",
     /named/.test(r1) && /named/.test(r2) && pl.west_end && pl.east_end && pl.rug_end && pl.long_room, `${r1} | ${r2} | ${Object.keys(pl).join(",")}`);
+
+  // review r3 F5: a remove built from a stale replica does not erase a name written in between
+  {
+    const orig = a.sendOps.bind(a);
+    let once = true;
+    a.sendOps = async (ops: any[], extra: any = {}) => {
+      if (once) {   // another writer lands a name after this replica was read and before the remove is sent
+        once = false;
+        await a.request("set", { id: "rug", component: "places", value: { late: { at: [2, 0.05, 0] } }, merge: true });
+      }
+      return orig(ops, extra);
+    };
+    try { r = await tool("name_place", { name: "rug_end", remove: true, on: "rug" }); } finally { a.sendOps = orig; }
+    await sleep(300);
+    const pl2 = a.entities.get("rug").places;
+    check("name_place remove, raced by another write: the name written in between survives, and the remove still lands",
+      /retired "rug_end"/.test(r) && !!pl2.late && pl2.rug_end === null, `${r} | ${JSON.stringify(pl2)}`);
+  }
 
   r = await tool("walk_to", { to: "the moon" });
   check("an unknown name is refused, listing the names that exist", /nothing here is called "the moon" — named places: .*tower\/hall/.test(r), r);

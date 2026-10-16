@@ -3318,22 +3318,15 @@ export class WorldAgent {
     return out.sort((a, b) => a.vol - b.vol);
   }
 
-  /** Where `to` is, as a walk can aim at it: "thing/place", a place's name or
-   *  label alone (the nearest, if several things have one), a thing alone
-   *  (its entrance, else its door), or a person (stopping short of them). */
+  /** Where `to` is, as a walk can aim at it: "thing/place", a thing alone
+   *  (its entrance, else its door), a place's name or label alone (the
+   *  nearest, if several things have one), or a person (stopping short of
+   *  them) — in that order: a person's name never hides a thing's. */
   destination(to: string): Destination | { refusal: string } {
     const q = to.trim();
     if (!q) return { refusal: "move's to names nothing" };
     const me = this.pos, now = Date.now();
     const ci = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-    // a person
-    for (const p of this.people.values()) {
-      if (!ci(p.id, q)) continue;
-      const xyz = posePosition(p.pose);
-      if (!xyz) return { refusal: `${p.id}'s position is not known yet` };
-      const [x, y, z] = xyz, d = Math.hypot(me.x - x, me.z - z), back = d > 0.01 ? Math.min(0.9, d) / d : 0;
-      return { x: x + (me.x - x) * back, y, z: z + (me.z - z) * back, reach: 0.6, label: p.id };
-    }
     const slash = q.indexOf("/");
     const ents = [...this.entities.values()].filter((e) => isFiniteVec3(e.pos));
     if (slash > 0 && q.slice(0, slash) === WORLD_ENTITY) {   // a place that belongs to no thing
@@ -3366,6 +3359,14 @@ export class WorldAgent {
       if (!("refusal" in d)) hits.push(d);
     }
     if (hits.length) return hits.sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
+    // a person, last (review r3 F4): a visitor who joins as "tower" must not capture every walk to the tower
+    for (const p of this.people.values()) {
+      if (!ci(p.id, q)) continue;
+      const xyz = posePosition(p.pose);
+      if (!xyz) return { refusal: `${p.id}'s position is not known yet` };
+      const [x, y, z] = xyz, d = Math.hypot(me.x - x, me.z - z), back = d > 0.01 ? Math.min(0.9, d) / d : 0;
+      return { x: x + (me.x - x) * back, y, z: z + (me.z - z) * back, reach: 0.6, label: p.id };
+    }
     const known = this.placesNear().map((x) => x.ref);
     return { refusal: `nothing here is called "${q}"${known.length ? ` — named places: ${known.slice(0, 16).join(", ")}${known.length > 16 ? ` and ${known.length - 16} more (move {to: "?"} lists them all)` : ""}` : ""}` };
   }
@@ -3425,24 +3426,34 @@ export class WorldAgent {
     if (!target) return opts.on ? `no thing called "${opts.on}" here` : "no placed thing within 15m to hang the name on — pass on: <thing id> (or on: \"@world\")";
     const h = target.h;
     if (!h) return `where [${target.id}] is right now cannot be worked out, so a spot on it cannot be named — try again when it rests`;
-    const had = target.had;
-    const cur: Record<string, unknown> = (had && typeof had === "object" && !Array.isArray(had)) ? { ...had } : {};
-    if (opts.remove) {
-      // always a hiding entry: whether the model declares the name is not
-      // known until its file has loaded, and a deleted entry would let it back
-      cur[name] = null;
-    } else {
-      const l = toLocal(h, w).map((v) => Math.round(v * 1000) / 1000);
-      cur[name] = { at: l, ...(opts.label ? { label: opts.label.slice(0, 80) } : {}) };
-    }
-    const data = JSON.stringify(cur);
-    if (data.length > 8000) return `[${target.id}]'s places would exceed the 8KB component limit — retire some first`;
     const t0 = Date.now(), id = target.id;
-    // an ordinary set of the places component, through the authority: rights, the gate and undo apply as to any edit.
-    // Adding or re-pointing a name merges just that name (RFC 7396); retiring one replaces the bag with the name held as
-    // null, since a merge's null would delete the entry and let a name the model declares back in
-    const op = opts.remove ? OP.set(id, "places", cur) : OP.set(id, "places", { [name]: cur[name] }, { merge: true });
-    const r: any = await this.sendOps([op]);
+    const placesNow = () => id === WORLD_ENTITY ? this.replica?.st?.entities?.[WORLD_ENTITY]?.c?.places
+      : (this.entities.get(id) ? recordComponents(this.entities.get(id) as Entity).places : undefined);
+    let had = target.had, cur: Record<string, unknown> = {}, r: any;
+    for (let attempt = 0; ; attempt++) {
+      cur = (had && typeof had === "object" && !Array.isArray(had)) ? { ...(had as Record<string, unknown>) } : {};
+      if (opts.remove) {
+        // always a hiding entry: whether the model declares the name is not
+        // known until its file has loaded, and a deleted entry would let it back
+        cur[name] = null;
+      } else {
+        const l = toLocal(h, w).map((v) => Math.round(v * 1000) / 1000);
+        cur[name] = { at: l, ...(opts.label ? { label: opts.label.slice(0, 80) } : {}) };
+      }
+      if (JSON.stringify(cur).length > 8000) return `[${target.id}]'s places would exceed the 8KB component limit — retire some first`;
+      // an ordinary set of the places component, through the authority: rights, the gate and undo apply as to any edit.
+      // Adding or re-pointing a name merges just that name (RFC 7396); retiring one replaces the bag with the name held as
+      // null, since a merge's null would delete the entry and let a name the model declares back in. That replace is
+      // built from this replica, so it is PINNED to the bag it read (expect, §3a): if someone else wrote a name in between,
+      // the authority refuses it as `changed`, and it is rebuilt from the bag as it now is (review r3 F5)
+      const op = opts.remove ? OP.set(id, "places", cur) : OP.set(id, "places", { [name]: cur[name] }, { merge: true });
+      const pin = opts.remove ? { expect: [{ id: op.args.id, component: op.args.component, ...(had !== undefined ? { value: had } : {}) }] } : {};
+      r = await this.sendOps([op], pin);
+      if (!(opts.remove && r && !r.ok && r.refused?.code === "changed" && attempt < 4)) break;
+      // the other write's log reaches this replica before (or just after) the refusal: wait for the bag to move
+      for (const until = Date.now() + 1000; Date.now() < until && JSON.stringify(placesNow()) === JSON.stringify(had);) await new Promise((res) => setTimeout(res, 50));
+      had = placesNow();
+    }
     if (r && !r.ok) return `not named — the world refused: ${r.refused?.reason ?? r.refused?.code ?? JSON.stringify(r.refused ?? r)}`;
     // the authority's answer is in; wait for this body's own fold of it, so a move {to} straight after finds the name
     for (const deadline = t0 + 3000; Date.now() < deadline;) {
