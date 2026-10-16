@@ -1048,12 +1048,14 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   R("ann", "create", { id: "bench-arm", components: { parent: { to: "bench" } } }); R("ann", "create", { id: "bench-arm-rest", components: { parent: { to: "bench-arm" }, socket: { name: "rest" } } });
   ok(code(R("ann", "set", { id: "bench-arm", component: "socket", value: { name: "arm" } })) === "shape" && !E("bench-arm")?.socket, "SKE4 …nor may a thing holding a socket become a socket itself");
   ok(code(R("ann", "create", { id: "badwho", components: { parent: { to: "stool" }, socket: { name: "y", body: { who: "king" } } } })) === "shape", "SKE6 body.who is a role here");
-  // R 10-12 20:44 ruling 4: sockets don't count toward capacity.things
-  R("ann", "set", { id: "@world", component: "capacity", value: { things: 4 } });
+  // R 10-15 22:48: ONE entity budget, sockets included ("aren't sockets child entities anyway?")
+  const have = Object.keys(openWorld(root, "socketents").state().entities).length - 1;
+  R("ann", "set", { id: "@world", component: "capacity", value: { entities: have + 2 } });
   const third = R("ann", "create", { id: "third", model: "crate" });
   const sockAtCap = R("ann", "create", { id: "third-seat", components: { parent: { to: "third" }, socket: { name: "seat" } } });
   const full = R("ann", "create", { id: "fourth", model: "crate" });
-  ok(third.ok && sockAtCap.ok && code(full) === "full" && full.refused?.things === 4, "SKE7 capacity counts things, never their sockets (ruling 4): with 3 things and 5 sockets a limit of 4 takes a 4th thing and a socket on it, and refuses a 5th thing", [third.refused, sockAtCap.refused, full.refused]);
+  const fullSock = R("ann", "create", { id: "third-arm", components: { parent: { to: "third" }, socket: { name: "arm" } } });
+  ok(third.ok && sockAtCap.ok && code(full) === "full" && full.refused?.entities === have + 2 && code(fullSock) === "full" && fullSock.refused?.entities === have + 2 && /@world\.capacity\.entities/.test(fullSock.refused?.reason ?? ""), "SKE7 capacity.entities counts every entity, sockets too (R 10-15): a limit of have+2 takes a thing and a socket on it, then refuses a thing and a socket alike", { have, r: [third.refused, sockAtCap.refused, full.refused, fullSock.refused] });
 }
 
 // SKE8-10: the verbs read socket children (socketsOf): use, look, inspect; and a socket is never a thing a hand takes
@@ -1171,36 +1173,40 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(ob.ok && om.ok && hm.ok && JSON.stringify(kids("bobcrate")) === '["back","drv","side"]', "SR1e the host's own builder still adds seats (natively, by the legacy map, and on a host made in the same batch)", [ob.refused, om.refused, hm.refused, kids("bobcrate")]);
 }
 
-// SR2 (review 10-12 S1-2): sockets aren't things (ruling 4), so they have a budget of their own: capacity.sockets (a world
-// setting, under the server's ceiling), guests' sockets together (capacity.guestSockets: a guest is a fresh identity per
-// connection), and at most SOCKETS_PER_HOST on one host. Only a write that adds sockets is refused (full).
+// SR2 (review 10-12 S1-2, re-cut by R 10-15 22:48): a socket is an entity, so it meets the one entity budget like any
+// other: capacity.entities for the world, capacity.guestEntities for all account-less people together (a guest is a fresh
+// identity per connection), and at most SOCKETS_PER_HOST on one host. Only a write that adds is refused (full).
 { const W = () => openWorld(root, "sockcap"); const R = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); const w = W(); w.kindOf = (id) => (id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
   const nSock = () => Object.values(W().state().entities).filter((e) => e.c.socket).length;
+  const nEnt = () => Object.keys(W().state().entities).length - 1;
   R("ann", "create-world", { title: "sockcap" }); R("ann", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
-  R("ann", "set", { id: "@world", component: "capacity", value: { guestThings: 2, things: 10 } });
+  R("ann", "set", { id: "@world", component: "capacity", value: { guestEntities: 1000, entities: 2000 } });
   // the review's C1: fresh guest identities, one batch of 20 described sockets each, onto one guest's crate
   R("g1", "create", { id: "gbox", model: "crate" }); let n = 0, last = null;
   for (let i = 0; i < 40; i++) { const x = R(`g${i + 2}`, "batch", { ops: Array.from({ length: 20 }, (_, j) => ({ verb: "create", args: { id: `gs-${i}-${j}`, components: { parent: { to: "gbox" }, socket: { name: `n${i}x${j}` }, description: "x".repeat(500) } } })) }); if (x.ok) n += 20; else { last = x; break; } }
   ok(code(last) === "full" && n <= 64 && nSock() === n, "SR2a the review's C1 (a pool of guests, 20 described sockets a batch onto one crate) is refused full, at the host's ceiling", { n, last: last?.refused, sockets: nSock() });
-  // the guests' pool, across hosts
-  R("ann", "set", { id: "@world", component: "capacity", value: { guestThings: 20, things: 100, guestSockets: 30 } });
+  // the guests' pool, across hosts: their sockets and their things are one pool
+  const guests0 = 1 + n; R("ann", "set", { id: "@world", component: "capacity", value: { guestEntities: guests0 + 30 } });
   let gn = 0, glast = null;
   for (let i = 0; i < 10; i++) { const host = `gh${i}`; R("ann", "create", { id: host, model: "crate", components: { transform: { pos: [i * 2, 0, 5] } } });
     const x = R(`g${100 + i}`, "batch", { ops: Array.from({ length: 8 }, (_, j) => ({ verb: "create", args: { id: `gp-${i}-${j}`, components: { parent: { to: host }, socket: { name: `p${j}` } } } })) }); if (x.ok) gn += 8; else { glast = x; break; } }
-  const guestNow = Object.keys(W().state().entities).filter((k) => /^g[sp]-/.test(k)).length;
-  ok(code(glast) === "full" && /guestSockets/.test(glast?.refused?.reason ?? "") && guestNow <= 30 + n, "SR2b guests together have at most capacity.guestSockets sockets standing, across hosts (each a fresh identity)", { gn, glast: glast?.refused, guestNow });
+  const room = guests0 + 30 - (guests0 + gn);   // what the pool still holds: things fill it, and then a thing is refused like a socket
+  const gFill = R("g200", "batch", { ops: Array.from({ length: room }, (_, j) => ({ verb: "create", args: { id: `gt-${j}`, model: "crate", components: { transform: { pos: [j * 2, 0, 9] } } } })) });
+  const gThing = R("g201", "create", { id: "gthing", model: "crate", components: { transform: { pos: [0, 0, 12] } } });
+  ok(code(glast) === "full" && /@world\.capacity\.guestEntities/.test(glast?.refused?.reason ?? "") && gn === 24 && room === 6 && gFill.ok && code(gThing) === "full", "SR2b account-less people together have at most capacity.guestEntities entities standing, sockets and things in one pool, across hosts (each a fresh identity)", { gn, room, glast: glast?.refused, gFill: gFill.refused, gThing: gThing.refused });
   const acct = R("ann", "create", { id: "acct-s", components: { parent: { to: "gh0" }, socket: { name: "a" } } });
   ok(acct.ok, "SR2b …an account still adds one", acct.refused);
-  // the world's own socket budget, and deleting frees room
-  const have = nSock(); R("ann", "set", { id: "@world", component: "capacity", value: { sockets: have + 1 } });
+  // the world's own budget: a socket meets it like a thing, and deleting frees room
+  const have = nEnt(); R("ann", "set", { id: "@world", component: "capacity", value: { entities: have + 2 } });
   R("ann", "create", { id: "w-host", model: "crate", components: { transform: { pos: [0, 0, -5] } } });
   const one = R("ann", "create", { id: "w-s1", components: { parent: { to: "w-host" }, socket: { name: "a" } } });
   const two = R("ann", "create", { id: "w-s2", components: { parent: { to: "w-host" }, socket: { name: "b" } } });
+  const thing = R("ann", "create", { id: "w-thing", model: "crate" });
   R("ann", "delete", { id: "w-s1" }); const three = R("ann", "create", { id: "w-s3", components: { parent: { to: "w-host" }, socket: { name: "c" } } });
-  ok(one.ok && code(two) === "full" && /capacity\.sockets/.test(two.refused?.reason ?? "") && three.ok, "SR2c capacity.sockets caps the world's sockets (an owner sets it); a delete frees room", [one.refused, two.refused, three.refused]);
-  ok(code(R("ann", "set", { id: "@world", component: "capacity", value: { sockets: 1e6 } })) !== undefined && W().state().entities["@world"].c.capacity.sockets === have + 1, "SR2c …under the server's ceiling: an owner can't raise it past it");
+  ok(one.ok && code(two) === "full" && /@world\.capacity\.entities/.test(two.refused?.reason ?? "") && code(thing) === "full" && three.ok && nEnt() === have + 2, "SR2c capacity.entities caps the world's entities, a socket the same as a thing (an owner sets it); a delete frees room", [one.refused, two.refused, thing.refused, three.refused]);
+  ok(code(R("ann", "set", { id: "@world", component: "capacity", value: { entities: 1e6 } })) !== undefined && W().state().entities["@world"]?.c.capacity?.entities === have + 2, "SR2c …under the server's ceiling: an owner can't raise it past it");
   // one host's ceiling: an owner too
-  R("ann", "set", { id: "@world", component: "capacity", value: { sockets: 5000 } });
+  R("ann", "set", { id: "@world", component: "capacity", value: { entities: 5000 } });
   R("ann", "create", { id: "big", model: "crate", components: { transform: { pos: [0, 0, -9] } } });
   const fill = R("ann", "batch", { ops: Array.from({ length: 64 }, (_, j) => ({ verb: "create", args: { id: `big-${j}`, components: { parent: { to: "big" }, socket: { name: `s${j}` } } } })) });
   const over = R("ann", "create", { id: "big-64", components: { parent: { to: "big" }, socket: { name: "s64" } } });
@@ -1211,10 +1217,14 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 { const slots = Object.fromEntries(Array.from({ length: 70 }, (_, j) => [`m${j}`, { pos: [0, 1, j * 0.01] }]));
   const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "wall", lib: "crate", pos: [0, 0, 0] } }, { seq: 3, ts: 4, actor: "ann", verb: "comp", args: { id: "wall", type: "sockets", data: slots } }];
-  fs.writeFileSync(root + "worlds/sockcap-lift.jsonl", translate(old, DOORKEYS()).out.map((e) => JSON.stringify(e)).join("\n") + "\n");
-  const lw = openWorld(root, "sockcap-lift"); let threw = null; try { liftWorld(lw); } catch (x) { threw = String(x?.message ?? x); }
+  const out = translate(old, DOORKEYS()).out; const n0 = out.length;   // and the world's entity budget is already spent: 1 (the wall)
+  const capv = { entities: 1, guestEntities: 0, avatar: 2000 }, ts = out[n0 - 1].ts + 1;   // an act and its change, as the precut helper below writes them
+  out.push({ world: out[1].world, kind: "act", actor: "ann", verb: "set", body: { request: { id: "@world", component: "capacity", value: capv } }, ts },
+    { world: out[1].world, kind: "change", actor: "ann", cause: n0, verb: "batch", body: { ops: [{ verb: "set", id: "@world", comp: "capacity", value: capv }] }, ts });
+  fs.writeFileSync(root + "worlds/sockcap-lift.jsonl", out.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const lw = openWorld(root, "sockcap-lift"); const cap0 = lw.state().entities["@world"]?.c.capacity?.entities; let threw = null; try { liftWorld(lw); } catch (x) { threw = String(x?.message ?? x); }
   const st = openWorld(root, "sockcap-lift").state(); const n = Object.values(st.entities).filter((e) => e.c.parent?.to === "wall" && e.c.socket).length;
-  ok(!threw && n === 70 && st.entities.wall.c.sockets === undefined, "SR2e the load's lift is a carry: a pre-cut host of 70 slots lifts whole, past the per-host ceiling", { threw, n }); }
+  ok(!threw && cap0 === 1 && n === 70 && st.entities.wall.c.sockets === undefined, "SR2e the load's lift is a carry: a pre-cut host of 70 slots lifts whole, past the per-host ceiling and past a spent capacity.entities (1)", { threw, n, cap0 }); }
 
 // SRU (review 10-12 S2): undo across the load's lift. A pre-cut world: tbl has sockets {perch}, the bell is mounted on the
 // perch. Its writer is the door's own (translate-v1, then acts appended as a pre-cut door stored them); the load lifts it.

@@ -957,18 +957,14 @@
  },
  "capacity": {
   "fields": {
-   "things": "int",
-   "guestThings": "int",
-   "sockets": "int",
-   "guestSockets": "int",
+   "entities": "int",
+   "guestEntities": "int",
    "avatar": "int"
   },
   "defaults": {
-   "things": 10000,
-   "guestThings": 500,
-   "sockets": 40000,
-   "guestSockets": 4000,
-   "avatar": 500
+   "entities": 10000,
+   "guestEntities": 500,
+   "avatar": 2000
   },
   "on": "world"
  },

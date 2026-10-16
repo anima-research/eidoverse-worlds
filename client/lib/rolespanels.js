@@ -11,7 +11,7 @@
 //              Narrow (a phone, or the panel squeezed): one role at a time.
 //     Access   who can come in, what arrivals and guests are, how many at once; a warning when the default role holds
 //              moderation powers or generate.
-//     World    capacity (things, sockets, guests', avatar), physics on/off, the world's training-consent policy (R 10-14 14:13:
+//     World    capacity (entities, guests' entities together, largest avatar), physics on/off, the world's training-consent policy (R 10-14 14:13:
 //              "not being able to edit these things would annoy people"). Opening it writes NOTHING: the effective value
 //              (componentspec.resolveVersioned, the authority's own reader) is shown grey; a set goes out only on an edit.
 //     Card     the world's name and blurb (@world.about).   Places  spawn and bounds.   Old world  what translation carried.
@@ -223,8 +223,9 @@ function paintAccess(body) {
 // World: the owner's dials over @world components that already exist (capacity, physics-engine, bare training-consent).
 // The ONE hard rule: write only on an explicit edit, never on open: a panel that wrote defaults on open would put numbers
 // in the log the owner never chose. Everyone reads; owners edit.
-const CAP = 'capacity', CAP_FIELDS = ['things', 'guestThings', 'sockets', 'guestSockets', 'avatar'];
-const CAP_WORDS = { things: 'Things', guestThings: "Guests' things (all together)", sockets: 'Sockets', guestSockets: "Guests' sockets (all together)", avatar: 'Things one avatar may wear' };
+const CAP = 'capacity', CAP_FIELDS = ['entities', 'guestEntities', 'avatar'];
+const CAP_WORDS = { entities: 'Entities in this world', guestEntities: "Guests' entities, together", avatar: 'Largest avatar (entities)' };
+const CAP_DOCS = COMPONENTS[CAP].docs ?? {};   // each says per what first: the whole world's, all account-less people's together, one worn avatar's
 /** the numbers in force (its reader: what is written, else the defaults); the authority enforces all but `avatar`, which nothing checks yet */
 function effectiveCapacity() { const { name, value, def } = resolveVersioned(wc(), 'capacity');
   const ok = (x) => Number.isInteger(x) && x >= 0;
@@ -233,8 +234,8 @@ function paintWorld(body) {
   const edit = isOwner(); const c = wc(); const cap = effectiveCapacity(); const R2 = COMPONENTS[CAP].ranges;
   const pe = c['physics-engine'] ?? null; const tc = c['training-consent'] ?? {};
   const capRow = (k) => edit
-    ? `<label class="rp-field">${esc(CAP_WORDS[k])} <input type="number" step="1" min="${R2[k].min}" max="${R2[k].max}" data-cap="${k}" value="${c[CAP]?.[k] ?? ''}" placeholder="${cap.eff[k]}" aria-label="${esc(CAP_WORDS[k])}"> <span class="rp-dim">now ${cap.eff[k].toLocaleString('en')} · ${esc(rangeWords(R2[k]))}</span></label>`
-    : `<div class="rp-row"><div class="rp-main">${esc(CAP_WORDS[k])} <b>${cap.eff[k].toLocaleString('en')}</b></div></div>`;
+    ? `<label class="rp-field" title="${esc(CAP_DOCS[k] ?? '')}">${esc(CAP_WORDS[k])} <input type="number" step="1" min="${R2[k].min}" max="${R2[k].max}" data-cap="${k}" value="${c[CAP]?.[k] ?? ''}" placeholder="${cap.eff[k]}" aria-label="${esc(CAP_WORDS[k])}"> <span class="rp-dim">now ${cap.eff[k].toLocaleString('en')} · ${esc(rangeWords(R2[k]))}</span></label>`
+    : `<div class="rp-row" title="${esc(CAP_DOCS[k] ?? '')}"><div class="rp-main">${esc(CAP_WORDS[k])} <b>${cap.eff[k].toLocaleString('en')}</b></div></div>`;
   body.innerHTML = `<h4 class="rp-h">Capacity</h4>`
     + `<p class="rp-dim">gates against a world nobody can load, not targets${cap.written ? '' : ' · nothing written: the defaults'}</p>`
     + CAP_FIELDS.map(capRow).join('') + `<p class="rp-cap-note rp-warn" hidden></p>`
