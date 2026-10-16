@@ -162,7 +162,7 @@ const HAND = {
       const slots = Object.keys(c.sockets);
       const fields = [{ t: 'list', k: 'slots', empty: 'no anchors yet', rows: slots.map((slot) => {
         const s = c.sockets[slot] ?? {}; const p = s.pos ?? [0, 0.5, 0];
-        const b = bodyOf(s);
+        const b = bodyOf(s.body);
         return { id: slot, label: slot, sub: `(${p.map((v) => (+v).toFixed(2)).join(', ')}) · ${sockRot(s).map((v) => Math.round(v * R2D)).join('/')}°${s.part ? ` · rides ${s.part}` : ''} · ${b ? `${b.action} (${typeof b.pose === 'string' ? b.pose : 'a blend'}, ${b.anchor})${b.input.move === 'drive' ? ' · drives' : ''}${b.leaveBy === 'script' ? ' · held' : ''}` : 'things attach'}`, actions: [{ k: 'del', label: '✕', danger: true }] };
       }) }];
       for (const slot of slots) {
@@ -172,11 +172,10 @@ const HAND = {
         const e = sockRot(s);
         [['heading', 1], ['pitch', 0], ['roll', 2]].forEach(([nm, ax]) => fields.push({ t: 'num', k: `${slot}|rot|${ax}`, label: `${slot} ${nm}`, value: round(e[ax], 6), step: 5, deg: true }));
         // a socket a PERSON attaches to by using it (VRChat Station, Roblox Seat): a chair, a saddle, a car seat
-        const b = bodyOf(s);
+        const b = bodyOf(s.body);
         fields.push({ t: 'check', k: `${slot}|body`, label: `${slot}: people attach`, value: !!b, hint: 'a person attaches here by using it (sit, ride…); off: an attachment point for things only' });
         if (b) {
-          // the body block (shared/sockbody.js): the common fields as rows, the structured ones (reach) as JSON; the
-          // component's own JSON hatch below reaches everything else (poses, sync, approach, exit, hold)
+          // the body block is the socket child's station (shape audit 10-16; shared/sockbody.js): its core fields as rows
           const raw = s.body ?? {}; const d = ACTION_DEFAULTS[b.action] ?? ACTION_DEFAULTS.sit;
           fields.push({ t: 'text', k: `${slot}|action`, label: `${slot} action`, value: b.action, hint: "what using it is called: sit, ride, lie, stand, drive… (it also picks the default pose and anchor)" });
           fields.push({ t: 'enum', k: `${slot}|anchor`, label: `${slot} anchor`, value: b.anchor, def: d.anchor, options: ANCHORS.map((v) => ({ v, label: v })), hint: 'the body point that lands on the socket: hips (a seat), feet (a place to stand), head, or the root' });
@@ -184,16 +183,7 @@ const HAND = {
           else fields.push({ t: 'json', k: `${slot}|pose`, label: `${slot} pose`, value: JSON.stringify(b.pose, null, 2), hint: '{clip, time: "phase"} or a blend {by: "speed", clips: [[0, "idle"], [2, "walk"]]}; a clip name string makes it one clip again' });
           fields.push({ t: 'enum', k: `${slot}|leaveBy`, label: `${slot} leave by`, value: b.leaveBy, def: 'any', options: [['any', 'moving, jumping or X'], ['jump', 'jump or X'], ['menu', 'X only'], ['script', 'only the world (a script)']].map(([v, label]) => ({ v, label })) });
           fields.push({ t: 'enum', k: `${slot}|who`, label: `${slot} who`, value: b.who ?? 'anyone', def: 'anyone', options: [['anyone', 'anyone'], ['builder', 'builders'], ['owner', 'owners']].map(([v, label]) => ({ v, label })) });
-          fields.push({ t: 'check', k: `${slot}|fromSeat`, label: `${slot}: hop from another seat`, value: b.fromSeat, hint: 'someone seated elsewhere may move here without standing up' });
-          fields.push({ t: 'text', k: `${slot}|enter`, label: `${slot} enter clip`, value: b.enter ?? '', hint: "one-shot clip while you're carried on (stand_to_sit); empty: ease on" });
-          fields.push({ t: 'text', k: `${slot}|leave`, label: `${slot} leave clip`, value: b.leave ?? '', hint: "one-shot clip while you're carried off (sit_to_stand); empty: step off" });
-          fields.push({ t: 'enum', k: `${slot}|input|move`, label: `${slot} movement keys`, value: b.input.move, def: 'none', options: [['none', 'get you off'], ['drive', 'drive the thing (one per thing)'], ['walk', 'steer your own pose']].map(([v, label]) => ({ v, label })), hint: 'drive publishes throttle/steer for the thing; walk publishes them for this body\'s pose only' });
-          fields.push({ t: 'enum', k: `${slot}|input|look`, label: `${slot} looking`, value: b.input.look, def: 'free', options: [['free', 'look around'], ['aim', 'look aims (aimYaw/aimPitch)'], ['locked', 'view locked forward']].map(([v, label]) => ({ v, label })) });
-          const lk = raw.look ?? {};
-          [['yaw', 0, 'left', -180, 180], ['yaw', 1, 'right', -180, 180], ['pitch', 0, 'down', -90, 90], ['pitch', 1, 'up', -90, 90]].forEach(([ax, i, nm, lo, hi]) =>
-            fields.push({ t: 'num', k: `${slot}|look|${ax}|${i}`, label: `${slot} look ${nm}`, value: (Array.isArray(lk[ax]) ? lk[ax][i] : b.look[ax][i]), step: 5, dp: 0, unit: '°', min: lo, max: hi, hint: ax === 'yaw' ? 'how far the head turns (yaw, degrees, + = left)' : 'how far the head tilts (pitch, degrees, + = up)' }));
-          fields.push({ t: 'enum', k: `${slot}|look|up`, label: `${slot} view up`, value: b.look.up, def: 'world', options: [['world', 'the horizon stays level'], ['socket', 'the view rolls with it']].map(([v, label]) => ({ v, label })) });
-          fields.push({ t: 'json', k: `${slot}|reach`, label: `${slot} reach`, value: JSON.stringify(raw.reach ?? {}, null, 2), collapsed: !raw.reach, hint: '{leftHand: {at: [x,y,z], q?, part?, hint?, vr: snap|track|near}}: hands (or feet) on the thing, in its frame; with part they move with it' });
+          // the station's reserved keys (fromSeat, enter/leave, input, look, reach…: shape audit 10-16) have no rows: the door refuses them
         }
       }
       fields.push({ t: 'btn', k: 'add', label: '+ seat here', hint: 'click the spot on the thing where a sitter goes', client: true });
@@ -1073,7 +1063,7 @@ function addOwnOps(ent, id, name, value) {
     return { ops: [OP.set(id, 'motion', motion[name])], errors: [] };
   }
   const simple = { Pivot: ['pivot', { pos: Array.isArray(value) && value.length === 3 && value.every(Number.isFinite) ? value : [0, 0, 0] }], Lock: ['lock', true], Hidden: ['hidden', true], Label: ['label', typeof value === 'string' && value.trim() ? value.trim().slice(0, 80) : 'unnamed'],
-    Particles: ['particles', { effect: typeof value === 'string' && value ? value : 'fire' }], LookAt: ['look-at', { target: '@viewer' }], Story: ['story', { title: 'Untitled', text: 'Why is this here?' }], Text: ['text', { text: 'Hello' }], Reactions: ['reactions', { push: { kind: 'impulse', strength: 0.5 } }], Stage: ['stage', {}] };
+    Particles: ['particles', { effect: typeof value === 'string' && value ? value : 'fire' }], LookAt: ['look-at', { target: '@viewer' }], Story: ['story', { title: 'Untitled', text: 'Why is this here?' }], Text: ['text', { text: 'Hello' }], Reactions: ['reactions', {}], Stage: ['stage', {}] };
   if (simple[name]) { const [type, data] = simple[name]; if (c[type] != null) return { ops: [], errors: [`${id} already has ${name}`] }; return { ops: [OP.set(id, type, data)], errors: [] }; }
   // write-new-on-edit: a Light added here is a component, never the light verb,
   // and it is written with its fields spelled out — the log records the result,

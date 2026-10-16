@@ -1,10 +1,11 @@
 // shared/protocol/authority/sockets.js — sockets as child entities (PLAN-sockets-entities 2026-10-12). A socket is
-// {transform, parent: {to: host}, socket: {name, part?, body?, accepts?, radius?}}: an attachment point with a pose of its
-// own (Godot's Marker3D, Unity's child Transform). What it is for is read from what it has, never stored: a seat if body,
-// a snap point if accepts, else an attach point.
+// {transform, parent: {to: host}, socket: {name, part?, accepts?, radius?}, station?}: an attachment point with a pose of
+// its own (Godot's Marker3D, Unity's child Transform), and what a person's body does there, its station (shape audit
+// 10-16: once socket.body). What it is for is read from what it has, never stored: a seat if a station, a snap point if
+// accepts, else an attach point.
 import { ONE_PLACE, socketQ } from "../../components.js";
 import { checkSockets } from "../../sockbody.js";
-import { COMPONENTS } from "../componentspec.js";
+import { COMPONENTS, materialize } from "../componentspec.js";
 import { PURGED, cowState, applyCow } from "../fold.js";
 import { sha256, hexBytes } from "../hash.js";
 import { kidsMap } from "./spatial.js";
@@ -15,13 +16,13 @@ import { refuse } from "./refuse.js";
 
 const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v) && v !== PURGED;
 export const isSocketC = (c) => bag(c?.socket);
-export const socketRole = (c) => (bag(c?.socket?.body) ? "seat" : Array.isArray(c?.socket?.accepts) ? "snap" : "attach");
+export const socketRole = (c) => (bag(c?.station) ? "seat" : Array.isArray(c?.socket?.accepts) ? "snap" : "attach");
 // what a socket may carry besides its pose and its name: what reads it (label, description), what switches or freezes it
 // (disabled, lock, hidden), a motion of its own (R 10-12 20:44), and the blueprint mark every placed part carries
 // one host holds at most this many sockets (review 10-12 S1-2): a seat map past it is several things. No setting raises it;
 // a socket is an entity, so it also counts in @world.capacity.entities (authority.js CAPACITY)
 export const SOCKETS_PER_HOST = 64;
-export const ON_A_SOCKET = new Set(["transform", "parent", "socket", "label", "description", "disabled", "lock", "hidden", "motion", "copy-of"]);
+export const ON_A_SOCKET = new Set(["transform", "parent", "socket", "station", "label", "description", "disabled", "lock", "hidden", "motion", "copy-of"]);
 const UNIT = (sc) => sc === undefined || (Array.isArray(sc) && sc.length === 3 && sc.every((x) => x === 1));
 
 /** The door's rules for socket entities, over the state a write leaves: the first that breaks, as {code, reason, fix}, or
@@ -31,7 +32,7 @@ export function socketRules(s, ids) {
   const kidsOf = (p) => { if (!kids) { kids = new Map(); for (const [k, e] of Object.entries(s.entities)) { const to = e.c.parent?.to; if (to) { let a = kids.get(to); if (!a) kids.set(to, (a = [])); a.push(k); } } } return kids.get(p) ?? []; };
   const hosts = new Set();
   for (const id of ids) { const e = s.entities[id]; if (!e) continue;
-    if (!isSocketC(e.c)) continue;
+    if (!isSocketC(e.c)) { if (bag(e.c.station)) return { code: "shape", reason: `${id} has a station but no socket: a station is what a body does at a socket`, fix: `give it a socket {name} (a child of the thing it belongs to), or delete station` }; continue; }
     const host = e.c.parent?.to;
     if (!host) return { code: "shape", reason: `${id} is a socket, and a socket needs a host`, fix: `give it parent {to: <the thing it belongs to>}, or delete it` };
     if (isSocketC(s.entities[host]?.c)) return { code: "shape", reason: `${id} is a socket, and ${host} is a socket too: a socket hangs on a thing, never on another socket`, fix: `parent it to ${s.entities[host].c.parent?.to ?? "the thing it belongs to"}` };
@@ -41,11 +42,33 @@ export function socketRules(s, ids) {
     const under = kidsOf(id).find((k) => isSocketC(s.entities[k].c));
     if (under) return { code: "shape", reason: `${under} is a socket under the socket ${id}: a socket hangs on a thing, never on another socket`, fix: `parent ${under} to ${host}` };
     hosts.add(host); }
-  for (const h of hosts) { const socks = kidsOf(h).filter((k) => isSocketC(s.entities[k].c)); const byName = new Map(); const drivers = [];
+  // (the one-driver rule went with station.input, reserved for later: shape audit 10-16)
+  for (const h of hosts) { const socks = kidsOf(h).filter((k) => isSocketC(s.entities[k].c)); const byName = new Map();
     for (const k of socks) { const v = s.entities[k].c.socket; const n = v.name;
       if (byName.has(n)) return { code: "name-taken", reason: `${h} already has a socket called '${v.name}' (${byName.get(n)})`, fix: "a socket's name is unique among its host's sockets: give it another", taken: byName.get(n) };
-      byName.set(n, k); if (bag(v.body) && v.body.input?.move === "drive") drivers.push(k); }
-    if (drivers.length > 1) return { code: "shape", reason: `${h}: only one socket may drive (${drivers.join(", ")} all have input.move 'drive')`, fix: "one driver per thing (a vehicle has one wheel); passengers' input can still shape their own pose: input.move 'walk'" }; }
+      byName.set(n, k); } }
+  return null;
+}
+
+/** One action namespace per thing (shape audit 10-16, R's call 3): what `use {id, action}` names must mean one thing. A
+ *  reaction key, or a name grabbable.use fires, never equals a station action of the thing's own sockets (several of its
+ *  sockets may share one: a sofa's seats all sit). Over the state a write leaves; the hosts the write touches, directly or
+ *  through one of their sockets. The first clash as {code: 'action-taken', reason, fix}, or null. */
+export function actionRules(s, ids) {
+  const hosts = new Set();
+  for (const id of ids) { const e = s.entities[id]; if (!e) continue; if (isSocketC(e.c) && e.c.parent?.to) hosts.add(e.c.parent.to); else hosts.add(id); }
+  let kids = null;   // the children index, built once and only if a touched host could clash
+  for (const h of hosts) { const c = s.entities[h]?.c; if (!c) continue;
+    if (!bag(c.reactions) && !bag(c.grabbable)) continue;
+    if (!kids) { kids = new Map(); for (const [k, e] of Object.entries(s.entities)) { const to = e.c.parent?.to; if (to && isSocketC(e.c) && bag(e.c.station)) { let a = kids.get(to); if (!a) kids.set(to, (a = [])); a.push(k); } } }
+    const seats = new Map();
+    for (const k of kids.get(h) ?? []) seats.set(s.entities[k].c.station.action ?? "sit", k);
+    if (!seats.size) continue;
+    for (const act of bag(c.reactions) ? Object.keys(c.reactions) : []) if (seats.has(act))
+      return { code: "action-taken", reason: `${h}: '${act}' is both a reaction and what its socket ${seats.get(act)}'s station does: use {id, action: '${act}'} would mean two things`, fix: `name the reaction something else, or give the station another action`, taken: seats.get(act) };
+    const u = bag(c.grabbable) ? c.grabbable.use : undefined;
+    for (const act of typeof u === "string" ? [u] : bag(u) ? [u.down, u.up].filter((x) => typeof x === "string") : []) if (seats.has(act))
+      return { code: "action-taken", reason: `${h}.grabbable.use names '${act}', which is what its socket ${seats.get(act)}'s station does: use while held fires a reaction`, fix: `name a reaction of ${h} (its reactions keys), not a station's action`, taken: seats.get(act) }; }
   return null;
 }
 
@@ -54,13 +77,13 @@ export function socketRules(s, ids) {
 export function socketsOf(st, host) {
   if (!st.entities[host]) return [];
   const out = [];
-  for (const k of kidsMap(st).get(host) ?? []) { const c = st.entities[k]?.c; if (isSocketC(c) && c.disabled !== true) out.push({ id: k, name: c.socket.name, sock: c.socket, host }); }
+  for (const k of kidsMap(st).get(host) ?? []) { const c = st.entities[k]?.c; if (isSocketC(c) && c.disabled !== true) out.push({ id: k, name: c.socket.name, sock: c.socket, station: bag(c.station) ? c.station : null, host }); }
   return out;
 }
 /** Every socket in the world, as socketsOf lists them. */
 export function allSockets(st) {
   const out = [];
-  for (const [k, e] of Object.entries(st.entities)) if (isSocketC(e.c) && e.c.disabled !== true && e.c.parent?.to) out.push({ id: k, name: e.c.socket.name, sock: e.c.socket, host: e.c.parent.to });
+  for (const [k, e] of Object.entries(st.entities)) if (isSocketC(e.c) && e.c.disabled !== true && e.c.parent?.to) out.push({ id: k, name: e.c.socket.name, sock: e.c.socket, station: bag(e.c.station) ? e.c.station : null, host: e.c.parent.to });
   return out;
 }
 /** Where a socket is in the world. */
@@ -78,8 +101,15 @@ const slugOf = (s, n) => String(s).toLowerCase().replace(/[^a-z0-9-]+/g, "-").re
 /** A lifted socket's id: the same from every loader, fork and agent, so two forks lifting apart agree, and a merge sees
  *  one entity. Readable (its slot's name first), 130 bits after it. */
 export const socketId = (host, slot) => `${slugOf(slot, 20)}-${base32(hexBytes(sha256(`eido-socket\0${host}\0${slot}`))).slice(0, 26)}`;
-const SOCK_FIELDS = ["part", "body", "accepts", "radius"];
+const SOCK_FIELDS = ["part", "accepts", "radius"];
 const socketOfSlot = (name, sk) => ({ name, ...Object.fromEntries(SOCK_FIELDS.filter((k) => sk[k] !== undefined).map((k) => [k, sk[k]])) });
+// an old body block as the station it is (shape audit 10-16), materialized as the door writes one. `stored`: a value the log
+// or a catalogue already held is re-spelled with the keys the station registers (the reserved and cut ones no stored value
+// uses are dropped); a request's own body keeps them, and the door refuses them in the station's words
+const STATION_KEYS = Object.keys(COMPONENTS.station.fields);
+export const stationOfBody = (b, { stored = false } = {}) => { if (!bag(b)) return null;
+  const v = stored ? Object.fromEntries(Object.entries(b).filter(([k]) => STATION_KEYS.includes(k))) : { ...b };
+  return materialize("station", v).value; };
 const tfOf = (c) => ({ ...COMPONENTS.transform.defaults, ...(c?.transform ?? {}) });
 // a pose written in the host's frame, re-expressed in its socket's (the socket's scale is 1; the host's world scale is
 // carried through so the world pose is the same, a non-uniform host included)
@@ -102,7 +132,7 @@ const legacyHome = (v) => bag(v) && legacyParent(v.parent);
 /** Does this write carry the old spelling anywhere? (The common write doesn't, and costs one pass.) */
 export function carriesLegacy(ops) {
   return ops.some((o) => o.comp === "sockets" || (o.verb === "set" && ((o.comp === "parent" && legacyParent(o.value)) || (o.comp === "home" && legacyHome(o.value))
-    || (o.comp === "grabbable" && legacyHome(o.value?.home)) || (o.comp === "model" && typeof o.value === "string" && bag(modelOf(o.value)?.sockets)))));
+    || (o.comp === "socket" && bag(o.value) && o.value.body !== undefined) || (o.comp === "model" && typeof o.value === "string" && bag(modelOf(o.value)?.sockets)))));
 }
 
 /** The write in the new spelling: {ops, notes}. `ever` is every id the world has made (a lifted id is never a reused one). */
@@ -116,8 +146,14 @@ function lifter(st, ever) {
   const make = (h, name, sk) => { const id = fresh(h, name);
     emit({ verb: "create", id }); emit(setOp(id, "parent", { to: h, order: "a0" }));
     emit(setOp(id, "transform", { pos: Array.isArray(sk.pos) ? sk.pos.slice() : [0, 0, 0], q: socketQ(sk), scale: [1, 1, 1] }));
-    emit(setOp(id, "socket", socketOfSlot(name, sk))); return id; };
-  // a home (or grabbable.home) naming a legacy socket: in that socket child's frame
+    emit(setOp(id, "socket", socketOfSlot(name, sk)));
+    if (bag(sk.body)) emit(setOp(id, "station", stationOfBody(sk.body, { stored: storedBodies })));
+    return id; };
+  let storedBodies = false;
+  // a socket child that still holds the old body block (a log stored before station): the block becomes its station
+  const liftBodies = (h) => { for (const k of kidsOf(h)) { const c = s.entities[k].c; if (!isSocketC(c) || c.socket.body === undefined) continue;
+    const { body, ...rest } = c.socket; emit(setOp(k, "socket", rest)); if (bag(body) && !bag(c.station)) emit(setOp(k, "station", stationOfBody(body, { stored: true }))); } };
+  // a home naming a legacy socket: in that socket child's frame
   const homeLifted = (hv, made) => { const p = hv.parent; const id = made?.[p.socket] ?? childNamed(p.to, p.socket);
     if (!id) { const { socket, ...rest } = p; return { ...hv, parent: rest }; }
     const T = underSocket(s, p.to, tfOf(s.entities[id].c), { pos: hv.pos ?? [0, 0, 0], ...(hv.q ? { q: hv.q } : {}) });
@@ -130,11 +166,10 @@ function lifter(st, ever) {
       if (c.parent?.to === h && typeof c.parent.socket === "string") { const id = made[c.parent.socket] ?? childNamed(h, c.parent.socket); const { socket, ...rest } = c.parent;
         if (!id) { emit(setOp(k, "parent", rest)); continue; }
         emit(setOp(k, "parent", { ...rest, to: id })); emit(setOp(k, "transform", underSocket(s, h, tfOf(s.entities[id].c), tfOf(c)))); }
-      if (legacyHome(c.home) && c.home.parent.to === h) emit(setOp(k, "home", homeLifted(c.home, made)));
-      if (bag(c.grabbable) && legacyHome(c.grabbable.home) && c.grabbable.home.parent.to === h) emit(setOp(k, "grabbable", { ...c.grabbable, home: homeLifted(c.grabbable.home, made) })); }
+      if (legacyHome(c.home) && c.home.parent.to === h) emit(setOp(k, "home", homeLifted(c.home, made))); }
     return made; };
   const liftStored = (h) => (bag(s.entities[h]?.c.sockets) ? liftHost(h, s.entities[h].c.sockets, { stored: true }) : {});
-  return { s, out, emit, make, kidsOf, childNamed, homeLifted, liftHost, liftStored }; }
+  return { s, out, emit, make, kidsOf, childNamed, homeLifted, liftHost, liftStored, liftBodies, stored: (x) => { storedBodies = x; } }; }
 
 export function liftOps(st, ops, ever = new Set()) {
   if (!carriesLegacy(ops)) return { ops, notes: [] };
@@ -160,7 +195,10 @@ export function liftOps(st, ops, ever = new Set()) {
         wrote[name] = id; const c = s.entities[id].c;
         const t = { pos: sk.pos.slice(), q: socketQ(sk), scale: [1, 1, 1] }, v = { ...socketOfSlot(name, sk) };
         if (JSON.stringify(c.transform) !== JSON.stringify(t)) emit(setOp(id, "transform", t));
-        if (JSON.stringify(c.socket) !== JSON.stringify(v)) emit(setOp(id, "socket", v)); }
+        if (JSON.stringify(c.socket) !== JSON.stringify(v)) emit(setOp(id, "socket", v));
+        // the slot's body is the child's station: a body written sets it, none takes it away
+        if (bag(sk.body)) { const st2 = stationOfBody(sk.body); if (JSON.stringify(c.station) !== JSON.stringify(st2)) emit(setOp(id, "station", st2)); }
+        else if (c.station !== undefined) emit(delOp(id, "station")); }
       notes.push({ legacy: "sockets", id: o.id, wrote, why: "sockets are child entities now: each slot is a socket child (parent {to: <its id>} attaches to it)" });
       continue;
     }
@@ -179,14 +217,17 @@ export function liftOps(st, ops, ever = new Set()) {
       emit(setOp(o.id, "transform", underSocket(s, h, tfOf(s.entities[id].c), o.value))); continue; }
     if (o.comp === "parent") via.delete(o.id);
     if (o.verb === "set" && o.comp === "home" && legacyHome(o.value)) { liftStored(o.value.parent.to); emit(setOp(o.id, "home", homeLifted(o.value))); continue; }
-    if (o.verb === "set" && o.comp === "grabbable" && legacyHome(o.value?.home)) { liftStored(o.value.home.parent.to); emit(setOp(o.id, "grabbable", { ...o.value, home: homeLifted(o.value.home) })); continue; }
+    // a socket written with the old body block: the socket without it, and the block as the station beside it
+    if (o.verb === "set" && o.comp === "socket" && bag(o.value) && bag(o.value.body)) { const { body, ...rest } = o.value;
+      emit(setOp(o.id, "socket", rest)); emit(setOp(o.id, "station", stationOfBody(body)));
+      notes.push({ legacy: "socket.body", id: o.id, wrote: { station: true }, why: "what a person's body does at a socket is its station now" }); continue; }
     if (o.verb === "set" && o.comp === "model") models.add(o.id);
     emit(o);
   }
   // a catalogue model that declares seats: they are made as children ("the log holds every number"), once
   for (const h of models) { const e = s.entities[h]; const ms = modelOf(e?.c.model)?.sockets;
     if (!bag(ms) || bag(e.c.sockets) || kidsOf(h).some((k) => isSocketC(s.entities[k].c))) continue;
-    const made = liftHost(h, ms, { stored: false }); notes.push({ legacy: "model sockets", id: h, wrote: made, why: `its model declares ${Object.keys(made).join(", ")}: made as socket children` }); }
+    L.stored(true); const made = liftHost(h, ms, { stored: false }); L.stored(false); notes.push({ legacy: "model sockets", id: h, wrote: made, why: `its model declares ${Object.keys(made).join(", ")}: made as socket children` }); }
   return { ops: out, notes };
 }
 
@@ -201,14 +242,16 @@ export function legacyHosts(st, ever = new Set()) {
   for (const [k, e] of Object.entries(st.entities)) { const c = e.c;
     if (bag(c.sockets)) hosts.add(k);
     if (legacyParent(c.parent) && st.entities[c.parent.to]) hosts.add(c.parent.to);
-    for (const h of [c.home, bag(c.grabbable) ? c.grabbable.home : null]) if (legacyHome(h) && st.entities[h.parent.to]) hosts.add(h.parent.to);
+    if (legacyHome(c.home) && st.entities[c.home.parent.to]) hosts.add(c.home.parent.to);
+    if (isSocketC(c) && c.socket.body !== undefined && st.entities[c.parent?.to]) hosts.add(c.parent.to);
     if (modelOf(c.model)?.sockets && modelSeatsDue(st, ever, k)) hosts.add(k); }
   return [...hosts].sort();
 }
 /** One host's lift: the ops (the system's own), the children it made by slot, and the things it moved. */
 export function liftHostOps(st, ever, h) {
-  const L = lifter(st, ever); const c = L.s.entities[h].c;
+  const L = lifter(st, ever); const c = L.s.entities[h].c; L.stored(true);   // what a log or a catalogue holds is re-spelled, not judged anew
   const made = bag(c.sockets) ? L.liftStored(h) : modelSeatsDue(L.s, ever, h) ? L.liftHost(h, modelOf(c.model).sockets, { stored: false }) : L.liftHost(h, {}, { stored: false });
+  L.liftBodies(h);
   const mine = new Set([h, ...Object.values(made)]);
   return { ops: L.out, made, moved: [...new Set(L.out.map((o) => o.id).filter((id) => !mine.has(id)))] };
 }

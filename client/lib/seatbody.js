@@ -36,7 +36,7 @@ export function seatChoices(riderId, m, body) {
   for (const [id, o] of avatarMounts) {
     if (!o.pose) continue;
     const s = o.to === m.to ? null : seatSocket(o.to);   // another seat on the same thing, in the same group
-    if (id !== riderId && (!s || s.host !== host || bodyOf(s.sock)?.sync !== body.sync)) continue;
+    if (id !== riderId && (!s || s.host !== host || bodyOf(s.station)?.sync !== body.sync)) continue;
     out.push({ name: o.pose, at: o.at ?? 0 });
   }
   return out;
@@ -70,7 +70,7 @@ export function driveSeat(av, riderId, { dt, nowMs, path = null, local = false, 
   if (!m || !av) return null;
   const seat = seatSocket(m.to);   // m.to is the socket; what it hangs on carries the motion, the reach and exit frames
   const sock = seat?.sock;
-  const body = bodyOf(sock);
+  const body = bodyOf(seat?.station);
   if (!body || seat.host == null) return null;
   const comp = bagOf(seat.host);
   const obj = entities.get(seat.host);

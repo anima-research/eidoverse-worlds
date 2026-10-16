@@ -301,8 +301,9 @@ await C("D9", "§4 explains schemas: reserved (no definition format yet), and th
   const g = SPEC.slice(SPEC.indexOf("## 4."), SPEC.indexOf("### 4.1")); return [/schemas:<name>/.test(g) && /reserved/i.test(g) && !/\*\*optional\*\*/.test(g) && /registry-pin/.test(g) && CAT.COMPONENTS.schemas.status === "reserved", g.slice(g.indexOf("Meaning travels"), g.indexOf("Meaning travels") + 300)]; });
 
 // ---- ST: status (shape audit 10-16; R: every component trial for the alpha) ----
-const RESERVED_NAMES = ["joint", "schemas", "terrain-grid", "terrain-tile", "terrain-paint"];
-await C("ST1", "every registered name has a status: the five held names are reserved, every other one trial, none stable (v1 promises none)", () => {
+// + the shape audit's wave 2 (attach-interact): sockets (the old map, lift-only) and the names R held (15:16 LOCKED)
+const RESERVED_NAMES = ["joint", "schemas", "terrain-grid", "terrain-tile", "terrain-paint", "sockets", "material", "anim-clip", "anim-states", "camera", "zone", "video", "spring-joint", "link", "tags"];
+await C("ST1", "every registered name has a status: the held names are reserved, every other one trial, none stable (v1 promises none)", () => {
   const bad = Object.entries<any>(CAT.COMPONENTS).filter(([k, d]) => d.status !== (RESERVED_NAMES.includes(k) ? "reserved" : "trial")).map(([k, d]) => `${k}: ${d.status}`);
   return [!bad.length && typeof CAT.STATUSES?.trial === "string" && typeof CAT.statusOf === "function" && CAT.statusOf("script:bell") === "trial" && CAT.statusOf("joint:h") === "reserved" && CAT.statusOf("example.org/heart") === null, bad]; });
 await C("ST2", "a write of any reserved name is refused at the door, one code and one wording for all of them (an owner's too); joint's fix still says what to use", () => {
@@ -381,9 +382,9 @@ await C("I4", "an entity id shaped like a person's identity (u- + 20 base32) is 
   const W = world(); const r = W.call("create", { id: "u-abcdefghijklmnopqrst", model: "crate" }); return [!r.ok && r.refused.code === "shape", r.refused ?? r]; });
 
 // ---- R: references (H5) ----
-await C("R1", "the registry types every reference: parent.to ref, look-at.target target, story.marks refs, captioners.ids people, a script's scope.ids scope, grabbable.home.parent.to", () => {
-  const C0 = CAT.COMPONENTS; const got = [C0.parent.fields.to, C0["look-at"].fields.target, C0.story.fields.marks, C0.captioners.fields.ids, C0.script.scopeFields.ids, C0.grabbable.refPaths?.["home.parent.to"]];
-  return [JSON.stringify(got) === JSON.stringify(["ref", "target", "refs", "people", "scope", "ref"]) && typeof CAT.refsOf === "function" && typeof CAT.mapRefs === "function", got]; });
+await C("R1", "the registry types every reference: parent.to ref, look-at.target target, story.marks refs, captioners.ids people, a script's scope.ids scope, home.parent.to, every reset's targets (shape audit 10-16)", () => {
+  const C0 = CAT.COMPONENTS; const got = [C0.parent.fields.to, C0["look-at"].fields.target, C0.story.fields.marks, C0.captioners.fields.ids, C0.script.scopeFields.ids, C0.home.refPaths?.["parent.to"], C0.reactions.refPaths?.["*.targets"]];
+  return [JSON.stringify(got) === JSON.stringify(["ref", "target", "refs", "people", "scope", "ref", "refs"]) && typeof CAT.refsOf === "function" && typeof CAT.mapRefs === "function", got]; });
 await C("R2", "a reference field holds ids: story.marks [42] and captioners.ids ['Not An Id'] are refused", () => {
   const W = world(); mk(W); const a = W.call("set", { id: "box", component: "story", value: { title: "t", text: "x", marks: [42] } });
   const b = W.call("set", { id: "box", component: "captioners", value: { ids: ["Not An Id"] } }); return [!a.ok && !b.ok, [a.refused, b.refused]]; });

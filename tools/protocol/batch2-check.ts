@@ -62,8 +62,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["look-at can't face itself or what rides it", "shared/protocol/authority.js", "if (T === id || ancestors(s, T).includes(id)) refuse(\"loop\"", "if (false) refuse(\"loop\"", ["L2"]],
   ["one driver per node", "shared/protocol/authority.js", "refuse(\"conflict\", `${node ? `${id}'s ${node}` : id} already turns by", "void (\"conflict\", `${node ? `${id}'s ${node}` : id} already turns by", ["L3"]],
   ["a dynamic thing can't look-at", "shared/protocol/authority.js", "if (isLookAt(comp) && e?.c.physics?.kind === \"dynamic\") refuse(\"conflict\"", "if (false) refuse(\"conflict\"", ["L3"]],
-  ["evalLookAt clamps to its limits", "shared/lookat.js", "const clamp = (x, lim) => (Array.isArray(lim) && lim.length === 2 ? Math.min(lim[1] * D2R, Math.max(lim[0] * D2R, x)) : x);", "const clamp = (x) => x;", ["L6"]],
-  ["evalLookAt slews at speed", "shared/lookat.js", "const ang = qangle(from, want), step = Math.min(speed, 3600) * D2R * Math.max(0, dt);", "const ang = qangle(from, want), step = Infinity;", ["L6"]],
+  ["evalLookAt clamps to its limits", "shared/lookat.js", "const clamp = (x, lim) => (Array.isArray(lim) && lim.length === 2 ? Math.min(lim[1], Math.max(lim[0], x)) : x);", "const clamp = (x) => x;", ["L6"]],
+  ["evalLookAt slews at speed", "shared/lookat.js", "const ang = qangle(from, want), step = Math.min(speed, 20 * Math.PI) * Math.max(0, dt);", "const ang = qangle(from, want), step = Infinity;", ["L6"]],
   ["evalLookAt: no heading straight above", "shared/lookat.js", "if (h < 1e-6) {", "if (false) {", ["L6"]],
   ["the editor writes look-at", "shared/editschema.js", "LookAt: ['look-at', { target: '@viewer' }]", "LookAt: ['look', {}]", ["L5"]],
   ["look says what it says", "shared/protocol/authority.js", "    ...sayOf(st, e.c) };", " };", ["A1", "P5", "W4"]],
@@ -335,12 +335,12 @@ const cases: Case[] = [
     good: (o) => !o.none && o.off === false && o.on === true && o.store === true && o.host === true && o.bad === false },
 
   // ---------------- L: look-at ----------------
-  { id: "L1", what: "look-at {target: lamp}: admitted with its defaults written out (yaw, forward z, up y, 240°/s, 12 m); look-at:<part> too", run(s) { cast(s);
+  { id: "L1", what: "look-at {target: lamp}: admitted with its defaults written out (yaw, forward [0, 0, 1], up [0, 1, 0], 240°/s as rad/s, 12 m: shape audit 10-16); look-at:<part> too", run(s) { cast(s);
       s.call("olive", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } }); s.call("olive", "create", { id: "statue", model: "crate", place: { at: [3, 0] } });
       const r = s.call("olive", "set", { id: "statue", component: "look-at", value: { target: "lamp" } });
       const p = s.call("olive", "set", { id: "statue", component: "look-at:head", value: { target: "@viewer" } });
       return { r: show(r), v: comp(s, "statue", "look-at"), p: show(p), pv: comp(s, "statue", "look-at:head") }; },
-    good: (o) => o.r === "ok" && o.v?.mode === "yaw" && o.v?.forward === "z" && o.v?.up === "y" && o.v?.speed === 240 && o.v?.range === 12 && o.p === "ok" && o.pv?.mode === "yaw" },
+    good: (o) => o.r === "ok" && o.v?.mode === "yaw" && JSON.stringify(o.v?.forward) === "[0,0,1]" && JSON.stringify(o.v?.up) === "[0,1,0]" && Math.abs(o.v?.speed - 240 * Math.PI / 180) < 1e-12 && o.v?.range === 12 && o.p === "ok" && o.pv?.mode === "yaw" },
   { id: "L2", what: "look-at target: 'lmap' refused not-found (did you mean lamp); '@viewers' refused with the list; itself and a thing riding it refused (loop); @nearest and an identity admitted", run(s) { cast(s);
       s.call("olive", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } }); s.call("olive", "create", { id: "statue", model: "crate", place: { at: [3, 0] } });
       s.call("olive", "create", { id: "hat", model: "book", components: { parent: { to: "statue" } } });
@@ -366,12 +366,12 @@ const cases: Case[] = [
       const card = sch.sections?.list?.find((x: any) => x.type === "LookAt");
       return { comp: add.ops?.[0]?.args?.component, card: !!card, fields: card?.fields ?? [] }; },
     good: (o) => o.comp === "look-at" && o.card && o.fields.includes("look-at.target") },
-  { id: "L6", what: "evalLookAt: a yaw-only target straight above changes nothing; a target behind with yaw [-90, 90] stops at 90°; 90°/s over 0.5 s turns 45°; forward -z faces the other way", run() {
+  { id: "L6", what: "evalLookAt (radians, shape audit 10-16): a yaw-only target straight above changes nothing; a target behind with yaw [-π/2, π/2] stops at 90°; π/2 rad/s over 0.5 s turns 45°; forward -z faces the other way", run() {
       const f = LA.evalLookAt; if (!f) return { none: true };
       const q30 = [0, Math.sin(Math.PI / 12), 0, Math.cos(Math.PI / 12)];   // already turned 30°
       const above = f({ at: [0, 0, 0], target: [0, 5, 0], la: { mode: "yaw" }, prev: q30, dt: 1 });
-      const behind = f({ at: [0, 0, 0], target: [0.001, 0, -5], la: { mode: "yaw", yaw: [-90, 90], speed: 0 } });
-      const slew = f({ at: [0, 0, 0], target: [5, 0, 0], la: { mode: "yaw", speed: 90 }, prev: [0, 0, 0, 1], dt: 0.5 });
+      const behind = f({ at: [0, 0, 0], target: [0.001, 0, -5], la: { mode: "yaw", yaw: [-Math.PI / 2, Math.PI / 2], speed: 0 } });
+      const slew = f({ at: [0, 0, 0], target: [5, 0, 0], la: { mode: "yaw", speed: Math.PI / 2 }, prev: [0, 0, 0, 1], dt: 0.5 });
       const back = f({ at: [0, 0, 0], target: [0, 0, 5], la: { mode: "yaw", forward: "-z", speed: 0 } });
       return { above: above.q, behind: ang(behind.q), slew: ang(slew.q), back: Math.abs(ang(back.q)) }; },
     good: (o) => !o.none && Math.abs(ang(o.above) - 30) < 1e-6 && o.behind === 90 && o.slew === 45 && o.back === 180 },

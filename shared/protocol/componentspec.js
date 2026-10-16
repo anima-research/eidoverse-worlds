@@ -35,9 +35,9 @@ export const COMPONENTS = {
   // its box; and the caption bot's speaker mark (shared/components.js Stage). Registered 10-07 with the meanings they had
   collider:  { on: "thing", fields: { shape: "string" }, enums: { shape: ["exact", "box", "sphere"] }, docs: { shape: "exact = its triangles, box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide" }, help: "how it collides: {shape: exact (its triangles) | box (its bounding box) | sphere (a ball: under an engine that carries spheres it rolls; the authority fits one to its box)}; absent, its size decides" },
   stage:     { on: "thing", fields: { speaker: "any" }, docs: { speaker: "who is speaking here (the caption bot's mark)" }, help: "the caption bot's stage mark: {speaker?: who is speaking here}" },
-  hidden:    { on: "thing", type: "bool", help: "true: not drawn by any client (it's still there: it collides, look and inspect list it). Delete it to show the thing again" },
-  clickthrough: { on: "thing", type: "bool", help: "true: a pointer click passes through it to whatever is behind (it is still drawn, collides, and can be grabbed by a hand or a tool; the editor still selects it). Delete it to make it a click target again" },
-  disabled:  { on: "thing", type: "bool", help: "true: switched off. It stays in the record and the Hierarchy, but no client loads or draws it, it has no collider and no physics, and nothing may grab, punt, use or sit on it; what hangs under it is switched off with it. Delete it to switch the thing back on" },
+  hidden:    { on: "thing", type: "bool", help: "true: not drawn by any client (it's still there: it collides, look and inspect list it). Delete it to show the thing again; false reads the same as absent" },
+  clickthrough: { on: "thing", type: "bool", help: "true: a pointer click passes through it to whatever is behind (it is still drawn, collides, and can be grabbed by a hand or a tool; the editor still selects it). Delete it to make it a click target again; false reads the same as absent" },
+  disabled:  { on: "thing", type: "bool", help: "true: switched off. It stays in the record and the Hierarchy, but no client loads or draws it, it has no collider and no physics, and nothing may grab, punt, use or sit on it; what hangs under it is switched off with it. Delete it to switch the thing back on; false reads the same as absent" },
   pivot:     { on: "thing", help: "{pos: [x,y,z]}: where it turns and scales from, in its own frame before scale ([0,0,0] = its origin). Never moves it or changes how it draws" },
   // attaching to a NAMED point on the parent is general (Unreal AttachToComponent's SocketName, Roblox Attachment,
   // Godot BoneAttachment3D): socket names one of the parent's sockets
@@ -79,34 +79,61 @@ export const COMPONENTS = {
                  radius: "the circle's radius, metres", degPerSec: "degrees a second (a lap of 30 s is 12°/s)", amplitude: "the first protocol's spelling of amp", pivot: "the point it turns about, in its own frame (absent: its Pivot component, else its origin)", center: "what it circles, in its parent's frame (absent: where it stands)",
                  face: "turns to face along the way it moves", points: "the path's control points, 2–64, in its parent's frame", speed: "metres a second along the path", duration: "seconds for the whole path (instead of speed)", loop: "loop | pingpong | once" },
                help: "{type, …} (the authority stamps t0): pendulum {axis [x,y,z] (local), amp (rad), period (s), damp, maxAmp, phase} swings about the point it hangs from; spin {axis, degPerSec (degrees a second) or period (s a turn), pivot?, phase} turns steadily; orbit {radius (m), center? [x,y,z] (in its parent's frame; default where it stands), period (s a lap) or degPerSec, face? (false: keeps its own heading), phase} circles; bob {axis, amp (m), period (s), phase} floats; path {points [[x,y,z], …] (2–64, in its parent's frame), speed (m/s) or duration (s), loop?: loop|pingpong|once, face?} follows its points. part: a node of its model that moves instead (motion:<part>)" },
-  // lock levels (R, 10-07): true is a builder-level lock (the first protocol's); {rank} names the level. A plain true is
-  // never rewritten (materialize fills objects only), so every existing lock keeps its value and its meaning
-  lock:      { fields: { rank: "string" }, defaults: { rank: "builder" }, enums: { rank: ["builder", "moderator", "owner"] }, docs: { rank: "who may unlock it, change it or move it anyway: builders and up, moderators and up, or owners only" },
-               help: "an edit lock (PROTOCOL §7, Locks): true (builder level, the first protocol's lock) or {rank: 'builder' | 'moderator' | 'owner'}. Nobody, its locker and owners included, may move, replace or delete it, or anything attached to it; edits that don't relocate it (label, light, motion, reactions…) stay open. Whoever set it, or anyone at its level or above, may unlock it (delete {id, component: 'lock'}), change it, or act through it by sending a request with throughLock: true; nobody sets a lock above their own rank. An owner-level lock is 'not this piece': builders and moderators can't lift it or act through it. Not on @world. A door's gameplay lock is `openable.locked`, not this" },
-  // a named attachment point on the thing (Unreal sockets, Roblox Attachment). With `body`, a PERSON can attach there by
-  // using it (VRChat Station, Roblox Seat): chairs, swings, saddles, a car's seats. Things attach with parent {to, socket}.
-  sockets:   { on: "thing", map: "object", lifted: "socket children (lifted at the door)", help: "the old spelling of sockets (socket children now: the door lifts a write of it, and a world stored with it at its first load): {<name>: {pos: [x,y,z] (its own frame), q? [x,y,z,w] (its rotation: a rocket seat lies on its back), part? (a model node it rides), accepts? [keywords] + radius? (m, default 0.15): a thing released within radius whose grabbable.fits shares a keyword snaps in (a key on its hook, a sword in its rack), body?: what a person's body does there: {action ('sit'; what 'use' calls it), anchor (root, the default | hips | feet | head: the body point on the socket), pose (a clip; {clip, time: 'phase'}; or a blend {by: 'speed'|'steer'|…|'param.<name>', clips: [[0,'idle'],[2,'walk']]}), poses {<name>: pose} + sync, approach [x,y,z,yaw], enter/leave (clips), exit [x,y,z], reach {leftHand: {at, q?, part?, hint?, vr: snap|track|near}}, hold {<bone>: q}, look {yaw: [min,max]°, pitch, up: world|socket}, input {move: none|drive|walk, look: free|aim|locked} (one drive per thing), leaveBy (jump|menu|script), fromSeat, who (builder|owner)}}}" },
-  // an attachment point as an entity of its own (Godot's Marker3D under its node, Unity's child Transform): a child of the
-  // thing it belongs to, its pose its own transform (scale 1). Seat if it has body, snap point if accepts, else attach point.
-  socket:    { on: "thing", fields: { name: "string", part: "string", body: "object", accepts: "array", radius: "number" }, required: ["name"],
-               absentMeans: { part: "it rides its host's root, not a moving node of the host's model", body: "things only: no person attaches here", accepts: "nothing snaps in by fits", radius: "0.15 m (read only with accepts)" },
-               help: "an attachment point on its parent (its host): {name (letters, digits, - and _, unique among the host's sockets; what use {args: {socket}} names), part? (a node of the host's model it rides), accepts? [keywords] + radius? (m; absent, 0.15): a thing released within radius whose grabbable.fits shares a keyword snaps in, body?: what a person's body does there (as sockets.<name>.body)}. Its pose is its transform (local to the host; scale 1). It carries nothing else but label, description, disabled, lock and motion. Things attach with parent {to: <its id>}" },
+  // lock levels (R, 10-07): {rank} names the level. One spelling (shape audit 10-16): the door still TAKES true (the first
+  // protocol's builder-level lock, an old agent's habit) and stores {rank: 'builder'}; a stored true (an older log) reads
+  // as builder, and the translator writes the object
+  lock:      { on: "thing", fields: { rank: "string" }, defaults: { rank: "builder" }, enums: { rank: ["builder", "moderator", "owner"] }, docs: { rank: "who may unlock it, change it or move it anyway: builders and up, moderators and up, or owners only" },
+               help: "an edit lock (PROTOCOL §7, Locks): {rank: 'builder' | 'moderator' | 'owner'} (default builder; a write of true is taken and stored as {rank: 'builder'}). Nobody, its locker and owners included, may move, replace or delete it, or anything attached to it; edits that don't relocate it (label, light, motion, reactions…) stay open. Whoever set it, or anyone at its level or above, may unlock it (delete {id, component: 'lock'}), change it, or act through it by sending a request with throughLock: true; nobody sets a lock above their own rank. An owner-level lock is 'not this piece': builders and moderators can't lift it or act through it. Not on @world. A door's gameplay lock is `openable.locked`, not this" },
+  // the first spelling of attachment points: a map on the host. Reserved and lift-only (shape audit 10-16): nothing stores it;
+  // the door lifts a write of it into socket children (each body block a station on its child), and a stored world at its
+  // first load. The name is held so it can't come back meaning something else.
+  sockets:   { status: "reserved", on: "thing", map: "object", lifted: "socket children + their stations (lifted at the door)", instead: "socket children: create {components: {parent: {to: <host>}, transform, socket: {name, accepts?, radius?, part?}, station?: {action, pose, anchor, exit?, leaveBy?, who?}}}", help: "reserved, lift-only: the old spelling of sockets (socket children now: the door lifts a write of it into socket children, each body block a station on its child, and a world stored with it at its first load): {<name>: {pos: [x,y,z] (its own frame), q? [x,y,z,w] (its rotation: a rocket seat lies on its back), part? (a model node it rides), accepts? [keywords] + radius? (m, default 0.15): a thing released within radius whose grabbable.fits shares a keyword snaps in (a key on its hook, a sword in its rack), body?: what a person's body does there: {action ('sit'; what 'use' calls it), anchor (root, the default | hips | feet | head: the body point on the socket), pose (a clip; {clip, time: 'phase'}; or a blend {by: 'speed'|'steer'|…|'param.<name>', clips: [[0,'idle'],[2,'walk']]}), poses {<name>: pose} + sync, approach [x,y,z,yaw], enter/leave (clips), exit [x,y,z], reach {leftHand: {at, q?, part?, hint?, vr: snap|track|near}}, hold {<bone>: q}, look {yaw: [min,max]°, pitch, up: world|socket}, input {move: none|drive|walk, look: free|aim|locked} (one drive per thing), leaveBy (jump|menu|script), fromSeat, who (builder|owner)}}}" },
+  // an attachment point as an entity of its own (Godot's Marker3D under its node, Unity's child Transform, Unreal's socket):
+  // a child of the thing it belongs to, its pose its own transform (scale 1). Shape audit 10-16 (R: "a socket is just
+  // anything where something may attach something else"): ONLY the attach point. What a person's body does there is the
+  // sibling `station` on the same entity (Resonite AvatarAnchor ≠ SnapTarget; VRChat Station ≠ Pickup). Seat if it has a
+  // station, snap point if accepts, else attach point (read, never stored).
+  socket:    { on: "thing", fields: { name: "string", part: "string", accepts: "array", radius: "number" }, required: ["name"],
+               ranges: { accepts: { maxItems: 8 }, radius: { min: 0.02, max: 1 } }, units: { radius: "m" },
+               absentMeans: { part: "it rides its host's root, not a moving node of the host's model", accepts: "nothing snaps in by fits", radius: "0.15 m (read only with accepts)" },
+               docs: { name: "letters, digits, - and _ (≤ 32), unique among its host's sockets: what use {args: {socket}} names", part: "a node of its host's model it rides", accepts: "keywords (≤ 8): a released thing whose grabbable.fits shares one snaps in",
+                 radius: "how near a released thing must be to snap in, metres", occupancy: "it holds one thing or one body at a time", attach: "who may attach: a thing, whoever may edit that thing's parent, or whoever releases a fitting grabbable within radius; a person, by using its station (station.who)" },
+               help: "an attachment point on its parent (its host): {name (letters, digits, - and _, unique among the host's sockets; what use {args: {socket}} names), part? (a node of the host's model it rides), accepts? [keywords, ≤ 8] + radius? (m; absent, 0.15): a thing released within radius whose grabbable.fits shares a keyword snaps in}. Its pose is its transform (local to the host; scale 1). It holds one thing or one body at a time. A person attaches by using it when the same entity has a station. It carries nothing else but station, label, description, disabled, lock and motion. Things attach with parent {to: <its id>}" },
+  // what a person's body does at a socket (shape audit 10-16; research RESEARCH-socket-body-2026-10-06; VRChat Station,
+  // Resonite AvatarAnchor, Roblox Seat), on the socket entity beside `socket`. The alpha registers the core only; the rest of
+  // the researched shape is reserved (refused, names held: STATION_RESERVED below; docs/COMPONENT-LADDER.md) and comes back
+  // as additions. Materialized on write: the action table fills pose, so editing the table never re-poses a stored seat.
+  station:   { on: "thing", fields: { action: "string", pose: "any", anchor: "string", exit: "array", leaveBy: "string", who: "string" },
+               defaults: { action: "sit", anchor: "root" },
+               when: [{ if: { action: "sit" }, set: { pose: "sitchair" } }, { if: { action: "ride" }, set: { pose: "sitchair" } }, { if: { action: "drive" }, set: { pose: "sitchair" } },
+                 { if: { action: "lie" }, set: { pose: "lie" } }, { if: { action: "kneel" }, set: { pose: "sit" } }, { if: { action: "stand" }, set: { pose: "idle" } }, { absent: ["pose"], set: { pose: "sitchair" } }],
+               enums: { anchor: ["hips", "feet", "head", "root", "surface"], leaveBy: ["jump", "menu", "script"] }, units: { exit: "m" },
+               absentMeans: { exit: "set down where they got on", leaveBy: "moving, jumping or getting up all leave", who: "anyone who may use the host" },
+               docs: { action: "the verb use calls it (sit, lie, ride, stand…): a label; at write it picks the default pose", pose: "the clip the body holds; {clip, time?: loop|phase, offset?}; or a blend {by: <signal>, clips: [[key, clip], …], time?, offset?}",
+                 anchor: "the body point that lands on the socket: root (where every seat put a body), hips, feet, head, or surface (the body's measured seat contact)", exit: "where they're set down, [x, y, z] or [x, y, z, yaw] in its host's frame", leaveBy: "jump | menu | script: how the occupant may leave", who: "who may take it: a role id (this rank or above)" },
+               reservedFields: ["poses", "sync", "approach", "enter", "leave", "reach", "look", "input", "fromSeat"],
+               help: "what a person's body does at this socket (only on a socket entity): {action (default sit: what use calls it), pose (a clip; {clip, time?, offset?}; or a blend {by, clips}; absent, picked from the action at write: sit/ride/drive sitchair, lie lie, kneel sit, stand idle, else sitchair), anchor (root, the default | hips | feet | head | surface), exit? [x, y, z(, yaw)] (its host's frame), leaveBy? (jump | menu | script; absent, any way), who? (a role id: this rank or above)}. Reserved for later (refused now): poses, sync, approach, enter, leave, reach, look, input, fromSeat" },
   // the numbers a thing exposes to the bodies on it, the ONE signal store (shape audit 10-16: no `param.*` keys in other
   // components): a seat pose blends by the signal param.<name>; scripts write them with world.param(id, name, n)
-  // where a thing goes back to when a reset sends it home (R 10-10): {pos, q, parent?: {to, socket?}} in its parent's frame.
-  // grabbable.home (older) means the same for a grabbable; a reset reads home first.
-  home:      { on: "thing", refPaths: { "parent.to": "ref" }, fields: { pos: "vec3", q: "array", scale: "any", parent: "any" }, absentMeans: { scale: "its size in the world is kept as it is when the reset runs" }, units: { pos: "m" },
-               docs: { pos: "where the reset puts it back, [x, y, z] in its parent's frame", q: "which way it faces at home, [x, y, z, w]", scale: "its size at home (1 is the model as made)", parent: "what it hangs under at home: {to, socket?}" }, help: "where it goes back to when a reset sends it home: {pos: [x,y,z], q?: [x,y,z,w], scale? (else its size in the world is kept), parent?: {to, socket?}} (its parent's frame). Stamped where it stands when a reset handler naming it is written" },
-  places:    { map: "any", help: "{<name>: {at: [x, y, z]} | {min: [x, y, z], max: [x, y, z]} | null}, each with label? (how it reads, ≤ 80) and kind? (seat | door): named places to walk to (move {to: '<thing>/<name>'}, or the name alone), in the thing's own frame so they move with it (on @world: world coordinates, places that belong to no thing). at is a spot to stand (its y the floor there); min/max a room (its min y its floor; look says which room you're in); null hides a place the model's own file declares (its glTF extras `building`). name_place {name} names the spot where you stand. An entry that fits none of these is kept and names nothing" },
+  // where a thing goes back to (R 10-10): {pos, q?, scale?, parent?: {to}} in its home parent's frame. The ONE home (shape
+  // audit 10-16: grabbable.home is gone): a reset, a grabbable's release: return and its returnAfter all read this.
+  home:      { on: "thing", refPaths: { "parent.to": "ref" }, fields: { pos: "vec3", q: "array", scale: "vec3", parent: "object" }, required: ["pos"],
+               absentMeans: { scale: "its size in the world is kept as it is when it goes home", q: "no turn: [0, 0, 0, 1]", parent: "goes home under no parent (the world root)" }, units: { pos: "m" },
+               docs: { pos: "where it goes back to, [x, y, z] in its home parent's frame", q: "which way it faces at home, [x, y, z, w]", scale: "its size at home, [x, y, z] (1 is the model as made); a number is taken and stored as one", parent: "what it hangs under at home: {to}" }, help: "where it goes back to when a reset sends it home, or a grabbable returns: {pos: [x,y,z], q?: [x,y,z,w], scale? [x,y,z] (else its size in the world is kept), parent?: {to}} (its home parent's frame). Stamped where it stands when a reset handler naming it, or a returning grabbable, is written without one" },
+  // named places to walk to (shape audit 10-16): a closed entry, checked at the door; `kind` is gone (a seat is a station,
+  // a door a reading of the model). Frame: the thing's full transform (pos, q, scale); on @world, world coordinates.
+  places:    { map: "any", keyPattern: "^[A-Za-z0-9_][A-Za-z0-9_ .:'-]{0,47}$", units: { at: "m", min: "m", max: "m" },
+               docs: { at: "a spot to stand, [x, y, z] in the thing's own frame (its y the floor there)", min: "a room's low corner (its y the floor)", max: "a room's high corner", label: "how it reads, ≤ 80 characters" },
+               help: "{<name>: {at: [x, y, z]} | {min: [x, y, z], max: [x, y, z]} | null}, each with label? (how it reads, ≤ 80); nothing else: named places to walk to (move {to: '<thing>/<name>'}, or the name alone), in the thing's own frame so they move with it (on @world: world coordinates, places that belong to no thing). at is a spot to stand (its y the floor there); min/max a room (its min y its floor; look says which room you're in); null hides a place the model's own file declares (its glTF extras `building`). name_place {name} names the spot where you stand" },
   params:    { on: "thing", map: "number", keyPattern: "^[a-z][a-zA-Z0-9_-]{0,31}$", maxKeys: 64, help: "{<name>: number}: up to 64 named numbers this thing exposes (a name: a lowercase letter, then letters, digits, _ or -, up to 32). A socket's pose blends by one as the signal param.<name>; a script writes one with world.param(id, name, number)" },
-  reactions: { help: "{<action>: handler}: what happens when someone uses it. Each handler may add who: 'builder'|'owner' (who may use it) and fix: text (shown on refusal).",
+  // shape audit 10-16: the handler kinds are FROZEN (VRChat SDK2's lesson: an action set that grows without end, then a hard
+  // break) and pinned with their args; anything new goes to the script handler. `impulse` is reserved: it had a general name
+  // and a pendulum-only meaning, and comes back with its general one when an engine carries impulses. One action namespace
+  // per thing: a reaction key never equals a station action of its own sockets (the door refuses the clash).
+  reactions: { refPaths: { "*.targets": "refs" }, help: "{<action>: handler}: what happens when someone uses it. Each handler may add who: a role id (who may use it: that rank or above) and fix: text (shown on refusal). The kinds are fixed: toggle, set, script, play, reset (anything else is a script); impulse is reserved. An action never shares its name with a station action of the thing's own sockets.",
     handlers: {
       toggle: { args: { component: "the component to flip (default 'openable')", field: "the true/false field inside it to flip (default 'open' for openable; leave both out for an openable). A named component with no field flips its whole value. The component must be on the thing when the handler is written", unless: "a field of the same component that, when true, bars it (e.g. 'locked')" }, example: { open: { kind: "toggle", component: "openable", field: "open", unless: "locked" } } },
       set: { args: { component: "which component", field: "optional: the field inside it to set (the component must then be on the thing)", value: "the value it gets (checked when the handler is written, as the authority would check that write)" }, example: { bolt: { kind: "set", component: "openable", field: "locked", value: true, who: "builder" } } },
-      // the general primitive pair (Godot apply_impulse / apply_torque_impulse; Unity AddForce / AddTorque with
-      // ForceMode.Impulse; Rapier and PhysX applyImpulse / applyTorqueImpulse): a push changes the thing's velocity at its
-      // centre (strength, m/s) or its turn rate about its axis (angular, rad/s). A hinged thing (a pendulum motion) takes
-      // strength as strength / its distance from the hinge, and angular as it is.
       // research 41 §3.1: the join between the two tiers. The action list, its `who` gate and its `fix` stay data; only
       // the effect is computed, by the script:<name> on the same thing, with its sponsor's rights narrowed to its scope
       script: { args: { script: "the name of a script on this same thing (its component is script:<name>)" }, example: { ring: { kind: "script", script: "bell" } } },
@@ -114,11 +141,12 @@ export const COMPONENTS = {
       // would stop it): the authority writes sound {…, playing: true, t0: now}
       play: { args: {}, example: { ring: { kind: "play" } } },
       // R 10-10: a reset button (VRChat's shape: each thing remembers a home, a button lists what it sends home; research
-      // notes/eidoverse/RESEARCH-grips-and-reset-2026-10-10.md). Each target goes back to its home component (or its
-      // grabbable.home), out of any hand; a target with no home, gone or locked is skipped and named in the reply.
+      // notes/eidoverse/RESEARCH-grips-and-reset-2026-10-10.md). Each target goes back to its home component, out of any hand; a target with no home, gone or locked is skipped and named in the reply.
       reset: { args: { targets: "the ids it sends home: 1 to 64 things. Each needs a home (stamped where it stands when the handler is written, if it has none)" }, example: { reset: { kind: "reset", targets: ["ball-0", "ball-1"] } } },
-      impulse: { args: { strength: "a push: the speed it gives the thing at its centre, m/s (default 0.5). A use may give its own push as args.impulse [x,y,z] (m/s)", angular: "or a turn: the turn rate it adds about the thing's axis, rad/s (instead of strength)" }, example: { push: { kind: "impulse", strength: 0.5 } } } },
-    common: { kind: "the handler kind", who: "who may use it: builder|owner", fix: "text shown on refusal" } },
+    },
+    // held names: a handler of one of these kinds is refused (reserved), never read
+    reservedKinds: { impulse: "a push (strength m/s at its centre, or angular rad/s): reserved until this world's engine carries impulses; it had a pendulum-only meaning, and returns with its general one" },
+    common: { kind: "the handler kind", who: "who may use it: a role id (builtin or this world's own), that rank or above; absent, anyone who may use the thing", fix: "text shown on refusal" } },
   // R 10-07: the behaviour is `openable` (a door, a gate, a lid, a hatch, a cabinet), not the asset. The conventional shape
   // (Unity/Godot/Roblox door recipes, Unreal's door timeline): a turn about a hinge (angle about axis, through the thing's
   // pivot) or a slide, tweened over a time (Roblox TweenInfo's default 1 s). `open` is the state; every client animates to it
@@ -126,7 +154,7 @@ export const COMPONENTS = {
                defaults: { open: false, locked: false, time: 1 }, when: [{ absent: ["slide"], set: { angle: Math.PI / 2, axis: [0, 1, 0] } }],
                ranges: { angle: { min: -Math.PI, max: Math.PI }, time: { min: 0, max: 10 }, slide: { min: -10, max: 10 } },
                units: { angle: "rad", slide: "m", time: "s" },
-               docs: { open: "its state now; anyone using it flips this (its reactions)", locked: "bars opening while on (an open handler with unless: 'locked'): the door's own lock for the people using it; pinning it in place is the Lock component's",
+               docs: { open: "its state now; anyone using it flips this (its reactions); false reads the same as absent", locked: "bars opening while on (an open handler with unless: 'locked'): the door's own lock for the people using it; pinning it in place is the Lock component's; false reads the same as absent",
                  angle: "how far it turns when open, radians; negative turns the other way", axis: "the hinge axis in its own frame: y an upright hinge (a door), x a lid or a hatch", slide: "how far it moves when open, [x, y, z] metres in its own frame (instead of turning)",
                  time: "seconds to open or close", part: "a node of its model that moves instead of the whole thing" },
                help: "it opens and closes when someone uses it: a door, a gate, a lid, a hatch. {open: true/false (its state), locked? (true bars an open handler with unless: 'locked'; the edit lock is the separate `lock`), angle? (rad it turns when open, default π/2; negative turns the other way), axis? (its own frame, default [0,1,0]: an upright hinge), slide? [x,y,z] (m it moves in its own frame when open, instead of turning), time? (s to open or close, 0–10, default 1), part? (a node of its model that moves instead of the whole thing)}. It turns about its pivot (pivot {pos}: put it on the hinge edge). Usable with reactions {open: {kind: 'toggle', unless: 'locked'}} (toggle's default flips openable.open)" },
@@ -167,14 +195,25 @@ export const COMPONENTS = {
   // check). Its own component, apart from dynamics: a lantern, a key, a book can be carried in a world with no physics.
   // shared/grab.js DEFAULTS, written down: the ones absent by meaning (no grips, no home, no use, a size-chosen pose)
   // stay absent. grab-check pins that these equal grab.js's own.
-  grabbable: { on: "thing", refPaths: { "home.parent.to": "ref" }, defaults: { enabled: true, who: "visitor", steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 },
+  grabbable: { on: "thing", fields: { enabled: "bool", who: "string", steal: "bool", range: "number", priority: "int", hold: "string", pose: "string", grips: "object", twoHanded: "bool", carries: "bool",
+                 throw: "number", release: "string", returnAfter: "number", fits: "array", use: "any", prompt: "string" },
+    // shape audit 10-16: the shape lives here now (grab.js derives its enums from these). Gone: home (the home component is
+    // the one home), a grip's bone overrides (hold). Reserved: fx (refused; presence-only particles while use is held)
+    enums: { hold: ["auto", "press", "toggle"], pose: ["hand", "carry", "torch", "pistol", "two-hand", "shoulder"], release: ["drop", "stay", "return"] },
+    reservedFields: ["fx"],
+    // the defaulted fields are materialized on every write since grabbable was registered; an older value without one reads
+    // as its default (grab.js fill), written down here so the pin holds that reading too
+    absentMeans: { enabled: "true: it can be picked up", who: "visitor", steal: "true", range: "1.5 m", priority: "0", hold: "auto", twoHanded: "false", throw: "1 (×)", release: "drop", returnAfter: "0 s: never",
+      pose: "by size: one hand under 0.5 m, both arms at or above; two-hand if twoHanded", grips: "held where it was grabbed", carries: "false: what rests on it falls off when it is picked up",
+      fits: "it snaps into no socket", use: "the use button does nothing while it is held", prompt: "Pick up <its label>" },
+    defaults: { enabled: true, who: "visitor", steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 },
     // the hand's own rules (shared/grab.js checkGrabbable) refuse outside these; written here so the inspector reads one source
-    ranges: { range: { min: 0.1, max: 10 }, priority: { min: -10, max: 10 }, throw: { min: 0, max: 3 }, returnAfter: { min: 0, max: 3600 } }, units: { range: "m", throw: "×", returnAfter: "s" },
-    docs: { enabled: "off: nobody can pick it up for now (a loose ball can still be kicked)", who: "who may pick it up: visitor (anyone), builder or owner", steal: "on: someone else can take it out of a hand; off: it stays with its holder (owners may still take it)",
+    ranges: { range: { min: 0.1, max: 10 }, priority: { min: -10, max: 10 }, throw: { min: 0, max: 3 }, returnAfter: { min: 0, max: 3600 }, fits: { maxItems: 8 }, prompt: { maxLen: 40 } }, units: { range: "m", throw: "×", returnAfter: "s" },
+    docs: { enabled: "off: nobody can pick it up for now (a loose ball can still be kicked)", who: "who may pick it up: a role id (this rank or above): visitor (anyone), builder, owner or this world's own", steal: "on: someone else can take it out of a hand; off: it stays with its holder (owners may still take it)",
       range: "how far from the hand it can be picked up, metres; past arm's reach (1.5) it flies to the hand", priority: "when several things are in reach the highest wins: the key, not the table it sits on", hold: "auto (grip in VR, sticky on desktop) | press (only while gripping) | toggle (sticky everywhere: a tool)",
       twoHanded: "on: both hands may hold it at once (a rifle, a broom): the first carries, the second aims", throw: "how hard it flies when thrown: 1 is normal, 2 twice as fast, 0 can only be dropped", release: "drop (it falls or is set down) | stay (where you let go) | return (it goes home)",
       returnAfter: "left unheld this many seconds it goes home; 0 never" },
-    help: "it can be picked up and carried (grab, put, drop, throw; a VR hand's grip; desktop T): {who?: visitor|builder|owner (default visitor), enabled? (false: not now), steal? (false: nobody takes it from a hand; owners may), range? (m from the hand, 0.1..10, default 1.5; past 1.5 it flies to you), priority? (-10..10: wins when several are in reach), hold?: auto|press|toggle, pose?: hand|carry|torch|pistol|two-hand|shoulder (a body without tracked hands; default by size), grips? {<name>: {pos, q?, hand?: left|right|either, role?: primary|secondary, fingers?: fist|pinch|point|flat|open|trigger, hold?, part?}} (where the palm goes, in its own frame; none: held where grabbed), twoHanded?, throw? (0..3, ×the release velocity; 0: drop only), release?: drop|stay|return, returnAfter? (s unheld, then it goes home), home? (stamped by the authority), fits? [keywords] (snaps into a socket whose accepts shares one), use? (a reactions action, or {down, up}: what the use button fires while held), prompt? (hover text), fx? {particles, at?} (drawn while its holder presses use: presence, never logged)}. Grabbable makes it carryable; physics {kind: 'dynamic'} makes it fall. A dynamic thing with no grabbable is carryable by physics.who" },
+    help: "it can be picked up and carried (grab, put, drop, throw; a VR hand's grip; desktop T): {who?: a role id (default visitor), enabled? (false: not now), steal? (false: nobody takes it from a hand; owners may), range? (m from the hand, 0.1..10, default 1.5; past 1.5 it flies to you), priority? (-10..10: wins when several are in reach), hold?: auto|press|toggle, pose?: hand|carry|torch|pistol|two-hand|shoulder (a body without tracked hands; default by size), grips? {<name>: {pos, q?, hand?: left|right|either, role?: primary|secondary, fingers?: fist|pinch|point|flat|open|trigger, part?}} (where the palm goes, in its own frame; none: held where grabbed), twoHanded?, throw? (0..3, ×the release velocity; 0: drop only), release?: drop|stay|return, returnAfter? (s unheld, then it goes home), fits? [keywords] (snaps into a socket whose accepts shares one), use? (a reactions action, or {down, up}: what the use button fires while held), prompt? (hover text, ≤ 40)}; where it goes home to is its home component (stamped when a returning grabbable has none); fx is reserved. Grabbable makes it carryable; physics {kind: 'dynamic'} makes it fall. A dynamic thing with no grabbable is carryable by physics.who (the rule: absent grabbable, a dynamic thing reads as {who: physics.who})" },
   "physics-engine": { on: "world", fields: { engine: "string", build: "any", tickMs: "int" }, help: "on @world only (owner): the physics engine this world runs: {engine: 'eidosim@1.0.0', tickMs?}. The authority stamps the exact build. Delete it to turn physics off (refused while things are in flight)" },
   // spec/PHYSICS.md §3.2: a world's named surface materials (Marrow's Surface Data Cards: one name bundles a surface's
   // physical numbers; SLZ's format names materials, not raw per-object numbers). physics.material names one
@@ -230,13 +269,15 @@ export const COMPONENTS = {
                 help: "a sign: {text (≤ 400 characters, ≤ 16 lines), size? (line height, m; 0.02..2), width? (wrap width, m; 0.1..10), align?: left|center|right, color? 0xRRGGBB, outline? (a contrasting edge), background? 0xRRGGBB (a plate behind it; absent = none), billboard?: off (flat, facing +Z, readable from both sides) | yaw (turns about up toward each viewer) | full (faces each viewer, kept upright), lit?: self|scene}" },
   // a thing (or one part, look-at:<part>) turns to face something (batch 2; Unity AimConstraint, Blender Locked/Damped
   // Track, Resonite LookAt). State is logged; the turn is a view each client computes, like motion
-  "look-at":  { on: "thing", keyed: "optional", fields: { target: "target", mode: "string", forward: "axis", up: "axis", yaw: "array", pitch: "array", speed: "number", range: "number", offset: "vec3" },
-                defaults: { mode: "yaw", forward: "z", up: "y", speed: 240, range: 12 }, required: ["target"], enums: { mode: ["yaw", "aim"] },
-                ranges: { speed: { min: 0, max: 3600 }, range: { gt: 0, max: 100 } },
-                units: { speed: "°/s", range: "m", offset: "m" },
-                docs: { target: "what it turns to face: a thing's id, @viewer (each viewer's own eyes), @nearest (whoever is nearest within range), or a person's identity", mode: "yaw (turns about its up only, stays upright) | aim (tilts too)", forward: "which of its own axes points at the target: x, y, z or [x, y, z]; z is its front",
-                  up: "its up axis", yaw: "[min, max] degrees it may turn from rest", pitch: "[min, max] degrees it may tilt from rest", speed: "degrees a second; 0 = turns at once", range: "a person further than this many metres: it turns back to rest", offset: "a point in the target thing's frame to aim at" },
-                help: "it turns to face something: {target (a thing's id, @viewer: each viewer's own eyes, @nearest: whoever is nearest within range, or a person's identity u-…), mode?: yaw (turns about up only, stays upright) | aim (tilts too), forward? (its local axis that points: x|y|z or [x, y, z], default z, its front; a negative one is a vector, [0, 0, -1]), up?, yaw? [min, max]° and pitch? [min, max]° (limits from rest), speed? °/s (0 = at once), range? m (a person beyond it: back to rest), offset? [x,y,z] (a point in the target thing's frame)}. look-at:<part> turns one model part" },
+  // shape audit 10-16: radians (PROTOCOL §9.2) and axes stored as vectors (a letter is taken at write and stored as its
+  // vector); offset is gone (speculative, unused)
+  "look-at":  { on: "thing", keyed: "optional", fields: { target: "target", mode: "string", forward: "axis", up: "axis", yaw: "array", pitch: "array", speed: "number", range: "number" },
+                defaults: { mode: "yaw", forward: [0, 0, 1], up: [0, 1, 0], speed: 240 * Math.PI / 180, range: 12 }, required: ["target"], enums: { mode: ["yaw", "aim"] },
+                ranges: { speed: { min: 0, max: 20 * Math.PI }, range: { gt: 0, max: 100 }, yaw: { min: -Math.PI, max: Math.PI }, pitch: { min: -Math.PI / 2, max: Math.PI / 2 } },
+                units: { speed: "rad/s", range: "m", yaw: "rad", pitch: "rad" },
+                docs: { target: "what it turns to face: a thing's id, @viewer (each viewer's own eyes), @nearest (whoever is nearest within range), or a person's identity", mode: "yaw (turns about its up only, stays upright) | aim (tilts too)", forward: "which of its own axes points at the target, [x, y, z] (a letter x, y or z is taken and stored as its vector); [0, 0, 1] is its front",
+                  up: "its up axis, [x, y, z]", yaw: "[min, max] radians it may turn from rest, within ±π", pitch: "[min, max] radians it may tilt from rest, within ±π/2", speed: "radians a second; 0 = turns at once", range: "a person further than this many metres: it turns back to rest" },
+                help: "it turns to face something: {target (a thing's id, @viewer: each viewer's own eyes, @nearest: whoever is nearest within range, or a person's identity u-…), mode?: yaw (turns about up only, stays upright) | aim (tilts too), forward? ([x, y, z] in its own frame, default [0, 0, 1], its front; a letter x|y|z is taken and stored as its vector; a negative one is a vector, [0, 0, -1]), up? (default [0, 1, 0]), yaw? [min, max] and pitch? [min, max] (radians from rest), speed? rad/s (default 240°/s; 0 = at once), range? m (a person beyond it: back to rest)}. look-at:<part> turns one model part" },
   // captions (a screen's live subtitles): written only by the caption request, a line at a time (shared/captions.js);
   // who may caption a screen is the screen's own captioners list (R leaned that way, 10-06, as the roles branch's CAPTION_ON_SCREENS does)
   captions:   { on: "thing", fields: { session: "string", n: "int", gen: "number", title: "string", mediaTime: "number", window: "array" },
@@ -291,7 +332,10 @@ export const COMPONENTS = {
   trusted:   { on: "world", fields: { components: "array" }, ranges: { components: { maxItems: 64 } }, help: "on @world (owner): {components: [<namespaced draft names>]} — drafts used and trusted in this world (a blue chip in the Inspector, offered in the main Add Component list); never a bare name (that is the engine's or nothing); ≤ 64, each once. Trust ≠ engine understanding: the authority doesn't read them" },
   bounds:    { on: "world", fields: { min: "vec3", max: "vec3" }, required: ["min", "max"], units: { min: "m", max: "m" }, docs: { min: "the box's low corner [x, y, z], world metres", max: "its high corner [x, y, z], world metres" },
                help: "on @world: the box the world lives in, {min: [x, y, z], max: [x, y, z]} in world metres, min < max on every axis. Absent (no bounds component), anywhere is in the world" },
-  spawn:     { on: "world", fields: { pos: "vec3", radius: "number" }, help: "on @world: where visitors arrive {pos, radius}" },
+  // shape audit 10-16: units, a range, and the absent radius written down (shared/mover.js TRACK.spawnR; tools/shape-attach-test pins they agree)
+  spawn:     { on: "world", fields: { pos: "vec3", radius: "number" }, required: ["pos"], units: { pos: "m", radius: "m" }, ranges: { radius: { min: 0, max: 100 } },
+               absentMeans: { radius: "2 m" }, docs: { pos: "where visitors arrive, [x, y, z] world metres", radius: "a visitor's arrival must lie within this many metres of pos (the client chooses where inside)" },
+               help: "on @world: where visitors arrive {pos: [x, y, z], radius? (m, 0..100; absent, 2 m): a visitor's arrival must lie within radius of pos}" },
   // research 40 §6.1: today's noise bag with `kind` explicit, or an imported raster as a value blob. Keys by kind.
   terrain:   { on: "world", fields: { kind: "string", seed: "int", size: "number", amplitude: "number", octaves: "int", frequency: "number", flatRadius: "number", flatHeight: "number",
                          blob: "string", w: "int", h: "int", spacing: "number", origin: "array", format: "string", segments: "int", layers: "any",
@@ -359,6 +403,21 @@ export const COMPONENTS = {
 // what to use meanwhile. stable: promised, additions only (none yet). A ladder DRAFT (a namespaced name the authority
 // doesn't know) has no status here: it isn't admitted at all. The pin records each status (spec/registry-pin.json); a
 // change to a trial or reserved entry is allowed only with an acknowledgement (pretrans --pin --ack), a stable one never.
+// held names (R 15:16, shape audit 10-16; research reserved-names.md): registered reserved, so no write can squat a name the
+// alpha means to give a settled shape. No fields: each says what it is held for. `joint` (the skeleton node) and
+// `physics-joint` come with the physics step.
+for (const [name, what] of Object.entries({
+  material: "appearance: a surface's look (glTF material, KHR extensions). physics.material names a surface, and is to become physics.surface",
+  "anim-clip": "an animation clip and its playhead",
+  "anim-states": "an animation state machine (states, transitions, params driving clips)",
+  camera: "a camera a world places (a view, a screen's source)",
+  zone: "a named world area; effects attach to it as siblings",
+  video: "a video a thing plays",
+  "spring-joint": "a spring between two bodies",
+  link: "a link a thing opens (a portal, a page)",
+  tags: "labels a thing carries for search and rules",
+})) COMPONENTS[name] = { status: "reserved", instead: "nothing yet: the name is held for a shape that isn't settled", help: `reserved: ${what}. Not written yet` };
+
 export const STATUSES = {
   trial: "admitted, but its shape may still change during the alpha (about a year); stored values are translated or repaired where they can be",
   reserved: "the name is held for a shape that isn't settled: every write of it is refused",
@@ -421,10 +480,17 @@ export function refFields(comp) {
 }
 const isThingRef = (x) => typeof x === "string" && x !== "" && !x.startsWith("@") && !PERSON_SHAPE.test(x);
 const getAt = (v, path) => path.reduce((o, k) => (o && typeof o === "object" && !Array.isArray(o) ? o[k] : undefined), v);
+// a refPaths entry may hold a '*' segment (reactions "*.targets": every action's targets): the concrete paths it names in v
+function expandPath(v, path) {
+  const i = path.indexOf("*"); if (i < 0) return [path];
+  const o = getAt(v, path.slice(0, i)); if (!o || typeof o !== "object" || Array.isArray(o)) return [];
+  return Object.keys(o).flatMap((k) => expandPath(v, [...path.slice(0, i), k, ...path.slice(i + 1)]));
+}
+const concrete = (comp, v) => refFields(comp).flatMap(({ path, type }) => expandPath(v, path).map((p) => ({ path: p, type })));
 /** Every THING an entity's component value refers to: [{path: "story.marks[1]", id}]. People and @words aren't things. */
 export function refsOf(comp, v) {
   const out = []; const name = baseOf(comp);
-  for (const { path, type } of refFields(comp)) { const x = getAt(v, path); const at = `${name}.${path.join(".")}`;
+  for (const { path, type } of concrete(comp, v)) { const x = getAt(v, path); const at = `${name}.${path.join(".")}`;
     if (type === "ref" || type === "target") { if (isThingRef(x)) out.push({ path: at, id: x }); }
     else if ((type === "refs" || type === "scope") && Array.isArray(x)) x.forEach((y, i) => { if (isThingRef(y)) out.push({ path: `${at}[${i}]`, id: y }); }); }
   return out;
@@ -435,7 +501,7 @@ export function refsOf(comp, v) {
 export function mapRefs(comp, v, f) {
   if (!v || typeof v !== "object" || Array.isArray(v)) return { value: v, dropped: [] };
   const out = copy(v), dropped = []; const d = defOf(comp); const name = baseOf(comp); let gone = false;
-  for (const { path, type } of refFields(comp)) {
+  for (const { path, type } of concrete(comp, v)) {
     const parent = getAt(out, path.slice(0, -1)); const k = path.at(-1); if (!parent || typeof parent !== "object" || Array.isArray(parent)) continue;
     const x = parent[k]; const at = `${name}.${path.join(".")}`;
     if (type === "ref" || type === "target") { if (!isThingRef(x)) continue; const y = f(x, at);
@@ -499,6 +565,10 @@ export function pinOf() {
     if (d.grammar) p.grammar = { ...d.grammar };
     if (d.keyed !== undefined) p.keyed = d.keyed;
     if (d.on) p.on = d.on;
+    // reactions' handler kinds and their args are part of its meaning (shape audit 10-16: the kinds are frozen)
+    if (d.handlers) p.handlers = Object.fromEntries(Object.entries(d.handlers).map(([k, h]) => [k, Object.keys(h.args ?? {})]));
+    if (d.reservedKinds) p.reservedKinds = Object.keys(d.reservedKinds);
+    if (d.reservedFields) p.reservedFields = [...d.reservedFields];
     out[name] = p;
   }
   return out;
@@ -536,6 +606,8 @@ export function pinBreakList(pin, now = pinOf()) {
     if (p.status !== undefined) for (const f of n.required ?? []) if (!(p.required ?? []).includes(f) && Object.hasOwn(p.fields ?? {}, f)) push(`${name}.${f}: now required`);
     for (const [f, m] of Object.entries(p.absentMeans ?? {})) if (n.absentMeans?.[f] !== m) push(`${name}.${f}: its meaning of absence ${j(m)} → ${j(n.absentMeans?.[f]) ?? "gone"}`);
     for (const [f, g] of Object.entries(p.grammar ?? {})) if (n.grammar?.[f] !== g) push(`${name}.${f}: grammar ${g} → ${n.grammar?.[f] ?? "gone"}`);
+    for (const [k, args] of Object.entries(p.handlers ?? {})) { if (!n.handlers?.[k]) { push(`${name}: handler kind ${k} is gone`); continue; }
+      for (const a of args) if (!n.handlers[k].includes(a)) push(`${name}.${k}: handler arg ${a} is gone`); }
     // PROTOCOL §4: a field added after the name's first registration says what an older value WITHOUT it means (a value
     // stored before it existed never holds it, and materialize never rewrites the past), and that meaning is pinned
     for (const f of Object.keys(n.fields ?? {})) if (!Object.hasOwn(p.fields ?? {}, f) && !(typeof n.absentMeans?.[f] === "string" && n.absentMeans[f].trim()))

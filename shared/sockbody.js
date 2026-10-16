@@ -1,4 +1,9 @@
-// sockbody — what a person's body does at a socket: the `body` block of `sockets.<name>`, as data.
+// sockbody — what a person's body does at a socket: the `station` component on a socket entity (shape audit 10-16; it
+// was the `body` block of `socket` / `sockets.<name>`, still read here as the old spelling the door lifts), as data.
+//
+// The alpha registers the station's core only (shared/protocol/componentspec.js station: action, pose, anchor, exit,
+// leaveBy, who). The rest of the researched shape below is RESERVED: the door refuses it (STATION_RESERVED), its names are
+// held, and this reader still reads it generously so it comes back as an addition, not a rewrite. hold is cut.
 //
 // One shape for every way a body attaches to a thing (research: notes/eidoverse/RESEARCH-socket-body-2026-10-06.md,
 // "The shape we build"): a chair, a swing, a saddle, a car's driver seat, a rocket couch, a bunk, a lectern you stand
@@ -36,10 +41,11 @@ import { REACH_CHAINS } from './joints.js';
 import { HUMANOID_BONES } from './humanoid.js';
 import { checkAccepts } from './grab.js';
 import { BUILTIN_IDS, isRoleId } from './protocol/roles.js';
+import { COMPONENTS, materialize } from './protocol/componentspec.js';
 
 // surface (D14, R 10-12): the seat authors its support plane; a body's profiled seat contact lands on it (client/lib/seatcore.js)
-export const ANCHORS = ['hips', 'feet', 'head', 'root', 'surface'];
-export const LEAVE_BY = ['jump', 'menu', 'script'];
+export const ANCHORS = COMPONENTS.station.enums.anchor;   // hips, feet, head, root, surface
+export const LEAVE_BY = COMPONENTS.station.enums.leaveBy;  // jump, menu, script
 export const MOVES = ['none', 'drive', 'walk'];
 export const LOOKS = ['free', 'aim', 'locked'];
 export const UPS = ['world', 'socket'];
@@ -56,7 +62,10 @@ export const BODY_KEYS = ['action', 'anchor', 'pose', 'poses', 'sync', 'approach
 // accepts/radius (shared/grab.js): a free socket takes a released thing whose grabbable.fits shares a keyword, within radius
 export const SOCKET_KEYS = ['pos', 'q', 'part', 'body', 'accepts', 'radius'];
 // a socket entity's own component: its pose is the entity's transform, so pos and q aren't here
-export const SOCKET_ENTITY_KEYS = ['name', 'part', 'body', 'accepts', 'radius'];
+export const SOCKET_ENTITY_KEYS = Object.keys(COMPONENTS.socket.fields);   // name, part, accepts, radius
+/** The station's registered keys, and the researched ones the alpha holds back (refused as reserved, names kept). */
+export const STATION_KEYS = Object.keys(COMPONENTS.station.fields);
+export const STATION_RESERVED = COMPONENTS.station.reservedFields;
 export const REACH_KEYS = ['at', 'q', 'part', 'hint', 'vr'];
 export const LOOK_KEYS = ['yaw', 'pitch', 'up'];
 export const INPUT_KEYS = ['move', 'look'];
@@ -69,14 +78,13 @@ const PARAM_RE = /^param\.[a-zA-Z][a-zA-Z0-9_]{0,31}$/;
 export const isSignal = (s) => typeof s === 'string' && (SIGNALS.includes(s) || PARAM_RE.test(s));
 const MAX_BLEND = 16, MAX_POSES = 16, LIM = 1e4;
 
-/** What an action means when the socket says nothing more: the pose it holds. The anchor defaults to the ROOT for
- *  every action — where every seat put a body before anchors existed (the Commons' twelve seats),
- *  so no existing seat moves; a socket names hips, feet or head to seat that body point instead. (For the house sit
+/** What an action means when the station says nothing more: the pose it holds. The registry's (componentspec.js station:
+ *  its defaults and `when` rules), applied at WRITE, so a stored station always holds its pose and editing this table never
+ *  re-poses a seat. The anchor defaults to the ROOT for every action — where every seat put a body before anchors existed
+ *  (the Commons' twelve seats); a station names hips, feet or head to seat that body point instead. (For the house sit
  *  clips the root IS about the seat surface: the clip lifts the hips a pelvis above it.) */
-export const ACTION_DEFAULTS = {
-  sit: { pose: 'sitchair', anchor: 'root' }, ride: { pose: 'sitchair', anchor: 'root' }, drive: { pose: 'sitchair', anchor: 'root' },
-  lie: { pose: 'lie', anchor: 'root' }, kneel: { pose: 'sit', anchor: 'root' }, stand: { pose: 'idle', anchor: 'root' },
-};
+export const ACTION_DEFAULTS = Object.fromEntries(['sit', 'ride', 'drive', 'lie', 'kneel', 'stand'].map((action) => {
+  const v = materialize('station', { action }).value; return [action, { pose: v.pose, anchor: v.anchor }]; }));
 const defaultsFor = (action) => ACTION_DEFAULTS[action] ?? ACTION_DEFAULTS.sit;
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -95,13 +103,14 @@ export function poseClip(spec) {
   return null;
 }
 
-/** A socket's body block, read generously with its defaults (shared by the authority, the client and the agent). Null when
- *  the socket has none: an attachment point for things only (parent {to, slot}). `pose` is the spec as written (a
- *  clip name, or an object); `clip` is the one name it stands for. Absent leaveBy is 'any' (moving, jumping or getting
- *  up all leave: what every seat did before leaveBy existed). */
-export function bodyOf(sock) {
-  const b = isObj(sock) ? sock.body : null;
-  if (!isObj(b)) return null;
+/** A socket's station (or a legacy body block: the same shape), read generously with its defaults (shared by the
+ *  authority, the client and the agent). Null when there is none: an attachment point for things only. `pose` is the
+ *  spec as written (a clip name, or an object); `clip` is the one name it stands for. Absent leaveBy is 'any' (moving,
+ *  jumping or getting up all leave: what every seat did before leaveBy existed). The reserved keys read as absent
+ *  unless an older value holds them. */
+export function bodyOf(station) {
+  const b = isObj(station) ? station : null;
+  if (!b) return null;
   const action = typeof b.action === 'string' && b.action ? b.action : 'sit';
   const d = defaultsFor(action);
   const pose = (typeof b.pose === 'string' && b.pose) || isObj(b.pose) ? b.pose : d.pose;
@@ -121,7 +130,7 @@ export function bodyOf(sock) {
     leave: typeof b.leave === 'string' && b.leave ? b.leave : null,
     exit: nums(b.exit, 3) || nums(b.exit, 4) ? b.exit : null,
     reach,
-    hold: isObj(b.hold) ? Object.fromEntries(Object.entries(b.hold).filter(([, q]) => unitQ(q))) : {},
+    hold: {},   // cut (shape audit 10-16): no bone overrides over the pose; the key stays for the readers that merge it
     look: { yaw: range(lk.yaw, -180, 180), pitch: range(lk.pitch, -90, 90), up: UPS.includes(lk.up) ? lk.up : 'world', limited: nums(lk.yaw, 2, 360) || nums(lk.pitch, 2, 360) },
     input: { move: MOVES.includes(inp.move) ? inp.move : 'none', look: LOOKS.includes(inp.look) ? inp.look : 'free' },
     leaveBy: LEAVE_BY.includes(b.leaveBy) ? b.leaveBy : 'any',
@@ -223,16 +232,26 @@ export function checkSockets(v, at = 'sockets') {
   return null;
 }
 
-/** One socket entity's `socket` component, checked as one slot of the old map is (closed keys, the body block, accepts):
- *  null when good. The rules that need its siblings (a unique name, one driver) are the door's. */
+/** One socket entity's `socket` component, checked (closed keys, accepts): null when good. The rules that need its
+ *  siblings (a unique name) are the door's. A body block is the station's now (the door lifts an old write of one). */
 export function checkSocket(v, at = 'socket') {
-  if (!isObj(v)) return bad('shape', `${at} must be {name, part?, body?, accepts?, radius?}`);
+  if (!isObj(v)) return bad('shape', `${at} must be {name, part?, accepts?, radius?}`);
+  if (v.body !== undefined) return bad('schema', `${at}.body: what a person's body does at a socket is the station component on the same entity now`, 'station {action, pose?, anchor?, exit?, leaveBy?, who?} beside socket', ['station']);
   let r = keys(at, v, SOCKET_ENTITY_KEYS, 'a socket'); if (r) return r;
   if (!(typeof v.name === 'string' && NAME_RE.test(v.name))) return bad('shape', `${at}.name is letters, digits, - and _ (up to 32): the name use {args: {socket}} calls it by`);
   if (v.part !== undefined && !(typeof v.part === 'string' && v.part)) return bad('shape', `${at}.part names a node of its host's model`);
   if ((r = checkAccepts(v, at))) return r;
-  if (v.body !== undefined && (r = checkBody(v.body, `${at}.body`))) return r;
   return null;
+}
+
+/** A socket entity's `station`, checked: the core keys (closed), the reserved ones refused as reserved (their names are
+ *  held), the body grammar for what's there. Null when good. That it hangs on a socket is the door's rule. */
+export function checkStation(v, at = 'station') {
+  if (!isObj(v)) return bad('shape', `${at} must be {action?, pose?, anchor?, exit?, leaveBy?, who?}`);
+  const held = Object.keys(v).find((k) => STATION_RESERVED.includes(k));
+  if (held) return bad('reserved', `${at}.${held} is reserved: the alpha holds the station's core only (${STATION_KEYS.join(', ')}); ${held} comes back later as an addition`, `leave ${held} out; reserved for later: ${STATION_RESERVED.join(', ')}`);
+  const r = keys(at, v, STATION_KEYS, 'a station'); if (r) return r;
+  return checkBody(v, at);
 }
 
 function checkBody(b, at) {
@@ -340,16 +359,16 @@ export function resolveSeat(world, seat) {
   return kid ? { to: kid } : null;
 }
 
-/** What a socket is for, read from what it has (never stored): a seat if body, a snap point if accepts, else an attach
- *  point. `c` is the socket's record (a fold `c` or a view's `comp`). */
-export const socketRole = (c) => (isObj(c?.socket?.body) ? 'seat' : Array.isArray(c?.socket?.accepts) ? 'snap' : 'attach');
-/** A host's sockets, as its socket children (PLAN-sockets-entities §1): [{id, name, sock}] in `kids` order. `kids(host)`
+/** What a socket is for, read from what it has (never stored): a seat if it has a station, a snap point if accepts, else
+ *  an attach point. `c` is the socket's record (a fold `c` or a view's `comp`). */
+export const socketRole = (c) => (isObj(c?.station) ? 'seat' : Array.isArray(c?.socket?.accepts) ? 'snap' : 'attach');
+/** A host's sockets, as its socket children (PLAN-sockets-entities §1): [{id, name, sock, station}] in `kids` order. `kids(host)`
  *  lists a thing's child ids; `rec(id)` is a record's components (a fold `c`, or a view's `comp`). A socket switched off
  *  on its own is a closed seat: not listed. The one reader every client and agent surface shares (the authority's own is
  *  authority/sockets.js socketsOf, over its children index). */
 export function socketsUnder(host, kids, rec, { all = false } = {}) {
   const out = [];
-  for (const k of kids(host) ?? []) { const c = rec(k); if (isObj(c?.socket) && (all || c.disabled !== true)) out.push({ id: k, name: c.socket.name, sock: c.socket }); }
+  for (const k of kids(host) ?? []) { const c = rec(k); if (isObj(c?.socket) && (all || c.disabled !== true)) out.push({ id: k, name: c.socket.name, sock: c.socket, station: isObj(c.station) ? c.station : null }); }
   return out;
 }
 /** …in a world: a fold state's or a view's `entities` ({id: {c}} or the view's flat {id: {socket?, parent?, …}}). O(things): readers that ask
@@ -359,19 +378,19 @@ export function socketsIn(entities, host, opts) {
   return socketsUnder(host, (h) => Object.keys(E).filter((k) => up(k) === h), recC, opts);
 }
 /** A socket child as the old `sockets.<name>` entry read ({pos, q?, part?, body?, accepts?, radius?}): its pose is its own
- *  transform, local to its host. For the readers still written against the map (the Inspector's Sockets card and the
- *  seat gizmos, until the Parts UI: PLAN §10 12b); writing one back as a map is translated at the door. `t` is the
- *  socket's transform ({pos, q}). */
-export function slotOf(sock, t) {
+ *  transform, local to its host, and its station is the entry's body. For the readers still written against the map (the
+ *  Inspector's Sockets card and the seat gizmos, until the Parts UI: PLAN §10 12b); writing one back as a map is
+ *  translated at the door (each body a station). `t` is the socket's transform ({pos, q}). */
+export function slotOf(sock, t, station = null) {
   const { name, ...rest } = sock ?? {};
   const q = Array.isArray(t?.q) && t.q.length === 4 && !(t.q[0] === 0 && t.q[1] === 0 && t.q[2] === 0 && t.q[3] === 1) ? { q: t.q.slice() } : {};
-  return { pos: Array.isArray(t?.pos) ? t.pos.slice() : [0, 0, 0], ...q, ...JSON.parse(JSON.stringify(rest)) };
+  return { pos: Array.isArray(t?.pos) ? t.pos.slice() : [0, 0, 0], ...q, ...JSON.parse(JSON.stringify(rest)), ...(isObj(station) ? { body: JSON.parse(JSON.stringify(station)) } : {}) };
 }
 /** A host's socket children as the old `sockets` map ({name: slotOf…}), switched-off ones included (a map written back
  *  must not drop them), or null when it has none. `entities` as socketsIn. */
 export function socketMapIn(entities, host) {
   const E = entities ?? {}; const out = {};
-  for (const x of socketsIn(E, host, { all: true })) { const e = E[x.id]; out[x.name] = slotOf(x.sock, e?.c ? e.c.transform : { pos: e?.pos, q: e?.q }); }
+  for (const x of socketsIn(E, host, { all: true })) { const e = E[x.id]; out[x.name] = slotOf(x.sock, e?.c ? e.c.transform : { pos: e?.pos, q: e?.q }, x.station); }
   return Object.keys(out).length ? out : null;
 }
 

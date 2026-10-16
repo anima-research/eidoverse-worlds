@@ -67,7 +67,6 @@ const DECIDED = {
   'Spin.pivot': 'it turns about its own Pivot component, else its origin [0, 0, 0]',
   'Path.points': 'no points: it stands still (the authority refuses a path with fewer than 2 points; the record\'s [] is the empty reading)',
   'Particles.at': '[0, 0, 0] in its own frame; in an older value, its origin (the registry says the same)',
-  'LookAt.offset': 'the target thing\'s own origin, [0, 0, 0] in its frame',
   'Text.outlineColor': 'the edge takes the colour that contrasts with the text colour: black behind light text, white behind dark (the registry says the same)',
 };
 
@@ -126,9 +125,9 @@ const CARDS = {
   Text: { key: 'text', show: ['text', 'size', 'width', 'align', 'color', 'outline', 'outlineColor', 'background', 'billboard', 'lit'], writeDp: 3, extra: ['plate'],
     editor: { text: { ui: { t: 'text' } }, size: { ui: { t: 'num', step: 0.01, dp: 2 } }, width: { ui: { t: 'num', step: 0.1, dp: 2 } },
       align: { ui: { t: 'enum' } }, color: { ui: { t: 'color' } }, outline: { ui: { t: 'check' } }, outlineColor: { ui: { t: 'color' } }, background: { ui: { t: 'color', def: false } }, billboard: { ui: { t: 'enum' } }, lit: { ui: { t: 'enum' } } } },
-  LookAt: { key: 'look-at', show: ['target', 'mode', 'forward', 'up', 'yaw', 'pitch', 'speed', 'range', 'offset'], writeDp: 3, extra: ['target@'],
+  LookAt: { key: 'look-at', show: ['target', 'mode', 'forward', 'up', 'yaw', 'pitch', 'speed', 'range'], writeDp: 3, extra: ['target@'],
     editor: { target: { ui: { t: 'ref' } }, mode: { ui: { t: 'enum' } }, forward: { ui: { t: 'enum' } },
-      speed: { ui: { t: 'num', step: 30, dp: 0 } }, range: { ui: { t: 'num', step: 1, dp: 1, softMin: 0.1 } } } },
+      speed: { ui: { t: 'num', step: 30, dp: 0, deg: true } }, /* stored rad/s (shape audit 10-16), shown in degrees */ range: { ui: { t: 'num', step: 1, dp: 1, softMin: 0.1 } } } },
   Lock: { key: 'lock', whole: 'value', show: [] },   // true | {rank}: the whole value is the row; its level is the Flags card's lockLevel
   Hidden: { key: 'hidden', whole: 'value' },
   Label: { key: 'label', whole: 'text' },

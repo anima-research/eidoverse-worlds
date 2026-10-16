@@ -87,8 +87,6 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
     const parent = resolve(m.to, view, nowMs, depth - 1, seen);
     if (!parent.ok) return parent;                     // the FIRST unsupported link names itself
 
-    // what it rides: a socket (a seat), whose body block says how a body sits there — or any thing
-    const sock = socketOf(view.entity(m.to));
 
     // the mount's own local pose (local to what it rides: the browser's execMount), else the parent's origin
     const isBody = !e;
@@ -119,7 +117,8 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
     // runtime truth; steady-state parity with the renderer is pinned by test.
     let seat: { state: "profiled" | "approximate"; reason?: string } | undefined;
     if (isBody) {
-      const g = seatGateCore({ sock, verdict: view.seatVerdict?.(id), pose: sock?.pose ?? "sitchair" });
+      const station = (view.entity(m.to) as any)?.station;   // what a body does at the socket (shape audit 10-16: once socket.body)
+      const g = seatGateCore({ sock: station, verdict: view.seatVerdict?.(id), pose: typeof station?.pose === "string" ? station.pose : "sitchair" });
       if (g.apply) {
         const rs = view.riderScale?.(id) ?? 1;
         const c = applySeatCorrection(pos, g.contactY, Number.isFinite(rs) && rs > 0 ? rs : 1);

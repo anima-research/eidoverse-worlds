@@ -112,7 +112,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   { const n = W().entries.length; const r = call("bob", "set", { id: "cup", component: "transform", value: { pos: [0.1, 0.75, 0] }, throughLock: true });
     const E = W().entries.slice(n); const st = E.filter((e) => e.kind === "change"); const ops = st.flatMap((e) => e.body.ops ?? [e.body]);
     ok(r.ok, "P16 throughLock: true lets a builder (who may remove the lock) act through it", r.refused);
-    ok(E.length === 2 && ops.length && ops.every((o) => o.comp !== "lock") && W().state().entities.tbl.c.lock === true, "P17 …and the log records only the edit: one act, one change entry, no unlock or relock; the lock is still on", E.map((e) => [e.kind, e.verb, e.body?.comp]));
+    ok(E.length === 2 && ops.length && ops.every((o) => o.comp !== "lock") && JSON.stringify(W().state().entities.tbl.c.lock) === '{"rank":"builder"}', "P17 …and the log records only the edit: one act, one change entry, no unlock or relock; the lock is still on (stored {rank: builder}: lock true is its short spelling, shape audit 10-16)", E.map((e) => [e.kind, e.verb, e.body?.comp]));
     ok(E[0].kind === "act" && E[0].body.request.throughLock === true, "P18 …the act carries the request as sent, flag and all (history shows who went through)", E[0].body); }
   ok(call("olive", "set", { id: "tbl", component: "transform", value: { pos: [0, 0, 3.1] }, throughLock: true }).ok, "P19 the locker herself acts through it the same way");
   ok(code(call("bob", "set", { id: "cup", component: "transform", value: { pos: [0, 0.75, 0] }, throughLock: "yes" })) === "shape", "P20 throughLock is a boolean");
@@ -137,7 +137,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     call("olive", "set", { id: "box", component: "lock", value: true });
     ok(code(call("bob", "undo", {})) === "locked", "P31 undo goes through admit: bob's undo of his move is refused while it's locked");
     const u = call("bob", "undo", { throughLock: true });
-    ok(u.ok && JSON.stringify(W().state().entities.box.c.transform.pos) === "[6,0,6]" && W().state().entities.box.c.lock === true, "P32 …and undo {throughLock: true} reverts it, leaving the lock on", u.refused ?? W().state().entities.box.c); }
+    ok(u.ok && JSON.stringify(W().state().entities.box.c.transform.pos) === "[6,0,6]" && JSON.stringify(W().state().entities.box.c.lock) === '{"rank":"builder"}', "P32 …and undo {throughLock: true} reverts it, leaving the lock on", u.refused ?? W().state().entities.box.c); }
   { // the gameplay lock lives inside its own component: door {open, locked}
     call("bob", "create", { id: "gate", model: "door", components: { openable: { open: false, locked: false }, reactions: { open: { kind: "toggle", unless: "locked" }, bolt: { kind: "set", component: "openable", field: "locked", value: true, who: "builder" } } }, place: { at: [-4, 0] } });
     ok(call("vic", "use", { id: "gate", action: "open" }).ok && W().state().entities.gate.c.openable.open === true, "P33 a visitor opens the door: toggle's default is openable.open");
@@ -230,8 +230,8 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
       { seq: 6, ts: 7, actor: "ann", verb: "comp", args: { id: "both", type: "guard", data: true } },
       { seq: 7, ts: 8, actor: "ann", verb: "comp", args: { id: "both", type: "guard", data: null } }];
     const r = translate(old, DOORKEYS()); const f = r.final.translated;
-    ok(f.statue.lock === true && !r.stats.divergences, "P38 a v1 lock translates to `lock` unchanged (the identity)", f.statue);
-    ok(f.sign.lock === true && !("guard" in f.sign) && !("lock" in f.both), "P39 a v1 guard becomes a lock (and an unguarded thing has none)", [f.sign, f.both]);
+    ok(JSON.stringify(f.statue.lock) === '{"rank":"builder"}' && !r.stats.divergences, "P38 a v1 lock translates to `lock` in its one spelling, {rank: 'builder'} (@12; the same meaning)", f.statue);
+    ok(JSON.stringify(f.sign.lock) === '{"rank":"builder"}' && !("guard" in f.sign) && !("lock" in f.both), "P39 a v1 guard becomes a lock (and an unguarded thing has none)", [f.sign, f.both]);
     ok(r.stats.guards === 2 && r.stats.guardsLive === 1, "P40 the translator counts guards that became locks (2 ever, 1 still on), so the owners can be told", r.stats);
     fs.writeFileSync(root + "worlds/tr-locks.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
     const tc = (actor, verb, args) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "tr-locks"), actor, verb, args); };
@@ -668,41 +668,19 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   hw("ann", "place", { id: "seat2", hang: "frame", height: 0.45, along: 0.5 });
   ok(JSON.stringify(W().entities.seat2?.c.pivot?.pos) === "[0,9,0]", "HG4 a pivot someone already set is left alone by a hang"); }
 
-// ---- SW: a push re-expresses the swing at the push instant, as v1's pendulumImpulse does (old-vs-new review 10-06 #5):
-// no jump at the push, and pushing in rhythm builds. The port kept the old phase with a new t0 and halved amp (a snap). ----
+// ---- SW: a push (old-vs-new review 10-06 #5) — the impulse kind is reserved since the shape audit (10-16): what remains is
+// the refusal, and the v1 mapping a translated world carries ----
 { const sw = (actor, verb, args = {}) => { process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "swingpush"), actor, verb, args); };
   const { pendulumTheta } = await import("../../client/lib/motioneval.js");
   T += 100; sw("ann", "create-world", { title: "swingpush" });
   T += 100; sw("ann", "create", { id: "frame", model: "swing-frame", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   T += 100; sw("ann", "create", { id: "seat", model: "swing-seat", place: { hang: "frame", height: 0.45 } });
-  T += 100; sw("ann", "set", { id: "seat", component: "reactions", value: { push: { kind: "impulse", strength: 0.5 } } });
-  const mo = () => openWorld(root, "swingpush").state().entities.seat.c.motion;
-  const theta = (m, at) => m ? pendulumTheta(m, Math.max(0, (at - m.t0) / 1000)) : 0;
-  T += 100; const p1 = sw("bob", "use", { id: "seat", action: "push", args: { impulse: [0, 0, 1] } });
-  const m1 = mo();
-  ok(p1.ok && Math.abs(theta(m1, T)) < 1e-3, "SW1 a swing at rest doesn't jump on the first push (it starts moving from where it hangs)", { p1: p1.refused, m1, th: theta(m1, T) });
-  const w0 = 2 * Math.PI / (m1?.period ?? 2.4);
-  // push again a quarter period later, mid-swing: the angle at that instant must be the same before and after
-  T += Math.round(250 * (m1?.period ?? 2.4)) + 37;
-  const before = theta(m1, T);
-  sw("bob", "use", { id: "seat", action: "push", args: { impulse: [0, 0, 1] } });
-  const m2 = mo();
-  ok(Math.abs(theta(m2, T) - before) < 2e-3, "SW2 a mid-swing push keeps the angle at the push instant (no snap)", { before, after: theta(m2, T), m2 });
-  // rhythm: push at each forward pass through the bottom; amplitude grows push after push
-  let m = mo(), amps = [];
-  for (let k = 0; k < 4; k++) {
-    let t = T; for (let i = 0; i < 4000; i++) { t += 5; const a = theta(m, t), b = theta(m, t + 5); if (a <= 0 && b > 0) break }   // next upward zero crossing
-    T = t + 5; sw("bob", "use", { id: "seat", action: "push", args: { impulse: [0, 0, 1] } }); m = mo(); amps.push(m.amp);
-  }
-  ok(amps.every((a, i) => i === 0 || a > amps[i - 1] - 1e-9) && amps[3] > amps[0] + 0.05, "SW3 pushing in rhythm builds the swing", amps);
-  // SW4 the angular form (v1's {impulse: x}, translated): from rest, a push adds exactly x rad/s of turn rate, so the
-  // amplitude is x / ω0. The linear form divides by the hinge distance; both are the general impulse (Godot
-  // apply_impulse / apply_torque_impulse)
-  T += 100; sw("ann", "create", { id: "seat2", model: "swing-seat", place: { hang: "frame", height: 0.45 } });
-  T += 100; sw("ann", "set", { id: "seat2", component: "reactions", value: { push: { kind: "impulse", angular: 0.35 } } });
-  T += 100; const p4 = sw("bob", "use", { id: "seat2", action: "push" });
-  const m4 = openWorld(root, "swingpush").state().entities.seat2.c.motion; const w4 = 2 * Math.PI / m4.period;
-  ok(p4.ok && Math.abs(m4.amp - 0.35 / w4) < 2e-3, "SW4 an angular impulse adds exactly its turn rate (amp = angular / ω0)", { p4: p4.refused, amp: m4?.amp, want: 0.35 / w4 });
+  // shape audit 10-16: `impulse` is a reserved handler kind (a general name with a pendulum-only meaning; it returns with its
+  // general one when an engine carries impulses). A new one is refused; the push rows that wrote one (SW1-SW4) are retired
+  // with it. A stored one (a translated v1 swing) is carried as it was and its use path is unchanged code.
+  T += 100; const p0 = sw("ann", "set", { id: "seat", component: "reactions", value: { push: { kind: "impulse", strength: 0.5 } } });
+  ok(p0.refused?.code === "reserved", "SW1 an impulse handler is refused as a reserved kind, even on a swing (shape audit 10-16)", p0.refused);
+  void pendulumTheta;
   const tx = (await import("./import-v1/translate-v1.js")).translate(
     [{ seq: 0, ts: 1, actor: "a", verb: "spawn", args: { id: "s", lib: "swing-seat" } }, { seq: 1, ts: 2, actor: "a", verb: "comp", args: { id: "s", type: "reactions", data: { push: { impulse: 0.35 } } } }], {});
   ok(/"reactions":\{"push":\{"kind":"impulse","angular":0.35\}\}/.test(JSON.stringify(tx)), "SW4 v1's {impulse: x} translates to the angular impulse, exactly", JSON.stringify(tx).match(/"reactions":[^}]*\}/)?.[0]);
@@ -808,9 +786,10 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(bad({ s: { pos: [0, 1, 0], body: { action: "Ride Now" } } }) === "shape", "SK4 body.action is a lower-case verb");
   ok(bad({ s: { body: {} } }) === "shape", "SK4 a socket needs its pos");
   ok(bad({ s: { pos: [0, 1, 0], body: { who: "king" } } }) === "shape", "SK4 body.who is visitor, builder or owner");
-  // SK5-8: the whole body block (shared/sockbody.js), through the authority's own request path
-  ok(R("ann", "set", { id: "horse", component: "sockets", value: { saddle: { pos: [0, 1.2, 0], body: { action: "ride", anchor: "hips", pose: { by: "speed", clips: [[0, "idle"], [2, "walk"], [6, "run"]] },
-    reach: { leftHand: { at: [-0.2, 1.4, 0.5], vr: "near" } }, look: { yaw: [-90, 90] }, input: { move: "drive", look: "aim" }, leaveBy: "jump", fromSeat: true } } } }).ok, "SK5 a saddle with a blend by speed, reins, look limits, a driver's input and leaveBy is taken");
+  // SK5-8: the body block (shared/sockbody.js), through the authority's own request path: its core is the station (shape
+  // audit 10-16); the rest of the research shape (reach, look, input, fromSeat…) is reserved, refused as such
+  ok(R("ann", "set", { id: "horse", component: "sockets", value: { saddle: { pos: [0, 1.2, 0], body: { action: "ride", anchor: "hips", pose: { by: "speed", clips: [[0, "idle"], [2, "walk"], [6, "run"]] }, leaveBy: "jump" } } } }).ok
+    && bad({ saddle: { pos: [0, 1.2, 0], body: { action: "ride", reach: { leftHand: { at: [-0.2, 1.4, 0.5], vr: "near" } }, look: { yaw: [-90, 90] }, input: { move: "drive", look: "aim" }, fromSeat: true } } }) === "reserved", "SK5 a saddle with a blend by speed and leaveBy is taken; reins, look limits, a driver's input are reserved");
   ok(bad({ s: { pos: [0, 1, 0], body: { anchr: "hips" } } }) === "schema" && bad({ s: { pos: [0, 1, 0], body: { reach: { leftHand: { at: [0, 1, 0], grip: 1 } } } } }) === "schema"
     && bad({ s: { pos: [0, 1, 0], body: { reach: { tail: { at: [0, 1, 0] } } } } }) === "schema", "SK6 closed keys: the body, a reach, the reach limbs (the reach chains)");
   ok(bad({ s: { pos: [0, 1, 0], body: { leaveBy: "teleport" } } }) === "shape" && bad({ s: { pos: [0, 1, 0], body: { look: { pitch: [10, -10] } } } }) === "shape"
@@ -821,7 +800,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const pm = R("ann", "create", { id: "swingset", model: "crate", components: { "motion:plank": { type: "pendulum", amp: 0.4, period: 3 }, motion: { type: "pendulum", amp: 0.1, period: 2 } } });
   const pmc = R("ann", "inspect", { id: "swingset" });
   ok(pm.ok && Number.isFinite(pmc.components?.["motion:plank"]?.t0) && Number.isFinite(pmc.components?.motion?.t0), "SK9 the authority stamps t0 on a part's motion (motion:<part>) as on the whole thing's", pmc.components);
-  ok(att?.anchor === "hips" && att.leaveBy === "jump" && att.input?.move === "drive" && att.reach?.leftHand?.vr === "near" && att.fromSeat === true && att.pose?.by === "speed", "SK8 use {ride} answers attach with what the body does there", att); }
+  ok(att?.anchor === "hips" && att.leaveBy === "jump" && att.pose?.by === "speed", "SK8 use {ride} answers attach with what the station does there", att); }
 const w0 = () => openWorld(root, "tier0");
 // T0 (component review, tier 0): values that would freeze or break every visitor, or wedge the world, are refused
 { T += 100; process.env.PROTOCOL_NOW = String(T); const R = (verb, args) => request(openWorld(root, "tier0"), "ann", verb, args);
@@ -1046,7 +1025,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(code(R("ann", "create", { id: "nested", components: { parent: { to: "bench-seat" }, socket: { name: "inner" } } })) === "shape", "SKE4 …nor hang under another socket");
   ok(code(R("ann", "set", { id: "bench-seat", component: "transform", value: { pos: [0, 0.5, 0], q: [0, 0, 0, 1], scale: [2, 2, 2] } })) === "shape", "SKE5 a socket's scale is [1, 1, 1]: scale 2 is refused");
   const drive = (id, name) => R("ann", "create", { id, components: { parent: { to: "stool" }, socket: { name, body: { input: { move: "drive" } } } } });
-  ok(drive("stool-d1", "d1").ok && code(drive("stool-d2", "d2")) === "shape", "SKE6 one driver among a host's sockets: a second drive socket is refused");
+  ok(code(drive("stool-d1", "d1")) === "reserved" && !E("stool-d1"), "SKE6 a driver's input is reserved (shape audit 10-16: station.input waits, and the one-driver rule with it)");
   ok(code(R("ann", "create", { id: "badsock", components: { parent: { to: "stool" }, socket: { name: "x", pos: [0, 1, 0] } } })) === "schema", "SKE6 a socket's pose is its transform: socket.pos is an unknown key (did you mean)");
   ok(code(R("ann", "create", { id: "badbody", components: { parent: { to: "stool" }, socket: { name: "z", body: { anchr: "hips" } } } })) === "schema" && code(R("ann", "create", { id: "badname", components: { parent: { to: "stool" }, socket: { name: "two words" } } })) === "shape", "SKE6 the body block is checked whole (an unknown body key; a name that isn't one)");
   R("ann", "create", { id: "bench-arm", components: { parent: { to: "bench" } } }); R("ann", "create", { id: "bench-arm-rest", components: { parent: { to: "bench-arm" }, socket: { name: "rest" } } });
@@ -1118,7 +1097,8 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(st.entities.bell.c.parent?.to === socks[0]?.[0] && !("socket" in st.entities.bell.c.parent) && near(now.pos, was.pos) && near(now.q, was.q), "LS2 …and the bell rides the perch's child, where it was in the world (within 1e-8)", [st.entities.bell.c.parent, was, now]);
   const ch = st.entities.coin.c.home;
   const gh = st.entities.coin.c.grabbable?.home;
-  ok(ch?.parent?.to === socks[0]?.[0] && !("socket" in ch.parent) && near(homeAt(st, ch), home0) && gh?.parent?.to === socks[0]?.[0] && near(homeAt(st, gh), home0), "LS2 …a stored home (and grabbable.home) naming the perch now names its child, the same place in the world", [ch, gh, home0]);
+  // (a stored grabbable.home is no longer read — home is the one home since the shape audit, 10-16 — so the lift leaves it as stored)
+  ok(ch?.parent?.to === socks[0]?.[0] && !("socket" in ch.parent) && near(homeAt(st, ch), home0) && gh?.parent?.socket === "perch", "LS2 …a stored home naming the perch now names its child, the same place in the world", [ch, gh, home0]);
   const coin0 = worldT(S(), "coin"); const pc = tc("set", { id: "coin", component: "parent", value: { to: "rack", socket: "hook" } }); const s2 = S();
   const hook = Object.keys(s2.entities).find((k) => s2.entities[k].c.parent?.to === "rack" && s2.entities[k].c.socket?.name === "hook");
   ok(pc.ok && s2.entities.rack.c.sockets === undefined && !!hook && s2.entities.coin.c.parent?.to === hook && near(worldT(s2, "coin").pos, coin0.pos), "LS2 a parent {to, socket} on a host still holding its map lifts that host first: rack's hook is a child, and the coin rides it where it was", [pc.refused, s2.entities.rack.c.sockets, s2.entities.coin.c.parent]);
@@ -1137,10 +1117,10 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } }); R("ann", "set", { id: "@world", component: "roles:cy", value: { role: "owner" } });
   R("ann", "create", { id: "car", model: "crate", components: { sockets: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } } });
   const kids = (h) => Object.keys(W().state().entities).filter((k) => E(k)?.parent?.to === h && E(k)?.socket).map((k) => E(k).socket.name).sort();
-  const drv = { name: "drv", body: { action: "drive", input: { move: "drive" } } };
+  const drv = { name: "drv", body: { action: "drive" } };
   // 1. a foreign drive seat: neither spelling, and bob can't drive ann's car
   const nat = R("bob", "create", { id: "bobdrv", components: { parent: { to: "car" }, transform: { pos: [0, 0.6, 0.3] }, socket: drv } });
-  const leg = R("bob", "set", { id: "car", component: "sockets", value: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } }, drv: { pos: [0, 0.6, 0.3], body: { action: "drive", input: { move: "drive" } } } } });
+  const leg = R("bob", "set", { id: "car", component: "sockets", value: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } }, drv: { pos: [0, 0.6, 0.3], body: { action: "drive" } } } });
   R("bob", "move", { to: [0, 0, 0.8] }); const dr = R("bob", "use", { id: "car", action: "drive" });
   ok(code(nat) === "rights" && code(leg) === "rights" && code(dr) !== undefined && JSON.stringify(kids("car")) === '["seat"]', "SR1a a builder without editOthers can't add a drive seat to the owner's car (native and legacy map), so can't drive it", [nat.refused, leg.refused, dr.attach ?? dr.refused, kids("car")]);
   // 2. under an owner-level lock: a builder and another owner are both refused a new socket
@@ -1153,7 +1133,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(code(lb) === "locked" && code(lc) === "locked" && code(lm) === "locked" && JSON.stringify(kids("chair")) === '["seat"]', "SR1b an owner-locked host refuses a new socket: a builder with editOthers, another owner, and the legacy map alike", [lb.refused, lc.refused, lm.refused, kids("chair")]);
   // 3. squatting a name or the one driver on someone else's host: refused, so the owner's own later seat is taken
   R("bob", "create", { id: "bobcrate", model: "crate", components: { transform: { pos: [4, 0, 0] } } });
-  const mine = R("bob", "create", { id: "bobhook", components: { parent: { to: "bobcrate" }, socket: { name: "drv", body: { action: "drive", input: { move: "drive" } } } } });
+  const mine = R("bob", "create", { id: "bobhook", components: { parent: { to: "bobcrate" }, socket: { name: "drv", body: { action: "drive" } } } });
   const re = R("bob", "set", { id: "bobhook", component: "parent", value: { to: "car" } });
   const own = R("ann", "create", { id: "anndrv", components: { parent: { to: "car" }, socket: drv } });
   ok(mine.ok && code(re) === "rights" && own.ok && E("anndrv")?.socket?.name === "drv", "SR1c re-parenting your own socket onto someone else's host is refused (rights), so it can't squat a name or the driver: the owner's own drv is taken", [mine.refused, re.refused, own.refused]);
@@ -1172,7 +1152,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(code(ac) === "rights" && code(as) === "rights" && code(at) === "rights" && JSON.stringify(E("rack-hook")?.socket?.accepts) === '["coat"]', "SR1d a builder without editOthers can't hang a snap point (accepts) on the owner's thing, nor rewrite or move the owner's socket", [ac.refused, as.refused, at.refused]);
   // the host's owner still may: bob seats his own crate, in either spelling; ann (owner) seats hers
   const ob = R("bob", "create", { id: "bobseat2", components: { parent: { to: "bobcrate" }, socket: { name: "back", body: { action: "sit" } } } });
-  const om = R("bob", "set", { id: "bobcrate", component: "sockets", value: { drv: { pos: [0, 0.6, 0], body: { action: "drive", input: { move: "drive" } } }, back: { pos: [0, 0.5, 0], body: { action: "sit" } }, side: { pos: [0.5, 0.5, 0] } } });
+  const om = R("bob", "set", { id: "bobcrate", component: "sockets", value: { drv: { pos: [0, 0.6, 0], body: { action: "drive" } }, back: { pos: [0, 0.5, 0], body: { action: "sit" } }, side: { pos: [0.5, 0.5, 0] } } });
   const hm = R("bob", "create", { id: "bobnew", model: "crate", components: { transform: { pos: [6, 0, 0] } } }) && R("bob", "batch", { ops: [{ verb: "create", args: { id: "bobnew2", model: "crate" } }, { verb: "create", args: { id: "bobnew2-s", components: { parent: { to: "bobnew2" }, socket: { name: "s" } } } }] });
   ok(ob.ok && om.ok && hm.ok && JSON.stringify(kids("bobcrate")) === '["back","drv","side"]', "SR1e the host's own builder still adds seats (natively, by the legacy map, and on a host made in the same batch)", [ob.refused, om.refused, hm.refused, kids("bobcrate")]);
 }

@@ -23,32 +23,34 @@
 //     throw       1             0..3: scales the release velocity (0: it can only be dropped)
 //     release     'drop'        drop | stay (hangs where you let go) | return (goes home)
 //     returnAfter 0             s, 0..3600: goes home after this long unheld (0: never)
-//     home        (stamped)     {pos, q, parent?}: where it goes home to (the authority stamps its transform then)
+//     (home)                    where it goes home to is the thing's own `home` component (shape audit 10-16: one home;
+//                               the authority stamps it when a returning grabbable is written without one)
 //     fits        []            keywords: it snaps into a socket whose `accepts` shares one, released within its radius
 //     use         null          a reactions action, or {down, up}: what the use button fires while held
 //     prompt      null          hover text (≤ 40); absent: "Pick up <label>"
-//     fx          null          {particles: <a particles value>, at?: [x, y, z]}: drawn by every client while its holder
-//                               presses use (presence: never logged; a hose's spray, a muzzle flash)
+//     (fx)                      reserved (shape audit 10-16): refused; presence-only particles while use is held come back
+//                               as an addition if wanted. A grip's bone overrides (hold) are cut.
 //   }
 //
 // Pure: no DOM, no three, no clock. The authority validates with checkGrabbable; client, door and agent read with grabOf.
 
-import { HUMANOID_BONES } from './humanoid.js';
 import { REACH } from './protocol/physconst.js';
-import { materialize } from './protocol/componentspec.js';
+import { materialize, COMPONENTS } from './protocol/componentspec.js';
 import { BUILTIN_IDS, isRoleId } from './protocol/roles.js';
 
 export const WHO = BUILTIN_IDS;
 // a `who` may also name a world's custom role: the shape is roles.js's, existence the authority's (whoRank)
 const isWho = isRoleId;
-export const HOLDS = ['auto', 'press', 'toggle'];
-export const POSES = ['hand', 'carry', 'torch', 'pistol', 'two-hand', 'shoulder'];
+// the registry's (componentspec.js grabbable: its fields and enums are the shape; this file reads and checks it)
+export const HOLDS = COMPONENTS.grabbable.enums.hold;      // auto, press, toggle
+export const POSES = COMPONENTS.grabbable.enums.pose;      // hand, carry, torch, pistol, two-hand, shoulder
 export const HANDS = ['left', 'right', 'either'];
 export const ROLES = ['primary', 'secondary'];
 export const FINGERS = ['fist', 'pinch', 'point', 'flat', 'open', 'trigger'];
-export const RELEASES = ['drop', 'stay', 'return'];
-export const KEYS = ['enabled', 'who', 'steal', 'range', 'priority', 'hold', 'pose', 'grips', 'twoHanded', 'carries', 'throw', 'release', 'returnAfter', 'home', 'fits', 'use', 'prompt', 'fx'];
-export const GRIP_KEYS = ['pos', 'q', 'hand', 'role', 'fingers', 'hold', 'part'];
+export const RELEASES = COMPONENTS.grabbable.enums.release; // drop, stay, return
+export const KEYS = Object.keys(COMPONENTS.grabbable.fields);
+export const RESERVED_KEYS = COMPONENTS.grabbable.reservedFields;   // fx
+export const GRIP_KEYS = ['pos', 'q', 'hand', 'role', 'fingers', 'part'];
 // Who may carry or punt a thing that doesn't say (grabbable.who, physics.who absent): ONE value, read by the hand here and by
 // the authority's punt (review 10-06 finding 5: the old protocol let visitors punt and carry, rank 0; the grabbable migration chose builder).
 // Flipping it to 'visitor' is this one line plus the cases that pin builder today: grab-check M2, G6, I1 and phys-check F.
@@ -80,7 +82,7 @@ const unitQ = (q) => nums(q, 4, 1.0001) && Math.abs(Math.hypot(...q) - 1) < 1e-3
 export function gripOf(g) {
   if (!isObj(g) || !nums(g.pos, 3)) return null;
   return { pos: g.pos, q: unitQ(g.q) ? g.q : [0, 0, 0, 1], hand: HANDS.includes(g.hand) ? g.hand : 'either', role: ROLES.includes(g.role) ? g.role : 'primary',
-    fingers: FINGERS.includes(g.fingers) ? g.fingers : 'fist', hold: isObj(g.hold) ? Object.fromEntries(Object.entries(g.hold).filter(([b, q]) => HUMANOID_BONES.includes(b) && unitQ(q))) : {},
+    fingers: FINGERS.includes(g.fingers) ? g.fingers : 'fist', hold: {},   // a grip's bone overrides are cut (shape audit 10-16); the key stays for fingerPose's callers
     part: typeof g.part === 'string' && g.part ? g.part : null };
 }
 
@@ -96,11 +98,15 @@ export function gripOf(g) {
 export function grabOf(c) {
   if (!isObj(c)) return null;
   const v = c.grabbable;
-  if (isObj(v)) return v.purged === true && Object.keys(v).length === 1 ? null : fill(v, 'grabbable');   // a purged value is absent, not a grabbable
-  if (v === undefined && isObj(c.physics) && c.physics.kind === 'dynamic') return fill({ who: isWho(c.physics.who) ? c.physics.who : DEFAULT_WHO }, 'physics');
+  if (isObj(v)) return v.purged === true && Object.keys(v).length === 1 ? null : fill(v, 'grabbable', c.home);   // a purged value is absent, not a grabbable
+  if (v === undefined && isObj(c.physics) && c.physics.kind === 'dynamic') return fill({ who: isWho(c.physics.who) ? c.physics.who : DEFAULT_WHO }, 'physics', c.home);
   return null;
 }
-function fill(v, source) {
+/** A `home` component, read with its defaults ({pos, q, parent?, scale?}), or null. The one home (shape audit 10-16). */
+export function homeOf(h) {
+  return isObj(h) && nums(h.pos, 3, 1e5) ? { pos: h.pos, q: unitQ(h.q) ? h.q : [0, 0, 0, 1], ...(isObj(h.parent) && typeof h.parent.to === 'string' ? { parent: { to: h.parent.to } } : {}), ...(h.scale !== undefined ? { scale: h.scale } : {}) } : null;
+}
+function fill(v, source, home) {
   const g = { source };
   g.enabled = v.enabled !== false;
   g.who = isWho(v.who) ? v.who : DEFAULTS.who;
@@ -115,11 +121,11 @@ function fill(v, source) {
   g.throw = num(v.throw) ? Math.min(3, Math.max(0, v.throw)) : 1;
   g.release = RELEASES.includes(v.release) ? v.release : 'drop';
   g.returnAfter = num(v.returnAfter) ? Math.min(3600, Math.max(0, v.returnAfter)) : 0;
-  g.home = isObj(v.home) && nums(v.home.pos, 3) ? { pos: v.home.pos, q: unitQ(v.home.q) ? v.home.q : [0, 0, 0, 1], ...(isObj(v.home.parent) && typeof v.home.parent.to === 'string' ? { parent: v.home.parent } : {}) } : null;
+  g.home = homeOf(home);   // the thing's home component (grabbable.home is gone)
   g.fits = Array.isArray(v.fits) ? v.fits.filter((x) => typeof x === 'string' && WORD_RE.test(x)).map((x) => x.toLowerCase()) : [];
   g.use = useOf(v.use);
   g.prompt = typeof v.prompt === 'string' && v.prompt ? v.prompt.slice(0, 40) : null;
-  g.fx = isObj(v.fx) && isObj(v.fx.particles) ? { particles: v.fx.particles, at: nums(v.fx.at, 3) ? v.fx.at : [0, 0, 0] } : null;
+  g.fx = null;   // reserved (shape audit 10-16)
   return g;
 }
 /** `use` as {down, up} (either may be null): a bare action name is its down. */
@@ -241,6 +247,9 @@ export const bothArms = (preset) => !!ARMS[preset]?.other;
  *  planner speaks the same words. */
 export function checkGrabbable(v, at = 'grabbable') {
   if (!isObj(v)) return bad('shape', `${at} must be an object {who?, grips?, release?, …} ({} takes every default)`);
+  const held = Object.keys(v).find((k) => RESERVED_KEYS.includes(k));
+  if (held) return bad('reserved', `${at}.${held} is reserved: held for a shape that isn't settled, and nothing may write it`, `leave ${held} out`);
+  if (v.home !== undefined) return bad('schema', `${at}.home: where a thing goes home to is its own home component now`, "home {pos, q?, scale?, parent?: {to}} (the authority stamps it for a returning grabbable)", ['home']);
   let r = keys(at, v, KEYS, 'grabbable'); if (r) return r;
   for (const k of ['enabled', 'steal', 'twoHanded', 'carries']) if (v[k] !== undefined && typeof v[k] !== 'boolean') return bad('shape', `${at}.${k} is true or false`);
   if (v.who !== undefined && !isWho(v.who)) return bad('shape', `${at}.who is ${WHO.join(', ')} (who may pick it up)`);
@@ -251,11 +260,11 @@ export function checkGrabbable(v, at = 'grabbable') {
     if (v[k] !== undefined && !(num(v[k]) && v[k] >= lo && v[k] <= hi)) return bad(num(v[k]) ? 'bounds' : 'shape', `${at}.${k} is ${v[k]}; it is ${lo}..${hi} (${what})`);
   if (v.priority !== undefined && !(Number.isInteger(v.priority) && v.priority >= -10 && v.priority <= 10)) return bad('shape', `${at}.priority is a whole number -10..10 (higher wins when several things are in reach)`);
   if (v.grips !== undefined) {
-    if (!isObj(v.grips)) return bad('shape', `${at}.grips must be {<name>: {pos, q?, hand?, role?, fingers?, hold?, part?}}`);
+    if (!isObj(v.grips)) return bad('shape', `${at}.grips must be {<name>: {pos, q?, hand?, role?, fingers?, part?}}`);
     const names = Object.keys(v.grips); if (names.length > MAX_GRIPS) return bad('shape', `${at}.grips: at most ${MAX_GRIPS}`);
     for (const n of names) { const g = v.grips[n], gat = `${at}.grips.${n}`;
       if (!NAME_RE.test(n)) return bad('shape', `${at}.grips: a grip's name is letters, digits, - and _ (up to 32)`);
-      if (!isObj(g)) return bad('shape', `${gat} must be {pos, q?, hand?, role?, fingers?, hold?, part?}`);
+      if (!isObj(g)) return bad('shape', `${gat} must be {pos, q?, hand?, role?, fingers?, part?}`);
       if ((r = keys(gat, g, GRIP_KEYS, 'a grip'))) return r;
       if (!nums(g.pos, 3)) return bad('shape', `${gat}.pos must be [x, y, z] in the thing's own frame (where the palm goes)`);
       if (g.q !== undefined && !unitQ(g.q)) return bad('shape', `${gat}.q is a unit quaternion [x, y, z, w] (the palm's frame: +Z out of the palm, +Y along the fingers' base)`);
@@ -263,20 +272,12 @@ export function checkGrabbable(v, at = 'grabbable') {
       if (g.role !== undefined && !ROLES.includes(g.role)) return bad('shape', `${gat}.role is ${ROLES.join(', ')} (a second hand takes a secondary grip)`);
       if (g.fingers !== undefined && !FINGERS.includes(g.fingers)) return bad('shape', `${gat}.fingers is ${FINGERS.join(', ')}`);
       if (g.part !== undefined && !(typeof g.part === 'string' && g.part)) return bad('shape', `${gat}.part names a node of its model (the grip rides it)`);
-      if (g.hold !== undefined) { if (!isObj(g.hold)) return bad('shape', `${gat}.hold must be {<finger bone>: [x, y, z, w]}`);
-        for (const [b, q] of Object.entries(g.hold)) { if (!HUMANOID_BONES.includes(b)) return bad('schema', `${gat}.hold: no bone '${b}'`, 'VRM humanoid bone names: rightIndexProximal, leftThumbDistal…', near(b, HUMANOID_BONES));
-          if (!unitQ(q)) return bad('shape', `${gat}.hold.${b} is a unit quaternion [x, y, z, w]`); } }
     }
   }
-  if (v.home !== undefined) { const h = v.home;
-    if (!isObj(h) || !nums(h.pos, 3, 1e5) || (h.q !== undefined && !unitQ(h.q)) || Object.keys(h).some((k) => !['pos', 'q', 'parent'].includes(k))) return bad('shape', `${at}.home is {pos: [x, y, z], q?: [x, y, z, w], parent?: {to, socket?}} (where it goes home to; the authority stamps it)`);
-    if (h.parent !== undefined && !(isObj(h.parent) && typeof h.parent.to === 'string' && (h.parent.socket === undefined || typeof h.parent.socket === 'string') && Object.keys(h.parent).every((k) => ['to', 'socket', 'order'].includes(k)))) return bad('shape', `${at}.home.parent is {to: <id>, socket?}`); }
   if (v.fits !== undefined && !(Array.isArray(v.fits) && v.fits.length <= MAX_FITS && v.fits.every((x) => typeof x === 'string' && WORD_RE.test(x)))) return bad('shape', `${at}.fits is up to ${MAX_FITS} keywords (letters, digits, - and _, up to 32 each): a socket whose accepts shares one takes it`);
   if (v.use !== undefined && v.use !== null && !useOf(v.use)) return bad('shape', `${at}.use names a reactions action ('light'), or {down: 'fire', up: 'cease'}`);
   if (isObj(v.use) && Object.keys(v.use).some((k) => !['down', 'up'].includes(k))) return bad('schema', `${at}.use takes down and up`);
   if (v.prompt !== undefined && !(typeof v.prompt === 'string' && v.prompt.length <= 40)) return bad('shape', `${at}.prompt is a short text (up to 40 characters)`);
-  if (v.fx !== undefined && v.fx !== null) { if (!isObj(v.fx) || !isObj(v.fx.particles) || (v.fx.at !== undefined && !nums(v.fx.at, 3, 100)) || Object.keys(v.fx).some((k) => !['particles', 'at'].includes(k)))
-    return bad('shape', `${at}.fx is {particles: {preset, …}, at?: [x, y, z]}: what every client draws while its holder presses use (presence, never logged)`); }
   return null;
 }
 

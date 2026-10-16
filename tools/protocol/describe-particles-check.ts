@@ -109,7 +109,7 @@ function cast(s: any) {
 }
 const thing = (s: any, id: string, components: any = {}) => s.call("olive", "create", { id, components: { transform: { pos: [0, 0, 0] }, ...components } });
 const lookOf = (s: any, id: string, who = "olive") => (s.call(who, "look", {}).things ?? []).find((t: any) => t.id === id) ?? null;
-const DOOR = { openable: { open: false, locked: true }, reactions: { open: { kind: "toggle", unless: "locked" }, knock: { kind: "impulse", strength: 0.2 } } };
+const DOOR = { openable: { open: false, locked: true }, reactions: { open: { kind: "toggle", unless: "locked" }, knock: { kind: "set", component: "label", value: "knocked" } } };   // (was an impulse: a reserved kind since the shape audit 10-16)
 const doc = (over: any = {}) => ({ kind: "particle-effect", v: 1, name: "lantern glow", reads: "a warm glow", emitters: [{ spawn: { amount: 40, lifetime: 2 }, shape: { type: "sphere", radius: 0.1 }, velocity: { direction: [0, 1, 0], spread: 20, speed: [0.1, 0.3] }, forces: { gravity: [0, 0.2, 0] }, size: { base: 0.08 }, color: { base: 0xffcc66, ramp: [[0, 0xffffff, 0], [0.2, 0xffffff, 1], [1, 0xffffff, 0]] }, render: { blend: "add" } }],
   params: { glow: { type: "number", min: 0, max: 1, to: [{ path: "emitters.0.color.alpha" }] } }, ...over });
 const em = (over: any = {}) => PE.resolveEmitter({ spawn: { amount: 64, lifetime: 1 }, ...over });
@@ -182,9 +182,9 @@ const cases: Case[] = [
   { id: "X7", what: "an address nothing here stores is not-found; a visitor can't upload a document but may read one", run(s) { cast(s); thing(s, "lantern");
       return { nf: code(s.call("olive", "set", { id: "lantern", component: "particles", value: { effect: `sha256:${"0".repeat(64)}` } })), vis: code(s.call("vic", "upload", { effect: doc() })), read: show(s.call("vic", "effect", { name: "fire" })) }; },
     good: (o) => o.nf === "not-found" && o.vis === "rights" && o.read === "ok" },
-  { id: "X8", what: "a held thing's fx carries a particles value in today's shape: the older bag is refused there too", run(s) { cast(s); thing(s, "hose");
+  { id: "X8", what: "a held thing's fx is reserved (shape audit 10-16): refused in the older bag's shape and in today's alike", run(s) { cast(s); thing(s, "hose");
       return { old: code(s.call("olive", "set", { id: "hose", component: "grabbable", value: { fx: { particles: { preset: "smoke" } } } })), now: show(s.call("olive", "set", { id: "hose", component: "grabbable", value: { fx: { particles: { effect: "smoke" }, at: [0, 0, 0.5] } } })) }; },
-    good: (o) => o.old === "shape" && o.now === "ok" },
+    good: (o) => o.old === "reserved" && /^refused reserved/.test(o.now) },
   { id: "X9", what: "every Essential is a document that passes its own bounds, and every older bag reads exactly as its modern spelling (instanceOf), param by param", run() {
       const names = Object.keys(PE.ESSENTIALS ?? {}); const bad = names.filter((k) => PE.effectProblem(PE.ESSENTIALS[k]));
       const old = { preset: "fire", seed: 9, origin: [0, 0.18, 0], count: 120, size: 0.4, opacity: 0.8, speed: 1.5, lifetime: 0.7, area: [0.2, 0.1, 0.2], texture: "eidoverse/assets/particle_textures/flame_05.png", quality: "med" };

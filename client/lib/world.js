@@ -77,7 +77,7 @@ export function seatSocket(id) {
   // a socket switched off (or under something switched off) is a closed seat, as the authority reads it (seatOf: offChain):
   // whoever sits there lets go (localbody's per-frame check), and a frame naming it seats nobody (review 10-12 S3-3)
   if (c.disabled === true || ancestorsOf(id).some((a) => bagOf(a)?.disabled === true)) return null;
-  return { id: String(id), host: parentIdOf(id), name: c.socket.name, sock: c.socket };
+  return { id: String(id), host: parentIdOf(id), name: c.socket.name, sock: c.socket, station: c.station && typeof c.station === 'object' ? c.station : null };
 }
 /** Avatar attachments (a sitter, a passenger) — bodies aren't entities, so
  *  their mounts live here for remotes/controller to consume. {to: <socket id>, pose?, at?, in?} */
@@ -471,7 +471,7 @@ export function mountTransform(riderId, outPos, rider, poseOffset = null) {
   const sObj = s ? entities.get(s.id) : null;
   if (!sObj) return null;
   const sock = s.sock;
-  const body = bodyOf(sock);
+  const body = bodyOf(s.station);
   sObj.updateWorldMatrix(true, false);
   _mtF.setFromMatrixPosition(sObj.matrixWorld);
   // the socket's whole world rotation (a rocket seat lies on its back), part displacement and host included
@@ -494,7 +494,7 @@ export function mountTransform(riderId, outPos, rider, poseOffset = null) {
     }
   } else {
     // the seat-height correction (#101) is a world-up subtraction, so it only holds while the socket stands upright
-    const seat = upright ? seatCorrectionFor(rider, sock) : { applied: false, reason: 'the socket is tilted (the seat profile assumes upright)' };
+    const seat = upright ? seatCorrectionFor(rider, s.station) : { applied: false, reason: 'the socket is tilted (the seat profile assumes upright)' };
     if (seat.applied) { const c = applySeatCorrection([_mtF.x, _mtF.y, _mtF.z], seat.contactY, seat.scale); if (c) _mtF.set(c[0], c[1], c[2]); state = 'profiled'; }
     else reason = seat.reason;
   }

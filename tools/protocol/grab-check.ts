@@ -55,8 +55,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["release: return goes home at once", "protocol/authority.js", "if (g?.release === \"return\" && g.home) {\n      const ret = returnPlan(w, st, a.id, g);", "if (false) {\n      const ret = returnPlan(w, st, a.id, g);", ["R3"]],
   ["a returning drop doesn't fly", "protocol/authority.js", "const sets = !fliesIn(st, a.id) || g?.release === \"return\" ||", "const sets = !fliesIn(st, a.id) ||", ["R3"]],
   ["a returning throw doesn't fly", "protocol/authority.js", ": g?.release === \"return\" ? null : undefined;", ": undefined;", ["R3"]],
-  ["home is stamped", "protocol/authority.js", "if (v.home === undefined || (born && !sameHome(after, id, v.home))) home = homeHere(after, id);", "if (false) home = homeHere(after, id);", ["R3", "R4"]],
-  ["home follows an edit that moves it from home", "protocol/authority.js", "else if (!setsG && ctx.st.entities[id] && sameHome(ctx.st, id, v.home) && !sameHome(after, id, v.home)) home = homeHere(after, id);", "", ["R4"]],
+  ["home is stamped", "protocol/authority.js", "if (!h || (born && !sameHome(after, id, h))) home = homeHere(after, id);", "if (false) home = homeHere(after, id);", ["R3", "R4"]],
+  ["home follows an edit that moves it from home", "protocol/authority.js", "else if (!setsH && was && sameHome(ctx.st, id, was) && !sameHome(after, id, was)) home = homeHere(after, id);", "", ["R4"]],
   ["returnAfter runs at each request", "protocol/authority.js", "settleSim(w); returnDue(w); expireAsks(w); CTX.work", "settleSim(w); expireAsks(w); CTX.work", ["R4"]],
   ["returnAfter: not while held", "protocol/authority.js", "if (!g?.home || w.presence.holds[id]) continue;", "if (!g?.home) continue;", ["R4"]],
   ["returnAfter: only a hand or physics moving it counts", "protocol/authority.js", "const byHand = (c.kind === \"act\" && (HAND_VERBS.has(c.verb)", "const byHand = true || (c.kind === \"act\" && (HAND_VERBS.has(c.verb)", ["R4"]],
@@ -98,7 +98,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["review: a put's pos is reach-checked before it snaps", "protocol/authority.js", "const d0 = dist(handOf(me), a.pos); if (d0 > REACH) refuse(", "const d0 = 0; if (d0 > REACH) refuse(", ["F1"]],
   ["review: a refused orphan's hold still ends", "protocol/authority.js", "if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", "if (false) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", ["F2b"]],
   ["review: the up from whoever pressed down", "protocol/authority.js", "const lateUp = a.args?.phase === \"up\" && P[a.id]?.by === actor && hold?.by !== actor;", "const lateUp = false;", ["F3"]],
-  ["review: a copy goes home where it was made", "protocol/authority.js", "(born && !sameHome(after, id, v.home))", "false", ["F4"]],
+  ["review: a copy goes home where it was made", "protocol/authority.js", "(born && !sameHome(after, id, h))", "false", ["F4"]],
   ["review: the holder's rank before a return", "protocol/authority.js", "if (g && rankOf(st, actor) < whoRank(st, g.who)) refuse(\"rights\"", "if (false) refuse(\"rights\"", ["F5"]],
   ["review: a handover drops the old hand's offset", "protocol/authority.js", "h.hand = h.second.hand; delete h.offset;", "h.hand = h.second.hand;", ["F6"]],
   ["review: what rests on it must be enabled", "protocol/authority.js", "!(gk && gk.enabled && rankOf(st, actor) >= whoRank(st, gk.who))", "!(gk && rankOf(st, actor) >= whoRank(st, gk.who))", ["F6"]],
@@ -324,13 +324,13 @@ const cases: Case[] = [
     good: (o) => o.p === "ok" && o.at1[1] === 1.1 && o.p2 === "ok" && o.at2[1] === 0.8 && o.rock === "implausible" },
   { id: "R3", what: "release: return: let go, it goes home at once (the holder's act, then the authority's return-home caused by it); its home was stamped at create", run(s) { cast(s, true);
       const c = s.call("olive", "create", { id: "torch", model: "table-lamp", components: { physics: { kind: "dynamic" }, grabbable: { who: "visitor", release: "return" } }, place: { at: [0, 0] } });
-      const home = comp(s, "torch", "grabbable")?.home;
+      const home = comp(s, "torch", "home");   // the one home (shape audit 10-16: grabbable.home is gone)
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "torch" }); s.call("vic", "move", { to: [0, 0, 3] }, 1000);
       const n0 = s.entries().length; const d = s.call("vic", "drop", { id: "torch" }); const L = s.entries(); const after = since(s, n0);
       const ret = L.slice(n0).find((e: any) => e.kind === "act" && e.verb === "return-home");
       const at = tf(s, "torch").pos; s.call("vic", "move", { to: [0, 0, 0.5] }, 1000); s.call("vic", "grab", { id: "torch" }); const n1 = s.entries().length;
       const t = s.call("vic", "throw", { id: "torch", v: [0, 2, 3] });
-      return { home, stampNote: c.notes?.some((n: any) => n.field === "home"), d: show(d), after, cause: ret ? L[ret.cause]?.verb : null, at, held: held(s, "torch"), t: show(t), thrown: since(s, n1), carrier: carrier(s) }; },
+      return { home, stampNote: c.notes?.some((n: any) => n.component === "home"), d: show(d), after, cause: ret ? L[ret.cause]?.verb : null, at, held: held(s, "torch"), t: show(t), thrown: since(s, n1), carrier: carrier(s) }; },
     good: (o) => JSON.stringify(o.home?.pos) === "[0,0,0]" && o.stampNote && o.d === "ok" && JSON.stringify(o.after) === '["act:put","act:return-home","change:set"]' && o.cause === "put" && JSON.stringify(o.at) === "[0,0,0]" && o.held === null && o.t === "ok" && JSON.stringify(o.thrown) === '["act:put","act:return-home","change:set"]' && !o.carrier.disagree },
   { id: "R4", what: "returnAfter: unheld that long after a hand moved it, the next request sends it home, once; not while held; an edit's move doesn't count", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "visitor", returnAfter: 30 } }, place: { at: [0, 0] } });
@@ -346,9 +346,9 @@ const cases: Case[] = [
       // a builder's edit moves it: its home follows it (it was home), and no return follows
       s.advance(40000); s.call("vic", "look", {});
       s.call("olive", "set", { id: "ball", component: "transform", value: { pos: [2, 0, 2], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
-      const home2 = comp(s, "ball", "grabbable").home?.pos;
+      const home2 = comp(s, "ball", "home")?.pos;
       // …and with a home set elsewhere (a builder may), the edit that left it away from home still isn't a release
-      s.call("olive", "set", { id: "ball", component: "grabbable", value: { ...comp(s, "ball", "grabbable"), home: { pos: [0, 0, 0], q: [0, 0, 0, 1] } } });
+      s.call("olive", "set", { id: "ball", component: "home", value: { pos: [0, 0, 0], q: [0, 0, 0, 1] } });
       s.advance(60000); const n3 = s.entries().length; s.call("vic", "look", {});
       return { early, back, first, again, whileHeld, home2, afterEdit: since(s, n3), at: tf(s, "ball").pos }; },
     good: (o) => o.early[2] > 2 && JSON.stringify(o.back) === "[0,0,0]" && JSON.stringify(o.first) === '["act:return-home","change:set"]' && !o.again.length && !o.whileHeld.length && JSON.stringify(o.home2) === "[2,0,2]" && !o.afterEdit.length && JSON.stringify(o.at) === "[2,0,2]" },
@@ -606,7 +606,7 @@ const cases: Case[] = [
   { id: "F4", what: "a copy of a returning thing goes home to where the copy stands, not to the original's home", run(s) { cast(s);
       s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "visitor", release: "return" } }, place: { at: [0, 0] } });
       const c = s.call("olive", "create", { from: "torch", id: "torch-2", at: { pos: [5, 0, 5] } });
-      return { c: show(c), home: comp(s, "torch-2", "grabbable")?.home?.pos, at: tf(s, "torch-2")?.pos }; },
+      return { c: show(c), home: comp(s, "torch-2", "home")?.pos, at: tf(s, "torch-2")?.pos }; },
     good: (o) => o.c === "ok" && JSON.stringify(o.home) === JSON.stringify(o.at) },
   { id: "F5", what: "a returning put is the holder's act under their rank NOW (demoted below grabbable.who: refused, like any put)", run(s) { cast(s);
       s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "visitor", release: "return" } }, place: { at: [0, 0] } });

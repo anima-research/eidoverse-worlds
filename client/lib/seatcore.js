@@ -139,7 +139,9 @@ export function profileStatus(profile, currentAvatarSha256, currentClipSha256) {
  *  numbers) is legacy by construction. `sock` is the socket component
  *  ({name, body, …}: PLAN-sockets-entities). */
 export function socketAnchor(sock) {
-  return sock?.body?.anchor === "surface" ? "surface" : "legacy-root";
+  // the seat's station (shape audit 10-16: what a body does at a socket is the station component; its anchor is top-level),
+  // or the older spelling a fixture or a lifted log may still hand in: a socket value with a body block
+  return (sock?.anchor ?? sock?.body?.anchor) === "surface" ? "surface" : "legacy-root";
 }
 
 // ---- rider scale (B5) -------------------------------------------------------

@@ -209,7 +209,9 @@ try {
     loft: { min: [-6, 3, -1.5], max: [6, 5, 1.5] } } });
   const perchY = a.heightAt(50, -12);
   await legacyVerb(a, "spawn", { id: "perch", lib: stool, pos: [50, perchY, -12], yaw: 0, scale: 4, collide: "box" });
-  await legacyVerb(a, "comp", { id: "perch", type: "places", data: { seat: { at: [0, 0.32, 0], kind: "seat" } } });
+  const kr = await legacyVerb(a, "comp", { id: "perch", type: "places", data: { seat: { at: [0, 0.32, 0], kind: "seat" } } });
+  check("a place's kind is gone: an entry with one is refused (shape audit 10-16: a seat is a station)", kr?.refused?.code === "schema", JSON.stringify(kr?.refused ?? kr));
+  await legacyVerb(a, "comp", { id: "perch", type: "places", data: { seat: { at: [0, 0.32, 0] } } });
   for (let i = 0; i < 60 && !(a.supportIds?.get("rug") && a.supportIds?.get("perch")); i++) await sleep(50);
   await a.supportReady(); await sleep(400);
   r = await tool("walk_to", { to: "the long room", run: true });
@@ -217,8 +219,9 @@ try {
     /arrived at rug\/long_room/.test(r) && near(a.pos.y, ry + 0.05) && Math.abs(a.pos.x - 50) > 1.5 && Math.abs(a.pos.x - 50) < 6, `${r} ${at()}`);
   r = await tool("walk_to", { to: "rug/loft" });
   check("a room whose floor is not there is refused — not the floor beneath it", /nowhere to stand anywhere in it on its floor.*no floor there/.test(r) && !/arrived/.test(r), r);
-  r = await tool("walk_to", { to: "perch/seat", run: true });
-  check("a seat on a thing scaled 4× is reached on the floor beside it", /arrived at perch\/seat/.test(r) && near(a.pos.y, perchY, 0.1), `${r} ${at()}`);
+  // retired (shape audit 10-16): "a seat on a thing scaled 4× is reached on the floor beside it" read the place's kind:
+  // 'seat'. A component place has no kind now (a seat is a station on a socket; the agent sits by attach), so the stool's
+  // place is a point like any other. A seat a MODEL declares (glTF extras `building`) still reads as one (placesFromModel).
 
   // name_place's coordinates: x and z, y found; never silently dropped
   r = await tool("name_place", { name: "rug_end", x: 55, z: -20, on: "rug" });

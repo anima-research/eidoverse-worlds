@@ -58,7 +58,7 @@ export function seatCorrectionFor(rider, sock) {
   if (!sc.ok) return { applied: false, reason: sc.why };
   const g = seatGate({
     sock, verdict,
-    pose: sock?.pose ?? 'sitchair',
+    pose: typeof sock?.pose === 'string' ? sock.pose : 'sitchair',   // sock: the seat's station
     currentSlot: rider.av.currentSlot,
     loadedClipSha256: vrmaShaLoaded(SEAT_CLIP_FILE),
     currentClipSha256: verdict?.clipSha256,

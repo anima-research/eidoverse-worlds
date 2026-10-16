@@ -193,7 +193,9 @@ const DEFS = [
   { name: 'Parent', category: 'Interaction', summary: 'what it rides: its parent (wire: parent, written by mount)',
     params: paramsOf('Parent', { to: { default: null }, slot: { default: null }, offset: { t: 'vec3', default: null }, yaw: { ...deg, default: null } }),
     fallback: { text: 'on <to>' } },
-  { name: 'Reactions', category: 'Interaction', needs: ['Pendulum'], summary: 'what a `use` does (added here: a push that swings it; an Openable brings its own)',
+  // shape audit 10-16: the push that swings a pendulum was the impulse handler, reserved now; Reactions is added empty (its
+  // actions are written on its card: toggle, set, play, reset, script) and needs nothing
+  { name: 'Reactions', category: 'Interaction', summary: 'what a `use` does: its actions (toggle, set, play, reset, script); an Openable brings its own',
     params: paramsOf('Reactions', { actions: { t: 'json', default: {} } }), fallback: { text: 'reacts to: <actions>' } },
   // R 10-07 (v2 of Particles, a new hash, L5): the instance names an effect document (shared/particle_effects.js) and sets
   // its params; the first protocol's flat knobs are params of the Essentials now, and an older bag round-trips through
@@ -219,7 +221,7 @@ const DEFS = [
     params: { plan: { t: 'json', default: { levels: [] } } },
     fallback: { visual: 'the anchor crate', text: 'a building' }, note: 'rides a hidden anchor model today; ignores motion, mount and hidden' },
   { name: 'LookAt', category: 'Interaction', summary: 'turns to face something: a thing, the viewer, whoever is nearest',
-    params: paramsOf('LookAt', { target: { default: null }, yaw: { default: null }, pitch: { default: null }, offset: { default: [0, 0, 0] } }),
+    params: paramsOf('LookAt', { target: { default: null }, yaw: { default: null }, pitch: { default: null } }),
     fallback: { visual: 'stays at rest', text: 'turns to face <target>' } },
   { name: 'Lock', category: 'Rules', summary: 'nailed down: nobody can move, replace or remove it', params: {}, fallback: { text: '🔒 locked' } },
   { name: 'Hidden', category: 'Rendering', summary: 'not drawn, still there', params: {}, fallback: { text: '(hidden)' } },

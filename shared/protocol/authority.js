@@ -9,8 +9,8 @@
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf, socketQ, ONE_PLACE } from "../components.js";
 import { MOVER, TRACK, bodyBox, bodyScale, floorStep, sweep, tokensAfter } from "../mover.js";
-import { checkSockets, checkSocket } from "../sockbody.js";
-import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
+import { checkSockets, checkSocket, checkStation } from "../sockbody.js";
+import { DEFAULT_WHO, grabOf, homeOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
 import { mintId, PERSON_ID } from "./ids.js";
 import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, outOfRange, rangeWords, resolveVersioned, statusOf, canonicalName, STATUSES } from "./componentspec.js";
@@ -36,7 +36,7 @@ import { reachTo, massOf, shoveCap, feetOn, sweptCovers } from "../shove.js";
 import { r3, noNeg0, unNegZero } from "./round.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 import { CTX } from "./authority/ctx.js";
-import { SOCKETS_PER_HOST, isLegacyParent, isSocketC, socketRules, socketsOf, allSockets, socketPoint, socketRole, liftOps, legacyHosts, liftHostOps, modelSocketNames } from "./authority/sockets.js";
+import { SOCKETS_PER_HOST, isLegacyParent, isSocketC, socketRules, actionRules, socketsOf, allSockets, socketPoint, socketRole, liftOps, legacyHosts, liftHostOps, modelSocketNames } from "./authority/sockets.js";
 import { Refusal, refuse, said } from "./authority/refuse.js";
 import { LAB_CATALOGUE, modelOf, geomOf, boxOfM, geomE, withCatalogue, meshShape } from "./authority/catalogue.js";
 export { LAB_CATALOGUE, withCatalogue, MESH_SIZE, meshSize, meshGeom, meshShape } from "./authority/catalogue.js";
@@ -277,7 +277,9 @@ function admit(w, st, who, ops) {
     // a reserved name (componentspec STATUSES) is held, never written: one refusal for every reserved name, before rights
     // (nobody may write it, so who is asking doesn't matter). A carried value (a fork's copy, the load's lift) keeps what it
     // holds: the refusal is about new writes, not about what an older log stored
-    if (op.verb === "set" && statusOf(op.comp) === "reserved" && !(CTX.forking || who.lifting)) { const b = canonicalName(baseOf(op.comp));
+    // (a lifted name, sockets, is the lift's: a write of it never gets here as itself unless malformed, and then its own
+    // check says what is wrong with it in its own words)
+    if (op.verb === "set" && statusOf(op.comp) === "reserved" && !defOf(op.comp)?.lifted && !(CTX.forking || who.lifting)) { const b = canonicalName(baseOf(op.comp));
       refuse("reserved", `${at}: '${b}' is a reserved name: it is held for a shape that isn't settled yet, and nothing may write it`, COMPONENTS[b].instead ?? `schema {component: '${b}'} says what it is held for`, { status: "reserved" }); }
     const pause = op.verb === "set" && op.comp.startsWith("script:") && pauseOnly(op.value, s.entities[op.id]?.c[op.comp]);
     rights(w, st, s, who, role, op, at, made, pause);
@@ -316,6 +318,7 @@ function admit(w, st, who, ops) {
   capacityCheck(w, st, s, who, norm);
   for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: CTX.forking || !!who.lifting }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
   { const bad = socketRules(s, new Set(norm.map((o) => o.id))); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
+  if (!(CTX.forking || who.lifting)) { const bad = actionRules(s, new Set(norm.map((o) => o.id))); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
   rolesCheck(st, s, norm);
   for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
   if (!CTX.forking) for (const op of norm) if (op.verb === "set") particlesCheck(w, op); // a particles value names an effect this world has, with params it declares (shared/particle_effects.js)
@@ -662,7 +665,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   if (comp === "grabbable" && obj) whoOk(v.who, at);
   if (comp === "reactions" && obj) for (const [act, h] of Object.entries(v)) if (h && typeof h === "object") whoOk(h.who, `${at}.${act}`);
   if (comp === "sockets" && obj) for (const [slot, sk] of Object.entries(v)) if (sk?.body && typeof sk.body === "object") whoOk(sk.body.who, `${at}.${slot}.body`);
-  if (comp === "socket" && obj && v.body && typeof v.body === "object") whoOk(v.body.who, `${at}.body`);
+  if (comp === "station" && obj) whoOk(v.who, at);
   if (comp === "transform") { if (!obj || !nums(v.pos, 3) || !nums(v.q, 4, 1.0001) || !nums(v.scale, 3, 1e3) || Object.keys(v).some((k) => !["pos", "q", "scale"].includes(k)))
     refuse("shape", `${at} must be {pos: [x,y,z], q: [x,y,z,w], scale: [x,y,z]}, finite and within bounds`, "pos within ±100 km, q a rotation, scale within ±1000"); 
     // a rotation is a unit quaternion (the renderer normalizes; the authority's own maths uses q as written), and a scale of
@@ -693,11 +696,15 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
       refuse("shape", `${at}.points must be 2 to 64 points [x, y, z] (metres, in its parent's frame)`, "e.g. {type: 'path', points: [[0, 0, 0], [0, 0, 4]], speed: 1}"); }
   if (comp === "motion" && obj && "pivot" in v) refuse("derived", `${at}.pivot is derived from what it hangs from; it isn't stored`, "§0 rule 2: no stored derived values; inspect shows the pivot as a view");
   if (comp === "home") { const okQ = (q) => nums(q, 4, 2) && Math.abs(Math.hypot(...q) - 1) < 1e-3;
-    if (!obj || !nums(v.pos, 3) || (v.q !== undefined && !okQ(v.q)) || (v.scale !== undefined && !(typeof v.scale === "number" ? v.scale > 0 : nums(v.scale, 3) && v.scale.every((x) => x > 0))) || Object.keys(v).some((k) => !["pos", "q", "scale", "parent"].includes(k)) || (v.parent !== undefined && !(v.parent && typeof v.parent.to === "string" && Object.keys(v.parent).every((k) => k === "to" || k === "socket"))))
-      refuse("shape", `${at} is {pos: [x, y, z], q?: [x, y, z, w], scale?, parent?: {to, socket?}}`, "e.g. {pos: [0, 0, 2]}"); }
+    // one spelling (shape audit 10-16): scale is [x, y, z] (a number is taken at write and stored as one; an older stored
+    // number is carried by a fork or a lift), parent is {to}
+    const okScale = (sc) => (nums(sc, 3) && sc.every((x) => x > 0)) || (carry && typeof sc === "number" && sc > 0);
+    if (!obj || !nums(v.pos, 3) || (v.q !== undefined && !okQ(v.q)) || (v.scale !== undefined && !okScale(v.scale)) || Object.keys(v).some((k) => !["pos", "q", "scale", "parent"].includes(k)) || (v.parent !== undefined && !(v.parent && typeof v.parent === "object" && typeof v.parent.to === "string" && Object.keys(v.parent).every((k) => k === "to"))))
+      refuse("shape", `${at} is {pos: [x, y, z], q?: [x, y, z, w], scale?: [x, y, z], parent?: {to}}`, "e.g. {pos: [0, 0, 2]}"); }
   if (comp === "reactions") { if (!obj) refuse("shape", `${at} must be {<action>: handler}`, "");
-    const kinds = Object.keys(COMPONENTS.reactions.handlers);
-    for (const [act, h] of Object.entries(v)) { if (!kinds.includes(h?.kind)) refuse("shape", `reactions.${act}: no handler kind '${h?.kind}'`, `handler kinds: ${kinds.join(", ")}`, { didYouMean: guess(String(h?.kind), kinds) });
+    const kinds = Object.keys(COMPONENTS.reactions.handlers), held = COMPONENTS.reactions.reservedKinds;
+    for (const [act, h] of Object.entries(v)) { if (!carry && Object.hasOwn(held, h?.kind)) refuse("reserved", `reactions.${act}: the handler kind '${h.kind}' is reserved: ${held[h.kind]}`, `handler kinds: ${kinds.join(", ")}; a script handler computes anything else`, { status: "reserved" });
+      if (!kinds.includes(h?.kind) && !(carry && Object.hasOwn(held, h?.kind))) refuse("shape", `reactions.${act}: no handler kind '${h?.kind}'`, `handler kinds: ${kinds.join(", ")}`, { didYouMean: guess(String(h?.kind), kinds) });
       if (h.component !== undefined && !isComponent(h.component)) refuse("shape", `reactions.${act}.component '${h.component}' isn't a component name`, "§3.1");
       if (h.kind === "set" && !isComponent(h.component)) refuse("shape", `reactions.${act} (set) needs a component`, "e.g. {kind: 'set', component: 'openable', field: 'locked', value: true}");
       for (const f of ["field", "unless"]) if (h[f] !== undefined && typeof h[f] !== "string") refuse("shape", `reactions.${act}.${f} is a field name (a string)`, "");
@@ -748,9 +755,9 @@ function mediaCheck(s, id, comp, v, at, obj) {
     else if (typeof T === "string" && /^u-/.test(T)) { if (!isIdentity(T)) refuse("shape", `${at}.target '${T}' isn't an identity`, "who {name} finds a person's identity"); }
     else if (typeof T === "string") { if (!s.entities[T] || T === "@world") refuse("not-found", `${at}.target: no thing called '${T}'`, "look lists what's here", { didYouMean: guess(T, Object.keys(s.entities).filter((k) => k !== "@world")) });
       if (T === id || ancestors(s, T).includes(id)) refuse("loop", `${id} can't turn to face ${T === id ? "itself" : `${T}, which rides it`}`, "pick a thing outside it"); }
-    for (const f of ["yaw", "pitch"]) if (v[f] !== undefined) { const lim = f === "yaw" ? 180 : 90;
-      if (!(Array.isArray(v[f]) && v[f].length === 2 && v[f].every((x) => isNum(x) && Math.abs(x) <= lim) && v[f][0] <= v[f][1])) refuse("bounds", `${at}.${f} is [min, max] degrees from rest, each within ±${lim}, min ≤ max`, `e.g. ${f}: [-45, 45]`); }
-    if (Array.isArray(v.offset) && v.offset.some((x) => Math.abs(x) > 50)) refuse("bounds", `${at}.offset is within ±50 m on each axis`, "");
+    // radians (shape audit 10-16; PROTOCOL §9.2): the limits are [min, max] from rest
+    for (const f of ["yaw", "pitch"]) if (v[f] !== undefined) { const lim = f === "yaw" ? Math.PI : Math.PI / 2;
+      if (!(Array.isArray(v[f]) && v[f].length === 2 && v[f].every((x) => isNum(x) && Math.abs(x) <= lim + 1e-12) && v[f][0] <= v[f][1])) refuse("bounds", `${at}.${f} is [min, max] radians from rest, each within ±${f === "yaw" ? "π" : "π/2"}, min ≤ max`, `e.g. ${f}: [-0.785, 0.785] (±45°)`); }
     for (const f of ["forward", "up"]) if (typeof v[f] === "string" && !["x", "y", "z"].includes(v[f])) refuse("shape", `${at}.${f} is an axis: x|y|z or [x, y, z] (a negative one is a vector: [0, 0, -1])`, ""); }
   // one driver per node (a socket's "one drive per thing", catalogue sockets): a node turned by a rotating motion can't
   // also turn to face something, and a dynamic thing's rotation is the sim's
@@ -859,6 +866,16 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
   // a socket's whole shape (shared/sockbody.js: closed keys, ranges, enums, one driver per thing), in its own words
   if (name === "sockets") { const bad = checkSockets(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.sockets.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
   if (name === "socket") { const bad = checkSocket(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.socket.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
+  // what a body does at a socket (shape audit 10-16): the core, closed; the reserved keys refused as reserved
+  if (name === "station") { const bad = checkStation(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.station.help, { ...(bad.didYouMean ? { didYouMean: bad.didYouMean } : {}), ...(bad.code === "reserved" ? { status: "reserved" } : {}) }); }
+  // a place entry is closed (shape audit 10-16): {at} | {min, max}, + label; null hides a model's own
+  if (name === "places" && !carry && v && typeof v === "object" && !Array.isArray(v)) for (const [k, p] of Object.entries(v)) { if (p === null) continue; const pat = `${at}.${k}`;
+    if (!(p && typeof p === "object" && !Array.isArray(p))) refuse("shape", `${pat} must be {at: [x, y, z]} or {min: [x, y, z], max: [x, y, z]} (+ label), or null`, def.help);
+    unknownKeys(pat, p, ["at", "min", "max", "label"], "a place");
+    const v3 = (x) => Array.isArray(x) && x.length === 3 && x.every((n) => isNum(n) && Math.abs(n) <= 1e5);
+    if (p.at !== undefined ? (!v3(p.at) || p.min !== undefined || p.max !== undefined) : !(v3(p.min) && v3(p.max))) refuse("shape", `${pat} is a spot {at: [x, y, z]} or a room {min: [x, y, z], max: [x, y, z]}, in the thing's own frame (metres)`, def.help);
+    if (p.label !== undefined && !(typeof p.label === "string" && graphemes(p.label) <= 80)) refuse("bounds", `${pat}.label is a string of at most 80 characters`, def.help);
+    if (typeof p.label === "string") { const bad = cleanText(p.label, { lines: false }); if (bad) refuse("shape", `${pat}.label ${bad.why}`, bad.fix); } }
   // what a hand may do with it (shared/grab.js: closed keys, ranges, enums, grips), in its own words
   if (name === "grabbable") { const bad = checkGrabbable(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.grabbable.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
   if (def.map) { if (!(v && typeof v === "object" && !Array.isArray(v)) || Object.values(v).some((x) => !TYPES[def.map](x))) refuse("shape", `${at} must be {<name>: ${def.map}}`, def.help ?? "");
@@ -904,7 +921,6 @@ function effectCheck(s, id, act, h) {
   const where = `reactions.${act}`;
   const would = (comp, value) => { try { valueCheck(s, { id, comp, value }); }
     catch (e) { if (!(e instanceof Refusal)) throw e; refuse(e.code, `${where} would set ${id}.${comp} to something the authority refuses: ${e.reason}`, e.fix, e.didYouMean ? { didYouMean: e.didYouMean } : undefined); } };
-  if (h.kind === "impulse" && c.motion && c.motion.type !== "pendulum") refuse("shape", `${where} pushes a swing, and ${id} moves by '${c.motion.type}'`, "an impulse swings a pendulum (motion {type: 'pendulum'}); use set or toggle for anything else");
   if (h.kind !== "set" && h.kind !== "toggle") return;
   const { comp, field } = h.kind === "toggle" ? toggleOf(h) : { comp: h.component, field: h.field };
   if (field !== undefined && !isObj(c[comp])) refuse("no-target", `${where} changes ${comp}.${field}, and ${id} has no ${comp}`,
@@ -915,7 +931,8 @@ function effectCheck(s, id, act, h) {
   else would(comp, field === undefined ? h.value : { ...c[comp], [field]: h.value });
 }
 function handlerCheck(at, act, h) {
-  const R = COMPONENTS.reactions; const allowed = [...Object.keys(R.common), ...Object.keys(R.handlers[h.kind]?.args ?? {})];
+  const R = COMPONENTS.reactions; if (!R.handlers[h.kind]) return;   // a carried reserved kind keeps what it held
+  const allowed = [...Object.keys(R.common), ...Object.keys(R.handlers[h.kind]?.args ?? {})];
   unknownKeys(`${at}.${act}`, h, [...new Set(allowed)], `a '${h.kind}' handler`);
 }
 // L3: a rest must equal the engine's value. The gate asks the engine itself, not the caller.
@@ -1177,6 +1194,11 @@ function resolve(ctx, id, comp, value, prev) {
     return v;
   }
   if (!defOf(comp) && isNamespaced(comp)) ctx.notes.push({ id, component: comp, why: `'${comp}' is a namespaced component this world's engine doesn't know: it is kept (and will be preserved), but nothing here will draw or run it` });
+  // one spelling per meaning (shape audit 10-16): what a write may say the short way is stored the one way
+  if (comp === "lock" && value === true) { ctx.notes.push({ id, component: "lock", sent: true, kept: { rank: "builder" }, why: "a lock is {rank}; true is the builder level" }); value = { rank: "builder" }; }
+  if (comp === "home" && value && typeof value === "object" && !Array.isArray(value) && typeof value.scale === "number") value = { ...value, scale: [value.scale, value.scale, value.scale] };
+  if (isLookAt(comp) && value && typeof value === "object" && !Array.isArray(value)) { const AXV = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };   // the letters the door takes (tools/lookat-forward-check: no negative letter)
+    for (const f of ["forward", "up"]) if (typeof value[f] === "string" && AXV[value[f]]) value = { ...value, [f]: AXV[value[f]].slice() }; }
   // every parameter written down (PROTOCOL §4): the definition's defaults and per-kind rules (componentspec materialize)
   const filled = (v, list) => { if (list.length) ctx.notes.push({ id, component: comp, filled: list, why: "defaults written out so the engine can't change them later" }); return v; };
   if (comp === "motion" && value && typeof value === "object") { const m = materialize("motion", value); const v = filled(m.value, m.filled); delete v.pivot;
@@ -1571,7 +1593,7 @@ function buildUse(ctx, a) {
     const ops = [], sent = [], skipped = [];
     for (const t of h.targets) { const te = ctx.st.entities[t];
       if (!te) { skipped.push({ id: t, why: "it isn't here any more" }); continue; }
-      const home = te.c.home ?? grabOf(te.c)?.home;
+      const home = te.c.home;
       if (!home) { skipped.push({ id: t, why: "it has no home" }); continue; }
       if ([t, ...ancestors(ctx.st, t)].some((k) => lockedC(ctx.st.entities[k]?.c))) { skipped.push({ id: t, why: "it is locked" }); continue; }
       const hp = home.parent; if (hp && !ctx.st.entities[hp.to]) { skipped.push({ id: t, why: `its home parent ${hp.to} is gone` }); continue; }
@@ -1638,7 +1660,7 @@ const toggleOf = (h) => { const comp = h.component ?? "openable"; return { comp,
 const barredBy = (e, h) => !!h?.unless && objOf(e.c[toggleOf(h).comp])[h.unless] === true;
 // the sockets a person can attach to: a host's (socketsOf), or a socket's own when it is the one asked
 const bodySockets = (st, id) => { const e = st.entities[id]; const host = isSocketC(e?.c) ? e.c.parent?.to : id;
-  return socketsOf(st, host).filter((x) => host === id || x.id === id).map((x) => ({ ...x, slot: x.name, body: bodyOf(x.sock) })).filter((x) => x.body); };
+  return socketsOf(st, host).filter((x) => host === id || x.id === id).map((x) => ({ ...x, slot: x.name, body: bodyOf(x.station) })).filter((x) => x.body); };
 // an openable thing with nothing that opens it offers 'open' on its own: the implicit toggle of openable.open (R 10-11
 // 23:17: the gym door had only `openable`; clicking it did nothing, and inspect said "nothing here opens it")
 const IMPLICIT_OPEN = Object.freeze({ kind: "toggle", component: "openable", field: "open" });
@@ -3348,25 +3370,27 @@ function stampResetHomes(ctx, ops) {
   if (!resets.length) return ops;
   const after = scratch(ctx.st, ops); const out = ops.slice(); const done = new Set();
   for (const t of resets.flatMap((h) => h.targets ?? [])) { const c = after.entities[t]?.c; if (!c || done.has(t)) continue; done.add(t);
-    if (c.home || grabOf(c)?.home || ops.some((o) => o.id === t && o.comp === "home")) continue;
+    if (c.home || ops.some((o) => o.id === t && o.comp === "home")) continue;
     const home = homeHere(after, t); out.push(setOp(t, "home", home)); ctx.notes.push({ id: t, component: "home", kept: home, why: "stamped for the reset that names it: where it stands now" }); }
   return out;
 }
+// a returning grabbable's home is its home component (shape audit 10-16: grabbable.home is gone)
 function stampHomes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;
   const after = scratch(ctx.st, ops); const out = ops.slice();
   const ids = new Set(ops.filter((o) => o.verb === "create" || (o.verb === "set" && ["grabbable", "transform", "parent"].includes(o.comp)) || (o.verb === "delete" && o.comp === "parent")).map((o) => o.id));
   for (const id of ids) {
     const v = after.entities[id]?.c.grabbable; if (!wantsHome(v)) continue;
-    const setsG = ops.some((o) => o.verb === "set" && o.comp === "grabbable" && o.id === id);
+    const setsH = ops.some((o) => o.comp === "home" && o.id === id);
+    const h = homeOf(after.entities[id].c.home), was = homeOf(ctx.st.entities[id]?.c.home);
     let home = null;
     const born = ops.some((o) => o.verb === "create" && o.id === id);   // a copy or an instance goes home to where it was made, not to its source's home (review 10-06)
-    if (v.home === undefined || (born && !sameHome(after, id, v.home))) home = homeHere(after, id);
-    else if (!setsG && ctx.st.entities[id] && sameHome(ctx.st, id, v.home) && !sameHome(after, id, v.home)) home = homeHere(after, id);
+    if (!h || (born && !sameHome(after, id, h))) home = homeHere(after, id);
+    else if (!setsH && was && sameHome(ctx.st, id, was) && !sameHome(after, id, was)) home = homeHere(after, id);
     if (!home) continue;
-    const k = out.findIndex((o) => o.verb === "set" && o.comp === "grabbable" && o.id === id); const val = { ...v, home };
-    if (k >= 0) out[k] = setOp(id, "grabbable", val); else out.push(setOp(id, "grabbable", val));
-    ctx.notes.push({ id, component: "grabbable", field: "home", kept: home, why: v.home === undefined ? "stamped: where it goes home to (its transform now)" : "moved with it: its home was where it stood" });
+    const k = out.findIndex((o) => o.verb === "set" && o.comp === "home" && o.id === id);
+    if (k >= 0) out[k] = setOp(id, "home", home); else out.push(setOp(id, "home", home));
+    ctx.notes.push({ id, component: "home", kept: home, why: !h ? "stamped: where it goes home to (its transform now)" : "moved with it: its home was where it stood" });
   }
   return out;
 }

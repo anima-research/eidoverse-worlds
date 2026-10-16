@@ -447,12 +447,13 @@ export class WorldAgent {
   /** A socket child as a seat reads it: {id, host, name, sock}, or null when `id` isn't a socket here. */
   seatOf(id: string | null | undefined) {
     const sock = id == null ? null : this.entities.get(id)?.socket;
-    return sock && typeof sock === "object" ? { id: String(id), host: this.mounts.get(String(id))?.to ?? null, name: String(sock.name ?? ""), sock } : null;
+    const station = id == null ? null : this.entities.get(id)?.station;
+    return sock && typeof sock === "object" ? { id: String(id), host: this.mounts.get(String(id))?.to ?? null, name: String(sock.name ?? ""), sock, station: station && typeof station === "object" ? station : null } : null;
   }
   /** "host (name)" for a seat or a socket — how a person reads where someone sits; the bare id for anything else. */
   seatName(id: string) { const s = this.seatOf(id); return s ? `${s.host} (${s.name})` : id; }
   /** My seat's body block (shared/sockbody.js), or null standing. */
-  mySeatBody() { const m = this.mySeat; return m ? bodyOf(this.seatOf(m.to)?.sock) : null; }
+  mySeatBody() { const m = this.mySeat; return m ? bodyOf(this.seatOf(m.to)?.station) : null; }
   /** May I leave my seat this way? (its leaveBy: a 'script' seat lets go only when the world does) */
   mayLeaveSeat(kind: "move" | "jump" | "menu" | "script") { const b: any = this.mySeatBody(); return !b || mayLeave(b, kind) || !this.seatOf(this.mySeat!.to); }
   /** sit on a thing's seat socket (presence: my frames carry {to: <socket id>}), or stand (null) */
@@ -552,7 +553,7 @@ export class WorldAgent {
   private clipClockStarted = 0;
   private bodyClip() {
     const mount = this.mounts.get(this.name);
-    return mount ? bodyOf(this.seatOf(mount.to)?.sock)?.clip ?? "sitchair" : this.clip;
+    return mount ? bodyOf(this.seatOf(mount.to)?.station)?.clip ?? "sitchair" : this.clip;
   }
   private noteClipClock() {
     const slot = this.bodyClip();
@@ -1254,7 +1255,7 @@ export class WorldAgent {
     if (!mount || !observation.pose) return observation;
     const effective = this.eff(observation.who, this.serverNow());
     if (!effective.ok) return { ...observation, error: `body mount cannot be composed: ${effective.why}` };
-    const clip = bodyOf(this.seatOf(mount.to)?.sock)?.clip ?? "sitchair";
+    const clip = bodyOf(this.seatOf(mount.to)?.station)?.clip ?? "sitchair";
     return { ...observation, frame: { source: "mount", to: mount.to, seat: effective.seat ?? null },
       pose: { ...observation.pose, p: effective.pos, yaw: effective.yaw, clip,
         ...(clip === (observation.pose.clipTimeSlot ?? observation.pose.clip) ? {} : { clipTime: undefined }) } };
@@ -3304,7 +3305,7 @@ export class WorldAgent {
    *  where a carried or moving thing is. Null when that cannot be resolved. */
   private placeHolder(e: Entity, nowMs = Date.now()): PlaceHolder | null {
     const f = this.eff(e.id, nowMs);
-    return f.ok ? { id: e.id, pos: f.pos, yaw: f.yaw, scale: f.scale } : null;
+    return f.ok ? { id: e.id, pos: f.pos, yaw: f.yaw, q: f.quat, scale: f.scale } : null;
   }
 
   /** Places that belong to no thing ("the meadow"): @world's places component, in world coordinates. */
@@ -4465,8 +4466,8 @@ export class WorldAgent {
    *  the same reason string the browser consoles and the nameplate ≈ carry —
    *  one contract, three declarations. Empty when the seat is profiled. */
   private seatSuffix(id: string, ride: { to: string }): string {
-    const sock = this.seatOf(ride.to)?.sock;
-    const g = seatGateCore({ sock, verdict: this.seatVerdictFor(id), pose: bodyOf(sock)?.clip ?? "sitchair" });
+    const station = this.seatOf(ride.to)?.station;
+    const g = seatGateCore({ sock: station, verdict: this.seatVerdictFor(id), pose: bodyOf(station)?.clip ?? "sitchair" });
     return g.apply ? "" : ` (seat approximate: ${g.reason})`;
   }
 
@@ -4632,8 +4633,8 @@ export class WorldAgent {
         // each socket a person can use says what the body does there (shared/sockbody.js describeBody), and who's on it;
         // an attach point says what it holds
         const on = (sid: string) => [...this.mounts.entries()].filter(([, m]) => m.to === sid).map(([rid]) => rid);
-        const lines = socks.map((x) => { const b = bodyOf(x.sock); const who = on(x.id); return b ? `${describeBody(x.name, b)}${who.length ? ` — ${who.join(", ")} is on it` : ""}` : null; }).filter(Boolean);
-        const things = socks.filter((x) => !bodyOf(x.sock)).map((x) => { const held = on(x.id); return `${x.name}${held.length ? ` (holding ${held.join(", ")})` : ""}`; });
+        const lines = socks.map((x) => { const b = bodyOf(x.station); const who = on(x.id); return b ? `${describeBody(x.name, b)}${who.length ? ` — ${who.join(", ")} is on it` : ""}` : null; }).filter(Boolean);
+        const things = socks.filter((x) => !bodyOf(x.station)).map((x) => { const held = on(x.id); return `${x.name}${held.length ? ` (holding ${held.join(", ")})` : ""}`; });
         if (lines.length) aff.push(`use it (attach {to: "${e.id}", socket}): ${lines.join(" · ")}`);
         if (things.length) aff.push(`attach points: ${things.join(", ")}`); }
       if (c.reactions) { const acts = Object.keys(c.reactions).filter((a) => a !== openAction(c)); if (acts.length) aff.push(`reacts to: ${acts.join(", ")}`); }

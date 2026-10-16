@@ -24,7 +24,7 @@ export function initClickUse(h) { hooks = h; }
 const off = () => !hooks || hooks.editing?.() || hooks.busy?.() || xrActive();
 
 const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
-const seatOf = (id) => { for (const x of socketsOn(id)) { const b = bodyOf(x.sock); if (b) return b; } return null; };   // a socket child a body may take (localbody's rule)
+const seatOf = (id) => { for (const x of socketsOn(id)) { const b = bodyOf(x.station); if (b) return b; } return null; };   // a socket child a body may take (localbody's rule)
 const canGrab = (id) => !!physicsApi.grabbable(id)?.enabled;
 
 /** What a thing offers, most likely first: [{k, label, run}]. The first is what a left-click does. */

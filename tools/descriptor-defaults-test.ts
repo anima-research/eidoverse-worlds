@@ -71,7 +71,9 @@ console.log("\nthe other restated defaults:");
   check("inspector physics.kind / physics.who defs are the registry's", fieldAt(ps, "physics.kind")?.def === ph.kind && fieldAt(ps, "physics.who")?.def === ph.who);
   // the inspector's Add seeds write a thing the authority then materializes: a number they restate must be the registry's
   const P = materialize("motion", { type: "pendulum" }).value;
-  for (const [name, ent] of [["Pendulum", { model: "store/x.glb", pos: [0, 0, 0], yaw: 0 }], ["Reactions", { model: "store/x.glb", pos: [0, 0, 0], yaw: 0 }]] as const) {
+  // (Add Reactions seeded one too while its default was a push; that kind, impulse, is reserved since the shape audit
+  // 10-16, and Reactions is added empty)
+  for (const [name, ent] of [["Pendulum", { model: "store/x.glb", pos: [0, 0, 0], yaw: 0 }]] as const) {
     const ops = (addOps(ent as any, "x", name, "") as any).ops.flat(9).filter((o: any) => o?.verb === "set" && o.args?.component === "motion");
     const seed = ops[0]?.args?.value;
     check(`Add ${name} seeds a pendulum whose period/damp/maxAmp, where stated, are the registry's`, !!seed && ["period", "damp", "maxAmp"].every((k) => seed[k] === undefined || seed[k] === P[k]), j(seed));

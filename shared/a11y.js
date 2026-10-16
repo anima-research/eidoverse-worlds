@@ -39,7 +39,7 @@ export function readOut(c, { name = null, heldBy = null, lookup = () => null, so
   if (gr) out.can.push(!gr.enabled ? "can't be picked up now" : gr.who === 'visitor' ? 'can be picked up' : `${gr.who}s can pick it up`);
   // its seats are its socket children ([{name, sock}], the caller's socketsOf / socketsIn: switched-off ones aren't offered)
   if (Array.isArray(sockets)) {
-    const seats = sockets.map((x) => [x.name, bodyOf(x.sock)]).filter(([, b]) => b);
+    const seats = sockets.map((x) => [x.name, bodyOf(x.station)]).filter(([, b]) => b);
     const acts = [...new Set(seats.map(([, b]) => b.action))];
     for (const a of acts) { const slots = seats.filter(([, b]) => b.action === a).map(([s]) => s); out.can.push(`can be ${a === 'sit' ? 'sat on' : `used to ${a}`} (${slots.join(', ')})`); }
   }

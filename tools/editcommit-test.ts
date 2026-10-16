@@ -134,15 +134,16 @@ console.log("\nthe channel box (step 3): rotations undo by q, and the editor rea
   // someone else turns it: the hint is void, the fresh (canonical) reading returns
   H.other("set", { id: "t1", component: "transform", value: { ...c("t1").transform, q: qFromEuler([0, Math.PI / 2, 0.7], "XYZ") } });
   check("…and is void once someone else's turn lands (inner channel back to 0)", val("x") === 0, String(val("x")));
-  // a compound edit (remove-both: two ops) is ONE request, so ONE act and one Ctrl+Z
-  H.W.seed({ r1: { model: "swing.glb", pos: [0, 0, 0], yaw: 0, motion: { type: "pendulum", amp: 0, period: 3.5 }, reactions: { push: { kind: "impulse", strength: 0.5 } } } }); H.sync();
+  // a compound edit (remove-both: two ops) is ONE request, so ONE act and one Ctrl+Z. (Was a pendulum under its push
+  // reaction; the push was the impulse handler, reserved since the shape audit 10-16: a collider under its model now.)
+  H.W.seed({ r1: { model: "swing.glb", pos: [0, 0, 0], yaw: 0, collider: { shape: "box" } } }); H.sync();
   H.entities.set("r1", realized());
   const before = Edits.stacks().undo.length;
-  const rr = commitEdit("r1", "remove.motion", "both");
+  const rr = commitEdit("r1", "remove.model", "both");
   await H.flush();
-  check("a held compound edit is ONE request, one act on my undo stack", rr.ops.length === 2 && last().verb === "batch" && last().args.ops.length === 2 && Edits.stacks().undo.length === before + 1 && !c("r1").motion && !c("r1").reactions, JSON.stringify([rr, last()]));
+  check("a held compound edit is ONE request, one act on my undo stack", rr.ops.length === 2 && last().verb === "batch" && last().args.ops.length === 2 && Edits.stacks().undo.length === before + 1 && !c("r1").model && !c("r1").collider, JSON.stringify([rr, last()]));
   const ub = await Edits.undo();
-  check("…and one Ctrl+Z brings both back", ub.ok && c("r1").motion?.type === "pendulum" && c("r1").reactions?.push?.kind === "impulse", JSON.stringify([ub.refused, c("r1")]));
+  check("…and one Ctrl+Z brings both back", ub.ok && c("r1").model === "swing.glb" && c("r1").collider?.shape === "box", JSON.stringify([ub.refused, c("r1")]));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

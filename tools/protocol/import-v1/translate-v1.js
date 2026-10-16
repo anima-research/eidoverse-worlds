@@ -94,6 +94,9 @@ export const TRANSLATOR = "eidoverse/translate-v1@12";
 // person data in values): roles:<id> and imported-bans:<id> lose it, and an imported act's raw v1 args lose it too when no
 // identity mapper is given (with one, it becomes the person's id, as before). A dialect-3 epoch her sim refused is carried
 // as imported:epoch (was the imported-epoch component). Both names (with and without her sim) move to @12.
+// @12, wave 2 (the shape audit's attach-interact family): a lock is written in its one spelling, {rank: 'builder'} (a v1
+// lock: true, and a guard merged into it, were true). Sockets stay the v1 map with each seat's body block: the server's
+// lift (authority/sockets.js) makes them socket children with a station at first load, as for any older v4 log.
 // @10 (2026-10-08): a dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) is translated with her sim run beside the
 // v1 fold (what translate-d3 did on its own, now on this one path with its identities, content addresses, founder key and
 // namespace): a punt is a logged launch with its exact stamped state, every rest a logged result the authority's sim layer
@@ -159,7 +162,7 @@ export const DROPPED = {
   "recentChat / chatTotal": "the chat window: a reader of `say` entries does this in v4, not world state",
   "placer": "who placed it: a view over the log in v4 (L2: no stored derived values); the old value survives in the old entry",
   "roles['*']": "becomes @world `default-role` (the declared role for anyone not named); '*' is not an identity (§2.3)",
-  "comp.guard": "merged into `lock` (PROTOCOL-v4 §5, R 19:58): a truthy guard becomes lock: true, which binds everyone (the placer too) and any builder may lift; the guard's authorship protection is dropped by design. stats.guards counts the things this happened to, so the world's owners can be told",
+  "comp.guard": "merged into `lock` (PROTOCOL-v4 §5, R 19:58): a truthy guard becomes lock {rank: 'builder'} (@12; was true), which binds everyone (the placer too) and any builder may lift; the guard's authorship protection is dropped by design. stats.guards counts the things this happened to, so the world's owners can be told",
   "comp.door": "renamed `openable` (R 10-07), and a reaction's component 'door' with it: the same value under v4's name (@5)",
   "roles.sub / bans.sub": "an account subject is person data (PROTOCOL §9.2): never written into a value (@12). With an identity mapper it is how the person's id is found (the key); without one it is dropped",
   "motion.rpm": "becomes degPerSec = rpm × 6 (@5): the rate the renderer drew, under the authority's one name for it",
@@ -217,6 +220,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
     for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" || k.startsWith("motion:") ? newMotion(v) : k === "particles" ? newParticles(v) : v;
     if (e.comp?.guard && !e.comp.lock) { c.lock = true; seen?.guards.add(id); } // §5: guard merges into lock
+    if (c.lock === true) c.lock = { rank: "builder" };   // @12: the one spelling (a v1 lock and a guard were builder-level)
     if (c.story && typeof c.story === "object" && !Array.isArray(c.story)) c.story = newStory(c.story); // @5: a marker's words, in story's shape
     if (e.parent) c.parent = typeof e.parent.to === "string"
       ? { to: enc(e.parent.to), order: "a0", ...Object.fromEntries(Object.entries(e.parent).filter(([k]) => k !== "to" && !PARENT_POSE.has(k)).map(([k, v]) => [k === "slot" ? "socket" : k, v])) }   // v1's slot is v4's socket (@7)

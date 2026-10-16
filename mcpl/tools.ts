@@ -460,7 +460,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const direct = ag.seatOf(want);   // a socket's own id
       const on = direct ? String(direct.host ?? "") : want;
       if (!ag.foldRecord(on)) return { content: [{ type: "text", text: `attach: nothing here called "${want}"` }], isError: true };
-      const all = (direct ? [direct] : ag.socketsOf(on)).map((x: any) => ({ id: x.id, slot: x.name, body: bodyOf(x.sock) })).filter((x: any) => x.body);   // only sockets a person can attach to
+      const all = (direct ? [direct] : ag.socketsOf(on)).map((x: any) => ({ id: x.id, slot: x.name, body: bodyOf(x.station) })).filter((x: any) => x.body);   // only sockets a person can attach to
       const taken = new Set([...ag.mounts.entries()].filter(([id]) => id !== ag.name).map(([, m]) => m.to));
       const fits = all.filter((x: any) => (a.socket == null || x.slot === String(a.socket)) && (a.action == null || x.body.action === String(a.action)));
       const pick: any = fits.find((x: any) => !taken.has(x.id)) ?? null;

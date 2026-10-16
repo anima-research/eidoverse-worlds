@@ -101,7 +101,7 @@ export const seatLeaving = () => !!leaving;
 /** My seat's socket body (shared/sockbody.js bodyOf), or null when I'm not seated. */
 export function mySeatBody() {
   const m = avatarMounts.get(CONFIG.name);
-  return m ? bodyOf(seatSocket(m.to)?.sock) : null;
+  return m ? bodyOf(seatSocket(m.to)?.station) : null;
 }
 /** Get off my seat, if the socket lets this kind of leaving through ('move' | 'jump' | 'menu' | 'script'). True when
  *  I'm off (or on my way off, with a leave clip). */
@@ -253,7 +253,7 @@ function nearestSeat(arg, reach) {
   // every socket child in the world (a seat is a socket with a body block): its host is what you name and see
   for (const [sid, c] of bags()) {
     if (!c?.socket || typeof c.socket !== 'object' || c.disabled === true) continue;
-    const body = bodyOf(c.socket);
+    const body = bodyOf(c.station);
     if (!body) continue;   // an attachment point for things, not a seat
     const id = parentIdOf(sid);
     if (id == null) continue;
@@ -281,7 +281,7 @@ let sitTicket = 0;   // the latest sit ask; getting up (or asking again) makes e
 export function trySitOn(arg, slot = null) {
   const mine = avatarMounts.get(CONFIG.name);
   const best = nearestSeat(arg, arg ? Infinity : 3.5);
-  if (best && slot && best.slot !== slot) { const o = socketsOn(best.id).find((x) => x.name === slot); const b = bodyOf(o?.sock); if (b) Object.assign(best, { sock: o.id, slot, body: b }); }
+  if (best && slot && best.slot !== slot) { const o = socketsOn(best.id).find((x) => x.name === slot); const b = bodyOf(o?.station); if (b) Object.assign(best, { sock: o.id, slot, body: b }); }
   if (!best) {
     const far = arg ? null : nearestSeat(null, 30);
     if (far) logChat('*', `nearest seat is ${far.id} (${far.slot}), ${far.d.toFixed(0)}m away — walk closer, or /sit ${far.id}`);

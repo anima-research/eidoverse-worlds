@@ -105,6 +105,7 @@ function oldNorm(st: any, phys: any = null) {
     if (L?.mounted) { e.pos = L.pos; e.q = L.q ?? yq(L.yaw); delete e.yaw; }
     if (e.parent && typeof e.parent.to === "string") e.parent = Object.fromEntries(Object.entries<any>(e.parent).filter(([k]) => !POSE.has(k)));
     if (e.comp && "guard" in e.comp) { const { guard, ...cc } = e.comp; e.comp = cc; if (guard && !cc.lock) e.comp.lock = true; }
+    if (e.comp?.lock === true) e.comp = { ...e.comp, lock: { rank: "builder" } };   // declared (translate-v1@12): a lock's one spelling
     const { yaw, q, scale, pos, ...rest } = e;
     const n: any = { ...rest, pos: pos ?? [0, 0, 0], q: Array.isArray(q) ? q : yq(yaw ?? 0), scale: typeof scale === "number" ? [scale, scale, scale] : (scale ?? [1, 1, 1]) };
     if (rest.kind === "light") { const L: any = {}; for (const f of LIGHT_KEYS) if (rest[f] !== undefined) { L[f] = rest[f]; delete n[f]; } delete n.kind; n.comp = { ...(n.comp ?? {}), light: L }; }

@@ -45,11 +45,11 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["Add Openable brings its open action", "shared/editschema.js", "...(rx.open ? [] : [OP.set(id, 'reactions', { ...rx, open: { kind: 'toggle', unless: 'locked' } })])], errors: [] };", "], errors: [] };", ["O7"]],
   ["the hinge button", "shared/editschema.js", "comps.set('pivot', { pos: [round(k === 'hingeL' ? box[0][0] : box[1][0], 4)", "comps.set('pivot', { pos: [round(0 && k === 'hingeL' ? box[0][0] : box[1][0], 4)", ["O7"]],
   ["Add Component doesn't offer LookAt", "shared/editschema.js", "const NOT_OFFERED = new Set(['LookAt']);", "const NOT_OFFERED = new Set([]);", ["R1"]],
-  ["a handler's effect is checked at write", "shared/protocol/authority.js", "handlerCheck(at, act, h); effectCheck(s, id, act, h); } }", "handlerCheck(at, act, h); } }", ["R2", "R3", "R4", "R6"]],
+  ["a handler's effect is checked at write", "shared/protocol/authority.js", "handlerCheck(at, act, h); effectCheck(s, id, act, h); } }", "handlerCheck(at, act, h); } }", ["R2", "R3", "R4"]],
   ["…the value it would write", "shared/protocol/authority.js", "else would(comp, field === undefined ? h.value : { ...c[comp], [field]: h.value });", "", ["R2"]],
   ["…a field needs its component", "shared/protocol/authority.js", "if (field !== undefined && !isObj(c[comp])) refuse(\"no-target\"", "if (false) refuse(\"no-target\"", ["R3"]],
   ["…a toggle flips true/false", "shared/protocol/authority.js", "if (h.kind === \"toggle\" && field !== undefined && ftype && ftype !== \"bool\" && ftype !== \"any\") refuse(", "if (false) refuse(", ["R4"]],
-  ["…a push swings a pendulum", "shared/protocol/authority.js", "if (h.kind === \"impulse\" && c.motion && c.motion.type !== \"pendulum\") refuse(", "if (false) refuse(", ["R6"]],
+  ["…an impulse is a reserved kind", "shared/protocol/authority.js", "if (!carry && Object.hasOwn(held, h?.kind)) refuse(\"reserved\"", "if (false) refuse(\"reserved\"", ["R6"]],
   ["a use with its component gone says so", "shared/protocol/authority.js", "if (!(e.c[comp] && typeof e.c[comp] === \"object\" && !Array.isArray(e.c[comp]))) refuse(\"no-handler\"", "if (false) refuse(\"no-handler\"", ["R5"]],
   ["motion: path is a type", "shared/protocol/componentspec.js", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\", \"path\"],", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\"],", ["M1", "R1"]],
   ["motion: rpm is taught", "shared/protocol/authority.js", "if (\"rpm\" in v) refuse(\"schema\"", "if (false) refuse(\"schema\"", ["M2"]],
@@ -255,10 +255,10 @@ await C("R5", "a use whose component was removed since says so, and writes nothi
   const u = W.call("use", { id: "gate" }, "vic"); const c = W.state().entities.gate.c;
   return [!u.ok && /no openable/.test(u.refused.reason) && !c.openable && !c.door, { u: why(u), comps: Object.keys(c) }];
 });
-await C("R6", "a push (impulse) on a spinning thing is refused when written", () => {
+await C("R6", "a push (impulse) is refused when written: a reserved kind since the shape audit (10-16), on a spinning thing or any", () => {
   const W = world(); W.call("create", { id: "fan", model: "crate", components: { motion: { type: "spin", degPerSec: 30 } }, place: { at: [0, 0] } });
   const r = W.call("set", { id: "fan", component: "reactions", value: { push: { kind: "impulse", strength: 0.5 } } });
-  return [!r.ok && /spin/.test(r.refused.reason), why(r)];
+  return [!r.ok && r.refused.code === "reserved", why(r)];
 });
 await C("R7", "what was right stays right: a door made with its state and handler in one write, a bell that sets its label, a world's own invented flag", () => {
   const W = world();

@@ -5,10 +5,10 @@
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/component-needs-test.ts
 //
-// The needs today's records carry: Collider, Seats and Picture need a Model
-// (placed from the Library — never in place, so it can only be explained);
-// Reactions needs the WHOLE entity's Pendulum (what the door's `use` pushes):
-// one sensible default when nothing moves it, a choice when a spin is in the way.
+// The needs today's records carry: Collider and Seats need a Model (placed from the Library — never in place, so it can
+// only be explained). Reactions needed the whole entity's Pendulum while its default was a push (the impulse handler);
+// that kind is reserved since the shape audit (10-16), so Reactions is added empty and needs nothing, and the rows that
+// rode on it (a need with a default, a need that asks) are retired with it: no record carries such a need now.
 //
 // the protocol port (2026-10-06): ops are door requests; "folded" means "sent to the door and read back". v1's
 // server/reactions.ts pendulumImpulse is replaced by the door's own `use {action: 'push'}`. Light-verb lights are gone.
@@ -33,51 +33,14 @@ const door = (ent: any, ops: any[]) => {
 };
 const addList = (ent: any) => inspectSchema(ent, 's').sections.add;
 
-console.log('a need with one sensible default is added for you, as real door ops');
+console.log('Reactions needs nothing (shape audit 10-16: its push default was the impulse handler, reserved now)');
 {
   const swing = { model: LIB, pos: [0, 0, 0], yaw: 0, actor: 'o', ts: 1 };
-  check('the record says it: Reactions needs Pendulum', J(RECORDS.Reactions.needs) === '["Pendulum"]');
+  check('the record says it: Reactions needs nothing', !RECORDS.Reactions.needs?.length, J(RECORDS.Reactions.needs));
   const r = addOps(swing, 's', 'Reactions');
-  check('add.Reactions on a thing that does not move: a Pendulum at rest (its period the authority writes, componentspec.js), then the reaction (the swing recipe)',
-    r.ops.length === 2 && J(r.ops[0]) === J(set('motion', { type: 'pendulum', amp: 0 })) && r.ops[1].verb === 'set' && r.ops[1].args.component === 'reactions' && !!r.ops[1].args.value?.push && r.errors.length === 0 && !r.choice, J(r));
-  check('…and says what it brought', /Pendulum at rest/.test(r.brings ?? ''), J(r));
+  check('add.Reactions writes one op: an empty reactions (its actions are written on its card)', r.ops.length === 1 && J(r.ops[0]) === J(set('reactions', {})) && !r.choice, J(r));
   const d = door(swing, r.ops);
-  // KNOWN BUG (reported 2026-10-06, not fixed here): the recipe writes v1's handler {push: {impulse: 0.35}}; the current
-  // door's reactions take {<action>: {kind: 'toggle'|'set'|'impulse', …}} and refuse a handler with no kind
-  // ("reactions.push: no handler kind 'undefined'"), so Add Component ▸ Reactions is refused in every world.
-  check('…the door takes the recipe as ONE request (KNOWN BUG: v1 handler shape refused)', d.res.ok, J(d.res.refused));
-  check('…written: the thing now has both, and the need is met (rides on the KNOWN BUG above)', d.after?.motion?.type === 'pendulum' && !!d.after?.reactions?.push && needMet('Pendulum', d.after), J(d.after?.comp));
-  const use = d.W.call('use', { id: 's', action: 'push' });
-  check('…and a use pushes it: the door\'s push swings the pendulum (amp > 0) (rides on the KNOWN BUG above)', use.ok && d.W.rec('s')?.motion?.amp > 0, J([use.refused, d.W.rec('s')?.motion]));
-  const e = editOps(swing, 's', { 'add.Reactions': null });
-  check('editOps carries the same two ops (one call = one request = one undo step on every surface)', e.ops.length === 2 && !e.asks && J(e.ops) === J(r.ops), J(e));
-  const entry = addList(swing).find((a: any) => a.name === 'Reactions');
-  check('the Add Component entry is offered, not blocked, and says what it brings', !!entry && !entry.blocked && /Pendulum/.test(entry.brings ?? ''), J(entry));
-  const pend = { ...swing, motion: { type: 'pendulum', amp: 0.2, period: 3, t0: 5 } };
-  const pr = addOps(pend, 's', 'Reactions');
-  check('with a whole-entity pendulum already there, nothing extra is added (just the reaction)', pr.ops.length === 1 && pr.ops[0].args.component === 'reactions', J(pr));
-  const partOnly = { ...swing, 'motion:seat': { type: 'pendulum', amp: 0.2 } };
-  check('a PART\'s pendulum does not meet it (reactions push the whole entity) — the default is added', addOps(partOnly, 's', 'Reactions').ops[0]?.args.component === 'motion');
-}
-
-console.log('a need that requires a choice asks, and sends nothing until answered');
-{
-  const spinner = { model: LIB, pos: [0, 0, 0], yaw: 0, motion: { type: 'spin', degPerSec: 30, t0: 5 }, actor: 'o', ts: 1 };
-  const r = addOps(spinner, 's', 'Reactions');
-  check('add.Reactions on a spinning thing: no ops, no error, a choice naming the need and the option',
-    r.ops.length === 0 && r.errors.length === 0 && r.choice?.need === 'Pendulum' && r.choice.options.length === 1 && r.choice.options[0].v === 'replace' && /already moves as a whole \(spin\)/.test(r.choice.prompt), J(r));
-  const e = editOps(spinner, 's', { 'add.Reactions': null });
-  check('editOps returns it as an ask the panel renders (key, component, prompt, options)', e.ops.length === 0 && e.asks?.[0]?.kind === 'choice' && e.asks[0].key === 'add.Reactions' && e.asks[0].component === 'Reactions', J(e));
-  const ans = editOps(spinner, 's', { 'add.Reactions': 'replace' });
-  check('answering "replace": the pendulum replaces the spin, then the reaction — in one call', ans.ops.length === 2 && ans.ops[0].args.component === 'motion' && ans.ops[0].args.value.type === 'pendulum' && ans.ops[1].args.component === 'reactions', J(ans));
-  check('…{choose: "replace"} answers the same way', addOps(spinner, 's', 'Reactions', { choose: 'replace' }).ops.length === 2);
-  check('…a value that is not one of its options still asks', !!addOps(spinner, 's', 'Reactions', 'nope').choice);
-  // the motion half alone (the need's own op) through the door: the spin is gone and the need met — this half doesn't
-  // ride on the reactions handler shape (the KNOWN BUG above)
-  const half = door(spinner, [ans.ops[0]]);
-  check('…sent to the door, the spin is replaced by the pendulum and the need is met', half.res.ok && needMet('Pendulum', half.after) && half.after?.motion?.type === 'pendulum' && half.after.motion.degPerSec === undefined, J([half.res.refused, half.after?.comp]));
-  const entry = addList(spinner).find((a: any) => a.name === 'Reactions');
-  check('the Add Component entry is offered and marked as asking', !!entry && !entry.blocked && entry.asks === 'Pendulum', J(entry));
+  check('…and the door takes it', d.res.ok && J(d.after?.reactions) === '{}', J([d.res.refused, d.after?.reactions]));
 }
 
 console.log('a need that cannot be met in place is explained (a Model comes from the Library)');
@@ -103,24 +66,21 @@ console.log('a need that cannot be met in place is explained (a Model comes from
 
 console.log('removing something another component needs names the dependant and offers remove-both');
 {
-  // a swing: its reactions are the door's own impulse handler (so the door holds what it removes)
-  const swing = { model: LIB, pos: [0, 0, 0], yaw: 0, motion: { type: 'pendulum', amp: 0, period: 3.5, t0: 5 }, reactions: { push: { kind: 'impulse', strength: 0.5 } }, actor: 'o', ts: 1 };
-  const r = removeOps(swing, 's', 'motion');
-  check('remove.motion under a Reactions: nothing sent, a confirm naming Reactions', r.ops.length === 0 && r.errors.length === 0 && r.confirm?.dependants?.[0]?.type === 'Reactions' && /Reactions needs this Pendulum — remove both\?/.test(r.confirm.prompt), J(r));
-  const e = editOps(swing, 's', { 'remove.motion': null });
-  check('editOps returns it as a confirm ask', e.ops.length === 0 && e.asks?.[0]?.kind === 'confirm' && e.asks[0].key === 'remove.motion' && e.asks[0].both === 'both', J(e));
-  const both = editOps(swing, 's', { 'remove.motion': 'both' });
-  check('"both": the dependant goes first, then the pendulum — one call', J(both.ops) === J([del('reactions'), del('motion')]), J(both));
-  const d = door(swing, both.ops);
-  check('…sent to the door as one request, both are gone', d.res.ok && !d.after?.motion && !d.after?.reactions, J([d.res.refused, d.after?.comp]));
+  // a model with a collider (Collider needs a Model): was a swing's pendulum under its push reaction (impulse, reserved since 10-16)
+  const lamp = { model: LIB, pos: [0, 0, 0], yaw: 0, collider: { shape: 'box' }, actor: 'o', ts: 1 };
+  const r = removeOps(lamp, 's', 'model');
+  check('remove.model under a Collider: nothing sent, a confirm naming Collider', r.ops.length === 0 && r.errors.length === 0 && r.confirm?.dependants?.[0]?.type === 'Collider' && /Collider needs this/.test(r.confirm.prompt) && /remove both\?/.test(r.confirm.prompt), J(r));
+  const e = editOps(lamp, 's', { 'remove.model': null });
+  check('editOps returns it as a confirm ask', e.ops.length === 0 && e.asks?.[0]?.kind === 'confirm' && e.asks[0].key === 'remove.model' && e.asks[0].both === 'both', J(e));
+  const both = editOps(lamp, 's', { 'remove.model': 'both' });
+  check('"both": the dependant goes first, then the model — one call', J(both.ops) === J([del('collider'), del('model')]), J(both));
+  const d = door(lamp, both.ops);
+  check('…sent to the door as one request, both are gone', d.res.ok && !d.after?.model && !d.after?.collider, J([d.res.refused, d.after]));
   const u = d.W.call('undo', {});
-  check('…and the door\'s undo brings both back (one act)', u.ok && d.W.rec('s')?.motion?.type === 'pendulum' && d.W.rec('s')?.reactions?.push?.kind === 'impulse', J([u.refused, d.W.rec('s')?.comp]));
-  check('removing the Reactions itself needs no confirm', J(removeOps(swing, 's', 'reactions').ops) === J([del('reactions')]));
-  const parts = { ...swing, ...swing.comp, 'motion:seat': { type: 'pendulum', amp: 0.1 } };
-  check('removing a PART\'s pendulum is not something Reactions needs — no confirm', removeOps(parts, 's', 'motion:seat').ops.length === 1);
-  const noPend = { ...swing, reactions: swing.reactions, lock: true };
-  check('a need that was already unmet is not "broken" by an unrelated removal', removeOps(noPend, 's', 'lock').ops.length === 1);
-  check('remove.motion on a thing without reactions: one delete motion', J(removeOps((({ reactions: _r, ...rest }) => rest)(swing), 's', 'motion').ops) === J([del('motion')]));
+  check('…and the door\'s undo brings both back (one act)', u.ok && d.W.rec('s')?.model === LIB && d.W.rec('s')?.collider?.shape === 'box', J([u.refused, d.W.rec('s')]));
+  check('removing the Collider itself needs no confirm', J(removeOps(lamp, 's', 'collider').ops) === J([del('collider')]));
+  check('a need that was already unmet is not "broken" by an unrelated removal', removeOps({ pos: [0, 0, 0], collider: { shape: 'box' }, lock: { rank: 'builder' } }, 's', 'lock').ops.length === 1);
+  check('remove.model on a thing without a collider: one delete model', J(removeOps((({ collider: _c, ...rest }) => rest)(lamp), 's', 'model').ops) === J([del('model')]));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

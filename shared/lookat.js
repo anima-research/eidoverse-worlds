@@ -6,10 +6,11 @@
 //     rest    the node's rest rotation, local to its parent [x,y,z,w]
 //     frame   the parent's world rotation [x,y,z,w] (identity for a root)
 //     at      the node's world position; target: the point to face (null: none in range → back to rest)
-//     la      the component: {mode: yaw|aim, forward, up, yaw?: [min,max]°, pitch?: [min,max]°, speed °/s (0 = at once)}
+//     la      the component: {mode: yaw|aim, forward, up, yaw?: [min,max] rad, pitch?: [min,max] rad, speed rad/s (0 = at once)}
 //     prev    last frame's local rotation (null: start at rest); dt: seconds since
 // Yaw turns about the node's own up (it stays upright: Blender's Locked Track); aim adds pitch, never roll (Damped Track
-// with an up). Limits are degrees from rest. A target straight above a yaw-only node gives no heading: it keeps the last.
+// with an up). Limits are radians from rest (shape audit 10-16: the registry stores radians). A target straight above a
+// yaw-only node gives no heading: it keeps the last. An older value's letter axes are still read (axisOf).
 export const AXIS = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
 const D2R = Math.PI / 180;
 const axisOf = (a, d) => { const v = typeof a === 'string' ? AXIS[a] : Array.isArray(a) && a.length === 3 ? a : null; const n = v ? Math.hypot(...v) : 0; return n > 1e-9 ? v.map((x) => x / n) : AXIS[d]; };
@@ -30,7 +31,7 @@ function slerp(a, b, t) {
   const th = Math.acos(c), s = Math.sin(th), wa = Math.sin((1 - t) * th) / s, wb = Math.sin(t * th) / s;
   return a.map((x, i) => x * wa + bb[i] * wb);
 }
-const clamp = (x, lim) => (Array.isArray(lim) && lim.length === 2 ? Math.min(lim[1] * D2R, Math.max(lim[0] * D2R, x)) : x);
+const clamp = (x, lim) => (Array.isArray(lim) && lim.length === 2 ? Math.min(lim[1], Math.max(lim[0], x)) : x);
 
 export function evalLookAt({ rest = [0, 0, 0, 1], frame = [0, 0, 0, 1], at, target, la = {}, prev = null, dt = 0 }) {
   const F = axisOf(la.forward, 'z');
@@ -51,8 +52,8 @@ export function evalLookAt({ rest = [0, 0, 0, 1], frame = [0, 0, 0, 1], at, targ
     want = qmul(rest, qmul(qaxis(U, yaw), qaxis(S.map((x) => -x), pitch)));
     rested = false;
   }
-  const speed = Number.isFinite(la.speed) ? la.speed : 240;
+  const speed = Number.isFinite(la.speed) ? la.speed : 240 * D2R;   // rad/s; absent, the registry's default (240°/s)
   if (speed <= 0 || !prev) return { q: qnorm(want), yaw, pitch, rested };
-  const ang = qangle(from, want), step = Math.min(speed, 3600) * D2R * Math.max(0, dt);
+  const ang = qangle(from, want), step = Math.min(speed, 20 * Math.PI) * Math.max(0, dt);
   return { q: ang <= step || ang < 1e-9 ? qnorm(want) : qnorm(slerp(from, want, step / ang)), yaw, pitch, rested };
 }

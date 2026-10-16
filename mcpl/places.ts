@@ -31,7 +31,9 @@ export type Place = {
   min?: Vec3; max?: Vec3;    // region
   source: "model" | "component";
 };
-export type PlaceHolder = { id: string; pos: number[]; yaw?: number; scale?: number };
+// its transform: pos, and q (a full rotation, [x, y, z, w]) or yaw, and scale (a number or [x, y, z]). Shape audit 10-16:
+// a place is in the thing's own frame, the same full transform every other "own frame" in the registry means.
+export type PlaceHolder = { id: string; pos: number[]; yaw?: number; q?: number[]; scale?: number | number[] };
 
 const finite3 = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === "number" && Number.isFinite(n));
 const NAME = /^[A-Za-z0-9_][A-Za-z0-9_ .:'-]{0,47}$/;
@@ -75,7 +77,7 @@ export function placesFromComponent(data: unknown): Map<string, Place | null> {
     if (!NAME.test(name)) continue;
     if (v === null) { out.set(name, null); continue; }
     const label = typeof v?.label === "string" ? v.label.slice(0, 80) : undefined;
-    if (finite3(v?.at)) out.set(name, { name, label, kind: v.kind === "seat" || v.kind === "door" ? v.kind : "point", at: v.at, source: "component" });
+    if (finite3(v?.at)) out.set(name, { name, label, kind: "point", at: v.at, source: "component" });   // kind is gone (shape audit 10-16): a stored one names nothing
     else if (finite3(v?.min) && finite3(v?.max)) {
       const min: Vec3 = [0, 1, 2].map((k) => Math.min(v.min[k], v.max[k])) as Vec3;
       const max: Vec3 = [0, 1, 2].map((k) => Math.max(v.min[k], v.max[k])) as Vec3;
@@ -95,15 +97,19 @@ export function placesOf(meta: any, comp: unknown): Place[] {
 }
 
 /** Model frame → world (the inverse of shared/structure.js localizePoint). */
+const scale3 = (s: PlaceHolder["scale"]): Vec3 => Array.isArray(s) && s.length === 3 && s.every((x) => Number.isFinite(x) && x > 0) ? [s[0], s[1], s[2]]
+  : typeof s === "number" && s > 0 ? [s, s, s] : [1, 1, 1];
+const rotOf = (e: PlaceHolder): number[] => { const q = e.q; if (Array.isArray(q) && q.length === 4 && q.every(Number.isFinite)) { const n = Math.hypot(...q); if (n > 1e-9) return q.map((x) => x / n); }
+  const y = e.yaw ?? 0; return [0, Math.sin(y / 2), 0, Math.cos(y / 2)]; };
+const qApply = (q: number[], v: number[]): Vec3 => { const [x, y, z, w] = q; const tx = 2 * (y * v[2] - z * v[1]), ty = 2 * (z * v[0] - x * v[2]), tz = 2 * (x * v[1] - y * v[0]);
+  return [v[0] + w * tx + (y * tz - z * ty), v[1] + w * ty + (z * tx - x * tz), v[2] + w * tz + (x * ty - y * tx)]; };
 export function toWorld(e: PlaceHolder, p: number[]): Vec3 {
-  const [px, py, pz] = e.pos, yaw = e.yaw ?? 0, s = e.scale && e.scale > 0 ? e.scale : 1;
-  const c = Math.cos(yaw), n = Math.sin(yaw);
-  return [px + s * (p[0] * c + p[2] * n), py + s * p[1], pz + s * (-p[0] * n + p[2] * c)];
+  const s = scale3(e.scale), d = qApply(rotOf(e), [p[0] * s[0], p[1] * s[1], p[2] * s[2]]);
+  return [e.pos[0] + d[0], e.pos[1] + d[1], e.pos[2] + d[2]];
 }
 export function toLocal(e: PlaceHolder, w: number[]): Vec3 {
-  const [px, py, pz] = e.pos, yaw = e.yaw ?? 0, s = e.scale && e.scale > 0 ? e.scale : 1;
-  const dx = w[0] - px, dz = w[2] - pz, c = Math.cos(yaw), n = Math.sin(yaw);
-  return [(dx * c - dz * n) / s, (w[1] - py) / s, (dx * n + dz * c) / s];
+  const s = scale3(e.scale), q = rotOf(e), d = qApply([-q[0], -q[1], -q[2], q[3]], [w[0] - e.pos[0], w[1] - e.pos[1], w[2] - e.pos[2]]);
+  return [d[0] / s[0], d[1] / s[1], d[2] / s[2]];
 }
 
 /** Is a body standing at world point `w` inside this region? Its feet must be
