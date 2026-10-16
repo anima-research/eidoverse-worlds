@@ -2,10 +2,10 @@
 // Ported from the protocol lab's phys-check.js @ 11db981; only paths changed. usage: bun tools/protocol/phys-check.ts
 // @ts-nocheck — lab code, kept as written
 import fs from "node:fs";
-import { request } from "../../shared/protocol/authority.js";
+import { request, settle } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { fold, readLog } from "../../shared/protocol/fold.js";
-import { simFold, restsOf } from "../../shared/protocol/simlayer.js";
+import { simFold, restsOf, ENGINES, EIDOSIM_BUILD } from "../../shared/protocol/simlayer.js";
 import { ENGINE, scratch } from "./common.ts";
 
 const root = scratch("phys");
@@ -359,6 +359,71 @@ function playground(name) {
   const C = copyOf(L); tval(C[i]).pos = [9, 9, 9]; // P4 edited only the annotation the view read; now the view reads the value
   const seen = rests(C)[0].at, folded = fold(C, { until: i }).entities.ball.c.transform.pos;
   ok(JSON.stringify(seen) === "[9,9,9]" && JSON.stringify(folded) === "[9,9,9]", "N P4 is gone: the rest view and the fold read the same one value (so a forgery shows in both, and carriers flag it)", { seen, folded });
+}
+
+// R — a deploy changes the engine's build (REVIEW-design-2026-10-15 "Deploying switches physics off"). A world the old
+// server stamped names the old build, so the new server holds it foreign and nothing flies. The authority restamps it
+// itself, as system, once: when the engine is one it carries, the build was stamped by an authority (not named by the
+// owner), and nothing is in flight (P6: the cut is then free). A "deploy" here is ENGINES' build swapped under the world.
+{
+  const OLD = "be543899cfedf430", E = ENGINES["eidosim@1.0.0"];
+  const deployed = (fn) => { E.build = OLD; try { return fn(); } finally { E.build = EIDOSIM_BUILD; } };   // the old server
+  const restamps = (W) => log(W).filter((e) => e.kind === "act" && e.actor === "system" && e.verb === "restamp-engine");
+  const specOf = (W) => fold(log(W)).entities["@world"].c["physics-engine"];
+  // R1 — stamped by the old server, nothing in flight: restamped at the first act after load, and physics runs
+  const W = deployed(() => playground("pc-r1"));
+  ok(specOf(W).build === OLD, "R1 setup: the old server stamped its own build", specOf(W));
+  call(W, "rowan", "look", {});
+  const rs = restamps(W), L = log(W), ai = L.findIndex((e) => e.kind === "act" && e.verb === "restamp-engine"), ch = L.findIndex((e) => e.kind === "change" && e.cause === ai);
+  ok(rs.length === 1 && specOf(W).build === EIDOSIM_BUILD && specOf(W).engine === "eidosim@1.0.0" && specOf(W).tickMs === 33,
+    "R1 the authority restamped @world.physics-engine with the build it carries, same engine and tickMs", { rs, spec: specOf(W) });
+  ok(ch > 0 && L[ch].actor === "system" && L[ch].body.id === "@world" && L[ch].body.comp === "physics-engine", "R1 …as a system change on @world.physics-engine", L[ch]);
+  ok(rs[0]?.body?.why === `engine build ${OLD} → ${EIDOSIM_BUILD}: restamped by the server; bodies at rest`, "R1 …and the log keeps why", rs[0]?.body);
+  call(W, "rowan", "look", {}); ok(restamps(W).length === 1, "R1 once: the next act writes nothing more", restamps(W).length);
+  call(W, "rowan", "grab", { id: "ball" }); const d = call(W, "rowan", "drop", { id: "ball" });
+  ok(d.ok, "R1 a drop is accepted (the world isn't foreign any more)", d); call(W, "rowan", "wait", {}, 3000);
+  const r = rests(log(W)).filter((x) => x.id === "ball").at(-1);
+  ok(r && Math.abs(r.at[1]) < ON && !view(W).checks.disagree.length, "R1 …and the dropped ball falls and rests on the ground, carriers agreeing", { r, checks: view(W).checks });
+  // R1c — the next checkpoint carries the new build
+  at(25000); settle(openWorld(root, W));
+  const ck = log(W).filter((e) => e.kind === "sim" && e.verb === "checkpoint").at(-1);
+  ok(ck?.body?.engine?.build === EIDOSIM_BUILD, "R1c the next checkpoint names the restamped build", ck?.body?.engine);
+  // R2 — a body in flight when the deploy came: no restamp, the world stays foreign (the owner can still restamp by hand)
+  const W2 = deployed(() => { const n = playground("pc-r2"); call(n, "rowan", "grab", { id: "ball" }); call(n, "rowan", "throw", { id: "ball", v: [0, 6, 0] }); return n; });
+  call(W2, "rowan", "look", {});
+  ok(!restamps(W2).length && specOf(W2).build === OLD, "R2 a launch with no rest on the record: no restamp", specOf(W2));
+  call(W2, "rowan", "move", { to: [2, 0, -0.5] }); call(W2, "rowan", "grab", { id: "crate-1" });
+  const t2 = call(W2, "rowan", "throw", { id: "crate-1", v: [0, 1, 1] });
+  ok(!t2.ok && t2.refused.code === "foreign-engine" && !restamps(W2).length, "R2 …the world stays foreign", t2);
+  // R2b — something held (lifted out of the engine, not put back): no restamp either
+  const W2b = deployed(() => { const n = playground("pc-r2b"); call(n, "rowan", "grab", { id: "ball" }); return n; });
+  call(W2b, "rowan", "look", {});
+  ok(!restamps(W2b).length && specOf(W2b).build === OLD, "R2b a thing held when the deploy came: no restamp", specOf(W2b));
+  // R2c — the hold is gone from presence (a host that keeps it in memory restarted) but the log's lift was never put back:
+  // still in flight by the log's word, so no restamp (the load's settleOrphans returns it first on a real server)
+  const W2c = deployed(() => { const n = playground("pc-r2c"); call(n, "rowan", "grab", { id: "ball" }); return n; });
+  const pp = `${root}worlds/${W2c}.presence.json`; const pres = JSON.parse(fs.readFileSync(pp, "utf8")); const realHold = pres.holds.ball; pres.holds = {}; fs.writeFileSync(pp, JSON.stringify(pres));
+  call(W2c, "rowan", "look", {});
+  ok(!restamps(W2c).length && specOf(W2c).build === OLD, "R2c a lift on the record with nothing after it: no restamp", specOf(W2c));
+  // R2d — held in presence only (no lift on the record): no restamp while the hold lasts
+  const W2d = deployed(() => playground("pc-r2d"));
+  const pd = `${root}worlds/${W2d}.presence.json`; const pr2 = fs.existsSync(pd) ? JSON.parse(fs.readFileSync(pd, "utf8")) : { bodies: {}, holds: {} };
+  (pr2.holds ??= {}).ball = realHold; fs.writeFileSync(pd, JSON.stringify(pr2));
+  call(W2d, "rowan", "look", {});
+  ok(!restamps(W2d).length && specOf(W2d).build === OLD, "R2d a hold in presence: no restamp", specOf(W2d));
+  // R3 — an engine this server doesn't carry at all: no restamp
+  ENGINES["oldsim@0.9.0"] = { ...E, build: "0123456789abcdef" };
+  let W3; try { W3 = fresh("pc-r3"); call(W3, "rowan", "create-world", { title: W3 }); call(W3, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "oldsim@0.9.0" } }); }
+  finally { delete ENGINES["oldsim@0.9.0"]; }
+  call(W3, "rowan", "look", {});
+  ok(specOf(W3).engine === "oldsim@0.9.0" && !restamps(W3).length, "R3 an engine this server doesn't carry: no restamp", specOf(W3));
+  // R4 — the current build: nothing written
+  const W4 = playground("pc-r4"); const n4 = log(W4).length; call(W4, "rowan", "look", {});
+  ok(!restamps(W4).length && log(W4).length === n4, "R4 a world on the carried build: no entry written", log(W4).length - n4);
+  // R5 — a build the OWNER named (pc-k's choice, kept): never overridden by the server
+  const W5 = fresh("pc-r5"); call(W5, "rowan", "create-world", { title: W5 });
+  call(W5, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", build: OLD } }); call(W5, "rowan", "look", {});
+  ok(!restamps(W5).length && specOf(W5).build === OLD, "R5 an owner-named build is the owner's: no restamp", specOf(W5));
 }
 
 console.log(`${passes} passed, ${fails} failed`);
