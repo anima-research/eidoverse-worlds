@@ -517,7 +517,7 @@ export function pinBreakList(pin, now = pinOf()) {
   const out = [], j = (x) => JSON.stringify(x);
   for (const [name, p] of Object.entries(pin)) {
     const status = p.status ?? "trial"; const push = (text) => out.push({ name, status, text });
-    const n = now[name]; if (!n) { push(`${name}: the name is gone (a registered name is read forever)`); continue; }
+    const n = now[name]; if (!n) { push(`${name}: the name is gone (stored values need a repair or a translation; a stable name never goes)`); continue; }
     if (p.status !== undefined && p.status !== n.status) push(`${name}: status ${p.status} → ${n.status}`);
     for (const k of ["type", "keyed", "on"]) if (p[k] !== undefined && j(p[k]) !== j(n[k])) push(`${name}: ${k} ${j(p[k])} → ${j(n[k])}`);
     for (const [f, t] of Object.entries(p.fields ?? {})) if (n.fields?.[f] !== t) push(`${name}.${f}: type ${t} → ${n.fields?.[f] ?? "gone"}`);

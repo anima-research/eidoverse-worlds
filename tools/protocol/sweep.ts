@@ -126,6 +126,8 @@ function oldNorm(st: any, phys: any = null) {
   const world: any = {};
   for (const [k, v] of Object.entries<any>(st)) { if (DROP_WORLD.includes(k) || v == null) continue;
     if (Array.isArray(v) && !v.length) continue; if (typeof v === "object" && !Array.isArray(v) && !Object.keys(v).length) continue; world[k] = v; }
+  // DROPPED "roles.sub / bans.sub" (translate-v1@12): an account subject never reaches a value
+  for (const k of ["roles", "bans"]) if (world[k] && typeof world[k] === "object") world[k] = Object.fromEntries(Object.entries<any>(world[k]).map(([n, v]) => [n, v && typeof v === "object" && !Array.isArray(v) && "sub" in v ? (({ sub, ...r }) => r)(v) : v]));
   // dropped on purpose by translate-v1 (round-2 R8): the sky's echo of who set it and when (the log says so itself)
   if (world.sky && typeof world.sky === "object") { const { seq, by, ...sky } = world.sky;
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }
