@@ -304,7 +304,13 @@ request moves a copy to a newer version, keeping its own overrides.
   here; writing per-frame values into the log is non-conforming. A reach
   travels as a *declarative relation* (`pose.reach`, shared/reachwire.js) —
   a target, not solved bones — and every client re-solves it locally with
-  the same closed-form IK; the server relays the bag opaquely. Semantic rig
+  the same closed-form IK. The server relays the bag after one check: a
+  limb aimed at another body (a named point on them, a point in their
+  frame, or a world point inside their capsule) relays only if that body's
+  consent table admits it as `touch`, or `intimate` for `chest_front`, the
+  waist and the hips. Otherwise the limb is stripped from the packet and
+  from the pose kept for late joiners, and the reacher is told why
+  (server/reachgate.ts → the authority's `reachAdmits`). Semantic rig
   state travels the same way: `pose.wingsFolded` is a boolean intent, never
   implementation-specific wing quaternions; each renderer applies it
   through the worn rig's own fold path. The same packet carries a body's
@@ -342,9 +348,9 @@ request moves a copy to a newer version, keeping its own overrides.
   listen for `enter`/`leave` records who triggered each activation, as every
   script act does; that is the world's choice, visible in its scripts.)
 - **One mover.** A body has one mover (shared/mover.js) and the mover has
-  modes — `walk` today; `fly` (shared/flight.js's integrator, the same
-  function in every runtime), `swim` and `drive` join the same table without
-  renaming anything. Every runtime steps a body with it: a person's client
+  modes — `walk` today (wading and swimming are its water stances:
+  `MOVER.swim`); `fly` (shared/flight.js's integrator, the same function in
+  every runtime) and `drive` join the same table without renaming anything. Every runtime steps a body with it: a person's client
   strides with it, an agent's tick strides with it, and the authority asks it
   where a body may go. Its numbers (a walk 1.55 m/s, a run 4 m/s; a body
   0.2 m in radius and 1.7 m tall; a 0.8 m step it walks onto without a
@@ -368,8 +374,10 @@ request moves a copy to a newer version, keeping its own overrides.
   social touch, intimate touch, pose, shove, move, voice; `carry` is
   reserved, PHYSICS §4.1), each set to
   everyone, ask, or nobody, separately for strangers and friends — the same
-  table for humans and agents. Silence is no. The authority refuses before
-  delivery, and the target's own client has the final word. Consent is
+  table for humans and agents. Silence is no. For touch, pose, shove and
+  move the authority refuses before delivery (a reach at the relay, above),
+  and the target's own client has the final word. *Near, follow and voice
+  are in the table and the settings, but nothing enforces them yet.* Consent is
   presence: it is never logged and is not a grant.
 
 ## 6. Actors
@@ -405,20 +413,23 @@ a rest). Then **one gate, `admit`**, checks those writes, keyed on:
 - rate, per actor;
 - the asker's active sanctions (bans, from the moderator log).
 
-Verb-specific checks MAY add to `admit`, never replace it. Accepted, the
+For any `change`, verb-specific checks MAY add to `admit`, never replace it. Accepted, the
 authority appends the request as an `act` and its result as one `change` entry
 caused by it; a refused write is appended as an act carrying its refusal
 (`{code, reason, fix}`) and nothing else is written (refusals that would
 only flood the log, such as rate limits, are answered without an entry). **Every appended `change` passes the gate** (`admit`); a `say` passes its own
-checks (length, rate, the sayer's rights), and a `sim` entry is written by the authority itself from a grab or a settle,
-never by a client.
+checks (length, rate, the sayer's rights), and a `sim` entry is written by the authority itself from a grab, a launch
+(throw, punt, a release with velocity) or a settle, never by a client.
 
 **Roles** are components on `@world`: `roles:<identity>` = `{role}`, and
 `default-role` for everyone without one (absent: visitor). The reference
 authority's ladder is `visitor` < `builder` < `owner` (a `moderator` rank sits
 between builder and owner where the roles ladder is enabled): changing any
 component of an entity needs builder; changing `@world` needs owner, except
-`blueprints:*` (publishing a blueprint, builder). Removing the last owner is
+`blueprints:*` (publishing a blueprint: build), `assets:*` (generate), the
+world's look (`about`, `sky`, `terrain*`, `grass`, `bounds`, `spawn`:
+editWorld), `roles:*` (the grant rule), and `training-consent:<identity>`,
+which only the identity it names may write or delete, never an owner. Removing the last owner is
 refused, and a world with no owner gives nobody more than visitor. **Two
 owner lists, never confused:** governance keys in genesis (§13) decide who
 may sign handoffs; roles decide rights inside the world.
@@ -453,7 +464,7 @@ reader never folds it. Only its effects reach the world, through the gate.
 Every refusal the authority issues comes from one of five questions, asked
 in this order. This section names them in one place so a new verb cites a
 rule rather than inventing one. Each is **normative** where the code already
-enforces it; the two marked *intended* are gaps found 2026-10-14 and are
+enforces it; the items marked *intended* are gaps found since 2026-10-14 and are
 owed before this section is complete.
 
 **The parties.** The *operator* (runs the sequencer; genesis names them,
@@ -468,12 +479,14 @@ you made; publish blueprints), `editOthers` (change or delete what others
 made), `editWorld` (sky, weather, ground, the card, spawn, bounds), `generate`
 (add models or pictures: the world's credit), `fly`, `scripts` (install and
 edit scripts: they act with your rights), `pauseScripts` (pause scripts whose
-sponsor ranks below you), `mute`, `kick`, `grantRoles` (give or take roles
-below yours, with only permissions you hold), `caption`. An owner holds all
+sponsor ranks below you), `mute`, `kick`, `ban` (keep someone out, up to the ban limit; owners any
+length), `grantRoles` (give or take roles below yours, with only permissions
+you hold). Captions are granted per screen (`captioners`), not by role. An owner holds all
 of them. A guest (no account) is at most the world's `default-role`.
 
 **2. The thing: who made it.** For a change to an entity the authority asks,
-in order (`lacks()`): an owner may; else the verb's own need (`owner`,
+in order (`lacks()`): a person's own word (`training-consent:<identity>`)
+is theirs alone; then an owner may; else the verb's own need (`owner`,
 `grant`, or a named permission) must be held; else `build` must be held;
 else the change is allowed if the holder has `editOthers`, is creating, or
 **made the thing** (its first `create` was admitted under their rights).
@@ -483,7 +496,8 @@ caption request; a `paused` write needs `pauseScripts`, not edit rights.
 
 **3. The lock: what the owner has nailed down.** `lock` (§4) binds
 *everyone*, owners included, until lifted by someone the lock's level names.
-It is the one rule that tells an owner no; it has a documented override
+It is the one rule *over things* that tells an owner no (rule 4 and a
+person's own word tell them no over people); it has a documented override
 (lifting it) and no silent one.
 
 **4. The body: what the affected participant permits.** A request that
@@ -495,8 +509,9 @@ ear — is decided by **their** consent table (§5): per class, per tier
 `deny` that outlasts the answer for the stay. No role, including owner,
 overrides a consent refusal: this is the one veto standing *outside* the
 role ladder, and it is the affected party's, never the installer's or the
-invoker's. *Intended, not yet enforced:* the grab / put / throw / punt path
-checks rank only and must pass through the same gate.
+invoker's. *Intended, not yet enforced:* standing close, following and
+speaking into the ear (in the table, unenforced), and the grab / put / throw /
+punt path, which checks rank only and must pass through the same gate.
 
 **5. The sponsor: whose rights a script spends.** A script acts with its
 sponsor's rights, not its author's; it may do nothing its sponsor could not;
@@ -508,7 +523,7 @@ person's own gesture over their own acts; reverting someone else's act is a
 deliberate `undo {act}` from history, judged by rule 2 at the time it is
 asked. Nothing is silently lost on either side.
 
-**Bodies, in short** (*intended*; the avatar design): an owner may remove a
+**Bodies, in short** (*intended*; the avatar design, not in this PR): an owner may remove a
 body from their world (`kick`, `ban`, refusing an avatar) and may never
 *edit* one. The only person who edits a body is its wearer and whoever the
 wearer has given builder-consent on it.

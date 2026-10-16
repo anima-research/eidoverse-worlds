@@ -225,7 +225,7 @@ function paintAccess(body) {
 // in the log the owner never chose. Everyone reads; owners edit.
 const CAP = 'capacity', CAP_FIELDS = ['things', 'guestThings', 'sockets', 'guestSockets', 'avatar'];
 const CAP_WORDS = { things: 'Things', guestThings: "Guests' things (all together)", sockets: 'Sockets', guestSockets: "Guests' sockets (all together)", avatar: 'Things one avatar may wear' };
-/** what the authority enforces today (its reader: what is written, else the defaults) */
+/** the numbers in force (its reader: what is written, else the defaults); the authority enforces all but `avatar`, which nothing checks yet */
 function effectiveCapacity() { const { name, value, def } = resolveVersioned(wc(), 'capacity');
   const ok = (x) => Number.isInteger(x) && x >= 0;
   return { name, written: value, eff: Object.fromEntries(CAP_FIELDS.map((k) => [k, ok(value?.[k]) ? value[k] : def.defaults[k]])) }; }
@@ -256,7 +256,7 @@ function paintWorld(body) {
     const n = Number(raw); const r = R2[k];
     if (!Number.isInteger(n) || outOfRange(r, n)) { say(`${CAP_WORDS[k]}: ${raw} isn't allowed; it must be a whole number ${rangeWords(r)}. Nothing was changed.`); toast(`${CAP_WORDS[k]}: must be ${rangeWords(r)}`, 'warn', 8000); x.value = wc()[CAP]?.[k] ?? ''; return; }
     say('');
-    // the first write carries every field the world enforces today: a merge of one key onto nothing would leave the
+    // the first write carries every field in force today: a merge of one key onto nothing would leave the
     // others to whatever the defaults are when it is next read, not what the owner saw here
     const value = wc()[CAP] ? { [k]: n } : { ...effectiveCapacity().eff, [k]: n };
     act('set', { id: '@world', component: CAP, value, merge: true }, `${CAP_WORDS[k]}: ${n}`).then((r) => { paintWorld(body);

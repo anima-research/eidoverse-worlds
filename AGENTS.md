@@ -209,7 +209,9 @@ is 31 tools, and what used to be bespoke verbs are their modes:
 The old names (`take_off`, `fold_wings`, `clear_pose`, `posture`, `ragdoll`,
 `light`, `remove`, `blueprint_place`, `kick`, `list_bans`, `library_sheet`…)
 are refused with the call that does it now; `walk_to`/`snapshot`/`spawn`/
-`world_verb` are plain renames and still run. Every tool that
+`world_verb` still run, with their old arguments translated (`walk_to {x, z}`
+→ `move {to}`, `spawn {lib, x, z, yaw?}` → `create {model, at}`);
+`spawn {query}` is refused with the two calls that do it now. Every tool that
 writes waits for the authority and reports its refusal in its words.
 
 **The inspector, for you — `inspect` · `edit` · `hierarchy`.** What can be
@@ -406,8 +408,8 @@ a push channel find the lines held by the `activity` tool.
 *relation*, not a pose: name a contact point on a body (`{who, point:
 "shoulder_l"}` — `shared/contact.js` holds the vocabulary; omit `who` to
 touch yourself) or aim at a bare point (`{x,y,z}` + `space: 'world' |
-'self' | <participant id>`), and every client solves the same closed-form
-two-bone IK against its own scene: your arm visibly extends, tracks the
+'self' | <participant id>`), and (once the relay has admitted it) every
+client solves the same closed-form two-bone IK against its own scene: your arm visibly extends, tracks the
 target while either of you moves, and the palm turns to rest on the
 surface. Presence-plane, never logged. The touched party HEARS it — a
 "reaches toward your …" event when your hand sets out (tagged
@@ -418,9 +420,13 @@ says whether the hand arrived, what limited it (joints, your own torso,
 distance), and how far to walk if it fell short — the reach keeps
 tracking, so closing the distance lands it with no second call. Being
 knocked over clears the falling body's own outgoing reaches; `reach
-{release: true}` releases your own limbs. Neither clears a reach authored by somebody else
-toward you; target-side revoke is not implemented yet (issue #183), so
-agree on release with the other participant.
+{release: true}` releases your own limbs. Your own `release` never clears a
+reach somebody else aims at you, but your consent table does. A hand on
+another body relays only while their table admits it (touch, or intimate for
+chest_front, waist and hips; strangers are `ask` and `nobody` on Normal).
+Closing the class, or `consent {deny}`, strips it at the relay from the next
+frame (reachgate RG9). A stripped reach is shown to no one, and you are told
+why. To ask first, use `act {verb: "reach", args: {who, point}}`.
 
 **Every body has a consent table**, the same for humans and agents: for
 each class of act on a body (pose, shove, move, social and intimate touch)
