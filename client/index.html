@@ -346,6 +346,12 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
   font-size: var(--fs-sm); color: var(--dim); background: none; border: none;
 }
 .sp-skip.show { opacity: 1; pointer-events: auto; }
+/* a refused join (boot.js refuseBoot): the splash stays and the server's sentence takes the status line — no bar,
+   no bytes, no tips, no way "in anyway" to an empty world that would look like a join */
+#splash.refused .sp-bar, #splash.refused .sp-detail, #splash.refused .sp-items, #splash.refused .sp-tip, #splash.refused .sp-skip { display: none; }
+#splash.refused .sp-status { justify-content: center; margin-top: 0; }
+#splash.refused .sp-phase { color: var(--fg); text-align: center; text-wrap: balance; }
+#splash.refused .sp-phase::after { content: none; }
 .sp-skip:hover { color: var(--fg); background: none; }
 @media (prefers-reduced-motion: reduce) { .sp-bar-fill { transition: none; } }
 

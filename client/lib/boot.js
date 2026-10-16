@@ -237,6 +237,30 @@ export function finishBoot(reason = 'ready') {
   releaseBoot?.();
 }
 
+/** The world refused the join (net.js: close 4005 and its kin — an old-format world, no such world, a removal): the
+ *  splash stays up, or comes back, and says so in the server's own words. Nothing lifts it — no ceiling, no "go in
+ *  anyway": an empty world behind it looked like a successful join (R 10-16 00:02: an old-format world opened as her
+ *  avatar on an empty grid, the refusal toasted UNDER the splash and gone before it lifted). Coming back is a reload. */
+export function refuseBoot(text) {
+  const root = el ?? document.getElementById('splash');
+  if (!root) return;
+  el = root;
+  done = true;   // finishBoot, the 45 s ceiling and the progress painters all stand down
+  clearInterval(tipTimer);
+  clearInterval(itemsTimer);
+  stopRays();
+  root.classList.remove('gone');
+  root.style.display = '';
+  root.classList.add('refused');
+  const phase = root.querySelector('.sp-phase');
+  if (phase) { phase.textContent = String(text ?? ''); phase.setAttribute('role', 'alert'); }
+  const detail = root.querySelector('.sp-detail');
+  if (detail) detail.textContent = '';
+  const sub = root.querySelector('.sp-sub');
+  if (sub) sub.textContent = "couldn't step in";
+}
+export const bootRefused = () => !!el?.classList.contains('refused');
+
 /** Disarm the lite-mode tripwire index.html armed before the first engine byte.
  *
  *  NOT at finishBoot: arrival means "there is somewhere to stand", and the world's assets
