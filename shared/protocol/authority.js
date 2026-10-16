@@ -110,7 +110,7 @@ export function request(w, actor, verb, args = {}) {
     // the authority's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them.
     // They have no budget of their own: they are bounded by the engine (settleSim takes at most 64 rests a request) and by
     // the returns that are due (each one a thing someone let go of that long ago)
-    if (h && w.exists) { CTX.work = { left: Infinity, until: Infinity, k: 0 }; settleSim(w); returnDue(w); expireAsks(w); CTX.work = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 }; }
+    if (h && w.exists) { CTX.work = { left: Infinity, until: Infinity, k: 0 }; restampEngine(w); settleSim(w); returnDue(w); expireAsks(w); CTX.work = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 }; }
     args = wire(args);
     // throughLock (§5) is a flag on any request, not an argument of one verb: checked here, then admit reads it
     // expect (§3a) is the same kind of flag: the values a gesture started from. Checked here, before anything is built
@@ -1920,7 +1920,7 @@ export function settle(w, { maxTicks = 8 } = {}) {
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
     const n0 = w.entries.length;
     CTX.work = { left: Infinity, until: Infinity, k: 0 };
-    settleSim(w); returnDue(w); expireAsks(w); checkpointSim(w);
+    restampEngine(w); settleSim(w); returnDue(w); expireAsks(w); checkpointSim(w);
     drainScripts(w); drainHeld(w);   // what the beat logged reaches scripts, as a request's entries do (second review S2-2)
     return w.entries.length - n0;
   });
@@ -2660,6 +2660,47 @@ function settleSim(w) {
       changeEntry(w, p3, w.append(actEntry(w, "system", "settle", { id: r.id, onto: sup.id, rest })));
     }
   }
+}
+// A deploy changes the engine's build (REVIEW-design-2026-10-15 "Deploying switches physics off"): a world the old server
+// stamped names the old build, carried() calls it foreign (rightly: determinism is per binary), and nothing would fly
+// until an owner rewrote physics-engine. The authority restamps it itself, as system, at the first act or heartbeat after
+// load, when all of these hold:
+//   - the engine is one this server carries, under another build;
+//   - that build was STAMPED (by an authority, or by this restamp), never named by the owner: a build the owner chose is
+//     the owner's word (phys-check pc-k), and stays foreign;
+//   - nothing is in flight (P6: then the cut is free, and real). A foreign world has no engine state (out.sim is null,
+//     out.launched {}), so the log is read instead, from the epoch's start: a launch whose body has no rest under it, or a
+//     lift or catch nothing put back (orphanLifts' lifecycle), is in flight; and so is anything held now (presence).
+// Otherwise it does nothing and the world stays foreign (the owner can still restamp by hand, force: true). Checked once
+// per world object and spec (a heartbeat doesn't re-read the log), except while a hold is what blocks it.
+const restampTried = new WeakMap();
+function restampEngine(w) {
+  const st = w.state(); const spec = st.entities["@world"]?.c["physics-engine"]; const known = spec && ENGINES[spec.engine];
+  if (!known || carried(spec)) return;
+  const key = JSON.stringify(spec); if (restampTried.get(w) === key) return;
+  if (w.custody?.()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer) return;   // a server that can't sign for the world doesn't write to it
+  if (Object.keys(w.presence?.holds ?? {}).length) return;   // held right now: try again at the next act
+  restampTried.set(w, key);
+  const E = w.entries; let from = -1;
+  for (let s = E.length - 1; s >= 0; s--) { const e = E[s]; if (isE(e) && e.kind === "change" && opsQuiet(e).some((o) => o.id === "@world" && o.comp === "physics-engine")) { from = s; break; } }
+  if (from < 0) return;
+  // named by the owner? the act that caused the epoch's change carries the request as sent (L4)
+  const named = (v) => !!v && typeof v === "object" && (Array.isArray(v) ? v.some(named) : (v.component === "physics-engine" && v.value?.build !== undefined) || Object.values(v).some(named));
+  const cause = E[E[from].cause]; if (isE(cause) && cause.kind === "act" && cause.actor !== "system" && named(cause.body?.request)) return;
+  const out = new Map();   // id → the launch seq it flies under, or "held"
+  for (let s = from + 1; s < E.length; s++) { const e = E[s]; if (!isE(e)) continue;
+    if (e.kind === "sim" && e.body?.id) { if (e.verb === "launch") out.set(e.body.id, s); else if (e.verb === "lift" || e.verb === "catch") out.set(e.body.id, "held"); continue; }
+    if (e.kind !== "change") continue;
+    const c = E[e.cause]; const rest = isE(c) && c.kind === "sim" && c.verb === "launch";
+    for (const o of opsQuiet(e)) { const f = out.get(o.id); if (f === undefined) continue;
+      if (rest ? f === e.cause : (f === "held" && (o.verb === "create" || ["transform", "parent"].includes(o.comp) || (o.comp === "disabled" && o.verb === "set" && o.value === true)))) out.delete(o.id);
+      else if (o.verb === "delete" && o.comp === undefined) out.delete(o.id); } }
+  if (out.size) return;
+  const next = { ...spec, build: known.build };
+  let plan; try { plan = admit(w, st, { actor: "system", cap: { kind: "system", ids: ["@world"], comps: ["physics-engine"] } }, [setOp("@world", "physics-engine", next)]); }
+  catch (x) { if (!(x instanceof Refusal)) throw x; return; }
+  changeEntry(w, plan, w.append(actEntry(w, "system", "restamp-engine", { id: "@world", component: "physics-engine", from: spec.build, to: next.build,
+    why: `engine build ${spec.build} → ${next.build}: restamped by the server; bodies at rest` })));
 }
 // P6: an engine change is a real cut. At rest the cut is free (the log already holds every result); in flight it waits.
 function buildEpoch(ctx, v, a) {
