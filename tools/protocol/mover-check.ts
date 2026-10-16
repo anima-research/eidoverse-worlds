@@ -345,6 +345,32 @@ if (M) {
   { const r = call("shelf", "lia", "move", { to: [0, 0, 5.5], teleport: true, scale: 50 }), up = r.ok && call("shelf", "lia", "move", { to: [0, 2, 6.3] });
     ok(r.ok && up && !up.ok && up.refused.code === "solid" && /ground/.test(up.refused.blocker ?? ""), "G6 a claimed scale of 50 is the mover's largest body (2): a 2 m terrain ledge is still a wall (its step is 1.6 m)", { r, up }); }
 
+  // ---- GH a heightmap whose grid isn't here (holes r3 F3): the height law would fall back to noise (amplitude 3 here: a
+  // phantom metre and more), so the authority commits NO ground until the grid is here (terrainshape's own rule; the
+  // browser and the agent keep their last ground): ground-seated placement and a walk are refused with words, nothing is
+  // logged; an arrival on dry ground (no ground read) still lands. Once the grid is registered: seated on the heightmap.
+  { const { registerGrid } = await import(ENGINE + "shared/terrainshape.js");
+    const REF = "store/heightmaps/f3f3f3f3f3f3f3f3.json", HM = { amplitude: 3, size: 80, heightmap: { grid: REF, min: 0, max: 0.01 } };
+    call("hm", "olive", "create-world", { title: "hm" });
+    ok(call("hm", "olive", "set", { id: "@world", component: "terrain", value: HM }).ok, "GH0 a heightmap terrain whose grid isn't on this server");
+    const yOf = (id) => openWorld(root, "hm").state().entities[id]?.c.transform?.pos?.[1];   // a crate's origin is its bottom
+    const c = call("hm", "olive", "create", { id: "hc1", model: "crate", at: [12, -7] });
+    ok(!c.ok && c.refused?.code === "ground-loading" && /loading/.test(c.refused.reason) && !openWorld(root, "hm").state().entities.hc1,
+      "GH1 create {at: [x, z]} with the grid missing: refused (the ground is still loading), no noise height logged", { refused: c.refused, y: openWorld(root, "hm").state().entities.hc1?.c.transform?.pos?.[1] });
+    ok(call("hm", "olive", "create", { id: "hc2", model: "crate", components: { transform: { pos: [5, 0.5, 5] } } }).ok, "GH1 a thing given its own [x, y, z] is not ground-seated: created");
+    const pl = call("hm", "olive", "place", { id: "hc2", at: [-15, 3] });
+    ok(!pl.ok && pl.refused?.code === "ground-loading" && near(openWorld(root, "hm").state().entities.hc2.c.transform.pos[1], 0.5), "GH1 place {at} with the grid missing: refused, the thing stays where it was", pl.refused);
+    const arr = call("hm", "ann", "move", { to: [0, 0, 0], client: "agent" });
+    ok(arr.ok, "GH2 an arrival on dry ground reads no ground: it lands", arr.refused);
+    const wk = call("hm", "ann", "move", { to: [0.5, 0, 0] });
+    ok(!wk.ok && wk.refused?.code === "ground-loading" && /loading/.test(wk.refused.reason), "GH2 a walk with the grid missing: refused with words (the authority won't judge it on noise)", wk.refused);
+    registerGrid(REF, { w: 2, h: 2, data: new Uint16Array([65535, 65535, 65535, 65535]) });
+    const hHM = fieldOf(HM);
+    const c3 = call("hm", "olive", "create", { id: "hc3", model: "crate", at: [12, -7] });
+    ok(c3.ok && near(yOf("hc3"), hHM(12, -7), 0.01) && hHM(12, -7) <= 0.0101 && hHM(12, -7) >= 0, "GH3 the grid here: create {at} seats the crate on the heightmap (0..0.01 m), not on noise", { got: yOf("hc3"), field: hHM(12, -7) });
+    ok(call("hm", "ann", "move", { to: [0.5, r3(hHM(0.5, 0)), 0] }).ok, "GH3 the grid here: the walk is accepted", null);
+  }
+
   // ---- GP placement: on the hill, place {at}, create {at: [x, z]} and the spawn alias seat a model's BOTTOM on the heightfield
   const { TOOL_ALIAS_ARGS } = await import(ENGINE + "mcpl/tools.ts");
   call("flat", "olive", "create-world", { title: "flat" });

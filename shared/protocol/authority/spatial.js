@@ -8,7 +8,7 @@ import { LAB_CATALOGUE, geomE } from "./catalogue.js";
 import { aabb, boxToObb, obbs, overlap, satCost, satDepth, surfacesOf } from "./math.js";
 import { VOLATILE } from "./storage.js";
 import { terrainParams, makeHeightField } from "../../terrainmath.js";
-import { waterParams } from "../../terrainshape.js";
+import { shapeParams, shapeReady, waterParams } from "../../terrainshape.js";
 // The authority is synchronous and every world on a server shares its one thread, so no request may cost the world's size
 // squared. Every hot path (support under a point, overlap warnings, a body's track, place's search, delete's set-down,
 // what rests on a thing picked up) asks the index "what could touch this box?" instead of every entity.
@@ -163,15 +163,27 @@ function familyOf(st, id) { const kids = kidsMap(st); const out = new Set([id]);
 // level the mover's water law reads). No terrain component: y 0 and no water, as every world stood before. The field is
 // built once per terrain VALUE (a write replaces the value, never changes it in place: the revision is the object), not
 // per call. A heightmap's grid comes through terrainshape's loader (the server's disk, server/heightmap.ts).
+// A heightmap whose grid isn't here yet (a world copied without its store/heightmaps file, a hash not uploaded, the loader's
+// miss window) is NOT READY (holes r3 F2/F3): the height law would fall back to the noise law, and nothing commits ground on
+// that (terrainshape's rule; the browser and the agent keep their last ground). Its ground is never cached, so it is built
+// the moment the grid lands, and any read of its height refuses with words: ground-seated placement, a walk, a put, a
+// set-down. Readers that only advise (warnings, the settle's rest-attach) ask groundReady first and skip.
 const GROUND = new WeakMap();
-const FLAT = Object.freeze({ terrain: false, height: () => 0, level: null });
+const FLAT = Object.freeze({ terrain: false, ready: true, height: () => 0, level: null });
+const loading = () => refuse("ground-loading", "this world's ground is still loading: its heightmap's grid isn't on this server yet, and the authority won't stand anything (or judge a step) on a guessed height",
+  "try again in a moment; if it stays missing, an owner can upload the heightmap image again");
 function groundOf(st) {
   const t = st.entities["@world"]?.c.terrain;
   if (!t || typeof t !== "object") return FLAT;
   let g = GROUND.get(t);
-  if (!g) { const h = makeHeightField(terrainParams(t)); g = Object.freeze({ terrain: true, height: h, level: waterParams(t)?.level ?? null }); GROUND.set(t, g); }
+  if (!g) {
+    const level = waterParams(t)?.level ?? null;
+    if (!shapeReady(shapeParams(t))) return { terrain: true, ready: false, height: loading, level };
+    g = Object.freeze({ terrain: true, ready: true, height: makeHeightField(terrainParams(t)), level }); GROUND.set(t, g);
+  }
   return g;
 }
+const groundReady = (st) => groundOf(st).ready;
 const terrainAt = (st, x, z) => { const y = groundOf(st).height(x, z); return Number.isFinite(y) ? y : 0; };
 
 // The highest support at (x, z) at or below y (+2 cm): a placed thing's top, or the ground (terrain counts at any height:
@@ -201,4 +213,4 @@ function supportUnder(st, b, ignore) {
   return best;
 }
 
-export { GEO, LASTIX, SPATIAL, buildIx, groundOf, terrainAt, cellKey, cellOf, cellsOf, clockMs, deriveIx, familyOf, fileIx, geoOf, hitsIx, kidsMap, kidsOfIx, near, spatial, spend, supportBelow, supportUnder };
+export { GEO, LASTIX, SPATIAL, buildIx, groundOf, groundReady, terrainAt, cellKey, cellOf, cellsOf, clockMs, deriveIx, familyOf, fileIx, geoOf, hitsIx, kidsMap, kidsOfIx, near, spatial, spend, supportBelow, supportUnder };
