@@ -135,6 +135,12 @@ const WALK_READY_MS = 15_000;
 /** The world entity (places that belong to no thing live on it), and how far and how many places look lists (owner
  *  22:40/22:43: only what you can see, nearest first; move {to: "?"} lists every one). */
 const WORLD_ENTITY = "@world", PLACE_SIGHT_M = 30, PLACE_LOOK_MAX = 12, PLACE_LIST_MAX = 200;
+/** A thing with no entrance is walked up to: stopped this far short of its origin (its footprint unknown) / out from its
+ *  footprint's nearest point (metres; the body's own, not the thing's). */
+const THING_STOP = 0.8, THING_STANDOFF = 0.5;
+/** This body's walking capsule: an agent's body is its authored size (no agent sets a scale: riderScale answers 1 for
+ *  it), so its walk resolves with colliderFor(1) (mcpl/physics.ts WALKING), and its shoves and stalls touch with the same. */
+const BODY_CAP = colliderFor(1);
 const GEOMETRY_LOADING = "things placed nearby are still loading their shape, so a walk now could pass through them — try again in a moment";
 const meshBytes = new Map<string, number>();
 /** Fetch-and-decode jobs at once (process-wide): replay fires one per spawn,
@@ -841,13 +847,17 @@ export class WorldAgent {
         const refused = this.joinRefused; this.joinRefused = null;
         if (code === 4005 && why === "full" && !this.closed) {
           clearTimeout(timeout);
-          reject(new Error(`${refused ?? "the world is full"} — trying again by itself`));
+          // the words are this body's, kept open: the agent doors (mcpl/server.ts, net-server's serve and travel) end on this
+          // rejection and close it, so they say only what a body that is kept does (review r5 F4; docs/WIRE.md 4005)
+          reject(new Error(`${refused ?? "the world is full"} — trying again by itself while this body is kept open (closing it gives up the wait)`));
           setTimeout(() => { if (!this.closed && !this.joined) this.connect().catch(() => {}); }, this.redial.next(REDIAL.full));
           return;
         }
         if (refused !== null) { this.closed = true; clearTimeout(timeout); reject(new Error(refused)); }
         if (code === 4005) { this.close(); return; }
-        if (!this.closed) setTimeout(() => this.connect().catch(() => {}), 1500);
+        // any other drop (an outage, a restart): dialled again on the browser's schedule (shared/redial.js, reset by a join),
+        // not a fixed 1.5 s that every agent of a restarted server would keep in step (review r5 F4)
+        if (!this.closed) setTimeout(() => this.connect().catch(() => {}), this.redial.next());
       };
       ws.onmessage = async (ev) => {
         // House rule #3, applied to the DOOR: no event may ever exit the
@@ -1902,7 +1912,7 @@ export class WorldAgent {
   private supportIds = new Map<string, string[]>();
   /** A pre-join refusal's words, until its close says whether it is final (onclose). */
   private joinRefused: string | null = null;
-  /** How long until the next dial of a full world (shared/redial.js: the browser's rule); reset by a join. */
+  /** How long until the next dial after a drop or a full world (shared/redial.js: the browser's rule); reset by a join. */
   private redial = redialer();
   private removedUntil: number | null = null;   // a moderation removal's end (a kick's cooldown): reconnect then   // entity id -> registered box ids
   /** This agent's claim token on shared support boxes. Per INSTANCE, not per
@@ -3344,7 +3354,7 @@ export class WorldAgent {
   }
 
   /** Where `to` is, as a walk can aim at it: "thing/place", a thing alone
-   *  (its entrance, else its door), a place's name or label alone (the
+   *  (its entrance, else its door, else up to it and beside it), a place's name or label alone (the
    *  nearest, if several things have one), a thing by its label, or a person
    *  (stopping short of them) — in that order: a person's name never hides a
    *  thing's, by id or by label. */
@@ -3370,13 +3380,15 @@ export class WorldAgent {
       if (!p) return { refusal: `[${e.id}] has no place called "${name}"${ps.length ? ` — its places: ${ps.map((x) => x.name).join(", ")}` : " (it has no named places)"}` };
       return at(e, p);
     }
+    // a thing: its entrance, else its door, else walked up to and stood beside (review r5 F3: here, not in a second
+    // resolver of move's — a person named like it never captures the walk, and of several, the nearest is taken)
+    const thing = (x: Entity): Destination | { refusal: string } => {
+      const ps = this.placesOn(x);
+      const p = ps.find((y) => y.name === "entrance") ?? ps.find((y) => y.kind === "door");
+      return p ? at(x, p) : this.besideThing(x);
+    };
     const e = ents.find((x) => ci(x.id, q));
-    if (e) {
-      const ps = this.placesOn(e);
-      const p = ps.find((x) => x.name === "entrance") ?? ps.find((x) => x.kind === "door");
-      if (p) return at(e, p);
-      return { refusal: `[${e.id}] has no entrance or door named — move to its places by name${ps.length ? ` (${ps.map((x) => x.name).join(", ")})` : ""}, or to its coordinates` };
-    }
+    if (e) return thing(e);
     const hits: Destination[] = [];
     for (const p of this.worldPlaces()) if (names(p, q)) hits.push(destinationOf(WorldAgent.WORLD_HOLDER, p));
     for (const x of ents) for (const p of this.placesOn(x)) {
@@ -3389,12 +3401,7 @@ export class WorldAgent {
     // (review r4 claims C1: a visitor named like a thing's label captured the walk)
     const byLabel = ents.filter((x) => { const l = (x as { label?: unknown }).label; return typeof l === "string" && ci(l.trim(), q); })
       .sort((a, b) => Math.hypot(a.pos[0] - me.x, a.pos[2] - me.z) - Math.hypot(b.pos[0] - me.x, b.pos[2] - me.z));
-    if (byLabel.length) {
-      const x = byLabel[0], ps = this.placesOn(x);
-      const p = ps.find((y) => y.name === "entrance") ?? ps.find((y) => y.kind === "door");
-      if (p) return at(x, p);
-      return { refusal: `[${x.id}] has no entrance or door named — move to its places by name${ps.length ? ` (${ps.map((y) => y.name).join(", ")})` : ""}, or to its coordinates` };
-    }
+    if (byLabel.length) return thing(byLabel[0]);
     // a person, last (review r3 F4): a visitor who joins as "tower" must not capture every walk to the tower
     for (const p of this.people.values()) {
       if (!ci(p.id, q)) continue;
@@ -3405,6 +3412,19 @@ export class WorldAgent {
     }
     const known = this.placesNear().map((x) => x.ref);
     return { refusal: `nothing here is called "${q}"${known.length ? ` — named places: ${known.slice(0, 16).join(", ")}${known.length > 16 ? ` and ${known.length - 16} more (move {to: "?"} lists them all)` : ""}` : ""}` };
+  }
+
+  /** A thing with no entrance or door, as a walk aims at it: up to it and beside it, on this body's side — THING_STANDOFF
+   *  out from the nearest point of its footprint (its origin where the footprint isn't known, THING_STOP short of it). */
+  private besideThing(x: Entity): Destination {
+    const me = this.pos, box = footprint(this.replica?.st, x.id);
+    let px = x.pos[0], pz = x.pos[2], off = THING_STOP;
+    if (box) {
+      const nx = Math.min(box.max[0], Math.max(box.min[0], me.x)), nz = Math.min(box.max[2], Math.max(box.min[2], me.z));
+      if (Math.hypot(me.x - nx, me.z - nz) > 1e-6) { px = nx; pz = nz; off = THING_STANDOFF; }
+    }
+    const d = Math.hypot(me.x - px, me.z - pz), back = d > 0.01 ? Math.min(off, d) / d : 0;
+    return { x: px + (me.x - px) * back, y: box ? box.min[1] : x.pos[1], z: pz + (me.z - pz) * back, reach: 0.6, label: `[${x.id}]` };
   }
 
   /** name_place edits, one at a time: each starts from the state the last
@@ -3583,11 +3603,14 @@ export class WorldAgent {
       `(${final.x.toFixed(2)}, ${final.z.toFixed(2)}): something solid is in the way that the route did not ` +
       `expect (it moved or arrived after the walk was planned) — move there again and the route will take it into account`;
     this.stallTicks = 0;
-    // pressed against a thing the route planned to walk into (its shove doesn't move it): round it, once
-    const plan = this.walkPlan, st = this.replica?.st, cap = colliderFor(1), feet = [this.pos.x, this.pos.y, this.pos.z];
-    if (plan && !plan.replanned && st) for (const id of plan.passable) {
-      const obb = obbOf(st, id);
-      if (obb && contactOf(feet, cap.r, cap.tall, { obb, box: aabbOfObb(obb) }, SHOVE_FEEL.slack) && this.replanRound(id)) { this.walkStall = null; return; }
+    // pressed against a thing the route planned to walk into (its shove doesn't move it): round it, once. Only a thing
+    // the stride presses INTO is blamed (its contact's normal head-on to the walk, as a shove's is: review r5 F5) — a
+    // walk stalled by something else while it grazes a crate doesn't mark the crate solid
+    const plan = this.walkPlan, st = this.replica?.st, cap = BODY_CAP, feet = [this.pos.x, this.pos.y, this.pos.z];
+    const dx = t.x - this.pos.x, dz = t.z - this.pos.z, dd = Math.hypot(dx, dz);
+    if (plan && !plan.replanned && st && dd > 1e-6) for (const id of plan.passable) {
+      const obb = obbOf(st, id), c = obb && contactOf(feet, cap.r, cap.tall, { obb, box: aabbOfObb(obb) }, SHOVE_FEEL.slack);
+      if (c && (dx * c.n[0] + dz * c.n[1]) / dd >= SHOVE_FEEL.headOn && this.replanRound(id)) { this.walkStall = null; return; }
     }
     this.abandonWalk();
   }
@@ -3676,18 +3699,29 @@ export class WorldAgent {
   private mayWalkInto(id: string, run: boolean): boolean {
     if (!this.mayShove(id)) return false;
     const was = this.misjudged.get(id), box = was && footprint(this.replica?.st, id);
-    if (was && box && Math.hypot((box.min[0] + box.max[0]) / 2 - was[0], (box.min[2] + box.max[2]) / 2 - was[1]) < SHOVE_FEEL.moved) return false;
-    if (was) this.misjudged.delete(id);   // it has moved (or gone) since: judged afresh
+    if (was && box && was.sig === this.shoveState(id) && Math.hypot((box.min[0] + box.max[0]) / 2 - was.at[0], (box.min[2] + box.max[2]) / 2 - was.at[1]) < SHOVE_FEEL.moved) return false;
+    if (was) this.misjudged.delete(id);   // it has moved (or gone), or its lock, physics or mass changed since: judged afresh
     return budges(massOf(this.replica?.st, id) ?? NaN, run ? MOVER.walk.run : MOVER.walk.speed);
   }
-  /** Things a walk planned through and the authority then called solid: id -> its footprint's centre [x, z] then. */
-  private misjudged = new Map<string, [number, number]>();
+  /** What a thing's shove depends on besides where it stands: its lock and every lock over it, its physics (kind, who,
+   *  mass, density, material) — the judgement of a misjudged thing holds only while these do (review r5 F5: a crate
+   *  locked once and unlocked was solid to this body's walks for good). */
+  private shoveState(id: string): string {
+    const st = this.replica?.st, locks: unknown[] = [];
+    let k: string | undefined = id;
+    for (let i = 0; k && i < 64; i++) { const c: any = st?.entities?.[k]?.c; locks.push(c?.lock ?? null); k = typeof c?.parent?.to === "string" ? c.parent.to : undefined; }
+    const ph: any = st?.entities?.[id]?.c?.physics ?? null;
+    return JSON.stringify([locks, ph && { kind: ph.kind, who: ph.who, mass: ph.mass, density: ph.density, material: ph.material }]);
+  }
+  /** Things a walk planned through and then found solid: id -> its footprint's centre [x, z] and its shoveState then. */
+  private misjudged = new Map<string, { at: [number, number]; sig: string }>();
   /** The walk under way's plan (to re-plan it once round a thing it misjudged). */
   private walkPlan: { x: number; z: number; run: boolean; timeoutMs: number; tolerance: number; y: number | undefined;
     near: Pick<NavTarget, "reach" | "above" | "below" | "inside">; passable: Set<string>; replanned: boolean } | null = null;
   /** The things this walk may walk into, and their registered colliders (sorted): the walk planner routes through them. */
   private passableColliders(run: boolean): { ids: Set<string>; colliders: string[] } {
     const ids = new Set<string>(), out: string[] = [];
+    for (const id of this.misjudged.keys()) if (!this.replica?.st?.entities?.[id]) this.misjudged.delete(id);   // gone: forgotten
     for (const [id, bids] of this.supportIds) if (this.mayWalkInto(id, run)) { ids.add(id); out.push(...bids); }
     return { ids, colliders: out.sort() };
   }
@@ -3700,7 +3734,7 @@ export class WorldAgent {
     if (this.shoveOff || !st || !canon?.sim || canon.foreign || !this.target || this.draggedBy || this.clip === "ragdoll" || this.flight || this.mySeat) return;
     if (!g || g.mode === "sync" || g.busy) return;
     const dx = this.target.x - this.pos.x, dz = this.target.z - this.pos.z, d = Math.hypot(dx, dz); if (d < 1e-6) return;
-    const sp = this.target.run ? MOVER.walk.run : MOVER.walk.speed, cap = colliderFor(1);
+    const sp = this.target.run ? MOVER.walk.run : MOVER.walk.speed, cap = BODY_CAP;
     const mounted = new Set<string>(), bodies: number[][] = [];
     for (const p of this.people.values()) { const seat = (p.pose as any)?.seat?.to; if (typeof seat === "string") mounted.add(seat);
       const at = (p.pose as any)?.p; if (Array.isArray(at) && at.length === 3 && at.every(Number.isFinite)) bodies.push(at); }
@@ -3732,7 +3766,7 @@ export class WorldAgent {
     const id = ref?.blocker, st = this.replica?.st;
     if (typeof id !== "string" || !st || !this.replica?.sim?.sim || (g.shoves ?? 0) >= SHOVE_TRIES || !shoveable(st, id)) return false;
     const obb = obbOf(st, id); if (!obb) return false; const thing = { obb, box: aabbOfObb(obb) };
-    const cap = colliderFor(1), dx = T.x - from[0], dz = T.z - from[2], d = Math.hypot(dx, dz); if (d < 1e-6) return false;
+    const cap = BODY_CAP, dx = T.x - from[0], dz = T.z - from[2], d = Math.hypot(dx, dz); if (d < 1e-6) return false;
     let s = 0; const STEP = 0.05;
     const touches = (k: number) => !!contactOf([from[0] + dx / d * k, from[1], from[2] + dz / d * k], cap.r, cap.tall, thing, SHOVE_FEEL.slack / 2);
     while (s < d && !touches(s)) s = Math.min(d, s + STEP);
@@ -3767,15 +3801,18 @@ export class WorldAgent {
   private replanRound(id: string, ref: any = null): boolean {
     const plan = this.walkPlan, box = footprint(this.replica?.st, id);
     if (!plan || plan.replanned || !plan.passable.has(id) || !this.walkDone || !box) return false;
-    this.misjudged.set(id, [(box.min[0] + box.max[0]) / 2, (box.min[2] + box.max[2]) / 2]);
+    this.misjudged.set(id, { at: [(box.min[0] + box.max[0]) / 2, (box.min[2] + box.max[2]) / 2], sig: this.shoveState(id) });
     if (Array.isArray(ref?.at)) this.trackAt = ref.at;
     const done = this.walkDone; this.walkDone = null;
     this.abandonWalk(); this.clip = "idle";
+    // every end of the re-planned walk but "refused before a step" goes through abandonWalk and bumps the ticket: a stop,
+    // a timeout, a stall, a refusal, a newer walk (whose state walkTo has just cleared) — none of them is this answer's
+    const ticket = this.walkTicket;
     const note = `${id} wouldn't move for your shove: you walked round it`;
     this.lastWalkNote = note;
     void this.walkNow(plan.x, plan.z, plan.run, plan.timeoutMs, plan.tolerance, plan.y, plan.near, true).then((arrived) => {
       // planned round it and refused before a step: what stopped the first plan is still this walk's answer
-      if (!arrived && !this.lastWalkRefusal && !this.walkStall && !this.walkStopReason) {
+      if (!arrived && this.walkTicket === ticket && !this.lastWalkRefusal && !this.walkStall && !this.walkStopReason) {
         if (ref) this.lastWalkRefusal = { code: String(ref.code), reason: String(ref.reason ?? ""), ...(ref.fix ? { fix: String(ref.fix) } : {}) };
         else this.walkStopReason = `${id} is in the way and wouldn't move for your shove, and no route round it: ${this.walkRefusal ?? "none found"}`;
         if (this.lastWalkNote === note) this.lastWalkNote = null;

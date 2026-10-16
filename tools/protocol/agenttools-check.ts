@@ -14,6 +14,7 @@
 //        sugar is pose {posture|wings|clear} / reach {release} / act shove; three library tools are one; moderation is
 //        act {kick|ban|unban|bans}; light/remove/blueprint_place are create / act delete / create {from}; a folded name
 //        still answers, teaching where it went
+//   AT8  a dropped agent dials again on shared/redial.js's schedule (reset by the join), not a fixed 1.5 s (review r5 F4)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -305,6 +306,18 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   ok(!wv.isError && /is now called act/.test(T(wv)), "AT7 world_verb {verb, args} runs act", T(wv).slice(0, 160));
   const sn = await handleTool(ctx as any, "snapshot", { view: "third" });
   ok(/is now called screenshot/.test(T(sn)) && !/\bto\b.*required|shape/i.test(T(sn)), "AT7 snapshot {view} reaches screenshot with its own shape (no spectator here is fine; a shape error is not)", T(sn).slice(0, 160)); }
+
+// ---- AT8 (review r5 F4): a dropped agent dials again on the browser's schedule (shared/redial.js), not a fixed 1.5 s ----
+{ const rid = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Rid", world: "yard", avatar: "" });
+  await rid.connect(); for (let i = 0; i < 60 && !rid.joined; i++) await sleep(50);
+  const t0 = rid.redial?.tries;
+  rid.ws.close(1000, "a drop");
+  for (let i = 0; i < 20 && rid.joined; i++) await sleep(10);
+  await sleep(30);
+  ok(t0 === 0 && rid.redial?.tries === 1, "AT8 a dropped agent's next dial is the shared backoff's (one try counted)", { t0, tries: rid.redial?.tries });
+  for (let i = 0; i < 80 && !rid.joined; i++) await sleep(50);
+  ok(rid.joined && rid.redial?.tries === 0, "AT8 …it gets back in by itself, and the join resets the backoff", { joined: rid.joined, tries: rid.redial?.tries });
+  rid.close(); }
 
 ag.close(); ann.close();
 console.log(`agenttools: ${pass} pass, ${fail} fail`);
