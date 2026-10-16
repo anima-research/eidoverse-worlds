@@ -315,16 +315,17 @@ export const COMPONENTS = {
   schemas:   { on: "world", keyed: true, key: "instance", help: "on @world (owner), keyed by component name: the content hash of that name's written definition; set once, never changed (PROTOCOL §4)" },
   blueprints: { on: "world", keyed: true, key: "instance", help: "on @world, keyed by a blueprint's hash: {name, …} (publish writes it)" },
   "terrain-paint": { on: "world", keyed: true, key: "partition", help: "keyed <i>-<j>: paint channels for one tile (research 40 §3; not built in the lab)" },
-  // capacity: R's 10-14 14:13 call (VRChat/Resonite scale: gates against a world nobody can load, not targets).
-  // things 10 000 is what scale-check C2 fills under budget; 50 000 is the owner's ceiling, not measured.
+  // capacity: R's 10-14 14:13 call (VRChat/Resonite scale: gates against a world nobody can load, not targets), cut to ONE
+  // entity budget by R 10-15 22:48 (a socket is a child entity, so it counts like any other). entities 10 000 is what
+  // scale-check C2 fills under budget; 50 000 is the owner's ceiling, not measured.
   capacity:  { on: "world",
-               fields: { things: "int", guestThings: "int", sockets: "int", guestSockets: "int", avatar: "int" }, defaults: { things: 10000, guestThings: 500, sockets: 40000, guestSockets: 4000, avatar: 500 },
-               ranges: { things: { min: 1, max: 50000 }, guestThings: { min: 0, max: 50000 }, sockets: { min: 0, max: 200000 }, guestSockets: { min: 0, max: 200000 }, avatar: { min: 1, max: 5000 } },
-               units: { things: "things", guestThings: "things", sockets: "sockets", guestSockets: "sockets", avatar: "things" },
-               docs: { things: "how many things this world holds (default 10 000, at most 50 000)", guestThings: "how many things people without an account may have standing here, all together (default 500)",
-                       sockets: "the world's socket budget (default 40 000; sockets aren't things)", guestSockets: "guests' sockets together (default 4 000)",
-                       avatar: "how many things one avatar may wear (default 500). Recorded for the avatar design; nothing enforces it yet" },
-               help: "on @world (owner): how much this world holds: {things (default 10000, at most 50000), guestThings (default 500), sockets (default 40000), guestSockets (default 4000), avatar (default 500: how many things one avatar may wear)}; one thing holds at most 64 sockets. A gate against a world nobody can load, not a target: a create past things, guestThings, sockets or guestSockets is refused (full); avatar isn't enforced yet" },
+               fields: { entities: "int", guestEntities: "int", avatar: "int" }, defaults: { entities: 10000, guestEntities: 500, avatar: 2000 },
+               ranges: { entities: { min: 1, max: 50000 }, guestEntities: { min: 0, max: 50000 }, avatar: { min: 1, max: 5000 } },
+               units: { entities: "entities", guestEntities: "entities", avatar: "entities" },
+               docs: { entities: "the whole world's entities: every one but @world, sockets included (default 10 000, at most 50 000)",
+                       guestEntities: "all account-less people's entities together: what people without an account made that still stands here, sockets included (default 500)",
+                       avatar: "one worn avatar's entity tree, at most: the largest one avatar may be, checked when it's worn and not counted in entities (default 2 000); not enforced yet: no avatar trees exist" },
+               help: "on @world (owner): how much this world holds: {entities (the whole world's entities, every one but @world, sockets included; default 10000, at most 50000), guestEntities (all account-less people's entities together; default 500), avatar (one worn avatar's entity tree at most, checked when worn, not counted in entities; default 2000; not enforced yet)}; one thing holds at most 64 sockets. A gate against a world nobody can load, not a target: a create past entities or guestEntities is refused (full)" },
   "script-settings": { on: "world", fields: { run: "bool", install: "string", max: "int", budget: "int", rate: "int", depth: "int", fails: "int", cpu: "int", runs: "int" }, enums: { install: ["builder", "owner"] },
                defaults: { run: true, install: "builder", max: 12, budget: 600, rate: 6, depth: 8, fails: 5, cpu: 2000, runs: 60 },   // the authority's SCRIPTS (pretrans D6 pins they agree)
                ranges: { max: { min: 0, max: 64 }, budget: { min: 0, max: 100000 }, rate: { min: 0, max: 600 }, depth: { min: 1, max: 32 }, fails: { min: 1, max: 100 }, cpu: { min: 0, max: 60000 }, runs: { min: 0, max: 600 } },

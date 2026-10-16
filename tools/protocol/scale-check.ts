@@ -16,7 +16,8 @@
 //   Q   the gates in front of the work: a visitor's place on a 1000× table is refused at once; a search that can't end
 //       inside the work budget is refused (too-costly); check {} on a heap likewise, while a write into it still lands;
 //       reads per connection (server/readmeter.ts); settling orphaned holds at load is bounded
-//   C   capacity: @world.capacity.things (and its default), and guests together (capacity.guestThings)
+//   C   capacity: @world.capacity.entities (and its default; sockets count like any entity), and guests together
+//       (capacity.guestEntities)
 //   I   indoors: a refused move is never logged; a house measured from its triangles can be walked into through its door
 //       (not through a wall) and things put down inside; a closed box stays solid; real library GLBs
 //   R   re-entrancy: a request nested in another (leave → drop, or a host's callback) leaves the outer call's state alone
@@ -62,8 +63,8 @@ const MUTANTS: [string, string, string | [string, string][], string, string[]][]
   ["the work budget", "shared/protocol/authority.js", "if ((WORK.left -= n) < 0 || ((WORK.k += n) >= 64 && ((WORK.k = 0), clockMs() > WORK.until))) {", "if (false) {", ["Q2", "Q3"]],
   ["a write's warnings never refuse it", "shared/protocol/authority.js", "if (strict || !(e instanceof Refusal) || e.code !== \"too-costly\") throw e;", "throw e;", ["Q3"]],
   ["look walks the children map", "shared/protocol/authority.js", "for (const k of kids.get(id) ?? []) tree(k, d + 1, n + 1); };", "for (const k of Object.keys(st.entities).filter((x) => st.entities[x].c.parent?.to === id)) tree(k, d + 1, n + 1); };", ["S4"]],
-  ["capacity.things", "shared/protocol/authority.js", "if (after > before && after > cap.things) refuse(\"full\"", "if (false) refuse(\"full\"", ["C1", "C2"]],
-  ["capacity.guestThings, all guests together", "shared/protocol/authority.js", "if (g + made > cap.guestThings) refuse(\"full\"", "if (false) refuse(\"full\"", ["C3"]],
+  ["capacity.entities", "shared/protocol/authority.js", "if (after > before && after > cap.entities) refuse(\"full\"", "if (false) refuse(\"full\"", ["C1", "C2"]],
+  ["capacity.guestEntities, all guests together", "shared/protocol/authority.js", "if (g + made > cap.guestEntities) refuse(\"full\"", "if (false) refuse(\"full\"", ["C3", "C3b"]],
   ["a refused move is never logged", "shared/protocol/authority.js", "    if (verb === \"move\") return;", "    if (verb === \"move\" && args?.teleport !== true && w.presence.bodies[actor]) return;", ["I1"]],
   ["solids: an enclosed cell is solid", "server/solids.ts", "const solid = (c: number) => occ[c] === 1 || out[c] === 0;", "const solid = (c: number) => occ[c] === 1;", ["I3"]],
   ["solids: cells merge only where their bounds line up", "server/solids.ts", "while (i1 + 1 < nx && free(i1 + 1, j, k) && same(idx(i1 + 1, j, k), s0, 1) && same(idx(i1 + 1, j, k), s0, 2)) i1++;", "while (i1 + 1 < nx && free(i1 + 1, j, k)) i1++;", ["I2"]],
@@ -169,7 +170,7 @@ const T0 = (pos: number[], scale = [1, 1, 1]) => ({ pos, q: [0, 0, 0, 1], scale 
 // ---------------- S: every request under BOUND_MS at a world's size ----------------
 function scaleCase(n: number) {
   return (s: any) => { cast(s);
-    if (n > 1900) s.call("olive", "set", { id: "@world", component: "capacity", value: { things: 2400 } });
+    if (n > 1900) s.call("olive", "set", { id: "@world", component: "capacity", value: { entities: 2400 } });
     const f = fill(s, n); if (!ok(f)) return { fill: show(f) };
     const X = f.side * 2 + 40;   // the furniture stands east of the grid
     s.call("olive", "create", { id: "big", model: "table", components: { transform: T0([X, 0, 0], [20, 1, 20]) } });
@@ -275,57 +276,63 @@ const cases: Case[] = [
       return { far: code(far.r), farMs: r1(far.ms), farAt: at(far.r), mid: code(mid.r), midMs: r1(mid.ms), midAt: at(mid.r), bound: r1(bound()) }; },
     good: (o) => o.far === "ok" && o.mid === "ok" && o.farMs <= o.bound && o.midMs <= o.bound && Math.abs(o.farAt?.[0] - 599.7) < 0.01 && Math.abs(o.farAt?.[2]) < 0.01 && Math.abs(Math.abs(o.midAt?.[0]) - 1.5) < 0.01 && Math.abs(o.midAt?.[2]) < 0.01 },   // the nearest free spots: the edge toward the offset; beside the slab (which side: G3 compares with the full scan)
   // ---------------- C: capacity ----------------
-  { id: "C1", what: "a world at capacity.things refuses what would add (full), a batch that would cross it whole; a delete frees room; other changes stay open", run(s) { cast(s);
-      s.call("olive", "set", { id: "@world", component: "capacity", value: { things: 10 } });
-      const made = []; for (let i = 0; i < 10; i++) made.push(code(s.call("bob", "create", { id: `t-${i}`, model: "crate", components: { transform: T0([i, 0, 0]) } }, 2000)));
+  { id: "C1", what: "a world at capacity.entities refuses what would add (full), a new socket the same as a new thing, a batch that would cross it whole; a delete frees room; other changes stay open", run(s) { cast(s);
+      s.call("olive", "set", { id: "@world", component: "capacity", value: { entities: 10 } });
+      const made = []; for (let i = 0; i < 9; i++) made.push(code(s.call("bob", "create", { id: `t-${i}`, model: "crate", components: { transform: T0([i, 0, 0]) } }, 2000)));
+      made.push(code(s.call("bob", "create", { id: "t-1-seat", components: { parent: { to: "t-1" }, socket: { name: "seat" } } }, 2000)));   // the 10th entity is a socket
       const over = s.call("bob", "create", { id: "t-10", model: "crate" }, 2000);
+      const sock = s.call("bob", "create", { id: "t-2-seat", components: { parent: { to: "t-2" }, socket: { name: "seat" } } }, 2000);
       const set = s.call("bob", "set", { id: "t-1", component: "label", value: "still open" }, 2000);
       s.call("bob", "delete", { id: "t-0" }, 2000);
       const batch = s.call("bob", "batch", { ops: [{ verb: "create", args: { id: "t-11", model: "crate" } }, { verb: "create", args: { id: "t-12", model: "crate" } }] }, 2000);
       const one = s.call("bob", "create", { id: "t-13", model: "crate", components: { transform: T0([0, 0, 3]) } }, 2000);
-      return { made: [...new Set(made)], over: code(over), why: over.refused?.reason, set: code(set), batch: code(batch), one: code(one), things: Object.keys(s.w().state().entities).length - 1 }; },
-    good: (o) => JSON.stringify(o.made) === '["ok"]' && o.over === "full" && /limit is 10/.test(o.why ?? "") && o.set === "ok" && o.batch === "full" && o.one === "ok" && o.things === 10 },
-  { id: "C2", what: `unset, a fresh world holds ${CAPACITY.things} things (capacity's default, R 10-14); the owner may raise it, never past capacity's max`, run(s) { cast(s);
-      const MAX = COMPONENTS.capacity.ranges.things.max;
-      const f = fill(s, CAPACITY.things); const over = s.call("bob", "create", { id: "x", model: "crate" }, 20000);
-      const raise = s.call("olive", "set", { id: "@world", component: "capacity", value: { things: CAPACITY.things + 100 } }, 20000);
+      return { made: [...new Set(made)], over: code(over), why: `${over.refused?.reason} | ${over.refused?.fix}`, sock: code(sock), sockWhy: sock.refused?.reason, set: code(set), batch: code(batch), one: code(one), entities: Object.keys(s.w().state().entities).length - 1 }; },
+    good: (o) => JSON.stringify(o.made) === '["ok"]' && o.over === "full" && /holds 10 entities and its limit is 10 \(@world\.capacity\.entities\)/.test(o.why) && /value: \{entities: <n>\}/.test(o.why) && o.sock === "full" && /@world\.capacity\.entities/.test(o.sockWhy ?? "") && o.set === "ok" && o.batch === "full" && o.one === "ok" && o.entities === 10 },
+  { id: "C2", what: `unset, a fresh world holds ${CAPACITY.entities} entities (capacity's default, R 10-14); the owner may raise it, never past capacity's max`, run(s) { cast(s);
+      const MAX = COMPONENTS.capacity.ranges.entities.max;
+      const f = fill(s, CAPACITY.entities); const over = s.call("bob", "create", { id: "x", model: "crate" }, 20000);
+      const raise = s.call("olive", "set", { id: "@world", component: "capacity", value: { entities: CAPACITY.entities + 100 } }, 20000);
       const now = s.call("bob", "create", { id: "y", model: "crate", components: { transform: T0([400, 0, 400]) } }, 20000);
-      const tooHigh = s.call("olive", "set", { id: "@world", component: "capacity", value: { things: MAX + 1000 } }, 20000);
-      const builder = s.call("bob", "set", { id: "@world", component: "capacity", value: { things: CAPACITY.things + 1000 } }, 20000);
-      return { fill: show(f), over: code(over), raise: code(raise), now: code(now), tooHigh: code(tooHigh), builder: code(builder) }; },
-    good: (o) => o.fill === "ok" && o.over === "full" && o.raise === "ok" && o.now === "ok" && o.tooHigh === "bounds" && o.builder === "rights" },
-  { id: "C2a", what: `capacity.avatar (how many things one avatar may wear) reads ${CAPACITY.avatar} unset; the owner sets it within 1–5000 and the rest of capacity is kept; 0 and 5001 are refused (bounds); a builder may not`, run(s) { cast(s);
+      const tooHigh = s.call("olive", "set", { id: "@world", component: "capacity", value: { entities: MAX + 1000 } }, 20000);
+      const builder = s.call("bob", "set", { id: "@world", component: "capacity", value: { entities: CAPACITY.entities + 1000 } }, 20000);
+      return { def: CAPACITY.entities, max: MAX, fill: show(f), over: code(over), raise: code(raise), now: code(now), tooHigh: code(tooHigh), builder: code(builder) }; },
+    good: (o) => o.def === 10000 && o.max === 50000 && o.fill === "ok" && o.over === "full" && o.raise === "ok" && o.now === "ok" && o.tooHigh === "bounds" && o.builder === "rights" },
+  { id: "C2a", what: `capacity has three fields, entities, guestEntities and avatar (R 10-15: things, guestThings, sockets and guestSockets are gone); capacity.avatar (the largest entity tree one worn avatar may be) reads ${CAPACITY.avatar} unset; the owner sets it within 1–5000 and the rest of capacity is kept; 0 and 5001 are refused (bounds); a builder may not; a gone field is refused; each field's docs say PER WHAT first (R 10-15)`, run(s) { cast(s);
       const cap = () => s.w().state().entities["@world"]?.c.capacity;
       const def = COMPONENTS.capacity.defaults.avatar, rng = COMPONENTS.capacity.ranges.avatar, unset = cap()?.avatar ?? null;
-      const set = s.call("olive", "set", { id: "@world", component: "capacity", value: { avatar: 2000 } }, 20000); const after = cap();
+      const set = s.call("olive", "set", { id: "@world", component: "capacity", value: { avatar: 3000 } }, 20000); const after = cap();
       const low = s.call("olive", "set", { id: "@world", component: "capacity", value: { avatar: 0 } }, 20000);
       const high = s.call("olive", "set", { id: "@world", component: "capacity", value: { avatar: 5001 } }, 20000);
-      const builder = s.call("bob", "set", { id: "@world", component: "capacity", value: { avatar: 3000 } }, 20000);
-      return { def, rng, unset, set: code(set), avatar: after?.avatar, things: after?.things, low: code(low), high: code(high), builder: code(builder), kept: cap()?.avatar }; },
-    good: (o) => o.def === CAPACITY.avatar && o.def === 500 && o.rng?.min === 1 && o.rng?.max === 5000 && o.unset === null && o.set === "ok" && o.avatar === 2000 && o.things === CAPACITY.things
-      && o.low === "bounds" && o.high === "bounds" && o.builder === "rights" && o.kept === 2000 },
-  { id: "C3b", what: "the guest refusal names the component and key the world reads (@world.capacity.guestThings), so an owner can follow it (review 10-14 C6/M9)", run(s) {
+      const builder = s.call("bob", "set", { id: "@world", component: "capacity", value: { avatar: 4000 } }, 20000);
+      const gone = s.call("olive", "set", { id: "@world", component: "capacity", value: { things: 5 } }, 20000);
+      const D = COMPONENTS.capacity.docs ?? {}, H = COMPONENTS.capacity.help ?? "";
+      return { per: [/^the whole world's entities/.test(D.entities ?? ""), /^all account-less people's entities together/.test(D.guestEntities ?? ""), /^one worn avatar's/.test(D.avatar ?? ""), /not enforced/.test(D.avatar ?? ""), /not enforced/.test(H), /sockets included/.test(D.entities ?? "")], fields: Object.keys(COMPONENTS.capacity.fields), cap: Object.keys(CAPACITY), def, rng, unset, set: code(set), avatar: after?.avatar, entities: after?.entities, guestEntities: after?.guestEntities, low: code(low), high: code(high), builder: code(builder), gone: code(gone), kept: cap()?.avatar, stored: Object.keys(cap() ?? {}).sort() }; },
+    good: (o) => o.per.every(Boolean) && JSON.stringify(o.fields) === '["entities","guestEntities","avatar"]' && JSON.stringify(o.cap) === JSON.stringify(o.fields) && o.def === CAPACITY.avatar && o.def === 2000 && o.rng?.min === 1 && o.rng?.max === 5000 && o.unset === null && o.set === "ok" && o.avatar === 3000 && o.entities === CAPACITY.entities && o.guestEntities === CAPACITY.guestEntities
+      && o.low === "bounds" && o.high === "bounds" && o.builder === "rights" && o.gone !== "ok" && o.kept === 3000 && JSON.stringify(o.stored) === '["avatar","entities","guestEntities"]' },
+  { id: "C3b", what: "the guest refusal names the component and key the world reads (@world.capacity.guestEntities) and says it is all account-less people's entities together, so an owner can follow it (review 10-14 C6/M9)", run(s) {
       const sess = session({ kindOf: (id: string) => (id.startsWith("g") ? "anon" : "human") }); s = sess;
       s.call("olive", "create-world", { title: "guests2" });
       s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
-      // nothing written: the guests meet the default (capacity.guestThings), and the refusal names the key the world reads
-      const made = []; for (let i = 0; i < CAPACITY.guestThings; i++) made.push(code(s.call("g1", "create", { id: `g1-${i}`, model: "crate", components: { transform: T0([i % 50, 0, Math.floor(i / 50) * 2]) } }, 2000)));
+      // nothing written: the guests meet the default (capacity.guestEntities), and the refusal names the key the world reads
+      const made = []; for (let i = 0; i < CAPACITY.guestEntities; i++) made.push(code(s.call("g1", "create", { id: `g1-${i}`, model: "crate", components: { transform: T0([i % 50, 0, Math.floor(i / 50) * 2]) } }, 2000)));
       const r = s.call("g1", "create", { id: "g1-x", model: "crate" }, 2000);
-      return { made: [...new Set(made)], code: code(r), text: `${r?.refused?.reason} | ${r?.refused?.fix}` }; },
-    good: (o) => JSON.stringify(o.made) === '["ok"]' && o.code === "full" && new RegExp(`have ${CAPACITY.guestThings} \\(@world\\.capacity\\.guestThings\\)`).test(o.text) && !/capacity@/.test(o.text) },
-  { id: "C3", what: "guests together have at most capacity.guestThings things standing (a fresh guest identity per connection gets no fresh share); an account still builds; a guest's delete frees room", run(s) {
+      return { def: CAPACITY.guestEntities, made: [...new Set(made)], code: code(r), text: `${r?.refused?.reason} | ${r?.refused?.fix}` }; },
+    good: (o) => o.def === 500 && JSON.stringify(o.made) === '["ok"]' && o.code === "full" && new RegExp(`have ${CAPACITY.guestEntities} entities standing here, and this world lets them have ${CAPACITY.guestEntities} \\(@world\\.capacity\\.guestEntities\\), all of them together`).test(o.text) && /value: \{guestEntities: <n>\}/.test(o.text) && !/capacity@/.test(o.text) },
+  { id: "C3", what: "guests together have at most capacity.guestEntities entities standing, sockets included (a fresh guest identity per connection gets no fresh share); an account still builds; a guest's delete frees room", run(s) {
       const sess = session({ kindOf: (id: string) => (id.startsWith("g") ? "anon" : "human") }); s = sess;
       s.call("olive", "create-world", { title: "guests" });
       s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
-      s.call("olive", "set", { id: "@world", component: "capacity", value: { guestThings: 5 } });
+      s.call("olive", "set", { id: "@world", component: "capacity", value: { guestEntities: 5 } });
       const r = [];
-      for (const [who, n] of [["g1", 3], ["g2", 2]]) for (let i = 0; i < n; i++) r.push(code(s.call(who, "create", { id: `${who}-${i}`, model: "crate", components: { transform: T0([i, 0, who === "g1" ? 0 : 2]) } }, 2000)));
+      for (const [who, n] of [["g1", 3], ["g2", 1]]) for (let i = 0; i < n; i++) r.push(code(s.call(who, "create", { id: `${who}-${i}`, model: "crate", components: { transform: T0([i, 0, who === "g1" ? 0 : 2]) } }, 2000)));
+      r.push(code(s.call("g2", "create", { id: "g2-0-seat", components: { parent: { to: "g2-0" }, socket: { name: "seat" } } }, 2000)));   // the pool's 5th is a socket
       const g3 = s.call("g3", "create", { id: "g3-0", model: "crate" }, 2000);
+      const g2s = s.call("g2", "create", { id: "g2-0-arm", components: { parent: { to: "g2-0" }, socket: { name: "arm" } } }, 2000);
       const acct = s.call("bob", "create", { id: "bob-0", model: "crate", components: { transform: T0([5, 0, 5]) } }, 2000);
       const del = s.call("g1", "delete", { id: "g1-0" }, 2000);
       const g3b = s.call("g3", "create", { id: "g3-1", model: "crate", components: { transform: T0([8, 0, 8]) } }, 2000);
-      return { r: [...new Set(r)], g3: code(g3), why: g3.refused?.reason, acct: code(acct), del: code(del), g3b: code(g3b) }; },
-    good: (o) => JSON.stringify(o.r) === '["ok"]' && o.g3 === "full" && /guests/.test(o.why ?? "") && o.acct === "ok" && o.del === "ok" && o.g3b === "ok" },
+      return { r: [...new Set(r)], g3: code(g3), why: g3.refused?.reason, g2s: code(g2s), acct: code(acct), del: code(del), g3b: code(g3b) }; },
+    good: (o) => JSON.stringify(o.r) === '["ok"]' && o.g3 === "full" && /account-less people/.test(o.why ?? "") && o.g2s === "full" && o.acct === "ok" && o.del === "ok" && o.g3b === "ok" },
 
   // ---------------- I: indoors ----------------
   { id: "I1", what: "a refused move is never logged: a refused step, a refused arrival (spawn) and a refused teleport (into a solid) add nothing to the log", run(s) { cast(s);
@@ -411,7 +418,7 @@ const cases: Case[] = [
       return { ms: { past: r1(past.ms), into: r1(into.ms) }, past: code(past.r), into: code(into.r), bound: r1(bound()) }; },
     good: (o) => o.past === "ok" && o.into === "solid" && o.ms.past <= o.bound && o.ms.into <= o.bound },
   { id: "S4", what: `look over 2 000 things: the first 40 in the tree's order and the total, in under ${BOUND_MS} ms`, run(s) { cast(s);
-      s.call("olive", "set", { id: "@world", component: "capacity", value: { things: 2400 } });
+      s.call("olive", "set", { id: "@world", component: "capacity", value: { entities: 2400 } });
       fill(s, 2000); for (let k = 0; k < 3; k++) s.call("olive", "create", { id: `kid-${k}`, model: "book", components: { parent: { to: "c-0" }, transform: T0([0, 0.6, 0]) } });
       const x = best(5, () => s.call("vic", "look", {}));
       return { ms: r1(x.ms), bound: r1(bound()), n: x.r.things?.length, total: x.r.total, first: x.r.things?.slice(0, 5).map((t: any) => `${t.id}@${t.depth}`) }; },
