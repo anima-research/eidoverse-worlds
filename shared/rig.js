@@ -54,6 +54,23 @@ export const PARENT = {
 export function rigMath(THREE) {
   /** World rest position of any node, by walking the TRS tree. */
   function worldPositions(g) {
+    const world = worldMatrices(g);
+    return (i) => new THREE.Vector3().setFromMatrixPosition(world(i));
+  }
+
+  /** World rest rotation of any node: the axes a node's own scale acts in,
+   *  which a skinned rig rarely leaves aligned with the model's (the four
+   *  library avatars turn nearly every humanoid bone at rest). */
+  function worldRotations(g) {
+    const world = worldMatrices(g);
+    return (i) => {
+      const q = new THREE.Quaternion();
+      world(i).decompose(new THREE.Vector3(), q, new THREE.Vector3());
+      return q;
+    };
+  }
+
+  function worldMatrices(g) {
     const parent = new Map();
     g.nodes.forEach((n, i) => (n.children ?? []).forEach((c) => parent.set(c, i)));
     const memo = new Map();
@@ -81,7 +98,7 @@ export function rigMath(THREE) {
       memo.set(i, out);
       return out;
     };
-    return (i) => new THREE.Vector3().setFromMatrixPosition(world(i));
+    return world;
   }
 
   /** Build private normalized bone nodes from world rest positions. */
@@ -141,5 +158,5 @@ export function rigMath(THREE) {
 
     return av;
   }
-  return { worldPositions, makeAvatar };
+  return { worldPositions, worldRotations, makeAvatar };
 }

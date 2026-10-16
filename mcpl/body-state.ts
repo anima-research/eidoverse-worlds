@@ -1,7 +1,7 @@
 // Body perception: observations first, optional CPU geometry second. Reads
 // never publish a pose, touch a body, or mutate the live reach solver.
 import * as THREE from "three";
-import { glbJson, humanBones, worldPositions, isVrm0 } from "./rig.ts";
+import { glbJson, humanBones, worldPositions, worldRotations, isVrm0 } from "./rig.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { normalizeReachBag, TOUCH_GAP, sameReach } from "../shared/reachwire.js";
 import { ReachBody } from "./physics.ts";
@@ -9,8 +9,8 @@ import { PoseClips } from "./pose-clips.ts";
 import { CLIP_SLOTS } from "../shared/clipdefs.js";
 import { swimTargets, SWIM_CLIPS } from "../shared/swimpose.js";
 import { planReaches, reachKey } from "../shared/reachorder.js";
-import { poseChannels } from "../shared/humanoid.js";
 import { clampBodyScale } from "../shared/presencewire.js";
+import { poseChannels } from "../shared/humanoid.js";
 
 export type PublicPose = {
   p: number[]; yaw: number; speed: number; clip: string;
@@ -38,7 +38,7 @@ type Rig = { P: Record<string, any>; parent: Record<string, string | null> };
 function parseRig(bytes: Uint8Array): Rig {
   const g = glbJson(bytes), bones = humanBones(g);
   if (!bones || !Number.isInteger(bones.hips)) throw new Error("avatar has no humanoid skeleton");
-  const wp = worldPositions(g), P: Record<string, any> = {};
+  const wp = worldPositions(g), wr = worldRotations(g), P: Record<string, any> = {}, restAxes: Record<string, number[]> = {};
   const nodeParent = new Map<number, number>();
   g.nodes.forEach((n: any, i: number) => (n.children ?? []).forEach((j: number) => nodeParent.set(j, i)));
   const names = new Map<number, string>();
@@ -46,6 +46,7 @@ function parseRig(bytes: Uint8Array): Rig {
     if (!Number.isInteger(index) || !g.nodes[index as number]) continue;
     names.set(index as number, name);
     P[name] = wp(index);
+    restAxes[name] = wr(index).toArray();
   }
   const parent: Record<string, string | null> = {};
   for (const [index, name] of names) {
@@ -57,16 +58,17 @@ function parseRig(bytes: Uint8Array): Rig {
     parent[name] = p == null ? null : names.get(p)!;
   }
   Object.defineProperty(P, "__vrm0", { value: isVrm0(g) });
+  Object.defineProperty(P, "__restAxes", { value: restAxes });
   return { P, parent };
 }
 
 function validate(o: BodyObservation) {
   if (o.error) return o.error;
   if (!o.pose || !finite3(o.pose.p) || !Number.isFinite(o.pose.yaw)) return "position or orientation is unknown";
+  // One bone the reader can't use costs that bone (unreadableBones), never
+  // the body; only a pose that isn't a map of bones is unusable whole.
   const bag = o.pose.pose;
-  if (bag != null && (typeof bag !== "object" || Array.isArray(bag)
-    || Object.values(bag).some(q => !Array.isArray(q) || q.length !== 4 || !q.every(Number.isFinite)
-      || Math.hypot(...q) < 1e-9))) return "published bone rotations are malformed";
+  if (bag != null && (typeof bag !== "object" || Array.isArray(bag))) return "published pose is not a map of bones";
   return null;
 }
 
@@ -207,17 +209,21 @@ export class BodyStateReader {
       const f = freshness(o), p = o.pose, valid = !validate(o);
       const bones = p?.pose ?? {}, reaches = normalizeReachBag(p?.reach);
       const count = valid ? Object.keys(bones).length : null;
+      const unreadable = valid ? Object.entries(bones).filter(([, v]) => !poseChannels(v)).map(([n]) => n) : [];
       const wing = p?.wingsFolded === true ? ", wings folded" : p?.wingsFolded === false ? ", wings open" : "";
       return {
         ok: f.status === "current", who, avatar: o.avatar || null, self: o.self,
         bodyGeneration: { scope: "this observer", value: o.generation }, freshness: f,
         frame: o.frame ?? { source: "presence" },
-        summary: `${who}: ${f.status}; ${valid ? `${p!.clip || "posture unknown"}${wing}${clampBodyScale(p!.scale) !== 1 ? `, ${clampBodyScale(p!.scale)}× size` : ""} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s), ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
+        summary: `${who}: ${f.status}; ${valid ? `${p!.clip || "posture unknown"}${wing}${clampBodyScale(p!.scale) !== 1 ? `, ${clampBodyScale(p!.scale)}× size` : ""} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s)${unreadable.length ? ` (${unreadable.length} unreadable: ${unreadable.join(", ")})` : ""}, ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
         root: valid ? { position: [...p!.p], yaw: p!.yaw, forward: [Math.sin(p!.yaw), 0, Math.cos(p!.yaw)] } : null,
         scale: clampBodyScale(p?.scale),
         posture: p?.clip ?? null, wingsFolded: typeof p?.wingsFolded === "boolean" ? p.wingsFolded : null,
         overrides: { state: valid ? count ? "held" : "none" : "unknown", count, source: o.source,
           sourceBasis: o.self ? "owner state" : o.source === "physics" ? "ragdoll clip; original author unknown" : "producer does not publish provenance" },
+        // Published bones with nothing the stand-in can use: they cost
+        // themselves, never the body, and every reply names them.
+        unreadableBones: valid ? unreadable : null,
         reaches: reaches ?? {},
         stability: { status: "unmeasured", reason: "single observation; use window_ms to measure reconstructed joint motion" },
         ...(f.status !== "current" ? { error: validate(o) ?? "body observation is stale; wait for a fresh presence sample" } : {}),
@@ -278,9 +284,11 @@ export class BodyStateReader {
         item.body.poseAt(o.pose!.p, o.pose!.yaw, null, o.pose!.scale);
         if (item.animation) this.clips.apply(item.animation, item.body, hasClipPhase(o.pose!) ? o.pose!.clipTime! : 0, item.rigKey);
         if (SWIM_CLIPS.includes(o.pose!.clip)) applySwim(item.body, o.pose!.clip === "swim" ? 1 : 0, Date.now() / 1000);
-        if (Number.isFinite(o.pose!.pitch) && item.body.av.nodes.head) item.body.av.nodes.head.quaternion.premultiply(
+        // A limp body draws no head pitch (avatar.js update: not while limp).
+        if (Number.isFinite(o.pose!.pitch) && o.pose!.clip !== "ragdoll" && item.body.av.nodes.head) item.body.av.nodes.head.quaternion.premultiply(
           new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.max(-.5, Math.min(.6, o.pose!.pitch!))));
-        for (const [name, v] of Object.entries(mapped)) { const q = poseChannels(v)?.q; if (q) item.body.av.nodes[name].quaternion.fromArray(q); }
+        // A limp body draws no raw layer (remotes.js sets a ragdoll limp).
+        item.body.holdPose(mapped, { raw: o.pose!.clip !== "ragdoll" });
         item.body.av.root.updateMatrixWorld(true);
       }
       const own = loaded.get(who)!;
@@ -330,9 +338,9 @@ export class BodyStateReader {
       own.body.av.root.updateMatrixWorld(true);
       const incomplete = Object.values(out.reachEvaluation).some((r: any) => !r.ok);
       if (incomplete) { out.ok = false; out.error = "some held reaches could not be evaluated; geometry is incomplete"; }
-      out.geometry = { status: incomplete ? "incomplete" : "derived", frame: "world", units: "metres", method: "humanoid skeleton + published rotations + limb IK",
+      out.geometry = { status: incomplete ? "incomplete" : "derived", frame: "world", units: "metres", method: "humanoid skeleton + published pose + limb IK",
         inputs: [...loaded.values()].map(({ observation: o }) => ({ who: o.who, observedAt: o.receivedAt, bodyGeneration: o.generation })),
-        limitations: ["Base VRMA posture, pitch, published rotations and reach relations are evaluated; clip blending, emotes, gaze, wing/springbone motion and renderer interpolation are not reproduced.",
+        limitations: ["Base VRMA posture, pitch, the published pose (rotation, translation and scale) and reach relations are evaluated; clip blending, emotes, gaze, wing/springbone motion and renderer interpolation are not reproduced.",
           "Contact surfaces are bone-bound anatomical estimates, not mesh measurements. Reach producers are evaluated before dependants; cyclic dependencies are reported as incomplete."] };
       if (detail === "bones" || detail === "all") {
         out.joints = Object.fromEntries(Object.entries(own.body.av.nodes).map(([name, raw]) => {
