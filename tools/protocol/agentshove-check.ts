@@ -9,6 +9,10 @@
 //   AS4  a locked crate in the path: no punt (walked through: it is low)
 //   AS5  a STATIC tall crate (the same size as AS2's) in the path: the planner routes round it — no punt, it stays put,
 //        the walk arrives, and the body left the straight line to get there (the navgrid's value for what isn't shoveable)
+//   AS6  a HEAVY dynamic tall crate (2000 kg: a walking body's shove slides it less than the shover's own "it moved") in
+//        the path: routed round as AS5's is — no shove, the walk arrives off the straight line (review r4 F1a)
+//   AS7  a light crate, passable when the walk is planned, locked while the body walks to it: the authority calls it
+//        solid, and the walk re-plans once with it as an obstacle and arrives round it (review r4 F1b)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -121,5 +125,33 @@ try {
     ok(JSON.stringify(p) === JSON.stringify(p0), "AS5 …it stays put", { p0, p });
     ok(/^arrived/.test(t), "AS5 …the walk arrives", t);
     ok(off > 0.3, "AS5 …routed round it: the body left the straight line", { off }); }
+  // AS6
+  { const r = await crate("heavy", "test/tallcrate.glb", [-12, 0, 2], {}, 2000); ok(r.ok, "(AS6 setup) a 2000 kg dynamic tall crate", r);
+    for (let i = 0; i < 80 && !Array.isArray(ag.replica?.st?.entities?.heavy?.c?.physics?.shape); i++) await sleep(50);
+    await sleep(1500);
+    const m0 = await call("move", { to: [-12, 0] }); ok(!m0.isError, "(AS6 setup) the agent stands south of the heavy crate", T(m0));
+    let off = 0, walking = true;
+    const w = call("move", { to: [-12, 5] }).finally(() => { walking = false; });
+    while (walking) { off = Math.max(off, Math.abs(ag.pos.x + 12)); await sleep(30); }
+    const t = T(await w);
+    ok(/^arrived/.test(t), "AS6 a 2000 kg dynamic crate in the path: the walk arrives", t);
+    ok(shoves("heavy").length === 0, "AS6 …with no shove", shoves("heavy").map((e) => e.body));
+    ok(off > 0.3, "AS6 …routed round it: the body left the straight line", { off }); }
+  // AS7
+  { const r = await crate("late", "test/tallcrate.glb", [-18, 0, 2], {}, 30); ok(r.ok, "(AS7 setup) a light tall crate", r);
+    for (let i = 0; i < 80 && !Array.isArray(ag.replica?.st?.entities?.late?.c?.physics?.shape); i++) await sleep(50);
+    await sleep(1500);
+    const m0 = await call("move", { to: [-18, 0] }); ok(!m0.isError, "(AS7 setup) the agent stands south of it", T(m0));
+    let off = 0, walking = true;
+    const w = call("move", { to: [-18, 5] }).finally(() => { walking = false; });
+    for (let i = 0; i < 100 && !ag.target; i++) await sleep(10);
+    const planned = !!ag.target && Math.abs(ag.target.x + 18) < 1e-6;   // planned straight through it (it was passable)
+    const lk = await ann.req("set", { id: "late", component: "lock", value: true });
+    ok(planned && lk.ok, "(AS7 setup) the walk planned straight through it, then it was locked", { planned, target: ag.target, lk });
+    while (walking) { off = Math.max(off, Math.abs(ag.pos.x + 18)); await sleep(30); }
+    const t = T(await w);
+    ok(/^arrived/.test(t), "AS7 a crate made un-shoveable mid-walk: the walk re-plans round it and arrives", t);
+    ok(/late wouldn't move for your shove/.test(t), "AS7 …and says why it went round", t);
+    ok(off > 0.3, "AS7 …the body left the straight line", { off }); }
 } catch (e) { ok(false, "threw", String(e?.stack ?? e).slice(0, 600)); }
 done(fail ? 1 : 0);

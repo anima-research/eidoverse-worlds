@@ -114,6 +114,20 @@ export function shoveV(vel, n, m, F = SHOVE_FEEL) {
   return [noNeg0(r3(n[0] * s)), noNeg0(r3(s * lift)), noNeg0(r3(n[1] * s))];
 }
 
+/** How far a shove slides a thing of mass m when a body walking at u m/s walks straight into it: shoveV's push (head-on),
+ *  slid out under the slide's friction (SHOVE.mu, eidosim's own: what sweptCovers reads), the lift left out (it only carries
+ *  the thing a little further). */
+export function shoveSlide(m, u) {
+  if (!Number.isFinite(m) || !(m > 0) || !Number.isFinite(u)) return 0;
+  const s = Math.min(shoveCap(m), Math.min(u, SHOVE.walk) * 2 * BODY_MASS / (BODY_MASS + m));
+  return s * s / (2 * SHOVE.mu * G);
+}
+/** Will a body walking at u move it out of the way? Its shove must slide it at least as far as the shover needs to see a
+ *  thing move before it shoves it again (F.moved): short of that, the walker shoves it once and stands against it — to a
+ *  walk it is a wall. Unknown mass: no. (BODY_MASS 70, SHOVE.mu 0.6, moved 0.05 m: a walk at 1.55 m/s moves up to ~213 kg,
+ *  a run at 4 m/s up to ~660 kg.) */
+export const budges = (m, u, F = SHOVE_FEEL) => shoveSlide(m, u) >= F.moved;
+
 /** Are a body's feet on top of this box (standing on it)? */
 export const feetOn = (box, p) => p[0] > box.min[0] - 0.1 && p[0] < box.max[0] + 0.1 && p[2] > box.min[2] - 0.1 && p[2] < box.max[2] + 0.1 && p[1] >= box.max[1] - 0.15 && p[1] <= box.max[1] + 0.3;
 /** Would this box, sliding along v (horizontal) until friction stops it, run into a body standing at p (radius r)? */

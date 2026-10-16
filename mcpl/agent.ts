@@ -76,7 +76,8 @@ import { describeCaptions } from "../shared/captions.js";
 import { describeStructure, describeHere, localizePoint, planStructure, prepareRouteLocal, ROUTE_STEP_METRES } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
-import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, SHOVE_FEEL } from "../shared/shove.js";
+import { redialer, REDIAL } from "../shared/redial.js";
+import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, massOf, budges, SHOVE_FEEL } from "../shared/shove.js";
 import { SHOVE } from "../shared/protocol/physconst.js";
 import { colliderFor } from "../client/lib/bodyscale.js";
 
@@ -797,7 +798,8 @@ export class WorldAgent {
       if (this.closed) return reject(new Error("agent closed"));
       const ws = new WebSocket(this.url);
       this.ws = ws;
-      const timeout = setTimeout(() => reject(new Error("join timeout")), 8000);
+      this.joinRefused = null;
+      const timeout = setTimeout(() => reject(new Error(this.joinRefused ?? "join timeout")), 8000);
       // `agent: true` is not a capability — it changes nothing about what this
       // body may do. It exists so the world can SAY who it is talking to.
       // Knowing whether the thing across the table thinks in tokens or neurons
@@ -828,12 +830,23 @@ export class WorldAgent {
           }
           this.close(); return;
         }
-        // 4005 = the sequencer REFUSED the join (bad/reserved name, bad token).
-        // A refusal is an answer, not an outage — redialing it every 1.5s is
-        // the polite-DoS the sequencer's own comments warn about (RFC-005
-        // review D1: a granted ?world= dial with a name the sequencer rejects
-        // used to hammer forever).
-        if ((ev as { code?: number } | undefined)?.code === 4005) { this.close(); return; }
+        // 4005 = the sequencer REFUSED the join: a malformed or reserved name, a bad token, no such world, an old-format
+        // world, an access refusal, a client that doesn't fold the log. A refusal is an answer, not an outage — redialing
+        // it every 1.5s is the polite-DoS the sequencer's own comments warn about (RFC-005 review D1: a granted ?world=
+        // dial with a name the sequencer rejects used to hammer forever).
+        // …except reason "full" (the world is at its access max): temporary, someone leaving makes room. The join is
+        // refused in the server's words and the body dials again by itself, backing off as a person's page does
+        // (shared/redial.js; review r4 claims C2). The other refusals end the body, as before.
+        const code = (ev as { code?: number } | undefined)?.code, why = String((ev as { reason?: string } | undefined)?.reason ?? "");
+        const refused = this.joinRefused; this.joinRefused = null;
+        if (code === 4005 && why === "full" && !this.closed) {
+          clearTimeout(timeout);
+          reject(new Error(`${refused ?? "the world is full"} — trying again by itself`));
+          setTimeout(() => { if (!this.closed && !this.joined) this.connect().catch(() => {}); }, this.redial.next(REDIAL.full));
+          return;
+        }
+        if (refused !== null) { this.closed = true; clearTimeout(timeout); reject(new Error(refused)); }
+        if (code === 4005) { this.close(); return; }
         if (!this.closed) setTimeout(() => this.connect().catch(() => {}), 1500);
       };
       ws.onmessage = async (ev) => {
@@ -852,9 +865,10 @@ export class WorldAgent {
             // same refusal. Surface the sequencer's reason instead of the
             // silent join-timeout loop this used to be.
             if (!this.joined) {
-              if (typeof msg.until !== "number") this.closed = true;   // a cooldown isn't final: onclose 4006 dials again after it
-              clearTimeout(timeout);
-              reject(new Error(String(msg.error ?? "join refused")));
+              // a cooldown isn't final: onclose 4006 dials again after it. Any other refusal's close says whether it is
+              // final (4005 "full" is not: onclose dials again); onclose answers this connect() with these words
+              if (typeof msg.until === "number") { clearTimeout(timeout); reject(new Error(String(msg.error ?? "join refused"))); }
+              else this.joinRefused = String(msg.error ?? "join refused");
             } else {
               // A mid-life refusal (insufficient rank, a bad moderation
               // target, being kicked…). Verbs are fire-and-forget, so this is
@@ -967,7 +981,7 @@ export class WorldAgent {
             await this.applyView(false, null, null);
             void this.supportReady(10_000).then(() => { this.feetSettling = false; });
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
-            this.joined = true;
+            this.joined = true; this.redial.reset();
             // my consent table, as a person's client sends it on every arrival (consentsync.js): the server's default preset by
             // name; absent, the server already holds me at that default and refuses in my name (parity sweep 10-14)
             this.request("consent", { preset: DEFAULT_PRESET }).catch(() => { /* the server's default stands */ });
@@ -1886,6 +1900,10 @@ export class WorldAgent {
 
   private geomCache = new Map<string, Promise<any | null>>();
   private supportIds = new Map<string, string[]>();
+  /** A pre-join refusal's words, until its close says whether it is final (onclose). */
+  private joinRefused: string | null = null;
+  /** How long until the next dial of a full world (shared/redial.js: the browser's rule); reset by a join. */
+  private redial = redialer();
   private removedUntil: number | null = null;   // a moderation removal's end (a kick's cooldown): reconnect then   // entity id -> registered box ids
   /** This agent's claim token on shared support boxes. Per INSTANCE, not per
    *  name: two agents can carry the same name across a reconnect, and a
@@ -3128,7 +3146,7 @@ export class WorldAgent {
   private walkTicket = 0;
 
   private walkNow(x: number, z: number, run: boolean, timeoutMs: number, tolerance: number, y: number | undefined,
-    near: Pick<NavTarget, "reach" | "above" | "below" | "inside">): Promise<boolean> {
+    near: Pick<NavTarget, "reach" | "above" | "below" | "inside">, replanned = false): Promise<boolean> {
     // Plan before touching the body, from the ground under it: a refused walk
     // leaves it seated, pinned, dragged, posed or tumbling as it was, and sends nothing.
     const support = this.walkSupport();
@@ -3137,7 +3155,7 @@ export class WorldAgent {
     // Through placed models: a walk the structure planner leaves as one
     // straight leg is routed against the colliders the feet will meet —
     // round the furniture, through the door, up the stair (mcpl/navgrid.ts).
-    let legs = plan.legs, snapped = false, routed = false;
+    let legs = plan.legs, snapped = false, routed = false, passIds = new Set<string>();
     const probe = plan.legs.length === 1 ? navProbe((wx, wz) => this.heightAt(wx, wz)) : null;
     if (probe) {
       // plan from the floor under the body, not its root: a tumbling or
@@ -3145,7 +3163,7 @@ export class WorldAgent {
       const feet = { x: this.pos.x, y: this.pos.y, z: this.pos.z };
       // a loose thing this body would shove is walked into, not round (R's queue: "walking into a loose thing pushes
       // it"): its collider is out of the planner's world while it plans — the feet and the authority still meet it
-      const passable = this.passableColliders();
+      const { ids, colliders: passable } = this.passableColliders(run); passIds = ids;
       // a grid is good until the colliders, the terrain, or what it may walk into change
       const navKey = `${collidersGeneration()}|${this.terrainRev}|${passable.join(",")}`;
       if (this.navGrid?.gen !== navKey) this.navGrid = { gen: navKey, grid: makeNavGrid(probe) };
@@ -3217,6 +3235,7 @@ export class WorldAgent {
     const asks = this.joined && this.ws?.readyState === 1;
     const gate: WalkGate = { mode: asks ? "sync" : "open", permit: null, busy: false };
     this.walkGate = gate;
+    this.walkPlan = { x, z, run, timeoutMs, tolerance, y, near, passable: passIds, replanned };
     if (asks) void this.trackHere().then((t) => {
       if (this.walkGate !== gate) return;
       if ("open" in t) { gate.mode = "open"; return; }
@@ -3326,8 +3345,9 @@ export class WorldAgent {
 
   /** Where `to` is, as a walk can aim at it: "thing/place", a thing alone
    *  (its entrance, else its door), a place's name or label alone (the
-   *  nearest, if several things have one), or a person (stopping short of
-   *  them) — in that order: a person's name never hides a thing's. */
+   *  nearest, if several things have one), a thing by its label, or a person
+   *  (stopping short of them) — in that order: a person's name never hides a
+   *  thing's, by id or by label. */
   destination(to: string): Destination | { refusal: string } {
     const q = to.trim();
     if (!q) return { refusal: "move's to names nothing" };
@@ -3365,6 +3385,16 @@ export class WorldAgent {
       if (!("refusal" in d)) hits.push(d);
     }
     if (hits.length) return hits.sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
+    // a thing by its label (a display name someone gave it), the nearest: as a thing by its id — before any person too
+    // (review r4 claims C1: a visitor named like a thing's label captured the walk)
+    const byLabel = ents.filter((x) => { const l = (x as { label?: unknown }).label; return typeof l === "string" && ci(l.trim(), q); })
+      .sort((a, b) => Math.hypot(a.pos[0] - me.x, a.pos[2] - me.z) - Math.hypot(b.pos[0] - me.x, b.pos[2] - me.z));
+    if (byLabel.length) {
+      const x = byLabel[0], ps = this.placesOn(x);
+      const p = ps.find((y) => y.name === "entrance") ?? ps.find((y) => y.kind === "door");
+      if (p) return at(x, p);
+      return { refusal: `[${x.id}] has no entrance or door named — move to its places by name${ps.length ? ` (${ps.map((y) => y.name).join(", ")})` : ""}, or to its coordinates` };
+    }
     // a person, last (review r3 F4): a visitor who joins as "tower" must not capture every walk to the tower
     for (const p of this.people.values()) {
       if (!ci(p.id, q)) continue;
@@ -3553,6 +3583,12 @@ export class WorldAgent {
       `(${final.x.toFixed(2)}, ${final.z.toFixed(2)}): something solid is in the way that the route did not ` +
       `expect (it moved or arrived after the walk was planned) — move there again and the route will take it into account`;
     this.stallTicks = 0;
+    // pressed against a thing the route planned to walk into (its shove doesn't move it): round it, once
+    const plan = this.walkPlan, st = this.replica?.st, cap = colliderFor(1), feet = [this.pos.x, this.pos.y, this.pos.z];
+    if (plan && !plan.replanned && st) for (const id of plan.passable) {
+      const obb = obbOf(st, id);
+      if (obb && contactOf(feet, cap.r, cap.tall, { obb, box: aabbOfObb(obb) }, SHOVE_FEEL.slack) && this.replanRound(id)) { this.walkStall = null; return; }
+    }
     this.abandonWalk();
   }
 
@@ -3634,11 +3670,26 @@ export class WorldAgent {
     const rank = Number.isFinite(this.myRights?.rank) ? this.myRights.rank : null;
     return shoveable(st, id, { rank, holds: this.holdsNow });
   }
-  /** The registered colliders of the things this body may shove (sorted): the walk planner routes through them. */
-  private passableColliders(): string[] {
-    const out: string[] = [];
-    for (const [id, bids] of this.supportIds) if (this.mayShove(id)) out.push(...bids);
-    return out.sort();
+  /** May the walk planner walk into it? Only what this body may shove AND what its shove at this walk's speed would move out
+   *  of the way (shared/shove.js budges: a 2000 kg crate is shoved once and stands — a wall), and nothing a walk this body
+   *  took found solid (`misjudged`) while it stays where it was then. */
+  private mayWalkInto(id: string, run: boolean): boolean {
+    if (!this.mayShove(id)) return false;
+    const was = this.misjudged.get(id), box = was && footprint(this.replica?.st, id);
+    if (was && box && Math.hypot((box.min[0] + box.max[0]) / 2 - was[0], (box.min[2] + box.max[2]) / 2 - was[1]) < SHOVE_FEEL.moved) return false;
+    if (was) this.misjudged.delete(id);   // it has moved (or gone) since: judged afresh
+    return budges(massOf(this.replica?.st, id) ?? NaN, run ? MOVER.walk.run : MOVER.walk.speed);
+  }
+  /** Things a walk planned through and the authority then called solid: id -> its footprint's centre [x, z] then. */
+  private misjudged = new Map<string, [number, number]>();
+  /** The walk under way's plan (to re-plan it once round a thing it misjudged). */
+  private walkPlan: { x: number; z: number; run: boolean; timeoutMs: number; tolerance: number; y: number | undefined;
+    near: Pick<NavTarget, "reach" | "above" | "below" | "inside">; passable: Set<string>; replanned: boolean } | null = null;
+  /** The things this walk may walk into, and their registered colliders (sorted): the walk planner routes through them. */
+  private passableColliders(run: boolean): { ids: Set<string>; colliders: string[] } {
+    const ids = new Set<string>(), out: string[] = [];
+    for (const [id, bids] of this.supportIds) if (this.mayWalkInto(id, run)) { ids.add(id); out.push(...bids); }
+    return { ids, colliders: out.sort() };
   }
   /** Body shove: while this body walks, the loose things it walks into are punted along its walk (shared/shove.js decides
    *  which and how hard; the authority admits each as any shove). The push is the walk's intent toward its target, so a
@@ -3710,8 +3761,35 @@ export class WorldAgent {
     if (now < b.until || (body && !body.resting)) return true;
     g.blocker = null; return false;
   }
+  /** The walk under way planned to walk into `id` (it was passable), and it stopped the walk: remember it as solid while it
+   *  stays where it is, and plan the walk once more, round it, from where the body stands. `ref`: the authority's refusal,
+   *  if that is what stopped it (still the walk's answer if the new plan is refused). False: not this walk's to re-plan. */
+  private replanRound(id: string, ref: any = null): boolean {
+    const plan = this.walkPlan, box = footprint(this.replica?.st, id);
+    if (!plan || plan.replanned || !plan.passable.has(id) || !this.walkDone || !box) return false;
+    this.misjudged.set(id, [(box.min[0] + box.max[0]) / 2, (box.min[2] + box.max[2]) / 2]);
+    if (Array.isArray(ref?.at)) this.trackAt = ref.at;
+    const done = this.walkDone; this.walkDone = null;
+    this.abandonWalk(); this.clip = "idle";
+    const note = `${id} wouldn't move for your shove: you walked round it`;
+    this.lastWalkNote = note;
+    void this.walkNow(plan.x, plan.z, plan.run, plan.timeoutMs, plan.tolerance, plan.y, plan.near, true).then((arrived) => {
+      // planned round it and refused before a step: what stopped the first plan is still this walk's answer
+      if (!arrived && !this.lastWalkRefusal && !this.walkStall && !this.walkStopReason) {
+        if (ref) this.lastWalkRefusal = { code: String(ref.code), reason: String(ref.reason ?? ""), ...(ref.fix ? { fix: String(ref.fix) } : {}) };
+        else this.walkStopReason = `${id} is in the way and wouldn't move for your shove, and no route round it: ${this.walkRefusal ?? "none found"}`;
+        if (this.lastWalkNote === note) this.lastWalkNote = null;
+      }
+      done(arrived);
+    });
+    return true;
+  }
   /** The authority refused this body the next stretch: it stops where the authority has it, and the walk says why. */
   private refuseWalk(ref: any) {
+    // a thing this walk planned to walk into, called solid (it wouldn't budge: backed against a wall, locked or taken
+    // meanwhile, heavier than its mass says): the walk is planned once more with it as an obstacle, from where it stopped
+    const id = ref?.code === "solid" && typeof ref?.blocker === "string" ? ref.blocker : null;
+    if (id && this.replanRound(id, ref)) return;
     this.lastWalkRefusal = { code: String(ref?.code ?? "refused"), reason: String(ref?.reason ?? ""), ...(ref?.fix ? { fix: String(ref.fix) } : {}) };
     if (Array.isArray(ref?.at)) this.trackAt = ref.at;
     this.abandonWalk(); this.clip = "idle";

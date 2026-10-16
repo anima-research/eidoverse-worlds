@@ -1001,6 +1001,8 @@ function resettleRiders(w, actor, ops, before, after0, act, notes) { let after =
     return hosts.has(c.parent?.to) && c.physics?.kind === "dynamic" && !lockedC(c) && !w.presence.holds[k] && !w.presence.holds[c.parent.to] && !after.entities[k].c.disabled && aabb(after, k); });
   if (!riders.length) return;
   const spec = after.entities["@world"]?.c["physics-engine"];
+  // the ground still loading: a fall would rest on a guessed height (review r4 F2) — they stay where they stand, said so
+  if (!groundReady(after)) { notes.push({ kept: riders, why: "they were resting on a thing whose shape changed, but this world's ground is still loading: they stay where they stand rather than fall onto a guessed height" }); return; }
   if (spec && carried(spec)) {
     const flying = new Set(Object.keys(w.sim?.()?.launched ?? {}));
     const dropped = riders.filter((k) => !flying.has(k));
@@ -1483,7 +1485,10 @@ function buildPlace(ctx, a) {
 // after it's written, end with an `unchecked` entry instead (a write is never refused after it lands).
 function warnings(st, ids, strict = false) {
   const out = []; const ix = spatial(st); const pairs = new Map();   // id → the things it was already said to overlap
-  const B = boundsOf(st), ground = groundReady(st); let k = 0; const was = CTX.work.what;   // ground loading: no sunk/floating advice (r3 F3) CTX.work.what = ids.length === 1 ? `checking ${ids[0]}` : `checking ${ids.length} things`;
+  // the ground still loading (r3 F3): no sunk/floating advice; a strict check (a put's claim) has nothing to judge it on and
+  // is refused ground-loading below, never waved through (r4 F3)
+  const B = boundsOf(st), ground = groundReady(st); let k = 0; const was = CTX.work.what;
+  CTX.work.what = ids.length === 1 ? `checking ${ids[0]}` : `checking ${ids.length} things`;
   try {
   for (; k < ids.length; k++) { const id = ids[k];
     const g = ix.rec.get(id); const b = g?.box; if (!b) continue;
@@ -1496,7 +1501,8 @@ function warnings(st, ids, strict = false) {
         spend(satCost(mine[i], go.obbs[j])); const p = satDepth(mine[i], go.obbs[j]); if (p > 0.02 && p > deepest) deepest = p; }
       if (deepest > -Infinity && !pairs.get(o)?.has(id)) { spend(10); out.push({ id, kind: "overlap", with: o, by: r3(deepest) }); let m = pairs.get(id); if (!m) pairs.set(id, (m = new Set())); m.add(o); } }
     const cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2;
-    if (!ground) { if (B && (outsideWorld(B, b.min) || outsideWorld(B, b.max))) out.push({ id, kind: "out-of-bounds", bounds: B }); continue; }
+    if (!ground) { if (strict) groundOf(st).height(cx, cz);   // refuses ground-loading, in the ground's own words
+      if (B && (outsideWorld(B, b.min) || outsideWorld(B, b.max))) out.push({ id, kind: "out-of-bounds", bounds: B }); continue; }
     const sup = supportBelow(st, cx, cz, b.min[1], fam);
     const hungFrom = ancestors(st, id).find((p) => { const pb = ix.rec.get(p)?.box; return pb && pb.max[1] > b.max[1]; });
     if (!hungFrom && sup.y - b.min[1] > 0.005 && sup.y - b.min[1] < 0.3) out.push({ id, kind: "sunk", depth: r3(sup.y - b.min[1]), into: sup.id });
@@ -2795,14 +2801,15 @@ function bodyAt(st, p) {   // where a body claimed at p stands: {y (feet), groun
 // THE BODY'S OWN SIZE (holes r3 F2): the mover judges water by the body's stature and a ledge by its scale, so the authority
 // judges each body with the height and scale it sends with its moves (kept on its presence record; absent, the mover's
 // 1.7 m at scale 1). Bounded as the walker bounds them: scale 0.5-2 (mover.js bodyScale, the size slider's range), height
-// 0.3-4 m. A claim buys only what that range of honest bodies may do: a step up to 1.6 m and a haul-out up to 1 m above the
-// water (scale 2; its box then starts 1.6 m up and is 3.4 m tall and 0.8 m wide), a box 0.85 m tall and 0.2 m wide (0.5;
-// its step 0.4 m), and in water, swimming or wading where a body 0.3-4 m tall would.
-const BODY_H = Object.freeze({ min: 0.3, max: 4 });
+// 0.5-4 m (the browser's avatar.js bodyHeight and the agent's rigbones bodyHeightFor: measured at the body's size, so the
+// height bound is already on the product; the slider couples nothing further — a 0.25 m avatar at scale 2 is 0.5 m).
+// A claim buys only what that range of honest bodies may do: a step up to 1.6 m and a haul-out up to 1 m above the water (scale 2; its box then starts 1.6 m up and is 3.4 m tall and 0.8 m wide), a box 0.85 m tall and 0.2 m wide (0.5;
+// its step 0.4 m), and in water, swimming or wading where a body 0.5-4 m tall would.
+const BODY_H = Object.freeze({ min: 0.5, max: 4 });
 function sizeOf(a, prev) {
   const out = { ...(prev ?? {}) };
   for (const k of ["height", "scale"]) if (a[k] !== undefined && !(typeof a[k] === "number" && Number.isFinite(a[k]) && a[k] > 0))
-    refuse("shape", `move's ${k} is a positive number (${k === "height" ? "your body's standing height in metres, 0.3-4" : "your body's size, 0.5-2"})`, "send the number your walker uses, or leave it out");
+    refuse("shape", `move's ${k} is a positive number (${k === "height" ? "your body's standing height in metres, 0.5-4" : "your body's size, 0.5-2"})`, "send the number your walker uses, or leave it out");
   if (a.height !== undefined) out.height = Math.min(BODY_H.max, Math.max(BODY_H.min, a.height));
   if (a.scale !== undefined) { const sc = bodyScale(a.scale); if (sc === 1) delete out.scale; else out.scale = sc; }
   return Object.keys(out).length ? out : undefined;
@@ -3199,9 +3206,12 @@ function shoveGate(w, st, me, a, flying, actor) {
   if (R.d > SHOVE.reach) refuse("out-of-reach", `${a.id} is ${r3(R.d)} m from your feet; a shove comes from a body against it (${SHOVE.reach} m)`, "walk up to it first");
   const dir = R.n ?? (() => { const cx = R.c[0] - f[0], cz = R.c[2] - f[2], l = Math.hypot(cx, cz); return l > 1e-6 ? [cx / l, cz / l] : null; })();
   if (!dir || vx * dir[0] + vz * dir[1] < 0.5 * vh) refuse("wrong-way", `that doesn't push ${a.id} away from your feet; a shove pushes it within 60° of straight away`, "");
-  // not through a wall: the body's way to the point it touches is clear of anything solid but the thing and what rides it
-  if (R.d > 0.05 && R.n) { const fam = new Set([a.id, ...descendants(st, a.id)]); const L = Math.max(0, R.d - 0.2), n = Math.ceil(L / 0.05);
-    for (let k = 1; k <= n; k++) { const p = [f[0] + R.n[0] * L * k / n, f[1], f[2] + R.n[1] * L * k / n]; const hit = solidAt(w, st, p, fam);
+  // not through a wall: the body's way to the point it touches is clear of anything solid but the thing and what rides it,
+  // judged with this body's own box (its kept size, as its walk is: review r4 F7). SHOVE.reach is already the largest
+  // body's radius plus the track's lag, so it stays one number.
+  if (R.d > 0.05 && R.n) { const fam = new Set([a.id, ...descendants(st, a.id)]); const s = lawOf(me.size).scale;
+    const L = Math.max(0, R.d - MOVER.body.radius * s), n = Math.ceil(L / 0.05);
+    for (let k = 1; k <= n; k++) { const p = [f[0] + R.n[0] * L * k / n, f[1], f[2] + R.n[1] * L * k / n]; const hit = solidAt(w, st, p, fam, null, bodyBox(p, s));
       if (hit) refuse("out-of-reach", `${hit} is between you and ${a.id}`, "walk round to it"); } }
   // never into someone: what it slides through until friction stops it is clear of every other body (S2-1)
   for (const [who, bd] of Object.entries(w.presence.bodies)) if (who !== actor && Array.isArray(bd?.at) && sweptCovers(b, a.v, bd.at))
@@ -3349,6 +3359,9 @@ function flyingWorld(st) {
   if (!spec) refuse("no-physics", "this world has no physics running, so nothing flies", "put it down instead (put {id}); the owner can turn physics on: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@1.0.0'}}");
   if (!carried(spec)) refuse("foreign-engine", `this world runs ${spec.engine} (build ${spec.build}), which this server doesn't carry`,
     `put it down instead; the owner can move the world to an engine this server carries: set {id: '@world', component: 'physics-engine', value: {engine: '${Object.keys(ENGINES)[0]}'}}`);
+  // the ground still loading (a heightmap whose grid isn't here): the engine would land it on the noise law's ground, and
+  // its rest is logged for good (review r4 F2). Nothing flies until the ground is here: a throw, a drop, a punt, a shove.
+  if (!groundReady(st)) groundOf(st).height(0, 0);   // refuses ground-loading, in the ground's own words
   return spec;
 }
 // a thing with no stamped shape is no body in the engine (stampShapes): launched, it would never fly or rest
