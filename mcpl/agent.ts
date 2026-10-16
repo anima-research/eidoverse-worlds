@@ -844,13 +844,17 @@ export class WorldAgent {
         const refused = this.joinRefused; this.joinRefused = null;
         if (code === 4005 && why === "full" && !this.closed) {
           clearTimeout(timeout);
-          reject(new Error(`${refused ?? "the world is full"} — trying again by itself`));
+          // the words are this body's, kept open: the agent doors (mcpl/server.ts, net-server's serve and travel) end on this
+          // rejection and close it, so they say only what a body that is kept does (review r5 F4; docs/WIRE.md 4005)
+          reject(new Error(`${refused ?? "the world is full"} — trying again by itself while this body is kept open (closing it gives up the wait)`));
           setTimeout(() => { if (!this.closed && !this.joined) this.connect().catch(() => {}); }, this.redial.next(REDIAL.full));
           return;
         }
         if (refused !== null) { this.closed = true; clearTimeout(timeout); reject(new Error(refused)); }
         if (code === 4005) { this.close(); return; }
-        if (!this.closed) setTimeout(() => this.connect().catch(() => {}), 1500);
+        // any other drop (an outage, a restart): dialled again on the browser's schedule (shared/redial.js, reset by a join),
+        // not a fixed 1.5 s that every agent of a restarted server would keep in step (review r5 F4)
+        if (!this.closed) setTimeout(() => this.connect().catch(() => {}), this.redial.next());
       };
       ws.onmessage = async (ev) => {
         // House rule #3, applied to the DOOR: no event may ever exit the
@@ -1905,7 +1909,7 @@ export class WorldAgent {
   private supportIds = new Map<string, string[]>();
   /** A pre-join refusal's words, until its close says whether it is final (onclose). */
   private joinRefused: string | null = null;
-  /** How long until the next dial of a full world (shared/redial.js: the browser's rule); reset by a join. */
+  /** How long until the next dial after a drop or a full world (shared/redial.js: the browser's rule); reset by a join. */
   private redial = redialer();
   private removedUntil: number | null = null;   // a moderation removal's end (a kick's cooldown): reconnect then   // entity id -> registered box ids
   /** This agent's claim token on shared support boxes. Per INSTANCE, not per
