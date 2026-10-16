@@ -409,8 +409,9 @@ Verb-specific checks MAY add to `admit`, never replace it. Accepted, the
 authority appends the request as an `act` and its result as one `change` entry
 caused by it; a refused write is appended as an act carrying its refusal
 (`{code, reason, fix}`) and nothing else is written (refusals that would
-only flood the log, such as rate limits, are answered without an entry). **Every appended entry passes the gate**,
-acts, says and sim entries included.
+only flood the log, such as rate limits, are answered without an entry). **Every appended `change` passes the gate** (`admit`); a `say` passes its own
+checks (length, rate, the sayer's rights), and a `sim` entry is written by the authority itself from a grab or a settle,
+never by a client.
 
 **Roles** are components on `@world`: `roles:<identity>` = `{role}`, and
 `default-role` for everyone without one (absent: visitor). The reference
