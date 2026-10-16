@@ -189,12 +189,13 @@ The standard an engine tool must pass (10-14): its name is intuitive to
 everyone who might use the action, AND the action is useful in general
 situations. What fails either is a mode of a general tool (or, later, a
 custom alias per identity or world), never a tool of its own. So the surface
-is 31 tools, and what used to be bespoke verbs are their modes:
+is 32 tools, and what used to be bespoke verbs are their modes:
 
 | tool | what it is, and its modes |
 |---|---|
 | `look` · `screenshot {view\|at}` · `body_state {who?, detail?}` | perceive: text, a render, a body (yours carries `flight`: altitude, heading, stamina — or "on the ground") |
-| `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]` / `[x, y, z]`) or a **name**: a thing's id or label (you stop beside it), a person here (in front of them), or a named place the world declares (`@world` `places` / a `places` component — the shape the upstream places PRs bring; pending their merge). `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig) |
+| `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]`, or `[x, y, z]` where `y` picks the floor there) or a **name**: a named place (`"lookout/balcony"`, a place's name or label; see Named places), a thing's id or label (its entrance, else you stop beside it), a person here (in front of them); `"?"` lists every named place. The walk routes round placed models, through doors and up stairs. `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig) |
+| `name_place {name, label?, on?, x?, y?, z?, remove?}` | name the spot where you stand (or x/z) as a place on the thing you are in, or the nearest (or `on`; `"@world"` for none): a `set` of its `places` component in the thing's own frame; `remove: true` retires a name |
 | `face {x, z \| target}` · `stop` | turn, halt |
 | `say {text}` · `whisper {to, text}` · `emote {name}` · `catch_up` · `activity` | high-volume social sugar (the MUD argument) |
 | `pose {bones?, hold?, replace?, target?, clear?, ragdoll?, posture?, wings?}` | hold a pose; `clear: true` releases it; `ragdoll: true` is the ragdoll (your body goes limp and falls; with `target`, theirs is asked to); `posture: sit \| sitchair \| lie \| stand`; `wings: fold \| open` (the vigil posture; folded grounds you) |
@@ -202,15 +203,17 @@ is 31 tools, and what used to be bespoke verbs are their modes:
 | `animate {dur, tracks}` · `attach {to, socket?}` · `detach` · `set_avatar {avatar}` | a one-off animation; get on / off a socket; change your body |
 | `library {query \| kind, page? \| preview}` | the catalog: search models, a contact sheet of models or avatars, one item at full size |
 | `create {id?, model?, components?, place? \| at?, from?}` | the authority's create; nowhere said = 2 m ahead; a **light** is `create {components: {light: {…}}}` (no model, eye height); `from: "sha256:<hash>"` (a unique prefix will do) places a blueprint copy, `from: <id>` duplicates |
-| `place {id, on \| beside \| hang \| against \| near \| at, …}` · `edit {id, set}` · `inspect {id}` · `hierarchy` · `measure {id \| lib}` · `blueprints` | the authority's place; the inspector (fields by address, `"light.intensity": 24` dims a light); the scene tree; geometry; the blueprint library |
+| `place {id, on \| beside \| hang \| against \| near \| at, …}` · `edit {id, set}` · `inspect {id}` · `hierarchy` · `measure {id \| lib, check?, scale?}` · `blueprints` | the authority's place; the inspector (fields by address, `"light.intensity": 24` dims a light); the scene tree; geometry (`check: true`: the build check — walk-in, reachable floors, why not, suggested places); the blueprint library |
 | `act {verb, args}` | every other verb, the authority's answer verbatim: `delete {id}` removes, `undo`, `publish`, `grab`/`put`/`throw`… — and a few answered by your **body** first: `land {to: [x, z]}` (after a fly-mode move), `shove {target, strength?}` (the directed ragdoll; the target's consent table decides); moderation **by name**: `kick {who, minutes?, reason?}`, `ban {who, days?, reason?, global?}`, `unban {who}`, `bans {global?}` |
 | `whois {name}` · `worlds` · `travel {world}` · `world_history` · `world_debug` | who goes by a name; the map; the move between worlds; the log; the flight recorder |
 
 The old names (`take_off`, `fold_wings`, `clear_pose`, `posture`, `ragdoll`,
 `light`, `remove`, `blueprint_place`, `kick`, `list_bans`, `library_sheet`…)
 are refused with the call that does it now; `walk_to`/`snapshot`/`spawn`/
-`world_verb` still run, with their old arguments translated (`walk_to {x, z}`
-→ `move {to}`, `spawn {lib, x, z, yaw?}` → `create {model, at}`);
+`world_verb`/`check_model` still run, with their old arguments translated
+(`walk_to {x, y?, z}` → `move {to: [x, (y,) z]}`, `walk_to {to}` → `move {to}`,
+`spawn {lib, x, z, yaw?}` → `create {model, at}`, `check_model {id | lib}` →
+`measure {…, check: true}`);
 `spawn {query}` is refused with the two calls that do it now. Every tool that
 writes waits for the authority and reports its refusal in its words.
 
@@ -264,6 +267,7 @@ The ones you'll reach for:
 | `openable` | `{open, locked?, angle?, axis?, slide?, time?, part?}`: it opens and closes when used (a door, a gate, a lid); it turns about its `pivot`, or slides; every client animates it |
 | `sockets` | named attachment points; with `body`, a place a person can sit, ride, stand (below) |
 | `reactions` | `{<action>: handler}`: what `use {id, action}` does (below) |
+| `places` | `{<name>: {at} \| {min, max} \| null}`: named places to walk to, in its own frame (on `@world`: world coordinates); see "Named places" |
 | `lock` | `true`: nobody may move, replace or delete it (below) |
 | `grabbable`, `physics` | it can be carried; it can fall and fly (below) |
 | `particles` | `{effect, part?, at?, seed?, playing?, scale?, params?}`: it emits an effect (below) |
@@ -621,7 +625,11 @@ id). The worlds dir's key files are renamed to `.custody.json` /
 - `.glb`/`.vrm` bodies → the content-addressed model store; the reply's
   `store/<hash>.glb` path is a library path, so `create {model: <path>}`
   (the `create` tool takes the same) places it. Generated meshes normally arrive
-  via Orrery (`send-to-eidoverse`).
+  via Orrery (`send-to-eidoverse`). A model's upload
+  answers `{path, check}`: the build check (#241) runs on it — walk-in or solid,
+  which floors can be reached from outside and why not, suggested rooms, doors
+  and stairs — and waits at `GET /check?lib=…`, or `measure {lib, check: true}`.
+  It is advice, never a refusal (docs/BUILDING.md).
 - `?as=image&name=foo` + a PNG/JPEG/WebP body (≤8MB) →
   `store/images/<hash>.<ext>`, a picture source. The kind is read from the
   bytes, not the name; the store is inert — what hangs in a world is the
@@ -708,7 +716,38 @@ shallowest first:
 
 ## Walking through buildings
 
-`move {to, run?, tolerance?}` (mode `walk`) routes through doors and arches in griddled structures, including entry, exit, and outdoor walks obstructed by a building. Its support basis comes from the standing implementation, not floor order or horizontal overlap. This branch supplies **terrain mode**: the feet follow the live terrain each tick of the walk, as the planner read it at each wall crossing. Thus a basement does not redefine ground and an overhead tile does not confine a ground walker. It does not supply elevated standing; that remains #140/PR #200's separate capability.
+**Placed models are solid to your feet, exactly as they are to a person's (#235).** Your body fits the same colliders a browser fits — from each model's own triangles, with its `collider` component (or the spawn's `collide`) deciding exact or box — and its feet are the browser walking controller's: the stride is the one walker's (`shared/mover.js`), then `client/lib/colliders.js` `resolveColliders` pushes the body out of anything solid and finds the ground under it. So it stands on raised floors, climbs any stair whose steps rise no more than the mover's step (0.8 m), stays on the storey it is on (walking under an upper floor keeps you downstairs; across it keeps you up), and is stopped by walls, railings and furniture. A tumble (`pose {ragdoll}`, a shove) lands on the floor or stair that is really there. Nothing in a model needs declaring for this. A walk asked for while a placed thing's shape is still downloading waits for it (up to 15 s, then is refused): it is never walked on the terrain underneath. The agent decodes at most three models at a time, and a model over 48 MB or a million triangles falls back to its `/geom` summary (floors only).
+
+**`move {to}` finds its own way through them (#236).** One call: round the furniture, in at the door, up the stair, along the upper floor, out onto the balcony (`mcpl/navgrid.ts`). The route is planned against the same colliders the feet will meet, by asking the same collision code where a body can stand and step, so a route is one your body can walk and a place the planner calls unreachable is one it cannot reach. On open ground it is the one straight leg it always was.
+
+- **Which floor** at the destination: `to: [x, y, z]` picks it — the place to stand nearest that height, no more than a step above it (`y: 0` for a ground floor, an upper storey's floor height for that storey). A `y` no floor matches (mid-air) arrives on the nearest floor there, and the reply says which: "no floor at 10.00 m there — you're on the floor at 2.60 m". `to: [x, z]`: your own storey if the destination has a floor within a step of yours, else the lowest one there (the ground floor of the next building, the ground under a balcony).
+- **Where nothing can stand** (inside a wall, a chair, closer to a wall than a body fits), the walk ends at the nearest place that can, on your side of it.
+- **Refusals carry the reason**: nowhere to stand near the point; no walkable way there (sealed off, or only by a climb or drop of more than a step — a route never steps off a balcony); or a search that ran too long (walk part of the way first).
+- **Something that moves or arrives after the walk was planned** still stops you, and the walk ends early saying so; ask again and the new route takes it into account.
+
+Griddled structures route by their own planner, below; a walk through one is not re-planned around placed models.
+
+Making a building of your own? **[docs/BUILDING.md](docs/BUILDING.md)** is the short guide: the geometry the walking body needs (steps, doorways, stairs, the walk-in threshold) and the optional metadata (seats, lights, named places). `measure {id | lib, check: true}` is the build check (#241): what a model is like to walk into, measured with the walking body's own rules, before or after it is placed.
+
+### Named places
+
+Things can have **named places** — rooms, doors, seats, a balcony — and `move {to: "…"}` goes to them by name (#239): `"lookout/balcony"` (thing/place), `"the reading room"` (a place's name or label alone — the nearest that has one), `"lantern-house"` (a thing alone: its entrance, else a door; a thing that names neither is walked up to and stood beside), or a person's name (you stop beside them). A room is reached anywhere on its own floor; a seat, on the floor beside it (`attach` to sit). `look` says which named room you are standing in and lists the places you can **see** (a line of sight from your eyes, within 30 m, nearest first, at most 12, with each one's distance and floor height); `move {to: "?"}` lists every place, seen or not, and moves nothing. The `walk_to` alias takes the same `to`.
+
+A place belongs to its thing and is written in the thing's model frame (Y up, metres — the frame sockets use), so it moves, turns and scales with it; places on `@world` are in world coordinates and belong to no thing ("the meadow"). Two sources, the second overriding the first name by name (`mcpl/places.ts`):
+
+1. **The model's own description** — a `building` object in a scene node's glTF extras (a JSON string is fine; Blender exports custom properties that way): `rooms` `[{id, name, min, max}]`, `portals` `[{id, center}]` (doors), `seats` `[{id, pos}]`, `arrivals` `[{id, pos}]` (the one with id `outside` is the thing's `entrance`). It survives the server's optimized copy.
+2. **The `places` component** — added, re-pointed or retired at any time, long after the thing was built, by anyone with builder rank, with an ordinary write:
+
+```
+act {verb: "set", args: {id: "lookout", component: "places", merge: true, value: {
+  balcony:  {at: [0, 3.15, 2.9], label: "the balcony"},                                  # a point; its y is the floor there
+  upstairs: {min: [-2.2, 3.15, -2.2], max: [2.2, 5.8, 2.2], label: "the lookout room"}}}}  # a room; min y is its floor
+act {verb: "set", args: {id: "lookout", component: "places", value: {…, porch_bench: null}}}  # null hides a place the model declares
+```
+
+`merge: true` changes only the names you send (and a merged `null` deletes an entry, which lets a name the model declares back in — to hide one, send the whole bag with it as `null`). The **`name_place` tool** does the frame arithmetic and the write for you: `name_place {name, label?}` names the spot where you stand, on the thing you are in (or the nearest within 15 m, or `on`; `on: "@world"` for a place that belongs to no thing), as a `set` through the authority (rights, undo); `remove: true` retires a name.
+
+`move {to, run?, tolerance?}` (mode `walk`) routes through doors and arches in griddled structures, including entry, exit, and outdoor walks obstructed by a building. Its support basis comes from the standing implementation, not floor order or horizontal overlap. This branch supplies **terrain mode** for griddled structures: the feet follow the live terrain each tick of the walk, as the planner read it at each wall crossing. Thus a basement does not redefine ground and an overhead tile does not confine a ground walker. Elevated standing on a griddled structure remains #140/PR #200's separate capability (placed models' floors, above, are stood on through their colliders).
 
 The shared `prepareRouteLocal(plan, basis)` API also accepts **identified-floor mode**: the standing resolver supplies the supporting entity/level and its actual fixed surface height. That mode permits only the floor's cells/halves. Missing tiles are holes; floor→terrain and cross-building floor transitions are explicitly unsupported. Another building's route cannot discharge the supporting floor's constraint. A pure planner test with supplied floor identity demonstrates that contract, not an elevated-standing capability here.
 
