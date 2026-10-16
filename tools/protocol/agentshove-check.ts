@@ -15,6 +15,11 @@
 //        solid, and the walk re-plans once with it as an obstacle and arrives round it (review r4 F1b)
 //   AS8  AS7's re-planned walk superseded by a new move, which is then stopped: neither walk reports the first walk's
 //        crate (the re-plan's answer is written only while it is still the walk under way; review r5 F1)
+//   AS9  AS7's crate, unlocked where it stands: walked into again (a misjudged mark holds only while its lock, physics and
+//        mass do; review r5 F5)
+//   AS10 a light long crate backed against two locked posts: the walk presses it, it doesn't budge, the walk stalls, re-plans
+//        round it and arrives (the stall branch's row; review r5 F5)
+//   AS11 a stall blames only a thing the stride presses into, not one it grazes (pure; review r5 F5)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -43,6 +48,8 @@ async function writeBoxGlb(file, [sx, sy, sz]) {
 const W = path.join(root, "w"), OPT = path.join(root, "opt"); fs.mkdirSync(W, { recursive: true });
 await writeBoxGlb(path.join(OPT, "test/lowcrate.glb"), [0.6, 0.5, 0.6]);
 await writeBoxGlb(path.join(OPT, "test/tallcrate.glb"), [0.6, 1.2, 0.6]);
+await writeBoxGlb(path.join(OPT, "test/longcrate.glb"), [3, 1.2, 0.6]);
+await writeBoxGlb(path.join(OPT, "test/post.glb"), [0.3, 1.2, 0.3]);
 const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: OPT, SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", TRUST_NAMES: "1", EIDO_FLIGHT_REHEARSAL: "", SESSIONS_PATH: path.join(root, "sessions.json"), ...extra });
 const r0 = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", "yard", "--owner", "Ann"], { cwd: ENGINE, env: env() });
@@ -174,5 +181,47 @@ try {
     const tB = T(await wB);
     ok(!/late2/.test(tB), "AS8 …and stopped, it does not report the first walk's crate", tB);
     ok(!/solid|late2 is in the way/.test(tA), "AS8 …nor does the superseded walk claim the authority refused it", tA); }
+  // AS9
+  { const m0 = await call("move", { to: [-18, 0] }); ok(!m0.isError, "(AS9 setup) the agent stands south of AS7's crate, still locked", T(m0));
+    const ul = await ann.req("delete", { id: "late", component: "lock" });
+    for (let i = 0; i < 80 && ag.replica?.st?.entities?.late?.c?.lock; i++) await sleep(50);
+    ok(ul.ok && !ag.replica?.st?.entities?.late?.c?.lock, "(AS9 setup) unlocked where it stands", ul);
+    const w = call("move", { to: [-18, 5] });
+    for (let i = 0; i < 100 && !ag.target; i++) await sleep(10);
+    const planned = !!ag.target && Math.abs(ag.target.x + 18) < 1e-6;
+    ok(planned, "AS9 a crate once found solid, then unlocked where it stood, is walked into again (planned straight through it)", { target: ag.target });
+    await call("stop", {}); await w; }
+  // AS10
+  { const r = await crate("jam", "test/longcrate.glb", [12, 0, -6], {}, 30); ok(r.ok, "(AS10 setup) a light long crate", r);
+    for (const [id, x] of [["postw", 11], ["poste", 13]] as any) {
+      const p = await ann.req("create", { id, model: "test/post.glb", components: { transform: { pos: [x, 0, -5.55], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" }, lock: true } });
+      ok(p.ok, `(AS10 setup) a locked post behind it (${id})`, p); }
+    for (let i = 0; i < 80 && !["jam", "postw", "poste"].every((id) => Array.isArray(ag.replica?.st?.entities?.[id]?.c?.physics?.shape)); i++) await sleep(50);
+    await sleep(1500);
+    const m0 = await call("move", { to: [12, -9] }); ok(!m0.isError, "(AS10 setup) the agent stands south of it", T(m0));
+    let off = 0, walking = true, stalled = null;
+    const w = call("move", { to: [12, -3] }).finally(() => { walking = false; });
+    for (let i = 0; i < 100 && !ag.target; i++) await sleep(10);
+    const planned = !!ag.target && Math.abs(ag.target.x - 12) < 1e-6;
+    while (walking) { off = Math.max(off, Math.abs(ag.pos.x - 12)); await sleep(30); }
+    const t = T(await w);
+    console.log("   AS10:", t, JSON.stringify(posOf("jam")), shoves("jam").length);
+    ok(planned, "(AS10 setup) the walk planned straight through it (30 kg: its shove would move it)", { target: ag.target });
+    ok(/^arrived/.test(t) && /jam wouldn't move for your shove/.test(t), "AS10 a light crate backed against locked posts: the walk presses it, it doesn't budge, the walk re-plans round it and arrives", t);
+    ok(off > 1.2, "AS10 …round its end (the body left the straight line by more than half its length)", { off }); }
+  // AS11 (pure: a body that never joins) — a stall blames only a thing the stride presses INTO
+  { const stallAgainst = (at) => {
+      const b = new WorldAgent({ url: "ws://127.0.0.1:1/ws", name: "Bea", world: "w", avatar: "" });
+      b.replica = { st: { entities: { "@world": { c: {} }, box: { c: { transform: { pos: at, q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", shape: [[-0.3, 0, -0.3], [0.3, 1.2, 0.3]] } } } } } };
+      b.pos = { x: 0, y: 0, z: 0 }; b.target = { x: 0, z: 5, run: false, tolerance: 0.01 }; b.legs = [];
+      b.walkPlan = { x: 0, z: 5, run: false, timeoutMs: 1000, tolerance: 0.01, y: undefined, near: {}, passable: new Set(["box"]), replanned: false };
+      b.walkDone = () => {}; b.stallTicks = 1e6;
+      try { b.noteWalkProgress(5, 1); } catch { /* the re-plan has no world to plan in: what it marked is what's read */ }
+      const r = { blamed: b.misjudged.has("box"), stall: b.walkStall };
+      try { b.close(); } catch {}
+      return r; };
+    const ahead = stallAgainst([0, 0, 0.5]), beside = stallAgainst([0.5, 0, 0]);
+    ok(ahead.blamed, "(AS11 setup) a stall pressed into a passable crate ahead blames it (re-plans round it)", ahead);
+    ok(!beside.blamed && /^blocked at/.test(beside.stall ?? ""), "AS11 a stall that only grazes a passable crate beside the stride doesn't blame it: the walk stops, saying so", beside); }
 } catch (e) { ok(false, "threw", String(e?.stack ?? e).slice(0, 600)); }
 done(fail ? 1 : 0);
