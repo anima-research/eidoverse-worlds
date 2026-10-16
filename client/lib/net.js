@@ -26,6 +26,7 @@ import { markPhase, refuseBoot, waitBoot } from './boot.js';
 // this client folds the authority's own stream (shared/protocol/replica.js) and derives the view the realizers draw from it,
 // locally; edit mode sends requests (editwrites.js) and waits for the authority.
 import { makeReplica } from '../../shared/protocol/replica.js';
+import { redialer, REDIAL } from '../../shared/redial.js';
 import { actorName } from '../../shared/protocol/names.js';
 // the fold's records are frozen on a dev host (a reader that writes into one throws where it stands, C7); a visitor's
 // browser skips the walk
@@ -51,7 +52,10 @@ let restoredPose = false;
 let hydrating = false;
 let pendingLive = [];
 let lastSeq = -1;
-let retryDelay = 1200;
+// when to dial again after a close (shared/redial.js: exponential with full jitter, up to a minute; the agent's rule too).
+// Reset only by a join the server ACCEPTED (the snapshot): a socket that opens and is refused again keeps backing off
+// (review r4 F5: reset on open, a full world's waiting pages redialled every 5 s, in step).
+const redial = redialer();
 
 // Supplied by main.js so net can read/write body state without importing the
 // controller (which imports ui, which imports assets…).
@@ -519,7 +523,6 @@ export async function connect() {
       bus.emit('net', net);
       net.ws = early.ws;
       joinRefusal = null;
-      retryDelay = 1200;
       // Drain what raced ahead of us IN ORDER while the boot script's own
       // buffering handler still catches anything arriving mid-drain; the
       // rewire below is synchronous with the final empty check, so no
@@ -558,7 +561,7 @@ export async function connect() {
   net.status = 'connecting';
   bus.emit('net', net);
   net.ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
-  net.ws.onopen = () => { retryDelay = 1200; sendJoin(); };
+  net.ws.onopen = () => { sendJoin(); };
   wireSocket(net.ws);
 }
 
@@ -627,9 +630,7 @@ function onSocketClosed(ev) {
     if (!waitBoot(text)) toast(text, 'warn', 8000);
     net.status = 'retrying';
     bus.emit('net', net);
-    retryDelay = Math.max(retryDelay, 5000);
-    setTimeout(connect, retryDelay);
-    retryDelay = Math.min(15000, retryDelay * 1.6);
+    setTimeout(connect, redial.next(REDIAL.full));
     return;
   }
   if (ev.code === 4005) {
@@ -662,8 +663,7 @@ function onSocketClosed(ev) {
   }
   net.status = 'retrying';
   bus.emit('net', net);
-  setTimeout(connect, retryDelay);
-  retryDelay = Math.min(15000, retryDelay * 1.6); // back off instead of hammering
+  setTimeout(connect, redial.next()); // back off instead of hammering
 }
 
 // ---------------------------------------------------------------- handling
@@ -984,6 +984,7 @@ async function onSnapshot(msg) {
   bus.emit('your-rights', net.myRights);
   markPhase('connect', 1);
   net.joined = true;
+  redial.reset();
   net.status = 'live';
   net.myId = msg.you;
   net.mySub = msg.yourSub ?? null;

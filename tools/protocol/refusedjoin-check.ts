@@ -17,6 +17,8 @@
 //      answer — the page connects fresh and joins (review r3 F6: "the early socket is never an authority")
 //   W7 a FULL world (access max) is a transient refusal: the words are shown but the splash isn't pinned, and the page
 //      gets in by itself once there is room (review r3 F6)
+//   W8 while it stays full, the redials back off (each wait longer than the last), not every 5 s in step (review r4 F5)
+//   W9 an agent (mcpl/agent.ts) dialling a full world waits and dials again too, and gets in when a seat frees (r4 C2)
 // Run under the house guards: code/scripts/eido-probe.sh -C <worktree> -t 300 tools/protocol/refusedjoin-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -114,6 +116,35 @@ try {
     const t1 = Date.now();
     while (Date.now() - t1 < 30000) { st = await evalJson(probe).catch((e) => ({ err: String(e) })); if (st?.joined) break; await sleep(500); }
     check("W7 ...and once there is room it gets in by itself, no reload", st?.joined === true && st.joins >= 2, { ...st, waited: Date.now() - t1 });
+  }
+  // W8 (review r4 F5): while it stays full, the page's redials back off — each wait longer than the last (exponential, with
+  // jitter: the page's Math.random is pinned to 0.5 here so the schedule is exact), not a fixed 5 s for as long as it's full
+  {
+    await cdp.send("Page.navigate", { url: "about:blank" }); await sleep(1500);   // W7's page leaves: its seat is free for keeper
+    const { WorldAgent } = await import("../../mcpl/agent.ts");
+    const keeper: any = new WorldAgent({ name: "keeper", world: "here", url: BASE.replace("http", "ws") + "/ws" });
+    await keeper.connect();
+    const full = await serverSays("here");
+    check("(W8 setup) here is full again", full.code === 4005 && /is full/.test(full.error), full);
+    await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `if (/[?&]w8=1/.test(location.search)) { Math.random = () => 0.5;
+      window.__joinAt = []; const send = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { if (JSON.parse(d)?.type === 'join') __joinAt.push(performance.now()); } catch {} return send.call(this, d); }; }` });
+    await cdp.send("Page.navigate", { url: `${BASE}/?world=here&name=T8&w8=1` });
+    let at: number[] = []; const t0 = Date.now();
+    while (Date.now() - t0 < 45000) { at = await evalJson(`window.__joinAt ?? []`).catch(() => []); if (at.length >= 4) break; await sleep(500); }
+    const gaps = at.slice(1).map((t, i) => Math.round(t - at[i]));
+    check("W8 here (stays full): the redials back off — the second and third waits each longer than the one before", gaps.length >= 3 && gaps[1] > gaps[0] * 1.2 && gaps[2] > gaps[1] * 1.2, { gaps });
+    await cdp.send("Page.navigate", { url: "about:blank" }); await sleep(500);   // the page stops dialling: the seat is the agent's
+    // W9 (review r4 claims C2): an AGENT dialling a full world waits too — refused in the server's words, it dials again by
+    // itself (the same backoff, shared/redial.js) and gets in once a seat frees; it never gives the world up
+    const ag9: any = new WorldAgent({ name: "A9", world: "here", url: BASE.replace("http", "ws") + "/ws" });
+    let said9 = "";
+    try { await ag9.connect(); said9 = "(joined)"; } catch (e) { said9 = String((e as Error)?.message ?? e); }
+    check("W9 an agent dialling a full world: refused in the server's words, and it says it will try again (not closed for good)",
+      said9.includes(full.error) && /trying again/.test(said9) && !ag9.closed, { said9, closed: ag9.closed });
+    try { keeper.close(); } catch { /* gone */ }
+    const t9 = Date.now(); while (Date.now() - t9 < 20000 && !ag9.joined) await sleep(250);
+    check("W9 ...and once a seat frees it gets in by itself", ag9.joined === true, { waited: Date.now() - t9, closed: ag9.closed });
+    try { ag9.close(); } catch { /* gone */ }
   }
 } catch (e) { check("the run threw", false, String(e?.stack ?? e)); }
 console.log(`[refusedjoin-check] ${tally.passed} passed, ${tally.failed} failed${tally.note()}`);

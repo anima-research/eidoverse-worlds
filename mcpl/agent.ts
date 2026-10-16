@@ -76,6 +76,7 @@ import { describeCaptions } from "../shared/captions.js";
 import { describeStructure, describeHere, localizePoint, planStructure, prepareRouteLocal, ROUTE_STEP_METRES } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
+import { redialer, REDIAL } from "../shared/redial.js";
 import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, massOf, budges, SHOVE_FEEL } from "../shared/shove.js";
 import { SHOVE } from "../shared/protocol/physconst.js";
 import { colliderFor } from "../client/lib/bodyscale.js";
@@ -797,7 +798,8 @@ export class WorldAgent {
       if (this.closed) return reject(new Error("agent closed"));
       const ws = new WebSocket(this.url);
       this.ws = ws;
-      const timeout = setTimeout(() => reject(new Error("join timeout")), 8000);
+      this.joinRefused = null;
+      const timeout = setTimeout(() => reject(new Error(this.joinRefused ?? "join timeout")), 8000);
       // `agent: true` is not a capability — it changes nothing about what this
       // body may do. It exists so the world can SAY who it is talking to.
       // Knowing whether the thing across the table thinks in tokens or neurons
@@ -828,12 +830,23 @@ export class WorldAgent {
           }
           this.close(); return;
         }
-        // 4005 = the sequencer REFUSED the join (bad/reserved name, bad token).
-        // A refusal is an answer, not an outage — redialing it every 1.5s is
-        // the polite-DoS the sequencer's own comments warn about (RFC-005
-        // review D1: a granted ?world= dial with a name the sequencer rejects
-        // used to hammer forever).
-        if ((ev as { code?: number } | undefined)?.code === 4005) { this.close(); return; }
+        // 4005 = the sequencer REFUSED the join: a malformed or reserved name, a bad token, no such world, an old-format
+        // world, an access refusal, a client that doesn't fold the log. A refusal is an answer, not an outage — redialing
+        // it every 1.5s is the polite-DoS the sequencer's own comments warn about (RFC-005 review D1: a granted ?world=
+        // dial with a name the sequencer rejects used to hammer forever).
+        // …except reason "full" (the world is at its access max): temporary, someone leaving makes room. The join is
+        // refused in the server's words and the body dials again by itself, backing off as a person's page does
+        // (shared/redial.js; review r4 claims C2). The other refusals end the body, as before.
+        const code = (ev as { code?: number } | undefined)?.code, why = String((ev as { reason?: string } | undefined)?.reason ?? "");
+        const refused = this.joinRefused; this.joinRefused = null;
+        if (code === 4005 && why === "full" && !this.closed) {
+          clearTimeout(timeout);
+          reject(new Error(`${refused ?? "the world is full"} — trying again by itself`));
+          setTimeout(() => { if (!this.closed && !this.joined) this.connect().catch(() => {}); }, this.redial.next(REDIAL.full));
+          return;
+        }
+        if (refused !== null) { this.closed = true; clearTimeout(timeout); reject(new Error(refused)); }
+        if (code === 4005) { this.close(); return; }
         if (!this.closed) setTimeout(() => this.connect().catch(() => {}), 1500);
       };
       ws.onmessage = async (ev) => {
@@ -852,9 +865,10 @@ export class WorldAgent {
             // same refusal. Surface the sequencer's reason instead of the
             // silent join-timeout loop this used to be.
             if (!this.joined) {
-              if (typeof msg.until !== "number") this.closed = true;   // a cooldown isn't final: onclose 4006 dials again after it
-              clearTimeout(timeout);
-              reject(new Error(String(msg.error ?? "join refused")));
+              // a cooldown isn't final: onclose 4006 dials again after it. Any other refusal's close says whether it is
+              // final (4005 "full" is not: onclose dials again); onclose answers this connect() with these words
+              if (typeof msg.until === "number") { clearTimeout(timeout); reject(new Error(String(msg.error ?? "join refused"))); }
+              else this.joinRefused = String(msg.error ?? "join refused");
             } else {
               // A mid-life refusal (insufficient rank, a bad moderation
               // target, being kicked…). Verbs are fire-and-forget, so this is
@@ -967,7 +981,7 @@ export class WorldAgent {
             await this.applyView(false, null, null);
             void this.supportReady(10_000).then(() => { this.feetSettling = false; });
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
-            this.joined = true;
+            this.joined = true; this.redial.reset();
             // my consent table, as a person's client sends it on every arrival (consentsync.js): the server's default preset by
             // name; absent, the server already holds me at that default and refuses in my name (parity sweep 10-14)
             this.request("consent", { preset: DEFAULT_PRESET }).catch(() => { /* the server's default stands */ });
@@ -1886,6 +1900,10 @@ export class WorldAgent {
 
   private geomCache = new Map<string, Promise<any | null>>();
   private supportIds = new Map<string, string[]>();
+  /** A pre-join refusal's words, until its close says whether it is final (onclose). */
+  private joinRefused: string | null = null;
+  /** How long until the next dial of a full world (shared/redial.js: the browser's rule); reset by a join. */
+  private redial = redialer();
   private removedUntil: number | null = null;   // a moderation removal's end (a kick's cooldown): reconnect then   // entity id -> registered box ids
   /** This agent's claim token on shared support boxes. Per INSTANCE, not per
    *  name: two agents can carry the same name across a reconnect, and a
