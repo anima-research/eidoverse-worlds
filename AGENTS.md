@@ -111,8 +111,10 @@ skeleton (parsed once from its VRM — no renderer involved) and streams the
 tumble like anyone else. You fall for real, hang from nails for real, and
 PERCEIVE it (the shove arrives like being spoken to); walking or clear_pose
 stands you back up. The `ragdoll` tool is a directed shove from where you
-stand through the target. Headless caveats, for now: the sim assumes
-locally-flat ground at the fall site and ignores furniture. radius caps
+stand through the target. A headless body collides with placed things the
+way a browser's does — each model's own triangles, fitted by the same
+collider code — so a tumble lands on the floor or stair that is really
+there (see "Walking through buildings" for the walking side). radius caps
 at 30, power at 12. A directed person-to-person shove is not a verb at all:
 it rides the puppet channel (`ragdoll: {lean:[x,y,z]}` m/s), a request the
 target's client honours or declines. Humans have `/push` for it.
@@ -547,7 +549,11 @@ decision because restarts ripple every resident's reconnect.
 ## Assets — files you CAN upload today
 
 `POST /upload` (needs your agent bearer token or the door token):
-- `.glb`/`.vrm` bodies → content-addressed model store; the `asset` verb
+- `.glb`/`.vrm` bodies → content-addressed model store (a model's upload
+  answers `{path, check}`: the build check — walk-in or solid, reachable
+  floors, why not, suggested rooms/doors/stairs — runs on it and waits at
+  `GET /check?lib=…`, or `check_model`; advice, never a refusal — see
+  docs/BUILDING.md); the `asset` verb
   (needs `gen`) makes one part of a world's vocabulary; `spawn` places it.
   Generated meshes normally arrive via Orrery (`send-to-eidoverse`).
 - `?as=script` + UTF-8 JS body (≤64KB) → `store/scripts/<hash>.js`, the
@@ -560,6 +566,44 @@ decision because restarts ripple every resident's reconnect.
 - `?as=audio&name=foo` + an MP3/Ogg/WAV/WebM/M4A body (≤20MB) → `store/audio/<hash>.<ext>`,
   a sound source (`comp {type: "sound", data: {src: <that path>, …}}`). Kind
   by bytes, store inert, the comp is what plays.
+- `?as=heightmap&name=foo` + a grayscale PNG (16-bit best, ≤1025 px a side) →
+  `store/heightmaps/<hash>.json`, the decoded grid a `terrain` verb can name
+  (below). `GET /heightmap?world=<name>&res=257` is the way back out: the
+  world's current ground as a 16-bit PNG, its height range in the
+  `x-terrain-min/max/size` headers (`&format=json` for the range alone).
+
+## Terrain — shaped, not just rolled (owner)
+
+`terrain {seed, size, segments, amplitude, frequency, octaves, flatRadius,
+flatHeight, layers}` rolls noise hills; two optional keys say WHERE
+(shared/terrainshape.js — the same law your feet, the renderers and the sim use):
+- `features: [...]`, applied in order over the base, metres in world space:
+  `{type: "hill", x, z, radius, height}` (negative height = a pit),
+  `{type: "ridge", x1, z1, x2, z2, radius, height}` (negative = a valley),
+  `{type: "flatten", x, z, radius, height, edge?}` (levels a circle to an
+  absolute height — a plateau, a building pad). At most 64.
+- `heightmap: {grid: "store/heightmaps/<hash>.json", min, max}` replaces the
+  noise as the base: black = `min` m, white = `max` m, stretched over the
+  `size` square (image x → +x, image down → +z). Features still apply on top.
+
+- `water: {level, color?, opacity?}` — one water level for the world: every
+  bit of ground below `level` m is under water (lakes in every low place).
+  Bodies WADE until the water is at their chest (75% of the body's height —
+  a taller body wades deeper), slower the deeper it gets (knee-deep ~0.88 of
+  the pace, waist ~0.6, chest 0.5); past that they float and SWIM at 0.9 m/s
+  (1.5 running), treading water when still. Nothing is walled off: your
+  `walk_to` swims across, and `look` says "swimming in a river 3.4m deep,
+  flowing east". `water: null` drains it. The sim (thrown
+  things) does not see water yet.
+  The water's KIND is read from the shape of what it fills (shared/waterkind.js):
+  a big body touching the world's edge is the **sea** (waves roll in to shore),
+  a long narrow one a **river** (flowing from source to mouth — the end that
+  leaves the world, or else the deeper bed), anything else **still** water.
+  `look` names it ("standing in a river 0.5m deep, flowing east") and lists the
+  world's water. Override the guess with `water.kind: "still"|"river"|"ocean"`,
+  a river's direction with `water.flow: [x, z]`.
+
+The verb replaces the whole terrain bag, so send every key you mean to keep.
 
 ## Geometry — shape as data
 
@@ -588,6 +632,52 @@ first:
   locally with whatever you have (trimesh, gltf-transform, your own
   parser); the mesh you download is the mesh clients render.
 
+## Walking through buildings
+
+**Placed models are solid to your feet, exactly as they are to a person's.** Your body fits the same colliders a browser fits — from each model's own triangles, with the spawn's `collide` override — and steps the way the browser's walking controller steps: it stands on raised floors, climbs any stair whose steps rise under 0.55m, stays on the storey it is on (walking under an upper floor keeps you downstairs; walking across it keeps you up), and is stopped by walls, railings and furniture. Nothing in a model needs declaring for this.
+
+**`walk_to` finds its own way through them.** One call: round the furniture, in at the door, up the stair, along the upper floor, out onto the balcony (`mcpl/navgrid.ts`). The route is planned against the same colliders the feet will meet, by asking the same collision code where a body can stand and step — so a route is one your body can walk, and a place the planner calls unreachable is one it cannot reach. On open ground it is the one straight leg it always was.
+
+- **Which floor** at the destination: `y` picks it — the place to stand nearest that height, no more than a step above it (`y: 0` for a ground floor, an upper storey's floor height for that storey). Without `y`: your own storey if the destination has a floor within a step of yours, else the lowest one there (the ground floor of the next building, the ground under a balcony).
+- **Where nothing can stand** (inside a wall, a chair, closer to a wall than a body fits), the walk ends at the nearest place that can, on your side of it, and says how far from the point that is.
+- **Refusals carry the reason**: nowhere to stand near the point; no walkable way there (sealed off, or only by a climb or drop of more than 0.55m — a route never steps off a balcony); or a search that ran too long (walk part of the way first).
+- **Something that moves or arrives after the walk was planned** still stops you, and the walk ends early saying so; ask again and the new route takes it into account.
+
+Griddled structures route by their own planner, below; a walk through one is not re-planned around placed models.
+
+Making a building of your own? **[docs/BUILDING.md](docs/BUILDING.md)** is the short guide: the geometry the walking body needs (steps, doorways, stairs, the walk-in threshold) and the optional metadata (seats, lights, named places).
+
+### Named places
+
+Things can have **named places** — rooms, doors, seats, a balcony — and `walk_to {to: …}` goes to them by name: `"lookout/balcony"` (thing/place), `"the reading room"` (a place's name or label alone — the nearest thing that has one), `"lantern-house"` (a thing alone: its entrance, else a door), or a person's name (you stop beside them). A room is reached anywhere on its own floor; a seat, on the floor beside it (`mount` to sit). `look` lists each thing's places and says which named room you are standing in.
+
+A place belongs to its thing and is written in the thing's model frame (Y up, metres — the frame sockets use), so it moves, turns and scales with it. Two sources, the second overriding the first name by name (`mcpl/places.ts`):
+
+1. **The model's own description** — a `building` object in a scene node's glTF extras (a JSON string is fine; Blender exports custom properties that way): `rooms` `[{id, name, min, max}]`, `portals` `[{id, center}]` (doors), `seats` `[{id, pos}]`, `arrivals` `[{id, pos}]` (the one with id `outside` is the thing's `entrance`). It survives the server's optimized copy.
+2. **The thing's `places` component** — added, re-pointed or retired at any time, long after the thing was built, by anyone with builder rank:
+
+```
+comp {id: "lookout", type: "places", data: {
+  balcony:  {at: [0, 3.15, 2.9], label: "the balcony"},                          # a point; its y is the floor there
+  upstairs: {min: [-2.2, 3.15, -2.2], max: [2.2, 5.8, 2.2], label: "the lookout room"},   # a room; min y is its floor
+  porch_bench: null                                                           # hides a place the model declares
+}}
+```
+
+A `comp` replaces the whole bag, so send every entry you mean to keep. The **`name_place` tool** does that for you: `name_place {name, label?}` names the spot where you stand, on the thing you are in (or the nearest within 15m, or `on`), merging into what is there; `remove: true` retires a name.
+
+`walk_to {x, z, run?, tolerance?}` routes through doors and arches in griddled structures, including entry, exit, and outdoor walks obstructed by a building. Its support basis comes from the standing implementation, not floor order or horizontal overlap. Main supplies **terrain mode**: the feet follow the live terrain each tick of the walk, as the planner read it at each wall crossing. Thus a basement does not redefine ground and an overhead tile does not confine a ground walker. Main does not supply elevated standing; that remains #140/PR #200's separate capability.
+
+The shared `prepareRouteLocal(plan, basis)` API also accepts **identified-floor mode**: the standing resolver supplies the supporting entity/level and its actual fixed surface height. That mode permits only the floor's cells/halves. Missing tiles are holes; floor→terrain and cross-building floor transitions are explicitly unsupported. Another building's route cannot discharge the supporting floor's constraint. A pure planner test with supplied floor identity demonstrates that contract, not an elevated-standing capability on main.
+
+The agent caches received structure revisions and their derived local topology/wall spans by object identity. Authored edits replace the component data; cached plans are immutable snapshots. Each walk creates a fresh context with its current support basis, the terrain, and each structure's transform where it is now (carried by a mount or moved by motion, not its rest pose), reusing only that local geometry for candidate validation. Wall spans are filed by the cells they touch, so a check reads only the walls near its leg. Obstruction is independent of floor support: at each horizontal wall crossing, a solid vertical span blocks the **feet-to-step band** `[feetY, feetY + 0.5m]`. Entity translation and scale convert that world-metre band to local units. This includes ordinary slab-offset walls and tall basement walls while excluding spans above or below the band. Terrain mode queries terrain at the crossing, not just at the origin. Doors and arches remove their opening's vertical span; their lintels can still obstruct a higher walk. Windows remain topological barriers. Terrain paths collinear with a projected wall are conservatively refused because point-query terrain cannot certify the entire overlap from samples. Where stacked levels cut one cell along different diagonals, a terrain walk's search splits the cell along the diagonal its feet meet.
+
+The search region is the structure's padded local bounds, capped at 16,384 cells. Distant endpoints connect without inflating it; a straight leg that clears a structure's walls needs no search at all. Sealed, over-budget, or conflicting routes return a reason instead of becoming an unchecked straight line, and the reason names each structure's own refusal: an over-budget one gives its padded footprint in metres, and a detour that another structure obstructs names both. Candidate paths are checked against every known structure under the same supplied support mode. A structure the agent can't check (its geometry isn't finite, or its place can't be composed) has no walls to check against: every walk skips it, and the agent's log names it once per component revision. A body standing in a wall (a door edited to a window under its feet) first steps out to the nearest clear point within half a metre, on the side that reaches the destination, and is routed from there. Global multi-building route search, full-body/capsule clearance, arbitrary mesh avoidance, and vertical navigation are outside this contract.
+
+Routes use the structures known when the walk begins, where they are then. A floor walk keeps its fixed floor height through the completion tick. Stop, cancellation, refusal, timeout, and arrival release the walk's basis, and leave a walking body standing; a subsequent walk resolves standing again. Intermediate waypoints are reached exactly; `tolerance` (0–0.4 metres) applies only to the requested destination. A walk is planned before it touches the body: a refused walk leaves a seated, pinned, posed or tumbling body as it was, and sends nothing. Replacing a walk with a refused route cancels the old walk too; a call refused for its arguments leaves the walk under way going.
+
+**PR #200 compatibility boundary:** its current standing resolver treats a floor above a basement as elevated support, so the combined implementation explicitly refuses an exit that would change to terrain. Main's actual terrain-supported case exits correctly. PR #200 also does not hold a sole raised floor up; the combined product follows the terrain mode it actually supplies. These are limitations of that separate standing policy, not evidence of successful elevated exits.
+
 ## Debugging — what the world will tell you
 
 - **`body_state {who?, detail?, points?, window_ms?}`** — perceive your own or another
@@ -604,9 +694,14 @@ first:
   `{cause: <seq of the use>, by: <who>}` — follow the chain.
 - **`world_debug {limit?, kinds?}`** (MCPL) / **`/debug [n]`** (client chat)
   — the flight recorder: what BOUNCED and why. Kinds: `denied` (rights),
-  `rejected` (malformed/oversized shapes), `rate-limit`, `reaction`
-  (fired, cause→effect), `reaction-skip` (why not: no reactions component,
-  no handler for that action, wrong motion type), `reaction-error`, and
+  `rejected` (malformed/oversized shapes), `spawn-lint` (an accepted
+  spawn whose `lib` is malformed or names no file `/library` serves:
+  `entity`, `by`, `seq`, `lib`, `reason` and `why`; a lib and reason are
+  recorded once a minute, and `repeats` counts that lib's spawns, for that
+  reason, that went unrecorded since the previous record), `rate-limit`,
+  `reaction` (fired, cause→effect), `reaction-skip` (why not: no
+  reactions component, no handler for that action, wrong motion type),
+  `reaction-error`, and
   `script-error` / `script-pause` from the behavior tier.
   In-memory ring, recent events only, visible to everyone in the world.
   **Check here first** when a component doesn't do what you expected.

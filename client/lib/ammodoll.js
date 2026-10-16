@@ -66,7 +66,9 @@
 // destroyed in dispose(); per-frame math reuses module-level temporaries.
 
 import { THREE } from './core.js';
-import { heightAt } from './terrain.js';
+import { heightAt, waterField } from './terrain.js';
+import { surfaceOffset } from '../../shared/waves.js';
+import { partWaterForce, waterCurrent, swellRise, WATER_ANG_DRAG } from '../../shared/buoyancy.js';
 import { nearColliders } from './colliders.js';
 import { SEGMENTS, segDistance, rigFrameOf, snapshotPacker, seedJoints } from './rigmeasure.js';
 import { BodyEngineBase } from './bodyengine.js';
@@ -609,6 +611,8 @@ function shortestArc(from, to, out = new THREE.Quaternion()) {
   return out.normalize();
 }
 
+const _wv = [0, 0, 0], _wf = [0, 0, 0], _wc = [0, 0, 0];   // water scratch (_water)
+
 export class AmmoRagdoll extends BodyEngineBase {
   constructor(avatar, lean = null, rest = null, seedVel = null) {
     super(avatar);                  // lifecycle fields — see bodyengine.js
@@ -862,6 +866,7 @@ export class AmmoRagdoll extends BodyEngineBase {
     this.segs = new Map();          // segKey -> seg
     this._bodies = [];              // every dynamic body, build order
     this._cores = [];               // non-finger bodies (settle metrics)
+    this._waterR = new Map();       // core body -> its extent either side of its centre (floating)
     this._massOf = new Map();       // body -> mass (Bullet only hands back 1/m)
     const bodyIndex = new Map();    // body -> filter bit index (core only)
 
@@ -903,7 +908,13 @@ export class AmmoRagdoll extends BodyEngineBase {
       rb.setActivationState(ACTIVE_TAG);
       this._bodies.push(rb);
       this._massOf.set(rb, mass);
-      if (!isFinger) this._cores.push(rb);
+      if (!isFinger) {
+        this._cores.push(rb);
+        // the part's reach either side of its centre, for how much of it is under water (_water)
+        let r = 0.04;
+        for (const bx of boxes) r = Math.max(r, Math.hypot(bx.t.x, bx.t.y, bx.t.z) + Math.hypot(bx.he.x, bx.he.y, bx.he.z) * 0.6);
+        this._waterR.set(rb, r);
+      }
       // Keep the child boxes for the debug overlay. The volumes are the ONE
       // thing about this engine you cannot infer from the skeleton — a bone
       // line says nothing about the thickness that stops a forearm passing
@@ -2218,6 +2229,37 @@ export class AmmoRagdoll extends BodyEngineBase {
     return pack.pack();
   }
 
+  /** Apply the water's force to every core part in it (see step). True when any part is wet. */
+  _water() {
+    // a body's own water when it was given one (a headless agent: one process can host agents in several
+    // worlds, so the module's single field may be another world's); else the page's
+    const wf = this.waterSource ? this.waterSource() : waterField();
+    if (!wf) return false;
+    const t = wf.time();
+    let wet = false;
+    for (const body of this._cores) {
+      const o = body.getCenterOfMassTransform().getOrigin();
+      const x = o.x(), y = o.y(), z = o.z(), r = this._waterR.get(body) ?? 0.1;
+      const w = wf.sample(x, z);
+      const surface = wf.level + surfaceOffset(w, x, z, t);
+      if (y - r >= surface) continue;
+      const lv = body.getLinearVelocity();
+      _wv[0] = lv.x(); _wv[1] = lv.y(); _wv[2] = lv.z();
+      const m = this._massOf.get(body) ?? 1;
+      const cur = waterCurrent(w);
+      _wc[0] = cur[0]; _wc[1] = cur[1];
+      _wc[2] = swellRise((tt) => surfaceOffset(w, x, z, tt), t, surface - y);   // the swell carries what floats in it
+      const sub = partWaterForce(m, y, r, _wv, surface, _wc, _wf);
+      if (sub <= 0) continue;
+      wet = true;
+      body.activate();   // a sleeping island ignores forces — and water never lets a body lie still
+      _bv1.setValue(_wf[0], _wf[1], _wf[2]); body.applyCentralForce(_bv1);
+      const av = body.getAngularVelocity(), k = -WATER_ANG_DRAG * sub * 0.4 * m * r * r;
+      _bv1.setValue(av.x() * k, av.y() * k, av.z() * k); body.applyTorque(_bv1);
+    }
+    return wet;
+  }
+
   _syncP() {
     for (const s of this.segs.values()) {
       const t = s.body.getCenterOfMassTransform();
@@ -2253,6 +2295,11 @@ export class AmmoRagdoll extends BodyEngineBase {
       ha.anchor.getMotionState().setWorldTransform(_bt1);
       ha.anchor.setWorldTransform(_bt1);
     }
+    // WATER (shared/buoyancy.js — the swimmer's law, part by part): every core part under the surface is
+    // buoyed by how much of it is submerged and dragged toward the water's own motion, so the body floats,
+    // rides the swell, drifts down a river and is pushed in by the surf. Bullet holds an applied force
+    // through every substep of the one stepSimulation, and frames are capped at 0.05 s above.
+    this.floating = dt > 0 && this._water();
     if (dt > 0) this.world.stepSimulation(dt, MAX_SUBSTEPS, FIXED_DT);
 
     // angular ceiling: nothing anatomical rotates at 20 rad/s, and residual
@@ -2282,7 +2329,10 @@ export class AmmoRagdoll extends BodyEngineBase {
     // the clock law is the base's; this engine's quiet test is linear AND
     // angular, and any noise cancels (no hysteresis band — Bullet's velocities
     // are the solver's own, not a positional estimate that flickers)
-    this._settleTick(dt, this.maxV < SETTLE_V && this.maxW < SETTLE_W);
+    // A FLOATING body does not settle: the water keeps moving it, and freezing it mid-bob would leave it
+    // hanging over a trough. It floats until its owner gets up (or something lifts it out).
+    this._settleTick(dt, !this.floating && this.maxV < SETTLE_V && this.maxW < SETTLE_W);
+    if (this.floating) this.elapsed = 0;
 
     this._syncP();
 

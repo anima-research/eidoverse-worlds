@@ -21,6 +21,7 @@ import { makeRagdoll } from './bodysim.js';
 import { jointPositions } from './ragdoll.js';
 import { initBodyDrag, beingDragged, revokeDragged } from './bodydrag.js';
 import { toast, flashHint, setAmbientHint } from './ui.js';
+import { html } from './markup.js';   // hint markup is opt-in: html`` escapes what it interpolates
 import { posable, pushable } from './consent.js';
 import { clearMyReach } from './reachnet.js';
 import { getMe } from './mybody.js';
@@ -166,8 +167,8 @@ export function updateSeatHint(dt) {
   _hintAcc = 0;
   if (CONFIG.renderer || CONFIG.spectate) return;
   let hint = null;
-  if (avatarMounts.has(CONFIG.name)) hint = '<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off';
-  else if (!downed && nearestSeat(null, 3.5)) hint = '<kbd>X</kbd> — sit';
+  if (avatarMounts.has(CONFIG.name)) hint = html`<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off`;
+  else if (!downed && nearestSeat(null, 3.5)) hint = html`<kbd>X</kbd> — sit`;
   setAmbientHint(hint);
 }
 

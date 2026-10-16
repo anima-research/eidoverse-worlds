@@ -84,6 +84,27 @@ for (const [args, why] of [
   const n = normalizeCaptionArgs(args);
   check(`refused shape: ${JSON.stringify(args)} → mentions ${why}`, !n.ok && new RegExp(why).test(n.why), n.ok ? "accepted" : n.why);
 }
+// a refusal names what failed, and only that, quoting what was sent
+const refusalOf = (args: unknown) => { const n = normalizeCaptionArgs(args); return n.ok ? "accepted" : n.why; };
+const onlyTimes = refusalOf({ id: "c", session: S1, n: 1, t0: 2, t1: 1, text: "x" });
+check("a line refused for its times names them and their values, not the text", /t0 2, t1 1/.test(onlyTimes) && !/text/.test(onlyTimes), onlyTimes);
+const onlyText = refusalOf({ id: "c", session: S1, n: 1, t0: 0, t1: 1, text: "   " });
+check("a line refused for its text names the text, not the times", /text/.test(onlyText) && !/t0/.test(onlyText), onlyText);
+const both = refusalOf({ id: "c", session: S1, n: 1, t0: -1, t1: 1, text: "" });
+check("a line wrong both ways names both at once", /t0 -1, t1 1/.test(both) && /text/.test(both), both);
+const badN = refusalOf({ id: "c", session: S1, n: 1.5, t0: 0, t1: 1, text: "x" });
+check("the n refusal quotes the n sent", /got 1\.5/.test(badN), badN);
+const badSession = refusalOf({ id: "c", session: "random", n: 1, t0: 0, t1: 1, text: "x" });
+check("the session refusal quotes the session sent and shows the form", /got "random"/.test(badSession) && /"2026-09-16T20:00:00\.000Z-k3f9"/.test(badSession), badSession);
+const nanTime = refusalOf({ id: "c", session: S1, n: 1, t0: NaN, t1: Infinity, text: "x" });
+check("a non-finite time is quoted as itself, not as JSON's null", /t0 NaN, t1 Infinity/.test(nanTime), nanTime);
+let unwritable: string;
+try { unwritable = refusalOf({ id: "c", session: 5n, n: 1, t0: 0, t1: 1, text: "x" }); } catch (e) { unwritable = `threw: ${e}`; }
+check("a value JSON can't write is still refused, and quoted, rather than thrown", /got 5\b/.test(unwritable), unwritable);
+const cyclic: any = {}; cyclic.self = cyclic;
+let cyclicWhy: string;
+try { cyclicWhy = refusalOf({ id: "c", session: cyclic, n: 1, t0: 0, t1: 1, text: "x" }); } catch (e) { cyclicWhy = `threw: ${e}`; }
+check("...a cycle included", /^caption wants a session/.test(cyclicWhy), cyclicWhy);
 check("a minted session has the shape the door accepts and sorts by time", (() => { const a = mintSession(new Date("2026-01-01T00:00:00Z")), b = mintSession(new Date("2026-01-01T00:00:01Z")); return normalizeCaptionArgs({ id: "c", session: a, n: 1, t0: 0, t1: 1, text: "x" }).ok && a < b; })());
 // the server stamps `gen` AFTER the shape (vCaption); a client-supplied one never survives it
 const L = (n: number, t0: number, text: string, session = S1, extra: Record<string, unknown> = {}, gen = 5) => ({ ...(normalizeCaptionArgs({ id: "cinema", session, n, t0, t1: t0 + 1, text, ...extra }) as any).args, gen });
@@ -93,18 +114,21 @@ check("an empty screen refuses nothing but an end", captionRefusal(undefined, L(
 let bag = foldCaption(undefined, L(1, 0, "a", S1, { title: "a film" }));
 check("the first line folds a bag: session, n, title, mediaTime, one-line window", !!bag && bag.session === S1 && bag.n === 1 && bag.title === "a film" && bag.mediaTime === 1 && bag.window.length === 1, JSON.stringify(bag));
 check("n at the high-water is a duplicate: refused", /duplicate or out of order/.test(captionRefusal(bag, L(1, 0, "a")) ?? ""));
+check("...and told the n its session needs next", /next line needs n=2 or higher/.test(captionRefusal(bag, L(1, 0, "a")) ?? ""), captionRefusal(bag, L(1, 0, "a")) ?? "accepted");
 check("n after it is taken", captionRefusal(bag, L(2, 1, "b")) === null);
 bag = foldCaption(bag, L(2, 1, "b"));
 check("…and appends, keeping the title and advancing mediaTime and n", !!bag && bag.window.length === 2 && bag.title === "a film" && bag.mediaTime === 2 && bag.n === 2);
 check("n below the high-water is old: refused", /n=1 is not after the folded high-water n=2/.test(captionRefusal(bag, L(1, 5, "late")) ?? ""), captionRefusal(bag, L(1, 5, "late")) ?? "accepted");
 check("a LOWER generation is refused: a superseded leg, whatever its session says", /captioned by a newer leg \(generation 5; yours is 4\)/.test(captionRefusal(bag, L(9, 9, "z", S2, {}, 4)) ?? "") && /superseded/.test(captionRefusal(bag, L(9, 9, "z", S1, {}, 4)) ?? ""), captionRefusal(bag, L(9, 9, "z", S2, {}, 4)) ?? "accepted");
 check("…and so is its end", /superseded/.test(captionRefusal(bag, END(S1, 4)) ?? ""));
+check("…and a superseded leg is told how to take the screen back", /rejoin/.test(captionRefusal(bag, L(9, 9, "z", S1, {}, 4)) ?? ""), captionRefusal(bag, L(9, 9, "z", S1, {}, 4)) ?? "accepted");
 check("the same leg under a DIFFERENT session is taken (a reattach: a new clock)", captionRefusal(bag, L(1, 0, "z", S2)) === null);
 const bag2 = foldCaption(bag, L(1, 0, "z", S2));
 check("…and starts a fresh window under the new session (title not carried: a new attach says its own)", !!bag2 && bag2.session === S2 && bag2.n === 1 && bag2.gen === 5 && bag2.window.length === 1 && bag2.window[0].text === "z" && bag2.title === undefined, JSON.stringify(bag2));
 check("a HIGHER generation continuing the same session is taken and the bag follows it (a reconnect)", captionRefusal(bag2, L(2, 1, "y", S2, {}, 7)) === null && foldCaption(bag2, L(2, 1, "y", S2, {}, 7))!.gen === 7 && foldCaption(bag2, L(2, 1, "y", S2, {}, 7))!.window.length === 2);
 check("a higher generation with an EARLIER-looking session still takes over (clock rollback is not a claim the door reads)", captionRefusal(bag2, L(1, 0, "w", "2026-09-16T00:00:00.000Z-back", {}, 8)) === null && foldCaption(bag2, L(1, 0, "w", "2026-09-16T00:00:00.000Z-back", {}, 8))!.window.length === 1);
 check("an end for the wrong session is refused", /captioned under session/.test(captionRefusal(bag2, END(S1)) ?? ""));
+check("...and names the session that would end what the screen shows", (captionRefusal(bag2, END(S1)) ?? "").includes(`end session ${S2}`), captionRefusal(bag2, END(S1)) ?? "accepted");
 check("an end for the right session is taken and clears the bag", captionRefusal(bag2, END(S2)) === null && foldCaption(bag2, END(S2)) === null);
 let big = foldCaption(undefined, L(1, 0, "line 1"));
 for (let i = 2; i <= CAPTIONS_MAX_LINES + 5; i++) big = foldCaption(big, L(i, i, `line ${i}`));

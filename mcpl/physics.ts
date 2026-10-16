@@ -27,10 +27,12 @@
 // settled through it to the terrain underneath (issue #17). Now the caller
 // hands over its terrain height function (setHeightField — the same generator
 // the browsers run, replicated in agent.ts) and registers support boxes for
-// placed entities (registerSupport, fed from the server's /geom summaries);
-// Ragdoll's own _terrain()/_world() clamps then see exactly what a browser's
-// would. Walls of room-scale interiors remain a browser-side concern — data
-// boxes carry floors, not architecture (see colliders.fitSupportBox).
+// placed entities; Ragdoll's own _terrain()/_world() clamps then see exactly
+// what a browser's would. Those colliders are fitted from each model's own
+// triangles where the agent can decode them (registerMeshSupport — walls and
+// furniture included, and the walking feet use them too: standOn), and from
+// the server's /geom summaries otherwise (registerSupport/registerSupportGrid
+// — floors only; data boxes carry no architecture, see colliders.fitSupportBox).
 //
 // Declared seam: terrain and the collider map are MODULE state in the client
 // libs, so one process serves ONE world's geometry. Agents co-resident in a
@@ -48,6 +50,9 @@ import { CONTACT_POINTS, contactSeed } from "../shared/contact.js";
 // The aerodynamics of a limp fall -- forces, not a scripted path.
 import { leafForceFor, DEFAULT_LEAF_FORCE } from "../shared/leafforce.js";
 import { bodyFrame, fromBody } from "../shared/joints.js";
+// the walking capsule's dimensions — pure module, the browser controller's own numbers
+import { colliderFor } from "../client/lib/bodyscale.js";
+import type { NavProbe } from "./navgrid.ts";
 
 const HEADLESS_CORE = fileURLToPath(new URL("./headless-core.mjs", import.meta.url));
 
@@ -133,6 +138,14 @@ export async function setHeightField(fn: ((x: number, z: number) => number) | nu
   m.terrain.setTerrain(fn ? { mesh: null, heightAt: fn } : null);
 }
 
+/** Hand the sim the world's water, so a body that falls in floats (ammodoll.js, via terrain.js's seam):
+ *  {level, sample(x, z), time()} — the agent's own water analysis and wave clock — or null. */
+export async function setWaterField(f: { level: number; sample: (x: number, z: number) => unknown; time: () => number } | null) {
+  const m = await loadSim();
+  if (!m) return;
+  m.terrain.setWaterField(f);
+}
+
 // Who is currently claiming each support box.
 //
 // Support ids are world/entity scoped, which is right — two agents in one
@@ -166,6 +179,8 @@ export async function registerSupport(
   // re-fit unconditionally: a place moves the box, and the newest claimant's
   // transform is the freshest reading of where the thing actually is
   m.colliders.fitSupportBox(id, min, max, xform);
+  generation++;
+  scopeEntry(m, id);
 }
 
 /** test/debug probe — who holds which support box (the world_debug spirit:
@@ -191,8 +206,132 @@ export async function registerSupportGrid(
   const m = await loadSim();
   if (!m) return false;
   if (!m.colliders.fitSupportGrid(id, topGrid, xform)) return false;
+  generation++;
+  scopeEntry(m, id);
   (holders.get(id) ?? holders.set(id, new Set()).get(id)!).add(holder);
   return true;
+}
+
+// One geometry per collision mesh, shared by every entity fitted from it —
+// the triangles are the lib's, the transform is the entity's (colliders.js
+// works root-local, so clones at any place/yaw/scale read the same arrays).
+const meshGeometries = new WeakMap<object, any>();
+
+/** Register a placed entity's REAL collider: fitted by colliders.js from its
+ *  triangles (server/geometry.ts collisionTriangles), with the same `collide`
+ *  override, scale and lib-sharing the browser's promote tail passes
+ *  (client/lib/realize/models.js). decide() then makes the browser's choice —
+ *  box, pillar or exact trimesh — so the walls of a room-scale interior hold
+ *  an agent back and its floors hold it up, not just a ragdoll's beads.
+ *  Same holder discipline and lifetime as registerSupport. */
+export async function registerMeshSupport(
+  holder: string, id: string, mesh: { positions: Float32Array; indices: Uint32Array },
+  xform: { position: number[]; yaw?: number; scale?: number; collide?: string; lib?: string },
+): Promise<boolean> {
+  if (!isFiniteVec3(xform?.position)
+      || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1)) {
+    console.error(`[physics] mesh support ${id} abstained — non-finite transform`);
+    return false;
+  }
+  const m = await loadSim();
+  if (!m) return false;
+  const { THREE } = m;
+  let geom = meshGeometries.get(mesh);
+  if (!geom) {
+    geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.BufferAttribute(mesh.positions, 3));
+    geom.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+    meshGeometries.set(mesh, geom);
+  }
+  const s = xform.scale ?? 1;
+  const root = new THREE.Group();
+  root.add(new THREE.Mesh(geom));
+  root.position.set(xform.position[0], xform.position[1], xform.position[2]);
+  root.rotation.y = xform.yaw ?? 0;
+  root.scale.setScalar(s);
+  root.updateMatrixWorld(true);
+  // Never throws (#88): a model the fit chokes on (degenerate triangles, a
+  // BVH build failure) abstains, and the caller falls back to its summary.
+  try {
+    m.colliders.fitCollider(id, root, { collide: xform.collide, scale: s, lib: xform.lib ?? null, localFrame: true });
+    scopeEntry(m, id);
+  } catch (err) {
+    console.error(`[physics] mesh support ${id} abstained — fit failed:`, String(err).split("\n")[0]);
+    return false;
+  }
+  generation++;
+  (holders.get(id) ?? holders.set(id, new Set()).get(id)!).add(holder);
+  return true;
+}
+
+const WALKING = colliderFor(1);
+
+/** Bumped whenever the collider map changes (a fit, a refit, a removal):
+ *  what a route planner learned about the world is good until it moves. */
+let generation = 0;
+export const collidersGeneration = () => generation;
+/** Support ids are `<world>/<entity>…` (agent.ts): the entry belongs to that
+ *  world, and queries made inside another world (inWorld) don't see it. */
+function scopeEntry(m: NonNullable<typeof simMods>, id: string) {
+  const e = m.colliders.colliders?.get(id), slash = id.indexOf("/");
+  if (e && slash > 0) e.scope = id.slice(0, slash);
+}
+
+/** test/debug probe — what a registered support id was fitted as: the exact
+ *  triangles, a box (or pillar), a heightfield grid, or a data box. */
+export function supportShape(id: string): "exact" | "box" | "pillar" | "grid" | "data-box" | null {
+  const e = simMods?.colliders.colliders?.get(id);
+  if (!e) return null;
+  return e.exact ? "exact" : e.grid ? "grid" : e.support ? "data-box" : e.pillar ? "pillar" : "box";
+}
+
+/** Run `fn` with the collider queries scoped to `world`: an agent process can
+ *  hold several worlds' colliders, and a body in one must not stand on, or
+ *  be stopped by, a floor or a wall in another at the same coordinates. */
+export function inWorld<T>(world: string | null | undefined, fn: () => T): T {
+  const C = simMods?.colliders;
+  if (!C?.setColliderScope || !world) return fn();
+  const prev = C.colliderScope();
+  C.setColliderScope(world);
+  try { return fn(); } finally { C.setColliderScope(prev); }
+}
+
+/** Are the collision modules loaded? Asking starts the load: a body's feet
+ *  use the terrain clamp until the answer is yes. */
+export function collidersReady(): boolean {
+  if (!simMods) void loadSim();
+  return simMods != null;
+}
+let standProbe: any = null;
+
+/** Where the feet stand at `pos`, by the browser walking controller's rule
+ *  (client/lib/controller.js): colliders.resolveColliders with the walking
+ *  capsule, which also PUSHES pos.x/z out of anything solid. Returns the
+ *  ground height, or null while the sim is not loaded — the caller keeps its
+ *  terrain clamp then. Synchronous: the walk tick calls it every substep. */
+export function standOn(pos: { x: number; y: number; z: number }, heightAt: (x: number, z: number) => number): number | null {
+  if (!simMods) { void loadSim(); return null; }
+  standProbe ??= new simMods.THREE.Vector3();
+  standProbe.set(pos.x, pos.y, pos.z);
+  const ground = simMods.colliders.resolveColliders(standProbe, heightAt, WALKING.r, WALKING.tall, true);
+  pos.x = standProbe.x; pos.z = standProbe.z;
+  return ground;
+}
+
+/** The route planner's view of the world (mcpl/navgrid.ts): the same
+ *  surfaceUnder and resolveColliders, with the same walking capsule, that the
+ *  feet will be moved by. null while the sim is not loaded. */
+export function navProbe(heightAt: (x: number, z: number) => number): NavProbe | null {
+  if (!simMods) { void loadSim(); return null; }
+  const C = simMods.colliders, v = new simMods.THREE.Vector3();
+  return {
+    surfaceUnder: (x, z, maxY) => C.surfaceUnder(x, z, heightAt, maxY).y,
+    stand: (x, y, z) => {
+      v.set(x, y, z);
+      const ground = C.resolveColliders(v, heightAt, WALKING.r, WALKING.tall, true);
+      return { ground, push: Math.hypot(v.x - x, v.z - z) };
+    },
+  };
 }
 
 export async function removeSupport(holder: string, id: string) {
@@ -204,6 +343,7 @@ export async function removeSupport(holder: string, id: string) {
   if (hs.size) return;              // someone else is still standing on it
   holders.delete(id);
   m.colliders.removeCollider(id);
+  generation++;
 }
 
 // skeletons are per-VRM and immutable — parse each avatar file once
@@ -315,6 +455,10 @@ export class HeadlessBody {
       : m.rig.makeAvatar(P);
   }
 
+  /** This body's water, read on every step it floats (ammodoll.js _water) — set by its agent, so a body
+   *  floats on its own world's water whatever another agent in the process last handed setWaterField. */
+  waterSource: (() => { level: number; sample: (x: number, z: number) => unknown; time: () => number } | null) | null = null;
+
   /** null when physics is unavailable for this process or this VRM. */
   static async create(httpBase: string, avatarPath: string): Promise<HeadlessBody | null> {
     const m = await loadSim();
@@ -344,7 +488,11 @@ export class HeadlessBody {
    *  given pose (a drag release) falling free. Everything is WORLD y —
    *  `rootY`, pins, the seed — and the sim clamps against the live height
    *  field and registered supports as it runs. */
-  begin(opts: {
+  /** The world this body falls in: its ragdoll sees that world's colliders only. */
+  scope: string | null = null;
+  begin(opts: Parameters<HeadlessBody["beginIn"]>[0]) { return inWorld(this.scope, () => this.beginIn(opts)); }
+  step(dt: number) { return inWorld(this.scope, () => this.stepIn(dt)); }
+  private beginIn(opts: {
     x: number; z: number; yaw: number;
     lean?: number[] | null;
     pose?: Record<string, unknown> | null;
@@ -381,6 +529,7 @@ export class HeadlessBody {
     // when the body already finished and freed itself.
     this.rd?.dispose?.();
     this.rd = new this.m.Body(this.av, lean, this.av.restBonePositions(), seed);
+    if (this.rd) this.rd.waterSource = this.waterSource;   // its own world's water, read live each step
     for (const p of opts.pins ?? []) this.setPin(p.j, p.at);
     // hipsOffset is how far the render root hangs below the hips — a property
     // of the RIG, so it must read the same on every build of the same body.
@@ -470,7 +619,7 @@ export class HeadlessBody {
   }
 
   /** Advance; returns what to stream, or null once the sim has captured. */
-  step(dt: number): { pose: Record<string, number[]>; p: number[]; done: boolean } | null {
+  private stepIn(dt: number): { pose: Record<string, number[]>; p: number[]; done: boolean } | null {
     if (!this.rd) return null;
     this.rd.step(dt);
     const pose = this.rd.done ? this.rd.finalPose : this.rd.pose;

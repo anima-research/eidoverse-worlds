@@ -1,5 +1,5 @@
 // gpulost's decisions, headless: reload once, never loop; the XR boot flag is dropped. `node tools/gpulost-test.mjs`
-import { gpuLostAction, recoveryUrl, recentGpuLosses, GPU_LOST_KEY, GPU_LOST_WINDOW_MS, GPU_LOST_LONG_MS } from '../client/lib/gpulost.js';
+import { gpuLostAction, recoveryUrl, recentGpuLosses, installGpuLostRecovery, GPU_LOST_KEY, GPU_LOST_WINDOW_MS, GPU_LOST_LONG_MS } from '../client/lib/gpulost.js';
 let pass = 0, fail = 0;
 const ok = (n, c, d = '') => { if (c) pass++; else { fail++; console.log(`  FAIL ${n} ${d}`); } };
 const now = 1_000_000;
@@ -22,4 +22,18 @@ ok('recovery drops ?xr and ?why, keeps world/name/key', recoveryUrl('https://h:1
   ok('recentGpuLosses counts the losses inside 15 min', recentGpuLosses(store(JSON.stringify([now - 1000, now - 60000])), now) === 2);
   ok('…not stale, future or junk entries', recentGpuLosses(store(JSON.stringify([now - GPU_LOST_LONG_MS - 1, now + 5, 'x', now])), now) === 1);
   ok('…and 0 for nothing or garbage', recentGpuLosses(store(null), now) === 0 && recentGpuLosses(store('{bad'), now) === 0 && recentGpuLosses({}, now) === 0); }
+// 10-08: Chrome reports reason 'destroyed' for a device it destroyed itself (headless: the swap chain's shared image
+// failed, "GPU state invalid") — no JS called destroy(). Ignoring every 'destroyed' left the page rendering into a dead
+// device, throwing each frame (and three's callDepth climbing: a fresh shader build per frame). Only OUR destroy is deliberate.
+{ const fakeWin = () => ({ sessionStorage: { getItem: () => '[]', setItem: () => {} }, localStorage: { removeItem: () => {} }, location: { href: 'https://h/?world=w', search: '?world=w', replace: () => {} }, setTimeout: () => {} });
+  const fakeDevice = () => { let res; const d = { lost: new Promise((r) => { res = r; }), destroy() { res({ reason: 'destroyed', message: 'Device was destroyed.' }); } }; d.loseExternally = () => res({ reason: 'destroyed', message: 'Device was destroyed.' }); return d; };
+  const d1 = fakeDevice(); const r1 = installGpuLostRecovery({ renderer: { backend: { device: d1 } }, win: fakeWin() });
+  d1.loseExternally(); await new Promise((r) => setTimeout(r, 0));
+  ok("a device the BROWSER destroyed (reason 'destroyed', no destroy() from us) is a loss: recovery fires", r1.fired === true);
+  const d2 = fakeDevice(); const r2 = installGpuLostRecovery({ renderer: { backend: { device: d2 } }, win: fakeWin() });
+  d2.destroy(); await new Promise((r) => setTimeout(r, 0));
+  ok("…a device the PAGE destroyed (its own destroy()) is not", r2.fired === false);
+  const d3 = { lost: Promise.resolve({ reason: 'unknown', message: 'GPU process crashed' }) }; const r3 = installGpuLostRecovery({ renderer: { backend: { device: d3 } }, win: fakeWin() });
+  await new Promise((r) => setTimeout(r, 0));
+  ok("control: reason 'unknown' still fires", r3.fired === true); }
 console.log(`${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

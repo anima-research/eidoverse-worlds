@@ -12,7 +12,7 @@ try{
  }
  const result=await page.evaluate(async()=>{
   const {CONFIG}=await import('/lib/base.js');CONFIG.renderer=true;
-  const {camera}=await import('/lib/core.js'),{entities}=await import('/lib/world.js'),w=await import('/lib/water.js');
+  const {camera}=await import('/lib/core.js'),{entities}=await import('/lib/world.js'),w=await import('/lib/environment.js');
   camera.position.fromArray(w.environmentSettings().spawn);const target=entities.get('water-habitat').position.clone();target.y+=2;camera.lookAt(target);
   return {water:w.waterDebug(),models:entities.size};
  });

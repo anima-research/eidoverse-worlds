@@ -63,7 +63,7 @@ measured on the fields above (see `fixtures/README.md`).
 | `genesis` | `{v, dialect}` | nothing (version marker) |
 | `spawn` | `{id, lib, pos?, yaw?, scale?, collide?}` | create **or replace** entity (see §3.1) |
 | `place` | `{id, pos?, yaw?, scale?}` | update transform; re-stamps rest pose |
-| `light` | `{id, pos?, color?, intensity?, range?, keep?, day?}` | create light entity; re-issuing on an id that already folds as a light is a **partial update** (absent fields keep their prior value); a non-light holding the id is replaced wholesale (§3.1) |
+| `light` | `{id, pos?, color?, intensity?, range?, keep?, day?}` | create light entity; re-issuing on an id that already folds as a light is a **partial update** (absent fields keep their prior value); a non-light holding the id is replaced wholesale (§3.1). A sequencer refuses new `light` intent whose `id` isn't a string with at least one non-whitespace character; the fold reads history as it always has: an entry whose id is missing or falsy folds to nothing, and any other id folds under its text, so `5` and `"5"` are one light |
 | `remove` | `{id}` | delete entity; children mounted on it get their **absolute pose computed and stamped** (parent pos + yaw-rotated offset), then orphaned; body mounts onto it are cleared |
 | `comp` | `{id, type, data\|null}` | `entities[id].comp[type] = data`; null deletes. **Blind**: data is opaque to the fold. Writers SHOULD keep data ≤ 8 KB |
 | `motion` | `{id, type, …params}` | sugar: `comp[motion] = args-minus-id`; `type: null` deletes. If `t0` absent, fold stamps `t0 = entry.ts` |

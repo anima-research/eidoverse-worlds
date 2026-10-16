@@ -27,6 +27,7 @@ import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, m
 import { rigBonesFor } from "./rigbones.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { rawShapeError } from "./shape.ts";
+import { lightArgsError } from "../server/verb-shapes.ts";
 import type { WorldAgent } from "./agent.ts";
 
 /** The slice of WorldAgent the tools touch — typed loosely on purpose: the
@@ -72,7 +73,9 @@ export const TOOLS = [
   { name: "body_state", description: "Perceive your body or another present participant (who; omitted or 'self' means you). Default summary reports posture, wings, position, held poses/reaches and freshness. detail:'bones' adds published quaternions and derived world joint positions; 'contacts' adds named world-space contact points, outward normals, self-relative positions and ready-to-use reach targets; 'all' includes both. Optional window_ms (0–5000) measures reconstructed joint motion and endpoint residuals over a short window; a snapshot alone does not measure stability. Optional points filters contacts, e.g. ['chest_front','hand_l','hand_r']. Geometry evaluates the shared VRMA posture clips, published bone rotations and dependent limb reaches. Missing clips or unresolved/cyclic reach dependencies return incomplete geometry. Contacts are bone-bound anatomical estimates; full renderer blending, emotes and springbones are not reproduced. Reading never moves or touches anyone. Use returned reachTarget with reach to track a named point; use selfPosition to plan offsets around your own body.", inputSchema: { type: "object", properties: { who: { type: "string" }, detail: { type: "string", enum: ["summary", "bones", "contacts", "all"] }, points: { type: "array", items: { type: "string" }, maxItems: Object.keys(CONTACT_POINTS).length }, window_ms: { type: "integer", minimum: 0, maximum: 5000 } } } },
   { name: "look", description: "Text-tier perception: where you are, who's present and what they're doing, every placed thing with distance/bearing, and chat since you last looked.", inputSchema: { type: "object", properties: {} } },
   { name: "snapshot", description: "A rendered image from the world (spectator browser on a GPU host). Slower than look — use when spatial/visual detail matters. view: 'first' (default) is your avatar's eyes — you are not in frame; 'third' is an over-the-shoulder chase view — your body and what's ahead of it; 'selfie' faces you from in front — your avatar, framed. renderer: 'auto' (default) prefers an opted-in Unreal client when one is available; 'browser' forces the GPU spectator.", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] }, renderer: { type: "string", enum: ["auto", "unreal", "browser"] } } } },
-  { name: "walk_to", description: "Walk (or run) to world coordinates. Default arrival tolerance is 0.01m, so short positioning moves are honored. Optional tolerance (0–0.4 metres) changes how close to the requested point counts as arrived. This is destination accuracy, not distance from another body.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, run: { type: "boolean" }, tolerance: { type: "number", minimum: 0, maximum: 0.4 } }, required: ["x", "z"] } },
+  { name: "walk_to", description: "Walk (or run) to a named place, a thing, a person, or world coordinates. Griddled structures route through walkable openings; sealed, oversized, or conflicting local routes return a reason without walking through walls. This is horizontal centerline routing with a 0.5m feet-to-step obstruction band, not full-body clearance or general mesh navigation. Placed models are solid, as they are to people: you stand on their floors, climb their stairs and are stopped by their walls and furniture — and walk_to routes through them: round furniture, through doorways, up and down stairs, onto other storeys (pick one with y). A destination with nowhere to stand, or no way there, is refused with the reason; a walk something unexpected stops ends early and says where. Main follows terrain support; identified-floor support requires the separate standing implementation. Default arrival tolerance is 0.01m, so short positioning moves are honored. Optional tolerance (0–0.4 metres) changes how close to the requested point counts as arrived. This is destination accuracy, not distance from another body.", inputSchema: { type: "object", properties: { to: { type: "string", description: "a named destination instead of coordinates: thing/place, a place name/label, a thing entrance, or a person" }, x: { type: "number" }, z: { type: "number" }, y: { type: "number", description: "which floor at the destination" }, run: { type: "boolean" }, tolerance: { type: "number", minimum: 0, maximum: 0.4 } } } },
+  { name: "name_place", description: "Give a spot a name, so you and everyone else can walk_to it by name. Written to the thing's places component (builder rights).", inputSchema: { type: "object", properties: { name: { type: "string" }, label: { type: "string" }, on: { type: "string" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, remove: { type: "boolean" } }, required: ["name"] } },
+  { name: "check_model", description: "What a model is like to walk into, measured with the walking body's own rules before or after it is placed: floors, entrances, obstructions, render budget, and suggested rooms/doors/stairs. Advisory: nothing is refused.", inputSchema: { type: "object", properties: { id: { type: "string" }, lib: { type: "string" }, scale: { type: "number" } } } },
   // ---- FLIGHT (upstream's flight arc, merged 2026-09-02; behind the `fly`
   // grant — the agent refuses on the ground it stands on). Deliberately no
   // file_plan: a sortie is these tools called in sequence from the pilot's own
@@ -107,7 +110,7 @@ export const TOOLS = [
   { name: "list_library", description: "Search the model library by keywords. Returns library paths for spawn.", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
   { name: "spawn", description: "Spawn a library model. lib (exact) or query (best match); position defaults to 2m in front of you.", inputSchema: { type: "object", properties: { lib: { type: "string" }, query: { type: "string" }, x: { type: "number" }, z: { type: "number" }, y: { type: "number" }, yaw: { type: "number" }, id: { type: "string" } } } },
   { name: "place", description: "Move an entity (id from look) to x,z (y defaults to terrain; pass y to seat on furniture).", inputSchema: { type: "object", properties: { id: { type: "string" }, x: { type: "number" }, z: { type: "number" }, y: { type: "number" }, yaw: { type: "number" } }, required: ["id", "x", "z"] } },
-  { name: "light", description: "Place a light source in the world, or update one you can already see: calling with the id of an existing light changes ONLY the fields you pass (brightness via intensity, color, range, position) and leaves the rest alone. Persists like any placed thing. color is a hex integer (e.g. 0xffd9a0 warm, 0x88bbff cool, 0xff5533 red), intensity (default 16) and range are optional. keep: true means the light ALWAYS casts: it lives outside the per-client point-light budget (consumes no slot, so unkept lights keep their full budget) and framerate governors never douse it. Every casting light has real GPU cost — keep it for lights that matter. Position defaults to just in front of you. A small glowing sphere marks it; move or remove it by id like any entity.", inputSchema: { type: "object", properties: { color: { type: "number" }, intensity: { type: "number" }, range: { type: "number" }, keep: { type: "boolean" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, id: { type: "string" } } } },
+  { name: "light", description: "Place a light source in the world, or update one you can already see: calling with the id of an existing light changes ONLY the fields you pass (brightness via intensity, color, range, position) and leaves the rest alone. Persists like any placed thing. color is a hex integer (e.g. 0xffd9a0 warm, 0x88bbff cool, 0xff5533 red), intensity (default 16) and range are optional. keep: true means the light ALWAYS casts: it lives outside the per-client point-light budget (consumes no slot, so unkept lights keep their full budget) and framerate governors never douse it. Every casting light has real GPU cost — keep it for lights that matter. Position defaults to just in front of you. A supplied id must be a string with at least one non-whitespace character; omit it (or pass null) to generate one. An id that names something other than a light is refused, since a light would replace it. A small glowing sphere marks it; move or remove it by id like any entity.", inputSchema: { type: "object", properties: { color: { type: "number" }, intensity: { type: "number" }, range: { type: "number" }, keep: { type: "boolean" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, id: { type: "string" } } } },
   { name: "remove", description: "Remove a placed entity.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   // Description narrowed to what the implementation actually does (antra
   // review, #3). It previously promised "held pose and posture survive", which
@@ -121,7 +124,7 @@ export const TOOLS = [
   { name: "world_verb", description: "Raw world-log verb. The verb set is CLOSED by design — say, use, punt, force, mount, dismount, spawn, place, remove, light, comp, motion, behavior, asset, terrain, grass, sky, weather, grant, kick, ban, unban, caption (one line of what a screen said; needs the per-screen caption deed) — and the door refuses others; extend STATE with comp types you invent, EVENTS with use actions, SEMANTICS with behavior scripts, never by hoping a new verb exists. This is also the authoring surface for components: comp {id, type, data|null} attaches data to an entity (sockets, reactions, or anything you invent); motion {id, type: pendulum|spin|orbit|bob|path, …} sets it moving; see AGENTS.md in the eidoverse-worlds repo for the full vocabulary.", inputSchema: { type: "object", properties: { verb: { type: "string" }, args: { type: "object" } }, required: ["verb", "args"] } },
   { name: "measure", description: "Geometry as data: bounding box, up-facing flat zones (seat/table/deck candidates), and named parts of a placed thing (id) or a library model (lib). Flat-zone coords are the MODEL's local frame — the same frame sockets use, so a zone's center IS a socket pos: comp {id, type:'sockets', data:{seat:{pos:[cx,y,cz], yaw}}}. Use this to find where a body can sit before declaring the seat; verify by mounting it yourself and taking a selfie snapshot. Raw GLB bytes are at GET <sequencer>/library/<lib> if you want to process the mesh locally.", inputSchema: { type: "object", properties: { id: { type: "string" }, lib: { type: "string" } } } },
   { name: "world_history", description: "Pull raw entries from the world log — the append-only record every world IS. Filter by verbs (e.g. ['use','motion'] to trace an interaction, ['comp'] to see how something was built), page backwards with before. Every entry has {seq, ts, actor, verb, args}; reaction-authored entries carry {cause, by}. This is the debugging primitive: the log is the world, so reading it is reading the world's source.", inputSchema: { type: "object", properties: { verbs: { type: "array", items: { type: "string" } }, before: { type: "number" }, after: { type: "number" }, limit: { type: "number" } } } },
-  { name: "world_debug", description: "The world's flight recorder: why things BOUNCED. The log answers 'what happened'; this answers 'why didn't it' — denied verbs (rights), rejected shapes (malformed/oversized comp, bad mount), rate limits, reaction outcomes ('reaction' fired with cause→effect seqs, 'reaction-skip' with the reason, 'reaction-error'), and script events ('script-error', 'script-pause'). Pass behavior: <id> to read ONE runtime script's own log ring (its world.log() console + status); pass behaviors: true to list what scripts run here and whether they're alive. IMPORTANT: motion/comp components are NOT scripts — they are passive data evaluated client-side and NEVER appear in the behaviors roster (absence there does not mean your component failed or was deleted; check world_history verbs:['comp','motion'] for its fold, and look for kind 'motion-lint' in the plain recorder: the server lints every folded motion for params the evaluator will ignore, unknown types, and part names that no client renders). In-memory, recent events only. Check here first when something doesn't do what you expected.", inputSchema: { type: "object", properties: { limit: { type: "number" }, kinds: { type: "array", items: { type: "string" } }, behavior: { type: "string" }, behaviors: { type: "boolean" } } } },
+  { name: "world_debug", description: "The world's flight recorder: why things BOUNCED. The log answers 'what happened'; this answers 'why didn't it' — denied verbs (rights), rejected shapes (malformed/oversized comp, bad mount), rate limits, reaction outcomes ('reaction' fired with cause→effect seqs, 'reaction-skip' with the reason, 'reaction-error'), script events ('script-error', 'script-pause'), and 'spawn-lint' (an accepted spawn whose lib is malformed or names no file /library serves; repeats of one lib are recorded once a minute). Pass behavior: <id> to read ONE runtime script's own log ring (its world.log() console + status); pass behaviors: true to list what scripts run here and whether they're alive. IMPORTANT: motion/comp components are NOT scripts — they are passive data evaluated client-side and NEVER appear in the behaviors roster (absence there does not mean your component failed or was deleted; check world_history verbs:['comp','motion'] for its fold, and look for kind 'motion-lint' in the plain recorder: the server lints every folded motion for params the evaluator will ignore, unknown types, and part names that no client renders). In-memory, recent events only. Check here first when something doesn't do what you expected.", inputSchema: { type: "object", properties: { limit: { type: "number" }, kinds: { type: "array", items: { type: "string" } }, behavior: { type: "string" }, behaviors: { type: "boolean" } } } },
   { name: "kick", description: "MODERATION: remove a participant from this world right now. They may rejoin — a kick interrupts, a ban excludes. Needs owner rights here (same gate as grant); operators and fellow owners cannot be kicked.", inputSchema: { type: "object", properties: { id: { type: "string" }, reason: { type: "string" } }, required: ["id"] } },
   { name: "ban", description: "MODERATION: ban a participant — disconnects them now and refuses their joins (including spectating) until unban. Default is THIS world only (needs owner rights here). global:true bans them from every world on this server (needs WORLD_ADMIN). Give a reason — it is shown to them and kept in the record.", inputSchema: { type: "object", properties: { id: { type: "string" }, reason: { type: "string" }, global: { type: "boolean" } }, required: ["id"] } },
   { name: "unban", description: "MODERATION: lift a ban — this world's by default, the server-wide list with global:true.", inputSchema: { type: "object", properties: { id: { type: "string" }, global: { type: "boolean" } }, required: ["id"] } },
@@ -323,12 +326,53 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   walk_to: async (ag, a, ctx, name) => {
-      const x = Number(a.x), z = Number(a.z), tolerance = a.tolerance ?? 0.01;
+      // `to` names the destination (a place, a thing, a person); x/z/y are
+      // coordinates. A named place carries its own floor and reach.
+      let x = Number(a.x), z = Number(a.z), y = a.y != null ? Number(a.y) : undefined, label: string | null = null;
+      let near: { reach?: number; above?: number; below?: number; inside?: (x: number, z: number) => boolean } = {};
+      if (typeof a.to === "string") {
+        const d = ag.destination(a.to);
+        if ("refusal" in d) return text(d.refusal);
+        ({ x, z } = d); y = d.y; near = { reach: d.reach, above: d.above, below: d.below, inside: d.inside }; label = d.label;
+      }
+      const tolerance = a.tolerance ?? 0.01;
       if (![x, z, tolerance].every(Number.isFinite) || tolerance < 0 || tolerance > 0.4)
-        return { content: [{ type: "text", text: "walk_to needs finite x/z and tolerance between 0 and 0.4 metres" }], isError: true };
-      const arrived = await ag.walkTo(x, z, Boolean(a.run), 90_000, tolerance);
-      return text(arrived ? `arrived at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}); ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m from requested destination` : "walk interrupted or timed out");
+        return { content: [{ type: "text", text: "walk_to needs finite x/z and tolerance between 0 and 0.4 metres" }], isError: true };   // walkTo's own words (WALK_ARGS_REASON)
+      if (y != null && !Number.isFinite(y))
+        return { content: [{ type: "text", text: "walk_to's y, when given, must be a finite height in metres" }], isError: true };
+      // This request's own refusal (its plan may wait for geometry still loading).
+      const receipt = { refusal: null as string | null };
+      const arrived = await ag.walkTo(x, z, Boolean(a.run), 90_000, tolerance, y, near, receipt);
+      if (!arrived) return text(receipt.refusal ?? ag.walkStopReason ?? ag.walkStall ?? "walk interrupted or timed out");
+      const here = ag.placesAt([ag.pos.x, ag.pos.y, ag.pos.z])[0];
+      return text(label
+        ? `arrived at ${label}: (${ag.pos.x.toFixed(2)}, ${ag.pos.y.toFixed(2)}, ${ag.pos.z.toFixed(2)})${here ? `, in ${here.place.label ?? here.place.name}` : ""}`
+        : `arrived at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}); ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m from requested destination${here ? `, in ${here.place.label ?? here.place.name} (${here.entity.id}/${here.place.name})` : ""}`);
 
+  },
+  check_model: async (ag, a) => {
+      const e = a.id ? ag.entities.get(String(a.id)) : null;
+      if (a.id && !e) return text(`no thing called "${a.id}" here`);
+      const lib = String(e?.lib ?? a.lib ?? "");
+      if (!lib || lib === "(light)") return text("check_model needs the id of a placed model, or a library path");
+      let r: any;
+      // a placed thing is checked as placed: at its scale (the body is not scaled)
+      const scale = e ? (e.scale && e.scale > 0 ? e.scale : 1) : (typeof a.scale === "number" && a.scale > 0 ? a.scale : 1);
+      try { r = await (await fetch(`${ag.httpBase}/check?lib=${encodeURIComponent(lib)}${scale !== 1 ? `&scale=${scale}` : ""}`)).json(); }
+      catch (err) { return text(`the check could not be reached: ${String((err as Error)?.message ?? err)}`); }
+      if (r.error) return text(`couldn't check ${lib}: ${r.error}`);
+      return text(describeCheck(`${e ? `[${e.id}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`, r, e ? ag.placesOn(e).length : 0, e?.id, e?.collide));
+  },
+  name_place: async (ag, a) => {
+      // coordinates: x and z together (y optional: the floor there nearest
+      // your own height), or none — never some of them silently dropped
+      const given = [a.x, a.y, a.z].some((v: unknown) => v != null);
+      if (given && ![a.x, a.z].every((v: unknown) => typeof v === "number" && Number.isFinite(v)))
+        return { content: [{ type: "text", text: "name_place's coordinates need x and z (y is optional: the floor there nearest your own height) — or leave them all out to name where you stand" }], isError: true };
+      if (a.y != null && !(typeof a.y === "number" && Number.isFinite(a.y)))
+        return { content: [{ type: "text", text: "name_place's y, when given, must be a finite height in metres" }], isError: true };
+      const at = given ? { x: a.x as number, z: a.z as number, y: a.y as number | undefined } : undefined;
+      return text(await ag.namePlace(String(a.name ?? ""), { on: a.on, label: a.label, remove: a.remove === true, at }));
   },
   face: async (ag, a, ctx, name) => {
       if (a.target) {
@@ -597,14 +641,28 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   light: async (ag, a, ctx, name) => {
-      if (a.id && ag.entities.has(a.id)) {
+      // Omission generates an id, and so does null, which hosts that fill
+      // every optional argument send for one left out; a supplied invalid id
+      // is not a placement.
+      if (a.id !== undefined && a.id !== null) {
+        const why = lightArgsError(a);
+        if (why) return { content: [{ type: "text", text: why }], isError: true };
+      }
+      const standing = a.id != null ? ag.entities.get(a.id) : undefined;
+      // Only a light is updated: the fold replaces anything else holding the
+      // id with a light wholesale (spec §3.1), so a sparse "update" of a
+      // model would leave a light at the fold's defaults where the model was.
+      if (standing && standing.lib !== "(light)") {
+        return { content: [{ type: "text", text: `"${a.id}" is a model (${standing.lib || "no lib"}), not a light, so light won't update it. Use another id, or omit id to generate one.` }], isError: true };
+      }
+      if (standing) {
         // UPDATE: send only what was given — the fold merges, so absent
         // fields keep their prior value (stamping defaults here would reset
         // a light's color every time someone dims it).
         const patch: any = { id: a.id };
         for (const k of ["color", "intensity", "range", "keep"] as const) if (a[k] != null) patch[k] = a[k];
         if (a.x != null || a.y != null || a.z != null) {
-          const prev = ag.entities.get(a.id)!.pos ?? [0, 1, 0];
+          const prev = standing.pos ?? [0, 1, 0];
           patch.pos = [a.x ?? prev[0], a.y ?? prev[1], a.z ?? prev[2]];
         }
         ag.verb("light", patch);
@@ -763,6 +821,33 @@ export const HANDLERS: Record<string, ToolHandler> = {
   const declared = new Set(TOOLS.map((t) => t.name));
   for (const n of declared) if (!HANDLERS[n]) throw new Error(`[tools] "${n}" is advertised but has no handler`);
   for (const n of Object.keys(HANDLERS)) if (!declared.has(n)) throw new Error(`[tools] "${n}" has a handler but no schema row`);
+}
+
+/** A build check (server/buildcheck.ts) as text a reader can act on. */
+function describeCheck(what: string, r: any, named: number, id?: string, collide?: string): string {
+  const L: string[] = [];
+  // spawned with collide: the world fits it that way whatever its size
+  if (collide === "exact" || collide === "box") {
+    r = { ...r, walkIn: { ...r.walkIn, roomScale: collide === "exact" }, warnings: (r.warnings ?? []).filter((w: any) => w.kind !== "solid") };
+    if (collide === "box") r.warnings.unshift({ kind: "solid", message: `it was spawned with collide: "box", so it is one solid box: nobody can go inside — what follows is what it would be with collide: "exact"` });
+  }
+  const floors = (r.levels ?? []).map((l: any) => `${l.y}m (${l.reachable}m² of ${l.area}m² reachable)`).join(", ");
+  L.push(`${what}: ${r.walkIn?.roomScale ? "walk-in" : collide === "box" ? "SOLID — spawned as a box" : "SOLID — under the walk-in size"}; ${(r.levels ?? []).length} floor${(r.levels ?? []).length === 1 ? "" : "s"}${floors ? `: ${floors}` : ""}`
+    + `${r.perf ? `; rendering ${r.perf.rank} (${r.perf.tris} triangles, ${r.perf.draws} draw calls)` : ""}.`);
+  if (r.warnings?.length) { L.push("Problems:"); for (const w of r.warnings) L.push(`  - ${w.message}`); }
+  else L.push("No problems found: every floor under its roof can be reached from outside.");
+  const s = r.suggested ?? {};
+  const parts = [
+    ...(s.rooms ?? []).map((x: any) => `${x.id} (a room, floor ${x.min[1]}m, ${x.area}m²)`),
+    ...(s.doors ?? []).map((x: any) => `${x.id} (${x.between.join(" ↔ ")}, ~${x.width}m wide, at ${x.at.join(", ")})`),
+    ...(s.stairs ?? []).map((x: any) => `${x.id} (a stair, ${x.between.join(" ↔ ")})`),
+  ];
+  if (parts.length) {
+    L.push(`Suggested places, read from the geometry${named ? ` (it already has ${named} named)` : ""}: ${parts.join("; ")}.`);
+    L.push(`To name them, rename the keys and send: comp {id: "${id ?? "<thing>"}", type: "places", data: ${JSON.stringify(s.places)}}`
+      + ` — merged with any places it already has, since a comp replaces the whole bag — or stand in each and use name_place.`);
+  }
+  return L.join("\n");
 }
 
 export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, any>) {

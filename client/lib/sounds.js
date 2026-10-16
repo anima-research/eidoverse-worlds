@@ -226,7 +226,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
         if (!norm.ok) { msg(norm.why, true); return; }
         commit('comp', { id, type: 'sound', data: norm.sound });
         msg(norm.notes.length ? norm.notes.join(' · ') : 'playing');
-        if (norm.notes.length) flashHint(`🔊 ${esc(norm.notes[0])}`);
+        if (norm.notes.length) flashHint(`🔊 ${norm.notes[0]}`);
         ev.target.blur();
       });
       q('pause')?.addEventListener('click', (ev) => {

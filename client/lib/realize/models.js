@@ -889,7 +889,11 @@ export function reconcileModels() {
 }
 
 function onEntry(entry) {
-  const { verb, args = {} } = entry;
+  const { verb, args: rawArgs = {} } = entry;
+  // The fold keys entities by the id's text (an object key), so a history
+  // light of {id: 5} and a later update authored as "5" are one entity.
+  // Key the realizer the same way, or that update realizes a second light.
+  const args = rawArgs?.id == null ? rawArgs : { ...rawArgs, id: String(rawArgs.id) };
   try {
     // the fold has already written state — refresh the parent index BEFORE
     // any handler runs (retire's step-out reads the SCENE index; canDemote,

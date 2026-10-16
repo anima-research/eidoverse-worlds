@@ -46,6 +46,10 @@ export const renderCensus = { perFrame: 0, maxPerFrame: 0, foreign: null, frames
 let mainPassCam = null;
 if (typeof renderer.render === 'function') { const orig = renderer.render.bind(renderer);   // node-side suites mock core.js with a renderer that has no render (wing-owner-wire-test)
   renderer.render = (sc, cam) => {
+    // a lost GPU (gpulost.js handled it: reloading, or stopped with the notice) draws nothing, by ANY pass (the world,
+    // the XR mirror, sky bakes, avatar asides): each render into a dead device throws before three's callDepth--, and
+    // every such throw leaves a new render context and a fresh, retained shader build behind
+    if (globalThis.__gpuLost?.fired) return;
     renderCensus.perFrame++;
     if (renderer.xr?.isPresenting && cam !== mainPassCam) {
       const rt = renderer.getRenderTarget();
@@ -53,6 +57,10 @@ if (typeof renderer.render === 'function') { const orig = renderer.render.bind(r
     }
     return orig(sc, cam);
   }; }
+// …and compiles nothing: every pipeline warm (assets, flora, terrain, XR entry, instance batches) goes through this one
+// method, and a page stopped after a second loss stays connected and keeps receiving world updates
+if (typeof renderer.compileAsync === 'function') { const origCompile = renderer.compileAsync.bind(renderer);
+  renderer.compileAsync = (...args) => (globalThis.__gpuLost?.fired ? Promise.resolve() : origCompile(...args)); }
 export function renderCensusTick() { renderCensus.frames++; if (renderCensus.perFrame > renderCensus.maxPerFrame) renderCensus.maxPerFrame = renderCensus.perFrame; renderCensus.perFrame = 0; }
 export const renderCensusPeek = () => renderCensus.foreign;
 export function renderCensusTake() { const o = { max: renderCensus.maxPerFrame, foreign: renderCensus.foreign }; renderCensus.maxPerFrame = 0; renderCensus.foreign = null; return o; }
@@ -101,6 +109,7 @@ let worldHold = false;
 export function setWorldHold(on) { worldHold = !!on; }
 export function renderWorld() {
   if (worldHold) return;
+  if (globalThis.__gpuLost?.fired) return;   // a lost GPU draws nothing (see renderer.render above); skip the rest of renderWorld too
   mainPassCam = camera;
   // SELF-HEAL (09-07 00:30, the black desktop's second half): three captures `outputRenderTarget = _renderTarget || …`
   // at the top of every render. A frame that aborts between binding its frame-buffer target and restoring leaves

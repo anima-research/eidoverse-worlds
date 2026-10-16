@@ -8,6 +8,7 @@ import { bus, CONFIG, setName, setToken, setErrorSink, report } from './base.js'
 import { resizeZoneAt, fitTabStrip } from './frames.js';
 import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, earGlyph, xrGlyph, xrGlyphAvailable, xrLive, flipXr } from './mictoggle.js';
 import { svg, fsvg, hasFill, rsvg, hasLine } from './icons.js';
+import { html, paint, lineKey } from './markup.js';
 
 // section-head emoji → Phosphor fill glyph (menu chrome never rides emoji —
 // the canvas-emoji trap generalizes: platform glyph gaps are silent)
@@ -94,8 +95,11 @@ bus.on('loading', () => {
 
 export function setHud(parts) { el.hud.innerHTML = parts; }
 
-export function setHint(html, { sticky = false } = {}) {
-  el.hint.innerHTML = html;
+// The hint bar shows TEXT unless it is handed markup built with html`` (markup.js): a plain string — a person's name, a
+// thing's label, an error from anywhere — is shown as the characters it is, never parsed. (A display name carrying a
+// tag used to run as script in the browser of anyone its owner knocked over, grabbed or posed.)
+export function setHint(line, { sticky = false } = {}) {
+  paint(el.hint, line);
   el.hint.classList.remove('gone');
   if (!sticky) setTimeout(() => el.hint.classList.add('gone'), 30000);
 }
@@ -104,22 +108,23 @@ export function setHint(html, { sticky = false } = {}) {
 // a standing offer from the world ("X — sit"), set and cleared by proximity.
 // A flash (emote names, mode switches) borrows the bar and gives it back.
 let ambientHint = null;
-export function setAmbientHint(html) {
-  if (html === ambientHint) return;   // don't fight setHint's boot message over nothing
-  ambientHint = html;
+export function setAmbientHint(line) {
+  if (lineKey(line) === lineKey(ambientHint)) return;   // don't fight setHint's boot message over nothing
+  ambientHint = line;
   if (el.hint._t) return;             // a flash owns the bar; it restores us when done
-  if (ambientHint) { el.hint.innerHTML = ambientHint; el.hint.classList.remove('gone'); }
+  if (ambientHint) { paint(el.hint, ambientHint); el.hint.classList.remove('gone'); }
   else el.hint.classList.add('gone');
 }
 // Esc put every panel away (frames.js): say how to get them back, for a few seconds; when they come back, stop saying it
 // …and the lantern's resting line goes away with them and comes back with them (lantern.js setPillQuiet)
 bus.on('esc-quiet', (did) => {
   setPillQuiet(did === 'closed');
-  if (did === 'closed') flashHint(`<span>${escapeHid() ? 'panels hidden' : 'hidden'} · <kbd>Esc</kbd> to bring back</span>`, 4000);   // one span: the bar is a flex row, which would eat the spaces around the key
+  if (did === 'closed') flashHint(html`<span>${escapeHid() ? 'panels hidden' : 'hidden'} · <kbd>Esc</kbd> to bring back</span>`, 4000);   // one span: the bar is a flex row, which would eat the spaces around the key
   else if (did === 'restored' && el.hint._t && /hidden · Esc to bring back/.test(el.hint.textContent)) endFlash();
 });
-export function flashHint(html, ms = 2600) {
-  el.hint.innerHTML = html;
+/** Borrow the hint bar for a moment. `line` is text unless built with html`` (markup.js). */
+export function flashHint(line, ms = 2600) {
+  paint(el.hint, line);
   el.hint.classList.remove('gone');
   clearTimeout(el.hint._t);
   el.hint._t = setTimeout(endFlash, ms);
@@ -128,7 +133,7 @@ export function flashHint(html, ms = 2600) {
 function endFlash() {
   clearTimeout(el.hint._t);
   el.hint._t = null;
-  if (ambientHint) el.hint.innerHTML = ambientHint;
+  if (ambientHint) paint(el.hint, ambientHint);
   else el.hint.classList.add('gone');
 }
 

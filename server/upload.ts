@@ -16,6 +16,8 @@ import { isStoreOriginal, ktx2VariantPath, lodVariantPath, storeShadowsMissing, 
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { worlds } from "./world.ts";
 import { atomicWrite } from "./fsutil.ts";
+import { ingestHeightmap } from "./heightmap.ts";
+import { checkFile } from "./buildcheck-queue.ts";
 
 /** What the handler needs from Bun's server object, structurally (the
  *  VerbWorld precedent): the socket address behind the nginx front. */
@@ -521,6 +523,18 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     console.log(`[upload] image ${irel}${iname ? ` ("${iname}")` : ""} (${(body.length / 1e3).toFixed(0)}KB) by ${upBy}`);
     return new Response(JSON.stringify({ path: irel }), { headers: { "content-type": "application/json" } });
   }
+  if (url.searchParams.get("as") === "heightmap") {
+    // Terrain as an image (server/heightmap.ts): a grayscale PNG, decoded HERE once into the integer grid
+    // the client, agents and sim all read. Content-addressed like everything in the store; what changes a
+    // WORLD is still the owner's `terrain` verb naming the grid.
+    if (body.length > IMAGE_CAP) return new Response(`heightmap too large (${IMAGE_CAP / 1e6}MB cap)`, { status: 413 });
+    if (sniffImage(body) !== "png") return new Response("a heightmap must be a PNG (16-bit grayscale is best)", { status: 415 });
+    const hhash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
+    const r = ingestHeightmap(body, hhash);
+    if ("error" in r) return new Response(r.error, { status: r.status });
+    console.log(`[upload] heightmap ${r.grid} (${r.w}×${r.h}, ${r.bits}-bit) by ${upBy}`);
+    return new Response(JSON.stringify(r), { headers: { "content-type": "application/json" } });
+  }
   if (url.searchParams.get("as") === "audio") {
     // Sound ingestion: an MP3, Ogg, WAV, WebM or M4A, content-addressed into
     // store/audio/<hash>.<ext>, served by the /library route like any store
@@ -631,5 +645,8 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     atomicWrite(mp, JSON.stringify(man));
   }
   console.log(`[upload] model ${rel}${upName ? ` ("${upName}")` : ""} (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
-  return new Response(JSON.stringify({ path: rel }), { headers: { "content-type": "application/json" } });
+  // the build check starts now and never holds the upload up or refuses it:
+  // its report is advice, waiting at `check` (server/buildcheck.ts)
+  void checkFile(join(OPT_DIR, rel), 1, body).catch((err) => console.warn(`[check] ${rel}: ${String(err?.message ?? err)}`));
+  return new Response(JSON.stringify({ path: rel, check: `/check?lib=${encodeURIComponent(rel)}` }), { headers: { "content-type": "application/json" } });
 }

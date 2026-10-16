@@ -8,7 +8,7 @@ try{
  const pixels=await page.evaluate(async()=>{
   const {THREE,scene,camera,renderer}=await import('/lib/core.js');
   const {CONFIG}=await import('/lib/base.js');CONFIG.renderer=true;
-  const {state}=await import('/lib/state.js');const w=await import('/lib/water.js');
+  const {state}=await import('/lib/state.js');const w=await import('/lib/environment.js');
   for(const o of scene.children)o.visible=false;
   w.setWaterObjects(()=>new Map());
   const ent={pos:[0,0,0],comp:{water:{center:[0,-5,0],size:[100,10,100],absorption:[.1,.1,.1],scatter:[0,0,0]}}};

@@ -10,6 +10,7 @@ import { retireField } from './flora_field.js';
 import { makeGrassQuality, GRASS_QUALITY } from './grass_quality.js';
 
 let current = null;
+
 let environmentFloor = null;
 export function setEnvironmentFloor(y) {
   environmentFloor = Number.isFinite(y) ? y : null;
@@ -18,8 +19,14 @@ export function setEnvironmentFloor(y) {
     if (grid) grid.visible = environmentFloor === null;
   }
 }
-
 export const heightAt = (x, z) => (current ? current.heightAt(x, z) : (environmentFloor ?? 0));
+// THE WATER, for whatever floats in it (the ragdolls — ammodoll.js). The same seam as the ground and for the
+// same reason: the browser and the agents' headless bodies both load this module, and each hands it its
+// own water — the browser from client/lib/water.js, an agent from mcpl/physics.ts setWaterField.
+// {level, sample(x, z) → shared/waterkind.js sample | null, time() → wave seconds} or null for no water.
+let water = null;
+export const waterField = () => water;
+export function setWaterField(f) { water = f ?? null; }
 export const hasTerrain = () => current !== null;
 /** §22m diag: the terrain mesh, for cost-attribution phases. */
 export const getTerrainMesh = () => current?.mesh ?? null;
@@ -60,9 +67,9 @@ export function setTerrain(t) {
     if (grid) grid.visible = false;
     if (axisLines) axisLines.visible = false;
   } else {
-    if (ground) ground.visible = environmentFloor === null;
-    if (grid) grid.visible = environmentFloor === null;
-    if (axisLines) axisLines.visible = environmentFloor === null;
+    if (ground) ground.visible = true;
+    if (grid) grid.visible = true;
+    if (axisLines) axisLines.visible = true;
   }
 }
 
