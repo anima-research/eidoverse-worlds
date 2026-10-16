@@ -55,6 +55,7 @@ export const noteTyping = () => {};
 export const noteHistoryContext = () => {};
 export const composeFirstPerson = () => {};
 export const markPhase = () => {};
+export const refuseBoot = () => {};
 export const toast = () => {};
 export const flashHint = () => {};
 

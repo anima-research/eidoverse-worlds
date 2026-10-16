@@ -22,7 +22,7 @@ import { presenceWire, voiceWire, bodyWire } from '../../shared/presencewire.js'
 import { serverNow, localNow, noteRoundTrip, clockRtt } from './serverclock.js';
 import { presence } from './presence.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
-import { markPhase } from './boot.js';
+import { markPhase, refuseBoot } from './boot.js';
 // this client folds the authority's own stream (shared/protocol/replica.js) and derives the view the realizers draw from it,
 // locally; edit mode sends requests (editwrites.js) and waits for the authority.
 import { makeReplica } from '../../shared/protocol/replica.js';
@@ -517,6 +517,7 @@ export async function connect() {
       net.status = 'connecting';
       bus.emit('net', net);
       net.ws = early.ws;
+      joinRefusal = null;
       retryDelay = 1200;
       // Drain what raced ahead of us IN ORDER while the boot script's own
       // buffering handler still catches anything arriving mid-drain; the
@@ -531,8 +532,26 @@ export async function connect() {
       wireSocket(net.ws);   // live delivery takes over (onopen stays the boot script's)
       return;
     }
+    // A socket mid-close (CLOSING) is about to say why: wait for its close (bounded) rather than dial over it.
+    if (!early.closeInfo && early.ws.readyState === 2) await new Promise((res) => {
+      const prev = early.ws.onclose; early.ws.onclose = (ev) => { try { prev?.(ev); } finally { res(); } }; setTimeout(res, 2000);
+    });
+    // The world REFUSED the early join (a 4xxx close: an old-format world, no such world, a removal, a bad key): that
+    // refusal is the answer, not a reason to dial again. Read the server's words out of what the boot script buffered
+    // and close exactly as a live socket would (R 10-16 00:02: this socket and its refusal were thrown away, the
+    // redial's 4005 toasted a wrong "not a valid world name" under the splash, and she stepped into an empty world).
+    if (early.closeInfo?.code >= 4000) {
+      net.status = 'connecting';
+      for (const raw of early.buffered) {
+        let msg; try { msg = JSON.parse(raw); } catch { continue; }
+        if (msg?.type === 'error') noteRefusal(msg.error);
+      }
+      onSocketClosed(early.closeInfo);
+      return;
+    }
     try { early.ws.close(); } catch { /* already dead */ }
   }
+  joinRefusal = null;
   net.status = 'connecting';
   bus.emit('net', net);
   net.ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
@@ -543,64 +562,7 @@ export async function connect() {
 /** close/error/message wiring, shared by a fresh connect and an adopted
  *  early socket (the inline boot script in index.html — see connect()). */
 function wireSocket(ws) {
-  ws.onclose = (ev) => {
-    clearInterval(clockTimer); clockTimer = null;
-    net.joined = false;
-    failPending();
-    if (intentionalClose) { intentionalClose = false; return; } // rejoin() drives its own reconnect
-    // 4002 = session takeover: this identity re-arrived elsewhere. Retrying
-    // would kick THAT session and ping-pong forever.
-    if (ev.code === 4002) {
-      net.status = 'rejected';
-      bus.emit('net', net);
-      failSays();
-      toast(`"${CONFIG.name}" is connected in another tab. This one has yielded — reload to take over.`, 'warn', 60000);
-      return;
-    }
-    // 4006 = removed by moderation (kicked or banned). The server already
-    // explained itself in an error toast just before closing. No retry: a
-    // banned door will not open, and auto-rejoining after a kick would make
-    // the kick meaningless — coming back is a deliberate reload.
-    if (ev.code === 4006) {
-      net.status = 'rejected';
-      bus.emit('net', net);
-      failSays();
-      toast('you were removed from this world — reload if you believe you may return', 'warn', 60000);
-      return;
-    }
-    // 4005 = the world name itself is malformed (a mangled link). No retry —
-    // the name can never exist, so reconnecting is just hammering the authority.
-    if (ev.code === 4005) {
-      net.status = 'rejected';
-      bus.emit('net', net);
-      failSays();
-      toast(`"${CONFIG.world}" is not a valid world name — check the link that brought you here`, 'warn', 60000);
-      return;
-    }
-    // 4003 = bad or missing door key. This used to fall through to the generic
-    // retry, so a wrong key hammered the authority forever while the client said
-    // "disconnected — retrying…" and never explained why.
-    if (ev.code === 4003) {
-      net.status = 'rejected';
-      bus.emit('net', net);
-      failSays();
-      // If we entered verified, this refusal means the session died
-      // server-side (TTL lapsed mid-visit). The cached identity is stale —
-      // drop it and go back through the login rather than asking for a key
-      // this person never had.
-      if (CONFIG.authed) {
-        identity = null;
-        CONFIG.authed = false;
-        if (bounceToLogin()) return;
-      }
-      bus.emit('bad-key');
-      return;
-    }
-    net.status = 'retrying';
-    bus.emit('net', net);
-    setTimeout(connect, retryDelay);
-    retryDelay = Math.min(15000, retryDelay * 1.6); // back off instead of hammering
-  };
+  ws.onclose = onSocketClosed;
 
   ws.onerror = () => { /* onclose always follows; nothing useful here */ };
 
@@ -609,6 +571,84 @@ function wireSocket(ws) {
     try { msg = JSON.parse(ev.data); } catch { return; }
     try { await handle(msg); } catch (e) { report(`net ${msg.type}`, e); }
   };
+}
+
+/** What the server said when it refused this join: the `error` that arrives before the snapshot is the refusal's own
+ *  words, and the close (4005 …) that follows shows THEM rather than a guess from the code. Reset per connection. */
+let joinRefusal = null;
+function noteRefusal(text) { if (!net.joined && text) joinRefusal = String(text); }
+
+/** A refused join, shown where the person is looking: the splash stays (or comes back) with the server's sentence on
+ *  it (boot.js refuseBoot) — never a toast under the splash over an empty world. */
+function showRefusal(text) {
+  net.status = 'rejected';
+  bus.emit('net', net);
+  failSays();
+  refuseBoot(text);
+  bus.emit('join-refused', { text });
+}
+
+/** The socket's close, live or the early socket's (connect()). One place decides what each close code means. */
+function onSocketClosed(ev) {
+  clearInterval(clockTimer); clockTimer = null;
+  net.joined = false;
+  failPending();
+  if (intentionalClose) { intentionalClose = false; return; } // rejoin() drives its own reconnect
+  // 4002 = session takeover: this identity re-arrived elsewhere. Retrying
+  // would kick THAT session and ping-pong forever.
+  if (ev.code === 4002) {
+    net.status = 'rejected';
+    bus.emit('net', net);
+    failSays();
+    toast(`"${CONFIG.name}" is connected in another tab. This one has yielded — reload to take over.`, 'warn', 60000);
+    return;
+  }
+  // 4006 = removed by moderation (kicked or banned). The server already
+  // explained itself in an error toast just before closing. No retry: a
+  // banned door will not open, and auto-rejoining after a kick would make
+  // the kick meaningless — coming back is a deliberate reload.
+  if (ev.code === 4006) {
+    net.status = 'rejected';
+    bus.emit('net', net);
+    failSays();
+    toast('you were removed from this world — reload if you believe you may return', 'warn', 60000);
+    return;
+  }
+  // 4005 = a refused join: a malformed name, no such world, an old-format world, a client that doesn't fold the log.
+  // No retry — the answer won't change, so reconnecting is just hammering the authority. The server says why in an `error` just before this close; that sentence is shown. Without one, the close
+  // reason picks the words (the server's reasons: "old-format world", "no such world", "bad world name", …).
+  if (ev.code === 4005) {
+    const why = String(ev.reason ?? '');
+    showRefusal(joinRefusal ?? (
+      /old-format/i.test(why) ? `"${CONFIG.world}" was saved by an older version of Eidoverse and needs a one-time conversion by whoever runs this server. Nothing is lost.`
+      : /no such world/i.test(why) ? `there's no world called "${CONFIG.world}" here — check the link that brought you here`
+      : /world name/i.test(why) ? `"${CONFIG.world}" is not a valid world name — check the link that brought you here`
+      : `"${CONFIG.world}" refused this visit${why ? ` (${why})` : ''} — reload to try again`));
+    return;
+  }
+  // 4003 = bad or missing door key. This used to fall through to the generic
+  // retry, so a wrong key hammered the authority forever while the client said
+  // "disconnected — retrying…" and never explained why.
+  if (ev.code === 4003) {
+    net.status = 'rejected';
+    bus.emit('net', net);
+    failSays();
+    // If we entered verified, this refusal means the session died
+    // server-side (TTL lapsed mid-visit). The cached identity is stale —
+    // drop it and go back through the login rather than asking for a key
+    // this person never had.
+    if (CONFIG.authed) {
+      identity = null;
+      CONFIG.authed = false;
+      if (bounceToLogin()) return;
+    }
+    bus.emit('bad-key');
+    return;
+  }
+  net.status = 'retrying';
+  bus.emit('net', net);
+  setTimeout(connect, retryDelay);
+  retryDelay = Math.min(15000, retryDelay * 1.6); // back off instead of hammering
 }
 
 // ---------------------------------------------------------------- handling
@@ -907,6 +947,7 @@ async function handle(msg) {
       // the world tells us it has no voice relay only when we try to use one —
       // remember it, so the mic glyph can say WHY it stays off (R, 09-04)
       if (/no voice relay/i.test(String(msg.error ?? ''))) window.__voiceRelayAbsent = true;
+      noteRefusal(msg.error);   // before the snapshot, an error is the join's refusal: its close shows these words
       // Server-side refusals are the user's problem to see, not the console's.
       toast(msg.error, 'warn');
       // ...and any module holding an optimistic preview needs to hear it: a
