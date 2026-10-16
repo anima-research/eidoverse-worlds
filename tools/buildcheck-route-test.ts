@@ -81,6 +81,19 @@ try {
   check("...and on one spawned collide: \"box\": solid, for that reason", /SOLID — spawned as a box/.test(saidForced) && /collide: "box"/.test(saidForced), saidForced.slice(0, 300));
   const saidBad = await tool("check_model", { lib: bad.path });
   check("...and the problems, for a library path", /Problems:\n  - .*narrower than a body/.test(saidBad), saidBad.slice(0, 400));
+  // review r3 F1: the door is public, so new work is rate-limited per address (a cached answer never is)
+  {
+    const asks = Array.from({ length: 11 }, (_, i) => fetch(`${h.BASE}${up.check}&scale=${(0.3 + i * 0.01).toFixed(2)}`, { headers: { "x-real-ip": "10.7.7.7" } }));
+    const quick: Response[] = [];
+    asks.forEach((p) => p.then((res) => quick.push(res)));
+    await sleep(1500);
+    const limited = quick.filter((res) => res.status === 429);
+    const body = limited[0] ? await limited[0].json() as any : null;
+    check("GET /check: a burst of new checks from one address is refused 429 past the limit, in words, with retry-after",
+      limited.length === 1 && /rate limit/.test(body?.error ?? "") && Number(limited[0].headers.get("retry-after")) > 0, JSON.stringify({ statuses: quick.map((x) => x.status), body }));
+    const cachedAsk = await fetch(`${h.BASE}${up.check}`, { headers: { "x-real-ip": "10.7.7.7" } });
+    check("...and that address is still answered at once from the cache", cachedAsk.status === 200, String(cachedAsk.status));
+  }
 } finally {
   try { a.close(); } catch { /* gone */ }
   (await import("node:fs")).rmSync(OPT, { recursive: true, force: true });
