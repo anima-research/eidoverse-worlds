@@ -133,7 +133,7 @@ const MESH_CACHE_BYTES = 256 * 1024 * 1024, MESH_FETCH_MS = 8000;
 const WALK_READY_MS = 15_000;
 /** The world entity (places that belong to no thing live on it), and how far and how many places look lists (owner
  *  22:40/22:43: only what you can see, nearest first; move {to: "?"} lists every one). */
-const WORLD_ENTITY = "@world", PLACE_SIGHT_M = 30, PLACE_LOOK_MAX = 12;
+const WORLD_ENTITY = "@world", PLACE_SIGHT_M = 30, PLACE_LOOK_MAX = 12, PLACE_LIST_MAX = 200;
 const GEOMETRY_LOADING = "things placed nearby are still loading their shape, so a walk now could pass through them — try again in a moment";
 const meshBytes = new Map<string, number>();
 /** Fetch-and-decode jobs at once (process-wide): replay fires one per spawn,
@@ -3277,11 +3277,17 @@ export class WorldAgent {
   private static placeLine(x: { ref: string; place: Place; dest: Destination; d: number }) {
     return `${x.ref}${x.place.label && x.place.label !== x.place.name.replace(/_/g, " ") ? ` "${x.place.label}"` : ""} (${x.d.toFixed(1)} m, floor ${x.dest.y.toFixed(2)} m)`;
   }
-  /** move {to: "?"}: every named place, seen or not (owner 22:40). */
-  placeList(): string {
-    const all = this.placesNear();
-    if (!all.length) return "no named places here — a model can declare them, and name_place names a spot";
-    return `named places here, nearest first (move {to: "<thing>/<place>"} or a place's name):\n${all.map((x) => `  ${WorldAgent.placeLine(x)}`).join("\n")}`;
+  /** move {to: "?"}: every named place, seen or not (owner 22:40) — nearest first, at most PLACE_LIST_MAX (a built-up
+   *  world's list was megabytes; review r3 F7). move {to: "?<text>"} lists only those whose "thing/place" or label
+   *  holds that text (any case). */
+  placeList(filter = ""): string {
+    const f = filter.trim().toLowerCase();
+    const all = this.placesNear().filter((x) => !f || x.ref.toLowerCase().includes(f) || (x.place.label ?? "").toLowerCase().includes(f));
+    if (!all.length) return f ? `no named places here whose name or label holds "${filter.trim()}" — move {to: "?"} lists them all`
+      : "no named places here — a model can declare them, and name_place names a spot";
+    const shown = all.slice(0, PLACE_LIST_MAX), more = all.length - shown.length;
+    return `named places here${f ? ` holding "${filter.trim()}"` : ""}, nearest first (move {to: "<thing>/<place>"} or a place's name):\n${shown.map((x) => `  ${WorldAgent.placeLine(x)}`).join("\n")}`
+      + (more ? `\n…and ${more} more, farther away — narrow it with move {to: "?<text>"} (e.g. "?${shown[shown.length - 1].ref.split("/")[0]}"): only places whose name or label holds that text` : "");
   }
   /** look's listing (owner 22:43): the places this body can SEE — a ray from its eye to the place (a point, or a room's
    *  middle a metre over its floor) unblocked by the placed models' fitted colliders (the same ones the feet use, #235)

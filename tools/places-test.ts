@@ -242,6 +242,26 @@ try {
       /retired "rug_end"/.test(r) && !!pl2.late && pl2.rug_end === null, `${r} | ${JSON.stringify(pl2)}`);
   }
 
+  // review r3 F7: "?" on a built-up world is capped, nearest first, and "?<text>" narrows it
+  {
+    const many: Record<string, unknown> = {};
+    for (let i = 0; i < 230; i++) many[`stall_${i}`] = { at: [-90 - (i % 10), 0, -90 - Math.floor(i / 10)] };
+    const wr: any = await a.request("set", { id: "@world", component: "places", value: many });
+    for (let i = 0; i < 60 && a.worldPlaces().length < 230; i++) await sleep(50);
+    check("(230 places on @world)", wr?.ok !== false && a.worldPlaces().length === 230, `${JSON.stringify(wr).slice(0, 200)} ${a.worldPlaces().length}`);
+    const listed = await tool("move", { to: "?" });
+    const lines = listed.split("\n").filter((l) => /^  \S/.test(l));
+    check("move {to: \"?\"} lists at most 200, nearest first, and says how many more and how to narrow",
+      lines.length === 200 && /tower2?\/|rug\/|perch\//.test(lines[0]) && /and \d+ more/.test(listed) && /\?<text>|"\?stall/.test(listed), `${lines.length} lines; ${listed.split("\n").slice(-2).join(" | ")}`);
+    const narrowed = await tool("move", { to: "?stall_22" });
+    const nl = narrowed.split("\n").filter((l) => /^  \S/.test(l));
+    check("move {to: \"?stall_22\"} lists only the places whose name holds that text",
+      nl.length === 11 && nl.every((l) => /stall_22/.test(l)), narrowed.slice(0, 300));
+    check("...and a narrowing that matches nothing says so", /no named places .*"zzz"/.test(await tool("move", { to: "?zzz" })));
+    await a.request("delete", { id: "@world", component: "places" });
+    for (let i = 0; i < 60 && a.worldPlaces().length; i++) await sleep(50);
+  }
+
   r = await tool("walk_to", { to: "the moon" });
   check("an unknown name is refused, listing the names that exist", /nothing here is called "the moon" — named places: .*tower\/hall/.test(r), r);
 } finally {
