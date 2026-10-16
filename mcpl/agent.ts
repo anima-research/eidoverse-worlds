@@ -3416,7 +3416,7 @@ export class WorldAgent {
     const thing = (x: Entity): Destination | { refusal: string } => {
       const ps = this.placesOn(x);
       const p = ps.find((y) => y.name === "entrance") ?? ps.find((y) => y.kind === "door");
-      return p ? at(x, p) : this.besideThing(x);
+      return p ? at(x, p) : this.besideThing(x, now);
     };
     const e = ents.find((x) => ci(x.id, q));
     if (e) return thing(e);
@@ -3430,8 +3430,10 @@ export class WorldAgent {
     if (hits.length) return hits.sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
     // a thing by its label (a display name someone gave it), the nearest: as a thing by its id — before any person too
     // (review r4 claims C1: a visitor named like a thing's label captured the walk)
+    // nearest by where each stands in the world: a child's `pos` is its offset from its parent (review r6 L2)
+    const far = (x: Entity) => { const w = this.worldPosOf(x, now); return Math.hypot(w[0] - me.x, w[2] - me.z); };
     const byLabel = ents.filter((x) => { const l = (x as { label?: unknown }).label; return typeof l === "string" && ci(l.trim(), q); })
-      .sort((a, b) => Math.hypot(a.pos[0] - me.x, a.pos[2] - me.z) - Math.hypot(b.pos[0] - me.x, b.pos[2] - me.z));
+      .map((x) => ({ x, d: far(x) })).sort((a, b) => a.d - b.d).map((o) => o.x);
     if (byLabel.length) return thing(byLabel[0]);
     // a person, last (review r3 F4): a visitor who joins as "tower" must not capture every walk to the tower
     for (const p of this.people.values()) {
@@ -3447,15 +3449,22 @@ export class WorldAgent {
 
   /** A thing with no entrance or door, as a walk aims at it: up to it and beside it, on this body's side — THING_STANDOFF
    *  out from the nearest point of its footprint (its origin where the footprint isn't known, THING_STOP short of it). */
-  private besideThing(x: Entity): Destination {
-    const me = this.pos, box = footprint(this.replica?.st, x.id);
-    let px = x.pos[0], pz = x.pos[2], off = THING_STOP;
+  private besideThing(x: Entity, now = Date.now()): Destination {
+    const me = this.pos, box = footprint(this.replica?.st, x.id), at = this.worldPosOf(x, now);
+    let px = at[0], pz = at[2], off = THING_STOP;
     if (box) {
       const nx = Math.min(box.max[0], Math.max(box.min[0], me.x)), nz = Math.min(box.max[2], Math.max(box.min[2], me.z));
       if (Math.hypot(me.x - nx, me.z - nz) > 1e-6) { px = nx; pz = nz; off = THING_STANDOFF; }
     }
     const d = Math.hypot(me.x - px, me.z - pz), back = d > 0.01 ? Math.min(off, d) / d : 0;
-    return { x: px + (me.x - px) * back, y: box ? box.min[1] : x.pos[1], z: pz + (me.z - pz) * back, reach: 0.6, label: `[${x.id}]` };
+    return { x: px + (me.x - px) * back, y: box ? box.min[1] : at[1], z: pz + (me.z - pz) * back, reach: 0.6, label: `[${x.id}]` };
+  }
+
+  /** Where a thing stands in the world now: its effective transform (a child's parent chain, any motion), its saved `pos`
+   *  only where that can't be worked out — for a child, `pos` is its offset from its parent (review r6 L2). */
+  private worldPosOf(x: Entity, now = Date.now()): number[] {
+    const f = this.eff(x.id, now);
+    return f.ok ? f.pos : x.pos;
   }
 
   /** name_place edits, one at a time: each starts from the state the last
