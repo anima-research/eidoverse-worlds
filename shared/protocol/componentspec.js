@@ -187,7 +187,9 @@ export const COMPONENTS = {
   joint:     { status: "reserved", instead: "parent {to} attaches rigidly; openable animates a door, lid or gate; motion swings a pendulum (PHYSICS §3.3)", on: "thing", keyed: true, key: "instance", fields: { to: "ref", type: "string", anchor: "vec3", axis: "axis", limits: "array", drive: "object", breakForce: "number" },
                enums: { type: ["fixed", "hinge", "slider", "ball", "distance", "spring"] }, ranges: { breakForce: { gt: 0 } },
                help: "reserved (refused until this world's engine carries joints): keyed by name, a physical joint to another thing: {to: id, type: fixed|hinge|slider|ball|distance|spring, anchor [x,y,z] (own frame, m), axis, limits [min, max] (rad or m), drive {stiffness, damping, maxForce}, breakForce (N)}" },
-  "copy-of": { on: "thing", fields: { from: "string", key: "string" }, help: "set by the server on copies: {from: record hash, key}" },
+  // server-written (shape audit 10-16): a hand set below owner is refused (a forged copy-of mis-routes a rebase)
+  "copy-of": { on: "thing", fields: { from: "string", key: "string" }, required: ["from", "key"], grammar: { from: "sha256" }, writtenBy: "server",
+               docs: { from: "the blueprint record it was copied from, sha256:<64 hex>", key: "which part of that record it is" }, help: "set by the server on copies (never by hand below owner): {from: the record's hash sha256:<64 hex>, key: its part key in that record}" },
   // a sound a thing plays (shared/sound.js; batch 2, 10-07): silent AT radius (a true taper to zero, not Web Audio's clamp,
   // which leaked about −21 dB across the whole world), cap 100 m, near ≤ radius (valueCheck), the authority stamps t0 when it
   // starts. src: this server's store, an allowlisted host's https link (everyone hears it), or another https link (only
@@ -283,11 +285,12 @@ export const COMPONENTS = {
   "default-role": { on: "world", fields: { role: "string", can: "object", guests: "string" }, help: "on @world (owner): the role of anyone without roles:<id> (absent = visitor): any role but owner; can? {<permission>: true|false} on top of that role for everyone who holds it this way (not guests); guests (people without an account) get guests (default visitor), never above role" },
   "role-defs": { on: "world", help: "on @world (owner): {<role id>: {name, rank (custom: 1–254, unique), can: {<permission>: true|false}, note?}}. Built-ins visitor, builder, moderator may be renamed and their permissions edited (rank fixed); owner holds every permission and isn't listed. Permissions: build, editOthers, editWorld, generate, fly, scripts, pauseScripts, mute, kick, ban, grantRoles" },
   access:    { on: "world", fields: { join: "string", max: "int", soft: "int", minAccountDays: "int" }, enums: { join: ["anyone", "signed-in", "listed"] }, ranges: { max: { min: 1, max: 200 }, soft: { min: 1, max: 200 }, minAccountDays: { min: 0, max: 365 } }, help: "on @world (owner): who may come in {join: anyone|signed-in|listed (only people with a roles:<id>), max? (1–200 at once), soft? (≤ max: the recommended capacity), minAccountDays? (0–365: a person's account must be at least this many days old; a guest is then refused, an enrolled agent is exempt; 0 or absent = off)}; moderators and owners always get in" },
-  about:     { on: "world", fields: { name: "string", text: "string" }, help: "on @world: the world's name and blurb" },
+  about:     { on: "world", fields: { name: "string", text: "string" }, ranges: { name: { maxLen: 80 }, text: { maxLen: 2000 } }, docs: { name: "the world's name, ≤ 80 characters", text: "its blurb, ≤ 2000 characters" }, help: "on @world: the world's name (≤ 80) and blurb (≤ 2000)" },
   // the component ladder's second rung (docs/COMPONENT-LADDER.md; R 10-12): the drafts this world's owner trusts here.
   // A fact about the world, not the engine: the authority still doesn't read a trusted draft. Owner-gated like the rest of @world.
   trusted:   { on: "world", fields: { components: "array" }, ranges: { components: { maxItems: 64 } }, help: "on @world (owner): {components: [<namespaced draft names>]} — drafts used and trusted in this world (a blue chip in the Inspector, offered in the main Add Component list); never a bare name (that is the engine's or nothing); ≤ 64, each once. Trust ≠ engine understanding: the authority doesn't read them" },
-  bounds:    { on: "world", fields: { min: "vec3", max: "vec3" }, help: "on @world: the box the world lives in (m); min < max on every axis" },
+  bounds:    { on: "world", fields: { min: "vec3", max: "vec3" }, required: ["min", "max"], units: { min: "m", max: "m" }, docs: { min: "the box's low corner [x, y, z], world metres", max: "its high corner [x, y, z], world metres" },
+               help: "on @world: the box the world lives in, {min: [x, y, z], max: [x, y, z]} in world metres, min < max on every axis. Absent (no bounds component), anywhere is in the world" },
   spawn:     { on: "world", fields: { pos: "vec3", radius: "number" }, help: "on @world: where visitors arrive {pos, radius}" },
   // research 40 §6.1: today's noise bag with `kind` explicit, or an imported raster as a value blob. Keys by kind.
   terrain:   { on: "world", fields: { kind: "string", seed: "int", size: "number", amplitude: "number", octaves: "int", frequency: "number", flatRadius: "number", flatHeight: "number",
@@ -305,8 +308,13 @@ export const COMPONENTS = {
   "terrain-grid": { status: "reserved", on: "world", fields: { spacing: "number", tile: "int", origin: "array", extent: "array", limits: "object" }, help: "the sculpt grid: {spacing (m), tile (samples per side), origin [x, z], extent [nx, nz] tiles, limits {raise, lower} (mm)}; fixed while any terrain-tile exists" },
   "terrain-tile": { status: "reserved", on: "world", keyed: true, key: "partition", fields: { mm: "array" }, help: "keyed <i>-<j>: {mm: [tile² integer millimetres, row-major]}, a delta over the base; written whole by sculpt" },
   // research 41 §3.2: a behaviour. Keyed, so §5's creator rule decides who may change it and who its SPONSOR is.
+  // the lists the install check reads are here, so the pin sees them (shape audit 10-16): each item of `on` is one of
+  // itemEnums.on ('changed:*' = changed:<a component name>), each of scope.bodies one of itemEnums["scope.bodies"]; scope's
+  // own keys are scopeFields (launch is gone: always refused, so never more than speculative surface)
   script:    { keyed: true, key: "instance", fields: { src: "string", scope: "object", on: "array", every: "number", always: "bool", knobs: "object", paused: "bool" },
-               scopeFields: { ids: "scope", comps: "array", create: "bool", say: "bool", launch: "bool", bodies: "array" },
+               required: ["src", "scope"], grammar: { src: "sha256" }, units: { every: "s" }, ranges: { every: { min: 5 } },
+               itemEnums: { on: ["use", "say", "enter", "leave", "grab", "release", "changed:*"], "scope.bodies": ["shove", "pose"] },
+               scopeFields: { ids: "scope", comps: "array", create: "bool", say: "bool", bodies: "array" },
                help: "keyed <name>: a script (JavaScript; docs/SCRIPTS.md). {src: the source blob's name (upload {text} gives it), scope: {ids: 'self'|'subtree'|[ids], comps: [names, 'name:*'], create?, say?, bodies?: ['shove'|'pose']}, on: ['use', 'say', 'enter', 'leave', 'grab', 'release', 'changed:<comp>'], every?: s (>= 5; it gets tick, and wake after sleeping), always?: bool (run with nobody present; owner), knobs?: {…} (<= 4 KiB), paused?}. It acts with its sponsor's rights now, never beyond its scope; a `use` reaches it through a reactions handler {kind: 'script', script: <name>}" },
   // §5 (23:40): keyed names say which kind of key they are. instance: the creator rule; partition: one shared surface
   // reserved (shape audit 10-16): no format for a "written definition" exists yet and nothing writes one, so the name is held
@@ -483,6 +491,9 @@ export function pinOf() {
     if (d.maxLen !== undefined) p.maxLen = d.maxLen;
     if (d.required) p.required = [...d.required];
     if (d.keyPattern) p.keyPattern = d.keyPattern;
+    if (d.itemEnums) p.itemEnums = copy(d.itemEnums);
+    if (d.scopeFields) p.scopeFields = { ...d.scopeFields };
+    if (d.writtenBy) p.writtenBy = d.writtenBy;
     if (d.maxKeys !== undefined) p.maxKeys = d.maxKeys;
     if (d.absentMeans) p.absentMeans = { ...d.absentMeans };
     if (d.grammar) p.grammar = { ...d.grammar };
@@ -517,6 +528,9 @@ export function pinBreakList(pin, now = pinOf()) {
     if (p.status !== undefined) for (const f of new Set([...Object.keys(p.ranges ?? {}), ...Object.keys(n.ranges ?? {})])) { const why = narrows(p.ranges?.[f], n.ranges?.[f]);
       if (why && Object.hasOwn(p.fields ?? {}, f)) push(`${name}.${f}: its range narrowed (${why}): ${j(p.ranges?.[f] ?? {})} → ${j(n.ranges?.[f])}`); }
     if (p.status !== undefined && n.maxLen !== undefined && (p.maxLen === undefined || n.maxLen < p.maxLen)) push(`${name}: maxLen ${p.maxLen ?? "none"} → ${n.maxLen}`);
+    for (const [f, vals] of Object.entries(p.itemEnums ?? {})) for (const x of vals) if (!(n.itemEnums?.[f] ?? []).includes(x)) push(`${name}.${f}[]: ${j(x)} is no longer allowed`);
+    for (const [f, t] of Object.entries(p.scopeFields ?? {})) if (n.scopeFields?.[f] !== t) push(`${name}.scope.${f}: type ${t} → ${n.scopeFields?.[f] ?? "gone"}`);
+    if (p.status !== undefined && n.writtenBy !== undefined && n.writtenBy !== p.writtenBy) push(`${name}: now written by ${n.writtenBy} only`);
     if (p.status !== undefined && n.keyPattern !== undefined && n.keyPattern !== p.keyPattern) push(`${name}: keys ${p.keyPattern ?? "any"} → ${n.keyPattern}`);
     if (p.status !== undefined && n.maxKeys !== undefined && (p.maxKeys === undefined || n.maxKeys < p.maxKeys)) push(`${name}: maxKeys ${p.maxKeys ?? "none"} → ${n.maxKeys}`);
     if (p.status !== undefined) for (const f of n.required ?? []) if (!(p.required ?? []).includes(f) && Object.hasOwn(p.fields ?? {}, f)) push(`${name}.${f}: now required`);

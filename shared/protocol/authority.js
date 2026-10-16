@@ -482,6 +482,10 @@ function rights(w, st, s, who, role, op, at, made, pause) {
   // written by a request: nothing reads them as live (bans are the moderator log's; scripts are script:<name>; a guard
   // merged into lock). An owner may (a copy of the world, a repair); deleting one is an ordinary edit.
   if (!cap && op.verb === "set" && role !== "owner" && IMPORTED_ONLY(op.comp)) refuse("imported", `${at} is an imported world's record, carried as it was; it isn't written by hand`, "what it meant lives elsewhere now: lock for a guard, the moderator log for bans (ban/unban), script:<name> for a behaviour");
+  // a server-written component (componentspec writtenBy: copy-of): the authority's own verbs write it (a copy, a rebase,
+  // a duplicate); no capability (a handler, a script) ever does, and a hand set or create below owner is refused where the
+  // request is built (serverWritten, buildSet and buildCreate)
+  if (op.verb === "set" && cap && ["reaction", "script"].includes(cap.kind) && defOf(op.comp)?.writtenBy === "server") serverWritten(at);
   if (!cap && op.comp === "captions" && op.verb === "set" && role !== "owner") refuse("caption-only", `${at} is written by the caption request, one line at a time`, "caption {id, session, n, t0, t1, text, speaker?, title?} (or {id, session, end: true}); who may is the screen's captioners {ids}");
   if (cap?.kind === "caption") { if (!cap.ids.includes(op.id) || op.comp !== "captions") refuse("rights", `a caption writes only ${cap.ids.join(", ")}'s captions`, "");
     const ids = st.entities[op.id]?.c.captioners?.ids;
@@ -872,6 +876,8 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
   for (const [k, t] of Object.entries(def.fields)) if (v[k] !== undefined && !(v[k] === null && def.nullable?.includes(k)) && !TYPES[t](v[k])) refuse("shape", `${at}.${k} must be ${t}, got ${JSON.stringify(v[k]).slice(0, 40)}`, def.help);
   for (const k of def.required ?? []) if (v[k] === undefined) refuse("schema", `${at} needs ${k}`, def.help);
   // a field's grammar narrows its pinned type (physics.shape is `any` in every value ever stored): spec/PHYSICS.md §3.1
+  for (const [k, g] of Object.entries(def.grammar ?? {})) if (v[k] !== undefined && g === "sha256" && !(typeof v[k] === "string" && /^sha256:[0-9a-f]{64}$/.test(v[k])))
+    refuse("shape", `${at}.${k} must be a content hash sha256:<64 hex>, got ${JSON.stringify(v[k]).slice(0, 40)}`, def.help);
   for (const [k, g] of Object.entries(def.grammar ?? {})) if (v[k] !== undefined && g === "shape") { const why = shapeError(v[k]);
     if (why) refuse("shape", `${at}.${k}: ${why}`, "PHYSICS §3.1: a box [[min], [max]] or {type: sphere|capsule|cylinder|box|convex|mesh|compound, …}; the authority stamps it from the model"); }
   for (const [k, r] of Object.entries(def.ranges ?? {})) { const x = v[k]; if (x === undefined) continue;
@@ -1219,6 +1225,7 @@ function buildCreate(ctx, a) {
   if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§3.1: a–z, 0–9 and '-', up to 64; or leave id out and the authority mints one");
   if (ctx.st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id, or leave id out and the server mints one");
   for (const k of Object.keys(comps)) if (!isComponent(k)) refuse("shape", `'${k}' isn't a component name`, "§3.1: [a-z][a-z0-9-]*, optionally <domain>/, @<n> and :<key>", { didYouMean: guess(k, Object.keys(COMPONENTS)) });
+  for (const k of Object.keys(comps)) handWrite(ctx, id, k);
   const out = {};
   for (const [k, v] of Object.entries(comps)) out[k] = resolve(ctx, id, k, v);
   if (!out.transform) out.transform = resolve(ctx, id, "transform", {});
@@ -1231,8 +1238,11 @@ function buildCreate(ctx, a) {
   return [...made.filter((o) => !(o.verb === "set" && (o.comp === "transform" || o.comp === "parent"))), ...placed.filter((o) => o.verb === "set")];
 }
 
+// a server-written component (componentspec writtenBy) named in a request by hand, below owner
+const serverWritten = (at) => refuse("server-written", `${at} is written by the server (on a copy of a blueprint, a duplicate or a rebase), not by hand`, "create {from: <blueprint hash or a thing's id>} makes a copy that carries it; rebase moves a copy to a newer record");
+const handWrite = (ctx, id, comp) => { if (defOf(comp)?.writtenBy === "server" && roleOf(ctx.st, ctx.actor) !== "owner") serverWritten(`${id}.${comp}`); };
 function buildSet(ctx, a) {
-  const e = needThing(ctx, a.id);
+  const e = needThing(ctx, a.id); handWrite(ctx, a.id, a.component);
   if (!isComponent(a.component)) refuse("shape", `'${a.component}' isn't a component name`, "§3.1: [a-z][a-z0-9-]*, optionally <domain>/, @<n> and :<key> (ASCII only)", { didYouMean: guess(String(a.component), Object.keys(COMPONENTS)) });
   const lt = lastTouch(ctx.w, a.id, a.component); const base = a.base === undefined ? undefined : versionSeq(ctx.w, a.base, "base");
   // No `current` here, for the same reason as expect's (attack-check H5a/H5c): buildSet runs inside commit's
@@ -1672,8 +1682,9 @@ const scriptsCfg = (st) => { const c = st.entities["@world"]?.c["script-settings
   const out = { ...SCRIPTS }; for (const k of OWNER_SCRIPT_FIELDS) if (own[k] !== undefined) out[k] = own[k];
   for (const [k, top] of Object.entries(scriptCeiling())) if (Number.isFinite(out[k])) out[k] = Math.min(out[k], top);
   return out; };
-const BODY_EFFECTS = ["shove", "pose"];
-const SCRIPT_EVENTS = ["use", "say", "enter", "leave", "grab", "release"];
+// the registry's lists (componentspec script.itemEnums), read here, never restated
+const BODY_EFFECTS = COMPONENTS.script.itemEnums["scope.bodies"];
+const SCRIPT_EVENTS = COMPONENTS.script.itemEnums.on.filter((e) => !e.endsWith(":*"));
 const scopeIds = (st, id, ids) => (ids === "self" ? [id] : ids === "subtree" ? [id, ...descendants(st, id)] : Array.isArray(ids) ? ids.map((x) => (x === "self" ? id : x)) : []);
 const inComps = (comps, c) => typeof c === "string" && comps.some((p) => p === c || (p.endsWith(":*") && c.startsWith(p.slice(0, -1))));
 const sampleOf = (p) => (p.endsWith(":*") ? p.slice(0, -1) + "x" : p);
@@ -1735,7 +1746,6 @@ function installCheck(w, st, s, who, op) {
     refuse("shape", `${at}.scope.ids must be 'self', 'subtree' or up to 32 ids`, COMPONENTS.script.help);
   if (!Array.isArray(sc.comps) || sc.comps.length > 16 || !sc.comps.every((c) => typeof c === "string" && isComponent(sampleOf(c)))) refuse("shape", `${at}.scope.comps must be up to 16 component names ('name:*' for keyed)`, COMPONENTS.script.help);
   if (sc.bodies !== undefined && (!Array.isArray(sc.bodies) || sc.bodies.some((b) => !BODY_EFFECTS.includes(b)))) refuse("shape", `${at}.scope.bodies may name ${BODY_EFFECTS.join(", ")}`, "each lands only where that body's consent allows it (§5)");
-  if (sc.launch) refuse("shape", `${at}.scope.launch: scripts can't launch sim bodies yet`, "leave launch out");
   if (sc.create && sc.ids !== "subtree") refuse("scope", `${at}: create needs ids: 'subtree' (what it makes must hang under it)`, "");
   // a scope that names a typo of a registered component could never write it (admit refuses the name): say so now
   for (const c of sc.comps) { const n = sampleOf(c).split(":")[0]; const near = !registered(n) && !n.includes("/") ? nearMiss(n) : [];

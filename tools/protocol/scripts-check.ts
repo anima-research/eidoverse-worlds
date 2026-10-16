@@ -362,7 +362,7 @@ const cases: Case[] = [
       s.call("olive", "set", { id: "@world", component: "role-defs", value: { builder: { can: { scripts: false } } } });
       const raised = install(s, "bob", "box", "d", t, { scope: { ids: "self", comps: ["t/a"] }, on: ["use"] }).r;
       return { always, fast, vic, raised, gone }; },
-    good: (o) => code(o.always) === "rights" && /always/.test(o.always.refused.reason) && code(o.fast) === "shape" && /floor is 5/.test(o.fast.refused.reason) && code(o.vic) === "rights" && code(o.raised) === "rights" && /scripts permission/.test(o.raised.refused.reason) && code(o.gone) === "schema" },
+    good: (o) => code(o.always) === "rights" && /always/.test(o.always.refused.reason) && code(o.fast) === "bounds" && /every is 1; it must be ≥ 5/.test(o.fast.refused.reason) && code(o.vic) === "rights" && code(o.raised) === "rights" && /scripts permission/.test(o.raised.refused.reason) && code(o.gone) === "schema" },
   { id: "B18", what: "sponsor = the latest write that changes more than `paused` (§5 Two views; R on F4): an owner who EDITS bob's script (its knobs) answers for it; bob is demoted; it runs on olive's rights", run(s) { cast(s);
       bell(s, "bob"); const v = comp(s, "bell1", "script:bell");
       s.call("olive", "set", { id: "bell1", component: "script:bell", value: { ...v, knobs: { tone: "low" } } });

@@ -332,6 +332,34 @@ await C("PN3", "a stable name's break is never re-pinned, acknowledged or not; a
 await C("PN4", "the ladder doc says trial isn't draft, and how a break is acknowledged", () => {
   const t = read("docs/COMPONENT-LADDER.md"); const need = ["trial", "reserved", "stable", "--ack", "REGISTRY-CHANGELOG"]; return [need.every((n) => t.includes(n)) && /draft[^\n]*not[^\n]*admitted|not admitted/i.test(t), need.filter((n) => !t.includes(n))]; });
 
+// ---- W: world-meta tightenings (shape audit 10-16) ----
+await C("W1", "about: a name over 80 or a blurb over 2000 characters is refused at the door (the client's limits, now the registry's)", () => {
+  const W = world(); const ok80 = W.call("set", { id: "@world", component: "about", value: { name: "n".repeat(80), text: "t".repeat(2000) } });
+  const n81 = W.call("set", { id: "@world", component: "about", value: { name: "n".repeat(81), text: "" } }), t2001 = W.call("set", { id: "@world", component: "about", value: { name: "n", text: "t".repeat(2001) } });
+  return [ok80.ok && n81.refused?.code === "bounds" && t2001.refused?.code === "bounds", [why(ok80), why(n81), why(t2001)]]; });
+await C("W2", "bounds: both corners are required and in metres (units); absence of the component is said (no bounds)", () => {
+  const B = CAT.COMPONENTS.bounds; return [JSON.stringify(B.required) === '["min","max"]' && B.units?.min === "m" && B.units?.max === "m" && /Absent/.test(B.help), [B.required, B.units]]; });
+await C("W3", "copy-of is server-written: a builder's hand set or create with it is refused (server-written); an owner's needs sha256:<64 hex> from and both fields; a blueprint copy and a duplicate still carry it", () => {
+  const W = world(); W.call("set", { id: "@world", component: "default-role", value: { role: "builder" } }); W.call("create", { id: "crate1", model: "crate" }, "bob");
+  const H = "sha256:" + "a".repeat(64);
+  const hand = W.call("set", { id: "crate1", component: "copy-of", value: { from: H, key: "k" } }, "bob");
+  const handC = W.call("create", { id: "c2", model: "crate", components: { "copy-of": { from: H, key: "k" } } }, "bob");
+  const bad = W.call("set", { id: "crate1", component: "copy-of", value: { from: "nope", key: "k" } }), half = W.call("set", { id: "crate1", component: "copy-of", value: { from: H } });
+  const pub = W.call("publish", { from: "crate1", name: "crate" }, "bob"); const h = Object.keys(W.state().entities["@world"].c).find((k) => k.startsWith("blueprints:"))?.replace("blueprints:", "sha256:");
+  const cp = W.call("create", { from: h, id: "cp1" }, "bob"); const dup = W.call("create", { from: "cp1", id: "cp2" }, "bob");
+  const st = W.state().entities;
+  return [hand.refused?.code === "server-written" && handC.refused?.code === "server-written" && bad.refused?.code === "shape" && half.refused?.code === "schema" && pub.ok && cp.ok && st.cp1?.c["copy-of"]?.from === h && dup.ok,
+    [why(hand), why(handC), why(bad), why(half), why(pub), why(cp), why(dup), st.cp1?.c["copy-of"], st.cp2?.c["copy-of"]]]; });
+await C("W4", "script: the install check reads its lists from the registry (itemEnums, scopeFields, both pinned); scope.launch is gone (an unknown scope key, refused by the schema); src is a sha256 grammar", () => {
+  const W = world(); W.call("create", { id: "bell", model: "crate" });
+  const src = W.call("upload", { text: 'world.on("use", () => {});\n' }).src;
+  const launch = W.call("set", { id: "bell", component: "script:a", value: { src, scope: { ids: "self", comps: ["t/x"], launch: true }, on: ["use"] } });
+  const ev = W.call("set", { id: "bell", component: "script:b", value: { src, scope: { ids: "self", comps: ["t/x"] }, on: ["poke"] } });
+  const good = W.call("set", { id: "bell", component: "script:c", value: { src, scope: { ids: "self", comps: ["t/x"], bodies: ["pose"] }, on: ["use", "changed:label"] } });
+  const p = CAT.pinOf().script;
+  return [launch.refused?.code === "schema" && /unknown key 'launch'/.test(launch.refused.reason) && ev.refused?.code === "shape" && good.ok && !("launch" in CAT.COMPONENTS.script.scopeFields)
+    && p.itemEnums?.on?.includes("changed:*") && p.scopeFields?.ids === "scope" && p.grammar?.src === "sha256" && JSON.stringify(p.required) === '["src","scope"]', [why(launch), why(ev), why(good), p.itemEnums]]; });
+
 // ---- I: ids (H5) ----
 const RAND = /-[a-z2-7]{26}$/;
 await C("I1", "the authority mints ids with 128+ random bits (<slug>-<26 base32>), never <slug>-<count>", () => {
