@@ -1,7 +1,7 @@
 # Building for eidoverse — a short guide
 
 For anyone (agent or person) making a building, a ruin, a pavilion — anything
-people walk into — as a model to upload and `spawn`. The short version: **get
+people walk into — as a model to upload and `create`. The short version: **get
 the geometry right and it works; metadata only adds names.** Nobody declares
 floors, stairs or walls; the world reads them off your triangles, the same way
 for people in browsers and for agents.
@@ -10,18 +10,22 @@ for people in browsers and for agents.
 
 Everything below comes from one fact: a walking body is a vertical capsule
 **0.2 m in radius and 1.7 m tall** (the mover's body, `shared/mover.js`), moved by `client/lib/colliders.js` — in the
-browser for people, and in the agent process for agents.
+browser for people, and in the agent process for agents. The authority walks
+the same body as a box (head room, below), and where the two disagree the
+authority's answer is the one that holds.
 
 **Format and frame.** GLB, metres, Y up. Put the origin on the ground at the
-middle of the footprint: a spawn's `pos` is where that point lands. Face the
-front (the main door) toward **+Z**, so yaw 0 means what you expect. Nothing
-fits a building to uneven terrain — extend the base half a metre or so below
-ground so slopes don't show a gap.
+middle of the footprint: `create {model, at: [x, z]}` puts that point at x, z,
+with the model's bottom resting on the highest ground under its footprint.
+Face the front (the main door) toward **+Z**, so yaw 0 means what you expect.
+Nothing bends a building to uneven terrain: on a slope the downhill side stands
+above the ground, so give it a base or plinth that reaches down half a metre or
+so, and the slope shows the plinth rather than a gap.
 
 **Make it walk-in.** The world collides against a model's real triangles only
 when it is room-scale: **footprint ≥ 16 m² and height ≥ 2.2 m**. Anything
-smaller is one solid box — a hut you cannot enter — unless it is spawned with
-`collide: "exact"`.
+smaller is one solid box — a hut you cannot enter — unless it carries
+`collider {shape: "exact"}`.
 
 **Dimensions the body needs.**
 
@@ -31,7 +35,7 @@ smaller is one solid box — a hut you cannot enter — unless it is spawned wit
 | a doorway or passage | clear width **> 0.4 m** (1 m is comfortable) | a body needs its radius (0.2 m) on each side |
 | what stops a body | anything **about 0.41–1.29 m above its feet** within 0.2 m | walls, railings, chair backs |
 | what a body steps onto | anything **≤ 0.8 m** above its feet | chair seats, footstools, benches, low tables |
-| head height | **not checked** | a low ceiling is never what stops anyone |
+| head room | **≥ 1.7 m** clear above any floor a body walks | the authority tests the whole body, from a step above the feet to the top of the head (`bodyBox`, `shared/mover.js`), so a beam or ceiling lower than 1.7 m is a wall to it, and the planner routes round it. The walking feet in the browser and the agent judge overhead edges differently (a known mismatch, listed to fix after this release), so build the head room rather than testing how low you can go |
 
 **Floors** are found by looking down from just above the feet, so any surface
 facing up is a floor, and stacked storeys need nothing special: walking under
@@ -78,7 +82,7 @@ act {verb: "set", args: {id, component: "sockets", value: {stool: {pos: [-1.2, 3
 No rotation faces +Z (`q: [0, 1, 0, 0]` turns it to face −Z); the door lifts `sockets` into socket children. `measure {id}` lists the model's flat zones; a zone's centre
 is a socket `pos` verbatim.
 
-**Lights** — one `light` verb each. They are separate things at world
+**Lights** — one `create {components: {light: {…}}}` each. They are separate things at world
 positions: they don't move with the building.
 
 **Named places** — for `move {to: "lookout/balcony"}` and for `look` to say

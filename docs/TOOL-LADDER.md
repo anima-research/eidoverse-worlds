@@ -24,7 +24,7 @@ A rename of something that stays → an **alias** in `TOOL_ALIASES` *with* an en
 old argument shape into the new one (or refuses, teaching the two calls that do it now). An alias with no argument
 translation is a shape error wearing a helpful note — that was `walk_to {x, z}` until 2026-10-15.
 
-## The checklist (each line is a suite that fails without it)
+## The checklist (each line but one is a suite that fails without it)
 
 - [ ] **The row**: `{ name, title, description, inputSchema, annotations }` in `TOOL_ROWS`. `annotations` is honest MCP
       metadata — `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` — and `agenttools-check` AT4 reads
@@ -54,14 +54,14 @@ TOOL_ALIAS_ARGS.walk_to = (a) => ({ to: a.to !== undefined ? a.to : a.y !== unde
   ...(a.run !== undefined ? { run: a.run } : {}), ...(a.tolerance !== undefined ? { tolerance: a.tolerance } : {}) });
 ```
 
-(The pathfinding stack, merged 10-15, gave walk_to a named `to` and a floor-picking `y`: both reach `move` intact, and
-`alias-test` holds each shape. Its `check_model` became `measure {check: true}` the same way: an alias whose
-translation adds the mode.)
-
-and `agenttools-check` AT7 calls `walk_to {x, z, tolerance}` on a live agent and checks the body MOVED. Before the
+`agenttools-check` AT7 calls `walk_to {x, z, tolerance}` on a live agent and checks the body MOVED. Before the
 translation landed, that row was red with "move needs to: [x, y, z]…" — the alias ran the right tool with the wrong
 words, and nothing had tested it. `spawn {query}` is the other case: no one-step new form exists, so the translation
 refuses and names the two calls (`library {query}` then `create {model}`).
+
+(The pathfinding stack, merged 10-15, gave walk_to a named `to` and a floor-picking `y`: both reach `move` intact, and
+`alias-test` holds each shape. Its `check_model` became `measure {check: true}` the same way: an alias whose
+translation adds the mode.)
 
 ## What this is for
 

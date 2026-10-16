@@ -6,7 +6,7 @@ to the moment an owner described, and renders or measures it. Labs are how the g
 a held crate drawn in the wrong place, a stack that settled late). They are not tests: a lab is keyed
 to one world's entities and one day's question, and it rots when the world changes. The method is
 what lasts; most of the files were cut on 2026-10-15 (`git show --stat e414ab3d` lists them);
-`tools/protocol/palm-frame.lab.ts` and `wsettings.lab.ts` stay as examples.
+`tools/protocol/palm-frame.lab.ts` and `tools/protocol/wsettings.lab.ts` stay as examples.
 
 ## The method
 1. **Copy the world, never lab the live one.** `mkdir -p /tmp/lab && cp -r worlds/<name> /tmp/lab/` and
@@ -21,6 +21,6 @@ what lasts; most of the files were cut on 2026-10-15 (`git show --stat e414ab3d`
    budgets), red before the fix and green after. The lab is then done and can go.
 
 ## A runnable example
-`tools/protocol/surface-parity.ts` (see `SURFACE-PARITY.md`) is the one lab-shaped tool that stayed: it copies
+`tools/protocol/surface-parity.ts` (see `SURFACE-PARITY.md`) is the lab-shaped tool that became a harness: it copies
 a world, opens it in two client trees, and diffs the pixels. Start a new lab from its world-copy and
 headless-client scaffolding rather than from scratch.
