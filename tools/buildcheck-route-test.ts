@@ -5,7 +5,7 @@
 process.env.AGENT_BODY_ENGINE = "verlet";
 process.env.WORLD_TOKEN = "";
 const { boxes, buildGlb } = await import("./two-storey-fixture.ts");
-const { scratchSequencer, mkCheck, sleep } = await import("./harness.ts");
+const { scratchSequencer, mkCheck, sleep, legacyVerb } = await import("./harness.ts");
 const { check, tally } = mkCheck();
 
 const ROOF = [-3.2, 6.3, -3.2, 3.2, 6.5, 3.2];
@@ -40,7 +40,7 @@ try {
   check("the faulty one's report names the narrow doorway", rb.warnings?.some((w: any) => w.kind === "narrow"), JSON.stringify(rb.warnings));
   check("an unknown asset is a 404 with a reason", (await fetch(`${h.BASE}/check?lib=store/nope.glb`)).status === 404);
 
-  a.verb("spawn", { id: "tower", lib: up.path, pos: [0, a.heightAt(0, 0), 0], yaw: 0 });
+  await legacyVerb(a, "spawn", { id: "tower", lib: up.path, pos: [0, a.heightAt(0, 0), 0], yaw: 0 });
   for (let i = 0; i < 40 && !a.entities.get("tower"); i++) await sleep(50);
   const said = await tool("check_model", { id: "tower" });
   check("check_model reads it out for a placed thing: walk-in, floors, no problems, suggestions and the comp to name them",
@@ -52,9 +52,9 @@ try {
   const wide = await (await fetch(`${h.BASE}/upload?name=wide-hall`, { method: "POST", body: await buildGlb(hall(0.9) as any) })).json() as any;
   const slim = await (await fetch(`${h.BASE}/upload?name=slim-hall`, { method: "POST", body: await buildGlb(hall(0.5) as any) })).json() as any;
   // 0.9m door at 0.6×: 0.54m, narrower than a body; 0.5m door at 1.6×: 0.8m, a body fits
-  a.verb("spawn", { id: "small", lib: wide.path, pos: [40, a.heightAt(40, 0), 0], yaw: 0, scale: 0.6, collide: "exact" });
-  a.verb("spawn", { id: "big", lib: slim.path, pos: [80, a.heightAt(80, 0), 0], yaw: 0, scale: 1.6 });
-  a.verb("spawn", { id: "forced", lib: up.path, pos: [60, a.heightAt(60, 0), 0], yaw: 0, collide: "box" });
+  await legacyVerb(a, "spawn", { id: "small", lib: wide.path, pos: [40, a.heightAt(40, 0), 0], yaw: 0, scale: 0.6, collide: "exact" });
+  await legacyVerb(a, "spawn", { id: "big", lib: slim.path, pos: [80, a.heightAt(80, 0), 0], yaw: 0, scale: 1.6 });
+  await legacyVerb(a, "spawn", { id: "forced", lib: up.path, pos: [60, a.heightAt(60, 0), 0], yaw: 0, collide: "box" });
   for (let i = 0; i < 40 && !(a.entities.get("small") && a.entities.get("big") && a.entities.get("forced")); i++) await sleep(50);
   const plain = await tool("check_model", { lib: wide.path });
   check("(the 0.9m-doored hall at its own size: no problems)", /No problems found/.test(plain), plain.slice(0, 300));

@@ -11,6 +11,11 @@ import { TOOL_ALIAS_ARGS } from "./tools.ts";
 for (const old of Object.keys(TOOL_ALIASES)) ok(typeof TOOL_ALIAS_ARGS[old] === "function", `${old} has an argument translation`);
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, z: 2, run: true, tolerance: 0.2 })) === JSON.stringify({ to: [1, 2], run: true, tolerance: 0.2 }), "walk_to {x, z, run, tolerance} → move {to: [x, z], run, tolerance}");
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, z: 2 })) === JSON.stringify({ to: [1, 2] }), "walk_to {x, z} alone → move {to}");
+// the stack's walk_to (#236 y, #239 to: a name) reaches move with its words intact (merge into v4, 10-15)
+ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ to: "lookout/balcony", run: true })) === JSON.stringify({ to: "lookout/balcony", run: true }), "walk_to {to: \"thing/place\"} → move {to: \"thing/place\"} (a name passes through untouched)");
+ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ to: "?" })) === JSON.stringify({ to: "?" }), "walk_to {to: \"?\"} → move {to: \"?\"} (the list of places)");
+ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, y: 3.3, z: 2, tolerance: 0.1 })) === JSON.stringify({ to: [1, 3.3, 2], tolerance: 0.1 }), "walk_to {x, y, z} → move {to: [x, y, z]} (y picks the floor)");
+ok(JSON.stringify(TOOL_ALIAS_ARGS.check_model({ id: "tower" })) === JSON.stringify({ id: "tower", check: true }), "check_model {id} → measure {id, check: true}");
 ok(JSON.stringify(TOOL_ALIAS_ARGS.spawn({ lib: "a.glb", x: 1, z: 2 })) === JSON.stringify({ model: "a.glb", at: [1, 2] }), "spawn {lib, x, z} → create {model, at: [x, z]}");
 ok(JSON.stringify(TOOL_ALIAS_ARGS.spawn({ lib: "a.glb", x: 1, y: 3, z: 2, yaw: 1.5, id: "k" })) === JSON.stringify({ model: "a.glb", id: "k", at: { pos: [1, 3, 2], yaw: 1.5 } }), "spawn with y, yaw and id → create {model, id, at: {pos, yaw}}");
 { const t: any = TOOL_ALIAS_ARGS.spawn({ lib: "a.glb", x: 1, z: 2, yaw: 1.5 }); const f = t.place?.facing ?? [];

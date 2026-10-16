@@ -18,7 +18,7 @@ process.env.AGENT_BODY_ENGINE = "verlet";
 process.env.WORLD_TOKEN = "";
 const { FLOOR, UPPER, boxes, building, buildGlb } = await import("./two-storey-fixture.ts");
 const P = await import("../mcpl/places.ts");
-const { scratchSequencer, mkCheck, sleep } = await import("./harness.ts");
+const { scratchSequencer, mkCheck, sleep, legacyVerb } = await import("./harness.ts");
 const { check, tally } = mkCheck();
 
 console.log("places.ts (pure):");
@@ -66,17 +66,24 @@ try {
     ((await (await fetch(`${h.BASE}/upload?name=${name}`, { method: "POST", body: glb })).json()) as { path: string }).path;
   const lib = await upload("tower", await buildGlb(boxes, { building }));
   const gy = a.heightAt(0, 0);
-  a.verb("spawn", { id: "tower", lib, pos: [0, gy, 0], yaw: 0 });
+  await legacyVerb(a, "spawn", { id: "tower", lib, pos: [0, gy, 0], yaw: 0 });
   // a second, identical tower 30m east, for "the nearest of two"
-  a.verb("spawn", { id: "tower2", lib, pos: [30, a.heightAt(30, 0), 0], yaw: 0 });
+  await legacyVerb(a, "spawn", { id: "tower2", lib, pos: [30, a.heightAt(30, 0), 0], yaw: 0 });
   for (let i = 0; i < 100 && !(a.supportIds?.get("tower") && a.supportIds?.get("tower2")); i++) await sleep(50);
   await a.supportReady(); await sleep(300);
 
   await a.walkTo(0, 7, true);
   const seen = await tool("look", {});
-  check("look lists a thing's places, from its model's own description",
-    /\[tower\].*places \(walk_to \{to: "tower\/<place>"\}\): .*hall "the hall".*upstairs "the upper room".*front_door.*entrance/.test(seen.replace(/\n/g, " ")),
-    seen.split("\n").find((l) => l.includes("[tower]")) ?? "(no tower line)");
+  // v4 merge (owner 22:40/22:43): look lists the places this body can SEE (line of sight, ≤ 30 m, nearest 12, with
+  // distance and floor), each from the model's own description; move {to: "?"} lists every one, seen or not
+  const sightLine = seen.split("\n").find((l) => l.startsWith("Places you can see")) ?? "(no places line)";
+  check("look lists the places in sight, from the model's own description, with distance and floor",
+    /tower\/entrance \(\d+\.\d m, floor -?\d+\.\d\d m\)/.test(sightLine), sightLine);
+  check("...but not a room behind walls (the upper room is out of sight from the front lawn)", !/tower\/upstairs/.test(sightLine), sightLine);
+  const all = await tool("move", { to: "?" });
+  check("move {to: \"?\"} lists every named place, seen or not, and moves nothing",
+    /tower\/upstairs "the upper room"/.test(all) && /tower\/hall "the hall"/.test(all) && /tower\/front_door/.test(all) && near(a.pos.z, 7, 0.05), all);
+  check("...the walk_to alias's to: \"?\" too", /tower\/upstairs/.test(await tool("walk_to", { to: "?" })));
 
   let r = await tool("walk_to", { to: "tower", run: true });
   check("walk_to a thing goes to its entrance", /arrived at tower\/entrance/.test(r) && near(a.pos.z, 5, 0.6), `${r} ${at()}`);
@@ -91,33 +98,49 @@ try {
   r = await tool("walk_to", { to: "front door", run: true });
   check("doors are places too", /arrived at tower\/front_door/.test(r) && near(a.pos.z, 2.9, 0.7), `${r} ${at()}`);
 
+  // move {to: [x, y, z]}: y picks the floor (#236; owner 22:40), and a y no floor matches says which it chose
+  r = await tool("move", { to: [-1.5, gy + UPPER, -1.5], run: true });
+  check("move [x, upper floor y, z] arrives upstairs", /arrived/.test(r) && near(a.pos.y, gy + UPPER), `${r} ${at()}`);
+  r = await tool("move", { to: [-1.5, gy, -1.2], run: true });
+  check("move [x, 0, z] goes down to the ground floor (0.3 m up: within a step of 0)", /arrived/.test(r) && near(a.pos.y, gy + FLOOR), `${r} ${at()}`);
+  r = await tool("move", { to: [-1.5, -1.5], run: true });
+  check("move [x, z] stays on the floor it can reach on its own storey", /arrived/.test(r) && near(a.pos.y, gy + FLOOR), `${r} ${at()}`);
+  r = await tool("move", { to: [-1.5, gy + 10, -1.2], run: true });
+  check("move [x, 10, z] arrives on the nearest floor and the reply names it", near(a.pos.y, gy + UPPER) && /no floor at .* you're on the floor at/.test(r), `${r} ${at()}`);
+  r = await tool("move", { to: [-1.5, gy - 5, -1.5], run: true });
+  check("move [x, under every floor, z] arrives on the nearest floor there, and says so", near(a.pos.y, gy + FLOOR) && /no floor at .* you're on the floor at/.test(r), `${r} ${at()}`);
+  r = await tool("walk_to", { x: -1.5, y: gy + UPPER, z: -1.2, run: true });
+  check("walk_to {x, y, z} through the alias: y picks the floor the same way", /arrived/.test(r) && near(a.pos.y, gy + UPPER), `${r} ${at()}`);
+  r = await tool("move", { to: "tower/hall", run: true });
+  check("move {to: \"thing/place\"} directly (the walk_to rows above run through the alias)", /arrived at tower\/hall/.test(r) && near(a.pos.y, gy + FLOOR), `${r} ${at()}`);
+
   // naming a spot after the building exists — standing on the stair landing
   await tool("walk_to", { x: 2.2, z: -2.3, y: gy + UPPER, run: true });
   r = await tool("name_place", { name: "landing", label: "the top of the stair" });
   check("name_place names the spot where the body stands, on the thing it is in", /named this spot "landing" on \[tower\]/.test(r), r);
   await sleep(300);
   check("...as an entry in that thing's places component, in its own frame",
-    Array.isArray(a.entities.get("tower")?.comp?.places?.landing?.at) && near(a.entities.get("tower").comp.places.landing.at[1], UPPER, 0.06),
-    JSON.stringify(a.entities.get("tower")?.comp?.places));
+    Array.isArray(a.entities.get("tower")?.places?.landing?.at) && near(a.entities.get("tower").places.landing.at[1], UPPER, 0.06),
+    JSON.stringify(a.entities.get("tower")?.places));
   await tool("walk_to", { to: "entrance", run: true });
   r = await tool("walk_to", { to: "the top of the stair", run: true });
   check("...and walk_to reaches it by its label, from outside, up the stair", /arrived at tower\/landing/.test(r) && near(a.pos.y, gy + UPPER) && near(a.pos.x, 2.2, 0.15), `${r} ${at()}`);
 
   // a raw comp edit: re-point the name, retire a model place
-  const cur = { ...a.entities.get("tower").comp.places, landing: { at: [-2, FLOOR, -2], label: "the corner" }, upstairs: null };
-  a.verb("comp", { id: "tower", type: "places", data: cur });
+  const cur = { ...a.entities.get("tower").places, landing: { at: [-2, FLOOR, -2], label: "the corner" }, upstairs: null };
+  await legacyVerb(a, "comp", { id: "tower", type: "places", data: cur });
   await sleep(400);
   r = await tool("walk_to", { to: "tower/landing", run: true });
   check("a builder can re-point a name with a plain comp — the walk follows", /arrived at tower\/landing/.test(r) && near(a.pos.y, gy + FLOOR) && near(a.pos.x, -2, 0.2), `${r} ${at()}`);
   r = await tool("walk_to", { to: "tower/upstairs" });
   check("a place the model declared can be retired (null)", /has no place called "upstairs"/.test(r), r);
   r = await tool("name_place", { name: "upstairs", remove: true, on: "tower" });
-  check("name_place remove on a model place keeps it hidden", /retired "upstairs"/.test(r) && a.entities.get("tower").comp.places.upstairs === null, r);
+  check("name_place remove on a model place keeps it hidden", /retired "upstairs"/.test(r) && a.entities.get("tower").places.upstairs === null, r);
 
   // a footstool a step above a named spot on the floor is not that spot
   const stool = await upload("stool", await buildGlb([[-0.25, 0, -0.2, 0.25, 0.32, 0.2]]));
-  a.verb("spawn", { id: "stool", lib: stool, pos: [-1.5, gy + FLOOR, 1.0], yaw: 0, collide: "box" });
-  a.verb("comp", { id: "tower", type: "places", data: { ...a.entities.get("tower").comp.places, by_stool: { at: [-1.0, FLOOR, 1.0] } } });
+  await legacyVerb(a, "spawn", { id: "stool", lib: stool, pos: [-1.5, gy + FLOOR, 1.0], yaw: 0, collide: "box" });
+  await legacyVerb(a, "comp", { id: "tower", type: "places", data: { ...a.entities.get("tower").places, by_stool: { at: [-1.0, FLOOR, 1.0] } } });
   for (let i = 0; i < 40 && !a.supportIds?.get("stool"); i++) await sleep(50);
   await a.supportReady(); await sleep(400);
   await tool("walk_to", { to: "tower/entrance", run: true });
@@ -137,7 +160,7 @@ try {
   check("with two things offering the same place, the nearest is taken", /arrived at tower2\/hall/.test(r) && a.pos.x > 25, `${r} ${at()}`);
 
   // moved things take their places with them
-  a.verb("place", { id: "tower2", pos: [30, a.heightAt(30, -20), -20], yaw: Math.PI / 2 });
+  await legacyVerb(a, "place", { id: "tower2", pos: [30, a.heightAt(30, -20), -20], yaw: Math.PI / 2 });
   for (let i = 0; i < 40 && a.entities.get("tower2")?.pos?.[2] !== -20; i++) await sleep(50);
   await a.supportReady(); await sleep(400);
   r = await tool("walk_to", { to: "tower2/entrance", run: true });
@@ -148,13 +171,13 @@ try {
   // a long room whose middle is full: reached at the clear floor it has
   const ry = a.heightAt(50, -20);
   const rug = await upload("rug", await buildGlb([[-6, 0, -1.5, 6, 0.05, 1.5], [-1.5, 0.05, -1.5, 1.5, 1.05, 1.5]]));
-  a.verb("spawn", { id: "rug", lib: rug, pos: [50, ry, -20], yaw: 0, collide: "exact" });
-  a.verb("comp", { id: "rug", type: "places", data: {
+  await legacyVerb(a, "spawn", { id: "rug", lib: rug, pos: [50, ry, -20], yaw: 0, collide: "exact" });
+  await legacyVerb(a, "comp", { id: "rug", type: "places", data: {
     long_room: { min: [-6, 0.05, -1.5], max: [6, 3, 1.5], label: "the long room" },
     loft: { min: [-6, 3, -1.5], max: [6, 5, 1.5] } } });
   const perchY = a.heightAt(50, -12);
-  a.verb("spawn", { id: "perch", lib: stool, pos: [50, perchY, -12], yaw: 0, scale: 4, collide: "box" });
-  a.verb("comp", { id: "perch", type: "places", data: { seat: { at: [0, 0.32, 0], kind: "seat" } } });
+  await legacyVerb(a, "spawn", { id: "perch", lib: stool, pos: [50, perchY, -12], yaw: 0, scale: 4, collide: "box" });
+  await legacyVerb(a, "comp", { id: "perch", type: "places", data: { seat: { at: [0, 0.32, 0], kind: "seat" } } });
   for (let i = 0; i < 60 && !(a.supportIds?.get("rug") && a.supportIds?.get("perch")); i++) await sleep(50);
   await a.supportReady(); await sleep(400);
   r = await tool("walk_to", { to: "the long room", run: true });
@@ -168,18 +191,18 @@ try {
   // name_place's coordinates: x and z, y found; never silently dropped
   r = await tool("name_place", { name: "rug_end", x: 55, z: -20, on: "rug" });
   check("name_place with x and z only names the floor there", /named this spot "rug_end" on \[rug\]/.test(r)
-    && near(a.entities.get("rug")?.comp?.places?.rug_end?.at?.[1], 0.05) && near(a.entities.get("rug").comp.places.rug_end.at[0], 5), `${r} ${JSON.stringify(a.entities.get("rug")?.comp?.places?.rug_end)}`);
+    && near(a.entities.get("rug")?.places?.rug_end?.at?.[1], 0.05) && near(a.entities.get("rug").places.rug_end.at[0], 5), `${r} ${JSON.stringify(a.entities.get("rug")?.places?.rug_end)}`);
   r = await tool("name_place", { name: "nowhere", y: 2 });
-  check("...and with y alone is refused, not quietly named where the body stands", /need x and z/.test(r) && !a.entities.get("rug").comp.places.nowhere, r);
-  a.verb("light", { id: "lamp", pos: [50, ry + 2, -20], intensity: 5 });
+  check("...and with y alone is refused, not quietly named where the body stands", /need x and z/.test(r) && !a.entities.get("rug").places.nowhere, r);
+  await legacyVerb(a, "light", { id: "lamp", pos: [50, ry + 2, -20], intensity: 5 });
   for (let i = 0; i < 40 && !a.entities.get("lamp"); i++) await sleep(50);
   r = await tool("name_place", { name: "glow", on: "lamp" });
-  check("a light cannot carry places — refused, not saved where nothing reads it", /is a light/.test(r) && !a.entities.get("lamp")?.comp?.places, r);
+  check("a light cannot carry places — refused, not saved where nothing reads it", /has no model/.test(r) && !a.entities.get("lamp")?.places, r);
   // two names in a row, before the first echo: both land
   const [r1, r2] = await Promise.all([
     tool("name_place", { name: "west_end", x: 45, z: -20, on: "rug" }),
     tool("name_place", { name: "east_end", x: 55.5, z: -20, on: "rug" })]);
-  const pl = a.entities.get("rug").comp.places;
+  const pl = a.entities.get("rug").places;
   check("two name_place calls at once both land — the second does not erase the first",
     /named/.test(r1) && /named/.test(r2) && pl.west_end && pl.east_end && pl.rug_end && pl.long_room, `${r1} | ${r2} | ${Object.keys(pl).join(",")}`);
 

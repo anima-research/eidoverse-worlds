@@ -10,7 +10,7 @@
 process.env.AGENT_BODY_ENGINE = "verlet";
 process.env.WORLD_TOKEN = "";
 const { FLOOR, UPPER, RISE, GOING, STAIR_FOOT, boxes, buildGlb } = await import("./two-storey-fixture.ts");
-const { scratchSequencer, mkCheck, sleep } = await import("./harness.ts");
+const { scratchSequencer, mkCheck, sleep, legacyVerb } = await import("./harness.ts");
 const { check, tally } = mkCheck();
 
 const h = await scratchSequencer("navgrid", { serverEnv: { SKIP_OPT_SWEEP: "1" }, portFrom: 9460 });
@@ -23,10 +23,10 @@ try {
   const upload = async (name: string, list: any[]) =>
     ((await (await fetch(`${h.BASE}/upload?name=${name}`, { method: "POST", body: await buildGlb(list) })).json()) as { path: string }).path;
   const gy = a.heightAt(0, 0);
-  a.verb("spawn", { id: "tower", lib: await upload("two-storey", boxes), pos: [0, gy, 0], yaw: 0 });
+  await legacyVerb(a, "spawn", { id: "tower", lib: await upload("two-storey", boxes), pos: [0, gy, 0], yaw: 0 });
   // a sealed room 12m west: four walls, no door
   const SX = -12;
-  a.verb("spawn", { id: "vault", lib: await upload("vault", [
+  await legacyVerb(a, "spawn", { id: "vault", lib: await upload("vault", [
     [-2.5, 0, -2.5, 2.5, 0.2, 2.5],
     [-2.5, 0.2, -2.5, -2.3, 3, 2.5], [2.3, 0.2, -2.5, 2.5, 3, 2.5],
     [-2.3, 0.2, -2.5, 2.3, 3, -2.3], [-2.3, 0.2, 2.3, 2.3, 3, 2.5],
