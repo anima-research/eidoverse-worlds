@@ -35,6 +35,14 @@ import { wingFoldPresence } from "../shared/wingpresence.js";
 import { clampBodyScale } from "../shared/presencewire.js";
 import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
 
+/** An act's answer for its tool. `ok` is false when the call didn't do what
+ *  it asked: a refusal, a cut, a climb or glide that fell short, a name the
+ *  world refused. A call that changed nothing because what it asked for
+ *  already held is ok. */
+export interface ActResult { ok: boolean; text: string }
+const done = (text: string): ActResult => ({ ok: true, text });
+const refused = (text: string): ActResult => ({ ok: false, text });
+
 /** integrator yaw (atan2(dz,dx), forward = (cos,sin)) -> world yaw
  *  (atan2(dx,dz), which every renderer and walkTo already speak). */
 const worldYaw = (y: number) => Math.PI / 2 - y;
@@ -2550,14 +2558,14 @@ export class WorldAgent {
   }
 
   /** take_off (spec §1). Refuses folded wings, a limp body, or no capability. */
-  async takeOff(): Promise<string> {
+  async takeOff(): Promise<ActResult> {
     await this.loadBodyBones();
     const cap = this.flightAllowed();
-    if (!cap.ok) return `you cannot fly here — ${cap.why}`;
+    if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     // Wing posture is carried independently of an active flight state. A body
     // can fold without a propulsion grant, so the sky door checks the public
     // posture before it constructs a fresh integrator.
-    if (this.wingsFolded) return `still standing — wings folded`;
+    if (this.wingsFolded) return refused(`still standing — wings folded`);
     // START FROM THE BODY, ALWAYS. A stale flight state -- LANDED after a
     // glide, or RAGDOLL after a cut -- carried the old position and phase into
     // the new launch, so take_off "worked" and the next verb found her back on
@@ -2570,8 +2578,8 @@ export class WorldAgent {
     this.flight = flightTakeOff(this.flightCfg, this.flight,
       { groundY: this.heightAt(this.pos.x, this.pos.z) });
     const ev = this.flight.events.find((e: any) => e.kind === "takeoff.refused");
-    if (ev) { return `still standing — ${ev.reason}`; }
-    return `took off — ${this.flight.pos.y.toFixed(1)}m, stamina ${this.flight.stamina.toFixed(0)}/100`;
+    if (ev) { return refused(`still standing — ${ev.reason}`); }
+    return done(`took off — ${this.flight.pos.y.toFixed(1)}m, stamina ${this.flight.stamina.toFixed(0)}/100`);
   }
 
   // WORLD-FACING FLIGHT TELEMETRY IS ABSENT ON PURPOSE, for now.
@@ -2601,7 +2609,7 @@ export class WorldAgent {
    *  Folding is a GROUND posture and needs no flight state to exist, so it
    *  lazily makes one rather than demanding take_off first -- a body standing
    *  in the world has wings whether or not it has flown today. */
-  async foldWings(fold: boolean): Promise<string> {
+  async foldWings(fold: boolean): Promise<ActResult> {
     await this.loadBodyBones();
     // Folding is body autonomy, not propulsion authority. A world may deny
     // `fly` while the person still closes or opens wings they visibly wear.
@@ -2611,12 +2619,13 @@ export class WorldAgent {
     // folded posture never needs it, so unknown bones don't hold a body folded.
     const bones = this.bodyBoneNames;
     if (bones == null && (fold || !this.wingsFolded)) {
-      return `wings unchanged — ${BONES_NOT_KNOWN}; calling again reads the model again`;
+      return refused(`wings unchanged — ${BONES_NOT_KNOWN}; calling again reads the model again`);
     }
     const body = inspectBody(bones ?? []);
-    if (fold && !body.canAnimateWings) return `this body has no animatable wings to fold`;
+    if (fold && !body.canAnimateWings) return refused(`this body has no animatable wings to fold`);
+    // Nothing is folded, which is what unfolding asks for.
     if (!fold && !body.canAnimateWings && !this.wingsFolded)
-      return `this body has no folded-wing posture to release`;
+      return done(`this body has no folded-wing posture to release`);
 
     // Do not create a flight integrator merely to strike a ground posture. A
     // dormant GROUND flight object owns position on the 10Hz tick and would
@@ -2628,26 +2637,30 @@ export class WorldAgent {
       this.flight = fold ? flightFold(this.flightCfg, this.flight)
                          : flightUnfold(this.flightCfg, this.flight);
       const ref = this.flight.events.find((e: any) => /refused$/.test(e.kind));
-      if (ref) return `wings stay ${before.toLowerCase()} — ${ref.reason}`;
+      // Wings already folded, or already open, are what the call asked for.
+      if (ref) {
+        const text = `wings stay ${before.toLowerCase()} — ${ref.reason}`;
+        return before === (fold ? "FOLDED" : "OPEN") ? done(text) : refused(text);
+      }
     } else if (this.wingsFolded === fold) {
-      return fold ? `wings are already folded` : `wings are already open`;
+      return done(fold ? `wings are already folded` : `wings are already open`);
     }
     this.wingsFolded = fold;
-    if (fold) return "wings folded — the vigil posture; take_off refuses until you unfold";
-    if (bones == null) return `folded-wing posture released — ${BONES_NOT_KNOWN}`;
-    if (!body.canAnimateWings) return "folded-wing posture released — this body has no wings";
+    if (fold) return done("wings folded — the vigil posture; take_off refuses until you unfold");
+    if (bones == null) return done(`folded-wing posture released — ${BONES_NOT_KNOWN}`);
+    if (!body.canAnimateWings) return done("folded-wing posture released — this body has no wings");
     const cap = this.flightAllowed();
-    return cap.ok ? "wings open — the sky is available again"
-                  : "wings open — propulsion is still not granted here";
+    return done(cap.ok ? "wings open — the sky is available again"
+                       : "wings open — propulsion is still not granted here");
   }
 
   /** glide_to (spec §1). Free, and lands SHORT honestly if the polar runs out. */
-  async glideTo(x: number, z: number): Promise<string> {
+  async glideTo(x: number, z: number): Promise<ActResult> {
     await this.loadBodyBones();
     const cap = this.flightAllowed();
-    if (!cap.ok) return `you cannot fly here — ${cap.why}`;
+    if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
-      return "you are on the ground — take_off first";
+      return refused("you are on the ground — take_off first");
     }
     const f = this.flight;
     const reach = glideRange(this.flightCfg, f.pos.y);
@@ -2687,22 +2700,22 @@ export class WorldAgent {
       this.flight.holdAt = { x, z };
     }
     const here = `(${this.flight.pos.x.toFixed(1)}, ${this.flight.pos.z.toFixed(1)})`;
-    if (arrived === "arrived") return `arrived at ${here}, ${this.flight.pos.y.toFixed(1)}m up — holding over it`;
+    if (arrived === "arrived") return done(`arrived at ${here}, ${this.flight.pos.y.toFixed(1)}m up — holding over it`);
     if (arrived === "landed") {
       const short = Math.hypot(x - this.flight.pos.x, z - this.flight.pos.z);
-      return `landed short at ${here} — ${short.toFixed(1)}m short. `
-        + `From ${f.pos.y.toFixed(1)}m best glide reaches ${reach.toFixed(0)}m; you needed ${need.toFixed(0)}m.`;
+      return refused(`landed short at ${here} — ${short.toFixed(1)}m short. `
+        + `From ${f.pos.y.toFixed(1)}m best glide reaches ${reach.toFixed(0)}m; you needed ${need.toFixed(0)}m.`);
     }
-    return `${arrived} at ${here}`;
+    return refused(`${arrived} at ${here}`);
   }
 
   /** climb_to (spec §1). -1 stamina/metre; an empty pool forces a glide down. */
-  async climbTo(alt: number): Promise<string> {
+  async climbTo(alt: number): Promise<ActResult> {
     await this.loadBodyBones();
     const cap = this.flightAllowed();
-    if (!cap.ok) return `you cannot fly here — ${cap.why}`;
+    if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
-      return "you are on the ground — take_off first";
+      return refused("you are on the ground — take_off first");
     }
     const f = this.flight, cfg = this.flightCfg;
     const from = f.pos.y;
@@ -2737,25 +2750,30 @@ export class WorldAgent {
       if (st.climbTo == null) return "there";
       return null;
     }, Math.min(120_000, (climbed / climbRate) * 1000 + 8000));
-    if (got === "cut") return `cut mid-climb at ${this.flight.pos.y.toFixed(1)}m`;
+    if (got === "cut") return refused(`cut mid-climb at ${this.flight.pos.y.toFixed(1)}m`);
+    // The wait's own timeout is the other answer that isn't "there": the climb
+    // didn't finish, so it isn't reported as reaching the target.
+    if (got !== "there") return refused(`${got} at ${(this.flight?.pos.y ?? 0).toFixed(1)}m, short of the climb`);
     const target = this.flight?.pos.y ?? reach;
     if (winded) {
-      return `winded at ${target.toFixed(1)}m — the pool only bought ${afford.toFixed(1)}m `
-        + `of the ${gain.toFixed(1)} you asked for, and it was flown, not granted`;
+      return refused(`winded at ${target.toFixed(1)}m — the pool only bought ${afford.toFixed(1)}m `
+        + `of the ${gain.toFixed(1)} you asked for, and it was flown, not granted`);
     }
-    return `at ${target.toFixed(1)}m — ${spend.toFixed(0)} stamina spent, ${(this.flight?.stamina ?? 0).toFixed(0)} left`;
+    return done(`at ${target.toFixed(1)}m — ${spend.toFixed(0)} stamina spent, ${(this.flight?.stamina ?? 0).toFixed(0)} left`);
   }
 
   /** land_at (x,z). Descend, arrive, and hand the body back to walking. */
-  async landAt(x: number, z: number): Promise<string> {
+  async landAt(x: number, z: number): Promise<ActResult> {
     await this.loadBodyBones();
     const cap = this.flightAllowed();
-    if (!cap.ok) return `you cannot fly here — ${cap.why}`;
+    if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
-      return "already on the ground";
+      return refused("already on the ground");
     }
-    const r = await this.glideTo(x, z);
+    const r = (await this.glideTo(x, z)).text;
     const f = this.flight;
+    // A cut ends the glide in a fall, not a landing.
+    const cut = f?.phase === "RAGDOLL";
     if (f && f.phase !== "RAGDOLL") {
       // A deliberate landing IS a flare: descend the remaining altitude rather
       // than dropping. This is the one place a landing animation is correct --
@@ -2764,7 +2782,8 @@ export class WorldAgent {
       await this.flightAwait((s) => (s.phase === "LANDED" || s.phase === "GROUND" || s.phase === "RAGDOLL") ? "down" : null, 60_000);
     }
     this.flightEnd();
-    return `${r} — landed at (${this.pos.x.toFixed(1)}, ${this.pos.z.toFixed(1)})`;
+    const where = `${r} — landed at (${this.pos.x.toFixed(1)}, ${this.pos.z.toFixed(1)})`;
+    return cut ? refused(where) : done(where);
   }
 
   /** Hand the body back to ordinary locomotion. */
@@ -3199,14 +3218,14 @@ export class WorldAgent {
    *  already there. `remove` retires a name (null: that also hides one the
    *  model itself declares). `at` may leave out y: the floor there nearest
    *  the body's own height. Answers once the world accepts or refuses it. */
-  namePlace(name: string, opts: { on?: string; label?: string; remove?: boolean; at?: { x: number; z: number; y?: number } } = {}): Promise<string> {
+  namePlace(name: string, opts: { on?: string; label?: string; remove?: boolean; at?: { x: number; z: number; y?: number } } = {}): Promise<ActResult> {
     const run = this.placeEdits.then(() => this.namePlaceNow(name, opts));
     this.placeEdits = run.catch(() => {});
     return run;
   }
 
-  private async namePlaceNow(name: string, opts: { on?: string; label?: string; remove?: boolean; at?: { x: number; z: number; y?: number } }): Promise<string> {
-    if (!/^[A-Za-z0-9_][A-Za-z0-9_ .:'-]{0,47}$/.test(name)) return "a place name is 1-48 letters, digits, spaces, _ . : ' or -, starting with a letter, digit or _";
+  private async namePlaceNow(name: string, opts: { on?: string; label?: string; remove?: boolean; at?: { x: number; z: number; y?: number } }): Promise<ActResult> {
+    if (!/^[A-Za-z0-9_][A-Za-z0-9_ .:'-]{0,47}$/.test(name)) return refused("a place name is 1-48 letters, digits, spaces, _ . : ' or -, starting with a letter, digit or _");
     let w: number[];
     if (opts.at) {
       const { x, z } = opts.at;
@@ -3217,7 +3236,7 @@ export class WorldAgent {
     let e: Entity | undefined;
     if (opts.on) {
       e = [...this.entities.values()].find((x) => x.id.toLowerCase() === opts.on!.toLowerCase());
-      if (e && (!e.lib || e.lib === "(light)")) return `[${e.id}] is a light — places hang on placed things (a model), not lights`;
+      if (e && (!e.lib || e.lib === "(light)")) return refused(`[${e.id}] is a light — places hang on placed things (a model), not lights`);
     } else {
       e = this.placesAt(w)[0]?.entity;
       if (!e) {
@@ -3231,9 +3250,9 @@ export class WorldAgent {
         }
       }
     }
-    if (!e) return opts.on ? `no thing called "${opts.on}" here` : "no placed thing within 15m to hang the name on — pass on: <thing id>";
+    if (!e) return refused(opts.on ? `no thing called "${opts.on}" here` : "no placed thing within 15m to hang the name on — pass on: <thing id>");
     const h = this.placeHolder(e, now);
-    if (!h) return `where [${e.id}] is right now cannot be worked out, so a spot on it cannot be named — try again when it rests`;
+    if (!h) return refused(`where [${e.id}] is right now cannot be worked out, so a spot on it cannot be named — try again when it rests`);
     const cur = (e.comp?.places && typeof e.comp.places === "object") ? { ...e.comp.places } : {};
     if (opts.remove) {
       // always a hiding entry: whether the model declares the name is not
@@ -3244,18 +3263,19 @@ export class WorldAgent {
       cur[name] = { at: l, ...(opts.label ? { label: opts.label.slice(0, 80) } : {}) };
     }
     const data = JSON.stringify(cur);
-    if (data.length > 8000) return `[${e.id}]'s places would exceed the 8KB component limit — retire some first`;
+    if (data.length > 8000) return refused(`[${e.id}]'s places would exceed the 8KB component limit — retire some first`);
     const t0 = Date.now(), id = e.id;
     this.verb("comp", { id, type: "places", data: cur });
     // the world's answer: our component echoed back, or a refusal
     for (const deadline = t0 + 3000; Date.now() < deadline;) {
-      if (this.lastRefusal && this.lastRefusal.ts >= t0) return `not named — the world refused: ${this.lastRefusal.text}`;
+      if (this.lastRefusal && this.lastRefusal.ts >= t0) return refused(`not named — the world refused: ${this.lastRefusal.text}`);
       if (JSON.stringify(this.entities.get(id)?.comp?.places ?? null) === data) {
-        return opts.remove ? `retired "${name}" on [${id}]` : `named this spot "${name}" on [${id}] — walk_to {to: "${id}/${name}"} reaches it`;
+        return done(opts.remove ? `retired "${name}" on [${id}]` : `named this spot "${name}" on [${id}] — walk_to {to: "${id}/${name}"} reaches it`);
       }
       await new Promise((r) => setTimeout(r, 50));
     }
-    return `sent "${name}" to [${id}], but the world has not confirmed it yet — look will show it once it lands`;
+    // Sent and not refused: whether it landed is for look to show.
+    return done(`sent "${name}" to [${id}], but the world has not confirmed it yet — look will show it once it lands`);
   }
 
   // ---- feet ----------------------------------------------------------------

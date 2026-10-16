@@ -28,7 +28,7 @@ import { rigBonesFor } from "./rigbones.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { rawShapeError } from "./shape.ts";
 import { lightArgsError } from "../server/verb-shapes.ts";
-import type { WorldAgent } from "./agent.ts";
+import type { ActResult, WorldAgent } from "./agent.ts";
 
 /** The slice of WorldAgent the tools touch — typed loosely on purpose: the
  *  agent's surface is the contract, not this file's re-declaration of it. */
@@ -208,11 +208,11 @@ export function toolList({ travel = false }: { travel?: boolean } = {}) {
 export async function snapshotTool(ag: ToolAgent, view = "first") {
   try {
     const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}`);
-    if (!r.ok) return { content: [{ type: "text", text: `no view available: ${(await r.text()).slice(0, 200)}` }] };
+    if (!r.ok) return fail(`no view available: ${(await r.text()).slice(0, 200)}`);
     const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
     return { content: [{ type: "image", data: b64, mimeType: "image/png" }] };
   } catch (e) {
-    return { content: [{ type: "text", text: `snapshot failed: ${(e as Error).message}` }] };
+    return fail(`snapshot failed: ${(e as Error).message}`);
   }
 }
 
@@ -224,10 +224,14 @@ export async function snapshotTool(ag: ToolAgent, view = "first") {
 // "Unknown tool" a caller meets at runtime.
 
 const text = (t: string) => ({ content: [{ type: "text", text: t }] });
+/** A call that didn't do what it was asked: a host shows the result as failed. */
+const fail = (t: string) => ({ content: [{ type: "text", text: t }], isError: true });
+/** An act's answer, failed when the call didn't do what it asked. */
+const act = (r: ActResult) => (r.ok ? text(r.text) : fail(r.text));
 // Refused at dispatch too, not merely hidden: a pilot who learned the name
 // off a bench must not be able to fire the trusted seam here.
 const rehearse = (ag: ToolAgent, a: Record<string, any>, name: string) => {
-  if (!REHEARSAL_ENABLED) return text("no such tool");
+  if (!REHEARSAL_ENABLED) return fail("no such tool");
   return text(name === "rehearse_down"
     ? ag.flightBodyDown(String(a.eventId ?? "rehearsal"))
     : ag.flightBodyRecovered(String(a.eventId ?? "rehearsal"), "gen-rehearsal"));
@@ -238,14 +242,14 @@ type ToolHandler = (ag: WorldAgent, a: Record<string, any>, ctx: ToolCtx, name: 
 
 export const HANDLERS: Record<string, ToolHandler> = {
   // ---- FLIGHT (upstream's flight arc, merged 2026-09-02)
-  take_off: async (ag, a, ctx, name) => text(await ag.takeOff()),
-  climb_to: async (ag, a, ctx, name) => text(await ag.climbTo(Number(a.altitude))),
-  glide_to: async (ag, a, ctx, name) => text(await ag.glideTo(Number(a.x), Number(a.z))),
-  land_at: async (ag, a, ctx, name) => text(await ag.landAt(Number(a.x), Number(a.z))),
+  take_off: async (ag, a, ctx, name) => act(await ag.takeOff()),
+  climb_to: async (ag, a, ctx, name) => act(await ag.climbTo(Number(a.altitude))),
+  glide_to: async (ag, a, ctx, name) => act(await ag.glideTo(Number(a.x), Number(a.z))),
+  land_at: async (ag, a, ctx, name) => act(await ag.landAt(Number(a.x), Number(a.z))),
   rehearse_down: async (ag, a, ctx, name) => rehearse(ag, a, name),
   rehearse_recover: async (ag, a, ctx, name) => rehearse(ag, a, name),
-  fold_wings: async (ag, a, ctx, name) => text(await ag.foldWings(true)),
-  unfold_wings: async (ag, a, ctx, name) => text(await ag.foldWings(false)),
+  fold_wings: async (ag, a, ctx, name) => act(await ag.foldWings(true)),
+  unfold_wings: async (ag, a, ctx, name) => act(await ag.foldWings(false)),
   flight_status: async (ag, a, ctx, name) => text(ag.flightStatus()),
   look: async (ag, a, ctx, name) => { return text(ag.look()); },
   body_state: async (ag, a) => {
@@ -258,7 +262,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const want = String(a.avatar ?? "").trim();
       if (!want) return text(`bodies on the roster: ${roster.map((r) => r.name).join(", ")}`);
       const path = want.includes("/") ? want : roster.find((r) => r.name === want)?.path;
-      if (!path) return text(`no body named "${want}" — roster: ${roster.map((r) => r.name).join(", ")}`);
+      if (!path) return fail(`no body named "${want}" — roster: ${roster.map((r) => r.name).join(", ")}`);
       ag.setAvatar(path);
       ctx.rememberAvatar?.(path);   // the choice outlives this session
       return text(`you are now wearing ${want.includes("/") ? path.split("/").pop() : want}`);
@@ -267,7 +271,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   posture: async (ag, a, ctx, name) => {
       const kind = String(a.kind ?? "");
       const clip = { sit: "sit", sitchair: "sitchair", lie: "lie", stand: "idle" }[kind];
-      if (!clip) return text("posture kinds: sit (on the ground), sitchair (chair height), lie, stand");
+      if (!clip) return fail("posture kinds: sit (on the ground), sitchair (chair height), lie, stand");
       ag.setPosture(clip);
       return text(kind === "stand" ? "you stand up" : `you ${kind === "lie" ? "lie down" : "sit down"} — walking stands you back up`);
 
@@ -290,7 +294,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       }
       const pages = Math.max(1, Math.ceil(items.length / SHEET.perPage));
       const slice = items.slice((page - 1) * SHEET.perPage, page * SHEET.perPage);
-      if (!slice.length) return text(`no page ${page} — ${items.length} ${kind}, ${pages} page${pages === 1 ? "" : "s"}`);
+      if (!slice.length) return fail(`no page ${page} — ${items.length} ${kind}, ${pages} page${pages === 1 ? "" : "s"}`);
       const tiles = await Promise.all(slice.map(async (it) => {
         if (!it.url) return { name: it.name, data: null, mime: "", h: it.h };
         try {
@@ -308,7 +312,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   },
   library_preview: async (ag, a, ctx, name) => {
       const want = String(a.name ?? "").trim();
-      if (!want) return text("pass `name`: a roster avatar name or a model filename/path");
+      if (!want) return fail("pass `name`: a roster avatar name or a model filename/path");
       const tries: string[] = [];
       if (!want.includes("/") && !/\.(glb|jpg)$/i.test(want)) tries.push(`${ag.httpBase}/thumb/${encodeURIComponent(want)}.png`);
       const stem = (want.includes("/") ? want : `eidoverse/assets/models/${want}`).replace(/(_preview\.jpg|\.jpg|\.glb)$/i, "");
@@ -319,7 +323,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
           if (r.ok) return { content: [{ type: "image", data: Buffer.from(await r.arrayBuffer()).toString("base64"), mimeType: r.headers.get("content-type")?.split(";")[0] ?? "image/jpeg" }] };
         } catch { /* next */ }
       }
-      return text(`no preview for "${want}" — avatar portraits appear once a body has been worn; library models ship _preview.jpg files`);
+      return fail(`no preview for "${want}" — avatar portraits appear once a body has been worn; library models ship _preview.jpg files`);
 
   },
   walk_to: async (ag, a, ctx, name) => {
@@ -329,7 +333,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       let near: { reach?: number; above?: number; below?: number; inside?: (x: number, z: number) => boolean } = {};
       if (typeof a.to === "string") {
         const d = ag.destination(a.to);
-        if ("refusal" in d) return text(d.refusal);
+        if ("refusal" in d) return fail(d.refusal);
         ({ x, z } = d); y = d.y; near = { reach: d.reach, above: d.above, below: d.below, inside: d.inside }; label = d.label;
       }
       const tolerance = a.tolerance ?? 0.01;
@@ -340,7 +344,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // This request's own refusal (its plan may wait for geometry still loading).
       const receipt = { refusal: null as string | null };
       const arrived = await ag.walkTo(x, z, Boolean(a.run), 90_000, tolerance, y, near, receipt);
-      if (!arrived) return text(receipt.refusal ?? ag.walkStopReason ?? ag.walkStall ?? "walk interrupted or timed out");
+      if (!arrived) return fail(receipt.refusal ?? ag.walkStopReason ?? ag.walkStall ?? "walk interrupted or timed out");
       const here = ag.placesAt([ag.pos.x, ag.pos.y, ag.pos.z])[0];
       return text(label
         ? `arrived at ${label}: (${ag.pos.x.toFixed(2)}, ${ag.pos.y.toFixed(2)}, ${ag.pos.z.toFixed(2)})${here ? `, in ${here.place.label ?? here.place.name}` : ""}`
@@ -349,15 +353,15 @@ export const HANDLERS: Record<string, ToolHandler> = {
   },
   check_model: async (ag, a) => {
       const e = a.id ? ag.entities.get(String(a.id)) : null;
-      if (a.id && !e) return text(`no thing called "${a.id}" here`);
+      if (a.id && !e) return fail(`no thing called "${a.id}" here`);
       const lib = String(e?.lib ?? a.lib ?? "");
-      if (!lib || lib === "(light)") return text("check_model needs the id of a placed model, or a library path");
+      if (!lib || lib === "(light)") return fail("check_model needs the id of a placed model, or a library path");
       let r: any;
       // a placed thing is checked as placed: at its scale (the body is not scaled)
       const scale = e ? (e.scale && e.scale > 0 ? e.scale : 1) : (typeof a.scale === "number" && a.scale > 0 ? a.scale : 1);
       try { r = await (await fetch(`${ag.httpBase}/check?lib=${encodeURIComponent(lib)}${scale !== 1 ? `&scale=${scale}` : ""}`)).json(); }
-      catch (err) { return text(`the check could not be reached: ${String((err as Error)?.message ?? err)}`); }
-      if (r.error) return text(`couldn't check ${lib}: ${r.error}`);
+      catch (err) { return fail(`the check could not be reached: ${String((err as Error)?.message ?? err)}`); }
+      if (r.error) return fail(`couldn't check ${lib}: ${r.error}`);
       return text(describeCheck(`${e ? `[${e.id}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`, r, e ? ag.placesOn(e).length : 0, e?.id, e?.collide));
   },
   name_place: async (ag, a) => {
@@ -369,15 +373,15 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (a.y != null && !(typeof a.y === "number" && Number.isFinite(a.y)))
         return { content: [{ type: "text", text: "name_place's y, when given, must be a finite height in metres" }], isError: true };
       const at = given ? { x: a.x as number, z: a.z as number, y: a.y as number | undefined } : undefined;
-      return text(await ag.namePlace(String(a.name ?? ""), { on: a.on, label: a.label, remove: a.remove === true, at }));
+      return act(await ag.namePlace(String(a.name ?? ""), { on: a.on, label: a.label, remove: a.remove === true, at }));
   },
   face: async (ag, a, ctx, name) => {
       if (a.target) {
         const p = ag.people.get(a.target)?.pose?.p ?? ag.entities.get(a.target)?.pos;
-        if (!p) return text(`no such target: ${a.target}`);
+        if (!p) return fail(`no such target: ${a.target}`);
         ag.face(p[0], p[2]);
       } else if (a.x != null && a.z != null) ag.face(Number(a.x), Number(a.z));
-      else return text("pass x+z or target");
+      else return fail("pass x+z or target");
       return text("facing");
 
   },
@@ -385,7 +389,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   emote: async (ag, a, ctx) => {
       const name = String(a.name ?? "");
       if (!["wave", "cheer", "dance", "point", "salute", "clap", "talk", "flail"].includes(name))
-        return text("emotes: wave, cheer, dance, point, salute, clap, talk, flail — or invent one with animate");
+        return fail("emotes: wave, cheer, dance, point, salute, clap, talk, flail — or invent one with animate");
       ag.emote(name);
       return text(`you ${name === "wave" ? "wave" : `play "${name}"`} — everyone sees it`);
   },
@@ -450,7 +454,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   whisper: async (ag, a, ctx, name) => {
-      if (!WHISPERS_ENABLED) return text("whispers are disabled in this world");
+      if (!WHISPERS_ENABLED) return fail("whispers are disabled in this world");
       ag.whisper(String(a.to), String(a.text).slice(0, 4000));
       return text(`whispered to ${a.to}`);
 
@@ -467,7 +471,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const avatar = target ? ag.people.get(target)?.avatar : ag.avatar;
       const rig = avatar ? await rigBonesFor(ag.httpBase, avatar) : null;
       if (a.bones == null) {
-        if (!rig) return text(`can't read ${target ? `${target}'s` : "your"} rig to list its bones. Humanoid names always work: ${HUMANOID_BONES.join(", ")}.`);
+        if (!rig) return fail(`can't read ${target ? `${target}'s` : "your"} rig to list its bones. Humanoid names always work: ${HUMANOID_BONES.join(", ")}.`);
         const humanoid = Object.entries(rig.humanoidOf).map(([raw, vrm]) => vrm === raw ? vrm : `${vrm} (${raw})`);
         const other = rig.bones.filter((b) => !rig.humanoidOf[b] && !rig.aboveHips.includes(b));
         return text(`${target ? `${target}'s` : "your"} rig — humanoid bones (by VRM name): ${humanoid.join(", ")}.`
@@ -478,7 +482,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const note = poseReport(v);
       const replace = !!a.replace;
       if (!v.accepted.length && !(v.released.length && !replace)) {
-        return text(`no pose set — nothing usable in \`bones\`.${note ? ` ${note}.` : ""}`
+        return fail(`no pose set — nothing usable in \`bones\`.${note ? ` ${note}.` : ""}`
           + " Want a sparse map of bone name to [x,y,z,w] or {q, t, s}, e.g."
           + ' {"leftUpperArm": [0, 0, -0.9, 0.44], "hips": {"t": [0, -0.4, 0]}}. Call pose with no bones to list your rig\'s.');
       }
@@ -514,13 +518,13 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const hasName = a.who != null || a.point != null;
       const hasXYZ = typeof a.x === "number" && typeof a.y === "number" && typeof a.z === "number";
       if (!hasName && !hasXYZ) {
-        return text("reach needs a target: either `point` (a contact point on a body; add `who` for someone else's) or `x`,`y`,`z` (with optional `space`: 'world' default, 'self', or a participant id).");
+        return fail("reach needs a target: either `point` (a contact point on a body; add `who` for someone else's) or `x`,`y`,`z` (with optional `space`: 'world' default, 'self', or a participant id).");
       }
       let target: Record<string, unknown>;
       if (hasName) {
-        if (a.point == null) return text("reaching for someone needs `point` too — which contact point on them: " + Object.keys(CONTACT_POINTS).join(", "));
+        if (a.point == null) return fail("reaching for someone needs `point` too — which contact point on them: " + Object.keys(CONTACT_POINTS).join(", "));
         const pt = canonicalPoint(String(a.point));
-        if (!pt) return text(`unknown contact point "${a.point}" — one of: ${Object.keys(CONTACT_POINTS).join(", ")}`);
+        if (!pt) return fail(`unknown contact point "${a.point}" — one of: ${Object.keys(CONTACT_POINTS).join(", ")}`);
         target = { who: String(a.who ?? ag.name), point: pt, ...(typeof a.standoff === "number" ? { standoff: a.standoff } : {}) };
       } else {
         target = { p: [a.x, a.y, a.z], ...(typeof a.space === "string" ? { space: a.space } : {}) };
@@ -535,7 +539,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   ragdoll: async (ag, a, ctx, name) => {
-      if (!a.target) return text("ragdoll needs a `target` — the body that falls simulates it");
+      if (!a.target) return fail("ragdoll needs a `target` — the body that falls simulates it");
       // the shove is directed: from where THIS body stands, through the
       // target — the same line a browser /push uses. No known position for
       // them = an undirected knock-over, the old wire.
@@ -559,12 +563,12 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const v = validateTracks(a.tracks);
       const note = poseReport(v);
       if (!v.accepted.length) {
-        return text(`nothing played — no usable tracks.${note ? ` ${note}.` : ""}`
+        return fail(`nothing played — no usable tracks.${note ? ` ${note}.` : ""}`
           + ' Want bone -> keyframes, e.g. {"leftUpperArm": [{"t": 0, "q": [0,0,0,1]},'
           + ' {"t": 0.5, "q": [0,0,-0.7,0.7]}]}.');
       }
       const dur = Number(a.dur);
-      if (!Number.isFinite(dur) || dur <= 0) return text("pass `dur`: the length in seconds, greater than 0");
+      if (!Number.isFinite(dur) || dur <= 0) return fail("pass `dur`: the length in seconds, greater than 0");
       const span = tracksSpan(v.tracks);
       const cut = span > dur ? ` — note dur ${dur}s cuts keyframes that run to ${span}s` : "";
       const spec = { dur, loop: !!a.loop, tracks: v.tracks, replace: !!a.replace };
@@ -623,7 +627,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   },
   spawn: async (ag, a, ctx, name) => {
       const lib = a.lib ?? (a.query ? (await searchLibrary(ag.httpBase, String(a.query)))[0]?.path : undefined);
-      if (!lib) return text("no model — pass lib or query");
+      if (!lib) return fail("no model — pass lib or query");
       const x = a.x ?? ag.pos.x + Math.sin(ag.yaw) * 2;
       const z = a.z ?? ag.pos.z + Math.cos(ag.yaw) * 2;
       const id = a.id ?? crypto.randomUUID().slice(0, 8);
@@ -632,7 +636,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   place: async (ag, a, ctx, name) => {
-      if (!ag.entities.has(a.id)) return text(`no entity ${a.id}`);
+      if (!ag.entities.has(a.id)) return fail(`no entity ${a.id}`);
       ag.verb("place", { id: a.id, pos: [a.x, a.y ?? ag.heightAt(a.x, a.z), a.z], ...(a.yaw != null ? { yaw: a.yaw } : {}) });
       return text(`placed ${a.id}`);
 
@@ -736,12 +740,12 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const q = a.id
         ? `world=${encodeURIComponent(ag.world)}&id=${encodeURIComponent(String(a.id))}`
         : a.lib ? `lib=${encodeURIComponent(String(a.lib))}` : null;
-      if (!q) return text("measure wants {id} (a placed thing) or {lib} (a library model)");
+      if (!q) return fail("measure wants {id} (a placed thing) or {lib} (a library model)");
       let d: any;
-      try { d = await (await fetch(`${base}/geom?${q}`)).json(); } catch (e) { return text(`measure failed: ${String(e)}`); }
-      if (d.error) return text(`measure: ${d.error}`);
+      try { d = await (await fetch(`${base}/geom?${q}`)).json(); } catch (e) { return fail(`measure failed: ${String(e)}`); }
+      if (d.error) return fail(`measure: ${d.error}`);
       const g = d.geometry ?? d;
-      if (!g?.bbox) return text("no geometry available for that (parsing offline, or a light)");
+      if (!g?.bbox) return fail("no geometry available for that (parsing offline, or a light)");
       const L: string[] = [];
       const s = g.bbox.size;
       L.push(`${a.id ? `[${d.id}] ${d.lib ?? ""}` : d.lib} — ${s[0]}×${s[1]}×${s[2]}m, ${g.tris} tris${g.sampled ? " (sampled)" : ""}`);
@@ -793,12 +797,14 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // Moderation deserves a real answer, not fire-and-forget: wait for
       // the world's echo (success) or refusal and hand THAT back.
       const id = String(a.id ?? "").trim();
-      if (!id) return text(`${name} needs an id — who, exactly?`);
+      if (!id) return fail(`${name} needs an id — who, exactly?`);
       const reason = a.reason != null ? String(a.reason) : undefined;
       const t0 = Date.now();
       if (a.global && name !== "kick") ag.sendMod(name === "ban" ? "global-ban" : "global-unban", { id, ...(reason ? { reason } : {}) });
       else ag.verb(name, { id, ...(reason ? { reason } : {}) });
       const answer = await ag.modOutcome(t0);
+      // A refusal is the world's no; no echo yet is sent, not refused.
+      if (answer?.startsWith("refused: ")) return fail(answer);
       return text(answer ?? `sent ${name} ${id}${a.global ? " (global)" : ""} — no echo from the world yet; check look()`);
 
   },
@@ -808,7 +814,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const t0 = Date.now();
       ag.sendMod(a.global ? "global-bans" : "world-bans");
       const answer = await ag.modOutcome(t0);
-      return text(answer ?? "no reply from the world (timeout)");
+      if (answer == null || answer.startsWith("refused: ")) return fail(answer ?? "no reply from the world (timeout)");
+      return text(answer);
 
   },
 };
