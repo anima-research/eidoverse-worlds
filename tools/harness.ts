@@ -261,8 +261,8 @@ export async function scratchBench(name: string, opts: ScratchOptions & { headed
   return { ...run, cleanup, browser, cws, cdp, evalJson, cspViolations };
 }
 
-/** The pre-v4 authoring words a test written against main used on an agent (`a.verb("spawn", …)`), as the authority
- *  requests protocol v4 speaks (every world write is a door request; the agent has no raw verbs). Merging the stack
+/** The old authoring words a test written against main used on an agent (`a.verb("spawn", …)`), as the authority
+ *  requests the protocol speaks (every world write is a door request; the agent has no raw verbs). Merging the stack
  *  (#235/#236/#239/#241, 10-15) brought tests in that author their scenes this way; this keeps their scenes as they
  *  wrote them. spawn's scale and collide become the transform's scale and the collider component; comp is a set;
  *  mount of the agent itself is the attach tool's path (presence), of a thing a parent set; light is a light thing. */
@@ -280,6 +280,6 @@ export async function legacyVerb(a: any, v: string, x: any): Promise<any> {
       if (x.id === a.name) { const { handleTool } = await import("../mcpl/tools.ts"); return handleTool({ agent: a } as any, "attach", { to: x.to, ...(x.slot ? { socket: x.slot } : {}) }); }
       return a.request("set", { id: x.id, component: "parent", value: { to: x.to } });
     }
-    default: throw new Error(`legacyVerb: no v4 request for '${v}'`);
+    default: throw new Error(`legacyVerb: no protocol request for '${v}'`);
   }
 }

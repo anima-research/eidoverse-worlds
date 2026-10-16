@@ -11,7 +11,7 @@ import { TOOL_ALIAS_ARGS } from "./tools.ts";
 for (const old of Object.keys(TOOL_ALIASES)) ok(typeof TOOL_ALIAS_ARGS[old] === "function", `${old} has an argument translation`);
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, z: 2, run: true, tolerance: 0.2 })) === JSON.stringify({ to: [1, 2], run: true, tolerance: 0.2 }), "walk_to {x, z, run, tolerance} → move {to: [x, z], run, tolerance}");
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, z: 2 })) === JSON.stringify({ to: [1, 2] }), "walk_to {x, z} alone → move {to}");
-// the stack's walk_to (#236 y, #239 to: a name) reaches move with its words intact (merge into v4, 10-15)
+// the stack's walk_to (#236 y, #239 to: a name) reaches move with its words intact (the protocol merge, 10-15)
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ to: "lookout/balcony", run: true })) === JSON.stringify({ to: "lookout/balcony", run: true }), "walk_to {to: \"thing/place\"} → move {to: \"thing/place\"} (a name passes through untouched)");
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ to: "?" })) === JSON.stringify({ to: "?" }), "walk_to {to: \"?\"} → move {to: \"?\"} (the list of places)");
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, y: 3.3, z: 2, tolerance: 0.1 })) === JSON.stringify({ to: [1, 3.3, 2], tolerance: 0.1 }), "walk_to {x, y, z} → move {to: [x, y, z]} (y picks the floor)");

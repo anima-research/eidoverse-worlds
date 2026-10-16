@@ -92,13 +92,15 @@ console.log("\nmodel downloads, governed:");
 }
 
 console.log("\nan agent in a two-storey building (isolated sequencer):");
-const h = await scratchSequencer("agent-mesh-collision", { serverEnv: { SKIP_OPT_SWEEP: "1" }, portFrom: 9420 });
+const h = await scratchSequencer("agent-mesh-collision", { serverEnv: { SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1" }, worlds: ["meshcollide", "meshcollide-empty"], owner: "walker", portFrom: 9420 });
 const { WorldAgent } = await import("../mcpl/agent.ts");
 const URL_ = h.BASE.replace("http", "ws") + "/ws";
 let a: any = new WorldAgent({ name: "walker", world: "meshcollide", url: URL_ });
 const near = (v: number, want: number, tol = 0.03) => Math.abs(v - want) <= tol;
 try {
   await a.connect();
+  // the protocol: a founded world has bounds (±20 m); the test ground is at x 19–21
+  await a.request("set", { id: "@world", component: "bounds", value: { min: [-100, -20, -100], max: [100, 60, 100] } });
   const up = await fetch(`${h.BASE}/upload?name=two-storey`, { method: "POST", body: await buildGlb(boxes) });
   const { path } = await up.json() as { path: string };
   // the building sits on the ground under its own origin, wherever that is
@@ -203,7 +205,10 @@ try {
       for (let i = 0; i < 40 && !a.entities.get("wall"); i++) await sleep(25);
       const crossed = await walk(21, 10);
       check("a pen spawned just now, its shape still downloading: a walk into it waits for it, then is refused — never passes through its wall",
-        !crossed && a.pos.x > 19 - 0.15 && a.pos.x < 19.9 && delayed > 0, `ended at x ${a.pos.x.toFixed(2)}, ${delayed} delayed fetch(es), ${a.walkStall ?? a.walkRefusal}`);
+        // (the protocol merge: the authority walks this body too, and its own solids stop a walk at the pen's wall either
+        // way — so the walk must be refused by its PLAN, before a step, from the pen's fitted shape: the barrier's work)
+        !crossed && a.pos.x > 19 - 0.15 && a.pos.x < 19.9 && delayed > 0 && /no walkable way|nowhere to stand|still loading/.test(a.walkRefusal ?? "") && !a.lastWalkRefusal,
+        `ended at x ${a.pos.x.toFixed(2)}, ${delayed} delayed fetch(es), plan: ${a.walkRefusal}, authority: ${JSON.stringify(a.lastWalkRefusal)}`);
 
       // a cold join: a body that left beside the wall comes back, and its
       // first walk is through the wall while the wall's shape is downloading
@@ -216,7 +221,8 @@ try {
       const pending = a.supportPending.size, from = a.pos.x;
       const back = await walk(21, 10);
       check("rejoining beside it and walking into it at once: refused too",
-        Math.abs(from - 19.3) < 0.7 && !back && a.pos.x < 19.9 && delayed > 0, `ended at x ${a.pos.x.toFixed(2)}, ${pending} syncs pending at the first walk, ${delayed} delayed`);
+        Math.abs(from - 19.3) < 0.7 && !back && a.pos.x < 19.9 && delayed > 0 && /no walkable way|nowhere to stand|still loading/.test(a.walkRefusal ?? "") && !a.lastWalkRefusal,
+        `ended at x ${a.pos.x.toFixed(2)}, ${pending} syncs pending at the first walk, ${delayed} delayed, plan: ${a.walkRefusal}, authority: ${JSON.stringify(a.lastWalkRefusal)}`);
     } finally { globalThis.fetch = realFetch; }
   }
 } finally {

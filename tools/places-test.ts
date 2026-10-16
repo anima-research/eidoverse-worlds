@@ -47,7 +47,7 @@ console.log("a model's own places survive the server's compressed copy:");
     `${JSON.stringify(viaOpt)?.slice(0, 120)} (${src.length} → ${opt.length} bytes)`);
 }
 
-const h = await scratchSequencer("places", { serverEnv: { SKIP_OPT_SWEEP: "1" }, portFrom: 9500 });
+const h = await scratchSequencer("places", { serverEnv: { SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1" }, worlds: ["places"], owner: "visitor", portFrom: 9500 });
 const { WorldAgent } = await import("../mcpl/agent.ts");
 const { handleTool } = await import("../mcpl/tools.ts");
 const URL_ = h.BASE.replace("http", "ws") + "/ws";
@@ -62,6 +62,8 @@ const near = (v: number, want: number, tol = 0.05) => Math.abs(v - want) <= tol;
 const at = () => `(${a.pos.x.toFixed(2)}, ${a.pos.y.toFixed(2)}, ${a.pos.z.toFixed(2)})`;
 try {
   await a.connect(); await friend.connect();
+  // the protocol: a founded world has bounds (±20 m); this test walks to x 50
+  await a.request("set", { id: "@world", component: "bounds", value: { min: [-100, -20, -100], max: [100, 60, 100] } });
   const upload = async (name: string, glb: Uint8Array) =>
     ((await (await fetch(`${h.BASE}/upload?name=${name}`, { method: "POST", body: glb })).json()) as { path: string }).path;
   const lib = await upload("tower", await buildGlb(boxes, { building }));
@@ -74,7 +76,7 @@ try {
 
   await a.walkTo(0, 7, true);
   const seen = await tool("look", {});
-  // v4 merge (owner 22:40/22:43): look lists the places this body can SEE (line of sight, ≤ 30 m, nearest 12, with
+  // protocol merge (owner 22:40/22:43): look lists the places this body can SEE (line of sight, ≤ 30 m, nearest 12, with
   // distance and floor), each from the model's own description; move {to: "?"} lists every one, seen or not
   const sightLine = seen.split("\n").find((l) => l.startsWith("Places you can see")) ?? "(no places line)";
   check("look lists the places in sight, from the model's own description, with distance and floor",
@@ -170,7 +172,10 @@ try {
 
   // a long room whose middle is full: reached at the clear floor it has
   const ry = a.heightAt(50, -20);
-  const rug = await upload("rug", await buildGlb([[-6, 0, -1.5, 6, 0.05, 1.5], [-1.5, 0.05, -1.5, 1.5, 1.05, 1.5]]));
+  // protocol merge: the furniture in its middle is 2.2 m tall (it was 1 m), so the model is tall enough for the authority to
+  // measure its solid parts (server/solids.ts: under 2 m a model's one box is solid, and a body on the floor at 0.05 m
+  // would be inside it); the room's floor and its furnished middle are the same as before
+  const rug = await upload("rug", await buildGlb([[-6, 0, -1.5, 6, 0.05, 1.5], [-1.5, 0.05, -1.5, 1.5, 2.2, 1.5]]));
   await legacyVerb(a, "spawn", { id: "rug", lib: rug, pos: [50, ry, -20], yaw: 0, collide: "exact" });
   await legacyVerb(a, "comp", { id: "rug", type: "places", data: {
     long_room: { min: [-6, 0.05, -1.5], max: [6, 3, 1.5], label: "the long room" },

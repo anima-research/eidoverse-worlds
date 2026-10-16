@@ -74,4 +74,3 @@ export async function buildGlb(list: Box[], { draco = false, lift = 0, shift = 0
     "draco3d.decoder": await draco3d.createDecoderModule(), "draco3d.encoder": await draco3d.createEncoderModule() });
   return io.writeBinary(doc);
 }
-
