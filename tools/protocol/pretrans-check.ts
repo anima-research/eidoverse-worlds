@@ -174,6 +174,13 @@ await C("K5", "create-world takes the founder's own key for tier 0 (ownerKey); w
 await C("K6", "the import README documents the Commons ceremony: key made on the founder's machine, checked, then translated", () => {
   const t = read("tools/protocol/import-v1/README.md"); const need = ["owner-key", "--founder-key", "openssl", "custody.json", "antra"]; return [need.every((n) => t.includes(n)), need.filter((n) => !t.includes(n))]; });
 
+await C("K7", "no account subject is written (PROTOCOL §9.2): without a mapper the translation's roles:janus has no sub and the imported grant act's args don't either; the door refuses roles {sub}", () => {
+  const r = TV1.translate(v1commons(), { founder: FOUNDER }); const w = r.final.translated["@world"];
+  const acts = r.out.filter((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "grant");
+  const W = world(); const sub = W.call("set", { id: "@world", component: "roles:vic", value: { role: "visitor", sub: "human:discord:9" } });
+  return [w[`roles:${TV1.enc("janus")}`]?.role === "owner" && !("sub" in w[`roles:${TV1.enc("janus")}`]) && acts.length >= 4 && !JSON.stringify(acts).includes("human:discord") && !sub.ok && sub.refused.code === "schema"
+    && /@12$/.test(TV1.TRANSLATOR) && /@12$/.test(TV1.TRANSLATOR_SIM), [w[`roles:${TV1.enc("janus")}`], acts.map((a: any) => a.body.args), sub.refused, TV1.TRANSLATOR]]; });
+
 // ---- N: names (H1, M7) ----
 const mk = (W: any, id = "box") => { const r = W.call("create", { id, model: "crate" }); if (!r.ok) throw new Error(why(r)); return id; };
 await C("N1", "an unregistered bare name is refused: bare names are the registry's; the fix shows the namespaced form", () => {

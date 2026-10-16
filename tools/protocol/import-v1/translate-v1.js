@@ -89,7 +89,11 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@9";
+export const TRANSLATOR = "eidoverse/translate-v1@12";
+// @12 (2026-10-16, the shape audit's wave 1): no account subject (`sub`) is ever written, mapper or not (PROTOCOL §9.2: no
+// person data in values): roles:<id> and imported-bans:<id> lose it, and an imported act's raw v1 args lose it too when no
+// identity mapper is given (with one, it becomes the person's id, as before). A dialect-3 epoch her sim refused is carried
+// as imported:epoch (was the imported-epoch component). Both names (with and without her sim) move to @12.
 // @10 (2026-10-08): a dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) is translated with her sim run beside the
 // v1 fold (what translate-d3 did on its own, now on this one path with its identities, content addresses, founder key and
 // namespace): a punt is a logged launch with its exact stamped state, every rest a logged result the authority's sim layer
@@ -101,7 +105,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@9";
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@11";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@12";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -176,7 +180,7 @@ function rideOf(st, e) {
 const PARENT_POSE = new Set(["offset", "yaw", "q"]);
 // who(name, {sub}) → the v4 identity for a v1 person (round-2 review R1): the server passes the authority directory's
 // mapping, so actors and role/ban keys become opaque ids and the account (`sub`) leaves the log for the directory.
-// Without one (the pure tests, the sweep), names are escaped as before and `sub` stays in the value.
+// Without one (the pure tests, the sweep), names are escaped as before; `sub` never stays in a value (@12).
 // v1's own system actors (v1 vocabulary: the v1 server wrote "door"); in v4 the authority's own acts are actor `system`
 const SYSTEM = new Set(["door", "world", "sim"]);
 /** a v1 actor name → the v4 actor, by grammar only (no directory): v1's "door" is v4's `system`, anything else enc() */
@@ -202,7 +206,7 @@ function namespaceUnknown(c, ns) {
 export function project(st, seen = null, who = null, ns = NAMESPACE, content = null) {
   const out = {};
   const person = (k, v) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? asSub(k) }) : enc(k));
-  const unsub = (v) => { if (!who || !v || typeof v !== "object" || !("sub" in v)) return v; const { sub, ...rest } = v; return rest; };
+  const unsub = (v) => { if (!v || typeof v !== "object" || Array.isArray(v) || !("sub" in v)) return v; const { sub, ...rest } = v; return rest; };   // @12: always
   for (const [id, e] of Object.entries(st.entities ?? {})) {
     const c = {};
     const t = { pos: e.pos ?? [0, 0, 0], q: Array.isArray(e.q) ? e.q : yawQ(e.yaw ?? 0), scale: typeof e.scale === "number" ? [e.scale, e.scale, e.scale] : (e.scale ?? [1, 1, 1]) };
@@ -325,8 +329,11 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   push({ kind: "genesis", actor: "system", verb: "genesis", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}), ...(founder ? { founder } : {}) }) });
   const physics = hasEpoch(oldEntries);
   push({ kind: "act", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero({ ...genesis, translator: physics ? TRANSLATOR_SIM : TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }) } });
-  // an old request as sent keeps its words, but never an account (a grant's sub): that becomes the person's id (R1)
-  const noAcct = (a) => (who && a && typeof a === "object" && typeof a.sub === "string" ? { ...a, sub: who(typeof a.id === "string" ? a.id : a.sub, { sub: a.sub }) } : a);
+  // an old request as sent keeps its words, but never an account (a grant's sub): with a mapper it becomes the person's id
+  // (R1); without one it is dropped (@12), so the imported act never re-leaks what the roles value no longer holds
+  const noAcct = (a) => { if (!a || typeof a !== "object" || Array.isArray(a) || !("sub" in a)) return a;
+    if (who && typeof a.sub === "string") return { ...a, sub: who(typeof a.id === "string" ? a.id : a.sub, { sub: a.sub }) };
+    const { sub, ...rest } = a; return rest; };
   const actorFor = (a) => (who && !SYSTEM.has(a ?? "door") ? who(String(a), {}) : actorOf(a ?? "door"));
   // ---- dialect 3 (@10): her sim beside the v1 fold. Inert until an epoch: simEntry ignores everything before one, and
   // physical() returns project() as it is, so a log without one translates exactly as @9 did.
