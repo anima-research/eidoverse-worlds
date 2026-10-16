@@ -89,7 +89,8 @@ const TOOL_ROWS = [
   { name: "body_state", description: "Perceive your body or another present participant (who; omitted or 'self' means you). Default summary reports posture, wings, position, held poses/reaches and freshness; for yourself it also carries flight: where the sky has left you (altitude, heading, airspeed, stamina, how far your best glide reaches, which layer is flying) — or that you are on the ground. detail:'bones' adds published quaternions and derived world joint positions; 'contacts' adds named world-space contact points, outward normals, self-relative positions and ready-to-use reach targets; 'all' includes both. Optional window_ms (0–5000) measures reconstructed joint motion and endpoint residuals over a short window; a snapshot alone does not measure stability. Optional points filters contacts, e.g. ['chest_front','hand_l','hand_r']. Geometry evaluates the shared VRMA posture clips, published bone rotations and dependent limb reaches. Missing clips or unresolved/cyclic reach dependencies return incomplete geometry. Contacts are bone-bound anatomical estimates; full renderer blending, emotes and springbones are not reproduced. Reading never moves or touches anyone. Use returned reachTarget with reach to track a named point; use selfPosition to plan offsets around your own body.", inputSchema: { type: "object", properties: { who: { type: "string" }, detail: { type: "string", enum: ["summary", "bones", "contacts", "all"] }, points: { type: "array", items: { type: "string" }, maxItems: Object.keys(CONTACT_POINTS).length }, window_ms: { type: "integer", minimum: 0, maximum: 5000 } } } },
   { name: "look", description: "Text-tier perception: where you are, who's present and what they're doing, every placed thing with distance/bearing, and chat since you last looked.", inputSchema: { type: "object", properties: {} } },
   { name: "screenshot", description: "A rendered image from the world (spectator browser on a GPU host). Slower than look — use when spatial/visual detail matters. view: 'first' (default) is your avatar's eyes — you are not in frame; 'third' is an over-the-shoulder chase view — your body and what's ahead of it; 'selfie' faces you from in front — your avatar, framed. at: a placed thing's id frames THAT thing instead — seen from where you stand, fitted to its bounds (to check what you built without walking to it).", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] }, at: { type: "string", description: "id of a placed thing to frame (overrides view)" } } } },
-  { name: "move", description: "Move your body somewhere. to is a point ([x, y, z], y the floor you stand on, usually 0; [x, z] is read as standing on the ground) or a NAME: a placed thing's id or label (you walk up to it and stop beside it), a person here (you stop in front of them), or a named place the world declares (@world places, or a thing's places component — pending the upstream places PRs). mode: \"walk\" (default; run: true runs): the authority's move {to} — your body is the authority's body: it walks there in steps the authority accepts (about 6 m/s, not through what it calls solid), so a wall stops you where it stands and the reply is an error saying why; griddled structures route through their doors and arches (horizontal centerline routing with a 0.5m feet-to-step band, not full-body clearance or mesh navigation), and a sealed, oversized or conflicting route is refused before a step, with the reason; after a flight, a seat or a drag it re-arrives you where you are (a teleport, on the record). Things you hold come with you. Default arrival tolerance is 0.01m, so short positioning moves are honored; tolerance (0–0.4 metres) changes how close to the requested point counts as arrived (destination accuracy, not distance from another body). mode: \"fly\" (behind the world's fly grant and a winged rig): with nothing else, you take off (refused with folded wings — pose {wings: \"open\"} — or a limp body; the launch costs stamina); altitude climbs to that many metres (THE expensive verb: 1 stamina per metre, refilled only on the ground at 0.5/s; an empty pool stops you where it ran out and the world hears 'winded'); to glides there, free, trading altitude for distance on the published polar — short of range you land SHORT, honestly, where the polar runs out, and the reply says by how much. Landing is act {verb: \"land\", args: {to}}; body_state reports altitude, heading, airspeed and stamina. READ THE REPLY: it is your only feedback on where you are.", inputSchema: { type: "object", properties: { to: { anyOf: [{ type: "array", items: { type: "number" }, minItems: 2, maxItems: 3 }, { type: "string", description: "a thing's id or label, a person's name, or a named place" }] }, mode: { type: "string", enum: ["walk", "fly"] }, altitude: { type: "number", description: "fly: climb to this many metres" }, run: { type: "boolean" }, tolerance: { type: "number", minimum: 0, maximum: 0.4 } } } },
+  { name: "move", description: "Move your body somewhere. to is a point ([x, y, z]: y picks the floor there — the place to stand nearest that height, no more than a step (the mover's, 0.8 m) above it, so 0 is a ground floor and an upper storey's floor height is that storey; a y no floor matches arrives on the nearest floor and the reply says which; [x, z]: your own storey if the destination has one, else its lowest floor) or a NAME: a placed thing's id or label (you walk up to it and stop beside it), a person here (you stop in front of them), or a named place: \"thing/place\" (e.g. \"lookout/balcony\"), a place's name or label alone (\"reading room\": the nearest one), a thing alone (its entrance or door, when it names one; else you stop beside it), or a place on @world. Places are a model's own (its file's rooms, doors, seats, arrivals) and its places component (name_place writes it); look lists the nearest, and to: \"?\" lists them all (no move). mode: \"walk\" (default; run: true runs): the authority's move {to} — your body is the authority's body: it walks there in steps the authority accepts (about 6 m/s, not through what it calls solid), so a wall stops you where it stands and the reply is an error saying why; placed models are solid, as they are to people: you stand on their floors, climb their stairs and are stopped by their walls and furniture — and the walk routes through them (round furniture, through doorways, up and down stairs, onto other storeys); griddled structures route through their doors and arches; a destination with nowhere to stand, or no way there (sealed, oversized, conflicting), is refused before a step, with the reason, and a walk something unexpected stops ends early and says where; after a flight, a seat or a drag it re-arrives you where you are (a teleport, on the record). Things you hold come with you. Default arrival tolerance is 0.01m, so short positioning moves are honored; tolerance (0–0.4 metres) changes how close to the requested point counts as arrived (destination accuracy, not distance from another body). mode: \"fly\" (behind the world's fly grant and a winged rig): with nothing else, you take off (refused with folded wings — pose {wings: \"open\"} — or a limp body; the launch costs stamina); altitude climbs to that many metres (THE expensive verb: 1 stamina per metre, refilled only on the ground at 0.5/s; an empty pool stops you where it ran out and the world hears 'winded'); to glides there, free, trading altitude for distance on the published polar — short of range you land SHORT, honestly, where the polar runs out, and the reply says by how much. Landing is act {verb: \"land\", args: {to}}; body_state reports altitude, heading, airspeed and stamina. READ THE REPLY: it is your only feedback on where you are.", inputSchema: { type: "object", properties: { to: { anyOf: [{ type: "array", items: { type: "number" }, minItems: 2, maxItems: 3 }, { type: "string", description: "a named place (\"thing/place\", a place's name or label), a thing's id or label, a person's name, or \"?\" for the list of named places" }] }, mode: { type: "string", enum: ["walk", "fly"] }, altitude: { type: "number", description: "fly: climb to this many metres" }, run: { type: "boolean" }, tolerance: { type: "number", minimum: 0, maximum: 0.4 } } } },
+  { name: "name_place", description: "Give a spot a name, so you and everyone else can move {to} it by name. Names where you stand (or x/z, with y optional: the floor there nearest your height), on the thing you are in or the nearest placed thing (or `on`), in that thing's own frame — it moves with it. Written to the thing's `places` component as an ordinary set through the authority (builder rights, undo; answers once the world accepts or refuses it): a name can be added, re-pointed or retired any time, and covers places the model itself declares. remove: true retires a name.", inputSchema: { type: "object", properties: { name: { type: "string" }, label: { type: "string", description: "how it reads, e.g. \"the window seat\"" }, on: { type: "string", description: "the thing's id; default: the thing you are in, else the nearest within 15m" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, remove: { type: "boolean" } }, required: ["name"] } },
   { name: "face", description: "Turn to face a point (x,z) or a participant/entity id (target).", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, target: { type: "string" } } } },
   { name: "stop", description: "Stop walking.", inputSchema: { type: "object", properties: {} } },
   { name: "say", description: "Say something in world chat (bubble over your head, persisted). Equivalent to publishing on the world channel. Optional spoken-say trio (spoken+utt, t0 optional): display/continuation metadata marking this say as voice-performed by your live voice leg — it does NOT prove performance (the authenticated attest/performed receipt path is the only performance truth). The trio travels together or the server refuses loudly.", inputSchema: { type: "object", properties: { text: { type: "string" }, to: { type: "string", description: "a participant id or name: the say is addressed to them (the client sends this too; it is logged)" }, spoken: { type: "boolean", description: "true = a live voice leg is performing this say (display metadata only)" }, utt: { type: "integer", minimum: 0, description: "utterance counter: author-controlled display/continuation metadata (does NOT prove performance)" }, t0: { type: "number", description: "performance start, epoch ms (optional, finite)" } }, required: ["text"] } },
@@ -116,7 +117,7 @@ const TOOL_ROWS = [
   // avatar and the activity dial ARE carried, and are named because they are.
   { name: "worlds", description: "Which worlds this server fronts, and who is embodied in each — the map for `travel`. Marks the world you are in now and, where the server knows your join policy, which others you may travel to. Founding a world that is not listed needs create authority. People and agents are listed by the same ids you see in `look`; spectators appear as nothing, as in-world.", inputSchema: { type: "object", properties: {} } },
   { name: "travel", description: "Walk to another world this server fronts, keeping your identity, avatar and attention settings — no reconnect. Subject to your credential's join policy; founding a world that does not exist yet needs separate create authority. Your held pose and posture do NOT survive the move (they are world-local, like a disconnect), and your chat cursor resets to the new world.", inputSchema: { type: "object", properties: { world: { type: "string", description: "world name, e.g. \"commons\"" } }, required: ["world"] } },
-  { name: "measure", description: "Geometry as data: bounding box, up-facing flat zones (seat/table/deck candidates), and named parts of a placed thing (id) or a library model (lib). Flat-zone coords are the MODEL's local frame — the same frame sockets use, so a zone's center IS a socket pos (the body's root goes there; anchor: 'hips' seats the hips joint instead): act {verb: 'set', args: {id, component: 'sockets', value: {seat: {pos: [cx, y, cz], body: {pose: 'sitchair'}}}}} (body makes it a seat a person can sit on). Use this to find where a body can sit before declaring the seat; verify by attaching to it yourself (attach {to: id}) and taking a selfie screenshot. Raw GLB bytes are at GET <sequencer>/library/<lib> if you want to process the mesh locally.", inputSchema: { type: "object", properties: { id: { type: "string" }, lib: { type: "string" } } } },
+  { name: "measure", description: "Geometry as data: bounding box, up-facing flat zones (seat/table/deck candidates), and named parts of a placed thing (id) or a library model (lib). Flat-zone coords are the MODEL's local frame — the same frame sockets use, so a zone's center IS a socket pos (the body's root goes there; anchor: 'hips' seats the hips joint instead): act {verb: 'set', args: {id, component: 'sockets', value: {seat: {pos: [cx, y, cz], body: {pose: 'sitchair'}}}}} (body makes it a seat a person can sit on). Use this to find where a body can sit before declaring the seat; verify by attaching to it yourself (attach {to: id}) and taking a selfie screenshot. Raw GLB bytes are at GET <sequencer>/library/<lib> if you want to process the mesh locally. check: true asks the build check instead (#241): what the model is like to walk into, measured with the walking body's own rules before or after it is placed — whether it is walk-in at all, its floors and how much of each can be reached from outside, why any part can't (a passage narrower than a body, a rise too high to step, a climb an overhanging floor blocks, no way in), the render budget — and suggested rooms, doors and stairs, ready to name as places. Advisory: nothing is refused. With id it is checked as placed (its scale, its collider); with lib at its own size, or at scale (0.05–20). The first check of a model at a scale takes a few seconds.", inputSchema: { type: "object", properties: { check: { type: "boolean", description: "the build check: walk-in, reachable floors, why not, suggested places" }, scale: { type: "number", description: "with lib and check: as if placed at this scale (0.05–20)" },  id: { type: "string" }, lib: { type: "string" } } } },
   { name: "inspect", description: "The inspector, for you: every editable field on a placed thing with its current value, units, limits, and the verb that changes it — the same declaration the browser's Inspector panel renders (shared/editschema.js). Fields are addressed group.field: pos.x pos.yaw pos.scale · rot.x rot.y rot.z (Rotate in degrees, read from q in the thing's rotation order) rot.qx…rot.qw rot.order · flags.lock flags.hidden flags.label flags.description (its alt text; flags.reads is how it reads: name, description, what it can do, its state) · light.color light.intensity light.range light.keep light.noon · motion.type motion.axis motion.amp motion.period … (a part's motion as motion.<part>|amp) · sockets.<slot>|pos|0..2 sockets.<slot>|yaw sockets.del · particles.effect particles.playing particles.at|0..2 particles.param|<name> (the effect's own knobs) · comp.<type> (raw JSON for any component no group speaks for; comp.+ adds one) · parent.to (its parent; set an id to parent it where it stands, \"\" or null to make it a root) · parent.unparent. Says its parent and children; a child's Transform is LOCAL to its parent. Read-only fields say why (locked, guarded, riding a moving part). id \"@world\" is the world entity: its Sky (sky.hours sky.rate sky.clouds sky.clock …), Weather (weather.state), Terrain (terrain.amplitude terrain.color …) and Grass (grass.density … grass.mow) — the world's sky/terrain/grass, edited with edit {id: \"@world\", …} (owner rank). Pass json:true for the raw schema.", inputSchema: { type: "object", properties: { id: { type: "string" }, json: { type: "boolean" } }, required: ["id"] } },
   { name: "edit", description: "Change fields on a placed thing by address (see inspect) — ONE request for the whole edit (one act; undo {act} takes it back), exactly what a person's edit sends: the transform channels become one whole `set transform` (local to its parent for a child); socket fields one `set sockets`. Numbers take Maya's relative math: \"+=1\", \"-=0.5\", \"*=-1\", \"+=10%\". Angles are typed in DEGREES. Edits that can't be planned (unknown field, a cycle, bad JSON) are reported by name and the rest still go; a locked thing is refused by the authority with the way through (throughLock: true, if you may lift locks). \"parent.to\": \"lamp\" parents it under lamp where it stands (null = make it a root); a child's pos/rot are local to its parent. set: {\"pos.x\": \"+=1\", \"light.intensity\": 24, \"flags.label\": \"the good chair\", \"sockets.seat|pos|1\": 0.55, \"comp.recipe\": \"{...}\"}. id \"@world\" edits the world entity: {\"sky.hours\": 17.5, \"weather.state\": \"rain\", \"terrain.amplitude\": \"+=1\"}. Pass dry:true to have the authority check it without writing.", inputSchema: { type: "object", properties: { id: { type: "string" }, set: { type: "object" }, dry: { type: "boolean" }, throughLock: { type: "boolean" } }, required: ["id", "set"] } },
   { name: "hierarchy", description: "The scene tree, as the browser's Hierarchy panel shows it: every placed thing, mounted things indented under their carrier, seated people as riders, with each thing's label, lib, components and lock state. filter narrows to ids/labels/libs/component types containing the text (matches keep their ancestors). Cheaper than look() when you want structure, not surroundings.", inputSchema: { type: "object", properties: { filter: { type: "string" } } } },
@@ -160,7 +161,8 @@ const ANNOTATIONS: Record<string, Ann> = {
   act: ["Any verb (escape hatch; land, shove, moderation)", false, true, false, true],
   worlds: ["List worlds", true, false, true, false],
   travel: ["Travel to another world", false, false, true, false],
-  measure: ["Measure geometry", true, false, true, false],
+  measure: ["Measure geometry (check: the build check)", true, false, true, false],
+  name_place: ["Name a place", false, false, true, false],
   inspect: ["Inspect a thing", true, false, true, false],
   edit: ["Edit a thing's fields", false, true, false, false],
   hierarchy: ["Scene tree", true, false, true, false],
@@ -310,6 +312,21 @@ function resolvePlaceName(ag: ToolAgent, name: string): { x: number; z: number; 
   if (pp) return { x: pp[0], z: pp.length === 3 ? pp[2] : pp[1], stop: 0, what: `the place "${name}"` };
   return { error: `move: nothing here is called "${name}" — not a placed thing (look / hierarchy list them), not a person here, not a named place` };
 }
+
+/** measure {check: true}: #241's check_model, a mode of measure (it reads a model's geometry as data; check_model is an alias). */
+const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>) => {
+  const e = a.id ? ag.entities.get(String(a.id)) : null;
+  if (a.id && !e) return text(`no thing called "${a.id}" here`);
+  const lib = String(e?.model ?? a.lib ?? "");
+  if (!lib) return text("measure {check: true} needs the id of a placed model, or a library path");
+  let r: any;
+  // a placed thing is checked as placed: at its scale (the body is not scaled)
+  const scale = e ? (e.scale && e.scale > 0 ? e.scale : 1) : (typeof a.scale === "number" && a.scale > 0 ? a.scale : 1);
+  try { r = await (await fetch(`${ag.httpBase}/check?lib=${encodeURIComponent(lib)}${scale !== 1 ? `&scale=${scale}` : ""}`)).json(); }
+  catch (err) { return text(`the check could not be reached: ${String((err as Error)?.message ?? err)}`); }
+  if (r.error) return text(`couldn't check ${lib}: ${r.error}`);
+  return text(describeCheck(`${e ? `[${e.id}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`, r, e ? ag.placesOn(e).length : 0, e?.id, e?.collide));
+};
 
 type ToolHandler = (ag: WorldAgent, a: Record<string, any>, ctx: ToolCtx, name: string)
   => Promise<Record<string, unknown>> | Record<string, unknown>;
@@ -530,19 +547,31 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (ag.mySeat && !ag.mayLeaveSeat("menu")) return { content: [{ type: "text", text: `you're held on ${ag.seatName(ag.mySeat.to)}: it lets you go only when the world does` }], isError: true };
       const mode = a.mode == null ? "walk" : String(a.mode);
       if (mode !== "walk" && mode !== "fly") return { content: [{ type: "text", text: `move: mode is "walk" (default) or "fly"` }], isError: true };
-      // to: [x, y, z] as the authority's move takes it ([x, z]: on the ground), or a NAME (a thing, a person, a place)
-      let x: number, z: number, stop = 0, what = "";
+      // to: [x, y, z] (y picks the floor there, #236) or [x, z] (no y: the walk's own storey, else the lowest floor), or a
+      // NAME: a named place (#239: "thing/place", a place's name or label, a thing's entrance), a thing, a person
+      let x: number, z: number, y: number | undefined, stop = 0, what = "", label: string | null = null;
+      let near: { reach?: number; above?: number; below?: number; inside?: (x: number, z: number) => boolean } = {};
       const tolerance = a.tolerance ?? 0.01;
       if (typeof a.to === "string") {
-        const r = resolvePlaceName(ag, a.to.trim());
-        if ("error" in r) return { content: [{ type: "text", text: r.error }], isError: true };
-        ({ x, z, stop } = r); what = ` (${r.what})`;
+        const q = a.to.trim();
+        if (q === "?") return text(ag.placeList());   // every named place here, seen or not (owner 22:40): no move
+        // a named place first (it carries its own floor and reach); a thing with no entrance named, or one known by its
+        // label, is walked up to and stood beside (resolvePlaceName); neither: the places refusal, which lists them
+        const d = ag.destination(q);
+        if (!("refusal" in d)) { ({ x, z } = d); y = d.y; near = { reach: d.reach, above: d.above, below: d.below, inside: d.inside }; label = d.label; }
+        else {
+          const r = resolvePlaceName(ag, q);
+          if ("error" in r) return { content: [{ type: "text", text: `move: ${d.refusal}` }], isError: true };
+          ({ x, z, stop } = r); what = ` (${r.what})`;
+        }
       } else if (a.to != null || mode === "walk") {
         const to = Array.isArray(a.to) ? a.to.map(Number) : [];
         x = to[0]; z = to.length === 3 ? to[2] : to[1];
+        if (to.length === 3) y = to[1];
         if (to.length !== 2 && to.length !== 3)
-          return { content: [{ type: "text", text: "move needs to: [x, y, z] (or [x, z]) of finite numbers, or a name (a thing's id or label, a person, a named place)" }], isError: true };
+          return { content: [{ type: "text", text: "move needs to: [x, y, z] (or [x, z]) of finite numbers, or a name (a named place, a thing's id or label, a person; \"?\" lists the places)" }], isError: true };
       } else { x = NaN; z = NaN; }
+      if (y != null && !Number.isFinite(y)) return { content: [{ type: "text", text: WALK_ARGS_REASON }], isError: true };
       // a non-finite point or a tolerance out of range: walkTo's own refusal, in its own words (WALK_ARGS_REASON)
       if (((a.to != null || mode === "walk") && ![x, z].every(Number.isFinite)) || !Number.isFinite(tolerance) || tolerance < 0 || tolerance > 0.4)
         return { content: [{ type: "text", text: WALK_ARGS_REASON }], isError: true };
@@ -557,17 +586,45 @@ export const HANDLERS: Record<string, ToolHandler> = {
         return text(L.join("\n"));
       }
       if (stop > 0) { const dx = x - ag.pos.x, dz = z - ag.pos.z, d = Math.hypot(dx, dz); if (d > stop) { x -= (dx / d) * stop; z -= (dz / d) * stop; } else what += " — already beside it"; }
-      const walking = ag.walkTo(x, z, Boolean(a.run), 90_000, tolerance);
-      const planned = ag.walkRefusal;   // this request's own plan, captured before a later walk can replace it
-      const arrived = await walking;
+      // this request's own refusal (receipt): its plan may wait for placed geometry still loading (#235), so walkRefusal,
+      // read straight after the call, could belong to a later walk
+      let receipt = { refusal: null as string | null };
+      let arrived = await ag.walkTo(x, z, Boolean(a.run), 90_000, tolerance, y, near, receipt);
+      // a y no floor matches (mid-air, or under every floor there): the nearest place to stand at any height, said so
+      if (!arrived && y != null && near.above == null && /^nowhere to stand/.test(receipt.refusal ?? "")) {
+        const first = receipt.refusal;
+        receipt = { refusal: null };
+        arrived = await ag.walkTo(x, z, Boolean(a.run), 90_000, tolerance, y, { ...near, above: Infinity }, receipt);
+        if (!arrived && !receipt.refusal) receipt.refusal = first;
+      }
+      const planned = receipt.refusal;
       // no route (a sealed room, a structure over the search limit, two that conflict): refused before a step, and why
       if (!arrived && planned) return { content: [{ type: "text", text: `move refused before a step: ${planned}\nyou stand at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)})${what}` }], isError: true };
       const note = ag.lastWalkNote ? ` (${ag.lastWalkNote})` : "";
       // E1: the authority walks this body too; a stretch it refused (a wall, out of bounds) stopped it, and says why
       const no = ag.lastWalkRefusal;
       if (!arrived && no) return { content: [{ type: "text", text: `${refusalText("move", { refused: no })}\nyou stopped at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}), ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m short${note}${what}` }], isError: true };
-      return text(arrived ? `arrived at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}); ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m from requested destination${note}${what}` : ag.walkStopReason ?? "walk interrupted or timed out");
+      if (!arrived) return text(ag.walkStall ?? ag.walkStopReason ?? "walk interrupted or timed out");
+      // which floor it chose, when the y asked for wasn't one (#236 y, owner 22:40)
+      const floorNote = y != null && Math.abs(ag.pos.y - y) > 0.1 ? `; no floor at ${y.toFixed(2)} m there — you're on the floor at ${ag.pos.y.toFixed(2)} m` : "";
+      // which named room you're in now (#239)
+      const here = ag.placesAt([ag.pos.x, ag.pos.y, ag.pos.z])[0];
+      const inRoom = here ? `, in ${here.place.label ?? here.place.name} (${here.entity.id}/${here.place.name})` : "";
+      return text(label
+        ? `arrived at ${label}: (${ag.pos.x.toFixed(2)}, ${ag.pos.y.toFixed(2)}, ${ag.pos.z.toFixed(2)})${here ? `, in ${here.place.label ?? here.place.name}` : ""}${note}`
+        : `arrived at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}); ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m from requested destination${floorNote}${inRoom}${note}${what}`);
 
+  },
+  name_place: async (ag, a) => {
+      // coordinates: x and z together (y optional: the floor there nearest
+      // your own height), or none — never some of them silently dropped
+      const given = [a.x, a.y, a.z].some((v: unknown) => v != null);
+      if (given && ![a.x, a.z].every((v: unknown) => typeof v === "number" && Number.isFinite(v)))
+        return { content: [{ type: "text", text: "name_place's coordinates need x and z (y is optional: the floor there nearest your own height) — or leave them all out to name where you stand" }], isError: true };
+      if (a.y != null && !(typeof a.y === "number" && Number.isFinite(a.y)))
+        return { content: [{ type: "text", text: "name_place's y, when given, must be a finite height in metres" }], isError: true };
+      const at = given ? { x: a.x as number, z: a.z as number, y: a.y as number | undefined } : undefined;
+      return text(await ag.namePlace(String(a.name ?? ""), { on: a.on, label: a.label, remove: a.remove === true, at }));
   },
   face: async (ag, a, ctx, name) => {
       if (a.target) {
@@ -937,6 +994,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       return text(`Worlds on this server (${list.length}):\n${lines.join("\n")}${foot ? `\n${foot}` : ""}`);
   },
   measure: async (ag, a, ctx, name) => {
+      if (a.check === true) return CHECK_MODEL(ag, a);
       // 🔴 USE THE AGENT'S OWN httpBase (2026-08-16). This re-derived the HTTP
       // base by string surgery on WORLD_URL — the exact form agent.ts:297
       // replaced with real URL parsing, for a reason its comment records: a
@@ -1135,10 +1193,37 @@ export const HANDLERS: Record<string, ToolHandler> = {
   for (const n of Object.keys(HANDLERS)) if (!declared.has(n)) throw new Error(`[tools] "${n}" has a handler but no schema row`);
 }
 
+/** A build check (server/buildcheck.ts) as text a reader can act on. */
+function describeCheck(what: string, r: any, named: number, id?: string, collide?: string): string {
+  const L: string[] = [];
+  // spawned with collide: the world fits it that way whatever its size
+  if (collide === "exact" || collide === "box") {
+    r = { ...r, walkIn: { ...r.walkIn, roomScale: collide === "exact" }, warnings: (r.warnings ?? []).filter((w: any) => w.kind !== "solid") };
+    if (collide === "box") r.warnings.unshift({ kind: "solid", message: `it was spawned with collide: "box", so it is one solid box: nobody can go inside — what follows is what it would be with collide: "exact"` });
+  }
+  const floors = (r.levels ?? []).map((l: any) => `${l.y}m (${l.reachable}m² of ${l.area}m² reachable)`).join(", ");
+  L.push(`${what}: ${r.walkIn?.roomScale ? "walk-in" : collide === "box" ? "SOLID — spawned as a box" : "SOLID — under the walk-in size"}; ${(r.levels ?? []).length} floor${(r.levels ?? []).length === 1 ? "" : "s"}${floors ? `: ${floors}` : ""}`
+    + `${r.perf ? `; rendering ${r.perf.rank} (${r.perf.tris} triangles, ${r.perf.draws} draw calls)` : ""}.`);
+  if (r.warnings?.length) { L.push("Problems:"); for (const w of r.warnings) L.push(`  - ${w.message}`); }
+  else L.push("No problems found: every floor under its roof can be reached from outside.");
+  const s = r.suggested ?? {};
+  const parts = [
+    ...(s.rooms ?? []).map((x: any) => `${x.id} (a room, floor ${x.min[1]}m, ${x.area}m²)`),
+    ...(s.doors ?? []).map((x: any) => `${x.id} (${x.between.join(" ↔ ")}, ~${x.width}m wide, at ${x.at.join(", ")})`),
+    ...(s.stairs ?? []).map((x: any) => `${x.id} (a stair, ${x.between.join(" ↔ ")})`),
+  ];
+  if (parts.length) {
+    L.push(`Suggested places, read from the geometry${named ? ` (it already has ${named} named)` : ""}: ${parts.join("; ")}.`);
+    L.push(`To name them, rename the keys and send: act {verb: "set", args: {id: "${id ?? "<thing>"}", component: "places", value: ${JSON.stringify(s.places)}, merge: true}}`
+      + ` — merge: true keeps the places it already has — or stand in each and use name_place.`);
+  }
+  return L.join("\n");
+}
+
 // Old names still work (STRIKES A-S1-2: walk_to, snapshot, spawn and world_verb were renamed with no alias, and a pilot
 // whose code learned the old name got "Unknown tool"). An alias runs the new tool and says so in one line; an unknown
 // name offers the closest declared one.
-export const TOOL_ALIASES: Record<string, string> = { walk_to: "move", snapshot: "screenshot", spawn: "create", world_verb: "act" };
+export const TOOL_ALIASES: Record<string, string> = { walk_to: "move", snapshot: "screenshot", spawn: "create", world_verb: "act", check_model: "measure" };
 /** Tools that FOLDED into a general tool's mode (10-14): the old name is refused with the call that does it now. Not an
  *  alias — the arguments changed shape, so running the new tool on the old args would do the wrong thing quietly. */
 export const TOOL_FOLDS: Record<string, string> = {
@@ -1155,8 +1240,12 @@ export const TOOL_FOLDS: Record<string, string> = {
  *  error — the alias ran the right tool with the wrong words). Each translates the old schema to the new one, or says what to
  *  call instead when the old call has no one-to-one new form. */
 export const TOOL_ALIAS_ARGS: Record<string, (a: Record<string, any>) => Record<string, any> | { refuse: string }> = {
-  walk_to: (a) => ({ to: [a.x, a.z], ...(a.run !== undefined ? { run: a.run } : {}), ...(a.tolerance !== undefined ? { tolerance: a.tolerance } : {}) }),
+  // walk_to {to} (a named place, a thing, a person, "?": #239) passes through as move's to; {x, z} is to: [x, z], and with
+  // y (#236: which floor) to: [x, y, z]. run and tolerance carry over; walk_to took nothing else
+  walk_to: (a) => ({ to: a.to !== undefined ? a.to : a.y !== undefined ? [a.x, a.y, a.z] : [a.x, a.z],
+    ...(a.run !== undefined ? { run: a.run } : {}), ...(a.tolerance !== undefined ? { tolerance: a.tolerance } : {}) }),
   snapshot: (a) => a,
+  check_model: (a) => ({ ...a, check: true }),   // #241's tool, a mode of measure: the same {id | lib, scale?}
   world_verb: (a) => a,   // TOOL_ALIAS_ARGS: act takes the same {verb, args}
   spawn: (a) => {
     if (!a.lib) return { refuse: a.query ? `spawn {query} has no one-step form now: library {query: ${JSON.stringify(a.query)}} finds the model, then create {model}` : "spawn needs lib (a library path); it is create {model} now" };

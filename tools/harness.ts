@@ -260,3 +260,26 @@ export async function scratchBench(name: string, opts: ScratchOptions & { headed
   };
   return { ...run, cleanup, browser, cws, cdp, evalJson, cspViolations };
 }
+
+/** The old authoring words a test written against main used on an agent (`a.verb("spawn", …)`), as the authority
+ *  requests the protocol speaks (every world write is a door request; the agent has no raw verbs). Merging the stack
+ *  (#235/#236/#239/#241, 10-15) brought tests in that author their scenes this way; this keeps their scenes as they
+ *  wrote them. spawn's scale and collide become the transform's scale and the collider component; comp is a set;
+ *  mount of the agent itself is the attach tool's path (presence), of a thing a parent set; light is a light thing. */
+export async function legacyVerb(a: any, v: string, x: any): Promise<any> {
+  const { qFromYaw } = await import("../shared/rot.js");
+  const tf = (o: any) => ({ ...(o.pos ? { pos: o.pos } : {}), ...(typeof o.yaw === "number" ? { q: qFromYaw(o.yaw) } : {}),
+    ...(typeof o.scale === "number" ? { scale: [o.scale, o.scale, o.scale] } : {}) });
+  switch (v) {
+    case "spawn": return a.request("create", { id: x.id, model: x.lib, components: { transform: tf(x), ...(x.collide ? { collider: { shape: x.collide } } : {}) } });
+    case "place": return a.request("set", { id: x.id, component: "transform", value: tf(x), merge: true });
+    case "remove": return a.request("delete", { id: x.id });
+    case "comp": return x.data == null ? a.request("delete", { id: x.id, component: x.type }) : a.request("set", { id: x.id, component: x.type, value: x.data });
+    case "light": return a.request("create", { id: x.id, components: { transform: tf(x), light: { ...(x.intensity != null ? { intensity: x.intensity } : {}), ...(x.color != null ? { color: x.color } : {}), ...(x.range != null ? { range: x.range } : {}) } } });
+    case "mount": {
+      if (x.id === a.name) { const { handleTool } = await import("../mcpl/tools.ts"); return handleTool({ agent: a } as any, "attach", { to: x.to, ...(x.slot ? { socket: x.slot } : {}) }); }
+      return a.request("set", { id: x.id, component: "parent", value: { to: x.to } });
+    }
+    default: throw new Error(`legacyVerb: no protocol request for '${v}'`);
+  }
+}

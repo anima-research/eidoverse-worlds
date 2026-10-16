@@ -17,6 +17,7 @@ import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { worlds } from "./world.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { ingestHeightmap } from "./heightmap.ts";
+import { checkFile } from "./buildcheck-queue.ts";
 
 /** What the handler needs from Bun's server object, structurally: the
  *  socket address behind the nginx front. */
@@ -644,5 +645,8 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     atomicWrite(mp, JSON.stringify(man));
   }
   console.log(`[upload] model ${rel}${upName ? ` ("${upName}")` : ""} (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
-  return new Response(JSON.stringify({ path: rel }), { headers: { "content-type": "application/json" } });
+  // the build check starts now and never holds the upload up or refuses it:
+  // its report is advice, waiting at `check` (server/buildcheck.ts)
+  void checkFile(join(OPT_DIR, rel), 1, body).catch((err) => console.warn(`[check] ${rel}: ${String(err?.message ?? err)}`));
+  return new Response(JSON.stringify({ path: rel, check: `/check?lib=${encodeURIComponent(rel)}` }), { headers: { "content-type": "application/json" } });
 }

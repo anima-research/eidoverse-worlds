@@ -28,6 +28,7 @@ import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_
 import { verifyToken } from "./aid1.ts";
 import { resolveLibFile } from "./libfile.ts";
 import { summarizeGlb } from "./geometry.ts";
+import { checkFile, checkScale } from "./buildcheck-queue.ts";
 import { worlds, getWorld, type World } from "./world.ts";
 import { handleUpload, optStatus, rebuildAsset } from "./upload.ts";
 import { serveHeightmapExport, heightRange } from "./heightmap.ts";
@@ -566,6 +567,25 @@ const ROUTES: Route[] = [
       return new Response(JSON.stringify({ ok: true }), {
         headers: { "content-type": "application/json", "set-cookie": "ew_sess=; Path=/; HttpOnly; Max-Age=0" },
       });
+    },
+  },
+  {
+    match: (u) => u.pathname === "/check",
+    handler: async ({ url }) => {
+      // The build check (server/buildcheck.ts): what a model will be like to
+      // walk into — walk-in or solid, its floors and what's reachable, why
+      // anything isn't, suggested rooms/doors/stairs, the render budget.
+      // Advisory and public, like /geom. Computed once per model, in its own
+      // process (buildcheck-queue.ts); the first ask can take a few seconds.
+      const j = (o: unknown, status = 200) =>
+        new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json" } });
+      const lib = url.searchParams.get("lib") ?? "";
+      const file = resolveLibFile(lib);
+      if (!file) return j({ error: `no such asset: ${lib}` }, 404);
+      // ?scale= checks it as a thing placed at that scale (0.05–20, to 2 places)
+      const scale = checkScale(url.searchParams.get("scale") ?? 1);
+      try { return j({ lib, ...(await checkFile(file, scale) as object) }); }
+      catch (err) { return j({ lib, error: String((err as Error)?.message ?? err) }, 500); }
     },
   },
   {

@@ -50,8 +50,13 @@ tolerance?, mode?: walk|fly}`, which also absorbs the nine flight verbs as a mod
 
 ```ts
 TOOL_ALIASES.walk_to = "move";
-TOOL_ALIAS_ARGS.walk_to = (a) => ({ to: [a.x, a.z], ...(a.run !== undefined ? { run: a.run } : {}), ...(a.tolerance !== undefined ? { tolerance: a.tolerance } : {}) });
+TOOL_ALIAS_ARGS.walk_to = (a) => ({ to: a.to !== undefined ? a.to : a.y !== undefined ? [a.x, a.y, a.z] : [a.x, a.z],
+  ...(a.run !== undefined ? { run: a.run } : {}), ...(a.tolerance !== undefined ? { tolerance: a.tolerance } : {}) });
 ```
+
+(The pathfinding stack, merged 10-15, gave walk_to a named `to` and a floor-picking `y`: both reach `move` intact, and
+`alias-test` holds each shape. Its `check_model` became `measure {check: true}` the same way: an alias whose
+translation adds the mode.)
 
 and `agenttools-check` AT7 calls `walk_to {x, z, tolerance}` on a live agent and checks the body MOVED. Before the
 translation landed, that row was red with "move needs to: [x, y, z]…" — the alias ran the right tool with the wrong
