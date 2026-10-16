@@ -3262,7 +3262,10 @@ function launch(w, actor, a, verb, g = null) {
 // The authority keeps every body's table (consent.js) beside `bodies` and `holds`, refuses BEFORE delivery, and keeps an
 // unlogged attempt ring. Delivery in the lab is the target's `inbox` (a stand-in for the relay to its client).
 const ringPush = (P, r) => { (P.ring ??= []).push(r); if (P.ring.length > 200) P.ring.shift(); };
-const inboxPush = (P, who, m) => { const q = (P.inbox ??= {})[who] ??= []; q.push(m); if (q.length > 200) q.shift(); };   // bounded like ring (review 10-14 C2: browsers never drain it)
+// bounded like ring (review 10-14 C2: browsers never drain it). Each message carries `n`, its person's own count, which
+// survives both the cap's trimming and `inbox` draining it: the server forwards by `n`, never by the array's length (holes
+// review 10-15 H1: a full queue stayed at 200, and its person heard nothing more)
+const inboxPush = (P, who, m) => { const n = ((P.inboxN ??= {})[who] ?? 0) + 1; P.inboxN[who] = n; const q = (P.inbox ??= {})[who] ??= []; q.push({ ...m, n }); if (q.length > 200) q.shift(); };
 const bodyRef = (x) => (typeof x === "string" ? x.replace(/^body:/, "") : x);
 function expireAsks(w) { const P = w.presence, now = w.now();
   for (const [id, k] of Object.entries(P.asks ?? {})) if (k.expires <= now) { delete P.asks[id]; coolDown(P, k, now); inboxPush(P, k.from, { type: "body-reply", ask: id, ok: false, why: "no answer in 20 s: silence is no" }); w.presenceDirty = true; } }
