@@ -25,6 +25,7 @@ fs.mkdirSync(process.env.WORLDS_DIR, { recursive: true });
 const { foundWorld } = await import("../../server/worldlog.ts");
 const { World } = await import("../../server/world.ts");
 const { MESSAGES } = await import("../../server/messages.ts");
+const { REACH_NOTE_MS } = await import("../../shared/protocol/consent.js");
 let pass = 0, fail = 0;
 const ok = (c, what, d?) => { if (c) { pass++; console.log(`  ok   ${what}`); } else { fail++; console.log(`  FAIL ${what}${d !== undefined ? " — " + JSON.stringify(d).slice(0, 500) : ""}`); } };
 
@@ -36,7 +37,7 @@ function person(id, key, at) {
   const c = { id, actorId: A(key), world: w, ws: null, lastPose: null, spectator: false, surface: "world", avatar: "", got: [] };
   c.ws = { send: (d) => c.got.push(JSON.parse(d)) };
   w.clients.add(c); people[id] = c;
-  w.log.requestSync(c.actorId, "move", { to: at });           // the authority's body (the reach verb needs one)
+  const mv = w.log.requestSync(c.actorId, "move", { to: at }); if (!mv?.ok) console.log("  (debug) move", id, JSON.stringify(mv));   // the authority's body (the reach verb needs one)
   pose(c, { p: at, yaw: 0 });
   return c;
 }
@@ -126,6 +127,104 @@ ok(w.log.head === head0, "RG10 nothing about a reach is appended to the log", w.
   ok(out2 && !out2.reach, "RG9 …and Vic closing touch to nobody ends it at the relay too", out2);
   ok(refusals(tom, k).length + tom.got.slice(k).filter((m) => m.type === "body-inbox").flatMap((m) => m.messages).filter((m) => m.type === "body-revoked").length >= 1, "RG9 …and Tom hears it", tom.got.slice(k)); }
 
+// ---- r2 holes review 10-15 F3: an ask answered yes is ONE touch, not a standing allow ----
+const live = w.log.live, wall = live.now; let skew = 0; live.now = () => wall() + skew;   // restored after RG15
+const rf = (r) => (r?.ok === false ? r.refused ?? r : r);
+const shoulder = (c, who = "Quin") => reachTo(c, { who, point: "shoulder_l" });
+const idle = (c) => pose(c, { p: c.lastPose?.p ?? [0, 0, 0], yaw: 0 });
+function grant(asker, target, point = "shoulder_l") {
+  skew += 61000;   // past the asker's 2-asks-a-minute
+  const r = req(asker, "reach", { who: target.actorId, point });
+  const ans = r?.ok && r.outcome === "asked" ? req(target, "consent", { answer: r.ask, yes: true }) : null;
+  return !!ans?.ok && ans.yes === true;
+}
+const pat = person("Pat", "p", [10, 0, 0]), quin = person("Quin", "q", [10.6, 0, 0]);
+// RG11 (a): letting go ends it
+{ ok(grant(pat, quin), "(RG11 setup) Pat asks Quin for her shoulder; Quin says yes");
+  idle(pat);   // a packet between the yes and the hand landing (the agent/browser is still streaming its idle pose)
+  ok(shoulder(pat)?.reach?.rightHand?.t?.point === "shoulder_l", "RG11a the granted hand relays, even after a packet that came before it landed");
+  ok(shoulder(pat)?.reach && shoulder(pat)?.reach, "RG11a …and keeps relaying while it is held, frame after frame");
+  idle(pat);   // the hand let go
+  const out = shoulder(pat);
+  ok(out && !out.reach, "RG11a after Pat lets go, the same hand again is stripped: a yes was one touch", out); }
+// RG12 (b): either person leaving ends it
+{ ok(grant(pat, quin), "(RG12 setup) a fresh yes");
+  ok(!!shoulder(pat)?.reach, "(RG12 setup) the hand relays");
+  w.log.departed(pat.actorId); req(pat, "move", { to: [10, 0, 0] });   // Pat's connection left; Pat comes back
+  const out = shoulder(pat);
+  ok(out && !out.reach, "RG12b the reacher leaving ends the grant: back again, the hand is stripped", out);
+  ok(grant(pat, quin), "(RG12 setup) another yes"); ok(!!shoulder(pat)?.reach, "(RG12 setup) relays");
+  w.log.departed(quin.actorId); req(quin, "move", { to: [10.6, 0, 0] });
+  const out2 = shoulder(pat);
+  ok(out2 && !out2.reach, "RG12b the target leaving ends it too: when she is back, the held hand is stripped", out2); }
+// RG13 (c): a change of mind is a revoke
+{ ok(grant(pat, quin), "(RG13 setup) a fresh yes"); ok(!!shoulder(pat)?.reach, "(RG13 setup) relays");
+  req(quin, "consent", { set: { class: "pose", tier: "strangers", mode: "ask" } });   // a change to another class
+  ok(!!shoulder(pat)?.reach, "RG13c a change to an unrelated class of Quin's table leaves the touch she said yes to");
+  req(quin, "consent", { set: { class: "touch", tier: "strangers", mode: "everyone" } });
+  ok(!!shoulder(pat)?.reach, "(RG13 setup) Quin opens touch to everyone: relays");
+  req(quin, "consent", { set: { class: "touch", tier: "strangers", mode: "ask" } });
+  const out = shoulder(pat);
+  ok(out && !out.reach, "RG13c Quin going everyone → ask ends the held touch (only nobody used to)", out);
+  ok(grant(pat, quin), "(RG13 setup) another yes"); ok(!!shoulder(pat)?.reach, "(RG13 setup) relays");
+  req(quin, "consent", { friend: pat.actorId }); req(pat, "consent", { friend: quin.actorId });   // friends: touch everyone
+  req(quin, "consent", { set: { class: "touch", tier: "friends", mode: "ask" } });
+  const out2 = shoulder(pat);
+  ok(out2 && !out2.reach, "RG13c …and so does any other move of the cell off everyone (friends' touch everyone → ask)", out2); }
+
+// ---- F5: every contact point can be asked for through the verb, classed as the relay classes it ----
+{ const { CONTACT_POINTS } = await import("../../shared/contact.js");
+  const fay = person("Fay", "f", [0, 0, 10]), gil = person("Gil", "g", [0.6, 0, 10]);
+  req(gil, "consent", { allow: fay.actorId, class: "touch" });   // touch: everyone for Fay; intimate stays Normal's nobody
+  const bad = [];
+  for (const point of Object.keys(CONTACT_POINTS)) {
+    const v = rf(req(fay, "reach", { who: gil.actorId, point }));
+    const verbCls = v?.ok ? v.class : v?.code === "consent" ? v.class : `refused ${v?.code}: ${v?.reason}`;
+    const out = reachTo(fay, { who: "Gil", point }); idle(fay);
+    const relayCls = out?.reach ? "touch" : "intimate";
+    if (verbCls !== relayCls) bad.push({ point, verb: verbCls, relay: relayCls }); }
+  ok(Object.keys(CONTACT_POINTS).length === 27 && bad.length === 0, "RG14 each of the 27 contact points can be asked for through the reach verb, and the verb's class is the relay's", bad); }
+
+// ---- consent refusals don't say WHY to the asker (10-13 consent research; coordinator 10-15) ----
+const lu = person("Lu", "l", [0, 0, -10]), mo = person("Mo", "m", [0.6, 0, -10]);
+const ned = person("Ned", "n", [-0.6, 0, -10]), kit = person("Kit", "k", [0.3, 0, -9.5]);
+const said = () => { const v = rf(req(lu, "reach", { who: mo.actorId, point: "chest_front" })); const g = w.log.reachAdmits(lu.actorId, mo.actorId, "intimate", { point: "chest_front" });
+  return { verb: v?.reason, verbFix: v?.fix, relay: g.reason, relayFix: g.fix, pose: rf(req(lu, "body", { to: mo.actorId, kind: "pose" }))?.reason }; };
+let tierNobody, perPerson, paused;
+{ tierNobody = said();                                                       // Normal: strangers' intimate is nobody
+  req(mo, "consent", { set: { class: "intimate", tier: "strangers", mode: "everyone" } }); req(mo, "consent", { set: { class: "pose", tier: "strangers", mode: "everyone" } });
+  req(mo, "consent", { deny: lu.actorId, class: "intimate" }); req(mo, "consent", { deny: lu.actorId, class: "pose" });
+  perPerson = said();
+  req(mo, "consent", { pause: true }); paused = said(); req(mo, "consent", { pause: false });
+  const same = (k) => tierNobody[k] === perPerson[k] && perPerson[k] === paused[k] && typeof paused[k] === "string";
+  ok(same("verb") && same("verbFix"), "RL1 the reach verb's refusal is byte-identical for tier nobody, a per-person deny and a pause", { tierNobody, perPerson, paused });
+  ok(same("relay") && same("relayFix"), "RL1 …so is what the relay tells a stripped reacher", { tierNobody, perPerson, paused });
+  ok(same("pose"), "RL1 …and the body verb's (pose)", { tierNobody, perPerson, paused });
+  ok(![tierNobody, perPerson, paused].some((s) => /paus|said no|strangers|friends|from Lu|u-l/.test(JSON.stringify(s))), "RL1 …none of them mentions a pause, a per-person no, or a tier", paused);
+  const att = rf(req(mo, "consent", {}))?.attempts ?? [];
+  ok(att.some((a) => /paused/.test(a.why ?? "")) && att.some((a) => /said no/.test(a.why ?? "")) && att.some((a) => /strangers is nobody/.test(a.why ?? "")),
+    "RL2 Mo's own attempt ring still records the real cause of each", att.map((a) => a.why)); }
+
+// ---- (the clock moves on from here: asks are at most 2 a minute) ----
+// RL3: an ask answered no and an ask nobody answered read the same to the asker, and the same as a refusal
+{ req(mo, "consent", { set: { class: "intimate", tier: "strangers", mode: "ask" } });
+  const a1 = req(ned, "reach", { who: mo.actorId, point: "chest_front" }); req(ned, "inbox", {});
+  req(mo, "consent", { answer: a1.ask, yes: false });
+  const noWhy = (req(ned, "inbox", {}).messages ?? []).find((m) => m.type === "body-reply")?.why;
+  const a2 = req(kit, "reach", { who: mo.actorId, point: "chest_front" }); req(kit, "inbox", {});
+  skew += 21000; req(mo, "consent", {});   // any request expires asks past their 20 s
+  const silentWhy = (req(kit, "inbox", {}).messages ?? []).find((m) => m.type === "body-reply")?.why;
+  ok(a1?.outcome === "asked" && a2?.outcome === "asked" && typeof noWhy === "string" && noWhy === silentWhy && noWhy === tierNobody.verb,
+    "RL3 'said no' and 'no answer' tell the asker the same words, and the same as a refusal", { noWhy, silentWhy, refusal: tierNobody.verb }); }
+// RG15 (d): a TTL backstops all of the above
+{ const rae = person("Rae", "r", [10, 0, 10]), zed = person("Zed", "z", [10.6, 0, 10]);
+  ok(grant(rae, zed), "(RG15 setup) Rae asks Zed; Zed says yes");
+  ok(!!shoulder(rae, "Zed")?.reach, "(RG15 setup) relays");
+  skew += 9 * 60000; ok(!!shoulder(rae, "Zed")?.reach, "RG15d still held 9 min on: relays");
+  skew += 60000 + 1000; const out = shoulder(rae, "Zed");
+  ok(out && !out.reach, "RG15d past 10 min the grant has lapsed even though the hand never let go: stripped (ask again)", out); }
+live.now = wall;
+
 let skipped = null; const SKIP = Symbol("skip");
 // ---- AG: an agent's reach through a real server (a real mcpl/agent.ts WorldAgent): the reply says what the world showed ----
 //   AG1  a stranger agent's hand on a person's chest_front: no frame the person receives carries it, and the reach reply
@@ -180,6 +279,16 @@ let skipped = null; const SKIP = Symbol("skip");
     const r2 = await call("reach", { who: "Vic", point: "shoulder_l" }); await sleep(600);
     ok(seenReach(k, "shoulder_l"), "AG2 with touch open, the agent's hand on Vic's shoulder relays", msgs.slice(k).filter((m) => m.type === "frame" && m.poses?.Hep).map((m) => m.poses.Hep.reach).slice(-2));
     ok(!/not shown/.test(T(r2)) && ag.reaches.has("rightHand"), "AG2 …and the reply claims no refusal", T(r2));
+    // AG3 (r2 holes F9): a refusal for one limb withdraws that limb, not a consented one on the same body
+    await sleep(REACH_NOTE_MS + 500);   // the relay says a (reacher, target, class) refusal once per REACH_NOTE_MS: wait out AG1's
+    k = msgs.length;
+    const r3 = await call("reach", { limb: "leftHand", who: "Vic", point: "chest_front" }); await sleep(600);
+    ok(/not shown/.test(T(r3)) && !ag.reaches.has("leftHand"), "(AG3 setup) the left hand on Vic's chest_front is refused and withdrawn", T(r3));
+    ok(ag.reaches.has("rightHand") && seenReach(k, "shoulder_l"), "AG3 …and the right hand she consented to stays on her shoulder", { reaches: [...ag.reaches.keys()], text: T(r3) });
+    // AG4: within REACH_NOTE_MS of that intimate refusal, a TOUCH-class point in Vic's own frame is not refused by memory of it
+    k = msgs.length;
+    const r4 = await call("reach", { limb: "leftHand", x: 0.24, y: 1.0, z: 0, space: "Vic" }); await sleep(600);
+    ok(!/not shown/.test(T(r4)) && ag.reaches.has("leftHand") && seenReach(k, '"space":"Vic"'), "AG4 a point at Vic's side (touch, open) relays and the agent doesn't claim the earlier intimate refusal for it", { text: T(r4), reaches: [...ag.reaches.keys()] });
   } catch (e) { if (e !== SKIP) ok(false, "AG threw", String(e?.stack ?? e).slice(0, 600)); else console.log(`  SKIP AG1-AG2: the agent can't load here (${skipped}); NODE_PATH=<node_modules with it> runs them`); }
   try { ag?.close(); } catch {} try { vs?.close(); } catch {} try { proc.kill(); } catch {} }
 
