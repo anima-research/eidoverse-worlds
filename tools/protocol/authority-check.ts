@@ -953,9 +953,13 @@ const w0 = () => openWorld(root, "tier0");
 { const iw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "imported"), actor, verb, args); };
   iw("ann", "create-world", { title: "imported" }); iw("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   iw("ann", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-  const tries = [["box", "imported-guard", true], ["box", "imported:kind", "light"], ["@world", "imported-behavior:x", { src: "store/scripts/x.js" }], ["@world", "imported-bans:u-aaaaaaaaaaaaaaaaaaaa", { reason: "x" }], ["@world", "imported-epoch", { sim: "eidosim@1.0.0" }]];
+  const tries = [["box", "imported:kind", "light"], ["@world", "imported-behavior:x", { src: "store/scripts/x.js" }], ["@world", "imported-bans:u-aaaaaaaaaaaaaaaaaaaa", { reason: "x" }], ["@world", "imported:epoch", { sim: "eidosim@1.0.0" }]];
   const by = tries.map(([id, component, value]) => code(iw("bob", "set", { id, component, value })));
-  ok(by.every((c) => c === "imported"), "IM1 a builder can't write an imported guard, an imported field, an old binding, an imported ban or an imported epoch", by);
+  ok(by.every((c) => c === "imported"), "IM1 a builder can't write an imported field, an old binding, an imported ban or an imported epoch (imported:epoch)", by);
+  // the shape audit (10-16): imported-epoch merged into imported:epoch, and imported-guard was never registered (a dead branch of
+  // the imported-only rule): each is now just an unregistered bare name, refused for everyone as one
+  const gone = [["box", "imported-guard", true], ["@world", "imported-epoch", { sim: "eidosim@1.0.0" }]].map(([id, component, value]) => code(iw("ann", "set", { id, component, value })));
+  ok(gone.every((c) => c === "schema"), "IM1b imported-guard and imported-epoch aren't components: refused as unregistered names, an owner's write too", gone);
   ok(iw("ann", "set", { id: "box", component: "imported:note", value: "kept" }).ok, "IM2 …an owner can (a copy of an imported world writes them; a repair)");
   { const d = iw("ann", "delete", { id: "box", component: "imported:note" }); ok(d.ok, "IM3 …and deleting one is an ordinary edit (a keyed record is its creator's or an owner's to delete)", d.refused); } }
 

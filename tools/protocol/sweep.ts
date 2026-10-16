@@ -160,7 +160,6 @@ function unproject(ents0: any) {
     if (id === "@world") {
       for (const [k, v] of Object.entries<any>(comps)) {
         if (["sky", "terrain", "grass"].includes(k)) world[k] = v;
-        else if (k === "imported-epoch") world.epoch = v;
         else if (k === "physics-engine") world.epoch = { sim: v.engine, tickMs: v.tickMs };   // translate-v1@10: a dialect-3 epoch
         else if (k.startsWith("assets:")) (world.assets ??= []).push(Object.keys(v).length ? v : dec(k.slice("assets:".length)));
         else if (k === "default-role") (world.roles ??= {})["*"] = fromCan(v); // DROPPED: roles['*']
@@ -173,6 +172,8 @@ function unproject(ents0: any) {
       }
       // a closed component's v1 leftovers ride beside it as imported:<component> {key: value}: they fold back in
       for (const c of ["sky", "terrain", "grass", "epoch"]) if (comps[`${IMP}${c}`] && world[c] && typeof world[c] === "object") world[c] = { ...world[c], ...comps[`${IMP}${c}`] };
+      // translate-v1@12: an epoch her sim refused is carried whole as imported:epoch (was the imported-epoch component)
+      if (comps[`${IMP}epoch`] !== undefined && world.epoch === undefined) world.epoch = comps[`${IMP}epoch`];
       continue;
     }
     const e: any = {};

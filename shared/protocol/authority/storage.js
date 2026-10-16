@@ -165,7 +165,7 @@ const { LOCK_LEVELS, lockLevel, lockRank } = R;
 // and a reader composing it through a parent drifts off unit: review of b398d7e3 #1)
 const qr3 = (q) => { const r = q.map(r3); const n = Math.hypot(r[0], r[1], r[2], r[3]); return n > 0 ? r.map((v) => v / n) : [0, 0, 0, 1]; };
 const setOp = (id, comp, value) => ({ verb: "set", id, comp, value });
-const IMPORTED_ONLY = (comp) => typeof comp === "string" && /^imported(?:-(?:behavior|bans|epoch|guard))?(?::|$)/.test(comp);
+const IMPORTED_ONLY = (comp) => typeof comp === "string" && /^imported(?:-(?:behavior|bans))?(?::|$)/.test(comp);   // imported-epoch is imported:epoch (10-16); imported-guard was never registered
 const delOp = (id, comp) => (comp === undefined ? { verb: "delete", id } : { verb: "delete", id, comp });
 const createOps = (id, comps) => [{ verb: "create", id }, ...Object.entries(comps).map(([k, v]) => setOp(id, k, v))];
 // a preview of ops on st: copy-on-write (the same state applyOps gives, sharing every entity the ops don't touch; values

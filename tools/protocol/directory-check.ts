@@ -452,9 +452,9 @@ const file = path.join(tmp, "worlds", ".directory.json");
       { seq: 4, ts: 9000, actor: "fx", verb: "remove", args: { id: null } }, { seq: 5, ts: 9100, actor: "fx", verb: "spawn", args: { id: "null", lib: "crate.glb", pos: [3, 0, 3], yaw: 0, box: B } }]), {}).out.map((e: any) => JSON.stringify(e)).join("\n"))).entities["null"]?.c.physics;
     ok(nul?.kind === "static", "EP4 remove {id: null} ends the thing named \"null\", as the v1 fold has it: the next is new and static", nul);
     ok(own["physics-engine"]?.engine === DEFAULT_ENGINE && other["physics-engine"]?.engine === "otherphys@2.0.0" && other["physics-engine"]?.build === null
-      && !refused["physics-engine"] && refused["imported-epoch"]?.tickMs === 5,
+      && !refused["physics-engine"] && refused["imported:epoch"]?.tickMs === 5,
       "EP5 her law becomes today's eidosim; an engine she didn't carry keeps its name and no build (nothing flies); an epoch she refused stays a record",
-      { own: own["physics-engine"], other: other["physics-engine"], refused: { engine: refused["physics-engine"], record: refused["imported-epoch"] } }); }
+      { own: own["physics-engine"], other: other["physics-engine"], refused: { engine: refused["physics-engine"], record: refused["imported:epoch"] } }); }
 
   // EP4 (review of b398d7e3 #2 #4): an id removed and spawned again is a new thing: never punted, it's static. And her
   // physics is not anyone's act to take back: undo of an imported punt's act changes nothing (the rest is the sim's)

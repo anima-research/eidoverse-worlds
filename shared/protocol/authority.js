@@ -478,7 +478,7 @@ function rights(w, st, s, who, role, op, at, made, pause) {
   // a screen's captions are written by the caption request only (its session, order and generation rules), never set by
   // hand; an owner may still set them whole (a copy of the world, a repair) and anyone who may edit the screen may
   // delete them (CAPTIONS below)
-  // an imported world's records (its old bindings, unmapped fields, bans, sim epoch, the old guard) are carried, never
+  // an imported world's records (its old bindings, unmapped fields incl. a sim epoch, bans) are carried, never
   // written by a request: nothing reads them as live (bans are the moderator log's; scripts are script:<name>; a guard
   // merged into lock). An owner may (a copy of the world, a repair); deleting one is an ordinary edit.
   if (!cap && op.verb === "set" && role !== "owner" && IMPORTED_ONLY(op.comp)) refuse("imported", `${at} is an imported world's record, carried as it was; it isn't written by hand`, "what it meant lives elsewhere now: lock for a guard, the moderator log for bans (ban/unban), script:<name> for a behaviour");

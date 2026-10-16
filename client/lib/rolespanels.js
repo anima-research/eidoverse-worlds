@@ -300,7 +300,7 @@ function paintPlaces(body) {
     act('batch', { ops, label: 'places' }, 'places', () => paintPlaces(body));
   });
 }
-// what translation carried from an older world: imported:<k>, imported-behavior:<k>, imported-bans:<id>, imported-epoch
+// what translation carried from an older world: imported:<k> (a v1 sim epoch is imported:epoch), imported-behavior:<k>, imported-bans:<id>
 const IMPORTED = /^imported(?:-[a-z]+)?(?::|$)/;
 function paintOld(body) {
   const st = replica.st?.entities ?? {}; const c = wc(); const edit = isOwner();

@@ -228,7 +228,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   }
   const w = {};
   for (const k of ["sky", "terrain", "grass"]) if (st[k] != null) w[k] = st[k];
-  if (st.epoch != null) w["imported-epoch"] = st.epoch; // v1 dialect 3's physics epoch: a record, never read live
+  // v1 dialect 3's physics epoch is carried like any field the mapping doesn't know: imported:epoch (@12; was imported-epoch)
   // round-2 R8: v1 echoed into the sky value who set it (`by`, a display name) and at which seq: derived, and a person's
   // name inside a value. Dropped; the log says who set the sky (History, inspect's touched).
   if (w.sky && typeof w.sky === "object") { const { seq, by, ...sky } = w.sky;
@@ -244,7 +244,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   for (const [k, v] of Object.entries(st.bans ?? {})) w[`imported-bans:${person(k, v)}`] = unsub(v);
   // a binding's author is a person: their identity, not their name (R1), when a who() mapper is given
   for (const [k, v] of Object.entries(st.behaviors ?? {})) w[keyed("imported-behavior", k)] = who && v && typeof v.author === "string" && !SYSTEM.has(v.author) ? { ...v, author: who(v.author, {}) } : v;
-  const known = new Set(["entities", "sky", "terrain", "grass", "epoch", "assets", "roles", "bans", "behaviors", "mounts", "recentChat", "chatTotal"]);
+  const known = new Set(["entities", "sky", "terrain", "grass", "assets", "roles", "bans", "behaviors", "mounts", "recentChat", "chatTotal"]);
   for (const [k, v] of Object.entries(st)) if (!known.has(k) && v != null) w[keyed("imported", k)] = v;
   out["@world"] = w; // @world is live from genesis (§2.3)
   for (const c of Object.values(out)) { splitUnknown(c); namespaceUnknown(c, ns); }
@@ -253,7 +253,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
 
 // Dialect 3 (@10): what the old world MEANS while her sim runs is her instant fold COMPOSED with her sim (PROTOCOL_v2,
 // conformance order: foldEntry, then simEntry). On top of project(): the epoch is @world physics-engine (not the
-// imported-epoch record); a body whose rest is logged stands at that logged pose until her law releases it (v4 holds the
+// imported:epoch record); a body whose rest is logged stands at that logged pose until her law releases it (v4 holds the
 // last LOGGED rest, P5: resting or flying again, it's the log's word); and a thing whose v1 lib has a stamped box carries
 // it as physics.shape (Covenant III: geometry enters the sim only through the log). Keyed by the v1 lib, not the model
 // value, which may be a content address by now. With no epoch ever entered this returns project()'s value untouched.
@@ -263,8 +263,8 @@ function physical(st, sim, recorded, out, dynamic = () => false) {
   // what her sim made of the epoch (review of b398d7e3 #3): her own law (carried) → today's eidosim runs from here on;
   // an engine she didn't carry (foreign: nothing flew) → that name, with no build, so nothing flies here either; an
   // epoch her sim refused (a bad tickMs: it never started) → no physics, only the imported record
-  if (sim.epoch && !sim.epoch.foreign) { delete w["imported-epoch"]; w["physics-engine"] = { engine: DEFAULT_ENGINE, build: ENGINES[DEFAULT_ENGINE].build, tickMs: sim.epoch.tickMs }; }   // HER tick (a later epoch she refused doesn't replace it; review r4 #3)
-  else if (sim.epoch?.foreign) { delete w["imported-epoch"]; w["physics-engine"] = { engine: sim.epoch.sim, build: null, tickMs: sim.epoch.tickMs }; }
+  if (sim.epoch && !sim.epoch.foreign) { delete w[keyed("imported", "epoch")]; w["physics-engine"] = { engine: DEFAULT_ENGINE, build: ENGINES[DEFAULT_ENGINE].build, tickMs: sim.epoch.tickMs }; }   // HER tick (a later epoch she refused doesn't replace it; review r4 #3)
+  else if (sim.epoch?.foreign) { delete w[keyed("imported", "epoch")]; w["physics-engine"] = { engine: sim.epoch.sim, build: null, tickMs: sim.epoch.tickMs }; }
   for (const [id, p] of recorded) { const c = out[enc(id)]; if (sim.bodies[id] && c) c.transform = { ...c.transform, pos: p.slice() }; }
   if (sim.boxes) for (const [id, e] of Object.entries(st.entities ?? {})) { const c = out[enc(id)]; if (c && typeof e?.lib === "string" && sim.boxes[e.lib]) c.physics = { kind: dynamic(id) ? "dynamic" : "static", shape: clone(sim.boxes[e.lib]) }; }
   return out;

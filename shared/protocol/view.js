@@ -11,7 +11,7 @@
 //   - ids, roles and parent targets come back through names.dec (an imported world's x-- escapes undone);
 //   - imported:<field> (a field an imported world's translation carried) → that field;
 //   - @world: roles:<id> → roles, default-role → roles['*'], imported-bans:<id> → bans, assets:<k> → assets,
-//     sky/terrain/grass → themselves, imported:<k> → st[k]. Not shown: physics-engine, imported-epoch, about, bounds, spawn, imported-behavior:<k>.
+//     sky/terrain/grass → themselves, imported:<k> → st[k]. Not shown: physics-engine, about, bounds, spawn, imported-behavior:<k>.
 // Until 2026-10-14 this record spoke the old protocol's names (model as `lib`, every other component inside a `comp`
 // bag): one vocabulary on the wire and another in every reader. tools/protocol/vocab-check.ts keeps the old one out.
 import { dec } from "./names.js";
@@ -19,7 +19,7 @@ import { qNorm, qHeading } from "../rot.js";
 
 export const idOut = (id) => dec(id) ?? id;
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-const HIDDEN_WORLD = new Set(["physics-engine", "imported-epoch", "about", "bounds", "spawn"]);
+const HIDDEN_WORLD = new Set(["physics-engine", "about", "bounds", "spawn"]);
 const IMP = "imported:", IMP_BANS = "imported-bans:";
 /** The record's derived fields (and its stamps): not components. The authority refuses a component named like one. */
 export const DERIVED = new Set(["id", "pos", "q", "yaw", "scale", "scale3", "born", "kind", "actor", "ts", "placer"]);
