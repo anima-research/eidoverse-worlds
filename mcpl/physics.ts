@@ -52,7 +52,7 @@ import { leafForceFor, DEFAULT_LEAF_FORCE } from "../shared/leafforce.js";
 import { bodyFrame, fromBody } from "../shared/joints.js";
 // the walking capsule's dimensions — pure module, the browser controller's own numbers
 import { colliderFor } from "../client/lib/bodyscale.js";
-import type { NavProbe } from "./navgrid.ts";
+import { NAV_NUDGE, type NavProbe } from "./navgrid.ts";
 
 const HEADLESS_CORE = fileURLToPath(new URL("./headless-core.mjs", import.meta.url));
 
@@ -226,7 +226,7 @@ const meshGeometries = new WeakMap<object, any>();
  *  Same holder discipline and lifetime as registerSupport. */
 export async function registerMeshSupport(
   holder: string, id: string, mesh: { positions: Float32Array; indices: Uint32Array },
-  xform: { position: number[]; yaw?: number; scale?: number; collide?: string; lib?: string },
+  xform: { position: number[]; yaw?: number; scale?: number; collide?: string; model?: string },
 ): Promise<boolean> {
   if (!isFiniteVec3(xform?.position)
       || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1)) {
@@ -253,7 +253,8 @@ export async function registerMeshSupport(
   // Never throws (#88): a model the fit chokes on (degenerate triangles, a
   // BVH build failure) abstains, and the caller falls back to its summary.
   try {
-    m.colliders.fitCollider(id, root, { collide: xform.collide, scale: s, lib: xform.lib ?? null, localFrame: true });
+    const lib = xform.model ?? null;   // colliders.js shares a fit between spawns of one model by this name
+    m.colliders.fitCollider(id, root, { collide: xform.collide, scale: s, lib, localFrame: true });
     scopeEntry(m, id);
   } catch (err) {
     console.error(`[physics] mesh support ${id} abstained — fit failed:`, String(err).split("\n")[0]);
@@ -265,6 +266,8 @@ export async function registerMeshSupport(
 }
 
 const WALKING = colliderFor(1);
+/** The route planner's radius: the authority's square body box, corners included, plus navgrid's nudge (navProbe). */
+const PLAN_R = WALKING.r * Math.SQRT2 + NAV_NUDGE;
 
 /** Bumped whenever the collider map changes (a fit, a refit, a removal):
  *  what a route planner learned about the world is good until it moves. */
@@ -328,8 +331,18 @@ export function navProbe(heightAt: (x: number, z: number) => number): NavProbe |
     surfaceUnder: (x, z, maxY) => C.surfaceUnder(x, z, heightAt, maxY).y,
     stand: (x, y, z) => {
       v.set(x, y, z);
-      const ground = C.resolveColliders(v, heightAt, WALKING.r, WALKING.tall, true);
-      return { ground, push: Math.hypot(v.x - x, v.z - z) };
+      // the planner's capsule is wider than the feet's: the authority walks a SQUARE box of the mover's radius (shared/
+      // mover.js bodyBox, a centimetre of slack) whose corners reach r·√2, and navgrid accepts a push under NAV_NUDGE as
+      // standing room — so a route planned with the feet's own radius grazed a doorway jamb (1.3 cm) and a railing's end
+      // (1.6 cm), and the authority refused that stretch (protocol merge). PLAN_R clears the box everywhere
+      const ground = C.resolveColliders(v, heightAt, PLAN_R, WALKING.tall, true);
+      const push = Math.hypot(v.x - x, v.z - z);
+      // ...and the authority's box reaches the body's full height (shared/mover.js bodyBox: a step above the feet to the
+      // top of the head), where the feet's wall probe stops at the hips: the same probe again, raised half a body, is
+      // the head's band — so a stair under the edge of an upper floor is climbed where the head clears it
+      v.set(x, y + WALKING.tall / 2, z);
+      C.resolveColliders(v, heightAt, PLAN_R, WALKING.tall, false);
+      return { ground, push: Math.max(push, Math.hypot(v.x - x, v.z - z)) };
     },
   };
 }

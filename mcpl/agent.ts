@@ -319,10 +319,12 @@ export class WorldAgent {
   joined = false;
   pos = { x: 0, y: 0, z: 0 };
   yaw = 0; speed = 0; clip = "idle";
-  private target: (Vec2 & { run: boolean; tolerance?: number }) | null = null;
+  private target: (Vec2 & { run: boolean; tolerance?: number; y?: number }) | null = null;
   /** Remaining validated centerline waypoints (walkTo). Only the destination uses
    * the caller's tolerance; intermediate waypoints are reached exactly. */
-  private legs: Vec2[] = [];
+  /** …each with the floor height the route stands on there, when the navgrid planned it (the authority is asked for
+   *  stretches at that height: up a stair, the stretch's end is on the stair, not the floor beneath it) */
+  private legs: (Vec2 & { y?: number })[] = [];
   private walkTolerance: number = MOVER.arrive.tolerance;
   /** The height the walk under way stands at, wherever it is: the live terrain for a terrain walk, the admitted floor
    *  for a floor walk. Null when no walk is under way. */
@@ -2048,7 +2050,7 @@ export class WorldAgent {
       // during it has something to drop — and if one happened, the fit that
       // lands afterwards is taken straight back out.
       this.supportIds.set(id, [bid]);
-      const ok = await registerMeshSupport(this.supportHolder, bid, mesh, { ...xform, collide: e.collide, lib: e.model });
+      const ok = await registerMeshSupport(this.supportHolder, bid, mesh, { ...xform, collide: e.collide, model: e.model });
       const now = this.entities.get(id);
       const superseded = !this.supportIds.get(id)?.includes(bid);
       if (superseded || this.closed || !now || now.model !== e.model || this.mounts.has(id) || this.hasActiveMotion(now)) {
@@ -2202,7 +2204,7 @@ export class WorldAgent {
         // rounds a doorway instead of driving at the wall behind it.
         const next = this.legs.shift();
         if (next) {
-          this.target = { x: next.x, z: next.z, run: T.run, tolerance: this.legs.length ? this.legTolerance : this.walkTolerance };
+          this.target = { x: next.x, z: next.z, run: T.run, tolerance: this.legs.length ? this.legTolerance : this.walkTolerance, ...(next.y != null ? { y: next.y } : {}) };
         } else {
           this.target = null; this.walkHeightAt = null; this.walkGate = null; this.speed = 0; this.clip = "idle";
           this.walkDone?.(true); this.walkDone = null;
@@ -2234,6 +2236,7 @@ export class WorldAgent {
     // snaps onto it or falls toward it. Seated, or just joined, the feet keep the floor they last stood on.
     const colliding = feetFree && collidersReady();
     let groundY: number | null = null;
+    const yBefore = this.pos.y;   // a float that starts this tick starts from the body as it stood, not mid-fall
     if (feetFree && ((colliding && this.mySeat) || this.feetSettling)) {
       if (snap && target) { this.pos.x = target.x; this.pos.z = target.z; }
       else { this.pos.x += moveX; this.pos.z += moveZ; }
@@ -2254,7 +2257,8 @@ export class WorldAgent {
         const st = waterStance(this.water.level, groundY, this.stature());
         if (st.swimming) {
           // float on the moving surface, the browser's law and clock (controller.js does the same)
-          if (!this.float.on) { this.float = { on: true, y: this.pos.y, vy: 0 }; }
+          if (!this.float.on) { this.float = { on: true, y: colliding ? yBefore : this.pos.y, vy: 0 }; }
+          if (colliding) this.vy = 0;   // afloat, the feet's own fall is not running
           const t = waveClock(this.serverNow()), level = this.water.level, A = this.waterKinds;
           const surf = footprintSurface((x, z) => level + surfaceOffset(A?.sample(x, z) ?? null, x, z, t), this.pos.x, this.pos.z);
           floatStep(this.float, surf, this.stature(), dt, groundY);
@@ -3156,7 +3160,7 @@ export class WorldAgent {
       const pts = [{ x: this.pos.x, z: this.pos.z }, ...nav.points.map((p) => ({ x: p.x, z: p.z }))];
       const crosses = structures.length > 0 && pts.slice(1).some((p, k) => structures.some((st) => !st.clear(pts[k], p)));
       if (!crosses) {
-        legs = nav.points.map((p) => ({ x: p.x, z: p.z }));
+        legs = nav.points.map((p) => ({ x: p.x, z: p.z, y: p.y }));
         snapped = nav.snapped; routed = true;
       }
     }
@@ -3200,9 +3204,10 @@ export class WorldAgent {
     // ROUTE THROUGH WALLS RATHER THAN INTO THEM (planWalk, and through placed models the navgrid): the legs that clear
     // every known structure, ending on the point asked for, exactly — unless it was no place to stand and the planner
     // chose the nearest one that is. Only the last takes the caller's tolerance.
-    this.legs = snapped ? legs.slice() : legs.slice(0, -1).concat({ x, z });
+    const end = legs[legs.length - 1] as Vec2 & { y?: number };
+    this.legs = snapped ? legs.slice() : legs.slice(0, -1).concat({ x, z, ...(routed && end?.y != null ? { y: end.y } : {}) });
     const first = this.legs.shift()!;
-    this.target = { x: first.x, z: first.z, run, tolerance: this.legs.length ? this.legTolerance : this.walkTolerance };
+    this.target = { x: first.x, z: first.z, run, tolerance: this.legs.length ? this.legTolerance : this.walkTolerance, ...(first.y != null ? { y: first.y } : {}) };
     // E1: the authority walks this body too, and a stretch it refuses (a wall, too fast) isn't walked (see trackHere).
     // With no authority to ask (not joined, no open socket) the gate is open at once: the verdict trackHere would reach a
     // tick later (request() answers not-joined, which it reads as {open}), without the tick.
@@ -3430,7 +3435,7 @@ export class WorldAgent {
     const data = JSON.stringify(cur);
     if (data.length > 8000) return `[${target.id}]'s places would exceed the 8KB component limit — retire some first`;
     const t0 = Date.now(), id = target.id;
-    // an ordinary set of the places component, through the authority (v4): rights, the gate and undo apply as to any edit.
+    // an ordinary set of the places component, through the authority: rights, the gate and undo apply as to any edit.
     // Adding or re-pointing a name merges just that name (RFC 7396); retiring one replaces the bag with the name held as
     // null, since a merge's null would delete the entry and let a name the model declares back in
     const op = opts.remove ? OP.set(id, "places", cur) : OP.set(id, "places", { [name]: cur[name] }, { merge: true });
@@ -3583,7 +3588,10 @@ export class WorldAgent {
     if (d < 1e-3) { g.permit = [T.x, from[1], T.z]; return; }   // the authority already has it at this leg's end
     const last = d <= PERMIT_STEP;
     const nx = last ? T.x : from[0] + dx * PERMIT_STEP / d, nz = last ? T.z : from[2] + dz * PERMIT_STEP / d;
-    const to = [r3(nx), r3(this.permitFloor(nx, nz)), r3(nz)];
+    // the stretch's height: on a routed leg, the route's own (a stair is a ramp of treads: the leg's rise, shared out along
+    // it — under a riser off the tread there, and the authority's box starts a step above the feet); else the feet's floor
+    const ty = T.y != null ? (last ? T.y : from[1] + (T.y - from[1]) * PERMIT_STEP / d) : this.permitFloor(nx, nz);
+    const to = [r3(nx), r3(ty), r3(nz)];
     g.busy = true;
     void this.request("move", { to }).then((r: any) => {
       if (this.walkGate !== g) return;

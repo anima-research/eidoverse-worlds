@@ -46,7 +46,7 @@ const cell = (x: number) => Math.round((x - NAV_OFF) / NAV_CELL);
 /** Most a walk climbs or drops between neighbouring columns — the feet's own
  *  step-up: the mover's (shared/mover.js MOVER.body.step), which
  *  colliders.resolveColliders applies to a standing body. One step height for
- *  the walker, the feet and the planner (merge into protocol v4: the stack had
+ *  the walker, the feet and the planner (the protocol merge: the stack had
  *  0.55, main's 0.3 × tall). Drops are held to the same bound: a route never
  *  steps off a balcony. */
 export const NAV_STEP = MOVER.body.step;
