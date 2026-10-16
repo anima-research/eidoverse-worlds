@@ -8,7 +8,7 @@
 // read and wrote files here; that part is server/disk.js now, so this module has no node: imports and no
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf, socketQ, ONE_PLACE } from "../components.js";
-import { MOVER, TRACK, bodyBox, floorStep, sweep, tokensAfter } from "../mover.js";
+import { MOVER, TRACK, bodyBox, bodyScale, floorStep, sweep, tokensAfter } from "../mover.js";
 import { checkSockets, checkSocket } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
@@ -2790,10 +2790,28 @@ const openNow = (st, id) => { const o = st.entities[id]?.c.openable; return !!o 
 function bodyAt(st, p) {   // where a body claimed at p stands: {y (feet), ground}
   const g = supportBelow(st, p[0], p[2], p[1]).y; return { y: Math.max(p[1], g), ground: g };
 }
-function groundSteps(st, from, pts) {
+// THE BODY'S OWN SIZE (holes r3 F2): the mover judges water by the body's stature and a ledge by its scale, so the authority
+// judges each body with the height and scale it sends with its moves (kept on its presence record; absent, the mover's
+// 1.7 m at scale 1). Bounded as the walker bounds them: scale 0.5-2 (mover.js bodyScale, the size slider's range), height
+// 0.3-4 m. A claim buys only what that range of honest bodies may do: a step up to 1.6 m and a haul-out up to 1 m above the
+// water (scale 2; its box then starts 1.6 m up and is 3.4 m tall and 0.8 m wide), a box 0.85 m tall and 0.2 m wide (0.5;
+// its step 0.4 m), and in water, swimming or wading where a body 0.3-4 m tall would.
+const BODY_H = Object.freeze({ min: 0.3, max: 4 });
+function sizeOf(a, prev) {
+  const out = { ...(prev ?? {}) };
+  for (const k of ["height", "scale"]) if (a[k] !== undefined && !(typeof a[k] === "number" && Number.isFinite(a[k]) && a[k] > 0))
+    refuse("shape", `move's ${k} is a positive number (${k === "height" ? "your body's standing height in metres, 0.3-4" : "your body's size, 0.5-2"})`, "send the number your walker uses, or leave it out");
+  if (a.height !== undefined) out.height = Math.min(BODY_H.max, Math.max(BODY_H.min, a.height));
+  if (a.scale !== undefined) { const sc = bodyScale(a.scale); if (sc === 1) delete out.scale; else out.scale = sc; }
+  return Object.keys(out).length ? out : undefined;
+}
+// the walker's own arguments for this body: floorStep's {height, scale}, bodyBox's scale
+const lawOf = (size) => ({ height: size?.height, scale: bodyScale(size?.scale) });
+function groundSteps(st, from, pts, size) {
   const G = groundOf(st); if (!G.terrain) return null;
-  const lv = G.level, s = 1, reachW = lv != null ? lv + MOVER.swim.climb * s : -Infinity;
-  const b0 = bodyAt(st, from); const r0 = floorStep({ y: b0.y, ground0: b0.ground, level0: lv, f: b0.ground, level1: lv });
+  const { height, scale: s } = lawOf(size), lv = G.level, reachW = lv != null ? lv + MOVER.swim.climb * s : -Infinity;
+  const step = (o) => floorStep({ ...o, height, scale: s });
+  const b0 = bodyAt(st, from); const r0 = step({ y: b0.y, ground0: b0.ground, level0: lv, f: b0.ground, level1: lv });
   let cur = { y: b0.y, ground: b0.ground }, lastSwim = r0.stance?.swimming ? cur : null;
   const out = [{ p: from, box: bodyBox([from[0], Math.max(from[1], r0.swim ? from[1] : b0.y), from[2]], s, r0.swim ? lv : null) }];
   let judged = from, swimNow = r0.swim;
@@ -2803,8 +2821,8 @@ function groundSteps(st, from, pts) {
     judged = p;
     const reach = Math.max(cur.y + MOVER.body.step * s, lastSwim ? reachW : -Infinity);
     const f = supportBelow(st, p[0], p[2], reach).y;
-    let r = floorStep({ y: cur.y, ground0: cur.ground, level0: lv, f, level1: lv });
-    if (r.blocked && lastSwim) { const r2 = floorStep({ y: lastSwim.y, ground0: lastSwim.ground, level0: lv, f, level1: lv }); if (!r2.blocked) r = r2; }
+    let r = step({ y: cur.y, ground0: cur.ground, level0: lv, f, level1: lv });
+    if (r.blocked && lastSwim) { const r2 = step({ y: lastSwim.y, ground0: lastSwim.ground, level0: lv, f, level1: lv }); if (!r2.blocked) r = r2; }
     if (r.blocked) return { blocked: { at: p, top: r.blocked.top, from: cur.y, swim: !!lastSwim && r.swim }, out };
     // the box: the swimmer's while the water's rule holds; else the body's own, at its claim (an upstairs the law can't see)
     // or the floor the law put it on, whichever is higher (a claim below the floor is inside it: the agent's permit sends
@@ -2814,12 +2832,12 @@ function groundSteps(st, from, pts) {
   }
   return { blocked: null, out };
 }
-function pathBlocked(w, st, from, to) {
-  const pts = sweep(from, to); const law = groundSteps(st, from, pts);
+function pathBlocked(w, st, from, to, size) {
+  const pts = sweep(from, to); const law = groundSteps(st, from, pts, size), s = lawOf(size).scale;
   if (law?.blocked) { const L = law.blocked;
-    return { ground: true, reason: L.swim ? `the bank at [${L.at.map(r3).join(", ")}] stands ${r3(L.top - groundOf(st).level)} m above the water: higher than a swimmer can haul out (${MOVER.swim.climb} m)`
-      : `the ground at [${L.at.map(r3).join(", ")}] rises ${r3(L.top - L.from)} m from where you stand: a ledge higher than a step (${MOVER.body.step} m)` }; }
-  const boxes = law ? law.out.map((x) => x.box) : [bodyBox(from), ...pts.map((p) => bodyBox(p))];
+    return { ground: true, reason: L.swim ? `the bank at [${L.at.map(r3).join(", ")}] stands ${r3(L.top - groundOf(st).level)} m above the water: higher than a swimmer can haul out (${r3(MOVER.swim.climb * s)} m)`
+      : `the ground at [${L.at.map(r3).join(", ")}] rises ${r3(L.top - L.from)} m from where you stand: a ledge higher than a step (${r3(MOVER.body.step * s)} m)` }; }
+  const boxes = law ? law.out.map((x) => x.box) : [bodyBox(from, s), ...pts.map((p) => bodyBox(p, s))];
   const already = new Set(); const b0 = boxes[0]; // a body already inside something may walk out of it
   for (const id of near(st, b0.min, b0.max)) if (hitsIx(st, b0, id, 0.01)) already.add(id);
   const lo = [0, 1, 2].map((i) => Math.min(...boxes.map((b) => b.min[i]))), hi = [0, 1, 2].map((i) => Math.max(...boxes.map((b) => b.max[i])));
@@ -2828,10 +2846,10 @@ function pathBlocked(w, st, from, to) {
   return null;
 }
 // the box of a body arriving at p (a teleport): the swimmer's when the water's rule holds there
-function arrivalBox(st, p) {
-  const G = groundOf(st); if (!G.terrain || G.level == null) return bodyBox(p);
-  const b = bodyAt(st, p); const r = floorStep({ y: b.y, ground0: b.ground, level0: G.level, f: b.ground, level1: G.level });
-  return bodyBox(p, 1, r.swim ? G.level : null);
+function arrivalBox(st, p, size) {
+  const { height, scale } = lawOf(size), G = groundOf(st); if (!G.terrain || G.level == null) return bodyBox(p, scale);
+  const b = bodyAt(st, p); const r = floorStep({ y: b.y, ground0: b.ground, level0: G.level, f: b.ground, level1: G.level, height, scale });
+  return bodyBox(p, scale, r.swim ? G.level : null);
 }
 // A body that walks more than a metre from its seat has stood up (a seated client sends no steps; standing, it walks)
 // Who sits where (presence, never logged: review 10-12 S1-1): {to: <socket id>}. A seat whose socket is gone or switched
@@ -2872,10 +2890,11 @@ const PHYSICS_VERBS = {
     const st = w.state(); const B = boundsOf(st);
     if (B && outsideWorld(B, a.to)) refuse("out-of-bounds", `[${a.to.join(", ")}] is outside this world (x ${B.min[0]}…${B.max[0]}, up to y ${B.max[1]}, z ${B.min[2]}…${B.max[2]})`, "pick a spot inside the bounds");
     const me = w.presence.bodies[actor]; const now = w.now(); const to = a.to.slice();
+    const size = sizeOf(a, me?.size);   // this body's height and scale: what it sends now, else what it sent last
     if (!me || a.teleport === true) { // a teleport (arriving is one): an act, so the track's reset is on the record
       const mine = Object.entries(w.presence.holds).filter(([, h]) => h.by === actor).map(([id]) => id);
       if (mine.length) refuse("holding", `you're holding ${mine.join(", ")}; a teleport can't carry things`, "put it down (or walk it there) first", { at: me?.at });
-      const inSolid = solidAt(w, st, to, new Set(), null, arrivalBox(st, to)); if (inSolid) refuse("solid", `[${to.join(", ")}] is inside ${inSolid}`, "arrive somewhere a body fits", { at: me?.at });
+      const inSolid = solidAt(w, st, to, new Set(), null, arrivalBox(st, to, size)); if (inSolid) refuse("solid", `[${to.join(", ")}] is inside ${inSolid}`, "arrive somewhere a body fits", { at: me?.at });
       const sp = st.entities["@world"]?.c.spawn;
       if (sp && Array.isArray(sp.pos) && !may(st, actor, "build") && dist(sp.pos, to) > (sp.radius ?? TRACK.spawnR))
         refuse("spawn", `this world's arrivals are within ${sp.radius ?? TRACK.spawnR} m of [${sp.pos.join(", ")}]`, "arrive there, then walk", { at: me?.at });
@@ -2884,15 +2903,15 @@ const PHYSICS_VERBS = {
       // at a time is not history the world needs). A TELEPORT while present is an act, because it resets the speed
       // track: who did it and when is on the record; never where from, where to, or what kind of client they are
       const act = me ? w.append(actOf(w, actor, "move", { teleport: true })) : undefined;
-      w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(a.client ? { client: String(a.client) } : {}) }; leftSeat(w, st, actor, to); w.savePresence();
+      w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(a.client ? { client: String(a.client) } : {}), ...(size ? { size } : {}) }; leftSeat(w, st, actor, to); w.savePresence();
       return { ok: true, at: to, ...(act !== undefined ? { recorded: true, act } : {}) };
     }
     const d = dist(me.at, to); const tokens = tokensAfter(me.tokens, now - (me.ts ?? now));
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${TRACK.speed} m/s, ${TRACK.cap} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
-    const block = pathBlocked(w, st, me.at, to);
+    const block = pathBlocked(w, st, me.at, to, size);
     if (block?.ground) refuse("solid", block.reason, "walk around it: a gentler slope, or out of the water where the bank is lower", { at: me.at, blocker: "ground" });
     if (block) refuse("solid", `${block} is in the way`, "walk around it (or through a door someone opens)", { at: me.at, blocker: block });
-    const prev = me.at; w.presence.bodies[actor] = { ...me, at: to, ts: now, tokens: tokens - d }; leftSeat(w, st, actor, to);
+    const prev = me.at; w.presence.bodies[actor] = { ...me, at: to, ts: now, tokens: tokens - d }; if (size) w.presence.bodies[actor].size = size; else delete w.presence.bodies[actor].size; leftSeat(w, st, actor, to);
     const carrying = [];
     for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === actor) { h.pose.pos = h.pose.pos.map((n, i) => n + to[i] - prev[i]); carrying.push(id); }
     w.savePresence();

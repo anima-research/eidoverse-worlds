@@ -213,23 +213,26 @@ if (M) {
   });
   // walk from `from` toward `target`, one stride per authority move; claim: "mover" sends the mover's y, "bed" the ground's
   // (the agent's permit: heightAt, never the float). → {strides, accepted (all at the same mm), agree, moverRef, authRef, seen}
-  function agree(world, actor, from, target, env, { claim = "mover", run = false, max = 400, h } = {}) {
+  // body: {height?, scale?} — the body's own stature and size, handed to the mover AND sent with every move (the clients do);
+  // once: sent with the arrival only (the authority keeps it on the body's record)
+  function agree(world, actor, from, target, env, { claim = "mover", run = false, max = 400, h, body = {}, once = false } = {}) {
+    const B = { ...(body.height !== undefined ? { height: body.height } : {}), ...(body.scale !== undefined ? { scale: body.scale } : {}) };
     const y0 = claim === "bed" ? h(from[0], from[1]) : env.floorAt(from[0], from[1]);
     let p = [from[0], y0, from[1]];
-    if (env.waterAt) { const st = stepWalk({ pos: p, dir: [1, 0], dt: 1e-9 }, env).stance; if (st?.swimming && claim === "mover") p = [p[0], st.y, p[2]]; }
-    const tp = call(world, actor, "move", { to: p.map(r3), teleport: true });
+    if (env.waterAt) { const st = stepWalk({ pos: p, dir: [1, 0], dt: 1e-9, ...B }, env).stance; if (st?.swimming && claim === "mover") p = [p[0], st.y, p[2]]; }
+    const tp = call(world, actor, "move", { to: p.map(r3), teleport: true, ...B });
     if (!tp.ok) return { start: tp.refused };
     let strides = 0, mism = null, moverRef = null, authRef = null; const seen = { swim: false, wade: false, dry: false, maxY: -Infinity, minY: Infinity, ys: [] };
     for (let i = 0; i < max; i++) {
-      const r = walkToward({ pos: p, target, dt: 0.1, run }, env);
+      const r = walkToward({ pos: p, target, dt: 0.1, run, ...B }, env);
       if (r.arrived) break;
       const dir = [target[0] - p[0], target[1] - p[2]], L = Math.hypot(dir[0], dir[1]);
       // the refused stride's length: the same step with the floor known only where the body stands (no ledge, no wall)
-      const d = r.blocked ? stepWalk({ pos: p, dir, dt: 0.1, run, cap: L }, { ...env, blocked: undefined, floorAt: (x, z) => (x === p[0] && z === p[2] ? env.floorAt(x, z) : NaN) }).moved : r.moved;
+      const d = r.blocked ? stepWalk({ pos: p, dir, dt: 0.1, run, cap: L, ...B }, { ...env, blocked: undefined, floorAt: (x, z) => (x === p[0] && z === p[2] ? env.floorAt(x, z) : NaN) }).moved : r.moved;
       const nx = p[0] + dir[0] / L * d, nz = p[2] + dir[1] / L * d;
       const y = claim === "bed" ? h(nx, nz) : r.blocked ? env.floorAt(nx, nz) : r.pos[1];
       const to = [r3(nx), r3(y), r3(nz)];
-      const m = call(world, actor, "move", { to }, 100);
+      const m = call(world, actor, "move", { to, ...(once ? {} : B) }, 100);
       if (r.blocked) { moverRef = r.blocked; authRef = m.ok ? { ok: true, at: m.at } : m.refused; break; }
       strides++;
       if (!m.ok) { authRef = m.refused; mism = { stride: strides, to, refused: m.refused, stance: r.stance }; break; }
@@ -295,6 +298,52 @@ if (M) {
     ok(bank.moverRef?.by === "ledge" && bank.authRef && !bank.authRef.ok && /ledge|terrain|bank/.test(`${bank.authRef.code} ${bank.authRef.reason}`) && bank.mism === null && bank.strides > 10,
       `G5 [${claim}] a terrain bank 0.6 m above the water: the mover refuses the stride (a ledge) and so does the authority`, bank);
   }
+
+  // ---- G6 THE BODY'S OWN SIZE (holes r3 F2): the mover judges water by the body's stature and ledges by its scale; so does the
+  // authority, from the height and scale the body sends with its moves. A 1.2 m body in 1.0 m of water by a bank 0.5 m above
+  // the surface swims and hauls out (the reviewer's case: before, the authority judged a 1.7 m wader and refused every stride);
+  // a 2.2 m body in 1.5 m wades and the same bank is a wall to both; a scale-2 body steps a 1.2 m terrain ledge and onto a
+  // 1.2 m crate (a 1.6 m step, its box 1.6 m up), a scale-0.5 body is refused a 0.6 m ledge (a 0.4 m step)
+  const SHALLOW = { amplitude: 0, size: 80, features: [{ type: "flatten", x: 0, z: 0, radius: 4, height: -1.5, edge: 0.01 }], water: { level: -0.5 } };
+  const DEEP = { amplitude: 0, size: 80, features: [{ type: "flatten", x: 0, z: 0, radius: 4, height: -2.0, edge: 0.01 }], water: { level: -0.5 } };
+  const SHELF = { amplitude: 0, size: 80, features: [{ type: "flatten", x: 10, z: 0, radius: 4, height: 1.2, edge: 0.01 }, { type: "flatten", x: -10, z: 0, radius: 4, height: 0.6, edge: 0.01 }, { type: "flatten", x: 0, z: 10, radius: 4, height: 2.0, edge: 0.01 }] };
+  const worlds6 = { shallow: SHALLOW, deep: DEEP, shelf: SHELF };
+  for (const [wn, tv] of Object.entries(worlds6)) { call(wn, "olive", "create-world", { title: wn }); ok(call(wn, "olive", "set", { id: "@world", component: "terrain", value: tv }).ok, `G0 the ${wn} world's terrain`); }
+  const hS = fieldOf(SHALLOW), hD = fieldOf(DEEP), hF = fieldOf(SHELF);
+  const envS = envOf(hS, -0.5, []), envD = envOf(hD, -0.5, []), envF = envOf(hF, null, []);
+  const both = (r) => r.moverRef && r.authRef && !r.authRef.ok && r.mism === null;
+  for (const claim of ["mover", "bed"]) {
+    const s12 = agree("shallow", "bea", [0, 0], [6, 0], envS, { claim, h: hS, body: { height: 1.2 } });
+    ok(s12.accepted && s12.seen.swim && s12.at[0] > 5.9 && near(s12.seen.maxY, 0, 1e-3), `G6 [${claim}] a 1.2 m body in 1.0 m of water swims and hauls out onto a bank 0.5 m above the surface: accepted by both (r3 F2: the authority judged a 1.7 m wader)`, s12);
+    const s17 = agree("shallow", "cal", [0, 0], [6, 0], envS, { claim, h: hS });
+    ok(both(s17) && s17.moverRef.by === "ledge" && s17.seen.wade && !s17.seen.swim, `G6 [${claim}] a 1.7 m body there wades and the bank is a 1.5 m ledge: refused by both, the same stride`, s17);
+    const s12once = agree("shallow", "dee", [0, 0], [6, 0], envS, { claim, h: hS, body: { height: 1.2 }, once: true });
+    ok(s12once.accepted && s12once.at[0] > 5.9, `G6 [${claim}] the height sent with the arrival only is kept on the body's record: the same haul-out`, s12once);
+    const d22 = agree("deep", "eve", [0, 0], [6, 0], envD, { claim, h: hD, body: { height: 2.2 } });
+    ok(both(d22) && d22.moverRef.by === "ledge" && !d22.seen.swim, `G6 [${claim}] a 2.2 m body in 1.5 m of water wades and the bank 0.5 m above the surface is a 2 m ledge: refused by both (the authority called it a swimmer and let it out)`, d22);
+    const d17 = agree("deep", "fay", [0, 0], [6, 0], envD, { claim, h: hD });
+    ok(d17.accepted && d17.seen.swim && d17.at[0] > 5.9, `G6 [${claim}] a 1.7 m body there swims and hauls out: accepted by both`, d17);
+    const up2 = agree("shelf", "gus", [2, 0], [10, 0], envF, { claim, h: hF, body: { scale: 2 } });
+    ok(up2.accepted && near(up2.seen.maxY, 1.2, 1e-3) && up2.at[0] > 9.9, `G6 [${claim}] a scale-2 body steps up a 1.2 m terrain ledge (its step is 1.6 m): accepted by both`, up2);
+    const up1 = agree("shelf", "hal", [2, 0], [10, 0], envF, { claim, h: hF });
+    ok(both(up1) && up1.moverRef.by === "ledge", `G6 [${claim}] a scale-1 body at the same ledge: refused by both`, up1);
+    const lo5 = agree("shelf", "ivy", [-2, 0], [-10, 0], envF, { claim, h: hF, body: { scale: 0.5 } });
+    ok(both(lo5) && lo5.moverRef.by === "ledge", `G6 [${claim}] a scale-0.5 body at a 0.6 m ledge (its step is 0.4 m): refused by both (the authority let a 0.8 m step through)`, lo5);
+  }
+  // a flat world (no terrain): a crate 1.2 m tall. A scale-2 body walks up onto it (a 1.6 m step; its box starts 1.6 m up)
+  call("flat2", "olive", "create-world", { title: "flat2" });
+  const CR = { id: "crate12", p: [5, 0, 0], s: [2, 1.2, 2] };
+  ok(call("flat2", "olive", "create", { id: CR.id, components: { mesh: { shape: "box", size: CR.s }, transform: { pos: CR.p } } }).ok, "G0 a 1.2 m crate on a flat world");
+  const envC = envOf(() => 0, null, [{ id: CR.id, box: meshBox(CR.p, CR.s) }]);
+  const cr2 = agree("flat2", "jo", [0, 0], [5, 0], envC, { body: { scale: 2 } });
+  ok(cr2.accepted && near(cr2.seen.maxY, 1.2, 1e-6) && cr2.at[0] > 4.9, "G6 flat world: a scale-2 body walks up onto a 1.2 m crate: accepted by both", cr2);
+  const cr1 = agree("flat2", "kit", [0, 0], [5, 0], envC);
+  ok(cr1.moverRef && cr1.authRef && !cr1.authRef.ok && cr1.mism === null, "G6 flat world: a scale-1 body at the same crate: refused by both", cr1);
+  // the bounds: what a body may say about itself (a liar's reach is the size slider's, no further)
+  const bnd = (args) => call("shelf", "lia", "move", { to: [0, 0, 0], teleport: true, ...args });
+  ok(!bnd({ height: "tall" }).ok && !bnd({ scale: -1 }).ok && !bnd({ scale: NaN }).ok && !bnd({ height: 0 }).ok, "G6 a height or scale that isn't a positive number is refused (shape)", [bnd({ height: "tall" }).refused?.code, bnd({ scale: -1 }).refused?.code]);
+  { const r = call("shelf", "lia", "move", { to: [0, 0, 5.5], teleport: true, scale: 50 }), up = r.ok && call("shelf", "lia", "move", { to: [0, 2, 6.3] });
+    ok(r.ok && up && !up.ok && up.refused.code === "solid" && /ground/.test(up.refused.blocker ?? ""), "G6 a claimed scale of 50 is the mover's largest body (2): a 2 m terrain ledge is still a wall (its step is 1.6 m)", { r, up }); }
 
   // ---- GP placement: on the hill, place {at}, create {at: [x, z]} and the spawn alias seat a model's BOTTOM on the heightfield
   const { TOOL_ALIAS_ARGS } = await import(ENGINE + "mcpl/tools.ts");

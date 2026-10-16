@@ -3706,6 +3706,8 @@ export class WorldAgent {
    *  fix}}. */
   request(verb: string, args: Record<string, unknown> = {}): Promise<any> {
     if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ ok: false, refused: { code: "not-joined", reason: "not in a world" } });
+    // holes r3 F2: the authority judges this body's water with the stature its mover is handed (in water: stature())
+    if (verb === "move" && this.water && args.height === undefined) args = { ...args, height: this.stature() };
     const id = `v${++this.histId}`;
     return new Promise((resolve) => {
       const t = setTimeout(() => { this.pendingRequests.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the authority did not answer within 8 s" } }); }, 8000);
