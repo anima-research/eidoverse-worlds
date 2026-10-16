@@ -3327,8 +3327,9 @@ export class WorldAgent {
 
   /** Where `to` is, as a walk can aim at it: "thing/place", a thing alone
    *  (its entrance, else its door), a place's name or label alone (the
-   *  nearest, if several things have one), or a person (stopping short of
-   *  them) — in that order: a person's name never hides a thing's. */
+   *  nearest, if several things have one), a thing by its label, or a person
+   *  (stopping short of them) — in that order: a person's name never hides a
+   *  thing's, by id or by label. */
   destination(to: string): Destination | { refusal: string } {
     const q = to.trim();
     if (!q) return { refusal: "move's to names nothing" };
@@ -3366,6 +3367,16 @@ export class WorldAgent {
       if (!("refusal" in d)) hits.push(d);
     }
     if (hits.length) return hits.sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
+    // a thing by its label (a display name someone gave it), the nearest: as a thing by its id — before any person too
+    // (review r4 claims C1: a visitor named like a thing's label captured the walk)
+    const byLabel = ents.filter((x) => { const l = (x as { label?: unknown }).label; return typeof l === "string" && ci(l.trim(), q); })
+      .sort((a, b) => Math.hypot(a.pos[0] - me.x, a.pos[2] - me.z) - Math.hypot(b.pos[0] - me.x, b.pos[2] - me.z));
+    if (byLabel.length) {
+      const x = byLabel[0], ps = this.placesOn(x);
+      const p = ps.find((y) => y.name === "entrance") ?? ps.find((y) => y.kind === "door");
+      if (p) return at(x, p);
+      return { refusal: `[${x.id}] has no entrance or door named — move to its places by name${ps.length ? ` (${ps.map((y) => y.name).join(", ")})` : ""}, or to its coordinates` };
+    }
     // a person, last (review r3 F4): a visitor who joins as "tower" must not capture every walk to the tower
     for (const p of this.people.values()) {
       if (!ci(p.id, q)) continue;

@@ -168,6 +168,20 @@ try {
       check("move {to: \"tower\"} goes to the tower's entrance, not to the person called Tower", /arrived at tower\/entrance/.test(r), `${r} ${at()}`);
     } finally { try { squatter.close(); } catch { /* gone */ } }
   }
+  // review r4 claims C1: nor does a person whose name is a thing's LABEL (a display name, not its id)
+  {
+    await a.request("set", { id: "tower2", component: "label", value: "Belfry" });
+    for (let i = 0; i < 40 && a.entities.get("tower2")?.label !== "Belfry"; i++) await sleep(50);
+    const squatter: any = new WorldAgent({ name: "Belfry", world: "places", url: URL_ });
+    try {
+      await squatter.connect();
+      await squatter.walkTo(-15, -15, true);
+      for (let i = 0; i < 40 && ![...a.people.keys()].some((k: string) => k.toLowerCase() === "belfry"); i++) await sleep(50);
+      check("(tower2 is labelled \"Belfry\", and a visitor named \"Belfry\" is here)", a.entities.get("tower2")?.label === "Belfry" && [...a.people.keys()].some((k: string) => k.toLowerCase() === "belfry"), [...a.people.keys()].join(","));
+      r = await tool("move", { to: "belfry", run: true });
+      check("move {to: \"belfry\"} goes to the thing labelled Belfry (its entrance), not to the person called Belfry", /arrived at tower2\/entrance/.test(r), `${r} ${at()}`);
+    } finally { try { squatter.close(); } catch { /* gone */ } }
+  }
 
   // the nearest of two
   await tool("walk_to", { x: 30, z: 7, run: true });

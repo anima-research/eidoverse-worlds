@@ -300,7 +300,7 @@ const airborne = (ag: ToolAgent) => !!ag.flight && ag.flight.phase !== "GROUND" 
  *  (@world places:<name> / a `places` component, the upstream places PRs' shape, read when present). Returns the point
  *  to walk to and how far short of it to stop — up to a thing, in front of a person, onto a place. */
 function resolvePlaceName(ag: ToolAgent, name: string): { x: number; z: number; stop: number; what: string } | { error: string } {
-  const ent: any = ag.entities.get(name) ?? [...ag.entities.values()].find((e: any) => e?.label === name);
+  const ent: any = ag.entities.get(name) ?? [...ag.entities.values()].find((e: any) => typeof e?.label === "string" && e.label.trim().toLowerCase() === name.toLowerCase());
   if (ent && Array.isArray(ent.pos)) return { x: ent.pos[0], z: ent.pos[2], stop: 0.8, what: `[${ent.id}]` };
   const who: any = ag.people.get(name);
   if (who?.pose?.p) return { x: who.pose.p[0], z: who.pose.p[2], stop: 1.2, what: name };
