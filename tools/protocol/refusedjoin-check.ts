@@ -12,14 +12,20 @@
 //   W3 the client knows it is refused (net.status 'rejected') and never says it joined (net.joined false)
 //   W4 it didn't redial: one join reached the server for this page load
 //   W5 (old-x, early socket) still there after the splash's 45 s ceiling, and no "go in anyway" into an empty world
+// and, on a world that exists (here, founded by keeper):
+//   W6 an early socket whose join was NOT the page's (it asked for "nope") is refused: that refusal is not the page's
+//      answer — the page connects fresh and joins (review r3 F6: "the early socket is never an authority")
+//   W7 a FULL world (access max) is a transient refusal: the words are shown but the splash isn't pinned, and the page
+//      gets in by itself once there is room (review r3 F6)
 // Run under the house guards: code/scripts/eido-probe.sh -C <worktree> -t 300 tools/protocol/refusedjoin-check.ts
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
 import { scratchBench, mkCheck, sleep } from "../harness.ts";
 
+process.env.AGENT_BODY_ENGINE = "verlet";
 const V1 = process.env.V1_LOG ?? "/home/claude/eido/staging/worlds/staging/log.jsonl";
-const { evalJson, cdp, cleanup, die, BASE, SCRATCH } = await scratchBench("refusedjoin", {
+const { evalJson, cdp, cleanup, die, BASE, SCRATCH } = await scratchBench("refusedjoin", { worlds: ["here"], owner: "keeper", serverEnv: { TRUST_NAMES: "1" },
   prepare: (scratch) => {
     const d = path.join(scratch, "worlds", "old-x"); fs.mkdirSync(d, { recursive: true });
     // a first-protocol log, cut to its first lines (a v1 world is recognised by its genesis line)
@@ -72,6 +78,42 @@ try {
         check(`W5 ${tag}: still on screen past the splash's 45 s ceiling, with no "go in anyway"`, late && skip === false, { late, skipOffered: skip });
       }
     }
+  }
+  // W6: the early socket's join differs from the page's (here: it asked for "nope"); its refusal must not be the page's
+  {
+    const said = await serverSays("nope");
+    await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `if (/[?&]w6=1/.test(location.search)) {
+      let first = true; const send = WebSocket.prototype.send;
+      WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (first && m?.type === 'join') { first = false; m.world = 'nope'; d = JSON.stringify(m); } } catch {} return send.call(this, d); };
+      let held = null; Object.defineProperty(globalThis, '__ewEarlySocket', { configurable: true, get() { return held; }, set(v) { if (v && v.sent) v.sent.world = 'nope'; held = v; } }); }` });
+    await cdp.send("Page.navigate", { url: `${BASE}/?world=here&name=T6&w6=1` });
+    let st: any = null; const t0 = Date.now();
+    while (Date.now() - t0 < 20000) { st = await evalJson(`import('/lib/net.js').then((m) => ({ status: m.net.status, joined: m.net.joined, joins: window.__joins, early: !!window.__ewEarlySocket || null,
+      refusalShown: document.body.innerText.includes(${JSON.stringify(said.error)}) }))`).catch((e) => ({ err: String(e) })); if (st?.joined) break; await sleep(300); }
+    check(`W6 here: an early refusal for a join the page didn't send ("nope") is discarded — the page connects fresh and joins`,
+      st?.joined === true && st.joins === 2 && !st.refusalShown, st);
+  }
+  // W7: a full world is transient — not pinned, and the page gets in once there is room
+  {
+    const { WorldAgent } = await import("../../mcpl/agent.ts");
+    const keeper: any = new WorldAgent({ name: "keeper", world: "here", url: BASE.replace("http", "ws") + "/ws" });
+    await keeper.connect();
+    const set: any = await keeper.request("set", { id: "@world", component: "access", value: { join: "anyone", max: 1 } });
+    const full = await serverSays("here");
+    check("(setup) here is full: max 1, and keeper is in", set?.ok !== false && full.code === 4005 && /is full/.test(full.error), { set: JSON.stringify(set).slice(0, 200), full });
+    await cdp.send("Page.navigate", { url: `${BASE}/?world=here&name=T7` });
+    const probe = `import('/lib/net.js').then((m) => ({ status: m.net.status, joined: m.net.joined, joins: window.__joins,
+      shown: document.body.innerText.includes(${JSON.stringify(full.error)}) }))`;
+    let st: any = null; const t0 = Date.now();
+    while (Date.now() - t0 < 8000) { st = await evalJson(probe).catch((e) => ({ err: String(e) })); if (st?.shown) break; await sleep(250); }
+    await sleep(1500);
+    st = await evalJson(probe).catch((e) => ({ err: String(e) }));
+    check("W7 here (full): the server's words are shown, and the page is not refused for good (it will try again)",
+      st?.shown === true && st.status !== "rejected" && st.joined === false, st);
+    try { keeper.close(); } catch { /* gone */ }
+    const t1 = Date.now();
+    while (Date.now() - t1 < 30000) { st = await evalJson(probe).catch((e) => ({ err: String(e) })); if (st?.joined) break; await sleep(500); }
+    check("W7 ...and once there is room it gets in by itself, no reload", st?.joined === true && st.joins >= 2, { ...st, waited: Date.now() - t1 });
   }
 } catch (e) { check("the run threw", false, String(e?.stack ?? e)); }
 console.log(`[refusedjoin-check] ${tally.passed} passed, ${tally.failed} failed${tally.note()}`);

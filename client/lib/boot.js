@@ -261,6 +261,19 @@ export function refuseBoot(text) {
 }
 export const bootRefused = () => !!el?.classList.contains('refused');
 
+/** A TRANSIENT refusal (a full world) said on the splash while it waits: the words where the person is looking, but
+ *  nothing is pinned — the splash goes on, and the next join that succeeds finishes it as usual (review r3 F6). */
+export function waitBoot(text) {
+  const root = el ?? document.getElementById('splash');
+  if (!root || done) return false;
+  el = root;
+  const phase = root.querySelector('.sp-phase');
+  if (phase) { phase.textContent = String(text ?? ''); phase.setAttribute('role', 'status'); }
+  const sub = root.querySelector('.sp-sub');
+  if (sub) sub.textContent = 'waiting for room — trying again by itself';
+  return true;
+}
+
 /** Disarm the lite-mode tripwire index.html armed before the first engine byte.
  *
  *  NOT at finishBoot: arrival means "there is somewhere to stand", and the world's assets

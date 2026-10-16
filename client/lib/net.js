@@ -22,7 +22,7 @@ import { presenceWire, voiceWire, bodyWire } from '../../shared/presencewire.js'
 import { serverNow, localNow, noteRoundTrip, clockRtt } from './serverclock.js';
 import { presence } from './presence.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
-import { markPhase, refuseBoot } from './boot.js';
+import { markPhase, refuseBoot, waitBoot } from './boot.js';
 // this client folds the authority's own stream (shared/protocol/replica.js) and derives the view the realizers draw from it,
 // locally; edit mode sends requests (editwrites.js) and waits for the authority.
 import { makeReplica } from '../../shared/protocol/replica.js';
@@ -513,7 +513,8 @@ export async function connect() {
   if (early) {
     const wantJoin = JSON.stringify({ world: CONFIG.world, id: CONFIG.name,
       avatar: hooks.myAvatarPath(), token: CONFIG.token, ...(CONFIG.account ? { account: CONFIG.account } : {}) });
-    if (!early.failed && early.ws.readyState <= 1 && JSON.stringify(early.sent) === wantJoin) {
+    const same = JSON.stringify(early.sent) === wantJoin;
+    if (!early.failed && early.ws.readyState <= 1 && same) {
       net.status = 'connecting';
       bus.emit('net', net);
       net.ws = early.ws;
@@ -540,7 +541,9 @@ export async function connect() {
     // refusal is the answer, not a reason to dial again. Read the server's words out of what the boot script buffered
     // and close exactly as a live socket would (R 10-16 00:02: this socket and its refusal were thrown away, the
     // redial's 4005 toasted a wrong "not a valid world name" under the splash, and she stepped into an empty world).
-    if (early.closeInfo?.code >= 4000) {
+    // Only for the join this page would send (review r3 F6): a refusal of some OTHER join (a token, a name, a world the
+    // page doesn't mean) is no answer to this page — it is discarded with the socket, and the page connects fresh.
+    if (same && early.closeInfo?.code >= 4000) {
       net.status = 'connecting';
       for (const raw of early.buffered) {
         let msg; try { msg = JSON.parse(raw); } catch { continue; }
@@ -617,6 +620,18 @@ function onSocketClosed(ev) {
   // 4005 = a refused join: a malformed name, no such world, an old-format world, a client that doesn't fold the log.
   // No retry — the answer won't change, so reconnecting is just hammering the authority. The server says why in an `error` just before this close; that sentence is shown. Without one, the close
   // reason picks the words (the server's reasons: "old-format world", "no such world", "bad world name", …).
+  // 4005 "full" = the world is at its access max: TRANSIENT — someone leaving makes room. Say the server's words (on
+  // the splash if it is still up, else a toast) and try again, backing off; never pinned as the answer (review r3 F6).
+  if (ev.code === 4005 && String(ev.reason ?? '') === 'full') {
+    const text = `${joinRefusal ?? `"${CONFIG.world}" is full`} — trying again by itself`;
+    if (!waitBoot(text)) toast(text, 'warn', 8000);
+    net.status = 'retrying';
+    bus.emit('net', net);
+    retryDelay = Math.max(retryDelay, 5000);
+    setTimeout(connect, retryDelay);
+    retryDelay = Math.min(15000, retryDelay * 1.6);
+    return;
+  }
   if (ev.code === 4005) {
     const why = String(ev.reason ?? '');
     showRefusal(joinRefusal ?? (
