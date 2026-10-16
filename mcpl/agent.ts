@@ -5,7 +5,7 @@
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
 import { bodyOf } from "../shared/components.js";
-import { DEFAULT_PRESET, KIND_CLASS, REACH_NOTE_MS, INTIMATE_POINTS } from "../shared/protocol/consent.js";
+import { DEFAULT_PRESET, KIND_CLASS, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/protocol/consent.js";
 import { kindOf } from "../shared/protocol/kind.js";
 import { describeBody, mayLeave, resolveSeat, socketsUnder } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
@@ -1034,7 +1034,7 @@ export class WorldAgent {
                 const to = String(m.to ?? ""), who = this.nameOfActor(to) ?? to;
                 this.reachRefusals.push({ to, cls: String(m.class ?? "touch"), why: String(m.why ?? "their consent refused it"), ...(m.fix ? { fix: String(m.fix) } : {}), ...(typeof m.limb === "string" ? { limb: m.limb } : {}), ts });
                 if (this.reachRefusals.length > 20) this.reachRefusals.shift();
-                const dropped = this.dropReachesAt(to, typeof m.limb === "string" ? m.limb : undefined);
+                const dropped = this.dropReachesAt(to, typeof m.limb === "string" ? m.limb : undefined, String(m.class ?? "touch"));
                 text = `your hand toward ${who}${m.point ? `'s ${m.point}` : ""} was not shown to anyone (consent class ${m.class}): ${m.why}${m.fix ? ` — ${m.fix}` : ""}${dropped.length ? `. Withdrawn: ${dropped.join(", ")}` : ""}`; }
               if (text) { this.inbox.push({ ts, kind: "act", who: m.type === "body-ask" ? String(m.ask?.from ?? "world") : String(m.from ?? m.by ?? "world"), text }); this.onEvent?.({ ts, kind: "act", who: String(m.ask?.from ?? m.from ?? m.by ?? "world"), text, mention: m.type === "body-ask" }); }
             }
@@ -3133,21 +3133,32 @@ export class WorldAgent {
    *  REACH_NOTE_MS), newest last: what reach() reads to tell the truth about a hand nobody saw. */
   reachRefusals: { to: string; cls: string; why: string; fix?: string; limb?: string; ts: number }[] = [];
   private nameOfActor(actor: string): string | null { for (const [n, a] of this.actorIds) if (a === actor) return n; return null; }
-  /** Stop streaming the limbs a refusal names (the relay strips them anyway): the one it named, and any aimed at that body. */
-  private dropReachesAt(actor: string, limb?: string): string[] {
+  /** Stop streaming the limb a refusal names (the relay strips it anyway). Only that one: another limb on the same body may
+   *  be one they consented to (r2 holes F9). A refusal from a server that doesn't name the limb drops the limbs aimed at that
+   *  body in the refused class. */
+  private dropReachesAt(actor: string, limb?: string, cls?: string): string[] {
     const name = this.nameOfActor(actor), out: string[] = [];
-    for (const [l, e] of [...this.reaches]) if (l === limb || (name && (e.t?.who === name || e.t?.space === name))) { this.reaches.delete(l); out.push(WorldAgent.LIMB_WORD[l] ?? l); }
+    for (const [l, e] of [...this.reaches]) {
+      const hit = limb !== undefined ? l === limb : !!name && (e.t?.who === name || e.t?.space === name) && (!cls || WorldAgent.reachClass(e.t, name) === cls);
+      if (hit) { this.reaches.delete(l); out.push(WorldAgent.LIMB_WORD[l] ?? l); } }
     return out;
+  }
+  /** The class the relay (server/reachgate.ts) gives a target on `name`'s body: a named point by consent.js's one table, a
+   *  point in their own frame by their capsule; null for a point beside them (the relay relays it) or another kind of target. */
+  static reachClass(t: any, name: string): string | null {
+    if (t?.who === name) return namedPointClass(t.point)?.cls ?? null;
+    if (t?.space === name && Array.isArray(t.p)) return pointClass([0, 0, 0], t.p);
+    return null;
   }
   /** After streaming a reach at another body: did the relay refuse it? A fresh refusal (waits a few frames for one), or one
    *  said within REACH_NOTE_MS (the relay won't say it again that soon, so silence then is not a yes). */
-  private async reachRefusalFor(limb: string, actor: string, cls: string | null, since: number) {
+  private async reachRefusalFor(limb: string, actor: string, cls: string, since: number) {
     for (let i = 0; i < 16 && this.joined && !this.closed; i++) {
       const r = this.reachRefusals.find((x) => x.ts >= since && x.to === actor && (x.limb ?? limb) === limb);
       if (r) return { r, fresh: true };
       await new Promise((res) => setTimeout(res, 50));
     }
-    const r = [...this.reachRefusals].reverse().find((x) => x.to === actor && (!cls || x.cls === cls) && x.ts > Date.now() - REACH_NOTE_MS);
+    const r = [...this.reachRefusals].reverse().find((x) => x.to === actor && x.cls === cls && x.ts > Date.now() - REACH_NOTE_MS);   // (target, class) exactly (F9)
     return r ? { r, fresh: false } : null;
   }
   /** A gesture's ops (shared/protocol/requests.js) as ONE request — one act, the authority's answer — sent after the previous one
@@ -3401,8 +3412,9 @@ export class WorldAgent {
     // a hand on another body is shown only with their consent: the relay strips it otherwise and says why (reachgate.ts)
     const otherName = t.who !== undefined ? t.who : t.space !== undefined && t.space !== "self" ? t.space : null;
     const otherActor = otherName && otherName !== this.name ? this.actorIds.get(otherName) : undefined;
-    if (otherActor && this.joined) {
-      const refused = await this.reachRefusalFor(limb, otherActor, t.who !== undefined ? (INTIMATE_POINTS.has(t.point) ? "intimate" : "touch") : null, since);
+    const cls = otherName ? WorldAgent.reachClass(t, otherName) : null;   // null: beside them, nothing for the relay to refuse
+    if (otherActor && this.joined && cls) {
+      const refused = await this.reachRefusalFor(limb, otherActor, cls, since);
       if (refused) {
         if (this.reaches.get(limb) === entry) this.reaches.delete(limb);
         const { r } = refused, ago = Math.round((Date.now() - r.ts) / 1000);

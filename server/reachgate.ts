@@ -5,7 +5,7 @@
 // table through the authority (WorldLog.reachAdmits → authority.js reachAdmits); a refused limb is taken out of the packet,
 // and the rest of the pose relays as it came. Presence only: nothing is logged. Judged by where the hand is aimed, as the
 // authority judges a reach (42 P8): a named point by the social/intimate split, a bare point by the body capsule it falls in.
-import { INTIMATE_POINTS, pointClass } from "../shared/protocol/consent.js";
+import { namedPointClass, pointClass } from "../shared/protocol/consent.js";
 import { normalizeReachTarget, REACH_LIMBS } from "../shared/reachwire.js";
 import type { Client } from "./world.ts";
 
@@ -40,7 +40,8 @@ function touched(c: Client, pose: any, t: any): Hit[] | null {
     if (t.who === c.id) return [];
     const tc = legNamed(c, t.who); if (!tc) return null;
     if (sameBody(c, tc)) return [];
-    return [{ tc, cls: INTIMATE_POINTS.has(t.point) ? "intimate" : "touch", point: t.point }];
+    const np = namedPointClass(t.point); if (!np) return null;   // one classifier with the reach verb (consent.js)
+    return [{ tc, cls: np.cls as Cls, point: np.point }];
   }
   if (t.space === undefined) return bodiesAt(c, t.p);
   if (t.space === "self" || t.space === c.id) return fin3(pose.p) ? bodiesAt(c, frameToWorld(pose.p, Number(pose.yaw) || 0, scaleOf(pose), t.p)) : null;
@@ -50,22 +51,28 @@ function touched(c: Client, pose: any, t: any): Hit[] | null {
   return cls ? [{ tc, cls, point: null }] : [];
 }
 
-/** Takes out of `pose.reach` (in place) every limb aimed at a body that hasn't consented to it. */
+/** Takes out of `pose.reach` (in place) every limb aimed at a body that hasn't consented to it. Then tells the authority
+ *  which bodies a relayed limb rests on: a yes to an ask is one touch, and ends on the first packet without its hand
+ *  (an absent reach is "nobody is reaching", reachwire.js). */
 export function gateReach(c: Client, pose: Record<string, unknown>): void {
+  const log = c.world?.log, aimed = new Set<string>();
+  const letGo = () => { if (log && c.actorId) log.reachLetGo(c.actorId, aimed); };
   const bag = pose.reach as Record<string, any> | null | undefined;
-  if (bag == null) return;
-  if (typeof bag !== "object" || Array.isArray(bag)) { delete pose.reach; return; }
-  const log = c.world?.log;
+  if (bag == null) return letGo();
+  if (typeof bag !== "object" || Array.isArray(bag)) { delete pose.reach; return letGo(); }
   for (const limb of Object.keys(bag)) {
     if (!REACH_LIMBS.includes(limb)) { delete bag[limb]; continue; }   // receivers drop it too; nobody draws it
     const t = normalizeReachTarget(bag[limb]?.t);
     const hits = t ? touched(c, pose, t) : null;
     // no target a receiver would draw, or a body that isn't here (whoever arrives under the name next would wear the hand)
     if (!hits) { delete bag[limb]; continue; }
+    let admitted = true;
     for (const h of hits) {
       const v = log && c.actorId && h.tc.actorId ? log.reachAdmits(c.actorId, h.tc.actorId, h.cls, { point: h.point, limb }) : { ok: false };
-      if (!v.ok) { delete bag[limb]; break; }
+      if (!v.ok) { delete bag[limb]; admitted = false; break; }
     }
+    if (admitted) for (const h of hits) if (h.tc.actorId) aimed.add(h.tc.actorId);
   }
   if (!Object.keys(bag).length) delete pose.reach;
+  letGo();
 }

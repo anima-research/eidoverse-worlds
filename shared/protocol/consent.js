@@ -9,6 +9,7 @@
 //   anyone you trust (someone YOU named a friend) may close your shield; only you may open it.
 // The lab enforces touch/intimate, pose, shove and move (what the lab can model: reach, pose, ragdoll, drag/grab of a
 // body). near, follow and voice are in the table and shown, but the lab has no fade, follow track or SFU to enforce.
+import { CONTACT_POINTS, canonicalPoint } from "../contact.js";
 export const CLASSES = ["near", "follow", "touch", "intimate", "pose", "shove", "move", "voice"];
 export const ENFORCED = ["touch", "intimate", "pose", "shove", "move"];
 const MODES = ["everyone", "ask", "nobody"];
@@ -25,9 +26,24 @@ export const ASK_MS = 20000, COOL_MS = 600000, MAX_ALLOW_MS = 30 * 24 * 3600000;
 // (reacher, target, class) per this long: a stream of frames is one attempt, never one message a frame
 export const REACH_NOTE_MS = 15000;
 export const KIND_CLASS = { pose: "pose", anim: "pose", shove: "shove", drag: "move", seat: "move", carry: "move", touch: "touch" };
-// Touch is judged by where a hand is, not how it was aimed (42 P8): named points split social / intimate.
+// Touch is judged by where a hand is, not how it was aimed (42 P8): a named point is intimate if it is one of these, and
+// touch if it is any other contact point (shared/contact.js). ONE classifier, namedPointClass, for the relay
+// (server/reachgate.ts), the authority's reach verb and the agent (r2 holes F5: the verb kept its own 19-point list, so
+// cheek, eye, knee and foot, which the relay classes touch and tells you to ask for, could never be asked for).
 export const INTIMATE_POINTS = new Set(["chest_front", "waist_l", "waist_r", "hip_l", "hip_r"]);
-export const SOCIAL_POINTS = new Set(["hand_l", "hand_r", "forearm_l", "forearm_r", "wrist_l", "wrist_r", "shoulder_l", "shoulder_r", "upper_back", "head_top", "arm_l", "arm_r", "back", "neck_back"]);
+export const REACH_POINTS = Object.keys(CONTACT_POINTS);
+/** a named contact point (any spelling canonicalPoint takes) → { point (canonical), cls: touch | intimate }; null if not a point */
+export function namedPointClass(name) { const point = canonicalPoint(name); return point ? { point, cls: INTIMATE_POINTS.has(point) ? "intimate" : "touch" } : null; }
+// An ask answered yes is ONE touch (r2 holes F3), and lasts at most this long even while the hand is held: the window a
+// no holds (COOL_MS) is the longest a yes holds. Long enough for a held hand on a walk or a slow dance, short enough that
+// a yes forgotten in a long session doesn't stand in for consent an hour on. Letting go, either person leaving, or the
+// target's cell moving off everyone ends it sooner (authority.js reachLetGo, leave, revokeAfter).
+export const REACH_GRANT_MS = COOL_MS;
+// What the ASKER is told when a table refuses: the same words for a tier's nobody, a per-person no, a pause, an ask
+// answered no and an ask nobody answered (10-13 consent research: the reason leaked a per-person deny). The real cause
+// (decide's why) goes to the target's own attempt ring only.
+export const refusalWords = (to, cls) => `${to} isn't taking ${cls} right now`;
+export const REFUSAL_FIX = "leave it be: it is theirs to open";
 // a world-space point at a body: inside its capsule (r 0.25 m, feet to 1.8 m) is a touch; the torso/pelvis core is intimate
 export function pointClass(bodyAt, p) {
   const h = Math.hypot(p[0] - bodyAt[0], p[2] - bodyAt[2]), y = p[1] - bodyAt[1];
