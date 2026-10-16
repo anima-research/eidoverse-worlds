@@ -752,6 +752,38 @@ try {
       const after = JSON.stringify(disk().entities["@world"]?.c.bounds ?? null);
       await evalJson(`(document.getElementById('__pl')?.remove(), true)`);
       check("CB1 Places › Save with empty Bounds saves the spawn and leaves bounds as they were (no zero box)", spawned && before === after, { spawned, before, after, toasts: await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 100)).slice(-3)`) }); }
+    // EK (R 10-15 23:09: "esc doesn't take you back out of fullscreen mode (f11). Right now it toggles your menus"): Esc never
+    // hides or restores the panel set (Tab does); F11 is the PAGE's full screen, so the browser's own Esc leaves it; Esc still
+    // closes the transient things. Out of edit mode (build.js claims Esc there), with two panels open.
+    { await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+      await page(`const w = await import('/lib/windows.js'); const base = await import('/lib/base.js'); globalThis.__quiet = []; base.bus.on('esc-quiet', (d) => __quiet.push(d)); for (const f of w.allFrames()) f.hide(); w.getFrame('chat')?.show(); w.getFrame('settings')?.show(); document.activeElement?.blur?.(); return true;`);
+      const openIds = `import('/lib/windows.js').then((w) => w.allFrames().filter((f) => f.visible).map((f) => f.id).sort().join())`;
+      const press = (k: string) => evalJson(`(() => { const e = new KeyboardEvent('keydown', { key: '${k}', code: '${k}', bubbles: true, cancelable: true }); const t = document.activeElement ?? document.body; const ok = t.dispatchEvent(e); t.dispatchEvent(new KeyboardEvent('keyup', { key: '${k}', code: '${k}', bubbles: true })); return { prevented: !ok }; })()`);   // at the focused element, as a real key is: document listeners (a context menu's) see it too
+      const before = await evalJson(openIds);
+      const claimed = await evalJson(`import('/lib/windows.js').then((w) => w.escapeIsClaimed())`);
+      await press("Escape"); await sleep(150);
+      const afterEsc = await evalJson(openIds);
+      check("EK1 with panels open, Esc does NOT hide them (and says nothing on the bus): Esc is the way out of full screen, never the panel toggle", before === "chat,settings" && claimed === null && afterEsc === before && await evalJson(`__quiet.length === 0`), { before, claimed, afterEsc, quiet: await evalJson(`__quiet`) });
+      await press("Escape"); await sleep(150);
+      check("EK1b …nor does a second Esc (no toggle back and forth)", await evalJson(openIds) === before && await evalJson(`__quiet.length === 0`), { now: await evalJson(openIds), quiet: await evalJson(`__quiet`) });
+      // EK2 Tab hides the set and brings back exactly that set
+      const t1 = await press("Tab"); await sleep(150);
+      const hid = await evalJson(openIds);
+      const t2 = await press("Tab"); await sleep(150);
+      const back = await evalJson(openIds);
+      check("EK2 Tab hides every open panel ('closed' on the bus), and Tab again restores exactly that set ('restored')", t1.prevented && hid === "" && t2.prevented && back === before && await evalJson(`__quiet.join() === 'closed,restored'`), { t1, hid, t2, back, quiet: await evalJson(`__quiet`) });
+      // EK3 F11 is taken (not the browser's chrome-hiding F11, which Esc can't leave) and asks the PAGE for full screen —
+      // headless can't truly go full screen, so the request is spied
+      await page(`globalThis.__fs = 0; globalThis.__fsWas = Element.prototype.requestFullscreen; Element.prototype.requestFullscreen = function () { if (this === document.documentElement) __fs++; return Promise.resolve(); }; return true;`);
+      const f11 = await press("F11"); await sleep(100);
+      const fsCalls = await evalJson(`__fs`);
+      await page(`Element.prototype.requestFullscreen = globalThis.__fsWas; return true;`);
+      check("EK3 F11 is prevented (not the browser's F11) and asks the page's full screen (document.documentElement.requestFullscreen) once", f11.prevented && fsCalls === 1, { f11, fsCalls });
+      // EK4 Esc still closes the transient things: a context menu goes, the panels stay
+      await page(`const p = await import('/lib/panels.js'); p.contextMenu(200, 200, [{ k: 'a', label: 'a' }, { k: 'b', label: 'b' }], () => {}); return true;`);
+      const menuUp = await evalJson(`!!document.querySelector('.sp-ctx')`);
+      await press("Escape"); await sleep(150);
+      check("EK4 Esc still closes an open context menu, and the panels stay where they were", menuUp && await evalJson(`!document.querySelector('.sp-ctx')`) && await evalJson(openIds) === before && await evalJson(`__quiet.join() === 'closed,restored'`), { menuUp, gone: await evalJson(`!document.querySelector('.sp-ctx')`), open: await evalJson(openIds), quiet: await evalJson(`__quiet`) }); }
     // CP10 removed from the world (4006): a line typed after it isn't queued "until the world is back" (it never comes)
     { await evalJson(`import('/lib/net.js').then((m) => (m.net.ws.close(4006, 'test: as if removed'), true))`);
       await waitFor(`import('/lib/net.js').then((m) => m.net.status === 'rejected')`, 5000);

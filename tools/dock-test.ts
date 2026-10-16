@@ -263,21 +263,21 @@ check("the wrench has a row while gated open", !!row("edit"));
   check("the row itself opens the lantern (like a window row opens its window)", L.isLanternOpen());
   L.closeLantern();
   bus.emit("esc-quiet", "closed");
-  check("Esc put the panels away (windows.js says so on the bus): the resting line goes with them", L.pillQuiet());
+  check("Tab put the panels away (windows.js says so on the bus): the resting line goes with them", L.pillQuiet());
   bus.emit("esc-quiet", "restored");
   check("…and comes back with them", !L.pillQuiet());
-  // the real key, with NO panel open (owner, 10-01: "Basically only the dock should be visible"): Esc still takes the
-  // resting line away, and says so; the next Esc brings it back
+  // the real key, with NO panel open (owner, 10-01: "Basically only the dock should be visible"): Tab still takes the
+  // resting line away, and says so; the next Tab brings it back (Esc did, until R 10-15: Esc is full screen's way out)
   for (const id of ["chat", "world", "emotes", "debug", "settings", "profile"]) getFrame(id)?.hide();
   const menuWas = !menu().hidden;
   if (menuWas) toggleEMenu(false);
-  const key = () => document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  const key = () => document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
   key();
   const hint = document.getElementById("hintbar")!;
-  check("no panel open: Esc puts the resting line away", L.pillQuiet(), String(L.pillQuiet()));
-  check("…and the hint says 'hidden · Esc to bring back' (no panels were)", /^hidden · Esc to bring back$/.test(hint.textContent!.trim()), hint.textContent!);
+  check("no panel open: Tab puts the resting line away", L.pillQuiet(), String(L.pillQuiet()));
+  check("…and the hint says 'hidden · Tab to bring back' (no panels were)", /^hidden · Tab to bring back$/.test(hint.textContent!.trim()), hint.textContent!);
   key();
-  check("…the next Esc brings it back", !L.pillQuiet());
+  check("…the next Tab brings it back", !L.pillQuiet());
   if (menuWas) openPanels();
 }
 { // ...and a row while gated CLOSED too — dead, not absent (R: "It SHOULD be

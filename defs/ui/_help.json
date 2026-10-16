@@ -65,7 +65,7 @@
     ],
     [
       "Panels",
-      "<kbd>Esc</kbd> closes every panel, again restores them · People Here is Chat's side pane · <kbd>Tab</kbd> opens People Here · grab empty panel space to move, corners to resize"
+      "<kbd>Tab</kbd> hides every panel, again restores them · <kbd>F11</kbd> full screen, <kbd>Esc</kbd> leaves it · People Here is Chat's side pane · grab empty panel space to move, corners to resize"
     ],
     [
       "Photo mode",

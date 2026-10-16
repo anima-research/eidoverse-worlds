@@ -16,7 +16,7 @@
 // crisp text at any distance, the house tokens and buttons for free, focusable, and it follows the plate while open.
 // (A sprite would need its own text rendering, its own hit-testing for the button and a repaint per state change.)
 // On a touch screen a TAP on a plate opens the same card; a tap elsewhere closes it. Esc closes it and goes no
-// further (windows.js's Esc toggle yields to the claim). Leaving plate and card closes a hover-opened card.
+// further (windows.js's panel toggle yields to the claim). Leaving plate and card closes a hover-opened card.
 // VR (owner, 10-02: "VR has no hover — … you can still laser-point at someone's label"): a hand's laser RESTING on a
 // plate (or the head under it) is the hover. xr.js asks platePick once no panel has claimed the laser and reports what it
 // found with aimPlate; the same timer opens the same card. The card is the SAME DOM, moved offscreen and rasterised onto

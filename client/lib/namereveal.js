@@ -7,7 +7,7 @@
 //
 // THE KEY: N ("names"). Alt was the first wish and is taken three times over: walk slowly (controller.js creeping),
 // fine look in photo mode, and grabbing a panel from anywhere (ui.js altgrab) — and a bare Alt release focuses the
-// menu bar in Windows browsers. Tab is People Here. N is bound nowhere in the client, is bare (no chord), and says
+// menu bar in Windows browsers. Tab is the panel set. N is bound nowhere in the client, is bare (no chord), and says
 // what it does. Ignored while typing (any text field or contenteditable) and on autorepeat; released on blur, since a
 // keyup never arrives when focus leaves with the key down (mictoggle.js's stuck-key class).
 import { revealRamp, revealEase } from './platesize.js';
