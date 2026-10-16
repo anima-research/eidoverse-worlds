@@ -76,6 +76,12 @@ await C("S1", "`by` is in the envelope table as a legacy field readers ignore", 
   const table = SPEC.slice(SPEC.indexOf("**The envelope.**"), SPEC.indexOf("**The kinds.**"));
   return [/^\| `by` \|.*ignore/im.test(table), table.split("\n").filter((l) => l.startsWith("|")).map((l) => l.slice(0, 30))]; });
 
+await C("S2", "the spec carries the alpha note (no guarantee, we try not to break, repair paths) and §9.2's component conventions", () => {
+  const alpha = SPEC.slice(SPEC.indexOf("**Alpha.**"), SPEC.indexOf("## 0."));
+  const conv = SPEC.slice(SPEC.indexOf("### 9.2 Component conventions"), SPEC.indexOf("## 10."));
+  const need = ["metres, kilograms, seconds", "epoch milliseconds", "radians", "[x, y, z, w]", "3-vectors", "names its frame", "sRGB", "content addresses", "treat the whole", "current default", "never written whole", "No person data", "refPaths", "role id", "falloff", "required"];
+  return [/about a year/.test(alpha) && /no guarantee/i.test(alpha) && /repair/.test(alpha) && need.every((n) => conv.includes(n)), need.filter((n) => !conv.includes(n))]; });
+
 // ---- C: citations (M5) ----
 // every "§N" or "§N.M" inside a string literal of the files whose words reach people and agents names a heading of
 // PROTOCOL.md (or PHYSICS.md when it says PHYSICS); lab-era names (§2.3, §3d, L1–L7, R8…) are gone from those words

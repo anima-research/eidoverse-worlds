@@ -9,6 +9,14 @@ mail ecosystem exist.
 
 Status: normative for logs whose genesis says `dialect: "eidoverse-log", v: 4,
 minor: 0` (the version history is at the end).
+**Alpha.** The component registry (§4) is in an alpha of about a year from
+v1. Every registered component is `trial` until it is promised: there is
+**no guarantee** that a trial component's shape won't change during the alpha.
+We try not to break one, every change is recorded (`REGISTRY-CHANGELOG.md`
+beside this document), and where a shape does change we give stored values a
+repair or translation path wherever we can. The log, the envelope, the four
+operations and the fold (§1–§3) are not part of the alpha: they are fixed.
+
 The words MUST/SHOULD/MAY are used in the RFC-2119 sense. Where this
 document and the reference implementation disagree, one of them has a bug —
 file it. The reference fold is `shared/protocol/fold.js`; a second reader, written
@@ -215,6 +223,12 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
 - **A changed meaning is a new name**, `<name>@<n>` (e.g. a hypothetical
   `light@2`), registered before anyone writes it, whose definition says what it `supersedes`. Old
   names are read forever. No component may change how another is read.
+- **Every registered name has a status.** `trial`: admitted, but its shape
+  may change during the alpha (above), with stored values repaired or
+  translated where they can be; `reserved`: the name is held and every write
+  of it is refused (one refusal, code `reserved`); `stable`: promised, it only
+  grows by additions. `schema` reports each one. None is stable at v1. A
+  draft (a namespaced name, below) has no status: it isn't admitted.
 - **Every parameter is written down.** The authority writes a component's
   defaults into the stored value when it is created or set, so a reader never
   supplies a value the log doesn't hold, and a later change to a default
@@ -238,8 +252,11 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   field's type, each default and when it applies, each enum's members — is
   pinned in `registry-pin.json` beside this document, with each field's
   meaning of absence where one is stated and each field's grammar where one
-  narrows its type (`physics.shape`); the conformance suite fails when one
-  changes, and only additions may be re-pinned. A
+  narrows its type (`physics.shape`), and each name's status, ranges and
+  required fields; the conformance suite fails when one is removed, changed or
+  narrowed. Additions re-pin freely. During the alpha a trial or reserved
+  name's break re-pins only with an acknowledgement, recorded with its reason
+  in `REGISTRY-CHANGELOG.md`; a stable name's never re-pins. A
   `schemas:<name>` component on `@world` is **optional**: it holds the content
   hash of that name's written definition (shape, units, prose meaning, what
   absence means, an example), and once set it never changes. It adds what the
@@ -596,6 +613,40 @@ rotation order (`XYZ` applies X first) changes how the channels read, never
 the stored `q`. Anything the fold or a physics engine computes from a
 heading uses owned trig (`shared/simmath.js`), never host `sin/cos/atan2`,
 so every runtime gets the same bits.
+
+### 9.2 Component conventions
+
+What every component's fields follow. The registry moves to these during the
+alpha; a trial component that still differs is moving to the convention, not
+away from it.
+
+- **Units**: metres, kilograms, seconds. Instants are epoch milliseconds.
+  Angles are radians unless the field's name carries its unit (`degPerSec`).
+- **Rotations** are unit quaternions `[x, y, z, w]` (§9.1). **Axes** are
+  3-vectors (`[0, 1, 0]`), not letters.
+- **Every vector names its frame** in its definition: the thing's own frame,
+  its parent's, or the world's.
+- **Colours** are integers, sRGB (`0xffd9a0`).
+- **Asset references** are content addresses (`eido:sha256/<64 hex>`,
+  `sha256:<64 hex>`), resolved at the write door: a stored value never holds a
+  mutable path.
+- **An enum member a reader doesn't know** makes the reader treat the whole
+  component as absent (never as a guessed member).
+- **Policy numbers** (capacity, script settings, access limits): an absent
+  field means *this server's current default*, which `schema` reports and
+  which may change. Ceilings are the server's policy, not the registry's
+  ranges. A setting the owner writes is stored as written, even when it
+  equals today's default, and settings are never written whole (a panel
+  writes only the field that changed).
+- **No person data in values**: no account subjects, display names or
+  contact details. Identity to person lives in the directory (§3.1).
+- **Every id field is a typed reference** (§4 "References are typed"): its
+  type in `fields`, or its path in the definition's `refPaths`.
+- **One `who` type**: a role id, meaning "this rank or above".
+- **Curves and falloff laws** are in the value, or named with a version: a
+  reader never supplies its own.
+- **Required where absence isn't the default**: a field whose absence would
+  mean something other than its default is `required`.
 
 ## 10. Extending the protocol
 
