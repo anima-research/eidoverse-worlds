@@ -155,7 +155,7 @@ export function setAmbientHint(line) {
   ambientHint = line;
   if (ambientHint) claimStatus('ambient', { priority: 5, content: ambientHint }); else releaseStatus('ambient');
 }
-// Esc put every panel away (windows.js): say how to get them back, for a few seconds; when they come back, stop saying it
+// Tab put every panel away (windows.js): say how to get them back, for a few seconds; when they come back, stop saying it
 // …and the lantern's resting line goes away with them and comes back with them (commandbar.js setPillQuiet)
 bus.on('esc-quiet', (did) => {
   setPillQuiet(did === 'closed');

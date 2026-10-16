@@ -188,7 +188,7 @@ function build() {
   const wire = el('button', 'edit-vbtn'); wire.innerHTML = iconSvg('box', 16); wire.title = 'wireframe'; wire.dataset.view = 'wire';
   wire.onclick = () => { setShade(shade === 'wire' ? 'shaded' : 'wire'); };
   shadeBtn = wire;
-  const full = el('button', 'edit-vbtn'); full.innerHTML = iconSvg('maximize', 16); full.title = 'full screen (F11 also works)'; full.dataset.view = 'full';
+  const full = el('button', 'edit-vbtn'); full.innerHTML = iconSvg('maximize', 16); full.title = 'full screen: F11 or this button toggles it; Esc leaves it'; full.dataset.view = 'full';
   full.onclick = toggleFullscreen;
   document.addEventListener('fullscreenchange', () => full.classList.toggle('on', !!document.fullscreenElement));
   // Body | Free: whose camera this is (controller.js FREE CAMERA)
@@ -288,7 +288,15 @@ function toggleIsolate() {
 export function toggleFullscreen() { if (document.fullscreenElement) document.exitFullscreen?.(); else document.documentElement.requestFullscreen?.(); }
 register({ id: 'view:fullscreen', title: 'full screen', key: 'F11', group: 'view',
   keywords: ['fullscreen', 'full screen', 'video', 'record', 'hide browser', 'kiosk'],
-  detail: 'the whole screen, no browser chrome; Esc or F11 leaves it', run: toggleFullscreen });
+  detail: 'the whole screen, no browser chrome: F11 or the button toggles it; Esc leaves it', run: toggleFullscreen });
+// F11 is taken here, not left to the browser (R 10-15 23:09: "esc doesn't take you back out of fullscreen mode (f11)"): the
+// browser's own F11 full screen sets no fullscreenElement and only F11 leaves it, so Esc did nothing the page could see.
+// The page's full screen is the Fullscreen API's, which the browser's Esc leaves. Always taken, even in a field (F11 types nothing).
+addEventListener('keydown', (e) => {
+  if (e.key !== 'F11' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+  e.preventDefault();
+  if (!e.repeat) toggleFullscreen();   // a held F11 is one toggle
+});
 
 const PANEL_NAMES = { world: 'World (catalog · ground · sky)', profile: 'Profile', emotes: 'Emotes', debug: 'Debug', settings: 'Settings', console: 'Console (scripts)', chat: 'Chat' };
 const panelName = (id) => PANEL_NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1);

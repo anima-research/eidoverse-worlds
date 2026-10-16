@@ -1053,48 +1053,45 @@ export function fitTabStrip(strip) {
   }
 }
 export function allFrames() { return [...frames.values()]; }
-// Esc toggles the whole set of open frames closed ⇄ back (live, 09-05 16:08),
-// but only when nothing more specific wants the key: an open pop, a focused
-// field, a scrim, edit mode (build.js owns Esc there), a locked pointer, or
-// chat's own Esc. The remembered set lives only for the session.
-let escStash = null;
-// anything that owns Esc registers a claim here (build.js registers edit mode) — frames imports nobody for it,
+// Tab hides the whole set of open frames and brings exactly that set back (R 10-11 23:01), but only when nothing more
+// specific wants the key: an open pop, a focused field, a scrim, edit mode (build.js owns its keys there), a locked
+// pointer. The remembered set lives only for the session.
+// Esc NEVER hides or restores the set (R 10-15 23:09: "esc doesn't take you back out of fullscreen mode (f11). Right now
+// it toggles your menus"): Esc is the browser's way out of full screen, and closes only transient things (pops, dialogs,
+// the command bar, edit mode's chain), each in its own handler.
+let panelStash = null;
+// anything that owns the keys registers a claim here (build.js registers edit mode) — frames imports nobody for it,
 // so the module graph stays a tree (frames → build → controller → ui → frames was a cycle)
 const escClaims = [];
 export function claimEscape(fn) { escClaims.push(fn); }
-// Esc closes every open panel; Tab hides the set and brings it back. Installed here, with the frames, so the
-// binding and the help text that promises it ship together. Yields to anything that owns Esc already
-// (escapeIsClaimed — edit mode registers its claim from build.js).
-// Esc only ever CLOSES; Tab hides the set and brings it back (R 10-11 23:01: in full screen Esc is the browser's way out,
-// and an Esc that re-opened the panels fought it: "esc makes sense to get out of full screen mode more").
+// Installed here, with the frames, so the binding and the help text that promises it ship together.
 addEventListener('keydown', (e) => {
-  if ((e.key !== 'Escape' && e.key !== 'Tab') || e.defaultPrevented) return;
+  if (e.key !== 'Tab' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
   if (escapeIsClaimed()) return;
-  if (e.key === 'Escape' && (document.fullscreenElement || ![...frames.values()].some((f) => f.visible))) return;   // the browser's Esc, or nothing to close
-  e.preventDefault();   // Tab: not the browser's focus walk
-  const did = escapeToggle();
+  e.preventDefault();   // not the browser's focus walk
+  const did = panelsToggle();
   // said, not only done: ui.js flashes "panels hidden · Tab to bring back" on the hint bar (the lantern's resting line
   // steps aside for it) — frames imports no ui, so the gesture goes out on the bus (escapeHid says what went with it)
   bus.emit('esc-quiet', did);
 });
-// With no panel open Esc still goes quiet (owner, 10-01: "Basically only the dock should be visible"): an empty stash
-// is a quiet with nothing to reopen, so 'closed' takes the lantern's resting line away and the next Esc brings it back.
-export function escapeToggle() {
+// With no panel open Tab still goes quiet (owner, 10-01: "Basically only the dock should be visible"): an empty stash
+// is a quiet with nothing to reopen, so 'closed' takes the lantern's resting line away and the next Tab brings it back.
+export function panelsToggle() {
   const open = [...frames.values()].filter((f) => f.visible);
-  if (open.length) { escStash = open.map((f) => f.id); for (const f of open) f.hide(); return 'closed'; }
-  if (escStash) { for (const id of escStash) frames.get(id)?.show(); escStash = null; return 'restored'; }
-  escStash = [];
+  if (open.length) { panelStash = open.map((f) => f.id); for (const f of open) f.hide(); return 'closed'; }
+  if (panelStash) { for (const id of panelStash) frames.get(id)?.show(); panelStash = null; return 'restored'; }
+  panelStash = [];
   return 'closed';
 }
-/** How many panels the standing Esc-quiet put away (0 = only the resting line; also 0 when not quiet). */
-export const escapeHid = () => escStash?.length ?? 0;
+/** How many panels the standing Tab-quiet put away (0 = only the resting line; also 0 when not quiet). */
+export const escapeHid = () => panelStash?.length ?? 0;
 export function escapeIsClaimed() {
   for (const fn of escClaims) { const c = fn(); if (c) return c; }
   const a = document.activeElement;
   if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return 'field';
   if (document.querySelector('.pf-pop, .dd-pop, .chat-gearpop:not([hidden]), #emenu:not([hidden]), #stpop:not([hidden])')) return 'pop';   // #stpop: a status chip's popover (statuschips.js)   // the gear pop lives in the DOM hidden; only a SHOWN one claims Esc
   if (document.querySelector('.scrim.open')) return 'overlay';
-  if (document.body.classList.contains('arranging')) return 'layout';   // HUD layout mode: Esc ends the mode (ui.js), not the panels
+  if (document.body.classList.contains('arranging')) return 'layout';   // HUD layout mode: Esc ends the mode (ui.js); the panel toggle waits
   if (document.pointerLockElement) return 'pointer-lock';
   return null;
 }

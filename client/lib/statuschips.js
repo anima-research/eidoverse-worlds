@@ -37,7 +37,7 @@ function ensure() {
   document.body.append(strip, pop);
   addEventListener('resize', place);
   addEventListener('dockmoved', place);
-  // Esc folds an open popover and goes no further: preventDefault is what windows.js's Esc toggle yields to
+  // Esc folds an open popover and goes no further (preventDefault: nothing after it acts on this Esc)
   addEventListener('keydown', (e) => { if (e.key === 'Escape' && openId) { e.preventDefault(); collapse(); } });
   // a click anywhere but the popover or its chip folds it
   document.addEventListener('pointerdown', (e) => {

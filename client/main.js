@@ -480,8 +480,6 @@ initCommands();   // the /command surface (lib/commands/) + its bus subscription
 const MAIN_KEYS = [
   { code: 'KeyH', key: 'H', id: 'key:help', title: 'help — keys and controls', keywords: ['?', 'keys', 'controls', 'how'], group: 'view',
     guard: () => !isEditing(), run: () => toggleHelp() },
-  { code: 'Tab', key: 'Tab', id: 'key:people', title: 'people here', keywords: ['who', 'present', 'roster'], group: 'panels', icon: 'users',
-    prevent: true, run: () => togglePeopleHere() },
   { code: 'KeyB', key: 'B', id: 'panel:edit', run: () => toggleEditMode() },
   { code: 'KeyP', key: 'P', id: 'key:photo', title: 'photo mode (free camera)', keywords: ['camera', 'picture'], group: 'view', run: () => togglePhotoMode() },
   { code: 'F1', key: 'F1', id: 'key:hidehud', title: 'hide the HUD', keywords: ['interface', 'clean', 'photo'], group: 'view', icon: 'eye-slash',
@@ -494,6 +492,9 @@ const MAIN_KEYS = [
 // merge-into rows keep the dock's title/run (the same act) and only add the key; new rows register whole
 for (const { code, guard, prevent, ...a } of MAIN_KEYS) registerAction(a.title ? a : { id: a.id, key: a.key });
 registerAction({ id: 'panel:chat', key: 'Enter' });
+// People Here: a row in the lantern, no key — Tab is the panel set's (windows.js, R 10-11 23:01), and a key with two
+// meanings ran both (Tab hid the set, then this re-showed chat beside it)
+registerAction({ id: 'key:people', title: 'people here', keywords: ['who', 'present', 'roster'], group: 'panels', icon: 'users', run: () => togglePeopleHere() });
 
 bus.on('key', (e) => {
   if (e.code === 'Slash' && e.shiftKey) { toggleHelp(); return; }
