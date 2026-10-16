@@ -46,7 +46,7 @@ review.
 | 4002 | session takeover — same (id, surface) rejoined elsewhere |
 | 4003 | bad/missing join token, or login lacks scope |
 | 4004 | reserved name (world/system/sim/script:*, or a reserved agent name without its bearer) |
-| 4005 | malformed world name / unusable surface name — do not retry |
+| 4005 | a refused join, its words in the `error` sent just before the close: a malformed world name, an unusable surface name, no such world, an old-format world, an access refusal (reason `access`), a client that doesn't fold the log — final, do not retry. The one temporary 4005 is reason `full` (the world holds as many as `@world`'s `access {max}` admits): someone leaving makes room, so the browser and the agent show the words and redial with backoff (`shared/redial.js`: full jitter, at least 5 s for a full world, at most 60 s, reset only by a join the server accepts) |
 | 4006 | banned (per-world or global) |
 | 4008 | aux leg without a living primary, or aux cap (4 distinct surfaces) |
 | 4009 | aux leg presented no binding to the primary's identity authority |

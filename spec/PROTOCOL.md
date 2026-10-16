@@ -365,8 +365,15 @@ request moves a copy to a newer version, keeping its own overrides.
   0.2 m in radius and 1.7 m tall; a 0.8 m step it walks onto without a
   mantle; a track of 6 m/s and 4 m at most in one step; arrival within
   0.01 m, up to 0.4) live there and nowhere else: a client or an agent
-  carrying its own is non-conforming, because two walkers that drift by a
-  centimetre are two bodies. The authority's refusal of a step — too fast,
+  carrying its own law is non-conforming, because two walkers that drift by
+  a centimetre are two bodies. The body's size is not law: those numbers are
+  the default body, and a `move` may carry the body's own `height` (its
+  standing height in metres, 0.5–4, as its walker measures it) and `scale`
+  (0.5–2, the size slider's range). Both are presence, kept on the body's
+  presence record until it sends others, and the authority judges that body
+  with exactly them (`floorStep`'s `height` and `scale`, `bodyBox`'s
+  `scale`), as its own walker does: where water reaches on it, its step, its
+  haul-out and its box. A body declaring its own size is conforming. The authority's refusal of a step — too fast,
   into a solid, up a ledge over a step — is the mover's own answer about the
   same input, and a step the mover takes is one the authority accepts at
   the same millimetre. The floor law is one function, `floorStep`
@@ -379,7 +386,13 @@ request moves a copy to a newer version, keeping its own overrides.
   the haul-out line), and a ground ledge over a step is refused as solid
   (`blocker: "ground"`). `place {at}`, `create {at: [x, z]}` and the spawn
   alias seat a model's bottom on the highest ground under its footprint. A
-  world with no `terrain` is flat at y 0 and dry.
+  world with no `terrain` is flat at y 0 and dry. A heightmap world whose
+  grid isn't on the server yet has no ground to judge on, and the authority
+  never stands anything on a guessed height: what needs the ground is refused
+  `ground-loading` with words (ground-seated placement, `create {at}` and
+  `place {at}`; a put; a launch — throw, drop, punt, a walk's shove; a walk),
+  nothing is logged, and the same request succeeds once the grid lands.
+  Arriving where there is no water to judge, chat and presence carry on.
 - **One clock.** Frames carry the world's authority clock (the one that
   stamps entries' `ts`, never behind the log), and a client measures it by
   round trip (`clock {t0}` → `{t0, t}`). A presence sample may carry its own

@@ -65,6 +65,14 @@ collision until it rests. So: leave doors fixed (ajar is fine), or make a door
 its own small entity with its origin at the hinge and open it by `place`-ing a
 new yaw.
 
+**Loose things.** A small thing with `physics {kind: "dynamic"}` and a box
+shape (a crate, a barrel) is not furniture to an agent's walk: if the walker
+may shove it and a walking shove would slide it out of the way (for a 70 kg
+body, up to about 213 kg at a walk, about 660 kg at a run: `shared/shove.js`
+`budges`), the route goes through it and the walk pushes it aside. Anything
+heavier, locked, held, or of a mass that can't be worked out is walked round
+like any solid, so a heavy crate in a doorway blocks the doorway.
+
 **Budget.** One draw call per material per mesh. Aim under **12 draws, 20k
 triangles, 8 materials**; merge static parts into one mesh, carry variety in
 vertex colours, and keep see-through (glass) materials to a few. Only meshes
@@ -113,7 +121,11 @@ pivoted where it would hinge or hang. `measure` lists named parts.
 - **The build check** runs on every model you upload, and never refuses one —
   it is advice. The upload answers with `check: "/check?lib=…"`; read it there,
   or ask `measure {id, check: true}` (a placed thing, checked at its scale) /
-  `measure {lib, scale?, check: true}` (a path; `&scale=` on the route). Scaling a
+  `measure {lib, scale?, check: true}` (a path; `&scale=` on the route). A model
+  already checked at that scale is answered at once; new checks are limited
+  (10 a minute per address, 60 a minute for the whole server: 429 with
+  `retry-after`) and queued (past 16 waiting: 503, ask again in a minute), each
+  refusal in words saying when to ask again. Scaling a
   model scales its doors and steps but not the body — check at the size you
   will place it.
   Measured with the walking body's own rules, it says: whether the model is
