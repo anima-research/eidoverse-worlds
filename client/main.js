@@ -486,6 +486,8 @@ const MAIN_KEYS = [
     prevent: true, run: () => document.body.classList.toggle('photo') },
   { code: 'F2', key: 'F2', id: 'key:screenshot', title: 'save a screenshot', keywords: ['picture', 'capture'], group: 'view', prevent: true, run: () => saveScreenshot() },
   { code: 'F3', key: 'F3', id: 'panel:debug', prevent: true, run: () => toggleDebug() },
+  { code: 'KeyU', key: 'U', id: 'key:people', title: 'people here', keywords: ['who', 'present', 'roster', 'us'], group: 'panels', icon: 'users',
+    guard: () => !isEditing(), run: () => togglePeopleHere() },
   { code: 'KeyR', key: 'R', id: 'body:limp', title: 'go limp / get up', keywords: ['ragdoll', 'fall', 'flop'], group: 'body',
     guard: () => !isEditing(), run: () => (isDowned() ? getUp() : goLimp()) },
 ];
@@ -494,7 +496,7 @@ for (const { code, guard, prevent, ...a } of MAIN_KEYS) registerAction(a.title ?
 registerAction({ id: 'panel:chat', key: 'Enter' });
 // People Here: a row in the lantern, no key — Tab is the panel set's (windows.js, R 10-11 23:01), and a key with two
 // meanings ran both (Tab hid the set, then this re-showed chat beside it)
-registerAction({ id: 'key:people', title: 'people here', keywords: ['who', 'present', 'roster'], group: 'panels', icon: 'users', run: () => togglePeopleHere() });
+
 
 bus.on('key', (e) => {
   if (e.code === 'Slash' && e.shiftKey) { toggleHelp(); return; }
