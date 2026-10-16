@@ -1,32 +1,36 @@
-// tools/protocol/surface-parity.ts — does the SURFACE look the same? Two trees of this repo, the same two worlds, the same
-// fixed cameras, pixel-diffed. The last gate before the v4 PR (R, 10-14: "it'd be incredible if everything on the
-// surface looks the same").
+// tools/protocol/surface-parity.ts — does the SURFACE look the same? A visual-regression check between two trees of this
+// repo: the same worlds, served by each tree, photographed from the same fixed cameras in a headless Chromium, and
+// pixel-diffed old against new. By default the old tree is `main` and the new tree is this checkout, so it answers
+// "does my branch change what anyone sees?"
 //
-//   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/surface-parity.ts [--check] [flags]
+//   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/surface-parity.ts [--check] --commons <dir> --gym <dir> [flags]
 //
 //   --check              assert every prerequisite and stop before the first frame (what to run first on a new box)
-//   --old <tree>         the OLD checkout to serve (default: a detached worktree of pre-repoint-20261014, made if missing
-//                        at $SURFACE_OLD_TREE or /tmp/eido-pre-parity)
+//   --old-ref <ref>      the git ref the OLD tree is checked out from (default main; env SURFACE_OLD_REF)
+//   --old <tree>         the OLD checkout to serve (default: a detached worktree of --old-ref, made if missing at
+//                        $SURFACE_OLD_TREE or <tmpdir>/eido-surface-old-<commit>)
 //   --new <tree>         the NEW checkout (default: this file's repo)
-//   --commons <dir>      the Commons copy to render (default scratch-worlds/nov1-e2e/commons — see NOTE below)
-//   --gym <dir>          the gym copy (default scratch-worlds/garden/gym)
-//   --out <dir>          where frames and diffs go (default notes/surface-parity/<timestamp>/; never /tmp)
+//   --commons <dir>      the Commons world to render: a directory holding world.jsonl (required unless --only excludes it)
+//   --gym <dir>          the gym world to render (required unless --only excludes it)
+//   --world <name>=<dir> another world to render beside them; repeatable (name: letters, digits, _)
+//   --out <dir>          where frames and diffs go (default notes/surface-parity/<timestamp>/ in the new tree; never /tmp)
 //   --threshold <pct>    changed-pixel percentage that fails a camera (default 0.5)
 //   --tolerance <0-255>  per-channel difference under which a pixel counts as unchanged (default 16: SwiftShader dither)
-//   --camera <w>:<name>=<x>,<y>,<z>/<lx>,<ly>,<lz>   add a camera to world <w> (commons|gym); repeatable
+//   --camera <w>:<name>=<x>,<y>,<z>/<lx>,<ly>,<lz>   add a camera to world <w>; repeatable
 //   --keep-ui            leave the DOM chrome (panels, chat, HUD) in frame — by default only the canvas is compared
+//   --pin-clock <ms>     the epoch ms the page's Date.now() is pinned to (default: the old tree's commit time)
 //   --no-pin-clock       let the page's Date.now() run real; by default it is pinned (see "probe hooks")
 //   --no-control         skip the second boot of the old tree that measures the noise floor
-//   --timeout <s>        how long a client may take to settle and draw (default 150; SwiftShader on WSL is slow)
-//   --only <world>       just one of commons|gym
+//   --timeout <s>        how long a client may take to settle and draw (default 150; SwiftShader is slow)
+//   --only <world>       just one world
 //   --headed             a window you can watch
 //
-// PREPARE, DON'T PRETEND. Headless Chromium under WSL has been unreliable here all week, so this script asserts every
-// prerequisite BY NAME before it takes a frame, and a run that cannot take frames exits 2 saying which step failed —
-// never a green. The named steps, in order: browser binary · old tree · world copies · memory · old server · new
-// server · world opens (both trees, both worlds, as the spectator the browser will be) · browser page target ·
-// client ready (frames drawn) · camera honoured. A red (exit 1) is a pixel verdict; exit 2 is "could not look"; exit 3
-// is "looked, but the noise floor is too high to call it".
+// PREPARE, DON'T PRETEND. Headless Chromium is easy to get half-working, so this script asserts every prerequisite BY
+// NAME before it takes a frame, and a run that cannot take frames exits 2 saying which step failed — never a green. The
+// named steps, in order: browser binary · old tree · world copies · memory · old server · new server · world opens
+// (both trees, every world, as the spectator the browser will be) · browser page target · client ready (frames drawn) ·
+// camera honoured. A red (exit 1) is a pixel verdict; exit 2 is "could not look"; exit 3 is "looked, but the noise
+// floor is too high to call it".
 //
 // WHAT IS COMPARED, AND WHAT IS NOT. The browser joins as a SPECTATOR (`?spectate`: client/lib/base.js:42 → net.js:266
 // `spectate: true`; localbody.js:335 spawns no local body for a spectator) in a scratch COPY of each world that nobody
@@ -39,20 +43,15 @@
 // (particles-shots.ts:189 does the same). There is no URL parameter for a fixed camera; a spectator's camera is only
 // moved by controller.js updateSpectator (:1035) when it follows a remote with an avatar, and with nobody present it
 // stays where we put it — which the harness verifies by reading it back after a few frames. And Date.now() is pinned
-// to the old tag's commit time inside the page (sky.js:385/:416 derive the sun and the forecast's weather from
+// to the old tree's commit time inside the page (sky.js:385/:416 derive the sun and the forecast's weather from
 // Date.now(), so two runs minutes apart would otherwise light the world differently; serverclock.js reads
 // performance.timeOrigin, so motion phases and clock sync are untouched). --no-pin-clock turns it off.
 //
-// NOTE on the default Commons: scratch-worlds/nov1-e2e/commons holds `v4.jsonl`, a log saved BEFORE the 2026-10-07
-// names pass. Neither tree opens that (server/livehost.ts isWorldDir wants world.jsonl with a {dialect, v:4} genesis;
-// server.ts:351 refuses the join by name). The self-check says so and points at a current-format copy
-// (staging/worlds/commons-v4). The default is kept as asked so the failure is named rather than silently redirected.
-//
-// Browser hygiene it leans on (memory: browser-probe-hygiene): teardown in finally and on signals; every gate prints
+// Browser hygiene it leans on: teardown in finally and on signals; every gate prints
 // its stage on green and red; waits are on conditions (frames drawn, loads idle) not clocks; evaluate is raced against
 // a clock (harness.ts cdpOn: 60 s); frames are PROVED (a renderer.render call counter advances) not assumed; the sky guard
 // (ew-cloud-quality=off) and the GPU-loss guard (sessionStorage ew-gpu-lost) from tools/harness.ts:220-226 are applied
-// to every page. One Chromium at a time: run under code/scripts/eido-probe.sh or `flock /home/claude/eido/.headless.lock`.
+// to every page. Run one headless browser at a time: the script checks memory but takes no lock.
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, cpSync, copyFileSync, mkdtempSync, rmSync, symlinkSync, readdirSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join, resolve, basename } from "node:path";
@@ -66,24 +65,29 @@ const opt = (k: string, d?: string) => { const i = argv.indexOf(`--${k}`); retur
 const all = (k: string) => argv.flatMap((a, i) => (a === `--${k}` && argv[i + 1] !== undefined ? [argv[i + 1]] : []));
 
 const NEW = resolve(opt("new", resolve(import.meta.dir, "../..")));
-const OLD_TAG = "pre-repoint-20261014";
-const OLD = resolve(opt("old", process.env.SURFACE_OLD_TREE ?? "/tmp/eido-pre-parity"));
+const OLD_REF = opt("old-ref", process.env.SURFACE_OLD_REF ?? "main")!;
+const OLD_GIVEN = opt("old", process.env.SURFACE_OLD_TREE);   // undefined: a worktree of OLD_REF in the temp dir (named once the ref resolves)
 const CHECK = has("check"), HEADED = has("headed"), KEEP_UI = has("keep-ui"), PIN = !has("no-pin-clock"), CONTROL = !has("no-control");
 const THRESHOLD = Number(opt("threshold", "0.5")), TOLERANCE = Number(opt("tolerance", "16")), READY_S = Number(opt("timeout", "150"));
-const ONLY = opt("only");   // one world (commons|gym) for a quicker run
+const ONLY = opt("only");   // one world for a quicker run
 const STAMP = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const OUT = resolve(opt("out", join(NEW, "notes", "surface-parity", STAMP)));
-const WORLDS: Record<string, string> = {
-  commons: resolve(opt("commons", "/home/claude/eido/staging/worlds/commons-v4")) /* the live Commons (world.jsonl, v4): the nov1-e2e copy is pre-names v4.jsonl and neither tree opens it */,
-  gym: resolve(opt("gym", "/home/claude/eido/scratch-worlds/garden/gym")),
-};
+// The worlds: commons and gym always (each required unless --only picks another), plus any --world name=<dir>. No default
+// paths: a world copy is the contributor's to name. A world with no directory is named by the "world copy" step (exit 2).
+const WORLDS: Record<string, string | undefined> = { commons: opt("commons"), gym: opt("gym") };
+for (const spec of all("world")) {
+  const m = spec.match(/^(\w+)=(.+)$/);
+  if (!m) { console.error(`--world ${spec}: want <name>=<dir> (name: letters, digits, _)`); process.exit(2); }
+  WORLDS[m[1]] = m[2];
+}
+for (const w of Object.keys(WORLDS)) if (WORLDS[w] !== undefined) WORLDS[w] = resolve(WORLDS[w]!);
+const SELECTED = ONLY ? [ONLY] : Object.keys(WORLDS);
 type Cam = { name: string; pos: [number, number, number]; look: [number, number, number] };
-// Two fixed cameras per world: a wide one from above the origin and a standing eye on the ground. Both worlds are built
-// around the origin (the stage floor), so these frame the bulk of each; add more with --camera.
-const CAMERAS: Record<string, Cam[]> = {
-  commons: [{ name: "wide", pos: [0, 7, 14], look: [0, 1, 0] }, { name: "eye", pos: [6, 1.6, 6], look: [0, 1.2, -2] }],
-  gym: [{ name: "wide", pos: [0, 7, 14], look: [0, 1, 0] }, { name: "eye", pos: [6, 1.6, 6], look: [0, 1.2, -2] }],
-};
+// Two fixed cameras per world: a wide one from above the origin and a standing eye on the ground. Both gym and Commons
+// are built around the origin (the stage floor), so these frame the bulk of each; a --world gets the same pair. Add more
+// with --camera.
+const DEFAULT_CAMS = (): Cam[] => [{ name: "wide", pos: [0, 7, 14], look: [0, 1, 0] }, { name: "eye", pos: [6, 1.6, 6], look: [0, 1.2, -2] }];
+const CAMERAS: Record<string, Cam[]> = Object.fromEntries(Object.keys(WORLDS).map((w) => [w, DEFAULT_CAMS()]));
 for (const spec of all("camera")) {
   const m = spec.match(/^(\w+):([\w-]+)=([-\d.]+),([-\d.]+),([-\d.]+)\/([-\d.]+),([-\d.]+),([-\d.]+)$/);
   if (!m) { console.error(`--camera ${spec}: want <world>:<name>=<x>,<y>,<z>/<lx>,<ly>,<lz>`); process.exit(2); }
@@ -119,17 +123,15 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) process.once(sig, () => { void
 process.once("uncaughtException", (e) => { console.error(e?.stack ?? String(e)); void cleanup().then(() => process.exit(2)); });
 process.once("unhandledRejection", (e) => { console.error(e instanceof Error ? e.stack : String(e)); void cleanup().then(() => process.exit(2)); });
 
-console.log(`\n${bold("surface parity")} — ${OLD_TAG} vs HEAD, ${Object.keys(WORLDS).join(" + ")}, fixed cameras, pixel diff${CHECK ? dim("  (--check: prerequisites only)") : ""}`);
-console.log(dim(`  new  ${NEW}\n  old  ${OLD}\n  out  ${OUT}`));
+console.log(`\n${bold("surface parity")} — ${OLD_GIVEN ? OLD_GIVEN : OLD_REF} vs HEAD, ${SELECTED.join(" + ")}, fixed cameras, pixel diff${CHECK ? dim("  (--check: prerequisites only)") : ""}`);
+console.log(dim(`  new  ${NEW}\n  old  ${OLD_GIVEN ? resolve(OLD_GIVEN) : `a worktree of ${OLD_REF}`}\n  out  ${OUT}`));
 
 // ---- 1. the browser binary -----------------------------------------------------------------------------------------
-// The paths the other probes use: CHROME env (tools/harness.ts:15), the reviewer-matching Chrome 153 that
-// code/scripts/eido-probe.sh exports, Playwright's managed build (tools/probe-harness.mjs:8), then harness.ts's list.
-// /usr/bin/chromium-browser on this box is a 2 KB shell stub that only says "snap install chromium" — a path that EXISTS
-// and is not a browser, which is exactly how a green would lie here.
+// The paths the other probes use: CHROME env (tools/harness.ts:15), Playwright's managed build
+// (tools/probe-harness.mjs:8), then harness.ts's list. On some distros /usr/bin/chromium-browser is a 2 KB shell stub
+// that only says "snap install chromium" — a path that EXISTS and is not a browser, which is exactly how a green would lie.
 const CANDIDATES = [
   process.env.CHROME, process.env.SFU_TEST_CHROME,
-  join(homedir(), ".local/chrome153/chrome-linux64/chrome"),
   ...(existsSync(join(homedir(), ".cache/ms-playwright")) ? readdirSync(join(homedir(), ".cache/ms-playwright")).filter((d) => /^chromium-\d+$/.test(d)).sort().reverse().map((d) => join(homedir(), ".cache/ms-playwright", d, "chrome-linux64/chrome")) : []),
   "/usr/bin/google-chrome", "/usr/bin/microsoft-edge", "/usr/bin/chromium", "/usr/bin/chromium-browser",
   "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe", "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
@@ -138,7 +140,7 @@ const CANDIDATES = [
 const isStub = (p: string) => { try { const head = readFileSync(p).subarray(0, 64).toString("latin1"); return head.startsWith("#!"); } catch { return true; } };
 const CHROME = CANDIDATES.find((p) => existsSync(p) && !isStub(p));
 if (!CHROME) await missing("browser binary", `none of these is a real Chromium: ${CANDIDATES.map((p) => `${p}${existsSync(p) ? (isStub(p) ? " (exists, but is a shell stub)" : "") : " (absent)"}`).join("\n      ")}`,
-  `set CHROME=/path/to/chrome (eido-probe.sh exports ~/.local/chrome153/chrome-linux64/chrome; Windows: msedge.exe)`);
+  `set CHROME=/path/to/chrome (Windows: msedge.exe)`);
 ok("browser binary", CHROME);
 
 // ---- 2. the two trees ----------------------------------------------------------------------------------------------
@@ -146,17 +148,25 @@ const treeOk = (t: string) => ["server/server.ts", "client/lib/core.js", "client
 if (!treeOk(NEW)) await missing("new tree", `${NEW} is not a checkout of this repo (server/server.ts, client/lib/core.js …)`);
 const headOf = (t: string) => Bun.spawnSync(["git", "-C", t, "rev-parse", "--short", "HEAD"]).stdout.toString().trim();
 const describe = (t: string) => Bun.spawnSync(["git", "-C", t, "log", "-1", "--format=%h %s"]).stdout.toString().trim().slice(0, 100);
-if (!treeOk(OLD)) {
-  const tagOk = Bun.spawnSync(["git", "-C", NEW, "rev-parse", "--verify", `${OLD_TAG}^{commit}`]);
-  if (tagOk.exitCode !== 0) await missing("old tree", `${OLD} is not a checkout and the tag ${OLD_TAG} is not in ${NEW}'s repo`, `pass --old <tree> or fetch the tag`);
-  console.log(dim(`  making a detached worktree of ${OLD_TAG} at ${OLD}`));
-  const add = Bun.spawnSync(["git", "-C", NEW, "worktree", "add", "--detach", OLD, OLD_TAG]);
-  if (add.exitCode !== 0 || !treeOk(OLD)) await missing("old tree", `git worktree add --detach ${OLD} ${OLD_TAG} failed:`, add.stderr.toString().trim().slice(0, 400));
+// --old names a checkout outright; otherwise the old tree is a detached worktree of --old-ref, at a path named by the
+// ref's commit (so a worktree left by a run against another commit is never mistaken for this one).
+let OLD = OLD_GIVEN ? resolve(OLD_GIVEN) : "";
+if (!OLD || !treeOk(OLD)) {
+  const refOk = Bun.spawnSync(["git", "-C", NEW, "rev-parse", "--verify", `${OLD_REF}^{commit}`]);
+  if (refOk.exitCode !== 0) await missing("old tree", `${OLD ? `${OLD} is not a checkout and ` : ""}the ref ${OLD_REF} does not resolve to a commit in ${NEW}'s repo`, `pass --old-ref <ref> (e.g. origin/main, after a fetch) or --old <tree>`);
+  const sha = refOk.stdout.toString().trim();
+  OLD ||= join(tmpdir(), `eido-surface-old-${sha.slice(0, 12)}`);
+  if (!treeOk(OLD)) {
+    console.log(dim(`  making a detached worktree of ${OLD_REF} (${sha.slice(0, 12)}) at ${OLD}`));
+    Bun.spawnSync(["git", "-C", NEW, "worktree", "prune"]);   // a registered worktree whose directory the temp cleaner took would block the add
+    const add = Bun.spawnSync(["git", "-C", NEW, "worktree", "add", "--detach", OLD, sha]);
+    if (add.exitCode !== 0 || !treeOk(OLD)) await missing("old tree", `git worktree add --detach ${OLD} ${OLD_REF} failed:`, add.stderr.toString().trim().slice(0, 400));
+  }
 }
 // the server needs the repo's node_modules (pngjs here, sharp/quickjs there) and the BROWSER needs client/node_modules
 // (three, three-vrm: the server warns "browsers will hang at the splash" without it). A worktree has neither of its own.
 // A link from another checkout is honest only while that checkout's manifest is byte-identical — asserted, not assumed.
-const depsSources = [NEW, "/home/claude/eido/staging", ...Bun.spawnSync(["git", "-C", NEW, "worktree", "list", "--porcelain"]).stdout.toString().split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9))];
+const depsSources = [NEW, ...Bun.spawnSync(["git", "-C", NEW, "worktree", "list", "--porcelain"]).stdout.toString().split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9))];
 function linkDeps(tree: string, sub: string) {
   const want = join(tree, sub, "node_modules"); if (existsSync(want)) return;
   const src = depsSources.find((t) => t !== tree && existsSync(join(t, sub, "node_modules")) && existsSync(join(t, sub, "package.json")) && readFileSync(join(t, sub, "package.json"), "utf8") === readFileSync(join(tree, sub, "package.json"), "utf8"));
@@ -169,29 +179,36 @@ const OLD_HEAD = headOf(OLD), NEW_HEAD = headOf(NEW);
 if (OLD_HEAD === NEW_HEAD) await missing("old tree", `old and new are the same commit (${OLD_HEAD}) — a diff of a tree against itself proves nothing`);
 ok("old tree", `${describe(OLD)}`);
 ok("new tree", `${describe(NEW)}`);
+// the clock pin defaults to the old tree's commit time: a fixed instant both trees are lit at (see "probe hooks")
+const PIN_MS = Number(opt("pin-clock", String(Number(Bun.spawnSync(["git", "-C", OLD, "log", "-1", "--format=%ct", "HEAD"]).stdout.toString().trim()) * 1000)));
+if (PIN && !(PIN_MS > 0)) await missing("clock pin", `could not read the old tree's commit time for the clock pin (git log -1 --format=%ct in ${OLD})`, `pass --pin-clock <epoch ms> or --no-pin-clock`);
 
 // ---- 3. the world copies -------------------------------------------------------------------------------------------
-// A world this server serves is a directory holding world.jsonl whose line 0 is a genesis {dialect:"eidoverse-log", v:4}
-// (server/livehost.ts:141). Anything else — a pre-names `v4.jsonl`, a v1 `log.jsonl` — is refused at the door
-// (server.ts:351) on BOTH trees, so it is named here, before any server starts.
+// A world this server serves is a directory holding world.jsonl whose line 0 is a genesis {dialect:"eidoverse-log", v}
+// with the current protocol's v (server/livehost.ts:141). Anything else — an older log under another name, a v1
+// `log.jsonl` — is refused at the door (server.ts:351) on BOTH trees, so it is named here, before any server starts.
 const genesisOf = (file: string) => { try { return JSON.parse(readFileSync(file, "utf8").split("\n", 1)[0]); } catch { return null; } };
 const entriesOf = (file: string) => { try { return readFileSync(file, "utf8").split("\n").filter(Boolean).length; } catch { return 0; } };
-for (const [w, dir] of Object.entries(WORLDS)) { if (ONLY && w !== ONLY) continue;
-  if (!existsSync(dir)) await missing(`world copy: ${w}`, `${dir} does not exist`, `pass --${w} <dir>`);
+for (const w of SELECTED) {
+  if (!(w in WORLDS)) await missing(`world copy: ${w}`, `--only ${w} names no world (known: ${Object.keys(WORLDS).join(", ")})`, `pass --world ${w}=<dir> (a directory holding world.jsonl)`);
+  const dir = WORLDS[w];
+  const how = w === "commons" || w === "gym" ? `pass --${w} <dir>` : `pass --world ${w}=<dir>`;
+  if (!dir) await missing(`world copy: ${w}`, `no directory given for ${w}`, `${how} (a directory holding world.jsonl)${ONLY ? "" : `, or --only <world> to render just one`}`);
+  if (!existsSync(dir)) await missing(`world copy: ${w}`, `${dir} does not exist`, `${how} (a directory holding world.jsonl)`);
   const log = join(dir, "world.jsonl"), g = genesisOf(log);
   if (!g || g.body?.dialect !== "eidoverse-log" || g.body?.v !== 4) {
     const others = (existsSync(dir) ? readdirSync(dir) : []).filter((f) => f.endsWith(".jsonl"));
-    const hint = others.includes("v4.jsonl") ? `it holds v4.jsonl: a log saved BEFORE the 2026-10-07 names pass. Neither tree opens it (server.ts:351 refuses the join). A current-format Commons copy is at /home/claude/eido/staging/worlds/commons-v4 — pass --commons /home/claude/eido/staging/worlds/commons-v4`
-      : others.includes("log.jsonl") ? `it holds log.jsonl (v1): translate it once with tools/protocol/world.ts translate, or point at a translated copy`
-        : `no world.jsonl with a {dialect:"eidoverse-log", v:4} genesis (found: ${others.join(", ") || "nothing"})`;
+    const hint = others.length
+      ? `it holds ${others.join(", ")}, which isn't a current-format world log (neither tree opens it: server.ts:351 refuses the join). A v1 log.jsonl translates once with: bun tools/protocol/world.ts translate <old> <new>`
+      : `no world.jsonl with a current {dialect:"eidoverse-log", v} genesis, and no other *.jsonl either`;
     await missing(`world copy: ${w}`, `${dir} is not a world this protocol serves —`, hint);
   }
   ok(`world copy: ${w}`, `${dir} (${entriesOf(log)} entries, genesis ${g.body.nonce})`);
 }
 
 // ---- 4. memory ------------------------------------------------------------------------------------------------------
-// Two sequencers and one headless Chromium under SwiftShader; the sky OOM of 09-26 (memory: feedback_headless_sky_oom)
-// took WSL down with it. Refuse below a floor rather than find out.
+// Two sequencers and one headless Chromium under SwiftShader: the sky alone can exhaust a small VM, and an OOM can take
+// the whole machine with it. Refuse below a floor rather than find out.
 const availMB = (() => { try { const m = readFileSync("/proc/meminfo", "utf8").match(/MemAvailable:\s+(\d+)/); return m ? Math.round(+m[1] / 1024) : null; } catch { return null; } })();
 const MEM_FLOOR = Number(process.env.SURFACE_MEM_FLOOR_MB ?? 1200);
 if (availMB !== null && availMB < MEM_FLOOR) await missing("memory", `MemAvailable is ${availMB} MB; the floor is ${MEM_FLOOR} MB (SURFACE_MEM_FLOOR_MB)`, `close another headless Chrome first (ss -ltnp | grep chrome), or wait for the other probe to finish`);
@@ -199,14 +216,14 @@ ok("memory", availMB === null ? "not readable here (not Linux) — skipped" : `$
 
 // ---- 5+6. one sequencer per tree, each serving copies of both worlds -------------------------------------------------
 scratch = mkdtempSync(join(tmpdir(), "ew-surface-"));   // OUT is made at the first frame, so a failed self-check leaves no empty folder
-const EIDOVERSE_DIR = process.env.EIDOVERSE_DIR ?? (existsSync(join(NEW, "..", "eidoverse-video")) ? resolve(NEW, "..", "eidoverse-video") : "/home/claude/eido/eidoverse-video");
+const EIDOVERSE_DIR = process.env.EIDOVERSE_DIR ?? resolve(NEW, "..", "eidoverse-video");
 if (!existsSync(join(EIDOVERSE_DIR, "eidoverse", "assets"))) await missing("asset library", `${EIDOVERSE_DIR}/eidoverse/assets is not there — set EIDOVERSE_DIR`);
 type Server = { tree: string; label: string; port: number; base: string; nonce: string; log: string; worldsDir: string };
 async function spawnServer(tree: string, label: string): Promise<Server> {
   const worldsDir = join(scratch, label, "worlds"); mkdirSync(worldsDir, { recursive: true });
   // the world copies — and the custody/directory files beside the source (the sequencer's keys, the identity directory),
   // as gym-env.lab.ts:220 copies them; a copy with no custody is served read-only-ish, which is all a spectator needs
-  for (const [w, dir] of Object.entries(WORLDS)) { if (ONLY && w !== ONLY) continue;
+  for (const w of SELECTED) { const dir = WORLDS[w]!;
     cpSync(dir, join(worldsDir, w), { recursive: true });
     for (const f of [".custody.json", ".directory.json"]) { const src = join(dir, "..", f); if (existsSync(src) && !existsSync(join(worldsDir, f))) copyFileSync(src, join(worldsDir, f)); }
   }
@@ -215,7 +232,7 @@ async function spawnServer(tree: string, label: string): Promise<Server> {
     cwd: tree,
     env: { ...process.env, PORT: String(port), JOIN_TOKEN: "", TRUST_NAMES: "1", WORLDS_DIR: worldsDir, RELAY_STATE_DIR: join(scratch, label),
       EIDOVERSE_DIR, BENCH_NONCE: nonce, SKIP_OPT_SWEEP: "1", RECORD_FRAMES: "0", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
-      // one content store for both trees: blobs are by hash, and a tag's export has no store/ (Commons sat at loading:6 on old, 10-15)
+      // one content store for both trees: blobs are by hash, and an older tree's checkout may have no store/ of its own
       OPT_DIR: process.env.SURFACE_OPT_DIR ?? join(NEW, "assets", "opt") },
     stdout: Bun.file(log), stderr: Bun.file(log),
   });
@@ -249,7 +266,7 @@ async function spectate(s: Server, world: string): Promise<{ entities: number; p
     ws.onerror = () => { clearTimeout(t); rej(new Error("socket error")); };
   });
 }
-for (const s of [oldS, newS]) for (const w of Object.keys(WORLDS)) { if (ONLY && w !== ONLY) continue;
+for (const s of [oldS, newS]) for (const w of SELECTED) {
   const r = await spectate(s, w).catch((e) => e as Error);
   if (r instanceof Error) await missing(`world opens: ${w} on ${s.label}`, `join refused: ${r.message}`, `sequencer log tail:`, ...tail(s.log));
   if (r.entities === 0) await missing(`world opens: ${w} on ${s.label}`, `the snapshot's cut folds to ZERO entities — a frame of this would be a blank floor; is the copy complete?`);
@@ -286,7 +303,6 @@ await cdp.send("Emulation.setDeviceMetricsOverride", { ...VIEW, deviceScaleFacto
 await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('ew-cloud-quality', 'off'); } catch {}" });
 await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: "try { if (!sessionStorage.getItem('ew-gpu-lost')) sessionStorage.setItem('ew-gpu-lost', JSON.stringify([Date.now()])); } catch {}" });
 // the clock pin (probe hook): the sun and the forecast read Date.now() (sky.js:385, :416)
-const PIN_MS = Number(opt("pin-clock", "1791956698000"));   // the tag's commit time (git log -1 --format=%ct pre-repoint-20261014)
 if (PIN) await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `(() => { const p0 = performance.now(); Date.now = () => ${PIN_MS} + (performance.now() - p0); })();` });
 const version = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/version`).then((r) => r.json()).catch(() => ({})) as any;
 ok("browser page target", `${version.Browser ?? "browser"} on :${DEBUG_PORT}${PIN ? `, Date.now pinned to ${new Date(PIN_MS).toISOString()}` : ""}`);
@@ -318,7 +334,7 @@ async function boot(s: Server, world: string): Promise<string> {
     if (renderer.__spCount === undefined) { renderer.__spCount = 0; const o = renderer.render.bind(renderer); renderer.render = function (...a) { renderer.__spCount++; return o(...a); }; }
     return renderer.__spCount; }; return true;`);
   const t0 = Date.now(); let last = "", frames0 = -1, framesAt = 0, stillSince = 0;
-  // every poll goes to <out>/<world>-<tree>.ready.log (elapsed s, stage): a hang leaves a trail, not a last line (run 6, 10-15)
+  // every poll goes to <out>/<world>-<tree>.ready.log (elapsed s, stage): a hang leaves a trail, not a last line
   const readyLog = join(OUT, `${world}-${s.label}.ready.log`); const seen: string[] = [];
   while (Date.now() - t0 < READY_S * 1000) {
     const tp = Date.now();
@@ -381,8 +397,7 @@ function diffPNG(a: PNG, b: PNG, out: string): Diff {
 type Row = { world: string; cam: string; diff: Diff; noise: Diff | null; verdict: "PASS" | "FAIL" | "NOISY" };
 const rows: Row[] = [];
 try {
-  for (const world of Object.keys(WORLDS)) {
-    if (ONLY && world !== ONLY) continue;
+  for (const world of SELECTED) {
     const cams = CAMERAS[world] ?? [];
     const dir = join(OUT, world); mkdirSync(dir, { recursive: true });
     const oldPNG = new Map<string, PNG>(), newPNG = new Map<string, PNG>();
