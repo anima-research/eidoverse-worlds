@@ -297,8 +297,8 @@ await C("D10", "grabbable's written defaults are shared/grab.js's own (the hand'
   const G = await imp("shared/grab.js"); const reg = CAT.COMPONENTS.grabbable.defaults;
   const want = Object.fromEntries(Object.entries(G.DEFAULTS).filter(([, v]) => v !== null && !(typeof v === "object" && !Object.keys(v).length)));
   return [JSON.stringify(Object.keys(want).sort().map((k) => [k, want[k]])) === JSON.stringify(Object.keys(reg).sort().map((k) => [k, reg[k]])), { want, reg }]; });
-await C("D9", "§4 explains schemas: optional, and why the stamped parameters and the pinned registry make old worlds safe without them", () => {
-  const g = SPEC.slice(SPEC.indexOf("## 4."), SPEC.indexOf("### 4.1")); return [/schemas:<name>/.test(g) && /optional/i.test(g) && /registry-pin/.test(g), g.slice(g.indexOf("Meaning travels"), g.indexOf("Meaning travels") + 300)]; });
+await C("D9", "§4 explains schemas: reserved (no definition format yet), and the stamped parameters and the pinned registry carry meaning without it", () => {
+  const g = SPEC.slice(SPEC.indexOf("## 4."), SPEC.indexOf("### 4.1")); return [/schemas:<name>/.test(g) && /reserved/i.test(g) && !/\*\*optional\*\*/.test(g) && /registry-pin/.test(g) && CAT.COMPONENTS.schemas.status === "reserved", g.slice(g.indexOf("Meaning travels"), g.indexOf("Meaning travels") + 300)]; });
 
 // ---- ST: status (shape audit 10-16; R: every component trial for the alpha) ----
 const RESERVED_NAMES = ["joint", "schemas", "terrain-grid", "terrain-tile", "terrain-paint"];

@@ -256,13 +256,11 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   required fields; the conformance suite fails when one is removed, changed or
   narrowed. Additions re-pin freely. During the alpha a trial or reserved
   name's break re-pins only with an acknowledgement, recorded with its reason
-  in `REGISTRY-CHANGELOG.md`; a stable name's never re-pins. A
-  `schemas:<name>` component on `@world` is **optional**: it holds the content
-  hash of that name's written definition (shape, units, prose meaning, what
-  absence means, an example), and once set it never changes. It adds what the
-  pin can't check, the prose, for a world that travels to readers who don't
-  share this registry; a world without one is read by this registry, whose
-  pinned meanings never change.
+  in `REGISTRY-CHANGELOG.md`; a stable name's never re-pins. The name
+  `schemas:<name>` on `@world` is **reserved** for a definition's content hash
+  (the prose the pin can't check, for a world that travels to readers who don't
+  share this registry); it isn't written yet, since no format for a written
+  definition exists. A world is read by this registry and its pin.
 - **Keyed names are instance or partition keys.** For instance keys
   (`script:`, `blueprints:`, `roles:`), an existing key may be changed or
   deleted only by its creator (whose rights admitted the first write in its

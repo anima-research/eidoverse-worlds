@@ -309,7 +309,9 @@ export const COMPONENTS = {
                scopeFields: { ids: "scope", comps: "array", create: "bool", say: "bool", launch: "bool", bodies: "array" },
                help: "keyed <name>: a script (JavaScript; docs/SCRIPTS.md). {src: the source blob's name (upload {text} gives it), scope: {ids: 'self'|'subtree'|[ids], comps: [names, 'name:*'], create?, say?, bodies?: ['shove'|'pose']}, on: ['use', 'say', 'enter', 'leave', 'grab', 'release', 'changed:<comp>'], every?: s (>= 5; it gets tick, and wake after sleeping), always?: bool (run with nobody present; owner), knobs?: {…} (<= 4 KiB), paused?}. It acts with its sponsor's rights now, never beyond its scope; a `use` reaches it through a reactions handler {kind: 'script', script: <name>}" },
   // §5 (23:40): keyed names say which kind of key they are. instance: the creator rule; partition: one shared surface
-  schemas:   { status: "reserved", on: "world", keyed: true, key: "instance", help: "on @world (owner), keyed by component name: the content hash of that name's written definition; set once, never changed (PROTOCOL §4)" },
+  // reserved (shape audit 10-16): no format for a "written definition" exists yet and nothing writes one, so the name is held
+  // until one does (it may then be a set-once string sha256:<64 hex>)
+  schemas:   { status: "reserved", instead: "nothing yet: the pinned registry (spec/registry-pin.json) carries a name's meaning; schemas:<name> waits for a definition document format", on: "world", keyed: true, key: "instance", help: "reserved: on @world, keyed by component name, for the content hash of that name's written definition once a format for one exists. Not written yet (PROTOCOL §4)" },
   blueprints: { on: "world", keyed: true, key: "instance", help: "on @world, keyed by a blueprint's hash: {name, …} (publish writes it)" },
   "terrain-paint": { status: "reserved", on: "world", keyed: true, key: "partition", help: "keyed <i>-<j>: paint channels for one tile (research 40 §3; not built in the lab)" },
   // capacity: R's 10-14 14:13 call (VRChat/Resonite scale: gates against a world nobody can load, not targets), cut to ONE
