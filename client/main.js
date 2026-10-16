@@ -476,7 +476,8 @@ initCommands();   // the /command surface (lib/commands/) + its bus subscription
 // lantern prompt lists it (lib/actions.js), so a key and its row cannot drift.
 // `id` names an existing action to merge into (the dock's debug/edit/chat rows
 // gain their key) or a new one; `guard` gates the KEY only (edit mode rebinds H
-// and R) — from the prompt the act is always the act.
+// and R) — from the prompt the act is always the act. `plain` keys answer only with no Ctrl/Alt/Meta held (a
+// browser's own chord must stay the browser's).
 const MAIN_KEYS = [
   { code: 'KeyH', key: 'H', id: 'key:help', title: 'help — keys and controls', keywords: ['?', 'keys', 'controls', 'how'], group: 'view',
     guard: () => !isEditing(), run: () => toggleHelp() },
@@ -487,20 +488,20 @@ const MAIN_KEYS = [
   { code: 'F2', key: 'F2', id: 'key:screenshot', title: 'save a screenshot', keywords: ['picture', 'capture'], group: 'view', prevent: true, run: () => saveScreenshot() },
   { code: 'F3', key: 'F3', id: 'panel:debug', prevent: true, run: () => toggleDebug() },
   { code: 'KeyU', key: 'U', id: 'key:people', title: 'people here', keywords: ['who', 'present', 'roster', 'us'], group: 'panels', icon: 'users',
-    guard: () => !isEditing(), run: () => togglePeopleHere() },
+    plain: true, guard: () => !isEditing(), run: () => togglePeopleHere() },   // plain: Ctrl+U is the browser's view-source
   { code: 'KeyR', key: 'R', id: 'body:limp', title: 'go limp / get up', keywords: ['ragdoll', 'fall', 'flop'], group: 'body',
     guard: () => !isEditing(), run: () => (isDowned() ? getUp() : goLimp()) },
 ];
 // merge-into rows keep the dock's title/run (the same act) and only add the key; new rows register whole
-for (const { code, guard, prevent, ...a } of MAIN_KEYS) registerAction(a.title ? a : { id: a.id, key: a.key });
+for (const { code, guard, prevent, plain, ...a } of MAIN_KEYS) registerAction(a.title ? a : { id: a.id, key: a.key });
 registerAction({ id: 'panel:chat', key: 'Enter' });
-// People Here: a row in the lantern, no key — Tab is the panel set's (windows.js, R 10-11 23:01), and a key with two
-// meanings ran both (Tab hid the set, then this re-showed chat beside it)
+// People Here is U (above), not Tab — Tab is the panel set's (windows.js, R 10-11 23:01), and a key with two meanings
+// ran both (Tab hid the set, then this re-showed chat beside it)
 
 
 bus.on('key', (e) => {
   if (e.code === 'Slash' && e.shiftKey) { toggleHelp(); return; }
-  const k = MAIN_KEYS.find((m) => m.code === e.code && (!m.guard || m.guard()));
+  const k = MAIN_KEYS.find((m) => m.code === e.code && (!m.plain || !(e.ctrlKey || e.altKey || e.metaKey)) && (!m.guard || m.guard()));
   if (k) { if (k.prevent) e.preventDefault(); k.run(); return; }
   // any movement stands you back up
   if (isDowned() && ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) getUp();

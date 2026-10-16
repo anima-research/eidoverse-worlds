@@ -6,6 +6,7 @@
 //   B   boot: the page knows it's in a world; its own fold of the log stream = the log on disk (digest)
 //   P   place from the Build tab's ghost: one `create` act, the page waited for the authority
 //   G   a gizmo drag is presence until release: ONE act, `set transform` with expect on where it started
+//   KU  U opens People Here; Ctrl+U (the browser's view-source) does not (review r3 F9)
 //   U   Ctrl+Z is the authority's undo {act} of MY act; Ctrl+Shift+Z redoes (undo of my undo)
 //   C   undo refused when someone changed it since: nothing written, the refusal shown in the agents' words
 //   X   Esc mid-drag: the thing goes back, and nothing is written (0 acts)
@@ -83,6 +84,18 @@ try {
   if (secs < 4) await die(1, "the page never booted");
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
   check("B1 the page knows it's in a world (it adopted the cut)", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
+  // ---- K: U opens People Here; Ctrl+U is the browser's (view-source), never this (review r3 F9) ----
+  {
+    const people = `import('/lib/windows.js').then((m) => { const f = m.getFrame('chat'); const c = f?.sidePane?.('cols'); return { vis: !!f?.visible, open: !!c && !c.classList.contains('side-closed') }; })`;
+    await page(`const m = await import('/lib/windows.js'); const f = m.getFrame('chat'); const c = f?.sidePane?.('cols');
+      if (c && !c.classList.contains('side-closed')) f.sidePane('tog')?.click(); f?.hide?.(); return true;`);
+    const before = await evalJson(people);
+    await key("KeyU", { ctrlKey: true }); await sleep(300);
+    const ctrl = await evalJson(people);
+    await key("KeyU"); await sleep(300);
+    const plain = await evalJson(people);
+    check("KU1 Ctrl+U leaves People Here alone; U alone opens it", !before.open && !ctrl.open && !ctrl.vis && plain.vis && plain.open, { before, ctrl, plain });
+  }
   bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "", replica: true })); await sleep(500);   // replica: a world speaks only to clients that fold its log (3c)
   check("(setup) the owner makes bob a builder", (await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`)) === true && /^u-/.test(BOB));
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
