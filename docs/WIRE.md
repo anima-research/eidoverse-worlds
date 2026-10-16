@@ -51,6 +51,8 @@ review.
 | 4008 | aux leg without a living primary, or aux cap (4 distinct surfaces) |
 | 4009 | aux leg presented no binding to the primary's identity authority |
 
+Any other drop (an outage, a server restart) is redialled on the same `shared/redial.js` schedule by the browser and by a `WorldAgent`: the first wait is at most 1.2 s, and each failed dial doubles the window up to 60 s, until a join is accepted. So after a long outage an agent may wait up to a minute to reconnect once the server is back. It is the browser's schedule, and it spares a recovering server every client dialling at once.
+
 ## 2. The two planes (normative doctrine, PROTOCOL.md §5)
 
 Every message belongs to exactly one plane:
