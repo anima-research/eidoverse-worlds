@@ -296,21 +296,17 @@ async function presenceRefusal(ag: ToolAgent, t0: number, ms = 700): Promise<str
 const refusedBy = (r: any, what: string) => ({ content: [{ type: "text", text: refusalText(what, r) }], isError: true });
 /** Is this body in the air? (the flight integrator's phases; GROUND/LANDED are feet on the ground) */
 const airborne = (ag: ToolAgent) => !!ag.flight && ag.flight.phase !== "GROUND" && ag.flight.phase !== "LANDED";
-/** A name, as move {to} takes one: a placed thing (id or label), a person here, or a named place the world declares
- *  (@world places:<name> / a `places` component, the upstream places PRs' shape, read when present). Returns the point
- *  to walk to and how far short of it to stop — up to a thing, in front of a person, onto a place. */
-function resolvePlaceName(ag: ToolAgent, name: string): { x: number; z: number; stop: number; what: string } | { error: string } {
-  const ent: any = ag.entities.get(name) ?? [...ag.entities.values()].find((e: any) => typeof e?.label === "string" && e.label.trim().toLowerCase() === name.toLowerCase());
-  if (ent && Array.isArray(ent.pos)) return { x: ent.pos[0], z: ent.pos[2], stop: 0.8, what: `[${ent.id}]` };
-  const who: any = ag.people.get(name);
-  if (who?.pose?.p) return { x: who.pose.p[0], z: who.pose.p[2], stop: 1.2, what: name };
-  const st: any = (ag as any).st ?? {};
+/** A name move {to} takes that destination() doesn't: a place in the older upstream shape (`places:<name>` on @world or
+ *  a thing's `places` entry given as a bare [x, y, z] / {pos}, world coordinates). Things, labels, people and places in the
+ *  current shape are destination()'s alone (review r5 F3: one resolver, so a person never captures a walk here and of
+ *  several things the nearest is taken). */
+function legacyPlace(ag: ToolAgent, name: string): { x: number; z: number; what: string } | null {
+  const st: any = ag.replica?.st ?? {};
   const places: Record<string, any> = { ...(st.places ?? {}), ...(st.entities?.[WORLD_ID]?.c?.places ?? {}) };
   for (const e of ag.entities.values() as any) for (const [k, v] of Object.entries<any>((e as any)?.places ?? {})) places[k] ??= v;
   const pl = places[name] ?? places[`places:${name}`];
   const pp = Array.isArray(pl) ? pl : Array.isArray(pl?.pos) ? pl.pos : null;
-  if (pp) return { x: pp[0], z: pp.length === 3 ? pp[2] : pp[1], stop: 0, what: `the place "${name}"` };
-  return { error: `move: nothing here is called "${name}" — not a placed thing (look / hierarchy list them), not a person here, not a named place` };
+  return pp && pp.every(Number.isFinite) && pp.length >= 2 ? { x: pp[0], z: pp.length === 3 ? pp[2] : pp[1], what: `the place "${name}"` } : null;
 }
 
 /** measure {check: true}: #241's check_model, a mode of measure (it reads a model's geometry as data; check_model is an alias). */
@@ -549,20 +545,20 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (mode !== "walk" && mode !== "fly") return { content: [{ type: "text", text: `move: mode is "walk" (default) or "fly"` }], isError: true };
       // to: [x, y, z] (y picks the floor there, #236) or [x, z] (no y: the walk's own storey, else the lowest floor), or a
       // NAME: a named place (#239: "thing/place", a place's name or label, a thing's entrance), a thing, a person
-      let x: number, z: number, y: number | undefined, stop = 0, what = "", label: string | null = null;
+      let x: number, z: number, y: number | undefined, what = "", label: string | null = null;
       let near: { reach?: number; above?: number; below?: number; inside?: (x: number, z: number) => boolean } = {};
       const tolerance = a.tolerance ?? 0.01;
       if (typeof a.to === "string") {
         const q = a.to.trim();
         if (q.startsWith("?")) return text(ag.placeList(q.slice(1)));   // the named places here, seen or not (owner 22:40), nearest 200; "?<text>" narrows: no move
-        // a named place first (it carries its own floor and reach); a thing with no entrance named, or one known by its
-        // label, is walked up to and stood beside (resolvePlaceName); neither: the places refusal, which lists them
+        // a named place (it carries its own floor and reach), a thing (its entrance, else up to it and beside it), a
+        // person (stopping short): destination() alone; only a place in the older upstream shape is read here besides
         const d = ag.destination(q);
         if (!("refusal" in d)) { ({ x, z } = d); y = d.y; near = { reach: d.reach, above: d.above, below: d.below, inside: d.inside }; label = d.label; }
         else {
-          const r = resolvePlaceName(ag, q);
-          if ("error" in r) return { content: [{ type: "text", text: `move: ${d.refusal}` }], isError: true };
-          ({ x, z, stop } = r); what = ` (${r.what})`;
+          const r = legacyPlace(ag, q);
+          if (!r) return { content: [{ type: "text", text: `move: ${d.refusal}` }], isError: true };
+          ({ x, z } = r); what = ` (${r.what})`;
         }
       } else if (a.to != null || mode === "walk") {
         const to = Array.isArray(a.to) ? a.to.map(Number) : [];
@@ -585,7 +581,6 @@ export const HANDLERS: Record<string, ToolHandler> = {
         L.push(ag.flightStatus());
         return text(L.join("\n"));
       }
-      if (stop > 0) { const dx = x - ag.pos.x, dz = z - ag.pos.z, d = Math.hypot(dx, dz); if (d > stop) { x -= (dx / d) * stop; z -= (dz / d) * stop; } else what += " — already beside it"; }
       // this request's own refusal (receipt): its plan may wait for placed geometry still loading (#235), so walkRefusal,
       // read straight after the call, could belong to a later walk
       let receipt = { refusal: null as string | null };

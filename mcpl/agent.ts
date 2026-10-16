@@ -135,6 +135,9 @@ const WALK_READY_MS = 15_000;
 /** The world entity (places that belong to no thing live on it), and how far and how many places look lists (owner
  *  22:40/22:43: only what you can see, nearest first; move {to: "?"} lists every one). */
 const WORLD_ENTITY = "@world", PLACE_SIGHT_M = 30, PLACE_LOOK_MAX = 12, PLACE_LIST_MAX = 200;
+/** A thing with no entrance is walked up to: stopped this far short of its origin (its footprint unknown) / out from its
+ *  footprint's nearest point (metres; the body's own, not the thing's). */
+const THING_STOP = 0.8, THING_STANDOFF = 0.5;
 const GEOMETRY_LOADING = "things placed nearby are still loading their shape, so a walk now could pass through them — try again in a moment";
 const meshBytes = new Map<string, number>();
 /** Fetch-and-decode jobs at once (process-wide): replay fires one per spawn,
@@ -3344,7 +3347,7 @@ export class WorldAgent {
   }
 
   /** Where `to` is, as a walk can aim at it: "thing/place", a thing alone
-   *  (its entrance, else its door), a place's name or label alone (the
+   *  (its entrance, else its door, else up to it and beside it), a place's name or label alone (the
    *  nearest, if several things have one), a thing by its label, or a person
    *  (stopping short of them) — in that order: a person's name never hides a
    *  thing's, by id or by label. */
@@ -3370,13 +3373,15 @@ export class WorldAgent {
       if (!p) return { refusal: `[${e.id}] has no place called "${name}"${ps.length ? ` — its places: ${ps.map((x) => x.name).join(", ")}` : " (it has no named places)"}` };
       return at(e, p);
     }
+    // a thing: its entrance, else its door, else walked up to and stood beside (review r5 F3: here, not in a second
+    // resolver of move's — a person named like it never captures the walk, and of several, the nearest is taken)
+    const thing = (x: Entity): Destination | { refusal: string } => {
+      const ps = this.placesOn(x);
+      const p = ps.find((y) => y.name === "entrance") ?? ps.find((y) => y.kind === "door");
+      return p ? at(x, p) : this.besideThing(x);
+    };
     const e = ents.find((x) => ci(x.id, q));
-    if (e) {
-      const ps = this.placesOn(e);
-      const p = ps.find((x) => x.name === "entrance") ?? ps.find((x) => x.kind === "door");
-      if (p) return at(e, p);
-      return { refusal: `[${e.id}] has no entrance or door named — move to its places by name${ps.length ? ` (${ps.map((x) => x.name).join(", ")})` : ""}, or to its coordinates` };
-    }
+    if (e) return thing(e);
     const hits: Destination[] = [];
     for (const p of this.worldPlaces()) if (names(p, q)) hits.push(destinationOf(WorldAgent.WORLD_HOLDER, p));
     for (const x of ents) for (const p of this.placesOn(x)) {
@@ -3389,12 +3394,7 @@ export class WorldAgent {
     // (review r4 claims C1: a visitor named like a thing's label captured the walk)
     const byLabel = ents.filter((x) => { const l = (x as { label?: unknown }).label; return typeof l === "string" && ci(l.trim(), q); })
       .sort((a, b) => Math.hypot(a.pos[0] - me.x, a.pos[2] - me.z) - Math.hypot(b.pos[0] - me.x, b.pos[2] - me.z));
-    if (byLabel.length) {
-      const x = byLabel[0], ps = this.placesOn(x);
-      const p = ps.find((y) => y.name === "entrance") ?? ps.find((y) => y.kind === "door");
-      if (p) return at(x, p);
-      return { refusal: `[${x.id}] has no entrance or door named — move to its places by name${ps.length ? ` (${ps.map((y) => y.name).join(", ")})` : ""}, or to its coordinates` };
-    }
+    if (byLabel.length) return thing(byLabel[0]);
     // a person, last (review r3 F4): a visitor who joins as "tower" must not capture every walk to the tower
     for (const p of this.people.values()) {
       if (!ci(p.id, q)) continue;
@@ -3405,6 +3405,19 @@ export class WorldAgent {
     }
     const known = this.placesNear().map((x) => x.ref);
     return { refusal: `nothing here is called "${q}"${known.length ? ` — named places: ${known.slice(0, 16).join(", ")}${known.length > 16 ? ` and ${known.length - 16} more (move {to: "?"} lists them all)` : ""}` : ""}` };
+  }
+
+  /** A thing with no entrance or door, as a walk aims at it: up to it and beside it, on this body's side — THING_STANDOFF
+   *  out from the nearest point of its footprint (its origin where the footprint isn't known, THING_STOP short of it). */
+  private besideThing(x: Entity): Destination {
+    const me = this.pos, box = footprint(this.replica?.st, x.id);
+    let px = x.pos[0], pz = x.pos[2], off = THING_STOP;
+    if (box) {
+      const nx = Math.min(box.max[0], Math.max(box.min[0], me.x)), nz = Math.min(box.max[2], Math.max(box.min[2], me.z));
+      if (Math.hypot(me.x - nx, me.z - nz) > 1e-6) { px = nx; pz = nz; off = THING_STANDOFF; }
+    }
+    const d = Math.hypot(me.x - px, me.z - pz), back = d > 0.01 ? Math.min(off, d) / d : 0;
+    return { x: px + (me.x - px) * back, y: box ? box.min[1] : x.pos[1], z: pz + (me.z - pz) * back, reach: 0.6, label: `[${x.id}]` };
   }
 
   /** name_place edits, one at a time: each starts from the state the last

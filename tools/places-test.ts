@@ -36,6 +36,34 @@ console.log("places.ts (pure):");
   check("model frame ↔ world round-trips through position, yaw and scale", back.every((v, i) => Math.abs(v - [1, 2, 3][i]) < 1e-9), JSON.stringify(back));
 }
 
+console.log("move {to: <a thing with no entrance>} (review r5 F3: one resolver, things before people, the nearest):");
+{
+  const { WorldAgent } = await import("../mcpl/agent.ts");
+  const { HANDLERS } = await import("../mcpl/tools.ts");
+  const mk = (ents: any[], people: any[]) => {
+    const ag: any = new WorldAgent({ url: "ws://127.0.0.1:1/ws", name: "P", world: "w", avatar: "" });
+    for (const e of ents) ag.entities.set(e.id, e);
+    for (const p of people) ag.people.set(p.id, p);
+    ag.pos = { x: 0, y: 0, z: 0 };
+    let went: number[] | null = null;
+    ag.walkTo = async (x: number, z: number) => { went = [x, z]; ag.pos = { x, y: 0, z }; return true; };
+    return { ag, went: () => went };
+  };
+  const txt = (r: any) => (r.content ?? []).map((c: any) => c.text ?? "").join("\n");
+  {
+    const { ag, went } = mk([{ id: "tower", pos: [10, 0, 0] }], [{ id: "TOWER", pose: { p: [-20, 0, 0] } }]);
+    const r = txt(await HANDLERS.move(ag, { to: "TOWER" }, {}, "move")), w = went();
+    check("a thing \"tower\" with no entrance and a person \"TOWER\": move {to: \"TOWER\"} walks up to the thing, not the person",
+      !!w && w[0] > 8 && w[0] < 10 && Math.abs(w[1]) < 1e-6, `walked to ${JSON.stringify(w)} | ${r}`);
+  }
+  {
+    const { ag, went } = mk([{ id: "far", pos: [50, 0, 0], label: "Belfry" }, { id: "nearb", pos: [3, 0, 0], label: "Belfry" }], []);
+    const r = txt(await HANDLERS.move(ag, { to: "belfry" }, {}, "move")), w = went();
+    check("two things labelled \"Belfry\", neither with an entrance: move {to: \"belfry\"} walks up to the nearer",
+      !!w && w[0] > 1 && w[0] < 3 && /nearb/.test(r), `walked to ${JSON.stringify(w)} | ${r}`);
+  }
+}
+
 console.log("a model's own places survive the server's compressed copy:");
 {
   const { optimizeGlb } = await import("../server/optimize.ts");
