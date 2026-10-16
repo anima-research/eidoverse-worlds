@@ -444,22 +444,28 @@ export function materialize(comp, v) {
 /** Every default a name can write (its `defaults` and every `when` rule's), for tools that ask "is this one written?" */
 export const defaultsOf = (name) => { const d = COMPONENTS[name]; return Object.assign({}, d?.defaults ?? {}, ...(d?.when ?? []).map((r) => r.set)); };
 
-// ---- what a name means, pinned (PROTOCOL §4: a name never changes meaning) ----
-// The checkable part of a definition: each field's type, each default (and when it applies), each enum's members. A
-// change to any of these is a changed meaning, so spec/registry-pin.json holds them and test:protocol fails when one
-// moves (pretrans-check D8); a NEW field, default, enum member or name is an addition and is fine. A field added to a name
-// after its first registration must say what an older value without it means (`absentMeans`, PROTOCOL §4; D11), and that
-// sentence is pinned too, as is a field's `grammar` (physics.shape). Regenerate the pin only for an addition:
-// bun tools/protocol/pretrans-check.ts --pin
+// ---- what a name means, pinned (PROTOCOL §4; the pin is a TRIPWIRE during the alpha) ----
+// The checkable part of a definition: its status, each field's type, each default (and when it applies), each enum's
+// members, each range and what's required, each field's meaning of absence and grammar. spec/registry-pin.json holds them
+// and test:protocol fails (pretrans-check D8) when one is removed, changed or narrowed; a NEW field, default, enum member,
+// widened range or name is an addition and is fine. A field added to a name after its first registration must say what an
+// older value without it means (`absentMeans`, PROTOCOL §4; D11).
+// During the alpha every registered name is `trial` (or `reserved`), so a break is ALLOWED, but never silently: re-pinning
+// over one needs an acknowledgement, `bun tools/protocol/pretrans-check.ts --pin --ack "<why>"`, which writes a line to
+// spec/REGISTRY-CHANGELOG.md naming what changed and why (pinVerdict). A `stable` name's breaks are never re-pinned: a
+// changed meaning of a stable name is a new versioned name (PROTOCOL §4). Additions re-pin with a plain --pin.
 export function pinOf() {
   const out = {};
   for (const [name, d] of Object.entries(COMPONENTS)) {
-    const p = {};
+    const p = { status: d.status ?? "trial" };
     if (d.type) p.type = d.type;
     if (d.fields) p.fields = { ...d.fields };
     if (d.defaults) p.defaults = copy(d.defaults);
     if (d.when) p.when = copy(d.when);
     if (d.enums) p.enums = copy(d.enums);
+    if (d.ranges) p.ranges = copy(d.ranges);
+    if (d.maxLen !== undefined) p.maxLen = d.maxLen;
+    if (d.required) p.required = [...d.required];
     if (d.absentMeans) p.absentMeans = { ...d.absentMeans };
     if (d.grammar) p.grammar = { ...d.grammar };
     if (d.keyed !== undefined) p.keyed = d.keyed;
@@ -468,24 +474,53 @@ export function pinOf() {
   }
   return out;
 }
-/** What changed meaning between a pin and now (removals and changes; additions are not breaks). [] = nothing. */
-export function pinBreaks(pin, now = pinOf()) {
+// is range b narrower than range a anywhere (a bound added, a lower bound raised, an upper bound lowered)?
+const LOWER = (r) => (r.gt !== undefined ? [r.gt, 1] : r.min !== undefined ? [r.min, 0] : null);
+function narrows(a = {}, b = {}) {
+  const la = LOWER(a), lb = LOWER(b);
+  if (lb && (!la || lb[0] > la[0] || (lb[0] === la[0] && lb[1] > la[1]))) return "its lower bound rose";
+  for (const k of ["max", "maxLen", "maxItems"]) if (b[k] !== undefined && (a[k] === undefined || b[k] < a[k])) return `its ${k} fell`;
+  return null;
+}
+/** Every break between a pin and now, as [{name, status, text}]: removals, changes and narrowings (additions aren't).
+ *  status is the PIN's (what was promised): trial or reserved breaks may be re-pinned with an acknowledgement, stable never. */
+export function pinBreakList(pin, now = pinOf()) {
   const out = [], j = (x) => JSON.stringify(x);
   for (const [name, p] of Object.entries(pin)) {
-    const n = now[name]; if (!n) { out.push(`${name}: the name is gone (a registered name is read forever)`); continue; }
-    for (const k of ["type", "keyed", "on"]) if (p[k] !== undefined && j(p[k]) !== j(n[k])) out.push(`${name}: ${k} ${j(p[k])} → ${j(n[k])}`);
-    for (const [f, t] of Object.entries(p.fields ?? {})) if (n.fields?.[f] !== t) out.push(`${name}.${f}: type ${t} → ${n.fields?.[f] ?? "gone"}`);
-    for (const [f, v] of Object.entries(p.defaults ?? {})) if (j(n.defaults?.[f]) !== j(v)) out.push(`${name}.${f}: default ${j(v)} → ${j(n.defaults?.[f]) ?? "gone"}`);
-    for (const r of p.when ?? []) if (!(n.when ?? []).some((q) => j(q.if) === j(r.if) && j(q.absent) === j(r.absent) && Object.entries(r.set).every(([f, v]) => j(q.set?.[f]) === j(v)))) out.push(`${name}: a conditional default changed: ${j(r)}`);
-    for (const [f, vals] of Object.entries(p.enums ?? {})) for (const x of vals) if (!(n.enums?.[f] ?? []).includes(x)) out.push(`${name}.${f}: ${j(x)} is no longer allowed`);
-    for (const [f, m] of Object.entries(p.absentMeans ?? {})) if (n.absentMeans?.[f] !== m) out.push(`${name}.${f}: its meaning of absence ${j(m)} → ${j(n.absentMeans?.[f]) ?? "gone"}`);
-    for (const [f, g] of Object.entries(p.grammar ?? {})) if (n.grammar?.[f] !== g) out.push(`${name}.${f}: grammar ${g} → ${n.grammar?.[f] ?? "gone"}`);
+    const status = p.status ?? "trial"; const push = (text) => out.push({ name, status, text });
+    const n = now[name]; if (!n) { push(`${name}: the name is gone (a registered name is read forever)`); continue; }
+    if (p.status !== undefined && p.status !== n.status) push(`${name}: status ${p.status} → ${n.status}`);
+    for (const k of ["type", "keyed", "on"]) if (p[k] !== undefined && j(p[k]) !== j(n[k])) push(`${name}: ${k} ${j(p[k])} → ${j(n[k])}`);
+    for (const [f, t] of Object.entries(p.fields ?? {})) if (n.fields?.[f] !== t) push(`${name}.${f}: type ${t} → ${n.fields?.[f] ?? "gone"}`);
+    for (const [f, v] of Object.entries(p.defaults ?? {})) if (j(n.defaults?.[f]) !== j(v)) push(`${name}.${f}: default ${j(v)} → ${j(n.defaults?.[f]) ?? "gone"}`);
+    for (const r of p.when ?? []) if (!(n.when ?? []).some((q) => j(q.if) === j(r.if) && j(q.absent) === j(r.absent) && Object.entries(r.set).every(([f, v]) => j(q.set?.[f]) === j(v)))) push(`${name}: a conditional default changed: ${j(r)}`);
+    for (const [f, vals] of Object.entries(p.enums ?? {})) for (const x of vals) if (!(n.enums?.[f] ?? []).includes(x)) push(`${name}.${f}: ${j(x)} is no longer allowed`);
+    // ranges, maxLen and required entered the pin with status (10-16): a pin from before holds none of them, so none is judged
+    if (p.status !== undefined) for (const f of new Set([...Object.keys(p.ranges ?? {}), ...Object.keys(n.ranges ?? {})])) { const why = narrows(p.ranges?.[f], n.ranges?.[f]);
+      if (why && Object.hasOwn(p.fields ?? {}, f)) push(`${name}.${f}: its range narrowed (${why}): ${j(p.ranges?.[f] ?? {})} → ${j(n.ranges?.[f])}`); }
+    if (p.status !== undefined && n.maxLen !== undefined && (p.maxLen === undefined || n.maxLen < p.maxLen)) push(`${name}: maxLen ${p.maxLen ?? "none"} → ${n.maxLen}`);
+    if (p.status !== undefined) for (const f of n.required ?? []) if (!(p.required ?? []).includes(f) && Object.hasOwn(p.fields ?? {}, f)) push(`${name}.${f}: now required`);
+    for (const [f, m] of Object.entries(p.absentMeans ?? {})) if (n.absentMeans?.[f] !== m) push(`${name}.${f}: its meaning of absence ${j(m)} → ${j(n.absentMeans?.[f]) ?? "gone"}`);
+    for (const [f, g] of Object.entries(p.grammar ?? {})) if (n.grammar?.[f] !== g) push(`${name}.${f}: grammar ${g} → ${n.grammar?.[f] ?? "gone"}`);
     // PROTOCOL §4: a field added after the name's first registration says what an older value WITHOUT it means (a value
     // stored before it existed never holds it, and materialize never rewrites the past), and that meaning is pinned
     for (const f of Object.keys(n.fields ?? {})) if (!Object.hasOwn(p.fields ?? {}, f) && !(typeof n.absentMeans?.[f] === "string" && n.absentMeans[f].trim()))
-      out.push(`${name}.${f}: added after ${name} was first registered, with no meaning of absence (absentMeans.${f}: what an older value without it means)`);
+      push(`${name}.${f}: added after ${name} was first registered, with no meaning of absence (absentMeans.${f}: what an older value without it means)`);
   }
   return out;
+}
+/** What changed meaning between a pin and now, as lines. [] = nothing. */
+export const pinBreaks = (pin, now = pinOf()) => pinBreakList(pin, now).map((b) => b.text);
+/** May `now` be re-pinned over `pin`? {ok, why?, changelog?}: with no breaks, yes; with breaks only on trial or reserved
+ *  names, only with an acknowledgement (`ack`, the why), and the changelog line to write says what and why; a stable
+ *  name's break, never. `date` stamps the changelog line. */
+export function pinVerdict(pin, now = pinOf(), ack = null, date = new Date().toISOString().slice(0, 10)) {
+  const breaks = pinBreakList(pin, now);
+  const stable = breaks.filter((b) => b.status === "stable");
+  if (stable.length) return { ok: false, breaks, why: `these change a STABLE name's meaning (a changed meaning is a new versioned name; no acknowledgement re-pins it):\n  ${stable.map((b) => b.text).join("\n  ")}` };
+  const why = typeof ack === "string" ? ack.trim() : "";
+  if (breaks.length && !why) return { ok: false, breaks, why: `these change a trial or reserved name (allowed during the alpha, but never silently): re-pin with --ack "<why>", which writes spec/REGISTRY-CHANGELOG.md:\n  ${breaks.map((b) => b.text).join("\n  ")}` };
+  return { ok: true, breaks, ...(why ? { changelog: `- ${date}: ${why}${breaks.length ? `\n${breaks.map((b) => `  - ${b.text}`).join("\n")}` : ""}\n` } : {}) };
 }
 
 /** A field's range ({min?, gt?, max?}) as the door judges a number against it, and the words it refuses with. `fmt`

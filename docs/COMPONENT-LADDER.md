@@ -3,6 +3,33 @@
 How a new component gets into the engine without breaking a world. The rules are `spec/PROTOCOL.md` §4 and §10; this
 is the checklist that follows from them. R and Hesperus, 2026-10-10.
 
+## Draft, trial, reserved, stable: four words, two different questions
+
+**Draft** is a rung of this ladder: a namespaced component (`<handle>/<name>`) the authority has **not admitted** to its
+registry. It is stored as written, but the engine doesn't know it and no rule reads it.
+
+**Trial**, **reserved** and **stable** are the *status* of a name that **is** in the registry (`status` on every
+definition in `shared/protocol/componentspec.js`; `schema` returns it, and the Inspector shows it on the card):
+- **trial**: admitted and written, but its shape may still change during the alpha (about a year). When it changes we
+  translate or repair stored values where we can. Every registered component is trial at v1.
+- **reserved**: the name is held (nobody else may take it) but every write is refused, with one refusal for all reserved
+  names (code `reserved`; the definition's `instead` says what to use meanwhile). Today: `joint`, `schemas`,
+  `terrain-grid`, `terrain-tile`, `terrain-paint`.
+- **stable**: promised. Its meaning never changes; it only grows by additions, and a changed meaning is a new versioned
+  name (rung 4). None is stable at v1.
+
+So a draft is not trial: a draft isn't admitted at all, and a trial component is admitted but unpromised.
+
+**The pin is a tripwire, not a vow.** `spec/registry-pin.json` records each name's status, types, defaults, enums,
+ranges, required fields, meanings of absence and grammars. `test:protocol` (pretrans D8) goes red when any of them is
+removed, changed or narrowed. Then:
+- an **addition** (a new name, field, default, enum member or widened range) re-pins with a plain
+  `bun tools/protocol/pretrans-check.ts --pin`;
+- a **break on a trial or reserved name** re-pins only with an acknowledgement:
+  `bun tools/protocol/pretrans-check.ts --pin --ack "<why>"`. That appends a line to `spec/REGISTRY-CHANGELOG.md`
+  naming every break and why, in the same commit as the pin;
+- a **break on a stable name** never re-pins, acknowledged or not.
+
 ## Rung 1: draft (namespaced)
 
 A component nobody has registered carries a namespace: `<handle>/<name>` (`hesperus/material`), keyed instances
@@ -58,7 +85,9 @@ One commit, reviewed by a second agent before it ships:
    `help` line, and `aliases: ["<handle>/<name>"]` so every draft value already in a world keeps working.
 2. **Decide every field now.** A field added after registration must say what its absence means, and that meaning is
    frozen. If today's behaviour wouldn't be acceptable forever as "absent", the field is added at promotion or not at all.
-3. **The pin**: `bun tools/protocol/pretrans-check.ts --pin` (additions only; it refuses a changed type, default or enum).
+3. **The pin**: `bun tools/protocol/pretrans-check.ts --pin` (additions re-pin freely; a change, removal or narrowing of a
+   trial name needs `--ack "<why>"` and leaves a REGISTRY-CHANGELOG line; a stable name's never re-pins). A promoted
+   name is `trial` until it is promised (`stable`).
 4. **The authority's checks** for anything a reader can't be trusted to check (ranges that matter to everyone, refs).
 5. **The protocol text**: its name in §4's list, and a line in the catalogue (`shared/components.js`) for Add Component.
 6. **The reader** keeps reading both spellings (the alias makes the authority treat them as one; clients use
@@ -71,7 +100,8 @@ One commit, reviewed by a second agent before it ships:
 
 ## Rung 4: a change of meaning
 
-Never edit what a registered field means. A new meaning is a new name, `<name>@<n>`, registered before anyone writes it,
+Never edit what a **stable** field means. (A **trial** field may change during the alpha, acknowledged in the
+changelog and with a repair or translation for stored values where one is possible; see the tripwire above.) A new meaning is a new name, `<name>@<n>`, registered before anyone writes it,
 saying what it `supersedes`. Old names are read forever.
 
 ## Who checks what

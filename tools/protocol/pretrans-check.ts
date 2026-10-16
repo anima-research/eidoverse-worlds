@@ -44,9 +44,14 @@ const why = (r: any) => (r?.ok ? "ok" : `${r?.refused?.code}: ${r?.refused?.reas
 const world = (tag = "pre") => SD.scratchWorld(tag);
 const read = (p: string) => fs.readFileSync(path.join(T, p), "utf8");
 const SPEC = read("spec/PROTOCOL.md");
-if (argv.includes("--pin")) {   // regenerate the registry pin: ONLY for an addition (a new name, field, default or enum member)
-  const breaks = fs.existsSync(path.join(T, "spec/registry-pin.json")) ? CAT.pinBreaks(JSON.parse(read("spec/registry-pin.json"))) : [];
-  if (breaks.length) { console.log("refusing to re-pin: these change a meaning (a changed meaning is a new versioned name):\n  " + breaks.join("\n  ")); process.exit(1); }
+if (argv.includes("--pin")) {   // regenerate the registry pin: an addition re-pins freely; a break on a trial or reserved name
+  // needs --ack "<why>" (a line in spec/REGISTRY-CHANGELOG.md); a stable name's break never re-pins (CAT.pinVerdict)
+  const old = fs.existsSync(path.join(T, "spec/registry-pin.json")) ? JSON.parse(read("spec/registry-pin.json")) : {};
+  const v = CAT.pinVerdict(old, CAT.pinOf(), opt("ack") ?? null);
+  if (!v.ok) { console.log("refusing to re-pin: " + v.why); process.exit(1); }
+  if (v.changelog) { const f = path.join(T, "spec/REGISTRY-CHANGELOG.md");
+    if (!fs.existsSync(f)) fs.writeFileSync(f, "# Registry changelog\n\nEvery re-pin of spec/registry-pin.json that changed, removed or narrowed a trial or reserved component (PROTOCOL §4 Status;\ndocs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pin --ack \"<why>\"`, newest last.\n\n");
+    fs.appendFileSync(f, v.changelog); console.log(`spec/REGISTRY-CHANGELOG.md: ${v.breaks.length} acknowledged`); }
   fs.writeFileSync(path.join(T, "spec/registry-pin.json"), JSON.stringify(CAT.pinOf(), null, 1) + "\n"); console.log("spec/registry-pin.json written"); process.exit(0); }
 
 // ---- J: I-JSON (L2) ----
@@ -286,6 +291,22 @@ await C("ST2", "a write of any reserved name is refused at the door, one code an
 await C("ST3", "schema says each name's status and what the statuses mean", () => {
   const W = world(); const r = W.call("schema", {}); const one = W.call("schema", { component: "joint" });
   return [r.ok && r.components.light.status === "trial" && one.components.joint.status === "reserved" && typeof r.statuses?.reserved === "string", [r.statuses, one.components?.joint?.status]]; });
+
+// ---- PN: the pin is a tripwire (shape audit 10-16): trial/reserved breaks re-pin only acknowledged; stable never ----
+await C("PN1", "the pin records each name's status, ranges and required fields", () => {
+  const p = CAT.pinOf(); return [p.light?.status === "trial" && p.joint?.status === "reserved" && p.sound?.ranges?.volume?.max === 1 && JSON.stringify(p.sound?.required) === '["src"]', [p.light?.status, p.joint?.status, p.sound?.ranges?.volume, p.sound?.required]]; });
+await C("PN2", "a break on a trial name (a narrowed range, a removed enum member, a gone name) is refused without --ack and admitted with one, the changelog line naming it and why", () => {
+  const pin = CAT.pinOf(), now = CAT.pinOf();
+  now.sound.ranges.volume = { min: 0, max: 0.5 }; now.light.enums.kind = ["point"]; delete now.stage;
+  const bare = CAT.pinVerdict(pin, now, null), acked = CAT.pinVerdict(pin, now, "test: why", "2026-10-16");
+  return [!bare.ok && /--ack/.test(bare.why) && bare.breaks.length === 3 && acked.ok && /^- 2026-10-16: test: why\n/.test(acked.changelog) && /sound\.volume: its range narrowed/.test(acked.changelog) && /light\.kind: "spot" is no longer allowed/.test(acked.changelog) && /stage: the name is gone/.test(acked.changelog), [bare, acked]]; });
+await C("PN3", "a stable name's break is never re-pinned, acknowledged or not; an addition or a widened range needs no acknowledgement", () => {
+  const pin = CAT.pinOf(); pin.light.status = "stable"; const now = CAT.pinOf(); now.light.status = "stable"; now.light.defaults.intensity = 17;
+  const st = CAT.pinVerdict(pin, now, "please"); const wide = CAT.pinOf(); wide.sound.ranges.volume = { min: 0, max: 2 }; wide.sound.fields.extra = "number"; wide.sound.absentMeans = { ...(wide.sound.absentMeans ?? {}), extra: "none" };
+  const add = CAT.pinVerdict(CAT.pinOf(), wide, null);
+  return [!st.ok && /STABLE/.test(st.why) && add.ok && !add.breaks.length && !add.changelog, [st.why, add]]; });
+await C("PN4", "the ladder doc says trial isn't draft, and how a break is acknowledged", () => {
+  const t = read("docs/COMPONENT-LADDER.md"); const need = ["trial", "reserved", "stable", "--ack", "REGISTRY-CHANGELOG"]; return [need.every((n) => t.includes(n)) && /draft[^\n]*not[^\n]*admitted|not admitted/i.test(t), need.filter((n) => !t.includes(n))]; });
 
 // ---- I: ids (H5) ----
 const RAND = /-[a-z2-7]{26}$/;
