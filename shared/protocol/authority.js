@@ -452,7 +452,7 @@ const WORLD_LOOK = new Set(["about", "sky", "terrain", "terrain-grid", "grass", 
 // training-consent:<identity> is that person's own word (componentspec: "no owner consents on your behalf"; design review
 // 10-15 item 2): written and deleted by exactly the identity it names, whatever their role, and by nobody else: not an owner,
 // not a capability. The bare training-consent (the world's policy) is the owner's like the rest of @world.
-const ownWordOf = (op) => { if (op.id !== "@world" || typeof op.comp !== "string") return null; const i = op.comp.indexOf(":");
+export const ownWordOf = (op) => { if (op.id !== "@world" || typeof op.comp !== "string") return null; const i = op.comp.indexOf(":");
   return i > 0 && op.comp.slice(0, i).replace(/@\d+$/, "") === "training-consent" ? op.comp.slice(i + 1) : null; };
 const needOf = (op) => {
   if (op.id !== "@world") return "thing";
@@ -2306,7 +2306,11 @@ function buildUndo(ctx, a, w) {
     if (!acts.length) refuse("nothing", `${said(a.actor)} has made no change since act ${from} that's still in force`, "");
     if (acts.length > 20 && a.confirm !== true && a.dry !== true) refuse("confirm", `that rolls back ${acts.length} acts by ${said(a.actor)} since act ${from}`, "dry: true lists them; confirm: true does it", { acts: acts.length });
     let st = ctx.st; const all = []; const skippedAll = [], done = [];
-    for (const q of acts) { const { groups, skipped } = inverseOf(E[q], result(q), st); const ops = groups.flat();
+    // training-consent:<id> is that person's own word, never undone by another person (review r2 F2): a rollback skips the
+    // inverse on it and takes back the rest, so writing your own consent doesn't shield your other work from an owner
+    for (const q of acts) { const { groups, skipped } = inverseOf(E[q], result(q), st);
+      const ops = groups.flat().filter((o) => { const who = ownWordOf(o); if (who === null || who === ctx.actor) return true;
+        skipped.push({ id: o.id, component: o.comp, why: `that's ${said(who)}'s own training consent: only they may write or withdraw it`, by: who }); return false; });
       skippedAll.push(...skipped); if (ops.length) { all.push(...ops); st = scratch(st, ops); done.push(q); } }
     if (!all.length) refuse("conflict", `everything ${said(a.actor)} did since then has been changed by others since`, "their later work stands");
     if (skippedAll.length) ctx.notes.push({ skipped: skippedAll });
@@ -2692,12 +2696,22 @@ function restampEngine(w) {
   if (w.custody?.()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer) return;   // a server that can't sign for the world doesn't write to it
   if (Object.keys(w.presence?.holds ?? {}).length) return;   // held right now: try again at the next act
   restampTried.set(w, key);
-  const E = w.entries; let from = -1;
-  for (let s = E.length - 1; s >= 0; s--) { const e = E[s]; if (isE(e) && e.kind === "change" && opsQuiet(e).some((o) => o.id === "@world" && o.comp === "physics-engine")) { from = s; break; } }
-  if (from < 0) return;
-  // named by the owner? the act that caused the epoch's change carries the request as sent (L4)
+  // Named by the owner? Each change's cause act carries the request as sent (L4). The CURRENT build is named when, walking
+  // back from the epoch's change through the run of physics-engine changes that kept this same build, one was caused by a
+  // person's act whose request typed a build (review r2 F7: a later merge of tickMs names no build, but leaves the named one
+  // in place). The change that brought the build in ends the walk: past it, the build was another. A fork-copy is inherited,
+  // not chosen (review r2 F4: forkWorld's copy carries the source's stamped build), and system acts (restamps) never name.
   const named = (v) => !!v && typeof v === "object" && (Array.isArray(v) ? v.some(named) : (v.component === "physics-engine" && v.value?.build !== undefined) || Object.values(v).some(named));
-  const cause = E[E[from].cause]; if (isE(cause) && cause.kind === "act" && cause.actor !== "system" && named(cause.body?.request)) return;
+  const chose = (e) => { const c = E[e.cause]; return isE(c) && c.kind === "act" && c.actor !== "system" && c.verb !== "fork-copy" && named(c.body?.request); };
+  const E = w.entries; let from = -1, after = null;
+  for (let s = E.length - 1; s >= 0; s--) { const e = E[s]; if (!(isE(e) && e.kind === "change")) continue;
+    const o = opsQuiet(e).filter((x) => x.id === "@world" && x.comp === "physics-engine").at(-1); if (!o) continue;
+    if (after && (o.verb !== "set" || o.value?.build !== after.value?.build)) break;   // `after` brought the build in, naming none
+    if (from < 0) from = s;
+    if (o.verb !== "set") break;
+    if (chose(e)) return;
+    after = o; }
+  if (from < 0) return;
   const out = new Map();   // id → the launch seq it flies under, or "held"
   for (let s = from + 1; s < E.length; s++) { const e = E[s]; if (!isE(e)) continue;
     if (e.kind === "sim" && e.body?.id) { if (e.verb === "launch") out.set(e.body.id, s); else if (e.verb === "lift" || e.verb === "catch") out.set(e.body.id, "held"); continue; }

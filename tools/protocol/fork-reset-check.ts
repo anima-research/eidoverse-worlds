@@ -47,7 +47,7 @@ const thingsOf = (st) => Object.fromEntries(Object.entries(st.entities).map(([id
 
 ok(tool(["found", "src", "--owner", "Ann"]).code === 0 && tool(["found", "taken", "--owner", "Ann"]).code === 0, "(setup) found src and taken, Ann owns both");
 const S = await start({ FOUND_PER_ACCOUNT: "2", FOUND_GAP_MS: "0", FOUND_PER_HOUR: "3" });
-const ann = await sock(S.port); await ann.join("src", "Ann");
+const ann = await sock(S.port); const ja0 = await ann.join("src", "Ann"); const annId = ja0.snapshot?.cut?.you;
 const bob = await sock(S.port); const jb = await bob.join("src", "Bob");
 const bobId = jb.snapshot?.cut?.you;
 // a world worth copying: a parent with a locked child, a light, sockets, @world settings and roles, and a chat line
@@ -59,6 +59,10 @@ for (const r of [
   await ann.req("set", { id: "lamp1", component: "lock", value: true }),
   await ann.req("create", { id: "chair1", model: MODEL, components: { sockets: { seat: { pos: [0, 0.45, 0], body: { action: "sit" } } } } }),
   await ann.req("say", { text: "a private chat line from before the copy" }),
+  // review r2 F1: training consent. Bob's own word, the world's policy (bare), and the forker's own word
+  await bob.req("set", { id: "@world", component: `training-consent:${bobId}`, value: { allow: true } }),
+  await ann.req("set", { id: "@world", component: "training-consent", value: { allow: false } }),
+  await ann.req("set", { id: "@world", component: `training-consent:${annId}`, value: { allow: false } }),
 ]) ok(r.ok, "(setup) the source world takes it", r.refused);
 // a scripted bell: scripts travel with a fork (their source blobs too) and keep working there
 { const up = await ann.req("upload", { text: 'world.on("use", () => { world.set("self", "t/bell", { rung: (world.get("self", "t/bell")?.rung ?? 0) + 1 }); });' });
@@ -86,6 +90,8 @@ ok(fk?.type === "world-forked" && fk.to === "copy", "FK3 the owner copies it", f
   ok(JSON.stringify(Object.keys(a).sort()) === JSON.stringify(Object.keys(b).sort()) && ["table1", "lamp1", "chair1"].every((id) => canon(a[id]) === canon(b[id])),
     "FK5 every thing is copied component for component (the parent, the locked child, the spot light, the sockets)", [Object.keys(b)]);
   ok(b["@world"][`roles:${bobId}`]?.role === "builder" && b["@world"]["default-role"]?.role === "visitor", "FK5 roles and the default role travel", b["@world"]);
+  ok(src.entities["@world"].c[`training-consent:${bobId}`] && !(`training-consent:${bobId}` in b["@world"]) && b["@world"]["training-consent"]?.allow === false
+    && b["@world"][`training-consent:${annId}`]?.allow === false, "FK12 someone else's own training consent doesn't travel into the owner's fork; the world's policy (bare key) and the forker's own word do (review r2 F1)", b["@world"]);
   ok(!logOf("copy").some((e) => e.kind === "say"), "FK6 chat does not travel (the source's log stays the record)");
   // review 10-07 H5: the fork's genesis names its parent {world, seq, head} (part of its id: the merge base), and the acts
   // that copied the parent are marked, so a reader tells inherited things from births

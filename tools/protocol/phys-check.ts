@@ -2,7 +2,7 @@
 // Ported from the protocol lab's phys-check.js @ 11db981; only paths changed. usage: bun tools/protocol/phys-check.ts
 // @ts-nocheck — lab code, kept as written
 import fs from "node:fs";
-import { request, settle } from "../../shared/protocol/authority.js";
+import { request, settle, forkCopy } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { fold, readLog } from "../../shared/protocol/fold.js";
 import { simFold, restsOf, ENGINES, EIDOSIM_BUILD } from "../../shared/protocol/simlayer.js";
@@ -424,6 +424,32 @@ function playground(name) {
   const W5 = fresh("pc-r5"); call(W5, "rowan", "create-world", { title: W5 });
   call(W5, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", build: OLD } }); call(W5, "rowan", "look", {});
   ok(!restamps(W5).length && specOf(W5).build === OLD, "R5 an owner-named build is the owner's: no restamp", specOf(W5));
+  // R6 — a fork of a physics world (review r2 F4): the copy's fork-copy act carries the source's stamped spec, build and all.
+  // That's inherited, not chosen, so after a deploy the fork is restamped like its source (forkWorld writes exactly this act)
+  const W6 = fresh("pc-r6"); call(W6, "rowan", "create-world", { title: W6 }); at(100);
+  const fc = forkCopy(openWorld(root, W6), "rowan", { ops: [{ verb: "set", args: { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", build: OLD, tickMs: 33 } } }], throughLock: true });
+  ok(fc.ok && specOf(W6).build === OLD && log(W6).some((e) => e.kind === "act" && e.verb === "fork-copy"), "R6 setup: a fork-copy carried the old server's stamped build", [fc.refused, specOf(W6)]);
+  call(W6, "rowan", "look", {});
+  ok(restamps(W6).length === 1 && specOf(W6).build === EIDOSIM_BUILD, "R6 a forked physics world is restamped at its first act (an inherited build isn't the owner's choice)", specOf(W6));
+  // R7 — the owner names a build, then changes only tickMs by merge (review r2 F7): the build is still the one they named
+  const W7 = fresh("pc-r7"); call(W7, "rowan", "create-world", { title: W7 });
+  call(W7, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", build: OLD } });
+  const m7 = call(W7, "rowan", "set", { id: "@world", component: "physics-engine", value: { tickMs: 20 }, merge: true });
+  call(W7, "rowan", "look", {});
+  ok(m7.ok && specOf(W7).tickMs === 20 && !restamps(W7).length && specOf(W7).build === OLD, "R7 an owner-named build survives a later merge of tickMs: no restamp", [m7.refused, specOf(W7)]);
+  // R7b — …but a stamped build stays stamped through a merge: the old server stamped it, the owner merged tickMs, a deploy restamps
+  const W7b = deployed(() => { const n = fresh("pc-r7b"); call(n, "rowan", "create-world", { title: n });
+    call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
+    call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { tickMs: 20 }, merge: true }); return n; });
+  call(W7b, "rowan", "look", {});
+  ok(restamps(W7b).length === 1 && specOf(W7b).build === EIDOSIM_BUILD && specOf(W7b).tickMs === 20, "R7b a stamped build merged over (tickMs) is still stamped: restamped, tickMs kept", specOf(W7b));
+  // R7c — an older named build doesn't outlive a later stamp: the owner named one, then re-set the engine without a build
+  // (the old server stamped its own), a deploy restamps (the walk stops at the change that brought the stamped build in)
+  const W7c = deployed(() => { const n = fresh("pc-r7c"); call(n, "rowan", "create-world", { title: n });
+    call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", build: "1111111111111111" } });
+    call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } }); return n; });
+  call(W7c, "rowan", "look", {});
+  ok(restamps(W7c).length === 1 && specOf(W7c).build === EIDOSIM_BUILD, "R7c a build named before a later stamped set doesn't count: restamped", specOf(W7c));
 }
 
 console.log(`${passes} passed, ${fails} failed`);

@@ -1161,8 +1161,13 @@ export const TOOL_ALIAS_ARGS: Record<string, (a: Record<string, any>) => Record<
   spawn: (a) => {
     if (!a.lib) return { refuse: a.query ? `spawn {query} has no one-step form now: library {query: ${JSON.stringify(a.query)}} finds the model, then create {model}` : "spawn needs lib (a library path); it is create {model} now" };
     const hasXZ = Number.isFinite(a.x) && Number.isFinite(a.z);
-    const at = !hasXZ ? undefined : a.yaw !== undefined ? { pos: [a.x, Number.isFinite(a.y) ? a.y : 0, a.z], yaw: a.yaw } : Number.isFinite(a.y) ? [a.x, a.y, a.z] : [a.x, a.z];
-    return { model: a.lib, ...(a.id !== undefined ? { id: a.id } : {}), ...(at !== undefined ? { at } : {}) };
+    const id = a.id !== undefined ? { id: a.id } : {};
+    // with a yaw and no y: place {at: [x, z], facing}, the authority's seat on what's under x, z (the same as without a yaw),
+    // facing a point 1 m along yaw (place takes facing, not yaw; atan2 gives yaw back); it used to be {pos: [x, 0, z], yaw},
+    // the origin at y 0, sitting on nothing (review r2 F8)
+    if (hasXZ && Number.isFinite(a.yaw) && !Number.isFinite(a.y)) return { model: a.lib, ...id, place: { at: [a.x, a.z], facing: [a.x + Math.sin(a.yaw), a.z + Math.cos(a.yaw)] } };
+    const at = !hasXZ ? undefined : a.yaw !== undefined ? { pos: [a.x, a.y, a.z], yaw: a.yaw } : Number.isFinite(a.y) ? [a.x, a.y, a.z] : [a.x, a.z];
+    return { model: a.lib, ...id, ...(at !== undefined ? { at } : {}) };
   },
 };
 export function resolveTool(name: string): { name: string; note?: string } | null {

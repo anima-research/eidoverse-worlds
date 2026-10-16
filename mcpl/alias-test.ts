@@ -13,6 +13,9 @@ ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, z: 2, run: true, tolerance: 0.
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, z: 2 })) === JSON.stringify({ to: [1, 2] }), "walk_to {x, z} alone → move {to}");
 ok(JSON.stringify(TOOL_ALIAS_ARGS.spawn({ lib: "a.glb", x: 1, z: 2 })) === JSON.stringify({ model: "a.glb", at: [1, 2] }), "spawn {lib, x, z} → create {model, at: [x, z]}");
 ok(JSON.stringify(TOOL_ALIAS_ARGS.spawn({ lib: "a.glb", x: 1, y: 3, z: 2, yaw: 1.5, id: "k" })) === JSON.stringify({ model: "a.glb", id: "k", at: { pos: [1, 3, 2], yaw: 1.5 } }), "spawn with y, yaw and id → create {model, id, at: {pos, yaw}}");
+{ const t: any = TOOL_ALIAS_ARGS.spawn({ lib: "a.glb", x: 1, z: 2, yaw: 1.5 }); const f = t.place?.facing ?? [];
+  ok(t.model === "a.glb" && t.at === undefined && JSON.stringify(t.place?.at) === "[1,2]" && Math.abs(Math.atan2(f[0] - 1, f[1] - 2) - 1.5) < 1e-9,
+    "spawn {lib, x, z, yaw} → create {model, place: {at: [x, z], facing along yaw}} (seated on what's under it, as without yaw; review r2 F8)", t); }
 ok(JSON.stringify(TOOL_ALIAS_ARGS.spawn({ lib: "a.glb" })) === JSON.stringify({ model: "a.glb" }), "spawn {lib} alone → create {model} (2 m in front, as before)");
 ok(/library \{query/.test((TOOL_ALIAS_ARGS.spawn({ query: "lamp" }) as any).refuse), "spawn {query} refuses and teaches library {query} then create");
 ok(TOOL_ALIAS_ARGS.snapshot({ view: "third" }).view === "third" && TOOL_ALIAS_ARGS.world_verb({ verb: "say", args: { text: "hi" } }).verb === "say", "snapshot and world_verb keep their shapes");
