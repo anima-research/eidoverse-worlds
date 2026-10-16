@@ -79,6 +79,7 @@ import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/li
 import { redialer, REDIAL } from "../shared/redial.js";
 import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, massOf, budges, SHOVE_FEEL } from "../shared/shove.js";
 import { SHOVE } from "../shared/protocol/physconst.js";
+import { worldPose } from "../shared/protocol/simlayer.js";
 import { colliderFor } from "../client/lib/bodyscale.js";
 
 import { recordComponents } from "../shared/protocol/view.js";
@@ -3415,7 +3416,7 @@ export class WorldAgent {
     const thing = (x: Entity): Destination | { refusal: string } => {
       const ps = this.placesOn(x);
       const p = ps.find((y) => y.name === "entrance") ?? ps.find((y) => y.kind === "door");
-      return p ? at(x, p) : this.besideThing(x);
+      return p ? at(x, p) : this.besideThing(x, now);
     };
     const e = ents.find((x) => ci(x.id, q));
     if (e) return thing(e);
@@ -3429,8 +3430,10 @@ export class WorldAgent {
     if (hits.length) return hits.sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
     // a thing by its label (a display name someone gave it), the nearest: as a thing by its id — before any person too
     // (review r4 claims C1: a visitor named like a thing's label captured the walk)
+    // nearest by where each stands in the world: a child's `pos` is its offset from its parent (review r6 L2)
+    const far = (x: Entity) => { const w = this.worldPosOf(x, now); return Math.hypot(w[0] - me.x, w[2] - me.z); };
     const byLabel = ents.filter((x) => { const l = (x as { label?: unknown }).label; return typeof l === "string" && ci(l.trim(), q); })
-      .sort((a, b) => Math.hypot(a.pos[0] - me.x, a.pos[2] - me.z) - Math.hypot(b.pos[0] - me.x, b.pos[2] - me.z));
+      .map((x) => ({ x, d: far(x) })).sort((a, b) => a.d - b.d).map((o) => o.x);
     if (byLabel.length) return thing(byLabel[0]);
     // a person, last (review r3 F4): a visitor who joins as "tower" must not capture every walk to the tower
     for (const p of this.people.values()) {
@@ -3446,15 +3449,42 @@ export class WorldAgent {
 
   /** A thing with no entrance or door, as a walk aims at it: up to it and beside it, on this body's side — THING_STANDOFF
    *  out from the nearest point of its footprint (its origin where the footprint isn't known, THING_STOP short of it). */
-  private besideThing(x: Entity): Destination {
-    const me = this.pos, box = footprint(this.replica?.st, x.id);
-    let px = x.pos[0], pz = x.pos[2], off = THING_STOP;
+  private besideThing(x: Entity, now = Date.now(), depth = 0): Destination {
+    const me = this.pos, box = footprint(this.replica?.st, x.id), at = this.worldPosOf(x, now);
+    let px = at[0], pz = at[2], off = THING_STOP;
     if (box) {
       const nx = Math.min(box.max[0], Math.max(box.min[0], me.x)), nz = Math.min(box.max[2], Math.max(box.min[2], me.z));
       if (Math.hypot(me.x - nx, me.z - nz) > 1e-6) { px = nx; pz = nz; off = THING_STANDOFF; }
     }
     const d = Math.hypot(me.x - px, me.z - pz), back = d > 0.01 ? Math.min(off, d) / d : 0;
-    return { x: px + (me.x - px) * back, y: box ? box.min[1] : x.pos[1], z: pz + (me.z - pz) * back, reach: 0.6, label: `[${x.id}]` };
+    const dest: Destination = { x: px + (me.x - px) * back, y: box ? box.min[1] : at[1], z: pz + (me.z - pz) * back, reach: 0.6, label: `[${x.id}]` };
+    // a thing standing on another (a cup on a table): the spot beside it may be on that other's top, where a walk can't
+    // climb — then the spot beside what holds it up, on ITS floor, is walked to instead (review r6 L1)
+    const under = box && depth < 4 ? this.supportOf(x.id, box) : null;
+    if (under) dest.orBeside = { ...this.besideThing(under, now, depth + 1), label: dest.label };
+    return dest;
+  }
+
+  /** The placed thing a thing rests on: the highest top (its footprint's) under the thing's footprint, within a couple of
+   *  centimetres of its base — never the thing itself nor anything riding on it. Null when it stands on the ground. */
+  private supportOf(id: string, box: { min: number[]; max: number[] }): Entity | null {
+    const st = this.replica?.st;
+    const rides = (k: string) => { for (let c: string | undefined = k, n = 0; c && n < 33; n++) { if (c === id) return true; const p: unknown = st?.entities?.[c]?.c?.parent?.to; c = typeof p === "string" ? p : undefined; } return false; };
+    let best: Entity | null = null, top = -Infinity;
+    for (const e of this.entities.values()) {
+      if (rides(e.id)) continue;
+      const b = footprint(st, e.id);
+      if (!b || b.max[0] <= box.min[0] || b.min[0] >= box.max[0] || b.max[2] <= box.min[2] || b.min[2] >= box.max[2]) continue;
+      if (Math.abs(b.max[1] - box.min[1]) <= 0.03 && b.max[1] > top) { best = e; top = b.max[1]; }
+    }
+    return best;
+  }
+
+  /** Where a thing stands in the world now: its effective transform (a child's parent chain, any motion), its saved `pos`
+   *  only where that can't be worked out — for a child, `pos` is its offset from its parent (review r6 L2). */
+  private worldPosOf(x: Entity, now = Date.now()): number[] {
+    const f = this.eff(x.id, now);
+    return f.ok ? f.pos : x.pos;
   }
 
   /** name_place edits, one at a time: each starts from the state the last
@@ -3734,14 +3764,15 @@ export class WorldAgent {
     return budges(massOf(this.replica?.st, id) ?? NaN, run ? MOVER.walk.run : MOVER.walk.speed);
   }
   /** What a thing's shove depends on besides where it stands: its lock and every lock over it, its physics (kind, who,
-   *  mass, density, material) — the judgement of a misjudged thing holds only while these do (review r5 F5: a crate
-   *  locked once and unlocked was solid to this body's walks for good). */
+   *  mass, density, material) and its size in the world (its derived mass goes with it: review r6 L3) — the judgement of a
+   *  misjudged thing holds only while these do (review r5 F5: a crate locked once and unlocked was solid to this body's
+   *  walks for good). */
   private shoveState(id: string): string {
     const st = this.replica?.st, locks: unknown[] = [];
     let k: string | undefined = id;
     for (let i = 0; k && i < 64; i++) { const c: any = st?.entities?.[k]?.c; locks.push(c?.lock ?? null); k = typeof c?.parent?.to === "string" ? c.parent.to : undefined; }
     const ph: any = st?.entities?.[id]?.c?.physics ?? null;
-    return JSON.stringify([locks, ph && { kind: ph.kind, who: ph.who, mass: ph.mass, density: ph.density, material: ph.material }]);
+    return JSON.stringify([locks, ph && { kind: ph.kind, who: ph.who, mass: ph.mass, density: ph.density, material: ph.material }, st ? worldPose(st, id)?.scale ?? null : null]);
   }
   /** Things a walk planned through and then found solid: id -> its footprint's centre [x, z] and its shoveState then. */
   private misjudged = new Map<string, { at: [number, number]; sig: string }>();

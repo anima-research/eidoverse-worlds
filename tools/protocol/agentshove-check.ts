@@ -20,6 +20,9 @@
 //   AS10 a light long crate backed against two locked posts: the walk presses it, it doesn't budge, the walk stalls, re-plans
 //        round it and arrives (the stall branch's row; review r5 F5)
 //   AS11 a stall blames only a thing the stride presses into, not one it grazes (pure; review r5 F5)
+//   AS12 a cup on a table: move {to: "cup"} is accepted and ends beside the table on the floor (review r6 L1)
+//   AS13 a child thing with no physics shape: walked to at its world position; labels' nearest by world position (r6 L2)
+//   AS14 a misjudged crate rescaled in place is judged afresh (pure; review r6 L3)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -223,5 +226,39 @@ try {
     const ahead = stallAgainst([0, 0, 0.5]), beside = stallAgainst([0.5, 0, 0]);
     ok(ahead.blamed, "(AS11 setup) a stall pressed into a passable crate ahead blames it (re-plans round it)", ahead);
     ok(!beside.blamed && /^blocked at/.test(beside.stall ?? ""), "AS11 a stall that only grazes a passable crate beside the stride doesn't blame it: the walk stops, saying so", beside); }
+  // AS12 (review r6 L1) — a thing on a table: move {to: it} is accepted and ends beside the table, on the floor
+  { await writeBoxGlb(path.join(OPT, "test/table.glb"), [2, 0.8, 2]); await writeBoxGlb(path.join(OPT, "test/cup.glb"), [0.1, 0.12, 0.1]);
+    const m0 = await call("move", { to: [-12, -14] }); ok(!m0.isError, "(AS12 setup) the agent stands at (-12, -14)", T(m0));
+    const tb = await ann.req("create", { id: "table", model: "test/table.glb", components: { transform: { pos: [-16, 0, -14], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
+    const cp = await ann.req("create", { id: "cup", model: "test/cup.glb", components: { transform: { pos: [-16, 0.8, -14], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
+    for (let i = 0; i < 80 && !["table", "cup"].every((id) => Array.isArray(ag.replica?.st?.entities?.[id]?.c?.physics?.shape)); i++) await sleep(50);
+    await sleep(1500);   // their colliders are fitted before the walk plans
+    ok(tb.ok && cp.ok && ["table", "cup"].every((id) => Array.isArray(ag.replica?.st?.entities?.[id]?.c?.physics?.shape)), "(AS12 setup) a 2×2 m table, 0.8 m tall, and a cup on it (shapes measured)", { tb, cp });
+    const t = T(await call("move", { to: "cup" }));
+    ok(/^arrived at \[cup\]/.test(t), "AS12 move {to: a cup on a table} is accepted and arrives", t);
+    ok(Math.abs(ag.pos.y) < 0.05 && ag.pos.x > -15 && ag.pos.x < -14 && Math.abs(ag.pos.z + 14) < 1.1, "AS12 …beside the table, on the floor", ag.pos); }
+  // AS13 (review r6 L2) — a child thing with no physics shape, on an offset parent: aimed at where it IS (its world position),
+  // and of two things with one label the nearest is judged by where they are, not by a child's parent-relative offset
+  { const me = { x: ag.pos.x, z: ag.pos.z }, L = [me.x + 1.5, 1.2, me.z + 1.5], P = [16, 0, 16], W = [P[0] + L[0], P[2] + L[2]];
+    const pl = await ann.req("create", { id: "plinth", model: "test/post.glb", components: { transform: { pos: P, q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
+    const lp = await ann.req("create", { id: "lamp", components: { transform: { pos: L, q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: "plinth" }, label: "beacon" } });
+    const mk = await ann.req("create", { id: "marker", model: "test/post.glb", components: { transform: { pos: [me.x + 5, 0, me.z], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: "beacon" } });
+    for (let i = 0; i < 80 && !["plinth", "lamp", "marker"].every((id) => ag.entities.get(id)); i++) await sleep(50);
+    ok(pl.ok && lp.ok && mk.ok && !ag.replica?.st?.entities?.lamp?.c?.physics, "(AS13 setup) a lamp (no model, so no physics) on a plinth at (16, 16), parent-relative ~2 m from the body: it stands ~25 m off", { pl: pl.ok, lp, mk: mk.ok, L, W, c: ag.replica?.st?.entities?.lamp?.c });
+    const d = ag.destination("lamp");
+    ok(!("refusal" in d) && Math.hypot(d.x - W[0], d.z - W[1]) < 1.0, "AS13 move {to: the lamp} aims at its world position, not its offset from the plinth", { d, W, me });
+    const b = ag.destination("beacon");
+    ok(!("refusal" in b) && b.label === "[marker]", "AS13 …and of two things labelled \"beacon\" the nearest by where they stand is taken (the marker 5 m off, not the lamp ~25 m off)", b); }
+  // AS14 (pure; review r6 L3) — a misjudged crate rescaled in place (its mass goes with its size) is judged afresh
+  { const b = new WorldAgent({ url: "ws://127.0.0.1:1/ws", name: "Bea", world: "w", avatar: "" });
+    const box = { c: { transform: { pos: [0, 0, 2], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", density: 40, shape: [[-0.3, 0, -0.3], [0.3, 1.2, 0.3]] } } };
+    b.replica = { st: { entities: { "@world": { c: {} }, box } }, sim: { sim: {}, foreign: false } };
+    b.misjudged.set("box", { at: [0, 2], sig: b.shoveState("box") });
+    const before = b.mayWalkInto("box", false);
+    box.c = { ...box.c, transform: { ...box.c.transform, scale: [0.5, 0.5, 0.5] } };
+    const after = b.mayWalkInto("box", false);
+    try { b.close(); } catch {}
+    ok(before === false, "(AS14 setup) a crate found solid stays solid while nothing about it changes", { before });
+    ok(after === true, "AS14 the same crate rescaled in place (its centre unmoved) is judged afresh: walked into again", { after }); }
 } catch (e) { ok(false, "threw", String(e?.stack ?? e).slice(0, 600)); }
 done(fail ? 1 : 0);
