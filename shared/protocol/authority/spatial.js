@@ -7,6 +7,8 @@ import { refuse } from "./refuse.js";
 import { LAB_CATALOGUE, geomE } from "./catalogue.js";
 import { aabb, boxToObb, obbs, overlap, satCost, satDepth, surfacesOf } from "./math.js";
 import { VOLATILE } from "./storage.js";
+import { terrainParams, makeHeightField } from "../../terrainmath.js";
+import { waterParams } from "../../terrainshape.js";
 // The authority is synchronous and every world on a server shares its one thread, so no request may cost the world's size
 // squared. Every hot path (support under a point, overlap warnings, a body's track, place's search, delete's set-down,
 // what rests on a thing picked up) asks the index "what could touch this box?" instead of every entity.
@@ -155,8 +157,27 @@ function hitsIx(st, box, id, eps, B = boxToObb(box)) {   // B: the box as an ori
 function familyOf(st, id) { const kids = kidsMap(st); const out = new Set([id]); const todo = [id];
   for (let n = 0; todo.length && n < 1e6; n++) { for (const k of kids.get(todo.pop()) ?? []) if (!out.has(k)) { out.add(k); todo.push(k); } } return out; }
 
+// THE GROUND (owner, 10-15 22:34): the authority stands things and bodies on the ground the walker walks on. @world's
+// terrain component through shared/terrainmath.js (terrainParams → makeHeightField: the sim's law, and the client's and the
+// agent's to ~1 ulp, features and heightmap included through terrainshape), and its water (terrainshape's waterParams, the
+// level the mover's water law reads). No terrain component: y 0 and no water, as every world stood before. The field is
+// built once per terrain VALUE (a write replaces the value, never changes it in place: the revision is the object), not
+// per call. A heightmap's grid comes through terrainshape's loader (the server's disk, server/heightmap.ts).
+const GROUND = new WeakMap();
+const FLAT = Object.freeze({ terrain: false, height: () => 0, level: null });
+function groundOf(st) {
+  const t = st.entities["@world"]?.c.terrain;
+  if (!t || typeof t !== "object") return FLAT;
+  let g = GROUND.get(t);
+  if (!g) { const h = makeHeightField(terrainParams(t)); g = Object.freeze({ terrain: true, height: h, level: waterParams(t)?.level ?? null }); GROUND.set(t, g); }
+  return g;
+}
+const terrainAt = (st, x, z) => { const y = groundOf(st).height(x, z); return Number.isFinite(y) ? y : 0; };
+
+// The highest support at (x, z) at or below y (+2 cm): a placed thing's top, or the ground (terrain counts at any height:
+// nothing stands under it, and a thing's top below it is buried, not a floor).
 function supportBelow(st, x, z, y, ignore = new Set()) {
-  let best = { y: 0, id: "ground" };
+  let best = { y: terrainAt(st, x, z), id: "ground" };
   const ix = spatial(st);
   for (const id of near(st, [x, -Infinity, z], [x, Infinity, z])) {
     if (ignore.has(id)) continue;
@@ -167,13 +188,17 @@ function supportBelow(st, x, z, y, ignore = new Set()) {
 }
 
 // Supported anywhere under its footprint (the engine's rule: a box rests on a top its footprint overlaps), not just
-// under its centre — so a thing physics left resting is never called floating by the authority (playtest 22, F5).
+// under its centre — so a thing physics left resting is never called floating by the authority (playtest 22, F5). On
+// terrain, the highest ground under the footprint (its corners, edges' middles and centre): a box on a slope rests on it.
 function supportUnder(st, b, ignore) {
-  let best = { y: 0, id: "ground" };
+  const G = groundOf(st); let gy = 0;
+  if (G.terrain) { gy = -Infinity; for (const fx of [0, 0.5, 1]) for (const fz of [0, 0.5, 1]) { const y = G.height(b.min[0] + (b.max[0] - b.min[0]) * fx, b.min[2] + (b.max[2] - b.min[2]) * fz); if (Number.isFinite(y) && y > gy) gy = y; }
+    if (!Number.isFinite(gy)) gy = 0; }
+  let best = { y: gy, id: "ground" };
   const ix = spatial(st);
   for (const id of near(st, [b.min[0], -Infinity, b.min[2]], [b.max[0], Infinity, b.max[2]])) { if (ignore.has(id)) continue;
     for (const s of ix.rec.get(id).surfs) if (b.max[0] > s.min[0] && b.min[0] < s.max[0] && b.max[2] > s.min[1] && b.min[2] < s.max[1] && s.y <= b.min[1] + 0.02 && s.y > best.y) best = { y: s.y, id }; }
   return best;
 }
 
-export { GEO, LASTIX, SPATIAL, buildIx, cellKey, cellOf, cellsOf, clockMs, deriveIx, familyOf, fileIx, geoOf, hitsIx, kidsMap, kidsOfIx, near, spatial, spend, supportBelow, supportUnder };
+export { GEO, LASTIX, SPATIAL, buildIx, groundOf, terrainAt, cellKey, cellOf, cellsOf, clockMs, deriveIx, familyOf, fileIx, geoOf, hitsIx, kidsMap, kidsOfIx, near, spatial, spend, supportBelow, supportUnder };

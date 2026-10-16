@@ -99,10 +99,15 @@ export function easeSpeed(prev, target, dt) {
 }
 
 /** The body as an axis-aligned box over its feet at p: from `step` up (a ledge below that is walked onto, not hit) to
- *  its height, `radius` either side. The authority tests this box against the world's solids. */
-export function bodyBox(p, scale = 1) {
+ *  its height, `radius` either side. The authority tests this box against the world's solids.
+ *  `level` (a water surface's y) is given while the WATER's rule holds for the step (floorStep's `swim`): a swimmer hauls
+ *  out onto anything up to `climb` above the surface, so its box is the box of a body standing `step` below that line —
+ *  what it can haul onto is exactly what a walker there steps onto, and a quay higher than `climb` is a wall (holes
+ *  review H2: the dry box, a step above the float or the bed, met the quay's side before the haul-out). */
+export function bodyBox(p, scale = 1, level = null) {
   const s = scaleOf(scale), r = MOVER.body.radius * s;
-  return { min: [p[0] - r, p[1] + MOVER.body.step * s, p[2] - r], max: [p[0] + r, p[1] + MOVER.body.height * s, p[2] + r] };
+  const feet = level != null && Number.isFinite(level) ? level + (MOVER.swim.climb - MOVER.body.step) * s : p[1];
+  return { min: [p[0] - r, feet + MOVER.body.step * s, p[2] - r], max: [p[0] + r, feet + MOVER.body.height * s, p[2] + r] };
 }
 /** The body's capsule for a client's collider pass: radius and height for its size. */
 export function capsule(scale = 1) {
@@ -167,6 +172,28 @@ export function waterCost(level, ground, height = MOVER.body.height) {
   return s.swimming ? MOVER.walk.speed / MOVER.swim.speed : 1 / s.speedFactor;
 }
 
+/** THE FLOOR LAW for one step, in every runtime (the walker below, and the authority's check of a move: it calls this,
+ *  never its own copy). A body with feet at `y`, standing on `ground0` in water of surface `level0` (null: dry), steps to
+ *  where the floor is `f` and the water `level1`. → {y, stance, swim, blocked}: `y` where its feet end up (afloat: the float
+ *  height); `stance` (waterStance) there; `swim`: the water's rule held for this step (bodyBox takes the level then);
+ *  `blocked`: {by: "ledge", top} when the floor is a wall from here.
+ *    afloat at the new spot: the ground under the water is no ledge;
+ *    afloat where it was: it hauls out onto anything up to `climb` above the surface (any ground under it is land: it
+ *      floats above it), higher is a wall (review 10-15 #1: judging it from the chest trapped swimmers in every dug pool);
+ *    on its feet: a floor up to a step above them (floorOk). */
+export function floorStep({ y, ground0 = y, level0 = undefined, f, level1 = level0, height = undefined, scale = 1 }) {
+  const s = scaleOf(scale), H = typeof height === "number" && height > 0 ? height : MOVER.body.height * s;
+  // a stance is reported wherever the caller has a water law at all (level null there: dry), as stepWalk always did
+  const st0 = level0 !== undefined ? waterStance(level0, ground0, H) : null, st = level1 !== undefined ? waterStance(level1, f, H) : null;
+  if (st?.swimming) return { y: st.y, stance: st, swim: true, blocked: null, level: level1 };
+  if (st0?.swimming) {
+    if (f > level0 + MOVER.swim.climb * s) return { y, stance: st0, swim: true, blocked: { by: "ledge", top: f }, level: level0 };
+    return { y: f, stance: st ?? st0, swim: true, blocked: null, level: level0 };
+  }
+  if (!floorOk(y, f, scale)) return { y, stance: st0, swim: false, blocked: { by: "ledge", top: f }, level: null };
+  return { y: f, stance: st, swim: false, blocked: null, level: null };
+}
+
 /** env.waterAt(x, z) → the water surface's y there, or null where there is none. With it, a step in water wades (slower)
  *  or swims (floats at the chest, its own speed, never refused by a ledge); the reply's `stance` is what the renderer
  *  needs to pick a clip (swim / tread vs walk). Without it (no water law in this world), nothing here changes.
@@ -179,8 +206,9 @@ export function stepWalk({ pos, dir, dt, run = false, creep = false, scale = 1, 
   if (!(len > 0) || !(dt > 0) || !(gain > 0)) return { pos: here, moved: 0, blocked: null, stance: null };
   // the stance is judged where the body IS (the step's speed), and re-judged where it lands (its y)
   const H = typeof height === "number" && height > 0 ? height : MOVER.body.height * scaleOf(scale);
-  const ground0 = env.floorAt ? env.floorAt(pos[0], pos[2], pos[1]) : NaN;
-  const st0 = env.waterAt ? waterStance(env.waterAt(pos[0], pos[2]), Number.isFinite(ground0) ? ground0 : pos[1], H) : null;
+  const ground0 = env.floorAt ? env.floorAt(pos[0], pos[2], pos[1]) : NaN, g0 = Number.isFinite(ground0) ? ground0 : pos[1];
+  const level0 = env.waterAt ? env.waterAt(pos[0], pos[2]) : undefined;
+  const st0 = env.waterAt ? waterStance(level0, g0, H) : null;
   // swimming: the dry speed asked for (keys, stick, run flag, gain) maps onto the stroke, so a stick ramp never goes
   // backwards at the run threshold (review 10-15 #3): below a walk, a fraction of the stroke; walk→run, stroke→hard
   const s = scaleOf(scale), dry = walkSpeed({ run, creep, scale }) * gain;
@@ -188,24 +216,17 @@ export function stepWalk({ pos, dir, dt, run = false, creep = false, scale = 1, 
   const d = Math.min(cap, (st0?.swimming ? stroke(dry / s) * s : dry * (st0?.speedFactor ?? 1)) * dt);
   if (!(d > 0)) return { pos: here, moved: 0, blocked: null, stance: st0 };
   const nx = pos[0] + (dir[0] / len) * d, nz = pos[2] + (dir[1] / len) * d;
-  let ny = pos[1], stance = st0;
+  let ny = pos[1], stance = st0, boxLevel = st0?.swimming ? level0 : null;
   if (env.floorAt) {
     const f = env.floorAt(nx, nz, pos[1]);
     if (Number.isFinite(f)) {
-      const st = env.waterAt ? waterStance(env.waterAt(nx, nz), f, H) : null;
-      if (st?.swimming) { ny = st.y; stance = st; }   // afloat: the ground under the water is no ledge
-      else if (st0?.swimming) {
-        // a swimmer hauls out: any ground under the surface is land (it floats above it), and so is a bank up to `climb`
-        // above the water; higher is a wall (review 10-15 #1: judging it from the chest trapped swimmers in every dug pool)
-        const level = env.waterAt(pos[0], pos[2]);
-        if (f > level + MOVER.swim.climb * s) return { pos: here, moved: 0, blocked: { by: "ledge", top: f }, stance: st0 };
-        ny = f; if (st) stance = st;
-      }
-      else { if (!floorOk(pos[1], f, scale)) return { pos: here, moved: 0, blocked: { by: "ledge", top: f }, stance: st0 }; ny = f; if (st) stance = st; }
+      const r = floorStep({ y: pos[1], ground0: g0, level0, f, level1: env.waterAt ? env.waterAt(nx, nz) : undefined, height: H, scale });
+      if (r.blocked) return { pos: here, moved: 0, blocked: r.blocked, stance: st0 };
+      ny = r.y; if (r.stance) stance = r.stance; boxLevel = r.swim ? r.level : null;
     }
   }
   const to = [nx, ny, nz];
-  if (env.blocked) { const hit = env.blocked(bodyBox(to, scale), { from: here, to }); if (hit) return { pos: here, moved: 0, blocked: { by: hit }, stance: st0 }; }
+  if (env.blocked) { const hit = env.blocked(bodyBox(to, scale, boxLevel), { from: here, to }); if (hit) return { pos: here, moved: 0, blocked: { by: hit }, stance: st0 }; }
   return { pos: to, moved: d, blocked: null, stance };
 }
 

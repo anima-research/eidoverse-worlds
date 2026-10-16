@@ -8,7 +8,7 @@
 // read and wrote files here; that part is server/disk.js now, so this module has no node: imports and no
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf, socketQ, ONE_PLACE } from "../components.js";
-import { TRACK, bodyBox, sweep, tokensAfter } from "../mover.js";
+import { MOVER, TRACK, bodyBox, floorStep, sweep, tokensAfter } from "../mover.js";
 import { checkSockets, checkSocket } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
@@ -43,7 +43,7 @@ export { LAB_CATALOGUE, withCatalogue, MESH_SIZE, meshSize, meshGeom, meshShape 
 import { CHANGE, IMPORTED_ONLY, VOLATILE, clone, createOps, delOp, isE, lockedC, nonce16, opsQuiet, qr3, scratch, setOp, slug, versionOf, versionSeq, LOCK_LEVELS, lockLevel, lockRank } from "./authority/storage.js";
 export { posAt, worldOf, seal, LOCK_LEVELS, lockLevel, lockRank } from "./authority/storage.js";
 import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, satCost, satDepth, surfacesOf, worldT, yawQ } from "./authority/math.js";
-import { SPATIAL, WORK_BUDGET, clockMs, familyOf, hitsIx, kidsMap, near, spatial, spend, supportBelow, supportUnder } from "./authority/spatial.js";
+import { SPATIAL, WORK_BUDGET, clockMs, familyOf, groundOf, hitsIx, kidsMap, near, spatial, spend, supportBelow, supportUnder } from "./authority/spatial.js";
 export { WORK_BUDGET, indexAudit } from "./authority/spatial.js";
 import { RANK, backward, banOf, creatorOf, effective, entryBy, ghostOf, inForce, inForceOf, isBanned, isScriptActor, kickOf, lastSetterOf, madeBy, may, modHolder, muteOf, ownersOf, rankOf, roleOf, sanctionsNow, wcOf, whoRank } from "./authority/rights.js";
 export { effectiveIn, roleIn, inForceOf, banOf, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, creatorOf, lastSetterOf } from "./authority/rights.js";
@@ -2764,8 +2764,8 @@ function holdOf(w, actor, id) {
 // The numbers and the body's box are the MOVER's (shared/mover.js): the one walker the agent and the client step with,
 // so a step the mover takes is one this track accepts, and this track's refusal is the mover's own answer.
 // both ask the spatial index: only what the body's box (or the whole step's swept box) meets is tested (review 10-06 S0-2)
-function solidAt(w, st, p, except = new Set(), cands = null) {
-  const box = bodyBox(p); const held = w.presence.holds; const ix = cands && spatial(st);
+function solidAt(w, st, p, except = new Set(), cands = null, box = bodyBox(p)) {
+  const held = w.presence.holds; const ix = cands && spatial(st);
   if (cands) spend(1 + (cands.length >> 3));   // a sub-step filters the step's candidates by box first
   for (const id of cands ?? near(st, box.min, box.max)) { if (id === "@world" || Object.hasOwn(held, id) || except.has(id) || openNow(st, id)) continue;
     if (cands) { const q = ix.rec.get(id).q; if (q.min[0] > box.max[0] || q.max[0] < box.min[0] || q.min[1] > box.max[1] || q.max[1] < box.min[1] || q.min[2] > box.max[2] || q.max[2] < box.min[2]) continue; }
@@ -2775,12 +2775,63 @@ function solidAt(w, st, p, except = new Set(), cands = null) {
 // an open openable (a whole door, not a cabinet's part) is out of the way: the fix above says "through a door someone
 // opens", and every browser's collider follows the drawn leaf (client/lib/openable.js reindexes it at rest)
 const openNow = (st, id) => { const o = st.entities[id]?.c.openable; return !!o && typeof o === "object" && o.open === true && !o.part; };
+// THE GROUND under a body (owner 10-15 22:34; holes review H2). In a world with terrain (and water), each point of a step is
+// judged with the MOVER's floor law (shared/mover.js floorStep: the walker's own), on the ground the walker walks on: the
+// terrain heightfield, and any placed top the body could step (or haul out) onto from where it is. The law says where the
+// feet end up, whether the water's rule holds (then the box is the swimmer's: bodyBox with the level), and refuses a floor
+// that is a wall from here (a terrain bank too high above the water, a cliff). A move is longer than a stride (an agent asks
+// for 2 m at once), so its points are judged as a chain of sub-strides, each from the last; and a body that swam earlier in
+// the move may also be judged from where it last swam (one stride from there to here, the mover's haul-out), so a sweep
+// point that lands part-way up a rim doesn't refuse what the walker's stride over it accepts. A flat world (no terrain
+// component) skips all of this: its ground is y 0 and dry, as before.
+// The sub-strides are at least MOVER.track.sweep (5 cm) apart in the ground plane (the sweep's own points are closer
+// where y changes: its spacing is 3-D): the floor law is a stride's law, and a chain of millimetre steps would walk up
+// any wall the ground draws as steep-but-continuous (the terrain law's flatten edge is 1 cm wide, not 0).
+function bodyAt(st, p) {   // where a body claimed at p stands: {y (feet), ground}
+  const g = supportBelow(st, p[0], p[2], p[1]).y; return { y: Math.max(p[1], g), ground: g };
+}
+function groundSteps(st, from, pts) {
+  const G = groundOf(st); if (!G.terrain) return null;
+  const lv = G.level, s = 1, reachW = lv != null ? lv + MOVER.swim.climb * s : -Infinity;
+  const b0 = bodyAt(st, from); const r0 = floorStep({ y: b0.y, ground0: b0.ground, level0: lv, f: b0.ground, level1: lv });
+  let cur = { y: b0.y, ground: b0.ground }, lastSwim = r0.stance?.swimming ? cur : null;
+  const out = [{ p: from, box: bodyBox([from[0], Math.max(from[1], r0.swim ? from[1] : b0.y), from[2]], s, r0.swim ? lv : null) }];
+  let judged = from, swimNow = r0.swim;
+  for (let k = 0; k < pts.length; k++) { const p = pts[k];
+    if (k < pts.length - 1 && Math.hypot(p[0] - judged[0], p[2] - judged[2]) < MOVER.track.sweep - 1e-9) {   // within this sub-stride: as judged
+      out.push({ p, box: bodyBox([p[0], Math.max(p[1], cur.y), p[2]], s, swimNow ? lv : null) }); continue; }
+    judged = p;
+    const reach = Math.max(cur.y + MOVER.body.step * s, lastSwim ? reachW : -Infinity);
+    const f = supportBelow(st, p[0], p[2], reach).y;
+    let r = floorStep({ y: cur.y, ground0: cur.ground, level0: lv, f, level1: lv });
+    if (r.blocked && lastSwim) { const r2 = floorStep({ y: lastSwim.y, ground0: lastSwim.ground, level0: lv, f, level1: lv }); if (!r2.blocked) r = r2; }
+    if (r.blocked) return { blocked: { at: p, top: r.blocked.top, from: cur.y, swim: !!lastSwim && r.swim }, out };
+    // the box: the swimmer's while the water's rule holds; else the body's own, at its claim (an upstairs the law can't see)
+    // or the floor the law put it on, whichever is higher (a claim below the floor is inside it: the agent's permit sends
+    // the bed's height for a body that hauled out onto a dock)
+    out.push({ p, box: bodyBox([p[0], Math.max(p[1], r.y), p[2]], s, r.swim ? lv : null) });
+    cur = { y: r.y, ground: f }; swimNow = r.swim; if (r.stance?.swimming) lastSwim = cur;
+  }
+  return { blocked: null, out };
+}
 function pathBlocked(w, st, from, to) {
-  const already = new Set(); const b0 = bodyBox(from); // a body already inside something may walk out of it
+  const pts = sweep(from, to); const law = groundSteps(st, from, pts);
+  if (law?.blocked) { const L = law.blocked;
+    return { ground: true, reason: L.swim ? `the bank at [${L.at.map(r3).join(", ")}] stands ${r3(L.top - groundOf(st).level)} m above the water: higher than a swimmer can haul out (${MOVER.swim.climb} m)`
+      : `the ground at [${L.at.map(r3).join(", ")}] rises ${r3(L.top - L.from)} m from where you stand: a ledge higher than a step (${MOVER.body.step} m)` }; }
+  const boxes = law ? law.out.map((x) => x.box) : [bodyBox(from), ...pts.map((p) => bodyBox(p))];
+  const already = new Set(); const b0 = boxes[0]; // a body already inside something may walk out of it
   for (const id of near(st, b0.min, b0.max)) if (hitsIx(st, b0, id, 0.01)) already.add(id);
-  const b1 = bodyBox(to); const swept = near(st, b0.min.map((v, i) => Math.min(v, b1.min[i])), b0.max.map((v, i) => Math.max(v, b1.max[i])));
-  for (const p of sweep(from, to)) { const hit = solidAt(w, st, p, already, swept); if (hit) return hit; }
+  const lo = [0, 1, 2].map((i) => Math.min(...boxes.map((b) => b.min[i]))), hi = [0, 1, 2].map((i) => Math.max(...boxes.map((b) => b.max[i])));
+  const swept = near(st, lo, hi);
+  for (let k = 0; k < pts.length; k++) { const hit = solidAt(w, st, pts[k], already, swept, boxes[k + 1]); if (hit) return hit; }
   return null;
+}
+// the box of a body arriving at p (a teleport): the swimmer's when the water's rule holds there
+function arrivalBox(st, p) {
+  const G = groundOf(st); if (!G.terrain || G.level == null) return bodyBox(p);
+  const b = bodyAt(st, p); const r = floorStep({ y: b.y, ground0: b.ground, level0: G.level, f: b.ground, level1: G.level });
+  return bodyBox(p, 1, r.swim ? G.level : null);
 }
 // A body that walks more than a metre from its seat has stood up (a seated client sends no steps; standing, it walks)
 // Who sits where (presence, never logged: review 10-12 S1-1): {to: <socket id>}. A seat whose socket is gone or switched
@@ -2824,7 +2875,7 @@ const PHYSICS_VERBS = {
     if (!me || a.teleport === true) { // a teleport (arriving is one): an act, so the track's reset is on the record
       const mine = Object.entries(w.presence.holds).filter(([, h]) => h.by === actor).map(([id]) => id);
       if (mine.length) refuse("holding", `you're holding ${mine.join(", ")}; a teleport can't carry things`, "put it down (or walk it there) first", { at: me?.at });
-      const inSolid = solidAt(w, st, to); if (inSolid) refuse("solid", `[${to.join(", ")}] is inside ${inSolid}`, "arrive somewhere a body fits", { at: me?.at });
+      const inSolid = solidAt(w, st, to, new Set(), null, arrivalBox(st, to)); if (inSolid) refuse("solid", `[${to.join(", ")}] is inside ${inSolid}`, "arrive somewhere a body fits", { at: me?.at });
       const sp = st.entities["@world"]?.c.spawn;
       if (sp && Array.isArray(sp.pos) && !may(st, actor, "build") && dist(sp.pos, to) > (sp.radius ?? TRACK.spawnR))
         refuse("spawn", `this world's arrivals are within ${sp.radius ?? TRACK.spawnR} m of [${sp.pos.join(", ")}]`, "arrive there, then walk", { at: me?.at });
@@ -2839,6 +2890,7 @@ const PHYSICS_VERBS = {
     const d = dist(me.at, to); const tokens = tokensAfter(me.tokens, now - (me.ts ?? now));
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${TRACK.speed} m/s, ${TRACK.cap} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
     const block = pathBlocked(w, st, me.at, to);
+    if (block?.ground) refuse("solid", block.reason, "walk around it: a gentler slope, or out of the water where the bank is lower", { at: me.at, blocker: "ground" });
     if (block) refuse("solid", `${block} is in the way`, "walk around it (or through a door someone opens)", { at: me.at, blocker: block });
     const prev = me.at; w.presence.bodies[actor] = { ...me, at: to, ts: now, tokens: tokens - d }; leftSeat(w, st, actor, to);
     const carrying = [];
