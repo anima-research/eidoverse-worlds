@@ -79,8 +79,10 @@ A physics change silently rewrites what old intents mean, so the engine is
 versioned in the log itself:
 
 - `@world.physics-engine` = `{engine: "<name>@<semver>", build, tickMs?}`. The owner
-  sets `engine`; the **authority stamps `build`**, the hash of the exact files
-  that implement it (determinism is per binary). The reference authority carries
+  sets `engine`; the **authority stamps `build`** when the owner's request names
+  none: the hash of the exact files that implement it (determinism is per
+  binary). A build the owner names is kept, and a server that doesn't carry it
+  treats the world as foreign. The reference authority carries
   `eidosim@1.0.0` (`EIDOSIM_BUILD` in `shared/protocol/simlayer.js`;
   `bun run test:protocol` recomputes it from the files and fails if they changed
   without a new build).
@@ -88,6 +90,14 @@ versioned in the log itself:
   `@world.physics-engine` while anything is in flight (an owner may force it, freezing
   in-flight bodies where they are). After the cut, everything is
   interpreted under the new engine.
+- **A build the authority stamped is the authority's to restamp.** When a world
+  names a carried engine under a build this server doesn't carry, the build was
+  stamped (not named in the owner's request), and nothing is in flight (by the
+  log's word: no launch without its rest, nothing lifted and not yet put
+  back) or held in presence, the authority writes the cut itself, as `system`
+  (act `restamp-engine`), at the next request or heartbeat. A server that
+  can't sign for the world doesn't. Otherwise the world stays foreign until an
+  owner restamps it.
 - **A reader that doesn't carry the named build MUST NOT recompute the
   flights.** It folds the log (the rests are there) and shows nothing in
   flight, rather than guessing. A wrong answer is worse than a missing
@@ -105,8 +115,8 @@ eidosim@1.0.0, the law (its constants are its version):
 - **Swept collisions**: a moving body is swept against everything at rest
   (colliders and sleeping bodies) by conservative advancement, so a fast body
   doesn't cross a thin wall between ticks. Two moving bodies are not swept
-  against each other: thrown at each other fast enough, they can pass (review
-  physics.md #8; body–body time of impact is a later build).
+  against each other: thrown at each other fast enough, they can pass (body–body
+  time of impact is a later build).
 - **A height-field ground** (`shared/terrainmath.js`).
 - **Waking and knocking**: a dynamic thing at rest that no hand rule holds fixed
   (not locked, under nothing locked, holding nothing locked) is a sleeping body.
@@ -401,7 +411,7 @@ accepted state, or released into the sim.
 - Between entries, ticks are pure advancement. Clients present the engine's
   state interpolated between ticks at display time — exact sim time, no
   extrapolation, and no sim number is ever read back from the display
-  (client/lib/simworld.js).
+  (client/lib/thingphysics.js).
 
 ### 5.1. One clock for presence and the sim
 
