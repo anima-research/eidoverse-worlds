@@ -706,24 +706,24 @@ try {
     // WRITES NOTHING (defaults written on open would put numbers in the log the owner never chose)
     { const W = `document.querySelector('#__w')`;
       const paint = () => page(`const m = await import('/lib/rolespanels.js'); document.getElementById('__w')?.remove(); const b = document.createElement('div'); b.id = '__w'; document.body.append(b); m._test.paintWorld(b); return true;`);
-      // the world has written no capacity: what the panel shows is the registry's defaults
+      // the world has written no capacity: what the panel shows is this server's defaults (schema's, asked once)
       const fresh = !disk().entities["@world"]?.c.capacity;
       // CW1 a visitor sees no dials; the owner sees them with the world's values
       await page(`const n = await import('/lib/net.js'); globalThis.__wasRights = n.net.myRights; n.net.myRights = { ...n.net.myRights, role: 'visitor', permissions: [] }; return true;`);
-      await paint();
+      await paint(); await waitFor(`${W}?.textContent.includes('Entities in this world 10,000')`, 4000);
       const vis = await evalJson(`({ inputs: ${W}.querySelectorAll('input').length, ro: !!${W}.querySelector('.rp-ro'), entities: ${W}.textContent.includes('Entities in this world 10,000'), guests: ${W}.textContent.includes("Guests' entities, together 500"), avatar: ${W}.textContent.includes('Largest avatar (entities) 2,000') })`);
       await page(`const n = await import('/lib/net.js'); n.net.myRights = globalThis.__wasRights; return true;`);
       const n0 = myActs().length, r0 = myRefused();
-      await paint(); await sleep(1500);
+      await paint(); await sleep(1500); await waitFor(`${W}.querySelector('[data-cap=entities]')?.max === '50000'`, 4000);
       const own = await evalJson(`(() => { const t = ${W}.querySelector('[data-cap=entities]'); const a = ${W}.querySelector('[data-cap=avatar]'); return { keys: [...${W}.querySelectorAll('input[data-cap]')].map((x) => x.dataset.cap), inputs: ${W}.querySelectorAll('input[data-cap]').length, min: t?.min, max: t?.max, value: t?.value, placeholder: t?.placeholder, avatar: a && { min: a.min, max: a.max, value: a.value, placeholder: a.placeholder }, phys: ${W}.querySelector('[data-phys]')?.checked, tc: !!${W}.querySelector('[data-tc]') }; })()`);
-      check("CW1 World › a visitor sees the numbers (guests' and avatar's too) and no dials; the owner sees three capacity fields (entities, guestEntities, avatar) with the registry's ranges (avatar 1–5000)", fresh && vis.inputs === 0 && vis.ro && vis.entities && vis.guests && vis.avatar && own.inputs === 3 && JSON.stringify(own.keys) === '["entities","guestEntities","avatar"]' && own.min === "1" && own.max === "50000" && own.avatar?.min === "1" && own.avatar?.max === "5000" && own.phys === false && own.tc === false, { fresh, vis, own });
+      check("CW1 World › a visitor sees the numbers (this server's defaults, guests' and avatar's too) and no dials; the owner sees three capacity fields (entities, guestEntities, avatar) with the registry's floor and this server's ceiling (avatar 1–5000)", fresh && vis.inputs === 0 && vis.ro && vis.entities && vis.guests && vis.avatar && own.inputs === 3 && JSON.stringify(own.keys) === '["entities","guestEntities","avatar"]' && own.min === "1" && own.max === "50000" && own.avatar?.min === "1" && own.avatar?.max === "5000" && own.phys === false && own.tc === false, { fresh, vis, own });
       // CW2 FRESH OPEN WRITES NOTHING: the defaults are shown grey (placeholders), never written
-      check("CW2 World › opening it as owner on a world with no capacity sends no set, and shows the defaults (10000, avatar 2000) as placeholders", myActs().length === n0 && myRefused() === r0 && own.value === "" && own.placeholder === "10000" && own.avatar?.value === "" && own.avatar?.placeholder === "2000" && !disk().entities["@world"]?.c.capacity, { acts: myActs().slice(n0).map((a) => a.e.body?.request?.component), own, cap: disk().entities["@world"]?.c.capacity ?? null });
-      // CW3 an in-range edit: ONE set, component capacity, merge, the value — and the first write carries the other numbers shown
+      check("CW2 World › opening it as owner on a world with no capacity sends no set (schema is a read), and shows this server's defaults (10000, avatar 2000) as placeholders", myActs().length === n0 && myRefused() === r0 && own.value === "" && own.placeholder === "10000" && own.avatar?.value === "" && own.avatar?.placeholder === "2000" && !disk().entities["@world"]?.c.capacity, { acts: myActs().slice(n0).map((a) => a.e.body?.request?.component), own, cap: disk().entities["@world"]?.c.capacity ?? null });
+      // CW3 an in-range edit: ONE set, component capacity, merge, ONLY the field that changed (a policy number's absence is the server's default)
       await evalJson(`(() => { const x = ${W}.querySelector('[data-cap=entities]'); x.value = '12'; x.onchange(); return true; })()`);
       const wrote = await waitDisk(() => disk().entities["@world"]?.c.capacity?.entities === 12);
       const req = myActs().slice(n0).map((a) => a.e.body?.request);
-      check("CW3 World › entities = 12 sends one set {component: 'capacity', merge: true}; the first write carries the other numbers shown (guestEntities 500, avatar 2000) and nothing else", wrote && req.length === 1 && req[0]?.component === "capacity" && req[0]?.merge === true && JSON.stringify(Object.keys(req[0]?.value ?? {}).sort()) === '["avatar","entities","guestEntities"]' && req[0]?.value?.entities === 12 && req[0]?.value?.guestEntities === 500 && req[0]?.value?.avatar === 2000, { req, cap: disk().entities["@world"]?.c.capacity });
+      check("CW3 World › entities = 12 sends one set {component: 'capacity', merge: true, value: {entities: 12}} and nothing else: the other fields stay absent (this server's defaults)", wrote && req.length === 1 && req[0]?.component === "capacity" && req[0]?.merge === true && JSON.stringify(req[0]?.value) === '{"entities":12}' && JSON.stringify(disk().entities["@world"]?.c.capacity) === '{"entities":12}', { req, cap: disk().entities["@world"]?.c.capacity });
       await waitFor(`${W}.querySelector('[data-cap=entities]')?.value === '12'`, 4000);
       // CW3b out of range: nothing sent, the panel says why in the registry's words
       const n1 = myActs().length, r1 = myRefused();

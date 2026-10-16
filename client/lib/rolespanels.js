@@ -13,7 +13,8 @@
 //              moderation powers or generate.
 //     World    capacity (entities, guests' entities together, largest avatar), physics on/off (R 10-14 14:13:
 //              "not being able to edit these things would annoy people"). Opening it writes NOTHING: the effective value
-//              (componentspec.resolveVersioned, the authority's own reader) is shown grey; a set goes out only on an edit.
+//              (what is written, else this server's default as schema reports it) is shown grey; an edit sends ONLY the
+//              field that changed (a policy number's absence is the server's default, PROTOCOL §9.2).
 //     Card     the world's name and blurb (@world.about).   Places  spawn and bounds.   Old world  what translation carried.
 // Rows here are DOM like every panel; in a headset they are the same frame as a quad (domquad.js XR_FRAMES), rows stay
 // rows, and every control is a button or a select (no hover, no long-press).
@@ -221,23 +222,33 @@ function paintAccess(body) {
       act('set', { id: '@world', component: 'access', value: v }, 'access').then(() => paintAccess(body)); } }; });
 }
 // World: the owner's dials over @world components that already exist (capacity, physics-engine).
-// The ONE hard rule: write only on an explicit edit, never on open: a panel that wrote defaults on open would put numbers
-// in the log the owner never chose. Everyone reads; owners edit.
+// The ONE hard rule: write only on an explicit edit, never on open, and only the field that changed: capacity is a policy
+// number (PROTOCOL §9.2), so an absent field is this server's current default (schema reports it, and it may change) and a
+// panel that wrote the others too would freeze today's defaults into the log. Everyone reads; owners edit.
 const CAP = 'capacity', CAP_FIELDS = ['entities', 'guestEntities', 'avatar'];
 const CAP_WORDS = { entities: 'Entities in this world', guestEntities: "Guests' entities, together", avatar: 'Largest avatar (entities)' };
 const CAP_DOCS = COMPONENTS[CAP].docs ?? {};   // each says per what first: the whole world's, all account-less people's together, one worn avatar's
-/** the numbers in force (its reader: what is written, else the defaults); the authority enforces all but `avatar`, which nothing checks yet */
-function effectiveCapacity() { const { name, value, def } = resolveVersioned(wc(), 'capacity');
+// this server's policy numbers ({defaults, ceilings}), asked of the server once (schema): never the registry's
+let serverPolicy = null, askingPolicy = false;
+function policy(repaint) {
+  if (!serverPolicy && !askingPolicy) { askingPolicy = true;
+    sendRequest('schema', { component: CAP }).then((r) => { askingPolicy = false; if (r?.server) { serverPolicy = r.server; repaint?.(); } }).catch(() => { askingPolicy = false; }); }
+  return serverPolicy;
+}
+/** the numbers in force (its reader: what is written, else this server's default); the authority enforces all but `avatar` */
+function effectiveCapacity(repaint) { const { name, value } = resolveVersioned(wc(), 'capacity'); const P = policy(repaint);
   const ok = (x) => Number.isInteger(x) && x >= 0;
-  return { name, written: value, eff: Object.fromEntries(CAP_FIELDS.map((k) => [k, ok(value?.[k]) ? value[k] : def.defaults[k]])) }; }
+  return { name, written: value, eff: Object.fromEntries(CAP_FIELDS.map((k) => [k, ok(value?.[k]) ? value[k] : P?.defaults?.capacity?.[k] ?? null])),
+    range: Object.fromEntries(CAP_FIELDS.map((k) => [k, { ...COMPONENTS[CAP].ranges?.[k], ...(P?.ceilings?.capacity?.[k] != null ? { max: P.ceilings.capacity[k] } : {}) }])) }; }
 function paintWorld(body) {
-  const edit = isOwner(); const c = wc(); const cap = effectiveCapacity(); const R2 = COMPONENTS[CAP].ranges;
+  const edit = isOwner(); const c = wc(); const cap = effectiveCapacity(() => { if (body.isConnected) paintWorld(body); }); const R2 = cap.range;
   const pe = c['physics-engine'] ?? null;
+  const num = (n) => (n == null ? '…' : n.toLocaleString('en'));
   const capRow = (k) => edit
-    ? `<label class="rp-field" title="${esc(CAP_DOCS[k] ?? '')}">${esc(CAP_WORDS[k])} <input type="number" step="1" min="${R2[k].min}" max="${R2[k].max}" data-cap="${k}" value="${c[CAP]?.[k] ?? ''}" placeholder="${cap.eff[k]}" aria-label="${esc(CAP_WORDS[k])}"> <span class="rp-dim">now ${cap.eff[k].toLocaleString('en')} · ${esc(rangeWords(R2[k]))}</span></label>`
-    : `<div class="rp-row" title="${esc(CAP_DOCS[k] ?? '')}"><div class="rp-main">${esc(CAP_WORDS[k])} <b>${cap.eff[k].toLocaleString('en')}</b></div></div>`;
+    ? `<label class="rp-field" title="${esc(CAP_DOCS[k] ?? '')}">${esc(CAP_WORDS[k])} <input type="number" step="1" min="${R2[k].min ?? ''}" max="${R2[k].max ?? ''}" data-cap="${k}" value="${c[CAP]?.[k] ?? ''}" placeholder="${cap.eff[k] ?? ''}" aria-label="${esc(CAP_WORDS[k])}"> <span class="rp-dim">now ${num(cap.eff[k])} · ${esc(rangeWords(R2[k]))}</span></label>`
+    : `<div class="rp-row" title="${esc(CAP_DOCS[k] ?? '')}"><div class="rp-main">${esc(CAP_WORDS[k])} <b>${num(cap.eff[k])}</b></div></div>`;
   body.innerHTML = `<h4 class="rp-h">Capacity</h4>`
-    + `<p class="rp-dim">gates against a world nobody can load, not targets${cap.written ? '' : ' · nothing written: the defaults'}</p>`
+    + `<p class="rp-dim">gates against a world nobody can load, not targets${cap.written ? '' : " · nothing written: this server's defaults"}</p>`
     + CAP_FIELDS.map(capRow).join('') + `<p class="rp-cap-note rp-warn" hidden></p>`
     + `<h4 class="rp-h">Physics</h4>`
     + (edit ? `<label class="rp-field"><input type="checkbox" data-phys ${pe ? 'checked' : ''}> things fly and fall (${esc(SIM_ID)})</label>` : `<div class="rp-row"><div class="rp-main">${pe ? `on: ${esc(pe.engine)}` : 'off'}</div></div>`)
@@ -249,13 +260,11 @@ function paintWorld(body) {
   body.querySelectorAll('input[data-cap]').forEach((x) => { x.onchange = () => {
     const k = x.dataset.cap; const raw = x.value.trim();
     if (raw === '') { say(''); x.value = wc()[CAP]?.[k] ?? ''; return; }   // emptied: nothing to say; the field goes back to what is written
-    const n = Number(raw); const r = R2[k];
+    const n = Number(raw); const r = effectiveCapacity().range[k];
     if (!Number.isInteger(n) || outOfRange(r, n)) { say(`${CAP_WORDS[k]}: ${raw} isn't allowed; it must be a whole number ${rangeWords(r)}. Nothing was changed.`); toast(`${CAP_WORDS[k]}: must be ${rangeWords(r)}`, 'warn', 8000); x.value = wc()[CAP]?.[k] ?? ''; return; }
     say('');
-    // the first write carries every field in force today: a merge of one key onto nothing would leave the
-    // others to whatever the defaults are when it is next read, not what the owner saw here
-    const value = wc()[CAP] ? { [k]: n } : { ...effectiveCapacity().eff, [k]: n };
-    act('set', { id: '@world', component: CAP, value, merge: true }, `${CAP_WORDS[k]}: ${n}`).then((r) => { paintWorld(body);
+    // ONLY the field that changed, merged: the others stay what is written, or absent (this server's default as it is then)
+    act('set', { id: '@world', component: CAP, value: { [k]: n }, merge: true }, `${CAP_WORDS[k]}: ${n}`).then((r) => { paintWorld(body);
       if (r && !r.ok) { const n2 = body.querySelector('.rp-cap-note'); n2.textContent = `${CAP_WORDS[k]}: ${r.refused?.reason ?? 'refused'}`; n2.hidden = false; } }); }; });
   body.querySelector('[data-phys]').onchange = () => { const on = body.querySelector('[data-phys]').checked;
     (on ? act('set', { id: '@world', component: 'physics-engine', value: { engine: SIM_ID } }, 'physics on') : act('delete', { id: '@world', component: 'physics-engine' }, 'physics off')).then(() => paintWorld(body)); };

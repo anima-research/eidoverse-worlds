@@ -352,16 +352,17 @@ const cases: Case[] = [
       const n0 = s.entries().length; const a = s.call("vic", "use", { id: "lamp", action: "on" }); const n1 = s.entries().length; const b = s.call("vic", "use", { id: "lamp", action: "on" });
       return { first: a.script?.status, second: b.script?.status, firstKinds: kinds(s.entries().slice(n0, n1)), secondKinds: kinds(s.entries().slice(n1)) }; },
     good: (o) => o.first === "ran" && o.second === "nothing" && JSON.stringify(o.firstKinds) === '{"act":2,"change":1}' && JSON.stringify(o.secondKinds) === '{"act":1}' },
-  { id: "B17", what: "install rules: a builder's `always`, a 1 s timer, a visitor's install, and a builder's install after the owner raises it to owner", run(s) { cast(s);
+  { id: "B17", what: "install rules: a builder's `always`, a 1 s timer, a visitor's install, and a builder's install after the owner turns off the builder role's scripts permission (role-defs; script-settings.install is gone)", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } }); const t = onUse(`world.set("self", "t/a", 1);`);
       const always = install(s, "bob", "box", "a", t, { scope: { ids: "self", comps: ["t/a"] }, every: 5, always: true }).r;
       const fast = install(s, "bob", "box", "b", t, { scope: { ids: "self", comps: ["t/a"] }, every: 1 }).r;
       const src = install(s, "bob", "box", "ok", t, { scope: { ids: "self", comps: ["t/a"] }, on: ["use"] }).src;
       const vic = s.call("vic", "set", { id: "box", component: "script:c", value: { src, scope: { ids: "self", comps: ["t/a"] } } });
-      s.call("olive", "set", { id: "@world", component: "script-settings", value: { install: "owner" } });
+      const gone = s.call("olive", "set", { id: "@world", component: "script-settings", value: { install: "owner" } });
+      s.call("olive", "set", { id: "@world", component: "role-defs", value: { builder: { can: { scripts: false } } } });
       const raised = install(s, "bob", "box", "d", t, { scope: { ids: "self", comps: ["t/a"] }, on: ["use"] }).r;
-      return { always, fast, vic, raised }; },
-    good: (o) => code(o.always) === "rights" && /always/.test(o.always.refused.reason) && code(o.fast) === "shape" && /floor is 5/.test(o.fast.refused.reason) && code(o.vic) === "rights" && code(o.raised) === "rights" && /needs owner/.test(o.raised.refused.reason) },
+      return { always, fast, vic, raised, gone }; },
+    good: (o) => code(o.always) === "rights" && /always/.test(o.always.refused.reason) && code(o.fast) === "shape" && /floor is 5/.test(o.fast.refused.reason) && code(o.vic) === "rights" && code(o.raised) === "rights" && /scripts permission/.test(o.raised.refused.reason) && code(o.gone) === "schema" },
   { id: "B18", what: "sponsor = the latest write that changes more than `paused` (§5 Two views; R on F4): an owner who EDITS bob's script (its knobs) answers for it; bob is demoted; it runs on olive's rights", run(s) { cast(s);
       bell(s, "bob"); const v = comp(s, "bell1", "script:bell");
       s.call("olive", "set", { id: "bell1", component: "script:bell", value: { ...v, knobs: { tone: "low" } } });
@@ -489,18 +490,19 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const out = (tz: string) => Bun.spawnSync(["bun", f], { env: { ...process.env, TZ: tz, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } }).stdout.toString().trim();
       return { utc: out("UTC"), tokyo: out("Asia/Tokyo") }; },
     good: (o) => o.utc.startsWith("[8,0,") && o.utc === o.tokyo },
-  { id: "B23", what: "the authority's own cost is metered, written or not: a script whose runs write nothing is held to `runs` a minute, and a sponsor to `cpu` ms of sandbox time", run(s) { cast(s);
+  { id: "B23", what: "the authority's own cost is metered, written or not: a script whose runs write nothing is held to `runs` a minute (the server's configuration), and a sponsor to `cpu` ms of sandbox time (the owner tightens it in script-settings)", run(s) { cast(s);
       s.call("bob", "create", { id: "ear", model: "crate", place: { at: [0, 0] } }); s.call("ann", "create", { id: "mill", model: "crate", place: { at: [2, 0] } });
       install(s, "bob", "ear", "idle", `world.on("say", () => {});\n`, { scope: { ids: "self", comps: ["t/n"] }, on: ["say"] });
       install(s, "ann", "mill", "grind", `world.on("say", () => { let x = 0; for (let i = 0; i < 1e5; i++) x += Math.sqrt(i); });\n`, { scope: { ids: "self", comps: ["t/n"] }, on: ["say"] });
       const last = (id: string) => s.call("olive", "scripts", {}).scripts.find((x: any) => x.id === id).last.at(-1);
-      // phase 1: runs (cpu out of the way)
-      s.call("olive", "set", { id: "@world", component: "script-settings", value: { runs: 5, cpu: 60000 } });
+      // phase 1: runs (the server's: an operator's setScriptConfig; cpu at its default is out of the way of an idle script)
+      const was = D.setScriptConfig({ runs: 5 });
       const ear: string[] = []; for (let i = 0; i < 8; i++) { s.call("vic", "say", { text: `hi ${i}` }, 600); ear.push(last("ear")?.status); }
       const earWhy = last("ear")?.why;
       // phase 2: cpu (runs out of the way), a minute later
-      s.advance(61000); s.call("olive", "set", { id: "@world", component: "script-settings", value: { runs: 600, cpu: 25 } });   // ≈10–16 ms a run quiet (isolated or not), ≈30–45 loaded: either way the cap binds before the sixth
+      s.advance(61000); D.setScriptConfig({ runs: 600 }); s.call("olive", "set", { id: "@world", component: "script-settings", value: { cpu: 25 } });   // ≈10–16 ms a run quiet (isolated or not), ≈30–45 loaded: either way the cap binds before the sixth
       const mill: string[] = []; for (let i = 0; i < 6; i++) { s.call("vic", "say", { text: `ho ${i}` }, 600); mill.push(last("mill")?.status); }
+      D.setScriptConfig(was);
       return { ear, earWhy, mill, why: last("mill")?.why, millMs: (s.w().presence.scriptRuns ?? []).filter((x: any) => x.sponsor === "ann").map((x: any) => x.ms) }; },
     good: (o) => JSON.stringify(o.ear) === '["nothing","nothing","nothing","nothing","nothing","refused","refused","refused"]' && /ran 5 times/.test(o.earWhy)
       && o.mill[0] === "nothing" && o.mill.at(-1) === "refused" && /ann's scripts used \d+ ms of the authority's time/.test(o.why) },

@@ -27,7 +27,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 
-import { CAPACITY } from "../../shared/protocol/authority.js";
+import { CAPACITY, CAPACITY_CEILING } from "../../shared/protocol/authority.js";
 import { COMPONENTS } from "../../shared/protocol/componentspec.js";
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -289,8 +289,8 @@ const cases: Case[] = [
       const one = s.call("bob", "create", { id: "t-13", model: "crate", components: { transform: T0([0, 0, 3]) } }, 2000);
       return { made: [...new Set(made)], over: code(over), why: `${over.refused?.reason} | ${over.refused?.fix}`, sock: code(sock), sockWhy: sock.refused?.reason, set: code(set), batch: code(batch), one: code(one), entities: Object.keys(s.w().state().entities).length - 1 }; },
     good: (o) => JSON.stringify(o.made) === '["ok"]' && o.over === "full" && /holds 10 entities and its limit is 10 \(@world\.capacity\.entities\)/.test(o.why) && /value: \{entities: <n>\}/.test(o.why) && o.sock === "full" && /@world\.capacity\.entities/.test(o.sockWhy ?? "") && o.set === "ok" && o.batch === "full" && o.one === "ok" && o.entities === 10 },
-  { id: "C2", what: `unset, a fresh world holds ${CAPACITY.entities} entities (capacity's default, R 10-14); the owner may raise it, never past capacity's max`, run(s) { cast(s);
-      const MAX = COMPONENTS.capacity.ranges.entities.max;
+  { id: "C2", what: `unset, a fresh world holds ${CAPACITY.entities} entities (this server's default, R 10-14); the owner may raise it, never past this server's ceiling`, run(s) { cast(s);
+      const MAX = CAPACITY_CEILING.entities;
       const f = fill(s, CAPACITY.entities); const over = s.call("bob", "create", { id: "x", model: "crate" }, 20000);
       const raise = s.call("olive", "set", { id: "@world", component: "capacity", value: { entities: CAPACITY.entities + 100 } }, 20000);
       const now = s.call("bob", "create", { id: "y", model: "crate", components: { transform: T0([400, 0, 400]) } }, 20000);
@@ -298,9 +298,9 @@ const cases: Case[] = [
       const builder = s.call("bob", "set", { id: "@world", component: "capacity", value: { entities: CAPACITY.entities + 1000 } }, 20000);
       return { def: CAPACITY.entities, max: MAX, fill: show(f), over: code(over), raise: code(raise), now: code(now), tooHigh: code(tooHigh), builder: code(builder) }; },
     good: (o) => o.def === 10000 && o.max === 50000 && o.fill === "ok" && o.over === "full" && o.raise === "ok" && o.now === "ok" && o.tooHigh === "bounds" && o.builder === "rights" },
-  { id: "C2a", what: `capacity has three fields, entities, guestEntities and avatar (R 10-15: things, guestThings, sockets and guestSockets are gone); capacity.avatar (the largest entity tree one worn avatar may be) reads ${CAPACITY.avatar} unset; the owner sets it within 1–5000 and the rest of capacity is kept; 0 and 5001 are refused (bounds); a builder may not; a gone field is refused; each field's docs say PER WHAT first (R 10-15)`, run(s) { cast(s);
+  { id: "C2a", what: `capacity has three fields, entities, guestEntities and avatar (R 10-15: things, guestThings, sockets and guestSockets are gone); capacity.avatar (the largest entity tree one worn avatar may be) reads ${CAPACITY.avatar} unset (this server's default); the owner sets it within 1–5000 (the registry's floor, the server's ceiling) and only that field is stored; 0 and 5001 are refused (bounds); a builder may not; a gone field is refused; each field's docs say PER WHAT first (R 10-15)`, run(s) { cast(s);
       const cap = () => s.w().state().entities["@world"]?.c.capacity;
-      const def = COMPONENTS.capacity.defaults.avatar, rng = COMPONENTS.capacity.ranges.avatar, unset = cap()?.avatar ?? null;
+      const def = CAPACITY.avatar, rng = { ...COMPONENTS.capacity.ranges.avatar, max: CAPACITY_CEILING.avatar }, unset = cap()?.avatar ?? null;
       const set = s.call("olive", "set", { id: "@world", component: "capacity", value: { avatar: 3000 } }, 20000); const after = cap();
       const low = s.call("olive", "set", { id: "@world", component: "capacity", value: { avatar: 0 } }, 20000);
       const high = s.call("olive", "set", { id: "@world", component: "capacity", value: { avatar: 5001 } }, 20000);
@@ -308,8 +308,8 @@ const cases: Case[] = [
       const gone = s.call("olive", "set", { id: "@world", component: "capacity", value: { things: 5 } }, 20000);
       const D = COMPONENTS.capacity.docs ?? {}, H = COMPONENTS.capacity.help ?? "";
       return { per: [/^the whole world's entities/.test(D.entities ?? ""), /^all account-less people's entities together/.test(D.guestEntities ?? ""), /^one worn avatar's/.test(D.avatar ?? ""), /not enforced/.test(D.avatar ?? ""), /not enforced/.test(H), /sockets included/.test(D.entities ?? "")], fields: Object.keys(COMPONENTS.capacity.fields), cap: Object.keys(CAPACITY), def, rng, unset, set: code(set), avatar: after?.avatar, entities: after?.entities, guestEntities: after?.guestEntities, low: code(low), high: code(high), builder: code(builder), gone: code(gone), kept: cap()?.avatar, stored: Object.keys(cap() ?? {}).sort() }; },
-    good: (o) => o.per.every(Boolean) && JSON.stringify(o.fields) === '["entities","guestEntities","avatar"]' && JSON.stringify(o.cap) === JSON.stringify(o.fields) && o.def === CAPACITY.avatar && o.def === 2000 && o.rng?.min === 1 && o.rng?.max === 5000 && o.unset === null && o.set === "ok" && o.avatar === 3000 && o.entities === CAPACITY.entities && o.guestEntities === CAPACITY.guestEntities
-      && o.low === "bounds" && o.high === "bounds" && o.builder === "rights" && o.gone !== "ok" && o.kept === 3000 && JSON.stringify(o.stored) === '["avatar","entities","guestEntities"]' },
+    good: (o) => o.per.every(Boolean) && JSON.stringify(o.fields) === '["entities","guestEntities","avatar"]' && JSON.stringify(o.cap) === JSON.stringify(o.fields) && o.def === CAPACITY.avatar && o.def === 2000 && o.rng?.min === 1 && o.rng?.max === 5000 && o.unset === null && o.set === "ok" && o.avatar === 3000 && o.entities === undefined && o.guestEntities === undefined
+      && o.low === "bounds" && o.high === "bounds" && o.builder === "rights" && o.gone !== "ok" && o.kept === 3000 && JSON.stringify(o.stored) === '["avatar"]' && !COMPONENTS.capacity.defaults },
   { id: "C3b", what: "the guest refusal names the component and key the world reads (@world.capacity.guestEntities) and says it is all account-less people's entities together, so an owner can follow it (review 10-14 C6/M9)", run(s) {
       const sess = session({ kindOf: (id: string) => (id.startsWith("g") ? "anon" : "human") }); s = sess;
       s.call("olive", "create-world", { title: "guests2" });

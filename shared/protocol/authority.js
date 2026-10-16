@@ -356,8 +356,11 @@ function seatRights(w, st, s, who, role, norm, made) {
 // account-less people TOGETHER at most capacity.guestEntities standing entities they made: a guest is a fresh identity
 // per connection, so no per-identity budget stopped one from filling a world. Only a write that adds entities is refused
 // (full); deleting, and every other change, stay open at the cap. capacity.avatar isn't enforced (no avatar trees yet).
-// CAPACITY mirrors componentspec's defaults (pretrans D6 pins they agree).
+// CAPACITY is this server's default for each absent field, and CAPACITY_CEILING the most an owner may set: server policy
+// (PROTOCOL §9.2), reported by schema, never pinned in the registry. entities 10 000 is what scale-check C2 fills under
+// budget; 50 000 is the owner's ceiling, not measured.
 export const CAPACITY = { entities: 10000, guestEntities: 500, avatar: 2000 };
+export const CAPACITY_CEILING = { entities: 50000, guestEntities: 50000, avatar: 5000 };
 const capacityOf = (st) => { const ok = (x) => Number.isInteger(x) && x >= 0;
   // read through the registry's one versioned-name reader (§4); with no capacity@n registered it is plain `capacity`
   const { name, value: v } = resolveVersioned(st.entities["@world"]?.c, "capacity"); const D = CAPACITY;
@@ -380,7 +383,7 @@ function capacityCheck(w, st, s, who, norm) {
   if (!made && !joined.size) return;
   const cap = capacityOf(s);
   if (made) { const before = entityCount(st), after = entityCount(s);
-    if (after > before && after > cap.entities) refuse("full", `this world holds ${before} entities and its limit is ${cap.entities} (@world.${cap.name}.entities): ${after - before} more won't fit (every entity counts, sockets too)`, `delete something first; the world's owner may raise it: set {id: '@world', component: '${cap.name}', value: {entities: <n>}} (at most ${COMPONENTS[cap.name].ranges.entities.max})`, { limit: cap.entities, entities: before }); }
+    if (after > before && after > cap.entities) refuse("full", `this world holds ${before} entities and its limit is ${cap.entities} (@world.${cap.name}.entities): ${after - before} more won't fit (every entity counts, sockets too)`, `delete something first; the world's owner may raise it: set {id: '@world', component: '${cap.name}', value: {entities: <n>}} (at most ${CAPACITY_CEILING.entities} on this server)`, { limit: cap.entities, entities: before }); }
   if (joined.size) { const per = new Map([...joined].map((h) => [h, [0, 0]]));
     for (const e of Object.values(s.entities)) { const h = isSocketC(e.c) ? e.c.parent?.to : null; if (per.has(h)) per.get(h)[1]++; }
     for (const e of Object.values(st.entities)) { const h = isSocketC(e.c) ? e.c.parent?.to : null; if (per.has(h)) per.get(h)[0]++; }
@@ -389,7 +392,7 @@ function capacityCheck(w, st, s, who, norm) {
   const holder = who.cap?.kind === "reaction" ? who.cap.author : who.cap?.kind === "script" ? who.cap.sponsor : who.actor;
   if (!CTX.isAnon(holder)) return;
   const g = guestMade(w, st);
-  if (g + made > cap.guestEntities) refuse("full", `account-less people (guests) together have ${g} entities standing here, and this world lets them have ${cap.guestEntities} (@world.${cap.name}.guestEntities), all of them together`, `sign in to build more, or ask the world's owner to raise it: set {id: '@world', component: '${cap.name}', value: {guestEntities: <n>}} (at most ${COMPONENTS[cap.name].ranges.guestEntities.max})`, { limit: cap.guestEntities, entities: g });
+  if (g + made > cap.guestEntities) refuse("full", `account-less people (guests) together have ${g} entities standing here, and this world lets them have ${cap.guestEntities} (@world.${cap.name}.guestEntities), all of them together`, `sign in to build more, or ask the world's owner to raise it: set {id: '@world', component: '${cap.name}', value: {guestEntities: <n>}} (at most ${CAPACITY_CEILING.guestEntities} on this server)`, { limit: cap.guestEntities, entities: g });
 }
 // A lock binds everyone, the locker and owners included (§5). `throughLock: true` on the request lets anyone who may
 // remove that lock act through it, and the log records only the edit (the act carries the request as sent, flag and
@@ -643,6 +646,9 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   if (id === "@world" && comp === "default-role" && obj && v.can !== undefined) { const bad = R.checkCan(v.can, at); if (bad) refuse(bad.code, bad.reason, bad.fix, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
     if (R.roleDef(wcS, v.role)) { const br = R.brokenNeed({ ...R.roleDef(wcS, v.role).can, ...v.can }); if (br) refuse("needs", `${at}: ${br[0]} needs ${br[1]}, which would be off`, `give ${br[1]} too (can: {${br[1]}: true}), or leave ${br[0]} off`); } }
   if (id === "@world" && comp === "trusted") { const bad = trustRefusal(v); if (bad) refuse("shape", `${at}: ${bad}`, "set {id: '@world', component: 'trusted', value: {components: ['<handle>/<name>', …]}} (the drafts this world trusts; delete the component to trust none)"); }
+  // policy numbers (PROTOCOL §9.2): an owner sets each at or below this server's ceiling, which is policy, not a registry range
+  if (id === "@world" && obj && !carry && (comp === "capacity" || comp === "script-settings")) { const top = comp === "capacity" ? CAPACITY_CEILING : scriptCeiling();
+    for (const [k, n] of Object.entries(top)) if (Number.isFinite(v[k]) && v[k] > n) refuse("bounds", `${at}.${k} is ${v[k]}; this server allows at most ${n}`, `set it at ${n} or below (schema reports this server's defaults and ceilings)`, { ceiling: n }); }
   if (id === "@world" && comp === "access" && obj && v.soft !== undefined && v.max !== undefined && v.soft > v.max) refuse("bounds", `${at}.soft (${v.soft}) can't be above max (${v.max})`, "soft is the recommended capacity; max is the hard one");
   // a who names a role this world has (a custom role too); a typo would open or close it to the wrong people
   // a carried value (a fork's copy, the load's lift) keeps the who it was written with, even a role deleted since: the lift
@@ -1656,9 +1662,21 @@ function offersFor(st, id, actor) {
 // Stated rule (§3d): no-op writes in a script batch are dropped (SR.elide, shared with the auditor). Authority practice: timers
 // sleep in an empty world unless `always`; a per-script rate, a per-sponsor fair share of a per-world hourly budget, a
 // cascade depth, and a pause after repeated failures.
-const SCRIPTS = { install: "builder", max: 12, budget: 600, rate: 6, depth: 8, fails: 5, run: true, cpu: SR.LIMITS.cpu, runs: SR.LIMITS.runs };
-export const SCRIPT_DEFAULTS = Object.freeze({ ...SCRIPTS });   // what script-settings' registered defaults must equal (pretrans D6)
-const scriptsCfg = (st) => { const c = st.entities["@world"]?.c["script-settings"]; return { ...SCRIPTS, ...(c && typeof c === "object" && !Array.isArray(c) && c !== PURGED ? c : {}) }; };
+// This server's script configuration (shape audit 10-16): run, max, budget and cpu are what an owner may set in
+// @world.script-settings (absent: scriptDefaults(), which schema reports), max, budget and cpu never above scriptCeiling() (an owner
+// tightens the budgets, never raises them past the server's); rate, depth, fails and runs are the server's alone
+// (setScriptConfig, an operator's). A stored value of a field the owner no longer sets (an old install, rate…) is ignored.
+const SCRIPTS = { max: 12, budget: 600, rate: 6, depth: 8, fails: 5, run: true, cpu: SR.LIMITS.cpu, runs: SR.LIMITS.runs };
+const OWNER_SCRIPT_FIELDS = ["run", "max", "budget", "cpu"];
+/** This server's defaults for script-settings' fields, and the most an owner may set (live: an operator may change SCRIPTS). */
+export const scriptDefaults = () => Object.fromEntries(OWNER_SCRIPT_FIELDS.map((k) => [k, SCRIPTS[k]]));
+export const scriptCeiling = () => ({ max: 64, budget: SCRIPTS.budget, cpu: SCRIPTS.cpu });
+/** An operator's (and a test's) script configuration; returns what it was, to restore. Never a world's. */
+export function setScriptConfig(over = {}) { const was = { ...SCRIPTS }; Object.assign(SCRIPTS, over); return was; }
+const scriptsCfg = (st) => { const c = st.entities["@world"]?.c["script-settings"]; const own = c && typeof c === "object" && !Array.isArray(c) && c !== PURGED ? c : {};
+  const out = { ...SCRIPTS }; for (const k of OWNER_SCRIPT_FIELDS) if (own[k] !== undefined) out[k] = own[k];
+  for (const [k, top] of Object.entries(scriptCeiling())) if (Number.isFinite(out[k])) out[k] = Math.min(out[k], top);
+  return out; };
 const BODY_EFFECTS = ["shove", "pose"];
 const SCRIPT_EVENTS = ["use", "say", "enter", "leave", "grab", "release"];
 const scopeIds = (st, id, ids) => (ids === "self" ? [id] : ids === "subtree" ? [id, ...descendants(st, id)] : Array.isArray(ids) ? ids.map((x) => (x === "self" ? id : x)) : []);
@@ -1708,9 +1726,8 @@ function uploadEffect(w, actor, a) {
 function installCheck(w, st, s, who, op) {
   const { actor, cap } = who; const installer = cap?.kind === "script" ? cap.sponsor : cap?.kind === "reaction" ? cap.author : actor;
   const role = roleOf(st, installer), cfg = scriptsCfg(st), v = op.value, at = `${op.id}.${op.comp}`;
-  // research S2: the `scripts` permission is the install gate; @world.script-settings.install: 'owner' reads as the built-in roles'
-  // scripts permission off until an owner edits that role (roles.js roleDef)
-  if (!may(st, installer, "scripts")) refuse("rights", `installing a script here needs ${cfg.install === "owner" ? "owner (@world.script-settings.install)" : "the scripts permission"}; ${said(installer)} is ${role}`, "@world.script-settings.install and the role's scripts permission say who may (the owner sets them)", { needs: "scripts" });
+  // research S2: the `scripts` permission is the install gate (role-defs: the owner sets each role's)
+  if (!may(st, installer, "scripts")) refuse("rights", `installing a script here needs the scripts permission; ${said(installer)} is ${role}`, "the role's scripts permission says who may (the owner sets it in role-defs)", { needs: "scripts" });
   if (typeof v.src !== "string" || !/^sha256:[0-9a-f]{64}$/.test(v.src)) refuse("shape", `${at}.src must be a blob name sha256:<64 hex>`, "upload {text} stores the source and returns its name");
   let blob = null; try { blob = w.getBlob(v.src); } catch { /* missing or doesn't match its name: refused below */ }
   if (!blob) refuse("not-found", `${at}.src: no blob ${v.src} here`, "upload {text} first");
@@ -3712,7 +3729,9 @@ const VERBS = {
   // particles names an effect: its schema also lists the Essentials and each one's params (the knobs an instance sets), so
   // an agent can write one without a second question; effect {name} returns a whole document
   // every definition carries its status (trial | reserved | stable); statuses says what each means
+  // and server: this server's policy numbers (PROTOCOL §9.2): the default an absent field means today, and the ceiling an owner may set
   schema(w, actor, a) { return { ok: true, components: a.component ? { [a.component]: COMPONENTS[a.component] } : COMPONENTS, statuses: STATUSES,
+    server: { defaults: { capacity: { ...CAPACITY }, "script-settings": scriptDefaults() }, ceilings: { capacity: { ...CAPACITY_CEILING }, "script-settings": scriptCeiling() } },
     ...(a.component === "particles" ? { effects: Object.fromEntries(ESSENTIAL_NAMES.map((k) => { const d = effectFor(k); return [k, { reads: d.reads, params: Object.fromEntries(Object.entries(d.params ?? {}).map(([n, p]) => [n, { type: p.type, ...(p.min !== undefined ? { min: p.min } : {}), ...(p.max !== undefined ? { max: p.max } : {}), ...(p.values ? { values: p.values } : {}), ...(p.help ? { help: p.help } : {}) }])) }]; })) } : {}) }; },
   create: (w, actor, a) => commit(w, actor, "create", a, (ctx) => buildCreate(ctx, a)),
   set: (w, actor, a) => commit(w, actor, "set", a, (ctx) => buildSet(ctx, a)),
@@ -3850,7 +3869,7 @@ const VERBS = {
   // checked here (to teach early) and again at install (what binds).
   upload(w, actor, a) {
     if (a.effect !== undefined) return uploadEffect(w, actor, a);
-    if (!may(w.state(), actor, "scripts")) refuse("rights", `uploading a script needs ${scriptsCfg(w.state()).install === "owner" ? "owner" : "the scripts permission"}; you are ${roleOf(w.state(), actor)}`, "ask the world's owner", { needs: "scripts" });
+    if (!may(w.state(), actor, "scripts")) refuse("rights", `uploading a script needs the scripts permission; you are ${roleOf(w.state(), actor)}`, "ask the world's owner", { needs: "scripts" });
     if (typeof a.text !== "string") refuse("shape", "upload {text}: the script's JavaScript source", "docs/SCRIPTS.md");
     { const now = w.now(), U = ((w.presence.uploads ??= {})[actor] ??= []).filter((t) => now - t < 60000); w.presence.uploads[actor] = U; // presence: never logged
       if (U.length >= SR.LIMITS.uploads) refuse("rate", `${said(actor)} has uploaded ${U.length} sources in the last minute; at most ${SR.LIMITS.uploads}`, "slow down");

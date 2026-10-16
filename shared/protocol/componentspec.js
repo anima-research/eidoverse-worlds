@@ -312,20 +312,33 @@ export const COMPONENTS = {
   blueprints: { on: "world", keyed: true, key: "instance", help: "on @world, keyed by a blueprint's hash: {name, …} (publish writes it)" },
   "terrain-paint": { status: "reserved", on: "world", keyed: true, key: "partition", help: "keyed <i>-<j>: paint channels for one tile (research 40 §3; not built in the lab)" },
   // capacity: R's 10-14 14:13 call (VRChat/Resonite scale: gates against a world nobody can load, not targets), cut to ONE
-  // entity budget by R 10-15 22:48 (a socket is a child entity, so it counts like any other). entities 10 000 is what
-  // scale-check C2 fills under budget; 50 000 is the owner's ceiling, not measured.
+  // entity budget by R 10-15 22:48 (a socket is a child entity, so it counts like any other). A POLICY number (PROTOCOL
+  // §9.2; shape audit 10-16): no pinned default. Absent, a field is this server's current default (authority CAPACITY, which
+  // `schema` reports and which may change); the ceiling an owner may set is the server's (CAPACITY_CEILING), not a range
+  // here. A field the owner writes is stored as written, even at today's default, and nothing is written whole.
   capacity:  { on: "world",
-               fields: { entities: "int", guestEntities: "int", avatar: "int" }, defaults: { entities: 10000, guestEntities: 500, avatar: 2000 },
-               ranges: { entities: { min: 1, max: 50000 }, guestEntities: { min: 0, max: 50000 }, avatar: { min: 1, max: 5000 } },
+               fields: { entities: "int", guestEntities: "int", avatar: "int" },
+               ranges: { entities: { min: 1 }, guestEntities: { min: 0 }, avatar: { min: 1 } },
                units: { entities: "entities", guestEntities: "entities", avatar: "entities" },
-               docs: { entities: "the whole world's entities: every one but @world, sockets included (default 10 000, at most 50 000)",
-                       guestEntities: "all account-less people's entities together: what people without an account made that still stands here, sockets included (default 500)",
-                       avatar: "one worn avatar's entity tree, at most: the largest one avatar may be, checked when it's worn and not counted in entities (default 2 000); not enforced yet: no avatar trees exist" },
-               help: "on @world (owner): how much this world holds: {entities (the whole world's entities, every one but @world, sockets included; default 10000, at most 50000), guestEntities (all account-less people's entities together; default 500), avatar (one worn avatar's entity tree at most, checked when worn, not counted in entities; default 2000; not enforced yet)}; one thing holds at most 64 sockets. A gate against a world nobody can load, not a target: a create past entities or guestEntities is refused (full)" },
-  "script-settings": { on: "world", fields: { run: "bool", install: "string", max: "int", budget: "int", rate: "int", depth: "int", fails: "int", cpu: "int", runs: "int" }, enums: { install: ["builder", "owner"] },
-               defaults: { run: true, install: "builder", max: 12, budget: 600, rate: 6, depth: 8, fails: 5, cpu: 2000, runs: 60 },   // the authority's SCRIPTS (pretrans D6 pins they agree)
-               ranges: { max: { min: 0, max: 64 }, budget: { min: 0, max: 100000 }, rate: { min: 0, max: 600 }, depth: { min: 1, max: 32 }, fails: { min: 1, max: 100 }, cpu: { min: 0, max: 60000 }, runs: { min: 0, max: 600 } },
-               help: "on @world (owner): {run: false stops every script, install: 'builder'|'owner', max (scripts, default 12), budget (script entries per hour, default 600; each sponsor gets a fair share), rate (logged activations per script per minute, default 6), depth (cascade depth, default 8), fails (failed activations in a row before a script pauses, default 5), cpu (ms of the authority's time per sponsor per minute, default 2000; the world 3×), runs (activations per script per minute, whatever they write, default 60)}" },
+               absentMeans: { entities: "this server's current default (schema reports it); it may change",
+                              guestEntities: "this server's current default (schema reports it); it may change",
+                              avatar: "this server's current default (schema reports it); it may change. Not enforced yet" },
+               docs: { entities: "the whole world's entities: every one but @world, sockets included (absent: this server's default; at most the server's ceiling)",
+                       guestEntities: "all account-less people's entities together: what people without an account made that still stands here, sockets included (absent: this server's default)",
+                       avatar: "one worn avatar's entity tree, at most: the largest one avatar may be, checked when it's worn and not counted in entities (absent: this server's default); not enforced yet: no avatar trees exist" },
+               help: "on @world (owner): how much this world holds: {entities (the whole world's entities, every one but @world, sockets included), guestEntities (all account-less people's entities together), avatar (one worn avatar's entity tree at most, checked when worn, not counted in entities; not enforced yet)}. Each is optional: absent, it is this server's current default, and no field may go above the server's ceiling (schema reports both). One thing holds at most 64 sockets. A gate against a world nobody can load, not a target: a create past entities or guestEntities is refused (full)" },
+  // script-settings (shape audit 10-16, trimmed): the owner's two decisions (scripts on or off, how many) and the two budgets an
+  // owner may TIGHTEN. A policy number like capacity: absent is this server's current default (authority scriptDefaults(),
+  // reported by schema), never above the server's ceiling (scriptCeiling()). Who may install is the role's `scripts`
+  // permission (role-defs), not a setting here. Rate, cascade depth, failures before a pause and runs per minute are the
+  // server's own configuration; a stored value of the old fields is read as absent.
+  "script-settings": { on: "world", fields: { run: "bool", max: "int", budget: "int", cpu: "int" },
+               ranges: { max: { min: 0 }, budget: { min: 0 }, cpu: { min: 0 } },
+               units: { budget: "script entries per hour", cpu: "ms of authority time per sponsor per minute" },
+               absentMeans: { run: "true: scripts run", max: "this server's current default (schema reports it)",
+                              budget: "this server's current default (schema reports it)", cpu: "this server's current default (schema reports it)" },
+               docs: { run: "false stops every script here", max: "how many scripts this world may hold", budget: "script entries per hour, each sponsor a fair share", cpu: "ms of the authority's time each sponsor's scripts may use a minute (the world 3×)" },
+               help: "on @world (owner): {run? (false stops every script), max? (how many scripts), budget? (script entries per hour; each sponsor gets a fair share), cpu? (ms of the authority's time per sponsor per minute; the world 3×)}. Each absent field is this server's current default, and none may go above the server's ceiling (schema reports both). Who may install a script is the role's scripts permission (role-defs)" },
 };
 
 // ---- status (shape audit 10-16, R: "all components trial for the alpha"; PROTOCOL §4 Status, docs/COMPONENT-LADDER.md) ----

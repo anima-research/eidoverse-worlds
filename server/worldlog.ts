@@ -245,8 +245,8 @@ export class WorldLog {
     else this.host?.broadcast(msg);
     for (const e of fresh) if (e?.kind === "say") this.hearSay(e);
     this.stale = true;
-    // anything that can change what someone may do: a role, the definitions, the default role, the install setting
-    const roles = (e: Any) => { try { return e?.kind === "change" && opsOf(e).some((o: Any) => o.id === "@world" && (String(o.comp ?? "").startsWith("roles:") || ["role-defs", "default-role", "script-settings", "access"].includes(o.comp))); } catch { return false; } };
+    // anything that can change what someone may do: a role, the definitions, the default role, access
+    const roles = (e: Any) => { try { return e?.kind === "change" && opsOf(e).some((o: Any) => o.id === "@world" && (String(o.comp ?? "").startsWith("roles:") || ["role-defs", "default-role", "access"].includes(o.comp))); } catch { return false; } };
     if (fresh.some(roles)) this.host?.rightsChanged();
   }
   private record(e: ChatLine) {

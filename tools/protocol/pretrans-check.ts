@@ -238,16 +238,27 @@ await C("D4", "a motion's per-type defaults are written: spin's axis and rate, o
   const m = (id: string) => stored(W, id, "motion");
   return [JSON.stringify(m("sp").axis) === "[0,1,0]" && m("sp").degPerSec === 36 && m("sp").phase === 0 && !("degPerSec" in m("sp2")) && m("or").radius === 3 && m("or").degPerSec === 12 && m("or").face === true
     && m("bo").amp === 0.3 && m("bo").period === 4 && m("pa").speed === 1 && m("pa").loop === "loop" && m("pa").face === true, ["sp", "sp2", "or", "bo", "pa"].map(m)]; });
-await C("D5", "a physics thing that flies says who may punt it (visitor); world settings set in part are written whole (capacity, script-settings)", () => {
+await C("D5", "a physics thing that flies says who may punt it (visitor); world settings set in part store ONLY what was written, even a value equal to today's default (capacity, script-settings: policy numbers, PROTOCOL §9.2)", () => {
   const W = world(); mk(W, "p"); W.call("set", { id: "p", component: "physics", value: { kind: "dynamic" } });
   W.call("set", { id: "@world", component: "capacity", value: { entities: 100 } }); W.call("set", { id: "@world", component: "script-settings", value: { max: 3 } });
+  const cap1 = W.state().entities["@world"].c.capacity;
+  const same = W.call("set", { id: "@world", component: "capacity", value: { guestEntities: CAPACITY.guestEntities } });
   W.call("set", { id: "@world", component: "default-role", value: { role: "builder" } });
   const w = W.state().entities["@world"].c, ss = w["script-settings"];
-  return [stored(W, "p", "physics")?.who === "visitor" && w.capacity?.entities === 100 && w.capacity?.guestEntities === CAPACITY.guestEntities && w.capacity?.avatar === CAPACITY.avatar && ss?.budget === 600 && ss?.rate === 6 && ss?.run === true && ss?.install === "builder" && W.call("set", { id: "@world", component: "default-role", value: { role: "none" } }).ok,
-    [stored(W, "p", "physics"), w.capacity, ss, w["default-role"]]]; });
-await C("D6", "the registry's defaults are the authority's own: script-settings and capacity agree with what it enforces when they're absent", () => {
-  const ss = CAT.COMPONENTS["script-settings"].defaults, cap = CAT.COMPONENTS.capacity.defaults;
-  return [!!ss && !!cap && Object.keys(D.CAPACITY).length === Object.keys(cap).length && Object.entries(D.CAPACITY).every(([k, v]) => cap[k] === v) && D.SCRIPT_DEFAULTS && Object.entries(D.SCRIPT_DEFAULTS).every(([k, v]) => ss[k] === v), [ss, cap, D.SCRIPT_DEFAULTS]]; });
+  return [stored(W, "p", "physics")?.who === "visitor" && JSON.stringify(cap1) === '{"entities":100}' && same.ok && JSON.stringify(w.capacity) === JSON.stringify({ guestEntities: CAPACITY.guestEntities }) && JSON.stringify(ss) === '{"max":3}'
+    && W.call("set", { id: "@world", component: "default-role", value: { role: "none" } }).ok, [stored(W, "p", "physics"), cap1, w.capacity, ss]]; });
+await C("D6", "policy numbers pin no default: the registry holds none for capacity or script-settings; schema reports this server's defaults and ceilings, the ones the authority enforces", () => {
+  const W = world(); const r = W.call("schema", { component: "capacity" }); const sv = r.server ?? {};
+  return [!CAT.COMPONENTS.capacity.defaults && !CAT.COMPONENTS["script-settings"].defaults && JSON.stringify(sv.defaults?.capacity) === JSON.stringify(D.CAPACITY) && JSON.stringify(sv.ceilings?.capacity) === JSON.stringify(D.CAPACITY_CEILING)
+    && JSON.stringify(sv.defaults?.["script-settings"]) === JSON.stringify(D.scriptDefaults()) && JSON.stringify(sv.ceilings?.["script-settings"]) === JSON.stringify(D.scriptCeiling())
+    && JSON.stringify(Object.keys(CAT.COMPONENTS["script-settings"].fields)) === '["run","max","budget","cpu"]', sv]; });
+await C("D6b", "an owner sets a policy number at or below the server's ceiling, never above (bounds); the budgets only tighten; a dropped script-settings field (install, rate, depth, fails, runs) is refused", () => {
+  const W = world(); const top = D.CAPACITY_CEILING.entities, sc = D.scriptCeiling();
+  const over = W.call("set", { id: "@world", component: "capacity", value: { entities: top + 1 } }), at = W.call("set", { id: "@world", component: "capacity", value: { entities: top } });
+  const cpuUp = W.call("set", { id: "@world", component: "script-settings", value: { cpu: sc.cpu + 1 } }), cpuDown = W.call("set", { id: "@world", component: "script-settings", value: { cpu: 25, budget: 10 } });
+  const gone = ["install", "rate", "depth", "fails", "runs"].map((k) => W.call("set", { id: "@world", component: "script-settings", value: { [k]: k === "install" ? "owner" : 3 } }));
+  return [!over.ok && over.refused.code === "bounds" && new RegExp(`at most ${top}`).test(over.refused.reason) && at.ok && !cpuUp.ok && cpuUp.refused.code === "bounds" && cpuDown.ok && gone.every((g) => !g.ok && g.refused.code === "schema"),
+    [over.refused, why(at), cpuUp.refused, why(cpuDown), gone.map(why)]]; });
 await C("D7", "no default lives only in help text: every 'default …' a help string names for a field is in the definition's data", () => {
   // defaults that aren't a fixed number: where it stands, a size-chosen pose; and nested ones (a socket's, a handler's args)
   // default-role.guests: absent is visitor whatever the role, which no stored value can say under a role of none (known gap)

@@ -158,7 +158,11 @@ clock (the act's `ts`), `seed` and presence `reads`, and compares the writes.
 - No timers (`setTimeout`), network, files or other clocks exist. Motion is a function of time (`motion`), never a
   per-tick write.
 
-## Limits (stated in `@world.script-settings`, owner-settable where marked)
+## Limits (the server's; an owner may set the ones marked in `@world.script-settings`)
+
+`script-settings` holds `{run?, max?, budget?, cpu?}`. An absent field is this server's current default (`schema` reports
+it, and it may change); an owner sets `max` up to the server's ceiling and may only tighten `budget` and `cpu`. Who may
+install a script is each role's `scripts` permission (`role-defs`). Everything else here is the server's configuration.
 
 | | |
 |---|---|
@@ -166,15 +170,15 @@ clock (the act's `ts`), `seed` and presence `reads`, and compares the writes.
 | wall-clock backstop | 300 ms per activation, host calls included; at 500 ms the authority kills the activation's sandbox process |
 | memory / native stack | 24 MB / 256 KB per activation |
 | reads per activation | 64; writes 32; says 4; body effects 4 |
-| logged activations | 6 per minute per script (`rate`) |
+| logged activations | 6 per minute per script (server) |
 | process script time | 500 ms per rolling second across every world on the authority (host-settable); past it, `busy` |
 | waiting for a sandbox process | at most 300 ms (after kills), then `unavailable` |
-| runs, logged or not | 60 per minute per script (`runs`); 2000 ms of sandbox time per sponsor per minute (`cpu`), 3× that per world |
+| runs, logged or not | 60 per minute per script (server); 2000 ms of sandbox time per sponsor per minute (`cpu`, owner: at most the server's), 3× that per world |
 | uploads | 20 per person per minute |
-| script entries per world per hour | 600 (`budget`), each sponsor a fair share |
-| cascade depth | 8 (`depth`): script acts in a cause chain |
-| failures before pause | 5 in a row (`fails`); set the script again to retry |
-| scripts per world | 12 (`max`) |
+| script entries per world per hour | 600 (`budget`, owner: at most the server's), each sponsor a fair share |
+| cascade depth | 8 (server): script acts in a cause chain |
+| failures before pause | 5 in a row (server); set the script again to retry |
+| scripts per world | 12 (`max`, owner: up to the server's ceiling, 64) |
 | timer floor | 5 s; with nobody present a timer sleeps unless `always` |
 | source | 64 KiB of UTF-8; no bidi controls, invisible characters or BOM; no line over 1000 columns |
 

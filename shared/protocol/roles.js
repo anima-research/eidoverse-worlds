@@ -82,15 +82,13 @@ export const isRoleId = (x) => BUILTIN_IDS.includes(x) || (typeof x === "string"
 export const defsOf = (wc) => (isObj(wc?.["role-defs"]) ? wc["role-defs"] : {});
 
 /** A role by id in a world (its @world components `wc`): {id, name, rank, can, builtin, custom} or null if the world
- *  doesn't define it. `scriptsInstall` is @world.script-settings.install ('builder' | 'owner'): until the owner edits a built-in
- *  role, `install: 'owner'` reads as that role's `scripts` permission off (research §switch notes). */
+ *  doesn't define it. Who may install scripts is each role's `scripts` permission (script-settings.install is gone, 10-16). */
 export function roleDef(wc, id) {
   if (id === "none") return { id, name: "No role", rank: RANK.none, can: on(), builtin: true, legacy: true };
   if (id === "owner") return { id, ...BUILTIN.owner, builtin: true };
   const defs = defsOf(wc); const d = Object.hasOwn(defs, id) && isObj(defs[id]) ? defs[id] : null;
   if (Object.hasOwn(BUILTIN, id)) {
     const b = BUILTIN[id]; const can = { ...b.can, ...(isObj(d?.can) ? pickPermissions(d.can) : {}) };
-    if (!d && wc?.["script-settings"]?.install === "owner") can.scripts = false;
     return { id, name: typeof d?.name === "string" ? d.name : b.name, rank: b.rank, can, builtin: true, ...(d?.note ? { note: d.note } : {}) };
   }
   // a rank written around the authority (a hand-edited log, an old translation) is range-checked here too: never above the owner
