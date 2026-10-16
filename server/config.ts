@@ -57,7 +57,11 @@ export const OPT_COST_FACTOR = envNumber("OPT_COST_FACTOR", 48, (n) => n > 0);
 // running a full world can need 10-20s per frame, and loses most races at 12.
 // Capped at 240: /snap sends nothing while it waits, and Bun.serve closes an
 // idle HTTP connection at 255s (server.ts idleTimeout) — a longer window would
-// let a frame arrive after its client was already gone.
+// let a frame arrive after its client was already gone. (GET /snap also sets
+// its own per-request timeout, window + 5s, so it doesn't depend on that one.)
+// Behind deploy/nginx-show.conf the proxy is the tighter limit: `location /`
+// sets no proxy_read_timeout, so nginx's 60s default cuts any window past ~60s
+// — raise it there before setting SNAP_TIMEOUT_SEC above 60.
 export const SNAP_TIMEOUT_MS = envNumber("SNAP_TIMEOUT_SEC", 12, (n) => n > 0 && n <= 240) * 1000;
 export const ROOT = resolve(import.meta.dir, "..");
 // Dev instances point this elsewhere so a scratch sequencer can't append to the

@@ -59,6 +59,8 @@ import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 export type Srv = {
   upgrade(req: Request, opts?: { data?: unknown }): boolean;
   requestIP(req: Request): { address: string } | null;
+  /** per-request idle timeout in seconds (overrides Bun.serve's idleTimeout) */
+  timeout?(req: Request, seconds: number): void;
 };
 
 // ---- snapshots: the world serves views of itself ---------------------------
@@ -646,7 +648,12 @@ const ROUTES: Route[] = [
   },
   {
     match: (u) => u.pathname === "/snap",
-    handler: async ({ url }) => {
+    handler: async ({ req, url, srv }) => {
+      // /snap sends nothing while it waits for the frame, so it is an idle
+      // connection to Bun: give this request its own timeout a little past the
+      // window, rather than leaning on the server-wide idleTimeout (Bun's
+      // default is 10s, shorter than the default 12s window).
+      srv.timeout?.(req, Math.ceil(SNAP_TIMEOUT_MS / 1000) + 5);
       const w = worlds.get(url.searchParams.get("world") ?? "commons");
       const follow = url.searchParams.get("follow") ?? "";
       if (!w) return new Response("unknown world", { status: 404 });
