@@ -20,6 +20,7 @@
 //   AS10 a light long crate backed against two locked posts: the walk presses it, it doesn't budge, the walk stalls, re-plans
 //        round it and arrives (the stall branch's row; review r5 F5)
 //   AS11 a stall blames only a thing the stride presses into, not one it grazes (pure; review r5 F5)
+//   AS14 a misjudged crate rescaled in place is judged afresh (pure; review r6 L3)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -223,5 +224,16 @@ try {
     const ahead = stallAgainst([0, 0, 0.5]), beside = stallAgainst([0.5, 0, 0]);
     ok(ahead.blamed, "(AS11 setup) a stall pressed into a passable crate ahead blames it (re-plans round it)", ahead);
     ok(!beside.blamed && /^blocked at/.test(beside.stall ?? ""), "AS11 a stall that only grazes a passable crate beside the stride doesn't blame it: the walk stops, saying so", beside); }
+  // AS14 (pure; review r6 L3) — a misjudged crate rescaled in place (its mass goes with its size) is judged afresh
+  { const b = new WorldAgent({ url: "ws://127.0.0.1:1/ws", name: "Bea", world: "w", avatar: "" });
+    const box = { c: { transform: { pos: [0, 0, 2], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", density: 40, shape: [[-0.3, 0, -0.3], [0.3, 1.2, 0.3]] } } };
+    b.replica = { st: { entities: { "@world": { c: {} }, box } }, sim: { sim: {}, foreign: false } };
+    b.misjudged.set("box", { at: [0, 2], sig: b.shoveState("box") });
+    const before = b.mayWalkInto("box", false);
+    box.c = { ...box.c, transform: { ...box.c.transform, scale: [0.5, 0.5, 0.5] } };
+    const after = b.mayWalkInto("box", false);
+    try { b.close(); } catch {}
+    ok(before === false, "(AS14 setup) a crate found solid stays solid while nothing about it changes", { before });
+    ok(after === true, "AS14 the same crate rescaled in place (its centre unmoved) is judged afresh: walked into again", { after }); }
 } catch (e) { ok(false, "threw", String(e?.stack ?? e).slice(0, 600)); }
 done(fail ? 1 : 0);

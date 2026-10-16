@@ -79,6 +79,7 @@ import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/li
 import { redialer, REDIAL } from "../shared/redial.js";
 import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, massOf, budges, SHOVE_FEEL } from "../shared/shove.js";
 import { SHOVE } from "../shared/protocol/physconst.js";
+import { worldPose } from "../shared/protocol/simlayer.js";
 import { colliderFor } from "../client/lib/bodyscale.js";
 
 import { recordComponents } from "../shared/protocol/view.js";
@@ -3734,14 +3735,15 @@ export class WorldAgent {
     return budges(massOf(this.replica?.st, id) ?? NaN, run ? MOVER.walk.run : MOVER.walk.speed);
   }
   /** What a thing's shove depends on besides where it stands: its lock and every lock over it, its physics (kind, who,
-   *  mass, density, material) — the judgement of a misjudged thing holds only while these do (review r5 F5: a crate
-   *  locked once and unlocked was solid to this body's walks for good). */
+   *  mass, density, material) and its size in the world (its derived mass goes with it: review r6 L3) — the judgement of a
+   *  misjudged thing holds only while these do (review r5 F5: a crate locked once and unlocked was solid to this body's
+   *  walks for good). */
   private shoveState(id: string): string {
     const st = this.replica?.st, locks: unknown[] = [];
     let k: string | undefined = id;
     for (let i = 0; k && i < 64; i++) { const c: any = st?.entities?.[k]?.c; locks.push(c?.lock ?? null); k = typeof c?.parent?.to === "string" ? c.parent.to : undefined; }
     const ph: any = st?.entities?.[id]?.c?.physics ?? null;
-    return JSON.stringify([locks, ph && { kind: ph.kind, who: ph.who, mass: ph.mass, density: ph.density, material: ph.material }]);
+    return JSON.stringify([locks, ph && { kind: ph.kind, who: ph.who, mass: ph.mass, density: ph.density, material: ph.material }, st ? worldPose(st, id)?.scale ?? null : null]);
   }
   /** Things a walk planned through and then found solid: id -> its footprint's centre [x, z] and its shoveState then. */
   private misjudged = new Map<string, { at: [number, number]; sig: string }>();
