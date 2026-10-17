@@ -37,9 +37,14 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
   (→ `amp`), `motion.part` (→ `motion:<slot> {node: <part>}`: a node's name from a model file is data in the value, never part of a key; readers find the part by `node`), `physics.material` (→ `surface`), `sky.weatherSeconds` (→
   `transition`; the sky act still takes it), `sky.clock` (→ `tz`; likewise), `terrain.water` (→ the `water` component).
   Some are taken at the door instead and stored in today's spelling: `parent.order` (dropped), `light.day` (→
-  `daytime`), `grass.preset` (→ its strokes) and the first protocol's grass knobs. The load's act is `repair-shapes`, once
-  per world (its act, a founding stamped `shapes`, or a translate-v1@12 act marks the world); PROTOCOL §4 lists
-  everything it repairs.
+  `daytime`) and the first protocol's grass knobs. The load's act is `repair-shapes`, once per world (its act, a
+  founding stamped `shapes`, or a translate-v1@12 act marks the world); PROTOCOL §4 lists everything it repairs.
+- **references are stored as written** (R 10-17, binding: "definitely serve path again alongside hash"): `model` is its
+  library path, a particle Essential its name, `grass.preset` its name (back as a field: Fable #4, expanding later is
+  cheap, un-expanding impossible). `model-hash` (trial, 10-17; `sha256:<64 hex>`, written by the server) rides beside a
+  model when the catalogue already knows its bytes, the way Godot's `ext_resource` carries `uid` beside `path` and a lock
+  file `integrity` beside `resolved`: optional, never the reference. A model stored as `eido:sha256/<hex>` (translate-v1
+  @8–@11) gets its path back at its first load where the host's index knows it (repair v2), else it still loads as it is.
 - **a component split out of another**: `water` (trial, 10-16) left `terrain`, as every engine keeps water apart from
   ground. `@world`'s `water {level (m, required), color?, opacity?, kind?: still|river|ocean, flow? [x, z] m/s}`; no
   `water` is a dry world, and absent fields read as `0x1d5a6e`, 0.82, a kind decided from the ground

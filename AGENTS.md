@@ -258,7 +258,8 @@ The ones you'll reach for:
 | component | what it is |
 |---|---|
 | `transform` | `{pos, q, scale}`: where it is (local to its parent, if it has one) |
-| `model` | which model it shows: a library path (`eidoverse/assets/…glb`, `store/<hash>.glb`) |
+| `model` | which model it shows: a library path (`eidoverse/assets/…glb`, `store/<hash>.glb`), stored as you write it |
+| `model-hash` | the server stamps it beside `model` when it knows the file's bytes: `sha256:<64 hex>`. An integrity/version fact only (never the reference; absent, nothing is lost); you don't write it |
 | `label` | its display name (the id never changes) |
 | `description` | how it is described to anyone who reads rather than sees it (alt text, ≤ 500); what it can do and its state are read out from its other components, so don't restate them. A visible nameplate is a child thing with `text {billboard: "yaw"}` |
 | `parent` | `{to, socket?}`: it rides another thing (at one of its sockets, with `socket`) |

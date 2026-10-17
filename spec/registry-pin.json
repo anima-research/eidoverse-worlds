@@ -41,6 +41,12 @@
   "type": "string",
   "on": "thing"
  },
+ "model-hash": {
+  "status": "trial",
+  "type": "sha256",
+  "writtenBy": "server",
+  "on": "thing"
+ },
  "label": {
   "status": "trial",
   "type": "string",
@@ -1388,6 +1394,7 @@
    "wind": "number",
    "color": "any",
    "seed": "int",
+   "preset": "string",
    "rows": "object",
    "corn": "object",
    "heading": "number",
@@ -1434,6 +1441,7 @@
    "color": "the species' own",
    "seed": "7",
    "strokes": "one stroke: the value itself (a species' own composition, corn's and sunflower's rows, still applies)",
+   "preset": "no preset: the value's own strokes, else one stroke",
    "heading": "-0.6 rad for sunflowers (they face one way together)"
   },
   "on": "world"

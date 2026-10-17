@@ -192,7 +192,8 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   (a typo of a registered one with a "did you mean"). The registered components,
   their fields, defaults and meanings are in `shared/protocol/componentspec.js`; a
   authority answers `schema {component?}` with the same. Among them: `transform
-  {pos, q, scale}`, `model` (a library path), `label`, `description`, `parent {to}`,
+  {pos, q, scale}`, `model` (a library path, stored as written; `model-hash`
+  `sha256:<64 hex>` beside it when the server knows the bytes), `label`, `description`, `parent {to}`,
   `pivot {pos}`, `light`, `mesh`, `motion` (a whole thing's; `motion:<slot> {node, …}` moves one node of its model: `node` is the node's name as the model file spells it, any characters, DATA and never part of a key; `<slot>` is a short local tag, and readers find the part by `node`), `socket {name, part?, accepts?, radius?}` (an attach point: a
   child entity of the thing it is on, carrying `parent {to: <host>}`), `station {action, pose, anchor,
   exit?, leaveBy?, who?}` (what a person's body does at that socket, on the same entity; `sockets`, the old
@@ -269,14 +270,16 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `pivot` → the `pivot` component; `collider` exact → mesh; `physics` with no
   kind → dynamic, `material` → `surface`, layers/mask/ccd dropped; `light`
   with no decay → 1.7 (the old rig's falloff; a new light's default is 2),
-  `day` → `daytime`, `shadows` dropped; a particle Essential's name → its
-  address; `sky` clock 'real' and dormantRated → `tz` (hours, rate and ts
+  `day` → `daytime`, `shadows` dropped; a `model` stored as
+  `eido:sha256/<hex>` (translate-v1@8–@11) → the library path this host's
+  index names for it, with `model-hash` `sha256:<hex>` beside it (an address
+  no file here names stays, and still loads; repair v2, R 10-17); `sky` clock 'real' and dormantRated → `tz` (hours, rate and ts
   kept as the fallback clock), azimuth degrees → radians, `weatherSeconds` →
   `transition`, a forecast's `dwellSec`/`transitionSec` → `dwell`/`transition`,
   sun/fill/world dropped, the registry's seven defaults written; `terrain`
   layer colours `"#rrggbb"` → ints, the sim's defaults written,
-  `terrain.water` → `water`; `grass` in the flora spelling, a preset expanded
-  into its strokes. The translator (`translate-v1@12`, §14) writes its
+  `terrain.water` → `water`; `grass` in the flora spelling (a preset keeps
+  its name). The translator (`translate-v1@12`, §14) writes its
   projection through the same functions, so a translated world needs no
   repair, and the old-world oracle mirrors the load with them; the sweep's
   declared projection and the oracle's core check are written independently,
@@ -362,8 +365,9 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   thing carrying `text` (billboarded); the reading above is what
   non-visual readers get.
 - **Effects are documents.** A `particles` component names an effect: an
-  Essentials name (`fire`) or a stored document's content address
-  (`sha256:<64 hex>`, the same bytes as `eido:sha256/<64 hex>`), whose
+  Essentials name (`fire`, stored as written) or a stored document's content
+  address (`sha256:<64 hex>`; an `eido:sha256/<64 hex>` spelling stored
+  before 10-17 is read as the same bytes), whose
   emitters are modules (spawn, shape, velocity, forces, rotation, size,
   colour, render) and whose `params` are the knobs an instance may set. A
   document is bounded (how many particles, how long, how fast) and checked
@@ -702,19 +706,23 @@ away from it.
 - **Every vector names its frame** in its definition: the thing's own frame,
   its parent's, or the world's.
 - **Colours** are integers, sRGB (`0xffd9a0`).
-- **Asset references** are content addresses (`eido:sha256/<64 hex>`,
-  `sha256:<64 hex>`), resolved at the write door: a stored value never holds a
-  mutable path. The door's one helper is shared/protocol/assetref.js
-  `atWrite`: a `model` path or name → its content address when the server's
-  catalogue can say what its bytes are (server/modelcatalogue.ts: the
-  library original's sha256; otherwise kept as written); a `particles`
-  Essential's name → its pinned document's address
-  (shared/particle_effects.js `ESSENTIAL_ADDRESSES`; readers still read it as
-  that Essential); a `grass` preset → its strokes, the name dropped (an
-  unknown preset is refused), and the first protocol's makeGrass knobs → the
-  flora spelling. Each rewrite is noted in the reply, and the load repairs a
-  stored value the same way (§4). The sky's presets already worked so: the
-  fold never sees a preset name.
+- **Asset references are stored as written** (R 10-17, binding: "definitely
+  serve path again alongside hash"): a `model` is its library path, a
+  `particles` Essential its name, a `grass` preset its name. That is the
+  portable reference: a world loads anywhere the library, or the code that
+  ships the Essentials and presets, exists. What the bytes were rides beside
+  it as one of the content addresses, `sha256:<64 hex>` (the one spelling a
+  value is written in: `model-hash`, `copy-of.from`, a script's `src`, an
+  uploaded effect), never instead of it: the authority stamps `model-hash`
+  when its catalogue already knows the hash (server/modelcatalogue.ts hashes
+  the library original at measure, off the request; the authority never
+  hashes), drops it when the model changes to one it can't hash, and nothing
+  breaks when it is absent or the host's index is lost. An
+  `eido:sha256/<64 hex>` value stored before is still read (and a model one
+  becomes its path at first load, §4). The door's one rewrite is a spelling,
+  not a resolution (shared/protocol/assetref.js `atWrite`): the first
+  protocol's makeGrass knobs → the flora spelling, noted in the reply; an
+  unknown grass preset is refused.
 - **An enum member a reader doesn't know** makes the reader treat the whole
   component as absent (never as a guessed member).
 - **Policy numbers** (capacity, script settings, access limits): an absent
