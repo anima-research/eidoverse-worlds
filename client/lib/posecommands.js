@@ -8,6 +8,8 @@
 //   EW.pose({ ... }, { target: 'mythos' })    ask someone else (their client decides)
 //   EW.pose({ ... }, 'mythos')                a name alone is the target too
 //   EW.pose(null)  /  EW.clearPose()          release the whole pose; with a target, theirs
+//   EW.pose({}, { replace: true })            a whole pose of no bones, a release too, as is the same with the
+//                                             bones left out; with a target, theirs
 //   EW.pose()                                 what you hold now, unchanged (with a target, or bones {}
 //                                             merged over theirs, nothing is sent)
 //   EW.clearPose('mythos')

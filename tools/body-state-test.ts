@@ -99,6 +99,15 @@ try {
   const brief = await read(peer, { who: owner.name });
   check("...and the summary names it too", eq(brief.unreadableBones, ["rightUpperArm"])
     && brief.summary.includes("1 unreadable: rightUpperArm"), brief.summary);
+  // A bone the stand-in lacks and a name every object has (constructor) are
+  // named in the bones detail's unmappedBones, and the rest of the pose is read.
+  const odd = { leftUpperArm: turned, tailTip: turned, constructor: turned };
+  owner.setPose(odd as any); owner.tick();
+  await until(() => eq(peer.people.get(owner.name)?.pose?.pose, odd));
+  const unmapped = await read(peer, { who: owner.name, detail: "bones" });
+  check("a bone the stand-in lacks and an inherited name are named in unmappedBones, and the rest of the pose is read", unmapped.ok
+    && eq([...(unmapped.unmappedBones ?? [])].sort(), ["constructor", "tailTip"]) && near(unmapped.joints?.leftUpperArm?.rotation, turned),
+    JSON.stringify({ ok: unmapped.ok, error: unmapped.error, unmapped: unmapped.unmappedBones }));
   owner.setPose(null); owner.tick();
   await until(() => !peer.people.get(owner.name)?.pose?.pose);
   for (const clip of ["swim", "tread"]) {

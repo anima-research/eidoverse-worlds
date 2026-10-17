@@ -131,8 +131,10 @@ Examples:
   the pose is still evaluated. Every reply that reads a body carries
   `unreadableBones` (null when the pose can't be read at all), and the
   summary names them. A refused argument, a body that isn't present, or
-  one that changed or left while its skeleton loaded gets an error reply
-  without it.
+  one that left, or became another body or avatar, while its skeleton
+  loaded gets an error reply without it. A body whose posture isn't
+  evaluated, such as one whose clip changed while its skeleton loaded,
+  gets an error reply that still reads its published pose, and carries it.
 - Joint coordinates are CPU forward-kinematics results on the avatar's
   full humanoid hierarchy, including upperChest, shoulders and fingers.
   Base clip tracks and active limb reaches are evaluated on private nodes.

@@ -2,7 +2,8 @@
 //
 //   bun tools/pose-release-probe.ts
 //
-// Needs a Chromium that tools/probe-harness.mjs can find. A run takes about a minute.
+// Needs a Chromium that tools/probe-harness.mjs can find. How long a run takes depends on the machine: a page's
+// load and join may wait up to three minutes, and each check up to 30 s, so a failing run can take several minutes.
 //
 // A scratch world this run owns (tools/probe-harness.mjs ownedWorld, proved by its nonce) serves a fixture body
 // from a scratch library (tools/body-fixture.ts). Two people join it in the full client: "poser" and "held", and
@@ -10,9 +11,9 @@
 // EW.clearPose('held'), EW.pose(null, 'held') and a replace with no bones named. Each request is a puppet message
 // the world routes to held (server/messages.ts), which held's client applies to its own body
 // (client/lib/localbody.js) and streams like any other pose. So each step is judged where a person sees it: on
-// held's page, the pose its body holds (EW.myState.pose) and the hint bar ("poser posed you", "poser released your
-// pose"); on poser's page, the pose held's avatar holds as poser's client draws it (avatar.js keeps it as the
-// avatar's pose override, which it eases in and out each frame).
+// held's page, the pose its body holds (EW.myState.pose), the hint bar ("poser posed you", "poser released your
+// pose") and its own avatar as drawn; on poser's page, held's avatar as poser's client draws it. A drawn avatar
+// is read from its pose override (avatar.js), each bone's target rotation while it eases in.
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,45 +59,59 @@ try {
   const arm = { leftUpperArm: [0, 0, 0.3, Math.sqrt(0.91)] };
   const heldPose = () => held.evaluate(() => JSON.stringify((globalThis as any).EW.myState.pose ?? null));
   const hints = () => held.evaluate(() => (globalThis as any).__hints.slice() as string[]);
-  // held's avatar as poser's client draws it: the pose it holds, and whether it is easing in (wantWeight 1).
+  // held's avatar as a page draws it (avatar.js setPose and clearPose): each bone its pose override holds, with
+  // its target rotation, while it is easing in (wantWeight 1); null when it holds none or is easing out. On
+  // poser's page that is held's remote avatar; on held's own page it is held's own avatar, which the client's
+  // held-pose system sets from EW.myState.pose every frame (client/main.js).
   const drawn = () => poser.evaluate(() => {
     const o = (globalThis as any).EW.remotes.get("held")?.avatar?._override;
-    return o?.kind === "pose" && o.wantWeight === 1 ? [...o.targets.keys()].sort() : null;
+    return o?.kind === "pose" && o.wantWeight === 1 ? Object.fromEntries([...o.targets].map(([b, q]: [string, any]) => [b, [q.x, q.y, q.z, q.w]])) : null;
   });
+  const own = () => held.evaluate(() => {
+    const o = (globalThis as any).EW.me()?._override;
+    return o?.kind === "pose" && o.wantWeight === 1 ? Object.fromEntries([...o.targets].map(([b, q]: [string, any]) => [b, [q.x, q.y, q.z, q.w]])) : null;
+  });
+  // The arm as sent: one bone, its rotation within a millionth in each component.
+  const holdsArm = (d: Record<string, number[]> | null) => !!d && Object.keys(d).join() === "leftUpperArm"
+    && d.leftUpperArm.every((v, i) => Math.abs(v - arm.leftUpperArm[i]) < 1e-6);
   const until = async (what: () => Promise<boolean>, ms = 30000) => {
     const end = Date.now() + ms;
     while (Date.now() < end) { if (await what()) return true; await new Promise((r) => setTimeout(r, 100)); }
     return false;
   };
-  const posed = async (how: string) => {
+  // Each step counts the hint bar's lines before it sends its request, since held's page can show the hint before
+  // a read taken after the request returns.
+  const posed = async (how: string, request: () => Promise<unknown>) => {
     const from = (await hints()).length;
+    await request();
     const applied = await until(async () => (await heldPose()) === JSON.stringify(arm));
     check(`${how}: held's body takes the pose`, applied, await heldPose());
     check("...its hint bar says poser posed it", await until(async () => (await hints()).slice(from).includes("poser posed you")), JSON.stringify((await hints()).slice(from)));
-    const seen = await until(async () => JSON.stringify(await drawn()) === JSON.stringify(["leftUpperArm"]));
-    check("...and poser's page draws held's avatar holding it", seen, JSON.stringify(await drawn()));
+    check("...held's page draws its body holding it", await until(async () => holdsArm(await own())), JSON.stringify(await own()));
+    check("...and poser's page draws held's avatar holding it", await until(async () => holdsArm(await drawn())), JSON.stringify(await drawn()));
   };
-  const released = async (how: string) => {
+  // Each release starts from the pose drawn on both pages, read before the request goes, so letting go means it was
+  // there and then wasn't.
+  const released = async (how: string, request: () => Promise<unknown>) => {
     const from = (await hints()).length;
+    const before = { own: await own(), drawn: await drawn() };
+    await request();
     const let_go = await until(async () => (await heldPose()) === "null");
     check(`${how}: held's body lets the pose go`, let_go, await heldPose());
     check("...its hint bar says poser released it", await until(async () => (await hints()).slice(from).includes("poser released your pose")), JSON.stringify((await hints()).slice(from)));
-    const seen = await until(async () => (await drawn()) === null);
-    check("...and poser's page draws held's avatar letting it go", seen, JSON.stringify(await drawn()));
+    check("...held's page draws its body letting it go",
+      holdsArm(before.own) && await until(async () => (await own()) === null), `before ${JSON.stringify(before.own)}, now ${JSON.stringify(await own())}`);
+    check("...and poser's page draws held's avatar letting it go",
+      holdsArm(before.drawn) && await until(async () => (await drawn()) === null), `before ${JSON.stringify(before.drawn)}, now ${JSON.stringify(await drawn())}`);
   };
 
-  await poser.evaluate((a) => (globalThis as any).EW.pose(a, "held"), arm);
-  await posed("EW.pose(bones, 'held')");
-  await poser.evaluate(() => (globalThis as any).EW.clearPose("held"));
-  await released("EW.clearPose('held')");
-  await poser.evaluate((a) => (globalThis as any).EW.pose(a, { target: "held" }), arm);
-  await posed("EW.pose(bones, {target: 'held'})");
-  await poser.evaluate(() => (globalThis as any).EW.pose(null, "held"));
-  await released("EW.pose(null, 'held')");
-  await poser.evaluate((a) => (globalThis as any).EW.pose(a, "held"), arm);
-  await posed("posed again");
-  await poser.evaluate(() => (globalThis as any).EW.pose(undefined, { replace: true, target: "held" }));
-  await released("EW.pose(undefined, {replace: true, target: 'held'})");
+  await posed("EW.pose(bones, 'held')", () => poser.evaluate((a) => (globalThis as any).EW.pose(a, "held"), arm));
+  await released("EW.clearPose('held')", () => poser.evaluate(() => (globalThis as any).EW.clearPose("held")));
+  await posed("EW.pose(bones, {target: 'held'})", () => poser.evaluate((a) => (globalThis as any).EW.pose(a, { target: "held" }), arm));
+  await released("EW.pose(null, 'held')", () => poser.evaluate(() => (globalThis as any).EW.pose(null, "held")));
+  await posed("posed again", () => poser.evaluate((a) => (globalThis as any).EW.pose(a, "held"), arm));
+  await released("EW.pose(undefined, {replace: true, target: 'held'})",
+    () => poser.evaluate(() => (globalThis as any).EW.pose(undefined, { replace: true, target: "held" })));
   // poser's own body is left alone throughout.
   check("poser's own body holds no pose", await poser.evaluate(() => (globalThis as any).EW.myState.pose == null));
   check("neither page threw", !errs.poser.length && !errs.held.length, JSON.stringify(errs));

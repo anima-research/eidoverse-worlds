@@ -291,7 +291,10 @@ try {
     if (!body) throw new Error("the headless sim is unavailable");
     threw = "";
     try { body.begin({ x: 0, z: 0, yaw: 0, pose: odd }); } catch (e) { threw = String(e); }
-    check("...and a fall from it starts", !threw && !!body.rd, threw);
+    // the fall starts from the pose as laid: the spine's published rotation on the headless stand-in's node
+    const spine = (body as any).av.nodes.spine?.quaternion;
+    check("...and a fall from it starts, from the rest of the pose laid", !threw && !!body.rd && !!spine && spine.equals(new THREE.Quaternion(...q).normalize()),
+      threw || JSON.stringify(spine?.toArray()));
   }
 
   // An arm's length is the solver's: a held scale on it doesn't lengthen it.
