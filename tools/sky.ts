@@ -20,7 +20,7 @@ const fail = (why: string) => { console.error(`sky → ${world}: ${why}`); try {
 const timer = setTimeout(() => fail("no answer from the world in 10 s"), 10_000);
 ws.onerror = () => fail("socket error");
 ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id, replica: true, token: process.env.EW_TOKEN ?? "",
-  ...(process.env.EW_AGENT_TOKEN ? { agentToken: process.env.EW_AGENT_TOKEN, agent: true } : {}) }));
+  ...(process.env.EW_AGENT_TOKEN ? { agentToken: process.env.EW_AGENT_TOKEN, declares: "agent" } : {}) }));
 ws.onmessage = (ev) => {
   const m = JSON.parse(String(ev.data));
   if (m.type === "error") fail(m.error);

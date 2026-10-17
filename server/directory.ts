@@ -20,13 +20,14 @@ import crypto from "node:crypto";
 import { readLog, worldIdOf } from "../shared/protocol/fold.js";
 import { directoryFileIn } from "./keyfiles.ts";
 
-export type Entry = { name: string; subs: string[]; kind: "human" | "agent" | "anon" | "imported"; since: number; world?: string; renamedAt?: number };
+// kind is about the ACCOUNT, never what holds it (PROTOCOL §6a rule 3): "account" (one is bound), "anon" (none: a guest),
+// "imported" (a name from an imported log, no account yet). Files written before 10-17 said "human"/"agent": read as "account".
+export type Entry = { name: string; subs: string[]; kind: "account" | "anon" | "imported"; since: number; world?: string; renamedAt?: number };
 type File = { v: 1 | 2; ids: Record<string, Entry> };
 
 const B32 = "abcdefghijklmnopqrstuvwxyz234567";
 export const mintId = () => "u-" + Array.from(crypto.randomBytes(20), (b) => B32[b & 31]).join("");
 export const isMinted = (s: string) => /^u-[a-z2-7]{20}$/.test(s);
-const kindOfSub = (sub: string) => (sub.startsWith("agent:") || sub.startsWith("aid1:") ? "agent" : "human");
 
 /** `existingWorlds`: the world ids already in this server, read only on the one-time v1 → v2 upgrade (they keep their
  *  server-wide ids). */
@@ -41,14 +42,16 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
   }
   const keyOf = (sub: string, _world?: string | null) => sub;   // server-wide: the same person in every world
   const byKey = new Map<string, string>();
+  // a file written before 10-17 kept an inferred "human"/"agent": read as "account" (§6a rule 3: nothing infers what holds one)
+  const unkind = (e: Entry) => { if ((e.kind as string) === "human" || (e.kind as string) === "agent") e.kind = "account"; return e; };
   const index = (id: string, e: Entry) => { for (const s of e.subs) byKey.set(e.world ? `${s}|${e.world}` : s, id); };
-  for (const [id, e] of Object.entries(d.ids)) index(id, e);
+  for (const [id, e] of Object.entries(d.ids)) index(id, unkind(e));
   const anon = new Map<string, Entry>();   // in memory only: an anonymous id is never written, never outlives the process
   // two writers (the CLI tools and a running server) share this file: re-read and merge before every write, so neither
   // drops the other's entries (M2). Ours win on a clash (the same id can only be minted by one of them).
   const save = () => {
     const disk = fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, "utf8")) as File) : null;
-    if (disk) for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id]) { d.ids[id] = e; index(id, e); }
+    if (disk) for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id]) { d.ids[id] = unkind(e); index(id, e); }
     fs.mkdirSync(path.dirname(file), { recursive: true }); const tmp = `${file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(d, null, 1), { mode: 0o600 }); fs.renameSync(tmp, file); fs.chmodSync(file, 0o600);
   };
@@ -57,17 +60,17 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
   // an account re-reads before minting, or the server would hand a translated world's owner a fresh, roleless id
   const refresh = () => { if (!fs.existsSync(file)) return;
     const disk = JSON.parse(fs.readFileSync(file, "utf8")) as File;
-    for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id]) { d.ids[id] = e; index(id, e); } };
+    for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id]) { d.ids[id] = unkind(e); index(id, e); } };
   const add = (e: Entry) => { let id = mintId(); while (d.ids[id] || anon.has(id)) id = mintId(); d.ids[id] = e; index(id, e); save(); return id; };
   const get = (id: string) => d.ids[id] ?? anon.get(id) ?? null;
   return {
     /** The id for a connection in a world: its account's id there (minted on first sight; the display name kept
      *  current), or, with no account, a fresh anonymous id held in memory only. `world` is the world's id (its
      *  genesis hash); without it the id is server-wide (tools, tests, legacy worlds). */
-    resolve({ sub, name, agent = false, world = null }: { sub?: string | null; name: string; agent?: boolean; world?: string | null }): string {
+    resolve({ sub, name, world = null }: { sub?: string | null; name: string; world?: string | null }): string {
       if (sub) { let id = byKey.get(keyOf(sub, world)); if (!id) { refresh(); id = byKey.get(keyOf(sub, world)); }
         if (id) { if (d.ids[id].name !== name) { d.ids[id].name = name; save(); } return id; }
-        return add({ name, subs: [sub], kind: agent ? "agent" : kindOfSub(sub), since: now() }); }
+        return add({ name, subs: [sub], kind: "account", since: now() }); }
       let id = mintId(); while (d.ids[id] || anon.has(id)) id = mintId();
       anon.set(id, { name, subs: [], kind: "anon", since: now() });
       return id;
@@ -78,7 +81,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     bind(id: string, sub: string) { const e = d.ids[id]; if (!e) throw new Error(`no identity ${id}`);
       const k = e.world ? `${sub}|${e.world}` : sub;
       const prev = byKey.get(k); if (prev && prev !== id) throw new Error(`${sub} already wears ${prev}${e.world ? " in that world" : ""}`);
-      if (!e.subs.includes(sub)) e.subs.push(sub); if (e.kind === "imported") e.kind = kindOfSub(sub); byKey.set(k, id); save(); },
+      if (!e.subs.includes(sub)) e.subs.push(sub); if (e.kind === "imported") e.kind = "account"; byKey.set(k, id); save(); },
     /** the id an account already wears in a world, if any (read-only: the translator plans before it writes) */
     idOfSub: (sub: string, world: string | null = null): string | null => byKey.get(keyOf(sub, world)) ?? null,
     /** add identities planned elsewhere (the translator's, once its log is written); never overwrites one */

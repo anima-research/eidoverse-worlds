@@ -26,8 +26,8 @@ const file = path.join(tmp, "worlds", ".directory.json");
   ok(twin !== ann, "D4 two people with one name are two identities");
   const a1 = d.resolve({ name: "Ann" }), a2 = d.resolve({ name: "Ann" });
   ok(a1 !== a2 && a1 !== ann && d.entry(a1)?.kind === "anon", "D5 with no account, every connection is a fresh identity, never anyone else's", [a1, a2]);
-  const bot = d.resolve({ sub: "agent:rowan", name: "Rowan", agent: true });
-  ok(d.entry(bot)?.kind === "agent", "D6 an agent's account makes an agent identity");
+  const bot = d.resolve({ sub: "agent:rowan", name: "Rowan" });
+  ok(d.entry(bot)?.kind === "account", "D6 an enrolled account is an account like any other (no kind of participant: §6a rule 3)");
   const leg = d.imported("Bea"); d.bind(leg, "human:discord:333");
   ok(d.resolve({ sub: "human:discord:333", name: "Bea" }) === leg, "D7 binding an account to a legacy identity lets that account wear it");
   let threw = false; try { d.bind(leg, "human:discord:111"); } catch { threw = true; }

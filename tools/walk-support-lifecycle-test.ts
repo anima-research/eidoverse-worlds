@@ -116,7 +116,7 @@ try{
  const g=make();g.entities.set("sealed",ent("sealed",sealed));
  const sent:any[]=[];(g as any).ws={send:(m:string)=>sent.push(JSON.parse(m)),close(){}};
  const seated=()=>{
-  g.pos={x:.5,y:1.2,z:.5};g.setSeat({to:"chair"});g.pins.set("hand_l",[1,1,1]);
+  g.pos={x:.5,y:1.2,z:.5};g.setOccupant({to:"chair"});g.pins.set("hand_l",[1,1,1]);
   g.heldPose={chest:[0,0,0,1]};g.clip="ragdoll";g.speed=0;
  };
  seated();

@@ -25,7 +25,6 @@ import { readMeter, authorityTime } from "./readmeter.ts";
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string, until?: number | null) => void; sweep?: (w: World) => void };
 type Any = any;
 const READS = WIRE_READS;
-const KIND_WORD: Record<string, string> = { human: "person", agent: "agent", anon: "guest", imported: "imported name (no account bound yet)" };
 
 /** whois {name} — a name → identity lookup through the authority's directory, scoped to THIS world: the people present now,
  *  and every identity this world's log, roles or moderator log names. Never the whole directory (a name typed here
@@ -37,12 +36,16 @@ export function whois(w: World, args: Any) {
   const q = typeof args?.name === "string" ? args.name.trim() : typeof args?.id === "string" ? args.id.trim() : "";
   if (!q || q.length > 128) return { ok: false, refused: { code: "shape", reason: "whois {name} (or {id: 'u-…'})", fix: "the name someone goes by here, as their nameplate shows it" } };
   const log = w.log!; const dir = directoryFor(WORLDS_DIR);
-  const here = new Map<string, string>(); for (const c of w.clients) if (c.actorId && !c.spectator) here.set(c.actorId, c.id);
+  const here = new Map<string, string>(), said = new Map<string, string>();
+  for (const c of w.clients) if (c.actorId && !c.spectator) { here.set(c.actorId, c.id); if (c.declares) said.set(c.actorId, c.declares); }
   const known = new Set<string>([...here.keys(), ...log.knownIds()]);
   const want = foldName(q);
   if (!want && !/^u-[a-z2-7]{20}$/.test(q)) return { ok: false, refused: { code: "shape", reason: `"${q.slice(0, 40)}" has no letters or digits to look up`, fix: "the name someone goes by here, as their nameplate shows it" } };
   const people = [...known].filter((id) => id === q || (dir.nameOf(id) != null && foldName(dir.nameOf(id)!) === want) || (here.has(id) && foldName(here.get(id)!) === want))
-    .map((id) => ({ id, name: here.get(id) ?? dir.nameOf(id) ?? id, kind: KIND_WORD[dir.entry(id)?.kind ?? ""] ?? "unknown", role: log.roleOf(id), here: here.has(id), banned: isBanned(log.live, id) }));
+    .map((id) => { const k = dir.entry(id)?.kind;
+      // no kind of participant (§6a rule 3): their own declared word while here, else nothing; the account facts (a guest, an
+      // imported name with no account yet) are about the account, never about what holds it
+      return { id, name: here.get(id) ?? dir.nameOf(id) ?? id, ...(said.has(id) ? { declares: said.get(id) } : {}), ...(k === "anon" ? { guest: true } : k === "imported" ? { imported: true } : {}), role: log.roleOf(id), here: here.has(id), banned: isBanned(log.live, id) }; });
   return { ok: true, name: q, people, ...(people.length ? {} : { note: `nobody called "${q}" has been in this world (it only knows people who were here)` }) };
 }
 const reads = readMeter(); // per connection: reads and dry runs, by count and authority time (security pass 2 H-A)
@@ -208,7 +211,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     if (!c.world) return err("join a world first");
     if (c.spectator) return err("spectators can't found worlds — join embodied");
     if (c.anonymous || !c.account) return err("founding a world needs a signed-in account (a guest's world would have no one to own it)");
-    if (/^(agent|aid1):/.test(c.account) || directoryFor(WORLDS_DIR).entry(actorOf(c))?.kind === "agent") return err("an agent's account doesn't found worlds here — the server's operator can found one for it");
+    if (/^(agent|aid1):/.test(c.account)) return err("an agent's account doesn't found worlds here — the server's operator can found one for it");
     const name = String(msg.name ?? "").trim().toLowerCase().slice(0, 64);
     const r = foundOwnedWorld(name, actorOf(c), c.account, typeof msg.title === "string" ? msg.title : undefined, worldExists);
     if (!r.ok) return err(r.err);

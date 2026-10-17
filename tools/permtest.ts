@@ -51,11 +51,11 @@ try {
   {
     const fake = await open({ id: "claude" });
     check("an enrolled agent's name without its bearer is refused", fake.closedWith === 4004 || fake.errors.some((e) => e.includes("reserved")), JSON.stringify([fake.closedWith, fake.errors]));
-    const real = await open({ id: "claude", agentToken: "permtest-cl-bearer", agent: true });
+    const real = await open({ id: "claude", agentToken: "permtest-cl-bearer", declares: "agent" });
     const snap = real.msgs.find((m) => m.type === "snapshot");
     check("the enrolled agent with its own bearer joins under its name", snap?.you === "claude", JSON.stringify(snap?.you ?? real.errors));
     check("…and is flagged an agent with a directory identity", /^u-/.test(snap?.cut?.you ?? ""), snap?.cut?.you);
-    const other = await open({ id: "claude", agentToken: "not-a-bearer", agent: true });
+    const other = await open({ id: "claude", agentToken: "not-a-bearer", declares: "agent" });
     check("a wrong bearer for the name is refused", other.closedWith === 4004, JSON.stringify([other.closedWith, other.errors]));
     for (const s of [fake, real, other]) try { s.ws.close(); } catch { /* closed */ }
   }

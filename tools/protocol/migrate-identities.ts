@@ -42,7 +42,7 @@ for (const dir of dirs) {
     const name = dec(k) ?? k;
     const acct = sub ?? (agents.has(name.toLowerCase()) ? `agent:token:${name.toLowerCase()}` : trust ? `local:${name.toLowerCase()}` : undefined);
     const key = acct ?? `name:${name}`; let id = memo.get(key) ?? (acct ? directory.idOfSub(acct) : null);
-    if (!id) { id = mintId(); planned[id] = { name, subs: acct ? [acct] : [], kind: acct?.startsWith("agent:") ? "agent" : acct ? "human" : "imported", since: Date.now() }; }
+    if (!id) { id = mintId(); planned[id] = { name, subs: acct ? [acct] : [], kind: acct ? "account" : "imported", since: Date.now() }; }
     memo.set(key, id); return id; };
   // role values may carry a sub: that person's account, first, so their acts land on the same id
   for (const [c, v] of Object.entries<any>(oldSt.entities["@world"]?.c ?? {})) if (c.startsWith("roles:") && typeof v?.sub === "string") who(c.slice(6), v.sub);

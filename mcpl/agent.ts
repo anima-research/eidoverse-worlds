@@ -7,7 +7,7 @@
 import { bodyOf } from "../shared/components.js";
 import { DEFAULT_PRESET, KIND_CLASS, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/protocol/consent.js";
 import { kindOf } from "../shared/protocol/kind.js";
-import { describeBody, mayLeave, resolveSeat, socketsUnder, unseatedFromMine, unseatedAt } from "../shared/sockbody.js";
+import { describeBody, mayLeave, resolveSeat, socketsUnder, vacatedFromMine, vacatedAt } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
 import { r3 } from "../shared/protocol/round.js";
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
@@ -332,6 +332,9 @@ export function voiceNote(pose: unknown): string {
 
 export class WorldAgent {
   url: string; name: string; world: string; avatar: string; agentToken = "";
+  /** The status this body declares at join (PROTOCOL §6a): "agent" unless told otherwise (AGENT_DECLARES; "" declares
+   *  nothing). The harness chooses it; the server relays it and never sets it from the credential. */
+  declares: string | null = "agent";
   ws: WebSocket | null = null;
   joined = false;
   pos = { x: 0, y: 0, z: 0 };
@@ -399,7 +402,7 @@ export class WorldAgent {
   private simTicker: ReturnType<typeof setInterval> | null = null;
   private walkDone: ((arrived: boolean) => void) | null = null;
   // ---- the authority's track of this body (E1, tools audit 10-07: "two bodies") ----
-  // The authority keeps its own body for every actor (authority.js PHYSICS_VERBS.move: 6 m/s, 4 m at most in one go, not
+  // The authority keeps its own body for every actor (authority.js EMBODIED_VERBS.move: 6 m/s, 4 m at most in one go, not
   // through what it calls solid) and every hand verb measures from it. A person's client streams `move` steps to it
   // (client/lib/thingphysics.js track); this body walks the same way: it asks the authority for each stretch BEFORE it
   // walks it, so a wall the authority refuses stops this body exactly where the authority's stops.
@@ -487,7 +490,7 @@ export class WorldAgent {
   mayLeaveSeat(kind: "move" | "jump" | "menu" | "script" | "escape") { const b: any = this.mySeatBody(); return !b || mayLeave(b, kind) || !this.seatOf(this.mySeat!.to); }
   /** The authority's body inbox (PROTOCOL L6), pushed by the server as it fills: an ask waiting for ME (someone's act met
    *  an `ask` cell of my table; 20 s, silence is no) is said with how to answer it through `act`; the replies to my own asks,
-   *  acts delivered to my body, revocations and being let off a seat (`unseated`) are said in the authority's words. */
+   *  acts delivered to my body, revocations and being let go from what I occupy (`vacated`) are said in the authority's words. */
   bodyInbox(messages: any) {
     for (const m of Array.isArray(messages) ? messages : []) {
       if (!m || typeof m !== "object") continue;
@@ -495,11 +498,11 @@ export class WorldAgent {
       if (m.type === "body-ask" && m.ask) { const a = m.ask; const left = typeof a.expires === "number" ? Math.max(1, Math.round((a.expires - ts) / 1000)) : 20;
         text = `${a.summary ?? `${a.from} asks to ${a.kind}`}${a.why ? ` — "${a.why}"` : ""} (consent class ${KIND_CLASS[a.kind] ?? a.kind}; about ${left} s to answer, silence is no): act {verb: "consent", args: {answer: ${JSON.stringify(a.id)}, yes: true}} allows it this once, yes: false refuses`; }
       else if (m.type === "body-reply") text = m.ok ? `your ask ${m.ask} was allowed${m.applied ? " and done" : ""}` : `your ask ${m.ask} was refused: ${m.why ?? "no"}`;
-      else if (m.type === "body") text = `${m.from} ${m.kind === "touch" ? "touched" : m.kind === "shove" ? "knocked over" : m.kind === "drag" || m.kind === "carry" ? "moved" : m.kind === "seat" ? "seated" : "posed"} you${m.spec?.point ? ` (${m.spec.point})` : ""} (consent: ${m.consent})`;
-      else if (m.type === "unseated") {   // review r9 M3: an edit by someone else moved the seat I sat on, and the authority let me go
-        if (unseatedFromMine(m, this.mySeat)) { const on = this.seatName(m.seat); this.setSeat(null);
+      else if (m.type === "body") text = `${m.from} ${m.kind === "touch" ? "touched" : m.kind === "shove" ? "knocked over" : m.kind === "drag" || m.kind === "carry" ? "moved" : m.kind === "occupy" ? "placed" : "posed"} you${m.spec?.point ? ` (${m.spec.point})` : ""} (consent: ${m.consent})`;
+      else if (m.type === "vacated") {   // review r9 M3: an edit by someone else moved the seat I sat on, and the authority let me go
+        if (vacatedFromMine(m, this.mySeat)) { const on = this.seatName(m.socket); this.setOccupant(null);
           // stand where the authority let me go (its track of my body starts again there, r9 M2)
-          const at = unseatedAt(m); if (at) { this.pos.x = at[0]; this.pos.y = at[1]; this.pos.z = at[2]; }
+          const at = vacatedAt(m); if (at) { this.pos.x = at[0]; this.pos.y = at[1]; this.pos.z = at[2]; }
           text = `${typeof m.by === "string" ? this.nameOfActor(m.by) ?? m.by : "someone"} moved ${on}, the seat you were on, so you are standing where it was${typeof m.why === "string" ? ` (${m.why})` : ""}`; } }
       else if (m.type === "body-revoked") text = `${m.by} withdrew consent for ${m.class}: what you were doing to their body has ended`;
       else if (m.type === "reach-refused") {   // the relay took a hand of mine out of my pose: nobody saw it (server/reachgate.ts)
@@ -512,7 +515,7 @@ export class WorldAgent {
     }
   }
   /** sit on a thing's seat socket (presence: my frames carry {to: <socket id>}), or stand (null) */
-  setSeat(seat: { to: string; pose?: string; at?: number } | null) {
+  setOccupant(seat: { to: string; pose?: string; at?: number } | null) {
     this.mySeat = seat;
     if (seat) this.mounts.set(this.name, { ...seat }); else this.mounts.delete(this.name);
   }
@@ -715,14 +718,14 @@ export class WorldAgent {
   private spelling: Promise<unknown> = Promise.resolve();
   /** replica: this body folds the world's log stream itself (the server refuses a client that doesn't). */
   private joinMsg() {
-    return { type: "join", world: this.world, id: this.name, avatar: this.avatar, agent: true, replica: true,
+    return { type: "join", world: this.world, id: this.name, avatar: this.avatar, ...(this.declares ? { declares: this.declares } : {}), replica: true,
       token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken };
   }
   private pendingRequests = new Map<string, (m: any) => void>();
   private pendingDebug = new Map<string, (m: any) => void>();
   private histId = 0;
 
-  constructor(opts: { url?: string; name?: string; world?: string; avatar?: string; agentToken?: string } = {}) {
+  constructor(opts: { url?: string; name?: string; world?: string; avatar?: string; agentToken?: string; declares?: string | null } = {}) {
     this.url = opts.url ?? process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws";
     this.name = opts.name ?? process.env.AGENT_NAME ?? "claude";
     this.world = opts.world ?? process.env.WORLD_NAME ?? "commons";
@@ -730,6 +733,7 @@ export class WorldAgent {
     // The agent's own bearer (the one that opened the MCPL door). Forwarded at
     // join so the sequencer can verify the name — agent names are reserved.
     this.agentToken = opts.agentToken ?? process.env.AGENT_TOKEN ?? "";
+    { const d = opts.declares !== undefined ? opts.declares : process.env.AGENT_DECLARES ?? "agent"; this.declares = d || null; }
   }
 
   /** The key this body joined with, as the Bearer header the world's state reads take (/snap, /worlds, /geom?world:
@@ -1041,7 +1045,7 @@ export class WorldAgent {
             this.restoredPose = true;
             // a (re)join: the authority's track of this body ended when it left, so the next walk arrives again
             this.trackArrived = false; this.trackAt = null;
-            for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, !!p.agent); if (typeof p.actorId === "string") this.actorIds.set(p.id, p.actorId); }
+            for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, p.declares === "agent"); if (typeof p.actorId === "string") this.actorIds.set(p.id, p.actorId); }
             // adopt the authority's cut and read the view of this body's own fold of it; the snapshot's `state` is the
             // chat window (chat isn't world state): its lines land in the inbox once, as history
             if (!(msg as any).cut?.state) { this.closed = true; clearTimeout(timeout); reject(new Error("the server sent no world cut (an old server?)")); break; }
@@ -1119,9 +1123,12 @@ export class WorldAgent {
               break;
             }
             if (msg.unpin != null) {
-              // pulling one of this body's nails — agents accept, as they
-              // accept being posed: being directed is the point. The live sim
-              // lets go of that joint and the body sags from what remains.
+              // pulling one of this body's nails: the server has already
+              // checked this body's consent table (one table and one preset
+              // for every body, PROTOCOL §6a), and this runtime applies what
+              // reached it (the browser re-reads its strangers row: one shared
+              // final word is open, research parity #13). The live sim lets go
+              // of that joint and the body sags from what remains.
               const j = String(msg.unpin.joint ?? "");
               if (this.pins.delete(j)) this.body?.setPin(j, null);
               break;
@@ -1210,7 +1217,7 @@ export class WorldAgent {
           case "arrive":
             // the people map is truth and updates NOW; the narration goes
             // through the gate, where a reconnect flap collapses to nothing
-            this.rememberBody(msg.id, msg.avatar, null, !!msg.agent);
+            this.rememberBody(msg.id, msg.avatar, null, msg.declares === "agent");
             if (typeof msg.actorId === "string") this.actorIds.set(msg.id, msg.actorId);
             this.gate.presence(msg.id, "arrive");
             break;
@@ -1304,9 +1311,9 @@ export class WorldAgent {
     return this.bodyReader.readWindow(who === "self" ? this.name : who, detail, points, windowMs, id => this.bodyObservation(id));
   }
 
-  /** Is this participant an agent? The server flags agent sessions in both
-   *  the join snapshot (`present[].agent`) and `arrive` broadcasts; this is
-   *  the reader the denoiser and chat-tagging lean on. */
+  /** Has this participant DECLARED itself an agent (PROTOCOL §6a)? The server relays a declaration in the join
+   *  snapshot (`present[].declares`) and `arrive` broadcasts, and never infers one; an undeclared agent reads false.
+   *  This is the reader the denoiser and chat-tagging lean on (their own filter over a declared field). */
   isAgent(who: string): boolean {
     return !!this.people.get(who)?.agent;
   }
@@ -3289,7 +3296,7 @@ export class WorldAgent {
     }
     // and deciding to walk IS getting off the seat — a folded mount otherwise
     // glues this body to its socket on every renderer, wherever the feet go
-    if (this.joined && this.mySeat && this.mayLeaveSeat("menu")) this.setSeat(null);
+    if (this.joined && this.mySeat && this.mayLeaveSeat("menu")) this.setOccupant(null);
     // and stand on the ground you got up onto: with colliders loaded, the floor under the feet found from where the body
     // is (a body seated upstairs stands up upstairs, #235); the planner's support answer otherwise
     const supportAt = support.kind === "terrain" ? (wx: number, wz: number) => this.heightAt(wx, wz) : () => support.height;
@@ -3736,17 +3743,17 @@ export class WorldAgent {
     const to = [r3(this.pos.x), r3(this.pos.y), r3(this.pos.z)];
     const take = (r: any, at: number[]) => { this.trackArrived = true; this.trackAt = Array.isArray(r?.at) ? r.at : at; return { ok: true as const }; };
     if (this.trackArrived && this.trackAt && Math.hypot(this.trackAt[0] - to[0], this.trackAt[1] - to[1], this.trackAt[2] - to[2]) < 0.05) return { ok: true };
-    let r = await this.request("move", { to, ...(this.trackArrived ? {} : { client: "agent" }) });
+    let r = await this.request("move", { to });
     if (r?.ok) return take(r, to);
     let code = r?.refused?.code;
     if (code === "not-joined" || code === "unknown-verb") return { open: true };
     if (code === "not-here") {   // the authority forgot this body (it left): arrive again
-      this.trackArrived = false; r = await this.request("move", { to, client: "agent" });
+      this.trackArrived = false; r = await this.request("move", { to });
       if (r?.ok) return take(r, to); code = r?.refused?.code; }
     if (code === "spawn") {
       const sp = (this.replica?.st?.entities?.["@world"]?.c as any)?.spawn;
       const at = Array.isArray(sp?.pos) && sp.pos.length === 3 && sp.pos.every(Number.isFinite) ? sp.pos.map(Number) : null;
-      if (at) { r = await this.request("move", { to: at, client: "agent" });
+      if (at) { r = await this.request("move", { to: at });
         if (r?.ok) { this.pos.x = at[0]; this.pos.y = at[1]; this.pos.z = at[2];
           this.lastWalkNote = `this world's arrivals are at its spawn (${at.map((n: number) => n.toFixed(1)).join(", ")}): you arrived there and walked on from it`;
           return take(r, at); } }
@@ -4356,7 +4363,7 @@ export class WorldAgent {
       this.pos.y = this.feetGround(true);
     }
     // and standing up IS getting off the seat
-    if (clip === "idle" && this.joined && this.mySeat && this.mayLeaveSeat("menu")) this.setSeat(null);
+    if (clip === "idle" && this.joined && this.mySeat && this.mayLeaveSeat("menu")) this.setOccupant(null);
     this.clip = clip;
   }
 

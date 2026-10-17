@@ -2,7 +2,7 @@
 // the rate over everything an actor makes the log hold, locks and lock levels, the rights a write needs (lacks, rights,
 // needWords), keyed components and owner seniority, grants and role definitions (refactor split, 2026-10-17; moved from
 // authority.js's "L7: the one gate" section unchanged; its value checks are authority/checks.js, capacity
-// authority/capacity.js). seatRights (riders') and serverWritten (the write path's) are above it, reached through UP.
+// authority/capacity.js). occupyRights (occupants.js's) and serverWritten (the write path's) are above it, reached through UP.
 import { DEFAULT_WHO, grabOf } from "../../grab.js";
 import { cowState, applyCow, checkIJSON, isEntityId, isComponent, jcs, PURGED } from "../fold.js";
 import { PERSON_ID } from "../ids.js";
@@ -16,13 +16,13 @@ import { ancestors } from "./math.js";
 import { socketRules, actionRules, liftOps } from "./sockets.js";
 import { RANK, backward, creatorOf, effective, lastSetterOf, may, ownersOf, rankOf, roleOf, wcOf, whoRank } from "./rights.js";
 import { installCheck, particlesCheck, pauseOnly, pausedBy, scriptRights, sponsorOf } from "./scripts.js";
-import { unseatWhy, unseatsFor } from "./riders.js";
+import { vacateWhy, vacatesFor } from "./occupants.js";
 import { capacityCheck } from "./capacity.js";
 import { restCheck, valueCheck } from "./checks.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const guess = (...a) => UP.guess(...a);
-const seatRights = (...a) => UP.seatRights(...a);
+const occupyRights = (...a) => UP.occupyRights(...a);
 const serverWritten = (...a) => UP.serverWritten(...a);
 
 // ---------- L7: the one gate ----------
@@ -58,7 +58,7 @@ const RATE = { n: 60, says: 20, ms: 10000, bytes: 256 * 1024, anonBytes: 32 * 10
 const SAY_MAX = 8192;
 const bytesOf = (e) => e.bytes ?? JSON.stringify(e).length;
 // FOLLOW_UP / followUp (the authority's own follow-up ops inside a person's write): authority/storage.js
-class Admitted { constructor(who, ops, after, notes = [], unseat = [], followUps = []) { this.who = who; this.ops = ops; this.after = after; this.notes = notes; this.unseat = unseat; this.followUps = followUps; Object.freeze(this); } }
+class Admitted { constructor(who, ops, after, notes = [], vacate = [], followUps = []) { this.who = who; this.ops = ops; this.after = after; this.notes = notes; this.vacate = vacate; this.followUps = followUps; Object.freeze(this); } }
 // L7 rate, per actor, over EVERYTHING the actor makes the log hold (acts and says), by the authority's clock. One function:
 // admit calls it for state writes, and every word that logs without a state write (say, grab's lift, throw, drop, a
 // teleport) calls it before appending. The lab has no agents (`for` is unwritten until keys, L4), so "that actor's
@@ -154,8 +154,8 @@ function admit(w, st, who, ops) {
     if (op.verb === "set" && op.comp.startsWith("script:")) prevOf.set(op, s.entities[op.id]?.c[op.comp]); // the value just before it
     applyCow(s, [op]); norm.push(op); // one entity copied per op it touches, not the world (s is this write's own copy)
   });
-  seatRights(w, st, s, who, role, norm.filter((o) => !fuOps.has(o)), made);
-  const unseat = CTX.forking || who.lifting ? [] : unseatsFor(w, st, who, norm);
+  occupyRights(w, st, s, who, role, norm.filter((o) => !fuOps.has(o)), made);
+  const vacate = CTX.forking || who.lifting ? [] : vacatesFor(w, st, who, norm);
   capacityCheck(w, st, s, who, norm);
   for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: CTX.forking || !!who.lifting }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
   { const bad = socketRules(s, new Set(norm.map((o) => o.id))); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
@@ -167,7 +167,7 @@ function admit(w, st, who, ops) {
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
   if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§7: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
   if (cap?.kind === "rest") restCheck(w, cap, s);
-  return new Admitted(who, norm, s, unseat.length ? [...lifted.notes, ...unseat.map((u) => ({ who: u.who, unseated: true, seat: u.seat, why: unseatWhy(u) }))] : lifted.notes, unseat,
+  return new Admitted(who, norm, s, vacate.length ? [...lifted.notes, ...vacate.map((u) => ({ who: u.who, vacated: true, socket: u.socket, why: vacateWhy(u) }))] : lifted.notes, vacate,
     norm.flatMap((o, i) => (fuOps.has(o) ? [i] : [])));
 }
 // A lock binds everyone, the locker and owners included (§5). `throughLock: true` on the request lets anyone who may

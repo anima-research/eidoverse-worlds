@@ -30,7 +30,7 @@ export function worldOf(io) {
   const w = { name, entries, getBlob, putBlob, exists: entries.length > 0, catalogue: io.catalogue ?? null };
   w.worldId = entries[0] && !(entries[0] instanceof Malformed) ? worldIdOf(entries[0]) : null;
   w.random = io.random ?? null;
-  w.kindOf = io.kindOf ?? null; // id → human|agent|anon|legacy (the directory): an anonymous identity gets a smaller budget
+  w.kindOf = io.kindOf ?? null; // id → account|anon|imported (the directory: about the account, never what holds it, §6a); only "anon" is read (a guest gets a smaller budget)
   w.nameOf = io.nameOf ?? null; // id → display name (the authority's directory, §2.3); null = old escaped ids only
   w.now = io.now;
   // presence pacing (the speed track): a clock of elapsed ms that no wall-clock step moves; null = pace by w.now
@@ -42,6 +42,9 @@ export function worldOf(io) {
   w.present = io.present ?? null;
   // the presence plane: bodies and holds. Transient, never logged (P1, P2)
   w.presence = io.presence ?? { bodies: {}, holds: {} };
+  // a presence file written before R 10-17 13:46 named who occupies what `seats`: read it as `occupants`, keep only the new key
+  if (w.presence.seats && !w.presence.occupants) w.presence.occupants = w.presence.seats;
+  delete w.presence.seats;
   w.savePresence = () => io.savePresence?.(w.presence);
   // Governance keys (§2.4) live outside the log. Custody is authority practice (§5 identity), injected like storage:
   // io.custody = { sequencer() → "ed25519:…", keyOf(who, make?) → "ed25519:…" | null } (server/filehost.ts keeps the keys).

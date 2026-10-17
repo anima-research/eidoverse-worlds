@@ -339,6 +339,10 @@ function sendGeomFollowup(w: World, c: Client) {
 // can finally be exercised without a live socket. Bodies moved verbatim;
 // refusal `return`s became `return null`.
 
+/** A join's declared status (PROTOCOL §6a): one short lowercase word of its own ("agent", "ai", …), else undeclared (null). */
+function declarationOf(v: unknown): string | null {
+  return typeof v === "string" && /^[a-z][a-z0-9-]{0,23}$/.test(v) ? v : null;
+}
 function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, reason?: string): void }, msg: any, auth: HnSession | null): World | null {
     // A malformed world name is a bad LINK, not a bad actor — refuse it
     // with an explanation and a close code the client knows not to retry
@@ -430,7 +434,10 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       }
     }
     c.spectator = Boolean(msg.spectate) || c.surface !== "world";
-    c.agent = Boolean(msg.agent);
+    // a status the participant DECLARES (PROTOCOL §6a): optional, presence only, relayed with arrive and the snapshot's
+    // present list, never inferred from the credential, the client or anything else, never logged, never read by a gate.
+    // Absent is undeclared: no word is assumed. One short lowercase word; anything else is no declaration.
+    c.declares = declarationOf(msg.declares) ?? undefined;
     c.renderer = Boolean(msg.renderer);
     if (c.renderer) c.spectator = true; // renderers are invisible by definition
     // ---- who this join is: an ACCOUNT, proven by this join's credential (C1/C2) ----
@@ -457,7 +464,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         account = viaEnrolment ? `agent:token:${viaEnrolment.toLowerCase()}` : `aid1:${a.payload.iss}:${a.payload.sub}`;
         agentName = viaEnrolment ?? a.slug;
       }
-      if (agentName) { c.id = nameAtDoor(agentName.slice(0, LIMITS.ID_LEN), { typed: false }).name; c.tokenVerified = true; c.agent = true; }   // an aid1 slug is the credential issuer's: no markup in it either
+      if (agentName) { c.id = nameAtDoor(agentName.slice(0, LIMITS.ID_LEN), { typed: false }).name; c.tokenVerified = true; }   // an aid1 slug is the credential issuer's: no markup in it either. The credential proves WHO (the enrolment, the reserved name), never what kind: §6a
       if (at.names.has(c.id.toLowerCase()) && account !== `agent:token:${c.id.toLowerCase()}`) {
         console.log(`[perm] join refused: "${c.id}" is a reserved agent name (no proof of that enrolment)`);
         ws.send(JSON.stringify({ type: "error", error: `"${c.id}" is a reserved agent name` }));
@@ -510,7 +517,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // A world's actor is an OPAQUE id from the authority's directory (server/directory.ts, never logged), reached only
     // through an account; one per account across the authority's worlds; anonymous ids live in memory only (M2). Typing someone's name
     // never yields their id, so it never yields their role.
-    c.actorId = directoryFor(WORLDS_DIR).resolve({ sub: c.account ?? null, name: c.id, agent: !!c.tokenVerified });
+    c.actorId = directoryFor(WORLDS_DIR).resolve({ sub: c.account ?? null, name: c.id });
     if (c.renamed && c.actorId) directoryFor(WORLDS_DIR).markRenamed(c.actorId);
     // Bans — checked once identity is SETTLED (id/sub/reserved names all
     // resolved above), before the body enters. A global ban closes every
@@ -726,7 +733,7 @@ export function sanctionSweep(w: World) {
     if (ghost !== was) {
       c.ghostHidden = ghost;
       if (ghost) { for (const t of w.clients) if (t !== c) { try { t.ws.send(JSON.stringify({ type: "leave", id: c.id })); } catch { /* gone */ } } w.scripts.onPresence("leave", c.id, c.actorId); }
-      else { w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, actorId: c.actorId, ...(c.anonymous ? { guest: true } : {}) }, c); w.scripts.onPresence("enter", c.id, c.actorId); }
+      else { w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, ...(c.declares ? { declares: c.declares } : {}), actorId: c.actorId, ...(c.anonymous ? { guest: true } : {}) }, c); w.scripts.onPresence("enter", c.id, c.actorId); }
     }
     const mine = JSON.stringify([ghost, x?.mute?.until ?? null, x?.mute?.channels ?? null]);
     if (c.sanctionKey !== mine) { const first = c.sanctionKey === undefined; c.sanctionKey = mine;
@@ -783,7 +790,7 @@ function buildSnapshot(w: World, c: Client) {
         // settledPose, not lastPose: a joiner must not inherit someone
         // else's mid-ragdoll frame (#61). Same normalization `restore`
         // above already gets via rememberPose.
-        id: o.id, avatar: o.avatar, pose: settledPose(o.lastPose), agent: o.agent,
+        id: o.id, avatar: o.avatar, pose: settledPose(o.lastPose), ...(o.declares ? { declares: o.declares } : {}),   // §6a: relayed as declared; absent = undeclared
         // a world: the identity the log and roles know them by (granting a role names this id, never a name)
         ...(o.actorId ? { actorId: o.actorId } : {}),
         ...(w.log && o.anonymous ? { guest: true } : {}),   // no account: the people list's 'guest' badge (research roles S6)
@@ -952,7 +959,7 @@ const server = Bun.serve({
           ws.send(JSON.stringify(buildSnapshot(w, c)));
           sendGeomFollowup(w, c);
           if (w.log) { c.ghostHidden = w.isGhost(c); }   // a ghost arrives unseen (PLAN 10-06); the sweep shows them when it ends
-          if (!c.spectator && !c.ghostHidden) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, ...(c.actorId ? { actorId: c.actorId } : {}), ...(w.log && c.anonymous ? { guest: true } : {}) }, c);
+          if (!c.spectator && !c.ghostHidden) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, ...(c.declares ? { declares: c.declares } : {}), ...(c.actorId ? { actorId: c.actorId } : {}), ...(w.log && c.anonymous ? { guest: true } : {}) }, c);
           if (w.log) sanctionSweep(w);   // a voice mute in force is re-applied on join (keyed on the identity, never a name)
           if (!c.spectator && !c.ghostHidden) w.scripts.onPresence("enter", c.id, c.actorId);   // scripts don't sense a ghost
           // Whispers that arrived while this identity was away. Held in memory

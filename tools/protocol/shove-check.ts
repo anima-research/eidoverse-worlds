@@ -30,15 +30,15 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["not in flight", "protocol/authority/manipulate.js", "if (flying) refuse(\"in-flight\"", "if (false) refuse(\"in-flight\"", ["S6"]],
   ["along the ground", "protocol/authority/manipulate.js", "if (vh < 1e-6 || vy < 0 || vy > SHOVE.lift * vh + 1e-9) refuse(\"shape\"", "if (false) refuse(\"shape\"", ["S9"]],
   ["a shove carries v", "protocol/authority/manipulate.js", "refuse(\"shape\", \"a shove carries v", "(\"shape\", \"a shove carries v", ["S9"]],
-  ["occupied: a seat", "protocol/authority/riders.js", "if (who !== actor && s && fam.has(s.to)) return { who, how: \"sits on\" };", "if (false) return { who, how: \"sits on\" };", ["S12", "S21"]],
-  ["occupied: the seat is kept", "protocol/authority/use.js", "if (probe.attach?.to) setSeat(w, actor, probe.attach.to, probe.near);", "", ["S12", "S21", "S22"]],
-  ["occupied: a seat is left by walking off", "protocol/authority/riders.js", "if (Math.hypot(to[0] - p[0], to[2] - p[2]) > 1) clearSeat(w, actor);", "", ["S12", "S21"]],
+  ["occupied: a seat", "protocol/authority/occupants.js", "if (who !== actor && s && fam.has(s.to)) return { who, how: \"sits on\" };", "if (false) return { who, how: \"sits on\" };", ["S12", "S21"]],
+  ["occupied: the seat is kept", "protocol/authority/use.js", "if (probe.attach?.to) setOccupant(w, actor, probe.attach.to, probe.near);", "", ["S12", "S21", "S22"]],
+  ["occupied: a seat is left by walking off", "protocol/authority/occupants.js", "if (Math.hypot(to[0] - p[0], to[2] - p[2]) > 1) clearOccupant(w, actor);", "", ["S12", "S21"]],
   ["occupied: one body per socket", "protocol/authority/use.js", "{ const t = taken(pick); if (t) refuse(\"occupied\"", "{ const t = null; if (t) refuse(\"occupied\"", ["S22"]],
   ["occupied: the free socket is picked", "protocol/authority/use.js", "ok.find((x) => !taken(x)) ?? ok[0]", "ok[0]", ["S22"]],
   ["occupied: snap passes over a sat-in socket", "protocol/authority/manipulate.js", "if (sat?.who) { out.notes.push(", "if (false) { out.notes.push(", ["S23"]],
-  ["occupied: a thing in a socket", "protocol/authority/riders.js", "const thing = Object.keys(st.entities).find((k) => st.entities[k].c.parent?.to === sock); return thing ? { thing } : null; }", "return null; }", ["S24"]],
-  ["occupied: a switched-off socket is no seat", "protocol/authority/riders.js", "isSocketC(st.entities[s.to]?.c) && !offChain(st, s.to) ? s : null; }", "isSocketC(st.entities[s.to]?.c) ? s : null; }", ["S22"]],
-  ["occupied: standing on it", "protocol/authority/riders.js", "boxes.some((x) => feetOn(x, b.at))) return { who, how: \"is standing on\" };", "false) return { who, how: \"is standing on\" };", ["S13"]],
+  ["occupied: a thing in a socket", "protocol/authority/occupants.js", "const thing = Object.keys(st.entities).find((k) => st.entities[k].c.parent?.to === sock); return thing ? { thing } : null; }", "return null; }", ["S24"]],
+  ["occupied: a switched-off socket is no seat", "protocol/authority/occupants.js", "isSocketC(st.entities[s.to]?.c) && !offChain(st, s.to) ? s : null; }", "isSocketC(st.entities[s.to]?.c) ? s : null; }", ["S22"]],
+  ["occupied: standing on it", "protocol/authority/occupants.js", "boxes.some((x) => feetOn(x, b.at))) return { who, how: \"is standing on\" };", "false) return { who, how: \"is standing on\" };", ["S13"]],
   ["occupied: the kick asks too", "protocol/authority/bodyverbs.js", "    occupiedRefuse(w, st, a.id, actor, \"punted\");\n", "", ["S12", "S13"]],
   ["occupied: the grab asks too", "protocol/authority/bodyverbs.js", "    occupiedRefuse(w, st, a.id, actor, \"picked up\");\n", "", ["S12"]],
   ["in-the-way", "protocol/authority/manipulate.js", "&& sweptCovers(b, a.v, bd.at))", "&& false)", ["S15"]],
@@ -255,7 +255,7 @@ const cases: Case[] = [
   { id: "S21", what: "S12 on socket children: bob sits on the chair's seat child, and the authority records his seat as {to: <the socket>}; vic's shove, kick and grab of the chair are refused occupied; once bob walks off, the shove goes", run(s) { cast(s);
       s.call("olive", "create", { id: "chair", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" }, grabbable: {} }, place: { at: [4, 0] } });
       s.call("olive", "create", { id: "chair-seat", components: { parent: { to: "chair" }, transform: { pos: [0, 0.45, 0] }, socket: { name: "seat", body: { action: "sit" } } } });
-      s.call("bob", "move", { to: [4, 0, -0.6] }); const sit = s.call("bob", "use", { id: "chair", action: "sit" }); const rec = JSON.stringify(s.w().presence.seats?.bob ?? null);
+      s.call("bob", "move", { to: [4, 0, -0.6] }); const sit = s.call("bob", "use", { id: "chair", action: "sit" }); const rec = JSON.stringify(s.w().presence.occupants?.bob ?? null);
       s.call("vic", "move", { to: [4, 0, -0.62] });
       const sh = s.call("vic", "punt", { id: "chair", v: [0, 0.2, 1.5], shove: true }), kick = s.call("vic", "punt", { id: "chair", power: 3 }), grab = s.call("vic", "grab", { id: "chair" });
       s.call("bob", "move", { to: [4, 0, -3.5] }, 1000); const after = s.call("vic", "punt", { id: "chair", v: [0, 0.2, 1.5], shove: true });

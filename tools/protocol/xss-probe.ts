@@ -221,7 +221,7 @@ try {
     const mine = await evalJson(`import('/lib/controller.js').then((m) => m.myState.pos.toArray())`);
     let rq = 0; const wreq = async (verb: string, args: any) => { const id = `q${++rq}`; wren.send({ type: "request", id, verb, args }); const t0 = Date.now(); while (Date.now() - t0 < 5000) { const r = wren.msgs.find((m) => m.type === "reply" && m.id === id); if (r) return r; await sleep(50); } return null; };
     const mv = await wreq("move", { to: [mine[0] + 1, mine[1], mine[2]] });   // the authority tracks bodies that moved (presence); a pose needs no reach
-    const mv2 = await evalJson(`import('/lib/net.js').then((m) => m.sendRequest('move', { to: ${JSON.stringify(mine.map((n: number) => Math.round(n * 1000) / 1000))}, client: 'human' }))`);   // and mine (in play, thingphysics does this on arrival)
+    const mv2 = await evalJson(`import('/lib/net.js').then((m) => m.sendRequest('move', { to: ${JSON.stringify(mine.map((n: number) => Math.round(n * 1000) / 1000))} }))`);   // and mine (in play, thingphysics does this on arrival)
     check("(Q setup) both bodies are in the world at the authority (move)", mv?.ok === true && mv2?.ok === true, { wren: mv, me: mv2 });
     const r1 = await wreq("body", { to: victim, kind: "pose", spec: { head: [0, 0, 0, 1] } });
     const askId = r1?.reply?.ask;

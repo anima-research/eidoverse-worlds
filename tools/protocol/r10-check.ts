@@ -10,9 +10,9 @@
 //       wasn't boarded within reach never re-anchors the track; the first step off clears the seat (L5)
 //   H   a follow-up restore steps over the follow-up delete it reverses (holes M2): an undo after a delete that dropped a
 //       handler gives it back to its author (and every authorship reader agrees); a key re-created by someone else is a new life
-//   A   the auditor's stand-ins are valid identities of two kinds (holes M3, L3); an arrival mismatch is `rerun-anon`, never `rerun`
+//   A   the auditor's stand-ins are valid identities of two shapes (holes M3, L3); an arrival mismatch is `rerun-anon`, never `rerun`
 //   F   the authority's consequences are follow-ups (scars M3): resettle is the system's act; a delete's set-down passes no lock
-//   U   unseated: sent when a socket goes or is switched off (holes L6); the browser and agent stand at its `at` (claims O1);
+//   U   vacated: sent when a socket goes or is switched off (holes L6); the browser and agent stand at its `at` (claims O1);
 //       a follow-up on the seat isn't an edit of the ride (claims O3)
 //   L   lows: undo drops references to things gone since (holes L1); a prototype key isn't a body verb (holes L2)
 //   X   the spec says it (holes M4 / scars M1, M2, M5; claims R1–R7)
@@ -29,9 +29,9 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 // [name, file under the tree, find, replace, rows]
 // [name, file under the tree, find, replace, rows]
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["a sit from anywhere", "shared/protocol/authority/use.js", "if (!inSitReach(from, sp, SIT_REACH.lag)) refuse(", "if (false) refuse(", ["S1"]],
-  ["every seat re-anchors", "shared/protocol/authority/riders.js", "|| w.presence.seats?.[who]?.near !== true) return null;", ") return null;", ["S2"]],
-  ["the first step keeps the seat", "shared/protocol/authority/bodyverbs.js", "if (w.presence.seats?.[actor]) clearSeat(w, actor); }", "}", ["S3"]],
+  ["a sit from anywhere", "shared/protocol/authority/use.js", "if (!inSitReach(from, sp, OCCUPY_REACH.lag)) refuse(", "if (false) refuse(", ["S1"]],
+  ["every seat re-anchors", "shared/protocol/authority/occupants.js", "|| w.presence.occupants?.[who]?.near !== true) return null;", ") return null;", ["S2"]],
+  ["the first step keeps the seat", "shared/protocol/authority/bodyverbs.js", "if (w.presence.occupants?.[actor]) clearOccupant(w, actor); }", "}", ["S3"]],
   ["lastTouch: a restore doesn't step over its delete", "shared/protocol/authority/followups.js", "if (o.verb === \"delete\" && restored) { restored = false; continue; } return null; }", "return null; }", ["H1"]],
   ["creatorOf: a restore doesn't step over its delete", "shared/protocol/authority/rights.js", "if (o.verb === \"delete\" && fu.has(k) && restored && comp !== undefined", "if (false && comp !== undefined", ["H2"]],
   ["lastSetterOf: a restore doesn't step over its delete", "shared/protocol/authority/rights.js", "if (restored) { restored = false; continue; } }   // r9 H1, r10 M2", "}", ["H2"]],
@@ -39,13 +39,13 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["sponsorAt: a restore doesn't step over its delete", "shared/protocol/scriptaudit.js", "{ restored = false; continue; }   // r10 M2", "{ restored = false; }   // r10 M2", ["H2"]],
   ["the stand tile held does nothing", "client/lib/localbody.js", "if ((keys.has('KeyX') || escapeTile) && !mayLeave(body, 'menu'))", "if (keys.has('KeyX') && !mayLeave(body, 'menu'))", ["E1"]],
   ["creatorOf merges a new life", "shared/protocol/authority/rights.js", "if (o.verb === \"set\" && o.comp === comp) restored = false;", "", ["H3"]],
-  ["the second stand-in is person-shaped", "shared/protocol/scriptaudit.js", "export const ARRIVAL_STAND_IN_2 = \"zq-stand-in\";", "export const ARRIVAL_STAND_IN_2 = \"u-\" + \"b\".repeat(20);", ["A1", "A2"]],
+  ["the second stand-in is minted-shaped", "shared/protocol/scriptaudit.js", "export const ARRIVAL_STAND_IN_2 = \"zq-stand-in\";", "export const ARRIVAL_STAND_IN_2 = \"u-\" + \"b\".repeat(20);", ["A1", "A2"]],
   ["an arrival mismatch is a forgery", "shared/protocol/scriptaudit.js", "if (anonWho) { flags.push({ seq, check: \"rerun-anon\"", "if (false) { flags.push({ seq, check: \"rerun-anon\"", ["A3"]],
   ["resettle under the asker", "shared/protocol/authority/followups.js", "let after = after0; const actor = \"system\";", "let after = after0; const actor = asker;", ["F1"]],
   ["the set-down is the deleter's write", "shared/protocol/authority/writes.js", "ops.push(followUp(setOp(id, \"transform\", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] })));", "ops.push(setOp(id, \"transform\", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] }));", ["F2"]],
-  ["no unseated when a socket goes", "shared/protocol/authority/writes.js", "if (typeof to === \"string\") inboxPush(w.presence, who, { type: \"unseated\"", "if (false) inboxPush(w.presence, who, { type: \"unseated\"", ["U1"]],
-  ["the browser ignores unseated.at", "client/lib/localbody.js", "dismountMe('script', unseatedAt(u))", "dismountMe('script')", ["U2"]],
-  ["the ride counts follow-ups as edits", "shared/protocol/authority/riders.js", "(lastTouch(w, from, key, { authored: true })?.seq ?? Infinity) < since", "(lastTouch(w, from, key)?.seq ?? Infinity) < since", ["U3"]],
+  ["no vacated when a socket goes", "shared/protocol/authority/writes.js", "if (typeof to === \"string\") inboxPush(w.presence, who, { type: \"vacated\"", "if (false) inboxPush(w.presence, who, { type: \"vacated\"", ["U1"]],
+  ["the browser ignores vacated.at", "client/lib/localbody.js", "dismountMe('script', vacatedAt(u))", "dismountMe('script')", ["U2"]],
+  ["the ride counts follow-ups as edits", "shared/protocol/authority/occupants.js", "(lastTouch(w, from, key, { authored: true })?.seq ?? Infinity) < since", "(lastTouch(w, from, key)?.seq ?? Infinity) < since", ["U3"]],
   ["undo restores references to things gone since", "shared/protocol/authority/undo.js", "const nv = since.size ? withoutRefs(id, comp, old, since) : old;", "const nv = old;", ["L1"]],
   ["a body verb read through the prototype", "mcpl/tools.ts", "if (Object.hasOwn(BODY_VERBS, verb)) return", "if (BODY_VERBS[verb]) return", ["L2"]],
   ["CONTROL (no-op: must stay green)", "shared/protocol/authority/gate.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
@@ -124,7 +124,7 @@ const comp = (s: any, id: string, c: string) => s.w().state().entities[id]?.c[c]
 const roles = (s: any, m: Record<string, string>) => { for (const [who, role] of Object.entries(m)) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } }); };
 const lastUse = (s: any) => s.entries().findLast((e: any) => e.kind === "act" && e.verb === "use");
 const SEAT = (extra: any = {}) => ({ sockets: { a: { pos: [0, 0.45, 0], body: { action: "sit", ...extra } } } });
-const seated = (s: any, who: string) => !!s.w().presence.seats?.[who];
+const seated = (s: any, who: string) => !!s.w().presence.occupants?.[who];
 const inboxOf = (s: any, who: string) => JSON.stringify(s.w().presence.inbox?.[who] ?? s.w().presence.inboxes?.[who] ?? null);
 
 const RT = await import(TREE + "shared/protocol/authority/rights.js");
@@ -159,18 +159,18 @@ const cases: Case[] = [
       const m1 = s.call("vic", "move", { to: [17, 0, -0.6] });
       const at = s.w().presence.bodies.vic?.at; const logged = s.entries().slice(n0).map((e: any) => `${e.kind} ${e.verb}${e.body?.refused ? " refused" : ""}`);
       const near = s.call("vic", "use", { id: "stool", action: "sit" });
-      return { tp: show(tp), sit: show(sit), m1: show(m1), at, logged, near: show(near), seat: s.w().presence.seats?.vic ?? null }; },
+      return { tp: show(tp), sit: show(sit), m1: show(m1), at, logged, near: show(near), seat: s.w().presence.occupants?.vic ?? null }; },
     good: (o) => /^refused spawn/.test(o.tp) && /^refused out-of-reach/.test(o.sit) && /^refused too-fast/.test(o.m1) && JSON.stringify(o.at) === "[-18,0,0]" && o.logged.every((x: string) => / refused$/.test(x)) && o.near === "ok" && o.seat?.near === true },
   { id: "S2", what: "(holes M1 b) a seat not boarded within reach (no `near`: a presence file from before r10, or a body not tracked when it sat) never re-anchors the track: the step off is measured from where the body was", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "visitor", bob: "builder" });
       s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [20, 0] } });
       s.call("vic", "move", { to: [0, 0, 0] });
-      s.w().presence.seats = { vic: { to: Object.keys(s.w().state().entities).find((k) => s.w().state().entities[k].c.parent?.to === "chair"), since: s.entries().length } };
+      s.w().presence.occupants = { vic: { to: Object.keys(s.w().state().entities).find((k) => s.w().state().entities[k].c.parent?.to === "chair"), since: s.entries().length } };
       const m = s.call("vic", "move", { to: [20, 0, -0.6] });
       // …and an edit unseating such a rider leaves the track where it was (no `at`)
-      s.w().presence.seats = { vic: { to: Object.keys(s.w().state().entities).find((k) => s.w().state().entities[k].c.parent?.to === "chair"), since: s.entries().length } };
+      s.w().presence.occupants = { vic: { to: Object.keys(s.w().state().entities).find((k) => s.w().state().entities[k].c.parent?.to === "chair"), since: s.entries().length } };
       const mv = s.call("bob", "set", { id: "chair", component: "transform", value: { pos: [24, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
-      const msg = (s.w().presence.inbox?.vic ?? []).find?.((x: any) => x.type === "unseated");
+      const msg = (s.w().presence.inbox?.vic ?? []).find?.((x: any) => x.type === "vacated");
       return { m: show(m), mv: show(mv), at: s.w().presence.bodies.vic?.at, msgAt: msg?.at ?? null, told: !!msg }; },
     good: (o) => /^refused too-fast/.test(o.m) && o.mv === "ok" && JSON.stringify(o.at) === "[0,0,0]" && o.msgAt === null && o.told },
   { id: "S3", what: "(holes L5) the first step off a seat is the stand-up: under a metre from the seat clears it (not only past 1 m)", run(s) {
@@ -217,7 +217,7 @@ const cases: Case[] = [
           return { creator: RT.creatorOf(W2, "l", "reactions")?.by ?? null, at: AU.creatorAt(W2.entries, "l", "reactions", W2.entries.length - 1)?.rights ?? null }; })() }; },
     good: (o) => o.nw === "ok" && o.creator === "wes" && o.at === "wes" && o.hand.creator === "wes" && o.hand.at === "wes" },
   // ---------------- A: the auditor's stand-ins ----------------
-  { id: "A1", what: "(holes M3, p4) a door's enter script greets people (u-…) and notes agents: an agent arrives (honest log) — no `rerun` flag (verified or listed as not re-runnable); a person arriving verifies clean", run() {
+  { id: "A1", what: "(holes M3, p4) a door's enter script counts minted ids (u-…) and notes other shapes: an identity of another shape arrives (honest log) — no `rerun` flag (verified or listed as not re-runnable); a minted id arriving verifies clean", run() {
       const out: any = {};
       for (const who of ["u-vicvicvicvicvicvicvi", "hesperus"]) { const s = session(); s.call("olive", "create-world", { title: s.name });
         s.call("olive", "create", { id: "door", model: "crate", place: { at: [0, 0] } });
@@ -228,7 +228,7 @@ const cases: Case[] = [
         out[who] = { ins: show(ins), ran: ran?.[0]?.status, flags: A.flags.map((f: any) => f.check), skipped: A.skipped.length, reran: A.reran }; }
       return out; },
     good: (o) => o.hesperus.ins === "ok" && o.hesperus.ran === "ran" && o.hesperus.flags.length === 0 && o.hesperus.skipped + o.hesperus.reran === 1 && o["u-vicvicvicvicvicvicvi"].flags.length === 0 && o["u-vicvicvicvicvicvicvi"].reran === 1 },
-  { id: "A2", what: "(holes L3) both stand-ins are valid identities (§3.1), nobody's, of different kinds: one person-shaped (u- and 20 lowercase), one agent-shaped (no u-)", run() {
+  { id: "A2", what: "(holes L3) both stand-ins are valid identities (§3.1), nobody's, of different shapes: one minted-shaped (u- and 20 lowercase), one of another valid shape (no u-)", run() {
       return { a: AU.ARRIVAL_STAND_IN, b: AU.ARRIVAL_STAND_IN_2, va: F.isIdentity(AU.ARRIVAL_STAND_IN ?? ""), vb: F.isIdentity(AU.ARRIVAL_STAND_IN_2 ?? "") }; },
     good: (o) => o.va && o.vb && /^u-[a-z0-9]{20}$/.test(o.a) && !/^u-/.test(o.b) && o.b === o.b.toLowerCase() },
   { id: "A3", what: "(holes M3) an enter counter (no identity in its result), its change entry rewritten: flagged `rerun-anon` (a mismatch the re-run can't attribute), never plain `rerun`", run(s) {
@@ -259,20 +259,20 @@ const cases: Case[] = [
       const d = s.call("vic", "delete", { id: "crate" });
       return { v: show(v), d: show(d), y: comp(s, "vase", "transform")?.pos?.[1], fu: d.ok ? FU(s, d.seq) : null, lock: comp(s, "vase", "lock")?.rank, creator: RT.creatorOf(s.w(), "vase")?.by ?? null }; },
     good: (o) => o.v === "ok" && o.d === "ok" && Math.abs(o.y) < 1e-6 && JSON.stringify(o.fu) === '["set vase.transform"]' && o.lock === "owner" && o.creator === "olive" },
-  // ---------------- U: unseated ----------------
-  { id: "U1", what: "(holes L6) olive removes the seat vic sits on: vic gets `unseated {seat, at}` in his inbox (as for an edit), and his track restarts at the seat", run(s) {
+  // ---------------- U: vacated ----------------
+  { id: "U1", what: "(holes L6) olive removes the seat vic sits on: vic gets `vacated {socket, at}` in his inbox (as for an edit), and his track restarts at the seat", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "visitor" });
       s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); s.call("vic", "use", { id: "chair", action: "sit" });
-      const sock = s.w().presence.seats?.vic?.to;
+      const sock = s.w().presence.occupants?.vic?.to;
       const del = s.call("olive", "delete", { id: sock });
-      const msg = (s.w().presence.inbox?.vic ?? []).find?.((m: any) => m.type === "unseated");
-      return { del: show(del), seated: seated(s, "vic"), seat: msg?.seat ?? null, sock, at: msg?.at ?? null, track: s.w().presence.bodies.vic?.at, by: msg?.by ?? null }; },
+      const msg = (s.w().presence.inbox?.vic ?? []).find?.((m: any) => m.type === "vacated");
+      return { del: show(del), seated: seated(s, "vic"), seat: msg?.socket ?? null, sock, at: msg?.at ?? null, track: s.w().presence.bodies.vic?.at, by: msg?.by ?? null }; },
     good: (o) => o.del === "ok" && !o.seated && o.seat === o.sock && Array.isArray(o.at) && JSON.stringify(o.at) === JSON.stringify(o.track) && Math.abs(o.at[0] - 4) < 0.01 && o.by === "olive" },
-  { id: "U2", what: "(claims O1) the browser and the agent stand where the authority let them go: one reader (sockbody unseatedAt) of `unseated.at`; the browser's dismount takes it", run() {
-      const f = SK.unseatedAt; const src = readText("client/lib/localbody.js"); const agent = readText("mcpl/agent.ts");
+  { id: "U2", what: "(claims O1) the browser and the agent stand where the authority let them go: one reader (sockbody vacatedAt) of `vacated.at`; the browser's dismount takes it", run() {
+      const f = SK.vacatedAt; const src = readText("client/lib/localbody.js"); const agent = readText("mcpl/agent.ts");
       return { good: f?.({ at: [1, 2, 3] }), bad: f?.({ at: [1, NaN, 3] }), none: f?.({}), short: f?.({ at: [1, 2] }),
-        browser: /dismountMe\('script', unseatedAt\(u\)\)/.test(src) && /if \(at\) off\.set\(at\[0\], at\[1\], at\[2\]\)/.test(src), agent: /unseatedAt\(m\)/.test(agent) }; },
+        browser: /dismountMe\('script', vacatedAt\(u\)\)/.test(src) && /if \(at\) off\.set\(at\[0\], at\[1\], at\[2\]\)/.test(src), agent: /vacatedAt\(m\)/.test(agent) }; },
     good: (o) => JSON.stringify(o.good) === "[1,2,3]" && o.bad === null && o.none === null && o.short === null && o.browser && o.agent },
   { id: "U3", what: "(claims O3) vic rides olive's carousel (set up before he sat); a thing its other handler named is deleted (a follow-up clear on the carousel's reactions); the carousel's turn still carries him", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "visitor" });
@@ -324,11 +324,11 @@ cases.push(
         b2: /\*\*B2\. One predicate, in `admit`, on every op\.\*\*/.test(b) && /follow-ups and system\s+writes/.test(b) && /\*\*at read time\*\*/.test(b) && !/top of `lacks\(\)`/.test(b),
         b5: !/when the grantee leaves the\s+world unless/.test(b) && /It does \*\*not\*\* end when the\s+grantee leaves/.test(b), reserved: /the request\s+`arrive`/.test(b) }; },
     good: (o) => o.b6 && o.b2 && o.b5 && o.reserved },
-  { id: "X4", what: "(claims R4–R7, R9) §8: unlogged grabs carry no identity (releases do), two stand-ins of two kinds, rerun-anon; §5: unseated {seat, by, why, at}, a sit within reach, the stand tile held; COMPONENT-LADDER @12 and later; SCRIPTS and AGENTS say the escape, the ride as when you sat, and where an agent stands", run() {
+  { id: "X4", what: "(claims R4–R7, R9) §8: unlogged grabs carry no identity (releases do), two stand-ins of two shapes, rerun-anon; §5: vacated {socket, by, why, at}, a sit within reach, the stand tile held; COMPONENT-LADDER @12 and later; SCRIPTS and AGENTS say the escape, the ride as when you sat, and where an agent stands", run() {
       const md = PROTO(); const s8 = section(md, /\n## 8\. /); const s5 = section(md, /\n## 5\. /);
       const lad = readText("docs/COMPONENT-LADDER.md"), sc = readText("docs/SCRIPTS.md"), ag = readText("AGENTS.md");
-      return { s8: /a grab that isn't itself logged, records no trigger actor/.test(s8) && /a release\s+always has its own act/.test(s8) && /second stand-in of another kind/.test(s8) && /flagged `rerun-anon`/.test(s8),
-        s5: /`unseated \{seat, by,\s+why, at\}`/.test(s5) && /\(`out-of-reach`\)/.test(s5) && /the stand tile pressed\s+and held/.test(s5),
+      return { s8: /a grab that isn't itself logged, records no trigger actor/.test(s8) && /a release\s+always has its own act/.test(s8) && /second stand-in of another shape/.test(s8) && /flagged `rerun-anon`/.test(s8),
+        s5: /`vacated \{socket, by,\s+why, at\}`/.test(s5) && /\(`out-of-reach`\)/.test(s5) && /the stand tile pressed\s+and held/.test(s5),
         lad: /translate-v1@12 and later/.test(lad), sc: /pressing and holding the stand tile/.test(sc) && /`rerun-anon`/.test(sc),
         ag: /`detach \{escape\?\}`/.test(ag) && /as it was when they sat, carries its riders/.test(ag) && /where you were let go; you stand\s+there/.test(ag) }; },
     good: (o) => o.s8 && o.s5 && o.lad && o.sc && o.ag },

@@ -333,7 +333,7 @@ export function foundWorld(dir: string, name: string, owner: string, title?: str
   // the owner is an account (human:…, agent:…, local:…); a bare name means `local:<name>`, the account a TRUST_NAMES
   // server gives that typed name. Its opaque id comes from the authority directory (round-2 review R1).
   const acct = /^(human|agent|aid1|local):/.test(owner) ? owner : `local:${owner.toLowerCase()}`;
-  const id = directoryFor(path.dirname(dir)).resolve({ sub: acct, name: acct.startsWith("local:") ? owner : acct.split(":").pop()!, agent: /^(agent|aid1):/.test(acct) });
+  const id = directoryFor(path.dirname(dir)).resolve({ sub: acct, name: acct.startsWith("local:") ? owner : acct.split(":").pop()! });
   const r = authorityRequest(w, id, "create-world", { title: title ?? name });
   if (!r.ok) throw new Error(`founding refused: ${JSON.stringify(r.refused)}`);
   return { worldId: w.worldId, owner: id, account: acct, entries: w.entries.length };

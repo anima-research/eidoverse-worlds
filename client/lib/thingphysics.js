@@ -203,7 +203,7 @@ async function track(force = false, { noTeleport = false } = {}) {
   if (moving) { await moving; if (!force) return arrived; }
   const go = async () => {
     if (!arrived) {   // arriving: one act on the record, as an agent's first move is
-      const r = await sendRequest('move', { to: to.map(r3), client: 'human' }); lastMove = { arrive: true, ok: !!r?.ok, refused: r?.refused?.code };
+      const r = await sendRequest('move', { to: to.map(r3) }); lastMove = { arrive: true, ok: !!r?.ok, refused: r?.refused?.code };
       if (r?.ok) { arrived = true; trackedAt = r.at ?? to; }
       if (arrived) { arriveFails = 0; stuck = null; return true; }   // arrived: no leftover back-off (review round 3)
       // refused (review of 5a978cc0: this retried every 200 ms, forever). Back off as a refused step does; and when the
@@ -214,7 +214,7 @@ async function track(force = false, { noTeleport = false } = {}) {
       arriveFails++; stuck = { at: to, until: performance.now() + 2000 * 2 ** Math.min(arriveFails - 1, 3), arrival: true };
       if (['too-fast', 'solid'].includes(r?.refused?.code) && !myHolds().length && performance.now() - lastTeleport > 3000) {
         lastTeleport = performance.now();
-        const t = await sendRequest('move', { to: to.map(r3), teleport: true, client: 'human' }); lastMove = { arrive: true, teleport: true, ok: !!t?.ok, refused: t?.refused?.code };
+        const t = await sendRequest('move', { to: to.map(r3), teleport: true }); lastMove = { arrive: true, teleport: true, ok: !!t?.ok, refused: t?.refused?.code };
         if (t?.ok) { arrived = true; arriveFails = 0; stuck = null; trackedAt = t.at ?? to; return true; }
         if (t?.refused) refused('move', t);
       } else if (r?.refused) refused('move', r);

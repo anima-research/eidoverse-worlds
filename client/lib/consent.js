@@ -73,9 +73,9 @@ export const PRESET_NAMES = Object.keys(PRESETS);
 // A puppet is an input to MY body, applied by MY client — never a pose forced
 // on me from outside. So it goes through the same presence path as my own
 // movement: a pose becomes my held pose (and broadcasts), an animation I play
-// and re-send as mine. Humans opt in (a director staging a scene is welcome; a
-// stranger yanking your limbs is not); agents accept by default, since being
-// directed is the point of a performer.
+// and re-send as mine. Every body opts in, from the same defaults (a director
+// staging a scene is welcome; a stranger yanking your limbs is not): the
+// table and its preset are one for every participant (PROTOCOL §5, §6a).
 //
 // The client's final word reads the STRANGERS row: it cannot tell a friend
 // from a stranger (friendship is the authority's, mutual, stamped), so it
