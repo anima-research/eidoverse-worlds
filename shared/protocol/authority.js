@@ -151,7 +151,7 @@ let FIXTURE_IDS = false;
 export function fixtureIds(on = true) { FIXTURE_IDS = !!on; }
 const UNLOGGED_REFUSALS = new WeakSet();   // a refusal of the placeholder pass names placeholders: the attempt isn't recorded
 // keys whose string value names a thing, and keys whose list does: an undefined placeholder there is refused by name
-const REF_KEYS = new Set(["id", "to", "on", "beside", "hang", "against", "near", "from", "target", "copy", "facing"]);
+const REF_KEYS = new Set(["id", "to", "on", "beside", "hang", "against", "near", "from", "target", "copy", "facing", "attach"]);
 const REF_LISTS = new Set(["targets", "marks", "ids", "refs"]);
 function placeholders(w, verb, args) {
   const creates = verb === "create" ? [[null, args]]
