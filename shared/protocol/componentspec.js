@@ -413,7 +413,7 @@ export const COMPONENTS = {
   // shape audit 10-16 (render-media-env §4): an Essential's NAME is a write-time convenience; the stored effect is the address
   // of that Essential's canonical document (shared/particle_effects.js ESSENTIAL_ADDRESSES, pinned there), so retuning fire in
   // code can't silently change every stored fire (Resonite's PhotonDust lesson). The first protocol's ten fields are gone from
-  // the registry: no v4 value holds them; a v1 bag is read (instanceOf) only by the translator
+  // the registry: no current value holds them; a first-protocol bag is read (instanceOf) only by the translator
   particles: { on: "thing", fields: { effect: "string", part: "string", at: "vec3", seed: "number", playing: "bool", scale: "number", params: "object" },
                defaults: { playing: true, scale: 1 }, required: ["effect"],
                ranges: { scale: { min: 0.01, max: 100 }, part: { maxLen: 64 }, effect: { maxLen: 80 }, at: { min: -8, max: 8 } },

@@ -122,7 +122,7 @@ const cases: Case[] = [
   { id: "K1", what: "label is still a plain string name, and story is still the titled placard {title, text, marks?}", run(s) { cast(s); thing(s, "tree");
       return { l: show(s.call("olive", "set", { id: "tree", component: "label", value: "the first marker tree" })), st: show(s.call("olive", "set", { id: "tree", component: "story", value: { title: "The first marker tree", text: "Mica's fire." } })) }; },
     good: (o) => o.l === "ok" && o.st === "ok" },
-  // shape audit 10-16 (render-media-env §4): the first protocol's ten fields left the registry (no v4 value holds them); the
+  // shape audit 10-16 (render-media-env §4): the first protocol's ten fields left the registry (no current value holds them); the
   // older bag is still READ by instanceOf, for the translator (X9, X10)
   { id: "K2", what: "the particles name registers the instance only; the first protocol's bag is still read (instanceOf), for the translator", run() {
       return { f: Object.keys(CS.COMPONENTS.particles?.fields ?? {}), old: PE.instanceOf?.({ preset: "fire", origin: [0, 1, 0], count: 3 }) }; },
