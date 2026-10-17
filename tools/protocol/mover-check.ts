@@ -116,7 +116,7 @@ if (M) {
     const L7 = boxOf("ledge7"), L9 = boxOf("ledge9"), W = boxOf("wall");
     // the agent's env: a floor map (the client's collider pass answers the same question from the drawn geometry)
     const env = { floorAt: (x, z) => (inXZ(L7, x, z) ? L7.max[1] : inXZ(L9, x, z) ? L9.max[1] : 0), blocked: (box) => (meets(box, W) ? "wall" : meets(box, L9) ? "ledge9" : null) };
-    const arrive = call("ann", "move", { to: [0, 0, 0], client: "agent" }); ok(arrive.ok, "A1 the body arrives at the origin", arrive.refused);
+    const arrive = call("ann", "move", { to: [0, 0, 0] }); ok(arrive.ok, "A1 the body arrives at the origin", arrive.refused);
     // walk +z onto the 0.7 m ledge: every stride the mover takes is a move the authority accepts, at the same spot
     let p = [0, 0, 0], strides = 0, mism = null, refusedAt = null, climbed = false;
     for (let i = 0; i < 60 && !mism && !refusedAt; i++) { const r = walkToward({ pos: p, target: [0, 5], dt: 0.1 }, env); if (r.arrived) break; strides++;
@@ -165,7 +165,7 @@ if (M) {
     const steps = []; let arrived = null;
     try {
       ok(request(w, "olive", "create-world", { title: "pace" }).ok, "A6 a live world");
-      arrived = request(w, "ann", "move", { to: [0, 0, 0], client: "agent" });
+      arrived = request(w, "ann", "move", { to: [0, 0, 0] });
       const back = 1500; Date.now = () => realNow() - back;   // the host's clock sync steps the wall back
       for (let i = 1; i <= 4; i++) { await new Promise((r) => setTimeout(r, 400)); const m = request(w, "ann", "move", { to: [0, 0, 2 * i] }); steps.push(m.ok ? "ok" : m.refused?.reason); }
     } finally { Date.now = realNow; if (pinned !== undefined) process.env.PROTOCOL_NOW = pinned; }
@@ -279,7 +279,7 @@ if (M) {
   call("hill", "olive", "create-world", { title: "hill" });
   ok(ground("hill", HILL).ok, "G0 the hill world's terrain");
   const hH = fieldOf(HILL), envH = envOf(hH, null, []);
-  ok(call("hill", "ann", "move", { to: [0, 0, 0], client: "agent" }).ok, "G0 ann arrives");
+  ok(call("hill", "ann", "move", { to: [0, 0, 0] }).ok, "G0 ann arrives");
   for (const claim of ["mover", "bed"]) {
     const up = agree("hill", "ann", [2, 0], [10, 0], envH, { claim, h: hH });
     ok(up.accepted && up.strides > 30 && near(up.seen.maxY, 2.5, 0.05), `G1 [${claim}] up a terrain slope to the hilltop: every stride the mover takes, the authority accepts at the same mm`, up);
@@ -301,7 +301,7 @@ if (M) {
   for (const d of [D5, D6, ROCK, STONE]) ok(call("pool", "olive", "create", { id: d.id, components: { mesh: { shape: "box", size: d.s }, transform: { pos: d.p } } }).ok, `G0 ${d.id}: its top ${r3(d.p[1] + d.s[1])} m, the water at 0`);
   const solids = [D5, D6, ROCK, STONE].map((d) => ({ id: d.id, box: meshBox(d.p, d.s) }));
   const hP = fieldOf(POOL), envP = envOf(hP, 0, solids);
-  ok(call("pool", "ann", "move", { to: [-12, 0, 0], client: "agent" }).ok, "G0 ann arrives at the pool's edge");
+  ok(call("pool", "ann", "move", { to: [-12, 0, 0] }).ok, "G0 ann arrives at the pool's edge");
   for (const claim of ["mover", "bed"]) {
     const wade = agree("pool", "ann", [-12, 0], [-6.2, 0], envP, { claim, h: hP });
     ok(wade.accepted && wade.seen.wade && !wade.seen.swim, `G2 [${claim}] wading in down the bowl's side: the same verdict, stride for stride`, wade);
@@ -322,7 +322,7 @@ if (M) {
   call("pond", "olive", "create-world", { title: "pond" });
   ok(ground("pond", POND).ok, "G0 the pond's terrain and water");
   const hQ = fieldOf(POND), envQ = envOf(hQ, -0.6, []);
-  ok(call("pond", "ann", "move", { to: [0, -2.6, 0], client: "agent" }).ok, "G0 ann arrives in the pond");
+  ok(call("pond", "ann", "move", { to: [0, -2.6, 0] }).ok, "G0 ann arrives in the pond");
   for (const claim of ["mover", "bed"]) {
     const bank = agree("pond", "ann", [0, 0], [6, 0], envQ, { claim, h: hQ });
     ok(bank.moverRef?.by === "ledge" && bank.authRef && !bank.authRef.ok && /ledge|terrain|bank/.test(`${bank.authRef.code} ${bank.authRef.reason}`) && bank.mism === null && bank.strides > 10,
@@ -384,7 +384,7 @@ if (M) {
   // point part-way up (ground -1.5, wading), from which the bank is a 1.5 m ledge: judged from where it last swam, as the
   // mover's one stride is, it is accepted
   for (const [claim, y] of [["mover", -1.275], ["bed", r3(hP(1.9, 0))]]) {
-    const tp = call("pool", "max", "move", { to: [1.9, y, 0], teleport: true, client: "agent" });
+    const tp = call("pool", "max", "move", { to: [1.9, y, 0], teleport: true });
     ok(tp.ok, `G7 [${claim}] a teleport into the water 0.1 m from the dock's side: the swimmer's box, accepted (a walker's box meets the dock)`, tp.refused);
   }
   { const SLOPE = { amplitude: 0, size: 80, features: [{ type: "flatten", x: 0, z: 0, radius: 4, height: -3, edge: 0.2 }], water: { level: -0.5 } };
@@ -394,7 +394,7 @@ if (M) {
     const m = stepWalk({ pos: from, dir: [1, 0], dt: 0.25, cap: 0.2 }, envL);
     ok(m.blocked === null && near(m.pos[0], 4.2) && near(m.pos[1], 0, 1e-6) && hL(4.1, 0) < -0.5 - 0.8 && hL(4.1, 0) > from[1], "G7 the mover: one stride from swimming at the rim's foot onto the bank (the sweep's mid point stands at ~-1.5, wading)", { m, mid: hL(4.1, 0) });
     for (const [claim, y] of [["mover", 0], ["bed", r3(hL(4.2, 0))]]) {
-      ok(call("slope", "nia", "move", { to: from.map(r3), teleport: true, client: "agent" }).ok, `G7 [${claim}] nia afloat at the rim's foot`);
+      ok(call("slope", "nia", "move", { to: from.map(r3), teleport: true }).ok, `G7 [${claim}] nia afloat at the rim's foot`);
       const r = call("slope", "nia", "move", { to: [4.2, y, 0] });
       ok(r.ok, `G7 [${claim}] the authority: the same stride up the sloped rim, accepted (judged from where it last swam)`, r.refused);
     }
@@ -415,7 +415,7 @@ if (M) {
     ok(call("hm", "olive", "create", { id: "hc2", model: "crate", components: { transform: { pos: [5, 0.5, 5] } } }).ok, "GH1 a thing given its own [x, y, z] is not ground-seated: created");
     const pl = call("hm", "olive", "place", { id: "hc2", at: [-15, 3] });
     ok(!pl.ok && pl.refused?.code === "ground-loading" && near(openWorld(root, "hm").state().entities.hc2.c.transform.pos[1], 0.5), "GH1 place {at} with the grid missing: refused, the thing stays where it was", pl.refused);
-    const arr = call("hm", "ann", "move", { to: [0, 0, 0], client: "agent" });
+    const arr = call("hm", "ann", "move", { to: [0, 0, 0] });
     ok(arr.ok, "GH2 an arrival on dry ground reads no ground: it lands", arr.refused);
     const wk = call("hm", "ann", "move", { to: [0.5, 0, 0] });
     ok(!wk.ok && wk.refused?.code === "ground-loading" && /loading/.test(wk.refused.reason), "GH2 a walk with the grid missing: refused with words (the authority won't judge it on noise)", wk.refused);
@@ -423,7 +423,7 @@ if (M) {
     // shove) would come to rest on the noise law's ground, and that rest is logged; a put {pos} is a claim judged against
     // the ground (floating, sunk), so with no ground to judge it on it is refused, never waved through
     ok(call("hm", "olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } }).ok, "(GH4 setup) the world runs eidosim");
-    ok(call("hm", "olive", "move", { to: [0, 0, 2], client: "agent" }).ok, "(GH4 setup) olive arrives");
+    ok(call("hm", "olive", "move", { to: [0, 0, 2] }).ok, "(GH4 setup) olive arrives");
     for (const [id, model, pos, extra] of [["hb", "ball", [0.5, 1, 2.4], {}], ["hk", "ball", [-0.5, 0.2, 2.4], {}], ["hp", "crate", [0.5, 0, 1.4], { grabbable: {} }]] as any)
       ok(call("hm", "olive", "create", { id, model, components: { transform: { pos }, ...(model === "ball" ? { physics: { kind: "dynamic", who: "visitor" } } : {}), ...extra } }).ok, `(GH4 setup) ${id}`);
     const n4 = openWorld(root, "hm").entries.length;

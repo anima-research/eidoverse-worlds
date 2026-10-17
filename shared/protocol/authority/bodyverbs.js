@@ -59,7 +59,7 @@ const PHYSICS_VERBS = {
       // at a time is not history the world needs). A TELEPORT while present is an act, because it resets the speed
       // track: who did it and when is on the record; never where from, where to, or what kind of client they are
       const act = me ? w.append(actOf(w, actor, "move", { teleport: true })) : undefined;
-      w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(a.client ? { client: String(a.client) } : {}), ...(size ? { size } : {}) }; leftSeat(w, st, actor, to); w.savePresence();
+      w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(size ? { size } : {}) }; leftSeat(w, st, actor, to); w.savePresence();
       return { ok: true, at: to, ...(act !== undefined ? { recorded: true, act } : {}) };
     }
     // still seated in the authority's view: a seated client sends no steps, so this is their first step off the seat (a

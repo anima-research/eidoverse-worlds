@@ -3740,17 +3740,17 @@ export class WorldAgent {
     const to = [r3(this.pos.x), r3(this.pos.y), r3(this.pos.z)];
     const take = (r: any, at: number[]) => { this.trackArrived = true; this.trackAt = Array.isArray(r?.at) ? r.at : at; return { ok: true as const }; };
     if (this.trackArrived && this.trackAt && Math.hypot(this.trackAt[0] - to[0], this.trackAt[1] - to[1], this.trackAt[2] - to[2]) < 0.05) return { ok: true };
-    let r = await this.request("move", { to, ...(this.trackArrived ? {} : { client: "agent" }) });
+    let r = await this.request("move", { to });
     if (r?.ok) return take(r, to);
     let code = r?.refused?.code;
     if (code === "not-joined" || code === "unknown-verb") return { open: true };
     if (code === "not-here") {   // the authority forgot this body (it left): arrive again
-      this.trackArrived = false; r = await this.request("move", { to, client: "agent" });
+      this.trackArrived = false; r = await this.request("move", { to });
       if (r?.ok) return take(r, to); code = r?.refused?.code; }
     if (code === "spawn") {
       const sp = (this.replica?.st?.entities?.["@world"]?.c as any)?.spawn;
       const at = Array.isArray(sp?.pos) && sp.pos.length === 3 && sp.pos.every(Number.isFinite) ? sp.pos.map(Number) : null;
-      if (at) { r = await this.request("move", { to: at, client: "agent" });
+      if (at) { r = await this.request("move", { to: at });
         if (r?.ok) { this.pos.x = at[0]; this.pos.y = at[1]; this.pos.z = at[2];
           this.lastWalkNote = `this world's arrivals are at its spawn (${at.map((n: number) => n.toFixed(1)).join(", ")}): you arrived there and walked on from it`;
           return take(r, at); } }
