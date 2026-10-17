@@ -270,7 +270,7 @@ await C("D6b", "an owner sets a policy number at or below the server's ceiling, 
 await C("D7", "no default lives only in help text: every 'default …' a help string names for a field is in the definition's data", () => {
   // defaults that aren't a fixed number: where it stands, a size-chosen pose; and nested ones (a socket's, a handler's args)
   // default-role.guests: absent is visitor whatever the role, which no stored value can say under a role of none (known gap)
-  const DYN = new Set(["motion.center", "grabbable.pose", "sockets.radius", "sockets.anchor", "reactions.component", "reactions.field", "reactions.strength", "default-role.guests"]);
+  const DYN = new Set(["motion.center", "grabbable.anim", "sockets.radius", "sockets.anchor", "reactions.component", "reactions.field", "reactions.strength", "default-role.guests"]);
   const bad = [];
   for (const [name, def] of Object.entries<any>(CAT.COMPONENTS)) { const h = def.help ?? ""; const all = CAT.defaultsOf?.(name) ?? {};
     for (const m of h.matchAll(/(\b[a-zA-Z]+)\??:? ?\(([^()]*\bdefault\b[^()]*)\)/g)) { const f = m[1]; if (DYN.has(`${name}.${f}`) || DYN.has(`${def.on === "world" ? name : name}.${f}`)) continue;
@@ -305,7 +305,7 @@ await C("D9", "§4 explains schemas: reserved (no definition format yet), and th
 // ---- ST: status (shape audit 10-16; R: every component trial for the alpha) ----
 // + the shape audit's wave 2 (attach-interact): sockets (the old map, lift-only) and the names R held (15:16 LOCKED)
 // + wave 2 (physics-motion): physics-joint (the constraint, renamed from joint) and surface (closed with physics' reserved fields)
-const RESERVED_NAMES = ["joint", "physics-joint", "surface", "schemas", "terrain-grid", "terrain-tile", "terrain-paint", "sockets", "material", "anim-clip", "anim-states", "camera", "zone", "video", "spring-joint", "link", "tags", "body-owner", "edit-grant", "avatar-deny"];   // the last three: the avatar guard rails' names (PROTOCOL §7a, R 10-17 02:45)
+const RESERVED_NAMES = ["joint", "physics-joint", "surface", "schemas", "terrain-grid", "terrain-tile", "terrain-paint", "sockets", "material", "anim-pose", "anim-clip", "anim-states", "camera", "zone", "video", "spring-joint", "link", "tags", "body-owner", "edit-grant", "avatar-deny"];   // the last three: the avatar guard rails' names (PROTOCOL §7a, R 10-17 02:45)
 await C("ST1", "every registered name has a status: the held names are reserved, every other one trial, none stable (v1 promises none)", () => {
   const bad = Object.entries<any>(CAT.COMPONENTS).filter(([k, d]) => d.status !== (RESERVED_NAMES.includes(k) ? "reserved" : "trial")).map(([k, d]) => `${k}: ${d.status}`);
   return [!bad.length && typeof CAT.STATUSES?.trial === "string" && typeof CAT.statusOf === "function" && CAT.statusOf("script:bell") === "trial" && CAT.statusOf("physics-joint:h") === "reserved" && CAT.statusOf("example.org/heart") === null, bad]; });

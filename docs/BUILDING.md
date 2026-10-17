@@ -85,7 +85,7 @@ seats and lights.
 
 **Seats** — a socket child of the building with a `station`, positioned in the model's frame:
 ```
-act {verb: "create", args: {components: {parent: {to: id}, transform: {pos: [-1.2, 3.65, 0.2], q: [0, 1, 0, 0]}, socket: {name: "stool"}, station: {pose: "sitchair"}}}}
+act {verb: "create", args: {components: {parent: {to: id}, transform: {pos: [-1.2, 3.65, 0.2], q: [0, 1, 0, 0]}, socket: {name: "stool"}, station: {anim: "sitchair"}}}}
 ```
 No rotation faces +Z (`q: [0, 1, 0, 0]` turns it to face −Z). The old `sockets` map is reserved: a write of it is still
 lifted into socket children, but write the children. `measure {id}` lists the model's flat zones; a zone's centre

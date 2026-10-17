@@ -15,8 +15,10 @@
 //     range       1.5           m from the hand; past 1.5 it flies to the hand (0.1..10)
 //     priority    0             -10..10: wins over lower when several things are in reach (the key, not the table)
 //     hold        'auto'        auto (press-to-hold in VR, sticky on desktop and phone) | press | toggle
-//     pose        (by size)     hand | carry | torch | pistol | two-hand | shoulder: the body's hold without tracked hands
-//     grips       {}            {<name>: {pos, q?, hand?, role?, fingers?, hold?, part?}}: where the PALM goes, in the
+//     anim        (by size)     how a body without tracked hands holds it: a pose or clip by NAME, open (R 10-17 15:09/15:11;
+//                               was pose, a closed enum): built in hand | carry | torch | pistol | shoulder (HOLD_POSES); a name
+//                               the body doesn't know is its default hold (by size), never a refusal. two-hand is twoHanded.
+//     grips       {}            {<name>: {pos, q?, hand?, role?, grasp?, part?}}: where the PALM goes, in the
 //                               thing's own frame (+Z out of the palm, +Y along the fingers' base)
 //     twoHanded   false         a second hand on a secondary grip steers it (false: a second hand takes it over)
 //     carries     (absent=false) a tray: what rests on it comes along when it is picked up (false: it falls off; R 10-10)
@@ -43,21 +45,25 @@ export const WHO = BUILTIN_IDS;
 const isWho = isRoleId;
 // the registry's (componentspec.js grabbable: its fields and enums are the shape; this file reads and checks it)
 export const HOLDS = COMPONENTS.grabbable.enums.hold;      // auto, press, toggle
-export const POSES = COMPONENTS.grabbable.enums.pose;      // hand, carry, torch, pistol, two-hand, shoulder
+/** The hold poses every body knows by name (an anim may name any pose or clip; these are the built-in ones). */
+export const HOLD_POSES = ['hand', 'carry', 'torch', 'pistol', 'shoulder'];
+/** An anim names a pose or clip: the animation library's file names or a presence slot (sockbody.js CLIP_RE, one grammar). */
+export const ANIM_RE = /^[A-Za-z][A-Za-z0-9_-]{0,47}$/;
 export const HANDS = ['left', 'right', 'either'];
 export const ROLES = ['primary', 'secondary'];
-export const FINGERS = ['fist', 'pinch', 'point', 'flat', 'open', 'trigger'];
+/** A grip's grasp (R 10-17: was fingers; the XR-hands / robotics word): how the hand closes on it. */
+export const GRASPS = ['fist', 'pinch', 'point', 'flat', 'open', 'trigger'];
 export const RELEASES = COMPONENTS.grabbable.enums.release; // drop, stay, return
 export const KEYS = Object.keys(COMPONENTS.grabbable.fields);
 export const RESERVED_KEYS = COMPONENTS.grabbable.reservedFields;   // fx
-export const GRIP_KEYS = ['pos', 'q', 'hand', 'role', 'fingers', 'part'];
+export const GRIP_KEYS = ['pos', 'q', 'hand', 'role', 'grasp', 'part'];
 // Who may carry or punt a thing that doesn't say (grabbable.who, physics.who absent): ONE value, read by the hand here and by
 // the authority's punt (review 10-06 finding 5: the old protocol let visitors punt and carry, rank 0; the grabbable migration chose builder).
 // Flipping it to 'visitor' is this one line plus the cases that pin builder today: grab-check M2, G6, I1 and phys-check F.
 export const DEFAULT_WHO = materialize('grabbable', {}).value.who;   // 'visitor' (R 10-07: "I vote for visitors being able to grab and throw"; a world narrows it per thing with who)
 // the written defaults are the registry's (componentspec.js grabbable.defaults: what the authority writes into a bare
 // {grabbable: {}}); the rest is what a reader fills in for a field the authority leaves absent
-export const DEFAULTS = Object.freeze({ ...materialize('grabbable', {}).value, pose: null, grips: Object.freeze({}), home: null, fits: Object.freeze([]), use: null, prompt: null, fx: null });
+export const DEFAULTS = Object.freeze({ ...materialize('grabbable', {}).value, anim: null, grips: Object.freeze({}), home: null, fits: Object.freeze([]), use: null, prompt: null, fx: null });
 /** The authority's hand reach (physconst.js REACH): a range past it is granted as a pull (the thing flies to the hand). */
 export const HAND_REACH = REACH;
 /** A free socket takes a released thing that fits within this many metres of it, unless it says otherwise. */
@@ -82,7 +88,7 @@ const unitQ = (q) => nums(q, 4, 1.0001) && Math.abs(Math.hypot(...q) - 1) < 1e-3
 export function gripOf(g) {
   if (!isObj(g) || !nums(g.pos, 3)) return null;
   return { pos: g.pos, q: unitQ(g.q) ? g.q : [0, 0, 0, 1], hand: HANDS.includes(g.hand) ? g.hand : 'either', role: ROLES.includes(g.role) ? g.role : 'primary',
-    fingers: FINGERS.includes(g.fingers) ? g.fingers : 'fist', hold: {},   // a grip's bone overrides are cut (shape audit 10-16); the key stays for fingerPose's callers
+    grasp: GRASPS.includes(g.grasp) ? g.grasp : GRASPS.includes(g.fingers) ? g.fingers : 'fist', hold: {},   // fingers: its spelling before 10-17 (a stored grip not yet renamed at load); a grip's bone overrides are cut (shape audit 10-16)
     part: typeof g.part === 'string' && g.part ? g.part : null };
 }
 
@@ -114,9 +120,11 @@ function fill(v, source, home) {
   g.range = num(v.range) ? Math.min(10, Math.max(0.1, v.range)) : DEFAULTS.range;
   g.priority = Number.isInteger(v.priority) ? Math.max(-10, Math.min(10, v.priority)) : 0;
   g.hold = HOLDS.includes(v.hold) ? v.hold : 'auto';
-  g.pose = POSES.includes(v.pose) ? v.pose : null;
+  // anim: any name (the body resolves it; unknown → its default hold). pose: the spelling before 10-17, a stored value not yet renamed
+  const anim = v.anim !== undefined ? v.anim : v.pose === 'two-hand' ? undefined : v.pose;
+  g.anim = typeof anim === 'string' && ANIM_RE.test(anim) ? anim : null;
   g.grips = isObj(v.grips) ? Object.fromEntries(Object.entries(v.grips).map(([k, x]) => [k, gripOf(x)]).filter(([k, x]) => x && NAME_RE.test(k))) : {};
-  g.twoHanded = v.twoHanded === true;
+  g.twoHanded = v.twoHanded === true || (v.anim === undefined && v.pose === 'two-hand');
   g.carries = v.carries === true;
   g.throw = num(v.throw) ? Math.min(3, Math.max(0, v.throw)) : 1;
   g.release = RELEASES.includes(v.release) ? v.release : 'drop';
@@ -137,12 +145,13 @@ export function useOf(u) {
 /** The returning modes need a home: stamped by the authority when one is wanted and none is set. */
 export const wantsHome = (v) => isObj(v) && (v.release === 'return' || (num(v.returnAfter) && v.returnAfter > 0));
 
-/** The hold pose a body without tracked hands takes for this thing: the declared one, else by size (one hand under
- *  HAND_SIZE, both arms at or above it; a two-handed thing in both hands). size = [x, y, z] metres, or null. */
+/** The hold pose a body without tracked hands takes for this thing: the named one when the body knows it (HOLD_POSES
+ *  today; a world's anim-pose later), else its default: by size (one hand under HAND_SIZE, both arms at or above it; a
+ *  two-handed thing in both hands). An unknown name is never an error, only the default. size = [x, y, z] metres, or null. */
 export function holdPoseOf(g, size) {
-  if (g?.pose) return g.pose;
+  if (g?.anim && ARMS[g.anim] && g.anim !== BOTH_HANDS) return g.anim;
   if (g?.source === 'physics') return 'hand';   // migration: a dynamic thing with no grabbable is held as before, by its centre in one hand
-  if (g?.twoHanded) return 'two-hand';
+  if (g?.twoHanded) return BOTH_HANDS;
   return Array.isArray(size) && Math.max(...size) >= HAND_SIZE ? 'carry' : 'hand';
 }
 
@@ -204,14 +213,16 @@ export function fingerPose(preset, side, hold = {}) {
 // then the forearm. Every client turns these into normalized-bone rotations (shortest arc from the T-pose: a rest arm
 // lies along -X on the right, +X on the left), so a desktop or phone body visibly holds what it holds, the same for
 // everyone. Every direction is written for a RIGHT arm and mirrored for a left one; `other` is the other arm of a
-// two-armed preset (carry: both arms round it; two-hand: the support hand forward on it).
+// two-armed preset (carry: both arms round it; both-hands, a twoHanded thing: the support hand forward on it). both-hands
+// is not a name an anim may give (twoHanded says it); the others are HOLD_POSES.
+const BOTH_HANDS = 'both-hands';
 const ARMS = {
   hand:       { hold: [[-0.12, -0.95, 0.28], [-0.05, -0.3, 0.95]] },
   torch:      { hold: [[-0.25, -0.55, 0.8], [-0.05, 0.55, 0.83]] },
   pistol:     { hold: [[-0.08, -0.05, 1], [0, 0, 1]] },
   shoulder:   { hold: [[-0.55, -0.7, 0.45], [0.35, 0.9, 0.25]] },
   carry:      { hold: [[-0.15, -0.8, 0.58], [0.45, -0.05, 0.89]], other: [[-0.15, -0.8, 0.58], [0.45, -0.05, 0.89]] },
-  'two-hand': { hold: [[-0.12, -0.85, 0.5], [0.4, 0.1, 0.91]], other: [[-0.1, -0.6, 0.79], [0.3, 0.2, 0.93]] },
+  'both-hands': { hold: [[-0.12, -0.85, 0.5], [0.4, 0.1, 0.91]], other: [[-0.1, -0.6, 0.79], [0.3, 0.2, 0.93]] },
 };
 const vnorm = (v) => { const n = Math.hypot(...v) || 1; return v.map((x) => x / n); };
 const vcross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -254,23 +265,23 @@ export function checkGrabbable(v, at = 'grabbable') {
   for (const k of ['enabled', 'steal', 'twoHanded', 'carries']) if (v[k] !== undefined && typeof v[k] !== 'boolean') return bad('shape', `${at}.${k} is true or false`);
   if (v.who !== undefined && !isWho(v.who)) return bad('shape', `${at}.who is ${WHO.join(', ')} (who may pick it up)`);
   if (v.hold !== undefined && !HOLDS.includes(v.hold)) return bad('shape', `${at}.hold is ${HOLDS.join(', ')} (auto: press-to-hold in VR, sticky on desktop)`);
-  if (v.pose !== undefined && !POSES.includes(v.pose)) return bad('shape', `${at}.pose is ${POSES.join(', ')} (leave it out: chosen by size)`);
+  if (v.anim !== undefined && !(typeof v.anim === 'string' && ANIM_RE.test(v.anim))) return bad('shape', `${at}.anim names a pose or clip (built in: ${HOLD_POSES.join(', ')}; a name the body doesn't know is held by size)`, 'leave it out: held by size');
   if (v.release !== undefined && !RELEASES.includes(v.release)) return bad('shape', `${at}.release is ${RELEASES.join(', ')}`);
   for (const [k, lo, hi, what] of [['range', 0.1, 10, 'm from the hand'], ['throw', 0, 3, 'a multiplier on the release velocity'], ['returnAfter', 0, 3600, 's unheld before it goes home']])
     if (v[k] !== undefined && !(num(v[k]) && v[k] >= lo && v[k] <= hi)) return bad(num(v[k]) ? 'bounds' : 'shape', `${at}.${k} is ${v[k]}; it is ${lo}..${hi} (${what})`);
   if (v.priority !== undefined && !(Number.isInteger(v.priority) && v.priority >= -10 && v.priority <= 10)) return bad('shape', `${at}.priority is a whole number -10..10 (higher wins when several things are in reach)`);
   if (v.grips !== undefined) {
-    if (!isObj(v.grips)) return bad('shape', `${at}.grips must be {<name>: {pos, q?, hand?, role?, fingers?, part?}}`);
+    if (!isObj(v.grips)) return bad('shape', `${at}.grips must be {<name>: {pos, q?, hand?, role?, grasp?, part?}}`);
     const names = Object.keys(v.grips); if (names.length > MAX_GRIPS) return bad('shape', `${at}.grips: at most ${MAX_GRIPS}`);
     for (const n of names) { const g = v.grips[n], gat = `${at}.grips.${n}`;
       if (!NAME_RE.test(n)) return bad('shape', `${at}.grips: a grip's name is letters, digits, - and _ (up to 32)`);
-      if (!isObj(g)) return bad('shape', `${gat} must be {pos, q?, hand?, role?, fingers?, part?}`);
+      if (!isObj(g)) return bad('shape', `${gat} must be {pos, q?, hand?, role?, grasp?, part?}`);
       if ((r = keys(gat, g, GRIP_KEYS, 'a grip'))) return r;
       if (!nums(g.pos, 3)) return bad('shape', `${gat}.pos must be [x, y, z] in the thing's own frame (where the palm goes)`);
       if (g.q !== undefined && !unitQ(g.q)) return bad('shape', `${gat}.q is a unit quaternion [x, y, z, w] (the palm's frame: +Z out of the palm, +Y along the fingers' base)`);
       if (g.hand !== undefined && !HANDS.includes(g.hand)) return bad('shape', `${gat}.hand is ${HANDS.join(', ')}`);
       if (g.role !== undefined && !ROLES.includes(g.role)) return bad('shape', `${gat}.role is ${ROLES.join(', ')} (a second hand takes a secondary grip)`);
-      if (g.fingers !== undefined && !FINGERS.includes(g.fingers)) return bad('shape', `${gat}.fingers is ${FINGERS.join(', ')}`);
+      if (g.grasp !== undefined && !GRASPS.includes(g.grasp)) return bad('shape', `${gat}.grasp is ${GRASPS.join(', ')}`);
       if (g.part !== undefined && !(typeof g.part === 'string' && g.part)) return bad('shape', `${gat}.part names a node of its model (the grip rides it)`);
     }
   }

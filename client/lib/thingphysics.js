@@ -383,7 +383,7 @@ function drawHeld() {
   poseHolders();
 }
 // What holding does to each holder's body (avatar.js setHoldPose): the grip's finger preset on each holding hand, and,
-// for a body without tracked hands, the arms' hold pose (grabbable.pose, else by size). Recomputed every frame from the
+// for a body without tracked hands, the arms' hold pose (grabbable.anim when the body knows it, else by size). Recomputed every frame from the
 // authority's record; an avatar that stops holding lets go.
 const posed = new Set();
 function poseHolders() {
@@ -394,8 +394,8 @@ function poseHolders() {
     let m = want.get(av); if (!m) want.set(av, (m = { bones: {}, fingers: {} }));
     const grip = h.grip ? g?.grips?.[h.grip] : null;
     if (g?.source === 'physics') continue;   // a dynamic thing with no grabbable: held as before (and VR fingers keep the controller's curl)
-    Object.assign(m.bones, fingerPose(grip?.fingers ?? 'fist', side, grip?.hold ?? {})); m.fingers[side] = true;
-    if (h.second) { const sg = h.second.grip ? g?.grips?.[h.second.grip] : null; Object.assign(m.bones, fingerPose(sg?.fingers ?? 'fist', h.second.hand, sg?.hold ?? {})); m.fingers[h.second.hand] = true; }
+    Object.assign(m.bones, fingerPose(grip?.grasp ?? 'fist', side, grip?.hold ?? {})); m.fingers[side] = true;
+    if (h.second) { const sg = h.second.grip ? g?.grips?.[h.second.grip] : null; Object.assign(m.bones, fingerPose(sg?.grasp ?? 'fist', h.second.hand, sg?.hold ?? {})); m.fingers[h.second.hand] = true; }
     // (a dynamic thing with no grabbable is held as before: in the hand where the arm already is, no hold pose)
     if (!tracked(h.by) && g && g.source !== 'physics') { const preset = holdPoseOf(g, sizeOf(id, entities.get(id)));
       Object.assign(m.bones, armPose(preset, side));

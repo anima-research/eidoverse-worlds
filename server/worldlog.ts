@@ -128,7 +128,7 @@ export class WorldLog {
   }
   /** what the load's socket lift couldn't do (per host) and what the shape repair skipped (per thing), said to the flight recorder when a world attaches */
   private liftNotes: Record<string, unknown>[] = [];
-  attach(host: LogHost) { this.host = host; for (const n of this.liftNotes) host.debug(n.repair ? "repair-shapes" : n.rename ? "rename-components" : "lift-sockets", n); }
+  attach(host: LogHost) { this.host = host; for (const n of this.liftNotes) host.debug(n.rename ? "rename-components" : n.repair ? "repair-shapes" : "lift-sockets", n); }
 
   private view(): WorldView {
     return viewState(this.live.state(), { recentChat: this._state?.recentChat ?? [], chatTotal: this._state?.chatTotal ?? 0 }) as WorldView;

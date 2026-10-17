@@ -18,7 +18,7 @@ import { isEditing, setPointerVeto, setEscapeHook } from './build.js';
 import * as Edits from './editwrites.js';
 import { sendRequest } from './net.js';
 import { flashHint } from './ui.js';
-import { checkGrabbable, HANDS, ROLES, FINGERS } from '../../shared/grab.js';
+import { checkGrabbable, HANDS, ROLES, GRASPS } from '../../shared/grab.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
 // the right hand's joints in its palm frame (metres), from R's avatar; ring is between middle and little
@@ -127,10 +127,10 @@ function paint() {
     move.onclick = () => { st.controls.setMode('translate'); paint(); }; turn.onclick = () => { st.controls.setMode('rotate'); paint(); };
     bar.append(mirror, tryIt, del);
     const fields = el('div', 'gripedit-fields');
-    const set = (k) => async (v) => { const gs = gripsOf(st.id); gs[st.name] = { ...gs[st.name], [k]: v }; await writeGrips(gs, `grip ${k}`); };
+    const set = (k) => async (v) => { const gs = gripsOf(st.id); gs[st.name] = { ...gs[st.name], [k]: v }; if (k === 'grasp') delete gs[st.name].fingers; await writeGrips(gs, `grip ${k}`); };
     fields.append(el('label', null, 'hand'), select(HANDS, g.hand ?? 'either', set('hand')),
       el('label', null, 'role'), select(ROLES, g.role ?? 'primary', set('role')),
-      el('label', null, 'fingers'), select(FINGERS, g.fingers ?? 'fist', set('fingers')));
+      el('label', null, 'grasp'), select(GRASPS, g.grasp ?? g.fingers ?? 'fist', set('grasp')));
     const tools = el('div', 'gripedit-bar'); tools.append(move, turn);
     p.append(fields, tools);
   }

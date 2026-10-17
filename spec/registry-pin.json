@@ -506,7 +506,7 @@
   "status": "trial",
   "fields": {
    "action": "string",
-   "pose": "any",
+   "anim": "any",
    "anchor": "string",
    "exit": "array",
    "leaveBy": "string",
@@ -522,7 +522,7 @@
      "action": "sit"
     },
     "set": {
-     "pose": "sitchair"
+     "anim": "sitchair"
     }
    },
    {
@@ -530,7 +530,7 @@
      "action": "ride"
     },
     "set": {
-     "pose": "sitchair"
+     "anim": "sitchair"
     }
    },
    {
@@ -538,7 +538,7 @@
      "action": "drive"
     },
     "set": {
-     "pose": "sitchair"
+     "anim": "sitchair"
     }
    },
    {
@@ -546,7 +546,7 @@
      "action": "lie"
     },
     "set": {
-     "pose": "lie"
+     "anim": "lie"
     }
    },
    {
@@ -554,7 +554,7 @@
      "action": "kneel"
     },
     "set": {
-     "pose": "sit"
+     "anim": "sit"
     }
    },
    {
@@ -562,15 +562,15 @@
      "action": "stand"
     },
     "set": {
-     "pose": "idle"
+     "anim": "idle"
     }
    },
    {
     "absent": [
-     "pose"
+     "anim"
     ],
     "set": {
-     "pose": "sitchair"
+     "anim": "sitchair"
     }
    }
   ],
@@ -591,7 +591,8 @@
   "absentMeans": {
    "exit": "set down where they got on",
    "leaveBy": "moving, jumping or getting up all leave",
-   "who": "anyone who may use the host"
+   "who": "anyone who may use the host",
+   "anim": "the action's default, materialized at write (sit/ride/drive sitchair, lie lie, kneel sit, stand idle); a value stored before 10-17 says pose, renamed anim at load"
   },
   "on": "thing",
   "reservedFields": [
@@ -825,7 +826,7 @@
    "range": "number",
    "priority": "int",
    "hold": "string",
-   "pose": "string",
+   "anim": "string",
    "grips": "object",
    "twoHanded": "bool",
    "carries": "bool",
@@ -853,14 +854,6 @@
     "auto",
     "press",
     "toggle"
-   ],
-   "pose": [
-    "hand",
-    "carry",
-    "torch",
-    "pistol",
-    "two-hand",
-    "shoulder"
    ],
    "release": [
     "drop",
@@ -903,7 +896,7 @@
    "throw": "1 (×)",
    "release": "drop",
    "returnAfter": "0 s: never",
-   "pose": "by size: one hand under 0.5 m, both arms at or above; two-hand if twoHanded",
+   "anim": "by size: one hand under 0.5 m, both arms at or above; both hands if twoHanded",
    "grips": "held where it was grabbed",
    "carries": "false: what rests on it falls off when it is picked up",
    "fits": "it snaps into no socket",
@@ -1947,6 +1940,9 @@
   "on": "world"
  },
  "material": {
+  "status": "reserved"
+ },
+ "anim-pose": {
   "status": "reserved"
  },
  "anim-clip": {

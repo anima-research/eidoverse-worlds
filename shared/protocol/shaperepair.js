@@ -182,12 +182,32 @@ export function shapesMarked(entries, bodyOf = (i) => entries?.[i]?.body ?? null
  *  overwrites a value already under the new name (that one wins; the old one is deleted). R 10-17 14:34: @world `trusted`
  *  read as a list of trusted PEOPLE (the consent table's delegates); it lists components. */
 export const RENAMED_COMPONENTS = Object.freeze({ "@world": Object.freeze({ trusted: "trusted-components" }) });
-/** The ops that rename stored components (RENAMED_COMPONENTS): [{verb, id, comp, value?}], [] when nothing needs it. */
+/** Fields renamed before release (R 10-17 15:09/15:11): grabbable.pose and station.pose → anim (an open name of a pose or a
+ *  clip; grabbable's 'two-hand' → twoHanded: true), a grip's fingers → grasp. One pure function for the door (a write in
+ *  the old spelling is taken and stored in the new: writes.js resolve) and the load (renameOps). Idempotent; a value
+ *  already spelled today is returned as the same object. {value, renamed: [{field, from, to}]} */
+export const RENAMED_FIELDS = Object.freeze({ grabbable: Object.freeze({ pose: "anim", "grips.*.fingers": "grasp" }), station: Object.freeze({ pose: "anim" }) });
+export function renameFields(comp, v) {
+  if (!bag(v) || !Object.hasOwn(RENAMED_FIELDS, comp)) return { value: v, renamed: [] };
+  let out = v; const renamed = []; const edit = () => (out === v ? (out = { ...v }) : out);
+  if ("pose" in out) { edit(); const p = out.pose; delete out.pose;
+    if (comp === "grabbable" && p === "two-hand") { if (out.twoHanded === undefined) out.twoHanded = true; renamed.push({ field: "pose", from: p, to: { twoHanded: out.twoHanded } }); }
+    else { if (out.anim === undefined) out.anim = p; renamed.push({ field: "pose", to: "anim" }); } }
+  if (comp === "grabbable" && bag(out.grips) && Object.values(out.grips).some((g) => bag(g) && "fingers" in g)) { edit();
+    out.grips = Object.fromEntries(Object.entries(out.grips).map(([k, g]) => { if (!bag(g) || !("fingers" in g)) return [k, g];
+      const { fingers, ...r } = g; renamed.push({ field: `grips.${k}.fingers`, to: "grasp" }); return [k, { ...r, ...(r.grasp === undefined ? { grasp: fingers } : {}) }]; })); }
+  return { value: out, renamed };
+}
+/** The ops that rename stored components (RENAMED_COMPONENTS) and fields (RENAMED_FIELDS): [{verb, id, comp, value?}], []
+ *  when nothing needs it. */
 export function renameOps(st, purged = null) {
   const ops = [];
   for (const [id, map] of Object.entries(RENAMED_COMPONENTS)) { const c = st?.entities?.[id]?.c; if (!bag(c)) continue;
     for (const [from, to] of Object.entries(map)) { if (!(from in c) || c[from] === purged) continue;
       ops.push({ verb: "delete", id, comp: from }); if (!(to in c)) ops.push({ verb: "set", id, comp: to, value: c[from] }); } }
+  for (const id of Object.keys(st?.entities ?? {}).sort()) { const c = st.entities[id].c; if (!bag(c)) continue;
+    for (const comp of Object.keys(RENAMED_FIELDS)) { if (!bag(c[comp]) || c[comp] === purged) continue;
+      const r = renameFields(comp, c[comp]); if (r.renamed.length) ops.push({ verb: "set", id, comp, value: r.value, renamed: r.renamed }); } }
   return ops;
 }
 

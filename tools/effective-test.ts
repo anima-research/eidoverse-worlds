@@ -442,7 +442,7 @@ if (EFF) {
   // below the rider root at authored size → root y = 0.5 − 0.45·u
   // the seat: a socket child whose station anchors at the surface (D14; the station since the shape audit 10-16)
   const chair = { pos: [0, 0, 0], yaw: 0, scale: 1 };
-  const seat = { pos: [0, 0.5, 0], yaw: 0, socket: { name: "seat" }, station: { action: "sit", anchor: "surface", pose: "sitchair" } };
+  const seat = { pos: [0, 0.5, 0], yaw: 0, socket: { name: "seat" }, station: { action: "sit", anchor: "surface", anim: "sitchair" } };
   const seatMount = { to: "chair", offset: [0, 0.5, 0] };
   const view = (riderScale?: (id: string) => number) => ({
     entity: (id: string) => (id === "chair" ? chair : id === "chair.seat" ? seat : undefined),

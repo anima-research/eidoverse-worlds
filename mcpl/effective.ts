@@ -118,7 +118,7 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
     let seat: { state: "profiled" | "approximate"; reason?: string } | undefined;
     if (isBody) {
       const station = (view.entity(m.to) as any)?.station;   // what a body does at the socket (shape audit 10-16: once socket.body)
-      const g = seatGateCore({ sock: station, verdict: view.seatVerdict?.(id), pose: typeof station?.pose === "string" ? station.pose : "sitchair" });
+      const g = seatGateCore({ sock: station, verdict: view.seatVerdict?.(id), pose: typeof (station?.anim ?? station?.pose) === "string" ? (station.anim ?? station.pose) : "sitchair" });   // anim (R 10-17; pose before)
       if (g.apply) {
         const rs = view.riderScale?.(id) ?? 1;
         const c = applySeatCorrection(pos, g.contactY, Number.isFinite(rs) && rs > 0 ? rs : 1);

@@ -361,7 +361,7 @@ it minted, and `<frame>` / `<seat>` below stand for those ids.
 act {verb: "create", args: {model: "<a swing frame model>", components: {label: "frame", transform: {pos: [0, 0, 0]}}}}
 act {verb: "create", args: {model: "<a seat model>", components: {label: "seat"}, place: {hang: "<frame>", height: 0.45}}}
 act {verb: "set", args: {id: "<seat>", component: "motion", value: {type: "pendulum", axis: [1, 0, 0], amp: 0.3, period: 3}}}
-act {verb: "create", args: {components: {parent: {to: "<seat>"}, transform: {pos: [0, 0.05, 0]}, socket: {name: "seat"}, station: {action: "sit", pose: "sit"}}}}
+act {verb: "create", args: {components: {parent: {to: "<seat>"}, transform: {pos: [0, 0.05, 0]}, socket: {name: "seat"}, station: {action: "sit", anim: "sit"}}}}
 # now ANYONE — visitors included — can attach to it (sit) and ride the swing
 ```
 
@@ -540,8 +540,8 @@ by its grip when it has one), set down (`put {id, pos?}`), let go (`drop
 where your hand lets go; in a world with no physics a throw is set down,
 and says so). `look` says what a hand may do with each thing. `grabbable`
 (`schema {component: 'grabbable'}`; shared/grab.js): `{who, enabled,
-steal, range, priority, hold, pose, grips: {<name>: {pos, q?, hand?, role?,
-fingers?}}, twoHanded, throw, release: drop|stay|return, returnAfter,
+steal, range, priority, hold, anim, grips: {<name>: {pos, q?, hand?, role?,
+grasp?}}, twoHanded, throw, release: drop|stay|return, returnAfter,
 fits: [keywords], use: <action>|{down, up}, prompt, fx}`: `fits` snaps it
 into a socket whose `accepts` shares a keyword when let go within the
 socket's `radius` (a key on its hook); `return`/`returnAfter` send it home
@@ -790,7 +790,7 @@ shallowest first:
   zone's center is a socket's position **verbatim**; `anchor: "hips"` (or
   feet, head, surface) seats that body point instead:
   `measure <swing>` → "y=0.55 0.42×0.40m → pos [0, 0.55, 0]" →
-  `create {components: {parent: {to: "<swing>"}, transform: {pos: [0,0.55,0], q: [0,1,0,0]}, socket: {name: "seat"}, station: {pose: "sitchair"}}}`.
+  `create {components: {parent: {to: "<swing>"}, transform: {pos: [0,0.55,0], q: [0,1,0,0]}, socket: {name: "seat"}, station: {anim: "sitchair"}}}`.
   A socket may also name a **`part`** (a node that a `motion:<part>`
   component animates): coords stay model-frame, but the seat then RIDES
   that part's motion — `socket {name: "seat", part:

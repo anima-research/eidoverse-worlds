@@ -40,7 +40,7 @@ import { LOCK_LEVELS, lockLevel } from './protocol/roles.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ, MESH_SHAPES } from './components.js';
 import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
 import { checkSockets, ANCHORS, ACTION_DEFAULTS, socketMapIn, socketsIn } from './sockbody.js';
-import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, POSES as GRAB_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
+import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, HOLD_POSES as GRAB_HOLD_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
 import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE, setEulerChannel } from './euler.js';
 import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
@@ -294,13 +294,13 @@ const HAND = {
       const opts = (list) => list.map((v) => ({ v, label: v }));
       const grips = Object.keys(g.grips);
       return { group: 'grabbable', label: 'grabbable', types: ['grabbable'], fields: [
-        G('enabled', { label: 'can be picked up', hint: 'Off: nobody can pick it up for now. (A loose ball can still be kicked.)' }),
+        G('enabled', { label: 'can be picked up', hint: 'Off: nobody can pick it up for now. (A loose ball can still be punted.)' }),
         G('who', { label: 'who may', options: GRAB_WHO.map((v) => ({ v, label: v === 'visitor' ? 'anyone' : `${v}s` })) }),
         G('steal', { label: 'can be taken from a hand', hint: 'On: someone else can grab it out of your hands. Off: it stays with whoever holds it until they let go (a world owner can still take it).' }),
         G('range', { label: 'reach', hint: 'How far away your hand can pick it up from. Arm\'s reach is 1.5 m; set it further and the thing flies to your hand when grabbed.' }),
         G('priority', { label: 'priority', hint: 'When several things are in reach, the one with the highest number is picked up first. Give small things on big things a higher number: the key, not the table it sits on.' }),
         G('hold', { label: 'hold', options: [['auto', 'auto: while gripping in VR, sticky on desktop'], ['press', 'only while gripping'], ['toggle', 'sticky everywhere (a tool)']].map(([v, label]) => ({ v, label })) }),
-        { t: 'enum', k: 'pose', label: 'body pose', value: raw.pose ?? 'by size', def: 'by size', options: opts(['by size', ...GRAB_POSES]), hint: 'How an avatar on desktop (no tracked hands) holds it: in one hand, carried in both arms, like a torch, like a pistol, in two hands, or on the shoulder. "by size" picks one hand for small things and both arms for big ones.' },
+        { t: 'enum', k: 'anim', label: 'held as', value: raw.anim ?? (raw.pose !== 'two-hand' ? raw.pose : null) ?? 'by size', def: 'by size', options: opts([...new Set(['by size', ...GRAB_HOLD_POSES, ...(typeof raw.anim === 'string' ? [raw.anim] : [])])]), hint: 'How a body without tracked hands holds it: a pose by name (built in: in one hand, carried in both arms, like a torch, like a pistol, on the shoulder; any other name a body knows). "by size" picks one hand for small things and both arms for big ones; a name the body doesn\'t know is held by size too. Two hands: switch on two-handed.' },
         G('twoHanded', { label: 'two-handed', hint: 'On: it can be held in both hands at once, like a rifle or a broom. The first hand carries it and the second hand aims it. Off: only one hand holds it, so grabbing it with your other hand moves it to that hand.' }),
         { t: 'check', k: 'carries', label: 'can carry other entities', value: g.carries, hint: 'On: picking it up brings along whatever is resting on it, like a tray of food. Off: only it comes up, and what was on it falls off, like taking a book out of a pile.' },
         G('throw', { label: 'throw', hint: 'How hard it flies when thrown: 1 is normal, 2 is twice as fast, 0 means it can only be dropped.' }),
@@ -317,7 +317,7 @@ const HAND = {
     write({ k, key, f, raw, c, comps, errors, writeField }) {
       const next = comps.get('grabbable') ?? JSON.parse(JSON.stringify(c.grabbable ?? {}));
       if (k === 'carries') next.carries = typeof raw === 'string' ? !/^(false|0|no|off)$/i.test(raw) : !!raw;
-      else if (k === 'pose') { if (raw === 'by size' || raw == null || raw === '') delete next.pose; else next.pose = String(raw); }
+      else if (k === 'anim') { delete next.pose; if (raw === 'by size' || raw == null || raw === '') delete next.anim; else next.anim = String(raw); }
       else if (k === 'fits') { const w = String(raw ?? '').split(/[,\s]+/).map((x) => x.trim()).filter(Boolean); if (w.length) next.fits = w; else delete next.fits; }
       else if (k === 'use') { const [d, u] = String(raw ?? '').split('/').map((x) => x.trim()); if (!d && !u) delete next.use; else next.use = u ? { ...(d ? { down: d } : {}), up: u } : d; }
       else if (k === 'prompt') { const v = String(raw ?? '').trim(); if (v) next.prompt = v; else delete next.prompt; }

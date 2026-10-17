@@ -250,8 +250,10 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   {pos, q, scale}`, `model` (a library path, stored as written; `model-hash`
   `sha256:<64 hex>` beside it when the server knows the bytes), `label`, `description`, `parent {to}`,
   `pivot {pos}`, `light`, `mesh`, `motion` (a whole thing's; `motion:<slot> {node, …}` moves one node of its model: `node` is the node's name as the model file spells it, any characters, DATA and never part of a key; `<slot>` is a short local tag, and readers find the part by `node`), `socket {name, part?, accepts?, radius?}` (an attach point: a
-  child entity of the thing it is on, carrying `parent {to: <host>}`), `station {action, pose, anchor,
-  exit?, leaveBy?, who?}` (what a person's body does at that socket, on the same entity; `sockets`, the old
+  child entity of the thing it is on, carrying `parent {to: <host>}`), `station {action, anim, anchor,
+  exit?, leaveBy?, who?}` (what a person's body does at that socket, on the same entity; `anim`, like
+  `grabbable.anim`, is an open name of a pose (one frame, only the bones it names) or a clip (more than one key):
+  a name the body doesn't know plays its default, never a refusal; `sockets`, the old
   map spelling, is reserved and lift-only: the authority lifts it into socket children with their stations
   on write and at a stored world's first load, and a socket's old `body` block into its station),
   `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,

@@ -107,7 +107,10 @@ const socketOfSlot = (name, sk) => ({ name, ...Object.fromEntries(SOCK_FIELDS.fi
 // or a catalogue already held is re-spelled with the keys the station registers (the reserved and cut ones no stored value
 // uses are dropped); a request's own body keeps them, and the door refuses them in the station's words
 const STATION_KEYS = Object.keys(COMPONENTS.station.fields);
-export const stationOfBody = (b, { stored = false } = {}) => { if (!bag(b)) return null;
+// A body block's `pose` is the station's `anim` (R 10-17 15:11: the map's body block keeps its old spelling; the station
+// takes the name of the family).
+export const stationOfBody = (b0, { stored = false } = {}) => { if (!bag(b0)) return null;
+  const b = "pose" in b0 && !("anim" in b0) ? (({ pose, ...r }) => ({ ...r, anim: pose }))(b0) : b0;
   const v = stored ? Object.fromEntries(Object.entries(b).filter(([k]) => STATION_KEYS.includes(k))) : { ...b };
   return materialize("station", v).value; };
 const tfOf = (c) => ({ ...COMPONENTS.transform.defaults, ...(c?.transform ?? {}) });

@@ -85,7 +85,7 @@ const MAX_BLEND = 16, MAX_POSES = 16, LIM = 1e4;
  *  (the Commons' twelve seats); a station names hips, feet or head to seat that body point instead. (For the house sit
  *  clips the root IS about the seat surface: the clip lifts the hips a pelvis above it.) */
 export const ACTION_DEFAULTS = Object.fromEntries(['sit', 'ride', 'drive', 'lie', 'kneel', 'stand'].map((action) => {
-  const v = materialize('station', { action }).value; return [action, { pose: v.pose, anchor: v.anchor }]; }));
+  const v = materialize('station', { action }).value; return [action, { pose: v.anim, anchor: v.anchor }]; }));
 const defaultsFor = (action) => ACTION_DEFAULTS[action] ?? ACTION_DEFAULTS.sit;
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -106,7 +106,8 @@ export function poseClip(spec) {
 
 /** A socket's station (or a legacy body block: the same shape), read generously with its defaults (shared by the
  *  authority, the client and the agent). Null when there is none: an attachment point for things only. `pose` is the
- *  spec as written (a clip name, or an object); `clip` is the one name it stands for. Absent leaveBy is 'any' (moving,
+ *  spec as written (the station's `anim`, R 10-17: a pose or clip name, or an object; a legacy body block's or an older
+ *  station's `pose`); `clip` is the one name it stands for (a name the body doesn't know plays its default). Absent leaveBy is 'any' (moving,
  *  jumping or getting up all leave: what every seat did before leaveBy existed). The reserved keys read as absent
  *  unless an older value holds them. */
 export function bodyOf(station) {
@@ -114,7 +115,8 @@ export function bodyOf(station) {
   if (!b) return null;
   const action = typeof b.action === 'string' && b.action ? b.action : 'sit';
   const d = defaultsFor(action);
-  const pose = (typeof b.pose === 'string' && b.pose) || isObj(b.pose) ? b.pose : d.pose;
+  const spec = b.anim !== undefined ? b.anim : b.pose;
+  const pose = (typeof spec === 'string' && spec) || isObj(spec) ? spec : d.pose;
   const reach = isObj(b.reach) ? Object.fromEntries(Object.entries(b.reach).filter(([k, r]) => REACH_CHAINS[k] && isObj(r) && nums(r.at, 3))
     .map(([k, r]) => [k, { at: r.at, q: unitQ(r.q) ? r.q : null, part: typeof r.part === 'string' ? r.part : null, hint: nums(r.hint, 3) ? r.hint : null, vr: VR_POLICIES.includes(r.vr) ? r.vr : 'snap' }])) : {};
   const lk = isObj(b.look) ? b.look : {};
@@ -258,7 +260,7 @@ export function checkSockets(v, at = 'sockets') {
  *  siblings (a unique name) are the door's. A body block is the station's now (the door lifts an old write of one). */
 export function checkSocket(v, at = 'socket') {
   if (!isObj(v)) return bad('shape', `${at} must be {name, part?, accepts?, radius?}`);
-  if (v.body !== undefined) return bad('schema', `${at}.body: what a person's body does at a socket is the station component on the same entity now`, 'station {action, pose?, anchor?, exit?, leaveBy?, who?} beside socket', ['station']);
+  if (v.body !== undefined) return bad('schema', `${at}.body: what a person's body does at a socket is the station component on the same entity now`, 'station {action, anim?, anchor?, exit?, leaveBy?, who?} beside socket', ['station']);
   let r = keys(at, v, SOCKET_ENTITY_KEYS, 'a socket'); if (r) return r;
   if (!(typeof v.name === 'string' && NAME_RE.test(v.name))) return bad('shape', `${at}.name is letters, digits, - and _ (up to 32): the name use {args: {socket}} calls it by`);
   if (v.part !== undefined && !(typeof v.part === 'string' && v.part)) return bad('shape', `${at}.part names a node of its host's model`);
@@ -269,11 +271,14 @@ export function checkSocket(v, at = 'socket') {
 /** A socket entity's `station`, checked: the core keys (closed), the reserved ones refused as reserved (their names are
  *  held), the body grammar for what's there. Null when good. That it hangs on a socket is the door's rule. */
 export function checkStation(v, at = 'station') {
-  if (!isObj(v)) return bad('shape', `${at} must be {action?, pose?, anchor?, exit?, leaveBy?, who?}`);
+  if (!isObj(v)) return bad('shape', `${at} must be {action?, anim?, anchor?, exit?, leaveBy?, who?}`);
   const held = Object.keys(v).find((k) => STATION_RESERVED.includes(k));
   if (held) return bad('reserved', `${at}.${held} is reserved: the alpha holds the station's core only (${STATION_KEYS.join(', ')}); ${held} comes back later as an addition`, `leave ${held} out; reserved for later: ${STATION_RESERVED.join(', ')}`);
-  const r = keys(at, v, STATION_KEYS, 'a station'); if (r) return r;
-  return checkBody(v, at);
+  let r = keys(at, v, STATION_KEYS, 'a station'); if (r) return r;
+  // anim (R 10-17: was pose): a pose or clip by name, or {clip, …} / a blend: the body grammar's own check, under its name
+  if (v.anim !== undefined && (r = checkPose(v.anim, `${at}.anim`))) return r;
+  const { anim: _a, ...rest } = v;
+  return checkBody(rest, at);
 }
 
 function checkBody(b, at) {
@@ -406,7 +411,9 @@ export function socketsIn(entities, host, opts) {
 export function slotOf(sock, t, station = null) {
   const { name, ...rest } = sock ?? {};
   const q = Array.isArray(t?.q) && t.q.length === 4 && !(t.q[0] === 0 && t.q[1] === 0 && t.q[2] === 0 && t.q[3] === 1) ? { q: t.q.slice() } : {};
-  return { pos: Array.isArray(t?.pos) ? t.pos.slice() : [0, 0, 0], ...q, ...JSON.parse(JSON.stringify(rest)), ...(isObj(station) ? { body: JSON.parse(JSON.stringify(station)) } : {}) };
+  // the map's body block keeps its old spelling: the station's anim is its pose (stationOfBody turns it back at the door)
+  const body = isObj(station) ? (({ anim, ...r }) => (anim !== undefined ? { ...r, pose: anim } : r))(JSON.parse(JSON.stringify(station))) : null;
+  return { pos: Array.isArray(t?.pos) ? t.pos.slice() : [0, 0, 0], ...q, ...JSON.parse(JSON.stringify(rest)), ...(body ? { body } : {}) };
 }
 /** A host's socket children as the old `sockets` map ({name: slotOf…}), switched-off ones included (a map written back
  *  must not drop them), or null when it has none. `entities` as socketsIn. */
