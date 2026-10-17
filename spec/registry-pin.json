@@ -257,7 +257,8 @@
    "points": "array",
    "speed": "number",
    "duration": "number",
-   "loop": "string"
+   "loop": "string",
+   "node": "string"
   },
   "when": [
    {
@@ -398,6 +399,9 @@
    ]
   },
   "ranges": {
+   "node": {
+    "maxLen": 256
+   },
    "period": {
     "gt": 0,
     "max": 3600
@@ -438,6 +442,7 @@
    "duration": "speed decides",
    "loop": "loop",
    "t0": "the reader's own first look (a value from before t0 was stamped)",
+   "node": "a keyed motion: the node its key's tag names (the reading before 10-16, when the key was the node's name); the door writes that down. A whole motion never has one",
    "points": "fewer than 2 points: it stands still"
   },
   "keyed": "optional",

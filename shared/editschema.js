@@ -908,7 +908,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
       case 'Mesh': sec.fields = claims('Mesh', 'mesh'); sec.removable = true; break;
       default:
         if (MOTION_GROUP[inst.type]) {
-          const part = inst.params.part ?? motionNode(inst.key, c[inst.key]);   // the node it moves (its value's `node`; names.js motionNode)
+          const part = inst.params.part ?? motionNode(inst.key, null);   // the node it moves: its value's `node` (components.js reads it into params.part), else the old reading (names.js motionNode)
           if (part) { sec.title = `${inst.type} · ${partLabel(part, live.parts, ++partOrdinal)}`; sec.part = part; }
           // the type is the card, not a field: changing it is remove + add
           const own = (f) => (inst.key === 'motion' ? !f.k.includes('|') : f.k.startsWith(`${inst.key.slice(7)}|`));

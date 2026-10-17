@@ -151,7 +151,7 @@ const open = { ...crate, lock: undefined };   // the same crate, unlocked (its c
 const through = (set: Record<string, unknown>, e: any = crate) => { const W = scratchWorld('compinspector').seed({ c1: e }); const r = v(set); const res = W.sendAll(r.ops); return { r, res, after: W.rec('c1') }; };
 {
   const a = through({ 'add.Spin': 'arm' }, open);
-  check('add.Spin on a part → set motion:arm {spin 36°/s}', JSON.stringify(a.r.ops) === JSON.stringify([{ verb: 'set', args: { id: 'c1', component: 'motion:arm', value: { type: 'spin', degPerSec: 36 } } }]), JSON.stringify(a.r.ops));
+  check('add.Spin on a part → set motion:arm {spin 36°/s, node: arm} (the node is data in the value; review r7)', JSON.stringify(a.r.ops) === JSON.stringify([{ verb: 'set', args: { id: 'c1', component: 'motion:arm', value: { type: 'spin', degPerSec: 36, node: 'arm' } } }]), JSON.stringify(a.r.ops));
   check('…through the door: the part spins, the whole-entity pendulum is untouched', a.res.ok && a.after['motion:arm']?.type === 'spin' && a.after['motion:arm'].degPerSec === 36 && a.after.motion?.type === 'pendulum', JSON.stringify([a.res.refused, a.after.comp]));
 }
 check('add.Spin with a whole motion present → refused, says why', v({ 'add.Spin': '' }).ops.length === 0 && /already moves as a whole/.test(v({ 'add.Spin': '' }).errors[0] ?? ''));

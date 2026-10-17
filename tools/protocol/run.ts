@@ -101,6 +101,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["places-scale", "../places-scale-test.ts", 1], // #239: a scaled thing's places scale; the walking body's tolerances don't
   ["shape-attach", "../shape-attach-test.ts", 1], // shape audit 10-16 wave 2: socket/station, one action namespace, one home, grabbable registered, reactions frozen, look-at radians, places closed, spawn, lock, reserved names
   ["shape-physics", "../shape-physics-test.ts", 1], // shape audit 10-16 wave 2: transform pinned (glTF rule), parent −order, pivot {pos}, motion trims + repair, physics kind/reserved/kinematic, physics-engine, collider mesh, physics-joint + joint, structure, surface, stage
+  ["shape-repair", "../shape-repair-test.ts", 1], // review r7 (10-16): the load's repair once per world (a marker in the log), per thing, a node's name as data (motion:<slot> {node}); no empty stations by default
   ["buildcheck", "../buildcheck-test.ts", 1], // #241: the build check against the walking body's rules
   ["buildcheck-queue", "../buildcheck-queue-test.ts", 1], // #241: checks are queued, cached, and answer for the bytes hashed
   ["buildcheck-route", "../buildcheck-route-test.ts", 1], // #241: GET /check and measure {check: true} (check_model)

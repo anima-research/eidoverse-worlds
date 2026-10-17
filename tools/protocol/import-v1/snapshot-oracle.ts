@@ -62,7 +62,7 @@ const { ENGINE_CATALOGUE } = await import("../../../server/modelcatalogue.ts");
 const { liftWorld } = await import("../../../shared/protocol/authority.js");
 const { legacyHosts, liftHostOps, isSocketC } = await import("../../../shared/protocol/authority/sockets.js");
 const { socketQ } = await import("../../../shared/components.js");
-const { shapeRepairOps } = await import("../../../shared/protocol/shaperepair.js");
+const { shapeRepairOps, shapesMarked } = await import("../../../shared/protocol/shaperepair.js");
 const FA = await import("../../../shared/flora_args.js"), FP = await import("../../../shared/flora_presets.js");   // the grass reader's own mapping, for C
 const { directoryFileIn } = await import("../../../server/keyfiles.ts");
 
@@ -150,12 +150,14 @@ function whoFrom(worldsDir) {
 
 /** The old projection put through the server's load-time lift: the same functions liftWorld calls (legacyHosts, then
  *  liftHostOps per host, in its order), applied by the real fold's applyInPlace. */
-function liftPlain(P, ever) {
+function liftPlain(P, ever, repair = true) {
   const st = emptyState(); delete st.entities["@world"];
   for (const [id, c] of Object.entries(P)) st.entities[id] = { born: 0, c: Object.assign(Object.create(null), jclone(c)) };
   const hosts = legacyHosts(st, ever);
   for (const h of hosts) { if (!st.entities[h]) continue; const { ops } = liftHostOps(st, ever, h); applyInPlace(st, ops, 1); }
-  { const ops = shapeRepairOps(st); if (ops.length) applyInPlace(st, ops, 1); }   // …then the shape repair (shape audit 10-16), as liftWorld does
+  // …then the shape repair (shape audit 10-16), as liftWorld does: once per world, so not on a log that is already marked
+  // (a translate-v1@12 log is: its projection is the repaired one; review r7 F2)
+  if (repair) { const ops = shapeRepairOps(st); if (ops.length) applyInPlace(st, ops, 1); }
   return { lifted: v4comps(st), hosts };
 }
 
@@ -239,7 +241,7 @@ export function oracleWorld(dir) {
   const lifted = liftWorld(live);
   const failedLift = lifted.filter((x) => x.failed || x.skipped);
   const newB = v4comps(live.state());
-  const { lifted: oldB, hosts } = liftPlain(oldA, ever);
+  const { lifted: oldB, hosts } = liftPlain(oldA, ever, !shapesMarked(live.entries));
   const B = compareWorlds(oldB, newB);
   // B', independent of the lift's code: every seat the OLD snapshot has is a socket child of its host, by name, at its pose
   const seatDiffs = [];
