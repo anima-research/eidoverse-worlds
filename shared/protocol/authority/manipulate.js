@@ -43,26 +43,27 @@ function recentRests(w, now) {
       ...(after?.verb === "return-lost" ? { lost: true } : {}), ...(after?.verb === "settle" ? { onto: readback(w, ai)?.onto } : {}) }); }
   return out.reverse();
 }
-// the punt's reach, from the feet: a thing at your feet, or in the air beside you (a volley)
-// A shove (shared/shove.js: a walking body ran into it) is a punt with its own gate, in place of the kick's reach: a thing at
-// rest, from a body standing against its footprint (SHOVE.reach from the feet, measured to its box, not its origin: a wide
-// crate's middle is far from the side you walk into), neither under the feet nor over the head, pushed away from the feet
-// along the ground at a walk's speed. Everything else is the punt's: physics.who, locks, a hand on it, the engine's cap.
+// the punt's reach, from where the body stands: a thing low beside it, or in the air beside it (a volley)
+// A contact push (punt {contact: true}; shared/shove.js: a moving body ran into it) is a punt with its own gate, in place of
+// the punt's reach: a thing at rest, from a body standing against its footprint (SHOVE.reach from the body's origin, measured
+// to its box, not its origin: a wide crate's middle is far from the side you move into), neither beneath the body nor over
+// it, pushed away from the body along the ground at a walk's speed. Everything else is the punt's: physics.who, locks, a
+// hand on it, the engine's cap.
 function shoveGate(w, st, me, a, flying, actor) {
-  if (a.shove !== true) refuse("shape", "shove is true or left out", "");
-  if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "a shove carries v: [x, y, z] in m/s (never power)", "e.g. punt {id, v: [1.5, 0.2, 0], shove: true}");
-  if (flying) refuse("in-flight", `${a.id} is already moving; a shove pushes what stands still`, "walk into it again once it comes to rest");
+  if (a.contact !== true) refuse("shape", "contact is true or left out", "");
+  if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "a contact push carries v: [x, y, z] in m/s (never power)", "e.g. punt {id, v: [1.5, 0.2, 0], contact: true}");
+  if (flying) refuse("in-flight", `${a.id} is already moving; a contact push moves what stands still`, "walk into it again once it comes to rest");
   const [vx, vy, vz] = a.v, vh = Math.hypot(vx, vz), m = massOf(st, a.id), cap = shoveCap(m);
-  if (vh > cap + 1e-3 || Math.hypot(vx, vy, vz) > SHOVE.maxV * (1 + SHOVE.lift) + 1e-3) refuse("too-fast", `a shove is a walking body's push: ${r3(vh)} m/s is more than a body passes to ${a.id} (${r3(m)} kg: at most ${r3(cap)} m/s)`, `at most ${r3(cap)} m/s; a kick (punt without shove) goes harder`);
-  if (vh < 1e-6 || vy < 0 || vy > SHOVE.lift * vh + 1e-9) refuse("shape", `a shove pushes along the ground: its v rises at most ${SHOVE.lift} × its speed along the ground, and never falls`, "e.g. v: [1.5, 0.2, 0]");
+  if (vh > cap + 1e-3 || Math.hypot(vx, vy, vz) > SHOVE.maxV * (1 + SHOVE.lift) + 1e-3) refuse("too-fast", `a contact push is a moving body's push: ${r3(vh)} m/s is more than a body passes to ${a.id} (${r3(m)} kg: at most ${r3(cap)} m/s)`, `at most ${r3(cap)} m/s; a punt without contact goes harder`);
+  if (vh < 1e-6 || vy < 0 || vy > SHOVE.lift * vh + 1e-9) refuse("shape", `a contact push moves it along the ground: its v rises at most ${SHOVE.lift} × its speed along the ground, and never falls`, "e.g. v: [1.5, 0.2, 0]");
   const f = me.at, b = aabb(st, a.id) ?? { min: worldT(st, a.id).pos, max: worldT(st, a.id).pos };
   if (b.max[1] <= f[1] + SHOVE.beneath) refuse("beneath", `${a.id} is beneath you; a body moves over it, it doesn't push it`, "move off it, or punt it (without contact)");
-  if (b.min[1] >= f[1] + SHOVE.above) refuse("out-of-reach", `${a.id} is over your head (${r3(b.min[1] - f[1])} m up); a shove is from a body against it`, "");
+  if (b.min[1] >= f[1] + SHOVE.above) refuse("out-of-reach", `${a.id} is above you (${r3(b.min[1] - f[1])} m up); a contact push is from a body against it`, "");
   // to its ORIENTED box (review 10-12 S2-2: a rotated plank's axis-aligned box reached metres past the plank)
   const ob = obbs(st, a.id); const R = ob.length ? reachTo(ob, f) : { d: 0, n: null, c: b.min.map((x, i) => (x + b.max[i]) / 2) };
-  if (R.d > SHOVE.reach) refuse("out-of-reach", `${a.id} is ${r3(R.d)} m from your feet; a shove comes from a body against it (${SHOVE.reach} m)`, "walk up to it first");
+  if (R.d > SHOVE.reach) refuse("out-of-reach", `${a.id} is ${r3(R.d)} m from you; a contact push comes from a body against it (${SHOVE.reach} m)`, "move up to it first");
   const dir = R.n ?? (() => { const cx = R.c[0] - f[0], cz = R.c[2] - f[2], l = Math.hypot(cx, cz); return l > 1e-6 ? [cx / l, cz / l] : null; })();
-  if (!dir || vx * dir[0] + vz * dir[1] < 0.5 * vh) refuse("wrong-way", `that doesn't push ${a.id} away from your feet; a shove pushes it within 60° of straight away`, "");
+  if (!dir || vx * dir[0] + vz * dir[1] < 0.5 * vh) refuse("wrong-way", `that doesn't push ${a.id} away from your body; a contact push sends it within 60° of straight away`, "");
   // not through a wall: the body's way to the point it touches is clear of anything solid but the thing and what rides it,
   // judged with this body's own box (its kept size, as its walk is: review r4 F7). SHOVE.reach is already the largest
   // body's radius plus the track's lag, so it stays one number.

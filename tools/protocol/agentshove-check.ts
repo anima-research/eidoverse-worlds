@@ -1,6 +1,6 @@
 // tools/protocol/agentshove-check.ts — body shove for an agent's body: a real mcpl/agent.ts WorldAgent walking (the move
 // tool, walk_to's new name) against a real sequencer running eidosim. Its walk pushes loose things it walks into through the
-// same punt {shove: true} a person's client sends (shared/shove.js decides, the authority admits). Scratch port, scratch
+// same punt {contact: true} a person's client sends (shared/shove.js decides, the authority admits). Scratch port, scratch
 // WORLDS_DIR/OPT_DIR, never 8968/8970.   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/agentshove-check.ts
 //   AS1  a low crate (the authority's body steps over it) in the path: shoved along the walk, the walk arrives
 //   AS2  a tall crate (solid to the authority): the walk goes up against it instead of stopping short, shoves it, and asks
@@ -101,7 +101,7 @@ try {
   ok(["low", "tall", "still", "locked"].every((id) => Array.isArray(ag.replica?.st?.entities?.[N(id)]?.c?.physics?.shape)), "(setup) the authority measured each crate's shape (the agent folds it)");
   const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name);
   const entries = () => readLog(fs.readFileSync(path.join(W, "yard", "world.jsonl")));
-  const shoves = (id) => entries().filter((e) => e.kind === "act" && e.verb === "punt" && e.actor === HEP && !e.body?.refused && e.body?.request?.id === N(id) && e.body?.request?.shove === true);
+  const shoves = (id) => entries().filter((e) => e.kind === "act" && e.verb === "punt" && e.actor === HEP && !e.body?.refused && e.body?.request?.id === N(id) && e.body?.request?.contact === true);
   const anyPunt = (id) => entries().filter((e) => e.kind === "act" && e.verb === "punt" && e.actor === HEP && JSON.stringify(e.body ?? {}).includes(`"${N(id)}"`));
   const posOf = (id) => ag.replica?.st?.entities?.[N(id)]?.c?.transform?.pos ?? null;
   const settle = async (id) => { for (let i = 0; i < 100; i++) { await sleep(100); if (!ag.replica?.sim?.sim?.bodies?.[N(id)]) { await ann.req("wait", {}); return; } } };
@@ -110,7 +110,7 @@ try {
   { const m0 = await call("move", { to: [0, 0] }); ok(!m0.isError, "(AS1 setup) the agent stands at the origin", T(m0));
     const w = await call("move", { to: [0, 4.5] }); await settle("low"); await sleep(400);
     const s = shoves("low"), p = posOf("low");
-    ok(s.length >= 1, "AS1 a low crate in the walk's path is shoved: a punt {shove: true} by the agent", { n: s.length, sample: s[0] ?? null, any: anyPunt("low").map((e) => e.body) });
+    ok(s.length >= 1, "AS1 a low crate in the walk's path is shoved: a punt {contact: true} by the agent", { n: s.length, sample: s[0] ?? null, any: anyPunt("low").map((e) => e.body) });
     ok(Array.isArray(p) && p[2] > 2.2, "AS1 …and it moved along the walk (+z)", p);
     ok(!w.isError, "AS1 …and the walk arrived (the authority's body steps over a low crate)", T(w)); }
   // AS2

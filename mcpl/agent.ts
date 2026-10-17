@@ -3861,7 +3861,7 @@ export class WorldAgent {
     try {
       if (hold && far) { g.retrackAt = Date.now(); const m = await this.request("move", { to: here });
         if (this.walkGate === g && m?.ok) { this.trackAt = Array.isArray(m.at) ? m.at : here; g.permit = this.trackAt; } }
-      r = await this.request("punt", { id, v, shove: true });
+      r = await this.request("punt", { id, v, contact: true });
     } finally { if (hold) g.hold = Math.max(0, (g.hold ?? 1) - 1); }
     if (!r?.ok) { this.shover.refused(id, Date.now(), r?.refused?.code); if (r?.refused?.code === "unknown-arg") this.shoveOff = true; }
     if (this.walkGate !== g || g.blocker?.id !== id) return;

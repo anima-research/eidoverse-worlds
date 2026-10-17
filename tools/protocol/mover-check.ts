@@ -430,7 +430,7 @@ if (M) {
     ok(call("hm", "olive", "grab", { id: "hb" }).ok, "(GH4 setup) olive holds a ball");
     const loading = (r) => !r.ok && r.refused?.code === "ground-loading" && /still loading/.test(r.refused.reason ?? "");
     for (const [what, verb, args] of [["a throw", "throw", { id: "hb", v: [0, 2, 2] }], ["a drop (it would fall)", "drop", { id: "hb" }],
-      ["a punt", "punt", { id: "hk", power: 2 }], ["a walk's shove", "punt", { id: "hk", v: [0, 0.1, -1], shove: true }]] as any) {
+      ["a punt", "punt", { id: "hk", power: 2 }], ["a walk's shove", "punt", { id: "hk", v: [0, 0.1, -1], contact: true }]] as any) {
       const r = call("hm", "olive", verb, args);
       ok(loading(r), `GH4 ${what} with the grid missing: refused ground-loading, with the same words`, r.refused ?? r); }
     ok(call("hm", "olive", "drop", { id: "hb" }).refused?.code === "ground-loading" && openWorld(root, "hm").entries.slice(n4).every((e) => !(e.kind === "sim" && e.verb === "launch")),

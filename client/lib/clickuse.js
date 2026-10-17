@@ -46,7 +46,7 @@ export function offersOf(id, { spot = null } = {}) {
   for (const a of actionsOf(id)) add(`use:${a.action}`, `${a.verb} `, a.barred ? ` (${a.barred})` : '', () => useThing(id, a.action, a.verb), near);
   const seat = seatOf(id);
   if (seat) add('sit', `${seat.action ?? 'sit'} on `, '', () => trySitOn(id), near);
-  if (!held && bagOf(id)?.physics?.kind === 'dynamic') add('punt', 'kick ', '', () => physicsApi.punt(id), () => physicsApi.canPunt(id));
+  if (!held && bagOf(id)?.physics?.kind === 'dynamic') add('punt', 'punt ', '', () => physicsApi.punt(id), () => physicsApi.canPunt(id));
   return out;
 }
 

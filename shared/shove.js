@@ -1,6 +1,6 @@
 // shove — walking into a loose thing pushes it (R's queue: "body shove"). The walker's side: one body (mine, never a remote's;
 // an agent's process runs its own) finds the loose things its walking capsule is against and says which to punt, and how
-// hard. The punt itself is the authority's (punt {id, v, shove: true}: shoveGate in authority.js, its limits SHOVE in
+// hard. The punt itself is the authority's (punt {id, v, contact: true}: shoveGate in authority.js, its limits SHOVE in
 // physconst.js); nothing here writes anything.
 //
 // Contact: the thing's ORIENTED box (its physics.shape, in the world: what the authority measures to through obbs()) within

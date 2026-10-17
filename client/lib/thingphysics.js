@@ -554,7 +554,7 @@ function whereIs(id) {
   const obj = entities.get(id); if (obj) { obj.updateWorldMatrix(true, false); return obj.getWorldPosition(new THREE.Vector3()).toArray(); }
   return null;
 }
-// what I hid with the eye (or isolated out) is offered no verb by proximity: no hint, no T, no kick, no hand (R 10-12 17:33).
+// what I hid with the eye (or isolated out) is offered no verb by proximity: no hint, no T, no punt, no hand (R 10-12 17:33).
 // Naming it still works (grab(name)), the Hierarchy row's equivalent
 const hiddenToMe = (id) => { const o = entities.get(id); return !!o && !!outOfMyView(o); };
 // the nearest a test accepts; for grabbing, the highest grabbable.priority first (the key, not the table: Resonite)
@@ -663,14 +663,14 @@ export async function release(v = [0, 0, 0], name) {
   if (!r?.ok) unpredict(id);
   return r?.ok ? r : refused(still ? 'drop' : 'throw', r, id);
 }
-/** /punt [thing] [power]: kick the named thing, or the nearest at your feet, through it from where you stand. */
+/** /punt [thing] [power]: punt the named thing, or the nearest low beside you, through it from where you stand. */
 export async function punt(arg) {
   if (!replica.active) return say('punting works in worlds');
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const named = parts.find((x) => !/^[\d.]+$/.test(x));
   const power = Math.min(20, Math.max(0.5, parseFloat(parts.find((x) => /^[\d.]+$/.test(x))) || PUNT_POWER));
   const id = named || nearest(atFeet);
-  if (!id) return say('nothing at your feet to punt (things with physics {kind: dynamic})');
+  if (!id) return say('nothing beside you to punt (things with physics {kind: dynamic})');
   await track(true);
   const r = await sendRequest('punt', { id, power });
   if (!r?.ok) return refused('punt', r, id);
@@ -680,7 +680,7 @@ export async function punt(arg) {
 
 // ---------------------------------------------------------------- body shove (shared/shove.js)
 // Walking into a loose thing pushes it: MY body only (a remote's client shoves for its own body, an agent's process for
-// its), one punt {shove: true} per contact, predicted like a throw so the crate leaves at once. A refusal is quiet (nobody
+// its), one punt {contact: true} per contact, predicted like a throw so the crate leaves at once. A refusal is quiet (nobody
 // asked for this push in words); shover.refused keeps it from repeating.
 const shover = createShover();
 let shoveOn = true;          // lab knob (physicsApi.shove.on(false)); off for the session when the server doesn't know shove
@@ -719,7 +719,7 @@ function planPunt(id, v) {
 async function shove(id, v, now) {
   const plan = planPunt(id, v); if (plan) predict(plan);
   await track(true, { noTeleport: true });   // a shove never re-arrives the body (the teleport limiter is for walking)
-  const r = await sendRequest('punt', { id, v, shove: true });
+  const r = await sendRequest('punt', { id, v, contact: true });
   shoveLog.push({ id, v, t: now, ok: !!r?.ok, code: r?.refused?.code ?? null }); if (shoveLog.length > 32) shoveLog.shift();
   if (!r?.ok) { shover.refused(id, performance.now(), r?.refused?.code); if (pending.delete(id)) presV = -1; bus.emit('shove-refused', { id, refused: r?.refused ?? null });
     if (r?.refused?.code === 'unknown-arg') shoveOn = false; }   // a server from before shove: stop asking
@@ -857,7 +857,7 @@ async function vrLetGo(side, id) {
 const KEYS = [
   { code: 'KeyT', key: 'T', id: 'body:take', title: 'pick up / put down', keywords: ['grab', 'carry', 'hold', 'take', 'put'], icon: 'hand',
     run: () => (myHolds().length ? put() : grab()) },
-  { code: 'KeyC', key: 'C', id: 'body:throw', title: 'throw what you hold / punt what\'s at your feet', keywords: ['throw', 'kick', 'punt', 'toss'],
+  { code: 'KeyC', key: 'C', id: 'body:throw', title: 'throw what you hold / punt what\'s beside you', keywords: ['throw', 'kick', 'punt', 'toss'],
     run: () => (myHolds().length ? throwHeld(hooks?.aim?.() ?? undefined) : punt()) },   // at the spot under the cursor (main.js hands me aim())
 ];
 for (const { code, ...a } of KEYS) registerAction({ ...a, group: 'body' });

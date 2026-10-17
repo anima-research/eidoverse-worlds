@@ -199,7 +199,7 @@ const USE_VERBS = {
     const probe = buildUse({ st: w.state(), actor, w, notes: [], refs: new Set() }, a);
     if (probe.presence) {
       // a seat is presence (nothing recorded), but the authority keeps who sits where: a thing someone sits on, or anything
-      // carrying it, isn't kicked, shoved, grabbed or thrown out from under them (occupant)
+      // carrying it, isn't punted, pushed, grabbed or thrown out from under them (occupant)
       if (probe.attach?.to) setOccupant(w, actor, probe.attach.to, probe.near);
       return { ok: true, recorded: false, ...(probe.attach ? { attach: probe.attach } : {}), note: probe.note };   // attach: where your frames now say you are
     }

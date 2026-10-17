@@ -257,8 +257,9 @@ function logRefusal(w, actor, verb, args, code) {
     // written into a signed, forkable log is exactly what consent.js promises never happens
     if (PRESENCE_VERBS.has(verb)) return;
     if (code === "rate") { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; } // an attempt all the same: counted, not written
-    // a refused shove is a walk that met something, not a request anyone made in words (review 10-12 S2-4): counted, not written
-    if (verb === "punt" && args?.shove === true) { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; }
+    // a refused contact push is a walk that met something, not a request anyone made in words (review 10-12 S2-4): counted,
+    // not written (`shove: true` is its old spelling)
+    if (verb === "punt" && (args?.contact === true || args?.shove === true)) { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; }
     if (UNLOGGED.has(code)) return;
     const names = argNames(verb, args);
     const body = { args: names.known, refused: { code } }; if (names.unknown) body.unknownArgs = names.unknown;

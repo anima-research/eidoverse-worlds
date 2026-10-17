@@ -597,7 +597,7 @@ request moves a copy to a newer version, keeping its own overrides.
   grid isn't on the server yet has no ground to judge on, and the authority
   never stands anything on a guessed height: what needs the ground is refused
   `ground-loading` with words (ground-seated placement, `create {at}` and
-  `place {at}`; a put; a launch — throw, drop, punt, a walk's shove; a walk),
+  `place {at}`; a put; a launch — throw, drop, punt, a walk's contact push; a walk),
   nothing is logged, and the same request succeeds once the grid lands.
   Arriving where there is no water to judge, chat and presence carry on.
 - **One clock.** Frames carry the world's authority clock (the one that

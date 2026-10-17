@@ -548,8 +548,8 @@ socket's `radius` (a key on its hook); `return`/`returnAfter` send it home
 one act, for state changes (a hose on, then off); rapid effects while
 pressed (a spray, a muzzle flash) are presence (`grabbable.fx`), never a
 stream of acts. Scripts hear `grab` and `release` (docs/SCRIPTS.md).
-`punt {id, power? | v?}` kicks a thing at your feet into flight (or
-volleys one in the air beside you); it is never `kick`, which is
+`punt {id, power? | v?}` sends a loose thing beside your body into flight
+(or volleys one in the air beside you); it is never `kick`, which is
 moderation's remove-a-person. Humans have T (pick up / put down), C (throw
 / punt), the left button to use what they hold, `/grab /put /drop /throw
 /punt`, and in VR the grip (near, or the laser out to `range`) and the
@@ -816,7 +816,7 @@ shallowest first:
 - **Where nothing can stand** (inside a wall, a chair, closer to a wall than a body fits), the walk ends at the nearest place that can, on your side of it.
 - **Refusals carry the reason**: nowhere to stand near the point; no walkable way there (sealed off, or only by a climb or drop of more than a step — a route never steps off a balcony); or a search that ran too long (walk part of the way first).
 - **Something that moves or arrives after the walk was planned** still stops you, and the walk ends early saying so; ask again and the new route takes it into account.
-- **Loose things are walked into only if your shove would move them.** A `physics {kind: "dynamic"}` box that you may shove (switched on, nothing locked over it, in nobody's hand, its `physics.who` within your rank; `shared/shove.js` `shoveable`, the same gate a person's walk uses) in a world whose physics runs here is planned *through*, and your walk pushes it as you pass (`punt {shove: true}`), but only when a walking shove would actually slide it out of the way (`shoveSlide`/`budges`: for a 70 kg body, up to about 213 kg at a walk, about 660 kg at a run). Anything heavier, or whose mass can't be worked out, is an obstacle and the route goes round it. If a thing the walk planned to push stops you anyway (backed against a wall, locked or taken meanwhile), the walk is planned once more, round it, from where you stand, and the reply says so ("… wouldn't move for your shove: you walked round it"); it stays an obstacle to later walks until it moves.
+- **Loose things are walked into only if your shove would move them.** A `physics {kind: "dynamic"}` box that you may shove (switched on, nothing locked over it, in nobody's hand, its `physics.who` within your rank; `shared/shove.js` `shoveable`, the same gate a person's walk uses) in a world whose physics runs here is planned *through*, and your walk pushes it as you pass (`punt {contact: true}`; `shove: true` is the old spelling), but only when a walking shove would actually slide it out of the way (`shoveSlide`/`budges`: for a 70 kg body, up to about 213 kg at a walk, about 660 kg at a run). Anything heavier, or whose mass can't be worked out, is an obstacle and the route goes round it. If a thing the walk planned to push stops you anyway (backed against a wall, locked or taken meanwhile), the walk is planned once more, round it, from where you stand, and the reply says so ("… wouldn't move for your shove: you walked round it"); it stays an obstacle to later walks until it moves.
 
 Griddled structures route by their own planner, below; a walk through one is not re-planned around placed models.
 

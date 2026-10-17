@@ -1,6 +1,6 @@
 // shared/protocol/authority/occupants.js — who occupies what (presence, never logged): a body occupying a station (sitting,
 // today), setting and clearing it, vacating it when what it occupies is moved or let go, and the occupant rule that keeps a
-// thing someone occupies from being kicked, shoved, grabbed or thrown out from under them (refactor split, 2026-10-17, as
+// thing someone occupies from being punted, pushed, grabbed or thrown out from under them (refactor split, 2026-10-17, as
 // riders.js; occupants.js since R 10-17 13:46: occupy is the one word family; moved from
 // authority.js's "physics" section unchanged; occupyRights, a socket joining a host, from its gate section). lastTouch,
 // lacks, lockCheck and needWords (the write path's and the gate's) are above it, reached through UP.
@@ -54,7 +54,7 @@ function leftOccupied(w, st, actor, to) {
   if (Math.hypot(to[0] - p[0], to[2] - p[2]) > 1) clearOccupant(w, actor);
 }
 // Who a hand or a foot acting on `id` would move with it: another present body seated on it or on anything riding it, or
-// standing on it or on anything riding it (review 10-12 S1-1/S1-2: a kick, a shove, a grab or a throw went round body
+// standing on it or on anything riding it (review 10-12 S1-1/S1-2: a punt, a contact push, a grab or a throw went round body
 // consent through the chair). Bodies are presence and never things, so this is the only way one is moved by moving a thing.
 function occupant(w, st, id, actor) {
   const fam = new Set([id, ...descendants(st, id)]);

@@ -268,11 +268,15 @@ const EMBODIED_VERBS = {
       return EMBODIED_VERBS.put(w, actor, { id: a.id }, how); }
     return launch(w, actor, { ...a, v: [0, 0, 0] }, "drop", g);
   },
-  // a kick (/punt, an agent's punt request), as a sim intent (design 20, P4: "punt is a sim intent
-  // too"). A thing at your feet (or in the air beside you: a volley) is launched with v, or with power along the line from
-  // your feet through it, lifted (physobj's 0.9 ratio: a knee-high hop at power 4). Its gates are grab's: dynamic,
-  // physics.who, its locks and its ancestors', and nobody's hand. A thing in flight is caught and re-launched (logged).
+  // a punt (/punt, an agent's punt request), as a sim intent (design 20, P4: "punt is a sim intent
+  // too"). A thing low beside the body (or in the air beside it: a volley) is launched with v, or with power along the line
+  // from where the body stands through it, lifted (physobj's 0.9 ratio: a knee-high hop at power 4). Its gates are grab's:
+  // dynamic, physics.who, its locks and its ancestors', and nobody's hand. A thing in flight is caught and re-launched (logged).
+  // `contact: true` is a moving body's push (shoveGate); `shove: true` is its old spelling, taken at the door and recorded
+  // as `contact` (R 10-17 14:34: one word, `shove`, stays for knocking a BODY over). Both at once is no request.
   punt(w, actor, a) {
+    if (a.shove !== undefined) { if (a.contact !== undefined) refuse("shape", "contact, or its old spelling shove: not both", "send contact: true");
+      a = { ...a, contact: a.shove }; delete a.shove; }
     const me = body(w, actor); const st = w.state(); const e = st.entities[a.id];
     if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here", { didYouMean: guess(a.id, Object.keys(st.entities)) });
     notAThing(st, a.id, "punted"); offRefuse(st, a.id, "punted");
@@ -284,12 +288,12 @@ const EMBODIED_VERBS = {
     const held = w.presence.holds[a.id]; if (held) refuse("held", `${said(held.by)} is holding ${a.id}`, "grab it to take it (the latest grab wins), or wait till they let go");
     occupiedRefuse(w, st, a.id, actor, "punted");
     shaped(e, a.id, st.entities["@world"]?.c["physics-engine"] ?? null);
-    if (a.v !== undefined && a.power !== undefined) refuse("shape", "punt takes v or power, not both", "v: [x, y, z] in m/s, or power (m/s) along the line from your feet through it");
+    if (a.v !== undefined && a.power !== undefined) refuse("shape", "punt takes v or power, not both", "v: [x, y, z] in m/s, or power (m/s) along the line from where you stand through it");
     const sf = w.sim(); const b = sf.sim?.bodies[a.id]; const flying = !!(sf.launched[a.id] && b && !b.resting);
     const t = worldT(st, a.id); const here = flying ? b.p : t.pos;
     const dx = here[0] - me.at[0], dz = here[2] - me.at[2], dh = Math.hypot(dx, dz), dy = here[1] - me.at[1];
-    if (a.shove !== undefined) shoveGate(w, st, me, a, flying, actor);
-    else if (dh > KICK.reach || dy < KICK.below || dy > KICK.above) refuse("out-of-reach", `${a.id} is ${r3(dh)} m from your feet${dy > KICK.above ? `, ${r3(dy)} m up` : ""}; a punt reaches ${KICK.reach} m`, `move {to: [${r3(here[0] - (dh > 1e-6 ? dx / dh : 0) * 0.5)}, ${me.at[1]}, ${r3(here[2] - (dh > 1e-6 ? dz / dh : 1) * 0.5)}]} first`);
+    if (a.contact !== undefined) shoveGate(w, st, me, a, flying, actor);
+    else if (dh > KICK.reach || dy < KICK.below || dy > KICK.above) refuse("out-of-reach", `${a.id} is ${r3(dh)} m from where you stand${dy > KICK.above ? `, ${r3(dy)} m up` : ""}; a punt reaches ${KICK.reach} m`, `move {to: [${r3(here[0] - (dh > 1e-6 ? dx / dh : 0) * 0.5)}, ${me.at[1]}, ${r3(here[2] - (dh > 1e-6 ? dz / dh : 1) * 0.5)}]} first`);
     let v;
     if (a.v !== undefined) { if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "punt's v is [x, y, z] in m/s", "e.g. v: [0, 2, 4]"); v = a.v.slice(); }
     else { const p = a.power ?? 4; if (!Number.isFinite(p) || p <= 0) refuse("shape", "power is a speed in m/s, above 0", "e.g. power: 4 (a hop), 10 (hard)");
