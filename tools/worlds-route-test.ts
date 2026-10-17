@@ -68,7 +68,7 @@ async function spawnServer(): Promise<{ port: number }> {
   return { port };
 }
 
-type Row = { name: string; loaded: boolean; people: string[]; agents: string[] };
+type Row = { name: string; loaded: boolean; people: { id: string; declares?: string }[]; agents?: unknown };
 const fetchWorlds = async (port: number) => {
   const r = await fetch(`http://127.0.0.1:${port}/worlds`);
   return { res: r, rows: ((await r.json()) as { worlds: Row[] }).worlds };
@@ -101,7 +101,7 @@ console.log("\n— A. on-disk worlds —");
   check("a dir with only an old v1 log is not a world here", !names.includes("oldv1"), names.join(","));
   check("dot-dirs are not worlds", !names.some((n) => n.startsWith(".")), names.join(","));
   check("sorted by name", JSON.stringify(names) === JSON.stringify([...names].sort()), names.join(","));
-  check("unloaded on-disk world says so, empty", rows.every((r) => r.loaded === false && r.people.length === 0 && r.agents.length === 0), JSON.stringify(rows));
+  check("unloaded on-disk world says so, empty", rows.every((r) => r.loaded === false && r.people.length === 0 && r.agents === undefined), JSON.stringify(rows));
 }
 
 console.log("\n— B. presence —");
@@ -112,13 +112,13 @@ console.log("\n— B. presence —");
   await new Promise((r) => setTimeout(r, 200));
   const m = byName((await fetchWorlds(port)).rows);
   check("annex now loaded", m.annex?.loaded === true, JSON.stringify(m.annex));
-  check("a person lists under people", JSON.stringify(m.annex?.people) === JSON.stringify(["alice"]), JSON.stringify(m.annex));
-  check("a declared agent lists under agents, not people", JSON.stringify(m.annex?.agents) === JSON.stringify(["bot"]), JSON.stringify(m.annex));
-  check("a spectator appears as nothing", m.commons?.people.length === 0 && m.commons?.agents.length === 0, JSON.stringify(m.commons));
+  check("a participant who declared nothing lists under people, untagged", m.annex?.people.some((p) => p.id === "alice" && !("declares" in p)), JSON.stringify(m.annex));
+  check("a participant who declared agent lists in the SAME people list, tagged with the word (R 10-17: one list)", m.annex?.people.some((p) => p.id === "bot" && p.declares === "agent") && m.annex?.agents === undefined && m.annex?.people.length === 2, JSON.stringify(m.annex));
+  check("a spectator appears as nothing", m.commons?.people.length === 0, JSON.stringify(m.commons));
   alice.close(); bot.close(); ghost.close();
   await new Promise((r) => setTimeout(r, 300));
   const after = byName((await fetchWorlds(port)).rows);
-  check("leaving empties the row (still loaded)", after.annex?.loaded === true && after.annex?.people.length === 0 && after.annex?.agents.length === 0, JSON.stringify(after.annex));
+  check("leaving empties the row (still loaded)", after.annex?.loaded === true && after.annex?.people.length === 0, JSON.stringify(after.annex));
 }
 
 console.log("\n— C. a join never founds; D. the map never founds —");

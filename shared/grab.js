@@ -32,7 +32,7 @@
 //                               as an addition if wanted. A grip's bone overrides (hold) are cut.
 //   }
 //
-// Pure: no DOM, no three, no clock. The authority validates with checkGrabbable; client, door and agent read with grabOf.
+// Pure: no DOM, no three, no clock. The authority validates with checkGrabbable; the browser, the door and the agent process read with grabOf.
 
 import { REACH } from './protocol/physconst.js';
 import { materialize, COMPONENTS } from './protocol/componentspec.js';
@@ -303,7 +303,7 @@ function near(k, allowed) {
   return allowed.filter((a) => { const y = a.toLowerCase(); return (x.length > 2 && (y.startsWith(x) || x.startsWith(y))) || lev(x, y) <= Math.max(1, Math.floor(y.length / 3)); }).slice(0, 3);
 }
 
-/** One line saying what a hand may do with it, for people and agents alike (the agent's look). */
+/** One line saying what a hand may do with it, for anyone reading it as text (the agent process's look). */
 export function describeGrab(g, label = 'it') {
   if (!g) return null;
   if (!g.enabled) return `${label} can't be picked up now`;

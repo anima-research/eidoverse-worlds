@@ -36,7 +36,7 @@
 //     who      'builder'        visitor | builder | owner
 //   }
 //
-// Pure: no DOM, no three, no clock. The authority validates with checkSockets; client, door and agent read with bodyOf.
+// Pure: no DOM, no three, no clock. The authority validates with checkSockets; the browser, the door and the agent process read with bodyOf.
 
 import { REACH_CHAINS } from './joints.js';
 import { HUMANOID_BONES } from './humanoid.js';
@@ -416,7 +416,7 @@ export function socketMapIn(entities, host) {
   return Object.keys(out).length ? out : null;
 }
 
-/** One line saying what a body does at a socket, for people and agents alike (the agent's look, the sit reply). */
+/** One line saying what a body does at a socket, for anyone reading it as text (the agent process's look, the sit reply). */
 export function describeBody(slot, b) {
   if (!b) return `${slot}: an attach point (things only)`;
   const pose = typeof b.pose === 'string' ? `holds ${b.pose}`

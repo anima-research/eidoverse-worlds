@@ -11,7 +11,7 @@
 //
 // THE CARD: rest the pointer on a nameplate (or the head under it) for HOVER_MS (dwell.js: one dwell for every
 // "rest on it for a beat" in the client) and a small card opens beside the
-// plate — name, presence, mic and hearing in words, distance / VR / agent, and the one per-person action the people
+// plate — name, presence, mic and hearing in words, distance / VR / a declared word, and the one per-person action the people
 // column already offers (message → the DM tab, chat.js openConvo). It is DOM, projected to the plate each frame:
 // crisp text at any distance, the house tokens and buttons for free, focusable, and it follows the plate while open.
 // (A sprite would need its own text rendering, its own hit-testing for the button and a repaint per state change.)
@@ -298,7 +298,7 @@ function paint() {
   const dist = me && r.avatar?.root ? r.avatar.root.position.distanceTo(me) : null;
   const pres = r.presence ?? 'present';
   const known = typeof r.mic === 'boolean' || typeof r.hear === 'boolean';
-  const s = [pres, r.mic, r.hear, dist == null ? '' : Math.round(dist), !!r.xrOn, !!r.agent].join('|');
+  const s = [pres, r.mic, r.hear, dist == null ? '' : Math.round(dist), !!r.xrOn, r.declares ?? ''].join('|');
   if (s === sig || sig === 'strip') return;   // an open ⋯ strip holds a choice in progress: don't repaint it away
   sig = s;
   const rows = [];
@@ -312,9 +312,9 @@ function paint() {
   }
   // the visor (owner, 10-02: "we should probably include the VR visor icon") — the HUD's own VR glyph
   rows.push(`<div class="pc-row" data-k="xr" data-on="${!!r.xrOn}">${fsvg('virtual-reality', 14)}<span>${r.xrOn ? 'in VR' : 'not in VR'}</span></div>`);
-  // the header's right end: what kind of body and how far — 'present' is the default and says nothing, so only away /
-  // busy are named, in their presence colour, after the name
-  const where = [r.agent ? 'agent' : null,
+  // the header's right end: the word they declared for themselves (§6a; any word, shown as said, nothing when they declared
+  // none) and how far — 'present' is the default and says nothing, so only away / busy are named, in their presence colour
+  const where = [typeof r.declares === 'string' && r.declares ? r.declares : null,
     dist == null ? null : `${dist < 10 ? dist.toFixed(1) : Math.round(dist)} m`].filter(Boolean).join(' · ');
   card.innerHTML = `<div class="pc-head"><span class="pc-dot" style="background:${esc(d.colorFor?.(r.id) ?? 'var(--brand)')}"></span>`
     + `<b class="pc-name">${esc(r.id)}</b>`

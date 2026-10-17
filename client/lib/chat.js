@@ -310,13 +310,14 @@ function buildLine(who, text, { kind = '', ts = Date.now(), historical = false }
   const pinged = !sys && !mine && mentionsMe(text);
 
   // Who you are talking to matters here more than it does in a chat app, so
-  // the marker comes from live presence (the server's join flag) rather than
-  // from anything written into the log.
-  const isAgent = kind === 'agent'
-    || (!sys && !mine && !!getPeople().find((p) => p.id === who)?.agent);
+  // the label comes from live presence (the word a speaker declared at the
+  // door, PROTOCOL §6a: any word, shown as said; none, no label) rather than
+  // from anything written into the log. "People" is everyone: nothing here
+  // sorts speakers into kinds.
+  const declared = sys || mine ? null : (getPeople().find((p) => p.id === who)?.declares ?? null);
 
   const line = document.createElement('div');
-  line.className = `line ${sys ? 'sys' : ''} ${mine ? 'me' : ''} ${isAgent ? 'agent' : ''} ${pinged ? 'ping' : ''}`;
+  line.className = `line ${sys ? 'sys' : ''} ${mine ? 'me' : ''} ${declared ? 'declared' : ''} ${pinged ? 'ping' : ''}`;
   line.dataset.kind = sys ? 'system' : pinged ? 'mention' : 'chat';
 
   const now = ts;
@@ -341,6 +342,7 @@ function buildLine(who, text, { kind = '', ts = Date.now(), historical = false }
   const w = document.createElement('span');
   w.className = 'who';
   w.textContent = who;
+  if (typeof declared === 'string' && declared) w.dataset.declares = declared;   // drawn after the name (index.html)
   // Everyone gets their colour, INCLUDING you: the point is that a name looks
   // the same to every reader, so people can refer to each other by it. Whisper
   // lines keep their purple — there the colour states the channel (private),
@@ -463,7 +465,7 @@ function updateAC() {
       .filter((p) => p.id.toLowerCase().includes(q) && p.id !== CONFIG.name)
       .slice(0, 8);
     return showAC(
-      hits.map((p) => ({ value: `@${p.id}`, label: p.id, hint: p.agent ? 'agent' : 'here' })),
+      hits.map((p) => ({ value: `@${p.id}`, label: p.id, hint: p.declares || 'here' })),
       caret - at[1].length - 1, 'at',
     );
   }

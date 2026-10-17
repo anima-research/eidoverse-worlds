@@ -35,7 +35,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["no reserved names", "server/server.ts", "if (at.names.has(c.id.toLowerCase()) && account !== `agent:token:${c.id.toLowerCase()}`) {", "if (false) {", ["D6"]],
   ["the agent declares nothing", "mcpl/agent.ts", "process.env.AGENT_DECLARES ?? \"agent\";", "process.env.AGENT_DECLARES ?? \"\";", ["D8"]],
   ["the agent reads the old key", "mcpl/agent.ts", "this.rememberBody(msg.id, msg.avatar, null, msg.declares === \"agent\");", "this.rememberBody(msg.id, msg.avatar, null, !!msg.agent);", ["D8"]],
-  ["the browser reads the old key", "client/lib/net.js", "ensureRemote(msg.id, msg.avatar, { agent: msg.declares === 'agent', authority: true });", "ensureRemote(msg.id, msg.avatar, { agent: msg.agent, authority: true });", ["D9"]],
+  ["the browser reads the old key", "client/lib/net.js", "ensureRemote(msg.id, msg.avatar, { declares: msg.declares ?? null, authority: true });", "ensureRemote(msg.id, msg.avatar, { declares: msg.agent ? 'agent' : null, authority: true });", ["D9"]],
   ["move takes client again", "shared/protocol/verbspec.js", "teleport: { type: \"bool\", doc: \"jump there", "client: { type: \"string\", doc: \"a presence claim\" }, teleport: { type: \"bool\", doc: \"jump there", ["M1"]],
   ["the track keeps a client kind", "shared/protocol/authority/bodyverbs.js", "tokens: TRACK.cap, ...(size ? { size } : {})", "tokens: TRACK.cap, client: \"agent\", ...(size ? { size } : {})", ["M1"]],
   ["the browser sends client", "client/lib/thingphysics.js", "sendRequest('move', { to: to.map(r3) });", "sendRequest('move', { to: to.map(r3), client: 'human' });", ["M2"]],
@@ -213,8 +213,8 @@ const cases: Case[] = [
       const ja = a.joinMsg(), jb = b.joinMsg(); const src = readText("mcpl/agent.ts");
       return { ja: { d: ja.declares, agent: "agent" in ja }, jb: { d: jb.declares, agent: "agent" in jb }, reads: (src.match(/\.declares === "agent"\)/g) ?? []).length, old: /!!(msg|p)\.agent\b/.test(src) }; },
     good: (o) => o.ja.d === "agent" && !o.ja.agent && o.jb.d === undefined && !o.jb.agent && o.reads === 2 && !o.old },
-  { id: "D9", what: "the browser reads `declares` from arrive and present (net.js), never an `agent` flag", run() {
-      const src = readText("client/lib/net.js"); return { arrive: /\{ agent: msg\.declares === 'agent'/.test(src), present: /\{ agent: p\.declares === 'agent'/.test(src), old: /agent: (msg|p)\.agent\b/.test(src) }; },
+  { id: "D9", what: "the browser reads `declares` from arrive and present (net.js) and keeps the word as said (R 10-17 14:41: no agent boolean), never an `agent` flag", run() {
+      const src = readText("client/lib/net.js"); return { arrive: /\{ declares: msg\.declares \?\? null/.test(src), present: /\{ declares: p\.declares \?\? null/.test(src), old: /(msg|p)\.agent\b/.test(src) }; },
     good: (o) => o.arrive && o.present && !o.old },
   // ---------------- W: whois names no kind ----------------
   { id: "W1", what: "(§6a rule 3; R 10-17 13:41 \"everyone is a person here\") whois infers no kind from the account: an enrolled agent, an aid1 agent and a typed-name account answer with no `kind` and no person/agent word; one who declared shows its own word (\"ai\") while here, nothing otherwise; the directory file holds no inferred kind", async run() {

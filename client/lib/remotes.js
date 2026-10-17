@@ -87,7 +87,7 @@ function retryBody(r) {
 export async function ensureRemote(id, avatarPath, meta = {}) {
   const existing = remotes.get(id);
   if (existing) {
-    if (meta.agent !== undefined) existing.agent = meta.agent;
+    if (meta.declares !== undefined) existing.declares = meta.declares;   // the word they declared at the door (§6a), or null
     // same person, new body: rebuild (live avatar switching re-announces via
     // join). A switch that lands while the OLD body is still loading must not
     // be dropped — delete the map entry and let the stale load's own guard
@@ -114,7 +114,7 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
         existing.avatar?.resetTransients?.();
         const fresh = {
           id, avatar: existing.avatar, avatarPath: existing.avatarPath,
-          loading: false, agent: !!(meta.agent ?? existing.agent),
+          loading: false, declares: meta.declares ?? existing.declares ?? null,
           gen: (gens.get(id) ?? 0) + 1,
           buf: [], lastClip: 'idle', lodAcc: 0, lodTick: 0, speakingUntil: 0,
         };
@@ -155,7 +155,7 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
     }
   }
   const r = {
-    id, avatar: null, avatarPath, loading: true, agent: !!meta.agent,
+    id, avatar: null, avatarPath, loading: true, declares: meta.declares ?? null,
     gen: (gens.get(id) ?? 0) + 1,
     buf: [],                 // [{ t, p:[x,y,z], yaw, speed, clip, pitch }]
     lastClip: 'idle',

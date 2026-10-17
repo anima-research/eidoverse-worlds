@@ -90,7 +90,7 @@ function emote(name) {
 function people() {
   const list = [{ id: CONFIG.name, me: true, dist: null }];
   for (const r of participants.remotes.values()) {
-    list.push({ id: r.id, me: false, agent: !!r.agent, dist: null });
+    list.push({ id: r.id, me: false, declares: r.declares ?? null, dist: null });
   }
   return list;
 }

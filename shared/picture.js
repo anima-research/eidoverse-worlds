@@ -91,7 +91,7 @@ export function normalizePicture(data) {
     if (graphemes(alt) > PICTURE_ALT_MAX) { notes.push(`alt clipped to ${PICTURE_ALT_MAX} characters`); picture.alt = graphemeList(alt).slice(0, PICTURE_ALT_MAX).join(''); }
     else if (alt) picture.alt = alt;
   }
-  if (!picture.alt) notes.push('no alt text — agents and people who can\'t see it get only the file name; say what it shows');
+  if (!picture.alt) notes.push('no alt text — anyone who can\'t see it (or reads the world as text) gets only the file name; say what it shows');
   if (data.lit != null) {
     if (Object.hasOwn(PICTURE_LIT, data.lit)) picture.lit = data.lit;
     else notes.push(`lit ${JSON.stringify(data.lit)} is unknown (${Object.keys(PICTURE_LIT).join('/')}) — using scene`);

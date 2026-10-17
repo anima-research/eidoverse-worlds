@@ -114,7 +114,7 @@ export function normalizeSound(data) {
     if (graphemes(alt) > SOUND_ALT_MAX) { notes.push(`alt clipped to ${SOUND_ALT_MAX} characters`); sound.alt = graphemeList(alt).slice(0, SOUND_ALT_MAX).join(''); }
     else if (alt) sound.alt = alt;
   }
-  if (!sound.alt) notes.push('no alt text — agents and people who can\'t hear it get only the file name; say what is playing');
+  if (!sound.alt) notes.push('no alt text — anyone who can\'t hear it (or reads the world as text) gets only the file name; say what is playing');
   return { ok: true, sound, tier, notes };
 }
 

@@ -590,7 +590,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
    look the same to you as it does to them), so "this one is mine" is carried by
    a faint wash instead. .ping's background is declared later and still wins. */
 .chat-log .line.me { background: rgba(255,255,255,.04); border-radius: 3px; }
-.chat-log .line.agent .who::before { content: '◈ '; color: var(--warn); font-size: var(--fs-xs); }
+.chat-log .line.declared .who[data-declares]::after { content: ' · ' attr(data-declares); color: var(--dim); font-size: var(--fs-xs); font-weight: normal; }
 .chat-log .line.sys { color: var(--dim); font-style: italic; }
 .chat-log .line.hist-note {
   border-bottom: 1px dashed var(--edge); padding-bottom: 4px; margin-bottom: 4px;
