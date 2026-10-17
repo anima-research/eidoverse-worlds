@@ -26,6 +26,7 @@
 //   translator's own DROPPED table (printed by name with its reason), and nothing else.
 //
 // usage: bun tools/protocol/import-v1/snapshot-oracle.ts [<world dir> …]
+//   a world dir translated in place is read through its kept originals (log.original.jsonl, snapshot.original.json)
 //   no args: ORACLE_WORLDS=<dir>[:<dir>…] (a world dir, or a dir of worlds), else PROTOCOL_WORLDS, else the checkout's parent
 //   (walked like the sweep), each distinct complete snapshot once. Exit 0 only when every compared world has 0 differences.
 //   OPT_DIR=<serving checkout>/assets/opt so store models get the model-hash they get on this host (read only).
@@ -210,7 +211,19 @@ function declaredGround(snap) {
   return out;
 }
 
-export function oracleWorld(dir) {
+/** A world translated in place (world.ts translate <world>) keeps its old files beside the new world as log.original.jsonl
+ *  and snapshot.original.json: read them through a scratch directory of the same name whose log.jsonl / snapshot.json /
+ *  poses.json are links to them (read only), so the oracle can be re-run on the original after the swap. Else `dir`. */
+function originalsOf(dir) {
+  if (fs.existsSync(path.join(dir, "log.jsonl")) || !fs.existsSync(path.join(dir, "log.original.jsonl"))) return dir;
+  const d = path.join(SCRATCH, "originals-" + crypto.randomBytes(3).toString("hex"), path.basename(dir)); fs.mkdirSync(d, { recursive: true });
+  for (const [from, to] of [["log.original.jsonl", "log.jsonl"], ["snapshot.original.json", "snapshot.json"], ["poses.original.json", "poses.json"]])
+    if (fs.existsSync(path.join(dir, from))) fs.symlinkSync(path.join(dir, from), path.join(d, to));
+  return d;
+}
+
+export function oracleWorld(given) {
+  const dir = originalsOf(given);
   const name = path.basename(dir);
   const c = completeSnapshot(dir);
   if (!c.ok) return { name, dir, skipped: c.why };
@@ -297,7 +310,7 @@ if (import.meta.main) {
     const c = completeSnapshot(d);
     if (c.ok && !args.length) { const k = `${c.snap.seq}:${c.snap.bytes}:${crypto.createHash("sha256").update(fs.readFileSync(path.join(d, "snapshot.json"))).digest("hex")}`;
       if (seen.has(k)) { results.push({ name: path.basename(d), dir: d, skipped: `the same log and snapshot as ${seen.get(k)}` }); continue; } seen.set(k, d); }
-    let w; try { w = oracleWorld(d); } catch (x) { w = { name: path.basename(d), dir: d, error: `threw: ${x?.stack ?? x}` }; }
+    let w; try { w = { ...oracleWorld(d), dir: d }; } catch (x) { w = { name: path.basename(d), dir: d, error: `threw: ${x?.stack ?? x}` }; }
     results.push(w); printWorld(w);
   }
   const compared = results.filter((w) => !w.skipped), bad = compared.filter((w) => unexplained(w));

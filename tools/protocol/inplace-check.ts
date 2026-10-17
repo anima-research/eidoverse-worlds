@@ -18,6 +18,7 @@
 //   IP8  the two-name form still translates into a new name and leaves the old directory as it was
 //   IP9  the world's own inventions are namespaced by its NAME, never by the temporary directory's
 //   IP10 a name with no old log refuses with that reason
+//   IP12 the snapshot oracle re-runs on a translated world's kept originals (log.original.jsonl, snapshot.original.json)
 //   IP11 a snapshot.json the oracle can't compare (a fold of part of the log) doesn't block the translation: it says,
 //        in its output, that the snapshot was NOT compared and why, and keeps it as snapshot.original.json
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/inplace-check.ts
@@ -107,6 +108,12 @@ ok(same(after["snapshot.original.json"], before["snapshot.json"]) && same(after[
   ok(Object.keys(P).length === 1 && /^u-[a-z2-7]{20}$/.test(Object.keys(P)[0]), "IP1 the new poses.json is keyed by identity (the translated world's)", P); }
 ok(!temps().length && same(Object.keys(after).sort(), ["log.original.jsonl", "poses.json", "poses.original.json", "snapshot.original.json", "world.jsonl"]), "IP1 no temporary directory is left, and the directory holds exactly the new world and the kept originals", [temps(), Object.keys(after)]);
 ok(/snapshot\.json agrees/.test(r1.out) && /mtime unchanged: true/.test(r1.out) && /keeps its name/.test(r1.out), "IP1 it says the snapshot oracle agreed, and that the original is kept with its mtime unchanged", r1.out.slice(-800));
+
+// ================= IP12: the oracle re-runs on the kept originals =================
+{ const fp = fingerprint(porch);
+  const o = Bun.spawnSync(["bun", "tools/protocol/import-v1/snapshot-oracle.ts", porch], { cwd: ENGINE, env: { ...process.env, ORACLE_SCRATCH: root, OPT_DIR: OPT, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const out = o.stdout.toString() + o.stderr.toString();
+  ok(o.exitCode === 0 && /oracle: 1\/1 compared world\(s\) agree/.test(out) && same(fingerprint(porch), fp), "IP12 snapshot-oracle <translated world> compares its kept originals with the old engine (and agrees), touching nothing", out.slice(-600)); }
 
 // ================= IP7: info counts entities =================
 { const r = tool(["info", "porch"]); let j: any = null; try { j = JSON.parse(r.out); } catch {}
