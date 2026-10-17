@@ -121,14 +121,17 @@ export function sendPuppet(target, { pose = null, merge = false, anim = null, ra
  *
  *  Folding bounds what a join costs, which necessarily means a joiner is not
  *  handed everything ever said. This is how the rest is reachable: scroll up
- *  and the client asks for what came before. */
+ *  and the client asks for what came before. A request that gets no answer,
+ *  because no socket is joined or nothing came back within 8 s, rejects, so
+ *  a caller can tell it from an empty page, which is an answer: there is
+ *  nothing there. */
 const pendingHistory = new Map();
 let histId = 0;
 export function requestHistory(opts = {}) {
-  if (!net.joined || net.ws?.readyState !== 1) return Promise.resolve({ entries: [], hasMore: false });
+  if (!net.joined || net.ws?.readyState !== 1) return Promise.reject(new Error('history: not connected'));
   const reqId = `h${++histId}`;
-  return new Promise((resolve) => {
-    const t = setTimeout(() => { pendingHistory.delete(reqId); resolve({ entries: [], hasMore: false }); }, 8000);
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => { pendingHistory.delete(reqId); reject(new Error('history: no answer within 8 s')); }, 8000);
     pendingHistory.set(reqId, (m) => { clearTimeout(t); resolve(m); });
     net.ws.send(JSON.stringify({ type: 'history', reqId, ...opts }));
   });
