@@ -19,13 +19,16 @@
 //   S   stale agent-visible addresses: light.daytime, sky.tz, the measure tool's socket child
 //   A   grabbable.anim / station.anim (an open name of a pose or a clip; unknown → the body's default), grasp, anim-pose
 //       reserved; old spellings taken at the door and renamed at load; wings-folded is a named pose; pose/animate by name
-//   U   the action bar (UI ids and strings; was the emote bar)
+//   U   the action bar (UI ids and strings; was the bar of the old name)
 //   L   layering (once overlays, a loop or hold replaces), where a name resolves (from), one form (name OR live keys)
 //   B   body-mode: its own presence field (stand | sit | lie chosen; swim | fly | fall reported); a description that grants nothing
 //   M   ONE agent tool anim (R 10-17 15:31/15:32): by name or live; mode once | loop | hold (at); each anim's own default;
-//       {playing, mode}; stopped {name, why} when a loop or hold ends; pose/animate/emote/posture are hidden aliases
+//       {playing, mode}; stopped {name, why} when a loop or hold ends; the four old body tools are hidden aliases
 //   K   anim {stop} (R 10-17 16:26/16:27): true stops every layer and rests in the CURRENT body-mode's own anim (never the
 //       bind pose; the body-mode unchanged); a name stops that layer; "live" stops the ad-libbed ones, a reserved name
+//   E   the old name of a gesture is gone (R 10-17 16:26): presence pose.anim (the old key read for one release), the
+//       action bar's modules and defs, every identifier, comment and string; it is spelled in exactly two places: the
+//       hidden tool alias's entry and the old key's read (EM below builds the word, so this file never spells it)
 //   X   the version history records it
 // @ts-nocheck
 import fs from "node:fs";
@@ -35,6 +38,7 @@ import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.t
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 
 const BASE = "a6d05a6b";
+const EM = "em" + "ote";   // the old word, built so this file never spells it (row E3 scans every file, this one too)
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 
@@ -82,8 +86,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the fence drops poses", "server/posecheck.ts", "if (\"poses\" in p) { const c = cleanPoses(p.poses); if (c) p.poses = c; else delete p.poses; }", "delete p.poses;", ["A6"]],
   ["anim takes no name", "mcpl/tools.ts", "properties: { name: { type: \"string\", description: \"an anim by name (a pose or a clip)\" }, bodyMode:", "properties: { bodyMode:", ["A7"]],
   ["anim-pose not reserved", "shared/protocol/componentspec.js", "  \"anim-pose\": \"a pose: one frame", "  \"x-anim-pose\": \"a pose: one frame", ["A1"]],
-  ["the frame is emotes again", "client/lib/windows.js", "  actions:  { x: 'center'", "  emotes:   { x: 'center'", ["U1"]],
-  ["the lite row is lite-emotes", "client/lib/emotebar_lite.js", "row.className = 'lite-actions';", "row.className = 'lite-emotes';", ["U1"]],
+  ["the frame has the old name again", "client/lib/windows.js", "  actions:  { x: 'center'", `  ${EM}s:   { x: 'center'`, ["U1", "E3"]],
+  ["the lite row has the old class again", "client/lib/actionbar_lite.js", "row.className = 'lite-actions';", `row.className = 'lite-${EM}s';`, ["U1", "E3"]],
   ["dance plays once", "mcpl/tools.ts", "  dance: \"loop\", sit: \"loop\",", "  dance: \"once\", sit: \"loop\",", ["M1"]],
   ["the call's mode is ignored", "mcpl/tools.ts", "const mode = (mode0 ?? ANIM_MODES[n] ?? \"once\") as", "const mode = (ANIM_MODES[n] ?? mode0 ?? \"once\") as", ["M2"]],
   ["hold doesn't freeze", "mcpl/agent.ts", "if (a.kind === \"clip\") this.animHold = a.mode === \"hold\" ? holdAt : null;", "if (a.kind === \"clip\") this.animHold = null;", ["M2"]],
@@ -91,9 +95,9 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["no stopped when replaced", "mcpl/agent.ts", "    this.animEnded(\"replaced\", (b) => b.kind === a.kind);", "", ["M4", "L1"]],
   ["a move isn't noticed", "mcpl/agent.ts", "    this.watchAnim();\n", "", ["M4"]],
   ["stopped isn't said", "mcpl/agent.ts", "this.inbox.push({ ts, kind: \"act\", who: this.name, text }); this.onEvent?.({ ts, kind: \"act\", who: this.name, text });", "", ["M4"]],
-  ["posture isn't an alias", "mcpl/tools.ts", "  pose: \"anim\", animate: \"anim\", emote: \"anim\", posture: \"anim\" };", "  pose: \"anim\", animate: \"anim\", emote: \"anim\" };", ["M5"]],
+  ["posture isn't an alias", "mcpl/tools.ts", `  pose: "anim", animate: "anim", ${EM}: "anim", posture: "anim" };`, `  pose: "anim", animate: "anim", ${EM}: "anim" };`, ["M5"]],
   ["a held frame of tracks is the first key", "mcpl/tools.ts", "const pick = at == null ? ks.at(-1) : ks.filter((k) => k.t <= at).at(-1) ?? ks[0];", "const pick = ks[0];", ["M6"]],
-  ["once replaces what is held", "mcpl/tools.ts", "    if (mode === \"once\") { ag.emote(n);", "    if (mode === \"once\") { if (ag.anim) ag.animEnded(\"replaced\"); ag.emote(n);", ["L1"]],
+  ["once replaces what is held", "mcpl/tools.ts", "    if (mode === \"once\") { ag.playOnce(n);", "    if (mode === \"once\") { ag.animEnded(\"replaced\"); ag.playOnce(n);", ["L1"]],
   ["the result hides where it came from", "mcpl/tools.ts", "...(from ? { from } : {})", "", ["L2"]],
   ["name and joints guessed", "mcpl/tools.ts", "  if (a.name != null && (a.joints != null || a.tracks != null)) return", "  if (false) return", ["L3"]],
   ["no body-mode on the wire", "mcpl/agent.ts", "clip: this.clip, bodyMode: this.bodyModeNow(), clipTime: this.animHold ?? this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: this.animHold != null ? 0 : 1,\n        ...wingFoldPresence(this.wingsFolded),\n        // a physics bag", "clip: this.clip, clipTime: this.animHold ?? this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: this.animHold != null ? 0 : 1,\n        ...wingFoldPresence(this.wingsFolded),\n        // a physics bag", ["B1"]],
@@ -116,6 +120,16 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the fence takes any body-mode", "server/posecheck.ts", "if (\"bodyMode\" in p && !isBodyMode(p.bodyMode)) delete p.bodyMode;", "", ["B2"]],
   ["flying isn't reported", "shared/bodymode.js", "  if (flying) return 'fly';\n", "", ["B3"]],
   ["a declaration is ignored", "shared/bodymode.js", "      return declared ?? real;", "      return real;", ["B3"]],
+  ["the agent's once anim rides the old key", "mcpl/agent.ts", "...(this.pendingAnim ? { anim: this.pendingAnim } : {}),", `...(this.pendingAnim ? { ${EM}: this.pendingAnim } : {}),`, ["E1", "E3"]],
+  ["the old key isn't read", "shared/onceanim.js", "const v = sample.anim ?? sample[OLD_KEY];", "const v = sample.anim;", ["E1", "E3"]],
+  ["the server remembers the once anim", "shared/onceanim.js", "  for (const k of ONCE_KEYS) delete out[k];\n", "", ["E1"]],
+  ["the browser sends the old key", "client/lib/net.js", "if (s.anim) { pose.anim = s.anim; s.anim = null; }", `if (s.anim) { pose.${EM} = s.anim; s.anim = null; }`, ["E1", "E3"]],
+  ["a remote reads only today's key", "client/lib/remotes.js", "  const once = onceAnimOf(s);\n  if (once && once !== r.lastAnim) {", "  const once = s.anim;\n  if (once && once !== r.lastAnim) {", ["E1"]],
+  ["the registry keeps the old key", "server/defs.ts", "    actionbar: loadSidecar(", `    ${EM}s: loadSidecar(`, ["E2", "E3"]],
+  ["the slash command keeps the old name", "client/lib/commands/registry.js", "{ name: 'anim', help: '/anim <name>", `{ name: '${EM}', help: '/${EM} <name>`, ["E2", "E3"]],
+  ["a comment says the old word", "client/lib/avatar.js", "  /** Play a gesture over locomotion.", `  /** Play an ${EM} over locomotion.`, ["E3"]],
+  ["the spec says the old word", "spec/PROTOCOL.md", "poses, gestures (`pose.anim`), reach descriptors", `poses, ${EM}s, reach descriptors`, ["E3"]],
+  ["the alias also translates", "mcpl/tools.ts", "  posture: (a) => { const k", `  ${EM}: (a) => ({ name: a.name, mode: "once" }),\n  posture: (a) => { const k`, ["M5", "E3"]],
   ["CONTROL (no-op: must stay green)", "shared/protocol/consent.js", "// Ported from the protocol lab (2026-10-05);", "//  Ported from the protocol lab (2026-10-05);", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -346,10 +360,10 @@ const cases: Case[] = [
       return { net: (net.match(/declares: (msg|p)\.declares \?\? null/g) ?? []).length, rem: /declares: meta\.declares \?\? null/.test(rem) && !/agent: !!meta\.agent/.test(rem),
         pc: /r\.declares : null/.test(pc) && !/r\.agent \? 'agent'/.test(pc), ch: /w\.dataset\.declares = declared/.test(ch) && !/\?\.agent\)/.test(ch), css: /\.who\[data-declares\]::after/.test(ix) && !/\.line\.agent/.test(ix) }; },
     good: (o) => o.net === 2 && o.rem && o.pc && o.ch && o.css },
-  { id: "W4", what: "…no text sets humans against agents: the emote tool, the sound and picture alt notes, refusal.js, grab.js, sockbody.js, browservoice.js", run() {
+  { id: "W4", what: "…no text sets humans against agents: the gesture tool, the sound and picture alt notes, refusal.js, grab.js, sockbody.js, browservoice.js", run() {
       const t = readText("mcpl/tools.ts"), so = readText("shared/sound.js"), pi = readText("shared/picture.js"), rf = readText("shared/protocol/refusal.js"), gr = readText("shared/grab.js"), sb = readText("shared/sockbody.js"), bv = readText("client/lib/browservoice.js");
-      return { emote: /one-shots humans have/.test(t), alt: /agents and people who can/.test(so + pi), rf: /shown to humans|for agents and people|by agents' tools/.test(rf), alike: /for people and agents alike/.test(gr + sb), bv: /a human and an\s*\/\/\s*agent|a human and an agent/.test(bv), same: /the same for people and agents/.test(t) }; },
-    good: (o) => !o.emote && !o.alt && !o.rf && !o.alike && !o.bv && !o.same },
+      return { bar: /one-shots humans have/.test(t), alt: /agents and people who can/.test(so + pi), rf: /shown to humans|for agents and people|by agents' tools/.test(rf), alike: /for people and agents alike/.test(gr + sb), bv: /a human and an\s*\/\/\s*agent|a human and an agent/.test(bv), same: /the same for people and agents/.test(t) }; },
+    good: (o) => !o.bar && !o.alt && !o.rf && !o.alike && !o.bv && !o.same },
   // ---------------- O: the occupy family ----------------
   { id: "O1", what: "(R 14:41) the agent and the client speak the occupy family: no seatOf/seatName/mySeat/mayLeaveSeat/mySeatBody in agent.ts, no setSeatHook/inSitReach anywhere, seats.js/seatedit.js/seatbody.js renamed", run() {
       const ag = readText("mcpl/agent.ts"), tl = readText("mcpl/tools.ts"), ctl = readText("client/lib/controller.js"), sk = readText("shared/sockbody.js"), cu = readText("client/lib/clickuse.js");
@@ -444,10 +458,10 @@ const cases: Case[] = [
       return { name: /properties: \{ name: \{ type: "string"/.test(a), mode: /mode: \{ type: "string", enum: \["once", "loop", "hold"\]/.test(a), at: /at: \{ type: "number"/.test(a), joints: /joints: \{ type: "object"/.test(a), tracks: /tracks: \{ type: "object"/.test(a), req: /required:/.test(a) }; },
     good: (o) => o.name && o.mode && o.at && o.joints && o.tracks && !o.req },
   // ---------------- U: the action bar ----------------
-  { id: "U1", what: "(R 15:18, the UI half) the emote bar is the action bar: its frame id, the lite client's ids and classes, its titles and strings say action", run() {
-      const wn = readText("client/lib/windows.js"), eb = readText("client/lib/emotebar.js"), el = readText("client/lib/emotebar_lite.js"), ix = readText("client/index.html"), ui = readText("client/lib/ui.js"), lt = readText("client/lite.js");
-      return { layout: /^  actions:  \{ x: 'center'/m.test(wn) && !/^  emotes:/m.test(wn), frame: /makeFrame\('actions'/.test(eb) && /title: 'action bar'/.test(eb), lite: /lite-actions/.test(el) && !/lite-emote/.test(el + ix + lt),
-        title: /actions: 'action bar'/.test(ui) && !/'emote bar'/.test(ui), strings: !/chat, emotes/.test(lt + ui) }; },
+  { id: "U1", what: "(R 15:18, the UI half) the bar of gestures is the action bar: its frame id, the lite client's ids and classes, its titles and strings say action", run() {
+      const wn = readText("client/lib/windows.js"), eb = readText("client/lib/actionbar.js"), el = readText("client/lib/actionbar_lite.js"), ix = readText("client/index.html"), ui = readText("client/lib/ui.js"), lt = readText("client/lite.js");
+      return { layout: /^  actions:  \{ x: 'center'/m.test(wn) && !new RegExp(`^  ${EM}s:`, "m").test(wn), frame: /makeFrame\('actions'/.test(eb) && /title: 'action bar'/.test(eb), lite: /lite-actions/.test(el) && !new RegExp(`lite-${EM}`).test(el + ix + lt),
+        title: /actions: 'action bar'/.test(ui) && !new RegExp(`'${EM} bar'`).test(ui), strings: !new RegExp(`chat, ${EM}s`).test(lt + ui) }; },
     good: (o) => o.layout && o.frame && o.lite && o.title && o.strings },
   // ---------------- M: ONE agent tool, anim (R 10-17 15:31/15:32) ----------------
   { id: "M1", what: "(R 15:32) each built-in anim's own mode: wave/cheer/clap/point/salute/flail/talk once; dance, sit, sitchair, lie, stand loop; wings-folded (a one-frame pose) holds; a name the body doesn't know plays once", async run() {
@@ -480,12 +494,12 @@ const cases: Case[] = [
       const told = ag.inbox?.filter((m: any) => /^stopped \{/.test(m.text ?? "")).length ?? 0;
       return { why: why(), told }; },
     good: (o) => JSON.stringify(o.why) === '["sit:replaced","dance:moved","lie:stopped","live:knocked over"]' && o.told === 4 },
-  { id: "M5", what: "…pose, animate, emote and posture are hidden aliases of anim (not advertised; each maps its old shape): pose {bones} → joints, pose {clear} → stop, pose {posture} / posture {kind} → a looped name, pose {wings: fold} → wings-folded, animate {tracks, loop} → mode loop, emote {name} → mode once", async run() {
+  { id: "M5", what: "…pose, animate, posture and the action bar's old tool are hidden aliases of anim (not advertised; each maps its old shape): pose {bones} → joints, pose {clear} → stop, pose {posture} / posture {kind} → a looped name, pose {wings: fold} → wings-folded, animate {tracks, loop} → mode loop; the old gesture tool's {name} passes through untranslated (R 16:26)", async run() {
       const T: any = await import(TREE + "mcpl/tools.ts"); const A = T.TOOL_ALIAS_ARGS ?? {};
-      return { listed: ["pose", "animate", "emote", "posture"].filter((n) => T.TOOLS.some((t: any) => t.name === n)), anim: T.TOOLS.some((t: any) => t.name === "anim"),
-        to: ["pose", "animate", "emote", "posture"].map((n) => T.resolveTool(n)?.name ?? null),
-        m: [A.pose?.({ bones: { head: [0, 0, 0, 1] } }), A.pose?.({ clear: true }), A.pose?.({ posture: "sit" }), A.posture?.({ kind: "lie" }), A.pose?.({ wings: "fold" }), A.animate?.({ tracks: {}, dur: 1, loop: true }), A.emote?.({ name: "wave" })].map((x) => JSON.stringify(x ?? null)) }; },
-    good: (o) => !o.listed.length && o.anim && o.to.every((n: string) => n === "anim") && JSON.stringify(o.m) === JSON.stringify(['{"joints":{"head":[0,0,0,1]}}', '{"stop":true}', '{"name":"sit","mode":"loop"}', '{"name":"lie","mode":"loop"}', '{"name":"wings-folded"}', '{"tracks":{},"dur":1,"mode":"loop"}', '{"name":"wave","mode":"once"}']) },
+      return { listed: ["pose", "animate", EM, "posture"].filter((n) => T.TOOLS.some((t: any) => t.name === n)), anim: T.TOOLS.some((t: any) => t.name === "anim"),
+        to: ["pose", "animate", EM, "posture"].map((n) => T.resolveTool(n)?.name ?? null), pass: A[EM] === undefined,
+        m: [A.pose?.({ bones: { head: [0, 0, 0, 1] } }), A.pose?.({ clear: true }), A.pose?.({ posture: "sit" }), A.posture?.({ kind: "lie" }), A.pose?.({ wings: "fold" }), A.animate?.({ tracks: {}, dur: 1, loop: true })].map((x) => JSON.stringify(x ?? null)) }; },
+    good: (o) => !o.listed.length && o.anim && o.to.every((n: string) => n === "anim") && o.pass && JSON.stringify(o.m) === JSON.stringify(['{"joints":{"head":[0,0,0,1]}}', '{"stop":true}', '{"name":"sit","mode":"loop"}', '{"name":"lie","mode":"loop"}', '{"name":"wings-folded"}', '{"tracks":{},"dur":1,"mode":"loop"}']) },
   { id: "M6", what: "…live tracks in mode hold freeze on one frame: `at` picks it (the last key at or before), default the last key", async run() {
       const { ag, call } = await animAgent(); const tr = { head: [{ t: 0, q: [0, 0, 0, 1] }, { t: 0.5, q: [0, 0.1, 0, 0.995] }, { t: 1, q: [0, 0.2, 0, 0.98] }] };
       const a = played(await call("anim", { tracks: tr, dur: 1, mode: "hold", at: 0.6 })); const f1 = JSON.stringify(ag.heldPose?.head ?? null);
@@ -562,7 +576,7 @@ const cases: Case[] = [
       await call("anim", { name: "sit" }); await call("anim", { joints: { head: [0, 0.1, 0, 0.995] } }); await call("anim", { tracks: { head: [{ t: 0, q: [0, 0, 0, 1] }] }, dur: 1, mode: "loop" });
       const n = sent.length; await call("anim", { stop: "live" }); ag.joined = false;
       const named = await call("anim", { name: "live" });
-      const AD: any = await import(TREE + "shared/animdefs.js"); const side = AD.validateActions ?? AD["validate" + "Em" + "otes"];
+      const AD: any = await import(TREE + "shared/animdefs.js"); const side = AD.validateActionBar;
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } }); s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
       const g = s.call("olive", "set", { id: "cup", component: "grabbable", value: { anim: "live" } });
       const st = s.call("olive", "create", { components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "bunk" }, station: { action: "lie", anim: "live" } } });
@@ -575,6 +589,40 @@ const cases: Case[] = [
       const says = (x: string) => /never the bind pose/i.test(x) && /body-mode[^.]{0,40}unchanged/i.test(x) && /stop: \\?"live\\?"/.test(x) && /reserved/.test(x) && /that layer/.test(x);
       return { tool: says(d), agents: says(a), spec: /never the bind pose/i.test(md) && /`\{type: "anim", stop: true\}`/.test(md) && /`live` is reserved/.test(md) }; },
     good: (o) => o.tool && o.agents && o.spec },
+  // ---------------- E: the old name of a gesture, gone (R 10-17 16:26) ----------------
+  { id: "E1", what: "(R 16:26) presence pose.anim: the agent's once anim rides the next packet as anim (never the old key); the browser sends pose.anim; a receiver (browser, agent) reads either key; the server remembers neither", async run() {
+      const { ag, call, sent } = await animAgent(); ag.joined = true; await call("anim", { name: "wave" }); ag.tick(); ag.tick(); ag.joined = false;
+      const pk = sent.filter((m: any) => m.type === "pose").map((m: any) => m.pose);
+      const OA = exists("shared/onceanim.js") ? await import(TREE + "shared/onceanim.js") : null;
+      const old = { p: [0, 0, 0], clip: "idle", [EM]: "cheer" };
+      const acts: any[] = []; const ag2: any = (await animAgent()).ag; ag2.inbox = []; try { ag2.noteActs?.("u-x", null, old, 1); ag2.noteActs?.("u-y", null, { p: [0, 0, 0], clip: "idle", anim: "clap" }, 1); } catch (e) { acts.push(String(e)); }
+      const srv = readText("server/server.ts"), net = readText("client/lib/net.js"), rem = readText("client/lib/remotes.js");
+      return { first: pk[0]?.anim ?? null, firstOld: pk[0] ? EM in pk[0] : null, second: pk[1] ? "anim" in pk[1] : null,
+        read: OA ? [OA.onceAnimOf({ anim: "wave" }), OA.onceAnimOf(old), OA.onceAnimOf({})] : null, drop: OA ? JSON.stringify(OA.withoutOnceAnim({ a: 1, anim: "x", [EM]: "y" })) : null,
+        heard: ag2.inbox.map((m: any) => m.text).join(" | ").slice(0, 300), acts,
+        srv: /settledPose[^]*?withoutOnceAnim\(pose/.test(srv), net: /pose\.anim = s\.anim/.test(net), rem: (rem.match(/onceAnimOf\(s\)/g) ?? []).length }; },
+    good: (o) => o.first === "wave" && o.firstOld === false && o.second === false && JSON.stringify(o.read) === '["wave","cheer",null]' && o.drop === '{"a":1}' && o.srv && o.net && o.rem === 2 },
+  { id: "E2", what: "…the action bar's modules and defs: actionbar.js, actionbar_lite.js, animnames.js, defs/animations/_actionbar.json (the registry's actionbar key, validateActionBar); the old files are gone; the slash command is /anim", async run() {
+      const AD: any = await import(TREE + "shared/animdefs.js"); const defs = readText("server/defs.ts"), reg = readText("client/lib/commands/registry.js");
+      const olds = fs.readdirSync(TREE + "client/lib").concat(fs.readdirSync(TREE + "defs/animations")).filter((f: string) => f.toLowerCase().includes(EM));
+      return { now: ["client/lib/actionbar.js", "client/lib/actionbar_lite.js", "client/lib/animnames.js", "defs/animations/_actionbar.json"].every(exists), olds,
+        key: /actionbar: loadSidecar\("animations\/_actionbar\.json", validateActionBar\)/.test(defs), v: typeof AD.validateActionBar === "function" && AD.validateActionBar({ wave: { clip: "raise" } }).length === 0,
+        slash: /\{ name: 'anim', help: '\/anim <name>/.test(reg) }; },
+    good: (o) => o.now && !o.olds.length && o.key && o.v && o.slash },
+  { id: "E3", what: "…the word appears nowhere but the hidden tool alias's entry (TOOL_ALIASES) and the old key's read (shared/onceanim.js): every file of the tree (spec/history, the frozen v1 record, aside), file names too; and both of those still work", async run() {
+      const re = new RegExp(`(?<![rd])${EM}`, "i"); const hits: string[] = []; const SKIP = new Set(["node_modules", ".git", "worlds", "store", "history"]);
+      const walk = (rel: string) => { let ents: any[] = []; try { ents = fs.readdirSync(TREE + rel, { withFileTypes: true }); } catch { return; }
+        for (const e of ents) { const r = rel ? `${rel}/${e.name}` : e.name; if (SKIP.has(e.name)) continue;
+          let st: any; try { st = fs.statSync(TREE + r); } catch { continue; }
+          if (re.test(e.name)) hits.push(`${r} (its name)`);
+          if (st.isDirectory()) { walk(r); continue; }
+          if (st.size > 4e6 || /\.(png|jpe?g|glb|vrm|vrma|wasm|ico|webp|gz|zip|mp3|ogg|wav)$/i.test(e.name)) continue;
+          const lines = fs.readFileSync(TREE + r, "utf8").split("\n"); lines.forEach((l: string, i: number) => { if (re.test(l)) hits.push(`${r}:${i + 1}: ${l.trim().slice(0, 120)}`); }); } };
+      walk("");
+      const allowed = (h: string) => /^mcpl\/tools\.ts:\d+: pose: "anim", animate: "anim", \w+: "anim", posture: "anim" \};$/.test(h) || /^shared\/onceanim\.js:\d+: const OLD_KEY = '\w+';$/.test(h);
+      const T: any = await import(TREE + "mcpl/tools.ts"); const OA = exists("shared/onceanim.js") ? await import(TREE + "shared/onceanim.js") : null;
+      return { stray: hits.filter((h) => !allowed(h)).slice(0, 12), nStray: hits.filter((h) => !allowed(h)).length, kept: hits.filter(allowed).length, alias: T.resolveTool?.(EM)?.name ?? null, read: OA?.onceAnimOf({ [EM]: "wave" }) ?? null }; },
+    good: (o) => o.nStray === 0 && o.kept === 2 && o.alias === "anim" && o.read === "wave" },
   // ---------------- X: the record ----------------
   { id: "X1", what: "the version history records the renames at minor 0, and the spec body speaks the new words (§5 consent, §7a rule 4)", run() {
       const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")); const body = md.slice(0, md.indexOf("## Version history"));
