@@ -23,6 +23,7 @@ export const pressFxOn = () => [];
 export const clockRtt = () => null;
 export const plain = (what, r) => `${what}: ${r?.refused?.code ?? ''}`;
 export const nameOf = (id) => id;
+export const called = (id) => nameOf(id) ?? String(id);   // plainwords.js: a thing's spoken name (thingphysics' hints, R 10-17)
 export const html = (s, ...v) => s.raw.map((x, i) => x + (v[i] ?? '')).join('');
 export const xrActive = () => false;
 export let clock = 0;
