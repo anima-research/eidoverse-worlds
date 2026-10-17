@@ -16,7 +16,7 @@ import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
 import { CONFIG, bus, report, tee, colorFor } from './lib/base.js';
 import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, EMOTE_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
-import { setSkyArgsSource, entities, buildsPending, avatarMounts, roleOf, worldHasOwner, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
+import { setSkyArgsSource, entities, buildsPending, anyBuildsPending, avatarMounts, roleOf, worldHasOwner, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
 import { presence } from './lib/presence.js';
 import { initWorldQuad } from './lib/worldquad.js';
 import { foldParity } from './lib/parity.js';
@@ -43,7 +43,7 @@ import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js'
 // this is the real, body-building implementation of that interface.
 import * as participants from './lib/remotes.js';
 import { setWaveClock } from './lib/water.js';
-import { snapshot } from './lib/net_snap.js';
+import { snapshot, setSnapReadiness } from './lib/net_snap.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
   net, connect, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendWhisper, sendTyping,
@@ -138,6 +138,15 @@ const isViewer = CONFIG.spectate || CONFIG.renderer;
 
 setSkyArgsSource(skyArgs);
 setResidencyFocus(() => myState?.pos ?? null);   // the body anchors residency too (§13.3)
+// a renderer takes a snapshot only once the world is realized around the body it follows (net_snap.js settle): the
+// body in the scene, the world's builds done, no model loading or standing in. (Shaders still warming do not block:
+// the renderer compiles any it meets — a stall, never a missing object.)
+setSnapReadiness(async (follow) => {
+  const r = residencyDebug(), warm = warmStats();
+  const body = !!remotes.get(follow)?.avatar, builds = anyBuildsPending();
+  return { ready: body && !builds && !r.loading && !r.standins, body, builds, models: r.real,
+    loading: r.loading + r.standins, compiling: warm.pending + (warm.running ? 1 : 0) };
+});
 // The realizers project folded state into the scene. Wired before connect()
 // so the hydrated event of the very first snapshot finds them listening;
 // causes.js takes the fold-inert live verbs off the 'live-entry' bus.

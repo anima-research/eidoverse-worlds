@@ -211,6 +211,7 @@ export function sendJoin() {
     avatar: hooks.myAvatarPath(),
     spectate: CONFIG.spectate || CONFIG.renderer,
     renderer: CONFIG.renderer,
+    ...(CONFIG.roam ? { roam: true } : {}),
     token: CONFIG.token,
     session: PAGE_SESSION,
   }));
@@ -695,6 +696,14 @@ async function handle(msg) {
         if (msg.entry.verb === 'say') noteSpeaking(msg.entry.actor);
       }
       break;
+
+    case 'renderer-travel':
+      // a roaming renderer is wanted elsewhere (server/snapshots.ts summon): go there — the same in-page re-join a
+      // person's travel uses. Only a roaming renderer obeys; anyone else ignores it.
+      if (CONFIG.renderer && CONFIG.roam && typeof msg.world === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(msg.world) && msg.world !== CONFIG.world) {
+        CONFIG.world = msg.world; rejoin();
+      }
+      return;
 
     case 'snap':
       // The reply is the snapshot's to produce and the wire's to send, so a client

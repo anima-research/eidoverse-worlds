@@ -337,6 +337,7 @@ try {
 
 let nextClientNum = 1;
 const clients = new Map<unknown, Client>();
+snapshots.setClients(() => clients.values());   // roaming renderers are found across worlds
 // #57 B2: transport-epoch source. Global (not per-world) so a generation number
 // never collides across worlds or after a world reload; never persisted — an
 // epoch outliving the process would defeat its purpose.
@@ -462,6 +463,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     if (typeof msg.session === "string" && PAGE_SESSION_RE.test(msg.session)) c.presenceSession = msg.session;
     c.agent = Boolean(msg.agent);
     c.renderer = Boolean(msg.renderer);
+    c.roam = c.renderer && Boolean(msg.roam);
     snapshots.configure(c, msg.capture);
     if (c.renderer) c.spectator = true; // renderers are invisible by definition
     // Same display name, different PERSON (two guild members can share a
@@ -617,6 +619,9 @@ function installJoin(c: Client, w: World) {
     c.gen = ++GEN;   // B2: this leg's surfaceSession, issued on acceptance
     c.legGen = w.legGen();   // the world-scoped generation caption entries carry (survives restarts)
     w.clients.add(c);
+    // an agent's body arriving where no renderer serves: send a roaming renderer now, so its first snapshot finds the
+    // world loaded (server/snapshots.ts prewarm; a no-op when one already serves or none roams)
+    if (c.agent && !c.spectator) snapshots.prewarm(w);
     // eidosim@0.3.0: know the world's standing geometry before anyone spawns
     // or epochs into it (boxes.ts — the sync validators read a warm cache).
     // AFTER admission, never before: a rejected or invalid join must not

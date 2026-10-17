@@ -39,9 +39,18 @@ export function pngFromDataURL(value: unknown): Buffer | null {
   return null;
 }
 
-export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, maxPending = 16, now = Date.now } = {}) {
+// ROAMING RENDERERS: a renderer that joined with `roam` serves no world in particular. When a snapshot is asked of
+// a world no renderer is serving (an agent building alone in its own world — the common case), the broker sends an
+// idle roamer there (`renderer-travel`), waits for it to arrive, and dispatches the snapshot to it. It stays until
+// another world needs it, so an agent iterating on a build gets fast follow-up shots. `allClients` lists every
+// connected client (the server passes its registry; tests pass their own).
+export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, maxPending = 16, now = Date.now,
+  travelMs = 25_000, arrivalTimeoutMs = 40_000, pollMs = 200, recentMs = 5 * 60_000,
+  allClients = (() => []) as () => Iterable<Client> } = {}) {
   const pending = new Map<string, Pending>();
   const last = new WeakMap<Client, number>();
+  const travelling = new Map<string, { at: number; arrived: Promise<boolean> }>();   // world name → a summons in flight
+  const asked = new Map<string, number>();   // world name → when a snapshot was last asked there (roamer rotation)
   const active = (c: Client, w: World) => c.world === w && w.clients.has(c) && !c.superseded
     && (c.ws.readyState == null || c.ws.readyState === 1);
   function retire(c: Client) {
@@ -58,9 +67,63 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     if (!["auto", "unreal", "browser"].includes(engine)) return fail("renderer must be auto, unreal, or browser", 400);
     const target = [...world.clients].find(c => c.id === follow && !c.spectator && active(c, world));
     if (!target) return fail(`"${follow}" is not present in "${world.name}"`, 404);
+    asked.set(world.name, now());
     const candidates = [...world.clients].filter(c => active(c, world) && (c.renderer || c.capture)
       && (engine === "auto" || (c.capture?.engine ?? "browser") === engine))
       .sort((a, b) => Number(!!b.capture) - Number(!!a.capture));
+    if (!candidates.length) {
+      // a roamer can only be a browser renderer: an Unreal-only request is not summoned
+      if (engine === "unreal") return fail(`no unreal renderer is currently serving world "${world.name}"`, 503);
+      return summon(world, false).then((arrived) => arrived
+        ? dispatch(world, follow, view, engine, frame, target, arrivalTimeoutMs)
+        : { ok: false as const, err: `no renderer is currently serving world "${world.name}", and no roaming renderer could come`, status: 503 });
+    }
+    return dispatch(world, follow, view, engine, frame, target, timeoutMs);
+  }
+  const candidatesIn = (world: World, engine: string) => [...world.clients].filter(c => active(c, world) && (c.renderer || c.capture)
+    && (engine === "auto" || (c.capture?.engine ?? "browser") === engine))
+    .sort((a, b) => Number(!!b.capture) - Number(!!a.capture));
+  /** How much a roamer's current world still needs it: 0 — no agent there (parked, free); 1 — agents there, but none
+   *  has asked for a snapshot recently; 2 — in use. Rotation takes the least needed, then the longest idle. */
+  const need = (c: Client) => {
+    const w = c.world!;
+    if (![...w.clients].some(o => o.agent && !o.spectator && active(o, w))) return 0;
+    return now() - (asked.get(w.name) ?? -Infinity) >= recentMs ? 1 : 2;
+  };
+  /** Send a roaming renderer to `world` and wait for it to join there. One summons per world at a time; a roamer busy
+   *  with a snapshot, or on its way somewhere, is not taken. A roamer a world is actively using is taken only for a
+   *  snapshot actually asked (never for a pre-warm), and only when no freer one exists. */
+  function summon(world: World, prewarming: boolean): Promise<boolean> {
+    const inFlight = travelling.get(world.name);
+    if (inFlight && now() - inFlight.at < travelMs) return inFlight.arrived;
+    const busy = new Set([...pending.values()].map(p => p.renderer));
+    const enRoute = new Set([...travelling.keys()]);
+    const roamers = [...allClients()].filter(c => c.roam && c.renderer && c.world && active(c, c.world)
+      && c.world !== world && !busy.has(c) && !enRoute.has(c.world.name))
+      .map(c => ({ c, n: need(c) })).filter(r => !(prewarming && r.n === 2))
+      .sort((a, b) => a.n - b.n || (last.get(a.c) ?? 0) - (last.get(b.c) ?? 0))
+      .map(r => r.c);
+    const roamer = roamers[0];
+    if (!roamer) return Promise.resolve(false);
+    try { roamer.ws.send(JSON.stringify({ type: "renderer-travel", world: world.name })); }
+    catch { return Promise.resolve(false); }
+    const at = now();
+    const arrived = new Promise<boolean>((resolve) => {
+      const tick = () => {
+        if (candidatesIn(world, "auto").length) { travelling.delete(world.name); return resolve(true); }
+        if (now() - at >= travelMs) { travelling.delete(world.name); return resolve(false); }
+        setTimeout(tick, pollMs);
+      };
+      setTimeout(tick, pollMs);
+    });
+    travelling.set(world.name, { at, arrived });
+    return arrived;
+  }
+  function dispatch(world: World, follow: string, view: string, engine: string,
+    frame: { dist?: number; height?: number; pitch?: number }, target: Client, waitMs: number): Promise<Result> {
+    const fail = (err: string, status: number) => Promise.resolve<Result>({ ok: false, err, status });
+    if (!active(target, world)) return fail(`"${follow}" is not present in "${world.name}"`, 404);
+    const candidates = candidatesIn(world, engine);
     if (!candidates.length) return fail(`no ${engine === "auto" ? "" : engine + " "}renderer is currently serving world "${world.name}"`, 503);
     const renderer = candidates.find(c => now() - (last.get(c) ?? -Infinity) >= cooldownMs
       && ![...pending.values()].some(p => p.renderer === c) && (c.ws.getBufferedAmount?.() ?? 0) < 256_000);
@@ -69,7 +132,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     const id = `snap-${randomUUID()}`;
     last.set(renderer, now());
     return new Promise(resolve => {
-      const timer = setTimeout(() => p.finish({ ok: false, err: "renderer timed out", status: 504 }), timeoutMs);
+      const timer = setTimeout(() => p.finish({ ok: false, err: "renderer timed out", status: 504 }), waitMs);
       const p: Pending = { renderer, target, world, gen: renderer.gen,
         engine: renderer.capture?.engine ?? "browser", scene: renderer.capture?.scene ?? "world-fold",
         finish(r) { if (!pending.delete(id)) return; clearTimeout(timer); resolve(r); } };
@@ -85,10 +148,20 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     if (typeof msg.id !== "string") return;
     const p = pending.get(msg.id);
     if (!p || p.renderer !== c || p.gen !== c.gen || !active(c, p.world) || !active(p.target, p.world) || !(c.renderer || c.capture)) return;
+    // a renderer's own refusal (still loading the world, the body not in its scene) reaches the asker in its words,
+    // as a retryable 503 — never a generic "invalid image"
+    if (typeof msg.error === "string" && msg.error.trim()) return p.finish({ ok: false, err: msg.error.trim().slice(0, 300), status: 503 });
     const png = pngFromDataURL(msg.dataUrl);
     p.finish(png ? { ok: true, png, engine: p.engine, scene: p.scene }
       : { ok: false, err: "renderer could not supply a valid image", status: 502 });
   }
-  return { request, receive, retire, configure, get pendingCount() { return pending.size; } };
+  /** PRE-WARM: a body that can ask for snapshots (an agent) arrived in `world`. If no renderer serves it, send a roamer
+   *  now, so the world is loaded by the time the first snapshot is asked. Fire-and-forget; idempotent per world. */
+  function prewarm(world: World) {
+    if (!candidatesIn(world, "auto").length) void summon(world, true);
+  }
+  /** The server's client registry, for finding roaming renderers in other worlds. */
+  function setClients(fn: () => Iterable<Client>) { allClients = fn; }
+  return { request, receive, retire, configure, setClients, prewarm, get pendingCount() { return pending.size; } };
 }
 export const snapshots = createSnapshotBroker();

@@ -78,6 +78,7 @@ export type Client = {
                        // Per-surface last-writer-wins replaces the flat one-body rule (2026-08-07;
                        // prior art: Discord voice legs keyed to gateway sessions, XMPP resources).
   renderer?: boolean;  // legacy invisible browser renderer
+  roam?: boolean;      // a renderer the snapshot broker may send to any world that has none (snapshots.ts)
   capture?: import("./snapshots.ts").CaptureCapability; // opt-in embodied/native donor
   bcRing?: unknown[];  // dev crash forensics (?bc=1): last N breadcrumbs, printed on close
   // rate windows: a griefer or a stuck client gets silence, not fanout
