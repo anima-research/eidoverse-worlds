@@ -3419,6 +3419,12 @@ export class WorldAgent {
   // still let an internal caller send utt:-1 or t0:NaN — two layers that
   // disagree on well-formed are one layer). Malformed trio → plain say: an
   // internal caller's bug must not silently ride protocol keys.
+  /** Whether a say would reach the world now: joined, on an open socket.
+   *  verb() checks only joined, so a say on a closing socket is dropped. */
+  get canSay(): boolean {
+    return this.joined && this.ws?.readyState === 1;
+  }
+
   say(text: string, extra?: { spoken?: boolean; utt?: number; t0?: number }) {
     this._typingUntil = 0;
     const args: Record<string, unknown> = { text };

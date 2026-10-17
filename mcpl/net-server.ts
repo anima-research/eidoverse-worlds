@@ -36,6 +36,7 @@ import {
 import {
   CHAT, EIDO, CAP, tags, capabilityMatches, MCPL_ADVERTISEMENT, FEATURE_SETS,
 } from "./declaration.ts";
+import { PUBLISH_TARGET, publishTargetRefusal, decidePublish } from "./declaration.ts";
 import { WorldAgent } from "./agent.ts";
 import { toolList, handleTool, type ToolCtx } from "./tools.ts";
 import { pingDelivery, type WirePing } from "./ping-wire.ts";
@@ -859,8 +860,10 @@ class Session {
             // a host that declared only `channels.incoming` still made the
             // world draw typing dots over its agent's head.
             if (!this.capAllowed(CAP.channelsStreaming)) continue;
-            const cid = (msg.notification.params as { channelId?: string } | undefined)?.channelId;
-            if (!cid || cid === this.channelId) this.agent.typing();
+            const chunk = msg.notification.params as { channelId?: string; threadId?: unknown } | undefined;
+            const cid = chunk?.channelId;
+            // RFC-011 §6: no dots for a place the world refuses.
+            if ((!cid || cid === this.channelId) && publishTargetRefusal(chunk?.threadId) === undefined) this.agent.typing();
           }
           continue;
         }
@@ -1097,7 +1100,8 @@ class Session {
       // it must be open from the first breath.
       initiallyOpen: true,
       metadata: { epoch: this.epoch, ...(this.foundedHere ? { created: true } : {}) },   // RFC-005 §3.2.3d/§3.2.7
-
+      // RFC-011: where a publish lands — the world itself (see declaration.ts).
+      capabilities: { publish: PUBLISH_TARGET },
     } as ChannelDescriptor];
   }
 
@@ -1106,18 +1110,19 @@ class Session {
     try { await this.conn.sendRequest(method.CHANNELS_REGISTER, params); } catch { /* non-MCPL host: tools still work */ }
   }
 
-  private handlePublish(params: ChannelsPublishParams): ChannelsPublishResult & { error?: string } {
-    // §3.2.3 cutoff: a publish naming a channel we are no longer attached to
-    // is answered, not dropped — the host learns the boundary. (The verb
-    // returns a result rather than throwing, so the honest signal rides here;
-    // the caller maps it to -32023.)
-    if (params.channelId !== this.channelId) return { delivered: false, error: `unknown channel: ${params.channelId}` };
-    const text = (params.content ?? [])
-      .filter((b): b is { type: "text"; text: string } => b.type === "text")
-      .map((b) => b.text).join("\n").trim();
-    if (!text) return { delivered: false };
-    this.agent.say(text.slice(0, 4000));
-    return { delivered: true };
+  private handlePublish(
+    params: ChannelsPublishParams & { threadId?: unknown },
+  ): ChannelsPublishResult & { error?: string; threadId?: null; reason?: string } {
+    // Decided in declaration.ts's decidePublish(), which the publish-target
+    // test runs: the §3.2.3 boundary first (a publish naming a channel we are
+    // no longer attached to is answered, not dropped; the caller maps its
+    // error to -32023), then RFC-011's target (a thread is refused as a
+    // result with a reason, before anything is said; null is the world, echoed
+    // back; absent is a legacy caller, answered as before), then the text.
+    const decision = decidePublish(params, { channelId: this.channelId, canSay: this.agent.canSay });
+    if (decision.say !== undefined) this.agent.say(decision.say);
+    else if (!decision.result.delivered && decision.result.reason) console.warn("[door] publish refused:", decision.result.reason);
+    return decision.result;
   }
 
   // Vision is the world's own API: the sequencer routes /snap to whatever
