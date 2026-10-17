@@ -232,6 +232,8 @@ export function initEmoteBar() {
       b.title = k;
       b.innerHTML = emojiRenders(em) ? `<span class="tile-glyph">${em}</span>` : `<span class="tile-word">${k}</span>`;
       b.onclick = () => { posture(k); paint(); };
+      // the stand tile held is the seat escape, as X held is (claims r10 R6: touch and phone parity; localbody.js 'escape-hold')
+      if (k === 'stand') { b.onpointerdown = () => bus.emit('escape-hold', true); b.onpointerup = b.onpointerleave = b.onpointercancel = () => bus.emit('escape-hold', false); }
       grid.appendChild(b);
       tiles.set(`posture:${k}`, b);
     }

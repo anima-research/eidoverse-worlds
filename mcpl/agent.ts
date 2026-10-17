@@ -7,7 +7,7 @@
 import { bodyOf } from "../shared/components.js";
 import { DEFAULT_PRESET, KIND_CLASS, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/protocol/consent.js";
 import { kindOf } from "../shared/protocol/kind.js";
-import { describeBody, mayLeave, resolveSeat, socketsUnder, unseatedFromMine } from "../shared/sockbody.js";
+import { describeBody, mayLeave, resolveSeat, socketsUnder, unseatedFromMine, unseatedAt } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
 import { r3 } from "../shared/protocol/round.js";
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
@@ -499,7 +499,7 @@ export class WorldAgent {
       else if (m.type === "unseated") {   // review r9 M3: an edit by someone else moved the seat I sat on, and the authority let me go
         if (unseatedFromMine(m, this.mySeat)) { const on = this.seatName(m.seat); this.setSeat(null);
           // stand where the authority let me go (its track of my body starts again there, r9 M2)
-          if (Array.isArray(m.at) && m.at.length === 3 && m.at.every(Number.isFinite)) { this.pos.x = m.at[0]; this.pos.y = m.at[1]; this.pos.z = m.at[2]; }
+          const at = unseatedAt(m); if (at) { this.pos.x = at[0]; this.pos.y = at[1]; this.pos.z = at[2]; }
           text = `${typeof m.by === "string" ? this.nameOfActor(m.by) ?? m.by : "someone"} moved ${on}, the seat you were on, so you are standing where it was${typeof m.why === "string" ? ` (${m.why})` : ""}`; } }
       else if (m.type === "body-revoked") text = `${m.by} withdrew consent for ${m.class}: what you were doing to their body has ended`;
       else if (m.type === "reach-refused") {   // the relay took a hand of mine out of my pose: nobody saw it (server/reachgate.ts)

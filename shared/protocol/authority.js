@@ -9,7 +9,7 @@
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf, socketQ, ONE_PLACE } from "../components.js";
 import { MOVER, TRACK, bodyBox, bodyScale, floorStep, sweep, tokensAfter } from "../mover.js";
-import { checkSockets, checkSocket, checkStation } from "../sockbody.js";
+import { checkSockets, checkSocket, checkStation, inSitReach, SIT_REACH } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, homeOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
 import { mintId, PERSON_ID, isPlaceholder } from "./ids.js";
@@ -1140,7 +1140,10 @@ function commit(w, actor, verb, args, build) {
       if (!after.entities[id] || !ancestors(after, id).some((p) => offed.includes(p))) continue;
       delete w.presence.holds[id]; let_go = true; heldEvent(w, "release", id, { by: h.by, how: "edited", seq: act }); ctx.notes.push({ id, tookFromHand: h.by, why: "what it hangs under was switched off, so it left the hand that held it" }); }
     if (let_go) w.savePresence(); }
-  for (const who of Object.keys(w.presence.seats ?? {})) if (!seatOf(w, after, who)) { const to = w.presence.seats[who]?.to; if (typeof to === "string" && st.entities[to]) unseatAt(w, st, who, to); clearSeat(w, who); ctx.notes.push({ who, unseated: true, why: "the socket they sat on was switched off or removed" }); }
+  // a seat gone or switched off lets its rider go: told in their inbox like any unseat (holes r10 L6), with where the track restarts
+  for (const who of Object.keys(w.presence.seats ?? {})) if (!seatOf(w, after, who)) { const to = w.presence.seats[who]?.to; const why = "the socket they sat on was switched off or removed";
+    const at = typeof to === "string" && st.entities[to] ? unseatAt(w, st, who, to) : null; clearSeat(w, who); ctx.notes.push({ who, unseated: true, why });
+    if (typeof to === "string") inboxPush(w.presence, who, { type: "unseated", seat: to, by: actor, why: `${to}: ${why}`, ...(at ? { at } : {}) }); }
   return { ok: true, seq, head: w.headAt(seq), act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
     after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
 }
@@ -1841,10 +1844,19 @@ function buildUse(ctx, a) {
     const taken = (x) => (ctx.w ? sitterOn(ctx.w, ctx.st, x.id, ctx.actor) : null);
     const pick = socket != null ? ok.find((x) => x.slot === socket) : ok.find((x) => !taken(x)) ?? ok[0];
     { const t = taken(pick); if (t) refuse("occupied", `${t.who ? said(t.who) : t.thing} ${t.who ? "sits" : "is"} in ${pick.host}'s ${pick.slot}${socket == null && ok.length > 1 ? `, and its other ${action} sockets are taken too` : ""}`, "one body per socket: wait till it's free, or pick another (args: {socket})", t.who ? { by: t.who } : { thing: t.thing }); }
+    // within reach (review r10 M1): leaving a seat restarts the authority's track of the body at it, so a sit from afar would be an
+    // unlogged teleport past the spawn rule and any wall. Measured from the tracked body (or, moving straight from another seat,
+    // from that seat); a body the authority doesn't track yet (not arrived) may sit, and its first move is an arrival as ever
+    let near = false;
+    if (ctx.w) { const me = ctx.w.presence.bodies?.[ctx.actor], cur = seatOf(ctx.w, ctx.st, ctx.actor);
+      const from = cur && ctx.st.entities[cur.to] ? worldT(ctx.st, cur.to).pos : Array.isArray(me?.at) ? me.at : null;
+      if (from) { const sp = worldT(ctx.st, pick.id).pos;
+        if (!inSitReach(from, sp, SIT_REACH.lag)) refuse("out-of-reach", `${pick.host}'s ${pick.slot} is ${r3(Math.hypot(sp[0] - from[0], sp[2] - from[2]))} m from you${Math.abs(sp[1] - from[1]) > 1 ? `, ${r3(sp[1] - from[1])} m up` : ""}; a seat is within ${SIT_REACH.r} m to sit on`, `walk up to it first (move {to: '${pick.host}'})`);
+        near = true; } }
     // attaching is presence (your frames say where you're attached; nothing is recorded), so the authority only answers: where,
     // and what the body does there (the socket's body block read with its defaults: shared/sockbody.js bodyOf)
     const { clip, ...body } = pick.body;
-    return { presence: true, attach: { to: pick.id, host: pick.host, socket: pick.slot, ...body }, note: `you ${action} on ${pick.host} (${pick.slot}): presence — your frames carry it; nothing recorded${body.leaveBy === "script" ? " (this seat lets you go only when a script does)" : ""}` };
+    return { presence: true, near, attach: { to: pick.id, host: pick.host, socket: pick.slot, ...body }, note: `you ${action} on ${pick.host} (${pick.slot}): presence — your frames carry it; nothing recorded${body.leaveBy === "script" ? " (this seat lets you go only when a script does)" : ""}` };
   }
   const h = handlerOf(e, action);
   if (h?.who && rankOf(ctx.st, ctx.actor) < whoRank(ctx.st, h.who)) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
@@ -3219,7 +3231,8 @@ function arrivalBox(st, p, size) {
 function seatOf(w, st, who) { const s = w.presence.seats?.[who];
   return s && typeof s.to === "string" && isSocketC(st.entities[s.to]?.c) && !offChain(st, s.to) ? s : null; }
 // `since`: the log's length when they sat (review r9 M1): what was written from then on isn't part of the ride they consented to
-const setSeat = (w, who, to) => { (w.presence.seats ??= {})[who] = { to, since: w.entries.length }; w.presenceDirty = true; };
+// `near`: the body was tracked within sitting reach when it sat (review r10 M1): only then does leaving re-anchor the track at the seat
+const setSeat = (w, who, to, near = false) => { (w.presence.seats ??= {})[who] = { to, since: w.entries.length, ...(near ? { near: true } : {}) }; w.presenceDirty = true; };
 const clearSeat = (w, who) => { if (w.presence.seats?.[who]) { delete w.presence.seats[who]; w.presenceDirty = true; } };
 // Leaving a seat is presence, like arriving (scars r9 M2): a seated client sends no steps, so the authority's track of the
 // body is where it boarded. When the seat lets them go (unseated, the socket removed or switched off, or their own first
@@ -3227,8 +3240,10 @@ const clearSeat = (w, who) => { if (w.presence.seats?.[who]) { delete w.presence
 // next step is measured from where they really are, never refused too-fast from the boarding point (which, in a world with
 // a spawn, a non-builder couldn't teleport out of). The seat's logged pose (a motion's swing isn't evaluated here: the full
 // budget covers it). Returns where, or null (no body tracked).
+// Only for a body that boarded within reach (`near`, review r10 M1); otherwise the track stays where it was (a presence file from
+// before r10 has no `near`: its riders keep their old track, the safe direction).
 function unseatAt(w, st, who, seat) {
-  const b = w.presence.bodies?.[who]; if (!b || !st?.entities[seat]) return null;
+  const b = w.presence.bodies?.[who]; if (!b || !st?.entities[seat] || w.presence.seats?.[who]?.near !== true) return null;
   const at = worldT(st, seat).pos.map(r3); if (!at.every(Number.isFinite)) return null;
   w.presence.bodies[who] = { ...b, at, ts: w.pace ? w.pace() : w.now(), tokens: TRACK.cap }; w.presenceDirty = true;
   return at;
@@ -3276,8 +3291,9 @@ function unseatsFor(w, st, who, norm) {
   // its host up to the root, were last written before the rider sat. A reaction added to the chair after you sat, or a thing
   // hung under it since, is someone's edit, not the ride (a builder can't move an occupied seat in two steps)
   const key = cap?.kind === "reaction" ? "reactions" : cap?.kind === "script" ? cap.key : null;
+  // (the authority's follow-ups aren't edits: a reference cleared on the seat since is skipped, claims r10 O3, as §5 says)
   const rideBefore = (since) => Number.isInteger(since) && [from, ...ancestors(st, from)].every((id, k) =>
-    (lastTouch(w, id, "parent")?.seq ?? Infinity) < since && (k > 0 || (lastTouch(w, from, key)?.seq ?? Infinity) < since));
+    (lastTouch(w, id, "parent", { authored: true })?.seq ?? -1) < since && (k > 0 || (lastTouch(w, from, key, { authored: true })?.seq ?? Infinity) < since));
   const out = new Map();
   for (const op of norm) {
     if (op.verb === "create" || op.comp === undefined || !MOVES_BODIES(op.comp) || !st.entities[op.id]) continue;
@@ -3323,7 +3339,8 @@ const PHYSICS_VERBS = {
     }
     // still seated in the authority's view: a seated client sends no steps, so this is their first step off the seat (a
     // person's stand-up is presence, never a request): it is measured from the seat, not from where they boarded (r9 M2)
-    { const sat = seatOf(w, st, actor); if (sat && unseatAt(w, st, actor, sat.to)) me = w.presence.bodies[actor]; }
+    // the first step is the stand-up (holes r10 L5): the seat clears now, wherever the step goes
+    { const sat = seatOf(w, st, actor); if (sat && unseatAt(w, st, actor, sat.to)) me = w.presence.bodies[actor]; if (w.presence.seats?.[actor]) clearSeat(w, actor); }
     const d = dist(me.at, to); const tokens = tokensAfter(me.tokens, now - (me.ts ?? now));
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${TRACK.speed} m/s, ${TRACK.cap} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
     const block = pathBlocked(w, st, me.at, to, size);
@@ -4177,7 +4194,7 @@ const VERBS = {
     if (probe.presence) {
       // a seat is presence (nothing recorded), but the authority keeps who sits where: a thing someone sits on, or anything
       // carrying it, isn't kicked, shoved, grabbed or thrown out from under them (occupant)
-      if (probe.attach?.to) setSeat(w, actor, probe.attach.to);
+      if (probe.attach?.to) setSeat(w, actor, probe.attach.to, probe.near);
       return { ok: true, recorded: false, ...(probe.attach ? { attach: probe.attach } : {}), note: probe.note };   // attach: where your frames now say you are
     }
     if (probe.script) { // L7 (41 §3.6): the visitor's use is ITS act, on its own rate; the behaviour runs with its sponsor's rights

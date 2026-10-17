@@ -159,6 +159,20 @@ export const ESCAPE_HOLD_S = 1.5, ESCAPE_REPEAT_S = 2;
 /** Does the authority's `unseated` inbox message name the seat I'm on now (`mount` = {to: <socket id>}, mine or null)? A
  *  late message (after a reconnect) never stands anyone up from a seat taken since (review r9 L4, M3: client and agent). */
 export const unseatedFromMine = (u, mount) => !!(u && mount && typeof u.seat === 'string' && u.seat === mount.to);
+/** Where the authority let me go (`unseated {at}`, its track of my body restarts there): [x, y, z] or null. The browser and the
+ *  agent both stand there (claims r10 O1), so the body and the authority's track start together. */
+export const unseatedAt = (u) => (Array.isArray(u?.at) && u.at.length === 3 && u.at.every((n) => typeof n === 'number' && Number.isFinite(n)) ? u.at.slice() : null);
+/** How near a body must be to sit (review r10 M1: a sit is presence, and leaving the seat restarts the authority's track at
+ *  it, so a sit from afar would be an unlogged teleport). The client's plain X offers a seat within `r` m on the ground and
+ *  within `up`/`down` m of the feet (localbody.js nearestSeat: R 10-11 00:47, a seat 3 m up isn't near); the authority
+ *  allows `lag` more on each, because its track of a walking body trails the client by one tracked step (thingphysics.js
+ *  sends at most 5 a second: 0.2 s at a 4 m/s run is 0.8 m). */
+export const SIT_REACH = Object.freeze({ r: 3.5, up: 1.6, down: 1.0, lag: 1.0 });
+/** Is a seat at `seat` within sitting reach of feet at `feet` ([x, y, z] each)? lag: the authority's allowance (0 for the client). */
+export function inSitReach(feet, seat, lag = 0) {
+  const dh = Math.hypot(seat[0] - feet[0], seat[2] - feet[2]), dy = seat[1] - feet[1];
+  return dh <= SIT_REACH.r + lag && dy <= SIT_REACH.up + lag && -dy <= SIT_REACH.down + lag;
+}
 export function mayLeave(body, kind) {
   if (!body) return true;
   if (kind === 'script' || kind === 'escape') return true;
