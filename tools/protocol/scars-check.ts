@@ -246,7 +246,7 @@ const cases: Case[] = [
       for (const m of src.matchAll(/\brefuse\(([a-zA-Z_][\w.?]*)[,)]/g)) if (f.endsWith("authority.js")) dynamic.push(m[1]); }
     const reg = new Set(Object.keys(REG.REFUSAL_CODES));
     const missing = [...used.keys()].filter((c) => !reg.has(c) && !REG.NOT_REFUSALS.includes(c));
-    const unused = [...reg].filter((c) => !used.has(c));
+    const unused = [...reg].filter((c) => !used.has(c) && !REG.REFUSAL_CODES[c].reserved);
     const badRow = Object.entries(REG.REFUSAL_CODES).filter(([, r]: any) => !(typeof r?.meaning === "string" && r.meaning && typeof r?.when === "string" && r.when)).map(([k]) => k);
     const dynUnknown = [...new Set(dynamic)].filter((d) => !REG.DYNAMIC_REFUSALS.includes(d));
     return { reg: true, missing, unused, badRow, dynUnknown, n: reg.size, unseen: [...D.unregisteredCodes?.() ?? ["(no runtime hook)"]] };
@@ -255,7 +255,7 @@ const cases: Case[] = [
 }
 
 let pass = 0, fail = 0;
-try { (globalThis as any).__REG = await import(TREE + "shared/protocol/refusal.js"); } catch { /* G1 says so */ }
+try { (globalThis as any).__REG = await import(TREE + "shared/protocol/refusalcodes.js"); } catch { /* G1 says so */ }
 (globalThis as any).__VS = await import(TREE + "shared/protocol/verbspec.js");
 for (const c of [...cases.filter((x) => x.id !== "G1"), ...cases.filter((x) => x.id === "G1")]) {   // G1 last: it reads what every other row met
   if (ONLY && !ONLY.includes(c.id)) continue;

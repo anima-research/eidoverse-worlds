@@ -17,6 +17,7 @@ import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, material
 import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
 import { dec, partSlot } from "./names.js";
 import { READ_ONLY, GHOST_OK } from "./verbclasses.js";
+import { isRefusalCode } from "./refusalcodes.js";
 import { foldSkyEntry } from "../forecast.js";
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../captions.js";
 import * as C from "./consent.js";
@@ -131,13 +132,21 @@ export function request(w, actor, verb, args = {}) {
     drainScripts(w); // what the request's own entries trigger (changed:<comp>, say), after them, each its own activation
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; }
     if (r && r.refused && !r.refused.fix) r.refused.fix = verbHelp(verb) ? `help {verb: '${verb}'} shows its arguments with examples` : "help lists every verb";
+    if (r && r.refused) noteCode(r.refused.code);
     return r;
   } catch (e) {
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } // a refusal still updates the authority's own ring and throttle (presence, unlogged)
-    if (e instanceof Refusal) { if (!UNLOGGED_REFUSALS.has(e)) logRefusal(w, actor, verb, args, e.code); const { code, reason, fix, ...rest } = e; return { ok: false, refused: { code, reason, fix: fix || (VERBSPEC[verb] ? `help {verb: '${verb}'} shows its arguments with examples` : "help lists every verb"), ...pick(rest) } }; }
+    if (e instanceof Refusal) { noteCode(e.code); if (!UNLOGGED_REFUSALS.has(e)) logRefusal(w, actor, verb, args, e.code); const { code, reason, fix, ...rest } = e; return { ok: false, refused: { code, reason, fix: fix || (VERBSPEC[verb] ? `help {verb: '${verb}'} shows its arguments with examples` : "help lists every verb"), ...pick(rest) } }; }
     throw e;
   } finally { exit(); }
 }
+// The refusal-code registry (refusalcodes.js; engine-scars 3.1): a code is one-way (it is written into signed entries), so
+// every code a reply carries must be registered. One the registry doesn't have is noted here (never refused: the asker gets
+// the refusal as given) and scars-check G1 fails on any it met.
+const UNSEEN_CODES = new Set();
+const noteCode = (c) => { if (!isRefusalCode(c)) UNSEEN_CODES.add(String(c)); };
+/** Refusal codes a reply carried that the registry doesn't list (tests read it; empty when the registry is whole). */
+export function unregisteredCodes() { return [...UNSEEN_CODES]; }
 // ---- ids: writers never choose them (R 10-17 00:46, STAGING-TODO "ID HARDENING" (2)) ----
 // The authority mints every id (shared/protocol/ids.js: 26 base32, no slug). A writer that needs to name a thing it is
 // making — to parent something to it, place something on it, point at it — in the same request writes a request-local
@@ -4142,7 +4151,7 @@ const VERBS = {
   // and `end` to clear the screen. The bag keeps the newest lines (CAPTIONS_MAX_LINES). ----
   caption: (w, actor, a) => commit(w, actor, "caption", a, (ctx) => {
     const n = normalizeCaptionArgs(a); if (!n.ok) refuse("shape", n.why, "caption {id, session, n, t0, t1, text, speaker?, title?} | {id, session, end: true}");
-    const id = n.args.id; const e = ctx.st.entities[id]; if (!e) refuse("no-such", `nothing here called ${id}`, "look lists what's here");
+    const id = n.args.id; const e = ctx.st.entities[id]; if (!e) refuse("not-found", `nothing here called ${id}`, "look lists what's here");
     const args = { ...n.args, gen: Number.isSafeInteger(a.gen) && a.gen >= 0 ? a.gen : 0 };
     const why = captionRefusal(e.c.captions, args); if (why) refuse("caption", why, "a resend of a line already written is refused: read that as its receipt");
     ctx.cap = { kind: "caption", ids: [id], comps: ["captions"] };
@@ -4207,6 +4216,8 @@ const VERBS = {
   },
 };
 /** The fork's copy acts (server/worldlog.ts copyInto): the batch request, logged as verb fork-copy. */
+/** Every verb the authority answers (VERBSPEC must have a row for each: scars-check V1). */
+export const VERB_NAMES = Object.freeze(Object.keys(VERBS));
 export function forkCopy(w, actor, args) { CTX.forking = true; try { return request(w, actor, "fork-copy", args); } finally { CTX.forking = false; } }
 function buildBatch(ctx, a, w) { {
       // the next op sees this one's result: ONE working copy for the whole batch, copied per entity as ops touch it (a
