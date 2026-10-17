@@ -30,11 +30,11 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["ref clears admitted on the deleter's rights", "protocol/authority.js", "const fu = raw[FOLLOW_UP] === true;", "const fu = false;", ["R1", "R2", "R3", "R4"]],
   ["undo's ref restores on the undoer's rights", "protocol/authority.js", "if (refRestore(o)) g[FOLLOW_UP] = true;", "", ["R4"]],
   ["no repair marker at founding", "protocol/authority.js", "w.append(actEntry(w, \"system\", \"repair-shapes\", { v: SHAPES_VERSION, ids: [], founding: true }));", "", ["M1"]],
-  ["the founding's marker read bare", "protocol/shaperepair.js", "if (e.verb === \"create-world\") { const b = bodyOf(i);", "if (e.verb === \"create-world\") { const b = e.body;", ["M2"]],
+  ["the founding's marker read bare", "protocol/shaperepair.js", "if (e.verb === \"create-world\" && !founded) { founded = true; const b = bodyOf(i);", "if (e.verb === \"create-world\" && !founded) { founded = true; const b = e.body;", ["M2"]],
   ["the load reads the marker without readback", "protocol/authority.js", "if (!shapesMarked(w.entries, (q) => readback(w, q))) try {", "if (!shapesMarked(w.entries)) try {", ["M2"]],
-  ["enter records who", "protocol/authority.js", "const anon = ANON_EVENTS.has(ev.on);", "const anon = false;", ["P1", "P2"]],
+  ["enter records who", "protocol/authority.js", "const anon = ANON_EVENTS.has(ev.on) || (HAND_EVENTS.has(ev.on) && ev.seq === undefined);", "const anon = false;", ["P1", "P2"]],
   ["the auditor re-runs an arrival with no one", "protocol/scriptaudit.js", "if (anonWho) event.by = ARRIVAL_STAND_IN;", "", ["P1"]],
-  ["the auditor flags an arrival it can't re-run", "protocol/scriptaudit.js", "    if (anonWho) { skipped.push(", "    if (false) { skipped.push(", ["P2"]],
+  ["the auditor flags an arrival it can't re-run", "protocol/scriptaudit.js", "    if (anonWho) { const r2 =", "    if (false) { const r2 =", ["P2"]],
   ["CONTROL (no-op: must stay green)", "protocol/authority.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {

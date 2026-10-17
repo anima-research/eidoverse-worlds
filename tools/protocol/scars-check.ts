@@ -37,7 +37,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["look shows who touches whom", "protocol/authority.js", ".filter(([k, r]) => r.to === id && (id === actor || k === actor)).map(([k]) => k) }));", ".filter(([k, r]) => r.to === id).map(([k]) => k) }));", ["K2"]],
   ["edits unseat no one", "protocol/authority.js", "const unseat = CTX.forking || who.lifting ? [] : unseatsFor(w, st, who, norm);", "const unseat = [];", ["O1", "O2", "O7", "O8"]],
   ["only the first rider is let go", "protocol/authority.js", "for (const r of riders) { if (out.has(r)) continue;", "for (const r of riders) { if (out.size) break;", ["O7"]],
-  ["the seat's own ride unseats", "protocol/authority.js", "      if (own && rootOf(s.to) === own) continue;", "", ["O3"]],
+  ["the seat's own ride unseats", "protocol/authority.js", "      if (own && rootOf(s.to) === own && rideBefore(s.since)) continue;", "", ["O3"]],
   ["moving your own seat unseats you", "protocol/authority.js", "const riders = Object.keys(w.presence.seats ?? {}).filter((k) => k !== who.actor);", "const riders = Object.keys(w.presence.seats ?? {});", ["O4"]],
   ["restamp reads a purged cause act", "protocol/authority.js", "if (b === null) return true;   // a purged cause: unknown chooser, so never restamped", "if (b === null) return false;", ["Q1"]],
   ["entryBy reads a purged cause act", "protocol/authority/rights.js", "if (b === null) return { seq: e.seq, by, rights: null };", "if (b === null) return { seq: e.seq, by, rights: by };", ["Q2"]],
