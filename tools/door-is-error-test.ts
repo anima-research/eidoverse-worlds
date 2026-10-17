@@ -43,6 +43,8 @@ const failed = (r: any) => r?.isError === true;
 const midway = async (agent: any, start: Promise<any>, happen: () => void) => {
   const before = agent.flightWaiters.length;
   for (let i = 0; i < 400 && agent.flightWaiters.length <= before; i++) await new Promise((res) => setTimeout(res, 5));
+  // An act that never waited on the flight answered from something else, so no check here may pass on it.
+  if (agent.flightWaiters.length <= before) return { rejected: 'the act registered no flight waiter' };
   happen(); agent.flightSettle();
   return start;
 };
@@ -107,7 +109,7 @@ r = await climbs(ceiling + 50);
 check('a climb asked above the ceiling stops there and is failed, naming the ceiling',
   failed(r) && new RegExp(`^at ${ceiling.toFixed(1)}m, the ceiling here, short of the ${ceiling + 50}m you asked for`).test(said(r)), said(r));
 r = await climbs(ceiling - 1);
-check('a climb that gets there is done', !failed(r) && /^at .*stamina spent/.test(said(r)), said(r));
+check('a climb that gets there is done, at the height asked', !failed(r) && new RegExp(`^at ${(ceiling - 1).toFixed(1)}m.*stamina spent`).test(said(r)), said(r));
 // The pool pays for half a metre of the one asked for: the body climbs that far and no farther.
 ag.flight.stamina = 0.5;
 r = await climbs(ceiling);
@@ -116,6 +118,26 @@ ag.flight.stamina = 1e6;
 r = await midway(ag, call('climb_to', { altitude: ceiling - 5 }), () => { ag.flight.phase = 'RAGDOLL'; });
 check('a climb cut midway is failed', failed(r) && /^cut mid-climb at /.test(said(r)), said(r));
 check('...and the cut body keeps no climb to resume when it recovers', ag.flight?.climbTo == null, String(ag.flight?.climbTo));
+await call('take_off'); ag.flight.stamina = 1e6;
+r = await midway(ag, call('climb_to', { altitude: ceiling - 5 }), () => { ag.flight.phase = 'LEAF'; });
+check('a climb cut in the air, falling limp, is failed', failed(r) && /^cut mid-climb at /.test(said(r)), said(r));
+check('...and keeps no climb either', ag.flight?.climbTo == null, String(ag.flight?.climbTo));
+await call('take_off'); ag.flight.stamina = 1e6;
+ag.flight.pos.y = 30;
+r = await midway(ag, call('climb_to', { altitude: 5 }), () => { ag.flight.phase = 'LANDED'; ag.flight.pos.y = 12; });
+check('a descent that meets the ground above its target is failed, saying where it came down',
+  failed(r) && /^came down on the ground at 12\.0m, short of the 5\.0m you asked for$/.test(said(r)), said(r));
+check('...and the landed body keeps no climb', ag.flight?.climbTo == null, String(ag.flight?.climbTo));
+// A body that's down flies nowhere until it recovers (in the air) or takes off again (on the ground).
+for (const [phase, tool, a, words] of [
+  ['LEAF', 'glide_to', { x: 10, z: 0 }, /^you're falling limp \(leaf\) — the body has to recover before it can fly$/],
+  ['RAGDOLL', 'climb_to', { altitude: 20 }, /^you're down on the ground \(ragdoll\) — take_off to fly again$/],
+  ['RECOVER', 'land_at', { x: 5, z: 5 }, /^you're down on the ground \(recover\) — take_off to fly again$/],
+] as const) {
+  await call('take_off'); ag.flight.phase = phase;
+  r = await call(tool, a);
+  check(`${tool} while ${phase.toLowerCase()} is failed, and leaves the body down`, failed(r) && words.test(said(r)) && ag.flight?.phase === phase, `${said(r)}; ${ag.flight?.phase}`);
+}
 ag.flight = null; // down, so the next take_off starts fresh
 for (const [tool, a, words] of [
   ['climb_to', {}, /^climb_to needs `altitude`/],
@@ -132,62 +154,63 @@ for (const [tool, a, words] of [
   check(`${tool} ${JSON.stringify(a)} is failed before flying`, failed(r) && words.test(said(r)), said(r));
 }
 // A string that reads as a number flies, as Number() always took it.
-await call('take_off');
-ag.flightAwait = async () => 'there';
-r = await call('climb_to', { altitude: '5' });
-check('climb_to with altitude "5" is not refused as non-numeric', !/needs `altitude`/.test(said(r)), said(r));
-ag.flightAwait = realAwait;
+await call('take_off'); ag.flight.stamina = 1e6; ag.flight.pos.y = 2;
+r = await midway(ag, call('climb_to', { altitude: '5' }), () => { ag.flight.pos.y = ag.flight.climbTo; ag.flight.climbTo = null; });
+check('climb_to with altitude "5" climbs to 5 m', !failed(r) && /^at 5\.0m/.test(said(r)), said(r));
 // A touchdown within the arrival radius is an arrival; farther off, a shortfall.
-const glideDown = (x: number, z: number) => async (test: any) => {
-  ag.flight.phase = 'LANDED'; ag.flight.pos.x = x; ag.flight.pos.z = z; return test(ag.flight);
+/** A glide from a fresh launch whose real wait settles once the body is down at (x, z), or cut (`phase`). */
+const glides = async (x: number, z: number, phase = 'LANDED') => {
+  await call('take_off');
+  ag.flight.pos.x = ag.flight.pos.z = 0;
+  return midway(ag, call('glide_to', { x: 10, z: 0 }), () => { ag.flight.phase = phase; ag.flight.pos.x = x; ag.flight.pos.z = z; });
 };
-// From a fresh launch, so each landing check starts in flight whatever the calls before it did.
-await call('take_off');
-ag.flightAwait = glideDown(9.2, 0.5);
-r = await call('glide_to', { x: 10, z: 0 });
+r = await glides(9.2, 0.5);
 check('a glide that touches down within 2 m of its target is done', !failed(r) && /^touched down at .*at the target$/.test(said(r)), said(r));
 for (const [x, done] of [[8.1, true], [7.9, false]] as const) {
-  await call('take_off');
-  ag.flightAwait = glideDown(x, 0);
-  r = await call('glide_to', { x: 10, z: 0 });
+  r = await glides(x, 0);
   check(`a touchdown ${(10 - x).toFixed(1)} m from the target is ${done ? 'done' : 'failed as short'}`,
     done ? !failed(r) && /at the target$/.test(said(r)) : failed(r) && /^landed short at /.test(said(r)), said(r));
 }
-ag.flightAwait = realAwait;
-r = await call('take_off');
-ag.flightAwait = glideDown(3, 0);
-r = await call('glide_to', { x: 10, z: 0 });
+r = await glides(3, 0);
 check('a glide that lands short is failed', failed(r) && /^landed short at .*7\.0m short/.test(said(r)), said(r));
-ag.flightAwait = realAwait;
+r = await glides(4, 0, 'LEAF');
+check('a glide cut in the air, falling limp, is failed as a cut', failed(r) && /^cut mid-glide — you are falling at /.test(said(r)), said(r));
+r = await glides(4, 0, 'RAGDOLL');
+check('a glide cut on the ground is failed as a cut', failed(r) && /^cut mid-glide — you are on the ground at /.test(said(r)), said(r));
 // land_at is done only when its glide arrived and its flare came down.
 const realGlide = ag.glideTo.bind(ag);
 const arrived = { ok: true, text: 'arrived at (5.0, 5.0), 9.0m up — holding over it' };
 /** land_at with its glide stood in for; its flare's wait is the real one, and `at` is where the flare comes down. */
-const landing = async (glide: { ok: boolean; text: string; phase?: string }, flare: 'cut' | 'down', at = { x: 5, z: 5 }) => {
+const landing = async (glide: { ok: boolean; text: string; phase?: string }, flare: 'cut' | 'leaf' | 'down', at = { x: 5, z: 5 }) => {
   await call('take_off');
   ag.glideTo = async () => { if (glide.phase) ag.flight.phase = glide.phase; return { ok: glide.ok, text: glide.text }; };
   const answer = await midway(ag, call('land_at', { x: 5, z: 5 }), () => {
     ag.flight.pos.x = ag.pos.x = at.x; ag.flight.pos.z = ag.pos.z = at.z;
-    ag.flight.phase = flare === 'cut' ? 'RAGDOLL' : 'LANDED';
+    ag.flight.phase = flare === 'cut' ? 'RAGDOLL' : flare === 'leaf' ? 'LEAF' : 'LANDED';
   });
   ag.glideTo = realGlide;
   return answer;
 };
 // A cut mid-glide is a fall: the glide's answer is the whole answer, and no flare is flown.
-await call('take_off');
-let flared = false;
-ag.glideTo = async () => { ag.flight.phase = 'RAGDOLL'; return { ok: false, text: 'cut mid-glide — you are on the ground at (1.0, 1.0)' }; };
-ag.flightAwait = async () => { flared = true; return 'down'; };
-r = await call('land_at', { x: 5, z: 5 });
-ag.glideTo = realGlide; ag.flightAwait = realAwait;
-check('a landing cut mid-glide is failed with the glide\'s own answer', failed(r) && said(r) === 'cut mid-glide — you are on the ground at (1.0, 1.0)', said(r));
-check('...and no flare is flown for a body that fell', !flared);
+for (const [phase, words] of [['RAGDOLL', 'cut mid-glide — you are on the ground at (1.0, 1.0)'], ['LEAF', 'cut mid-glide — you are falling at (1.0, 1.0)']] as const) {
+  await call('take_off');
+  let flared = false;
+  ag.glideTo = async () => { ag.flight.phase = phase; return { ok: false, text: words }; };
+  ag.flightAwait = async () => { flared = true; return 'down'; };
+  r = await call('land_at', { x: 5, z: 5 });
+  ag.glideTo = realGlide; ag.flightAwait = realAwait;
+  check(`a landing cut mid-glide (${phase.toLowerCase()}) is failed with the glide's own answer`, failed(r) && said(r) === words, said(r));
+  check('...and no flare is flown for a body that fell, which keeps its flight state for its recovery', !flared && ag.flight?.phase === phase, `${flared}; ${ag.flight?.phase}`);
+}
 r = await landing({ ok: false, text: 'landed short at (2.0, 2.0) — 4.2m short.', phase: 'LANDED' }, 'down');
 check('a landing whose glide fell short is failed', failed(r) && /^landed short at .* — landed at /.test(said(r)), said(r));
 r = await landing({ ok: false, text: 'timed out aloft at (3.0, 3.0)' }, 'down');
 check('a landing whose glide timed out is failed', failed(r) && /^timed out aloft at .* — landed at /.test(said(r)), said(r));
 r = await landing(arrived, 'cut');
 check('a landing cut during its flare is failed', failed(r) && / — cut during the flare, down at /.test(said(r)), said(r));
+check('...and the cut body keeps its flight state for its recovery', ag.flight?.phase === 'RAGDOLL', String(ag.flight?.phase));
+r = await landing(arrived, 'leaf');
+check('a landing cut in the air during its flare is failed', failed(r) && / — cut during the flare, down at /.test(said(r)), said(r));
 await call('take_off');
 ag.glideTo = async () => arrived;
 ag.flightAwait = async () => 'timed out aloft';
@@ -212,6 +235,11 @@ r = await call('rehearse_down', {});
 check('rehearse_down in flight is done', !failed(r) && /^down — /.test(said(r)), said(r));
 r = await call('rehearse_recover', {});
 check('rehearse_recover of a body that is down is done', !failed(r) && said(r) === 'recovering', said(r));
+await call('take_off'); ag.flight.phase = 'RAGDOLL';
+r = await call('rehearse_recover', {});
+check('rehearse_recover of a body down on the ground is done', !failed(r) && said(r) === 'recovering' && ag.flight?.phase === 'RECOVER', `${said(r)}; ${ag.flight?.phase}`);
+r = await call('rehearse_recover', {});
+check('a second recovery while the body sits up is done, as already recovering', !failed(r) && said(r) === 'already recovering', said(r));
 
 console.log('\nBONES NOT KNOWN');
 const unread: any = new WorldAgent({ name: 'unread', world: 'is-error-bench' });
@@ -231,6 +259,14 @@ check('releasing a folded posture while the bones are unknown is done',
 r = await callU('unfold_wings');
 check('an unfold with nothing folded while the bones are unknown changes nothing, and is done',
   !failed(r) && /^nothing is folded — /.test(said(r)), said(r));
+// In the air, the flight's own wings say whether they're folded.
+unread.flight = { wings: 'OPEN', phase: 'PILOT' };
+r = await callU('fold_wings');
+check('a fold in the air while the bones are unknown is failed', failed(r) && /^wings unchanged — /.test(said(r)), said(r));
+unread.flight = { wings: 'FOLDED', phase: 'PILOT' };
+r = await callU('fold_wings');
+check('a fold in the air of wings the flight holds folded, while the bones are unknown, is done', !failed(r) && said(r) === 'wings are already folded', said(r));
+unread.flight = null;
 const wingless: any = new WorldAgent({ name: 'wingless', world: 'is-error-bench' });
 wingless.bodyBoneNames = ['Hip', 'Spine02', 'Head'];
 wingless.loadBodyBones = async () => wingless.bodyBoneNames;
@@ -289,18 +325,31 @@ r = await call('animate', { tracks: { leftUpperArm: [{ t: 0, q: [0, 0, 0, 1] }, 
 check('animate with no duration is failed', failed(r) && /^pass `dur`/.test(said(r)), said(r));
 // With the link down, nothing reaches the world, and the call says so as verb() does.
 // A handler that throws is answered in the result, where the model reads it, not as a protocol error.
-for (const a of [{ to: 'someone' }, { text: 'hello' }, { to: 'someone', text: '' }]) {
+for (const a of [{ to: 'someone' }, { text: 'hello' }, { to: 'someone', text: '' }, { to: '', text: 'hello' },
+  { to: '   ', text: 'hello' }, { to: 'someone', text: ' \n ' }, { to: ['someone'], text: 'hello' }, { to: 'someone', text: { said: 'hello' } }]) {
   r = await call('whisper', a);
-  check(`whisper ${JSON.stringify(a)} is failed before sending`, failed(r) && /^whisper needs `to`/.test(said(r)), said(r));
+  check(`whisper ${JSON.stringify(a)} is failed before sending`, failed(r) && /^whisper needs `to`, the name of who it's for/.test(said(r)), said(r));
 }
 r = await call('whisper', { to: 'someone', text: 'hello' });
 check('a whisper with the link down is failed as not joined', failed(r) && said(r) === 'not joined', said(r));
 r = await call('animate', { dur: 1, tracks: { leftUpperArm: [{ t: 0, q: [0, 0, 0, 1] }, { t: 0.5, q: [0, 0, -0.7, 0.7] }] } });
 check('your own animation with the link down is failed as not joined', failed(r) && said(r) === 'not joined', said(r));
+const held = { leftUpperArm: [0, 0, -0.7, 0.7] };
+ag.heldPose = held;
+r = await call('animate', { replace: true, dur: 1, tracks: { leftUpperArm: [{ t: 0, q: [0, 0, 0, 1] }, { t: 0.5, q: [0, 0, -0.7, 0.7] }] } });
+check('a replacing animation with the link down is failed as not joined, and the held pose stays',
+  failed(r) && said(r) === 'not joined' && ag.heldPose === held, `${said(r)}; held ${JSON.stringify(ag.heldPose)}`);
+ag.heldPose = null;
+// Someone the door can see, so a request to them is sent (and here meets the link down).
+ag.people.set('someone', { id: 'someone', avatar: 'a.vrm', pose: null, agent: false, observedAt: null });
 r = await call('ragdoll', { target: 'someone' });
 check('a shove with the link down is failed as not joined', failed(r) && said(r) === 'not joined', said(r));
 r = await call('clear_pose', { target: 'someone' });
 check('releasing someone else\'s pose with the link down is failed as not joined', failed(r) && said(r) === 'not joined', said(r));
+r = await call('clear_pose', { target: 'nobody-here' });
+check('releasing the pose of someone not here is failed', failed(r) && said(r) === "nobody-here isn't here, so there's no pose of theirs to release", said(r));
+r = await call('ragdoll', { target: 'nobody-here' });
+check('shoving someone not here is failed', failed(r) && said(r) === "nobody-here isn't here to shove", said(r));
 const logged: string[] = [];
 const realConsoleError = console.error;
 console.error = (...a: unknown[]) => { logged.push(a.map(String).join(' ')); };
@@ -329,13 +378,22 @@ check('a preview the world has none of is failed', failed(r) && /^no preview for
 unreachable();
 r = await call('library_preview', { name: 'heron' });
 check('a preview with the world\'s server unreachable says so', failed(r)
-  && /^couldn't reach the world's server for a preview of "heron" \(connect ECONNREFUSED\); calling again may work once it answers$/.test(said(r)), said(r));
+  && /^couldn't get a preview of "heron" from the world's server \(connect ECONNREFUSED\); calling again may work$/.test(said(r)), said(r));
 serve(() => new Response('bad gateway', { status: 502 }));
 r = await call('library_preview', { name: 'heron' });
-check('a preview behind a proxy that answers 502 says the server wasn\'t reached', failed(r) && /^couldn't reach .* \(it answered 502\)/.test(said(r)), said(r));
-serve(() => new Response(new ReadableStream({ start(c) { c.error(new Error('connection dropped')); } }), { status: 200, headers: { 'content-type': 'image/jpeg' } }));
+check('a preview behind a proxy that answers 502 says the server wasn\'t reached', failed(r) && /^couldn't get .* \(it answered 502\)/.test(said(r)), said(r));
+const unreadable = () => new Response(new ReadableStream({ start(c) { c.error(new Error('connection dropped')); } }), { status: 200, headers: { 'content-type': 'image/jpeg' } });
+serve(unreadable);
 r = await call('library_preview', { name: 'heron' });
-check('a preview whose body can\'t be read says so', failed(r) && /^the world's server sent a preview of "heron" that couldn't be read: /.test(said(r)), said(r));
+check('a preview whose body can\'t be read says so', failed(r) && /^couldn't get a preview of "heron" .*\(a preview it sent couldn't be read: connection dropped\); calling again may work$/.test(said(r)), said(r));
+// One candidate answered with none, the other wasn't reached: whether a preview exists isn't known.
+serve((url) => new Response(/\/thumb\//.test(url) ? 'not found' : 'busy', { status: /\/thumb\//.test(url) ? 404 : 503 }));
+r = await call('library_preview', { name: 'heron' });
+check('a preview whose second place answers 503 isn\'t reported as missing', failed(r) && /^couldn't get a preview of "heron" .*\(it answered 503\)/.test(said(r)), said(r));
+// A first candidate that can't be read leaves the next one to answer.
+serve((url) => /\/thumb\//.test(url) ? unreadable() : new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'content-type': 'image/jpeg' } }));
+r = await call('library_preview', { name: 'heron' });
+check('a preview the library has is shown when the portrait can\'t be read', !failed(r) && r?.content?.[0]?.type === 'image' && r.content[0].data === 'AQID', JSON.stringify(r).slice(0, 200));
 serve(() => new Response('no renderer', { status: 503 }));
 r = await call('snapshot', {});
 check('a snapshot with no view available is failed', failed(r) && /^no view available: no renderer$/.test(said(r)), said(r));
@@ -357,15 +415,44 @@ check('spawn with an empty lib and a query searches, as with lib left out',
 r = await call('spawn', { lib: '' });
 check('spawn with an empty lib and no query is failed', failed(r) && /no model/.test(said(r)), said(r));
 globalThis.fetch = realFetch;
+// What a whisper and a say send, with the world taking them.
+const whispers: [string, string][] = [], says: string[] = [];
+const realWhisper = ag.whisper, realSay = ag.say;
+ag.whisper = (to: string, text: string) => { whispers.push([to, text]); };
+ag.say = (text: string) => { says.push(text); };
+r = await call('whisper', { to: 42, text: 7 });
+check('a whisper to a name given as a number goes to its digits, as before', !failed(r) && said(r) === 'whispered to 42' && JSON.stringify(whispers.at(-1)) === '["42","7"]', `${said(r)}; ${JSON.stringify(whispers.at(-1))}`);
+r = await call('whisper', { to: 'someone', text: '  as written  ' });
+check('a whisper\'s text keeps its own spaces', !failed(r) && whispers.at(-1)?.[1] === '  as written  ', JSON.stringify(whispers.at(-1)));
+r = await call('whisper', { to: 'someone', text: 'w'.repeat(4001) });
+check('a whisper over 4000 characters sends the first 4000, and says so',
+  !failed(r) && said(r) === 'whispered to someone — only the first 4000 characters were sent' && whispers.at(-1)?.[1].length === 4000, said(r));
+r = await call('whisper', { to: 'someone', text: 'w'.repeat(4000) });
+check('...and one of exactly 4000 says nothing of a cut', !failed(r) && said(r) === 'whispered to someone', said(r));
+r = await call('say', { text: 's'.repeat(4001) });
+check('a say over 4000 characters sends the first 4000, and says so',
+  !failed(r) && said(r) === 'said — only its first 4000 characters were sent' && says.at(-1)?.length === 4000, said(r));
+r = await call('say', { text: 's'.repeat(4000) });
+check('...and one of exactly 4000 is just said', !failed(r) && said(r) === 'said', said(r));
+ag.whisper = realWhisper; ag.say = realSay;
 // A puppet request is sent, and the target decides.
 const puppets: [string, unknown][] = [];
 const realPuppet = ag.puppet;
 ag.puppet = (target: string, spec: unknown) => { puppets.push([target, spec]); };
 r = await call('clear_pose', { target: 'someone' });
 check('releasing someone else\'s pose says it was asked, and that they decide', !failed(r) && said(r) === 'asked someone to release their pose. They decide whether to.', said(r));
+check('...and asks them to clear it', JSON.stringify(puppets.at(-1)) === '["someone",{"pose":{}}]', JSON.stringify(puppets.at(-1)));
 r = await call('ragdoll', { target: 'someone' });
-check('a shove says what it asked, and that they decide', !failed(r) && /^you shove someone, asking them to go limp\. They decide whether to\.$/.test(said(r)), said(r));
+check('a shove of someone whose place isn\'t known says what it asked, and that they decide', !failed(r) && /^you shove someone, asking them to go limp\. They decide whether to\.$/.test(said(r)), said(r));
+check('...and asks them to go limp', JSON.stringify(puppets.at(-1)) === '["someone",{"ragdoll":true}]', JSON.stringify(puppets.at(-1)));
+ag.people.set('someone', { id: 'someone', avatar: 'a.vrm', pose: { p: [ag.pos.x + 3, 0, ag.pos.z + 4] }, agent: false, observedAt: Date.now() });
+r = await call('ragdoll', { target: 'someone', strength: 2 });
+check('a shove of someone standing 5 m off is directed through them', !failed(r) && /^you shove someone, asking them to go down the way you pushed\. They decide whether to\.$/.test(said(r)), said(r));
+const lean = (puppets.at(-1)?.[1] as any)?.ragdoll?.lean;
+check('...with the lean along the line from here through them, at the strength asked',
+  puppets.at(-1)?.[0] === 'someone' && Array.isArray(lean) && Math.abs(lean[0] - 1.2) < 1e-9 && lean[1] === 0 && Math.abs(lean[2] - 1.6) < 1e-9, JSON.stringify(puppets.at(-1)));
 ag.puppet = realPuppet;
+ag.people.delete('someone');
 // The world's answer decides a moderation verb's result.
 ag.modOutcome = async () => 'refused: only a world owner can ban';
 r = await call('ban', { id: 'someone' });

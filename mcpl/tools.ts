@@ -95,7 +95,7 @@ export const TOOLS = [
   { name: "say", description: "Say something in world chat (bubble over your head, persisted). Equivalent to publishing on the world channel. Optional spoken-say trio (spoken+utt, t0 optional): display/continuation metadata marking this say as voice-performed by your live voice leg — it does NOT prove performance (the authenticated attest/performed receipt path is the only performance truth). The trio travels together or the door refuses loudly.", inputSchema: { type: "object", properties: { text: { type: "string" }, spoken: { type: "boolean", description: "true = a live voice leg is performing this say (display metadata only)" }, utt: { type: "integer", minimum: 0, description: "utterance counter: author-controlled display/continuation metadata (does NOT prove performance)" }, t0: { type: "number", description: "performance start, epoch ms (optional, finite)" } }, required: ["text"] } },
   { name: "catch_up", description: "What happened in the world while you were not thinking. Returns chat since a point in the world's history; omit `since` to continue from where you last caught up. Use when a conversation refers to something you have no memory of.", inputSchema: { type: "object", properties: { since: { type: "number" }, limit: { type: "number" } } } },
   { name: "activity", description: "Your ambient-activity sense — and the dial for it. While something is happening within radius_m of you (speech, movement, gestures, arrivals, building), you receive one digest per pulse_sec window on the world channel, tagged \"activity\" with metadata {activity: true} — never as a mention. If your host lets you configure wake rules, match that tag/metadata to be woken regularly exactly as long as there is life nearby; the stream stops by itself when the area goes quiet, so it costs nothing in an empty room. Call with no arguments to see your current settings. pulse_sec (10–3600 seconds, 0 = off) and radius_m (1–200) are your own to set and persist across sessions. If your host has no push channel (plain MCP), digests are held instead and handed over each time you call this tool — poll it when you want to know what has been happening around you.", inputSchema: { type: "object", properties: { pulse_sec: { type: "number" }, radius_m: { type: "number" } } } },
-  { name: "whisper", description: "Say something privately to ONE participant. Not spoken aloud, no bubble, and deliberately never written to the world log — so it is also not replayed to anyone later.", inputSchema: { type: "object", properties: { to: { type: "string" }, text: { type: "string" } }, required: ["to", "text"] } },
+  { name: "whisper", description: "Say something privately to ONE participant. Not spoken aloud, no bubble, and deliberately never written to the world log, so no one else ever sees it. If they aren't here, the world holds it in memory and hands it over when they next arrive; a restart of the world loses it.", inputSchema: { type: "object", properties: { to: { type: "string" }, text: { type: "string" } }, required: ["to", "text"] } },
   { name: "pose", description: "Hold a custom body pose. `bones` is a sparse map of bone name to a value: a rotation [x,y,z,w], or {q, t, s} to also move or scale that bone — q rotation [x,y,z,w], t translation [x,y,z] in metres, s scale (one number, or [x,y,z]). Humanoid bones go by VRM name (leftUpperArm, leftLowerArm, spine, chest, neck, head, hips, leftUpperLeg...); ANY other bone your rig has goes by its own name (a wing, an eyelid, a twist bone, a tail) — call pose with no `bones` to list them. Rotations are relative to the parent bone's. Translation on hips moves the whole body in world metres (Y is up): {\"hips\": {\"t\": [0, -0.5, 0]}} lowers you half a metre, for kneeling or crouching; on any other bone t is how far it moves beyond where its parent carries it. Scale is in the bone's own axes and carries to its children. By default only the bones you name change and the rest of any pose you hold stays (so you can raise an arm while kneeling); a bone set to null is released back to normal. replace:true makes this the WHOLE pose instead: every bone you don't name goes back to normal animation. Names are checked against the rig and corrected where unambiguous, and anything dropped is reported back with the reason — so read the reply, it is your only feedback that the body did what you meant. Held until you `clear_pose` or move; pass hold:true to keep it through walking too (your legs still stride, so pose arms and head rather than legs if you mean to travel in it). Presence only — never written to the world log, so it costs nothing and vanishes when you leave. Pass `target` to pose SOMEONE ELSE (checked against THEIR rig; they decide whether to allow it).", inputSchema: { type: "object", properties: { bones: { type: "object" }, replace: { type: "boolean", description: "true: this is the whole pose; unnamed bones return to normal. Default false: only the named bones change" }, hold: { type: "boolean" }, target: { type: "string" } } } },
   { name: "clear_pose", description: "Release a held pose, easing back to normal animation. Pass `target` to release a pose you asked someone else to hold.", inputSchema: { type: "object", properties: { target: { type: "string" } } } },
   { name: "emote", description: "Fire a named gesture — the same one-shots humans have on their emote bar. Plays once over your locomotion; presence only, never logged. For a gesture that isn't listed, invent one with `animate`.", inputSchema: { type: "object", properties: { name: { type: "string", enum: ["wave", "cheer", "dance", "point", "salute", "clap", "talk", "flail"] } }, required: ["name"] } },
@@ -332,23 +332,22 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!want.includes("/") && !/\.(glb|jpg)$/i.test(want)) tries.push(`${ag.httpBase}/thumb/${encodeURIComponent(want)}.png`);
       const stem = (want.includes("/") ? want : `eidoverse/assets/models/${want}`).replace(/(_preview\.jpg|\.jpg|\.glb)$/i, "");
       tries.push(`${ag.httpBase}/library/${stem}_preview.jpg`);
-      // A fetch that throws, or a 5xx from what fronts the sequencer, never
-      // got the sequencer's answer, which is not the same as a sequencer that
-      // answered with no preview.
-      let unreached: string | null = null, answered = false;
+      // A fetch that throws, a 5xx from what fronts the sequencer, or a body
+      // that can't be read never got the sequencer's answer for that
+      // candidate, which is not the same as a sequencer that answered with no
+      // preview: "no preview" is said only when every candidate answered.
+      let unreached: string | null = null;
       for (const url of tries) {
         let r: Response;
         try { r = await fetch(url); } catch (e) { unreached ??= (e as Error).message; continue; }
         if (r.status >= 500) { unreached ??= `it answered ${r.status}`; continue; }
-        answered = true;
         if (!r.ok) continue;
-        try {
-          return { content: [{ type: "image", data: Buffer.from(await r.arrayBuffer()).toString("base64"), mimeType: r.headers.get("content-type")?.split(";")[0] ?? "image/jpeg" }] };
-        } catch (e) {
-          return fail(`the world's server sent a preview of "${want}" that couldn't be read: ${(e as Error).message}`);
-        }
+        let data: string;
+        try { data = Buffer.from(await r.arrayBuffer()).toString("base64"); }
+        catch (e) { unreached ??= `a preview it sent couldn't be read: ${(e as Error).message}`; continue; }
+        return { content: [{ type: "image", data, mimeType: r.headers.get("content-type")?.split(";")[0] ?? "image/jpeg" }] };
       }
-      if (!answered) return fail(`couldn't reach the world's server for a preview of "${want}" (${unreached}); calling again may work once it answers`);
+      if (unreached) return fail(`couldn't get a preview of "${want}" from the world's server (${unreached}); calling again may work`);
       return fail(`no preview for "${want}" — avatar portraits appear once a body has been worn; library models ship _preview.jpg files`);
 
   },
@@ -475,17 +474,23 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const extra = trioOk
         ? { spoken: true as const, utt: a.utt, ...(typeof a.t0 === "number" ? { t0: a.t0 } : {}) }
         : undefined;
-      ag.say(String(a.text).slice(0, 4000), extra);
-      return text("said");
+      ag.say(a.text.slice(0, 4000), extra);
+      return text(a.text.length > 4000 ? "said — only its first 4000 characters were sent" : "said");
 
   },
   whisper: async (ag, a, ctx, name) => {
       if (!WHISPERS_ENABLED) return fail("whispers are disabled in this world");
-      if (typeof a.to !== "string" || !a.to || typeof a.text !== "string" || !a.text) {
-        return fail("whisper needs `to`, the name of someone here, and `text`, what to say to them");
+      // A name or text given as a number goes as its digits, as it always
+      // has; anything else that isn't a string, or is only whitespace, is
+      // refused. `to` may be someone not here yet: the world holds a whisper
+      // for them until they come.
+      const str = (v: unknown) => typeof v === "string" ? v : typeof v === "number" ? String(v) : null;
+      const to = str(a.to), said = str(a.text);
+      if (to == null || !to.trim() || said == null || !said.trim()) {
+        return fail("whisper needs `to`, the name of who it's for, and `text`, what to say to them");
       }
-      ag.whisper(a.to, a.text.slice(0, 4000));
-      return text(`whispered to ${a.to}`);
+      ag.whisper(to, said.slice(0, 4000));
+      return text(`whispered to ${to}${said.length > 4000 ? " — only the first 4000 characters were sent" : ""}`);
 
   },
   pose: async (ag, a, ctx, name) => {
@@ -536,7 +541,12 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   clear_pose: async (ag, a, ctx, name) => {
-      if (a.target) { ag.puppet(String(a.target), { pose: {} }); return text(`asked ${a.target} to release their pose. They decide whether to.`); }
+      if (a.target) {
+        const to = String(a.target);
+        if (!ag.people.has(to)) return fail(`${to} isn't here, so there's no pose of theirs to release`);
+        ag.puppet(to, { pose: {} });
+        return text(`asked ${to} to release their pose. They decide whether to.`);
+      }
       ag.setPose(null);
       return text("released pose");
 
@@ -574,6 +584,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // target — the same line a browser /push uses. No known position for
       // them = an undirected knock-over, the old wire.
       const to = String(a.target);
+      if (!ag.people.has(to)) return fail(`${to} isn't here to shove`);
       const tp = ag.people.get(to)?.pose?.p;
       const pow = Math.min(4, Math.max(0.5, Number(a.strength) || 2.2));
       let lean: number[] | null = null;

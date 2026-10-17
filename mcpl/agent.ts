@@ -42,6 +42,13 @@ import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
 export interface ActResult { ok: boolean; text: string }
 const done = (text: string): ActResult => ({ ok: true, text });
 const refused = (text: string): ActResult => ({ ok: false, text });
+/** A body down: limp wings, in the air (LEAF), on the ground (RAGDOLL) or sitting up (RECOVER). */
+const isDown = (phase: string) => phase === "LEAF" || phase === "RAGDOLL" || phase === "RECOVER";
+// In the air the limp fall ends only with a recovery (shared/flight.js bodyRecovered); on the ground,
+// take_off launches afresh from wherever the body lies (takeOff).
+const downRefusal = (phase: string) => phase === "LEAF"
+  ? "you're falling limp (leaf) — the body has to recover before it can fly"
+  : `you're down on the ground (${phase.toLowerCase()}) — take_off to fly again`;
 
 /** integrator yaw (atan2(dz,dx), forward = (cos,sin)) -> world yaw
  *  (atan2(dx,dz), which every renderer and walkTo already speak). */
@@ -2666,6 +2673,8 @@ export class WorldAgent {
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
       return refused("you are on the ground — take_off first");
     }
+    // A down is involuntary: no flight verb flies a body out of one (downRefusal says what does).
+    if (isDown(this.flight.phase)) return refused(downRefusal(this.flight.phase));
     const f = this.flight;
     const reach = glideRange(this.flightCfg, f.pos.y);
     const need = Math.hypot(x - f.pos.x, z - f.pos.z);
@@ -2683,6 +2692,8 @@ export class WorldAgent {
     // "closest approach" actually means and cannot be missed by a wide step.
     let closest = Infinity;
     const arrived = await this.flightAwait((s) => {
+      // A cut in the air is the limp fall (LEAF); one on the ground, the ragdoll.
+      if (s.phase === "LEAF") return "cut mid-glide — you are falling";
       if (s.phase === "RAGDOLL") return "cut mid-glide — you are on the ground";
       const d = Math.hypot(x - s.pos.x, z - s.pos.z);
       // Down within the arrival radius is down at the target, not short of it.
@@ -2723,6 +2734,7 @@ export class WorldAgent {
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
       return refused("you are on the ground — take_off first");
     }
+    if (isDown(this.flight.phase)) return refused(downRefusal(this.flight.phase));
     const f = this.flight, cfg = this.flightCfg;
     const from = f.pos.y;
     const want = Math.min(alt, cfg.bounds.ceiling);
@@ -2753,7 +2765,9 @@ export class WorldAgent {
     // The wait is for the distance either way: a lower target is a descent.
     const climbed = Math.abs(reach - from);
     const got = await this.flightAwait((st) => {
-      if (st.phase === "RAGDOLL") return "cut";
+      if (st.phase === "LEAF" || st.phase === "RAGDOLL") return "cut";
+      // A descent that meets the ground above its target ends there.
+      if (st.phase === "LANDED" || st.phase === "GROUND") return "landed";
       if (st.climbTo == null) return "there";
       return null;
     }, Math.min(120_000, (climbed / climbRate) * 1000 + 8000));
@@ -2761,6 +2775,10 @@ export class WorldAgent {
       // A cut body keeps no climb, so it doesn't resume one when it recovers.
       if (this.flight) this.flight.climbTo = null;
       return refused(`cut mid-climb at ${(this.flight?.pos.y ?? 0).toFixed(1)}m`);
+    }
+    if (got === "landed") {
+      if (this.flight) this.flight.climbTo = null;
+      return refused(`came down on the ground at ${(this.flight?.pos.y ?? 0).toFixed(1)}m, short of the ${reach.toFixed(1)}m you asked for`);
     }
     // The wait's own timeout is the other answer that isn't "there": the climb
     // didn't finish, so it isn't reported as reaching the target. It stops
@@ -2790,30 +2808,33 @@ export class WorldAgent {
     }
     const glide = await this.glideTo(x, z);
     const f = this.flight;
-    // A cut mid-glide is a fall, with no flare to make; the glide says so.
-    let flare = null as string | null;
-    if (f && f.phase !== "RAGDOLL") {
-      // A deliberate landing IS a flare: descend the remaining altitude rather
-      // than dropping. This is the one place a landing animation is correct --
-      // T4 forbids it only for a body that never chose to land.
-      f.phase = "PILOT"; f.pitch = 0.2;
-      flare = await this.flightAwait((s) => s.phase === "RAGDOLL" ? "cut"
-        : (s.phase === "LANDED" || s.phase === "GROUND") ? "down" : null, 60_000);
+    // A cut mid-glide is a fall, with no flare to make; the glide says so. The
+    // body keeps its flight state, which its recovery reads. A body already
+    // down is refused by glideTo, and that refusal is the answer too.
+    if (!f || isDown(f.phase)) return refused(glide.text);
+    // A deliberate landing IS a flare: descend the remaining altitude rather
+    // than dropping. This is the one place a landing animation is correct --
+    // T4 forbids it only for a body that never chose to land.
+    f.phase = "PILOT"; f.pitch = 0.2;
+    const flare = await this.flightAwait((s) => isDown(s.phase) ? "cut"
+      : (s.phase === "LANDED" || s.phase === "GROUND") ? "down" : null, 60_000);
+    // How the flare ended is read after it, so a cut during it is a fall too,
+    // and the cut body keeps its flight state for its recovery.
+    if (flare === "cut") {
+      const fell = `(${(this.flight?.pos.x ?? this.pos.x).toFixed(1)}, ${(this.flight?.pos.z ?? this.pos.z).toFixed(1)})`;
+      return refused(`${glide.text} — cut during the flare, down at ${fell}`);
     }
     this.flightEnd();
-    // A cut mid-glide is a fall, which the glide's own answer already says.
-    if (flare == null) return refused(glide.text);
     const at = `(${this.pos.x.toFixed(1)}, ${this.pos.z.toFixed(1)})`;
-    // How the flare ended is read after it, so a cut during it is a fall too.
-    if (flare === "cut") return refused(`${glide.text} — cut during the flare, down at ${at}`);
     // The flare's own timeout: the body didn't come down, and flightEnd set it down.
     if (flare !== "down") return refused(`${glide.text} — the flare ${flare}, so the body was set down at ${at}`);
     // A flare after an arrival sinks on the circle held over the point, so
     // the answer says how far from it the body came down.
     const off = Math.hypot(x - this.pos.x, z - this.pos.z);
     const where = `${glide.text} — landed at ${at}, ${off.toFixed(1)}m from (${x.toFixed(1)}, ${z.toFixed(1)})`;
-    // Done when the glide reached the point (arrived over it, or touched down
-    // within its 2 m) and the landing was deliberate.
+    // Done when the glide's own answer was: it arrived (within 2 m, or at its
+    // closest approach under 12 m, as glideTo's rule has it) or touched down
+    // within 2 m, and the landing was deliberate. The distance says the rest.
     return glide.ok ? done(where) : refused(where);
   }
 
@@ -2873,7 +2894,8 @@ export class WorldAgent {
   flightBodyRecovered(eventId: string, recoveryGeneration?: string): ActResult {
     if (!this.flight) return refused("not airborne — take_off first");
     // Only a body that is down has anything to recover from; bodyRecovered
-    // leaves every other phase as it is.
+    // leaves every other phase as it is, and a body sitting up already is.
+    if (this.flight.phase === "RECOVER") return done("already recovering");
     if (this.flight.phase !== "LEAF" && this.flight.phase !== "RAGDOLL") {
       return refused(`nothing to recover from — the body isn't down (${this.flight.phase.toLowerCase()})`);
     }
