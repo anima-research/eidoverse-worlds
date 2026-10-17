@@ -288,7 +288,7 @@ for (const p of logs.sort()) {
     for (const id of Object.keys(phys.restAt)) if (!phys.sim.bodies[id]) delete phys.restAt[id]; };
   const compareAt = (i: number) => { if (loss || i < 0) return; if (i % every && i !== body.length - 1) return; const x = lossAt(v1, now, phys); if (x) loss = { oldSeq: body[i].seq, ...x }; };
   for (let s = 1; s < r.out.length && !loss; s++) { const e = r.out[s];
-    if ((e.kind === "act" && e.verb !== "translated") || e.kind === "say") { // `translated` (genesis's companion, translate-v1@3) has no old entry
+    if ((e.kind === "act" && e.verb !== "translated" && !(e.verb === "repair-shapes" && e.actor === "system")) || e.kind === "say") { // `translated` (genesis's companion, translate-v1@3) and the repair marker beside it have no old entry
       if (phys && Number.isInteger(body[k + 1]?.ts)) settle(eidosim.tickOf(phys.sim, body[k + 1].ts));   // her rests up to the next act are logged before it
       compareAt(k); k++; alive.step(body[k]); foldEntry(v1, body[k]);
       if (phys) { eidosim.simEntry(phys.sim, body[k], v1); settle(phys.sim.tick); } }

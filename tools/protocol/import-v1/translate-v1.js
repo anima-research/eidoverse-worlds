@@ -16,7 +16,7 @@ import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
 import { modernize as newParticles } from "../../../shared/particle_effects.js";
-import { repairComps, repairWorld } from "../../../shared/protocol/shaperepair.js";
+import { repairComps, repairWorld, SHAPES_VERSION } from "../../../shared/protocol/shaperepair.js";
 import * as eidosim from "./eidosim-v1.js";   // HER engine (the first eidosim, dialect 3): what a v1 punt did. Importer-only.
 import { ENGINES, DEFAULT_ENGINE } from "../../../shared/protocol/simlayer.js";
 
@@ -361,6 +361,9 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   push({ kind: "genesis", actor: "system", verb: "genesis", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}), ...(founder ? { founder } : {}) }) });
   const physics = hasEpoch(oldEntries);
   push({ kind: "act", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero({ ...genesis, translator: physics ? TRANSLATOR_SIM : TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }) } });
+  // the translation writes the repaired spelling, so its log carries the load's once-per-world marker from the start: the
+  // system's repair-shapes act, read by verb and actor only (review r8 M3: the translated act's body is purgeable)
+  push({ kind: "act", actor: "system", verb: "repair-shapes", ts: t0.ts ?? 0, body: { v: SHAPES_VERSION, ids: [], translated: true } });
   // an old request as sent keeps its words, but never an account (a grant's sub): with a mapper it becomes the person's id
   // (R1); without one it is dropped (@12), so the imported act never re-leaks what the roles value no longer holds
   const noAcct = (a) => { if (!a || typeof a !== "object" || Array.isArray(a) || !("sub" in a)) return a;

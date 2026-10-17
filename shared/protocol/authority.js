@@ -2302,7 +2302,7 @@ export function liftWorld(w) {
     // since: a pendulum set today without a pivot keeps none, a deleted pivot stays deleted. Admitted per thing (F5): a
     // thing whose repair the door refuses is left as it was and named in the act ({failed}); the rest repair. The act is
     // written even when there is nothing to repair, so the next load finds the marker and does nothing
-    if (!shapesMarked(w.entries)) try {
+    if (!shapesMarked(w.entries, (q) => readback(w, q))) try {   // READBACK act:create-world / act:translated: a purged one is marked
       const st = w.state(); const all = shapeRepairOps(st, PURGED, { pathOf: (m) => { try { return CTX.cat.pathOf?.(m) ?? null; } catch { return null; } } });
       const byId = new Map(); for (const o of all) { if (!byId.has(o.id)) byId.set(o.id, []); byId.get(o.id).push(o); }
       const kept = [], failed = [];
@@ -3950,6 +3950,9 @@ const VERBS = {
     const plan = admit(w, w.state(), { actor, cap: { kind: "founding", ids: ["@world"], comps: ops.map((o) => o.comp) } }, ops);
     // born in today's spelling (shapes: the shape repair's version): the load's repair never runs on this world (liftWorld)
     changeEntry(w, plan, w.append(actOf(w, actor, "create-world", a, { shapes: SHAPES_VERSION })));
+    // …and the marker itself is the system's repair-shapes act beside it (review r8 M3): read by verb and actor only, which
+    // a purge never reaches (the founding's body holds the title, the first thing an owner might purge)
+    w.append(actEntry(w, "system", "repair-shapes", { v: SHAPES_VERSION, ids: [], founding: true }));
     return { ok: true, world: w.name, you: "owner", ...(a.ownerKey ? {} : { governance: "tier 0 is empty: this server's operator key is the world's top governance key (PROTOCOL §13). Founding with ownerKey (your own ed25519 key) puts you there instead; tier 0 can't be filled later" }) };
   },
   help(w, actor, a) {

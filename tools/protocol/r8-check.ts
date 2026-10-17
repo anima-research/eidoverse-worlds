@@ -29,8 +29,9 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a fork's copy stamps model-hash", "protocol/authority.js", "if (!ids.size || CTX.forking) return ops;", "if (!ids.size) return ops;", ["H2"]],
   ["ref clears admitted on the deleter's rights", "protocol/authority.js", "const fu = raw[FOLLOW_UP] === true;", "const fu = false;", ["R1", "R2", "R3", "R4"]],
   ["undo's ref restores on the undoer's rights", "protocol/authority.js", "if (refRestore(o)) g[FOLLOW_UP] = true;", "", ["R4"]],
-  ["no repair marker at founding", "protocol/authority.js", "w.append(actEntry(w, \"system\", \"repair-shapes\", { v: SHAPES_VERSION, ids: [], founding: true }));", "", ["M1", "M2"]],
-  ["the founding's marker read bare", "protocol/shaperepair.js", "const b = bodyOf(i); if (b === null) return true;", "const b = e.body; if (b === null) return true;", ["M2"]],
+  ["no repair marker at founding", "protocol/authority.js", "w.append(actEntry(w, \"system\", \"repair-shapes\", { v: SHAPES_VERSION, ids: [], founding: true }));", "", ["M1"]],
+  ["the founding's marker read bare", "protocol/shaperepair.js", "if (e.verb === \"create-world\") { const b = bodyOf(i);", "if (e.verb === \"create-world\") { const b = e.body;", ["M2"]],
+  ["the load reads the marker without readback", "protocol/authority.js", "if (!shapesMarked(w.entries, (q) => readback(w, q))) try {", "if (!shapesMarked(w.entries)) try {", ["M2"]],
   ["enter records who", "protocol/authority.js", "const anon = ANON_EVENTS.has(ev.on);", "const anon = false;", ["P1"]],
   ["CONTROL (no-op: must stay green)", "protocol/authority.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
 ];
@@ -167,12 +168,23 @@ const cases: Case[] = [
       const k = s.call("olive", "sky", { azimuth: Math.PI / 2 });
       const az0 = comp(s, "@world", "sky")?.azimuth, mo0 = JSON.stringify(comp(s, "swing", "motion"));
       const w = s.reopen(); const i = w.entries.findIndex((e: any) => e.kind === "act" && e.verb === "create-world"); w.entries[i].body = { ...STUB };
-      // a log whose marker is ONLY the founding (one founded before the marker act existed): the stub alone is unknown
-      const old = w.entries.filter((e: any) => !(e.kind === "act" && e.verb === "repair-shapes"));
+      // a log whose marker is ONLY the founding (one founded before the marker act existed): its marker act read as some other
+      // act (in memory), so the stub alone decides, and a purged founding is unknown, which is marked
+      const j = w.entries.findIndex((e: any) => e.kind === "act" && e.verb === "repair-shapes"); if (j >= 0) w.entries[j] = { ...w.entries[j], verb: "x-not-a-marker" };
+      const old = w.entries;
       const n = w.entries.length; s.step(); const out = D.liftWorld(w);
       return { m: show(m), k: show(k), n, after: w.entries.length, az: comp(s, "@world", "sky")?.azimuth, az0, mo: JSON.stringify(comp(s, "swing", "motion")), mo0, out,
         markedOld: SR.shapesMarked(old, (q: number) => (q === i ? null : old[q]?.body)) }; },
     good: (o) => o.m === "ok" && o.k === "ok" && o.after === o.n && o.az === o.az0 && o.mo === o.mo0 && o.markedOld === true },
+  { id: "M3", what: "a translation carries the marker from its start: the system's repair-shapes act beside `translated`; with the translated act's body purged (unknown) the log still reads marked", async run() {
+      const TV = await import(ENGINE + "tools/protocol/import-v1/translate-v1.js");
+      const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { Marigold: { role: "owner" } } } },
+        { seq: 1, ts: 2, actor: "Marigold", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } }];
+      const r = TV.translate(old, {}); const L = r.out;
+      const t = L.findIndex((e: any) => e.verb === "translated"), m = L.findIndex((e: any) => e.verb === "repair-shapes" && e.actor === "system");
+      const stub = L.map((e: any, i: number) => (i === t ? { ...e, body: { ...STUB } } : e));
+      return { t, m, marked: SR.shapesMarked(stub, (q: number) => (q === t ? null : stub[q]?.body)), noMarker: SR.shapesMarked(stub.filter((_: any, i: number) => i !== m)) }; },
+    good: (o) => o.t === 1 && o.m === 2 && o.marked && o.noMarker === false },
   // ---------------- P ----------------
   { id: "P1", what: "an enter script runs on arrival and hears `by`, but the act names nobody: the identity is nowhere in the log; the auditor flags nothing", run(s) { cast(s);
       const WHO = "u-vicvicvicvicvicvicvi";

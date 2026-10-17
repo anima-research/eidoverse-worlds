@@ -158,12 +158,19 @@ export const SHAPES_VERSION = 2;
  *  holds the repair's own act (any version: the first one, before 10-16's review, repaired everything before it or
  *  nothing), a founding stamped with `shapes` (a world founded since), or a translation by translate-v1@12 or later (which
  *  writes the repaired spelling). A pure view over the log, so every replica and every server answers the same. */
-export function shapesMarked(entries) {
-  for (const e of entries ?? []) {
-    if (!e || e.kind !== "act" || !e.body || typeof e.body !== "object") continue;
+// Review r8 M3: the marker is the system's repair-shapes act, read by verb and actor only (they stay in a purged entry's
+// skeleton). A founding writes one beside it, and translate-v1 one beside its `translated`. The two older markers (a
+// founding's `shapes`, a translation's translator) are read through `bodyOf`: the authority passes readback, so a purged
+// body is unknown, and unknown is MARKED. Never re-running a one-way rewrite on values written in today's spelling is the safe
+// side; the cost is a world founded before 10-16 whose founding was purged before its first load here, which keeps its old
+// values unrepaired (their readers' defaults) rather than having today's values rewritten as if old.
+export function shapesMarked(entries, bodyOf = (i) => entries?.[i]?.body ?? null) {
+  const L = entries ?? [];
+  for (let i = 0; i < L.length; i++) { const e = L[i];
+    if (!e || e.kind !== "act") continue;
     if (e.verb === "repair-shapes" && e.actor === "system") return true;
-    if (e.verb === "create-world" && Number.isInteger(e.body.shapes)) return true;
-    if (e.verb === "translated" && e.actor === "system") { const m = /@(\d+)$/.exec(String(e.body.from?.translator ?? "")); if (m && +m[1] >= 12) return true; } }
+    if (e.verb === "create-world") { const b = bodyOf(i); if (b === null) return true; if (b && typeof b === "object" && Number.isInteger(b.shapes)) return true; }
+    if (e.verb === "translated" && e.actor === "system") { const b = bodyOf(i); if (b === null) return true; const m = /@(\d+)$/.exec(String(b?.from?.translator ?? "")); if (m && +m[1] >= 12) return true; } }
   return false;
 }
 
