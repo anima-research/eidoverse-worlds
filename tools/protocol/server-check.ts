@@ -169,7 +169,7 @@ const L = readLog(fs.readFileSync(path.join(W4, "garden", "world.jsonl")));
 const st = fold(L);
 ok(st.status === "ok" && !st.diagnostics.some(([, k]) => String(k).startsWith("malformed")), "S4 the log on disk reads back strictly", st.diagnostics.slice(0, 3));
 ok(L.every((e, i) => i === 0 || e.ts >= L[i - 1].ts) && L.filter((e) => e.kind === "act").length >= 6, "S4 ts never decreases; every write is an act + its result");
-ok(L.filter((e) => e.kind === "act").every((e) => [ANN, BOB].includes(e.actor) || (e.actor === VIC && e.body?.refused)), "S4 acts are stamped with the connection's identity, never the payload's (Vic's are his refused attempts, recorded: round-2 R7)", [...new Set(L.map((e) => e.actor))]);
+ok(L.filter((e) => e.kind === "act").every((e) => [ANN, BOB].includes(e.actor) || (e.actor === VIC && e.body?.refused) || (e.actor === "system" && e.verb === "repair-shapes")), "S4 acts are stamped with the connection's identity, never the payload's (Vic's are his refused attempts, recorded: round-2 R7; the founding's repair-shapes marker is the system's, review r8 M3)", [...new Set(L.map((e) => e.actor))]);
 for (const c of [ann, bob, vic, spec]) ok(digest(heldBy(c).st) === digest(st), `S4 what ${c.id} holds (its own fold of what it was sent) = the log on disk (digest)`);
 ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync was needed (one snapshot each)", [ann, bob, vic].map((c) => c.of("snapshot").length));
 { // the sky (which the v1 projection could only resync for) is just another entry in the stream now
