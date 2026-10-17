@@ -441,12 +441,19 @@ request moves a copy to a newer version, keeping its own overrides.
   A table is its person's own: `look` shows each viewer their own table and
   who poses, drags or touches them, and of anyone else only where they
   stand (and what the viewer is doing to them); another body's cells or
-  pause would undo the uniform words. An **edit that would move a body** —
-  the `transform`, `parent` or `motion` of a seat someone sits on, a floor
-  they stand on, or anything those hang from, by whatever verb — is a `move`
-  act on that body: admitted only when their `move` cell says `everyone`
-  (an edit can't wait for an answer), refused in the same words otherwise.
-  Moving the seat you sit on yourself is yours. A
+  pause would undo the uniform words. **Sitting is consent; standing up
+  is the exit** (Second Life's sit, VRChat's station): a seat carries its
+  rider through whatever moves it, and an edit is never refused because a
+  body is on the thing. An edit by anyone but the rider that would move a
+  seat — the `transform`, `parent` or `motion` of the seat or of anything
+  it hangs from, by whatever verb, a handler or script on another thing
+  included — lands and **unseats** every rider on that seat: each is let go
+  where they were, standing, and told why (presence, never logged). What
+  the seat's own assembly does to it (a reaction or script on a thing with
+  the same root as the seat: a swing's push, a carousel's turn, an
+  elevator's script) is the ride, and carries them. Moving the seat you sit
+  on yourself is yours. A body standing on a thing never blocks an edit of
+  it: what you stand on carries you. A
   yes to an ask is one touch: it ends when the hand lets go, when either
   body leaves, when the target closes that class, or after 10 minutes. Semantic rig
   state travels the same way: `pose.wingsFolded` is a boolean intent, never

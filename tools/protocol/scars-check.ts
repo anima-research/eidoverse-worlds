@@ -8,8 +8,9 @@
 // Rows:
 //   L   a refused request is logged as its verb, its argument NAMES and its code; the values go to an in-memory ring
 //   K   look: a viewer sees their own consent table and who touches them; nobody else's
-//   O   an ordinary edit that would move a body (a seat or a floor someone is on: transform, parent, motion) needs that
-//       person's move consent, like the hand verbs' occupant check; refused in the uniform words
+//   O   sitting is consent, standing up is the exit (scars r8 M1): an edit by someone else that would move a seat
+//       (transform, parent, motion) lands and lets each rider go; the seat's own reaction or script is the ride; moving
+//       your own seat is yours; a standing body never blocks an edit
 //   Q   purge safety: an act body the authority reads back (READBACK) read through one accessor; a purged one is unknown,
 //       and unknown never restamps an owner-chosen build, never flips a creator's rights, never crashes undo
 //   G   the refusal-code registry: every code the authority can refuse with is registered (and every registered one used)
@@ -34,8 +35,10 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the refusal ring", "protocol/authority.js", "  ring.push(rec); if (ring.length > REFUSAL_RING) ring.splice(0, ring.length - REFUSAL_RING);", "", ["L3"]],
   ["look shows everyone's table", "protocol/authority.js", "...(id === actor ? { shield: shieldOf(P, id) } : {}),", "shield: shieldOf(P, id),", ["K1"]],
   ["look shows who touches whom", "protocol/authority.js", ".filter(([k, r]) => r.to === id && (id === actor || k === actor)).map(([k]) => k) }));", ".filter(([k, r]) => r.to === id).map(([k]) => k) }));", ["K2"]],
-  ["edits skip the occupant check", "protocol/authority.js", "  if (!(CTX.forking || who.lifting)) occupiedEdits(w, st, who, norm);", "", ["O1", "O2", "O5", "O6"]],
-  ["edits ignore the occupant's consent", "protocol/authority.js", "if (d.mode === \"everyone\") continue;", "continue;", ["O3"]],
+  ["edits unseat no one", "protocol/authority.js", "const unseat = CTX.forking || who.lifting ? [] : unseatsFor(w, st, who, norm);", "const unseat = [];", ["O1", "O2", "O7", "O8"]],
+  ["only the first rider is let go", "protocol/authority.js", "for (const r of riders) { if (out.has(r)) continue;", "for (const r of riders) { if (out.size) break;", ["O7"]],
+  ["the seat's own ride unseats", "protocol/authority.js", "      if (own && rootOf(s.to) === own) continue;", "", ["O3"]],
+  ["moving your own seat unseats you", "protocol/authority.js", "const riders = Object.keys(w.presence.seats ?? {}).filter((k) => k !== who.actor);", "const riders = Object.keys(w.presence.seats ?? {});", ["O4"]],
   ["restamp reads a purged cause act", "protocol/authority.js", "if (b === null) return true;   // a purged cause: unknown chooser, so never restamped", "if (b === null) return false;", ["Q1"]],
   ["entryBy reads a purged cause act", "protocol/authority/rights.js", "if (b === null) return { seq: e.seq, by, rights: null };", "if (b === null) return { seq: e.seq, by, rights: by };", ["Q2"]],
   ["readback ignores the purge index", "protocol/authority/storage.js", "if (purgedSeqs(w).has(seq)) return null;", "", ["Q3"]],
@@ -154,56 +157,71 @@ const cases: Case[] = [
       const seen = (who: string) => s.call(who, "look", {}).bodies?.find((b: any) => b.id === "bob")?.touchedBy ?? [];
       return { t: show(t), bob: seen("bob"), vic: seen("vic"), ann: seen("ann") }; },
     good: (o) => o.t === "ok" && JSON.stringify(o.bob) === '["vic"]' && JSON.stringify(o.vic) === '["vic"]' && JSON.stringify(o.ann) === "[]" },
-  // ---------------- O: an edit that would move a body ----------------
-  { id: "O1", what: "bob sits on a chair: the owner's place, set transform and set parent of it are refused in the uniform words (move consent), and nothing is written", run(s) { cast(s);
+  // ---------------- O: an edit that would move a seat (scars r8 M1: sitting is consent, standing up is the exit) ----------------
+  { id: "O1", what: "bob sits on a chair: the owner's place, set transform and set parent of it all land, and each lets bob go (unseated, standing where he was, told in his inbox and the reply's notes)", run(s) { cast(s);
       s.call("olive", "create", { id: "chair", model: "chair", components: SEAT, place: { at: [4, 0] } });
       s.call("olive", "create", { id: "rug", model: "crate", place: { at: [9, 0] } });
-      s.call("bob", "move", { to: [4, 0, -0.6] }); const sit = s.call("bob", "use", { id: "chair", action: "sit" });
-      const before = JSON.stringify(s.w().state().entities.chair.c.transform); const n0 = s.entries().filter((e: any) => e.kind === "change").length;
-      const pl = s.call("olive", "place", { id: "chair", at: [20, 20] });
-      const tr = s.call("olive", "set", { id: "chair", component: "transform", value: { pos: [0, 100, 0] } });
-      const pa = s.call("olive", "set", { id: "chair", component: "parent", value: { to: "rug" } });
-      return { sit: sit.ok, pl: show(pl), tr: code(tr), pa: code(pa), cls: tr?.refused?.class, same: JSON.stringify(s.w().state().entities.chair.c.transform) === before,
-        changes: s.entries().filter((e: any) => e.kind === "change").length - n0, words: C.refusalWords("bob", "move") }; },
-    good: (o) => o.sit && o.pl.startsWith("refused consent: " + o.words) && o.tr === "consent" && o.pa === "consent" && o.cls === "move" && o.same && o.changes === 0 },
-  { id: "O2", what: "…a motion on the chair, or on the table it hangs from (a parent moves its children), is refused the same way", run(s) { cast(s);
+      const sitThen = (f: () => any) => { s.call("bob", "move", { to: [4, 0, -0.6] }); const sit = s.call("bob", "use", { id: "chair", action: "sit" }); const r = f(); return { sit: sit.ok, r: show(r), seated: !!s.w().presence.seats?.bob, note: (r.notes ?? []).some((n: any) => n.who === "bob" && n.unseated) }; };
+      const pl = sitThen(() => s.call("olive", "place", { id: "chair", at: [4, 0.01] }));
+      const tr = sitThen(() => s.call("olive", "set", { id: "chair", component: "transform", value: { pos: [4, 0, 0.02] } }));
+      const pa = sitThen(() => s.call("olive", "set", { id: "chair", component: "parent", value: { to: "rug" } }));
+      const inbox = s.call("bob", "inbox", {}).messages ?? [];
+      return { pl, tr, pa, told: inbox.filter((m: any) => m.type === "unseated" && m.by === "olive").length }; },
+    good: (o) => [o.pl, o.tr, o.pa].every((x) => x.sit && x.r === "ok" && !x.seated && x.note) && o.told === 3 },
+  { id: "O2", what: "…a motion on the chair, or on the table it hangs from (a parent moves its children), lands and lets bob go the same way", run(s) { cast(s);
       s.call("olive", "create", { id: "table", model: "table", place: { at: [4, 0] } });
       s.call("olive", "create", { id: "chair", model: "chair", components: { ...SEAT, parent: { to: "table" }, transform: { pos: [0, 0, 1.2] } } });
       s.call("bob", "move", { to: [4, 0, 0.6] }); const sit = s.call("bob", "use", { id: "chair", action: "sit" });
-      const m1 = s.call("olive", "set", { id: "chair", component: "motion", value: { type: "spin", axis: [0, 1, 0], speed: 1 } });
-      const m2 = s.call("olive", "set", { id: "table", component: "motion:orbit", value: { type: "orbit", radius: 3, period: 4 } });
-      const t2 = s.call("olive", "set", { id: "table", component: "transform", value: { pos: [4, 50, 0] } });
-      return { sit: show(sit), m1: show(m1), m2: code(m2), t2: code(t2) }; },
-    good: (o) => o.sit === "ok" && /^refused consent/.test(o.m1) && o.m2 === "consent" && o.t2 === "consent" },
-  { id: "O3", what: "…once bob allows the owner to move him (consent allow, class move), the same place goes", run(s) { cast(s);
+      const m1 = s.call("olive", "set", { id: "chair", component: "motion", value: { type: "spin", axis: [0, 1, 0], speed: 1 } }); const s1 = !!s.w().presence.seats?.bob;
+      s.call("bob", "use", { id: "chair", action: "sit" });
+      const m2 = s.call("olive", "set", { id: "table", component: "motion:orbit", value: { type: "orbit", radius: 3, period: 4 } }); const s2 = !!s.w().presence.seats?.bob;
+      return { sit: show(sit), m1: show(m1), m2: show(m2), s1, s2 }; },
+    good: (o) => o.sit === "ok" && o.m1 === "ok" && o.m2 === "ok" && !o.s1 && !o.s2 },
+  { id: "O3", what: "vic starts the carousel bob sits on (a use of the carousel's own reaction, which writes its motion): it lands and bob stays seated — the ride is what he sat down for (a swing's push, where a world carries the impulse kind, is the same rule)", run(s) { cast(s);
+      const mk = s.call("olive", "create", { id: "carousel", model: "chair", components: { ...SEAT, transform: { pos: [4, 0, 0] }, reactions: { start: { kind: "set", component: "motion", value: { type: "spin", axis: [0, 1, 0], speed: 0.5 } } } } }); if (!mk.ok) return { mk: show(mk) };
+      s.call("bob", "move", { to: [4, 0, -0.6] }); const sit = s.call("bob", "use", { id: "carousel", action: "sit" });
+      s.call("vic", "move", { to: [4, 0, -1.5] }); const go = s.call("vic", "use", { id: "carousel", action: "start" });
+      return { sit: show(sit), go: show(go), motion: s.w().state().entities.carousel.c.motion?.type, seated: !!s.w().presence.seats?.bob }; },
+    good: (o) => o.sit === "ok" && o.go === "ok" && o.motion === "spin" && o.seated },
+  { id: "O4", what: "…bob may move the chair he sits on himself and stays seated, and anyone may edit what doesn't move it (a label) without unseating him", run(s) { cast(s);
       s.call("olive", "create", { id: "chair", model: "chair", components: SEAT, place: { at: [4, 0] } });
       s.call("bob", "move", { to: [4, 0, -0.6] }); s.call("bob", "use", { id: "chair", action: "sit" });
-      const no = s.call("olive", "place", { id: "chair", at: [6, 6] });
-      s.call("bob", "consent", { allow: "olive", class: "move" }); const yes = s.call("olive", "place", { id: "chair", at: [6, 6] });
-      return { no: code(no), yes: show(yes) }; },
-    good: (o) => o.no === "consent" && o.yes === "ok" },
-  { id: "O4", what: "…bob may move the chair he sits on himself, and anyone may edit what doesn't move it (a label)", run(s) { cast(s);
-      s.call("olive", "create", { id: "chair", model: "chair", components: SEAT, place: { at: [4, 0] } });
-      s.call("bob", "move", { to: [4, 0, -0.6] }); s.call("bob", "use", { id: "chair", action: "sit" });
-      const lab = s.call("olive", "set", { id: "chair", component: "label", value: "the good chair" });
-      const own = s.call("bob", "place", { id: "chair", at: [5, 0] });
-      return { lab: show(lab), own: show(own) }; },
-    good: (o) => o.lab === "ok" && o.own === "ok" },
-  { id: "O5", what: "bob stands on a deck: the owner's set transform of the deck is refused (move consent), a crate beside it isn't", run(s) { cast(s);
+      const lab = s.call("olive", "set", { id: "chair", component: "label", value: "the good chair" }); const s1 = !!s.w().presence.seats?.bob;
+      const own = s.call("bob", "place", { id: "chair", at: [5, 0] }); const s2 = !!s.w().presence.seats?.bob;
+      return { lab: show(lab), own: show(own), s1, s2 }; },
+    good: (o) => o.lab === "ok" && o.own === "ok" && o.s1 && o.s2 },
+  { id: "O5", what: "bob stands on a deck: the owner's set transform of the deck lands (a standing body never blocks an edit: a visitor can't freeze a stage)", run(s) { cast(s);
       s.call("olive", "create", { id: "deck", model: "crate", components: { transform: { pos: [8, 0, 0], scale: [3, 0.5, 3] } } });
       s.call("olive", "create", { id: "box", model: "crate", place: { at: [-6, 0] } });
       s.call("bob", "move", { to: [8, 0.3, 0], teleport: true });
       const d = s.call("olive", "set", { id: "deck", component: "transform", value: { pos: [8, 30, 0], scale: [3, 0.5, 3] } });
       const b = s.call("olive", "set", { id: "box", component: "transform", value: { pos: [-6, 0, 2] } });
-      return { d: code(d), b: show(b) }; },
-    good: (o) => o.d === "consent" && o.b === "ok" },
-  { id: "O6", what: "…and undo of the owner's earlier move of that deck meets the same check (undo writes through admit)", run(s) { cast(s);
+      return { d: show(d), b: show(b) }; },
+    good: (o) => o.d === "ok" && o.b === "ok" },
+  { id: "O6", what: "…and the owner's undo of an earlier move of that deck lands too", run(s) { cast(s);
       s.call("olive", "create", { id: "deck", model: "crate", components: { transform: { pos: [8, 0, 0], scale: [3, 0.5, 3] } } });
       const mv = s.call("olive", "set", { id: "deck", component: "transform", value: { pos: [10, 0, 0], scale: [3, 0.5, 3] } });
       s.call("bob", "move", { to: [10, 0.3, 0], teleport: true });
       const u = s.call("olive", "undo", {});
-      return { mv: show(mv), u: code(u) }; },
-    good: (o) => o.mv === "ok" && o.u === "consent" },
+      return { mv: show(mv), u: show(u) }; },
+    good: (o) => o.mv === "ok" && o.u === "ok" },
+  { id: "O7", what: "bob and vic sit on a two-seat bench: the owner's move of it lets BOTH go, not just the first rider found (holes r8 M2)", run(s) { cast(s);
+      const BENCH = { sockets: { a: { pos: [-0.5, 0.45, 0], body: { action: "sit" } }, b: { pos: [0.5, 0.45, 0], body: { action: "sit" } } } };
+      s.call("olive", "create", { id: "bench", model: "chair", components: BENCH, place: { at: [4, 0] } });
+      s.call("bob", "move", { to: [3.6, 0, -0.6] }); const b = s.call("bob", "use", { id: "bench", action: "sit" });
+      s.call("vic", "move", { to: [4.4, 0, -0.6] }); const v = s.call("vic", "use", { id: "bench", action: "sit" });
+      const both = Object.keys(s.w().presence.seats ?? {}).sort().join(",");
+      const r = s.call("olive", "set", { id: "bench", component: "transform", value: { pos: [4, 40, 0] } });
+      const unseated = (r.notes ?? []).filter((n: any) => n.unseated).map((n: any) => n.who).sort().join(",");
+      return { b: show(b), v: show(v), both, r: show(r), left: Object.keys(s.w().presence.seats ?? {}).join(","), unseated }; },
+    good: (o) => o.b === "ok" && o.v === "ok" && o.both === "bob,vic" && o.r === "ok" && o.left === "" && o.unseated === "bob,vic" },
+  { id: "O8", what: "a reaction on ANOTHER thing that moves the seat (a reset button across the room sending the chair home) is someone else's edit: it lands and lets the rider go", run(s) { cast(s);
+      s.call("olive", "create", { id: "chair", model: "chair", components: { ...SEAT, home: { pos: [4, 0, 0] } }, place: { at: [6, 0] } });
+      s.call("olive", "create", { id: "button", model: "crate", components: { reactions: { reset: { kind: "reset", targets: ["chair"] } } }, place: { at: [-6, 0] } });
+      s.call("bob", "move", { to: [6, 0, -0.6] }); const sit = s.call("bob", "use", { id: "chair", action: "sit" });
+      s.call("vic", "move", { to: [-6, 0, -1] }); const r = s.call("vic", "use", { id: "button", action: "reset" });
+      return { sit: show(sit), r: show(r), at: s.w().state().entities.chair.c.transform?.pos, seated: !!s.w().presence.seats?.bob }; },
+    good: (o) => o.sit === "ok" && o.r === "ok" && o.at?.[0] === 4 && !o.seated },
   // ---------------- Q: purge vs readback ----------------
   { id: "Q1", what: "an owner named the engine's build; its cause act's body is purged (in memory, and as the stored {commit} stub): the server never restamps it", run(s) { cast(s);
       const OLD = "be543899cfedf430";

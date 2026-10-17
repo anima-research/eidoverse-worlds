@@ -53,7 +53,8 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["authority-layers", "authority-layers-check.ts", 1], // C11 (DEBT 10-12 #4b): the authority split is a DAG — a leaf under shared/protocol/authority/ never imports the gate or a leaf above it
   ["authority", "authority-check.ts", 1],
   ["ids", "ids-check.ts", 1],
-  ["scars", "scars-check.ts", 1],       // R 10-17 02:45 engine-scars + consent gaps: refused acts keep names + code, look's own table, edits that move a body need consent, READBACK vs purge, the refusal-code registry, a VERBSPEC row per verb, the spec pins           // R 10-17 ID HARDENING: opaque minting, writers never choose ids ($placeholders), delete clears refs, lint finds dangling ones
+  ["scars", "scars-check.ts", 1],       // R 10-17 02:45 engine-scars + consent gaps: refused acts keep names + code, look's own table, an edit that moves a seat unseats its riders (sitting is consent), READBACK vs purge, the refusal-code registry, a VERBSPEC row per verb, the spec pins           // R 10-17 ID HARDENING: opaque minting, writers never choose ids ($placeholders), delete clears refs, lint finds dangling ones
+  ["r8", "r8-check.ts", 1],             // review round 8 (10-17): a delete never re-sponsors a script; a fork copies no new model-hash; ref clears are the authority's follow-up (no third-party veto); the shape marker is the system's act; enter/leave record no identity
   ["directory", "directory-check.ts", 1],
   ["keyhints", "../keyhints-check.ts", 1], // R 10-04: no hidden keys in edit mode (every modifier tagged and shown)
   ["client", "client-check.ts", 1],     // slice 3b: edit mode in headless Chromium against a scratch server (one browser, guarded)

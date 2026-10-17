@@ -319,7 +319,7 @@ const bytesOf = (e) => e.bytes ?? JSON.stringify(e).length;
 // written eagerly (ids are never reused, so it is tidiness, never a resurrection guard).
 const FOLLOW_UP = Symbol("follow-up");
 const followUp = (o) => { o[FOLLOW_UP] = true; return o; };
-class Admitted { constructor(who, ops, after, notes = []) { this.who = who; this.ops = ops; this.after = after; this.notes = notes; Object.freeze(this); } }
+class Admitted { constructor(who, ops, after, notes = [], unseat = []) { this.who = who; this.ops = ops; this.after = after; this.notes = notes; this.unseat = unseat; Object.freeze(this); } }
 // L7 rate, per actor, over EVERYTHING the actor makes the log hold (acts and says), by the authority's clock. One function:
 // admit calls it for state writes, and every word that logs without a state write (say, grab's lift, throw, drop, a
 // teleport) calls it before appending. The lab has no agents (`for` is unwritten until keys, L4), so "that actor's
@@ -416,7 +416,7 @@ function admit(w, st, who, ops) {
     applyCow(s, [op]); norm.push(op); // one entity copied per op it touches, not the world (s is this write's own copy)
   });
   seatRights(w, st, s, who, role, norm.filter((o) => !fuOps.has(o)), made);
-  if (!(CTX.forking || who.lifting)) occupiedEdits(w, st, who, norm);
+  const unseat = CTX.forking || who.lifting ? [] : unseatsFor(w, st, who, norm);
   capacityCheck(w, st, s, who, norm);
   for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: CTX.forking || !!who.lifting }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
   { const bad = socketRules(s, new Set(norm.map((o) => o.id))); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
@@ -428,7 +428,7 @@ function admit(w, st, who, ops) {
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
   if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§7: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
   if (cap?.kind === "rest") restCheck(w, cap, s);
-  return new Admitted(who, norm, s, lifted.notes);
+  return new Admitted(who, norm, s, unseat.length ? [...lifted.notes, ...unseat.map((u) => ({ who: u.who, unseated: true, seat: u.seat, why: unseatWhy(u) }))] : lifted.notes, unseat);
 }
 // A socket is part of its host (review 10-12 S1-1): before the cut a seat was the host's own `sockets` component, so
 // adding one to someone else's thing needed editOthers on it and an owner-level lock refused it. Now it's a child entity,
@@ -1086,6 +1086,9 @@ function changeShape(plan, cause, w) {
 function changeEntry(w, plan, cause) {
   if (!(plan instanceof Admitted)) throw new Error("authority bug: a state write that admit() didn't produce (§7)");
   const seq = w.append(changeShape(plan, cause, w), CHANGE);
+  // the riders an edit lets go (unseatsFor): presence, after the write has landed, each told in their inbox
+  for (const u of plan.unseat) if (w.presence.seats?.[u.who]?.to === u.seat) { clearSeat(w, u.who);
+    inboxPush(w.presence, u.who, { type: "unseated", seat: u.seat, ...(u.host ? { host: u.host } : {}), by: plan.who.actor, why: unseatWhy(u) }); }
   (w.changedQ ??= []).push(seq); // `changed:<comp>` events, drained after the request (scripts, below)
   return seq;
 }
@@ -3190,28 +3193,36 @@ function occupant(w, st, id, actor) {
   for (const [who, b] of Object.entries(w.presence.bodies)) if (who !== actor && Array.isArray(b?.at) && boxes.some((x) => feetOn(x, b.at))) return { who, how: "is standing on" };
   return null;
 }
-// Consent gaps 1 (R 10-17 02:45; the SL orbiter / cage scar): an ORDINARY edit that would move a present body is a `move`
-// act on that body, whichever verb carries it. The hand verbs had occupant() (above); an owner's place, a set of transform
-// or parent, or a motion on the chair someone sits in (or the floor they stand on, or anything those hang from) carried
-// them with no consent check. Now each such op meets the occupant's move cell: only `everyone` (a standing allow included)
-// lets it through. An edit can't wait for an answer (like a script meeting an ask), so `ask` refuses too, and the refusal
-// uses the uniform words (consent.js refusalWords): the same for a tier's nobody, a per-person no and a pause; the cause
-// goes to the occupant's own attempt ring. The authority's follow-ups (rest, system), the load's lift, a fork's copy and
-// the hand path (which refuses `occupied` itself, before admit) are not edits. Moving the seat you sit on yourself is yours.
+// Riders (scars r8 M1 / holes M2; replaces consent gaps 1's occupant check on edits): sitting is consent, standing up is the
+// exit (Second Life's sit, VRChat's station). A seat carries its rider through whatever moves it, and an edit never waits on
+// or is refused for a body on it:
+//   - an edit by anyone but the rider that would move a seat someone sits on (transform, parent or motion of the seat or of
+//     anything it hangs from) UNSEATS each rider on it, every one, not the first found: the edit lands, the rider is let go
+//     where they were, standing (presence, nothing logged), and told why (their inbox, and a note in the reply);
+//   - what the seat's own assembly does to it is the ride: a reaction or a script on a thing with the same root as the seat
+//     (a swing's push, a carousel's turn, an elevator's script) carries its riders, whoever pressed the button;
+//   - moving the seat you sit on yourself is yours: you stay seated (others on it are let go);
+//   - a standing body never blocks an edit and is never a reason to refuse one: what you stand on carries you, as ever (the
+//     client's own walker keeps you on it). A griefer can't freeze an owner's stage by standing on it.
+// The authority's follow-ups (rest, system), a hand (handle: the hand verbs refuse `occupied` themselves, before admit), the
+// load's lift and a fork's copy unseat no one.
 const MOVES_BODIES = (comp) => comp === "transform" || comp === "parent" || baseOf(comp) === "motion";
-function occupiedEdits(w, st, who, norm) {
-  const cap = who.cap; if (cap && ["rest", "system", "handle"].includes(cap.kind)) return;
-  const others = Object.keys(w.presence.bodies ?? {}).filter((k) => k !== who.actor); if (!others.length) return;   // nobody else here: nothing to carry
-  const from = who.actor, now = w.now(); const seen = new Set();
+function unseatsFor(w, st, who, norm) {
+  const cap = who.cap; if (cap && ["rest", "system", "handle"].includes(cap.kind)) return [];
+  const riders = Object.keys(w.presence.seats ?? {}).filter((k) => k !== who.actor); if (!riders.length) return [];
+  const rootOf = (id) => { const a = ancestors(st, id); return a.length ? a[a.length - 1] : id; };
+  const from = cap?.kind === "reaction" ? cap.ids[0] : cap?.kind === "script" ? cap.id : null;   // the thing whose own behaviour this is
+  const own = from && st.entities[from] ? rootOf(from) : null;
+  const out = new Map();
   for (const op of norm) {
-    if (op.verb === "create" || op.comp === undefined || !MOVES_BODIES(op.comp) || seen.has(op.id) || !st.entities[op.id]) continue;
-    seen.add(op.id);
-    const o = occupant(w, st, op.id, from); if (!o) continue;
-    const d = C.decide(w.presence, from, o.who, "move", now); if (d.mode === "everyone") continue;
-    ringPush(w.presence, { ts: now, from, to: o.who, cls: "move", verdict: `refused (an edit of ${op.id}.${op.comp})`, why: d.why }); w.presenceDirty = true;
-    refuse("consent", `${C.refusalWords(o.who, "move")}: ${said(o.who)} ${o.how} ${op.id} (or something on it), and ${op.comp} would move them`, C.REFUSAL_FIX, { class: "move", by: o.who });
-  }
+    if (op.verb === "create" || op.comp === undefined || !MOVES_BODIES(op.comp) || !st.entities[op.id]) continue;
+    const fam = new Set([op.id, ...descendants(st, op.id)]);
+    for (const r of riders) { if (out.has(r)) continue; const s = seatOf(w, st, r); if (!s || !fam.has(s.to)) continue;
+      if (own && rootOf(s.to) === own) continue;   // the seat's own assembly moving it: the ride
+      out.set(r, { who: r, seat: s.to, host: st.entities[s.to]?.c.parent?.to ?? null, id: op.id, comp: op.comp }); } }
+  return [...out.values()];
 }
+const unseatWhy = (u) => `${u.id}.${u.comp} was changed by someone else, and it moves the seat ${u.who} sat on: they were let go where they were, standing (sitting is consent to the seat's own ride, not to anyone's edit)`;
 function occupiedRefuse(w, st, id, actor, what) {
   const o = occupant(w, st, id, actor);
   if (o) refuse("occupied", `${said(o.who)} ${o.how} ${id} (or something on it), so it can't be ${what}`, "wait till they get up or step off", { by: o.who });
