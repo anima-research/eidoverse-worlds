@@ -1555,7 +1555,7 @@
   "status": "trial",
   "fields": {
    "src": "string",
-   "attach": "string",
+   "attach": "ref",
    "caps": "object",
    "knobs": "object",
    "author": "string",

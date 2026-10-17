@@ -134,6 +134,9 @@ One commit, reviewed by a second agent before it ships:
    trial name needs `--ack "<why>"` and leaves a REGISTRY-CHANGELOG line; a stable name's never re-pins). A promoted
    name is `trial` until it is promised (`stable`).
 4. **The authority's checks** for anything a reader can't be trusted to check (ranges that matter to everyone, refs).
+   **Every field that holds an entity id is typed** `ref` / `refs` (or listed in `refPaths` when nested): that type is what
+   lets a duplicate, a publish and a merge rebind it, a deletion clear it in the same act (R 10-17), and `lint` report it
+   when it names nothing. An id in an untyped string field is invisible to all four.
 5. **The protocol text**: its name in §4's list, and a line in the catalogue (`shared/components.js`) for Add Component.
 6. **The reader** keeps reading both spellings (the alias makes the authority treat them as one; clients use
    `registered()` from componentspec).

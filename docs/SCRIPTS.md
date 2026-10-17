@@ -81,6 +81,10 @@ Refusals show on the card in these same words. (shared/protocol/newscript.js pla
 
 ## The API (one global, `world`)
 
+A script names things by **id**, never by label: a label is a name people change and two things may share; an id is
+minted once and never changes. (An id from `world.ids()`, `world.children()`, `world.self` or `world.create()` is
+always the right one to keep.)
+
 | | |
 |---|---|
 | `world.self` | the thing it's installed on |
@@ -96,7 +100,7 @@ Refusals show on the card in these same words. (shared/protocol/newscript.js pla
 | `world.name(id)` | a person's display name (identities are opaque ids; recorded in the act), or `null` |
 | `world.set(id, comp, value)` | propose a write (must be inside `scope`) |
 | `world.delete(id, comp?)` | propose a delete (a whole thing only if this activation created it) |
-| `world.create(components, id?)` | propose a new thing (needs `scope.create`); returns its id |
+| `world.create(components)` | propose a new thing (needs `scope.create`); returns the id it was minted (opaque: a script never chooses an id, and an id never carries a word; API 2) |
 | `world.param(id, name, number)` | write `params.<name>` on a thing (merged into what's there; needs `params` in the scope's comps): a signal something else reads (a seat pose blends by `param.<name>`) |
 | `world.say(text)` | a say entry (needs `scope.say`) |
 | `world.shove(who)`, `world.pose(who, spec)` | effects on a person (needs `scope.bodies`, then their consent) |

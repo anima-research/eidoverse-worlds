@@ -115,7 +115,9 @@ Every message belongs to exactly one plane:
   fresh snapshot.
 - `reply` — `{id, verb, ok, reply}`: the authority's own answer to your
   request, whole under `reply` (`{ok: false, refused: {code, reason,
-  fix}}` when refused).
+  fix}}` when refused). A request whose creates named placeholders (`$name`:
+  a writer never chooses an id, PROTOCOL §7 "Ids are the authority's") gets
+  `reply.ids`: `{"$name": "<the id it was minted>"}`.
 - `holds` — `{world, holds: {id: {by, hand, grip?|offset?, second?}}}`:
   who holds what (presence), sent whenever it changes and in every cut.
 - `moderated` — `{verb, by, text}`: bystanders' line when the authority removed

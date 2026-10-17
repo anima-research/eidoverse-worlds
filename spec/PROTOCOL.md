@@ -169,9 +169,14 @@ All ASCII.
   `(world id, entity id)`, written `<world id>#<entity id>`, and no protocol
   feature may assume an id is unique outside its world (a fork copies its
   parent's ids). A minted id SHOULD carry at least 128 random bits (the
-  reference authority and clients write `<slug>-<26 base32>`), so two forks
-  rarely mint alike; that makes renames on merge rare, never unnecessary. An
-  entity id never has an identity's shape (`u-` and 20 base32 letters).
+  reference authority writes 26 base32 characters and nothing else), so two
+  forks rarely mint alike; that makes renames on merge rare, never
+  unnecessary. An entity id never has an identity's shape (`u-` and 20 base32
+  letters). **An id is opaque and immutable; a thing's name is its `label`.**
+  A minted id carries no word: a word goes stale (a `health-potion-…` that
+  becomes a plant would say health potion forever), and an id never changes.
+  Ids minted with a readable prefix before stay valid as they are. Writers
+  never choose ids (§7, "Ids are the authority's").
 - **Identities** (actors, and keys such as `roles:<identity>`):
   `[a-z0-9-]{1,64}`, opaque. The mapping from an identity to a person lives
   outside the log, so purging a person never needs the log's skeleton.
@@ -352,6 +357,14 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   references outside it unless asked to drop them (`unwire`); a **copy** of a
   record turns part keys into its own new ids and leaves anything else
   unbound. An untyped value (a namespaced component) is never rewritten.
+  **A deletion clears the references to what it removes** (the thing and the
+  children that go with it), in the same change: a list loses the entry, a
+  single reference's field goes (and a value that can't stand without it, such
+  as a `look-at` whose target is gone; a `reset` handler left with no targets
+  leaves its `reactions`), a `home` loses its `parent`. The reply's notes list
+  each reference cleared (`cleared: [{from, was}]`). A reference that names
+  nothing can still arrive in an old log or an import: `lint` reports each one
+  (`kind: "dangling"`, where it is, what it names).
 - **A thing reads like an accessibility tree.** To anyone who perceives by
   reading (an agent's `look` and `inspect`, a screen reader, the inspector),
   a thing is its **name** (`label`), its **description** (`description`: how
@@ -571,6 +584,21 @@ has a level: `true` is builder level, and `{rank: "builder" | "moderator" |
 "owner"}` names one. Only someone at that rank or above, or whoever set the
 lock, may change or remove it or act through it; nobody sets a lock above
 their own rank.
+
+**Ids are the authority's.** The authority mints every entity id (§3.1). A
+create (`create`, `create {from}`, a `batch`'s create) that names an id is
+refused, with the fix — unless the id is a **placeholder**: `$` and up to 63
+of `[A-Za-z0-9_-]` (JSON:API's `lid`), local to that one request. Before the
+request is checked the authority mints an id for each placeholder a create
+defines, writes it wherever the placeholder stands in the request (a parent's
+`to`, a place's `on`, a set's `id`, a reference list), and answers with the
+map: `{ok: true, ids: {"$table": "<minted>"}, …}` (a dry run maps them too).
+The `act` is the request with the minted ids in it: **a placeholder never
+reaches the log**. A placeholder defined twice, or used where a thing is named
+without a create defining it, is refused by name. System acts that must keep
+ids — a fork's copy, a translation, a merge, the load's repair — copy them
+verbatim. A script's `world.create(components)` returns the id it was minted
+(script API 2; it takes none).
 
 **Requests are open; results are closed.** Anyone may add a request word —
 a verb, a `use` action, a script command — and no request word grants a

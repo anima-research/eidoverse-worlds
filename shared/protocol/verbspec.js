@@ -45,7 +45,7 @@ export const VERBSPEC = {
     required: ["id", "axis", "deg"], example: { id: "plank-1", axis: "x", deg: 30, space: "object" } },
   create: {
     doc: "make a new thing; optionally place it in the same step",
-    args: { id: { type: "string", doc: "optional; the server mints one if absent" }, model: { type: "string", doc: "a model from find {kind: 'model'}" },
+    args: { id: { type: "string", doc: "leave it out: the authority mints every id. A placeholder '$name' is accepted: refs to it in the same request (a batch) resolve, and the reply's ids map gives the id it became; any other id is refused" }, model: { type: "string", doc: "a model from find {kind: 'model'}" },
       components: { type: "object", doc: "component values; see schema" }, from: { type: "string", doc: "a blueprint hash (find {kind: 'blueprint'}), or a thing's id to duplicate it with what's attached to it" },
       at: { type: "any", doc: "where: [x, z] on the ground, [x, y, z] exactly, or {pos, yaw|q}; with from, {pos, yaw|q} only (a duplicate's is local to the source's parent; default 0.5 m along x). Not with place" }, place: { type: "object", doc: "a place request without id", example: { model: "chair", place: { near: "table-1", facing: "table-1" } } }, dry: { type: "bool" } },
   },

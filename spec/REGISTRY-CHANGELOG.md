@@ -170,3 +170,5 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - terrain.heightmap: its meaning of absence "no image: the noise (or raster) is the base" → "no image: the noise is the base"
   - terrain.water: its meaning of absence "no water: dry ground everywhere" → gone
 - 2026-10-17: motion gains node (a keyed motion's node name is data, motion:<slot> {node}; review r7 F1); motion.part's dropped pointer reworded
+- 2026-10-17: imported-behavior.attach holds an entity id: typed ref so a delete clears it, lint finds it dangling, copy/merge rebind it (R 10-17 ID HARDENING 4)
+  - imported-behavior.attach: type string → ref

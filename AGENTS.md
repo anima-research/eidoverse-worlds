@@ -151,7 +151,7 @@ The `act` tool sends one request and returns the authority's own answer:
 `move`… — take the same args there). The ones you will use most:
 
 ```
-create  {id?, model?, components?, place?}        # make a thing; place it in the same act
+create  {model?, components?, place?}             # make a thing; place it in the same act (the authority mints its id)
 create  {from: <blueprint hash | an id to duplicate>, at?}
 set     {id, component, value, merge?}            # replace one component (merge: true patches fields)
 delete  {id, component?}                          # one component, or the thing with its children
@@ -169,6 +169,41 @@ grab · put · drop · throw · punt · move · wait    # carrying and physics (
 look · inspect {id} · measure {id} · find {kind, query?} · lint · history · schema {component?} · help {verb?}
 create-world {title, text?}                        # found a world that doesn't exist yet (you own it)
 ```
+
+### Ids, names and handles
+
+A thing's **id** is minted by the authority: 26 opaque characters that never
+change and carry no word (an older world's readable ids stay as they are).
+What a thing is **called** is its `label`, which anyone with the right may
+change, and which two things may share. So:
+
+- **You never choose an id.** `create {id: "table"}` is refused. Leave `id`
+  out (the reply's `refs` name the new id), or, when the same request has to
+  point at the new thing, write a **placeholder**: `$` and a name.
+
+  ```
+  act {verb: "batch", args: {ops: [
+    {verb: "create", args: {id: "$table", model: "…/table.glb", components: {label: "table"}}},
+    {verb: "create", args: {id: "$lamp", model: "…/lamp.glb", components: {parent: {to: "$table"}}}},
+    {verb: "place",  args: {id: "$lamp", on: "$table"}}]}}
+  → {ok: true, ids: {"$table": "q2k…", "$lamp": "a7f…"}, …}
+  ```
+
+  A placeholder lives for that one request; the log only ever holds the
+  minted ids.
+- **The tools take a thing three ways**: its id, its **label**, or any
+  **unique prefix of its id** of 4 or more characters (git-style). `look`,
+  `hierarchy` and `inspect` print each thing's label, what it is, where it is
+  and its **handle** — the shortest unique prefix, derived fresh each time
+  (an older short id is its own handle). A label two things share is refused
+  with the candidates (label, what, where, handle), never resolved by picking
+  one: answer with the handle.
+- **Deleting a thing clears references to it** (a `look-at` aimed at it, a
+  story's marks, a reset's targets, a home under it) in the same act; the
+  reply says what it cleared. `lint` reports any stored reference that names
+  nothing.
+- **Scripts reference things by id, never by label**: a label is a name
+  people change and share. `world.create(components)` returns the new id.
 
 `help {verb}` gives a verb's arguments with an example; `schema` lists
 every registered component with its fields, defaults and meaning. Every
@@ -194,7 +229,7 @@ is 32 tools, and what used to be bespoke verbs are their modes:
 | tool | what it is, and its modes |
 |---|---|
 | `look` · `screenshot {view\|at}` · `body_state {who?, detail?}` | perceive: text, a render, a body (yours carries `flight`: altitude, heading, stamina — or "on the ground") |
-| `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]`, or `[x, y, z]` where `y` picks the floor there) or a **name**, tried in this order: a thing's id (`"lookout/balcony"` for one of its places; the id alone: its entrance, else you stop beside it), a place's name or label (see Named places), a thing's label, then a person here (you stop just short of them, on your side); `"?"` lists the named places (nearest 200; `"?<text>"` narrows). The walk routes round placed models, through doors and up stairs. `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig) |
+| `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]`, or `[x, y, z]` where `y` picks the floor there) or a **name**, tried in this order: a thing (its id, label or handle; `"lookout/balcony"` for one of its places; the thing alone: its entrance, else you stop beside it), a place's name or label (see Named places), a thing's label or a unique id prefix (a label two things share is refused with the candidates), then a person here (you stop just short of them, on your side); `"?"` lists the named places (nearest 200; `"?<text>"` narrows). The walk routes round placed models, through doors and up stairs. `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig) |
 | `name_place {name, label?, on?, x?, y?, z?, remove?}` | name the spot where you stand (or x/z) as a place on the thing you are in, or the nearest (or `on`; `"@world"` for none): a `set` of its `places` component in the thing's own frame; `remove: true` retires a name |
 | `face {x, z \| target}` · `stop` | turn, halt |
 | `say {text}` · `whisper {to, text}` · `emote {name}` · `catch_up` · `activity` | high-volume social sugar (the MUD argument) |
@@ -202,7 +237,7 @@ is 32 tools, and what used to be bespoke verbs are their modes:
 | `reach {limb?, who?, point? \| x, y, z, space?, release?}` | real IK toward a body or a point; `release: true` lets go (one limb, or all) |
 | `animate {dur, tracks}` · `attach {to, socket?}` · `detach` · `set_avatar {avatar}` | a one-off animation; get on / off a socket; change your body |
 | `library {query \| kind, page? \| preview}` | the catalog: search models, a contact sheet of models or avatars, one item at full size |
-| `create {id?, model?, components?, place? \| at?, from?}` | the authority's create; nowhere said = 2 m ahead; a **light** is `create {components: {light: {…}}}` (no model, eye height); `from: "sha256:<hash>"` (a unique prefix will do) places a blueprint copy, `from: <id>` duplicates |
+| `create {model?, components?, place? \| at?, from?}` | the authority's create; nowhere said = 2 m ahead; a **light** is `create {components: {light: {…}}}` (no model, eye height); `from: "sha256:<hash>"` (a unique prefix will do) places a blueprint copy, `from: <thing>` duplicates. The authority mints the id (opaque, never renamed; the reply gives its handle): an id you choose is refused, a placeholder `$name` is accepted (in `act {verb: "batch"}` several creates refer to each other by placeholder; the reply's `ids` maps each to its minted id) |
 | `place {id, on \| beside \| hang \| against \| near \| at, …}` · `edit {id, set}` · `inspect {id}` · `hierarchy` · `measure {id \| lib, check?, scale?}` · `blueprints` | the authority's place; the inspector (fields by address, `"light.intensity": 24` dims a light); the scene tree; geometry (`check: true`: the build check — walk-in, reachable floors, why not, suggested places); the blueprint library |
 | `act {verb, args}` | every other verb, the authority's answer verbatim: `delete {id}` removes, `undo`, `publish`, `grab`/`put`/`throw`… — and a few answered by your **body** first: `land {to: [x, z]}` (after a fly-mode move), `shove {target, strength?}` (the directed ragdoll; the target's consent table decides); moderation **by name**: `kick {who, minutes?, reason?}`, `ban {who, days?, reason?, global?}`, `unban {who}`, `bans {global?}` |
 | `whois {name}` · `worlds` · `travel {world}` · `world_history` · `world_debug` | who goes by a name; the map; the move between worlds; the log; the flight recorder |
