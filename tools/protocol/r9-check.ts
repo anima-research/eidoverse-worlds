@@ -227,7 +227,7 @@ const cases: Case[] = [
       const ci = L.findIndex((e: any, i: number) => i > ai && e.kind === "change" && e.cause === ai); L[ci] = JSON.parse(JSON.stringify(L[ci]).replace('"n":1', '"n":999'));
       const A1 = AU.auditScripts(L, s.w().getBlob, { run: SB.runScript });
       return { ins: show(ins), ran: ran?.[0]?.status, honest: { f: A0.flags.length, s: A0.skipped.length, r: A0.reran }, forged: { checks: A1.flags.map((f: any) => f.check), s: A1.skipped.length } }; },
-    good: (o) => o.ins === "ok" && o.ran === "ran" && o.honest.f === 0 && o.honest.s === 0 && o.honest.r === 1 && JSON.stringify(o.forged.checks) === '["rerun"]' && o.forged.s === 0 },
+    good: (o) => o.ins === "ok" && o.ran === "ran" && o.honest.f === 0 && o.honest.s === 0 && o.honest.r === 1 && JSON.stringify(o.forged.checks) === '["rerun-anon"]' && o.forged.s === 0 },
   // ---------------- U: the agent hears unseated ----------------
   { id: "U1", what: "(holes M3 / claims O1) an agent seated on S gets `unseated {seat: S, at}`: its seat clears, it stands where the authority let it go, and its inbox says who moved the seat; a message for another seat changes nothing", async run() {
       const { WorldAgent } = await import(TREE + "mcpl/agent.ts");

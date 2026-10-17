@@ -19,9 +19,10 @@
 //             (sponsor, depth, seed, src, the read shape), and an identity-independent result is checked in full.
 //   arrivals — an `enter` / `leave` activation records no identity (review r8 M4): the script heard `by` live, the act keeps
 //             neither a trigger actor nor event.by. A re-run gets a stand-in identity; a result that doesn't depend on who
-//             came is verified. One that differs from the log is re-run again with a SECOND stand-in (review r9 M2): if the two
-//             re-runs agree with each other, the result doesn't depend on who came, so the mismatch is the log's and it is
-//             flagged `rerun` / `rerun-say`; only when the two re-runs differ from each other is it `skipped`.
+//             came is verified. One that differs from the log is re-run again with a SECOND stand-in of another kind (a person-
+//             shaped one, then an agent-shaped one; review r9 M2, r10 M3): if the two re-runs differ from each other it is
+//             `skipped`; if they agree, the mismatch is flagged `rerun-anon` (never `rerun`: two inputs can't prove a result is
+//             the same for every identity, so it is a mismatch to look at, not proof of a forgery).
 // Replay of the WORLD never runs code (L1); this re-run is an optional audit view.
 import { fold, opsOf, followUpsOf, jcs } from "./fold.js";
 import { elide, seedOf } from "./scriptrules.js";
@@ -76,8 +77,11 @@ const norm = (ops) => jcs(ops.map(({ verb, id, comp, value }) => ({ verb, id, ..
  */
 const readShape = (r) => ({ near: (r?.near ?? []).map((x) => [x.r, Array.isArray(x.ids) ? x.ids.length : x.n]), count: r?.count ?? [], names: Array.isArray(r?.names) ? r.names.length : r?.names ?? 0 });
 /** did these recorded reads ask who was near, or what someone is called? (inputs a re-run gets only as stand-ins) */
-const ARRIVAL_STAND_IN = "u-" + "a".repeat(20);   // shaped like an identity, nobody's (ids are minted, never chosen)
-const ARRIVAL_STAND_IN_2 = "u-" + "Zq7".repeat(6) + "Zq";   // a second one, different in every letter (review r9 M2)
+// Two stand-ins of different KINDS (review r10 M3, L3): a person-shaped one (u- and 20 lowercase, as minted) and an agent-shaped
+// one (a short lowercase name, no u-). Both are valid identities (§3.1) and nobody's, so a script that greets people and not
+// agents, or reads an identity's length or prefix, answers differently for the two and is listed as not re-runnable.
+export const ARRIVAL_STAND_IN = "u-" + "a".repeat(20);
+export const ARRIVAL_STAND_IN_2 = "zq-stand-in";
 const whoReads = (r) => (r?.near ?? []).some((x) => !Array.isArray(x.ids) && x.n > 0) || (typeof r?.names === "number" && r.names > 0);
 export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
   const flags = [], skipped = []; let acts = 0, maxDepth = 0, reran = 0;
@@ -116,6 +120,9 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     if (anonWho) { const r2 = rerun({ ...event, by: ARRIVAL_STAND_IN_2 });   // does the result depend on who came? two stand-ins agree → no
       const agree = r2.ok && jcs(readShape(r2.reads)) === jcs(readShape(res.reads)) && norm(elide(st, r2.ops)) === norm(want) && jcs(r2.says) === jcs(res.says);
       if (!agree) { skipped.push({ seq, why: "its result depends on who arrived or left, which the act doesn't record: it can't be re-run to the same result" }); return; } }
+    // an arrival's mismatch is named as one (review r10 M3): two stand-ins that agree can't prove the result is the same for
+    // every identity, so it is never reported as plain `rerun` (a forgery): `rerun-anon` says it differs and the re-run can't know who came
+    if (anonWho) { flags.push({ seq, check: "rerun-anon", why: `the re-run's ${!sameW ? "writes" : "says"} differ from the log; it can't know who arrived or left (two stand-ins of different kinds agreed), so this is a mismatch to look at, not proof of a forgery`, ...(!sameW ? { want: want.length, got: got.length, at: state ? L.indexOf(state) : null } : {}) }); return; }
     if (!sameW) flags.push({ seq, check: "rerun", why: "the re-run's writes differ from the logged batch", want: want.length, got: got.length, at: state ? L.indexOf(state) : null });
     if (!sameS) flags.push({ seq, check: "rerun-say", why: "the re-run's says differ from the logged ones" });
   });
