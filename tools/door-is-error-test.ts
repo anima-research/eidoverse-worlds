@@ -39,12 +39,16 @@ const settle = async (p: Promise<unknown>): Promise<any> => { try { return await
 const said = (r: any) => r?.rejected != null ? `(rejected: ${r.rejected})` : String(r?.content?.[0]?.text ?? '');
 const failed = (r: any) => r?.isError === true;
 /** Run a call whose wait is the real flightAwait. Once its waiter is registered,
- *  set what the flight tick would have (`happen`) and settle it, as the tick does. */
+ *  set what the flight tick would have (`happen`) and settle it, as the tick does.
+ *  The checks that need a wait to time out stand in for flightAwait instead (the
+ *  climb's and the flare's timeouts, and the cut glide's flare), since a real
+ *  one would take its whole budget. */
 const midway = async (agent: any, start: Promise<any>, happen: () => void) => {
-  const before = agent.flightWaiters.length;
-  for (let i = 0; i < 400 && agent.flightWaiters.length <= before; i++) await new Promise((res) => setTimeout(res, 5));
+  // A waiter left by an earlier call could answer for this one, so none may be waiting yet.
+  if (agent.flightWaiters.length) return { rejected: 'a flight waiter from an earlier call was still registered' };
+  for (let i = 0; i < 400 && !agent.flightWaiters.length; i++) await new Promise((res) => setTimeout(res, 5));
   // An act that never waited on the flight answered from something else, so no check here may pass on it.
-  if (agent.flightWaiters.length <= before) return { rejected: 'the act registered no flight waiter' };
+  if (!agent.flightWaiters.length) return { rejected: 'the act registered no flight waiter' };
   happen(); agent.flightSettle();
   return start;
 };
@@ -61,6 +65,8 @@ const call = (name: string, a: Record<string, unknown> = {}) => settle(handleToo
 
 console.log('\nFLIGHT');
 ag.myRights = { role: 'builder', fly: false };
+/** A fresh flight, as after a body that went down has come to rest: a limp fall can't be launched out of. */
+const relaunch = async () => { ag.flight = null; await call('take_off'); };
 let r = await call('take_off');
 check('a denied take_off is failed', failed(r) && /cannot fly/.test(said(r)), said(r));
 r = await call('fold_wings');
@@ -118,23 +124,32 @@ ag.flight.stamina = 1e6;
 r = await midway(ag, call('climb_to', { altitude: ceiling - 5 }), () => { ag.flight.phase = 'RAGDOLL'; });
 check('a climb cut midway is failed', failed(r) && /^cut mid-climb at /.test(said(r)), said(r));
 check('...and the cut body keeps no climb to resume when it recovers', ag.flight?.climbTo == null, String(ag.flight?.climbTo));
-await call('take_off'); ag.flight.stamina = 1e6;
+await relaunch(); ag.flight.stamina = 1e6;
 r = await midway(ag, call('climb_to', { altitude: ceiling - 5 }), () => { ag.flight.phase = 'LEAF'; });
 check('a climb cut in the air, falling limp, is failed', failed(r) && /^cut mid-climb at /.test(said(r)), said(r));
 check('...and keeps no climb either', ag.flight?.climbTo == null, String(ag.flight?.climbTo));
-await call('take_off'); ag.flight.stamina = 1e6;
+await relaunch(); ag.flight.stamina = 1e6;
 ag.flight.pos.y = 30;
 r = await midway(ag, call('climb_to', { altitude: 5 }), () => { ag.flight.phase = 'LANDED'; ag.flight.pos.y = 12; });
 check('a descent that meets the ground above its target is failed, saying where it came down',
   failed(r) && /^came down on the ground at 12\.0m, short of the 5\.0m you asked for$/.test(said(r)), said(r));
 check('...and the landed body keeps no climb', ag.flight?.climbTo == null, String(ag.flight?.climbTo));
+await relaunch(); ag.flight.stamina = 1e6;
+ag.flight.pos.y = 30;
+r = await midway(ag, call('climb_to', { altitude: 5 }), () => { ag.flight.phase = 'LANDED'; ag.flight.pos.y = 5.2; });
+check('a descent that comes down on the ground at its target got there', !failed(r) && !/short of/.test(said(r)), said(r));
+check('...and keeps no climb', ag.flight?.climbTo == null, String(ag.flight?.climbTo));
+await relaunch(); ag.flight.stamina = 1e6;
+r = await midway(ag, call('climb_to', { altitude: ceiling - 5 }), () => { ag.flight.phase = 'RECOVER'; });
+check('a climb whose body is sitting up after a cut is failed as cut', failed(r) && /^cut mid-climb at /.test(said(r)), said(r));
 // A body that's down flies nowhere until it recovers (in the air) or takes off again (on the ground).
 for (const [phase, tool, a, words] of [
-  ['LEAF', 'glide_to', { x: 10, z: 0 }, /^you're falling limp \(leaf\) — the body has to recover before it can fly$/],
+  ['LEAF', 'glide_to', { x: 10, z: 0 }, /^you're falling limp \(leaf\) — once you're down on the ground, take_off launches you again$/],
+  ['LEAF', 'take_off', {}, /^you're falling limp \(leaf\) — once you're down on the ground, take_off launches you again$/],
   ['RAGDOLL', 'climb_to', { altitude: 20 }, /^you're down on the ground \(ragdoll\) — take_off to fly again$/],
   ['RECOVER', 'land_at', { x: 5, z: 5 }, /^you're down on the ground \(recover\) — take_off to fly again$/],
 ] as const) {
-  await call('take_off'); ag.flight.phase = phase;
+  await relaunch(); ag.flight.phase = phase;
   r = await call(tool, a);
   check(`${tool} while ${phase.toLowerCase()} is failed, and leaves the body down`, failed(r) && words.test(said(r)) && ag.flight?.phase === phase, `${said(r)}; ${ag.flight?.phase}`);
 }
@@ -154,13 +169,13 @@ for (const [tool, a, words] of [
   check(`${tool} ${JSON.stringify(a)} is failed before flying`, failed(r) && words.test(said(r)), said(r));
 }
 // A string that reads as a number flies, as Number() always took it.
-await call('take_off'); ag.flight.stamina = 1e6; ag.flight.pos.y = 2;
+await relaunch(); ag.flight.stamina = 1e6; ag.flight.pos.y = 2;
 r = await midway(ag, call('climb_to', { altitude: '5' }), () => { ag.flight.pos.y = ag.flight.climbTo; ag.flight.climbTo = null; });
 check('climb_to with altitude "5" climbs to 5 m', !failed(r) && /^at 5\.0m/.test(said(r)), said(r));
 // A touchdown within the arrival radius is an arrival; farther off, a shortfall.
 /** A glide from a fresh launch whose real wait settles once the body is down at (x, z), or cut (`phase`). */
 const glides = async (x: number, z: number, phase = 'LANDED') => {
-  await call('take_off');
+  await relaunch();
   ag.flight.pos.x = ag.flight.pos.z = 0;
   return midway(ag, call('glide_to', { x: 10, z: 0 }), () => { ag.flight.phase = phase; ag.flight.pos.x = x; ag.flight.pos.z = z; });
 };
@@ -177,12 +192,14 @@ r = await glides(4, 0, 'LEAF');
 check('a glide cut in the air, falling limp, is failed as a cut', failed(r) && /^cut mid-glide — you are falling at /.test(said(r)), said(r));
 r = await glides(4, 0, 'RAGDOLL');
 check('a glide cut on the ground is failed as a cut', failed(r) && /^cut mid-glide — you are on the ground at /.test(said(r)), said(r));
+r = await glides(4, 0, 'RECOVER');
+check('a glide whose body is already sitting up after a cut is failed as a cut', failed(r) && /^cut mid-glide — you are on the ground at /.test(said(r)), said(r));
 // land_at is done only when its glide arrived and its flare came down.
 const realGlide = ag.glideTo.bind(ag);
 const arrived = { ok: true, text: 'arrived at (5.0, 5.0), 9.0m up — holding over it' };
 /** land_at with its glide stood in for; its flare's wait is the real one, and `at` is where the flare comes down. */
 const landing = async (glide: { ok: boolean; text: string; phase?: string }, flare: 'cut' | 'leaf' | 'down', at = { x: 5, z: 5 }) => {
-  await call('take_off');
+  await relaunch();
   ag.glideTo = async () => { if (glide.phase) ag.flight.phase = glide.phase; return { ok: glide.ok, text: glide.text }; };
   const answer = await midway(ag, call('land_at', { x: 5, z: 5 }), () => {
     ag.flight.pos.x = ag.pos.x = at.x; ag.flight.pos.z = ag.pos.z = at.z;
@@ -193,7 +210,7 @@ const landing = async (glide: { ok: boolean; text: string; phase?: string }, fla
 };
 // A cut mid-glide is a fall: the glide's answer is the whole answer, and no flare is flown.
 for (const [phase, words] of [['RAGDOLL', 'cut mid-glide — you are on the ground at (1.0, 1.0)'], ['LEAF', 'cut mid-glide — you are falling at (1.0, 1.0)']] as const) {
-  await call('take_off');
+  await relaunch();
   let flared = false;
   ag.glideTo = async () => { ag.flight.phase = phase; return { ok: false, text: words }; };
   ag.flightAwait = async () => { flared = true; return 'down'; };
@@ -211,7 +228,7 @@ check('a landing cut during its flare is failed', failed(r) && / — cut during 
 check('...and the cut body keeps its flight state for its recovery', ag.flight?.phase === 'RAGDOLL', String(ag.flight?.phase));
 r = await landing(arrived, 'leaf');
 check('a landing cut in the air during its flare is failed', failed(r) && / — cut during the flare, down at /.test(said(r)), said(r));
-await call('take_off');
+await relaunch();
 ag.glideTo = async () => arrived;
 ag.flightAwait = async () => 'timed out aloft';
 r = await call('land_at', { x: 5, z: 5 });
@@ -226,7 +243,7 @@ r = await call('rehearse_down', {});
 check('rehearse_down with no flight is failed', failed(r) && said(r) === 'not airborne — take_off first', said(r));
 r = await call('rehearse_recover', {});
 check('rehearse_recover with no flight is failed', failed(r) && said(r) === 'not airborne — take_off first', said(r));
-await call('take_off');
+await relaunch();
 r = await call('rehearse_recover', {});
 check('rehearse_recover of a body that is flying, not down, is failed',
   failed(r) && /^nothing to recover from — the body isn't down \(/.test(said(r)), said(r));
@@ -235,7 +252,11 @@ r = await call('rehearse_down', {});
 check('rehearse_down in flight is done', !failed(r) && /^down — /.test(said(r)), said(r));
 r = await call('rehearse_recover', {});
 check('rehearse_recover of a body that is down is done', !failed(r) && said(r) === 'recovering', said(r));
-await call('take_off'); ag.flight.phase = 'RAGDOLL';
+const begun = ag.flight?.recoverAt;
+r = await call('rehearse_recover', {});
+check('a second recovery while one in the air has begun is done as already recovering, and doesn\'t start it over',
+  !failed(r) && said(r) === 'already recovering' && begun != null && ag.flight?.recoverAt === begun, `${said(r)}; recoverAt ${begun} then ${ag.flight?.recoverAt}`);
+await relaunch(); ag.flight.phase = 'RAGDOLL';
 r = await call('rehearse_recover', {});
 check('rehearse_recover of a body down on the ground is done', !failed(r) && said(r) === 'recovering' && ag.flight?.phase === 'RECOVER', `${said(r)}; ${ag.flight?.phase}`);
 r = await call('rehearse_recover', {});
@@ -346,10 +367,9 @@ r = await call('ragdoll', { target: 'someone' });
 check('a shove with the link down is failed as not joined', failed(r) && said(r) === 'not joined', said(r));
 r = await call('clear_pose', { target: 'someone' });
 check('releasing someone else\'s pose with the link down is failed as not joined', failed(r) && said(r) === 'not joined', said(r));
+// With the link down, whether someone is here isn't known, so the answer is the link's.
 r = await call('clear_pose', { target: 'nobody-here' });
-check('releasing the pose of someone not here is failed', failed(r) && said(r) === "nobody-here isn't here, so there's no pose of theirs to release", said(r));
-r = await call('ragdoll', { target: 'nobody-here' });
-check('shoving someone not here is failed', failed(r) && said(r) === "nobody-here isn't here to shove", said(r));
+check('releasing the pose of someone not here, with the link down, is failed as not joined', failed(r) && said(r) === 'not joined', said(r));
 const logged: string[] = [];
 const realConsoleError = console.error;
 console.error = (...a: unknown[]) => { logged.push(a.map(String).join(' ')); };
@@ -379,6 +399,15 @@ unreachable();
 r = await call('library_preview', { name: 'heron' });
 check('a preview with the world\'s server unreachable says so', failed(r)
   && /^couldn't get a preview of "heron" from the world's server \(connect ECONNREFUSED\); calling again may work$/.test(said(r)), said(r));
+serve(() => new Response('forbidden', { status: 403 }));
+r = await call('library_preview', { name: 'heron' });
+check('a preview refused with a 403 isn\'t reported as missing, nor as worth calling again', failed(r) && said(r) === 'couldn\'t get a preview of "heron" from the world\'s server (it answered 403)', said(r));
+serve(() => new Response('slow down', { status: 429 }));
+r = await call('library_preview', { name: 'heron' });
+check('...and one answered 429 may work on another call', failed(r) && /\(it answered 429\); calling again may work$/.test(said(r)), said(r));
+globalThis.fetch = (async () => { throw new Error(''); }) as any;
+r = await call('library_preview', { name: 'heron' });
+check('a fetch that fails with no message still counts as not reached', failed(r) && /^couldn't get a preview of "heron" .*\(the request failed\); calling again may work$/.test(said(r)), said(r));
 serve(() => new Response('bad gateway', { status: 502 }));
 r = await call('library_preview', { name: 'heron' });
 check('a preview behind a proxy that answers 502 says the server wasn\'t reached', failed(r) && /^couldn't get .* \(it answered 502\)/.test(said(r)), said(r));
@@ -434,6 +463,23 @@ check('a say over 4000 characters sends the first 4000, and says so',
   !failed(r) && said(r) === 'said — only its first 4000 characters were sent' && says.at(-1)?.length === 4000, said(r));
 r = await call('say', { text: 's'.repeat(4000) });
 check('...and one of exactly 4000 is just said', !failed(r) && said(r) === 'said', said(r));
+// A cut never ends in half of a character: here the 4000th unit is the first half of an emoji.
+r = await call('say', { text: 's'.repeat(3999) + '😀' + 's' });
+check('a say whose cut would split a character sends what comes before it, and says how much',
+  !failed(r) && said(r) === 'said — only its first 3999 characters were sent' && says.at(-1) === 's'.repeat(3999), said(r));
+r = await call('whisper', { to: 'someone', text: 'w'.repeat(3999) + '😀' });
+check('...as does a whisper', !failed(r) && whispers.at(-1)?.[1] === 'w'.repeat(3999), said(r));
+r = await call('whisper', { to: '  someone ', text: 'hi' });
+check('a whisper\'s name goes trimmed, since the world matches it exactly', !failed(r) && whispers.at(-1)?.[0] === 'someone' && said(r) === 'whispered to someone', `${said(r)}; ${JSON.stringify(whispers.at(-1))}`);
+r = await call('whisper', { to: 2 ** 60, text: 'hi' });
+check('a whisper to a number past the safe integers is failed, and sends nothing', failed(r) && /too large to read exactly/.test(said(r)) && whispers.at(-1)?.[1] === 'hi' && whispers.length > 0 && whispers.at(-1)?.[0] === 'someone', said(r));
+ag.joined = true;
+r = await call('whisper', { to: 'away-now', text: 'hi' });
+check('a whisper to someone not here says the world holds it for them', !failed(r) && said(r) === "whispered to away-now; they aren't here, so the world holds it for when they next arrive", said(r));
+ag.people.set('someone', { id: 'someone', avatar: 'a.vrm', pose: null, agent: false, observedAt: null });
+r = await call('whisper', { to: 'someone', text: 'hi' });
+check('...and one to someone here says nothing of holding it', !failed(r) && said(r) === 'whispered to someone', said(r));
+ag.joined = false;
 ag.whisper = realWhisper; ag.say = realSay;
 // A puppet request is sent, and the target decides.
 const puppets: [string, unknown][] = [];
@@ -451,6 +497,20 @@ check('a shove of someone standing 5 m off is directed through them', !failed(r)
 const lean = (puppets.at(-1)?.[1] as any)?.ragdoll?.lean;
 check('...with the lean along the line from here through them, at the strength asked',
   puppets.at(-1)?.[0] === 'someone' && Array.isArray(lean) && Math.abs(lean[0] - 1.2) < 1e-9 && lean[1] === 0 && Math.abs(lean[2] - 1.6) < 1e-9, JSON.stringify(puppets.at(-1)));
+// Joined, a request to someone not here is refused, naming who is, and nothing is sent.
+ag.joined = true;
+const sentBefore = puppets.length;
+for (const [tool, a, words] of [
+  ['clear_pose', { target: 'nobody-here' }, "nobody-here isn't here, so there's no pose of theirs to release (present: someone)"],
+  ['ragdoll', { target: 'nobody-here' }, "nobody-here isn't here, so there's no one to shove (present: someone)"],
+  ['pose', { target: 'nobody-here', bones: { head: [0, 0, 0, 1] } }, "nobody-here isn't here, so there's no one to pose (present: someone)"],
+  ['animate', { target: 'nobody-here', dur: 1, tracks: { leftUpperArm: [{ t: 0, q: [0, 0, 0, 1] }, { t: 0.5, q: [0, 0, -0.7, 0.7] }] } }, "nobody-here isn't here, so there's no one to play it on (present: someone)"],
+] as const) {
+  r = await call(tool, a);
+  check(`${tool} aimed at someone not here is failed, naming who is`, failed(r) && said(r) === words, said(r));
+}
+check('...and none of them sent anything', puppets.length === sentBefore, JSON.stringify(puppets.slice(sentBefore)));
+ag.joined = false;
 ag.puppet = realPuppet;
 ag.people.delete('someone');
 // The world's answer decides a moderation verb's result.

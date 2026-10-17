@@ -44,10 +44,11 @@ const done = (text: string): ActResult => ({ ok: true, text });
 const refused = (text: string): ActResult => ({ ok: false, text });
 /** A body down: limp wings, in the air (LEAF), on the ground (RAGDOLL) or sitting up (RECOVER). */
 const isDown = (phase: string) => phase === "LEAF" || phase === "RAGDOLL" || phase === "RECOVER";
-// In the air the limp fall ends only with a recovery (shared/flight.js bodyRecovered); on the ground,
-// take_off launches afresh from wherever the body lies (takeOff).
+// In the air the limp fall ends when the body reaches the ground (RAGDOLL) or with a recovery
+// (shared/flight.js bodyRecovered, which the door sends only in rehearsal); on the ground, take_off
+// launches afresh from wherever the body lies (takeOff).
 const downRefusal = (phase: string) => phase === "LEAF"
-  ? "you're falling limp (leaf) — the body has to recover before it can fly"
+  ? "you're falling limp (leaf) — once you're down on the ground, take_off launches you again"
   : `you're down on the ground (${phase.toLowerCase()}) — take_off to fly again`;
 
 /** integrator yaw (atan2(dz,dx), forward = (cos,sin)) -> world yaw
@@ -2578,6 +2579,9 @@ export class WorldAgent {
     // the new launch, so take_off "worked" and the next verb found her back on
     // the ground with the stamina already spent. A launch is a fresh flight
     // from wherever the body actually is.
+    // A limp fall can't be launched out of: the body is in the air, and starting a fresh flight from the
+    // ground under it would move it there.
+    if (this.flight?.phase === "LEAF") return refused(downRefusal("LEAF"));
     if (!this.flight || this.flight.phase !== "GROUND") this.flightBegin();
     // ...and the ragdoll, if one is still running, no longer owns her.
     this.body?.stop(); this.stopSim();
@@ -2692,9 +2696,9 @@ export class WorldAgent {
     // "closest approach" actually means and cannot be missed by a wide step.
     let closest = Infinity;
     const arrived = await this.flightAwait((s) => {
-      // A cut in the air is the limp fall (LEAF); one on the ground, the ragdoll.
+      // A cut in the air is the limp fall (LEAF); one on the ground, the ragdoll, or the sit-up after it.
       if (s.phase === "LEAF") return "cut mid-glide — you are falling";
-      if (s.phase === "RAGDOLL") return "cut mid-glide — you are on the ground";
+      if (isDown(s.phase)) return "cut mid-glide — you are on the ground";
       const d = Math.hypot(x - s.pos.x, z - s.pos.z);
       // Down within the arrival radius is down at the target, not short of it.
       if (s.phase === "LANDED" || s.phase === "GROUND") return d < 2.0 ? "touched down" : "landed";
@@ -2765,9 +2769,10 @@ export class WorldAgent {
     // The wait is for the distance either way: a lower target is a descent.
     const climbed = Math.abs(reach - from);
     const got = await this.flightAwait((st) => {
-      if (st.phase === "LEAF" || st.phase === "RAGDOLL") return "cut";
-      // A descent that meets the ground above its target ends there.
-      if (st.phase === "LANDED" || st.phase === "GROUND") return "landed";
+      if (isDown(st.phase)) return "cut";
+      // A descent that meets the ground above its target ends there; one that meets it at the target,
+      // within the tick's 0.4 m snap, got there.
+      if (st.phase === "LANDED" || st.phase === "GROUND") return Math.abs(st.pos.y - reach) < 0.4 ? "there" : "landed";
       if (st.climbTo == null) return "there";
       return null;
     }, Math.min(120_000, (climbed / climbRate) * 1000 + 8000));
@@ -2787,6 +2792,8 @@ export class WorldAgent {
       if (this.flight) this.flight.climbTo = null;
       return refused(`${got} at ${(this.flight?.pos.y ?? 0).toFixed(1)}m, short of the climb; the climbing stops there and you fly on`);
     }
+    // Reached on touchdown, the climb may still be set; it's done either way.
+    if (this.flight) this.flight.climbTo = null;
     const target = this.flight?.pos.y ?? reach;
     if (winded) {
       return refused(`winded at ${target.toFixed(1)}m — the pool only bought ${afford.toFixed(1)}m `
@@ -2894,8 +2901,9 @@ export class WorldAgent {
   flightBodyRecovered(eventId: string, recoveryGeneration?: string): ActResult {
     if (!this.flight) return refused("not airborne — take_off first");
     // Only a body that is down has anything to recover from; bodyRecovered
-    // leaves every other phase as it is, and a body sitting up already is.
-    if (this.flight.phase === "RECOVER") return done("already recovering");
+    // leaves every other phase as it is. A body sitting up, or one whose
+    // recovery in the air has begun (still LEAF, with recoverAt set), already is.
+    if (this.flight.phase === "RECOVER" || (this.flight.phase === "LEAF" && this.flight.recoverAt != null)) return done("already recovering");
     if (this.flight.phase !== "LEAF" && this.flight.phase !== "RAGDOLL") {
       return refused(`nothing to recover from — the body isn't down (${this.flight.phase.toLowerCase()})`);
     }
