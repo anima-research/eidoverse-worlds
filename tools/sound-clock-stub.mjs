@@ -24,6 +24,5 @@ export const audioContext = () => ({
 /** The dial. The test sets `clock.server` to whatever the smoothed server
  *  clock should read; Date.now() stays the machine's own, deliberately
  *  skewed from it. */
-export const clock = { server: 0, synced: true };
+export const clock = { server: 0 };
 export const serverNow = () => clock.server;
-export const clockSynced = () => clock.synced;   // false = no frame has carried the server's time yet

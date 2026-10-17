@@ -19,7 +19,10 @@ const [,, URL, KEY] = process.argv;
 const ws = new WebSocket(`${URL.replace(/^http/,'ws')}/ws`);
 const out = [];
 ws.onopen = () => ws.send(JSON.stringify({ type:'join', world:'staging', id:'probe', token: KEY }));
-ws.onmessage = (e) => { const s=String(e.data).slice(0,120); out.push(s); if(out.length>=2) finish(); };
+ws.onmessage = (e) => {
+  let m; try { m = JSON.parse(String(e.data)); } catch { /* not JSON: print it as it came */ }
+  if (m?.type === 'clock') return;   // the server's time, sent just before the snapshot
+  const s=String(e.data).slice(0,120); out.push(s); if(out.length>=2) finish(); };
 ws.onclose = (e) => { console.log(`  key=${JSON.stringify(KEY)} → CLOSED code=${e.code} reason=${e.reason||'-'}`); process.exit(0); };
 const finish = () => { console.log(`  key=${JSON.stringify(KEY)} → ${out[0]}`); process.exit(0); };
 setTimeout(finish, 6000);

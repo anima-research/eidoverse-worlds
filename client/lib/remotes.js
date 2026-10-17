@@ -27,7 +27,8 @@ const loadBody = (id, path) => CONFIG.params.has('capsule') ? Promise.reject(new
 const INTERP_MS = 110;
 const BUF_MAX = 12;
 
-// Server-to-local clock offset, smoothed. Frames carry the server's `t`.
+// Server-to-local clock offset, smoothed. The `clock` message ahead of each
+// snapshot carries the server's `t`, and so does every frame.
 let clockOffset = null;
 export function noteServerTime(t) {
   if (typeof t !== 'number') return;
@@ -35,10 +36,6 @@ export function noteServerTime(t) {
   clockOffset = clockOffset === null ? sample : clockOffset * 0.92 + sample * 0.08;
 }
 export const serverNow = () => performance.timeOrigin + performance.now() + (clockOffset ?? 0);
-/** Has any frame carried the server's time yet? Until one has, serverNow()
- *  is the machine's own clock. Frames only go out while something moves, so
- *  a spectator in a quiet world can sit unsynced for a long time. */
-export const clockSynced = () => clockOffset !== null;
 
 /** Per-identity generation counter (#95): every AUTHORITATIVE (re)creation
  *  of an id bumps it, and async continuations validate record identity

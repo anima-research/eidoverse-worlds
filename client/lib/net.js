@@ -517,6 +517,10 @@ function noteStalePresence(id) {
 
 async function handle(msg) {
   switch (msg.type) {
+    // The server's time, sent just before each snapshot, so every sound the
+    // snapshot carries is seeked, and every stamp the editor makes, in server
+    // time (remotes.js serverNow).
+    case 'clock': noteServerTime(msg.t); break;
     case 'snapshot': return onSnapshot(msg);
 
     case 'your-rights': {

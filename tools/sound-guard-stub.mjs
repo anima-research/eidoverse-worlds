@@ -15,4 +15,3 @@ export const volumeFor = () => 1;
 // playhead against it (sound-clock-test exercises that; here the editor block
 // is only rendered, so the value is never read)
 export const serverNow = () => 0;
-export const clockSynced = () => true;

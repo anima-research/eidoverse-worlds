@@ -513,7 +513,8 @@ export class WorldAgent {
    *  Motion is a function of SEQUENCER time; evaluating it on a skewed host
    *  clock makes this body report a different pendulum phase than every
    *  browser looking at the same swing, while both run the same closed form
-   *  (#92 review, B1). Fed from the embodied plane's frame stamps. */
+   *  (#92 review, B1). Fed from the clock message the server sends just
+   *  before each snapshot, and from the embodied plane's frame stamps. */
   private clockOffset: number | null = null;
   noteServerTime(t: unknown) {
     if (typeof t !== "number" || !Number.isFinite(t)) return;
@@ -521,7 +522,8 @@ export class WorldAgent {
     this.clockOffset = this.clockOffset === null ? sample : this.clockOffset * 0.92 + sample * 0.08;
   }
   /** Epoch ms on the sequencer's clock, best estimate. Before the first
-   *  frame lands this is local time — the browser's exact fallback. */
+   *  clock message or frame lands this is local time — the browser's exact
+   *  fallback. */
   serverNow(): number { return Date.now() + (this.clockOffset ?? 0); }
 
   /** A composition gap is a perception limit, not a world error: say so a
@@ -848,6 +850,11 @@ export class WorldAgent {
             break;
           case "pose":
             this.notePose(msg.id, msg.pose);
+            break;
+          case "clock":
+            // the server's time, sent just before each snapshot, so the
+            // estimate is set from the join on, as the browser's is
+            this.noteServerTime((msg as { t?: unknown }).t);
             break;
           case "frame":
             // batched embodied plane: latest pose per id, one message per tick.

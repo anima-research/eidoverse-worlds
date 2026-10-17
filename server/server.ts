@@ -805,6 +805,13 @@ const server = Bun.serve({
           const w = admitJoin(c, ws, msg, auth);
           if (!w) return;
           installJoin(c, w);
+          // The server's clock, just before the snapshot. A browser seeks
+          // shared sounds and stamps their start in server time, and an agent
+          // evaluates motion in it (serverNow in client/lib/remotes.js and
+          // mcpl/agent.ts); both learn it from a message's `t`. The snapshot's
+          // own transfer time would bias the first sample, so a small message
+          // carries it first.
+          ws.send(JSON.stringify({ type: "clock", t: Date.now() }));
           ws.send(JSON.stringify(buildSnapshot(w, c)));
           sendGeomFollowup(w, c);
           if (!c.spectator) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent }, c);
