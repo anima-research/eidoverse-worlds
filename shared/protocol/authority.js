@@ -302,6 +302,15 @@ function spokenOf(a, now) {
 const RATE = { n: 60, says: 20, ms: 10000, bytes: 256 * 1024, anonBytes: 32 * 1024 };
 const SAY_MAX = 8192;
 const bytesOf = (e) => e.bytes ?? JSON.stringify(e).length;
+// The authority's own follow-up ops inside a person's write (review r8 M1 / scars M5): clearing the references to what a
+// delete removed, and an undo putting back the references that delete cleared. Marked on the op object (a request's JSON
+// can't carry a symbol), and admitted like the authority's other follow-ups (rest, system): no rights, key, seniority,
+// lock or in-flight check, and no capability scope, so a third party's keyed reference or lock can't veto your delete or
+// your undo, and a script deleting what it made isn't refused for a reference outside its scope. Shape and value checks
+// still apply. Unity, Unreal and Resonite null such references at read time, attributed to nobody; this is the same rule
+// written eagerly (ids are never reused, so it is tidiness, never a resurrection guard).
+const FOLLOW_UP = Symbol("follow-up");
+const followUp = (o) => { o[FOLLOW_UP] = true; return o; };
 class Admitted { constructor(who, ops, after, notes = []) { this.who = who; this.ops = ops; this.after = after; this.notes = notes; Object.freeze(this); } }
 // L7 rate, per actor, over EVERYTHING the actor makes the log hold (acts and says), by the authority's clock. One function:
 // admit calls it for state writes, and every word that logs without a state write (say, grab's lift, throw, drop, a
@@ -336,8 +345,10 @@ function admit(w, st, who, ops) {
   const inFlight = (id) => !!(sf?.launched[id] && sf.sim?.bodies[id] && !sf.sim.bodies[id].resting);
   let s = cowState(st); const norm = []; const made = new Set(); // a lock guards what happens after it, not the write that creates the thing
   const prevOf = new Map(); // script: sets → the key's value just before that op, within this write
+  const fuOps = new Set(); // the authority's follow-ups in this write (FOLLOW_UP): admitted without the asker's rights
   ops.forEach((raw, i) => {
     const { verb, ...rest } = raw; const op = { verb, ...shapeOneOrRefuse(verb, rest, i) };
+    const fu = raw[FOLLOW_UP] === true; if (fu) fuOps.add(op);
     if ("value" in op) op.value = unNegZero(op.value); // I-JSON has no -0 (an engine can make one); the same number, written as 0
     // parent.order is gone (shape audit 10-16): whatever path a parent value takes to the door (a request, a copy of a stored
     // one, the lift), the order it carries is dropped here, never written again
@@ -364,9 +375,9 @@ function admit(w, st, who, ops) {
     if (op.verb === "set" && statusOf(op.comp) === "reserved" && !defOf(op.comp)?.lifted && !(CTX.forking || who.lifting)) { const b = canonicalName(baseOf(op.comp));
       refuse("reserved", `${at}: '${b}' is a reserved name: it is held for a shape that isn't settled yet, and nothing may write it`, COMPONENTS[b].instead ?? `schema {component: '${b}'} says what it is held for`, { status: "reserved" }); }
     const pause = op.verb === "set" && op.comp.startsWith("script:") && pauseOnly(op.value, s.entities[op.id]?.c[op.comp]);
-    rights(w, st, s, who, role, op, at, made, pause);
-    keyRights(w, st, s, who, op, at, keysMade, pause);
-    seniority(w, st, who, op);
+    if (!fu) { rights(w, st, s, who, role, op, at, made, pause);
+      keyRights(w, st, s, who, op, at, keysMade, pause);
+      seniority(w, st, who, op); }
     // §3d H7: deleting an entity is admitted as deleting each of its components, so the creator rule applies per key
     if (op.verb === "delete" && op.comp === undefined && e) for (const c of Object.keys(e.c)) keyRights(w, st, s, who, { verb: "delete", id: op.id, comp: c }, `${op.id}.${c}`, keysMade);
     // §3d M6 (L5): a schemas:<name> value, once set, can't change (a new meaning is a new name). Setting the same value
@@ -375,16 +386,16 @@ function admit(w, st, who, ops) {
       refuse("schema-fixed", `@world.${op.comp} is set; a schema never changes (§4: a name never changes meaning)`, "a new meaning is a new name");
     if (op.comp === "terrain-grid" && Object.keys(e?.c ?? {}).some((k) => k.startsWith("terrain-tile:")) && !(op.verb === "set" && jcs(op.value) === jcs(e.c["terrain-grid"])))
       refuse("grid-fixed", `${op.id}'s terrain-grid is fixed while it has tiles`, "regridding is a new ground entity");
-    if (inFlight(op.id)) refuse("in-flight", `${op.id} is in flight: the engine has it until it comes to rest`, "wait (or catch it: grab {id}); no write may touch a launched thing before its rest");
+    if (inFlight(op.id) && !fu) refuse("in-flight", `${op.id} is in flight: the engine has it until it comes to rest`, "wait (or catch it: grab {id}); no write may touch a launched thing before its rest");
     if (op.id === "@world" && op.comp === "lock" && op.verb === "set") refuse("world", "@world can't be locked", "§7: lock the things in it instead");
-    lockLevelCheck(w, st, s, who, op, at);
+    if (!fu) lockLevelCheck(w, st, s, who, op, at);
     // locks: the thing's own lock as of this op; its ancestors' locks as of before this write (what was attached then)
     if (op.verb === "create") made.add(op.id);
     // a lock covers EVERYTHING on the thing and on what hangs under it (R 10-11 16:21, Second Life's Locked): every component
     // set, added or removed, not only where it stands (review 10-11 C-S1-1: a builder could switch off, hide or un-physics an
     // owner-locked thing). Open still: USE (a reaction's own writes), the engine's rest, the authority's follow-ups, and the
     // thing's own lock (lockLevelCheck says who may lift it).
-    else if (!made.has(op.id) && !["rest", "system"].includes(cap?.kind) && !(op.comp === "lock" && lockedC(s.entities[op.id]?.c))
+    else if (!fu && !made.has(op.id) && !["rest", "system"].includes(cap?.kind) && !(op.comp === "lock" && lockedC(s.entities[op.id]?.c))
       && (cap?.kind !== "reaction" || op.comp === undefined || RELOCATES.has(op.comp))) {   // use stays open, but no handler moves, re-parents, swaps or removes a locked thing
       // §5: "a held thing keeps its logged parent, but holding suspends parent constraints until it settles" (answering
       // research 34 #11): a lock set on the table while the cup is in a hand doesn't bind the cup in the hand, so its
@@ -396,7 +407,7 @@ function admit(w, st, who, ops) {
     if (op.verb === "set" && op.comp.startsWith("script:")) prevOf.set(op, s.entities[op.id]?.c[op.comp]); // the value just before it
     applyCow(s, [op]); norm.push(op); // one entity copied per op it touches, not the world (s is this write's own copy)
   });
-  seatRights(w, st, s, who, role, norm, made);
+  seatRights(w, st, s, who, role, norm.filter((o) => !fuOps.has(o)), made);
   if (!(CTX.forking || who.lifting)) occupiedEdits(w, st, who, norm);
   capacityCheck(w, st, s, who, norm);
   for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: CTX.forking || !!who.lifting }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
@@ -1238,7 +1249,8 @@ const hashOfModel = (m) => { if (typeof m !== "string") return null; const a = e
   let h = null; try { h = CTX.cat.get(m)?.sha256; } catch { h = null; } return typeof h === "string" && /^[0-9a-f]{64}$/.test(h) ? `sha256:${h}` : null; };
 function stampModelHash(ctx, ops) {
   const ids = new Set(); for (const o of ops) if ((o.verb === "set" || o.verb === "delete") && o.comp === "model") ids.add(o.id);
-  if (!ids.size) return ops;
+  // a fork's copy carries what its parent holds (review r8 H2): a hash measured since, or none, is the parent's to stamp
+  if (!ids.size || CTX.forking) return ops;
   const after = scratch(ctx.st, ops); const out = ops.slice();
   for (const id of ids) {
     const e = after.entities[id]; if (!e) continue;   // the thing itself is gone
@@ -1501,15 +1513,17 @@ const holdsRefs = (k) => { let v = refComps.get(k); if (v === undefined) { v = r
 function clearRefsTo(ctx, gone) {
   const ops = [], cleared = [], dropped = [];
   for (const [id, e] of Object.entries(ctx.st.entities)) { if (gone.has(id)) continue;
-    for (const [k, v] of Object.entries(e.c)) { if (k === "parent" || baseOf(k) === "parent" || !holdsRefs(k) || v === PURGED) continue;
+    // a script's scope is left alone (review r8 H1): a scope id that names nothing reaches nothing (scopeIds), an id is never
+    // reused (§3d H7), and a write to script:<name> would re-sponsor it to the deleter (sponsorOf: the latest non-pause write)
+    for (const [k, v] of Object.entries(e.c)) { if (k === "parent" || baseOf(k) === "script" || baseOf(k) === "parent" || !holdsRefs(k) || v === PURGED) continue;
       if (!refsOf(k, v).some((r) => gone.has(r.id))) continue;
       const r = mapRefs(k, v, (x, at) => { if (!gone.has(x)) return x; cleared.push({ from: `${id}.${at.replace(/^[^.]*/, k)}`, was: x }); return null; });
       let nv = r.value;
       if (nv !== undefined && baseOf(k) === "reactions") { nv = { ...nv };
         for (const [act, hd] of Object.entries(nv)) if (hd && typeof hd === "object" && Array.isArray(hd.targets) && !hd.targets.length) { delete nv[act]; dropped.push(`${id}.${k}.${act}`); } }
       if (nv !== undefined && baseOf(k) === "home" && nv.parent && typeof nv.parent === "object" && nv.parent.to === undefined) { const { parent, ...rest } = nv; nv = rest; }
-      if (nv === undefined || (baseOf(k) === "reactions" && !Object.keys(nv).length)) { ops.push(delOp(id, k)); dropped.push(`${id}.${k}`); }
-      else ops.push(setOp(id, k, nv));
+      if (nv === undefined || (baseOf(k) === "reactions" && !Object.keys(nv).length)) { ops.push(followUp(delOp(id, k))); dropped.push(`${id}.${k}`); }
+      else ops.push(followUp(setOp(id, k, nv)));
       ctx.refs.add(id); } }
   if (cleared.length) ctx.notes.push({ cleared, ...(dropped.length ? { removed: dropped } : {}), why: `references to what you deleted were cleared in the same act${dropped.length ? " (a value that can't stand without its reference, or a reset left with nothing to send home, went with it)" : ""}` });
   return ops;
@@ -2510,6 +2524,12 @@ function buildUndo(ctx, a, w) {
   const groups = [], skipped = [];
   const keys = new Map();
   const madeHere = new Set(flat.filter((o) => o.verb === "create").map((o) => o.id)); // undone as one unit: the whole thing goes
+  // review r8 M1: what the act's delete cleared in others' things (clearRefsTo, the authority's follow-up) comes back as a
+  // follow-up too: a value that named a thing this act removed, put back exactly as it was (touchedBy has already skipped
+  // it if anyone changed it since), so the referrer's lock or key can't veto the undo any more than it could the delete
+  const goneHere = new Set(flat.filter((o) => o.verb === "delete" && o.comp === undefined).map((o) => o.id));
+  const refRestore = (o) => { if (!goneHere.size || o.comp === undefined || o.verb === "create" || goneHere.has(o.id) || !holdsRefs(o.comp)) return false;
+    const old = before(o.id)?.c[o.comp]; return old !== undefined && old !== PURGED && refsOf(o.comp, old).some((r) => goneHere.has(r.id)); };
   for (const o of flat) { if (madeHere.has(o.id) && o.verb !== "create") continue;
     const k = o.id + "|" + (o.verb === "set" || (o.verb === "delete" && o.comp !== undefined) ? o.comp : "*"); if (!keys.has(k)) keys.set(k, o); }
   const paired = new Set();
@@ -2538,7 +2558,7 @@ function buildUndo(ctx, a, w) {
       if (old === PURGED) { skipped.push({ id, component: comp, why: "its old value was purged" }); continue; }
       // (sockets: a host's socket children stand for the map it held before the cut; their delete is translated at the door)
       if (old === undefined) { if (now.entities[id] && (comp in now.entities[id].c || (comp === "sockets" && socketsOf(now, id).some((x) => x.id)))) groups.push([delOp(id, comp)]); }
-      else if (now.entities[id]) groups.push([setOp(id, comp, old)]); }
+      else if (now.entities[id]) { const g = setOp(id, comp, old); if (refRestore(o)) g[FOLLOW_UP] = true; groups.push([g]); } }
     ctx.refs.add(id);
   }
   // an undo must not land my old state on someone else's later work (spatial conflict, not just same-component)
