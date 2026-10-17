@@ -110,14 +110,16 @@ act, but the *authority* reads a few act fields back for meaning: an undo's
 (whose rights admitted its writes), a script act's `sponsor`, a sculpt's
 `request.brush` and `clamped`, a request's `label`, the request that typed a
 physics-engine `build` (whether the owner chose it: a deploy restamps only a
-build the server stamped), and a launch's, lift's or catch's `id`. The full
+build the server stamped), a launch's, lift's or catch's `id`, and a
+founding's `shapes` or a translation's `from.translator` (the shape repair's
+older markers, §4). The full
 list, with what each reader does, is the reference authority's `READBACK`
 table (shared/protocol/verbclasses.js); a new readback is a new row there.
 §12 lets the whole body of an act be purged, so every one of these reads
 treats a purged body as **unknown**, never as a default: an unknown chooser
 of an engine build is the owner's (no restamp), unknown rights match nobody,
-an unknown undo names no target, and an unknown flight may still be in the
-air.
+an unknown undo names no target, an unknown flight may still be in the air,
+and an unknown marker counts as marked (the shape repair never re-runs).
 
 ## 2. Folded state
 
@@ -272,10 +274,16 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   the authority's first load of a stored world writes what its old values
   meant, in today's spelling, in one system act, `repair-shapes {v, ids,
   failed?}` (shared/protocol/shaperepair.js: `repairComps` for each thing,
-  `repairWorld` for `@world`'s look). It runs **once per world**: that act is
-  the world's marker, as is a founding act stamped `shapes` (a world founded
-  since) and a `translated` act by translate-v1@12 or later
-  (`shapesMarked`, a pure view over the log, so every replica agrees). The
+  `repairWorld` for `@world`'s look).
+  It runs **once per world**: the system's `repair-shapes` act is the world's
+  marker, read by verb and actor only (they survive a purge), and a world
+  founded or translated today gets one beside its founding or its `translated`
+  act (`ids: []`, with `founding: true` or `translated: true`). Worlds from
+  before that act carry an older marker, a founding stamped `shapes` or a
+  `translated` act by translate-v1@12 or later. Those are read back (§1), and
+  a purged one counts as marked: a one-way rewrite is never re-run on values
+  that may already be in today's spelling (`shapesMarked`, a pure view over
+  the log, so every replica agrees). The
   rules that read an absent field (a pendulum's swing point, physics kind,
   a light's decay and daytime, the sky's and terrain's defaults) therefore
   only ever see values stored before the marker, never a write made since:
@@ -376,7 +384,12 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   record turns part keys into its own new ids and leaves anything else
   unbound. An untyped value (a namespaced component) is never rewritten.
   **A deletion clears the references to what it removes** (the thing and the
-  children that go with it), in the same change: a list loses the entry, a
+  children that go with it), in the same change, as the authority's own
+  follow-up: the clears are admitted without the deleter's rights, and the
+  referring thing's lock or key can't veto them (an undo of the delete puts
+  them back the same way). A script's `script:<name>` scope is left alone: an
+  id in it that names nothing reaches nothing, and rewriting it would
+  re-sponsor the script. A list loses the entry, a
   single reference's field goes (and a value that can't stand without it, such
   as a `look-at` whose target is gone; a `reset` handler left with no targets
   leaves its `reactions`), a `home` loses its `parent`. The reply's notes list
@@ -604,7 +617,11 @@ nothing else is written. A refused act never holds a value or a name the
 verb doesn't know: a visitor can't write text into a permanent, forkable
 record by being refused. The reference authority keeps the values in an
 in-memory ring for diagnosis, never persisted. Refusals that would only
-flood the log, such as rate limits, are answered without an entry. **Every
+flood the log, such as rate limits, are answered without an entry. A
+refusal of what a body does or says about itself (`move`, `body`, `reach`,
+`consent`, `inbox`, `wait`, `leave`) is presence and is never logged. A verb
+the authority doesn't have is recorded as `unknown-verb`, because its name is
+the visitor's own text. **Every
 code is registered** (shared/protocol/refusalcodes.js: code, meaning, when):
 a code is written into signed entries, so it never changes meaning, and a
 new one is a new row. **Every appended `change` passes the gate** (`admit`); a `say` passes its own
@@ -805,8 +822,8 @@ records what its presence reads asked and how much came back (`reads
 {near: [{r, n}], count: [n], names: k}`), never who was near or what anyone
 is called, and a body effect as `{kind, to}`, never which consent admitted
 it: the log is permanent and public, and the authority's own record of an
-activation never becomes an attendance list (enter/leave acts carry no
-actor). What a script writes with the identities it receives live is its
+activation never becomes an attendance list (an `enter` / `leave`
+activation records no trigger actor and no `event.by`). What a script writes with the identities it receives live is its
 own act, signed with its sponsor's rights. An auditor may re-run the source with the recorded
 event, clock, seed and stand-ins for the presence reads: a result that
 doesn't depend on who was there is verified; one that does is reported as
@@ -863,7 +880,8 @@ away from it.
   uploaded effect), never instead of it: the authority stamps `model-hash`
   when its catalogue already knows the hash (server/modelcatalogue.ts hashes
   the library original at measure, off the request; the authority never
-  hashes), drops it when the model changes to one it can't hash, and nothing
+  hashes), drops it when the model changes to one it can't hash (a fork's
+  copy carries its parent's `model-hash` as it stood, or none), and nothing
   breaks when it is absent or the host's index is lost. An
   `eido:sha256/<64 hex>` value stored before is still read (and a model one
   becomes its path at first load, §4). The door's one rewrite is a spelling,
