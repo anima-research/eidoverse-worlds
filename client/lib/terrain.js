@@ -31,11 +31,11 @@ export const hasTerrain = () => current !== null;
 
 /** Where the rain lands (the sky's splash ground — weather_system's groundHeightAt): the terrain, or
  *  the water standing over it, whichever is higher. null past the terrain's edge: there is no ground
- *  out there, so no splash. With no terrain, the stage floor at 0, as before. The weather system
+ *  out there, so no splash. With no terrain, whatever floor heightAt stands on. The weather system
  *  bakes this into a heightfield around the camera, so it is called a few thousand times when the
  *  rain starts or the camera roams far, not per frame. 'ground-changed' (below) re-bakes it. */
 export function rainSurfaceAt(x, z) {
-  if (!current) return 0;
+  if (!current) return heightAt(x, z);
   const box = extentOf(current);
   if (box && (x < box.minX || x > box.maxX || z < box.minZ || z > box.maxZ)) return null;
   const h = current.heightAt(x, z);
