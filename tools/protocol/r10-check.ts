@@ -29,7 +29,7 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 // [name, file under the tree, find, replace, rows]
 // [name, file under the tree, find, replace, rows]
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["a sit from anywhere", "shared/protocol/authority.js", "if (!inSitReach(from, sp, SIT_REACH.lag)) refuse(", "if (false) refuse(", ["S1"]],
+  ["a sit from anywhere", "shared/protocol/authority/use.js", "if (!inSitReach(from, sp, SIT_REACH.lag)) refuse(", "if (false) refuse(", ["S1"]],
   ["every seat re-anchors", "shared/protocol/authority.js", "|| w.presence.seats?.[who]?.near !== true) return null;", ") return null;", ["S2"]],
   ["the first step keeps the seat", "shared/protocol/authority.js", "if (w.presence.seats?.[actor]) clearSeat(w, actor); }", "}", ["S3"]],
   ["lastTouch: a restore doesn't step over its delete", "shared/protocol/authority.js", "if (o.verb === \"delete\" && restored) { restored = false; continue; } return null; }", "return null; }", ["H1"]],

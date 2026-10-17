@@ -79,7 +79,7 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["changed:<comp> cascades", "authority.js", "if (hit) activate(w, id, name, { on: `changed:${hit.comp}`", "if (false) activate(w, id, name, { on: `changed:${hit.comp}`", ["E3", "B8"]],
   ["say events", "authority.js", "activate(w, id, name, { on: \"say\", by: e.actor", "void (w, id, name, { on: \"say\", by: e.actor", ["E1"]],
   ["a script never hears its own say", "authority.js", "if (!(Array.isArray(v.on) && v.on.includes(\"say\")) || e.actor === `script:${id}`) continue;", "if (!(Array.isArray(v.on) && v.on.includes(\"say\"))) continue;", ["E1"]],
-  ["use of an imported binding says re-install", "authority.js", "if (old || (isE(ce) && ce.kind === \"act\" && ce.verb === \"imported\"))", "if (false)", ["V1"]],
+  ["use of an imported binding says re-install", "authority/use.js", "if (old || (isE(ce) && ce.kind === \"act\" && ce.verb === \"imported\"))", "if (false)", ["V1"]],
   ["imported behaviours are listed", "authority.js", "...(id && id !== \"@world\" ? {} : { imported: importedBehaviours(w, st) })", "...{}", ["V1"]],
   ["UTC inside the sandbox", "sandbox.js", "P.getTimezoneOffset = function getTimezoneOffset() { return 0; };", "", ["D3"]],
   ["local-time methods are UTC", "sandbox.js", "P[\"get\" + k] = P[\"getUTC\" + k];", "", ["D3"]],

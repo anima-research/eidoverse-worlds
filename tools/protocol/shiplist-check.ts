@@ -32,8 +32,8 @@ const KEEP = new Set(["R7", "O0"]);
 
 // ---------------- the mutation and control drivers (they re-run this file as child processes) ----------------
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["a named openable toggles open", "shared/protocol/authority.js", "field: h.field ?? (comp === \"openable\" ? \"open\" : undefined)", "field: h.field ?? (h.component === undefined ? \"open\" : undefined)", ["R3b"]],
-  ["toggle's default is openable", "shared/protocol/authority.js", "const comp = h.component ?? \"openable\";", "const comp = h.component ?? \"door\";", ["O3", "R3"]],
+  ["a named openable toggles open", "shared/protocol/authority/use.js", "field: h.field ?? (comp === \"openable\" ? \"open\" : undefined)", "field: h.field ?? (h.component === undefined ? \"open\" : undefined)", ["R3b"]],
+  ["toggle's default is openable", "shared/protocol/authority/use.js", "const comp = h.component ?? \"openable\";", "const comp = h.component ?? \"door\";", ["O3", "R3"]],
   ["openable: angle or slide", "shared/protocol/authority.js", "if (v.angle !== undefined && v.slide !== undefined) refuse(", "if (false) refuse(", ["O2"]],
   ["openable: slide bounds", "shared/protocol/authority.js", "if (v.slide !== undefined && !nums(v.slide, 3, 10)) refuse(", "if (false) refuse(", ["O2"]],
   ["openable: the catalogue's ranges", "shared/protocol/componentspec.js", "ranges: { angle: { min: -Math.PI, max: Math.PI }, time: { min: 0, max: 10 } },", "", ["O2"]],
@@ -51,7 +51,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["…a field needs its component", "shared/protocol/authority.js", "if (field !== undefined && !isObj(c[comp])) refuse(\"no-target\"", "if (false) refuse(\"no-target\"", ["R3"]],
   ["…a toggle flips true/false", "shared/protocol/authority.js", "if (h.kind === \"toggle\" && field !== undefined && ftype && ftype !== \"bool\" && ftype !== \"any\") refuse(", "if (false) refuse(", ["R4"]],
   ["…an impulse is a reserved kind", "shared/protocol/authority.js", "if (!carry && Object.hasOwn(held, h?.kind)) refuse(\"reserved\"", "if (false) refuse(\"reserved\"", ["R6"]],
-  ["a use with its component gone says so", "shared/protocol/authority.js", "if (!(e.c[comp] && typeof e.c[comp] === \"object\" && !Array.isArray(e.c[comp]))) refuse(\"no-handler\"", "if (false) refuse(\"no-handler\"", ["R5"]],
+  ["a use with its component gone says so", "shared/protocol/authority/use.js", "if (!(e.c[comp] && typeof e.c[comp] === \"object\" && !Array.isArray(e.c[comp]))) refuse(\"no-handler\"", "if (false) refuse(\"no-handler\"", ["R5"]],
   ["motion: path is a type", "shared/protocol/componentspec.js", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\", \"path\"],", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\"],", ["M1", "R1"]],
   ["motion: rpm is taught", "shared/protocol/authority.js", "if (\"rpm\" in v) refuse(\"schema\"", "if (false) refuse(\"schema\"", ["M2"]],
   ["motion: one speed", "shared/protocol/authority.js", "if ((v.type === \"spin\" || v.type === \"orbit\") && v.degPerSec !== undefined && v.period !== undefined) refuse(", "if (false) refuse(", ["M2"]],

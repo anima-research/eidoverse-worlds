@@ -51,7 +51,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the translator maps markedEntity into marks", "tools/protocol/import-v1/translate-v1.js", "if (typeof v.markedEntity === \"string\" && v.markedEntity) out.marks =", "if (false) out.marks =", ["T1"]],
   ["the authority stamps a sound's t0", "shared/protocol/authority.js", "const t0 = ctx.w.now(); ctx.notes.push({ id: o.id, component: \"sound\", field: \"t0\"", "return o; const t0 = ctx.w.now(); ctx.notes.push({ id: o.id, component: \"sound\", field: \"t0\"", ["S2", "S3", "S4"]],
   ["a resume restamps", "shared/protocol/authority.js", "if (p && p.playing !== false && p.src === v.src && v.t0 !== undefined) return o;", "if (p && p.src === v.src && v.t0 !== undefined) return o;", ["S3"]],
-  ["the play reaction", "shared/protocol/authority.js", "if (h?.kind === \"play\") { const cur = e.c.sound;", "if (false) { const cur = e.c.sound;", ["S4"]],
+  ["the play reaction", "shared/protocol/authority/use.js", "if (h?.kind === \"play\") { const cur = e.c.sound;", "if (false) { const cur = e.c.sound;", ["S4"]],
   ["near ≤ radius", "shared/protocol/authority.js", "v.near > v.radius) refuse(\"bounds\"", "false) refuse(\"bounds\"", ["S5"]],
   ["radius cap 100", "shared/protocol/componentspec.js", "radius: { min: 1, max: 100 }, src:", "radius: { min: 1, max: 200 }, src:", ["S5"]],
   ["the falloff reaches silence (no taper)", "shared/sound.js", "return inv * (1 - t) * (1 - t);", "return inv;", ["S6"]],
