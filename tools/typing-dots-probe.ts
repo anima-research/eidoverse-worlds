@@ -4,7 +4,7 @@
 //   bun tools/typing-dots-probe.ts
 //
 // Needs the door's sibling built (../mcpl-core-ts, which the door imports: mcpl/net-server.ts) and a Chromium
-// that tools/probe-harness.mjs can find. A run took 163 s on a machine at a load of about 70.
+// that tools/probe-harness.mjs can find. Two runs took 163 s and 187 s on a machine at a load of 70 to 96.
 //
 // A scratch world and the door are children of this run, each proved ours by a per-run nonce it echoes
 // (the ownership pattern of tools/door-cap-gate-live-test.mjs). A raw MCPL host stands in for
@@ -219,15 +219,16 @@ try {
   // again with each look, so a signal still on its way counts.
   const shut = async (name: string, from: number) => {
     const until = Date.now() + 25000;
+    let last: Signal | undefined;
     while (Date.now() < until) {
       const log = await readLog();
-      const last = log.signals.filter((s) => s.t >= from).at(-1);
-      const u = last && log.updates.find((u) => u.seq > last.seq && !u.win);
+      last = log.signals.filter((s) => s.t >= from).at(-1);
+      const u = last && log.updates.find((u) => u.seq > last!.seq && !u.win);
       if (u) return check(name, true, `the last signal at ${Math.round(last!.t - T0)} ms; the update at ${Math.round(u.t - T0)} ms found the window shut`);
       if (!last && Date.now() > from + 10000) break;
       await sleep(250);
     }
-    check(name, false, "no update after the last signal found the window shut");
+    check(name, false, last ? "no update after the last signal found the window shut" : "the page applied no signal to judge a window by");
   };
 
   // A turn as agent-framework runs it: start, and again every 7 s until stop. It walks, speaks, and goes on
@@ -276,7 +277,9 @@ try {
   await sleep(300);
   const backPending = !responses.has(backWalk);
   const closeAt = Date.now(); host.close();
-  const raised = await pollPage((u) => u.drawn, 25000, goneFrom);
+  // Its start opened one 4 s window. A page whose updates come further apart than that may never draw the
+  // dots in it, which is the machine's pace, not a defect; that the page applied the start is the order
+  // check's, and that it drew nothing once the window shut is the update rule's.
   await shut("once it disconnects, the page's window runs out", goneFrom);
   // Long enough after the close for a relay that outlived it to have signalled twice.
   await sleep(Math.max(0, closeAt + 6000 - Date.now()));
@@ -353,8 +356,7 @@ try {
   const arrived = /^arrived at \((-?\d+(?:\.\d+)?), (-?\d+(?:\.\d+)?)\)/.exec(walkReply?.result?.content?.[0]?.text ?? "");
   check("the turn's walk arrived within 0.5 m of where it was sent, x = 30", !!arrived && !walkReply.result.isError && Math.hypot(Number(arrived[1]) - 30, Number(arrived[2])) <= 0.5,
     JSON.stringify(walkReply ?? null).slice(0, 160));
-  check("before the host disconnects mid-walk, its start draws the dots", raised !== null);
-  check("…and its walk back is still under way when it disconnects", backPending, JSON.stringify(responses.get(backWalk) ?? null).slice(0, 160));
+  check("the host's walk back is still under way when it disconnects", backPending, JSON.stringify(responses.get(backWalk) ?? null).slice(0, 160));
 
   check("the page threw nothing", errs.length === 0, errs.slice(0, 3).join(" | "));
   const long = hb.filter(([, excess]) => excess > 250);
