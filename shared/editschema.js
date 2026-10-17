@@ -267,7 +267,7 @@ const HAND = {
       // the ladder's second rung (R 10-12): the world's owner may trust this draft here; everyone else sees only the chip
       if (live.mayTrust === true) fields.push(isTrusted(MATK, live.trusted)
         ? { t: 'btn', k: 'trust', label: 'stop trusting it in this world', hint: 'Takes hesperus/material off this world\'s trusted list: back to a draft (amber), offered under "drafts". Nothing stored changes.' }
-        : { t: 'btn', k: 'trust', label: 'trust this in this world', hint: 'Not engine-official, but used and trusted in this world: the owner\'s word (@world.trusted). It moves into the main Add Component list with a blue chip. The engine still doesn\'t read it.' });
+        : { t: 'btn', k: 'trust', label: 'trust this in this world', hint: 'Not engine-official, but used and trusted in this world: the owner\'s word (@world.trusted-components). It moves into the main Add Component list with a blue chip. The engine still doesn\'t read it.' });
       return { group: 'hmat', label: 'Material', types: [...(ov ? [MATK] : []), ...slotKeys], fields };
     },
     write({ k, raw, c, comps, errors, ops = [], live = {} }) {
@@ -276,7 +276,7 @@ const HAND = {
       if (m && !/^[a-z][a-z0-9-]{0,47}$/.test(m[1])) { errors.push(`material: '${m[1]}' isn't a slot name`); return; }
       if (fk === 'override' || fk === 'add') { if (c[ck] == null) comps.set(ck, {}); return; }
       if (fk === 'reset') { comps.set(ck, null); return; }
-      if (fk === 'trust') { ops.push(trustOp(MATK, live)); return; }   // the second rung: @world.trusted toggled (trustOp below)
+      if (fk === 'trust') { ops.push(trustOp(MATK, live)); return; }   // the second rung: @world.trusted-components toggled (trustOp below)
       const next = comps.get(ck) ?? JSON.parse(JSON.stringify(c[ck] ?? {}));
       if (fk === 'color' || fk === 'emissive') { const n = typeof raw === 'number' ? raw : parseInt(String(raw ?? '').replace(/^#/, ''), 16);
         if (raw === null || raw === '') delete next[fk]; else if (Number.isInteger(n) && n >= 0 && n <= 0xffffff) next[fk] = n; else { errors.push(`material.${fk}: a colour`); return; } }
@@ -959,7 +959,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
   for (const name of ['Model', 'Structure', 'Parent']) if (!have.has(name) && !add.some((a) => a.name === name) && WIRE_BLOCKED[name])
     add.push({ name, category: RECORDS[name].category, summary: RECORDS[name].summary, hash: RECORDS[name].hash, blocked: WIRE_BLOCKED[name](have, ent) });
   // the ladder's drafts (docs/COMPONENT-LADDER.md): only what this client has a reader for, where it applies, once.
-  // Trusted here (the owner's @world.trusted): the main list, blue. A plain draft: under "drafts", amber, unproven.
+  // Trusted here (the owner's @world.trusted-components): the main list, blue. A plain draft: under "drafts", amber, unproven.
   for (const d of draftsRead()) {
     if (ent?.[d.name] != null || !d.applies(ent)) continue;
     const trusted = isTrusted(d.name, live.trusted);
@@ -975,7 +975,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
     model: lib, libLabel: lib != null ? libLabel(lib) : isBag(ent?.mesh) && MESH_SHAPES.includes(ent.mesh.shape) ? ent.mesh.shape : ent?.light ? 'light' : 'empty' };
 }
 
-/** The one request the "trust this in this world" button sends: @world.trusted with `name` toggled; an emptied list
+/** The one request the "trust this in this world" button sends: @world.trusted-components with `name` toggled; an emptied list
  *  removes the component. The authority gates it (owner), and refuses a malformed list (shared/drafts.js trustRefusal). */
 export function trustOp(name, live = {}) {
   const next = toggleTrusted(Array.isArray(live.trusted) ? live.trusted : [], name);

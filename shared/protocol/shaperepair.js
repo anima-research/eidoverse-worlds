@@ -176,6 +176,21 @@ export function shapesMarked(entries, bodyOf = (i) => entries?.[i]?.body ?? null
   return false;
 }
 
+/** Component names renamed before release (protocol minor 0), {old: new}, per the entity they live on ("@world" or "thing").
+ *  Unlike the shape repair this is a pure rename, idempotent, so it is NOT marker-gated: every load renames what it finds
+ *  (renameOps), as the system's `rename-components` act, and a world with nothing to rename writes nothing. A rename never
+ *  overwrites a value already under the new name (that one wins; the old one is deleted). R 10-17 14:34: @world `trusted`
+ *  read as a list of trusted PEOPLE (the consent table's delegates); it lists components. */
+export const RENAMED_COMPONENTS = Object.freeze({ "@world": Object.freeze({ trusted: "trusted-components" }) });
+/** The ops that rename stored components (RENAMED_COMPONENTS): [{verb, id, comp, value?}], [] when nothing needs it. */
+export function renameOps(st, purged = null) {
+  const ops = [];
+  for (const [id, map] of Object.entries(RENAMED_COMPONENTS)) { const c = st?.entities?.[id]?.c; if (!bag(c)) continue;
+    for (const [from, to] of Object.entries(map)) { if (!(from in c) || c[from] === purged) continue;
+      ops.push({ verb: "delete", id, comp: from }); if (!(to in c)) ops.push({ verb: "set", id, comp: to, value: c[from] }); } }
+  return ops;
+}
+
 /** The ops that repair a folded state (every thing, and @world's look): [{verb: "set"|"delete", id, comp, value?}], in
  *  id order. [] when nothing needs it. */
 export function shapeRepairOps(st, purged = null, { pathOf = null } = {}) {

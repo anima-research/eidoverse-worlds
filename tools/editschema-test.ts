@@ -397,9 +397,9 @@ console.log("\ntrusted drafts (the ladder's second rung):");
   const btn = (live: any) => inspectSchema(ov, "m1", live).groups.find((g: any) => g.group === "hmat")?.fields.find((f: any) => f.k === "trust");
   check("TD8 an owner sees 'trust this in this world' / 'stop trusting'; a non-owner sees no button", /trust this in this world/.test(btn({ materials: [], mayTrust: true })?.label ?? "") && /stop trusting/.test(btn({ materials: [], mayTrust: true, trusted: ["hesperus/material"] })?.label ?? "") && !btn({ materials: [] }), JSON.stringify([btn({ materials: [], mayTrust: true }), btn({ materials: [] })]));
   const t1 = editOps(ov, "m1", { "hmat.trust": true }, { materials: [], mayTrust: true, trusted: ["mica/heart"] });
-  check("TD9 the button writes @world.trusted with the name added (the rest kept)", JSON.stringify(flat(t1.ops).find((o: any) => o.args.id === "@world")?.args) === JSON.stringify({ id: "@world", component: "trusted", value: { components: ["mica/heart", "hesperus/material"] } }), JSON.stringify(t1));
+  check("TD9 the button writes @world.trusted with the name added (the rest kept)", JSON.stringify(flat(t1.ops).find((o: any) => o.args.id === "@world")?.args) === JSON.stringify({ id: "@world", component: "trusted-components", value: { components: ["mica/heart", "hesperus/material"] } }), JSON.stringify(t1));
   const t2 = editOps(ov, "m1", { "hmat.trust": true }, { materials: [], mayTrust: true, trusted: ["hesperus/material"] });
-  check("TD10 …and removes it when it was trusted (an empty list deletes the component)", flat(t2.ops).some((o: any) => o.verb === "delete" && o.args.id === "@world" && o.args.component === "trusted"), JSON.stringify(t2));
+  check("TD10 …and removes it when it was trusted (an empty list deletes the component)", flat(t2.ops).some((o: any) => o.verb === "delete" && o.args.id === "@world" && o.args.component === "trusted-components"), JSON.stringify(t2));
   // the World inspector (where sky/weather live): a "trusted components" card listing them, each with remove (owner)
   const ws = (live: any) => worldSchema({ sky: null, terrain: null, grass: null }, live);
   const wcard = ws({ trusted: ["hesperus/material", "mica/heart"], mayTrust: true }).sections.list.find((x: any) => x.key === "trusted");
@@ -407,7 +407,7 @@ console.log("\ntrusted drafts (the ladder's second rung):");
   const wg = (live: any) => ws(live).groups.find((g: any) => g.group === "trusted")?.fields ?? [];
   check("TW2 an owner has a remove button per name; a non-owner has none; none trusted says so", wg({ trusted: ["mica/heart"], mayTrust: true }).some((f: any) => f.k === "remove|mica/heart") && !wg({ trusted: ["mica/heart"] }).some((f: any) => f.t === "btn") && wg({ trusted: [] }).some((f: any) => f.t === "info" && /none/.test(f.value)), JSON.stringify([wg({ trusted: ["mica/heart"], mayTrust: true }), wg({ trusted: ["mica/heart"] })]));
   const wr = worldEditOps({ sky: null, terrain: null, grass: null }, { "trusted.remove|mica/heart": true }, { trusted: ["hesperus/material", "mica/heart"], mayTrust: true });
-  check("TW3 remove writes the list without that name", JSON.stringify(flat(wr.ops)[0]?.args) === JSON.stringify({ id: "@world", component: "trusted", value: { components: ["hesperus/material"] } }) && wr.errors.length === 0, JSON.stringify(wr));
+  check("TW3 remove writes the list without that name", JSON.stringify(flat(wr.ops)[0]?.args) === JSON.stringify({ id: "@world", component: "trusted-components", value: { components: ["hesperus/material"] } }) && wr.errors.length === 0, JSON.stringify(wr));
 }
 
 // F2 (10-12): a refused value writes NOTHING. Since C8a a mistyped light colour came back as an error AND a `set light`

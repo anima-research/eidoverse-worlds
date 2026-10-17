@@ -96,7 +96,7 @@ export function liveFor(id) {
     mutedForMe: isMineMuted(id), untrusted: allowUntrusted(),
     // the stored particle effects this viewer has (emitters.js): an effect's params are the inspector's knobs
     effects: effectLookup,
-    // the ladder's second rung: what this world trusts (@world.trusted), and whether this viewer may change it (the owner)
+    // the ladder's second rung: what this world trusts (@world.trusted-components), and whether this viewer may change it (the owner)
     trusted: trustedHere(), mayTrust: mayTrust(),
   };
 }

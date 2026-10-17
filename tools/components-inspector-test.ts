@@ -173,7 +173,7 @@ check('Add Component lists blocked entries with a reason; Light and Collider are
 check('Add Component does not offer Guard as addable (merged into Lock) (KNOWN BUG)', (() => { const g = inspectSchema(crate, 'c1').sections.add.find((a: any) => a.name === 'Guard'); return !g || (!!g.blocked && /lock/i.test(g.blocked)); })(),
   JSON.stringify([inspectSchema(crate, 'c1').sections.add.find((a: any) => a.name === 'Guard'), editOps(crate, 'c1', { 'add.Guard': null }).errors]));
 
-// the trusted rung end to end (R 10-12 10:09): the owner's button plans one @world.trusted write; through the real door
+// the trusted rung end to end (R 10-12 10:09): the owner's button plans one @world.trusted-components write; through the real door
 // the world carries it; the schema read with that list flips the chip amber → blue and the offer moves out of "drafts";
 // a builder's same button is refused by the door
 {
@@ -187,10 +187,10 @@ check('Add Component does not offer Guard as addable (merged into Lock) (KNOWN B
   const asBob = W.sendAll(plan.ops, {}, 'bob');
   check('TE2 a builder pressing the owner\'s button: the door refuses (rights)', asBob.refused?.code === 'rights', JSON.stringify(asBob));
   const res = W.sendAll(plan.ops);
-  check('TE3 the owner\'s button writes @world.trusted through the door', res.ok && JSON.stringify(W.state().entities['@world'].c.trusted) === '{"components":["hesperus/material"]}', JSON.stringify([res.refused, W.state().entities['@world']?.c.trusted]));
+  check('TE3 the owner\'s button writes @world.trusted-components through the door', res.ok && JSON.stringify(W.state().entities['@world'].c['trusted-components']) === '{"components":["hesperus/material"]}', JSON.stringify([res.refused, W.state().entities['@world']?.c['trusted-components']]));
   check('TE4 …and the chip flips: main list (Look), blue, no unproven hint', chip(liveAt(true))?.category === 'Look' && chip(liveAt(true))?.chip === 'blue' && !chip(liveAt(true))?.hint, JSON.stringify(chip(liveAt(true))));
   const back = editOps(W.rec('c1'), 'c1', { 'hmat.trust': true }, liveAt(true));
-  check('TE5 "stop trusting" (the last one) deletes the component; the chip is amber again', W.sendAll(back.ops).ok && W.state().entities['@world'].c.trusted === undefined && chip(liveAt(true))?.chip === 'amber', JSON.stringify([back.ops, W.state().entities['@world']?.c.trusted]));
+  check('TE5 "stop trusting" (the last one) deletes the component; the chip is amber again', W.sendAll(back.ops).ok && W.state().entities['@world'].c['trusted-components'] === undefined && chip(liveAt(true))?.chip === 'amber', JSON.stringify([back.ops, W.state().entities['@world']?.c['trusted-components']]));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

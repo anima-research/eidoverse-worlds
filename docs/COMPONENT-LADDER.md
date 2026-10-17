@@ -103,7 +103,7 @@ physics, a right) waits for promotion.
 ## Rung 2: trusted here (owner-approved), and proving it
 
 "Not engine-official, but used and trusted in this world." Trust is a fact about the WORLD, not the engine: the
-world's owner writes `@world.trusted = {components: ["hesperus/material", …]}` (a registered world-only component,
+world's owner writes `@world.trusted-components = {components: ["hesperus/material", …]}` (a registered world-only component,
 gated like the rest of `@world`: owner, never a permission — `editWorld` doesn't reach it). The list holds namespaced
 draft base names only (no keys, no bare or registered names: a bare name is the engine's or nothing), at most 64, each
 once; the authority refuses anything else (`trustRefusal` in `shared/drafts.js`, the same rule the inspector reads).
@@ -112,7 +112,7 @@ What clients make of it:
 - a trusted draft's card wears a BLUE chip, "trusted here";
 - Add Component lists it in the main list under its own category (not under "drafts"), blue chip, no "unproven" hint;
 - in the Inspector card of a draft, an **owner** sees "trust this in this world" / "stop trusting it in this world" (one
-  request: `@world.trusted` with the name toggled; an emptied list deletes the component). Everyone else sees the chip;
+  request: `@world.trusted-components` with the name toggled; an emptied list deletes the component). Everyone else sees the chip;
 - the World inspector (with Sky and Weather) has a **Trusted components** card listing them, each with an owner's
   "stop trusting".
 
@@ -178,4 +178,4 @@ of the four needs above, promote it to a child entity, and write the promotion h
 
 - The conformance suite (`tools/protocol/run.ts`) fails on a changed pin, a v1 word, an unregistered refusal code (scars G1).
 - A second agent reviews every promotion against this page and §4 before it merges.
-- A world's owner decides what that world trusts (`@world.trusted`); R decides when a draft is proven.
+- A world's owner decides what that world trusts (`@world.trusted-components`); R decides when a draft is proven.

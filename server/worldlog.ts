@@ -110,7 +110,11 @@ export class WorldLog {
       if (rep?.repaired.length) console.log(`[world:${name}] repaired ${rep.repaired.length} thing(s) stored before the shape audit, in today's spelling (once; repair-shapes): ${rep.repaired.slice(0, 20).join(", ")}${rep.repaired.length > 20 ? ", …" : ""}`);
       else if (rep && !rep.failed.length) console.log(`[world:${name}] the shape repair found nothing to change (marked: it won't run again)`);
       for (const f of rep?.failed ?? []) console.error(`[world:${name}] the shape repair skipped ${f.id ?? "the world"} (${f.code}): ${f.reason}; ${f.id ? "it keeps its old spelling (the rest of the world was repaired)" : "nothing was repaired; the next load tries again"}`);
-      this.liftNotes = [...failed.map((f) => ({ host: f.host, ...f.failed })), ...skipped.map((k) => ({ skipped: k.skipped, why: k.why })), ...(rep?.failed ?? []).map((f) => ({ repair: true, ...f }))]; }
+      // a component renamed before release (every load, idempotent: authority.js liftWorld, rename-components)
+      const ren = lifted.find((x) => x.rename)?.rename;
+      if (ren?.renamed.length) console.log(`[world:${name}] renamed ${ren.renamed.map((r: Any) => `${r.id}.${r.from} → ${r.to}`).join(", ")} (rename-components)`);
+      if (ren?.failed) console.error(`[world:${name}] renaming components failed (${ren.failed.code}): ${ren.failed.reason}; the old name stays until a load renames it`);
+      this.liftNotes = [...failed.map((f) => ({ host: f.host, ...f.failed })), ...skipped.map((k) => ({ skipped: k.skipped, why: k.why })), ...(rep?.failed ?? []).map((f) => ({ repair: true, ...f })), ...(ren?.failed ? [{ rename: true, ...ren.failed }] : [])]; }
     catch (err) { console.error(`[world:${name}] lifting sockets`, err); }
     const st = this.live.state();
     if (st.status !== "ok") console.warn(`[world:${name}] log folds to '${st.status}': the authority will refuse writes`);
@@ -124,7 +128,7 @@ export class WorldLog {
   }
   /** what the load's socket lift couldn't do (per host) and what the shape repair skipped (per thing), said to the flight recorder when a world attaches */
   private liftNotes: Record<string, unknown>[] = [];
-  attach(host: LogHost) { this.host = host; for (const n of this.liftNotes) host.debug(n.repair ? "repair-shapes" : "lift-sockets", n); }
+  attach(host: LogHost) { this.host = host; for (const n of this.liftNotes) host.debug(n.repair ? "repair-shapes" : n.rename ? "rename-components" : "lift-sockets", n); }
 
   private view(): WorldView {
     return viewState(this.live.state(), { recentChat: this._state?.recentChat ?? [], chatTotal: this._state?.chatTotal ?? 0 }) as WorldView;

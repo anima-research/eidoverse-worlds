@@ -10,7 +10,7 @@ import { dec } from "../names.js";
 import * as SR from "../scriptrules.js";
 import { effectFor, effectBlobName, EFFECT_KIND, ESSENTIAL_NAMES } from "../../particle_effects.js";
 import { livePoses, digestOf, simCutOf } from "../simlayer.js";
-import { shapeRepairOps, shapesMarked, SHAPES_VERSION } from "../shaperepair.js";
+import { RENAMED_COMPONENTS, renameOps, shapeRepairOps, shapesMarked, SHAPES_VERSION } from "../shaperepair.js";
 import { CTX, UP } from "./ctx.js";
 import { Refusal, refuse, said } from "./refuse.js";
 import { readback, delOp, isE, opsQuiet, setOp, versionSeq } from "./storage.js";
@@ -275,8 +275,18 @@ export function liftWorld(w) {
       else w.append(act);
       out.push({ repair: { repaired: ids, failed } });
     } catch (x) { out.push({ repair: { repaired: [], failed: [{ id: null, code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) }] } }); }
+    // names renamed before release (shaperepair.js RENAMED_COMPONENTS: @world trusted → trusted-components, R 10-17): a pure
+    // rename, so every load does it (no marker); nothing to rename writes nothing. One system act, admitted as the repair is
+    try { const ops = renameOps(w.state(), PURGED);
+      if (ops.length) { const ids = [...new Set(ops.map((o) => o.id))], comps = [...new Set(ops.map((o) => o.comp))];
+        const renamed = ops.filter((o) => o.verb === "delete").map((o) => ({ id: o.id, from: o.comp, to: RENAMED_TO(o.id, o.comp) }));
+        const plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids, comps }, lifting: true }, ops);
+        changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "rename-components", body: { renamed, why: "component names renamed before release (protocol minor 0): the value kept, under its new name" } }));
+        out.push({ rename: { renamed } }); } }
+    catch (x) { out.push({ rename: { renamed: [], failed: { code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) } } }); }
     return out; });
 }
+const RENAMED_TO = (id, comp) => RENAMED_COMPONENTS[id]?.[comp] ?? null;
 // Things the log has lifted out of the engine (a grab's lift, a catch) with nothing after that puts them back: no launch,
 // no write to where they are or what they are, no epoch cut (a new epoch builds its bodies from the whole state).
 function orphanLifts(w) {
