@@ -45,7 +45,10 @@ try {
   for (let i = 0; i < 40 && !a.entities.get(sceneId(a, "tower")); i++) await sleep(50);
   const said = await tool("check_model", { id: "tower" });
   check("check_model reads it out for a placed thing: walk-in, floors, no problems, suggestions and the comp to name them",
-    /\[tower\].*walk-in; 2 floors/.test(said) && /No problems found/.test(said) && /Suggested places/.test(said) && /act \{verb: "set", args: \{id: "tower", component: "places"/.test(said), said);
+    /\[tower\].*walk-in; 2 floors/.test(said) && /No problems found/.test(said) && /Suggested places/.test(said)
+    // the header names it as people do (its label); the act to paste names it by the id the authority minted (R 10-17: never
+    // chosen by a writer, never renamed, and an exact id is the first thing every tool resolves)
+    && said.includes(`act {verb: "set", args: {id: "${sceneId(a, "tower")}", component: "places"`) && sceneId(a, "tower") !== "tower", said);
   // checked as placed: the model scaled, the body not. A one-room hall 8m
   // square and 4m tall, its door `door` wide.
   const hall = (door: number) => [[-4, 0, -4, 4, 0.1, 4], [-4, 0.1, -4, -3.8, 4, 4], [3.8, 0.1, -4, 4, 4, 4], [-4, 0.1, -4, 4, 4, -3.8],
