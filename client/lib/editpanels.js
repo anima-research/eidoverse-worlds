@@ -17,7 +17,7 @@
 // the base the motion composes onto, which is the honest thing to edit.
 
 import * as OP from '../../shared/protocol/requests.js';
-import { worldHistoryRows, historyView, HISTORY_MODES } from './historyrows.js';
+import { worldHistoryRows, historyView, HISTORY_MODES, mergeHistory } from './historyrows.js';
 import { creditLine } from '../../shared/libcredits.js';
 import { THREE, scene } from './core.js';
 import { bus, CONFIG } from './base.js';
@@ -1165,14 +1165,23 @@ function buildVRDispatch(action, payload) {
 // before}), a page at a time: recent by default, Older… for the deep search. Nothing stored.
 // Credits are filter modes here (R 10-07: no third tab, no hand credits): by time, by person, biggest contributors, by
 // what changed (client/lib/historyrows.js historyView). The view's mode is this viewer's, never logged.
-const hist = { key: null, entries: [], next: null, loading: false, id: null, mode: 'time', who: null };
+// (mergeHistory: client/lib/historyrows.js)
+const hist = { key: null, entries: [], next: null, loading: false, id: null, mode: 'time', who: null, gen: 0 };
+// A thing's history is re-read whenever the thing changes (its components are in the key), so a refresh of the newest page
+// can land while — or after — the person reads Older… pages. The two never undo each other: a thing's rows are merged by
+// their log seq (newest first), a refresh keeps the older pages already read (and their Older… cursor), and a refresh
+// answered after a newer refresh was sent is dropped. Before (seen in client-check HT6, 10-17), a refresh that landed after
+// an Older… read replaced the list with the newest page alone: the older rows vanished and Older… started over.
 function histLoad(id, more = false) {
   const before = more ? hist.next : undefined;
+  const gen = more ? hist.gen : ++hist.gen;
   hist.loading = true;
   sendRequest('history', id ? { id, limit: 20, ...(before != null ? { before } : {}) } : { limit: 30 }).then((r) => {
-    if (!r?.ok || hist.id !== id) return;
+    if (!r?.ok || hist.id !== id || (!more && gen !== hist.gen)) return;
     const rows = id ? r.entries : worldHistoryRows(r.entries, Edits.nameOf);
-    hist.entries = more ? [...hist.entries, ...rows] : rows; hist.next = r.next ?? null; hist.loading = false; repaintAll();
+    if (!id) { hist.entries = more ? [...hist.entries, ...rows] : rows; hist.next = r.next ?? null; }
+    else ({ entries: hist.entries, next: hist.next } = mergeHistory(hist, rows, r.next ?? null, more));
+    hist.loading = false; repaintAll();
   }).catch(() => { hist.loading = false; });
 }
 function historyFields() {

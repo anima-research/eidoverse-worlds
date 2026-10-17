@@ -40,3 +40,16 @@ export function historyView(list, nameOf, { mode = 'time', who = null } = {}) {
   }
   return { mode: 'time', rows };
 }
+
+/** A thing's history page merged into what is already read (editpanels' History; client-check HT6, 10-17): rows unique by
+ *  their log seq, newest first. `more` (an Older… read) appends and takes its cursor. A refresh of the newest page keeps
+ *  what was read where it meets the new page (no gap a cursor would skip) and the deeper Older… cursor with it; one that
+ *  doesn't meet starts over. {entries, next} */
+export function mergeHistory({ entries, next }, rows, rNext, more) {
+  const oldestNew = rows.length ? Math.min(...rows.map((e) => e.seq)) : Infinity;
+  const meets = more || rNext == null || entries.some((e) => e.seq >= oldestNew);
+  const old = meets ? entries : [];
+  const deeper = !more && old.some((e) => e.seq < oldestNew);
+  const bySeq = new Map(); for (const e of [...old, ...rows]) bySeq.set(e.seq, e);
+  return { entries: [...bySeq.values()].sort((a, b) => b.seq - a.seq), next: more ? rNext : deeper ? next : rNext };
+}

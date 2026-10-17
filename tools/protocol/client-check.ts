@@ -416,7 +416,8 @@ try {
   // R 10-10 23:48: the name is the first line's title (no label; the eye and padlock beside it), then the id; R 10-12: the
   // ENABLED box leads that line
   const firstIsTitle = await evalJson(`(() => { const r = [...${insp}.querySelectorAll('.sp-row')]; return r[0]?.classList.contains('sp-enabled') && r[1]?.classList.contains('sp-title'); })()`);
-  check("I1 the Inspector leads with the ENABLED box and the name (its title line), then the id", firstIsTitle && labels?.[0] === "" && labels?.[1] === "" && labels?.[2] === "id", { firstIsTitle, labels: labels?.slice(0, 3) });
+  // R 10-17 ID HARDENING: the id is hidden behind "show id" by default (it can't be renamed; the label is the name)
+  check("I1 the Inspector leads with the ENABLED box and the name (its title line); the id row is hidden by default", firstIsTitle && labels?.[0] === "" && labels?.[1] === "" && !labels?.includes("id"), { firstIsTitle, labels: labels?.slice(0, 3) });
   // R 10-10: parent moved to the Attributes tab ("I don't think we should show 'parent' here at all - this seems like a Hierarchy thing")
   check("I2 …no lib line (the Model card has it), no filter box; no Parent card (it lives in Attributes now)", !labels?.includes("lib") && !(await evalJson(`!!${insp}.querySelector('input[placeholder^="filter"]')`)) && !labels?.includes("parent") && !labels?.includes("children") && !labels?.includes("on"), labels);
   check("I3 …placed by names who made it (the authority's inspect, as an agent asks it)", await waitFor(`[...${insp}.querySelectorAll('.sp-row')].some((r) => r.querySelector('.sp-label')?.textContent === 'placed by' && r.textContent.includes('bob'))`), await evalJson(`[...${insp}.querySelectorAll('.sp-row')].map((r) => r.textContent).slice(0, 5)`));
@@ -596,10 +597,13 @@ try {
   check("HT3 it lists this thing's acts, newest first, with who and what (pt's motion set and deleted above)", await waitFor(`(() => { const t = [...document.querySelectorAll('[data-frame="history"] .sp-info')].map((x) => x.textContent); const i = t.findIndex((x) => /delete.*motion/.test(x)), j = t.findIndex((x) => /set.*motion/.test(x)); return i >= 0 && j > i; })()`, 5000), await hrows());
   // enough acts to page: 25 label sets on pt, then Older… must reach back to the motion set
   for (let k = 0; k < 25; k++) await page("await (await import('/lib/net.js')).sendRequest('set', { id: 'pt', component: 'label', value: 'pt " + k + "' }); return true;");
-  await sleep(800);
+  // the panel re-reads its newest page when the thing changes: HT4/HT5 read it once it has caught up with the last set
+  // (a real condition, not a fixed wait: an 800 ms sleep read a page taken mid-stream, motion still on it)
+  await waitFor(`[...document.querySelectorAll('[data-frame="history"] .sp-info')].some((x) => /pt 24/.test(x.textContent))`, 8000);
   check("HT4 a long history shows a page and an Older… button", await waitFor(`[...document.querySelectorAll('[data-frame="history"] .sp-btn')].some((b) => /Older/.test(b.textContent))`, 5000), await hrows());
   check("HT5 …the first page doesn't reach back to the motion yet", !(await hrows() as string[]).some((x) => /set.*motion/.test(x)));
-  await evalJson(`([...document.querySelectorAll('[data-frame="history"] .sp-btn')].find((b) => /Older/.test(b.textContent)).click(), true)`);
+  // click Older… the moment it is there (a repaint rebuilds the panel's rows; the button is found and clicked in one step)
+  await waitFor(`(() => { const b = [...document.querySelectorAll('[data-frame="history"] .sp-btn')].find((x) => /Older/.test(x.textContent)); if (!b) return false; b.click(); return true; })()`, 5000);
   if (process.env.SHOT_DIR) { const r = await cdp.send('Page.captureScreenshot', { format: 'png' }); (await import('node:fs')).writeFileSync(`${process.env.SHOT_DIR}/history-tab.png`, Buffer.from(r.data, 'base64')); }
   check("HT6 …Older… reads further back and finds it", await waitFor(`[...document.querySelectorAll('[data-frame="history"] .sp-info')].some((x) => /set.*motion/.test(x.textContent))`, 5000), (await hrows() as string[]).length);
   await page(`(await import('/lib/scenegraph.js')).sceneSelect(null); return true;`).catch(() => null);
