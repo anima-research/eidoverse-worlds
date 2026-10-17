@@ -126,8 +126,8 @@ export function tickMotion() {
   // The SEQUENCER's clock, not the wall's: t0s are server stamps, and an
   // NTP-skewed client rendering motion at wrong phase disagrees with every
   // other window into the same world (Hesperus finding #4). serverNow() is
-  // smoothed from frame stamps and falls back to local time before the
-  // first frame arrives.
+  // smoothed from the server's stamps (the clock message just before each
+  // snapshot, and every frame) and is local time only before the first.
   const nowMs = serverNow();
   _seenParts.clear();
   for (const [id, bag] of comps) {

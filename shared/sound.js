@@ -21,7 +21,8 @@
 // (re)started, so every listener — and every late joiner — hears the same
 // place in the track: the playhead is (serverNow - t0) mod duration when
 // looping. A behavior stamps it with Date.now(), which runs on the server; a
-// browser with serverNow() (client/lib/remotes.js). Motion params are
+// browser stamps it with serverNow() (client/lib/remotes.js); an agent's
+// estimate of the server's clock is its own serverNow() (mcpl/agent.ts). Motion params are
 // functions of time for the same reason. Whoever emits `playing: true` should
 // stamp it; without it each client starts from the top and they drift.
 //

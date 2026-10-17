@@ -93,9 +93,9 @@ Every message belongs to exactly one plane:
 ## 4. Server → client messages
 
 - `clock` — `{t}`: the server's time in ms, sent just before each `snapshot`,
-  a join's or a travel's, so a client can set its offset to the server's clock
-  before anything needs it, in an idle world too. Find the snapshot by its
-  type, not its place among a join's messages.
+  a join's or a travel's, so a client has a sample of the server's clock before
+  anything needs it, in an idle world too. Find the snapshot by its type, not
+  its place among a join's messages.
 - `snapshot` — the join answer: `{world, you, gen, yourSurfaces, recording,
   state, throughSeq, entries (tail), avatars (roster), yourRights, restore,
   present[{id, avatar, pose, agent, surfaces}]}`. State + tail is the whole
