@@ -118,6 +118,7 @@ const proc = Bun.spawn([process.execPath, "run", join(import.meta.dir, "..", "se
     // scratch sessions too: the logins below must not write the checkout's .sessions.json
     AGENT_TOKENS_PATH: tokensPath, HN_SESSIONS_FILE: join(scratch, "sessions.json"), HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0",
     ACCESS_SWEEP_MS: "300", FOUND_DAILY_CAP: "2", WORLD_ADMIN: "", VERB_RATE: "500", EIDO_BOOT_NONCE: NONCE,
+    RENDERER_TOKEN: "test-renderer-key",
   },
   stdout: "ignore", stderr: "inherit",
 });
@@ -421,6 +422,39 @@ try {
   check("Carol is still a member after the reset", Boolean(C3.snap()), `code=${C3.closedWith}`);
   const B5 = keep(await open(W, {}, bob));
   check("bob is still out", B5.closedWith === 4010);
+
+  console.log("11b. renderers are the agents' vision: trusted by their own credential, everywhere");
+  {
+    const RKEY = "test-renderer-key";
+    const fake = keep(await open(W, { id: "fake-renderer", renderer: true, token: DOOR }));
+    check("a client merely SAYING renderer (door key) may not watch the closed world", fake.closedWith === 4010, `code=${fake.closedWith}`);
+    const sneaky = keep(await open(W, { id: "sneaky", token: RKEY }));
+    check("the renderers' credential without the renderer flag opens no door", sneaky.closedWith === 4003, `code=${sneaky.closedWith}`);
+    const real = keep(await open(W, { id: "mac-renderer", renderer: true, token: RKEY }));
+    check("a renderer holding the renderers' credential watches the closed world", Boolean(real.snap()), `code=${real.closedWith} ${real.errors.join("|")}`);
+    check("alice opens and closes the world again", (await ask(A, "grant", { id: "*", role: "builder" })) === null && (await ask(A, "grant", { id: "*", role: "none" })) === null);
+    await sleep(400);
+    check("…and the trusted renderer is not removed by the closing", real.closedWith == null, `code=${real.closedWith}`);
+    real.close(); await sleep(300);
+    // roamers: the dispatcher sends only one the destination will let in
+    const LOBBY = `${W}-lobby`;
+    keep(await open(LOBBY, { id: "lobbykeeper", token: DOOR }));
+    const plainRoamer = keep(await open(LOBBY, { id: "roam-plain", renderer: true, roam: true, token: DOOR }));
+    check("a plain roamer waits in an open lobby", Boolean(plainRoamer.snap()), `code=${plainRoamer.closedWith}`);
+    const r1 = await fetch(`${HTTP}/snap?world=${W}&follow=Alice`, { headers: { cookie: alice } });
+    const t1 = await r1.text();
+    check("a member's snapshot of the closed world, with only a plain roamer free: 503, saying why", r1.status === 503 && /no roaming renderer holding the renderers' credential/.test(t1), `${r1.status} ${t1}`);
+    check("…and the plain roamer was NOT sent there (it would have been refused and gone dead)", !plainRoamer.msgs.some((m) => m.type === "renderer-travel") && plainRoamer.closedWith == null);
+    const trustedRoamer = keep(await open(LOBBY, { id: "roam-trusted", renderer: true, roam: true, token: RKEY }));
+    check("a trusted roamer waits in the lobby too", Boolean(trustedRoamer.snap()), `code=${trustedRoamer.closedWith}`);
+    const ac = new AbortController();
+    const pendingSnap = fetch(`${HTTP}/snap?world=${W}&follow=Alice`, { headers: { cookie: alice }, signal: ac.signal }).catch(() => null);
+    await until(() => trustedRoamer.msgs.some((m) => m.type === "renderer-travel"), 3000);
+    check("a member's snapshot summons the TRUSTED roamer into the closed world", trustedRoamer.msgs.some((m) => m.type === "renderer-travel" && m.world === W));
+    check("…and still never the plain one", !plainRoamer.msgs.some((m) => m.type === "renderer-travel"));
+    ac.abort(); await pendingSnap;
+    plainRoamer.close(); trustedRoamer.close();
+  }
 
   console.log("12. founding: every member may, a few per day");
   const E1 = keep(await open(`${W}-e1`, {}, eve));

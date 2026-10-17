@@ -10,7 +10,7 @@ import { join } from "node:path";
 // config FIRST — it carries the WORLDS_DIR mkdir, and auth.ts/moderation.ts
 // carry their restore-at-boot blocks, so this import order IS the unsplit
 // file's boot order: mkdir → session restore → ban restore (§15, step 7a).
-import { PORT, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
+import { PORT, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
 import { canEnter, whoOf, foundingRefusal, noteFounding, notePrincipal, sweepAccess, worldForAccess, ACCESS_CLOSE, NOT_YET_CLOSE, type AccessWorld, type Expel } from "./access.ts";
@@ -506,6 +506,9 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     c.agent = Boolean(msg.agent);
     c.renderer = Boolean(msg.renderer);
     c.roam = c.renderer && Boolean(msg.roam);
+    // re-derived on every join, like the rest of identity: the renderers' own
+    // credential, presented WITH the renderer flag on this very join
+    c.trustedRenderer = c.renderer && Boolean(RENDERER_TOKEN) && String(msg.token ?? "") === RENDERER_TOKEN;
     snapshots.configure(c, msg.capture);
     if (c.renderer) c.spectator = true; // renderers are invisible by definition
     // Same display name, different PERSON (two guild members can share a
@@ -904,7 +907,10 @@ const server = Bun.serve({
           // JOIN_TOKEN as before. Both may be live at once — invite links for
           // the show, Discord login for everyone with the role.
           const auth = c.auth && c.auth.exp > Date.now() ? c.auth : null;
-          if (!auth && JOIN_TOKEN && String(msg.token ?? "") !== JOIN_TOKEN) {
+          // …and a renderer may come through on the RENDERERS' credential
+          // instead (config.ts RENDERER_TOKEN) — only as a renderer
+          const rendererKey = Boolean(RENDERER_TOKEN) && Boolean(msg.renderer) && String(msg.token ?? "") === RENDERER_TOKEN;
+          if (!auth && JOIN_TOKEN && String(msg.token ?? "") !== JOIN_TOKEN && !rendererKey) {
             ws.send(JSON.stringify({ type: "error", error: "bad or missing join token" }));
             c.ws.close?.(4003, "bad token");
             return;

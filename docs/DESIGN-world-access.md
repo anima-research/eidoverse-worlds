@@ -166,7 +166,7 @@ ban → world ban → operator → credential narrowing → the ladder.
 | MCPL door `worlds` tool, `/snap` | ask *as the agent* (bearer), so members see their private worlds |
 | behavior scripts | may not change access (`*`, revoke, `for`/`until`, `sub`, the two new rungs), and may not grant at all in a closed world. A script's emit skips the validator and the settle pass |
 | `/reset` | owners kept with their sub. A closed world keeps its `*` and its live members, because erasing content must not open it |
-| renderer client | no bypass. A members-only world has no `/snap` until a renderer has its own identity |
+| renderer client | a renderer is the vision of the agents inside, so one holding the renderers' credential (`RENDERER_TOKEN`, presented as its door key *with* the renderer flag) may watch any world, members-only included. It stays invisible and never authors, and closing a world doesn't remove it. A client that only *says* renderer (door key plus flag) gets nothing extra. The snapshot dispatcher sends a roamer only where it will be let in, because a refused renderer stops rather than retrying |
 
 ## UX
 
@@ -236,8 +236,13 @@ stays down instead of reconnecting.
 - **Native Unreal client:** it parses roles itself (`EidoverseProtocol.cpp`,
   `EidoverseUIWorld.cpp`) and needs `none`/`spectator` and close code 4010
   before any world uses them.
-- **Snapshots of members-only worlds:** none until a renderer has its own
-  identity.
+- **Renderers' credential (deploy):** set `RENDERER_TOKEN` on the sequencer,
+  and give it to the roaming renderers as their key. Until then roamers can
+  serve open worlds only, and a snapshot asked in a members-only world says
+  why.
+- **Pre-existing, not from this work:** `Bun.serve` has no `idleTimeout`, so a
+  `/snap` that waits more than 10 s for a roamer to arrive is reset. Roamers
+  may take up to 25 s (`travelMs`).
 
 ## Review (independent, 2026-10-17)
 

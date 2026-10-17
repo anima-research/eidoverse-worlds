@@ -65,6 +65,7 @@ export type Client = {
   superseded?: boolean; // kicked by identity takeover — don't let its stale pose overwrite the successor's
   tokenVerified?: boolean; // this leg presented the identity's own bearer at join
   nameReserved?: boolean;  // …and that bearer makes the NAME authoritative (a tokens.json agent, an aid1 agent) — access.ts
+  trustedRenderer?: boolean; // a renderer that presented RENDERER_TOKEN: may watch any world (access.ts)
   auxBound?: boolean;  // this aux leg is bound to the primary's identity authority (token bearer OR matching login sub) — the B1 admission result, reused by the B3 attest gate
   gen?: number;        // surfaceSession (#57 B2): server-issued transport epoch for THIS leg.
   legGen?: number;     // this leg's WORLD-scoped generation (World.legGen): survives sequencer restarts, rides caption entries

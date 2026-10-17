@@ -5,7 +5,8 @@ const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCA
 const cap = { version: 1, engine: "unreal", scene: "underwater-prototype" };
 function setup(options = {}) {
   const broker = createSnapshotBroker({ cooldownMs: 0, timeoutMs: 100, ...options });
-  const world = { name: "test", clients: new Set<Client>() } as World;
+  // a world has a folded state; an open one (no owner) lets every renderer in (server/access.ts)
+  const world = { name: "test", clients: new Set<Client>(), state: { roles: {}, bans: {} } } as unknown as World;
   const make = (id: string, opts = {}) => {
     const messages: any[] = [];
     const c = { id, world, spectator: false, gen: 1, surface: "world", ws: { readyState: 1, send: (s: string) => messages.push(JSON.parse(s)) }, ...opts } as Client;
@@ -80,7 +81,7 @@ test("transport send exception never escapes broker", async () => {
 function roamSetup(opts = {}) {
   const all = new Set<Client>();
   const broker = createSnapshotBroker({ cooldownMs: 0, timeoutMs: 200, arrivalTimeoutMs: 400, travelMs: 400, pollMs: 10, allClients: () => all, ...opts });
-  const worldOf = (name: string) => ({ name, clients: new Set<Client>() } as World);
+  const worldOf = (name: string) => ({ name, clients: new Set<Client>(), state: { roles: {}, bans: {} } } as unknown as World);
   const join = (world: World, id: string, extra = {}) => {
     const messages: any[] = [];
     const c = { id, world, spectator: false, gen: 1, surface: "world", ws: { readyState: 1, send: (s: string) => messages.push(JSON.parse(s)) }, ...extra } as Client;

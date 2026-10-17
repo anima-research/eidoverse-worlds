@@ -45,7 +45,7 @@ export const NOT_YET_CLOSE = 4011;
  *  name at the JOIN_TOKEN door never is.
  *  `onlyWorld` — credential narrowing (a native device session limited to one
  *  world). It can only refuse. */
-export type Who = { id: string; sub?: string; nameReserved?: boolean; onlyWorld?: string; watchOnly?: boolean };
+export type Who = { id: string; sub?: string; nameReserved?: boolean; onlyWorld?: string; watchOnly?: boolean; trustedRenderer?: boolean };
 export type EntryMode = "embody" | "watch";
 type WorldLike = { name: string; state: WorldState };
 
@@ -76,6 +76,9 @@ export function canEnter(w: WorldLike, who: Who, mode: EntryMode, now = Date.now
     return { ok: false, code: 4006, reason: "banned",
       why: `you are banned from ${gb ? "these worlds" : `"${w.name}"`}${ban.reason ? ` — ${ban.reason}` : ""} (by ${ban.by})` };
   }
+  // A TRUSTED RENDERER (RENDERER_TOKEN, config.ts) is the vision of the agents
+  // inside: it may watch any world — never be embodied, never author.
+  if (who.trustedRenderer && mode === "watch") return { ok: true };
   if (who.onlyWorld && who.onlyWorld !== "*" && who.onlyWorld !== w.name && !isAdminId(who.id, who.sub)) {
     return { ok: false, code: ACCESS_CLOSE, reason: "no-access", why: `this sign-in is limited to "${who.onlyWorld}"` };
   }
@@ -199,7 +202,7 @@ export function worldForAccess(name: string, loaded: Map<string, WorldLike>): Wo
 // ---- after roles change ------------------------------------------------------
 
 export type AccessClient = {
-  id: string; sub?: string; spectator: boolean; nameReserved?: boolean; surface?: string;
+  id: string; sub?: string; spectator: boolean; nameReserved?: boolean; trustedRenderer?: boolean; surface?: string;
   world: unknown; ws: { send(data: string): void };
 };
 export type AccessWorld = WorldLike & {
@@ -209,8 +212,9 @@ export type AccessWorld = WorldLike & {
 };
 export type Expel = (w: AccessWorld, target: AccessClient, why: string, code?: number) => void;
 
-export function whoOf(c: { id: string; sub?: string; nameReserved?: boolean }): Who {
-  return { id: c.id, ...(c.sub ? { sub: c.sub } : {}), ...(c.nameReserved ? { nameReserved: true } : {}) };
+export function whoOf(c: { id: string; sub?: string; nameReserved?: boolean; trustedRenderer?: boolean }): Who {
+  return { id: c.id, ...(c.sub ? { sub: c.sub } : {}), ...(c.nameReserved ? { nameReserved: true } : {}),
+    ...(c.trustedRenderer ? { trustedRenderer: true } : {}) };
 }
 
 /** The roles just changed (a grant, a revoke, an expiry settled). Tell every
