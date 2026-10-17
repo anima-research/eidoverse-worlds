@@ -30,11 +30,11 @@ const NAMES = ["linkpic", "linkradio", "hostradio", "moon", "radio", "sign", "po
 const { cdp, cws, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("batch2", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
-const evalJson = pagedEval(evalRaw, NAMES);
     const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", WORLD, "--owner", ME, "--title", "batch 2 probe"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worldsDir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
     if (r.exitCode !== 0) throw new Error("founding failed: " + r.stderr.toString());
   },
 });
+const evalJson = pagedEval(evalRaw, NAMES);
 const { check: check0, tally } = mkCheck();
 const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail === undefined ? "" : typeof detail === "string" ? detail.slice(0, 600) : (JSON.stringify(detail) ?? "").slice(0, 600));
 const disk = () => fold(readLog(fs.readFileSync(path.join(worldsDir, WORLD, "world.jsonl"))));

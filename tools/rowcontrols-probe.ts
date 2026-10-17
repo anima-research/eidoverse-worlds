@@ -186,19 +186,22 @@ try {
   const hh = await ev(`(async () => { const t = await import('/lib/thingphysics.js'); const h = t.handsHint(); return h == null ? null : String(h.strings ? h.strings.join('|') + JSON.stringify(h.values) : h); })()`).catch((e) => 'err ' + e);
   check('P1 the ambient hint does not offer to pick up the toy I hid', !/toy/.test(String(hh)), String(hh));
   const use = await ev(`import('/lib/useprompt.js').then((m) => m.usable())`).catch((e) => 'err ' + e);
-  check('P2 E (the use prompt) does not target the toy I hid', !JSON.stringify(use ?? null).includes('toy'), JSON.stringify(use));
+  // the toy's id is minted, and its seat a socket child with an id of its own (R 10-17): the checks name both, never the word
+  const toyIds = [N('toy'), ...((await ev(`import('/lib/world.js').then((w) => w.socketsOn('toy').map((s) => s.id))`)) ?? [])];
+  const mentionsToy = (x: unknown) => toyIds.some((id) => JSON.stringify(x).includes(id));
+  check('P2 E (the use prompt) does not target the toy I hid', toyIds.length >= 2 && !mentionsToy(use ?? null), JSON.stringify({ use, toyIds }));
   const hap = await ev(`(async () => { const t = await import('/lib/thingphysics.js'); const { THREE } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const o = w.entities.get('toy'); const c = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()); let n = 0;
       t.xrHand('left', { pos: c, grip: false, trig: false, haptic: () => n++ }); return n; })()`).catch((e) => 'err ' + e);
   check('P3 an XR hand inside the hidden toy gets no hover pulse (near-grab would not take it)', hap === 0, String(hap));
   const g = await ev(`(async () => { const t = await import('/lib/thingphysics.js'); const r = await t.grab(); return { r: r?.ok ?? null, holds: t.myHolds() }; })()`).catch((e) => 'err ' + e);
-  check('P4 T / grab() with no name does not pick up the toy I hid', !JSON.stringify(g).includes('toy'), JSON.stringify(g));
+  check('P4 T / grab() with no name does not pick up the toy I hid', !mentionsToy(g), JSON.stringify({ g, toyIds }));
   await ev(`(async () => { const t = await import('/lib/thingphysics.js'); if (t.myHolds().length) await t.drop(); return true; })()`);
   const sit = await ev(`(async () => { const l = await import('/lib/localbody.js'); const w = await import('/lib/world.js'); const c = await import('/lib/controller.js'); const o = w.entities.get('toy'); c.myState.pos.set(o.position.x + 1.0, o.position.y, o.position.z); const r = l.trySitOn(); await new Promise((s) => setTimeout(s, 1200)); const { CONFIG } = await import('/lib/base.js'); return { r, mount: w.avatarMounts.get(CONFIG.name) ?? null }; })()`).catch((e) => 'err ' + e);
-  check('P5 X (trySitOn) does not sit me on the toy I hid', !JSON.stringify(sit).includes('toy'), JSON.stringify(sit));
+  check('P5 X (trySitOn) does not sit me on the toy I hid', !mentionsToy(sit), JSON.stringify({ sit, toyIds }));
   const seatHint = await ev(`(async () => { window.__hints.length = 0; const l = await import('/lib/localbody.js'); l.updateSeatHint(1); return window.__hints.join(' | ') + ' || ' + (document.getElementById('hintbar')?.textContent ?? ''); })()`);
   check('P5 …and the hint bar does not offer "X — sit" beside it', !/X\s*—\s*sit/.test(String(seatHint)), String(seatHint));
   const named = await ev(`(async () => { const l = await import('/lib/localbody.js'); const r = l.trySitOn('toy'); await new Promise((s) => setTimeout(s, 1200)); const w = await import('/lib/world.js'); const { CONFIG } = await import('/lib/base.js'); const m = w.avatarMounts.get(CONFIG.name) ?? null; return { r, mount: m }; })()`).catch((e) => 'err ' + e);
-  check('P6 (control) sitting on it BY NAME still works (the Hierarchy-row equivalent)', JSON.stringify(named).includes('toy'), JSON.stringify(named));
+  check('P6 (control) sitting on it BY NAME still works (the Hierarchy-row equivalent)', mentionsToy(named), JSON.stringify({ named, toyIds }));
   await ev(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyX' })), true`); await sleep(600);
   await ev(`(async () => { const w = await import('/lib/world.js'); const c = await import('/lib/controller.js'); const o = w.entities.get('toy'); c.myState.pos.set(o.position.x + 1.3, o.position.y, o.position.z); return true; })()`);
   await ev(`(async () => { ${D}.hierDo?.('myhide', 'toy'); return true; })()`); await sleep(300);

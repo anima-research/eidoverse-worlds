@@ -29,11 +29,11 @@ const NODE = new Map<string, string>(); const NAMES = ["house-a", "house-b"];
 const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("build", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
-const evalJson = (expr: string) => evalRaw(inPage(expr, NAMES, NODE));
     const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", WORLD, "--owner", ME, "--title", "build probe"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worldsDir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
     if (r.exitCode !== 0) throw new Error("founding failed: " + r.stderr.toString());
   },
 });
+const evalJson = (expr: string) => evalRaw(inPage(expr, NAMES, NODE));
 const { check: check0, tally } = mkCheck();
 const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail === undefined ? "" : typeof detail === "string" ? detail.slice(0, 600) : (JSON.stringify(detail) ?? "").slice(0, 600));
 const entries = () => readLog(fs.readFileSync(path.join(worldsDir, WORLD, "world.jsonl")));

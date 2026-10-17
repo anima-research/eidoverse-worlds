@@ -28,11 +28,11 @@ const NODE = new Map<string, string>(); const N = (n: string) => NODE.get(n) ?? 
 const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("shiplist", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
-const evalJson = pagedEval(evalRaw, NAMES, NODE);
     const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", WORLD, "--owner", ME, "--title", "ship list probe"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worldsDir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
     if (r.exitCode !== 0) throw new Error("founding failed: " + r.stderr.toString());
   },
 });
+const evalJson = pagedEval(evalRaw, NAMES, NODE);
 const { check: check0, tally } = mkCheck();
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail === undefined ? "" : typeof detail === "string" ? detail.slice(0, 600) : (JSON.stringify(detail) ?? "").slice(0, 600));
