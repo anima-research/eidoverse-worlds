@@ -122,7 +122,7 @@ try{
  const sole={id:"sole",pos:[0,0,0],yaw:0,scale:1,comp:{structure:{levels:[upper]}}};
  const soleBody=body(sole,()=>0,[.5,.5]);soleBody.pos.y=3.1;
  const soleWalk=await walk(soleBody,[2.5,.5]);
- check(soleWalk.arrived && soleBody.pos.y===0,"current standing implementation supplies terrain, not elevated support, for a sole raised floor");
+ check(!soleWalk.arrived && (soleBody as any).walkRefusal && soleBody.pos.y===3.1,"a body on a sole raised floor stands on it, and a walk across the floor's gap is refused rather than taken on the terrain");
  const slope={id:"slope",pos:[10,2,-5],yaw:Math.PI/2,scale:2,comp:{structure:wall}};
  const highAtCross=(wx:number,wz:number)=>{const [lx]=localizePoint(slope,wx,0,wz);return 2+8*lx;};
  const c=body(slope,highAtCross,transform(slope,0,.5));
