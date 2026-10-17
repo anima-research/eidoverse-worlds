@@ -43,7 +43,7 @@ async function writeBoxGlb(file, [sx, sy, sz]) {
 }
 
 // ---- AT4 needs no server: the table itself ----
-const { HANDLERS, TOOLS, toolList } = await import("../../mcpl/tools.ts");
+const { HANDLERS, TOOLS, toolList, handleTool: handleToolDoor } = await import("../../mcpl/tools.ts");
 { const listed = [...toolList({ travel: true }), ...toolList({ travel: false })];
   const HINTS = ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"];
   const bad = listed.filter((t) => typeof t.title !== "string" || !t.title.trim() || !t.annotations || HINTS.some((h) => typeof t.annotations[h] !== "boolean"));
@@ -52,11 +52,11 @@ const { HANDLERS, TOOLS, toolList } = await import("../../mcpl/tools.ts");
   const by = Object.fromEntries(TOOLS.map((t) => [t.name, t.annotations ?? {}]));
   const reads = ["look", "inspect", "measure", "world_history", "world_debug", "hierarchy", "blueprints", "whois", "body_state", "screenshot", "library", "worlds", "catch_up"];
   ok(reads.every((n) => by[n]?.readOnlyHint === true && by[n]?.destructiveHint === false), "AT4 the reads are read-only and not destructive", reads.filter((n) => !(by[n]?.readOnlyHint === true && by[n]?.destructiveHint === false)));
-  const writes = ["move", "create", "place", "edit", "act", "say", "attach", "travel", "set_avatar", "pose", "reach"];
+  const writes = ["move", "create", "place", "edit", "act", "say", "attach", "travel", "set_avatar", "anim", "reach"];
   ok(writes.every((n) => by[n]?.readOnlyHint === false), "AT4 everything that changes the world or a body is not read-only", writes.filter((n) => by[n]?.readOnlyHint !== false));
   ok(["act", "edit"].every((n) => by[n]?.destructiveHint === true) && ["create", "say", "move"].every((n) => by[n]?.destructiveHint === false), "AT4 act (delete, kick, ban…) and editing in place are destructive; making, saying and walking are not",
     Object.fromEntries(["act", "edit", "create", "say", "move"].map((n) => [n, by[n]?.destructiveHint])));
-  ok(["say", "whisper", "act", "pose"].every((n) => by[n]?.openWorldHint === true) && ["look", "inspect", "move"].every((n) => by[n]?.openWorldHint === false), "AT4 what reaches other people is open-world; reading the world and walking in it are not");
+  ok(["say", "whisper", "act", "anim"].every((n) => by[n]?.openWorldHint === true) && ["look", "inspect", "move"].every((n) => by[n]?.openWorldHint === false), "AT4 what reaches other people is open-world; reading the world and walking in it are not");
   // the stdio host adds one tool of its own (mcpl/server.ts can't be imported here: it connects at load)
   const src = fs.readFileSync(path.join(ENGINE, "mcpl/server.ts"), "utf8");
   const pp = src.slice(src.indexOf("const PENDING_PINGS_TOOL"), src.indexOf("};", src.indexOf("const PENDING_PINGS_TOOL")));
@@ -70,16 +70,16 @@ const { HANDLERS, TOOLS, toolList } = await import("../../mcpl/tools.ts");
     "clear_pose", "clear_reach", "posture", "ragdoll", "library_sheet", "library_preview", "list_library", "light", "remove", "blueprint_place", "kick", "ban", "unban", "list_bans"];
   ok(names.length <= 32 && names.length >= 28, `AT6 the table is ~30 tools (${names.length})`, names);
   ok(!folded.some((n) => names.includes(n)), "AT6 none of the folded names is a tool of its own", folded.filter((n) => names.includes(n)));
-  ok(["move", "act", "pose", "reach", "library", "set_avatar", "create", "edit", "body_state"].every((n) => names.includes(n)), "AT6 the general tools they folded into exist");
+  ok(["move", "act", "anim", "reach", "library", "set_avatar", "create", "edit", "body_state"].every((n) => names.includes(n)) && !["pose", "animate", "emote", "posture"].some((n) => names.includes(n)), "AT6 the general tools they folded into exist (anim: R 10-17 15:31; pose, animate, emote and posture are hidden aliases of it)");
   ok(/mode/.test(desc.move) && /fly/.test(desc.move) && /altitude/.test(desc.move) && /name/.test(desc.move), "AT6 move documents mode: \"fly\" (altitude) and to: <a name>", desc.move.slice(0, 300));
   ok(/land/.test(desc.act) && /kick/.test(desc.act) && /\bbans\b/.test(desc.act) && /delete/.test(desc.act), "AT6 act documents land, kick/ban/unban/bans and delete", desc.act.slice(0, 200));
-  ok(/posture/.test(desc.pose) && /wings/.test(desc.pose) && /clear/.test(desc.pose), "AT6 pose documents posture, wings and clear");
+  ok(/wings-folded/.test(desc.anim) && /stop/.test(desc.anim) && /mode/.test(desc.anim) && /joints/.test(desc.anim) && /tracks/.test(desc.anim), "AT6 anim documents names (wings-folded), mode, joints, tracks and stop");
   ok(/release/.test(desc.reach), "AT6 reach documents release");
   ok(/query/.test(desc.library) && /preview/.test(desc.library) && /sheet|page/.test(desc.library), "AT6 library documents query, preview and the sheet");
   ok(/light/.test(desc.create) && /\bat\b/.test(desc.create), "AT6 create documents a light and at");
   const { resolveTool, handleTool } = await import("../../mcpl/tools.ts");
   ok(resolveTool("set_avatar")?.name === "set_avatar" && resolveTool("wear") === null && resolveTool("walk_to")?.name === "move", "AT6 set_avatar keeps its name (R: unambiguous; wear could mean a hat), the old renames still alias");
-  ok(/ragdoll: true/.test(desc.pose) && !/limp: true/.test(desc.pose) && !/shove \{target/.test(desc.pose) && /shove \{target/.test(desc.act), "AT6 pose documents ragdoll (one vocabulary with the browser: a body going limp); the push's form (shove {target…}) is act's alone");
+  ok(/ragdoll: true/.test(desc.anim) && !/limp: true/.test(desc.anim) && !/shove \{target/.test(desc.anim) && /shove \{target/.test(desc.act), "AT6 anim documents ragdoll (one vocabulary with the browser: a body going limp); the push's form (shove {target…}) is act's alone");
   ok(resolveTool("take_off") === null && resolveTool("kick") === null, "AT6 a folded tool does not resolve to a handler (it folded, it was not renamed)");
   const gone = await handleTool({ agent: null } as any, "take_off", {});
   ok(gone.isError && /move \{mode: "fly"/.test(gone.content[0].text), "AT6 calling a folded name teaches where it went", gone.content[0].text);
@@ -148,7 +148,7 @@ ok((await make("wall", { model: "test/wall.glb", components: { transform: { pos:
 ok((await make("mug", { model: "test/cup.glb", components: { transform: { pos: [6.4, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, grabbable: { who: "visitor" } } })).ok, "(setup) …and a mug anyone may carry, at x = 6.4");
 for (let i = 0; i < 60 && !(ag.entities.has(ID.wall) && ag.entities.has(ID.mug)); i++) await sleep(50);
 ok(/^[a-z2-7]{26}$/.test(ID.mug ?? ""), "(setup) the authority minted the mug an opaque id", ID);
-const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name);
+const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name, a);   // through the door a host uses (aliases included)
 
 // ---- AT5: a light is create {components: {light}} (the light tool folded; #216's id rule rides create's own) ----
 { const before = [...ag.entities.keys()].length;
@@ -231,22 +231,22 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   const bs = await call("body_state", {});
   ok(!bs.isError && /"flight"/.test(T(bs)) && /on the ground/.test(T(bs)), "AT6c body_state carries the flight status (flight_status folded)", T(bs).slice(0, 300));
   // the body cluster
-  const sit = await call("pose", { posture: "sit" });
-  ok(!sit.isError && /sit down/.test(T(sit)) && ag.clip === "sit", "AT6d pose {posture: \"sit\"} sits (posture folded)", [T(sit), ag.clip]);
+  const sit = await call("anim", { name: "sit" });
+  ok(!sit.isError && /"playing":"sit","mode":"loop"/.test(T(sit)) && ag.clip === "sit", "AT6d anim {name: \"sit\"} sits, looped (its own mode)", [T(sit), ag.clip]);
   const stand = await call("pose", { posture: "stand" });
-  ok(!stand.isError && /stand up/.test(T(stand)), "AT6d …and stand", T(stand));
-  const posed = await call("pose", { bones: { head: [0, 0.2, 0, 0.98] }, hold: true });
-  const cleared = await call("pose", { clear: true });
-  ok(!posed.isError && !cleared.isError && /released/.test(T(cleared)) && ag.heldPose == null, "AT6e pose {clear: true} releases a held pose (clear_pose folded)", [T(posed).slice(0, 80), T(cleared), ag.heldPose]);
+  ok(!stand.isError && /pose is now called anim/.test(T(stand)) && /"playing":"stand"/.test(T(stand)) && ag.clip === "idle", "AT6d …the old pose {posture: \"stand\"} answers as anim {name: \"stand\"}", [T(stand), ag.clip]);
+  const posed = await call("anim", { joints: { head: [0, 0.2, 0, 0.98] }, hold: true });
+  const cleared = await call("anim", { stop: true });
+  ok(!posed.isError && /"playing":"live","mode":"hold"/.test(T(posed)) && !cleared.isError && ag.heldPose == null, "AT6e anim {joints} holds a live frame; anim {stop: true} releases it (clear_pose folded)", [T(posed).slice(0, 120), T(cleared), ag.heldPose]);
   // ragdoll = a body going limp: pose {ragdoll: true} (R 10-14: one vocabulary with the browser;: shoving is moving someone else; going limp is a body state)
-  const limp = await call("pose", { ragdoll: true });
-  ok(!limp.isError && /limp|down/.test(T(limp)) && ag.clip === "ragdoll", "AT6p pose {ragdoll: true} drops your own body limp (clip ragdoll)", [T(limp), ag.clip]);
-  const up = await call("pose", { posture: "stand" });
+  const limp = await call("anim", { ragdoll: true });
+  ok(!limp.isError && /limp|down/.test(T(limp)) && ag.clip === "ragdoll", "AT6p anim {ragdoll: true} drops your own body limp (clip ragdoll)", [T(limp), ag.clip]);
+  const up = await call("anim", { name: "stand" });
   ok(!up.isError && ag.clip !== "ragdoll", "AT6p …and standing picks it back up", [T(up), ag.clip]);
-  const k2 = vic.msgs.length; const theirs = await call("pose", { ragdoll: true, target: "Vic" }); await sleep(300);
-  ok(!theirs.isError && vic.msgs.slice(k2).some((m) => m.type === "puppet" && m.ragdoll === true), "AT6q pose {ragdoll: true, target} asks THEIR body to go limp (an undirected ragdoll, not a shove)", [T(theirs), vic.msgs.slice(k2).map((m) => m.type)]);
+  const k2 = vic.msgs.length; const theirs = await call("anim", { ragdoll: true, target: "Vic" }); await sleep(300);
+  ok(!theirs.isError && vic.msgs.slice(k2).some((m) => m.type === "puppet" && m.ragdoll === true), "AT6q anim {ragdoll: true, target} asks THEIR body to go limp (an undirected ragdoll, not a shove)", [T(theirs), vic.msgs.slice(k2).map((m) => m.type)]);
   const wings = await call("pose", { wings: "fold" });
-  ok(!wings.isError && /wings/.test(T(wings)), "AT6f pose {wings: \"fold\"} reaches the wing posture (this body: none to fold, said)", T(wings));
+  ok(!wings.isError && /wings/.test(T(wings)) && /pose is now called anim/.test(T(wings)), "AT6f the old pose {wings: \"fold\"} answers as anim {name: \"wings-folded\"} (this body: none to fold, said)", T(wings));
   const letgo = await call("reach", { release: true });
   ok(!letgo.isError && /releas|let go|weren't reaching/.test(T(letgo)), "AT6g reach {release: true} lets go (clear_reach folded; nothing held: said)", T(letgo));
   // the library

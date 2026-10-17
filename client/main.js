@@ -133,6 +133,7 @@ import { measureChain, solveChain } from './lib/reachbone.js';
 import { canonicalPoint } from '../shared/contact.js';
 import { initReachNet, setMyReach, clearMyReach } from './lib/reachnet.js';
 import { foldedIn } from '../shared/wingpresence.js';
+import { readBodyMode } from '../shared/bodymode.js';
 
 // (Crash breadcrumbs live in lib/breadcrumbs.js now; the frame loop stamps each
 // system's name as it runs. avatar.js still reads globalThis.__ewBC.)
@@ -424,9 +425,7 @@ wireNet({
     myState.pos.set(fin(r.p[0]), fin(r.p[1]), fin(r.p[2]));
     myState.yaw = r.yaw ?? 0;
     setCamYaw(myState.yaw + Math.PI); // camera behind you, facing your way
-    if (r.clip === 'sit' || r.clip === 'sitchair' || r.clip === 'lie') {
-      setPosture(r.clip === 'lie' ? 'lie' : 'sit');
-    }
+    { const m = readBodyMode(r); if (m === 'sit' || m === 'lie') setPosture(m); }   // the body-mode survives a rejoin (an older sample: read off its clip)
     // an enacted pose is authored content — wake holding it, like the spot
     // you stood on. It rides the next presence packet, so everyone sees it.
     // EXCEPT a remembered ragdoll frame (pre-sanitizer entries): that is

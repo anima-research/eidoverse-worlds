@@ -40,6 +40,7 @@ import { MOVER, TRACK, walkToward, toleranceOf, waterStance } from "../shared/mo
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
 import { inspectBody } from "../shared/flightbody.js";
 import { foldedIn, wingFoldPresence } from "../shared/wingpresence.js";
+import { bodyModeTracker, isBodyMode, readBodyMode } from "../shared/bodymode.js";
 import { clampBodyScale } from "../shared/presencewire.js";
 import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
 
@@ -1041,6 +1042,7 @@ export class WorldAgent {
               // authored by definition (settledPose strips physics frames)
               if (msg.restore.pose && msg.restore.clip !== "ragdoll") { this.heldPose = msg.restore.pose; this.heldPoseAuthored = true; }
               this.wingsFolded = foldedIn(msg.restore) === true;   // the named pose wings-folded (or an older wingsFolded)
+              this.bodyMode = readBodyMode(msg.restore);   // the body-mode survives a rejoin (an older sample: read from its clip); a declaration until the next real transition
             }
             this.restoredPose = true;
             // a (re)join: the authority's track of this body ended when it left, so the next walk arrives again
@@ -1280,7 +1282,7 @@ export class WorldAgent {
         connected: this.joined && !this.closed, receivedAt: this.joined ? Date.now() : this.selfObservedAt,
         source: bones ? this.heldPoseAuthored ? "authored" : "physics" : "unknown",
         pose: this.selfObservedAt != null || this.joined ? structuredClone({
-          p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, speed: this.speed, clip: this.clip, clipTime: this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: 1,
+          p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, speed: this.speed, clip: this.clip, bodyMode: this.bodyModeNow(), clipTime: this.animHold ?? this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: this.animHold != null ? 0 : 1,
           ...wingFoldPresence(this.wingsFolded), ...(bones ? { pose: bones } : {}),
           ...(this.reaches.size ? { reach: Object.fromEntries(this.reaches) } : {}),
         ...(this.myOccupancy ? { seat: this.myOccupancy } : {}),
@@ -2198,7 +2200,47 @@ export class WorldAgent {
 
   /** Every collider query a tick makes is about this agent's own world. */
   private tick() { inWorld(this.world, () => this.tickInWorld()); }
+  // ---------------- anim (R 10-17 15:31/15:32): one way to play a pose or a clip, by name or live ----------------
+  /** The anim this body is in now, when it lasts (mode loop or hold); a once anim ends by itself, silently. kind: a clip
+   *  (held as the presence clip), the named pose wings-folded, or live joints / a held frame of live tracks. */
+  anim: { name: string; mode: "loop" | "hold"; kind: "clip" | "pose" | "live"; clip?: string; bodyMode?: string } | null = null;
+  /** The body-mode (R 10-17 15:34/15:45: was posture, the clip label): stand | sit | lie | swim | fly | fall, every one
+   *  declarable for looks (anim {bodyMode}; an anim may ask for one: the built-in sit and lie do, and its end returns to
+   *  stand); the mover's real transitions (flight, water) set it and end a declaration. Published as presence bodyMode
+   *  (bodyModeNow). A self-declared description: it grants nothing (take-off still wants the fly permission). */
+  modeTracker = bodyModeTracker();
+  get bodyMode() { return this.modeTracker.declared ?? "stand"; }
+  set bodyMode(m: string | null) { this.modeTracker.declare(m === "stand" ? null : m); }
+  /** The mode this body publishes now: a declaration, else the mover's (fly, swim, stand); on a station, sit. */
+  bodyModeNow() { const m = this.modeTracker.step({ flying: !!this.flight && this.clip !== "ragdoll", swimming: this.clip === "swim" || this.clip === "tread" }); return m === "stand" && this.myOccupancy ? "sit" : m; }
+  /** A clip held in mode hold: the time it freezes at (presence clipTime with clipRate 0). */
+  animHold: number | null = null;
+  /** The ends this body heard (newest last; presence only, never logged): what an agent reads as `stopped {name, why}`. */
+  animStops: { name: string; why: string; ts: number }[] = [];
+  /** A loop or hold anim ended: tell the agent once, `stopped {name, why}`, and forget it. */
+  animEnded(why: string) {
+    const a = this.anim; if (!a) return;
+    this.anim = null; this.animHold = null; if (a.bodyMode) this.bodyMode = "stand";   // an anim that set the body-mode returns it to stand
+    const ts = Date.now(); this.animStops.push({ name: a.name, why, ts }); if (this.animStops.length > 20) this.animStops.shift();
+    const text = `stopped {name: ${JSON.stringify(a.name)}, why: ${JSON.stringify(why)}}`;
+    this.inbox.push({ ts, kind: "act", who: this.name, text }); this.onEvent?.({ ts, kind: "act", who: this.name, text });
+  }
+  /** Start an anim that lasts (the one before it ends with why "another anim"). */
+  animBegan(a: NonNullable<WorldAgent["anim"]>, holdAt: number | null = null) {
+    if (this.anim) this.animEnded("replaced");   // R 15:34: a new loop or hold replaces the one before (a once overlays it)
+    this.anim = a; if (a.bodyMode && isBodyMode(a.bodyMode)) this.bodyMode = a.bodyMode; this.animHold = a.kind === "clip" && a.mode === "hold" ? holdAt : null;
+  }
+  /** Every tick: an anim that lasts ends when what holds it is gone (a walk took the clip, a ragdoll, a clear, the wings
+   *  opened), with why: moved, knocked over, cleared, replaced. */
+  private watchAnim() {
+    const a = this.anim; if (!a) return;
+    if (a.kind === "clip" && this.clip !== a.clip) this.animEnded(this.clip === "ragdoll" ? "knocked over" : ["walk", "run", "swim", "tread"].includes(this.clip) || this.target ? "moved" : "replaced");
+    else if (a.kind === "pose" && !this.wingsFolded) this.animEnded("stopped");
+    else if (a.kind === "live" && !this.heldPose) this.animEnded(this.clip === "ragdoll" ? "knocked over" : this.target ? "moved" : "cleared");
+    else if (a.kind === "live" && this.clip === "ragdoll") this.animEnded("knocked over");
+  }
   private tickInWorld() {
+    this.watchAnim();
     if (!this.joined) return;
     const dt = TICK_MS / 1000;
     // The world's physics (@world.physics-engine): stamp where each flying thing IS into the entity view — the same engine state
@@ -2372,7 +2414,7 @@ export class WorldAgent {
     this.ws?.send(JSON.stringify({
       type: "pose",
       pose: {
-        p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, speed: this.speed, clip: this.clip, clipTime: this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: 1,
+        p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, speed: this.speed, clip: this.clip, bodyMode: this.bodyModeNow(), clipTime: this.animHold ?? this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: this.animHold != null ? 0 : 1,
         ...wingFoldPresence(this.wingsFolded),
         // a physics bag only ever leaves this process labelled as what it is —
         // "ragdoll" — so every clip-keyed sanitizer downstream can see it.
@@ -4630,9 +4672,10 @@ export class WorldAgent {
       const held = (p.pose as { pose?: Record<string, unknown> | null }).pose;
       const posed = held ? `, holding a pose (${Object.keys(held).length} bones)` : "";
       const winged = foldedIn(p.pose) === true ? ", wings folded" : "";
+      const moded = ((m) => (m && m !== "stand" ? `, ${m === "sit" ? "sitting" : m === "lie" ? "lying down" : m === "swim" ? "swimming" : m === "fly" ? "flying" : "falling"}` : ""))(readBodyMode(p.pose));
       const ride = this.mounts.get(p.id);
       const riding = ride ? ` — on ${this.socketName(ride.to)}${this.seatSuffix(p.id, ride)}` : "";
-      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${winged}${riding}${voiceNote(p.pose)}`);
+      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${moded}${winged}${riding}${voiceNote(p.pose)}`);
     }
 
     // a socket is part of its host (a seat, a hook): listed under the host, never as a thing of its own

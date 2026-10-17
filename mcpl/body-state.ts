@@ -12,6 +12,7 @@ import { planReaches, reachKey } from "../shared/reachorder.js";
 import { poseChannels } from "../shared/humanoid.js";
 import { clampBodyScale } from "../shared/presencewire.js";
 import { foldedIn } from "../shared/wingpresence.js";
+import { readBodyMode } from "../shared/bodymode.js";
 
 export type PublicPose = {
   p: number[]; yaw: number; speed: number; clip: string;
@@ -99,7 +100,7 @@ function applySwim(body: any, m: number, t: number) {
 
 function missingPosture(out: any, o: BodyObservation) {
   return { ...out, ok: false, publishedRotations: structuredClone(o.pose?.pose ?? {}),
-    error: `current-body geometry unavailable: posture '${o.pose?.clip ?? "unknown"}' is not evaluated`,
+    error: `current-body geometry unavailable: clip '${o.pose?.clip ?? "unknown"}' is not evaluated`,
     geometry: { status: "incomplete", basis: "rest_pose_estimate", clip: o.pose?.clip ?? null,
       reason: "posture_not_evaluated", currentBodyTargets: false } };
 }
@@ -213,10 +214,10 @@ export class BodyStateReader {
         ok: f.status === "current", who, avatar: o.avatar || null, self: o.self,
         bodyGeneration: { scope: "this observer", value: o.generation }, freshness: f,
         frame: o.frame ?? { source: "presence" },
-        summary: `${who}: ${f.status}; ${valid ? `${p!.clip || "posture unknown"}${wing}${clampBodyScale(p!.scale) !== 1 ? `, ${clampBodyScale(p!.scale)}× size` : ""} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s), ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
+        summary: `${who}: ${f.status}; ${valid ? `${readBodyMode(p) ?? "body-mode unknown"}${p!.clip ? ` (playing ${p!.clip})` : ""}${wing}${clampBodyScale(p!.scale) !== 1 ? `, ${clampBodyScale(p!.scale)}× size` : ""} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s), ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
         root: valid ? { position: [...p!.p], yaw: p!.yaw, forward: [Math.sin(p!.yaw), 0, Math.cos(p!.yaw)] } : null,
         scale: clampBodyScale(p?.scale),
-        posture: p?.clip ?? null, wingsFolded: foldedIn(p), poses: Array.isArray(p?.poses) ? p.poses : null,
+        bodyMode: readBodyMode(p), clip: p?.clip ?? null, wingsFolded: foldedIn(p), poses: Array.isArray(p?.poses) ? p.poses : null,
         overrides: { state: valid ? count ? "held" : "none" : "unknown", count, source: o.source,
           sourceBasis: o.self ? "owner state" : o.source === "physics" ? "ragdoll clip; original author unknown" : "producer does not publish provenance" },
         reaches: reaches ?? {},

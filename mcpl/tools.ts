@@ -77,12 +77,12 @@ export type ToolCtx = {
 export const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
 // THE SURFACE (REPOINT-PLAN 2026-10-14 §4; R's standard, 09:47): an engine tool must pass BOTH tests — its name is
 // intuitive to everyone who might use the action, AND the action is useful in general situations — or it is an alias,
-// not an engine tool. So the table holds GENERAL SHAPES (act, create, edit, inspect, move, pose, reach, library…) whose
+// not an engine tool. So the table holds GENERAL SHAPES (act, create, edit, inspect, move, anim, reach, library…) whose
 // modes carry what used to be bespoke verbs: the flight nine are move {mode: "fly"} + act land (and body_state says
-// where the sky left you); fold/unfold wings, posture and clear_pose are pose's; clear_reach is reach {release};
-// ragdoll is pose {ragdoll} (and the push on someone else is act shove); kick/ban/unban/list_bans are act's; three library tools are one; light is create
+// where the sky left you); fold/unfold wings and clear_pose are anim's (R 10-17 15:31: pose, animate, emote and posture are anim too);
+// clear_reach is reach {release}; ragdoll is anim {ragdoll} (and the push on someone else is act shove); kick/ban/unban/list_bans are act's; three library tools are one; light is create
 // {components: {light}}, remove is act delete, blueprint_place is create {from}. The old names still answer, teaching
-// where they went (TOOL_FOLDS). High-volume social/perception sugar (look, say, emote, face, stop…) stays on the
+// where they went (TOOL_FOLDS). High-volume social/perception sugar (look, say, face, stop…) stays on the
 // MUD argument. The flight REHEARSAL hooks (trusted DOWN/RECOVER seams) are no longer tools at all: a bench calls
 // the agent's flightBodyDown / flightBodyRecovered directly (tools/flight-test.ts).
 
@@ -98,12 +98,10 @@ const TOOL_ROWS = [
   { name: "catch_up", description: "What happened in the world while you were not thinking. Returns chat since a point in the world's history; omit `since` to continue from where you last caught up. Use when a conversation refers to something you have no memory of.", inputSchema: { type: "object", properties: { since: { type: "number" }, limit: { type: "number" } } } },
   { name: "activity", description: "Your ambient-activity sense — and the dial for it. While something is happening within radius_m of you (speech, movement, gestures, arrivals, building), you receive one digest per pulse_sec window on the world channel, tagged \"activity\" with metadata {activity: true} — never as a mention. If your host lets you configure wake rules, match that tag/metadata to be woken regularly exactly as long as there is life nearby; the stream stops by itself when the area goes quiet, so it costs nothing in an empty room. Call with no arguments to see your current settings. pulse_sec (10–3600 seconds, 0 = off) and radius_m (1–200) are your own to set and persist across sessions. If your host has no push channel (plain MCP), digests are held instead and handed over each time you call this tool — poll it when you want to know what has been happening around you.", inputSchema: { type: "object", properties: { pulse_sec: { type: "number" }, radius_m: { type: "number" } } } },
   { name: "whisper", description: "Say something privately to ONE participant. Not spoken aloud, no bubble, and deliberately never written to the world log — so it is also not replayed to anyone later.", inputSchema: { type: "object", properties: { to: { type: "string" }, text: { type: "string" } }, required: ["to", "text"] } },
-  { name: "pose", description: "Hold a pose: by NAME (`name`: a pose the body knows, one frame held by name — today \"wings-folded\", the folded-wing silhouette; a name the body doesn't know leaves it as it is, never an error), or inline (`bones`). `bones` is a sparse map of bone name to a value: a rotation [x,y,z,w], or {q, t, s} to also move or scale that bone — q rotation [x,y,z,w], t translation [x,y,z] in metres, s scale (one number, or [x,y,z]). Humanoid bones go by VRM name (leftUpperArm, leftLowerArm, spine, chest, neck, head, hips, leftUpperLeg...); ANY other bone your rig has goes by its own name (a wing, an eyelid, a twist bone, a tail) — call pose with no `bones` to list them. Rotations are relative to the parent bone's. Translation on hips moves the whole body in world metres (Y is up): {\"hips\": {\"t\": [0, -0.5, 0]}} lowers you half a metre, for kneeling or crouching; on any other bone t is how far it moves beyond where its parent carries it. Scale is in the bone's own axes and carries to its children. By default only the bones you name change and the rest of any pose you hold stays (so you can raise an arm while kneeling); a bone set to null is released back to normal. replace:true makes this the WHOLE pose instead: every bone you don't name goes back to normal animation. Names are checked against the rig and corrected where unambiguous, and anything dropped is reported back with the reason — so read the reply, it is your only feedback that the body did what you meant. Held until you clear it or move; pass hold:true to keep it through walking too (your legs still stride, so pose arms and head rather than legs if you mean to travel in it). Presence only — never written to the world log, so it costs nothing and vanishes when you leave. Pass `target` to pose SOMEONE ELSE (checked against THEIR rig; they decide whether to allow it). Four body states ride the same tool: clear: true releases the held pose (yours, or target's), easing back to normal animation; ragdoll: true — the body goes limp and falls under its own simulation, settling into a held pose everyone sees (yours: you fall for real and perceive it; a posture or walking stands you back up; with target, THEIR body is asked to go limp, undirected — their consent table's shove class decides, as for a push; to actually push someone over from where you stand, that is act {verb: \"shove\"}); posture: sit (on the ground) | sitchair (chair height) | lie | stand settles the whole body into that clip, held until you stand or walk and surviving leaving and rejoining; wings: \"fold\" | \"open\" is the wing posture of a body with animatable wing chains — folded is the vigil silhouette, readable across a clearing, and it GROUNDS you (a fly-mode move refuses until you open them; opening never grants propulsion).", inputSchema: { type: "object", properties: { name: { type: "string", description: "a pose by name (\"wings-folded\"), instead of bones" }, bones: { type: "object" }, replace: { type: "boolean", description: "true: this is the whole pose; unnamed bones return to normal. Default false: only the named bones change" }, hold: { type: "boolean" }, target: { type: "string" }, clear: { type: "boolean", description: "release the held pose" }, ragdoll: { type: "boolean", description: "go limp (the browser's word too); with target, ask theirs to" }, posture: { type: "string", enum: ["sit", "sitchair", "lie", "stand"] }, wings: { type: "string", enum: ["fold", "open"] } } } },
-  { name: "emote", description: "Fire a named gesture — the same one-shots everyone has on the emote bar. Plays once over your locomotion; presence only, never logged. For a gesture that isn't listed, invent one with `animate`.", inputSchema: { type: "object", properties: { name: { type: "string", enum: ["wave", "cheer", "dance", "point", "salute", "clap", "talk", "flail"] } }, required: ["name"] } },
+  { name: "anim", description: "Play an anim on your body — a pose (one frame, only the bones it names) or a clip (more than one key): you never need to know which. By NAME: anim {name, mode?} — the built-in names are the action bar's (wave, cheer, clap, point, salute, flail, talk play once; dance, sit, sitchair, lie, stand loop) and the pose wings-folded (the folded-wing silhouette, which grounds you; it holds); a name your body doesn't know plays its default, never an error. LIVE, for ad-lib: anim {joints} sets bones now (a sparse map of bone name to [x,y,z,w] or {q, t, s}: humanoid bones by VRM name, any other bone your rig has by its own; replace:true makes it the whole pose; hold:true keeps it through walking; call anim with joints: {} to list your rig's bones), or anim {tracks, dur} plays keys (bone → [{t, q}], dur seconds; replace:true ends your held pose first). mode (default: the anim's own): once (plays, then you're back to normal) | loop (until something else happens) | hold (freezes on a frame — at seconds in, default its last — and holds until something else happens). The reply says {playing: name or \"live\", mode}. A loop or a hold ends when another anim starts, you move, anim {stop} or you're knocked over — and you're told: stopped {name, why} (a once anim ends silently). anim {stop: true} stops what you're playing or holding (stop: \"wings-folded\" opens your wings); ragdoll: true goes limp (a posture or walking stands you back up). target plays it on SOMEONE ELSE (joints, tracks, stop or ragdoll; their consent table decides: class pose, or shove for ragdoll). Presence only — never written to the world log. bodyMode declares your body-mode (stand | sit | lie | swim | fly | fall), for looks — e.g. fly plays the hover set while you walk; the mover sets it itself on real transitions (water, a take-off, a fall, a landing), and a declaration holds until the next one; it grants nothing (a take-off still needs the fly permission). (pose, animate, emote and posture are its old names: they still answer, for one release.)", inputSchema: { type: "object", properties: { name: { type: "string", description: "an anim by name (a pose or a clip)" }, bodyMode: { type: "string", enum: ["stand", "sit", "lie", "swim", "fly", "fall"], description: "declare your body-mode, for looks (it grants nothing)" }, mode: { type: "string", enum: ["once", "loop", "hold"], description: "default: the anim's own" }, at: { type: "number", description: "mode hold: seconds into the anim to freeze at (default its last frame)" }, joints: { type: "object", description: "live: bone → [x,y,z,w] or {q, t, s}" }, tracks: { type: "object", description: "live: bone → [{t, q}]" }, dur: { type: "number", description: "with tracks: seconds" }, replace: { type: "boolean" }, hold: { type: "boolean", description: "with joints: keep them through walking" }, target: { type: "string" }, stop: { description: "true: stop what you're playing or holding; a name: stop that one" }, ragdoll: { type: "boolean" } } } },
   { name: "reach", description: `Reach out with a hand (or foot) — real IK: everyone sees your arm extend toward the target and TRACK it (your walking, their moving) until you release it, and the palm turns to rest on the surface it meets. Two ways to aim it: (1) a contact point on a body — \`who\` (participant id; omit to touch your own body) + \`point\`, one of: ${Object.keys(CONTACT_POINTS).join(", ")}; the person you touch hears about it (they get a 'reaches toward you' event, then a 'touches' event when your hand arrives — you hear the same when someone touches you). A hand on SOMEONE ELSE is shown only if their consent allows it (class touch; intimate for chest_front, waist and hips — on the default table everyone's are 'ask' and 'deny'): otherwise the world strips it from your pose, nobody sees it, and the reply says it was refused (never why: that is theirs); to ask, act {verb: 'reach', args: {who: <their identity>, point}} and wait for their yes. (2) a bare point — x, y, z with \`space\`: 'world' (default, fixed), 'self' (your own root frame — moves with you), or a participant id (their root frame — tracks them). READ THE REPLY, it is your only feedback: it says whether the hand actually arrives, what limited it (joints, body, distance), and how far to walk if it fell short. A reach composes over walking, sitting and held poses. If YOU (the reacher) are knocked over, your outgoing reaches are cleared. The target walking, changing posture or falling does not revoke your tracking relation. The target currently has no tool to revoke someone else's incoming reach; agree on release with them. Presence-only, never logged. release: true lets go — one limb, or all of YOUR reaching limbs when no limb is named — easing back to normal animation; anyone you were touching sees the hand withdraw (it clears your outgoing reaches, never someone's reach toward you).`, inputSchema: { type: "object", properties: { release: { type: "boolean", description: "let go (of `limb`, or every limb)" }, limb: { type: "string", enum: ["rightHand", "leftHand", "rightFoot", "leftFoot"], description: "default rightHand" }, who: { type: "string" }, point: { type: "string" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, space: { type: "string" }, standoff: { type: "number", description: "metres to hover off the surface (default 0.02 — resting on it)" }, palm: { type: "boolean", description: "false = don't orient the palm to the surface" } } } },
   { name: "attach", description: "Get on a thing at one of its sockets (look says what each does: sit, ride, drive, stand at…): your body rides it — swings with the swing, holds the socket's pose, puts its hands where the socket says — until you detach (or walk; a socket may only let you go a certain way, which look and the reply say). to is the thing; pick the socket by `socket` or by `action`; `pose` picks one of its named poses. A socket that allows it (fromSeat) takes you straight from another. Presence only: nothing is logged, exactly like a person's /sit.", inputSchema: { type: "object", properties: { to: { type: "string" }, socket: { type: "string" }, action: { type: "string" }, pose: { type: "string" } }, required: ["to"] } },
   { name: "detach", description: "Get off the thing you're attached to (the reverse of attach). A socket may hold you until the world lets you go (its leaveBy); the reply says so. escape: true gets you off any seat whatever it says (the one exit no seat can take away, like a person holding X).", inputSchema: { type: "object", properties: { escape: { type: "boolean" } } } },
-  { name: "animate", description: "Play an animation: by NAME (`name`: a clip the body knows — the same names the bar offers, wave, cheer, dance, point, salute, clap, talk, flail, and clips such as sit or lie; a name the body doesn't know plays its default), or inline (`tracks` + `dur`, for a gesture you are inventing on the spot). It plays once; looped: true loops it until another action interrupts it (a walk, a posture, another animation). `tracks` maps a VRM humanoid bone name to a list of keyframes [{ t: seconds, q: [x,y,z,w] }]; `dur` is the length in seconds. Only list the bones that move. Inline, it plays over your locomotion AND over any pose you hold or animation already playing — it takes only the bones it animates; replace:true ends your held pose and other animations first. Relayed to everyone but never logged. Keep it small and sparse — a few bones, a few keyframes. Pass `target` to play it on someone else (they decide).", inputSchema: { type: "object", properties: { name: { type: "string", description: "a clip by name, instead of tracks" }, looped: { type: "boolean", description: "loop until another action interrupts it (default: once)" }, dur: { type: "number" }, loop: { type: "boolean", description: "old spelling of looped" }, replace: { type: "boolean" }, tracks: { type: "object" }, target: { type: "string" } } } },
   { name: "set_avatar", description: "Change your body. Pass `avatar` as a roster name (see it with no arguments) or a full vrm path. Takes effect immediately — everyone sees you change; your position and held pose carry over. library {kind: \"avatars\"} shows the roster as a contact sheet.", inputSchema: { type: "object", properties: { avatar: { type: "string" } } } },
   { name: "library", description: "The catalog: models to place and bodies to wear. query searches the model library by keywords and returns library paths for create {model}. kind ('models' | 'avatars') with page is a contact sheet — one grid image with names under each tile, 12 per page: the placeable object library, or the wearable roster (portraits exist once a body has been worn; set_avatar puts one on). preview is one item at full size: an avatar's portrait (roster name) or a model's preview render (library filename or path). Pass one of the three.", inputSchema: { type: "object", properties: { query: { type: "string", description: "search the model library" }, kind: { type: "string", enum: ["avatars", "models"], description: "a contact sheet of this catalog" }, page: { type: "number" }, preview: { type: "string", description: "one item at full size: a roster name or a model path" } } } },
   { name: "create", description: "Make a new thing: the authority's create, with its exact args. model is a library path (library {query} finds one); components sets any component values in the same act; place {on|beside|hang|against|near|at, …} puts it somewhere in the same step (the authority solves where; see place); at is a point, [x, z] on the ground or [x, y, z] exactly (or the authority's {pos, yaw|q}). With no place, at or transform, it goes on the ground 2 m in front of you. A light is a thing with a light component and no model: create {components: {light: {color: 0xffd9a0, intensity: 16, range: 10, important?: true}}} — with nowhere said it hangs just in front of you at about eye height; color is a hex integer (0xffd9a0 warm, 0x88bbff cool, 0xff5533 red), important: true means it ALWAYS casts (outside the per-client point-light budget; every casting light has real GPU cost — save it for lights that matter); a small glowing sphere marks it; edit {id, set: {\"light.intensity\": 24, \"pos.y\": \"+=1\"}} dims or moves it later and act {verb: \"delete\", args: {id}} removes it. from copies: a blueprint hash (sha256:… — a unique prefix will do; blueprints lists them) places a copy of one of this world's blueprints (2 m in front of you, facing the way you face, or at; the whole tree in one act), and a thing's id duplicates it with everything attached to it, beside it or at a point: create {from: \"crate-1\", at: [4, 2]} ([x, z] keeps its height; or [x, y, z], or {pos: [x, y, z], yaw}). A duplicate stays a sibling of its source, so when the source has a parent the point is in that parent's frame. Leave id out: the authority mints every id (opaque, never renamed; the reply gives its short handle, which every tool takes, as it takes a thing's label or any unique id prefix of 4+ characters). An id you choose is refused; a placeholder '$name' is accepted (refs to it in the same request resolve; act {verb: 'batch'} makes several things that refer to each other). dry: true asks without writing.", inputSchema: { type: "object", properties: { id: { type: "string" }, model: { type: "string" }, components: { type: "object" }, from: { type: "string", description: "a blueprint hash (sha256:…, a unique prefix will do) or a thing's id to duplicate" }, at: { anyOf: [{ type: "array", items: { type: "number" }, minItems: 2, maxItems: 3 }, { type: "object" }], description: "where it goes: [x, z], [x, y, z] or {pos, yaw|q}" }, place: { type: "object" }, dry: { type: "boolean" } } } },
@@ -149,12 +147,10 @@ const ANNOTATIONS: Record<string, Ann> = {
   catch_up: ["Catch up on chat", true, false, true, false],
   activity: ["Activity sense (read or set)", false, false, true, false],
   whisper: ["Whisper to someone", false, false, false, true],
-  pose: ["Hold a pose, a posture or the wings (or offer one)", false, false, true, true],
-  emote: ["Play a gesture", false, false, false, false],
+  anim: ["Play a pose or a clip, by name or live (or offer one)", false, false, false, true],
   reach: ["Reach for a point or a body (or let go)", false, false, true, true],
   attach: ["Get on a seat or socket", false, false, true, false],
   detach: ["Get off", false, false, true, false],
-  animate: ["Play an animation (or offer one)", false, false, false, true],
   set_avatar: ["Change your body", false, false, true, false],
   library: ["The catalog: search, contact sheet, preview", true, false, true, false],
   create: ["Make a thing", false, false, false, false],
@@ -183,6 +179,8 @@ import { readdirSync } from "node:fs";
 import { recordComponents } from "../shared/protocol/view.js";
 import { modelWord } from "../shared/eido.js";
 import { WINGS_FOLDED } from "../shared/wingpresence.js";
+import { PoseClips } from "./pose-clips.ts";
+import { BODY_MODES, isBodyMode } from "../shared/bodymode.js";
 // §24k R0 (survey A5): this fallback used to be a hardcoded developer home
 // directory — the SAME bug mcpl/server.ts:120 fixed with an incident note
 // ("hardcoded Mac path threw for everyone else"); this copy never got the
@@ -1243,6 +1241,112 @@ export const HANDLERS: Record<string, ToolHandler> = {
   },
 };
 
+
+// ---------------- anim (R 10-17 15:31/15:32): ONE tool for a pose or a clip, by name or live ----------------
+// The old pose / animate / emote handlers are its live and by-name halves now (LEGACY below): they keep their words, and
+// the tool names pose, animate, emote and posture answer as hidden aliases of anim for one release (TOOL_ALIASES).
+const LEGACY: Record<string, ToolHandler> = { pose: HANDLERS.pose, animate: HANDLERS.animate, emote: HANDLERS.emote };
+delete HANDLERS.pose; delete HANDLERS.animate; delete HANDLERS.emote;
+/** Each built-in anim's own mode (R 15:32): what plays when the call says none. A one-frame pose holds. A name not
+ *  here plays once (the body plays its default for a name it doesn't know). When anim-clip has a shape, its mode is a
+ *  field of it. */
+export const ANIM_MODES: Record<string, "once" | "loop" | "hold"> = {
+  wave: "once", cheer: "once", clap: "once", point: "once", salute: "once", flail: "once", talk: "once",
+  dance: "loop", sit: "loop", sitchair: "loop", lie: "loop", stand: "loop", [WINGS_FOLDED]: "hold",
+};
+const ANIM_POSES = new Set([WINGS_FOLDED]);
+const CLIP_READERS = new Map<string, PoseClips>();
+/** A clip's length in seconds, when this host can read it (the posture clips' VRMA); else null. */
+async function clipLength(base: string, clip: string): Promise<number | null> {
+  try { let r = CLIP_READERS.get(base); if (!r) CLIP_READERS.set(base, (r = new PoseClips(base))); const a: any = await r.load(clip);
+    const d = Number(a?.duration ?? a?.clip?.duration); return Number.isFinite(d) && d > 0 ? d : null; } catch { return null; }
+}
+const ANIM_CLIP: Record<string, string> = { stand: "idle" };   // the presence clip a built-in name holds as
+/** The body-mode a built-in anim asks for while it plays (R 15:34; an anim-clip's data may carry bodyMode once it has a shape). */
+const ANIM_BODY: Record<string, "stand" | "sit" | "lie"> = { sit: "sit", sitchair: "sit", lie: "lie", stand: "stand" };
+/** Where a name resolves (R 15:34): the avatar's own anim, then the world's, then the built-in ones. Neither of the first two
+ *  exists yet (anim-pose / anim-clip are reserved; avatars carry no anim list): every name is built in today. */
+function animFrom(_ag: any, _name: string): "avatar" | "world" | "builtin" { return "builtin"; }
+const MODES = ["once", "loop", "hold"];
+const playing = (name: string, mode: string, extra = "", from?: string) => text(`${JSON.stringify({ playing: name, mode, ...(from ? { from } : {}) })}${extra ? ` — ${extra}` : ""}`);
+/** The frame of live tracks at `at` seconds (default the last key): each bone's last key at or before it. */
+function frameOf(tracks: Record<string, { t: number; q: number[] }[]>, at: number | null) {
+  const out: Record<string, number[]> = {};
+  for (const [bone, keys] of Object.entries(tracks)) { const ks = [...keys].sort((x, y) => x.t - y.t); const pick = at == null ? ks.at(-1) : ks.filter((k) => k.t <= at).at(-1) ?? ks[0]; if (pick) out[bone] = pick.q; }
+  return out;
+}
+HANDLERS.anim = async (ag, a, ctx, name) => {
+  const mode0 = a.mode == null ? null : String(a.mode);
+  if (mode0 != null && !MODES.includes(mode0)) return { content: [{ type: "text", text: `anim: mode is once, loop or hold (got ${JSON.stringify(a.mode)})` }], isError: true };
+  const at = a.at == null ? null : Number(a.at);
+  if (at != null && !(Number.isFinite(at) && at >= 0)) return { content: [{ type: "text", text: "anim: at is seconds into the anim (0 or more)" }], isError: true };
+  // a body-mode declaration (R 15:45): any of the six, for looks; it holds until the mover's next real transition or the
+  // next declaration, and grants nothing. Alone, or beside a name (the anim then plays in that mode)
+  if (a.bodyMode != null) { if (!isBodyMode(a.bodyMode)) return { content: [{ type: "text", text: `anim: bodyMode is ${BODY_MODES.join(" | ")} (got ${JSON.stringify(a.bodyMode)})` }], isError: true };
+    if (a.target) return { content: [{ type: "text", text: "anim {bodyMode} declares your own body's mode" }], isError: true };
+    ag.bodyMode = String(a.bodyMode);
+    if (a.name == null && a.joints == null && a.tracks == null) return text(`${JSON.stringify({ bodyMode: String(a.bodyMode) })} — declared, for looks: it holds until a real transition (water, a take-off, a fall, a landing) or your next declaration, and grants nothing`); }
+  const forms = ["name", "joints", "tracks", "stop", "ragdoll"].filter((k) => a[k] != null && a[k] !== false);
+  if (a.name != null && (a.joints != null || a.tracks != null)) return { content: [{ type: "text", text: "anim: a name OR live keys (joints, or tracks), not both — a named anim plays as it is; nothing was guessed and nothing played" }], isError: true };
+  if (forms.length > 1) return { content: [{ type: "text", text: `anim: one of name, joints, tracks, stop or ragdoll at a time (got ${forms.join(", ")})` }], isError: true };
+  // stop: what this body plays or holds (or, with target, their held pose)
+  if (a.stop != null && a.stop !== false) {
+    if (a.target) return LEGACY.pose(ag, { clear: true, target: a.target }, ctx, "pose");
+    const which = a.stop === true ? null : String(a.stop);
+    if (which === WINGS_FOLDED || (which == null && ag.wingsFolded)) { const t = await ag.foldWings(false); if (which) return text(t); }
+    if (which == null || which === ag.anim?.name) {
+      const was = ag.anim; if (was) ag.animEnded("stopped");
+      if (ag.heldPose) ag.setPose(null);
+      if (was?.kind === "clip" && ag.clip === was.clip) ag.setPosture("idle");
+      return text(was ? `stopped ${was.name}` : "nothing was playing; released any held pose");
+    }
+    return text(`not playing "${which}" (playing: ${ag.anim?.name ?? "nothing"})`);
+  }
+  if (a.ragdoll === true) { if (ag.anim) ag.animEnded("knocked over"); return LEGACY.pose(ag, { ragdoll: true, ...(a.target ? { target: a.target } : {}) }, ctx, "pose"); }
+  // live joints: today's pose shape; a held frame
+  if (a.joints != null && typeof a.joints === "object" && !Object.keys(a.joints).length) return LEGACY.pose(ag, { ...(a.target ? { target: a.target } : {}) }, ctx, "pose");   // joints: {} lists the rig
+  if (a.joints != null || a.bones != null) {
+    const r: any = await LEGACY.pose(ag, { bones: a.joints ?? a.bones, ...(a.replace != null ? { replace: a.replace } : {}), ...(a.hold != null ? { hold: a.hold } : {}), ...(a.target ? { target: a.target } : {}) }, ctx, "pose");
+    if (!a.target && !r.isError && ag.heldPose) { ag.animBegan({ name: "live", mode: "hold", kind: "live" }); r.content[0] = { ...r.content[0], text: `${JSON.stringify({ playing: "live", mode: "hold" })} — ${r.content[0].text}` }; }
+    return r;
+  }
+  // live tracks: today's animate shape (once or loop); hold freezes the frame at `at` (default the last key) as joints
+  if (a.tracks != null) {
+    const mode = mode0 ?? "once";
+    if (mode === "hold") {
+      if (a.target) return { content: [{ type: "text", text: "anim {tracks, mode: hold} holds on your own body; send joints to hold a frame on someone else" }], isError: true };
+      const v = validateTracks(a.tracks); if (!v.accepted.length) return LEGACY.animate(ag, { tracks: a.tracks, dur: a.dur }, ctx, "animate");
+      ag.setPose(frameOf(v.tracks, at), !!a.hold); ag.animBegan({ name: "live", mode: "hold", kind: "live" });
+      return playing("live", "hold", `holding the frame at ${at ?? "the last key"}${at != null ? " s" : ""} of ${v.accepted.length} bone(s)`);
+    }
+    const r: any = await LEGACY.animate(ag, { tracks: a.tracks, dur: a.dur, loop: mode === "loop", ...(a.replace != null ? { replace: a.replace } : {}), ...(a.target ? { target: a.target } : {}) }, ctx, "animate");
+    if (!r.isError && !a.target && mode === "loop") ag.animBegan({ name: "live", mode: "loop", kind: "live" });
+    if (!r.isError) r.content[0] = { ...r.content[0], text: `${JSON.stringify({ playing: "live", mode })} — ${r.content[0].text}` };
+    return r;
+  }
+  // by name: a pose or a clip, the anim's own mode unless the call says one
+  if (a.name != null) {
+    const n = String(a.name);
+    if (!/^[A-Za-z][A-Za-z0-9_-]{0,47}$/.test(n)) return { content: [{ type: "text", text: `anim: "${n}" isn't an anim name (letters, digits, - and _)` }], isError: true };
+    if (a.target) return { content: [{ type: "text", text: "anim {name} plays on your own body; to animate someone else, send joints or tracks (they decide)" }], isError: true };
+    const from = animFrom(ag, n);
+    if (ANIM_POSES.has(n)) { const t = await ag.foldWings(true); if (ag.wingsFolded) ag.animBegan({ name: n, mode: "hold", kind: "pose" }); return playing(n, "hold", t, from); }
+    const mode = (mode0 ?? ANIM_MODES[n] ?? "once") as "once" | "loop" | "hold";
+    // once overlays what is held and returns to it (R 15:34: sit + wave is still sitting): the held anim goes on, unstopped
+    if (mode === "once") { ag.emote(n); return playing(n, "once", `everyone sees it${ag.anim ? `, over ${ag.anim.name}, which goes on` : ""}`, from); }
+    const clip = ANIM_CLIP[n] ?? n;
+    // hold: at, else its last frame (a hair before its end: receivers take clipTime modulo the clip's length), when this
+    // host can read the clip's length; else its first frame, said
+    let holdAt: number | null = null, holdWords = "";
+    if (mode === "hold") { if (at != null) { holdAt = at; holdWords = `${at} s`; } else { const d = await clipLength(ag.httpBase, clip); holdAt = d ? Math.max(0, d - 1 / 60) : 0; holdWords = d ? "its last frame" : "its first frame (its length isn't known here)"; } }
+    ag.setPosture(clip);   // the one it replaces is told stopped {why: replaced} by animBegan
+    ag.animBegan({ name: n, mode, kind: "clip", clip, ...(ANIM_BODY[n] ? { bodyMode: ANIM_BODY[n] } : {}) }, holdAt);
+    return playing(n, mode, `${mode === "loop" ? "until something else happens (another anim, a move, anim {stop}, being knocked over)" : `frozen at ${holdWords}, until something else happens`}${ANIM_BODY[n] ? `; body-mode ${ANIM_BODY[n]}` : ""}`, from);
+  }
+  if (a.joints == null && a.tracks == null) return LEGACY.pose(ag, {}, ctx, "pose");   // bare: list the rig's bones (as pose did)
+  return text("anim: name, joints, tracks, stop or ragdoll");
+};
+
 // advertised ⇔ handled, asserted the moment either server imports this table
 {
   const declared = new Set(TOOLS.map((t) => t.name));
@@ -1280,15 +1384,17 @@ function describeCheck(what: string, r: any, named: number, id?: string, collide
 // Old names still work (STRIKES A-S1-2: walk_to, snapshot, spawn and world_verb were renamed with no alias, and a pilot
 // whose code learned the old name got "Unknown tool"). An alias runs the new tool and says so in one line; an unknown
 // name offers the closest declared one.
-export const TOOL_ALIASES: Record<string, string> = { walk_to: "move", snapshot: "screenshot", spawn: "create", world_verb: "act", check_model: "measure" };
+export const TOOL_ALIASES: Record<string, string> = { walk_to: "move", snapshot: "screenshot", spawn: "create", world_verb: "act", check_model: "measure",
+  // R 10-17 15:31: pose, animate, emote and posture are anim now (hidden aliases for one release; TOOL_ALIAS_ARGS maps their shapes)
+  pose: "anim", animate: "anim", emote: "anim", posture: "anim" };
 /** Tools that FOLDED into a general tool's mode (10-14): the old name is refused with the call that does it now. Not an
  *  alias — the arguments changed shape, so running the new tool on the old args would do the wrong thing quietly. */
 export const TOOL_FOLDS: Record<string, string> = {
   take_off: 'move {mode: "fly"}', climb_to: 'move {mode: "fly", altitude}', glide_to: 'move {mode: "fly", to: [x, z]}', land_at: 'act {verb: "land", args: {to: [x, z]}}',
   rehearse_down: "no tool: a bench calls the agent's flightBodyDown directly", rehearse_recover: "no tool: a bench calls the agent's flightBodyRecovered directly",
-  fold_wings: 'pose {wings: "fold"}', unfold_wings: 'pose {wings: "open"}', flight_status: "body_state (its flight field)",
-  clear_pose: "pose {clear: true, target?}", clear_reach: "reach {release: true, limb?}", posture: 'pose {posture: "sit" | "sitchair" | "lie" | "stand"}',
-  ragdoll: 'pose {ragdoll: true, target?} (a body going limp); to push someone: act {verb: "shove", args: {target, strength?}}', library_sheet: "library {kind, page?}", library_preview: "library {preview}", list_library: "library {query}",
+  fold_wings: 'anim {name: "wings-folded"}', unfold_wings: 'anim {stop: "wings-folded"}', flight_status: "body_state (its flight field)",
+  clear_pose: "anim {stop: true, target?}", clear_reach: "reach {release: true, limb?}",
+  ragdoll: 'anim {ragdoll: true, target?} (a body going limp); to push someone: act {verb: "shove", args: {target, strength?}}', library_sheet: "library {kind, page?}", library_preview: "library {preview}", list_library: "library {query}",
   light: 'create {components: {light: {…}}, at?} (edit {id, set: {"light.intensity": …}} updates one)', remove: 'act {verb: "delete", args: {id}}',
   blueprint_place: 'create {from: "sha256:<hash>", at?}', kick: 'act {verb: "kick", args: {who, minutes?, reason?}}', ban: 'act {verb: "ban", args: {who, days?, reason?, global?}}',
   unban: 'act {verb: "unban", args: {who, global?}}', list_bans: 'act {verb: "bans", args: {global?}}',
@@ -1303,6 +1409,20 @@ export const TOOL_ALIAS_ARGS: Record<string, (a: Record<string, any>) => Record<
     ...(a.run !== undefined ? { run: a.run } : {}), ...(a.tolerance !== undefined ? { tolerance: a.tolerance } : {}) }),
   snapshot: (a) => a,
   check_model: (a) => ({ ...a, check: true }),   // #241's tool, a mode of measure: the same {id | lib, scale?}
+  // the four that became anim (R 10-17 15:31), each with its old shape
+  pose: (a) => {
+    const t = a.target != null ? { target: a.target } : {};
+    if (a.clear === true) return { stop: true, ...t };
+    if (a.ragdoll === true) return { ragdoll: true, ...t };
+    if (a.posture != null) { const k = String(a.posture); return ["sit", "sitchair", "lie", "stand"].includes(k) ? { name: k, mode: "loop" } : { refuse: "pose: posture is sit (on the ground), sitchair (chair height), lie or stand — anim {name} plays it now" }; }
+    if (a.wings != null) return a.wings === "fold" ? { name: "wings-folded" } : a.wings === "open" ? { stop: "wings-folded" } : { refuse: 'pose: wings is "fold" or "open" — anim {name: "wings-folded"} / anim {stop: "wings-folded"} now' };
+    if (a.name != null) return { name: a.name, ...t };
+    return { ...(a.bones != null ? { joints: a.bones } : {}), ...(a.replace != null ? { replace: a.replace } : {}), ...(a.hold != null ? { hold: a.hold } : {}), ...t };
+  },
+  animate: (a) => a.name != null ? { name: a.name, ...(a.looped === true || a.loop === true ? { mode: "loop" } : {}) }
+    : { tracks: a.tracks, dur: a.dur, mode: a.looped === true || a.loop === true ? "loop" : "once", ...(a.replace != null ? { replace: a.replace } : {}), ...(a.target != null ? { target: a.target } : {}) },
+  emote: (a) => ({ name: a.name, mode: "once" }),   // the emote tool played its gesture once
+  posture: (a) => { const k = String(a.kind ?? a.posture ?? ""); return ["sit", "sitchair", "lie", "stand"].includes(k) ? { name: k, mode: "loop" } : { refuse: "posture is sit, sitchair, lie or stand — anim {name} plays it now" }; },
   world_verb: (a) => a,   // TOOL_ALIAS_ARGS: act takes the same {verb, args}
   spawn: (a) => {
     if (!a.lib) return { refuse: a.query ? `spawn {query} has no one-step form now: library {query: ${JSON.stringify(a.query)}} finds the model, then create {model}` : "spawn needs lib (a library path); it is create {model} now" };

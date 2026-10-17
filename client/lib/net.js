@@ -361,6 +361,7 @@ export function sendPose(now) {
     yaw: ov?.yaw ?? s.yaw, speed: s.speed, clip: s.clip,
     pitch: Math.round((ov?.pitch ?? s.pitch ?? 0) * 100) / 100,
     ...wingFoldPresence(s.wingsFolded),
+    ...(s.bodyMode ? { bodyMode: s.bodyMode } : {}),   // the body-mode (shared/bodymode.js; R 10-17: was the posture, read off the clip)
     ...presenceWire(presence()),        // present / away / busy — for the Who panel (R, 09-05)
     ...voiceWire(hooks.myVoice()),      // mic live / headphones on — the hover card, agents' look
   };
