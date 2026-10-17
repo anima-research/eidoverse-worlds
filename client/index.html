@@ -434,6 +434,10 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
   /* popovers float OVER content (the chat log), so glass at --panel-a made
      them a legibility lottery — near-opaque, still following the panel hue */
   background: rgb(var(--panel-rgb) / .94); }
+/* Stay in the frame for both desktop and VR. Small frames keep every control
+   reachable through their own scrollbar rather than scrolling clipped ancestors. */
+.chat-gearpop { box-sizing: border-box; max-width: calc(100% - 8px); overflow: auto; overscroll-behavior: contain; }
+.chat-gearpop > * { flex: none; }
 .chat-gearpop[hidden] { display: none; }
 .chat-gearpop .gp-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
 .chat-gearpop .gp-row span { color: var(--dim); margin-right: 6px; }
@@ -1740,7 +1744,10 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
     const stash = { ws, sent, buffered: [], failed: false, closeInfo: null };
     globalThis.__ewEarlySocket = stash;
-    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token }));
+    // the page's presence session (net.js PAGE_SESSION reads the same one): one id for the page's life
+    const session = (globalThis.__ewPageSession ??= globalThis.crypto?.randomUUID?.()
+      ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token, session }));
     ws.onmessage = (ev) => {
       stash.buffered.push(ev.data);
       if (stash.buffered.length > 5000) {   // a runaway stream: bail to the normal path

@@ -14,6 +14,7 @@
 // that even a place".
 
 import { lightArgsError } from "../server/verb-shapes.ts";
+import { shown } from "../shared/shown.js";
 
 export const isFiniteVec3 = (v: unknown): v is [number, number, number] =>
   Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === "number" && Number.isFinite(n));
@@ -28,18 +29,18 @@ export function rawShapeError(verb: string, args: Record<string, unknown>): stri
     if (typeof args.id !== "string" || !args.id)
       return "raw place wants {id, pos:[x,y,z], yaw?, scale?} — missing id";
     if ("x" in args || "y" in args || "z" in args)
-      return "raw place takes pos:[x,y,z] — the {x,y,z} convenience shape belongs to the typed place tool, not the log";
+      return "raw place takes pos:[x,y,z], not separate x, y and z; the typed place tool takes those";
     if (args.pos !== undefined && !isFiniteVec3(args.pos))
-      return `raw place pos must be a finite [x,y,z] — got ${JSON.stringify(args.pos)?.slice(0, 80)}`;
+      return `raw place pos must be a finite [x,y,z] — got ${shown(args.pos)}`;
     if (args.yaw !== undefined && !Number.isFinite(args.yaw))
-      return "raw place yaw must be a finite number";
+      return `raw place yaw must be a finite number — got ${shown(args.yaw)}`;
     if (args.scale !== undefined && !Number.isFinite(args.scale))
-      return "raw place scale must be a finite number";
+      return `raw place scale must be a finite number — got ${shown(args.scale)}`;
   } else if (verb === "spawn" || verb === "dismount" || verb === "light") {
     // same trap, other doors: pos is optional on these, but a pos that IS
     // given must be the log's shape
     if (args.pos !== undefined && !isFiniteVec3(args.pos))
-      return `raw ${verb} pos must be a finite [x,y,z]`;
+      return `raw ${verb} pos must be a finite [x,y,z] — got ${shown(args.pos)}`;
   }
   return null;
 }

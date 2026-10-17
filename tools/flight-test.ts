@@ -745,7 +745,7 @@ console.log('\nREVIEW cea3c3c -- blockers 4 and 6');
   check('...filtered out of tools/list when off',
         /REHEARSAL_ENABLED \|\| !REHEARSAL_TOOLS\.has\(t\.name\)/.test(ns));
   check('...AND refused at dispatch, not merely hidden',
-        /if \(!REHEARSAL_ENABLED\) return text\("no such tool"\)/.test(ns));
+        /if \(!REHEARSAL_ENABLED\) return text\(noSuchTool\(name\)\)/.test(ns));
 
   // B5: infrastructure must not speak in the resident's voice.
   const ag = readFileSync('mcpl/agent.ts', 'utf8');

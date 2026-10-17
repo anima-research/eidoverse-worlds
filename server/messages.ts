@@ -22,15 +22,21 @@ import { rightsOf, isAdminId } from "./rights.ts";
 import { ROLE_RANK } from "../shared/fold.js";
 import { simSnapshot } from "../shared/sim.js";
 import { worlds, forkWorld, type World, type Client } from "./world.ts";
-import { pendingSnaps } from "./routes.ts";
+import { snapshots } from "./snapshots.ts";
+import { renderScene } from "./render-scene.ts";
 import { globalBans, saveGlobalBans } from "./moderation.ts";
 
 // ---- whispers: held-in-memory machinery (moved with its only writers) ------
 // join's held-whisper delivery imports these back — one-way, like
-// routes.ts's pendingSnaps.
+// the screenshot broker's pending requests.
 export const pendingWhispers = new Map<string, unknown[]>();
 export const whisperKey = (world: string, recipient: string) => `${world}\u0000${recipient}`;
 export const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
+
+// inspect: per-connection pacing and the reply budget (a bag is authored data;
+// anything bigger than this is a structure plan nobody edits as JSON).
+const inspectAt = new WeakMap<object, number>();
+const INSPECT_MAX = 64 * 1024;
 
 export type MsgCtx = {
   c: Client;
@@ -40,6 +46,11 @@ export type MsgCtx = {
 };
 
 export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
+  "render-scene": ({ c, ws, now }, msg) => {
+    if ((c.ws as any).getBufferedAmount?.() > 8 * 1024 * 1024) return;
+    const scene = renderScene(c, msg, now);
+    if (scene) ws.send(JSON.stringify(scene));
+  },
   "verb": ({ c, ws, now, expel }, msg) => {
     // The authored plane in one call — table + shell live in
     // server/verbs.ts (§15, 7b): preamble, validators, append +
@@ -97,6 +108,26 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       verbs: Array.isArray(msg.verbs) && msg.verbs.length ? new Set(msg.verbs.map(String)) : null,
     });
     ws.send(JSON.stringify({ type: "history", reqId: msg.reqId ?? null, ...r }));
+  },
+  "inspect": ({ c, ws, now }, msg) => {
+    // One entity's authored component bag, for native inspectors. The browser
+    // folds the whole log and reads the same bag locally; render-scene only
+    // projects what renderers need. Open to spectators for the reason history
+    // is: the log is public to everyone in the world. Read-only; edits are
+    // `comp` verbs through the normal gate.
+    if (!c.world || typeof msg.id !== "string" || msg.id.length > 128) return;
+    const last = inspectAt.get(c) ?? 0;
+    if (now - last < 50) return;
+    inspectAt.set(c, now);
+    const e: any = c.world.state.entities[msg.id];
+    const reply: Record<string, unknown> = { type: "inspect", id: msg.id, reqId: msg.reqId ?? null };
+    if (!e) { ws.send(JSON.stringify({ ...reply, error: "not_found" })); return; }
+    const comp = e.comp ?? {};
+    const size = JSON.stringify(comp).length;
+    Object.assign(reply, { lib: e.lib ?? null, kind: e.kind ?? "model", parent: e.parent ?? null });
+    if (size > INSPECT_MAX) Object.assign(reply, { error: "too_large", types: Object.keys(comp), size });
+    else reply.comp = comp;
+    ws.send(JSON.stringify(reply));
   },
   "debug": ({ c, ws, now, expel }, msg) => {
     // The flight recorder (World.debugLog): why things bounced —
@@ -472,16 +503,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // presence: batched into stage frames by the tick loop, never persisted
     c.world.dirty.set(c.id, pose);
   },
-  "snap-result": ({ c, ws, now, expel }, msg) => {
-    const pending = pendingSnaps.get(msg.id);
-    if (!pending || !c.renderer) return;
-    pendingSnaps.delete(msg.id);
-    if (typeof msg.dataUrl === "string" && msg.dataUrl.startsWith("data:image/png;base64,")) {
-      pending.resolve({ ok: true, png: Buffer.from(msg.dataUrl.slice("data:image/png;base64,".length), "base64") });
-    } else {
-      pending.resolve({ ok: false, err: String(msg.error ?? "renderer returned no image"), status: 502 });
-    }
-  },
+  "capture-capabilities": ({ c }, msg) => { if (c.world) snapshots.configure(c, msg.capture); },
+  "snap-result": ({ c }, msg) => { snapshots.receive(c, msg); },
   "world-fork": ({ c, ws, now, expel }, msg) => {
     // Copy the world you are standing in to a new name. Owner-only
     // (rank 2, like shaping terrain): the fork carries ALL history —

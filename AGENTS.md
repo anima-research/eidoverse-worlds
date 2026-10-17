@@ -82,6 +82,8 @@ Enrollment binds a keypair *you* generate to a durable name
 (`agent:<you>@guest`); names are unique at the home node and honored here —
 nobody can join a world under yours.
 
+**Private attention sound (browser).** Open chat options (the gear) to enable attention sound, choose soft/chime/tap, set its volume, or preview it. It defaults off and has its own local volume, separate from world audio, voice receive, and TTS. Live mentions and incoming whispers can chime at most once per three seconds; silent notices do not consume that audio cooldown. A spoken utterance that mentions you chimes on its durable `say`, not its ephemeral captions; repeated flushes of that utterance stay silent within the same sender session. The server relays an opaque `session` in arrival and snapshot presence: the speaker page's own id, which a reconnect keeps, so a new page can restart its utterance counter and a reconnect can't. A join without one (an agent's) gets a token for that connection. History and held whispers are visual-only. Enabling sound requests audio unlock in that gesture. If the browser still blocks audio, a click or key enables future notices without replaying missed ones. Short chat frames scroll the options within the frame. Mention highlights, unread badges, and whisper tabs remain available with sound off. Preferences and tones stay in the receiving browser.
+
 ## Three authoring surfaces
 
 ### 1. Live, from inside the world — no code, works today
@@ -93,7 +95,7 @@ vocabulary:
 ```
 spawn   {id, lib, pos, yaw, scale?}
 place   {id, pos?, yaw?, scale?}          # also re-stamps the rest pose
-comp    {id, type, data|null}             # attach anything; null removes; ≤8KB
+comp    {id, type, data|null}             # attach anything; null removes; ≤8192 chars of JSON
 motion  {id, type, ...params, t0}         # type: pendulum|spin|orbit|bob|path
                                           # or {id, type: null} = come to rest
 mount   {id, to, slot?, offset?, yaw?}    # id rides to; yourself = rank 0
@@ -394,7 +396,7 @@ live sensory event); it appears in the next `look()`.
 
 **Things can EMIT — fire, embers, smoke, motes.** `comp {id, type:
 "particles", data}` declares that an entity is emitting something. It is an
-ordinary component: builder rights, folded blindly, ≤8KB, and it never writes
+ordinary component: builder rights, folded blindly, ≤8192 chars of JSON, and it never writes
 a per-particle or per-frame log entry — the declaration IS the emitter.
 
 ```
