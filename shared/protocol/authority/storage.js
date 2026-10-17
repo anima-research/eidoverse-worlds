@@ -196,5 +196,16 @@ const scratch = (st, ops) => { const s = applyCow(cowState(st), ops); if (VOLATI
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "thing";
 
 const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
+// (refactor split, 2026-10-17: moved here from authority.js's gate section, beside CHANGE: the gate admits these ops, the
+// write path and undo mark them, and a leaf can't reach the gate)
+// The authority's own follow-up ops inside a person's write (review r8 M1 / scars M5): clearing the references to what a
+// delete removed, and an undo putting back the references that delete cleared. Marked on the op object (a request's JSON
+// can't carry a symbol), and admitted like the authority's other follow-ups (rest, system): no rights, key, seniority,
+// lock or in-flight check, and no capability scope, so a third party's keyed reference or lock can't veto your delete or
+// your undo, and a script deleting what it made isn't refused for a reference outside its scope. Shape and value checks
+// still apply. Unity, Unreal and Resonite null such references at read time, attributed to nobody; this is the same rule
+// written eagerly (ids are never reused, so it is tidiness, never a resurrection guard).
+const FOLLOW_UP = Symbol("follow-up");
+const followUp = (o) => { o[FOLLOW_UP] = true; return o; };
 export { followUpsOf };
-export { CHANGE, IMPORTED_ONLY, VOLATILE, bodyCommit, chainStep, clone, createOps, delOp, isE, lockedC, nonce16, opCommit, opsQuiet, qr3, scratch, setOp, skelOp, skeleton, slug, versionOf, versionSeq };
+export { CHANGE, FOLLOW_UP, IMPORTED_ONLY, VOLATILE, bodyCommit, chainStep, clone, createOps, delOp, followUp, isE, lockedC, nonce16, opCommit, opsQuiet, qr3, scratch, setOp, skelOp, skeleton, slug, versionOf, versionSeq };

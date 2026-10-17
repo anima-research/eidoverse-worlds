@@ -45,12 +45,12 @@ import { Refusal, refuse, said } from "./authority/refuse.js";
 import { LAB_CATALOGUE, modelOf, geomOf, boxOfM, geomE, withCatalogue, meshShape } from "./authority/catalogue.js";
 export { LAB_CATALOGUE, withCatalogue, MESH_SIZE, meshSize, meshGeom, meshShape } from "./authority/catalogue.js";
 import { readback } from "./authority/storage.js";
-import { CHANGE, IMPORTED_ONLY, VOLATILE, clone, createOps, delOp, followUpsOf, isE, lockedC, nonce16, opsQuiet, qr3, scratch, setOp, versionOf, versionSeq, LOCK_LEVELS, lockLevel, lockRank } from "./authority/storage.js";
+import { CHANGE, FOLLOW_UP, IMPORTED_ONLY, VOLATILE, clone, createOps, delOp, followUp, followUpsOf, isE, lockedC, nonce16, opsQuiet, qr3, scratch, setOp, versionOf, versionSeq, LOCK_LEVELS, lockLevel, lockRank } from "./authority/storage.js";
 export { posAt, worldOf, seal, LOCK_LEVELS, lockLevel, lockRank, readback } from "./authority/storage.js";
 import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, satCost, satDepth, surfacesOf, worldT, yawQ } from "./authority/math.js";
 import { SPATIAL, WORK_BUDGET, clockMs, familyOf, groundOf, groundReady, hitsIx, kidsMap, near, spatial, spend, supportBelow, supportUnder } from "./authority/spatial.js";
 export { WORK_BUDGET, indexAudit } from "./authority/spatial.js";
-import { RANK, backward, banOf, creatorOf, effective, entryBy, ghostOf, inForce, inForceOf, isBanned, isScriptActor, kickOf, lastSetterOf, madeBy, may, modHolder, muteOf, ownersOf, rankOf, roleOf, sanctionsNow, wcOf, whoRank } from "./authority/rights.js";
+import { RANK, RESERVED, backward, banOf, creatorOf, effective, entryBy, ghostOf, inForce, inForceOf, isBanned, isScriptActor, kickOf, lastSetterOf, madeBy, may, modHolder, muteOf, ownersOf, rankOf, roleOf, sanctionsNow, wcOf, whoRank } from "./authority/rights.js";
 export { effectiveIn, roleIn, inForceOf, banOf, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, creatorOf, lastSetterOf } from "./authority/rights.js";
 import { BODY_VERBS, bodyGate, expireAsks, forgetReaches, inboxPush, shieldOf } from "./authority/bodyconsent.js";
 export { reachAdmits, reachLetGo } from "./authority/bodyconsent.js";
@@ -65,7 +65,7 @@ import { READ_VERBS, buildCreateFrom, buildPublish, buildUpdate, thingSaid } fro
 // ---------- rights, views over the log, sanctions: authority/rights.js ----------
 // ---------- the authority ----------
 // Refusal / refuse / said: authority/refuse.js
-const RESERVED = new Set(["system", "sim", "world"]); // the authority's own identities: a request can never be stamped as one
+// RESERVED (the authority's own identities): authority/rights.js
 
 // A request as sent must itself be I-JSON (it is logged as the act). -0 is normalised; non-finite is refused.
 function wire(args) {
@@ -315,15 +315,7 @@ function spokenOf(a, now) {
 const RATE = { n: 60, says: 20, ms: 10000, bytes: 256 * 1024, anonBytes: 32 * 1024 };
 const SAY_MAX = 8192;
 const bytesOf = (e) => e.bytes ?? JSON.stringify(e).length;
-// The authority's own follow-up ops inside a person's write (review r8 M1 / scars M5): clearing the references to what a
-// delete removed, and an undo putting back the references that delete cleared. Marked on the op object (a request's JSON
-// can't carry a symbol), and admitted like the authority's other follow-ups (rest, system): no rights, key, seniority,
-// lock or in-flight check, and no capability scope, so a third party's keyed reference or lock can't veto your delete or
-// your undo, and a script deleting what it made isn't refused for a reference outside its scope. Shape and value checks
-// still apply. Unity, Unreal and Resonite null such references at read time, attributed to nobody; this is the same rule
-// written eagerly (ids are never reused, so it is tidiness, never a resurrection guard).
-const FOLLOW_UP = Symbol("follow-up");
-const followUp = (o) => { o[FOLLOW_UP] = true; return o; };
+// FOLLOW_UP / followUp (the authority's own follow-up ops inside a person's write): authority/storage.js
 class Admitted { constructor(who, ops, after, notes = [], unseat = [], followUps = []) { this.who = who; this.ops = ops; this.after = after; this.notes = notes; this.unseat = unseat; this.followUps = followUps; Object.freeze(this); } }
 // L7 rate, per actor, over EVERYTHING the actor makes the log hold (acts and says), by the authority's clock. One function:
 // admit calls it for state writes, and every word that logs without a state write (say, grab's lift, throw, drop, a
