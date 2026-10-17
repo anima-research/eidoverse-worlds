@@ -273,7 +273,7 @@ const DEFAULT_LAYOUT = {
   settings: { x: -8,  y: 381, w: 407, h: 443, hidden: true },
   profile:  { x: 48,  y: 46,  w: 505, h: 452, hidden: true },
   debug:    { x: -414, y: 8,  w: 342, h: 453, hidden: true },
-  emotes:   { x: 'center', y: 10, h: 32, hidden: false },  // one bar across the TOP, OPEN by default — moved from y:-10 on 2026-09-11 because the hint bar and toasts live at the bottom (owner: "all the helper notifications display at the bottom where it currently is"); the bar sizes its WIDTH itself (emotebar.js snapTo) and its ROWS from a dragged height, but ROW_H is fixed — carried here so fitsDefaults stops counting the bar as zero-height (round 4)
+  actions:  { x: 'center', y: 10, h: 32, hidden: false },  // one bar across the TOP, OPEN by default — moved from y:-10 on 2026-09-11 because the hint bar and toasts live at the bottom (owner: "all the helper notifications display at the bottom where it currently is"); the bar sizes its WIDTH itself (emotebar.js snapTo) and its ROWS from a dragged height, but ROW_H is fixed — carried here so fitsDefaults stops counting the bar as zero-height (round 4)
 };
 // Can this viewport hold the hand-arranged default at all? Derived from
 // DEFAULT_LAYOUT rather than a hardcoded breakpoint, so it stays true if the
@@ -302,7 +302,7 @@ const CHROME = 26;
 function fitsDefaults() {
   const open = Object.values(DEFAULT_LAYOUT).filter((d) => d.hidden === false);
   const box = (d) => (d.h ?? 0) + CHROME;
-  const bar = DEFAULT_LAYOUT.emotes.hidden === false ? box(DEFAULT_LAYOUT.emotes) : 0;
+  const bar = DEFAULT_LAYOUT.actions.hidden === false ? box(DEFAULT_LAYOUT.actions) : 0;
   // WIDTH IS A ROW, NOT A FRAME. `Math.max(...widths)` asked whether the single
   // widest panel fits — but chat is anchored LEFT (x:10) and world RIGHT (x:-8),
   // so they must sit side by side and the arrangement needs the SUM. At 800px
@@ -312,7 +312,7 @@ function fitsDefaults() {
   // Boot-check has been red at 800x700 since the bar moved to the top (288a5da)
   // and I did not see it because I ran only 1280x720 and 390x844 all day.
   const sideBySide = open
-    .filter((d) => d !== DEFAULT_LAYOUT.emotes && typeof d.x === 'number')
+    .filter((d) => d !== DEFAULT_LAYOUT.actions && typeof d.x === 'number')
     .reduce((sum, d) => sum + (d.w ?? 0), 0);
   // A CENTRED STRIP IS PART OF THE ROW TOO (2026-09-12, found because R asked
   // whether a window can even get that small). sideBySide sums only frames with a
@@ -334,7 +334,7 @@ function fitsDefaults() {
     .filter((d) => typeof d.x === 'number' && d.x < 0).map((d) => d.w ?? 0));
   const centredRow = centredW && rightAnchored ? centredW + 2 * (rightAnchored + 8) : 0;
   const widest = Math.max(...open.map((d) => d.w ?? 0));
-  const tallest = Math.max(...open.filter((d) => d !== DEFAULT_LAYOUT.emotes).map(box), 0);
+  const tallest = Math.max(...open.filter((d) => d !== DEFAULT_LAYOUT.actions).map(box), 0);
   return innerWidth - 16 >= Math.max(widest, sideBySide, centredRow) && innerHeight - 16 >= tallest + bar;
 }
 

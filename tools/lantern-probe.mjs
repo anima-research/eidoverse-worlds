@@ -171,7 +171,7 @@ try {
     check('every rail tooltip names its key where the registry knows one (real client: main.js merges them)',
       titles.chat === 'Chat · Enter' && titles.debug === 'Debug · F3' && titles.world === 'World' && /^Edit · B/.test(titles.edit ?? ''), JSON.stringify(titles));
     const rail = await pg.evaluate(() => [...document.querySelectorAll('#dock button[data-toggles]')].map((b) => b.dataset.toggles));
-    check('the search entry sits between emotes and debug, pinned (owner, 10-01)', rail.indexOf('search') === rail.indexOf('emotes') + 1
+    check('the search entry sits between emotes and debug, pinned (owner, 10-01)', rail.indexOf('search') === rail.indexOf('actions') + 1
       && rail.indexOf('debug') === rail.indexOf('search') + 1 && !(await pg.evaluate(() => document.querySelector('#dock button[data-toggles="search"]').hidden)), rail.join());
     await pg.hover('#dock button[data-toggles="search"]'); await sleep(700);
     const tipc = await pg.evaluate(() => { const t = document.getElementById('tipchip'); return { show: t.classList.contains('show'), text: t.textContent }; });

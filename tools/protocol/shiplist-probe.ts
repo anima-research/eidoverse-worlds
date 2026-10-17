@@ -706,7 +706,7 @@ try {
   // ---- EP: each mode keeps its own open HUD panels (R, 10-10; Blender's workspaces) ----
   await stage("EP", async () => {
   const r = await page(`const W = await import('/lib/windows.js'), B = await import('/lib/build.js'); const wait = (ms) => new Promise((z) => setTimeout(z, ms));
-    const ids = W.allFrames().map((f) => f.id); const a = ['emotes', 'profile', 'keyboard', 'debug'].find((x) => ids.includes(x)), b = ['profile', 'keyboard', 'emotes', 'debug'].find((x) => ids.includes(x) && x !== a);
+    const ids = W.allFrames().map((f) => f.id); const a = ['actions', 'profile', 'keyboard', 'debug'].find((x) => ids.includes(x)), b = ['profile', 'keyboard', 'actions', 'debug'].find((x) => ids.includes(x) && x !== a);
     try { localStorage.removeItem('ew.edit.panels'); } catch {}
     W.getFrame(a).show(); W.getFrame(b).hide(); B.setEditMode(true); await wait(500);
     const inEdit1 = [W.getFrame(a).visible, W.getFrame(b).visible]; W.getFrame(b).show(); await wait(200);

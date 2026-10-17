@@ -141,7 +141,7 @@ async function tour(pg, tag, base) {
   await shot('emenu-panels');
   const rows = await pg.evaluate(async () => { const F = await import('/lib/windows.js');
     return [...document.querySelectorAll('#emenu-sub .mrow[data-row]')].map((r) => r.dataset.row).filter((id) => F.getFrame(id)); });
-  check(`${tag} Panels ▸ lists a row for every panel (${rows.join(' · ')})`, ['profile', 'chat', 'world', 'emotes', 'debug', 'settings'].every((id) => rows.includes(id)), rows.join());
+  check(`${tag} Panels ▸ lists a row for every panel (${rows.join(' · ')})`, ['profile', 'chat', 'world', 'actions', 'debug', 'settings'].every((id) => rows.includes(id)), rows.join());
   for (const id of rows) {
     const sel = `#emenu-sub .mrow[data-row="${id}"]`;
     await pg.click(sel, { position: { x: 30, y: 12 }, timeout: 3000 }).catch(() => pg.evaluate((s) => document.querySelector(s).click(), sel));

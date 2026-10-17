@@ -192,7 +192,7 @@ settingsFrame();               // exists (hidden) so the ∃ menu can open it
 initDock([
   { id: 'chat', label: '💬' },
   { id: 'world', label: '🧱' },
-  { id: 'emotes', label: '👋' },
+  { id: 'actions', label: '👋' },
   { id: 'debug', label: '🐞' },
   // The wrench. It was declared here through the lab (edb63df, 27eae14) and
   // did NOT survive the recut: DEFAULT_PINS still pinned 'edit', but nothing
@@ -294,7 +294,7 @@ if (CONFIG.params.has('sendlayout')) {
 if (globalThis.__ewLiteWhy === 'retry') statusChip({
   id: 'lite-retry', level: 'attn', label: 'last load stalled',
   title: "This world didn't finish loading last time",
-  body: "We're trying the full 3D world again. If it keeps stalling or crashing here, the lite client has chat, emotes and who's here, with no 3D.",
+  body: "We're trying the full 3D world again. If it keeps stalling or crashing here, the lite client has chat, the action bar and who's here, with no 3D.",
   actions: [{ label: 'switch to the lite client', run: () => chooseClient(true) }, { label: 'stay in 3D', clear: true }],
 });
 

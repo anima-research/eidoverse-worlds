@@ -464,7 +464,7 @@ register('seatpose', (arg) => {
 register('emote', (arg) => {
   const name = (arg || '').trim().toLowerCase();
   if (!EMOTE_ORDER.includes(name) && !Object.keys(EMOTES).includes(name)) {
-    return logChat('*', `emotes: ${Object.keys(EMOTES).join(', ')}`);
+    return logChat('*', `actions: ${Object.keys(EMOTES).join(', ')}`);
   }
   getMe()?.playEmote(name);
   myState.emote = name;

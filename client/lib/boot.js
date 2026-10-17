@@ -147,7 +147,7 @@ const TIPS = [
   ['∃', 'The <b>∃</b> menu is the drawer: the model library, save and recover, and every panel you have unpinned.'],
   ['X', 'Press <b>X</b> next to a chair and you will sit <i>on</i> it. Nobody had to make it a chair. <b>Z</b> lies down.'],
   ['V', 'Hold <b>V</b> to talk. Your body should wake up silent — the mic is off until you say so.'],
-  ['1', 'Number keys play the emote bar\'s gestures, in its order. The bar shows which is which.'],
+  ['1', 'Number keys play the action bar\'s entries, in its order. The bar shows which is which.'],
   ['Tab', '<b>Tab</b> hides every open panel and brings back exactly what you had. <b>F11</b> is full screen; <b>Esc</b> leaves it.'],
   ['●', 'Click your portrait in the profile to set present, away or busy. Everyone here sees it beside your name.'],
   ['P', '<b>P</b> is photo mode: free camera, <b>F1</b> hides the UI, <b>F2</b> saves the shot.'],

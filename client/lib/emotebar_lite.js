@@ -20,7 +20,7 @@ const GLYPH_FALLBACK = '\u2728';
  *  An emote is a one-shot field on the presence pose - see lite.js. */
 export function initLiteEmotes(host, emote) {
   const row = document.createElement('div');
-  row.className = 'lite-emotes';
+  row.className = 'lite-actions';
 
   const paint = () => {
     row.textContent = '';
@@ -28,14 +28,14 @@ export function initLiteEmotes(host, emote) {
       // The vocabulary is hydrated from defs over the network, so an empty table is
       // "not yet", not "none" — say so rather than rendering an empty strip.
       const w = document.createElement('span');
-      w.className = 'lite-emotes-wait';
-      w.textContent = 'loading emotes\u2026';
+      w.className = 'lite-actions-wait';
+      w.textContent = 'loading actions\u2026';
       row.appendChild(w);
       return;
     }
     for (const name of EMOTE_ORDER) {
       const b = document.createElement('button');
-      b.className = 'lite-emote';
+      b.className = 'lite-action';
       b.type = 'button';
       b.dataset.emote = name;
       b.title = name;

@@ -39,8 +39,8 @@ export function initEmoteBar() {
   const heightFor = (cols) => rowsFor(cols) * ROW_H + (rowsFor(cols) - 1) * GAP;
   let snapT = null;
   const ALL = 9;   // 3 postures + 6 emotes: ONE bar (live 09-06 23:34: '9×1')
-  const f = makeFrame('emotes', {
-    title: 'emotes', x: 'center', y: -10, w: widthFor(ALL), h: ROW_H,   // one row of nine across the bottom by default
+  const f = makeFrame('actions', {
+    title: 'action bar', x: 'center', y: -10, w: widthFor(ALL), h: ROW_H,   // one row of nine across the bottom by default
       // minW was widthFor(3)=124px and a REAL resize clamps at f.minW
       // (the east/west resize clamp in windows.js), so 124px admitted exactly three columns — ONE column was
       // unreachable by drag no matter what snapTo computed. R hit it at once:
@@ -251,7 +251,7 @@ export function initEmoteBar() {
       grid.appendChild(b);
       tiles.set(name, b);
       // the tile's own act, findable by name; number keys 1–9 follow EMOTE_ORDER (main.js)
-      unregs.push(registerAction({ id: `emote:${name}`, title: name, group: 'emotes', keywords: ['emote', 'gesture'],
+      unregs.push(registerAction({ id: `bar:${name}`, title: name, group: 'action bar', keywords: ['action', 'gesture'],
         icon: emojiRenders(em) ? em : undefined, key: i < 9 ? String(i + 1) : undefined, run: b.onclick }));
     });
     // sit and lie are keys (X, Z — controller.js registers those); standing up has no key, only this tile
@@ -267,7 +267,7 @@ export function initEmoteBar() {
   f.body.appendChild(grid);
   // the same six gestures as a VR quad — one button per emote, the same call
   registerXRPanel({
-    id: 'emotes', title: 'emotes',
+    id: 'actions', title: 'action bar',
     // postures lead (live, 09-04 22:02: sit/lie belong to the emote menu, not the
     // ring); then the emotes — names, not emoji: a canvas fillText of a
     // missing glyph paints nothing

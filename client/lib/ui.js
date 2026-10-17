@@ -484,7 +484,7 @@ const PINS_LS = 'ew-dock-pins';
 const gateWas = new Map();
 let pins = new Set();
 // every panel starts pinned to the dock; unpinning is the personal choice, not pinning (live, 09-06 23:34)
-const DEFAULT_PINS = ['search', 'profile', 'world', 'chat', 'emotes', 'debug', 'settings', 'edit'];   // 'edit' too (live 09-07 10:55) — its ownership gate still decides visibility
+const DEFAULT_PINS = ['search', 'profile', 'world', 'chat', 'actions', 'debug', 'settings', 'edit'];   // 'edit' too (live 09-07 10:55) — its ownership gate still decides visibility
 try { pins = new Set(JSON.parse(localStorage.getItem(PINS_LS) ?? JSON.stringify(DEFAULT_PINS))) } catch { pins = new Set(DEFAULT_PINS); }
 // the search entry arrived after people had saved their pins: pin it ONCE for them, then their unpin is theirs
 try { if (!localStorage.getItem('ew-dock-search-seen')) { localStorage.setItem('ew-dock-search-seen', '1'); pins.add('search'); } } catch {}
@@ -534,7 +534,7 @@ export function dockPins() {
 }
 
 // how a rail entry reads as a lantern row (the rail itself shows only a glyph)
-const PANEL_TITLE = { emotes: 'emote bar', edit: 'builder mode', debug: 'debug panel' };
+const PANEL_TITLE = { actions: 'action bar', edit: 'builder mode', debug: 'debug panel' };
 const PANEL_WORDS = { world: ['catalog', 'build'], profile: ['avatar', 'presence', 'friends', 'satchel'],
   chat: ['messages', 'log', 'people'], edit: ['build', 'builder', 'edit', 'place'], settings: ['preferences', 'options'] };
 function addDockButton(entry) {
@@ -603,7 +603,7 @@ export function initDock(entries) {
   dockEntries = [...lead, ...entries, ...dockEntries].filter((e) => !seen.has(e.id) && seen.add(e.id));
   // search goes in before debug, else after emotes, else ahead of the `last` entries (the sort below keeps those last)
   if (!seen.has(SEARCH_ENTRY.id)) {
-    const at = dockEntries.findIndex((e) => e.id === 'debug'), after = dockEntries.findIndex((e) => e.id === 'emotes');
+    const at = dockEntries.findIndex((e) => e.id === 'debug'), after = dockEntries.findIndex((e) => e.id === 'actions');
     dockEntries.splice(at >= 0 ? at : after >= 0 ? after + 1 : dockEntries.length, 0, SEARCH_ENTRY);
   }
   // `last: true` entries (the edit wrench) ALWAYS close the list: edit is a
@@ -1036,9 +1036,9 @@ function topItems() {
     'sep',
     { id: 'panels', icon: 'layout', label: 'Panels', sub: true },
     // the way down to the light version, asked first (owner, 10-01); back up is the ∃ there
-    { id: 'lite', icon: 'chat-circle', label: 'Lite client', title: "the lite client: chat, emotes and who's here, with no 3D world", run: () => confirmCenter({
+    { id: 'lite', icon: 'chat-circle', label: 'Lite client', title: "the lite client: chat, the action bar and who's here, with no 3D world", run: () => confirmCenter({
       title: 'Switch to the lite client?',
-      body: "Chat, emotes and who's here, with no 3D world. Useful on a slow or struggling machine. Click the \u2203 logo there to come back.",
+      body: "Chat, the action bar and who's here, with no 3D world. Useful on a slow or struggling machine. Click the \u2203 logo there to come back.",
       ok: 'Switch', cancel: 'Stay in 3D',
     }).then((yes) => { if (yes) chooseClient(true); }) },
     'sep',

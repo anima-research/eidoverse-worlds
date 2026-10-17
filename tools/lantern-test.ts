@@ -21,7 +21,7 @@ const said: string[] = [];
 const ran: string[] = [];
 A.clear();
 A.register({ id: 'body:sit', title: 'sit', group: 'body', key: 'X', run: () => ran.push('body:sit') });
-A.register({ id: 'emote:wave', title: 'wave', group: 'emotes', key: '1', run: () => ran.push('emote:wave') });
+A.register({ id: 'bar:wave', title: 'wave', group: 'action bar', key: '1', run: () => ran.push('bar:wave') });
 A.register({ id: 'cmd:w', title: '/w', group: 'commands', keywords: ['whisper'], detail: '/w <name> <message> — whisper, privately', fill: '/w ' });
 A.register({ id: 'cmd:who', title: '/who', group: 'commands', detail: 'list everyone present', run: () => ran.push('cmd:who') });
 

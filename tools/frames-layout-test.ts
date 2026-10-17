@@ -80,7 +80,7 @@ check("a non-frame key (ew-ui-locked) survives the purge", localStorage.getItem(
     // negative y re-resolves against innerHeight) to y:10, an absolute offset
     // from the top. A material DEFAULT_LAYOUT change, riding the LAYOUT_VERSION
     // bump this block already exercises.
-    { const tbar = makeFrame("emotes", { title: "emotes", x: "center", y: -10, w: 352, h: 32 });
+    { const tbar = makeFrame("actions", { title: "actions", x: "center", y: -10, w: 352, h: 32 });
       check("the emote bar's DEFAULT is the TOP edge, not the bottom",
         tbar.state.y < 100, `y=${tbar.state.y} vh=${innerHeight}`); }
   check("a frame with a purged save takes the DEFAULT, not the stale x:1",
