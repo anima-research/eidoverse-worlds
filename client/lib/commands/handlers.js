@@ -13,7 +13,17 @@ import { SHOVE_REACH } from '../../../shared/protocol/physconst.js';
 import { CUSTOM_ID } from '../../../shared/protocol/roles.js';
 import { captureFrame } from '../capture.js';
 import { register, dispatch } from './registry.js';
-import { entities, worldHasOwner } from '../world.js';
+import { entities, worldHasOwner, bagOf } from '../world.js';
+import { resolveThing, handleOf } from '../../../shared/thingref.js';
+// a thing by what a person types (R 10-17: ids are minted and opaque): its id, its label, or a unique id prefix of 4+.
+// A label two things share is refused with their handles, never resolved by picking one. {id} | {err} | null (nothing)
+function thingNamed(word) {
+  if (!word) return null;
+  const r = resolveThing(word, [...entities.keys()].map((id) => ({ id, label: bagOf(id)?.label })));
+  if (r.id) return { id: r.id };
+  if (r.ambiguous) return { err: `"${word}" names ${r.ambiguous.length} things — say which (its handle works): ${r.ambiguous.slice(0, 6).map((t) => `${typeof t.label === 'string' ? `"${t.label}" ` : ''}#${handleOf(t.id, entities.keys())}`).join(', ')}` };
+  return null;
+}
 import {
   net, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldFound, sendWorldReset, requestDebug, sendRequest,
 } from '../net.js';
@@ -245,7 +255,7 @@ register('push', (arg) => {
   // one word, two acts: /push swing1 is the swing's use-reaction (the old
   // alias, kept working), /push bob is a shove. Things win the name lookup
   // because they were here first; /shove is always the person verb.
-  if (named && entities.has(named)) { send(OP.use(named, 'push'), { what: `push ${named}` }); return; }
+  { const t = thingNamed(named); if (t?.err) return logChat('*', t.err); if (t) { send(OP.use(t.id, 'push'), { what: `push ${named}` }); return; } }
   const pow = Math.min(4, Math.max(0.5, parseFloat(parts.find((p) => /^[\d.]+$/.test(p))) || 2.2));
   let target = named ?? null;
   if (!target) {
@@ -408,25 +418,29 @@ register('debug', (arg) => {
 
 register('mount', (arg) => {
   // /mount <thing> <onto> [slot] — glue where it stands, or seat in a socket
-  const [child, parent, slot] = (arg || '').trim().split(/\s+/);
-  if (!child || !parent) return logChat('*', 'usage: /mount <thing> <onto> [slot] — parents one thing to another, keeping its pose');
-  if (!entities.get(child) || !entities.get(parent)) return logChat('*', 'both things must exist (and be loaded) here');
-  sceneAttach(child, parent, slot);
+  const [childW, parentW, slot] = (arg || '').trim().split(/\s+/);
+  if (!childW || !parentW) return logChat('*', 'usage: /mount <thing> <onto> [slot] — parents one thing to another, keeping its pose');
+  const c = thingNamed(childW), p = thingNamed(parentW); const e = c?.err ?? p?.err; if (e) return logChat('*', e);
+  if (!c || !p || !entities.get(c.id) || !entities.get(p.id)) return logChat('*', 'both things must exist (and be loaded) here');
+  sceneAttach(c.id, p.id, slot);
 });
 
 register('dismount', (arg) => {
-  const id = (arg || '').trim();
-  if (!id) return logChat('*', 'usage: /dismount <thing>');
-  if (!entities.get(id)?.userData?.mountedTo) return logChat('*', `${id} isn't mounted on anything`);
-  sceneDetach(id);
+  const word = (arg || '').trim();
+  if (!word) return logChat('*', 'usage: /dismount <thing>');
+  const t = thingNamed(word); if (t?.err) return logChat('*', t.err);
+  if (!t || !entities.get(t.id)?.userData?.mountedTo) return logChat('*', `${word} isn't mounted on anything`);
+  sceneDetach(t.id);
 });
 
 register('use', (arg) => {
   // /use <entity> [action] — rank 0: using the world is for everyone.
   // Reactions (the swing's push, a door's open) come back as log entries.
-  const [id, action] = (arg || '').trim().split(/\s+/);
-  if (!id) return logChat('*', 'usage: /use <thing> [action] — e.g. /push swing1');
-  if (!entities.has(id)) return logChat('*', `nothing here called "${id}"`);
+  const [word, action] = (arg || '').trim().split(/\s+/);
+  if (!word) return logChat('*', 'usage: /use <thing> [action] — e.g. /push swing1');
+  const t = thingNamed(word); if (t?.err) return logChat('*', t.err);
+  if (!t) return logChat('*', `nothing here called "${word}"`);
+  const id = t.id;
   // no action: the authority does the thing's one action, or says what it offers (it was sent 'use', which most don't)
   send(OP.use(id, action || null), { what: action ? `${action} ${id}` : `use ${id}` });
 });

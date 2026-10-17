@@ -20,9 +20,15 @@ const ME = "shipbot", WORLD = "ship4";
 process.env.TRUST_NAMES = "1";
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
-const { cdp, evalJson, cleanup, die, BASE } = await scratchBench("shiplist", {
+import { pagedEval } from "./idalias.ts";
+// R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); every page answer brings the
+// minted ids back (NODE), and N(name) reads a scene name as its id for the node-side checks
+const NAMES = ["acbox", "anchor", "atbox", "box1", "clbox", "cloud", "ctbox", "cuball", "gate", "getool", "hdsign", "hpball", "htcrate", "hysign", "nhball", "nlbox", "pobase", "potop", "rbbtn", "rbtgt", "slcrate", "slfloor", "sthigh", "stlow", "syb", "syorb", "wbcrate", "wgcrate", "sba", "sbb", "crate-2", "crate-3"];
+const NODE = new Map<string, string>(); const N = (n: string) => NODE.get(n) ?? n;
+const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("shiplist", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
+const evalJson = pagedEval(evalRaw, NAMES, NODE);
     const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", WORLD, "--owner", ME, "--title", "ship list probe"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worldsDir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
     if (r.exitCode !== 0) throw new Error("founding failed: " + r.stderr.toString());
   },
@@ -68,8 +74,8 @@ try {
     while (performance.now() - t0 < 4000) { const s = o.openableState('gate'); const q = w.entities.get('gate').quaternion; out.push([Math.round(performance.now() - t0), s?.f ?? null, s?.to ?? null, 2 * Math.acos(Math.min(1, Math.abs(q.w)))]); await new Promise((r) => setTimeout(r, 40)); }
     return out; })(), true)`);
   await key("KeyE");
-  check("D2 E opens it through the authority: one use act, openable.open = true", await waitDisk(() => disk().entities.gate?.c.openable?.open === true && entries().filter((e: any) => e.kind === "act" && e.verb === "use").length === uses0 + 1),
-    { open: disk().entities.gate?.c.openable, refused: await evalJson(`__refused.map((r) => r.text)`) });
+  check("D2 E opens it through the authority: one use act, openable.open = true", await waitDisk(() => disk().entities[N("gate")]?.c.openable?.open === true && entries().filter((e: any) => e.kind === "act" && e.verb === "use").length === uses0 + 1),
+    { open: disk().entities[N("gate")]?.c.openable, refused: await evalJson(`__refused.map((r) => r.text)`) });
   const samp: any[] = await evalJson(`window.__samp`);
   const moving = samp.filter(([, f, to]) => to === 1 && f > 0.05 && f < 0.95);
   const first = samp.find(([, f, to]) => to === 1), last = samp.at(-1);
@@ -80,7 +86,7 @@ try {
     { n: samp.length, moving: moving.length, drawnMid, swingMs: rest && first ? rest[0] - first[0] : null, last, some: moving.slice(0, 4) });
   check("D4 open, the hint says close", await waitFor(`/E\\s*close\\s*“Gate”/.test(${hint})`, 4000), await evalJson(hint));
   await key("KeyE");
-  check("D5 E closes it", await waitDisk(() => disk().entities.gate?.c.openable?.open === false));
+  check("D5 E closes it", await waitDisk(() => disk().entities[N("gate")]?.c.openable?.open === false));
   await sleep(1600);
   const q2 = await evalJson(`import('/lib/world.js').then((m) => m.entities.get('gate').quaternion.toArray())`);
   check("D6 …and it's drawn shut again where it stood", Math.abs(Math.abs(q0[0] * q2[0] + q0[1] * q2[1] + q0[2] * q2[2] + q0[3] * q2[3]) - 1) < 1e-4, { q0, q2 });
@@ -188,7 +194,7 @@ try {
   check("E1 the Inspector shows an Openable card with its rows (open, door locked, opens by, turns, hinge axis, takes)", await waitFor(`(() => { const c = ${card}; if (!c) return false; const L = [...c.querySelectorAll('.sp-label')].map((l) => l.textContent); return ['open', 'door locked', 'opens by', 'turns', 'hinge axis', 'takes'].every((x) => L.includes(x)); })()`, 6000),
     { rows: await evalJson(`[...(${card}?.querySelectorAll('.sp-label') ?? [])].map((l) => l.textContent)`), groups: await evalJson(`[...(${insp}?.querySelectorAll('.sp-group') ?? [])].map((g) => g.textContent.slice(0, 60))`), sel: await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelected())`) });
   const clicked = await evalJson(cardBtn("/hinge on its right edge/"));
-  check("E2 'hinge on its right edge' puts its pivot on the +x edge of its box (one act)", clicked && await waitDisk(() => (disk().entities.gate?.c.pivot?.pos?.[0] ?? -1) > 0.2), { clicked, pivot: disk().entities.gate?.c.pivot });
+  check("E2 'hinge on its right edge' puts its pivot on the +x edge of its box (one act)", clicked && await waitDisk(() => (disk().entities[N("gate")]?.c.pivot?.pos?.[0] ?? -1) > 0.2), { clicked, pivot: disk().entities[N("gate")]?.c.pivot });
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('box1'); return true;`);
   await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'box1')`); await sleep(400);
   await evalJson(`${insp}.querySelector('.sp-pop-btn').click(), true`);
@@ -198,7 +204,7 @@ try {
   const items = await evalJson(`[...document.querySelectorAll('.sp-pop-item')].map((b) => b.textContent)`);
   check("E3 Add Component offers Path and LookAt (what the authority takes: look-at since batch 2), and 'door' finds Openable", all?.some((t: string) => /^Path/.test(t)) && all?.some((t: string) => /^LookAt/.test(t)) && items?.some((t: string) => /Openable/.test(t)), { all, items });
   await evalJson(`[...document.querySelectorAll('.sp-pop-item')].find((b) => /Openable/.test(b.textContent))?.click(), true`);
-  check("E4 …adding it writes its state and its open action: the toy box opens with E", await waitDisk(() => disk().entities.box1?.c.openable?.open === false && disk().entities.box1?.c.reactions?.open?.kind === "toggle"), { c: disk().entities.box1?.c });
+  check("E4 …adding it writes its state and its open action: the toy box opens with E", await waitDisk(() => disk().entities[N("box1")]?.c.openable?.open === false && disk().entities[N("box1")]?.c.reactions?.open?.kind === "toggle"), { c: disk().entities[N("box1")]?.c });
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
   });
   // ---- VA: the body's arrival refused (a takeover reconnect: the server still has my body where it was, and the client
@@ -255,7 +261,7 @@ try {
   const holds = () => evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.mine())`);
   const at0 = await click(0, 60);
   await sleep(700);
-  check("CU1 a press that travels 60 px is a drag (the camera's), not a click: nothing is picked up", at0?.onScreen && !(await holds())?.includes("cuball"), { at0, holds: await holds() });
+  check("CU1 a press that travels 60 px is a drag (the camera's), not a click: nothing is picked up", at0?.onScreen && !(await holds())?.includes(N("cuball")), { at0, holds: await holds() });
   await click(2);
   const menu = await waitFor(`!!document.querySelector('.sp-ctx')`, 2000), items = await evalJson(`[...document.querySelectorAll('.sp-ctx-item')].map((b) => b.textContent)`);
   check("CU2 right-click on it opens its menu: pick up first, kick among the rest", menu && /^pick up/.test(items?.[0] ?? "") && items?.some((t: string) => /^kick/.test(t)), items);
@@ -375,8 +381,8 @@ try {
   await m("mousePressed", sx, sy, 8); for (let k = 1; k <= 6; k++) await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(sx + (ex - sx) * k / 6), y: Math.round(sy + (ey - sy) * k / 6), button: "left", buttons: 1, modifiers: 8 });
   await m("mouseReleased", ex, ey, 8); await sleep(600);
   const s2 = await sel();
-  check("SB1 Shift-click in the viewport adds a second thing to the selection", JSON.stringify(s1) === '["sba","sbb"]', { A, B, s1 });
-  check("SB2 Shift-drag on bare space draws a box, and both things inside it are selected", JSON.stringify(s2) === '["sba","sbb"]', { box: [sx, sy, ex, ey], start, s2 });
+  check("SB1 Shift-click in the viewport adds a second thing to the selection", JSON.stringify([...(s1 ?? [])].sort()) === JSON.stringify([N("sba"), N("sbb")].sort()), { A, B, s1 });
+  check("SB2 Shift-drag on bare space draws a box, and both things inside it are selected", JSON.stringify([...(s2 ?? [])].sort()) === JSON.stringify([N("sba"), N("sbb")].sort()), { box: [sx, sy, ex, ey], start, s2 });
   await page(`(await import('/lib/build.js')).setEditMode(false); const m = await import('/lib/net.js'); await m.sendRequest('delete', { id: 'sba' }); await m.sendRequest('delete', { id: 'sbb' }); return true;`).catch(() => null);
   });
   // ---- SL: selection layers (R, 10-11: "selection layers so people don't select the ground plane all the time") ----
@@ -407,8 +413,8 @@ try {
   await page(`(await import('/lib/selectmask.js')).setLayerOn('environment', true); return true;`);
   const c2 = await clickAt(floorPx); await esc();
   await page(`(await import('/lib/selectmask.js')).setLayerOn('environment', false); (await import('/lib/build.js')).setEditMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'slfloor' }); await n.sendRequest('delete', { id: 'slcrate' }); return true;`).catch(() => null);
-  check("SL1 a floor slab on 'environment' is off for clicks at first: clicking it selects nothing; the crate on it still selects", a !== "slfloor" && b === "slcrate", { a, b, floorPx, cratePx });
-  check("SL2 Select ▸ environment on: the floor is clickable again", c2 === "slfloor", { c2 });
+  check("SL1 a floor slab on 'environment' is off for clicks at first: clicking it selects nothing; the crate on it still selects", a !== N("slfloor") && b === N("slcrate"), { a, b, floorPx, cratePx });
+  check("SL2 Select ▸ environment on: the floor is clickable again", c2 === N("slfloor"), { c2 });
   });
   // ---- SY: one selection (R, 10-11 01:13 "agree with each other in the hierarchy and the viewport"; 00:57 "after undoing a
   // few times ... can't unselect them by clicking away"; 00:41 "the bounding box on moving objects update as they translate") ----
@@ -436,7 +442,7 @@ try {
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: Math.round(bare[0]), y: Math.round(bare[1]), button: "left", buttons: 0, clickCount: 1 }); await sleep(500);
   const after = await page(`const b = await import('/lib/build.js'), sg = await import('/lib/scenegraph.js'); const o = { scene: sg.sceneSelected(), view: b.selectionView() }; b.setEditMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'syorb' }); await n.sendRequest('delete', { id: 'syb' }); return o;`);
   check("SY1 picked in the Hierarchy, the viewport outlines the same thing", r?.sy1, r?.v1);
-  check("SY2 after an edit and an undo, a click on empty space deselects it in the Hierarchy AND the viewport", r?.afterUndo?.scene === "syb" && after.scene == null && !after.view.visible, { afterUndo: r?.afterUndo, after });
+  check("SY2 after an edit and an undo, a click on empty space deselects it in the Hierarchy AND the viewport", r?.afterUndo?.scene === N("syb") && after.scene == null && !after.view.visible, { afterUndo: r?.afterUndo, after });
   check("SY3 the selection box follows a moving (orbiting) thing", r?.follow?.length === 6 && r.follow.every(Boolean), r?.follow);
   });
   // ---- ST: X sits only where I could climb (R, 10-11 00:47: "trying to sit with 'x' near the crates results in me levitating
@@ -453,7 +459,7 @@ try {
     return { did, on: host };`);
   await page(`const lb = await import('/lib/localbody.js'); lb.standUp?.(); (await import('/lib/base.js')).bus.emit('key', new KeyboardEvent('keydown', { code: 'KeyX' })); return true;`).catch(() => null); await sleep(800);
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('delete', { id: 'sthigh' }); await m.sendRequest('delete', { id: 'stlow' }); return true;`).catch(() => null);
-  check("ST1 X with a seat 3 m up beside me and one at the ground 2.2 m away: I sit on the one I could climb onto", r?.on === "stlow", r);
+  check("ST1 X with a seat 3 m up beside me and one at the ground 2.2 m away: I sit on the one I could climb onto", r?.on === N("stlow"), r);
   });
   // ---- NL: the Inspector's name line (R, 10-10 23:48: "make the 'name' attribute be like Maya ... The eye and lock and
   // disable icons can be on this line to the right") ----
@@ -645,7 +651,7 @@ try {
   await sleep(800);
   const offer = await page(`const cu = await import('/lib/clickuse.js'); const o = cu.offersOf('rbbtn'); const r = await o[0]?.run(); return { first: o[0]?.label, ok: r?.ok ?? null, why: r?.refused?.reason ?? null };`);
   await sleep(1200);
-  const at = await page(`const st = (await import('/lib/state.js')).state.st; return st.entities.rbtgt?.pos;`);
+  const at = await page(`const st = (await import('/lib/state.js')).state.st; return st.entities['rbtgt']?.pos;`);
   check("RZ1 Edit's 'make reset button' + the button's first offer (its left-click): the moved thing is back where it stood when the button was made", mk.every(Boolean) && made?.ok && moved?.ok && /^reset/.test(offer.first ?? "") && offer.ok && Math.hypot(at[0] - me[0] - 2, at[2] - me[1] + 2) < 0.01, { mk, made: made?.ok ?? made, moved: moved?.ok, offer, at });
   });
   // ---- GE: the grip editor (R, 10-10): add a grip, drag it, mirror it, try it; the palm lands on the grip ----
@@ -787,7 +793,7 @@ try {
   check("EC3 Alt+right-drag dollies: the distance changes, nothing else", d3?.at && Math.abs(c3.dist - c2.dist) > 0.5 && Math.abs(c3.yaw - c2.yaw) < 1e-9, { c2, c3 });
   await evalJson(`import('/lib/build.js').then((m) => (m.select('cuball'), true))`);
   const s0 = await sel(); const d4 = await drag("bare", 0, false, 100, 0); const c4 = await cam(); const s1 = await sel();
-  check("EC4 a left-drag on bare space orbits, and keeps what was selected", d4?.at && Math.abs(c4.yaw - c3.yaw) > 0.2 && s0 === "cuball" && s1 === "cuball", { d4, c3, c4, s0, s1 });
+  check("EC4 a left-drag on bare space orbits, and keeps what was selected", d4?.at && Math.abs(c4.yaw - c3.yaw) > 0.2 && s0 === N("cuball") && s1 === N("cuball"), { d4, c3, c4, s0, s1 });
   await drag("bare", 0, false, 0, 0);
   check("EC5 …and a left CLICK on bare space (no travel) deselects, as before", (await sel()) === null, await sel());
   // F in Body mode on a thing: the eye stays OUTSIDE it (it was pulled into its middle by the wall rule)
@@ -876,7 +882,7 @@ try {
     return true;`);
   await onLabel("translate x", "drag"); await sleep(600);
   const r1 = await rows();
-  check("CB3 a drag on the name 'translate x' scrubs its value", +v("translate x", r1)?.v > 7.6 && Math.abs(disk().entities.cuball.c.transform.pos[0] - +v("translate x", r1).v) < 0.01, { face: v("translate x", r1)?.v, disk: disk().entities.cuball.c.transform.pos });
+  check("CB3 a drag on the name 'translate x' scrubs its value", +v("translate x", r1)?.v > 7.6 && Math.abs(disk().entities[N("cuball")].c.transform.pos[0] - +v("translate x", r1).v) < 0.01, { face: v("translate x", r1)?.v, disk: disk().entities[N("cuball")].c.transform.pos });
   await onLabel("translate x", "click"); await onLabel("translate z", "click", "ctrlKey: true"); await sleep(200);
   const r2 = await rows();
   check("CB4 a click on a name selects the channel; Ctrl-click adds another", v("translate x", r2)?.sel && v("translate z", r2)?.sel && !v("translate y", r2)?.sel, r2?.filter((r: any) => r.sel).map((r: any) => r.label));
@@ -894,12 +900,12 @@ try {
   const items = await evalJson(`[...document.querySelectorAll('.sp-ctx-item')].map((b) => b.textContent)`);
   await evalJson(`([...document.querySelectorAll('.sp-ctx-item')].find((b) => /reset the 2 selected/.test(b.textContent))?.click(), true)`);
   check("CB5 right-click offers 'reset the 2 selected channels', and it sets both to their defaults (y stays)", items?.some((t: string) => /reset the 2 selected channels/.test(t))
-    && await waitDisk(() => { const p = disk().entities.cuball.c.transform.pos; return p[0] === 0 && p[2] === 0 && p[1] === 0.25; }), { items, pos: disk().entities.cuball.c.transform.pos });
+    && await waitDisk(() => { const p = disk().entities[N("cuball")].c.transform.pos; return p[0] === 0 && p[2] === 0 && p[1] === 0.25; }), { items, pos: disk().entities[N("cuball")].c.transform.pos });
   // the reset keys follow the tools' letters (G move, E rotate, R scale): Alt+G / Alt+E / Alt+R, and Ctrl+G for all
   await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: 'cuball', component: 'transform', value: { pos: [3, 0.25, 4], q: [0, 0.3826834, 0, 0.9238795], scale: [0.5, 0.5, 0.5] } }); (await import('/lib/scenegraph.js')).sceneSelect('cuball'); return true;`);
   await sleep(600);
   const key = (code: string, mods: string) => evalJson(`(window.dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', key: '${code.slice(3).toLowerCase()}', bubbles: true, cancelable: true, ${mods} })), true)`);
-  const tr = () => disk().entities.cuball.c.transform;
+  const tr = () => disk().entities[N("cuball")].c.transform;
   const chans = await evalJson(`Promise.all([import('/lib/inspect.js'), import('/shared/editschema.js')]).then(([i, e]) => e.channels(i.schemaFor('cuball')).map((c) => c.key))`);
   const n0 = entries().length;
   await key("KeyG", "altKey: true");

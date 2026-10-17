@@ -10,6 +10,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { scratchBench, mkCheck, sleep } from "../harness.ts";
+import { idAliases } from "./idalias.ts";
+const IDS = idAliases();   // R 10-17: the owner's names ride as placeholders and minted ids
 
 const ENGINE = path.resolve(import.meta.dir, "../..");
 const ME = "fxbot", WORLD = "fx";
@@ -39,7 +41,7 @@ try {
   own.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); };
   await new Promise((r, j) => { own.onopen = r; own.onerror = j; });
   own.send(JSON.stringify({ type: "join", world: WORLD, id: ME, avatar: "", replica: true })); await sleep(800);
-  const req = (verb: string, args: any) => new Promise<any>((res) => { const id = `o${++rn}`; replies.set(id, res); own.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
+  const req = (verb: string, args: any) => new Promise<any>((res) => { const id = `o${++rn}`; replies.set(id, (r: any) => res(IDS.back(r))); own.send(JSON.stringify({ type: "request", id, verb, args: IDS.out(verb, args) })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
   const sky = await req("sky", { hours: 0, rate: 0 }); check("night sky", sky?.ok, sky);
   await cdp.send("Page.navigate", { url: `${BASE}/?name=shots&world=${WORLD}&webgl=1&spectate` });
   check("world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`, 60000));
@@ -52,12 +54,12 @@ try {
     const value = MODE === "before" ? { preset: p, seed: 7 } : { effect: p, seed: 7 };
     const r = await req("create", { id: `fx-${p}`, components: { transform: { pos: [4, 0.6, -3.2] }, particles: value } });
     check(`${p}: created`, r?.ok, r); if (!r?.ok) console.log(`  ${p}: refused ${JSON.stringify(r)}`);
-    await waitFor(`import('/lib/world.js').then((m) => m.entities.has('fx-${p}'))`);
+    await waitFor(`import('/lib/world.js').then((m) => m.entities.has('${IDS.of(`fx-${p}`)}'))`);
     await aim(); await sleep(3500); await aim();   // past every effect's warm-up
-    if (process.env.PRE) { console.log('  pre:', JSON.stringify(await page(process.env.PRE.replaceAll('$ID', `fx-${p}`)).catch((e) => String(e)))); await sleep(1500); await aim(); }
+    if (process.env.PRE) { console.log('  pre:', JSON.stringify(await page(process.env.PRE.replaceAll('$ID', IDS.of(`fx-${p}`))).catch((e) => String(e)))); await sleep(1500); await aim(); }
     const f = await shot(p);
-    const st = await page(`const process = { env: { DBG: ${JSON.stringify(process.env.DBG ?? '')} } }; const m = await import('/lib/emitters.js'), w = await import('/lib/world.js'); const h = m._registry.get('fx-${p}');
-      return { live: m.emitterCount(), comp: JSON.stringify(w.bagOf('fx-${p}')?.particles ?? null), drawn: h ? h.parts.map((x) => x.mesh.count) : null, alive: h ? h.parts.map((x) => x.sim.liveCount()) : null, vis: h ? h.parts.map((x) => x.mesh.visible) : null, dbg: process.env.DBG ? (() => { const m = h.parts[0].mesh; const g = m.geometry; return { pos: [...g.attributes.iPos.array.slice(0, 6)], col: [...g.attributes.iCol.array.slice(0, 8)], sa: [...g.attributes.iSa.array.slice(0, 6)], mw: [...m.matrixWorld.elements.slice(12, 15)], parent: m.parent?.name, gp: m.parent?.parent?.type, inScene: (() => { let o = m; while (o.parent) o = o.parent; return o.type; })(), layers: m.layers.mask, ro: m.renderOrder }; })() : null };`).catch((e) => String(e));
+    const st = await page(`const process = { env: { DBG: ${JSON.stringify(process.env.DBG ?? '')} } }; const m = await import('/lib/emitters.js'), w = await import('/lib/world.js'); const h = m._registry.get('${IDS.of(`fx-${p}`)}');
+      return { live: m.emitterCount(), comp: JSON.stringify(w.bagOf('${IDS.of(`fx-${p}`)}')?.particles ?? null), drawn: h ? h.parts.map((x) => x.mesh.count) : null, alive: h ? h.parts.map((x) => x.sim.liveCount()) : null, vis: h ? h.parts.map((x) => x.mesh.visible) : null, dbg: process.env.DBG ? (() => { const m = h.parts[0].mesh; const g = m.geometry; return { pos: [...g.attributes.iPos.array.slice(0, 6)], col: [...g.attributes.iCol.array.slice(0, 8)], sa: [...g.attributes.iSa.array.slice(0, 6)], mw: [...m.matrixWorld.elements.slice(12, 15)], parent: m.parent?.name, gp: m.parent?.parent?.type, inScene: (() => { let o = m; while (o.parent) o = o.parent; return o.type; })(), layers: m.layers.mask, ro: m.renderOrder }; })() : null };`).catch((e) => String(e));
     console.log(`  ${p}: ${JSON.stringify(st)}`);
     console.log(`  ${p}: ${f} (${fs.statSync(f).size} bytes)`);
     await req("delete", { id: `fx-${p}` });

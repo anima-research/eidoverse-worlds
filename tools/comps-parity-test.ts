@@ -10,8 +10,11 @@
 // tick (`setTimeout(() => syncComps(id))` in onComp) — the row then reads the old label while the Inspector reads the new.
 // Hygiene (memory reference_browser_probe_hygiene.md): wait on conditions, every gate prints its stage, teardown in finally.
 import { scratchBench, mkCheck, sleep } from './harness.ts';
+import { pagedEval } from './protocol/idalias.ts';
 
-const { cdp, evalJson, cleanup, die, BASE } = await scratchBench('comps-parity', { worlds: ['parity'], owner: 'editbot', serverEnv: { TRUST_NAMES: '1', VERB_RATE: '1000' } });
+const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench('comps-parity', { worlds: ['parity'], owner: 'editbot', serverEnv: { TRUST_NAMES: '1', VERB_RATE: '1000' } });
+// R 10-17: the page names its crate with a placeholder (tools/protocol/idalias.ts pageIds); 'crate' in page code is its id
+const evalJson = pagedEval(evalRaw, ['crate']);
 const { check, tally } = mkCheck();
 const waitFor = async (expr: string, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await evalJson(expr)) return true; await sleep(100); } return false; };
 
@@ -36,7 +39,7 @@ try {
   await evalJson(`Promise.all([import('/lib/state.js'), import('/lib/editpanels.js')]).then(([S, E]) => { window.__seen = []; S.onWorldChange((ev) => { if (ev.type !== 'change' || ev.id !== 'crate' || ev.comp !== 'label') return; const d = E.editPanelsDebug(); const row = d.hierFields().flatMap((f) => f.rows ?? []).find((r) => r.id === 'crate'); const insp = d.inspFields().find((f) => f.path === 'flags.label'); window.__seen.push({ row: row?.rename ?? null, insp: insp?.value ?? null }); }); return true; })`);
   const set = await evalJson(`import('/lib/net.js').then((m) => m.sendRequest('set', { id: 'crate', component: 'label', value: 'tall crate' }))`);
   check('the owner renames it', set?.ok === true, JSON.stringify(set?.refused));
-  check('the rename folds', await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities.crate?.c.label === 'tall crate')`));
+  check('the rename folds', await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['crate']?.c.label === 'tall crate')`));
   check('the change event fired for crate.label', await waitFor(`window.__seen.length >= 1`), JSON.stringify(await evalJson(`window.__seen`)));
   const seen = await evalJson(`window.__seen`);
   check('AT THE EVENT the Hierarchy row and the Inspector read the same label (one record, not two caches)', Array.isArray(seen) && seen.length >= 1 && seen.every((s: any) => s.row === 'tall crate' && s.insp === 'tall crate'), JSON.stringify(seen));

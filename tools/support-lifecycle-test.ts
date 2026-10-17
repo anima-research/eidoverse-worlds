@@ -29,6 +29,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foundWorlds, freePort } from "./harness.ts";
 import { qFromYaw } from "../shared/rot.js";
+import { idAliases } from "./protocol/idalias.ts";
+const IDS = idAliases();
 
 // Bun 1.3.x caches transpiled module graphs globally by content. A failed
 // plugin-resolved path can therefore survive into a later checkout and bypass
@@ -132,12 +134,19 @@ function hand(world: string, name: string) {
   return new Promise<any>((res) => {
     const ws = new WebSocket(`${URL_}?name=${name}`);
     let n = 0;
+    // R 10-17: the scene's names ride as placeholders and minted ids (tools/protocol/idalias.ts). Each request waits for the
+    // one before it to be answered (its reply carries the ids a later request names); a verb's promise may be ignored, the
+    // order holds
+    const waiting = new Map<string, (r: any) => void>(); let chain: Promise<any> = Promise.resolve();
+    const ask = (r: { verb: string; args: any }) => new Promise<any>((done) => { const id = `${name}-${++n}`; waiting.set(id, done);
+      ws.send(JSON.stringify({ type: "request", id, verb: r.verb, args: IDS.out(r.verb, r.args) })); setTimeout(() => { if (waiting.delete(id)) done(null); }, 8000); });
     ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: name, token: TOKEN, replica: true }));
     ws.onmessage = (e) => {
       const m = JSON.parse(String(e.data));
+      if (m.type === "reply") { IDS.back(m.reply); const d = waiting.get(m.id); if (d) { waiting.delete(m.id); d(m.reply); } }
       if (m.type === "reply" && !m.ok) console.log(`  (door refused ${m.verb}: ${JSON.stringify(m.reply?.refused)})`);
       if (m.type === "snapshot") res({
-        verb: (v: string, a: any) => { for (const r of requestsOf(v, a)) ws.send(JSON.stringify({ type: "request", id: `${name}-${++n}`, ...r })); },
+        verb: (v: string, a: any) => (chain = chain.then(async () => { for (const r of requestsOf(v, a)) await ask(r); })),
         send: (o: any) => ws.send(JSON.stringify(o)),
         close: () => ws.close(),
       });
@@ -517,8 +526,8 @@ try {
     const y = await dropOver(h, ag, "palm-bot", dropAt, canopy.y, "release");
     const { supportShape } = await import("../mcpl/physics.ts");
     check("the palm's support is fitted from its triangles — an exact collider, no summary decks",
-      JSON.stringify((ag as any).supportIds.get("palm")) === JSON.stringify([`${W}/palm`]) && supportShape(`${W}/palm`) === "exact",
-      `${JSON.stringify((ag as any).supportIds.get("palm"))} fitted as ${supportShape(`${W}/palm`)}`);
+      JSON.stringify((ag as any).supportIds.get(IDS.of("palm"))) === JSON.stringify([`${W}/${IDS.of("palm")}`]) && supportShape(`${W}/${IDS.of("palm")}`) === "exact",
+      `${JSON.stringify((ag as any).supportIds.get(IDS.of("palm")))} fitted as ${supportShape(`${W}/${IDS.of("palm")}`)}`);
     check("a body released over a palm rests in its real fronds or below them, never on a floor above the model",
       y + hipsOffset <= g.bbox.max[1] + 0.15,
       `root=${y.toFixed(2)} (surface ${(y + hipsOffset).toFixed(2)}) palm top ${g.bbox.max[1]}`);

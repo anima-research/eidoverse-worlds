@@ -27,9 +27,13 @@ const ME = "partyhost", WORLD = "party1";
 process.env.TRUST_NAMES = "1";
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
-const { cdp, evalJson, cleanup, die, BASE } = await scratchBench("party", {
+import { inPage } from "./idalias.ts";
+// R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); NODE holds the minted ids
+const NODE = new Map<string, string>(); const NAMES = ["box2", "bench5", "lockd", "signbox", "bpbox"];
+const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("party", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
+const evalJson = (expr: string) => evalRaw(inPage(expr, NAMES, NODE));
     const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", WORLD, "--owner", ME, "--title", "party probe"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worldsDir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
     if (r.exitCode !== 0) throw new Error("founding failed: " + r.stderr.toString());
   },
@@ -58,7 +62,7 @@ const clickEl = async (sel: string) => { const c = await centre(sel); if (!c) re
 const insp = `document.querySelector('[data-frame="inspector"]')`;
 const select = async (id: string) => { await page(`(await import('/lib/scenegraph.js')).sceneSelect('${id}'); return true;`); await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === '${id}')`); await sleep(400); };
 const editMode = async (on: boolean) => { await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(${on}), true))`); await waitFor(`document.body.classList.contains('edit-mode') === ${on}`); await sleep(500); };
-const make = (id: string, comps: string, at: [number, number, number], model = CRATE) => page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${id}', ${model ? `model: '${model}', ` : ""}components: { ${comps} transform: { pos: [${at}], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });`);
+const make = async (id: string, comps: string, at: [number, number, number], model = CRATE) => { const r = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${id}', ${model ? `model: '${model}', ` : ""}components: { ${comps} transform: { pos: [${at}], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });`); if (r?.ok) NODE.set(id, await evalJson(`'${id}'`)); return r; };
 const chatLines = `[...document.querySelectorAll('#chatlog .line, #chatlog > *')].map((l) => l.textContent)`;
 
 function guest(name: string) {
@@ -121,7 +125,7 @@ try {
     const added = entries().slice(n0).map((e: any) => `${e.kind}:${e.verb ?? ""}${e.refused ? ":REFUSED" : ""}`);
     check("B2a Enter writes once: one act and its change, no refused second write", added.length === 2 && !added.some((a) => /REFUSED/.test(a)), added);
     check("B2b …and no refusal toast", (await evalJson(`__refused.length`)) === r0, await evalJson(`__refused.slice(${r0}).map((r) => r.text)`));
-    const q = disk().entities.box2?.c.transform?.q; check("B2c …and it turned to 45°", q && Math.abs(2 * Math.asin(q[1]) * 180 / Math.PI - 45) < 0.5, q);
+    const q = disk().entities[NODE.get("box2")]?.c.transform?.q; check("B2c …and it turned to 45°", q && Math.abs(2 * Math.asin(q[1]) * 180 / Math.PI - 45) < 0.5, q);
   });
 
   // ---- B3: World settings in builder mode ----
@@ -188,7 +192,7 @@ try {
     check("S1a 'Delete anyway' is not the focused answer", !/Delete anyway/.test(focus), focus);
     await shot("S1-locked-X");
     await press("Enter"); await sleep(1200);
-    check("S1b Enter on the question deletes nothing", !!disk().entities.lockd && !(await evalJson(`!!document.querySelector('#confirm-center')`)));
+    check("S1b Enter on the question deletes nothing", !!disk().entities[NODE.get("lockd")] && !(await evalJson(`!!document.querySelector('#confirm-center')`)));
   });
 
   // ---- S4: a sign on a crate shows ----
@@ -210,7 +214,7 @@ try {
     check("S4a Text added to a crate is drawn on its front face (past it), not at its origin inside it", w.out.length >= 1 && w.out.every((s: any) => !s.inside && s.c[2] >= w.crate[1][2] - 0.02 && s.c[1] > w.crate[0][1] + 0.2), w);
     const sel = await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelected())`);
     const textOn = Object.entries(disk().entities).find(([, e]: any) => e.c.text)?.[0];
-    check("S4b …it is its own thing riding the crate, and it is selected (its card is in front of you)", textOn && textOn !== "signbox" && disk().entities[textOn]?.c.parent?.to === "signbox" && sel === textOn, { sel, textOn });
+    check("S4b …it is its own thing riding the crate, and it is selected (its card is in front of you)", textOn && textOn !== NODE.get("signbox") && disk().entities[textOn]?.c.parent?.to === NODE.get("signbox") && sel === textOn, { sel, textOn });
     await shot("S4-sign");
     // a picture, through the same path the upload gesture ends in (the file chooser itself can't open headless)
     await select("signbox");
@@ -218,7 +222,7 @@ try {
     await sleep(800);
     const pic = Object.entries(disk().entities).find(([, e]: any) => e.c.picture);
     const pos = pic?.[1].c.transform?.pos;
-    check("S4c a picture added to the crate stands on its front face (its own child, past the crate's front)", pic && pic[1].c.parent?.to === "signbox" && pos && pos[2] > 0.2, { pr, pic });
+    check("S4c a picture added to the crate stands on its front face (its own child, past the crate's front)", pic && pic[1].c.parent?.to === NODE.get("signbox") && pos && pos[2] > 0.2, { pr, pic });
   });
 
   // ---- S5: Save as blueprint asks for a name ----
@@ -259,7 +263,7 @@ try {
   // ---- L: what the inspector and hierarchy say about locks ----
   await stage("L", async () => {
     await editMode(true);
-    if (!disk().entities.lockd) await make("lockd", "label: 'Locked crate', lock: true,", near(-3, 3));
+    if (!disk().entities[NODE.get("lockd")]) await make("lockd", "label: 'Locked crate', lock: true,", near(-3, 3));
     check("(setup) a door-crate under the locked crate", (await make("child1", "label: 'Lid', parent: { to: 'lockd' }, openable: { open: false, locked: false }, reactions: { open: { kind: 'toggle', unless: 'locked' } },", [0, 1.6, 0]))?.ok);
     await select("lockd"); await sleep(400);
     const labels = await evalJson(`[...${insp}.querySelectorAll('.sp-row')].filter((r) => r.querySelector('input[type=checkbox]')).map((r) => r.querySelector('.sp-label')?.textContent ?? '')`);

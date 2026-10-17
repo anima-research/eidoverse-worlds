@@ -24,9 +24,13 @@ const ENGINE = path.resolve(import.meta.dir, "../..");
 const ME = "b2bot", WORLD = "b2";
 process.env.TRUST_NAMES = "1";
 let worldsDir = "";
-const { cdp, cws, evalJson, cleanup, die, BASE } = await scratchBench("batch2", {
+import { pagedEval } from "./idalias.ts";
+// R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); quoted names in page code are ids
+const NAMES = ["linkpic", "linkradio", "hostradio", "moon", "radio", "sign", "post", "statue", "kiosk", ...Array.from({ length: 10 }, (_, i) => `loop${i}`)];
+const { cdp, cws, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("batch2", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
+const evalJson = pagedEval(evalRaw, NAMES);
     const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", WORLD, "--owner", ME, "--title", "batch 2 probe"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worldsDir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
     if (r.exitCode !== 0) throw new Error("founding failed: " + r.stderr.toString());
   },

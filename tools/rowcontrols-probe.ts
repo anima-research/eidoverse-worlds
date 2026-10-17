@@ -21,9 +21,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { scratchBench, mkCheck, sleep } from './harness.ts';
+import { pagedEval } from './protocol/idalias.ts';
 
 const WORLD = 'rows', CRATE = 'eidoverse/assets/models/crate_large_blue.glb';
-const { evalJson, cleanup, die, cdp, BASE, SCRATCH } = await scratchBench('rowcontrols', { worlds: [WORLD], owner: 'editbot', serverEnv: { TRUST_NAMES: '1', VERB_RATE: '1000' } });
+const { evalJson: evalRaw, cleanup, die, cdp, BASE, SCRATCH } = await scratchBench('rowcontrols', { worlds: [WORLD], owner: 'editbot', serverEnv: { TRUST_NAMES: '1', VERB_RATE: '1000' } });
+// R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); quoted scene names in page
+// code are read as ids, every answer brings the minted ids back, and N(name) reads one for the node-side checks
+const NAMES = ["crate", "box2", "cup", "toy", "lamp", "deep1", "deep2", "deep3", "deep4", "deep5", "deep6"]; const NODE = new Map<string, string>(); const N = (n: string) => NODE.get(n) ?? n;
+const evalJson = pagedEval(evalRaw, NAMES, NODE);
 const { check, tally } = mkCheck();
 const ev = (e: string, ms = 15000) => Promise.race([evalJson(e), sleep(ms).then(() => { throw new Error(`evaluate timed out after ${ms} ms: ${e.slice(0, 90)}`); })]);
 const waitFor = async (e: string, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await ev(e).catch(() => false)) return true; await sleep(100); } return false; };
@@ -93,15 +98,15 @@ try {
 
   // ---------------------------------------------------------------- R: the Hierarchy's columns
   await ev(`(async () => { ${D}.hierDo?.('fold:all-open'); return true; })()`); await painted(); await painted();
-  const cols = await ev(`(() => { const out = {}; for (const id of ['crate', 'box2', 'cup']) { const row = document.querySelector('[data-frame="hierarchy"] .sp-tree-row[data-id="' + id + '"]'); if (!row) { out[id] = null; continue; }
+  const cols = await ev(`(() => { const out = {}; for (const [k, id] of [['k:crate', 'crate'], ['k:box2', 'box2'], ['k:cup', 'cup']]) { const row = document.querySelector('[data-frame="hierarchy"] .sp-tree-row[data-id="' + id + '"]'); if (!row) { out[k.slice(2)] = null; continue; }
       const kids = [...row.children].map((e) => e.classList.contains('sp-row-on') ? 'box' : e.classList.contains('sp-item-main') ? 'name' : e.classList.contains('sp-eye') ? 'eye' : e.classList.contains('sp-lock') ? 'lock' : null).filter(Boolean);
       const x = (s) => Math.round(row.querySelector(s)?.getBoundingClientRect().left ?? -1);
-      out[id] = { order: kids.join(','), box: x('.sp-row-on'), name: x('.sp-item-label'), eye: x('.sp-eye'), lock: x('.sp-lock') }; } return out; })()`);
+      out[k.slice(2)] = { order: kids.join(','), box: x('.sp-row-on'), name: x('.sp-item-label'), eye: x('.sp-eye'), lock: x('.sp-lock') }; } return out; })()`);
   check('R1 every entity row is [☑][name][👁][🔒], in that order', ['crate', 'box2', 'cup'].every((k) => cols[k]?.order === 'box,name,eye,lock'), JSON.stringify(cols));
   check('R1 …the eye and the lock columns sit at one x down the list', cols.crate && cols.crate.eye === cols.box2.eye && cols.box2.eye === cols.cup.eye && cols.crate.lock === cols.cup.lock && cols.crate.eye > 0, JSON.stringify(cols));
   check('R1 …and two rows at one depth start their box and name at one x', cols.crate?.box === cols.box2?.box && cols.crate?.name === cols.box2?.name && cols.cup?.name > cols.crate?.name, JSON.stringify(cols));
   await ev(`(async () => { ${D}.hierDo?.('hopt:comps'); ${D}.hierDo?.('fold:all-open'); return true; })()`); await painted(); await painted();
-  const comp = await ev(`(() => { const r = document.querySelector('[data-frame="hierarchy"] .sp-tree-row[data-id^="comp:crate:"]'); const cup = document.querySelector('[data-frame="hierarchy"] .sp-tree-row[data-id="cup"]');
+  const comp = await ev(`(() => { const r = document.querySelector('[data-frame="hierarchy"] .sp-tree-row[data-id^="comp:' + 'crate' + ':"]'); const cup = document.querySelector('[data-frame="hierarchy"] .sp-tree-row[data-id="cup"]');
     const x = (row) => Math.round(row?.querySelector('.sp-item-label')?.getBoundingClientRect().left ?? -1); return { id: r?.dataset.id ?? null, comp: x(r), cup: x(cup), rows: [r, cup].map((row) => [...(row?.children ?? [])].map((e) => e.className.split(' ')[0] + '@' + Math.round(e.getBoundingClientRect().left) + '+' + Math.round(e.getBoundingClientRect().width) + ':' + getComputedStyle(e).marginLeft + '/' + getComputedStyle(e).marginRight).join(' ')) }; })()`);
   check('R1 a row with no box (a component row) starts its name where a boxed row at its depth does', comp.id && comp.comp === comp.cup && comp.cup > 0, JSON.stringify(comp));
   await ev(`(async () => { ${D}.hierDo?.('hopt:comps'); return true; })()`); await painted();
@@ -124,7 +129,7 @@ try {
     try { const c = ctr.clone().project(camera); return b.pickAt ? b.pickAt(c.x, c.y) : 'no pickAt'; } finally { camera.quaternion.copy(q); camera.updateMatrixWorld(true); } })()`);
   const why = (id: string) => ev(`(async () => { const { camera, THREE } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const o = w.entities.get('${id}'); const c = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()).project(camera); const rc = new THREE.Raycaster(); rc.setFromCamera(new THREE.Vector2(c.x, c.y), camera); const hits = rc.intersectObject(o, true); return { ndc: [c.x, c.y, c.z].map((v) => +v.toFixed(3)), raw: hits.length, layer: (await import('/shared/layers.js')).layerOf((await import('/lib/state.js')).state.st.entities, '${id}') }; })()`).catch((e) => String(e));
   const before = await click('crate');
-  check('E0 (control) before hiding, a viewport click at the crate selects the crate', before === 'crate', JSON.stringify({ before, why: await why('crate') }));
+  check('E0 (control) before hiding, a viewport click at the crate selects the crate', before === N('crate'), JSON.stringify({ before, why: await why('crate') }));
   await ev(`(async () => { ${D}.hierDo?.('myhide', 'crate'); return true; })()`);
   check('E1 the eye hides it in my view: not drawn', await waitFor(`import('/lib/world.js').then((w) => w.entities.get('crate')?.visible === false)`));
   check('E1 …kept in this browser, per world', await ev(`(() => { try { return JSON.parse(localStorage.getItem('ew-myhidden-${WORLD}') ?? '[]').includes('crate'); } catch { return false; } })()`));
@@ -136,7 +141,7 @@ try {
   check('E4 its row eye is on, tinted "only you" (not the accent of a shared switch), and says so', eye?.on && eye.color === 'rgb(176, 138, 216)' && /^Only you/.test(eye.title), JSON.stringify(eye));
   // a known write after the hide: the log grows by exactly that one entry
   const ren = await ev(`import('/lib/net.js').then((m) => m.sendRequest('set', { id: 'box2', component: 'label', value: 'box two' }))`);
-  check('(setup) a known write (rename box2) lands', ren?.ok === true && await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities.box2?.c.label === 'box two')`), JSON.stringify(ren?.refused));
+  check('(setup) a known write (rename box2) lands', ren?.ok === true && await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['box2']?.c.label === 'box two')`), JSON.stringify(ren?.refused));
   await ev(`(async () => { ${D}.hierDo?.('myhide', 'box2'); ${D}.hierDo?.('myhide', 'box2'); return true; })()`);
   await sleep(600);
   const added = logLines().slice(n0).map((l) => JSON.parse(l));
@@ -151,18 +156,18 @@ try {
   await into('crate');
   check('E6 the hidden crate still collides: my body standing in it is pushed out', await waitFor(`(async () => { const w = await import('/lib/world.js'); const c = await import('/lib/controller.js'); const o = w.entities.get('crate'); return Math.hypot(c.myState.pos.x - o.position.x, c.myState.pos.z - o.position.z) > 0.3; })()`, 5000));
   let peak: any = null;
-  { const t0 = Date.now(); while (Date.now() - t0 < 4000) { await into('crate'); await painted(); const m = (await marks()).find((x: any) => x.id === 'crate'); if (m && m.a > (peak?.a ?? 0)) peak = m; if (peak?.a >= 0.5) break; } }
+  { const t0 = Date.now(); while (Date.now() - t0 < 4000) { await into('crate'); await painted(); const m = (await marks()).find((x: any) => x.id === N('crate')); if (m && m.a > (peak?.a ?? 0)) peak = m; if (peak?.a >= 0.5) break; } }
   check('E7 bumping it fades in its outline with the crossed-out eye ("you hid this")', peak && peak.a >= 0.5 && peak.eye > 0.4, JSON.stringify(peak));
   await ev(`(async () => { const c = await import('/lib/controller.js'); const w = await import('/lib/world.js'); const o = w.entities.get('crate'); c.myState.pos.set(o.position.x - 12, o.position.y, o.position.z - 12); return true; })()`);
   check('E8 …and it fades out after the contact ends', !!peak && await waitFor(`import('/lib/hiddenbump.js').then((m) => !m.bumpMarks().some((x) => x.id === 'crate'))`, 5000), JSON.stringify(await marks()));
   // a crate I did not hide: solid, and no mark
   let seen: any[] = [];
   { const t0 = Date.now(); while (Date.now() - t0 < 1500) { await into('box2'); await painted(); seen = seen.concat(await marks()); } }
-  check('E9 (control) a crate I did not hide pushes me out too, and shows no mark', await pushedOut('box2') && !seen.some((x: any) => x.id === 'box2'), JSON.stringify(seen.slice(0, 3)));
+  check('E9 (control) a crate I did not hide pushes me out too, and shows no mark', await pushedOut('box2') && !seen.some((x: any) => x.id === N('box2')), JSON.stringify(seen.slice(0, 3)));
   await ev(`(async () => { ${D}.hierDo?.('myhide', 'crate'); return true; })()`);
   check('E10 the eye again shows it: drawn', await waitFor(`import('/lib/world.js').then((w) => w.entities.get('crate')?.visible === true)`));
   const back = await click('crate');
-  check('E10 …and a viewport click lands on it again (the crate, or the cup riding it)', back === 'crate' || back === 'cup', JSON.stringify({ back, why: await why('crate') }));
+  check('E10 …and a viewport click lands on it again (the crate, or the cup riding it)', back === N('crate') || back === N('cup'), JSON.stringify({ back, why: await why('crate') }));
 
   // ---------------------------------------------------------------- S3-5: my private view never shapes a shared write
   await ev(`(async () => { ${D}.hierDo?.('myhide', 'crate'); return true; })()`);
@@ -218,19 +223,19 @@ try {
   if (await ev(`![...document.querySelectorAll('.frame.edit')].some((f) => getComputedStyle(f).display !== 'none')`)) await ev(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB' })), true`);
   await gate('(setup) back in edit mode', await waitFor(`[...document.querySelectorAll('.frame.edit')].some((f) => getComputedStyle(f).display !== 'none')`));
   await ev(`(() => { document.querySelector('.edit-tabs:not(.edit-rtabs) .edit-tab[data-tab="hierarchy"]')?.click(); return true; })()`); await painted();
-  await ev(`(document.activeElement?.blur?.(), true)`); await ev(`import('/lib/net.js').then((m) => m.replica.st.entities.box2?.c.disabled ? m.sendRequest('delete', { id: 'box2', component: 'disabled' }) : null)`);
+  await ev(`(document.activeElement?.blur?.(), true)`); await ev(`import('/lib/net.js').then((m) => m.replica.st.entities['box2']?.c.disabled ? m.sendRequest('delete', { id: 'box2', component: 'disabled' }) : null)`);
   await gate('(setup) box2 back on', await waitFor(`(async () => !(${offOf('box2')}))()`) && await waitFor(`import('/lib/world.js').then((w) => !!w.entities.get('box2'))`, 20000),
-    JSON.stringify(await ev(`(async () => ({ off: ${offOf('box2')}, comp: (await import('/lib/net.js')).replica.st.entities.box2?.c, ent: !!(await import('/lib/world.js')).entities.get('box2') }))()`)));
+    JSON.stringify(await ev(`(async () => ({ off: ${offOf('box2')}, comp: (await import('/lib/net.js')).replica.st.entities['box2']?.c, ent: !!(await import('/lib/world.js')).entities.get('box2') }))()`)));
   await ev(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('box2')), true`); await painted(); await painted();
   await gate('(setup) a real mouse click on the Inspector ENABLED box', await clickAt(HEADBOX));
   check('RC4 the Inspector switches to its off form (state line) without waiting for a blur', await waitFor(`(async () => ${offOf('box2')})()`) && await waitFor(`[...document.querySelectorAll('[data-frame="inspector"] .sp-row')].some((r) => /switched off: nobody/.test(r.textContent))`, 4000));
-  await ev(`(document.activeElement?.blur?.(), true)`); await ev(`import('/lib/net.js').then((m) => m.replica.st.entities.box2?.c.disabled ? m.sendRequest('delete', { id: 'box2', component: 'disabled' }) : null)`);
+  await ev(`(document.activeElement?.blur?.(), true)`); await ev(`import('/lib/net.js').then((m) => m.replica.st.entities['box2']?.c.disabled ? m.sendRequest('delete', { id: 'box2', component: 'disabled' }) : null)`);
   await gate('(setup) box2 on again', await waitFor(`(async () => !(${offOf('box2')}))()`) && await waitFor(`import('/lib/world.js').then((w) => !!w.entities.get('box2'))`, 20000));
 
   // ---------------------------------------------------------------- K: a refused toggle leaves no lie behind
   // a lock refuses the switch (b1d9c7dd: a lock covers everything on the thing), so the authority says no
   await ev(`import('/lib/net.js').then((m) => m.sendRequest('set', { id: 'box2', component: 'lock', value: true }))`);
-  await gate('(setup) box2 locked', await waitFor(`import('/lib/net.js').then((m) => !!m.replica.st.entities.box2?.c.lock)`));
+  await gate('(setup) box2 locked', await waitFor(`import('/lib/net.js').then((m) => !!m.replica.st.entities['box2']?.c.lock)`));
   await painted(); await painted();
   await ev(`(async () => { const { bus } = await import('/lib/base.js'); window.__asked = []; bus.on('edit-lock-asked', (e) => window.__asked.push(e.choice)); bus.on('edit-done', (e) => window.__asked.push('done:' + e.what)); return true; })()`);
   // RC4's own "switched off" flash may still be held (a hint under the pointer doesn't expire): replace it first
@@ -255,7 +260,7 @@ try {
   await sleep(1500); await painted(); await painted();
   check('K5 the Inspector header box is ticked again after a refused untick', !(await ev(`(async () => ${offOf('box2')})()`)) && await waitFor(`document.querySelector('${HEADBOX}')?.checked === true`, 4000), String(await ev(`document.querySelector('${HEADBOX}')?.checked`)));
   await ev(`import('/lib/net.js').then((m) => m.sendRequest('delete', { id: 'box2', component: 'lock' }))`);
-  await waitFor(`import('/lib/net.js').then((m) => !m.replica.st.entities.box2?.c.lock)`);
+  await waitFor(`import('/lib/net.js').then((m) => !m.replica.st.entities['box2']?.c.lock)`);
   // a refusal with no dialog in between (nothing takes focus, nothing else repaints): the authority's own answer, to a
   // switch the probe re-addresses on the wire to a thing that isn't there
   for (const [k, sel] of [['K6 row', ROWBOX], ['K7 Inspector header', HEADBOX]] as const) {
@@ -280,7 +285,7 @@ try {
   // ---------------------------------------------------------------- F: filters
   await ev(`(async () => { ${D}.hierDo?.('hopt:comps'); ${D}.hierDo?.('honly:locked'); ${D}.hierDo?.('filter', 'clickthrough'); return true; })()`); await painted(); await painted();
   const fr = await ev(`(async () => ${D}.hierFields().find((f) => f.t === 'tree')?.rows.map((r) => r.id))()`);
-  check('F1 "only locked" + a search: no unlocked thing comes back through its component row', !(fr ?? []).some((x: string) => x.startsWith('comp:crate') || x === 'crate'), JSON.stringify(fr));
+  check('F1 "only locked" + a search: no unlocked thing comes back through its component row', !(fr ?? []).some((x: string) => x.startsWith('comp:' + N('crate')) || x === N('crate')), JSON.stringify(fr));
   await ev(`(async () => { ${D}.hierDo?.('filter', ''); return true; })()`); await painted(); await painted();
   const face = await ev(`(() => [...document.querySelectorAll('[data-frame="hierarchy"] .sp-pop-btn, [data-frame="hierarchy"] button')].map((b) => b.textContent.trim()).find((t) => /^Options/.test(t)) ?? null)()`);
   check('F2 an active row filter shows on the bar', /locked/.test(String(face)), String(face));
@@ -292,10 +297,10 @@ try {
   const LONG = 'a very long name for a thing nobody would type but someone will paste';
   await ev(`import('/lib/net.js').then((m) => m.sendRequest('set', { id: 'cup', component: 'label', value: '${LONG}' }))`);
   { let par = 'cup'; for (let i = 1; i <= 6; i++) { await ev(`import('/lib/net.js').then((m) => m.sendRequest('create', { id: 'deep${i}', components: { transform: { pos: [0, 0.2, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: 'deep${i} ${LONG}', parent: { to: '${par}', order: 'a0' } } }))`); par = `deep${i}`; } }
-  await waitFor(`import('/lib/net.js').then((m) => !!m.replica.st.entities.deep6)`);
+  await waitFor(`import('/lib/net.js').then((m) => !!m.replica.st.entities['deep6'])`);
   await ev(`(async () => { ${D}.hierDo?.('fold:all-open'); return true; })()`);
   await ev(`(async () => { ${D}.hierDo?.('hopt:kinds'); return true; })()`);
-  await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities.cup?.c.label?.startsWith('a very'))`);
+  await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['cup']?.c.label?.startsWith('a very'))`);
   const clip = await ev(`(async () => { const P = await import('/lib/panels.js'); const c = document.createElement('canvas'); const g = c.getContext('2d'); const ft = g.fillText.bind(g), rec = [];
     g.fillText = (s, x, y) => { rec.push({ s: String(s), x, y, w: g.measureText(String(s)).width }); return ft(s, x, y); };
     const regs = P.renderCanvas(c, ${D}.hierFields(), {}); const eye = regs.find((r) => r.action === 'myhide'); const over = rec.filter((t) => t.x < eye.x && t.x + t.w > eye.x - 2).map((t) => t.s.slice(0, 30) + '@' + Math.round(t.x + t.w));
@@ -312,7 +317,7 @@ try {
     let row = [...f.querySelectorAll('.sp-row')].find((r) => r.querySelector('.sp-label')?.textContent.trim() === 'range' && r.querySelector('input.sp-num'));
     if (!row) { [...f.querySelectorAll('.sp-group')].find((g) => /Light/.test(g.textContent))?.click(); await new Promise((r) => setTimeout(r, 400)); row = [...f.querySelectorAll('.sp-row')].find((r) => r.querySelector('.sp-label')?.textContent.trim() === 'range' && r.querySelector('input.sp-num')); }
     const n = row?.querySelector('input.sp-num'); if (!n) return 'no range field'; n.focus(); n.value = '0.5'; n.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return 'typed'; })()`);
-  check('N1 a typed 0.5 m light range is written as 0.5 (the slider minimum of 1 m is not a clamp)', typed === 'typed' && await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities.lamp?.c.light?.range === 0.5)`, 5000), `${typed} · range ${await ev(`import('/lib/net.js').then((m) => m.replica.st.entities.lamp?.c.light?.range)`)}`);
+  check('N1 a typed 0.5 m light range is written as 0.5 (the slider minimum of 1 m is not a clamp)', typed === 'typed' && await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['lamp']?.c.light?.range === 0.5)`, 5000), `${typed} · range ${await ev(`import('/lib/net.js').then((m) => m.replica.st.entities['lamp']?.c.light?.range)`)}`);
   check('no page errors', (await ev(`window.__errs`))?.length === 0, JSON.stringify(await ev(`window.__errs`)));
 } finally {
   console.log(`\n${tally.passed} passed, ${tally.failed} failed`);

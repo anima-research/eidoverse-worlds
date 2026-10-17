@@ -29,9 +29,15 @@ const ME = "editbot", WORLD = "edit4";
 process.env.TRUST_NAMES = "1"; // a private test server: the name editbot is the account local:editbot (server/config.ts)
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb", RED = "eidoverse/assets/models/crate_large_red.glb";
 let worldsDir = "";
-const { cdp, evalJson, cleanup, die, BASE, SCRATCH } = await scratchBench("client", {
+import { idAliases, inPage } from "./idalias.ts";
+// R 10-17: the scene's names ride as placeholders and minted ids — bob's through IDS (node), the page's own through the page
+// helper (pageIds); every expression sent to the page reads the quoted names as ids (inPage)
+const IDS = idAliases();
+const NAMES = ["cup", "tbl", "plinth", "pebble", "pv", "pt", "ststool", "ststool-seat", "bell"];
+const { cdp, evalJson: evalRaw, cleanup, die, BASE, SCRATCH } = await scratchBench("client", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
+const evalJson = (expr: string) => evalRaw(inPage(expr, NAMES, IDS.map));
     const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", WORLD, "--owner", ME, "--title", "client check"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worldsDir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
     if (r.exitCode !== 0) throw new Error("founding failed: " + r.stderr.toString());
   },
@@ -67,7 +73,7 @@ try {
   let BOB = "";   // bob's identity: the opaque id his snapshot tells him (round-2 R1); a role is granted to it, never to "bob"
   bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.cut?.you) BOB = m.cut.you; };
   await new Promise((r, j) => { bob.onopen = r; bob.onerror = j; });
-  const bobReq = (verb: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, res); bob.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
+  const bobReq = (verb: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, (r: any) => res(IDS.back(r))); bob.send(JSON.stringify({ type: "request", id, verb, args: IDS.out(verb, args) })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
 
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
     window.__gaps = []; { const w = console.warn.bind(console); console.warn = (...a) => { if (/\\[state\\] seq gap/.test(String(a[0]))) __gaps.push(String(a[0])); return w(...a); }; }
@@ -209,7 +215,7 @@ try {
   check("L2 …saying in one line which thing is locked and by whom, no agent teaching (R, 10-04)", body === "It rides tbl, which is locked by bob.", body);
   check("L3 …and the refused try changed nothing; the attempt itself is on the record (round-2 R7)", myActs().length === n0 && myRefused() >= 1, myRefused());
   await dlgClick("Move anyway");
-  check("L4 Move anyway: ONE act, the same request with throughLock: true", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.body.request.throughLock === true && myActs().at(-1).e.body.request.id === "cup"), myActs().slice(n0).map((a) => a.e.body.request));
+  check("L4 Move anyway: ONE act, the same request with throughLock: true", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.body.request.throughLock === true && myActs().at(-1).e.body.request.id === IDS.of("cup")), myActs().slice(n0).map((a) => a.e.body.request));
   check("L5 …the cup moved, and the table is still locked", Math.abs(disk().entities.cup.c.transform.pos[0] - 0.4) < 1e-9 && disk().entities.tbl.c.lock?.rank === "builder", [disk().entities.cup.c.transform, disk().entities.tbl.c.lock]);
   check("L6 the dialog's answer was recorded as yes", await evalJson(`__asked.length === ${a0 + 1} && __asked.at(-1).yes === true`));
 
@@ -219,7 +225,7 @@ try {
   await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === '${crate}')`);
   await key("KeyD", { altKey: true });
   check("D1 Alt+D = create {from: <the thing>}: ONE act", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "create" && myActs().at(-1).e.body.request.from === crate), myActs().slice(n0).map((a) => a.e.body.request));
-  const st1 = disk(); const dup = Object.keys(st1.entities).find((k) => k !== crate && k !== "cup" && st1.entities[k].c.model === st1.entities[crate].c.model);   // the stored model: the door keeps CRATE as its content address
+  const st1 = disk(); const dup = Object.keys(st1.entities).find((k) => k !== crate && k !== IDS.of("cup") && st1.entities[k].c.model === st1.entities[crate].c.model);   // the stored model: the door keeps CRATE as its content address
   check("D2 …a copy 0.5 m along x, drawn in the page", !!dup && Math.abs(st1.entities[dup].c.transform.pos[0] - st1.entities[crate].c.transform.pos[0] - 0.5) < 1e-6 && await waitFor(`import('/lib/world.js').then((m) => m.entities.has('${dup}'))`), dup);
 
   // ---- M: multi-delete is one batch ----
@@ -383,7 +389,7 @@ try {
     check("F3 …and the drag doesn't jump when it starts: the pebble keeps its offset from the point under the pointer (the old ray found the pebble itself)", !!A0 && !!press && Math.hypot(...d(d(p0, A0), d(press.P, press.A))) < 0.02, { p0, A0, press });
     n0 = myActs().length;
     await evalJson(`(dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${m1?.[0]}, clientY: ${m1?.[1]} })), true)`);
-    check("F4 release = ONE act: set the pebble's transform (local to the plinth), expecting where it was", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "set" && myActs().at(-1).e.body.request.id === "pebble" && !!myActs().at(-1).e.body.request.expect), myActs().slice(n0).map((a) => a.e.body.request));
+    check("F4 release = ONE act: set the pebble's transform (local to the plinth), expecting where it was", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "set" && myActs().at(-1).e.body.request.id === IDS.of("pebble") && !!myActs().at(-1).e.body.request.expect), myActs().slice(n0).map((a) => a.e.body.request));
     await sleep(800);
     const pAfter = (await geo(0, 0)).P;
     check("F5 …and once the authority's echo is drawn, the pebble is where the drag left it", Math.hypot(...d(pAfter, p1)) < 0.02, { pAfter, p1 });
@@ -548,7 +554,7 @@ try {
   await sleep(400);
   const heldD = await evalJson(`import('/lib/controller.js').then((m) => m.keys.has('KeyD'))`);   // the walk reads this set
   await evalJson(`(dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyD', key: 'd', ctrlKey: true, bubbles: true })), true)`);
-  check("CD1 Ctrl+D = create {from: pt}: ONE act", await waitDisk(() => myActs().length === nD + 1 && myActs().at(-1).e.body.request.from === "pt"), myActs().slice(nD).map((a) => a.e.body?.request));
+  check("CD1 Ctrl+D = create {from: pt}: ONE act", await waitDisk(() => myActs().length === nD + 1 && myActs().at(-1).e.body.request.from === IDS.of("pt")), myActs().slice(nD).map((a) => a.e.body?.request));
   const me1 = await evalJson(`import('/lib/controller.js').then((m) => [m.myState.pos.x, m.myState.pos.y, m.myState.pos.z])`);
   check("CD2 …and the chord never counts as a held D, so it can't strafe the body (the walk reads the held set)", heldD === false && Math.hypot(me1[0] - me0[0], me1[2] - me0[2]) < 0.05, { heldD, me0, me1 });
   await sleep(600);   // the first copy reselects ITSELF 400 ms after it lands (editpanels duplicate): let that happen first
@@ -653,10 +659,10 @@ try {
     await type("/role");
     check("CP2 …and /role is mine: owner", await lineLike(`/you: owner/`), (await lines() as string[]).slice(-3));
     // CP3 /use <thing> with no action does its one action (it sent 'use', which the bell doesn't do)
-    { const r = await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('create', { id: 'bell', model: '${CRATE}', components: { reactions: { ring: { kind: 'set', component: 'label', value: 'rung' } } }, place: { at: [4, 4] } })).ok;`);
+    { const r = await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('create', { id: 'bell', model: '${CRATE}', components: { label: 'bell', reactions: { ring: { kind: 'set', component: 'label', value: 'rung' } } }, place: { at: [4, 4] } })).ok;`);
       await waitFor(`import('/lib/world.js').then((m) => m.entities.has('bell'))`);
       await type("/use bell");
-      check("CP3 /use bell rings it: the authority did its one action (the label is on the record)", r && await waitDisk(() => disk().entities.bell?.c.label === "rung"), { r, refused: await evalJson(`__refused.map((x) => x.text).slice(-2)`) }); }
+      check("CP3 /use bell rings it: the authority did its one action (the label is on the record)", r && await (async () => { const bid = await evalJson(`'bell'`); /* the page made it: its id, read in the page */ return waitDisk(() => disk().entities[bid]?.c.label === "rung"); })(), { r, refused: await evalJson(`__refused.map((x) => x.text).slice(-2)`) }); }
     // CP5 a spoken utterance arriving in two says is one chat line again (the port dropped the trio)
     { await bobReq("say", { text: "the first half", spoken: true, utt: 41 }); await bobReq("say", { text: "and the rest", spoken: true, utt: 41 });
       check("CP5 a spoken utterance's continuation merges into its line", await lineLike(`/the first half and the rest/`), (await lines() as string[]).slice(-3)); }

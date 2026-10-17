@@ -11,7 +11,8 @@
 //   L   lint reports a stored reference that names nothing
 //   T   every field that holds an entity id is typed (imported-behavior.attach)
 //   S   scripts: world.create mints opaque and takes no id (api 2); an api-1 act re-runs as it was minted
-//   G   the fixture seam (fixtureIds) is reachable from tests only
+//   G   the fixture seam (fixtureIds) is reachable from tests only: no runtime file calls it (G1, static) and a process
+//       that loads the server's and the agent door's code still refuses a chosen id (G2, at runtime)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -220,9 +221,25 @@ await C("G1", "fixtureIds (tests' fixtures seed known ids, like a fork's copy) i
   const walk = (d) => { if (!fs.existsSync(path.join(T, d))) return; for (const f of fs.readdirSync(path.join(T, d), { withFileTypes: true })) {
     const p = path.join(d, f.name); if (f.isDirectory()) { if (f.name !== "node_modules") walk(p); continue; }
     if (!/\.(js|ts|mjs)$/.test(f.name) || /-test\.|-check\.|-probe\./.test(f.name)) continue;
-    const s = read(p); if (/fixtureIds\s*\(/.test(s) && p !== "shared/protocol/authority.js") hits.push(p); } };
+    const s = read(p); if (/\bfixtureIds\b/.test(s) && p !== "shared/protocol/authority.js") hits.push(p); } };   // named at all (an import alias would dodge a call pattern)
   roots.forEach(walk);
   return [typeof D.fixtureIds === "function" && !hits.length, hits]; });
+
+await C("G2", "at runtime, loading the server's and the agent door's own code never enables the seam: a fresh process that imports them refuses a chosen id", () => {
+  const src = `
+    await import(${JSON.stringify(path.join(T, "server/worldlog.ts"))}); await import(${JSON.stringify(path.join(T, "server/messages.ts"))});
+    await import(${JSON.stringify(path.join(T, "mcpl/tools.ts"))}); await import(${JSON.stringify(path.join(T, "mcpl/agent.ts"))});
+    const { request, liftWorld, LAB_CATALOGUE } = await import(${JSON.stringify(path.join(T, "shared/protocol/authority.js"))});
+    const { openWorld } = await import(${JSON.stringify(path.join(T, "server/filehost.ts"))});
+    const { scratch } = await import(${JSON.stringify(path.join(T, "tools/protocol/common.ts"))});
+    process.env.PROTOCOL_NOW = "1800000000000"; const w = openWorld(scratch("g2"), "g2"); w.catalogue = LAB_CATALOGUE; liftWorld(w);
+    request(w, "olive", "create-world", { title: "g2" }); process.env.PROTOCOL_NOW = "1800000001000";
+    const r = request(w, "olive", "create", { id: "table", model: "table" });
+    console.log("G2:" + JSON.stringify({ ok: r.ok, code: r.refused?.code, minted: /mint/.test(r.refused?.reason ?? "") }));`;
+  const out = Bun.spawnSync(["bun", "-e", src], { cwd: T, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const line = out.stdout.toString().split("\n").find((l) => l.startsWith("G2:"));
+  const v = line ? JSON.parse(line.slice(3)) : null;
+  return [v && v.ok === false && v.code === "shape" && v.minted, line ?? out.stderr.toString().slice(-600)]; });
 
 console.log(`ids: ${pass} ok, ${fail} failed`);
 process.exit(fail ? 1 : 0);

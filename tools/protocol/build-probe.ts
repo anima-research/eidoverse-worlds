@@ -22,9 +22,14 @@ const ME = "editbot", WORLD = "buildp";
 process.env.TRUST_NAMES = "1";
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
-const { cdp, evalJson, cleanup, die, BASE } = await scratchBench("build", {
+import { inPage } from "./idalias.ts";
+// R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); NODE holds the minted ids
+// once read back, so node-side checks and later page code use them
+const NODE = new Map<string, string>(); const NAMES = ["house-a", "house-b"];
+const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("build", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
+const evalJson = (expr: string) => evalRaw(inPage(expr, NAMES, NODE));
     const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", WORLD, "--owner", ME, "--title", "build probe"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worldsDir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
     if (r.exitCode !== 0) throw new Error("founding failed: " + r.stderr.toString());
   },
@@ -71,9 +76,10 @@ try {
     const T = (p: number[]) => ({ pos: p, q: [0, 0, 0, 1], scale: [1, 1, 1] });
     const mk = (id: string, p: number[]) => page(`const m = await import('/lib/net.js'); return (await m.sendRequest('create', { id: '${id}', model: '${CRATE}', components: { transform: ${JSON.stringify(T(p))}, structure: ${JSON.stringify(room)} } })).ok;`);
     const okA = await mk("house-a", [H[0] - 14, 0, H[2]]), okB = await mk("house-b", [H[0] - 1.5, 0, H[2] - 1]);
+    for (const n of NAMES) NODE.set(n, await evalJson(`'${n}'`));   // the ids the authority minted for them
     check("(setup) two buildings: house-a (the world's first) and house-b around the aim point", okA && okB && !!H, H);
     await waitFor(`import('/lib/world.js').then((m) => m.entities.has('house-b'))`);
-    const A0 = JSON.stringify(disk().entities["house-a"].c.structure), B0 = JSON.stringify(disk().entities["house-b"].c.structure);
+    const A0 = JSON.stringify(disk().entities[NODE.get("house-a")].c.structure), B0 = JSON.stringify(disk().entities[NODE.get("house-b")].c.structure);
     await page(`(await import('/lib/scenegraph.js')).sceneSelect('house-b'); const s = await import('/lib/structure_ui.js'); s.setStructureMode(true); s.setTool('wall'); return true;`);
     check("ST0 the wall tool is armed in edit mode", await waitFor(`import('/lib/structure_ui.js').then((m) => m.currentTool() === 'wall' && m.isStructureMode())`));
     let n0 = myActs().length;
@@ -81,22 +87,22 @@ try {
     await press();
     const one = await waitDisk(() => myActs().length === n0 + 1);
     const a = myActs().at(-1); const req = a?.e.body?.request;
-    check("ST1 a click with the wall tool edits the SELECTED building (house-b), not the world's first: ONE act", one && req?.id === "house-b" && req?.component === "structure", { acts: myActs().slice(n0).map((x) => [x.e.verb, x.e.body?.request?.id]), refused: await evalJson(`__refused.map((r) => r.text)`) });
+    check("ST1 a click with the wall tool edits the SELECTED building (house-b), not the world's first: ONE act", one && req?.id === NODE.get("house-b") && req?.component === "structure", { acts: myActs().slice(n0).map((x) => [x.e.verb, x.e.body?.request?.id]), refused: await evalJson(`__refused.map((r) => r.text)`) });
     check("ST2 …with expect on the building as I saw it", JSON.stringify(req?.expect?.[0]?.value) === B0, req?.expect);
-    check("ST3 …and house-a is untouched", JSON.stringify(disk().entities["house-a"].c.structure) === A0);
-    const B1 = JSON.stringify(disk().entities["house-b"].c.structure);
-    check("ST4 …a wall was added", B1 !== B0 && disk().entities["house-b"].c.structure.levels[0].walls.length === JSON.parse(B0).levels[0].walls.length + 1);
+    check("ST3 …and house-a is untouched", JSON.stringify(disk().entities[NODE.get("house-a")].c.structure) === A0);
+    const B1 = JSON.stringify(disk().entities[NODE.get("house-b")].c.structure);
+    check("ST4 …a wall was added", B1 !== B0 && disk().entities[NODE.get("house-b")].c.structure.levels[0].walls.length === JSON.parse(B0).levels[0].walls.length + 1);
     await waitFor(`globalThis.__editWrites().undo.at(-1) === ${a?.seq}`);
     n0 = myActs().length;
     await key("KeyZ", { ctrlKey: true });
-    check("ST5 Ctrl+Z (the editor's one undo) takes the wall away: house-b is as it was", await waitDisk(() => JSON.stringify(disk().entities["house-b"].c.structure) === B0 && myActs().at(-1).e.verb === "undo"), myActs().slice(n0).map((x) => x.e.body));
+    check("ST5 Ctrl+Z (the editor's one undo) takes the wall away: house-b is as it was", await waitDisk(() => JSON.stringify(disk().entities[NODE.get("house-b")].c.structure) === B0 && myActs().at(-1).e.verb === "undo"), myActs().slice(n0).map((x) => x.e.body));
     // someone else changes house-b after my edit: my Ctrl+Z must not write over theirs
     await waitFor(`import('/lib/net.js').then((m) => JSON.stringify(m.replica.st.entities['house-b'].c.structure) === ${JSON.stringify(B0)})`);
     await press();
-    await waitDisk(() => JSON.stringify(disk().entities["house-b"].c.structure) === B1);
+    await waitDisk(() => JSON.stringify(disk().entities[NODE.get("house-b")].c.structure) === B1);
     const mine = myActs().at(-1).seq; await waitFor(`globalThis.__editWrites().undo.at(-1) === ${mine}`);
     const theirs = drawRoom(emptyStructure(), { x: 0, z: 0 }, { x: 3, z: 3 });
-    const bw = await bobReq("set", { id: "house-b", component: "structure", value: theirs });
+    const bw = await bobReq("set", { id: NODE.get("house-b"), component: "structure", value: theirs });
     check("(setup) bob changes house-b after my edit", bw.ok, bw.refused);
     await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['house-b'].c.structure.levels[0].tiles.length === 16)`);
     const nE = entries().length;
@@ -104,7 +110,7 @@ try {
     await sleep(1500);
     const after = disk();
     check("ST6 …then my Ctrl+Z writes nothing over bob's building, and house-a is still untouched",
-      JSON.stringify(after.entities["house-b"].c.structure) === JSON.stringify(theirs) && JSON.stringify(after.entities["house-a"].c.structure) === A0,
+      JSON.stringify(after.entities[NODE.get("house-b")].c.structure) === JSON.stringify(theirs) && JSON.stringify(after.entities[NODE.get("house-a")].c.structure) === A0,
       { written: entries().slice(nE).filter((e) => e.kind === "change").map((e) => e.body?.id), refused: await evalJson(`__refused.slice(-1).map((r) => r.text)`) });
     const panel = await evalJson(`[...document.querySelectorAll('button')].map((b) => b.textContent.trim()).filter((t) => /undo building/i.test(t))`);
     check("ST7 the Create panel has no second undo ('undo building edit'): Ctrl+Z is the one undo", Array.isArray(panel) && panel.length === 0, panel);
