@@ -24,6 +24,16 @@
     1
    ]
   },
+  "ranges": {
+   "pos": {
+    "min": -100000,
+    "max": 100000
+   },
+   "scale": {
+    "min": -1000,
+    "max": 1000
+   }
+  },
   "on": "thing"
  },
  "model": {
@@ -34,7 +44,8 @@
  "label": {
   "status": "trial",
   "type": "string",
-  "maxLen": 80
+  "maxLen": 80,
+  "on": "thing"
  },
  "description": {
   "status": "trial",
@@ -49,17 +60,28 @@
   },
   "enums": {
    "shape": [
-    "exact",
+    "mesh",
     "box",
     "sphere"
    ]
+  },
+  "absentMeans": {
+   "shape": "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (shared/supportclass.js)"
   },
   "on": "thing"
  },
  "stage": {
   "status": "trial",
   "fields": {
-   "speaker": "any"
+   "speaker": "string"
+  },
+  "ranges": {
+   "speaker": {
+    "maxLen": 80
+   }
+  },
+  "absentMeans": {
+   "speaker": "no stage cue: the caption bot uses its own speaker"
   },
   "on": "thing"
  },
@@ -80,18 +102,32 @@
  },
  "pivot": {
   "status": "trial",
+  "fields": {
+   "pos": "vec3"
+  },
+  "ranges": {
+   "pos": {
+    "min": -10000,
+    "max": 10000
+   }
+  },
+  "required": [
+   "pos"
+  ],
+  "absentMeans": {
+   "pos": "it turns and scales about its origin, [0, 0, 0]"
+  },
   "on": "thing"
  },
  "parent": {
   "status": "trial",
   "fields": {
    "to": "ref",
-   "order": "string",
    "socket": "string"
   },
-  "defaults": {
-   "order": "a0"
-  },
+  "required": [
+   "to"
+  ],
   "on": "thing"
  },
  "light": {
@@ -103,18 +139,18 @@
    "range": "number",
    "angle": "number",
    "inner": "number",
-   "shadows": "bool",
+   "decay": "number",
    "important": "bool",
-   "day": "bool"
+   "daytime": "string"
   },
   "defaults": {
    "kind": "point",
    "color": 16767392,
    "intensity": 16,
    "range": 10,
-   "shadows": false,
+   "decay": 2,
    "important": false,
-   "day": true
+   "daytime": "dim"
   },
   "when": [
    {
@@ -131,6 +167,10 @@
    "kind": [
     "point",
     "spot"
+   ],
+   "daytime": [
+    "dim",
+    "full"
    ]
   },
   "ranges": {
@@ -151,8 +191,17 @@
    "inner": {
     "min": 0,
     "max": 1.5707963267948966
+   },
+   "decay": {
+    "min": 0,
+    "max": 4
    }
-  }
+  },
+  "absentMeans": {
+   "decay": "1.7: the falloff exponent the light rig used before it was written (three.js decay); a value stored before 10-16 is repaired to 1.7 at its first load",
+   "daytime": "dim: it follows the day cycle (an older value's day: false meant full)"
+  },
+  "on": "thing"
  },
  "mesh": {
   "status": "trial",
@@ -183,6 +232,10 @@
     "max": 200
    }
   },
+  "absentMeans": {
+   "origin": "the centre of its base: it stands on its own origin (every referent centres primitives; ours stands, as a model does)",
+   "ignored": "a sphere ignores size[1] and size[2], a cylinder and a capsule size[2], a plane size[1]"
+  },
   "on": "thing"
  },
  "motion": {
@@ -196,10 +249,8 @@
    "maxAmp": "number",
    "phase": "number",
    "t0": "number",
-   "part": "string",
    "radius": "number",
    "degPerSec": "number",
-   "amplitude": "number",
    "pivot": "vec3",
    "center": "vec3",
    "face": "bool",
@@ -230,8 +281,7 @@
      "type": "pendulum"
     },
     "absent": [
-     "amp",
-     "amplitude"
+     "amp"
     ],
     "set": {
      "amp": 0
@@ -305,8 +355,7 @@
      "type": "bob"
     },
     "absent": [
-     "amp",
-     "amplitude"
+     "amp"
     ],
     "set": {
      "amp": 0.3
@@ -370,6 +419,27 @@
     "max": 36000
    }
   },
+  "required": [
+   "type"
+  ],
+  "absentMeans": {
+   "period": "pendulum: 3.5 s; spin and orbit: their degPerSec; bob: 4 s",
+   "damp": "0: it swings forever",
+   "amp": "pendulum 0 (still); bob 0.3 m",
+   "axis": "pendulum [1, 0, 0]; spin and bob [0, 1, 0]",
+   "pivot": "a part turns about its own origin; a whole thing (which never holds one) about its pivot component, else its origin [0, 0, 0]",
+   "phase": "0",
+   "maxAmp": "0.9 rad",
+   "degPerSec": "spin 36°/s, orbit 12°/s (when no period either)",
+   "radius": "3 m",
+   "center": "where it stands",
+   "face": "true",
+   "speed": "1 m/s (when no duration either)",
+   "duration": "speed decides",
+   "loop": "loop",
+   "t0": "the reader's own first look (a value from before t0 was stamped)",
+   "points": "fewer than 2 points: it stands still"
+  },
   "keyed": "optional",
   "on": "thing"
  },
@@ -387,10 +457,11 @@
     "moderator",
     "owner"
    ]
-  }
+  },
+  "on": "thing"
  },
  "sockets": {
-  "status": "trial",
+  "status": "reserved",
   "on": "thing"
  },
  "socket": {
@@ -398,36 +469,153 @@
   "fields": {
    "name": "string",
    "part": "string",
-   "body": "object",
    "accepts": "array",
    "radius": "number"
+  },
+  "ranges": {
+   "accepts": {
+    "maxItems": 8
+   },
+   "radius": {
+    "min": 0.02,
+    "max": 1
+   }
   },
   "required": [
    "name"
   ],
   "absentMeans": {
    "part": "it rides its host's root, not a moving node of the host's model",
-   "body": "things only: no person attaches here",
    "accepts": "nothing snaps in by fits",
    "radius": "0.15 m (read only with accepts)"
   },
   "on": "thing"
+ },
+ "station": {
+  "status": "trial",
+  "fields": {
+   "action": "string",
+   "pose": "any",
+   "anchor": "string",
+   "exit": "array",
+   "leaveBy": "string",
+   "who": "string"
+  },
+  "defaults": {
+   "action": "sit",
+   "anchor": "root"
+  },
+  "when": [
+   {
+    "if": {
+     "action": "sit"
+    },
+    "set": {
+     "pose": "sitchair"
+    }
+   },
+   {
+    "if": {
+     "action": "ride"
+    },
+    "set": {
+     "pose": "sitchair"
+    }
+   },
+   {
+    "if": {
+     "action": "drive"
+    },
+    "set": {
+     "pose": "sitchair"
+    }
+   },
+   {
+    "if": {
+     "action": "lie"
+    },
+    "set": {
+     "pose": "lie"
+    }
+   },
+   {
+    "if": {
+     "action": "kneel"
+    },
+    "set": {
+     "pose": "sit"
+    }
+   },
+   {
+    "if": {
+     "action": "stand"
+    },
+    "set": {
+     "pose": "idle"
+    }
+   },
+   {
+    "absent": [
+     "pose"
+    ],
+    "set": {
+     "pose": "sitchair"
+    }
+   }
+  ],
+  "enums": {
+   "anchor": [
+    "hips",
+    "feet",
+    "head",
+    "root",
+    "surface"
+   ],
+   "leaveBy": [
+    "jump",
+    "menu",
+    "script"
+   ]
+  },
+  "absentMeans": {
+   "exit": "set down where they got on",
+   "leaveBy": "moving, jumping or getting up all leave",
+   "who": "anyone who may use the host"
+  },
+  "on": "thing",
+  "reservedFields": [
+   "poses",
+   "sync",
+   "approach",
+   "enter",
+   "leave",
+   "reach",
+   "look",
+   "input",
+   "fromSeat"
+  ]
  },
  "home": {
   "status": "trial",
   "fields": {
    "pos": "vec3",
    "q": "array",
-   "scale": "any",
-   "parent": "any"
+   "scale": "vec3",
+   "parent": "object"
   },
+  "required": [
+   "pos"
+  ],
   "absentMeans": {
-   "scale": "its size in the world is kept as it is when the reset runs"
+   "scale": "its size in the world is kept as it is when it goes home",
+   "q": "no turn: [0, 0, 0, 1]",
+   "parent": "goes home under no parent (the world root)"
   },
   "on": "thing"
  },
  "places": {
-  "status": "trial"
+  "status": "trial",
+  "keyPattern": "^[A-Za-z0-9_][A-Za-z0-9_ .:'-]{0,47}$"
  },
  "params": {
   "status": "trial",
@@ -436,7 +624,29 @@
   "on": "thing"
  },
  "reactions": {
-  "status": "trial"
+  "status": "trial",
+  "handlers": {
+   "toggle": [
+    "component",
+    "field",
+    "unless"
+   ],
+   "set": [
+    "component",
+    "field",
+    "value"
+   ],
+   "script": [
+    "script"
+   ],
+   "play": [],
+   "reset": [
+    "targets"
+   ]
+  },
+  "reservedKinds": [
+   "impulse"
+  ]
  },
  "openable": {
   "status": "trial",
@@ -492,21 +702,7 @@
    "who": "string",
    "shape": "any",
    "mass": "number",
-   "density": "number",
-   "material": "string",
-   "friction": "number",
-   "restitution": "number",
-   "linearDamping": "number",
-   "angularDamping": "number",
-   "centerOfMass": "vec3",
-   "ccd": "bool",
-   "layers": "int",
-   "mask": "int",
-   "frictionCombine": "string",
-   "restitutionCombine": "string"
-  },
-  "defaults": {
-   "kind": "dynamic"
+   "density": "number"
   },
   "when": [
    {
@@ -524,18 +720,6 @@
     "static",
     "none",
     "kinematic"
-   ],
-   "frictionCombine": [
-    "average",
-    "min",
-    "multiply",
-    "max"
-   ],
-   "restitutionCombine": [
-    "average",
-    "min",
-    "multiply",
-    "max"
    ]
   },
   "ranges": {
@@ -546,58 +730,101 @@
    "density": {
     "gt": 0,
     "max": 100000
-   },
-   "friction": {
-    "min": 0,
-    "max": 10
-   },
-   "restitution": {
-    "min": 0,
-    "max": 1
-   },
-   "linearDamping": {
-    "min": 0,
-    "max": 1000
-   },
-   "angularDamping": {
-    "min": 0,
-    "max": 1000
-   },
-   "layers": {
-    "min": 0,
-    "max": 4294967295
-   },
-   "mask": {
-    "min": 0,
-    "max": 4294967295
-   },
-   "material": {
-    "maxLen": 64
    }
   },
+  "required": [
+   "kind"
+  ],
   "absentMeans": {
    "shape": "no measured shape: the thing is no body to the engine (it neither flies nor collides)",
-   "mass": "kg; absent, density × the volume of its stamped shape (shapes.js shapeVolume; a convex, mesh or compound shape's baked geometry). Never a constant",
-   "density": "kg/m³; absent, its material's surface density, else 1000 kg/m³ (water)",
-   "material": "a surface:<name> on @world; absent (or naming no surface there now), friction and restitution are its own fields', else the engine's own law",
-   "friction": "≥ 0, one coefficient (static = dynamic); absent, its material's, else the engine's own law (eidosim: its fixed constants)",
-   "restitution": "0..1; absent, its material's, else the engine's own law (eidosim: its fixed bounce)",
-   "frictionCombine": "average|min|multiply|max, how its friction meets another's (the higher in that order wins); absent, its material's, else average",
-   "restitutionCombine": "average|min|multiply|max, as frictionCombine; absent, its material's, else max",
+   "mass": "kg; absent, density × the volume of its stamped shape at its scale (shapes.js shapeVolume; shared/shove.js massOf). Today that shape is its measured bounding box, so a chair weighs as a solid box of its density; eidosim's flight computes the same (shared/sim.js: 1000 kg/m³ × its box) and reads no mass yet. Never a constant",
+   "density": "kg/m³; absent, its surface's density, else 1000 kg/m³ (water: eidosim's, shared/sim.js DENSITY)",
+   "surface": "a surface:<name> on @world; absent (or naming no surface there now), friction and restitution are its own fields', else the engine's own law",
+   "friction": "≥ 0, one coefficient (static = dynamic); absent, its surface's, else the engine's own law (eidosim: its fixed constants)",
+   "restitution": "0..1; absent, its surface's, else the engine's own law (eidosim: its fixed bounce)",
+   "frictionCombine": "average|min|multiply|max, how its friction meets another's (the later in that list wins, PhysX's priority); absent, its surface's, else average",
+   "restitutionCombine": "average|min|multiply|max, as frictionCombine; absent, its surface's, else max",
    "linearDamping": "1/s; absent, the engine's own law (eidosim: none)",
    "angularDamping": "1/s; absent, the engine's own law (eidosim: none; it doesn't spin)",
-   "centerOfMass": "[x, y, z] m in its own frame; absent, the centroid of its stamped shape",
-   "ccd": "true: swept (continuous) collision for this body; absent, the engine's own law (eidosim sweeps every body)",
-   "layers": "32-bit collision layers it is in; absent, 1 (the first)",
-   "mask": "32-bit layers it collides with (both sides must accept); absent, all (0xffffffff)"
+   "centerOfMass": "[x, y, z] m in its own frame before scale; absent, the centroid of its stamped shape"
   },
   "grammar": {
    "shape": "shape"
   },
-  "on": "thing"
+  "on": "thing",
+  "reservedFields": [
+   "surface",
+   "friction",
+   "restitution",
+   "frictionCombine",
+   "restitutionCombine",
+   "linearDamping",
+   "angularDamping",
+   "centerOfMass"
+  ],
+  "reservedShape": {
+   "units": {
+    "linearDamping": "1/s",
+    "angularDamping": "1/s",
+    "centerOfMass": "m"
+   },
+   "ranges": {
+    "friction": {
+     "min": 0,
+     "max": 10
+    },
+    "restitution": {
+     "min": 0,
+     "max": 1
+    },
+    "linearDamping": {
+     "min": 0,
+     "max": 1000
+    },
+    "angularDamping": {
+     "min": 0,
+     "max": 1000
+    },
+    "surface": {
+     "maxLen": 64
+    }
+   },
+   "enums": {
+    "frictionCombine": [
+     "average",
+     "min",
+     "multiply",
+     "max"
+    ],
+    "restitutionCombine": [
+     "average",
+     "min",
+     "multiply",
+     "max"
+    ]
+   }
+  }
  },
  "grabbable": {
   "status": "trial",
+  "fields": {
+   "enabled": "bool",
+   "who": "string",
+   "steal": "bool",
+   "range": "number",
+   "priority": "int",
+   "hold": "string",
+   "pose": "string",
+   "grips": "object",
+   "twoHanded": "bool",
+   "carries": "bool",
+   "throw": "number",
+   "release": "string",
+   "returnAfter": "number",
+   "fits": "array",
+   "use": "any",
+   "prompt": "string"
+  },
   "defaults": {
    "enabled": true,
    "who": "visitor",
@@ -609,6 +836,26 @@
    "throw": 1,
    "release": "drop",
    "returnAfter": 0
+  },
+  "enums": {
+   "hold": [
+    "auto",
+    "press",
+    "toggle"
+   ],
+   "pose": [
+    "hand",
+    "carry",
+    "torch",
+    "pistol",
+    "two-hand",
+    "shoulder"
+   ],
+   "release": [
+    "drop",
+    "stay",
+    "return"
+   ]
   },
   "ranges": {
    "range": {
@@ -626,21 +873,63 @@
    "returnAfter": {
     "min": 0,
     "max": 3600
+   },
+   "fits": {
+    "maxItems": 8
+   },
+   "prompt": {
+    "maxLen": 40
    }
   },
-  "on": "thing"
+  "absentMeans": {
+   "enabled": "true: it can be picked up",
+   "who": "visitor",
+   "steal": "true",
+   "range": "1.5 m",
+   "priority": "0",
+   "hold": "auto",
+   "twoHanded": "false",
+   "throw": "1 (×)",
+   "release": "drop",
+   "returnAfter": "0 s: never",
+   "pose": "by size: one hand under 0.5 m, both arms at or above; two-hand if twoHanded",
+   "grips": "held where it was grabbed",
+   "carries": "false: what rests on it falls off when it is picked up",
+   "fits": "it snaps into no socket",
+   "use": "the use button does nothing while it is held",
+   "prompt": "Pick up <its label>"
+  },
+  "on": "thing",
+  "reservedFields": [
+   "fx"
+  ]
  },
  "physics-engine": {
   "status": "trial",
   "fields": {
    "engine": "string",
-   "build": "any",
+   "build": "string",
    "tickMs": "int"
+  },
+  "defaults": {
+   "tickMs": 33
+  },
+  "ranges": {
+   "tickMs": {
+    "min": 16,
+    "max": 1000
+   }
+  },
+  "required": [
+   "engine"
+  ],
+  "absentMeans": {
+   "gravity": "not a field: the engine's own (eidosim: [0, −9.81, 0] m/s², world frame)"
   },
   "on": "world"
  },
  "surface": {
-  "status": "trial",
+  "status": "reserved",
   "fields": {
    "friction": "number",
    "restitution": "number",
@@ -680,36 +969,24 @@
     "maxLen": 80
    }
   },
+  "absentMeans": {
+   "friction": "the engine's own law",
+   "restitution": "the engine's own law",
+   "density": "the engine's own",
+   "frictionCombine": "average",
+   "restitutionCombine": "max",
+   "label": "its key"
+  },
   "keyed": true,
   "on": "world"
  },
+ "physics-joint": {
+  "status": "reserved",
+  "keyed": true,
+  "on": "thing"
+ },
  "joint": {
   "status": "reserved",
-  "fields": {
-   "to": "ref",
-   "type": "string",
-   "anchor": "vec3",
-   "axis": "axis",
-   "limits": "array",
-   "drive": "object",
-   "breakForce": "number"
-  },
-  "enums": {
-   "type": [
-    "fixed",
-    "hinge",
-    "slider",
-    "ball",
-    "distance",
-    "spring"
-   ]
-  },
-  "ranges": {
-   "breakForce": {
-    "gt": 0
-   }
-  },
-  "keyed": true,
   "on": "thing"
  },
  "copy-of": {
@@ -778,21 +1055,21 @@
   "required": [
    "src"
   ],
+  "absentMeans": {
+   "law": "gain = min(1, near / distance) (inverse distance, full volume inside near), then a (1−t)² taper over the last 5% of radius to exactly 0 at radius: shared/sound.js gainAt"
+  },
   "on": "thing"
  },
  "picture": {
   "status": "trial",
   "fields": {
    "src": "string",
-   "part": "string",
    "width": "number",
    "alt": "string",
-   "lit": "string",
-   "flip": "bool"
+   "lit": "string"
   },
   "defaults": {
    "lit": "scene",
-   "flip": false,
    "width": 1
   },
   "enums": {
@@ -805,9 +1082,6 @@
    "width": {
     "gt": 0,
     "max": 20
-   },
-   "part": {
-    "maxLen": 64
    },
    "src": {
     "maxLen": 2048
@@ -913,7 +1187,8 @@
    "text"
   ],
   "absentMeans": {
-   "outlineColor": "the edge takes the colour that contrasts with the text colour: black behind light text, white behind dark"
+   "outlineColor": "the edge takes the colour that contrasts with the text colour: black behind light text, white behind dark",
+   "anchor": "the block is centred on its origin in its local X–Y plane, facing +Z (horizontally by align's box of width, vertically on the middle of its lines): pinned (shape audit 10-16)"
   },
   "on": "thing"
  },
@@ -927,14 +1202,21 @@
    "yaw": "array",
    "pitch": "array",
    "speed": "number",
-   "range": "number",
-   "offset": "vec3"
+   "range": "number"
   },
   "defaults": {
    "mode": "yaw",
-   "forward": "z",
-   "up": "y",
-   "speed": 240,
+   "forward": [
+    0,
+    0,
+    1
+   ],
+   "up": [
+    0,
+    1,
+    0
+   ],
+   "speed": 4.1887902047863905,
    "range": 12
   },
   "enums": {
@@ -946,11 +1228,19 @@
   "ranges": {
    "speed": {
     "min": 0,
-    "max": 3600
+    "max": 62.83185307179586
    },
    "range": {
     "gt": 0,
     "max": 100
+   },
+   "yaw": {
+    "min": -3.141592653589793,
+    "max": 3.141592653589793
+   },
+   "pitch": {
+    "min": -1.5707963267948966,
+    "max": 1.5707963267948966
    }
   },
   "required": [
@@ -966,8 +1256,20 @@
    "n": "int",
    "gen": "number",
    "title": "string",
-   "mediaTime": "number",
-   "window": "array"
+   "line": "object"
+  },
+  "ranges": {
+   "title": {
+    "maxLen": 120
+   }
+  },
+  "required": [
+   "session",
+   "n",
+   "line"
+  ],
+  "absentMeans": {
+   "line": "an older value's window [{t0, t1, text, speaker?}]: its last entry is the line on screen"
   },
   "on": "thing"
  },
@@ -984,43 +1286,107 @@
    "hours": "number",
    "rate": "number",
    "ts": "number",
-   "azimuth": "number",
+   "tz": "string",
    "clouds": "string",
    "weather": "string",
-   "forecast": "object",
-   "override": "object",
    "weatherK": "number",
-   "clock": "string",
-   "tz": "string",
-   "dormantRated": "object",
-   "weatherSeconds": "number",
+   "transition": "number",
+   "azimuth": "number",
    "fog": "number",
    "exposure": "number",
    "ambient": "number",
-   "sun": "number",
-   "fill": "number",
-   "world": "string"
+   "forecast": "object",
+   "override": "object"
+  },
+  "defaults": {
+   "hours": 12,
+   "rate": 0,
+   "clouds": "cumulus",
+   "azimuth": 3.141592653589793,
+   "fog": 1,
+   "exposure": 1,
+   "ambient": 1
+  },
+  "enums": {
+   "clouds": [
+    "clear",
+    "cumulus",
+    "stratus",
+    "cirrus"
+   ],
+   "weather": [
+    "clear",
+    "fair",
+    "sunshower",
+    "overcast",
+    "rain",
+    "storm",
+    "cyclone",
+    "darkstorm"
+   ]
+  },
+  "ranges": {
+   "hours": {
+    "min": 0,
+    "max": 24
+   },
+   "rate": {
+    "min": -1000,
+    "max": 1000
+   },
+   "azimuth": {
+    "min": -6.283185307179586,
+    "max": 6.283185307179586
+   },
+   "fog": {
+    "min": 0
+   },
+   "exposure": {
+    "min": 0
+   },
+   "ambient": {
+    "min": 0
+   },
+   "transition": {
+    "gt": 0,
+    "max": 600
+   },
+   "weatherK": {
+    "min": 0,
+    "max": 2
+   },
+   "tz": {
+    "maxLen": 64
+   }
+  },
+  "absentMeans": {
+   "tz": "no wall clock: hours, rate and ts govern the day",
+   "weather": "no authored weather (a forecast may still say one)",
+   "weatherK": "1: full intensity",
+   "transition": "the renderer's own ease (30 s in a forecast)",
+   "forecast": "no forecast: the authored weather holds",
+   "override": "no manual weather inside the current forecast segment",
+   "law": "forecast@1: shared/forecast.js segmentAt's draw order (dwell, then state, then intensity) per (seed, segment) at this commit"
   },
   "on": "world"
  },
  "grass": {
   "status": "trial",
   "fields": {
+   "species": "string",
    "width": "number",
    "depth": "number",
+   "size": "number",
    "center": "array",
-   "bladeHeight": "number",
-   "wind": "number",
-   "spacing": "number",
-   "perCell": "number",
-   "color": "any",
-   "colorTip": "number",
-   "species": "string",
    "height": "number",
    "density": "number",
-   "preset": "string",
+   "wind": "number",
+   "color": "any",
+   "seed": "int",
    "rows": "object",
-   "corn": "object"
+   "corn": "object",
+   "heading": "number",
+   "strokes": "array"
   },
   "ranges": {
    "width": {
@@ -1031,9 +1397,9 @@
     "gt": 0,
     "max": 1000
    },
-   "bladeHeight": {
+   "size": {
     "gt": 0,
-    "max": 5
+    "max": 1000
    },
    "height": {
     "gt": 0,
@@ -1043,18 +1409,27 @@
     "min": 0,
     "max": 4
    },
-   "spacing": {
-    "min": 0.05,
-    "max": 10
-   },
-   "perCell": {
-    "min": 1,
-    "max": 32
-   },
    "wind": {
     "min": 0,
     "max": 10
+   },
+   "strokes": {
+    "maxItems": 16
    }
+  },
+  "absentMeans": {
+   "size": "80 m wide and 70 m deep when width and depth aren't given either (a stroke's own: 30 m)",
+   "species": "grass",
+   "width": "size, else 80 m (a stroke's own: 30 m)",
+   "depth": "size, else 70 m (a stroke's own: 30 m)",
+   "center": "[0, 0]",
+   "height": "the species' own",
+   "density": "1",
+   "wind": "1",
+   "color": "the species' own",
+   "seed": "7",
+   "strokes": "one stroke: the value itself (a species' own composition, corn's and sunflower's rows, still applies)",
+   "heading": "-0.6 rad for sunflowers (they face one way together)"
   },
   "on": "world"
  },
@@ -1068,25 +1443,64 @@
    "labels": "object",
    "levels": "array"
   },
-  "on": "thing"
+  "defaults": {
+   "tile": 1,
+   "wallH": 2.8,
+   "wallT": 0.15
+  },
+  "ranges": {
+   "tile": {
+    "gt": 0,
+    "max": 100
+   },
+   "wallH": {
+    "gt": 0,
+    "max": 100
+   },
+   "wallT": {
+    "gt": 0,
+    "max": 10
+   },
+   "slabT": {
+    "gt": 0,
+    "max": 10
+   }
+  },
+  "absentMeans": {
+   "slabT": "0.10 m (structure.js GRID_DEFAULTS; never written by the editor)"
+  },
+  "on": "thing",
+  "nestedEnums": {
+   "levels[].apertures[][3]": [
+    "door",
+    "window",
+    "arch"
+   ],
+   "levels[].walls[][0]": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "levels[].apertures[][0]": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "levels[].tiles[][3]": [
+    "A",
+    "B"
+   ]
+  }
  },
  "particles": {
   "status": "trial",
   "fields": {
-   "preset": "string",
-   "seed": "number",
-   "origin": "array",
-   "count": "number",
-   "quality": "string",
-   "size": "number",
-   "area": "any",
-   "texture": "string",
-   "speed": "number",
-   "opacity": "number",
-   "lifetime": "number",
    "effect": "string",
    "part": "string",
    "at": "vec3",
+   "seed": "number",
    "playing": "bool",
    "scale": "number",
    "params": "object"
@@ -1111,14 +1525,18 @@
     "max": 8
    }
   },
+  "required": [
+   "effect"
+  ],
   "absentMeans": {
-   "effect": "an older value (the first protocol's): its preset names the effect, and its count, size, opacity, speed, lifetime, area, texture and quality are that effect's params of the same names",
    "part": "it emits from the thing itself, not one node of its model",
-   "at": "[0, 0, 0] in its own frame; in an older value, its origin",
+   "at": "[0, 0, 0] in its own frame",
+   "seed": "derived from its id and its effect's name (hashSeed(`${id}:${name}`))",
    "playing": "playing: it emits (the component's presence was its state)",
    "scale": "1: the effect at its own size",
-   "params": "none: the effect's own defaults (in an older value, its own knobs: see effect)"
-  }
+   "params": "none: the effect's own defaults"
+  },
+  "on": "thing"
  },
  "imported-behavior": {
   "status": "trial",
@@ -1252,6 +1670,18 @@
    "pos": "vec3",
    "radius": "number"
   },
+  "ranges": {
+   "radius": {
+    "min": 0,
+    "max": 100
+   }
+  },
+  "required": [
+   "pos"
+  ],
+  "absentMeans": {
+   "radius": "2 m"
+  },
   "on": "world"
  },
  "terrain": {
@@ -1265,17 +1695,25 @@
    "frequency": "number",
    "flatRadius": "number",
    "flatHeight": "number",
-   "blob": "string",
-   "w": "int",
-   "h": "int",
-   "spacing": "number",
-   "origin": "array",
-   "format": "string",
    "segments": "int",
-   "layers": "any",
+   "layers": "array",
    "features": "array",
-   "heightmap": "object",
-   "water": "any"
+   "heightmap": "object"
+  },
+  "defaults": {
+   "kind": "noise",
+   "seed": 1,
+   "size": 80,
+   "amplitude": 3,
+   "octaves": 4,
+   "frequency": 2.5,
+   "flatRadius": 0,
+   "flatHeight": 0
+  },
+  "enums": {
+   "kind": [
+    "noise"
+   ]
   },
   "ranges": {
    "size": {
@@ -1305,23 +1743,60 @@
    "features": {
     "maxItems": 64
    },
-   "w": {
-    "min": 2,
-    "max": 4096
-   },
-   "h": {
-    "min": 2,
-    "max": 4096
-   },
-   "spacing": {
-    "gt": 0,
-    "max": 64
+   "layers": {
+    "maxItems": 8
    }
   },
   "absentMeans": {
    "features": "no placed shapes: the base alone is the ground",
-   "heightmap": "no image: the noise (or raster) is the base",
-   "water": "no water: dry ground everywhere"
+   "heightmap": "no image: the noise is the base",
+   "segments": "the renderer's own mesh resolution (a drawing choice, not part of the height law)",
+   "layers": "one plain layer, 0x4a5d33 repeated 16 times across its size",
+   "law": "the ground's height is shared/terrainmath.js makeHeightField over these numbers, pinned by EIDOSIM_BUILD (then features and heightmap: shared/terrainshape.js)"
+  },
+  "on": "world",
+  "reservedKinds": [
+   "raster"
+  ]
+ },
+ "water": {
+  "status": "trial",
+  "fields": {
+   "level": "number",
+   "color": "int",
+   "opacity": "number",
+   "kind": "string",
+   "flow": "array"
+  },
+  "enums": {
+   "kind": [
+    "still",
+    "river",
+    "ocean"
+   ]
+  },
+  "ranges": {
+   "level": {
+    "min": -500,
+    "max": 500
+   },
+   "color": {
+    "min": 0,
+    "max": 16777215
+   },
+   "opacity": {
+    "min": 0.1,
+    "max": 1
+   }
+  },
+  "required": [
+   "level"
+  ],
+  "absentMeans": {
+   "color": "0x1d5a6e",
+   "opacity": "0.82",
+   "kind": "decided from the ground it fills (shared/waterkind.js)",
+   "flow": "still: no current"
   },
   "on": "world"
  },
@@ -1457,5 +1932,32 @@
    "cpu": "this server's current default (schema reports it)"
   },
   "on": "world"
+ },
+ "material": {
+  "status": "reserved"
+ },
+ "anim-clip": {
+  "status": "reserved"
+ },
+ "anim-states": {
+  "status": "reserved"
+ },
+ "camera": {
+  "status": "reserved"
+ },
+ "zone": {
+  "status": "reserved"
+ },
+ "video": {
+  "status": "reserved"
+ },
+ "spring-joint": {
+  "status": "reserved"
+ },
+ "link": {
+  "status": "reserved"
+ },
+ "tags": {
+  "status": "reserved"
  }
 }
