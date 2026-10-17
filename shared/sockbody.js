@@ -167,11 +167,11 @@ export const unseatedAt = (u) => (Array.isArray(u?.at) && u.at.length === 3 && u
  *  within `up`/`down` m of the feet (localbody.js nearestSeat: R 10-11 00:47, a seat 3 m up isn't near); the authority
  *  allows `lag` more on each, because its track of a walking body trails the client by one tracked step (thingphysics.js
  *  sends at most 5 a second: 0.2 s at a 4 m/s run is 0.8 m). */
-export const SIT_REACH = Object.freeze({ r: 3.5, up: 1.6, down: 1.0, lag: 1.0 });
+export const SEAT_REACH = Object.freeze({ r: 3.5, up: 1.6, down: 1.0, lag: 1.0 });
 /** Is a seat at `seat` within sitting reach of feet at `feet` ([x, y, z] each)? lag: the authority's allowance (0 for the client). */
 export function inSitReach(feet, seat, lag = 0) {
   const dh = Math.hypot(seat[0] - feet[0], seat[2] - feet[2]), dy = seat[1] - feet[1];
-  return dh <= SIT_REACH.r + lag && dy <= SIT_REACH.up + lag && -dy <= SIT_REACH.down + lag;
+  return dh <= SEAT_REACH.r + lag && dy <= SEAT_REACH.up + lag && -dy <= SEAT_REACH.down + lag;
 }
 export function mayLeave(body, kind) {
   if (!body) return true;

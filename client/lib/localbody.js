@@ -9,7 +9,7 @@
 // not add another edge into it (§14.2).
 
 import { bodyOf } from '../../shared/components.js';
-import { mayLeave, unseatedFromMine, unseatedAt, SIT_REACH, ESCAPE_HOLD_S, ESCAPE_REPEAT_S } from '../../shared/sockbody.js';
+import { mayLeave, unseatedFromMine, unseatedAt, SEAT_REACH, ESCAPE_HOLD_S, ESCAPE_REPEAT_S } from '../../shared/sockbody.js';
 import { driveSeat, releaseSeat } from './seatbody.js';
 import { serverNow } from './remotes.js';
 import { sendRequest } from './net.js';
@@ -256,8 +256,8 @@ export function chooseSeatPose(name) {
 const _sitV = new THREE.Vector3();
 // R 10-11 00:47: X near the crates lifted her ~5 m: a seat declared on a sign 3 m up counted as 'near' (only the ground
 // distance was read). A plain X offers only a seat you could climb onto; naming one (/sit <name>) still reaches any.
-// (one source with the authority's sit check, shared/sockbody.js SIT_REACH: review r10 M1)
-const SEAT_RISE = { up: SIT_REACH.up, down: SIT_REACH.down };
+// (one source with the authority's sit check, shared/sockbody.js SEAT_REACH: review r10 M1)
+const SEAT_RISE = { up: SEAT_REACH.up, down: SEAT_REACH.down };
 function nearestSeat(arg, reach) {
   const want = arg ? String(arg).toLowerCase() : null;
   const mine = avatarMounts.get(CONFIG.name);
@@ -293,7 +293,7 @@ function nearestSeat(arg, reach) {
 let sitTicket = 0;   // the latest sit ask; getting up (or asking again) makes every earlier answer stale
 export function trySitOn(arg, slot = null) {
   const mine = avatarMounts.get(CONFIG.name);
-  const best = nearestSeat(arg, arg ? Infinity : SIT_REACH.r);
+  const best = nearestSeat(arg, arg ? Infinity : SEAT_REACH.r);
   if (best && slot && best.slot !== slot) { const o = socketsOn(best.id).find((x) => x.name === slot); const b = bodyOf(o?.station); if (b) Object.assign(best, { sock: o.id, slot, body: b }); }
   if (!best) {
     const far = arg ? null : nearestSeat(null, 30);
@@ -351,7 +351,7 @@ export function updateSeatHint(dt) {
   if (avatarMounts.has(CONFIG.name)) { const b = mySeatBody();
     hint = !b || b.leaveBy === 'any' ? (b?.input.move !== 'none' && b ? html`<kbd>X</kbd> get up · <kbd>WASD</kbd> drive` : html`<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off`)
       : b.leaveBy === 'script' ? html`this seat lets you go when the world does · hold <kbd>X</kbd> to get up anyway` : b.leaveBy === 'jump' ? html`<kbd>Space</kbd> or <kbd>X</kbd> get up` : html`<kbd>X</kbd> get up`; }
-  else if (!downed && nearestSeat(null, SIT_REACH.r)) hint = html`<kbd>X</kbd> — sit`;
+  else if (!downed && nearestSeat(null, SEAT_REACH.r)) hint = html`<kbd>X</kbd> — sit`;
   // my hands come first: what I hold and how to let go (it must never be a secret), else what's in reach to pick up
   if (!downed) { const hh = handsHint(); if (hh && (myHoldsNow() || !hint)) hint = hh; }
   if (!hint && !downed) hint = usePromptHint();   // E: what's in front of you to use (useprompt.js)
@@ -538,7 +538,7 @@ export function initLocalBody({ logChat: logChatFn }) {
   // the controller's own layers (geometry seat pans, then the ground sit).
   setMountedHook(() => avatarMounts.has(CONFIG.name));
   // sitting is consent, standing up is the exit (scars r8 M1): someone else's edit moved the seat I sat on, and the
-  // authority let me go (its `unseated` inbox message, authority/riders.js releasedRiders). Get off as when the world lets go.
+  // authority let me go (its `unseated` inbox message, authority/seats.js unseatsFor). Get off as when the world lets go.
   bus.on('body-inbox', (msg) => {
     // only from the seat I'm on now (review r9 L4): a late message (after a reconnect) never stands me up from a seat taken since
     const u = Array.isArray(msg?.messages) ? msg.messages.find((m) => m?.type === 'unseated') : null;

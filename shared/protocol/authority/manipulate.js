@@ -20,7 +20,7 @@ import { allSockets, socketPoint } from "./sockets.js";
 import { RESERVED } from "./rights.js";
 import { actIndexOf } from "./undo.js";
 import { heldEvent } from "./scriptrun.js";
-import { riddenRefuse, socketRider } from "./riders.js";
+import { occupiedRefuse, sitterOn } from "./seats.js";
 import { body, dist, gripPoint, gripOf, lawOf, solidAt } from "./physics.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
@@ -123,7 +123,7 @@ function snapTarget(st, id, g, p, w = null) {
     const d = dist(socketPoint(st, x), p); if (d > socketRadius(sk)) continue;
     const where = { to: x.id };
     if (Object.entries(st.entities).some(([k, y]) => k !== id && y.c.parent?.to === x.id)) { out.notes.push({ passedOver: where, why: "something already sits in that socket" }); continue; }
-    const sat = w ? socketRider(w, st, x.id, null) : null; if (sat?.who) { out.notes.push({ passedOver: where, why: `${said(sat.who)} sits in that socket` }); continue; }
+    const sat = w ? sitterOn(w, st, x.id, null) : null; if (sat?.who) { out.notes.push({ passedOver: where, why: `${said(sat.who)} sits in that socket` }); continue; }
     const lk = [at, ...ancestors(st, at)].find((k) => lockedC(st.entities[k]?.c)); if (lk) { out.notes.push({ passedOver: where, why: `${lk} is locked` }); continue; }
     if (!out.to || d < out.to.d) out.to = { ...x, d, where };
   }
@@ -240,7 +240,7 @@ function releasePos(me, pos) {
   return pos.map(noNeg0);
 }
 function launch(w, actor, a, verb, g = null) {
-  const me = body(w, actor); const h = gripOf(w, actor, a.id); riddenRefuse(w, w.state(), a.id, actor, verb === "drop" ? "dropped" : "thrown");
+  const me = body(w, actor); const h = gripOf(w, actor, a.id); occupiedRefuse(w, w.state(), a.id, actor, verb === "drop" ? "dropped" : "thrown");
   const spec = flyingWorld(w.state());
   shaped(w.state().entities[a.id], a.id, spec);
   if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "throw needs v: [x, y, z] in m/s", "e.g. v: [0, 3, 4] tosses it up and forward (+z)");

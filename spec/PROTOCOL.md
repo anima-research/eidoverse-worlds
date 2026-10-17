@@ -508,7 +508,7 @@ request moves a copy to a newer version, keeping its own overrides.
   (`out-of-reach`) unless the body it tracks, or the seat it moves straight
   from, is within the client's own sitting reach of the socket (3.5 m across
   the ground, 1.6 m up, 1 m down, plus 1 m for the track's lag:
-  shared/sockbody.js `SIT_REACH`), so sitting is never a way to cover
+  shared/sockbody.js `SEAT_REACH`), so sitting is never a way to cover
   distance off the record. A rider's first step off is the stand-up. What the seat's own assembly does to it (a reaction or script on a
   thing with the same root as the seat: a swing's push, a carousel's turn,
   an elevator's script) is the ride, and carries them — the ride **as it

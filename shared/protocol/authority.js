@@ -9,7 +9,7 @@
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf, socketQ, ONE_PLACE } from "../components.js";
 import { MOVER, TRACK, bodyBox, bodyScale, floorStep, sweep, tokensAfter } from "../mover.js";
-import { checkSockets, checkSocket, checkStation, inSitReach, SIT_REACH } from "../sockbody.js";
+import { checkSockets, checkSocket, checkStation, inSitReach, SEAT_REACH } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, homeOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
 import { mintId, PERSON_ID, isPlaceholder } from "./ids.js";
@@ -63,7 +63,7 @@ import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, installCheck, logRt
 export { DUTY, scriptCeiling, scriptDefaults, setScriptConfig, setScriptDuty, unpaused } from "./authority/scripts.js";
 import { SCRIPT_VERBS, activate, drainHeld, drainScripts, heldEvent } from "./authority/scriptrun.js";
 export { ORPHANS, liftWorld, presenceEvent, scriptsView, settle, settleOrphans, tick } from "./authority/scriptrun.js";
-import { clearRide, leftRide, riddenRefuse, rideOf, socketRights, setRide, socketRider, letGoAt, releasedWhy, releasedRiders } from "./authority/riders.js";
+import { clearSeat, leftSeat, occupiedRefuse, seatOf, seatRights, setSeat, sitterOn, unseatAt, unseatWhy, unseatsFor } from "./authority/seats.js";
 import { arrivalBox, body, buildEpoch, dist, gripPoint, gripOf, lawOf, pathBlocked, restampEngine, settleSim, shearFree, sizeOf, solidAt } from "./authority/physics.js";
 import { fliesIn, flyingWorld, gripHow, homeScale, launch, recentRests, releasePos, returnDue, returnHome, returnPlan, sameHome, secondGrip, shaped, shoveGate, snapTarget, stampHomes, stampResetHomes, vec3s } from "./authority/manipulate.js";
 import { EMBODIED_VERBS } from "./authority/bodyverbs.js";
@@ -304,7 +304,7 @@ function guess(s, opts) {
 }
 
 // ---------- L7, the one gate: authority/gate.js ----------
-// ---------- socketRights (a socket joining a host): authority/riders.js ----------
+// ---------- seatRights (a socket joining a host): authority/seats.js ----------
 // ---------- how much a world holds: authority/capacity.js ----------
 // ---------- the gate's value checks: authority/checks.js ----------
 // ---------- the write path: authority/writes.js ----------
@@ -318,7 +318,7 @@ function guess(s, opts) {
 // ---------- the act index, undo: authority/undo.js ----------
 // ---------- blueprints, reads: authority/blueprints.js ----------
 // ---------- physics (design 20): authority/physics.js ----------
-// ---------- riders: authority/riders.js ----------
+// ---------- riders: authority/seats.js ----------
 // ---------- the verbs a body performs: authority/bodyverbs.js ----------
 // ---------- what a body does to a loose thing: authority/manipulate.js ----------
 // ---------- body consent: authority/bodyconsent.js ----------
@@ -342,4 +342,4 @@ const VERBS = {
 export const VERB_NAMES = Object.freeze(Object.keys(VERBS));
 export function forkCopy(w, actor, args) { CTX.forking = true; try { return request(w, actor, "fork-copy", args); } finally { CTX.forking = false; } }
 // the leaves reach the layers above them through UP (authority/ctx.js): bound here, once every module has loaded
-Object.assign(UP, { actEntry, actOf, activate, admit, body, boundsOf, changeEntry, changeShape, commit, danglingRefs, dist, enter, guess, gripPoint, historyDiff, holdsRefs, homeScale, isNum, lacks, lastTouch, lockCheck, mint, nearMiss, needThing, needWords, notAThing, offRefuse, opsTouching, outsideWorld, rateCheck, request, resolve, restampEngine, returnDue, returnHome, returnPlan, sameHome, rideOf, socketRights, serverWritten, setRide, settleSim, socketRider, touchedOf, unknownKeys, vec3s, warnings, withoutRefs });
+Object.assign(UP, { actEntry, actOf, activate, admit, body, boundsOf, changeEntry, changeShape, commit, danglingRefs, dist, enter, guess, gripPoint, historyDiff, holdsRefs, homeScale, isNum, lacks, lastTouch, lockCheck, mint, nearMiss, needThing, needWords, notAThing, offRefuse, opsTouching, outsideWorld, rateCheck, request, resolve, restampEngine, returnDue, returnHome, returnPlan, sameHome, seatOf, seatRights, serverWritten, setSeat, settleSim, sitterOn, touchedOf, unknownKeys, vec3s, warnings, withoutRefs });

@@ -20,7 +20,7 @@ import { madeBy, roleOf } from "./rights.js";
 import { inboxPush } from "./bodyconsent.js";
 import { buildCreateFrom } from "./blueprints.js";
 import { heldEvent } from "./scriptrun.js";
-import { clearRide, rideOf, letGoAt, releasedWhy } from "./riders.js";
+import { clearSeat, seatOf, unseatAt, unseatWhy } from "./seats.js";
 import { buildEpoch } from "./physics.js";
 import { stampHomes, stampResetHomes } from "./manipulate.js";
 import { isLookAt } from "./checks.js";
@@ -43,12 +43,12 @@ function changeShape(plan, cause, w) {
 }
 function changeEntry(w, plan, cause) {
   if (!(plan instanceof Admitted)) throw new Error("authority bug: a state write that admit() didn't produce (§7)");
-  const pre = plan.released.length ? w.state() : null;   // where each rider was let go: the seat as it stood before the edit
+  const pre = plan.unseat.length ? w.state() : null;   // where each rider was let go: the seat as it stood before the edit
   const seq = w.append(changeShape(plan, cause, w), CHANGE);
-  // the riders an edit lets go (releasedRiders): presence, after the write has landed, each told in their inbox (with where
+  // the riders an edit lets go (unseatsFor): presence, after the write has landed, each told in their inbox (with where
   // they stand now: the authority's track of their body starts again there, scars r9 M2)
-  for (const u of plan.released) if (w.presence.seats?.[u.who]?.to === u.seat) { const at = letGoAt(w, pre, u.who, u.seat); clearRide(w, u.who);
-    inboxPush(w.presence, u.who, { type: "unseated", seat: u.seat, ...(u.host ? { host: u.host } : {}), by: plan.who.actor, why: releasedWhy(u), ...(at ? { at } : {}) }); }
+  for (const u of plan.unseat) if (w.presence.seats?.[u.who]?.to === u.seat) { const at = unseatAt(w, pre, u.who, u.seat); clearSeat(w, u.who);
+    inboxPush(w.presence, u.who, { type: "unseated", seat: u.seat, ...(u.host ? { host: u.host } : {}), by: plan.who.actor, why: unseatWhy(u), ...(at ? { at } : {}) }); }
   (w.changedQ ??= []).push(seq); // `changed:<comp>` events, drained after the request (scripts, below)
   return seq;
 }
@@ -93,8 +93,8 @@ function commit(w, actor, verb, args, build) {
       delete w.presence.holds[id]; let_go = true; heldEvent(w, "release", id, { by: h.by, how: "edited", seq: act }); ctx.notes.push({ id, tookFromHand: h.by, why: "what it hangs under was switched off, so it left the hand that held it" }); }
     if (let_go) w.savePresence(); }
   // a seat gone or switched off lets its rider go: told in their inbox like any unseat (holes r10 L6), with where the track restarts
-  for (const who of Object.keys(w.presence.seats ?? {})) if (!rideOf(w, after, who)) { const to = w.presence.seats[who]?.to; const why = "the socket they sat on was switched off or removed";
-    const at = typeof to === "string" && st.entities[to] ? letGoAt(w, st, who, to) : null; clearRide(w, who); ctx.notes.push({ who, unseated: true, why });
+  for (const who of Object.keys(w.presence.seats ?? {})) if (!seatOf(w, after, who)) { const to = w.presence.seats[who]?.to; const why = "the socket they sat on was switched off or removed";
+    const at = typeof to === "string" && st.entities[to] ? unseatAt(w, st, who, to) : null; clearSeat(w, who); ctx.notes.push({ who, unseated: true, why });
     if (typeof to === "string") inboxPush(w.presence, who, { type: "unseated", seat: to, by: actor, why: `${to}: ${why}`, ...(at ? { at } : {}) }); }
   return { ok: true, seq, head: w.headAt(seq), act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
     after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };

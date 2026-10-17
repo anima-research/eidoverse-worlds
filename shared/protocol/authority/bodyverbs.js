@@ -1,6 +1,6 @@
 // shared/protocol/authority/bodyverbs.js — the verbs a body performs (move, grab, put, throw, drop, punt, leave, wait) as
 // EMBODIED_VERBS, which authority.js spreads into VERBS first (refactor split, 2026-10-17; moved from authority.js's
-// "physics" section unchanged). They stand on physics.js, riders.js and manipulate.js; the gate is above them, through UP.
+// "physics" section unchanged). They stand on physics.js, seats.js and manipulate.js; the gate is above them, through UP.
 import { TRACK, tokensAfter } from "../../mover.js";
 import { DEFAULT_WHO, grabOf, offsetOk } from "../../grab.js";
 import { livePoses, ENGINES, carried } from "../simlayer.js";
@@ -15,7 +15,7 @@ import { may, rankOf, roleOf, whoRank } from "./rights.js";
 import { BODY_VERBS, forgetReaches } from "./bodyconsent.js";
 import { thingSaid } from "./blueprints.js";
 import { heldEvent } from "./scriptrun.js";
-import { clearRide, leftRide, riddenRefuse, rideOf, letGoAt } from "./riders.js";
+import { clearSeat, leftSeat, occupiedRefuse, seatOf, unseatAt } from "./seats.js";
 import { arrivalBox, body, dist, gripPoint, gripOf, pathBlocked, shearFree, sizeOf, solidAt } from "./physics.js";
 import { fliesIn, flyingWorld, gripHow, launch, recentRests, releasePos, returnHome, returnPlan, secondGrip, shaped, shoveGate, snapTarget } from "./manipulate.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
@@ -59,19 +59,19 @@ const EMBODIED_VERBS = {
       // at a time is not history the world needs). A TELEPORT while present is an act, because it resets the speed
       // track: who did it and when is on the record; never where from, where to, or what kind of client they are
       const act = me ? w.append(actOf(w, actor, "move", { teleport: true })) : undefined;
-      w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(size ? { size } : {}) }; leftRide(w, st, actor, to); w.savePresence();
+      w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(size ? { size } : {}) }; leftSeat(w, st, actor, to); w.savePresence();
       return { ok: true, at: to, ...(act !== undefined ? { recorded: true, act } : {}) };
     }
     // still seated in the authority's view: a seated client sends no steps, so this is their first step off the seat (a
     // person's stand-up is presence, never a request): it is measured from the seat, not from where they boarded (r9 M2)
     // the first step is the stand-up (holes r10 L5): the seat clears now, wherever the step goes
-    { const sat = rideOf(w, st, actor); if (sat && letGoAt(w, st, actor, sat.to)) me = w.presence.bodies[actor]; if (w.presence.seats?.[actor]) clearRide(w, actor); }
+    { const sat = seatOf(w, st, actor); if (sat && unseatAt(w, st, actor, sat.to)) me = w.presence.bodies[actor]; if (w.presence.seats?.[actor]) clearSeat(w, actor); }
     const d = dist(me.at, to); const tokens = tokensAfter(me.tokens, now - (me.ts ?? now));
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${TRACK.speed} m/s, ${TRACK.cap} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
     const block = pathBlocked(w, st, me.at, to, size);
     if (block?.ground) refuse("solid", block.reason, "walk around it: a gentler slope, or out of the water where the bank is lower", { at: me.at, blocker: "ground" });
     if (block) refuse("solid", `${thingSaid(st, block)} is in the way`, "walk around it (or through a door someone opens)", { at: me.at, blocker: block });
-    const prev = me.at; w.presence.bodies[actor] = { ...me, at: to, ts: now, tokens: tokens - d }; if (size) w.presence.bodies[actor].size = size; else delete w.presence.bodies[actor].size; leftRide(w, st, actor, to);
+    const prev = me.at; w.presence.bodies[actor] = { ...me, at: to, ts: now, tokens: tokens - d }; if (size) w.presence.bodies[actor].size = size; else delete w.presence.bodies[actor].size; leftSeat(w, st, actor, to);
     const carrying = [];
     for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === actor) { h.pose.pos = h.pose.pos.map((n, i) => n + to[i] - prev[i]); carrying.push(id); }
     w.savePresence();
@@ -93,7 +93,7 @@ const EMBODIED_VERBS = {
     const need = g.who; const role = roleOf(st, actor); if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may pick up ${a.id}`, `ask someone who can, or ask the owner to set ${g.source}.who: 'visitor'`);
     if (held && !g.steal && role !== "owner") refuse("held", `${said(held.by)} is holding ${a.id}, and it can't be taken from a hand (grabbable.steal is false)`, "wait till they let go (an owner may take it)");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be picked up`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
-    riddenRefuse(w, st, a.id, actor, "picked up");
+    occupiedRefuse(w, st, a.id, actor, "picked up");
     // two things at once (R, 10-10, an avatar walking about with five crates: "maybe two, since VR players can pick up two
     // things"; a number, not a claim about hands: "avatars can have more (or none!)")
     { const mine = Object.keys(w.presence.holds).filter((k) => k !== a.id && w.presence.holds[k].by === actor);
@@ -177,7 +177,7 @@ const EMBODIED_VERBS = {
   // the hand let go (release: stay), or straight down onto what's below (drop, the default).
   put(w, actor, a, how = "put") {
     const me = body(w, actor); const h = gripOf(w, actor, a.id);
-    const st = w.state(); riddenRefuse(w, st, a.id, actor, "set down"); const t = worldT(st, a.id); const g = grabOf(st.entities[a.id].c);
+    const st = w.state(); occupiedRefuse(w, st, a.id, actor, "set down"); const t = worldT(st, a.id); const g = grabOf(st.entities[a.id].c);
     const facts = () => ({ handled: h.handled });
     // review 10-06: the claim is checked before anything acts on it: a pos is [x, y, z] within reach (a far or malformed
     // pos snapped into a socket across the world), and the holder's rank NOW still covers carrying it (the return and the
@@ -282,7 +282,7 @@ const EMBODIED_VERBS = {
     const need = ph.who ?? DEFAULT_WHO; if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may punt ${a.id}`, "ask the owner to set physics.who: 'visitor'");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be punted`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
     const held = w.presence.holds[a.id]; if (held) refuse("held", `${said(held.by)} is holding ${a.id}`, "grab it to take it (the latest grab wins), or wait till they let go");
-    riddenRefuse(w, st, a.id, actor, "punted");
+    occupiedRefuse(w, st, a.id, actor, "punted");
     shaped(e, a.id, st.entities["@world"]?.c["physics-engine"] ?? null);
     if (a.v !== undefined && a.power !== undefined) refuse("shape", "punt takes v or power, not both", "v: [x, y, z] in m/s, or power (m/s) along the line from your feet through it");
     const sf = w.sim(); const b = sf.sim?.bodies[a.id]; const flying = !!(sf.launched[a.id] && b && !b.resting);
@@ -315,7 +315,7 @@ const EMBODIED_VERBS = {
       const st = w.state(); if (st.entities[id] && st.entities["@world"]?.c["physics-engine"]) { const t = st.entities[id].c.transform;
         if (t) { const p = admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]);
           changeEntry(w, p, w.append(actEntry(w, "system", "return-held", { id, holder: actor, why: r.refused?.code }))); } } }
-    delete w.presence.bodies[actor]; forgetReaches(w.presence, actor); clearRide(w, actor); w.savePresence();   // F3 (b): a yes ends when either person leaves
+    delete w.presence.bodies[actor]; forgetReaches(w.presence, actor); clearSeat(w, actor); w.savePresence();   // F3 (b): a yes ends when either person leaves
     return { ok: true, left: true, dropped: out.map(({ id, r }) => ({ id, ok: r.ok, ...(r.refused ? { refused: r.refused.reason } : {}) })) };
   },
   wait(w) {
