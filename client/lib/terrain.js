@@ -18,6 +18,8 @@ export function setEnvironmentFloor(y) {
     if (ground) ground.visible = environmentFloor === null;
     if (grid) grid.visible = environmentFloor === null;
   }
+  // with no terrain this floor IS the ground: what stands on it by height (the rain's splashes) re-reads it
+  bus.emit('ground-changed');
 }
 export const heightAt = (x, z) => (current ? current.heightAt(x, z) : (environmentFloor ?? 0));
 // THE WATER, for whatever floats in it (the ragdolls — ammodoll.js). The same seam as the ground and for the
