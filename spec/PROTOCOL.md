@@ -9,13 +9,18 @@ mail ecosystem exist.
 
 Status: normative for logs whose genesis says `dialect: "eidoverse-log", v: 4,
 minor: 0` (the version history is at the end).
-**Alpha.** The component registry (§4) is in an alpha of about a year from
-v1. Every registered component is `trial` until it is promised: there is
-**no guarantee** that a trial component's shape won't change during the alpha.
-We try not to break one, every change is recorded (`REGISTRY-CHANGELOG.md`
-beside this document), and where a shape does change we give stored values a
-repair or translation path wherever we can. The log, the envelope, the four
-operations and the fold (§1–§3) are not part of the alpha: they are fixed.
+**Alpha.** This whole protocol is in a trial period of about a year from v1.
+There is **no guarantee** that a log folded today will fold the same way under
+a later version: not a component's shape, not a field or message name, and not
+§1–§3 either. Hardening a protocol around early design decisions is the
+mistake this period exists to avoid. What we promise instead is care: we try
+not to break things, every change is recorded (`REGISTRY-CHANGELOG.md` beside
+this document, and the version history at the end), and where a change would
+break stored logs we ship a **log translator** or a load repair with it, so
+that existing worlds move forward rather than strand. Translators are the
+migration path for the trial period. Every registered component is `trial`
+until it is promised. Implementations SHOULD NOT add anything they are not
+reasonably sure will survive; adding later is cheap, removing is not.
 
 The words MUST/SHOULD/MAY are used in the RFC-2119 sense. Where this
 document and the reference implementation disagree, one of them has a bug —
