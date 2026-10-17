@@ -747,7 +747,9 @@ person's own gesture over their own acts; reverting someone else's act is a
 deliberate `undo {act}` from history, judged by rule 2 at the time it is
 asked. Nothing is silently lost on either side.
 
-**Bodies: the avatar guard rails.** Today a body is presence, never an
+### Body ownership (avatars)
+
+Your body is yours. Today a body is presence, never an
 entity, so no write reaches one. These rules are **normative before avatar
 entity trees ship** (R 10-17): an implementation that makes body parts
 entities MUST meet every one of them first. The names they use are reserved
@@ -801,9 +803,6 @@ now (`body-owner`, `edit-grant`, `avatar-deny` in the registry; the request
   records only `arrive {wearing: {avatar, hash}}`: the hash names the exact
   body, which is moderation's evidence. A world founded with body writes in
   its log could never take them out again.
-
-There is no `sealed` component: "sealed" is this permission rule (B1–B3),
-never something anyone writes.
 
 ## 8. Scripts
 
