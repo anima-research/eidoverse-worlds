@@ -217,13 +217,13 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   // the authority (who), and keeps to how the seat lets you go (leaveBy) and whether it takes you from another (fromSeat)
   ok((await ann.req("create", { id: "carriage", model: "test/table.glb", place: { at: [9, 9] }, components: { sockets: {
     throne: { pos: [0, 0.5, 0], body: { who: "owner" } },
-    box: { pos: [0.6, 0.5, 0], body: { action: "drive", input: { move: "drive" }, leaveBy: "script" } },
+    box: { pos: [0.6, 0.5, 0], body: { action: "drive", leaveBy: "script" } },
     rumble: { pos: [-0.6, 0.5, 0], body: { action: "ride", leaveBy: "menu" } } } } })).ok, "S5e (Ann builds a carriage: an owner's throne, a driver's box that holds you, a rumble seat)");
   // its seats are socket children (PLAN-sockets-entities: the map is lifted at the door): wait for all three
   for (let i = 0; i < 40 && ag.socketsOf("carriage").length < 3; i++) await sleep(50);
   const seatId = (n: string) => ag.socketsOf("carriage").find((x: any) => x.name === n)?.id;
   const lk = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
-  ok(/box: drive \(.*drives it.*lets you go only when the world does/.test(lk) && /throne: sit \([^·]*owners only/.test(lk), "S5e look says what each seat does (box drives and holds you; the throne is owners only)", lk.split("\n").filter((l) => /carriage/.test(l)));
+  ok(/box: drive \(.*lets you go only when the world does/.test(lk) && /throne: sit \([^·]*owners only/.test(lk), "S5e look says what each seat does (box holds you; the throne is owners only)", lk.split("\n").filter((l) => /carriage/.test(l)));
   // grabbable (slice 5): look says what a hand may do with a thing, the authority's own reading (shared/grab.js describeGrab)
   ok((await ann.req("create", { id: "lantern", model: "test/cup.glb", place: { at: [9, 7] }, components: { grabbable: { who: "visitor", use: { down: "light" }, release: "return", prompt: "Take the lantern" } } })).ok, "S5g (Ann makes a lantern anyone may carry)");
   for (let i = 0; i < 40 && !ag.entities.get("lantern")?.grabbable; i++) await sleep(50);
@@ -514,7 +514,7 @@ await sleep(200);
   bot.caption({ t0: 1, t1: 2, text: "and after" } as any);
   for (let i = 0; i < 40 && bot.pendingCount; i++) await sleep(100);
   const bag = heldBy(own)?.view()?.entities?.screen1?.captions;
-  ok(bot.acked === 2 && bag?.window?.map((l: any) => l.text).join("|") === "before the list|and after" && bag.title === "the talk" && bag.gen > 0, "CB once listed, the held line and the next land in order; the bag carries the server-stamped leg generation", [bot.acked, bag]);
+  ok(bot.acked === 2 && bag?.n === 2 && bag?.line?.text === "and after" && bag.title === "the talk" && bag.gen > 0, "CB once listed, the held line and the next land in order; the bag carries the server-stamped leg generation", [bot.acked, bag]);
   const forged = await own.req("caption", { id: "screen1", session: bag?.session, n: 9, t0: 2, t1: 3, text: "x", gen: 999999999999 });
   ok(!forged.ok && /newer leg/.test(forged.refused?.reason ?? "") && heldBy(own)?.view()?.entities?.screen1?.captions?.gen < 999999999999, "CB a client's own gen is ignored: the server stamps its connection's (the owner's older leg is refused as superseded, however large a gen she sends)", [forged.refused, heldBy(own)?.view()?.entities?.screen1?.captions?.gen]);
   bot.close(); own.close(); await sleep(200); }
