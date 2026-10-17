@@ -14,15 +14,23 @@ it and nothing at runtime can load it; `tools/protocol/nov1-check.ts` (in `bun r
 | `eidosim-v1.js` | the first eidosim (dialect 3), kept here so the translator, the sweep and the directory check can read what a physics-era v1 log's punts did; nothing at runtime loads it (the server runs `eidosim@1.0.0`) |
 | `eidosim-v1-test.ts` | its covenant tests (self-agreement, schedule independence, quantization), run on the copy kept here |
 | `build.ts` | the old fold's build hash, stamped into a translated world's `translated` act |
-| `world.ts` | `translateV1World(src, dest)`: reads `src/log.jsonl` (never writes it), translates, re-reads the result with the strict reader (and, for a physics-era log, the authority's own sim layer, which re-checks every rest), maps every old name to a door identity, then writes `dest/world.jsonl` |
+| `world.ts` | `translateV1World(src, dest, {founderKey, name})`: reads `src/log.jsonl` (never writes it), translates, re-reads the result with the strict reader (and, for a physics-era log, the authority's own sim layer, which re-checks every rest), maps every old name to a door identity, then writes `dest/world.jsonl` |
 | `snapshot-oracle.ts` | the translator against the OLD ENGINE (suite `oracle`): every old world whose `snapshot.json` is a complete fold of its log (seq and bytes match) is translated for real, and its fold (and the server's lifted load) compared with the snapshot, through the translator's mapping and also field by field off the snapshot. Incomplete snapshots are skipped, never compared. `OPT_DIR=<serving checkout>/assets/opt` gives store models their real addresses |
 
-The operator runs it: `WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <old world> <new name> --founder-key <ed25519:…>`
-(or `--no-founder-key`, which leaves the world's top governance tier empty for ever; see the ceremony below). To cut a world over
-under its own name (the Commons), move the old directory aside first, then translate it into the name:
-`mv worlds/commons worlds/commons-v1 && bun tools/protocol/world.ts translate commons-v1 commons --founder-key <KEY>` (the old directory is read,
-never written; its remembered places come across keyed by identity). Until then the server serves nothing under that
-name. At boot it prints, for each old world, the exact command, with `WORLDS_DIR` filled in, a free new name and a
+The operator runs it, in place: `WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <world> --founder-key <ed25519:…>`
+(or `--no-founder-key`, which leaves the world's top governance tier empty for ever; see the ceremony below). The world
+keeps its name, so links to it keep working (the Commons is cut over with `translate commons --founder-key <KEY>`). It
+is translated into a temporary sibling directory (`.translating-<world>-…`, never served) and verified there first: the
+importer's own checks (0 divergences, projection equality, strict read-back), the result opened as the server opens it
+(same digest), and, when the directory holds the old server's `snapshot.json`, `snapshot-oracle.ts`'s agreement with it
+(a snapshot the oracle can't compare, a partial one or a physics-era log's, is reported as not compared). Only then is
+it swapped in: `world.jsonl` lands in the world's directory in one rename, and the old files are renamed beside it,
+`log.jsonl` → `log.original.jsonl`, `snapshot.json` → `snapshot.original.json`, `poses.json` → `poses.original.json`:
+the same files, never rewritten or deleted. On any failure, before or during the swap, whatever moved is put back, the
+temporary directory is removed, and it says why. A directory whose `world.jsonl` is a world is served as one, so the
+kept `log.original.jsonl` never makes it look old; translating it again refuses. `translate <old world> <new name>`
+still translates into a new name instead, leaving the old directory exactly as it was. At boot the server prints, for
+each old world, the exact in-place command, with `WORLDS_DIR` filled in and a
 placeholder for the founder key (`server/oldworlds.ts` `bootNotice`). A visitor is told in plain words that the world
 needs a one-time conversion by whoever runs the server and that nothing is lost (`visitorText`; the browser keeps that
 sentence on its splash, suite `refusedjoin`). The sweep
@@ -60,7 +68,7 @@ keys are a separate list (§7, "two owner lists, never confused"). Neither R's k
 4. **Back up the host's custody** (`keys/custody.json` under the worlds directory) off this machine first: it holds the
    sequencer and operator keys. Lose it and the Commons can never sign another head; the only way on is a fork.
 5. **Translate** with her key in tier 0 and the host's operator key in tier 1:
-   `bun tools/protocol/world.ts translate commons-v1 commons --founder-key <KEY>`. `info commons` afterwards shows the
+   `bun tools/protocol/world.ts translate commons --founder-key <KEY>`. `info commons` afterwards shows the
    roles; line 0 of `world.jsonl` shows `owners: [[<KEY>], [<operator>]]`.
 
 `--no-founder-key` translates with tier 0 empty, knowingly (a test world, or a world whose founder can't be reached and

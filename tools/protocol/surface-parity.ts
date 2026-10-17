@@ -199,7 +199,7 @@ for (const w of SELECTED) {
   if (!g || g.body?.dialect !== "eidoverse-log" || g.body?.v !== 4) {
     const others = (existsSync(dir) ? readdirSync(dir) : []).filter((f) => f.endsWith(".jsonl"));
     const hint = others.length
-      ? `it holds ${others.join(", ")}, which isn't a current-format world log (neither tree opens it: server.ts:351 refuses the join). A v1 log.jsonl translates once with: bun tools/protocol/world.ts translate <old> <new>`
+      ? `it holds ${others.join(", ")}, which isn't a current-format world log (neither tree opens it: server.ts:351 refuses the join). A v1 log.jsonl translates once, in place, with: bun tools/protocol/world.ts translate <its name>`
       : `no world.jsonl with a current {dialect:"eidoverse-log", v} genesis, and no other *.jsonl either`;
     await missing(`world copy: ${w}`, `${dir} is not a world this protocol serves —`, hint);
   }

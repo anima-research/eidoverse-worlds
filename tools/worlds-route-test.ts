@@ -44,7 +44,7 @@ const worldsDir = mkdtempSync(join(tmpdir(), "worlds-route-"));
 foundWorlds(worldsDir, ["commons", "annex"]);   // two worlds (a world.jsonl whose line 0 is a genesis)
 mkdirSync(join(worldsDir, "logless"), { recursive: true });
 // an OLD world: a v1 log and no new one. The server serves only the protocol, so it isn't listed (it's translated once by the
-// operator into a new world: bun tools/protocol/world.ts translate)
+// operator, in place: bun tools/protocol/world.ts translate <name>)
 mkdirSync(join(worldsDir, "oldv1"), { recursive: true });
 writeFileSync(join(worldsDir, "oldv1", "log.jsonl"), JSON.stringify({ seq: 0, ts: 0, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }) + "\n");
 mkdirSync(join(worldsDir, ".clientlogs"), { recursive: true });

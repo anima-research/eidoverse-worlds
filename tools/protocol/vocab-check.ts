@@ -62,6 +62,19 @@ const walk = (dir: string) => {
   }
 };
 for (const d of [...RUNTIME, ...DEPLOYED]) walk(path.join(ROOT, d));
+// What the operator's world tools print counts ENTITIES (R 10-17: "the protocol's word is entities"): `info` once said
+// `things: N`, the translator "guarded thing(s)". A string these files print may not count things; a comment may.
+const OPERATOR = ["tools/protocol/world.ts", "tools/protocol/import-v1/world.ts", "server/oldworlds.ts"];
+for (const rel of OPERATOR) {
+  const p = path.join(ROOT, rel); if (!fs.existsSync(p)) { offences.push(`${rel}: missing (OPERATOR lists it)`); continue; }
+  fs.readFileSync(p, "utf8").split("\n").forEach((line, i) => {
+    if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+    const code = line.replace(/\s\/\/\s.*$/, "");   // a trailing comment
+    const strings = code.match(/"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`|'(?:[^'\\]|\\.)*'/g) ?? [];
+    if (/\bthings\s*:/.test(code) || strings.some((t) => /\bthings?\b/i.test(t)))
+      offences.push(`${rel}:${i + 1}  an operator tool counts "things" (the protocol's word is entities): ${line.trim().slice(0, 100)}`);
+  });
+}
 for (const o of offences) console.log("  " + o);
 console.log(`[vocab-check] ${offences.length ? `${offences.length} old-spelling read(s)` : "one vocabulary: every runtime reader speaks the record in the protocol's names"}`);
 process.exit(offences.length ? 1 : 0);

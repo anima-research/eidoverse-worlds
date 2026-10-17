@@ -681,9 +681,16 @@ The production servers restart on a human decision because restarts
 ripple every resident's reconnect.
 
 **Old worlds.** A world written in the retired first protocol is
-translated once, by an operator, into a new world:
-`WORLDS_DIR=… bun tools/protocol/world.ts translate <old world> <new name>`. The
-old log is read, never written. Its entries appear in the new world's
+translated once, by an operator, in place:
+`WORLDS_DIR=… bun tools/protocol/world.ts translate <world> --founder-key <key>`
+(or `--no-founder-key`). The world keeps its name, so links to it keep working;
+the old log stays beside it as `log.original.jsonl` (and `snapshot.json` as
+`snapshot.original.json`), renamed, never written. It is translated into a
+temporary directory and checked first (0 divergences, the result opened as the
+server opens it, and agreement with the old server's own `snapshot.json` where
+there is one); on any failure nothing is moved and it says why. Re-running it
+on a translated world refuses. `translate <old world> <new name>` still
+translates into a new name instead, leaving the old directory as it was. Its entries appear in the new world's
 history as `imported` acts (`{verb, args, from}`), and fields the protocol has no
 component for ride along as `imported:<name>`. Old runtime scripts are kept
 as a record on `@world` and never run: `scripts` lists them as

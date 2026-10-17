@@ -1162,10 +1162,13 @@ argument will be short.
 ## 14. Worlds from the first protocol
 
 The first protocol (an untyped verb log) is retired. An old world's log can
-be translated once, one way, into a new world
-(`bun tools/protocol/world.ts translate <old> <new> --founder-key <key>`, or
-`--no-founder-key` to leave tier 0 empty for ever, §13); the old log is read, never
-written. Each old entry appears in the new log as an `act` with verb
+be translated once, one way, into a world of this protocol
+(`bun tools/protocol/world.ts translate <world> --founder-key <key>`, or
+`--no-founder-key` to leave tier 0 empty for ever, §13). It is translated in
+place: the world keeps its name, and the old log stays beside the new one as
+`log.original.jsonl`, renamed, never written; a directory whose `world.jsonl` is a
+world of this protocol is served as one whatever else it holds. (`translate <old>
+<new>` translates into a new name instead.) Each old entry appears in the new log as an `act` with verb
 `imported` (`body {verb, args, from}`) or as a `say`, followed by the change it
 produced; fields with no component in this protocol ride along as `imported:<name>`. A
 translated world is an ordinary world from then on.

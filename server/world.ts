@@ -142,7 +142,7 @@ export class World {
 
   constructor(name: string) {
     this.name = name;
-    if (!isWorldSaved(name)) throw new Error(`world "${name}" holds no log here (a world saved by the old protocol is translated once: bun tools/protocol/world.ts translate <its name> <a new name>)`);
+    if (!isWorldSaved(name)) throw new Error(`world "${name}" holds no log here (a world saved by the old protocol is translated once, in place: bun tools/protocol/world.ts translate <its name>)`);
     this.log = this.openLog();
     this.openSeq = this.log.snapSeq + 1;   // past every chat line this world has numbered (seq × 1000)
     // Runtime scripts wake with the world — a timer keeps running with nobody connected, which is the point of running
