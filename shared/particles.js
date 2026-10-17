@@ -8,7 +8,7 @@
 // so a renderer client, a late joiner, and a resident who perceives by reading cannot disagree about what is burning.
 //
 // Unit-tested in tools/particles-test.ts.
-import { ESSENTIALS, ESSENTIAL_NAMES, instanceOf, effectBlobName, effectFor, hashSeed, QUALITY_TIERS } from './particle_effects.js';
+import { ESSENTIALS, ESSENTIAL_NAMES, instanceOf, effectBlobName, effectFor, hashSeed, QUALITY_TIERS, essentialNameOf } from './particle_effects.js';
 import { quoted } from './text.js';
 
 export { hashSeed, QUALITY_TIERS };
@@ -32,7 +32,7 @@ export function mulberry32(seed) {
 export function emitterSeed(entityId, data) {
   const inst = instanceOf(data) ?? {};
   if (typeof inst.seed === 'number' && Number.isFinite(inst.seed)) return Math.floor(inst.seed) >>> 0;
-  return hashSeed(`${entityId}:${inst.effect ?? ''}`);
+  return hashSeed(`${entityId}:${essentialNameOf(inst.effect) ?? inst.effect ?? ''}`);   // an Essential's name, stored as its address or not
 }
 /** Particles one viewer draws of `amount`: the effect's own ratio (an older value's quality) and the viewer's tier,
  *  whichever asks for less. The only number allowed to differ between two clients looking at the same fire. */
@@ -46,7 +46,7 @@ const short = (addr) => `${addr.replace(/^eido:sha256\//, 'sha256:').slice(0, 19
  *  reader has it; else its address, shortened. */
 function readsAs(effect, lookup) {
   if (typeof effect !== 'string' || !effect) return 'something';
-  if (Object.hasOwn(ESSENTIALS, effect)) return ESSENTIALS[effect].reads;
+  const ess = essentialNameOf(effect); if (ess) return ESSENTIALS[ess].reads;   // a name, or the address it is stored as
   const doc = effectFor(effect, lookup);
   if (doc) return doc.reads || doc.name ? quoted(doc.reads || doc.name, 80) : `a stored effect (${short(effect)})`;
   if (effectBlobName(effect)) return `a stored effect (${short(effect)})`;
@@ -62,7 +62,7 @@ function readsAs(effect, lookup) {
 export function describeParticles(data, { lookup = () => null } = {}) {
   const inst = instanceOf(data);
   if (!inst) return 'emitting something (particles; malformed declaration)';
-  const known = Object.hasOwn(ESSENTIALS, inst.effect) || !!effectFor(inst.effect, lookup);
+  const known = !!essentialNameOf(inst.effect) || !!effectFor(inst.effect, lookup);
   const bits = ['particles'];
   const o = Array.isArray(inst.at) && inst.at.length === 3 && inst.at.every((n) => typeof n === 'number' && Number.isFinite(n)) ? inst.at : null;
   bits.push(`local origin [${(o ?? [0, 0, 0]).join(', ')}]`);

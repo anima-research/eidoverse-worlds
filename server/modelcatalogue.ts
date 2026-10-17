@@ -13,7 +13,7 @@
 import { resolveLibFile } from "./libfile.ts";
 import { r3 } from "../shared/protocol/round.js";
 import { isEido, eidoHex } from "../shared/eido.js";
-import { eidoRel } from "./eidoindex.ts";
+import { eidoRel, contentAddressOf, recordEido } from "./eidoindex.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { readdirSync, statSync, readFileSync } from "node:fs";
 import { creditsFor } from "../shared/libcredits.js";
@@ -30,6 +30,7 @@ export function libraryCredits(): Record<string, any> {
   return CREDITS!;
 }
 const cache = new Map<string, Entry>();
+const addressed = new Map<string, string | null>();   // library path → its content address (or null), once per process
 const pending = new Map<string, Promise<void>>();
 /** What a library path looks like (resolveLibFile's own rule, plus the content store's names). */
 export const isLibPath = (s: unknown): s is string => isEido(s) || (typeof s === "string" && s.length <= 512 && !s.includes("..") && /^[A-Za-z0-9_./-]+\.(glb|vrm)$/i.test(s));
@@ -102,6 +103,17 @@ export const ENGINE_CATALOGUE = {
     const e = cache.get(name) ?? { label: name.split("/").pop()!, surfaces: [] }; // cold: named, not sized (warm first)
     if (e.credits === undefined) e.credits = creditsFor(libraryCredits(), name);
     return e;
+  },
+  /** A library path's content address, eido:sha256/<hex of its ORIGINAL bytes> (shape audit 10-16: the door stores models as
+   *  addresses, shared/protocol/assetref.js), or null (an address already, or no such file here). The address is recorded in
+   *  the eido index (so /library/eido/… and a later measure find the file) and answers with the path's measured entry. */
+  address(name: string): string | null {
+    if (typeof name !== "string" || isEido(name) || !isLibPath(name)) return null;
+    let a = addressed.get(name);
+    if (a === undefined) { const hex = contentAddressOf(name); a = hex ? `eido:sha256/${hex}` : null; addressed.set(name, a);
+      if (hex && eidoRel(hex) !== name) { try { recordEido(hex, name); } catch { /* a read-only host: the address still stands */ } } }
+    if (a && !cache.has(a) && cache.has(name)) cache.set(a, cache.get(name)!);   // the same bytes, measured once
+    return a;
   },
   list(q: string): [string, Entry][] {
     const ql = String(q ?? "").toLowerCase();

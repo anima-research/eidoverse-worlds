@@ -320,6 +320,28 @@ export const ESSENTIALS = Object.freeze(Object.fromEntries(Object.entries(BUILDE
 export const ESSENTIAL_NAMES = Object.freeze(Object.keys(ESSENTIALS));
 /** An Essential's content address: the same document stored in a world has this name. */
 export const effectAddress = (doc) => `sha256:${sha256(jcs(doc))}`;
+// The address each Essential is STORED as (shape audit 10-16, render-media-env §4): the door takes a name and writes this, so
+// a stored fire names one frozen document, never whatever ESSENTIALS.fire says in a later build (Resonite's PhotonDust
+// lesson: meaning held in code migrates every world when the code changes). Pinned here as literals, and
+// tools/shape-render-test PT2 holds each to its document's hash: a retuned Essential turns that row red. To change one,
+// keep the old document (and this address) readable beside the new, and give the new its own address.
+export const ESSENTIAL_ADDRESSES = Object.freeze({
+  sparks: 'eido:sha256/2263d1577683b9ed64f47b56a0e0e6ba12881bef0012f61ce25fae0099d7fab0',
+  embers: 'eido:sha256/090b6f0f78e100c34db71a35168772297daa518960b36ef0bc6726ab1ca065ec',
+  smoke: 'eido:sha256/707232f77afd5996eb0cee918732a91ce7c9c1275c5f052f07b650db8379bb36',
+  dust: 'eido:sha256/bb3f8dc746d7129c081feb9b0ca83322152d7227262979ca189196f0d63fcf80',
+  snow: 'eido:sha256/0a8afb556320e8f6d96f8d53e662671f09908daf01beee7b5d0f04a1ad6dc755',
+  magic: 'eido:sha256/0e413aa3b23d404a07d1d4736c9f23987e22cda1ab1b438df394712179dc384f',
+  stars: 'eido:sha256/29d12840afa1437819259ba3026da37c083e10530e18c2d6b33708322386658f',
+  muzzle: 'eido:sha256/aa2a6de4ec06157679bb1dd85219680f05bf661101297efbdf2f0a9ac5f90b84',
+  fire: 'eido:sha256/1ca045801dca39db0ff6da4b5d7270836fecbd8578a25692a3d180829013132c',
+});
+const ESSENTIAL_BY_HEX = new Map(Object.entries(ESSENTIAL_ADDRESSES).map(([k, a]) => [a.slice('eido:sha256/'.length), k]));
+/** The address an Essential is stored as, or null for a name that isn't one. */
+export const essentialAddress = (name) => (typeof name === 'string' && Object.hasOwn(ESSENTIAL_ADDRESSES, name) ? ESSENTIAL_ADDRESSES[name] : null);
+/** The Essential a stored effect names (its name, or its address in either spelling), or null. */
+export const essentialNameOf = (s) => { if (typeof s !== 'string') return null; if (Object.hasOwn(ESSENTIALS, s)) return s; const m = EFFECT_ADDRESS.exec(s); return m ? ESSENTIAL_BY_HEX.get(m[1]) ?? null : null; };
+export const isEssential = (s) => essentialNameOf(s) !== null;
 function jcs(v) {   // RFC 8785 for the plain JSON a document is (keys sorted, no whitespace)
   if (v === null || typeof v !== 'object') return JSON.stringify(v);
   if (Array.isArray(v)) return `[${v.map(jcs).join(',')}]`;
@@ -357,7 +379,7 @@ export function modernize(v) {
  *  loaded yet). */
 export function effectFor(name, lookup = () => null) {
   if (typeof name !== 'string') return null;
-  if (Object.hasOwn(ESSENTIALS, name)) return ESSENTIALS[name];
+  const ess = essentialNameOf(name); if (ess) return ESSENTIALS[ess];
   const b = effectBlobName(name); return b ? lookup(b) : null;
 }
 /** Why an instance value isn't one the authority takes (the doc already found, or null when it isn't), or null. */
@@ -366,7 +388,7 @@ export function instanceProblem(v, doc) {
   const legacy = Object.keys(v).filter((k) => LEGACY_FIELDS.includes(k));
   if (legacy.length) return `${legacy.join(', ')} ${legacy.length > 1 ? 'are' : 'is'} the first protocol's spelling (read in older values, never written): write {effect: '${typeof v.preset === 'string' ? v.preset : 'fire'}'${legacy.some((k) => LEGACY_PARAM_KEYS.includes(k)) ? `, params: {${legacy.filter((k) => LEGACY_PARAM_KEYS.includes(k)).join(', ')}}` : ''}${legacy.includes('origin') ? ', at: [x, y, z]' : ''}}`;
   if (typeof v.effect !== 'string' || !v.effect) return 'particles needs effect: an Essentials name or a stored effect\'s address (sha256:<64 hex>)';
-  if (!doc) return Object.hasOwn(ESSENTIALS, v.effect) ? null : effectBlobName(v.effect) ? `no effect ${v.effect} is stored in this world` : `'${v.effect}' isn't an Essentials effect (${ESSENTIAL_NAMES.join(', ')}); a document of your own goes by its address`;
+  if (!doc) return isEssential(v.effect) ? null : effectBlobName(v.effect) ? `no effect ${v.effect} is stored in this world` : `'${v.effect}' isn't an Essentials effect (${ESSENTIAL_NAMES.join(', ')}); a document of your own goes by its address`;
   if (v.at !== undefined && !(isVec(v.at) && v.at.every((x) => Math.abs(x) <= 8))) return 'at is [x, y, z] in its own frame, each within ±8 m (a far emitter is its own thing)';
   if (v.part !== undefined && !(typeof v.part === 'string' && v.part.length >= 1 && v.part.length <= 64)) return 'part names a node of its model (≤ 64)';
   if (v.scale !== undefined && !(isNum(v.scale) && v.scale >= 0.01 && v.scale <= 100)) return 'scale is a number 0.01..100';
@@ -415,10 +437,10 @@ export function resolveParticles(v, { entityId = '', lookup = () => null } = {})
   const applied = applyParams(doc, params);
   const bad = effectProblem(applied);
   // an Essential's own document may exceed what a writer may (stars' 22 m area); the authority bounds what's WRITTEN
-  if (bad && !Object.hasOwn(ESSENTIALS, inst.effect)) return { ok: false, why: `the effect, with its params: ${bad}` };
+  if (bad && !isEssential(inst.effect)) return { ok: false, why: `the effect, with its params: ${bad}` };
   const at = isVec(inst.at) ? inst.at.map((x) => Math.max(-8, Math.min(8, x))) : [0, 0, 0];
   if (isVec(inst.at) && inst.at.some((x) => Math.abs(x) > 8)) notes.push('at is bounded to ±8 m — place a far emitter on its own thing');
-  const seed = isNum(inst.seed) ? Math.floor(inst.seed) >>> 0 : hashSeed(`${entityId}:${inst.effect ?? ''}`);
+  const seed = isNum(inst.seed) ? Math.floor(inst.seed) >>> 0 : hashSeed(`${entityId}:${essentialNameOf(inst.effect) ?? inst.effect ?? ''}`);
   return { ok: true, effect: inst.effect, emitters: applied.emitters.map(resolveEmitter), seed, at, part: typeof inst.part === 'string' ? inst.part : null,
     playing: inst.playing !== false, scale: isNum(inst.scale) && inst.scale > 0 ? inst.scale : 1, reads: doc.reads ?? doc.name ?? null, notes };
 }
