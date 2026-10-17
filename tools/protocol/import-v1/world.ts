@@ -19,8 +19,10 @@ import { contentAddressOf, recordEido, storeNameMatches } from "../../../server/
 type Any = any;
 
 /** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir. `founderKey`: the
- *  founder's own governance key (ed25519:…), made on their machine, for tier 0 (README.md, "The Commons ceremony"). */
-export function translateV1World(srcDir: string, destDir: string, { founderKey }: { founderKey?: string } = {}) {
+ *  founder's own governance key (ed25519:…), made on their machine, for tier 0 (README.md, "The Commons ceremony").
+ *  `name`: the world's name, when destDir's own name isn't it (an in-place translation writes into a temporary sibling
+ *  first: world.ts translate <world>); the world's own inventions are namespaced by it. */
+export function translateV1World(srcDir: string, destDir: string, { founderKey, name }: { founderKey?: string; name?: string } = {}) {
   const src = path.join(srcDir, "log.jsonl");
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
   if (fs.existsSync(path.join(destDir, "world.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) throw new Error(`${destDir} already holds a world`);
@@ -59,7 +61,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey }
   const content = (p: string) => { const h = contentAddressOf(p); if (!h) return null; addressed.set(h, p); if (!storeNameMatches(p)) renamedBlobs.push(p); return `sha256:${h}`; };
   const renamedBlobs: string[] = [];   // store blobs whose bytes no longer hash to their name: hashed by what's here
   if (founderKey !== undefined && !keyOk(founderKey)) throw new Error(`${founderKey}: not a governance key (ed25519:<base64url of 32 bytes>, PROTOCOL §13)`);
-  const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, namespace: path.basename(destDir), content, ...(founderKey ? { founder: founderKey } : {}) });
+  const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, namespace: name ?? path.basename(destDir), content, ...(founderKey ? { founder: founderKey } : {}) });
   if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
   const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";

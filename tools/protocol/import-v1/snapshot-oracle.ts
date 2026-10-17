@@ -125,7 +125,7 @@ function compareWorlds(oldP, newP) {
   const missing = oldIds.filter((k) => !newIds.has(k)), extra = [...newIds].filter((k) => !(k in oldP));
   const diffs = [];
   for (const id of oldIds) if (newIds.has(id)) for (const d of deepDiff(oldP[id], newP[id])) diffs.push({ id, field: d.path.slice(1), old: d.old, new: d.new });
-  const ents = (ids) => [...ids].filter((k) => k !== "@world").length;   // things; @world is compared too, as one more record
+  const ents = (ids) => [...ids].filter((k) => k !== "@world").length;   // entities, not counting @world (which is compared too, as one more record)
   return { old: ents(oldIds), new: ents(newIds), matched: ents(oldIds.filter((k) => newIds.has(k))), missing, extra, diffs };
 }
 
@@ -171,7 +171,7 @@ function coreCheck(snapState, newA, content) {
   const yq = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
   for (const [id0, e] of Object.entries(snapState.entities ?? {})) {
     const id = enc(id0), c = newA[id];
-    if (!c) { push(id, "(the thing)", "present", undefined); continue; }
+    if (!c) { push(id, "(the entity)", "present", undefined); continue; }
     // R 10-17: the model is v1's path as written; its bytes' hash beside it where this host has them
     if (e.lib !== undefined) { if (c.model !== e.lib) push(id, "model", e.lib, c.model);
       const h = typeof e.lib === "string" ? content(e.lib) ?? undefined : undefined; if (c["model-hash"] !== h) push(id, "model-hash", h, c["model-hash"]); }
@@ -309,5 +309,7 @@ if (import.meta.main) {
   for (const w of bad) { const d = w.error ? null : [...w.A.diffs, ...w.B.diffs, ...w.C, ...w.lift.seatDiffs][0];
     console.log(`  FAIL ${w.name}: ${w.error ? w.error.split("\n")[0] : d ? `${d.id} ${d.field}: old ${fmt(d.old)} new ${fmt(d.new)}` : `missing ${fmt(w.A.missing.concat(w.B.missing).slice(0, 3))} extra ${fmt(w.A.extra.concat(w.B.extra).slice(0, 3))} unresolved ${fmt(w.unresolved.slice(0, 2))}`}`); }
   console.log(`oracle: ${compared.length - bad.length}/${compared.length} compared world(s) agree with the old engine${bad.length ? `; DIFFER: ${bad.map((w) => w.name).join(", ")}` : ""}`);
+  // one machine-readable line for a caller (tools/protocol/world.ts translate <world>, which runs this before an in-place swap)
+  if (process.env.ORACLE_SUMMARY) console.log(`oracle-summary ${JSON.stringify(results.map((w) => ({ dir: w.dir, ...(w.skipped ? { skipped: w.skipped } : w.error ? { error: w.error.split("\n")[0] } : { agree: !unexplained(w), unexplained: unexplained(w), entities: [w.A.old, w.A.new], seats: w.lift.seats }) })))}`);
   process.exit(bad.length || !compared.length ? 1 : 0);
 }
