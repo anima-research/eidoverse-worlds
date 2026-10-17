@@ -789,8 +789,10 @@ person. **Replay never re-runs code**: the fold reads the batch. The act
 records what its presence reads asked and how much came back (`reads
 {near: [{r, n}], count: [n], names: k}`), never who was near or what anyone
 is called, and a body effect as `{kind, to}`, never which consent admitted
-it: the log is permanent and public, and a script must not keep an
-attendance list in it. An auditor may re-run the source with the recorded
+it: the log is permanent and public, and the authority's own record of an
+activation never becomes an attendance list (enter/leave acts carry no
+actor). What a script writes with the identities it receives live is its
+own act, signed with its sponsor's rights. An auditor may re-run the source with the recorded
 event, clock, seed and stand-ins for the presence reads: a result that
 doesn't depend on who was there is verified; one that does is reported as
 not re-runnable, never as verified. The reference API, limits and determinism rules are

@@ -41,7 +41,7 @@ Refusals show on the card in these same words. (shared/protocol/newscript.js pla
 
 ```jsonc
 "script:bell": {
-  "src": "sha256:<64 hex>",          // the source blob ({lang: "js", api: 1, text}); upload {text} makes it
+  "src": "sha256:<64 hex>",          // the source blob ({lang: "js", api: 2, text}); upload {text} makes it
   "scope": {
     "ids": "self",                   // "self" | "subtree" | ["self", "<id>", …] (≤ 32)
     "comps": ["bell", "light"],      // components it may set or delete there (≤ 16); "name:*" for keyed names
