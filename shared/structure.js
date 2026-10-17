@@ -996,8 +996,9 @@ export function roomAt(plan, lx, lz, ly = 0) {
 }
 
 /** The storey a point stands on AND the room it stands in, resolved once:
- *  the nearest level at or below the point (so a first storey doesn't answer
- *  for someone standing on the second) that has a room at that cell. roomAt
+ *  the highest level whose surface is at most half a metre above the point
+ *  (so a first storey doesn't answer for someone standing on the second)
+ *  that has a room at that cell. roomAt
  *  and the describer both go through here, so the doors described to someone
  *  upstairs are their own room's; with one level it can only ever return that
  *  level. Null when the point is in no room on any reachable storey. */
