@@ -242,10 +242,10 @@ await C("R3b", "a toggle naming the openable without a field opens and closes it
   W.call("use", { id: "gate" }, "vic"); const open2 = W.state().entities.gate.c.openable?.open;
   return [r.ok && open1 === true && open2 === false, { r: why(r), open1, open2 }];
 });
-await C("R4", "a toggle of a number (light.intensity) is refused when written, saying a toggle flips true/false; of a true/false field (light.shadows), taken", () => {
-  const W = world(); W.call("create", { id: "lamp", components: { label: "lamp", light: { intensity: 4 }, transform: { pos: [0, 0, 0] } } });
+await C("R4", "a toggle of a number (light.intensity) is refused when written, saying a toggle flips true/false; of a true/false field (openable.locked), taken", () => {
+  const W = world(); W.call("create", { id: "lamp", components: { label: "lamp", light: { intensity: 4 }, openable: { open: false }, transform: { pos: [0, 0, 0] } } });
   const n = W.call("set", { id: "lamp", component: "reactions", value: { t: { kind: "toggle", component: "light", field: "intensity" } } });
-  const b = W.call("set", { id: "lamp", component: "reactions", value: { t: { kind: "toggle", component: "light", field: "shadows" } } });
+  const b = W.call("set", { id: "lamp", component: "reactions", value: { t: { kind: "toggle", component: "openable", field: "locked" } } });
   return [!n.ok && /true\/false/.test(n.refused.reason) && b.ok, { n: why(n), b: why(b) }];   // says why in a toggle's terms
 });
 await C("R5", "a use whose component was removed since says so, and writes nothing", () => {

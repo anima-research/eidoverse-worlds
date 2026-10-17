@@ -195,7 +195,7 @@ export function duplicate(id, at = undefined) {
 }
 /** Lock or unlock: `set lock true` / `delete lock` (§5: the plain lock component, both ways). */
 export function lock(id, on) {
-  return send(on ? { verb: 'set', args: { id: idIn(id), component: 'lock', value: true } } : { verb: 'delete', args: { id: idIn(id), component: 'lock' } },
+  return send(on ? { verb: 'set', args: { id: idIn(id), component: 'lock', value: { rank: 'builder' } } } : { verb: 'delete', args: { id: idIn(id), component: 'lock' } },
     { what: on ? `lock ${id}` : `unlock ${id}` });
 }
 /** Save as blueprint: the authority's `publish {from, name}` (one root, or several siblings as a group). */

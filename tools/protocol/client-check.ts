@@ -210,7 +210,7 @@ try {
   check("L3 …and the refused try changed nothing; the attempt itself is on the record (round-2 R7)", myActs().length === n0 && myRefused() >= 1, myRefused());
   await dlgClick("Move anyway");
   check("L4 Move anyway: ONE act, the same request with throughLock: true", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.body.request.throughLock === true && myActs().at(-1).e.body.request.id === "cup"), myActs().slice(n0).map((a) => a.e.body.request));
-  check("L5 …the cup moved, and the table is still locked", Math.abs(disk().entities.cup.c.transform.pos[0] - 0.4) < 1e-9 && disk().entities.tbl.c.lock === true, [disk().entities.cup.c.transform, disk().entities.tbl.c.lock]);
+  check("L5 …the cup moved, and the table is still locked", Math.abs(disk().entities.cup.c.transform.pos[0] - 0.4) < 1e-9 && disk().entities.tbl.c.lock?.rank === "builder", [disk().entities.cup.c.transform, disk().entities.tbl.c.lock]);
   check("L6 the dialog's answer was recorded as yes", await evalJson(`__asked.length === ${a0 + 1} && __asked.at(-1).yes === true`));
 
   // ---- D: duplicate ----
@@ -259,7 +259,7 @@ try {
     await evalJson(`[...${hier}?.querySelectorAll('.sp-tree-row') ?? []].map((r) => r.dataset.id + ':' + (r.querySelector('.sp-lock')?.className ?? '-'))`));
   n0 = myActs().length;
   await evalJson(`${lockBtn(crate)}.click(), true`);
-  check("H1 a click on it is ONE act: set lock true", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.body.request.component === "lock" && myActs().at(-1).e.body.request.id === crate && disk().entities[crate].c.lock === true), myActs().slice(n0).map((a) => a.e.body.request));
+  check("H1 a click on it is ONE act: set lock {rank: builder}", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.body.request.component === "lock" && myActs().at(-1).e.body.request.id === crate && disk().entities[crate].c.lock?.rank === "builder"), myActs().slice(n0).map((a) => a.e.body.request));
   check("H2 …and the icon reads locked", await waitFor(`${lockBtn(crate)}?.classList.contains('on')`));
   check("H3 a lock someone else set shows on its row (bob's table)", await waitFor(`${lockBtn("tbl")}?.classList.contains('on')`));
   check("(setup) bob unlocks his table", (await bobReq("delete", { id: "tbl", component: "lock" })).ok);
@@ -276,7 +276,7 @@ try {
   await dlgClick("Cancel");
   check("K3 ✕ Cancel: it snaps back to where the log has it", await waitFor(`${posX(crate)}.then((x) => Math.abs(x - ${kStart.pos[0]}) < 1e-3)`), await evalJson(posX(crate)));
   await sleep(800);
-  check("K4 …and nothing was written (0 acts), the lock still on", myActs().length === n0 && disk().entities[crate].c.lock === true, myActs().slice(n0).map((a) => a.e.body.request));
+  check("K4 …and nothing was written (0 acts), the lock still on", myActs().length === n0 && disk().entities[crate].c.lock?.rank === "builder", myActs().slice(n0).map((a) => a.e.body.request));
   await drag(1);
   await waitFor(`${dlgTitle} === 'This is locked. Move anyway?'`);
   await dlgClick("Unlock");
@@ -289,7 +289,7 @@ try {
   check("K7 Ctrl+Z undoes the move first (the lock stays off)", await waitDisk(() => myActs().at(-1).e.verb === "undo" && myActs().at(-1).e.body.request.act === mv?.seq && Math.abs(disk().entities[crate].c.transform.pos[0] - kStart.pos[0]) < 1e-3 && !("lock" in disk().entities[crate].c)), myActs().at(-1)?.e.body);
   await waitFor(`globalThis.__editWrites().undo.at(-1) === ${ul?.seq}`);
   await key("KeyZ", { ctrlKey: true });
-  check("K8 …and the next Ctrl+Z puts the lock back", await waitDisk(() => myActs().at(-1).e.body.request.act === ul?.seq && disk().entities[crate].c.lock === true), myActs().at(-1)?.e.body);
+  check("K8 …and the next Ctrl+Z puts the lock back", await waitDisk(() => myActs().at(-1).e.body.request.act === ul?.seq && disk().entities[crate].c.lock?.rank === "builder"), myActs().at(-1)?.e.body);
   n0 = myActs().length;
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('${crate}'); return true;`);
   await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === '${crate}')`);
@@ -300,7 +300,7 @@ try {
   check("K11 ✓ Delete anyway: ONE act, the delete with throughLock", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "delete" && myActs().at(-1).e.body.request.throughLock === true && !disk().entities[crate]), myActs().slice(n0).map((a) => a.e.body.request));
   await waitFor(`globalThis.__editWrites().undo.at(-1) === ${myActs().at(-1).seq}`);
   await key("KeyZ", { ctrlKey: true });
-  check("K12 Ctrl+Z brings it back, still locked", await waitDisk(() => !!disk().entities[crate] && disk().entities[crate].c.lock === true) && await waitFor(`import('/lib/world.js').then((m) => m.entities.has('${crate}'))`, 12000));
+  check("K12 Ctrl+Z brings it back, still locked", await waitDisk(() => !!disk().entities[crate] && disk().entities[crate].c.lock?.rank === "builder") && await waitFor(`import('/lib/world.js').then((m) => m.entities.has('${crate}'))`, 12000));
 
   // ---- V: a visitor (who can't lift locks) gets the refusal, no buttons ----
   { const r0 = await evalJson(`__refused.length`);

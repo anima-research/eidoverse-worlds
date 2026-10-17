@@ -178,14 +178,14 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const w: any = openLive(path.join(tmp, "worlds", "wx"), "wx", { now: () => (T += 1000), custodyFile: path.join(tmp, "wx-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const own = d.resolve({ sub: "human:discord:w1", name: "Wyn" }), vis = d.resolve({ sub: "human:discord:w2", name: "Val" });
   request(w, own, "create-world", { title: "wx" }); request(w, own, "set", { id: "@world", component: `roles:${vis}`, value: { role: "visitor" } });
-  const panel = { hours: 18, rate: 2, clouds: "cumulus", weather: "clear", sun: 1.2, fill: 0.4, world: "earth", clock: "authored" };
+  const panel = { hours: 18, rate: 2, clouds: "cumulus", weather: "clear", azimuth: 1.2 };   // sun/fill/world/clock cut 10-16; the panel strips them (skypanel.js:114)
   const m: any = { verb: "sky", args: panel };   // what the sky panel sends (client/lib/skypanel.js)
   const we: any = worldEditOps({ sky: null, terrain: null, grass: null }, { "weather.state": "rain" }, { now: T });
   ok(we.ops.length === 1 && we.ops[0].verb === "weather" && we.ops[0].args.weather === "rain", "W1 edit @world plans the authority's own tools (weather), never a v1 verb", we);
   const r: any = request(w, own, m.verb, m.args); const sky = w.state().entities["@world"].c.sky;
-  ok(r.ok && sky.hours === 18 && sky.world === "earth" && Number.isInteger(sky.ts) && !("seq" in sky) && !("by" in sky), "W2 sky sets the sky, stamped with the authority's clock, with no echo of who (R8)", [r.refused, sky]);
+  ok(r.ok && sky.hours === 18 && sky.azimuth === 1.2 && Number.isInteger(sky.ts) && !("seq" in sky) && !("by" in sky), "W2 sky sets the sky, stamped with the authority's clock, with no echo of who (R8)", [r.refused, sky]);
   const r2: any = request(w, own, "weather", { weather: "rain" }); const sky2 = w.state().entities["@world"].c.sky;
-  ok(r2.ok && sky2.weather === "rain" && sky2.clouds === "cumulus" && sky2.world === "earth", "W3 weather merges onto the standing sky", [r2.refused, sky2]);
+  ok(r2.ok && sky2.weather === "rain" && sky2.clouds === "cumulus" && sky2.azimuth === 1.2, "W3 weather merges onto the standing sky", [r2.refused, sky2]);
   ok(request(w, vis, "sky", panel).refused?.code === "rights", "W4 a visitor can't set the world's sky"); }
 
 // ---- RB: an owner's rollback, undo {actor, since} (round-2 R11) ----
