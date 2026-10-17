@@ -1972,5 +1972,18 @@
  },
  "tags": {
   "status": "reserved"
+ },
+ "body-owner": {
+  "status": "reserved",
+  "on": "thing"
+ },
+ "edit-grant": {
+  "status": "reserved",
+  "keyed": true,
+  "on": "thing"
+ },
+ "avatar-deny": {
+  "status": "reserved",
+  "on": "world"
  }
 }

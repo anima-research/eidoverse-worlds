@@ -1,5 +1,9 @@
 // Every request verb declares its arguments: type, which modes they apply to, and an example. The authority validates every
 // request against this BEFORE doing anything, and `help {verb}` is generated from it (fresh-builder findings W1–W3).
+// EVERY verb the authority answers has a row (engine-scars 3.3, R 10-17 02:45; scars-check V1): an argument a verb doesn't
+// list is refused `unknown-arg`, so tightening after ship would break every client that sends extras. Where a handler checks
+// a value itself (with its own words and code), the row's type is `any`: the row names the argument, the handler judges it.
+import { COMPONENTS } from "./componentspec.js";
 const xz = { type: "xz", doc: "[x, z] in metres (ground position; y comes from what's below)" };
 const ref = (doc) => ({ type: "id", doc });
 const target = (doc) => ({ type: "id|xz", doc });
@@ -76,9 +80,66 @@ export const VERBSPEC = {
   unghost: { doc: "bring a ghosted person back (needs kick; its author, an owner, or someone at its author's rank or above)", args: { who: { type: "string" } }, required: ["who"] },
   modlog: { doc: "the moderation log, newest first, with role changes merged in (needs a moderation power)", args: { who: { type: "string", doc: "only this person" }, before: { type: "number", doc: "older than this ts (the reply's next)" }, limit: { type: "int" } } },
   bans: { doc: "who is banned, kicked (cooling down), muted or ghosted now, and bans that ended (needs a moderation power)", args: {} },
+  // ---- the rest of the authority's verbs (rows added 10-17: names and types; each handler still judges its values) ----
+  leave: { doc: "leave the world: whatever you hold is dropped (the server sends this when you disconnect)", args: {} },
+  wait: { doc: "what physics did lately: things in flight, things that came to rest in the last minute, and any not yet on the record", args: {} },
+  consent: { doc: "your body's consent table (presence: never logged). Bare: read it, with asks waiting for you and the last attempts on you. preset/set/allow/deny/pause/friend change it (only you open it; someone you named trusted may close it, of: <you>); answer replies to an ask", args: {
+      preset: { type: "any", doc: "normal | open | friends-only | performer" }, set: { type: "any", doc: "{class, tier: strangers|friends, mode: everyone|ask|nobody}" },
+      allow: { type: "any", doc: "an identity allowed (every class, or `class`) for `for` ms (default 1 h, at most 30 days)" }, deny: { type: "any", doc: "an identity refused (every class, or `class`) until lifted" },
+      class: { type: "any", doc: "near | follow | touch | intimate | pose | shove | move | voice" }, for: { type: "any", doc: "ms an allow lasts" }, pause: { type: "any", doc: "true: every class is nobody, friends included" },
+      friend: { type: "any", doc: "name someone you trust (they may close your table, never open it)" }, of: { type: "any", doc: "act on someone else's table (closing only, if they named you trusted)" },
+      answer: { type: "any", doc: "an ask's id" }, yes: { type: "any", doc: "with answer: true allows it this once" } }, example: { set: { class: "touch", tier: "strangers", mode: "ask" } } },
+  body: { doc: "act on another body (pose, anim, shove, drag, seat, carry): their consent decides, at once or after they answer an ask (20 s; silence is no)", args: {
+      to: { type: "any", doc: "their identity" }, kind: { type: "any", doc: "pose | anim | shove | drag | seat | carry" }, spec: { type: "any", doc: "what the act carries (a pose, a clip)" }, why: { type: "any", doc: "a line they see with the ask" } },
+    required: ["to", "kind"], example: { to: "u-…", kind: "pose", spec: { clip: "wave" } } },
+  reach: { doc: "touch someone: a named contact point on them, or a world point at their body; judged by where the hand lands (touch or intimate) against their consent", args: {
+      who: { type: "any", doc: "their identity" }, point: { type: "any", doc: "a contact point (shoulder_l, hand_r, …)" }, at: { type: "any", doc: "[x, y, z]: a world point instead" }, why: { type: "any", doc: "a line they see with the ask" } },
+    example: { who: "u-…", point: "shoulder_l" } },
+  inbox: { doc: "what reached your body since you last asked (asks, replies, touches, revocations), then empty", args: {} },
+  "create-world": { doc: "found this world (you become its owner)", args: { title: { type: "any", doc: "its name" }, text: { type: "any", doc: "a line about it" },
+      from: { type: "any", doc: "a fork or reset: {world: sha256:…, head, seq?, name?}" }, ownerKey: { type: "any", doc: "your own governance key, ed25519:<base64url> (PROTOCOL §13)" }, dry: { type: "bool" } }, example: { title: "the meadow" } },
+  help: { doc: "what the authority answers: every verb, or one verb's arguments with examples", args: { verb: { type: "string", doc: "one verb" } }, example: { verb: "place" } },
+  look: { doc: "what's here: the things (a tree, the first `limit`), and the bodies (your own consent table and who touches you; of others, where they are)", args: { limit: { type: "number", doc: "things shown (default 40)" } } },
+  inspect: { doc: "one thing in full: its components, versions, who touched what lately, its children, what it offers you", args: { id: ref("the thing") }, required: ["id"] },
+  measure: { doc: "a thing's box, size, front and surfaces", args: { id: ref("the thing") }, required: ["id"] },
+  find: { doc: "models this server has (query narrows), or this world's blueprints (kind: 'blueprint')", args: { kind: { type: "string", doc: "model (default) | blueprint" }, query: { type: "string" } }, example: { kind: "model", query: "chair" } },
+  lint: { doc: "warnings about one thing, or the whole world (overlaps, floating things, references that name nothing)", args: { id: ref("one thing (omit for all)") } },
+  schema: { doc: "the component registry: every component, or one, with its fields, defaults, ranges and status", args: { component: { type: "string" } }, example: { component: "light" } },
+  publish: { doc: "save a thing (with what hangs on it), or several, as a blueprint of this world (@world.blueprints:<hash>)", args: { from: { type: "any", doc: "a thing's id, or a list of them" }, name: { type: "any", doc: "what it's called" },
+      unwire: { type: "bool", doc: "publish even though links point outside: each is dropped and listed" }, dry: { type: "bool" } }, required: ["from"], example: { from: "lamp-1", name: "reading lamp" } },
+  update: { doc: "move a blueprint copy to a newer version of its blueprint, keeping its own overrides", args: { copy: ref("the copy's root"), to: { type: "any", doc: "the newer blueprint's hash" },
+      resolve: { type: "any", doc: "{\"<id>.<component>.<field>\": 'mine'|'theirs'} for parts changed on both sides" }, dry: { type: "bool" } }, required: ["copy", "to"] },
+  say: { doc: "chat: a line everyone here sees (to: one person)", args: { text: { type: "any", doc: "the words (at most 8192 characters)" }, to: { type: "any", doc: "one person's identity" },
+      spoken: { type: "any", doc: "true: a voice leg performs it (display only)" }, utt: { type: "any", doc: "with spoken: the utterance counter" }, t0: { type: "any", doc: "with spoken: when it started (ms)" } }, required: ["text"], example: { text: "hello" } },
+  caption: { doc: "one line of a screen's captions (if its captioners name you), or end: true to clear it", args: { id: ref("the screen"), session: { type: "any", doc: "the UTC time the captioner attached, a hyphen, 2–16 letters or digits" },
+      n: { type: "any", doc: "the line's number in the session" }, t0: { type: "any" }, t1: { type: "any" }, text: { type: "any" }, speaker: { type: "any" }, title: { type: "any" }, end: { type: "any" },
+      gen: { type: "any", doc: "stamped by the server from the connection (a captioner's leg generation)" }, dry: { type: "bool" } }, required: ["id"] },
+  upload: { doc: "store a script's source (text) or a particle effect (effect); the reply's src goes in script:<name>", args: { text: { type: "any", doc: "JavaScript (docs/SCRIPTS.md)" }, effect: { type: "any", doc: "a particle effect document" }, dry: { type: "bool" } } },
+  effect: { doc: "a particle effect by name (an Essential) or address (sha256:…)", args: { name: { type: "any" } }, required: ["name"], example: { name: "sparks" } },
+  adopt: { doc: "take on a script someone else sponsors (it then runs on your rights)", args: { id: ref("the thing"), script: { type: "any", doc: "its name (script:<name>)" }, base: { type: "any", doc: "the version you read" }, dry: { type: "bool" } }, required: ["id", "script"] },
+  scripts: { doc: "the scripts here and their status; with id + script + test, run one dry on a test event", args: { id: ref("one thing"), script: { type: "any" }, test: { type: "any", doc: "an event {on: 'use'|'tick'|'wake'|'say'|'enter'|'leave'|'changed:<comp>', …}" } } },
+  sky: { doc: "set the sky (the authority stamps its clock): every field of the sky component", args: skyArgs() },
+  weather: { doc: "a weather change, merged onto the standing sky (keepSky: false starts fresh)", args: skyArgs() },
+  sculpt: { doc: "one brush stroke on a terrain grid", args: { on: ref("the ground entity"), brush: { type: "any", doc: "a brush (raise, lower, smooth, flatten…)" }, path: { type: "any", doc: "[[x, z], …] (1–256 points)" },
+      radius: { type: "any", doc: "metres (≤ 64)" }, strength: { type: "any", doc: "whole mm (> 0) for an additive brush" }, dry: { type: "bool" } }, required: ["on", "brush"] },
+  batch: { doc: "several writes as ONE act (one undo): ops [{verb, args}…] of create, set, delete, place, turn", args: { ops: { type: "any", doc: "[{verb, args}, …]" }, label: { type: "any", doc: "a name undo {label} can find it by" }, dry: { type: "bool" } }, required: ["ops"] },
+  "fork-copy": { doc: "a fork's copy of its parent's state (the server's own, while forking; never a person's request)", args: { ops: { type: "any" } } },
   use: { doc: "do something to a thing (inspect shows what it offers you). While you hold it, use {id} with no action fires its grabbable.use (its down; args {phase: 'up'} its up)", args: { id: ref("the thing"), action: { type: "string" }, args: { type: "object" }, dry: { type: "bool", doc: "preview only: what it would write (a script runs dry); nothing is logged" } }, required: ["id"],
     example: { id: "swing-1", action: "push", args: { impulse: [0, 0, 1.5] } } },
 };
+// Request words held for a shape that isn't built (PROTOCOL §7a: the avatar guard rails). The authority refuses each by name
+// (`reserved`), never as an unknown verb, so nobody ships a client that sends one with a guessed shape.
+export const RESERVED_VERBS = Object.freeze({
+  arrive: { args: { wearing: { type: "any", doc: "{avatar, hash}: the body a person arrives wearing; the world records only this, never the body's parts (they live in the wearer's log)" } },
+    why: "reserved (PROTOCOL §7a): avatar entity trees aren't built; arriving is a body's first move today" },
+});
+// the sky and weather verbs take the sky component's own fields (componentspec), its old spellings (the fold translates
+// them: forecast.js skySpelling) and weather's keepSky
+function skyArgs() {
+  const f = Object.fromEntries(Object.keys(COMPONENTS.sky.fields).map((k) => [k, { type: "any", doc: `the sky's ${k}` }]));
+  return { ...f, clock: { type: "any", doc: "old spelling: a tz present means the wall clock governs" }, weatherSeconds: { type: "any", doc: "old spelling of transition" },
+    dormantRated: { type: "any", doc: "old fold bookkeeping (read as hours/rate)" }, keepSky: { type: "any", doc: "weather: false discards the standing sky" }, dry: { type: "bool" } };
+}
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
 const okType = (spec, v) => {
   switch (spec.type) {

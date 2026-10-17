@@ -14,7 +14,7 @@ import { DEFAULT_WHO, grabOf, homeOf, checkGrabbable, wantsHome, fitsSocket, soc
 import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
 import { mintId, PERSON_ID, isPlaceholder } from "./ids.js";
 import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, refsOf, refFields, outOfRange, rangeWords, resolveVersioned, statusOf, canonicalName, STATUSES } from "./componentspec.js";
-import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
+import { validate, verbHelp, VERBSPEC, RESERVED_VERBS } from "./verbspec.js";
 import { dec, partSlot } from "./names.js";
 import { READ_ONLY, GHOST_OK } from "./verbclasses.js";
 import { isRefusalCode } from "./refusalcodes.js";
@@ -98,6 +98,7 @@ export function request(w, actor, verb, args = {}) {
     if (h && w.exists && w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer && !READ_ONLY.has(verb))
       refuse("custody", "this server doesn't hold the key that signs this world (its genesis names another sequencer)", "the operator restores the world's custody file, or hands the sequencer over (§13 handoff); reads still work");
     if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log folds to '${w.state().status}'`, "the authority won't write to a log its own reader refuses");
+    if (!h && Object.hasOwn(RESERVED_VERBS, verb)) refuse("reserved", `'${verb}' is a reserved request: ${RESERVED_VERBS[verb].why}`, "help lists every verb");
     if (!h) refuse("unknown-verb", `there is no '${verb}'`, "help lists every verb", { didYouMean: guess(verb, Object.keys(VERBS)) });
     // `leave` passes: it settles their own presence (the server sends it when it removes them; review 10-07: a kicked
     // body and what it held were never released)

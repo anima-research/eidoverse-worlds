@@ -15,6 +15,9 @@ from reader import Reader, parse_ijson, jcs, Malformed, check_genesis, key_ok, b
 DEFAULT_WINDOW = 1000
 NONE = "none"   # GOV-2: a handoff signed only by the outgoing sequencer has rank "none" (lower than every tier)
 GOV_FIELDS = {"key", "owners", "fork", "sigs"}
+# PROTOCOL §2: a trusted checkpoint will be a governance entry carrying `checkpoint`; its shape isn't specified, so the name
+# is held and refused by name (10-17 engine-scars 4: reserve the name, don't pin a guess at its shape)
+RESERVED_GOV = {"checkpoint"}
 
 
 def gov_message(world_id, seq, body):
@@ -98,6 +101,8 @@ def governance(data):
         b = e.get("body")
         if not isinstance(b, dict):
             ev["why"] = "malformed"; continue
+        if set(b) & RESERVED_GOV:
+            ev["why"] = "checkpoint is reserved"; continue
         if set(b) - GOV_FIELDS:
             ev["why"] = "unknown field"; continue
         sigs = b.get("sigs")

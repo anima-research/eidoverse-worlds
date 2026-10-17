@@ -54,6 +54,10 @@ check("GV6 a handoff by the outgoing sequencer is valid; the new sequencer can't
 # GV7: removal still needs rank (the rule that was already there)
 ev = world([[a], [b]], s, [({"owners": [[], [b]]}, [(B, b)])])
 check("GV7 a tier-1 key can't remove the tier-0 key", not ev[0]["valid"], ev)
+# GV9: `checkpoint` is a reserved governance field (PROTOCOL §2: a trusted checkpoint will be a governance entry carrying it;
+# its shape isn't specified, so a reader refuses it by name, never as an anonymous unknown field) — 10-17 engine-scars 4
+ev = world([[a], [b]], s, [({"key": n, "checkpoint": {"at": 0, "head": "00" * 32, "digest": "00" * 32}}, [(A, a)])])
+check("GV9 a governance body carrying `checkpoint` is refused as reserved (until the spec names its shape)", not ev[0]["valid"] and ev[0].get("why") == "checkpoint is reserved", ev)
 # GV8: a new lower tier may be added by any tier at or above it
 ev = world([[a], [b]], s, [({"owners": [[a], [b], [c1]]}, [(B, b)])])
 check("GV8 tier 1 may add a tier 2 below itself", ev[0]["valid"], ev)

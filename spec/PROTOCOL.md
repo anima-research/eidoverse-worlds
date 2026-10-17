@@ -92,9 +92,10 @@ reports it in diagnostics, never in the world.
 
 - **`genesis`** — entry 0, and only entry 0 (§13).
 - **`change`** — the fold's only input (§3).
-- **`act`** — a request as it was sent, with its refusal if it was refused.
-  Acts are history: the fold never reads them. A change entry's `cause` is
-  usually the act that asked for it.
+- **`act`** — a request as it was sent. A refused one keeps only its verb
+  (the entry's own `verb`), the names of the arguments that verb takes, and
+  its refusal code (§7): never a value. Acts are history: the fold never
+  reads them. A change entry's `cause` is usually the act that asked for it.
 - **`sim`** — a physics intent (a launch, a lift, a catch, the engine's
   digest); read only by readers that carry the world's engine
   (`PHYSICS.md`).
@@ -102,6 +103,21 @@ reports it in diagnostics, never in the world.
 - **`purge`** — the one rule that changes the record (§12).
 - **`sequencer`** — governance: handing the writer role on, or an owner
   override (§13).
+
+**Where the authority reads old acts (readback).** The fold never reads an
+act, but the *authority* reads a few act fields back for meaning: an undo's
+`undoes` and a rollback's `acts` (the undo chain), a `use`'s `capability`
+(whose rights admitted its writes), a script act's `sponsor`, a sculpt's
+`request.brush` and `clamped`, a request's `label`, the request that typed a
+physics-engine `build` (whether the owner chose it: a deploy restamps only a
+build the server stamped), and a launch's, lift's or catch's `id`. The full
+list, with what each reader does, is the reference authority's `READBACK`
+table (shared/protocol/verbclasses.js); a new readback is a new row there.
+§12 lets the whole body of an act be purged, so every one of these reads
+treats a purged body as **unknown**, never as a default: an unknown chooser
+of an engine build is the owner's (no restamp), unknown rights match nobody,
+an unknown undo names no target, and an unknown flight may still be in the
+air.
 
 ## 2. Folded state
 
@@ -126,13 +142,13 @@ The fold yields a **status** (`ok`, `no-world`, or `unknown-version`), a
 Readers MAY start from a **checkpoint** — a folded view whose digest the
 log records — and verify it by folding forward; the digest is never itself
 folded. A checkpoint that readers may *trust* rather than merely start from
-is a `sequencer` entry (§12) on the chain: `body {at: <seq>, head, digest}`,
-the fold digest at that entry and the head it summarises, signed like any
-chain point. A replica holding the sequencer's key MAY adopt such a
-checkpoint without folding from genesis; one that doesn't MUST still fold
-forward from an entry it trusts. This is the log's trust anchor: a world
-ten years old is otherwise verifiable only from entry 0. (Not yet written
-by any sequencer; the shape is fixed here so the chain never grows a gap.)
+will be a governance entry (`kind: "sequencer"`, §13) carrying a
+`checkpoint` field, signed like any governance entry. **The name is
+reserved and its shape is not specified**: no sequencer writes one, and a
+reader refuses a governance body that carries it (`gov.py`: "checkpoint is
+reserved") until this section names the shape, the way `joint` is held in
+the registry (§4). Until then a replica folds forward from an entry it
+trusts, and a world ten years old is verifiable only from entry 0.
 
 ## 3. State operations and their fold semantics (normative)
 
@@ -421,7 +437,16 @@ request moves a copy to a newer version, keeping its own overrides.
   answered no or left to expire all read the same; a cell at `ask` says to
   ask). The cause goes only to the target's own attempt ring, which
   `consent {}` shows them as `attempts` (server/reachgate.ts → the
-  authority's `reachAdmits`; shared/protocol/consent.js `refusalWords`). A
+  authority's `reachAdmits`; shared/protocol/consent.js `refusalWords`).
+  A table is its person's own: `look` shows each viewer their own table and
+  who poses, drags or touches them, and of anyone else only where they
+  stand (and what the viewer is doing to them); another body's cells or
+  pause would undo the uniform words. An **edit that would move a body** —
+  the `transform`, `parent` or `motion` of a seat someone sits on, a floor
+  they stand on, or anything those hang from, by whatever verb — is a `move`
+  act on that body: admitted only when their `move` cell says `everyone`
+  (an edit can't wait for an answer), refused in the same words otherwise.
+  Moving the seat you sit on yourself is yours. A
   yes to an ask is one touch: it ends when the hand lets go, when either
   body leaves, when the target closes that class, or after 10 minutes. Semantic rig
   state travels the same way: `pose.wingsFolded` is a boolean intent, never
@@ -551,9 +576,18 @@ a rest). Then **one gate, `admit`**, checks those writes, keyed on:
 
 For any `change`, verb-specific checks MAY add to `admit`, never replace it. Accepted, the
 authority appends the request as an `act` and its result as one `change` entry
-caused by it; a refused write is appended as an act carrying its refusal
-(`{code, reason, fix}`) and nothing else is written (refusals that would
-only flood the log, such as rate limits, are answered without an entry). **Every appended `change` passes the gate** (`admit`); a `say` passes its own
+caused by it; a refused write is appended as an act whose body is `{args:
+<the names of the arguments the verb takes>, refused: {code}}` (with
+`unknownArgs: n` when the request carried names the verb doesn't take, and
+`unrecorded: n` when refusals past the actor's budget went unwritten), and
+nothing else is written. A refused act never holds a value or a name the
+verb doesn't know: a visitor can't write text into a permanent, forkable
+record by being refused. The reference authority keeps the values in an
+in-memory ring for diagnosis, never persisted. Refusals that would only
+flood the log, such as rate limits, are answered without an entry. **Every
+code is registered** (shared/protocol/refusalcodes.js: code, meaning, when):
+a code is written into signed entries, so it never changes meaning, and a
+new one is a new row. **Every appended `change` passes the gate** (`admit`); a `say` passes its own
 checks (length, rate, the sayer's rights), and a `sim` entry is written by the authority itself from a grab, a launch
 (throw, punt, a release with velocity) or a settle, never by a client.
 
@@ -635,7 +669,7 @@ you hold). Captions are granted per screen (`captioners`), not by role. An owner
 of them. A guest (no account) is at most the world's `default-role`.
 
 **2. The thing: who made it.** For a change to an entity the authority asks,
-in order (`lacks()`): an owner may; else the verb's own need (`owner`,
+in order (`lacks()`; below a body root the body rule B2 comes first, below): an owner may; else the verb's own need (`owner`,
 `grant`, or a named permission) must be held; else `build` must be held;
 else the change is allowed if the holder has `editOthers`, is creating, or
 **made the thing** (its first `create` was admitted under their rights).
@@ -658,9 +692,9 @@ ear — is decided by **their** consent table (§5): per class, per tier
 `deny` that outlasts the answer for the stay. No role, including owner,
 overrides a consent refusal: this is the one veto standing *outside* the
 role ladder, and it is the affected party's, never the installer's or the
-invoker's. *Intended, not yet enforced:* standing close, following and
-speaking into the ear (in the table, unenforced), and the grab / put / throw /
-punt path, which checks rank only and must pass through the same gate.
+invoker's. An ordinary edit that would move a seated or standing body is a
+`move` act on it (§5). *Intended, not yet enforced:* standing close,
+following and speaking into the ear (in the table, unenforced).
 
 **5. The sponsor: whose rights a script spends.** A script acts with its
 sponsor's rights, not its author's; it may do nothing its sponsor could not;
@@ -672,10 +706,63 @@ person's own gesture over their own acts; reverting someone else's act is a
 deliberate `undo {act}` from history, judged by rule 2 at the time it is
 asked. Nothing is silently lost on either side.
 
-**Bodies, in short** (*intended*; the avatar design, not in this PR): an owner may remove a
-body from their world (`kick`, `ban`, refusing an avatar) and may never
-*edit* one. The only person who edits a body is its wearer and whoever the
-wearer has given builder-consent on it.
+**Bodies: the avatar guard rails.** Today a body is presence, never an
+entity, so no write reaches one. These rules are **normative before avatar
+entity trees ship** (R 10-17): an implementation that makes body parts
+entities MUST meet every one of them first. The names they use are reserved
+now (`body-owner`, `edit-grant`, `avatar-deny` in the registry; the request
+`arrive`; the refusal code `body`).
+
+- **B1. The body's owner is its wearer, stamped by the authority at wear.**
+  When a person arrives wearing an avatar (`arrive {wearing: {avatar,
+  hash}}`), the authority stamps the body root's owner (`body-owner`, never
+  set by a request). It is the wearer, or the world for a body the world
+  lends. It MUST NOT be derived from the log's history (who created which
+  part) or from a role. Every entity under the root is the owner's, whoever
+  authored it.
+- **B2. One predicate, at the top of `lacks()`.** For an op on a body root
+  or anything under one, before the owner short-circuit, before
+  `editOthers` and before any handler's or script's rights: the body's
+  owner and their live grantees MAY write it without `build`; everyone else
+  MUST be refused, the world owner included. The refusal is code `body` and
+  one sentence ("that's part of <person>'s body"): no ids, no creator, no
+  locker, no did-you-mean.
+- **B3. The same predicate on every path to a body part:** the hand path
+  (grab, put, throw, drop, punt), `publish`, and `create {from}` (a
+  duplicate) MUST run it on the *source* parts, not only on what they write.
+  A world script's `scope` never covers a body part; a script on a body
+  part is sponsored only by the body's owner.
+- **B4. Precedence: consent > body owner and grantees > world.**
+  1. The person's consent governs every act on their body, live (rule 4).
+     A lent body keeps it: a world may dress you in its costume, never
+     touch you without consent.
+  2. The body's owner and their grantees decide how it is made. No world
+     role, lock, rank-valued `who` field or world script reaches below the
+     root.
+  3. The world MAY refuse a body (`avatar-deny {ids?, hashes?}` on `@world`,
+     at arrive), remove the person (`kick`, `ban`), hide them for everyone
+     (a moderator-log act, never `disabled` on an entity), and set budgets
+     (counted on the assembled tree at wear). It MUST NOT edit or lock a
+     body: `lock`, `disabled` and every rank-valued `who` on or under a body
+     root are refused except from the body's owner.
+- **B5. Co-editing is the owner's grant.** `edit-grant:<identity> {until?,
+  scope?: "subtree" | [ids]}` on the body root, in the wearer's log. It
+  ends when the owner deletes it, when `until` passes (read against entry
+  timestamps, so a replay decides alike), or when the grantee leaves the
+  world unless the owner kept it. It is never copied by a duplicate or a
+  publish, and no world script reads it. Revoking stops future edits, never
+  past ones: what a co-editor did stays in history, and the owner may revert
+  it. A co-editor gets attribution (history and the inspector say who
+  edited what), never rights.
+- **B6. Body edits live in the wearer's log.** The body is live in the
+  world's hierarchy and edited with the same verbs, but its authored writes
+  are stored in the wearer's log, never the world's. The world's log
+  records only `arrive {wearing: {avatar, hash}}`: the hash names the exact
+  body, which is moderation's evidence. A world founded with body writes in
+  its log could never take them out again.
+
+There is no `sealed` component: "sealed" is this permission rule (B1–B3),
+never something anyone writes.
 
 ## 8. Scripts
 
@@ -689,9 +776,15 @@ sponsor's scripts go dormant; a banned sponsor's are suspended.
 Each activation that changes something is one `act` (actor `script:<entity>`,
 naming the source hash, sponsor, trigger, clock and seed) plus one
 all-or-nothing batch through the same `admit`. Every cause chain ends at a
-person. **Replay never re-runs code**: the fold reads the batch. An auditor
-may re-run the source with the recorded event, clock, seed and presence
-reads and compare. The reference API, limits and determinism rules are
+person. **Replay never re-runs code**: the fold reads the batch. The act
+records what its presence reads asked and how much came back (`reads
+{near: [{r, n}], count: [n], names: k}`), never who was near or what anyone
+is called, and a body effect as `{kind, to}`, never which consent admitted
+it: the log is permanent and public, and a script must not keep an
+attendance list in it. An auditor may re-run the source with the recorded
+event, clock, seed and stand-ins for the presence reads: a result that
+doesn't depend on who was there is verified; one that does is reported as
+not re-runnable, never as verified. The reference API, limits and determinism rules are
 `docs/SCRIPTS.md`.
 
 ## 9. Conventions
@@ -840,7 +933,8 @@ argument will be short.
   later `set` of the same component replaces it normally. Purgeable: a
   `set`'s value (the id, component name and position never are, so the fold
   can still say what was purged), and the whole body of an `act`, `say` or
-  `sim` entry. A purge rewrites the stored line, replacing `value` + `salt`
+  `sim` entry (an act body the authority reads back, §1, may be purged like
+  any other: its readers take it as unknown). A purge rewrites the stored line, replacing `value` + `salt`
   with `commit`; the skeleton is unchanged, so every head still verifies
   and the bytes are gone. A purge of a purge, a target at or after the
   purge's own seq, a target that isn't a value, and a `roles:` value

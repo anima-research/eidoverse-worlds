@@ -43,7 +43,7 @@ export const REFUSAL_CODES = Object.freeze({
   "schema":         { meaning: "a component value the registry doesn't take", when: "an unknown field, an unregistered bare name, a value outside the component's schema" },
   "bounds":         { meaning: "a number past what this server allows", when: "a value above a server limit (counts, sizes, rates)" },
   "too-big":        { meaning: "too large to write", when: "a value over 64 KiB, a log line over 1 MiB or 64 deep, a script source or batch over its cap" },
-  "reserved":       { meaning: "a name held for a shape that isn't settled", when: "writing a reserved component, field or handler kind" },
+  "reserved":       { meaning: "a name held for a shape that isn't settled", when: "writing a reserved component, field or handler kind, or sending a reserved request (arrive)" },
   "stamped":        { meaning: "the authority writes that field, never a request", when: "a stamped field (a sky's ts, a physics build…) in a write" },
   "derived":        { meaning: "that's computed from something else", when: "writing a derived field (a motion's pivot) instead of its source" },
   "legacy":         { meaning: "an old spelling", when: "a pre-cut shape (a socket as a parent field) in a new write" },

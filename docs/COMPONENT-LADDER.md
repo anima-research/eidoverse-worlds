@@ -152,6 +152,25 @@ Never edit what a **stable** field means. (A **trial** field may change during t
 changelog and with a repair or translation for stored values where one is possible; see the tripwire above.) A new meaning is a new name, `<name>@<n>`, registered before anyone writes it,
 saying what it `supersedes`. Old names are read forever.
 
+## A keyed component is a facet; anything with its own life is a child entity
+
+A keyed name (`motion:<slot>`, `roles:<identity>`, `script:<name>`) is one more facet of the thing it sits on: Unreal's
+component name within its actor, never a second entity system. The rule (engine-scars review 2026-10-17, R's ruling):
+**anything that needs its own transform, lock, rights, references or children is a child entity, not a key suffix.**
+
+- *Its own transform*: it sits somewhere of its own (a seat, a hook, a bone). Make it a child with `parent {to}` and a
+  `transform` local to its parent. Sockets went this way (a socket is a child entity with `socket {name}`); avatar bones
+  (`joint`, reserved) will too.
+- *Its own lock or rights*: someone may lock it, or hold rights over it, apart from its thing. A key can't be locked on its
+  own (a lock covers the whole thing), and a key's creator rule is not a rights system.
+- *References to it*: something else names it (a reaction pointing at it, a script's ref). Ids are stable and typed refs
+  are cleared on delete; a key is renamed by rewriting it, and nothing follows the rename (Unreal's FName scar).
+- *Children*: things hang from it. Only entities have children.
+
+What may stay a key: data with no life of its own, read with its thing (a motion's parameters, with the node it drives
+written as data, `motion:<slot> {node}`, never in the key; a role; a script's source and scope). If a key ever grows one
+of the four needs above, promote it to a child entity, and write the promotion here.
+
 ## Who checks what
 
 - The conformance suite (`tools/protocol/run.ts`) fails on a changed pin, a v1 word, an unhandled refusal.

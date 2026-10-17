@@ -31,7 +31,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["argument names not filtered to the verb's own", "protocol/authority.js", "const known = spec ? keys.filter((k) => k in spec.args || UNIVERSAL_ARGS.has(k)) : [];", "const known = keys;", ["L2"]],
   ["the refusal ring", "protocol/authority.js", "  ring.push(rec); if (ring.length > REFUSAL_RING) ring.splice(0, ring.length - REFUSAL_RING);", "", ["L3"]],
   ["look shows everyone's table", "protocol/authority.js", "...(id === actor ? { shield: shieldOf(P, id) } : {}),", "shield: shieldOf(P, id),", ["K1"]],
-  ["look shows who touches whom", "protocol/authority.js", ".filter(([k, r]) => r.to === id && (id === actor || k === actor)).map(([k]) => k);", ".filter(([k, r]) => r.to === id).map(([k]) => k);", ["K2"]],
+  ["look shows who touches whom", "protocol/authority.js", ".filter(([k, r]) => r.to === id && (id === actor || k === actor)).map(([k]) => k) }));", ".filter(([k, r]) => r.to === id).map(([k]) => k) }));", ["K2"]],
   ["edits skip the occupant check", "protocol/authority.js", "  if (!(CTX.forking || who.lifting)) occupiedEdits(w, st, who, norm);", "", ["O1", "O2", "O5", "O6"]],
   ["edits ignore the occupant's consent", "protocol/authority.js", "if (d.mode === \"everyone\") continue;", "continue;", ["O3"]],
   ["restamp reads a purged cause act", "protocol/authority.js", "if (b === null) return true;   // a purged cause: unknown chooser, so never restamped", "if (b === null) return false;", ["Q1"]],
@@ -39,6 +39,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["readback ignores the purge index", "protocol/authority/storage.js", "if (purgedSeqs(w).has(seq)) return null;", "", ["Q3"]],
   ["an unregistered refusal code", "protocol/authority.js", "refuse(\"stale\", `${a.id}.${key}", "refuse(\"stale-x\", `${a.id}.${key}", ["G1"]],
   ["a verb without a row", "protocol/verbspec.js", "  inbox: {", "  inbox_gone: {", ["V1"]],
+  ["a reserved request is just unknown", "protocol/authority.js", "if (!h && Object.hasOwn(RESERVED_VERBS, verb)) refuse(\"reserved\"", "if (false) refuse(\"reserved\"", ["X4"]],
   ["CONTROL (no-op: must stay green)", "protocol/authority.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -230,6 +231,36 @@ const cases: Case[] = [
       const names = D.VERB_NAMES ?? []; const V = (globalThis as any).__VS?.VERBSPEC ?? {};
       return { n: names.length, rowless: names.filter((v: string) => !V[v]), extra: Object.keys(V).filter((v) => !names.includes(v) && v !== "*") }; },
     good: (o) => o.n > 50 && !o.rowless.length && !o.extra.length },
+  // ---------------- X: the spec, the registry, the ladder ----------------
+  { id: "X1", what: "checkpoint: the name is reserved (gov.py refuses it by name), PROTOCOL §2 pins no unexercised shape", run() {
+      const spec = read("spec/PROTOCOL.md"), gov = read("spec/conformance/gov.py");
+      return { oldShape: spec.includes("`body {at: <seq>, head, digest}`"), reserved: /`checkpoint`\s+field[\s\S]{0,200}name is\s+reserved/.test(spec), gov: /RESERVED_GOV = \{"checkpoint"\}/.test(gov) && gov.includes('"checkpoint is reserved"') }; },
+    good: (o) => !o.oldShape && o.reserved && o.gov },
+  { id: "X2", what: "readback: PROTOCOL §1 names where the authority reads old acts and that a purged one is unknown; READBACK lists each reader with its unknown rule", run() {
+      const spec = read("spec/PROTOCOL.md"); const RB = (globalThis as any).__VC?.READBACK ?? {};
+      return { para: /\*\*Where the authority reads old acts \(readback\)\.\*\*/.test(spec) && /treats a purged body as \*\*unknown\*\*/.test(spec),
+        purge12: /act body the authority reads back, §1, may be purged/.test(spec), rows: Object.keys(RB), whole: Object.values(RB).every((r: any) => r.fields?.length && r.where && r.unknown) }; },
+    good: (o) => o.para && o.purge12 && ["act:undo", "act:use", "act:script", "act:sculpt", "act:*", "sim:launch"].every((k) => o.rows.includes(k)) && o.whole },
+  { id: "X3", what: "PROTOCOL §7a: the avatar guard rails are MUSTs before avatars (owner stamped at wear, one predicate, every path, the precedence ladder, the grant, the wearer's log); `sealed` is a rule, not a component", run() {
+      const spec = read("spec/PROTOCOL.md"); const sec = spec.slice(spec.indexOf("## 7a."), spec.indexOf("## 8."));
+      return { b: ["B1.", "B2.", "B3.", "B4.", "B5.", "B6."].filter((x) => !sec.includes(`**${x}`)), ladder: sec.includes("consent > body owner and grantees > world"),
+        stamped: /stamped by the authority at wear/.test(sec) && /MUST NOT be derived from the log's history/.test(sec), grant: sec.includes("`edit-grant:<identity> {until?,"),
+        wearer: /stored in the wearer's log, never the world's/.test(sec), sealed: /There is no `sealed` component/.test(sec), oldIntended: sec.includes("(*intended*; the avatar design, not in this PR)") }; },
+    good: (o) => !o.b.length && o.ladder && o.stamped && o.grant && o.wearer && o.sealed && !o.oldIntended },
+  { id: "X4", what: "the names the guard rails use are held: body-owner, edit-grant, avatar-deny reserved in the registry; the request arrive {wearing} refused as reserved; the refusal code body registered", async run(s) { cast(s);
+      const CS = await import(TREE + "shared/protocol/componentspec.js"); const VS = (globalThis as any).__VS; const RC = (globalThis as any).__REG?.REFUSAL_CODES ?? {};
+      const arrive = s.call("vic", "arrive", { wearing: { avatar: "x", hash: "sha256:" + "0".repeat(64) } });
+      const squat = s.call("olive", "set", { id: "@world", component: "avatar-deny", value: { ids: ["u-x"] } });
+      return { comps: ["body-owner", "edit-grant", "avatar-deny"].map((n) => CS.statusOf?.(n) ?? null), arrive: code(arrive), wearing: !!VS?.RESERVED_VERBS?.arrive?.args?.wearing, body: !!RC.body?.reserved, squat: code(squat) }; },
+    good: (o) => JSON.stringify(o.comps) === '["reserved","reserved","reserved"]' && o.arrive === "reserved" && o.wearing && o.body && o.squat === "reserved" },
+  { id: "X5", what: "COMPONENT-LADDER: anything needing its own transform, lock, rights, refs or children is a child entity, not a key suffix", run() {
+      return { rule: read("docs/COMPONENT-LADDER.md").includes("**anything that needs its own transform, lock, rights, references or children is a child entity, not a key suffix.**") }; },
+    good: (o) => o.rule },
+  { id: "X6", what: "PROTOCOL §7 and §8 say what a refused act and a script act keep: argument names and a code; presence reads as counts, body effects without consent", run() {
+      const spec = read("spec/PROTOCOL.md");
+      return { refused: spec.includes("`{args:\n<the names of the arguments the verb takes>, refused: {code}}`") || /refused: \{code\}\}`/.test(spec) && /never holds a value/.test(spec),
+        oldRefused: spec.includes("(`{code, reason, fix}`) and nothing else is written"), reads: /never who was near or what anyone\s+is called/.test(spec), look: /`look` shows each viewer their own table/.test(spec) }; },
+    good: (o) => o.refused && !o.oldRefused && o.reads && o.look },
 ];
 // G1 (static): scan the files the authority's refusals come from, then the registry; built after the cases list so the
 // scan reads the TREE under test (a mutant's copy)
@@ -257,6 +288,7 @@ const cases: Case[] = [
 let pass = 0, fail = 0;
 try { (globalThis as any).__REG = await import(TREE + "shared/protocol/refusalcodes.js"); } catch { /* G1 says so */ }
 (globalThis as any).__VS = await import(TREE + "shared/protocol/verbspec.js");
+(globalThis as any).__VC = await import(TREE + "shared/protocol/verbclasses.js");
 for (const c of [...cases.filter((x) => x.id !== "G1"), ...cases.filter((x) => x.id === "G1")]) {   // G1 last: it reads what every other row met
   if (ONLY && !ONLY.includes(c.id)) continue;
   let o: any; try { o = await c.run(session()); } catch (e) { o = { threw: String(e?.stack ?? e).slice(0, 600) }; }

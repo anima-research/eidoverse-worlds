@@ -558,6 +558,15 @@ for (const [name, what] of Object.entries({
   link: "a link a thing opens (a portal, a page)",
   tags: "labels a thing carries for search and rules",
 })) COMPONENTS[name] = { status: "reserved", instead: "nothing yet: the name is held for a shape that isn't settled", help: `reserved: ${what}. Not written yet` };
+// the avatar guard rails (PROTOCOL §7a, normative before avatar entity trees ship; R 10-17 02:45): the names are held now so
+// nobody squats them under the must-ignore escape hatch before the shapes land. A body's owner is a PERMISSION RULE
+// stamped by the authority at wear, never a component anyone writes (R 02:45: `sealed` is that rule, not a component).
+COMPONENTS["body-owner"] = { status: "reserved", on: "thing", instead: "nothing yet: avatar entity trees aren't built",
+  help: "reserved: on a body root, the identity that owns the body (its wearer, or the world for a lent body), stamped by the authority at wear and never set by a request; every entity under the root is that person's (PROTOCOL §7a)" };
+COMPONENTS["edit-grant"] = { status: "reserved", on: "thing", keyed: true, key: "instance", instead: "nothing yet: avatar entity trees aren't built",
+  help: "reserved: keyed by an identity, on a body root, in the WEARER's log: {until?, scope?: 'subtree' | [ids]} lets that person edit the body without build; revoking (deleting it) stops future edits, never past ones; a co-editor gets attribution, not rights (PROTOCOL §7a)" };
+COMPONENTS["avatar-deny"] = { status: "reserved", on: "world", instead: "nothing yet: avatar entity trees aren't built",
+  help: "reserved: on @world, {ids?, hashes?}: avatars this world refuses at arrive (the world may refuse a body, never edit one; PROTOCOL §7a)" };
 
 export const STATUSES = {
   trial: "admitted, but its shape may still change during the alpha (about a year); stored values are translated or repaired where they can be",
