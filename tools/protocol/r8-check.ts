@@ -25,8 +25,8 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 
 // [name, file under shared/, find, replace, rows]
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["a delete clears script scopes again", "protocol/authority.js", "baseOf(k) === \"script\" || ", "", ["H1"]],
-  ["a fork's copy stamps model-hash", "protocol/authority.js", "if (!ids.size || CTX.forking) return ops;", "if (!ids.size) return ops;", ["H2"]],
+  ["a delete clears script scopes again", "protocol/authority/followups.js", "baseOf(k) === \"script\" || ", "", ["H1"]],
+  ["a fork's copy stamps model-hash", "protocol/authority/followups.js", "if (!ids.size || CTX.forking) return ops;", "if (!ids.size) return ops;", ["H2"]],
   ["ref clears admitted on the deleter's rights", "protocol/authority/gate.js", "const fu = raw[FOLLOW_UP] === true;", "const fu = false;", ["R1", "R2", "R3", "R4"]],
   ["undo's ref restores on the undoer's rights", "protocol/authority/undo.js", "const g = setOp(id, comp, nv); g[FOLLOW_UP] = true;", "const g = setOp(id, comp, nv);", ["R4"]],
   ["no repair marker at founding", "protocol/authority.js", "w.append(actEntry(w, \"system\", \"repair-shapes\", { v: SHAPES_VERSION, ids: [], founding: true }));", "", ["M1"]],
