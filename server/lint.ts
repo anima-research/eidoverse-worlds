@@ -39,19 +39,44 @@ export const MOTION_TYPES: Record<string, Set<string>> = {
   path: new Set(["type", "points", "speed", "duration", "loop", "face", "t0", "part", "cause", "by"]),
 };
 
+/** The disk path, relative to each rung, that /library/<encoded> serves, or
+ *  null when the request must be refused. `encoded` is the still-encoded
+ *  remainder of URL.pathname: the /library route passes its own, and
+ *  libraryPath() passes the one the client's URL would carry, so the route
+ *  and every resolver read a name the same way. A file whose name has a
+ *  space ("Frosted Glass Window Seat.glb" → %20) or an accent lives on disk
+ *  under its decoded name, so the path is decoded once, with three guards:
+ *  - a raw path that already names an entry on ANY rung of the ladder wins
+ *    (a model literally called "box%41.glb" must not turn into "boxA.glb");
+ *  - a malformed sequence or a decoded NUL keeps the raw path;
+ *  - a ".." segment after decoding is refused outright. This, not the
+ *    normalize()+startsWith(base) check in onLadder() and the route, is what
+ *    stops "..%2f": that check is a string prefix, so "..%2flibrary-backup%2fx"
+ *    would pass it and reach a SIBLING directory whose name starts with the
+ *    base's. */
+export function libraryRel(encoded: string): string | null {
+  let rel = encoded;
+  if (rel.includes("%") && !LADDER.some(base => entryAt(join(base, rel)) !== null)) {
+    try { const d = decodeURIComponent(rel); if (!d.includes("\0")) rel = d; } catch { /* keep raw */ }
+  }
+  return rel.split(/[\/\\]/).includes("..") ? null : rel;
+}
+
 /** The /library path a lib names, as the asset route will look it up, or
  *  null when it names none with that extension. Mirrors the client's
  *  /library/<lib> URL: percent-encoding of spaces/Unicode, and query and
- *  fragment removed. The route uses URL.pathname verbatim (it does not decode
- *  it back to a disk filename). A parent-traversal segment is refused; a name
+ *  fragment removed; then libraryRel() decodes it back to the disk name
+ *  exactly as the route does. A parent-traversal segment is refused; a name
  *  that merely contains two dots, such as robot..v2.glb, is served and kept. */
 export function libraryPath(lib: unknown, extension: RegExp): string | null {
   if (typeof lib !== "string") return null;
   if (lib.split(/[?#]/, 1)[0].includes("\0")) return null;
   const pathname = new URL("/library/" + lib, "http://library.invalid").pathname;
   if (!pathname.startsWith("/library/")) return null;
-  const rel = normalize(pathname.slice("/library/".length)).replace(/^\/+/, "");
-  return rel.split("/").includes("..") || !extension.test(rel) ? null : rel;
+  const encoded = normalize(pathname.slice("/library/".length)).replace(/^\/+/, "");
+  if (encoded.split("/").includes("..")) return null;
+  const rel = libraryRel(encoded);
+  return rel === null || !extension.test(rel) ? null : rel;
 }
 
 const MODEL = /\.(glb|vrm)$/i;

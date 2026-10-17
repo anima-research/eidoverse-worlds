@@ -35,10 +35,11 @@ try {
   }
   for (const name of ["space model.glb", "café.glb"]) {
     writeFileSync(join(ladder[2], name), "literal filename");
-    check("literal URL-encodable disk name is not falsely resolved: " + name, resolveLibFile(name) === null);
+    check("a literal disk name with a space or accent resolves, as the route decodes it: " + name,
+      resolveLibFile(name) === join(ladder[2], name));
     const encoded = new URL("/library/" + name, "http://library.invalid").pathname.slice("/library/".length);
     writeFileSync(join(ladder[2], encoded), "served filename");
-    check("the encoded pathname resolves exactly as the asset route: " + name,
+    check("a disk name that is the encoded form wins over decoding, as in the route: " + name,
       resolveLibFile(name) === join(ladder[2], encoded));
     check("already-encoded input is not encoded twice: " + encoded,
       resolveLibFile(encoded) === join(ladder[2], encoded));

@@ -21,7 +21,7 @@ import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
 import { LOD_RECIPE, lodVariantPath, lodVerdictKind, lodVerdictFinal } from "./store-variants.ts";
 import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
-import { resolveLibFile, libraryPath, onLadder } from "./lint.ts";
+import { resolveLibFile, libraryPath, libraryRel, onLadder } from "./lint.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { checkFile, checkScale } from "./buildcheck-queue.ts";
 import { worlds, getWorld, type World } from "./world.ts";
@@ -1024,7 +1024,11 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname.startsWith("/library/"),
     handler: ({ req, url }) => {
-      const rel = url.pathname.slice("/library/".length);
+      // url.pathname keeps percent-encoding; libraryRel() decodes it to the
+      // disk name (and refuses a decoded ".."), the same function lint, /geom,
+      // boxes and the rosters resolve through, so they agree on every name.
+      const rel = libraryRel(url.pathname.slice("/library/".length));
+      if (rel === null) return new Response("forbidden", { status: 403 });
       // optimized mirror first (draco+webp): same path, ~30x smaller
       const versioned = url.searchParams.has("v") || rel.startsWith("store/"); // content-addressed = immutable
       // Deliberate upstream forks win over EVERYTHING (upstream-patched/
