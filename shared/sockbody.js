@@ -30,7 +30,8 @@
 //     hold     {spine: [x,y,z,w]}                       sparse bone overrides over the pose (the escape hatch)
 //     look     {yaw: [min,max], pitch: [min,max], up}   head limits in degrees, socket frame; up: world | socket
 //     input    {move: none|drive|walk, look: free|aim|locked}   at most one `drive` per thing
-//     leaveBy  'jump'           jump | menu | script  (absent: moving, jumping or getting up all leave)
+//     leaveBy  'jump'           jump | menu | script  (absent: moving, jumping or getting up all leave; script: only the
+//                               world, or the occupant's always-on escape — a held X, a second get-up, detach {escape})
 //     fromSeat true             you may move here from another seat without standing up
 //     who      'builder'        visitor | builder | owner
 //   }
@@ -149,12 +150,19 @@ export function choosePose(body, choices = []) {
 }
 
 /** Is a leave request of this kind allowed by the socket? kind: 'move' (a movement key), 'jump', 'menu' (the explicit
- *  get-up: X, the stand tile, /stand, the radial menu), 'script'. A seat whose input takes the movement keys (drive,
- *  walk) never treats them as "get off". */
+ *  get-up: X, the stand tile, /stand, the radial menu), 'script', 'escape'. A seat whose input takes the movement keys
+ *  (drive, walk) never treats them as "get off".
+ *  'escape' is the occupant's one exit no seat can take away (review r9 scars M1; VRChat's respawn and menu, SL's stand):
+ *  holding X (or the stand tile) for ESCAPE_HOLD_S, pressing the get-up again within ESCAPE_REPEAT_S of a refusal, or an
+ *  agent's detach {escape: true}. A seat may make leaving deliberate, never impossible. */
+export const ESCAPE_HOLD_S = 1.5, ESCAPE_REPEAT_S = 2;
+/** Does the authority's `unseated` inbox message name the seat I'm on now (`mount` = {to: <socket id>}, mine or null)? A
+ *  late message (after a reconnect) never stands anyone up from a seat taken since (review r9 L4, M3: client and agent). */
+export const unseatedFromMine = (u, mount) => !!(u && mount && typeof u.seat === 'string' && u.seat === mount.to);
 export function mayLeave(body, kind) {
   if (!body) return true;
-  if (kind === 'script') return true;
-  const lb = body.leaveBy;   // 'script' falls through every branch below: nothing the occupant does lets go
+  if (kind === 'script' || kind === 'escape') return true;
+  const lb = body.leaveBy;   // 'script' falls through every branch below: none of the casual exits lets go (the escape still does)
   if (kind === 'move') return lb === 'any' && body.input.move === 'none';
   if (kind === 'jump') return lb === 'any' || lb === 'jump';
   return lb !== 'script';   // menu: the explicit get-up works for any, jump and menu
@@ -406,7 +414,7 @@ export function describeBody(slot, b) {
   if (b.input.move === 'drive') bits.push('drives it (movement is throttle/steer)'); else if (b.input.move === 'walk') bits.push('movement shapes your pose');
   if (b.input.look === 'locked') bits.push('view locked forward'); else if (b.look.limited) bits.push(`head turns ${b.look.yaw[0]}…${b.look.yaw[1]}°`);
   if (b.enter || b.approach) bits.push(`gets on${b.approach ? ' from its approach point' : ''}${b.enter ? ` with ${b.enter}` : ''}`);
-  bits.push(b.leaveBy === 'script' ? 'lets you go only when the world does' : b.leaveBy === 'menu' ? 'get up explicitly to leave' : b.leaveBy === 'jump' ? 'jump or get up to leave' : 'walk or get up to leave');
+  bits.push(b.leaveBy === 'script' ? 'lets you go when the world does (hold X to get up anyway)' : b.leaveBy === 'menu' ? 'get up explicitly to leave' : b.leaveBy === 'jump' ? 'jump or get up to leave' : 'walk or get up to leave');
   if (b.fromSeat) bits.push('you can move here from another seat');
   if (b.who) bits.push(`${b.who}s only`);
   return `${slot}: ${b.action} (${bits.join('; ')})`;

@@ -9,7 +9,7 @@
 // not add another edge into it (§14.2).
 
 import { bodyOf } from '../../shared/components.js';
-import { mayLeave } from '../../shared/sockbody.js';
+import { mayLeave, unseatedFromMine, ESCAPE_HOLD_S, ESCAPE_REPEAT_S } from '../../shared/sockbody.js';
 import { driveSeat, releaseSeat } from './seatbody.js';
 import { serverNow } from './remotes.js';
 import { sendRequest } from './net.js';
@@ -105,14 +105,20 @@ export function mySeatBody() {
 }
 /** Get off my seat, if the socket lets this kind of leaving through ('move' | 'jump' | 'menu' | 'script'). True when
  *  I'm off (or on my way off, with a leave clip). */
+// The escape (review r9 scars M1): a seat that lets you go only when the world does still can't hold you. The explicit
+// get-up pressed again within ESCAPE_REPEAT_S of its refusal, or X held for ESCAPE_HOLD_S, always gets you up.
+let escapeArmedAt = -Infinity, escapeHeld = 0;
 export function dismountMe(kind = 'menu') {
   const m = avatarMounts.get(CONFIG.name);
   if (!m) return false;
   const body = mySeatBody();
+  if (kind === 'menu' && !mayLeave(body, kind) && body?.leaveBy === 'script' && performance.now() - escapeArmedAt < ESCAPE_REPEAT_S * 1000) kind = 'escape';
   if (!mayLeave(body, kind)) {
-    flashHint(body?.leaveBy === 'script' ? "this seat lets you go only when the world does" : body?.leaveBy === 'jump' ? html`<kbd>Space</kbd> or <kbd>X</kbd> to get off` : html`<kbd>X</kbd> to get off`);
+    if (body?.leaveBy === 'script' && kind === 'menu') escapeArmedAt = performance.now();
+    flashHint(body?.leaveBy === 'script' ? html`this seat lets you go when the world does — <kbd>X</kbd> again (or hold it) to get up anyway` : body?.leaveBy === 'jump' ? html`<kbd>Space</kbd> or <kbd>X</kbd> to get off` : html`<kbd>X</kbd> to get off`);
     return false;
   }
+  escapeArmedAt = -Infinity; escapeHeld = 0;
   const me = getMe();
   const sw = mountTransform(CONFIG.name, _seatP, { av: me });
   const yaw = sw?.yaw ?? myState.yaw;
@@ -219,6 +225,9 @@ export function updateMountedMe(dt) {
   // getting off, as the socket allows: movement keys (only when the seat doesn't take them), jump
   if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].some((k) => keys.has(k)) && body.input.move === 'none') { if (mayLeave(body, 'move')) { camera.up.set(0, 1, 0); dismountMe('move'); } }
   else if (keys.has('Space') || (xrIntent.active && xrIntent.jump)) { if (mayLeave(body, 'jump')) { camera.up.set(0, 1, 0); dismountMe('jump'); } }
+  // the escape: X (or the stand tile) held, on a seat that otherwise lets you go only when the world does
+  if (keys.has('KeyX') && !mayLeave(body, 'menu')) { escapeHeld += dt; if (escapeHeld >= ESCAPE_HOLD_S) { camera.up.set(0, 1, 0); dismountMe('escape'); } }
+  else escapeHeld = 0;
 }
 
 /** Pick one of my seat's named poses (its `poses` menu), or its default (null). Rides my seat frames with the time I
@@ -296,7 +305,7 @@ export function trySitOn(arg, slot = null) {
     if (mine) releaseSeat(getMe());
     setBodySeat(CONFIG.name, { to: best.sock });   // presence: my frames carry the seat, the socket's id (world.js)
     const lb = best.body.leaveBy;
-    logChat('*', `you ${best.body.action} on ${called(best.id)} (${best.slot}) — ${lb === 'script' ? 'it lets you go when the world does' : lb === 'menu' ? 'X to get up' : lb === 'jump' ? 'Space or X to get up' : 'X or move to get off'}`);
+    logChat('*', `you ${best.body.action} on ${called(best.id)} (${best.slot}) — ${lb === 'script' ? 'it lets you go when the world does (hold X to get up anyway)' : lb === 'menu' ? 'X to get up' : lb === 'jump' ? 'Space or X to get up' : 'X or move to get off'}`);
   };
   sendRequest('use', { id: best.sock, action: best.body.action }).then((r) => {
     if (r?.ok) take(); else logChat('*', plain(`${best.body.action} on ${best.id}`, r));   // a person's words (plainwords.js)
@@ -337,7 +346,7 @@ export function updateSeatHint(dt) {
   let hint = null;
   if (avatarMounts.has(CONFIG.name)) { const b = mySeatBody();
     hint = !b || b.leaveBy === 'any' ? (b?.input.move !== 'none' && b ? html`<kbd>X</kbd> get up · <kbd>WASD</kbd> drive` : html`<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off`)
-      : b.leaveBy === 'script' ? 'this seat lets you go when the world does' : b.leaveBy === 'jump' ? html`<kbd>Space</kbd> or <kbd>X</kbd> get up` : html`<kbd>X</kbd> get up`; }
+      : b.leaveBy === 'script' ? html`this seat lets you go when the world does · hold <kbd>X</kbd> to get up anyway` : b.leaveBy === 'jump' ? html`<kbd>Space</kbd> or <kbd>X</kbd> get up` : html`<kbd>X</kbd> get up`; }
   else if (!downed && nearestSeat(null, 3.5)) hint = html`<kbd>X</kbd> — sit`;
   // my hands come first: what I hold and how to let go (it must never be a secret), else what's in reach to pick up
   if (!downed) { const hh = handsHint(); if (hh && (myHoldsNow() || !hint)) hint = hh; }
@@ -527,8 +536,9 @@ export function initLocalBody({ logChat: logChatFn }) {
   // sitting is consent, standing up is the exit (scars r8 M1): someone else's edit moved the seat I sat on, and the
   // authority let me go (its `unseated` inbox message, authority.js unseatsFor). Get off as when the world lets go.
   bus.on('body-inbox', (msg) => {
+    // only from the seat I'm on now (review r9 L4): a late message (after a reconnect) never stands me up from a seat taken since
     const u = Array.isArray(msg?.messages) ? msg.messages.find((m) => m?.type === 'unseated') : null;
-    if (u && avatarMounts.has(CONFIG.name) && dismountMe('script')) toast(`${typeof u.by === 'string' ? u.by : 'someone'} moved the seat you were on, so you stood up`, 'info', 5000);
+    if (u && unseatedFromMine(u, avatarMounts.get(CONFIG.name)) && dismountMe('script')) toast(`${typeof u.by === 'string' ? u.by : 'someone'} moved the seat you were on, so you stood up`, 'info', 5000);
   });
   setSeatHook(() => {
     if (avatarMounts.has(CONFIG.name)) { dismountMe('menu'); return true; }
