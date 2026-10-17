@@ -17,6 +17,9 @@
 //             is called, the act is `skipped` with that reason, never flagged and never counted verified. An act with no
 //             such reads that differs is still flagged `rerun`. Soundness: everything but the identities is still checked
 //             (sponsor, depth, seed, src, the read shape), and an identity-independent result is checked in full.
+//   arrivals — an `enter` / `leave` activation records no identity (review r8 M4): the script heard `by` live, the act keeps
+//             neither a trigger actor nor event.by. A re-run gets a stand-in identity; a result that doesn't depend on who
+//             came is verified, one that does is `skipped`, as for presence reads.
 // Replay of the WORLD never runs code (L1); this re-run is an optional audit view.
 import { fold, opsOf, jcs } from "./fold.js";
 import { elide, seedOf } from "./scriptrules.js";
@@ -66,6 +69,7 @@ const norm = (ops) => jcs(ops.map(({ verb, id, comp, value }) => ({ verb, id, ..
  */
 const readShape = (r) => ({ near: (r?.near ?? []).map((x) => [x.r, Array.isArray(x.ids) ? x.ids.length : x.n]), count: r?.count ?? [], names: Array.isArray(r?.names) ? r.names.length : r?.names ?? 0 });
 /** did these recorded reads ask who was near, or what someone is called? (inputs a re-run gets only as stand-ins) */
+const ARRIVAL_STAND_IN = "u-" + "a".repeat(20);   // shaped like an identity, nobody's (ids are minted, never chosen)
 const whoReads = (r) => (r?.near ?? []).some((x) => !Array.isArray(x.ids) && x.n > 0) || (typeof r?.names === "number" && r.names > 0);
 export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
   const flags = [], skipped = []; let acts = 0, maxDepth = 0, reran = 0;
@@ -87,6 +91,7 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     if (b.on === "say") { if (!isE(trig) || typeof trig.body?.text !== "string") { flags.push({ seq, check: "input", why: "the say it heard is gone (purged?): it can't be re-run" }); return; }
       event.text = trig.body.text; if (trig.body.to !== undefined) event.to = trig.body.to; }
     if (b.on === "use" && isE(trig) && trig.body?.request?.args !== undefined) event.args = trig.body.request.args;
+    const anonWho = (b.on === "enter" || b.on === "leave") && event.by === undefined; if (anonWho) event.by = ARRIVAL_STAND_IN;
     // no wall clock on a re-run: fuel (deterministic) is the limit; the auditor's machine may be slower than the authority's
     const res = run({ text: blob.text, self: id, key: b.script, event, knobs: v.knobs ?? {}, now: a.ts, seed: b.seed, api: b.api ?? 1, st, reads: b.reads ?? { near: [], count: [], names: 0 }, limits: { wallMs: 10000 } });
     if (!res.ok) { flags.push({ seq, check: "rerun", why: `the re-run failed: ${res.code}: ${res.why}` }); return; }
@@ -99,6 +104,7 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     const sameW = norm(want) === norm(got), sameS = jcs(says) === jcs(res.says);
     if (sameW && sameS) { reran++; return; }
     if (whoReads(b.reads)) { skipped.push({ seq, why: "its result depends on who was near or what someone is called, which the act doesn't record (only how many): it can't be re-run to the same result" }); return; }
+    if (anonWho) { skipped.push({ seq, why: "its result depends on who arrived or left, which the act doesn't record: it can't be re-run to the same result" }); return; }
     if (!sameW) flags.push({ seq, check: "rerun", why: "the re-run's writes differ from the logged batch", want: want.length, got: got.length, at: state ? L.indexOf(state) : null });
     if (!sameS) flags.push({ seq, check: "rerun-say", why: "the re-run's says differ from the logged ones" });
   });

@@ -116,7 +116,9 @@ Events (`e`): every event has `on`.
   snapped into), `seq` (the settlement's act, which is the activation's cause). `grab` and `release` reach every
   script whose scope covers the thing (`self` on the thing itself; `subtree` or ids for a game that watches its pieces);
 - `say`: `by`, `text`, `to?`, `seq`;
-- `enter` / `leave`: `by`;
+- `enter` / `leave`: `by`, live only: the act records no identity for an arrival or a departure (no `trigger` actor, no
+  `event.by`), so the log never holds who came and went because a script listened. An auditor re-runs it with a
+  stand-in and lists a result that depends on who it was as `skipped`;
 - `changed:<comp>`: `id`, `comp`, `by` (whose request caused it), `seq` (the change entry). It fires for a change to that
   component on any id in the script's scope, by anyone but the script itself;
 - `tick`: nothing more. `wake`: `slept` (seconds asleep).
@@ -157,9 +159,12 @@ read who was near or a name, the auditor lists it as `skipped` (it can't be re-r
 - `Math.random()` is seeded from the activation (`seed` in the act): re-running it gives the same numbers.
 - The time zone is always UTC: local-time methods (`getHours`, `new Date(2026, 0, 1)`) are the UTC ones, and a
   date-time string with no zone is read as UTC. The host's zone never leaks in.
-- What a script reads from outside the log (`world.near`, `world.count`, `world.name`) is recorded in its act as what it
-  asked and how much came back, never who or what they're called: the log is permanent and public, and a script can't
-  keep an attendance list in it. A re-run gets stand-ins. Body effects (`world.shove`, `world.pose`) are recorded as
+- What a script reads from outside the log (`world.near`, `world.count`, `world.name`), and who arrived or left (`enter`,
+  `leave`), is recorded in its act as what it asked and how much came back, never who or what they're called: the log is
+  permanent and public, and the authority's own record of an activation never becomes an attendance list. What the
+  script WRITES is another matter: it receives identities live, and a value it sets or a `say` it makes can name them
+  (within its declared scope). That is the script's own act, signed with its sponsor's rights, and readable in its source.
+  A re-run gets stand-ins. Body effects (`world.shove`, `world.pose`) are recorded as
   `{kind, to}`, never which consent let them through. A `say`'s text and a `use`'s `args` are not copied into the act: it points at them (`trigger`),
   so purging that say or request purges them everywhere.
 - Each activation runs in a **fresh** sandbox: nothing survives between activations. Keep state in a component in your

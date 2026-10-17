@@ -2092,6 +2092,12 @@ function overCpu(w, now, id, key, sponsor, cfg) {
 // what an act records of its event: everything but what its trigger already holds (a say's text and `to`, a use's args),
 // so purging that say or that request purges it everywhere (an auditor reads it from the trigger: scriptaudit.js)
 const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq !== undefined ? rest : ev; };
+// review r8 M4: an arrival or a departure is presence, and a signed, permanent act naming who came and went is an attendance
+// list the authority would keep for any script that listens. Its activation records no identity (no trigger actor, no
+// event.by); the script still hears `by` live, and what it writes itself is its own (and in its scope). The auditor re-runs
+// it with a stand-in arrival (scriptaudit.js)
+const ANON_EVENTS = new Set(["enter", "leave"]);
+const anonEvent = ({ by: _by, ...rest }) => rest;
 const overBudget = (B, cfg, key, sponsor, cost) => (B.mine >= cfg.rate ? `${key} logged ${B.mine} activations in the last minute; the rate is ${cfg.rate}`
   : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget} (@world.script-settings.budget)`
   : B.bySponsor + cost > B.share ? `${said(sponsor)}'s scripts wrote ${B.bySponsor} entries in the last hour; each of the ${B.sponsors} sponsors here gets ${B.share} of the world's ${cfg.budget}` : null);
@@ -2146,9 +2152,10 @@ function activate(w, id, name, ev) {
   if (dry) return { script: key, id, status: "would-run", would: plan?.ops ?? [], says: res.says, bodies: res.bodies, sponsor: sp.sponsor, fuel: res.fuel, note: "dry: nothing was written; body effects still meet each body's consent when it runs", ...logs };
   const gates = [];
   for (const b of res.bodies) { const g = bodyGate(w, `script:${id}`, b.to, b.kind, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason); gates.push({ ...b, consent: g.consent, deliver: g.deliver }); }
+  const anon = ANON_EVENTS.has(ev.on);
   const actE = { kind: "act", actor: `script:${id}`, verb: "script", ...(cause !== undefined ? { cause } : {}),
-    body: { script: key, src: v.src, sponsor: sp.sponsor, sponsorAt: sp.sponsorAt, on: ev.on, ...(ev.by ? { trigger: { actor: ev.by, ...(ev.seq !== undefined ? { seq: ev.seq } : {}) } } : {}),
-      event: recorded(event), head: actSeq - 1, seed, depth, engine: SR.ENGINE, api: SR.API, ...(res.reads ? { reads: res.reads } : {}),
+    body: { script: key, src: v.src, sponsor: sp.sponsor, sponsorAt: sp.sponsorAt, on: ev.on, ...(ev.by && !anon ? { trigger: { actor: ev.by, ...(ev.seq !== undefined ? { seq: ev.seq } : {}) } } : {}),
+      event: anon ? anonEvent(recorded(event)) : recorded(event), head: actSeq - 1, seed, depth, engine: SR.ENGINE, api: SR.API, ...(res.reads ? { reads: res.reads } : {}),
       // a body effect is recorded as WHAT and ON WHOM, never which consent let it through: "allowed" (a per-person allow) vs
       // "standing" is a relationship fact, and consent is presence, never appended (consent gaps 6c, R 10-17 02:45)
       ...(gates.length ? { bodies: gates.map((g) => ({ kind: g.kind, to: `body:${g.to}` })) } : {}) } };
@@ -2333,8 +2340,9 @@ function orphanLifts(w) {
   });
   return lifted;
 }
-/** Someone arrived or left (presence, told by the host): scripts that list `enter` / `leave` hear it, with `by`. The act's
- *  cause is the entry that made the script's sponsor (an arrival isn't logged on every path). */
+/** Someone arrived or left (presence, told by the host): scripts that list `enter` / `leave` hear it, with `by` (live only:
+ *  the act records no identity, ANON_EVENTS). The act's cause is the entry that made the script's sponsor (an arrival isn't
+ *  logged on every path). */
 export function presenceEvent(w, kind, who) {
   if (!w.exists || w.state().status !== "ok" || !["enter", "leave"].includes(kind) || !isIdentity(who)) return [];
   return withAuthority(w, () => {

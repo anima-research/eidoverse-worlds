@@ -32,7 +32,9 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["no repair marker at founding", "protocol/authority.js", "w.append(actEntry(w, \"system\", \"repair-shapes\", { v: SHAPES_VERSION, ids: [], founding: true }));", "", ["M1"]],
   ["the founding's marker read bare", "protocol/shaperepair.js", "if (e.verb === \"create-world\") { const b = bodyOf(i);", "if (e.verb === \"create-world\") { const b = e.body;", ["M2"]],
   ["the load reads the marker without readback", "protocol/authority.js", "if (!shapesMarked(w.entries, (q) => readback(w, q))) try {", "if (!shapesMarked(w.entries)) try {", ["M2"]],
-  ["enter records who", "protocol/authority.js", "const anon = ANON_EVENTS.has(ev.on);", "const anon = false;", ["P1"]],
+  ["enter records who", "protocol/authority.js", "const anon = ANON_EVENTS.has(ev.on);", "const anon = false;", ["P1", "P2"]],
+  ["the auditor re-runs an arrival with no one", "protocol/scriptaudit.js", "if (anonWho) event.by = ARRIVAL_STAND_IN;", "", ["P1"]],
+  ["the auditor flags an arrival it can't re-run", "protocol/scriptaudit.js", "    if (anonWho) { skipped.push(", "    if (false) { skipped.push(", ["P2"]],
   ["CONTROL (no-op: must stay green)", "protocol/authority.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -195,6 +197,16 @@ const cases: Case[] = [
       const A = AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript });
       return { ins: show(ins), ran: ran?.[0]?.status, n: comp(s, "door", "t/n"), inLog: JSON.stringify(s.entries()).includes(WHO), flags: A.flags, skipped: A.skipped.length, reran: A.reran }; },
     good: (o) => o.ins === "ok" && o.ran === "ran" && o.n?.n === 1 && o.n?.heard === true && !o.inLog && !o.flags.length },
+  { id: "P2", what: "…an enter script that writes who came (its own write, in its own scope) is the script's doing: the auditor lists it skipped (depends on who arrived), never flagged or verified", run(s) { cast(s);
+      const WHO = "u-bobbobbobbobbobbobbo";
+      s.call("olive", "create", { id: "door", model: "crate", place: { at: [0, 0] } });
+      const u = s.call("olive", "upload", { text: 'world.on("enter", (e) => { world.set("self", "t/last", { who: e.by }); });' });
+      const ins = s.call("olive", "set", { id: "door", component: "script:guest", value: { src: u.src, scope: { ids: "self", comps: ["t/last"] }, on: ["enter"] } });
+      s.step(); const ran = D.presenceEvent(s.w(), "enter", WHO);
+      const act = s.entries().findLast((e: any) => e.kind === "act" && e.verb === "script");
+      const A = AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript });
+      return { ins: show(ins), ran: ran?.[0]?.status, actNames: JSON.stringify(act?.body ?? {}).includes(WHO), flags: A.flags, skipped: A.skipped.map((x: any) => x.why) }; },
+    good: (o) => o.ins === "ok" && o.ran === "ran" && !o.actNames && !o.flags.length && o.skipped.length === 1 && /who arrived/.test(o.skipped[0]) },
 ];
 
 let pass = 0, fail = 0;

@@ -13,7 +13,8 @@
 //   presence world.near(r) / world.count() answers, and world.name(id) (the authority's directory, outside the log), are
 //            RECORDED (`reads`) as what was asked and how much came back — never WHO (consent gaps 6b, R 10-17 02:45: a
 //            script's act is signed and permanent, so ids near it and display names made it an attendance log anyone with
-//            `scripts` could keep). `reads` = {near: [{r, n}], count: [n], names: <how many name() calls>}. A re-run gets
+//            `scripts` could keep). The script itself still receives ids and names live: what it writes or says with them
+//            is its own act (review r8 M4), and the act's record of its reads never names who. `reads` = {near: [{r, n}], count: [n], names: <how many name() calls>}. A re-run gets
 //            n opaque stand-ins per near() and null per name(): an auditor re-runs with those and verifies the result when
 //            it doesn't depend on who was there, and says honestly that it can't when it does (scriptaudit.js `skipped`).
 //            An older act that recorded the ids ({r, ids}, [{id, name}]) still replays them;
