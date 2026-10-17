@@ -476,9 +476,9 @@ export class HeadlessBody {
   /** Reset the stand-in to a pose at a place, standing on the live ground.
    *  `pose` is a sparse bone map (a streamed pose — e.g. where a dragger's
    *  hand left this body — or the pose it held); null means standing. Only
-   *  rotations: a limp body in the browser drops a held pose's translations
-   *  and scales too (avatar.js _applyRawPose), except a hips drop, which
-   *  begin() moves onto the root. */
+   *  rotations: a limp body in the browser leaves out a held pose's
+   *  translations and scales too (avatar.js _applyRawPose doesn't run while
+   *  limp), except a hips drop, which begin() moves onto the root. */
   private pose(x: number, z: number, yaw: number, pose: Record<string, unknown> | null) {
     this.av.root.position.set(x, this.m.terrain.heightAt(x, z), z);
     this.av.root.rotation.y = yaw;

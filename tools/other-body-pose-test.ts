@@ -92,6 +92,12 @@ check("replace sends the whole pose, and a replace with nothing left is a releas
   check("...and with a target, sends that body the release", eq(sent, [["someone", { pose: {} }]]), JSON.stringify(sent));
   sent.length = 0;
   state.pose = { head: [0, 0, 0, 1] };
+  EW.pose({}, { replace: true });
+  check("EW.pose({}, {replace: true}) releases the caller's pose too", state.pose === null && !sent.length, JSON.stringify(state.pose));
+  EW.pose({}, { replace: true, target: "someone" });
+  check("...and with a target, sends that body the release as well", eq(sent, [["someone", { pose: {} }]]), JSON.stringify(sent));
+  sent.length = 0;
+  state.pose = { head: [0, 0, 0, 1] };
   EW.animate({ dur: 1, tracks: {}, replace: true });
   check("EW.animate takes replace from the animation too, ending the caller's pose first",
     played.length === 1 && played[0].replace === true && state.pose === null && !sent.length, JSON.stringify(played));
