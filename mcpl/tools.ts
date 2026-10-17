@@ -262,7 +262,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   look: async (ag, a, ctx, name) => { return text(ag.look()); },
   body_state: async (ag, a) => {
     const result = await ag.bodyState(a.who == null ? ag.name : String(a.who), a.detail ?? "summary", a.points, a.window_ms ?? 0);
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], ...(result.ok ? {} : { isError: true }) };
+    return (result.ok ? text : fail)(JSON.stringify(result, null, 2));
   },
   snapshot: async (ag, a, ctx, name) => { return await snapshotTool(ag, typeof a.view === "string" ? a.view : "first"); },
   set_avatar: async (ag, a, ctx, name) => {
@@ -300,11 +300,13 @@ export const HANDLERS: Record<string, ToolHandler> = {
           url: h.preview ? `${ag.httpBase}/library/${h.preview}` : null,
         }));
       }
-      // Nothing to show is an answer, not a failure: the lookup ran and found none.
-      if (!items.length) return text(kind === "avatars" ? "the roster has no bodies yet" : "the library has no models yet");
       const pages = Math.max(1, Math.ceil(items.length / SHEET.perPage));
       const slice = items.slice((page - 1) * SHEET.perPage, page * SHEET.perPage);
-      if (!slice.length) return fail(`no page ${page} — ${items.length} ${kind}, ${pages} page${pages === 1 ? "" : "s"}`);
+      // A page past the end asked for something that isn't there. An empty
+      // roster or library is an answer: the lookup ran and found none.
+      if (!slice.length) return items.length
+        ? fail(`no page ${page} — ${items.length} ${kind}, ${pages} page${pages === 1 ? "" : "s"}`)
+        : text(kind === "avatars" ? "the roster has no bodies yet" : "the library has no models yet");
       const tiles = await Promise.all(slice.map(async (it) => {
         if (!it.url) return { name: it.name, data: null, mime: "", h: it.h };
         try {
@@ -353,9 +355,9 @@ export const HANDLERS: Record<string, ToolHandler> = {
       }
       const tolerance = a.tolerance ?? 0.01;
       if (![x, z, tolerance].every(Number.isFinite) || tolerance < 0 || tolerance > 0.4)
-        return { content: [{ type: "text", text: "walk_to needs finite x/z and tolerance between 0 and 0.4 metres" }], isError: true };   // walkTo's own words (WALK_ARGS_REASON)
+        return fail("walk_to needs finite x/z and tolerance between 0 and 0.4 metres");   // walkTo's own words (WALK_ARGS_REASON)
       if (y != null && !Number.isFinite(y))
-        return { content: [{ type: "text", text: "walk_to's y, when given, must be a finite height in metres" }], isError: true };
+        return fail("walk_to's y, when given, must be a finite height in metres");
       // This request's own refusal (its plan may wait for geometry still loading).
       const receipt = { refusal: null as string | null };
       const arrived = await ag.walkTo(x, z, Boolean(a.run), 90_000, tolerance, y, near, receipt);
@@ -384,9 +386,9 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // your own height), or none — never some of them silently dropped
       const given = [a.x, a.y, a.z].some((v: unknown) => v != null);
       if (given && ![a.x, a.z].every((v: unknown) => typeof v === "number" && Number.isFinite(v)))
-        return { content: [{ type: "text", text: "name_place's coordinates need x and z (y is optional: the floor there nearest your own height) — or leave them all out to name where you stand" }], isError: true };
+        return fail("name_place's coordinates need x and z (y is optional: the floor there nearest your own height) — or leave them all out to name where you stand");
       if (a.y != null && !(typeof a.y === "number" && Number.isFinite(a.y)))
-        return { content: [{ type: "text", text: "name_place's y, when given, must be a finite height in metres" }], isError: true };
+        return fail("name_place's y, when given, must be a finite height in metres");
       const at = given ? { x: a.x as number, z: a.z as number, y: a.y as number | undefined } : undefined;
       return act(await ag.namePlace(String(a.name ?? ""), { on: a.on, label: a.label, remove: a.remove === true, at }));
   },
@@ -435,7 +437,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // trio but no text lands a FABRICATED spoken say whose body is the
       // literal "undefined"/"[object Object]".
       if (typeof a.text !== "string" || a.text.length === 0) {
-        return { content: [{ type: "text", text: "say refused: `text` is required and must be a non-empty string." }], isError: true };
+        return fail("say refused: `text` is required and must be a non-empty string.");
       }
       // "Wants spoken" means the caller is ASSERTING a performance: spoken:true,
       // or a trio partner (utt/t0) present. An explicit spoken:false (or spoken
@@ -459,7 +461,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         // schema client that inspects result.isError read this as a successful
         // say — the door must mark the refusal as an error, not just describe
         // one in text.
-        return { content: [{ type: "text", text: "spoken-say refused: the protocol trio must travel together — spoken:true plus a non-negative integer utt (t0 optional, finite). Sent as ordinary text it would silently lose its performance link, so nothing was said; fix and resend." }], isError: true };
+        return fail("spoken-say refused: the protocol trio must travel together — spoken:true plus a non-negative integer utt (t0 optional, finite). Sent as ordinary text it would silently lose its performance link, so nothing was said; fix and resend.");
       }
       const extra = trioOk
         ? { spoken: true as const, utt: a.utt, ...(typeof a.t0 === "number" ? { t0: a.t0 } : {}) }
@@ -546,7 +548,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       }
       const r = await ag.reach(typeof a.limb === "string" ? a.limb : undefined, target,
         a.palm === false ? { palm: false } : {});
-      return r.ok ? text(r.text) : { content: [{ type: "text", text: r.text }], isError: true };
+      return act(r);
 
   },
   clear_reach: async (ag, a, ctx, name) => {
@@ -641,7 +643,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   spawn: async (ag, a, ctx, name) => {
-      const lib = a.lib ?? (a.query ? (await searchLibrary(ag.httpBase, String(a.query)))[0]?.path : undefined);
+      // An empty lib names no model, as a lib left out doesn't, so a query
+      // given with it still searches.
+      const named = a.lib === "" ? undefined : a.lib;
+      const lib = named ?? (a.query ? (await searchLibrary(ag.httpBase, String(a.query)))[0]?.path : undefined);
       if (!lib) return fail("no model — pass lib or query");
       const x = a.x ?? ag.pos.x + Math.sin(ag.yaw) * 2;
       const z = a.z ?? ag.pos.z + Math.cos(ag.yaw) * 2;
@@ -662,14 +667,14 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // is not a placement.
       if (a.id !== undefined && a.id !== null) {
         const why = lightArgsError(a);
-        if (why) return { content: [{ type: "text", text: why }], isError: true };
+        if (why) return fail(why);
       }
       const standing = a.id != null ? ag.entities.get(a.id) : undefined;
       // Only a light is updated: the fold replaces anything else holding the
       // id with a light wholesale (spec §3.1), so a sparse "update" of a
       // model would leave a light at the fold's defaults where the model was.
       if (standing && standing.lib !== "(light)") {
-        return { content: [{ type: "text", text: `"${a.id}" is a model (${standing.lib || "no lib"}), not a light, so light won't update it. Use another id, or omit id to generate one.` }], isError: true };
+        return fail(`"${a.id}" is a model (${standing.lib || "no lib"}), not a light, so light won't update it. Use another id, or omit id to generate one.`);
       }
       if (standing) {
         // UPDATE: send only what was given — the fold merges, so absent
@@ -701,7 +706,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // fatal-join teardown — so the shared table hands it to the host
       // through the ctx hook. A door with no hook (stdio fronts exactly one
       // WORLD_URL) does not list the tool; answering anyway teaches.
-      if (!ctx.travel) return { content: [{ type: "text", text: "travel is not available on this door — it fronts a single world; reconnect with a different WORLD_NAME instead" }], isError: true };
+      if (!ctx.travel) return fail("travel is not available on this door — it fronts a single world; reconnect with a different WORLD_NAME instead");
       return await ctx.travel(String(a.world ?? "").trim());
 
   },
@@ -712,8 +717,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // refused travel.
       let r: Response;
       try { r = await fetch(`${ag.httpBase}/worlds`, { signal: AbortSignal.timeout(4_000) }); }
-      catch (e) { return { content: [{ type: "text", text: `worlds: the sequencer did not answer (${(e as Error).message})` }], isError: true }; }
-      if (!r.ok) return { content: [{ type: "text", text: `worlds: sequencer answered ${r.status}` }], isError: true };
+      catch (e) { return fail(`worlds: the sequencer did not answer (${(e as Error).message})`); }
+      if (!r.ok) return fail(`worlds: sequencer answered ${r.status}`);
       const body = (await r.json()) as { worlds?: { name: string; loaded?: boolean; people?: string[]; agents?: string[] }[] };
       const list = Array.isArray(body.worlds) ? body.worlds : [];
       if (!list.some((w) => w.name === ag.world)) list.push({ name: ag.world, loaded: true, people: [], agents: [] });
@@ -736,7 +741,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // malformed place in the log is permanent history every replayer
       // must survive (#88)
       const why = rawShapeError(String(a.verb), (a.args ?? {}) as Record<string, unknown>);
-      if (why) return { content: [{ type: "text", text: `refused ${a.verb}: ${why}` }], isError: true };
+      if (why) return fail(`refused ${a.verb}: ${why}`);
       ag.verb(String(a.verb), a.args ?? {});
       return text(`sent ${a.verb}`);
 
@@ -874,6 +879,10 @@ function describeCheck(what: string, r: any, named: number, id?: string, collide
 
 export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, any>) {
   const h = HANDLERS[name];
-  if (!h) return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
-  return await h(ctx.agent, a, ctx, name);
+  if (!h) return fail(`Unknown tool: ${name}`);
+  // A tool's failure belongs in its result, where the model reads it: a
+  // handler that throws, such as verb()'s "not joined", answers as a failed
+  // call rather than as a protocol error.
+  try { return await h(ctx.agent, a, ctx, name); }
+  catch (e) { return fail(e instanceof Error ? e.message : String(e)); }
 }

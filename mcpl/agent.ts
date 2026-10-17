@@ -3593,7 +3593,7 @@ export class WorldAgent {
   /** Reach a limb toward a target (wire grammar: {who, point, standoff?} or
    *  {p:[x,y,z], space?: 'world'|'self'|id}). Sets the descriptor streaming
    *  either way; the reply says what the arm actually achieves. */
-  async reach(limbRaw: string | undefined, targetRaw: unknown, opts: { palm?: boolean } = {}): Promise<{ ok: boolean; text: string }> {
+  async reach(limbRaw: string | undefined, targetRaw: unknown, opts: { palm?: boolean } = {}): Promise<ActResult> {
     const limb = canonicalLimb(limbRaw ?? "rightHand");
     if (!limb) return { ok: false, text: `unknown limb "${limbRaw}" — leftHand, rightHand, leftFoot or rightFoot` };
     const t = normalizeReachTarget(targetRaw);

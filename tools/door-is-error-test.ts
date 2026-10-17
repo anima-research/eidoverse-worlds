@@ -37,8 +37,6 @@ function check(name: string, ok: boolean, detail = '') {
 const settle = async (p: Promise<unknown>): Promise<any> => { try { return await p; } catch (e) { return { rejected: (e as Error).message }; } };
 const said = (r: any) => r?.rejected != null ? `(rejected: ${r.rejected})` : String(r?.content?.[0]?.text ?? '');
 const failed = (r: any) => r?.isError === true;
-/** The error a call rejected with, or null when it answered. */
-const rejected = (r: any): string | null => r?.rejected ?? null;
 
 const WINGED = [
   'Hip', 'Spine02', 'Head',
@@ -93,6 +91,13 @@ check('a climb asked above the ceiling stops there and is failed, naming the cei
   failed(r) && new RegExp(`^at ${ceiling.toFixed(1)}m, the ceiling here, short of the ${ceiling + 50}m you asked for`).test(said(r)), said(r));
 r = await call('climb_to', { altitude: ceiling - 1 });
 check('a climb that gets there is done', !failed(r) && /^at .*stamina spent/.test(said(r)), said(r));
+// The pool pays for half a metre of the one asked for: the body climbs that far and no farther.
+ag.flight.stamina = 0.5;
+r = await call('climb_to', { altitude: ceiling });
+check('a winded climb is failed, saying how far the pool reached', failed(r) && /^winded at .*only bought 0\.5m of the 1\.0 you asked for/.test(said(r)), said(r));
+ag.flightAwait = async () => 'cut';
+r = await call('climb_to', { altitude: ceiling });
+check('a climb cut midway is failed', failed(r) && /^cut mid-climb at /.test(said(r)), said(r));
 ag.flightAwait = realAwait;
 for (const [tool, a, words] of [
   ['climb_to', {}, /^climb_to needs `altitude`/],
@@ -192,6 +197,8 @@ r = await call('reach', { who: 'someone' });
 check('reaching for someone with no point is failed', failed(r) && /needs `point` too/.test(said(r)), said(r));
 r = await call('reach', { point: 'elbow-of-the-moon' });
 check('an unknown contact point is failed', failed(r) && /unknown contact point/.test(said(r)), said(r));
+r = await call('reach', { limb: 'tail', x: 1, y: 1, z: 1 });
+check('a reach with an unknown limb is failed', failed(r) && /^unknown limb "tail"/.test(said(r)), said(r));
 r = await call('ragdoll', {});
 check('ragdoll with no target is failed', failed(r) && /ragdoll needs a `target`/.test(said(r)), said(r));
 r = await call('animate', { tracks: {}, dur: 1 });
@@ -217,12 +224,15 @@ check('a pose that cannot read the rig to list its bones is failed', failed(r) &
 r = await call('animate', { tracks: { leftUpperArm: [{ t: 0, q: [0, 0, 0, 1] }, { t: 0.5, q: [0, 0, -0.7, 0.7] }] } });
 check('animate with no duration is failed', failed(r) && /^pass `dur`/.test(said(r)), said(r));
 // With the link down, nothing reaches the world, and the call says so as verb() does.
+// A handler that throws is answered in the result, where the model reads it, not as a protocol error.
 r = await call('whisper', { to: 'someone', text: 'hello' });
-check('a whisper with the link down fails as not joined', rejected(r) === 'not joined', said(r));
+check('a whisper with the link down is failed as not joined', failed(r) && said(r) === 'not joined', said(r));
 r = await call('ragdoll', { target: 'someone' });
-check('a shove with the link down fails as not joined', rejected(r) === 'not joined', said(r));
+check('a shove with the link down is failed as not joined', failed(r) && said(r) === 'not joined', said(r));
 r = await call('clear_pose', { target: 'someone' });
-check('releasing someone else\'s pose with the link down fails as not joined', rejected(r) === 'not joined', said(r));
+check('releasing someone else\'s pose with the link down is failed as not joined', failed(r) && said(r) === 'not joined', said(r));
+r = await call('say', { text: 'hello' });
+check('a say with the link down, which verb() refuses, is failed in the result', failed(r) && said(r) === 'not joined', said(r));
 // What the world's HTTP side answers, stood in for.
 const realFetch = globalThis.fetch;
 const serve = (handler: (url: string) => Response) => { globalThis.fetch = (async (u: any) => handler(String(u))) as any; };
@@ -255,6 +265,14 @@ ag.verb = (verb: string, args: unknown) => { sent.push([verb, args]); };
 r = await call('remove', {});
 check('remove with no id is failed, and sends nothing', failed(r) && /^remove needs `id`/.test(said(r)) && sent.length === 0,
   `${said(r)}; sent ${JSON.stringify(sent)}`);
+serve((url) => new Response(JSON.stringify(/library-models\?q=chair/.test(url) ? [{ path: 'furniture/chair.glb' }] : []), { status: 200 }));
+r = await call('spawn', { lib: '', query: 'chair' });
+check('spawn with an empty lib and a query searches, as with lib left out',
+  !failed(r) && /^spawned \[.*\] chair\.glb/.test(said(r)) && (sent.at(-1)?.[1] as any)?.lib === 'furniture/chair.glb',
+  `${said(r)}; sent ${JSON.stringify(sent.at(-1))}`);
+r = await call('spawn', { lib: '' });
+check('spawn with an empty lib and no query is failed', failed(r) && /no model/.test(said(r)), said(r));
+globalThis.fetch = realFetch;
 // The world's answer decides a moderation verb's result.
 ag.modOutcome = async () => 'refused: only a world owner can ban';
 r = await call('ban', { id: 'someone' });
@@ -274,6 +292,10 @@ r = await call('name_place', { name: '!!' });
 check('a malformed place name is failed', failed(r) && /^a place name is/.test(said(r)), said(r));
 r = await call('name_place', { name: 'lookout', on: 'nothing-here' });
 check('naming a place on an unknown thing is failed', failed(r) && /no thing called "nothing-here"/.test(said(r)), said(r));
+ag.entities.set('lamp', { id: 'lamp', lib: '(light)', pos: [0, 2, 0] });
+r = await call('name_place', { name: 'lookout', on: 'lamp' });
+check('naming a place on a light is failed', failed(r) && /^\[lamp\] is a light/.test(said(r)), said(r));
+ag.entities.delete('lamp');
 // Sent, with no refusal and no echo within the wait: done, and it says it isn't confirmed.
 ag.entities.set('stone', { id: 'stone', lib: 'models/stone.glb', pos: [0, 0, 0] });
 const realEff = ag.eff;
