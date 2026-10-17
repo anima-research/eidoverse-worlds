@@ -98,7 +98,10 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@12";
+export const TRANSLATOR = "eidoverse/translate-v1@13";
+// @13 (review r9 claims O3, 2026-10-17): every translation writes the system's repair-shapes act right after `translated`
+// (the shape repair's once-per-world marker, review r8 M3), one entry @12 didn't. Its projection is @12's; its log is one
+// entry longer. Both names move to @13 (the name says which output you got).
 // @12 (2026-10-16, the shape audit's wave 1): no account subject (`sub`) is ever written, mapper or not (PROTOCOL §9.2: no
 // person data in values): roles:<id> and imported-bans:<id> lose it, and an imported act's raw v1 args lose it too when no
 // identity mapper is given (with one, it becomes the person's id, as before). A dialect-3 epoch her sim refused is carried
@@ -127,7 +130,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@12";
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@12";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@13";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key

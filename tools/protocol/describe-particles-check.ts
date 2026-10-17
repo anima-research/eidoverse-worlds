@@ -201,7 +201,7 @@ const cases: Case[] = [
       const r = TV1.translate(L); const ents = r.final?.translated ?? {}; const c = Object.values<any>(ents).find((x) => x.particles) ?? {};
       return { tr: TV1.TRANSLATOR, p: c.particles, imp: c["imported:particles"], back: PE.instanceOf?.({ preset: "fire", seed: 781526, origin: [0, 0.18, 0], count: 150, quality: "auto" }) }; },
     // @12 (R 10-17): an Essential keeps its name, as the door and the load keep it
-    good: (o) => /@12$/.test(o.tr) && JSON.stringify(o.p) === JSON.stringify({ effect: "fire", seed: 781526, at: [0, 0.18, 0], params: { count: 150, quality: "auto" } }) && o.imp?.glow === true && JSON.stringify(o.back) === JSON.stringify(o.p) },
+    good: (o) => /@13$/.test(o.tr) && JSON.stringify(o.p) === JSON.stringify({ effect: "fire", seed: 781526, at: [0, 0.18, 0], params: { count: 150, quality: "auto" } }) && o.imp?.glow === true && JSON.stringify(o.back) === JSON.stringify(o.p) },
   { id: "X11", what: "look says what an emitter is doing: emitting fire; can emit smoke (stopped) when playing is off", run(s) { cast(s);
       thing(s, "a", { particles: { effect: "fire" } }); thing(s, "b", { particles: { effect: "smoke", playing: false } });
       return { a: lookOf(s, "a")?.state, b: lookOf(s, "b")?.state }; },
