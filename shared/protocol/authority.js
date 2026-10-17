@@ -1057,11 +1057,6 @@ function warnings(st, ids, strict = false) {
 }
 
 // ---------- use (interaction): authority/use.js ----------
-// ---------- behaviours (L4, L7 as revised; research 41; the lab's slice, the protocol lab's authority.js @ 2300bae, on a real sandbox) ----------
-// A script is a keyed component `script:<name>` naming a source blob ({lang: "js", api, text}, by its sha256 name) and a
-// declared SCOPE. Its sponsor is whose rights admitted the LATEST write to that key in its current life (§5 "Two views"):
-// a view, never a stored field. Every activation is a fresh admission with capability {kind: "script"}: the sponsor's
-// rights NOW, narrowed to the scope. The visitor who triggers it adds nothing. An activation that changes something is
 // ---------- behaviours, standing: authority/scripts.js ----------
 // ---------- behaviours, running: authority/scriptrun.js ----------
 
