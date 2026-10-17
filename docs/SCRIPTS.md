@@ -118,9 +118,11 @@ Events (`e`): every event has `on`.
   script whose scope covers the thing (`self` on the thing itself; `subtree` or ids for a game that watches its pieces);
 - `say`: `by`, `text`, `to?`, `seq`;
 - `enter` / `leave`: `by`, live only: the act records no identity for an arrival or a departure (no `trigger` actor, no
-  `event.by`), so the log never holds who came and went because a script listened. An auditor re-runs it with two
-  different stand-ins: when the two agree, the result doesn't depend on who it was and is checked against the log in full
-  (a mismatch is flagged); only when they disagree is it listed `skipped`;
+  `event.by`), so the log never holds who came and went because a script listened. An auditor re-runs it with a
+  person-shaped stand-in and, if the result differs from the log, again with an agent-shaped one (both valid identities,
+  nobody's): when the two disagree it is listed `skipped`; when they agree the mismatch is flagged `rerun-anon` (a
+  difference to look at, never `rerun`, since two stand-ins can't prove the result is the same for everyone). A script
+  that greets people and not agents is fine: its two re-runs differ, and it is listed, not accused;
 - `changed:<comp>`: `id`, `comp`, `by` (whose request caused it), `seq` (the change entry). It fires for a change to that
   component on any id in the script's scope, by anyone but the script itself;
 - `tick`: nothing more. `wake`: `slept` (seconds asleep).
@@ -133,7 +135,8 @@ never two out of three). Writes that change nothing are dropped; an activation l
 
 A socket's `station {leaveBy: "script"}` is a seat that lets its occupant go when the world does: a script switching the
 socket off or removing it, a ride ending. It turns off the occupant's casual exits (moving, jumping, one press of X), never
-all of them: holding X (or the stand tile) for about 1.5 s, pressing it again within 2 s, or an agent's
+all of them: holding X (or pressing and holding the stand tile) for about 1.5 s, pressing the get-up again (X, the tile, the
+menu) within 2 s of its refusal, or an agent's
 `detach {escape: true}` always stands them up, and no seat or script can take that away (PROTOCOL §5: a seat may make
 leaving deliberate, never impossible). Build a ride that ends by letting go, not one that can't be left. The ride itself
 is the assembly as it was when they sat: a handler or script added to the seat's assembly after someone sat down unseats

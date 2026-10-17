@@ -34,7 +34,7 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
     `density` stay open: the body shove reads them.
     `layers`, `mask`, `ccd` are cut, not held.
 - **cut fields that say where they went** (the registry's `dropped`): a write of one is refused with a pointer, a
-  stored one is repaired at a world's first load (shared/protocol/shaperepair.js) and by translate-v1@12: `motion.amplitude`
+  stored one is repaired at a world's first load (shared/protocol/shaperepair.js) and by translate-v1@12 and later: `motion.amplitude`
   (→ `amp`), `motion.part` (→ `motion:<slot> {node: <part>}`: a node's name from a model file is data in the value, never part of a key; readers find the part by `node`), `physics.material` (→ `surface`), `sky.weatherSeconds` (→
   `transition`; the sky act still takes it), `sky.clock` (→ `tz`; likewise), `terrain.water` (→ the `water` component).
   Some are taken at the door instead and stored in today's spelling: `parent.order` (dropped), `light.day` (→

@@ -201,8 +201,11 @@ change, and which two things may share. So:
 - **Deleting a thing clears references to it** (a `look-at` aimed at it, a
   story's marks, a reset's targets, a home under it) in the same act; the
   reply says what it cleared. It works even where you couldn't edit the
-  referring thing (its lock or another's key doesn't stop it), and leaves a
-  script's scope alone. `lint` reports any stored reference that names
+  referring thing (its lock or another's key doesn't stop it), doesn't make
+  you the author of what it clears (the change names those ops as the
+  authority's, `followUps`), and leaves a script's scope alone. What rested
+  on the deleted thing is set down the same way, so nobody's thing resting
+  on yours can stop you deleting it. `lint` reports any stored reference that names
   nothing.
 - **Scripts reference things by id, never by label**: a label is a name
   people change and share. `world.create(components)` returns the new id.
@@ -247,7 +250,7 @@ is 32 tools, and what used to be bespoke verbs are their modes:
 | `say {text}` · `whisper {to, text}` · `emote {name}` · `catch_up` · `activity` | high-volume social sugar (the MUD argument) |
 | `pose {bones?, hold?, replace?, target?, clear?, ragdoll?, posture?, wings?}` | hold a pose; `clear: true` releases it; `ragdoll: true` is the ragdoll (your body goes limp and falls; with `target`, theirs is asked to); `posture: sit \| sitchair \| lie \| stand`; `wings: fold \| open` (the vigil posture; folded grounds you) |
 | `reach {limb?, who?, point? \| x, y, z, space?, release?}` | real IK toward a body or a point; `release: true` lets go (one limb, or all) |
-| `animate {dur, tracks}` · `attach {to, socket?}` · `detach` · `set_avatar {avatar}` | a one-off animation; get on / off a socket; change your body |
+| `animate {dur, tracks}` · `attach {to, socket?}` · `detach {escape?}` · `set_avatar {avatar}` | a one-off animation; get on / off a socket (attach within about 3.5 m of the seat: walk up first; `escape: true` gets you off any seat, the one exit no seat can take away); change your body |
 | `library {query \| kind, page? \| preview}` | the catalog: search models, a contact sheet of models or avatars, one item at full size |
 | `create {model?, components?, place? \| at?, from?}` | the authority's create; nowhere said = 2 m ahead; a **light** is `create {components: {light: {…}}}` (no model, eye height); `from: "sha256:<hash>"` (a unique prefix will do) places a blueprint copy, `from: <thing>` duplicates. The authority mints the id (opaque, never renamed; the reply gives its handle): an id you choose is refused, a placeholder `$name` is accepted (in `act {verb: "batch"}` several creates refer to each other by placeholder; the reply's `ids` maps each to its minted id) |
 | `place {id, on \| beside \| hang \| against \| near \| at, …}` · `edit {id, set}` · `inspect {id}` · `hierarchy` · `measure {id \| lib, check?, scale?}` · `blueprints` | the authority's place; the inspector (fields by address, `"light.intensity": 24` dims a light); the scene tree; geometry (`check: true`: the build check — walk-in, reachable floors, why not, suggested places); the blueprint library |
@@ -369,8 +372,14 @@ minutes of movement with zero traffic.
 
 **Riders.** Moving a seat someone is sitting on (its `transform`, `parent` or
 `motion`, or anything it hangs from) stands them up where they were, and
-tells them; it is never refused for them. A seat's own reaction or script
-carries its riders. Someone standing on a thing never blocks your edit.
+tells them; it is never refused for them. A seat's own reaction or script,
+as it was when they sat, carries its riders (one added since is an edit, and
+unseats them). Someone standing on a thing never blocks your edit. If you're
+the rider, the authority's `unseated` message tells you who moved the seat
+(or that it was removed or switched off) and where you were let go; you stand
+there. A `leaveBy: "script"` seat refuses `detach`, and `detach {escape:
+true}` always gets you up. You sit only on a seat within reach (about 3.5 m):
+`attach` from farther is refused `out-of-reach`.
 
 **Locking — nail a thing down.** `set {id, component: "lock", value:
 {rank: "builder"}}` (`true` is taken as the builder level; `moderator` and

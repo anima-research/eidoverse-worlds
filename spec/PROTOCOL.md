@@ -161,9 +161,27 @@ A `change` entry's `verb` and `body` are one of:
 | `create` | `{id}` | a new, empty entity; does nothing if `id` is live |
 | `set` | `{id, comp, value?, salt?}` | replace that one component's value; does nothing if the entity is missing, or if `value` is **absent** (`null` is a value) |
 | `delete` | `{id, comp?}` | with `comp`: remove that component (nothing if it isn't there); without: remove the entity (never `@world`) |
-| `batch` | `{ops: [{verb, id, comp?, value?, salt?}, …]}` | the ops above, applied in order |
+| `batch` | `{ops: [{verb, id, comp?, value?, salt?}, …], followUps?: [i, …]}` | the ops above, applied in order |
 
 - A batch never contains a batch.
+- **`followUps`**, when present, names the ops the authority derived as
+  consequences of the asker's own (a deletion's reference clears and the
+  set-down of what rested on the deleted thing, §4; an undo putting clears
+  back): a **non-empty, strictly ascending list of integer indices into
+  `ops`**, each `0 ≤ i < ops.length`. Anything else (empty, out of order, a
+  repeat, out of range, a fraction, a non-number) makes the **whole entry**
+  malformed (`batch-followups`). The invariant: these ops were admitted
+  **without the asker's rights or locks** (§7); the fold applies them like
+  any op, so it never needs the field to fold; readers that derive
+  **authorship** from the log — who set up a handler, who created or last
+  set a component, who sponsors a script (§7, §8) — skip a marked op, and a
+  marked `set` that puts a value back (an undo's restore) also steps over
+  the marked `delete` it reverses, so the restored value keeps its author
+  (a key written by anyone else in between is a new life, never merged with
+  the old). A verifier re-running the gate re-runs it on the **unmarked ops
+  only**. A tool that rewrites a batch's `ops` remaps `followUps` with
+  them. (This field was added to the batch body before v4's release, at
+  minor 0: see §10.)
 - A shape or grammar error anywhere in an entry (an unknown field, a bad id
   or component name, a nested batch) makes the **whole entry** malformed. A
   semantic no-op (a missing entity, an absent component) skips only that
@@ -310,7 +328,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   sun/fill/world dropped, the registry's seven defaults written; `terrain`
   layer colours `"#rrggbb"` → ints, the sim's defaults written,
   `terrain.water` → `water`; `grass` in the flora spelling (a preset keeps
-  its name). The translator (`translate-v1@12`, §14) writes its
+  its name). The translator (`translate-v1@13`, §14) writes its
   projection through the same functions, so a translated world needs no
   repair, and the old-world oracle mirrors the load with them; the sweep's
   declared projection and the oracle's core check are written independently,
@@ -387,7 +405,14 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   children that go with it), in the same change, as the authority's own
   follow-up: the clears are admitted without the deleter's rights, and the
   referring thing's lock or key can't veto them (an undo of the delete puts
-  them back the same way). A script's `script:<name>` scope is left alone: an
+  them back the same way, dropping any reference to a thing gone since).
+  The change entry names them (`followUps`, §3), so a reader of the log
+  alone tells them from the deleter's own ops: a clear never makes the
+  deleter the author of the value it rewrites (a handler's author, a
+  component's creator, a script's sponsor). So does what rested on the
+  deleted thing (an unparented thing standing on its surface): it is set
+  down onto what is below, as a follow-up in the same change, so nobody can
+  pin a thing against deletion by resting something of theirs on it. A script's `script:<name>` scope is left alone: an
   id in it that names nothing reaches nothing, and rewriting it would
   re-sponsor the script. A list loses the entry, a
   single reference's field goes (and a value that can't stand without it, such
@@ -463,21 +488,29 @@ request moves a copy to a newer version, keeping its own overrides.
   seat — the `transform`, `parent` or `motion` of the seat or of anything
   it hangs from, by whatever verb, a handler or script on another thing
   included — lands and **unseats** every rider on that seat: each is let go
-  where they were, standing, and told why (presence, never logged), and the
-  authority's track of their body starts again from where the seat let them
-  go. What the seat's own assembly does to it (a reaction or script on a
+  where they were, standing, and told why and where (`unseated {seat, by,
+  why, at}`, presence, never logged), and the authority's track of their
+  body starts again from where the seat let them go; a seat removed or
+  switched off lets its rider go the same way. The track restarts there
+  only because a sit is **within reach**: the authority refuses a sit
+  (`out-of-reach`) unless the body it tracks, or the seat it moves straight
+  from, is within the client's own sitting reach of the socket (3.5 m across
+  the ground, 1.6 m up, 1 m down, plus 1 m for the track's lag:
+  shared/sockbody.js `SIT_REACH`), so sitting is never a way to cover
+  distance off the record. A rider's first step off is the stand-up. What the seat's own assembly does to it (a reaction or script on a
   thing with the same root as the seat: a swing's push, a carousel's turn,
   an elevator's script) is the ride, and carries them — the ride **as it
   was when they sat**: a handler or script written after the rider sat, or
   a thing hung under the seat's assembly since, is someone's edit, and
-  unseats them. Physics resting a seat (something thrown into it) carries
+  unseats them (the authority's follow-ups, §3, are not edits). Physics resting a seat (something thrown into it) carries
   its rider too. Moving the seat you sit on yourself is yours. A body
   standing on a thing never blocks an edit of it: what you stand on
   carries you. **A seat may make leaving deliberate, never impossible**: a
   station's `leaveBy: "script"` turns off the occupant's casual exits
   (moving, jumping, one press of the get-up), but the escape stays on and
-  no seat can remove it — holding the get-up (X, the stand tile) for about
-  1.5 s, pressing it again within 2 s of its refusal, or an agent's
+  no seat can remove it — holding the get-up (X, or the stand tile pressed
+  and held) for about 1.5 s, pressing it again (X, the tile, the menu)
+  within 2 s of its refusal, or an agent's
   `detach {escape: true}` always stands the occupant up (VRChat keeps
   respawn and the menu; Second Life's stand always works). A
   yes to an ask is one touch: it ends when the hand lets go, when either
@@ -624,9 +657,28 @@ the authority doesn't have is recorded as `unknown-verb`, because its name is
 the visitor's own text. **Every
 code is registered** (shared/protocol/refusalcodes.js: code, meaning, when):
 a code is written into signed entries, so it never changes meaning, and a
-new one is a new row. **Every appended `change` passes the gate** (`admit`); a `say` passes its own
+new one is a new row. **Every appended `change` passes the gate** (`admit`), except that the
+authority's own follow-ups inside a write pass it without the asker's rights, locks, keys or in-flight
+check (shape and value checks still apply) and are named in the entry's `followUps` (§3); a `say` passes its own
 checks (length, rate, the sayer's rights), and a `sim` entry is written by the authority itself from a grab, a launch
 (throw, punt, a release with velocity) or a settle, never by a client.
+
+**The authority's consequences are follow-ups** (one rule, review r10): what the authority writes because of
+an asker's write is never written as the asker's own. A consequence that must be atomic with the asker's
+change rides in it, marked; one that may stand alone is the system's own act, caused by the asker's.
+Only what the asker could have written themselves, on what they are writing anyway, is theirs:
+
+| consequence | where it is written | actor | admitted with | marked |
+|---|---|---|---|---|
+| a deletion's reference clears (§4), and their restoration by its undo | the asker's change | the asker | no rights, locks or keys (shape checks) | `followUps` |
+| a deletion's set-down of unparented things resting on what it removes | the asker's change | the asker | no rights, locks or keys (shape checks) | `followUps` |
+| riders set down or dropped when a host's geometry changes | its own act `resettle {hosts, riders, asked}`, caused by the asker's act, and its change | `system` | the system's capability, scoped to those riders | the actor |
+| settle, return-lost, return-held, restamp-engine, lift-sockets, repair-shapes | their own act and change | `system` | the system's capability | the actor |
+| a physics rest | its own change, caused by the launch | `sim` | the rest capability | the actor |
+| stamps on what the asker is writing (a physics shape, a home, a media or model hash; a home for a reset's target) | the asker's change | the asker | the asker's rights (a target they may not edit refuses the write) | no: they are the asker's |
+
+A reader deriving authorship skips marked ops, and a `system` or `sim` write is authored by `system` or `sim`,
+never by the asker; a verifier re-runs the gate on the unmarked ops of an asker's change with the asker's rights.
 
 **Roles** are components on `@world`: `roles:<identity>` = `{role}`, and
 `default-role` for everyone without one (absent: visitor). The reference
@@ -758,18 +810,26 @@ now (`body-owner`, `edit-grant`, `avatar-deny` in the registry; the request
 
 - **B1. The body's owner is its wearer, stamped by the authority at wear.**
   When a person arrives wearing an avatar (`arrive {wearing: {avatar,
-  hash}}`), the authority stamps the body root's owner (`body-owner`, never
-  set by a request). It is the wearer, or the world for a body the world
+  hash}}`, presence like any arrival: B6), the authority stamps the body
+  root's owner (`body-owner`, never set by a request). It is the wearer, or the world for a body the world
   lends. It MUST NOT be derived from the log's history (who created which
   part) or from a role. Every entity under the root is the owner's, whoever
   authored it.
-- **B2. One predicate, at the top of `lacks()`.** For an op on a body root
-  or anything under one, before the owner short-circuit, before
-  `editOthers` and before any handler's or script's rights: the body's
-  owner and their live grantees MAY write it without `build`; everyone else
-  MUST be refused, the world owner included. The refusal is code `body` and
-  one sentence ("that's part of <person>'s body"): no ids, no creator, no
-  locker, no did-you-mean.
+- **B2. One predicate, in `admit`, on every op.** It runs for **every** op
+  `admit` sees on a body root or anything under one: the asker's, a
+  handler's or script's, and the authority's own follow-ups and system
+  writes (§7's consequences table), which otherwise skip the asker's rights
+  and locks. It comes before the owner short-circuit, before `editOthers`
+  and before any handler's or script's rights: the body's owner and their
+  live grantees MAY write it without `build`; everyone else MUST be
+  refused, the world owner included. **No authority consequence writes a
+  body part**: a deletion's set-down and a resettle pass a body part by,
+  and a reference from a body part to a world thing that is gone is nulled
+  **at read time** (it reads as naming nothing, as any dangling reference
+  does), never cleared by a write, since the world authority can't write
+  into the wearer's log (B6) atomically with its own. The refusal is code
+  `body` and one sentence ("that's part of <person>'s body"): no ids, no
+  creator, no locker, no did-you-mean.
 - **B3. The same predicate on every path to a body part:** the hand path
   (grab, put, throw, drop, punt), `publish`, and `create {from}` (a
   duplicate) MUST run it on the *source* parts, not only on what they write.
@@ -790,19 +850,27 @@ now (`body-owner`, `edit-grant`, `avatar-deny` in the registry; the request
      root are refused except from the body's owner.
 - **B5. Co-editing is the owner's grant.** `edit-grant:<identity> {until?,
   scope?: "subtree" | [ids]}` on the body root, in the wearer's log. It
-  ends when the owner deletes it, when `until` passes (read against entry
-  timestamps, so a replay decides alike), or when the grantee leaves the
-  world unless the owner kept it. It is never copied by a duplicate or a
+  ends when the owner deletes it or when `until` passes (read against entry
+  timestamps, so a replay decides alike). It does **not** end when the
+  grantee leaves: leaving is presence and never logged (§5), so a rule keyed
+  on it couldn't be replayed from the wearer's log, and writing every leave
+  into that log as a revoke would make it an attendance list. An owner who
+  wants a grant for one visit gives it an `until`, or deletes it. It is never copied by a duplicate or a
   publish, and no world script reads it. Revoking stops future edits, never
   past ones: what a co-editor did stays in history, and the owner may revert
   it. A co-editor gets attribution (history and the inspector say who
   edited what), never rights.
 - **B6. Body edits live in the wearer's log.** The body is live in the
   world's hierarchy and edited with the same verbs, but its authored writes
-  are stored in the wearer's log, never the world's. The world's log
-  records only `arrive {wearing: {avatar, hash}}`: the hash names the exact
-  body, which is moderation's evidence. A world founded with body writes in
-  its log could never take them out again.
+  are stored in the wearer's log, never the world's. **The world's log
+  records nothing about a body**: arriving wearing one (`arrive {wearing:
+  {avatar, hash}}`, a reserved request) is presence like any arrival (§5),
+  never logged, so the permanent log never becomes an attendance list. The
+  body's hash names the exact body and is moderation's evidence, so it
+  reaches the **moderator log** only when someone acts about it: a report,
+  a kick, a ban, or an arrival refused by `avatar-deny` (VRChat captures the
+  avatar id at report time). A world founded with body writes in its log
+  could never take them out again.
 
 ## 8. Scripts
 
@@ -822,11 +890,20 @@ records what its presence reads asked and how much came back (`reads
 is called, and a body effect as `{kind, to}`, never which consent admitted
 it: the log is permanent and public, and the authority's own record of an
 activation never becomes an attendance list (an `enter` / `leave`
-activation records no trigger actor and no `event.by`). What a script writes with the identities it receives live is its
+activation, and a grab that isn't itself logged, records no trigger actor
+and no `event.by`; a release always has its own act, so it keeps its
+trigger). What a script writes with the identities it receives live is its
 own act, signed with its sponsor's rights. An auditor may re-run the source with the recorded
-event, clock, seed and stand-ins for the presence reads: a result that
-doesn't depend on who was there is verified; one that does is reported as
-not re-runnable, never as verified. The reference API, limits and determinism rules are
+event, clock, seed and stand-ins for the presence reads and for an identity
+the act doesn't record. A result that doesn't depend on who was there is
+verified. An arrival whose re-run differs from the log is re-run with a
+second stand-in of another kind (one person-shaped, `u-` and 20 lowercase;
+one agent-shaped, a short name; both valid identities and nobody's): if the
+two differ, it is reported as not re-runnable; if they agree, the mismatch
+is flagged `rerun-anon`, a difference to look at, never `rerun` (proof of a
+forgery), since two inputs can't show a result is the same for every
+identity. Nothing that depends on who was there is ever reported as
+verified. A sponsor reader skips the authority's follow-ups (§3). The reference API, limits and determinism rules are
 `docs/SCRIPTS.md`.
 
 ## 9. Conventions
@@ -933,7 +1010,15 @@ the thing's (or part's) own frame before scale; `motion.center` and
 - **The four operations, the envelope, the kinds and the fold are fixed.**
   Changing them is a new `minor` (or a new `v`) in genesis; a reader that
   doesn't know a world's minor refuses the world rather than folding it to
-  a different digest.
+  a different digest. One exception, before release: the batch body's
+  `followUps` (§3) was added to v4 **at minor 0**, because v4 had not been
+  released. Every v4 log written so far was written by the reference
+  authority on its own branch, and every one folds to the same digest with
+  or without the field (the fold applies marked ops like any op); the only
+  readers that refuse it are that branch's own earlier builds. Bumping to
+  minor 1 would have made every trial world and conformance log carry a
+  version that marks nothing a released reader could disagree on. From
+  release on, the rule above holds without exception.
 
 ## 11. Conformance
 
@@ -1089,7 +1174,7 @@ v}`. File names, wire fields and code don't carry the number.
 |---|---|---|
 | 1–2 | The first world log: an untyped verb log folded by its reader (`genesis {verb: "genesis", args: {v, dialect}}`); dialect 2 added `force` and `punt` | `history/PROTOCOL-v1.md` |
 | 3 | The deterministic-physics amendment: a sim fold over sim-scoped entries, sim epochs (`dialect 3`) | `history/PROTOCOL-v2-sim.md` |
-| 4 | This protocol: typed entries (`change`, `act`, `sim`, `say`, `purge`, `sequencer`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md` | this document |
+| 4 | This protocol: typed entries (`change`, `act`, `sim`, `say`, `purge`, `sequencer`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. Before release, minor 0 gained the batch body's `followUps` (§3, §10; review r10) | this document |
 
 Logs of `v` 1–3 are not read at runtime; §14 translates one, once, into a new
 world.
