@@ -3219,10 +3219,10 @@ function unseatsFor(w, st, who, norm) {
     const fam = new Set([op.id, ...descendants(st, op.id)]);
     for (const r of riders) { if (out.has(r)) continue; const s = seatOf(w, st, r); if (!s || !fam.has(s.to)) continue;
       if (own && rootOf(s.to) === own) continue;   // the seat's own assembly moving it: the ride
-      out.set(r, { who: r, seat: s.to, host: st.entities[s.to]?.c.parent?.to ?? null, id: op.id, comp: op.comp }); } }
+      out.set(r, { who: r, seat: s.to, host: st.entities[s.to]?.c.parent?.to ?? null, id: op.id, field: op.comp }); } }
   return [...out.values()];
 }
-const unseatWhy = (u) => `${u.id}.${u.comp} was changed by someone else, and it moves the seat ${u.who} sat on: they were let go where they were, standing (sitting is consent to the seat's own ride, not to anyone's edit)`;
+const unseatWhy = (u) => `${u.id}.${u.field} was changed by someone else, and it moves the seat ${u.who} sat on: they were let go where they were, standing (sitting is consent to the seat's own ride, not to anyone's edit)`;
 function occupiedRefuse(w, st, id, actor, what) {
   const o = occupant(w, st, id, actor);
   if (o) refuse("occupied", `${said(o.who)} ${o.how} ${id} (or something on it), so it can't be ${what}`, "wait till they get up or step off", { by: o.who });
