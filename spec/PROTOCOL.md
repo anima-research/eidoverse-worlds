@@ -80,7 +80,7 @@ or null-prototype objects, and a tokenizer that sees duplicate keys, since
 | `verb` | a string: for `change`, one of the four operations (§3) |
 | `body` | an object |
 | `head`, `sig` | the sequencer's chain fields, on chain points (§12) |
-| `for`, `grant` | reserved for acting on someone's behalf; until identities have keys, an entry carrying `for` is malformed |
+| `for`, `grant` | reserved for acting on someone's behalf; until identities have keys, an entry carrying `for` is malformed (`grant` is reserved and not yet checked) |
 | `by` | legacy (the lab's name for `actor`): allowed, and every reader MUST ignore it. Writers MUST NOT write it |
 
 An unknown field, a `seq` field, a missing or non-string `kind`/`actor`/
@@ -185,7 +185,9 @@ All ASCII.
   `(world id, entity id)`, written `<world id>#<entity id>`, and no protocol
   feature may assume an id is unique outside its world (a fork copies its
   parent's ids). A minted id SHOULD carry at least 128 random bits (the
-  reference authority writes 26 base32 characters and nothing else), so two
+  reference authority writes 26 base32 characters; a script's create mints
+  32 hex characters of its activation's seed, so an auditor's re-run mints
+  the same id), so two
   forks rarely mint alike; that makes renames on merge rare, never
   unnecessary. An entity id never has an identity's shape (`u-` and 20 base32
   letters). **An id is opaque and immutable; a thing's name is its `label`.**
@@ -227,8 +229,8 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `physics-joint:<name>` (the constraint between two bodies) and `joint` (a skeleton node), both
   reserved, and on
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
-  `sky`, `terrain`, `water`, `terrain-grid`, `terrain-tile:<i>-<j>`, `grass`, `physics-engine`, `surface:<name>` (reserved),
-  `script-settings`, `blueprints:<hash>`, `assets:<key>`, `capacity`, `schemas:<name>`.
+  `sky`, `terrain`, `water`, `terrain-grid` (reserved), `terrain-tile:<i>-<j>` (reserved), `grass`, `physics-engine`, `surface:<name>` (reserved),
+  `script-settings`, `blueprints:<hash>`, `assets:<key>`, `capacity`, `schemas:<name>` (reserved).
 - **A mesh is a body without a model.** `mesh {shape, size}` draws a
   parametric body (box, sphere, cylinder, plane, capsule) on a thing that has
   no model; the authority reads its size as it reads a measured model's, so
@@ -387,7 +389,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   it is described to a text-based reader, alt text, one plain string), then
   what it **can do** and its **state**, generated from its components
   (`openable` → it can be opened, open or shut, locked; `grabbable` → it can
-  be picked up; `sockets` → it can be sat on; `sound` → playing; `lock`; …),
+  be picked up; a seat (a socket child with a `station`) → it can be sat on; `sound` → playing; `lock`; …),
   so a description never restates an affordance and can't contradict one.
   `story` is the long-form details beside it (a titled placard, and the
   things it marks). A visible nameplate is not a component: it is a child
@@ -621,8 +623,8 @@ their own rank.
 
 **Ids are the authority's.** The authority mints every entity id (§3.1). A
 create (`create`, `create {from}`, a `batch`'s create) that names an id is
-refused, with the fix — unless the id is a **placeholder**: `$` and up to 63
-of `[A-Za-z0-9_-]` (JSON:API's `lid`), local to that one request. Before the
+refused, with the fix — unless the id is a **placeholder**: `$`, a letter or
+digit, then up to 62 of `[A-Za-z0-9_-]` (JSON:API's `lid`), local to that one request. Before the
 request is checked the authority mints an id for each placeholder a create
 defines, writes it wherever the placeholder stands in the request (a parent's
 `to`, a place's `on`, a set's `id`, a reference list), and answers with the
