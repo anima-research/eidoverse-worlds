@@ -727,7 +727,10 @@ const ROUTES: Route[] = [
     // never creates one (getWorld is not called). Behind the same door as a
     // join (mayRead). Presence names are the same ids every join snapshot
     // already hands out; spectators and renderers appear as nothing here
-    // exactly as they do in-world.
+    // exactly as they do in-world. ONE list of people (R 10-17 14:41:
+    // "people" means everyone): each entry is {id, declares?}, the word a
+    // participant declared for themselves at the door (PROTOCOL §6a), if any,
+    // as a tag — never a second list sorted by kind.
     match: (u) => u.pathname === "/worlds",
     handler: ({ req }) => {
       if (!mayRead(req)) return unauthorized();
@@ -743,8 +746,7 @@ const ROUTES: Route[] = [
         return {
           name,
           loaded: !!w,
-          people: present.filter((c) => c.declares !== "agent").map((c) => c.id),
-          agents: present.filter((c) => c.declares === "agent").map((c) => c.id),
+          people: present.map((c) => ({ id: c.id, ...(c.declares ? { declares: c.declares } : {}) })),
         };
       });
       return new Response(JSON.stringify({ worlds: out }),

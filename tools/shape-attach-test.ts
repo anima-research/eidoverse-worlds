@@ -24,20 +24,20 @@ tryRow('ST', () => {
   const mk = (id: string, socket: any, extra: any = {}) => W.call('create', { id, components: { parent: { to: 'bench' }, transform: { pos: [0, 0.5, 0] }, socket, ...extra } });
 
   check('ST1 the registry: socket is {name, part?, accepts?, radius?} (no body)', JSON.stringify(Object.keys(COMPONENTS.socket.fields)) === '["name","part","accepts","radius"]', COMPONENTS.socket.fields);
-  check('ST1 …station is its own component, core {action, pose, anchor, exit, leaveBy, who}', JSON.stringify(Object.keys(COMPONENTS.station?.fields ?? {})) === '["action","pose","anchor","exit","leaveBy","who"]', COMPONENTS.station);
+  check('ST1 …station is its own component, core {action, anim, anchor, exit, leaveBy, who} (R 10-17: anim was pose)', JSON.stringify(Object.keys(COMPONENTS.station?.fields ?? {})) === '["action","anim","anchor","exit","leaveBy","who"]', COMPONENTS.station);
   check('ST1 …sockets (the old map) is reserved, lift-only', statusOf('sockets') === 'reserved' && !!COMPONENTS.sockets.lifted);
 
   let r = mk('lie1', { name: 'bunk' }, { station: { action: 'lie' } });
-  check('ST2 a station is materialized on write: lie → pose lie, anchor root', r.ok && JSON.stringify(C('lie1')?.station) === '{"action":"lie","anchor":"root","pose":"lie"}', [r.refused, C('lie1')]);
+  check('ST2 a station is materialized on write: lie → anim lie, anchor root', r.ok && JSON.stringify(C('lie1')?.station) === '{"action":"lie","anchor":"root","anim":"lie"}', [r.refused, C('lie1')]);
   r = mk('sit1', { name: 'seat' }, { station: {} });
-  check('ST2 …an empty station is a seat: sit, sitchair, root', r.ok && JSON.stringify(C('sit1')?.station) === '{"action":"sit","anchor":"root","pose":"sitchair"}', [r.refused, C('sit1')]);
+  check('ST2 …an empty station is a seat: sit, sitchair, root', r.ok && JSON.stringify(C('sit1')?.station) === '{"action":"sit","anchor":"root","anim":"sitchair"}', [r.refused, C('sit1')]);
   r = mk('odd1', { name: 'perch' }, { station: { action: 'hover' } });
-  check('ST2 …an action the table doesn\'t know gets the seat pose, written down', r.ok && C('odd1')?.station?.pose === 'sitchair', [r.refused, C('odd1')]);
+  check('ST2 …an action the table doesn\'t know gets the seat pose, written down', r.ok && C('odd1')?.station?.anim === 'sitchair', [r.refused, C('odd1')]);
   const u = W.call('use', { id: 'bench', action: 'lie' });
   check('ST3 use {lie} attaches there in the stored pose', u.ok && u.attach?.to === 'lie1' && u.attach.pose === 'lie', u);
 
   r = mk('old1', { name: 'stool', body: { action: 'sit' } });
-  check('ST4 a socket written with the old body block is lifted: socket without body + station', r.ok && C('old1')?.socket && !('body' in C('old1').socket) && C('old1')?.station?.action === 'sit' && C('old1')?.station?.pose === 'sitchair', [r.refused, C('old1')]);
+  check('ST4 a socket written with the old body block is lifted: socket without body + station', r.ok && C('old1')?.socket && !('body' in C('old1').socket) && C('old1')?.station?.action === 'sit' && C('old1')?.station?.anim === 'sitchair', [r.refused, C('old1')]);
   check('ST5 a station key the alpha holds back (reach) is refused as reserved', code(mk('rb1', { name: 'rb' }, { station: { reach: { leftHand: { at: [0, 1, 0] } } } })) === 'reserved');
   check('ST5 …so are input, poses, sync, approach, enter, leave, look, fromSeat', ['input', 'poses', 'sync', 'approach', 'enter', 'leave', 'look', 'fromSeat'].every((k, i) => code(mk(`rb${i + 2}`, { name: `rb${i + 2}` }, { station: { [k]: k === 'fromSeat' ? true : k === 'sync' || k === 'enter' || k === 'leave' ? 'x' : k === 'approach' ? [0, 0, 0, 0] : {} } })) === 'reserved'));
   check('ST5 …and the bone overrides (hold) are cut: an unknown key', code(mk('hb1', { name: 'hb' }, { station: { hold: { spine: [0, 0, 0, 1] } } })) === 'schema');
@@ -49,13 +49,13 @@ tryRow('ST', () => {
   W.call('create', { id: 'sofa', model: 'crate' });
   r = W.call('set', { id: 'sofa', component: 'sockets', value: { left: { pos: [-0.4, 0.5, 0], body: {} }, right: { pos: [0.4, 0.5, 0], body: { action: 'sit', pose: 'sit' } } } });
   const L = C(socketId('sofa', 'left')), R = C(socketId('sofa', 'right'));
-  check('ST8 the old sockets map lifts each body to a station on its socket child', r.ok && L?.station?.pose === 'sitchair' && R?.station?.pose === 'sit' && !('body' in (L?.socket ?? {})), [r.refused, L, R]);
+  check('ST8 the old sockets map lifts each body to a station on its socket child', r.ok && L?.station?.anim === 'sitchair' && R?.station?.anim === 'sit' && !('body' in (L?.socket ?? {})), [r.refused, L, R]);
 
   // a stored socket.body (a log stored before station), lifted at load
   const st = { diagnostics: [], entities: { h: { c: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }, s: { c: { parent: { to: 'h' }, transform: { pos: [0, 1, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: 'seat', body: { action: 'lie' } } } } } };
   const hosts = legacyHosts(st);
   const ops = hosts.includes('h') ? liftHostOps(st, new Set(), 'h').ops : [];
-  check('ST9 the load-time lift finds a stored socket.body and moves it to a station', hosts.includes('h') && ops.some((o: any) => o.id === 's' && o.comp === 'station' && o.value?.action === 'lie' && o.value?.pose === 'lie')
+  check('ST9 the load-time lift finds a stored socket.body and moves it to a station', hosts.includes('h') && ops.some((o: any) => o.id === 's' && o.comp === 'station' && o.value?.action === 'lie' && o.value?.anim === 'lie')
     && ops.some((o: any) => o.id === 's' && o.comp === 'socket' && !('body' in o.value)), [hosts, ops]);
 });
 
@@ -83,7 +83,7 @@ tryRow('HG', () => {
   check('HG4 home.parent is {to} only (the socket spelling is gone)', JSON.stringify(COMPONENTS.home.fields) === '{"pos":"vec3","q":"array","scale":"vec3","parent":"object"}', COMPONENTS.home.fields);
   const G = COMPONENTS.grabbable;
   check('HG5 grabbable registers its fields (carries included; no home, no fx)', !!G.fields && 'carries' in G.fields && !('home' in G.fields) && !('fx' in G.fields) && 'grips' in G.fields && 'use' in G.fields, G.fields);
-  check('HG5 …and its enums from grab.js', JSON.stringify(G.enums?.hold) === '["auto","press","toggle"]' && JSON.stringify(G.enums?.release) === '["drop","stay","return"]' && (G.enums?.pose ?? []).includes('shoulder'), G.enums);
+  check('HG5 …and its enums from grab.js', JSON.stringify(G.enums?.hold) === '["auto","press","toggle"]' && JSON.stringify(G.enums?.release) === '["drop","stay","return"]' && G.enums?.pose === undefined && G.fields?.anim === 'string', G.enums);   // anim is an open name (R 10-17), no enum
   check('HG6 grabbable.fx is reserved (refused)', code(W.call('set', { id: 'ball', component: 'grabbable', value: { fx: { particles: { effect: 'sparks' } } } })) === 'reserved');
   check('HG7 a grip\'s bone overrides (hold) are cut', code(W.call('set', { id: 'ball', component: 'grabbable', value: { grips: { a: { pos: [0, 0, 0], hold: { rightIndexProximal: [0, 0, 0, 1] } } } } })) === 'schema');
   check('HG8 carries is taken', W.call('set', { id: 'ball', component: 'grabbable', value: { carries: true } }).ok);

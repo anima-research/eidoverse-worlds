@@ -264,7 +264,7 @@ console.log('\n5. the inspector (shared/editschema.js: reads either spelling, wr
   const lsch = inspectSchema(lamp, 'x');
   check('a light component shows in the light group (light.* addresses), valued from its bag',
     fieldAt(lsch, 'light.intensity')?.value === 20 && fieldAt(lsch, 'light.color')?.value === 0xff8800 && fieldAt(lsch, 'light.range')?.value === 10 && fieldAt(lsch, 'light.important')?.value === true, JSON.stringify(lsch.groups.find((g: any) => g.group === 'light')));
-  const le = door(lamp, { 'light.intensity': 24, 'light.important': false, 'light.noon': true, 'light.color': '#00ff00' });
+  const le = door(lamp, { 'light.intensity': 24, 'light.important': false, 'light.daytime': true, 'light.color': '#00ff00' });
   check('…editing it writes ONE set light, merged into the bag, important/daytime stored only when not default (daytime: full is burns-at-noon: shape audit 10-16)',
     opsOf(le.r) === JSON.stringify([{ verb: 'set', args: { id: 'x', component: 'light', value: { color: 0x00ff00, intensity: 24, daytime: 'full' } } }]), opsOf(le.r));
   check('…and through the door the lamp is lit that way (important cleared, burns at noon)', le.res.ok && le.after.light.color === 0x00ff00 && le.after.light.intensity === 24 && le.after.light.daytime === 'full' && !le.after.light.important, JSON.stringify([le.res.refused, le.after.comp]));

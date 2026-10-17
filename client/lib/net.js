@@ -361,6 +361,7 @@ export function sendPose(now) {
     yaw: ov?.yaw ?? s.yaw, speed: s.speed, clip: s.clip,
     pitch: Math.round((ov?.pitch ?? s.pitch ?? 0) * 100) / 100,
     ...wingFoldPresence(s.wingsFolded),
+    ...(s.bodyMode ? { bodyMode: s.bodyMode } : {}),   // the body-mode (shared/bodymode.js; R 10-17: was the posture, read off the clip)
     ...presenceWire(presence()),        // present / away / busy — for the Who panel (R, 09-05)
     ...voiceWire(hooks.myVoice()),      // mic live / headphones on — the hover card, agents' look
   };
@@ -737,7 +738,7 @@ async function handle(msg) {
       // present — and ensureRemote resets the mesh's transient expressions
       // before transplanting it into a fresh record.
       if (remotes.has(msg.id)) bus.emit('participant-teardown', msg.id);
-      ensureRemote(msg.id, msg.avatar, { agent: msg.declares === 'agent', authority: true });   // §6a: a declared status, absent = undeclared
+      ensureRemote(msg.id, msg.avatar, { declares: msg.declares ?? null, authority: true });   // §6a: a declared status (any word), absent = undeclared; shown as said, never sorted into kinds
       if (msg.actorId) identities.set(msg.id, msg.actorId);
       if (msg.guest) guests.add(msg.id); else guests.delete(msg.id);
       logChat('*', `${msg.id} arrived`);
@@ -892,7 +893,7 @@ async function handle(msg) {
     }
 
     case 'avatar-profile-updated': {
-      // a seat profile was proposed or countersigned (#101) — seats.js holds
+      // a seat profile was proposed or countersigned (#101) — occupants.js holds
       // the cache and the generation guard; this is just the wire → bus hop
       bus.emit('avatar-profile-updated', msg);
       break;
@@ -1041,7 +1042,7 @@ async function onSnapshot(msg) {
   for (const p of msg.present) {
     if (p.actorId) identities.set(p.id, p.actorId);
     if (p.guest) guests.add(p.id);
-    ensureRemote(p.id, p.avatar, { agent: p.declares === 'agent', authority: true })
+    ensureRemote(p.id, p.avatar, { declares: p.declares ?? null, authority: true })
       .then(() => { if (p.pose) pushPose(p.id, p.pose); })
       .catch((e) => report(`present ${p.id}`, e));
   }

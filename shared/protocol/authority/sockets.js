@@ -16,7 +16,7 @@ import { refuse } from "./refuse.js";
 
 const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v) && v !== PURGED;
 export const isSocketC = (c) => bag(c?.socket);
-export const socketRole = (c) => (bag(c?.station) ? "seat" : Array.isArray(c?.socket?.accepts) ? "snap" : "attach");
+export const socketRole = (c) => (bag(c?.station) ? "station" : Array.isArray(c?.socket?.accepts) ? "snap" : "attach");
 // what a socket may carry besides its pose and its name: what reads it (label, description), what switches or freezes it
 // (disabled, lock, hidden), a motion of its own (R 10-12 20:44), and the blueprint mark every placed part carries
 // one host holds at most this many sockets (review 10-12 S1-2): a seat map past it is several things. No setting raises it;
@@ -107,7 +107,10 @@ const socketOfSlot = (name, sk) => ({ name, ...Object.fromEntries(SOCK_FIELDS.fi
 // or a catalogue already held is re-spelled with the keys the station registers (the reserved and cut ones no stored value
 // uses are dropped); a request's own body keeps them, and the door refuses them in the station's words
 const STATION_KEYS = Object.keys(COMPONENTS.station.fields);
-export const stationOfBody = (b, { stored = false } = {}) => { if (!bag(b)) return null;
+// A body block's `pose` is the station's `anim` (R 10-17 15:11: the map's body block keeps its old spelling; the station
+// takes the name of the family).
+export const stationOfBody = (b0, { stored = false } = {}) => { if (!bag(b0)) return null;
+  const b = "pose" in b0 && !("anim" in b0) ? (({ pose, ...r }) => ({ ...r, anim: pose }))(b0) : b0;
   const v = stored ? Object.fromEntries(Object.entries(b).filter(([k]) => STATION_KEYS.includes(k))) : { ...b };
   return materialize("station", v).value; };
 const tfOf = (c) => ({ ...COMPONENTS.transform.defaults, ...(c?.transform ?? {}) });

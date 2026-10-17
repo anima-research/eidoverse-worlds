@@ -27,13 +27,13 @@ export const forgetBytes = () => {};
 
 // world
 export const avatarMounts = new Map();
-// #101: seats.js (real, unmocked) pulls the clip digest from the assets
+// #101: occupants.js (real, unmocked) pulls the clip digest from the assets
 // module — null here means every stub seat reads declared-approximate,
 // which is exactly the truthful state for a world with no clip bytes
 export const vrmaShaLoaded = () => null;
 export const pendingMounts = new Map();
 export const mountTransform = () => null;
-// world.js's seat surface (presence seats): remotes.js sets a body's seat from its frames, and seatbody.js reads the
+// world.js's seat surface (presence seats): remotes.js sets a body's seat from its frames, and occupybody.js reads the
 // thing's components, objects and parts. Empty here — the lifecycle under test is bodies, not seats
 export const setBodySeat = () => {};
 export const comps = new Map();
@@ -43,7 +43,7 @@ export function* bags() { yield* comps; }
 export const metaOf = (id) => entityMeta.get(id) ?? null;
 export const entities = new Map();
 export const findPart = () => null;
-/* world.js grew these in the sockets merge (10-14); seatbody.js imports seatSocket, so the shared stub must offer it (headless: no sockets) */
+/* world.js grew these in the sockets merge (10-14); occupybody.js imports seatSocket, so the shared stub must offer it (headless: no sockets) */
 export const seatSocket = () => null;
 export const socketsOn = () => [];
 export const parentIdOf = () => null;
@@ -91,5 +91,5 @@ export const makeAvatar = (id, path) => {
 
 // xrbody.js (VR PR): remotes.js drives a remote's VR pose through these; no-ops here — the lifecycle under test is bodies, not arms
 export const applyRemoteXR = () => {};
-export const xrHandWorld = () => null;   // seatbody.js asks where a tracked hand is (a socket's vr policy): never tracked here
+export const xrHandWorld = () => null;   // occupybody.js asks where a tracked hand is (a socket's vr policy): never tracked here
 export const resetFingers = () => {};

@@ -48,16 +48,16 @@ const ACTOR_ID = /^u-[a-z2-7]{20}$/;
 
 /** Body consent at the server (PROTOCOL L6; tools audit 10-07 "Body consent"): a presence act on someone else's body is
  *  checked against THEIR table in the authority's presence plane (shared/protocol/consent.js — a body that never sent
- *  one is Normal: strangers' shove, pose and move are nobody) and a sane range, BEFORE it's forwarded. The target's
+ *  one is Normal: everyone's shove, pose and displace are deny) and a sane range, BEFORE it's forwarded. The target's
  *  client still has the last word; this is so a stranger's packet never reaches a body that said no. 'ask' is refused
  *  with how to ask (the authority's `body` verb asks and delivers). Returns the refusal, or null to forward. */
 export { BODY_RANGE };   // m between the two bodies' last frames
-function bodyRefusal(c: Client, tc: Client, cls: "shove" | "pose" | "move", kind: string): string | null {
+function bodyRefusal(c: Client, tc: Client, cls: "shove" | "pose" | "displace", kind: string): string | null {
   if (c.actorId && c.actorId === tc.actorId) return null;            // your own body
   const live = c.world?.log?.live;
   if (!live || !c.actorId || !tc.actorId) return `${tc.id}'s body isn't taking ${cls} right now`;
   const d = consentDecide(live.presence, c.actorId, tc.actorId, cls, live.now());
-  if (d.mode === "nobody") return refusalWords(tc.id, cls);   // one sentence whatever the cause (a pause, a per-person no, a tier): the real cause is theirs, not yours
+  if (d.mode === "deny") return refusalWords(tc.id, cls);   // one sentence whatever the cause (a pause, a per-person no, a tier): the real cause is theirs, not yours
   if (d.mode === "ask") return `${tc.id} asks first for ${cls}: ask with the body request — body {to: "${tc.actorId}", kind: "${kind}"}`;
   const a = c.lastPose?.p, b = tc.lastPose?.p, r = BODY_RANGE[cls];
   if (!Array.isArray(a) || !Array.isArray(b)) return `can't tell where you and ${tc.id} are yet — try again in a moment`;
@@ -264,7 +264,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (!tc) return;                       // dragging the departed: silently moot
     // a grab takes someone's body (move, L6): their consent and reach, at the server; the stream and release that follow
     // only ever go to a body that accepted the grab (its client answers with end otherwise)
-    if (msg.grab != null) { const why = bodyRefusal(c, tc, "move", "drag"); if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; } }
+    if (msg.grab != null) { const why = bodyRefusal(c, tc, "displace", "drag"); if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; } }
     tc.ws.send(JSON.stringify({
       type: "bodydrag", by: c.id, ...(c.actorId ? { byActor: c.actorId } : {}),
       ...(msg.grab != null ? { grab: msg.grab } : {}),

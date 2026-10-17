@@ -68,7 +68,7 @@ try {
     const seen = await read(peer, { who: owner.name, detail: "contacts", points: ["knee_r"] });
     check(`${clip}: current-body geometry is withheld on the real self/peer tool path`,
       seated.wire.isError === true && seen.wire.isError === true && seen.geometry?.basis === "rest_pose_estimate"
-      && !seated.joints && !seated.contacts && !seen.contacts && seen.posture === clip && eq(seated.publishedRotations, bones));
+      && !seated.joints && !seated.contacts && !seen.contacts && seen.clip === clip && eq(seated.publishedRotations, bones));
   }
   owner.clip = "idle"; owner.setPose(null); owner.tick();
   await until(() => peer.people.get(owner.name)?.pose?.clip === "idle");

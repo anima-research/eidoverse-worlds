@@ -36,7 +36,7 @@ import { warm, P_GATE } from './warmqueue.js';
 // calls these for every seated body; their import fell on the fork side of
 // a merge hunk while the call site auto-merged, and every SIT threw 56
 // ReferenceErrors a second (antra, live, from a swing in commons2)
-import { seatCorrectionFor } from './seats.js';
+import { occupyCorrectionFor } from './occupants.js';
 import { applySeatCorrection } from './seatcore.js';
 
 /** id -> Object3D. `null` is a reservation held while the GLB downloads, so a
@@ -74,7 +74,7 @@ export const socketsOn = (host) => socketsUnder(String(host), childrenOf, bagOf)
 export function seatSocket(id) {
   const c = id == null ? null : bagOf(id);
   if (!c?.socket || typeof c.socket !== 'object') return null;
-  // a socket switched off (or under something switched off) is a closed seat, as the authority reads it (seatOf: offChain):
+  // a socket switched off (or under something switched off) is closed to occupying, as the authority reads it (occupants.js: offChain):
   // whoever sits there lets go (localbody's per-frame check), and a frame naming it seats nobody (review 10-12 S3-3)
   if (c.disabled === true || ancestorsOf(id).some((a) => bagOf(a)?.disabled === true)) return null;
   return { id: String(id), host: parentIdOf(id), name: c.socket.name, sock: c.socket, station: c.station && typeof c.station === 'object' ? c.station : null };
@@ -105,7 +105,7 @@ function seatSocketId(seat) {
 }
 /** What else a seat frame carries (shared/sockbody.js): the pose the occupant chose from the socket's menu and when
  *  (`pose`, `at`: a sync group follows the latest choice), and their input (`in`: throttle, steer, aimYaw, aimPitch)
- *  when the socket routes it. Read by seatbody.js for every occupant, mine and everyone else's, the same way. */
+ *  when the socket routes it. Read by occupybody.js for every occupant, mine and everyone else's, the same way. */
 function seatExtras(m, seat) {
   const fin = Number.isFinite;
   if (typeof seat.pose === 'string' && /^[a-z0-9][a-z0-9_-]{0,31}$/i.test(seat.pose)) { m.pose = seat.pose; m.at = fin(seat.at) ? seat.at : 0; } else { delete m.pose; delete m.at; }
@@ -494,7 +494,7 @@ export function mountTransform(riderId, outPos, rider, poseOffset = null) {
     }
   } else {
     // the seat-height correction (#101) is a world-up subtraction, so it only holds while the socket stands upright
-    const seat = upright ? seatCorrectionFor(rider, s.station) : { applied: false, reason: 'the socket is tilted (the seat profile assumes upright)' };
+    const seat = upright ? occupyCorrectionFor(rider, s.station) : { applied: false, reason: 'the socket is tilted (the seat profile assumes upright)' };
     if (seat.applied) { const c = applySeatCorrection([_mtF.x, _mtF.y, _mtF.z], seat.contactY, seat.scale); if (c) _mtF.set(c[0], c[1], c[2]); state = 'profiled'; }
     else reason = seat.reason;
   }

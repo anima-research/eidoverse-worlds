@@ -13,7 +13,7 @@
 // SPLIT (R4): this file is the gesture CORE — mode, selection, ghost, drag,
 // undo, and the one pointer/key router. The panel sections live beside it
 // (catalog.js models+avatars+upload, groundpanel.js, skypanel.js), and the
-// seat-anchor grammar in seatedit.js; the router here hands seat gestures
+// seat-anchor grammar in socketedit.js; the router here hands seat gestures
 // across that seam and never re-implements them.
 
 import { svg as iconSvg } from './icons.js';
@@ -41,8 +41,8 @@ import { claimEscape } from './windows.js';
 import { currentTool as structureTool, setTool as setStructureTool } from './structure_ui.js';   // an armed building tool is Esc's first rung
 import { state } from './state.js';   // one rule for who may author (and one name for them), shared with the scene panel
 import * as Edits from './editwrites.js';   // slice 3b: every write here is a request
-import { refreshSeatGizmos, resetSeats, armSeatPlacement, seatArmed, seatSelected,
-  cancelSeatArm, deselectSeat, seatMouseDown, seatKeyDown, updateSeatDrag } from './seatedit.js';
+import { refreshSocketGizmos, resetSockets, armSocketPlacement, socketArmed, socketSelected,
+  cancelSocketArm, deselectSocket, socketMouseDown, socketKeyDown, updateSocketDrag } from './socketedit.js';
 
 const raycaster = new THREE.Raycaster();
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -93,7 +93,7 @@ export const mayEdit = () => {
 export function setEditMode(on, { quiet = false } = {}) {
   // The gate the wrench advertises, applied at the one chokepoint every entry
   // point funnels through: toggleEditMode, the dock action, KeyB, and the two
-  // quiet callers (holdGhost, armSeatPlacement — "I picked a thing to place",
+  // quiet callers (holdGhost, armSocketPlacement — "I picked a thing to place",
   // which is exactly the build intent the server refuses). Gating only the
   // keybind would have been half a fix, which is the shape of mistake this
   // review round already caught once.
@@ -112,8 +112,8 @@ export function setEditMode(on, { quiet = false } = {}) {
   if (editMode === on) return editMode;
   editMode = on;
   document.body.classList.toggle('edit-mode', on);
-  if (!on) { cancelGhost(); deselect(); resetSeats(); }
-  refreshSeatGizmos();   // anchors are visible exactly while you are editing
+  if (!on) { cancelGhost(); deselect(); resetSockets(); }
+  refreshSocketGizmos();   // anchors are visible exactly while you are editing
   // Saying you are building puts the tools in front of you: the workspace's Build tab (editlayout.js) is the catalog.
   // The legacy World frame used to be shown here too; the workspace parked it at once and then "restored" it on the
   // way out, so it stayed open in look mode (review 10-07 S14). It now opens only if it was open before.
@@ -205,7 +205,7 @@ function showInspector(id) {
     // an icon, never an emoji (R, 10-10: "ONLY use emotes in the Chat and Emote panes. They are illegal pretty much everywhere else")
     `<input type="checkbox" data-bact="lock"${locked ? ' checked' : ''}><span class="sp-ico" aria-hidden="true">${iconSvg(locked ? 'lock' : 'lockOpen', 14)}</span> lock</label>`;
   // '+ seat' lived here (R 10-10 23:56: "Very curious why there's a 'seat' button here in the helper dialog?"); one stray
-  // click on it seated people on a sign 3 m up. A seat is added where components are: Add Component ▸ Sockets ▸ '+ seat here'.
+  // click on it seated people on a sign 3 m up. A seat is added where components are: Add Component ▸ Sockets ▸ '+ socket here'.
   inspector.querySelector('[data-bact="lock"]').onchange = (ev) => {
     const on = ev.target.checked;
     Edits.lock(id, on).then(() => { if (selected?.id === id) showInspector(id); });
@@ -417,7 +417,7 @@ function aimPoint(skipId = null) {
 }
 
 export function updateBuild() {
-  updateSeatDrag();
+  updateSocketDrag();
   if (ghost) {
     const aim = aimPoint();
     if (aim) {
@@ -604,7 +604,7 @@ addEventListener('mouseup', (e) => {
   const p = barePress; barePress = null;
   if (!p || !editMode || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 5) return;
   // a click on empty space clears THE selection (the Hierarchy's too), not only the viewport's pick
-  deselectAll(); if (seatSelected()) deselectSeat();
+  deselectAll(); if (socketSelected()) deselectSocket();
 });
 // BOX SELECT (R 10-11 00:18: "shift-select-drag draw a bounding box around objects to select them"): Shift-drag on bare
 // space draws a box and ADDS every thing whose centre lands inside it (hidden ones, and layers I've switched off for
@@ -639,11 +639,11 @@ canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !editMode) return;  // outside edit mode the canvas is for looking
   if (e.altKey) return;   // Alt+drag is the camera's (controller.js: orbit / pan / dolly)   // keys: editCamera
   // an armed seat placement outranks everything, the ghost included
-  if (seatArmed()) { seatMouseDown(e); e.preventDefault(); return; }
+  if (socketArmed()) { socketMouseDown(e); e.preventDefault(); return; }
   if (ghost) return;                        // click-to-place handled on click
   // gizmo picks next — a marker is small and deliberate, and the mesh it
   // floats over would otherwise win every contested click
-  if (seatMouseDown(e)) { e.preventDefault(); return; }
+  if (socketMouseDown(e)) { e.preventDefault(); return; }
   if (pointerVeto()) return;                // a gizmo handle under the pointer owns this press
   // Pick from THIS event's coordinates. Relying on the last mousemove to have
   // left `mouse` in the right place works for a real pointer and fails for
@@ -656,7 +656,7 @@ canvas.addEventListener('mousedown', (e) => {
     d.className = 'edit-marquee'; d.style.display = 'none'; document.body.append(d);
     marquee = { x: e.clientX, y: e.clientY, el: d }; addEventListener('mousemove', marqueeMove); addEventListener('mouseup', marqueeEnd); e.preventDefault(); return; }
   if (!hit) { barePress = { x: e.clientX, y: e.clientY }; bus.emit('edit-bare-press'); return; }
-  if (seatSelected()) deselectSeat();
+  if (socketSelected()) deselectSocket();
   let root = hit.object;
   while (root && !root.userData.entityId) root = root.parent;
   if (!root) return;
@@ -756,9 +756,9 @@ bus.on('key', (e) => {
     if (dragging?.armed) { const id = dragging.id; dragging = null; Edits.revertPose(id); flashHint('move cancelled — nothing written'); return; }
     if (escapeHook()) return;
     if (structureTool()) setStructureTool(null);   // an armed building tool drops first (the viewport strip says "Esc to drop")
-    else if (cancelSeatArm()) { /* an armed placement is the most transient state */ }
+    else if (cancelSocketArm()) { /* an armed placement is the most transient state */ }
     else if (ghost) cancelGhost();
-    else if (seatSelected()) deselectSeat();
+    else if (socketSelected()) deselectSocket();
     else if (primaryThing()) deselectAll();
     else if (editMode) setEditMode(false);
     return;
@@ -778,7 +778,7 @@ bus.on('key', (e) => {
   // the thing in hand holds Q / E and , / . before the tools do (they'd switch tool mid-aim)
   if (ghostKey(e)) return;
   // a selected seat anchor holds the editing keys before things do
-  if (seatKeyDown(e)) return;
+  if (socketKeyDown(e)) return;
   // Tool keys, every one OFF the walking set (the camera here is a BODY and
   // WASD walks — Maya's W and Blender's S both collide, found in review):
   // G move (Blender), E rotate and R scale (Maya), Q select, F find, X or Del

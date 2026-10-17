@@ -62,7 +62,7 @@ const wears = (html: string, name: string) => paths(name).every((d) => html.incl
 const PUZZLE = "puzzle-piece";
 
 // the built-in frames the rail lists (main.js makes these before initDock)
-for (const id of ["chat", "world", "emotes", "debug"]) makeFrame(id, { title: id });
+for (const id of ["chat", "world", "actions", "debug"]) makeFrame(id, { title: id });
 let editOn = false, editGate = false, editFired = 0;
 
 console.log("DOCK — initDock");
@@ -70,20 +70,20 @@ initDock([
   { id: "chat", label: "💬" },
   { id: "world", label: "🧱" },
   { id: "nofrx", label: "👥" },        // synthetic: a declared entry with NO frame and NO pin
-  { id: "emotes", label: "👋" },
+  { id: "actions", label: "👋" },
   { id: "debug", label: "🐞" },
   { id: "edit", label: "🔧", icon: "wrench", last: true, action: () => { editFired++; editOn = !editOn; }, active: () => editOn, gate: () => editGate },
 ]);
 await tick();   // initPanels' dynamic imports land and repaint
 // DEFAULT_LAYOUT opens world/chat/emotes at birth; every rail assertion below starts from CLOSED
-for (const id of ["chat", "world", "emotes", "debug"]) getFrame(id)!.hide();
+for (const id of ["chat", "world", "actions", "debug"]) getFrame(id)!.hide();
 bus.emit("frames");
 check("∃ leads the rail", dock().firstElementChild?.id === "hud");
 check("profile leads the buttons (right under the ∃); the wrench closes the list; the grip is last",
   order()[0] === "profile" && order()[order().length - 1] === "edit" && dock().lastElementChild?.classList.contains("dock-grip"), order().join());
 // search sits between emotes and debug (owner, 10-01: "Search almost feels like a less-standard feature, so maybe
 // should be docked by default between emotes and debug"), pinned by default
-check("dock order follows the entry list, search between emotes and debug", order().join() === "profile,chat,world,nofrx,emotes,search,debug,edit", order().join());
+check("dock order follows the entry list, search between actions and debug", order().join() === "profile,chat,world,nofrx,actions,search,debug,edit", order().join());
 check("…and search is pinned by default (shown while the lantern is closed)", btn("search")!.hidden === false && JSON.parse(localStorage.getItem("ew-dock-pins") ?? '["search"]').includes("search"));
 { // the search entry: the lantern prompt's way in, wearing the magnifying glass, its chord in the tooltip
   const { get: getAction, register: registerAction } = await import("../client/lib/actions.js");
@@ -96,9 +96,9 @@ check("…and search is pinned by default (shown while the lantern is closed)", 
   registerAction({ id: "panel:chat", key: "Enter" });
   registerAction({ id: "panel:edit", key: "B" });
   bus.emit("frames");
-  const titles = Object.fromEntries(["chat", "world", "debug", "emotes", "edit"].map((id) => [id, btn(id)?.title]));
-  check("rail tooltips read the key from the action registry: 'Chat · Enter', 'Debug · F3', 'World', 'Emotes'",
-    titles.chat === "Chat · Enter" && titles.debug === "Debug · F3" && titles.world === "World" && titles.emotes === "Emotes", JSON.stringify(titles));
+  const titles = Object.fromEntries(["chat", "world", "debug", "actions", "edit"].map((id) => [id, btn(id)?.title]));
+  check("rail tooltips read the key from the action registry: 'Chat · Enter', 'Debug · F3', 'World', 'Actions'",
+    titles.chat === "Chat · Enter" && titles.debug === "Debug · F3" && titles.world === "World" && titles.actions === "Actions", JSON.stringify(titles));
   check("…the gated wrench: 'Builder mode · B — needs build rights in this world'", titles.edit === "Builder mode · B — needs build rights in this world", String(titles.edit));
 }
 check("built-ins are pinned by default: chat's button shows while its frame is closed",
@@ -124,7 +124,7 @@ console.log("DOCK — EMOJI_ICON: rail chrome never rides emoji");
 // world is upstream-labelled '🧱' (main.js), but 🧱 means BUILD — catalog.js's
 // build section wears the hammer correctly. The world PANEL is a planet, so the
 // entry id overrides the emoji (ui.js ID_ICON). Live report, #185.
-const RAIL: [string, string, string][] = [["chat", "💬", "chat-circle"], ["world", "🧱", "planet"], ["emotes", "👋", "hand-waving"], ["debug", "🐞", "bug"]];
+const RAIL: [string, string, string][] = [["chat", "💬", "chat-circle"], ["world", "🧱", "planet"], ["actions", "👋", "hand-waving"], ["debug", "🐞", "bug"]];
 for (const [id, emoji, icon] of RAIL) {
   const b = btn(id)!;
   check(`rail button '${id}' (${emoji}) wears the ${icon} FILL glyph — not the emoji, not puzzle-piece`,
@@ -224,7 +224,7 @@ top("panels")!.click();
 check("Panels ▸ opens its flyout", sub().hidden === false && top("panels")!.classList.contains("subopen"));
 check("voice rows lead: mic, ears, VR", ["glyph:mic", "glyph:ear", "glyph:xr"].every((k) => !!row(k)));
 check("VR row is dead when no headset is sensed (disabled row + disabled pin)", row("glyph:xr")!.disabled && pin("glyph:xr")!.disabled);
-check("every window with a frame has a row; a frameless entry has none", ["chat", "world", "emotes", "debug", "modx"].every((id) => !!row(id)) && !row("nofrx"));
+check("every window with a frame has a row; a frameless entry has none", ["chat", "world", "actions", "debug", "modx"].every((id) => !!row(id)) && !row("nofrx"));
 check("the wrench has a row while gated open", !!row("edit"));
 { // THE LANTERN'S RESTING LINE pins from here too (owner, 10-01: "add it as a pin feature for the reverse-E menu (might
   // need its own logo to differentiate), and have it obey the 'esc to hide' feature")
@@ -268,7 +268,7 @@ check("the wrench has a row while gated open", !!row("edit"));
   check("…and comes back with them", !L.pillQuiet());
   // the real key, with NO panel open (owner, 10-01: "Basically only the dock should be visible"): Tab still takes the
   // resting line away, and says so; the next Tab brings it back (Esc did, until R 10-15: Esc is full screen's way out)
-  for (const id of ["chat", "world", "emotes", "debug", "settings", "profile"]) getFrame(id)?.hide();
+  for (const id of ["chat", "world", "actions", "debug", "settings", "profile"]) getFrame(id)?.hide();
   const menuWas = !menu().hidden;
   if (menuWas) toggleEMenu(false);
   const key = () => document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
@@ -401,7 +401,7 @@ check("the wrench has a row while gated open", !!row("edit"));
   const reset = [...sub().querySelectorAll(".mrow")].find((r) => /reset layout/.test(r.textContent!)) as HTMLButtonElement;
   reset.click();
   check("the menu's reset layout forgets the resting line's moved spot", localStorage.getItem("ew-lantern-pos") === null, String(localStorage.getItem("ew-lantern-pos")));
-  for (const id of ["chat", "world", "emotes", "debug"]) getFrame(id)!.hide();   // the reset reopened the default layout; the checks below start closed
+  for (const id of ["chat", "world", "actions", "debug"]) getFrame(id)!.hide();   // the reset reopened the default layout; the checks below start closed
   bus.emit("frames");
 }
 check("the lock row and reset row close the Panels flyout", !!sub().querySelector(".mrow[data-lock]") && /reset layout/.test(sub().lastElementChild!.textContent!));

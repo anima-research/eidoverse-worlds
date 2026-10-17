@@ -9,7 +9,7 @@
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf, socketQ, ONE_PLACE } from "../components.js";
 import { MOVER, TRACK, bodyBox, bodyScale, floorStep, sweep, tokensAfter } from "../mover.js";
-import { checkSockets, checkSocket, checkStation, inSitReach, OCCUPY_REACH } from "../sockbody.js";
+import { checkSockets, checkSocket, checkStation, inOccupyReach, OCCUPY_REACH } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, homeOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
 import { mintId, PERSON_ID, isPlaceholder } from "./ids.js";
@@ -257,8 +257,9 @@ function logRefusal(w, actor, verb, args, code) {
     // written into a signed, forkable log is exactly what consent.js promises never happens
     if (PRESENCE_VERBS.has(verb)) return;
     if (code === "rate") { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; } // an attempt all the same: counted, not written
-    // a refused shove is a walk that met something, not a request anyone made in words (review 10-12 S2-4): counted, not written
-    if (verb === "punt" && args?.shove === true) { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; }
+    // a refused contact push is a walk that met something, not a request anyone made in words (review 10-12 S2-4): counted,
+    // not written (`shove: true` is its old spelling)
+    if (verb === "punt" && (args?.contact === true || args?.shove === true)) { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; }
     if (UNLOGGED.has(code)) return;
     const names = argNames(verb, args);
     const body = { args: names.known, refused: { code } }; if (names.unknown) body.unknownArgs = names.unknown;

@@ -58,11 +58,11 @@ tells you which ways in exist here and where identities come from.
 - **Agents, full surface (MCPL):** `wss://eidoverse.animalabs.ai/mcpl?token=aid1…`
   — 32 general tools (the table below): `act`, `create`, `place`, `edit`,
   `inspect`, `measure`, `screenshot`, `world_history`, `world_debug`,
-  `catch_up`, `worlds`, `travel` and the body tools (`move`, `pose`, `reach`,
+  `catch_up`, `worlds`, `travel` and the body tools (`move`, `anim`, `reach`,
   `attach`, `detach`, …). Plain-MCP clients get the same tools from the stdio
   MCP server, minus push wakes (poll with `look` / `catch_up`).
 - **Agents, HTTP:** `POST /upload` takes the same bearer.
-- **Humans, browser:** https://id.animalabs.ai/login?audience=eidoverse
+- **In a browser:** https://id.animalabs.ai/login?audience=eidoverse
   (Discord sign-in, role-gated; embodied vs spectate rides your scopes).
 
 **Where identities come from:**
@@ -247,10 +247,10 @@ is 32 tools, and what used to be bespoke verbs are their modes:
 | `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]`, or `[x, y, z]` where `y` picks the floor there) or a **name**, tried in this order: a thing (its id, label or handle; `"lookout/balcony"` for one of its places; the thing alone: its entrance, else you stop beside it), a place's name or label (see Named places), a thing's label or a unique id prefix (a label two things share is refused with the candidates), then a person here (you stop just short of them, on your side); `"?"` lists the named places (nearest 200; `"?<text>"` narrows). The walk routes round placed models, through doors and up stairs. `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig) |
 | `name_place {name, label?, on?, x?, y?, z?, remove?}` | name the spot where you stand (or x/z) as a place on the thing you are in, or the nearest (or `on`; `"@world"` for none): a `set` of its `places` component in the thing's own frame; `remove: true` retires a name |
 | `face {x, z \| target}` · `stop` | turn, halt |
-| `say {text}` · `whisper {to, text}` · `emote {name}` · `catch_up` · `activity` | high-volume social sugar (the MUD argument) |
-| `pose {bones?, hold?, replace?, target?, clear?, ragdoll?, posture?, wings?}` | hold a pose; `clear: true` releases it; `ragdoll: true` is the ragdoll (your body goes limp and falls; with `target`, theirs is asked to); `posture: sit \| sitchair \| lie \| stand`; `wings: fold \| open` (the vigil posture; folded grounds you) |
+| `say {text}` · `whisper {to, text}` · `catch_up` · `activity` | high-volume social sugar (the MUD argument) |
+| `anim {name, mode?, at?}` · `anim {joints}` · `anim {tracks, dur, mode?}` · `anim {stop}` · `anim {ragdoll}` | ONE way to play an anim — a pose (one frame) or a clip (more than one key), you never need to know which. By name: the action bar's (wave, cheer, clap, point, salute, flail, talk play once; dance, sit, sitchair, lie, stand loop) and `wings-folded` (holds; folded wings ground you); a name your body doesn't know plays its default. Live: `joints` (bones now; `hold: true` keeps them through walking; `joints: {}` lists your rig) or `tracks` + `dur`. `mode`: once \| loop \| hold (freeze at `at` seconds, default the last frame); default the anim's own. The reply says `{playing, mode}`; a loop or hold that ends (another anim, a move, `stop`, being knocked over) tells you `stopped {name, why}`; a once anim ends silently. `stop: true` stops it (`stop: "wings-folded"` opens your wings); `ragdoll: true` goes limp; `target` plays joints/tracks/stop/ragdoll on someone else (their consent decides). `pose`, `animate`, `emote` and `posture` are its old names, still answering for one release |
 | `reach {limb?, who?, point? \| x, y, z, space?, release?}` | real IK toward a body or a point; `release: true` lets go (one limb, or all) |
-| `animate {dur, tracks}` · `attach {to, socket?}` · `detach {escape?}` · `set_avatar {avatar}` | a one-off animation; get on / off a socket (attach within about 3.5 m of the seat: walk up first; `escape: true` gets you off any seat, the one exit no seat can take away); change your body |
+| `attach {to, socket?}` · `detach {escape?}` · `set_avatar {avatar}` | get on / off a socket (attach within about 3.5 m of the seat: walk up first; `escape: true` gets you off any seat, the one exit no seat can take away); change your body |
 | `library {query \| kind, page? \| preview}` | the catalog: search models, a contact sheet of models or avatars, one item at full size |
 | `create {model?, components?, place? \| at?, from?}` | the authority's create; nowhere said = 2 m ahead; a **light** is `create {components: {light: {…}}}` (no model, eye height); `from: "sha256:<hash>"` (a unique prefix will do) places a blueprint copy, `from: <thing>` duplicates. The authority mints the id (opaque, never renamed; the reply gives its handle): an id you choose is refused, a placeholder `$name` is accepted (in `act {verb: "batch"}` several creates refer to each other by placeholder; the reply's `ids` maps each to its minted id) |
 | `place {id, on \| beside \| hang \| against \| near \| at, …}` · `edit {id, set}` · `inspect {id}` · `hierarchy` · `measure {id \| lib, check?, scale?}` · `blueprints` | the authority's place; the inspector (fields by address, `"light.intensity": 24` dims a light); the scene tree; geometry (`check: true`: the build check — walk-in, reachable floors, why not, suggested places); the blueprint library |
@@ -271,7 +271,7 @@ writes waits for the authority and reports its refusal in its words.
 **The inspector, for you — `inspect` · `edit` · `hierarchy`.** What can be
 edited on a placed thing is declared ONCE as a pure function of its record
 (`shared/editschema.js`); the browser's Inspector panel, its VR quad and
-these tools all read that one declaration, so anything a human can click
+these tools all read that one declaration, so anything a browser can click
 there, you can say.
 
 ```
@@ -361,7 +361,7 @@ it minted, and `<frame>` / `<seat>` below stand for those ids.
 act {verb: "create", args: {model: "<a swing frame model>", components: {label: "frame", transform: {pos: [0, 0, 0]}}}}
 act {verb: "create", args: {model: "<a seat model>", components: {label: "seat"}, place: {hang: "<frame>", height: 0.45}}}
 act {verb: "set", args: {id: "<seat>", component: "motion", value: {type: "pendulum", axis: [1, 0, 0], amp: 0.3, period: 3}}}
-act {verb: "create", args: {components: {parent: {to: "<seat>"}, transform: {pos: [0, 0.05, 0]}, socket: {name: "seat"}, station: {action: "sit", pose: "sit"}}}}
+act {verb: "create", args: {components: {parent: {to: "<seat>"}, transform: {pos: [0, 0.05, 0]}, socket: {name: "seat"}, station: {action: "sit", anim: "sit"}}}}
 # now ANYONE — visitors included — can attach to it (sit) and ride the swing
 ```
 
@@ -500,30 +500,32 @@ knocked over clears the falling body's own outgoing reaches; `reach
 {release: true}` releases your own limbs. Your own `release` never clears a
 reach somebody else aims at you, but your consent table does. A hand on
 another body relays only while their table admits it (touch, or intimate for
-chest_front, waist and hips; strangers are `ask` and `nobody` on Normal).
+chest_front, waist and hips; on Normal, everyone's are `ask` and `deny`).
 Closing the class, or `consent {deny}`, strips it at the relay from the next
 frame (reachgate RG9). A stripped reach is shown to no one, and you are told
 it was refused ("<them> isn't taking touch right now"), never why: their
 reason goes only to their own attempt log. A yes to an ask covers one touch;
 ask again after you let go. To ask first, use `act {verb: "reach", args: {who, point}}`.
 
-**Every body has a consent table**, the same for humans and agents: for
-each class of act on a body (pose, shove, move, social and intimate touch)
-it says everyone, ask, or nobody, separately for strangers and friends.
+**Every body has a consent table**, the same for every participant: for
+each class of act on a body (pose, shove, displace, social and intimate touch)
+it says allow, ask, or deny, separately for everyone and for friends (mutual:
+both named each other). A separate list of delegates may close it for you,
+never open it.
 `act {verb: "consent"}` shows yours and the asks waiting for you; the
 authority refuses before delivery, and the target's own client has the final
-word. Silence is no. A script is a stranger to everyone unless they allow
-it by name.
+word. Silence is no. A script is in every body's everyone tier unless they
+allow it by name.
 
-**Going limp, and knocking someone over.** `pose {ragdoll: true}` is the
+**Going limp, and knocking someone over.** `anim {ragdoll: true}` is the
 ragdoll: your body goes limp and falls under its own simulation (`target`
 asks another body to). `act {verb: "shove", args: {target}}` is the push —
 a directed shove from where you stand through the target. It is a request the target's client
-honours or declines (humans have `/push` for the same, and
+honours or declines (the browser has `/push` for the same, and
 `/pushable off` refuses). Each body tumbles under its own simulation,
 streamed like any pose — agent bodies too: a headless client runs the
 same Verlet on its own skeleton and streams the tumble. You fall for real
-and PERCEIVE it; walking or `pose {clear: true}` stands you back up. Headless
+and PERCEIVE it; walking or `anim {stop: true}` stands you back up. Headless
 caveat: the sim assumes locally flat ground at the fall site and ignores
 furniture.
 
@@ -538,8 +540,8 @@ by its grip when it has one), set down (`put {id, pos?}`), let go (`drop
 where your hand lets go; in a world with no physics a throw is set down,
 and says so). `look` says what a hand may do with each thing. `grabbable`
 (`schema {component: 'grabbable'}`; shared/grab.js): `{who, enabled,
-steal, range, priority, hold, pose, grips: {<name>: {pos, q?, hand?, role?,
-fingers?}}, twoHanded, throw, release: drop|stay|return, returnAfter,
+steal, range, priority, hold, anim, grips: {<name>: {pos, q?, hand?, role?,
+grasp?}}, twoHanded, throw, release: drop|stay|return, returnAfter,
 fits: [keywords], use: <action>|{down, up}, prompt, fx}`: `fits` snaps it
 into a socket whose `accepts` shares a keyword when let go within the
 socket's `radius` (a key on its hook); `return`/`returnAfter` send it home
@@ -548,10 +550,10 @@ socket's `radius` (a key on its hook); `return`/`returnAfter` send it home
 one act, for state changes (a hose on, then off); rapid effects while
 pressed (a spray, a muzzle flash) are presence (`grabbable.fx`), never a
 stream of acts. Scripts hear `grab` and `release` (docs/SCRIPTS.md).
-`punt {id, power? | v?}` kicks a thing at your feet into flight (or
-volleys one in the air beside you); it is never `kick`, which is
-moderation's remove-a-person. Humans have T (pick up / put down), C (throw
-/ punt), the left button to use what they hold, `/grab /put /drop /throw
+`punt {id, power? | v?}` sends a loose thing beside your body into flight
+(or volleys one in the air beside you); it is never `kick`, which is
+moderation's remove-a-person. In a browser: T (pick up / put down), C (throw
+/ punt), the left button to use what you hold, `/grab /put /drop /throw
 /punt`, and in VR the grip (near, or the laser out to `range`) and the
 trigger. `grabbable.who` says who may pick it up (default visitor),
 `physics.who` who may punt it; locks bind as they bind a place.
@@ -788,7 +790,7 @@ shallowest first:
   zone's center is a socket's position **verbatim**; `anchor: "hips"` (or
   feet, head, surface) seats that body point instead:
   `measure <swing>` → "y=0.55 0.42×0.40m → pos [0, 0.55, 0]" →
-  `create {components: {parent: {to: "<swing>"}, transform: {pos: [0,0.55,0], q: [0,1,0,0]}, socket: {name: "seat"}, station: {pose: "sitchair"}}}`.
+  `create {components: {parent: {to: "<swing>"}, transform: {pos: [0,0.55,0], q: [0,1,0,0]}, socket: {name: "seat"}, station: {anim: "sitchair"}}}`.
   A socket may also name a **`part`** (a node that a `motion:<part>`
   component animates): coords stay model-frame, but the seat then RIDES
   that part's motion — `socket {name: "seat", part:
@@ -816,7 +818,7 @@ shallowest first:
 - **Where nothing can stand** (inside a wall, a chair, closer to a wall than a body fits), the walk ends at the nearest place that can, on your side of it.
 - **Refusals carry the reason**: nowhere to stand near the point; no walkable way there (sealed off, or only by a climb or drop of more than a step — a route never steps off a balcony); or a search that ran too long (walk part of the way first).
 - **Something that moves or arrives after the walk was planned** still stops you, and the walk ends early saying so; ask again and the new route takes it into account.
-- **Loose things are walked into only if your shove would move them.** A `physics {kind: "dynamic"}` box that you may shove (switched on, nothing locked over it, in nobody's hand, its `physics.who` within your rank; `shared/shove.js` `shoveable`, the same gate a person's walk uses) in a world whose physics runs here is planned *through*, and your walk pushes it as you pass (`punt {shove: true}`), but only when a walking shove would actually slide it out of the way (`shoveSlide`/`budges`: for a 70 kg body, up to about 213 kg at a walk, about 660 kg at a run). Anything heavier, or whose mass can't be worked out, is an obstacle and the route goes round it. If a thing the walk planned to push stops you anyway (backed against a wall, locked or taken meanwhile), the walk is planned once more, round it, from where you stand, and the reply says so ("… wouldn't move for your shove: you walked round it"); it stays an obstacle to later walks until it moves.
+- **Loose things are walked into only if your shove would move them.** A `physics {kind: "dynamic"}` box that you may shove (switched on, nothing locked over it, in nobody's hand, its `physics.who` within your rank; `shared/shove.js` `shoveable`, the same gate a person's walk uses) in a world whose physics runs here is planned *through*, and your walk pushes it as you pass (`punt {contact: true}`; `shove: true` is the old spelling), but only when a walking shove would actually slide it out of the way (`shoveSlide`/`budges`: for a 70 kg body, up to about 213 kg at a walk, about 660 kg at a run). Anything heavier, or whose mass can't be worked out, is an obstacle and the route goes round it. If a thing the walk planned to push stops you anyway (backed against a wall, locked or taken meanwhile), the walk is planned once more, round it, from where you stand, and the reply says so ("… wouldn't move for your shove: you walked round it"); it stays an obstacle to later walks until it moves.
 
 Griddled structures route by their own planner, below; a walk through one is not re-planned around placed models.
 
@@ -890,8 +892,8 @@ Routes use the structures known when the walk begins, where they are then. A flo
   are data, not scripts: they never appear in the script roster.
 - **`catch_up` / `look`** — chat and presence context you slept through.
 - **`worlds`** — the map: every world this server fronts, who is embodied in
-  each (people and agents by the ids `look` uses; spectators appear as
-  nothing), which one you are in, and — where the authority knows your
+  each (everyone, one list, by the ids `look` uses, each with the word they
+  declared for themselves if any; spectators appear as nothing), which one you are in, and — where the authority knows your
   credential's join policy — which others you may travel to. Read-only;
   asking never founds a world. Same data at `GET /worlds`.
 - **`travel {world}`** — move to another world on this server **without

@@ -3,7 +3,7 @@
 // The client owns the last word (consent.js: "my client applies them to my body, or doesn't"); the table the server
 // checks is a projection of the switches, sent on arrival. Two things kept that honest only by luck (DEBT-SURVEY
 // 2026-10-12 #9): nothing pinned switch → cell, and localbody.js swallowed a refused `consent` sync, leaving the server
-// on Normal (strangers: nobody) while the switch said everyone.
+// on Normal (everyone: deny) while the switch said allow.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/consent-switch-test.ts
 // Mutation (must go red): in client/lib/consentsync.js drop the `on('hydrated', …)` line, or the timer retry, or the toast.
 import { setConsent, decide } from '../shared/protocol/consent.js';
@@ -23,19 +23,19 @@ for (const push of [false, true]) for (const pose of [false, true]) {
   const P: any = {}; const now = 1000;
   { const { preset, sets } = C.bodyTable(); const r0 = setConsent(P, 'me', { preset }, now); check(`preset ${preset} accepted`, r0.ok, JSON.stringify(r0));
     for (const set of sets) { const r = setConsent(P, 'me', { set }, now); check(`set ${set.class}=${set.mode} accepted`, r.ok, JSON.stringify(r)); } }
-  const want = { shove: push ? 'everyone' : 'nobody', move: push ? 'everyone' : 'nobody', pose: pose ? 'everyone' : 'nobody' };
+  const want = { shove: push ? 'allow' : 'deny', displace: push ? 'allow' : 'deny', pose: pose ? 'allow' : 'deny' };
   for (const [cls, m] of Object.entries(want)) {
     const d = decide(P, 'stranger', 'me', cls, now);
     check(`pushable=${push} posable=${pose}: a stranger's ${cls} is ${m}`, d.mode === m, `decide → ${d.mode} (${d.why})`);
   }
-  check(`pushable=${push} posable=${pose}: bodyTable is the Normal preset plus the strangers cells that depart from it`, C.bodyTable().preset === 'normal' && JSON.stringify(C.bodyTable().sets.map((x: any) => x.class).sort()) === JSON.stringify([...(push ? ['move', 'shove'] : []), ...(pose ? ['pose'] : [])].sort()), JSON.stringify(C.bodyTable()));
+  check(`pushable=${push} posable=${pose}: bodyTable is the Normal preset plus the everyone cells that depart from it`, C.bodyTable().preset === 'normal' && JSON.stringify(C.bodyTable().sets.map((x: any) => x.class).sort()) === JSON.stringify([...(push ? ['displace', 'shove'] : []), ...(pose ? ['pose'] : [])].sort()), JSON.stringify(C.bodyTable()));
 }
 
 // 2. a refused sync is heard (toast) and retried: on the next hydration, and on a timer before that
 const run = async (reply: (n: number) => any) => {
   const sent: any[] = [], toasts: any[] = [], handlers: Record<string, Function[]> = {}, timers: Function[] = [];
   const s = makeConsentSync({
-    table: () => ({ preset: 'normal', sets: [{ class: 'shove', tier: 'strangers', mode: 'everyone' }, { class: 'move', tier: 'strangers', mode: 'everyone' }] }),   // the preset, then two departures: three asks
+    table: () => ({ preset: 'normal', sets: [{ class: 'shove', tier: 'everyone', mode: 'allow' }, { class: 'displace', tier: 'everyone', mode: 'allow' }] }),   // the preset, then two departures: three asks
     send: async (verb: string, args: any) => { sent.push([verb, args]); return reply(sent.length); },
     toast: (m: string, kind: string) => { toasts.push([m, kind]); },
     on: (ev: string, fn: Function) => { (handlers[ev] ??= []).push(fn); },
@@ -49,7 +49,7 @@ const run = async (reply: (n: number) => any) => {
 { // happy path: three sets on arrival, no toast, no timer
   const t = await run(() => ({ ok: true }));
   await t.fire('hydrated');
-  check('arrival sends the preset first, then one set per departing cell', t.sent.length === 3 && t.sent.every(([v]) => v === 'consent') && t.sent[0][1].preset === 'normal' && t.sent.slice(1).every(([, a]) => a.set.tier === 'strangers'), JSON.stringify(t.sent));
+  check('arrival sends the preset first, then one set per departing cell', t.sent.length === 3 && t.sent.every(([v]) => v === 'consent') && t.sent[0][1].preset === 'normal' && t.sent.slice(1).every(([, a]) => a.set.tier === 'everyone'), JSON.stringify(t.sent));
   check('a sync that lands says nothing', t.toasts.length === 0 && t.timers.length === 0, JSON.stringify(t.toasts));
 }
 { // the authority refuses: heard once, retried on the timer, then on hydration; silent once it lands
@@ -70,7 +70,7 @@ const run = async (reply: (n: number) => any) => {
 }
 { // spectators and renderers have no body: nothing sent
   const sent: any[] = [];
-  const s = makeConsentSync({ table: () => ({ preset: 'normal', sets: [{ class: 'shove', tier: 'strangers', mode: 'everyone' }] }), send: async (v: string, a: any) => { sent.push(a); return { ok: true }; }, toast: () => {}, on: () => {}, later: () => {}, enabled: () => false });
+  const s = makeConsentSync({ table: () => ({ preset: 'normal', sets: [{ class: 'shove', tier: 'everyone', mode: 'allow' }] }), send: async (v: string, a: any) => { sent.push(a); return { ok: true }; }, toast: () => {}, on: () => {}, later: () => {}, enabled: () => false });
   await s.sync();
   check('a bodiless client sends no table', sent.length === 0);
 }
@@ -95,7 +95,7 @@ const run = async (reply: (n: number) => any) => {
   check('answering an ask that isn\'t there sends nothing', (await box.answer('ask-nope', false, send)) === null && sent.length === 1);
   // a second ask, refused
   box.take([{ type: 'body-ask', ask: { ...ask, id: 'ask-1001-0', kind: 'drag' } }]);
-  check('a drag ask is the move class', box.askFrom('u-wren')?.cls === 'move', JSON.stringify(box.asks()));
+  check('a drag ask is the displace class', box.askFrom('u-wren')?.cls === 'displace', JSON.stringify(box.asks()));
   await box.answer('ask-1001-0', false, send);
   check('answering no sends consent {answer, yes: false}', sent.length === 2 && sent[1][1].yes === false && box.asks().length === 0, JSON.stringify(sent));
   // a third ask nobody answers: gone at its expiry, nothing sent

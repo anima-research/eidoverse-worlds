@@ -381,12 +381,12 @@ console.log('EMOTEBAR — a defs push rebuilds the lantern\'s emote actions, not
   const saved = EMOTE_ORDER.splice(0);
   EMOTE_ORDER.push('clap', 'cheer', 'dance', 'point', 'salute', 'bow', 'shrug', 'nod', 'spin', 'wave');
   bus.emit('emotes-updated');
-  check('a moved emote takes its new number key (clap → 1)', A.get('emote:clap')?.key === '1', `key=${A.get('emote:clap')?.key}`);
-  check('an emote moved past nine loses its key (wave, 1st → 10th)', !!A.get('emote:wave') && A.get('emote:wave').key === undefined, `key=${A.get('emote:wave')?.key}`);
+  check('a moved emote takes its new number key (clap → 1)', A.get('bar:clap')?.key === '1', `key=${A.get('bar:clap')?.key}`);
+  check('an emote moved past nine loses its key (wave, 1st → 10th)', !!A.get('bar:wave') && A.get('bar:wave').key === undefined, `key=${A.get('bar:wave')?.key}`);
   EMOTE_ORDER.splice(0, EMOTE_ORDER.length, 'wave', 'cheer');
   bus.emit('emotes-updated');
-  check('a removed emote leaves the lantern (clap gone)', A.get('emote:clap') === null);
-  check('the kept ones are still there with their keys', A.get('emote:wave')?.key === '1' && A.get('emote:cheer')?.key === '2');
+  check('a removed emote leaves the lantern (clap gone)', A.get('bar:clap') === null);
+  check('the kept ones are still there with their keys', A.get('bar:wave')?.key === '1' && A.get('bar:cheer')?.key === '2');
   check('posture:stand survives the rebuild', !!A.get('posture:stand'));
   EMOTE_ORDER.splice(0, EMOTE_ORDER.length, ...saved); bus.emit('emotes-updated');
 }

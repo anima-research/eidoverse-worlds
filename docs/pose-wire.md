@@ -14,7 +14,9 @@ refuses non-finite or malformed samples at the source (`server/posecheck.ts`).
 | `speed`, `clip` | | locomotion for the remote's mixer |
 | `emote` | string | one-shot; sent once |
 | `pose` | `{bone: quat}` | a held custom pose (bodydrag / gestures); blended a→b by receivers |
-| `pins`, `reach`, wing-fold, presence | | see their modules (`shared/reachwire.js`, `shared/wingpresence.js`, `shared/presencewire.js`) |
+| `bodyMode` | string | stand \| sit \| lie \| swim \| fly \| fall: the body's mode, apart from `clip` (what plays); the mover sets it on real transitions, the owner may declare any for looks; it grants nothing (`shared/bodymode.js`; a sample without it: read off `clip`) |
+| `poses` | `[name]` | the poses this body holds by NAME (one frame each; R 10-17): `"wings-folded"` today, each rig resolving it its own way; `[]` holds none, absent says nothing (`shared/wingpresence.js`; was the boolean `wingsFolded`, still read) |
+| `pins`, `reach`, presence | | see their modules (`shared/reachwire.js`, `shared/presencewire.js`) |
 | `xr` | object | **tracked head + hands (C18, 2026-09-06)** — below |
 | `mic`, `hear` | boolean | this body's mic is live / it is hearing voices — **shared with everyone in the world**, below |
 | `t` | number | this sample's **capture time** on the world's authority clock (ms; spec/PHYSICS.md §5.1). Sent once a `clock` round trip has measured the offset; receivers interpolate at it when it's sane against the frame (not after the frame's `t`, not older than 1 s), else at the frame's `t`. A live reading: never remembered for late joiners |

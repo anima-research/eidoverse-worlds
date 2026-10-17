@@ -590,7 +590,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
    look the same to you as it does to them), so "this one is mine" is carried by
    a faint wash instead. .ping's background is declared later and still wins. */
 .chat-log .line.me { background: rgba(255,255,255,.04); border-radius: 3px; }
-.chat-log .line.agent .who::before { content: '◈ '; color: var(--warn); font-size: var(--fs-xs); }
+.chat-log .line.declared .who[data-declares]::after { content: ' · ' attr(data-declares); color: var(--dim); font-size: var(--fs-xs); font-weight: normal; }
 .chat-log .line.sys { color: var(--dim); font-style: italic; }
 .chat-log .line.hist-note {
   border-bottom: 1px dashed var(--edge); padding-bottom: 4px; margin-bottom: 4px;
@@ -1299,11 +1299,11 @@ button.keybtn:active { box-shadow: inset 0 1px 3px rgb(0 0 0 / .6); }
 .pf-who > b { font-size: 17px; font-weight: 650; }
 .pf-who > span { color: var(--dim); font-size: var(--fs-sm); }
 .pf-who > span b { color: var(--fg); font-weight: 550; }
- /* 🔴 TILES — the one tile, shared: profile's stubs and the emote menu both use it.
+ /* 🔴 TILES — the one tile, shared: profile's stubs and the action bar both use it.
    A tile is a quiet well with an icon/glyph, a name, and an optional note or key.
    .on = lit (the playing emote, the chosen thing). No private tile rules. */
 .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1; min-height: 0; }
-/* emote tiles are FIXED width and flow: widen the frame and they go to one
+/* action bar tiles are FIXED width and flow: widen the frame and they go to one
    line; the frame snaps to whole tiles on release (emotebar.js). Even gutters. */
 .tiles.fixed { grid-template-columns: repeat(auto-fill, 32px); grid-auto-rows: 32px; gap: 6px; justify-content: center; align-content: start; flex: none; padding: 0; }   /* 30 px buttons, 6 px gutters: 'bring back the buffers and put the buttons on a diet' (live 09-05 22:00) */
 .tile {
@@ -1421,13 +1421,13 @@ kbd {
    inline. The history of the old placements is in git (#185 B2). */
 .capnotice {
   position: fixed; left: 50%; transform: translateX(-50%); top: 8px; z-index: 95;   /* top-centre, over everything until dismissed (owner, 09-27; capnotice.js says why) */
-  max-width: min(320px, 46vw);   /* NARROW, not merely right-anchored: at 720px the card still reached back across the centred emote bar and blocked 7 of 9 tiles even from top-right. The long text is the title tooltip anyway (09-05 note above). #185 B2. */ padding: 5px 10px; font-size: var(--fs-sm); line-height: 1.4;
+  max-width: min(320px, 46vw);   /* NARROW, not merely right-anchored: at 720px the card still reached back across the centred action bar and blocked 7 of 9 tiles even from top-right. The long text is the title tooltip anyway (09-05 note above). #185 B2. */ padding: 5px 10px; font-size: var(--fs-sm); line-height: 1.4;
   display: flex; flex-direction: row; align-items: center; gap: 10px; border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--attn) 70%, transparent); background: color-mix(in srgb, var(--attn) 10%, var(--bg));   /* THE attention amber: a message they must click through (owner, 09-19) */
 }
 
 /* A PHONE HAS NO ROOM IN THE TOP STRIP (antra-tess #185 B2, measured 2026-09-12).
-   The emote bar is widthFor(9)=352px and never narrower at its default, so at
+   The action bar is widthFor(9)=352px and never narrower at its default, so at
    390px wide there are 38px beside it. Three separate occluders were measured in
    that strip: this card (5 of 9 tiles), #dock once body.touch reorients the rail
    along the top edge in landscape (1 tile), and #earbtn at z45 (1 tile). Moving
@@ -1927,7 +1927,7 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit .sp-tree .sp-eye.on { color: var(--e-mine); }
 .sp-tree .sp-eye.on::after { content: ''; position: absolute; right: 1px; bottom: 1px; width: 5px; height: 5px; border-radius: 50%; background: var(--e-mine, #b08ad8); }
 .frame.edit .sp-empty { color: var(--e-dim); font-style: normal; }
-body.edit-workspace [data-frame="emotes"] { display: none !important; }
+body.edit-workspace [data-frame="actions"] { display: none !important; }
 .sp-log { margin: 2px 0; padding: 6px 8px; width: 100%; box-sizing: border-box; max-height: 150px; overflow: auto; background: var(--well); border-radius: 4px;
   font: 11px/1.45 var(--font-code); white-space: pre-wrap; color: var(--fg); }
 .sp-log.empty { color: var(--dim); font-style: italic; }
@@ -2553,23 +2553,23 @@ input[type=checkbox]:focus-visible { outline: 1px solid var(--edge-hi); outline-
    tap targets at 44px, and nothing that assumes a pointer or a wide viewport. */
 html.lite, html.lite body { height: 100%; overflow: hidden; }
 
-#lite-emote-host {
+#lite-action-host {
   position: fixed; left: 0; right: 0; top: 0; z-index: 30;
   padding: 6px 8px calc(6px + env(safe-area-inset-top, 0px));
   background: var(--panel); border-bottom: 1px solid var(--edge); box-shadow: var(--rim);
 }
-.lite-emotes { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
-/* THE PHONE LAYOUT (owner, 10-01). One top bar: the ∃ (the way into 3D) first, then the emotes on one line. */
+.lite-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+/* THE PHONE LAYOUT (owner, 10-01). One top bar: the ∃ (the way into 3D) first, then the action bar on one line. */
 /* WIDE SCREENS (owner, 10-01: "make sure it's not formatted in an insane way" on a desktop): lite is a column at most
    720 px wide, centred; --lite-x is the margin either side of it (0 on any phone, so the phone layout is unchanged). The
    bar's background still spans the screen; its contents, the card and the chat keep to the column. */
 html.lite { --lite-x: max(0px, calc((100vw - 720px) / 2)); }
-#lite-emote-host { display: flex; align-items: center; gap: 8px; padding-left: calc(var(--lite-x) + 8px); padding-right: calc(var(--lite-x) + 8px); }
-/* the emotes share the row in equal cells (owner, 10-01: "can they all sit comfortably on that top row?"): six fit a
+#lite-action-host { display: flex; align-items: center; gap: 8px; padding-left: calc(var(--lite-x) + 8px); padding-right: calc(var(--lite-x) + 8px); }
+/* the action bar's entries share the row in equal cells (owner, 10-01: "can they all sit comfortably on that top row?"): six fit a
    360 px phone beside the ∃ at ~44 px each; if more are ever added, a cell won't go under 40 px and the row scrolls */
-#lite-emote-host .lite-emotes { flex: 1; min-width: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(40px, 52px); justify-content: start; gap: 6px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
-#lite-emote-host .lite-emotes::-webkit-scrollbar { display: none; }
-#lite-emote-host .lite-emote { width: 100%; min-width: 0; height: 44px; padding: 0; display: grid; place-items: center; font-size: 24px; line-height: 1; border-radius: 10px; }
+#lite-action-host .lite-actions { flex: 1; min-width: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(40px, 52px); justify-content: start; gap: 6px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+#lite-action-host .lite-actions::-webkit-scrollbar { display: none; }
+#lite-action-host .lite-action { width: 100%; min-width: 0; height: 44px; padding: 0; display: grid; place-items: center; font-size: 24px; line-height: 1; border-radius: 10px; }
 /* the card spans the column under the bar, not the full client's narrow top-centre notice */
 html.lite #lite-banner { left: calc(var(--lite-x) + 8px); right: calc(var(--lite-x) + 8px); transform: none; max-width: none; }
 /* the chat fills everything below the bar (and the card while it's up): windows.js sizes frames inline, so these win with !important */
@@ -2587,19 +2587,19 @@ html.lite .frame.chat-frame > .fr-body { height: auto !important; flex: 1 1 auto
 /* the ∃ leads the top bar and is the way into the 3D world (lite.js) */
 /* on a screen wider than the column the chat gets its side edges back, so it reads as a pane, not a page */
 @media (min-width: 721px) { html.lite .frame.chat-frame { border-left: 1px solid var(--edge); border-right: 1px solid var(--edge); } }
-html.lite #lite-emote-host #hud.emark { position: static; flex: none; width: 44px; height: 44px; padding: 0;   /* the house 9 px side padding left a 24 px box the 30 px mark overflowed to the right (measured 3 px off-centre, owner 10-01) */ border-radius: 10px; color: var(--brand); background: var(--chip); border: 1px solid var(--edge); }
-html.lite #lite-emote-host #hud.emark:active { background: var(--act); }
-html.lite #lite-emote-host #hud.emark:disabled { color: var(--dim); cursor: default; }
-html.lite #lite-emote-host #hud.emark svg { width: 30px; height: 30px; }   /* matched to the emoji glyphs beside it (owner, 10-01) */
-.lite-emote {
+html.lite #lite-action-host #hud.emark { position: static; flex: none; width: 44px; height: 44px; padding: 0;   /* the house 9 px side padding left a 24 px box the 30 px mark overflowed to the right (measured 3 px off-centre, owner 10-01) */ border-radius: 10px; color: var(--brand); background: var(--chip); border: 1px solid var(--edge); }
+html.lite #lite-action-host #hud.emark:active { background: var(--act); }
+html.lite #lite-action-host #hud.emark:disabled { color: var(--dim); cursor: default; }
+html.lite #lite-action-host #hud.emark svg { width: 30px; height: 30px; }   /* matched to the emoji glyphs beside it (owner, 10-01) */
+.lite-action {
   min-width: 44px; min-height: 44px; font-size: 22px; line-height: 1;
   background: var(--chip); color: var(--fg);
   border: 1px solid var(--edge); border-radius: 8px; cursor: pointer;
   transition: transform .12s ease, border-color .12s ease;
 }
-.lite-emote:active { transform: scale(.94); }
-.lite-emote.fired { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 35%, transparent); }
-.lite-emotes-wait { color: var(--dim); font-size: var(--fs-sm, 12px); padding: 12px; }
+.lite-action:active { transform: scale(.94); }
+.lite-action.fired { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 35%, transparent); }
+.lite-actions-wait { color: var(--dim); font-size: var(--fs-sm, 12px); padding: 12px; }
 
 #lite-banner .cn-btns button { min-height: 44px; font-size: 15px; }
 

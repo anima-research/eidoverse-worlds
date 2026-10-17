@@ -518,7 +518,13 @@ async function sameAsBase() {
     const t = r.stdout.toString(); try { return JSON.parse(t); } catch { return { bad: (t + r.stderr.toString()).slice(-400) }; } };
   const a = run(TREE), b0 = run(d); if (!Array.isArray(a) || !Array.isArray(b0)) return { a: a?.bad ?? "ok", b: b0?.bad ?? "ok" };
   // the base speaks the names before the 10-07 conventional-names pass: its replies' keys are read in today's names
-  const b = JSON.parse(JSON.stringify(b0), function (k, v) { if (!v || typeof v !== "object" || Array.isArray(v)) return v;
+  // R 10-17 14:41 (consent words): a body's shield in look is read in today's words (tier strangers → everyone; class move →
+  // displace; everyone|nobody → allow|deny): the same table, renamed
+  const CONSENT_WORD: Record<string, string> = { everyone: "allow", nobody: "deny" };
+  const shieldToday = (sh: any) => Object.fromEntries(Object.entries(sh).map(([k, row]: any) => [k === "strangers" ? "everyone" : k,
+    row && typeof row === "object" && !Array.isArray(row) ? Object.fromEntries(Object.entries(row).map(([c, m]: any) => [c === "move" ? "displace" : c, CONSENT_WORD[m] ?? m])) : row]));
+  const b = JSON.parse(JSON.stringify(b0), function (k, v) { if (k === "shield" && v && typeof v === "object" && !Array.isArray(v)) v = shieldToday(v);
+    if (!v || typeof v !== "object" || Array.isArray(v)) return v;
     return Object.fromEntries(Object.entries(v).map(([key, x]) => [Object.hasOwn(RENAMED_KEYS, key) ? RENAMED_KEYS[key] : key, x])); });
   // R 10-07: look and inspect read a thing as its name, description, what it can do and its state (shared/a11y.js): those
   // fields are additions the base never wrote, generated from components it also had. Compared without them, on both sides

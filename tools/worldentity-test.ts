@@ -211,10 +211,10 @@ console.log('\n3. the cards: every field commits as door requests and reads back
   const e3 = edit({ 'grass.mow': true });
   check('grass.mow mows (delete @world grass); undo grows the same field back', e3.ops[0]?.verb === 'delete' && st().grass === null && (undo(e3), canon(st().grass) === canon(e3.was.grass)), JSON.stringify(e3.ops));
   check('grass.mow on a world with nothing growing sends nothing', (() => { const M = scratchWorld('worldentity'); return worldEditOps(M.view(), { 'grass.mow': true }, { now: now() }).ops.length === 0; })());
-  const e4 = edit({ 'sky.clock': 'real' });
-  check('clock → real time: the hour and rate become read-only and say whose clock it is', fieldAt(worldSchema(st(), { now: now() }), 'sky.hours')?.disabled === true && /Los_Angeles/.test(fieldAt(worldSchema(st(), { now: now() }), 'sky.hours')?.hint ?? '') && e4.ops[0].args.tz === 'America/Los_Angeles' && e4.one.ok);
-  const e5 = edit({ 'sky.clock': 'authored' });
-  check('…and back to authored hands the parked rated clock back (rate 24)', st().sky.clock === undefined && st().sky.rate === 24 && e5.errors.length === 0 && e5.one.ok, canon(st().sky));
+  const e4 = edit({ 'sky.tz': 'America/Los_Angeles' });
+  check('a timezone (sky.tz; R 10-17: was sky.clock real) → the hour and rate become read-only and say whose clock it is', fieldAt(worldSchema(st(), { now: now() }), 'sky.hours')?.disabled === true && /Los_Angeles/.test(fieldAt(worldSchema(st(), { now: now() }), 'sky.hours')?.hint ?? '') && e4.ops[0].args.tz === 'America/Los_Angeles' && e4.one.ok);
+  const e5 = edit({ 'sky.tz': '' });
+  check('…and an empty timezone (was sky.clock authored) hands the parked rated clock back (rate 24)', st().sky.clock === undefined && st().sky.rate === 24 && e5.errors.length === 0 && e5.one.ok, canon(st().sky));
   check('a refused edit says why and sends nothing for it (unknown field, bad enum, bad colour); the good edit beside them still goes', (() => {
     const r = worldEditOps(st(), { 'sky.nope': 1, 'sky.clouds': 'fluffy', 'terrain.color': 'red', 'weather.state': 'rain' }, { now: now() });
     return r.errors.length === 3 && r.ops.length === 1 && r.ops[0].verb === 'weather';

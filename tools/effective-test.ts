@@ -435,14 +435,14 @@ console.log("\n━━ precision: mount chain wins over own motion ━━");
 
 // ---- body size (pose.scale): a profiled seat's contact is measured at the
 // rider's AUTHORED size, so it multiplies the rider's chosen size — the
-// browser's seats.js riderScalar(root × avatar.bodyScale()) — and nothing else.
+// browser's occupants.js riderScalar(root × avatar.bodyScale()) — and nothing else.
 console.log("\n━━ body size: a profiled seat lowers a scaled rider in proportion ━━");
 if (EFF) {
   // chair at the origin, unscaled; a surface socket 0.5 up; contact plane 0.45
   // below the rider root at authored size → root y = 0.5 − 0.45·u
   // the seat: a socket child whose station anchors at the surface (D14; the station since the shape audit 10-16)
   const chair = { pos: [0, 0, 0], yaw: 0, scale: 1 };
-  const seat = { pos: [0, 0.5, 0], yaw: 0, socket: { name: "seat" }, station: { action: "sit", anchor: "surface", pose: "sitchair" } };
+  const seat = { pos: [0, 0.5, 0], yaw: 0, socket: { name: "seat" }, station: { action: "sit", anchor: "surface", anim: "sitchair" } };
   const seatMount = { to: "chair", offset: [0, 0.5, 0] };
   const view = (riderScale?: (id: string) => number) => ({
     entity: (id: string) => (id === "chair" ? chair : id === "chair.seat" ? seat : undefined),

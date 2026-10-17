@@ -131,7 +131,7 @@ await tryRow('RP7', () => {
   check('RP7 the seat signals find a socket\'s carrying motion by node, not by key', sm?.part === true && sm.m.node === 'Seat Plank', sm);
   const a = addOps({ model: 'swing.glb', pos: [0, 0, 0] }, 'sw', 'Spin', 'tripo_part_3');
   check('RP7 the editor adds a part\'s motion as motion:<slot> {node}', a.ops?.length === 1 && a.ops[0].args?.component === `motion:${partSlot('tripo_part_3')}` && a.ops[0].args?.value?.node === 'tripo_part_3', a);
-  const M = read('client/lib/motion.js'), SE = read('client/lib/seatedit.js');
+  const M = read('client/lib/motion.js'), SE = read('client/lib/socketedit.js');
   check('RP7 the renderer and the seat editor read the node from the value (motionNode), not the key', /motionNode\(key, m\)/.test(M) && !/key\.slice\(7\)/.test(M) && /motionNode\(key, bag\[key\]\)/.test(SE), '');
 });
 

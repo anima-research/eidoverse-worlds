@@ -40,7 +40,7 @@ import {
 import { initUsePrompt } from './lib/useprompt.js';
 import { initClickUse, clickUseApi } from './lib/clickuse.js';
 import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js';
-import { initSeats } from './lib/seats.js';
+import { initOccupants } from './lib/occupants.js';
 // The whole module as one object: net.js takes the participant registry by injection
 // now (it must carry the protocol for lite.js, which has no bodies to register), and
 // this is the real, body-building implementation of that interface.
@@ -132,6 +132,8 @@ import { deriveLandmarks, debugMarkers, landmarkWorld } from './lib/landmarks.js
 import { measureChain, solveChain } from './lib/reachbone.js';
 import { canonicalPoint } from '../shared/contact.js';
 import { initReachNet, setMyReach, clearMyReach } from './lib/reachnet.js';
+import { foldedIn } from '../shared/wingpresence.js';
+import { readBodyMode } from '../shared/bodymode.js';
 
 // (Crash breadcrumbs live in lib/breadcrumbs.js now; the frame loop stamps each
 // system's name as it runs. avatar.js still reads globalThis.__ewBC.)
@@ -191,7 +193,7 @@ settingsFrame();               // exists (hidden) so the ∃ menu can open it
 initDock([
   { id: 'chat', label: '💬' },
   { id: 'world', label: '🧱' },
-  { id: 'emotes', label: '👋' },
+  { id: 'actions', label: '👋' },
   { id: 'debug', label: '🐞' },
   // The wrench. It was declared here through the lab (edb63df, 27eae14) and
   // did NOT survive the recut: DEFAULT_PINS still pinned 'edit', but nothing
@@ -293,7 +295,7 @@ if (CONFIG.params.has('sendlayout')) {
 if (globalThis.__ewLiteWhy === 'retry') statusChip({
   id: 'lite-retry', level: 'attn', label: 'last load stalled',
   title: "This world didn't finish loading last time",
-  body: "We're trying the full 3D world again. If it keeps stalling or crashing here, the lite client has chat, emotes and who's here, with no 3D.",
+  body: "We're trying the full 3D world again. If it keeps stalling or crashing here, the lite client has chat, the action bar and who's here, with no 3D.",
   actions: [{ label: 'switch to the lite client', run: () => chooseClient(true) }, { label: 'stay in 3D', clear: true }],
 });
 
@@ -423,23 +425,21 @@ wireNet({
     myState.pos.set(fin(r.p[0]), fin(r.p[1]), fin(r.p[2]));
     myState.yaw = r.yaw ?? 0;
     setCamYaw(myState.yaw + Math.PI); // camera behind you, facing your way
-    if (r.clip === 'sit' || r.clip === 'sitchair' || r.clip === 'lie') {
-      setPosture(r.clip === 'lie' ? 'lie' : 'sit');
-    }
+    { const m = readBodyMode(r); if (m === 'sit' || m === 'lie') setPosture(m); }   // the body-mode survives a rejoin (an older sample: read off its clip)
     // an enacted pose is authored content — wake holding it, like the spot
     // you stood on. It rides the next presence packet, so everyone sees it.
     // EXCEPT a remembered ragdoll frame (pre-sanitizer entries): that is
     // wreckage, not authorship — wake standing instead of hung mid-tumble.
     if (r.clip === 'ragdoll') { myState.pos.y = 0; return; }
     if (r.pose) myState.pose = r.pose;
-    setFolded(r.wingsFolded === true);
+    setFolded(foldedIn(r) === true);   // the named pose wings-folded (or, remembered before 10-17, wingsFolded)
   },
   onSnapshotDone: () => {},
 });
 
 bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 
-initSeats();   // seat-profile verdicts (#101): fetch on boot, refresh on the two update events
+initOccupants();   // seat-profile verdicts (#101): fetch on boot, refresh on the two update events
 
 // ---------------------------------------------------------------- my body
 // The avatar swap + avatar-updated wiring rides mybody.js's import; the
@@ -526,7 +526,7 @@ function people() {
   const list = [{ id: CONFIG.name, me: true, dist: null, presence: presence() }];
   for (const r of remotes.values()) {
     list.push({
-      id: r.id, me: false, agent: !!r.agent, presence: r.presence ?? 'present',
+      id: r.id, me: false, declares: r.declares ?? null, presence: r.presence ?? 'present',
       dist: r.avatar ? r.avatar.root.position.distanceTo(myState.pos) : null,
     });
   }

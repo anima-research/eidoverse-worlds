@@ -52,7 +52,7 @@ globalThis.__ewEngineUp = true;
 const WHY = globalThis.__ewLiteWhy ?? 'url';
 const WHY_TEXT = {
   // the card (liteBanner) says why for every reason now; this line is only for a reason with no card
-  default: 'lite client \u2014 chat, emotes, and who\u2019s here',
+  default: 'lite client \u2014 chat, the action bar, and who\u2019s here',
 };
 
 /** The way into the 3D world: the person's choice, saved, the address left clean (litechoice.js says why). */
@@ -81,7 +81,7 @@ const rememberedBody = () => restored ?? { p: [0, 0, 0], yaw: 0 };
 /** One emote: the remembered body, unchanged, carrying a one-shot. */
 function emote(name) {
   if (!sendPoseExact({ ...rememberedBody(), emote: name })) {
-    toast('not connected - emote not sent', 'warn');
+    toast('not connected - action not sent', 'warn');
   }
 }
 
@@ -90,7 +90,7 @@ function emote(name) {
 function people() {
   const list = [{ id: CONFIG.name, me: true, dist: null }];
   for (const r of participants.remotes.values()) {
-    list.push({ id: r.id, me: false, agent: !!r.agent, dist: null });
+    list.push({ id: r.id, me: false, declares: r.declares ?? null, dist: null });
   }
   return list;
 }
@@ -116,11 +116,11 @@ function toast(message, kind = 'info', ttl = 5000) {
 const TAP = globalThis.matchMedia?.('(pointer: coarse)').matches ? 'Tap' : 'Click';
 const BANNER_TEXT = {
   // WHY, plainly, then the one way in (owner, 10-01: "make sure the notice correctly tells them why").
-  phone: `You're on a phone, so you're in the lite client: chat, emotes and who's here. ${TAP} the \u2203 Eidoverse logo (top left) to load the full 3D world.`,
-  crash: `This world didn't finish loading on this device last time, so you're in the lite client: chat, emotes and who's here. ${TAP} the \u2203 Eidoverse logo (top left) to load the full 3D world.`,
-    'no-gpu': "This browser has no 3D support, so you're in the lite client: chat, emotes and who's here.",
-  saved: `You chose the lite client on this device: chat, emotes and who's here. ${TAP} the \u2203 Eidoverse logo (top left) to load the full 3D world.`,
-  url: `This link opens the lite client: chat, emotes and who's here. ${TAP} the \u2203 Eidoverse logo (top left) to load the full 3D world.`,
+  phone: `You're on a phone, so you're in the lite client: chat, the action bar and who's here. ${TAP} the \u2203 Eidoverse logo (top left) to load the full 3D world.`,
+  crash: `This world didn't finish loading on this device last time, so you're in the lite client: chat, the action bar and who's here. ${TAP} the \u2203 Eidoverse logo (top left) to load the full 3D world.`,
+    'no-gpu': "This browser has no 3D support, so you're in the lite client: chat, the action bar and who's here.",
+  saved: `You chose the lite client on this device: chat, the action bar and who's here. ${TAP} the \u2203 Eidoverse logo (top left) to load the full 3D world.`,
+  url: `This link opens the lite client: chat, the action bar and who's here. ${TAP} the \u2203 Eidoverse logo (top left) to load the full 3D world.`,
 };
 const NO_WAY_IN = new Set(['no-gpu']);
 // The same card as the full client's capability notice (capnotice.js: .panel.capnotice >
@@ -132,7 +132,7 @@ const NO_WAY_IN = new Set(['no-gpu']);
 // box is set here, through --lite-top, which index.html's html.lite rules read.
 export function liteLayout() {
   if (typeof document === 'undefined') return;
-  const bar = document.getElementById('lite-emote-host');
+  const bar = document.getElementById('lite-action-host');
   const card = document.getElementById('lite-banner');
   // flush under the bar; a breath under the card while it's up
   const below = card ? card.getBoundingClientRect().bottom + 8 : (bar?.getBoundingClientRect().bottom ?? 0);
@@ -158,7 +158,7 @@ export function liteBanner(why) {
   document.body.appendChild(card);
   // Under the emote row, never over it: that row is fixed to the top and its height
   // depends on how many emotes wrap, so follow it instead of guessing a number.
-  const host = document.getElementById('lite-emote-host');
+  const host = document.getElementById('lite-action-host');
   const place = () => { card.style.top = `${Math.round((host?.getBoundingClientRect().bottom ?? 0) + 8)}px`; liteLayout(); };
   place();
   if (host && globalThis.ResizeObserver) (ro = new ResizeObserver(place)).observe(host);
@@ -280,7 +280,7 @@ async function main() {
   // Chrome. None of it consumes socket traffic, but it costs nothing to have it
   // standing before the first message lands either.
   const emoteHost = document.createElement('div');
-  emoteHost.id = 'lite-emote-host';
+  emoteHost.id = 'lite-action-host';
   document.body.appendChild(emoteHost);
   initLiteEmotes(emoteHost, emote);
   // THE LOGO IS THE WAY IN (owner, 10-01): the ∃ leads the top bar and loads the full 3D world. In the full

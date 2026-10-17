@@ -88,7 +88,7 @@ console.log("wire + call-site invariants (asserted against the source):");
   ok(/heldPose = out\.pose; this\.heldPoseAuthored = false/.test(src),
      "a settled sim frame is marked physics at capture");
   // a seat is presence (the body's own frames carry it, nothing is logged): leaving it is setOccupant(null)
-  const leaves = src.match(/this\.mySeat && this\.mayLeaveSeat\("menu"\)\) this\.setOccupant\(null\)/g) ?? [];
+  const leaves = src.match(/this\.myOccupancy && this\.mayVacate\("menu"\)\) this\.setOccupant\(null\)/g) ?? [];
   ok(leaves.length >= 2, "walking AND standing both leave the seat (found " + leaves.length + " call sites)");
   ok(/msg\.restore\.pose && msg\.restore\.clip !== "ragdoll"\) \{ this\.heldPose = msg\.restore\.pose; this\.heldPoseAuthored = true/.test(src),
      "a restored pose (post-settledPose server memory) counts as authored");

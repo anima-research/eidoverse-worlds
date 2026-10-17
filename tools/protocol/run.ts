@@ -36,7 +36,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["descriptors", "../descriptor-defaults-test.ts", 1], // C5 (DEBT 10-12 #3a): every record and inspector default is the registry's, through the editor translation
   ["light-readers", "../light-readers-test.ts", 1], // D2 (DEBT-2 #5): a light is found by kindOf and the rig's complight key, its gizmo is no box or material slot
   ["ghost-mesh-size", "../ghost-mesh-size-test.ts", 1], // D1: every shape × scale the build ghost sends passes the door's mesh check (the plane at 1/1.1 did not)
-  ["boot-init", "../boot-init-test.ts", 1], // D3: every client init* has a caller (initSeats had none)
+  ["boot-init", "../boot-init-test.ts", 1], // D3: every client init* has a caller (initOccupants had none)
   ["editor-range", "../editor-range-test.ts", 1], // D4a: the editor writes what was typed inside the door's range, and refuses outside it with nothing sent
   ["lookat-forward", "../lookat-forward-check.ts", 1], // D7: the authority and the door give one verdict on every LookAt.forward
   ["role-grammar", "../role-grammar-test.ts", 1], // D7: one role-id grammar (grab, sockbody, rolespanels, commands)
@@ -58,6 +58,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["r8", "r8-check.ts", 1],             // review round 8 (10-17): a delete never re-sponsors a script; a fork copies no new model-hash; ref clears are the authority's follow-up (no third-party veto); the shape marker is the system's act; enter/leave record no identity
   ["r9", "r9-check.ts", 1],             // review round 9 (10-17): authorship never comes from a follow-up (followUps in the entry); the ride as it was when you sat; a script seat keeps the escape; two stand-ins; the agent hears unseated; a seat re-anchors the track
   ["r10", "r10-check.ts", 1],            // review round 10 (10-17): a sit is within reach; a follow-up restore keeps its author; two stand-ins of two shapes (rerun-anon); the authority's consequences are follow-ups (resettle is the system's act, a delete's set-down passes no lock); unseated on a socket gone and at its `at`
+  ["names", "names-check.ts", 1],     // R 10-17 14:34–14:41: names carry no body plan and set no kind against another (refusal codes, punt {contact}, trusted-components, consent words + delegates, one people list, the occupy family, stale addresses)
   ["parity", "parity-check.ts", 1],     // research agent/human parity Part B (R 10-17 12:42): one kind of participant — a status is declared at the door, never inferred from the credential or logged; move {client} gone; the spoken trio is anyone's; §6a, §8 by shape
   ["directory", "directory-check.ts", 1],
   ["keyhints", "../keyhints-check.ts", 1], // R 10-04: no hidden keys in edit mode (every modifier tagged and shown)
@@ -69,7 +70,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["reset-race", "reset-race-check.ts", 1], // review 10-14 C1: a request awaiting warm() across a reset refuses instead of writing the old log's line into the new file // world fork (a new world naming its source) and reset (archived, re-founded by its owners)
   ["scripts", "scripts-check.ts", 1],   // research 41: scripts in QuickJS on sponsor rights; use → script; a timer through a real server
   ["grab", "grab-check.ts", 1],         // grabbable (research grab 10-06): the gate, release modes, the hold record, use while held
-  ["shove", "shove-check.ts", 1],       // body shove at the authority: punt {shove: true}'s own gate (a body against it, at a walk's speed, away from the feet, at rest)
+  ["shove", "shove-check.ts", 1],       // body shove at the authority: punt {contact: true}'s own gate (a body against it, at a walk's speed, away from the body, at rest)
   ["shove-walker", "../shove-test.ts", 1], // …the walker's side (shared/shove.js): one punt per contact, bounded, none standing still or for what may not be shoved
   ["agentshove", "agentshove-check.ts", 1], // …an agent's walk shoves too, through the same punt (a real WorldAgent on a real server)
   ["hands", "hands-check.ts", 1],       // what is in a hand and where a put lands: held things are not ground, no perching, an edit takes it from the hand, two hands

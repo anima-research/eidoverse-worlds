@@ -1504,7 +1504,7 @@ export class Avatar {
       lastWrist: prev?.lastWrist ?? null,
       relation: opts.relation ?? null,
       palm: opts.palm !== false,
-      owner: opts.owner ?? null,            // 'seat': a socket's reach (seatbody.js) — a person's own reach outranks it
+      owner: opts.owner ?? null,            // 'seat': a socket's reach (occupybody.js) — a person's own reach outranks it
       hint: opts.hint ?? null,              // () => [x,y,z] world: where the elbow/knee points (a socket's reach.hint)
       // Retargeting still has to restore the previous writes when the new
       // relation cannot solve (including a cycle over a paused base clip).
@@ -2133,7 +2133,7 @@ export class Avatar {
     this._puppet = v; this._applyBodyScale();
     return true;
   }
-  /** The body's model→root multiplier: chosen size × VR fit. The seat seam (seats.js riderScalar) reads this. */
+  /** The body's model→root multiplier: chosen size × VR fit. The seat seam (occupants.js riderScalar) reads this. */
   bodyScale() { return (this.userScale ?? 1) * (this._puppet ?? 1); }
   _applyBodyScale() {
     const sc = this.vrm?.scene;

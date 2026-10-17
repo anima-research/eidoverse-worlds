@@ -250,8 +250,10 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   {pos, q, scale}`, `model` (a library path, stored as written; `model-hash`
   `sha256:<64 hex>` beside it when the server knows the bytes), `label`, `description`, `parent {to}`,
   `pivot {pos}`, `light`, `mesh`, `motion` (a whole thing's; `motion:<slot> {node, …}` moves one node of its model: `node` is the node's name as the model file spells it, any characters, DATA and never part of a key; `<slot>` is a short local tag, and readers find the part by `node`), `socket {name, part?, accepts?, radius?}` (an attach point: a
-  child entity of the thing it is on, carrying `parent {to: <host>}`), `station {action, pose, anchor,
-  exit?, leaveBy?, who?}` (what a person's body does at that socket, on the same entity; `sockets`, the old
+  child entity of the thing it is on, carrying `parent {to: <host>}`), `station {action, anim, anchor,
+  exit?, leaveBy?, who?}` (what a person's body does at that socket, on the same entity; `anim`, like
+  `grabbable.anim`, is an open name of a pose (one frame, only the bones it names) or a clip (more than one key):
+  a name the body doesn't know plays its default, never a refusal; `sockets`, the old
   map spelling, is reserved and lift-only: the authority lifts it into socket children with their stations
   on write and at a stored world's first load, and a socket's old `body` block into its station),
   `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
@@ -526,12 +528,28 @@ request moves a copy to a newer version, keeping its own overrides.
   `detach {escape: true}` always stands the occupant up (VRChat keeps
   respawn and the menu; Second Life's stand always works). A
   yes to an ask is one touch: it ends when the hand lets go, when either
-  body leaves, when the target closes that class, or after 10 minutes. Semantic rig
-  state travels the same way: `pose.wingsFolded` is a boolean intent, never
-  implementation-specific wing quaternions; each renderer applies it
-  through the worn rig's own fold path. The same packet carries a body's
+  body leaves, when the target closes that class, or after 10 minutes. Named poses
+  travel the same way: `pose.poses` lists the poses a body holds by name (a
+  pose is one frame, only the bones it names; a clip has more than one key;
+  R 10-17), never implementation-specific quaternions: `"wings-folded"` is
+  the folded-wing silhouette, which each renderer applies through the worn
+  rig's own fold path, and a name a rig doesn't know is ignored (its
+  default). An empty list holds none; an absent one says nothing. (Before
+  release the packet said `wingsFolded: true|false`; a receiver still reads
+  it as that pose.) The same packet carries a body's
   size and a person's voice state, each optional, absence meaning the
   default (or, for voice, *unknown*):
+  - `pose.bodyMode` — what the body is doing as a whole: `stand` | `sit` |
+    `lie` | `swim` | `fly` | `fall` (R 10-17; was the posture, read off the
+    clip, which is what a sample without it still means). The body's owner
+    publishes it: the mover sets it on real transitions (into water, an
+    actual take-off, airborne, landing) and the owner may declare any of the
+    six for looks; a declaration holds until the next real transition or
+    declaration. It is apart from `clip` (what plays). It is a self-declared
+    description: the authority and every server MUST NOT grant or relax any
+    rule, consent check or permission because of a declared body-mode; a rule
+    that depends on a body's state checks what it can verify on the act (the
+    water at the position, the fly permission at take-off).
   - `pose.scale` — the wearer's chosen size multiplier for the whole body
     (mesh, eyes, stride, collider); absent = 1. Range 0.5–2.
   - `pose.plateY` — metres the nameplate hangs above the body's measured
@@ -544,7 +562,7 @@ request moves a copy to a newer version, keeping its own overrides.
   non-number as absent; a non-boolean `mic`/`hear` is absent
   (shared/presencewire.js holds the clamps; the server's pose fence applies
   the same ones). `scale`/`plateY` are body state and ride the settled pose
-  a server keeps for late joiners, as `wingsFolded` does; `mic`/`hear` are
+  a server keeps for late joiners, as `poses` does; `mic`/`hear` are
   a live reading re-sent with every packet and are never part of it. The
   pose packet's fields are `docs/pose-wire.md`.
 - **Presence touches the log only through checked acts, and only with what
@@ -597,7 +615,7 @@ request moves a copy to a newer version, keeping its own overrides.
   grid isn't on the server yet has no ground to judge on, and the authority
   never stands anything on a guessed height: what needs the ground is refused
   `ground-loading` with words (ground-seated placement, `create {at}` and
-  `place {at}`; a put; a launch — throw, drop, punt, a walk's shove; a walk),
+  `place {at}`; a put; a launch — throw, drop, punt, a walk's contact push; a walk),
   nothing is logged, and the same request succeeds once the grid lands.
   Arriving where there is no water to judge, chat and presence carry on.
 - **One clock.** Frames carry the world's authority clock (the one that
@@ -610,12 +628,16 @@ request moves a copy to a newer version, keeping its own overrides.
   rest caused by its launch). The log never depends on reconstructing where
   a ride was.
 - **Body consent.** Every body has one table of act classes (near, follow,
-  social touch, intimate touch, pose, shove, move, voice; `carry` is
+  social touch, intimate touch, pose, shove, displace — someone else dragging,
+  carrying or occupying-with you, never your own `move` — and voice; `carry` is
   reserved, PHYSICS §4.1), each set to
-  everyone, ask, or nobody, separately for strangers and friends — the same
+  `allow`, `ask`, or `deny`, separately for two tiers: `everyone` and
+  `friends` (mutual: both named each other in their `friends` list) — the same
   table for every participant, and its defaults are one preset for every body
-  (`shared/protocol/consent.js` `DEFAULT_PRESET`). Silence is no. For touch, pose, shove and
-  move the authority refuses before delivery (a reach at the relay, above),
+  (`shared/protocol/consent.js` `DEFAULT_PRESET`). A separate `delegates` list
+  names who may close your table for you (pause, deny), never open it; only you
+  open it. Silence is no. For touch, pose, shove and
+  displace the authority refuses before delivery (a reach at the relay, above),
   and the target's own client has the final word. *Near, follow and voice
   are in the table and the settings, but nothing enforces them yet.* Consent is
   presence: it is never logged and is not a grant.
@@ -840,7 +862,7 @@ person's own word tell them no over people); it has a documented override
 reaches another person's body — standing close, following, touching
 (plainly or intimately), posing, knocking over, carrying, speaking into the
 ear — is decided by **their** consent table (§5): per class, per tier
-(strangers / friends), `everyone` | `ask` | `nobody`, with `ask` filing a
+(`everyone` / `friends`), `allow` | `ask` | `deny`, with `ask` filing a
 20-second question they answer or let lapse (silence is no), and a per-person
 `deny` that outlasts the answer for the stay. No role, including owner,
 overrides a consent refusal: this is the one veto standing *outside* the
@@ -1241,7 +1263,7 @@ v}`. File names, wire fields and code don't carry the number.
 |---|---|---|
 | 1–2 | The first world log: an untyped verb log folded by its reader (`genesis {verb: "genesis", args: {v, dialect}}`); dialect 2 added `force` and `punt` | `history/PROTOCOL-v1.md` |
 | 3 | The deterministic-physics amendment: a sim fold over sim-scoped entries, sim epochs (`dialect 3`) | `history/PROTOCOL-v2-sim.md` |
-| 4 | This protocol: typed entries (`change`, `act`, `sim`, `say`, `purge`, `sequencer`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. Before release, minor 0 gained the batch body's `followUps` (§3, §10; review r10) and §6a, one kind of participant (a status is declared at the door, never inferred or logged; `move` lost its `client` claim); occupy is the one word family for taking a socket (presence `occupants`, the `vacated {socket, …}` message, body kind `occupy`; was `seats`, `unseated {seat, …}`, `seat`; none of them is logged) | this document |
+| 4 | This protocol: typed entries (`change`, `act`, `sim`, `say`, `purge`, `sequencer`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. Before release, minor 0 gained the batch body's `followUps` (§3, §10; review r10) and §6a, one kind of participant (a status is declared at the door, never inferred or logged; `move` lost its `client` claim); occupy is the one word family for taking a socket (presence `occupants`, the `vacated {socket, …}` message, body kind `occupy`; was `seats`, `unseated {seat, …}`, `seat`; none of them is logged); and names carry no body plan and set no kind against another (R 10-17 14:34–14:41): the refusal codes `hold-limit`, `beneath`, `not-pushable` (were `hands-full`, `underfoot`, `no-body`: a refused act in an older log may carry the old word, which the fold never judges); `punt {contact: true}` (was `shove: true`: the door takes it and records `contact`; an older punt act reads as it was); @world `trusted-components` (was `trusted`: renamed at every load by the system's `rename-components` act); body consent's tiers `everyone` / `friends`, cells `allow` | `ask` | `deny`, class `displace`, and a `delegates` list apart from `friends` (were `strangers`, `everyone` | `ask` | `nobody`, `move`, one `friends` list; presence only: the old words are still taken on the wire, and a presence file in the old shape is rewritten at load); `grabbable.anim` and `station.anim` (were `pose`: an open name of a pose, one frame, or a clip, more than one key; a name the body doesn't know is its default; `two-hand` is `twoHanded`), a grip's `grasp` (was `fingers`), and `anim-pose` reserved beside `anim-clip` (a write in the old spelling is taken and stored in the new; stored values renamed at every load by `rename-components`); the pose packet's `poses: [names]` (was `wingsFolded`: folded wings are the named pose `wings-folded`; the old boolean is still read); and the pose packet's `bodyMode` (stand | sit | lie | swim | fly | fall: what the body is doing, apart from the `clip` that plays; was the posture read off the clip, which a sample without it still means; a self-declared description that grants nothing) | this document |
 
 Logs of `v` 1–3 are not read at runtime; §14 translates one, once, into a new
 world.

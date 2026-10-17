@@ -1,6 +1,6 @@
 // shove — walking into a loose thing pushes it (R's queue: "body shove"). The walker's side: one body (mine, never a remote's;
 // an agent's process runs its own) finds the loose things its walking capsule is against and says which to punt, and how
-// hard. The punt itself is the authority's (punt {id, v, shove: true}: shoveGate in authority.js, its limits SHOVE in
+// hard. The punt itself is the authority's (punt {id, v, contact: true}: shoveGate in authority.js, its limits SHOVE in
 // physconst.js); nothing here writes anything.
 //
 // Contact: the thing's ORIENTED box (its physics.shape, in the world: what the authority measures to through obbs()) within
@@ -84,7 +84,7 @@ export function reachTo(boxes, feet, tall = SHOVE.above) {
  *  it} or null. Under the feet or over the head is no contact. */
 export function contactOf(feet, r, tall, thing, slack = SHOVE_FEEL.slack) {
   const { obb, box } = thing;
-  if (box.max[1] <= feet[1] + SHOVE.underfoot || box.min[1] >= feet[1] + Math.min(tall, SHOVE.above)) return null;
+  if (box.max[1] <= feet[1] + SHOVE.beneath || box.min[1] >= feet[1] + Math.min(tall, SHOVE.above)) return null;
   const m = reachTo([obb], feet, tall); if (!m || m.d > r + slack) return null;
   let n = m.n; if (!n) { const cx = obb.c[0] - feet[0], cz = obb.c[2] - feet[2], l = Math.hypot(cx, cz); if (l < 1e-6) return null; n = [cx / l, cz / l]; }
   return { d: m.d, n };

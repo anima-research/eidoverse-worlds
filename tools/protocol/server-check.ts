@@ -241,15 +241,15 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(lk2.split("\n").some((l) => l.includes(`[${lh}]`) && /Take the lantern \(anyone may pick it up;[^\n]*use while held: light;[^\n]*goes home when let go\)/.test(l) && l.includes(`act {verb: "grab", args: {id: "${lh}"}}`)), "S5g look says a grabbable thing can be picked up, by whom, what using it does and where it goes", lk2.split("\n").filter((l) => /lantern/.test(l)));
   ok(["throne", "box", "rumble"].every((n) => !!seatId(n) && !lk.includes(seatId(n)!)) && /Things \(\d+\)/.test(lk), "S5e look lists the seats under the carriage by name, never as things of their own (nor as things it carries)", lk.split("\n").filter((l) => /carriage|empty|throne/.test(l)));
   const thId = await HANDLERS.attach(ag, { to: seatId("throne") }, {} as any, "attach");
-  ok(thId.isError && /rights/.test(thId.content[0].text) && !ag.mySeat, "S5e attach takes a socket's own id too (the throne's: the authority still refuses a builder)", thId.content[0].text);
+  ok(thId.isError && /rights/.test(thId.content[0].text) && !ag.myOccupancy, "S5e attach takes a socket's own id too (the throne's: the authority still refuses a builder)", thId.content[0].text);
   const th = await HANDLERS.attach(ag, { to: IDS.of("carriage"), socket: "throne" }, {} as any, "attach");
-  ok(th.isError && /rights/.test(th.content[0].text) && !ag.mySeat, "S5e attach to the owner's throne: the authority refuses a builder", th.content[0].text);
+  ok(th.isError && /rights/.test(th.content[0].text) && !ag.myOccupancy, "S5e attach to the owner's throne: the authority refuses a builder", th.content[0].text);
   const dv = await HANDLERS.attach(ag, { to: IDS.of("carriage"), action: "drive" }, {} as any, "attach");
-  ok(!dv.isError && !!seatId("box") && ag.mySeat?.to === seatId("box"), "S5e attach {action: 'drive'} picks the driver's box (my seat is its socket child)", [dv.content[0].text, ag.mySeat]);
+  ok(!dv.isError && !!seatId("box") && ag.myOccupancy?.to === seatId("box"), "S5e attach {action: 'drive'} picks the driver's box (my seat is its socket child)", [dv.content[0].text, ag.myOccupancy]);
   const up = await HANDLERS.detach(ag, {}, {} as any, "detach"), wk = await HANDLERS.move(ag, { to: [0, 0, 0] }, {} as any, "move");
-  ok(up.isError && wk.isError && ag.mySeat?.to === seatId("box"), "S5e …it holds you (leaveBy script): neither detaching nor walking gets you off", [up.content[0].text, wk.content[0].text]);
+  ok(up.isError && wk.isError && ag.myOccupancy?.to === seatId("box"), "S5e …it holds you (leaveBy script): neither detaching nor walking gets you off", [up.content[0].text, wk.content[0].text]);
   const hop = await HANDLERS.attach(ag, { to: IDS.of("carriage"), socket: "rumble" }, {} as any, "attach");
-  ok(hop.isError && /from another seat/.test(hop.content[0].text) && ag.mySeat?.to === seatId("box"), "S5e …and the rumble seat doesn't take you straight from another (no fromSeat)", hop.content[0].text);
+  ok(hop.isError && /from another seat/.test(hop.content[0].text) && ag.myOccupancy?.to === seatId("box"), "S5e …and the rumble seat doesn't take you straight from another (no fromSeat)", hop.content[0].text);
   ag.close(); }
 
 // (Bob's own socket was taken over by S5's agent, which joined as Bob: Vic and the watcher are the bystanders here)

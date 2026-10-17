@@ -183,9 +183,9 @@ and whichever engine follows it (most likely a spec-defined deterministic one)
 must be able to carry every field.
 
 **Reserved, not written (shape audit 2026-10-16)**, all but two. `mass` and
-`density` stay open fields: the body shove reads them (`shared/shove.js`
-`massOf`: the authority's shove gate, the walker and the agent cap a shove by
-mass), though eidosim's flight doesn't yet. Nothing reads the other eight, so
+`density` stay open fields: the contact push reads them (`shared/shove.js`
+`massOf`: the authority's contact gate (`punt {contact: true}`), the walker and
+the agent cap a push by mass), though eidosim's flight doesn't yet. Nothing reads the other eight, so
 they are `physics`' *reserved fields*: their names, units, limits and
 meanings of absence below are held (in the registry's `reservedFields`,
 `reservedShape` and `absentMeans`, all pinned), and every write of one is

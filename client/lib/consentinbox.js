@@ -3,7 +3,7 @@
 // The authority files an ask when someone's act on my body meets an `ask` cell (shared/protocol/authority.js bodyGate:
 // `body {to, kind}` / `reach`), gives it 20 s, and pushes it to my socket as {type: "body-inbox", messages} (server/
 // worldlog.ts forwardInbox). Until 10-14 no client file read that message: a person who chose `ask` was silently in
-// `nobody`. This module holds the asks (keyed by the authority's ask id), answers one with `consent {answer, yes}` through
+// `deny`. This module holds the asks (keyed by the authority's ask id), answers one with `consent {answer, yes}` through
 // whatever `send` it is handed, and lets an unanswered ask go at its expiry WITHOUT sending — the authority already took
 // silence as no (expireAsks) and told the asker. Replies to MY asks, acts delivered to me and revocations ride the same
 // message; they are kept in a short ring for whoever wants to show them.

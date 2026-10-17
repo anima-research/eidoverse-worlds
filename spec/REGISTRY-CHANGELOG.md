@@ -172,3 +172,22 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
 - 2026-10-17: motion gains node (a keyed motion's node name is data, motion:<slot> {node}; review r7 F1); motion.part's dropped pointer reworded
 - 2026-10-17: imported-behavior.attach holds an entity id: typed ref so a delete clears it, lint finds it dangling, copy/merge rebind it (R 10-17 ID HARDENING 4)
   - imported-behavior.attach: type string → ref
+- 2026-10-17: names (R 10-17 14:34): @world trusted → trusted-components (the bare word read as a list of trusted people); stored values renamed at every load by the system's rename-components act (shaperepair.js RENAMED_COMPONENTS)
+  - trusted: the name is gone (stored values need a repair or a translation; a stable name never goes)
+- 2026-10-17: names (R 10-17 15:09/15:11): grabbable.pose and station.pose → anim (an open name of a pose or a clip; a name the body doesn't know is its default, never a refusal; grabbable's two-hand is twoHanded), a grip's fingers → grasp; anim-pose reserved beside anim-clip. A write in the old spelling is taken and stored in the new (writes.js); stored values renamed at every load by rename-components (shaperepair.js RENAMED_FIELDS)
+  - station.pose: type any → gone
+  - station: a conditional default changed: {"if":{"action":"sit"},"set":{"pose":"sitchair"}}
+  - station: a conditional default changed: {"if":{"action":"ride"},"set":{"pose":"sitchair"}}
+  - station: a conditional default changed: {"if":{"action":"drive"},"set":{"pose":"sitchair"}}
+  - station: a conditional default changed: {"if":{"action":"lie"},"set":{"pose":"lie"}}
+  - station: a conditional default changed: {"if":{"action":"kneel"},"set":{"pose":"sit"}}
+  - station: a conditional default changed: {"if":{"action":"stand"},"set":{"pose":"idle"}}
+  - station: a conditional default changed: {"absent":["pose"],"set":{"pose":"sitchair"}}
+  - grabbable.pose: type string → gone
+  - grabbable.pose: "hand" is no longer allowed
+  - grabbable.pose: "carry" is no longer allowed
+  - grabbable.pose: "torch" is no longer allowed
+  - grabbable.pose: "pistol" is no longer allowed
+  - grabbable.pose: "two-hand" is no longer allowed
+  - grabbable.pose: "shoulder" is no longer allowed
+  - grabbable.pose: its meaning of absence "by size: one hand under 0.5 m, both arms at or above; two-hand if twoHanded" → gone

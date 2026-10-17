@@ -3,7 +3,7 @@
 // spreads into VERBS where it stood (refactor split, 2026-10-17; moved from authority.js's "use (interaction)" section
 // and the VERBS table unchanged). The write path, scripts and seats it hands off to are above it, reached through UP.
 import { bodyOf } from "../../components.js";
-import { inSitReach, OCCUPY_REACH } from "../../sockbody.js";
+import { inOccupyReach, OCCUPY_REACH } from "../../sockbody.js";
 import { grabOf } from "../../grab.js";
 import { PURGED } from "../fold.js";
 import { COMPONENTS, PENDULUM } from "../componentspec.js";
@@ -75,7 +75,7 @@ function buildUse(ctx, a) {
     if (ctx.w) { const me = ctx.w.presence.bodies?.[ctx.actor], cur = occupantOf(ctx.w, ctx.st, ctx.actor);
       const from = cur && ctx.st.entities[cur.to] ? worldT(ctx.st, cur.to).pos : Array.isArray(me?.at) ? me.at : null;
       if (from) { const sp = worldT(ctx.st, pick.id).pos;
-        if (!inSitReach(from, sp, OCCUPY_REACH.lag)) refuse("out-of-reach", `${pick.host}'s ${pick.slot} is ${r3(Math.hypot(sp[0] - from[0], sp[2] - from[2]))} m from you${Math.abs(sp[1] - from[1]) > 1 ? `, ${r3(sp[1] - from[1])} m up` : ""}; a seat is within ${OCCUPY_REACH.r} m to sit on`, `walk up to it first (move {to: '${pick.host}'})`);
+        if (!inOccupyReach(from, sp, OCCUPY_REACH.lag)) refuse("out-of-reach", `${pick.host}'s ${pick.slot} is ${r3(Math.hypot(sp[0] - from[0], sp[2] - from[2]))} m from you${Math.abs(sp[1] - from[1]) > 1 ? `, ${r3(sp[1] - from[1])} m up` : ""}; a seat is within ${OCCUPY_REACH.r} m to sit on`, `walk up to it first (move {to: '${pick.host}'})`);
         near = true; } }
     // attaching is presence (your frames say where you're attached; nothing is recorded), so the authority only answers: where,
     // and what the body does there (the socket's body block read with its defaults: shared/sockbody.js bodyOf)
@@ -106,7 +106,7 @@ function buildUse(ctx, a) {
     return ops;
   }
   if (h?.kind === "impulse") {
-    if (e.c.motion && e.c.motion.type !== "pendulum") refuse("no-body", `${a.id} moves by '${e.c.motion.type}', which a push doesn't change`, "an impulse swings a pendulum (motion {type: 'pendulum'})");
+    if (e.c.motion && e.c.motion.type !== "pendulum") refuse("not-pushable", `${a.id} moves by '${e.c.motion.type}', which a push doesn't change`, "an impulse swings a pendulum (motion {type: 'pendulum'})");
     const mo = { ...(e.c.motion?.type === "pendulum" ? e.c.motion : PENDULUM) }; delete mo.pivot;
     if (!pivotOf(ctx.st, a.id)) refuse("no-pivot", `${a.id} swings but hangs from nothing above it`, `hang it first: place {id: '${a.id}', hang: <frame>}`);
     const raw = a.args?.impulse ?? qrot(worldT(ctx.st, a.id).q, [0, 0, h.strength ?? 0.5]);
@@ -199,7 +199,7 @@ const USE_VERBS = {
     const probe = buildUse({ st: w.state(), actor, w, notes: [], refs: new Set() }, a);
     if (probe.presence) {
       // a seat is presence (nothing recorded), but the authority keeps who sits where: a thing someone sits on, or anything
-      // carrying it, isn't kicked, shoved, grabbed or thrown out from under them (occupant)
+      // carrying it, isn't punted, pushed, grabbed or thrown out from under them (occupant)
       if (probe.attach?.to) setOccupant(w, actor, probe.attach.to, probe.near);
       return { ok: true, recorded: false, ...(probe.attach ? { attach: probe.attach } : {}), note: probe.note };   // attach: where your frames now say you are
     }

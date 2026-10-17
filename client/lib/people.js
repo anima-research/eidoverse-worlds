@@ -61,9 +61,9 @@ export function menuFor(display) {
   const ask = k ? [
     { id: 'ask-allow', label: `Allow: ${askWords(k)} (this once)`, ask: k.id },
     { id: 'ask-no', label: 'Not now', ask: k.id },
-    { id: 'ask-never', label: `Never (${k.cls}: nobody for them)`, ask: k.id, danger: true },
+    { id: 'ask-never', label: `Never (${k.cls}: deny for them)`, ask: k.id, danger: true },
   ] : [];
-  // my standing table, as a sub-list on every person: ✓ per class that is `everyone` for strangers, All at the top
+  // my standing table, as a sub-list on every person: ✓ per class that is `allow` for everyone, All at the top
   return [...ask, ...items, { id: 'consent', label: 'Consent ▸' }];
 }
 export const badgeHtml = (display, esc) => { const b = R.badgeOf(personOf(display)); const k = askFrom(display);
@@ -186,21 +186,21 @@ async function answerAsk(item, display) {
   else deps.toast(yes ? `${display} may ${words}, this once` : `told ${display} not now`, 'info');
   return r;
 }
-/** My table's strangers tier as a checklist: ✓ when a class is `everyone`; a press toggles everyone ↔ Normal's cell for it
- *  (ask or nobody, shown on the row), through consent.js setCell → consentsync (the one sender). All at the top. The
- *  client can't tell a friend from a stranger (consent.js: friendship is the authority's), so it is the strangers row
+/** My table's everyone tier as a checklist: ✓ when a class is `allow`; a press toggles allow ↔ Normal's cell for it
+ *  (ask or deny, shown on the row), through consent.js setCell → consentsync (the one sender). All at the top. The
+ *  client can't tell a friend from anyone else (consent.js: friendship is the authority's), so it is the everyone row
  *  this edits — the row the client's own last word reads. */
-const TIER = 'strangers';
+const TIER = 'everyone';
 export function consentItems() {
   const base = CONSENT_PRESETS[DEFAULT_PRESET][TIER];
-  const all = CLASSES.every((c) => cell(TIER, c) === 'everyone');
+  const all = CLASSES.every((c) => cell(TIER, c) === 'allow');
   return [{ k: 'all', label: `${all ? '✓ ' : ''}All (anyone may do any of these)` },
-    ...CLASSES.map((c) => { const m = cell(TIER, c); return { k: c, label: `${m === 'everyone' ? '✓ ' : ''}${CLASS_WORDS[c]}${m === 'everyone' ? '' : ` · ${m}`}`, title: `anyone: ${m}; off = ${base[c]} (Normal)` }; })];
+    ...CLASSES.map((c) => { const m = cell(TIER, c); return { k: c, label: `${m === 'allow' ? '✓ ' : ''}${CLASS_WORDS[c]}${m === 'allow' ? '' : ` · ${m}`}`, title: `anyone: ${m}; off = ${base[c]} (Normal)` }; })];
 }
 export function toggleConsent(k) {
   const base = CONSENT_PRESETS[DEFAULT_PRESET][TIER];
-  if (k === 'all') { const all = CLASSES.every((c) => cell(TIER, c) === 'everyone'); for (const c of CLASSES) setCell(TIER, c, all ? base[c] : 'everyone'); return; }
-  if (CLASSES.includes(k)) setCell(TIER, k, cell(TIER, k) === 'everyone' ? base[k] : 'everyone');
+  if (k === 'all') { const all = CLASSES.every((c) => cell(TIER, c) === 'allow'); for (const c of CLASSES) setCell(TIER, c, all ? base[c] : 'allow'); return; }
+  if (CLASSES.includes(k)) setCell(TIER, k, cell(TIER, k) === 'allow' ? base[k] : 'allow');
 }
 function consentMenu(display, surface) {
   const items = consentItems();

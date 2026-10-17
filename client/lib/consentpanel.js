@@ -1,13 +1,13 @@
 // consentpanel — Settings ▸ body: my body's consent table, one row per act
-// class, a select of the authority's three answers (everyone / ask / nobody),
-// for strangers and for friends. The rows are consent.js's table; the table is
+// class, a select of the authority's three answers (allow / ask / deny),
+// for everyone and for friends. The rows are consent.js's table; the table is
 // the server's (PROTOCOL L6, shared/protocol/consent.js) — localbody.js sends
 // it whenever a cell changes. Plain: the same .row.wide / .nm / .ctl markup
 // contract as the video and audio sections (index.html owns it).
 import { makeSection, flashHint } from './ui.js';
 import { CLASSES, TIERS, MODES, CLASS_WORDS, PRESET_NAMES, cell, setCell, applyPreset, onConsentChange } from './consent.js';
 
-const TIER_WORDS = { strangers: 'strangers', friends: 'friends' };
+const TIER_WORDS = { everyone: 'everyone', friends: 'friends (both named each other)' };
 function selectRow(label, hint, options, value, onChange) {
   const row = document.createElement('div');
   row.className = 'row wide';

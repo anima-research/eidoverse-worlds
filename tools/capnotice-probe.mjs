@@ -59,7 +59,7 @@ const shedOn = (pg) => pg.evaluate(async () => (await import('/lib/realize/model
 const clash = (pg) => pg.evaluate(() => {
   const s = document.getElementById('hudstatus')?.getBoundingClientRect(); if (!s?.width) return ['no strip'];
   const out = [];
-  for (const sel of ['#dock', '#micbtn', '#earbtn', '#xrbtn', '.frame[data-frame="emotes"]']) {
+  for (const sel of ['#dock', '#micbtn', '#earbtn', '#xrbtn', '.frame[data-frame="actions"]']) {
     const e = document.querySelector(sel); if (!e || getComputedStyle(e).display === 'none') continue;
     const g = e.getBoundingClientRect(); if (!g.width) continue;
     if (s.left < g.right && s.right > g.left && s.top < g.bottom && s.bottom > g.top) out.push(sel);

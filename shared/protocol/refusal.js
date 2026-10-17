@@ -1,9 +1,9 @@
-// shared/protocol/refusal.js — how an authority refusal reads, in one place, so a person in edit mode and an agent calling a tool
-// see the same words for the same refusal (PARITY: "refusals show the same text the agents get"). The authority's reply is
+// shared/protocol/refusal.js — how an authority refusal reads, in one place, so someone in edit mode and someone calling a tool
+// see the same words for the same refusal (PARITY: one text on every surface). The authority's reply is
 // {ok: false, refused: {code, reason, fix, …}}; `what` names the request ("place", "undo", "move crate-1").
 //
 // Names: an identity or id outside the §2.3 grammar ("Marigold", "Lamp") is stored escaped (x--5269…). These words are
-// read by people and by agents' tools (which take plain names), so an escaped name is read back as it is spelled. A
+// read in the editor and through the tools (which take plain names), so an escaped name is read back as it is spelled. A
 // hashed name (h--) can't be read back and stays. The authority tool's raw JSON reply is untouched: its ids are the ones to
 // send back, and the authority says people's names readably itself (with the id in `by`).
 import { dec, actorName, ACTOR_ID } from "./names.js";
@@ -17,10 +17,10 @@ export function refusalText(what, reply) {
   return readable(`${what} refused by the authority (${r.code ?? "refused"}): ${r.reason ?? ""}${r.fix ? ` — ${r.fix}` : ""}`);
 }
 
-// ---- for people (ship list 10-07: "refusals shown to humans use tool syntax and hex ids") ----
-// A person reads what they tried and why, in words: no refusal code, no tool syntax (the authority's fix is for agents and
-// is kept only when it's already plain words), and things named by their labels. `nameOf(id)` → how a person knows that
-// thing (its label, or what it is), or null when the word isn't a thing's id. An agent's tools keep refusalText, and the
+// ---- for the editor's reader (ship list 10-07: refusals in the editor showed tool syntax and hex ids) ----
+// Someone in the editor reads what they tried and why, in words: no refusal code, no tool syntax (the authority's fix is for
+// a tool caller and is kept only when it's already plain words), and things named by their labels. `nameOf(id)` → how
+// they know that thing (its label, or what it is), or null when the word isn't a thing's id. The tools keep refusalText, and the
 // client logs that too (the console), so nothing is lost for whoever wants the authority's whole answer.
 const TOOLISH = /[{}[\]`]|=>|\w\s*\(|\b\w+:\s*['"\d[{tf]|throughLock|merge: true/;
 /** Ids in a sentence → names a person knows (a dotted path "lamp.light.intensity" → "Lamp's light intensity"). */

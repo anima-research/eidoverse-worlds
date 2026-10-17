@@ -54,9 +54,9 @@ const ck = (n: string, got: unknown, want: unknown) => {
 
 // ── semantic body posture survives reconnect and late join ─────────────────
 {
-  const vigil = { clip: "idle", wingsFolded: true, p: [4, 0, 2] };
+  const vigil = { clip: "idle", poses: ["wings-folded"], p: [4, 0, 2] };
   const out = settledPose(vigil)!;
-  ck("folded wings survive settled presence", out.wingsFolded, true);
+  ck("folded wings (the named pose) survive settled presence", JSON.stringify(out.poses), '["wings-folded"]');
   ck("  ...without becoming a bone override", out.pose, undefined);
 }
 

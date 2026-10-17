@@ -40,7 +40,7 @@ import { LOCK_LEVELS, lockLevel } from './protocol/roles.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ, MESH_SHAPES } from './components.js';
 import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
 import { checkSockets, ANCHORS, ACTION_DEFAULTS, socketMapIn, socketsIn } from './sockbody.js';
-import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, POSES as GRAB_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
+import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, HOLD_POSES as GRAB_HOLD_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
 import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE, setEulerChannel } from './euler.js';
 import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
@@ -188,7 +188,7 @@ const HAND = {
           // the station's reserved keys (fromSeat, enter/leave, input, look, reach…: shape audit 10-16) have no rows: the door refuses them
         }
       }
-      fields.push({ t: 'btn', k: 'add', label: '+ seat here', hint: 'click the spot on the thing where a sitter goes', client: true });
+      fields.push({ t: 'btn', k: 'add', label: '+ socket here', hint: 'click the spot on the thing where a body (or a thing) attaches', client: true });
       return { group: 'sockets', label: 'sockets', types: ['sockets'], fields };
     },
     write({ id, k, raw, f, c, comps, errors, num, bool }) {
@@ -196,7 +196,7 @@ const HAND = {
       if (k === 'del' && !next[raw]) { errors.push(`sockets.del: no slot ${JSON.stringify(raw)} on ${id}`); return; }
       if (k === 'del') { delete next[raw]; comps.set('sockets', Object.keys(next).length ? next : null); return; }
       const [slot, what, idx, sub] = k.split('|');
-      const cur = next[slot] ?? (next[slot] = { pos: [0, 0.5, 0], body: {} });   // a new slot is a seat, as '+ seat' makes
+      const cur = next[slot] ?? (next[slot] = { pos: [0, 0.5, 0], body: {} });   // a new slot takes a body, as '+ socket' makes
       if (what === 'body') { if (bool(raw)) cur.body = cur.body ?? {}; else delete cur.body; comps.set('sockets', next); return; }
       if (what === 'action') { const v = String(raw).trim().toLowerCase(); if (!/^[a-z][a-z0-9-]{0,31}$/.test(v)) { errors.push(`sockets.${slot}|action: a verb in lower case (sit, ride)`); return; }
         cur.body = { ...(cur.body ?? {}), action: v }; if (v === 'sit') delete cur.body.action; comps.set('sockets', next); return; }
@@ -267,7 +267,7 @@ const HAND = {
       // the ladder's second rung (R 10-12): the world's owner may trust this draft here; everyone else sees only the chip
       if (live.mayTrust === true) fields.push(isTrusted(MATK, live.trusted)
         ? { t: 'btn', k: 'trust', label: 'stop trusting it in this world', hint: 'Takes hesperus/material off this world\'s trusted list: back to a draft (amber), offered under "drafts". Nothing stored changes.' }
-        : { t: 'btn', k: 'trust', label: 'trust this in this world', hint: 'Not engine-official, but used and trusted in this world: the owner\'s word (@world.trusted). It moves into the main Add Component list with a blue chip. The engine still doesn\'t read it.' });
+        : { t: 'btn', k: 'trust', label: 'trust this in this world', hint: 'Not engine-official, but used and trusted in this world: the owner\'s word (@world.trusted-components). It moves into the main Add Component list with a blue chip. The engine still doesn\'t read it.' });
       return { group: 'hmat', label: 'Material', types: [...(ov ? [MATK] : []), ...slotKeys], fields };
     },
     write({ k, raw, c, comps, errors, ops = [], live = {} }) {
@@ -276,7 +276,7 @@ const HAND = {
       if (m && !/^[a-z][a-z0-9-]{0,47}$/.test(m[1])) { errors.push(`material: '${m[1]}' isn't a slot name`); return; }
       if (fk === 'override' || fk === 'add') { if (c[ck] == null) comps.set(ck, {}); return; }
       if (fk === 'reset') { comps.set(ck, null); return; }
-      if (fk === 'trust') { ops.push(trustOp(MATK, live)); return; }   // the second rung: @world.trusted toggled (trustOp below)
+      if (fk === 'trust') { ops.push(trustOp(MATK, live)); return; }   // the second rung: @world.trusted-components toggled (trustOp below)
       const next = comps.get(ck) ?? JSON.parse(JSON.stringify(c[ck] ?? {}));
       if (fk === 'color' || fk === 'emissive') { const n = typeof raw === 'number' ? raw : parseInt(String(raw ?? '').replace(/^#/, ''), 16);
         if (raw === null || raw === '') delete next[fk]; else if (Number.isInteger(n) && n >= 0 && n <= 0xffffff) next[fk] = n; else { errors.push(`material.${fk}: a colour`); return; } }
@@ -294,13 +294,13 @@ const HAND = {
       const opts = (list) => list.map((v) => ({ v, label: v }));
       const grips = Object.keys(g.grips);
       return { group: 'grabbable', label: 'grabbable', types: ['grabbable'], fields: [
-        G('enabled', { label: 'can be picked up', hint: 'Off: nobody can pick it up for now. (A loose ball can still be kicked.)' }),
+        G('enabled', { label: 'can be picked up', hint: 'Off: nobody can pick it up for now. (A loose ball can still be punted.)' }),
         G('who', { label: 'who may', options: GRAB_WHO.map((v) => ({ v, label: v === 'visitor' ? 'anyone' : `${v}s` })) }),
         G('steal', { label: 'can be taken from a hand', hint: 'On: someone else can grab it out of your hands. Off: it stays with whoever holds it until they let go (a world owner can still take it).' }),
         G('range', { label: 'reach', hint: 'How far away your hand can pick it up from. Arm\'s reach is 1.5 m; set it further and the thing flies to your hand when grabbed.' }),
         G('priority', { label: 'priority', hint: 'When several things are in reach, the one with the highest number is picked up first. Give small things on big things a higher number: the key, not the table it sits on.' }),
         G('hold', { label: 'hold', options: [['auto', 'auto: while gripping in VR, sticky on desktop'], ['press', 'only while gripping'], ['toggle', 'sticky everywhere (a tool)']].map(([v, label]) => ({ v, label })) }),
-        { t: 'enum', k: 'pose', label: 'body pose', value: raw.pose ?? 'by size', def: 'by size', options: opts(['by size', ...GRAB_POSES]), hint: 'How an avatar on desktop (no tracked hands) holds it: in one hand, carried in both arms, like a torch, like a pistol, in two hands, or on the shoulder. "by size" picks one hand for small things and both arms for big ones.' },
+        { t: 'enum', k: 'anim', label: 'held as', value: raw.anim ?? (raw.pose !== 'two-hand' ? raw.pose : null) ?? 'by size', def: 'by size', options: opts([...new Set(['by size', ...GRAB_HOLD_POSES, ...(typeof raw.anim === 'string' ? [raw.anim] : [])])]), hint: 'How a body without tracked hands holds it: a pose by name (built in: in one hand, carried in both arms, like a torch, like a pistol, on the shoulder; any other name a body knows). "by size" picks one hand for small things and both arms for big ones; a name the body doesn\'t know is held by size too. Two hands: switch on two-handed.' },
         G('twoHanded', { label: 'two-handed', hint: 'On: it can be held in both hands at once, like a rifle or a broom. The first hand carries it and the second hand aims it. Off: only one hand holds it, so grabbing it with your other hand moves it to that hand.' }),
         { t: 'check', k: 'carries', label: 'can carry other entities', value: g.carries, hint: 'On: picking it up brings along whatever is resting on it, like a tray of food. Off: only it comes up, and what was on it falls off, like taking a book out of a pile.' },
         G('throw', { label: 'throw', hint: 'How hard it flies when thrown: 1 is normal, 2 is twice as fast, 0 means it can only be dropped.' }),
@@ -317,7 +317,7 @@ const HAND = {
     write({ k, key, f, raw, c, comps, errors, writeField }) {
       const next = comps.get('grabbable') ?? JSON.parse(JSON.stringify(c.grabbable ?? {}));
       if (k === 'carries') next.carries = typeof raw === 'string' ? !/^(false|0|no|off)$/i.test(raw) : !!raw;
-      else if (k === 'pose') { if (raw === 'by size' || raw == null || raw === '') delete next.pose; else next.pose = String(raw); }
+      else if (k === 'anim') { delete next.pose; if (raw === 'by size' || raw == null || raw === '') delete next.anim; else next.anim = String(raw); }
       else if (k === 'fits') { const w = String(raw ?? '').split(/[,\s]+/).map((x) => x.trim()).filter(Boolean); if (w.length) next.fits = w; else delete next.fits; }
       else if (k === 'use') { const [d, u] = String(raw ?? '').split('/').map((x) => x.trim()); if (!d && !u) delete next.use; else next.use = u ? { ...(d ? { down: d } : {}), up: u } : d; }
       else if (k === 'prompt') { const v = String(raw ?? '').trim(); if (v) next.prompt = v; else delete next.prompt; }
@@ -489,7 +489,7 @@ export function inspectSchema(ent, id, live = {}) {
       L('intensity', { label: 'brightness', softMax: Math.max(64, src.intensity ?? 16) }),
       L('range', { label: 'range', softMax: Math.max(40, src.range ?? 10) }),
       L('important', { label: 'important', hint: 'always casts: first claim on a light slot, never governor-shed' }),
-      L('noon', { label: 'burns at noon', hint: 'opts out of the day cycle' }),
+      L('daytime', { label: 'burns at noon', hint: 'on: daytime full (opts out of the day cycle); off: daytime dim' }),
     ];
     if (live.casting === false) fields.push({ t: 'info', label: '', value: 'glow-only right now (slot pool spent) — it may still cast for others' });
     groups.push({ group: 'light', label: 'light', types: ['light'], fields });
@@ -777,7 +777,7 @@ export function inspectSchema(ent, id, live = {}) {
   // a picture needs an image and a part, a sound a file. Both are uploads.
   if (!c.picture) fields.push({ t: 'btn', k: 'add:picture', label: '+ picture…', client: true, hint: 'upload an image and hang it on this thing (make sure you own the rights to it)' });
   if (!c.sound) fields.push({ t: 'btn', k: 'add:sound', label: '+ sound…', client: true, hint: 'upload audio and put it on this thing (make sure you own the rights to it)' });
-  if (!c.sockets && live.parts) fields.push({ t: 'btn', k: 'add:seat', label: '+ seat…', client: true, hint: 'click the spot on the thing where a sitter goes' });
+  if (!c.sockets && live.parts) fields.push({ t: 'btn', k: 'add:seat', label: '+ socket…', client: true, hint: 'click the spot on the thing where a body (or a thing) attaches' });
   fields.push({ t: 'text', k: '+', label: '+ component', value: '', placeholder: 'type (local/recipe, example.org/notice…) ⏎', hint: 'attach a component — any type folds, evaluators give known ones behavior' });
   groups.push({ group: 'comp', label: `Components (${rest.length})`, fields });
 
@@ -959,7 +959,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
   for (const name of ['Model', 'Structure', 'Parent']) if (!have.has(name) && !add.some((a) => a.name === name) && WIRE_BLOCKED[name])
     add.push({ name, category: RECORDS[name].category, summary: RECORDS[name].summary, hash: RECORDS[name].hash, blocked: WIRE_BLOCKED[name](have, ent) });
   // the ladder's drafts (docs/COMPONENT-LADDER.md): only what this client has a reader for, where it applies, once.
-  // Trusted here (the owner's @world.trusted): the main list, blue. A plain draft: under "drafts", amber, unproven.
+  // Trusted here (the owner's @world.trusted-components): the main list, blue. A plain draft: under "drafts", amber, unproven.
   for (const d of draftsRead()) {
     if (ent?.[d.name] != null || !d.applies(ent)) continue;
     const trusted = isTrusted(d.name, live.trusted);
@@ -975,7 +975,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
     model: lib, libLabel: lib != null ? libLabel(lib) : isBag(ent?.mesh) && MESH_SHAPES.includes(ent.mesh.shape) ? ent.mesh.shape : ent?.light ? 'light' : 'empty' };
 }
 
-/** The one request the "trust this in this world" button sends: @world.trusted with `name` toggled; an emptied list
+/** The one request the "trust this in this world" button sends: @world.trusted-components with `name` toggled; an emptied list
  *  removes the component. The authority gates it (owner), and refuses a malformed list (shared/drafts.js trustRefusal). */
 export function trustOp(name, live = {}) {
   const next = toggleTrusted(Array.isArray(live.trusted) ? live.trusted : [], name);

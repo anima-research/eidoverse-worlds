@@ -22,7 +22,8 @@ import { surfaceOffset } from '../../shared/waves.js';
 import { floatStep, footprintSurface } from '../../shared/buoyancy.js';
 import { chat } from './chat.js';
 import { isOverlayOpen, flashHint, html } from './ui.js';
-import { selectClip } from './locomotion_clip.js';
+import { selectClip, AIRBORNE_GRACE } from './locomotion_clip.js';
+import { bodyModeOf } from '../../shared/bodymode.js';
 import { register as registerAction } from './actions.js';
 import {
   resolveFirstPersonAnchor, FP_FORWARD, FP_EYE_LIFT, FP_GAZE_AHEAD, FP_GAZE_DROP,
@@ -258,6 +259,7 @@ export const myState = {
   emote: null,       // one-shot, cleared after it's been sent once
   pose: undefined,   // held custom bone override (null clears); presence only
   wingsFolded: false, // semantic body posture; each rig renders its own fold
+  bodyMode: 'stand',  // what the body is doing as a whole (shared/bodymode.js): published as presence bodyMode
   seat: null,        // { id, chair } while seated on something
 };
 
@@ -387,11 +389,11 @@ for (const { code, ...a } of BODY_KEYS) registerAction({ ...a, id: `body:${a.id}
 // first claim (a swing that carries you beats sitting frozen mid-air where
 // its collider used to be), and a mounted body's X means "get up". Returns
 // true when the hook consumed the press. Same probe pattern as build.js.
-let seatHook = () => false;
-export function setSeatHook(fn) { seatHook = fn; }
+let occupyHook = () => false;
+export function setOccupyHook(fn) { occupyHook = fn; }
 
 function toggleSit() {
-  if (seatHook()) return;
+  if (occupyHook()) return;
   if (posture === 'sit') { posture = null; myState.seat = null; return; }
   // Layer-0: if there's a real seat pan within reach, sit ON it. The geometry
   // is the affordance — a scanned stool is sittable the moment it arrives.
@@ -758,6 +760,7 @@ export function updateMe(dt, me) {
     myState.speed = Math.hypot(flight.vel.x, flight.vel.z);
     myState.clip = flight.wings === 'LIMP' ? 'ragdoll'
       : (input.flap ? 'fly' : 'soar');
+    myState.bodyMode = flight.wings === 'LIMP' ? 'fall' : 'fly';   // the mover's flight state, reported (shared/bodymode.js)
     // WINGS THAT WORK WHEN THE PHYSICS IS WORKING. Effort is read off the
     // flight state rather than off a timer, so the animation cannot drift out
     // of step with what is actually lifting her:
@@ -891,6 +894,9 @@ export function updateMe(dt, me) {
   // swimming is its own pair of clips — a stroke while moving, treading water while still. They are
   // procedural (avatar.js _swimLayer), so every client draws them from this name alone.
   myState.clip = swimming && grounded ? (wantMove || myState.speed > 0.15 ? 'swim' : 'tread') : sel.clip;
+  // the body-mode this body publishes (shared/bodymode.js; R 10-17: was the posture, read off the clip): the mover's own
+  // states (swimming, in the air past the step grace) over what was chosen (posture; a seat is sitting)
+  myState.bodyMode = bodyModeOf({ swimming: swimming && grounded, falling: !grounded && !mantle && airborneFor > AIRBORNE_GRACE, chosen: posture ?? (myState.seat ? 'sit' : 'stand') });
 
   me.setClip(myState.clip, myState.speed, sel.opts);
   me.root.position.copy(myState.pos);
@@ -1114,7 +1120,7 @@ let mountedHook = () => false;
 export function setMountedHook(fn) { if (typeof fn === 'function') mountedHook = fn; }
 export function sitHere() { if (mountedHook()) return; if (posture !== 'sit') toggleSit(); }
 export function standUp() {
-  if (mountedHook()) { seatHook(); return; }
+  if (mountedHook()) { occupyHook(); return; }
   if (posture === 'sit' || posture === 'lie') { posture = null; myState.seat = null; }
 }
 export const getPosture = () => posture;

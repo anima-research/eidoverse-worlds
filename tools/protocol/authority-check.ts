@@ -201,24 +201,24 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     const i = lc("vic", "inspect", { id: "stage" });
     ok(i.lock?.rank === "owner" || i.flags?.lock?.rank === "owner" || /owner/.test(JSON.stringify(i.lock ?? i.flags?.lock ?? "")), "PL16 inspect says the lock's level", { lock: i.lock, flags: i.flags });
   }
-  { // the trusted rung (R 10-12 10:09; docs/COMPONENT-LADDER.md): @world.trusted {components: [drafts]} is the owner's word,
+  { // the trusted rung (R 10-12 10:09; docs/COMPONENT-LADDER.md): @world.trusted-components {components: [drafts]} is the owner's word,
     // gated like the rest of @world (never a permission); the list is namespaced draft names only, ≤ 64, distinct
     const tc = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "trust"), actor, verb, args); };
     const TW = () => openWorld(root, "trust").state();
     tc("olive", "create-world", { title: "trust" }); tc("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
     tc("olive", "set", { id: "@world", component: "roles:mo", value: { role: "moderator", can: { editWorld: true } } });
     const good = { components: ["hesperus/material"] };
-    ok(code(tc("bob", "set", { id: "@world", component: "trusted", value: good })) === "rights", "TR1 a builder can't trust a draft for the world");
-    ok(code(tc("mo", "set", { id: "@world", component: "trusted", value: good })) === "rights", "TR2 …nor a moderator with editWorld (trust is the owner's, never a permission)");
-    const r = tc("olive", "set", { id: "@world", component: "trusted", value: good });
-    ok(r.ok && JSON.stringify(TW().entities["@world"].c.trusted) === JSON.stringify(good), "TR3 the owner trusts it, and the world carries the list", r.refused ?? TW().entities["@world"]?.c.trusted);
+    ok(code(tc("bob", "set", { id: "@world", component: "trusted-components", value: good })) === "rights", "TR1 a builder can't trust a draft for the world");
+    ok(code(tc("mo", "set", { id: "@world", component: "trusted-components", value: good })) === "rights", "TR2 …nor a moderator with editWorld (trust is the owner's, never a permission)");
+    const r = tc("olive", "set", { id: "@world", component: "trusted-components", value: good });
+    ok(r.ok && JSON.stringify(TW().entities["@world"].c["trusted-components"]) === JSON.stringify(good), "TR3 the owner trusts it, and the world carries the list", r.refused ?? TW().entities["@world"]?.c["trusted-components"]);
     for (const [v, what] of [[{ components: [1] }, "a non-string"], [{ components: ["light"] }, "a bare name"], [{ components: ["hesperus/material:slot"] }, "a keyed name"], [{ components: Array.from({ length: 65 }, (_, i) => `h/d${i}`) }, "65 entries"],
       [{ components: ["hesperus/material", "hesperus/material"] }, "a name twice"], [["hesperus/material"], "a bare list"], [{ components: ["hesperus/material"], note: "x" }, "an unknown key"], [{ components: "hesperus/material" }, "a string for the list"]])
-      ok(code(tc("olive", "set", { id: "@world", component: "trusted", value: v })) === "shape", `TR4 refused (shape): ${what}`, tc("olive", "set", { id: "@world", component: "trusted", value: v }).refused);
-    ok(tc("olive", "set", { id: "@world", component: "trusted", value: { components: Array.from({ length: 64 }, (_, i) => `h/d${i}`) } }).ok, "TR5 64 entries is the most, and fine");
+      ok(code(tc("olive", "set", { id: "@world", component: "trusted-components", value: v })) === "shape", `TR4 refused (shape): ${what}`, tc("olive", "set", { id: "@world", component: "trusted-components", value: v }).refused);
+    ok(tc("olive", "set", { id: "@world", component: "trusted-components", value: { components: Array.from({ length: 64 }, (_, i) => `h/d${i}`) } }).ok, "TR5 64 entries is the most, and fine");
     tc("olive", "create", { id: "plinth", model: "crate", place: { at: [2, 2] } });
-    ok(code(tc("olive", "set", { id: "plinth", component: "trusted", value: good })) === "world-only", "TR6 trusted is a world setting: refused on a thing", tc("olive", "set", { id: "plinth", component: "trusted", value: good }).refused);
-    ok(tc("olive", "delete", { id: "@world", component: "trusted" }).ok && TW().entities["@world"].c.trusted === undefined, "TR7 the owner removes the list (stop trusting the last one)");
+    ok(code(tc("olive", "set", { id: "plinth", component: "trusted-components", value: good })) === "world-only", "TR6 trusted is a world setting: refused on a thing", tc("olive", "set", { id: "plinth", component: "trusted-components", value: good }).refused);
+    ok(tc("olive", "delete", { id: "@world", component: "trusted-components" }).ok && TW().entities["@world"].c["trusted-components"] === undefined, "TR7 the owner removes the list (stop trusting the last one)");
   }
   { // translation: v1 lock is the identity; v1 guard becomes a lock, and is counted
     const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } },
@@ -1059,7 +1059,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(us.ok && us.attach?.to === "sofa-r" && us.attach.host === "sofa", "SKE8 use {id: <a socket>} is the direct form (its one action)", us);
   ok(code(R("bob", "use", { id: "sofa-hook" })) === "no-action", "SKE8 …a socket with no body offers nothing to use");
   const ins = R("bob", "inspect", { id: "sofa" });
-  ok(JSON.stringify(ins.actions) === '["sit"]' && JSON.stringify(ins.sockets?.map((x) => [x.id, x.name, x.as])) === '[["sofa-l","left","seat"],["sofa-r","right","seat"],["sofa-hook","hook","snap"]]', "SKE9 inspect {host}: its actions come from its seats, and it lists its sockets (id, name, seat | snap | attach)", [ins.actions, ins.sockets]);
+  ok(JSON.stringify(ins.actions) === '["sit"]' && JSON.stringify(ins.sockets?.map((x) => [x.id, x.name, x.as])) === '[["sofa-l","left","station"],["sofa-r","right","station"],["sofa-hook","hook","snap"]]', "SKE9 inspect {host}: its actions come from its stations, and it lists its sockets (id, name, station | snap | attach)", [ins.actions, ins.sockets]);
   const lk = R("bob", "look", {});
   ok(lk.things.some((t) => t.id === "sofa" && t.sockets?.length === 3) && !lk.things.some((t) => ["sofa-l", "sofa-r", "sofa-hook"].includes(t.id)), "SKE9 look lists the host with its sockets, never a socket as a thing", lk.things.map((t) => t.id));
   R("ann", "set", { id: "sofa-l", component: "disabled", value: true });

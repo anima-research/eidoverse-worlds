@@ -180,11 +180,11 @@ const framesOf = (page) => page.evaluate(() => globalThis.__frames ?? { sent: []
 
   // Now arrive in lite under that identity and tap one emote.
   await page.goto(`${world.origin}/?world=staging&name=bodykeep&key=${world.key}&lite=1`, { waitUntil: 'load' });
-  await page.waitForFunction(() => document.querySelectorAll('.lite-emote').length > 0, { timeout: 20000 })
+  await page.waitForFunction(() => document.querySelectorAll('.lite-action').length > 0, { timeout: 20000 })
     .catch(() => {});
   await page.waitForTimeout(1500);
   const tapped = await page.evaluate(() => {
-    const b = document.querySelector('.lite-emote');
+    const b = document.querySelector('.lite-action');
     if (!b) return null;
     b.click();
     return b.dataset.emote;

@@ -562,15 +562,15 @@ function releaseGrab() {
  *  with no VR surface yet is still a slot — dim, and honest about it — because
  *  parity means the gap is visible until the sweep fills it. sit/lie live in
  *  the emote quad now, not here. */
-let ringLevel = 'root';   // 'root' | 'emotes' — the sub-wheel in view
+let ringLevel = 'root';   // 'root' | 'actions' — the sub-wheel in view
 const SPACER = { spacer: true, has: false, label: '', on: () => false, act: () => {} };
 const BACK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 26 26" fill="none" stroke="#f2f7f5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-7 7 7 7"/></svg>';
 // THE WHEEL IS THE DOCK, plus what VR needs (owner, 09-07 22:08): 12 o'clock = the panels menu (the rail's reverse-E),
 // 6 o'clock = leave VR; the dock's pins fill the right half, mic / headphones / recentre the left; a dim spacer keeps the
-// count even so the two fixed slots sit exactly on the vertical. 'emotes' is a sub-wheel (VRC's shape): the nine
+// count even so the two fixed slots sit exactly on the vertical. 'actions' is a sub-wheel (VRC's shape): the nine
 // plus a back slot at 6 o'clock. Toggles stay open and show state; everything else closes on activation.
 export function radialEntries() {   // exported with makeRadial for the headless ring screenshot
-  if (ringLevel === 'emotes') {
+  if (ringLevel === 'actions') {
     const e = ringEmoteEntries();                    // postures + emotes, bar order, 12 o'clock first
     const back = { svg: BACK_SVG, label: 'back', on: () => false, sub: 'root', act: () => {} };
     const half = Math.ceil(e.length / 2);
@@ -581,9 +581,9 @@ export function radialEntries() {   // exported with makeRadial for the headless
   const panels = { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 26 26"><text x="13" y="19.5" font-family="system-ui, sans-serif" font-size="19" font-weight="700" text-anchor="middle" fill="#f2f7f5">∃</text></svg>', label: 'panels', on: () => xrPanelsShown(), act: ringPanelsAct };
   const leave = { svg: xrGlyph(52), label: 'leave VR', on: () => true, close: true, guard: true, act: () => leaveVR('ring') };   // guard: trigger only — a stick brush toward 6 o'clock threw the owner out (22:29)
   // emotes is its own strip on the desk, not a dock panel — a fixed slot, first on the right (1 o'clock)
-  const right = [{ icon: 'hand-waving', label: 'emotes', sub: 'emotes', on: () => false, act: () => {} }];
+  const right = [{ icon: 'hand-waving', label: 'actions', sub: 'actions', on: () => false, act: () => {} }];
   for (const e of dockPins()) {
-    if (e.id === 'emotes') continue;   // the sub-wheel slot above IS emotes (owner, 09-07 22:57: 'you have emotes twice')
+    if (e.id === 'actions') continue;   // the sub-wheel slot above IS emotes (owner, 09-07 22:57: 'you have emotes twice')
     const has = xrPanelHas(e.id);
     right.push({ icon: e.icon, label: e.id, has, on: () => xrPanelOpen(e.id), close: true,
       act: () => { if (has) showXRPanel(e.id); else tee(`[xr] ring: ${e.id} has no VR surface yet`); } });

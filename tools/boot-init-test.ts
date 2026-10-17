@@ -1,5 +1,5 @@
 // boot-init-test — every `export function init*` under client/lib is called from somewhere in the client other than its own
-// definition. initSeats lost its only call in the merge resolution of cdc539db (PR #109, 2026-08-12) and nothing noticed:
+// definition. initOccupants lost its only call in the merge resolution of cdc539db (PR #109, 2026-08-12) and nothing noticed:
 // an init with no caller is a module that silently never starts.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/boot-init-test.ts

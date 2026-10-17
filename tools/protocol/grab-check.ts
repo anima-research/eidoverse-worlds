@@ -300,7 +300,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } });
       const set = (v: any) => s.call("olive", "set", { id: "cup", component: "grabbable", value: v });
       const typo = set({ realease: "stay" }); const grip = set({ grips: { handle: { q: [0, 0, 0, 1] } } }); const en = set({ release: "fly" }); const th = set({ throw: 9 });
-      const good = set({ who: "visitor", grips: { handle: { pos: [0, 0.1, 0], hand: "right", fingers: "pinch" } }, fits: ["cup"], use: { down: "sip" } });
+      const good = set({ who: "visitor", grips: { handle: { pos: [0, 0.1, 0], hand: "right", grasp: "pinch" } }, fits: ["cup"], use: { down: "sip" } });
       return { typo: code(typo), dym: typo.refused?.didYouMean, grip: code(grip), en: code(en), th: code(th), good: show(good) }; },
     good: (o) => o.typo === "schema" && o.dym?.[0] === "release" && o.grip === "shape" && o.en === "shape" && o.th === "bounds" && o.good === "ok" },
   // ---------------- R: release modes (slice 2) ----------------
@@ -414,7 +414,7 @@ const cases: Case[] = [
       return { a: a.hand, b: b.hand, rec: G.holdWire?.(held(s, "mug")), bad: code(bad), logged: s.entries().filter((e: any) => e.kind === "act" && e.verb === "grab" && !e.body?.refused).length }; },
     good: (o) => o.a === "right" && o.b === "left" && JSON.stringify(o.rec) === '{"by":"vic","hand":"left"}' && o.bad === "shape" && o.logged === 0 },
   { id: "H2", what: "grips: a hand takes the first grip that suits it; a named grip must exist (did you mean) and suit the hand; a thing with none has no grip to name", run(s) { cast(s);
-      s.call("olive", "create", { id: "sword", model: "book", components: { grabbable: { who: "visitor", grips: { hilt: { pos: [0, 0.05, 0], hand: "right", fingers: "fist" }, offhand: { pos: [0, 0.15, 0], hand: "left" } } } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "sword", model: "book", components: { grabbable: { who: "visitor", grips: { hilt: { pos: [0, 0.05, 0], hand: "right", grasp: "fist" }, offhand: { pos: [0, 0.15, 0], hand: "left" } } } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "cup", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [0.3, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] });
       const r = s.call("vic", "grab", { id: "sword" }); s.call("vic", "put", { id: "sword" });
@@ -532,11 +532,11 @@ const cases: Case[] = [
   { id: "I2", what: "its card edits the common fields (who, let go, fits, use down / up) into one value, and refuses what the authority would (a malformed use)", run(s) {
       const ent = { model: "book", pos: [0, 0, 0], grabbable: { who: "builder" } };
       const sch = ES.inspectSchema(ent, "b1"); const card = sch.sections.list.find((x: any) => x.type === "Grabbable");
-      const ok1 = ES.editOps(ent, "b1", { "grabbable.who": "visitor", "grabbable.release": "stay", "grabbable.fits": "key, hook", "grabbable.use": "fire / cease", "grabbable.pose": "torch" });
+      const ok1 = ES.editOps(ent, "b1", { "grabbable.who": "visitor", "grabbable.release": "stay", "grabbable.fits": "key, hook", "grabbable.use": "fire / cease", "grabbable.anim": "torch" });
       const bad = ES.editOps(ent, "b1", { "grabbable.use": "not an action!" });
       return { card: card?.fields ?? null, value: ok1.ops.find((o: any) => o.args?.component === "grabbable")?.args?.value ?? ok1.ops, errors: ok1.errors, bad: bad.errors }; },
     good: (o) => Array.isArray(o.card) && o.card.includes("grabbable.who") && o.card.includes("grabbable.release") && !o.errors.length
-      && JSON.stringify(o.value) === JSON.stringify({ who: "visitor", release: "stay", fits: ["key", "hook"], use: { down: "fire", up: "cease" }, pose: "torch" }) && /grabbable\.use: .*names a reactions action/.test(o.bad.join(" ")) },
+      && JSON.stringify(o.value) === JSON.stringify({ who: "visitor", release: "stay", fits: ["key", "hook"], use: { down: "fire", up: "cease" }, anim: "torch" }) && /grabbable\.use: .*names a reactions action/.test(o.bad.join(" ")) },
   { id: "I3", what: "…its JSON hatch reaches grips (and is refused, like the authority, when a grip has no pos)", run(s) {
       const ent = { model: "book", pos: [0, 0, 0], grabbable: { who: "builder" } };
       const hatch = ES.inspectSchema(ent, "b1").groups.find((g: any) => g.group === "grabbable")?.fields.find((f: any) => f.t === "json")?.commit;

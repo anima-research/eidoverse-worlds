@@ -183,9 +183,10 @@ export function worldSchema(st, live = {}) {
   const real = realClock(sky);
   const s = isBag(sky) ? sky : {};
   const skyFields = [
-    { t: 'enum', k: 'clock', label: 'clock', value: real ? 'real' : 'authored', def: 'authored', options: [{ v: 'authored', label: 'authored' }, { v: 'real', label: 'real time' }], ...ro,
-      hint: ro.hint ?? 'authored: the hour and rate below; real time: the hour IS a timezone\'s wall hour' },
-    ...(real ? [{ t: 'text', k: 'tz', label: 'timezone', value: s.tz ?? DEFAULT_TZ, ...ro }] : []),
+    // the sky's own field (R 10-17: the editor's old `clock` enum is gone, as the wire's is): a timezone means the hour IS
+    // its wall hour; empty is the authored clock (the hour and rate below)
+    { t: 'text', k: 'tz', label: 'timezone', value: real ? (s.tz ?? DEFAULT_TZ) : '', ...ro,
+      hint: ro.hint ?? `a timezone (e.g. ${DEFAULT_TZ}): the hour IS its wall hour; empty: the hour and rate below` },
   ];
   for (const [k, label, min, softMax, step, def, unit] of SKY_NUMS) {
     const clocked = real && (k === 'hours' || k === 'rate');
@@ -240,7 +241,7 @@ export function worldSchema(st, live = {}) {
   groups.push({ group: 'grass', label: 'Grass', fields: grassFields });
 
   // Trusted components (docs/COMPONENT-LADDER.md, the second rung; R 10-12): the drafts this world's owner trusts here,
-  // @world.trusted — live.trusted is the list as the client read it (mayTrust: this viewer is the owner)
+  // @world.trusted-components — live.trusted is the list as the client read it (mayTrust: this viewer is the owner)
   const trusted = Array.isArray(live.trusted) ? live.trusted : [];
   const trustedFields = trusted.length ? trusted.flatMap((n) => [{ t: 'info', label: 'trusted', value: n, hint: 'a draft used and trusted in this world: a blue chip, offered in the main Add Component list. The engine still doesn\'t read it' },
     ...(live.mayTrust === true ? [{ t: 'btn', k: `remove|${n}`, label: `stop trusting ${n}`, danger: true, hint: 'back to a plain draft (amber, under "drafts"). Nothing stored changes' }] : [])])
@@ -251,7 +252,7 @@ export function worldSchema(st, live = {}) {
   const have = new Set(worldComponents(st).components.map((c) => c.type));
   const list = groups.map(({ group, fields }) => {
     const type = { sky: 'Sky', weather: 'Weather', terrain: 'Terrain', grass: 'Grass' }[group];
-    if (!type) return { type: 'Trusted', key: group, title: 'Trusted components', hash: null, category: 'World', summary: 'the drafts this world\'s owner trusts here (@world.trusted): not engine-official, but used and trusted in this world',
+    if (!type) return { type: 'Trusted', key: group, title: 'Trusted components', hash: null, category: 'World', summary: 'the drafts this world\'s owner trusts here (@world.trusted-components): not engine-official, but used and trusted in this world',
       fields: fields.filter((x) => x.k != null).map((x) => `${group}.${x.k}`), removable: false, info: fields.filter((x) => x.t === 'info' && x.value).map((x) => [x.label, x.value]), present: trusted.length > 0 };
     const rec = RECORDS[type];
     return { type, key: group, title: type, hash: rec.hash, category: rec.category, summary: rec.summary,
@@ -273,10 +274,10 @@ export function worldEditOps(st, edits, live = {}) {
   const schema = worldSchema(st, live);
   const errors = [];
   let skyPatch = null, weather = null, ground = null, grassPatch = null, mow = false, noSky = false, noGround = false;   // ground: the terrain patch
-  let untrust = null;   // names to take off @world.trusted
+  let untrust = null;   // names to take off @world.trusted-components
   for (const [key, raw] of Object.entries(edits ?? {})) {
     const f = fieldAt(schema, key);
-    if (!f || f.t === 'info') { errors.push(`${key}: no such field on ${WORLD_ID} (sky.* weather.state terrain.* grass.* trusted.*; inspect @world lists them)`); continue; }
+    if (!f || f.t === 'info') { errors.push(`${key}: no such field on ${WORLD_ID} (sky.* weather.state terrain.* grass.* ${TRUSTED}.*; inspect @world lists them)`); continue; }
     if (f.disabled) { errors.push(`${key}: ${f.hint ?? 'read-only'}`); continue; }
     const group = key.slice(0, key.indexOf('.')); const k = key.slice(key.indexOf('.') + 1);
     let v = raw;
@@ -294,16 +295,16 @@ export function worldEditOps(st, edits, live = {}) {
       case 'sky':
         if (k === 'remove') { noSky = true; break; }
         skyPatch ??= {};
-        if (k === 'clock') {
-          if (v === 'real') Object.assign(skyPatch, { clock: 'real', tz: sky?.tz ?? DEFAULT_TZ });
+        if (k === 'tz') {
+          if (v) skyPatch.tz = v;
           else {
-            // back to the authored clock: the fold parked the rated clock under
+            // back to the authored clock (an empty timezone): an older fold parked the rated clock under
             // dormantRated (#65); hand it back, as the sky panel does
-            Object.assign(skyPatch, { clock: undefined, tz: undefined });
+            Object.assign(skyPatch, { tz: undefined });
             const d = sky?.dormantRated;
             if (isBag(d)) { if (d.rate != null) skyPatch.rate = d.rate; if (d.hours != null) skyPatch.hours = round(d.rate ? hoursAt({ hours: d.hours, rate: d.rate, ts: d.ts }, now) : d.hours, 4); }
           }
-        } else if (k === 'tz') { if (!v) { errors.push('timezone: empty'); continue; } skyPatch.tz = v; }
+        }
         else if (k === 'azimuth') skyPatch.azimuth = round(v / DEG, 6);   // shown in degrees, stored in radians
         else skyPatch[k] = v;
         break;

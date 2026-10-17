@@ -1,6 +1,6 @@
 // tools/shove-test.ts — shared/shove.js, the walker's side of body shove, frame by frame (no browser, no server):
 // walking into a crate sends one punt; standing still, none; pressed against a wall of crates, a bounded number a second;
-// a locked, held, static, underfoot or out-of-rights thing, none; a crate that moved and is walked into again, another.
+// a locked, held, static, beneath-the-body or out-of-rights thing, none; a crate that moved and is walked into again, another.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/shove-test.ts
 // @ts-nocheck
 import { createShover, contactOf, footprint, obbOf, aabbOfObb, shoveV, massOf, shoveCap, keptOf, occupied, smoother, SHOVE_FEEL } from "../shared/shove.js";

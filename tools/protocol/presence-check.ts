@@ -59,7 +59,7 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
 { const bob = await sock("Bob"), carol = await sock("Carol"), mal = await sock("Mallory");
   // within reach, and both open pose and move to strangers (BC: the server checks a body's consent before forwarding)
   bob.at(0, 0); carol.at(1, 0); mal.at(0.5, 0.5);
-  for (const s2 of [bob, carol]) for (const cls of ["pose", "move"]) await s2.req("consent", { set: { class: cls, tier: "strangers", mode: "everyone" } });
+  for (const s2 of [bob, carol]) for (const cls of ["pose", "displace"]) await s2.req("consent", { set: { class: cls, tier: "everyone", mode: "allow" } });
   await sleep(300);
   ok(/^u-/.test(bob.actor ?? "") && /^u-/.test(carol.actor ?? ""), "(PR setup) every joiner knows its own actor id", [bob.actor, carol.actor]);
   const arrive = mal.msgs.find((m) => m.type === "arrive" && m.id === "Carol") ?? null;
@@ -111,9 +111,9 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
   sly.send({ type: "bodydrag", target: "Vic", targetActor: vic.actor, grab: { joint: "hips" } }); await sleep(300);
   ok(got(k, "bodydrag").length === 0, "BC1 …and a drag's grab likewise (move nobody)", got(k, "bodydrag"));
   // Vic opens shove and move to everyone: now it's forwarded, within reach
-  const r1 = await vic.req("consent", { set: { class: "shove", tier: "strangers", mode: "everyone" } });
-  const r2 = await vic.req("consent", { set: { class: "move", tier: "strangers", mode: "everyone" } });
-  ok(r1?.ok && r2?.ok, "(BC setup) Vic opens shove and move to strangers through the authority's consent verb", [r1, r2]);
+  const r1 = await vic.req("consent", { set: { class: "shove", tier: "everyone", mode: "allow" } });
+  const r2 = await vic.req("consent", { set: { class: "displace", tier: "everyone", mode: "allow" } });
+  ok(r1?.ok && r2?.ok, "(BC setup) Vic opens shove and displace to everyone through the authority's consent verb", [r1, r2]);
   k = vic.msgs.length;
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await sleep(300);
   ok(got(k, "puppet").length === 1, "BC2 with Vic's table saying everyone, the knock-over is forwarded", vic.since(k).map((m) => m.type));
@@ -125,7 +125,7 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await sleep(300);
   ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /away/.test(m.error)), "BC3 a knock-over from 20 m is refused (out of reach), whatever the table says", sly.since(ks));
   // ask: refused, saying how to ask
-  sly.at(1, 0); await vic.req("consent", { set: { class: "pose", tier: "strangers", mode: "ask" } }); await sleep(300);
+  sly.at(1, 0); await vic.req("consent", { set: { class: "pose", tier: "everyone", mode: "ask" } }); await sleep(300);
   k = vic.msgs.length; ks = sly.msgs.length;
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, pose: { head: [0, 0, 0, 1] } }); await sleep(300);
   ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /ask/.test(m.error) && /body/.test(m.error)), "BC4 'ask' is refused with how to ask (body {to, kind}), not forwarded", sly.since(ks));

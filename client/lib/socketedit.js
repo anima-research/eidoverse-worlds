@@ -37,8 +37,8 @@ let seatSel = null;             // { id, slot } — the anchor under edit
 let seatDrag = null;            // { armed, startX, startY, pending } drag state
 let seatArm = null;             // entity id waiting for a placement click
 
-export const seatArmed = () => seatArm !== null;
-export const seatSelected = () => seatSel !== null;
+export const socketArmed = () => seatArm !== null;
+export const socketSelected = () => seatSel !== null;
 
 function makeSeatGizmo() {
   const g = new THREE.Group();
@@ -57,7 +57,7 @@ function makeSeatGizmo() {
 /** Rebuild all markers from the fold's records. Parented to the entity ROOT in
  *  model frame — the anchor's rest spot, matching socketWorldPos semantics
  *  (reach never oscillates with a part's motion, neither should the gizmo). */
-export function refreshSeatGizmos() {
+export function refreshSocketGizmos() {
   for (const [k, g] of seatGizmos) { g.parent?.remove(g); seatGizmos.delete(k); }
   if (!isEditing()) return;
   // a seat is a socket child (PLAN-sockets-entities): every host that has one, read as its old map (socketMapIn)
@@ -74,11 +74,11 @@ export function refreshSeatGizmos() {
       seatGizmos.set(`${id}\x00${slot}`, g);
     }
   }
-  if (seatSel && !seatGizmos.has(`${seatSel.id}\x00${seatSel.slot}`)) deselectSeat();
+  if (seatSel && !seatGizmos.has(`${seatSel.id}\x00${seatSel.slot}`)) deselectSocket();
   else refreshSeatHighlight();
 }
-bus.on('comp', ({ type }) => { if (type === 'socket' && isEditing()) refreshSeatGizmos(); });
-bus.on('entity', () => { if (isEditing()) refreshSeatGizmos(); });
+bus.on('comp', ({ type }) => { if (type === 'socket' && isEditing()) refreshSocketGizmos(); });
+bus.on('entity', () => { if (isEditing()) refreshSocketGizmos(); });
 
 function refreshSeatHighlight() {
   for (const [k, g] of seatGizmos) {
@@ -105,7 +105,7 @@ function pickSeat(ray) {
   return { id, slot };
 }
 
-export function selectSeat(pick) {
+export function selectSocket(pick) {
   deselect();                              // a seat and a thing never co-hold the keys
   seatSel = pick;
   refreshSeatHighlight();
@@ -115,7 +115,7 @@ export function selectSeat(pick) {
   setInspectorHtml(
     html`<span><b>${pick.slot}</b> anchor on <b>${label.slice(0, 24)}</b></span><span style="color:var(--dim)">drag move · <kbd>Q</kbd><kbd>E</kbd> face · <kbd>Del</kbd> remove · <kbd>Esc</kbd> done</span>`);   // one html``: markup + markup would concatenate to a plain (text) string
 }
-export function deselectSeat() {
+export function deselectSocket() {
   if (seatSel) release();
   seatSel = null; seatDrag = null;
   refreshSeatHighlight();
@@ -123,9 +123,9 @@ export function deselectSeat() {
 }
 
 /** Leaving edit mode: nothing seat-flavored survives the exit. */
-export function resetSeats() {
+export function resetSockets() {
   seatArm = null;
-  deselectSeat();
+  deselectSocket();
 }
 
 /** A host's sockets as the map this grammar edits (its socket children: shared/sockbody.js socketMapIn); writing the map
@@ -186,14 +186,14 @@ function seatFromHit(id, root, hit) {
   return { pos: [round3(mp.x), round3(mp.y), round3(mp.z)], part };
 }
 
-export function armSeatPlacement(id) {
+export function armSocketPlacement(id) {
   if (!id || !entities.get(id)) return;
   setEditMode(true, { quiet: true });
   seatArm = id;
   flashHint(html`click the spot where a sitter goes — the arrow will face you · <kbd>Esc</kbd> cancels`, 8000);
 }
 
-export function cancelSeatArm() {
+export function cancelSocketArm() {
   if (!seatArm) return false;
   seatArm = null;
   flashHint('seat placement cancelled');
@@ -218,20 +218,20 @@ function placeSeatAt(e) {
   while (sockets[slot]) slot = `seat${n++}`;
   sockets[slot] = { pos, ...(yaw ? { q: qFromYaw(yaw).map((v) => +v.toFixed(6)) } : {}), ...(part ? { part } : {}), body: {} };   // '+ seat' places a seat: a person attaches here
   commitSockets(id, sockets, 'seat anchor');
-  selectSeat({ id, slot });      // the comp echo builds the gizmo already selected
+  selectSocket({ id, slot });      // the comp echo builds the gizmo already selected
   flashHint(html`<b>${slot}</b> declared${part ? ' (rides ' + part + ')' : ''} — drag refines · <kbd>Q</kbd><kbd>E</kbd> face · <kbd>Del</kbd> removes`);
 }
 
 /** The core's mousedown hands seat gestures here FIRST — a gizmo is small
  *  and deliberate, and the mesh it floats over would otherwise win every
  *  contested click. Returns true when the press was a seat gesture. */
-export function seatMouseDown(e) {
+export function socketMouseDown(e) {
   if (seatArm) { placeSeatAt(e); return true; }
   mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   raycaster.setFromCamera(mouse, camera);
   const sp = pickSeat(raycaster.ray);
   if (!sp) return false;
-  selectSeat(sp);
+  selectSocket(sp);
   seatDrag = { armed: false, startX: e.clientX, startY: e.clientY };
   return true;
 }
@@ -239,7 +239,7 @@ export function seatMouseDown(e) {
 /** A selected seat anchor holds the editing keys before things do. Returns
  *  true whenever a seat is selected — matching the old ladder, where seat
  *  selection consumed the whole key set. */
-export function seatKeyDown(e) {
+export function socketKeyDown(e) {
   if (!seatSel) return false;
   if (e.code === 'KeyQ') turnSeat(e.shiftKey ? 0.02 : Math.PI / 12);   // keys: seatTurn
   if (e.code === 'KeyE') turnSeat(e.shiftKey ? -0.02 : -Math.PI / 12);   // keys: seatTurn
@@ -249,7 +249,7 @@ export function seatKeyDown(e) {
 
 /** Called each frame from updateBuild while a seat drag is armed: the anchor
  *  slides along ITS OWN entity's surfaces — it cannot fall off the thing. */
-export function updateSeatDrag() {
+export function updateSocketDrag() {
   if (!seatDrag?.armed || !seatSel) return;
   raycaster.setFromCamera(mouse, camera);
   const root = entities.get(seatSel.id);
@@ -288,7 +288,7 @@ function removeSeat() {
   const sockets = socketsOf(seatSel.id);
   delete sockets[seatSel.slot];
   commitSockets(seatSel.id, sockets, 'seat removal');
-  deselectSeat();
+  deselectSocket();
 }
 
 // The seat drag's own arm/commit listeners — the same DRAG_SLOP threshold
@@ -310,15 +310,15 @@ addEventListener('mouseup', () => {
 
 // ---- the inspector's sockets GESTURES + preview --------------------------------
 // The fields are declared in shared/editschema.js. What only this module can
-// add: '+ seat here' arms the click-to-place, a row click selects the gizmo,
+// add: '+ socket here' arms the click-to-place, a row click selects the gizmo,
 // a live drag on a slot's channels moves the gizmo before the merged comp
 // commits (the shared path merges and pushes the undo).
 // Components ▸ + seat…: the first seat in ONE step (before, a sockets comp had to exist first)
-registerHandler('comp', (id, _obj, k, _v, opts) => { if (k !== 'add:seat' || opts?.live) return false; armSeatPlacement(id); return true; });
+registerHandler('comp', (id, _obj, k, _v, opts) => { if (k !== 'add:seat' || opts?.live) return false; armSocketPlacement(id); return true; });
 registerHandler('sockets', (id, obj, k, value, opts) => {
-  if (k === 'add') { armSeatPlacement(id); return true; }
-  if (k === 'slots') { if (entities.get(id)) selectSeat({ id, slot: value }); return true; }
-  if (k === 'del') { if (seatSel?.id === id && seatSel.slot === value) deselectSeat(); return false; }
+  if (k === 'add') { armSocketPlacement(id); return true; }
+  if (k === 'slots') { if (entities.get(id)) selectSocket({ id, slot: value }); return true; }
+  if (k === 'del') { if (seatSel?.id === id && seatSel.slot === value) deselectSocket(); return false; }
   if (!opts?.live) return false;
   const [slot, what, idx] = k.split('|');
   const g = seatGizmos.get(`${id}\x00${slot}`);

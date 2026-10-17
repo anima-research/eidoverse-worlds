@@ -274,7 +274,7 @@ check('…and a default: leaveBy any leaves the key out; the anchor is written d
 { const L = scratchWorld('lift4');
   const r = L.call('create', { id: 'chair1', model: 'chair' });
   const seat = socketId('chair1', 'seat'); const c = L.state().entities[seat]?.c;
-  check('LS4 create {model: chair} makes its seat child (its model\'s socket, every number in the log)', r.ok && c?.parent?.to === 'chair1' && c.socket?.name === 'seat' && !('body' in c.socket) && c.station?.pose === 'sitchair' && JSON.stringify(c.transform.pos) === '[0,0.45,0]', [r.refused, c]);
+  check('LS4 create {model: chair} makes its seat child (its model\'s socket, every number in the log)', r.ok && c?.parent?.to === 'chair1' && c.socket?.name === 'seat' && !('body' in c.socket) && c.station?.anim === 'sitchair' && JSON.stringify(c.transform.pos) === '[0,0.45,0]', [r.refused, c]);
   const u = L.call('use', { id: 'chair1', action: 'sit' });
   check('LS4 …and use {sit} attaches there', u.ok && u.attach?.to === seat, u);
   const d = L.call('create', { from: 'chair1', id: 'chair2' });
@@ -285,7 +285,7 @@ check('…and a default: leaveBy any leaves the key out; the anchor is written d
 { const H = scratchWorld('kinds').seed({ rack: { model: 'crate', pos: [0, 0, 0] } });
   H.call('set', { id: 'rack', component: 'sockets', value: { seat: { pos: [0, 0.5, 0], body: {} }, hook: { pos: [0.4, 1, 0], accepts: ['coat'] }, eye: { pos: [0, 1.2, 0] } } });
   const v = H.view().entities; const hint = (n: string) => kindHint(v[socketsIn(v, 'rack').find((x: any) => x.name === n)?.id ?? '']);
-  check('K7 kindHint: a socket child reads seat / snap / attach by what it has', hint('seat') === 'seat' && hint('hook') === 'snap' && hint('eye') === 'attach', [hint('seat'), hint('hook'), hint('eye')]); }
+  check('K7 kindHint: a socket child reads station / snap / attach by what it has', hint('seat') === 'station' && hint('hook') === 'snap' && hint('eye') === 'attach', [hint('seat'), hint('hook'), hint('eye')]); }
 
 // OC3: a presence frame's seat, old or new, as a socket id (receivers take the old {to: host, slot} for one release)
 { const view = { entities: { bench: {  }, 'bench-seat': { parent: { to: 'bench' }, socket: { name: 'seat' } }, other: {  } } };

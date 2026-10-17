@@ -149,7 +149,7 @@ const cases: Case[] = [
       s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [1, 0, 0] }); s.call("bob", "consent", { pause: true });
       const L = s.call("vic", "look", {}); const me = L.bodies?.find((b: any) => b.id === "vic"), him = L.bodies?.find((b: any) => b.id === "bob");
       return { me, him }; },
-    good: (o) => !!o.me?.shield?.strangers && !!o.him && !("shield" in o.him) && !JSON.stringify(o.him).includes("paused") },
+    good: (o) => !!o.me?.shield?.everyone && !!o.him && !("shield" in o.him) && !JSON.stringify(o.him).includes("paused") },
   { id: "K2", what: "look: who touches whom is the toucher's and the touched's own: a third person sees none of it", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "visitor" } });
       s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] }); s.call("ann", "move", { to: [3, 0, 0] });

@@ -298,7 +298,7 @@ addEventListener('keydown', (e) => {
   if (!e.repeat) toggleFullscreen();   // a held F11 is one toggle
 });
 
-const PANEL_NAMES = { world: 'World (catalog · ground · sky)', profile: 'Profile', emotes: 'Emotes', debug: 'Debug', settings: 'Settings', console: 'Console (scripts)', chat: 'Chat' };
+const PANEL_NAMES = { world: 'World (catalog · ground · sky)', profile: 'Profile', actions: 'Action bar', debug: 'Debug', settings: 'Settings', console: 'Console (scripts)', chat: 'Chat' };
 const panelName = (id) => PANEL_NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
 
 function menu(label, items) {

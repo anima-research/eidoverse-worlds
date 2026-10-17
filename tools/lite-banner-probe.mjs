@@ -35,11 +35,11 @@ try {
     p.on('pageerror', e => errs.push(e.message));
     if (seed) await p.addInitScript(() => { if (sessionStorage.getItem('probe-seeded')) return; sessionStorage.setItem('probe-seeded', '1'); localStorage.setItem('ew-boot-attempt:busy', String(Date.now() - 5000)); })   /* ONE death, not one per navigation */;
     await p.goto(`${O}/?world=busy&name=${label}&key=${K}${q}`);
-    await p.waitForFunction(() => globalThis.__ewLite !== undefined && document.querySelector('#lite-emote-host #hud'), null, { timeout: 30000 });
+    await p.waitForFunction(() => globalThis.__ewLite !== undefined && document.querySelector('#lite-action-host #hud'), null, { timeout: 30000 });
     await p.waitForTimeout(2500);
     const r = await p.evaluate(() => { const bn = document.getElementById('lite-banner'); const rc = bn?.getBoundingClientRect();
       return { lite: globalThis.__ewLite, why: globalThis.__ewLiteWhy, banner: bn?.textContent ?? null, onScreen: !!rc && rc.top >= 0 && rc.bottom <= innerHeight && rc.width > 0,
-        clearOfEmotes: (() => { const e = document.getElementById('lite-emote-host')?.getBoundingClientRect(); return !bn || !e || rc.top >= e.bottom; })(),
+        clearOfEmotes: (() => { const e = document.getElementById('lite-action-host')?.getBoundingClientRect(); return !bn || !e || rc.top >= e.bottom; })(),
         chatTail: [...document.querySelectorAll('#chatlog > *')].slice(-1).map(e => e.textContent.slice(0, 30))[0] };
     });
     return { p, ctx, r, errs };
@@ -51,9 +51,9 @@ try {
   ok('…below the emote row, not over it (360 px wide, the row wraps)', r.clearOfEmotes === true);
   ok('…it names the way in (the ∃ logo), and its one button is got it', /Tap the \u2203 Eidoverse logo/.test(r.banner) /* a touch phone taps */ && await p.evaluate(() => { const c = document.getElementById('lite-banner'); return c.classList.contains('capnotice') && [...c.querySelectorAll('button')].map(b => b.textContent).join('|') === 'got it'; }));
   ok('…the ∃ mark is centred in its tile (within 1 px)', await p.evaluate(() => { const b = document.getElementById('hud').getBoundingClientRect(), g = document.querySelector('#hud svg').getBoundingClientRect(); return Math.abs((b.left + b.right) / 2 - (g.left + g.right) / 2) <= 1 && Math.abs((b.top + b.bottom) / 2 - (g.top + g.bottom) / 2) <= 1; }));
-  ok('…the ∃ is a real tap target (≥ 44 px) leading the top bar', await p.evaluate(() => { const h = document.getElementById('hud'); const r = h.getBoundingClientRect(); return h.parentElement.id === 'lite-emote-host' && h.parentElement.firstElementChild === h && r.height >= 44 && r.width >= 44 && !h.disabled; }));
+  ok('…the ∃ is a real tap target (≥ 44 px) leading the top bar', await p.evaluate(() => { const h = document.getElementById('hud'); const r = h.getBoundingClientRect(); return h.parentElement.id === 'lite-action-host' && h.parentElement.firstElementChild === h && r.height >= 44 && r.width >= 44 && !h.disabled; }));
   const L = await p.evaluate(() => { const R = (q) => document.querySelector(q)?.getBoundingClientRect(); const ov = (a, b) => !!a && !!b && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-    const bar = R('#lite-emote-host'), card = R('#lite-banner'), chat = R('.frame.chat-frame'), dock = R('#hud'), gear = R('.chat-gear'), input = R('#chatline'), hud = document.getElementById('hud');
+    const bar = R('#lite-action-host'), card = R('#lite-banner'), chat = R('.frame.chat-frame'), dock = R('#hud'), gear = R('.chat-gear'), input = R('#chatline'), hud = document.getElementById('hud');
     const cs = getComputedStyle(document.querySelector('.frame.chat-frame'));
     return { dockInBar: !!dock && dock.top >= bar.top && dock.bottom <= bar.bottom, dockClearOfCompose: !ov(dock, gear) && !ov(dock, input),
       chatBelowCard: chat.top >= card.bottom, chatToBottom: Math.abs(innerHeight - chat.bottom) <= 1, chatFullWidth: chat.left <= 0.5 && Math.abs(innerWidth - chat.right) <= 0.5,
@@ -78,11 +78,11 @@ try {
   { // a FRESH phone (no history) starts in lite; choosing 3D is remembered on that device
     const ctx = await b.newContext(PHONE); const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
     await p.goto(`${O}/?world=busy&name=freshphone&key=${K}`);
-    await p.waitForFunction(() => globalThis.__ewLite !== undefined && document.querySelector('#lite-emote-host #hud'), null, { timeout: 30000 });
+    await p.waitForFunction(() => globalThis.__ewLite !== undefined && document.querySelector('#lite-action-host #hud'), null, { timeout: 30000 });
     await p.waitForTimeout(1500);
     const f = await p.evaluate(() => ({ lite: globalThis.__ewLite, why: globalThis.__ewLiteWhy, banner: document.getElementById('lite-banner')?.textContent ?? '' }));
     ok('a fresh phone starts in lite (why=phone), and the card says why: on a phone', f.lite === true && f.why === 'phone' && /You're on a phone/.test(f.banner), JSON.stringify(f));
-    const E = await p.evaluate(() => { const row = document.querySelector('#lite-emote-host .lite-emotes'); const t = [...row.querySelectorAll('.lite-emote')].map((b) => b.getBoundingClientRect());
+    const E = await p.evaluate(() => { const row = document.querySelector('#lite-action-host .lite-actions'); const t = [...row.querySelectorAll('.lite-action')].map((b) => b.getBoundingClientRect());
       return { n: t.length, fits: row.scrollWidth <= row.clientWidth + 1, inView: t.every((r) => r.left >= 0 && r.right <= innerWidth), w: Math.round(t[0]?.width ?? 0), h: Math.round(t[0]?.height ?? 0) }; });
     ok('emotes: every one sits on the top row at 360 px, none scrolled off, tiles ≥ 40 px', E.n > 0 && E.fits && E.inView && E.w >= 40 && E.h >= 40, JSON.stringify(E));
     // the compose box grows with what you type, to a cap, then scrolls; Enter sends and it shrinks back
@@ -119,7 +119,7 @@ try {
   ({ p, ctx, r, errs } = await run('asked', '&lite=1', false, DESK));
   { // a WIDE desktop window: lite keeps to a centred column; tiles stay tiles, packed against the ∃
     await p.setViewportSize({ width: 2000, height: 1000 }); await p.waitForTimeout(400);
-    const W = await p.evaluate(() => { const R = (q) => document.querySelector(q)?.getBoundingClientRect(); const t = [...document.querySelectorAll('.lite-emote')].map((b) => b.getBoundingClientRect());
+    const W = await p.evaluate(() => { const R = (q) => document.querySelector(q)?.getBoundingClientRect(); const t = [...document.querySelectorAll('.lite-action')].map((b) => b.getBoundingClientRect());
       const card = R('#lite-banner'), chat = R('.frame.chat-frame'), hud = R('#hud');
       return { tileMax: Math.round(Math.max(...t.map((r) => r.width))), packed: t.length > 0 && t[0].left - hud.right < 20 && t.every((r, i) => !i || r.left - t[i - 1].right < 12),
         card: Math.round(card.width), chat: Math.round(chat.width), centred: Math.abs((chat.left + chat.right) / 2 - innerWidth / 2) <= 2 && Math.abs((card.left + card.right) / 2 - innerWidth / 2) <= 2 }; });
@@ -137,7 +137,7 @@ try {
   await p.locator('#lite-banner .cn-ok').click();
   ok('got it dismisses it', await p.evaluate(() => !document.getElementById('lite-banner')));
   await p.waitForTimeout(200);
-  ok('…and the chat grows flush up to the bar', await p.evaluate(() => Math.abs(document.querySelector('.frame.chat-frame').getBoundingClientRect().top - document.getElementById('lite-emote-host').getBoundingClientRect().bottom) <= 1));
+  ok('…and the chat grows flush up to the bar', await p.evaluate(() => Math.abs(document.querySelector('.frame.chat-frame').getBoundingClientRect().top - document.getElementById('lite-action-host').getBoundingClientRect().bottom) <= 1));
   ok('…and stops following the emote row (its ResizeObserver disconnects)', await p.evaluate(() => globalThis.__roOff === 1)); await ctx.close();
 
   { // a DESKTOP whose last boot died: full client, plus a pill offering the light version

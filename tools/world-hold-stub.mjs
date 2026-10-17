@@ -46,8 +46,8 @@ export const applySky = () => {};
 export const attachLocalLights = () => {};
 // forecast.js
 export const foldSkyEntry = () => null;
-// seats.js / seatcore.js
-export const seatCorrectionFor = () => null;
+// occupants.js / seatcore.js
+export const occupyCorrectionFor = () => null;
 export const applySeatCorrection = () => {};
 // lights.js
 export const makeLight = () => null;

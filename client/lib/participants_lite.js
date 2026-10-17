@@ -5,7 +5,7 @@
 // the wire protocol has one implementation and this file never has to track changes to
 // it. What differs is what a "participant" IS. There, a record owns a three.js body, a
 // pose buffer and an interpolator. Here it is a row: who, what they're wearing (as a
-// NAME, never loaded), whether they're an agent, whether they just spoke or are typing.
+// NAME, never loaded), the word they declared for themselves (if any), whether they just spoke or are typing.
 //
 // The pose plane is dropped on the floor, and that is the single biggest reason a
 // phone can hold this: presence arrives ~15Hz PER PERSON, and every sample would
@@ -31,7 +31,7 @@ export const serverNow = () => performance.timeOrigin + performance.now() + (clo
 export async function ensureRemote(id, avatarPath, meta = {}) {
   const existing = remotes.get(id);
   if (existing) {
-    if (meta.agent !== undefined) existing.agent = meta.agent;
+    if (meta.declares !== undefined) existing.declares = meta.declares;   // the word they declared at the door (§6a), or null
     if (avatarPath) existing.avatarPath = avatarPath;   // a name; nothing fetches it
     bus.emit('roster');
     return existing;
@@ -39,7 +39,7 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
   const row = {
     id,
     avatarPath: avatarPath || '',
-    agent: meta.agent,
+    declares: meta.declares ?? null,
     speakingUntil: 0,
     typing: false,
     // No `avatar` key, and that is load-bearing: net.js reaches through this record
