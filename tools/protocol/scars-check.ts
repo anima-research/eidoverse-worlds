@@ -273,11 +273,11 @@ const cases: Case[] = [
       return { para: /\*\*Where the authority reads old acts \(readback\)\.\*\*/.test(spec) && /treats a purged body as \*\*unknown\*\*/.test(spec),
         purge12: /act body the authority reads back, §1, may be purged/.test(spec), rows: Object.keys(RB), whole: Object.values(RB).every((r: any) => r.fields?.length && r.where && r.unknown) }; },
     good: (o) => o.para && o.purge12 && ["act:undo", "act:use", "act:script", "act:sculpt", "act:*", "sim:launch"].every((k) => o.rows.includes(k)) && o.whole },
-  { id: "X3", what: "PROTOCOL §7a: the avatar guard rails are MUSTs before avatars (owner stamped at wear, one predicate, every path, the precedence ladder, the grant, the wearer's log); `sealed` is a rule, not a component", run() {
+  { id: "X3", what: "PROTOCOL §7a: the avatar guard rails are MUSTs before avatars (owner stamped at wear, one predicate, every path, the precedence ladder, the grant, the wearer's log); body ownership is a rule under its own heading, and the old word 'sealed' is gone (R 10-17)", run() {
       const spec = read("spec/PROTOCOL.md"); const sec = spec.slice(spec.indexOf("## 7a."), spec.indexOf("## 8."));
       return { b: ["B1.", "B2.", "B3.", "B4.", "B5.", "B6."].filter((x) => !sec.includes(`**${x}`)), ladder: sec.includes("consent > body owner and grantees > world"),
         stamped: /stamped by the authority at wear/.test(sec) && /MUST NOT be derived from the log's history/.test(sec), grant: sec.includes("`edit-grant:<identity> {until?,"),
-        wearer: /stored in the wearer's log, never the world's/.test(sec), sealed: /There is no `sealed` component/.test(sec), oldIntended: sec.includes("(*intended*; the avatar design, not in this PR)") }; },
+        wearer: /stored in the wearer's log, never the world's/.test(sec), sealed: sec.includes("### Body ownership (avatars)") && !/sealed/i.test(sec), oldIntended: sec.includes("(*intended*; the avatar design, not in this PR)") }; },
     good: (o) => !o.b.length && o.ladder && o.stamped && o.grant && o.wearer && o.sealed && !o.oldIntended },
   { id: "X4", what: "the names the guard rails use are held: body-owner, edit-grant, avatar-deny reserved in the registry; the request arrive {wearing} refused as reserved; the refusal code body registered", async run(s) { cast(s);
       const CS = await import(TREE + "shared/protocol/componentspec.js"); const VS = (globalThis as any).__VS; const RC = (globalThis as any).__REG?.REFUSAL_CODES ?? {};

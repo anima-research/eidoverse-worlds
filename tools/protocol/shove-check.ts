@@ -258,9 +258,9 @@ const cases: Case[] = [
       s.call("bob", "move", { to: [4, 0, -0.6] }); const sit = s.call("bob", "use", { id: "chair", action: "sit" }); const rec = JSON.stringify(s.w().presence.seats?.bob ?? null);
       s.call("vic", "move", { to: [4, 0, -0.62] });
       const sh = s.call("vic", "punt", { id: "chair", v: [0, 0.2, 1.5], shove: true }), kick = s.call("vic", "punt", { id: "chair", power: 3 }), grab = s.call("vic", "grab", { id: "chair" });
-      s.call("bob", "move", { to: [4, 0, -4] }, 1000); const after = s.call("vic", "punt", { id: "chair", v: [0, 0.2, 1.5], shove: true });
+      s.call("bob", "move", { to: [4, 0, -3.5] }, 1000); const after = s.call("vic", "punt", { id: "chair", v: [0, 0.2, 1.5], shove: true });
       return { sit: sit.attach?.to, rec, sh: code(sh), kick: code(kick), grab: code(grab), after: show(after) }; },
-    good: (o) => o.sit === "chair-seat" && o.rec === '{"to":"chair-seat"}' && o.sh === "occupied" && o.kick === "occupied" && o.grab === "occupied" && o.after === "ok" },
+    good: (o) => o.sit === "chair-seat" && JSON.parse(o.rec).to === "chair-seat" && Number.isInteger(JSON.parse(o.rec).since) && o.sh === "occupied" && o.kick === "occupied" && o.grab === "occupied" && o.after === "ok" },
   { id: "S22", what: "one body per socket: with bob in the sofa's left seat, vic's use takes the free right seat, ann's is refused occupied naming who sits there; a switched-off seat is no seat (bob's is let go)", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "visitor" } });
       s.call("olive", "create", { id: "sofa", model: "crate", place: { at: [6, 0] } });
