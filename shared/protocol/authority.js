@@ -1150,7 +1150,10 @@ function commit(w, actor, verb, args, build) {
 // each stands (the engine logs where it lands, as a grab's fallen dependents are); with no engine, set straight down onto
 // what is under them. A held, locked or already flying child is left alone. A move or a turn is not a geometry write: the
 // stack rides along, as it always did.
-function resettleRiders(w, actor, ops, before, after0, act, notes) { let after = after0;
+// The authority's consequence, not the asker's write (scars r10 M3): written by `system` under its own act, `resettle {hosts,
+// riders}`, caused by the asker's act (as settle and return-lost are), so the entry never says the asker moved someone else's things.
+function resettleRiders(w, asker, ops, before, after0, cause, notes) { let after = after0; const actor = "system"; let act = null;
+  const own = (riders) => (act ??= w.append({ kind: "act", actor, verb: "resettle", cause, body: { hosts: [...hosts], riders, asked: asker } }));
   // what a host's top depends on: its geometry (a mesh's size, a model's measured box, or none) and its scale. A write that
   // leaves these as they were (the same value re-asserted, a move, a turn) re-drops nothing (review r2 S2.1); a delete of the
   // geometry is a change like any other (r2 S2.3)
@@ -1172,9 +1175,9 @@ function resettleRiders(w, actor, ops, before, after0, act, notes) { let after =
     // with a fresh local pose (a rest keeps a child's recorded scale, and that scale was compensation for the OLD host size)
     // (as it stood BEFORE the write: a model host's new scale had already carried the child's world pose and size with it)
     if (dropped.length) { const free = dropped.flatMap((k) => { const t = worldT(before, k); return [delOp(k, "parent"), setOp(k, "transform", { pos: t.pos.map(r3), q: qr3(t.q), scale: t.scale.map(r3) })]; });
-      changeEntry(w, admit(w, after, { actor, cap: { kind: "system", ids: dropped, comps: ["transform", "parent"] } }, free), act); after = w.state(); }
+      const plan = admit(w, after, { actor, cap: { kind: "system", ids: dropped, comps: ["transform", "parent"] } }, free); changeEntry(w, plan, own(dropped)); after = w.state(); }
     for (const k of dropped) { const t = worldT(before, k);
-      w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: k, p: t.pos.slice(), yaw: qYaw(t.q), ...(ENGINES[spec.engine]?.rotates ? { q: t.q.slice() } : {}), v: [0, 0, 0], handled: [actor] } }); }
+      w.append({ kind: "sim", actor, cause: own(dropped), verb: "launch", body: { id: k, p: t.pos.slice(), yaw: qYaw(t.q), ...(ENGINES[spec.engine]?.rotates ? { q: t.q.slice() } : {}), v: [0, 0, 0], handled: [asker] } }); }
     if (dropped.length) notes.push({ fell: dropped, why: "they were resting on a thing whose shape changed; they fall to its new top (physics will log where they land)" });
     return;
   }
@@ -1188,7 +1191,7 @@ function resettleRiders(w, actor, ops, before, after0, act, notes) { let after =
     const v = { ...after.entities[k].c.transform, pos: lt.pos }; return JSON.stringify(v) === JSON.stringify(after.entities[k].c.transform) ? [] : [setOp(k, "transform", v)]; });
   if (!setOps.length) return;
   const plan = admit(w, after, { actor, cap: { kind: "system", ids: riders, comps: ["transform", "parent"] } }, setOps);
-  changeEntry(w, plan, act);
+  changeEntry(w, plan, own([...new Set(setOps.map((o) => o.id))]));
   notes.push({ setDown: [...new Set(setOps.map((o) => o.id))], why: "they were resting on a thing whose shape changed; with no physics running they were set straight down onto what is under them now" });
 }
 // P7 + Covenant III: a thing is in the sim by its `physics` component, and its geometry enters the sim only through the
@@ -1523,11 +1526,15 @@ function buildDelete(ctx, a) {
   // only what stands over a surface of what's gone can have rested on it (the index: its neighbours, never the world)
   const ixb = spatial(ctx.st); const over = new Set();
   for (const g of gone) for (const s of ixb.rec.get(g)?.surfs ?? []) for (const id of near(ctx.st, [s.min[0], s.y - 0.02, s.min[1]], [s.max[0], Infinity, s.max[1]])) over.add(id);
+  // the set-down is the authority's consequence of the delete, so a follow-up (scars r10 M3): admitted without the deleter's rights or
+  // the rider's lock, so nobody pins a thing against deletion by resting something of theirs on it. In a hand or in flight isn't resting
+  const sf = ctx.w?.sim?.();
   for (const id of Object.keys(after.entities)) { if (!over.has(id)) continue; const b = aabb(after, id); if (!b || after.entities[id].c.parent) continue;
+    if (ctx.w?.presence.holds?.[id] || sf?.launched?.[id]) continue;
     const before = supportBelow(ctx.st, (b.min[0] + b.max[0]) / 2, (b.min[2] + b.max[2]) / 2, b.min[1], new Set([id]));
     if (!gone.has(before.id)) continue;
     const now = supportBelow(after, (b.min[0] + b.max[0]) / 2, (b.min[2] + b.max[2]) / 2, b.min[1], new Set([id]));
-    const t = worldT(after, id); ops.push(setOp(id, "transform", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] })); setDown.push({ id, onto: now.id }); ctx.refs.add(id); }
+    const t = worldT(after, id); ops.push(followUp(setOp(id, "transform", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] }))); setDown.push({ id, onto: now.id }); ctx.refs.add(id); }
   if (setDown.length) ctx.notes.push({ setDown, why: "they were resting on what you deleted, so they were set down on what's below" });
   return ops;
 }
