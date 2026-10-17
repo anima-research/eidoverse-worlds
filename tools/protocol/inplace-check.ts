@@ -6,7 +6,8 @@
 //   files are renamed beside it (log.original.jsonl, snapshot.original.json, poses.original.json), never rewritten.
 //   IP1  the happy path: the name is kept, the original log/snapshot/poses are the SAME files (bytes, inode, mtime), no
 //        temporary directory is left, the snapshot oracle was consulted and agreed
-//   IP2  the server: the boot notice no longer names it, and a visitor joining it under its original name is served it
+//   IP2  the server: one running since before the translation (which refused it) serves it under its original name with no
+//        restart; a fresh boot no longer flags it, and serves it too
 //   IP3  boot ignores log.original.jsonl: a translated directory is not an old-format world (oldWorldAt, bootNotice,
 //        isPreNamesDir), while a world still waiting is (control)
 //   IP4  re-running translate on a translated world refuses cleanly, and changes nothing
@@ -66,9 +67,34 @@ function fingerprint(d: string) {
 const temps = () => fs.readdirSync(W).filter((f) => f.startsWith(".translating-"));
 const same = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
 
+// ---- a real server on the scratch worlds dir ----
+async function freePort(from: number) { for (let p = from; p < from + 200; p++) { if (p === 8968 || p === 8970) continue;
+  const free = await new Promise((res) => { try { const s = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); s.stop(true); res(true); } catch { res(false); } }); if (free) return p; } throw new Error("no free port"); }
+async function boot(tag: string) {
+  const port = await freePort(9240); const log = path.join(root, `${tag}.log`);
+  const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, OPT_DIR: OPT, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
+    BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(log), stderr: Bun.file(log + ".err") });
+  process.on("exit", () => { try { proc.kill(); } catch {} });
+  for (let i = 0; i < 100; i++) { await sleep(150); try { if ((await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok) return { port, proc, log }; } catch {} }
+  throw new Error(`${tag}: the server didn't come up: ${fs.existsSync(log + ".err") ? fs.readFileSync(log + ".err", "utf8").slice(-500) : ""}`);
+}
+async function joinAs(port: number, world: string) {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = [];
+  ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
+  await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+  ws.send(JSON.stringify({ type: "join", world, id: "Ann", avatar: "", replica: true }));
+  for (let i = 0; i < 80 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
+  ws.close();
+  return { snap: msgs.find((m) => m.type === "snapshot"), err: msgs.find((m) => m.type === "error")?.error, types: msgs.map((m) => m.type === "error" ? m.error : m.type).slice(0, 6) };
+}
+
 // ================= IP1: in place, the happy path =================
 const porch = oldWorld("porch");
 const before = fingerprint(porch);
+// the server is running before the translation, and refuses the old world as it is (control)
+const srv1 = await boot("boot1");
+{ const j = await joinAs(srv1.port, "porch");
+  ok(!j.snap && /older version of Eidoverse/.test(j.err ?? "") && /old-format world "porch"/.test(fs.readFileSync(srv1.log, "utf8")), "IP2 setup: before the translation, the running server flags \"porch\" at boot and refuses a visitor in plain words", j.types); }
 const r1 = tool(["translate", "porch", "--no-founder-key"]);
 const after = fingerprint(porch);
 ok(r1.code === 0 && /0 divergences/.test(r1.out) && /translated "porch" .*→ world "porch"/.test(r1.out), "IP1 translate <world> succeeds in place, 0 divergences", r1.out.slice(-1200));
@@ -98,24 +124,17 @@ const waiting = oldWorld("waiting");
   ok(notice.includes(`WORLDS_DIR=${W} bun tools/protocol/world.ts translate waiting --founder-key <the founder's ed25519 key>`) && /keeps its name, so links to it keep working/.test(notice), "IP3 …and its command is the in-place form", notice); }
 
 // ================= IP2: the server serves it under its original name =================
-async function freePort(from: number) { for (let p = from; p < from + 200; p++) { if (p === 8968 || p === 8970) continue;
-  const free = await new Promise((res) => { try { const s = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); s.stop(true); res(true); } catch { res(false); } }); if (free) return p; } throw new Error("no free port"); }
-{ const port = await freePort(9240); const logf = path.join(root, "server.log");
-  const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, OPT_DIR: OPT, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
-    BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
-  process.on("exit", () => { try { proc.kill(); } catch {} });
-  let up = false; for (let i = 0; i < 100 && !up; i++) { await sleep(150); try { up = (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok; } catch {} }
-  ok(up, "IP2 setup: a server on the scratch worlds dir", fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8").slice(-500) : "");
-  const boot = fs.readFileSync(logf, "utf8");
-  ok(!/old-format world "porch"/.test(boot) && /old-format world "waiting"/.test(boot), "IP2 at boot the translated world isn't flagged as old-format (the waiting one is)", boot.split("\n").filter((l) => /old-format|need translating/.test(l)));
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = [];
-  ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
-  await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-  ws.send(JSON.stringify({ type: "join", world: "porch", id: "Ann", avatar: "", replica: true }));
-  for (let i = 0; i < 80 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
-  const snap = msgs.find((m) => m.type === "snapshot"); const info = JSON.parse(tool(["info", "porch"]).out);
-  ok(snap && !msgs.some((m) => m.type === "error") && JSON.stringify(snap).includes(info.worldId), "IP2 a visitor joining \"porch\" (the original name, the old link) is served the translated world", msgs.map((m) => m.type === "error" ? m.error : m.type).slice(0, 6));
-  ws.close(); proc.kill(); await sleep(200); }
+// (the server running since before the translation picks it up with no restart — R's walkthrough keeps it running —
+// and a fresh boot no longer flags it)
+{ const live = await joinAs(srv1.port, "porch");
+  ok(live.snap && !live.err && JSON.stringify(live.snap).includes(JSON.parse(tool(["info", "porch"]).out).worldId), "IP2 the server that refused \"porch\" before the translation serves it now under the same name (the old link), with no restart", live.types);
+  srv1.proc.kill(); await sleep(300);
+  const srv2 = await boot("boot2");
+  const bootLog = fs.readFileSync(srv2.log, "utf8");
+  ok(!/old-format world "porch"/.test(bootLog) && /old-format world "waiting"/.test(bootLog), "IP2 at a fresh boot the translated world isn't flagged as old-format (the waiting one is)", bootLog.split("\n").filter((l) => /old-format|need translating/.test(l)));
+  const j = await joinAs(srv2.port, "porch");
+  ok(j.snap && !j.err, "IP2 …and a visitor joining \"porch\" after the fresh boot is served it", j.types);
+  srv2.proc.kill(); await sleep(200); }
 
 // ================= IP4: re-running refuses, and changes nothing =================
 { const fp = fingerprint(porch); const r = tool(["translate", "porch", "--no-founder-key"]);
