@@ -30,7 +30,7 @@ const cache = makeVerdictCache(async () => {
 });
 let started = false;
 
-export function initSeats() {
+export function initOccupants() {
   if (started) return;
   started = true;
   // note() bumps BEFORE its refetch departs and demotes the held verdict to
@@ -45,7 +45,7 @@ export function initSeats() {
  *  the roster knows the body by, and the live wrapper (null while loading).
  *  Returns {applied:true, contactY, scale} or {applied:false, reason} — the
  *  reason is the declared string, shared verbatim with the other readers. */
-export function seatCorrectionFor(rider, sock) {
+export function occupyCorrectionFor(rider, sock) {
   if (!rider || !rider.path) return { applied: false, reason: 'no rider context' };
   if (!rider.av) return { applied: false, reason: 'body loading' };
   const name = nameFromAvatarPath(rider.path);
@@ -73,11 +73,11 @@ export function seatCorrectionFor(rider, sock) {
 // the next sit declares afresh.
 
 const declared = new Map(); // riderId → last declared "to/slot state reason"
-export function declareSeatState(riderId, to, slot, state, reason) {
+export function declareOccupyState(riderId, to, slot, state, reason) {
   const key = `${to}/${slot ?? 'seat'} ${state} ${reason ?? ''}`;
   if (declared.get(riderId) === key) return;
   declared.set(riderId, key);
   if (state === 'approximate') console.info(`[seat] ${riderId} on ${to}/${slot ?? 'seat'}: seat approximate — ${reason}`);
   else console.info(`[seat] ${riderId} on ${to}/${slot ?? 'seat'}: seat ${state}`);
 }
-export function clearSeatState(riderId) { declared.delete(riderId); }
+export function clearOccupyState(riderId) { declared.delete(riderId); }

@@ -29,7 +29,7 @@ const _m = new THREE.Matrix4(), _mv = new THREE.Vector3(), _mq = new THREE.Quate
 
 /** The pose choices that bear on one occupant: their own, and (in a sync group) every occupant's of the same thing
  *  whose socket shares the group — all from presence, so every client gathers the same list. */
-export function seatChoices(riderId, m, body) {
+export function occupyChoices(riderId, m, body) {
   if (!body?.sync) return m?.pose ? [{ name: m.pose, at: m.at ?? 0 }] : [];
   const host = seatSocket(m.to)?.host;
   const out = [];
@@ -65,7 +65,7 @@ function thingPoint(id, at, part, out, qIn = null, qOut = null) {
  *  the clip name presence should carry, and how far into getting on it is — or null when it isn't seated (or its seat
  *  isn't live yet: the thing is still loading). `xr` is a remote occupant's tracked-hands sample (presence `xr`); the
  *  local occupant's hands are read from the headset. */
-export function driveSeat(av, riderId, { dt, nowMs, path = null, local = false, xr = null }) {
+export function driveOccupied(av, riderId, { dt, nowMs, path = null, local = false, xr = null }) {
   const m = avatarMounts.get(riderId);
   if (!m || !av) return null;
   const seat = seatSocket(m.to);   // m.to is the socket; what it hangs on carries the motion, the reach and exit frames
@@ -79,7 +79,7 @@ export function driveSeat(av, riderId, { dt, nowMs, path = null, local = false, 
   // keys, the look (aimYaw/aimPitch) unless the view is locked — the same filter on every client
   const inp = m.in ? { ...(body.input.move !== 'none' ? { throttle: m.in.throttle, steer: m.in.steer } : {}), ...(body.input.look !== 'locked' ? { aimYaw: m.in.aimYaw, aimPitch: m.in.aimPitch } : {}) } : null;
   const signals = socketSignals({ comp, sock, base, nowMs, input: inp });
-  const chosen = choosePose(body, seatChoices(riderId, m, body));
+  const chosen = choosePose(body, occupyChoices(riderId, m, body));
   const ev = evalPose(chosen.spec, signals);
   const sw = mountTransform(riderId, _p, { path, av }, ev.offset);
   if (!sw) return null;
@@ -184,7 +184,7 @@ function releaseLimbs(av, st) {
 }
 
 /** Everything a seat put on a body, let go: the pose layer, held bones, the head's turn, the hands, the anchor. */
-export function releaseSeat(av) {
+export function releaseOccupied(av) {
   if (!av) return;
   const st = av._seatState;
   if (st) releaseLimbs(av, st);

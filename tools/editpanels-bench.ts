@@ -871,10 +871,10 @@ console.log('\nthe first seat in one step (Add Component ▸ + Seats, which was 
   const btn = popItem('+ Seats');
   check('a model without sockets is offered "+ Seats"', await waitFor(`!!${btn}`), JSON.stringify(await evalJson(popItems)));
   await evalJson(`(${btn}.click(), true)`);
-  check('clicking it arms seat placement directly (no empty sockets comp first)', await waitFor(`import('/lib/seatedit.js').then((m) => m.seatArmed())`), JSON.stringify(await evalJson(`({ btn: (() => { const b = ${btn}; return b ? { disabled: b.disabled, title: b.closest('.sp-row')?.title } : null; })(), hint: document.querySelector('#hintbar')?.textContent, sel: globalThis.__editPanels?.().selection, errs: (window.__errs ?? []).slice(-3), refused: window.__refused })`)));
+  check('clicking it arms seat placement directly (no empty sockets comp first)', await waitFor(`import('/lib/socketedit.js').then((m) => m.socketArmed())`), JSON.stringify(await evalJson(`({ btn: (() => { const b = ${btn}; return b ? { disabled: b.disabled, title: b.closest('.sp-row')?.title } : null; })(), hint: document.querySelector('#hintbar')?.textContent, sel: globalThis.__editPanels?.().selection, errs: (window.__errs ?? []).slice(-3), refused: window.__refused })`)));
   check('…and wrote nothing yet', await evalJson(`import('/lib/world.js').then((m) => !m.bagOf('crate1')?.sockets)`));
   await evalJson(`(document.activeElement?.blur?.(), dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' })), true)`);
-  check('Esc cancels the arming', await waitFor(`import('/lib/seatedit.js').then((m) => !m.seatArmed())`));
+  check('Esc cancels the arming', await waitFor(`import('/lib/socketedit.js').then((m) => !m.socketArmed())`));
   await evalJson(`import('/lib/net.js').then((m) => (m.sendVerb('comp', { id: 'crate1', type: 'sockets', data: { seat: { pos: [0, 0.5, 0], yaw: 0 } } }), true))`);
   check('once it has a seat, "+ Sockets" gives way to the Sockets card', await waitFor(`!${btn} && ${cardTitles}.includes('Sockets')`), JSON.stringify(await evalJson(cardTitles)));
   await evalJson(`import('/lib/net.js').then((m) => (m.sendVerb('comp', { id: 'crate1', type: 'sockets', data: null }), true))`);
@@ -987,7 +987,7 @@ check('Esc hides the frames (Build among them)', await waitFor(`(() => { const F
 check('…and the workspace chrome is not painted any more (bar, rail, columns, tool strip)', await waitFor(`[...document.querySelectorAll('.edit-strip, .edit-col, .edit-split-v, .edit-toolstrip')].every((e) => getComputedStyle(e).display === 'none')`), JSON.stringify(await evalJson(`[...document.querySelectorAll('.edit-strip, .edit-col, .edit-split-v, .edit-toolstrip')].map((e) => e.className + ':' + getComputedStyle(e).display)`)));
 check('…and the ∃ is back on the HUD, its glyphs beside it', await evalJson(`(() => { const h = document.querySelector('#hud').getBoundingClientRect(), m = document.querySelector('#micbtn').getBoundingClientRect(); const hit = document.elementFromPoint(h.left + h.width / 2, h.top + h.height / 2); return (hit === document.querySelector('#hud') || document.querySelector('#hud').contains(hit)) && m.left >= h.right && Math.abs((m.top + m.bottom) / 2 - (h.top + h.bottom) / 2) <= 2; })()`));
 const errs: string[] = (await evalJson(`window.__errs`)) ?? [];
-const mine = errs.filter((e) => /editpanels|editlayout|editschema|panels\.js|inspect\.js|lights\.js|seatedit|scenegraph/.test(e));
+const mine = errs.filter((e) => /editpanels|editlayout|editschema|panels\.js|inspect\.js|lights\.js|socketedit|scenegraph/.test(e));
 check('no page errors from the edit surface', mine.length === 0, mine.slice(0, 3).join(' | '));
 
 console.log(`\n${tally.passed} passed, ${tally.failed} failed`);

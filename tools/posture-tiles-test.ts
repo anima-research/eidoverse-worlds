@@ -26,7 +26,7 @@ GlobalRegistrator.register();
 
 const stub = await import('./posture-tiles-stub.mjs');
 const ctl = await import('../client/lib/controller.js');
-const { sitHere, standUp, setPosture, setMountedHook, setSeatHook, getPosture, myState, updateMe } = ctl;
+const { sitHere, standUp, setPosture, setMountedHook, setOccupyHook, getPosture, myState, updateMe } = ctl;
 const { THREE, world } = stub;
 
 let pass = 0, fail = 0;
@@ -39,7 +39,7 @@ const check = (name: string, ok: boolean, detail = '') => {
 // a declared seat in reach → mount and consume; otherwise fall through to the controller's own layers
 const socket = { mounted: false, inReach: false, dismounts: 0, mounts: 0 };
 setMountedHook(() => socket.mounted);
-setSeatHook(() => {
+setOccupyHook(() => {
   if (socket.mounted) { socket.mounted = false; socket.dismounts++; setPosture('stand'); return true; }   // dismountMe
   if (socket.inReach) { socket.mounted = true; socket.mounts++; return true; }                            // trySitOn
   return false;

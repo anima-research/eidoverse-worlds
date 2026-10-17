@@ -120,12 +120,12 @@ try{
   g.heldPose={chest:[0,0,0,1]};g.clip="ragdoll";g.speed=0;
  };
  seated();
- const state=()=>JSON.stringify({pos:g.pos,seat:g.mySeat,pins:[...g.pins],pose:g.heldPose,clip:g.clip,epoch:(g as any).bodyEpoch});
+ const state=()=>JSON.stringify({pos:g.pos,seat:g.myOccupancy,pins:[...g.pins],pose:g.heldPose,clip:g.clip,epoch:(g as any).bodyEpoch});
  const before=state();
  check(!(await g.walkTo(8.5,.5,true,LONG,0))&&g.walkRefusal?.includes("[sealed]"),"a walk into a sealed room is refused");
  check(state()===before&&sent.length===0,"and the refused walk leaves the seated, pinned, posed, tumbling body as it was, sending nothing");
  const up=g.walkTo(1.5,.5,true,LONG,0);
- check(g.pins.size===0&&g.heldPose===null&&g.pos.y===0&&g.mySeat===null&&!g.mounts.has(g.name),"an accepted walk gets the body up: unpinned, unposed, dismounted, on the ground");
+ check(g.pins.size===0&&g.heldPose===null&&g.pos.y===0&&g.myOccupancy===null&&!g.mounts.has(g.name),"an accepted walk gets the body up: unpinned, unposed, dismounted, on the ground");
  // …and the world hears it: a seat is presence (the pose frame's `seat`), so the next frame carries none.
  (g as any).tick();
  const frame=sent.filter(m=>m.type==="pose").at(-1);

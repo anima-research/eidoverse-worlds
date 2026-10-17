@@ -40,7 +40,7 @@ import {
 import { initUsePrompt } from './lib/useprompt.js';
 import { initClickUse, clickUseApi } from './lib/clickuse.js';
 import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js';
-import { initSeats } from './lib/seats.js';
+import { initOccupants } from './lib/occupants.js';
 // The whole module as one object: net.js takes the participant registry by injection
 // now (it must carry the protocol for lite.js, which has no bodies to register), and
 // this is the real, body-building implementation of that interface.
@@ -439,7 +439,7 @@ wireNet({
 
 bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 
-initSeats();   // seat-profile verdicts (#101): fetch on boot, refresh on the two update events
+initOccupants();   // seat-profile verdicts (#101): fetch on boot, refresh on the two update events
 
 // ---------------------------------------------------------------- my body
 // The avatar swap + avatar-updated wiring rides mybody.js's import; the

@@ -387,11 +387,11 @@ for (const { code, ...a } of BODY_KEYS) registerAction({ ...a, id: `body:${a.id}
 // first claim (a swing that carries you beats sitting frozen mid-air where
 // its collider used to be), and a mounted body's X means "get up". Returns
 // true when the hook consumed the press. Same probe pattern as build.js.
-let seatHook = () => false;
-export function setSeatHook(fn) { seatHook = fn; }
+let occupyHook = () => false;
+export function setOccupyHook(fn) { occupyHook = fn; }
 
 function toggleSit() {
-  if (seatHook()) return;
+  if (occupyHook()) return;
   if (posture === 'sit') { posture = null; myState.seat = null; return; }
   // Layer-0: if there's a real seat pan within reach, sit ON it. The geometry
   // is the affordance — a scanned stool is sittable the moment it arrives.
@@ -1114,7 +1114,7 @@ let mountedHook = () => false;
 export function setMountedHook(fn) { if (typeof fn === 'function') mountedHook = fn; }
 export function sitHere() { if (mountedHook()) return; if (posture !== 'sit') toggleSit(); }
 export function standUp() {
-  if (mountedHook()) { seatHook(); return; }
+  if (mountedHook()) { occupyHook(); return; }
   if (posture === 'sit' || posture === 'lie') { posture = null; myState.seat = null; }
 }
 export const getPosture = () => posture;

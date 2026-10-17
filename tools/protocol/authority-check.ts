@@ -1059,7 +1059,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(us.ok && us.attach?.to === "sofa-r" && us.attach.host === "sofa", "SKE8 use {id: <a socket>} is the direct form (its one action)", us);
   ok(code(R("bob", "use", { id: "sofa-hook" })) === "no-action", "SKE8 …a socket with no body offers nothing to use");
   const ins = R("bob", "inspect", { id: "sofa" });
-  ok(JSON.stringify(ins.actions) === '["sit"]' && JSON.stringify(ins.sockets?.map((x) => [x.id, x.name, x.as])) === '[["sofa-l","left","seat"],["sofa-r","right","seat"],["sofa-hook","hook","snap"]]', "SKE9 inspect {host}: its actions come from its seats, and it lists its sockets (id, name, seat | snap | attach)", [ins.actions, ins.sockets]);
+  ok(JSON.stringify(ins.actions) === '["sit"]' && JSON.stringify(ins.sockets?.map((x) => [x.id, x.name, x.as])) === '[["sofa-l","left","station"],["sofa-r","right","station"],["sofa-hook","hook","snap"]]', "SKE9 inspect {host}: its actions come from its stations, and it lists its sockets (id, name, station | snap | attach)", [ins.actions, ins.sockets]);
   const lk = R("bob", "look", {});
   ok(lk.things.some((t) => t.id === "sofa" && t.sockets?.length === 3) && !lk.things.some((t) => ["sofa-l", "sofa-r", "sofa-hook"].includes(t.id)), "SKE9 look lists the host with its sockets, never a socket as a thing", lk.things.map((t) => t.id));
   R("ann", "set", { id: "sofa-l", component: "disabled", value: true });

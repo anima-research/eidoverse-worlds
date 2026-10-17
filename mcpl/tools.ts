@@ -468,10 +468,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // action}): it checks who may, and that nobody sits there. The seat's leaveBy decides how I get off, and fromSeat
       // whether I may move to it without standing.
       let want = String(a.to ?? "").trim();
-      if (want && !ag.seatOf(want)) { const t = ag.thingRef(want); if ("refusal" in t) return { content: [{ type: "text", text: `attach: ${t.refusal}` }], isError: true }; if ("id" in t) want = t.id; }
-      const mine = ag.mySeat;
+      if (want && !ag.socketRec(want)) { const t = ag.thingRef(want); if ("refusal" in t) return { content: [{ type: "text", text: `attach: ${t.refusal}` }], isError: true }; if ("id" in t) want = t.id; }
+      const mine = ag.myOccupancy;
       if (!want) return { content: [{ type: "text", text: "attach needs to: the thing to get on (detach gets you off)" }], isError: true };
-      const direct = ag.seatOf(want);   // a socket's own id
+      const direct = ag.socketRec(want);   // a socket's own id
       const on = direct ? String(direct.host ?? "") : want;
       if (!ag.foldRecord(on)) return { content: [{ type: "text", text: `attach: nothing here called "${want}"` }], isError: true };
       const all = (direct ? [direct] : ag.socketsOf(on)).map((x: any) => ({ id: x.id, slot: x.name, body: bodyOf(x.station) })).filter((x: any) => x.body);   // only sockets a person can attach to
@@ -484,7 +484,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       }
       const { id: sid, slot, body } = pick;
       if (mine && mine.to !== sid) {
-        if (!body.fromSeat) return { content: [{ type: "text", text: `attach: you're on ${ag.seatName(mine.to)}; ${on} (${slot}) doesn't take you straight from another seat — detach first` }], isError: true };
+        if (!body.fromSeat) return { content: [{ type: "text", text: `attach: you're on ${ag.socketName(mine.to)}; ${on} (${slot}) doesn't take you straight from another seat — detach first` }], isError: true };
       }
       if (a.pose != null && body.poses[String(a.pose)] === undefined) return { content: [{ type: "text", text: `attach: ${on} (${slot}) has no pose "${a.pose}" (its poses: ${Object.keys(body.poses).join(", ") || "only its own"})` }], isError: true };
       { const r = await ag.request("use", { id: sid, action: body.action });
@@ -493,10 +493,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
       return text(`you ${body.action} on ${on} — ${describeBody(slot, body)}`);
   },
   detach: async (ag, a) => {
-      const mine = ag.mySeat;
+      const mine = ag.myOccupancy;
       if (!mine) return text("you're not attached to anything");
       // the escape (review r9 scars M1): a seat may make leaving deliberate, never impossible
-      if (!ag.mayLeaveSeat(a?.escape === true ? "escape" : "menu")) return { content: [{ type: "text", text: `${ag.seatName(mine.to)} lets you go when the world does (a script, or the seat being taken away); detach {escape: true} gets you up anyway` }], isError: true };
+      if (!ag.mayVacate(a?.escape === true ? "escape" : "menu")) return { content: [{ type: "text", text: `${ag.socketName(mine.to)} lets you go when the world does (a script, or the seat being taken away); detach {escape: true} gets you up anyway` }], isError: true };
       ag.setOccupant(null); return text(a?.escape === true ? "you get up (the escape: no seat can hold you)" : "you get off");
   },
   library: async (ag, a, ctx, name) => {
@@ -556,7 +556,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   move: async (ag, a, ctx, name) => {
-      if (ag.mySeat && !ag.mayLeaveSeat("menu")) return { content: [{ type: "text", text: `you're held on ${ag.seatName(ag.mySeat.to)}: it lets you go when the world does (detach {escape: true} gets you up anyway)` }], isError: true };
+      if (ag.myOccupancy && !ag.mayVacate("menu")) return { content: [{ type: "text", text: `you're held on ${ag.socketName(ag.myOccupancy.to)}: it lets you go when the world does (detach {escape: true} gets you up anyway)` }], isError: true };
       const mode = a.mode == null ? "walk" : String(a.mode);
       if (mode !== "walk" && mode !== "fly") return { content: [{ type: "text", text: `move: mode is "walk" (default) or "fly"` }], isError: true };
       // to: [x, y, z] (y picks the floor there, #236) or [x, z] (no y: the walk's own storey, else the lowest floor), or a
@@ -1090,7 +1090,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (a.json) return text(JSON.stringify(schema));
       const kids = childrenOf(world, id);
       const head = `[${ag.handle(id)}] ${kindOf(rec) === "model" ? modelWord(rec.model) : kindOf(rec)}${rec?.label ? ` "${rec.label}"` : ""} — id ${id} (minted, never renamed: its label is its name)`
-        + `\nparent: ${rec.parent ? `${ag.seatName(rec.parent.to)} — its Transform below is LOCAL to ${rec.parent.to}` : "none (a root: its Transform is the world's)"}`
+        + `\nparent: ${rec.parent ? `${ag.socketName(rec.parent.to)} — its Transform below is LOCAL to ${rec.parent.to}` : "none (a root: its Transform is the world's)"}`
         + `\nchildren: ${kids.length ? kids.join(", ") : "none"}`
         + (() => { const h = String((rec as any)?.["copy-of"]?.hash ?? "").replace(/^sha256:/, ""); if (!h) return ""; const b = ag.worldBlueprints()[h]; return `\nblueprint: a copy of \"${b?.name ?? "?"}\" (${h.slice(0, 12)})`; })();
       // where each component's value came from (the authority's touched; the Inspector's card tooltips say the same words)

@@ -10,7 +10,7 @@
 
 import { bodyOf } from '../../shared/components.js';
 import { mayLeave, vacatedFromMine, vacatedAt, OCCUPY_REACH, ESCAPE_HOLD_S, ESCAPE_REPEAT_S } from '../../shared/sockbody.js';
-import { driveSeat, releaseSeat } from './seatbody.js';
+import { driveOccupied, releaseOccupied } from './occupybody.js';
 import { serverNow } from './remotes.js';
 import { sendRequest } from './net.js';
 import { plain, called, typeable } from './plainwords.js';
@@ -21,7 +21,7 @@ import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { mergePose } from '../../shared/humanoid.js';
 import {
-  myState, updateFollowCamera, setPosture, keys, setSeatHook, setMountedHook, camYaw, camPitch, setCamYaw, xrIntent,
+  myState, updateFollowCamera, setPosture, keys, setOccupyHook, setMountedHook, camYaw, camPitch, setCamYaw, xrIntent,
 } from './controller.js';
 import { camera } from './core.js';
 import { avatarMounts, mountTransform, bags, bagOf, socketWorldPos, setBodySeat, entities, seatSocket, socketsOn, parentIdOf } from './world.js';
@@ -90,7 +90,7 @@ export function getUp() {
 }
 // ---------------------------------------------------------------- mounted
 // While seated/riding, my body is DERIVED from the parent entity's live
-// transform + socket (same math remotes use for me: seatbody.js) — so I visibly
+// transform + socket (same math remotes use for me: occupybody.js) — so I visibly
 // swing on the swing I'm sitting on. Getting off is the socket's to allow
 // (body.leaveBy, shared/sockbody.js mayLeave): moving, jumping, the explicit
 // get-up (X, the stand tile, the radial menu), or only a script. Getting off
@@ -99,7 +99,7 @@ const _seatP = new THREE.Vector3();
 let leaving = null;            // {from, to, yaw, clip, t0, dur}: carried off the seat while a leave clip plays
 export const seatLeaving = () => !!leaving;
 /** My seat's socket body (shared/sockbody.js bodyOf), or null when I'm not seated. */
-export function mySeatBody() {
+export function occupiedBody() {
   const m = avatarMounts.get(CONFIG.name);
   return m ? bodyOf(seatSocket(m.to)?.station) : null;
 }
@@ -113,7 +113,7 @@ bus.on('escape-hold', (on) => { escapeTile = !!on; });   // the stand tile press
 export function dismountMe(kind = 'menu', at = null) {
   const m = avatarMounts.get(CONFIG.name);
   if (!m) return false;
-  const body = mySeatBody();
+  const body = occupiedBody();
   if (kind === 'menu' && !mayLeave(body, kind) && body?.leaveBy === 'script' && performance.now() - escapeArmedAt < ESCAPE_REPEAT_S * 1000) kind = 'escape';
   if (!mayLeave(body, kind)) {
     if (body?.leaveBy === 'script' && kind === 'menu') escapeArmedAt = performance.now();
@@ -139,7 +139,7 @@ export function dismountMe(kind = 'menu', at = null) {
   setBodySeat(CONFIG.name, null);        // presence: my next frame carries no seat, and everyone stands me up
   const from = me ? me.root.position.clone() : off.clone();
   const leaveClip = me ? body?.leave ?? null : null;
-  releaseSeat(me);
+  releaseOccupied(me);
   if (leaveClip && me) {
     // carried off while the leave clip plays, its time locked to the carry (the same warp that carries you on)
     const a = me.ensureClip(leaveClip);
@@ -180,7 +180,7 @@ export function updateMountedMe(dt) {
   const me = getMe();
   const m = avatarMounts.get(CONFIG.name);
   if (!m || !me) return;
-  const body = mySeatBody();
+  const body = occupiedBody();
   if (!body) {   // the socket went away under me (removed, or a script took the seat away): that is how a script lets go
     dismountMe('script');
     return;
@@ -198,7 +198,7 @@ export function updateMountedMe(dt) {
   }
   m.in = inp;
   me.pitch = 0;   // the seat turns the head (setSeatLook); the walking head pitch stays off while seated
-  const r = driveSeat(me, CONFIG.name, { dt, nowMs: serverNow(), local: true });
+  const r = driveOccupied(me, CONFIG.name, { dt, nowMs: serverNow(), local: true });
   if (!r) { updateFollowCamera(dt, me); return; }   // parent still downloading
   lastSeat = r;
   myState.pos.copy(r.pos);
@@ -236,7 +236,7 @@ export function updateMountedMe(dt) {
 /** Pick one of my seat's named poses (its `poses` menu), or its default (null). Rides my seat frames with the time I
  *  chose it, so a sync group follows the latest choice on every screen. Returns the menu, or null when not seated. */
 export function chooseSeatPose(name) {
-  const m = avatarMounts.get(CONFIG.name); const b = mySeatBody();
+  const m = avatarMounts.get(CONFIG.name); const b = occupiedBody();
   if (!m || !b) return null;
   const menu = Object.keys(b.poses);
   if (name == null || name === '') return menu;   // just asking
@@ -306,7 +306,7 @@ export function trySitOn(arg, slot = null) {
     // only the latest ask may seat me, and only if I haven't sat, moved or stood since asking: a late answer (a slow
     // door, X pressed twice) must never put me back on a seat I already left
     if (ticket !== sitTicket || avatarMounts.get(CONFIG.name) !== mine) return;
-    if (mine) releaseSeat(getMe());
+    if (mine) releaseOccupied(getMe());
     setBodySeat(CONFIG.name, { to: best.sock });   // presence: my frames carry the seat, the socket's id (world.js)
     const lb = best.body.leaveBy;
     logChat('*', `you ${best.body.action} on ${called(best.id)} (${best.slot}) — ${lb === 'script' ? 'it lets you go when the world does (hold X to get up anyway)' : lb === 'menu' ? 'X to get up' : lb === 'jump' ? 'Space or X to get up' : 'X or move to get off'}`);
@@ -348,7 +348,7 @@ export function updateSeatHint(dt) {
   if (CONFIG.renderer || CONFIG.spectate) return;
   if (_building) { setAmbientHint(null); return; }
   let hint = null;
-  if (avatarMounts.has(CONFIG.name)) { const b = mySeatBody();
+  if (avatarMounts.has(CONFIG.name)) { const b = occupiedBody();
     hint = !b || b.leaveBy === 'any' ? (b?.input.move !== 'none' && b ? html`<kbd>X</kbd> get up · <kbd>WASD</kbd> drive` : html`<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off`)
       : b.leaveBy === 'script' ? html`this seat lets you go when the world does · hold <kbd>X</kbd> to get up anyway` : b.leaveBy === 'jump' ? html`<kbd>Space</kbd> or <kbd>X</kbd> get up` : html`<kbd>X</kbd> get up`; }
   else if (!downed && nearestSeat(null, OCCUPY_REACH.r)) hint = html`<kbd>X</kbd> — sit`;
@@ -542,9 +542,9 @@ export function initLocalBody({ logChat: logChatFn }) {
   bus.on('body-inbox', (msg) => {
     // only from the seat I'm on now (review r9 L4): a late message (after a reconnect) never stands me up from a seat taken since
     const u = Array.isArray(msg?.messages) ? msg.messages.find((m) => m?.type === 'vacated') : null;
-    if (u && vacatedFromMine(u, avatarMounts.get(CONFIG.name)) && dismountMe('script', vacatedAt(u))) toast(`${typeof u.by === 'string' ? u.by : 'someone'} moved the seat you were on, so you stood up`, 'info', 5000);
+    if (u && vacatedFromMine(u, avatarMounts.get(CONFIG.name)) && dismountMe('script', vacatedAt(u))) toast(`${typeof u.by === 'string' ? u.by : 'someone'} moved what you were occupying, so you stood up`, 'info', 5000);
   });
-  setSeatHook(() => {
+  setOccupyHook(() => {
     if (avatarMounts.has(CONFIG.name)) { dismountMe('menu'); return true; }
     if (downed) return false;
     return trySitOn(null);

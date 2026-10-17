@@ -892,7 +892,7 @@ async function handle(msg) {
     }
 
     case 'avatar-profile-updated': {
-      // a seat profile was proposed or countersigned (#101) — seats.js holds
+      // a seat profile was proposed or countersigned (#101) — occupants.js holds
       // the cache and the generation guard; this is just the wire → bus hop
       bus.emit('avatar-profile-updated', msg);
       break;

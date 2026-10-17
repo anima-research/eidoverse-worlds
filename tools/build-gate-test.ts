@@ -6,7 +6,7 @@
 import { plugin } from 'bun';
 const here = (f: string) => new URL(f, import.meta.url).pathname;
 plugin({ name: 'build-gate-stubs', setup(b) {
-  for (const m of ['core', 'base', 'assets', 'lights', 'world', 'colliders', 'terrain', 'net', 'controller', 'ui', 'scenegraph', 'windows', 'seatedit', 'xrask'])
+  for (const m of ['core', 'base', 'assets', 'lights', 'world', 'colliders', 'terrain', 'net', 'controller', 'ui', 'scenegraph', 'windows', 'socketedit', 'xrask'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./build-gate-stub.mjs') }));
   // the building realizer (three.js materials and the GPU) behind structure_ui.js is not under test
   b.onResolve({ filter: /^\.\/realize\/structure\.js$/ }, () => ({ path: here('./build-gate-stub.mjs') }));
@@ -45,7 +45,7 @@ check('any other known role: refused', build.mayEdit() === false);
 console.log('\nBUILD GATE — the gate is applied at the chokepoint, not the keybind');
 
 // Every entry point funnels through setEditMode: toggleEditMode, the dock
-// action, KeyB, and the two quiet callers (holdGhost, armSeatPlacement).
+// action, KeyB, and the two quiet callers (holdGhost, armSocketPlacement).
 asRole('visitor');
 build.setEditMode(false);                       // settle
 const h0 = stub.hints.length;
@@ -56,7 +56,7 @@ check('...and is told why, out loud', stub.hints.slice(h0).some((t: string) => /
 // the quiet callers are gated too — "I picked a thing to place" is build intent
 const h1 = stub.hints.length;
 build.setEditMode(true, { quiet: true });
-check('a quiet caller (holdGhost/armSeatPlacement) is gated too', build.isEditing() === false);
+check('a quiet caller (holdGhost/armSocketPlacement) is gated too', build.isEditing() === false);
 check('...but quietly, as asked', stub.hints.length === h1, JSON.stringify(stub.hints.slice(h1)));
 
 // KeyB routes through toggleEditMode -> setEditMode

@@ -345,7 +345,7 @@ export function applyRemoteXR(av, xr, st, dt) {
     const torso = torsoCapsule(vrm, h);
     for (const side of ['left', 'right']) {
       const g = xr[side[0]];
-      if (av._seatArms?.[side]) continue;   // a socket's reach holds this hand (its vr policy: seatbody.js decides, the same on every client)
+      if (av._seatArms?.[side]) continue;   // a socket's reach holds this hand (its vr policy: occupybody.js decides, the same on every client)
       if (!Array.isArray(g) || g.length !== 7) { relaxArm(vrm, side, dt); continue; }   // a side absent from the wire = lost there too
       fp.set(g[0], g[1], g[2]).applyQuaternion(facingQ).add(rootP);
       fq.set(g[3], g[4], g[5], g[6]).premultiply(facingQ);
@@ -611,7 +611,7 @@ export function tickXRBody(dt) {
     const grip = hands[side]?.grip;
     let ok = false;
     const opts = { dt, head: hmdPos, torso: torsoCap };
-    if (av._seatArms?.[side]) {   // a socket's reach holds this hand (seatbody.js): the tracked hand still rides the wire, unsolved
+    if (av._seatArms?.[side]) {   // a socket's reach holds this hand (occupybody.js): the tracked hand still rides the wire, unsolved
       const gp = xrHandWorld(side, gripP);
       if (gp) { fp.copy(gp).sub(rootP).applyQuaternion(facingInv); wire[side[0]] = [...fp.toArray(), 0, 0, 0, 1].map(r4); }
       dbg.arms[side] = 'seat'; continue;

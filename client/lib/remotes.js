@@ -10,8 +10,8 @@ import { THREE, camera, scene } from './core.js';
 import { report, angleDelta, CONFIG } from './base.js';
 import { makeAvatar, makeCapsuleAvatar } from './avatar.js';
 import { avatarMounts, setBodySeat } from './world.js';
-import { driveSeat, releaseSeat } from './seatbody.js';
-import { declareSeatState, clearSeatState } from './seats.js';
+import { driveOccupied, releaseOccupied } from './occupybody.js';
+import { declareOccupyState, clearOccupyState } from './occupants.js';
 import { applyRemoteReach, noteReachEvents } from './reachnet.js';
 import { syncClipPhase } from './poseclips.js';
 import { applyWingFoldPresence } from '../../shared/wingpresence.js';
@@ -388,9 +388,9 @@ export function updateRemotes(dt, now = performance.now()) {
     // stale stream can't fight the seat.
     if (avatarMounts.has(r.id)) {
       const s0 = buf[buf.length - 1];
-      // the same driver my own seat runs (seatbody.js): socket, anchor, signals, pose, reach, look — so a sitter looks
+      // the same driver my own seat runs (occupybody.js): socket, anchor, signals, pose, reach, look — so a sitter looks
       // the same on every screen
-      const seated = driveSeat(r.avatar, r.id, { dt, nowMs: serverNow(), path: r.avatarPath, xr: s0?.xr ?? null });
+      const seated = driveOccupied(r.avatar, r.id, { dt, nowMs: serverNow(), path: r.avatarPath, xr: s0?.xr ?? null });
       const sw = seated?.sw;
       if (sw) {
         r.avatar.root.position.copy(seated.pos);
@@ -399,7 +399,7 @@ export function updateRemotes(dt, now = performance.now()) {
         // transition — an unprofiled seat renders where it always did, but
         // never silently.
         r.avatar.setSeatApprox(sw.seatState === 'approximate');
-        declareSeatState(r.id, sw.host ?? sw.to, sw.slot, sw.seatState, sw.seatReason);
+        declareOccupyState(r.id, sw.host ?? sw.to, sw.slot, sw.seatState, sw.seatReason);
         // The seat owns WHERE the body is and its base clip — never its
         // expressiveness. The newest presence sample still delivers emotes
         // (one-shots layer over the sit; setClip is emote-aware and won't
@@ -432,11 +432,11 @@ export function updateRemotes(dt, now = performance.now()) {
       }
       // parent still downloading — fall through to normal presence meanwhile
     } else {
-      if (r.avatar._seatState) releaseSeat(r.avatar);   // stood up: the seat lets go of the body
+      if (r.avatar._seatState) releaseOccupied(r.avatar);   // stood up: the seat lets go of the body
       if (r.avatar._seatApprox) {
         // stood up: the marker comes off and the next sit declares afresh
         r.avatar.setSeatApprox(false);
-        clearSeatState(r.id);
+        clearOccupyState(r.id);
       }
     }
 

@@ -23,10 +23,10 @@ export function socketWorldPos() { return null; }
 export function seatSocket() { return null; }   // world.js: the seat socket child of a thing, or null (sockets merge 10-14)
 export function socketsOn() { return []; }
 export function parentIdOf() { return null; }
-// seats.js
-export function declareSeatState() {}
-export function clearSeatState() {}
-export function seatCorrectionFor() { return null; }
+// occupants.js
+export function declareOccupyState() {}
+export function clearOccupyState() {}
+export function occupyCorrectionFor() { return null; }
 // reachnet.js
 export function applyRemoteReach() {}
 export function noteReachEvents() {}
@@ -44,7 +44,7 @@ export function wingFoldPresence() { return null; }
 // xrbody.js — #197 has remotes.js apply remote XR poses. It reaches windows.js (and a DOM) through
 // its own cone, and the capsule recovery path never applies a pose, so it is replaced wholesale.
 export function applyRemoteXR() {}
-export function xrHandWorld() { return null; }   // seatbody.js: a socket's vr policy asks where a tracked hand is
+export function xrHandWorld() { return null; }   // occupybody.js: a socket's vr policy asks where a tracked hand is
 export function resetFingers() {}
 export const xrBodyDebug = () => null;
 // shared/presencewire.js — same: #197 wires presence through it; recovery never sends one.

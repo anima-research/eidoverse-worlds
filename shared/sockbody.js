@@ -169,7 +169,7 @@ export const vacatedAt = (u) => (Array.isArray(u?.at) && u.at.length === 3 && u.
  *  sends at most 5 a second: 0.2 s at a 4 m/s run is 0.8 m). */
 export const OCCUPY_REACH = Object.freeze({ r: 3.5, up: 1.6, down: 1.0, lag: 1.0 });
 /** Is a seat at `seat` within sitting reach of feet at `feet` ([x, y, z] each)? lag: the authority's allowance (0 for the client). */
-export function inSitReach(feet, seat, lag = 0) {
+export function inOccupyReach(feet, seat, lag = 0) {
   const dh = Math.hypot(seat[0] - feet[0], seat[2] - feet[2]), dy = seat[1] - feet[1];
   return dh <= OCCUPY_REACH.r + lag && dy <= OCCUPY_REACH.up + lag && -dy <= OCCUPY_REACH.down + lag;
 }
@@ -381,9 +381,9 @@ export function resolveSeat(world, seat) {
   return kid ? { to: kid } : null;
 }
 
-/** What a socket is for, read from what it has (never stored): a seat if it has a station, a snap point if accepts, else
+/** What a socket is for, read from what it has (never stored): a station if it has one, a snap point if accepts, else
  *  an attach point. `c` is the socket's record (a fold `c` or a view's `comp`). */
-export const socketRole = (c) => (isObj(c?.station) ? 'seat' : Array.isArray(c?.socket?.accepts) ? 'snap' : 'attach');
+export const socketRole = (c) => (isObj(c?.station) ? 'station' : Array.isArray(c?.socket?.accepts) ? 'snap' : 'attach');
 /** A host's sockets, as its socket children (PLAN-sockets-entities §1): [{id, name, sock, station}] in `kids` order. `kids(host)`
  *  lists a thing's child ids; `rec(id)` is a record's components (a fold `c`, or a view's `comp`). A socket switched off
  *  on its own is a closed seat: not listed. The one reader every client and agent surface shares (the authority's own is

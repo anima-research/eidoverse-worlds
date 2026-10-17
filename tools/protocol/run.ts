@@ -36,7 +36,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["descriptors", "../descriptor-defaults-test.ts", 1], // C5 (DEBT 10-12 #3a): every record and inspector default is the registry's, through the editor translation
   ["light-readers", "../light-readers-test.ts", 1], // D2 (DEBT-2 #5): a light is found by kindOf and the rig's complight key, its gizmo is no box or material slot
   ["ghost-mesh-size", "../ghost-mesh-size-test.ts", 1], // D1: every shape × scale the build ghost sends passes the door's mesh check (the plane at 1/1.1 did not)
-  ["boot-init", "../boot-init-test.ts", 1], // D3: every client init* has a caller (initSeats had none)
+  ["boot-init", "../boot-init-test.ts", 1], // D3: every client init* has a caller (initOccupants had none)
   ["editor-range", "../editor-range-test.ts", 1], // D4a: the editor writes what was typed inside the door's range, and refuses outside it with nothing sent
   ["lookat-forward", "../lookat-forward-check.ts", 1], // D7: the authority and the door give one verdict on every LookAt.forward
   ["role-grammar", "../role-grammar-test.ts", 1], // D7: one role-id grammar (grab, sockbody, rolespanels, commands)

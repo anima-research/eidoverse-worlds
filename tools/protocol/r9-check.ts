@@ -35,7 +35,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the ride ignores when the rider sat", "shared/protocol/authority/occupants.js", "if (own && rootOf(s.to) === own && rideBefore(s.since)) continue;", "if (own && rootOf(s.to) === own) continue;", ["M1", "M2"]],
   ["no escape from a script seat", "shared/sockbody.js", "if (kind === 'script' || kind === 'escape') return true;", "if (kind === 'script') return true;", ["E1", "E2"]],
   ["the auditor skips every arrival mismatch", "shared/protocol/scriptaudit.js", "if (!agree) { skipped.push(", "if (true) { skipped.push(", ["A1"]],
-  ["the agent ignores unseated", "mcpl/agent.ts", "if (vacatedFromMine(m, this.mySeat)) {", "if (false) {", ["U1"]],
+  ["the agent ignores unseated", "mcpl/agent.ts", "if (vacatedFromMine(m, this.myOccupancy)) {", "if (false) {", ["U1"]],
   ["unseated from any seat", "shared/sockbody.js", "u.socket === mount.to);", "true);", ["U2"]],
   ["no re-anchor on a step off a seat", "shared/protocol/authority/bodyverbs.js", "if (sat && vacateAt(w, st, actor, sat.to)) me = w.presence.bodies[actor];", "", ["T1"]],
   ["no re-anchor on an unseat", "shared/protocol/authority/occupants.js", "w.presence.bodies[who] = { ...b, at, ts: w.pace ? w.pace() : w.now(), tokens: TRACK.cap }; w.presenceDirty = true;", "", ["T1", "T2"]],
@@ -209,7 +209,7 @@ const cases: Case[] = [
   { id: "E2", what: "an agent on a script seat: detach is refused and names the escape; detach {escape: true} gets it up", async run() {
       const TL = await import(TREE + "mcpl/tools.ts"); const body = SK.bodyOf({ action: "sit", leaveBy: "script" });
       let seat: any = { to: "s1" };
-      const ag: any = { get mySeat() { return seat; }, mayLeaveSeat: (k: string) => SK.mayLeave(body, k), seatName: () => "the cage (a)", setOccupant: (x: any) => { seat = x; } };
+      const ag: any = { get myOccupancy() { return seat; }, mayVacate: (k: string) => SK.mayLeave(body, k), socketName: () => "the cage (a)", setOccupant: (x: any) => { seat = x; } };
       const det = TL.HANDLERS?.detach;
       if (!det) return { noHandler: Object.keys(TL) };
       const a = await det(ag, {}); const still = !!seat; const b = await det(ag, { escape: true });
@@ -232,10 +232,10 @@ const cases: Case[] = [
   { id: "U1", what: "(holes M3 / claims O1) an agent seated on S gets `vacated {socket: S, at}`: its seat clears, it stands where the authority let it go, and its inbox says who moved the seat; a message for another seat changes nothing", async run() {
       const { WorldAgent } = await import(TREE + "mcpl/agent.ts");
       const ag = new WorldAgent({ url: "ws://127.0.0.1:1/ws", name: "Hep", world: "x", avatar: "" });
-      ag.setOccupant({ to: "s2" }); ag.bodyInbox([{ type: "vacated", socket: "s1", by: "bob", why: "w" }]); const other = ag.mySeat?.to ?? null;
+      ag.setOccupant({ to: "s2" }); ag.bodyInbox([{ type: "vacated", socket: "s1", by: "bob", why: "w" }]); const other = ag.myOccupancy?.to ?? null;
       ag.setOccupant({ to: "s1" }); ag.bodyInbox([{ type: "vacated", socket: "s1", by: "bob", why: "chair.transform was changed by someone else", at: [3, 0.45, 7] }]);
       const said = ag.inbox.map((x: any) => x.text).join(" | ");
-      return { other, seat: ag.mySeat, mount: ag.mounts.has("Hep"), pos: [ag.pos.x, ag.pos.y, ag.pos.z], said }; },
+      return { other, seat: ag.myOccupancy, mount: ag.mounts.has("Hep"), pos: [ag.pos.x, ag.pos.y, ag.pos.z], said }; },
     good: (o) => o.other === "s2" && o.seat === null && !o.mount && JSON.stringify(o.pos) === "[3,0.45,7]" && /bob moved/.test(o.said) && /standing where it was/.test(o.said) },
   { id: "U2", what: "(holes L4) the client's and agent's one predicate: a `vacated` stands you up only from the socket it names", run() {
       const f = SK.vacatedFromMine;

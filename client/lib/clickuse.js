@@ -24,7 +24,7 @@ export function initClickUse(h) { hooks = h; }
 const off = () => !hooks || hooks.editing?.() || hooks.busy?.() || xrActive();
 
 const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
-const seatOf = (id) => { for (const x of socketsOn(id)) { const b = bodyOf(x.station); if (b) return b; } return null; };   // a socket child a body may take (localbody's rule)
+const occupiableOf = (id) => { for (const x of socketsOn(id)) { const b = bodyOf(x.station); if (b) return b; } return null; };   // a socket child a body may take (localbody's rule)
 const canGrab = (id) => !!physicsApi.grabbable(id)?.enabled;
 
 /** What a thing offers, most likely first: [{k, label, run}]. The first is what a left-click does. */
@@ -44,7 +44,7 @@ export function offersOf(id, { spot = null } = {}) {
     out.push({ k: 'puton', label: `put ${hn} on ${name}`, parts: [`put ${hn} on `, name, ''], run: () => putAtSpot(inHand, onTop(id, spot)) }); }
   else if (canGrab(id)) add('grab', 'pick up ', '', () => physicsApi.grab(id), near);
   for (const a of actionsOf(id)) add(`use:${a.action}`, `${a.verb} `, a.barred ? ` (${a.barred})` : '', () => useThing(id, a.action, a.verb), near);
-  const seat = seatOf(id);
+  const seat = occupiableOf(id);
   if (seat) add('sit', `${seat.action ?? 'sit'} on `, '', () => trySitOn(id), near);
   if (!held && bagOf(id)?.physics?.kind === 'dynamic') add('punt', 'punt ', '', () => physicsApi.punt(id), () => physicsApi.canPunt(id));
   return out;
@@ -59,7 +59,7 @@ export function thingAt(clientX, clientY) {
   const targets = [];
   // clickthrough (componentspec): a click passes through it to whatever is behind (R 10-11: a per-thing switch)
   const through = (id) => bagOf(id)?.clickthrough === true;
-  for (const [id, o] of entities) if (o && !through(id) && (canGrab(id) || actionsOf(id).length || seatOf(id) || physicsApi.mine().includes(id))) targets.push(o);
+  for (const [id, o] of entities) if (o && !through(id) && (canGrab(id) || actionsOf(id).length || occupiableOf(id) || physicsApi.mine().includes(id))) targets.push(o);
   if (!targets.length) return null;
   // not a surface the camera is standing in (an orbit camera pulled up against a gate saw only the gate, 7 cm away)
   let root = ray.intersectObjects(targets, true).find((h) => h.distance > NEAR && !outOfMyView(h.object))?.object;

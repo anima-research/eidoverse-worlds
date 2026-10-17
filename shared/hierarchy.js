@@ -126,7 +126,7 @@ export function childrenOf(world, id) {
 export function kindHint(ent) {
   if (!ent) return '?';
   const kind = kindOf(ent);
-  if (kind === 'socket') return socketRole(ent.c ?? ent);   // what it is for: seat, snap or attach (never stored)
+  if (kind === 'socket') return socketRole(ent.c ?? ent);   // what it is for: station, snap or attach (never stored)
   const plus = lightOf(ent) ? ' + light' : '';
   if (kind === 'mesh') return `${(ent.c ?? ent).mesh.shape}${plus}`;
   if (kind !== 'model') return kind;

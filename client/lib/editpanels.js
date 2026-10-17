@@ -34,7 +34,7 @@ import { state, onWorldChange } from './state.js';
 import { treeRows, kindHint, ancestors } from '../../shared/hierarchy.js';
 import { handleOf } from '../../shared/thingref.js';
 import { refreshOutline, setRemoveHook, holdGhost, holdBlueprint, getTool as transformTool, setTool as setTransformTool } from './build.js';
-import { armSeatPlacement, seatArmed, cancelSeatArm } from './seatedit.js';
+import { armSocketPlacement, socketArmed, cancelSocketArm } from './socketedit.js';
 import { defsRegistry } from './defs.js';
 import { WORLD_ID, describeWorld, worldPick, worldChoice } from '../../shared/worldentity.js';
 import { WEATHERS } from '../../shared/forecast.js';
@@ -993,7 +993,7 @@ function removeMany(ids) {
 //               Saved blueprints arrive with step 6; the group is there, empty, saying so.
 //   Tools       the transform tools (build.js setTool — the same call as Q/G/E/R), the building
 //               tools (structure_ui.js — its TOOLS, its setTool; a building edit is one act, so Ctrl+Z undoes it)
-//               and seat placement (seatedit.js armSeatPlacement, on the selected thing).
+//               and seat placement (socketedit.js armSocketPlacement, on the selected thing).
 //   World       the world entity's presets (shared/worldentity.js worldPick): Sky from
 //               defs/sky/_presets.json, Terrain and Grass from defs/ground/_palette.json (the same
 //               args groundpanel writes, shared/grounddefs.js), Weather. A pick replaces the
@@ -1102,10 +1102,10 @@ function buildFields() {
     { t: 'group', k: 'tools', label: 'Tools', open: !buildFolds.tools },
     // one tool is active: an armed building tool or seat placement owns the next click, so the
     // transform tile reads armed only while neither is
-    { t: 'tiles', k: 'ttool', value: st || seatArmed() ? null : transformTool(), options: TRANSFORM_TILES },
+    { t: 'tiles', k: 'ttool', value: st || socketArmed() ? null : transformTool(), options: TRANSFORM_TILES },
     { t: 'tiles', k: 'stool', value: st, options: structureTools().map((x) => ({ v: x.k, label: x.label, icon: x.icon, hint: x.hint })) },
-    { t: 'tiles', k: 'xtool', value: seatArmed() ? 'seat' : null, disabled: !sel && !seatArmed(),
-      options: [{ v: 'seat', label: 'seat', icon: 'armchair', hint: sel ? `click where a sitter goes on ${sel}` : 'select a thing first, then click where a sitter goes' }] },
+    { t: 'tiles', k: 'xtool', value: socketArmed() ? 'seat' : null, disabled: !sel && !socketArmed(),
+      options: [{ v: 'seat', label: 'station', icon: 'armchair', hint: sel ? `click where a body occupies ${sel} (a station socket)` : 'select a thing first, then click where a body occupies it' }] },
     { t: 'btn', k: 'snew', label: 'new building', icon: 'plus', hint: 'start a new building on the ground in view' },
     ...worldBuildFields(),
   ];
@@ -1118,9 +1118,9 @@ function buildDispatch(action, payload) {
     case 'wsel': selectWorld(); return;
     // a transform tile is the same call as its key (Q/G/E/R); picking one also puts down an armed
     // building tool or seat placement, which would otherwise keep the next click
-    case 'ttool': if (structureTool()) setStructureTool(null); cancelSeatArm(); setTransformTool(payload); break;
-    case 'stool': cancelSeatArm(); setStructureTool(structureTool() === payload ? null : payload); break;   // the armed tile again = drop it
-    case 'xtool': if (seatArmed()) cancelSeatArm(); else { if (structureTool()) setStructureTool(null); armSeatPlacement(sceneSelected()); } break;
+    case 'ttool': if (structureTool()) setStructureTool(null); cancelSocketArm(); setTransformTool(payload); break;
+    case 'stool': cancelSocketArm(); setStructureTool(structureTool() === payload ? null : payload); break;   // the armed tile again = drop it
+    case 'xtool': if (socketArmed()) cancelSocketArm(); else { if (structureTool()) setStructureTool(null); armSocketPlacement(sceneSelected()); } break;
     case 'snew': newBuilding(null); break;
     case 'light': holdGhost('@light', 'light'); break;
     case 'bp': placeAhead(payload); break;

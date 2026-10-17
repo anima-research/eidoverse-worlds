@@ -9,7 +9,7 @@
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf, socketQ, ONE_PLACE } from "../components.js";
 import { MOVER, TRACK, bodyBox, bodyScale, floorStep, sweep, tokensAfter } from "../mover.js";
-import { checkSockets, checkSocket, checkStation, inSitReach, OCCUPY_REACH } from "../sockbody.js";
+import { checkSockets, checkSocket, checkStation, inOccupyReach, OCCUPY_REACH } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, homeOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
 import { mintId, PERSON_ID, isPlaceholder } from "./ids.js";

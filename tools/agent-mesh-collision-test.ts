@@ -126,9 +126,9 @@ try {
   await legacyVerb(a, "comp", { id: "tower", type: "sockets", data: { bench: { pos: [-0.8, UPPER + 0.45, -2.4], body: { pose: "sitchair" } } } });
   await sleep(200);
   await legacyVerb(a, "mount", { id: "walker", to: "tower", slot: "bench" });
-  for (let i = 0; i < 40 && !!!a.mySeat; i++) await sleep(50);
+  for (let i = 0; i < 40 && !!!a.myOccupancy; i++) await sleep(50);
   await sleep(500);                                     // seated for a few ticks
-  check("sits on an upstairs seat", !!a.mySeat);
+  check("sits on an upstairs seat", !!a.myOccupancy);
   check("stands up from it upstairs, not on the ground floor beneath",
     await walk(-0.2, -2.4) && near(a.pos.y, gy + UPPER), `y ${a.pos.y.toFixed(3)}`);
   // leave upstairs, come back: the body wakes where it was, at that height,

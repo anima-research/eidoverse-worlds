@@ -30,7 +30,7 @@ export type EffectiveView = {
    *  and never rederives one. */
   seatVerdict?(id: string): { pose?: string; status: string; contactY?: number; refusal?: string; which?: string } | undefined;
   /** A seated BODY's chosen size (presence `pose.scale`, clamped; absent = 1) —
-   *  the browser's riderScalar input (seats.js: root scale × avatar.bodyScale()).
+   *  the browser's riderScalar input (occupants.js: root scale × avatar.bodyScale()).
    *  Absent method reads as 1. */
   riderScale?(id: string): number;
 };

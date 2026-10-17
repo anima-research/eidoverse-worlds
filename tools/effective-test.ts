@@ -435,7 +435,7 @@ console.log("\n━━ precision: mount chain wins over own motion ━━");
 
 // ---- body size (pose.scale): a profiled seat's contact is measured at the
 // rider's AUTHORED size, so it multiplies the rider's chosen size — the
-// browser's seats.js riderScalar(root × avatar.bodyScale()) — and nothing else.
+// browser's occupants.js riderScalar(root × avatar.bodyScale()) — and nothing else.
 console.log("\n━━ body size: a profiled seat lowers a scaled rider in proportion ━━");
 if (EFF) {
   // chair at the origin, unscaled; a surface socket 0.5 up; contact plane 0.45
