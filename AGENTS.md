@@ -200,7 +200,9 @@ change, and which two things may share. So:
   one: answer with the handle.
 - **Deleting a thing clears references to it** (a `look-at` aimed at it, a
   story's marks, a reset's targets, a home under it) in the same act; the
-  reply says what it cleared. `lint` reports any stored reference that names
+  reply says what it cleared. It works even where you couldn't edit the
+  referring thing (its lock or another's key doesn't stop it), and leaves a
+  script's scope alone. `lint` reports any stored reference that names
   nothing.
 - **Scripts reference things by id, never by label**: a label is a name
   people change and share. `world.create(components)` returns the new id.
@@ -224,7 +226,9 @@ lists what a verb takes.
 A refused write is still on the record, as an attempt act that changed
 nothing: its verb, the names of the arguments it carried and the refusal
 code, never the values (those are kept in memory for diagnosis only);
-`world_debug` shows the reason.
+`world_debug` shows the reason. A refusal of what your body does (`move`,
+`body`, `reach`, `consent`, `inbox`, `wait`, `leave`) isn't logged at all; a
+verb the authority doesn't know is recorded as `unknown-verb`.
 
 ### The tools — general shapes, with modes
 
@@ -362,6 +366,11 @@ act {verb: "create", args: {components: {parent: {to: "<seat>"}, transform: {pos
 the pendulum swings about it. Motion is a **function of time**: every
 client evaluates the closed form at its own `now`, so one entry buys
 minutes of movement with zero traffic.
+
+**Riders.** Moving a seat someone is sitting on (its `transform`, `parent` or
+`motion`, or anything it hangs from) stands them up where they were, and
+tells them; it is never refused for them. A seat's own reaction or script
+carries its riders. Someone standing on a thing never blocks your edit.
 
 **Locking — nail a thing down.** `set {id, component: "lock", value:
 {rank: "builder"}}` (`true` is taken as the builder level; `moderator` and
