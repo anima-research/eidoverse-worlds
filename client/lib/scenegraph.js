@@ -45,6 +45,7 @@ import { offIn } from './realize/models_field.js';
 import { makeSection, flashHint, html } from './ui.js';
 import { logChat } from './chat.js';
 import { myState } from './controller.js';
+import { modelWord } from '../../shared/eido.js';
 
 
 const esc = (v) => String(v).replace(/[&<>"]/g, (c) => (
@@ -107,7 +108,7 @@ function paintScene(force = false) {
   const rows = [];
   const row = (id, depth) => {
     const meta = metaOf(id);
-    const short = (meta?.model ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '')
+    const short = (meta?.model != null ? modelWord(meta.model) : (meta?.kind ?? '?').split('/').pop())   // an address: its word, never its hex
       .split('_').slice(0, 3).join(' ');
     const badges = badgesFor(id);
     const scripts = behaviorRows.filter((b) => b.attach === id).map((b) => `📜${b.id}`);

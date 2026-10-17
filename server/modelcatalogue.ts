@@ -12,7 +12,7 @@
 // it. A name that isn't a library path at all is refused (no model called …).
 import { resolveLibFile } from "./libfile.ts";
 import { r3 } from "../shared/protocol/round.js";
-import { isEido, eidoHex } from "../shared/eido.js";
+import { isEido, eidoHex, learnModelPath, modelWord } from "../shared/eido.js";
 import { eidoRel, contentAddressOf, recordEido } from "./eidoindex.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { readdirSync, statSync, readFileSync } from "node:fs";
@@ -38,7 +38,8 @@ const MIN_ZONE = 0.02; // m²: smaller up-facing zones are trim and bevels, not 
 
 async function measure(lib: string): Promise<void> {
   const named = isEido(lib) ? eidoRel(eidoHex(lib)!) ?? lib : lib;   // an address is labelled by the file it names here
-  const label = named.split("/").pop()!.replace(/\.(glb|vrm)$/i, "").replace(/[_-]+/g, " ");
+  if (named !== lib) learnModelPath(lib, named);
+  const label = modelWord(named).replace(/[_-]+/g, " ");   // an address no file here names is "thing", never its hex
   let entry: Entry = { label, surfaces: [] };
   try {
     const file = resolveLibFile(lib);
@@ -100,7 +101,7 @@ export const ENGINE_CATALOGUE = {
   get version() { return version; },
   get(name: string): Entry | undefined {
     if (!isLibPath(name)) return undefined;
-    const e = cache.get(name) ?? { label: name.split("/").pop()!, surfaces: [] }; // cold: named, not sized (warm first)
+    const e = cache.get(name) ?? { label: isEido(name) ? modelWord(name, (m: string) => eidoRel(eidoHex(m)!)) : name.split("/").pop()!, surfaces: [] }; // cold: named, not sized (warm first); an address by the file it names, never its hex
     if (e.credits === undefined) e.credits = creditsFor(libraryCredits(), name);
     return e;
   },
@@ -110,7 +111,7 @@ export const ENGINE_CATALOGUE = {
   address(name: string): string | null {
     if (typeof name !== "string" || isEido(name) || !isLibPath(name)) return null;
     let a = addressed.get(name);
-    if (a === undefined) { const hex = contentAddressOf(name); a = hex ? `eido:sha256/${hex}` : null; addressed.set(name, a);
+    if (a === undefined) { const hex = contentAddressOf(name); a = hex ? `eido:sha256/${hex}` : null; addressed.set(name, a); if (a) learnModelPath(a, name);
       if (hex && eidoRel(hex) !== name) { try { recordEido(hex, name); } catch { /* a read-only host: the address still stands */ } } }
     if (a && !cache.has(a) && cache.has(name)) cache.set(a, cache.get(name)!);   // the same bytes, measured once
     return a;

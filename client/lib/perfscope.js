@@ -30,6 +30,7 @@ import { THREE, scene, camera, renderer, canvas } from './core.js';
 import { positionLocal, normalLocal, positionWorld, cameraPosition, modelScale } from 'three/tsl';
 import { entities, metaOf } from './world.js';
 import * as icons from './icons.js';
+import { modelWord } from '../../shared/eido.js';
 // the fill icon set is optional: without it the loupe button is its word
 const fsvg = (name, size) => (typeof icons.fsvg === 'function' ? icons.fsvg(name, size) : '');
 
@@ -172,7 +173,7 @@ function collect() {
         rec = subjects.get(`e:${id}`);
         if (!rec) {
           const meta = metaOf(id);
-          rec = freshRec(`e:${id}`, 'entity', id + (meta?.model ? `  (${String(meta.model).split('/').pop()})` : ''));
+          rec = freshRec(`e:${id}`, 'entity', id + (meta?.model ? `  (${modelWord(meta.model)})` : ''));
           subjects.set(rec.key, rec);
         }
         continue;

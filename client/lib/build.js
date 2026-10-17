@@ -21,7 +21,8 @@ import * as OP from '../../shared/protocol/requests.js';
 import { mintId } from '../../shared/protocol/ids.js';
 import { THREE, scene, camera, canvas } from './core.js';
 import { bus, report } from './base.js';
-import { loadGLB, libLabels } from './assets.js';
+import { loadGLB, libLabels, modelName } from './assets.js';
+import { modelWord } from '../../shared/eido.js';
 import { makeLightGizmo } from './lights.js';
 import { entities, metaOf, bagOf, editHolds } from './world.js';
 import { reindexCollider } from './colliders.js';
@@ -194,7 +195,7 @@ function showInspector(id) {
   ensureInspector();
   // its NAME first (R 10-11: the bar said 'crate_large_blue'), then the model's library label, its file, its id
   const own = Edits.compsOf(id)?.label;
-  const label = (typeof own === 'string' && own) || (libLabels.get(meta.model) ?? meta.model?.split('/').pop()?.replace(/\.glb$/, '') ?? id);
+  const label = (typeof own === 'string' && own) || (meta.model != null ? modelName(meta.model) : id);
   const locked = isLocked(id);
   inspector.innerHTML =
     `<span><b>${escapeHtml(label.slice(0, 34))}</b></span>` +   // a thing's label or model path: world content, text
@@ -523,7 +524,7 @@ bus.on('cut-adopted', () => { for (const id of [...claims.keys()]) endClaim(id);
 
 function commitSpawn() {
   const p = ghost.obj.position;
-  const id = mintId(ghost.lib === '@light' ? 'light' : ghost.lib === '@empty' ? 'empty' : meshOf(ghost.lib) ?? String(ghost.lib ?? '').split('/').pop().replace(/\.[a-z0-9]+$/i, ''));   // 128+ random bits (shared/protocol/ids.js)
+  const id = mintId(ghost.lib === '@light' ? 'light' : ghost.lib === '@empty' ? 'empty' : meshOf(ghost.lib) ?? (ghost.lib ? modelWord(ghost.lib) : ''));   // 128+ random bits (shared/protocol/ids.js)
   // one request: create (a model, or a light: a thing with a light component), or create {from} for a blueprint copy
   // a copy's root keeps the record's own size, times the size it was given in hand
   const rootScale = () => { const s = ghost.bp.record?.root?.components?.find((c) => c.type === 'Transform')?.params?.scale; return Number.isFinite(s) ? s : 1; };

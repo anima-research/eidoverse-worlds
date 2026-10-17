@@ -46,6 +46,7 @@ import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { localOf, parentOps, childrenOf, worldPose } from './hierarchy.js';
 import { recordOf } from './protocol/view.js';
+import { modelWord } from './eido.js';
 import { DESCRIPTORS, fieldOf, claimOf, CLAIMED_KEYS, editorDefault, toWire } from './protocol/descriptors.js';
 
 import { recordComponents } from './protocol/view.js';
@@ -817,7 +818,7 @@ export const ADD_WORDS = Object.freeze({
   Lock: ['pin', 'nail down', 'freeze'], Pivot: ['hinge', 'origin'],
 });
 /** A library path as the inspector header shows it: the file stem, first three words. */
-export const libLabel = (lib) => String(lib).split('/').pop().replace(/\.glb$/, '').split('_').slice(0, 3).join(' ');
+export const libLabel = (lib) => modelWord(lib).split('_').slice(0, 3).join(' ');   // an address: the word for it, never its hex (shared/eido.js)
 // A node name a generator made (tripo_part_fused_0, mesh_12, Cube.003, a uuid)
 // says nothing to a person; anything else is the modeller's own word.
 const MACHINE_PART = [/^(tripo_)?(part|mesh|node|object|geometry|group|primitive|submesh)([_.\- ]?(fused|merged))?[_.\- ]?\d+$/i,

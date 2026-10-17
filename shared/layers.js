@@ -1,4 +1,5 @@
 import { recordComponents } from './protocol/view.js';
+import { isVrmModel } from './eido.js';
 // Selection layers (R, 10-11 00:18-00:37): which kind of thing a click in the edit viewport can land on. A thing's layer
 // is world data a builder may set (the DRAFT component hesperus/layer, docs/COMPONENT-LADDER.md rung 1); without it, a
 // sensible default by kind, and whatever rides an avatar is on 'people' with it. Which layers each PERSON can click is
@@ -10,7 +11,7 @@ export const LAYER_HINT = {
   structure: 'built walls, floors and roofs', props: 'models: crates, furniture, things to move',
   lights: 'lights on their own', signs: 'text and pictures', people: 'avatar models and what rides them', other: 'everything else',
 };
-const vrm = (e) => typeof e?.model === 'string' && /\.vrm(\?|$)/i.test(e.model);
+const vrm = (e) => typeof e?.model === 'string' && isVrmModel(e.model);   // an address: by the file it names here
 /** The layer a thing defaults to, from its own components. */
 export function defaultLayer(e) {
   const c = recordComponents(e);
