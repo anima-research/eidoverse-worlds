@@ -43,8 +43,9 @@ import { SOCKETS_PER_HOST, isLegacyParent, isSocketC, socketRules, actionRules, 
 import { Refusal, refuse, said } from "./authority/refuse.js";
 import { LAB_CATALOGUE, modelOf, geomOf, boxOfM, geomE, withCatalogue, meshShape } from "./authority/catalogue.js";
 export { LAB_CATALOGUE, withCatalogue, MESH_SIZE, meshSize, meshGeom, meshShape } from "./authority/catalogue.js";
+import { readback, purgedSeqs } from "./authority/storage.js";
 import { CHANGE, IMPORTED_ONLY, VOLATILE, clone, createOps, delOp, isE, lockedC, nonce16, opsQuiet, qr3, scratch, setOp, versionOf, versionSeq, LOCK_LEVELS, lockLevel, lockRank } from "./authority/storage.js";
-export { posAt, worldOf, seal, LOCK_LEVELS, lockLevel, lockRank } from "./authority/storage.js";
+export { posAt, worldOf, seal, LOCK_LEVELS, lockLevel, lockRank, readback } from "./authority/storage.js";
 import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, satCost, satDepth, surfacesOf, worldT, yawQ } from "./authority/math.js";
 import { SPATIAL, WORK_BUDGET, clockMs, familyOf, groundOf, groundReady, hitsIx, kidsMap, near, spatial, spend, supportBelow, supportUnder } from "./authority/spatial.js";
 export { WORK_BUDGET, indexAudit } from "./authority/spatial.js";
@@ -177,15 +178,38 @@ function placeholders(w, verb, args) {
   return Object.keys(ids).length ? { args: out, ids } : null;
 }
 
-// R7: a refused write is part of the record (what someone TRIED, in true order; §2.1 "the request as sent, plus its
-// refusal if refused"): an act whose body is {request, refused: {code}}, the request cut to 2 KiB, inside the actor's
-// byte budget. Never logged: reads, dry runs, and the refusals that ARE the budget or the authority's own state (rate,
-// identity, no-world, custody, unreadable, banned): logging those would be the flood. Past the budget, the authority counts
-// what it didn't write, and the next refusal it does write says how many (`unrecorded`).
+// R7: a refused write is part of the record (what someone TRIED, in true order): an act whose body is {args, refused: {code}}
+// inside the actor's byte budget. The engine-scars review (6a, R 10-17 02:45) cut what it keeps to the verb (the act's own
+// `verb`), the argument NAMES the verb takes (its VERBSPEC row, plus the flags every request may carry), and the code: never
+// a value. A visitor could otherwise write any text into a permanent, signed, forkable record by sending refused requests
+// (and a name the verb doesn't take is text too: it is counted as `unknownArgs`, never written). The values go to the
+// authority's in-memory ring (refusalRing: never persisted, capped, like the server's world_debug flight recorder).
+// Never logged: reads, dry runs, and the refusals that ARE the budget or the authority's own state (rate, identity,
+// no-world, custody, unreadable, banned): logging those would be the flood. Past the budget, the authority counts what it
+// didn't write, and the next refusal it does write says how many (`unrecorded`).
 // "muted": its refusal would put the muted words in the public log (review 10-07)
 const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "kicked", "ghost", "muted"]);
+const UNIVERSAL_ARGS = new Set(["dry", "throughLock", "expect"]);   // flags any request may carry (§3a, §5)
+const REFUSAL_RING = 200, RING_VALUE_BYTES = 2048;
+/** The argument names a refused request is logged with: the verb's own (VERBSPEC), sorted; the rest only counted. */
+function argNames(verb, args) {
+  const keys = args && typeof args === "object" && !Array.isArray(args) ? Object.keys(args) : [];
+  const spec = Object.hasOwn(VERBSPEC, verb) ? VERBSPEC[verb] : null;
+  const known = spec ? keys.filter((k) => k in spec.args || UNIVERSAL_ARGS.has(k)) : [];
+  return { known: known.sort(), unknown: keys.length - known.length };
+}
+/** The authority's in-memory ring of refused requests WITH their values (what someone typed): diagnosis, never history.
+ *  Not persisted (a reopened world starts empty) and never written to the log. Newest last. */
+export function refusalRing(w) { return (w.refusals ?? []).slice(); }
+function ringRefusal(w, actor, verb, args, code) {
+  let v; try { v = jcs(stripDry(args ?? {})); } catch { v = "(not I-JSON)"; }
+  const rec = { ts: Math.floor(w.now()), actor, verb: String(verb).slice(0, 64), code, args: v.length > RING_VALUE_BYTES ? `${v.slice(0, RING_VALUE_BYTES)}… (${v.length} bytes)` : v };
+  const ring = (w.refusals ??= []);
+  ring.push(rec); if (ring.length > REFUSAL_RING) ring.splice(0, ring.length - REFUSAL_RING);
+}
 function logRefusal(w, actor, verb, args, code) {
   try {
+    if (w.exists) ringRefusal(w, actor, verb, args, code);
     // a verb the authority doesn't have is recorded too (an agent's invented verb is part of what it tried), when it's a name
     if (!w.exists || !(VERBS[verb] || /^[a-z][a-z0-9-]{0,31}$/.test(String(verb))) || READ_ONLY.has(verb) || args?.dry === true || !isIdentity(actor) || RESERVED.has(actor)) return;
     // a body's track is presence: a refused move (a step, an arrival or a teleport) is never recorded. A person's client
@@ -196,8 +220,8 @@ function logRefusal(w, actor, verb, args, code) {
     // a refused shove is a walk that met something, not a request anyone made in words (review 10-12 S2-4): counted, not written
     if (verb === "punt" && args?.shove === true) { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; }
     if (UNLOGGED.has(code)) return;
-    let req = stripDry(args ?? {}); try { checkIJSON(req); } catch { req = { unloggable: "not I-JSON" }; } const j = jcs(req);
-    const body = { request: j.length > 2048 ? { truncated: true, bytes: j.length } : req, refused: { code } };
+    const names = argNames(verb, args);
+    const body = { args: names.known, refused: { code } }; if (names.unknown) body.unknownArgs = names.unknown;
     const miss = (w.unrecorded ??= new Map()); const n = miss.get(actor) ?? 0; if (n) body.unrecorded = n;
     try { rateCheck(w, actor, "act", jcs(body).length + 256); } catch (x) { if (x instanceof Refusal) { miss.set(actor, n + 1); return; } throw x; }
     w.append(actEntry(w, actor, verb, body)); miss.delete(actor);
@@ -363,6 +387,7 @@ function admit(w, st, who, ops) {
     applyCow(s, [op]); norm.push(op); // one entity copied per op it touches, not the world (s is this write's own copy)
   });
   seatRights(w, st, s, who, role, norm, made);
+  if (!(CTX.forking || who.lifting)) occupiedEdits(w, st, who, norm);
   capacityCheck(w, st, s, who, norm);
   for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: CTX.forking || !!who.lifting }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
   { const bad = socketRules(s, new Set(norm.map((o) => o.id))); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
@@ -647,8 +672,8 @@ function keyRights(w, st, s, who, op, at, keysMade, pause = false) {
   if (pause && !cap && may(st, holder, "pauseScripts")) { const sp = sponsorOf(w, op.id, op.comp);
     if (sp && rankOf(st, sp.sponsor) < rankOf(st, holder)) return;
     refuse("rank", `${op.id}.${op.comp}'s sponsor ${sp ? said(sp.sponsor) : "(nobody)"} doesn't rank below you; pauseScripts reaches scripts whose sponsor ranks below you`, "ask someone ranked above them", { needs: "rank" }); }
-  refuse("rights", `${at} is ${c ? said(c.rights) : "nobody's on record"}'s${c ? ` (made at ${c.seq})` : ""}; only its creator or an owner may ${op.verb === "delete" ? "delete" : "change"} it`,
-    op.comp.startsWith("blueprints:") ? "publish your own version: it gets its own key" : `make your own instance (${op.comp.split(":")[0]}:<another key>), or ask ${c ? said(c.rights) : "an owner"}`);
+  refuse("rights", `${at} is ${c?.rights ? said(c.rights) : "nobody's on record"}'s${c ? ` (made at ${c.seq})` : ""}; only its creator or an owner may ${op.verb === "delete" ? "delete" : "change"} it`,
+    op.comp.startsWith("blueprints:") ? "publish your own version: it gets its own key" : `make your own instance (${op.comp.split(":")[0]}:<another key>), or ask ${c?.rights ? said(c.rights) : "an owner"}`);
 }
 // @world.role-defs as a whole (research §component shapes): checked against the state the write leaves, so a batch
 // that moves people off a role and deletes it lands as one act; a custom role somebody still holds can't vanish.
@@ -1981,7 +2006,7 @@ const pauseOnly = (v, prev) => v !== undefined && prev !== undefined && jcs(unpa
 function sponsorOf(w, id, key) {
   if (!creatorOf(w, id, key)) return null;
   const W = scriptWrites(w, id, key);
-  for (let k = 0; k < W.length; k++) if (k === W.length - 1 || !pauseOnly(W[k].value, W[k + 1].value)) return { sponsor: entryBy(w, W[k].e).rights, sponsorAt: W[k].e.seq };
+  for (let k = 0; k < W.length; k++) if (k === W.length - 1 || !pauseOnly(W[k].value, W[k + 1].value)) { const sp = entryBy(w, W[k].e).rights; return sp ? { sponsor: sp, sponsorAt: W[k].e.seq } : null; }   // READBACK: a purged install act names no sponsor: nothing runs on nobody's rights
   return null;
 }
 // who paused it: the write that turned `paused` on, in the run of writes since (a view: never a name in the value)
@@ -2272,8 +2297,8 @@ function orphanLifts(w) {
   const lifted = new Map();
   w.entries.forEach((e, seq) => {
     if (!isE(e)) return;
-    if (e.kind === "sim" && (e.verb === "lift" || e.verb === "catch") && e.body?.id) lifted.set(e.body.id, { seq, by: e.actor });
-    else if (e.kind === "sim" && e.verb === "launch") lifted.delete(e.body?.id);
+    if (e.kind === "sim" && (e.verb === "lift" || e.verb === "catch") && readback(w, seq)?.id) lifted.set(readback(w, seq).id, { seq, by: e.actor });   // READBACK: a purged lift names nothing to return
+    else if (e.kind === "sim" && e.verb === "launch") lifted.delete(readback(w, seq)?.id);
     else if (e.kind === "change") for (const o of opsQuiet(e)) {
       // the same lifecycle as the engine's (simlayer RELEASES): what ends a hold is a write that moves it, re-parents it,
       // switches it off or removes it; an engine change or an edit to its physics or model leaves it in the hand
@@ -2446,7 +2471,7 @@ function buildWeather(ctx, a, w) { return [setOp("@world", "sky", skyValue(ctx.s
 function buildUndo(ctx, a, w) {
   const X = actIndexOf(w); const E = w.entries;
   const mine = X.actsOf.get(ctx.actor) ?? [];
-  const bodyOf = (seq) => (X.purged.has(seq) ? null : E[seq].body); // a purged act's request can't be read, or matched by label
+  const bodyOf = (seq) => readback(w, seq); // READBACK: a purged act's request can't be read, or matched by label (null: unknown)
   const result = (seq) => { const r = X.resultOf.get(seq); return r === undefined ? undefined : E[r]; };
   // the inverse of one act against `now`: what to write, and what to leave because someone changed it since. A function
   // so an owner's rollback can run it over many acts in a row, each against what the previous inverses left
@@ -2518,8 +2543,10 @@ function buildUndo(ctx, a, w) {
   // A bare undo takes back my latest live act of EVEN depth: an ordinary act or a redo. Skipping only plain undos keeps
   // Ctrl+Z walking back, while a redo is undone first (agent lab round 2, Hazel: a bare undo after a redo reached past
   // it into older work).
-  const depthOf = (seq) => { let d = 0, q = seq; while (q !== undefined && E[q]?.verb === "undo" && d < 64) { d++; q = E[q].body?.undoes; } return d; };
-  const undoneBy = (seq) => { for (let k = mine.length - 1; k >= 0; k--) if (E[mine[k]].verb === "undo" && E[mine[k]].body?.undoes === seq) return mine[k]; return undefined; };
+  // READBACK: the chain reads each undo's `undoes`; a purged undo is unknown, read as the index reads it (it undoes nothing
+  // we can name: the chain ends there, and its target isn't counted undone)
+  const depthOf = (seq) => { let d = 0, q = seq; while (q !== undefined && E[q]?.verb === "undo" && d < 64) { d++; q = bodyOf(q)?.undoes; } return d; };
+  const undoneBy = (seq) => { for (let k = mine.length - 1; k >= 0; k--) if (E[mine[k]].verb === "undo" && bodyOf(mine[k])?.undoes === seq) return mine[k]; return undefined; };
   // an owner's rollback (round-2 R11, CoreProtect's rollback by player and time): undo {actor, since} takes back every
   // act that person made since a version, newest first, each inverse against what the previous ones left; later work by
   // anyone else still stands. It says how many acts it would take back, and above 20 it needs confirm: true.
@@ -2558,7 +2585,7 @@ function buildUndo(ctx, a, w) {
       live !== null ? `it's back in force through redo ${live}: undo {act: ${live}} (or a bare undo) takes it back` : "a bare undo takes back your latest change; history shows the chain"); }
   if (["throw", "drop", "leave"].includes(target.verb)) refuse("physical", `that was a ${target.verb}: what it changed is where things came to rest, which physics decided`, "put it back yourself: grab it, then put {id, pos}");
   const res = result(target.seq); if (!res) refuse("nothing", "that act changed nothing", "");
-  if (target.verb === "sculpt" && TR.ADDITIVE.has(target.body.request?.brush) && !target.body.clamped) { const inv = sculptInverse(w, ctx, target, res); if (inv) { ctx.actExtra = { undoes: target.seq, inverse: true }; return inv; } }
+  if (target.verb === "sculpt" && TR.ADDITIVE.has(bodyOf(target.seq)?.request?.brush) && bodyOf(target.seq)?.clamped !== true) { const inv = sculptInverse(w, ctx, target, res); if (inv) { ctx.actExtra = { undoes: target.seq, inverse: true }; return inv; } }
   const { groups, skipped } = inverseOf(target, res, ctx.st);
   if (!groups.length) refuse("conflict", "everything that act touched has been changed by someone else since", "their later change stands (undo never writes over it); if you still want yours, make the change again yourself, and history shows who did what", { skipped });
   if (skipped.length) ctx.notes.push({ skipped });
@@ -2574,13 +2601,14 @@ function buildUndo(ctx, a, w) {
   // round-2 R11: undoing my own `use` is admitted under the same reaction capability the use was (a visitor may open
   // a door through its handler, so they may close it again by undo), asked for again NOW: no handler, no undo
   const ureq = bodyOf(target.seq)?.request;
-  if (target.verb === "use" && target.actor === ctx.actor && target.body?.capability?.reaction && ureq?.id && ctx.st.entities[ureq.id]?.c.reactions?.[target.body.capability.reaction]) {
+  const ucap = bodyOf(target.seq)?.capability;
+  if (target.verb === "use" && target.actor === ctx.actor && ucap?.reaction && ureq?.id && ctx.st.entities[ureq.id]?.c.reactions?.[ucap.reaction]) {
     const comps = [...new Set(groups.flat().map((o) => o.comp).filter(Boolean))];
-    if (groups.flat().every((o) => o.id === ureq.id && o.comp !== undefined)) { reactionCap(ctx, ureq.id, comps[0], target.body.capability.reaction); ctx.cap.comps = comps;
+    if (groups.flat().every((o) => o.id === ureq.id && o.comp !== undefined)) { reactionCap(ctx, ureq.id, comps[0], ucap.reaction); ctx.cap.comps = comps;
       ctx.actExtra = { undoes: target.seq, capability: ctx.actExtra.capability }; } }
   // say what came back: which act, what it was, and whether this undoes it or redoes it (Hazel: the reply named nothing)
   const req = bodyOf(target.seq)?.request ?? {}; const dz = depthOf(target.seq);
-  const base = dz ? (() => { let q = target.seq; for (let i = 0; i < dz; i++) q = E[q].body?.undoes; return E[q]; })() : target;
+  const base = dz ? (() => { let q = target.seq; for (let i = 0; i < dz; i++) q = bodyOf(q)?.undoes; return E[q]; })() : target;
   const breq = base ? (bodyOf(base.seq)?.request ?? {}) : req;
   const what = `${base?.verb ?? target.verb}${breq.id ? ` ${breq.id}` : ""}${breq.component ? ` ${breq.component}` : ""}${breq.label ? ` "${breq.label}"` : ""}`;
   ctx.undid = { act: target.seq, kind: dz % 2 ? "redo" : "undo", what, ...(dz ? { of: base?.seq } : {}) };
@@ -2594,7 +2622,7 @@ function sculptInverse(w, ctx, target, res) {
   const before = w.stateAt(target.seq - 1), ops = [];
   // a LATER stroke that clamped on these tiles makes the inverse inexact too (40 says "at either time"; this is a third)
   const mine = new Set(opsOf(res).map((o) => `${o.id}|${o.comp}`));
-  for (const e of w.entries) if (isE(e) && e.kind === "act" && e.verb === "sculpt" && e.seq > target.seq && e.body?.clamped) {
+  for (const e of w.entries) if (isE(e) && e.kind === "act" && e.verb === "sculpt" && e.seq > target.seq && (readback(w, e.seq) === null || !!readback(w, e.seq).clamped)) {   // READBACK: a purged later stroke may have clamped: inexact
     const r = w.entries.find((x) => isE(x) && x.kind === "change" && x.cause === e.seq); if (r && opsQuiet(r).some((o) => mine.has(`${o.id}|${o.comp}`))) return null; }
   for (const o of opsOf(res)) { const g = ctx.st.entities[o.id]?.c["terrain-grid"]; if (!g || !o.comp?.startsWith("terrain-tile:") || o.verb !== "set") return null;
     const zeros = () => new Array(g.tile ** 2).fill(0); const b = before.entities[o.id]?.c[o.comp]?.mm ?? zeros(), a = o.value.mm, h = ctx.st.entities[o.id]?.c[o.comp]?.mm ?? zeros();
@@ -2926,7 +2954,11 @@ function restampEngine(w) {
   // in place). The change that brought the build in ends the walk: past it, the build was another. A fork-copy is inherited,
   // not chosen (review r2 F4: forkWorld's copy carries the source's stamped build), and system acts (restamps) never name.
   const named = (v) => !!v && typeof v === "object" && (Array.isArray(v) ? v.some(named) : (v.component === "physics-engine" && v.value?.build !== undefined) || Object.values(v).some(named));
-  const chose = (e) => { const c = E[e.cause]; return isE(c) && c.kind === "act" && c.actor !== "system" && c.verb !== "fork-copy" && named(c.body?.request); };
+  // READBACK: the cause act's request is read back; a purged one (readback null) is an UNKNOWN chooser, and unknown means
+  // the owner may have chosen it: never restamped (engine-scars 4/6c: a purge made an owner's build look stamped)
+  const chose = (e) => { const c = E[e.cause]; if (!(isE(c) && c.kind === "act") || c.actor === "system" || c.verb === "fork-copy") return false;
+    const b = readback(w, e.cause); if (b === null) return true;   // a purged cause: unknown chooser, so never restamped
+    return named(b.request); };
   const E = w.entries; let from = -1, after = null;
   for (let s = E.length - 1; s >= 0; s--) { const e = E[s]; if (!(isE(e) && e.kind === "change")) continue;
     const o = opsQuiet(e).filter((x) => x.id === "@world" && x.comp === "physics-engine").at(-1); if (!o) continue;
@@ -2938,7 +2970,8 @@ function restampEngine(w) {
   if (from < 0) return;
   const out = new Map();   // id → the launch seq it flies under, or "held"
   for (let s = from + 1; s < E.length; s++) { const e = E[s]; if (!isE(e)) continue;
-    if (e.kind === "sim" && e.body?.id) { if (e.verb === "launch") out.set(e.body.id, s); else if (e.verb === "lift" || e.verb === "catch") out.set(e.body.id, "held"); continue; }
+    if (e.kind === "sim") { const b = readback(w, s); if (b === null && ["launch", "lift", "catch"].includes(e.verb)) return;   // READBACK: a purged flight names no body: unknown, so maybe in flight: no restamp
+      if (b?.id) { if (e.verb === "launch") out.set(b.id, s); else if (e.verb === "lift" || e.verb === "catch") out.set(b.id, "held"); } continue; }
     if (e.kind !== "change") continue;
     const c = E[e.cause]; const rest = isE(c) && c.kind === "sim" && c.verb === "launch";
     for (const o of opsQuiet(e)) { const f = out.get(o.id); if (f === undefined) continue;
@@ -3108,6 +3141,27 @@ function occupant(w, st, id, actor) {
   const boxes = [...fam].map((k) => aabb(st, k)).filter(Boolean);
   for (const [who, b] of Object.entries(w.presence.bodies)) if (who !== actor && Array.isArray(b?.at) && boxes.some((x) => feetOn(x, b.at))) return { who, how: "is standing on" };
   return null;
+}
+// Consent gaps 1 (R 10-17 02:45; the SL orbiter / cage scar): an ORDINARY edit that would move a present body is a `move`
+// act on that body, whichever verb carries it. The hand verbs had occupant() (above); an owner's place, a set of transform
+// or parent, or a motion on the chair someone sits in (or the floor they stand on, or anything those hang from) carried
+// them with no consent check. Now each such op meets the occupant's move cell: only `everyone` (a standing allow included)
+// lets it through. An edit can't wait for an answer (like a script meeting an ask), so `ask` refuses too, and the refusal
+// uses the uniform words (consent.js refusalWords): the same for a tier's nobody, a per-person no and a pause; the cause
+// goes to the occupant's own attempt ring. The authority's follow-ups (rest, system), the load's lift, a fork's copy and
+// the hand path (which refuses `occupied` itself, before admit) are not edits. Moving the seat you sit on yourself is yours.
+const MOVES_BODIES = (comp) => comp === "transform" || comp === "parent" || baseOf(comp) === "motion";
+function occupiedEdits(w, st, who, norm) {
+  const cap = who.cap; if (cap && ["rest", "system", "handle"].includes(cap.kind)) return;
+  const from = who.actor, now = w.now(); const seen = new Set();
+  for (const op of norm) {
+    if (op.verb === "create" || op.comp === undefined || !MOVES_BODIES(op.comp) || seen.has(op.id) || !st.entities[op.id]) continue;
+    seen.add(op.id);
+    const o = occupant(w, st, op.id, from); if (!o) continue;
+    const d = C.decide(w.presence, from, o.who, "move", now); if (d.mode === "everyone") continue;
+    ringPush(w.presence, { ts: now, from, to: o.who, cls: "move", verdict: `refused (an edit of ${op.id}.${op.comp})`, why: d.why }); w.presenceDirty = true;
+    refuse("consent", `${C.refusalWords(o.who, "move")}: ${said(o.who)} ${o.how} ${op.id} (or something on it), and ${op.comp} would move them`, C.REFUSAL_FIX, { class: "move", by: o.who });
+  }
 }
 function occupiedRefuse(w, st, id, actor, what) {
   const o = occupant(w, st, id, actor);
@@ -3412,8 +3466,8 @@ function recentRests(w, now) {
     // PHYSICS §1: a launch's rest covers every body its flight set moving; each transform in it is one body's rest
     const c = E[e.cause]; const ops = opsQuiet(e).filter((o) => o.comp === "transform" && typeof o.id === "string" && o.value?.pos);
     const ai = X.restAfter.get(seq); const after = ai === undefined ? null : E[ai];
-    for (const op of ops.reverse()) out.push({ seq, id: op.id, cause: e.cause, at: op.value.pos, handled: c.body.handled ?? [c.actor], when,
-      ...(after?.verb === "return-lost" ? { lost: true } : {}), ...(after?.verb === "settle" ? { onto: after.body.onto } : {}) }); }
+    for (const op of ops.reverse()) out.push({ seq, id: op.id, cause: e.cause, at: op.value.pos, handled: readback(w, e.cause)?.handled ?? [c.actor], when,
+      ...(after?.verb === "return-lost" ? { lost: true } : {}), ...(after?.verb === "settle" ? { onto: readback(w, ai)?.onto } : {}) }); }
   return out.reverse();
 }
 // the punt's reach, from the feet: a thing at your feet, or in the air beside you (a volley)
@@ -3892,8 +3946,14 @@ const VERBS = {
     ids.forEach((id) => tree(id, 0));
     const all = order.slice(0, lim).map(([id, d]) => ({ ...describe(st, id, live, w.presence.holds), depth: d })); const total = order.length;
     // a ghost's body is unseen by everyone else (review 10-07)
-    const P = w.presence; const bodies = Object.entries(P.bodies).filter(([id]) => id === actor || !ghostOf(w, id)).map(([id, b]) => ({ id, at: b.at, shield: shieldOf(P, id),
-      ...(b.poseBy ? { posedBy: b.poseBy } : {}), ...(b.draggedBy ? { draggedBy: b.draggedBy } : {}), touchedBy: Object.entries(P.reaches ?? {}).filter(([, r]) => r.to === id).map(([k]) => k) }));
+    // consent is each person's own (consent gaps 6a, R 10-17 02:45): a viewer sees THEIR table, and who poses, drags or touches
+    // them; of anyone else only where they stand, plus what the viewer is doing to them. Another body's stranger cells and
+    // pause would undo the uniform refusal words (a stranger who reads touch: everyone and is then refused learns they
+    // personally are denied), and who touches whom is nobody else's business
+    const P = w.presence; const bodies = Object.entries(P.bodies).filter(([id]) => id === actor || !ghostOf(w, id)).map(([id, b]) => ({ id, at: b.at,
+      ...(id === actor ? { shield: shieldOf(P, id) } : {}),
+      ...(b.poseBy && (id === actor || b.poseBy === actor) ? { posedBy: b.poseBy } : {}), ...(b.draggedBy && (id === actor || b.draggedBy === actor) ? { draggedBy: b.draggedBy } : {}),
+      touchedBy: Object.entries(P.reaches ?? {}).filter(([k, r]) => r.to === id && (id === actor || k === actor)).map(([k]) => k) }));
     return { ok: true, things: all.slice(0, lim), ...(total > lim ? { truncated: true, total } : {}), bodies };
   },
   inspect(w, actor, a) {
@@ -3933,7 +3993,7 @@ const VERBS = {
         out.push({ seq: i, by: e.actor, who: said(e.actor), ts: e.ts, verb: (isE(act) && act.kind === "act" ? (act.verb === "imported" && typeof act.body?.verb === "string" ? act.body.verb : act.verb) : null) ?? ops[0].verb,
           changed: [...new Set(ops.map((o) => o.verb === "create" ? "(created)" : o.verb === "delete" && o.comp === undefined ? "(deleted)" : o.comp))],
           ...(() => { const d = historyDiff(w, id, i, ops); return d ? { diff: d } : {}; })(),
-          ...(isE(act) && act.body?.undoes !== undefined ? { undoes: act.body.undoes } : {}), ...(Number.isInteger(e.cause) ? { act: e.cause } : {}) }); }
+          ...(isE(act) && readback(w, e.cause)?.undoes !== undefined ? { undoes: readback(w, e.cause).undoes } : {}), ...(Number.isInteger(e.cause) ? { act: e.cause } : {}) }); }
       return { ok: true, id, entries: out, ...(next !== null ? { next, more: "send the same with before: next for older" } : {}) };
     }
     // the whole world's log, a page at a time (Commons audit, agents #3: `verbs` and `before` reached nobody). verbs

@@ -106,6 +106,27 @@ export function worldOf(io) {
   };
   return w;
 }
+// READBACK (verbclasses.js; engine-scars 4/6c, R 10-17 02:45): the act fields the authority reads back for meaning (an
+// undo's chain, a use's capability, a script's sponsor, a sculpt's brush, the request that named an engine build…). §12
+// lets the WHOLE body of an act, say or sim entry be purged, so every such read goes through readback(): the body, or
+// null when it is purged — named by a purge entry later in the log (the authority's in-memory entry still holds it), or
+// already rewritten to its {commit} stub on disk. Null is UNKNOWN, and each reader says what unknown means for it (never
+// "the default": a purged cause act must not make an owner's chosen build look stamped, or a handler's write the visitor's).
+const purgeIx = new WeakMap();   // entries array → {n, seqs}: purge targets whose whole body is gone, kept incrementally
+export function purgedSeqs(w) {
+  const E = w.entries; let c = purgeIx.get(E); if (!c) purgeIx.set(E, (c = { n: 0, seqs: new Set() }));
+  for (; c.n < E.length; c.n++) { const e = E[c.n];
+    if (isE(e) && e.kind === "purge" && Array.isArray(e.body?.values)) for (const t of e.body.values) if (t && typeof t === "object" && Number.isInteger(t.seq) && t.seq < c.n && t.op === undefined) c.seqs.add(t.seq); }
+  return c.seqs;
+}
+const isCommitStub = (b) => !!b && typeof b === "object" && !Array.isArray(b) && Object.keys(b).length > 0 && Object.keys(b).every((k) => k === "commit" || k === "salt");
+/** An old entry's body as the authority may read it back, or null when it is purged (unknown). */
+export function readback(w, seq) {
+  const e = w.entries[seq]; if (!isE(e) || !e.body || typeof e.body !== "object") return null;
+  if (!["act", "say", "sim"].includes(e.kind)) return e.body;   // a change's ops and genesis are never purged whole
+  if (purgedSeqs(w).has(seq)) return null;
+  return isCommitStub(e.body) ? null : e.body;
+}
 // 16 random bytes as base64url (a genesis nonce, a set's salt). io.random(n) → Uint8Array may be injected (a test that
 // compares two runs byte for byte seeds both alike); otherwise Web Crypto, in bun and browsers alike.
 const nonce16 = (w) => { const b = w?.random ? w.random(16) : globalThis.crypto.getRandomValues(new Uint8Array(16)); let s = ""; for (const x of b) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };

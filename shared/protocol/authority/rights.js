@@ -4,7 +4,7 @@
 import * as R from "../roles.js";
 import { CTX } from "./ctx.js";
 import { said } from "./refuse.js";
-import { isE, opsQuiet } from "./storage.js";
+import { isE, opsQuiet, readback } from "./storage.js";
 // The ladder, the closed permission list and the effective set live in shared/protocol/roles.js (the Sanctioned Society: ranked
 // membership only; banned and ghost are states outside it). Every rank comparison in the authority goes through rankOf /
 // whoRank below, so a custom role (any id an owner defined in @world.role-defs) stands where its rank says.
@@ -85,7 +85,13 @@ function entryBy(w, e) {
   const c = w.entries[e.cause];
   const by = isE(c) && c.kind === "act" ? c.actor : e.actor;
   // a behaviour's results were admitted with its SPONSOR's rights (L4), which its act names (checkable from sponsorAt)
-  return { seq: e.seq, by, rights: (isE(c) && c.kind === "act" && (c.body?.capability?.author || (isScriptActor(c.actor) && c.body?.sponsor))) || by };
+  // READBACK: a purged cause act no longer says whose rights admitted it (a handler's author? a script's sponsor?), so the
+  // rights are unknown: null, which matches nobody. Never `by`: that would hand the visitor who pulled the lever the
+  // handler author's thing (engine-scars 4, consent gaps G1 d)
+  if (isE(c) && c.kind === "act") { const b = readback(w, e.cause);
+    if (b === null) return { seq: e.seq, by, rights: null };
+    return { seq: e.seq, by, rights: b.capability?.author || (isScriptActor(c.actor) && b.sponsor) || by }; }
+  return { seq: e.seq, by, rights: by };
 }
 // The creator of a thing (comp undefined), or of component `comp` on it, in its CURRENT life: the entry that made it
 // present after it was last absent. null if it isn't present now. { seq, by, rights }.

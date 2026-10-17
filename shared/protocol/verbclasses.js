@@ -23,3 +23,20 @@ export const WIRE_READS = new Set([...[...READ_ONLY].filter((v) => !SPECTATOR_GA
 
 // acts on a person: after one succeeds the server sweeps (expels, re-rolls badges) — not the authority's concern
 export const PERSON_ACTS = new Set(["warn", "mute", "unmute", "kick", "ban", "unban", "ghost", "unghost"]);
+
+// READBACK (engine-scars 3.2/4/6c, R 10-17 02:45): the old entry fields the authority reads back for meaning. PROTOCOL §1
+// says the fold never reads acts, and that stays true; the AUTHORITY does, in these places, and §12 lets an act's whole body
+// be purged. So every one of these reads goes through storage.js readback(w, seq), which gives null for a purged body, and
+// null is UNKNOWN: the right-hand side says what each reader does with unknown. A new readback is a new row here (and a
+// reader that handles null), never a bare `entries[seq].body` read. Keys are `<kind>:<verb>` (`act:*` = any person's act).
+export const READBACK = Object.freeze({
+  "act:undo":    { fields: ["undoes", "rollback.acts"], where: "buildUndo depthOf/undoneBy, the act index, history rows", unknown: "undoes nothing we can name: the chain ends there and its target isn't counted undone" },
+  "act:use":     { fields: ["capability.author", "capability.reaction", "request.id"], where: "rights.js entryBy (creatorOf, lastSetterOf), undo of your own use", unknown: "rights null (matches nobody); undo falls back to your own rights" },
+  "act:script":  { fields: ["sponsor"], where: "rights.js entryBy (sponsorOf), the sponsor budget", unknown: "no sponsor: nothing runs on nobody's rights" },
+  "act:sculpt":  { fields: ["request.brush", "clamped"], where: "buildUndo sculptInverse", unknown: "not exact: restore-before (refused if changed since)" },
+  "act:*":       { fields: ["request.label", "request.id", "request.component", "request (a physics-engine build it typed)"], where: "undo {label}, undo's reply, restampEngine's chose()", unknown: "no label match; an unknown chooser of an engine build is the owner's: never restamped" },
+  "act:system":  { fields: ["rest", "onto"], where: "the act index (restAfter), recentRests", unknown: "no rest link; no `onto` in the view" },
+  "sim:launch":  { fields: ["id", "handled"], where: "restampEngine's in-flight walk, recentRests", unknown: "maybe in flight: no restamp; handled falls back to the launch's actor" },
+  "sim:lift":    { fields: ["id"], where: "restampEngine's in-flight walk, orphanLifts", unknown: "maybe held: no restamp" },
+  "sim:catch":   { fields: ["id"], where: "restampEngine's in-flight walk, orphanLifts", unknown: "maybe held: no restamp" },
+});
