@@ -53,7 +53,7 @@ check(paddedCells(fieldPlan)===ROUTE_MAX_CELLS,"the worst-case field is padded t
 const worstFrom=performance.now();
 const worst=planRouteLocal(fieldPlan,-.5,-.5,63.5,63.5);
 const worstMs=performance.now()-worstFrom;
-check(worst.kind==="blocked"&&worst.reason==="no walkable connection between the endpoints"&&worstMs<2000,
+check(worst.kind==="blocked"&&worst.reason==="no path through its doorways and arches connects the start to the destination (windows don't count); pick a destination you can reach through an opening"&&worstMs<2000,
  `a search of every cell at the limit, among ${field.length} walls, finishes in ${worstMs.toFixed(0)} ms (bound 2000)`);
 
 const base:any={levels:[{y:0,tiles:[[0,0],[1,0]],walls:[[1,1,0]],apertures:[]}],labels:{}};

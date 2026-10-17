@@ -22,6 +22,7 @@ import { beginWork } from './loadwork.js';
 import { reindexCollider } from './colliders.js';
 import { setTerrain, setGrass, clearGrass, heightAt } from './terrain.js';
 import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, gridRetryIn, shapeReady } from '../../shared/terrainshape.js';
+import { materialLayerSpecs } from '../../shared/terrainlayers.js';
 setGridFetcher(async (ref) => { const r = await fetch(`/library/${ref}`); if (!r.ok) throw new Error(`${r.status}`); return r.json(); });
 import { applyWater } from './water.js';
 import { buildFloraField, warmField, loadFloraModule } from './flora.js';
@@ -132,7 +133,7 @@ export function applyTerrainState(args) {
       return;
     }
     if (lastTerrainArgs !== key) return;   // a newer terrain arrived while the grid was in flight
-    const layers = (args.layers ?? []).map((l) => ({
+    const layers = materialLayerSpecs(args.layers).map((l) => ({
       map: noiseTexture(l.color ?? '#4a5d33'), repeat: l.repeat ?? 16,
     }));
     const t = globalThis.makeTerrain({ ...args, layers });

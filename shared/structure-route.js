@@ -8,6 +8,11 @@ export const ROUTE_MAX_CELLS = 16384;
 const EPS = 1e-9;
 const OPEN = new Set(['door', 'arch']);
 export const ROUTE_STEP_METRES = 0.5;
+/** Why an endpoint that isn't a finite point can't be routed. walk_to refuses
+ *  a non-finite destination before it plans, so here the start (the body's
+ *  own position) or the structure's placement, which carries both endpoints
+ *  into its frame, wasn't finite. */
+export const NON_FINITE_ENDPOINT = "an endpoint isn't a finite point in the structure's frame (the body's position or the structure's placement isn't finite), so it can't be routed, and calling again won't change that; if you need this walk, ask whoever runs this host";
 const cross = (ax, az, bx, bz) => ax * bz - az * bx;
 
 /** Intersection parameters on the walking segment, including touching and
@@ -190,10 +195,10 @@ export function terrainCells(plan, heightAt, band) {
  * is world metres per local metre, for the refusal's figures. */
 export function routeLevel(level, g, from, to, outdoors, clear, { bounds, scale = 1 } = {}) {
   const blocked = reason => ({ kind: 'blocked', reason, points: [] });
-  if (![...from, ...to].every(Number.isFinite)) return blocked('non-finite endpoint');
+  if (![...from, ...to].every(Number.isFinite)) return blocked(NON_FINITE_ENDPOINT);
   if (outdoors && clear(from, to)) return { kind: 'clear', points: [from, to] };
-  if (!clear(from, from)) return blocked('the start lies on a solid wall');
-  if (!clear(to, to)) return blocked('the destination lies on a solid wall');
+  if (!clear(from, from)) return blocked('the start is inside one of its walls');
+  if (!clear(to, to)) return blocked('the destination is inside one of its walls; pick a point in one of its rooms, or outside it');
 
   // Bounds belong to authored geometry, never to walk distance.
   let { minX, minZ, maxX, maxZ } = bounds ?? includeLevel(emptyBounds(), level);
@@ -213,7 +218,7 @@ export function routeLevel(level, g, from, to, outdoors, clear, { bounds, scale 
   const start = clip(from), end = clip(to);
   if (![...start, ...end].every(Number.isFinite) ||
       !clear(from, start) || !clear(end, to))
-    return blocked('exterior connector is obstructed');
+    return blocked('the straight approach from an endpoint to the structure crosses one of its walls');
   const first = nodeAtPoint(level, g, ...start), last = nodeAtPoint(level, g, ...end);
   const allowed = key => {
     if (outdoors) return true;
@@ -222,9 +227,10 @@ export function routeLevel(level, g, from, to, outdoors, clear, { bounds, scale 
   };
   // Terrain mode has its own supplied support everywhere. Identified-floor
   // mode has only this floor's cells/halves, irrespective of level ordering.
-  if (!outdoors && (!allowed(first) || !allowed(last) || start[0] !== from[0] ||
-      start[1] !== from[1] || end[0] !== to[0] || end[1] !== to[1]))
-    return blocked('identified-floor route requires floored endpoints (floor-to-terrain transitions are unavailable)');
+  if (!outdoors && (!allowed(first) || start[0] !== from[0] || start[1] !== from[1]))
+    return blocked("the start isn't on this floor (it's off the floor's edge, or over a hole in it), so no route on this floor can begin there, whatever the destination");
+  if (!outdoors && (!allowed(last) || end[0] !== to[0] || end[1] !== to[1]))
+    return blocked("the destination isn't on this floor (it's off the floor's edge, or over a hole in it), and a walk from a floor onto the ground or another building isn't supported; pick a destination on the same floor");
   // One cell/half is convex. Its admitted endpoints can use a clear direct
   // segment, especially a stationary request which must not visit the center.
   if (!outdoors && first === last && clear(from, to))
@@ -266,7 +272,11 @@ export function routeLevel(level, g, from, to, outdoors, clear, { bounds, scale 
       prev.set(n.key, { key: q[i], crossing: n.crossing }); q.push(n.key);
     }
   }
-  if (!prev.has(last)) return blocked('no walkable connection between the endpoints');
+  if (!prev.has(last)) {
+    return blocked(outdoors
+      ? "no path through its doorways and arches connects the start to the destination (windows don't count); pick a destination you can reach through an opening"
+      : "no path across this floor connects the start to the destination: its walls are crossed only through doorways and arches (windows don't count), and a hole in the floor can divide it; pick a destination you can reach on the floor");
+  }
   const keys = [], crossings = [];
   for (let k = last; k !== null;) {
     keys.push(k);

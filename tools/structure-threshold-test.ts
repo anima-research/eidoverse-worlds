@@ -3,6 +3,7 @@
 // of the planner, from authored edges, so a shared predicate bug cannot pass it.
 import { strict as assert } from "node:assert";
 import { planStructure, planRouteLocal, prepareRouteLocal, routeLocal, localizePoint } from "../shared/structure.js";
+import { NON_FINITE_ENDPOINT } from "../shared/structure-route.js";
 import { WorldAgent, WALK_ARGS_REASON } from "../mcpl/agent.ts";
 import { handleTool } from "../mcpl/tools.ts";
 process.env.AGENT_BODY_ENGINE = "verlet";
@@ -84,7 +85,7 @@ route(concave,[2.5,1.5],[.25,1.75],"concave outline to reentrant arch");
 const courtyard = { levels: [{ tiles: [[0,0],[1,0],[2,0],[0,1],[2,1],[0,2],[1,2],[2,2]],
   walls: [[0,1,1],[0,1,2],[1,1,1],[1,2,1]], apertures: [[0,1,1,"door"]] }] };
 route(courtyard,[1.5,1.5],[3.5,1.5],"unfloored courtyard through its door");
-check(planRouteLocal(p,NaN,0,1,1).kind==="blocked","non-finite endpoints are refused");
+check(planRouteLocal(p,NaN,0,1,1).kind==="blocked"&&planRouteLocal(p,NaN,0,1,1).reason===NON_FINITE_ENDPOINT,"non-finite endpoints are refused, with the router's one reason for them");
 // A terrain leg along a wall's projection is refused even when the wall is
 // overhead: point queries can't bound the terrain over the whole overlap. The
 // walk is routed away from the wall's line instead.
@@ -237,6 +238,9 @@ try {
   const withHuge=await walk(d,[5,1.5]);
   check(!withHuge.arrived && d.walkRefusal!.includes("multi-building") && d.walkRefusal!.includes("[huge]: its footprint")
     && d.walkRefusal!.includes("over the 16384-cell routing limit"),"an over-limit structure's own reason survives the generic refusal");
+  // A reason carries its remedy after a semicolon, so each structure's starts a line of its own.
+  check(d.walkRefusal!.split("\n").some((l) => l.startsWith("[huge]: its footprint")) && !d.walkRefusal!.includes("; [huge]"),
+    "each structure's reason starts its own line: "+JSON.stringify(d.walkRefusal));
   {
     // A body held on an upper floor of a stacked house.
     const u=agent();
@@ -248,12 +252,18 @@ try {
       "a floor-held body stays put for an off-center stationary walk request");
     u.pos={x:.5,y:3.1,z:.5};
     const out=await walk(u,[.5,-2]);
-    check(!out.arrived && !!u.walkRefusal?.includes("floored endpoints"),"a floor-held body is refused an upper destination beyond the floor");
+    check(!out.arrived && !!u.walkRefusal?.includes("the destination isn't on this floor"),"a floor-held body is refused an upper destination beyond the floor");
     check(u.pos.x===.5 && u.pos.z===.5 && u.pos.y===3.1,"and the refusal leaves it standing where it was upstairs");
+    u.pos={x:-.5,y:3.1,z:.5};
+    const offStart=await walk(u,[.5,.5]);
+    check(!offStart.arrived && !!u.walkRefusal?.includes("the start isn't on this floor") && !u.walkRefusal?.includes("destination isn't"),
+      "a floor-held body standing off the floor is told the start is the endpoint off it");
+    u.pos={x:.5,y:3.1,z:.5};
     above.tiles=[[0,0],[2,0]]; above.walls=[]; above.apertures=[];
     u.entities.set("stacked",entity({ levels: [structuredClone(house.levels[0]),above] } as any,"stacked"));
     const gap=await walk(u,[2.5,.5]);
     check(!gap.arrived && !(u as any).target,"a floor-held body is refused crossing a gap in sparse upper floors");
+    check(!!u.walkRefusal?.includes("a hole in the floor can divide it"),"...and told a hole can divide a floor, not only its walls");
   }
 
   // A structure the agent can't check (its geometry isn't finite: a 10 m
@@ -297,9 +307,9 @@ try {
   const stuck=agent(); stuck.entities.set("shut",entity(shut as any,"shut")); stuck.entities.set("vault",entity(vault as any,"vault",[10,0,10]));
   stuck.pos={x:0,y:0,z:.5};
   const nowhere=await walk(stuck,[10.5,10.5]);
-  check(!nowhere.arrived && stuck.walkRefusal!.startsWith("the body stands in a wall, and from beside it: ") && stuck.walkRefusal!.includes("[vault]")
-    && stuck.walkRefusal!.includes("; from another side: "),
-    "a body in a wall with no route from either side gives each side's reason: "+stuck.walkRefusal);
+  check(!nowhere.arrived && stuck.walkRefusal!.startsWith("the body stands in a wall, and from beside it:\n") && stuck.walkRefusal!.includes("[vault]")
+    && stuck.walkRefusal!.includes("\nfrom another side: "),
+    "a body in a wall with no route from either side gives each side's reason, each on its own line: "+stuck.walkRefusal);
   console.log("PASS " + checks + " threshold routing checks");
 } finally { for (const a of agents) a.close(); }
 process.exit(0);

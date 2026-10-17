@@ -4,7 +4,7 @@
 // the rigs that have them, and a pose naming one a rig lacks does nothing on
 // every renderer, silently. So the check needs the rig, and the rig is in the
 // file's JSON chunk — the header bytes, not the multi-megabyte body.
-import { glbJson, humanBones, worldPositions } from "./rig.ts";
+import { glbJson, humanBones, stature } from "./rig.ts";
 
 export type RigBones = {
   /** every skin joint and humanoid bone, by node name */
@@ -69,9 +69,9 @@ export function rigFromGltf(g: any): RigBones | null {
 // ---- stature ------------------------------------------------------------------
 const heights = new Map<string, Promise<number | null>>();
 
-/** A body's standing height in metres — the head joint at rest plus a forehead, the same rule the
- *  browser's Avatar.bodyHeight uses — from the same header bytes. What water depth is measured against
- *  (shared/terrainshape.js waterStance). Null when the file has no humanoid head. */
+/** A body's standing height in metres, shared/rig.js's stature() over the same header bytes: the
+ *  rule the browser's Avatar.bodyHeight and the roster (server/vrmheight.ts) use. What water depth is
+ *  measured against (shared/terrainshape.js waterStance). Null when the file has no humanoid head. */
 export function bodyHeightFor(httpBase: string, avatarPath: string): Promise<number | null> {
   const key = avatarPath.split("?")[0];
   if (!key) return Promise.resolve(null);
@@ -85,10 +85,7 @@ export function bodyHeightFor(httpBase: string, avatarPath: string): Promise<num
         const len = new DataView(buf.buffer, buf.byteOffset).getUint32(12, true);
         buf = new Uint8Array(await (await fetch(`${httpBase}/library/${key}`, { headers: { Range: `bytes=0-${19 + len}` } })).arrayBuffer());
       }
-      const g = glbJson(buf), hb = humanBones(g);
-      if (!hb || !Number.isInteger(hb.head)) return null;
-      const wp = worldPositions(g), y = wp(hb.head as number).y + 0.13;
-      return y > 0.5 && y < 4 ? y : null;
+      return stature(glbJson(buf));
     })().catch(() => null);
     heights.set(key, p);
     p.then((h) => { if (h == null) heights.delete(key); });

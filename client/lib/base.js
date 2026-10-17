@@ -50,6 +50,17 @@ export const CONFIG = {
 if (params.get('key')) store?.setItem('ew-key', CONFIG.token);
 store?.setItem('ew-name', CONFIG.name);
 
+/** The name a join ack says we have, minus the transport prefix sendJoin put
+ *  on the wire id ("renderer-" / "retina-"). Pure, for net.js onSnapshot.
+ *  A VERIFIED identity (the ack carries yourSub) is the server's own name for
+ *  us — it ignored the requested id — so it is kept whole: a signed-in viewer
+ *  really called "retina-helen" must not be shortened to "helen". */
+export function nameFromJoinAck(you, { renderer = false, spectate = false, verified = false } = {}) {
+  if (!you || verified) return you;
+  const prefix = renderer ? 'renderer-' : spectate ? 'retina-' : '';
+  return prefix && you.startsWith(prefix) ? you.slice(prefix.length) : you;
+}
+
 /** Rename in place (the front-door panel calls this before connecting). */
 export function setName(name) {
   CONFIG.name = name;

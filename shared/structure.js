@@ -1,4 +1,4 @@
-import { routeLevel, prepareWallCheck, routeGeometryFor, terrainCells, ROUTE_STEP_METRES } from './structure-route.js';
+import { routeLevel, prepareWallCheck, routeGeometryFor, terrainCells, ROUTE_STEP_METRES, NON_FINITE_ENDPOINT } from './structure-route.js';
 export { ROUTE_STEP_METRES };
 // structure_field — the griddled-building model's pure half (§11.4 discipline,
 // sibling of models_field.js / flora_field.js / emitter_field.js).
@@ -1087,7 +1087,7 @@ export function prepareRouteLocal(plan, basis) {
     clear: (ax,az,bx,bz) => clear([ax,az],[bx,bz]),
     route(fromX,fromZ,toX,toZ) {
       const from=[fromX,fromZ], to=[toX,toZ];
-      if (![...from,...to].every(Number.isFinite)) return blocked('non-finite endpoint');
+      if (![...from,...to].every(Number.isFinite)) return blocked(NON_FINITE_ENDPOINT);
       if (basis.kind === 'terrain') {
         if (clear(from,to)) return { kind: 'clear', points: [from,to], confined: false };
         // The search covers every level's geometry; the diagonals that cut its

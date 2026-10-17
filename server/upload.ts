@@ -13,10 +13,11 @@ import { JOIN_TOKEN, UPLOAD_CAP, IMAGE_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DI
 // in; the door stays on R1's aid1JoinIdentity (the HN_*/verifyToken form is
 // what it replaced — the merged body references neither)
 import { isStoreOriginal, ktx2VariantPath, lodVariantPath, storeShadowsMissing, verdictStands, freshOver, diskIdentity, sourceSidecar, recordedSource, sameIdentity, verdictMarker, readVerdict, KTX2_RECIPE, LOD_RECIPE } from "./store-variants.ts";
-import { agentTokens, aid1JoinIdentity } from "./auth.ts";
+import { agentTokens, aid1JoinIdentity, sessionFromCookie } from "./auth.ts";
 import { worlds } from "./world.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { ingestHeightmap } from "./heightmap.ts";
+import { checkFile } from "./buildcheck-queue.ts";
 
 /** What the handler needs from Bun's server object, structurally (the
  *  VerbWorld precedent): the socket address behind the nginx front. */
@@ -454,9 +455,16 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
   // Same audience/scope/slug derivation as the two doors, no jti burn
   // (an aid1 credential is reusable until expiry at every door).
   if (!upAgent) upAgent = aid1JoinIdentity(upTok)?.slug;
-  if (JOIN_TOKEN && upTok !== JOIN_TOKEN && !upAgent)
-    return new Response("token required", { status: 401 });
-  const upBy = (url.searchParams.get("by") ?? upAgent ?? "?").slice(0, 64);
+  // ...and the people who signed in through the home node: they carry a session cookie, not a door key (the
+  // join door takes the same cookie). Taken only from this site's own pages — SameSite=Lax lets the cookie
+  // ride requests from sibling subdomains — exactly as /rebuild takes it (routes.ts).
+  const session = sessionFromCookie(req.headers.get("cookie"));
+  // (embodied access, worlds:join — what the join door asks of a login that is not spectating)
+  const upPerson = session && session.scopes.includes("worlds:join") && req.headers.get("sec-fetch-site") === "same-origin" ? session.name : null;
+  if (JOIN_TOKEN && upTok !== JOIN_TOKEN && !upAgent && !upPerson)
+    return new Response("sign in, or bring the door key (token required)", { status: 401 });
+  // a signed-in person is who the session says, whatever ?by= claims
+  const upBy = (upPerson ?? url.searchParams.get("by") ?? upAgent ?? "?").slice(0, 64);
   // Behind the show's nginx front every socket is 127.0.0.1 — the real
   // client address rides X-Real-IP. (Spoofable only when directly exposed,
   // which is the tailnet dev case where rate limits hardly matter.)
@@ -644,5 +652,8 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     atomicWrite(mp, JSON.stringify(man));
   }
   console.log(`[upload] model ${rel}${upName ? ` ("${upName}")` : ""} (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
-  return new Response(JSON.stringify({ path: rel }), { headers: { "content-type": "application/json" } });
+  // the build check starts now and never holds the upload up or refuses it:
+  // its report is advice, waiting at `check` (server/buildcheck.ts)
+  void checkFile(join(OPT_DIR, rel), 1, body).catch((err) => console.warn(`[check] ${rel}: ${String(err?.message ?? err)}`));
+  return new Response(JSON.stringify({ path: rel, check: `/check?lib=${encodeURIComponent(rel)}` }), { headers: { "content-type": "application/json" } });
 }
