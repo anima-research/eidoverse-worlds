@@ -103,16 +103,16 @@ export const REFUSAL_CODES = Object.freeze({
   "too-fast":       { meaning: "faster than a body (or a throw) may go", when: "a step past the speed track, a throw or shove over its cap" },
   "out-of-reach":   { meaning: "too far away", when: "a hand or body act beyond its reach" },
   "holding":        { meaning: "a teleport can't carry things", when: "a teleport while holding something" },
-  "hands-full":     { meaning: "both hands are full", when: "a grab past MAX_HELD" },
+  "hold-limit":     { meaning: "you are holding as many things as you may", when: "a grab past MAX_HELD" },
   "not-holding":    { meaning: "you aren't holding that", when: "put, throw or drop of a thing not in your hand" },
   "not-grabbable":  { meaning: "it can't be carried", when: "a grab of a thing with no grabbable and no dynamic physics" },
   "not-dynamic":    { meaning: "it can't be punted", when: "a punt of a thing without dynamic physics" },
   "no-grip":        { meaning: "it has no such grip", when: "a grab naming a grip the thing doesn't have" },
   "wrong-hand":     { meaning: "that grip is for the other hand", when: "a grab whose grip names the other hand" },
-  "wrong-way":      { meaning: "a shove pushes away from the feet", when: "a shove velocity more than 60° off straight away" },
-  "underfoot":      { meaning: "a body walks over it, not into it", when: "a shove of a thing under the feet" },
+  "wrong-way":      { meaning: "a contact push sends it away from the body", when: "a shove velocity more than 60° off straight away" },
+  "beneath":        { meaning: "a body moves over it, not into it", when: "a contact push of a thing beneath the body" },
   "sideways":       { meaning: "that push is mostly sideways", when: "a push across a pendulum's swing plane" },
-  "no-body":        { meaning: "a push doesn't change that motion", when: "an impulse to a thing whose motion isn't a pendulum" },
+  "not-pushable":   { meaning: "a push doesn't change that motion", when: "an impulse to a thing whose motion isn't a pendulum" },
   "no-pivot":       { meaning: "it swings but hangs from nothing", when: "a push to a pendulum with no hang point above" },
   "no-physics":     { meaning: "this world has no physics running", when: "throw, punt or launch in a world without physics-engine" },
   "unknown-engine": { meaning: "this server doesn't carry that engine", when: "setting physics-engine to an engine not in ENGINES" },
@@ -141,4 +141,9 @@ export const REFUSAL_SOURCES = Object.freeze(["shared/protocol/verbspec.js", "sh
 export const DYNAMIC_REFUSALS = Object.freeze(["code", "bad.code", "e.code", "dirty.code", "r.code", "g.code"]);
 /** `code:` literals in the scanned files that aren't refusal codes (none today; a status code that isn't a refusal goes here). */
 export const NOT_REFUSALS = Object.freeze([]);
+/** Codes renamed before release (protocol minor 0, R 10-17: no body plan in a name). A log written before the rename may
+ *  carry the old word in a refused act; the fold never judges a code, so it reads either, and a reader that branches on
+ *  one maps it through here. The authority never refuses with an old word. */
+export const RENAMED_CODES = Object.freeze({ "hands-full": "hold-limit", "underfoot": "beneath", "no-body": "not-pushable" });
+export const canonicalCode = (c) => (typeof c === "string" && Object.hasOwn(RENAMED_CODES, c) ? RENAMED_CODES[c] : c);
 export const isRefusalCode = (c) => typeof c === "string" && Object.hasOwn(REFUSAL_CODES, c);

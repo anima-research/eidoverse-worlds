@@ -45,6 +45,6 @@ const take = (W, id, x) => { call(W, "vic", "move", { to: [x, 0, -0.8] }); retur
   ok(e.ok && held(W).includes("a"), "H7 …an edit of something else about it (its label) leaves it in the hand", { e: code(e), held: held(W) }); }
 { const W = "two"; mk(W); const r = [take(W, "a", 0), take(W, "b", 3), take(W, "c", 1.5)].map(code);
   const p = call(W, "vic", "put", { id: "b", at: [1.5, -1.4] }); const again = call(W, "vic", "grab", { id: "c" });
-  ok(r.join() === "ok,ok,hands-full" && p.ok && again.ok, "H8 two hands: a third thing is refused (hands-full) until one is put down", { r, put: code(p), again: code(again) }); }
+  ok(r.join() === "ok,ok,hold-limit" && p.ok && again.ok, "H8 two hands: a third thing is refused (hold-limit) until one is put down", { r, put: code(p), again: code(again) }); }
 console.log(`[hands-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

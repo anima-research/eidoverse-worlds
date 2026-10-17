@@ -7,11 +7,11 @@ export const MAX_HELD = 2;     // things in two hands at once
 export const KICK = Object.freeze({ reach: 1.6, below: -0.5, above: 2.0, lift: 0.9 });   // a punt, from the feet
 // a shove: a punt {shove: true} that a walking body sends when it walks into a loose thing (shared/shove.js). The authority
 // admits one only from a body standing against the thing: its feet within `reach` of the thing's oriented box (a body's
-// radius at the largest size, plus the track's lag), the thing not under the feet (`underfoot`) nor over the head
+// radius at the largest size, plus the track's lag), the thing not beneath the body (`beneath`) nor over the head
 // (`above`), lifted at most `lift` × its speed along the ground, pushed away from the feet, at most what a body of BODY_MASS
 // running at `walk` m/s passes elastically to the thing's mass, never above `maxV`. `mu`: the slide's friction, for how
 // far a shoved thing goes (eidosim's own, shared/sim.js FRICTION).
-export const SHOVE = Object.freeze({ reach: 0.9, underfoot: 0.1, above: 2.0, maxV: 3, lift: 0.3, walk: 4.0, mu: 0.6 });
+export const SHOVE = Object.freeze({ reach: 0.9, beneath: 0.1, above: 2.0, maxV: 3, lift: 0.3, walk: 4.0, mu: 0.6 });
 // a shove or drag at another body is gated three times, by design (handlers.js: "honesty, not security"): the authority
 // admits it within BODY_REACH, a client offers the command within SHOVE_REACH, the server forwards a presence packet within
 // BODY_RANGE. Three layers, three numbers, each named here so none is a stray literal.

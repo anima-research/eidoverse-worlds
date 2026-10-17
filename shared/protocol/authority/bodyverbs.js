@@ -97,7 +97,7 @@ const EMBODIED_VERBS = {
     // two things at once (R, 10-10, an avatar walking about with five crates: "maybe two, since VR players can pick up two
     // things"; a number, not a claim about hands: "avatars can have more (or none!)")
     { const mine = Object.keys(w.presence.holds).filter((k) => k !== a.id && w.presence.holds[k].by === actor);
-      if (mine.length >= MAX_HELD) refuse("hands-full", `you are already holding ${mine.length} things (${mine.join(", ")}), and ${MAX_HELD} is the most you can carry here`, `put one down first: put {id: '${mine.at(-1)}'}`); }
+      if (mine.length >= MAX_HELD) refuse("hold-limit", `you are already holding ${mine.length} things (${mine.join(", ")}), and ${MAX_HELD} is the most you can carry here`, `put one down first: put {id: '${mine.at(-1)}'}`); }
     const live = livePoses(sf)[a.id]; const t = worldT(st, a.id); const eb = sf.launched[a.id] ? sf.sim?.bodies[a.id] : null;
     const here = held ? held.pose.pos : live ? live.pos : eb ? eb.p : t.pos; // where it IS: someone's hand, the air, the engine (rested, not yet logged: second review S2-1), or the log
     // range (grabbable): from the hand; past arm's reach the authority grants it as a pull (the thing flies to the hand: a

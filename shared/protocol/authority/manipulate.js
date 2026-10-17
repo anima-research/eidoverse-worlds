@@ -56,7 +56,7 @@ function shoveGate(w, st, me, a, flying, actor) {
   if (vh > cap + 1e-3 || Math.hypot(vx, vy, vz) > SHOVE.maxV * (1 + SHOVE.lift) + 1e-3) refuse("too-fast", `a shove is a walking body's push: ${r3(vh)} m/s is more than a body passes to ${a.id} (${r3(m)} kg: at most ${r3(cap)} m/s)`, `at most ${r3(cap)} m/s; a kick (punt without shove) goes harder`);
   if (vh < 1e-6 || vy < 0 || vy > SHOVE.lift * vh + 1e-9) refuse("shape", `a shove pushes along the ground: its v rises at most ${SHOVE.lift} × its speed along the ground, and never falls`, "e.g. v: [1.5, 0.2, 0]");
   const f = me.at, b = aabb(st, a.id) ?? { min: worldT(st, a.id).pos, max: worldT(st, a.id).pos };
-  if (b.max[1] <= f[1] + SHOVE.underfoot) refuse("underfoot", `${a.id} is under your feet; a body walks over it, it doesn't shove it`, "step off it, or punt it (no shove)");
+  if (b.max[1] <= f[1] + SHOVE.beneath) refuse("beneath", `${a.id} is beneath you; a body moves over it, it doesn't push it`, "move off it, or punt it (without contact)");
   if (b.min[1] >= f[1] + SHOVE.above) refuse("out-of-reach", `${a.id} is over your head (${r3(b.min[1] - f[1])} m up); a shove is from a body against it`, "");
   // to its ORIENTED box (review 10-12 S2-2: a rotated plank's axis-aligned box reached metres past the plank)
   const ob = obbs(st, a.id); const R = ob.length ? reachTo(ob, f) : { d: 0, n: null, c: b.min.map((x, i) => (x + b.max[i]) / 2) };

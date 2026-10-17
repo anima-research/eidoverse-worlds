@@ -26,7 +26,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["reach to the footprint", "protocol/authority/manipulate.js", "if (R.d > SHOVE.reach) refuse(\"out-of-reach\"", "if (false) refuse(\"out-of-reach\"", ["S2"]],
   ["the speed cap", "protocol/authority/manipulate.js", "if (vh > cap + 1e-3 || Math.hypot(vx, vy, vz) > SHOVE.maxV * (1 + SHOVE.lift) + 1e-3) refuse(\"too-fast\"", "if (false) refuse(\"too-fast\"", ["S3"]],
   ["away from the feet", "protocol/authority/manipulate.js", "if (!dir || vx * dir[0] + vz * dir[1] < 0.5 * vh) refuse(\"wrong-way\"", "if (false) refuse(\"wrong-way\"", ["S4"]],
-  ["not underfoot", "protocol/authority/manipulate.js", "if (b.max[1] <= f[1] + SHOVE.underfoot) refuse(\"underfoot\"", "if (false) refuse(\"underfoot\"", ["S5"]],
+  ["not beneath", "protocol/authority/manipulate.js", "if (b.max[1] <= f[1] + SHOVE.beneath) refuse(\"beneath\"", "if (false) refuse(\"beneath\"", ["S5"]],
   ["not in flight", "protocol/authority/manipulate.js", "if (flying) refuse(\"in-flight\"", "if (false) refuse(\"in-flight\"", ["S6"]],
   ["along the ground", "protocol/authority/manipulate.js", "if (vh < 1e-6 || vy < 0 || vy > SHOVE.lift * vh + 1e-9) refuse(\"shape\"", "if (false) refuse(\"shape\"", ["S9"]],
   ["a shove carries v", "protocol/authority/manipulate.js", "refuse(\"shape\", \"a shove carries v", "(\"shape\", \"a shove carries v", ["S9"]],
@@ -150,11 +150,11 @@ const cases: Case[] = [
       s.call("vic", "move", { to: AGAINST }); const r = s.call("vic", "punt", { id: "crate", v: [0, 0.2, -1.5], shove: true });
       return { r: code(r), launches: launches(s) }; },
     good: (o) => o.r === "wrong-way" && o.launches === 0 },
-  { id: "S5", what: "what is under the feet (a dynamic rug) is refused underfoot", run(s) { cast(s);
+  { id: "S5", what: "what is under the feet (a dynamic rug) is refused beneath", run(s) { cast(s);
       s.call("olive", "create", { id: "rug", model: "rug", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [3, 0] } });
       s.call("vic", "move", { to: [3, 0, 0.2] }); const r = s.call("vic", "punt", { id: "rug", v: [0, 0, 1.5], shove: true });
       return { r: code(r), launches: launches(s) }; },
-    good: (o) => o.r === "underfoot" && o.launches === 0 },
+    good: (o) => o.r === "beneath" && o.launches === 0 },
   { id: "S6", what: "a thing already in flight is refused in-flight (a kick would volley it)", run(s) { cast(s);
       s.call("vic", "move", { to: AGAINST }); s.call("vic", "punt", { id: "crate", v: [0, 3, 0.5] }, 10);
       const r = s.call("vic", "punt", { id: "crate", v: [0, 0.2, 1.5], shove: true }, 10);

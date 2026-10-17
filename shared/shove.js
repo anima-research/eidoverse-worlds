@@ -84,7 +84,7 @@ export function reachTo(boxes, feet, tall = SHOVE.above) {
  *  it} or null. Under the feet or over the head is no contact. */
 export function contactOf(feet, r, tall, thing, slack = SHOVE_FEEL.slack) {
   const { obb, box } = thing;
-  if (box.max[1] <= feet[1] + SHOVE.underfoot || box.min[1] >= feet[1] + Math.min(tall, SHOVE.above)) return null;
+  if (box.max[1] <= feet[1] + SHOVE.beneath || box.min[1] >= feet[1] + Math.min(tall, SHOVE.above)) return null;
   const m = reachTo([obb], feet, tall); if (!m || m.d > r + slack) return null;
   let n = m.n; if (!n) { const cx = obb.c[0] - feet[0], cz = obb.c[2] - feet[2], l = Math.hypot(cx, cz); if (l < 1e-6) return null; n = [cx / l, cz / l]; }
   return { d: m.d, n };
