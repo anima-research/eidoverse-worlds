@@ -46,6 +46,7 @@ import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { localOf, parentOps, childrenOf, worldPose } from './hierarchy.js';
 import { recordOf } from './protocol/view.js';
+import { partSlot, motionNode } from './protocol/names.js';
 import { modelWord } from './eido.js';
 import { DESCRIPTORS, fieldOf, claimOf, CLAIMED_KEYS, editorDefault, toWire } from './protocol/descriptors.js';
 
@@ -525,7 +526,7 @@ export function inspectSchema(ent, id, live = {}) {
     const fields = [];
     for (const key of mk) {
       const m = c[key];
-      const P = key === 'motion' ? '' : `${key.slice(7)} · `;
+      const P = key === 'motion' ? '' : `${motionNode(key, m)} · `;   // the node's name (its value's `node`); the row keys keep the slot
       const k = (p) => (key === 'motion' ? p : `${key.slice(7)}|${p}`);
       const types = MOTION_TYPES.includes(m.type) ? MOTION_TYPES : [...MOTION_TYPES, m.type ?? '?'];
       fields.push({ t: 'enum', k: k('type'), label: `${P}type`, value: m.type, options: types.map((v) => ({ v, label: v })) });
@@ -907,7 +908,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
       case 'Mesh': sec.fields = claims('Mesh', 'mesh'); sec.removable = true; break;
       default:
         if (MOTION_GROUP[inst.type]) {
-          const part = inst.key === 'motion' ? (inst.params.part ?? null) : inst.key.slice(7);
+          const part = inst.params.part ?? motionNode(inst.key, c[inst.key]);   // the node it moves (its value's `node`; names.js motionNode)
           if (part) { sec.title = `${inst.type} · ${partLabel(part, live.parts, ++partOrdinal)}`; sec.part = part; }
           // the type is the card, not a field: changing it is remove + add
           const own = (f) => (inst.key === 'motion' ? !f.k.includes('|') : f.k.startsWith(`${inst.key.slice(7)}|`));
@@ -1057,7 +1058,10 @@ function addOwnOps(ent, id, name, value) {
   const motion = { Pendulum: { type: 'pendulum', amp: 0.26 }, Spin: { type: 'spin', degPerSec: 36 }, Orbit: { type: 'orbit', radius: 1, degPerSec: 12 }, Bob: { type: 'bob', amp: 0.3, period: 4 }, Path: { type: 'path', points: [p0, [p0[0], p0[1], round(p0[2] + 2, 4)]], speed: 1 } };
   if (motion[name]) {
     const part = typeof value === 'string' && value.trim() ? value.trim() : null;
-    if (part) { const key = `motion:${part}`; if (c[key]) return { ops: [], errors: [`${id} already has a motion on ${part}`] }; return { ops: [OP.set(id, key, motion[name])], errors: [] }; }
+    // a node's motion: motion:<slot> {node: <its name, as the file spells it>} (the node is data; partSlot makes the key)
+    if (part) { if (Object.keys(c).some((k) => k.startsWith('motion:') && motionNode(k, c[k]) === part)) return { ops: [], errors: [`${id} already has a motion on ${part}`] };
+      const key = `motion:${partSlot(part)}`; if (c[key]) return { ops: [], errors: [`${id} already has ${key}`] };
+      return { ops: [OP.set(id, key, { ...motion[name], node: part })], errors: [] }; }
     if (c.motion) return { ops: [], errors: [`${id} already moves as a whole (${c.motion.type}) — remove it first, or add this one to a part`] };
     return { ops: [OP.set(id, 'motion', motion[name])], errors: [] };
   }
@@ -1362,7 +1366,7 @@ export function editOps(ent, id, edits, live = {}) {
           // a type change keeps only what carries across (the evaluator would
           // ignore a spin's amp, and the server lints every leftover); t0 stays
           // so the change is not also a phase jump
-          for (const p of Object.keys(next)) if (!['type', 'axis', 'pivot', 'phase', 't0', 'part'].includes(p)) delete next[p];
+          for (const p of Object.keys(next)) if (!['type', 'axis', 'pivot', 'phase', 't0', 'part', 'node'].includes(p)) delete next[p];
           next.type = raw;
         }
         else if (!writeField({ pendulum: 'Pendulum', spin: 'Spin', orbit: 'Orbit', bob: 'Bob', path: 'Path' }[prev.type] ?? 'Spin', param, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }

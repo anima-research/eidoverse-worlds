@@ -17,8 +17,9 @@
 //   bob      {axis?, amp, period, phase?, t0}                      — hover, buoys
 //   path     {points, speed|duration, loop?: 'loop'|'pingpong'|'once', face?, t0}
 //
-// SUB-OBJECTS: a component keyed `motion:<partName>` — or a `motion` whose
-// data carries `part` — animates ONE NAMED NODE inside the entity's model
+// SUB-OBJECTS: a component keyed `motion:<slot>` whose value names a `node`
+// (its name as the model file spells it; motioneval.js motionNode — or, in a
+// value stored before 10-16, the key's tag or a whole `motion`'s `part`) animates ONE NAMED NODE inside the entity's model
 // instead of the whole thing (Orrery's segmented exports name their parts:
 // tripo_part_0, …). Several `motion:<part>` components coexist on one entity,
 // so a machine can have many moving parts. Coordinates are the PART's frame:
@@ -41,6 +42,7 @@ import { serverNow } from './remotes.js';
 // applying evaluated transforms to THREE objects, and the part-frame
 // machinery only a renderer with a loaded model can have.
 import { evalWholeMotion, evalPath, axisOf, ampOf, since, pendulumTheta, rateOf } from './motioneval.js';
+import { motionNode } from '../../shared/protocol/names.js';
 
 const _q = new THREE.Quaternion();
 const _ax = new THREE.Vector3();
@@ -146,7 +148,7 @@ export function tickMotion() {
       // the frame it re-enters range — nothing drifts, nothing catches up
       if (obj.position.distanceToSquared(_eye) > 8100) continue;   // 90m, from the camera's WORLD position (review 11a M1)
       const t = since(m, nowMs);
-      const partName = isWhole ? (typeof m.part === 'string' ? m.part : null) : key.slice(7);
+      const partName = motionNode(key, m);   // the node it moves: its value's `node` (motioneval.js)
 
       if (partName) {
         const part = findPart(obj, partName);

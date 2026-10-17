@@ -11,7 +11,7 @@
 import { emptyState as v1Empty, foldEntry } from "./fold.js";
 import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, DIALECT, VERSION } from "../../../shared/protocol/fold.js";
 import { unNegZero } from "../../../shared/protocol/round.js";
-import { enc, encName, dec } from "../../../shared/protocol/names.js";
+import { enc, encName, dec, partSlot } from "../../../shared/protocol/names.js";
 import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
@@ -83,9 +83,7 @@ function newMotion(m) {
 // whole pendulum with no pivot component swings about the [0, 2, 0] the renderer used (now its pivot component), a
 // whole motion's pivot field is the thing's pivot, collider exact is mesh. A parent no longer carries order.
 function shapeRepaired(c) {
-  const out = repairComps(c).c; if (out === c) return c;
-  const keyedRight = {}; for (const [k, v] of Object.entries(out)) keyedRight[k.startsWith("motion:") && !(k in c) ? encName(k) : k] = v;   // a part's new key, in the §2.3 grammar
-  return keyedRight;
+  return repairComps(c).c;   // a node's motion is motion:<partSlot(name)> {node: name}: its key is already in the §2.3 grammar (review r7 F1)
 }
 function newReactions(rx) {
   if (!rx || typeof rx !== "object") return rx;
@@ -184,7 +182,7 @@ export const DROPPED = {
   "comp.door": "renamed `openable` (R 10-07), and a reaction's component 'door' with it: the same value under v4's name (@5)",
   "roles.sub / bans.sub": "an account subject is person data (PROTOCOL §9.2): never written into a value (@12). With an identity mapper it is how the person's id is found (the key); without one it is dropped",
   "motion.rpm": "becomes degPerSec = rpm × 6 (@5): the rate the renderer drew, under the authority's one name for it",
-  "motion.part": "a bare motion naming a part becomes motion:<part> (@12): when the thing already has a motion:<part>, that one wins and the bare one is dropped (the renderer drew both on one node, the keyed one last)",
+  "motion.part": "a bare motion naming a part becomes motion:<slot> {node: <the part's name>} (@12; the slot is shared/protocol/names.js partSlot of the name: the name itself when it is a §2.3 tag, else a sanitized form with 8 hex of its sha256): when the thing already has a motion on that node, that one wins and the bare one is dropped (the renderer drew both on one node, the keyed one last). A keyed motion carries node (its key's tag, the old reading)",
   "a mounted thing's own pos/yaw/q": "v1 keeps a riding thing's pre-mount pose, unused until a dismount; v4's transform IS the pose it rides at (local to its parent: v1's offset, or its socket's pos, and q/yaw). The parent's offset/yaw/q are that transform, not a second copy (L2)",
 };
 // v1's mount, read the way the renderer realizes it (shared/hierarchy.js localOf, written independently here): a
@@ -237,7 +235,10 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     c.transform = t;
     if (e.lib !== undefined) c.model = content && typeof e.lib === "string" ? content(e.lib) ?? e.lib : e.lib;
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
-    for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" || k.startsWith("motion:") ? newMotion(v) : k === "particles" ? newParticles(v) : v;
+    for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") {
+      // a node's motion (v1 motion:<node name>): the name is data, motion:<partSlot(name)> {node: name} (@12, review r7 F1)
+      if (k.startsWith("motion:") && v && typeof v === "object" && !Array.isArray(v)) { const node = k.slice(7); c[`motion:${partSlot(node)}`] = { ...newMotion(v), node: typeof v.node === "string" && v.node ? v.node : node }; continue; }
+      c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" ? newMotion(v) : k === "particles" ? newParticles(v) : v; }
     if (e.comp?.guard && !e.comp.lock) { c.lock = true; seen?.guards.add(id); } // §5: guard merges into lock
     if (c.lock === true) c.lock = { rank: "builder" };   // @12: the one spelling (a v1 lock and a guard were builder-level)
     if (c.story && typeof c.story === "object" && !Array.isArray(c.story)) c.story = newStory(c.story); // @5: a marker's words, in story's shape

@@ -13,7 +13,7 @@
 // such things at rest: a renderer that draws stillness is visibly guessing,
 // but a printed coordinate claims to be truth (#82's whole disease).
 //
-// Part-frame motion (`motion:<part>` keys, or a `motion` carrying `part`)
+// Part-frame motion (`motion:<slot> {node}` keys, or an old `motion` carrying `part`: shared/protocol/names.js motionNode)
 // does not displace the entity's ROOT transform at all — those stay in
 // motion.js, THREE-side, and this module reports the root as unmoved.
 

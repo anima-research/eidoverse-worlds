@@ -372,6 +372,7 @@ export function componentsOf(ent) {
       const params = {}; const extra = {};
       for (const [k, v] of Object.entries(data)) {
         if (k === 'type') continue;
+        if (k === 'node' && key.startsWith('motion:') && typeof v === 'string') { params.part = v; continue; }   // the node it moves (motion:<slot> {node}): the record's part
         if (known.includes(k)) params[k] = v;
         else if (type === 'Spin' && (k === 'degPerSec' || k === 'rpm')) { params.rate = v; (extra.rateKey ??= k); }
         else if (type === 'Orbit' && k === 'degPerSec') { params.rate = v; extra.rateKey = k; }

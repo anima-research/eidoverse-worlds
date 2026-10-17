@@ -20,6 +20,7 @@ import { modelName } from './assets.js';
 import { entities, metaOf, bags, bagOf, parentIdOf, findPart } from './world.js';
 import { state } from './state.js';
 import { socketMapIn } from '../../shared/sockbody.js';
+import { motionNode } from '../../shared/protocol/names.js';
 import { mouse } from './controller.js';
 import { flashHint, html } from './ui.js';
 import { engage, release } from './keyhints.js';
@@ -155,8 +156,8 @@ function partUnderHit(id, hitObj) {
   const bag = bagOf(id) ?? {};
   const names = new Set();
   for (const key in bag) {
-    if (key.startsWith('motion:')) names.add(key.slice(7));
-    else if (key === 'motion' && typeof bag[key]?.part === 'string') names.add(bag[key].part);
+    const n = (key === 'motion' || key.startsWith('motion:')) ? motionNode(key, bag[key]) : null;   // the node it moves (its value's `node`)
+    if (n) names.add(n);
   }
   if (!names.size) return null;
   for (let o = hitObj; o && !o.userData.entityId; o = o.parent) if (names.has(o.name)) return o.name;

@@ -1,11 +1,13 @@
 // shared/protocol/shaperepair.js — a value stored before the shape audit's wave 2 (physics-motion, 10-16), in today's
 // spelling, with the meaning its readers gave it. Pure: a thing's components in, the repaired components out. Three
 // callers, one rule set: the server's first load of a stored world (authority.js liftWorld: one system act,
-// `repair-shapes`), translate-v1@12's projection (so a translated world needs no repair), and the old-world oracle's
-// mirror of the load. A second run finds nothing to do.
+// `repair-shapes`, ONCE per world: shapesMarked below), translate-v1@12's projection (so a translated world needs no
+// repair, and is marked), and the old-world oracle's mirror of the load. The rules that read an absent field may only
+// ever see values stored before the audit: that is the marker's job, not these functions' (review r7 F2).
 //
 // The rules (notes/eidoverse/shape-audit/physics-motion.md §4, §5, §7):
-//   motion   a bare motion naming a `part` is that part's motion: motion:<part> (an existing motion:<part> wins);
+//   motion   a bare motion naming a `part` is that node's motion: motion:<partSlot(part)> {node: part} (a motion already on
+//            that node wins); a keyed motion with no node gets its key's tag (the node's name, before the node was data);
 //            amplitude → amp (amp wins); a letter axis (x, y, z, -x, -y, -z) → its vector;
 //            a pendulum with no period read 3.5 s and with no damp 0 (motioneval.js): written down;
 //            a whole motion's `pivot` field → the thing's pivot component (when it has none);
@@ -30,6 +32,7 @@
 import { essentialAddress } from "../particle_effects.js";
 import { grassAtWrite } from "./assetref.js";
 import { COMPONENTS } from "./componentspec.js";
+import { partSlot } from "./names.js";
 const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 /** The light rig's falloff before a light said its own (client/lib/lightrig.js, three.js decay). */
 export const OLD_LIGHT_DECAY = 1.7;
@@ -58,10 +61,14 @@ export function repairComps(c0) {
   const c = { ...c0 }; const set = new Set(), del = new Set();
   const put = (k, v) => { c[k] = v; set.add(k); del.delete(k); };
   const drop = (k) => { delete c[k]; del.add(k); set.delete(k); };
-  // a bare motion naming a part is that part's motion
+  // a keyed motion stored before the node was data: its key's tag was the node's name (motion.js read key.slice(7))
+  for (const k of Object.keys(c)) if (k.startsWith("motion:") && bag(c[k]) && !(typeof c[k].node === "string" && c[k].node)) put(k, { ...c[k], node: k.slice(7) });
+  // a bare motion naming a part is that node's motion: motion:<slot> {node: <the file's name, as it was>}. The slot is a
+  // pure function of the name (partSlot), so every server writes the same key; a motion already on that node wins
   if (bag(c.motion) && typeof c.motion.part === "string" && c.motion.part) {
-    const { part, ...rest } = c.motion; const key = `motion:${part}`;
-    if (!bag(c[key])) put(key, rest);
+    const { part, ...rest } = c.motion; const key = `motion:${partSlot(part)}`;
+    const onIt = Object.keys(c).some((k) => k.startsWith("motion:") && bag(c[k]) && c[k].node === part);
+    if (!onIt && !bag(c[key])) put(key, { ...rest, node: part });
     drop("motion");
   } else if (bag(c.motion) && "part" in c.motion) { const { part: _p, ...rest } = c.motion; put("motion", rest); }   // a part that names nothing
   for (const k of Object.keys(c)) if (isMotionKey(k) && bag(c[k])) { const r = repairMotion(c[k]); if (r !== c[k]) put(k, r); }

@@ -15,7 +15,7 @@ import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isCo
 import { mintId, PERSON_ID } from "./ids.js";
 import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, outOfRange, rangeWords, resolveVersioned, statusOf, canonicalName, STATUSES } from "./componentspec.js";
 import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
-import { dec } from "./names.js";
+import { dec, partSlot } from "./names.js";
 import { READ_ONLY, GHOST_OK } from "./verbclasses.js";
 import { foldSkyEntry } from "../forecast.js";
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../captions.js";
@@ -701,6 +701,10 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
     if (v.type === "path" && !(Array.isArray(v.points) && v.points.length >= 2 && v.points.length <= 64 && v.points.every((p) => nums(p, 3, 1e4))))
       refuse("shape", `${at}.points must be 2 to 64 points [x, y, z] (metres, in its parent's frame)`, "e.g. {type: 'path', points: [[0, 0, 0], [0, 0, 4]], speed: 1}"); }
   // one hinge per thing (shape audit 10-16): a whole thing turns about its pivot component; motion:<part>.pivot is a part's
+  // a node of its model moves as motion:<slot> {node: <the file's name>} (review r7, R 10-16: a part's name is data, never
+  // part of a key); a whole thing's motion moves the whole thing
+  if (comp === "motion" && obj && "node" in v && !carry) refuse("shape", `${at}.node: a whole thing's motion moves the whole thing; a node of its model moves as its own component`, `set {id: '${id}', component: 'motion:${partSlot(typeof v.node === "string" && v.node ? v.node : "part")}', value: {node: ${JSON.stringify(typeof v.node === "string" ? v.node : "<node>")}, type, …}}`);
+  if (comp.startsWith("motion:") && obj && "node" in v && !(typeof v.node === "string" && v.node.length >= 1 && v.node.length <= 256)) refuse("shape", `${at}.node is the name of a node in its model, as the file spells it (1–256 characters)`, "measure {id} lists its model's parts");
   if (comp === "motion" && obj && "pivot" in v && !carry) refuse("derived", `${at}.pivot: a whole thing's motion turns about its pivot component, not a field of the motion`, `set {id: '${id}', component: 'pivot', value: {pos: [x, y, z]}} (its own frame); a part's motion (motion:<part>) takes pivot`);
   if (comp === "home") { const okQ = (q) => nums(q, 4, 2) && Math.abs(Math.hypot(...q) - 1) < 1e-3;
     // one spelling (shape audit 10-16): scale is [x, y, z] (a number is taken at write and stored as one; an older stored
@@ -834,7 +838,7 @@ function terrainShapeCheck(at, v, def) {
 // where a cut field went (componentspec `dropped`), for the refusal's fix
 const DROPPED_FIX = {
   "motion.amplitude": "amp is the one spelling: {type: 'pendulum', amp: 0.3}",
-  "motion.part": "a node of its model moves as its own component: set {id, component: 'motion:<part>', value: {type, …}}",
+  "motion.part": "a node of its model moves as its own component: set {id, component: 'motion:<slot>', value: {node: <the node's name, as its file spells it>, type, …}} (<slot>: any short tag [a-z0-9-]; the editors use the node's name, or a sanitized form of it)",
   "physics.material": "physics.surface names a surface:<name> (reserved until an engine reads surfaces)",
   "physics.layers": "collision filters come back as named groups; leave it out",
   "physics.mask": "collision filters come back as named groups; leave it out",
@@ -1263,7 +1267,11 @@ function resolve(ctx, id, comp, value, prev) {
     if (v.t0 === undefined) { v.t0 = ctx.w.now(); ctx.notes.push({ id, component: "motion", field: "t0", kept: v.t0, why: "stamped by the authority" }); } return v; }
   // a part's motion (motion:<part>) runs on the same clock: without a stamp every client started it from its own first
   // look and disagreed on its phase (a swing's seat, locked to that phase, pumped out of step on every screen)
-  if (comp.startsWith("motion:") && value && typeof value === "object" && !Array.isArray(value)) { const m = materialize("motion", value); const v = filled(m.value, m.filled);
+  if (comp.startsWith("motion:") && value && typeof value === "object" && !Array.isArray(value)) {
+    // the node it moves is data in the value; a write that leaves it out names the node its key's tag spells (the reading
+    // before 10-16), written down
+    if (!(typeof value.node === "string" && value.node)) { value = { ...value, node: comp.slice(7) }; ctx.notes.push({ id, component: comp, field: "node", kept: value.node, why: "the node it moves, written down (absent, its key's tag)" }); }
+    const m = materialize("motion", value); const v = filled(m.value, m.filled);
     if (v.t0 === undefined) { v.t0 = ctx.w.now(); ctx.notes.push({ id, component: comp, field: "t0", kept: v.t0, why: "stamped by the authority" }); } return v; }
   if (def && value && typeof value === "object" && !Array.isArray(value)) { const m = materialize(comp, value); return filled(m.value, m.filled); }
   return value;

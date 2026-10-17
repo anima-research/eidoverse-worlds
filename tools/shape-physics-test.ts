@@ -71,7 +71,7 @@ await tryRow('MO', async () => {
   let r = W.call('set', { id: 'swing', component: 'motion', value: { type: 'pendulum', amplitude: 0.3 } });
   check('MO2 amplitude is refused (did you mean amp)', code(r) === 'schema' && (r.refused?.didYouMean ?? []).includes('amp'), r.refused);
   r = W.call('set', { id: 'fan', component: 'motion', value: { type: 'spin', part: 'blade' } });
-  check('MO3 a part field is refused: a part\'s motion is motion:<part>', code(r) === 'schema' && /motion:<part>/.test(r.refused?.fix ?? ''), r.refused);
+  check('MO3 a part field is refused: a node\'s motion is motion:<slot> {node} (review r7: the name is data)', code(r) === 'schema' && /motion:<slot>/.test(r.refused?.fix ?? '') && /node/.test(r.refused?.fix ?? ''), r.refused);
   check('MO3 …and motion:<part> is taken', W.call('set', { id: 'fan', component: 'motion:blade', value: { type: 'spin' } }).ok);
   r = W.call('set', { id: 'fan', component: 'motion', value: { type: 'spin', axis: 'x' } });
   check('MO4 a letter axis is stored as its vector', r.ok && JSON.stringify(C('fan').motion.axis) === '[1,0,0]', [r.refused, C('fan').motion]);
@@ -90,7 +90,7 @@ await tryRow('MO', async () => {
   check('MO8 repair: amplitude → amp, a letter axis → its vector, the old period/damp readings written, the old swing point a pivot', JSON.stringify(R.motion) === '{"type":"pendulum","axis":[0,0,1],"amp":0.4,"period":3.5,"damp":0}' && JSON.stringify(R.pivot) === '{"pos":[0,2,0]}', R);
   check('MO8 …collider exact → mesh', R.collider?.shape === 'mesh', R.collider);
   const P2 = repairComps({ motion: { type: 'spin', part: 'arm', degPerSec: 10 } }).c;
-  check('MO8 …a bare motion naming a part becomes motion:<part>', !P2.motion && JSON.stringify(P2['motion:arm']) === '{"type":"spin","degPerSec":10}', P2);
+  check('MO8 …a bare motion naming a part becomes motion:<slot> {node} (arm is a tag: its own slot)', !P2.motion && JSON.stringify(P2['motion:arm']) === '{"type":"spin","degPerSec":10,"node":"arm"}', P2);
   const P3 = repairComps({ motion: { type: 'spin', part: 'arm' }, 'motion:arm': { type: 'bob' } }).c;
   check('MO8 …an existing motion:<part> wins', !P3.motion && P3['motion:arm'].type === 'bob', P3);
   const P4 = repairComps({ motion: { type: 'spin', pivot: [0.1, 0.2, 0.3] } }).c;
@@ -111,7 +111,7 @@ await tryRow('MO', async () => {
     { seq: 5, ts: 6, actor: 'ann', verb: 'comp', args: { id: 'mill', type: 'collider', data: { shape: 'exact' } } }];
   const t = translate(old); const f = t.final.translated;
   check('MO10 translate-v1@12 repairs as the load does: amp, vector axis, the readings, the pivot', JSON.stringify(f.bell?.motion) === '{"type":"pendulum","axis":[0,0,1],"amp":0.2,"period":3.5,"damp":0}' && JSON.stringify(f.bell?.pivot) === '{"pos":[0,2,0]}', f.bell);
-  check('MO10 …a part\'s motion under its key, collider mesh; 0 divergences', JSON.stringify(f.mill?.['motion:sails']) === '{"type":"spin","degPerSec":20}' && !f.mill?.motion && f.mill?.collider?.shape === 'mesh' && !t.stats.divergences, [f.mill, t.stats.divergences]);
+  check('MO10 …a part\'s motion under its key, collider mesh; 0 divergences', JSON.stringify(f.mill?.['motion:sails']) === '{"type":"spin","degPerSec":20,"node":"sails"}' && !f.mill?.motion && f.mill?.collider?.shape === 'mesh' && !t.stats.divergences, [f.mill, t.stats.divergences]);
 });
 
 // ===================================================================== physics: kind required, reserved fields, cuts, kinematic stamps

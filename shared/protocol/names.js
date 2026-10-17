@@ -33,6 +33,31 @@ export function encName(s) {
   s = String(s);
   return isComponent(s) && !ESC.test(s) ? s : escape(s);
 }
+/** The local tag of the component that moves one node of a thing's model: motion:<partSlot(node)> {node, …}. A node's name
+ *  comes from a model file and is DATA (any characters: tripo_part_3, "Seat Plank", 座席); the key needs a §2.3 tag
+ *  ([a-z0-9-]{1,64}). A name that already is one, and isn't an escape, is its own tag ("seat", "arm-2"); any other is
+ *  lowercased, its runs of other characters become one dash, cut to 48, and given 8 hex of its sha256 so two names that
+ *  sanitize alike ("Tripo_Part", "tripo-part") still differ: tripo_part_3 → tripo-part-3-<8 hex>. Pure: every server, the
+ *  load's repair, the translator and the editors write the same key for the same node. Readers never parse it: they read
+ *  the value's `node`.
+ *  @param {unknown} node @returns {string} */
+export function partSlot(node) {
+  const s = String(node);
+  if (/^[a-z0-9-]{1,64}$/.test(s) && !ESC.test(s)) return s;
+  const base = s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/, "");
+  return `${base || "node"}-${sha256(s).slice(0, 8)}`;
+}
+// The node a motion moves, by its key and value (review r7, R 10-16: a node's name is DATA): a keyed motion's `node`
+// (motion:<slot> {node}); a keyed one stored before the node was data, its key's tag (the load's repair writes that
+// down); a whole motion naming `part` (the first spelling, before its first load's repair), that part. Null: the whole
+// thing. The one reading every reader shares (renderer, seat signals, editor, agent).
+/** @param {string} key @param {any} m @returns {string | null} */
+export function motionNode(key, m) {
+  if (key === "motion") return m && typeof m.part === "string" && m.part ? m.part : null;
+  if (typeof key !== "string" || !key.startsWith("motion:")) return null;
+  return m && typeof m.node === "string" && m.node ? m.node : key.slice(7);
+}
+
 /** @param {string} s @returns {string | null} the original name, or null when it was hashed (h--) */
 export function dec(s) {
   if (typeof s !== "string") return null;

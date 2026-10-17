@@ -20,6 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENGINE } from "./common.ts";
 import { sha256, sha256Portable, utf8Hex } from "../../shared/protocol/hash.js";
+import { partSlot } from "../../shared/protocol/names.js";   // the node-motion slot: a naming function, as encName is
 import { readLog, fold as replica, opsOf, applyInPlace, emptyState } from "../../shared/protocol/fold.js";
 import { translate as translateV1, DROPPED, hasEpoch, puntedLives, lifeTracker } from "./import-v1/translate-v1.js";
 import { translate as translateD3 } from "./import-v1/translate-d3.js";
@@ -127,7 +128,11 @@ function oldNorm(st: any, phys: any = null) {
     // vector; a pendulum with no period or damp read 3.5 s and 0; a whole motion's pivot is the thing's pivot; a whole
     // pendulum with no pivot swung about [0, 2, 0]; collider exact is mesh
     if (n.comp) { const C = (n.comp = { ...n.comp }), isB = (v: any) => !!v && typeof v === "object" && !Array.isArray(v), AX: any = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], "-x": [-1, 0, 0], "-y": [0, -1, 0], "-z": [0, 0, -1] };
-      if (isB(C.motion) && typeof C.motion.part === "string" && C.motion.part) { const { part, ...r } = C.motion; if (!isB(C[`motion:${part}`])) C[`motion:${part}`] = r; delete C.motion; }
+      // (review r7 F1) a node's name is data: a keyed motion carries node (its tag, when it was the name), and a bare one naming
+      // a part becomes motion:<partSlot(part)> {node: part} (a motion already on that node wins)
+      for (const k of Object.keys(C)) if (k.startsWith("motion:") && isB(C[k]) && !(typeof C[k].node === "string" && C[k].node)) C[k] = { ...C[k], node: k.slice(7) };
+      if (isB(C.motion) && typeof C.motion.part === "string" && C.motion.part) { const { part, ...r } = C.motion; const key = `motion:${partSlot(part)}`;
+        if (!Object.keys(C).some((k) => k.startsWith("motion:") && isB(C[k]) && C[k].node === part) && !isB(C[key])) C[key] = { ...r, node: part }; delete C.motion; }
       else if (isB(C.motion) && "part" in C.motion) { const { part: _p, ...r } = C.motion; C.motion = r; }
       for (const k of Object.keys(C)) if ((k === "motion" || k.startsWith("motion:")) && isB(C[k])) { const m = { ...C[k] };
         if ("amplitude" in m) { if (m.amp === undefined && typeof m.amplitude === "number") m.amp = m.amplitude; delete m.amplitude; }

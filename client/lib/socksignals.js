@@ -14,22 +14,25 @@
 // occupant's presence — so two clients looking at one swing put the rider's clip at the same frame. (A thing moved by
 // physics, not by a motion component, reads speed/turn 0 here: physics is a later port.)
 //
-// Pure: imports only the motion closed forms (motioneval.js, itself pure and shared with the agent). It lives beside
+// Pure: imports only the motion closed forms (motioneval.js, itself pure and shared with the agent) and the node reader (names.js motionNode). It lives beside
 // them in client/lib because the browser is served client/ at its root: shared/ code can't reach back into it.
 
 import { evalWholeMotion, since, ampOf, rateOf } from './motioneval.js';
+import { motionNode } from '../../shared/protocol/names.js';
 
 const TAU = 2 * Math.PI;
 const frac = (x) => x - Math.floor(x);
 const fin = Number.isFinite;
 
-/** The motion that carries a socket: its part's (`motion:<part>`, or a `motion` naming that part) when it rides one,
+/** The motion that carries a socket: its part's (a `motion:<slot>` whose node it is, or an old `motion` naming that part) when it rides one,
  *  else the thing's whole motion. Null when nothing moves it. */
 export function carrierMotion(comp, sock) {
   if (!comp) return null;
   const part = typeof sock?.part === 'string' ? sock.part : null;
   if (part) {
-    const m = comp[`motion:${part}`] ?? (comp.motion?.part === part ? comp.motion : null);
+    // the motion on that node: a keyed motion whose node it is (motioneval.js motionNode: the value's `node`, never the key)
+    const k = Object.keys(comp).find((x) => x.startsWith('motion:') && comp[x]?.type && motionNode(x, comp[x]) === part);
+    const m = (k ? comp[k] : null) ?? (comp.motion?.part === part ? comp.motion : null);
     if (m?.type) return { m, part: true };
   }
   const w = comp.motion;
