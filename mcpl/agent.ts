@@ -3997,7 +3997,14 @@ export class WorldAgent {
       const winged = p.pose.wingsFolded === true ? ", wings folded" : "";
       const ride = this.mounts.get(p.id);
       const riding = ride ? ` — on ${ride.to}${ride.slot ? ` (${ride.slot})` : ""}${this.seatSuffix(p.id, ride)}` : "";
-      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${winged}${riding}${voiceNote(p.pose)}`);
+      // Their heading is on the wire (pose.yaw, world yaw like our own) — say it,
+      // or an agent can't tell which side of someone it will see. A rider's body
+      // follows the seat's socket, so their root yaw isn't where they face. A body
+      // knocked over (ragdoll) or lying down keeps its standing yaw — the clip
+      // changes, not the heading — so for those too say nothing rather than lie.
+      const lying = p.pose.clip === "ragdoll" || p.pose.clip === "lie";
+      const facing = !ride && !lying && Number.isFinite(p.pose.yaw) ? `, facing ${this.bearing(Math.sin(p.pose.yaw), Math.cos(p.pose.yaw))}` : "";
+      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${facing}${posed}${winged}${riding}${voiceNote(p.pose)}`);
     }
 
     const ents = [...this.entities.values()];
