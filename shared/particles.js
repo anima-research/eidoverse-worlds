@@ -74,7 +74,7 @@ const NUMERIC_BOUNDS = {
   lifetime: [0.05, 30],
   area:     [0, 8],
 };
-const KNOWN_KEYS = new Set(['preset', 'seed', 'texture', 'origin', 'quality', ...Object.keys(NUMERIC_BOUNDS)]);
+const KNOWN_KEYS = new Set(['preset', 'seed', 'texture', 'origin', 'quality', 'part', ...Object.keys(NUMERIC_BOUNDS)]);
 
 // ---- determinism -----------------------------------------------------------
 
@@ -141,14 +141,14 @@ const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
 function normalizeOrigin(origin, problems) {
   if (origin == null) return [0, 0, 0];
   if (!Array.isArray(origin) || origin.length !== 3 || !origin.every((n) => typeof n === 'number' && Number.isFinite(n))) {
-    problems.push('origin must be [x, y, z] numbers (entity-relative metres)');
+    problems.push('origin must be [x, y, z] numbers (entity-relative, or part-relative when part is named)');
     return [0, 0, 0];
   }
   // Entity-RELATIVE by contract: the emitter hangs off the thing that owns it
   // and travels with it. A 200m offset is not a local origin, it is a second
   // entity nobody can see, move or remove.
   if (origin.some((n) => Math.abs(n) > 8)) {
-    problems.push('origin is entity-relative and bounded to ±8m — place a far emitter on its own entity');
+    problems.push('origin is entity-relative (part-relative with part) and bounded to ±8m — place a far emitter on its own entity');
     return origin.map((n) => clamp(n, [-8, 8]));
   }
   return origin.slice();
@@ -183,6 +183,10 @@ export function normalizeParticles(data, { entityId = '' } = {}) {
     origin: normalizeOrigin(data.origin, notes),
     quality: Object.hasOwn(QUALITY_TIERS, data.quality) ? data.quality : 'auto',
   };
+  if (data.part != null) {
+    if (typeof data.part === 'string' && data.part.trim() && data.part.length <= 256) emitter.part = data.part;
+    else notes.push('part must be a non-empty name of at most 256 characters — using the entity frame');
+  }
   if (data.quality != null && !Object.hasOwn(QUALITY_TIERS, data.quality)) {
     notes.push(`quality ${JSON.stringify(data.quality)} is unknown (${Object.keys(QUALITY_TIERS).join('/')}) — using auto`);
   }
@@ -245,6 +249,9 @@ export function describeParticles(data) {
   const bits = ['particles'];
   const o = Array.isArray(data.origin) && data.origin.length === 3 && data.origin.every((n) => typeof n === 'number' && Number.isFinite(n))
     ? data.origin : null;
+  if (typeof data.part === 'string' && data.part.trim() && data.part.length <= 256) {
+    bits.push(`declared part ${JSON.stringify(data.part)} (part-local origin; entity fallback if unavailable)`);
+  }
   bits.push(`local origin [${(o ?? [0, 0, 0]).join(', ')}]`);
   if (!known) bits.push('preset unknown to this client');
   // "active" is the honest claim: the component IS the emitter's state, and a
