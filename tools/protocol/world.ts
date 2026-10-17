@@ -1,6 +1,7 @@
-// tools/protocol/world.ts — found a world, or translate an old (v1) world once into a NEW world.
+// tools/protocol/world.ts — found a world, or translate an old (v1) world once, in place or into a new name.
 //
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts found <name> --owner <your id> [--title "…"]
+//   WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <v1 world> --founder-key <ed25519:…> | --no-founder-key
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <v1 world> <new name> --founder-key <ed25519:…> | --no-founder-key
 //   bun tools/protocol/world.ts owner-key <ed25519:…> <signature>      (the ceremony's check: import-v1/README.md)
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts info <name>
@@ -13,19 +14,100 @@
 // `translate` reads <v1 world>/log.jsonl, never writes it (R9: the original is kept), runs the importer
 // (tools/protocol/import-v1/: 0 divergences required), re-reads the output with the strict reader, and only then writes
 // <new name>/world.jsonl. The old directory stays on disk as it was; the server doesn't serve it.
+// `translate <v1 world>` alone (R 10-17: "links keep working") translates IN PLACE: into a temporary sibling first, then
+// verified (the importer's checks, the result opened as the server opens it, and, where the old server left a
+// snapshot.json, the snapshot oracle's agreement with the old engine), and only then swapped in under the original name,
+// with the old log kept beside it as log.original.jsonl (snapshot.json → snapshot.original.json): renamed, never
+// rewritten. On any failure the original is left as it was, the temporary directory is removed, and it says why.
 import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { WORLDS_DIR } from "../../server/config.ts";
 import { foundWorld, isWorldSaved } from "../../server/worldlog.ts";
 import { translateV1World } from "./import-v1/world.ts";
-import { openLive } from "../../server/livehost.ts";
+import { openLive, isWorldDir } from "../../server/livehost.ts";
 import { digest, keyOk } from "../../shared/protocol/fold.js";
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flag = (k: string) => { const i = rest.indexOf(`--${k}`); return i >= 0 ? rest[i + 1] : undefined; };
 const NAME = /^[a-z0-9_-]{1,64}$/i;
 const die = (m: string) => { console.error(m); process.exit(1); };
+
+/** An in-place translation keeps the old world's files beside the new one under these names (never written, never deleted). */
+const ORIGINAL = { log: "log.original.jsonl", snapshot: "snapshot.original.json", poses: "poses.original.json" } as const;
+
+/** What a translation says about itself (both forms). */
+function report(src: string, dest: string, r: ReturnType<typeof translateV1World>) {
+  console.log(`translated "${src}" (${r.stats.in} old entries) → world "${dest}" (${r.entries} entries, ${r.stats.change} change, `
+    + `0 divergences, ${r.stats.renamed} actor names escaped, ${r.stats.tsClamped ?? 0} ts clamped); digest ${r.digest}`);
+  if (r.renamedBlobs?.length) console.log(`NOTE: ${r.renamedBlobs.length} store blob(s) no longer hash to their names (rewritten after upload); their addresses are of the bytes this host has: ${r.renamedBlobs.join(", ")}`);
+  if (r.stats.modelsHashed !== undefined) console.log(`models: kept as library paths; ${r.stats.modelsHashed} with model-hash (sha256:…) beside them${r.stats.modelsUnhashed.length ? `; ${r.stats.modelsUnhashed.length} without (no bytes on this host): ${r.stats.modelsUnhashed.join(", ")}` : ""}`);
+  if (r.sim) console.log(`physics: ${r.sim.engine?.engine ?? "the epoch was left"} — ${r.sim.launches} punt(s) became launches, ${r.sim.rests} rest(s) logged where her sim rests them; the authority's sim layer re-checked ${r.sim.agree}/${r.sim.rests}`);
+  // PROTOCOL §5: v1 `guard` merges into `lock`, which drops its authorship protection by design. Say so, so the
+  // world's owners can be told what changed (and which entities to look at).
+  if (r.stats.guards) console.log(`NOTE for the owners: ${r.stats.guards} guarded entities in the v1 world became locked (${r.stats.guardsLive} still guarded at the end). `
+    + `Now a lock binds everyone, the placer too, and any builder may lift it; the guard's "only the placer or an owner may change it" is gone (§5).`);
+}
+
+/** `translate <world>`: the world keeps its name (links to it keep working). Translated into a temporary sibling, verified,
+ *  and only then swapped in: world.jsonl lands in the world's directory in one rename (from then on it is a world), and the
+ *  old files are renamed beside it (log.jsonl → log.original.jsonl, snapshot.json → snapshot.original.json, poses.json →
+ *  poses.original.json): the same files, never rewritten. Any failure before or during the swap puts back whatever moved,
+ *  removes the temporary directory and says why. */
+function translateInPlace(name: string, founderKey: string | undefined) {
+  const D = path.join(WORLDS_DIR, name), log = path.join(D, "log.jsonl");
+  if (!fs.existsSync(log)) die(`"${name}" holds no old log (${log}): there's nothing to translate here. Nothing was changed.`);
+  const fail = (why: string, T?: string): never => {
+    if (T) fs.rmSync(T, { recursive: true, force: true });
+    die(`${why}\nNothing was moved: "${name}" is exactly as it was (its log.jsonl untouched), and nothing was left behind.`);
+    throw 0; };
+  // where the old files go must be free, and so must the names the new world's files take
+  const taken = [...Object.values(ORIGINAL), "world.jsonl", "world.mod.jsonl"].filter((f) => fs.existsSync(path.join(D, f)));
+  if (taken.length) fail(`can't translate "${name}" in place: ${taken.join(", ")} already exist(s) in ${D}, where the translation would put its own.`);
+  const before = fs.statSync(log);
+  // 1. the old engine's own fold, if the world kept one (snapshot.json): the translator must agree with it
+  //    (import-v1/snapshot-oracle.ts, in its own scratch: it writes nothing here)
+  let oracleSaid = "no snapshot.json here, so nothing to compare with the old engine";
+  if (fs.existsSync(path.join(D, "snapshot.json"))) {
+    const o = Bun.spawnSync([process.execPath, path.join(import.meta.dir, "import-v1", "snapshot-oracle.ts"), D], { env: { ...process.env, ORACLE_SUMMARY: "1" } });
+    const out = o.stdout.toString() + o.stderr.toString();
+    const line = out.split("\n").find((l) => l.startsWith("oracle-summary "));
+    let w: any = null; try { w = JSON.parse(line!.slice("oracle-summary ".length))[0]; } catch { /* no summary: the oracle failed to run */ }
+    if (!w) fail(`the snapshot check (import-v1/snapshot-oracle.ts) didn't run to the end:\n${out.slice(-2000)}`);
+    if (w.error || (!w.skipped && !w.agree)) fail(`the translation doesn't agree with the old engine's own snapshot.json (snapshot-oracle: ${w.error ?? `${w.unexplained} unexplained difference(s)`}):\n${out.split("\n").filter((l) => /DIFF|FAIL|missing|extra/.test(l)).slice(0, 30).join("\n")}`);
+    oracleSaid = w.skipped ? `snapshot.json NOT compared: ${w.skipped}` : `snapshot.json agrees: the translation folds to the old engine's own state (${w.entities[1]} entities, ${w.seats} seat(s); snapshot-oracle)`;
+  }
+  // 2. translate into a temporary sibling (a name the server never serves: it isn't a world name); the importer's own
+  //    checks (0 divergences, projection equality, strict read-back) run before it writes anything
+  const T = path.join(WORLDS_DIR, `.translating-${name}-${crypto.randomBytes(4).toString("hex")}`);
+  let r: ReturnType<typeof translateV1World>;
+  try { r = translateV1World(D, T, { founderKey, name }); } catch (x) { fail(`the translation failed: ${(x as Error).message}`, T); throw 0; }
+  // 3. the result, opened as the server opens it: a world, folding to the importer's digest
+  try { const live = openLive(T, name); const st = live.state();
+    if (!isWorldDir(T) || st.status !== "ok" || digest(st) !== r.digest) throw new Error(`opened as the server opens it: ${isWorldDir(T) ? "" : "not a world, "}status ${st.status}, digest ${digest(st)} (the importer said ${r.digest})`); }
+  catch (x) { fail(`the translated world didn't verify: ${(x as Error).message}`, T); }
+  // 4. the swap. world.jsonl first: one rename makes the directory a world (the old log beside it is ignored from then on)
+  const steps: [string, string][] = [[path.join(T, "world.jsonl"), path.join(D, "world.jsonl")], [log, path.join(D, ORIGINAL.log)]];
+  if (fs.existsSync(path.join(D, "snapshot.json"))) steps.push([path.join(D, "snapshot.json"), path.join(D, ORIGINAL.snapshot)]);
+  if (fs.existsSync(path.join(D, "poses.json"))) steps.push([path.join(D, "poses.json"), path.join(D, ORIGINAL.poses)]);
+  for (const f of fs.readdirSync(T)) if (f !== "world.jsonl") steps.push([path.join(T, f), path.join(D, f)]);
+  const done: [string, string][] = [];
+  const fault = Number(process.env.WORLD_TS_FAULT_AT_STEP ?? NaN);   // tests only: fail as if step k's rename had (tools/protocol/inplace-check.ts)
+  try { for (const [a, b] of steps) { if (done.length === fault) throw new Error(`(injected) step ${done.length} failed`); if (fs.existsSync(b)) throw new Error(`${b} appeared during the swap`); fs.renameSync(a, b); done.push([a, b]); } }
+  catch (x) {
+    const stuck: string[] = [];
+    for (const [a, b] of done.reverse()) { try { fs.renameSync(b, a); } catch (y) { stuck.push(`${b} (should be ${a}: ${(y as Error).message})`); } }
+    if (stuck.length) die(`the swap failed (${(x as Error).message}) and these couldn't be put back; move them by hand:\n  ${stuck.join("\n  ")}\nThe translated files are in ${T}.`);
+    fail(`the swap failed: ${(x as Error).message}; everything that had moved was put back.`, T);
+  }
+  fs.rmSync(T, { recursive: true, force: true });
+  const after = fs.statSync(path.join(D, ORIGINAL.log));
+  report(name, name, r!);
+  console.log(oracleSaid);
+  console.log(`in place: "${name}" keeps its name, so links to it keep working. The old log is kept beside it as ${ORIGINAL.log} — the same file, renamed, never written `
+    + `(${after.size} bytes, mtime unchanged: ${before.mtimeMs === after.mtimeMs && before.size === after.size && before.ino === after.ino})`
+    + `${fs.existsSync(path.join(D, ORIGINAL.snapshot)) ? `, and the old snapshot as ${ORIGINAL.snapshot}` : ""}; ${r!.poses} remembered place(s) carried over by identity`);
+}
 
 if (cmd === "found") {
   const name = rest[0], owner = flag("owner");
@@ -43,33 +125,35 @@ if (cmd === "found") {
   const msg = `eidoverse-owner-key:${key}`;
   let good = false; try { good = crypto.verify(null, Buffer.from(msg), pub, Buffer.from(sig.replace(/-/g, "+").replace(/_/g, "/"), "base64")); } catch { good = false; }
   if (!good) die(`the signature doesn't verify for ${key} over "${msg}": nothing is wrong with the world, but this key can't be used until it does`);
-  console.log(`ok: ${key} signed "${msg}". Use it: bun tools/protocol/world.ts translate <old> <new> --founder-key ${key}`);
+  console.log(`ok: ${key} signed "${msg}". Use it: bun tools/protocol/world.ts translate <world> --founder-key ${key}`);
 } else if (cmd === "translate") {
-  const [src, dest] = rest;
-  if (!src || !dest || !NAME.test(src) || !NAME.test(dest)) die("usage: translate <v1 world> <new name> (--founder-key <ed25519:…> | --no-founder-key)");
-  if (isWorldSaved(src)) die(`${src} is already a world`);
+  // the words that aren't flags: `translate <world>` (in place) or `translate <old world> <new name>`
+  const words = rest.filter((w, i) => !w.startsWith("--") && rest[i - 1] !== "--founder-key");
+  const USAGE = "usage: translate <world> (--founder-key <ed25519:…> | --no-founder-key)   (in place: it keeps its name; the old log stays beside it as log.original.jsonl)\n"
+    + "       translate <old world> <new name> (--founder-key <ed25519:…> | --no-founder-key)   (into a new name; the old directory is left as it was)";
+  if (!words.length || words.length > 2 || !words.every((w) => NAME.test(w))) die(USAGE);
+  const [src, dest] = words;
+  if (isWorldSaved(src)) die(fs.existsSync(path.join(WORLDS_DIR, src, ORIGINAL.log))
+    ? `"${src}" is already translated: it's a world in this protocol, and its original old log is kept beside it as ${ORIGINAL.log}. Nothing was changed.`
+    : `"${src}" is already a world in this protocol: there's nothing to translate. Nothing was changed.`);
   // PROTOCOL §13 GOV-5: nobody can add a key to an empty tier 0 later, so the founder's key goes in now or never
   const founderKey = flag("founder-key");
   if (!founderKey && !rest.includes("--no-founder-key")) die("translate needs the founder's own governance key for tier 0: --founder-key <ed25519:…> (made on their machine and checked with owner-key; import-v1/README.md, \"The Commons ceremony\"). "
     + "--no-founder-key founds it with tier 0 empty, which can never be filled later (§13 GOV-5)");
-  const before = fs.statSync(path.join(WORLDS_DIR, src, "log.jsonl"));
-  const r = translateV1World(path.join(WORLDS_DIR, src), path.join(WORLDS_DIR, dest), { founderKey });
-  const after = fs.statSync(path.join(WORLDS_DIR, src, "log.jsonl"));
-  console.log(`translated "${src}" (${r.stats.in} old entries) → world "${dest}" (${r.entries} entries, ${r.stats.change} change, `
-    + `0 divergences, ${r.stats.renamed} actor names escaped, ${r.stats.tsClamped ?? 0} ts clamped); digest ${r.digest}`);
-  if (r.renamedBlobs?.length) console.log(`NOTE: ${r.renamedBlobs.length} store blob(s) no longer hash to their names (rewritten after upload); their addresses are of the bytes this host has: ${r.renamedBlobs.join(", ")}`);
-  if (r.stats.modelsHashed !== undefined) console.log(`models: kept as library paths; ${r.stats.modelsHashed} with model-hash (sha256:…) beside them${r.stats.modelsUnhashed.length ? `; ${r.stats.modelsUnhashed.length} without (no bytes on this host): ${r.stats.modelsUnhashed.join(", ")}` : ""}`);
-  if (r.sim) console.log(`physics: ${r.sim.engine?.engine ?? "the epoch was left"} — ${r.sim.launches} punt(s) became launches, ${r.sim.rests} rest(s) logged where her sim rests them; the authority's sim layer re-checked ${r.sim.agree}/${r.sim.rests}`);
-  console.log(`the old log was read, not written:${before.size} bytes, mtime unchanged: ${before.mtimeMs === after.mtimeMs}; ${r.poses} remembered place(s) carried over by identity`);
-  // PROTOCOL §5: v1 `guard` merges into `lock`, which drops its authorship protection by design. Say so, so the
-  // world's owners can be told what changed (and which things to look at).
-  if (r.stats.guards) console.log(`NOTE for the owners: ${r.stats.guards} guarded thing(s) in the v1 world became locked (${r.stats.guardsLive} still guarded at the end). `
-    + `Now a lock binds everyone, the placer too, and any builder may lift it; the guard's "only the placer or an owner may change it" is gone (§5).`);
+  if (dest === undefined) translateInPlace(src, founderKey);
+  else {
+    const before = fs.statSync(path.join(WORLDS_DIR, src, "log.jsonl"));
+    const r = translateV1World(path.join(WORLDS_DIR, src), path.join(WORLDS_DIR, dest), { founderKey });
+    const after = fs.statSync(path.join(WORLDS_DIR, src, "log.jsonl"));
+    report(src, dest, r);
+    console.log(`the old log was read, not written: ${before.size} bytes, mtime unchanged: ${before.mtimeMs === after.mtimeMs}; ${r.poses} remembered place(s) carried over by identity`);
+  }
 } else if (cmd === "info") {
   const name = rest[0]; if (!name || !NAME.test(name)) die("usage: info <name>");
   if (!isWorldSaved(name)) die(`${name} is not a world (no world.jsonl with a genesis)`);
   const w = openLive(path.join(WORLDS_DIR, name), name);
   const st = w.state();
-  console.log(JSON.stringify({ name, worldId: w.worldId, entries: w.entries.length, status: st.status, things: Object.keys(st.entities).length - 1,
+  console.log(JSON.stringify({ name, worldId: w.worldId, entries: w.entries.length, status: st.status,
+    entities: Object.keys(st.entities).length - 1, entitiesNote: "not counting @world, the world's own entity",
     roles: Object.fromEntries(Object.entries(st.entities["@world"].c).filter(([k]) => k.startsWith("roles:"))), digest: digest(st) }, null, 1));
-} else die("usage: found <name> --owner <id> [--title …] | translate <v1 world> <new name> (--founder-key <key> | --no-founder-key) | owner-key <key> <sig> | info <name>   (WORLDS_DIR=<dir>)");
+} else die("usage: found <name> --owner <id> [--title …] | translate <world> [<new name>] (--founder-key <key> | --no-founder-key) | owner-key <key> <sig> | info <name>   (WORLDS_DIR=<dir>)");

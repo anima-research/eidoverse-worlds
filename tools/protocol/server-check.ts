@@ -554,7 +554,7 @@ srv.proc.kill();
   const N0 = readLog(fs.readFileSync(path.join(w, "world.jsonl"))).filter((e) => e.kind === "say").length;
   const srvA = await startServer(ENGINE, W4, OPT, "sh");
   { const boot = fs.readFileSync(srvA.log, "utf8");   // the boot sweep TELLS the operator about the old worlds left on disk by S6 (owner 10-15)
-    ok(boot.includes(`[boot] old-format world "oldtown" (oldtown/log.jsonl) is NOT being served.`) && boot.includes(`WORLDS_DIR=${W4} bun tools/protocol/world.ts translate oldtown oldtown-2 --founder-key <the founder's ed25519 key>`)
+    ok(boot.includes(`[boot] old-format world "oldtown" (oldtown/log.jsonl) is NOT being served.`) && boot.includes(`WORLDS_DIR=${W4} bun tools/protocol/world.ts translate oldtown --founder-key <the founder's ed25519 key>`)
       && boot.includes(`[boot] old-format world "prenamed" (prenamed/world.jsonl) is NOT being served.`) && /\[boot\] 2 world\(s\) need translating — see above/.test(boot) && !/"hollow"/.test(boot),
       "SH0 at boot the operator is told, per old world, that it isn't served and the exact command (this WORLDS_DIR), and how many", boot.split("\n").filter((l) => /old-format|need translating|translate /.test(l))); }
   const t = await client(srvA.port, "garden", "Ann", REPLICA);

@@ -5,8 +5,8 @@
 //   - the OPERATOR is told at boot, one block per world, with the exact command (bootNotice);
 //   - a VISITOR is told in plain words that the world is safe and needs a one-time conversion (visitorText).
 // Two kinds, never confused:
-//   translatable  a log.jsonl of the first protocol's verbs: tools/protocol/world.ts translate reads it (never writes it)
-//                 into a NEW world;
+//   translatable  a log.jsonl of the first protocol's verbs: tools/protocol/world.ts translate <name> translates it in
+//                 place (the world keeps its name; the old log is renamed log.original.jsonl beside it, never written);
 //   pre-names     a log of this protocol's family saved before the 2026-10-07 names pass (livehost isPreNamesDir): it
 //                 can't be translated as it stands; it's re-translated from its ORIGINAL old log, or refounded.
 // Pure reads of the directory: nothing here writes, and nothing here loads the translator.
@@ -20,7 +20,7 @@ export type OldWorld = {
   kind: OldWorldKind;
   /** the old log found (absolute path) */
   file: string;
-  /** a world name that is free in this directory (nothing on disk under it) */
+  /** a world name that is free in this directory (nothing on disk under it): a pre-names world's re-translation goes there */
   suggestedName: string;
   /** the operator's command, WORLDS_DIR filled in, the founder's key a placeholder */
   command: string;
@@ -33,6 +33,7 @@ export type OldWorld = {
 const NAME = /^[a-z0-9_-]{1,64}$/i;
 const TOOL = "bun tools/protocol/world.ts";
 export const FOUNDER_KEY_PLACEHOLDER = "<the founder's ed25519 key>";
+const KEPT_IN_PLACE = "It keeps its name, so links to it keep working; the original log is kept untouched beside it as log.original.jsonl.";
 const KEPT = "the original log is kept untouched; translate into a new name, then point links at it (or rename the directories)";
 
 /** A shell word as typed (a directory with spaces or quotes is single-quoted). */
@@ -70,7 +71,7 @@ export function oldWorldAt(dir: string, name: string): OldWorld | null {
   const file = path.join(d, "log.jsonl");
   if (!fs.existsSync(file)) return null;
   return { name, kind: "translatable", file, suggestedName,
-    command: `${head} translate ${name} ${suggestedName} --founder-key ${FOUNDER_KEY_PLACEHOLDER}`, visitor: visitorText(name, "translatable") };
+    command: `${head} translate ${name} --founder-key ${FOUNDER_KEY_PLACEHOLDER}`, visitor: visitorText(name, "translatable") };
 }
 
 /** Every old world in `dir`, by name. */
@@ -87,10 +88,10 @@ export function bootNotice(dir: string): string {
     const at = path.relative(dir, o.file);
     return o.kind === "translatable"
       ? [`[boot] old-format world "${o.name}" (${at}) is NOT being served.`,
-         `  It was saved by an older version of Eidoverse (a log.jsonl of the first protocol). Translate it once into a new world:`,
+         `  It was saved by an older version of Eidoverse (a log.jsonl of the first protocol). Translate it once, in place:`,
          `    ${o.command}`,
          `  The founder makes that key on their own machine and you check it with \`${TOOL} owner-key <key> <signature>\`; --no-founder-key instead leaves the world's top governance tier empty for ever.`,
-         `  ${KEPT}`].join("\n")
+         `  ${KEPT_IN_PLACE}`].join("\n")
       : [`[boot] old-format world "${o.name}" (${at}) is NOT being served.`,
          `  It was saved before this server's protocol names changed (2026-10-07), so it can't be translated as it stands. Re-translate it from its original old log (the directory its first-protocol log.jsonl is in) into a new world:`,
          `    ${o.command}`,
