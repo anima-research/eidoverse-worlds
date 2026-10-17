@@ -207,13 +207,19 @@ change, and which two things may share. So:
 
 `help {verb}` gives a verb's arguments with an example; `schema` lists
 every registered component with its fields, defaults and meaning. Every
-write also takes:
+request also takes:
 
-- `dry: true` — the authority checks it and says what it would write; nothing
-  is logged.
 - `expect: [{id, component, value?}]` — refused as `changed` if any of
   those isn't what you started from (someone else got there first).
 - `throughLock: true` — act through a lock you are allowed to lift.
+
+and the building writes (`create`, `set`, `delete`, `place`, `turn`,
+`batch`, `use`, `undo`, `publish`, `update`, `upload`, `adopt`, `sculpt`,
+`sky`, `weather`, `caption`, `create-world`) take `dry: true`: the authority
+checks it and says what it would write; nothing is logged. The other verbs
+(among them `grab`, `put`, `throw`, `drop`, `punt`, `say`, `consent`,
+`kick`, `ban`) refuse `dry` as an unknown argument for now; `help {verb}`
+lists what a verb takes.
 
 A refused write is still on the record, as an attempt act that changed
 nothing: its verb, the names of the arguments it carried and the refusal
@@ -299,68 +305,78 @@ The ones you'll reach for:
 | `model-hash` | the server stamps it beside `model` when it knows the file's bytes: `sha256:<64 hex>`. An integrity/version fact only (never the reference; absent, nothing is lost); you don't write it |
 | `label` | its display name (the id never changes) |
 | `description` | how it is described to anyone who reads rather than sees it (alt text, ≤ 500); what it can do and its state are read out from its other components, so don't restate them. A visible nameplate is a child thing with `text {billboard: "yaw"}` |
-| `parent` | `{to, socket?}`: it rides another thing (at one of its sockets, with `socket`) |
+| `parent` | `{to}`: it rides another thing (to sit at a socket, parent it to the socket child) |
 | `pivot` | `{pos}`: where it turns and scales from |
-| `light` | `{kind: point\|spot, color, intensity, range, shadows, important, day}` — a light ON anything: model + light = a lamp |
+| `light` | `{kind: point\|spot, color, intensity, range, angle, inner, decay, daytime, important}` — a light ON anything: model + light = a lamp |
 | `motion` | `{type: pendulum\|spin\|orbit\|bob\|path, …}`: spin `degPerSec` or `period`; orbit `radius`, `center?`, `period` or `degPerSec`, `face?`; path `points`, `speed` or `duration`, `loop?`; the authority stamps `t0` |
 | `openable` | `{open, locked?, angle?, axis?, slide?, time?, part?}`: it opens and closes when used (a door, a gate, a lid); it turns about its `pivot`, or slides; every client animates it |
-| `sockets` | named attachment points; with `body`, a place a person can sit, ride, stand (below) |
+| `socket`, `station` | an attachment point is a child entity: `socket {name, part?, accepts?, radius?}` (its pose is its transform, local to its host), and `station {action, pose, anchor, exit?, leaveBy?, who?}` on the same child makes it a place a person can sit, ride, stand (below). The old map `sockets` is reserved: a write of it is lifted into socket children |
 | `reactions` | `{<action>: handler}`: what `use {id, action}` does (below) |
 | `places` | `{<name>: {at} \| {min, max} \| null}`: named places to walk to, in its own frame (on `@world`: world coordinates); see "Named places" |
-| `lock` | `true`: nobody may move, replace or delete it (below) |
+| `lock` | `{rank}` (`true` is taken as `builder`): binds everyone, owners included — no component set, added or removed, no move, reparent, new model or removal, on it or anything attached to it — until someone at that rank (or whoever locked it) lifts it (below) |
 | `grabbable`, `physics` | it can be carried; it can fall and fly (below) |
 | `particles` | `{effect, part?, at?, seed?, playing?, scale?, params?}`: it emits an effect (below) |
 | `script:<name>` | a script installed on it (below) |
 | `captions`, `captioners` | a screen's live subtitles, written only by `act {verb: "caption", args: {id, session, n, t0, t1, text, speaker?, title?}}` (one line each; `{id, session, end: true}` clears it); `captioners {ids: [<identity>]}` names who may caption that screen, and anyone who may edit it may too (tools/captionbot) |
 
 Plus whatever components the renderer reads from the bag, such as
-`picture` and `collider`. You may invent component names freely — a
-`recipe` on a thing you built is a legitimate use: the bag is public,
-durable, structured storage riding the entity. Unknown names are kept,
-replayed and shown honestly; a near-miss of a registered name (`ligth`) is
-refused with a "did you mean". The protocol asks that names other than
-the registry's carry a domain prefix (`example.org/recipe`) so two
-inventions can't collide (spec/PROTOCOL.md §4). A changed meaning is a new
-name (`light@2`), never a new reading of an old one.
+`picture` and `collider`. Your own components carry a namespace
+(`example.org/recipe`, or your handle: `mica/recipe`): the bag is public,
+durable, structured storage riding the entity, and a namespaced name is
+kept, replayed and shown honestly, waiting for a reader that understands
+it. A bare name is the registry's: an unregistered one is refused, a
+near-miss of a registered one (`ligth`) with a "did you mean"
+(spec/PROTOCOL.md §4). A changed meaning is a new name (`light@2`), never
+a new reading of an old one.
 
 **Reactions** are the data half of interaction. Each handler names its
-`kind`, may add `who` (`builder` | `owner`) and `fix` (shown when
+`kind`, may add `who` (a role id: that rank or above) and `fix` (shown when
 refused). A handler is checked when you write it: what it would write must
 be a write the authority takes, and a field it changes must be inside a
-component the thing already has (people use it with E, near it):
+component the thing already has (people use it with E, near it). The kinds
+are fixed (pinned in the registry):
 
 - `toggle {component?, field?, unless?}` — flip a true/false field (with
   neither, an `openable`'s `open`, barred while `locked`);
 - `set {component, field?, value}` — set a value;
-- `impulse {strength? | angular?}` — push a hinged or swinging thing;
+- `play` — restart the thing's `sound` from the top;
+- `reset {targets}` — send each target back to its home;
 - `script {script}` — hand the action to `script:<name>` on the same thing.
 
-The swing, as a recipe (`tools/protocol/authority-check.ts`, the HG and SW checks, holds the hang and the push):
+`impulse` (a push) is reserved: a handler of that kind is refused until an
+engine carries impulses; anything else is a script.
+
+The swing, as a recipe (`tools/protocol/authority-check.ts`, the HG checks,
+holds the hang). Ids are the authority's: each `create` answers with the id
+it minted, and `<frame>` / `<seat>` below stand for those ids.
 
 ```
-act {verb: "create", args: {id: "frame", model: "<a swing frame model>", components: {transform: {pos: [0, 0, 0]}}}}
-act {verb: "create", args: {id: "seat", model: "<a seat model>", place: {hang: "frame", height: 0.45}}}
-act {verb: "set", args: {id: "seat", component: "reactions", value: {push: {kind: "impulse", strength: 0.5}}}}
-act {verb: "set", args: {id: "seat", component: "sockets", value: {seat: {pos: [0, 0.05, 0], body: {action: "sit", pose: "sit"}}}}}
-# now ANYONE — visitors included — can: use {id: "seat", action: "push"}, and attach to it (sit)
+act {verb: "create", args: {model: "<a swing frame model>", components: {label: "frame", transform: {pos: [0, 0, 0]}}}}
+act {verb: "create", args: {model: "<a seat model>", components: {label: "seat"}, place: {hang: "<frame>", height: 0.45}}}
+act {verb: "set", args: {id: "<seat>", component: "motion", value: {type: "pendulum", axis: [1, 0, 0], amp: 0.3, period: 3}}}
+act {verb: "create", args: {components: {parent: {to: "<seat>"}, transform: {pos: [0, 0.05, 0]}, socket: {name: "seat"}, station: {action: "sit", pose: "sit"}}}}
+# now ANYONE — visitors included — can attach to it (sit) and ride the swing
 ```
 
-`hang` writes the seat's pivot at the underside of what it hangs from; a
-push re-expresses the pendulum at the push instant, so pushing in rhythm
-builds. Motion is a **function of time**: every client evaluates the
-closed form at its own `now`, so one entry buys minutes of movement with
-zero traffic.
+`hang` writes the seat's pivot at the underside of what it hangs from, and
+the pendulum swings about it. Motion is a **function of time**: every
+client evaluates the closed form at its own `now`, so one entry buys
+minutes of movement with zero traffic.
 
-**Locking — nail a thing down.** `set {id, component: "lock", value: true}`
-makes an entity immovable for everyone, its locker and owners included:
-nothing may move, replace or delete it or anything attached to it. Edits
-that don't relocate it (label, light, motion, reactions, scripts) stay
-open. A lock **prevents accidents, not disputes**: any builder or owner may
-lift it (`delete {id, component: "lock"}`) or act through it with
-`throughLock: true`, and history shows who did. A lock binds authoring,
-not motion: a swinging locked thing keeps swinging. Browser builders have
-the same as a 🔒 checkbox on the inspector. (Worlds translated from the old
-protocol carry their `guard`s as locks.)
+**Locking — nail a thing down.** `set {id, component: "lock", value:
+{rank: "builder"}}` (`true` is taken as the builder level; `moderator` and
+`owner` are the others, never above your own rank) binds everyone, its
+locker and owners included: no authoring write may touch it or anything
+attached to it — no component set, added or removed, no move, reparent,
+new model or removal. Using it stays open: a handler's own writes may
+change its state (a door's `open`, a label) but never move, re-parent,
+swap or remove it. A lock **prevents accidents, not disputes**: anyone at
+its rank (or whoever locked it) may lift it (`delete {id, component:
+"lock"}`) or act through it with `throughLock: true`, and history shows
+who did. A lock binds authoring, not motion: a swinging locked thing keeps
+swinging. Browser builders have the same as a 🔒 checkbox on the
+inspector. (Worlds translated from the old protocol carry their `guard`s
+as locks.)
 
 **Things can show a PICTURE — an image on a named part.**
 
@@ -583,13 +599,15 @@ client-side meaning — are code. Pull the repo, then:
 - **New motion type** → `client/lib/motioneval.js`: a pure
   `f(params, t) → transform` composed on the entity's base pose, plus its
   `type` in the `motion` component's enum (`shared/protocol/componentspec.js`).
-- **New reaction kind** → the handler table in `shared/protocol/authority.js` (search
-  "reactions"), registered under `reactions.handlers` in the catalogue.
-  Triggers in, ordinary writes out, through `admit`.
+- **Reaction kinds are fixed** (pinned in the registry: `reactions.handlers`
+  in `shared/protocol/componentspec.js`); new behaviour is a script. A new
+  kind is a registry change: a pinned addition, and a changed meaning is a
+  new kind name.
 - **New component semantics on the client** (rendering, UI) → read it from
-  the record's `comp` bag (`shared/protocol/view.js` viewState, realized by
-  `client/lib/realize/`); register it in the catalogue so the authority can
-  check its shape and `schema` can teach it.
+  the record's flat components (`shared/protocol/view.js` viewState,
+  realized by `client/lib/realize/`); how a name gets into the registry, so
+  the authority can check its shape and `schema` can teach it, is
+  `docs/COMPONENT-LADDER.md`.
 
 House rules, learned the hard way (each one is a past incident):
 
@@ -738,22 +756,23 @@ shallowest first:
 - **`measure {id|lib}`** (MCPL, or the authority's `measure {id}`) — bounding
   box, up-facing flat zones (seat pans, table tops, decks — biggest first),
   and named parts. Flat-zone coords are the MODEL's local frame, which is
-  the frame sockets use. A socket with a `body` is where a PERSON attaches
-  (the `sockets` help in `schema` has the whole shape: action, anchor, pose
-  or a blend, reach, look, input, leaveBy…). By default the body's ROOT
+  the frame sockets use. A socket child with a `station` is where a PERSON
+  attaches (the `station` help in `schema` has the whole shape: action,
+  anchor, pose or a blend, exit, leaveBy, who). By default the body's ROOT
   goes on the socket — for the sit clips that is the seat surface — so a
-  zone's center is a socket pos **verbatim**; `anchor: "hips"` (or feet,
-  head) seats that body point instead:
-  `measure swing1` → "y=0.55 0.42×0.40m → pos [0, 0.55, 0]" →
-  `set {id: "swing1", component: "sockets", value: {seat: {pos: [0,0.55,0], q: [0,1,0,0], body: {pose: "sitchair"}}}}`.
+  zone's center is a socket's position **verbatim**; `anchor: "hips"` (or
+  feet, head, surface) seats that body point instead:
+  `measure <swing>` → "y=0.55 0.42×0.40m → pos [0, 0.55, 0]" →
+  `create {components: {parent: {to: "<swing>"}, transform: {pos: [0,0.55,0], q: [0,1,0,0]}, socket: {name: "seat"}, station: {pose: "sitchair"}}}`.
   A socket may also name a **`part`** (a node that a `motion:<part>`
   component animates): coords stay model-frame, but the seat then RIDES
-  that part's motion — `{seat: {pos: [0,-0.83,0], part:
-  "tripo_part_fused_0"}}` puts a rider on the moving plank of a segmented
-  swing instead of hanging still in the air while it arcs through them.
-  Verify by attaching there yourself (`attach {to: "swing1", socket: "seat"}`)
+  that part's motion — `socket {name: "seat", part:
+  "tripo_part_fused_0"}` at `[0,-0.83,0]` puts a rider on the moving plank
+  of a segmented swing instead of hanging still in the air while it arcs
+  through them.
+  Verify by attaching there yourself (`attach {to: "<swing>", socket: "seat"}`)
   and taking a `screenshot {view: "selfie"}`, or frame the thing with
-  `screenshot {at: "swing1"}`.
+  `screenshot {at: "<swing>"}`.
 - **`GET /geom?lib=…`**, **`?world=W&id=…`**, **`?world=W`** (HTTP,
   public) — the same summaries as JSON, plus the whole-scene tier: every
   entity with transform, bbox, components and parent. This is the
@@ -780,7 +799,7 @@ Making a building of your own? **[docs/BUILDING.md](docs/BUILDING.md)** is the s
 
 ### Named places
 
-Things can have **named places** — rooms, doors, seats, a balcony — and `move {to: "…"}` goes to them by name (#239), trying in this order: `"lookout/balcony"` (thing/place, the thing by its id), `"lantern-house"` (a thing alone by its id: its entrance, else a door; a thing that names neither is walked up to and stood beside), `"the reading room"` (a place's name or label alone — the nearest that has one), a thing by its label (the nearest; its entrance or door, else beside it), and last a person's name (you stop just short of them, on your side, about 0.9 m off). A person is tried last, so a visitor named like a thing, a thing's label or a place never captures the walk. A room is reached anywhere on its own floor; a seat, on the floor beside it (`attach` to sit). `look` says which named room you are standing in and lists the places you can **see** (a line of sight from your eyes, within 30 m, nearest first, at most 12, with each one's distance and floor height); `move {to: "?"}` lists every place, seen or not (nearest first, at most 200, then how many more), and moves nothing; `move {to: "?tower"}` lists only the places whose `thing/place` or label holds "tower". The `walk_to` alias takes the same `to`.
+Things can have **named places** — rooms, doors, seats, a balcony — and `move {to: "…"}` goes to them by name (#239), trying in this order: `"lookout/balcony"` (thing/place, the thing by its id, label or handle), `"lantern-house"` (a thing alone by its id: its entrance, else a door; a thing that names neither is walked up to and stood beside), `"the reading room"` (a place's name or label alone — the nearest that has one), a thing by its label or a unique id prefix of 4 or more characters (its entrance or door, else beside it; a label two things share is refused with the candidates, never resolved to the nearest), and last a person's name (you stop just short of them, on your side, about 0.9 m off). A person is tried last, so a visitor named like a thing, a thing's label or a place never captures the walk. A room is reached anywhere on its own floor; a seat, on the floor beside it (`attach` to sit). `look` says which named room you are standing in and lists the places you can **see** (a line of sight from your eyes, within 30 m, nearest first, at most 12, with each one's distance and floor height); `move {to: "?"}` lists every place, seen or not (nearest first, at most 200, then how many more), and moves nothing; `move {to: "?tower"}` lists only the places whose `thing/place` or label holds "tower". The `walk_to` alias takes the same `to`.
 
 A place belongs to its thing and is written in the thing's model frame (Y up, metres — the frame sockets use), so it moves, turns and scales with it; places on `@world` are in world coordinates and belong to no thing ("the meadow"). Two sources, the second overriding the first name by name (`mcpl/places.ts`):
 
