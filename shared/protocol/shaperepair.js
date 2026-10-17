@@ -151,7 +151,7 @@ const withSkyDefaults = (sky) => { const out = { ...sky }; for (const [k, v] of 
 
 /** The shape repair's version: carried by its act (repair-shapes {v}) and by a founding (create-world {shapes}). 2 (R 10-17):
  *  an old content address → its library path, and names (an Essential's, a grass preset's) kept rather than resolved. A log
- *  marked by any version is not repaired again: v1 was only ever written by this branch's test and scratch worlds, and their
+ *  marked by any version is not repaired again: version 1 was only ever written by this branch's test and scratch worlds, and their
  *  addresses still load (the index) or read as "thing". */
 export const SHAPES_VERSION = 2;
 /** Has this log been through the shape repair already, or been written in today's spelling from its start? True when it
