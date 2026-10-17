@@ -29,6 +29,8 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 const MUTANTS: [string, string, string, string, string[]][] = [
   ["a refused request logs its values again", "protocol/authority.js", "const body = { args: names.known, refused: { code } };", "const body = { args: names.known, request: args, refused: { code } };", ["L1"]],
   ["argument names not filtered to the verb's own", "protocol/authority.js", "const known = spec ? keys.filter((k) => k in spec.args || UNIVERSAL_ARGS.has(k)) : [];", "const known = keys;", ["L2"]],
+  ["an invented verb's name is logged", "protocol/authority.js", "const asVerb = Object.hasOwn(VERBS, verb) || Object.hasOwn(RESERVED_VERBS, verb) ? verb : \"unknown-verb\";", "const asVerb = verb;", ["L4"]],
+  ["presence verbs' refusals are logged", "protocol/authority.js", "    if (PRESENCE_VERBS.has(verb)) return;", "", ["L5"]],
   ["the refusal ring", "protocol/authority.js", "  ring.push(rec); if (ring.length > REFUSAL_RING) ring.splice(0, ring.length - REFUSAL_RING);", "", ["L3"]],
   ["look shows everyone's table", "protocol/authority.js", "...(id === actor ? { shield: shieldOf(P, id) } : {}),", "shield: shieldOf(P, id),", ["K1"]],
   ["look shows who touches whom", "protocol/authority.js", ".filter(([k, r]) => r.to === id && (id === actor || k === actor)).map(([k]) => k) }));", ".filter(([k, r]) => r.to === id).map(([k]) => k) }));", ["K2"]],
@@ -123,10 +125,22 @@ const cases: Case[] = [
       const big = s.call("vic", "set", { id: "lamp", component: "label", value: "x".repeat(5000) }); const ring2 = D.refusalRing ? D.refusalRing(s.w()) : [];
       return { last: ring.at(-1), bigLen: JSON.stringify(ring2.at(-1) ?? {}).length, reopened: D.refusalRing ? D.refusalRing(s.reopen()).length : -1, big: code(big) }; },
     good: (o) => o.last?.verb === "set" && o.last?.actor === "vic" && o.last?.code === "rights" && /hello there/.test(o.last?.args ?? "") && o.bigLen < 2600 && o.reopened === 0 },
-  { id: "L4", what: "…an invented verb is recorded by name with no arguments at all (nothing to filter them against)", run(s) { cast(s);
-      const r = s.call("vic", "teleport-everyone", { secret: "555-0100" }); const a = lastAct(s);
-      return { r: code(r), verb: a?.verb, body: a?.body, log: JSON.stringify(s.entries()).includes("555-0100") }; },
-    good: (o) => o.r === "unknown-verb" && o.verb === "teleport-everyone" && JSON.stringify(o.body?.args) === "[]" && o.body?.unknownArgs === 1 && !o.log },
+  { id: "L4", what: "…an invented verb is recorded as `unknown-verb` with no arguments at all: its name is the visitor's text, so it goes to the ring only (scars r8 M3)", run(s) { cast(s);
+      const r = s.call("vic", "call-me-on-5550100", { secret: "555-0100" }); const a = lastAct(s);
+      const ring = D.refusalRing ? D.refusalRing(s.w()) : [];
+      return { r: code(r), verb: a?.verb, body: a?.body, log: JSON.stringify(s.entries()).includes("5550100") || JSON.stringify(s.entries()).includes("555-0100"), ring: ring.at(-1)?.verb }; },
+    good: (o) => o.r === "unknown-verb" && o.verb === "unknown-verb" && JSON.stringify(o.body?.args) === "[]" && o.body?.unknownArgs === 1 && !o.log && o.ring === "call-me-on-5550100" },
+  { id: "L5", what: "a refused touch, body effect or consent write is never logged (presence: consent is never appended, scars r8 M3); a refused edit still is", run(s) { cast(s);
+      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] });
+      const n0 = s.entries().length;
+      const b = s.call("vic", "body", { to: "bob", kind: "shove" });
+      const r = s.call("vic", "reach", { who: "bob", point: "shoulder_l" });
+      const c = s.call("vic", "consent", { of: "bob", allow: "vic", class: "touch" });
+      const n1 = s.entries().length;
+      s.call("olive", "create", { id: "lamp", model: "crate", place: { at: [5, 0] } }); const n2 = s.entries().length;
+      const e = s.call("vic", "set", { id: "lamp", component: "label", value: "x" });
+      return { b: show(b), r: show(r), c: show(c), wrote: n1 - n0, edit: code(e), editLogged: s.entries().length - n2 }; },
+    good: (o) => /^refused/.test(o.b) && /^refused/.test(o.c) && o.wrote === 0 && o.edit === "rights" && o.editLogged === 1 },
   // ---------------- K: look ----------------
   { id: "K1", what: "look: vic sees his own consent table, and nobody else's (bob's stranger cells and pause stay bob's)", run(s) { cast(s);
       s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [1, 0, 0] }); s.call("bob", "consent", { pause: true });

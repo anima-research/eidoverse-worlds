@@ -200,6 +200,7 @@ function placeholders(w, verb, args) {
 // "muted": its refusal would put the muted words in the public log (review 10-07)
 const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "kicked", "ghost", "muted"]);
 const UNIVERSAL_ARGS = new Set(["dry", "throughLock", "expect"]);   // flags any request may carry (§3a, §5)
+const PRESENCE_VERBS = new Set(["move", "body", "reach", "consent", "inbox", "wait", "leave"]);   // a refusal of these is never logged
 const REFUSAL_RING = 200, RING_VALUE_BYTES = 2048;
 /** The argument names a refused request is logged with: the verb's own (VERBSPEC), sorted; the rest only counted. */
 function argNames(verb, args) {
@@ -226,15 +227,22 @@ function logRefusal(w, actor, verb, args, code) {
     // keeps the track current several times a second and answers a refused step with a teleport; a person indoors, flying
     // or seated wrote a permanent, broadcast refusal every few seconds (review 10-06 S0-3). An ACCEPTED teleport is an act.
     if (verb === "move") return;
+    // …and so is everything else a body does or says about itself (scars r8 M3): a refused touch, pose or reach, a refused
+    // consent write, an inbox or wait. Consent is presence, never appended: "A tried to touch B, was refused, kept trying"
+    // written into a signed, forkable log is exactly what consent.js promises never happens
+    if (PRESENCE_VERBS.has(verb)) return;
     if (code === "rate") { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; } // an attempt all the same: counted, not written
     // a refused shove is a walk that met something, not a request anyone made in words (review 10-12 S2-4): counted, not written
     if (verb === "punt" && args?.shove === true) { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; }
     if (UNLOGGED.has(code)) return;
     const names = argNames(verb, args);
     const body = { args: names.known, refused: { code } }; if (names.unknown) body.unknownArgs = names.unknown;
+    // a verb the authority doesn't have is recorded as `unknown-verb`: its name is the visitor's text (32 characters of it,
+    // in a permanent, forkable record), so it goes to the ring only, as argument values do (scars r8 M3)
+    const asVerb = Object.hasOwn(VERBS, verb) || Object.hasOwn(RESERVED_VERBS, verb) ? verb : "unknown-verb";
     const miss = (w.unrecorded ??= new Map()); const n = miss.get(actor) ?? 0; if (n) body.unrecorded = n;
     try { rateCheck(w, actor, "act", jcs(body).length + 256); } catch (x) { if (x instanceof Refusal) { miss.set(actor, n + 1); return; } throw x; }
-    w.append(actEntry(w, actor, verb, body)); miss.delete(actor);
+    w.append(actEntry(w, actor, asVerb, body)); miss.delete(actor);
   } catch { /* logging a refusal never fails the request it records */ }
 }
 const pick = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !["message", "stack"].includes(k)));
