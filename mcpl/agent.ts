@@ -47,9 +47,14 @@ const isDown = (phase: string) => phase === "LEAF" || phase === "RAGDOLL" || pha
 // In the air the limp fall ends when the body reaches the ground (RAGDOLL) or with a recovery
 // (shared/flight.js bodyRecovered, which the door sends only in rehearsal); on the ground, take_off
 // launches afresh from wherever the body lies (takeOff).
-const downRefusal = (phase: string) => phase === "LEAF"
-  ? "you're falling limp (leaf) — once you're down on the ground, take_off launches you again"
-  : `you're down on the ground (${phase.toLowerCase()}) — take_off to fly again`;
+/** Why a body that's down can't fly now, and what gets it flying again. A limp fall whose recovery began
+ *  in the air (LEAF with recoverAt set) flies on by itself once it's done, unless it meets the ground
+ *  first (shared/flight.js). */
+const downRefusal = (f: { phase: string; recoverAt?: number | null }) => f.phase === "LEAF"
+  ? f.recoverAt != null
+    ? "you're falling limp (leaf) with your recovery under way — you fly again once it's done, unless you reach the ground first"
+    : "you're falling limp (leaf) — once you're down on the ground, take_off launches you again"
+  : `you're down on the ground (${f.phase.toLowerCase()}) — take_off to fly again`;
 
 /** integrator yaw (atan2(dz,dx), forward = (cos,sin)) -> world yaw
  *  (atan2(dx,dz), which every renderer and walkTo already speak). */
@@ -2515,7 +2520,8 @@ export class WorldAgent {
     });
     if (this.flight.climbTo != null &&
         Math.abs(this.flight.climbTo - this.flight.pos.y) < 0.4) {
-      this.flight.pos.y = this.flight.climbTo;
+      // Met in the air, a climb ends at its height. Met on the ground, it ends where the body stands.
+      if (this.flight.phase !== "LANDED" && this.flight.phase !== "GROUND") this.flight.pos.y = this.flight.climbTo;
       this.flight.climbTo = null;
       this.flightSettle();
     }
@@ -2592,7 +2598,7 @@ export class WorldAgent {
     // from wherever the body actually is.
     // A limp fall can't be launched out of: the body is in the air, and starting a fresh flight from the
     // ground under it would move it there.
-    if (this.flight?.phase === "LEAF") return refused(downRefusal("LEAF"));
+    if (this.flight?.phase === "LEAF") return refused(downRefusal(this.flight));
     if (!this.flight || this.flight.phase !== "GROUND") this.flightBegin();
     // ...and the ragdoll, if one is still running, no longer owns her.
     this.body?.stop(); this.stopSim();
@@ -2692,7 +2698,7 @@ export class WorldAgent {
       return refused("you are on the ground — take_off first");
     }
     // A down is involuntary: no flight verb flies a body out of one (downRefusal says what does).
-    if (isDown(this.flight.phase)) return refused(downRefusal(this.flight.phase));
+    if (isDown(this.flight.phase)) return refused(downRefusal(this.flight));
     const f = this.flight;
     const reach = glideRange(this.flightCfg, f.pos.y);
     const need = Math.hypot(x - f.pos.x, z - f.pos.z);
@@ -2752,7 +2758,7 @@ export class WorldAgent {
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
       return refused("you are on the ground — take_off first");
     }
-    if (isDown(this.flight.phase)) return refused(downRefusal(this.flight.phase));
+    if (isDown(this.flight.phase)) return refused(downRefusal(this.flight));
     const f = this.flight, cfg = this.flightCfg;
     const from = f.pos.y;
     const want = Math.min(alt, cfg.bounds.ceiling);
@@ -2784,9 +2790,8 @@ export class WorldAgent {
     const climbed = Math.abs(reach - from);
     const got = await this.flightAwait((st) => {
       if (isDown(st.phase)) return "cut";
-      // A descent that meets the ground above its target ends there; one that meets it at the target,
-      // within the tick's 0.4 m snap, got there.
-      if (st.phase === "LANDED" || st.phase === "GROUND") return Math.abs(st.pos.y - reach) < 0.4 ? "there" : "landed";
+      // A descent that meets the ground ends there, at its target's height (within the tick's 0.4 m) or not.
+      if (st.phase === "LANDED" || st.phase === "GROUND") return Math.abs(st.pos.y - reach) < 0.4 ? "touched down" : "landed";
       if (st.climbTo == null) return "there";
       return null;
     }, Math.min(120_000, (climbed / climbRate) * 1000 + 8000));
@@ -2795,9 +2800,14 @@ export class WorldAgent {
       if (this.flight) this.flight.climbTo = null;
       return refused(`cut mid-climb at ${(this.flight?.pos.y ?? 0).toFixed(1)}m`);
     }
+    if (got === "touched down") {
+      if (this.flight) this.flight.climbTo = null;
+      return done(`came down on the ground at ${(this.flight?.pos.y ?? 0).toFixed(1)}m, the height you asked for — take_off to fly again`);
+    }
     if (got === "landed") {
       if (this.flight) this.flight.climbTo = null;
-      return refused(`came down on the ground at ${(this.flight?.pos.y ?? 0).toFixed(1)}m, short of the ${reach.toFixed(1)}m you asked for`);
+      const y = this.flight?.pos.y ?? 0;
+      return refused(`came down on the ground at ${y.toFixed(1)}m, ${y > reach ? "above" : "below"} the ${reach.toFixed(1)}m you asked for`);
     }
     // The wait's own timeout is the other answer that isn't "there": the climb
     // didn't finish, so it isn't reported as reaching the target. It stops
@@ -2806,8 +2816,7 @@ export class WorldAgent {
       if (this.flight) this.flight.climbTo = null;
       return refused(`${got} at ${(this.flight?.pos.y ?? 0).toFixed(1)}m, short of the climb; the climbing stops there and you fly on`);
     }
-    // Reached on touchdown, the climb may still be set; it's done either way.
-    if (this.flight) this.flight.climbTo = null;
+    // "there" is the tick's snap in the air, which cleared the climb.
     const target = this.flight?.pos.y ?? reach;
     if (winded) {
       return refused(`winded at ${target.toFixed(1)}m — the pool only bought ${afford.toFixed(1)}m `
@@ -3844,7 +3853,7 @@ export class WorldAgent {
    *  Over your held pose and other animations; `replace` ends them first. */
   animate(data: { dur: number; loop?: boolean; replace?: boolean; tracks: Record<string, { t: number; q: number[] }[]> }) {
     // Sent or refused, as puppet() is: an animation that never left must not read as playing.
-    if (!this.joined || this.ws?.readyState !== 1) throw new Error("not joined");
+    if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
     if (data.replace) this.setPose(null);
     this.ws.send(JSON.stringify({ type: "anim", dur: data.dur, loop: !!data.loop, tracks: data.tracks,
       replace: data.replace === true }));
@@ -3855,7 +3864,7 @@ export class WorldAgent {
    *  way the shove sends it — the receiver simulates and caps for itself. */
   puppet(target: string, spec: { pose?: Record<string, PoseValue | null>; merge?: boolean; anim?: unknown; ragdoll?: boolean | { lean: number[] } }) {
     // Sent or refused, as verb() is: a request that never left must not read as made.
-    if (!this.joined || this.ws?.readyState !== 1) throw new Error("not joined");
+    if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
     this.ws.send(JSON.stringify({ type: "puppet", target,
       pose: spec.pose ?? null, ...(spec.merge ? { merge: true } : {}), anim: spec.anim ?? null, ragdoll: spec.ragdoll ?? null }));
   }
@@ -3927,7 +3936,7 @@ export class WorldAgent {
   /** Private, point-to-point, never appended to the world log. */
   whisper(to: string, text: string) {
     // Sent or refused, as verb() is: a whisper that never left must not read as said.
-    if (!this.joined || this.ws?.readyState !== 1) throw new Error("not joined");
+    if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
     this.ws.send(JSON.stringify({ type: "whisper", to, text }));
   }
 

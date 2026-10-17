@@ -97,7 +97,7 @@ export const TOOLS = [
   { name: "say", description: "Say something in world chat (bubble over your head, persisted). Equivalent to publishing on the world channel. Optional spoken-say trio (spoken+utt, t0 optional): display/continuation metadata marking this say as voice-performed by your live voice leg — it does NOT prove performance (the authenticated attest/performed receipt path is the only performance truth). The trio travels together or the door refuses loudly.", inputSchema: { type: "object", properties: { text: { type: "string" }, spoken: { type: "boolean", description: "true = a live voice leg is performing this say (display metadata only)" }, utt: { type: "integer", minimum: 0, description: "utterance counter: author-controlled display/continuation metadata (does NOT prove performance)" }, t0: { type: "number", description: "performance start, epoch ms (optional, finite)" } }, required: ["text"] } },
   { name: "catch_up", description: "What happened in the world while you were not thinking. Returns chat since a point in the world's history; omit `since` to continue from where you last caught up. Use when a conversation refers to something you have no memory of.", inputSchema: { type: "object", properties: { since: { type: "number" }, limit: { type: "number" } } } },
   { name: "activity", description: "Your ambient-activity sense — and the dial for it. While something is happening within radius_m of you (speech, movement, gestures, arrivals, building), you receive one digest per pulse_sec window on the world channel, tagged \"activity\" with metadata {activity: true} — never as a mention. If your host lets you configure wake rules, match that tag/metadata to be woken regularly exactly as long as there is life nearby; the stream stops by itself when the area goes quiet, so it costs nothing in an empty room. Call with no arguments to see your current settings. pulse_sec (10–3600 seconds, 0 = off) and radius_m (1–200) are your own to set and persist across sessions. If your host has no push channel (plain MCP), digests are held instead and handed over each time you call this tool — poll it when you want to know what has been happening around you.", inputSchema: { type: "object", properties: { pulse_sec: { type: "number" }, radius_m: { type: "number" } } } },
-  { name: "whisper", description: "Say something privately to ONE participant. Not spoken aloud, no bubble, and deliberately never written to the world log, so no one else ever sees it. If they aren't here, the world holds it in memory, keeping the latest 20 for each person, and hands it over when they next arrive; a restart of the world loses it.", inputSchema: { type: "object", properties: { to: { type: "string" }, text: { type: "string" } }, required: ["to", "text"] } },
+  { name: "whisper", description: "Say something privately to ONE participant. Not spoken aloud, no bubble, and deliberately never written to the world log, so no one else ever sees it. If they aren't here, the world holds it in memory, keeping the latest few for each person (20 unless its operator sets otherwise), and hands it over when they next arrive; a restart of the world loses it. The world cuts a long whisper to its own length, 4000 characters unless its operator sets otherwise.", inputSchema: { type: "object", properties: { to: { type: "string" }, text: { type: "string" } }, required: ["to", "text"] } },
   { name: "pose", description: "Hold a custom body pose. `bones` is a sparse map of bone name to a value: a rotation [x,y,z,w], or {q, t, s} to also move or scale that bone — q rotation [x,y,z,w], t translation [x,y,z] in metres, s scale (one number, or [x,y,z]). Humanoid bones go by VRM name (leftUpperArm, leftLowerArm, spine, chest, neck, head, hips, leftUpperLeg...); ANY other bone your rig has goes by its own name (a wing, an eyelid, a twist bone, a tail) — call pose with no `bones` to list them. Rotations are relative to the parent bone's. Translation on hips moves the whole body in world metres (Y is up): {\"hips\": {\"t\": [0, -0.5, 0]}} lowers you half a metre, for kneeling or crouching; on any other bone t is how far it moves beyond where its parent carries it. Scale is in the bone's own axes and carries to its children. By default only the bones you name change and the rest of any pose you hold stays (so you can raise an arm while kneeling); a bone set to null is released back to normal. replace:true makes this the WHOLE pose instead: every bone you don't name goes back to normal animation. Names are checked against the rig and corrected where unambiguous, and anything dropped is reported back with the reason — so read the reply, it is your only feedback that the body did what you meant. Held until you `clear_pose` or move; pass hold:true to keep it through walking too (your legs still stride, so pose arms and head rather than legs if you mean to travel in it). Presence only — never written to the world log, so it costs nothing and vanishes when you leave. Pass `target` to pose SOMEONE ELSE (checked against THEIR rig; they decide whether to allow it).", inputSchema: { type: "object", properties: { bones: { type: "object" }, replace: { type: "boolean", description: "true: this is the whole pose; unnamed bones return to normal. Default false: only the named bones change" }, hold: { type: "boolean" }, target: { type: "string" } } } },
   { name: "clear_pose", description: "Release a held pose, easing back to normal animation. Pass `target` to release a pose you asked someone else to hold.", inputSchema: { type: "object", properties: { target: { type: "string" } } } },
   { name: "emote", description: "Fire a named gesture — the same one-shots humans have on their emote bar. Plays once over your locomotion; presence only, never logged. For a gesture that isn't listed, invent one with `animate`.", inputSchema: { type: "object", properties: { name: { type: "string", enum: ["wave", "cheer", "dance", "point", "salute", "clap", "talk", "flail"] } }, required: ["name"] } },
@@ -250,12 +250,14 @@ const cutSpeech = (t: string) => {
   const end = /[\uD800-\uDBFF]/.test(t[SPEECH_MAX - 1]!) ? SPEECH_MAX - 1 : SPEECH_MAX;
   return t.slice(0, end);
 };
-/** Why a request can't go to `to`, someone else, or null. While joined, someone not here is refused,
- *  naming who is, as reach does; while not joined, the request goes on, and is answered as not joined. */
+/** Why a request can't go to `to`, someone else as a trimmed name, or null. A name of only spaces names no
+ *  one. While joined, someone not here is refused, and look lists who is; your own name is here, though
+ *  the world's list of people leaves you out. While not joined, the request goes on, and the link's own
+ *  refusal answers it. */
 const absent = (ag: ToolAgent, to: string, why: string) => {
-  if (!ag.joined || ag.people.has(to)) return null;
-  const names = [...ag.people.keys()].filter((n) => n !== ag.name).slice(0, 12);
-  return fail(`${to} isn't here, ${why}${names.length ? ` (present: ${names.join(", ")})` : ""}`);
+  if (!to) return fail(`the target is only spaces, ${why}`);
+  if (!ag.joined || to === ag.name || ag.people.has(to)) return null;
+  return fail(`${to} isn't here, ${why}; look lists who is around you`);
 };
 /** A tool this door doesn't serve, hidden or never there: the same words. */
 const noSuchTool = (name: string) => `there's no tool named "${name}" on this door, so nothing ran; your tool list has the ones it serves`;
@@ -367,9 +369,12 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // A fetch that throws, any other status that isn't ok, or a body that
       // can't be read never got that answer, so "no preview" is said only
       // when every candidate answered 404. Calling again may work after a
-      // failed fetch, a 408, a 429 or a 5xx.
-      let unreached = false, why = "", retry = false;
-      const miss = (reason: string, mayRetry: boolean) => { if (!unreached) { unreached = true; why = reason; retry = mayRetry; } };
+      // failed fetch, a 408, a 429, a 5xx or a preview that couldn't be read,
+      // at any candidate. Each reason is named once, so two candidates that
+      // failed alike read as one.
+      const whys: string[] = [];
+      let retry = false;
+      const miss = (reason: string, mayRetry: boolean) => { if (!whys.includes(reason)) whys.push(reason); retry ||= mayRetry; };
       for (const url of tries) {
         let r: Response;
         try { r = await fetch(url); } catch (e) { miss((e as Error).message || "the request failed", true); continue; }
@@ -380,7 +385,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         catch (e) { miss(`a preview it sent couldn't be read: ${(e as Error).message || "no reason given"}`, true); continue; }
         return { content: [{ type: "image", data, mimeType: r.headers.get("content-type")?.split(";")[0] ?? "image/jpeg" }] };
       }
-      if (unreached) return fail(`couldn't get a preview of "${want}" from the world's server (${why})${retry ? "; calling again may work" : ""}`);
+      if (whys.length) return fail(`couldn't get a preview of "${want}" from the world's server (${whys.join("; ")})${retry ? "; calling again may work" : "; calling again won't change that"}`);
       return fail(`no preview for "${want}" — avatar portraits appear once a body has been worn; library models ship _preview.jpg files`);
 
   },
@@ -509,7 +514,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         : undefined;
       const sent = cutSpeech(a.text);
       ag.say(sent, extra);
-      return text(sent.length < a.text.length ? `said — only its first ${sent.length} characters were sent` : "said");
+      return text(sent.length < a.text.length ? `said — only its first ${[...sent].length} characters were sent` : "said");
 
   },
   whisper: async (ag, a, ctx, name) => {
@@ -519,9 +524,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // refused, and the name goes trimmed, since the world matches ids
       // exactly. `to` may be someone not here yet: the world holds a whisper
       // for them until they come.
-      // A number past the safe integers has lost digits by the time it's read here, so it names no one.
-      if (typeof a.to === "number" && !Number.isSafeInteger(a.to)) {
-        return fail("whisper's `to` is a number too large to read exactly, so send the name as a string");
+      // A number past the safe integers has lost digits by the time it's read here, so it isn't what was sent.
+      const unsafe = (v: unknown) => typeof v === "number" && Math.abs(v) > Number.MAX_SAFE_INTEGER;
+      if (unsafe(a.to) || unsafe(a.text)) {
+        return fail(`whisper's \`${unsafe(a.to) ? "to" : "text"}\` is a number too large to read exactly, so send it as a string`);
       }
       const to = textArg(a.to)?.trim(), said = textArg(a.text);
       if (!to || said == null || !said.trim()) {
@@ -529,8 +535,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       }
       const sent = cutSpeech(said);
       ag.whisper(to, sent);
-      const away = ag.joined && !ag.people.has(to) ? `; they aren't here, so the world holds it for when they next arrive` : "";
-      return text(`whispered to ${to}${away}${sent.length < said.length ? ` — only the first ${sent.length} characters were sent` : ""}`);
+      const away = ag.joined && to !== ag.name && !ag.people.has(to) ? `; they aren't here, so the world holds it for when they next arrive` : "";
+      return text(`whispered to ${to}${away}${sent.length < said.length ? ` — only the first ${[...sent].length} characters were sent` : ""}`);
 
   },
   pose: async (ag, a, ctx, name) => {
@@ -541,8 +547,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // did not move. (See shared/humanoid.js.) Checked against the rig of
       // the body being posed: arbitrary bones exist only on the rigs that
       // have them.
-      const target = a.target ? String(a.target) : null;
-      const away = target ? absent(ag, target, "so there's no one to pose") : null;
+      const target = a.target ? String(a.target).trim() : null;
+      const away = target != null ? absent(ag, target, "so there's no one to pose") : null;
       if (away) return away;
       const avatar = target ? ag.people.get(target)?.avatar : ag.avatar;
       const rig = avatar ? await rigBonesFor(ag.httpBase, avatar) : null;
@@ -584,7 +590,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   },
   clear_pose: async (ag, a, ctx, name) => {
       if (a.target) {
-        const to = String(a.target);
+        const to = String(a.target).trim();
         const away = absent(ag, to, "so there's no pose of theirs to release");
         if (away) return away;
         ag.puppet(to, { pose: {} });
@@ -626,7 +632,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // the shove is directed: from where THIS body stands, through the
       // target — the same line a browser /push uses. No known position for
       // them = an undirected knock-over, the old wire.
-      const to = String(a.target);
+      const to = String(a.target).trim();
       const away = absent(ag, to, "so there's no one to shove");
       if (away) return away;
       const tp = ag.people.get(to)?.pose?.p;
@@ -658,10 +664,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const cut = span > dur ? ` — note dur ${dur}s cuts keyframes that run to ${span}s` : "";
       const spec = { dur, loop: !!a.loop, tracks: v.tracks, replace: !!a.replace };
       if (a.target) {
-        const away = absent(ag, String(a.target), "so there's no one to play it on");
+        const to = String(a.target).trim();
+        const away = absent(ag, to, "so there's no one to play it on");
         if (away) return away;
-        ag.puppet(String(a.target), { anim: spec });
-        return text(`sent a ${dur}s animation over ${v.accepted.length} bone(s) to ${a.target}`
+        ag.puppet(to, { anim: spec });
+        return text(`sent a ${dur}s animation over ${v.accepted.length} bone(s) to ${to}`
           + `${note ? ` — ${note}` : ""}${cut}. They decide whether to play it.`);
       }
       ag.animate(spec);
@@ -966,8 +973,8 @@ export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, a
   const h = HANDLERS[name];
   if (!h) return fail(noSuchTool(name));
   // A tool's failure belongs in its result, where the model reads it: a
-  // handler that throws, such as verb()'s "not joined", answers as a failed
-  // call rather than as a protocol error.
+  // handler that throws, such as verb()'s refusal while the link is down,
+  // answers as a failed call rather than as a protocol error.
   try { return await h(ctx.agent, a, ctx, name); }
   catch (e) {
     // The host no longer sees the throw, so the operator's log does.
