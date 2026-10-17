@@ -1,6 +1,6 @@
 // Every request verb declares its arguments: type, which modes they apply to, and an example. The authority validates every
 // request against this BEFORE doing anything, and `help {verb}` is generated from it (fresh-builder findings W1–W3).
-// EVERY verb the authority answers has a row (engine-scars 3.3, R 10-17 02:45; scars-check V1): an argument a verb doesn't
+// EVERY verb the authority answers has a row (engine-scars 3.3, R 10-17 02:45; scars-check's verb-row check): an argument a verb doesn't
 // list is refused `unknown-arg`, so tightening after ship would break every client that sends extras. Where a handler checks
 // a value itself (with its own words and code), the row's type is `any`: the row names the argument, the handler judges it.
 import { COMPONENTS } from "./componentspec.js";

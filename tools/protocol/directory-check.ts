@@ -105,13 +105,13 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const m0 = w.entries.length;
   const ref: any = request(w, anon, "delete", { id: "@world" });
   const rec = w.entries.slice(m0);
-  ok(!ref.ok && rec.length === 1 && rec[0].kind === "act" && rec[0].actor === anon && rec[0].body?.refused?.code === ref.refused?.code && rec[0].body?.request?.id === "@world",
-    "B4 a refused write is recorded: an act with the request as sent and {refused: {code}}, no state", rec.map((e: any) => [e.kind, e.body]));
+  ok(!ref.ok && rec.length === 1 && rec[0].kind === "act" && rec[0].actor === anon && rec[0].body?.refused?.code === ref.refused?.code && JSON.stringify(rec[0].body?.args) === '["id"]' && !("request" in rec[0].body),
+    "B4 a refused write is recorded: an act with its argument names and {refused: {code}}, never the values (engine-scars 6a), no state", rec.map((e: any) => [e.kind, e.body]));
   const m1 = w.entries.length;
   request(w, anon, "delete", { id: "@world", dry: true }); request(w, anon, "inspect", { id: "nope" }); request(w, anon, "frobnicate", {});
   ok(w.entries.length === m1 + 1 && w.entries.at(-1).body?.refused?.code === "unknown-verb", "B5 dry runs and reads aren't recorded; an unknown verb is (it's what was tried)", w.entries.slice(m1).map((e: any) => e.body?.refused));
   const huge: any = request(w, anon, "set", { id: "nope", component: "label", value: "q".repeat(5000) });
-  ok(!huge.ok && w.entries.at(-1).body?.request?.truncated === true, "B6 a recorded request over 2 KiB is cut to its size", w.entries.at(-1).body?.request);
+  ok(!huge.ok && JSON.stringify(w.entries.at(-1).body?.args) === '["component","id","value"]' && JSON.stringify(w.entries.at(-1)).length < 600, "B6 a refused request's values never reach the log, however long: its names and code do (the values go to the in-memory ring)", w.entries.at(-1).body);
   T += 20000; const before = w.entries.length; const TRIES = 300;
   for (let i = 0; i < TRIES; i++) request(w, anon, "delete", { id: "@world" });   // refusals cost bytes too
   const written = w.entries.length - before; const grewB = w.entries.slice(before).reduce((a: number, e: any) => a + JSON.stringify(e).length, 0);

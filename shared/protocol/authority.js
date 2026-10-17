@@ -3165,6 +3165,7 @@ function occupant(w, st, id, actor) {
 const MOVES_BODIES = (comp) => comp === "transform" || comp === "parent" || baseOf(comp) === "motion";
 function occupiedEdits(w, st, who, norm) {
   const cap = who.cap; if (cap && ["rest", "system", "handle"].includes(cap.kind)) return;
+  const others = Object.keys(w.presence.bodies ?? {}).filter((k) => k !== who.actor); if (!others.length) return;   // nobody else here: nothing to carry
   const from = who.actor, now = w.now(); const seen = new Set();
   for (const op of norm) {
     if (op.verb === "create" || op.comp === undefined || !MOVES_BODIES(op.comp) || seen.has(op.id) || !st.entities[op.id]) continue;
@@ -4217,7 +4218,7 @@ const VERBS = {
   },
 };
 /** The fork's copy acts (server/worldlog.ts copyInto): the batch request, logged as verb fork-copy. */
-/** Every verb the authority answers (VERBSPEC must have a row for each: scars-check V1). */
+/** Every verb the authority answers (VERBSPEC must have a row for each: scars-check's verb-row check). */
 export const VERB_NAMES = Object.freeze(Object.keys(VERBS));
 export function forkCopy(w, actor, args) { CTX.forking = true; try { return request(w, actor, "fork-copy", args); } finally { CTX.forking = false; } }
 function buildBatch(ctx, a, w) { {

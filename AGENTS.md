@@ -216,7 +216,9 @@ write also takes:
 - `throughLock: true` — act through a lock you are allowed to lift.
 
 A refused write is still on the record, as an attempt act that changed
-nothing; `world_debug` shows the reason.
+nothing: its verb, the names of the arguments it carried and the refusal
+code, never the values (those are kept in memory for diagnosis only);
+`world_debug` shows the reason.
 
 ### The tools — general shapes, with modes
 

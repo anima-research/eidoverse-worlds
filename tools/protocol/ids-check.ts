@@ -112,8 +112,9 @@ await C("P7", "a refused request with a placeholder leaves no '$name' in the log
 
 await C("P8", "a chosen id refused beside a placeholder in one batch: the attempt isn't recorded with its '$name' in it", () => {
   const W = world(); const r = W.call("batch", { ops: [{ verb: "create", args: { id: "$keep", model: "crate" } }, { verb: "create", args: { id: "chair", model: "crate" } }] });
-  const plain = W.call("create", { id: "table", model: "crate" });   // a chosen id alone is an attempt like any other: recorded
-  return [!r.ok && /op 1/.test(r.refused.reason) && !logText(W).includes("$keep") && !plain.ok && logText(W).includes('"table"'), [why(r)]]; });
+  const plain = W.call("create", { id: "table", model: "crate" });   // a chosen id alone is an attempt like any other: recorded, as names and a code (engine-scars 6a, R 10-17 02:45: never its values)
+  const att = W.entries().findLast((e: any) => e.kind === "act" && e.verb === "create");
+  return [!r.ok && /op 1/.test(r.refused.reason) && !logText(W).includes("$keep") && !plain.ok && JSON.stringify(att?.body?.args) === '["id","model"]' && att?.body?.refused?.code === "shape" && !logText(W).includes('"table"'), [why(r), att?.body]]; });
 
 // ---- Y: system acts keep ids ----
 await C("Y1", "a fork's copy (the system door) writes the ids it is given, verbatim", () => {

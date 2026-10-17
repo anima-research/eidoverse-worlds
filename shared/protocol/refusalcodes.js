@@ -128,7 +128,7 @@ export const REFUSAL_CODES = Object.freeze({
   "no-target":      { meaning: "the handler's target isn't there", when: "a set handler naming a field of a component the thing doesn't have" },
   "no-action":      { meaning: "it offers nothing to use", when: "use of a thing with no reactions and no station" },
   "no-handler":     { meaning: "nobody set up that action", when: "use with an action the thing doesn't have" },
-  "no-runtime":     { meaning: "that behaviour needs re-installing", when: "use of an imported v1 behaviour binding" },
+  "no-runtime":     { meaning: "that behaviour needs re-installing", when: "use of a behaviour binding imported from the old engine" },
   "no-sound":       { meaning: "it has no sound to play", when: "a play handler on a thing with no sound" },
   "action-taken":   { meaning: "that action name is taken", when: "a socket's station action that a reaction on the host already uses" },
   "name-taken":     { meaning: "that socket name is taken", when: "two sockets of one host with one name" },

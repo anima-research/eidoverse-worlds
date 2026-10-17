@@ -86,7 +86,7 @@ await C("S2", "the spec carries the alpha note (no guarantee, we try not to brea
 // ---- C: citations (M5) ----
 // every "§N" or "§N.M" inside a string literal of the files whose words reach people and agents names a heading of
 // PROTOCOL.md (or PHYSICS.md when it says PHYSICS); lab-era names (§2.3, §3d, L1–L7, R8…) are gone from those words
-const HEAD = new Set([...SPEC.matchAll(/^#{2,3} (\d+(?:\.\d+)?)\.?\s/gm)].map((m) => m[1]));
+const HEAD = new Set([...SPEC.matchAll(/^#{2,3} (\d+[a-z]?(?:\.\d+)?)\.?\s/gm)].map((m) => m[1]));   // "## 7a." is a section too
 const PHYS = new Set([...read("spec/PHYSICS.md").matchAll(/^#{2,3} (\d+(?:\.\d+)?)\./gm)].map((m) => m[1]));
 const SAID = ["shared/protocol/authority.js", "shared/protocol/componentspec.js", "shared/protocol/verbspec.js", "shared/protocol/refusal.js", "shared/protocol/roles.js", "mcpl/tools.ts", "shared/grab.js", "shared/sockbody.js"];
 function literals(src: string) {   // string literals, comments skipped (a small scanner: enough for these files)
@@ -305,7 +305,7 @@ await C("D9", "§4 explains schemas: reserved (no definition format yet), and th
 // ---- ST: status (shape audit 10-16; R: every component trial for the alpha) ----
 // + the shape audit's wave 2 (attach-interact): sockets (the old map, lift-only) and the names R held (15:16 LOCKED)
 // + wave 2 (physics-motion): physics-joint (the constraint, renamed from joint) and surface (closed with physics' reserved fields)
-const RESERVED_NAMES = ["joint", "physics-joint", "surface", "schemas", "terrain-grid", "terrain-tile", "terrain-paint", "sockets", "material", "anim-clip", "anim-states", "camera", "zone", "video", "spring-joint", "link", "tags"];
+const RESERVED_NAMES = ["joint", "physics-joint", "surface", "schemas", "terrain-grid", "terrain-tile", "terrain-paint", "sockets", "material", "anim-clip", "anim-states", "camera", "zone", "video", "spring-joint", "link", "tags", "body-owner", "edit-grant", "avatar-deny"];   // the last three: the avatar guard rails' names (PROTOCOL §7a, R 10-17 02:45)
 await C("ST1", "every registered name has a status: the held names are reserved, every other one trial, none stable (v1 promises none)", () => {
   const bad = Object.entries<any>(CAT.COMPONENTS).filter(([k, d]) => d.status !== (RESERVED_NAMES.includes(k) ? "reserved" : "trial")).map(([k, d]) => `${k}: ${d.status}`);
   return [!bad.length && typeof CAT.STATUSES?.trial === "string" && typeof CAT.statusOf === "function" && CAT.statusOf("script:bell") === "trial" && CAT.statusOf("physics-joint:h") === "reserved" && CAT.statusOf("example.org/heart") === null, bad]; });
