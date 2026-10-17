@@ -95,7 +95,7 @@ const run = async (reply: (n: number) => any) => {
   check('answering an ask that isn\'t there sends nothing', (await box.answer('ask-nope', false, send)) === null && sent.length === 1);
   // a second ask, refused
   box.take([{ type: 'body-ask', ask: { ...ask, id: 'ask-1001-0', kind: 'drag' } }]);
-  check('a drag ask is the move class', box.askFrom('u-wren')?.cls === 'move', JSON.stringify(box.asks()));
+  check('a drag ask is the displace class', box.askFrom('u-wren')?.cls === 'displace', JSON.stringify(box.asks()));
   await box.answer('ask-1001-0', false, send);
   check('answering no sends consent {answer, yes: false}', sent.length === 2 && sent[1][1].yes === false && box.asks().length === 0, JSON.stringify(sent));
   // a third ask nobody answers: gone at its expiry, nothing sent

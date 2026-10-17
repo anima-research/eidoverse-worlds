@@ -402,11 +402,11 @@ console.log("\ntrusted drafts (the ladder's second rung):");
   check("TD10 …and removes it when it was trusted (an empty list deletes the component)", flat(t2.ops).some((o: any) => o.verb === "delete" && o.args.id === "@world" && o.args.component === "trusted-components"), JSON.stringify(t2));
   // the World inspector (where sky/weather live): a "trusted components" card listing them, each with remove (owner)
   const ws = (live: any) => worldSchema({ sky: null, terrain: null, grass: null }, live);
-  const wcard = ws({ trusted: ["hesperus/material", "mica/heart"], mayTrust: true }).sections.list.find((x: any) => x.key === "trusted");
+  const wcard = ws({ trusted: ["hesperus/material", "mica/heart"], mayTrust: true }).sections.list.find((x: any) => x.key === "trusted-components");
   check("TW1 @world has a Trusted components card listing each name, present when any", wcard?.present === true && JSON.stringify(wcard.info?.map((x: any) => x[1])) === JSON.stringify(["hesperus/material", "mica/heart"]), JSON.stringify(wcard));
-  const wg = (live: any) => ws(live).groups.find((g: any) => g.group === "trusted")?.fields ?? [];
+  const wg = (live: any) => ws(live).groups.find((g: any) => g.group === "trusted-components")?.fields ?? [];
   check("TW2 an owner has a remove button per name; a non-owner has none; none trusted says so", wg({ trusted: ["mica/heart"], mayTrust: true }).some((f: any) => f.k === "remove|mica/heart") && !wg({ trusted: ["mica/heart"] }).some((f: any) => f.t === "btn") && wg({ trusted: [] }).some((f: any) => f.t === "info" && /none/.test(f.value)), JSON.stringify([wg({ trusted: ["mica/heart"], mayTrust: true }), wg({ trusted: ["mica/heart"] })]));
-  const wr = worldEditOps({ sky: null, terrain: null, grass: null }, { "trusted.remove|mica/heart": true }, { trusted: ["hesperus/material", "mica/heart"], mayTrust: true });
+  const wr = worldEditOps({ sky: null, terrain: null, grass: null }, { "trusted-components.remove|mica/heart": true }, { trusted: ["hesperus/material", "mica/heart"], mayTrust: true });
   check("TW3 remove writes the list without that name", JSON.stringify(flat(wr.ops)[0]?.args) === JSON.stringify({ id: "@world", component: "trusted-components", value: { components: ["hesperus/material"] } }) && wr.errors.length === 0, JSON.stringify(wr));
 }
 

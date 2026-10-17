@@ -277,7 +277,7 @@ export function worldEditOps(st, edits, live = {}) {
   let untrust = null;   // names to take off @world.trusted-components
   for (const [key, raw] of Object.entries(edits ?? {})) {
     const f = fieldAt(schema, key);
-    if (!f || f.t === 'info') { errors.push(`${key}: no such field on ${WORLD_ID} (sky.* weather.state terrain.* grass.* trusted.*; inspect @world lists them)`); continue; }
+    if (!f || f.t === 'info') { errors.push(`${key}: no such field on ${WORLD_ID} (sky.* weather.state terrain.* grass.* ${TRUSTED}.*; inspect @world lists them)`); continue; }
     if (f.disabled) { errors.push(`${key}: ${f.hint ?? 'read-only'}`); continue; }
     const group = key.slice(0, key.indexOf('.')); const k = key.slice(key.indexOf('.') + 1);
     let v = raw;

@@ -107,7 +107,7 @@ const CARDS = {
   Sockets: { key: 'sockets', whole: 'slots', hand: true },
   // the hand-written four (hand: true): Transform, Sockets, Grabbable and Material (a draft, unregistered: no descriptor) keep
   // read/write hooks in editschema.js (HAND); Grabbable's registry fields still draw and write through the table
-  Grabbable: { key: 'grabbable', whole: 'spec', hand: true, show: ['enabled', 'who', 'steal', 'range', 'priority', 'hold', 'twoHanded', 'throw', 'release', 'returnAfter'], writeDp: 3, extra: ['pose', 'carries', 'fits', 'use', 'prompt'],
+  Grabbable: { key: 'grabbable', whole: 'spec', hand: true, show: ['enabled', 'who', 'steal', 'range', 'priority', 'hold', 'twoHanded', 'throw', 'release', 'returnAfter'], writeDp: 3, extra: ['anim', 'carries', 'fits', 'use', 'prompt'],
     editor: { enabled: { ui: { t: 'check' } }, who: { ui: { t: 'enum' } }, steal: { ui: { t: 'check' } }, range: { ui: { t: 'num', step: 0.1, dp: 2 } },
       priority: { ui: { t: 'num', step: 1, dp: 0, wdp: 0 } }, hold: { ui: { t: 'enum' } }, twoHanded: { ui: { t: 'check' } }, throw: { ui: { t: 'num', step: 0.1, dp: 2 } },
       release: { ui: { t: 'enum' } }, returnAfter: { ui: { t: 'num', step: 5, dp: 0 } } } },
