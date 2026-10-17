@@ -374,8 +374,8 @@ minutes of movement with zero traffic.
 `motion`, or anything it hangs from) stands them up where they were, and
 tells them; it is never refused for them. A seat's own reaction or script,
 as it was when they sat, carries its riders (one added since is an edit, and
-unseats them). Someone standing on a thing never blocks your edit. If you're
-the rider, the authority's `unseated` message tells you who moved the seat
+vacates it). Someone standing on a thing never blocks your edit. If you're
+the rider, the authority's `vacated` message tells you who moved the seat
 (or that it was removed or switched off) and where you were let go; you stand
 there. A `leaveBy: "script"` seat refuses `detach`, and `detach {escape:
 true}` always gets you up. You sit only on a seat within reach (about 3.5 m):

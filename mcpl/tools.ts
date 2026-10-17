@@ -489,7 +489,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (a.pose != null && body.poses[String(a.pose)] === undefined) return { content: [{ type: "text", text: `attach: ${on} (${slot}) has no pose "${a.pose}" (its poses: ${Object.keys(body.poses).join(", ") || "only its own"})` }], isError: true };
       { const r = await ag.request("use", { id: sid, action: body.action });
         if (!r?.ok) return { content: [{ type: "text", text: `attach: the authority refused (${r?.refused?.code}): ${r?.refused?.reason ?? ""}${r?.refused?.fix ? ` — ${r.refused.fix}` : ""}` }], isError: true }; }
-      ag.setSeat({ to: sid, ...(a.pose != null ? { pose: String(a.pose), at: Date.now() } : {}) });
+      ag.setOccupant({ to: sid, ...(a.pose != null ? { pose: String(a.pose), at: Date.now() } : {}) });
       return text(`you ${body.action} on ${on} — ${describeBody(slot, body)}`);
   },
   detach: async (ag, a) => {
@@ -497,7 +497,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!mine) return text("you're not attached to anything");
       // the escape (review r9 scars M1): a seat may make leaving deliberate, never impossible
       if (!ag.mayLeaveSeat(a?.escape === true ? "escape" : "menu")) return { content: [{ type: "text", text: `${ag.seatName(mine.to)} lets you go when the world does (a script, or the seat being taken away); detach {escape: true} gets you up anyway` }], isError: true };
-      ag.setSeat(null); return text(a?.escape === true ? "you get up (the escape: no seat can hold you)" : "you get off");
+      ag.setOccupant(null); return text(a?.escape === true ? "you get up (the escape: no seat can hold you)" : "you get off");
   },
   library: async (ag, a, ctx, name) => {
       // one catalog tool: query (search), kind + page (a contact sheet), preview (one item)

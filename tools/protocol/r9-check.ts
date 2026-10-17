@@ -12,7 +12,7 @@
 //   M   the ride is the seat's assembly as it was when the rider sat (a handler added since unseats them)
 //   E   a station's leaveBy "script" keeps the occupant's escape (sockbody, the agent's detach {escape})
 //   A   the auditor re-runs an arrival with two stand-ins: agreeing re-runs are compared with the log (a forgery is flagged)
-//   U   an agent hears `unseated` (its seat cleared, standing where the authority let it go); only for the seat it is on
+//   U   an agent hears `vacated` (its seat cleared, standing where the authority let it go); only for the seat it is on
 //   T   leaving a seat restarts the authority's track of the body at the seat (no too-fast after a ride)
 //   L   lows: a prototype key as a verb, the founding marker is the first create-world, an unlogged grab records no
 //       identity, the translator's name is @13
@@ -32,13 +32,13 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["lastTouch {authored} reads follow-ups as authors", "shared/protocol/authority/followups.js", "if (fu?.has(k)) { if (o.verb === \"set\") { restored = true; continue; } if (o.verb === \"delete\" && restored) { restored = false; continue; } return null; }", "", ["H1", "H2", "H3"]],
   ["undo marks any ref restore as a follow-up", "shared/protocol/authority/undo.js", "if (!goneHere.size || !fuHere.has(o) ||", "if (!goneHere.size ||", ["H5"]],
   ["the fold takes any followUps", "shared/protocol/fold.js", "if (\"followUps\" in body) followUpsCheck(body.followUps, body.ops.length);", "", ["H6"]],
-  ["the ride ignores when the rider sat", "shared/protocol/authority/seats.js", "if (own && rootOf(s.to) === own && rideBefore(s.since)) continue;", "if (own && rootOf(s.to) === own) continue;", ["M1", "M2"]],
+  ["the ride ignores when the rider sat", "shared/protocol/authority/occupants.js", "if (own && rootOf(s.to) === own && rideBefore(s.since)) continue;", "if (own && rootOf(s.to) === own) continue;", ["M1", "M2"]],
   ["no escape from a script seat", "shared/sockbody.js", "if (kind === 'script' || kind === 'escape') return true;", "if (kind === 'script') return true;", ["E1", "E2"]],
   ["the auditor skips every arrival mismatch", "shared/protocol/scriptaudit.js", "if (!agree) { skipped.push(", "if (true) { skipped.push(", ["A1"]],
-  ["the agent ignores unseated", "mcpl/agent.ts", "if (unseatedFromMine(m, this.mySeat)) {", "if (false) {", ["U1"]],
-  ["unseated from any seat", "shared/sockbody.js", "u.seat === mount.to);", "true);", ["U2"]],
-  ["no re-anchor on a step off a seat", "shared/protocol/authority/bodyverbs.js", "if (sat && unseatAt(w, st, actor, sat.to)) me = w.presence.bodies[actor];", "", ["T1"]],
-  ["no re-anchor on an unseat", "shared/protocol/authority/seats.js", "w.presence.bodies[who] = { ...b, at, ts: w.pace ? w.pace() : w.now(), tokens: TRACK.cap }; w.presenceDirty = true;", "", ["T1", "T2"]],
+  ["the agent ignores unseated", "mcpl/agent.ts", "if (vacatedFromMine(m, this.mySeat)) {", "if (false) {", ["U1"]],
+  ["unseated from any seat", "shared/sockbody.js", "u.socket === mount.to);", "true);", ["U2"]],
+  ["no re-anchor on a step off a seat", "shared/protocol/authority/bodyverbs.js", "if (sat && vacateAt(w, st, actor, sat.to)) me = w.presence.bodies[actor];", "", ["T1"]],
+  ["no re-anchor on an unseat", "shared/protocol/authority/occupants.js", "w.presence.bodies[who] = { ...b, at, ts: w.pace ? w.pace() : w.now(), tokens: TRACK.cap }; w.presenceDirty = true;", "", ["T1", "T2"]],
   ["a verb read through the prototype", "shared/protocol/authority.js", "const h = Object.hasOwn(VERBS, verb) ? VERBS[verb] : undefined;", "const h = VERBS[verb];", ["L1"]],
   ["every create-world counts as the founding", "shared/protocol/shaperepair.js", "if (e.verb === \"create-world\" && !founded) {", "if (e.verb === \"create-world\") {", ["L2"]],
   ["an unlogged grab records who", "shared/protocol/authority/scriptrun.js", "const anon = ANON_EVENTS.has(ev.on) || (GRIP_EVENTS.has(ev.on) && ev.seq === undefined);", "const anon = ANON_EVENTS.has(ev.on);", ["L3"]],
@@ -113,7 +113,7 @@ const comp = (s: any, id: string, c: string) => s.w().state().entities[id]?.c[c]
 const roles = (s: any, m: Record<string, string>) => { for (const [who, role] of Object.entries(m)) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } }); };
 const lastUse = (s: any) => s.entries().findLast((e: any) => e.kind === "act" && e.verb === "use");
 const SEAT = (extra: any = {}) => ({ sockets: { a: { pos: [0, 0.45, 0], body: { action: "sit", ...extra } } } });
-const seated = (s: any, who: string) => !!s.w().presence.seats?.[who];
+const seated = (s: any, who: string) => !!s.w().presence.occupants?.[who];
 const inboxOf = (s: any, who: string) => JSON.stringify(s.w().presence.inbox?.[who] ?? s.w().presence.inboxes?.[who] ?? null);
 
 // the q6 world: builder bob's lever with a set and a reset handler on olive's things; bob demoted
@@ -186,7 +186,7 @@ const cases: Case[] = [
       const add = s.call("bob", "set", { id: "chair", component: "reactions", value: { fly: { kind: "set", component: "transform", value: { pos: [4, 40, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } });
       const after = seated(s, "vic");
       s.call("bob", "move", { to: [4, 0, -1.5] }); const go = s.call("bob", "use", { id: "chair", action: "fly" });
-      return { sit: show(sit), add: show(add), after, go: show(go), pos: comp(s, "chair", "transform")?.pos, seated: seated(s, "vic"), note: JSON.stringify(go.notes ?? []).includes("unseated"), inbox: inboxOf(s, "vic").includes("unseated") }; },
+      return { sit: show(sit), add: show(add), after, go: show(go), pos: comp(s, "chair", "transform")?.pos, seated: seated(s, "vic"), note: JSON.stringify(go.notes ?? []).includes("vacated"), inbox: inboxOf(s, "vic").includes("vacated") }; },
     good: (o) => o.sit === "ok" && o.add === "ok" && o.after && o.go === "ok" && o.pos?.[1] === 40 && !o.seated && o.note && o.inbox },
   { id: "M2", what: "…the motion variant: a `spin` handler added after the sit, used: vic unseated; and a ride set up BEFORE the sit (the carousel) still carries", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "visitor", wes: "visitor" });
@@ -209,7 +209,7 @@ const cases: Case[] = [
   { id: "E2", what: "an agent on a script seat: detach is refused and names the escape; detach {escape: true} gets it up", async run() {
       const TL = await import(TREE + "mcpl/tools.ts"); const body = SK.bodyOf({ action: "sit", leaveBy: "script" });
       let seat: any = { to: "s1" };
-      const ag: any = { get mySeat() { return seat; }, mayLeaveSeat: (k: string) => SK.mayLeave(body, k), seatName: () => "the cage (a)", setSeat: (x: any) => { seat = x; } };
+      const ag: any = { get mySeat() { return seat; }, mayLeaveSeat: (k: string) => SK.mayLeave(body, k), seatName: () => "the cage (a)", setOccupant: (x: any) => { seat = x; } };
       const det = TL.HANDLERS?.detach;
       if (!det) return { noHandler: Object.keys(TL) };
       const a = await det(ag, {}); const still = !!seat; const b = await det(ag, { escape: true });
@@ -228,18 +228,18 @@ const cases: Case[] = [
       const A1 = AU.auditScripts(L, s.w().getBlob, { run: SB.runScript });
       return { ins: show(ins), ran: ran?.[0]?.status, honest: { f: A0.flags.length, s: A0.skipped.length, r: A0.reran }, forged: { checks: A1.flags.map((f: any) => f.check), s: A1.skipped.length } }; },
     good: (o) => o.ins === "ok" && o.ran === "ran" && o.honest.f === 0 && o.honest.s === 0 && o.honest.r === 1 && JSON.stringify(o.forged.checks) === '["rerun-anon"]' && o.forged.s === 0 },
-  // ---------------- U: the agent hears unseated ----------------
-  { id: "U1", what: "(holes M3 / claims O1) an agent seated on S gets `unseated {seat: S, at}`: its seat clears, it stands where the authority let it go, and its inbox says who moved the seat; a message for another seat changes nothing", async run() {
+  // ---------------- U: the agent hears vacated ----------------
+  { id: "U1", what: "(holes M3 / claims O1) an agent seated on S gets `vacated {socket: S, at}`: its seat clears, it stands where the authority let it go, and its inbox says who moved the seat; a message for another seat changes nothing", async run() {
       const { WorldAgent } = await import(TREE + "mcpl/agent.ts");
       const ag = new WorldAgent({ url: "ws://127.0.0.1:1/ws", name: "Hep", world: "x", avatar: "" });
-      ag.setSeat({ to: "s2" }); ag.bodyInbox([{ type: "unseated", seat: "s1", by: "bob", why: "w" }]); const other = ag.mySeat?.to ?? null;
-      ag.setSeat({ to: "s1" }); ag.bodyInbox([{ type: "unseated", seat: "s1", by: "bob", why: "chair.transform was changed by someone else", at: [3, 0.45, 7] }]);
+      ag.setOccupant({ to: "s2" }); ag.bodyInbox([{ type: "vacated", socket: "s1", by: "bob", why: "w" }]); const other = ag.mySeat?.to ?? null;
+      ag.setOccupant({ to: "s1" }); ag.bodyInbox([{ type: "vacated", socket: "s1", by: "bob", why: "chair.transform was changed by someone else", at: [3, 0.45, 7] }]);
       const said = ag.inbox.map((x: any) => x.text).join(" | ");
       return { other, seat: ag.mySeat, mount: ag.mounts.has("Hep"), pos: [ag.pos.x, ag.pos.y, ag.pos.z], said }; },
     good: (o) => o.other === "s2" && o.seat === null && !o.mount && JSON.stringify(o.pos) === "[3,0.45,7]" && /bob moved/.test(o.said) && /standing where it was/.test(o.said) },
-  { id: "U2", what: "(holes L4) the client's and agent's one predicate: an `unseated` stands you up only from the seat it names", run() {
-      const f = SK.unseatedFromMine;
-      return { mine: f?.({ type: "unseated", seat: "s1" }, { to: "s1" }), other: f?.({ type: "unseated", seat: "s1" }, { to: "s2" }), none: f?.({ type: "unseated", seat: "s1" }, null), noSeat: f?.({ type: "unseated" }, { to: "s1" }) }; },
+  { id: "U2", what: "(holes L4) the client's and agent's one predicate: a `vacated` stands you up only from the socket it names", run() {
+      const f = SK.vacatedFromMine;
+      return { mine: f?.({ type: "vacated", socket: "s1" }, { to: "s1" }), other: f?.({ type: "vacated", socket: "s1" }, { to: "s2" }), none: f?.({ type: "vacated", socket: "s1" }, null), noSeat: f?.({ type: "vacated" }, { to: "s1" }) }; },
     good: (o) => o.mine === true && o.other === false && o.none === false && o.noSeat === false },
   // ---------------- T: the track after a seat ----------------
   { id: "T1", what: "(scars M2) a world with a spawn: visitor vic rides olive's ferry 15 m (a ride set up before he sat), then steps off it: the step is measured from the seat, not refused too-fast from where he boarded", run(s) {
@@ -257,7 +257,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); s.call("vic", "use", { id: "chair", action: "sit" });
       const mv = s.call("bob", "set", { id: "chair", component: "transform", value: { pos: [24, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
-      const msg = (s.w().presence.inbox?.vic ?? []).find?.((m: any) => m.type === "unseated");
+      const msg = (s.w().presence.inbox?.vic ?? []).find?.((m: any) => m.type === "vacated");
       const at = s.w().presence.bodies.vic?.at;
       const step = s.call("vic", "move", { to: [at?.[0] ?? 0, 0, (at?.[2] ?? 0) + 0.8] });
       return { mv: show(mv), seated: seated(s, "vic"), at, msgAt: msg?.at ?? null, step: show(step) }; },

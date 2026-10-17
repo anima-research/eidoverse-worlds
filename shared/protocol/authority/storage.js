@@ -42,6 +42,9 @@ export function worldOf(io) {
   w.present = io.present ?? null;
   // the presence plane: bodies and holds. Transient, never logged (P1, P2)
   w.presence = io.presence ?? { bodies: {}, holds: {} };
+  // a presence file written before R 10-17 13:46 named who occupies what `seats`: read it as `occupants`, keep only the new key
+  if (w.presence.seats && !w.presence.occupants) w.presence.occupants = w.presence.seats;
+  delete w.presence.seats;
   w.savePresence = () => io.savePresence?.(w.presence);
   // Governance keys (§2.4) live outside the log. Custody is authority practice (§5 identity), injected like storage:
   // io.custody = { sequencer() → "ed25519:…", keyOf(who, make?) → "ed25519:…" | null } (server/filehost.ts keeps the keys).

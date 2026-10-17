@@ -25,7 +25,7 @@ export const ASK_MS = 20000, COOL_MS = 600000, MAX_ALLOW_MS = 30 * 24 * 3600000;
 // a reach descriptor the relay strips (server/reachgate.ts → authority.js reachAdmits) is said to the reacher once per
 // (reacher, target, class) per this long: a stream of frames is one attempt, never one message a frame
 export const REACH_NOTE_MS = 15000;
-export const KIND_CLASS = { pose: "pose", anim: "pose", shove: "shove", drag: "move", seat: "move", carry: "move", touch: "touch" };
+export const KIND_CLASS = { pose: "pose", anim: "pose", shove: "shove", drag: "move", occupy: "move", carry: "move", touch: "touch" };
 // Touch is judged by where a hand is, not how it was aimed (42 P8): a named point is intimate if it is one of these, and
 // touch if it is any other contact point (shared/contact.js). ONE classifier, namedPointClass, for the relay
 // (server/reachgate.ts), the authority's reach verb and the agent (r2 holes F5: the verb kept its own 19-point list, so

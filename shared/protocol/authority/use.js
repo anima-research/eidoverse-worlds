@@ -3,7 +3,7 @@
 // spreads into VERBS where it stood (refactor split, 2026-10-17; moved from authority.js's "use (interaction)" section
 // and the VERBS table unchanged). The write path, scripts and seats it hands off to are above it, reached through UP.
 import { bodyOf } from "../../components.js";
-import { inSitReach, SEAT_REACH } from "../../sockbody.js";
+import { inSitReach, OCCUPY_REACH } from "../../sockbody.js";
 import { grabOf } from "../../grab.js";
 import { PURGED } from "../fold.js";
 import { COMPONENTS, PENDULUM } from "../componentspec.js";
@@ -25,9 +25,9 @@ const lastTouch = (...a) => UP.lastTouch(...a);
 const offRefuse = (...a) => UP.offRefuse(...a);
 const rateCheck = (...a) => UP.rateCheck(...a);
 const sameHome = (...a) => UP.sameHome(...a);
-const seatOf = (...a) => UP.seatOf(...a);
-const setSeat = (...a) => UP.setSeat(...a);
-const sitterOn = (...a) => UP.sitterOn(...a);
+const occupantOf = (...a) => UP.occupantOf(...a);
+const setOccupant = (...a) => UP.setOccupant(...a);
+const occupantOn = (...a) => UP.occupantOn(...a);
 const vec3s = (...a) => UP.vec3s(...a);
 
 // ---------- use (interaction) ----------
@@ -65,17 +65,17 @@ function buildUse(ctx, a) {
       if (!may(named)) refuse("rights", `only a ${named.body.who} may ${action} ${a.id} (${socket})`, "ask someone who can"); }
     const ok = socks.filter(may);
     if (!ok.length) refuse("rights", `only a ${socks[0].body.who} may ${action} ${a.id}`, "ask someone who can");
-    const taken = (x) => (ctx.w ? sitterOn(ctx.w, ctx.st, x.id, ctx.actor) : null);
+    const taken = (x) => (ctx.w ? occupantOn(ctx.w, ctx.st, x.id, ctx.actor) : null);
     const pick = socket != null ? ok.find((x) => x.slot === socket) : ok.find((x) => !taken(x)) ?? ok[0];
     { const t = taken(pick); if (t) refuse("occupied", `${t.who ? said(t.who) : t.thing} ${t.who ? "sits" : "is"} in ${pick.host}'s ${pick.slot}${socket == null && ok.length > 1 ? `, and its other ${action} sockets are taken too` : ""}`, "one body per socket: wait till it's free, or pick another (args: {socket})", t.who ? { by: t.who } : { thing: t.thing }); }
     // within reach (review r10 M1): leaving a seat restarts the authority's track of the body at it, so a sit from afar would be an
     // unlogged teleport past the spawn rule and any wall. Measured from the tracked body (or, moving straight from another seat,
     // from that seat); a body the authority doesn't track yet (not arrived) may sit, and its first move is an arrival as ever
     let near = false;
-    if (ctx.w) { const me = ctx.w.presence.bodies?.[ctx.actor], cur = seatOf(ctx.w, ctx.st, ctx.actor);
+    if (ctx.w) { const me = ctx.w.presence.bodies?.[ctx.actor], cur = occupantOf(ctx.w, ctx.st, ctx.actor);
       const from = cur && ctx.st.entities[cur.to] ? worldT(ctx.st, cur.to).pos : Array.isArray(me?.at) ? me.at : null;
       if (from) { const sp = worldT(ctx.st, pick.id).pos;
-        if (!inSitReach(from, sp, SEAT_REACH.lag)) refuse("out-of-reach", `${pick.host}'s ${pick.slot} is ${r3(Math.hypot(sp[0] - from[0], sp[2] - from[2]))} m from you${Math.abs(sp[1] - from[1]) > 1 ? `, ${r3(sp[1] - from[1])} m up` : ""}; a seat is within ${SEAT_REACH.r} m to sit on`, `walk up to it first (move {to: '${pick.host}'})`);
+        if (!inSitReach(from, sp, OCCUPY_REACH.lag)) refuse("out-of-reach", `${pick.host}'s ${pick.slot} is ${r3(Math.hypot(sp[0] - from[0], sp[2] - from[2]))} m from you${Math.abs(sp[1] - from[1]) > 1 ? `, ${r3(sp[1] - from[1])} m up` : ""}; a seat is within ${OCCUPY_REACH.r} m to sit on`, `walk up to it first (move {to: '${pick.host}'})`);
         near = true; } }
     // attaching is presence (your frames say where you're attached; nothing is recorded), so the authority only answers: where,
     // and what the body does there (the socket's body block read with its defaults: shared/sockbody.js bodyOf)
@@ -200,7 +200,7 @@ const USE_VERBS = {
     if (probe.presence) {
       // a seat is presence (nothing recorded), but the authority keeps who sits where: a thing someone sits on, or anything
       // carrying it, isn't kicked, shoved, grabbed or thrown out from under them (occupant)
-      if (probe.attach?.to) setSeat(w, actor, probe.attach.to, probe.near);
+      if (probe.attach?.to) setOccupant(w, actor, probe.attach.to, probe.near);
       return { ok: true, recorded: false, ...(probe.attach ? { attach: probe.attach } : {}), note: probe.note };   // attach: where your frames now say you are
     }
     if (probe.script) { // L7 (41 §3.6): the visitor's use is ITS act, on its own rate; the behaviour runs with its sponsor's rights

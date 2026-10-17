@@ -50,6 +50,12 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the directory infers a kind", "server/directory.ts", "return add({ name, subs: [sub], kind: \"account\", since: now() }); }", "return add({ name, subs: [sub], kind: (/^(agent|aid1):/.test(sub) ? \"agent\" : \"human\") as any, since: now() }); }", ["W1"]],
   ["the whois tool says a kind", "mcpl/tools.ts", "the word they declare for themselves if they declared one while here", "what they are (person, agent, guest)", ["W2"]],
   ["an old file's kind is kept", "server/directory.ts", "for (const [id, e] of Object.entries(d.ids)) index(id, unkind(e));", "for (const [id, e] of Object.entries(d.ids)) index(id, e);", ["W3"]],
+  ["the message is unseated again", "shared/protocol/authority/writes.js", "inboxPush(w.presence, u.who, { type: \"vacated\", socket: u.socket,", "inboxPush(w.presence, u.who, { type: \"unseated\", seat: u.socket,", ["O1"]],
+  ["the notes say unseated", "shared/protocol/authority/gate.js", "({ who: u.who, vacated: true, socket: u.socket,", "({ who: u.who, unseated: true, seat: u.socket,", ["O1"]],
+  ["presence keeps seats", "shared/protocol/authority/occupants.js", "(w.presence.occupants ??= {})[who]", "(w.presence.seats ??= {})[who]", ["O1"]],
+  ["no read-both for an old presence file", "shared/protocol/authority/storage.js", "if (w.presence.seats && !w.presence.occupants) w.presence.occupants = w.presence.seats;", "", ["O2"]],
+  ["body kind seat again", "shared/protocol/authority/bodyconsent.js", "\"drag\", \"occupy\", \"carry\"]", "\"drag\", \"seat\", \"carry\"]", ["O3"]],
+  ["sockbody reads seat", "shared/sockbody.js", "typeof u.socket === 'string' && u.socket === mount.to", "typeof u.seat === 'string' && u.seat === mount.to", ["O4"]],
   ["CONTROL (no-op: must stay green)", "server/server.ts", "/** A join's declared status (PROTOCOL §6a)", "/**  A join's declared status (PROTOCOL §6a)", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -232,6 +238,33 @@ const cases: Case[] = [
       fs.writeFileSync(f, JSON.stringify({ v: 2, ids: { ["u-" + "c".repeat(20)]: { name: "Old", subs: ["agent:token:old"], kind: "agent", since: 1 }, ["u-" + "d".repeat(20)]: { name: "Hu", subs: ["human:discord:9"], kind: "human", since: 1 } } }));
       const d = DR.directoryAt(f); return { a: d.entry("u-" + "c".repeat(20))?.kind, h: d.entry("u-" + "d".repeat(20))?.kind }; },
     good: (o) => o.a === "account" && o.h === "account" },
+  // ---------------- O: occupy is the one word family (R 10-17 13:46) ----------------
+  { id: "O1", what: "(R 13:46) a socket removed under vic: his inbox has `vacated {socket, by, why, at}` (no `unseated`, no `seat`), the reply's note says `vacated: true, socket`-free of seat words, and presence keeps `occupants` (no `seats`)", run(s) {
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "visitor" } });
+      s.call("olive", "create", { id: "chair", model: "chair", components: { sockets: { a: { pos: [0, 0.45, 0], body: { action: "sit" } } } }, place: { at: [4, 0] } });
+      s.call("vic", "move", { to: [4, 0, -0.6] }); const sit = s.call("vic", "use", { id: "chair", action: "sit" });
+      const pres = Object.keys(s.w().presence); const occ = s.w().presence.occupants?.vic?.to ?? null;
+      const mv = s.call("olive", "set", { id: "chair", component: "transform", value: { pos: [6, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
+      const inbox = JSON.parse(JSON.stringify(s.w().presence.inbox?.vic ?? []));
+      const m = inbox.find((x: any) => x.type === "vacated") ?? null;
+      return { sit: show(sit), occ, pres, mv: show(mv), notes: JSON.stringify(mv.notes ?? []), m, types: inbox.map((x: any) => x.type) }; },
+    good: (o) => o.sit === "ok" && !!o.occ && o.pres.includes("occupants") && !o.pres.includes("seats") && o.mv === "ok" && !!o.m && o.m.socket === o.occ && typeof o.m.why === "string" && Array.isArray(o.m.at) && !("seat" in o.m) && !o.types.includes("unseated") && /"vacated":true/.test(o.notes) && /"socket":/.test(o.notes) && !/unseated|"seat":/.test(o.notes) },
+  { id: "O2", what: "…a presence file written before (`seats`) is read as `occupants` and only the new key is kept", run() {
+      const w = D.worldOf({ name: "o2", entries: [], getBlob: () => null, putBlob: () => "", now: () => T, writeLine: () => {}, presence: { bodies: {}, holds: {}, seats: { vic: { to: "s1", since: 3 } } }, savePresence: () => {}, scripts: null });
+      return { keys: Object.keys(w.presence), occ: w.presence.occupants?.vic?.to ?? null }; },
+    good: (o) => o.occ === "s1" && !o.keys.includes("seats") },
+  { id: "O3", what: "…body consent's kind is `occupy` (`seat` is no kind), and the reach that bounds taking any station is OCCUPY_REACH (no SIT_REACH/SEAT_REACH)", async run(s) {
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] });
+      const occ = s.call("olive", "body", { to: "vic", kind: "occupy" }), seat = s.call("olive", "body", { to: "vic", kind: "seat" });
+      const SK = await import(TREE + "shared/sockbody.js"); const C = await import(TREE + "shared/protocol/consent.js");
+      return { occ: show(occ), seat: show(seat), reach: !!SK.OCCUPY_REACH, old: "SIT_REACH" in SK || "SEAT_REACH" in SK, cls: C.KIND_CLASS?.occupy ?? null, oldCls: C.KIND_CLASS?.seat ?? null }; },
+    good: (o) => !/^refused shape/.test(o.occ) && /^refused shape/.test(o.seat) && o.reach && !o.old && o.cls === "move" && o.oldCls === null },
+  { id: "O4", what: "…the readers and the words follow: sockbody's vacatedAt/vacatedFromMine read `socket`, the browser and the agent read `vacated`, the spec, AGENTS.md, SCRIPTS.md and WIRE.md say `vacated {socket, …}` and never `unseated`, and the version history records it", async run() {
+      const SK = await import(TREE + "shared/sockbody.js"); const lb = readText("client/lib/localbody.js"), ag = readText("mcpl/agent.ts"), md = readText("spec/PROTOCOL.md"), a = readText("AGENTS.md"), sc = readText("docs/SCRIPTS.md"), wi = readText("docs/WIRE.md");
+      return { mine: SK.vacatedFromMine?.({ socket: "s1" }, { to: "s1" }) === true && SK.vacatedFromMine?.({ seat: "s1" }, { to: "s1" }) === false, at: JSON.stringify(SK.vacatedAt?.({ at: [1, 2, 3] })),
+        lb: /m\?\.type === 'vacated'/.test(lb) && !/'unseated'/.test(lb), ag: /m\.type === "vacated"/.test(ag) && !/"unseated"/.test(ag),
+        docs: [md.slice(0, md.indexOf("## Version history")), a, sc, wi].every((t) => !/\bunseat/i.test(t)) && /`vacated \{socket, by,\s+why, at\}`/.test(md) && /`vacated`/.test(a) && /`vacated \{socket, host\?, by, why, at\?\}`/.test(wi), vh: /occupy/.test(md.slice(md.indexOf("## Version history"))) }; },
+    good: (o) => o.mine && o.at === "[1,2,3]" && o.lb && o.ag && o.docs && o.vh },
   // ---------------- M: move {client} is gone ----------------
   { id: "M1", what: "(research #14) move takes no `client`: arriving leaves no client kind on the authority's track, and `move {client}` is refused unknown-arg; VERBSPEC.move lists no client", run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "visitor" } });

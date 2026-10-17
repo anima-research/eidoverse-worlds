@@ -89,8 +89,8 @@ export const VERBSPEC = {
       class: { type: "any", doc: "near | follow | touch | intimate | pose | shove | move | voice" }, for: { type: "any", doc: "ms an allow lasts" }, pause: { type: "any", doc: "true: every class is nobody, friends included" },
       friend: { type: "any", doc: "name someone you trust (they may close your table, never open it)" }, of: { type: "any", doc: "act on someone else's table (closing only, if they named you trusted)" },
       answer: { type: "any", doc: "an ask's id" }, yes: { type: "any", doc: "with answer: true allows it this once" } }, example: { set: { class: "touch", tier: "strangers", mode: "ask" } } },
-  body: { doc: "act on another body (pose, anim, shove, drag, seat, carry): their consent decides, at once or after they answer an ask (20 s; silence is no)", args: {
-      to: { type: "any", doc: "their identity" }, kind: { type: "any", doc: "pose | anim | shove | drag | seat | carry" }, spec: { type: "any", doc: "what the act carries (a pose, a clip)" }, why: { type: "any", doc: "a line they see with the ask" } },
+  body: { doc: "act on another body (pose, anim, shove, drag, occupy, carry): their consent decides, at once or after they answer an ask (20 s; silence is no)", args: {
+      to: { type: "any", doc: "their identity" }, kind: { type: "any", doc: "pose | anim | shove | drag | occupy | carry" }, spec: { type: "any", doc: "what the act carries (a pose, a clip)" }, why: { type: "any", doc: "a line they see with the ask" } },
     required: ["to", "kind"], example: { to: "u-…", kind: "pose", spec: { clip: "wave" } } },
   reach: { doc: "touch someone: a named contact point on them, or a world point at their body; judged by where the hand lands (touch or intimate) against their consent", args: {
       who: { type: "any", doc: "their identity" }, point: { type: "any", doc: "a contact point (shoulder_l, hand_r, …)" }, at: { type: "any", doc: "[x, y, z]: a world point instead" }, why: { type: "any", doc: "a line they see with the ask" } },

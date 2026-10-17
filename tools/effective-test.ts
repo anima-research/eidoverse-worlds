@@ -65,7 +65,7 @@ function liftV1(E: Record<string, any>) {
 const fold = (a: WorldAgent, entry: { verb: string; args: any; actor?: string }, live = false) => {
   const A = a as any;
   // a body sitting is presence, never the fold: the agent's own seat (a socket child's id)
-  if ((entry.verb === "mount" || entry.verb === "dismount") && entry.args?.id === A.name) { A.setSeat(entry.verb === "mount" ? { to: entry.args.slot ? SID(entry.args.to, entry.args.slot) : entry.args.to } : null); A.reconcileFromFold(); return; }
+  if ((entry.verb === "mount" || entry.verb === "dismount") && entry.args?.id === A.name) { A.setOccupant(entry.verb === "mount" ? { to: entry.args.slot ? SID(entry.args.to, entry.args.slot) : entry.args.to } : null); A.reconcileFromFold(); return; }
   const was = entry.args?.id != null ? A.entities.get(entry.args.id) : undefined;
   const st = scenes.get(a); foldEntry(st, { seq: ++seqN, ts: T0, actor: entry.actor ?? "t", ...entry });
   A.st = { ...A.st, entities: liftV1(structuredClone(st.entities)) };

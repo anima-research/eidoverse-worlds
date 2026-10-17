@@ -133,7 +133,7 @@ const BODY_VERBS = {
       attempts: (P.ring ?? []).filter((r) => r.to === actor).slice(-10) }; },
   // one shape for every act on a body (42 §4.4): pose, anim, shove, drag. Waits for nothing in the lab; says what happened.
   body(w, actor, a) { const me = body(w, actor); const to = bodyRef(a.to); expireAsks(w);
-    if (!["pose", "anim", "shove", "drag", "seat", "carry"].includes(a.kind)) refuse("shape", `no body kind '${a.kind}'`, "body {to, kind: pose|anim|shove|drag|seat|carry}");
+    if (!["pose", "anim", "shove", "drag", "occupy", "carry"].includes(a.kind)) refuse("shape", `no body kind '${a.kind}'`, "body {to, kind: pose|anim|shove|drag|occupy|carry}");
     const t = w.presence.bodies[to]; if (t && ["shove", "drag", "carry"].includes(a.kind) && dist(me.at, t.at) > BODY_REACH) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "walk closer");
     const g = bodyGate(w, actor, to, a.kind, { spec: a.spec, why: a.why });
     if (!g.ok) refuse(g.code, g.reason, g.fix, { class: g.class });

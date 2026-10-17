@@ -7,7 +7,7 @@
 import { bodyOf } from "../shared/components.js";
 import { DEFAULT_PRESET, KIND_CLASS, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/protocol/consent.js";
 import { kindOf } from "../shared/protocol/kind.js";
-import { describeBody, mayLeave, resolveSeat, socketsUnder, unseatedFromMine, unseatedAt } from "../shared/sockbody.js";
+import { describeBody, mayLeave, resolveSeat, socketsUnder, vacatedFromMine, vacatedAt } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
 import { r3 } from "../shared/protocol/round.js";
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
@@ -490,7 +490,7 @@ export class WorldAgent {
   mayLeaveSeat(kind: "move" | "jump" | "menu" | "script" | "escape") { const b: any = this.mySeatBody(); return !b || mayLeave(b, kind) || !this.seatOf(this.mySeat!.to); }
   /** The authority's body inbox (PROTOCOL L6), pushed by the server as it fills: an ask waiting for ME (someone's act met
    *  an `ask` cell of my table; 20 s, silence is no) is said with how to answer it through `act`; the replies to my own asks,
-   *  acts delivered to my body, revocations and being let off a seat (`unseated`) are said in the authority's words. */
+   *  acts delivered to my body, revocations and being let go from what I occupy (`vacated`) are said in the authority's words. */
   bodyInbox(messages: any) {
     for (const m of Array.isArray(messages) ? messages : []) {
       if (!m || typeof m !== "object") continue;
@@ -498,11 +498,11 @@ export class WorldAgent {
       if (m.type === "body-ask" && m.ask) { const a = m.ask; const left = typeof a.expires === "number" ? Math.max(1, Math.round((a.expires - ts) / 1000)) : 20;
         text = `${a.summary ?? `${a.from} asks to ${a.kind}`}${a.why ? ` — "${a.why}"` : ""} (consent class ${KIND_CLASS[a.kind] ?? a.kind}; about ${left} s to answer, silence is no): act {verb: "consent", args: {answer: ${JSON.stringify(a.id)}, yes: true}} allows it this once, yes: false refuses`; }
       else if (m.type === "body-reply") text = m.ok ? `your ask ${m.ask} was allowed${m.applied ? " and done" : ""}` : `your ask ${m.ask} was refused: ${m.why ?? "no"}`;
-      else if (m.type === "body") text = `${m.from} ${m.kind === "touch" ? "touched" : m.kind === "shove" ? "knocked over" : m.kind === "drag" || m.kind === "carry" ? "moved" : m.kind === "seat" ? "seated" : "posed"} you${m.spec?.point ? ` (${m.spec.point})` : ""} (consent: ${m.consent})`;
-      else if (m.type === "unseated") {   // review r9 M3: an edit by someone else moved the seat I sat on, and the authority let me go
-        if (unseatedFromMine(m, this.mySeat)) { const on = this.seatName(m.seat); this.setSeat(null);
+      else if (m.type === "body") text = `${m.from} ${m.kind === "touch" ? "touched" : m.kind === "shove" ? "knocked over" : m.kind === "drag" || m.kind === "carry" ? "moved" : m.kind === "occupy" ? "placed" : "posed"} you${m.spec?.point ? ` (${m.spec.point})` : ""} (consent: ${m.consent})`;
+      else if (m.type === "vacated") {   // review r9 M3: an edit by someone else moved the seat I sat on, and the authority let me go
+        if (vacatedFromMine(m, this.mySeat)) { const on = this.seatName(m.socket); this.setOccupant(null);
           // stand where the authority let me go (its track of my body starts again there, r9 M2)
-          const at = unseatedAt(m); if (at) { this.pos.x = at[0]; this.pos.y = at[1]; this.pos.z = at[2]; }
+          const at = vacatedAt(m); if (at) { this.pos.x = at[0]; this.pos.y = at[1]; this.pos.z = at[2]; }
           text = `${typeof m.by === "string" ? this.nameOfActor(m.by) ?? m.by : "someone"} moved ${on}, the seat you were on, so you are standing where it was${typeof m.why === "string" ? ` (${m.why})` : ""}`; } }
       else if (m.type === "body-revoked") text = `${m.by} withdrew consent for ${m.class}: what you were doing to their body has ended`;
       else if (m.type === "reach-refused") {   // the relay took a hand of mine out of my pose: nobody saw it (server/reachgate.ts)
@@ -515,7 +515,7 @@ export class WorldAgent {
     }
   }
   /** sit on a thing's seat socket (presence: my frames carry {to: <socket id>}), or stand (null) */
-  setSeat(seat: { to: string; pose?: string; at?: number } | null) {
+  setOccupant(seat: { to: string; pose?: string; at?: number } | null) {
     this.mySeat = seat;
     if (seat) this.mounts.set(this.name, { ...seat }); else this.mounts.delete(this.name);
   }
@@ -3296,7 +3296,7 @@ export class WorldAgent {
     }
     // and deciding to walk IS getting off the seat — a folded mount otherwise
     // glues this body to its socket on every renderer, wherever the feet go
-    if (this.joined && this.mySeat && this.mayLeaveSeat("menu")) this.setSeat(null);
+    if (this.joined && this.mySeat && this.mayLeaveSeat("menu")) this.setOccupant(null);
     // and stand on the ground you got up onto: with colliders loaded, the floor under the feet found from where the body
     // is (a body seated upstairs stands up upstairs, #235); the planner's support answer otherwise
     const supportAt = support.kind === "terrain" ? (wx: number, wz: number) => this.heightAt(wx, wz) : () => support.height;
@@ -4363,7 +4363,7 @@ export class WorldAgent {
       this.pos.y = this.feetGround(true);
     }
     // and standing up IS getting off the seat
-    if (clip === "idle" && this.joined && this.mySeat && this.mayLeaveSeat("menu")) this.setSeat(null);
+    if (clip === "idle" && this.joined && this.mySeat && this.mayLeaveSeat("menu")) this.setOccupant(null);
     this.clip = clip;
   }
 

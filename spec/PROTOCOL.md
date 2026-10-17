@@ -499,8 +499,8 @@ request moves a copy to a newer version, keeping its own overrides.
   body is on the thing. An edit by anyone but the rider that would move a
   seat — the `transform`, `parent` or `motion` of the seat or of anything
   it hangs from, by whatever verb, a handler or script on another thing
-  included — lands and **unseats** every rider on that seat: each is let go
-  where they were, standing, and told why and where (`unseated {seat, by,
+  included — lands and **vacates** it: every occupant is let go where they
+  were, standing, and told why and where (`vacated {socket, by,
   why, at}`, presence, never logged), and the authority's track of their
   body starts again from where the seat let them go; a seat removed or
   switched off lets its rider go the same way. The track restarts there
@@ -508,13 +508,13 @@ request moves a copy to a newer version, keeping its own overrides.
   (`out-of-reach`) unless the body it tracks, or the seat it moves straight
   from, is within the client's own sitting reach of the socket (3.5 m across
   the ground, 1.6 m up, 1 m down, plus 1 m for the track's lag:
-  shared/sockbody.js `SEAT_REACH`), so sitting is never a way to cover
+  shared/sockbody.js `OCCUPY_REACH`), so sitting is never a way to cover
   distance off the record. A rider's first step off is the stand-up. What the seat's own assembly does to it (a reaction or script on a
   thing with the same root as the seat: a swing's push, a carousel's turn,
   an elevator's script) is the ride, and carries them — the ride **as it
   was when they sat**: a handler or script written after the rider sat, or
   a thing hung under the seat's assembly since, is someone's edit, and
-  unseats them (the authority's follow-ups, §3, are not edits). Physics resting a seat (something thrown into it) carries
+  vacates it (the authority's follow-ups, §3, are not edits). Physics resting a seat (something thrown into it) carries
   its rider too. Moving the seat you sit on yourself is yours. A body
   standing on a thing never blocks an edit of it: what you stand on
   carries you. **A seat may make leaving deliberate, never impossible**: a
@@ -848,7 +848,7 @@ role ladder, and it is the affected party's, never the installer's or the
 invoker's. Sitting is not on the table: it is consent to the seat's own
 ride, as it was when you sat, and standing up is the exit (§5). An edit by
 anyone else that would move a seat therefore never asks its rider and is
-never refused for them: it lands and unseats them, and the authority tells
+never refused for them: it lands and vacates it, and the authority tells
 them why. A body standing on a thing is carried by it and never consulted.
 No seat can take away its occupant's escape (§5). *Intended, not yet enforced:* standing close,
 following and speaking into the ear (in the table, unenforced).
@@ -1238,7 +1238,7 @@ v}`. File names, wire fields and code don't carry the number.
 |---|---|---|
 | 1–2 | The first world log: an untyped verb log folded by its reader (`genesis {verb: "genesis", args: {v, dialect}}`); dialect 2 added `force` and `punt` | `history/PROTOCOL-v1.md` |
 | 3 | The deterministic-physics amendment: a sim fold over sim-scoped entries, sim epochs (`dialect 3`) | `history/PROTOCOL-v2-sim.md` |
-| 4 | This protocol: typed entries (`change`, `act`, `sim`, `say`, `purge`, `sequencer`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. Before release, minor 0 gained the batch body's `followUps` (§3, §10; review r10) and §6a, one kind of participant (a status is declared at the door, never inferred or logged; `move` lost its `client` claim) | this document |
+| 4 | This protocol: typed entries (`change`, `act`, `sim`, `say`, `purge`, `sequencer`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. Before release, minor 0 gained the batch body's `followUps` (§3, §10; review r10) and §6a, one kind of participant (a status is declared at the door, never inferred or logged; `move` lost its `client` claim); occupy is the one word family for taking a socket (presence `occupants`, the `vacated {socket, …}` message, body kind `occupy`; was `seats`, `unseated {seat, …}`, `seat`; none of them is logged) | this document |
 
 Logs of `v` 1–3 are not read at runtime; §14 translates one, once, into a new
 world.

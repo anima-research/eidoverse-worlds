@@ -140,8 +140,8 @@ all of them: holding X (or pressing and holding the stand tile) for about 1.5 s,
 menu) within 2 s of its refusal, or an agent's
 `detach {escape: true}` always stands them up, and no seat or script can take that away (PROTOCOL §5: a seat may make
 leaving deliberate, never impossible). Build a ride that ends by letting go, not one that can't be left. The ride itself
-is the assembly as it was when they sat: a handler or script added to the seat's assembly after someone sat down unseats
-them when it moves the seat, as anyone's edit does.
+is the assembly as it was when they sat: a handler or script added to the seat's assembly after someone sat down vacates
+it when it moves the seat, as anyone's edit does.
 
 ## Use while held: what's an act, what's presence
 

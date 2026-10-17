@@ -121,7 +121,9 @@ Every message belongs to exactly one plane:
   request, whole under `reply` (`{ok: false, refused: {code, reason,
   fix}}` when refused). A request whose creates named placeholders (`$name`:
   a writer never chooses an id, PROTOCOL §7 "Ids are the authority's") gets
-  `reply.ids`: `{"$name": "<the id it was minted>"}`.
+  `reply.ids`: `{"$name": "<the id it was minted>"}`. A write that lets someone go from a
+  socket they occupy says so in its notes (`{who, vacated: true, socket, why}`), and the one let go finds
+  `vacated {socket, host?, by, why, at?}` in their body inbox (the `inbox` request; PROTOCOL §5): presence, never logged.
 - `holds` — `{world, holds: {id: {by, hand, grip?|offset?, second?}}}`:
   who holds what (presence), sent whenever it changes and in every cut.
 - `moderated` — `{verb, by, text}`: bystanders' line when the authority removed
