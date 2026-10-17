@@ -84,6 +84,7 @@ import { colliderFor } from "../client/lib/bodyscale.js";
 
 import { recordComponents } from "../shared/protocol/view.js";
 import { modelWord } from "../shared/eido.js";
+import { handleOf, resolveThing } from "../shared/thingref.js";
 (globalThis as any).THREE = Object.assign({}, THREE_W, TSL);
 
 /** The body's clock: one stride of shared/mover.js (the one walker: the client's and the authority's too) per tick. */
@@ -452,7 +453,34 @@ export class WorldAgent {
     return sock && typeof sock === "object" ? { id: String(id), host: this.mounts.get(String(id))?.to ?? null, name: String(sock.name ?? ""), sock, station: station && typeof station === "object" ? station : null } : null;
   }
   /** "host (name)" for a seat or a socket — how a person reads where someone sits; the bare id for anything else. */
-  seatName(id: string) { const s = this.seatOf(id); return s ? `${s.host} (${s.name})` : id; }
+  seatName(id: string) { const s = this.seatOf(id); return s ? `${s.host ? this.refName(String(s.host)) : s.host} (${s.name})` : this.entities.has(id) ? this.refName(id) : id; }   // by its name (R 10-17)
+  /** A thing's short handle here (R 10-17, shared/thingref.js): the shortest unique id prefix of 4+, derived fresh. */
+  handle(id: string): string { return handleOf(id, this.entities.keys()); }
+  /** What a reader calls a thing in a sentence or a "thing/place" ref: its label when that names it alone, else its handle. */
+  refName(id: string): string { const l = (this.entities.get(id) as any)?.label; if (typeof l === "string" && l.trim() && !/[/\[\]"]/.test(l)) { const r = this.thingRef(l); if ("id" in r && r.id === id) return l.trim(); } return this.handle(id); }
+  /** How a thing reads in a list of candidates: its label, what it is, where it is, its handle. */
+  thingLine(id: string): string {
+    const e: any = this.entities.get(id); if (!e) return `[${this.handle(id)}]`;
+    const what = e.model ? modelWord(e.model).split("_").slice(0, 5).join(" ") : e.kind === "socket" ? "a socket" : "(empty)";
+    const up = this.mounts.get(id)?.to; const f = this.eff(id, Date.now());
+    const where = up && this.entities.has(up) ? `on ${(this.entities.get(up) as any)?.label ?? `[${this.handle(up)}]`}` : f.ok ? `at (${f.pos[0].toFixed(1)}, ${f.pos[1].toFixed(1)}, ${f.pos[2].toFixed(1)})` : "where unknown";
+    return `${typeof e.label === "string" && e.label ? `"${e.label}" ` : ""}${what} ${where} [${this.handle(id)}]`;
+  }
+  /** A thing by what an agent calls it (R 10-17 ID HARDENING (5)): its id, its label, or a unique id prefix (4+, git-style).
+   *  Several matching is refused with the candidates (label, what, where, handle), never resolved by picking one. A
+   *  placeholder ('$x'), @world, a blueprint hash or a person's identity is not a thing name: it passes as it is.
+   *  {id} | {refusal} | {none} (nothing here is called that: a caller may try a place or a person next). */
+  thingRef(raw: string): { id: string } | { refusal: string } | { none: true } {
+    const q = String(raw ?? "").trim();
+    if (!q || q.startsWith("$") || q.startsWith("@") || q.startsWith("sha256:") || /^u-[a-z2-7]{20}$/.test(q)) return q ? { id: q } : { none: true };
+    const r = resolveThing(q, [...this.entities.values()] as any[]);
+    if ("id" in r) return { id: r.id };
+    if ("ambiguous" in r) {
+      const c = r.ambiguous.slice(0, 8).map((t: any) => this.thingLine(t.id));
+      return { refusal: `"${q}" ${r.by === "label" ? "is the label of" : "starts the id of"} ${r.ambiguous.length} things — say which (its handle works): ${c.join("; ")}${r.ambiguous.length > 8 ? `; and ${r.ambiguous.length - 8} more` : ""}` };
+    }
+    return { none: true };
+  }
   /** My seat's body block (shared/sockbody.js), or null standing. */
   mySeatBody() { const m = this.mySeat; return m ? bodyOf(this.seatOf(m.to)?.station) : null; }
   /** May I leave my seat this way? (its leaveBy: a 'script' seat lets go only when the world does) */
@@ -3077,7 +3105,7 @@ export class WorldAgent {
       // The straight leg was checked first, so a search that throws leaves a
       // structure in the way with no route around it.
       try { result = s.route.route(ax, az, bx, bz); }
-      catch (err) { refusals.push(`[${s.id}]: its route couldn't be searched (${(err as Error)?.message ?? err})`); continue; }
+      catch (err) { refusals.push(`[${this.refName(s.id)}]: its route couldn't be searched (${(err as Error)?.message ?? err})`); continue; }
       if (result.kind === "blocked") { refusals.push("[" + s.id + "]: " + result.reason); continue; }
       if (result.kind === "clear") continue;
       const points = result.points.map(([lx, lz]: number[]) => s.world(lx, lz));
@@ -3095,8 +3123,8 @@ export class WorldAgent {
         || !candidate.points.slice(1).every((p, i) => s.clear(candidate.points[i], p)));
       if (!blocker) return { points: candidate.points };
       obstructed.push(blocker.route.confined && candidate.owner !== blocker
-        ? `[${candidate.owner.id}]'s route leaves the floor of [${blocker.id}] the body stands on`
-        : `[${candidate.owner.id}]'s route is obstructed by [${blocker.id}]`);
+        ? `[${this.refName(candidate.owner.id)}]'s route leaves the floor of [${this.refName(blocker.id)}] the body stands on`
+        : `[${this.refName(candidate.owner.id)}]'s route is obstructed by [${this.refName(blocker.id)}]`);
     }
     return { refusal: [structures.some((s) => s.route.confined)
       ? "no local route preserves the supporting upper-floor path (multi-building floor composition is unavailable)"
@@ -3307,7 +3335,7 @@ export class WorldAgent {
    *  where a carried or moving thing is. Null when that cannot be resolved. */
   private placeHolder(e: Entity, nowMs = Date.now()): PlaceHolder | null {
     const f = this.eff(e.id, nowMs);
-    return f.ok ? { id: e.id, pos: f.pos, yaw: f.yaw, q: f.quat, scale: f.scale } : null;
+    return f.ok ? { id: e.id, name: this.refName(e.id), pos: f.pos, yaw: f.yaw, q: f.quat, scale: f.scale } : null;
   }
 
   /** Places that belong to no thing ("the meadow"): @world's places component, in world coordinates. */
@@ -3333,7 +3361,7 @@ export class WorldAgent {
     const out: { ref: string; place: Place; dest: Destination; d: number }[] = [];
     for (const { id, h, ps } of this.placeHolders()) {
       if (!h) continue;
-      for (const p of ps) { const dest = destinationOf(h, p); out.push({ ref: `${id}/${p.name}`, place: p, dest, d: Math.hypot(dest.x - this.pos.x, dest.z - this.pos.z) }); }
+      for (const p of ps) { const dest = destinationOf(h, p); out.push({ ref: `${id === WORLD_ENTITY ? id : this.refName(id)}/${p.name}`, place: p, dest, d: Math.hypot(dest.x - this.pos.x, dest.z - this.pos.z) }); }
     }
     return out.sort((a, b) => a.d - b.d);
   }
@@ -3405,13 +3433,15 @@ export class WorldAgent {
     }
     const at = (e: Entity, p: Place): Destination | { refusal: string } => {
       const h = this.placeHolder(e, now);
-      return h ? destinationOf(h, p) : { refusal: `where [${e.id}] is right now cannot be worked out (${(this.eff(e.id, now) as { why: string }).why})` };
+      return h ? destinationOf(h, p) : { refusal: `where [${this.refName(e.id)}] is right now cannot be worked out (${(this.eff(e.id, now) as { why: string }).why})` };
     };
     if (slash > 0) {
-      const e = ents.find((x) => ci(x.id, q.slice(0, slash)));
+      const tr = this.thingRef(q.slice(0, slash));   // its id, its label or a unique id prefix (R 10-17); a shared label is refused with the candidates
+      if ("refusal" in tr) return tr;
+      const e = ents.find((x) => "id" in tr && x.id === tr.id) ?? ents.find((x) => ci(x.id, q.slice(0, slash)));
       if (!e) return { refusal: `no thing called "${q.slice(0, slash)}" here` };
       const name = q.slice(slash + 1), ps = this.placesOn(e), p = ps.find((x) => names(x, name));
-      if (!p) return { refusal: `[${e.id}] has no place called "${name}"${ps.length ? ` — its places: ${ps.map((x) => x.name).join(", ")}` : " (it has no named places)"}` };
+      if (!p) return { refusal: `[${this.refName(e.id)}] has no place called "${name}"${ps.length ? ` — its places: ${ps.map((x) => x.name).join(", ")}` : " (it has no named places)"}` };
       return at(e, p);
     }
     // a thing: its entrance, else its door, else walked up to and stood beside (review r5 F3: here, not in a second
@@ -3431,13 +3461,11 @@ export class WorldAgent {
       if (!("refusal" in d)) hits.push(d);
     }
     if (hits.length) return hits.sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
-    // a thing by its label (a display name someone gave it), the nearest: as a thing by its id — before any person too
-    // (review r4 claims C1: a visitor named like a thing's label captured the walk)
-    // nearest by where each stands in the world: a child's `pos` is its offset from its parent (review r6 L2)
-    const far = (x: Entity) => { const w = this.worldPosOf(x, now); return Math.hypot(w[0] - me.x, w[2] - me.z); };
-    const byLabel = ents.filter((x) => { const l = (x as { label?: unknown }).label; return typeof l === "string" && ci(l.trim(), q); })
-      .map((x) => ({ x, d: far(x) })).sort((a, b) => a.d - b.d).map((o) => o.x);
-    if (byLabel.length) return thing(byLabel[0]);
+    // a thing by its label (a display name someone gave it) or a unique id prefix — before any person too (review r4 claims
+    // C1: a visitor named like a thing's label captured the walk). R 10-17: a label two things share is refused with the
+    // candidates (label, what, where, handle), never resolved to the nearest
+    { const tr = this.thingRef(q); if ("refusal" in tr) return tr;
+      if ("id" in tr) { const x = ents.find((y) => y.id === tr.id); if (x) return thing(x); } }
     // a person, last (review r3 F4): a visitor who joins as "tower" must not capture every walk to the tower
     for (const p of this.people.values()) {
       if (!ci(p.id, q)) continue;
@@ -3460,7 +3488,7 @@ export class WorldAgent {
       if (Math.hypot(me.x - nx, me.z - nz) > 1e-6) { px = nx; pz = nz; off = THING_STANDOFF; }
     }
     const d = Math.hypot(me.x - px, me.z - pz), back = d > 0.01 ? Math.min(off, d) / d : 0;
-    const dest: Destination = { x: px + (me.x - px) * back, y: box ? box.min[1] : at[1], z: pz + (me.z - pz) * back, reach: 0.6, label: `[${x.id}]` };
+    const dest: Destination = { x: px + (me.x - px) * back, y: box ? box.min[1] : at[1], z: pz + (me.z - pz) * back, reach: 0.6, label: `[${this.refName(x.id)}]` };
     // a thing standing on another (a cup on a table): the spot beside it may be on that other's top, where a walk can't
     // climb — then the spot beside what holds it up, on ITS floor, is walked to instead (review r6 L1)
     const under = box && depth < 4 ? this.supportOf(x.id, box) : null;
@@ -3523,7 +3551,7 @@ export class WorldAgent {
       if (opts.on === WORLD_ENTITY) target = ofWorld();
       else {
         const e = [...this.entities.values()].find((x) => x.id.toLowerCase() === opts.on!.toLowerCase());
-        if (e && !e.model) return `[${e.id}] has no model — places hang on placed things (a model) or on @world, not lights or Empties`;
+        if (e && !e.model) return `[${this.refName(e.id)}] has no model — places hang on placed things (a model) or on @world, not lights or Empties`;
         if (e) target = ofEntity(e);
       }
     } else {
@@ -3544,7 +3572,7 @@ export class WorldAgent {
     }
     if (!target) return opts.on ? `no thing called "${opts.on}" here` : "no placed thing within 15m to hang the name on — pass on: <thing id> (or on: \"@world\")";
     const h = target.h;
-    if (!h) return `where [${target.id}] is right now cannot be worked out, so a spot on it cannot be named — try again when it rests`;
+    if (!h) return `where [${this.refName(target.id)}] is right now cannot be worked out, so a spot on it cannot be named — try again when it rests`;
     const t0 = Date.now(), id = target.id;
     const placesNow = () => id === WORLD_ENTITY ? this.replica?.st?.entities?.[WORLD_ENTITY]?.c?.places
       : (this.entities.get(id) ? recordComponents(this.entities.get(id) as Entity).places : undefined);
@@ -3559,7 +3587,7 @@ export class WorldAgent {
         const l = toLocal(h, w).map((v) => Math.round(v * 1000) / 1000);
         cur[name] = { at: l, ...(opts.label ? { label: opts.label.slice(0, 80) } : {}) };
       }
-      if (JSON.stringify(cur).length > 8000) return `[${target.id}]'s places would exceed the 8KB component limit — retire some first`;
+      if (JSON.stringify(cur).length > 8000) return `[${this.refName(target.id)}]'s places would exceed the 8KB component limit — retire some first`;
       // an ordinary set of the places component, through the authority: rights, the gate and undo apply as to any edit.
       // Adding or re-pointing a name merges just that name (RFC 7396); retiring one replaces the bag with the name held as
       // null, since a merge's null would delete the entry and let a name the model declares back in. That replace is
@@ -3578,7 +3606,8 @@ export class WorldAgent {
     for (const deadline = t0 + 3000; Date.now() < deadline;) {
       const got = id === WORLD_ENTITY ? this.replica?.st?.entities?.[WORLD_ENTITY]?.c?.places : recordComponents(this.entities.get(id) as Entity).places;
       if (JSON.stringify(got?.[name] ?? null) === JSON.stringify(cur[name] ?? null)) {
-        return opts.remove ? `retired "${name}" on [${id}]` : `named this spot "${name}" on [${id}] — move {to: "${id}/${name}"} reaches it`;
+        { const nm = id === WORLD_ENTITY ? id : this.refName(id);
+          return opts.remove ? `retired "${name}" on [${nm}]` : `named this spot "${name}" on [${nm}] — move {to: "${nm}/${name}"} reaches it`; }
       }
       await new Promise((r) => setTimeout(r, 50));
     }
@@ -3872,13 +3901,13 @@ export class WorldAgent {
     // every end of the re-planned walk but "refused before a step" goes through abandonWalk and bumps the ticket: a stop,
     // a timeout, a stall, a refusal, a newer walk (whose state walkTo has just cleared) — none of them is this answer's
     const ticket = this.walkTicket;
-    const note = `${id} wouldn't move for your shove: you walked round it`;
+    const note = `${this.refName(id)} wouldn't move for your shove: you walked round it`;
     this.lastWalkNote = note;
     void this.walkNow(plan.x, plan.z, plan.run, plan.timeoutMs, plan.tolerance, plan.y, plan.near, true).then((arrived) => {
       // planned round it and refused before a step: what stopped the first plan is still this walk's answer
       if (!arrived && this.walkTicket === ticket && !this.lastWalkRefusal && !this.walkStall && !this.walkStopReason) {
         if (ref) this.lastWalkRefusal = { code: String(ref.code), reason: String(ref.reason ?? ""), ...(ref.fix ? { fix: String(ref.fix) } : {}) };
-        else this.walkStopReason = `${id} is in the way and wouldn't move for your shove, and no route round it: ${this.walkRefusal ?? "none found"}`;
+        else this.walkStopReason = `${this.refName(id)} is in the way and wouldn't move for your shove, and no route round it: ${this.walkRefusal ?? "none found"}`;
         if (this.lastWalkNote === note) this.lastWalkNote = null;
       }
       done(arrived);
@@ -4542,14 +4571,14 @@ export class WorldAgent {
         try {
           const [lx, ly, lz] = localizePoint(e, me.x, me.y, me.z);
           const here = describeHere(this.planFor(e.id, data), lx, lz, ly);
-          if (here) { L.push(`${here} (inside [${e.id}]; sides are the building's own compass.)`); break; }
+          if (here) { L.push(`${here} (inside [${this.handle(e.id)}]; sides are the building's own compass.)`); break; }
         } catch { /* one malformed house must not cost the whole percept */ }
       }
     }
     // ...and in named places: a room a model or a builder declared
     if (meKnown) {
       const here = this.placesAt([me.x, me.y, me.z]);
-      if (here.length) L.push(`You are in ${here.map(({ entity, place }) => `${place.label ?? place.name} (${entity.id}/${place.name})`).join(", within ")}.`);
+      if (here.length) L.push(`You are in ${here.map(({ entity, place }) => `${place.label ?? place.name} (${this.refName(entity.id)}/${place.name})`).join(", within ")}.`);
       const sight = this.placesInSight();
       if (sight.lines.length || sight.more) L.push(`Places ${sight.byDistance ? `within ${PLACE_SIGHT_M} m (line of sight not checked yet: the collision modules are still loading)` : "you can see"}, nearest first: ${sight.lines.length ? sight.lines.join("; ") : "none"}${sight.more ? ` — and ${sight.more} more: move {to: "?"} lists every place` : ""}.`);
     }
@@ -4620,7 +4649,7 @@ export class WorldAgent {
       // (shared/a11y.js, the reading the authority's look and the inspector share)
       if (typeof c.description === "string" && c.description.trim()) aff.push(quoted(c.description, 200));
       if (c.openable && typeof c.openable === "object") { const ax = readOut({ openable: c.openable, reactions: c.reactions });
-        const open = openAction(c); aff.push(`${ax.can[0]}: ${ax.state[0]}${open ? ` — act {verb: "use", args: {id: "${e.id}", action: "${open}"}}` : ""}`); }
+        const open = openAction(c); aff.push(`${ax.can[0]}: ${ax.state[0]}${open ? ` — act {verb: "use", args: {id: "${this.handle(e.id)}", action: "${open}"}}` : ""}`); }
       // A light, by either spelling (the light verb's entity, or a light
       // component on a lamp model or an Empty), says what it casts — colour,
       // brightness, reach — read off the FOLDED record (the perception view
@@ -4637,11 +4666,11 @@ export class WorldAgent {
         const on = (sid: string) => [...this.mounts.entries()].filter(([, m]) => m.to === sid).map(([rid]) => rid);
         const lines = socks.map((x) => { const b = bodyOf(x.station); const who = on(x.id); return b ? `${describeBody(x.name, b)}${who.length ? ` — ${who.join(", ")} is on it` : ""}` : null; }).filter(Boolean);
         const things = socks.filter((x) => !bodyOf(x.station)).map((x) => { const held = on(x.id); return `${x.name}${held.length ? ` (holding ${held.join(", ")})` : ""}`; });
-        if (lines.length) aff.push(`use it (attach {to: "${e.id}", socket}): ${lines.join(" · ")}`);
+        if (lines.length) aff.push(`use it (attach {to: "${this.handle(e.id)}", socket}): ${lines.join(" · ")}`);
         if (things.length) aff.push(`attach points: ${things.join(", ")}`); }
       if (c.reactions) { const acts = Object.keys(c.reactions).filter((a) => a !== openAction(c)); if (acts.length) aff.push(`reacts to: ${acts.join(", ")}`); }
       // what a hand may do with it (shared/grab.js: the authority's own reader, so a dynamic thing with no grabbable counts)
-      { const gr = grabOf(c); if (gr) aff.push(`${describeGrab(gr, "it")} — act {verb: "grab", args: {id: "${e.id}"}}`); }
+      { const gr = grabOf(c); if (gr) aff.push(`${describeGrab(gr, "it")} — act {verb: "grab", args: {id: "${this.handle(e.id)}"}}`); }
       if (c.motion?.type) aff.push(`in motion (${c.motion.type})`);
       // The emitter is named as the SEMANTIC thing it is on the entity that
       // owns it — "emitting fire", not a sprite inventory and not a bare
@@ -4666,8 +4695,8 @@ export class WorldAgent {
       // locked = nailed down: the authority refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused round-trip.
       // the real tool where there is one (audit 10-07: look taught the act hatch for edit's own fields)
-      if (c.lock) aff.push(`🔒 locked (immovable until a builder lifts it: edit {id: "${e.id}", set: {"flags.lock": false}}; or edit through it with throughLock: true)`);
-      if (c.hidden === true) aff.push(`hidden (not drawn; edit {id: "${e.id}", set: {"flags.hidden": false}} shows it)`);
+      if (c.lock) aff.push(`🔒 locked (immovable until a builder lifts it: edit {id: "${this.handle(e.id)}", set: {"flags.lock": false}}; or edit through it with throughLock: true)`);
+      if (c.hidden === true) aff.push(`hidden (not drawn; edit {id: "${this.handle(e.id)}", set: {"flags.hidden": false}} shows it)`);
       // a placed blueprint copy (or one of its parts) says which blueprint it
       // follows — the link, read through the one shared reading
       const copy = c["copy-of"] ? this.copyLine(e.id) : null;
@@ -4694,14 +4723,14 @@ export class WorldAgent {
         // For an unmounted, unmoving thing this is exactly the folded pos.
         // Distance/bearing only exist relative to a KNOWN self (#92, B2).
         const dx = f.pos[0] - me.x, dz = f.pos[2] - me.z;
-        L.push(`  - [${e.id}] ${short}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${f.pos[0].toFixed(1)}, ${f.pos[1].toFixed(1)}, ${f.pos[2].toFixed(1)})${f.pos[1] > 0.05 ? " (elevated)" : ""}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
+        L.push(`  - [${this.handle(e.id)}] ${short}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${f.pos[0].toFixed(1)}, ${f.pos[1].toFixed(1)}, ${f.pos[2].toFixed(1)})${f.pos[1] > 0.05 ? " (elevated)" : ""}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
       } else {
         // No number is better than a wrong number: when the chain cannot be
         // composed (a part socket, an unknown motion type, a malformed link),
         // perception says whose frame the thing rides and why the coordinate
         // is withheld — never the stale pre-mount pos next to "mounted on".
         const where = ride ? `position rides ${this.seatName(ride.to)}` : `position unavailable`;
-        L.push(`  - [${e.id}] ${short}: ${where} — ${f.why}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
+        L.push(`  - [${this.handle(e.id)}] ${short}: ${where} — ${f.why}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
       }
     }
     if (ents.some((e) => e?.reactions) || [...this.entities.values()].some((e) => e.kind === "socket")) {

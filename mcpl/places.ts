@@ -33,7 +33,7 @@ export type Place = {
 };
 // its transform: pos, and q (a full rotation, [x, y, z, w]) or yaw, and scale (a number or [x, y, z]). Shape audit 10-16:
 // a place is in the thing's own frame, the same full transform every other "own frame" in the registry means.
-export type PlaceHolder = { id: string; pos: number[]; yaw?: number; q?: number[]; scale?: number | number[] };
+export type PlaceHolder = { id: string; pos: number[]; yaw?: number; q?: number[]; scale?: number | number[]; name?: string };   // name: how a reader calls it (its unique label, else its handle: R 10-17)
 
 const finite3 = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === "number" && Number.isFinite(n));
 const NAME = /^[A-Za-z0-9_][A-Za-z0-9_ .:'-]{0,47}$/;
@@ -156,7 +156,7 @@ export const SEAT_STANDOFF = 0.7, SEAT_HALF = 0.3;
  *  or point: there. */
 export function destinationOf(e: PlaceHolder, p: Place): Destination {
   const s = e.scale && e.scale > 0 ? e.scale : 1;
-  const label = `${e.id}/${p.name}${p.label ? ` (${p.label})` : ""}`;
+  const label = `${e.name ?? e.id}/${p.name}${p.label ? ` (${p.label})` : ""}`;
   if (p.kind === "region") {
     const mid = toWorld(e, [(p.min![0] + p.max![0]) / 2, p.min![1], (p.min![2] + p.max![2]) / 2]);
     // reach covers the whole room (its half-diagonal); `inside` keeps the

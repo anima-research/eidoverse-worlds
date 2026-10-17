@@ -106,7 +106,7 @@ const TOOL_ROWS = [
   { name: "animate", description: "Play a one-off animation — for a specific gesture you are inventing on the spot. `tracks` maps a VRM humanoid bone name to a list of keyframes [{ t: seconds, q: [x,y,z,w] }]; `dur` is the length in seconds. Only list the bones that move. It plays once (or set loop:true), over your locomotion AND over any pose you hold or animation already playing — it takes only the bones it animates; replace:true ends your held pose and other animations first. Relayed to everyone but never logged. Keep it small and sparse — a few bones, a few keyframes. Pass `target` to play it on someone else (they decide).", inputSchema: { type: "object", properties: { dur: { type: "number" }, loop: { type: "boolean" }, replace: { type: "boolean" }, tracks: { type: "object" }, target: { type: "string" } }, required: ["dur", "tracks"] } },
   { name: "set_avatar", description: "Change your body. Pass `avatar` as a roster name (see it with no arguments) or a full vrm path. Takes effect immediately — everyone sees you change; your position and held pose carry over. library {kind: \"avatars\"} shows the roster as a contact sheet.", inputSchema: { type: "object", properties: { avatar: { type: "string" } } } },
   { name: "library", description: "The catalog: models to place and bodies to wear. query searches the model library by keywords and returns library paths for create {model}. kind ('models' | 'avatars') with page is a contact sheet — one grid image with names under each tile, 12 per page: the placeable object library, or the wearable roster (portraits exist once a body has been worn; set_avatar puts one on). preview is one item at full size: an avatar's portrait (roster name) or a model's preview render (library filename or path). Pass one of the three.", inputSchema: { type: "object", properties: { query: { type: "string", description: "search the model library" }, kind: { type: "string", enum: ["avatars", "models"], description: "a contact sheet of this catalog" }, page: { type: "number" }, preview: { type: "string", description: "one item at full size: a roster name or a model path" } } } },
-  { name: "create", description: "Make a new thing: the authority's create, with its exact args. model is a library path (library {query} finds one); components sets any component values in the same act; place {on|beside|hang|against|near|at, …} puts it somewhere in the same step (the authority solves where; see place); at is a point, [x, z] on the ground or [x, y, z] exactly (or the authority's {pos, yaw|q}). With no place, at or transform, it goes on the ground 2 m in front of you. A light is a thing with a light component and no model: create {components: {light: {color: 0xffd9a0, intensity: 16, range: 10, important?: true}}} — with nowhere said it hangs just in front of you at about eye height; color is a hex integer (0xffd9a0 warm, 0x88bbff cool, 0xff5533 red), important: true means it ALWAYS casts (outside the per-client point-light budget; every casting light has real GPU cost — save it for lights that matter); a small glowing sphere marks it; edit {id, set: {\"light.intensity\": 24, \"pos.y\": \"+=1\"}} dims or moves it later and act {verb: \"delete\", args: {id}} removes it. from copies: a blueprint hash (sha256:… — a unique prefix will do; blueprints lists them) places a copy of one of this world's blueprints (2 m in front of you, facing the way you face, or at; the whole tree in one act), and a thing's id duplicates it with everything attached to it, beside it or at a point: create {from: \"crate-1\", at: [4, 2]} ([x, z] keeps its height; or [x, y, z], or {pos: [x, y, z], yaw}). A duplicate stays a sibling of its source, so when the source has a parent the point is in that parent's frame. id, when given, is a non-empty string (omit it and the authority mints one). dry: true asks without writing.", inputSchema: { type: "object", properties: { id: { type: "string" }, model: { type: "string" }, components: { type: "object" }, from: { type: "string", description: "a blueprint hash (sha256:…, a unique prefix will do) or a thing's id to duplicate" }, at: { anyOf: [{ type: "array", items: { type: "number" }, minItems: 2, maxItems: 3 }, { type: "object" }], description: "where it goes: [x, z], [x, y, z] or {pos, yaw|q}" }, place: { type: "object" }, dry: { type: "boolean" } } } },
+  { name: "create", description: "Make a new thing: the authority's create, with its exact args. model is a library path (library {query} finds one); components sets any component values in the same act; place {on|beside|hang|against|near|at, …} puts it somewhere in the same step (the authority solves where; see place); at is a point, [x, z] on the ground or [x, y, z] exactly (or the authority's {pos, yaw|q}). With no place, at or transform, it goes on the ground 2 m in front of you. A light is a thing with a light component and no model: create {components: {light: {color: 0xffd9a0, intensity: 16, range: 10, important?: true}}} — with nowhere said it hangs just in front of you at about eye height; color is a hex integer (0xffd9a0 warm, 0x88bbff cool, 0xff5533 red), important: true means it ALWAYS casts (outside the per-client point-light budget; every casting light has real GPU cost — save it for lights that matter); a small glowing sphere marks it; edit {id, set: {\"light.intensity\": 24, \"pos.y\": \"+=1\"}} dims or moves it later and act {verb: \"delete\", args: {id}} removes it. from copies: a blueprint hash (sha256:… — a unique prefix will do; blueprints lists them) places a copy of one of this world's blueprints (2 m in front of you, facing the way you face, or at; the whole tree in one act), and a thing's id duplicates it with everything attached to it, beside it or at a point: create {from: \"crate-1\", at: [4, 2]} ([x, z] keeps its height; or [x, y, z], or {pos: [x, y, z], yaw}). A duplicate stays a sibling of its source, so when the source has a parent the point is in that parent's frame. Leave id out: the authority mints every id (opaque, never renamed; the reply gives its short handle, which every tool takes, as it takes a thing's label or any unique id prefix of 4+ characters). An id you choose is refused; a placeholder '$name' is accepted (refs to it in the same request resolve; act {verb: 'batch'} makes several things that refer to each other). dry: true asks without writing.", inputSchema: { type: "object", properties: { id: { type: "string" }, model: { type: "string" }, components: { type: "object" }, from: { type: "string", description: "a blueprint hash (sha256:…, a unique prefix will do) or a thing's id to duplicate" }, at: { anyOf: [{ type: "array", items: { type: "number" }, minItems: 2, maxItems: 3 }, { type: "object" }], description: "where it goes: [x, z], [x, y, z] or {pos, yaw|q}" }, place: { type: "object" }, dry: { type: "boolean" } } } },
   { name: "place", description: "Put a thing somewhere by saying where it goes: the authority's place, with its exact args. One of on (a thing's surface), beside (next to a thing on the same support), hang (below a frame or beam; height), against (back to a wall; height, along, side), near (on the floor near a thing), at ([x, z]); then facing (a thing or [x, z]; away: true turns its back), level (which surface of an `on` target), offset ([dx, dz] on the surface), side, gap, height, along, lying (rest it on its largest face), attach (ride what it's placed on). The authority solves the numbers and says where it went. dry: true asks without writing.", inputSchema: { type: "object", properties: { id: { type: "string" }, on: { type: "string" }, beside: { type: "string" }, hang: { type: "string" }, against: { type: "string" }, near: { type: "string" }, at: { type: "array", items: { type: "number" } }, facing: {}, away: { type: "boolean" }, level: { type: "integer" }, offset: { type: "array", items: { type: "number" } }, side: {}, gap: { type: "number" }, height: { type: "number" }, along: { type: "number" }, lying: { type: "boolean" }, attach: { type: "boolean" }, dry: { type: "boolean" } }, required: ["id"] } },
   { name: "act", description: "One request, by verb — the escape hatch for verbs that have no tool of their own; answered by the world's authority itself: {ok: true, …what changed, notes, warnings} or {ok: false, refused: {code, reason, fix}}. A few verbs are answered by YOUR BODY (same reply shape, {ok, text}) before anything reaches the authority: land {to: [x, z]} descends, flares and lands there — landing is an EVENT the world sees, and afterwards your body is walking again (a fly-mode move gets you up); shove {target, strength?} knocks another body over — a physics ragdoll, directed from where YOU stand through them (walk to the right side of someone before pushing; strength 0.5–4 m/s, default 2.2), simulated by THEM on their own body and settled into a held pose everyone sees; whether a body can be knocked over is ITS consent table's call (class shove), the same for people and agents: every body starts Normal (strangers: nobody; friends: everyone) until its owner opens it, and the server also wants you within 3 m — a refusal comes back as an error saying why. MODERATION rides here too, by NAME: kick {who, minutes?, reason?} removes someone now (who is their name or identity u-…; they may come back after minutes, default 10, at most 60 — a kick interrupts, a ban excludes; needs the kick permission and a rank above theirs; an owner can't be kicked); ban {who, days?, reason?, global?} disconnects them and refuses their joins (including spectating) until unban or for days — someone absent is found among the people this world has seen (whois); global: true bans them from every world on this server (WORLD_ADMIN); give a reason, it is shown to them and kept in the moderator's record; unban {who, global?} lifts a ban (or a kick's cooldown); bans {global?} lists what is in force now — bans, removals cooling down, mutes and ghosts (people who hold a moderation power may ask; the whole server's with global: true, operator only). The authority's own verbs: create {id?, model?, components?, place?} | create {from: <blueprint hash, or a thing's id to duplicate it>, at?} | set {id, component, value, merge?, base?} | delete {id, component?} | place {id, on|beside|hang|against|near|at, facing?, …} (the authority solves where it goes) | turn {id, axis, deg, space?, about?} | batch {ops: [{verb, args}…]} | use {id, action?} | say {text} | caption {id, session, n, t0, t1, text, speaker?, title?} (one line of a screen's captions, if its captioners {ids} name you) | undo {act?|label?} (your own acts; refuses what others changed since) | publish {from, name} | update {copy, to} | move {to} | grab {id, hand?, grip?} (a thing with a grabbable component, or physics {kind: 'dynamic'}; look says who may and how it's held) | put {id, pos?} | throw {id, v, pos?} | drop {id, hand?} (its grabbable may send it home, into a socket that accepts it, or leave it where you let go) | use {id} while holding it fires its grabbable.use (args {phase: 'up'}: the release) | punt {id, power?|v?} (kick a thing at your feet) | wait (your tracked body; physics: things with physics {kind: 'dynamic'} fly when @world.physics-engine runs; grabbable makes a thing carryable, physics makes it fall) | look | inspect {id} (who made it, versions) | measure {id} | find {kind: 'model'|'blueprint', query?} | lint {id?} | history {id?, limit?, before?, after?, verbs?} | schema {component?} | help {verb?}. Every write may add dry: true, expect: [{id, component, value?}] (refused 'changed' if any isn't what you started from) and throughLock: true. undo {act: <your undo>} is redo. create/place/edit are tools of their own, and wait for the authority's answer too; delete {id} removes a thing (with its children). whois {name} finds a person's identity (u-…) here, present or not.", inputSchema: { type: "object", properties: { verb: { type: "string" }, args: { type: "object" } }, required: ["verb"] } },
   // Description narrowed to what the implementation actually does (antra
@@ -296,6 +296,18 @@ async function presenceRefusal(ag: ToolAgent, t0: number, ms = 700): Promise<str
   return null;
 }
 const refusedBy = (r: any, what: string) => ({ content: [{ type: "text", text: refusalText(what, r) }], isError: true });
+// R 10-17 (ID HARDENING (5)): every tool argument that names a thing takes its id, its label or a unique id prefix (4+,
+// git-style; look prints each thing's short handle). A label two things share is refused with the candidates — never
+// resolved by picking one. One resolver (WorldAgent.thingRef; destination() asks it too); a name that matches nothing is
+// passed on as typed, for the authority's own not-found words.
+const THING_KEYS = ["id", "on", "beside", "hang", "against", "near", "facing", "from", "copy", "to", "target"];
+function namedThings(ag: any, a: Record<string, any>, keys: string[] = THING_KEYS): { args: Record<string, any> } | { err: any } {
+  const out: Record<string, any> = { ...a };
+  for (const k of keys) { const v = out[k]; if (typeof v !== "string" || !v.trim()) continue;
+    const r = ag.thingRef(v); if ("refusal" in r) return { err: { content: [{ type: "text", text: `${k}: ${r.refusal}` }], isError: true } };
+    if ("id" in r) out[k] = r.id; }
+  return { args: out };
+}
 /** Is this body in the air? (the flight integrator's phases; GROUND/LANDED are feet on the ground) */
 const airborne = (ag: ToolAgent) => !!ag.flight && ag.flight.phase !== "GROUND" && ag.flight.phase !== "LANDED";
 /** A name move {to} takes that destination() doesn't: a place in the older upstream shape (`places:<name>` on @world or
@@ -323,7 +335,7 @@ const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>) => {
   try { r = await (await fetch(`${ag.httpBase}/check?lib=${encodeURIComponent(lib)}${scale !== 1 ? `&scale=${scale}` : ""}`)).json(); }
   catch (err) { return text(`the check could not be reached: ${String((err as Error)?.message ?? err)}`); }
   if (r.error) return text(`couldn't check ${lib}: ${r.error}`);
-  return text(describeCheck(`${e ? `[${e.id}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`, r, e ? ag.placesOn(e).length : 0, e?.id, e?.collide));
+  return text(describeCheck(`${e ? `[${ag.refName(e.id)}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`, r, e ? ag.placesOn(e).length : 0, e?.id, e?.collide));
 };
 
 type ToolHandler = (ag: WorldAgent, a: Record<string, any>, ctx: ToolCtx, name: string)
@@ -455,7 +467,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // (pick by `socket` name or by `action`), or a socket's own id. The authority is asked first (use {id: <socket>,
       // action}): it checks who may, and that nobody sits there. The seat's leaveBy decides how I get off, and fromSeat
       // whether I may move to it without standing.
-      const want = String(a.to ?? "").trim();
+      let want = String(a.to ?? "").trim();
+      if (want && !ag.seatOf(want)) { const t = ag.thingRef(want); if ("refusal" in t) return { content: [{ type: "text", text: `attach: ${t.refusal}` }], isError: true }; if ("id" in t) want = t.id; }
       const mine = ag.mySeat;
       if (!want) return { content: [{ type: "text", text: "attach needs to: the thing to get on (detach gets you off)" }], isError: true };
       const direct = ag.seatOf(want);   // a socket's own id
@@ -620,7 +633,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const floorNote = y != null && Math.abs(ag.pos.y - y) > 0.1 ? `; no floor at ${y.toFixed(2)} m there — you're on the floor at ${ag.pos.y.toFixed(2)} m` : "";
       // which named room you're in now (#239)
       const here = ag.placesAt([ag.pos.x, ag.pos.y, ag.pos.z])[0];
-      const inRoom = here ? `, in ${here.place.label ?? here.place.name} (${here.entity.id}/${here.place.name})` : "";
+      const inRoom = here ? `, in ${here.place.label ?? here.place.name} (${ag.refName(here.entity.id)}/${here.place.name})` : "";
       return text(label
         ? `arrived at ${label}: (${ag.pos.x.toFixed(2)}, ${ag.pos.y.toFixed(2)}, ${ag.pos.z.toFixed(2)})${here ? `, in ${here.place.label ?? here.place.name}` : ""}${note}`
         : `arrived at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}); ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m from requested destination${floorNote}${inRoom}${note}${what}`);
@@ -635,11 +648,13 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (a.y != null && !(typeof a.y === "number" && Number.isFinite(a.y)))
         return { content: [{ type: "text", text: "name_place's y, when given, must be a finite height in metres" }], isError: true };
       const at = given ? { x: a.x as number, z: a.z as number, y: a.y as number | undefined } : undefined;
-      return text(await ag.namePlace(String(a.name ?? ""), { on: a.on, label: a.label, remove: a.remove === true, at }));
+      let on = a.on; if (typeof on === "string" && on.trim()) { const t = ag.thingRef(on); if ("refusal" in t) return { content: [{ type: "text", text: `name_place: ${t.refusal}` }], isError: true }; if ("id" in t) on = t.id; }
+      return text(await ag.namePlace(String(a.name ?? ""), { on, label: a.label, remove: a.remove === true, at }));
   },
   face: async (ag, a, ctx, name) => {
       if (a.target) {
-        const p = ag.people.get(a.target)?.pose?.p ?? ag.entities.get(a.target)?.pos;
+        let tid = String(a.target); if (!ag.people.has(tid)) { const t = ag.thingRef(tid); if ("refusal" in t) return { content: [{ type: "text", text: `face: ${t.refusal}` }], isError: true }; if ("id" in t) tid = t.id; }
+        const p = ag.people.get(tid)?.pose?.p ?? ag.entities.get(tid)?.pos;
         if (!p) return text(`no such target: ${a.target}`);
         ag.face(p[0], p[2]);
       } else if (a.x != null && a.z != null) ag.face(Number(a.x), Number(a.z));
@@ -901,8 +916,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // #216: an id, when given, is a non-empty string; null/omitted means a minted one. The wire doesn't refuse a bad id —
       // it ESCAPES it (x--…), so "" and {} used to mint junk with no word said.
       if (a.id !== undefined && a.id !== null && (typeof a.id !== "string" || !a.id.trim()))
-        return { content: [{ type: "text", text: "create's id, when given, is a non-empty string; omit it (or pass null) and the authority mints one" }], isError: true };
+        return { content: [{ type: "text", text: "create's id, when given, is a placeholder ('$lamp'); omit it (or pass null) and the authority mints one" }], isError: true };
       const args: Record<string, unknown> = { ...a }; if (a.id == null) delete args.id;
+      // from (a thing to duplicate) and place's targets name things: by id, label or a unique id prefix
+      if (typeof a.from === "string" && !/^sha256:/.test(a.from)) { const t = namedThings(ag, { from: a.from }, ["from"]); if ("err" in t) return t.err; args.from = t.args.from; a = { ...a, from: t.args.from }; }
+      if (a.place && typeof a.place === "object" && !Array.isArray(a.place)) { const t = namedThings(ag, a.place as any); if ("err" in t) return t.err; args.place = t.args; }
       const comps = a.components && typeof a.components === "object" ? a.components as any : null;
       const somewhere = a.place != null || a.at != null || comps?.transform != null;
       const ahead = [ag.pos.x + Math.sin(ag.yaw) * 2, ag.pos.z + Math.cos(ag.yaw) * 2];
@@ -948,13 +966,15 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const r: any = await ag.request("create", args);
       if (!r?.ok) return refusedBy(r, "create");
       const made = (r.notes ?? []).find((n: any) => n?.copied)?.as ?? r.refs?.[0]?.id ?? (r.would ?? []).find((o: any) => o?.verb === "create")?.id ?? Object.keys(r.after ?? {})[0];
-      const id = a.id ?? made ?? "?";
+      const id = (typeof a.id === "string" ? r.ids?.[a.id] : null) ?? made ?? "?";
       const pos = r.after?.[id]?.transform?.pos;
-      return text(`${a.dry ? "would create" : "created"} [${id}]${a.model ? ` ${modelWord(a.model)}` : ""}${Array.isArray(pos) ? ` at (${pos.map((v: number) => (+v).toFixed(2)).join(", ")})` : ""}${r.notes?.length ? `\nnotes: ${JSON.stringify(r.notes).slice(0, 600)}` : ""}`);
+      // its handle (the short id look prints: tools take it, or its label), and its full id once (R 10-17)
+      return text(`${a.dry ? "would create" : "created"} [${a.dry ? id : ag.handle(id)}]${a.model ? ` ${modelWord(a.model)}` : ""}${Array.isArray(pos) ? ` at (${pos.map((v: number) => (+v).toFixed(2)).join(", ")})` : ""} — id ${id}${r.notes?.length ? `\nnotes: ${JSON.stringify(r.notes).slice(0, 600)}` : ""}`);
 
   },
   place: async (ag, a, ctx, name) => {
-      // the authority's place, its args as they are: it solves where the thing goes and says so
+      // the authority's place, its args as they are: it solves where the thing goes and says so (things named by id, label or prefix)
+      const t = namedThings(ag, a); if ("err" in t) return t.err; a = t.args;
       const r: any = await ag.request("place", { ...a });
       if (!r?.ok) return refusedBy(r, "place");
       const where = r.notes?.find((n: any) => n.placed)?.placed;
@@ -965,7 +985,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const verb = String(a.verb ?? ""), args = (a.args && typeof a.args === "object" ? a.args : {}) as Record<string, any>;
       if (BODY_VERBS[verb]) return BODY_VERBS[verb](ag, args, ctx, verb);   // answered by this body, or moderation by name
       if (typeof args.who === "string") { const rw = await resolveWho(ag, args.who, verb); if ("err" in rw) return rw.err; args.who = rw.who; }   // warn/mute/ghost/…: a name works here too
-      const r = await ag.request(verb, args);
+      const named = namedThings(ag, args, THING_KEYS.filter((k) => k !== "to" || verb !== "move")); if ("err" in named) return named.err;   // a thing by id, label or prefix (move's to is a point)
+      const r = await ag.request(verb, named.args);
       const reply = r ?? { ok: false };
       return { content: [{ type: "text", text: JSON.stringify(reply, null, 1) }], ...(reply.ok ? {} : { isError: true }) };
   },
@@ -1005,6 +1026,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       return text(`Worlds on this server (${list.length}):\n${lines.join("\n")}${foot ? `\n${foot}` : ""}`);
   },
   measure: async (ag, a, ctx, name) => {
+      { const t = namedThings(ag, a, ["id"]); if ("err" in t) return t.err; a = t.args; }
       if (a.check === true) return CHECK_MODEL(ag, a);
       // 🔴 USE THE AGENT'S OWN httpBase (2026-08-16). This re-derived the HTTP
       // base by string surgery on WORLD_URL — the exact form agent.ts:297
@@ -1030,7 +1052,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!g?.bbox) return text("no geometry available for that (parsing offline, or a light)");
       const L: string[] = [];
       const s = g.bbox.size;
-      L.push(`${a.id ? `[${d.id}] ${d.model ?? ""}` : d.model} — ${s[0]}×${s[1]}×${s[2]}m, ${g.tris} tris${g.sampled ? " (sampled)" : ""}`);
+      L.push(`${a.id ? `[${ag.refName(String(d.id))}] ${d.model ?? ""}` : d.model} — ${s[0]}×${s[1]}×${s[2]}m, ${g.tris} tris${g.sampled ? " (sampled)" : ""}`);
       if (a.id) L.push(`placed at (${d.pos.map((n: number) => n.toFixed(2)).join(", ")}) yaw ${d.yaw.toFixed(2)}${d.scale !== 1 ? ` scale ${d.scale}` : ""}${d.parent ? ` — mounted on ${d.parent.to}` : ""}`);
       if (g.topSurfaces?.length) {
         L.push(`flat zones (local frame, biggest first) — a center is a socket pos verbatim:`);
@@ -1046,6 +1068,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   inspect: async (ag, a) => {
+      { const t = namedThings(ag, a, ["id"]); if ("err" in t) return t.err; a = t.args; }
       const id = String(a.id ?? "");
       if (id === WORLD_ID) {
         // the world entity (design §3): the fold's sky / terrain / grass read as one
@@ -1065,7 +1088,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const schema = inspectSchema(rec, id, { world, box: rec.model ? await ag.modelBox(String(rec.model)) : null });
       if (a.json) return text(JSON.stringify(schema));
       const kids = childrenOf(world, id);
-      const head = `[${id}] ${kindOf(rec) === "model" ? modelWord(rec.model) : kindOf(rec)}${rec?.label ? ` "${rec.label}"` : ""}`
+      const head = `[${ag.handle(id)}] ${kindOf(rec) === "model" ? modelWord(rec.model) : kindOf(rec)}${rec?.label ? ` "${rec.label}"` : ""} — id ${id} (minted, never renamed: its label is its name)`
         + `\nparent: ${rec.parent ? `${ag.seatName(rec.parent.to)} — its Transform below is LOCAL to ${rec.parent.to}` : "none (a root: its Transform is the world's)"}`
         + `\nchildren: ${kids.length ? kids.join(", ") : "none"}`
         + (() => { const h = String((rec as any)?.["copy-of"]?.hash ?? "").replace(/^sha256:/, ""); if (!h) return ""; const b = ag.worldBlueprints()[h]; return `\nblueprint: a copy of \"${b?.name ?? "?"}\" (${h.slice(0, 12)})`; })();
@@ -1077,6 +1100,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       return text(`${head}\n${describeSchema(schema)}${prov}`);
   },
   edit: async (ag, a) => {
+      { const t = namedThings(ag, a, ["id"]); if ("err" in t) return t.err; a = t.args; }
       const id = String(a.id ?? "");
       const rec = id === WORLD_ID ? null : ag.foldRecord(id) as any;
       if (!rec && id !== WORLD_ID) return text(`edit: no placed thing "${id}" here`);
@@ -1113,7 +1137,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const line = (e: any) => {
         const c = recordComponents(e);
         const comps = Object.keys(c).filter((k) => k !== "lock" && k !== "label").map((k) => (k === "motion" || k.startsWith("motion:")) ? `${k}(${c[k]?.type ?? "…"})` : k === "socket" ? `socket(${c.socket?.name ?? ""}: ${socketRole(c)})` : k);
-        return `[${e.id}]${c.label ? ` "${c.label}"` : ""} ${e.kind === "model" ? modelWord(e.model) : e.kind}${comps.length ? ` · ${comps.join(" · ")}` : ""}${c.lock ? " · 🔒" : ""}${c.hidden ? " · hidden" : ""}`;
+        return `[${ag.handle(e.id)}]${c.label ? ` "${c.label}"` : ""} ${e.kind === "model" ? modelWord(e.model) : e.kind}${comps.length ? ` · ${comps.join(" · ")}` : ""}${c.lock ? " · 🔒" : ""}${c.hidden ? " · hidden" : ""}`;
       };
       const hit = (e: any) => !q || [e.id, e.model, e.model ? modelWord(e.model) : "", e?.label ?? "", ...Object.keys(recordComponents(e))].join(" ").toLowerCase().includes(q);
       const L: string[] = [];
@@ -1261,7 +1285,9 @@ export const TOOL_ALIAS_ARGS: Record<string, (a: Record<string, any>) => Record<
   spawn: (a) => {
     if (!a.lib) return { refuse: a.query ? `spawn {query} has no one-step form now: library {query: ${JSON.stringify(a.query)}} finds the model, then create {model}` : "spawn needs lib (a library path); it is create {model} now" };
     const hasXZ = Number.isFinite(a.x) && Number.isFinite(a.z);
-    const id = a.id !== undefined ? { id: a.id } : {};
+    // the old spawn's id was how its author named the thing: the authority mints ids now (R 10-17), so the name becomes its
+    // label, which every tool takes as it takes an id
+    const id = a.id !== undefined ? { components: { label: String(a.id) } } : {};
     // with a yaw and no y: place {at: [x, z], facing}, the authority's seat on what's under x, z (the same as without a yaw),
     // facing a point 1 m along yaw (place takes facing, not yaw; atan2 gives yaw back); it used to be {pos: [x, 0, z], yaw},
     // the origin at y 0, sitting on nothing (review r2 F8)
