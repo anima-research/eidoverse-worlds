@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import type { Client, World } from "./world.ts";
 import { wildcardRoleIn } from "../shared/rightsfold.js";
+import { LIMITS } from "./limits.ts";
 
 export type CaptureCapability = { version: 1; engine: "unreal"; scene: "underwater-prototype" | "world-projection" };
 export function captureCapability(value: unknown): CaptureCapability | undefined {
@@ -48,16 +49,25 @@ export function pngFromDataURL(value: unknown): Buffer | null {
 export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, maxPending = 16, now = Date.now,
   travelMs = 25_000, arrivalTimeoutMs = 40_000, pollMs = 200, recentMs = 5 * 60_000,
   allClients = (() => []) as () => Iterable<Client>,
-  admits = (() => true) as (world: World, c: Client) => boolean } = {}) {
+  admits = (() => true) as (world: World, c: Client) => boolean,
+  log = (line: string) => console.log(line) } = {}) {
   const pending = new Map<string, Pending>();
+  // A failed snapshot used to leave no server-side trace: a frame arriving after the timeout, or from a client that
+  // was not the renderer asked, looked the same as no reply at all. Every failure after dispatch logs one [snap] line.
+  // Ids and error text are client text: bound and escape them, or a peer could print its own "log lines".
+  const quote = (v: unknown, n: number = LIMITS.ID_LEN) => typeof v === "string" ? JSON.stringify(v.slice(0, n)) : "(invalid id)";
+  const who = (c: Client) => quote(c.id);
+  const notRenderer = new WeakSet<Client>();   // told once per connection; the rest drop unlogged
   const last = new WeakMap<Client, number>();
   const travelling = new Map<string, { at: number; arrived: Promise<boolean> }>();   // world name → a summons in flight
   const asked = new Map<string, number>();   // world name → when a snapshot was last asked there (roamer rotation)
   const active = (c: Client, w: World) => c.world === w && w.clients.has(c) && !c.superseded
     && (c.ws.readyState == null || c.ws.readyState === 1);
   function retire(c: Client) {
-    for (const p of pending.values()) if (p.renderer === c || p.target === c)
+    for (const [id, p] of pending) if (p.renderer === c || p.target === c) {
+      log(`[snap] ${id}: ${p.renderer === c ? "renderer" : "followed body"} ${who(c)} disconnected or changed session — 503`);
       p.finish({ ok: false, err: "screenshot participant disconnected or changed session", status: 503 });
+    }
   }
   function configure(c: Client, value: unknown) {
     retire(c);
@@ -77,7 +87,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
       // a roamer can only be a browser renderer: an Unreal-only request is not summoned
       if (engine === "unreal") return fail(`no unreal renderer is currently serving world "${world.name}"`, 503);
       return summon(world, false).then((arrived) => arrived
-        ? dispatch(world, follow, view, engine, frame, target, arrivalTimeoutMs)
+        ? dispatch(world, follow, view, engine, frame, target, Math.max(arrivalTimeoutMs, timeoutMs))
         : { ok: false as const, err: wildcardRoleIn(world.state as any) === "none"
             ? `"${world.name}" is members-only and no roaming renderer holding the renderers' credential is free, so no snapshot can be taken there now`
             : `no renderer is currently serving world "${world.name}", and no roaming renderer could come`, status: 503 });
@@ -142,7 +152,12 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     const id = `snap-${randomUUID()}`;
     last.set(renderer, now());
     return new Promise(resolve => {
-      const timer = setTimeout(() => p.finish({ ok: false, err: "renderer timed out", status: 504 }), waitMs);
+      const timer = setTimeout(() => {
+        // say which snap, whose renderer, and how backed-up its socket was
+        log(`[snap] ${id} follow=${quote(follow)} view=${view}: no frame from ${who(renderer)} in ${waitMs / 1000}s ` +
+          `(renderer ws buffered=${renderer.ws.getBufferedAmount?.() ?? "?"}) — 504`);
+        p.finish({ ok: false, err: "renderer timed out", status: 504 });
+      }, waitMs);
       const p: Pending = { renderer, target, world, gen: renderer.gen,
         engine: renderer.capture?.engine ?? "browser", scene: renderer.capture?.scene ?? "world-fold",
         finish(r) { if (!pending.delete(id)) return; clearTimeout(timer); resolve(r); } };
@@ -151,17 +166,33 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
       // and only when a field is given
       try { renderer.ws.send(JSON.stringify({ type: "snap", id, follow, view, width: 960, height: 540,
         ...(Object.keys(frame).length ? { frame } : {}) })); }
-      catch { p.finish({ ok: false, err: "renderer unavailable", status: 503 }); }
+      catch { log(`[snap] ${id}: send to renderer ${who(renderer)} failed — 503`); p.finish({ ok: false, err: "renderer unavailable", status: 503 }); }
     });
   }
   function receive(c: Client, msg: { id?: unknown; dataUrl?: unknown; error?: unknown }) {
-    if (typeof msg.id !== "string") return;
-    const p = pending.get(msg.id);
-    if (!p || p.renderer !== c || p.gen !== c.gen || !active(c, p.world) || !active(p.target, p.world) || !(c.renderer || c.capture)) return;
+    // Renderer first: any joined client can send snap-result, and a log line per message would let it write the
+    // server log at the message rate. A non-renderer is told about once per connection; the rest drop.
+    if (!(c.renderer || c.capture)) {
+      if (!notRenderer.has(c)) {
+        notRenderer.add(c);
+        log(`[snap] ${quote(msg.id)}: reply from ${who(c)}, which is not a renderer — dropped (further replies from this connection drop unlogged)`);
+      }
+      return;
+    }
+    const p = typeof msg.id === "string" ? pending.get(msg.id) : undefined;
+    if (!p) return log(`[snap] ${quote(msg.id)}: reply from ${who(c)} for an expired or unknown snap — dropped`);
+    const stale = p.renderer !== c ? `it was sent to ${who(p.renderer)}` : p.gen !== c.gen ? "its session changed"
+      : !active(c, p.world) ? `it is no longer in "${p.world.name}"` : !active(p.target, p.world) ? "the followed body left" : "";
+    if (stale) return log(`[snap] ${quote(msg.id)}: reply from ${who(c)} dropped — ${stale}`);
     // a renderer's own refusal (still loading the world, the body not in its scene) reaches the asker in its words,
     // as a retryable 503 — never a generic "invalid image"
-    if (typeof msg.error === "string" && msg.error.trim()) return p.finish({ ok: false, err: msg.error.trim().slice(0, 300), status: 503 });
+    if (typeof msg.error === "string" && msg.error.trim()) {
+      const err = msg.error.trim().slice(0, 300);
+      log(`[snap] ${msg.id}: renderer ${who(c)} replied without an image: ${quote(err, 200)} — 503`);
+      return p.finish({ ok: false, err, status: 503 });
+    }
     const png = pngFromDataURL(msg.dataUrl);
+    if (!png) log(`[snap] ${msg.id}: renderer ${who(c)} sent no valid PNG (${typeof msg.dataUrl === "string" ? `${msg.dataUrl.length} chars` : typeof msg.dataUrl}) — 502`);
     p.finish(png ? { ok: true, png, engine: p.engine, scene: p.scene }
       : { ok: false, err: "renderer could not supply a valid image", status: 502 });
   }
@@ -176,6 +207,13 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
    *  server state itself — its unit test stays independent of a machine's ban list and directories. Until wired,
    *  every world admits (the broker's behaviour before world access existed). */
   function setAdmission(fn: (world: World, c: Client) => boolean) { admits = fn; }
-  return { request, receive, retire, configure, setClients, setAdmission, prewarm, get pendingCount() { return pending.size; } };
+  /** The frame window (config.ts SNAP_TIMEOUT_SEC), injected by the server like the admission check, so this module
+   *  never loads server config itself. */
+  function setFrameTimeout(ms: number) { timeoutMs = ms; }
+  return { request, receive, retire, configure, setClients, setAdmission, setFrameTimeout, prewarm,
+    get pendingCount() { return pending.size; },
+    /** The longest a request can wait: a roamer's journey, then its first frame. GET /snap sizes its own HTTP
+     *  timeout from this. */
+    get maxWaitMs() { return travelMs + Math.max(arrivalTimeoutMs, timeoutMs); } };
 }
 export const snapshots = createSnapshotBroker();

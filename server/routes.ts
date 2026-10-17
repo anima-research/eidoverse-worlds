@@ -72,6 +72,8 @@ import { entryOf, wildcardRoleIn } from "../shared/rightsfold.js";
 export type Srv = {
   upgrade(req: Request, opts?: { data?: unknown }): boolean;
   requestIP(req: Request): { address: string } | null;
+  /** per-request idle timeout in seconds (overrides Bun.serve's idleTimeout) */
+  timeout?(req: Request, seconds: number): void;
 };
 
 // ---- snapshots: the world serves views of itself ---------------------------
@@ -667,7 +669,13 @@ const ROUTES: Route[] = [
   },
   {
     match: (u) => u.pathname === "/snap",
-    handler: async ({ req, url }) => {
+    handler: async ({ req, url, srv }) => {
+      // /snap sends nothing while it waits for the frame, so it is an idle
+      // connection to Bun: give this request its own timeout a little past the
+      // broker's longest wait (a roamer's journey plus its frame), rather than
+      // leaning on the server-wide idleTimeout — Bun's default is 10s, shorter
+      // than the default 12s window. 255s is Bun's ceiling.
+      srv.timeout?.(req, Math.min(255, Math.ceil(snapshots.maxWaitMs / 1000) + 5));
       const w = worlds.get(url.searchParams.get("world") ?? "commons");
       const follow = url.searchParams.get("follow") ?? "";
       if (!w || !visibleTo(w, httpCaller(req))) return new Response("unknown world", { status: 404 });
