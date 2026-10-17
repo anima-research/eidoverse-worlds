@@ -1653,7 +1653,7 @@
   },
   "on": "world"
  },
- "trusted": {
+ "trusted-components": {
   "status": "trial",
   "fields": {
    "components": "array"
