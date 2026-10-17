@@ -10,7 +10,7 @@
 //       wasn't boarded within reach never re-anchors the track; the first step off clears the seat (L5)
 //   H   a follow-up restore steps over the follow-up delete it reverses (holes M2): an undo after a delete that dropped a
 //       handler gives it back to its author (and every authorship reader agrees); a key re-created by someone else is a new life
-//   A   the auditor's stand-ins are valid identities of two kinds (holes M3, L3); an arrival mismatch is `rerun-anon`, never `rerun`
+//   A   the auditor's stand-ins are valid identities of two shapes (holes M3, L3); an arrival mismatch is `rerun-anon`, never `rerun`
 //   F   the authority's consequences are follow-ups (scars M3): resettle is the system's act; a delete's set-down passes no lock
 //   U   unseated: sent when a socket goes or is switched off (holes L6); the browser and agent stand at its `at` (claims O1);
 //       a follow-up on the seat isn't an edit of the ride (claims O3)
@@ -39,7 +39,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["sponsorAt: a restore doesn't step over its delete", "shared/protocol/scriptaudit.js", "{ restored = false; continue; }   // r10 M2", "{ restored = false; }   // r10 M2", ["H2"]],
   ["the stand tile held does nothing", "client/lib/localbody.js", "if ((keys.has('KeyX') || escapeTile) && !mayLeave(body, 'menu'))", "if (keys.has('KeyX') && !mayLeave(body, 'menu'))", ["E1"]],
   ["creatorOf merges a new life", "shared/protocol/authority/rights.js", "if (o.verb === \"set\" && o.comp === comp) restored = false;", "", ["H3"]],
-  ["the second stand-in is person-shaped", "shared/protocol/scriptaudit.js", "export const ARRIVAL_STAND_IN_2 = \"zq-stand-in\";", "export const ARRIVAL_STAND_IN_2 = \"u-\" + \"b\".repeat(20);", ["A1", "A2"]],
+  ["the second stand-in is minted-shaped", "shared/protocol/scriptaudit.js", "export const ARRIVAL_STAND_IN_2 = \"zq-stand-in\";", "export const ARRIVAL_STAND_IN_2 = \"u-\" + \"b\".repeat(20);", ["A1", "A2"]],
   ["an arrival mismatch is a forgery", "shared/protocol/scriptaudit.js", "if (anonWho) { flags.push({ seq, check: \"rerun-anon\"", "if (false) { flags.push({ seq, check: \"rerun-anon\"", ["A3"]],
   ["resettle under the asker", "shared/protocol/authority/followups.js", "let after = after0; const actor = \"system\";", "let after = after0; const actor = asker;", ["F1"]],
   ["the set-down is the deleter's write", "shared/protocol/authority/writes.js", "ops.push(followUp(setOp(id, \"transform\", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] })));", "ops.push(setOp(id, \"transform\", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] }));", ["F2"]],
@@ -217,7 +217,7 @@ const cases: Case[] = [
           return { creator: RT.creatorOf(W2, "l", "reactions")?.by ?? null, at: AU.creatorAt(W2.entries, "l", "reactions", W2.entries.length - 1)?.rights ?? null }; })() }; },
     good: (o) => o.nw === "ok" && o.creator === "wes" && o.at === "wes" && o.hand.creator === "wes" && o.hand.at === "wes" },
   // ---------------- A: the auditor's stand-ins ----------------
-  { id: "A1", what: "(holes M3, p4) a door's enter script greets people (u-…) and notes agents: an agent arrives (honest log) — no `rerun` flag (verified or listed as not re-runnable); a person arriving verifies clean", run() {
+  { id: "A1", what: "(holes M3, p4) a door's enter script counts minted ids (u-…) and notes other shapes: an identity of another shape arrives (honest log) — no `rerun` flag (verified or listed as not re-runnable); a minted id arriving verifies clean", run() {
       const out: any = {};
       for (const who of ["u-vicvicvicvicvicvicvi", "hesperus"]) { const s = session(); s.call("olive", "create-world", { title: s.name });
         s.call("olive", "create", { id: "door", model: "crate", place: { at: [0, 0] } });
@@ -228,7 +228,7 @@ const cases: Case[] = [
         out[who] = { ins: show(ins), ran: ran?.[0]?.status, flags: A.flags.map((f: any) => f.check), skipped: A.skipped.length, reran: A.reran }; }
       return out; },
     good: (o) => o.hesperus.ins === "ok" && o.hesperus.ran === "ran" && o.hesperus.flags.length === 0 && o.hesperus.skipped + o.hesperus.reran === 1 && o["u-vicvicvicvicvicvicvi"].flags.length === 0 && o["u-vicvicvicvicvicvicvi"].reran === 1 },
-  { id: "A2", what: "(holes L3) both stand-ins are valid identities (§3.1), nobody's, of different kinds: one person-shaped (u- and 20 lowercase), one agent-shaped (no u-)", run() {
+  { id: "A2", what: "(holes L3) both stand-ins are valid identities (§3.1), nobody's, of different shapes: one minted-shaped (u- and 20 lowercase), one of another valid shape (no u-)", run() {
       return { a: AU.ARRIVAL_STAND_IN, b: AU.ARRIVAL_STAND_IN_2, va: F.isIdentity(AU.ARRIVAL_STAND_IN ?? ""), vb: F.isIdentity(AU.ARRIVAL_STAND_IN_2 ?? "") }; },
     good: (o) => o.va && o.vb && /^u-[a-z0-9]{20}$/.test(o.a) && !/^u-/.test(o.b) && o.b === o.b.toLowerCase() },
   { id: "A3", what: "(holes M3) an enter counter (no identity in its result), its change entry rewritten: flagged `rerun-anon` (a mismatch the re-run can't attribute), never plain `rerun`", run(s) {
@@ -324,10 +324,10 @@ cases.push(
         b2: /\*\*B2\. One predicate, in `admit`, on every op\.\*\*/.test(b) && /follow-ups and system\s+writes/.test(b) && /\*\*at read time\*\*/.test(b) && !/top of `lacks\(\)`/.test(b),
         b5: !/when the grantee leaves the\s+world unless/.test(b) && /It does \*\*not\*\* end when the\s+grantee leaves/.test(b), reserved: /the request\s+`arrive`/.test(b) }; },
     good: (o) => o.b6 && o.b2 && o.b5 && o.reserved },
-  { id: "X4", what: "(claims R4–R7, R9) §8: unlogged grabs carry no identity (releases do), two stand-ins of two kinds, rerun-anon; §5: unseated {seat, by, why, at}, a sit within reach, the stand tile held; COMPONENT-LADDER @12 and later; SCRIPTS and AGENTS say the escape, the ride as when you sat, and where an agent stands", run() {
+  { id: "X4", what: "(claims R4–R7, R9) §8: unlogged grabs carry no identity (releases do), two stand-ins of two shapes, rerun-anon; §5: unseated {seat, by, why, at}, a sit within reach, the stand tile held; COMPONENT-LADDER @12 and later; SCRIPTS and AGENTS say the escape, the ride as when you sat, and where an agent stands", run() {
       const md = PROTO(); const s8 = section(md, /\n## 8\. /); const s5 = section(md, /\n## 5\. /);
       const lad = readText("docs/COMPONENT-LADDER.md"), sc = readText("docs/SCRIPTS.md"), ag = readText("AGENTS.md");
-      return { s8: /a grab that isn't itself logged, records no trigger actor/.test(s8) && /a release\s+always has its own act/.test(s8) && /second stand-in of another kind/.test(s8) && /flagged `rerun-anon`/.test(s8),
+      return { s8: /a grab that isn't itself logged, records no trigger actor/.test(s8) && /a release\s+always has its own act/.test(s8) && /second stand-in of another shape/.test(s8) && /flagged `rerun-anon`/.test(s8),
         s5: /`unseated \{seat, by,\s+why, at\}`/.test(s5) && /\(`out-of-reach`\)/.test(s5) && /the stand tile pressed\s+and held/.test(s5),
         lad: /translate-v1@12 and later/.test(lad), sc: /pressing and holding the stand tile/.test(sc) && /`rerun-anon`/.test(sc),
         ag: /`detach \{escape\?\}`/.test(ag) && /as it was when they sat, carries its riders/.test(ag) && /where you were let go; you stand\s+there/.test(ag) }; },

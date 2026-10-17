@@ -291,7 +291,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // every listening agent. So the sentences ride presence — relayed,
     // never persisted, same doctrine as typing — and the complete
     // utterance lands in the log as ONE say when the voice finishes.
-    // Agents perceive a paragraph; humans watch it being spoken.
+    // A reader of the log gets one paragraph; a listener watches it spoken.
+    // Any participant's voice paces this way (a person's TTS as well as a program's).
     // Presence lanes are the voice surface's pacing channel (#57, review
     // finding 8): the bound voice leg owns the audio clock, so it — not
     // the primary, which has no playback timing — paces captions and

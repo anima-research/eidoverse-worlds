@@ -119,10 +119,11 @@ Events (`e`): every event has `on`.
 - `say`: `by`, `text`, `to?`, `seq`;
 - `enter` / `leave`: `by`, live only: the act records no identity for an arrival or a departure (no `trigger` actor, no
   `event.by`), so the log never holds who came and went because a script listened. An auditor re-runs it with a
-  person-shaped stand-in and, if the result differs from the log, again with an agent-shaped one (both valid identities,
-  nobody's): when the two disagree it is listed `skipped`; when they agree the mismatch is flagged `rerun-anon` (a
-  difference to look at, never `rerun`, since two stand-ins can't prove the result is the same for everyone). A script
-  that greets people and not agents is fine: its two re-runs differ, and it is listed, not accused;
+  minted-shaped stand-in (`u-` and 20 lowercase) and, if the result differs from the log, again with one of another valid
+  shape (both valid identities, nobody's; an id never says what holds it, PROTOCOL §6a): when the two disagree it is
+  listed `skipped`; when they agree the mismatch is flagged `rerun-anon` (a difference to look at, never `rerun`, since
+  two stand-ins can't prove the result is the same for everyone). A script that treats ids of one shape differently from
+  another is fine: its two re-runs differ, and it is listed, not accused;
 - `changed:<comp>`: `id`, `comp`, `by` (whose request caused it), `seq` (the change entry). It fires for a change to that
   component on any id in the script's scope, by anyone but the script itself;
 - `tick`: nothing more. `wake`: `slept` (seconds asleep).

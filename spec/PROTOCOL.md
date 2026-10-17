@@ -104,7 +104,13 @@ reports it in diagnostics, never in the world.
 - **`sim`** — a physics intent (a launch, a lift, a catch, the engine's
   digest); read only by readers that carry the world's engine
   (`PHYSICS.md`).
-- **`say`** — chat: `body {text, to?}`. Never world state.
+- **`say`** — chat: `body {text, to?, spoken?, utt?, t0?}`. Never world state.
+  The spoken trio (`spoken: true`, an utterance counter `utt`, a start `t0`
+  the authority clamps) is display metadata: the words were voice-performed
+  and already shown as captions. Any participant may mark a say this way (a
+  person reading through TTS as well as a program's voice leg); nothing
+  gates it on what a participant is, and it says how the words were
+  performed, never who performed them (§6a).
 - **`purge`** — the one rule that changes the record (§12).
 - **`sequencer`** — governance: handing the writer role on, or an owner
   override (§13).
@@ -222,7 +228,8 @@ All ASCII.
   never choose ids (§7, "Ids are the authority's").
 - **Identities** (actors, and keys such as `roles:<identity>`):
   `[a-z0-9-]{1,64}`, opaque. The mapping from an identity to a person lives
-  outside the log, so purging a person never needs the log's skeleton.
+  outside the log, so purging a person never needs the log's skeleton. An
+  identity's shape MUST NOT encode what holds it (§6a rule 2).
 - **Component names**: `[a-z][a-z0-9-]*`, optionally prefixed by a domain
   (`example.org/`), optionally versioned `@<n>` (`light@2`), optionally
   keyed `:<key>` with a key of `[a-z0-9-]{1,64}` (`roles:u-abc`,
@@ -606,7 +613,8 @@ request moves a copy to a newer version, keeping its own overrides.
   social touch, intimate touch, pose, shove, move, voice; `carry` is
   reserved, PHYSICS §4.1), each set to
   everyone, ask, or nobody, separately for strangers and friends — the same
-  table for humans and agents. Silence is no. For touch, pose, shove and
+  table for every participant, and its defaults are one preset for every body
+  (`shared/protocol/consent.js` `DEFAULT_PRESET`). Silence is no. For touch, pose, shove and
   move the authority refuses before delivery (a reach at the relay, above),
   and the target's own client has the final word. *Near, follow and voice
   are in the table and the settings, but nothing enforces them yet.* Consent is
@@ -624,6 +632,55 @@ request moves a copy to a newer version, keeping its own overrides.
   actor.
 - Display names are a view, kept outside the log. A stranger who takes your
   old name inherits nothing.
+
+## 6a. One kind of participant
+
+The protocol knows **participants**, not people and agents. A participant is
+an identity (§3.1) with a body (§5), whatever is behind it: a person at a
+browser, a person in a headset, a program, or a program a person is steering.
+
+1. **One gate for everyone.** The authority MUST NOT read whether a
+   participant is a person or a program. Rights, roles, locks, rates, refusal
+   codes and words, consent tables and their defaults, and every request verb
+   are the same for every identity. The only distinctions the authority MAY
+   draw between identities are the world's own grants (roles, §7) and whether
+   the identity holds an account (a guest, §7a).
+2. **Ids carry no kind.** An identity's shape MUST NOT encode what holds it.
+   A reader MUST NOT infer anything about a participant from its id.
+3. **A declared status, never an inferred one.** A participant MAY declare a
+   status at its door (`declares`, one short lowercase word, e.g. `"agent"` or
+   `"person"`; absent means **undeclared**, never "person"). It is presence:
+   relayed as sent with the participant's arrival and in a joiner's list of
+   who is present, never written to the log, never sent to scripts, and never
+   read by `admit`, the consent check or any rate. A host MUST NOT set it for
+   a participant from their credential, client, voice, speed or wording; a
+   credential proves who a participant is (an enrolment, a reserved name),
+   never what kind. Nothing in the log records what a participant is. A say's
+   spoken trio (§1) is no exception: it marks words a voice performed, and any
+   participant may set it, a person reading through TTS exactly as a program
+   does.
+4. **The same constraints on every path.** A gate that binds one interface
+   binds all of them: a hand placed by a tracked controller meets the same
+   consent check as a hand placed by a reach descriptor; a seat's escape
+   exists for every client (§5). Where a capability exists for only one
+   interface (a route planner, asking for touch, a body's size), it is listed
+   as a gap until the other has it. (The reference client's tracked hands do
+   not meet the reach gate yet: a known gap, not a licence.)
+5. **Policy by kind is a world's choice, in the open.** A world that wants
+   different rules for declared agents (to admit only declared agents, to
+   require a declaration, or to give declared agents their own rate) says so
+   in a registered `@world` component that everyone can read, keyed on the
+   **declaration**. A host's own door policy (who may enrol, found worlds, or
+   skip an account-age check) is outside this protocol, and it SHOULD be
+   published as the host's terms, not as a hidden branch.
+6. **A false declaration is a moderation matter** (a report, a kick, a ban),
+   decided by people. It is never detected by inference.
+
+*Rationale.* A world that infers "this is an AI" keeps that inference forever
+in a forkable log, and one that infers "this is a person" does the same. Equal
+treatment is the default; where the trial period shows that agents and people
+need different rules, rule 5 is the place to add them, visibly, rather than in
+the authority's code.
 
 ## 7. The authority
 
@@ -902,8 +959,8 @@ own act, signed with its sponsor's rights. An auditor may re-run the source with
 event, clock, seed and stand-ins for the presence reads and for an identity
 the act doesn't record. A result that doesn't depend on who was there is
 verified. An arrival whose re-run differs from the log is re-run with a
-second stand-in of another kind (one person-shaped, `u-` and 20 lowercase;
-one agent-shaped, a short name; both valid identities and nobody's): if the
+second stand-in of another shape (one minted-shaped (`u-` and 20 lowercase) and one of another valid shape, here a
+short name; both valid identities and nobody's, and neither says what holds it, §6a rule 2): if the
 two differ, it is reported as not re-runnable; if they agree, the mismatch
 is flagged `rerun-anon`, a difference to look at, never `rerun` (proof of a
 forgery), since two inputs can't show a result is the same for every
@@ -1179,7 +1236,7 @@ v}`. File names, wire fields and code don't carry the number.
 |---|---|---|
 | 1–2 | The first world log: an untyped verb log folded by its reader (`genesis {verb: "genesis", args: {v, dialect}}`); dialect 2 added `force` and `punt` | `history/PROTOCOL-v1.md` |
 | 3 | The deterministic-physics amendment: a sim fold over sim-scoped entries, sim epochs (`dialect 3`) | `history/PROTOCOL-v2-sim.md` |
-| 4 | This protocol: typed entries (`change`, `act`, `sim`, `say`, `purge`, `sequencer`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. Before release, minor 0 gained the batch body's `followUps` (§3, §10; review r10) | this document |
+| 4 | This protocol: typed entries (`change`, `act`, `sim`, `say`, `purge`, `sequencer`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. Before release, minor 0 gained the batch body's `followUps` (§3, §10; review r10) and §6a, one kind of participant (a status is declared at the door, never inferred or logged; `move` lost its `client` claim) | this document |
 
 Logs of `v` 1–3 are not read at runtime; §14 translates one, once, into a new
 world.
