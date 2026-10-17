@@ -184,6 +184,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // that it must not ride the 15Hz pose stream, so it is its own
     // message sent once.
     if (!c.world || c.spectator) return;
+    // {stop: true} (R 10-17 16:26): every animation this body is playing fades out, back to what it holds beneath
+    if (msg.stop === true) { c.world.broadcast({ type: "anim", id: c.id, stop: true }, c); return; }
     if (typeof msg.dur !== "number" || typeof msg.tracks !== "object") return;
     // one guard against a pathological payload — poses are tiny, so
     // anything approaching a real asset is a mistake or an attack

@@ -24,6 +24,8 @@
 //   B   body-mode: its own presence field (stand | sit | lie chosen; swim | fly | fall reported); a description that grants nothing
 //   M   ONE agent tool anim (R 10-17 15:31/15:32): by name or live; mode once | loop | hold (at); each anim's own default;
 //       {playing, mode}; stopped {name, why} when a loop or hold ends; pose/animate/emote/posture are hidden aliases
+//   K   anim {stop} (R 10-17 16:26/16:27): true stops every layer and rests in the CURRENT body-mode's own anim (never the
+//       bind pose; the body-mode unchanged); a name stops that layer; "live" stops the ad-libbed ones, a reserved name
 //   X   the version history records it
 // @ts-nocheck
 import fs from "node:fs";
@@ -84,9 +86,9 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the lite row is lite-emotes", "client/lib/emotebar_lite.js", "row.className = 'lite-actions';", "row.className = 'lite-emotes';", ["U1"]],
   ["dance plays once", "mcpl/tools.ts", "  dance: \"loop\", sit: \"loop\",", "  dance: \"once\", sit: \"loop\",", ["M1"]],
   ["the call's mode is ignored", "mcpl/tools.ts", "const mode = (mode0 ?? ANIM_MODES[n] ?? \"once\") as", "const mode = (ANIM_MODES[n] ?? mode0 ?? \"once\") as", ["M2"]],
-  ["hold doesn't freeze", "mcpl/agent.ts", "this.animHold = a.kind === \"clip\" && a.mode === \"hold\" ? holdAt : null;", "this.animHold = null;", ["M2"]],
+  ["hold doesn't freeze", "mcpl/agent.ts", "if (a.kind === \"clip\") this.animHold = a.mode === \"hold\" ? holdAt : null;", "if (a.kind === \"clip\") this.animHold = null;", ["M2"]],
   ["the reply hides the mode", "mcpl/tools.ts", "JSON.stringify({ playing: name, mode, ...(from", "JSON.stringify({ playing: name, ...(from", ["M3"]],
-  ["no stopped when replaced", "mcpl/agent.ts", "    if (this.anim) this.animEnded(\"replaced\");", "", ["M4", "L1"]],
+  ["no stopped when replaced", "mcpl/agent.ts", "    this.animEnded(\"replaced\", (b) => b.kind === a.kind);", "", ["M4", "L1"]],
   ["a move isn't noticed", "mcpl/agent.ts", "    this.watchAnim();\n", "", ["M4"]],
   ["stopped isn't said", "mcpl/agent.ts", "this.inbox.push({ ts, kind: \"act\", who: this.name, text }); this.onEvent?.({ ts, kind: \"act\", who: this.name, text });", "", ["M4"]],
   ["posture isn't an alias", "mcpl/tools.ts", "  pose: \"anim\", animate: \"anim\", emote: \"anim\", posture: \"anim\" };", "  pose: \"anim\", animate: \"anim\", emote: \"anim\" };", ["M5"]],
@@ -95,7 +97,20 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the result hides where it came from", "mcpl/tools.ts", "...(from ? { from } : {})", "", ["L2"]],
   ["name and joints guessed", "mcpl/tools.ts", "  if (a.name != null && (a.joints != null || a.tracks != null)) return", "  if (false) return", ["L3"]],
   ["no body-mode on the wire", "mcpl/agent.ts", "clip: this.clip, bodyMode: this.bodyModeNow(), clipTime: this.animHold ?? this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: this.animHold != null ? 0 : 1,\n        ...wingFoldPresence(this.wingsFolded),\n        // a physics bag", "clip: this.clip, clipTime: this.animHold ?? this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: this.animHold != null ? 0 : 1,\n        ...wingFoldPresence(this.wingsFolded),\n        // a physics bag", ["B1"]],
-  ["an anim's end keeps its body-mode", "mcpl/agent.ts", "if (a.bodyMode) this.bodyMode = \"stand\";", "", ["B1"]],
+  ["an anim's end keeps its body-mode", "mcpl/agent.ts", "if (a.bodyMode && why !== \"stopped\") this.bodyMode = \"stand\";", "", ["B1"]],
+  ["stop drops the body-mode", "mcpl/agent.ts", "if (a.bodyMode && why !== \"stopped\") this.bodyMode = \"stand\";", "if (a.bodyMode) this.bodyMode = \"stand\";", ["K1", "B1"]],
+  ["stop rests in idle whatever the mode", "mcpl/agent.ts", "const rest = this.restClip(this.bodyModeNow());", "const rest = \"idle\";", ["K1", "K2"]],
+  ["stop on a station stands the occupant up", "mcpl/agent.ts", "const rest = this.restClip(this.bodyModeNow()); if (rest) { this.stop(); this.clip = rest; }", "const rest = this.restClip(this.bodyModeNow()); if (rest) { this.stop(); this.clip = rest; } else this.setPosture(\"idle\");", ["K1"]],
+  ["a pose struck over a sit replaces it", "mcpl/agent.ts", "this.animEnded(\"replaced\", (b) => b.kind === a.kind);", "this.animEnded(\"replaced\");", ["K2", "K3", "K4"]],
+  ["stop by name stops every layer", "mcpl/agent.ts", "const hit = this.anims.filter((a) => which == null || a.name === which);", "const hit = this.anims.filter((a) => true);", ["K3", "K4"]],
+  ["the relay isn't told to fade the tracks", "mcpl/agent.ts", "this.ws.send(JSON.stringify({ type: \"anim\", stop: true }));", "void 0;", ["K2", "K4"]],
+  ["a tracks loop is a held frame (ends at the next tick)", "mcpl/tools.ts", "ag.animBegan({ name: \"live\", mode: \"loop\", kind: \"track\" });", "ag.animBegan({ name: \"live\", mode: \"loop\", kind: \"live\" });", ["K2", "K4"]],
+  ["live may be a name", "mcpl/tools.ts", "    if (isReservedAnimName(n)) return", "    if (false) return", ["K4"]],
+  ["a clip def may be called live", "shared/animdefs.js", "  if (isReservedAnimName(name)) errs.push(", "  if (false) errs.push(", ["K4"]],
+  ["an object may hold live", "shared/grab.js", "  if (isReservedAnimName(v.anim)) return bad(", "  if (false) return bad(", ["K4"]],
+  ["a station may play live", "shared/sockbody.js", "  if (isReservedAnimName(v.anim)) return bad(", "  if (false) return bad(", ["K4"]],
+  ["the tool forgets the rest", "mcpl/tools.ts", " — never the bind pose; the body-mode is unchanged", "", ["K5"]],
+  ["the spec has no rest rule", "spec/PROTOCOL.md", "CURRENT body-mode's own anim (`stand`: idle; `sit`: its sit loop; `lie`;\n    `swim`: tread; `fly`: its hover), never the bind pose, and its", "CURRENT body-mode's own anim, and its", ["K5"]],
   ["sit asks for no body-mode", "mcpl/tools.ts", "const ANIM_BODY: Record<string, \"stand\" | \"sit\" | \"lie\"> = { sit: \"sit\", sitchair: \"sit\", lie: \"lie\", stand: \"stand\" };", "const ANIM_BODY: Record<string, \"stand\" | \"sit\" | \"lie\"> = {};", ["B1"]],
   ["an old sample's clip isn't read", "shared/bodymode.js", "return isBodyMode(sample.bodyMode) ? sample.bodyMode : (typeof sample.clip === 'string' ? modeFromClip(sample.clip) : null);", "return isBodyMode(sample.bodyMode) ? sample.bodyMode : null;", ["B2"]],
   ["the fence takes any body-mode", "server/posecheck.ts", "if (\"bodyMode\" in p && !isBodyMode(p.bodyMode)) delete p.bodyMode;", "", ["B2"]],
@@ -492,12 +507,13 @@ const cases: Case[] = [
       const a = await call("anim", { name: "sit", joints: { head: [0, 0, 0, 1] } }), b = await call("anim", { name: "wave", tracks: { head: [{ t: 0, q: [0, 0, 0, 1] }] }, dur: 1 });
       return { a: a?.isError === true && /a name OR live keys/.test(a.content[0].text), b: b?.isError === true && /a name OR live keys/.test(b.content[0].text), clip: ag.clip, anim: ag.anim }; },
     good: (o) => o.a && o.b && o.clip !== "sit" && o.anim === null },
-  { id: "B1", what: "(R 15:34 D) body-mode is its own presence field (bodyMode), apart from the clip: anim sit publishes sit; its end (anim stop) and a walk return to stand", async run() {
+  { id: "B1", what: "(R 15:34 D, 16:26) body-mode is its own presence field (bodyMode), apart from the clip: anim sit publishes sit; anim {stop} leaves it sit, a declared stand or a walk returns to stand", async run() {
       const { ag, call, sent } = await animAgent(); const pk = () => { ag.joined = true; ag.tick(); ag.joined = false; return sent.filter((m: any) => m.type === "pose").at(-1)?.pose ?? null; };
       const s0 = pk()?.bodyMode; await call("anim", { name: "sitchair" }); const s1 = pk(); await call("anim", { stop: true }); const s2 = pk()?.bodyMode;
+      await call("anim", { bodyMode: "stand" }); const s2b = pk()?.bodyMode;
       await call("anim", { name: "lie" }); const s3 = pk()?.bodyMode; ag.clip = "walk"; ag.tick(); const s4 = pk()?.bodyMode;
-      return { s0, s1: s1?.bodyMode, clip1: s1?.clip, s2, s3, s4 }; },
-    good: (o) => o.s0 === "stand" && o.s1 === "sit" && o.clip1 === "sitchair" && o.s2 === "stand" && o.s3 === "lie" && o.s4 === "stand" },
+      return { s0, s1: s1?.bodyMode, clip1: s1?.clip, s2, s2b, s3, s4 }; },
+    good: (o) => o.s0 === "stand" && o.s1 === "sit" && o.clip1 === "sitchair" && o.s2 === "sit" && o.s2b === "stand" && o.s3 === "lie" && o.s4 === "stand" },
   { id: "B2", what: "…a sample written before (no bodyMode) is read from its clip (sitchair → sit, lie → lie, tread → swim); the server's fence keeps only the grammar", async run() {
       const BM = await import(TREE + "shared/bodymode.js"); const PC = await import(TREE + "server/posecheck.ts");
       const ok1 = PC.sanePose({ p: [0, 0, 0], bodyMode: "lie" }), bad = PC.sanePose({ p: [0, 0, 0], bodyMode: "infected" });
@@ -512,10 +528,57 @@ const cases: Case[] = [
       const md = readText("spec/PROTOCOL.md");
       return { r, declared: pk?.bodyMode ?? null, clip: pk?.clip ?? null, t: t.slice(0, 120), flying: !!ag.flight, spec: /self-declared\s+description/.test(md) && /MUST\s+NOT\s+grant or relax/.test(md.slice(md.indexOf("pose.bodyMode"), md.indexOf("pose.bodyMode") + 1600)) }; },
     good: (o) => JSON.stringify(o.r) === '["fly","swim","fall","lie"]' && o.declared === "fly" && o.clip === "walk" && !o.flying && /cannot fly|not granted|no wings/.test(o.t) && o.spec },
+  // ---------------- K: anim {stop} (R 10-17 16:26/16:27) ----------------
+  { id: "K1", what: "(R 16:26) anim {stop: true} rests in the CURRENT body-mode's own anim and leaves the body-mode as it was: sit → sit, sitchair → sitchair (sit), lie → lie, dance → idle (stand), dance with swim declared → tread; never the bind pose (no held bones, a clip always); each told stopped {name, why: stopped}; on a station the occupant stays", async run() {
+      const out: any = {};
+      for (const [n, decl] of [["sit"], ["sitchair"], ["lie"], ["dance"], ["dance", "swim"]] as [string, string?][]) {
+        const { ag, call } = await animAgent(); if (decl) await call("anim", { bodyMode: decl });
+        await call("anim", { name: n }); const r = await call("anim", { stop: true });
+        out[n + (decl ? `@${decl}` : "")] = { mode: ag.bodyModeNow(), clip: ag.clip, held: ag.heldPose != null, stops: ag.animStops.map((x: any) => `${x.name}:${x.why}`), err: r?.isError === true, playing: ag.anims?.length ?? (ag.anim ? 1 : 0) };
+      }
+      const { ag, call } = await animAgent(); ag.myOccupancy = { to: "sofa-l" }; ag.joined = true;
+      await call("anim", { name: "sitchair" }); await call("anim", { stop: true }); ag.joined = false;
+      out.occupant = { still: ag.myOccupancy?.to ?? null, mode: ag.bodyModeNow() };
+      return out; },
+    good: (o) => { const is = (k: string, mode: string, clip: string) => o[k]?.mode === mode && o[k]?.clip === clip && !o[k].held && !o[k].err && o[k].playing === 0 && JSON.stringify(o[k].stops) === JSON.stringify([`${k.split("@")[0]}:stopped`]);
+      return is("sit", "sit", "sit") && is("sitchair", "sit", "sitchair") && is("lie", "lie", "lie") && is("dance", "stand", "idle") && is("dance@swim", "swim", "tread") && o.occupant.still === "sofa-l" && o.occupant.mode === "sit"; } },
+  { id: "K2", what: "…anims are layers: a pose (joints) or a tracks loop struck over a sit leaves the sit playing; anim {stop: true} stops every layer (each told), drops the held bones, tells every client to fade the tracks, and rests in the sit; a tracks loop isn't ended by the next tick", async run() {
+      const { ag, call, sent } = await animAgent(); ag.joined = true;
+      await call("anim", { name: "sit" }); await call("anim", { joints: { head: [0, 0.1, 0, 0.995] } });
+      await call("anim", { tracks: { head: [{ t: 0, q: [0, 0, 0, 1] }, { t: 0.5, q: [0, 0.1, 0, 0.995] }] }, dur: 1, mode: "loop" }); ag.tick();
+      const layers = (ag.anims ?? []).map((x: any) => x.name), before = ag.animStops.map((x: any) => `${x.name}:${x.why}`), clip0 = ag.clip, held0 = ag.heldPose != null;
+      const n = sent.length; await call("anim", { stop: true }); ag.joined = false;
+      return { layers, before, clip0, held0, stops: ag.animStops.map((x: any) => `${x.name}:${x.why}`), held: ag.heldPose != null, clip: ag.clip, mode: ag.bodyModeNow(), fade: sent.slice(n).some((m: any) => m.type === "anim" && m.stop === true) }; },
+    good: (o) => JSON.stringify(o.layers) === '["sit","live","live"]' && o.before.length === 0 && o.clip0 === "sit" && o.held0 && JSON.stringify(o.stops) === '["sit:stopped","live:stopped","live:stopped"]' && !o.held && o.clip === "sit" && o.mode === "sit" && o.fade },
+  { id: "K3", what: "…anim {stop: \"<name>\"} stops only that layer: sit + a pose, stop sit → the pose goes on (and the body-mode rests in sit); a name that isn't playing is a clear \"not playing\" note, not an error, and stops nothing", async run() {
+      const { ag, call } = await animAgent();
+      await call("anim", { name: "sit" }); await call("anim", { joints: { head: [0, 0.1, 0, 0.995] } });
+      const r = await call("anim", { stop: "sit" }); const after = { layers: (ag.anims ?? []).map((x: any) => x.name), held: ag.heldPose != null, clip: ag.clip, mode: ag.bodyModeNow() };
+      const r2 = await call("anim", { stop: "dance" });
+      return { after, stops: ag.animStops.map((x: any) => `${x.name}:${x.why}`), t: r?.content?.[0]?.text, t2: r2?.content?.[0]?.text, e2: r2?.isError === true, layers2: (ag.anims ?? []).map((x: any) => x.name) }; },
+    good: (o) => JSON.stringify(o.after.layers) === '["live"]' && o.after.held && o.after.clip === "sit" && o.after.mode === "sit" && JSON.stringify(o.stops) === '["sit:stopped"]' && /not playing "dance"/.test(o.t2) && !o.e2 && JSON.stringify(o.layers2) === '["live"]' },
+  { id: "K4", what: "(R 16:27) anim {stop: \"live\"} stops only ad-libbed anims (joints, tracks), leaving the named ones and the body-mode: sit + a pose + a tracks loop → sit plays on; \"live\" is reserved: no anim by that name (the tool, a clip def, the action bar's table, an object's or a station's anim)", async run(s) {
+      const { ag, call, sent } = await animAgent(); ag.joined = true;
+      await call("anim", { name: "sit" }); await call("anim", { joints: { head: [0, 0.1, 0, 0.995] } }); await call("anim", { tracks: { head: [{ t: 0, q: [0, 0, 0, 1] }] }, dur: 1, mode: "loop" });
+      const n = sent.length; await call("anim", { stop: "live" }); ag.joined = false;
+      const named = await call("anim", { name: "live" });
+      const AD: any = await import(TREE + "shared/animdefs.js"); const side = AD.validateActions ?? AD["validate" + "Em" + "otes"];
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } }); s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
+      const g = s.call("olive", "set", { id: "cup", component: "grabbable", value: { anim: "live" } });
+      const st = s.call("olive", "create", { components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "bunk" }, station: { action: "lie", anim: "live" } } });
+      return { layers: (ag.anims ?? []).map((x: any) => x.name), stops: ag.animStops.map((x: any) => `${x.name}:${x.why}`), held: ag.heldPose != null, clip: ag.clip, mode: ag.bodyModeNow(), fade: sent.slice(n).some((m: any) => m.type === "anim" && m.stop === true),
+        named: named?.isError === true && /reserved/.test(named.content[0].text), def: (AD.validateAnimationDef?.("live", {}) ?? []).length > 0, bar: (side?.({ live: { clip: "dance" } }) ?? []).length > 0, g: show(g), st: show(st) }; },
+    good: (o) => JSON.stringify(o.layers) === '["sit"]' && JSON.stringify(o.stops) === '["live:stopped","live:stopped"]' && !o.held && o.clip === "sit" && o.mode === "sit" && o.fade && o.named && o.def && o.bar && /^refused/.test(o.g) && /^refused/.test(o.st) },
+  { id: "K5", what: "…the words: the anim tool's description and AGENTS.md spell out stop (true: every layer, the body-mode's rest, never the bind pose, body-mode unchanged; a name: that layer; \"live\": the ad-libbed ones, a reserved name), and the spec gives the rest rule and the relay's anim {stop: true}", run() {
+      const t = readText("mcpl/tools.ts"); const i = t.indexOf('name: "anim", description: "'); const d = i < 0 ? "" : t.slice(i, t.indexOf("\n", i));
+      const a = readText("AGENTS.md"), md = readText("spec/PROTOCOL.md");
+      const says = (x: string) => /never the bind pose/i.test(x) && /body-mode[^.]{0,40}unchanged/i.test(x) && /stop: \\?"live\\?"/.test(x) && /reserved/.test(x) && /that layer/.test(x);
+      return { tool: says(d), agents: says(a), spec: /never the bind pose/i.test(md) && /`\{type: "anim", stop: true\}`/.test(md) && /`live` is reserved/.test(md) }; },
+    good: (o) => o.tool && o.agents && o.spec },
   // ---------------- X: the record ----------------
   { id: "X1", what: "the version history records the renames at minor 0, and the spec body speaks the new words (§5 consent, §7a rule 4)", run() {
       const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")); const body = md.slice(0, md.indexOf("## Version history"));
-      return { vh: ["`hold-limit`", "`contact`", "`trusted-components`", "`rename-components`", "`displace`", "`delegates`", "`grabbable.anim`", "`grasp`", "`anim-pose`", "`wings-folded`", "`bodyMode`"].every((w) => vh.includes(w)),
+      return { vh: ["`hold-limit`", "`contact`", "`trusted-components`", "`rename-components`", "`displace`", "`delegates`", "`grabbable.anim`", "`grasp`", "`anim-pose`", "`wings-folded`", "`bodyMode`", "`{stop: true}`", "`live`"].every((w) => vh.includes(w)),
         body: /`allow`, `ask`, or `deny`/.test(body) && /\(`everyone` \/ `friends`\), `allow` \| `ask` \| `deny`/.test(body) && !/everyone, ask, or nobody/.test(body) && !/\(strangers \/ friends\)/.test(body) }; },
     good: (o) => o.vh && o.body },
 ];

@@ -1412,6 +1412,9 @@ export class Avatar {
    *  the held pose is the AUTHOR's half of a replace — it lives in presence
    *  (myState.pose, an agent's heldPose), which this body only renders. */
   playAnimation(data) {
+    // {stop: true} (R 10-17 16:26): every layer fades out and hands its bones back to what is beneath (the held pose,
+    // the clip): the body rests in what it was doing, never the bind pose
+    if (data?.stop === true) { for (const l of this._anims ?? []) l.wantWeight = 0; return; }
     if (!data?.tracks) return;
     const tracks = new Map();
     for (const [n, keys] of Object.entries(data.tracks)) {
