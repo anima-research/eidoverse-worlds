@@ -528,10 +528,15 @@ request moves a copy to a newer version, keeping its own overrides.
   `detach {escape: true}` always stands the occupant up (VRChat keeps
   respawn and the menu; Second Life's stand always works). A
   yes to an ask is one touch: it ends when the hand lets go, when either
-  body leaves, when the target closes that class, or after 10 minutes. Semantic rig
-  state travels the same way: `pose.wingsFolded` is a boolean intent, never
-  implementation-specific wing quaternions; each renderer applies it
-  through the worn rig's own fold path. The same packet carries a body's
+  body leaves, when the target closes that class, or after 10 minutes. Named poses
+  travel the same way: `pose.poses` lists the poses a body holds by name (a
+  pose is one frame, only the bones it names; a clip has more than one key;
+  R 10-17), never implementation-specific quaternions: `"wings-folded"` is
+  the folded-wing silhouette, which each renderer applies through the worn
+  rig's own fold path, and a name a rig doesn't know is ignored (its
+  default). An empty list holds none; an absent one says nothing. (Before
+  release the packet said `wingsFolded: true|false`; a receiver still reads
+  it as that pose.) The same packet carries a body's
   size and a person's voice state, each optional, absence meaning the
   default (or, for voice, *unknown*):
   - `pose.scale` — the wearer's chosen size multiplier for the whole body
@@ -546,7 +551,7 @@ request moves a copy to a newer version, keeping its own overrides.
   non-number as absent; a non-boolean `mic`/`hear` is absent
   (shared/presencewire.js holds the clamps; the server's pose fence applies
   the same ones). `scale`/`plateY` are body state and ride the settled pose
-  a server keeps for late joiners, as `wingsFolded` does; `mic`/`hear` are
+  a server keeps for late joiners, as `poses` does; `mic`/`hear` are
   a live reading re-sent with every packet and are never part of it. The
   pose packet's fields are `docs/pose-wire.md`.
 - **Presence touches the log only through checked acts, and only with what

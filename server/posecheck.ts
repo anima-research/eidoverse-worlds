@@ -4,6 +4,7 @@
 // client guards remain (they fix the cause); this is the fence at the source:
 // a non-finite sample is dropped here, never batched into a frame.
 import { clampBodyScale, clampPlateY } from "../shared/presencewire.js";
+import { cleanPoses } from "../shared/wingpresence.js";
 
 const fin = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const finArr = (a: unknown, n: number) => Array.isArray(a) && a.length === n && a.every(fin);
@@ -35,6 +36,10 @@ export function sanePose(pose: unknown): Record<string, unknown> | null {
   // voice and body fields are normalised here, not refused: a bad one costs its field, never the whole pose (the
   // receivers clamp too, but lastPose is remembered for joiners). Absent = unknown / default, so garbage is deleted.
   for (const k of ["mic", "hear"]) if (k in p && typeof p[k] !== "boolean") delete p[k];
+  // poses: the named poses a body holds (R 10-17: "wings-folded"; was the boolean wingsFolded, still relayed as sent so an
+  // older receiver keeps folding): a bad list costs the field
+  if ("poses" in p) { const c = cleanPoses(p.poses); if (c) p.poses = c; else delete p.poses; }
+  if ("wingsFolded" in p && typeof p.wingsFolded !== "boolean") delete p.wingsFolded;
   // a sample's capture time (authority clock, ms) and its sender's count (spec/PHYSICS.md §5.1): bad ones cost the field
   if ("t" in p && !fin(p.t)) delete p.t;
   if ("seq" in p && !(Number.isInteger(p.seq) && (p.seq as number) >= 0 && (p.seq as number) <= Number.MAX_SAFE_INTEGER)) delete p.seq;

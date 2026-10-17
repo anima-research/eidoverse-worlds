@@ -132,6 +132,7 @@ import { deriveLandmarks, debugMarkers, landmarkWorld } from './lib/landmarks.js
 import { measureChain, solveChain } from './lib/reachbone.js';
 import { canonicalPoint } from '../shared/contact.js';
 import { initReachNet, setMyReach, clearMyReach } from './lib/reachnet.js';
+import { foldedIn } from '../shared/wingpresence.js';
 
 // (Crash breadcrumbs live in lib/breadcrumbs.js now; the frame loop stamps each
 // system's name as it runs. avatar.js still reads globalThis.__ewBC.)
@@ -432,7 +433,7 @@ wireNet({
     // wreckage, not authorship — wake standing instead of hung mid-tumble.
     if (r.clip === 'ragdoll') { myState.pos.y = 0; return; }
     if (r.pose) myState.pose = r.pose;
-    setFolded(r.wingsFolded === true);
+    setFolded(foldedIn(r) === true);   // the named pose wings-folded (or, remembered before 10-17, wingsFolded)
   },
   onSnapshotDone: () => {},
 });

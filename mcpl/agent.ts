@@ -39,7 +39,7 @@ import {
 import { MOVER, TRACK, walkToward, toleranceOf, waterStance } from "../shared/mover.js";
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
 import { inspectBody } from "../shared/flightbody.js";
-import { wingFoldPresence } from "../shared/wingpresence.js";
+import { foldedIn, wingFoldPresence } from "../shared/wingpresence.js";
 import { clampBodyScale } from "../shared/presencewire.js";
 import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
 
@@ -1040,7 +1040,7 @@ export class WorldAgent {
               // what survives the server's settled memory is an enacted pose —
               // authored by definition (settledPose strips physics frames)
               if (msg.restore.pose && msg.restore.clip !== "ragdoll") { this.heldPose = msg.restore.pose; this.heldPoseAuthored = true; }
-              this.wingsFolded = msg.restore.wingsFolded === true;
+              this.wingsFolded = foldedIn(msg.restore) === true;   // the named pose wings-folded (or an older wingsFolded)
             }
             this.restoredPose = true;
             // a (re)join: the authority's track of this body ended when it left, so the next walk arrives again
@@ -1523,9 +1523,9 @@ export class WorldAgent {
     const nowHeld = Boolean(pose.pose);
     if (nowHeld && !prevHeld) acts.push({ key: "pose", text: `strikes a pose (${Object.keys(pose.pose!).length} bones held)` });
     if (!nowHeld && prevHeld) acts.push({ key: "pose-release", text: "releases their pose" });
-    const hadFold = typeof prev?.wingsFolded === "boolean";
-    const hasFold = typeof pose.wingsFolded === "boolean";
-    const prevFold = prev?.wingsFolded === true, nowFold = pose.wingsFolded === true;
+    const was = foldedIn(prev), now = foldedIn(pose);   // the named pose wings-folded (an older sample's wingsFolded reads the same)
+    const hadFold = was !== null, hasFold = now !== null;
+    const prevFold = was === true, nowFold = now === true;
     // A first sighting is a state, not an act. Announce only an edge observed
     // between two explicit semantic samples; legacy absence proves neither
     // folding nor opening.
@@ -4629,7 +4629,7 @@ export class WorldAgent {
       const doing = { idle: "standing", walk: "walking", run: "running", sit: "sitting", sitchair: "sitting on a chair", lie: "lying down" }[p.pose.clip] ?? p.pose.clip;
       const held = (p.pose as { pose?: Record<string, unknown> | null }).pose;
       const posed = held ? `, holding a pose (${Object.keys(held).length} bones)` : "";
-      const winged = p.pose.wingsFolded === true ? ", wings folded" : "";
+      const winged = foldedIn(p.pose) === true ? ", wings folded" : "";
       const ride = this.mounts.get(p.id);
       const riding = ride ? ` — on ${this.socketName(ride.to)}${this.seatSuffix(p.id, ride)}` : "";
       L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${winged}${riding}${voiceNote(p.pose)}`);
