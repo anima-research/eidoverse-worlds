@@ -107,8 +107,8 @@ const regUnit = (key: string, path: string, type?: string) => { const u = COMPON
   check("the hand cards' channel rows (mesh.size, openable.slide, particles.at) carry the registry's limits and unit", !rbad.length, rbad.join(", "));
   check("limitsOf reads gt as the floor and skips text caps", j(limitsOf("light", "range")) === j({ min: 0, unit: "m" }) && j(limitsOf("story", "title")) === "{}" && j(limitsOf("sound", "radius")) === j({ min: 1, max: 100, unit: "m" }));
   // physics as text rows: a refusal reads the registry's range words
-  const r = E.editOps(every, "every", { "physics.friction": "11" });
-  check("a physics number past the registry's range is refused in the registry's words", r.errors.length === 1 && /≥ 0 and ≤ 10/.test(r.errors[0]), j(r.errors));
+  const r = E.editOps(every, "every", { "physics.mass": "2000000" });
+  check("a physics number past the registry's range is refused in the registry's words", r.errors.length === 1 && /> 0 and ≤ 1000000/.test(r.errors[0]), j(r.errors));
 }
 
 // 5. @world: the terrain and grass rows carry the registry's limits and units

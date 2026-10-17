@@ -324,7 +324,7 @@ const DEFAULT_KEY = {
   Sockets: 'sockets', Reactions: 'reactions', Structure: 'structure', Captions: 'captions',
   LookAt: 'look', Stage: 'stage', Particles: 'particles', Picture: 'picture', Sound: 'sound',
 };
-const COLLIDER_SHAPES = new Set(['exact', 'box']);
+const COLLIDER_SHAPES = new Set(['mesh', 'exact', 'box']);   // exact: the stored word before 10-16 (the door stores mesh)
 
 /** A node's components in the spelling every NEW write uses (owner,
  *  2026-10-02: "everything should go out under the new comp system"):

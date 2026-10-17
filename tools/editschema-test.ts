@@ -278,13 +278,16 @@ console.log("\nphysics as fields (R 10-10: 'hard to interact with unless you kno
 {
   const box = { model: "eidoverse/assets/models/crate_large_blue.glb", pos: [0, 0, 0], physics: { kind: "dynamic", who: "visitor", shape: [[-1, 0, -1], [1, 2, 1]] } };
   const m = inspectSchema(box, "pb1"); const g = m.groups.find((x: any) => x.group === "physics");
-  check("a physics component gets its own card of fields (body, pushed by, mass, friction, bounciness, fast mover) and its JSON hatch",
-    !!g && ["kind", "who", "mass", "friction", "restitution", "ccd"].every((k) => g.fields.some((f: any) => f.k === k)) && g.fields.some((f: any) => f.t === "json" && f.collapsed) && !m.groups.find((x: any) => x.group === "comp")?.fields?.some((f: any) => f.k === "physics"));
-  const r = editOps(box, "pb1", { "physics.friction": "0.3", "physics.mass": "" });
+  // shape audit 10-16: friction and bounciness are reserved (no engine reads them) and ccd is cut: said, never offered
+  check("a physics component gets its own card of fields (body, pushed by, mass; the reserved ones said, not offered) and its JSON hatch",
+    !!g && ["kind", "who", "mass"].every((k) => g.fields.some((f: any) => f.k === k)) && !["friction", "restitution", "ccd"].some((k) => g.fields.some((f: any) => f.k === k)) && g.fields.some((f: any) => f.t === "info" && /reserved/.test(f.hint ?? "")) && g.fields.some((f: any) => f.t === "json" && f.collapsed) && !m.groups.find((x: any) => x.group === "comp")?.fields?.some((f: any) => f.k === "physics"));
+  const r = editOps(box, "pb1", { "physics.mass": "2.5", "physics.kind": "dynamic" });
   const v = r.ops[0]?.args?.value;
-  check("an edit writes the whole physics value once: friction set, a blank mass stays absent, the rest kept", r.ops.length === 1 && v?.friction === 0.3 && !("mass" in v) && v?.kind === "dynamic" && Array.isArray(v?.shape), JSON.stringify(r));
-  const bad = editOps(box, "pb1", { "physics.restitution": "2" });
-  check("bounciness above 1 is refused before it is sent", !bad.ops.length && /restitution/.test(bad.errors[0] ?? ""), JSON.stringify(bad));
+  check("an edit writes the whole physics value once: mass set, the rest kept", r.ops.length === 1 && v?.mass === 2.5 && v?.kind === "dynamic" && Array.isArray(v?.shape), JSON.stringify(r));
+  const blank = editOps({ ...box, physics: { ...box.physics, mass: 3 } }, "pb1", { "physics.mass": "" });
+  check("…a blank mass is its absence", blank.ops.length === 1 && !("mass" in (blank.ops[0]?.args?.value ?? {})), JSON.stringify(blank));
+  const bad = editOps(box, "pb1", { "physics.friction": "0.3" });
+  check("friction (reserved) is refused before it is sent", !bad.ops.length && /friction/.test(bad.errors[0] ?? ""), JSON.stringify(bad));
 }
 
 console.log("\nMaterial, the draft hesperus/material (docs/COMPONENT-LADDER.md):");

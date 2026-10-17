@@ -90,12 +90,13 @@ export function contactOf(feet, r, tall, thing, slack = SHOVE_FEEL.slack) {
   return { d: m.d, n };
 }
 
-/** Its mass (kg): physics.mass, else density (its own, its material's, else water's) × its shape's volume at its scale. */
+/** Its mass (kg): physics.mass, else density (its own, its surface's, else water's) × its shape's volume at its scale. */
 export function massOf(st, id) {
   const e = st?.entities?.[id]; const ph = e?.c.physics; if (!ph) return null;
   if (Number.isFinite(ph.mass) && ph.mass > 0) return ph.mass;
   const v = shapeVolume(ph.shape); if (!Number.isFinite(v)) return null;
-  const mat = typeof ph.material === "string" ? st.entities["@world"]?.c?.[ph.material.startsWith("surface:") ? ph.material : `surface:${ph.material}`] : null;
+  const sname = typeof ph.surface === "string" ? ph.surface : ph.material;   // physics.surface (reserved; `material` before 10-16): carried values only
+  const mat = typeof sname === "string" ? st.entities["@world"]?.c?.[sname.startsWith("surface:") ? sname : `surface:${sname}`] : null;
   const rho = Number.isFinite(ph.density) && ph.density > 0 ? ph.density : Number.isFinite(mat?.density) && mat.density > 0 ? mat.density : 1000;
   const sc = worldPose(st, id)?.scale ?? [1, 1, 1];
   return Math.max(1e-6, rho * v * Math.abs(sc[0] * sc[1] * sc[2]));

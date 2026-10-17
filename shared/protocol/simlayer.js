@@ -37,6 +37,12 @@ const PHYSICAL = new Set(["transform", "parent", "model", "mesh", "physics", "di
 const RELEASES = new Set(["transform", "parent", "disabled"]);   // the writes that end a hold (authority commit()); keep the two in step   // disabled: switching off takes the body (and its subtree) out, on puts it back
 
 const yawOf = (q) => (Array.isArray(q) ? 2 * Math.atan2(q[1], q[3]) : 0);
+// A thing's world pose, composed down its parent chain. The protocol's rule is glTF's (PROTOCOL §9.3): local = T · R · S,
+// world = parent's world × local. This returns a TRS, not a matrix, so it is EXACT for the position (parent pos + R·(S·pos))
+// and exact for q and scale whenever every ancestor's scale is uniform; under a non-uniformly scaled ancestor a rotated
+// child's true world transform shears (no TRS holds it), and here its q is the plain product and its scale the
+// component-wise product (Unity's lossyScale reading). The stored data had 0 such cases at the shape audit (10-16).
+// TODO(shape audit 10-16): return the composed matrix (or flag the sheared case) if a reader ever needs the exact one.
 export function worldPose(st, id, depth = 0) {
   const e = st.entities[id]; if (!e) return null;
   const t = e.c.transform ?? {}; const pos = t.pos ?? [0, 0, 0], q = t.q ?? [0, 0, 0, 1], sc = t.scale ?? [1, 1, 1];

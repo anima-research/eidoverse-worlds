@@ -3765,7 +3765,7 @@ export class WorldAgent {
     return budges(massOf(this.replica?.st, id) ?? NaN, run ? MOVER.walk.run : MOVER.walk.speed);
   }
   /** What a thing's shove depends on besides where it stands: its lock and every lock over it, its physics (kind, who,
-   *  mass, density, material) and its size in the world (its derived mass goes with it: review r6 L3) — the judgement of a
+   *  mass, density, surface) and its size in the world (its derived mass goes with it: review r6 L3) — the judgement of a
    *  misjudged thing holds only while these do (review r5 F5: a crate locked once and unlocked was solid to this body's
    *  walks for good). */
   private shoveState(id: string): string {
@@ -3773,7 +3773,7 @@ export class WorldAgent {
     let k: string | undefined = id;
     for (let i = 0; k && i < 64; i++) { const c: any = st?.entities?.[k]?.c; locks.push(c?.lock ?? null); k = typeof c?.parent?.to === "string" ? c.parent.to : undefined; }
     const ph: any = st?.entities?.[id]?.c?.physics ?? null;
-    return JSON.stringify([locks, ph && { kind: ph.kind, who: ph.who, mass: ph.mass, density: ph.density, material: ph.material }, st ? worldPose(st, id)?.scale ?? null : null]);
+    return JSON.stringify([locks, ph && { kind: ph.kind, who: ph.who, mass: ph.mass, density: ph.density, surface: ph.surface ?? ph.material }, st ? worldPose(st, id)?.scale ?? null : null]);
   }
   /** Things a walk planned through and then found solid: id -> its footprint's centre [x, z] and its shoveState then. */
   private misjudged = new Map<string, { at: [number, number]; sig: string }>();
@@ -4627,7 +4627,7 @@ export class WorldAgent {
       if (lit) aff.push(`light: #${lit.color.toString(16).padStart(6, "0")}, brightness ${+lit.intensity.toFixed(2)}, reaches ${+lit.range.toFixed(2)}m${lit.important ? ", important (always casts)" : ""}${lit.day ? "" : ", burns at noon"}`);
       // a declared collider (the collider component)
       const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
-      if (col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its exact shape");
+      if (col === "mesh" || col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its mesh (its triangles)");
       const socks = this.socketsOf(e.id);
       if (socks.length) {
         // each socket a person can use says what the body does there (shared/sockbody.js describeBody), and who's on it;
@@ -4678,7 +4678,7 @@ export class WorldAgent {
       const spoken = ["model", "parent", "sockets", "socket", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
       if (copy) spoken.push("blueprint");
       if (lit) spoken.push("light");   // described above; a malformed one stays listed
-      if (col === "exact" || col === "box") spoken.push("collider");
+      if (col === "mesh" || col === "exact" || col === "box") spoken.push("collider");
       const extra = Object.keys(c).filter((k) => !spoken.includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);

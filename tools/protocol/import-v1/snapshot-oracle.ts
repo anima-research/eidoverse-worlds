@@ -62,6 +62,7 @@ const { ENGINE_CATALOGUE } = await import("../../../server/modelcatalogue.ts");
 const { liftWorld } = await import("../../../shared/protocol/authority.js");
 const { legacyHosts, liftHostOps, isSocketC } = await import("../../../shared/protocol/authority/sockets.js");
 const { socketQ } = await import("../../../shared/components.js");
+const { shapeRepairOps } = await import("../../../shared/protocol/shaperepair.js");
 const { directoryFileIn } = await import("../../../server/keyfiles.ts");
 
 const TOL = 1e-9;
@@ -153,6 +154,7 @@ function liftPlain(P, ever) {
   for (const [id, c] of Object.entries(P)) st.entities[id] = { born: 0, c: Object.assign(Object.create(null), jclone(c)) };
   const hosts = legacyHosts(st, ever);
   for (const h of hosts) { if (!st.entities[h]) continue; const { ops } = liftHostOps(st, ever, h); applyInPlace(st, ops, 1); }
+  { const ops = shapeRepairOps(st); if (ops.length) applyInPlace(st, ops, 1); }   // …then the shape repair (shape audit 10-16), as liftWorld does
   return { lifted: v4comps(st), hosts };
 }
 

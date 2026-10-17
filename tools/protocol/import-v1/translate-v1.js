@@ -16,6 +16,7 @@ import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
 import { modernize as newParticles } from "../../../shared/particle_effects.js";
+import { repairComps } from "../../../shared/protocol/shaperepair.js";
 import * as eidosim from "./eidosim-v1.js";   // HER engine (the first eidosim, dialect 3): what a v1 punt did. Importer-only.
 import { ENGINES, DEFAULT_ENGINE } from "../../../shared/protocol/simlayer.js";
 
@@ -76,6 +77,16 @@ function newMotion(m) {
   const { rpm, ...rest } = m;
   return rest.degPerSec !== undefined || typeof rpm !== "number" ? rest : { ...rest, degPerSec: rpm * 6 };
 }
+// @12, wave 2 (the shape audit's physics-motion family): what the server's load repairs in a stored v4 world
+// (shared/protocol/shaperepair.js), the translation writes already: a bare motion naming a part is motion:<part>,
+// amplitude is amp, a letter axis its vector, a pendulum's unwritten period and damp the 3.5 s and 0 the renderer read, a
+// whole pendulum with no pivot component swings about the [0, 2, 0] the renderer used (now its pivot component), a
+// whole motion's pivot field is the thing's pivot, collider exact is mesh. A parent no longer carries order.
+function shapeRepaired(c) {
+  const out = repairComps(c).c; if (out === c) return c;
+  const keyedRight = {}; for (const [k, v] of Object.entries(out)) keyedRight[k.startsWith("motion:") && !(k in c) ? encName(k) : k] = v;   // a part's new key, in the §2.3 grammar
+  return keyedRight;
+}
 function newReactions(rx) {
   if (!rx || typeof rx !== "object") return rx;
   const out = {};
@@ -94,6 +105,9 @@ export const TRANSLATOR = "eidoverse/translate-v1@12";
 // person data in values): roles:<id> and imported-bans:<id> lose it, and an imported act's raw v1 args lose it too when no
 // identity mapper is given (with one, it becomes the person's id, as before). A dialect-3 epoch her sim refused is carried
 // as imported:epoch (was the imported-epoch component). Both names (with and without her sim) move to @12.
+// @12, wave 2 (the shape audit's physics-motion family): a stored value's old spelling is written in today's (shapeRepaired,
+// below; shared/protocol/shaperepair.js, the same rules the server's first load applies to a stored v4 world), and a
+// parent carries no order. Output differs on any log with a motion, a collider or a mount.
 // @12, wave 2 (the shape audit's attach-interact family): a lock is written in its one spelling, {rank: 'builder'} (a v1
 // lock: true, and a guard merged into it, were true). Sockets stay the v1 map with each seat's body block: the server's
 // lift (authority/sockets.js) makes them socket children with a station at first load, as for any older v4 log.
@@ -166,6 +180,7 @@ export const DROPPED = {
   "comp.door": "renamed `openable` (R 10-07), and a reaction's component 'door' with it: the same value under v4's name (@5)",
   "roles.sub / bans.sub": "an account subject is person data (PROTOCOL §9.2): never written into a value (@12). With an identity mapper it is how the person's id is found (the key); without one it is dropped",
   "motion.rpm": "becomes degPerSec = rpm × 6 (@5): the rate the renderer drew, under the authority's one name for it",
+  "motion.part": "a bare motion naming a part becomes motion:<part> (@12): when the thing already has a motion:<part>, that one wins and the bare one is dropped (the renderer drew both on one node, the keyed one last)",
   "a mounted thing's own pos/yaw/q": "v1 keeps a riding thing's pre-mount pose, unused until a dismount; v4's transform IS the pose it rides at (local to its parent: v1's offset, or its socket's pos, and q/yaw). The parent's offset/yaw/q are that transform, not a second copy (L2)",
 };
 // v1's mount, read the way the renderer realizes it (shared/hierarchy.js localOf, written independently here): a
@@ -223,13 +238,13 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     if (c.lock === true) c.lock = { rank: "builder" };   // @12: the one spelling (a v1 lock and a guard were builder-level)
     if (c.story && typeof c.story === "object" && !Array.isArray(c.story)) c.story = newStory(c.story); // @5: a marker's words, in story's shape
     if (e.parent) c.parent = typeof e.parent.to === "string"
-      ? { to: enc(e.parent.to), order: "a0", ...Object.fromEntries(Object.entries(e.parent).filter(([k]) => k !== "to" && !PARENT_POSE.has(k)).map(([k, v]) => [k === "slot" ? "socket" : k, v])) }   // v1's slot is v4's socket (@7)
+      ? { to: enc(e.parent.to), ...Object.fromEntries(Object.entries(e.parent).filter(([k]) => k !== "to" && !PARENT_POSE.has(k)).map(([k, v]) => [k === "slot" ? "socket" : k, v])) }   // v1's slot is v4's socket (@7)
       : e.parent; // not a v1 mount (the v1 fold writes `to` as a string): carried as it is
     for (const [k, v] of Object.entries(e)) {
       if (["pos", "yaw", "q", "scale", "lib", "kind", "color", "intensity", "range", "keep", "day", "comp", "parent", "placer"].includes(k) || ENTITY_SKIP.has(k)) continue;
       c[keyed("imported", k)] = v; // anything the mapping doesn't know is carried, never dropped (R10)
     }
-    out[enc(id)] = c;
+    out[enc(id)] = shapeRepaired(c);
   }
   const w = {};
   for (const k of ["sky", "terrain", "grass"]) if (st[k] != null) w[k] = st[k];

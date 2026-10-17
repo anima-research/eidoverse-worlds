@@ -18,8 +18,13 @@
 // callback), so every engine can carry them; when two differ, the later in this list wins (PhysX's and Unity's priority)
 export const COMBINE = ["average", "min", "multiply", "max"];
 export const COMPONENTS = {
-  transform: { on: "thing", fields: { pos: "vec3", q: "array", scale: "vec3" }, defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, units: { pos: "m" },
-    docs: { pos: "where it stands, [x, y, z] in metres (a child's: local to its parent)", q: "its orientation, a unit quaternion [x, y, z, w]", scale: "its size, [x, y, z] (1 = as made)" }, help: "where it is: pos (m), q (unit quaternion), scale" },
+  // glTF's node TRS (shape audit 10-16, physics-motion §1): local matrix = T · R · S, world = parent's world × local, down the
+  // tree (PROTOCOL §9.3 writes the rule down). The door's limits, pinned: pos within ±1e5 m, each scale within ±1e3 and at
+  // least 1e-4 from zero (a negative one mirrors; physics reads |scale|, KHR_physics_rigid_bodies' rule)
+  transform: { on: "thing", fields: { pos: "vec3", q: "array", scale: "vec3" }, defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, units: { pos: "m", scale: "×" },
+    ranges: { pos: { min: -1e5, max: 1e5 }, scale: { min: -1e3, max: 1e3 } },
+    docs: { pos: "where it stands, [x, y, z] in metres, in its parent's frame (the world's when it has no parent)", q: "its orientation, a unit quaternion [x, y, z, w] (glTF order), in its parent's frame; normalized on write", scale: "its size per axis, [x, y, z] (1 = as made), each within ±1000 and never within 1e-4 of zero; a negative one mirrors (physics reads its size, |scale|)" },
+    help: "where it is, glTF's node TRS: pos (m), q (unit quaternion [x, y, z, w]), scale [x, y, z], all in its parent's frame. Composed as glTF composes a node: local = T · R · S, world = parent's world × local (PROTOCOL §9.3)" },
   model:     { on: "thing", type: "string", help: "which model it shows: a name from find {kind: 'model'}, or its content address eido:sha256/<64 hex> (spec/EIDO-URIS.md; a glTF binary by its role)" },
   label:     { type: "string", maxLen: 80, help: "its display name, a short string (its name to every reader: the accessible name; description says what it is)" },
   // R 10-07 (our answer to upstream PR #168's label {name, description, visibility, offset}): the accessibility model's
@@ -33,15 +38,31 @@ export const COMPONENTS = {
   // registry's (PROTOCOL §4), with the meaning it already had
   // the collision shape every client and the authority's solids honour (shared/editschema.js Collider): its triangles or
   // its box; and the caption bot's speaker mark (shared/components.js Stage). Registered 10-07 with the meanings they had
-  collider:  { on: "thing", fields: { shape: "string" }, enums: { shape: ["exact", "box", "sphere"] }, docs: { shape: "exact = its triangles, box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide" }, help: "how it collides: {shape: exact (its triangles) | box (its bounding box) | sphere (a ball: under an engine that carries spheres it rolls; the authority fits one to its box)}; absent, its size decides" },
-  stage:     { on: "thing", fields: { speaker: "any" }, docs: { speaker: "who is speaking here (the caption bot's mark)" }, help: "the caption bot's stage mark: {speaker?: who is speaking here}" },
+  // two readers, one vocabulary (shape audit 10-16, physics-motion §7): `mesh` is shapes.js's word, KHR's geometry.mesh, Unity's
+  // MeshCollider, Godot's trimesh (it was `exact`; the door takes that and stores mesh). The physics stamp (authority
+  // shapeFor) and the walker (client/lib/colliders.js decide) read it, and its absence, differently: both written down
+  collider:  { on: "thing", fields: { shape: "string" }, enums: { shape: ["mesh", "box", "sphere"] },
+    docs: { shape: "mesh = its triangles (to walk on; physics collides a mesh as its box, PhysX's rule for a dynamic body, and eidosim carries boxes), box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide" },
+    absentMeans: { shape: "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (shared/supportclass.js)" },
+    help: "how it collides: {shape: mesh (its triangles: walked on as they are; physics collides it as its box) | box (its bounding box) | sphere (a ball: under an engine that carries spheres it rolls; the authority fits one to its box)}; absent, its size decides (a room-scale or uneven floor-shaped thing walks as its mesh, else its box; physics uses its box). exact, the old word for mesh, is taken and stored as mesh" },
+  stage:     { on: "thing", fields: { speaker: "string" }, ranges: { speaker: { maxLen: 80 } }, docs: { speaker: "who is speaking here, a name (≤ 80; the caption bot's mark, WebVTT's <v Name>)" },
+    absentMeans: { speaker: "no stage cue: the caption bot uses its own speaker" }, help: "the caption bot's stage mark: {speaker?: who is speaking here, a name ≤ 80}" },
   hidden:    { on: "thing", type: "bool", help: "true: not drawn by any client (it's still there: it collides, look and inspect list it). Delete it to show the thing again; false reads the same as absent" },
   clickthrough: { on: "thing", type: "bool", help: "true: a pointer click passes through it to whatever is behind (it is still drawn, collides, and can be grabbed by a hand or a tool; the editor still selects it). Delete it to make it a click target again; false reads the same as absent" },
   disabled:  { on: "thing", type: "bool", help: "true: switched off. It stays in the record and the Hierarchy, but no client loads or draws it, it has no collider and no physics, and nothing may grab, punt, use or sit on it; what hangs under it is switched off with it. Delete it to switch the thing back on; false reads the same as absent" },
-  pivot:     { on: "thing", help: "{pos: [x,y,z]}: where it turns and scales from, in its own frame before scale ([0,0,0] = its origin). Never moves it or changes how it draws" },
+  // the one hinge (shape audit 10-16, physics-motion §3): a whole thing's motion, openable, the gizmo all turn about it; a part's
+  // motion carries its own (motion:<part>.pivot, in the part's frame), since a part can't carry components
+  pivot:     { on: "thing", fields: { pos: "vec3" }, required: ["pos"], units: { pos: "m" }, ranges: { pos: { min: -1e4, max: 1e4 } },
+    docs: { pos: "the point it turns and scales about, [x, y, z] metres in its own frame before scale" },
+    absentMeans: { pos: "it turns and scales about its origin, [0, 0, 0]" },
+    help: "{pos: [x,y,z]}: where it turns and scales from, in its own frame before scale ([0,0,0] = its origin). Never moves it or changes how it draws. A whole thing's motion and openable turn about it; absent, about its origin" },
   // attaching to a NAMED point on the parent is general (Unreal AttachToComponent's SocketName, Roblox Attachment,
   // Godot BoneAttachment3D): socket names one of the parent's sockets
-  parent:    { on: "thing", fields: { to: "ref", order: "string", socket: "string" }, defaults: { order: "a0" }, legacy: ["socket"], docs: { to: "the thing it rides: its transform becomes local to this parent", socket: "the old spelling of a socket attachment: parent to the socket child instead" }, help: "{to: id}; its transform becomes local to the parent. To attach at a socket, parent to the socket (a child entity of its host). socket: the old spelling, read in old logs and lifted at the door" },
+  // shape audit 10-16 (physics-motion §2): `order` is gone. Its materialized "a0" ordered nothing (every child tied; no reader
+  // sorted by it); a sibling order comes back as an addition (a fractional index) when a reader needs one. The door takes a
+  // written order and drops it; a stored one is read by nothing (and dropped at its next write)
+  parent:    { on: "thing", fields: { to: "ref", socket: "string" }, required: ["to"], legacy: ["socket"], dropped: { order: "sibling order: read by nothing (every stored value was \"a0\")" },
+    docs: { to: "the thing it rides: its transform becomes local to this parent", socket: "the old spelling of a socket attachment: parent to the socket child instead" }, help: "{to: id}; its transform becomes local to the parent. To attach at a socket, parent to the socket (a child entity of its host). socket: the old spelling, read in old logs and lifted at the door" },
   // the punctual light every engine shares (glTF KHR_lights_punctual, Godot OmniLight3D/SpotLight3D, Unity Light,
   // three.js): kind, color, intensity, range; a spot adds its cone as HALF-angles in radians (glTF outer/innerConeAngle,
   // Godot spot_angle, three.js angle/penumbra) and shines along the thing's local -Z (glTF, Godot)
@@ -64,21 +85,31 @@ export const COMPONENTS = {
   // RotatingMovementComponent RotationRate, Unity's Rotate) or a period in seconds; a path is control points with a speed
   // or a duration and a loop mode (Unreal's InterpToMovementComponent: ControlPoints, Duration, OneShot/Loop/PingPong)
   // the per-type defaults are motioneval.js's readings, written down (a spin with no rate turned at 36°/s in every renderer)
+  // shape audit 10-16 (physics-motion §4): amplitude (the first protocol's amp) and a `part` field (a part's motion is motion:<part>) are gone,
+  // refused at write and repaired in a stored world at its first load (authority/shaperepair.js) and by translate-v1@12; an
+  // axis is stored as a vector (x|y|z|-x|-y|-z taken at write); `pivot` is a PART motion's hinge only (a whole thing turns
+  // about its pivot component). The readings that lived only in motioneval.js are here, as absentMeans
   motion:    { on: "thing", keyed: "optional", when: [
-                 { if: { type: "pendulum" }, set: { axis: [1, 0, 0], period: 2.4, damp: 0.08, maxAmp: 0.9, phase: 0 } }, { if: { type: "pendulum" }, absent: ["amp", "amplitude"], set: { amp: 0 } },
+                 { if: { type: "pendulum" }, set: { axis: [1, 0, 0], period: 2.4, damp: 0.08, maxAmp: 0.9, phase: 0 } }, { if: { type: "pendulum" }, absent: ["amp"], set: { amp: 0 } },
                  { if: { type: "spin" }, set: { axis: [0, 1, 0], phase: 0 } }, { if: { type: "spin" }, absent: ["degPerSec", "period", "rpm"], set: { degPerSec: 36 } },
                  { if: { type: "orbit" }, set: { radius: 3, phase: 0, face: true } }, { if: { type: "orbit" }, absent: ["degPerSec", "period", "rpm"], set: { degPerSec: 12 } },
-                 { if: { type: "bob" }, set: { axis: [0, 1, 0], period: 4, phase: 0 } }, { if: { type: "bob" }, absent: ["amp", "amplitude"], set: { amp: 0.3 } },
+                 { if: { type: "bob" }, set: { axis: [0, 1, 0], period: 4, phase: 0 } }, { if: { type: "bob" }, absent: ["amp"], set: { amp: 0.3 } },
                  { if: { type: "path" }, set: { loop: "loop", face: true } }, { if: { type: "path" }, absent: ["speed", "duration"], set: { speed: 1 } }],
-               fields: { type: "string", axis: "axis", amp: "number", period: "number", damp: "number", maxAmp: "number", phase: "number", t0: "number", part: "string", radius: "number", degPerSec: "number", amplitude: "number", pivot: "vec3",
-                 center: "vec3", face: "bool", points: "array", speed: "number", duration: "number", loop: "string" }, enums: { type: ["pendulum", "spin", "orbit", "bob", "path"], loop: ["loop", "pingpong", "once"] },
+               fields: { type: "string", axis: "axis", amp: "number", period: "number", damp: "number", maxAmp: "number", phase: "number", t0: "number", radius: "number", degPerSec: "number", pivot: "vec3",
+                 center: "vec3", face: "bool", points: "array", speed: "number", duration: "number", loop: "string" }, required: ["type"], enums: { type: ["pendulum", "spin", "orbit", "bob", "path"], loop: ["loop", "pingpong", "once"] },
+               dropped: { amplitude: "the first protocol's spelling of amp (repaired to amp)", part: "a part's motion is motion:<part> (repaired to that key)" },
                ranges: { period: { gt: 0, max: 3600 }, degPerSec: { min: -36000, max: 36000 }, radius: { min: 0, max: 10000 }, speed: { min: 0, max: 1000 }, duration: { gt: 0, max: 36000 } },
-               units: { amp: { pendulum: "rad", bob: "m" }, period: "s", degPerSec: "°/s", radius: "m", speed: "m/s", duration: "s", pivot: "m", center: "m", phase: "rad" },
-               docs: { type: "pendulum | spin | orbit | bob | path", axis: "the axis it moves about or along, in its own frame: x, y, z or [x, y, z]", amp: "how far it swings (a pendulum: radians) or rises (a bob: metres)", period: "seconds for one swing, one turn or one lap",
-                 damp: "how fast a swing dies down; 0 swings forever", maxAmp: "the most a push may swing it, radians", phase: "where in its cycle it starts, radians", t0: "when it started (the authority stamps it)", part: "a node of its model that moves instead of the whole thing",
-                 radius: "the circle's radius, metres", degPerSec: "degrees a second (a lap of 30 s is 12°/s)", amplitude: "the first protocol's spelling of amp", pivot: "the point it turns about, in its own frame (absent: its Pivot component, else its origin)", center: "what it circles, in its parent's frame (absent: where it stands)",
+               units: { amp: { pendulum: "rad", bob: "m" }, period: "s", degPerSec: "°/s", radius: "m", speed: "m/s", duration: "s", pivot: "m", center: "m", phase: "rad", maxAmp: "rad", damp: "1/s", t0: "ms" },
+               docs: { type: "pendulum | spin | orbit | bob | path", axis: "the axis it moves about or along, a direction [x, y, z] in its own frame (x, y, z, -x, -y or -z is taken and stored as one)", amp: "how far it swings (a pendulum: radians) or rises (a bob: metres)", period: "seconds for one swing, one turn or one lap",
+                 damp: "how fast a swing dies down, 1/s; 0 swings forever", maxAmp: "the most a push may swing it, radians", phase: "where in its cycle it starts, radians", t0: "when it started, epoch ms on the authority's clock (the authority stamps it)",
+                 radius: "the circle's radius, metres", degPerSec: "degrees a second (a lap of 30 s is 12°/s)", pivot: "a part's motion only: the point the part turns about, metres in the part's own frame (a whole thing turns about its pivot component)", center: "what it circles, in its parent's frame (absent: where it stands)",
                  face: "turns to face along the way it moves", points: "the path's control points, 2–64, in its parent's frame", speed: "metres a second along the path", duration: "seconds for the whole path (instead of speed)", loop: "loop | pingpong | once" },
-               help: "{type, …} (the authority stamps t0): pendulum {axis [x,y,z] (local), amp (rad), period (s), damp, maxAmp, phase} swings about the point it hangs from; spin {axis, degPerSec (degrees a second) or period (s a turn), pivot?, phase} turns steadily; orbit {radius (m), center? [x,y,z] (in its parent's frame; default where it stands), period (s a lap) or degPerSec, face? (false: keeps its own heading), phase} circles; bob {axis, amp (m), period (s), phase} floats; path {points [[x,y,z], …] (2–64, in its parent's frame), speed (m/s) or duration (s), loop?: loop|pingpong|once, face?} follows its points. part: a node of its model that moves instead (motion:<part>)" },
+               // what an older value WITHOUT a field reads as (every one of these is materialized on write now; a value stored
+               // before, or written by a translator, can lack them): motioneval.js's readings, written down
+               absentMeans: { period: "pendulum: 3.5 s; spin and orbit: their degPerSec; bob: 4 s", damp: "0: it swings forever", amp: "pendulum 0 (still); bob 0.3 m", axis: "pendulum [1, 0, 0]; spin and bob [0, 1, 0]",
+                 pivot: "a part turns about its own origin; a whole thing (which never holds one) about its pivot component, else its origin [0, 0, 0]", phase: "0", maxAmp: "0.9 rad", degPerSec: "spin 36°/s, orbit 12°/s (when no period either)", radius: "3 m",
+                 center: "where it stands", face: "true", speed: "1 m/s (when no duration either)", duration: "speed decides", loop: "loop", t0: "the reader's own first look (a value from before t0 was stamped)", points: "fewer than 2 points: it stands still" },
+               help: "{type, …} (the authority stamps t0, epoch ms): pendulum {axis [x,y,z] (own frame), amp (rad), period (s), damp (1/s), maxAmp, phase} swings about its pivot component (absent: its origin); spin {axis, degPerSec (degrees a second) or period (s a turn), phase} turns steadily about its pivot; orbit {radius (m), center? [x,y,z] (in its parent's frame; default where it stands), period (s a lap) or degPerSec, face? (false: keeps its own heading), phase} circles in its parent's XZ plane about +Y; bob {axis, amp (m), period (s), phase} floats; path {points [[x,y,z], …] (2–64, in its parent's frame), speed (m/s) or duration (s), loop?: loop|pingpong|once, face?} follows its points. A node of its model moves instead as motion:<part>, whose pivot? [x,y,z] (the part's own frame) is its hinge" },
   // lock levels (R, 10-07): {rank} names the level. One spelling (shape audit 10-16): the door still TAKES true (the first
   // protocol's builder-level lock, an old agent's habit) and stores {rank: 'builder'}; a stored true (an older log) reads
   // as builder, and the translator writes the object
@@ -158,39 +189,44 @@ export const COMPONENTS = {
                  angle: "how far it turns when open, radians; negative turns the other way", axis: "the hinge axis in its own frame: y an upright hinge (a door), x a lid or a hatch", slide: "how far it moves when open, [x, y, z] metres in its own frame (instead of turning)",
                  time: "seconds to open or close", part: "a node of its model that moves instead of the whole thing" },
                help: "it opens and closes when someone uses it: a door, a gate, a lid, a hatch. {open: true/false (its state), locked? (true bars an open handler with unless: 'locked'; the edit lock is the separate `lock`), angle? (rad it turns when open, default π/2; negative turns the other way), axis? (its own frame, default [0,1,0]: an upright hinge), slide? [x,y,z] (m it moves in its own frame when open, instead of turning), time? (s to open or close, 0–10, default 1), part? (a node of its model that moves instead of the whole thing)}. It turns about its pivot (pivot {pos}: put it on the hinge edge). Usable with reactions {open: {kind: 'toggle', unless: 'locked'}} (toggle's default flips openable.open)" },
-  // spec/PHYSICS.md §3.1–§3.2 (research physics-seeds 10-07, seeds 3–4): shape has a grammar (shared/protocol/shapes.js),
-  // and the physical properties are named now, with units and what absence means, so the first engine that reads them
-  // can't invent either. None is a materialized default: no engine this server carries reads them yet, and a number
-  // written into every value that nothing honours is a number builders tune for nothing. Absence keeps today's meaning.
-  // Angular velocity everywhere (acts, launches, state samples) is w: [x, y, z] rad/s in the world frame.
-  physics:   { on: "thing", fields: { kind: "string", who: "string", shape: "any", mass: "number", density: "number", material: "string", friction: "number", restitution: "number",
-                 linearDamping: "number", angularDamping: "number", centerOfMass: "vec3", ccd: "bool", layers: "int", mask: "int",
-                 frictionCombine: "string", restitutionCombine: "string" },
+  // spec/PHYSICS.md §3.1–§3.2 (research physics-seeds 10-07, seeds 3–4): shape has a grammar (shared/protocol/shapes.js).
+  // Shape audit 10-16 (physics-motion §5): kind is REQUIRED (no default: a bare {} was "dynamic" while the component's
+  // absence means static or nothing, the trap PROTOCOL §9.2's last rule names); the eight physical properties nothing here
+  // reads are RESERVED fields (mass and density stay open: the body shove reads them) (named, unit-ed and their absence written down, so the first engine that reads them can't
+  // invent either; refused until one does, so nobody tunes numbers nothing honours); layers, mask and ccd are cut (filters
+  // come back as named groups, KHR's collisionSystems; ccd is a solver knob no format maps). `material` is renamed
+  // `surface` (it names a surface:<name>; `material` means appearance). Angular velocity everywhere (acts, launches, state
+  // samples) is w: [x, y, z] rad/s in the world frame.
+  physics:   { on: "thing", fields: { kind: "string", who: "string", shape: "any", mass: "number", density: "number" }, required: ["kind"],
     grammar: { shape: "shape" },   // `any` is the pinned type of every value ever stored; the grammar narrows what may be written
-    defaults: { kind: "dynamic" }, enums: { kind: ["dynamic", "static", "none", "kinematic"], frictionCombine: COMBINE, restitutionCombine: COMBINE },
+    enums: { kind: ["dynamic", "static", "none", "kinematic"] },
     when: [{ if: { kind: "dynamic" }, set: { who: "visitor" } }],   // shared/grab.js DEFAULT_WHO, written down
-    ranges: { mass: { gt: 0, max: 1e6 }, density: { gt: 0, max: 1e5 }, friction: { min: 0, max: 10 }, restitution: { min: 0, max: 1 }, linearDamping: { min: 0, max: 1000 }, angularDamping: { min: 0, max: 1000 },
-              layers: { min: 0, max: 0xffffffff }, mask: { min: 0, max: 0xffffffff }, material: { maxLen: 64 } },
-    units: { mass: "kg", density: "kg/m³", linearDamping: "1/s", angularDamping: "1/s", centerOfMass: "m" },
-    docs: { kind: "dynamic (falls, tumbles, can be pushed) | static (solid, never moves) | kinematic (moves only by its motion or a script, pushes others) | none (no collisions)", who: "who may punt it (and pick it up when it has no grabbable): visitor, builder or owner",
-      mass: "how heavy it is, kg; blank: worked out from its size as if as dense as water", friction: "how much it grips what it slides on: 0 is ice, 1 is rubber (up to 10)", restitution: "how much it bounces: 0 lands dead, 1 bounces back as high as it fell",
-      ccd: "on for small fast things (a thrown ball) so they don't pass through thin walls; costs a little more", shape: "its collision shape, measured from its model by the authority (you never send it)" },
+    // mass and density stay OPEN: the body shove reads them (shared/shove.js massOf: the authority's shove gate, the walker,
+    // the agent), so they are not unread. The other eight have no reader
+    reservedFields: ["surface", "friction", "restitution", "frictionCombine", "restitutionCombine", "linearDamping", "angularDamping", "centerOfMass"],
+    dropped: { layers: "32-bit collision layers: cut (filters return as named groups)", mask: "the layers it collides with: cut", ccd: "swept collision: cut (eidosim sweeps every body)", material: "renamed surface (it names a surface:<name>)" },
+    // the reserved fields' units, limits and meaning of absence: what they will mean when an engine reads them (PHYSICS §3.2)
+    ranges: { mass: { gt: 0, max: 1e6 }, density: { gt: 0, max: 1e5 } }, units: { mass: "kg", density: "kg/m³" },
+    reservedShape: { units: { linearDamping: "1/s", angularDamping: "1/s", centerOfMass: "m" },
+      ranges: { friction: { min: 0, max: 10 }, restitution: { min: 0, max: 1 }, linearDamping: { min: 0, max: 1000 }, angularDamping: { min: 0, max: 1000 }, surface: { maxLen: 64 } },
+      enums: { frictionCombine: COMBINE, restitutionCombine: COMBINE } },
+    docs: { kind: "dynamic (falls, tumbles, can be pushed) | static (solid, never moves) | kinematic (moves only by its motion, an edit or a script, pushes others; what the authority stamps on a thing with motion or openable) | none (no collisions)", who: "who may punt it (and pick it up when it has no grabbable): a role id, this rank or above",
+      shape: "its collision shape, measured from its model by the authority (you never send it)",
+      mass: "how heavy it is, kg (a body's shove reads it; eidosim's flight doesn't yet); blank: its density × its size", density: "kg/m³; blank: water's (1000)" },
     absentMeans: {
       shape: "no measured shape: the thing is no body to the engine (it neither flies nor collides)",
-      mass: "kg; absent, density × the volume of its stamped shape (shapes.js shapeVolume; a convex, mesh or compound shape's baked geometry). Never a constant",
-      density: "kg/m³; absent, its material's surface density, else 1000 kg/m³ (water)",
-      material: "a surface:<name> on @world; absent (or naming no surface there now), friction and restitution are its own fields', else the engine's own law",
-      friction: "≥ 0, one coefficient (static = dynamic); absent, its material's, else the engine's own law (eidosim: its fixed constants)",
-      restitution: "0..1; absent, its material's, else the engine's own law (eidosim: its fixed bounce)",
-      frictionCombine: "average|min|multiply|max, how its friction meets another's (the higher in that order wins); absent, its material's, else average",
-      restitutionCombine: "average|min|multiply|max, as frictionCombine; absent, its material's, else max",
+      mass: "kg; absent, density × the volume of its stamped shape at its scale (shapes.js shapeVolume; shared/shove.js massOf). Today that shape is its measured bounding box, so a chair weighs as a solid box of its density; eidosim's flight computes the same (shared/sim.js: 1000 kg/m³ × its box) and reads no mass yet. Never a constant",
+      density: "kg/m³; absent, its surface's density, else 1000 kg/m³ (water: eidosim's, shared/sim.js DENSITY)",
+      // reserved fields (refused today): their absence is today's behaviour, and stays their meaning of absence
+      surface: "a surface:<name> on @world; absent (or naming no surface there now), friction and restitution are its own fields', else the engine's own law",
+      friction: "≥ 0, one coefficient (static = dynamic); absent, its surface's, else the engine's own law (eidosim: its fixed constants)",
+      restitution: "0..1; absent, its surface's, else the engine's own law (eidosim: its fixed bounce)",
+      frictionCombine: "average|min|multiply|max, how its friction meets another's (the later in that list wins, PhysX's priority); absent, its surface's, else average",
+      restitutionCombine: "average|min|multiply|max, as frictionCombine; absent, its surface's, else max",
       linearDamping: "1/s; absent, the engine's own law (eidosim: none)",
       angularDamping: "1/s; absent, the engine's own law (eidosim: none; it doesn't spin)",
-      centerOfMass: "[x, y, z] m in its own frame; absent, the centroid of its stamped shape",
-      ccd: "true: swept (continuous) collision for this body; absent, the engine's own law (eidosim sweeps every body)",
-      layers: "32-bit collision layers it is in; absent, 1 (the first)",
-      mask: "32-bit layers it collides with (both sides must accept); absent, all (0xffffffff)" },
-    help: "how it takes part in physics: {kind: dynamic (it flies when thrown, dropped or punted; with no grabbable it can also be picked up) | static (a collider; what anything with a model becomes when the world runs physics) | kinematic (a collider moved only by edits and motion, never by the engine; it is never launched) | none (nothing collides with it), who: who may punt it (and pick it up, when it has no grabbable; default visitor), shape: stamped by the authority (its measured box; you never send it), and, for engines that read them (eidosim reads none of these yet): mass (kg; absent: density × volume), density (kg/m³), material (a surface:<name> on @world), friction, restitution (0..1), linearDamping, angularDamping (1/s), centerOfMass [x,y,z], ccd, layers, mask (32-bit collision layers), frictionCombine, restitutionCombine (average|min|multiply|max)}. Grabbable makes a thing carryable; physics makes it fall. With eidosim: a thrown thing flies, tumbles, rolls if it's a sphere, and comes to rest; it knocks over dynamic things it hits unless a lock holds them (their own, or one on what they're under or what they hold)" },
+      centerOfMass: "[x, y, z] m in its own frame before scale; absent, the centroid of its stamped shape" },
+    help: "how it takes part in physics: {kind (required): dynamic (it flies when thrown, dropped or punted; with no grabbable it can also be picked up) | static (a collider; what anything with a model becomes when the world runs physics) | kinematic (a collider moved only by edits and motion, never by the engine; it is never launched; what a thing with motion or openable is stamped) | none (nothing collides with it), who: who may punt it (and pick it up, when it has no grabbable; default visitor), shape: stamped by the authority (its measured box; you never send it)}. mass (kg; absent: density × its box's volume) and density (kg/m³; absent 1000), which a body's shove reads. Reserved until an engine reads them (refused now): surface (a surface:<name> on @world), friction, restitution (0..1), frictionCombine, restitutionCombine (average|min|multiply|max), linearDamping, angularDamping (1/s), centerOfMass [x,y,z]. Grabbable makes a thing carryable; physics makes it fall. With eidosim (gravity [0, −9.81, 0] m/s²): a thrown thing flies, tumbles, rolls if it's a sphere, and comes to rest; it knocks over dynamic things it hits unless a lock holds them (their own, or one on what they're under or what they hold)" },
   // what a hand may do with it (research RESEARCH-grab-2026-10-06; shared/grab.js holds the shape, the defaults and the
   // check). Its own component, apart from dynamics: a lantern, a key, a book can be carried in a world with no physics.
   // shared/grab.js DEFAULTS, written down: the ones absent by meaning (no grips, no home, no use, a size-chosen pose)
@@ -214,18 +250,32 @@ export const COMPONENTS = {
       twoHanded: "on: both hands may hold it at once (a rifle, a broom): the first carries, the second aims", throw: "how hard it flies when thrown: 1 is normal, 2 twice as fast, 0 can only be dropped", release: "drop (it falls or is set down) | stay (where you let go) | return (it goes home)",
       returnAfter: "left unheld this many seconds it goes home; 0 never" },
     help: "it can be picked up and carried (grab, put, drop, throw; a VR hand's grip; desktop T): {who?: a role id (default visitor), enabled? (false: not now), steal? (false: nobody takes it from a hand; owners may), range? (m from the hand, 0.1..10, default 1.5; past 1.5 it flies to you), priority? (-10..10: wins when several are in reach), hold?: auto|press|toggle, pose?: hand|carry|torch|pistol|two-hand|shoulder (a body without tracked hands; default by size), grips? {<name>: {pos, q?, hand?: left|right|either, role?: primary|secondary, fingers?: fist|pinch|point|flat|open|trigger, part?}} (where the palm goes, in its own frame; none: held where grabbed), twoHanded?, throw? (0..3, ×the release velocity; 0: drop only), release?: drop|stay|return, returnAfter? (s unheld, then it goes home), fits? [keywords] (snaps into a socket whose accepts shares one), use? (a reactions action, or {down, up}: what the use button fires while held), prompt? (hover text, ≤ 40)}; where it goes home to is its home component (stamped when a returning grabbable has none); fx is reserved. Grabbable makes it carryable; physics {kind: 'dynamic'} makes it fall. A dynamic thing with no grabbable is carryable by physics.who (the rule: absent grabbable, a dynamic thing reads as {who: physics.who})" },
-  "physics-engine": { on: "world", fields: { engine: "string", build: "any", tickMs: "int" }, help: "on @world only (owner): the physics engine this world runs: {engine: 'eidosim@1.0.0', tickMs?}. The authority stamps the exact build. Delete it to turn physics off (refused while things are in flight)" },
+  // shape audit 10-16 (physics-motion §6): tickMs's default lives here (the authority read a literal 33); its range is the
+  // engine's (eidosim TICK_MS; tools/shape-physics-test holds them equal); build is the authority's stamp, a string. Gravity
+  // is the engine's own, not in the log (eidosim: [0, −9.81, 0] m/s²): a field is an addition once an engine reads one
+  "physics-engine": { on: "world", fields: { engine: "string", build: "string", tickMs: "int" }, required: ["engine"], nullable: ["build"], defaults: { tickMs: 33 },
+    ranges: { tickMs: { min: 16, max: 1000 } }, units: { tickMs: "ms" },
+    docs: { engine: "the engine and its version, name@semver (eidosim@1.0.0)", build: "the exact build the authority stamps (16 hex: its source files' hash; null for an engine this server doesn't carry); never sent", tickMs: "milliseconds a step (33 = 30 steps a second)" },
+    absentMeans: { gravity: "not a field: the engine's own (eidosim: [0, −9.81, 0] m/s², world frame)" },
+    help: "on @world only (owner): the physics engine this world runs: {engine: 'eidosim@1.0.0', tickMs? (ms a step, default 33)}. The authority stamps the exact build. Gravity is the engine's own (eidosim: [0, −9.81, 0] m/s²). Delete it to turn physics off (refused while things are in flight)" },
   // spec/PHYSICS.md §3.2: a world's named surface materials (Marrow's Surface Data Cards: one name bundles a surface's
-  // physical numbers; SLZ's format names materials, not raw per-object numbers). physics.material names one
-  surface:   { on: "world", keyed: true, key: "instance", fields: { friction: "number", restitution: "number", density: "number", frictionCombine: "string", restitutionCombine: "string", label: "string" },
-               enums: { frictionCombine: COMBINE, restitutionCombine: COMBINE }, ranges: { friction: { min: 0, max: 10 }, restitution: { min: 0, max: 1 }, density: { gt: 0, max: 1e5 }, label: { maxLen: 80 } },
-               help: "on @world, keyed by name: a surface material things name with physics.material: {friction? (≥ 0), restitution? (0..1), density? (kg/m³), frictionCombine?, restitutionCombine? (average|min|multiply|max; absent: average and max), label?}. When two touching surfaces' combine modes differ, the higher of average < min < multiply < max wins (PHYSICS §3.2)" },
-  // spec/PHYSICS.md §3.3: reserved so a door, a lever or a chain has ONE meaning when an engine can solve it. parent is a
-  // rigid attachment, never a solver joint; openable is kinematic animation; a physical door is a joint. The authority
-  // refuses it until the world's engine carries joints (none does yet)
-  joint:     { status: "reserved", instead: "parent {to} attaches rigidly; openable animates a door, lid or gate; motion swings a pendulum (PHYSICS §3.3)", on: "thing", keyed: true, key: "instance", fields: { to: "ref", type: "string", anchor: "vec3", axis: "axis", limits: "array", drive: "object", breakForce: "number" },
-               enums: { type: ["fixed", "hinge", "slider", "ball", "distance", "spring"] }, ranges: { breakForce: { gt: 0 } },
-               help: "reserved (refused until this world's engine carries joints): keyed by name, a physical joint to another thing: {to: id, type: fixed|hinge|slider|ball|distance|spring, anchor [x,y,z] (own frame, m), axis, limits [min, max] (rad or m), drive {stiffness, damping, maxForce}, breakForce (N)}" },
+  // physical numbers; SLZ's format names materials, not raw per-object numbers). physics.surface names one. Reserved with
+  // physics' reserved fields (shape audit 10-16): no engine reads either, so neither is written yet; both open together.
+  // The combine modes and their order are PhysX's, Unity's and Rapier's (COMBINE, above); KHR_physics_rigid_bodies names the
+  // same four (minimum, maximum) but resolves a mismatch the other way round (average first), so an importer resolves per
+  // pair, never per mode
+  surface:   { status: "reserved", instead: "nothing yet: no engine here reads surfaces (eidosim's friction and bounce are its own constants)", on: "world", keyed: true, key: "instance", fields: { friction: "number", restitution: "number", density: "number", frictionCombine: "string", restitutionCombine: "string", label: "string" },
+               enums: { frictionCombine: COMBINE, restitutionCombine: COMBINE }, ranges: { friction: { min: 0, max: 10 }, restitution: { min: 0, max: 1 }, density: { gt: 0, max: 1e5 }, label: { maxLen: 80 } }, units: { density: "kg/m³" },
+               absentMeans: { friction: "the engine's own law", restitution: "the engine's own law", density: "the engine's own", frictionCombine: "average", restitutionCombine: "max", label: "its key" },
+               help: "reserved (refused until an engine reads surfaces): on @world, keyed by name, a surface material things name with physics.surface: {friction? (≥ 0), restitution? (0..1), density? (kg/m³), frictionCombine?, restitutionCombine? (average|min|multiply|max; absent: average and max), label?}. When two touching surfaces' combine modes differ, the later of average < min < multiply < max wins (PhysX, Unity, Rapier; KHR resolves the other way round, PHYSICS §3.2)" },
+  // spec/PHYSICS.md §3.3: the constraint between two bodies is `physics-joint` (OMI_physics_joint; it sits beside physics and
+  // physics-engine). R 15:04: `joint` is the skeleton node (Maya, glTF, VRM: an avatar's entity tree), below. Both reserved:
+  // one anchor can't carry the two frames every engine and glTF/OMI use, so no fields are pinned (the target shape is
+  // sketched in PHYSICS §3.3, not here). parent is a rigid attachment, never a solver joint; openable is kinematic animation
+  "physics-joint": { status: "reserved", instead: "parent {to} attaches rigidly; openable animates a door, lid or gate; motion swings a pendulum (PHYSICS §3.3)", on: "thing", keyed: true, key: "instance",
+               help: "reserved (refused until this world's engine carries joints): keyed by name, a physical constraint between this thing and another (OMI_physics_joint: two frames, one on each body, with limits and drives; PHYSICS §3.3 sketches the shape)" },
+  joint:     { status: "reserved", instead: "nothing yet: a skeleton's nodes come with avatar entity trees", on: "thing",
+               help: "reserved: a skeleton node (Maya's joint, glTF's skin joint, a VRM humanoid bone): an entity that is one bone of an articulated body, for avatar entity trees. Not the physics constraint (that is physics-joint)" },
   // server-written (shape audit 10-16): a hand set below owner is refused (a forged copy-of mis-routes a rebase)
   "copy-of": { on: "thing", fields: { from: "string", key: "string" }, required: ["from", "key"], grammar: { from: "sha256" }, writtenBy: "server",
                docs: { from: "the blueprint record it was copied from, sha256:<64 hex>", key: "which part of that record it is" }, help: "set by the server on copies (never by hand below owner): {from: the record's hash sha256:<64 hex>, key: its part key in that record}" },
@@ -291,7 +341,17 @@ export const COMPONENTS = {
                ranges: { width: { gt: 0, max: 1000 }, depth: { gt: 0, max: 1000 }, bladeHeight: { gt: 0, max: 5 }, height: { gt: 0, max: 10 }, density: { min: 0, max: 4 },
                          spacing: { min: 0.05, max: 10 }, perCell: { min: 1, max: 32 }, wind: { min: 0, max: 10 } }, units: { width: "m", depth: "m", bladeHeight: "m", height: "m", spacing: "m" },
                docs: { width: "the field's width, metres", depth: "the field's depth, metres", density: "how thickly it grows (0..4)", height: "blade height, metres", species: "what grows", preset: "a planting by name" }, help: "a grass or crop field {width, depth, center, species, density…}" },
-  structure: { on: "thing", fields: { tile: "number", wallH: "number", wallT: "number", slabT: "number", labels: "object", levels: "array" }, help: "a built structure's plan {tile, wallH, wallT, levels, labels}" },
+  // carried from the first protocol, with real readers (shared/structure.js; shape audit 10-16, physics-motion §9): its grid numbers and its nested
+  // grammar were only in structure.js (GRID_DEFAULTS, APERTURES, normalize), "a CONTRACT". Pinned here; tools/shape-physics-test
+  // holds them equal to structure.js. A level entry a reader can't parse reads as absent (normalize skips it)
+  structure: { on: "thing", fields: { tile: "number", wallH: "number", wallT: "number", slabT: "number", labels: "object", levels: "array" },
+    defaults: { tile: 1, wallH: 2.8, wallT: 0.15 }, units: { tile: "m", wallH: "m", wallT: "m", slabT: "m" },
+    ranges: { tile: { gt: 0, max: 100 }, wallH: { gt: 0, max: 100 }, wallT: { gt: 0, max: 10 }, slabT: { gt: 0, max: 10 } },
+    absentMeans: { slabT: "0.10 m (structure.js GRID_DEFAULTS; never written by the editor)" },
+    nested: { levels: "[{y (m), tiles: [[x int, z int, mat?, half?: A|B]], walls: [[axis 0..3, x int, z int, mat?]], apertures: [[axis 0..3, x int, z int, kind]]}]", labels: "{<cellKey>: string}" },
+    nestedEnums: { "levels[].apertures[][3]": ["door", "window", "arch"], "levels[].walls[][0]": [0, 1, 2, 3], "levels[].apertures[][0]": [0, 1, 2, 3], "levels[].tiles[][3]": ["A", "B"] },
+    docs: { tile: "metres a cell", wallH: "wall height, floor to floor, metres", wallT: "wall thickness, metres", slabT: "floor slab thickness, metres (its top at the level's y)", labels: "room names by cell", levels: "the storeys: tiles, walls on cell edges, apertures (door, window, arch) in walls" },
+    help: "a built structure's plan (The Sims' grid: walls on cell edges) {tile (m, default 1), wallH (m, default 2.8), wallT (m, default 0.15), slabT? (m; absent 0.10), levels: [{y, tiles: [[x, z, mat?, half?]], walls: [[axis 0..3, x, z, mat?]], apertures: [[axis, x, z, door|window|arch]]}], labels: {<cell>: name}}" },
   // R 10-07: "not the kitchen sink style for particles". The instance is tiny and names an effect document (the
   // Niagara / Godot / bevy_hanabi shape; shared/particle_effects.js): an Essentials name or a stored document's content
   // address, with the document's own params. The first protocol's bag (preset, origin, count, quality, size, area,
@@ -405,9 +465,9 @@ export const COMPONENTS = {
 // change to a trial or reserved entry is allowed only with an acknowledgement (pretrans --pin --ack), a stable one never.
 // held names (R 15:16, shape audit 10-16; research reserved-names.md): registered reserved, so no write can squat a name the
 // alpha means to give a settled shape. No fields: each says what it is held for. `joint` (the skeleton node) and
-// `physics-joint` come with the physics step.
+// `physics-joint` (the constraint) are registered above, with physics.
 for (const [name, what] of Object.entries({
-  material: "appearance: a surface's look (glTF material, KHR extensions). physics.material names a surface, and is to become physics.surface",
+  material: "appearance: a surface's look (glTF material, KHR extensions). The physical surface a thing names is physics.surface",
   "anim-clip": "an animation clip and its playhead",
   "anim-states": "an animation state machine (states, transitions, params driving clips)",
   camera: "a camera a world places (a view, a screen's source)",
@@ -569,6 +629,10 @@ export function pinOf() {
     if (d.handlers) p.handlers = Object.fromEntries(Object.entries(d.handlers).map(([k, h]) => [k, Object.keys(h.args ?? {})]));
     if (d.reservedKinds) p.reservedKinds = Object.keys(d.reservedKinds);
     if (d.reservedFields) p.reservedFields = [...d.reservedFields];
+    // what a reserved field will mean when it opens (physics: units, limits, enums), held as the absentMeans are
+    if (d.reservedShape) p.reservedShape = copy(d.reservedShape);
+    // a nested grammar's closed vocabularies (structure's aperture kinds and wall axes: shape audit 10-16)
+    if (d.nestedEnums) p.nestedEnums = copy(d.nestedEnums);
     out[name] = p;
   }
   return out;
@@ -599,6 +663,9 @@ export function pinBreakList(pin, now = pinOf()) {
       if (why && Object.hasOwn(p.fields ?? {}, f)) push(`${name}.${f}: its range narrowed (${why}): ${j(p.ranges?.[f] ?? {})} → ${j(n.ranges?.[f])}`); }
     if (p.status !== undefined && n.maxLen !== undefined && (p.maxLen === undefined || n.maxLen < p.maxLen)) push(`${name}: maxLen ${p.maxLen ?? "none"} → ${n.maxLen}`);
     for (const [f, vals] of Object.entries(p.itemEnums ?? {})) for (const x of vals) if (!(n.itemEnums?.[f] ?? []).includes(x)) push(`${name}.${f}[]: ${j(x)} is no longer allowed`);
+    // a reserved field that opens (moves into fields) is an addition; one that leaves both lists frees a held name
+    for (const f of p.reservedFields ?? []) if (!(n.reservedFields ?? []).includes(f) && !Object.hasOwn(n.fields ?? {}, f)) push(`${name}.${f}: a reserved field is gone (its name is no longer held)`);
+    for (const [f, vals] of Object.entries(p.nestedEnums ?? {})) for (const x of vals) if (!(n.nestedEnums?.[f] ?? []).includes(x)) push(`${name}.${f}: ${j(x)} is no longer allowed`);
     for (const [f, t] of Object.entries(p.scopeFields ?? {})) if (n.scopeFields?.[f] !== t) push(`${name}.scope.${f}: type ${t} → ${n.scopeFields?.[f] ?? "gone"}`);
     if (p.status !== undefined && n.writtenBy !== undefined && n.writtenBy !== p.writtenBy) push(`${name}: now written by ${n.writtenBy} only`);
     if (p.status !== undefined && n.keyPattern !== undefined && n.keyPattern !== p.keyPattern) push(`${name}: keys ${p.keyPattern ?? "any"} → ${n.keyPattern}`);

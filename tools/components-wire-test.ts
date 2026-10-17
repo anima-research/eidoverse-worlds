@@ -314,11 +314,11 @@ console.log('\n5. the inspector (shared/editschema.js: reads either spelling, wr
   check('with both spellings the component owns the group, the legacy card says it is overridden, nothing is owned twice',
     fieldAt(inspectSchema(both, 'x'), 'collider.shape')?.value === 'box' && card(both, 'Collider', 'collider')?.fields.includes('collider.shape')
     && /overridden/.test(JSON.stringify(card(both, 'Collider')?.info)) && cardsSound(both).length === 0, JSON.stringify(cardsSound(both)));
-  check('collider.shape must be exact or box', (() => { const r = ed(both, { 'collider.shape': 'mesh' }); return r.ops.length === 0 && /exact.*box/.test(r.errors[0] ?? ''); })());
+  check('collider.shape must be mesh, box or sphere (shape audit 10-16: mesh was exact)', (() => { const r = ed(both, { 'collider.shape': 'triangles' }); return r.ops.length === 0 && /mesh.*box/.test(r.errors[0] ?? ''); })());
   const ac = door({ model: LAMP, pos: [0, 0, 0] }, { 'add.Collider': 'box' });
-  check('add.Collider on a model writes set collider (default exact; "box" when asked), and the door writes it',
+  check('add.Collider on a model writes set collider (default mesh; "box" when asked), and the door writes it',
     opsOf(ac.r) === JSON.stringify([{ verb: 'set', args: { id: 'x', component: 'collider', value: { shape: 'box' } } }])
-    && opsOf(ed({ model: LAMP, pos: [0, 0, 0] }, { 'add.Collider': null })) === JSON.stringify([{ verb: 'set', args: { id: 'x', component: 'collider', value: { shape: 'exact' } } }])
+    && opsOf(ed({ model: LAMP, pos: [0, 0, 0] }, { 'add.Collider': null })) === JSON.stringify([{ verb: 'set', args: { id: 'x', component: 'collider', value: { shape: 'mesh' } } }])
     && ac.res.ok && ac.after?.collider?.shape === 'box', JSON.stringify([ac.r.ops, ac.res.refused]));
   check('the raw-JSON door obeys the door\'s rules too (comp.light with a string colour)', ed(lamp, { 'comp.light': '{"color":"red"}' }).ops.length === 0);
   check('every card sound on the lamp, the Empty and the legacy-collide model', [lamp, empty, oldCol].every((e) => cardsSound(e).length === 0), JSON.stringify([lamp, empty, oldCol].map(cardsSound)));

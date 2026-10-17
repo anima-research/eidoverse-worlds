@@ -53,20 +53,26 @@ ok("SH6", typeof SH.shapeVolume === "function" && Math.abs(SH.shapeVolume([[0, 0
 // ---- PH: physical properties ----
 const CS = await imp("shared/protocol/componentspec.js");
 const ph = CS.COMPONENTS?.physics ?? {};
-const NEW = ["mass", "density", "material", "friction", "restitution", "linearDamping", "angularDamping", "centerOfMass", "ccd", "layers", "mask", "frictionCombine", "restitutionCombine"];
-ok("PH1", NEW.every((f) => ph.fields?.[f]) && NEW.every((f) => typeof ph.absentMeans?.[f] === "string" && ph.absentMeans[f].length > 10) && typeof ph.absentMeans?.shape === "string",
-  "physics registers mass, density, material, friction, restitution, damping, centerOfMass, ccd, layers, mask, friction/restitution combine modes, each with its meaning of absence", { fields: ph.fields, absentMeans: ph.absentMeans && Object.keys(ph.absentMeans) });
-ok("PH2", NEW.every((f) => !(f in (CS.defaultsOf?.("physics") ?? {}))) && /kg\/m³/.test(ph.absentMeans?.density ?? "") && /density/.test(ph.absentMeans?.mass ?? "") && /volume/.test(ph.absentMeans?.mass ?? ""),
+// shape audit 10-16 (physics-motion §5): the ten physical properties are RESERVED fields (named, unit-ed, their absence
+// written down, refused until an engine reads them); material is renamed surface; ccd, layers, mask are cut
+// (mass and density stay open fields: the body shove reads them, shared/shove.js massOf)
+const NEW = ["surface", "friction", "restitution", "frictionCombine", "restitutionCombine", "linearDamping", "angularDamping", "centerOfMass"];
+ok("PH1", ph.fields?.mass === "number" && ph.fields?.density === "number" && NEW.every((f) => (ph.reservedFields ?? []).includes(f) && !ph.fields?.[f]) && NEW.every((f) => typeof ph.absentMeans?.[f] === "string" && ph.absentMeans[f].length > 10) && typeof ph.absentMeans?.shape === "string"
+  && ["ccd", "layers", "mask", "material"].every((f) => !ph.fields?.[f] && !(ph.reservedFields ?? []).includes(f)),
+  "physics keeps mass and density (the shove reads them) and holds surface, friction, restitution, damping, centerOfMass, friction/restitution combine modes as reserved fields, each with its meaning of absence (ccd, layers, mask cut; material renamed surface)", { fields: ph.fields, reserved: ph.reservedFields, absentMeans: ph.absentMeans && Object.keys(ph.absentMeans) });
+ok("PH2", [...NEW, "mass", "density"].every((f) => !(f in (CS.defaultsOf?.("physics") ?? {}))) && /kg\/m³/.test(ph.absentMeans?.density ?? "") && /density/.test(ph.absentMeans?.mass ?? "") && /volume/.test(ph.absentMeans?.mass ?? ""),
   "none of them is a materialized constant (a pinned mass: 1 would be wrong for every crate); mass absent = density × volume", ph.absentMeans);
-const bad = [{ mass: 0 }, { density: -1 }, { friction: -0.1 }, { restitution: 1.5 }, { linearDamping: -1 }, { layers: 2 ** 32 }, { mask: 1.5 }, { frictionCombine: "geometric" }, { restitutionCombine: "MAX" }, { centerOfMass: [0, "x", 0] }, { ccd: "yes" }, { material: 3 }];
-const good = { kind: "dynamic", mass: 2.5, density: 700, material: "wood", friction: 0.6, restitution: 0.2, linearDamping: 0.05, angularDamping: 0.1, centerOfMass: [0, 0.1, 0], ccd: true, layers: 1, mask: 0xffffffff, frictionCombine: "min", restitutionCombine: "max" };
-ok("PH3", sr(good) === null && bad.every((b) => sr({ kind: "dynamic", ...b })), "their ranges and types are the authority's", { good: sr(good), bad: bad.map((b) => [Object.keys(b)[0], sr({ kind: "dynamic", ...b })]) });
+const held = NEW.map((f) => ({ [f]: f === "surface" || f.endsWith("Combine") ? "min" : f === "centerOfMass" ? [0, 0.1, 0] : 0.5 }));
+const cut = [{ ccd: true }, { layers: 1 }, { mask: 1 }, { material: "wood" }];
+ok("PH3", sr({ kind: "dynamic" }) === null && sr({ kind: "dynamic", mass: 2.5, density: 700 }) === null && !!sr({ kind: "dynamic", mass: 0 }) && !!sr({ kind: "dynamic", density: -1 }) && held.every((b) => /reserved/.test(sr({ kind: "dynamic", ...b }) ?? "")) && cut.every((b) => /gone/.test(sr({ kind: "dynamic", ...b }) ?? "")) && /needs kind/.test(sr({}) ?? ""),
+  "the authority takes a mass and a density in range, refuses a reserved property as reserved, a cut one as gone, and a physics with no kind", { held: held.map((b) => sr({ kind: "dynamic", ...b })), cut: cut.map((b) => sr({ kind: "dynamic", ...b })), none: sr({}) });
 const sf = CS.COMPONENTS?.surface;
 ok("PH4", sf?.on === "world" && sf?.keyed && ["friction", "restitution", "density"].every((f) => sf.fields?.[f] === "number") && AU.schemaRefusal?.("surface:oak", { friction: 0.6, restitution: 0.1, density: 700, frictionCombine: "average" }) === null
   && AU.schemaRefusal?.("surface:oak", { friction: -1 }) && AU.schemaRefusal?.("surface:oak", { frictionCombine: "geometric" }) && JSON.stringify(CS.COMBINE) === '["average","min","multiply","max"]',
   "a world's surfaces: @world surface:<name> {friction, restitution, density} (a named material, Marrow's surface-card shape)", sf);
 ok("PH5", (ph.enums?.kind ?? []).includes("kinematic") && ["dynamic", "static", "none"].every((k) => ph.enums.kind.includes(k)), "physics.kind adds kinematic (moved by authority or motion, never by the engine)", ph.enums);
-ok("PH6", CS.COMPONENTS?.joint?.keyed && CS.COMPONENTS.joint.fields?.to === "ref" && (CS.COMPONENTS.joint.enums?.type ?? []).includes("hinge"), "joint:<name> is reserved {to: ref, type: fixed|hinge|slider|ball|distance|spring, …}", CS.COMPONENTS?.joint);
+ok("PH6", CS.statusOf("physics-joint") === "reserved" && CS.COMPONENTS["physics-joint"].keyed && !CS.COMPONENTS["physics-joint"].fields && CS.statusOf("joint") === "reserved" && /skeleton/.test(CS.COMPONENTS.joint.help),
+  "physics-joint:<name> is the reserved constraint (no fields pinned: one anchor can't carry two frames; PHYSICS §3.3 sketches the shape); joint is the reserved skeleton node", [CS.COMPONENTS["physics-joint"], CS.COMPONENTS.joint]);
 
 // a live world (server/livehost.ts) with a pinned clock, as physlive-check opens one
 const { request } = AU;
@@ -88,17 +94,19 @@ function playground() {
   return x;
 }
 { const { call, w } = playground();
-  const j = call("rowan", "set", { id: "ball", component: "joint:hinge", value: { to: "@world", type: "hinge", axis: [0, 1, 0] } });
-  ok("PH7", !j.ok && j.refused?.code === "reserved" && /joint/.test(j.refused?.reason ?? "") && /parent \{to\}/.test(j.refused?.fix ?? ""), "the authority refuses a joint: a reserved name (one refusal for every reserved name; its fix says what to use meanwhile), rather than storing a dead value", j.refused ?? j);
+  const j = call("rowan", "set", { id: "ball", component: "physics-joint:hinge", value: { to: "@world" } });
+  ok("PH7", !j.ok && j.refused?.code === "reserved" && /physics-joint/.test(j.refused?.reason ?? "") && /parent \{to\}/.test(j.refused?.fix ?? ""), "the authority refuses a physics-joint: a reserved name (one refusal for every reserved name; its fix says what to use meanwhile), rather than storing a dead value", j.refused ?? j);
   const k = call("rowan", "create", { id: "lift", model: "crate", components: { physics: { kind: "kinematic" } }, place: { at: [3, 3] } });
   const kp = w.state().entities.lift?.c.physics;
   ok("PH8", k.ok && kp?.kind === "kinematic" && Array.isArray(kp.shape) && call("rowan", "punt", { id: "lift" }).refused?.code === "not-dynamic",
     "a kinematic thing is admitted, gets its measured shape (a collider), and is never launched", [k.refused, kp]);
+  // shape audit 10-16: surfaces and the properties are reserved until an engine reads them (writes closed, names held)
   const s = call("rowan", "set", { id: "@world", component: "surface:oak", value: { friction: 0.6, restitution: 0.1, density: 700 } });
-  const m = call("rowan", "set", { id: "ball", component: "physics", value: { kind: "dynamic", material: "oak", mass: 0.4 } });
-  ok("PH9", s.ok && m.ok && w.state().entities.ball.c.physics.material === "oak" && w.state().entities.ball.c.physics.mass === 0.4, "a surface on @world and a thing naming it are admitted", [s.refused, m.refused]);
+  const m = call("rowan", "set", { id: "ball", component: "physics", value: { kind: "dynamic", surface: "oak" } });
+  const ms = call("rowan", "set", { id: "ball", component: "physics", value: { kind: "dynamic", mass: 0.4 } });
+  ok("PH9", s.refused?.code === "reserved" && m.refused?.code === "reserved" && !w.state().entities["@world"].c["surface:oak"] && ms.ok && w.state().entities.ball.c.physics.mass === 0.4, "a surface on @world and a thing naming it are refused as reserved (nothing reads them yet); a mass is admitted (the shove reads it)", [s.refused, m.refused, ms.refused]);
   const mm = call("rowan", "set", { id: "ball", component: "physics", value: { kind: "dynamic", material: "teak" } });
-  ok("PH10", !mm.ok && /teak/.test(mm.refused?.reason ?? ""), "a material that names no surface here is refused with the ones there are", mm.refused ?? mm);
+  ok("PH10", !mm.ok && mm.refused?.code === "schema" && (mm.refused?.didYouMean ?? []).includes("surface"), "physics.material is refused with where it went (renamed surface)", mm.refused ?? mm);
 }
 
 // ---- TH: throws keep spin and capture time ----

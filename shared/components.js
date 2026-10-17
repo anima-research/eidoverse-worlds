@@ -155,15 +155,16 @@ const DEFS = [
     params: { lib: { t: 'asset', default: null, required: true } },
     fallback: { visual: 'placeholder box until the model loads', text: 'a <file stem>' } },
   { name: 'Collider', category: 'Physics', needs: ['Model'], summary: 'how bodies bump into it',
-    params: paramsOf('Collider', { shape: { default: 'exact' } }),
+    params: paramsOf('Collider', { shape: { default: 'mesh' } }),
     fallback: { text: '(none)' }, note: 'wire: comp.collider {shape} (written by comp), or the spawn verb\'s legacy `collide`; comp.collider wins when both are present. Absent = the browser decides by size' },
   { name: 'Light', category: 'Rendering', summary: 'a point light',
     params: paramsOf('Light'),
     fallback: { visual: 'a glowing gizmo when the slot pool is spent', text: '(light)' },
     note: 'wire: comp.light {color, intensity, range, important, day} on any entity (an imported lamp is a Model and a Light)' },
-  // the motions' READS: a pendulum swings about [0, 2, 0] (a part about its own origin), an orbit's part circles at 1 m
+  // the motions' READS: a whole thing swings and turns about its Pivot component, else its origin (shape audit 10-16; a pendulum
+  // was [0, 2, 0]); a part about its own origin; an orbit's part circles at 1 m
   { name: 'Pendulum', category: 'Motion', summary: 'swings back and forth about an axis',
-    params: paramsOf('Pendulum', { part, pivot: { default: [0, 2, 0], partDefault: [0, 0, 0] } }),
+    params: paramsOf('Pendulum', { part, pivot: { default: [0, 0, 0], partDefault: [0, 0, 0] } }),
     fallback: { visual: 'stands still', text: 'in motion (pendulum)' } },
   { name: 'Spin', category: 'Motion', summary: 'turns steadily about an axis',
     params: paramsOf('Spin', { part, pivot: { default: [0, 0, 0] } }),
@@ -523,12 +524,13 @@ export function lightOf(ent) {
 }
 
 /** The collider preference the browser hands fitCollider: comp.collider.shape
- *  when it is "exact" or "box", else the legacy spawn `collide` verbatim (as
+ *  "mesh" (or the older "exact") as "exact", "box" as itself, else the legacy spawn `collide` verbatim (as
  *  the browser always passed it), else undefined (= decide by size). "sphere" is a physics request (PHYSICS §3.1): to
  *  walk on, a ball is what its size decides. */
 export function colliderOf(ent) {
   const s = isBag(ent?.collider) ? ent.collider.shape : undefined;
-  if (s === 'exact' || s === 'box') return s;
+  if (s === 'mesh' || s === 'exact') return 'exact';   // the walker's word for its triangles; `exact` is the stored word before 10-16
+  if (s === 'box') return s;
   return ent?.collide;
 }
 
@@ -579,7 +581,7 @@ export function compRefusal(type, data, ent = null) {
     return null;
   }
   if (type === 'collider') {
-    if (!isBag(data) || (data.shape !== 'exact' && data.shape !== 'box' && data.shape !== 'sphere')) return 'a collider component is {shape: "exact"} (its triangles), {shape: "box"} (its bounding box) or {shape: "sphere"} (a ball, for physics); remove it (data: null) to let the size decide';
+    if (!isBag(data) || (data.shape !== 'mesh' && data.shape !== 'exact' && data.shape !== 'box' && data.shape !== 'sphere')) return 'a collider component is {shape: "mesh"} (its triangles), {shape: "box"} (its bounding box) or {shape: "sphere"} (a ball, for physics); remove it (data: null) to let the size decide';
     return null;
   }
   return null;

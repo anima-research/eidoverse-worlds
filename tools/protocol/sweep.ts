@@ -119,6 +119,21 @@ function oldNorm(st: any, phys: any = null) {
     // declared (translate-v1@5 DROPPED motion.rpm): a spin's rpm is degPerSec = rpm × 6 (degPerSec wins when both were written)
     if (n.comp) for (const [k, m] of Object.entries<any>(n.comp)) if ((k === "motion" || k.startsWith("motion:")) && m && typeof m === "object" && "rpm" in m) {
       const { rpm, ...r } = m; n.comp[k] = r.degPerSec !== undefined || typeof rpm !== "number" ? r : { ...r, degPerSec: rpm * 6 }; }
+    // declared (translate-v1@12, the shape audit's physics-motion family), written independently of shared/protocol/shaperepair.js:
+    // a bare motion naming a part is motion:<part> (a keyed one already there wins); amplitude is amp; a letter axis its
+    // vector; a pendulum with no period or damp read 3.5 s and 0; a whole motion's pivot is the thing's pivot; a whole
+    // pendulum with no pivot swung about [0, 2, 0]; collider exact is mesh
+    if (n.comp) { const C = (n.comp = { ...n.comp }), isB = (v: any) => !!v && typeof v === "object" && !Array.isArray(v), AX: any = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], "-x": [-1, 0, 0], "-y": [0, -1, 0], "-z": [0, 0, -1] };
+      if (isB(C.motion) && typeof C.motion.part === "string" && C.motion.part) { const { part, ...r } = C.motion; if (!isB(C[`motion:${part}`])) C[`motion:${part}`] = r; delete C.motion; }
+      else if (isB(C.motion) && "part" in C.motion) { const { part: _p, ...r } = C.motion; C.motion = r; }
+      for (const k of Object.keys(C)) if ((k === "motion" || k.startsWith("motion:")) && isB(C[k])) { const m = { ...C[k] };
+        if ("amplitude" in m) { if (m.amp === undefined && typeof m.amplitude === "number") m.amp = m.amplitude; delete m.amplitude; }
+        if (typeof m.axis === "string" && AX[m.axis.toLowerCase()]) m.axis = AX[m.axis.toLowerCase()];
+        if (m.type === "pendulum") { if (m.period === undefined) m.period = 3.5; if (m.damp === undefined) m.damp = 0; }
+        if (c(m) !== c(C[k])) C[k] = m; }
+      if (isB(C.motion) && "pivot" in C.motion) { const { pivot, ...r } = C.motion; C.motion = r; if (!isB(C.pivot) && Array.isArray(pivot) && pivot.length === 3 && pivot.every(Number.isFinite)) C.pivot = { pos: pivot }; }
+      if (isB(C.motion) && C.motion.type === "pendulum" && !isB(C.pivot)) C.pivot = { pos: [0, 2, 0] };
+      if (isB(C.collider) && C.collider.shape === "exact") C.collider = { ...C.collider, shape: "mesh" }; }
     if (phys?.restAt[id]) n.pos = phys.restAt[id].slice();
     if (phys?.sim.boxes && typeof e0.lib === "string" && phys.sim.boxes[e0.lib]) n.comp = { ...(n.comp ?? {}), physics: { kind: phys.dynamic?.(id) ? "dynamic" : "static", shape: phys.sim.boxes[e0.lib] } };   // @11: what the log punts (this incarnation) is dynamic, from its start (R 10-08)
     if (n.comp && !Object.keys(n.comp).length) delete n.comp;
@@ -256,7 +271,7 @@ for (const p of logs.sort()) {
   check(`${name}: the projection loses nothing (independent inverse vs the engine fold${every > 1 ? `, every ${every}` : ", every entry"})`, !loss, JSON.stringify(loss).slice(0, 400));
 }
 console.log(`[sweep] ${total} distinct world logs, ${entries} entries, divergences ${divergences}, malformed-on-read-back ${malformed}, lossy ${lossy}, renamed actors ${renamed}, ts clamped ${clamped}, ${Math.round(performance.now() - t0)} ms`);
-console.log(`[sweep] translate-v1@2: ${mountVerbs} v1 mounts translated; ${mounted} things ride a parent at the end (door-shaped: transform local, parent {to, order, socket?}); ${guards} guards became locks in ${guardWorlds} world(s)`);
+console.log(`[sweep] translate-v1@2: ${mountVerbs} v1 mounts translated; ${mounted} things ride a parent at the end (door-shaped: transform local, parent {to, socket?}); ${guards} guards became locks in ${guardWorlds} world(s)`);
 console.log(`[sweep] DROPPED (by design): ${Object.keys(DROPPED).join("; ")}`);
 console.log(`[sweep] ${pass} passed, ${fail} failed`);
 process.exit(fail || !total ? 1 : 0);

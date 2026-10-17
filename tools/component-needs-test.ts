@@ -58,9 +58,9 @@ console.log('a need that cannot be met in place is explained (a Model comes from
   const lamp = { pos: [0, 2, 0], light: { color: 1, intensity: 2, range: 3 }, actor: 'o', ts: 1 };
   check('a lamp with no model has no model either', /needs a model/.test(addOps(lamp, 'L', 'Collider').errors[0] ?? ''));
   const col = addOps({ model: LIB, pos: [0, 0, 0] }, 's', 'Collider');
-  check('on a model the Model need is met: add.Collider just adds it', J(col.ops) === J([set('collider', { shape: 'exact' })]), J(col));
+  check('on a model the Model need is met: add.Collider just adds it', J(col.ops) === J([set('collider', { shape: 'mesh' })]), J(col));
   const cd = door({ model: LIB, pos: [0, 0, 0] }, col.ops);
-  check('…and the door writes it', cd.res.ok && cd.after?.collider?.shape === 'exact', J([cd.res.refused, cd.after?.comp]));
+  check('…and the door writes it', cd.res.ok && cd.after?.collider?.shape === 'mesh', J([cd.res.refused, cd.after?.comp]));
   check('addable() without {unmet} is unchanged (needs met only)', !addable(componentsOf(empty).components).some((a: any) => a.name === 'Collider') && addable(componentsOf(empty).components, { unmet: true }).find((a: any) => a.name === 'Collider')?.unmet?.[0] === 'Model');
 }
 

@@ -192,7 +192,7 @@ export function evalWholeMotion(base, m, nowMs) {
   switch (m.type) {
     case 'pendulum':
       r = { ok: true, rot: true, yaw: null,
-        ...rotateAtPivot(base, axisOf(m, [1, 0, 0]), m.pivot ?? base.pivot ?? [0, 2, 0], pendulumTheta(m, t)) };   // base.pivot: the entity's pivot component (research 52)
+        ...rotateAtPivot(base, axisOf(m, [1, 0, 0]), m.pivot ?? base.pivot ?? [0, 0, 0], pendulumTheta(m, t)) };   // base.pivot: the entity's pivot component (research 52); absent, its origin (shape audit 10-16: was [0, 2, 0], which a stored world's first load writes as its pivot)
       break;
     case 'spin': {
       const rate = rateOf(m, 36);   // degPerSec, else 360 / period, else rpm × 6

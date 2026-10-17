@@ -293,7 +293,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const r = translate(old, DOORKEYS()); fs.writeFileSync(root + "worlds/tr-mounts.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
   const v1 = v1Empty(); for (const e of old) v1fold(v1, e);
   const tc = (verb, args) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "tr-mounts"), "ann", verb, args); };
-  ok(!r.stats.divergences && r.final.translated.box.parent?.order === "a0" && !("offset" in r.final.translated.box.parent), "M1 a translated mount is door-shaped: parent {to, order}, no offset copy (L2)", r.final.translated.box.parent);
+  ok(!r.stats.divergences && r.final.translated.box.parent?.to !== undefined && !("order" in r.final.translated.box.parent) && !("offset" in r.final.translated.box.parent), "M1 a translated mount is door-shaped: parent {to} (no order since the shape audit, 10-16), no offset copy (L2)", r.final.translated.box.parent);
   ok(JSON.stringify(r.final.translated.box.transform.pos) === "[0,0.75,0]" && JSON.stringify(r.final.translated.bell.transform.pos) === "[0.45,0.75,0.25]" && r.final.translated.bell.parent.socket === "perch",
     "M2 its transform is local: the offset, or (no offset) its socket's pos, and the socket is kept (v1's slot)", [r.final.translated.box.transform, r.final.translated.bell.transform, r.final.translated.bell.parent]);
   const near = (a, b) => a && b && a.every((x, i) => Math.abs(x - b[i]) < 1e-6);

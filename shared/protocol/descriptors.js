@@ -61,9 +61,10 @@ const RATE_UI = { t: 'num', step: 5, dp: 1 };
  *  record's number is what a reader DOES when the key is absent, not what the authority writes — and none registered:
  *  registering one changes what every new component carries on the wire (a pin regeneration), and no reader needs it. */
 const DECIDED = {
-  'Pivot.pos': 'no pivot component: it turns and scales about its origin, [0, 0, 0] in its own frame',
-  'Collider.shape': 'no collider component: the browser decides by its size (its triangles when small, its box when large)',
-  'Pendulum.pivot': 'it swings about its own Pivot component, else [0, 2, 0] for a whole thing and the part\'s own origin for a part (client/lib/motioneval.js)',
+  // the registry states these two now (shape audit 10-16): read from it, never restated
+  'Pivot.pos': COMPONENTS.pivot.absentMeans.pos,
+  'Collider.shape': COMPONENTS.collider.absentMeans.shape,
+  'Pendulum.pivot': 'a whole thing swings about its Pivot component, else its origin [0, 0, 0] (before 10-16: [0, 2, 0], written as its pivot at a stored world\'s first load); a part about its own origin',
   'Spin.pivot': 'it turns about its own Pivot component, else its origin [0, 0, 0]',
   'Path.points': 'no points: it stands still (the authority refuses a path with fewer than 2 points; the record\'s [] is the empty reading)',
   'Particles.at': '[0, 0, 0] in its own frame; in an older value, its origin (the registry says the same)',
@@ -79,20 +80,20 @@ const DECIDED = {
 // (componentspec `enums`; the authority refuses anything else), so an edit outside it is refused before it is sent; an enum
 // the registry leaves open (grabbable.who takes the world's own roles) is the door's to judge.
 const MOTION = {
-  Pendulum: { type: 'pendulum', show: ['part', 'axis', 'amp', 'period', 'damp', 'maxAmp', 'phase', 'pivot'],
+  Pendulum: { type: 'pendulum', show: ['axis', 'amp', 'period', 'damp', 'maxAmp', 'phase', 'pivot'],
     editor: { amp: { wire: AMP, ui: { ...DEG, softMin: 0, softMax: Math.PI, def: false, clears: ['amplitude'] } }, period: { ui: { ...SEC, absent: 3.5 } }, damp: { ui: { t: 'num', step: 0.01, dp: 3, softMin: 0, softMax: 2, absent: 0 } }, phase: { ui: PHASE } } },
-  Spin: { type: 'spin', show: ['part', 'axis', 'degPerSec', 'pivot', 'phase'], editor: { phase: { ui: PHASE } } },
-  Orbit: { type: 'orbit', show: ['part', 'radius', 'center', 'degPerSec', 'phase', 'face'],
+  Spin: { type: 'spin', show: ['axis', 'degPerSec', 'pivot', 'phase'], editor: { phase: { ui: PHASE } } },
+  Orbit: { type: 'orbit', show: ['radius', 'center', 'degPerSec', 'phase', 'face'],
     editor: { radius: { ui: { t: 'num', step: 0.1, dp: 2 } }, phase: { ui: PHASE }, face: { ui: { t: 'check' } } } },
-  Bob: { type: 'bob', show: ['part', 'axis', 'amp', 'period', 'phase'],
+  Bob: { type: 'bob', show: ['axis', 'amp', 'period', 'phase'],
     editor: { amp: { wire: AMP, ui: { t: 'num', step: 0.05, dp: 2, softMin: 0, clears: ['amplitude'] } }, period: { ui: SEC }, phase: { ui: PHASE } } },
-  Path: { type: 'path', show: ['part', 'points', 'speed', 'duration', 'loop', 'face'],
+  Path: { type: 'path', show: ['points', 'speed', 'duration', 'loop', 'face'],
     editor: { speed: { ui: { t: 'num', step: 0.1, dp: 2 } }, duration: { ui: { t: 'num', step: 0.5, dp: 1, softMin: 0.1, def: false } }, loop: { ui: { t: 'enum', def: false } }, face: { ui: { t: 'check' } } } },
 };
 const MOTION_EDITOR = { axis: { wire: AXIS, ui: { t: 'enum', def: false, own: true } }, degPerSec: { param: 'rate', wire: RATE, ui: { ...RATE_UI, clears: ['rpm', 'period'] } } };
 const CARDS = {
   Transform: { key: 'transform', hand: true, show: ['pos', 'q', 'scale'], editor: { scale: { wire: UNIFORM } } },
-  Pivot: { key: 'pivot', own: { pos: 'vec3' }, extra: ['x', 'y', 'z'] },   // the registry types pivot by its help only ({pos: [x,y,z]}); registering the field needs a pin regeneration (D8)
+  Pivot: { key: 'pivot', extra: ['x', 'y', 'z'] },   // pivot.pos is a registered field (shape audit 10-16)
   Collider: { key: 'collider', editor: { shape: { ui: { t: 'enum', def: false } } } },
   // a mesh thing (primitives, R 10-12): its shape from the table; its size's three channels are the card's own rows (extra),
   // one vec3 on the wire, as a pivot's are
@@ -100,7 +101,8 @@ const CARDS = {
   Light: { key: 'light', show: ['color', 'intensity', 'range', 'important', 'day'], writeDp: null,
     editor: { color: { ui: { t: 'color' } }, intensity: { ui: { t: 'num', step: 1, dp: 0, softMax: 64 } }, range: { ui: { t: 'num', step: 1, dp: 0, softMin: 1, softMax: 40 } },
       important: { ui: { t: 'check', sparse: true } }, day: { k: 'noon', param: 'burnsAtNoon', wire: NOON, ui: { t: 'check', sparse: true } } } },
-  ...Object.fromEntries(Object.entries(MOTION).map(([card, m]) => [card, { key: 'motion', type: m.type, show: m.show, writeDp: 4, editor: { ...MOTION_EDITOR, ...m.editor } }])),
+  // a motion's part is its KEY (motion:<part>), never a field of the value (shape audit 10-16): the card's own row
+  ...Object.fromEntries(Object.entries(MOTION).map(([card, m]) => [card, { key: 'motion', type: m.type, show: m.show, extra: ['part'], writeDp: 4, editor: { ...MOTION_EDITOR, ...m.editor } }])),
   Sockets: { key: 'sockets', whole: 'slots', hand: true },
   // the hand-written four (hand: true): Transform, Sockets, Grabbable and Material (a draft, unregistered: no descriptor) keep
   // read/write hooks in editschema.js (HAND); Grabbable's registry fields still draw and write through the table

@@ -144,7 +144,7 @@ function lifter(st, ever) {
   const kidsOf = (h) => Object.keys(s.entities).filter((k) => s.entities[k].c.parent?.to === h);
   const childNamed = (h, name) => kidsOf(h).find((k) => isSocketC(s.entities[k].c) && s.entities[k].c.socket.name === name) ?? null;
   const make = (h, name, sk) => { const id = fresh(h, name);
-    emit({ verb: "create", id }); emit(setOp(id, "parent", { to: h, order: "a0" }));
+    emit({ verb: "create", id }); emit(setOp(id, "parent", { to: h }));
     emit(setOp(id, "transform", { pos: Array.isArray(sk.pos) ? sk.pos.slice() : [0, 0, 0], q: socketQ(sk), scale: [1, 1, 1] }));
     emit(setOp(id, "socket", socketOfSlot(name, sk)));
     if (bag(sk.body)) emit(setOp(id, "station", stationOfBody(sk.body, { stored: storedBodies })));

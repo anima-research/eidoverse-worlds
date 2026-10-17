@@ -302,14 +302,15 @@ await C("D9", "§4 explains schemas: reserved (no definition format yet), and th
 
 // ---- ST: status (shape audit 10-16; R: every component trial for the alpha) ----
 // + the shape audit's wave 2 (attach-interact): sockets (the old map, lift-only) and the names R held (15:16 LOCKED)
-const RESERVED_NAMES = ["joint", "schemas", "terrain-grid", "terrain-tile", "terrain-paint", "sockets", "material", "anim-clip", "anim-states", "camera", "zone", "video", "spring-joint", "link", "tags"];
+// + wave 2 (physics-motion): physics-joint (the constraint, renamed from joint) and surface (closed with physics' reserved fields)
+const RESERVED_NAMES = ["joint", "physics-joint", "surface", "schemas", "terrain-grid", "terrain-tile", "terrain-paint", "sockets", "material", "anim-clip", "anim-states", "camera", "zone", "video", "spring-joint", "link", "tags"];
 await C("ST1", "every registered name has a status: the held names are reserved, every other one trial, none stable (v1 promises none)", () => {
   const bad = Object.entries<any>(CAT.COMPONENTS).filter(([k, d]) => d.status !== (RESERVED_NAMES.includes(k) ? "reserved" : "trial")).map(([k, d]) => `${k}: ${d.status}`);
-  return [!bad.length && typeof CAT.STATUSES?.trial === "string" && typeof CAT.statusOf === "function" && CAT.statusOf("script:bell") === "trial" && CAT.statusOf("joint:h") === "reserved" && CAT.statusOf("example.org/heart") === null, bad]; });
-await C("ST2", "a write of any reserved name is refused at the door, one code and one wording for all of them (an owner's too); joint's fix still says what to use", () => {
+  return [!bad.length && typeof CAT.STATUSES?.trial === "string" && typeof CAT.statusOf === "function" && CAT.statusOf("script:bell") === "trial" && CAT.statusOf("physics-joint:h") === "reserved" && CAT.statusOf("example.org/heart") === null, bad]; });
+await C("ST2", "a write of any reserved name is refused at the door, one code and one wording for all of them (an owner's too); physics-joint's fix still says what to use", () => {
   const W = world(); mk(W);
   const tries = [["@world", "schemas:light", "sha256:" + "0".repeat(64)], ["@world", "terrain-grid", { spacing: 1, tile: 8, origin: [0, 0], extent: [1, 1] }], ["@world", "terrain-tile:0-0", { mm: [0] }],
-    ["@world", "terrain-paint:0-0", {}], ["box", "joint:h", { to: "@world", type: "hinge" }]];
+    ["@world", "terrain-paint:0-0", {}], ["box", "physics-joint:h", { to: "@world" }]];
   const rs = tries.map(([id, component, value]) => W.call("set", { id, component, value }));
   const words = rs.map((r) => r.refused?.reason?.replace(/^\S+: '[^']+'/, "X"));
   return [rs.every((r) => !r.ok && r.refused.code === "reserved") && new Set(words).size === 1 && /parent \{to\}/.test(rs[4].refused.fix), rs.map((r) => r.refused ?? r)]; });

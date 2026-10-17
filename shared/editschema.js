@@ -511,10 +511,10 @@ export function inspectSchema(ent, id, live = {}) {
   // `collide` has no verb but spawn, and re-spawning would re-author the thing.
   if (isBag(c.collider) || ent.collide != null) {
     const shape = isBag(c.collider) ? c.collider.shape : ent.collide;
-    const opts = ['exact', 'box', 'sphere'];
+    const opts = ['mesh', 'box', 'sphere'];
     groups.push({ group: 'collider', label: 'collider', ...(isBag(c.collider) ? { types: ['collider'] } : {}), fields: [
       rowOf('Collider', 'shape', isBag(c.collider) ? c.collider : { shape }, { label: 'shape', options: (opts.includes(shape) ? opts : [...opts, String(shape)]).map((v) => ({ v, label: v })),
-        hint: isBag(c.collider) ? 'exact = its triangles, box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide'
+        hint: isBag(c.collider) ? 'mesh = its triangles, box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide'
           : 'set by its spawn; changing it here writes a collider component, which takes precedence' }),
     ] });
   }
@@ -607,9 +607,8 @@ export function inspectSchema(ent, id, live = {}) {
       { t: 'enum', k: 'kind', label: 'body', value: ph.kind ?? 'dynamic', def: 'dynamic', options: SPEC.physics.enums.kind.map((v) => ({ v, label: v })), hint: SPEC.physics.docs.kind },
       ...((ph.kind ?? 'dynamic') === 'dynamic' ? [{ t: 'enum', k: 'who', label: 'pushed by', value: ph.who ?? 'visitor', def: 'visitor', options: [['visitor', 'anyone'], ['builder', 'builders'], ['owner', 'owners']].map(([v, label]) => ({ v, label })), hint: SPEC.physics.docs.who }] : []),
       { t: 'text', k: 'mass', label: `mass (${SPEC.physics.units.mass})`, value: opt(ph.mass), placeholder: 'from its size', hint: SPEC.physics.docs.mass },
-      { t: 'text', k: 'friction', label: 'friction', value: opt(ph.friction), placeholder: 'engine default', hint: SPEC.physics.docs.friction },
-      { t: 'text', k: 'restitution', label: 'bounciness', value: opt(ph.restitution), placeholder: 'engine default', hint: SPEC.physics.docs.restitution },
-      { t: 'check', k: 'ccd', label: 'fast mover', value: ph.ccd === true, hint: SPEC.physics.docs.ccd },
+      // friction, bounciness and the rest are reserved until an engine reads them (shape audit 10-16): said, never offered
+      { t: 'info', label: 'friction, bounce', value: 'the engine\'s own', hint: `reserved: ${SPEC.physics.reservedFields.join(', ')} are named but no engine here reads them yet, so none can be written` },
       { t: 'info', label: 'shape', value: shapeWords, hint: `${SPEC.physics.docs.shape}. To change how it bumps into things, use a Collider component` },
     ] });
   }
@@ -1086,8 +1085,8 @@ function addOwnOps(ent, id, name, value) {
   if (name === 'Collider') {
     if (ent?.model == null && !compMesh(ent)) return { ops: [], errors: [`a collider needs a model or a mesh to collide as (${id} has none)`] };
     if (c.collider != null) return { ops: [], errors: [`${id} already has a collider`] };
-    const shape = value === 'box' || value === 'sphere' ? value : value == null || value === '' || value === 'exact' ? 'exact' : null;
-    if (!shape) return { ops: [], errors: ['a collider shape is "exact", "box" or "sphere"'] };
+    const shape = value === 'box' || value === 'sphere' ? value : value == null || value === '' || value === 'mesh' || value === 'exact' ? 'mesh' : null;
+    if (!shape) return { ops: [], errors: ['a collider shape is "mesh", "box" or "sphere"'] };
     return { ops: [OP.set(id, 'collider', { shape })], errors: [] };
   }
   // write-new-on-edit, the way a Light is added: its fields spelled out from shared/grab.js DEFAULTS (the data, never a
@@ -1397,12 +1396,12 @@ export function editOps(ent, id, edits, live = {}) {
       case 'physics': {
         const next = comps.get('physics') ?? JSON.parse(JSON.stringify(c.physics ?? {}));
         if (k === 'kind' || k === 'who') next[k] = String(raw);
-        else if (k === 'ccd') { if (bool(raw)) next.ccd = true; else delete next.ccd; }
-        else if (['mass', 'friction', 'restitution'].includes(k)) {
+        else if (k === 'mass' || k === 'density') {
           const t = String(raw ?? '').trim(); if (!t) { delete next[k]; }
           else { const n = Number(t); const r = SPEC.physics.ranges[k];
             if (!Number.isFinite(n) || outOfRange(r, n)) { errors.push(`physics.${k}: a number ${rangeWords(r)}, or blank`); break; }
             next[k] = round(n, 4); } }
+        else if (SPEC.physics.reservedFields.includes(k)) { errors.push(`physics.${k} is reserved: no engine here reads it yet`); break; }
         else { errors.push(`${key}: no such field`); break; }
         comps.set('physics', next);
         break;

@@ -29,6 +29,7 @@ import { saysOf } from "../says.js";
 import { readOut } from "../a11y.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES } from "../particle_effects.js";
 import { livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
+import { shapeRepairOps } from "./shaperepair.js";
 import { trustRefusal } from "../drafts.js";
 import { planLaunch } from "./launchplan.js";
 import { REACH, HAND_Y, MAX_HELD, KICK, SHOVE, BODY_REACH } from "./physconst.js";
@@ -260,6 +261,9 @@ function admit(w, st, who, ops) {
   ops.forEach((raw, i) => {
     const { verb, ...rest } = raw; const op = { verb, ...shapeOneOrRefuse(verb, rest, i) };
     if ("value" in op) op.value = unNegZero(op.value); // I-JSON has no -0 (an engine can make one); the same number, written as 0
+    // parent.order is gone (shape audit 10-16): whatever path a parent value takes to the door (a request, a copy of a stored
+    // one, the lift), the order it carries is dropped here, never written again
+    if (op.verb === "set" && op.comp === "parent" && op.value && typeof op.value === "object" && !Array.isArray(op.value) && "order" in op.value) { const { order: _o, ...rest } = op.value; op.value = rest; }
     const at = `${op.id}${op.comp !== undefined ? "." + op.comp : ""}`;
     if ("value" in op) { try { checkIJSON(op.value); } catch (x) { refuse("shape", `${at}: the value isn't I-JSON (${x.code} ${x.detail})`, "finite numbers, integers within 2^53, no -0"); }
       if (jcs(op.value).length > 65536) refuse("too-big", `${at} is ${jcs(op.value).length} bytes; the authority keeps values under 64 KiB`, "put big data in a blob and store its hash"); }
@@ -694,7 +698,8 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
     if (v.type === "path" && v.speed !== undefined && v.duration !== undefined) refuse("shape", `${at} gives its speed twice (speed and duration)`, "give one: speed (m/s) or duration (s from the first point to the last)");
     if (v.type === "path" && !(Array.isArray(v.points) && v.points.length >= 2 && v.points.length <= 64 && v.points.every((p) => nums(p, 3, 1e4))))
       refuse("shape", `${at}.points must be 2 to 64 points [x, y, z] (metres, in its parent's frame)`, "e.g. {type: 'path', points: [[0, 0, 0], [0, 0, 4]], speed: 1}"); }
-  if (comp === "motion" && obj && "pivot" in v) refuse("derived", `${at}.pivot is derived from what it hangs from; it isn't stored`, "§0 rule 2: no stored derived values; inspect shows the pivot as a view");
+  // one hinge per thing (shape audit 10-16): a whole thing turns about its pivot component; motion:<part>.pivot is a part's
+  if (comp === "motion" && obj && "pivot" in v && !carry) refuse("derived", `${at}.pivot: a whole thing's motion turns about its pivot component, not a field of the motion`, `set {id: '${id}', component: 'pivot', value: {pos: [x, y, z]}} (its own frame); a part's motion (motion:<part>) takes pivot`);
   if (comp === "home") { const okQ = (q) => nums(q, 4, 2) && Math.abs(Math.hypot(...q) - 1) < 1e-3;
     // one spelling (shape audit 10-16): scale is [x, y, z] (a number is taken at write and stored as one; an older stored
     // number is carried by a fork or a lift), parent is {to}
@@ -716,9 +721,8 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   mediaCheck(s, id, comp, v, at, obj);
   for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(":")[0]]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
   schemaCheck(at, comp, v, { carry });
-  // §3.2: a material names one of this world's surfaces
-  if (comp === "physics" && obj && typeof v.material === "string" && !carry && !s.entities["@world"]?.c[`surface:${v.material}`]) { const have = Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("surface:")).map((k) => k.slice(8));
-    refuse("not-found", `${at}.material: this world has no surface '${v.material}'${have.length ? ` (it has ${have.join(", ")})` : " (it has none)"}`, "the owner adds one: set {id: '@world', component: 'surface:<name>', value: {friction, restitution, density}}", { didYouMean: guess(v.material, have) }); }
+  // physics.material (a surface's name) is renamed physics.surface and reserved with surfaces (shape audit 10-16): the
+  // check that it names one of this world's surfaces returns when the field opens
   if (comp === "terrain-grid") { const ok = v.spacing > 0 && Number.isInteger(v.tile) && v.tile >= 1 && v.tile <= 64 && Array.isArray(v.extent) && v.extent.length === 2 && v.extent.every((n) => Number.isInteger(n) && n >= 1 && n <= 4096)
       && Array.isArray(v.origin) && v.origin.length === 2 && v.origin.every(isNum) && (v.limits === undefined || (Number.isInteger(v.limits.raise) && Number.isInteger(v.limits.lower) && v.limits.raise >= 0 && v.limits.lower >= 0));
     if (!ok) refuse("shape", `${at} must be {spacing > 0, tile 1–64, origin [x, z], extent [nx, nz], limits? {raise, lower} (mm)}`, COMPONENTS["terrain-grid"].help); }
@@ -823,6 +827,17 @@ function terrainShapeCheck(at, v, def) {
     if (w.flow !== undefined && !(Array.isArray(w.flow) && w.flow.length === 2 && w.flow.every(fin))) refuse("shape", `${at}.water.flow must be [x, z]`, def.help);
   }
 }
+// where a cut field went (componentspec `dropped`), for the refusal's fix
+const DROPPED_FIX = {
+  "motion.amplitude": "amp is the one spelling: {type: 'pendulum', amp: 0.3}",
+  "motion.part": "a node of its model moves as its own component: set {id, component: 'motion:<part>', value: {type, …}}",
+  "physics.material": "physics.surface names a surface:<name> (reserved until an engine reads surfaces)",
+  "physics.layers": "collision filters come back as named groups; leave it out",
+  "physics.mask": "collision filters come back as named groups; leave it out",
+  "physics.ccd": "eidosim sweeps every body; leave it out",
+  "parent.order": "leave it out: siblings have no stored order",
+};
+const DROPPED_DYM = { "motion.amplitude": ["amp"], "physics.material": ["surface"] };
 function unknownKeys(at, v, allowed, what) {
   for (const k of Object.keys(v)) if (!allowed.includes(k)) { const dym = guessKey(k, allowed);
     refuse("schema", `${at}: unknown key '${k}'${dym.length ? `; did you mean '${dym[0]}'?` : ""}`, `${what} takes: ${allowed.join(", ")}`, { didYouMean: dym }); }
@@ -886,7 +901,14 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
   if (name === "lock" && v === true) return;   // a plain lock is true (builder level); its {rank} form is checked as an object below
   const fields = Object.keys(def.fields);
   if (!(v && typeof v === "object" && !Array.isArray(v))) refuse("shape", `${at} must be an object {${fields.join(", ")}}`, def.help);
-  unknownKeys(at, v, fields, name);
+  // shape audit 10-16: a reserved field (physics' unread properties) is refused in its own words, and a field the alpha cut
+  // (motion.amplitude, motion.part, physics.layers…) says where it went. A carried value (a fork's copy, the load's lift)
+  // keeps what it was written with
+  if (!carry) { const held = def.reservedFields?.find((k) => k in v);
+    if (held !== undefined && name !== "grabbable" && name !== "station") refuse("reserved", `${at}.${held} is a reserved field: no engine here reads it yet, so nothing may write it (the name and its meaning are held: schema {component: '${name}'})`, def.help, { status: "reserved" });
+    const gone = Object.keys(def.dropped ?? {}).find((k) => k in v);
+    if (gone !== undefined) refuse("schema", `${at}.${gone} is gone: ${def.dropped[gone]}`, DROPPED_FIX[`${name}.${gone}`] ?? def.help, DROPPED_DYM[`${name}.${gone}`] ? { didYouMean: DROPPED_DYM[`${name}.${gone}`] } : undefined); }
+  unknownKeys(at, v, carry ? [...fields, ...(def.reservedFields ?? []), ...Object.keys(def.dropped ?? {})] : fields, name);
   const kind = v.kind ?? def.defaultKind; // an imported world's terrain never named its kind: it is noise
   if (def.byKind) { if (!def.byKind[kind]) refuse("schema", `${at}.kind must be one of ${Object.keys(def.byKind).join(" | ")}, got ${JSON.stringify(v.kind)}`, def.help, { didYouMean: guess(String(v.kind), Object.keys(def.byKind)) });
     unknownKeys(at, v, def.byKind[kind], `${name} {kind: '${kind}'}`); }
@@ -1065,6 +1087,11 @@ function stampShapes(ctx, ops) {
   const after = scratch(ctx.st, ops); const simOn = !!after.entities["@world"]?.c["physics-engine"];
   const ids = new Set();
   for (const o of ops) if ((o.verb === "set" || o.verb === "delete") && o.comp && (o.comp === "physics" || o.comp === "model" || o.comp === "collider" || o.comp === "mesh")) ids.add(o.id);
+  // a thing that moves by its motion or opens is a KINEMATIC collider (PHYSICS §3.3; shape audit 10-16): the stamp says so
+  // (eidosim carries kinematic as static, so behaviour is unchanged; the record no longer says "never moves")
+  for (const o of ops) if (o.verb === "set" && o.comp && (o.comp === "motion" || o.comp.startsWith("motion:") || o.comp === "openable")) ids.add(o.id);
+  const moves = (id) => { for (let k = id, n = 0; k && n < 33; k = after.entities[k]?.c.parent?.to, n++) { const c = after.entities[k]?.c; if (!c) break;
+    if (c.openable !== undefined || Object.keys(c).some((x) => x === "motion" || x.startsWith("motion:"))) return true; } return false; };
   if (simOn) for (const o of ops) if (o.verb === "create") ids.add(o.id);
   if (ops.some((o) => o.id === "@world" && o.comp === "physics-engine" && o.verb === "set") && simOn) for (const id of Object.keys(after.entities)) ids.add(id);
   ids.delete("@world");
@@ -1073,8 +1100,9 @@ function stampShapes(ctx, ops) {
     const e = after.entities[id]; if (!e) continue;
     const ph = e.c.physics; const want = typeof e.c.model === "string" ? shapeFor(e.c.model, e.c.collider?.shape) : e.c.mesh !== undefined ? meshShape(e.c.mesh) : null;
     let next;
-    if (ph === undefined || ph === null) { if (!simOn || !want) continue; next = { kind: "static", shape: want }; }
+    if (ph === undefined || ph === null) { if (!simOn || !want) continue; next = { kind: moves(id) ? "kinematic" : "static", shape: want }; }
     else if (typeof ph !== "object" || Array.isArray(ph)) continue; // valueCheck refuses it
+    else if (ph.kind === "static" && moves(id) && !ops.some((o) => o.verb === "set" && o.comp === "physics" && o.id === id)) next = { ...ph, kind: "kinematic", ...(want ? { shape: want } : {}) };   // it started moving
     else { if (JSON.stringify(ph.shape ?? null) === JSON.stringify(want)) continue;
       next = { ...ph }; if (want) next.shape = want; else delete next.shape;
       if (ph.shape !== undefined && ops.some((o) => o.verb === "set" && o.comp === "physics" && o.id === id && o.value?.shape !== undefined))
@@ -1180,6 +1208,7 @@ function needThing(ctx, id) {
 const outsideWorld = (B, p) => p[0] < B.min[0] || p[0] > B.max[0] || p[2] < B.min[2] || p[2] > B.max[2] || p[1] > B.max[1];
 const boundsOf = (st) => { const B = st.entities["@world"]?.c.bounds; const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   return B && v3(B.min) && v3(B.max) ? B : null; };
+const MOTION_AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], "-x": [-1, 0, 0], "-y": [0, -1, 0], "-z": [0, 0, -1] };   // motioneval.js AXES
 function resolve(ctx, id, comp, value, prev) {
   const def = !comp.includes(":") || comp.startsWith("look-at:") ? defOf(comp) : undefined;   // an alias has its registered name's defaults; a part's look-at the whole one's
   if (comp === "transform") {
@@ -1201,7 +1230,12 @@ function resolve(ctx, id, comp, value, prev) {
     for (const f of ["forward", "up"]) if (typeof value[f] === "string" && AXV[value[f]]) value = { ...value, [f]: AXV[value[f]].slice() }; }
   // every parameter written down (PROTOCOL §4): the definition's defaults and per-kind rules (componentspec materialize)
   const filled = (v, list) => { if (list.length) ctx.notes.push({ id, component: comp, filled: list, why: "defaults written out so the engine can't change them later" }); return v; };
-  if (comp === "motion" && value && typeof value === "object") { const m = materialize("motion", value); const v = filled(m.value, m.filled); delete v.pivot;
+  // an axis is a vector (PROTOCOL §9.2): the letters the readers take are stored as their vectors
+  if ((comp === "motion" || comp.startsWith("motion:")) && value && typeof value === "object" && !Array.isArray(value) && typeof value.axis === "string" && MOTION_AXES[value.axis.toLowerCase()]) {
+    ctx.notes.push({ id, component: comp, field: "axis", sent: value.axis, kept: MOTION_AXES[value.axis.toLowerCase()], why: "an axis is stored as a vector" }); value = { ...value, axis: MOTION_AXES[value.axis.toLowerCase()].slice() }; }
+  if (comp === "collider" && value && typeof value === "object" && !Array.isArray(value) && value.shape === "exact") { ctx.notes.push({ id, component: comp, field: "shape", sent: "exact", kept: "mesh", why: "mesh is the word for its triangles" }); value = { ...value, shape: "mesh" }; }
+  if (comp === "parent" && value && typeof value === "object" && !Array.isArray(value) && "order" in value) { const { order, ...rest } = value; ctx.notes.push({ id, component: comp, field: "order", sent: order, why: "siblings have no stored order: dropped" }); value = rest; }
+  if (comp === "motion" && value && typeof value === "object") { const m = materialize("motion", value); const v = filled(m.value, m.filled);
     if (v.t0 === undefined) { v.t0 = ctx.w.now(); ctx.notes.push({ id, component: "motion", field: "t0", kept: v.t0, why: "stamped by the authority" }); } return v; }
   // a part's motion (motion:<part>) runs on the same clock: without a stamp every client started it from its own first
   // look and disagreed on its phase (a swing's seat, locked to that phase, pumped out of step on every screen)
@@ -1478,7 +1512,7 @@ function buildPlace(ctx, a) {
   const wt = { pos: [pos[0] - off[0], pos[1] - lo[1], pos[2] - off[2]].map(r3), q: qr3(qmul(yawQ(yaw), tilt)), scale };
   const ops = [];
   if (a.attach && support !== "ground") {
-    ops.push(setOp(a.id, "parent", { to: support, order: "a0" }));
+    ops.push(setOp(a.id, "parent", { to: support }));
     const s2 = scratch(st, [setOp(a.id, "parent", { to: support })]);
     ops.push(setOp(a.id, "transform", localFrom(s2, support, wt)));
   } else {
@@ -1600,7 +1634,7 @@ function buildUse(ctx, a) {
       // a launched thing is the engine's until it rests (no write may touch it: inFlight in admit); for now a reset skips it and says so
       { const sf = ctx.w.sim(), b = sf.sim?.bodies[t]; if (sf.launched[t] && b && !b.resting) { skipped.push({ id: t, why: "it is in flight; press again once it lands" }); continue; } }
       if (sameHome(ctx.st, t, home) && !ctx.w.presence.holds[t] && vec3s(te.c.transform?.scale).every((x, i) => Math.abs(x - homeScale(ctx.st, t, home)[i]) < 1e-4)) continue;   // home already (and its size), in no hand
-      ops.push(...(hp ? [setOp(t, "parent", { order: "a0", ...hp })] : te.c.parent ? [delOp(t, "parent")] : []),
+      ops.push(...(hp ? [setOp(t, "parent", { ...hp })] : te.c.parent ? [delOp(t, "parent")] : []),
         setOp(t, "transform", { pos: home.pos.slice(), q: (home.q ?? [0, 0, 0, 1]).slice(), scale: homeScale(ctx.st, t, home) }));
       sent.push(t); ctx.refs.add(t); }
     ctx.cap = { ...ctx.cap, ids: [a.id, ...sent], comps: ["transform", "parent"] };
@@ -2074,6 +2108,17 @@ export function liftWorld(w) {
         changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "lift-sockets", body: { id: h, made, moved, ...(author ? { capability: { author } } : {}) } }));
         out.push({ host: h, made, moved });
       } catch (x) { out.push({ host: h, failed: { code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) } }); } }
+    // shape audit 10-16 (physics-motion): what a value stored before wave 2 meant, written in today's spelling, in one system
+    // act (shared/protocol/shaperepair.js: a part's motion to its key, amplitude, letter axes, the old pendulum readings and
+    // swing point, collider exact, physics kind/material). A second load finds nothing to repair; a refusal is reported
+    // like a host's and the world is left as it was, to repair at the next load
+    try {
+      const st = w.state(); const ops = shapeRepairOps(st, PURGED);
+      if (ops.length) { const ids = [...new Set(ops.map((o) => o.id))], comps = [...new Set(ops.map((o) => o.comp))];
+        const plan = admit(w, st, { actor: "system", cap: { kind: "system", ids, comps }, lifting: true }, ops);
+        changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "repair-shapes", body: { ids, why: "values stored before the shape audit (10-16), in today's spelling with the meaning their readers gave them" } }));
+        out.push({ repaired: ids }); }
+    } catch (x) { out.push({ repair: true, failed: { code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) } }); }
     return out; });
 }
 // Things the log has lifted out of the engine (a grab's lift, a catch) with nothing after that puts them back: no launch,
@@ -2480,7 +2525,7 @@ function publishGroup(ctx, a, w, roots) {
   const ws = roots.map((r) => worldT(ctx.st, r).pos); const cx = ws.reduce((t, p) => t + p[0], 0) / ws.length, cz = ws.reduce((t, p) => t + p[2], 0) / ws.length;
   const parts = [{ key: "root", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: a.name } },
     ...publishLinks(ctx, a, new Set(all), keyOf, (fix) => all.map((id) => { const c = clone(ctx.st.entities[id].c); delete c["copy-of"];
-      if (roots.includes(id)) { const t = worldT(ctx.st, id); c.transform = { ...t, pos: [r3(t.pos[0] - cx), r3(t.pos[1]), r3(t.pos[2] - cz)] }; c.parent = { to: "root", order: "a0" }; }
+      if (roots.includes(id)) { const t = worldT(ctx.st, id); c.transform = { ...t, pos: [r3(t.pos[0] - cx), r3(t.pos[1]), r3(t.pos[2] - cz)] }; c.parent = { to: "root" }; }
       else c.parent = { ...c.parent, to: keyOf(c.parent.to) };
       return { key: keyOf(id), components: fix(id, c) }; }))];
   const record = { name: a.name ?? "group", root: "root", parts, by: ctx.actor };
@@ -2702,7 +2747,7 @@ function settleSim(w) {
       // scaled parent is SHEARED by the composition (R 10-11 23:36: a crate "splortched" after a domino fell with it on top)
       const wt = worldT(st2, r.id); const s3 = scratch(st2, [setOp(r.id, "parent", { to: sup.id })]); const lt = localFrom(s3, sup.id, wt);
       if (!shearFree(worldT(st2, sup.id).scale, lt.q)) continue;
-      const attach = [setOp(r.id, "parent", { to: sup.id, order: "a0" }), setOp(r.id, "transform", lt)];
+      const attach = [setOp(r.id, "parent", { to: sup.id }), setOp(r.id, "transform", lt)];
       const p3 = admit(w, st2, { actor: "system", cap: { kind: "system", ids: [r.id], comps: ["transform", "parent"] } }, attach);
       changeEntry(w, p3, w.append(actEntry(w, "system", "settle", { id: r.id, onto: sup.id, rest })));
     }
@@ -2770,12 +2815,12 @@ function buildEpoch(ctx, v, a) {
   if (!v || typeof v.engine !== "string") refuse("shape", "sim needs {engine, tickMs?}", `engines this server carries: ${Object.keys(ENGINES).join(", ")}`);
   unknownKeys("@world.physics-engine", v, Object.keys(COMPONENTS["physics-engine"].fields), "physics-engine"); // the authority builds the value from these keys: a typo would vanish silently
   const known = ENGINES[v.engine];
-  const spec = { engine: v.engine, build: v.build ?? known?.build ?? null, tickMs: Number.isInteger(v.tickMs) ? v.tickMs : 33 };
+  const spec = { engine: v.engine, build: v.build ?? known?.build ?? null, tickMs: Number.isInteger(v.tickMs) ? v.tickMs : COMPONENTS["physics-engine"].defaults.tickMs };   // the registry's default (shape audit 10-16)
   if (!known) refuse("unknown-engine", `this server doesn't carry '${v.engine}'`, `it carries: ${Object.keys(ENGINES).join(", ")}`, { didYouMean: guess(v.engine, Object.keys(ENGINES)) });
   // the engine never starts an epoch outside its tick range, so a throw would be logged and then fly nowhere, forever
   // (review of b398d7e3 #3)
   if (v.tickMs !== undefined && !(Number.isInteger(v.tickMs) && v.tickMs >= TICK_MS.min && v.tickMs <= TICK_MS.max))
-    refuse("bounds", `tickMs is ${JSON.stringify(v.tickMs)}; the engine steps at a whole number of ms from ${TICK_MS.min} to ${TICK_MS.max}`, "leave it out for 33 (30 steps a second), or e.g. tickMs: 16");
+    refuse("bounds", `tickMs is ${JSON.stringify(v.tickMs)}; the engine steps at a whole number of ms from ${TICK_MS.min} to ${TICK_MS.max}`, `leave it out for ${COMPONENTS["physics-engine"].defaults.tickMs} (30 steps a second), or e.g. tickMs: 16`);
   if (v.build === undefined) ctx.notes.push({ component: "physics-engine", field: "build", kept: spec.build, why: "stamped: determinism belongs to one exact build, so the epoch names it" });
   if (!carried(spec)) ctx.notes.push({ component: "physics-engine", why: "that build isn't carried here: nothing will be thrown in this world until a server that carries it runs it" });
   ctx.refs.add("@world");
@@ -3019,7 +3064,7 @@ const PHYSICS_VERBS = {
       const ps = worldT(st, a.id).scale;
       carriedUp = dependents.filter((k) => !w.presence.holds[k]).map((k) => { const wt = worldT(st, k); const s3 = scratch(st, [setOp(k, "parent", { to: a.id })]); return { k, lt: localFrom(s3, a.id, wt) }; })
         .filter((x) => shearFree(ps, x.lt.q));
-      const ops = carriedUp.flatMap(({ k, lt }) => [setOp(k, "parent", { to: a.id, order: "a0" }), setOp(k, "transform", lt)]);
+      const ops = carriedUp.flatMap(({ k, lt }) => [setOp(k, "parent", { to: a.id }), setOp(k, "transform", lt)]);
       carriedUp = carriedUp.map((x) => x.k);
       if (ops.length) plan = admit(w, st, { actor, cap: { kind: "system", ids: carriedUp, comps: ["transform", "parent"] } }, ops);
       dependents.length = 0;
@@ -3081,7 +3126,7 @@ const PHYSICS_VERBS = {
     if (snap.to) { const x = snap.to;
       // it sits at the socket's own pose (identity under it); its size in the world is kept
       const hs = worldT(st, x.id).scale; const scale = t.scale.map((v, i) => r3(v / hs[i]));
-      const ops = [setOp(a.id, "parent", { to: x.id, order: "a0" }), setOp(a.id, "transform", { pos: [0, 0, 0], q: [0, 0, 0, 1], scale })];
+      const ops = [setOp(a.id, "parent", { to: x.id }), setOp(a.id, "transform", { pos: [0, 0, 0], q: [0, 0, 0, 1], scale })];
       const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
       const act = w.append(actOf(w, actor, "put", a, { ...facts(), release: "snap", socket: x.where }));
       const seq = changeEntry(w, plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "snap", to: x.host, socket: x.name, in: x.id, seq: act });
@@ -3316,7 +3361,7 @@ function snapTarget(st, id, g, p, w = null) {
 function returnPlan(w, st, id, g) {
   const e = st.entities[id]; const hp = g.home.parent;
   if (hp && !st.entities[hp.to]) return { plan: null, why: `its home parent ${hp.to} is gone` };
-  const ops = [...(hp ? [setOp(id, "parent", { order: "a0", ...hp })] : e.c.parent ? [delOp(id, "parent")] : []), setOp(id, "transform", { pos: g.home.pos.slice(), q: g.home.q.slice(), scale: (e.c.transform?.scale ?? [1, 1, 1]).slice() })];
+  const ops = [...(hp ? [setOp(id, "parent", { ...hp })] : e.c.parent ? [delOp(id, "parent")] : []), setOp(id, "transform", { pos: g.home.pos.slice(), q: g.home.q.slice(), scale: (e.c.transform?.scale ?? [1, 1, 1]).slice() })];
   try { return { plan: admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform", "parent"] } }, ops) }; }
   catch (x) { if (!(x instanceof Refusal)) throw x; return { plan: null, why: x.reason }; }
 }
