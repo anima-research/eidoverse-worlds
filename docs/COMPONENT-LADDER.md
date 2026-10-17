@@ -38,8 +38,9 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
   (→ `amp`), `motion.part` (→ `motion:<slot> {node: <part>}`: a node's name from a model file is data in the value, never part of a key; readers find the part by `node`), `physics.material` (→ `surface`), `sky.weatherSeconds` (→
   `transition`; the sky act still takes it), `sky.clock` (→ `tz`; likewise), `terrain.water` (→ the `water` component).
   Some are taken at the door instead and stored in today's spelling: `parent.order` (dropped), `light.day` (→
-  `daytime`) and the first protocol's grass knobs. The load's act is `repair-shapes`, once per world (its act, a
-  founding stamped `shapes`, or a translate-v1@12 act marks the world); PROTOCOL §4 lists everything it repairs.
+  `daytime`) and the first protocol's grass knobs. The load's act is `repair-shapes`, once per world (the system's
+  `repair-shapes` act marks the world; a founding or translation writes one; older worlds' markers are read back, and a
+  purged one counts as marked); PROTOCOL §4 lists everything it repairs.
 - **references are stored as written** (R 10-17, binding: "definitely serve path again alongside hash"): `model` is its
   library path, a particle Essential its name, `grass.preset` its name (back as a field: Fable #4, expanding later is
   cheap, un-expanding impossible). `model-hash` (trial, 10-17; `sha256:<64 hex>`, written by the server) rides beside a
@@ -166,7 +167,7 @@ component name within its actor, never a second entity system. The rule (engine-
 - *Its own lock or rights*: someone may lock it, or hold rights over it, apart from its thing. A key can't be locked on its
   own (a lock covers the whole thing), and a key's creator rule is not a rights system.
 - *References to it*: something else names it (a reaction pointing at it, a script's ref). Ids are stable and typed refs
-  are cleared on delete; a key is renamed by rewriting it, and nothing follows the rename (Unreal's FName scar).
+  are cleared on delete (the authority's follow-up; a script's scope is left alone); a key is renamed by rewriting it, and nothing follows the rename (Unreal's FName scar).
 - *Children*: things hang from it. Only entities have children.
 
 What may stay a key: data with no life of its own, read with its thing (a motion's parameters, with the node it drives
