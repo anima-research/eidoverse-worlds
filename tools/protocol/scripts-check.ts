@@ -62,7 +62,7 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["the beat drains scripts", "authority.js", "drainScripts(w); drainHeld(w);   // what the beat logged reaches scripts", "/* mutant */   // what the beat logged reaches scripts", ["E6"]],
   ["enter() restores the outer call's queues", "authority.js", "Object.assign(CTX, outer); w.changedQ = wq.changedQ; w.sayQ = wq.sayQ;", "Object.assign(CTX, outer); w.sayQ = wq.sayQ;", ["E5"]],
   ["bodies need scope.bodies", "authority.js", "for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.kind)) return mark(\"scope\"", "for (const b of res.bodies) if (false) return mark(\"scope\"", ["C2"]],
-  ["sponsor-wide body allowance", "authority.js", "&& C.tableOf(P, to).overrides[`scripts-by:${extra.sponsor}`]?.[cls]) d = C.decide(P, `scripts-by:${extra.sponsor}`, to, cls, now);", "&& false) d = null;", ["C3"]],
+  ["sponsor-wide body allowance", "authority/bodyconsent.js", "&& C.tableOf(P, to).overrides[`scripts-by:${extra.sponsor}`]?.[cls]) d = C.decide(P, `scripts-by:${extra.sponsor}`, to, cls, now);", "&& false) d = null;", ["C3"]],
   ["frozen clock", "sandbox.js", "FrozenDate.now = () => NOW;", "FrozenDate.now = () => RealDate.now();", ["D2"]],
   ["seeded randomness", "sandbox.js", "Math.random = function random() { return sfc(); };", "", ["D2"]],
   ["presence reads replayed from the act (stand-ins for who)", "sandbox.js", "const ids = x.reads ? (Array.isArray(was?.ids) ? was.ids : standIns(nearAt, was?.n)) : (x.near ? x.near(r) : []);", "const ids = x.near ? x.near(r) : [];", ["D1"]],

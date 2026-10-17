@@ -306,7 +306,7 @@ const cases: Case[] = [
     for (const f of files) { const src = read(f);
       for (const m of src.matchAll(/\brefuse\("([a-z0-9-]+)"/g)) used.set(m[1], f);
       for (const m of src.matchAll(/\bcode: "([a-z0-9-]+)"/g)) used.set(m[1], f);
-      for (const m of src.matchAll(/\brefuse\(([a-zA-Z_][\w.?]*)[,)]/g)) if (f.endsWith("authority.js")) dynamic.push(m[1]); }
+      for (const m of src.matchAll(/\brefuse\(([a-zA-Z_][\w.?]*)[,)]/g)) if (f.endsWith("authority.js") || f.startsWith("shared/protocol/authority/")) dynamic.push(m[1]); }
     const reg = new Set(Object.keys(REG.REFUSAL_CODES));
     const missing = [...used.keys()].filter((c) => !reg.has(c) && !REG.NOT_REFUSALS.includes(c));
     const unused = [...reg].filter((c) => !used.has(c) && !REG.REFUSAL_CODES[c].reserved);
