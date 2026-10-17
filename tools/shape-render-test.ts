@@ -22,6 +22,8 @@ const code = (r: any) => r?.refused?.code ?? (r?.ok ? 'ok' : 'error');
 const tryRow = async (name: string, f: () => any) => { try { await f(); } catch (e) { check(`${name} (threw)`, false, String(e?.stack ?? e).slice(0, 300)); } };
 const ENGINE = new URL('..', import.meta.url).pathname;
 const read = (p: string) => fs.readFileSync(ENGINE + p, 'utf8');
+// the authority is authority.js and its leaves under authority/ (refactor split, 2026-10-17): a source check reads them all
+const readAuthority = () => ['shared/protocol/authority.js', ...fs.readdirSync(ENGINE + 'shared/protocol/authority').filter((f) => f.endsWith('.js')).sort().map((f) => 'shared/protocol/authority/' + f)].map(read).join('\n');
 const keys = (o: any) => JSON.stringify(Object.keys(o ?? {}).sort());
 const repairMod = async () => await import('../shared/protocol/shaperepair.js');
 const v1 = (...rest: any[]) => [{ seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 2, dialect: 'eidoverse-log', roles: { ann: { role: 'owner' } } } },
@@ -281,7 +283,7 @@ await tryRow('OT', () => {
   check('OT2 mesh pins its origin (the centre of its base) as a fact', /centre of its base|center of its base/.test(JSON.stringify(COMPONENTS.mesh.absentMeans ?? {}) + (COMPONENTS.mesh.docs?.shape ?? '')), COMPONENTS.mesh.absentMeans);
   check('OT3 sound pins its gain law (inverse distance from near, (1−t)² taper over the last 5%, silent at radius) and that volume is linear gain', /inverse/.test(COMPONENTS.sound.absentMeans?.law ?? COMPONENTS.sound.help) && /5%/.test(COMPONENTS.sound.help) && /linear/.test(COMPONENTS.sound.docs?.volume ?? ''), COMPONENTS.sound.docs?.volume);
   check('OT4 text pins its anchor (where the block sits on its origin)', /anchor|centred|centered/.test(JSON.stringify(COMPONENTS.text.absentMeans ?? {}) + COMPONENTS.text.help), COMPONENTS.text.absentMeans);
-  check('OT5 water joins the world look (editWorld)', /WORLD_LOOK = new Set\(\[[^\]]*"water"/.test(read('shared/protocol/authority.js')), '');
+  check('OT5 water joins the world look (editWorld)', /WORLD_LOOK = new Set\(\[[^\]]*"water"/.test(readAuthority()), '');
 });
 
 // ===================================================================== the load, and the translator, apply the same rules

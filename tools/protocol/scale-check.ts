@@ -72,7 +72,7 @@ const MUTANTS: [string, string, string | [string, string][], string, string[]][]
   ["the catalogue measures solids", "server/modelcatalogue.ts", "...(sum!.solids ? { solids: sum!.solids } : {})", "", ["I4"]],
   ["a nested request keeps the outer call's queues", "shared/protocol/authority.js", "w.changedQ = saved.changedQ; w.sayQ = saved.sayQ; w.heldQ = saved.heldQ;", "", ["R1"]],
   ["a nested leave keeps the outer leave's flag", "shared/protocol/authority.js", "w.leaving = wasLeaving ?? null; }", "w.leaving = null; }", ["R2"]],
-  ["settling orphans: at most ORPHANS.holders", "shared/protocol/authority.js", "if (holders.length > ORPHANS.holders) {", "if (false) {", ["Q5"]],
+  ["settling orphans: at most ORPHANS.holders", "shared/protocol/authority/behaviours.js", "if (holders.length > ORPHANS.holders) {", "if (false) {", ["Q5"]],
   ["reads per connection: how many", "server/readmeter.ts", "if (!timeOnly && a.length >= limits.n) return", "if (false) return", ["Q4"]],
   ["reads per connection: how long", "server/readmeter.ts", "if (ms >= limits.ms) return", "if (false) return", ["Q4"]],
   ["a derived index re-files what rides on a change", "shared/protocol/authority.js", "for (const k of pk.get(t) ?? []) if (!touched.has(k)) todo.push(k);", "", ["G2"]],
