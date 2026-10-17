@@ -192,19 +192,20 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   (a typo of a registered one with a "did you mean"). The registered components,
   their fields, defaults and meanings are in `shared/protocol/componentspec.js`; a
   authority answers `schema {component?}` with the same. Among them: `transform
-  {pos, q, scale}`, `model` (a library path), `label`, `description`, `parent {to, order?}`,
-  `pivot`, `light`, `mesh`, `motion`, `socket {name, part?, accepts?, radius?}` (an attach point: a
+  {pos, q, scale}`, `model` (a library path), `label`, `description`, `parent {to}`,
+  `pivot {pos}`, `light`, `mesh`, `motion` (a whole thing's; `motion:<part>` moves one node of its model), `socket {name, part?, accepts?, radius?}` (an attach point: a
   child entity of the thing it is on, carrying `parent {to: <host>}`), `station {action, pose, anchor,
   exit?, leaveBy?, who?}` (what a person's body does at that socket, on the same entity; `sockets`, the old
   map spelling, is reserved and lift-only: the authority lifts it into socket children with their stations
   on write and at a stored world's first load, and a socket's old `body` block into its station),
   `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
-  `collider {shape}` (exact, box or sphere; absent, its size decides), `places` (named places to walk to, in the
+  `collider {shape}` (mesh, box or sphere; absent, its size decides), `places` (named places to walk to, in the
   thing's own frame; on `@world`, world coordinates),
   `openable`, `physics`, `grabbable`, `particles`, `script:<name>`,
-  `joint:<name>` (reserved: refused until an engine carries joints), and on
+  `physics-joint:<name>` (the constraint between two bodies) and `joint` (a skeleton node), both
+  reserved, and on
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
-  `sky`, `terrain`, `terrain-grid`, `terrain-tile:<i>-<j>`, `grass`, `physics-engine`, `surface:<name>`,
+  `sky`, `terrain`, `terrain-grid`, `terrain-tile:<i>-<j>`, `grass`, `physics-engine`, `surface:<name>` (reserved),
   `script-settings`, `blueprints:<hash>`, `assets:<key>`, `capacity`, `schemas:<name>`.
 - **A mesh is a body without a model.** `mesh {shape, size}` draws a
   parametric body (box, sphere, cylinder, plane, capsule) on a thing that has
@@ -647,6 +648,23 @@ away from it.
   reader never supplies its own.
 - **Required where absence isn't the default**: a field whose absence would
   mean something other than its default is `required`.
+
+### 9.3 Transforms compose as glTF nodes do
+
+A thing's `transform {pos, q, scale}` is glTF's node TRS, in its parent's
+frame (the world's when it has no parent). Its local matrix is **T · R · S**
+(scale first, then rotation, then translation), and its world matrix is its
+parent's world matrix × its local matrix, down the `parent` chain. So a
+child's world position is the parent's position + the parent's rotation
+applied to (the parent's scale × the child's `pos`). Under a non-uniformly
+scaled parent a rotated child shears, as in glTF and three.js; a reader that
+keeps a TRS rather than a matrix (the authority's `worldPose`) is exact
+wherever every ancestor's scale is uniform and approximates otherwise
+(component-wise scale, Unity's `lossyScale`), and says so. A negative scale
+mirrors; physics reads a thing's size as |scale| (KHR_physics_rigid_bodies).
+Vectors name their frame (§9.2): a `pivot` and a part motion's `pivot` are in
+the thing's (or part's) own frame before scale; `motion.center` and
+`motion.points` in its parent's.
 
 ## 10. Extending the protocol
 

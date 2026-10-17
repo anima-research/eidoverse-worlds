@@ -180,24 +180,42 @@ units and combine rules are the vocabulary the major engines **share**
 (PhysX/Unity, Jolt, Rapier, Godot, Bullet, and Box2D v3 for the 2D analogues),
 in SI units, not any one engine's API: eidosim stays this protocol's engine,
 and whichever engine follows it (most likely a spec-defined deterministic one)
-must be able to carry every field. Every one is optional and **none is a
-materialized default**: no engine this server carries reads them yet, and a
-constant written into every value would be wrong for most things (a pinned
-`mass: 1` is wrong for every crate ever made). Absence keeps the behaviour
-before the field existed: the engine's own law.
+must be able to carry every field.
+
+**Reserved, not written (shape audit 2026-10-16)**, all but two. `mass` and
+`density` stay open fields: the body shove reads them (`shared/shove.js`
+`massOf`: the authority's shove gate, the walker and the agent cap a shove by
+mass), though eidosim's flight doesn't yet. Nothing reads the other eight, so
+they are `physics`' *reserved fields*: their names, units, limits and
+meanings of absence below are held (in the registry's `reservedFields`,
+`reservedShape` and `absentMeans`, all pinned), and every write of one is
+refused (code `reserved`) until an engine declares that it reads it. A number
+a builder can type that nothing honours is a number tuned for nothing. Absence
+keeps the behaviour before the field existed: the engine's own law. None will
+ever be a materialized default (a pinned `mass: 1` is wrong for every crate
+ever made). `physics.kind` is **required**: a bare `{}` read as dynamic while
+the component's absence means static or nothing.
 
 | field | unit | absent means |
 |---|---|---|
-| `mass` | kg, > 0 | `density` × the volume of the stamped shape (`shapes.js shapeVolume`; a blob shape's baked geometry) |
-| `density` | kg/m³, > 0 | its material's surface density, else 1000 (water) |
-| `material` | a `surface:<name>` on `@world` | friction, restitution and their combine modes from their own fields, else the engine's law |
-| `friction` | ≥ 0, one coefficient (static = dynamic) | its material's, else the engine's law |
-| `restitution` | 0..1 | its material's, else the engine's law |
-| `frictionCombine`, `restitutionCombine` | `average` \| `min` \| `multiply` \| `max` | its material's, else `average` (friction) and `max` (restitution) |
+| `mass` | kg, > 0 | `density` × the volume of the stamped shape (`shapes.js shapeVolume`). That shape is the measured **bounding box** today, so a chair weighs as a solid box; eidosim computes exactly this (`shared/sim.js`: 1000 kg/m³ × its box) |
+| `density` | kg/m³, > 0 | its surface's density, else 1000 (water; eidosim's) |
+| `surface` | a `surface:<name>` on `@world` (was `material`, renamed so `material` means appearance only) | friction, restitution and their combine modes from their own fields, else the engine's law |
+| `friction` | ≥ 0, one coefficient (static = dynamic) | its surface's, else the engine's law |
+| `restitution` | 0..1 | its surface's, else the engine's law |
+| `frictionCombine`, `restitutionCombine` | `average` \| `min` \| `multiply` \| `max` | its surface's, else `average` (friction) and `max` (restitution) |
 | `linearDamping`, `angularDamping` | 1/s | the engine's law (eidosim: none) |
-| `centerOfMass` | [x, y, z] m, own frame | the centroid of its stamped shape |
-| `ccd` | bool | the engine's law (eidosim sweeps every moving body against what rests; two flying bodies don't sweep against each other) |
-| `layers`, `mask` | 32-bit collision layers | layers 1; mask all (0xffffffff). Two things collide only if each one's mask holds a layer of the other |
+| `centerOfMass` | [x, y, z] m, own frame before scale | the centroid of its stamped shape |
+
+**Cut** (they were named, never read, and 0 values stored them): `ccd` (a
+solver-quality knob no format maps: Unity has four modes, Jolt a motion
+quality, KHR and OMI none; eidosim sweeps every body anyway) and `layers` /
+`mask` (32-bit layers can't explain themselves to a reader of the log, and
+Unity's 32-layer cap is a decade-old complaint; when collision filtering
+arrives it is **named groups**, KHR's `collisionSystems`, probably on
+`collider`). Additive later, each with its meaning of absence: `gravityFactor`
+(absent 1; KHR and OMI), `staticFriction` / `dynamicFriction` (absent:
+`friction`), inertia.
 
 How the names map (recalled from each engine's public API; a mapping, not an
 adoption):
@@ -210,8 +228,6 @@ adoption):
 | `*Combine` | `PxCombineMode` AVERAGE/MIN/MULTIPLY/MAX / `PhysicsMaterialCombine` | a combine callback | `CoefficientCombineRule` | `rough` / `absorbent` flags (no general modes) |
 | `linearDamping`, `angularDamping` | `linearDamping`, `angularDamping` | `mLinearDamping`, `mAngularDamping` | `linearDamping`, `angularDamping` | `linear_damp`, `angular_damp` |
 | `centerOfMass` | `cMassLocalPose` / `centerOfMass` | `OffsetCenterOfMassShape` | `MassProperties` local CoM | `center_of_mass` |
-| `ccd` | `eENABLE_CCD` / `Continuous` | `EMotionQuality::LinearCast` | `ccdEnabled` | `continuous_cd` |
-| `layers`, `mask` | `PxFilterData` words / layer matrix | object layers + filters | `InteractionGroups(memberships, filter)` | `collision_layer`, `collision_mask` |
 | `kind: kinematic` | `eKINEMATIC` / `isKinematic` | `EMotionType::Kinematic` | `KinematicPositionBased` | `AnimatableBody3D` |
 | `w` | angular velocity, rad/s, world | `GetAngularVelocity` | `angvel` | `angular_velocity` |
 
@@ -223,8 +239,10 @@ superset of 32).
   {friction?, restitution?, density?, frictionCombine?, restitutionCombine?,
   label?}` (Marrow's Surface Data Cards: one name bundles a surface's
   numbers, and content names materials rather than raw per-object numbers).
-  A material naming no surface reads as no material. The registry may later
-  add built-in surface names; a world's own `surface:<name>` wins.
+  `surface` is **reserved** with `physics`' reserved fields (writes closed;
+  both open together). A `physics.surface` naming no surface reads as none.
+  The registry may later add built-in surface names; a world's own
+  `surface:<name>` wins.
 - **Combining two surfaces is the protocol's, not the engine's.** The modes
   are the four every engine can carry (PhysX's, Unity's and Rapier's enums;
   Jolt and Box2D v3 take any rule as a callback): `average`, `min`,
@@ -233,7 +251,12 @@ superset of 32).
   friction averages (the PhysX, Unity and Rapier default) and restitution
   takes the max (the Jolt and Box2D default: a bouncy ball stays bouncy on
   any floor). Geometric mean, Jolt's and Box2D's friction default, isn't
-  offered: three of the engines can't express it.
+  offered: three of the engines can't express it. **KHR_physics_rigid_bodies
+  names the same four modes (`average`, `minimum`, `maximum`, `multiply`) but
+  resolves a mismatch the other way round** (if either says average, average;
+  then minimum, maximum, multiply). We keep the engines' order, which three of
+  them carry natively; an importer of KHR materials resolves each touching
+  pair to one mode, never maps mode to mode.
 - **Angular velocity is `w`: [x, y, z] in rad/s about world axes, everywhere**
   (acts, launches, state samples). Orientation is `q`, a unit quaternion
   (PROTOCOL §9.1).
@@ -247,19 +270,44 @@ superset of 32).
 - **`physics.kind: kinematic`**: a collider moved only by authored edits and
   `motion`, never by the engine; it pushes dynamic things and is never
   pushed or launched. Under eidosim it is a collider at its transform, like
-  a static.
+  a static. **The authority stamps it** (shape audit 2026-10-16): a thing
+  that has `motion`, `motion:<part>` or `openable`, itself or on anything it
+  hangs under, is stamped `kinematic` rather than `static` when the world runs
+  physics, and a static thing that starts moving is restamped. Behaviour is
+  unchanged under eidosim; the record no longer says "never moves".
 - **A thing with `motion`** (pendulum, spin, orbit, bob, path) is a closed
   form of time, so it is a deterministic input (Covenant I). An engine that
   can carries it as a kinematic collider at its motion's pose; eidosim reads
   only the transform, so a thrown ball passes through a swinging pendulum
-  today. Don't build on that pass-through.
-- **`joint:<name>` is reserved**: `{to: ref, type: fixed | hinge | slider |
-  ball | distance | spring, anchor, axis, limits, drive {stiffness, damping,
-  maxForce}, breakForce}`. `to` is a typed reference (duplicate and publish
-  rebind it). The authority refuses it until the world's engine declares
-  joints (`ENGINES[…].joints`). `parent` is a rigid attachment and never a
-  solver joint; `openable` is kinematic animation; a *physical* door is a
-  joint.
+  today. Don't build on that pass-through. A whole thing's motion turns
+  about its `pivot` component (absent: its origin); a part's motion
+  (`motion:<part>`) carries its own `pivot`, in the part's frame.
+- **`physics-joint:<name>` is reserved** (the constraint between two bodies;
+  OMI_physics_joint's name, beside `physics` and `physics-engine`). Renamed
+  from `joint` on 2026-10-16, when nothing stored it: `joint` is now the
+  reserved **skeleton node** (Maya's joint, glTF's skin joint, a VRM humanoid
+  bone: one bone of an avatar's entity tree). The authority refuses both. No
+  fields are pinned: one `anchor` and one `axis` can't carry the **two
+  frames** every engine and glTF/OMI use (Rapier's local frame on each body,
+  Unity's anchor + connectedAnchor, OMI's joint node + connected node), and a
+  six-member type enum with `limits: [min, max]` in "rad or m" is ambiguous
+  for a cone or a spring. `parent` is a rigid attachment and never a solver
+  joint; `openable` is kinematic animation; a *physical* door is a
+  physics-joint.
+- **The target shape, sketched so the first engine with joints doesn't
+  invent one (not registered, not pinned).** After OMI/KHR, with both frames
+  stored rather than derived at load (Covenant III: things move after
+  authoring):
+  `{to: ref, a: {pos, q}, b: {pos, q}, limits: [{linear?: [axes], angular?:
+  [axes], min?, max?, stiffness?, damping?}], drives: [{type, mode, axis,
+  maxForce, positionTarget, velocityTarget, stiffness, damping}], collide?:
+  false, breakForce? (N), breakTorque? (N·m)}`. Each frame is in its own
+  body's frame before scale; the authority *stamps* both from one authored
+  world-space anchor at write (as it stamps `physics.shape`), so authoring
+  keeps "place one empty". Limits are m or rad (N/m, N·m/rad). Named types
+  (hinge, slider, ball, fixed) are editor presets that compile to limits,
+  never stored (Unity's ConfigurableJoint-versus-HingeJoint split is the
+  lesson).
 
 ## 4. Covenant III — the planes stand
 

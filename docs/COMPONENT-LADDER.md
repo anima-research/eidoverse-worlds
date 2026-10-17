@@ -13,8 +13,9 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
 - **trial**: admitted and written, but its shape may still change during the alpha (about a year). When it changes we
   translate or repair stored values where we can. Every registered component is trial at v1.
 - **reserved**: the name is held (nobody else may take it) but every write is refused, with one refusal for all reserved
-  names (code `reserved`; the definition's `instead` says what to use meanwhile). Today: `joint`, `schemas`,
-  `terrain-grid`, `terrain-tile`, `terrain-paint`; `sockets` (the old map: lift-only, the door turns a write of it into
+  names (code `reserved`; the definition's `instead` says what to use meanwhile). Today: `physics-joint` (the
+  constraint between two bodies; renamed from `joint` 10-16, nothing stored it), `joint` (a skeleton node: Maya, glTF,
+  VRM; for avatar entity trees), `surface` (with physics' reserved fields), `schemas`, `terrain-grid`, `terrain-tile`, `terrain-paint`; `sockets` (the old map: lift-only, the door turns a write of it into
   socket children); and the names R held for shapes not settled yet (shape audit 10-16): `material`, `anim-clip`,
   `anim-states`, `camera`, `zone`, `video`, `spring-joint`, `link`, `tags`.
 - **reserved inside a trial component**: a field or a kind can be held the same way, refused with code `reserved` while
@@ -24,6 +25,15 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
     with its `absentMeans`). `hold` (bone overrides over the pose) is cut, not held.
   - `grabbable`: `fx` (presence-only particles while use is held). A grip's `hold` is cut.
   - `reactions`: the handler kind `impulse` (it returns with its general meaning when an engine carries impulses).
+  - `physics`: `surface` (was `material`), `friction`, `restitution`, `frictionCombine`,
+    `restitutionCombine`, `linearDamping`, `angularDamping`, `centerOfMass` (the vocabulary every engine shares; units,
+    limits and meanings of absence held in `reservedShape`/`absentMeans`; they open when an engine reads them). `mass` and
+    `density` stay open: the body shove reads them.
+    `layers`, `mask`, `ccd` are cut, not held.
+- **cut fields that say where they went** (the registry's `dropped`): a write of one is refused with a pointer, a
+  stored one is repaired at a world's first load (shared/protocol/shaperepair.js) and by translate-v1@12: `motion.amplitude`
+  (→ `amp`), `motion.part` (→ the key `motion:<part>`), `physics.material` (→ `surface`); `parent.order` is taken and
+  dropped at the door.
 - **stable**: promised. Its meaning never changes; it only grows by additions, and a changed meaning is a new versioned
   name (rung 4). None is stable at v1.
 
