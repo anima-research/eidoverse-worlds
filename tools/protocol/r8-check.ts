@@ -188,7 +188,7 @@ const cases: Case[] = [
       return { t, m, marked: SR.shapesMarked(stub, (q: number) => (q === t ? null : stub[q]?.body)), noMarker: SR.shapesMarked(stub.filter((_: any, i: number) => i !== m)) }; },
     good: (o) => o.t === 1 && o.m === 2 && o.marked && o.noMarker === false },
   // ---------------- P ----------------
-  { id: "P1", what: "an enter script runs on arrival and hears `by`, but the act names nobody: the identity is nowhere in the log; the auditor flags nothing", run(s) { cast(s);
+  { id: "P1", what: "an enter script runs on arrival and hears `by`, but the act names nobody: the identity is nowhere in the log; the auditor verifies it with a stand-in arrival (its result doesn't depend on who)", run(s) { cast(s);
       const WHO = "u-vicvicvicvicvicvicvi";
       s.call("olive", "create", { id: "door", model: "crate", place: { at: [0, 0] } });
       const u = s.call("olive", "upload", { text: 'world.on("enter", (e) => { const n = (world.get("self", "t/n")?.n ?? 0) + 1; world.set("self", "t/n", { n, heard: typeof e.by === "string" && e.by.length > 0 }); });' });
@@ -196,7 +196,7 @@ const cases: Case[] = [
       s.step(); const ran = D.presenceEvent(s.w(), "enter", WHO);
       const A = AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript });
       return { ins: show(ins), ran: ran?.[0]?.status, n: comp(s, "door", "t/n"), inLog: JSON.stringify(s.entries()).includes(WHO), flags: A.flags, skipped: A.skipped.length, reran: A.reran }; },
-    good: (o) => o.ins === "ok" && o.ran === "ran" && o.n?.n === 1 && o.n?.heard === true && !o.inLog && !o.flags.length },
+    good: (o) => o.ins === "ok" && o.ran === "ran" && o.n?.n === 1 && o.n?.heard === true && !o.inLog && !o.flags.length && o.skipped === 0 && o.reran === 1 },
   { id: "P2", what: "…an enter script that writes who came (its own write, in its own scope) is the script's doing: the auditor lists it skipped (depends on who arrived), never flagged or verified", run(s) { cast(s);
       const WHO = "u-bobbobbobbobbobbobbo";
       s.call("olive", "create", { id: "door", model: "crate", place: { at: [0, 0] } });
