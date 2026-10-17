@@ -12,15 +12,16 @@
 // it. A name that isn't a library path at all is refused (no model called …).
 import { resolveLibFile } from "./libfile.ts";
 import { r3 } from "../shared/protocol/round.js";
-import { isEido, eidoHex, learnModelPath, modelWord } from "../shared/eido.js";
-import { eidoRel, contentAddressOf, recordEido } from "./eidoindex.ts";
+import { isEido, eidoHex, modelWord } from "../shared/eido.js";
+import { eidoRel, originalOf, noteEido } from "./eidoindex.ts";
 import { summarizeGlb } from "./geometry.ts";
-import { readdirSync, statSync, readFileSync } from "node:fs";
+import { readdirSync, statSync, readFileSync, createReadStream } from "node:fs";
+import { createHash } from "node:crypto";
 import { creditsFor } from "../shared/libcredits.js";
 import { join, relative } from "node:path";
 import { OPT_DIR, LIBRARY_DIR, ROOT } from "./config.ts";
 
-export type Entry = { label: string; size?: number[]; box?: number[][]; surfaces: { y: number; x?: number[]; z?: number[] }[]; solids?: number[][][]; credits?: Record<string, unknown> | null };
+export type Entry = { label: string; size?: number[]; box?: number[][]; surfaces: { y: number; x?: number[]; z?: number[] }[]; solids?: number[][][]; credits?: Record<string, unknown> | null; sha256?: string };
 // batch 2: who made each shipped asset (defs/library/credits.json, from the library's own CREDITS.md): the authority's
 // inspect says it beside the model (derived.asset), /library-models beside each row
 let CREDITS: Record<string, any> | null = null;
@@ -30,17 +31,29 @@ export function libraryCredits(): Record<string, any> {
   return CREDITS!;
 }
 const cache = new Map<string, Entry>();
-const addressed = new Map<string, string | null>();   // library path → its content address (or null), once per process
 const pending = new Map<string, Promise<void>>();
 /** What a library path looks like (resolveLibFile's own rule, plus the content store's names). */
 export const isLibPath = (s: unknown): s is string => isEido(s) || (typeof s === "string" && s.length <= 512 && !s.includes("..") && /^[A-Za-z0-9_./-]+\.(glb|vrm)$/i.test(s));
 const MIN_ZONE = 0.02; // m²: smaller up-facing zones are trim and bevels, not surfaces
 
+/** The sha256 of a file, streamed (the event loop keeps turning between chunks: other worlds aren't held up by a big model). */
+const hashFile = (file: string): Promise<string | null> => new Promise((res) => {
+  const h = createHash("sha256"); const s = createReadStream(file);
+  s.on("data", (b) => h.update(b)); s.on("end", () => res(h.digest("hex"))); s.on("error", () => res(null)); });
+/** A library path an old address names here (the index), or null. */
+const pathOfAddress = (m: string): string | null => (isEido(m) ? eidoRel(eidoHex(m)!) : null);
+
 async function measure(lib: string): Promise<void> {
-  const named = isEido(lib) ? eidoRel(eidoHex(lib)!) ?? lib : lib;   // an address is labelled by the file it names here
-  if (named !== lib) learnModelPath(lib, named);
+  const named = pathOfAddress(lib) ?? lib;   // an old address is labelled by the file it names here
   const label = modelWord(named).replace(/[_-]+/g, " ");   // an address no file here names is "thing", never its hex
   let entry: Entry = { label, surfaces: [] };
+  // R 10-17: what its bytes are (model-hash, stamped beside the path by the authority), hashed HERE, off the authority's
+  // request: warm is awaited before a request reaches it. The original's bytes (the library's, never the optimized mirror's),
+  // as a content address always named; an old address is its own hash. Nothing depends on it: unhashed, nothing is stamped
+  try {
+    const hex = isEido(lib) ? eidoHex(lib) : (() => { const o = originalOf(lib); return o ? hashFile(o) : null; })();
+    const h = await hex; if (h) { entry.sha256 = h; if (!isEido(lib)) noteEido(h, lib); }
+  } catch { /* unhashed */ }
   try {
     const file = resolveLibFile(lib);
     const sum = file ? await summarizeGlb(file, { solids: true }) : null;
@@ -51,7 +64,7 @@ async function measure(lib: string): Promise<void> {
         .map((s) => ({ y: r3(s.y), x: s.x.map(r3), z: s.z.map(r3) })).sort((a, b) => a.y - b.y);
       // its solid parts (server/solids.ts): a building's walls, floor and roof with its rooms open, so a body walks in
       // through the authority and a thing can be put down inside (review 10-06 S0-3); absent, the box is the solid
-      entry = { label, box, size: box[1].map((v, i) => r3(v - box[0][i])), surfaces, ...(sum!.solids ? { solids: sum!.solids } : {}) };
+      entry = { ...entry, label, box, size: box[1].map((v, i) => r3(v - box[0][i])), surfaces, ...(sum!.solids ? { solids: sum!.solids } : {}) };
     }
   } catch { /* unmeasured: named, not sized */ }
   cache.set(lib, entry); version++;
@@ -101,21 +114,14 @@ export const ENGINE_CATALOGUE = {
   get version() { return version; },
   get(name: string): Entry | undefined {
     if (!isLibPath(name)) return undefined;
-    const e = cache.get(name) ?? { label: isEido(name) ? modelWord(name, (m: string) => eidoRel(eidoHex(m)!)) : name.split("/").pop()!, surfaces: [] }; // cold: named, not sized (warm first); an address by the file it names, never its hex
-    if (e.credits === undefined) e.credits = creditsFor(libraryCredits(), name);
+    const e = cache.get(name) ?? { label: isEido(name) ? modelWord(name, pathOfAddress) : name.split("/").pop()!, surfaces: [] }; // cold: named, not sized (warm first); an address by the file it names, never its hex
+    // who made it, by its library PATH (review r7 F3: an old address's credits are its file's); every entry is its own object
+    if (e.credits === undefined) e.credits = creditsFor(libraryCredits(), pathOfAddress(name) ?? name);
     return e;
   },
-  /** A library path's content address, eido:sha256/<hex of its ORIGINAL bytes> (shape audit 10-16: the door stores models as
-   *  addresses, shared/protocol/assetref.js), or null (an address already, or no such file here). The address is recorded in
-   *  the eido index (so /library/eido/… and a later measure find the file) and answers with the path's measured entry. */
-  address(name: string): string | null {
-    if (typeof name !== "string" || isEido(name) || !isLibPath(name)) return null;
-    let a = addressed.get(name);
-    if (a === undefined) { const hex = contentAddressOf(name); a = hex ? `eido:sha256/${hex}` : null; addressed.set(name, a); if (a) learnModelPath(a, name);
-      if (hex && eidoRel(hex) !== name) { try { recordEido(hex, name); } catch { /* a read-only host: the address still stands */ } } }
-    if (a && !cache.has(a) && cache.has(name)) cache.set(a, cache.get(name)!);   // the same bytes, measured once
-    return a;
-  },
+  /** The library path an old content address (eido:sha256/<hex>, stored before 10-17) names on this host, or null: the load
+   *  repair writes it back as the model (shared/protocol/shaperepair.js). */
+  pathOf(name: string): string | null { return typeof name === "string" ? pathOfAddress(name) : null; },
   list(q: string): [string, Entry][] {
     const ql = String(q ?? "").toLowerCase();
     return libraryListing().filter((l) => l.toLowerCase().includes(ql)).slice(0, 200).map((l) => [l, cache.get(l) ?? { label: l.split("/").pop()!, surfaces: [] }]);

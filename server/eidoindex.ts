@@ -5,7 +5,10 @@
 //     name (rewritten in place after upload): their address is the digest of the bytes this host actually has, recorded
 //     in the index, and the translator lists them (storeNameMatches) so the operator knows;
 //   - a library model's address is its ORIGINAL's (LIBRARY_DIR), never the optimized mirror in OPT_DIR, which is a
-//     different byte string (§1a); whoever computes one (the translator) records it in OPT_DIR/eido-index.json.
+//     different byte string (§1a); whoever computes one (the translator) records it in OPT_DIR/eido-index.json; the model
+//     catalogue notes each one it hashes at measure for this process (noteEido).
+// R 10-17: a model is stored as its library path, so nothing a world needs to LOAD depends on this index; it resolves an
+// address stored before (translate-v1@8–@11) and a model-hash's bytes (/eido/sha256/<hex>).
 // The address always names the original; /library/eido/… may still serve the host's rendition (routes.ts).
 import fs from "node:fs";
 import path from "node:path";
@@ -43,6 +46,9 @@ export function recordEido(hex: string, rel: string) {
   const tmp = `${INDEX}.${process.pid}.tmp`; fs.writeFileSync(tmp, JSON.stringify(I, null, 1)); fs.renameSync(tmp, INDEX); index = I; indexMtime = fs.statSync(INDEX).mtimeMs;
 }
 const checked = new Map<string, string | null>();   // hex → rel, verified against the bytes once per process
+/** Remember, for this process, that `rel`'s original bytes hash to `hex` (the catalogue, having just hashed them at measure:
+ *  R 10-17, a model-hash's bytes are then fetchable here by /eido/sha256/<hex>). Nothing is written to disk. */
+export function noteEido(hex: string, rel: string) { if (/^[0-9a-f]{64}$/.test(hex) && typeof rel === "string" && !checked.get(hex)) checked.set(hex, rel); }
 /** The library-style path on this host whose ORIGINAL bytes are `hex`, or null. */
 export function eidoRel(hex: string): string | null {
   if (!/^[0-9a-f]{64}$/.test(hex)) return null;

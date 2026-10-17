@@ -155,7 +155,7 @@ const cases: Case[] = [
   // ---------------- X: particles ----------------
   { id: "X1", what: "particles {effect: 'fire'} is taken, and its defaults are written (playing: true, scale: 1)", run(s) { cast(s); thing(s, "hearth");
       return { r: show(s.call("olive", "set", { id: "hearth", component: "particles", value: { effect: "fire", at: [0, 0.18, 0] } })), v: comp(s, "hearth", "particles") }; },
-    good: (o) => o.r === "ok" && o.v?.playing === true && o.v?.scale === 1 && o.v?.effect === PE.essentialAddress?.("fire") },   // an Essential is stored as its address (shape audit 10-16)
+    good: (o) => o.r === "ok" && o.v?.playing === true && o.v?.scale === 1 && o.v?.effect === "fire" },   // an Essential is stored by its name, as written (R 10-17)
   { id: "X2", what: "the first protocol's flat bag is refused in a write, and the refusal says today's spelling (effect, params, at) and cites PROTOCOL §4", run(s) { cast(s); thing(s, "hearth");
       const r = s.call("olive", "set", { id: "hearth", component: "particles", value: { preset: "fire", count: 100, origin: [0, 0.2, 0] } }); return { code: code(r), why: r.refused?.reason, fix: r.refused?.fix }; },
     good: (o) => o.code === "shape" && /effect: 'fire'/.test(o.why ?? "") && /params: \{count\}/.test(o.why ?? "") && /at: \[x, y, z\]/.test(o.why ?? "") && /PROTOCOL §4/.test(o.fix ?? "") },
@@ -199,8 +199,8 @@ const cases: Case[] = [
         { seq: 2, ts: 3, actor: "mica", verb: "comp", args: { id: "f78c7ab8", type: "particles", data: { preset: "fire", seed: 781526, origin: [0, 0.18, 0], count: 150, quality: "auto", glow: true } } }];
       const r = TV1.translate(L); const ents = r.final?.translated ?? {}; const c = Object.values<any>(ents).find((x) => x.particles) ?? {};
       return { tr: TV1.TRANSLATOR, p: c.particles, imp: c["imported:particles"], back: PE.instanceOf?.({ preset: "fire", seed: 781526, origin: [0, 0.18, 0], count: 150, quality: "auto" }) }; },
-    // @12 (the shape audit's wave 2, 10-16): an Essential is stored as its pinned document address, as the door and the load write it
-    good: (o) => /@12$/.test(o.tr) && JSON.stringify(o.p) === JSON.stringify({ effect: PE.essentialAddress?.("fire"), seed: 781526, at: [0, 0.18, 0], params: { count: 150, quality: "auto" } }) && o.imp?.glow === true && JSON.stringify({ ...o.back, effect: PE.essentialAddress?.(o.back?.effect) }) === JSON.stringify(o.p) },
+    // @12 (R 10-17): an Essential keeps its name, as the door and the load keep it
+    good: (o) => /@12$/.test(o.tr) && JSON.stringify(o.p) === JSON.stringify({ effect: "fire", seed: 781526, at: [0, 0.18, 0], params: { count: 150, quality: "auto" } }) && o.imp?.glow === true && JSON.stringify(o.back) === JSON.stringify(o.p) },
   { id: "X11", what: "look says what an emitter is doing: emitting fire; can emit smoke (stopped) when playing is off", run(s) { cast(s);
       thing(s, "a", { particles: { effect: "fire" } }); thing(s, "b", { particles: { effect: "smoke", playing: false } });
       return { a: lookOf(s, "a")?.state, b: lookOf(s, "b")?.state }; },

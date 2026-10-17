@@ -19,7 +19,10 @@
 // …and the render-media-env family (render-media-env.md §3, §4, §13–§15), the same callers:
 //   light      no decay fell off as the rig's three.js decay 1.7: written (a NEW light's default is 2); day → daytime
 //              (true dim, false full); shadows (read by nothing) dropped
-//   particles  an Essentials name → that Essential's pinned address (the derived seed reads the name either way)
+//   model      (R 10-17, v2) a content address eido:sha256/<hex> (translate-v1@8–@11 wrote them) → the library path this
+//              host's index names for it, with the address's hash beside it as model-hash sha256:<hex>; only with a resolver
+//              (the load passes the catalogue's pathOf: host-local, which is fine for a logged act every replica folds as
+//              written); an address no file here names is kept, and still loads
 //   @world (repairWorld):
 //   sky        clock 'real' + dormantRated {hours, rate, ts} → tz, with hours/rate/ts the parked clock (it is the fallback
 //              now); another clock → no tz; azimuth degrees → radians;
@@ -28,9 +31,10 @@
 //   terrain    layer colours "#rrggbb" → ints; the sim's defaults (terrainmath.js) written where absent; terrain.water →
 //              the water component (its colour an int)
 //   grass      the first protocol's makeGrass knobs → the flora spelling (mapGrassArgs, the reader's own mapping); a preset
-//              → its strokes (presetStrokes over shared/flora_presets.js, as the door expands one)
-import { essentialAddress } from "../particle_effects.js";
+//              is kept by its name, as the door keeps one (R 10-17; Fable #4)
+// A particle Essential's name and a grass preset's name are stored as written (R 10-17): nothing rewrites them to an address.
 import { grassAtWrite } from "./assetref.js";
+import { eidoHex } from "../eido.js";
 import { COMPONENTS } from "./componentspec.js";
 import { partSlot } from "./names.js";
 const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
@@ -55,8 +59,9 @@ export function repairMotion(m) {
 }
 
 /** A thing's components repaired: {c (a new object when anything changed, else the same), set: [keys written], del: [keys
- *  removed]}. Only this family's names are touched; everything else is passed through as it is. */
-export function repairComps(c0) {
+ *  removed]}. Only this family's names are touched; everything else is passed through as it is. `pathOf(address)` → the
+ *  library path an old content address names on this host, or null (absent: models are left as they are). */
+export function repairComps(c0, { pathOf = null } = {}) {
   if (!bag(c0)) return { c: c0, set: [], del: [] };
   const c = { ...c0 }; const set = new Set(), del = new Set();
   const put = (k, v) => { c[k] = v; set.add(k); del.delete(k); };
@@ -90,7 +95,10 @@ export function repairComps(c0) {
     if (L.daytime === undefined) { edit(); L.daytime = "dim"; }
     if ("shadows" in L) { edit(); delete L.shadows; }
     if (L !== c.light) put("light", L); }
-  for (const k of Object.keys(c)) if ((k === "particles" || k.startsWith("particles:")) && bag(c[k]) && essentialAddress(c[k].effect)) put(k, { ...c[k], effect: essentialAddress(c[k].effect) });
+  // a model stored as its content address gets its library path back (R 10-17), the address kept beside it as its hash
+  const hex = typeof pathOf === "function" ? eidoHex(c.model) : null;
+  if (hex) { let p = null; try { p = pathOf(c.model); } catch { p = null; }
+    if (typeof p === "string" && p && !eidoHex(p)) { put("model", p); if (c["model-hash"] === undefined) put("model-hash", `sha256:${hex}`); } }
   return set.size || del.size ? { c, set: [...set], del: [...del] } : { c: c0, set: [], del: [] };
 }
 
@@ -141,8 +149,11 @@ export function repairWorld(c0) {
 }
 const withSkyDefaults = (sky) => { const out = { ...sky }; for (const [k, v] of Object.entries(COMPONENTS.sky.defaults)) if (out[k] === undefined) out[k] = v; return out; };
 
-/** The shape repair's version: carried by its act (repair-shapes {v}) and by a founding (create-world {shapes}). */
-export const SHAPES_VERSION = 1;
+/** The shape repair's version: carried by its act (repair-shapes {v}) and by a founding (create-world {shapes}). 2 (R 10-17):
+ *  an old content address → its library path, and names (an Essential's, a grass preset's) kept rather than resolved. A log
+ *  marked by any version is not repaired again: v1 was only ever written by this branch's test and scratch worlds, and their
+ *  addresses still load (the index) or read as "thing". */
+export const SHAPES_VERSION = 2;
 /** Has this log been through the shape repair already, or been written in today's spelling from its start? True when it
  *  holds the repair's own act (any version: the first one, before 10-16's review, repaired everything before it or
  *  nothing), a founding stamped with `shapes` (a world founded since), or a translation by translate-v1@12 or later (which
@@ -158,11 +169,11 @@ export function shapesMarked(entries) {
 
 /** The ops that repair a folded state (every thing, and @world's look): [{verb: "set"|"delete", id, comp, value?}], in
  *  id order. [] when nothing needs it. */
-export function shapeRepairOps(st, purged = null) {
+export function shapeRepairOps(st, purged = null, { pathOf = null } = {}) {
   const ops = [];
   for (const id of Object.keys(st?.entities ?? {}).sort()) {
     const c0 = st.entities[id].c; if (purged && Object.values(c0).some((v) => v === purged)) continue;   // a purged value is no one's to rewrite
-    const { c, set, del } = id === "@world" ? repairWorld(c0) : repairComps(c0);
+    const { c, set, del } = id === "@world" ? repairWorld(c0) : repairComps(c0, { pathOf });
     for (const k of del) ops.push({ verb: "delete", id, comp: k });
     for (const k of set) ops.push({ verb: "set", id, comp: k, value: c[k] }); }
   return ops;

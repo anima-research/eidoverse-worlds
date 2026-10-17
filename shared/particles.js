@@ -32,7 +32,7 @@ export function mulberry32(seed) {
 export function emitterSeed(entityId, data) {
   const inst = instanceOf(data) ?? {};
   if (typeof inst.seed === 'number' && Number.isFinite(inst.seed)) return Math.floor(inst.seed) >>> 0;
-  return hashSeed(`${entityId}:${essentialNameOf(inst.effect) ?? inst.effect ?? ''}`);   // an Essential's name, stored as its address or not
+  return hashSeed(`${entityId}:${essentialNameOf(inst.effect) ?? inst.effect ?? ''}`);   // an Essential's name (or the address one was stored as before 10-17)
 }
 /** Particles one viewer draws of `amount`: the effect's own ratio (an older value's quality) and the viewer's tier,
  *  whichever asks for less. The only number allowed to differ between two clients looking at the same fire. */

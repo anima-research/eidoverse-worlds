@@ -25,10 +25,18 @@ export const COMPONENTS = {
     ranges: { pos: { min: -1e5, max: 1e5 }, scale: { min: -1e3, max: 1e3 } },
     docs: { pos: "where it stands, [x, y, z] in metres, in its parent's frame (the world's when it has no parent)", q: "its orientation, a unit quaternion [x, y, z, w] (glTF order), in its parent's frame; normalized on write", scale: "its size per axis, [x, y, z] (1 = as made), each within ±1000 and never within 1e-4 of zero; a negative one mirrors (physics reads its size, |scale|)" },
     help: "where it is, glTF's node TRS: pos (m), q (unit quaternion [x, y, z, w]), scale [x, y, z], all in its parent's frame. Composed as glTF composes a node: local = T · R · S, world = parent's world × local (PROTOCOL §9.3)" },
-  // shape audit 10-16 (render-media-env §2): stored as a content address. A name or a library path is a write-time convenience
-  // the door resolves (shared/protocol/assetref.js) when this server can say what the bytes are; an older stored path or name
-  // still reads through the catalogue as this host has it (best effort, which is why new writes are addresses)
-  model:     { on: "thing", type: "string", help: "which model it shows: its content address eido:sha256/<64 hex> (spec/EIDO-URIS.md; a glTF binary by its role). A name from find {kind: 'model'} or a library path is taken and resolved at write to its content address when this server can say what its bytes are (else kept as written)" },
+  // R 10-17 (binding: "definitely serve path again alongside hash"): a model is its LIBRARY PATH, stored as written: the
+  // portable reference (a world loads anywhere the library exists, as on anima/main). What its bytes were rides beside it,
+  // optionally, as model-hash (below), never instead. A content address stored before 10-17 (eido:sha256/<64 hex>: translate-v1
+  // @8–@11, and this branch's door for a day) still loads where this host's index knows it, and the load repair writes its path
+  // back (shaperepair.js); one no file here names reads as "thing"
+  model:     { on: "thing", type: "string", help: "which model it shows: its library path (eidoverse/assets/models/…glb, store/<hash>.glb; a name from find {kind: 'model'} gives one), stored as written. The server stamps model-hash beside it when it knows the file's bytes. An older eido:sha256/<64 hex> address still loads where this host can find its bytes" },
+  // the bytes a model's path named when it was written: Godot's ext_resource {path, uid}, an npm lock's {resolved, integrity},
+  // a web page's <script src integrity>. Optional (a host that can't hash, or hasn't yet, writes none; nothing breaks without
+  // it), never the reference: readers load the path. Stamped by the authority from what its catalogue measured off the request
+  // path (server/modelcatalogue.ts), dropped when the model changes to one it can't hash
+  "model-hash": { on: "thing", type: "sha256", writtenBy: "server",
+               help: "set by the server beside model (never by hand below owner): sha256:<64 hex> of the original bytes its library path named when it was written (the file in the library, never an optimized copy). An integrity and version fact only: readers load the path; absent, nothing is lost" },
   label:     { on: "thing", type: "string", maxLen: 80, help: "its display name, a short string (its name to every reader: the accessible name; description says what it is)" },
   // R 10-07 (our answer to upstream PR #168's label {name, description, visibility, offset}): the accessibility model's
   // name / description / role+state. label stays the name; description is how the thing is described to any text-based
@@ -382,19 +390,19 @@ export const COMPONENTS = {
                help: "on @world: the sky and its clock {hours, rate, tz? (present: the wall clock of that zone governs), clouds, weather, weatherK, transition (s), azimuth (rad), fog, exposure, ambient (× this renderer's own curves), forecast?}. ts, override and forecast.epoch are stamped by the sky and weather acts; the sky act also takes clock: 'real' (stored as tz) and weatherSeconds (stored as transition)" },
   // shape audit 10-16 (render-media-env §14): ONE spelling, the flora one. The first protocol's makeGrass knobs (bladeHeight,
   // spacing, perCell, colorTip, an int colour) are taken at write and stored through the reader's own mapping (flora_args
-  // mapGrassArgs), once; a preset is a name for strokes held in a mutable file (defs/flora/_presets.json), so it is expanded
-  // at write (shared/protocol/assetref.js) and the stored value holds its strokes, never the name (the sky presets' law).
+  // mapGrassArgs), once; a preset is stored by its NAME (R 10-17; Fable #4: expansion is cheap later, un-expansion impossible)
+  // and checked at write against shared/flora_presets.js; the reader composes its strokes (flora_args presetStrokes).
   // seed and size were read and refused: registered. colour stays a palette name or a [r, g, b] multiplier: the flora
   // palette's recolors (defs/flora/_colors.json) aren't an sRGB int (deviation from the audit's int)
-  grass:     { on: "world", fields: { species: "string", width: "number", depth: "number", size: "number", center: "array", height: "number", density: "number", wind: "number", color: "any", seed: "int", rows: "object", corn: "object", heading: "number", strokes: "array" },
-               dropped: { bladeHeight: "the flora spelling is height (a write of the old knobs is taken and mapped)", spacing: "the flora spelling is density", perCell: "the flora spelling is density", colorTip: "the flora spelling is color (a multiplier)", preset: "expanded at write into strokes (a preset is a name for strokes in a file that may change)" },
+  grass:     { on: "world", fields: { species: "string", width: "number", depth: "number", size: "number", center: "array", height: "number", density: "number", wind: "number", color: "any", seed: "int", preset: "string", rows: "object", corn: "object", heading: "number", strokes: "array" },
+               dropped: { bladeHeight: "the flora spelling is height (a write of the old knobs is taken and mapped)", spacing: "the flora spelling is density", perCell: "the flora spelling is density", colorTip: "the flora spelling is color (a multiplier)" },
                ranges: { width: { gt: 0, max: 1000 }, depth: { gt: 0, max: 1000 }, size: { gt: 0, max: 1000 }, height: { gt: 0, max: 10 }, density: { min: 0, max: 4 }, wind: { min: 0, max: 10 }, strokes: { maxItems: 16 } },
                units: { width: "m", depth: "m", size: "m", height: "m", heading: "rad" },
                absentMeans: { size: "80 m wide and 70 m deep when width and depth aren't given either (a stroke's own: 30 m)", species: "grass", width: "size, else 80 m (a stroke's own: 30 m)", depth: "size, else 70 m (a stroke's own: 30 m)", center: "[0, 0]", height: "the species' own", density: "1", wind: "1", color: "the species' own", seed: "7",
-                 strokes: "one stroke: the value itself (a species' own composition, corn's and sunflower's rows, still applies)", heading: "-0.6 rad for sunflowers (they face one way together)" },
+                 strokes: "one stroke: the value itself (a species' own composition, corn's and sunflower's rows, still applies)", preset: "no preset: the value's own strokes, else one stroke", heading: "-0.6 rad for sunflowers (they face one way together)" },
                docs: { species: "what grows (a flora def: grass, corn, sunflower, galleta_dry…)", width: "the field's width, metres", depth: "the field's depth, metres", size: "width and depth when they aren't given, metres", center: "[x, z] of the field's middle, metres", height: "plant height, metres", density: "how thickly it grows (0..4)", wind: "how much it sways (×)", color: "a palette name (defs/flora/_colors.json) or a multiplier [r, g, b]", seed: "the planting's random seed",
-                 rows: "a crop's rows {spacing, plant, stride?, phase?}", corn: "corn's own knobs {peel?, peelChance?}", heading: "the way sunflowers face, radians", strokes: "the plantings this field is made of (a preset, expanded at write): [{species, width, depth, center, seed, density, variant?, footprint?}]" },
-               help: "a grass or crop field {species, width, depth (or size), center, height, density, wind, color, seed} or {width, depth, seed, strokes: […]}; a preset ({preset: 'mojave'}) is expanded at write into its strokes, and the first protocol's knobs (bladeHeight, spacing, perCell, colorTip) are taken and stored in this spelling" },
+                 rows: "a crop's rows {spacing, plant, stride?, phase?}", corn: "corn's own knobs {peel?, peelChance?}", heading: "the way sunflowers face, radians", preset: "a named planting (defs/flora/_presets.json: mojave, …), stored by its name and composed into strokes by the reader; an unknown name is refused", strokes: "the plantings this field is made of: [{species, width, depth, center, seed, density, variant?, footprint?}] (they win over a preset)" },
+               help: "a grass or crop field {species, width, depth (or size), center, height, density, wind, color, seed} or {width, depth, seed, strokes: […]}; a preset ({preset: 'mojave'}) is stored by its name and composed by the reader, and the first protocol's knobs (bladeHeight, spacing, perCell, colorTip) are taken and stored in this spelling" },
   // carried from the first protocol, with real readers (shared/structure.js; shape audit 10-16, physics-motion §9): its grid numbers and its nested
   // grammar were only in structure.js (GRID_DEFAULTS, APERTURES, normalize), "a CONTRACT". Pinned here; tools/shape-physics-test
   // holds them equal to structure.js. A level entry a reader can't parse reads as absent (normalize skips it)
@@ -411,15 +419,15 @@ export const COMPONENTS = {
   // address, with the document's own params. The first protocol's bag (preset, origin, count, quality, size, area,
   // texture, speed, opacity, lifetime) stays here because a stored value is read forever (PROTOCOL §4): it reads as
   // {effect: preset, at: origin, params: {count, …}} (instanceOf), and the authority no longer takes it in a write
-  // shape audit 10-16 (render-media-env §4): an Essential's NAME is a write-time convenience; the stored effect is the address
-  // of that Essential's canonical document (shared/particle_effects.js ESSENTIAL_ADDRESSES, pinned there), so retuning fire in
-  // code can't silently change every stored fire (Resonite's PhotonDust lesson). The first protocol's ten fields are gone from
+  // R 10-17: an Essential is stored by its NAME, as written (the code that ships it resolves it everywhere, as a library path
+  // does a model). An Essential's pinned address (shared/particle_effects.js ESSENTIAL_ADDRESSES), stored for a day by this
+  // branch's door, still reads as that Essential. The first protocol's ten fields are gone from
   // the registry: no current value holds them; a first-protocol bag is read (instanceOf) only by the translator
   particles: { on: "thing", fields: { effect: "string", part: "string", at: "vec3", seed: "number", playing: "bool", scale: "number", params: "object" },
                defaults: { playing: true, scale: 1 }, required: ["effect"],
                ranges: { scale: { min: 0.01, max: 100 }, part: { maxLen: 64 }, effect: { maxLen: 80 }, at: { min: -8, max: 8 } },
                units: { at: "m", scale: "×" },
-               docs: { effect: "the effect document's content address (eido:sha256/… for an Essential, sha256:… for one uploaded here); an Essentials name (fire, sparks, embers, smoke, dust, snow, magic, stars, muzzle) is taken and stored as its address", part: "a node of its model it emits from", at: "where it emits, [x, y, z] metres in its own frame, each within ±8", seed: "the random seed; absent: derived from its id",
+               docs: { effect: "an Essentials name (fire, sparks, embers, smoke, dust, snow, magic, stars, muzzle), stored as written, or the content address sha256:<64 hex> of a document uploaded here (an Essential's eido:sha256/… address stored before 10-17 still reads as that Essential)", part: "a node of its model it emits from", at: "where it emits, [x, y, z] metres in its own frame, each within ±8", seed: "the random seed; absent: derived from its id",
                  playing: "off: no new particles; the living finish", scale: "every length in the effect (positions, sizes, speeds, accelerations) × this, on top of the thing's own transform scale; 0.01..100", params: "the effect's own knobs {<name>: value}" },
                absentMeans: {
                  part: "it emits from the thing itself, not one node of its model",
@@ -428,7 +436,7 @@ export const COMPONENTS = {
                  playing: "playing: it emits (the component's presence was its state)",
                  scale: "1: the effect at its own size",
                  params: "none: the effect's own defaults" },
-               help: "it emits particles: {effect (an effect document's address; an Essentials name, fire, sparks, embers, smoke, dust, snow, magic, stars, muzzle, is taken and stored as its address; upload {effect: {…}} stores a document of your own, sha256:<64 hex>), part? (a node of its model it emits from), at? [x, y, z] (m in its own frame, ±8), seed? (absent: derived from its id), playing? (false: no new particles; the living finish), scale? (0.01..100: every length in the effect × this, on top of the thing's own scale), params? {<name>: value} (the effect's own knobs, schema {component: 'particles'} and the inspector list them; every Essential takes count, size, opacity, speed, lifetime, area, texture, quality)}. An effect document is emitters of modules: spawn, shape, velocity, forces, rotation, size, color, render (spec in shared/particle_effects.js)" },
+               help: "it emits particles: {effect (an Essentials name, fire, sparks, embers, smoke, dust, snow, magic, stars, muzzle, or a document of your own by its address: upload {effect: {…}} stores one, sha256:<64 hex>), part? (a node of its model it emits from), at? [x, y, z] (m in its own frame, ±8), seed? (absent: derived from its id), playing? (false: no new particles; the living finish), scale? (0.01..100: every length in the effect × this, on top of the thing's own scale), params? {<name>: value} (the effect's own knobs, schema {component: 'particles'} and the inspector list them; every Essential takes count, size, opacity, speed, lifetime, area, texture, quality)}. An effect document is emitters of modules: spawn, shape, velocity, forces, rotation, size, color, render (spec in shared/particle_effects.js)" },
   "imported-behavior": { on: "world", keyed: true, key: "instance", fields: { src: "string", attach: "string", caps: "object", knobs: "object", author: "string", ts: "number", state: "object" }, help: "keyed by name: an imported world's old runtime-script binding, carried from translation (scripts are script:<name>)" },
   assets:    { on: "world", keyed: true, key: "instance", fields: { name: "string", path: "string" }, help: "on @world, keyed: one of the world's assets (a model added here)" },
   imported:  { keyed: true, key: "instance", help: "keyed: a field an imported world's translation had no mapping for, carried as it was" },

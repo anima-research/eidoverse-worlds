@@ -31,7 +31,7 @@ import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND,
 import { livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
 import { shapeRepairOps, shapesMarked, SHAPES_VERSION } from "./shaperepair.js";
 import { atWrite } from "./assetref.js";
-import { isEido, modelWord } from "../eido.js";
+import { isEido, eidoHex, modelWord } from "../eido.js";
 import { trustRefusal } from "../drafts.js";
 import { planLaunch } from "./launchplan.js";
 import { REACH, HAND_Y, MAX_HELD, KICK, SHOVE, BODY_REACH } from "./physconst.js";
@@ -790,6 +790,7 @@ function mediaCheck(s, id, comp, v, at, obj) {
 // got 3 m hills. Unknown NAMES are still kept (L5): this binds only names the catalogue defines.
 const isNum = (x) => typeof x === "number" && Number.isFinite(x);
 const TYPES = { number: isNum, int: Number.isInteger, string: (x) => typeof x === "string", bool: (x) => typeof x === "boolean", any: () => true,
+  sha256: (x) => typeof x === "string" && /^sha256:[0-9a-f]{64}$/.test(x),   // a content hash (model-hash; the one spelling, as copy-of.from's)
   vec3: (x) => Array.isArray(x) && x.length === 3 && x.every(isNum),
   axis: (x) => (Array.isArray(x) && x.length === 3 && x.every(isNum)) || x === "x" || x === "y" || x === "z", // the text-tier shorthand the renderer reads (motioneval.js)
   array: Array.isArray, object: (x) => x && typeof x === "object" && !Array.isArray(x),
@@ -1001,7 +1002,7 @@ function commit(w, actor, verb, args, build) {
   const sent = clone(args); // L4: the act is the request AS SENT (builders may annotate their own copy)
   const st = w.state();
   const ctx = { st, actor, w, notes: [], refs: new Set() };
-  const ops = stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, build(ctx)))));
+  const ops = stampModelHash(ctx, stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, build(ctx))))));
   const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops); ctx.notes.push(...plan.notes);
   if (args.dry) return { ok: true, dry: true, would: plan.ops, notes: ctx.notes, ...warnOrNot(warnings(plan.after, [...ctx.refs])) };
   const actE = actOf(w, actor, verb, sent, ctx.actExtra);
@@ -1148,6 +1149,26 @@ function stampMedia(ctx, ops) {
     return { ...o, value: { ...v, t0 } };
   });
 }
+// R 10-17: a model is its library path; what its bytes were rides beside it as model-hash (sha256:<64 hex>), stamped by the
+// authority when its catalogue already knows the hash (server/modelcatalogue.ts measures it off the request path: warm, before
+// the authority sees the request) and never computed here. A model it can't hash carries none: the old one named other bytes,
+// so a change of model drops it. A capability (a handler, a script) never sets a server-written component, so under one the
+// stale hash is only dropped. A content address written as the model (one stored before 10-17) is its own hash.
+const hashOfModel = (m) => { if (typeof m !== "string") return null; const a = eidoHex(m); if (a) return `sha256:${a}`;
+  let h = null; try { h = CTX.cat.get(m)?.sha256; } catch { h = null; } return typeof h === "string" && /^[0-9a-f]{64}$/.test(h) ? `sha256:${h}` : null; };
+function stampModelHash(ctx, ops) {
+  const ids = new Set(); for (const o of ops) if ((o.verb === "set" || o.verb === "delete") && o.comp === "model") ids.add(o.id);
+  if (!ids.size) return ops;
+  const after = scratch(ctx.st, ops); const out = ops.slice();
+  for (const id of ids) {
+    const e = after.entities[id]; if (!e) continue;   // the thing itself is gone
+    const was = ctx.st.entities[id]?.c.model, now = e.c.model; if (now === was) continue;
+    const want = ctx.cap ? null : hashOfModel(now), have = e.c["model-hash"];
+    if (want) { if (have !== want) { const k = out.findIndex((o) => o.verb === "set" && o.comp === "model-hash" && o.id === id); if (k >= 0) out[k] = setOp(id, "model-hash", want); else out.push(setOp(id, "model-hash", want)); } }
+    else if (have !== undefined && !ops.some((o) => o.id === id && o.comp === "model-hash")) out.push(delOp(id, "model-hash"));
+  }
+  return out;
+}
 function touched(ops, st) {
   const out = {};
   for (const o of ops) { const e = st.entities[o.id]; out[o.id] ??= {};
@@ -1240,11 +1261,10 @@ function resolve(ctx, id, comp, value, prev) {
   // one spelling per meaning (shape audit 10-16): what a write may say the short way is stored the one way
   if (comp === "lock" && value === true) { ctx.notes.push({ id, component: "lock", sent: true, kept: { rank: "builder" }, why: "a lock is {rank}; true is the builder level" }); value = { rank: "builder" }; }
   if (comp === "home" && value && typeof value === "object" && !Array.isArray(value) && typeof value.scale === "number") value = { ...value, scale: [value.scale, value.scale, value.scale] };
-  // names resolved at the write door (shape audit 10-16, render-media-env; shared/protocol/assetref.js): a model's path or
-  // name → its content address, a particle Essential's name → its document's address, a grass preset → its strokes and the
-  // first protocol's makeGrass knobs → the flora spelling
-  if (comp === "model" || baseOf(comp) === "particles" || comp === "grass") { let r;
-    try { r = atWrite(comp, value, { catalogue: CTX.cat }); } catch (x) { refuse("shape", `${id}.${comp}: ${String(x?.message ?? x).replace(/^\[flora\] /, "")}`, COMPONENTS.grass.help); }
+  // a reference is stored as written (R 10-17: a model's library path, an Essential's name, a grass preset's name;
+  // shared/protocol/assetref.js): grass's first-protocol knobs are mapped to the flora spelling, and a preset is checked
+  if (comp === "grass") { let r;
+    try { r = atWrite(comp, value); } catch (x) { refuse("shape", `${id}.${comp}: ${String(x?.message ?? x).replace(/^\[flora\] /, "")}`, COMPONENTS.grass.help); }
     for (const n of r.notes) ctx.notes.push({ id, component: comp, ...n }); value = r.value; }
   // a light's day (a double negative) is daytime (shape audit 10-16): true = dim, false = full
   if (comp === "light" && value && typeof value === "object" && !Array.isArray(value) && typeof value.day === "boolean") { const { day, ...rest } = value;
@@ -1284,8 +1304,8 @@ function merge7396(target, patch) {
 }
 // a fresh id: never one this world has had (§3d H7), nor one already used in this request
 // review 10-07 H5: <slug>-<26 base32> (shared/protocol/ids.js), never <slug>-<count>, which two forks minted alike
-// a thing's word for a minted id (gate 21, 10-16): the door stores a model as its content address, whose file name is a hex;
-// an address is named by the catalogue's label for it (the file it names here), else the word the host learned, else "thing"
+// a thing's word for a minted id (gate 21, 10-16): a model is its library path (R 10-17), but one stored as a content address
+// before has a hex for a file name: it is named by the catalogue's label for it (the file its index names here), else "thing"
 const idWord = (m) => (isEido(m) ? modelWord(m, (x) => modelOf(x)?.label) : m);
 function mint(st, base) { const ever = CTX.mintW?.everIds() ?? new Set(); let id;
   do id = mintId(slug(base)); while (st.entities[id] || ever.has(id)); return id; }
@@ -2156,7 +2176,7 @@ export function liftWorld(w) {
     // thing whose repair the door refuses is left as it was and named in the act ({failed}); the rest repair. The act is
     // written even when there is nothing to repair, so the next load finds the marker and does nothing
     if (!shapesMarked(w.entries)) try {
-      const st = w.state(); const all = shapeRepairOps(st, PURGED);
+      const st = w.state(); const all = shapeRepairOps(st, PURGED, { pathOf: (m) => { try { return CTX.cat.pathOf?.(m) ?? null; } catch { return null; } } });
       const byId = new Map(); for (const o of all) { if (!byId.has(o.id)) byId.set(o.id, []); byId.get(o.id).push(o); }
       const kept = [], failed = [];
       for (const [id, ops] of byId) {

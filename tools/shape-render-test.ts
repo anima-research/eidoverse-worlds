@@ -57,50 +57,62 @@ await tryRow('LI', async () => {
   check('LI10 translate-v1@12 writes a v1 light as the load repairs it (decay 1.7, daytime)', tl?.decay === 1.7 && tl?.daytime === 'full' && !('day' in (tl ?? {})) && !t.stats.divergences, [tl, t.stats.divergences]);
 });
 
-// ===================================================================== model: content addresses through one door helper
+// ===================================================================== model: its library path as written; the bytes' hash rides beside it
+// (R 10-17, binding: "definitely serve path again alongside hash"; review r7 F3/F4, Fable #3)
 await tryRow('MD', async () => {
   const A = await import('../shared/protocol/assetref.js');
-  check('MD1 one door helper (shared/protocol/assetref.js) resolves names at write for model, particles and grass', typeof A.atWrite === 'function' && /atWrite\(/.test(read('shared/protocol/authority.js')), Object.keys(A));
   const HEX = 'a'.repeat(64);
-  const cat = { get: (n: string) => (n === 'props/ball.glb' || n === `eido:sha256/${HEX}` ? { label: 'ball', surfaces: [] } : undefined), list: () => [], address: (n: string) => (n === 'props/ball.glb' ? `eido:sha256/${HEX}` : null) };
+  const cat = { get: (n: string) => (n === 'props/ball.glb' ? { label: 'ball', surfaces: [], sha256: HEX } : undefined), list: () => [] };
   const out = A.atWrite('model', 'props/ball.glb', { catalogue: cat });
-  check('MD2 a library path is stored as its content address when the catalogue can say what its bytes are', out.value === `eido:sha256/${HEX}` && out.notes.length === 1, out);
-  check('MD2 …an address stays itself; a name the catalogue can\'t address is kept as written', A.atWrite('model', `eido:sha256/${HEX}`, { catalogue: cat }).value === `eido:sha256/${HEX}` && A.atWrite('model', 'crate', { catalogue: { get: () => ({}), list: () => [] } }).value === 'crate', '');
-  check('MD3 the engine\'s catalogue can say a library path\'s address (server/modelcatalogue.ts address)', /address\(name/.test(read('server/modelcatalogue.ts')), '');
-  check('MD4 model\'s help says a name or path is resolved to its content address at write', /content address/.test(COMPONENTS.model.help) && /at write|resolved/.test(COMPONENTS.model.help), COMPONENTS.model.help);
+  check('MD1 the door keeps a model as written: its library path, no rewrite, no note', out.value === 'props/ball.glb' && out.notes.length === 0, out);
+  const MC = read('server/modelcatalogue.ts');
+  check('MD2 the engine\'s catalogue never turns a path into an address (no address()), and hashes at measure, off the authority (a stream, never readFileSync of the original)', !/\baddress\(name/.test(MC) && !/contentAddressOf/.test(MC) && /createReadStream/.test(MC), '');
+  check('MD3 model\'s help says a library path; model-hash is registered: on thing, a sha256:<64 hex>, written by the server', /library path/.test(COMPONENTS.model.help) && !/resolved at write to its content address/.test(COMPONENTS.model.help) && COMPONENTS['model-hash']?.on === 'thing' && COMPONENTS['model-hash']?.type === 'sha256' && COMPONENTS['model-hash']?.writtenBy === 'server', [COMPONENTS.model.help, COMPONENTS['model-hash']]);
+  const MCAT = { get: (n: string) => (n === 'props/ball.glb' ? { label: 'ball', size: [1, 1, 1], surfaces: [], sha256: HEX } : n === 'props/odd.glb' ? { label: 'odd', size: [1, 1, 1], surfaces: [] } : undefined), list: () => [] };
+  const W = scratchWorld('w2r-mhash', { catalogue: MCAT });
+  const C = () => W.state().entities.b?.c ?? {};
+  let r = W.call('create', { id: 'b', model: 'props/ball.glb', components: { transform: { pos: [0, 0, 0] } } });
+  check('MH1 a create stores the path and the server stamps model-hash sha256:<hex> beside it when its catalogue knows the bytes', r.ok && C().model === 'props/ball.glb' && C()['model-hash'] === `sha256:${HEX}`, [r.refused, C()]);
+  r = W.call('set', { id: 'b', component: 'model', value: 'props/odd.glb' });
+  check('MH2 a model whose bytes the catalogue can\'t name carries no hash: the old one (other bytes) goes with the old model', r.ok && C().model === 'props/odd.glb' && !('model-hash' in C()), [r.refused, C()]);
+  r = W.call('set', { id: 'b', component: 'model', value: 'props/ball.glb' });
+  check('MH3 …and is stamped again with a model it can name', r.ok && C()['model-hash'] === `sha256:${HEX}`, [r.refused, C()]);
+  r = W.call('set', { id: 'b', component: 'model-hash', value: 'abc' });
+  check('MH4 a model-hash that isn\'t sha256:<64 hex> is refused', code(r) === 'shape', r.refused);
+  r = W.call('delete', { id: 'b', component: 'model' });
+  check('MH5 deleting the model deletes its hash', r.ok && !('model' in C()) && !('model-hash' in C()), [r.refused, C()]);
+  const W2 = scratchWorld('w2r-mhash-lab');
+  r = W2.call('create', { id: 'c', model: 'crate', components: { transform: { pos: [0, 0, 0] } } });
+  check('MH6 a catalogue that hashes nothing (the lab\'s) stamps nothing: the hash is optional', r.ok && W2.state().entities.c.c.model === 'crate' && !('model-hash' in W2.state().entities.c.c), [r.refused, W2.state().entities.c?.c]);
 });
 
-// ===================================================================== the readers of an addressed model (gate 21, 10-16): every
-// reader that read a word, an id, a URL, a type or a cache key off `model` as if it were a path
+// ===================================================================== the readers of a model: a path is its own word; an address stored before
+// 10-17 still loads and reads as "thing" (never its hex), with no host-local registry
 await tryRow('AD', async () => {
   const E = await import('../shared/eido.js');
-  const H = 'c'.repeat(64), ADDR = `eido:sha256/${H}`, ADDR2 = `eido:sha256/${'d'.repeat(64)}`, ADDR3 = `eido:sha256/${'e'.repeat(64)}`;
+  const H = 'c'.repeat(64), ADDR = `eido:sha256/${H}`, CW = 'eidoverse/assets/models/crate_wood.glb';
   const hx = E.hexOfLibRel;
-  check('AD1 /library/<model> fetches an address as stored (eido:sha256/<hex>, the colon raw or %3A) as well as libRelOf\'s spelling',
+  check('AD1 an address stored before 10-17 still fetches: /library/<model> takes eido:sha256/<hex> (the colon raw or %3A) and libRelOf\'s spelling',
     hx(`eido:sha256/${H}`) === H && hx(`eido%3Asha256/${H}`) === H && hx(E.libRelOf(ADDR)) === H && hx(`eido:sha256/${H}.glb`) === null && hx('props/crate.glb') === null, [hx(`eido:sha256/${H}`), hx(`eido%3Asha256/${H}`)]);
-  check('AD1 …and the route names the file it served (x-library-path), so a reader learns an address\'s word from the bytes it fetched',
-    /hexOfLibRel\(rel0\)/.test(read('server/routes.ts')) && /x-library-path/.test(read('server/routes.ts')) && /x-library-path/.test(read('client/lib/assets.js')) && /x-library-path/.test(read('mcpl/agent.ts')), '');
-  check('AD2 one word for a model (shared/eido.js modelWord): an address nobody can name is "thing", never its hex',
-    typeof E.modelWord === 'function' && E.modelWord(ADDR) === 'thing' && E.modelWord(ADDR, () => H) === 'thing' && E.modelWord(ADDR, () => ADDR) === 'thing', E.modelWord?.(ADDR));
-  E.learnModelPath?.(ADDR2, 'eidoverse/assets/models/crate_wood.glb');
-  check('AD2 …an address this host learned the path of reads as that file\'s name; a name given wins; a path reads as its file name',
-    E.modelWord?.(ADDR2) === 'crate_wood' && E.modelWord?.(ADDR2, () => 'Wooden crate') === 'Wooden crate' && E.modelWord?.('props/ball.glb') === 'ball' && E.modelWord?.(ADDR3, null) === 'thing', [E.modelWord?.(ADDR2)]);
+  check('AD1 …and the learned address→path registry and its x-library-path header are gone (they only recovered the path the door threw away)',
+    !('learnModelPath' in E) && !('learnedModelPath' in E) && !/x-library-path/.test(read('server/routes.ts')) && !/x-library-path/.test(read('client/lib/assets.js')) && !/x-library-path|learnModelPath/.test(read('mcpl/agent.ts')), Object.keys(E));
+  check('AD2 one word for a model (shared/eido.js modelWord): a path is its file\'s name, a name given wins, an address nobody names is "thing", never its hex',
+    E.modelWord(ADDR) === 'thing' && E.modelWord(ADDR, () => H) === 'thing' && E.modelWord(ADDR, () => ADDR) === 'thing' && E.modelWord(CW) === 'crate_wood' && E.modelWord(CW, () => 'Wooden crate') === 'Wooden crate' && E.modelWord('props/ball.glb') === 'ball', [E.modelWord(ADDR), E.modelWord(CW)]);
   const { kindHint } = await import('../shared/hierarchy.js');
   const { libLabel } = await import('../shared/editschema.js');
-  check('AD3 the shared readers say a word for an addressed model: the Hierarchy\'s kind hint and the inspector\'s lib label',
-    kindHint({ model: ADDR, c: { model: ADDR } }) === 'thing' && libLabel(ADDR) === 'thing' && kindHint({ model: ADDR2, c: { model: ADDR2 } }) === 'crate wood' && libLabel(ADDR2) === 'crate wood', [kindHint({ model: ADDR, c: { model: ADDR } }), libLabel(ADDR), libLabel(ADDR2)]);
-  E.learnModelPath?.(ADDR3, 'avatars/statue.vrm');
+  check('AD3 the shared readers: the Hierarchy\'s kind hint and the inspector\'s lib label (a path by its file, an old address "thing")',
+    kindHint({ model: ADDR, c: { model: ADDR } }) === 'thing' && libLabel(ADDR) === 'thing' && kindHint({ model: CW, c: { model: CW } }) === 'crate wood' && libLabel(CW) === 'crate wood', [kindHint({ model: ADDR, c: { model: ADDR } }), libLabel(ADDR), libLabel(CW)]);
   const { defaultLayer } = await import('../shared/layers.js');
-  check('AD3 …and the layer guess still knows a VRM by the file an address names', defaultLayer({ model: ADDR3, c: { model: ADDR3 } }) === 'people', defaultLayer({ model: ADDR3, c: { model: ADDR3 } }));
-  const W = scratchWorld('w2r-addr').seed({ box: { model: ADDR, pos: [0, 0, 0] }, cr: { model: ADDR2, pos: [3, 0, 0] } });
+  check('AD3 …and the layer guess knows a VRM by its path', defaultLayer({ model: 'avatars/statue.vrm', c: { model: 'avatars/statue.vrm' } }) === 'people', defaultLayer({ model: 'avatars/statue.vrm', c: { model: 'avatars/statue.vrm' } }));
+  const W = scratchWorld('w2r-addr').seed({ box: { model: ADDR, pos: [0, 0, 0] }, cr: { model: CW, pos: [3, 0, 0] } });
   const ids0 = new Set(Object.keys(W.state().entities));
   let r = W.call('create', { from: 'box' });
   const dup = Object.keys(W.state().entities).find((k) => !ids0.has(k));
-  check('AD4 a copy of an addressed thing gets an id from a word, not the hash (create {from})', r.ok && /^thing-[a-z2-7]{26}$/.test(dup ?? ''), [r.refused, dup]);
+  check('AD4 a copy of a thing with an old address gets an id from a word, not the hash (create {from})', r.ok && /^thing-[a-z2-7]{26}$/.test(dup ?? ''), [r.refused, dup]);
   const ids1 = new Set(Object.keys(W.state().entities));
   r = W.call('create', { from: 'cr' });
   const dup2 = Object.keys(W.state().entities).find((k) => !ids1.has(k));
-  check('AD4 …a copy of one whose file this host knows takes that file\'s name', r.ok && /^crate-wood-[a-z2-7]{26}$/.test(dup2 ?? ''), [r.refused, dup2]);
+  check('AD4 …a copy of one with a path takes its file\'s name', r.ok && /^crate-wood-[a-z2-7]{26}$/.test(dup2 ?? ''), [r.refused, dup2]);
   const ids2 = new Set(Object.keys(W.state().entities));
   r = W.call('create', { model: ADDR, components: { transform: { pos: [6, 0, 0] } } });
   const mk = Object.keys(W.state().entities).find((k) => !ids2.has(k));
@@ -122,25 +134,25 @@ await tryRow('AD', async () => {
     const { makeReplica, clientCutOf } = await import('../shared/protocol/replica.js');
     const { scratch } = await import('./protocol/common.ts');
     const CA = `eido:sha256/${'5'.repeat(64)}`;
-    const cat = { get: (n: string) => LAB_CATALOGUE.get(n === CA ? 'crate' : n), list: (q: string) => LAB_CATALOGUE.list(q), address: (n: string) => (n === 'crate' ? CA : null) };
+    const cat = { get: (n: string) => LAB_CATALOGUE.get(n === CA ? 'crate' : n), list: (q: string) => LAB_CATALOGUE.list(q) };
     const dir = `${scratch('w2r-addr-fly')}w/`; fs.mkdirSync(dir, { recursive: true }); let now = 1800000000000;
     const lw = openLive(dir, 'w', { now: () => ++now, catalogue: cat, custodyFile: `${dir}../custody.json`, nameOf: () => null, kindOf: () => 'human' });
     const lc = (a: string, v: string, x: any = {}, st = 100) => { now += st; return request(lw, a, v, x); };
     const LL = () => readLog(fs.readFileSync(dir + 'world.jsonl'));
     lc('rowan', 'create-world', { title: 'fly' });
     lc('rowan', 'set', { id: '@world', component: 'physics-engine', value: { engine: 'eidosim@1.0.0' } });
-    lc('rowan', 'create', { id: 'cuball', model: 'crate', components: { physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [0, 0, 0], scale: 0.3 } } });
+    lc('rowan', 'create', { id: 'cuball', model: CA, components: { physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [0, 0, 0], scale: 0.3 } } });
     lc('rowan', 'move', { to: [0, 0, -0.5] });
     const rep = makeReplica(); rep.adopt(JSON.parse(JSON.stringify({ ...clientCutOf(lw), you: 'vic' })));
     const from = LL().length; const pr = lc('rowan', 'punt', { id: 'cuball', power: 6 }); rep.ingest(LL().slice(from), from);
     const flown: string[] = []; for (let t = 0; t < 40; t++) { const b = rep.simAt?.(now + t * 33)?.bodies?.cuball; if (b) flown.push(b.p.join()); }
     const c0 = lw.state().entities.cuball.c;
-    check('AD8 an addressed dynamic thing is stamped with its measured shape, punted, and flies in a client\'s fold (guard: the shared sim keys by the stored model)',
+    check('AD8 a thing with an old address (written as it is) is stamped with its measured shape, punted, and flies in a client\'s fold (guard: the shared sim keys by the stored model)',
       c0.model === CA && Array.isArray(c0.physics?.shape) && pr.ok && new Set(flown).size > 10, [c0.model, c0.physics, pr.refused, new Set(flown).size]);
   }
 });
 
-// ===================================================================== particles: Essentials as content addresses, legacy list dropped, on thing
+// ===================================================================== particles: an Essential by its name (an address stored before 10-17 still reads), legacy list dropped, on thing
 await tryRow('PT', async () => {
   const P = COMPONENTS.particles;
   check('PT1 particles: on thing; its fields are the instance only (the ten first-protocol fields are gone from the registry)', P.on === 'thing' && keys(P.fields) === keys({ effect: 1, part: 1, at: 1, seed: 1, playing: 1, scale: 1, params: 1 }) && !P.legacy, [P.on, Object.keys(P.fields), P.legacy]);
@@ -151,29 +163,30 @@ await tryRow('PT', async () => {
   check('PT3 …and draws the same as the name did (the derived seed too)', a.ok && b.ok && a.seed === b.seed && JSON.stringify(a.emitters) === JSON.stringify(b.emitters) && a.reads === b.reads, [a.seed, b.seed, a.why, b.why]);
   const W = scratchWorld('w2r-particles').seed({ torch: { model: 'crate', pos: [0, 0, 0] } });
   let r = W.call('set', { id: 'torch', component: 'particles', value: { effect: 'fire' } });
-  check('PT4 effect: fire is stored as fire\'s content address', r.ok && W.state().entities.torch.c.particles.effect === fire, [r.refused, W.state().entities.torch.c.particles]);
+  check('PT4 effect: fire is stored as written, by its name (R 10-17: a reference is its name or path; the code that ships the Essential is what resolves it)', r.ok && W.state().entities.torch.c.particles.effect === 'fire', [r.refused, W.state().entities.torch.c.particles]);
   r = W.call('set', { id: 'torch', component: 'particles', value: { effect: 'fire', params: { count: 40 } } });
   check('PT4 …its params are still checked against fire\'s own', r.ok && code(W.call('set', { id: 'torch', component: 'particles', value: { effect: 'fire', params: { nope: 1 } } })) !== 'ok', r.refused);
   check('PT5 the first protocol\'s spelling is still refused at write', code(W.call('set', { id: 'torch', component: 'particles', value: { preset: 'fire' } })) !== 'ok');
   check('PT6 particles on @world is refused (on: thing)', code(W.call('set', { id: '@world', component: 'particles', value: { effect: 'fire' } })) === 'thing-only');
   const { repairComps } = await repairMod();
   const R = repairComps({ particles: { effect: 'smoke', scale: 2 } }).c;
-  check('PT7 repair: a stored Essential name becomes its address; a stored document address is left alone', R.particles?.effect === PE.essentialAddress('smoke') && repairComps({ particles: { effect: `sha256:${'b'.repeat(64)}` } }).set.length === 0, R);
+  check('PT7 repair: a stored Essential name stays its name; a stored document address is left alone', R.particles?.effect === 'smoke' && repairComps({ particles: { effect: 'smoke' } }).set.length === 0 && repairComps({ particles: { effect: `sha256:${'b'.repeat(64)}` } }).set.length === 0, R);
 });
 
-// ===================================================================== grass: one spelling, presets expanded at write, seed/size registered
+// ===================================================================== grass: one spelling, a preset kept by its name (Fable #4), seed/size registered
 await tryRow('GR', async () => {
   const G = COMPONENTS.grass;
-  check('GR1 grass\'s fields are the flora spelling (no bladeHeight, spacing, perCell, colorTip; no preset stored); seed and size registered; strokes for an expanded preset', ['bladeHeight', 'spacing', 'perCell', 'colorTip', 'preset'].every((k) => !(k in G.fields)) && G.fields.seed === 'int' && G.fields.size === 'number' && G.fields.strokes === 'array', Object.keys(G.fields));
+  check('GR1 grass\'s fields are the flora spelling (no bladeHeight, spacing, perCell, colorTip); preset is stored as written; seed, size and strokes registered', ['bladeHeight', 'spacing', 'perCell', 'colorTip'].every((k) => !(k in G.fields)) && G.fields.preset === 'string' && !('preset' in (G.dropped ?? {})) && G.fields.seed === 'int' && G.fields.size === 'number' && G.fields.strokes === 'array', Object.keys(G.fields));
   const FA = await import('../shared/flora_args.js');
   const P = await import('../shared/flora_presets.js');
-  check('GR2 the presets the door expands are the defs file\'s (shared/flora_presets.js = defs/flora/_presets.json)', JSON.stringify(P.FLORA_PRESETS.mojave) === JSON.stringify(JSON.parse(read('defs/flora/_presets.json')).mojave), '');
+  check('GR2 the presets the door checks a name against are the defs file\'s (shared/flora_presets.js = defs/flora/_presets.json)', JSON.stringify(P.FLORA_PRESETS.mojave) === JSON.stringify(JSON.parse(read('defs/flora/_presets.json')).mojave), '');
   const W = scratchWorld('w2r-grass');
   let r = W.call('set', { id: '@world', component: 'grass', value: { preset: 'mojave', width: 40, depth: 30, seed: 5 } });
   const g = W.state().entities['@world'].c.grass;
-  check('GR3 a preset is expanded at write: the stored grass holds its strokes, never the name', r.ok && !('preset' in (g ?? {})) && Array.isArray(g?.strokes) && g.strokes.length === 7 && g.strokes[0].species === 'galleta_dry', [r.refused, g]);
-  check('GR3 …the strokes are what the reader composed from the name', r.ok && JSON.stringify(g.strokes) === JSON.stringify(FA.presetStrokes({ preset: 'mojave', width: 40, depth: 30, seed: 5 }, P.FLORA_PRESETS)), '');
-  check('GR4 the reader draws stored strokes as they are', JSON.stringify(FA.presetStrokes(g)) === JSON.stringify(g.strokes), '');
+  check('GR3 a preset is kept by its name at write (expanding later is cheap; un-expanding is impossible)', r.ok && JSON.stringify(g) === JSON.stringify({ preset: 'mojave', width: 40, depth: 30, seed: 5 }), [r.refused, g]);
+  check('GR3 …and the reader composes its strokes from the name', JSON.stringify(FA.presetStrokes(g, P.FLORA_PRESETS)).length > 2 && FA.presetStrokes(g, P.FLORA_PRESETS)[0].species === 'galleta_dry', '');
+  const S = FA.presetStrokes(g, P.FLORA_PRESETS);
+  check('GR4 the reader draws stored strokes as they are', JSON.stringify(FA.presetStrokes({ width: 40, depth: 30, strokes: S })) === JSON.stringify(S), '');
   r = W.call('set', { id: '@world', component: 'grass', value: { width: 20, depth: 20, bladeHeight: 0.5, spacing: 0.26, perCell: 4, color: 0x557733 } });
   const g2 = W.state().entities['@world'].c.grass;
   check('GR5 the old makeGrass knobs are taken and stored in the flora spelling (the reader\'s own mapping, once)', r.ok && JSON.stringify(g2) === JSON.stringify(FA.mapGrassArgs({ width: 20, depth: 20, bladeHeight: 0.5, spacing: 0.26, perCell: 4, color: 0x557733 })), [r.refused, g2]);
@@ -183,7 +196,7 @@ await tryRow('GR', async () => {
   const { repairWorld } = await repairMod();
   const R1 = repairWorld({ grass: { preset: 'mojave', width: 40, depth: 30, seed: 5 } }).c.grass;
   const R2 = repairWorld({ grass: { width: 20, bladeHeight: 0.5, color: 0x557733 } }).c.grass;
-  check('GR7 repair: a stored preset is expanded, stored makeGrass knobs mapped', JSON.stringify(R1?.strokes) === JSON.stringify(g.strokes) && !('preset' in R1) && JSON.stringify(R2) === JSON.stringify(FA.mapGrassArgs({ width: 20, bladeHeight: 0.5, color: 0x557733 })), [R1, R2]);
+  check('GR7 repair: a stored preset is kept by its name, stored makeGrass knobs mapped', JSON.stringify(R1) === JSON.stringify({ preset: 'mojave', width: 40, depth: 30, seed: 5 }) && JSON.stringify(R2) === JSON.stringify(FA.mapGrassArgs({ width: 20, bladeHeight: 0.5, color: 0x557733 })), [R1, R2]);
 });
 
 // ===================================================================== picture: −part −flip (to material)

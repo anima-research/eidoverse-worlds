@@ -83,7 +83,7 @@ import { worldPose } from "../shared/protocol/simlayer.js";
 import { colliderFor } from "../client/lib/bodyscale.js";
 
 import { recordComponents } from "../shared/protocol/view.js";
-import { modelWord, learnModelPath } from "../shared/eido.js";
+import { modelWord } from "../shared/eido.js";
 (globalThis as any).THREE = Object.assign({}, THREE_W, TSL);
 
 /** The body's clock: one stride of shared/mover.js (the one walker: the client's and the authority's too) per tick. */
@@ -2007,7 +2007,6 @@ export class WorldAgent {
     p = meshSlot(async () => {
       const r = await fetch(`${this.httpBase}/library/${lib}`, { signal: AbortSignal.timeout(MESH_FETCH_MS) });
       if (!r.ok) return fallback(`HTTP ${r.status}`);
-      learnModelPath(lib, r.headers.get("x-library-path") ?? "");   // an address names its file here: the word for it (routes.ts)
       const len = Number(r.headers.get("content-length"));
       if (len > MESH_MAX_BYTES) { void r.body?.cancel(); return fallback(`${(len / 1e6).toFixed(0)}MB is over the ${MESH_MAX_BYTES / 1e6 | 0}MB exact-collision limit`); }
       const b = await r.arrayBuffer();

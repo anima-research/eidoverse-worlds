@@ -326,14 +326,6 @@ const hardCacheable = (path: string) =>
 // hands out the old copy once while it revalidates in the background. The same tier answers a lod ask whose standing
 // verdict makes the plain ktx2 variant FINAL (#205): final for this recipe, but still those rebuildable bytes.
 const VARIANT_CC = "public, max-age=60, stale-while-revalidate=300";
-/** A /library/ answer for an address names the file it served (x-library-path): a reader that fetched /library/<model>
- *  learns the word for a stored address from the bytes it got (shared/eido.js learnModelPath; shape audit 10-16: the
- *  write door stores models as addresses, whose own file name is a hex). */
-function namedLibraryAnswer(url: URL, res: Response): Response {
-  const eh = hexOfLibRel(url.pathname.slice("/library/".length)); const named = eh ? eidoRel(eh) : null;
-  if (named && res.status < 400) { try { res.headers.set("x-library-path", named); } catch { /* immutable headers: unnamed */ } }
-  return res;
-}
 /** `opts.variant`: the file is a built variant (VARIANT_CC unless provisional). `opts.headers`: headers that NAME the
  *  answer (x-eidoverse-lod) — on the 304 too, so devtools reads the state without a body. */
 function serveFrom(base: string, rel: string, cache = false, req?: Request, immutable = false, provisional = false,
@@ -1078,10 +1070,10 @@ const ROUTES: Route[] = [
   },
   {
     match: (u) => u.pathname.startsWith("/library/"),
-    handler: ({ req, url }) => namedLibraryAnswer(url, (() => {
+    handler: ({ req, url }) => {
       // /library/eido/sha256/<hex>.glb (shared/eido.js libRelOf): the client loading a model by its address gets this
       // host's rendition of the file it names, through the same ladder as its path (review 10-07 H3)
-      const rel0 = url.pathname.slice("/library/".length); const eh = hexOfLibRel(rel0);   // either spelling of an address (shared/eido.js)
+      const rel0 = url.pathname.slice("/library/".length); const eh = hexOfLibRel(rel0);   // either spelling of an address stored before 10-17 (shared/eido.js)
       const rel = eh ? eidoRel(eh) ?? rel0 : rel0;
       // optimized mirror first (draco+webp): same path, ~30x smaller
       const versioned = url.searchParams.has("v") || rel.startsWith("store/"); // content-addressed = immutable
@@ -1205,7 +1197,7 @@ const ROUTES: Route[] = [
       const opt = normalize(join(OPT_DIR, rel));
       if (opt.startsWith(OPT_DIR) && existsSync(opt)) return serveFrom(OPT_DIR, rel, true, req, versioned, provisional, { headers: deepHeader });
       return serveFrom(LIBRARY_DIR, rel, true, req, versioned, provisional, { headers: deepHeader });
-    })()),
+    },
   },
   {
     match: (u) => u.pathname.startsWith("/node_modules/"),

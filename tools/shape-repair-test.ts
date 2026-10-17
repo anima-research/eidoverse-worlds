@@ -12,7 +12,7 @@ import { request, liftWorld, LAB_CATALOGUE } from '../shared/protocol/authority.
 import { openWorld } from '../server/filehost.ts';
 import { isComponent } from '../shared/protocol/fold.js';
 import { partSlot, motionNode } from '../shared/protocol/names.js';
-import { repairComps, repairWorld, shapesMarked } from '../shared/protocol/shaperepair.js';
+import { repairComps, repairWorld, shapesMarked, SHAPES_VERSION } from '../shared/protocol/shaperepair.js';
 import { carrierMotion } from '../client/lib/socksignals.js';
 import { addOps } from '../shared/editschema.js';
 import { translate } from './protocol/import-v1/translate-v1.js';
@@ -27,9 +27,9 @@ const ANY = Object.freeze({ get: (n) => LAB_CATALOGUE.get(n) ?? (typeof n === 's
 const TF = { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] };
 
 /** A world as a log written before the audit holds it: an unstamped founding, then the old spellings set raw. */
-function legacyWorld(things: Record<string, Record<string, any>>, world: Record<string, any> = {}) {
+function legacyWorld(things: Record<string, Record<string, any>>, world: Record<string, any> = {}, catalogue: any = ANY) {
   const entries: any[] = []; let T = 1785000000000;
-  const io = { name: 'legacy', entries, getBlob: () => { throw new Error('no blobs'); }, putBlob: () => { throw new Error('no blobs'); }, writeLine: () => {}, now: () => (T += 1000), catalogue: ANY };
+  const io = { name: 'legacy', entries, getBlob: () => { throw new Error('no blobs'); }, putBlob: () => { throw new Error('no blobs'); }, writeLine: () => {}, now: () => (T += 1000), catalogue };
   const w = worldOf(io);
   w.append({ kind: 'genesis', actor: 'system', verb: 'genesis', body: { dialect: 'eidoverse-log', v: 4, minor: 0, nonce: 'j1783lQSA7cL_W-K6NwvNw', owners: [[], [KEY]], sequencer: KEY } });
   const a = w.append({ kind: 'act', actor: 'olive', verb: 'create-world', body: { request: { title: 'old' } } });
@@ -99,7 +99,7 @@ await tryRow('RP5', () => {
   check('RP5 one thing the door refuses (a light with range 0) doesn\'t block the rest: the good light is repaired (decay 1.7)', C(w, 'good').light?.decay === 1.7 && rep?.repaired.includes('good'), [out, C(w, 'good')]);
   check('RP5 …the refused thing keeps its old spelling and is named', C(w, 'bad').light?.decay === undefined && rep?.failed.some((f) => f.id === 'bad' && f.reason), rep);
   const act = w.entries.filter((e) => e?.kind === 'act' && e.verb === 'repair-shapes');
-  check('RP5 …in the act too ({v, ids, failed}), which marks the world', act.length === 1 && act[0].body.v === 1 && act[0].body.failed?.[0]?.id === 'bad' && shapesMarked(w.entries), act.map((e) => e.body));
+  check('RP5 …in the act too ({v, ids, failed}), which marks the world', act.length === 1 && act[0].body.v === SHAPES_VERSION && act[0].body.failed?.[0]?.id === 'bad' && shapesMarked(w.entries), act.map((e) => e.body));
   check('RP5 …and the server\'s outcome isn\'t a socket host\'s (no top-level failed/host for the lift\'s line to misread)', out.every((x) => !(x.repair && ('failed' in x || 'host' in x))), out);
 });
 
@@ -160,6 +160,23 @@ await tryRow('RP9', () => {
   const w3 = legacyWorld({ coatrack: { model: 'crate', sockets: { peg: { pos: [0, 1.5, 0] } } } }); liftWorld(w3);
   const k3 = Object.entries(w3.state().entities).filter(([, e]) => e.c.parent?.to === 'coatrack' && e.c.socket);
   check('RP9 …nor a stored world\'s socket map with no body, lifted at its first load', k3.length === 1 && !k3[0][1].c.station, k3);
+});
+
+// ===================================================================== R 10-17: a model is its library path again. A world stored with
+// content addresses (a translation by translate-v1@8–@11, before the path was kept) gets its paths back at its first load where
+// this host's index knows the file, the address kept beside it as model-hash; an address no file here names stays and loads
+await tryRow('RP10', () => {
+  const H = '7'.repeat(64), H2 = '8'.repeat(64);
+  const CAT = { ...ANY, get: ANY.get, list: ANY.list, pathOf: (m: string) => (m === `eido:sha256/${H}` ? 'eidoverse/assets/models/crow.glb' : null) };
+  const w = legacyWorld({ crow: { model: `eido:sha256/${H}` }, ghost: { model: `eido:sha256/${H2}` }, plain: { model: 'crate' } }, {}, CAT);
+  const out = liftWorld(w);
+  check('RP10 a stored address this host can name becomes its library path, with the address\'s hash beside it as model-hash', C(w, 'crow').model === 'eidoverse/assets/models/crow.glb' && C(w, 'crow')['model-hash'] === `sha256:${H}` && repairOf(out)?.repaired.includes('crow'), [out, C(w, 'crow')]);
+  check('RP10 …one no file here names stays as stored (it still loads, and reads as "thing"); a path is untouched', C(w, 'ghost').model === `eido:sha256/${H2}` && !('model-hash' in C(w, 'ghost')) && C(w, 'plain').model === 'crate' && !('model-hash' in C(w, 'plain')), [C(w, 'ghost'), C(w, 'plain')]);
+  check('RP10 …the act carries the repair\'s version (2: the rule set with the paths)', SHAPES_VERSION === 2 && w.entries.some((e) => e?.verb === 'repair-shapes' && e.body?.v === 2), SHAPES_VERSION);
+  const n = w.entries.length; liftWorld(w);
+  check('RP10 …once per world (a second load writes nothing)', w.entries.length === n, w.entries.length - n);
+  const R = repairComps({ model: `eido:sha256/${H}` });
+  check('RP10 the pure rule with no resolver changes nothing (the translator and the lab have none)', R.set.length === 0, R);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

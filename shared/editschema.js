@@ -643,7 +643,7 @@ export function inspectSchema(ent, id, live = {}) {
     // R 10-07: the instance is {effect, part?, at?, seed?, playing?, scale?, params?}; the knobs are the effect's own params
     // (an Essential's: count, size, opacity, speed, lifetime, area, texture, quality). An older value (the first
     // protocol's flat bag) is shown in today's shape and written back in it on the first edit
-    // an Essential is stored as its address (shape audit 10-16) and shown, and written, by its name (the door stores the address)
+    // an Essential is stored by its name (R 10-17); one stored as its address before is shown, and written, by its name too
     const inst0 = instanceOf(c.particles) ?? {}; const inst = essentialNameOf(inst0.effect) ? { ...inst0, effect: essentialNameOf(inst0.effect) } : inst0;
     const doc = effectFor(inst.effect, live.effects ?? (() => null)); const at = Array.isArray(inst.at) ? inst.at : [0, 0, 0];
     const effects = ESSENTIAL_NAMES.includes(inst.effect) ? ESSENTIAL_NAMES : [...ESSENTIAL_NAMES, inst.effect ?? '?'];

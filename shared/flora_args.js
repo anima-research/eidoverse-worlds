@@ -1,9 +1,9 @@
 // flora_args — pure translation logic for the `grass` verb: legacy makeGrass
 // bags → createFlora options, and preset/variety stroke composition. No DOM,
 // no THREE — unit-tested in tools/flora.test.ts. Shared (shape audit 10-16): the
-// authority runs mapGrassArgs and presetStrokes at write (shared/protocol/
-// assetref.js) so a stored grass holds one spelling and never a preset name;
-// the client still runs them on read, for any value stored before.
+// authority runs mapGrassArgs at write (shared/protocol/assetref.js) so a stored
+// grass holds one spelling, and checks a preset's name with presetStrokes; the
+// preset itself is stored by its name (R 10-17) and composed here on read.
 
 // makeGrass's blade atlas replacement has a known opaque mean (documented in
 // vegetation.js: 91/138/35). A legacy hex color maps to the multiplier that
@@ -56,7 +56,7 @@ export function mapGrassArgs(a) {
 // de-centred organic stands + yucca). `preset` bags compose those strokes
 // client-side under ONE field object, so the verb model stays untouched.
 export function presetStrokes(args, presets = null) {
-  // a preset expanded at write (shape audit 10-16): the stored strokes ARE the planting, drawn as they are
+  // stored strokes ARE the planting, drawn as they are (they win over a preset)
   if (Array.isArray(args.strokes) && args.strokes.length) return args.strokes.map((st) => ({ ...st }));
   const W = args.width ?? args.size ?? 80, D = args.depth ?? args.size ?? 70;
   const [cx, cz] = args.center ?? [0, 0];

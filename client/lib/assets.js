@@ -31,7 +31,7 @@ import { warm } from './warmqueue.js';
 import { prepareObject } from './materials.js';
 import { registerFoliage } from './foliage.js';
 import { markDrawBatchSource } from './draw_batches.js';
-import { libRelOf, hexOfLibRel, learnModelPath, learnedModelPath, modelWord } from '../../shared/eido.js';
+import { libRelOf, modelWord } from '../../shared/eido.js';
 
 // ---- loading tray -----------------------------------------------------------
 // Every in-flight asset (downloads with byte progress, builds as spinners) is
@@ -130,7 +130,6 @@ export async function fetchBytes(path) {
           await new Promise((res) => setTimeout(res, attempt === 0 ? 700 : 1800));
         }
         if (!r.ok) throw new Error(`fetch ${path}: ${r.status}`);
-        learnFrom(path, r);
         const total = Number(r.headers.get('content-length') ?? 0);
         if (r.body && total > 200_000) { // stream big bodies for byte progress
           const reader = r.body.getReader();
@@ -554,15 +553,9 @@ export const poolStats = () => ({
 // Friendly names for library paths — store hashes are unreadable, and the
 // loading tray should say "deco desk", not "4fee4b7c4794a2be".
 export const libLabels = new Map();
-/** An address's file, as /library named it when it answered (x-library-path, server/routes.ts): the word for a stored address
- *  (shape audit 10-16: the door stores `model` as eido:sha256/<hex>, whose own file name is a hex). */
-function learnFrom(path, r) {
-  const h = hexOfLibRel(String(path).replace(/^\/library\//, '').split('?')[0]); const named = h ? r.headers.get('x-library-path') : null;
-  if (named) learnModelPath(`eido:sha256/${h}`, named);
-}
-/** A person's word for a model: its library name (libLabels: the catalogue's, an upload's), for an address the name of the
- *  file it names here, else that file's name; an address nobody named is "thing", never its hex (shared/eido.js modelWord). */
-export const modelName = (model) => modelWord(model, (m) => libLabels.get(m) ?? (learnedModelPath(m) != null ? libLabels.get(learnedModelPath(m)) ?? learnedModelPath(m) : null));
+/** A person's word for a model: its library name (libLabels: the catalogue's, an upload's), else its path's file name; an old
+ *  address (stored before 10-17) nobody named is "thing", never its hex (shared/eido.js modelWord). */
+export const modelName = (model) => modelWord(model, (m) => libLabels.get(m) ?? null);
 
 const glbCache = new Map();
 export async function loadGLB(libPath, { tier = 'full' } = {}) {

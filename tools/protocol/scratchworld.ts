@@ -16,18 +16,18 @@ let T = 1800000000000;
 // the engine's catalogue is the library's GLB paths (server/modelcatalogue.ts); a scratch world names any path the tests
 // use: the lab's measured models where they exist, else a model the authority can name but not measure (no `size`)
 const ANY_MODEL = Object.freeze({ get: (n) => LAB_CATALOGUE.get(n) ?? (typeof n === "string" && n ? { label: n, surfaces: [] } : undefined), list: (q) => LAB_CATALOGUE.list(q) });
-const open = (root, name) => { const w = openWorld(root, name); w.catalogue = ANY_MODEL; liftWorld(w); return w; };
+const open = (root, name, catalogue = ANY_MODEL) => { const w = openWorld(root, name); w.catalogue = catalogue; liftWorld(w); return w; };
 let n = 0;
 const roots = new Map();
 
 /** A fresh world in a scratch root (one root per tag), founded by `owner`. */
-export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch" } = {}) {
+export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch", catalogue = ANY_MODEL } = {}) {
   if (!roots.has(tag)) roots.set(tag, scratch(tag));
   const root = roots.get(tag); const name = `w${++n}`;
   // one world object for the scratch world's life (its state is kept incrementally); the authority's clock steps a second per
   // request so a long sweep stays inside the authority's rate budget (60 entries / 10 s per actor)
   let w = null;
-  const call = (verb, args = {}, actor = owner) => { T += 1000; process.env.PROTOCOL_NOW = String(T); w ??= open(root, name); return request(w, actor, verb, args); };
+  const call = (verb, args = {}, actor = owner) => { T += 1000; process.env.PROTOCOL_NOW = String(T); w ??= open(root, name, catalogue); return request(w, actor, verb, args); };
   const founded = call("create-world", { title });
   if (!founded.ok) throw new Error(`scratch world: new refused: ${JSON.stringify(founded.refused)}`);
   const W = {
@@ -41,11 +41,11 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch" 
       if (!flat.length) return { ok: true, noop: true };
       return flat.length === 1 ? W.send(flat[0], extra, actor) : call("batch", { ops: flat, ...extra }, actor);
     },
-    state: () => (w ??= open(root, name)).state(),
+    state: () => (w ??= open(root, name, catalogue)).state(),
     /** the log's entries as the authority holds them */
-    entries: () => (w ??= open(root, name)).entries,
+    entries: () => (w ??= open(root, name, catalogue)).entries,
     /** a stored blob (a published blueprint record) by its hash */
-    getBlob: (h) => (w ??= open(root, name)).getBlob(h),
+    getBlob: (h) => (w ??= open(root, name, catalogue)).getBlob(h),
     view: () => viewState(w.state()),
     /** the view record of one thing (ids as the planners use them) */
     rec: (id) => viewState(w.state()).entities[id] ?? null,
