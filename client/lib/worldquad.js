@@ -6,7 +6,6 @@
 // duplicated here; the quad says 'preview' and the desk commits. owner, 09-04
 // 22:02: every slot opens that frame's quad; this is the world frame's.
 import * as OP from '../../shared/protocol/requests.js';
-import { mintId } from '../../shared/protocol/ids.js';
 import { sendOps } from './editwrites.js';
 import { bus } from './base.js';
 import { myState } from './controller.js';
@@ -14,7 +13,6 @@ import { starterModels } from './catalog.js';
 import { defsRegistry } from './defs.js';
 import { previewSky, skyArgs } from './sky.js';
 import { registerXRPanel } from './xrpanels.js';
-import { modelWord } from '../../shared/eido.js';
 
 let presets = {};   // name → sky args; fields() is synchronous, so cache the def
 async function loadPresets() {
@@ -35,9 +33,8 @@ function fields() {
 export function spawnAhead(lib) {
   const yaw = myState.yaw ?? 0;
   const p = [myState.pos.x + Math.sin(yaw) * 1.5, myState.pos.y, myState.pos.z + Math.cos(yaw) * 1.5];
-  const thing = mintId(lib ? modelWord(lib) : '');   // an address: its word, never its hex (shared/eido.js)   // 128+ random bits (shared/protocol/ids.js)
-  sendOps([OP.create(thing, { model: lib, transform: { pos: [+p[0].toFixed(2), +p[1].toFixed(2), +p[2].toFixed(2)], q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)] } })], { what: 'place it ahead', expect: false });
-  return thing;
+  // the authority mints its id (R 10-17: writers never choose ids); resolves with the id it became
+  return sendOps([OP.create('$thing', { model: lib, transform: { pos: [+p[0].toFixed(2), +p[1].toFixed(2), +p[2].toFixed(2)], q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)] } })], { what: 'place it ahead', expect: false }).then((r) => r?.ids?.$thing ?? null);
 }
 function dispatch(k, id) {
   if (k === 'spawn' && id) {

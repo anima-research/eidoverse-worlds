@@ -559,7 +559,7 @@ export const isEmpty = (ent) => !!ent && typeof ent === 'object' && kindOf(ent) 
 export const ONE_PLACE = {
   reason: (id, has, wants) => (has === 'light' ? `${id} is a light; a ${wants} goes on its own thing${wants === 'model' ? '' : ' under it'}`
     : has === 'mesh' ? `${id} is a mesh; a ${wants} goes on its own thing${wants === 'light' ? ' under it' : ''}` : `${id} has a model; a ${wants} ${wants === 'light' ? 'goes on its own thing under it' : 'is its own thing'}`),
-  fix: (id, has, wants) => (wants === 'light' ? `create {id: '${id}-light', components: {light: {…}, parent: {to: '${id}'}, transform: {pos: [0, 1, 0]}}}`
+  fix: (id, has, wants) => (wants === 'light' ? `create {components: {light: {…}, parent: {to: '${id}'}, transform: {pos: [0, 1, 0]}}}`
     : wants === 'mesh' ? (has === 'light' ? 'create the mesh as its own thing and parent this light to it' : `create {id: '${id}-mesh', components: {mesh: {…}, parent: {to: '${id}'}}}, or delete its model first`)
     : has === 'light' ? 'create the model as its own thing and parent this light to it' : 'create the model as its own thing, or delete the mesh first'),
   socket: {

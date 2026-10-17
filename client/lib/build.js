@@ -18,11 +18,9 @@
 
 import { svg as iconSvg } from './icons.js';
 import * as OP from '../../shared/protocol/requests.js';
-import { mintId } from '../../shared/protocol/ids.js';
 import { THREE, scene, camera, canvas } from './core.js';
 import { bus, report } from './base.js';
 import { loadGLB, libLabels, modelName } from './assets.js';
-import { modelWord } from '../../shared/eido.js';
 import { makeLightGizmo } from './lights.js';
 import { entities, metaOf, bagOf, editHolds } from './world.js';
 import { reindexCollider } from './colliders.js';
@@ -524,7 +522,7 @@ bus.on('cut-adopted', () => { for (const id of [...claims.keys()]) endClaim(id);
 
 function commitSpawn() {
   const p = ghost.obj.position;
-  const id = mintId(ghost.lib === '@light' ? 'light' : ghost.lib === '@empty' ? 'empty' : meshOf(ghost.lib) ?? (ghost.lib ? modelWord(ghost.lib) : ''));   // 128+ random bits (shared/protocol/ids.js)
+  const id = '$new';   // the authority mints its id (R 10-17); the reply's ids map says what it became
   // one request: create (a model, or a light: a thing with a light component), or create {from} for a blueprint copy
   // a copy's root keeps the record's own size, times the size it was given in hand
   const rootScale = () => { const s = ghost.bp.record?.root?.components?.find((c) => c.type === 'Transform')?.params?.scale; return Number.isFinite(s) ? s : 1; };
@@ -542,7 +540,7 @@ function commitSpawn() {
   Promise.resolve(sent).then((r) => {
     if (!r?.ok) return;
     const made = (r.refs ?? []).map((x) => x.id);
-    const pick = bp ? made.find((x) => !made.includes(state.st.entities?.[x]?.parent?.to)) ?? made[0] : id;
+    const pick = bp ? made.find((x) => !made.includes(state.st.entities?.[x]?.parent?.to)) ?? made[0] : r.ids?.[id];
     if (pick) selectWhenHere(pick);
   });
   cancelGhost();

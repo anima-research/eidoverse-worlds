@@ -32,6 +32,7 @@ import { treeData, sceneSelected, sceneSelect } from './scenegraph.js';
 import * as Sel from './edit/selection.js';
 import { state, onWorldChange } from './state.js';
 import { treeRows, kindHint, ancestors } from '../../shared/hierarchy.js';
+import { handleOf } from '../../shared/thingref.js';
 import { refreshOutline, setRemoveHook, holdGhost, holdBlueprint, getTool as transformTool, setTool as setTransformTool } from './build.js';
 import { armSeatPlacement, seatArmed, cancelSeatArm } from './seatedit.js';
 import { defsRegistry } from './defs.js';
@@ -265,7 +266,13 @@ function hierarchyFields() {
   const q = filter.trim().toLowerCase();
   // a socket's row is its name (a seat, a hook: kindHint says which), unless someone labelled it
   const nameOnly = (id) => { const c = bagOf(id); const l = c?.label; return typeof l === 'string' && l ? l : typeof c?.socket?.name === 'string' ? c.socket.name : null; };
-  const labelOf = (id) => { const l = nameOnly(id); return l ? (hopts.ids ? `${l}  (${id})` : l) : id; };
+  // R 10-17 (ID HARDENING 3): ids are hidden by default. A row is its label; an unlabelled one says what it is (its kind),
+  // never its id ('show ids' adds the id). Siblings that read the same get a dim short handle, only those twins
+  const shownName = (id) => nameOnly(id) ?? (kindHint(world[id]) || 'thing');
+  const labelOf = (id) => { const l = shownName(id); return hopts.ids ? `${l}  (${id})` : l; };
+  const twinOf = (() => { if (hopts.ids) return () => null; const all = Object.keys(world).filter((k) => k !== WORLD_ID); const groups = new Map();
+    for (const k of all) { const key = `${world[k]?.parent?.to ?? ''}\u0000${shownName(k).trim().toLowerCase()}`; groups.set(key, (groups.get(key) ?? 0) + 1); }
+    return (id) => (groups.get(`${world[id]?.parent?.to ?? ''}\u0000${shownName(id).trim().toLowerCase()}`) > 1 ? `#${handleOf(id, all)}` : null); })();
   const only = ONLY[hopts.only]?.test ?? null;
   const textHit = (id) => [id, world[id]?.label ?? '', world[id]?.model ?? '', world[id]?.model != null ? modelName(world[id].model) : '', kindHint(world[id]), ...Object.keys(recordComponents(world[id]))].join(' ').toLowerCase().includes(q);
   const matches = q || only ? (id) => (!q || textHit(id)) && (!only || only(id, world)) : null;
@@ -284,6 +291,7 @@ function hierarchyFields() {
     if (!entities.get(id) && !off) badges.unshift('loading…');
     if (bag.hidden === true) badges.push('hidden');
     if (claimsByOthers[id]) badges.push(`editing: ${claimsByOthers[id]}`);   // a live drag by someone else (build.js claims)
+    { const tw = twinOf(id); if (tw) badges.unshift(tw); }   // a twin's short handle, dim, first (shared/thingref.js)
     const selfOff = world[id]?.disabled === true;
     if (off && !selfOff) badges.push('off (above)');   // its own box is ticked; what it hangs under is not
     const bpLink = world[id]?.['copy-of'];
@@ -303,7 +311,7 @@ function hierarchyFields() {
     if (String(r.id).startsWith('rider:') || String(r.id).startsWith('comp:')) continue;
     const mounted = !!world[r.id]?.parent;
     const lab = bagOf(r.id)?.label;
-    r.rename = typeof lab === 'string' ? lab : '';   // the label comp; empty = the row shows its id
+    r.rename = typeof lab === 'string' ? lab : '';   // the label comp; empty = the row says what it is (its kind), never its id
     r.menu = [
       { k: 'rename', label: 'rename  (F2)' },
       { k: 'find', label: 'find  (F)' },
@@ -370,7 +378,7 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
       break;
     }
     case 'lock': toggleLock(payload); break;
-    case 'rename': {   // an empty name clears the label: the row shows its id again
+    case 'rename': {   // an empty name clears the label: the row says what it is again
       const r = commitEdit(payload, 'flags.label', opts?.value ?? '');
       if (r.errors?.length) flashHint(r.errors.join(' · '), 5000);
       break;
@@ -643,7 +651,8 @@ function lastChange(id) {
   return v.created ? `made by ${Edits.nameOf(v.by)} · ${ago(v.ts)}` : `${Edits.nameOf(v.by)} · ${sec?.title ?? comp} · ${ago(v.ts)}`;
 }
 
-const thingName = (id) => { const l = bagOf(id)?.label; return typeof l === 'string' && l ? l : id; };
+const thingName = (id) => { const l = bagOf(id)?.label; return typeof l === 'string' && l ? l : (kindHint(state.st.entities?.[id]) || 'thing'); };   // never the id (R 10-17)
+let showId = false;   // the inspector's 'show id' toggle (R 10-17: ids hidden by default)
 /** The ENABLED box that leads every thing's Inspector header (Unity's and Resonite's convention; R 10-12): ticked = on.
  *  It is the `disabled` component (5d5eef5c) read the other way round, so it is there whether the thing is on or off. */
 const enabledBox = (id) => { const on = state.st.entities[id]?.disabled !== true;
@@ -661,18 +670,21 @@ function inspectorFields() {
   // the fold knows the thing before its model arrives: entities holds null
   // while the GLB loads (scenegraph guards the same seam)
   const schema = schemaFor(id);           // ONE declaration: shared/editschema.js
-  const idRow = { t: 'info', label: 'id', value: id, dim: true, hint: 'its permanent id: the log, scripts and agents point at this, so it never changes, even when you rename it (like a Maya node\'s UUID)' };
+  // R 10-17 (ID HARDENING 3): the id is hidden by default; a toggle shows it (copyable), marked as never renamed
+  const idHint = 'its permanent id, minted by the world: the log, scripts and agents point at this, so it never changes and can\'t be renamed (its name is its label, like a Maya node\'s UUID under its name)';
+  const idRows = showId ? [{ t: 'info', label: 'id', value: id, dim: true, hint: idHint }, { t: 'btn', k: 'copyid', label: 'copy id', hint: 'copy it (not renameable: rename changes the label)' }, { t: 'btn', k: 'showid', label: 'hide id' }]
+    : [{ t: 'btn', k: 'showid', label: 'show id', hint: idHint }];
   if (!obj && offIn(state.st.entities, id)) {   // switched off: nothing loaded, so no transform to show; the way back on
     const self = state.st.entities[id]?.disabled === true; let up = id; if (!self) for (let k = state.st.entities[id]?.parent?.to; k; k = state.st.entities[k]?.parent?.to) if (state.st.entities[k]?.disabled === true) { up = k; break; }
-    return [enabledBox(id), { t: 'info', label: '', vrLabel: 'name', value: thingName(id), bar: true, cls: 'sp-title' }, idRow,
+    return [enabledBox(id), { t: 'info', label: '', vrLabel: 'name', value: thingName(id), bar: true, cls: 'sp-title' }, ...idRows,
       { t: 'info', label: 'state', value: self ? 'switched off: nobody downloads, sees or touches it' : `switched off with ${thingName(up)}, which it hangs under` },
       ...(self ? [] : [{ t: 'btn', k: `selup:${up}`, label: `select ${thingName(up)}` }])]; }
-  if (!obj) return [idRow, { t: 'info', label: 'state', value: 'loading…', hint: 'its model is still downloading' }];
+  if (!obj) return [...idRows, { t: 'info', label: 'state', value: 'loading…', hint: 'its model is still downloading' }];
   const locked = !!bag.lock;
   const wp = obj.getWorldPosition(_wp);
 
   const f = [
-    idRow,
+    ...idRows,
     { t: 'info', label: 'placed by', value: placedBy(id), hint: 'who first made it' },
     { t: 'info', label: 'world', value: `(${wp.x.toFixed(1)}, ${wp.y.toFixed(1)}, ${wp.z.toFixed(1)}) · ${wp.distanceTo(myState.pos).toFixed(0)}m away`, hint: 'where it is in the world, and how far from you' },
   ];
@@ -807,6 +819,8 @@ function inspectorDispatch(action, payload, field, opts = {}) {
   if (action.startsWith('selup:')) { sceneSelect(action.slice(6)); return; }
   if (action === 'henabled' && id && id !== WORLD_ID) { setEnabled(id, payload !== false); return; }
   if (action === 'myhide' && id && id !== WORLD_ID) { myHide(id); return; }
+  if (action === 'showid') { showId = !showId; repaintAll(); return; }
+  if (action === 'copyid' && id) { try { void navigator.clipboard?.writeText(String(id)); } catch { /* no clipboard: the row shows it to select */ } return; }
   if (action === 'ed:grabbable.gripedit') { openGripEditor(id); return; }
   if (action === 'ed:home.sethere') { void Edits.setHomeHere([id]); return; }   // the Home card's button: where it is now (editwrites)   // the grip editor (gripedit.js)
   if (id === WORLD_ID && WORLD_PICKS[action]) { pickWorld(action, payload); repaintAll(); return; }   // the Terrain card's shape tiles (S15)

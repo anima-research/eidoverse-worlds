@@ -6,9 +6,10 @@
 // parent (PROTOCOL §2.3), exactly what the view shows as the child's pos/q/scale. Pure; browser, server, agent.
 import { socketsIn } from "../sockbody.js";
 import { enc, encName } from "./names.js";
+import { isPlaceholder } from "./ids.js";
 import { qNorm, qFromYaw, qWithHeading } from "../rot.js";
 
-const E = (id) => (id === "@world" ? id : enc(String(id ?? "")));   // the world entity is itself, never escaped
+const E = (id) => (id === "@world" || isPlaceholder(id) ? id : enc(String(id ?? "")));   // the world entity is itself, never escaped; a request-local placeholder ('$lamp') is the authority's to mint
 const finite3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
 const scale3 = (s) => (Number.isFinite(s) ? [s, s, s] : finite3(s) ? [...s] : null);
 
@@ -23,10 +24,12 @@ export const remove = (id) => ({ verb: "delete", args: { id: E(id) } });
 /** use a thing. With no action the authority does the thing's one action, or names what it offers (never 'use' by default:
  *  a thing that offers 'push' doesn't 'use'). */
 export const use = (id, action = null, args = null) => ({ verb: "use", args: { id: E(id), ...(action != null ? { action: String(action) } : {}), ...(args ? { args } : {}) } });
-/** make a thing. components: {name: value}; the transform is whole (missing parts default). */
+/** make a thing. components: {name: value}; the transform is whole (missing parts default). The authority mints its id
+ *  (R 10-17: writers never choose ids): pass null, or a placeholder ('$lamp') when the same request (a batch) refers to it
+ *  or the reply's ids map should say what it became. */
 export function create(id, { model = null, transform = {}, components = {}, from = null } = {}) {
   const comps = {}; for (const [k, v] of Object.entries(components)) comps[encName(k)] = v;
-  return { verb: "create", args: { id: E(id), ...(model ? { model } : {}), ...(from ? { from } : {}),
+  return { verb: "create", args: { ...(id == null ? {} : { id: E(id) }), ...(model ? { model } : {}), ...(from ? { from } : {}),
     components: { transform: { pos: finite3(transform.pos) ? [...transform.pos] : [0, 0, 0], q: qNorm(transform.q) ?? [0, 0, 0, 1], scale: scale3(transform.scale) ?? [1, 1, 1] }, ...comps } } };
 }
 

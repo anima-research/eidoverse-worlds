@@ -10,7 +10,6 @@ import { THREE } from './core.js';
 import { entities } from './world.js';
 import { bus } from './base.js';
 import { enc } from '../../shared/protocol/names.js';
-import { mintId } from '../../shared/protocol/ids.js';
 import * as OP from '../../shared/protocol/requests.js';
 import { sendOps } from './editwrites.js';
 
@@ -47,7 +46,7 @@ export function frontOf(id) {
  *  reply; the new sign is selected once it lands. Returns null (nothing sent) when `id` has no model of its own. */
 export async function addOnFace(id, comp, data) {
   const f = frontOf(id); if (!f) return null;
-  const cid = mintId(comp === 'text' ? 'sign' : 'picture');   // 128+ random bits (shared/protocol/ids.js)
+  const cid = '$sign';   // the authority mints its id (R 10-17); the reply's ids map says what it became
   const value = { ...data };
   let pos = f.pos;
   if (comp === 'picture') {
@@ -56,7 +55,7 @@ export async function addOnFace(id, comp, data) {
   } else if (comp === 'text') value.width = r4(Math.max(0.1, Math.min(value.width ?? 2, 0.9 * f.faceW)));
   const op = OP.create(cid, { transform: { pos, scale: f.scale }, components: { parent: { to: enc(String(id)) }, label: comp === 'text' ? 'sign' : 'picture', [comp]: value } });
   const r = await sendOps([op], { what: comp === 'text' ? `put a sign on ${id}` : `hang a picture on ${id}`, expect: false });
-  if (r?.ok) selectWhenHere(cid);
+  if (r?.ok && r.ids?.[cid]) selectWhenHere(r.ids[cid]);
   return r;
 }
 

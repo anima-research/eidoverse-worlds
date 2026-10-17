@@ -1077,7 +1077,7 @@ function addOwnOps(ent, id, name, value) {
     // metre up, so its pose is its own and the gizmo moves one thing
     // on a mesh thing the bulb hangs half a metre over its top (a plane's at 0.55, a 5 m box's at 5.5), not at a fixed metre
     const top = compMesh(ent) ? (c.mesh.shape === 'plane' ? 0.05 : c.mesh.shape === 'sphere' ? +c.mesh.size?.[0] || 1 : c.mesh.shape === 'capsule' ? Math.max(+c.mesh.size?.[0] || 1, +c.mesh.size?.[1] || 1) : +c.mesh.size?.[1] || 1) : null;
-    if (c.model != null || ent?.model != null || c.mesh != null) return { ops: [OP.create(`${id}-light`, { transform: { pos: [0, top == null ? 1 : round(top + 0.5, 3), 0] }, components: { label: 'light', parent: { to: id }, light: { ...LIGHT_DEFAULTS } } })], errors: [] };
+    if (c.model != null || ent?.model != null || c.mesh != null) return { ops: [OP.create('$light', { transform: { pos: [0, top == null ? 1 : round(top + 0.5, 3), 0] }, components: { label: 'light', parent: { to: id }, light: { ...LIGHT_DEFAULTS } } })], errors: [] };
     return { ops: [OP.set(id, 'light', { ...LIGHT_DEFAULTS })], errors: [] };
   }
   if (name === 'Mesh') {
