@@ -57,7 +57,7 @@ import { radialForce, FORCE_MIN } from "../shared/force.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
-import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
+import { describeParticles, emitterTransition, transitionLine, isParticlesKey, emittersIn } from "../shared/particles.js";
 import { describePicture } from "../shared/picture.js";
 import { describeCaptions } from "../shared/captions.js";
 import { describeSound } from "../shared/sound.js";
@@ -82,6 +82,8 @@ const BONES_NOT_KNOWN = "this body's bones aren't known (its model hasn't loaded
  *  one line. Long enough to swallow a slider drag, short enough that "puts the
  *  fire out" still arrives while you are looking at it. */
 const EMITTER_COALESCE_MS = Number(process.env.EW_EMITTER_COALESCE_SEC ?? 4) * 1000;
+/** One narration window per (entity, emitter component). */
+const emitterSlot = (id: string, key: string) => (key === "particles" ? id : `${id}\u0000${key}`);
 
 type Vec2 = { x: number; z: number };
 type CollisionMesh = { positions: Float32Array; indices: Uint32Array; building?: unknown };
@@ -431,9 +433,10 @@ export class WorldAgent {
     this.ws.send(JSON.stringify({ type: "attest", seq, digest, gen: this.surfaceGen }));
     return true;
   }
-  /** Open coalescing windows for world-change narration, keyed by entity id.
+  /** Open coalescing windows for world-change narration, one per (entity,
+   *  emitter component) — see emitterSlot.
    *  See noteEmitter. */
-  private emitterNarration = new Map<string, { announced: unknown; latest: unknown; actor: string; timer: ReturnType<typeof setTimeout> }>();
+  private emitterNarration = new Map<string, { announced: unknown; latest: unknown; actor: string; key: string; timer: ReturnType<typeof setTimeout> }>();
   private lastNear = new Map<string, number>(); // participant -> last approach-ping ts
   /** approach re-arm: after a walk-up ping, the SAME person must actually go
    *  away (> REARM_RADIUS) before another boundary crossing can ever count —
@@ -1428,7 +1431,7 @@ export class WorldAgent {
         // in the world — the one component type with a live sensory event.
         // Replay reconstructs the state above and stops there: a fire that was
         // lit last week is in look(), not in your ears (#25).
-        if (args.type === "particles" && live) {
+        if (isParticlesKey(args.type) && live) {
           // proximity-gate on where the emitter's owner ACTUALLY is — a
           // carried lantern is judged at the carrier, not at its pre-mount
           // spot (#82). When the chain cannot compose, ABSTAIN: gating on
@@ -1436,7 +1439,7 @@ export class WorldAgent {
           // an abandoned address and miss those beside the actual carrier
           // (#92, B2). The gap is logged, bounded, not performed.
           const fx = this.eff(String(args.id), this.serverNow());
-          if (fx.ok) this.noteEmitter(actor, String(args.id), before, args.data ?? null, fx.pos, ts);
+          if (fx.ok) this.noteEmitter(actor, String(args.id), before, args.data ?? null, fx.pos, ts, args.type);
           else this.noteEffGap(String(args.id), fx.why);
         }
         // a motion arriving or leaving changes whether this thing may hold a
@@ -1586,7 +1589,8 @@ export class WorldAgent {
    * A live `particles` attach / replace / remove near this body — ONE ambient
    * world-change percept, never per particle and never per frame (#25).
    *
-   * Coalesced by (entity, component): the first change in a quiet period
+   * Coalesced by (entity, component) — `particles` and `particles:smoke` on
+   * one hearth are two emitters and narrate apart: the first change in a quiet period
    * speaks at once (someone lighting a fire beside you is news the moment it
    * happens), and everything inside the following window is folded into at
    * most one further line describing the NET result. So dragging a parameter
@@ -1599,43 +1603,44 @@ export class WorldAgent {
    * `nowMs`/`setTimer` are injectable for tests.
    */
   private noteEmitter(actor: string | undefined, id: string, before: unknown, after: unknown,
-                      pos: number[] | undefined, ts: number) {
+                      pos: number[] | undefined, ts: number, key = "particles") {
     if (!actor || actor === this.name || actor === "world") return;
     if (pos && Math.hypot(pos[0] - this.pos.x, pos[2] - this.pos.z) > this.activityRadiusM) return;
-    const slot = this.emitterNarration.get(id);
+    const slot = this.emitterNarration.get(emitterSlot(id, key));
     if (slot) {                       // inside the quiet window — fold, don't speak
       slot.latest = after;
       slot.actor = actor;
       return;
     }
-    const line = transitionLine(actor, id, emitterTransition(before, after));
+    const line = transitionLine(actor, id, emitterTransition(before, after), key);
     if (line) {
       this.act30.builds++;            // it feeds the activity digest like any build
       this.onEvent?.({ ts, kind: "world-change", who: actor, text: line });
     }
-    this.openEmitterWindow(id, actor, after);
+    this.openEmitterWindow(id, actor, after, key);
   }
 
-  private openEmitterWindow(id: string, actor: string, announced: unknown) {
+  private openEmitterWindow(id: string, actor: string, announced: unknown, key = "particles") {
+    const slotKey = emitterSlot(id, key);
     const close = () => {
-      const slot = this.emitterNarration.get(id);
+      const slot = this.emitterNarration.get(slotKey);
       if (!slot) return;
-      this.emitterNarration.delete(id);
+      this.emitterNarration.delete(slotKey);
       const t = emitterTransition(slot.announced, slot.latest);
       if (!t) return;                 // the burst netted out to what we already said
-      const line = transitionLine(slot.actor, id, t);
+      const line = transitionLine(slot.actor, id, t, key);
       if (line) {
         this.act30.builds++;
         this.onEvent?.({ ts: Date.now(), kind: "world-change", who: slot.actor, text: line });
       }
       // A continuous burst speaks once per window rather than being silenced
       // forever by its own persistence — same rule the act refractory uses.
-      this.openEmitterWindow(id, slot.actor, slot.latest);
+      this.openEmitterWindow(id, slot.actor, slot.latest, key);
     };
     const timer = setTimeout(close, EMITTER_COALESCE_MS);
     // never hold the process open for a decoration
     (timer as unknown as { unref?: () => void }).unref?.();
-    this.emitterNarration.set(id, { announced, latest: announced, actor, timer });
+    this.emitterNarration.set(slotKey, { announced, latest: announced, actor, key, timer });
   }
 
   /** The push half of sky perception (the pull half is look()). Runs at 1Hz
@@ -4031,7 +4036,9 @@ export class WorldAgent {
       // `components: particles`. Nothing is claimed about heat, light, sound
       // or contact: separate authored components would provide those, and a
       // resident who reads "warm" acts on it.
-      if (c.particles) aff.push(describeParticles(c.particles));
+      // Every emitter it carries, the default first: a hearth reads "emitting
+      // fire …; emitting smoke (particles:smoke …)", each on its own terms.
+      for (const [k, v] of emittersIn(c)) aff.push(describeParticles(v, k));
       // A picture is named by what its author SAID it shows, on the part that
       // carries it — never by its pixels. Rung 1 of the projector ladder.
       if (c.picture) aff.push(describePicture(c.picture));
@@ -4063,7 +4070,7 @@ export class WorldAgent {
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure"].includes(k));
+      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure"].includes(k) && !isParticlesKey(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
       if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);

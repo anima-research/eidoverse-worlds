@@ -13,7 +13,7 @@ import { effectiveSky, effectiveClock } from "../shared/forecast.js";
 import { projectFlora } from "./render-flora.ts";
 import { advanceSim, simSnapshot, tickOf } from "../shared/sim.js";
 import { waterParams, vector, MAX_AIR } from "../shared/water.js";
-import { normalizeParticles } from "../shared/particles.js";
+import { normalizeParticles, emittersIn } from "../shared/particles.js";
 import { normalizePicture } from "../shared/picture.js";
 import { normalizeSound } from "../shared/sound.js";
 import type { Client, World } from "./world.ts";
@@ -74,6 +74,15 @@ export function projectComponentData(comp: any, entityId = "") {
   // Presentation components, normalized by the same shared laws the browser uses
   // (a bag that does not normalize renders nothing there either).
   if (comp?.particles) { const r = normalizeParticles(comp.particles, { entityId }); if (r.ok) data.particles = r.emitter; }
+  // Named emitters (`particles:<name>`), by name — the same normalization, so
+  // a native renderer builds exactly what the browser does (incl. `scale`).
+  const named: Record<string, unknown> = {};
+  for (const [k, v] of emittersIn(comp)) {
+    if (k === "particles") continue;
+    const r = normalizeParticles(v, { entityId, key: k });
+    if (r.ok) named[k.slice(10)] = r.emitter;
+  }
+  if (Object.keys(named).length) data.emitters = Object.fromEntries(Object.entries(named).slice(0, 32));
   if (comp?.picture) { const r = normalizePicture(comp.picture); if (r.ok) data.picture = r.picture; }
   if (comp?.sound) { const r = normalizeSound(comp.sound); if (r.ok) data.sound = r.sound; }
   // Named-part motions (motion.js): every motion:<part> key, plus motion with a part.

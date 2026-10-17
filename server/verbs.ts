@@ -401,7 +401,9 @@ function afterComp(ctx: VerbCtx, entry: LogEntry) {
   // Same courtesy for an emitter that won't emit: an unknown preset or
   // a clamped parameter is a silence the author would otherwise have
   // to discover by asking someone with a GPU what they can see.
-  if (type === "particles") lintParticles(ctx.w, entry);
+  // (`particles:<name>` too — every emitter key — and a malformed
+  // `particles:…` key gets told why it isn't one.)
+  if (type === "particles" || type.startsWith("particles:")) lintParticles(ctx.w, entry);
 }
 
 function afterModerate(ctx: VerbCtx, entry: LogEntry) {

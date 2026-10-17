@@ -157,6 +157,13 @@ test("water, air and environment components reach native renderers as normalized
   expect(up.ocean.data.environment.spawn).toEqual([0,-5,0]);
   expect(up.habitat.data.air.boxes[0]).toEqual({center:[0,1,0],size:[4,3,6],q:[0,0,0,1]});
   expect(projectComponentData({reactions:{}})).toBeNull();
+  // named emitters reach native renderers by name, normalized by the same law
+  // (scale and authored motion included); a malformed key is not an emitter
+  const fx:any=projectComponentData({particles:{preset:"fire",scale:0.025},"particles:smoke":{preset:"smoke",gravity:0.6,color:"#556"},"particles:two words":{preset:"fire"}},"hearth");
+  expect(fx.particles.scale).toBe(0.025);
+  expect(Object.keys(fx.emitters)).toEqual(["smoke"]);
+  expect(fx.emitters.smoke.gravity).toEqual([0,0.6,0]);expect(fx.emitters.smoke.color).toBe(0x555566);
+  expect(fx.emitters.smoke.seed).not.toBe(projectComponentData({particles:{preset:"smoke"}},"hearth").particles.seed);
   f.write("comp",{id:"ocean",type:"water",data:{center:[0,-40,0],size:[400,100,400]}});
   const next=f.request(2000).upserts.map((e:any)=>e.id);
   expect(next).toEqual(["ocean"]);

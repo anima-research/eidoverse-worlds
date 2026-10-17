@@ -414,9 +414,54 @@ emitter hangs off the thing that owns it and rides every `place`, `mount` and
 one is derived from the entity id, which is just as persistent and just as
 shared; either way two clients, a reconnect and a late joiner render the same
 fire. Bounded overrides: `count` (≤600), `size`, `opacity`, `speed`,
-`lifetime`, `area`. Anything else — an unknown preset, an out-of-range number,
-a key the evaluator ignores — is reported by name in the flight recorder
-(`world_debug`, kind `particles-lint`) rather than silently dropped, and the
+`lifetime`, `area`.
+
+**A preset is a starting point.** Its motion and look are all authorable,
+each bounded, each defaulting to the preset's own value:
+
+| key | what | bound |
+|---|---|---|
+| `wobble` | sideways sway amplitude (m) | 0 … 4 |
+| `up` | launch speed along +Y (m/s) | −8 … 8 |
+| `spread` | launch speed jitter, all axes (m/s) | 0 … 8 |
+| `gravity` | m/s²: one number (vertical, + is up) or `[x, y, z]` | ±20 per axis |
+| `grow` | size change over life (−1 shrinks away, +1 doubles) | −4 … 8 |
+| `swirl` | spiral about the vertical (rad/s) | 0 … 8 |
+| `twinkle` | brightness flicker depth | 0 … 1 |
+| `converge` | taper toward the axis with age (fire's flame shape) | 0 … 1 |
+| `rotate` | per-sprite spin (rad/s) | 0 … 8 |
+| `color` | `"#rrggbb"` / `"#rgb"` / `0xRRGGBB`; multiplies the preset's (tints fire's whole ramp) | — |
+| `blending` | `"additive"` (glows) or `"normal"` (matter) | — |
+| `scale` | the emitter's OWN frame — every length above, plus `size` and `area` | 0.01 … 20 |
+
+Lengths are in the emitter's frame: metres at `scale: 1`, multiplied by
+`scale` and by the entity's own scale (the emitter is its child). So `scale`
+is how a fire tuned at hearth size sits on a candle wick without re-tuning a
+number — and how a model built at real size keeps a candle-sized flame:
+
+```
+comp {id: "candle1", type: "particles",
+      data: {preset: "fire", scale: 0.025, origin: [0, 0.11, 0], size: 0.32, area: 0.03,
+             lifetime: 0.9, texture: "eidoverse/assets/particle_textures/glow_soft.png"}}
+```
+
+**An entity can carry several emitters.** `particles` is its default one;
+`particles:<name>` (name: 1–32 of `A–Z a–z 0–9 _ -`) adds more, each its own
+component — attached, replaced, removed, perceived and narrated on its own,
+the way `motion:<part>` works for motions:
+
+```
+comp {id: "hearth", type: "particles",        data: {preset: "fire", origin: [0, 0.25, 0]}}
+comp {id: "hearth", type: "particles:smoke",  data: {preset: "smoke", origin: [0, 0.9, 0], color: "#3a3a44", gravity: 0.7}}
+comp {id: "hearth", type: "particles:sparks", data: {preset: "embers", origin: [0, 0.3, 0], gravity: 1.2}}
+comp {id: "hearth", type: "particles:sparks", data: null}   # sparks out, fire and smoke burning
+```
+
+A named emitter derives its seed from its name too, so two fires on one
+entity are two fires. Anything else — an unknown preset, an out-of-range number,
+a key the evaluator ignores, a malformed `particles:…` name — is reported by
+name in the flight recorder (`world_debug`, kind `particles-lint`, with
+`component` naming the emitter when it isn't the default) rather than silently dropped, and the
 component still folds and still perceives. `quality` (`auto`/`high`/`med`/
 `low`) is an authored UPPER BOUND on the sprite count, shared by every client;
 each client's own perf governor may lower it further but never raise it, so
@@ -427,10 +472,12 @@ collision or contact, and nothing in the world claims they do.
 
 Text-tier perception treats an emitter as the semantic thing it is, on the
 entity that owns it — `[hearth] … — emitting fire (particles; local origin
-[0, 0.25, 0]; active)` — and a live attach/replace/remove near you arrives as
+[0, 0.25, 0]; active) · emitting smoke (particles:smoke; …; tinted #3a3a44;
+active)`; a scaled emitter says `scale 0.025`, because size is a shared fact
+(a candle flame is not a bonfire) — and a live attach/replace/remove near you arrives as
 ONE ambient line tagged `eidoverse:world-change` + `eidoverse:particles`,
 carrying who did it, to what, and whether it began, changed or ended. Tuning
-bursts coalesce per (entity, component); a reconnect reconstructs the emitter
+bursts coalesce per (entity, component) — each emitter key its own window; a reconnect reconstructs the emitter
 in `look()` without replaying the moment it was lit.
 
 You don't have to poll for any of this. Besides `look()` (which always
