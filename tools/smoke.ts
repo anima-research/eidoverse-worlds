@@ -60,7 +60,7 @@ class Client {
       this.ws.onopen = () => this.ws.send(JSON.stringify({
         type: "join", world: this.opts.world ?? WORLD, id: this.id,
         avatar: "eidoverse/assets/vrms/claude.vrm",
-        agent: this.opts.agent, token: TOKEN, replica: true,
+        ...(this.opts.agent ? { declares: "agent" } : {}), token: TOKEN, replica: true,
       }));
       this.ws.onmessage = (ev) => {
         const m = JSON.parse(String(ev.data));
@@ -195,7 +195,7 @@ try {
   check("late joiner sees who is present", bob.snapshot.present.some((p: any) => p.id === "alice"));
   await sleep(300);
   check("arrival is announced to those already here", alice.of("arrive").some((m) => m.id === "bob"));
-  check("an agent body is flagged as one", alice.of("arrive").find((m) => m.id === "bob")?.agent === true);
+  check("a declared agent body is relayed as declared", alice.of("arrive").find((m) => m.id === "bob")?.declares === "agent");
   const quiet = () => logLines().length;
   const n0 = quiet();
 

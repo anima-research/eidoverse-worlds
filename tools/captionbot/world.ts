@@ -58,7 +58,7 @@ export interface WorldOptions {
   session?: string;
   /** Test seam: called with the key just before each send. */
   onSend?: (key: string) => void;
-  /** Join as an agent (default true; tests join as a plain participant). */
+  /** Declare itself an agent at join (PROTOCOL §6a; default true; tests join undeclared). */
   agent?: boolean;
 }
 
@@ -103,7 +103,7 @@ export class WorldClient {
     const ws = new WebSocket(this.opts.url);
     this.ws = ws;
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'join', world: this.opts.world, id: this.opts.actor, avatar: '', replica: true, ...(this.opts.agent === false ? {} : { agent: true }), token: this.opts.token, ...(this.opts.agentToken ? { agentToken: this.opts.agentToken } : {}) }));
+      ws.send(JSON.stringify({ type: 'join', world: this.opts.world, id: this.opts.actor, avatar: '', replica: true, ...(this.opts.agent === false ? {} : { declares: 'agent' }), token: this.opts.token, ...(this.opts.agentToken ? { agentToken: this.opts.agentToken } : {}) }));
     };
     ws.onclose = () => {
       this.open = false;

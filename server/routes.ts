@@ -743,8 +743,8 @@ const ROUTES: Route[] = [
         return {
           name,
           loaded: !!w,
-          people: present.filter((c) => !c.agent).map((c) => c.id),
-          agents: present.filter((c) => c.agent).map((c) => c.id),
+          people: present.filter((c) => c.declares !== "agent").map((c) => c.id),
+          agents: present.filter((c) => c.declares === "agent").map((c) => c.id),
         };
       });
       return new Response(JSON.stringify({ worlds: out }),

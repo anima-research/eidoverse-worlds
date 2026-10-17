@@ -332,6 +332,9 @@ export function voiceNote(pose: unknown): string {
 
 export class WorldAgent {
   url: string; name: string; world: string; avatar: string; agentToken = "";
+  /** The status this body declares at join (PROTOCOL §6a): "agent" unless told otherwise (AGENT_DECLARES; "" declares
+   *  nothing). The harness chooses it; the server relays it and never sets it from the credential. */
+  declares: string | null = "agent";
   ws: WebSocket | null = null;
   joined = false;
   pos = { x: 0, y: 0, z: 0 };
@@ -715,14 +718,14 @@ export class WorldAgent {
   private spelling: Promise<unknown> = Promise.resolve();
   /** replica: this body folds the world's log stream itself (the server refuses a client that doesn't). */
   private joinMsg() {
-    return { type: "join", world: this.world, id: this.name, avatar: this.avatar, agent: true, replica: true,
+    return { type: "join", world: this.world, id: this.name, avatar: this.avatar, ...(this.declares ? { declares: this.declares } : {}), replica: true,
       token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken };
   }
   private pendingRequests = new Map<string, (m: any) => void>();
   private pendingDebug = new Map<string, (m: any) => void>();
   private histId = 0;
 
-  constructor(opts: { url?: string; name?: string; world?: string; avatar?: string; agentToken?: string } = {}) {
+  constructor(opts: { url?: string; name?: string; world?: string; avatar?: string; agentToken?: string; declares?: string | null } = {}) {
     this.url = opts.url ?? process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws";
     this.name = opts.name ?? process.env.AGENT_NAME ?? "claude";
     this.world = opts.world ?? process.env.WORLD_NAME ?? "commons";
@@ -730,6 +733,7 @@ export class WorldAgent {
     // The agent's own bearer (the one that opened the MCPL door). Forwarded at
     // join so the sequencer can verify the name — agent names are reserved.
     this.agentToken = opts.agentToken ?? process.env.AGENT_TOKEN ?? "";
+    { const d = opts.declares !== undefined ? opts.declares : process.env.AGENT_DECLARES ?? "agent"; this.declares = d || null; }
   }
 
   /** The key this body joined with, as the Bearer header the world's state reads take (/snap, /worlds, /geom?world:
@@ -1041,7 +1045,7 @@ export class WorldAgent {
             this.restoredPose = true;
             // a (re)join: the authority's track of this body ended when it left, so the next walk arrives again
             this.trackArrived = false; this.trackAt = null;
-            for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, !!p.agent); if (typeof p.actorId === "string") this.actorIds.set(p.id, p.actorId); }
+            for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, p.declares === "agent"); if (typeof p.actorId === "string") this.actorIds.set(p.id, p.actorId); }
             // adopt the authority's cut and read the view of this body's own fold of it; the snapshot's `state` is the
             // chat window (chat isn't world state): its lines land in the inbox once, as history
             if (!(msg as any).cut?.state) { this.closed = true; clearTimeout(timeout); reject(new Error("the server sent no world cut (an old server?)")); break; }
@@ -1210,7 +1214,7 @@ export class WorldAgent {
           case "arrive":
             // the people map is truth and updates NOW; the narration goes
             // through the gate, where a reconnect flap collapses to nothing
-            this.rememberBody(msg.id, msg.avatar, null, !!msg.agent);
+            this.rememberBody(msg.id, msg.avatar, null, msg.declares === "agent");
             if (typeof msg.actorId === "string") this.actorIds.set(msg.id, msg.actorId);
             this.gate.presence(msg.id, "arrive");
             break;
@@ -1304,9 +1308,9 @@ export class WorldAgent {
     return this.bodyReader.readWindow(who === "self" ? this.name : who, detail, points, windowMs, id => this.bodyObservation(id));
   }
 
-  /** Is this participant an agent? The server flags agent sessions in both
-   *  the join snapshot (`present[].agent`) and `arrive` broadcasts; this is
-   *  the reader the denoiser and chat-tagging lean on. */
+  /** Has this participant DECLARED itself an agent (PROTOCOL §6a)? The server relays a declaration in the join
+   *  snapshot (`present[].declares`) and `arrive` broadcasts, and never infers one; an undeclared agent reads false.
+   *  This is the reader the denoiser and chat-tagging lean on (their own filter over a declared field). */
   isAgent(who: string): boolean {
     return !!this.people.get(who)?.agent;
   }

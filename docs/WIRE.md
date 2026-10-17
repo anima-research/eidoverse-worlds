@@ -30,7 +30,10 @@ review.
   spectators never duel. Every accepted leg gets a server-issued
   monotonic **generation** (`gen`) — rtc/attest are stamped and gated by it.
 - Flags on join: `spectate` (see everything, appear as nothing, cannot
-  author), `agent` (self-declared MCPL body), `renderer` (invisible
+  author), `declares` (a status the participant declares, one short
+  lowercase word such as `"agent"` or `"person"`: PROTOCOL §6a; optional,
+  relayed as sent, never set from the credential or the client, never
+  logged; absent is undeclared, never "person"), `renderer` (invisible
   volunteer that answers `capture` requests). Aux surfaces imply spectator.
 - Rate caps: **60 msgs/s** per connection (`MSG_RATE`): past it, a
   `request` is answered refused `rate` (never run) and anything else is
@@ -75,7 +78,7 @@ Every message belongs to exactly one plane:
 
 | type | plane | who may send | shape (essentials) | notes |
 |---|---|---|---|---|
-| `join` | — | anyone admitted | `{world, id?, token?, avatar?, surface?, spectate?, agent?, renderer?, agentToken?, replica}` | travel = leave A, join B on the same socket. Verified sessions: `id` ignored, login name wins. An embodied (`world` surface) join must say `replica: true` — it folds the log itself — or it is refused. Answers `snapshot` (§4). |
+| `join` | — | anyone admitted | `{world, id?, token?, avatar?, surface?, spectate?, declares?, renderer?, agentToken?, replica}` | travel = leave A, join B on the same socket. Verified sessions: `id` ignored, login name wins. An embodied (`world` surface) join must say `replica: true` — it folds the log itself — or it is refused. Answers `snapshot` (§4). |
 | `request` | authored | embodied; spectators may only read | `{id?, verb, args}` | the ONLY way into the log: one request (create, set, delete, place, batch, use, say, undo, publish, update, grab/put/throw/drop/punt/move/wait, sky/weather/sculpt, upload/adopt, kick/ban/unban, and the reads look/inspect/measure/find/lint/history/schema/scripts/help/whois). The asker is stamped from the connection, never read from the payload. Answers `reply`. There is no other write path. |
 | `history` | read | anyone incl. spectators | `{before?, after?, limit?≤300, verbs?, reqId?}` | pages the log newest-first; answers `history`. |
 | `debug` | read | anyone incl. spectators | `{limit?, kinds?}` or `{behavior}` or `{behaviors:true}` | the flight recorder (every refusal) + script status; answers `debug`. |
@@ -104,7 +107,7 @@ Every message belongs to exactly one plane:
   cut: {dialect, v, head, worldId, verbs, state, sim, names, holds, mine, you},
   state (the chat
   window), avatars (roster), yourRights, restore, present[{id, avatar, pose,
-  agent, surfaces}]}`. `cut.state` is the fold at `head` (each component
+  declares?, surfaces}]}`. `cut.state` is the fold at `head` (each component
   wrapped `{v}` or `{purged: true}`, as in the digest); a joiner adopts that
   cut and folds on from `head + 1`. Cost scales with the world, not its
   history.
@@ -129,7 +132,8 @@ Every message belongs to exactly one plane:
   the log), not raw wall time (spec/PHYSICS.md §5.1).
 - `clock` — `{t0, t}`: the answer to a client's `clock {t0}` (`t0` echoed, `t`
   the authority clock): a round-trip clock sample (`client/lib/serverclock.js`).
-- `arrive` / `leave` — embodied presence transitions.
+- `arrive` / `leave` — embodied presence transitions. `arrive` carries `{id, avatar, declares?, actorId?, guest?}`:
+  `declares` only when the participant declared one (§6a).
   `surface-transition` — `{id, surface, gen, retired}`: aux-leg
   join/takeover visibility (rtc re-keying, TTS hold capability).
 - `error` — `{error}`: every refusal, human-readable. `mod` — `{text}`:

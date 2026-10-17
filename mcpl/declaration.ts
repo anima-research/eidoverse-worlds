@@ -36,6 +36,8 @@ export const CHAT = {
   fromHuman: "chat:from-human",
   fromBot: "chat:from-bot",
   fromSelf: "chat:from-self",
+  // from a participant that DECLARED itself an agent (PROTOCOL §6a): the server relays a declaration and never infers one,
+  // so an undeclared agent's words carry no such tag. Loop prevention can't rest on it alone; a rate guard isn't kind-based.
   fromAgent: "chat:from-agent",
   private: "chat:private",
   group: "chat:group",

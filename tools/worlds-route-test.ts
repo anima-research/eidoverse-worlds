@@ -107,13 +107,13 @@ console.log("\n— A. on-disk worlds —");
 console.log("\n— B. presence —");
 {
   const alice = await joinBody(port, "annex", "alice");
-  const bot = await joinBody(port, "annex", "bot", { agent: true });
+  const bot = await joinBody(port, "annex", "bot", { declares: "agent" });
   const ghost = await joinBody(port, "commons", "ghost", { spectate: true });
   await new Promise((r) => setTimeout(r, 200));
   const m = byName((await fetchWorlds(port)).rows);
   check("annex now loaded", m.annex?.loaded === true, JSON.stringify(m.annex));
   check("a person lists under people", JSON.stringify(m.annex?.people) === JSON.stringify(["alice"]), JSON.stringify(m.annex));
-  check("an agent lists under agents, not people", JSON.stringify(m.annex?.agents) === JSON.stringify(["bot"]), JSON.stringify(m.annex));
+  check("a declared agent lists under agents, not people", JSON.stringify(m.annex?.agents) === JSON.stringify(["bot"]), JSON.stringify(m.annex));
   check("a spectator appears as nothing", m.commons?.people.length === 0 && m.commons?.agents.length === 0, JSON.stringify(m.commons));
   alice.close(); bot.close(); ghost.close();
   await new Promise((r) => setTimeout(r, 300));
