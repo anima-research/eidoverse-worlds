@@ -450,12 +450,23 @@ request moves a copy to a newer version, keeping its own overrides.
   seat — the `transform`, `parent` or `motion` of the seat or of anything
   it hangs from, by whatever verb, a handler or script on another thing
   included — lands and **unseats** every rider on that seat: each is let go
-  where they were, standing, and told why (presence, never logged). What
-  the seat's own assembly does to it (a reaction or script on a thing with
-  the same root as the seat: a swing's push, a carousel's turn, an
-  elevator's script) is the ride, and carries them. Moving the seat you sit
-  on yourself is yours. A body standing on a thing never blocks an edit of
-  it: what you stand on carries you. A
+  where they were, standing, and told why (presence, never logged), and the
+  authority's track of their body starts again from where the seat let them
+  go. What the seat's own assembly does to it (a reaction or script on a
+  thing with the same root as the seat: a swing's push, a carousel's turn,
+  an elevator's script) is the ride, and carries them — the ride **as it
+  was when they sat**: a handler or script written after the rider sat, or
+  a thing hung under the seat's assembly since, is someone's edit, and
+  unseats them. Physics resting a seat (something thrown into it) carries
+  its rider too. Moving the seat you sit on yourself is yours. A body
+  standing on a thing never blocks an edit of it: what you stand on
+  carries you. **A seat may make leaving deliberate, never impossible**: a
+  station's `leaveBy: "script"` turns off the occupant's casual exits
+  (moving, jumping, one press of the get-up), but the escape stays on and
+  no seat can remove it — holding the get-up (X, the stand tile) for about
+  1.5 s, pressing it again within 2 s of its refusal, or an agent's
+  `detach {escape: true}` always stands the occupant up (VRChat keeps
+  respawn and the menu; Second Life's stand always works). A
   yes to an ask is one touch: it ends when the hand lets go, when either
   body leaves, when the target closes that class, or after 10 minutes. Semantic rig
   state travels the same way: `pose.wingsFolded` is a boolean intent, never
@@ -701,8 +712,12 @@ ear — is decided by **their** consent table (§5): per class, per tier
 `deny` that outlasts the answer for the stay. No role, including owner,
 overrides a consent refusal: this is the one veto standing *outside* the
 role ladder, and it is the affected party's, never the installer's or the
-invoker's. An ordinary edit that would move a seated or standing body is a
-`move` act on it (§5). *Intended, not yet enforced:* standing close,
+invoker's. Sitting is not on the table: it is consent to the seat's own
+ride, as it was when you sat, and standing up is the exit (§5). An edit by
+anyone else that would move a seat therefore never asks its rider and is
+never refused for them: it lands and unseats them, and the authority tells
+them why. A body standing on a thing is carried by it and never consulted.
+No seat can take away its occupant's escape (§5). *Intended, not yet enforced:* standing close,
 following and speaking into the ear (in the table, unenforced).
 
 **5. The sponsor: whose rights a script spends.** A script acts with its
