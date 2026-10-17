@@ -45,6 +45,7 @@ export const report = () => {};
 
 export const loadGLB = async () => new THREE.Object3D();
 export const libLabels = new Map();
+export const modelName = (m) => String(m ?? "").split("/").pop().replace(/\.[a-z0-9]+$/i, "") || "thing";   // assets.js modelName (address fix 10-16)
 export const makeLightGizmo = () => new THREE.Object3D();
 
 // world.js also exports findPart, which seatedit.js imports — build.js pulls in

@@ -26,6 +26,7 @@ export const noiseTexture = () => null;
 export const loadTrack = async () => null;
 export const loadDone = () => {};
 export const libLabels = new Map();
+export const modelName = (m) => String(m ?? "").split("/").pop().replace(/\.[a-z0-9]+$/i, "") || "thing";   // assets.js modelName (address fix 10-16)
 // loadwork.js
 export const beginWork = () => ({ done() {} });
 // colliders.js

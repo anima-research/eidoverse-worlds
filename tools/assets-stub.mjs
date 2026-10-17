@@ -26,6 +26,7 @@ export async function fetchBytes() { return null; }
 export const ktx2Capable = () => false;
 export const ktx2KeyReady = Promise.resolve(null);
 export const libLabels = new Map();
+export const modelName = (m) => String(m ?? "").split("/").pop().replace(/\.[a-z0-9]+$/i, "") || "thing";   // assets.js modelName (address fix 10-16)
 export async function listLibrary() { return []; }
 export function loadEidoModule() { return null; }
 export async function loadGLB() { return null; }
