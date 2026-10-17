@@ -65,8 +65,12 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["sponsor-wide body allowance", "authority.js", "&& C.tableOf(P, to).overrides[`scripts-by:${extra.sponsor}`]?.[cls]) d = C.decide(P, `scripts-by:${extra.sponsor}`, to, cls, now);", "&& false) d = null;", ["C3"]],
   ["frozen clock", "sandbox.js", "FrozenDate.now = () => NOW;", "FrozenDate.now = () => RealDate.now();", ["D2"]],
   ["seeded randomness", "sandbox.js", "Math.random = function random() { return sfc(); };", "", ["D2"]],
-  ["names replayed from the act", "sandbox.js", "const n = x.reads ? x.reads.names?.[nameAt]?.name ?? null : (x.name ? x.name(id) ?? null : null);", "const n = x.name ? x.name(id) ?? null : null;", ["M1"]],
-  ["presence reads replayed from the act", "sandbox.js", "const ids = x.reads ? x.reads.near?.[nearAt]?.ids ?? [] : (x.near ? x.near(r) : []);", "const ids = x.near ? x.near(r) : [];", ["D1"]],
+  ["presence reads replayed from the act (stand-ins for who)", "sandbox.js", "const ids = x.reads ? (Array.isArray(was?.ids) ? was.ids : standIns(nearAt, was?.n)) : (x.near ? x.near(r) : []);", "const ids = x.near ? x.near(r) : [];", ["D1"]],
+  ["a near() read records who (ids)", "sandbox.js", "nearAt++; reads.near.push({ r, n: ids.length }); return ids.slice(); }", "nearAt++; reads.near.push({ r, n: ids.length, ids: ids.slice() }); return ids.slice(); }", ["D4"]],
+  ["a name() read records the name", "sandbox.js", "nameAt++; reads.names++; return n; }", "nameAt++; reads.names++; reads.near.push({ r: 0, n: 0, ids: [n] }); return n; }", ["D4"]],
+  ["the auditor counts an identity-dependent act verified (or flags it)", "scriptaudit.js", "if (whoReads(b.reads)) { skipped.push(", "if (false) { skipped.push(", ["D4"]],
+  ["the auditor checks the read shape", "scriptaudit.js", "if (jcs(readShape(res.reads)) !== jcs(readShape(b.reads))) {", "if (false) {", ["D4"]],
+  ["a script's body effect records its consent mode", "authority.js", "bodies: gates.map((g) => ({ kind: g.kind, to: `body:${g.to}` }))", "bodies: gates.map((g) => ({ kind: g.kind, to: `body:${g.to}`, consent: g.consent }))", ["C1"]],
   ["fuel", "sandbox.js", "if (fuel > L.fuel) {", "if (false) {", ["R1"]],
   ["host-call cap", "sandbox.js", "if (++calls > L.calls) {", "if (false) {", ["R4"]],
   ["write cap", "sandbox.js", "if (ops.length >= L.ops) {", "if (false) {", ["R5"]],
@@ -459,7 +463,7 @@ const cases: Case[] = [
   // ---------------- D: determinism and the reader's audit ----------------
   { id: "D1", what: "41 #14/#15: a reader re-runs every activation from what its act records (head, event, ts, seed, presence reads) and gets the logged batch; a forged sponsor and an altered op are flagged", run(s) { cast(s);
       s.call("bob", "create", { id: "dice", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "dice", "roll", onUse(`world.set("self", "t/face", { n: Math.floor(Math.random() * 6), near: world.near(3), here: world.count(), at: Date.now(), by: e.by });`), { scope: { ids: "self", comps: ["t/face"] }, on: ["use"] });
+      install(s, "bob", "dice", "roll", onUse(`world.set("self", "t/face", { n: Math.floor(Math.random() * 6), near: world.near(3).length, here: world.count(), at: Date.now(), by: e.by });`), { scope: { ids: "self", comps: ["t/face"] }, on: ["use"] });
       s.call("bob", "set", { id: "dice", component: "reactions", value: { roll: { kind: "script", script: "roll" } } });
       s.call("vic", "move", { to: [0, 0, 1] }); for (let i = 0; i < 3; i++) s.call("vic", "use", { id: "dice", action: "roll" });
       s.call("vic", "move", { to: [0, 0, 5] }); s.call("vic", "use", { id: "dice", action: "roll" }, 2000); // walked away: the 4th roll's near is []
@@ -469,10 +473,27 @@ const cases: Case[] = [
       const copy = () => F.readLog(Buffer.from(L0.map((e: any) => JSON.stringify(e)).join("\n") + "\n"));
       const k = L0.findIndex((e: any) => isScriptActor(e.actor) && e.kind === "act"); const forged = copy(); forged[k].body.sponsor = "olive";
       const j = L0.findLastIndex((e: any) => isScriptActor(e.actor) && e.kind === "change"); const tampered = copy(); tampered[j].body.value.n = (tampered[j].body.value.n + 1) % 6;
-      const lost = copy(); for (const e of lost) if (isScriptActor(e.actor) && e.kind === "act") delete e.body.reads; // without the recorded reads the re-run can't agree
-      return { acts: honest.acts, reran: honest.reran, honestFlags: honest.flags, reads: L0.filter((e: any) => isScriptActor(e.actor) && e.kind === "act").map((e: any) => e.body.reads?.near?.[0]?.ids?.join(",") ?? "?"),
+      const lost = copy(); for (const e of lost) if (isScriptActor(e.actor) && e.kind === "act") delete e.body.reads; // without the recorded reads the re-run asks reads the act doesn't record
+      return { acts: honest.acts, reran: honest.reran, honestFlags: honest.flags, reads: L0.filter((e: any) => isScriptActor(e.actor) && e.kind === "act").map((e: any) => JSON.stringify(e.body.reads?.near?.[0] ?? "?")),
         forged: AU.auditScripts(forged, get, { run }).flags.map((x: any) => x.check), tampered: AU.auditScripts(tampered, get, { run }).flags.map((x: any) => `${x.seq}:${x.check}`), lost: AU.auditScripts(lost, get, { run }).flags.map((x: any) => x.check) }; },
-    good: (o) => o.acts === 4 && o.reran === 4 && o.honestFlags.length === 0 && JSON.stringify(o.reads) === '["vic","vic","vic",""]' && o.forged.includes("sponsor") && o.tampered.some((x: string) => /:rerun$/.test(x)) && o.lost.includes("rerun") },
+    good: (o) => o.acts === 4 && o.reran === 4 && o.honestFlags.length === 0 && JSON.stringify(o.reads) === JSON.stringify(['{"r":3,"n":1}', '{"r":3,"n":1}', '{"r":3,"n":1}', '{"r":3,"n":0}']) && o.forged.includes("sponsor") && o.tampered.some((x: string) => /:rerun$/.test(x)) && o.lost.includes("reads") },
+  { id: "D4", what: "consent gaps 6b: a script's act records what its presence reads asked and how many came back, never who (no ids, no names); an act whose result names who was near is SKIPPED by the auditor (said why), never verified or flagged; a forged read shape is flagged", run(s) { cast(s);
+      s.call("bob", "create", { id: "sign", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "sign", "roll", onUse(`const who = world.near(3); world.set("self", "t/seen", { who, name: world.name(e.by), n: who.length });`), { scope: { ids: "self", comps: ["t/seen"] }, on: ["use"] });
+      install(s, "bob", "sign", "count", onUse(`world.set("self", "t/count", { n: world.near(3).length });`), { scope: { ids: "self", comps: ["t/count"] }, on: ["use"] });
+      s.call("bob", "set", { id: "sign", component: "reactions", value: { roll: { kind: "script", script: "roll" }, count: { kind: "script", script: "count" } } });
+      s.call("vic", "move", { to: [0, 0, 1] }); const r1 = s.call("vic", "use", { id: "sign", action: "roll" }); const r2 = s.call("vic", "use", { id: "sign", action: "count" });
+      const acts = s.entries().filter((e: any) => isScriptActor(e.actor) && e.kind === "act");
+      if (!AU) return { absent: true };
+      const L0 = s.entries(), get = s.w().getBlob, run = SB.runScript; const A = AU.auditScripts(L0, get, { run });
+      const copy = () => F.readLog(Buffer.from(L0.map((e: any) => JSON.stringify(e)).join("\n") + "\n"));
+      const forged = copy(); const k = forged.findLastIndex((e: any) => isScriptActor(e.actor) && e.kind === "act"); forged[k].body.reads.near[0].r = 9;
+      return { r1: st(s, r1), r2: st(s, r2), reads: acts.map((e: any) => e.body.reads), actText: JSON.stringify(acts), seen: s.w().state().entities.sign.c["t/seen"],
+        reran: A.reran, skipped: A.skipped?.map((x: any) => x.why) ?? null, flags: A.flags.map((x: any) => x.check), forged: AU.auditScripts(forged, get, { run }).flags.map((x: any) => x.check) }; },
+    opts: { nameOf: (id: string) => NAMES[id] ?? null },
+    good: (o) => o.r1 === "ran" && o.r2 === "ran" && JSON.stringify(o.reads) === JSON.stringify([{ near: [{ r: 3, n: 1 }], names: 1 }, { near: [{ r: 3, n: 1 }] }])
+      && !/Vic/.test(o.actText) && o.seen?.name === "Vic"
+      && o.reran === 1 && o.skipped?.length === 1 && /who was near/.test(o.skipped[0]) && o.flags.length === 0 && o.forged.includes("reads") },
   { id: "D2", what: "41 §3.7: an activation's clock is frozen at its act's ts, and Math.random is seeded from its act: the same seed gives the same numbers, another seed others", run(s) { cast(s);
       if (!SB) return { absent: true };
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
@@ -739,7 +760,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       return { str: code(str), name: code(name), many: code(many), full: ok(full) ? "ok" : code(full), script: st(s, s.call("vic", "use", { id: "seatl", action: "p" })) }; },
     good: (o) => o.str === "shape" && o.name === "shape" && o.many === "bounds" && o.full === "ok" && o.script === "failed thrown" },
   // ---------------- C: body effects meet consent ----------------
-  { id: "C1", what: "41 #13 / §3d M4: a script `shove`s a visitor whose table says no (a behaviour is a stranger): refused where it lands, nothing logged; once vic allows it by name, it lands and the act records the consent used", run(s) { cast(s);
+  { id: "C1", what: "41 #13 / §3d M4: a script `shove`s a visitor whose table says no (a behaviour is a stranger): refused where it lands, nothing logged; once vic allows it by name, it lands; the act records what and on whom, never which consent let it (consent gaps 6c: a per-person allow is presence)", run(s) { cast(s);
       s.call("bob", "create", { id: "trap", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "trap", "spring", onUse(`world.shove(e.by);`), { scope: { ids: "self", comps: [], bodies: ["shove"] }, on: ["use"] });
       s.call("bob", "set", { id: "trap", component: "reactions", value: { step: { kind: "script", script: "spring" } } });
@@ -748,7 +769,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("vic", "consent", { allow: "script:trap", class: "shove" }); const r2 = s.call("vic", "use", { id: "trap", action: "step" });
       const act = s.entries().findLast((e: any) => e.actor === "script:trap" && e.kind === "act");
       return { r1: st(s, r1), scripted1, r2: st(s, r2), recorded: act?.body?.bodies, tumble: !!s.w().presence.bodies.vic?.tumble }; },
-    good: (o) => o.r1 === "refused consent" && o.scripted1 === 0 && o.r2 === "ran" && JSON.stringify(o.recorded) === '[{"kind":"shove","to":"body:vic","consent":"allowed"}]' && o.tumble },
+    good: (o) => o.r1 === "refused consent" && o.scripted1 === 0 && o.r2 === "ran" && JSON.stringify(o.recorded) === '[{"kind":"shove","to":"body:vic"}]' && o.tumble },
   { id: "C2", what: "bodies need scope.bodies: a script that shoves without declaring it is refused (scope), whatever the target allows", run(s) { cast(s);
       s.call("bob", "create", { id: "trap", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "trap", "spring", onUse(`world.shove(e.by);`), { scope: { ids: "self", comps: [] }, on: ["use"] });
@@ -799,12 +820,12 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("vic", "move", { to: [0, 0, 2] });
       for (let i = 0; i < 3; i++) { s.advance(60000); s.tick(); }
       const says = s.entries().filter((e: any) => e.kind === "say" && isScriptActor(e.actor)).map((e: any) => e.body.text);
-      NAMES.vic = "Vee"; // a rename in the directory afterwards: the audit replays the name the act recorded
+      NAMES.vic = "Vee"; // a rename in the directory afterwards: the act recorded no name, so the greeter's act can't be re-run to its say (skipped, said why)
       const A = AU ? AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript }) : null;
       return { ring: st(s, ring), motion: comp(s, "bell1", "motion")?.type, rings: comp(s, "bell1", "t/bellkeeper")?.rings, met: comp(s, "sign", "t/greeter")?.met, sweeps: comp(s, "lamp1", "t/lighthouse")?.sweeps, says,
-        audit: A ? `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}` : null }; },
+        audit: A ? `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}` : null, skipped: A?.skipped?.length ?? null }; },
     opts: { nameOf: (id: string) => NAMES[id] ?? null },
-    good: (o) => o.ring === "ran" && o.motion === "pendulum" && o.rings === 1 && o.met === 1 && o.sweeps === 2 && o.audit === "4/4 "
+    good: (o) => o.ring === "ran" && o.motion === "pendulum" && o.rings === 1 && o.met === 1 && o.sweeps === 2 && o.audit === "3/4 " && o.skipped === 1
       && o.says.includes("the bell tolls (1) — rung by vic") && o.says.includes("welcome to the meadow, Vic — you are visitor #1") && o.says.includes("all clear — sweep 2, 1 soul(s) in view") },
   // ---------------- V: translated v1 behaviours ----------------
   { id: "V1", what: "a translated v1 world's imported-behavior:<name> (a v1 binding) never runs; the status view says plainly it needs re-installing as script:<name>", run(s) { cast(s);

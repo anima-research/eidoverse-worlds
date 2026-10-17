@@ -2125,7 +2125,9 @@ function activate(w, id, name, ev) {
   const actE = { kind: "act", actor: `script:${id}`, verb: "script", ...(cause !== undefined ? { cause } : {}),
     body: { script: key, src: v.src, sponsor: sp.sponsor, sponsorAt: sp.sponsorAt, on: ev.on, ...(ev.by ? { trigger: { actor: ev.by, ...(ev.seq !== undefined ? { seq: ev.seq } : {}) } } : {}),
       event: recorded(event), head: actSeq - 1, seed, depth, engine: SR.ENGINE, api: SR.API, ...(res.reads ? { reads: res.reads } : {}),
-      ...(gates.length ? { bodies: gates.map((g) => ({ kind: g.kind, to: `body:${g.to}`, consent: g.consent })) } : {}) } };
+      // a body effect is recorded as WHAT and ON WHOM, never which consent let it through: "allowed" (a per-person allow) vs
+      // "standing" is a relationship fact, and consent is presence, never appended (consent gaps 6c, R 10-17 02:45)
+      ...(gates.length ? { bodies: gates.map((g) => ({ kind: g.kind, to: `body:${g.to}` })) } : {}) } };
   const sayE = (t, c) => ({ kind: "say", actor: `script:${id}`, cause: c, verb: "say", body: { text: t } });
   let act, state = null;
   w.pinTs = now;

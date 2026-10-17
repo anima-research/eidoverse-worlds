@@ -95,9 +95,9 @@ always the right one to keep.)
 | `world.get(id, comp?)` | a copy of a component's value (or of all of them), or `null`; `"self"` works as an id |
 | `world.children(id)` | the ids parented to it (≤ 1000) |
 | `world.ids()` | every id in the world (≤ 1000, sorted) |
-| `world.near(r)` | identities of people within `r` m of the thing (recorded in the act) |
+| `world.near(r)` | identities of people within `r` m of the thing (the act records `r` and how many, never who) |
 | `world.count()` | how many people are here (recorded in the act) |
-| `world.name(id)` | a person's display name (identities are opaque ids; recorded in the act), or `null` |
+| `world.name(id)` | a person's display name (identities are opaque ids; the act counts the call, never records the name), or `null` |
 | `world.set(id, comp, value)` | propose a write (must be inside `scope`) |
 | `world.delete(id, comp?)` | propose a delete (a whole thing only if this activation created it) |
 | `world.create(components)` | propose a new thing (needs `scope.create`); returns the id it was minted (opaque: a script never chooses an id, and an id never carries a word; API 2) |
@@ -146,7 +146,10 @@ it rides. A script that counts shots counts presses (`use.down`), within the rat
 ```
 A timer's or a presence event's act has `cause` = the entry that made its sponsor. Replay never runs code: the fold
 reads 814. An auditor may: `shared/protocol/scriptaudit.js` folds to `head`, re-runs the source with the recorded event,
-clock (the act's `ts`), `seed` and presence `reads`, and compares the writes.
+clock (the act's `ts`), `seed` and presence `reads`, and compares the writes. An act's `reads` say what was asked and
+how much came back (`{near: [{r, n}], count: [n], names: k}`), never who: so a re-run answers `world.near` with stand-ins
+and `world.name` with `null`. When the writes and says still match, the act is verified; when they differ and the script
+read who was near or a name, the auditor lists it as `skipped` (it can't be re-run to that result), never as verified.
 
 ## Determinism (why some JavaScript behaves differently here)
 
@@ -154,8 +157,10 @@ clock (the act's `ts`), `seed` and presence `reads`, and compares the writes.
 - `Math.random()` is seeded from the activation (`seed` in the act): re-running it gives the same numbers.
 - The time zone is always UTC: local-time methods (`getHours`, `new Date(2026, 0, 1)`) are the UTC ones, and a
   date-time string with no zone is read as UTC. The host's zone never leaks in.
-- What a script reads from outside the log (`world.near`, `world.count`, `world.name`) is recorded in its act and
-  replayed on a re-run. A `say`'s text and a `use`'s `args` are not copied into the act: it points at them (`trigger`),
+- What a script reads from outside the log (`world.near`, `world.count`, `world.name`) is recorded in its act as what it
+  asked and how much came back, never who or what they're called: the log is permanent and public, and a script can't
+  keep an attendance list in it. A re-run gets stand-ins. Body effects (`world.shove`, `world.pose`) are recorded as
+  `{kind, to}`, never which consent let them through. A `say`'s text and a `use`'s `args` are not copied into the act: it points at them (`trigger`),
   so purging that say or request purges them everywhere.
 - Each activation runs in a **fresh** sandbox: nothing survives between activations. Keep state in a component in your
   scope (it is world state: forkable, readable, undoable). There is no private kv.

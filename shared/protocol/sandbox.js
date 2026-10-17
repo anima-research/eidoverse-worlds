@@ -11,7 +11,12 @@
 //   random   Math.random is a PRNG seeded from `seed` (H(world ‖ act seq ‖ script key), recorded in the act);
 //   world    reads see the folded head the activation was given, plus its own writes so far (read-your-writes);
 //   presence world.near(r) / world.count() answers, and world.name(id) (the authority's directory, outside the log), are
-//            RECORDED (`reads`) and, on a re-run, REPLAYED from the record;
+//            RECORDED (`reads`) as what was asked and how much came back — never WHO (consent gaps 6b, R 10-17 02:45: a
+//            script's act is signed and permanent, so ids near it and display names made it an attendance log anyone with
+//            `scripts` could keep). `reads` = {near: [{r, n}], count: [n], names: <how many name() calls>}. A re-run gets
+//            n opaque stand-ins per near() and null per name(): an auditor re-runs with those and verifies the result when
+//            it doesn't depend on who was there, and says honestly that it can't when it does (scriptaudit.js `skipped`).
+//            An older act that recorded the ids ({r, ids}, [{id, name}]) still replays them;
 //   nothing else: no timers, no network, no filesystem, no other clock.
 // Metered by FUEL: QuickJS calls the interrupt handler every so many bytecode ticks; the count of calls is the fuel,
 // deterministic for one QuickJS build (LIMITS.fuel). A wall-clock deadline is the backstop (host calls can't be
@@ -105,6 +110,9 @@ const PRELUDE = String.raw`"use strict";
 const errName = (e) => (e && typeof e === "object" ? e.name ?? "Error" : "Error");
 const errMsg = (e) => (e && typeof e === "object" ? `${e.name ?? "Error"}: ${e.message ?? ""}` : String(e));
 const firstLine = (e) => { const st = e && typeof e === "object" ? String(e.stack ?? "") : ""; const m = /eval\.js:(\d+):(\d+)/.exec(st); return m ? ` (line ${Number(m[1])}, column ${m[2]})` : ""; };
+// a re-run's answer to the k-th near() whose ids weren't recorded: n opaque stand-ins, never shaped like an identity, so a
+// script that compares them with someone gets "nobody" (and its result then differs: the auditor says it can't verify it)
+const standIns = (k, n) => Array.from({ length: Number.isSafeInteger(n) && n > 0 ? Math.min(n, 1000) : 0 }, (_, i) => `?near-${k + 1}-${i + 1}`);
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24) || "thing";
 
 /**
@@ -115,7 +123,7 @@ const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace
  */
 export function makeHost(x) {
   const L = { ...LIMITS, ...(x.limits ?? {}) };
-  const logs = [], ops = [], says = [], bodies = [], reads = { near: [], count: [], names: [] }; let nearAt = 0, countAt = 0, nameAt = 0;
+  const logs = [], ops = [], says = [], bodies = [], reads = { near: [], count: [], names: 0 }; let nearAt = 0, countAt = 0, nameAt = 0;
   let calls = 0, minted = 0, stop = null;
   // read-your-writes without copying the world: an overlay of the things this activation wrote (id → entity, or null if
   // it deleted it), over the head it was given. Each write costs O(1); ids/children use indexes built once (a review
@@ -153,9 +161,10 @@ export function makeHost(x) {
       case "children": { read(); return kidsOf(self(a[0])).slice(0, L.ids); }
       case "ids": { read(); return allIds().slice(0, L.ids); }
       case "near": { read(); const r = a[0]; if (!(r >= 0 && r <= 1000)) throw new HostError("world.near(r): r is metres, 0–1000");
-        const ids = x.reads ? x.reads.near?.[nearAt]?.ids ?? [] : (x.near ? x.near(r) : []); nearAt++; reads.near.push({ r, ids: ids.slice() }); return ids.slice(); }
-      case "name": { read(); const id = a[0]; // a display name lives in the authority's directory, outside the log: recorded, so a re-run agrees
-        const n = x.reads ? x.reads.names?.[nameAt]?.name ?? null : (x.name ? x.name(id) ?? null : null); nameAt++; reads.names.push({ id, name: n }); return n; }
+        const was = x.reads?.near?.[nearAt]; const ids = x.reads ? (Array.isArray(was?.ids) ? was.ids : standIns(nearAt, was?.n)) : (x.near ? x.near(r) : []);
+        nearAt++; reads.near.push({ r, n: ids.length }); return ids.slice(); }
+      case "name": { read(); const id = a[0]; // a display name lives in the authority's directory, outside the log: counted, never recorded
+        const n = x.reads ? (Array.isArray(x.reads.names) ? x.reads.names[nameAt]?.name ?? null : null) : (x.name ? x.name(id) ?? null : null); nameAt++; reads.names++; return n; }
       case "count": { read(); const n = x.reads ? x.reads.count?.[countAt] ?? 0 : (x.count ? x.count() : 0); countAt++; reads.count.push(n); return n; }
       // every parameter written down (PROTOCOL §4): a script's value gets its definition's defaults here, in the host, so the
       // logged batch is what an auditor's re-run makes too (and a re-asserted value equal to the stored one is elided)
@@ -192,7 +201,7 @@ export function makeHost(x) {
   const finish = (vm) => {
     if (stop) return { ok: false, ...stop, logs, fuel: vm.fuel };
     if (vm.fail) return { ok: false, ...vm.fail, logs, fuel: vm.fuel };
-    return { ok: true, ran: vm.ran, ops, says, bodies, reads: reads.near.length || reads.count.length || reads.names.length ? { ...(reads.near.length ? { near: reads.near } : {}), ...(reads.count.length ? { count: reads.count } : {}), ...(reads.names.length ? { names: reads.names } : {}) } : null, logs, fuel: vm.fuel };
+    return { ok: true, ran: vm.ran, ops, says, bodies, reads: reads.near.length || reads.count.length || reads.names ? { ...(reads.near.length ? { near: reads.near } : {}), ...(reads.count.length ? { count: reads.count } : {}), ...(reads.names ? { names: reads.names } : {}) } : null, logs, fuel: vm.fuel };
   };
   return { call, finish, limits: L, input: { self: x.self, key: x.key, knobs: x.knobs ?? {}, now: x.now, seed: x.seed } };
 }
@@ -237,7 +246,7 @@ export function vmRun(text, input, event, L, call, clock = () => performance.now
  * {ok, ...}. A slow native builtin can hold this thread: an authority runs activations isolated (runIsolated, below).
  * @param {{text: string, self: string, key: string, event: object, knobs?: object, now: number, seed: string, st: any,
  *   near?: (r: number) => string[], count?: () => number, name?: (id: string) => string | null,
- *   reads?: {near?: {r, ids}[], count?: number[], names?: {id, name}[]},
+ *   reads?: {near?: {r, n, ids?}[], count?: number[], names?: number | {id, name}[]},
  *   limits?: object, clock?: () => number}} x
  * @returns {{ok: true, ops, says, bodies, reads, logs, fuel, ran} | {ok: false, code, why, logs, fuel}}
  */
