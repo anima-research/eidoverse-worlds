@@ -42,7 +42,7 @@ export function applyShared(st: Any, ops: Any[], seq: number) {
 export type LiveOpts = { now?: () => number; /** the speed track's elapsed-time clock (ms); default: performance.now, or `now` when given */ pace?: () => number; catalogue?: Any; simModels?: Any; onAppend?: (seq: number, e: Any) => void;
   /** the authority's governance keys file (§2.4); default <worlds dir>/.custody.json, shared by every world in it */ custodyFile?: string;
   /** id → display name (the authority directory, server/directory.ts); default: that worlds dir's directory */ nameOf?: (id: string) => string | null;
-  /** id → human|agent|anon|legacy (the directory); default: that worlds dir's directory */ kindOf?: (id: string) => string | null;
+  /** id → account|anon|imported (the directory; the authority reads only "anon"); default: that worlds dir's directory */ kindOf?: (id: string) => string | null;
   /** the script sandbox (default QuickJS, shared/protocol/sandbox.js; null = none) */ scripts?: Any;
   /** who is connected beyond the authority's own bodies: [{id, at}] (server/worldlog.ts, from the World's clients) */ present?: () => { id: string; at: number[] | null }[] };
 

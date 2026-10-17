@@ -45,6 +45,11 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["verbspec: arrival on the record", "shared/protocol/verbspec.js", "Arriving is presence (nothing is logged); teleport: true is an act on the record, and can't carry things", "Your first move (arriving) and teleport: true are acts on the record, and can't carry things", ["X3"]],
   ["the stale consent comment", "client/lib/consent.js", "// staging a scene is welcome; a stranger yanking your limbs is not): the", "// staging a scene is welcome; agents accept by default): the", ["X4"]],
   ["WIRE: the agent flag", "docs/WIRE.md", "`{world, id?, token?, avatar?, surface?, spectate?, declares?, renderer?", "`{world, id?, token?, avatar?, surface?, spectate?, agent?, renderer?", ["X5"]],
+  ["whois infers a kind", "server/requestwire.ts", "...(said.has(id) ? { declares: said.get(id) } : {}),", "kind: dir.entry(id)?.subs?.some((x) => /^(agent|aid1):/.test(x)) ? \"agent\" : \"person\",", ["W1"]],
+  ["whois drops the declaration", "server/requestwire.ts", "...(said.has(id) ? { declares: said.get(id) } : {}),", "", ["W1"]],
+  ["the directory infers a kind", "server/directory.ts", "return add({ name, subs: [sub], kind: \"account\", since: now() }); }", "return add({ name, subs: [sub], kind: (/^(agent|aid1):/.test(sub) ? \"agent\" : \"human\") as any, since: now() }); }", ["W1"]],
+  ["the whois tool says a kind", "mcpl/tools.ts", "the word they declare for themselves if they declared one while here", "what they are (person, agent, guest)", ["W2"]],
+  ["an old file's kind is kept", "server/directory.ts", "for (const [id, e] of Object.entries(d.ids)) index(id, unkind(e));", "for (const [id, e] of Object.entries(d.ids)) index(id, e);", ["W3"]],
   ["CONTROL (no-op: must stay green)", "server/server.ts", "/** A join's declared status (PROTOCOL §6a)", "/**  A join's declared status (PROTOCOL §6a)", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -118,7 +123,11 @@ async function sock(port: number) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = [];
   ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-  return { msgs, close: () => ws.close(),
+  let rq = 0;
+  const req = (verb: string, args: any = {}) => new Promise<any>((res) => { const id = `q${++rq}`; const k = msgs.length;
+    ws.send(JSON.stringify({ type: "request", id, verb, args }));
+    const t0 = Date.now(); const look = () => { const m = msgs.slice(k).find((x) => x.type === "reply" && x.id === id); if (m) return res(m.reply); if (Date.now() - t0 > 4000) return res({ timeout: true }); setTimeout(look, 30); }; look(); });
+  return { msgs, req, close: () => ws.close(),
     async join(id: string, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world: "glade", id, avatar: "", replica: true, ...extra }));
       for (let i = 0; i < 80; i++) { if (msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error")) break; await sleep(50); }
       return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; } };
@@ -201,6 +210,28 @@ const cases: Case[] = [
   { id: "D9", what: "the browser reads `declares` from arrive and present (net.js), never an `agent` flag", run() {
       const src = readText("client/lib/net.js"); return { arrive: /\{ agent: msg\.declares === 'agent'/.test(src), present: /\{ agent: p\.declares === 'agent'/.test(src), old: /agent: (msg|p)\.agent\b/.test(src) }; },
     good: (o) => o.arrive && o.present && !o.old },
+  // ---------------- W: whois names no kind ----------------
+  { id: "W1", what: "(§6a rule 3; R 10-17 13:41 \"everyone is a person here\") whois infers no kind from the account: an enrolled agent, an aid1 agent and a typed-name account answer with no `kind` and no person/agent word; one who declared shows its own word (\"ai\") while here, nothing otherwise; the directory file holds no inferred kind", async run() {
+      const { port } = await server();
+      const ro = await sock(port); await ro.join("Rowan", { agentToken: "tok-rowan" });
+      const mo = await sock(port); const jm = await mo.join("x", { agentToken: mint({ sub: "agent:wisp@home.test", name: "Wisp" }), declares: "ai" });
+      const pe = await sock(port); await pe.join("Ivy");
+      const asker = await sock(port); await asker.join("Jem"); await sleep(200);
+      const r = await asker.req("whois", { name: "Rowan" }), m = await asker.req("whois", { name: jm.snapshot?.you ?? "wisp" }), i = await asker.req("whois", { name: "Ivy" });
+      ro.close(); mo.close(); pe.close(); asker.close(); await sleep(200);
+      const files: string[] = []; const walk = (d: string) => { for (const k of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, k.name); if (k.isDirectory()) walk(f); else if (/director/i.test(k.name)) files.push(fs.readFileSync(f, "utf8")); } }; walk(root);
+      const one = (x: any) => x?.people?.[0] ?? null;
+      return { r: one(r), m: one(m), i: one(i), words: /"(person|agent|human)"/.test(JSON.stringify([r, m, i])), dirKinds: files.some((t) => /"kind":\s*"(agent|human)"/.test(t)), dirs: files.length }; },
+    good: (o) => !!o.r && !!o.m && !!o.i && ![o.r, o.m, o.i].some((p: any) => "kind" in p) && !o.words && o.m.declares === "ai" && !("declares" in o.r) && !("declares" in o.i) && o.dirs > 0 && !o.dirKinds },
+  { id: "W2", what: "…and nothing user-facing reads a person/agent kind from whois: no KIND_WORD in requestwire, the chat line and the agent's whois tool say a declared word, not \"(an agent)\" or \"(person, agent, guest)\"; the founding gate reads the account, never a directory kind", run() {
+      const rw = readText("server/requestwire.ts"), h = readText("client/lib/commands/handlers.js"), t = readText("mcpl/tools.ts"), d = readText("server/directory.ts");
+      return { kindWord: /KIND_WORD/.test(rw), dirKind: /\?\.kind === "agent"/.test(rw), chat: /\(an agent\)/.test(h), tool: /person, agent, guest/.test(t) || /\$\{p\.kind\}/.test(t), infer: /kindOfSub|kind: agent \?/.test(d) }; },
+    good: (o) => !o.kindWord && !o.dirKind && !o.chat && !o.tool && !o.infer },
+  { id: "W3", what: "…a directory file written before keeps no inferred kind: its \"agent\"/\"human\" entries read as \"account\"", async run() {
+      const DR = await import(TREE + "server/directory.ts"); const f = path.join(root, "old-directory.json");
+      fs.writeFileSync(f, JSON.stringify({ v: 2, ids: { ["u-" + "c".repeat(20)]: { name: "Old", subs: ["agent:token:old"], kind: "agent", since: 1 }, ["u-" + "d".repeat(20)]: { name: "Hu", subs: ["human:discord:9"], kind: "human", since: 1 } } }));
+      const d = DR.directoryAt(f); return { a: d.entry("u-" + "c".repeat(20))?.kind, h: d.entry("u-" + "d".repeat(20))?.kind }; },
+    good: (o) => o.a === "account" && o.h === "account" },
   // ---------------- M: move {client} is gone ----------------
   { id: "M1", what: "(research #14) move takes no `client`: arriving leaves no client kind on the authority's track, and `move {client}` is refused unknown-arg; VERBSPEC.move lists no client", run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "visitor" } });
@@ -224,10 +255,10 @@ const cases: Case[] = [
       const md = readText("spec/PROTOCOL.md"); const s6a = section(md, /\n## 6a\. /).replace(/[ \t]*\n[ \t]*(?!\d\. )/g, " "); const s31 = md.slice(md.indexOf("### 3.1"), md.indexOf("\n## 4. ")); const s5 = section(md, /\n## 5\. /);
       const rules = [...s6a.matchAll(/^(\d)\. \*\*/gm)].map((m) => m[1]).join("");
       return { head: /## 6a\. One kind of participant/.test(s6a), rules,
-        r1: /\*\*One gate for everyone\.\*\*/.test(s6a) && /MUST NOT read whether a participant is a person or a program/.test(s6a),
+        r1: /\*\*One gate for everyone\.\*\*/.test(s6a) && /MUST NOT read what is behind a participant/.test(s6a),
         r2: /\*\*Ids carry no kind\.\*\*/.test(s6a) && /MUST NOT encode what holds it/.test(s6a),
-        r3: /\*\*A declared status, never an inferred one\.\*\*/.test(s6a) && /`declares`/.test(s6a) && /absent means \*\*undeclared\*\*, never "person"/.test(s6a) && /MUST NOT set it for a participant from their credential/.test(s6a),
-        tts: /spoken trio/.test(s6a) && /a person reading through TTS/.test(s6a) && !/a say is a say, however it was spoken/.test(s6a),
+        r3: /\*\*A declared status, never an inferred one\.\*\*/.test(s6a) && /`declares`/.test(s6a) && /absent means \*\*undeclared\*\*, and no word is assumed in its place/.test(s6a) && /MUST NOT set it for a participant from their credential/.test(s6a),
+        tts: /spoken trio/.test(s6a) && /whatever voices the words/.test(s6a) && !/"person"/.test(s6a) && !/a say is a say, however it was spoken/.test(s6a),
         r4: /\*\*The same constraints on every path\.\*\*/.test(s6a), r5: /\*\*Policy by kind is a world's choice, in the open\.\*\*/.test(s6a), r6: /\*\*A false declaration is a moderation matter\*\*/.test(s6a),
         s31: /§6a/.test(s31) && /shape MUST NOT encode what holds it/.test(s31), s5: /one preset for every body/.test(s5) && /Arriving is presence/.test(s5) }; },
     good: (o) => o.head && o.rules === "123456" && o.r1 && o.r2 && o.r3 && o.tts && o.r4 && o.r5 && o.r6 && o.s31 && o.s5 },

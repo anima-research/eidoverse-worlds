@@ -280,7 +280,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   // CM3 whois: a name → identity, scoped to this world; the authority's role; here or not
   const zed = await client(srv.port, "garden", "Zed", REPLICA); await zed.req("say", { text: "hi, I'm Zed" }); const ZED = zed.snapshot?.cut?.you; zed.close(); await sleep(200);
   const wz = await vic.req("whois", { name: "zed" });
-  ok(wz.ok && wz.people?.length === 1 && wz.people[0].id === ZED && wz.people[0].here === false && wz.people[0].role === "visitor" && wz.people[0].kind === "person" && !JSON.stringify(wz).includes("local:"),
+  ok(wz.ok && wz.people?.length === 1 && wz.people[0].id === ZED && wz.people[0].here === false && wz.people[0].role === "visitor" && !("kind" in wz.people[0]) && !JSON.stringify(wz).includes("local:"),
     "CM3 whois finds someone absent by name (case-folded): their identity, role, not here, and never their account", wz);
   // ---- DR: a live drag is relayed with who is dragging, and its last sample says end (docs/WIRE.md: a live drag is a claim) ----
   { const da = await client(srv.port, "garden", "Dana", REPLICA); const db = await client(srv.port, "garden", "Dev", REPLICA);
@@ -332,7 +332,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   await wait(() => vic.of("moderated").length > nb2);
   ok(vic.of("moderated").at(-1)?.text === "Oz banned Zed from this world", "CM4 …bystanders were told", vic.of("moderated").slice(nb2));
   const wi = HANDLERS.whois ? await HANDLERS.whois(oz, { name: "zed" }, {} as any, "whois") : { isError: true, content: [{ type: "text", text: "(no whois tool)" }] };
-  ok(!wi.isError && new RegExp(`${ZED}: person, visitor here, not here, BANNED`).test(T(wi)), "CM4 the agent's whois tool reads it back", T(wi));
+  ok(!wi.isError && new RegExp(`${ZED}: visitor here, not here, BANNED`).test(T(wi)), "CM4 the agent's whois tool reads it back", T(wi));
   const kk = await HANDLERS.act(oz, { verb: "kick", args: { who: "Zed" } }, {} as any, "act");
   ok(kk.isError && /isn't here/.test(T(kk)), "CM4 kicking someone absent says they aren't here", T(kk));
   const ub = await HANDLERS.act(oz, { verb: "unban", args: { who: "Zed" } }, {} as any, "act");

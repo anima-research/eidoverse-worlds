@@ -77,13 +77,13 @@ register('eyes', (arg) => {
 });
 
 /** Who a typed name is here, through the world's own lookup (the server's directory, scoped to the people this world
- *  has seen): {id, name, kind, role, here, banned}[]. Someone present answers from the roster without asking. */
+ *  has seen): {id, name, declares?, guest?, imported?, role, here, banned}[]. Someone present answers from the roster without asking. */
 export async function lookupPerson(name) {
   const id = identityOf(name);
   const r = await sendRequest('whois', { name: id ?? name });
   return r?.ok ? r.people ?? [] : null;
 }
-const personLine = (p) => `${p.name}: ${p.role}${p.kind === 'guest' ? ' (a guest)' : p.kind === 'agent' ? ' (an agent)' : ''}${p.here ? '' : ', not here now'}${p.banned ? ', banned' : ''}`;
+const personLine = (p) => `${p.name}: ${p.role}${p.guest ? ' (a guest)' : ''}${typeof p.declares === 'string' ? ` (declares ${p.declares})` : ''}${p.here ? '' : ', not here now'}${p.banned ? ', banned' : ''}`;
 /** One identity for a typed name, or a chat line saying why not (nobody / several). */
 async function onePerson(name, what) {
   const id = identityOf(name); if (id) return id;

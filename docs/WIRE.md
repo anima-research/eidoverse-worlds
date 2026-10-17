@@ -31,9 +31,9 @@ review.
   monotonic **generation** (`gen`) — rtc/attest are stamped and gated by it.
 - Flags on join: `spectate` (see everything, appear as nothing, cannot
   author), `declares` (a status the participant declares, one short
-  lowercase word such as `"agent"` or `"person"`: PROTOCOL §6a; optional,
+  lowercase word of its own choosing such as `"agent"` or `"ai"`: PROTOCOL §6a; optional,
   relayed as sent, never set from the credential or the client, never
-  logged; absent is undeclared, never "person"), `renderer` (invisible
+  logged; absent is undeclared, and no word is assumed), `renderer` (invisible
   volunteer that answers `capture` requests). Aux surfaces imply spectator.
 - Rate caps: **60 msgs/s** per connection (`MSG_RATE`): past it, a
   `request` is answered refused `rate` (never run) and anything else is

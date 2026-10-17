@@ -30,7 +30,7 @@ export function worldOf(io) {
   const w = { name, entries, getBlob, putBlob, exists: entries.length > 0, catalogue: io.catalogue ?? null };
   w.worldId = entries[0] && !(entries[0] instanceof Malformed) ? worldIdOf(entries[0]) : null;
   w.random = io.random ?? null;
-  w.kindOf = io.kindOf ?? null; // id → human|agent|anon|legacy (the directory): an anonymous identity gets a smaller budget
+  w.kindOf = io.kindOf ?? null; // id → account|anon|imported (the directory: about the account, never what holds it, §6a); only "anon" is read (a guest gets a smaller budget)
   w.nameOf = io.nameOf ?? null; // id → display name (the authority's directory, §2.3); null = old escaped ids only
   w.now = io.now;
   // presence pacing (the speed track): a clock of elapsed ms that no wall-clock step moves; null = pace by w.now

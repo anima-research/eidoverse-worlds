@@ -43,7 +43,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey }
     const display = isAcct(name) ? null : name;   // a role keyed by its account has no name of its own
     const key = acct ?? `name:${name}`;
     let id = memo.get(key) ?? (acct ? dir.idOfSub(acct) : null) ?? null;   // the same person they are everywhere on this server
-    if (!id) { id = mintId(); planned[id] = { name: display ?? "someone", subs: acct ? [acct] : [], kind: acct ? (/^(agent|aid1):/.test(acct) ? "agent" : "human") : "imported", since: Date.now() }; }
+    if (!id) { id = mintId(); planned[id] = { name: display ?? "someone", subs: acct ? [acct] : [], kind: acct ? "account" : "imported", since: Date.now() }; }
     if (display && planned[id]?.name === "someone") planned[id].name = display;   // a later mention brings the name
     memo.set(key, id); if (display) memo.set(`name:${display}`, id); return id; };
   // every name that ever had an account in this log (a grant with a sub, genesis roles), first: a person's acts may come

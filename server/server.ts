@@ -339,7 +339,7 @@ function sendGeomFollowup(w: World, c: Client) {
 // can finally be exercised without a live socket. Bodies moved verbatim;
 // refusal `return`s became `return null`.
 
-/** A join's declared status (PROTOCOL §6a): one short lowercase word ("agent", "person", …), else undeclared (null). */
+/** A join's declared status (PROTOCOL §6a): one short lowercase word of its own ("agent", "ai", …), else undeclared (null). */
 function declarationOf(v: unknown): string | null {
   return typeof v === "string" && /^[a-z][a-z0-9-]{0,23}$/.test(v) ? v : null;
 }
@@ -436,7 +436,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     c.spectator = Boolean(msg.spectate) || c.surface !== "world";
     // a status the participant DECLARES (PROTOCOL §6a): optional, presence only, relayed with arrive and the snapshot's
     // present list, never inferred from the credential, the client or anything else, never logged, never read by a gate.
-    // Absent is undeclared, never "person". One short lowercase word; anything else is no declaration.
+    // Absent is undeclared: no word is assumed. One short lowercase word; anything else is no declaration.
     c.declares = declarationOf(msg.declares) ?? undefined;
     c.renderer = Boolean(msg.renderer);
     if (c.renderer) c.spectator = true; // renderers are invisible by definition
@@ -517,7 +517,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // A world's actor is an OPAQUE id from the authority's directory (server/directory.ts, never logged), reached only
     // through an account; one per account across the authority's worlds; anonymous ids live in memory only (M2). Typing someone's name
     // never yields their id, so it never yields their role.
-    c.actorId = directoryFor(WORLDS_DIR).resolve({ sub: c.account ?? null, name: c.id, agent: !!c.tokenVerified });
+    c.actorId = directoryFor(WORLDS_DIR).resolve({ sub: c.account ?? null, name: c.id });
     if (c.renamed && c.actorId) directoryFor(WORLDS_DIR).markRenamed(c.actorId);
     // Bans — checked once identity is SETTLED (id/sub/reserved names all
     // resolved above), before the body enters. A global ban closes every

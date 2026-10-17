@@ -107,8 +107,8 @@ reports it in diagnostics, never in the world.
 - **`say`** — chat: `body {text, to?, spoken?, utt?, t0?}`. Never world state.
   The spoken trio (`spoken: true`, an utterance counter `utt`, a start `t0`
   the authority clamps) is display metadata: the words were voice-performed
-  and already shown as captions. Any participant may mark a say this way (a
-  person reading through TTS as well as a program's voice leg); nothing
+  and already shown as captions. Any participant may mark a say this way
+  (whoever voices the words: a TTS voice someone chose, a program's voice leg); nothing
   gates it on what a participant is, and it says how the words were
   performed, never who performed them (§6a).
 - **`purge`** — the one rule that changes the record (§12).
@@ -635,12 +635,13 @@ request moves a copy to a newer version, keeping its own overrides.
 
 ## 6a. One kind of participant
 
-The protocol knows **participants**, not people and agents. A participant is
-an identity (§3.1) with a body (§5), whatever is behind it: a person at a
-browser, a person in a headset, a program, or a program a person is steering.
+The protocol knows **participants**, and only participants: everyone here is
+a person to the protocol. A participant is an identity (§3.1) with a body
+(§5), whatever is behind it: someone at a browser, someone in a headset, a
+program, or a program someone is steering.
 
-1. **One gate for everyone.** The authority MUST NOT read whether a
-   participant is a person or a program. Rights, roles, locks, rates, refusal
+1. **One gate for everyone.** The authority MUST NOT read what is behind a
+   participant (a browser, a headset, a program). Rights, roles, locks, rates, refusal
    codes and words, consent tables and their defaults, and every request verb
    are the same for every identity. The only distinctions the authority MAY
    draw between identities are the world's own grants (roles, §7) and whether
@@ -648,8 +649,9 @@ browser, a person in a headset, a program, or a program a person is steering.
 2. **Ids carry no kind.** An identity's shape MUST NOT encode what holds it.
    A reader MUST NOT infer anything about a participant from its id.
 3. **A declared status, never an inferred one.** A participant MAY declare a
-   status at its door (`declares`, one short lowercase word, e.g. `"agent"` or
-   `"person"`; absent means **undeclared**, never "person"). It is presence:
+   status at its door (`declares`, one short lowercase word of its own choosing,
+   e.g. `"agent"` or `"ai"`; absent means **undeclared**, and no word is
+   assumed in its place). It is presence:
    relayed as sent with the participant's arrival and in a joiner's list of
    who is present, never written to the log, never sent to scripts, and never
    read by `admit`, the consent check or any rate. A host MUST NOT set it for
@@ -657,8 +659,8 @@ browser, a person in a headset, a program, or a program a person is steering.
    credential proves who a participant is (an enrolment, a reserved name),
    never what kind. Nothing in the log records what a participant is. A say's
    spoken trio (§1) is no exception: it marks words a voice performed, and any
-   participant may set it, a person reading through TTS exactly as a program
-   does.
+   participant may set it, whatever voices the words (a TTS voice someone
+   chose, a program's voice leg).
 4. **The same constraints on every path.** A gate that binds one interface
    binds all of them: a hand placed by a tracked controller meets the same
    consent check as a hand placed by a reach descriptor; a seat's escape
@@ -676,9 +678,9 @@ browser, a person in a headset, a program, or a program a person is steering.
 6. **A false declaration is a moderation matter** (a report, a kick, a ban),
    decided by people. It is never detected by inference.
 
-*Rationale.* A world that infers "this is an AI" keeps that inference forever
-in a forkable log, and one that infers "this is a person" does the same. Equal
-treatment is the default; where the trial period shows that agents and people
+*Rationale.* A world that infers what is behind an identity keeps that
+inference forever in a forkable log, whichever way it guessed. Equal treatment
+is the default; where the trial period shows that some declared participants
 need different rules, rule 5 is the place to add them, visibly, rather than in
 the authority's code.
 
