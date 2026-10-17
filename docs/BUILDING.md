@@ -25,7 +25,7 @@ so, and the slope shows the plinth rather than a gap.
 **Make it walk-in.** The world collides against a model's real triangles only
 when it is room-scale: **footprint ≥ 16 m² and height ≥ 2.2 m**. Anything
 smaller is one solid box — a hut you cannot enter — unless it carries
-`collider {shape: "exact"}`.
+`collider {shape: "mesh"}`.
 
 **Dimensions the body needs.**
 
@@ -83,12 +83,13 @@ reachable from the scene count — orphan nodes are ignored.
 None of this is needed to walk in, climb, route or ragdoll. It adds names,
 seats and lights.
 
-**Seats** — a `sockets` component, in the model's frame:
+**Seats** — a socket child of the building with a `station`, positioned in the model's frame:
 ```
-act {verb: "set", args: {id, component: "sockets", value: {stool: {pos: [-1.2, 3.65, 0.2], q: [0, 1, 0, 0], body: {pose: "sitchair"}}}}}
+act {verb: "create", args: {components: {parent: {to: id}, transform: {pos: [-1.2, 3.65, 0.2], q: [0, 1, 0, 0]}, socket: {name: "stool"}, station: {pose: "sitchair"}}}}
 ```
-No rotation faces +Z (`q: [0, 1, 0, 0]` turns it to face −Z); the door lifts `sockets` into socket children. `measure {id}` lists the model's flat zones; a zone's centre
-is a socket `pos` verbatim.
+No rotation faces +Z (`q: [0, 1, 0, 0]` turns it to face −Z). The old `sockets` map is reserved: a write of it is still
+lifted into socket children, but write the children. `measure {id}` lists the model's flat zones; a zone's centre
+is a socket's position verbatim.
 
 **Lights** — one `create {components: {light: {…}}}` each. They are separate things at world
 positions: they don't move with the building.

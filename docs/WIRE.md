@@ -32,9 +32,10 @@ review.
 - Flags on join: `spectate` (see everything, appear as nothing, cannot
   author), `agent` (self-declared MCPL body), `renderer` (invisible
   volunteer that answers `capture` requests). Aux surfaces imply spectator.
-- Rate caps: **60 msgs/s** per client (`MSG_RATE`, excess silently
-  dropped); the authority's own rate per identity over everything it makes the
-  log hold (acts and says: entries and bytes per 10 s, `RATE` in
+- Rate caps: **60 msgs/s** per connection (`MSG_RATE`): past it, a
+  `request` is answered refused `rate` (never run) and anything else is
+  dropped; past twice the cap, requests are dropped too. The authority's
+  own rate per identity over everything it makes the log hold (acts and says: entries and bytes per 10 s, `RATE` in
   `shared/protocol/authority.js`), refused with code `rate`.
 - No message may kill the process: handler errors answer
   `{type:"error", error:"that request failed server-side — it has been logged"}`.

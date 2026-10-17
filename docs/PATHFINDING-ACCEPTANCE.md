@@ -19,15 +19,15 @@ Run every suite from the repo root with `BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun
 | #241 | `buildcheck`, `buildcheck-queue`, `buildcheck-route` |
 
 Outside the gate, run on their own: `tools/walk-precision-test.ts` and #237/#242's water and heightmap tests.
-`tools/support-lifecycle-test.ts` is **not** passing: it was broken on this branch before the stack merged (its
-`geom()` reads a record field that no longer exists, and the puppet knock-down wire it drives is gone), and it does
-not exit on its own. It stays out of the gate.
+`tools/support-lifecycle-test.ts` is **not** passing: it was red on this branch before the stack merged. One cause is
+fixed (`68993f19`: its `geom()` read an undefined name); why it still fails hasn't been re-measured, so it stays out of
+the gate.
 
 ## The four negative controls
 
 **1. Bypass the support wait** (#235). The agent must not plan or walk before the placed world's colliders exist
-(`mcpl/agent.ts` `supportReady()`, the barrier a walk waits on). Make the walk skip it — in `supportReady`, replace
-`if (!this.supportPending.size) return now();` with `return now();` — then run `agent-mesh-collision`:
+(`mcpl/agent.ts` `supportReady()`, the barrier a walk waits on). Make the walk skip it — in `walkTo` (where the walk
+waits on `supportReady`), replace `if (!this.supportPending.size) return now();` with `return now();` — then run `agent-mesh-collision`:
 
 ```
 ✗ a pen spawned just now, its shape still downloading: a walk into it waits for it, then is refused — never passes
