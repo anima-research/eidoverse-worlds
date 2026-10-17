@@ -232,10 +232,12 @@ const act = (r: ActResult) => (r.ok ? text(r.text) : fail(r.text));
 // off a bench must not be able to fire the trusted seam here.
 const rehearse = (ag: ToolAgent, a: Record<string, any>, name: string) => {
   if (!REHEARSAL_ENABLED) return fail("no such tool");
-  return text(name === "rehearse_down"
+  return act(name === "rehearse_down"
     ? ag.flightBodyDown(String(a.eventId ?? "rehearsal"))
     : ag.flightBodyRecovered(String(a.eventId ?? "rehearsal"), "gen-rehearsal"));
 };
+/** A coordinate or altitude the call can't fly to: missing, or not a number. */
+const notANumber = (v: unknown) => v == null || v === "" || !Number.isFinite(Number(v));
 
 type ToolHandler = (ag: WorldAgent, a: Record<string, any>, ctx: ToolCtx, name: string)
   => Promise<Record<string, unknown>> | Record<string, unknown>;
@@ -243,9 +245,15 @@ type ToolHandler = (ag: WorldAgent, a: Record<string, any>, ctx: ToolCtx, name: 
 export const HANDLERS: Record<string, ToolHandler> = {
   // ---- FLIGHT (upstream's flight arc, merged 2026-09-02)
   take_off: async (ag, a, ctx, name) => act(await ag.takeOff()),
-  climb_to: async (ag, a, ctx, name) => act(await ag.climbTo(Number(a.altitude))),
-  glide_to: async (ag, a, ctx, name) => act(await ag.glideTo(Number(a.x), Number(a.z))),
-  land_at: async (ag, a, ctx, name) => act(await ag.landAt(Number(a.x), Number(a.z))),
+  climb_to: async (ag, a, ctx, name) => notANumber(a.altitude)
+    ? fail("climb_to needs `altitude`, a number of metres")
+    : act(await ag.climbTo(Number(a.altitude))),
+  glide_to: async (ag, a, ctx, name) => notANumber(a.x) || notANumber(a.z)
+    ? fail("glide_to needs `x` and `z`, numbers")
+    : act(await ag.glideTo(Number(a.x), Number(a.z))),
+  land_at: async (ag, a, ctx, name) => notANumber(a.x) || notANumber(a.z)
+    ? fail("land_at needs `x` and `z`, numbers")
+    : act(await ag.landAt(Number(a.x), Number(a.z))),
   rehearse_down: async (ag, a, ctx, name) => rehearse(ag, a, name),
   rehearse_recover: async (ag, a, ctx, name) => rehearse(ag, a, name),
   fold_wings: async (ag, a, ctx, name) => act(await ag.foldWings(true)),
@@ -292,6 +300,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
           url: h.preview ? `${ag.httpBase}/library/${h.preview}` : null,
         }));
       }
+      // Nothing to show is an answer, not a failure: the lookup ran and found none.
+      if (!items.length) return text(kind === "avatars" ? "the roster has no bodies yet" : "the library has no models yet");
       const pages = Math.max(1, Math.ceil(items.length / SHEET.perPage));
       const slice = items.slice((page - 1) * SHEET.perPage, page * SHEET.perPage);
       if (!slice.length) return fail(`no page ${page} — ${items.length} ${kind}, ${pages} page${pages === 1 ? "" : "s"}`);
@@ -317,12 +327,17 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!want.includes("/") && !/\.(glb|jpg)$/i.test(want)) tries.push(`${ag.httpBase}/thumb/${encodeURIComponent(want)}.png`);
       const stem = (want.includes("/") ? want : `eidoverse/assets/models/${want}`).replace(/(_preview\.jpg|\.jpg|\.glb)$/i, "");
       tries.push(`${ag.httpBase}/library/${stem}_preview.jpg`);
+      // A fetch that throws never reached the sequencer, which is not the
+      // same as a sequencer that answered with no preview.
+      let unreached: string | null = null, answered = false;
       for (const url of tries) {
         try {
           const r = await fetch(url);
+          answered = true;
           if (r.ok) return { content: [{ type: "image", data: Buffer.from(await r.arrayBuffer()).toString("base64"), mimeType: r.headers.get("content-type")?.split(";")[0] ?? "image/jpeg" }] };
-        } catch { /* next */ }
+        } catch (e) { unreached ??= (e as Error).message; }
       }
+      if (!answered) return fail(`couldn't reach the world's server for a preview of "${want}": ${unreached}`);
       return fail(`no preview for "${want}" — avatar portraits appear once a body has been worn; library models ship _preview.jpg files`);
 
   },
@@ -535,7 +550,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   clear_reach: async (ag, a, ctx, name) => {
-      return text(ag.releaseReach(typeof a.limb === "string" ? a.limb : null));
+      return act(ag.releaseReach(typeof a.limb === "string" ? a.limb : null));
 
   },
   ragdoll: async (ag, a, ctx, name) => {
@@ -677,7 +692,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
       return text(`placed light [${id}] at (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})`);
 
   },
-  remove: async (ag, a, ctx, name) => { ag.verb("remove", { id: a.id }); return text(`removed ${a.id}`); },
+  remove: async (ag, a, ctx, name) => {
+    if (a.id == null || a.id === "") return fail("remove needs `id`, the thing to remove");
+    ag.verb("remove", { id: a.id }); return text(`removed ${a.id}`);
+  },
   travel: async (ag, a, ctx, name) => {
       // Travel is SESSION machinery — channel epochs, join gates, the
       // fatal-join teardown — so the shared table hands it to the host

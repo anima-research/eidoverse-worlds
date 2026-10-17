@@ -50,11 +50,11 @@ const whileFolded = await ag.takeOff();
 check('a granted body still cannot take off while folded', !whileFolded.ok && /wings folded/.test(whileFolded.text), whileFolded.text);
 const opened = await ag.foldWings(false);
 check('and unfolds without granting propulsion', ag.wingsFolded === false && opened.ok && /wings open/.test(opened.text), opened.text);
-check('unfold tells the truth when propulsion remains denied', (() => {
-  ag.myRights = { role: 'builder', fly: false };
-  ag.wingsFolded = true; ag.flight = null;
-  return true;
-})() && /still not granted/.test((await ag.foldWings(false)).text));
+ag.myRights = { role: 'builder', fly: false };
+ag.wingsFolded = true; ag.flight = null;
+const deniedUnfold = await ag.foldWings(false);
+check('unfold tells the truth when propulsion remains denied, and is done',
+  deniedUnfold.ok && /still not granted/.test(deniedUnfold.text), deniedUnfold.text);
 ag.myRights = { role: 'builder', fly: true };
 const tookOff = await ag.takeOff();
 check('after unfold, a granted body can take off', tookOff.ok && /took off/.test(tookOff.text), tookOff.text);
