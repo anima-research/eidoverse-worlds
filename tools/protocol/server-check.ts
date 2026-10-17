@@ -506,6 +506,15 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   // (a tumbling engine may land a cube on its side, so its origin needn't be at y 0: the authority's word is "on ground")
   ok(wr?.cameToRest?.some((r: any) => r.id === IDS.of("ball") && r.on === "ground") && k?.sim?.checks?.agree >= 1 && !k.sim.checks.disagree.length, "SP4 it rests on the ground, and Cy's own fold (from his cut) agrees with the authority's rest", [rest, k?.sim?.checks, wr]);
   a.close(); c.close(); }
+// ---- MR: a burst of requests is always answered (client-check HT, 10-17): 30 label sets, each followed by the history
+// re-read an editor sends, as fast as replies come back. Past the connection's message cap a request was dropped SILENTLY,
+// and its client waited out its own timeout; now every request gets a reply (run, or refused 'rate') ----
+{ const mk = await ann.req("create", { id: "burst", components: { mesh: { shape: "box", size: [1, 1, 1] } } });
+  const answers: string[] = [];
+  for (let k = 0; k < 30; k++) { const s1 = await ann.req("set", { id: "burst", component: "label", value: `b ${k}` }); const h = await ann.req("history", { id: "burst", limit: 20 });
+    answers.push(s1.ok ? "ok" : s1.refused?.code, h.ok ? "ok" : h.refused?.code); }
+  ok(mk.ok && answers.length === 60 && !answers.includes("timeout") && answers.every((x) => x === "ok" || x === "rate"), "MR1 30 sets and 30 history reads, back to back: 60 answers (run, or refused 'rate'), never silence", answers.join(" "));
+  await sleep(1100); }   // the next rows start in a fresh message window
 for (const c of [ann, bob, vic, spec]) c.close();
 await sleep(200);
 // ================= CB: the captioner bot (tools/captionbot/world.ts) through a real server: the authority's caption tool, the

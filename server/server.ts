@@ -886,7 +886,15 @@ const server = Bun.serve({
       // silently — closing would just trigger the client's auto-reconnect.
       const now = Date.now();
       if (now - c.msgWin > 1000) { c.msgWin = now; c.msgCount = 0; }
-      if (++c.msgCount > MSG_RATE) return;
+      if (++c.msgCount > MSG_RATE) {
+        // a REQUEST over the cap is answered, never dropped silently: its client awaits a reply by id, and silence left it
+        // waiting out its own timeout while the request never reached the authority (client-check HT, 10-17: a burst of
+        // label sets, each with its history re-read, lost a set and then hung 15 s). Bounded: past twice the cap even a
+        // request is dropped (a flood must not buy itself a stream of replies)
+        if (msg?.type === "request" && c.msgCount <= 2 * MSG_RATE) { try { ws.send(JSON.stringify({ type: "reply", id: msg.id ?? null, verb: String(msg.verb ?? "").slice(0, 32), ok: false,
+          reply: { ok: false, refused: { code: "rate", reason: `more than ${MSG_RATE} messages in a second from this connection: this request wasn't run`, fix: "slow down and send it again" } } })); } catch { /* gone */ } }
+        return;
+      }
 
       // No message may ever kill the process. An uncaught throw in Bun's ws
       // callback EXITS THE SERVER, and a client in a reconnect loop turns one
