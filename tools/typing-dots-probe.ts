@@ -4,24 +4,29 @@
 //   bun tools/typing-dots-probe.ts
 //
 // Needs the door's sibling built (../mcpl-core-ts, which the door imports: mcpl/net-server.ts) and a Chromium
-// that tools/probe-harness.mjs can find. A run takes about two and a half minutes.
+// that tools/probe-harness.mjs can find. A run took 163 s on a machine at a load of about 70.
 //
 // A scratch world and the door are children of this run, each proved ours by a per-run nonce it echoes
 // (the ownership pattern of tools/door-cap-gate-live-test.mjs). A raw MCPL host stands in for
 // agent-framework and sends what it sends: start when a turn begins and every 7 s, stop when it ends
 // (agent-framework's test/channel-registry-typing.test.ts owns when it sends them). The full client runs in
-// Chromium, joined to the same world, and a raw socket beside it logs what the world broadcasts.
+// Chromium, joined to the same world, and a raw socket beside it logs what the world broadcasts, in order.
 //
-// The page keeps its own log, by wrapping two of the agent avatar's methods (client/lib/avatar.js): each
-// typing signal the client applies (setTyping with a state, which opens the 4 s window), and the state after
-// each update the render loop runs (update), which is where the client decides whether the pill is drawn.
-// So the log is what a person saw, frame by frame, at whatever rate a loaded machine renders, whichever
-// socket brought each signal. The page and this side both stamp with Date.now(), the machine's one wall
-// clock, and an update's time is when it decided: its stamp less the time since the `now` it was given,
-// measured on performance.now(), the clock the client keeps its window by. An agent's typing frames carry
-// no state (mcpl/agent.ts typing(), which the door's
-// relay calls), so the live-mic pill, which the client keeps up over a bubble, can't arise here, and the
-// check that no pill shows over the bubble relies on that.
+// The page is judged by the client's own state. Two of the agent avatar's methods (client/lib/avatar.js) are
+// wrapped in the page, and their calls logged in one sequence: each typing signal the client applies, with the
+// window it set, and the state each update of the render loop left, which is where the client decides whether
+// the pill is drawn. A signal is setTyping with anything but null: an agent's typing frames carry no state
+// (mcpl/agent.ts typing(), which the door's relay calls), so the client applies setTyping(undefined), which
+// opens the window as a state would. So every update must draw the pill exactly when the window is open at the
+// update's own `now` and no bubble shows; each signal must open a window ending 4 s after it; and each frame the
+// world sent must be applied, in order, by the page's second update after the frame reached this side, since a
+// page that rendered meanwhile wasn't blocked. The page and this side both stamp with Date.now(), the
+// machine's one wall clock. With no state on the frames, the live-mic pill, which the client keeps up over a
+// bubble, can't arise here, and the first rule relies on that.
+//
+// The raw socket judges the door's contract, what the world broadcasts, by this side's clock. A heartbeat
+// records every gap between its ticks past their 100 ms, and each stamp is allowed only the stall that ended
+// at it, the one its frame waited in: a stall that ended before the frame arrived delayed nothing.
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -77,11 +82,15 @@ const waitFor = async (what: string, probe: () => Promise<boolean>, ms = 30000) 
 const world = child("world", ["server/server.ts"], { PORT: String(WPORT), WORLDS_DIR: scratch, SKIP_OPT_SWEEP: "1", WORLD_INSTANCE_NONCE: NONCE });
 const door = child("door", ["mcpl/net-server.ts"], { MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,
   MCPL_TOKENS: tokensPath, MCPL_STATE: join(scratch, "mcpl-state.json"), MCPL_INSTANCE_NONCE: NONCE });
-// This side's own event-loop stalls, which would delay the watcher's stamps: each gap over 250 ms, by its end.
+// This side's own event-loop stalls, which would delay the watcher's stamps: every gap between the heartbeat's
+// ticks past their 100 ms, as [when it ended, its excess].
 let hbLast = Date.now();
-const hbStalls: Array<[number, number]> = [];
-const heartbeat = setInterval(() => { const now = Date.now(); if (now - hbLast > 250) hbStalls.push([now, now - hbLast]); hbLast = now; }, 100);
-const sideStall = (a: number, b: number) => Math.max(0, ...hbStalls.filter(([end, gap]) => end > a && end - gap < b).map(([, gap]) => gap));
+const hb: Array<[number, number]> = [];
+const heartbeat = setInterval(() => { const now = Date.now(); if (now - hbLast > 100) hb.push([now, now - hbLast - 100]); hbLast = now; }, 100);
+// The stall a stamp at `b` waited in. A frame that arrives while this side is stalled is read when the stall
+// ends, in the same backlog as the late tick that ended it: so that tick began late before `b` and ended
+// within a tick of it. A stall that ended before the frame arrived delayed nothing, so it isn't allowed.
+const waitedIn = (b: number) => Math.max(0, ...hb.filter(([end, excess]) => end - excess <= b && b <= end + 100).map(([, excess]) => excess));
 let browser: { close(): Promise<void> } | null = null;
 try {
   const launched = await launchBrowser();
@@ -110,18 +119,22 @@ try {
   await pg.waitForFunction(() => document.getElementById("splash")?.classList.contains("gone") && !!(globalThis as any).EW?.me?.(),
     null, { timeout: 120000 });
 
-  // A raw socket in the same world, beside the browser: what the world broadcasts, by this side's clock, which
-  // is where the door's contract lives. Each typing frame for the agent, and the log entry of its speech.
-  const worldTyping: number[] = [];
-  let sayEntryAt: number | null = null;
+  // A raw socket in the same world, beside the browser: what the world broadcasts, by this side's clock and in
+  // the order it came, which is where the door's contract lives. Each typing frame for the agent, and the log
+  // entry of its speech.
+  type Seen = { t: number; seq: number };
+  const frames: Seen[] = [];
+  let sayEntry = null as Seen | null;   // set by the watcher's handler, so not narrowed to null here
+  let seen = 0;
   const watcher = new WebSocket(`ws://127.0.0.1:${WPORT}/ws`);
   await new Promise<void>((res, rej) => {
     const t = setTimeout(() => rej(new Error("watcher join timeout")), 10000);
     watcher.onmessage = (ev) => {
+      const at = Date.now(), seq = ++seen;
       let m: any; try { m = JSON.parse(String(ev.data)); } catch { return; }
       if (m.type === "snapshot") { clearTimeout(t); res(); }
-      if (m.type === "typing" && m.id === "claude") worldTyping.push(Date.now());
-      if (m.type === "log" && m.entry?.verb === "say" && m.entry?.actor === "claude") sayEntryAt ??= Date.now();
+      if (m.type === "typing" && m.id === "claude") frames.push({ t: at, seq });
+      if (m.type === "log" && m.entry?.verb === "say" && m.entry?.actor === "claude") sayEntry ??= { t: at, seq };
     };
     watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", world: "commons", id: "watcher", avatar: "a.vrm" }));
   });
@@ -148,27 +161,34 @@ try {
   // Each start this side sends for this world, by its clock; nextStart() resolves on the next one.
   const starts: number[] = [];
   let onStart: (() => void) | null = null;
-  const sendStart = () => { starts.push(Date.now()); typing("start"); onStart?.(); };
+  const sendStart = () => { const at = Date.now(); starts.push(at); typing("start"); onStart?.(); return at; };
   const nextStart = () => new Promise<void>((res) => { onStart = () => { onStart = null; res(); }; });
 
   await pg.waitForFunction(() => !!(globalThis as any).EW?.remotes?.get("claude")?.avatar?.label, null, { timeout: 90000 });
-  // The page's log (see the header). A replaced avatar, or a replaced socket, is wrapped or counted anew.
-  const logFrom = Date.now();
+  // The page's log (see the header), in one sequence. A replaced avatar, or a replaced socket, is wrapped or
+  // counted anew.
   await pg.evaluate(() => {
     const g = globalThis as any;
-    g.__log = { signals: [] as number[], updates: [] as unknown[], avatars: 0, sockets: 0 };
+    g.__log = { seq: 0, signals: [] as unknown[], updates: [] as unknown[], avatars: 0, sockets: 0 };
     const wrap = (av: any) => {
       if (!av || av.__probed) return;
       av.__probed = true;
       g.__log.avatars++;
       const { setTyping, update } = av;
-      // Taken after the client set its window, so the window a log entry implies never ends sooner than the
-      // client's. A null state clears the window (resetTransients) and opens none, so it isn't a signal.
-      av.setTyping = function (...a: unknown[]) { const r = setTyping.apply(this, a); if (a[0] !== null) g.__log.signals.push(Date.now()); return r; };
+      // The window a signal set, read once the client set it, between the clock's readings either side of the
+      // call. A null state shuts the window (resetTransients) and opens none, so it isn't a signal.
+      av.setTyping = function (...a: unknown[]) {
+        const p0 = performance.now(), r = setTyping.apply(this, a), p1 = performance.now();
+        if (a[0] !== null) g.__log.signals.push({ t: Date.now(), seq: ++g.__log.seq, p0, p1, until: this._typingUntil });
+        return r;
+      };
+      // What an update left: the pill drawn or not, the bubble, and whether the window was open at the `now` it
+      // was given, which is the time the client decides by (client/lib/remotes.js passes the render loop's).
       av.update = function (...a: unknown[]) {
         const now = typeof a[1] === "number" ? (a[1] as number) : performance.now();
         const r = update.apply(this, a);
-        g.__log.updates.push({ t: Date.now() - (performance.now() - now), drawn: !!this.typing?.visible, bubble: !!this.bubble, win: now < this._typingUntil });
+        g.__log.updates.push({ t: Date.now(), seq: ++g.__log.seq, drawn: !!this.typing?.visible, bubble: !!this.bubble,
+          win: now < this._typingUntil, hidden: !!this.ownPlateHidden });
         return r;
       };
     };
@@ -177,8 +197,10 @@ try {
     watch();
     setInterval(watch, 100);
   });
-  type Update = { t: number; drawn: boolean; bubble: boolean; win: boolean };
-  const readLog = () => pg.evaluate(() => (globalThis as any).__log) as Promise<{ signals: number[]; updates: Update[]; avatars: number; sockets: number }>;
+  type Signal = { t: number; seq: number; p0: number; p1: number; until: number };
+  type Update = { t: number; seq: number; drawn: boolean; bubble: boolean; win: boolean; hidden: boolean };
+  type PageLog = { signals: Signal[]; updates: Update[]; avatars: number; sockets: number };
+  const readLog = () => pg.evaluate(() => (globalThis as any).__log) as Promise<PageLog>;
   // The first update after `since` for which pred holds, polled for up to ms, or null. A far avatar updates
   // only on its level-of-detail ticks (client/lib/remotes.js), which a loaded page spaces seconds apart, and
   // between updates its pill stays as the last one left it.
@@ -192,43 +214,21 @@ try {
     }
     return null;
   };
-  // Why an update the dots should be drawn at didn't draw them, or null. "behind" is the page itself
-  // lagging: its window had run out (no signal in the 4 s before the update), though the world had sent a
-  // frame here in those 4 s that the page hadn't applied yet. A slow page shows that as a gap a correct door
-  // and client didn't cause, so it's counted, not failed; the check that the page applied every frame the
-  // world sent keeps a client that drops frames from passing on it.
-  const fault = (u: Update, signals: number[]): "behind" | string | null => {
-    if (u.drawn) return null;
-    const last = signals.filter((s) => s <= u.t).at(-1);
-    if (last !== undefined && u.t - last < 4000) return `not drawn ${u.t - last} ms after a signal, inside its window`;
-    if (worldTyping.some((f) => f > u.t - 4000 && f <= u.t)) return "behind";
-    return `not drawn, and the world had sent no frame in the 4 s before`;
+  // Once the dots' last window has run out: the page's first update after the last signal it applied since
+  // `from` that found the window shut, so the rule below has an update to judge there. The last signal is read
+  // again with each look, so a signal still on its way counts.
+  const shut = async (name: string, from: number) => {
+    const until = Date.now() + 25000;
+    while (Date.now() < until) {
+      const log = await readLog();
+      const last = log.signals.filter((s) => s.t >= from).at(-1);
+      const u = last && log.updates.find((u) => u.seq > last.seq && !u.win);
+      if (u) return check(name, true, `the last signal at ${Math.round(last!.t - T0)} ms; the update at ${Math.round(u.t - T0)} ms found the window shut`);
+      if (!last && Date.now() > from + 10000) break;
+      await sleep(250);
+    }
+    check(name, false, "no update after the last signal found the window shut");
   };
-  // A span the dots should be drawn through: the update that set the pill at its start (the last at or
-  // before it), and every update in it, drew them, since between updates the pill stays as it was.
-  const drawnThrough = (name: string, log: { signals: number[]; updates: Update[] }, a: number, b: number) => {
-    const U = log.updates;
-    const atStart = U.filter((u) => u.t <= a).at(-1);
-    const us = [...(atStart ? [atStart] : []), ...U.filter((u) => u.t > a && u.t < b)];
-    const faults = us.map((u) => [u, fault(u, log.signals)] as const).filter(([, f]) => f !== null);
-    const failed = faults.filter(([, f]) => f !== "behind"), behind = faults.length - failed.length;
-    const gap = Math.max(0, ...us.slice(1).map((u, i) => u.t - us[i]!.t));
-    check(name, us.length > 0 && failed.length === 0,
-      `${us.length - faults.length}/${us.length} updates drew them, the one in place at the span's start included${behind ? `; ${behind} more came while the page was behind on a frame the world had sent` : ""}${failed.length ? `; the first that failed, at ${Math.round(failed[0]![0].t - T0)} ms: ${failed[0]![1]}` : ""}; the page's longest gap between updates ${Math.round(gap)} ms`);
-  };
-  // After the dots' last window has ended: the page's first update that decided after it leaves them
-  // undrawn. The last signal is read again once that update lands, so a signal still on its way counts.
-  const goneAfter = async (name: string, from: number) => {
-    const since = (await readLog()).signals.filter((t) => t >= from);
-    if (!since.length) return check(name, false, "the page applied no signal to judge a window by");
-    let last = Math.max(...since);
-    const next = await pollPage(() => true, 25000, last + 4000);
-    last = Math.max(...(await readLog()).signals.filter((t) => t >= from));
-    check(name, next !== null && next.t > last + 4000 && !next.drawn,
-      next === null ? "no update came after the window" : `the last signal it applied at ${Math.round(last - T0)} ms; its next update after the window, at ${Math.round(next.t - T0)} ms, ${next.drawn ? "drew" : "didn't draw"} them`);
-  };
-  // A bound on a gap between this side's stamps, less this side's own stall in it.
-  const within = (a: number, b: number, bound: number) => b - a - sideStall(a, b) < bound;
 
   // A turn as agent-framework runs it: start, and again every 7 s until stop. It walks, speaks, and goes on
   // after the speech until the dots are back.
@@ -240,7 +240,7 @@ try {
   sendStart();
   const refresher = setInterval(sendStart, 7000);
   await sleep(9000);
-  const walkStart = Date.now(); const walkId = walk(30);   // a walk the door answers on arrival, about 19 s on
+  const walkId = walk(30);   // a walk the door answers on arrival, about 19 s on
   await sleep(15000);
   const walkPending15 = !responses.has(walkId);
   // The speech goes 300 ms after a start, so the host's next start is about 6.7 s after it: long enough to see
@@ -251,93 +251,117 @@ try {
   const bubbleGone = bubbleShown && await pollPage((u) => !u.bubble, 40000, bubbleShown.t);
   const backUp = bubbleGone && await pollPage((u) => u.drawn, 15000, bubbleGone.t);
   await sleep(2000);
-  // The stop goes 300 ms after a start too, so a door that ignored it would go on signalling for seconds.
   await waitFor("the walk's reply", async () => responses.has(walkId), 30000).catch(() => {});
   const walkReply = responses.get(walkId);
+  // The stop goes 300 ms after a start too, so a relay that ignored it would go on signalling for about 10 s.
   await nextStart(); await sleep(300);
   clearInterval(refresher);
   const stopAt = Date.now(); typing("stop");
-  await sleep(2000);
+  await shut("after the host's stop, the page's window runs out", T0);
+
+  // Another channel's typing raises no dots here, and a start for this world after it does.
+  const otherAt = Date.now(); typing("start", "world:elsewhere");
+  await pollPage(() => true, 25000, otherAt + 1000);
+  const ctlAt = sendStart();
+  const ctl = await pollPage((u) => u.drawn, 25000, ctlAt);
+  const ctlStopAt = Date.now(); typing("stop");
+  await shut("…and after its stop, the window runs out again", ctlAt);
+
+  // The host disconnects mid-walk, with no stop, 300 ms after a start: the door's relay ends with the
+  // connection, and the dots go with their window. A relay that outlived it would go on signalling for about
+  // 10 s after that start, until its own overdue stop.
+  const backWalk = walk(0);
+  await sleep(1500);
+  const goneFrom = sendStart();
+  await sleep(300);
+  const backPending = !responses.has(backWalk);
+  const closeAt = Date.now(); host.close();
+  const raised = await pollPage((u) => u.drawn, 25000, goneFrom);
+  await shut("once it disconnects, the page's window runs out", goneFrom);
+  // Long enough after the close for a relay that outlived it to have signalled twice.
+  await sleep(Math.max(0, closeAt + 6000 - Date.now()));
   const log = await readLog();
-  const U = log.updates;
+  const U = log.updates, S = log.signals;
 
-  const firstFrame = worldTyping.find((t) => t >= starts[0]!) ?? null;
-  check("the world sends the first start's frame at once, within 1 s of this side's own stalls", firstFrame !== null && within(starts[0]!, firstFrame, 1000),
-    firstFrame === null ? "none came" : `${firstFrame - starts[0]!} ms after the start, with this side's longest stall in it ${sideStall(starts[0]!, firstFrame)} ms`);
-  const firstApplied = log.signals.find((t) => t >= starts[0]!) ?? null;
-  const firstUpdate = firstApplied === null ? undefined : U.find((u) => u.t > firstApplied);
-  const firstFault = firstUpdate ? fault(firstUpdate, log.signals) : "no update came";
-  check("the page's first update after it applied that signal draws the dots", !!firstUpdate && (firstFault === null || firstFault === "behind"),
-    firstApplied === null ? "no signal applied" : `applied ${Math.round(firstApplied - starts[0]!)} ms after the start; ${firstFault === null ? "drawn" : firstFault === "behind" ? "the page was behind on a frame the world had sent" : firstFault} at the update ${firstUpdate ? Math.round(firstUpdate.t - firstApplied) + " ms" : "never"} after that`);
-  drawnThrough("…they stay drawn between the host's 7 s starts, past the world's 4 s window", log, firstUpdate?.t ?? firstApplied ?? starts[0]!, walkStart);
-  check("the walk is still under way 15 s in", walkPending15);
-  drawnThrough("…and through the walk, up to the speech", log, walkStart, sayAt);
-  const turnFrames = worldTyping.filter((t) => t >= starts[0]! && t <= (sayEntryAt ?? sayAt));
-  const marks = [starts[0]!, ...turnFrames, sayEntryAt ?? sayAt];
-  const steps = marks.slice(1).map((t, i) => t - marks[i]!);
-  const longest = Math.max(...steps), at = steps.indexOf(longest);
-  const late = marks.slice(1).filter((t, i) => !within(marks[i]!, t, 4000)).length;
-  check("from the first start to the speech, the world sent a typing frame at least every 4 s, the window each one opens, less this side's own stalls",
-    turnFrames.length > 0 && sayEntryAt !== null && late === 0,
-    `${turnFrames.length} frames; the start to the first ${steps[0]} ms, the last to the speech ${steps.at(-1)} ms, the longest step ${longest} ms, with this side's longest stall in it ${sideStall(marks[at]!, marks[at + 1]!)} ms; ${late} steps over 4 s once this side's stall is taken out`);
-
-  check("the speech shows as a bubble", bubbleShown);
+  // The door's contract, at the world, by this side's clock.
+  const late = (f: Seen, from: number) => f.t - waitedIn(f.t) - from;
+  const firstFrame = frames.find((f) => f.t >= starts[0]!) ?? null;
+  check("the world sends the first start's frame at once, within 1 s less the stall it waited in", firstFrame !== null && late(firstFrame, starts[0]!) < 1000,
+    firstFrame === null ? "none came" : `${firstFrame.t - starts[0]!} ms after the start, ${waitedIn(firstFrame.t)} ms of it a stall of this side's`);
+  const turnFrames = sayEntry === null ? [] : frames.filter((f) => f.t >= starts[0]! && f.seq < sayEntry!.seq);
+  const marks = [{ t: starts[0]!, stall: 0 }, ...[...turnFrames, ...(sayEntry ? [sayEntry] : [])].map((f) => ({ t: f.t, stall: waitedIn(f.t) }))];
+  const steps = marks.slice(1).map((b, i) => ({ step: b.t - marks[i]!.t, stall: b.stall }));
+  const slowest = steps.reduce((m, s) => (s.step - s.stall > m.step - m.stall ? s : m), { step: 0, stall: 0 });
+  check("from the first start to the speech, the world sent a typing frame at least every 4 s, the window each one opens, less the stall each waited in",
+    turnFrames.length > 0 && sayEntry !== null && steps.every((s) => s.step - s.stall < 4000),
+    sayEntry === null ? "the world logged no speech" : `${turnFrames.length} frames; the start to the first ${steps[0]?.step} ms, the last to the speech ${steps.at(-1)?.step} ms; the longest step less its stall ${slowest.step - slowest.stall} ms (${slowest.step} ms, ${slowest.stall} ms of it a stall)`);
+  // By order and by this side's own send times: a frame that came after the speech's log entry, and before the
+  // host's next start was even sent, can only be the relay's. A stall here makes a frame look later, never sooner.
   const nextAfterSay = starts.find((s) => s > sayAt) ?? null;
-  const quiet = sayEntryAt === null || nextAfterSay === null ? null : worldTyping.filter((t) => t > sayEntryAt! && t < nextAfterSay);
-  check("the speech ends the door's relay: the world sends no typing frame after it logs the speech, up to the host's next start",
-    quiet !== null && nextAfterSay! - sayEntryAt! >= 3000 && quiet.length === 0,
-    sayEntryAt === null ? "the world logged no speech" : `the next start came ${nextAfterSay === null ? "never" : nextAfterSay - sayEntryAt + " ms"} after the speech's log entry; frames between: ${quiet?.length ?? "-"}`);
+  const relayed = sayEntry === null || nextAfterSay === null ? null : frames.filter((f) => f.seq > sayEntry!.seq && f.t < nextAfterSay);
+  check("the speech ends the door's relay: no typing frame comes after the world logs it and before the host's next start is sent",
+    relayed !== null && nextAfterSay! - sayAt >= 3000 && relayed.length === 0,
+    sayEntry === null ? "the world logged no speech" : `the next start went ${nextAfterSay === null ? "never" : nextAfterSay - sayAt + " ms"} after the speech; frames between: ${relayed?.length ?? "-"}`);
+  // After a stop or the close, nothing more until the next start for this world, but a frame already on its way.
+  const quiet = (name: string, from: number, to: number) => {
+    const after = frames.filter((f) => f.t > from && f.t < to && late(f, from) > 500);
+    check(name, after.length === 0, after.length ? `at ${after.map((f) => `${f.t - from} ms (${waitedIn(f.t)} ms of it a stall)`).join(", ")} after it` : "");
+  };
+  quiet("after the host's stop, the world sends no typing frame later than 500 ms on, less the stall it waited in", stopAt, otherAt);
+  const elsewhere = frames.filter((f) => f.t > otherAt && f.t < ctlAt);
+  check("a start for another channel sends no typing frame for this world", ctlAt - otherAt >= 1000 && elsewhere.length === 0,
+    `${elsewhere.length} frames in the ${ctlAt - otherAt} ms before this world's next start was sent`);
+  check("…and a start for this world then draws the dots", ctl !== null, ctl === null ? "" : `drawn ${Math.round(ctl.t - ctlAt)} ms after it`);
+  quiet("…and after its stop, again no typing frame later than 500 ms on", ctlStopAt, goneFrom);
+  quiet("once the host disconnects, the world sends no typing frame later than 500 ms on, less the stall it waited in", closeAt, Infinity);
+
+  // The page, by the client's own state.
+  const wrong = U.filter((u) => u.drawn !== (u.win && !u.bubble));
+  const w0 = wrong[0];
+  check("every update of the agent's avatar draws the pill exactly when its window is open and no bubble shows", U.length > 0 && wrong.length === 0,
+    `${U.length - wrong.length}/${U.length} updates${w0 ? `; the first that didn't, at ${Math.round(w0.t - T0)} ms: ${w0.drawn ? "drawn" : "not drawn"}, window ${w0.win ? "open" : "shut"}, ${w0.bubble ? "a bubble" : "no bubble"}${w0.hidden ? ", its plate hidden" : ""}` : ""}`);
+  const misset = S.filter((s) => !(s.until >= s.p0 + 4000 - 1e-6 && s.until <= s.p1 + 4000 + 1e-6));
+  check("each signal opens a window that runs out 4 s after it", S.length > 0 && misset.length === 0,
+    misset.length ? `${misset.length} of ${S.length}; the first ran ${Math.round(misset[0]!.until - misset[0]!.p0)} ms` : `${S.length} signals`);
+  // Each frame the world sent, matched in order to the signal that applied it: none before its frame could
+  // have reached the page (its stamp, less the stall it waited in, less 50 ms between two sockets on one
+  // machine), and none after the page's second update past the frame's arrival here.
+  const pairs = frames.slice(0, S.length).map((f, i) => {
+    const s = S[i]!, second = U.filter((u) => u.t > f.t)[1];
+    return { f, s, early: s.t < f.t - waitedIn(f.t) - 50, waited: U.filter((u) => u.t > f.t && u.seq < s.seq).length, due: second ? s.seq < second.seq : null };
+  });
+  const early = pairs.filter((p) => p.early), overdue = pairs.filter((p) => p.due === false), undecided = pairs.filter((p) => p.due === null);
+  check("the page applied each typing frame the world sent, in order, by its second update after the frame arrived",
+    S.length === frames.length && early.length === 0 && overdue.length === 0 && undecided.length === 0,
+    `${frames.length} frames, ${S.length} signals; the most updates any frame waited ${Math.max(0, ...pairs.map((p) => p.waited))}` +
+      `${early.length ? `; ${early.length} applied before their frame could have come, the first ${early[0]!.f.t - early[0]!.s.t} ms before its frame's stamp` : ""}` +
+      `${overdue.length ? `; ${overdue.length} not applied by the second update, the first frame at ${Math.round(overdue[0]!.f.t - T0)} ms, applied after ${overdue[0]!.waited} updates` : ""}` +
+      `${undecided.length ? `; ${undecided.length} with no second update after them` : ""}` +
+      `; its socket replaced ${log.sockets} times, the agent's avatar wrapped ${log.avatars} times`);
+
+  // What the turn showed.
+  check("the walk is still under way 15 s in", walkPending15);
   const bubbled = U.filter((u) => u.bubble && u.t >= sayAt);
-  check("the pill isn't drawn while the bubble shows", bubbled.length > 0 && bubbled.every((u) => !u.drawn),
-    `${bubbled.filter((u) => u.drawn).length} of ${bubbled.length} updates with the bubble drew it`);
-  check("…though a typing window opened while it showed, so the rule was in play", bubbled.some((u) => u.win),
+  check("the speech shows as a bubble", !!bubbleShown);
+  check("…a typing window opened while it showed, so the bubble rule was in play", bubbled.some((u) => u.win),
     `${bubbled.filter((u) => u.win).length} of ${bubbled.length} updates with the bubble had a window open`);
-  check("the bubble goes", bubbleGone);
+  check("…and the bubble goes", !!bubbleGone);
   const lastBubble = bubbled.at(-1)?.t ?? null;
   const backAt = lastBubble === null ? null : U.find((u) => u.t > lastBubble && u.drawn)?.t ?? null;
   check("after the bubble, the turn goes on and the dots are drawn again before the host's stop", !!backUp && backAt !== null && backAt < stopAt,
     `bubble last seen at ${lastBubble === null ? "-" : Math.round(lastBubble - T0)} ms, drawn again at ${backAt === null ? "-" : Math.round(backAt - T0)} ms, stop at ${stopAt - T0} ms`);
-  drawnThrough("…and stay drawn until the stop", log, backAt ?? stopAt, stopAt);
-
-  // An update's own clock is its frame's start, a little before its stamp, so goneAfter allows 100 ms.
-  await goneAfter("after the host's stop, the page's first update once its last signal has had its 4 s doesn't draw the dots", starts[0]!);
-  const lateFrames = worldTyping.filter((t) => t > stopAt && !within(stopAt, t, 1500));
-  check("…and the world sends no typing frame later than 1.5 s after the stop, less this side's own stalls", lateFrames.length === 0,
-    lateFrames.length ? `at ${lateFrames.map((t) => t - stopAt).join(", ")} ms after it` : "");
-  check("the turn's walk ended as asked", !!walkReply && "result" in walkReply && !walkReply.result?.isError, JSON.stringify(walkReply ?? null).slice(0, 160));
-
-  // Another channel's typing raises no dots here, and a start for this world after it does.
-  const otherAt = Date.now(); typing("start", "world:elsewhere");
-  const otherSeen = await pollPage(() => true, 25000, otherAt + 1000);
-  check("a start for another channel draws no dots here", otherSeen !== null && !otherSeen.drawn && (await readLog()).signals.every((t) => t < otherAt),
-    otherSeen === null ? "no update came" : `the update at ${Math.round(otherSeen.t - otherAt)} ms after it ${otherSeen.drawn ? "drew" : "didn't draw"} them`);
-  const ctlAt = Date.now(); sendStart();
-  const ctl = await pollPage((u) => u.drawn, 25000, ctlAt);
-  check("…and a start for this world then does", ctl !== null, ctl === null ? "" : `drawn ${Math.round(ctl.t - ctlAt)} ms after it`);
-  typing("stop");
-  await goneAfter("…and after its stop, the page's first update once its window ends doesn't draw them", ctlAt);
-
-  // The host disconnects mid-walk, with no stop: the door's relay ends with it, and the dots go with the window.
-  const goneFrom = Date.now(); sendStart();
-  await sleep(1500); const backWalk = walk(0);
-  const raised = await pollPage((u) => u.drawn, 25000, goneFrom);
-  check("before the host disconnects mid-walk, its start drew the dots", raised !== null);
-  check("…and its walk back is still under way when it disconnects", !responses.has(backWalk), JSON.stringify(responses.get(backWalk) ?? null).slice(0, 160));
-  const closeAt = Date.now(); host.close();
-  await goneAfter("once it disconnects, the page's first update after its last signal's window doesn't draw the dots", goneFrom);
-  const afterClose = worldTyping.filter((t) => t > closeAt && !within(closeAt, t, 1500));
-  check("…and the world sends no typing frame later than 1.5 s after the close, less this side's own stalls", afterClose.length === 0,
-    afterClose.length ? `at ${afterClose.map((t) => t - closeAt).join(", ")} ms after it` : "");
-  const log3 = await readLog();
-  // Over the whole run, the page applied each frame the world sent: the page-lag rule above passes an
-  // update the page was late to, and this is what keeps a client that drops frames from passing on it.
-  const sent = worldTyping.filter((t) => t >= logFrom).length;
-  check("the page applied a typing signal for every typing frame the world sent", log3.signals.length === sent,
-    `${sent} frames, ${log3.signals.length} signals; its socket replaced ${log3.sockets} times, the agent's avatar wrapped ${log3.avatars} times`);
+  const arrived = /^arrived at \((-?\d+(?:\.\d+)?), (-?\d+(?:\.\d+)?)\)/.exec(walkReply?.result?.content?.[0]?.text ?? "");
+  check("the turn's walk arrived within 0.5 m of where it was sent, x = 30", !!arrived && !walkReply.result.isError && Math.hypot(Number(arrived[1]) - 30, Number(arrived[2])) <= 0.5,
+    JSON.stringify(walkReply ?? null).slice(0, 160));
+  check("before the host disconnects mid-walk, its start draws the dots", raised !== null);
+  check("…and its walk back is still under way when it disconnects", backPending, JSON.stringify(responses.get(backWalk) ?? null).slice(0, 160));
 
   check("the page threw nothing", errs.length === 0, errs.slice(0, 3).join(" | "));
-  console.log(`  the page applied ${log3.signals.length} typing signals over ${log3.updates.length} updates; its socket was replaced ${log3.sockets} times, and the agent's avatar wrapped ${log3.avatars} times`);
-  console.log(`  this side's event loop stalled over 250 ms ${hbStalls.length} times, the longest ${Math.max(0, ...hbStalls.map(([, gap]) => gap))} ms`);
+  const long = hb.filter(([, excess]) => excess > 250);
+  // How finely the page was judged: a client that deferred every frame by more than twice the longest of
+  // these gaps would have failed the order check above, and one deferring by less might not have.
+  const gaps = U.slice(1).map((u, i) => u.t - U[i]!.t).sort((a, b) => a - b);
+  console.log(`  the page applied ${S.length} typing signals over ${U.length} updates of the agent's avatar, a median ${gaps[gaps.length >> 1] ?? "-"} ms and at most ${gaps.at(-1) ?? "-"} ms apart; this side's heartbeat ran late ${long.length} times by over 250 ms, the most by ${Math.max(0, ...hb.map(([, excess]) => excess))} ms`);
 } catch (e) {
   fail++;
   console.log(`FATAL ${(e as Error).message}\n${(e as Error).stack}`);
