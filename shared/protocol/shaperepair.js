@@ -165,11 +165,13 @@ export const SHAPES_VERSION = 2;
 // side; the cost is a world founded before 10-16 whose founding was purged before its first load here, which keeps its old
 // values unrepaired (their readers' defaults) rather than having today's values rewritten as if old.
 export function shapesMarked(entries, bodyOf = (i) => entries?.[i]?.body ?? null) {
-  const L = entries ?? [];
+  const L = entries ?? []; let founded = false;
   for (let i = 0; i < L.length; i++) { const e = L[i];
     if (!e || e.kind !== "act") continue;
     if (e.verb === "repair-shapes" && e.actor === "system") return true;
-    if (e.verb === "create-world") { const b = bodyOf(i); if (b === null) return true; if (b && typeof b === "object" && Number.isInteger(b.shapes)) return true; }
+    // only the founding counts (review r9 L5): the first create-world act. A later one is a refused attempt the log keeps (a
+    // visitor's create-world on a world that exists), whose purge must never read as "marked"
+    if (e.verb === "create-world" && !founded) { founded = true; const b = bodyOf(i); if (b === null) return true; if (b && typeof b === "object" && Number.isInteger(b.shapes)) return true; }
     if (e.verb === "translated" && e.actor === "system") { const b = bodyOf(i); if (b === null) return true; const m = /@(\d+)$/.exec(String(b?.from?.translator ?? "")); if (m && +m[1] >= 12) return true; } }
   return false;
 }

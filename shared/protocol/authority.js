@@ -45,7 +45,7 @@ import { Refusal, refuse, said } from "./authority/refuse.js";
 import { LAB_CATALOGUE, modelOf, geomOf, boxOfM, geomE, withCatalogue, meshShape } from "./authority/catalogue.js";
 export { LAB_CATALOGUE, withCatalogue, MESH_SIZE, meshSize, meshGeom, meshShape } from "./authority/catalogue.js";
 import { readback } from "./authority/storage.js";
-import { CHANGE, IMPORTED_ONLY, VOLATILE, clone, createOps, delOp, isE, lockedC, nonce16, opsQuiet, qr3, scratch, setOp, versionOf, versionSeq, LOCK_LEVELS, lockLevel, lockRank } from "./authority/storage.js";
+import { CHANGE, IMPORTED_ONLY, VOLATILE, clone, createOps, delOp, followUpsOf, isE, lockedC, nonce16, opsQuiet, qr3, scratch, setOp, versionOf, versionSeq, LOCK_LEVELS, lockLevel, lockRank } from "./authority/storage.js";
 export { posAt, worldOf, seal, LOCK_LEVELS, lockLevel, lockRank, readback } from "./authority/storage.js";
 import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, satCost, satDepth, surfacesOf, worldT, yawQ } from "./authority/math.js";
 import { SPATIAL, WORK_BUDGET, clockMs, familyOf, groundOf, groundReady, hitsIx, kidsMap, near, spatial, spend, supportBelow, supportUnder } from "./authority/spatial.js";
@@ -91,7 +91,7 @@ export function request(w, actor, verb, args = {}) {
   const clock = w.now; const t0 = clock(); w.now = () => t0;
   try {
     if (!isIdentity(actor) || RESERVED.has(actor)) refuse("identity", `'${actor}' isn't an identity the authority can stamp`, "identities are a–z, 0–9 and '-', up to 64 (§3.1); system, sim and world are the authority's own");
-    const h = VERBS[verb];
+    const h = Object.hasOwn(VERBS, verb) ? VERBS[verb] : undefined;   // never a prototype key (review r9 L1: `constructor`, `__proto__`)
     if (h && !w.exists && !["create-world", "help"].includes(verb)) refuse("no-world", `there is no world called '${w.name}' yet`, `create-world {title: '…'} founds it (you become its owner); or pick a world that exists`);
     // §2.4: chain points are signed by the key genesis names (or the latest handoff). An authority holding another key would
     // write lines its own verifier calls forged (a moved dir, a lost or swapped custody file): it refuses instead (R5).
@@ -137,7 +137,7 @@ export function request(w, actor, verb, args = {}) {
     return r;
   } catch (e) {
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } // a refusal still updates the authority's own ring and throttle (presence, unlogged)
-    if (e instanceof Refusal) { noteCode(e.code); if (!UNLOGGED_REFUSALS.has(e)) logRefusal(w, actor, verb, args, e.code); const { code, reason, fix, ...rest } = e; return { ok: false, refused: { code, reason, fix: fix || (VERBSPEC[verb] ? `help {verb: '${verb}'} shows its arguments with examples` : "help lists every verb"), ...pick(rest) } }; }
+    if (e instanceof Refusal) { noteCode(e.code); if (!UNLOGGED_REFUSALS.has(e)) logRefusal(w, actor, verb, args, e.code); const { code, reason, fix, ...rest } = e; return { ok: false, refused: { code, reason, fix: fix || (Object.hasOwn(VERBSPEC, verb) ? `help {verb: '${verb}'} shows its arguments with examples` : "help lists every verb"), ...pick(rest) } }; }
     throw e;
   } finally { exit(); }
 }
@@ -222,7 +222,7 @@ function logRefusal(w, actor, verb, args, code) {
   try {
     if (w.exists) ringRefusal(w, actor, verb, args, code);
     // a verb the authority doesn't have is recorded too (an agent's invented verb is part of what it tried), when it's a name
-    if (!w.exists || !(VERBS[verb] || /^[a-z][a-z0-9-]{0,31}$/.test(String(verb))) || READ_ONLY.has(verb) || args?.dry === true || !isIdentity(actor) || RESERVED.has(actor)) return;
+    if (!w.exists || !(Object.hasOwn(VERBS, verb) || /^[a-z][a-z0-9-]{0,31}$/.test(String(verb))) || READ_ONLY.has(verb) || args?.dry === true || !isIdentity(actor) || RESERVED.has(actor)) return;
     // a body's track is presence: a refused move (a step, an arrival or a teleport) is never recorded. A person's client
     // keeps the track current several times a second and answers a refused step with a teleport; a person indoors, flying
     // or seated wrote a permanent, broadcast refusal every few seconds (review 10-06 S0-3). An ACCEPTED teleport is an act.
@@ -319,7 +319,7 @@ const bytesOf = (e) => e.bytes ?? JSON.stringify(e).length;
 // written eagerly (ids are never reused, so it is tidiness, never a resurrection guard).
 const FOLLOW_UP = Symbol("follow-up");
 const followUp = (o) => { o[FOLLOW_UP] = true; return o; };
-class Admitted { constructor(who, ops, after, notes = [], unseat = []) { this.who = who; this.ops = ops; this.after = after; this.notes = notes; this.unseat = unseat; Object.freeze(this); } }
+class Admitted { constructor(who, ops, after, notes = [], unseat = [], followUps = []) { this.who = who; this.ops = ops; this.after = after; this.notes = notes; this.unseat = unseat; this.followUps = followUps; Object.freeze(this); } }
 // L7 rate, per actor, over EVERYTHING the actor makes the log hold (acts and says), by the authority's clock. One function:
 // admit calls it for state writes, and every word that logs without a state write (say, grab's lift, throw, drop, a
 // teleport) calls it before appending. The lab has no agents (`for` is unwritten until keys, L4), so "that actor's
@@ -428,7 +428,8 @@ function admit(w, st, who, ops) {
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
   if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§7: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
   if (cap?.kind === "rest") restCheck(w, cap, s);
-  return new Admitted(who, norm, s, unseat.length ? [...lifted.notes, ...unseat.map((u) => ({ who: u.who, unseated: true, seat: u.seat, why: unseatWhy(u) }))] : lifted.notes, unseat);
+  return new Admitted(who, norm, s, unseat.length ? [...lifted.notes, ...unseat.map((u) => ({ who: u.who, unseated: true, seat: u.seat, why: unseatWhy(u) }))] : lifted.notes, unseat,
+    norm.flatMap((o, i) => (fuOps.has(o) ? [i] : [])));
 }
 // A socket is part of its host (review 10-12 S1-1): before the cut a seat was the host's own `sockets` component, so
 // adding one to someone else's thing needed editOthers on it and an owner-level lock refused it. Now it's a child entity,
@@ -1080,15 +1081,22 @@ function restCheck(w, cap, after) {
 function changeShape(plan, cause, w) {
   // §2.4: in a chained log every set carries a salt (base64url, 16 random bytes), so a purged value's commit can't be
   // brute-forced from a guess. Added here, before fits() measures the entry. The fold ignores it.
-  const ops = plan.ops.map((o) => (o.verb === "set" && "value" in o && o.salt === undefined ? { ...o, salt: nonce16(w) } : o)); const one = ops.length === 1 ? (({ verb, ...body }) => ({ verb, body }))(ops[0]) : { verb: "batch", body: { ops } };
+  // the authority's follow-ups are named in the entry itself (review r9 H1 / scars M3): `followUps` lists their indices, so any
+  // reader of the log alone (purged values or not, this code version or another) can tell them from the asker's own ops,
+  // and authorship (lastTouch {authored}, creatorOf, lastSetterOf, a script's sponsor) skips them. Always a batch then.
+  const ops = plan.ops.map((o) => (o.verb === "set" && "value" in o && o.salt === undefined ? { ...o, salt: nonce16(w) } : o));
+  const fu = plan.followUps ?? [];
+  const one = ops.length === 1 && !fu.length ? (({ verb, ...body }) => ({ verb, body }))(ops[0]) : { verb: "batch", body: { ops, ...(fu.length ? { followUps: [...fu] } : {}) } };
   return { kind: "change", actor: plan.who.actor, cause, ...one };
 }
 function changeEntry(w, plan, cause) {
   if (!(plan instanceof Admitted)) throw new Error("authority bug: a state write that admit() didn't produce (§7)");
+  const pre = plan.unseat.length ? w.state() : null;   // where each rider was let go: the seat as it stood before the edit
   const seq = w.append(changeShape(plan, cause, w), CHANGE);
-  // the riders an edit lets go (unseatsFor): presence, after the write has landed, each told in their inbox
-  for (const u of plan.unseat) if (w.presence.seats?.[u.who]?.to === u.seat) { clearSeat(w, u.who);
-    inboxPush(w.presence, u.who, { type: "unseated", seat: u.seat, ...(u.host ? { host: u.host } : {}), by: plan.who.actor, why: unseatWhy(u) }); }
+  // the riders an edit lets go (unseatsFor): presence, after the write has landed, each told in their inbox (with where
+  // they stand now: the authority's track of their body starts again there, scars r9 M2)
+  for (const u of plan.unseat) if (w.presence.seats?.[u.who]?.to === u.seat) { const at = unseatAt(w, pre, u.who, u.seat); clearSeat(w, u.who);
+    inboxPush(w.presence, u.who, { type: "unseated", seat: u.seat, ...(u.host ? { host: u.host } : {}), by: plan.who.actor, why: unseatWhy(u), ...(at ? { at } : {}) }); }
   (w.changedQ ??= []).push(seq); // `changed:<comp>` events, drained after the request (scripts, below)
   return seq;
 }
@@ -1132,7 +1140,7 @@ function commit(w, actor, verb, args, build) {
       if (!after.entities[id] || !ancestors(after, id).some((p) => offed.includes(p))) continue;
       delete w.presence.holds[id]; let_go = true; heldEvent(w, "release", id, { by: h.by, how: "edited", seq: act }); ctx.notes.push({ id, tookFromHand: h.by, why: "what it hangs under was switched off, so it left the hand that held it" }); }
     if (let_go) w.savePresence(); }
-  for (const who of Object.keys(w.presence.seats ?? {})) if (!seatOf(w, after, who)) { clearSeat(w, who); ctx.notes.push({ who, unseated: true, why: "the socket they sat on was switched off or removed" }); }
+  for (const who of Object.keys(w.presence.seats ?? {})) if (!seatOf(w, after, who)) { const to = w.presence.seats[who]?.to; if (typeof to === "string" && st.entities[to]) unseatAt(w, st, who, to); clearSeat(w, who); ctx.notes.push({ who, unseated: true, why: "the socket they sat on was switched off or removed" }); }
   return { ok: true, seq, head: w.headAt(seq), act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
     after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
 }
@@ -1283,11 +1291,18 @@ function touched(ops, st) {
 const stripDry = ({ dry, ...rest }) => rest;
 const warnOrNot = (ws) => (ws.length ? { warnings: ws } : {});
 
-function lastTouch(w, id, comp, { editsOnly = false } = {}) {
+// authored: who AUTHORED its current value (a handler's author, review r9 H1): the authority's follow-ups (a reference cleared
+// because what it named was deleted, or put back by that delete's undo; the entry's own `followUps`) are skipped, so an owner's
+// cleanup never re-authors a demoted builder's handlers with the owner's rights, nor a visitor's delete an owner's. A follow-up
+// that removed the component leaves no author (null). Without it: the last write of any kind (a version, a conflict check).
+function lastTouch(w, id, comp, { editsOnly = false, authored = false } = {}) {
   for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
     if (editsOnly && w.entries[e.cause]?.body?.capability) continue;   // a use's own write (a toggle flipped it): not an author
-    for (const o of opsQuiet(e)) { if (o.id !== id) continue;
-      if (o.verb === "create" || o.comp === comp || (o.verb === "delete" && o.comp === undefined)) return { seq: i, actor: e.actor }; } }
+    const ops = opsQuiet(e), fu = authored ? followUpsOf(e) : null;
+    for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
+      if (o.verb === "create" || o.comp === comp || (o.verb === "delete" && o.comp === undefined)) {
+        if (fu?.has(k)) { if (o.verb === "set") continue; return null; }
+        return { seq: i, actor: e.actor }; } } }
   return null;
 }
 // who last changed each component, within a horizon of this thing's own recent entries (R 10-04: "only the most recent
@@ -1296,10 +1311,11 @@ export const TOUCH_HORIZON = 200;
 function touchedOf(w, id, comps, horizon = TOUCH_HORIZON) {
   const out = {}; const want = new Set(comps); let seen = 0, oldest = null;
   for (const i of backward(w, id)) { if (!want.size || seen >= horizon) break; const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
-    seen++; oldest = i;
-    for (const o of opsQuiet(e)) { if (o.id !== id) continue;
+    seen++; oldest = i; const fu = followUpsOf(e);
+    opsQuiet(e).forEach((o, k) => { if (o.id !== id) return;
       const hit = o.verb === "create" ? [...want] : want.has(o.comp) ? [o.comp] : [];
-      for (const c of hit) { out[c] = { seq: i, by: e.actor, who: said(e.actor), ts: e.ts, ...(o.verb === "create" ? { created: true } : {}) }; want.delete(c); } } }
+      // a follow-up (a reference cleared by a delete, review r9 H1) says so: `by` caused it, but didn't author the value
+      for (const c of hit) { out[c] = { seq: i, by: e.actor, who: said(e.actor), ts: e.ts, ...(o.verb === "create" ? { created: true } : {}), ...(fu.has(k) ? { followUp: true } : {}) }; want.delete(c); } }); }
   for (const c of want) out[c] = { beyond: oldest ?? 0 };   // not found in the window: "unchanged since before #N"
   return out;
 }
@@ -1783,7 +1799,7 @@ function pivotOf(st, id) {
 // only while the handler's author (whoever last set `reactions`) could still make that change themselves.
 function reactionCap(ctx, id, comp, action) {
   const implicit = !ctx.st.entities[id]?.c.reactions?.[action] && action === "open" && implicitOpens(ctx.st.entities[id]);
-  const lt = lastTouch(ctx.w, id, implicit ? "openable" : "reactions", { editsOnly: implicit }); if (!lt) refuse("no-handler", `nobody set up '${action}' on ${id}`, "");
+  const lt = lastTouch(ctx.w, id, implicit ? "openable" : "reactions", { editsOnly: implicit, authored: true }); if (!lt) refuse("no-handler", `nobody set up '${action}' on ${id}`, "");
   ctx.actExtra = { capability: { reaction: action, author: lt.actor, grantedAt: lt.seq } };
   ctx.cap = { kind: "reaction", ids: [id], comps: [comp], author: lt.actor, action };
 }
@@ -2026,9 +2042,9 @@ function scriptDepth(w, seq) { let n = 0, e = w.entries[seq], guard = 0;
 // The writes to a script: key in its current life, newest first: [{e, value}] (value undefined if purged)
 function scriptWrites(w, id, key) {
   const out = [];
-  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue; const ops = opsQuiet(e);
+  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue; const ops = opsQuiet(e); const fu = followUpsOf(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
-      if (o.verb === "set" && o.comp === key) out.push({ e, value: o.value });
+      if (o.verb === "set" && o.comp === key) { if (!fu.has(k)) out.push({ e, value: o.value }); }   // a follow-up never sponsors (review r9 H1)
       else if (o.verb === "create" || (o.verb === "delete" && (o.comp === key || o.comp === undefined))) return out; } }
   return out;
 }
@@ -2107,7 +2123,7 @@ const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq
 // list the authority would keep for any script that listens. Its activation records no identity (no trigger actor, no
 // event.by); the script still hears `by` live, and what it writes itself is its own (and in its scope). The auditor re-runs
 // it with a stand-in arrival (scriptaudit.js)
-const ANON_EVENTS = new Set(["enter", "leave"]);
+const ANON_EVENTS = new Set(["enter", "leave"]), HAND_EVENTS = new Set(["grab", "release"]);
 const anonEvent = ({ by: _by, ...rest }) => rest;
 const overBudget = (B, cfg, key, sponsor, cost) => (B.mine >= cfg.rate ? `${key} logged ${B.mine} activations in the last minute; the rate is ${cfg.rate}`
   : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget} (@world.script-settings.budget)`
@@ -2163,7 +2179,11 @@ function activate(w, id, name, ev) {
   if (dry) return { script: key, id, status: "would-run", would: plan?.ops ?? [], says: res.says, bodies: res.bodies, sponsor: sp.sponsor, fuel: res.fuel, note: "dry: nothing was written; body effects still meet each body's consent when it runs", ...logs };
   const gates = [];
   for (const b of res.bodies) { const g = bodyGate(w, `script:${id}`, b.to, b.kind, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason); gates.push({ ...b, consent: g.consent, deliver: g.deliver }); }
-  const anon = ANON_EVENTS.has(ev.on);
+  // an arrival or departure, and a hand event whose own entry isn't on the record (an unlogged grab: presence), record no
+  // identity (review r9 claims O2): the log would otherwise hold who handled what only because a script listened. A hand
+  // event with an act of its own (a grab the sim had to be told of, a release's settlement) already names its actor there,
+  // so its activation keeps `trigger` (and the auditor its `by`)
+  const anon = ANON_EVENTS.has(ev.on) || (HAND_EVENTS.has(ev.on) && ev.seq === undefined);
   const actE = { kind: "act", actor: `script:${id}`, verb: "script", ...(cause !== undefined ? { cause } : {}),
     body: { script: key, src: v.src, sponsor: sp.sponsor, sponsorAt: sp.sponsorAt, on: ev.on, ...(ev.by && !anon ? { trigger: { actor: ev.by, ...(ev.seq !== undefined ? { seq: ev.seq } : {}) } } : {}),
       event: anon ? anonEvent(recorded(event)) : recorded(event), head: actSeq - 1, seed, depth, engine: SR.ENGINE, api: SR.API, ...(res.reads ? { reads: res.reads } : {}),
@@ -2546,8 +2566,11 @@ function buildUndo(ctx, a, w) {
   // review r8 M1: what the act's delete cleared in others' things (clearRefsTo, the authority's follow-up) comes back as a
   // follow-up too: a value that named a thing this act removed, put back exactly as it was (touchedBy has already skipped
   // it if anyone changed it since), so the referrer's lock or key can't veto the undo any more than it could the delete
+  // Only an op the target entry itself marks as a follow-up (its `followUps`) is restored as one (review r9 holes L2): the
+  // asker's own write in the same batch is theirs, and putting it back meets their rights and the locks now, like any undo.
   const goneHere = new Set(flat.filter((o) => o.verb === "delete" && o.comp === undefined).map((o) => o.id));
-  const refRestore = (o) => { if (!goneHere.size || o.comp === undefined || o.verb === "create" || goneHere.has(o.id) || !holdsRefs(o.comp)) return false;
+  const fuHere = new Set([...followUpsOf(res)].map((k) => flat[k]).filter(Boolean));
+  const refRestore = (o) => { if (!goneHere.size || !fuHere.has(o) || o.comp === undefined || o.verb === "create" || goneHere.has(o.id) || !holdsRefs(o.comp)) return false;
     const old = before(o.id)?.c[o.comp]; return old !== undefined && old !== PURGED && refsOf(o.comp, old).some((r) => goneHere.has(r.id)); };
   for (const o of flat) { if (madeHere.has(o.id) && o.verb !== "create") continue;
     const k = o.id + "|" + (o.verb === "set" || (o.verb === "delete" && o.comp !== undefined) ? o.comp : "*"); if (!keys.has(k)) keys.set(k, o); }
@@ -3172,8 +3195,21 @@ function arrivalBox(st, p, size) {
 // off is no seat (its occupant was let go by every client), so a reader never sees one.
 function seatOf(w, st, who) { const s = w.presence.seats?.[who];
   return s && typeof s.to === "string" && isSocketC(st.entities[s.to]?.c) && !offChain(st, s.to) ? s : null; }
-const setSeat = (w, who, to) => { (w.presence.seats ??= {})[who] = { to }; w.presenceDirty = true; };
+// `since`: the log's length when they sat (review r9 M1): what was written from then on isn't part of the ride they consented to
+const setSeat = (w, who, to) => { (w.presence.seats ??= {})[who] = { to, since: w.entries.length }; w.presenceDirty = true; };
 const clearSeat = (w, who) => { if (w.presence.seats?.[who]) { delete w.presence.seats[who]; w.presenceDirty = true; } };
+// Leaving a seat is presence, like arriving (scars r9 M2): a seated client sends no steps, so the authority's track of the
+// body is where it boarded. When the seat lets them go (unseated, the socket removed or switched off, or their own first
+// step off it), the track starts again from the seat's world pose with a full speed budget, writing nothing to the log: the
+// next step is measured from where they really are, never refused too-fast from the boarding point (which, in a world with
+// a spawn, a non-builder couldn't teleport out of). The seat's logged pose (a motion's swing isn't evaluated here: the full
+// budget covers it). Returns where, or null (no body tracked).
+function unseatAt(w, st, who, seat) {
+  const b = w.presence.bodies?.[who]; if (!b || !st?.entities[seat]) return null;
+  const at = worldT(st, seat).pos.map(r3); if (!at.every(Number.isFinite)) return null;
+  w.presence.bodies[who] = { ...b, at, ts: w.pace ? w.pace() : w.now(), tokens: TRACK.cap }; w.presenceDirty = true;
+  return at;
+}
 // another present body seated on this socket (one body per socket: VRChat Station, Roblox Seat), or the thing sitting in it
 function sitterOn(w, st, sock, actor) {
   for (const who of Object.keys(w.presence.seats ?? {})) if (who !== actor && w.presence.bodies[who] && seatOf(w, st, who)?.to === sock) return { who };
@@ -3213,12 +3249,18 @@ function unseatsFor(w, st, who, norm) {
   const rootOf = (id) => { const a = ancestors(st, id); return a.length ? a[a.length - 1] : id; };
   const from = cap?.kind === "reaction" ? cap.ids[0] : cap?.kind === "script" ? cap.id : null;   // the thing whose own behaviour this is
   const own = from && st.entities[from] ? rootOf(from) : null;
+  // the ride is the assembly as it was when they sat (review r9 M1): the handler or script doing it, and every parent link from
+  // its host up to the root, were last written before the rider sat. A reaction added to the chair after you sat, or a thing
+  // hung under it since, is someone's edit, not the ride (a builder can't move an occupied seat in two steps)
+  const key = cap?.kind === "reaction" ? "reactions" : cap?.kind === "script" ? cap.key : null;
+  const rideBefore = (since) => Number.isInteger(since) && [from, ...ancestors(st, from)].every((id, k) =>
+    (lastTouch(w, id, "parent")?.seq ?? Infinity) < since && (k > 0 || (lastTouch(w, from, key)?.seq ?? Infinity) < since));
   const out = new Map();
   for (const op of norm) {
     if (op.verb === "create" || op.comp === undefined || !MOVES_BODIES(op.comp) || !st.entities[op.id]) continue;
     const fam = new Set([op.id, ...descendants(st, op.id)]);
     for (const r of riders) { if (out.has(r)) continue; const s = seatOf(w, st, r); if (!s || !fam.has(s.to)) continue;
-      if (own && rootOf(s.to) === own) continue;   // the seat's own assembly moving it: the ride
+      if (own && rootOf(s.to) === own && rideBefore(s.since)) continue;   // the seat's own assembly moving it, as it was when they sat: the ride
       out.set(r, { who: r, seat: s.to, host: st.entities[s.to]?.c.parent?.to ?? null, id: op.id, field: op.comp }); } }
   return [...out.values()];
 }
@@ -3235,7 +3277,7 @@ const PHYSICS_VERBS = {
     if (!Array.isArray(a.to) || a.to.length !== 3 || a.to.some((n) => !Number.isFinite(n))) refuse("shape", "move needs to: [x, y, z]", "");
     const st = w.state(); const B = boundsOf(st);
     if (B && outsideWorld(B, a.to)) refuse("out-of-bounds", `[${a.to.join(", ")}] is outside this world (x ${B.min[0]}…${B.max[0]}, up to y ${B.max[1]}, z ${B.min[2]}…${B.max[2]})`, "pick a spot inside the bounds");
-    const me = w.presence.bodies[actor]; const to = a.to.slice();
+    let me = w.presence.bodies[actor]; const to = a.to.slice();
     // the speed track's clock is elapsed time (w.pace: a host's monotonic clock), never the log's: a wall clock stepped back
     // (NTP, a VM's host sync) holds the log's clock still — it never goes backwards — and the bucket would refill nothing
     // until the wall caught up, refusing a plain run too-fast (gate 18 navgrid/places). A host without one paces by w.now
@@ -3256,6 +3298,9 @@ const PHYSICS_VERBS = {
       w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(a.client ? { client: String(a.client) } : {}), ...(size ? { size } : {}) }; leftSeat(w, st, actor, to); w.savePresence();
       return { ok: true, at: to, ...(act !== undefined ? { recorded: true, act } : {}) };
     }
+    // still seated in the authority's view: a seated client sends no steps, so this is their first step off the seat (a
+    // person's stand-up is presence, never a request): it is measured from the seat, not from where they boarded (r9 M2)
+    { const sat = seatOf(w, st, actor); if (sat && unseatAt(w, st, actor, sat.to)) me = w.presence.bodies[actor]; }
     const d = dist(me.at, to); const tokens = tokensAfter(me.tokens, now - (me.ts ?? now));
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${TRACK.speed} m/s, ${TRACK.cap} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
     const block = pathBlocked(w, st, me.at, to, size);
@@ -4118,7 +4163,7 @@ const VERBS = {
         // an imported world: the reaction names an old binding (@world imported-behavior:<name>), which the authority never runs
         // (a binding there, or the handler itself written by the translation: its cause is an `imported` act)
         const old = Object.entries(wc).find(([k, b]) => k.startsWith("imported-behavior:") && (k === `imported-behavior:${probe.script}` || b?.attach === a.id));
-        const lt = lastTouch(w, a.id, "reactions"); const ce = lt ? w.entries[w.entries[lt.seq]?.cause] : null;
+        const lt = lastTouch(w, a.id, "reactions", { authored: true }); const ce = lt ? w.entries[w.entries[lt.seq]?.cause] : null;
         if (old || (isE(ce) && ce.kind === "act" && ce.verb === "imported"))
           refuse("no-runtime", `${a.id}'s '${probe.action}' runs the imported behaviour '${old ? old[0].slice("imported-behavior:".length) : probe.script}', carried by translation; the authority doesn't run the old script API`, `re-install it as script:${probe.script} on ${a.id} (docs/SCRIPTS.md); scripts lists imported behaviours as needs-reinstall`);
         refuse("no-handler", `${a.id}'s '${probe.action}' runs ${key}, which isn't installed on it`, "scripts {id} lists what runs here"); }

@@ -19,9 +19,11 @@
 //             (sponsor, depth, seed, src, the read shape), and an identity-independent result is checked in full.
 //   arrivals — an `enter` / `leave` activation records no identity (review r8 M4): the script heard `by` live, the act keeps
 //             neither a trigger actor nor event.by. A re-run gets a stand-in identity; a result that doesn't depend on who
-//             came is verified, one that does is `skipped`, as for presence reads.
+//             came is verified. One that differs from the log is re-run again with a SECOND stand-in (review r9 M2): if the two
+//             re-runs agree with each other, the result doesn't depend on who came, so the mismatch is the log's and it is
+//             flagged `rerun` / `rerun-say`; only when the two re-runs differ from each other is it `skipped`.
 // Replay of the WORLD never runs code (L1); this re-run is an optional audit view.
-import { fold, opsOf, jcs } from "./fold.js";
+import { fold, opsOf, followUpsOf, jcs } from "./fold.js";
 import { elide, seedOf } from "./scriptrules.js";
 
 const isE = (e) => e && typeof e === "object" && typeof e.kind === "string";
@@ -40,8 +42,9 @@ function by(L, seq) { const e = L[seq], c = L[e.cause];
 /** creator of (id, comp) as of seq `upto` (inclusive): { seq, rights } or null */
 export function creatorAt(L, id, comp, upto) {
   let found = null;
-  for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isE(e) || e.kind !== "change") continue; const ops = quiet(e);
+  for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isE(e) || e.kind !== "change") continue; const ops = quiet(e); const fu = followUpsOf(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
+      if (o.verb === "set" && fu.has(k)) continue;   // the authority's follow-up authors nothing (the entry's followUps, review r9 H1)
       if (o.verb === "set" && o.comp === comp) found = i;
       else if ((o.verb === "delete" && (o.comp === comp || o.comp === undefined)) || o.verb === "create") return found === null ? null : by(L, found); } }
   return found === null ? null : by(L, found);
@@ -51,8 +54,9 @@ export function creatorAt(L, id, comp, upto) {
 export function sponsorAt(L, id, comp, upto) {
   if (!creatorAt(L, id, comp, upto)) return null;
   const W = []; // newest first, current life only
-  scan: for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isE(e) || e.kind !== "change") continue; const ops = quiet(e);
+  scan: for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isE(e) || e.kind !== "change") continue; const ops = quiet(e); const fu = followUpsOf(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
+      if (o.verb === "set" && fu.has(k)) continue;
       if (o.verb === "set" && o.comp === comp) W.push({ seq: i, value: o.value });
       else if (o.verb === "create" || (o.verb === "delete" && (o.comp === comp || o.comp === undefined))) break scan; } }
   const unp = (v) => { if (!v || typeof v !== "object" || Array.isArray(v)) return v; const { paused, ...rest } = v; return rest; };
@@ -70,6 +74,7 @@ const norm = (ops) => jcs(ops.map(({ verb, id, comp, value }) => ({ verb, id, ..
 const readShape = (r) => ({ near: (r?.near ?? []).map((x) => [x.r, Array.isArray(x.ids) ? x.ids.length : x.n]), count: r?.count ?? [], names: Array.isArray(r?.names) ? r.names.length : r?.names ?? 0 });
 /** did these recorded reads ask who was near, or what someone is called? (inputs a re-run gets only as stand-ins) */
 const ARRIVAL_STAND_IN = "u-" + "a".repeat(20);   // shaped like an identity, nobody's (ids are minted, never chosen)
+const ARRIVAL_STAND_IN_2 = "u-" + "Zq7".repeat(6) + "Zq";   // a second one, different in every letter (review r9 M2)
 const whoReads = (r) => (r?.near ?? []).some((x) => !Array.isArray(x.ids) && x.n > 0) || (typeof r?.names === "number" && r.names > 0);
 export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
   const flags = [], skipped = []; let acts = 0, maxDepth = 0, reran = 0;
@@ -91,9 +96,10 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     if (b.on === "say") { if (!isE(trig) || typeof trig.body?.text !== "string") { flags.push({ seq, check: "input", why: "the say it heard is gone (purged?): it can't be re-run" }); return; }
       event.text = trig.body.text; if (trig.body.to !== undefined) event.to = trig.body.to; }
     if (b.on === "use" && isE(trig) && trig.body?.request?.args !== undefined) event.args = trig.body.request.args;
-    const anonWho = (b.on === "enter" || b.on === "leave") && event.by === undefined; if (anonWho) event.by = ARRIVAL_STAND_IN;
+    const anonWho = ["enter", "leave", "grab", "release"].includes(b.on) && event.by === undefined; if (anonWho) event.by = ARRIVAL_STAND_IN;   // an unlogged grab records no identity either (r9 O2)
     // no wall clock on a re-run: fuel (deterministic) is the limit; the auditor's machine may be slower than the authority's
-    const res = run({ text: blob.text, self: id, key: b.script, event, knobs: v.knobs ?? {}, now: a.ts, seed: b.seed, api: b.api ?? 1, st, reads: b.reads ?? { near: [], count: [], names: 0 }, limits: { wallMs: 10000 } });
+    const rerun = (ev) => run({ text: blob.text, self: id, key: b.script, event: ev, knobs: v.knobs ?? {}, now: a.ts, seed: b.seed, api: b.api ?? 1, st, reads: b.reads ?? { near: [], count: [], names: 0 }, limits: { wallMs: 10000 } });
+    const res = rerun(event);
     if (!res.ok) { flags.push({ seq, check: "rerun", why: `the re-run failed: ${res.code}: ${res.why}` }); return; }
     if (jcs(readShape(res.reads)) !== jcs(readShape(b.reads))) { flags.push({ seq, check: "reads", why: "the re-run asked different presence reads than the act records", want: readShape(res.reads), got: readShape(b.reads) }); return; }
     const want = elide(st, res.ops);
@@ -104,7 +110,9 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     const sameW = norm(want) === norm(got), sameS = jcs(says) === jcs(res.says);
     if (sameW && sameS) { reran++; return; }
     if (whoReads(b.reads)) { skipped.push({ seq, why: "its result depends on who was near or what someone is called, which the act doesn't record (only how many): it can't be re-run to the same result" }); return; }
-    if (anonWho) { skipped.push({ seq, why: "its result depends on who arrived or left, which the act doesn't record: it can't be re-run to the same result" }); return; }
+    if (anonWho) { const r2 = rerun({ ...event, by: ARRIVAL_STAND_IN_2 });   // does the result depend on who came? two stand-ins agree → no
+      const agree = r2.ok && jcs(readShape(r2.reads)) === jcs(readShape(res.reads)) && norm(elide(st, r2.ops)) === norm(want) && jcs(r2.says) === jcs(res.says);
+      if (!agree) { skipped.push({ seq, why: "its result depends on who arrived or left, which the act doesn't record: it can't be re-run to the same result" }); return; } }
     if (!sameW) flags.push({ seq, check: "rerun", why: "the re-run's writes differ from the logged batch", want: want.length, got: got.length, at: state ? L.indexOf(state) : null });
     if (!sameS) flags.push({ seq, check: "rerun-say", why: "the re-run's says differ from the logged ones" });
   });
