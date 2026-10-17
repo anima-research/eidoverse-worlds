@@ -30,6 +30,8 @@ const check = (name: string, ok: boolean, detail = '') => {
   else { failed++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? `\n      ${detail}` : ''}`); }
 };
 const J = JSON.stringify;
+// a copy's parts are minted (R 10-17: opaque ids, never <copy>-<key>): the part with record key `key` under copy `copy`
+const partOf = (E: any, copy: string, key: string) => Object.keys(E).find((x) => { if (E[x]?.['copy-of']?.key !== key) return false; for (let p: any = x, n = 0; p && n < 64; p = E[p]?.parent?.to, n++) if (p === copy) return true; return false; }) ?? `${copy}-${key}`;
 
 const { blueprintHash, blueprintRefusal, hashRefusal, expand, overridesOf, rebase, linkOf, lineageOf, BLUEPRINT_LIMITS } = await import('../shared/blueprint.js');
 const { componentsOf, entityOf, canon, sha256hex } = await import('../shared/components.js');
@@ -243,13 +245,13 @@ let HV = '';   // the record's hash, "sha256:<hex>"
   const at = { pos: [3, 0, 4], q: qFromYaw(0.5) };
   const c1 = W.call('create', { id: 'lamp-1', from: HV, at }, 'bld');
   const E = () => W.view().entities;
-  check('create {id, from: hash, at}: one act, the copy\'s parts named from its id', c1.ok && !!E()['lamp-1'] && !!E()['lamp-1-bulb'], J([c1.refused, Object.keys(E())]));
-  const root = E()['lamp-1'], bulb = E()['lamp-1-bulb'];
+  check('create {id, from: hash, at}: one act, the copy\'s parts named from its id', c1.ok && !!E()['lamp-1'] && !!E()[partOf(E(), 'lamp-1', 'bulb')], J([c1.refused, Object.keys(E())]));
+  const root = E()['lamp-1'], bulb = E()[partOf(E(), 'lamp-1', 'bulb')];
   check('…the root at `at` (pos and turn) with its model and label; the bulb an Empty with its light',
     root.model === LAMP && near(root.pos, [3, 0, 4], 0) && Math.abs(root.yaw - 0.5) < 1e-6 && root?.light === undefined && root?.label === 'a lamp'
     && bulb.model === undefined && bulb?.light?.range === 3, J({ root, bulb }));
   check('…the bulb rides the copy\'s root at its LOCAL pose (as the record says)', bulb.parent?.to === 'lamp-1' && near(bulb.pos, [0, 1.2, 0], 0), J(bulb));
-  const Wb = worldPose(E(), 'lamp-1-bulb')!;
+  const Wb = worldPose(E(), partOf(E(), 'lamp-1', 'bulb'))!;
   check('…so its world pose is the root\'s pose composed with it: [3, 1.2, 4]', near(Wb.pos, [3, 1.2, 4]), J(Wb));
   check('…every part carries the link: copy-of {from: hash, key}', J(root?.['copy-of']) === J({ from: HV, key: 'lamp' }) && J(bulb?.['copy-of']) === J({ from: HV, key: 'bulb' }), J([root?.['copy-of'], bulb?.['copy-of']]));
   const c2 = W.call('create', { id: 'lamp-1', from: HV, at }, 'bld');
@@ -260,12 +262,12 @@ let HV = '';   // the record's hash, "sha256:<hex>"
   const c4 = W2.call('create', { from: HV });
   check('a record that isn\'t one of THIS world\'s blueprints is refused (publish it here first)', c4.ok === false && ['not-published', 'not-found'].includes(c4.refused?.code), J(c4));
   const u = W.call('undo', {}, 'bld');
-  check('one undo (the door\'s, of the create) takes the whole copy away', u.ok && !E()['lamp-1'] && !E()['lamp-1-bulb'] && !!E().lamp, J([u.refused, Object.keys(E())]));
+  check('one undo (the door\'s, of the create) takes the whole copy away', u.ok && !E()['lamp-1'] && !E()[partOf(E(), 'lamp-1', 'bulb')] && !!E().lamp, J([u.refused, Object.keys(E())]));
   // a copy edited for itself is just a thing (the link stays): editing it never touches the record or other copies
   W.call('create', { id: 'lamp-2', from: HV, at: { pos: [0, 0, 0] } }, 'bld');
   W.call('create', { id: 'lamp-3', from: HV, at: { pos: [2, 0, 0] } }, 'bld');
-  W.call('set', { id: 'lamp-2-bulb', component: 'light', value: { color: 0xffffff, intensity: 2, range: 3 } }, 'bld');
-  check('an edit to one copy\'s part changes that copy only, and the record stays as published', E()['lamp-2-bulb'].light.intensity === 2 && E()['lamp-3-bulb'].light.intensity === 4 && W.getBlob(HV).parts[1].components.light.intensity === 4);
+  W.call('set', { id: partOf(W.view().entities, 'lamp-2', 'bulb'), component: 'light', value: { color: 0xffffff, intensity: 2, range: 3 } }, 'bld');
+  check('an edit to one copy\'s part changes that copy only, and the record stays as published', E()[partOf(E(), 'lamp-2', 'bulb')].light.intensity === 2 && E()[partOf(E(), 'lamp-3', 'bulb')].light.intensity === 4 && W.getBlob(HV).parts[1].components.light.intensity === 4);
 }
 {
   // a deeper design: a scaled base with a box collider, a tilted half-scale arm, a locked shade with a rotation order
@@ -288,7 +290,7 @@ let HV = '';   // the record's hash, "sha256:<hex>"
   const yaw90 = [0, 0.7071067811865476, 0, 0.7071067811865476];
   const c = W.call('create', { id: 'desk2', from: HD, at: { pos: [10, 0, -2], q: yaw90 } });
   const E = W.view().entities;
-  const id = (k: string) => Object.keys(E).find((x) => E[x]?.['copy-of']?.from === HD && E[x]['copy-of'].key === k && x.startsWith('desk2'));
+  const id = (k: string) => { const x = partOf(E, 'desk2', k); return E[x]?.['copy-of']?.from === HD ? x : undefined; };
   check('the copy lands as one act: four parts', c.ok && ['desk', 'arm', 'shade', 'glow'].every((k) => !!id(k)), J([c.refused, Object.keys(E)]));
   const arm = worldPose(E, id('arm')!)!;
   check('the tilted arm (root turned 90°, root scale 2; local offset, tilt and scale ½) stands at its composed pose: [10, 1, -2.4], scale 1, tilted',
@@ -299,9 +301,9 @@ let HV = '';   // the record's hash, "sha256:<hex>"
   // a lock binds removal (§5), and undoing a create removes: the door refuses the bare undo `locked` (v1's inverses
   // unlocked first). The person is asked "Move anyway?" (editwrites: undo offers through, not unlock); throughLock takes it.
   const u0 = W.call('undo', {});
-  check('a bare undo of the copy is refused `locked` (its shade is locked), and nothing is removed', u0.ok === false && u0.refused?.code === 'locked' && Object.keys(W.view().entities).filter((x) => x.startsWith('desk2')).length === 4, J(u0));
+  check('a bare undo of the copy is refused `locked` (its shade is locked), and nothing is removed', u0.ok === false && u0.refused?.code === 'locked' && ['desk', 'arm', 'shade', 'glow'].every((k) => !!W.view().entities[partOf(W.view().entities, 'desk2', k)]), J(u0));
   const u = W.call('undo', { throughLock: true });
-  check('…throughLock: one undo takes the whole deep copy away, its locked part included', u.ok && !Object.keys(W.view().entities).some((x) => x.startsWith('desk2')), J([u.refused, Object.keys(W.view().entities)]));
+  check('…throughLock: one undo takes the whole deep copy away, its locked part included', u.ok && !Object.values(W.view().entities).some((e: any) => e?.['copy-of']?.from === HD), J([u.refused, Object.keys(W.view().entities)]));
 }
 
 // ---- 7. the agent's tools over the library ------------------------------------------------
@@ -337,7 +339,8 @@ console.log('\n7. the text tier — blueprints, blueprint_place, look() (mcpl), 
   const look = ag.look();
   const line = (id: string) => look.split('\n').find((l: string) => l.includes(`[${id}]`)) ?? '';
   check('look(): a placed copy says which blueprint it is', /a copy of "Lamp"/.test(line('lampa')) && !/components: .*blueprint/.test(line('lampa')), line('lampa'));
-  check('look(): a part says whose part it is', /part "bulb" of lampa/.test(line('lampa-bulb')), line('lampa-bulb'));
+  const bh = ag.handle(partOf(W.view().entities, 'lampa', 'bulb'));   // look reads a part by its handle (R 10-17)
+  check('look(): a part says whose part it is', /part "bulb" of lampa/.test(line(bh)), line(bh));
 }
 
 rmSync(SCRATCH, { recursive: true, force: true });

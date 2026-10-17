@@ -159,10 +159,11 @@ function placeholders(w, verb, args) {
   const at = (i) => (i === null ? "" : `batch op ${i}: `);
   const no = (reason, fix) => { try { refuse("shape", reason, fix); } catch (e) { UNLOGGED_REFUSALS.add(e); throw e; } };
   const keep = CTX.forking || FIXTURE_IDS; const ids = {};
+  const anyPh = creates.some(([, a]) => isPlaceholder(a.id));   // a refusal of a request that holds placeholders isn't recorded (they never reach the log)
   for (const [i, a] of creates) { if (a.id === undefined || a.id === null) continue;
     if (isPlaceholder(a.id)) { if (a.id in ids) no(`${at(i)}the placeholder '${a.id}' is defined twice in one request`, `each placeholder names one new thing: give the other create its own ('${a.id}-2'), and refer to either by its name elsewhere in the request`); ids[a.id] = null; continue; }
     if (!keep) { const word = String(a.id).replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^[-_]+/, "").slice(0, 40) || "name";
-      refuse("shape", `${at(i)}a thing's id isn't chosen by the writer: the authority mints it (an id never changes, so it carries no word; what a thing is called is its label)`, `leave id out (the reply's refs name the id it gets), or write '$${word}' as a placeholder: refs to '$${word}' in the same request resolve, and the reply's ids map gives the id it became`); } }
+      (anyPh ? no : (r, f) => refuse("shape", r, f))( `${at(i)}a thing's id isn't chosen by the writer: the authority mints it (an id never changes, so it carries no word; what a thing is called is its label)`, `leave id out (the reply's refs name the id it gets), or write '$${word}' as a placeholder: refs to '$${word}' in the same request resolve, and the reply's ids map gives the id it became`); } }
   const st = w.state(); const ever = w.everIds?.() ?? new Set(); const fresh = new Set();
   for (const k of Object.keys(ids)) { let id; do id = mintId(); while (st.entities[id] || ever.has(id) || fresh.has(id)); fresh.add(id); ids[k] = id; }
   const sub = (v, key) => {
@@ -1044,6 +1045,9 @@ function commit(w, actor, verb, args, build) {
   const st = w.state();
   const ctx = { st, actor, w, notes: [], refs: new Set() };
   const ops = stampModelHash(ctx, stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, build(ctx))))));
+  // whatever removes a thing (delete, a batch's delete, an undo of its create) clears the references to it in the same act
+  if (ops.some((o) => o.verb === "delete" && o.comp === undefined)) { const after = scratch(st, ops); const gone = new Set(ops.filter((o) => o.verb === "delete" && o.comp === undefined && !after.entities[o.id]).map((o) => o.id));
+    if (gone.size) ops.push(...clearRefsTo({ ...ctx, st: after }, gone)); }
   const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops); ctx.notes.push(...plan.notes);
   if (args.dry) return { ok: true, dry: true, would: plan.ops, notes: ctx.notes, ...warnOrNot(warnings(plan.after, [...ctx.refs])) };
   const actE = actOf(w, actor, verb, sent, ctx.actExtra);
@@ -1438,8 +1442,7 @@ function buildDelete(ctx, a) {
   }
   const kids = descendants(ctx.st, a.id);
   if (kids.length) ctx.notes.push({ id: a.id, why: `its ${kids.length} children went with it: ${kids.join(", ")}` });
-  const gone = new Set([a.id, ...kids]); const ops = [...kids.reverse(), a.id].map((id) => delOp(id));
-  ops.push(...clearRefsTo(ctx, gone));
+  const gone = new Set([a.id, ...kids]); const ops = [...kids.reverse(), a.id].map((id) => delOp(id));   // references to them are cleared by commit (clearRefsTo)
   const after = scratch(ctx.st, ops); const setDown = [];
   // only what stands over a surface of what's gone can have rested on it (the index: its neighbours, never the world)
   const ixb = spatial(ctx.st); const over = new Set();

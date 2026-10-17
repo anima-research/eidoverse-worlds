@@ -101,7 +101,7 @@ ok(fk?.type === "world-forked" && fk.to === "copy", "FK3 the owner copies it", f
   ok(after.length === before.length, "FK7 no temporary directory is left behind", after); }
 { const c2 = await sock(S.port); const j0 = await c2.join("copy", "Ann");
   const r = await c2.req("use", { id: "bell1", action: "ring" }); await sleep(200);
-  ok(r.ok && fold(logOf("copy")).entities.bell1?.c["t/bell"]?.rung === 2, "FK9 the scripted bell rings in the copy (its script and source travelled; its count carried on from 1)", [r.refused, fold(logOf("copy")).entities.bell1?.c["t/bell"]]);
+  ok(r.ok && fold(logOf("copy")).entities[IDS.of("bell1")]?.c["t/bell"]?.rung === 2, "FK9 the scripted bell rings in the copy (its script and source travelled; its count carried on from 1)", [r.refused, fold(logOf("copy")).entities[IDS.of("bell1")]?.c["t/bell"]]);
   c2.close(); }
 { const c2 = await sock(S.port); const j = await c2.join("copy", "Ann");
   ok(!!j.snapshot && j.snapshot.yourRights?.role === "owner", "FK8 the copy is served, and its owner is its owner", [j.errors, j.snapshot?.yourRights]); c2.close(); }
@@ -132,7 +132,7 @@ ok((await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { r
   const up = await again.req("upload", { text: 'world.on("enter", (e) => { world.set("self", "t/greet", { last: e.by }); });' });
   const inst = await again.req("set", { id: "new-crate", component: "script:greeter", value: { src: up.src, scope: { ids: "self", comps: ["t/greet"] }, on: ["enter"] } });
   const arriving = await sock(S.port); const jr = await arriving.join("src", "Dee"); await sleep(1500);
-  const greet = fold(logOf("src")).entities["new-crate"]?.c["t/greet"];
+  const greet = fold(logOf("src")).entities[IDS.of("new-crate")]?.c["t/greet"];
   ok(up.ok && inst.ok && !!jr.snapshot && greet?.last === jr.snapshot.cut?.you, "RS7 scripts run in the fresh world: an arrival reaches its greeter (the script host was rebuilt with the log)", [up.refused, inst.refused, greet]);
   arriving.close();
   ok(w2.ok, "RS6 …and it takes writes (the live world was swapped in place)", w2.refused);

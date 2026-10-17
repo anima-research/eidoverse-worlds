@@ -235,11 +235,13 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       s.call("bob", "create", { id: "bulb", model: "book", components: { transform: T0([0, 0.6, 0]), parent: { to: "lamp" } } });
       const v1 = s.call("bob", "publish", { from: "lamp", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
       const a = s.call("bob", "create", { id: "a", from: v1, at: { pos: [5, 0, 5] } }); const b = s.call("bob", "create", { id: "b", from: v1, at: { pos: [9, 0, 5] } });
-      s.call("bob", "set", { id: "a-bulb", component: "label", value: "brighter" });
+      // a copy's parts are minted (R 10-17: opaque, no <copy>-<key>): a part is the one carrying its record key under that copy
+      const partOf = (copy: string, key: string) => Object.keys(s.w().state().entities).find((k) => s.w().state().entities[k].c["copy-of"]?.key === key && s.w().state().entities[k].c.parent?.to === copy);
+      s.call("bob", "set", { id: partOf("a", "bulb"), component: "label", value: "brighter" });
       const v2 = s.call("bob", "publish", { from: "a", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
       const keys = s.w().getBlob(v2).parts.map((p: any) => p.key).sort();
       const up = s.call("bob", "update", { copy: "b", to: v2 });
-      return { a: show(a), b: show(b), keys, up: show(up), label: s.w().state().entities["b-bulb"]?.c.label ?? null, kids: Object.keys(s.w().state().entities).filter((k) => k.startsWith("b-")).length }; },
+      return { a: show(a), b: show(b), keys, up: show(up), label: s.w().state().entities[partOf("b", "bulb")]?.c.label ?? null, kids: Object.keys(s.w().state().entities).filter((k) => s.w().state().entities[k].c.parent?.to === "b").length }; },
     good: (o) => o.up === "ok" && JSON.stringify(o.keys) === '["bulb","lamp"]' && o.label === "brighter" && o.kids === 1 },
 ];
 

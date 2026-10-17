@@ -480,11 +480,14 @@ if (M) {
     ok(near(bottom("hill", `pc${i}`), hH(px, pz), 0.01), `GP1 place {at: [${r3(px)}, ${r3(pz)}]} on the hill: the crate's bottom is the terrain's height there (${r3(hH(px, pz))} m) ±1 cm`, { got: bottom("hill", `pc${i}`), terrain: hH(px, pz) });
     ok(call("hill", "olive", "create", { id: `cc${i}`, model: "crate", at: [cx, cz] }).ok && near(bottom("hill", `cc${i}`), hH(cx, cz), 0.01), `GP2 create {at: [${r3(cx)}, ${r3(cz)}]} on the hill: the same (${r3(hH(cx, cz))} m)`, { got: bottom("hill", `cc${i}`), terrain: hH(cx, cz) });
     const sp = TOOL_ALIAS_ARGS.spawn({ lib: "crate", x: sx, z: sz, id: `sp${i}` }), spy = TOOL_ALIAS_ARGS.spawn({ lib: "crate", x: yx, z: yz, yaw: 0.7, id: `sy${i}` });
-    ok(call("hill", "olive", "create", sp).ok && near(bottom("hill", `sp${i}`), hH(sx, sz), 0.01), `GP3 the spawn alias {lib, x, z} on the hill: the same (${r3(hH(sx, sz))} m)`, { args: sp, got: bottom("hill", `sp${i}`) });
-    ok(call("hill", "olive", "create", spy).ok && near(bottom("hill", `sy${i}`), hH(yx, yz), 0.01), `GP3 the spawn alias with a yaw (place {at, facing}): the same (${r3(hH(yx, yz))} m)`, { args: spy, got: bottom("hill", `sy${i}`) });
-    ok(call("flat", "olive", "create", { id: `fc${i}`, model: "crate", at: [cx, cz] }).ok && bottom("flat", `fc${i}`) === 0 && call("flat", "olive", "create", TOOL_ALIAS_ARGS.spawn({ lib: "crate", x: sx, z: sz, id: `fs${i}` })).ok && bottom("flat", `fs${i}`) === 0
+    // the alias's old id is the thing's label now (R 10-17: the authority mints ids): the new thing is the reply's ref
+    const rsp = call("hill", "olive", "create", sp), rspy = call("hill", "olive", "create", spy); const spId = rsp.refs?.[0]?.id, syId = rspy.refs?.[0]?.id;
+    ok(rsp.ok && near(bottom("hill", spId), hH(sx, sz), 0.01), `GP3 the spawn alias {lib, x, z} on the hill: the same (${r3(hH(sx, sz))} m)`, { args: sp, got: bottom("hill", spId) });
+    ok(rspy.ok && near(bottom("hill", syId), hH(yx, yz), 0.01), `GP3 the spawn alias with a yaw (place {at, facing}): the same (${r3(hH(yx, yz))} m)`, { args: spy, got: bottom("hill", syId) });
+    const rfs = call("flat", "olive", "create", { id: `fc${i}`, model: "crate", at: [cx, cz] }).ok && bottom("flat", `fc${i}`) === 0 ? call("flat", "olive", "create", TOOL_ALIAS_ARGS.spawn({ lib: "crate", x: sx, z: sz, id: `fs${i}` })) : null; const fsId = rfs?.refs?.[0]?.id;
+    ok(rfs?.ok && bottom("flat", fsId) === 0
       && call("flat", "olive", "create", { id: `fp${i}`, model: "crate" }).ok && call("flat", "olive", "place", { id: `fp${i}`, at: [px, pz] }).ok && bottom("flat", `fp${i}`) === 0,
-      `GP4 on a flat world (no terrain component) place {at}, create {at} and the alias are y 0, as they always were`, [bottom("flat", `fc${i}`), bottom("flat", `fs${i}`), bottom("flat", `fp${i}`)]);
+      `GP4 on a flat world (no terrain component) place {at}, create {at} and the alias are y 0, as they always were`, [bottom("flat", `fc${i}`), bottom("flat", fsId), bottom("flat", `fp${i}`)]);
   }
   // a crate already on the hill is what a second one lands on (a thing's top still outranks the ground under it)
   ok(call("hill", "olive", "create", { id: "stack", model: "crate", at: [10, 0] }).ok && near(bottom("hill", "stack"), hH(10, 0) + 0.6, 0.01), "GP5 create {at} where a crate already sits on the hill: on the crate's top", bottom("hill", "stack"));

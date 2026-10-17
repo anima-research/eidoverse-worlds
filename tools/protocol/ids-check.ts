@@ -109,6 +109,11 @@ await C("P7", "a refused request with a placeholder leaves no '$name' in the log
   const W = world(); const r = W.call("create", { id: "$x", model: "crate", components: { "no such": 1 } });
   return [!r.ok && !logText(W).includes("$x"), why(r)]; });
 
+await C("P8", "a chosen id refused beside a placeholder in one batch: the attempt isn't recorded with its '$name' in it", () => {
+  const W = world(); const r = W.call("batch", { ops: [{ verb: "create", args: { id: "$keep", model: "crate" } }, { verb: "create", args: { id: "chair", model: "crate" } }] });
+  const plain = W.call("create", { id: "table", model: "crate" });   // a chosen id alone is an attempt like any other: recorded
+  return [!r.ok && /op 1/.test(r.refused.reason) && !logText(W).includes("$keep") && !plain.ok && logText(W).includes('"table"'), [why(r)]]; });
+
 // ---- Y: system acts keep ids ----
 await C("Y1", "a fork's copy (the system door) writes the ids it is given, verbatim", () => {
   const W = world(); const w = SD.worldObject(W);
@@ -142,6 +147,17 @@ await C("D3", "references into deleted children are cleared too (a child goes wi
   const a = made(W.call("create", { model: "crate", components: { "look-at": { target: k } } }))[0];
   const r = W.call("delete", { id: p });
   return [r.ok && !W.state().entities[a].c["look-at"], [why(r), W.state().entities[a]?.c]]; });
+
+await C("D4", "an undo that takes a thing away (the undo of its create) clears references to it too; so does a batch's delete", () => {
+  const W = world();
+  const mk = W.call("create", { model: "crate" }); const b = made(mk)[0];
+  const a = made(W.call("create", { model: "crate", components: { "look-at": { target: b } } }))[0];
+  const u = W.call("undo", { act: mk.act });
+  const c = made(W.call("create", { model: "crate" }))[0];
+  const d = made(W.call("create", { model: "crate", components: { story: { title: "t", text: "x", marks: [c] } } }))[0];
+  const bt = W.call("batch", { ops: [{ verb: "delete", args: { id: c } }] });
+  const st = W.state().entities;
+  return [(!u.ok || (!st[b] && !st[a].c["look-at"])) && bt.ok && JSON.stringify(st[d].c.story.marks) === "[]", [why(u), st[a]?.c["look-at"], why(bt), st[d]?.c.story]]; });
 
 // ---- L: lint ----
 await C("L1", "lint reports a stored reference that names nothing (kind dangling, where, what it names)", () => {

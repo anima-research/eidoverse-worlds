@@ -11,6 +11,7 @@
 //   bun tools/protocol/describe-particles-check.ts --mutants    remove each gate in a copy of the tree: its cases go red; a no-op stays green
 //   bun tools/protocol/describe-particles-check.ts --tree <dir> against another checkout
 // @ts-nocheck
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
