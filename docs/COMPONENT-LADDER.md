@@ -25,6 +25,8 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
     with its `absentMeans`). `hold` (bone overrides over the pose) is cut, not held.
   - `grabbable`: `fx` (presence-only particles while use is held). A grip's `hold` is cut.
   - `reactions`: the handler kind `impulse` (it returns with its general meaning when an engine carries impulses).
+  - `terrain`: the kind `raster` (an imported height raster; no reader draws or walks it yet, so its fields stay
+    unregistered).
   - `physics`: `surface` (was `material`), `friction`, `restitution`, `frictionCombine`,
     `restitutionCombine`, `linearDamping`, `angularDamping`, `centerOfMass` (the vocabulary every engine shares; units,
     limits and meanings of absence held in `reservedShape`/`absentMeans`; they open when an engine reads them). `mass` and
@@ -32,8 +34,17 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
     `layers`, `mask`, `ccd` are cut, not held.
 - **cut fields that say where they went** (the registry's `dropped`): a write of one is refused with a pointer, a
   stored one is repaired at a world's first load (shared/protocol/shaperepair.js) and by translate-v1@12: `motion.amplitude`
-  (→ `amp`), `motion.part` (→ the key `motion:<part>`), `physics.material` (→ `surface`); `parent.order` is taken and
-  dropped at the door.
+  (→ `amp`), `motion.part` (→ the key `motion:<part>`), `physics.material` (→ `surface`), `sky.weatherSeconds` (→
+  `transition`; the sky act still takes it), `sky.clock` (→ `tz`; likewise), `terrain.water` (→ the `water` component).
+  Some are taken at the door instead and stored in today's spelling: `parent.order` (dropped), `light.day` (→
+  `daytime`), `grass.preset` (→ its strokes) and the first protocol's grass knobs. The load's act is `repair-shapes`;
+  PROTOCOL §4 lists everything it repairs, and the one sky it can't tell apart.
+- **a component split out of another**: `water` (trial, 10-16) left `terrain`, as every engine keeps water apart from
+  ground. `@world`'s `water {level (m, required), color?, opacity?, kind?: still|river|ocean, flow? [x, z] m/s}`; no
+  `water` is a dry world, and absent fields read as `0x1d5a6e`, 0.82, a kind decided from the ground
+  (shared/waterkind.js) and no current. Its readers moved with it: the authority's ground (spatial.js), the client
+  (drawing, ground panel), the agent, and the mover's water law (shared/mover.js), through shared/terrainshape.js's
+  `worldWater`, which reads an older `terrain.water` until the load moves it.
 - **stable**: promised. Its meaning never changes; it only grows by additions, and a changed meaning is a new versioned
   name (rung 4). None is stable at v1.
 
@@ -48,6 +59,15 @@ removed, changed or narrowed. Then:
   `bun tools/protocol/pretrans-check.ts --pin --ack "<why>"`. That appends a line to `spec/REGISTRY-CHANGELOG.md`
   naming every break and why, in the same commit as the pin;
 - a **break on a stable name** never re-pins, acknowledged or not.
+
+The pin also records what is held or closed inside a trial name (PROTOCOL §4): `reservedKinds` (the kinds above),
+`reservedShape` (what a reserved field will mean when it opens: `physics`' units, limits and combine enums) and
+`nestedEnums` (a nested grammar's closed vocabularies, by path: `structure`'s aperture kinds, wall axes, tile halves). A
+`nestedEnums` member removed trips D8 like an enum's; a change to `reservedKinds` or `reservedShape` shows only in the
+pin's diff for now.
+
+Not pinned, but refused by the same registry: a definition's `stamped` fields (the sky's `ts`, `override`,
+`forecast.epoch`) are the authority's alone, and a write carrying one is refused `stamped`, naming the act that owns it.
 
 ## Rung 1: draft (namespaced)
 

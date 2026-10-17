@@ -205,13 +205,25 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `physics-joint:<name>` (the constraint between two bodies) and `joint` (a skeleton node), both
   reserved, and on
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
-  `sky`, `terrain`, `terrain-grid`, `terrain-tile:<i>-<j>`, `grass`, `physics-engine`, `surface:<name>` (reserved),
+  `sky`, `terrain`, `water`, `terrain-grid`, `terrain-tile:<i>-<j>`, `grass`, `physics-engine`, `surface:<name>` (reserved),
   `script-settings`, `blueprints:<hash>`, `assets:<key>`, `capacity`, `schemas:<name>`.
 - **A mesh is a body without a model.** `mesh {shape, size}` draws a
   parametric body (box, sphere, cylinder, plane, capsule) on a thing that has
   no model; the authority reads its size as it reads a measured model's, so
   the thing can be placed, stacked on and given a physics shape. A mesh never
   shares a thing with a model or a light (one place per thing).
+- **Water is its own component.** `@world`'s `water {level, color?, opacity?,
+  kind?, flow?}` (trial; split from `terrain` 10-16, as every engine separates
+  water from ground) is one surface height for the world, metres in world y:
+  ground below it is under water. No `water`, the world is dry; absent fields
+  read as colour `0x1d5a6e`, opacity 0.82, a kind decided from the ground it
+  fills (shared/waterkind.js: still, river or ocean) and no current (`flow`
+  is `[x, z]` m/s). The authority's ground (shared/protocol/authority/spatial.js),
+  the client's drawing and ground panel and the agent read it through
+  shared/terrainshape.js (`worldWater`, `waterParams`), and the mover's water
+  law (shared/mover.js `waterStance`: wading, swimming, the haul-out) takes its
+  level. A write of `terrain.water` is refused with where it went; a stored one
+  is moved at load (below), and the readers read it until then.
 - **Anyone else's components carry a namespace**, `<namespace>/<name>`: a
   domain they control or a handle (`example.org/heart`, `mica/heart`), so two
   honest clients can't both invent `light`. The mark is the `/` itself: the
@@ -232,11 +244,45 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   of it is refused (one refusal, code `reserved`); `stable`: promised, it only
   grows by additions. `schema` reports each one. None is stable at v1. A
   draft (a namespaced name, below) has no status: it isn't admitted.
+- **An old spelling is repaired once, at load.** When a trial shape changes,
+  the authority's first load of a stored world writes what its old values
+  meant, in today's spelling, in one system act, `repair-shapes`
+  (shared/protocol/shaperepair.js: `repairComps` for each thing,
+  `repairWorld` for `@world`'s look); a second load finds nothing, and a
+  purged value is left alone. The shape audit (10-16) repairs: a bare motion
+  naming a part → `motion:<part>`, `amplitude` → `amp`, letter axes →
+  vectors, the old pendulum readings written down (period 3.5 s, damp 0, a
+  whole pendulum's `[0, 2, 0]` swing point as its `pivot`), a motion's
+  `pivot` → the `pivot` component; `collider` exact → mesh; `physics` with no
+  kind → dynamic, `material` → `surface`, layers/mask/ccd dropped; `light`
+  with no decay → 1.7 (the old rig's falloff; a new light's default is 2),
+  `day` → `daytime`, `shadows` dropped; a particle Essential's name → its
+  address; `sky` clock 'real' and dormantRated → `tz` (hours, rate and ts
+  kept as the fallback clock), azimuth degrees → radians, `weatherSeconds` →
+  `transition`, a forecast's `dwellSec`/`transitionSec` → `dwell`/`transition`,
+  sun/fill/world dropped, the registry's seven defaults written; `terrain`
+  layer colours `"#rrggbb"` → ints, the sim's defaults written,
+  `terrain.water` → `water`; `grass` in the flora spelling, a preset expanded
+  into its strokes. The translator (`translate-v1@12`, §14) writes its
+  projection through the same functions, so a translated world needs no
+  repair, and the old-world oracle mirrors the load with them; the sweep's
+  declared projection and the oracle's core check are written independently,
+  a second hand on the same rules. One ambiguity is accepted: a sky is old
+  when it holds a field only the old spelling had, an old forecast, an
+  azimuth above 2π or not every default, so an old sky that happened to hold
+  all seven defaults and nothing else old, with an azimuth ≤ 2π degrees,
+  reads as today's (radians) and isn't converted.
 - **Every parameter is written down.** The authority writes a component's
   defaults into the stored value when it is created or set, so a reader never
   supplies a value the log doesn't hold, and a later change to a default
   never changes an old world. A parameter's meaning (its units, what it
   does) never changes; a new meaning is a new versioned name.
+- **A stamped field is the authority's.** A definition's `stamped` lists the
+  fields only the authority writes (a dotted path reaches inside a value):
+  `sky.ts`, `sky.override` and `sky.forecast.epoch`. A `set` carrying one is
+  refused `stamped`, naming the act that owns it: the `sky` act stamps `ts`
+  and a forecast's epoch, the `weather` act an override. A sky set by hand is
+  stamped like the sky act's (`ts` is the authority's clock when it lands).
 - **Absence means absent.** A reader that gives absence a meaning is naming
   a default, and that default belongs in the component's definition.
 - **A field added later states its meaning of absence.** A value stored
@@ -264,6 +310,18 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   (the prose the pin can't check, for a world that travels to readers who don't
   share this registry); it isn't written yet, since no format for a written
   definition exists. A world is read by this registry and its pin.
+- **Held kinds and closed grammars are in the pin too.** `reservedKinds`
+  holds a kind inside a trial component (`reactions`' handler `impulse`,
+  `terrain`'s `raster`): a write naming it is refused `reserved` in the held
+  kind's own words, and a fork or a lift carries a stored one. `reservedShape`
+  holds what a reserved field will mean when it opens (`physics`' damping
+  units, friction and restitution limits, the combine enums: spec/PHYSICS.md
+  §3.2). `nestedEnums` closes a vocabulary inside a nested grammar, keyed by
+  its path (`structure`'s `levels[].apertures[][3]`: door, window, arch; wall
+  axes 0..3; tile halves A, B). All three are pinned: a `nestedEnums` member
+  removed is a break like an enum's; `reservedKinds` and `reservedShape` are
+  recorded (a change shows in the pin's diff) but not yet judged by the
+  tripwire.
 - **Keyed names are instance or partition keys.** For instance keys
   (`script:`, `blueprints:`, `roles:`), an existing key may be changed or
   deleted only by its creator (whose rights admitted the first write in its
@@ -398,7 +456,7 @@ request moves a copy to a newer version, keeping its own overrides.
   point of a move's sweep. The authority reads the same ground the walker
   does: `@world`'s `terrain` through shared/terrainmath.js (features and
   heightmaps through shared/terrainshape.js; built once per terrain value)
-  and its water level. So a body is supported by the terrain under it or a
+  and its water level (`@world`'s `water`, §4). So a body is supported by the terrain under it or a
   top within a step, a swimmer is tested as a swimmer (its box a step below
   the haul-out line), and a ground ledge over a step is refused as solid
   (`blocker: "ground"`). `place {at}`, `create {at: [x, z]}` and the spawn
@@ -476,7 +534,7 @@ authority's ladder is `visitor` < `builder` < `owner` (a `moderator` rank sits
 between builder and owner where the roles ladder is enabled): changing any
 component of an entity needs builder; changing `@world` needs owner, except
 `blueprints:*` (publishing a blueprint: build), `assets:*` (generate), the
-world's look (`about`, `sky`, `terrain*`, `grass`, `bounds`, `spawn`:
+world's look (`about`, `sky`, `terrain*`, `water`, `grass`, `bounds`, `spawn`:
 editWorld), and `roles:*` (the grant rule). Removing the last owner is
 refused, and a world with no owner gives nobody more than visitor. **Two
 owner lists, never confused:** governance keys in genesis (§13) decide who
@@ -623,6 +681,10 @@ away from it.
 
 - **Units**: metres, kilograms, seconds. Instants are epoch milliseconds.
   Angles are radians unless the field's name carries its unit (`degPerSec`).
+  The shape audit (10-16) moved the last degrees: `look-at`'s yaw, pitch and
+  speed (rad, rad/s) and `sky.azimuth` (where the sun stands round the
+  horizon: default π, within ±2π; a stored degree value is converted at
+  load, §4); `grass.heading` was registered in radians.
 - **Rotations** are unit quaternions `[x, y, z, w]` (§9.1). **Axes** are
   3-vectors (`[0, 1, 0]`), not letters.
 - **Every vector names its frame** in its definition: the thing's own frame,
@@ -630,7 +692,17 @@ away from it.
 - **Colours** are integers, sRGB (`0xffd9a0`).
 - **Asset references** are content addresses (`eido:sha256/<64 hex>`,
   `sha256:<64 hex>`), resolved at the write door: a stored value never holds a
-  mutable path.
+  mutable path. The door's one helper is shared/protocol/assetref.js
+  `atWrite`: a `model` path or name → its content address when the server's
+  catalogue can say what its bytes are (server/modelcatalogue.ts: the
+  library original's sha256; otherwise kept as written); a `particles`
+  Essential's name → its pinned document's address
+  (shared/particle_effects.js `ESSENTIAL_ADDRESSES`; readers still read it as
+  that Essential); a `grass` preset → its strokes, the name dropped (an
+  unknown preset is refused), and the first protocol's makeGrass knobs → the
+  flora spelling. Each rewrite is noted in the reply, and the load repairs a
+  stored value the same way (§4). The sky's presets already worked so: the
+  fold never sees a preset name.
 - **An enum member a reader doesn't know** makes the reader treat the whole
   component as absent (never as a guessed member).
 - **Policy numbers** (capacity, script settings, access limits): an absent
