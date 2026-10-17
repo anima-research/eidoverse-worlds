@@ -1,7 +1,7 @@
 // shared/protocol/scriptrules.js — the parts of scripts (research 41) that the AUTHORITY, the SANDBOX and an AUDITOR must agree on
 // byte for byte. Pure: no node: imports, no sandbox (the authority is imported by browsers; the sandbox is injected).
 //   LIMITS   the budgets an activation runs under (41 §3.10), named once.
-//   SOURCE   what a script's source blob is: {lang: "js", api: 1, text}, stored by its sha256 name (§2.2).
+//   SOURCE   what a script's source blob is: {lang: "js", api: <API>, text}, stored by its sha256 name (§2.2).
 //   hygiene  refusals at install that teach (41 §3.12): Trojan Source, code hidden past column 1000, a BOM.
 //   seedOf   the activation's seed = H(world ‖ act seq ‖ entity/script key) (41 §3.7): what Math.random runs from.
 //   elide    PROTOCOL §3d: dropping no-op writes in a SCRIPT batch is a stated rule, not free authority practice,
@@ -12,7 +12,9 @@ import { cowState, applyCow, jcs } from "./fold.js";
 import { sha256 } from "./hash.js";
 
 export const LANG = "js";
-export const API = 1;
+// 2 (R 10-17, ID HARDENING): world.create mints an opaque id and takes none from the script. An act names the API it ran
+// under (api), and an auditor re-runs it under that one
+export const API = 2;
 export const LIMITS = Object.freeze({
   source: 65536,        // characters of source
   fuel: 60,             // QuickJS interrupt-handler calls per activation: deterministic for one QuickJS build (41 §3.7). Measured

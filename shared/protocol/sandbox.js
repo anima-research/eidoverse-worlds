@@ -24,7 +24,7 @@
 // held the authority's thread for 1–13 s (review, 2026-10-06). The host side stays on the authority's thread, so an activation is
 // still one synchronous step. runScript (in-process) is for auditors and tools, which may take their time.
 import { jcs, isEntityId, isComponent } from "./fold.js";
-import { LIMITS, isParamName } from "./scriptrules.js";
+import { LIMITS, isParamName, API } from "./scriptrules.js";
 import { materialize } from "./componentspec.js";
 import { isEido, modelWord } from "../eido.js";
 
@@ -87,7 +87,7 @@ const PRELUDE = String.raw`"use strict";
     set(id, comp, value) { call(["set", String(id), String(comp), JSON.parse(enc(value, "world.set " + comp))]); },
     param(id, name, value) { call(["param", String(id), String(name), JSON.parse(enc(value, "world.param " + name))]); },
     delete(id, comp) { call(["delete", String(id), comp === undefined ? null : String(comp)]); },
-    create(components, id) { return call(["create", JSON.parse(enc(components ?? {}, "world.create")), id === undefined ? null : String(id)]); },
+    create(components, id) { return call(["create", JSON.parse(enc(components ?? {}, "world.create")), id === undefined || id === null ? null : String(id)]); },
     say(text) { call(["say", String(text)]); },
     shove(who) { call(["body", "shove", String(who), null]); },
     pose(who, spec) { call(["body", "pose", String(who), JSON.parse(enc(spec ?? {}, "world.pose"))]); },
@@ -168,8 +168,12 @@ export function makeHost(x) {
         const op = { verb: "set", id, comp: "params", value: { ...prev, [name]: a[2] } }; ops.push(op); apply(op); return null; }
       case "delete": { write(); const id = wantId(self(a[0]), "world.delete"); const op = a[1] === null ? { verb: "delete", id } : { verb: "delete", id, comp: wantComp(a[1], "world.delete") }; ops.push(op); apply(op); return null; }
       case "create": { const comps = a[0]; if (!comps || typeof comps !== "object" || Array.isArray(comps)) throw new HostError("world.create(components, id?): components is an object");
-        // a minted id carries 128 bits of the activation's seed (review 10-07 H5: 32 bits collided across forks), so a re-run mints it again
-        const id = a[1] !== null ? wantId(a[1], "world.create") : `${slug(isEido(comps.model) ? comps.label ?? modelWord(comps.model, null) : comps.model ?? comps.label ?? "thing")}-${x.seed.slice(0, 32)}${minted ? `-${minted}` : ""}`; minted++;
+        // a minted id carries 128 bits of the activation's seed (review 10-07 H5: 32 bits collided across forks), so a re-run mints it
+        // again. API 2 (R 10-17, ID HARDENING): opaque (no slug: a word in an id goes stale) and never the script's choice: the
+        // id is minted and returned. An API-1 act (an older log's) re-runs as it was minted then: <slug>-<seed>, or the id it chose
+        const v2 = (x.api ?? API) >= 2;
+        if (v2 && a[1] !== null) throw new HostError("world.create(components): a script never chooses an id; the id is minted and returned (const id = world.create({...}))");
+        const id = a[1] !== null ? wantId(a[1], "world.create") : v2 ? `${x.seed.slice(0, 32)}${minted ? `-${minted}` : ""}` : `${slug(isEido(comps.model) ? comps.label ?? modelWord(comps.model, null) : comps.model ?? comps.label ?? "thing")}-${x.seed.slice(0, 32)}${minted ? `-${minted}` : ""}`; minted++;
         for (const c of Object.keys(comps)) wantComp(c, "world.create");
         write(); const mk = { verb: "create", id }; ops.push(mk); apply(mk);
         for (const [c, v] of Object.entries(comps)) { write(); const op = { verb: "set", id, comp: c, value: materialize(c, v).value }; ops.push(op); apply(op); }

@@ -32,6 +32,8 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch",
   if (!founded.ok) throw new Error(`scratch world: new refused: ${JSON.stringify(founded.refused)}`);
   const W = {
     name, root, owner,
+    /** the world object itself (the system door, forkCopy, takes it) */
+    world: () => (w ??= open(root, name, catalogue)),
     call,
     /** send one planned request ({verb, args}); extra args (throughLock, dry, expect) ride along. */
     send: (req, extra = {}, actor = owner) => (req ? call(req.verb, { ...req.args, ...extra }, actor) : { ok: true, noop: true }),
@@ -73,6 +75,9 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch",
   };
   return W;
 }
+
+/** The world object behind a scratch world (for the authority's system door: forkCopy). */
+export const worldObject = (W) => W.world();
 
 /** A VIEW-form record ({model?, pos, …components flat}) as the fold holds it (`c`: {model?, transform, parent?, …components}, names encoded) — what seed()
  *  writes, read back without the authority: the suites run their fixtures through the editor as fold records (C7b). */

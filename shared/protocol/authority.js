@@ -12,8 +12,8 @@ import { MOVER, TRACK, bodyBox, bodyScale, floorStep, sweep, tokensAfter } from 
 import { checkSockets, checkSocket, checkStation } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, homeOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
-import { mintId, PERSON_ID } from "./ids.js";
-import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, outOfRange, rangeWords, resolveVersioned, statusOf, canonicalName, STATUSES } from "./componentspec.js";
+import { mintId, PERSON_ID, isPlaceholder } from "./ids.js";
+import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, refsOf, refFields, outOfRange, rangeWords, resolveVersioned, statusOf, canonicalName, STATUSES } from "./componentspec.js";
 import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
 import { dec, partSlot } from "./names.js";
 import { READ_ONLY, GHOST_OK } from "./verbclasses.js";
@@ -31,7 +31,7 @@ import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND,
 import { livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
 import { shapeRepairOps, shapesMarked, SHAPES_VERSION } from "./shaperepair.js";
 import { atWrite } from "./assetref.js";
-import { isEido, eidoHex, modelWord } from "../eido.js";
+import { eidoHex } from "../eido.js";
 import { trustRefusal } from "../drafts.js";
 import { planLaunch } from "./launchplan.js";
 import { REACH, HAND_Y, MAX_HELD, KICK, SHOVE, BODY_REACH } from "./physconst.js";
@@ -43,7 +43,7 @@ import { SOCKETS_PER_HOST, isLegacyParent, isSocketC, socketRules, actionRules, 
 import { Refusal, refuse, said } from "./authority/refuse.js";
 import { LAB_CATALOGUE, modelOf, geomOf, boxOfM, geomE, withCatalogue, meshShape } from "./authority/catalogue.js";
 export { LAB_CATALOGUE, withCatalogue, MESH_SIZE, meshSize, meshGeom, meshShape } from "./authority/catalogue.js";
-import { CHANGE, IMPORTED_ONLY, VOLATILE, clone, createOps, delOp, isE, lockedC, nonce16, opsQuiet, qr3, scratch, setOp, slug, versionOf, versionSeq, LOCK_LEVELS, lockLevel, lockRank } from "./authority/storage.js";
+import { CHANGE, IMPORTED_ONLY, VOLATILE, clone, createOps, delOp, isE, lockedC, nonce16, opsQuiet, qr3, scratch, setOp, versionOf, versionSeq, LOCK_LEVELS, lockLevel, lockRank } from "./authority/storage.js";
 export { posAt, worldOf, seal, LOCK_LEVELS, lockLevel, lockRank } from "./authority/storage.js";
 import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, satCost, satDepth, surfacesOf, worldT, yawQ } from "./authority/math.js";
 import { SPATIAL, WORK_BUDGET, clockMs, familyOf, groundOf, groundReady, hitsIx, kidsMap, near, spatial, spend, supportBelow, supportUnder } from "./authority/spatial.js";
@@ -115,6 +115,7 @@ export function request(w, actor, verb, args = {}) {
     // the returns that are due (each one a thing someone let go of that long ago)
     if (h && w.exists) { CTX.work = { left: Infinity, until: Infinity, k: 0 }; restampEngine(w); settleSim(w); returnDue(w); expireAsks(w); CTX.work = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 }; }
     args = wire(args);
+    const minted = h && w.exists ? placeholders(w, verb, args) : null; if (minted) args = minted.args;
     // throughLock (§5) is a flag on any request, not an argument of one verb: checked here, then admit reads it
     // expect (§3a) is the same kind of flag: the values a gesture started from. Checked here, before anything is built
     const { throughLock, expect, ...plain } = args;
@@ -124,6 +125,7 @@ export function request(w, actor, verb, args = {}) {
     if (expect !== undefined) expectCheck(w, expect);
     if (verb === "create" && args.place) { const b2 = validate("place", { ...args.place, id: "x" }); if (b2) { const { code, reason, fix, ...rest } = b2; refuse(code, `place: ${reason}`, fix, rest); } }
     const r = h(w, actor, args);
+    if (minted && r && (r.ok || r.dry)) r.ids = minted.ids;   // each placeholder and the id it became (never logged: the act holds the ids)
     drainHeld(w);    // grab / release (grabbable): scripts whose scope covers the thing hear who took it, how it was let go
     drainScripts(w); // what the request's own entries trigger (changed:<comp>, say), after them, each its own activation
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; }
@@ -131,10 +133,49 @@ export function request(w, actor, verb, args = {}) {
     return r;
   } catch (e) {
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } // a refusal still updates the authority's own ring and throttle (presence, unlogged)
-    if (e instanceof Refusal) { logRefusal(w, actor, verb, args, e.code); const { code, reason, fix, ...rest } = e; return { ok: false, refused: { code, reason, fix: fix || (VERBSPEC[verb] ? `help {verb: '${verb}'} shows its arguments with examples` : "help lists every verb"), ...pick(rest) } }; }
+    if (e instanceof Refusal) { if (!UNLOGGED_REFUSALS.has(e)) logRefusal(w, actor, verb, args, e.code); const { code, reason, fix, ...rest } = e; return { ok: false, refused: { code, reason, fix: fix || (VERBSPEC[verb] ? `help {verb: '${verb}'} shows its arguments with examples` : "help lists every verb"), ...pick(rest) } }; }
     throw e;
   } finally { exit(); }
 }
+// ---- ids: writers never choose them (R 10-17 00:46, STAGING-TODO "ID HARDENING" (2)) ----
+// The authority mints every id (shared/protocol/ids.js: 26 base32, no slug). A writer that needs to name a thing it is
+// making — to parent something to it, place something on it, point at it — in the same request writes a request-local
+// placeholder ('$table', JSON:API's lid) as the create's id and wherever it refers to it; the authority mints an id for
+// each before the request is checked, writes the minted id everywhere the placeholder stood, and the reply maps them
+// ({ids: {"$table": "<minted>"}}). The act is the request with the minted ids in it: a placeholder never reaches the log.
+// A chosen id on a create (create, create {from}, a batch's create) is refused, with the fix. System acts that must
+// keep ids (a fork's copy: forkCopy) keep copying them verbatim; so do tests' fixtures, through fixtureIds() (in-process
+// only: no request word reaches it, and ids-check G1 holds every runtime file to never calling it).
+let FIXTURE_IDS = false;
+/** Tests' fixtures seed known ids the way a fork's copy does (in-process only; never called by a runtime file). */
+export function fixtureIds(on = true) { FIXTURE_IDS = !!on; }
+const UNLOGGED_REFUSALS = new WeakSet();   // a refusal of the placeholder pass names placeholders: the attempt isn't recorded
+// keys whose string value names a thing, and keys whose list does: an undefined placeholder there is refused by name
+const REF_KEYS = new Set(["id", "to", "on", "beside", "hang", "against", "near", "from", "target", "copy", "facing"]);
+const REF_LISTS = new Set(["targets", "marks", "ids", "refs"]);
+function placeholders(w, verb, args) {
+  const creates = verb === "create" ? [[null, args]]
+    : (verb === "batch" || verb === "fork-copy") && Array.isArray(args?.ops) ? args.ops.map((o, i) => [i, o && o.verb === "create" && o.args && typeof o.args === "object" ? o.args : null]).filter(([, a]) => a) : [];
+  const at = (i) => (i === null ? "" : `batch op ${i}: `);
+  const no = (reason, fix) => { try { refuse("shape", reason, fix); } catch (e) { UNLOGGED_REFUSALS.add(e); throw e; } };
+  const keep = CTX.forking || FIXTURE_IDS; const ids = {};
+  for (const [i, a] of creates) { if (a.id === undefined || a.id === null) continue;
+    if (isPlaceholder(a.id)) { if (a.id in ids) no(`${at(i)}the placeholder '${a.id}' is defined twice in one request`, `each placeholder names one new thing: give the other create its own ('${a.id}-2'), and refer to either by its name elsewhere in the request`); ids[a.id] = null; continue; }
+    if (!keep) { const word = String(a.id).replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^[-_]+/, "").slice(0, 40) || "name";
+      refuse("shape", `${at(i)}a thing's id isn't chosen by the writer: the authority mints it (an id never changes, so it carries no word; what a thing is called is its label)`, `leave id out (the reply's refs name the id it gets), or write '$${word}' as a placeholder: refs to '$${word}' in the same request resolve, and the reply's ids map gives the id it became`); } }
+  const st = w.state(); const ever = w.everIds?.() ?? new Set(); const fresh = new Set();
+  for (const k of Object.keys(ids)) { let id; do id = mintId(); while (st.entities[id] || ever.has(id) || fresh.has(id)); fresh.add(id); ids[k] = id; }
+  const sub = (v, key) => {
+    if (typeof v === "string") { if (v in ids && isPlaceholder(v)) return ids[v];
+      if (isPlaceholder(v) && REF_KEYS.has(key)) no(`'${v}' isn't defined in this request`, `a placeholder names a thing a create in the same request makes (create {id: '${v}', …}); a thing already here goes by its id (look lists them)`);
+      return v; }
+    if (Array.isArray(v)) return v.map((x) => (typeof x === "string" && REF_LISTS.has(key) ? sub(x, "id") : sub(x, key)));
+    if (v && typeof v === "object") { const o = {}; for (const [k, x] of Object.entries(v)) o[k] = sub(x, k); return o; }
+    return v; };
+  const out = sub(args, null);
+  return Object.keys(ids).length ? { args: out, ids } : null;
+}
+
 // R7: a refused write is part of the record (what someone TRIED, in true order; §2.1 "the request as sent, plus its
 // refusal if refused"): an act whose body is {request, refused: {code}}, the request cut to 2 KiB, inside the actor's
 // byte budget. Never logged: reads, dry runs, and the refusals that ARE the budget or the authority's own state (rate,
@@ -1302,13 +1343,11 @@ function merge7396(target, patch) {
   for (const [k, v] of Object.entries(patch)) { if (v === null) delete out[k]; else out[k] = merge7396(out[k], v); }
   return out;
 }
-// a fresh id: never one this world has had (§3d H7), nor one already used in this request
-// review 10-07 H5: <slug>-<26 base32> (shared/protocol/ids.js), never <slug>-<count>, which two forks minted alike
-// a thing's word for a minted id (gate 21, 10-16): a model is its library path (R 10-17), but one stored as a content address
-// before has a hex for a file name: it is named by the catalogue's label for it (the file its index names here), else "thing"
-const idWord = (m) => (isEido(m) ? modelWord(m, (x) => modelOf(x)?.label) : m);
-function mint(st, base) { const ever = CTX.mintW?.everIds() ?? new Set(); let id;
-  do id = mintId(slug(base)); while (st.entities[id] || ever.has(id)); return id; }
+// a fresh id: never one this world has had (§3d H7), nor one already used in this request (`also`)
+// review 10-07 H5: 26 base32 (shared/protocol/ids.js), never <slug>-<count>, which two forks minted alike; R 10-17: no slug
+// at all (a word in an id goes stale; the label is the name)
+function mint(st, also = null) { const ever = CTX.mintW?.everIds() ?? new Set(); let id;
+  do id = mintId(); while (st.entities[id] || ever.has(id) || also?.has(id)); return id; }
 
 // create {at} without from (holes review 10-15 M1: it was never read, and the thing landed at the origin with ok):
 // [x, z] is on the ground there (place {at}: returned, for buildCreate to place); [x, y, z] is its origin exactly; {pos?,
@@ -1332,9 +1371,9 @@ function buildCreate(ctx, a) {
   const comps = { ...(a.components ?? {}) };
   if (a.model) comps.model = a.model;
   const placeAt = createAt(a, comps);
-  const id = a.id ?? mint(ctx.st, idWord(comps.model) ?? "thing");   // the writer's own name for it where it gave one
-  if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§3.1: a–z, 0–9 and '-', up to 64; or leave id out and the authority mints one");
-  if (ctx.st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id, or leave id out and the server mints one");
+  const id = a.id ?? mint(ctx.st);   // a placeholder's minted id (request()), a fork's copied one, or minted here
+  if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§3.1: a–z, 0–9 and '-', up to 64; leave id out and the authority mints one");
+  if (ctx.st.entities[id]) refuse("exists", `'${id}' already exists`, "leave id out and the authority mints one");
   for (const k of Object.keys(comps)) if (!isComponent(k)) refuse("shape", `'${k}' isn't a component name`, "§3.1: [a-z][a-z0-9-]*, optionally <domain>/, @<n> and :<key>", { didYouMean: guess(k, Object.keys(COMPONENTS)) });
   for (const k of Object.keys(comps)) handWrite(ctx, id, k);
   const out = {};
@@ -1400,6 +1439,7 @@ function buildDelete(ctx, a) {
   const kids = descendants(ctx.st, a.id);
   if (kids.length) ctx.notes.push({ id: a.id, why: `its ${kids.length} children went with it: ${kids.join(", ")}` });
   const gone = new Set([a.id, ...kids]); const ops = [...kids.reverse(), a.id].map((id) => delOp(id));
+  ops.push(...clearRefsTo(ctx, gone));
   const after = scratch(ctx.st, ops); const setDown = [];
   // only what stands over a surface of what's gone can have rested on it (the index: its neighbours, never the world)
   const ixb = spatial(ctx.st); const over = new Set();
@@ -1410,6 +1450,30 @@ function buildDelete(ctx, a) {
     const now = supportBelow(after, (b.min[0] + b.max[0]) / 2, (b.min[2] + b.max[2]) / 2, b.min[1], new Set([id]));
     const t = worldT(after, id); ops.push(setOp(id, "transform", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] })); setDown.push({ id, onto: now.id }); ctx.refs.add(id); }
   if (setDown.length) ctx.notes.push({ setDown, why: "they were resting on what you deleted, so they were set down on what's below" });
+  return ops;
+}
+
+// R 10-17 (ID HARDENING (4)): a thing's deletion nulls the typed references to it (and to the children that go with it) in
+// the same act, as Unity, Unreal and Resonite do — a reference never outlives what it names. A list loses the entry; a single
+// reference's field goes, and with it a value that can't stand without it (look-at's target: the look-at goes); a reset
+// left with no targets is dropped from the reactions (it can't send nothing home); a home's parent goes (home under the
+// root). Parent links need nothing here: the children went with it. The reply's note lists every reference cleared.
+const refComps = new Map();   // component name → does it hold references (the registry's typed fields)
+const holdsRefs = (k) => { let v = refComps.get(k); if (v === undefined) { v = refFields(k).length > 0; refComps.set(k, v); } return v; };
+function clearRefsTo(ctx, gone) {
+  const ops = [], cleared = [], dropped = [];
+  for (const [id, e] of Object.entries(ctx.st.entities)) { if (gone.has(id)) continue;
+    for (const [k, v] of Object.entries(e.c)) { if (k === "parent" || baseOf(k) === "parent" || !holdsRefs(k) || v === PURGED) continue;
+      if (!refsOf(k, v).some((r) => gone.has(r.id))) continue;
+      const r = mapRefs(k, v, (x, at) => { if (!gone.has(x)) return x; cleared.push({ from: `${id}.${at.replace(/^[^.]*/, k)}`, was: x }); return null; });
+      let nv = r.value;
+      if (nv !== undefined && baseOf(k) === "reactions") { nv = { ...nv };
+        for (const [act, hd] of Object.entries(nv)) if (hd && typeof hd === "object" && Array.isArray(hd.targets) && !hd.targets.length) { delete nv[act]; dropped.push(`${id}.${k}.${act}`); } }
+      if (nv !== undefined && baseOf(k) === "home" && nv.parent && typeof nv.parent === "object" && nv.parent.to === undefined) { const { parent, ...rest } = nv; nv = rest; }
+      if (nv === undefined || (baseOf(k) === "reactions" && !Object.keys(nv).length)) { ops.push(delOp(id, k)); dropped.push(`${id}.${k}`); }
+      else ops.push(setOp(id, k, nv));
+      ctx.refs.add(id); } }
+  if (cleared.length) ctx.notes.push({ cleared, ...(dropped.length ? { removed: dropped } : {}), why: `references to what you deleted were cleared in the same act${dropped.length ? " (a value that can't stand without its reference, or a reset left with nothing to send home, went with it)" : ""}` });
   return ops;
 }
 
@@ -1601,6 +1665,15 @@ function buildPlace(ctx, a) {
 // The pairs come from the spatial index (each thing against what its box meets, never against the world), and the work
 // is counted: `strict` (check, a put's claim) is refused past the budget; a write's own advisory warnings, computed
 // after it's written, end with an `unchecked` entry instead (a write is never refused after it lands).
+// a stored reference that names nothing (R 10-17 ID HARDENING (4)): a write can't make one (every ref is checked) and a delete
+// clears them, but an old log, an import or a merge can hold one. lint says where it is and what it names.
+function danglingRefs(st, ids) {
+  const out = [];
+  for (const id of ids) { const e = st.entities[id]; if (!e) continue;
+    for (const [k, v] of Object.entries(e.c)) { if (v === PURGED || !holdsRefs(k)) continue;
+      for (const r of refsOf(k, v)) if (!st.entities[r.id]) out.push({ id, kind: "dangling", at: `${id}.${r.path.replace(/^[^.[]*/, k)}`, names: r.id, fix: `nothing here is called '${r.id}': point it at something that is, or clear it` }); } }
+  return out;
+}
 function warnings(st, ids, strict = false) {
   const out = []; const ix = spatial(st); const pairs = new Map();   // id → the things it was already said to overlap
   // the ground still loading (r3 F3): no sunk/floating advice; a strict check (a put's claim) has nothing to judge it on and
@@ -2001,7 +2074,7 @@ function activate(w, id, name, ev) {
     if (D0.length >= DRY.n) return out("refused", { code: "rate", why: `${said(who)} has asked for ${D0.length} dry runs in the last minute; at most ${DRY.n}` });
     D0.push(now0); w.presenceDirty = true; }
   const t0 = performance.now();
-  const res = w.scripts.run({ text: blob.text, self: id, key, event, knobs: v.knobs ?? {}, now, seed, st,
+  const res = w.scripts.run({ text: blob.text, self: id, key, event, knobs: v.knobs ?? {}, now, seed, api: SR.API, st,
     near: (r) => [...here].filter(([, at]) => at && dist(at, me) <= r).map(([k]) => k).sort(), count: () => here.size,
     name: (who) => (typeof who === "string" && (isIdentity(who) || isScriptActor(who)) ? CTX.nameOf?.(who) ?? dec(who) ?? null : null) });
   { const ms = performance.now() - t0; dutyLog.push({ at: performance.now(), ms, w: w.worldId }); } // dry runs spend the thread too
@@ -2617,10 +2690,10 @@ function partKeys(st, ids, lineage, reserved = []) {
   return (id) => out.get(id) ?? id;
 }
 // Ids for a copy's parts: minted, so they follow §2.3; which part is which lives in each part's blueprint.key.
+// each part of a copy gets a minted id of its own (R 10-17: opaque; a part's id was <copy>-<its key's slug>)
 function partIds(st, copy, rootKey, keys) {
-  const map = new Map([[rootKey, copy]]); const used = new Set(Object.keys(st.entities)); used.add(copy);
-  for (const k of keys) { if (map.has(k)) continue; let id = `${copy}-${slug(k)}`.slice(0, 64); let n = 2;
-    while (used.has(id) || !isEntityId(id)) id = `${copy}-${slug(k)}`.slice(0, 60) + `-${n++}`; used.add(id); map.set(k, id); }
+  const map = new Map([[rootKey, copy]]); const used = new Set([copy]);
+  for (const k of keys) { if (map.has(k)) continue; const id = mint(st, used); used.add(id); map.set(k, id); }
   return map;
 }
 // Offer a newer record to a copy: per-part, per-component, per-FIELD three-way merge (R13). base = the copy's record,
@@ -2676,14 +2749,14 @@ function buildCreateFrom(ctx, a) {
   const w = ctx.w; let rec;
   try { rec = w.getBlob(a.from); } catch { refuse("not-found", `no blueprint ${a.from}`, "find {kind: 'blueprint'} lists this world's blueprints"); }
   if (!isPublished(ctx.st, a.from)) refuse("not-published", `${a.from} isn't one of this world's blueprints`, "publish it here first");
-  const id = a.id ?? mint(ctx.st, rec.name);
+  const id = a.id ?? mint(ctx.st);
   if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§3.1: a–z, 0–9 and '-', up to 64; or leave id out");
   if (ctx.st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id for the copy");
   const ids = partIds(ctx.st, id, rec.root, rec.parts.map((p) => p.key));
   // a record published before part keys were unique (N1) may name a key twice: each later twin gets an id of its own
   // (a part that names a twin as its parent rides the first; there's no telling which was meant)
   const seen = new Set(), used = new Set([...ids.values()]); const idAt = rec.parts.map((p) => { if (!seen.has(p.key)) { seen.add(p.key); return ids.get(p.key); }
-    let n = 2, x; do x = `${ids.get(p.key)}`.slice(0, 60) + `-${n++}`; while (used.has(x) || ctx.st.entities[x]); used.add(x); return x; });
+    const x = mint(ctx.st, used); used.add(x); return x; });
   const ops = [], unbound = [];
   for (const [i, p] of rec.parts.entries()) { const c = clone(p.components);
     if (p.key === rec.root && i === rec.parts.findIndex((q) => q.key === rec.root)) c.transform = resolve(ctx, id, "transform", { ...c.transform, ...(a.at ?? {}) });
@@ -2707,7 +2780,7 @@ function buildDuplicate(ctx, a) {
   if (src === "@world" || !st.entities[src]) refuse("not-found", `no thing called '${src}' to copy`, "from takes a blueprint hash (sha256:…) or the id of a thing here", { didYouMean: guess(String(src), Object.keys(st.entities)) });
   const all = [src, ...descendants(st, src)];
   const sc = st.entities[src].c;
-  const id = a.id ?? mint(st, typeof sc.label === "string" ? sc.label : typeof sc.model === "string" ? idWord(sc.model).split("/").pop().replace(/\.[a-z0-9]+$/i, "") : src);
+  const id = a.id ?? mint(st);
   if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§3.1: a–z, 0–9 and '-', up to 64; or leave id out");
   if (st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id for the copy");
   const ids = partIds(st, id, src, all);
@@ -3838,7 +3911,8 @@ const VERBS = {
       return { ok: true, blueprints: Object.entries(lib).filter(([k]) => k.startsWith(BLUEPRINTS)).map(([k, v]) => ({ hash: `sha256:${k.slice(BLUEPRINTS.length)}`, ...v, by: creatorOf(w, "@world", k)?.rights ?? null })).filter((b) => String(b.name ?? "").toLowerCase().includes(q)) }; }
     return { ok: true, models: CTX.cat.list(q).slice(0, 50).map(([k, m]) => ({ model: k, ...(m.size ? { size: m.size } : { size: null, note: "not measured here" }), about: m.label, surfaces: (m.surfaces ?? []).map((s) => s.y), ...(modelSocketNames(m) ? { seats: modelSocketNames(m) } : {}) })) };
   },
-  lint(w, actor, a) { const st = w.state(); return { ok: true, warnings: warnings(st, a.id ? [a.id] : Object.keys(st.entities), true) }; },
+  lint(w, actor, a) { const st = w.state(); const ids = a.id ? [a.id] : Object.keys(st.entities);
+    return { ok: true, warnings: [...warnings(st, ids, true), ...danglingRefs(st, ids)] }; },
   history(w, actor, a) {
     // one thing's history, newest first, paged backwards (R 10-04: recent by default, deeper on request): before = the seq
     // to continue from (the reply's `next`), limit = how many acts per page

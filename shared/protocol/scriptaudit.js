@@ -69,7 +69,7 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
       event.text = trig.body.text; if (trig.body.to !== undefined) event.to = trig.body.to; }
     if (b.on === "use" && isE(trig) && trig.body?.request?.args !== undefined) event.args = trig.body.request.args;
     // no wall clock on a re-run: fuel (deterministic) is the limit; the auditor's machine may be slower than the authority's
-    const res = run({ text: blob.text, self: id, key: b.script, event, knobs: v.knobs ?? {}, now: a.ts, seed: b.seed, st, reads: b.reads ?? { near: [], count: [], names: [] }, limits: { wallMs: 10000 } });
+    const res = run({ text: blob.text, self: id, key: b.script, event, knobs: v.knobs ?? {}, now: a.ts, seed: b.seed, api: b.api ?? 1, st, reads: b.reads ?? { near: [], count: [], names: [] }, limits: { wallMs: 10000 } });
     if (!res.ok) { flags.push({ seq, check: "rerun", why: `the re-run failed: ${res.code}: ${res.why}` }); return; }
     reran++;
     const want = elide(st, res.ops);
