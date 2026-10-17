@@ -15,6 +15,9 @@
 //        act {kick|ban|unban|bans}; light/remove/blueprint_place are create / act delete / create {from}; a folded name
 //        still answers, teaching where it went
 //   AT8  a dropped agent dials again on shared/redial.js's schedule (reset by the join), not a fixed 1.5 s (review r5 F4)
+//   AT7  an agent is a body under the same consent as a person (its table on join; no `pushable`; say takes `to`)
+//   AT9  an alias runs the new tool with the OLD argument shape (walk_to, spawn, world_verb, snapshot); renumbered from a
+//        second AT7 (claims r10 O4)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -96,7 +99,7 @@ const { HANDLERS, TOOLS, toolList } = await import("../../mcpl/tools.ts");
     const toolsSrc = fs.readFileSync(path.join(ENGINE, "mcpl/tools.ts"), "utf8");
     ok(/async function resolveWho\(/.test(toolsSrc), "AT8a tools.ts has ONE resolveWho (name or u-… → identity, via whois)");
     ok((toolsSrc.match(/await ag\.request\("whois", \{ name/g) ?? []).length === 2, "AT8b whois-by-name is called from exactly two places — the resolver and the whois tool itself — not once per verb");
-    ok(/BODY_VERBS\[verb\]\) return[\s\S]{0,400}resolveWho\(/.test(toolsSrc.slice(toolsSrc.indexOf("act: async"))), "AT8c `act` resolves args.who through the resolver before sending a who-taking verb");
+    ok(/Object\.hasOwn\(BODY_VERBS, verb\)\) return[\s\S]{0,400}resolveWho\(/.test(toolsSrc.slice(toolsSrc.indexOf("act: async"))), "AT8c `act` resolves args.who through the resolver before sending a who-taking verb");
     ok(!/sky, weather, terrain and grass verbs/.test(toolsSrc), "AT8d inspect's description no longer cites the sky/weather/terrain/grass verbs (they are `edit {id: \"@world\"}` now)");
   }
   ok(!names.some((n) => /^rehearse_/.test(n)) && !/ag\.flightBody(Down|Recovered)\(/.test(fs.readFileSync(path.join(ENGINE, "mcpl/tools.ts"), "utf8")), "AT6 the rehearsal hooks are gone from the tool surface: no tool, no call into the trusted seam (a bench calls the agent's flightBodyDown directly)");
@@ -286,39 +289,39 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   const un = await call("edit", { id: "post", set: { "flags.lock": false, "flags.hidden": false } }); await sleep(200);   // by its label
   ok(!un.isError && !ag.foldRecord(ID.post)?.lock && !ag.foldRecord(ID.post)?.hidden, "AT5 …and what it teaches works (by its label too)", T(un)); }
 
-// ---- AT7: an alias runs the new tool with the OLD argument shape (review 10-15 #5: walk_to {x, z} was a shape error) ----
+// ---- AT9: an alias runs the new tool with the OLD argument shape (review 10-15 #5: walk_to {x, z} was a shape error) ----
 { const { handleTool } = await import("../../mcpl/tools.ts");
   const ctx = { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } };
   const x0 = ag.pos.x, z0 = ag.pos.z;
   const w = await handleTool(ctx as any, "walk_to", { x: x0 + 1.5, z: z0, tolerance: 0.2 });
-  ok(!w.isError && /is now called move/.test(T(w)) && Math.abs(ag.pos.x - (x0 + 1.5)) < 0.25, "AT7 walk_to {x, z, tolerance} walks the body (move {to}), and says the new name", { text: T(w).slice(0, 160), x: ag.pos.x, x0 });
+  ok(!w.isError && /is now called move/.test(T(w)) && Math.abs(ag.pos.x - (x0 + 1.5)) < 0.25, "AT9 walk_to {x, z, tolerance} walks the body (move {to}), and says the new name", { text: T(w).slice(0, 160), x: ag.pos.x, x0 });
   const n0 = ag.entities.size;
   const sp = await handleTool(ctx as any, "spawn", { lib: "test/cup.glb", x: x0 + 3, z: z0 + 3, id: "alias-cup" });
   const named = (n) => { const t = ag.thingRef(n); return "id" in t ? t.id : null; };   // the old spawn's id is the thing's label now (R 10-17)
   for (let i = 0; i < 60 && !named("alias-cup"); i++) await sleep(50);
-  ok(!sp.isError && !!named("alias-cup") && ag.entities.size === n0 + 1, "AT7 spawn {lib, x, z, id} creates the thing (create {model, at}, the id its label: the authority mints ids)", T(sp).slice(0, 200));
+  ok(!sp.isError && !!named("alias-cup") && ag.entities.size === n0 + 1, "AT9 spawn {lib, x, z, id} creates the thing (create {model, at}, the id its label: the authority mints ids)", T(sp).slice(0, 200));
   // M1 (holes review 10-15): with a yaw the alias builds at {pos, yaw}, which buildCreate never read: ok, at the origin.
   // Mutation (must go red): drop the `a.at` branch in authority.js buildCreate.
   const spAt = async (args, id) => { const r = await handleTool(ctx as any, "spawn", { lib: "test/cup.glb", ...args, id }); for (let i = 0; i < 60 && !named(id); i++) await sleep(50); return { r, rec: ag.foldRecord(named(id)) as any }; };
   const near = (p, x, z) => Array.isArray(p) && Math.abs(p[0] - x) < 0.05 && Math.abs(p[2] - z) < 0.05;
   const xz = await spAt({ x: x0 - 3, z: z0 + 3 }, "alias-cup-xz");
-  ok(!xz.r.isError && near(xz.rec?.pos, x0 - 3, z0 + 3), "AT7 spawn {lib, x, z} lands at x, z (not the origin)", [T(xz.r).slice(0, 200), xz.rec?.pos]);
+  ok(!xz.r.isError && near(xz.rec?.pos, x0 - 3, z0 + 3), "AT9 spawn {lib, x, z} lands at x, z (not the origin)", [T(xz.r).slice(0, 200), xz.rec?.pos]);
   const yw = await spAt({ x: x0 - 3, z: z0 - 3, yaw: 1 }, "alias-cup-yaw");
   const qy = [0, Math.sin(0.5), 0, Math.cos(0.5)];
-  ok(!yw.r.isError && near(yw.rec?.pos, x0 - 3, z0 - 3) && Array.isArray(yw.rec?.q) && yw.rec.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3), "AT7 spawn {lib, x, z, yaw} lands at x, z facing yaw (create {at: {pos, yaw}})", [T(yw.r).slice(0, 200), yw.rec?.pos, yw.rec?.q]);
+  ok(!yw.r.isError && near(yw.rec?.pos, x0 - 3, z0 - 3) && Array.isArray(yw.rec?.q) && yw.rec.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3), "AT9 spawn {lib, x, z, yaw} lands at x, z facing yaw (create {at: {pos, yaw}})", [T(yw.r).slice(0, 200), yw.rec?.pos, yw.rec?.q]);
   // review r2 F8: with a yaw and no y the alias put the origin at y 0 (create {at: {pos: [x, 0, z], yaw}}): never seated on
   // what's under x, z. Now it is place {at: [x, z], yaw}, the same seat as without a yaw: over the wall (top at 2.4) it lands ON it
   const ywOn = await spAt({ x: 1, z: 3, yaw: 1 }, "alias-cup-yaw-on");
   const noYaw = await spAt({ x: -1, z: 3 }, "alias-cup-on");
   ok(!ywOn.r.isError && near(ywOn.rec?.pos, 1, 3) && Math.abs(ywOn.rec?.pos?.[1] - 2.4) < 0.02 && Math.abs(noYaw.rec?.pos?.[1] - ywOn.rec?.pos?.[1]) < 1e-6
     && Array.isArray(ywOn.rec?.q) && ywOn.rec.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3),
-    "AT7 spawn {lib, x, z, yaw} over the wall sits on its top, like spawn without a yaw, facing yaw (review r2 F8)", [T(ywOn.r).slice(0, 200), ywOn.rec?.pos, ywOn.rec?.q, noYaw.rec?.pos]);
+    "AT9 spawn {lib, x, z, yaw} over the wall sits on its top, like spawn without a yaw, facing yaw (review r2 F8)", [T(ywOn.r).slice(0, 200), ywOn.rec?.pos, ywOn.rec?.q, noYaw.rec?.pos]);
   const sq = await handleTool(ctx as any, "spawn", { query: "cup" });
-  ok(sq.isError && /library \{query/.test(T(sq)), "AT7 spawn {query} is refused with the two calls that do it now", T(sq).slice(0, 200));
+  ok(sq.isError && /library \{query/.test(T(sq)), "AT9 spawn {query} is refused with the two calls that do it now", T(sq).slice(0, 200));
   const wv = await handleTool(ctx as any, "world_verb", { verb: "say", args: { text: "alias says" } });
-  ok(!wv.isError && /is now called act/.test(T(wv)), "AT7 world_verb {verb, args} runs act", T(wv).slice(0, 160));
+  ok(!wv.isError && /is now called act/.test(T(wv)), "AT9 world_verb {verb, args} runs act", T(wv).slice(0, 160));
   const sn = await handleTool(ctx as any, "snapshot", { view: "third" });
-  ok(/is now called screenshot/.test(T(sn)) && !/\bto\b.*required|shape/i.test(T(sn)), "AT7 snapshot {view} reaches screenshot with its own shape (no spectator here is fine; a shape error is not)", T(sn).slice(0, 160)); }
+  ok(/is now called screenshot/.test(T(sn)) && !/\bto\b.*required|shape/i.test(T(sn)), "AT9 snapshot {view} reaches screenshot with its own shape (no spectator here is fine; a shape error is not)", T(sn).slice(0, 160)); }
 
 // ---- AT8 (review r5 F4): a dropped agent dials again on the browser's schedule (shared/redial.js), not a fixed 1.5 s ----
 { const rid = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Rid", world: "yard", avatar: "" });
