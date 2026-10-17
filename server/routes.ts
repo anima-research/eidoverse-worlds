@@ -13,7 +13,7 @@ import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdir
 import { sfuDiag } from "./sfuadapter.ts";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
-import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN, STORE_MIN } from "./config.ts";
+import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN, STORE_MIN, SNAP_TIMEOUT_MS } from "./config.ts";
 import { isStoreOriginal, isServingArtifact, variantStatus, variantSource, freshOver } from "./store-variants.ts";
 import { glbPerfOfFile } from "./glbperf.ts";
 import { rankOf, TIER_NAMES } from "../shared/perfrank.js";
@@ -61,6 +61,8 @@ import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 export type Srv = {
   upgrade(req: Request, opts?: { data?: unknown }): boolean;
   requestIP(req: Request): { address: string } | null;
+  /** per-request idle timeout in seconds (overrides Bun.serve's idleTimeout) */
+  timeout?(req: Request, seconds: number): void;
 };
 
 // ---- snapshots: the world serves views of itself ---------------------------
@@ -83,8 +85,14 @@ function requestSnap(world: World, follow: string, view = "first"): Promise<{ ok
     pendingSnaps.set(id, { resolve });
     renderer.ws.send(JSON.stringify({ type: "snap", id, follow, view }));
     setTimeout(() => {
-      if (pendingSnaps.delete(id)) resolve({ ok: false, err: "renderer timed out", status: 504 });
-    }, 12_000);
+      if (pendingSnaps.delete(id)) {
+        // the one failure that left no server-side trace: say which snap, whose
+        // renderer, and how backed-up its socket was
+        console.log(`[snap] ${id} follow=${follow} view=${view}: no frame from ${renderer.id} in ${SNAP_TIMEOUT_MS / 1000}s ` +
+          `(renderer ws buffered=${renderer.ws.getBufferedAmount?.() ?? "?"}) — 504`);
+        resolve({ ok: false, err: "renderer timed out", status: 504 });
+      }
+    }, SNAP_TIMEOUT_MS);
   });
 }
 
@@ -656,7 +664,12 @@ const ROUTES: Route[] = [
   },
   {
     match: (u) => u.pathname === "/snap",
-    handler: async ({ url }) => {
+    handler: async ({ req, url, srv }) => {
+      // /snap sends nothing while it waits for the frame, so it is an idle
+      // connection to Bun: give this request its own timeout a little past the
+      // window, rather than leaning on the server-wide idleTimeout (Bun's
+      // default is 10s, shorter than the default 12s window).
+      srv.timeout?.(req, Math.ceil(SNAP_TIMEOUT_MS / 1000) + 5);
       const w = worlds.get(url.searchParams.get("world") ?? "commons");
       const follow = url.searchParams.get("follow") ?? "";
       if (!w) return new Response("unknown world", { status: 404 });

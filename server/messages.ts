@@ -473,13 +473,33 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     c.world.dirty.set(c.id, pose);
   },
   "snap-result": ({ c, ws, now, expel }, msg) => {
+    // Every drop used to be silent, so a frame arriving after the timeout (or
+    // from a client without the renderer flag) looked identical to no reply.
+    // msg.id is client text: bound and escape it, or a peer could print its own
+    // "log lines" (embedded newlines) into the server log.
+    const loggedId = () => typeof msg.id === "string" ? JSON.stringify(msg.id.slice(0, LIMITS.ID_LEN)) : "(invalid id)";
+    // Renderer flag first: any joined client can send snap-result, and a
+    // log line per message would let it write the server log at the message
+    // rate. A non-renderer is told about once per connection; the rest drop.
+    if (!c.renderer) {
+      const cc = c as Client & { snapNotRenderer?: boolean };
+      if (!cc.snapNotRenderer) {
+        cc.snapNotRenderer = true;
+        console.log(`[snap] ${loggedId()}: reply from ${JSON.stringify(c.id)}, which is not a renderer — dropped (further replies from this connection drop unlogged)`);
+      }
+      return;
+    }
     const pending = pendingSnaps.get(msg.id);
-    if (!pending || !c.renderer) return;
+    if (!pending) { console.log(`[snap] ${loggedId()}: reply from ${JSON.stringify(c.id)} for an expired or unknown snap — dropped`); return; }
     pendingSnaps.delete(msg.id);
     if (typeof msg.dataUrl === "string" && msg.dataUrl.startsWith("data:image/png;base64,")) {
       pending.resolve({ ok: true, png: Buffer.from(msg.dataUrl.slice("data:image/png;base64,".length), "base64") });
     } else {
-      pending.resolve({ ok: false, err: String(msg.error ?? "renderer returned no image"), status: 502 });
+      const err = String(msg.error ?? "renderer returned no image");
+      // the renderer's own refusal was the last silent failure: bound and
+      // escape its text like the ids (it is client text too)
+      console.log(`[snap] ${loggedId()}: renderer ${JSON.stringify(c.id)} replied without an image: ${JSON.stringify(err.slice(0, 200))} — 502`);
+      pending.resolve({ ok: false, err, status: 502 });
     }
   },
   "world-fork": ({ c, ws, now, expel }, msg) => {
