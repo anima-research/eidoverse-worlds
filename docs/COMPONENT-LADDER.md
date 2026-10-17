@@ -11,13 +11,14 @@ registry. It is stored as written, but the engine doesn't know it and no rule re
 **Trial**, **reserved** and **stable** are the *status* of a name that **is** in the registry (`status` on every
 definition in `shared/protocol/componentspec.js`; `schema` returns it, and the Inspector shows it on the card):
 - **trial**: admitted and written, but its shape may still change during the alpha (about a year). When it changes we
-  translate or repair stored values where we can. Every registered component is trial at v1.
+  translate or repair stored values where we can. Every registered name that isn't reserved is trial at v1.
 - **reserved**: the name is held (nobody else may take it) but every write is refused, with one refusal for all reserved
   names (code `reserved`; the definition's `instead` says what to use meanwhile). Today: `physics-joint` (the
   constraint between two bodies; renamed from `joint` 10-16, nothing stored it), `joint` (a skeleton node: Maya, glTF,
   VRM; for avatar entity trees), `surface` (with physics' reserved fields), `schemas`, `terrain-grid`, `terrain-tile`, `terrain-paint`; `sockets` (the old map: lift-only, the door turns a write of it into
   socket children); and the names R held for shapes not settled yet (shape audit 10-16): `material`, `anim-clip`,
-  `anim-states`, `camera`, `zone`, `video`, `spring-joint`, `link`, `tags`.
+  `anim-states`, `camera`, `zone`, `video`, `spring-joint`, `link`, `tags`; and `body-owner`, `edit-grant`, `avatar-deny`
+  (the avatar guard rails' names, PROTOCOL §7a).
 - **reserved inside a trial component**: a field or a kind can be held the same way, refused with code `reserved` while
   its name is kept for an addition later (the registry's `reservedFields` / `reservedKinds`, pinned):
   - `station`: `poses`, `sync`, `approach`, `enter`, `leave`, `reach`, `look`, `input`, `fromSeat` (researched in
@@ -137,7 +138,8 @@ One commit, reviewed by a second agent before it ships:
    **Every field that holds an entity id is typed** `ref` / `refs` (or listed in `refPaths` when nested): that type is what
    lets a duplicate, a publish and a merge rebind it, a deletion clear it in the same act (R 10-17), and `lint` report it
    when it names nothing. An id in an untyped string field is invisible to all four.
-5. **The protocol text**: its name in §4's list, and a line in the catalogue (`shared/components.js`) for Add Component.
+5. **The protocol text**: §4 lists examples (the registry itself is componentspec + `spec/registry-pin.json`); name it
+   there if it's one a reader should meet first, and add a line in the catalogue (`shared/components.js`) for Add Component.
 6. **The reader** keeps reading both spellings (the alias makes the authority treat them as one; clients use
    `registered()` from componentspec).
 7. **Rules it now feeds** (physics reading a material's surface, say) land in the same change, each with a check watched
@@ -173,6 +175,6 @@ of the four needs above, promote it to a child entity, and write the promotion h
 
 ## Who checks what
 
-- The conformance suite (`tools/protocol/run.ts`) fails on a changed pin, a v1 word, an unhandled refusal.
+- The conformance suite (`tools/protocol/run.ts`) fails on a changed pin, a v1 word, an unregistered refusal code (scars G1).
 - A second agent reviews every promotion against this page and §4 before it merges.
 - A world's owner decides what that world trusts (`@world.trusted`); R decides when a draft is proven.
