@@ -99,8 +99,8 @@ function bornOf(prev, kind, a, e) {
  * @property {number} chatTotal
  *   Everything ever said here, so a joiner can be told that what it is
  *   looking at is a window and not the whole conversation.
- * @property {Record<string, { role: "owner" | "builder" | "visitor",
- *   gen?: boolean, fly?: boolean, sub?: string }>} roles
+ * @property {Record<string, { role: "owner" | "builder" | "visitor" | "spectator" | "none",
+ *   gen?: boolean, fly?: boolean, sub?: string, until?: number }>} roles
  *   Per-world permissions, fed by owner-authored `grant` verbs in the log —
  *   event-sourced like everything else, so roles replay, fold, and audit.
  *   A world with NO owner in this map is OPEN (everyone builds — the
@@ -111,7 +111,10 @@ function bornOf(prev, kind, a, e) {
  *   orthogonal to the ladder like `gen`, but default-off in EVERY world
  *   including open ones — an owner grants it deliberately or nobody has it.
  *   `sub` binds the grant to a durable subject: when present, only that sub
- *   wears it.
+ *   wears it. `until` (epoch ms) ends the record: past it, the record is
+ *   read as absent and its holder falls back to the wildcard `*`. The fold
+ *   only RECORDS the instant — the clock is the reader's (rightsIn's `now`),
+ *   so replay stays deterministic. Owner records and `*` never carry one.
  * @property {Record<string, { by: string, ts: number, reason?: string,
  *   sub?: string }>} [bans]
  *   Per-world bans, fed by owner-authored `ban`/`unban` verbs in the log —
@@ -123,9 +126,13 @@ function bornOf(prev, kind, a, e) {
  *   Runtime scripts bound into this world by `behavior` entries.
  */
 
-/** The rights ladder (PROTOCOL.md §7): visitor < builder < owner.
+/** The rights ladder (PROTOCOL.md §7): none < spectator < visitor < builder
+ *  < owner. The two rungs below visitor are ENTRY: `none` may not come in at
+ *  all (the world is invisible to them), `spectator` may watch but has no
+ *  body. Ranks of the original three are unchanged, so every verb gate that
+ *  compares against 0/1/2 means what it always meant.
  *  @type {Record<string, number>} */
-export const ROLE_RANK = { visitor: 0, builder: 1, owner: 2 };
+export const ROLE_RANK = { none: -2, spectator: -1, visitor: 0, builder: 1, owner: 2 };
 
 /** The placer principal a creation carries: {id, sub?}, server-stamped
  *  (verbs.ts / behaviors.ts). Folded as given, never derived here — the fold
@@ -347,6 +354,17 @@ export function foldEntry(st, e) {
       // everything else. (Snapshots from before this verb lack the map.)
       if (!a?.id) return;
       st.roles ??= {};
+      // {id, revoke: true, sub?} — the record goes, and its holder falls back
+      // to the wildcard. Every record carrying the same sub goes with it (a
+      // subject has one record; historical worlds can hold several). This is
+      // also how an expiry is SETTLED into history: the sequencer writes the
+      // revoke when `until` passes, so the log says when access ended.
+      if (a.revoke === true) {
+        const gone = st.roles[a.id];
+        if (!(a.sub && gone?.sub && gone.sub !== a.sub)) delete st.roles[a.id];
+        if (a.sub) for (const k of Object.keys(st.roles)) if (st.roles[k]?.sub === a.sub) delete st.roles[k];
+        return;
+      }
       // A SUBJECT HAS ONE RECORD — a subject-keyed migration (Mica, #187
       // rounds 3–4). A grant that knows its subject's sub:
       //   · FAILS CLOSED when the target name already carries ANOTHER sub's
@@ -391,8 +409,17 @@ export function foldEntry(st, e) {
       // before this, anyone reusing an offline owner's nick inherited the
       // world. Grants without a sub (unauthenticated ids, pre-fix history)
       // keep their old name-keyed meaning.
+      // TIME-LIMITED: `until` (epoch ms) ends the record; `until: null`
+      // clears an end; absent keeps whatever end the record had (adding gen
+      // to someone's two hours must not make them permanent). Ownership never
+      // expires, and neither does the wildcard: an expiring `*` would fall
+      // through to the default and silently open a closed world.
+      const until = role === "owner" || a.id === "*" ? undefined
+        : a.until === null ? undefined
+          : (typeof a.until === "number" && Number.isFinite(a.until) ? a.until : cur.until);
       st.roles[a.id] = { role, ...(gen ? { gen: true } : {}), ...(fly ? { fly: true } : {}), ...(caption ? { caption } : {}),
-        ...(a.sub ? { sub: String(a.sub) } : cur.sub ? { sub: cur.sub } : {}) };
+        ...(a.sub ? { sub: String(a.sub) } : cur.sub ? { sub: cur.sub } : {}),
+        ...(until != null ? { until } : {}) };
       return;
     }
     case "ban": {
@@ -559,7 +586,11 @@ export function stateToEntries(state, {
 
   if (roles) {
     for (const [id, r] of Object.entries(state.roles ?? {})) {
-      add('grant', { id, role: r.role, ...(r.gen ? { gen: true } : {}), ...(r.fly ? { fly: true } : {}) });
+      // `until` rides along so a reader's rightsIn ends the record on time;
+      // `sub` deliberately does NOT — the browser computes its own rights by
+      // name, and a sub-bound record it cannot match would drop it to `*`.
+      add('grant', { id, role: r.role, ...(r.gen ? { gen: true } : {}), ...(r.fly ? { fly: true } : {}),
+        ...(r.until != null ? { until: r.until } : {}) });
     }
   }
   if (state.epoch) add('epoch', { sim: state.epoch.sim, tickMs: state.epoch.tickMs },

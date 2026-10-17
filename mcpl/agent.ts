@@ -746,6 +746,11 @@ export class WorldAgent {
         // door, holding up bodies in later worlds at the same coordinates
         // (#83; the #17 symptom reached through a ban).
         if ((ev as { code?: number } | undefined)?.code === 4006) { this.close(); return; }
+        // 4010 = this world is not open to this identity: refused at the door
+        // (members only, watch only), or its access ended or was changed.
+        // Same answer as a ban for reconnecting: the door will not open on
+        // its own, so the body stays down until its host decides otherwise.
+        if ((ev as { code?: number } | undefined)?.code === 4010) { this.close(); return; }
         // 4005 = the sequencer REFUSED the join (bad/reserved name, bad token).
         // A refusal is an answer, not an outage — redialing it every 1.5s is
         // the polite-DoS the sequencer's own comments warn about (RFC-005
@@ -788,6 +793,17 @@ export class WorldAgent {
           case "mod":
             // Moderation replies (ban lists, global-ban confirmations).
             this.lastMod = { ts: Date.now(), text: String(msg.text ?? "") };
+            // …kept briefly as a short list too: one change can answer in more
+            // than one line (a grant's "bound to <subject>" echo, then the
+            // listing), and a tool must be able to hand back all of them
+            this.recentMods.push(this.lastMod);
+            if (this.recentMods.length > 20) this.recentMods.shift();
+            break;
+          case "notice":
+            // The world telling this identity something that is not a refusal
+            // — today, that its access here ends soon. Into the inbox, so the
+            // next look() carries it.
+            this.inbox.push({ ts: Date.now(), kind: "act", who: "world", text: String(msg.text ?? "") });
             break;
           // ── media signalling (see onMedia) ─────────────────────────────
           // Forwarded verbatim to whoever holds this identity's audio. The
@@ -3383,11 +3399,13 @@ export class WorldAgent {
   /** The world's most recent mid-life refusal / moderation reply. */
   lastRefusal: { ts: number; text: string } | null = null;
   lastMod: { ts: number; text: string } | null = null;
+  /** The last few `mod` replies, oldest first (see the "mod" case). */
+  recentMods: { ts: number; text: string }[] = [];
 
   /** Moderation messages that are not world verbs: 'world-bans' (list this
    *  world's bans — anyone present), 'global-ban' / 'global-unban' /
    *  'global-bans' (server: WORLD_ADMIN only). Answers arrive as `mod`. */
-  sendMod(type: "world-bans" | "global-ban" | "global-unban" | "global-bans", extra: Record<string, unknown> = {}) {
+  sendMod(type: "world-bans" | "world-access" | "global-ban" | "global-unban" | "global-bans", extra: Record<string, unknown> = {}) {
     if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
     this.ws.send(JSON.stringify({ type, ...extra }));
   }

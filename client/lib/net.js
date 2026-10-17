@@ -446,6 +446,17 @@ function wireSocket(ws) {
       toast('you were removed from this world — reload if you believe you may return', 'warn', 60000);
       return;
     }
+    // 4010 = this world is not open to you: refused at the door (members
+    // only, watch only), or your access just ended or was changed. The server
+    // said why in an error toast just before closing. No retry — the door
+    // will not open on its own; coming back is a deliberate reload (or
+    // ?spectate, when the toast says you may watch).
+    if (ev.code === 4010) {
+      net.status = 'rejected';
+      bus.emit('net', net);
+      toast(`you're not in "${CONFIG.world}" — reload if your access changes`, 'warn', 60000);
+      return;
+    }
     // 4005 = the world name itself is malformed (a mangled link). No retry —
     // the name can never exist, so reconnecting is just hammering the door.
     if (ev.code === 4005) {
@@ -764,6 +775,20 @@ async function handle(msg) {
       // Moderation replies (ban lists, global-ban confirmations) — chat is
       // where the person is looking when they issue the command.
       for (const line of String(msg.text ?? '').split('\n')) logChat('*', line);
+      break;
+
+    case 'access-state':        // the world panel's 🔒 access tab (accesspanel.js)
+    case 'access-directory':
+      bus.emit(msg.type, msg);
+      break;
+
+    case 'notice':
+      // The world telling YOU something that is not a refusal — today, that
+      // your access here ends soon. Toast (it matters now) and chat (so it is
+      // still there when you look). Not an `error`: that would also tell every
+      // optimistic preview its verb was refused.
+      toast(String(msg.text ?? ''), 'warn', 20000);
+      logChat('*', String(msg.text ?? ''));
       break;
 
     case 'error':

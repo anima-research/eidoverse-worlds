@@ -55,6 +55,9 @@ try {
     const url = origin + "/snap?world=snapshot-test&follow=snapshot-agent";
     const response = fetch(url); await wait(() => donor.messages.some(m => m.type === "snap"), "capture dispatched");
     const request = donor.messages.find(m => m.type === "snap");
+    // a renderer watches a world that EXISTS — watching an unfounded name founds
+    // nothing (server/access.ts: 4011, retried) — so someone founds it first
+    await connect("other-founder", {}, "other-world");
     const other = await connect("other-renderer", { renderer: true }, "other-world");
     other.send({ type: "snap-result", id: request.id, dataUrl: png });
     assert.equal((await fetch(url)).status, 429);

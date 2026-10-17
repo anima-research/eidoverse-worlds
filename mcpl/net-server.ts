@@ -354,8 +354,10 @@ class Session {
    *       🔴 MCPL HOSTS ONLY. granted() is false for every plain-MCP client by
    *       construction, so asking it of them denied the advertised plain lane
    *       outright (antra #1). A plain host's authority is its credential.
-   *    2. may this CREDENTIAL reach that world → join policy (-32017).
-   *    3. does the world exist, and if not may this credential found → (-32023).
+   *    2. does this CREDENTIAL's narrowing allow that world, and does the
+   *       WORLD let this identity in (asked via /access) → (-32017).
+   *    3. does the world exist, and if not may this identity found → (-32023).
+   *    (-32024 when the world server could not be asked: nothing moves.)
    */
   /** Classify a joinWorld() failure. ONE place, because the two invocation
    *  lanes hand-rolled this and drifted: channels/open correctly closed the
@@ -403,17 +405,30 @@ class Session {
     // worse than an absent one.
     //
     // A plain-MCP caller's authority is its CREDENTIAL, checked immediately
-    // below: joinAllowed() enforces the join policy and `auth.create` gates
-    // founding, so removing the capability requirement for this lane narrows
-    // nothing — it just stops demanding a token plain MCP cannot hold.
+    // below: joinAllowed() applies the credential's narrowing and the world's
+    // own answer (accessProbe) decides; `create: false` narrows founding. So
+    // removing the capability requirement for this lane narrows nothing — it
+    // just stops demanding a token plain MCP cannot hold.
     if (this.mcplClient && !this.granted(CAP.channelsLifecycle))
       return { ok: false, code: -32002, why: `your host hasn't granted this door ${CAP.channelsLifecycle}, which travel needs, and calling again won't change that; if you need it, ask whoever runs your host` };
+    // The credential can only NARROW (an operator keeping an agent to a list
+    // of worlds); the WORLD decides who may come in. Both are asked before
+    // anything moves, so a refusal leaves the body where it was.
     if (!joinAllowed(this.auth, target))
-      return { ok: false, code: -32017, why: `world "${target}" is not in this credential's join policy; worlds marks the worlds you may travel to` };
-    const founding = !(await worldExists(target));
-    if (founding && !this.auth.create)
-      return { ok: false, code: -32023, why: `no world named "${target}" exists, and this credential can't found one; worlds lists the worlds that exist` };
-    return { ok: true, founding };
+      return { ok: false, code: -32017, why: `world "${target}" is outside the worlds this credential is limited to; worlds marks where you may travel` };
+    const a = await accessProbe(target, this.agentToken);
+    if (!a) return { ok: false, code: -32024, why: `the world server didn't say whether you may go to "${target}", so nothing moved; try again in a moment` };
+    if (a.exists) {
+      if (a.you === "enter") return { ok: true, founding: false };
+      return { ok: false, code: -32017, why: a.you === "watch"
+        ? `you may watch "${target}" but not travel into it; its owners decide who comes in`
+        : `"${target}" isn't open to you; its owners decide who comes in` };
+    }
+    if (this.auth.create === false)
+      return { ok: false, code: -32023, why: `no world named "${target}" exists, and this credential may not found one; worlds lists the worlds that exist` };
+    if (!a.found?.ok)
+      return { ok: false, code: -32023, why: `no world named "${target}" exists, and you can't found it right now: ${a.found?.why ?? "the world server refused"}` };
+    return { ok: true, founding: true };
   }
 
   private async joinWorld(w: string, founding = false): Promise<void> {
@@ -1213,7 +1228,7 @@ class Session {
       rememberAvatar: (path) => { chosenAvatar[this.auth.id] = path; persistState(); },
       rememberActivity: (cfg) => { activityCfg[this.auth.id] = cfg; persistState(); },
       travel: (world) => this.travelTool(world),
-      worldPolicy: { canJoin: (world) => joinAllowed(this.auth, world), canFound: this.auth.create === true },
+      worldPolicy: { canJoin: (world) => joinAllowed(this.auth, world), canFound: this.auth.create !== false },
     };
   }
 
@@ -1318,43 +1333,43 @@ class JoinDeclined extends Error {}
 /** channels/open and channels/close, refused for a host without the grant. */
 const LIFECYCLE_NOT_GRANTED = "your host hasn't granted this door channels.lifecycle, so no channel was opened or closed, and calling again won't change that; if you need it, ask whoever runs your host";
 
-/** Does this world already exist? The MCPL door is a SEPARATE PROCESS from the
- *  sequencer, so this asks over the same HTTP surface every client uses: /geom
- *  answers 404 for a world with no log. Fail-closed — an unreachable sequencer
- *  reports "exists" so that a join is refused for lack of create authority
- *  rather than silently founding a world during an outage. */
-async function worldExists(name: string): Promise<boolean> {
+/** "May this identity go to `name`?" — asked of the sequencer's /access AS
+ *  THE AGENT (its bearer), because the world decides who comes in and the
+ *  door is a separate process (server/access.ts). Null when the sequencer
+ *  could not be asked: callers fail closed for a destination the agent chose.
+ *  Bounded, so an unreachable sequencer fails the probe FAST rather than
+ *  hanging the agent's call until the TCP stack gives up. */
+type AccessAnswer = { exists: boolean; you: "enter" | "watch" | "none"; why?: string; found?: { ok: boolean; why?: string } };
+async function accessProbe(name: string, token: string): Promise<AccessAnswer | null> {
   // Proper URL surgery, not string surgery: a WORLD_URL carrying a query
-  // string or a mount path defeated the old two-regex version and produced
-  // garbage (fail-closed, so founding became impossible rather than unsafe).
+  // string or a mount path defeats a regex replace.
   const u = new URL(process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws");
   u.protocol = u.protocol === "wss:" ? "https:" : "http:";
-  u.pathname = u.pathname.replace(/\/ws$/, "") + "/geom";
-  u.search = "";
-  const base = u.toString().replace(/\/geom$/, "");
+  u.pathname = u.pathname.replace(/\/ws$/, "") + "/access";
+  u.search = `?world=${encodeURIComponent(name)}`;
   try {
-    // Bounded: an unreachable sequencer must fail the probe FAST, not hang the
-    // agent's channels/open until the TCP stack gives up (caught by the
-    // attach-failure test, which kills the sequencer mid-session).
-    const r = await fetch(`${base}/geom?world=${encodeURIComponent(name)}`,
-      { method: "HEAD", signal: AbortSignal.timeout(2_000) });
-    if (r.status === 404) return false;
-    if (r.ok) return true;
-    return true;
-  } catch { return true; }
+    const r = await fetch(u, { signal: AbortSignal.timeout(2_000), headers: { authorization: `Bearer ${token}` } });
+    if (!r.ok) return null;
+    const a = (await r.json()) as AccessAnswer;
+    return typeof a?.exists === "boolean" && typeof a?.you === "string" ? a : null;
+  } catch { return null; }
 }
 
 /** RFC-005 join policy: may this credential attach to `world`? One rule, both
- *  lanes (dial-time ?world= and in-session channels/open). No `worlds` list on
- *  the credential = no policy = deny — the pre-RFC-005 status quo exactly.
+ *  lanes (dial-time ?world= and in-session travel). It can only NARROW: a
+ *  `worlds` list (or a minted `world`) keeps an agent to those worlds, as its
+ *  operator chose; NO list means no narrowing — which worlds will have it is
+ *  the worlds' own decision (server/access.ts, asked via accessProbe). This
+ *  used to read "no list = deny", which made a home-node edit the only way
+ *  to let an agent into a world (docs/DESIGN-world-access.md).
  *  The name-shape gate mirrors the sequencer's own rule (server.ts join
  *  validation): the door refusing early is one closed loop instead of a
  *  granted join dying against the sequencer 8s later. */
 const WORLD_NAME_RE = /^[a-z0-9_-]{1,64}$/;
 function joinAllowed(auth: Auth, world: string): boolean {
   if (!WORLD_NAME_RE.test(world)) return false;
-  return world === (auth.world ?? "commons") ||
-    (auth.worlds ?? []).some((w) => w === "*" || w === world);
+  if (!auth.worlds) return true;
+  return world === (auth.world ?? "commons") || auth.worlds.some((w) => w === "*" || w === world);
 }
 /** Per-world watermark key for missed-mention replay. World-fixed identity was
  *  a safe assumption before RFC-005; a commons seq is meaningless in annex.
@@ -1387,7 +1402,9 @@ wss.on("connection", (ws, req) => {
         avatar: typeof p.claims?.avatar === "string" ? (p.claims.avatar as string) : undefined,
         worlds: Array.isArray(p.claims?.worlds) && (p.claims.worlds as unknown[]).every((w) => typeof w === "string")
           ? (p.claims.worlds as string[]) : undefined,
-        create: p.claims?.create === true,   // RFC-005 §3.2.7 — founding authority
+        // founding is every member's (a few a day, the sequencer's cap); an
+        // explicit `create: false` narrows it away
+        create: p.claims?.create === false ? false : undefined,
       };
       console.log(`[${ts()}] aid1 agent: ${p.sub} ("${p.name}") exp ${new Date(p.exp * 1000).toISOString()}`);
     } else {
@@ -1422,16 +1439,17 @@ wss.on("connection", (ws, req) => {
       // this RFC exists to prevent, reintroduced at connect time. Refuse, and
       // name the denied destination in the close reason.
       console.log(`[${ts()}] [audit] dial-time world "${reqWorld}" DENIED for ${auth.id} — refusing connection`);
-      refuseWithGuidance(ws, `world "${reqWorld}" is not in this credential's join policy`);
+      refuseWithGuidance(ws, `world "${reqWorld}" is outside the worlds this credential is limited to`);
       return;
     }
   }
-  // ── RFC-005 §3.2.7: FOUNDING AUTHORITY, at the one point every path meets ──
+  // ── RFC-005 §3.2.7: FOUNDING, at the one point every path meets ──
   // Three routes reach a fresh world name: the minted `world` claim, the
-  // dial-time ?world= lane, and the in-session join. Only the last was gated,
-  // so a credential could found a world merely by naming one (found by
-  // adversarial review, proven on disk). The sequencer founds unconditionally
-  // for any joiner, so the door is the only place this is enforceable.
+  // dial-time ?world= lane, and the in-session join. Founding is every
+  // member's, a few worlds a day — the SEQUENCER enforces that cap at the
+  // join (server/access.ts), so this door only asks it first (accessProbe)
+  // to refuse with guidance rather than strand a body; an explicit
+  // `create: false` on the credential narrows founding away.
   //
   // SCOPE, learned the hard way: this gates DESTINATIONS THE AGENT CHOSE, not
   // the world its operator minted it into. A credential arriving at its own
@@ -1446,20 +1464,38 @@ wss.on("connection", (ws, req) => {
   // `auth.world`, so ?world=commons refused where no ?world= admitted. Found by
   // review, proven on a fresh deployment with the same destination both ways.)
   const chosen = dialWorld !== null && dialWorld !== mintedWorld;
-  if (chosen) {
-    const wname = dialWorld!;                  // the DIALLED name, not the claim
+  // THE WORLD DECIDES, for every attachment — minted or chosen: asked before
+  // the body exists, so a world that is not open to this agent refuses the
+  // connection with guidance instead of a body dying at the sequencer's door.
+  // Founding: a CHOSEN new name needs the sequencer's founding allowance (and
+  // no explicit create:false on the credential); the minted world is where
+  // the operator put the agent, so a fresh deployment's "commons" still founds.
+  {
+    const wname = auth.world ?? "commons";
     void (async () => {
-      const exists = await worldExists(wname); // one probe, one verdict
-      if (!exists && !auth!.create) {
-        console.log(`[${ts()}] [audit] founding DENIED: ${auth!.id} → "${wname}" (dial-time, no create authority)`);
-        refuse(`world "${wname}" does not exist and this credential has no create authority`);
+      const a = await accessProbe(wname, token ?? "");
+      if (!a) {
+        // the sequencer could not be asked: a chosen destination fails closed;
+        // the minted world proceeds — the sequencer still decides at the join
+        if (chosen) { refuse(`could not ask the world server about "${wname}" — try again in a moment`); return; }
+        admit(); return;
+      }
+      if (a.exists && a.you !== "enter") {
+        console.log(`[${ts()}] [audit] dial-time world "${wname}" not open to ${auth!.id} (${a.you}) — refusing connection`);
+        refuse(a.you === "watch" ? `you may watch "${wname}" but not join it in a body` : `"${wname}" isn't open to you`);
         return;
       }
-      if (!exists) console.log(`[${ts()}] [audit] founding GRANTED: ${auth!.id} → "${wname}" (dial-time, create authority)`);
+      if (!a.exists && chosen) {
+        if (auth!.create === false || !a.found?.ok) {
+          const why = auth!.create === false ? "this credential may not found worlds" : (a.found?.why ?? "the world server refused");
+          console.log(`[${ts()}] [audit] founding DENIED: ${auth!.id} → "${wname}" (dial-time: ${why})`);
+          refuse(`world "${wname}" does not exist, and it can't be founded now: ${why}`);
+          return;
+        }
+        console.log(`[${ts()}] [audit] founding GRANTED: ${auth!.id} → "${wname}" (dial-time)`);
+      }
       admit();
     })();
-  } else {
-    admit();
   }
 
   /** Refuse AFTER the hold-buffer is installed: drop the buffer first, and
@@ -1475,6 +1511,14 @@ wss.on("connection", (ws, req) => {
   }
 
   function admit() {
+    // The access check above is async: a socket that CLOSED while it was in
+    // flight must not be admitted — its late admit would take over (and kill)
+    // the newer session its replacement already opened (Greptile #258).
+    // 1 = WebSocket.OPEN.
+    if (ws.readyState !== 1) {
+      console.log(`[${ts()}] [mcpl] ${auth!.id}: connection closed during admission — dropped`);
+      return;
+    }
     // session takeover: one body per identity — a half-open predecessor gets
     // cleanly killed instead of rubberbanding against its successor
     const prev = sessions.get(auth!.id);

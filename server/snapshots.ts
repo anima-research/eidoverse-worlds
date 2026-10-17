@@ -1,6 +1,7 @@
 // Ephemeral screenshot broker. No fold, disk, credentials, or camera control.
 import { randomUUID } from "node:crypto";
 import type { Client, World } from "./world.ts";
+import { wildcardRoleIn } from "../shared/rightsfold.js";
 
 export type CaptureCapability = { version: 1; engine: "unreal"; scene: "underwater-prototype" | "world-projection" };
 export function captureCapability(value: unknown): CaptureCapability | undefined {
@@ -46,7 +47,8 @@ export function pngFromDataURL(value: unknown): Buffer | null {
 // connected client (the server passes its registry; tests pass their own).
 export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, maxPending = 16, now = Date.now,
   travelMs = 25_000, arrivalTimeoutMs = 40_000, pollMs = 200, recentMs = 5 * 60_000,
-  allClients = (() => []) as () => Iterable<Client> } = {}) {
+  allClients = (() => []) as () => Iterable<Client>,
+  admits = (() => true) as (world: World, c: Client) => boolean } = {}) {
   const pending = new Map<string, Pending>();
   const last = new WeakMap<Client, number>();
   const travelling = new Map<string, { at: number; arrived: Promise<boolean> }>();   // world name → a summons in flight
@@ -76,7 +78,9 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
       if (engine === "unreal") return fail(`no unreal renderer is currently serving world "${world.name}"`, 503);
       return summon(world, false).then((arrived) => arrived
         ? dispatch(world, follow, view, engine, frame, target, arrivalTimeoutMs)
-        : { ok: false as const, err: `no renderer is currently serving world "${world.name}", and no roaming renderer could come`, status: 503 });
+        : { ok: false as const, err: wildcardRoleIn(world.state as any) === "none"
+            ? `"${world.name}" is members-only and no roaming renderer holding the renderers' credential is free, so no snapshot can be taken there now`
+            : `no renderer is currently serving world "${world.name}", and no roaming renderer could come`, status: 503 });
     }
     return dispatch(world, follow, view, engine, frame, target, timeoutMs);
   }
@@ -98,8 +102,14 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     if (inFlight && now() - inFlight.at < travelMs) return inFlight.arrived;
     const busy = new Set([...pending.values()].map(p => p.renderer));
     const enRoute = new Set([...travelling.keys()]);
+    // …and only one the destination will let in. A roamer holding the
+    // renderers' credential (RENDERER_TOKEN) goes anywhere — it is the vision
+    // of the agents there; one without it is just a client that said
+    // "renderer", and a closed world refuses it (server/access.ts). Never send
+    // a roamer to be refused: a refused renderer stops rather than retrying,
+    // and would sit dead until its watchdog restarted it.
     const roamers = [...allClients()].filter(c => c.roam && c.renderer && c.world && active(c, c.world)
-      && c.world !== world && !busy.has(c) && !enRoute.has(c.world.name))
+      && c.world !== world && !busy.has(c) && !enRoute.has(c.world.name) && admits(world, c))
       .map(c => ({ c, n: need(c) })).filter(r => !(prewarming && r.n === 2))
       .sort((a, b) => a.n - b.n || (last.get(a.c) ?? 0) - (last.get(b.c) ?? 0))
       .map(r => r.c);
@@ -162,6 +172,10 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
   }
   /** The server's client registry, for finding roaming renderers in other worlds. */
   function setClients(fn: () => Iterable<Client>) { allClients = fn; }
-  return { request, receive, retire, configure, setClients, prewarm, get pendingCount() { return pending.size; } };
+  /** Would `world` let this renderer in? Injected by the server (access.ts canEnter), so this broker never loads
+   *  server state itself — its unit test stays independent of a machine's ban list and directories. Until wired,
+   *  every world admits (the broker's behaviour before world access existed). */
+  function setAdmission(fn: (world: World, c: Client) => boolean) { admits = fn; }
+  return { request, receive, retire, configure, setClients, setAdmission, prewarm, get pendingCount() { return pending.size; } };
 }
 export const snapshots = createSnapshotBroker();
