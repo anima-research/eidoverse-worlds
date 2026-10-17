@@ -27,7 +27,7 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 const MUTANTS: [string, string, string, string, string[]][] = [
   ["a delete clears script scopes again", "protocol/authority.js", "baseOf(k) === \"script\" || ", "", ["H1"]],
   ["a fork's copy stamps model-hash", "protocol/authority.js", "if (!ids.size || CTX.forking) return ops;", "if (!ids.size) return ops;", ["H2"]],
-  ["ref clears admitted on the deleter's rights", "protocol/authority.js", "const fu = raw[FOLLOW_UP] === true;", "const fu = false;", ["R1", "R2", "R3", "R4"]],
+  ["ref clears admitted on the deleter's rights", "protocol/authority/gate.js", "const fu = raw[FOLLOW_UP] === true;", "const fu = false;", ["R1", "R2", "R3", "R4"]],
   ["undo's ref restores on the undoer's rights", "protocol/authority/undo.js", "const g = setOp(id, comp, nv); g[FOLLOW_UP] = true;", "const g = setOp(id, comp, nv);", ["R4"]],
   ["no repair marker at founding", "protocol/authority.js", "w.append(actEntry(w, \"system\", \"repair-shapes\", { v: SHAPES_VERSION, ids: [], founding: true }));", "", ["M1"]],
   ["the founding's marker read bare", "protocol/shaperepair.js", "if (e.verb === \"create-world\" && !founded) { founded = true; const b = bodyOf(i);", "if (e.verb === \"create-world\" && !founded) { founded = true; const b = e.body;", ["M2"]],
@@ -35,7 +35,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["enter records who", "protocol/authority/scriptrun.js", "const anon = ANON_EVENTS.has(ev.on) || (HAND_EVENTS.has(ev.on) && ev.seq === undefined);", "const anon = false;", ["P1", "P2"]],
   ["the auditor re-runs an arrival with no one", "protocol/scriptaudit.js", "if (anonWho) event.by = ARRIVAL_STAND_IN;", "", ["P1"]],
   ["the auditor flags an arrival it can't re-run", "protocol/scriptaudit.js", "    if (anonWho) { const r2 =", "    if (false) { const r2 =", ["P2"]],
-  ["CONTROL (no-op: must stay green)", "protocol/authority.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
+  ["CONTROL (no-op: must stay green)", "protocol/authority/gate.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
   const args = ["bun", path.join(ENGINE, "tools/protocol/r8-check.ts"), "--tree", tree, ...(only ? ["--only", only.join(",")] : [])];

@@ -11,7 +11,7 @@ let fails = 0;
 const ok = (c: unknown, what: string) => { if (!c) { fails++; console.log("FAIL " + what); } };
 
 const DIR = ENGINE + "shared/protocol/authority/";
-const ORDER = ["ctx", "refuse", "catalogue", "storage", "math", "spatial", "sockets", "rights", "bodyconsent", "moderation", "use", "blueprints", "undo", "scripts", "scriptrun", "riders", "physics", "manipulate", "bodyverbs"];   // sockets (10-12 branch, merged 10-14) sits on spatial/catalogue/math/storage/refuse   // leaf-most first; the gate is last
+const ORDER = ["ctx", "refuse", "catalogue", "storage", "math", "spatial", "sockets", "rights", "bodyconsent", "moderation", "use", "blueprints", "undo", "scripts", "scriptrun", "riders", "physics", "manipulate", "bodyverbs", "capacity", "checks", "gate"];   // sockets (10-12 branch, merged 10-14) sits on spatial/catalogue/math/storage/refuse   // leaf-most first; the gate is last
 const rank = new Map(ORDER.map((n, i) => [n, i]));
 const importsOf = (src: string) => [...src.matchAll(/^\s*(?:import|export)\s[^;]*?\sfrom\s*["']([^"']+)["']/gm)].map((m) => m[1]);
 
