@@ -148,6 +148,9 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
       moving: rootMoved ? String(motion.type) : null };
   }
 
-  return { ok: true, pos: [e.pos[0], e.pos[1], e.pos[2]], yaw: yaw0,
-    quat: qAxisAngle([0, 1, 0], yaw0) as [number, number, number, number], scale, moving: null };
+  // A live pose (a vehicle lease) may carry a full orientation: honour it so riders compose with the pitch too.
+  const q0 = Array.isArray(e.livePose?.q) && e.livePose.q.length === 4 && e.livePose.q.every(Number.isFinite)
+    ? e.livePose.q as [number, number, number, number] : qAxisAngle([0, 1, 0], yaw0) as [number, number, number, number];
+  return { ok: true, pos: [e.pos[0], e.pos[1], e.pos[2]], yaw: e.livePose ? yawOfQuat(q0) : yaw0,
+    quat: q0, scale, moving: e.livePose ? "leased" : null };
 }

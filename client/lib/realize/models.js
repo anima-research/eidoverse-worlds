@@ -561,7 +561,8 @@ function onComp(id, type) {
   if (type === 'collision') {
     const obj=entities.get(id),ent=state.st.entities[id];
     if (collisionOwnedElsewhere(ent,obj?.userData.mountedTo)) removeCollider(id);
-    else if(obj && !isPlaceholder(obj)) fitCollider(id,obj,{collide:ent?.collide,localFrame:true});
+    // the same rules as promotion: lod tiers own no collider, and the entity's scale picks the shape
+    else if(obj && !isPlaceholder(obj) && obj.userData.tier !== 'lod') fitCollider(id,obj,{collide:ent?.collide,scale:ent?.scale || 1,localFrame:true});
   }
   if (type === 'motion' && data == null) restAtBase(id);
   // a sockets change re-seats everything riding this carrier — a mount that

@@ -131,6 +131,27 @@ function finishPlacement(x, z, o, spec, rng, step, selfCheck) {
 // No ellipse cut, no stragglers — those are wild-stand manners. `angle` turns
 // the whole planting; stride/phase interleave two strokes through one field
 // (e.g. every 4th row from a peeled-ear variant call).
+/** Authored placements ([x, z, scale?] each): the exact spots, with seeded yaw/colour/phase so they reproduce
+ *  per seed, and their footprints registered for occupancy — the same answer in the browser and the native
+ *  projection. y: o._surfaceAt (a building's floor) when given, else o.heightFn, else o.y. */
+export function placeExplicit(o, spec) {
+    return o.placements.map((pl, pi) => {
+        // seeded, not Math.random(): authored placements must reproduce exactly per seed — run-to-run
+        // scale/yaw drift broke every like-for-like lookdev comparison
+        const pr = (() => { let sN = ((o.seed ?? 7) * 131 + pi * 37 + 5) % 2147483647;
+            return () => { sN = (sN * 16807) % 2147483647; return sN / 2147483647; }; })();
+        const scale = pl[2] ?? 1;
+        if (spec.footRadius) _placedPlants.push({ x: pl[0], z: pl[1], r: spec.footRadius * scale });
+        const sy = o._surfaceAt ? (o._surfaceAt(pl[0], pl[1])?.y ?? 0) : null;
+        return {
+            x: pl[0], y: sy ?? (o.heightFn ? o.heightFn(pl[0], pl[1]) : (o.y ?? 0)), z: pl[1],
+            yaw: pr() * Math.PI * 2,
+            scale, tilt: 0, colorVar: pr(),
+            phase: pr() * Math.PI * 2,
+        };
+    });
+}
+
 export function placeRows(o, spec) {
     const rng = (() => { let s = ((o.seed ?? 7) + 5) * 2654435761 % 2147483647;
         return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; })();

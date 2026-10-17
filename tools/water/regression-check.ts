@@ -14,7 +14,7 @@ try{
  }
  const result=await page.evaluate(async()=>{
   const {THREE,camera}=await import('/lib/core.js'),{entities,comps}=await import('/lib/world.js');
-  const c=await import('/lib/controller.js'),w=await import('/lib/environment.js'),t=await import('/lib/traversal.js');
+  const c=await import('/lib/controller.js'),w=await import('/lib/watervolumes.js'),t=await import('/lib/traversal.js');
   const {getMe}=await import('/lib/mybody.js'),{CONFIG,bus}=await import('/lib/base.js');
   const {resolveColliders,raySegment,reindexCollider}=await import('/lib/colliders.js'),{heightAt}=await import('/lib/terrain.js');
   CONFIG.renderer=true;CONFIG.spectate=false;w.updateWater();

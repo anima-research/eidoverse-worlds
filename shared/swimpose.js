@@ -31,6 +31,7 @@ export function swimTargets(m, t) {
   ];
 }
 
+// The volume swimmer's pose (watervolumes.js oceans and pools; a body in a water VOLUME, not the level).
 // Absolute normalized-humanoid rotations, radians (XYZ Euler). VRM's neutral
 // arms point sideways: adding a Z twist to a relaxed idle folds them behind
 // the torso. Own the shoulders, upper/lower arms and hands during the stroke.

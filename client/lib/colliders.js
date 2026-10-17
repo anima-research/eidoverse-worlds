@@ -31,12 +31,17 @@ const STEP = 0.55;   // max mantle-less step-up, metres — one comfortable stai
 const HIP = 0.95;    // wall-probe height: floors stay > r away, walls don't
 const TALL = 1.9;    // default body height above `pos` — an avatar on its feet
 
+// A model whose every mesh opts out of collision (glTF extras collision:false) is NOT solid — distinct from
+// "no exact collider available", which falls back to a box/pillar.
+const NON_SOLID = Object.freeze({ nonSolid: true });
 function buildExact(obj) {
   obj.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(obj.matrixWorld).invert();
   const geoms = [];
+  let meshes = 0;
   obj.traverse((o) => {
     if (!o.isMesh || !o.geometry?.attributes?.position) return;
+    meshes++;
     // glTF extras preserve non-solid panes, pool surfaces, and decorative parts.
     for(let parent=o;parent&&parent!==obj.parent;parent=parent.parent)
       if(parent.userData?.collision===false)return;
@@ -52,7 +57,7 @@ function buildExact(obj) {
       geoms.push(clean);
     }
   });
-  if (!geoms.length) return null;
+  if (!geoms.length) return meshes ? NON_SOLID : null;
   return { bvh: new MeshBVH(mergeGeometries(geoms, false)) };
 }
 
@@ -284,7 +289,8 @@ function decide(entry, s, fresh = false) {
     if (shared?.exact) entry.exact = shared.exact;
     else {
       const built = buildExact(entry.obj);
-      if (built) {
+      if (built === NON_SOLID) { if (shared && fresh) shared.exact = built; }
+      else if (built) {
         // hasFloor reads only the local bvh + local box (its `s` is unused):
         // the verdict rides the shared product instead of re-raycasting 16
         // times per clone — same inputs, same boolean, computed once
@@ -294,7 +300,8 @@ function decide(entry, s, fresh = false) {
       entry.exact = built;
     }
   }
-  if (!exact) entry.exact = null;         // small/solid: use pillar/box, no trimesh
+  entry.nonSolid = exact && entry.exact === NON_SOLID;   // every mesh opted out: nothing to stand on or bump
+  if (!exact || entry.nonSolid) entry.exact = null;         // small/solid: use pillar/box, no trimesh
   entry.pillar = !entry.exact && (box.max.y - box.min.y) * s > 2.4;
   // Clearing is a SEPARATE question from collision: a palm is now exact (you
   // walk under the fronds and bump the trunk, which is right), but stamping its
@@ -322,6 +329,10 @@ export function fitCollider(id, obj, { collide, scale = 1, lib = null, localFram
     libCache.set(lib, c);
   }
   decide(entry, scale, Boolean(lib));
+  if (entry.nonSolid) {   // decorative throughout: register nothing (and give back the lib ref taken above)
+    if (lib) { const c = libCache.get(lib); if (c && --c.refs <= 0) libCache.delete(lib); }
+    return;
+  }
   colliders.set(id, entry);
   bucketAdd(id, entry);
 }

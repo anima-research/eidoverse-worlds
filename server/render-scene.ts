@@ -4,12 +4,18 @@
 import { createHash } from "node:crypto";
 import { planStructure } from "../shared/structure.js";
 import { terrainParams, makeHeightField } from "../shared/terrainmath.js";
+import { waterParams as levelParams, shapeReady, shapeParams } from "../shared/terrainshape.js";
+import { analyzeWater } from "../shared/waterkind.js";
+import "./heightmap.ts";   // registers the heightmap grid loader the shaped terrain reads
 import { effectiveWorldTransform } from "../mcpl/effective.ts";
 import { since } from "../client/lib/motioneval.js";
 import { effectiveSky, effectiveClock } from "../shared/forecast.js";
 import { projectFlora } from "./render-flora.ts";
 import { advanceSim, simSnapshot, tickOf } from "../shared/sim.js";
 import { waterParams, vector, MAX_AIR } from "../shared/water.js";
+import { normalizeParticles } from "../shared/particles.js";
+import { normalizePicture } from "../shared/picture.js";
+import { normalizeSound } from "../shared/sound.js";
 import type { Client, World } from "./world.ts";
 
 export const RENDER_VERSION = 1;
@@ -20,23 +26,65 @@ const clients = new WeakMap<Client, Cache>();
 const worlds = new WeakMap<World, { seq: number; entities: any[]; environment: any; signature: string; envSource: string }>();
 const failures = new WeakMap<World, { seq: number; detail: string }>();
 
+// The world's one water level (shared/terrainshape.js) and what it fills, analysed on the terrain's own
+// vertex grid (shared/waterkind.js): only wet vertices travel, as [index, kind 0 still|1 river|2 ocean,
+// flowX, flowZ, waveSpeed, toShoreX, toShoreZ, shore metres]. Depth is the level minus the heights sent.
+function projectWater(terrain: any, height: (x: number, z: number) => number, size: number, n: number) {
+  const w = levelParams(terrain);
+  if (!w) return null;
+  const raw = terrain?.water ?? {};
+  const a = analyzeWater(height, size, { level: w.level, kind: raw.kind, flow: raw.flow }, n);
+  const K: Record<string, number> = { still: 0, river: 1, ocean: 2 };
+  const r3 = (v: number) => Math.round(v * 1000) / 1000;
+  const cells: number[] = [];
+  for (let k = 0; k < a.depth.length; k++) {
+    if (!(a.depth[k] > 0) || a.comp[k] < 0) continue;
+    const b = a.bodies[a.comp[k]]; if (!b) continue;
+    const river = b.kind === "river", ocean = b.kind === "ocean";
+    cells.push(k, K[b.kind] ?? 0, river ? r3(a.flow[2 * k]) : 0, river ? r3(a.flow[2 * k + 1]) : 0, river ? r3(b.waveSpeed ?? 0) : 0,
+      ocean ? r3(a.toShore[2 * k]) : 0, ocean ? r3(a.toShore[2 * k + 1]) : 0, r3(Math.min(a.shore[k], 999)));
+  }
+  return { level: w.level, color: w.color, opacity: w.opacity, cells };
+}
+
 export function projectEnvironment(state: any) {
   const p = terrainParams(state.terrain ?? { size: 200, amplitude: 0 });
   if (!(p.size > 0 && p.size <= 10000)) throw Error("terrain size unsupported");
+  // The shaped ground (placed features, heightmaps) over the base law — what the browser and agents stand on.
+  // makeHeightField already applies terrainParams' shape: shaping it again doubled every feature (a −4 m pit
+  // projected at −8 m), so native clients got different ground and water than browsers.
   const n = Math.min(128,Math.max(64,Math.round(Number(state.terrain?.segments)||64))), height = makeHeightField(p), heights: number[] = [];
   for (let z = 0; z <= n; z++) for (let x = 0; x <= n; x++)
     heights.push(height((x / n - .5) * p.size, (z / n - .5) * p.size));
   const tint=state.terrain?.color??state.terrain?.layers?.[0]?.color??0x70815a;
   const color=typeof tint==='string'?parseInt(tint.replace('#',''),16):tint;
-  return { terrain: { size: p.size, segments: n, heights, color:Number.isFinite(color)?color:0x70815a, authored: !!state.terrain },
+  const layers = Array.isArray(state.terrain?.layers) ? state.terrain.layers.slice(0, 8).map((l: any) => ({
+    color: typeof l?.color === "string" ? parseInt(l.color.replace("#", ""), 16) : Number(l?.color ?? 0x70815a),
+    repeat: Number.isFinite(l?.repeat) ? l.repeat : 16 })) : [];
+  return { terrain: { size: p.size, segments: n, heights, color:Number.isFinite(color)?color:0x70815a, authored: !!state.terrain, layers },
+    water: projectWater(state.terrain, height, p.size, n),
     sky: state.sky ?? null, grass: state.grass ?? null, flora: projectFlora(state.grass,height) };
 }
 
 // Renderer-facing component parameters (tools/water/README.md). Water is
 // normalized by the same law the browser uses; the rest pass through bounded.
 const PASS_THROUGH = ["environment", "vehicle", "traversal", "collision"] as const;
-export function projectComponentData(comp: any) {
+export function projectComponentData(comp: any, entityId = "") {
   const data: Record<string, unknown> = {};
+  // Presentation components, normalized by the same shared laws the browser uses
+  // (a bag that does not normalize renders nothing there either).
+  if (comp?.particles) { const r = normalizeParticles(comp.particles, { entityId }); if (r.ok) data.particles = r.emitter; }
+  if (comp?.picture) { const r = normalizePicture(comp.picture); if (r.ok) data.picture = r.picture; }
+  if (comp?.sound) { const r = normalizeSound(comp.sound); if (r.ok) data.sound = r.sound; }
+  // Named-part motions (motion.js): every motion:<part> key, plus motion with a part.
+  // t0 is left as authored; partMotionsFor() resolves a missing t0 per request.
+  const parts: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(comp ?? {})) {
+    if (!v || typeof v !== "object") continue;
+    if (k.startsWith("motion:") && k.length > 7) parts[k.slice(7).slice(0, 64)] = v;
+    else if (k === "motion" && typeof (v as any).part === "string") parts[(v as any).part.slice(0, 64)] = v;
+  }
+  if (Object.keys(parts).length) data.parts = Object.fromEntries(Object.entries(parts).slice(0, 32));
   if (comp?.water) { const { center, size, absorption, scatter, speed, waves } = waterParams(comp.water);
     data.water = { center, size, absorption, scatter, speed, waves }; }
   if (Array.isArray(comp?.air?.boxes)) data.air = { boxes: comp.air.boxes.slice(0, MAX_AIR).map((b: any) => {
@@ -61,9 +109,12 @@ export function projectEntity(id: string, e: any) {
   }
   const out = { id, lib: e.lib ?? "", kind: e.kind ?? "model", structure,
     color: e.color ?? 0xffe0b0, intensity: e.intensity ?? 1, range: e.range ?? 10,
-    collide: e.collide ?? "exact", components: Object.keys(e.comp ?? {}), data: projectComponentData(e.comp),
+    collide: e.collide ?? "exact", collideAuthored: e.collide ?? null, components: Object.keys(e.comp ?? {}), data: projectComponentData(e.comp, id),
+    ...(e.kind === "light" ? { keep: !!e.keep, day: e.day !== false } : {}),
     interact: {actions:Object.keys(e.comp?.reactions??{}).slice(0,32),sockets:e.comp?.sockets??null,
-      locked:!!e.comp?.lock, mounted:!!e.parent, moving:!!e.comp?.motion} };
+      locked:!!e.comp?.lock, mounted:!!e.parent, moving:!!e.comp?.motion,
+      // attribution for the inspector and the guard check (placer.js / build.js mayAuthor)
+      guarded:!!e.comp?.guard, placer:e.placer?.id ?? null, placerSub:e.placer?.sub ?? null, lastActor:e.actor ?? null} };
   return { ...out, revision: hash(out) };
 }
 
@@ -77,12 +128,36 @@ export function localMotion(raw: any, nowMs: number, simBody: boolean) {
   const t0 = Number.isFinite(m.t0) ? m.t0 : nowMs - since(m, nowMs) * 1000;
   return { base: { pos: raw.pos, yaw: raw.yaw ?? 0 }, m: { ...m, t0 } };
 }
+/** child world = carrier world ∘ (offset scaled by the carrier, then the mount's yaw); scale multiplies. */
+export function composeMount(pt: { pos: number[]; quat: number[]; scale: number }, mount: { offset: number[]; yaw: number }, ownScale = 1) {
+  const [qx, qy, qz, qw] = pt.quat, o = mount.offset.map((v: number) => v * (pt.scale ?? 1));
+  // rotate o by the carrier's quaternion
+  const ix = qw * o[0] + qy * o[2] - qz * o[1], iy = qw * o[1] + qz * o[0] - qx * o[2], iz = qw * o[2] + qx * o[1] - qy * o[0], iw = -qx * o[0] - qy * o[1] - qz * o[2];
+  const pos = [pt.pos[0] + ix * qw + iw * -qx + iy * -qz - iz * -qy, pt.pos[1] + iy * qw + iw * -qy + iz * -qx - ix * -qz, pt.pos[2] + iz * qw + iw * -qz + ix * -qy - iy * -qx];
+  const h = (mount.yaw ?? 0) / 2, yq = [0, Math.sin(h), 0, Math.cos(h)];
+  const quat = [qw * yq[0] + qx * yq[3] + qy * yq[2] - qz * yq[1], qw * yq[1] - qx * yq[2] + qy * yq[3] + qz * yq[0], qw * yq[2] + qx * yq[1] - qy * yq[0] + qz * yq[3], qw * yq[3] - qx * yq[0] - qy * yq[1] - qz * yq[2]];
+  return { pos, quat, scale: (pt.scale ?? 1) * ownScale };
+}
 export function localMount(raw: any, parent: any) {
   const m = raw?.parent;
   if (!m?.to) return null;
   const sock = m.slot ? parent?.comp?.sockets?.[m.slot] : undefined;
-  if (sock && typeof sock.part === "string") return null;
-  return { to: m.to, offset: m.offset ?? sock?.pos ?? [0, 0, 0], yaw: m.yaw ?? sock?.yaw ?? 0, scale: raw.scale ?? 1 };
+  // A socket on a named part: the native renderer rides the part's live transform.
+  const part = sock && typeof sock.part === "string" ? { part: sock.part.slice(0, 64) } : {};
+  return { to: m.to, offset: m.offset ?? sock?.pos ?? [0, 0, 0], yaw: m.yaw ?? sock?.yaw ?? 0, scale: raw.scale ?? 1, ...(m.slot ? { slot: m.slot } : {}), ...part };
+}
+// Resolve each part motion's t0 the way localMotion does, so every native client agrees.
+export function partMotionsFor(raw: any, nowMs: number) {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(raw?.comp ?? {})) {
+    let part: string | null = null;
+    if (k.startsWith("motion:") && k.length > 7) part = k.slice(7);
+    else if (k === "motion" && typeof (v as any)?.part === "string") part = (v as any).part;
+    if (!part || !v || typeof (v as any).type !== "string") continue;
+    const m = v as any;
+    out[part.slice(0, 64)] = { ...m, t0: Number.isFinite(m.t0) ? m.t0 : nowMs - since(m, nowMs) * 1000 };
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 export function renderScene(c: Client, msg: any, now = Date.now()): object | null {
@@ -96,6 +171,13 @@ export function renderScene(c: Client, msg: any, now = Date.now()): object | nul
   // Rate-limit errors too. Commit delivered revisions only after size checks.
   old.at = now; clients.set(c, old);
   if (msg.version !== RENDER_VERSION) return { type: "render-scene", version: 1, world: w.name, error: "unsupported_version" };
+  // A saved heightmap whose grid has not loaded yet would project the noise fallback as the ground, and
+  // cache it as success (terrain, water and plant positions all wrong until some unrelated edit). Refuse
+  // until it is ready, caching nothing; `moving` keeps native clients polling at their usual interval.
+  // (the NORMALIZED shape: a malformed grid ref the height law ignores must not hold the scene forever)
+  if (!shapeReady(shapeParams(w.state.terrain ?? {})))
+    return { type: "render-scene", version: 1, world: w.name, error: "terrain_pending", moving: true, updateIntervalMs: 300,
+      detail: `heightmap grid ${String(w.state.terrain?.heightmap?.grid ?? "").slice(0, 120)} is not available yet` };
   try {
     const jp = w.joinPayload();
     const seq = Math.max(jp.throughSeq, ...jp.tail.slice(-1).map((e: any) => e.seq));
@@ -111,7 +193,8 @@ export function renderScene(c: Client, msg: any, now = Date.now()): object | nul
       const previous = new Map(cached?.entities.map(e => [e.id, e]) ?? []);
       let geometryNumbers = 0, parts = 0;
       const entities = entries.map(([id, e]: [string, any]) => {
-        const source = hash([e.lib, e.kind, e.comp, e.parent, e.color, e.intensity, e.range, e.collide]);
+        // every field projectEntity reads: a light's keep/day or new attribution must re-project
+        const source = hash([e.lib, e.kind, e.comp, e.parent, e.color, e.intensity, e.range, e.collide, e.keep, e.day, e.actor, e.placer]);
         const projected = previous.get(id)?.source === source ? previous.get(id) : { ...projectEntity(id, e), source };
         geometryNumbers += projected.structure?.sweeps.reduce((n: number, s: any) => n + s.positions.length + s.indices.length, 0) ?? 0;
         parts += (projected.structure?.parts.length ?? 0) + (projected.structure?.boxes.length ?? 0);
@@ -127,26 +210,62 @@ export function renderScene(c: Client, msg: any, now = Date.now()): object | nul
     const sim = w.sim?.epoch ? structuredClone(simSnapshot(w.sim)) : null;
     if (sim && !sim.epoch?.foreign) advanceSim(sim, tickOf(sim, now));
     const activeBodies = sim && !sim.epoch?.foreign ? Object.values(sim.bodies).filter(b => !b.resting).length : 0;
+    // The pose each entity is at NOW: a live lease (a piloted vessel) beats the sim beats the fold — resolved
+    // through the whole mount chain, so cargo and riders ride where the leased carrier actually is.
     const view = { entity: (id: string) => {
-      const e = w.state.entities[id], b = sim?.bodies[id];
+      const e = w.state.entities[id], s = w.leases?.get(id)?.lastState, b = sim?.bodies[id];
+      if (e && s && Array.isArray(s.p)) return { ...e, pos: s.p, yaw: s.yaw ?? 0, livePose: { q: s.q }, comp: { ...e.comp, motion: null } };
       return e && b ? { ...e, pos: b.p, yaw: b.yaw, comp: { ...e.comp, motion: null } } : e;
     }, mount: (id: string) => w.state.entities[id]?.parent };
+    // Each entity's pose now: the effective transform where it resolves, else (a part socket somewhere up
+    // its chain) its carrier's pose composed with the mount — recursively, cycle- and depth-guarded.
+    const poses = new Map<string, any>();
+    const poseOf = (id: string, depth = 8): any => {
+      if (poses.has(id)) return poses.get(id);
+      poses.set(id, null);
+      let r: any = null;
+      const t = effectiveWorldTransform(id, view, now);
+      if (t.ok) r = { pos: t.pos, quat: t.quat, scale: t.scale ?? 1 };
+      else {
+        const raw = w.state.entities[id];
+        if (raw?.parent?.to && depth > 0) {
+          const pt = poseOf(raw.parent.to, depth - 1), m = localMount(raw, w.state.entities[raw.parent.to]);
+          if (pt && m) r = composeMount(pt, m, raw.scale ?? 1);
+        }
+      }
+      poses.set(id, r); return r;
+    };
     const transforms: any[] = []; const warnings: string[] = [];
     warnings.push(...cached.environment.flora.warnings);
     const weather=effectiveSky(w.state.sky,now),clock=effectiveClock(w.state.sky,now);
     let moving = !!w.state.sky || activeBodies > 0;
     for (const e of cached.entities) {
-      const unsupported = e.components.filter((k: string) => ["particles", "flora", "panel", "physics"].includes(k) || k.startsWith("motion:"));
+      const unsupported = e.components.filter((k: string) => ["flora", "panel", "physics"].includes(k));
       if (unsupported.length) warnings.push(`${e.id}: unsupported native components: ${unsupported.join(", ")}`);
       const lease=w.leases?.get(e.id);
       if(lease?.lastState){const s=lease.lastState;transforms.push({id:e.id,p:s.p,q:s.q??[0,Math.sin((s.yaw??0)/2),0,Math.cos((s.yaw??0)/2)],scale:w.state.entities[e.id].scale??1,leased:true});moving=true;continue;}
+      const raw = w.state.entities[e.id];
+      const partMotions = partMotionsFor(raw, now);
+      const b = sim?.bodies[e.id];
+      const simState = b ? { sim: { v: b.v, resting: !!b.resting, on: !!b.on, tickMs: sim?.epoch?.tickMs ?? 66 } } : {};
       const t = effectiveWorldTransform(e.id, view, now);
       if (t.ok) {
-        const raw = w.state.entities[e.id];
-        const motion = localMotion(raw, now, !!sim?.bodies[e.id]);
+        const motion = localMotion(raw, now, !!b);
         const mount = raw?.parent ? localMount(raw, w.state.entities[raw.parent.to]) : null;
-        transforms.push({ id: e.id, p: t.pos, q: t.quat, scale: t.scale, ...(motion ? { motion } : {}), ...(mount ? { mount } : {}) });
-        moving ||= !!t.moving;
+        transforms.push({ id: e.id, p: t.pos, q: t.quat, scale: t.scale, ...(motion ? { motion } : {}), ...(mount ? { mount } : {}),
+          ...(partMotions ? { parts: partMotions } : {}), ...simState });
+        moving ||= !!t.moving || !!partMotions;
+      }
+      else if (raw?.parent) {
+        // Mounted on a part socket — directly, or further down a chain that rides one (a bag on a seat on a
+        // swing): no server-side part pose, so send the rest-pose composition and the mount relation;
+        // native clients ride the live part and everything mounted below it.
+        const pt = poseOf(raw.parent.to), mount = localMount(raw, w.state.entities[raw.parent.to]);
+        if (pt && mount) {
+          const c = composeMount(pt, mount, raw.scale ?? 1);
+          transforms.push({ id: e.id, p: c.pos, q: c.quat, scale: c.scale, mount, ...(partMotions ? { parts: partMotions } : {}) });
+          moving = true;
+        } else warnings.push(`${e.id}: ${t.why}`);
       }
       else warnings.push(`${e.id}: ${t.why}`);
     }

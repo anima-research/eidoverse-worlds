@@ -13,7 +13,7 @@ try {
  }
  const result=await page.evaluate(async()=>{
   const {CONFIG}=await import('/lib/base.js');CONFIG.renderer=true;
-  const core=await import('/lib/core.js'),w=await import('/lib/environment.js'),c=await import('/lib/controller.js');
+  const core=await import('/lib/core.js'),w=await import('/lib/watervolumes.js'),c=await import('/lib/controller.js');
   const {entities}=await import('/lib/world.js');const {resolveColliders,colliders}=await import('/lib/colliders.js');const {heightAt}=await import('/lib/terrain.js');
   const fake={root:new core.THREE.Group(),vrm:{scene:new core.THREE.Group()},setClip:()=>{},headWorldPosition:()=>null};
   w.updateWater();

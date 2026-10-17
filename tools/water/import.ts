@@ -55,6 +55,17 @@ try{
   if(!r.ok)throw Error(`asset upload failed: HTTP ${r.status}`);
   mapping.set(f.path,(await r.json()).path);
  }
+ // A rerun must not re-append what the world already holds: fold the entry into a throwaway copy with the
+ // real fold and compare the entity (or a body's mount) before and after — ignoring who did it and when (actor, ts,
+ // placer) and, when the manifest leaves it out, a motion's start time (re-sending would restart it).
+ const settled=(e:any,keepT0:boolean)=>{if(!e)return e;const{actor,placer,ts,...rest}=e;
+  if(!keepT0&&rest.comp?.motion){rest.comp={...rest.comp,motion:{...rest.comp.motion}};delete rest.comp.motion.t0;}return rest;};
+ const unchangedBy=(verb:string,args:any)=>{
+  const probe=structuredClone(st),keepT0=args?.t0!=null||args?.data?.t0!=null;
+  const view=(s:any)=>JSON.stringify([settled(s.entities?.[args.id],keepT0),s.mounts?.[args.id]??null]);
+  const before=view(st);foldEntry(probe,{seq:Number.MAX_SAFE_INTEGER,ts:Date.now(),actor:'import',verb,args:structuredClone(args)});
+  return before===view(probe);
+ };
  let applied=0,skipped=0;
  for(const item of manifest.verbs){
   const v=structuredClone(item),a=v.args;
@@ -62,9 +73,14 @@ try{
   const entity=st.entities[a.id];
   if(v.verb==='asset'&&st.assets.some(x=>x.path===a.path)||
     v.verb==='spawn'&&entity?.lib===a.lib||
-    v.verb==='comp'&&JSON.stringify(entity?.comp?.[a.type])===JSON.stringify(a.data)){skipped++;continue;}
+    v.verb==='comp'&&JSON.stringify(entity?.comp?.[a.type])===JSON.stringify(a.data)||
+    ['light','mount','motion'].includes(v.verb)&&unchangedBy(v.verb,a)){skipped++;continue;}
   if(v.verb==='spawn'&&entity&&!replace)throw Error(`refusing to overwrite existing entity ${a.id}`);
-  const m=await next(m=>m.type==='log'&&m.entry?.verb===v.verb&&JSON.stringify(m.entry.args)===JSON.stringify(a),
+  // Match the authoritative echo by IDENTITY (verb + id, component type, asset path), never by the whole
+  // argument bag: the server stamps fields (placer) and may normalize others, which made an exact match
+  // wait forever and abort mid-scene.
+  const same=(e:any)=>e?.verb===v.verb&&e.args?.id===a.id&&e.args?.type===a.type&&e.args?.path===a.path;
+  const m=await next(m=>m.type==='log'&&same(m.entry),
    ()=>ws.send(JSON.stringify({type:'verb',...v})));
   foldEntry(st,m.entry);applied++;
   // Stay below the ordinary verb-rate budget, including first-world imports.

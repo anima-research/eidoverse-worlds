@@ -16,7 +16,7 @@ import { waterStance, SWIM_SPEED, SWIM_RUN } from '../../shared/terrainshape.js'
 import { resolveColliders, lastBlockedTop, findSeat, raySegment } from './colliders.js';
 import { scaledSpeed, colliderFor, deskEyeY, canMantle, mantleStep } from './bodyscale.js';   // this body's chosen size: stride, capsule, eye
 import { chat } from './chat.js';
-import { waterAt as mediumWaterAt, waterTime as mediumWaterTime, movementBounds } from './environment.js';
+import { waterAt as volumeAt, waterTime, movementBounds } from './watervolumes.js';
 import { nearbyTraversal, startTraversal, stepTraversal, traversing, cancelTraversal } from './traversal.js';
 import { swimStep, waveHeight } from '../../shared/water.js';
 import { isOverlayOpen, flashHint } from './ui.js';
@@ -262,7 +262,7 @@ export const keys = new Set();
 // XR intent — a thumbstick is a keyboard that reports fractions (parity law:
 // every gesture must be sayable). xr.js fills this per-frame while presenting;
 // the same wish/gravity/mantle/seat code below does every bit of the moving.
-export const xrIntent = { fwd: 0, strafe: 0, yawDelta: 0, jump: false, active: false };
+export const xrIntent = { fwd: 0, strafe: 0, yawDelta: 0, jump: false, active: false, pitchDown: 0 };   // pitchDown: the head's, radians (+ looking down)
 // While an XR session presents, the headset owns the camera (via the rig in
 // xr.js) — the desktop follow-cam must not fight it. Probe pattern as usual.
 let xrPresenting = () => false;
@@ -541,36 +541,68 @@ export function constrainMovement(pos) {
   if (bounds?.min?.length === 3 && bounds?.max?.length === 3) {
     for (const [i,axis] of ['x','y','z'].entries())
       if (Number.isFinite(bounds.min[i]) && Number.isFinite(bounds.max[i])) pos[axis] = THREE.MathUtils.clamp(pos[axis], bounds.min[i], bounds.max[i]);
-  } else if (!bounds && !waterAt(pos)) {
+  } else if (!bounds && !volumeAt(pos)) {
     // Preserve the legacy stage boundary only for worlds without authored bounds.
     const r = Math.hypot(pos.x,pos.z); if(r>78){pos.x*=78/r;pos.z*=78/r;}
   }
 }
+// DIVING in the world's water LEVEL (water.js: lakes, rivers, the sea). Swimming there is a surface float
+// (shared/buoyancy.js, below in updateMe); diving takes the body under it into the same 3D swim the authored volumes
+// use — WASD where you look, Space up, C / Ctrl down — with the surface at the wave above you. Coming back up to the
+// surface (not diving) hands the body back to the float.
+let levelDiving = false;
+const levelDiveKeys = () => keys.has('KeyC') || keys.has('ControlLeft') || keys.has('ControlRight');
+function levelDiveWater(me) {
+  const wl = flight ? null : waterLevel();
+  const w = wl == null ? null : waterAt(myState.pos.x, myState.pos.z);
+  if (!w) { levelDiving = false; return null; }
+  const stature = deskEyeY(me?.userScale) / deskEyeY(1);
+  if (!levelDiving) {
+    // only from a swim (deep enough to float), and only when asked: C / Ctrl, or a headset heading down
+    const wantDive = levelDiveKeys() || (xrIntent.active && xrIntent.fwd * Math.sin(xrIntent.pitchDown) > .3);
+    if (!wantDive || !(w.depth > 1.3 * stature)) return null;
+    // only from IN the water (review #254): falling over a lake with C held must not start a swim in mid-air —
+    // the body is at least half under the surface (afloat sits 1.1·stature under it)
+    const top = wl + surfaceOffset(w, myState.pos.x, myState.pos.z, waveTime());
+    if (!(myState.pos.y < top - 0.6 * stature)) return null;
+    levelDiving = true; swimVelocity = [0, -0.6, 0];
+  }
+  return { level: true, top: wl + surfaceOffset(w, myState.pos.x, myState.pos.z, waveTime()), waves: [],
+    speed: scaledSpeed(SWIM_SPEED, me?.userScale) * 1.4 };
+}
+export const isLevelDiving = () => levelDiving;   // probes and tests
 function updateSwimming(dt, me, fwd, strafe) {
   _swimProbe.copy(myState.pos); _swimProbe.y += .7;
-  const water = mediumWaterAt(_swimProbe);
-  if (!water || myState.seat) { swimVelocity=[0,0,0];return false; }
+  const water = volumeAt(_swimProbe) ?? levelDiveWater(me);
+  if (!water || myState.seat) { swimVelocity=[0,0,0];levelDiving=false;return false; }
   _swimProbe.copy(myState.pos);
   const floor = resolveColliders(_swimProbe,heightAt);
-  const rise=keys.has('Space'), dive=keys.has('KeyC')||keys.has('ControlLeft')||keys.has('ControlRight');
+  // a headset swims where it looks: A/X (its jump) rises, and looking down while pushing forward dives —
+  // no invented buttons (the desktop's C/Ctrl have no VR twin by design)
+  const xr=xrIntent.active;
+  const rise=keys.has('Space')||(xr&&xrIntent.jump), dive=keys.has('KeyC')||keys.has('ControlLeft')||keys.has('ControlRight');
   // Wading is still walking. At a deep shoreline gravity hands over to swim.
-  if(floor >= waveHeight(water,myState.pos.x,myState.pos.z,waterTime())-1.1 && !rise) return false;
+  const stature=deskEyeY(me?.userScale)/deskEyeY(1);   // this body's size: float depth, handover and head sweep follow it
+  if(floor >= waveHeight(water,myState.pos.x,myState.pos.z,waterTime())-1.1*stature && !rise) { levelDiving=false; return false; }
   if(flight){flight=null;releaseWings();}
   if(!myState.locomotion)flashHint('swimming — WASD move, Space rise, C / Ctrl dive, Shift faster');
   mantle=null;posture=null;grounded=false;vy=0;airborneFor=0;
   _dir.set(strafe,0,-fwd).applyAxisAngle(UP,camYaw);
-  _dir.y = Number(rise)-Number(dive)-fwd*Math.sin(camPitch-.32);
-  const input={direction:_dir.toArray(),rise,dive,fast:keys.has('ShiftLeft')||keys.has('ShiftRight')};
+  _dir.y = Number(rise)-Number(dive)-fwd*Math.sin(xr?xrIntent.pitchDown:camPitch-.32);
+  // a headset heading down (looking down, pushing forward) is diving: it releases the surface latch, which
+  // otherwise snaps a swimmer with no dive button straight back up (its direction stays where it looks)
+  const headsetDive=xr&&!rise&&fwd*Math.sin(xrIntent.pitchDown)>.3;   // an explicit rise (A/X) wins
+  const input={direction:_dir.toArray(),rise,dive:dive||headsetDive,fast:keys.has('ShiftLeft')||keys.has('ShiftRight'),stature};
   let mode='swim';const steps=Math.max(1,Math.ceil(dt/(1/60)));
   for(let i=0;i<steps;i++){
     _swimOld.copy(myState.pos);
-    const next=swimStep(myState.pos.toArray(),swimVelocity,input,water,dt/steps,mediumWaterTime());
+    const next=swimStep(myState.pos.toArray(),swimVelocity,input,water,dt/steps,waterTime());
     myState.pos.fromArray(next.pos);swimVelocity=next.velocity;mode=next.mode;
     // Sweep torso and head before resolving support; this also stops upward
     // swimming through a habitat ceiling, which walking's floor probe cannot.
     _dir.copy(myState.pos).sub(_swimOld);const distance=_dir.length();
     if(distance>.00001){_dir.divideScalar(distance);
-      for(const h of [.3,1.1]){
+      for(const h of [.3*stature,1.1*stature]){
         _swimProbe.copy(_swimOld);_swimProbe.y+=h;
         const hit=raySegment(_swimProbe,_dir,distance+.3);
         if(hit!==null){myState.pos.copy(_swimOld).addScaledVector(_dir,Math.max(0,hit-.3));swimVelocity=[0,0,0];break;}
@@ -580,6 +612,8 @@ function updateSwimming(dt, me, fwd, strafe) {
     if(myState.pos.y<bottom){myState.pos.y=bottom;swimVelocity[1]=Math.max(0,swimVelocity[1]);}
     constrainMovement(myState.pos);
   }
+  // back at the level's surface and not diving: the float (updateMe) takes the body from here
+  if(water.level&&mode==='surface'&&!input.dive){levelDiving=false;}
   const horizontal=Math.hypot(swimVelocity[0],swimVelocity[2]);
   if(horizontal>.05)myState.yaw+=angleDelta(myState.yaw,Math.atan2(swimVelocity[0],swimVelocity[2]))*Math.min(1,dt*8);
   myState.speed=Math.hypot(...swimVelocity);myState.clip='idle';

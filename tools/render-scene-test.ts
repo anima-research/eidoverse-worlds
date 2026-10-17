@@ -7,9 +7,10 @@ import { createNativeLogin } from "../server/native-login.ts";
 import { captureCapability } from "../server/snapshots.ts";
 import { effectiveClock, effectiveSky } from '../shared/forecast.js';
 import { projectFlora } from '../server/render-flora.ts';
-import { placeInstances, resetFloraOccupancy } from '../shared/flora-placement.js';
+import { placeInstances, placeExplicit, resetFloraOccupancy } from '../shared/flora-placement.js';
 import grassSpec from '../defs/flora/grass.json';
 import { emptySim, simEntry, advanceSim, tickOf } from '../shared/sim.js';
+import { registerGrid, shapedHeightAt, encodeGrid, decodeGrid } from '../shared/terrainshape.js';
 
 const building = { levels: [{ y: 0, tiles: [[0,0],[1,0]], walls: [[0,0,0],[0,0,1],[1,0,0],[1,2,0]], apertures: [[0,0,0,"door"]] }] };
 function fixture() {
@@ -186,4 +187,109 @@ test("terrain says whether it was authored, so renderers can honor environment.f
   expect(projectEnvironment(emptyState()).terrain.authored).toBe(false);
   const st:any=emptyState();st.terrain={size:300,amplitude:4};
   expect(projectEnvironment(st).terrain.authored).toBe(true);
+});
+test("presentation components, part motions, part sockets and light flags reach native renderers",()=>{
+  const f=fixture();
+  f.write("spawn",{id:"swing",lib:"swing.glb",pos:[0,0,0]});
+  f.write("comp",{id:"swing",type:"motion:seat",data:{type:"pendulum",axis:[1,0,0],amp:0.4,period:3}});
+  f.write("comp",{id:"swing",type:"sockets",data:{seat:{pos:[0,0.5,0],part:"seat"}}});
+  f.write("comp",{id:"swing",type:"particles",data:{preset:"fire",count:5000}});
+  f.write("comp",{id:"swing",type:"sound",data:{src:"eidoverse/assets/audio/creak.ogg",volume:2}});
+  f.write("comp",{id:"swing",type:"picture",data:{src:"eidoverse/assets/images/a.png",part:"board"}});
+  f.write("spawn",{id:"kid",lib:"c.glb"});f.write("mount",{id:"kid",to:"swing",slot:"seat"});
+  f.write("light",{id:"lamp",pos:[1,2,3],keep:true,day:false});
+  const r=f.request(1000);
+  const swing=r.upserts.find((u:any)=>u.id==="swing");
+  expect(swing.data.particles.preset).toBe("fire");expect(swing.data.particles.count).toBe(600);
+  expect(typeof swing.data.particles.seed).toBe("number");
+  expect(swing.data.sound.volume).toBe(1);expect(swing.data.picture.part).toBe("board");
+  expect(swing.data.parts.seat.type).toBe("pendulum");
+  const st=r.transforms.find((t:any)=>t.id==="swing");expect(st.parts.seat.type).toBe("pendulum");expect(Number.isFinite(st.parts.seat.t0)).toBe(true);
+  const kid=r.transforms.find((t:any)=>t.id==="kid");expect(kid.mount.part).toBe("seat");expect(kid.p[1]).toBeCloseTo(0.5);
+  const lamp=r.upserts.find((u:any)=>u.id==="lamp");expect(lamp.keep).toBe(true);expect(lamp.day).toBe(false);
+  expect(r.warnings.filter((w:string)=>w.includes("unsupported"))).toEqual([]);
+});
+test("inspector attribution: placer, last actor, lock and guard reach native renderers",()=>{
+  const f=fixture();
+  f.write("spawn",{id:"lamp1",lib:"l.glb",pos:[0,0,0],placer:{id:"ada",sub:"discord:1"}});
+  f.write("comp",{id:"lamp1",type:"guard",data:true});
+  f.write("comp",{id:"lamp1",type:"lock",data:true});
+  const u=f.request(1000).upserts.find((x:any)=>x.id==="lamp1");
+  expect(u.interact.placer).toBe("ada");expect(u.interact.placerSub).toBe("discord:1");
+  expect(u.interact.guarded).toBe(true);expect(u.interact.locked).toBe(true);expect(u.interact.lastActor).toBe("builder");
+});
+
+// ---- review #248 ----
+test("a light's keep/day edit re-projects (the reuse key covers every projected field)",()=>{
+  const f=fixture();f.write("light",{id:"lamp",pos:[1,2,3],keep:true,day:false});
+  expect(f.request(1000).upserts.find((e:any)=>e.id==="lamp")).toMatchObject({keep:true,day:false});
+  f.write("light",{id:"lamp",pos:[1,2,3],keep:false,day:true});
+  expect(f.request(1300).upserts.find((e:any)=>e.id==="lamp")).toMatchObject({keep:false,day:true});
+});
+test("cargo rides a leased carrier where the lease puts it, pitch included",()=>{
+  const f=fixture();f.write("spawn",{id:"boat",lib:"b.glb",pos:[0,0,0]});f.write("spawn",{id:"crate",lib:"c.glb"});
+  f.write("mount",{id:"crate",to:"boat",offset:[0,1,0]});f.request(1000);
+  f.world.leases=new Map([["boat",{lastState:{p:[10,0,0],yaw:0}}]]);
+  const crate=(r:any)=>r.transforms.find((t:any)=>t.id==="crate").p.map((v:number)=>Math.round(v*1e6)/1e6);
+  expect(crate(f.request(1300))).toEqual([10,1,0]);
+  const h=Math.PI/4;f.world.leases.set("boat",{lastState:{p:[10,0,0],q:[Math.sin(h),0,0,Math.cos(h)]}});   // pitched 90° about x
+  expect(crate(f.request(1600))).toEqual([10,0,1]);
+  f.world.leases.clear();expect(crate(f.request(1900))).toEqual([0,1,0]);
+});
+test("a rider on a part socket inherits the carrier's scale, like any mount",()=>{
+  const f=fixture();f.write("spawn",{id:"swing",lib:"s.glb",pos:[0,0,0],scale:2});f.write("spawn",{id:"doll",lib:"d.glb"});
+  f.write("comp",{id:"swing",type:"sockets",data:{seat:{pos:[0,0.5,0],part:"seat"}}});
+  f.write("mount",{id:"doll",to:"swing",slot:"seat"});
+  expect(f.request(1000).transforms.find((t:any)=>t.id==="doll").scale).toBe(2);
+});
+test("authored flora placements reach native renderers as the exact plants the browser draws",()=>{
+  const placements=[[1,2,1],[3,4,.5],[-2,5]];
+  const out=projectFlora({species:"grass",seed:9,placements},()=>0.25);
+  expect(out.warnings).toEqual([]);
+  const got=out.strokes[0].placements;expect(got).toHaveLength(3);
+  resetFloraOccupancy();const want=placeExplicit({seed:9,placements,heightFn:()=>0.25},grassSpec);
+  expect(got.map((p:any)=>[p.x,p.z,p.scale,p.y,p.yaw])).toEqual(want.map((p:any)=>[p.x,p.z,p.scale,p.y,p.yaw]));
+  expect(got.map((p:any)=>[p.x,p.z])).toEqual([[1,2],[3,4],[-2,5]]);
+});
+test("a sliver field with a huge density is refused by its real loop count, fast (no server freeze)",()=>{
+  const t0=performance.now();
+  for(const raw of [{species:"grass",width:500,depth:1e-20,density:1e20},{species:"corn",width:500,depth:2,density:1e20,rows:{spacing:.76,plant:.24}}]){
+    const out=projectFlora(raw,()=>0);expect(out.strokes).toEqual([]);expect(out.warnings.join(" ")).toMatch(/budget/);
+  }
+  expect(performance.now()-t0).toBeLessThan(500);
+  // an ordinary field still projects
+  expect(projectFlora({species:"grass",width:20,depth:20},()=>0).strokes[0].placements.length).toBeGreaterThan(100);
+});
+test("a heightmap whose grid has not loaded is refused (no noise ground cached), then projects once it arrives",()=>{
+  const f=fixture();const grid=`store/heightmaps/${Date.now().toString(16).padStart(16,'0').slice(-16)}.json`;
+  f.write("terrain",{seed:3,size:40,heightmap:{grid,min:-10,max:10}});
+  const a=f.request(1000);expect(a.error).toBe("terrain_pending");expect(a.moving).toBe(true);expect(a.detail).toContain(grid);
+  registerGrid(grid,decodeGrid(encodeGrid({w:2,h:2,data:new Uint16Array([65535,65535,65535,65535])})));
+  const b=f.request(1300);expect(b.error).toBeUndefined();
+  // the shaped ground with the grid in it — and not what the same seed's noise fallback gives
+  const t={seed:3,size:40,heightmap:{grid,min:-10,max:10}},n=b.environment.terrain.segments;
+  const law=makeHeightField(terrainParams(t)),noise=makeHeightField(terrainParams({seed:3,size:40}));   // terrainParams carries the shape
+  const h=b.environment.terrain.heights,at=(i:number)=>[((i%(n+1))/n-.5)*40,(Math.floor(i/(n+1))/n-.5)*40];
+  for(const i of [0,n,(n+1)*(n+1)>>1,(n+1)*(n+1)-1]){const [x,z]=at(i);expect(h[i]).toBeCloseTo(law(x,z),6);}
+  expect(h.some((v:number,i:number)=>{const [x,z]=at(i);return Math.abs(v-noise(x,z))>.5;})).toBe(true);
+  // a malformed grid ref is ignored by the height law, so it must not hold the scene pending forever
+  const g=fixture();g.write("terrain",{seed:3,size:40,heightmap:{grid:"not/a/grid",min:-10,max:10}});
+  expect(g.request(1000).error).toBeUndefined();
+});
+test("a chain riding a part socket (bag on a seat on a swing) gets poses and mount relations all the way down",()=>{
+  const f=fixture();f.write("spawn",{id:"swing",lib:"s.glb",pos:[0,0,0],scale:2});f.write("spawn",{id:"seat",lib:"c.glb"});f.write("spawn",{id:"bag",lib:"b.glb"});
+  f.write("comp",{id:"swing",type:"sockets",data:{ride:{pos:[0,1,0],part:"arm"}}});
+  f.write("mount",{id:"seat",to:"swing",slot:"ride"});f.write("mount",{id:"bag",to:"seat",offset:[0,.5,0]});
+  const r=f.request(1000),get=(id:string)=>r.transforms.find((t:any)=>t.id===id);
+  expect(get("seat")).toMatchObject({p:[0,2,0],scale:2,mount:{to:"swing",part:"arm"}});
+  const bag=get("bag");expect(bag).toBeDefined();expect(bag.mount).toMatchObject({to:"seat"});
+  expect(bag.p.map((v:number)=>Math.round(v*1e6)/1e6)).toEqual([0,3,0]);expect(bag.scale).toBe(2);   // offset .5 scaled by the carrier's 2
+  expect(r.warnings.filter((x:string)=>x.startsWith("bag:")||x.startsWith("seat:"))).toEqual([]);
+});
+test("placed features shape the projected ground ONCE — the same ground the browser builds",()=>{
+  const f=fixture();f.write("terrain",{seed:7,size:80,amplitude:0,features:[{type:"hill",x:0,z:0,radius:10,height:-4},{type:"hill",x:20,z:20,radius:8,height:3}],water:{level:-1}});
+  const r=f.request(1000),t=r.environment.terrain,n=t.segments,at=(x:number,z:number)=>t.heights[Math.round((z/80+.5)*n)*(n+1)+Math.round((x/80+.5)*n)];
+  expect(at(0,0)).toBeCloseTo(-4,6);expect(at(20,20)).toBeCloseTo(3,6);expect(at(-30,-30)).toBeCloseTo(0,6);
+  const cells=r.environment.water.cells;let deepest=0;for(let i=0;i<cells.length;i+=8)deepest=Math.max(deepest,-1-t.heights[cells[i]]);
+  expect(deepest).toBeCloseTo(3,1);   // a 3 m pit under the -1 m level, not 7
 });

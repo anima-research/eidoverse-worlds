@@ -71,6 +71,7 @@ export type Client = {
                        // it, and a superseded generation's messages are refused structurally —
                        // takeover retires the GENERATION, not just the socket.
                        // Deferred authored verbs capture it and recheck before committing.
+  presenceSession?: string; // `session` on arrive and snapshot.present: the joining page's id, else a token for this leg (server.ts presenceSession)
   surface?: string;    // (name, surface) session model: "world" = the embodied primary (default);
                        // anything else = an auxiliary media leg (voice, vr-hands, …) — invisible,
                        // poseless, log-mute, rtc-capable, and REAPED when its primary dies.
@@ -242,9 +243,11 @@ export class WorldLog {
       if (want(e)) { out.push(e); seen.add(e.seq); }
     }
     // older than what is in memory — go to the file (flushed first, so a
-    // page can never miss an entry the memory tail has already dropped)
+    // page can never miss an entry the memory tail has already dropped).
+    // Memory holds every entry after the last fold, so an `after` at or past
+    // it has nothing to find there: a re-join's resync (chat.js) stays O(tail).
     const oldestInMemory = this.entries.length ? this.entries[0].seq : Infinity;
-    if (out.length < limit && before > 0 && oldestInMemory > 0 && existsSync(this.logPath)) {
+    if (out.length < limit && before > 0 && oldestInMemory > 0 && after < this.snapSeq && existsSync(this.logPath)) {
       this.flushLog();
       const lines = readFileSync(this.logPath, "utf8").split("\n");
       for (let i = lines.length - 1; i >= 0 && out.length < limit; i--) {
@@ -252,6 +255,7 @@ export class WorldLog {
         if (!line.trim()) continue;
         let e: LogEntry;
         try { e = JSON.parse(line); } catch { continue; }
+        if (e.seq <= after) break;                   // the log is in seq order: nothing older qualifies
         if (seen.has(e.seq) || !want(e)) continue;
         out.push(e); seen.add(e.seq);
       }

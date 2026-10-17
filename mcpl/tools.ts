@@ -26,7 +26,9 @@ import sharp from "sharp";
 import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose } from "../shared/humanoid.js";
 import { rigBonesFor } from "./rigbones.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
+import { normalizeSnapFrame } from "../shared/snapframe.js";
 import { rawShapeError } from "./shape.ts";
+import { shown } from "../shared/shown.js";
 import { lightArgsError } from "../server/verb-shapes.ts";
 import type { WorldAgent } from "./agent.ts";
 
@@ -72,10 +74,10 @@ export const REHEARSAL_TOOLS = new Set(["rehearse_down", "rehearse_recover"]);
 export const TOOLS = [
   { name: "body_state", description: "Perceive your body or another present participant (who; omitted or 'self' means you). Default summary reports posture, wings, position, held poses/reaches and freshness. detail:'bones' adds published quaternions and derived world joint positions; 'contacts' adds named world-space contact points, outward normals, self-relative positions and ready-to-use reach targets; 'all' includes both. Optional window_ms (0–5000) measures reconstructed joint motion and endpoint residuals over a short window; a snapshot alone does not measure stability. Optional points filters contacts, e.g. ['chest_front','hand_l','hand_r']. Geometry evaluates the shared VRMA posture clips, published bone rotations and dependent limb reaches. Missing clips or unresolved/cyclic reach dependencies return incomplete geometry. Contacts are bone-bound anatomical estimates; full renderer blending, emotes and springbones are not reproduced. Reading never moves or touches anyone. Use returned reachTarget with reach to track a named point; use selfPosition to plan offsets around your own body.", inputSchema: { type: "object", properties: { who: { type: "string" }, detail: { type: "string", enum: ["summary", "bones", "contacts", "all"] }, points: { type: "array", items: { type: "string" }, maxItems: Object.keys(CONTACT_POINTS).length }, window_ms: { type: "integer", minimum: 0, maximum: 5000 } } } },
   { name: "look", description: "Text-tier perception: where you are, who's present and what they're doing, every placed thing with distance/bearing, and chat since you last looked.", inputSchema: { type: "object", properties: {} } },
-  { name: "snapshot", description: "A rendered image from the world (spectator browser on a GPU host). Slower than look — use when spatial/visual detail matters. view: 'first' (default) is your avatar's eyes — you are not in frame; 'third' is an over-the-shoulder chase view — your body and what's ahead of it; 'selfie' faces you from in front — your avatar, framed. renderer: 'auto' (default) prefers an opted-in Unreal client when one is available; 'browser' forces the GPU spectator.", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] }, renderer: { type: "string", enum: ["auto", "unreal", "browser"] } } } },
-  { name: "walk_to", description: "Walk (or run) to a named place, a thing, a person, or world coordinates. Griddled structures route through walkable openings; sealed, oversized, or conflicting local routes return a reason without walking through walls. This is horizontal centerline routing with a 0.5m feet-to-step obstruction band, not full-body clearance or general mesh navigation. Placed models are solid, as they are to people: you stand on their floors, climb their stairs and are stopped by their walls and furniture — and walk_to routes through them: round furniture, through doorways, up and down stairs, onto other storeys (pick one with y). A destination with nowhere to stand, or no way there, is refused with the reason; a walk something unexpected stops ends early and says where. Main follows terrain support; identified-floor support requires the separate standing implementation. Default arrival tolerance is 0.01m, so short positioning moves are honored. Optional tolerance (0–0.4 metres) changes how close to the requested point counts as arrived. This is destination accuracy, not distance from another body.", inputSchema: { type: "object", properties: { to: { type: "string", description: "a named destination instead of coordinates: thing/place, a place name/label, a thing entrance, or a person" }, x: { type: "number" }, z: { type: "number" }, y: { type: "number", description: "which floor at the destination" }, run: { type: "boolean" }, tolerance: { type: "number", minimum: 0, maximum: 0.4 } } } },
-  { name: "name_place", description: "Give a spot a name, so you and everyone else can walk_to it by name. Written to the thing's places component (builder rights).", inputSchema: { type: "object", properties: { name: { type: "string" }, label: { type: "string" }, on: { type: "string" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, remove: { type: "boolean" } }, required: ["name"] } },
-  { name: "check_model", description: "What a model is like to walk into, measured with the walking body's own rules before or after it is placed: floors, entrances, obstructions, render budget, and suggested rooms/doors/stairs. Advisory: nothing is refused.", inputSchema: { type: "object", properties: { id: { type: "string" }, lib: { type: "string" }, scale: { type: "number" } } } },
+  { name: "snapshot", description: "A rendered image from the world (spectator browser on a GPU host). Slower than look — use when spatial/visual detail matters. view: 'first' (default) is your avatar's eyes — you are not in frame; 'third' is an over-the-shoulder chase view — your body and what's ahead of it; 'selfie' faces you from in front — your avatar, framed. Optional framing: pitch (first only) tilts your gaze in degrees, + up / − down (default ≈ −4; try −60 to see what's at your feet); dist and height (third/selfie) set the camera's flat distance from you and its height above your feet in metres (defaults third 3.4/2.1, selfie 2.6/1.6). renderer: 'auto' (default) prefers a native Unreal renderer serving this world, else a browser one; 'browser' or 'unreal' asks for that one only.", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] }, renderer: { type: "string", enum: ["auto", "browser", "unreal"] }, pitch: { type: "number", minimum: -85, maximum: 85 }, dist: { type: "number", minimum: 0.5, maximum: 30 }, height: { type: "number", minimum: 0, maximum: 30 } } } },
+  { name: "walk_to", description: "Walk (or run) to a named place, a thing, a person, or world coordinates. Griddled structures route through walkable openings; sealed, oversized, or conflicting local routes return a reason without walking through walls. This is horizontal centerline routing with a 0.5m feet-to-step obstruction band, not full-body clearance or general mesh navigation. Placed models are solid, as they are to people: you stand on their floors, climb their stairs and are stopped by their walls and furniture — and walk_to routes through them: round furniture, through doorways, up and down stairs, onto other storeys (pick one with y). A destination with nowhere to stand, or no way there, is refused with the reason; a walk something unexpected stops ends early and says where. Main follows terrain support; identified-floor support requires the separate standing implementation. Default arrival tolerance is 0.01m, so short positioning moves are honored. Optional tolerance (0–0.4 metres) changes how close to the requested point counts as arrived. This is destination accuracy, not distance from another body.", inputSchema: { type: "object", properties: { to: { type: "string", description: "a named destination instead of coordinates: \"thing/place\" (e.g. \"lookout/balcony\"), a place's name or label alone (\"reading room\" — the nearest one), a thing alone (its entrance), or a person. look lists each thing's places." }, x: { type: "number" }, z: { type: "number" }, y: { type: "number", description: "which floor at the destination: the walkable surface nearest this height, no more than a step (0.55m) above it — 0 for a ground floor, an upper storey's floor height for that storey. Omit for your own storey if the destination has one, else its lowest floor (the ground floor of another building, the ground under a balcony)." }, run: { type: "boolean" }, tolerance: { type: "number", minimum: 0, maximum: 0.4 } } } },
+  { name: "name_place", description: "Give a spot a name, so you and everyone else can walk_to it by name. Names where you stand (or x/z, with y optional: the floor there nearest your height), on the thing you are in or the nearest placed thing (or `on`), in that thing's own frame — it moves with it. Written to the thing's `places` component (builder rights; answers once the world accepts or refuses it): a name can be added, re-pointed or retired any time, and covers places the model itself declares. remove: true retires a name.", inputSchema: { type: "object", properties: { name: { type: "string" }, label: { type: "string", description: "how it reads, e.g. \"the window seat\"" }, on: { type: "string", description: "the thing's id; default: the thing you are in, else the nearest within 15m" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, remove: { type: "boolean" } }, required: ["name"] } },
+  { name: "check_model", description: "What a model is like to walk into, measured with the walking body's own rules before or after it is placed: whether it is walk-in at all, its floors and how much of each can be reached from outside, why any part can't (a passage narrower than a body, a rise too high to step, a climb an overhanging floor blocks, no way in), the render budget — and suggested rooms, doors and stairs, ready to name as places. Advisory: nothing is refused. Pass the id of a placed thing (checked as placed: at its scale, with its collide), or a library/store path (what an upload returns; checked at its own size, or at scale). The first check of a model at a scale takes a few seconds.", inputSchema: { type: "object", properties: { id: { type: "string" }, lib: { type: "string" }, scale: { type: "number", description: "with lib: check it as if placed at this scale (0.05–20)" } } } },
   // ---- FLIGHT (upstream's flight arc, merged 2026-09-02; behind the `fly`
   // grant — the agent refuses on the ground it stands on). Deliberately no
   // file_plan: a sortie is these tools called in sequence from the pilot's own
@@ -121,7 +123,7 @@ export const TOOLS = [
   // avatar and the activity dial ARE carried, and are named because they are.
   { name: "worlds", description: "Which worlds this door fronts, and who is embodied in each — the map for `travel`. Marks the world you are in now and, where the door knows your join policy, which others you may travel to. Founding a world that is not listed needs create authority. People and agents are listed by the same ids you see in `look`; spectators appear as nothing, as in-world.", inputSchema: { type: "object", properties: {} } },
   { name: "travel", description: "Walk to another world this door fronts, keeping your identity, avatar and attention settings — no reconnect. Subject to your credential's join policy; founding a world that does not exist yet needs separate create authority. Your held pose and posture do NOT survive the move (they are world-local, like a disconnect), and your chat cursor resets to the new world.", inputSchema: { type: "object", properties: { world: { type: "string", description: "world name, e.g. \"commons\"" } }, required: ["world"] } },
-  { name: "world_verb", description: "Raw world-log verb. The verb set is CLOSED by design — say, use, punt, force, mount, dismount, spawn, place, remove, light, comp, motion, behavior, asset, terrain, grass, sky, weather, grant, kick, ban, unban, caption (one line of what a screen said; needs the per-screen caption deed) — and the door refuses others; extend STATE with comp types you invent, EVENTS with use actions, SEMANTICS with behavior scripts, never by hoping a new verb exists. This is also the authoring surface for components: comp {id, type, data|null} attaches data to an entity (sockets, reactions, or anything you invent); motion {id, type: pendulum|spin|orbit|bob|path, …} sets it moving; see AGENTS.md in the eidoverse-worlds repo for the full vocabulary.", inputSchema: { type: "object", properties: { verb: { type: "string" }, args: { type: "object" } }, required: ["verb", "args"] } },
+  { name: "world_verb", description: "Raw world-log verb. The verb set is CLOSED by design — say, use, punt, force, mount, dismount, spawn, place, remove, light, comp, motion, behavior, asset, terrain, grass, sky, weather, epoch (owner only: enters or upgrades the world's deterministic-sim epoch), grant, kick, ban, unban, caption (one line of what a screen said; needs the per-screen caption deed) — and the world refuses others; extend STATE with comp types you invent, EVENTS with use actions, SEMANTICS with behavior scripts, never by hoping a new verb exists. This is also the authoring surface for components: comp {id, type, data|null} attaches data to an entity (sockets, reactions, or anything you invent); motion {id, type: pendulum|spin|orbit|bob|path, …} sets it moving; see AGENTS.md in the eidoverse-worlds repo for the full vocabulary.", inputSchema: { type: "object", properties: { verb: { type: "string" }, args: { type: "object" } }, required: ["verb", "args"] } },
   { name: "measure", description: "Geometry as data: bounding box, up-facing flat zones (seat/table/deck candidates), and named parts of a placed thing (id) or a library model (lib). Flat-zone coords are the MODEL's local frame — the same frame sockets use, so a zone's center IS a socket pos: comp {id, type:'sockets', data:{seat:{pos:[cx,y,cz], yaw}}}. Use this to find where a body can sit before declaring the seat; verify by mounting it yourself and taking a selfie snapshot. Raw GLB bytes are at GET <sequencer>/library/<lib> if you want to process the mesh locally.", inputSchema: { type: "object", properties: { id: { type: "string" }, lib: { type: "string" } } } },
   { name: "world_history", description: "Pull raw entries from the world log — the append-only record every world IS. Filter by verbs (e.g. ['use','motion'] to trace an interaction, ['comp'] to see how something was built), page backwards with before. Every entry has {seq, ts, actor, verb, args}; reaction-authored entries carry {cause, by}. This is the debugging primitive: the log is the world, so reading it is reading the world's source.", inputSchema: { type: "object", properties: { verbs: { type: "array", items: { type: "string" } }, before: { type: "number" }, after: { type: "number" }, limit: { type: "number" } } } },
   { name: "world_debug", description: "The world's flight recorder: why things BOUNCED. The log answers 'what happened'; this answers 'why didn't it' — denied verbs (rights), rejected shapes (malformed/oversized comp, bad mount), rate limits, reaction outcomes ('reaction' fired with cause→effect seqs, 'reaction-skip' with the reason, 'reaction-error'), script events ('script-error', 'script-pause'), and 'spawn-lint' (an accepted spawn whose lib is malformed or names no file /library serves; repeats of one lib are recorded once a minute). Pass behavior: <id> to read ONE runtime script's own log ring (its world.log() console + status); pass behaviors: true to list what scripts run here and whether they're alive. IMPORTANT: motion/comp components are NOT scripts — they are passive data evaluated client-side and NEVER appear in the behaviors roster (absence there does not mean your component failed or was deleted; check world_history verbs:['comp','motion'] for its fold, and look for kind 'motion-lint' in the plain recorder: the server lints every folded motion for params the evaluator will ignore, unknown types, and part names that no client renders). In-memory, recent events only. Check here first when something doesn't do what you expected.", inputSchema: { type: "object", properties: { limit: { type: "number" }, kinds: { type: "array", items: { type: "string" } }, behavior: { type: "string" }, behaviors: { type: "boolean" } } } },
@@ -205,17 +207,27 @@ export function toolList({ travel = false }: { travel?: boolean } = {}) {
     && (REHEARSAL_ENABLED || !REHEARSAL_TOOLS.has(t.name)));
 }
 
-export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "auto") {
+export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "auto", frame: { dist?: unknown; height?: unknown; pitch?: unknown } = {}) {
   try {
-    const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}&renderer=${encodeURIComponent(renderer)}`);
-    if (!r.ok) return { content: [{ type: "text", text: `no view available: ${(await r.text()).slice(0, 200)}` }] };
+    const norm = normalizeSnapFrame(frame);
+    const extra = Object.entries(norm).map(([k, v]) => `&${k}=${v}`).join("");
+    // Name any framing field the chosen view does not use, rather than
+    // ignoring it silently: pitch is first-only, dist/height third/selfie-only.
+    const posed = view === "third" || view === "selfie";
+    const ignored = posed ? (norm.pitch !== undefined ? ["pitch"] : []) : (["dist", "height"] as const).filter((k) => norm[k] !== undefined);
+    const note = !ignored.length ? null
+      : posed ? "pitch applies only to view first; ignored"
+      : `${ignored.join(" and ")} ${ignored.length > 1 ? "apply" : "applies"} only to views third and selfie; ignored`;
+    const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}&renderer=${encodeURIComponent(renderer)}${extra}`);
+    if (!r.ok) return { content: [{ type: "text", text: `snapshot: no picture was taken; the world server answered "${(await r.text()).slice(0, 200)}" (${r.status}), so try again in a while` }] };
     const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
     const label = r.headers.get("x-eidoverse-scene") === "world-projection"
       ? "Unreal server-world projection: models, structures, terrain and avatars; unsupported components and effects may be absent. This is a donor-rendered image, not authoritative state."
       : "Unreal underwater prototype view: local terrain/habitats and networked avatars; persistent world buildings are not mirrored.";
-    return { content: [...(r.headers.get("x-eidoverse-renderer") === "unreal" ? [{ type: "text", text: label }] : []), { type: "image", data: b64, mimeType: "image/png" }] };
+    const image = { type: "image", data: b64, mimeType: "image/png" };
+    return { content: [...(r.headers.get("x-eidoverse-renderer") === "unreal" ? [{ type: "text", text: label }] : []), image, ...(note ? [{ type: "text", text: note }] : [])] };
   } catch (e) {
-    return { content: [{ type: "text", text: `snapshot failed: ${(e as Error).message}` }] };
+    return { content: [{ type: "text", text: `snapshot failed: no picture arrived from the world server (${(e as Error).message}); try again in a moment` }] };
   }
 }
 
@@ -223,14 +235,16 @@ export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "au
 // One handler per tool, keyed to TOOLS by NAME — the verbs.ts/messages.ts
 // treatment (survey §B3, deferred until the table had one home): bodies moved
 // VERBATIM from the 26-case switch. The load-time assertion below makes
-// advertise/handle drift a boot failure on BOTH doors instead of an
-// "Unknown tool" a caller meets at runtime.
+// advertise/handle drift a boot failure on BOTH doors instead of a missing
+// tool a caller meets at runtime.
 
 const text = (t: string) => ({ content: [{ type: "text", text: t }] });
+/** A tool this door doesn't serve, hidden or never there: the same words. */
+const noSuchTool = (name: string) => `there's no tool named "${name}" on this door, so nothing ran; your tool list has the ones it serves`;
 // Refused at dispatch too, not merely hidden: a pilot who learned the name
 // off a bench must not be able to fire the trusted seam here.
 const rehearse = (ag: ToolAgent, a: Record<string, any>, name: string) => {
-  if (!REHEARSAL_ENABLED) return text("no such tool");
+  if (!REHEARSAL_ENABLED) return text(noSuchTool(name));
   return text(name === "rehearse_down"
     ? ag.flightBodyDown(String(a.eventId ?? "rehearsal"))
     : ag.flightBodyRecovered(String(a.eventId ?? "rehearsal"), "gen-rehearsal"));
@@ -255,13 +269,13 @@ export const HANDLERS: Record<string, ToolHandler> = {
     const result = await ag.bodyState(a.who == null ? ag.name : String(a.who), a.detail ?? "summary", a.points, a.window_ms ?? 0);
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], ...(result.ok ? {} : { isError: true }) };
   },
-  snapshot: async (ag, a, ctx, name) => { return await snapshotTool(ag, typeof a.view === "string" ? a.view : "first", typeof a.renderer === "string" ? a.renderer : "auto"); },
+  snapshot: async (ag, a, ctx, name) => { return await snapshotTool(ag, typeof a.view === "string" ? a.view : "first", typeof a.renderer === "string" ? a.renderer : "auto", { dist: a.dist, height: a.height, pitch: a.pitch }); },
   set_avatar: async (ag, a, ctx, name) => {
       const roster = (await (await fetch(`${ag.httpBase}/avatars`)).json()) as { name: string; path: string }[];
       const want = String(a.avatar ?? "").trim();
       if (!want) return text(`bodies on the roster: ${roster.map((r) => r.name).join(", ")}`);
       const path = want.includes("/") ? want : roster.find((r) => r.name === want)?.path;
-      if (!path) return text(`no body named "${want}" — roster: ${roster.map((r) => r.name).join(", ")}`);
+      if (!path) return text(`no body named "${want}" is on the roster, so you're still wearing your current body. ${roster.length ? `The roster has: ${roster.map((r) => r.name).join(", ")}.` : "The roster is empty."} A path with a slash names a library model instead.`);
       ag.setAvatar(path);
       ctx.rememberAvatar?.(path);   // the choice outlives this session
       return text(`you are now wearing ${want.includes("/") ? path.split("/").pop() : want}`);
@@ -293,7 +307,9 @@ export const HANDLERS: Record<string, ToolHandler> = {
       }
       const pages = Math.max(1, Math.ceil(items.length / SHEET.perPage));
       const slice = items.slice((page - 1) * SHEET.perPage, page * SHEET.perPage);
-      if (!slice.length) return text(`no page ${page} — ${items.length} ${kind}, ${pages} page${pages === 1 ? "" : "s"}`);
+      if (!slice.length) return text(items.length
+        ? `no page ${page}: there are ${items.length} ${kind} on ${pages} page${pages === 1 ? "" : "s"}, so pass a page from 1 to ${pages}`
+        : `there are no ${kind} to show yet`);
       const tiles = await Promise.all(slice.map(async (it) => {
         if (!it.url) return { name: it.name, data: null, mime: "", h: it.h };
         try {
@@ -377,10 +393,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
   face: async (ag, a, ctx, name) => {
       if (a.target) {
         const p = ag.people.get(a.target)?.pose?.p ?? ag.entities.get(a.target)?.pos;
-        if (!p) return text(`no such target: ${a.target}`);
+        if (!p) return text(`nothing here is called "${a.target}", so you didn't turn; look lists who and what is around you`);
         ag.face(p[0], p[2]);
       } else if (a.x != null && a.z != null) ag.face(Number(a.x), Number(a.z));
-      else return text("pass x+z or target");
+      else return text('face needs x and z, or a target, so you didn\'t turn: face {x: 4, z: -2} or face {target: "<an id from look>"}');
       return text("facing");
 
   },
@@ -419,7 +435,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // trio but no text lands a FABRICATED spoken say whose body is the
       // literal "undefined"/"[object Object]".
       if (typeof a.text !== "string" || a.text.length === 0) {
-        return { content: [{ type: "text", text: "say refused: `text` is required and must be a non-empty string." }], isError: true };
+        return { content: [{ type: "text", text: `say refused: \`text\` is required and must be a non-empty string, so nothing was said; you sent ${shown(a.text)}` }], isError: true };
       }
       // "Wants spoken" means the caller is ASSERTING a performance: spoken:true,
       // or a trio partner (utt/t0) present. An explicit spoken:false (or spoken
@@ -443,7 +459,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         // schema client that inspects result.isError read this as a successful
         // say — the door must mark the refusal as an error, not just describe
         // one in text.
-        return { content: [{ type: "text", text: "spoken-say refused: the protocol trio must travel together — spoken:true plus a non-negative integer utt (t0 optional, finite). Sent as ordinary text it would silently lose its performance link, so nothing was said; fix and resend." }], isError: true };
+        return { content: [{ type: "text", text: `spoken-say refused, so nothing was said: a spoken line needs spoken: true and utt a non-negative integer, and t0, if given, a finite number (you sent spoken ${shown(a.spoken)}, utt ${shown(a.utt)}, t0 ${shown(a.t0)}). Sent as plain text it would lose its performance link. For an ordinary say, send only text.` }], isError: true };
       }
       const extra = trioOk
         ? { spoken: true as const, utt: a.utt, ...(typeof a.t0 === "number" ? { t0: a.t0 } : {}) }
@@ -453,7 +469,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   whisper: async (ag, a, ctx, name) => {
-      if (!WHISPERS_ENABLED) return text("whispers are disabled in this world");
+      if (!WHISPERS_ENABLED) return text("whispers are turned off on this door, so nothing was sent, and calling again won't change that");
       ag.whisper(String(a.to), String(a.text).slice(0, 4000));
       return text(`whispered to ${a.to}`);
 
@@ -538,7 +554,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   ragdoll: async (ag, a, ctx, name) => {
-      if (!a.target) return text("ragdoll needs a `target` — the body that falls simulates it");
+      if (!a.target) return text('ragdoll needs a target, the body to knock over, so nothing happened: ragdoll {target: "<an id from look>"}');
       // the shove is directed: from where THIS body stands, through the
       // target — the same line a browser /push uses. No known position for
       // them = an undirected knock-over, the old wire.
@@ -567,7 +583,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
           + ' {"t": 0.5, "q": [0,0,-0.7,0.7]}]}.');
       }
       const dur = Number(a.dur);
-      if (!Number.isFinite(dur) || dur <= 0) return text("pass `dur`: the length in seconds, greater than 0");
+      if (!Number.isFinite(dur) || dur <= 0) return text(`animate needs dur, the length in seconds and more than 0, so nothing played; you sent ${shown(a.dur)}`);
       const span = tracksSpan(v.tracks);
       const cut = span > dur ? ` — note dur ${dur}s cuts keyframes that run to ${span}s` : "";
       const spec = { dur, loop: !!a.loop, tracks: v.tracks, replace: !!a.replace };
@@ -625,8 +641,16 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   spawn: async (ag, a, ctx, name) => {
-      const lib = a.lib ?? (a.query ? (await searchLibrary(ag.httpBase, String(a.query)))[0]?.path : undefined);
-      if (!lib) return text("no model — pass lib or query");
+      // The library is searched only when lib is left out and a query given.
+      const searched = a.lib == null && !!a.query;
+      const lib = a.lib ?? (searched ? (await searchLibrary(ag.httpBase, String(a.query)))[0]?.path : undefined);
+      // A search that found nothing is not a call that named no model, and
+      // neither is a lib that was sent empty.
+      if (!lib) return text(searched
+        ? `no library model matches ${shown(a.query)}, so nothing was spawned; list_library finds models by other words`
+        : a.lib != null
+          ? `spawn's lib was ${shown(a.lib)}, which names no model, so nothing was spawned; pass a model's path, or leave lib out and pass query to search the library`
+          : "spawn needs lib (a model's path) or query (words to search the library), so nothing was spawned");
       const x = a.x ?? ag.pos.x + Math.sin(ag.yaw) * 2;
       const z = a.z ?? ag.pos.z + Math.cos(ag.yaw) * 2;
       const id = a.id ?? crypto.randomUUID().slice(0, 8);
@@ -635,7 +659,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   place: async (ag, a, ctx, name) => {
-      if (!ag.entities.has(a.id)) return text(`no entity ${a.id}`);
+      if (a.id == null) return text(`place needs id, the entity to move, so nothing was placed: place {id: "lamp1", x: 3, z: -2}`);
+      // What this body has seen of the world: an entity spawned a moment ago
+      // may not have reached it yet.
+      if (!ag.entities.has(a.id)) return text(`this body knows of no entity ${shown(a.id)} in this world, so nothing was placed; look lists what's around you`);
       ag.verb("place", { id: a.id, pos: [a.x, a.y ?? ag.heightAt(a.x, a.z), a.z], ...(a.yaw != null ? { yaw: a.yaw } : {}) });
       return text(`placed ${a.id}`);
 
@@ -682,7 +709,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // fatal-join teardown — so the shared table hands it to the host
       // through the ctx hook. A door with no hook (stdio fronts exactly one
       // WORLD_URL) does not list the tool; answering anyway teaches.
-      if (!ctx.travel) return { content: [{ type: "text", text: "travel is not available on this door — it fronts a single world; reconnect with a different WORLD_NAME instead" }], isError: true };
+      if (!ctx.travel) return { content: [{ type: "text", text: "travel isn't available on this door: it fronts a single world, so you stayed where you are; its operator chooses that world (WORLD_NAME)" }], isError: true };
       return await ctx.travel(String(a.world ?? "").trim());
 
   },
@@ -693,8 +720,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // refused travel.
       let r: Response;
       try { r = await fetch(`${ag.httpBase}/worlds`, { signal: AbortSignal.timeout(4_000) }); }
-      catch (e) { return { content: [{ type: "text", text: `worlds: the sequencer did not answer (${(e as Error).message})` }], isError: true }; }
-      if (!r.ok) return { content: [{ type: "text", text: `worlds: sequencer answered ${r.status}` }], isError: true };
+      catch (e) { return { content: [{ type: "text", text: `worlds: the world server didn't answer (${(e as Error).message}), so the list isn't known; try again in a moment` }], isError: true }; }
+      if (!r.ok) return { content: [{ type: "text", text: `worlds: the world server answered ${r.status}, so the list isn't known; try again in a moment` }], isError: true };
       const body = (await r.json()) as { worlds?: { name: string; loaded?: boolean; people?: string[]; agents?: string[] }[] };
       const list = Array.isArray(body.worlds) ? body.worlds : [];
       if (!list.some((w) => w.name === ag.world)) list.push({ name: ag.world, loaded: true, people: [], agents: [] });
@@ -740,9 +767,13 @@ export const HANDLERS: Record<string, ToolHandler> = {
         ? `world=${encodeURIComponent(ag.world)}&id=${encodeURIComponent(String(a.id))}`
         : a.lib ? `lib=${encodeURIComponent(String(a.lib))}` : null;
       if (!q) return text("measure wants {id} (a placed thing) or {lib} (a library model)");
+      // What the world server did, as far as the door can see it: no answer,
+      // an answer that isn't geometry, or its own error.
+      let r: Response;
+      try { r = await fetch(`${base}/geom?${q}`); } catch (e) { return text(`measure: the world server didn't answer (${String(e)}), so nothing was measured; try again in a moment`); }
       let d: any;
-      try { d = await (await fetch(`${base}/geom?${q}`)).json(); } catch (e) { return text(`measure failed: ${String(e)}`); }
-      if (d.error) return text(`measure: ${d.error}`);
+      try { d = await r.json(); } catch { return text(`measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); }
+      if (d.error) return text(`measure: the world server answered "${d.error}" (${r.status}), so nothing was measured`);
       const g = d.geometry ?? d;
       if (!g?.bbox) return text("no geometry available for that (parsing offline, or a light)");
       const L: string[] = [];
@@ -852,6 +883,6 @@ function describeCheck(what: string, r: any, named: number, id?: string, collide
 
 export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, any>) {
   const h = HANDLERS[name];
-  if (!h) return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
+  if (!h) return { content: [{ type: "text", text: noSuchTool(name) }], isError: true };
   return await h(ctx.agent, a, ctx, name);
 }

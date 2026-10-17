@@ -7,6 +7,8 @@ import { sendLease } from './net.js';
 import { keys, myState, photoMode, updateFollowCamera, constrainMovement } from './controller.js';
 import { raySegment, reindexCollider } from './colliders.js';
 import { flashHint } from './ui.js';
+import { yieldSim } from './physobj.js';
+import { isDowned } from './localbody.js';
 let pending=null, pilot=null, lastSent=0, velocity=new THREE.Vector3();
 const local=new THREE.Vector3(), old=new THREE.Vector3(), delta=new THREE.Vector3();
 const axis=new THREE.Vector3(0,1,0);
@@ -31,7 +33,8 @@ bus.on('key',e=>{
 });
 bus.on('lease',m=>{
   if(m.id===pending){
-    if(m.op==='granted'){pilot=pending;pending=null;lastSent=0;flashHint('piloting — W/S thrust, A/D steer, Space rise, C dive, E exit');}
+    // the same holder may already be simulating it (a kicked hull, no sim epoch): one controller only
+    if(m.op==='granted'){pilot=pending;pending=null;lastSent=0;yieldSim(pilot);flashHint('piloting — W/S thrust, A/D steer, Space rise, C dive, E exit');}
     else if(m.op==='denied'){pending=null;flashHint(m.why??'helm occupied');}
   }
   if(m.id===pilot&&['lost','released'].includes(m.op))end(false);
@@ -41,6 +44,8 @@ bus.on('net',n=>{if(!n.joined)end(false);});
 export const piloting=()=>pilot;
 export function updateVehicle(dt,me){
   if(!pilot||!me)return false;
+  // knocked down at the helm (a push, a force): let go, so the fall runs and nothing steers from a limp body
+  if(isDowned()){end(true,false);flashHint('knocked from the helm');return false;}
   const o=entities.get(pilot),spec=comps.get(pilot)?.vehicle;
   if(!o||!spec){end();return false;}
   dt=Math.min(.1,Math.max(0,dt));

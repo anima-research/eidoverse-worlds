@@ -18,6 +18,7 @@ import { isStoreOriginal, isServingArtifact, variantStatus, variantSource, fresh
 import { glbPerfOfFile } from "./glbperf.ts";
 import { rankOf, TIER_NAMES } from "../shared/perfrank.js";
 import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
+import { normalizeSnapFrame } from "../shared/snapframe.js";
 import { LOD_RECIPE, lodVariantPath, lodVerdictKind, lodVerdictFinal } from "./store-variants.ts";
 import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
@@ -29,6 +30,7 @@ const nativeLogin = createNativeLogin({
 });
 import { resolveLibFile, libraryPath, onLadder } from "./lint.ts";
 import { summarizeGlb } from "./geometry.ts";
+import { vrmHeightFor } from "./vrmheight.ts";
 import { checkFile, checkScale } from "./buildcheck-queue.ts";
 import { worlds, getWorld, type World } from "./world.ts";
 import { snapshots } from "./snapshots.ts";
@@ -71,10 +73,12 @@ export type Srv = {
 };
 
 // ---- snapshots: the world serves views of itself ---------------------------
-// GET /snap?world=W&follow=ID → the sequencer asks a renderer client (an
-// opt-in Unreal player or legacy browser spectator, dialed OUT like any client)
-// to jump its camera to ID's head and return one frame. Clients never know
-// rendering exists as a separate thing — it's just the world's API.
+// GET /snap?world=W&follow=ID[&view=first|third|selfie][&renderer=auto|unreal|browser]
+// [&dist=&height=&pitch=] (optional framing, shared/snapframe.js) → the sequencer
+// asks a renderer client (an opt-in Unreal player or legacy browser spectator,
+// dialed OUT like any client) to jump its camera to ID's head and return one
+// frame. Clients never know rendering exists as a separate thing — it's just the
+// world's API.
 
 // ---- static serving ---------------------------------------------------------
 
@@ -128,8 +132,8 @@ export function avatarRoster(): { name: string; path: string; height: number | n
     const v = String(Math.round(Bun.file(file).lastModified));
     seen.set(name, { url: `${d.vrm}?v=${v}`, file, v });
   }
-  // stature metadata, contributed alongside portraits (see POST /thumb);
-  // a def's declared height wins over the measured sidecar
+  // what wearers' browsers posted with their portraits (see POST /thumb): the
+  // portrait's framing height, which stands in only when the file gives none
   let hmeta: Record<string, { h?: number; perf?: AvatarPerf }> = {};
   try {
     const mp = join(OPT_DIR, "thumbs", "meta.json");
@@ -140,11 +144,19 @@ export function avatarRoster(): { name: string; path: string; height: number | n
   // never rehash a VRM and can never read a stale value as fresh). The sha
   // work behind judge() is mtime-cached, so a roster read costs hashing only
   // when a body's bytes actually changed.
-  return [...seen].map(([name, { url, file, v }]) => ({ name, path: url,
-    height: defs[name]?.height ?? hmeta[name.replace(/[^a-zA-Z0-9_-]/g, "_")]?.h ?? null,
-    // the loupe's rank of THIS version only (the v its URL carries): a stamp from an older export is withheld until a wearer re-measures
-    perf: ((p) => p && p.v === v ? p : null)(hmeta[name.replace(/[^a-zA-Z0-9_-]/g, "_")]?.perf),
-    seat: seatStore.judge(name, file) }));
+  return [...seen].map(([name, { url, file, v }]) => {
+    const safe = name.replace(/[^a-zA-Z0-9_-]/g, "_");
+    return { name, path: url,
+      // A def's declared height, else the file's own stature (vrmheight.ts, a
+      // lookup but for once per version). A wearer's posted height is the
+      // portrait's framing height (avatar.js), raised toward the bounding box,
+      // so it stands in only when the file gives no stature: no humanoid head,
+      // a head out of range, or a file the server can't read.
+      height: defs[name]?.height ?? vrmHeightFor(file, v) ?? hmeta[safe]?.h ?? null,
+      // the loupe's rank of THIS version only (the v its URL carries): a stamp from an older export is withheld until a wearer re-measures
+      perf: ((p) => p && p.v === v ? p : null)(hmeta[safe]?.perf),
+      seat: seatStore.judge(name, file) };
+  });
 }
 
 /** The animation clips, each at a path stamped with its mtime — the same
@@ -653,7 +665,9 @@ const ROUTES: Route[] = [
       const w = worlds.get(url.searchParams.get("world") ?? "commons");
       const follow = url.searchParams.get("follow") ?? "";
       if (!w) return new Response("unknown world", { status: 404 });
-      const r = await snapshots.request(w, follow, url.searchParams.get("view") ?? "first", url.searchParams.get("renderer") ?? "auto");
+      const q = url.searchParams;
+      const frame = normalizeSnapFrame({ dist: q.get("dist"), height: q.get("height"), pitch: q.get("pitch") });
+      const r = await snapshots.request(w, follow, q.get("view") ?? "first", q.get("renderer") ?? "auto", frame);
       if (!r.ok) return new Response(r.err, { status: r.status, headers: { "cache-control": "no-store", ...(r.status === 429 ? { "retry-after": "2" } : {}) } });
       return new Response(r.png, { headers: { "content-type": "image/png", "cache-control": "no-store",
         "x-content-type-options": "nosniff", "x-eidoverse-renderer": r.engine, "x-eidoverse-scene": r.scene } });

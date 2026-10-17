@@ -36,7 +36,7 @@ const POOL = [
   'apocalyptic_destroyed_rubble_debris_streetlight_lamp_light_street_preview.jpg',
   'apocalyptic_scifi_cyberpunk_destroyed_rubble_debris_pile_preview.jpg',
   'bagger_288_bucketwheel_excavator_mining_extraction_preview.jpg',
-  'computer_servers_rack_with_fans_on_back_single_column_preview.jpg',
+  'cactus_wren_bird_animated_desert_songbird_calling_hopping_walking_preview.jpg',
   'computer_servers_rack_with_fans_on_back_row_of_four_4_columns_preview.jpg',
 ].map((f) => M + f);
 let poolIdx = 0;
@@ -53,7 +53,7 @@ async function joinAs(name: string) {
   await pg.goto(`${world.origin}/?world=raceprobe&key=${world.key}&name=${name}`, { waitUntil: 'domcontentloaded' });
   await pg.fill('#d-name', name).catch(() => {});
   await pg.click('#d-go').catch(() => {});
-  await pg.waitForSelector('#micbtn, #mictoggle', { timeout: 30000 });   // #185 desktop badge or pre-#185 legacy badge
+  await pg.waitForSelector('#mictoggle', { timeout: 30000 });
   return pg;
 }
 const verb = (pg: any, v: string, args: unknown) => pg.evaluate(([v, args]: [string, unknown]) => import('/lib/net.js').then((n: any) => n.sendVerb(v, args)), [v, args]);

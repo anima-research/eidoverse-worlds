@@ -20,8 +20,12 @@ for(let i=0;i<300;i++)s=swimStep(s.pos,s.velocity,{direction:[0,1,0],rise:true},
 a.equal(s.mode,'surface');a.ok(Math.abs(s.pos[1]+1.1)<1e-8);
 for(let i=0;i<60;i++)s=swimStep(s.pos,s.velocity,{direction:[0,-1,0],dive:true},water,1/60,i/60);
 a.ok(s.pos[1]<-2);a.equal(s.mode,'swim');
+// a half-size body floats half as deep, so its eyes clear the surface (review #248)
+let half={pos:[0,-4,0],velocity:[0,0,0]};
+for(let i=0;i<300;i++)half=swimStep(half.pos,half.velocity,{direction:[0,1,0],rise:true,stature:.5},water,1/60,i/60);
+a.equal(half.mode,'surface');a.ok(Math.abs(half.pos[1]+.55)<1e-8);
 const w={...water,waves:[{amplitude:.4,wavelength:10,direction:[1,0],phase:Math.PI/2}]};
 a.ok(Math.abs(waveHeight(w,0,0,0)-.4)<1e-10);
 const bad=waterParams({size:[NaN,0,Infinity],waves:[null],absorption:[NaN,0,1]});
 a.ok(bad.size.every(Number.isFinite));a.ok(bad.absorption.every(Number.isFinite));
-console.log('PASS: wet/dry boundaries, surface crossings, zero/parallel rays, nested/overlapping/rotated air volumes, ascent, surface latch, diving, waves, malformed data');
+console.log('PASS: wet/dry boundaries, surface crossings, zero/parallel rays, nested/overlapping/rotated air volumes, ascent, surface latch (scaled by stature), diving, waves, malformed data');

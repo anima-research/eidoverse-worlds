@@ -130,6 +130,10 @@ function stopSim(id, commit) {
   if (commit) sendLease('release', id, { p: [s.p.x, s.p.y, s.p.z], yaw: s.baseYaw });
 }
 
+/** Hand an object I am simulating to another of my controllers (a vehicle's helm) without releasing its
+ *  lease: the sim stops where it is and the new controller moves and streams it from there. */
+export function yieldSim(id) { sims.delete(id); pendingKicks.delete(id); }
+
 /** One frame of every sim I hold. Runs in the main frame loop. */
 export function tickPhysObj(dt, now = performance.now()) {
   for (const [id, s] of sims) {

@@ -52,7 +52,8 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     retire(c);
     c.capture = (c.surface ?? "world") === "world" ? captureCapability(value) : undefined;
   }
-  function request(world: World, follow: string, view = "first", engine = "auto"): Promise<Result> {
+  function request(world: World, follow: string, view = "first", engine = "auto",
+    frame: { dist?: number; height?: number; pitch?: number } = {}): Promise<Result> {
     const fail = (err: string, status: number) => Promise.resolve<Result>({ ok: false, err, status });
     if (!["auto", "unreal", "browser"].includes(engine)) return fail("renderer must be auto, unreal, or browser", 400);
     const target = [...world.clients].find(c => c.id === follow && !c.spectator && active(c, world));
@@ -73,7 +74,10 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
         engine: renderer.capture?.engine ?? "browser", scene: renderer.capture?.scene ?? "world-fold",
         finish(r) { if (!pending.delete(id)) return; clearTimeout(timer); resolve(r); } };
       pending.set(id, p);
-      try { renderer.ws.send(JSON.stringify({ type: "snap", id, follow, view, width: 960, height: 540 })); }
+      // framing (shared/snapframe.js) rides nested, apart from the image size,
+      // and only when a field is given
+      try { renderer.ws.send(JSON.stringify({ type: "snap", id, follow, view, width: 960, height: 540,
+        ...(Object.keys(frame).length ? { frame } : {}) })); }
       catch { p.finish({ ok: false, err: "renderer unavailable", status: 503 }); }
     });
   }

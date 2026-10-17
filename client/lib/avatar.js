@@ -2229,7 +2229,7 @@ export class Avatar {
       if(r?.live && node.quaternion.equals(r.out))node.quaternion.copy(r.base);
     }
     this._swimNodes=[];
-    if(this.locomotion?.medium==='water' && this.locomotion?.body!=='submarine' && !this._limp && !this._override && !this.emote){
+    if(this.locomotion?.medium==='water' && this.locomotion?.body!=='submarine' && !SWIM_CLIPS.includes(this.postureSlot) && !this._limp && !this._override && !this.emote){
       for(const [name,rotation] of Object.entries(swimPose(now/1000,this.locomotion.mode==='surface'))){
         const node=this.vrm.humanoid?.getNormalizedBoneNode(name);if(!node)continue;
         const r=this._composeBegin(node);

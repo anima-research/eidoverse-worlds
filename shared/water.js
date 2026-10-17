@@ -78,7 +78,10 @@ export function swimStep(pos, velocity, input, water, dt, time) {
   const blend = 1-Math.exp(-5*dt);
   const vel = velocity.map((v,i) => v+(target[i]-v)*blend);
   const next = pos.map((v,i) => v+vel[i]*dt);
-  const surface = waveHeight(water,next[0],next[2],time)-1.1;
+  // the root floats a body-length fraction under the surface: 1.1 m for a 100% body, scaled with its size
+  // (input.stature, default 1) so a small body's eyes still clear the water
+  const stature = Number.isFinite(input.stature) && input.stature > 0 ? input.stature : 1;
+  const surface = waveHeight(water,next[0],next[2],time)-1.1*stature;
   let mode = 'swim';
   if (!input.dive && next[1] >= surface-.12) { next[1] = surface; vel[1] = 0; mode = 'surface'; }
   return { pos:next, velocity:vel, mode };

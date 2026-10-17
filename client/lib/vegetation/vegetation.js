@@ -516,7 +516,7 @@ function rosetteGeometry(spec, rng) {
 }
 
 // ── cross-field occupancy — content-aware overlap ───────────────────────────
-import { resetFloraOccupancy, valueNoise2D, placeInstances, placeRows } from '../../../shared/flora-placement.js';
+import { resetFloraOccupancy, valueNoise2D, placeInstances, placeRows, placeExplicit } from '../../../shared/flora-placement.js';
 export { resetFloraOccupancy } from '../../../shared/flora-placement.js';
 
 // `surface` support: any mesh(es) become a height field by raycasting straight
@@ -671,22 +671,7 @@ export async function createFlora(opts = {}) {
         : tuftGeometry(spec, gRng);
 
     const inst = o.placements
-        ? o.placements.map((pl, pi) => {
-            // seeded, not Math.random(): authored placements must reproduce
-            // exactly per seed — run-to-run scale/yaw drift broke every
-            // like-for-like lookdev comparison
-            const pr = (() => { let sN = ((o.seed ?? 7) * 131 + pi * 37 + 5) % 2147483647;
-                return () => { sN = (sN * 16807) % 2147483647; return sN / 2147483647; }; })();
-            const scale = pl[2] ?? 1;
-            if (spec.footRadius) _placedPlants.push({ x: pl[0], z: pl[1], r: spec.footRadius * scale });
-            const sy = o._surfaceAt ? (o._surfaceAt(pl[0], pl[1])?.y ?? 0) : null;
-            return {
-                x: pl[0], y: sy ?? (o.heightFn ? o.heightFn(pl[0], pl[1]) : (o.y ?? 0)), z: pl[1],
-                yaw: pr() * Math.PI * 2,
-                scale, tilt: 0, colorVar: pr(),
-                phase: pr() * Math.PI * 2,
-            };
-        })
+        ? placeExplicit(o, spec)
         : o.rows ? placeRows(o, spec)
         : placeInstances(o, spec);
     if (!inst.length) { console.warn('[grass2] zero instances placed'); }

@@ -23,6 +23,9 @@ The server sends the existing framing request:
 {"type":"snap","id":"snap-opaque-nonce","follow":"participant-id","view":"first","width":960,"height":540}
 ```
 
+A request whose framing keeps a field once normalised also carries `frame`,
+`{dist?, height?, pitch?}` (see `docs/WIRE.md`).
+
 The donor returns `{"type":"snap-result","id":"…","dataUrl":"data:image/png;base64,…"}`
 or an `error` string. The HTTP caller receives PNG bytes. The response headers
 `x-eidoverse-renderer` and `x-eidoverse-scene` identify the donor implementation.

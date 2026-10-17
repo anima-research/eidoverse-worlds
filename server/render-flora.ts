@@ -1,7 +1,7 @@
 // Same seeded placement/biome definitions as Three.js; geometry and draw budget
 // are renderer-specific. This module never mutates folded state.
 import { mapGrassArgs, presetStrokes } from '../client/lib/flora_args.js';
-import { placeInstances, placeRows, resetFloraOccupancy } from '../shared/flora-placement.js';
+import { placeInstances, placeRows, placeExplicit, resetFloraOccupancy } from '../shared/flora-placement.js';
 import presets from '../defs/flora/_presets.json';
 import grass from '../defs/flora/grass.json';
 import galleta_dry from '../defs/flora/galleta_dry.json';
@@ -24,7 +24,16 @@ export function projectFlora(raw: any, heightFn: (x:number,z:number)=>number) {
       o.width=st.width??st.size??24;o.depth=st.depth??st.size??24;
       if (![o.width,o.depth,o.density??1,o.seed,...o.center].every(Number.isFinite) || o.width<=0 || o.depth<=0 || o.width>500 || o.depth>500 || (o.density??1)<0) throw Error('Invalid flora extents/density');
       if (o.rows && ((o.rows.spacing??.76)<.1 || (o.rows.plant??.24)<.05)) throw Error('Flora row spacing below native budget');
-      const candidates=o.rows?o.width*o.depth/(o.rows.spacing??.76)/(o.rows.plant??.24)*Math.max(1,o.density??1):o.width*o.depth*1.6*spec.density*(o.density??1)*(o.footprint==='organic'?1.45:1);
+      const explicit=Array.isArray(o.placements)&&o.placements.length>0;
+      if (explicit && !o.placements.every((pl:any)=>Array.isArray(pl)&&Number.isFinite(pl[0])&&Number.isFinite(pl[1])&&(pl[2]==null||Number.isFinite(pl[2])))) throw Error('Invalid flora placements');
+      // Budget the loops placeInstances/placeRows ACTUALLY run, not the area: each loop runs at least once
+      // per row, so a sliver (depth 1e-20) with a huge density passed an area estimate while looping
+      // trillions of times — synchronously, freezing every world on the server.
+      const k=o.density??1;
+      const loops=(span:number,step:number)=>Math.max(1,Math.ceil(span/step));
+      const candidates=explicit?o.placements.length
+        :o.rows?loops(o.depth,o.rows.spacing??.76)*loops(o.width,(o.rows.plant??.24)/Math.max(1,k))
+        :(()=>{const step=1/Math.sqrt(spec.density*k*(o.footprint==='organic'?1.45:1));return loops(o.width*1.25,step)*loops(o.depth*1.25,step);})();
       if (!Number.isFinite(candidates)||candidates>800000||candidates>candidateBudget||(spec.footRadius&&candidates>5000)) {warnings.push(`${name}: field exceeds native placement budget`);continue;}
       candidateBudget-=candidates;
       // Large meadows retain the SAME seeded plants as the browser, but only
@@ -32,12 +41,13 @@ export function projectFlora(raw: any, heightFn: (x:number,z:number)=>number) {
       // production field just because it has more plants than we can draw.
       let seen=0, random=(Number(o.seed)>>>0)||1;
       const reservoir:any[]=[];
-      if(!o.rows&&candidates>150000){
+      if(!explicit&&!o.rows&&candidates>150000){
         o.placementSink=(p:any)=>{++seen;if(reservoir.length<left){reservoir.push(p);return;}
           random=(Math.imul(random,1664525)+1013904223)>>>0;
           const at=Math.floor(random/4294967296*seen);if(at<left)reservoir[at]=p;};
       }
-      const generated=o.density===0?[]:o.rows?placeRows(o,spec):placeInstances(o,spec);
+      // authored placements are the exact plants the browser draws, never a fresh seeded field
+      const generated=explicit?placeExplicit(o,spec):o.density===0?[]:o.rows?placeRows(o,spec):placeInstances(o,spec);
       const all=o.placementSink?reservoir:generated;
       const count=Math.min(left,all.length),stride=all.length/Math.max(1,count);
       const placements=Array.from({length:count},(_,i)=>all[Math.floor(i*stride)]);

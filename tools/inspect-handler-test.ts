@@ -1,7 +1,10 @@
 // bun tools/inspect-handler-test.ts — the "inspect" message (server/messages.ts) answers one
 // entity's authored component bag to anyone in the world, refuses nothing else, paces
 // per connection, and replaces oversized bags with their type list.
-process.env.WORLDS_DIR ??= require("node:fs").mkdtempSync(require("node:os").tmpdir() + "/inspect-handler-");
+// ALWAYS a test-owned directory (never an inherited WORLDS_DIR — cleanup deletes it, and an inherited one
+// may be a real server's saved worlds); only this directory is removed at the end.
+const OWN_DIR = require("node:fs").mkdtempSync(require("node:os").tmpdir() + "/inspect-handler-");
+process.env.WORLDS_DIR = OWN_DIR;
 process.env.JOIN_TOKEN ??= "test-door";
 const { MESSAGES } = await import("../server/messages.ts");
 const ok = (v: unknown, why: string) => { if (!v) { console.error("FAIL", why); process.exit(1); } };
@@ -30,4 +33,4 @@ ok(sent.length === 4, "malformed ids answer nothing");
 c.world = null; ask({ type: "inspect", id: "crate" });
 ok(sent.length === 4, "outside a world: nothing");
 console.log("inspect-handler: 8 ok");
-import("node:fs").then((fs) => { try { fs.rmSync(process.env.WORLDS_DIR!, { recursive: true, force: true }); } catch {} });
+import("node:fs").then((fs) => { try { fs.rmSync(OWN_DIR, { recursive: true, force: true }); } catch {} });

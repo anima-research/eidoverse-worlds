@@ -1,6 +1,6 @@
 import { setTraversalObjects } from './lib/traversal.js';
-import { updateVehicle } from './lib/vehicles.js';
-import { updateWater, setWaterObjects, setWaterClock, environmentSettings, waterDebug } from './lib/environment.js';
+import { updateVehicle, piloting } from './lib/vehicles.js';
+import { updateWater, updateWaterView, setWaterObjects, setWaterClock, environmentSettings, waterDebug, applyEnvLight } from './lib/watervolumes.js';
 // eidoverse-worlds browser client.
 //
 // Two planes: the world log (verbs, ordered, replayed on join) and presence
@@ -34,7 +34,7 @@ import './lib/pictures.js';
 import { tickSounds } from './lib/sounds.js';   // the sound comp: positional audio from an entity
 import { tickMotion } from './lib/motion.js';
 import {
-  myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
+  myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode, photoMode,
   setRightsHook, setMeHook, setFolded,
 } from './lib/controller.js';
 import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js';
@@ -457,7 +457,7 @@ const MAIN_KEYS = [
   { code: 'Tab', key: 'Tab', id: 'key:people', title: 'people here', keywords: ['who', 'present', 'roster'], group: 'panels', icon: 'users',
     prevent: true, run: () => togglePeopleHere() },
   { code: 'KeyB', key: 'B', id: 'panel:edit', run: () => toggleEditMode() },
-  { code: 'KeyP', key: 'P', id: 'key:photo', title: 'photo mode (free camera)', keywords: ['camera', 'picture'], group: 'view', run: () => togglePhotoMode() },
+  { code: 'KeyP', key: 'P', id: 'key:photo', title: 'photo mode (free camera)', keywords: ['camera', 'picture'], group: 'view', run: () => (piloting() && !photoMode ? flashHint('photo mode needs the controls — leave the helm first (E)', 4000) : togglePhotoMode()) },
   { code: 'F1', key: 'F1', id: 'key:hidehud', title: 'hide the HUD', keywords: ['interface', 'clean', 'photo'], group: 'view', icon: 'eye-slash',
     prevent: true, run: () => document.body.classList.toggle('photo') },
   { code: 'F2', key: 'F2', id: 'key:screenshot', title: 'save a screenshot', keywords: ['picture', 'capture'], group: 'view', prevent: true, run: () => saveScreenshot() },
@@ -563,7 +563,7 @@ const readyPoll = setInterval(() => {
 
 registerSystem('autos', (dt, t) => updateAutoSystems(t));       // grass wind, particles
 registerSystem('motion', () => tickMotion());                   // the world's moving parts
-registerSystem('sky', (dt, t, now) => updateSky(now, t));
+registerSystem('sky', (dt, t, now) => { updateSky(now, t); applyEnvLight(); });   // an authored environment's sun wins, before the rig fits shadows
 registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather → uniforms
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests
 registerSystem('sounds', () => tickSounds(), { every: 2 });      // panners follow entities, the listener the camera
@@ -574,7 +574,7 @@ registerSystem('water', updateWater);
 registerSystem('me-drive', (dt) => {
   if (CONFIG.renderer) { /* camera is driven per snap request */ }
   else if (CONFIG.spectate) updateSpectator(dt, CONFIG.follow ? remotes.get(CONFIG.follow) : null);
-  else if (updateVehicle(dt, getMe())) { /* lease holder drives the helm */ }
+  else if (updateVehicle(dt, getMe())) { if (photoMode) togglePhotoMode(); /* the helm owns the keys and camera: never both */ }
   else if (isDowned()) { myState.q=undefined;myState.locomotion=undefined;const me=getMe();if(me)me.locomotion=null;stepRagdoll(dt); }     // the controller yields while limp
   else if (avatarMounts.has(CONFIG.name)) updateMountedMe(dt);  // seated: derived, not driven
   else updateMe(dt, getMe());
@@ -614,6 +614,7 @@ registerSystem('debug', (dt, t, now) => updateDebug(now));       // F3 wireframe
 registerSystem('send-pose', (dt, t, now) => sendPose(now));
 // XR: read hands → fill intent (updateMe already moved the body) → rig follows
 registerSystem('xr', (dt) => updateXR(dt));
+registerSystem('water-view', () => updateWaterView());   // after the camera's last move this frame (movement, XR): the level's fog and background
 registerSystem('xrvignette', (dt) => tickXRVignette(dt));   // comfort tunnel, on the XR camera (Settings › VR)
 registerSystem('pixel-ratio', () => applyPendingPixelRatio());   // a resize clears the canvas: before the draw, never after
 registerSystem('render', renderWorld);
