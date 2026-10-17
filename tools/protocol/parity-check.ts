@@ -28,7 +28,7 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 const MUTANTS: [string, string, string, string, string[]][] = [
   ["the credential declares for you", "server/server.ts", "c.tokenVerified = true; }", "c.tokenVerified = true; c.declares = \"agent\"; }", ["D1", "D2"]],
   ["the enrolment declares a person", "server/server.ts", "c.tokenVerified = true; }", "c.tokenVerified = true; c.declares = c.declares ?? \"person\"; }", ["D1", "D2"]],
-  ["any value is a declaration", "server/server.ts", "return typeof v === \"string\" && /^[a-z][a-z0-9-]{0,23}$/.test(v) ? v : null;", "return v == null ? null : String(v);", ["D3"]],
+  ["any value is a declaration", "server/server.ts", "return typeof v === \"string\" && /^[a-z][a-z0-9-]{0,31}$/.test(v) ? v : null;", "return v == null ? null : String(v);", ["D3"]],
   ["the old agent key declares", "server/server.ts", "c.declares = declarationOf(msg.declares) ?? undefined;", "c.declares = declarationOf(msg.declares) ?? (msg.agent ? \"agent\" : undefined);", ["D5"]],
   ["arrive drops the declaration", "server/server.ts", "w.broadcast({ type: \"arrive\", id: c.id, avatar: c.avatar, ...(c.declares ? { declares: c.declares } : {}), ...(c.actorId", "w.broadcast({ type: \"arrive\", id: c.id, avatar: c.avatar, ...(c.actorId", ["D3", "D4"]],
   ["present drops the declaration", "server/server.ts", "pose: settledPose(o.lastPose), ...(o.declares ? { declares: o.declares } : {}),", "pose: settledPose(o.lastPose),", ["D3", "D4"]],

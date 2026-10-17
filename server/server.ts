@@ -339,9 +339,9 @@ function sendGeomFollowup(w: World, c: Client) {
 // can finally be exercised without a live socket. Bodies moved verbatim;
 // refusal `return`s became `return null`.
 
-/** A join's declared status (PROTOCOL §6a): one short lowercase word of its own ("agent", "ai", …), else undeclared (null). */
+/** A join's declared status (PROTOCOL §6a): one short lowercase word of its own ("agent", "ai", …; up to 32 characters — its own grammar, not a role id), else undeclared (null). */
 function declarationOf(v: unknown): string | null {
-  return typeof v === "string" && /^[a-z][a-z0-9-]{0,23}$/.test(v) ? v : null;
+  return typeof v === "string" && /^[a-z][a-z0-9-]{0,31}$/.test(v) ? v : null;
 }
 function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, reason?: string): void }, msg: any, auth: HnSession | null): World | null {
     // A malformed world name is a bad LINK, not a bad actor — refuse it
