@@ -1296,12 +1296,14 @@ const warnOrNot = (ws) => (ws.length ? { warnings: ws } : {});
 // cleanup never re-authors a demoted builder's handlers with the owner's rights, nor a visitor's delete an owner's. A follow-up
 // that removed the component leaves no author (null). Without it: the last write of any kind (a version, a conflict check).
 function lastTouch(w, id, comp, { editsOnly = false, authored = false } = {}) {
+  let restored = false;
   for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
     if (editsOnly && w.entries[e.cause]?.body?.capability) continue;   // a use's own write (a toggle flipped it): not an author
     const ops = opsQuiet(e), fu = authored ? followUpsOf(e) : null;
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
       if (o.verb === "create" || o.comp === comp || (o.verb === "delete" && o.comp === undefined)) {
-        if (fu?.has(k)) { if (o.verb === "set") continue; return null; }
+        // a follow-up set put a value back (an undo's restore, review r10 M2): it also steps over the follow-up delete it reverses
+        if (fu?.has(k)) { if (o.verb === "set") { restored = true; continue; } if (o.verb === "delete" && restored) { restored = false; continue; } return null; }
         return { seq: i, actor: e.actor }; } } }
   return null;
 }
@@ -2041,10 +2043,11 @@ function scriptDepth(w, seq) { let n = 0, e = w.entries[seq], guard = 0;
   while (isE(e) && isScriptActor(e.actor) && guard++ < 1000) { if (e.kind === "act") n++; e = w.entries[e.cause]; } return n; }
 // The writes to a script: key in its current life, newest first: [{e, value}] (value undefined if purged)
 function scriptWrites(w, id, key) {
-  const out = [];
+  const out = []; let restored = false;
   for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue; const ops = opsQuiet(e); const fu = followUpsOf(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
-      if (o.verb === "set" && o.comp === key) { if (!fu.has(k)) out.push({ e, value: o.value }); }   // a follow-up never sponsors (review r9 H1)
+      if (o.verb === "set" && o.comp === key) { if (fu.has(k)) restored = true; else { restored = false; out.push({ e, value: o.value }); } }   // a follow-up never sponsors (review r9 H1)
+      else if (o.verb === "delete" && fu.has(k) && restored && (o.comp === key || o.comp === undefined)) { restored = false; continue; }   // reversed by a follow-up restore (r10 M2)
       else if (o.verb === "create" || (o.verb === "delete" && (o.comp === key || o.comp === undefined))) return out; } }
   return out;
 }

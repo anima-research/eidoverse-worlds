@@ -101,12 +101,17 @@ function* backward(w, id) {
   if (w.touching) { const a = w.touching(id); for (let k = a.length - 1; k >= 0; k--) yield a[k]; return; }
   for (let i = w.entries.length - 1; i >= 0; i--) yield i;
 }
+// A follow-up set that put a value back (an undo's restore) also steps over the follow-up delete it reverses (review r10 M2),
+// so the restored value keeps its author and its life; any write of the asker's own in between ends that (a key re-created
+// by someone else after a clear is a new life, never merged with the old one).
 export function creatorOf(w, id, comp) {
-  let found = null;
+  let found = null, restored = false;
   for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
     const ops = opsQuiet(e); const fu = followUpsOf(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
-      if (o.verb === "set" && fu.has(k)) continue;   // the authority's follow-up (a reference cleared or put back) authors nothing (review r9 H1)
+      if (o.verb === "set" && fu.has(k)) { if (o.comp === comp) restored = true; continue; }   // the authority's follow-up (a reference cleared or put back) authors nothing (review r9 H1)
+      if (o.verb === "delete" && fu.has(k) && restored && comp !== undefined && (o.comp === comp || o.comp === undefined)) { restored = false; continue; }
+      if (o.verb === "set" && o.comp === comp) restored = false;
       if (comp === undefined) { if (o.verb === "create") return entryBy(w, e); if (o.verb === "delete" && o.comp === undefined) return null; continue; }
       if (o.verb === "set" && o.comp === comp) found = e;
       else if ((o.verb === "delete" && (o.comp === comp || o.comp === undefined)) || o.verb === "create") return found && entryBy(w, found); } }
@@ -114,9 +119,11 @@ export function creatorOf(w, id, comp) {
 }
 // Who last set (or deleted) component `comp` on a thing: { seq, by, rights, deleted } or null if nobody ever has.
 export function lastSetterOf(w, id, comp) {
+  let restored = false;
   for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
     const ops = opsQuiet(e); const fu = followUpsOf(e);
-    for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id || o.comp !== comp || o.verb === "create" || (o.verb === "set" && fu.has(k))) continue;
+    for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id || o.comp !== comp || o.verb === "create") continue;
+      if (fu.has(k)) { if (o.verb === "set") { restored = true; continue; } if (restored) { restored = false; continue; } }   // r9 H1, r10 M2
       return { ...entryBy(w, e), deleted: o.verb === "delete" }; } }
   return null;
 }

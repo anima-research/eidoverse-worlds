@@ -41,11 +41,12 @@ function by(L, seq) { const e = L[seq], c = L[e.cause];
   return { seq, rights }; }
 /** creator of (id, comp) as of seq `upto` (inclusive): { seq, rights } or null */
 export function creatorAt(L, id, comp, upto) {
-  let found = null;
+  let found = null, restored = false;
   for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isE(e) || e.kind !== "change") continue; const ops = quiet(e); const fu = followUpsOf(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
-      if (o.verb === "set" && fu.has(k)) continue;   // the authority's follow-up authors nothing (the entry's followUps, review r9 H1)
-      if (o.verb === "set" && o.comp === comp) found = i;
+      if (o.verb === "set" && fu.has(k)) { if (o.comp === comp) restored = true; continue; }   // the authority's follow-up authors nothing (the entry's followUps, review r9 H1)
+      if (o.verb === "delete" && fu.has(k) && restored && (o.comp === comp || o.comp === undefined)) { restored = false; continue; }   // reversed by a follow-up restore (r10 M2)
+      if (o.verb === "set" && o.comp === comp) { found = i; restored = false; }
       else if ((o.verb === "delete" && (o.comp === comp || o.comp === undefined)) || o.verb === "create") return found === null ? null : by(L, found); } }
   return found === null ? null : by(L, found);
 }
@@ -54,10 +55,12 @@ export function creatorAt(L, id, comp, upto) {
 export function sponsorAt(L, id, comp, upto) {
   if (!creatorAt(L, id, comp, upto)) return null;
   const W = []; // newest first, current life only
+  let restored = false;
   scan: for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isE(e) || e.kind !== "change") continue; const ops = quiet(e); const fu = followUpsOf(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
-      if (o.verb === "set" && fu.has(k)) continue;
-      if (o.verb === "set" && o.comp === comp) W.push({ seq: i, value: o.value });
+      if (o.verb === "set" && fu.has(k)) { if (o.comp === comp) restored = true; continue; }
+      if (o.verb === "delete" && fu.has(k) && restored && (o.comp === comp || o.comp === undefined)) { restored = false; continue; }   // r10 M2
+      if (o.verb === "set" && o.comp === comp) { restored = false; W.push({ seq: i, value: o.value }); }
       else if (o.verb === "create" || (o.verb === "delete" && (o.comp === comp || o.comp === undefined))) break scan; } }
   const unp = (v) => { if (!v || typeof v !== "object" || Array.isArray(v)) return v; const { paused, ...rest } = v; return rest; };
   for (let k = 0; k < W.length; k++) if (k === W.length - 1 || W[k].value === undefined || W[k + 1].value === undefined || jcs(unp(W[k].value)) !== jcs(unp(W[k + 1].value))) return by(L, W[k].seq);
