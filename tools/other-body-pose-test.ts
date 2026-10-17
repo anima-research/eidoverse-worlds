@@ -81,6 +81,24 @@ check("replace sends the whole pose, and a replace with nothing left is a releas
   check("...and a replacing animation ends the caller's pose first", played.length === 2 && played[1].replace === true && state.pose === null && !sent.length);
 }
 
+// Replace with no bones named makes the whole pose nothing, a release, as
+// replace with nothing left does; and replace may ride in an animation.
+{
+  const sent: any[] = [], played: any[] = [], state: any = { pose: { head: [0, 0, 0, 1] } };
+  const EW = poseCommands({ state, sendPuppet: (t: string, r: unknown) => { sent.push([t, r]); }, play: (a: unknown) => { played.push(a); } });
+  EW.pose(undefined, { replace: true });
+  check("EW.pose(undefined, {replace: true}) releases the caller's pose", state.pose === null && !sent.length, JSON.stringify(state.pose));
+  EW.pose(undefined, { replace: true, target: "someone" });
+  check("...and with a target, sends that body the release", eq(sent, [["someone", { pose: {} }]]), JSON.stringify(sent));
+  sent.length = 0;
+  state.pose = { head: [0, 0, 0, 1] };
+  EW.animate({ dur: 1, tracks: {}, replace: true });
+  check("EW.animate takes replace from the animation too, ending the caller's pose first",
+    played.length === 1 && played[0].replace === true && state.pose === null && !sent.length, JSON.stringify(played));
+  EW.animate({ dur: 1, tracks: {}, replace: true }, "someone");
+  check("...and carries it to a target", eq(sent, [["someone", { anim: { dur: 1, tracks: {}, replace: true } }]]) && played.length === 1, JSON.stringify(sent));
+}
+
 const lib = mkdtempSync(join(tmpdir(), "other-body-library-"));
 mkdirSync(join(lib, "fixtures"));
 writeFileSync(join(lib, "fixtures/body.vrm"), fixture());

@@ -59,7 +59,9 @@ export function poseCommands({ state, sendPuppet, play }) {
         throw new TypeError("EW.pose: the first argument is a map of bone name to value, or null to release; a target's name goes second");
       }
       if (bones && ('target' in bones || 'replace' in bones)) throw new TypeError("EW.pose: target and replace go in the second argument, not among the bones");
-      if (bones === undefined) return target ? undefined : state.pose;   // nothing named: nothing changes
+      // Nothing named changes nothing, unless it replaces: a whole pose of no
+      // bones sends every bone back, which is a release.
+      if (bones === undefined && !replace) return target ? undefined : state.pose;
       if (target) {
         // No bones merged over theirs is no request: the pose tool sends none either.
         if (bones && !replace && !Object.keys(bones).length) return undefined;

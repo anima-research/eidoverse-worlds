@@ -170,6 +170,11 @@ try {
       source: "unknown", receivedAt: Date.now(), pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "ragdoll", pose: [[0, 0, 0, 1]] } } as any));
     check("a published pose that isn't a map of bones is refused whole, with no claim about its bones",
       !bad.ok && bad.error === "published pose is not a map of bones" && bad.unreadableBones === null, bad.error);
+    // A word, which Object.entries would read a letter at a time.
+    const word = await reader.read("bad", "bones", undefined, () => ({ who: "bad", avatar: "vrm1.vrm", generation: 1, self: true, connected: true,
+      source: "unknown", receivedAt: Date.now(), pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "ragdoll", pose: "kneel" } } as any));
+    check("...and so is one that isn't an object",
+      !word.ok && word.error === "published pose is not a map of bones" && word.unreadableBones === null, word.error);
   }
 
   // The reach solver sees the held pose's normalized layer only: the
@@ -268,6 +273,25 @@ try {
     a.holdPose({ spine: [0, 0, 0, 0] });
     check("a rotation of no length puts the bone at rest, over the clip, as the renderer reads it", a.av.nodes.spine.quaternion.equals(new THREE.Quaternion()),
       JSON.stringify(a.av.nodes.spine.quaternion.toArray()));
+  }
+
+  // A published pose names bones as its sender's body has them. One the
+  // stand-in lacks, or a name every object inherits, is skipped, and the
+  // rest is laid, on the reach path and at a fall's start.
+  {
+    const q = [0, 0, 0.3, Math.sqrt(0.91)];
+    const odd = JSON.parse(JSON.stringify({ spine: q, tailTip: q, constructor: q, toString: q }));
+    const a = await ReachBody.create(base, "turned-vrm1.vrm");
+    if (!a) throw new Error("no reach body");
+    let threw = "";
+    try { a.poseAt([0, 0, 0], 0, odd); } catch (e) { threw = String(e); }
+    check("a held pose naming a bone the stand-in lacks, or `constructor`, lays the rest on the reach body",
+      !threw && a.av.nodes.spine.quaternion.equals(new THREE.Quaternion(...q).normalize()), threw || JSON.stringify(a.av.nodes.spine.quaternion.toArray()));
+    const body = await HeadlessBody.create(base, "vrm1.vrm");
+    if (!body) throw new Error("the headless sim is unavailable");
+    threw = "";
+    try { body.begin({ x: 0, z: 0, yaw: 0, pose: odd }); } catch (e) { threw = String(e); }
+    check("...and a fall from it starts", !threw && !!body.rd, threw);
   }
 
   // An arm's length is the solver's: a held scale on it doesn't lengthen it.

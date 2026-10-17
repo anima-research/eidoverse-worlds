@@ -222,7 +222,8 @@ export class BodyStateReader {
         overrides: { state: valid ? count ? "held" : "none" : "unknown", count, source: o.source,
           sourceBasis: o.self ? "owner state" : o.source === "physics" ? "ragdoll clip; original author unknown" : "producer does not publish provenance" },
         // Published bones with nothing the stand-in can use: they cost
-        // themselves, never the body, and every reply names them.
+        // themselves, never the body, and every reply built from a reading
+        // of the body names them.
         unreadableBones: valid ? unreadable : null,
         reaches: reaches ?? {},
         stability: { status: "unmeasured", reason: "single observation; use window_ms to measure reconstructed joint motion" },

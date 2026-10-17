@@ -128,8 +128,11 @@ Examples:
   from the bone, as drawn. `unmappedBones` names published bones this rig's
   humanoid skeleton lacks, and `unreadableBones` names published bones with
   nothing usable in their value. Either costs only that bone: the rest of
-  the pose is still evaluated. Every reply carries `unreadableBones` (null
-  when the pose can't be read at all), and the summary names them.
+  the pose is still evaluated. Every reply that reads a body carries
+  `unreadableBones` (null when the pose can't be read at all), and the
+  summary names them. A refused argument, a body that isn't present, or
+  one that changed or left while its skeleton loaded gets an error reply
+  without it.
 - Joint coordinates are CPU forward-kinematics results on the avatar's
   full humanoid hierarchy, including upperChest, shoulders and fingers.
   Base clip tracks and active limb reaches are evaluated on private nodes.

@@ -485,7 +485,8 @@ export class HeadlessBody {
     for (const n of Object.values(this.av.nodes) as any[]) n.quaternion.identity();
     if (pose) {
       for (const [j, v] of Object.entries(pose)) {
-        const n = this.av.nodes[j], q = poseChannels(v)?.q;
+        // a published name is the sender's; one an object inherits (`constructor`) is no bone
+        const n = Object.hasOwn(this.av.nodes, j) ? this.av.nodes[j] : null, q = poseChannels(v)?.q;
         if (n && q) n.quaternion.set(q[0], q[1], q[2], q[3]).normalize();
       }
     }
@@ -792,12 +793,14 @@ export class ReachBody {
    *  bone's rest, and a scale at or below 0 collapses or mirrors what hangs
    *  from the bone, as drawn. A limp body draws no raw layer (avatar.js:
    *  _applyRawPose doesn't run while limp), so `raw: false` leaves it out. A
-   *  bone the stand-in lacks, or a value with nothing usable in it, is
-   *  skipped; body_state names both. */
+   *  bone the stand-in lacks, a name an object inherits (`constructor`), or a
+   *  value with nothing usable in it, is skipped. body_state's reply names a
+   *  value with nothing usable in it (unreadableBones), and its bones detail
+   *  names a bone the stand-in lacks (unmappedBones). */
   holdPose(pose: Record<string, unknown>, { raw = true } = {}) {
     const T = this.m.THREE;
     for (const [j, v] of Object.entries(pose)) {
-      const n = this.av.nodes[j], c = poseChannels(v);
+      const n = Object.hasOwn(this.av.nodes, j) ? this.av.nodes[j] : null, c = poseChannels(v);
       if (!n || !c) continue;
       if (c.q) n.quaternion.set(c.q[0], c.q[1], c.q[2], c.q[3]).normalize();
       if (c.t && j === "hips") n.position.add(new T.Vector3(c.t[0], c.t[1], c.t[2]));

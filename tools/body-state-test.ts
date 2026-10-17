@@ -81,8 +81,9 @@ try {
   await until(() => eq(peer.people.get(owner.name)?.pose?.pose, kneel));
   const knelt = await read(peer, { who: owner.name, detail: "bones" });
   check("the pose tool's kneeling example is read, not refused", knelt.ok && eq(knelt.publishedRotations, kneel) && eq(knelt.unreadableBones, []), knelt.error);
-  check("kneeling lowers every joint by 0.5 m and moves none sideways", !!standing.joints && Object.entries(standing.joints).every(([k, j]: [string, any]) =>
-    near(knelt.joints?.[k]?.position, [j.position[0], j.position[1] - 0.5, j.position[2]])));
+  const standingJoints = Object.entries(standing.joints ?? {});
+  check("kneeling lowers every joint by 0.5 m and moves none sideways", standing.ok && standingJoints.length >= 10 && standingJoints.every(([k, j]: [string, any]) =>
+    near(knelt.joints?.[k]?.position, [j.position[0], j.position[1] - 0.5, j.position[2]])), `${standingJoints.length} joints read standing`);
   // Every bone is read as the renderer reads it (a rotation of no length is
   // the bone's rest, a scale at or below 0 collapses or mirrors it); a bone
   // with nothing usable in it costs only itself, and every reply names it.
