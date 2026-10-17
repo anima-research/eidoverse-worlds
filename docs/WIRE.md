@@ -31,7 +31,8 @@ review.
   monotonic **generation** (`gen`) — rtc/attest are stamped and gated by it.
 - Flags on join: `spectate` (see everything, appear as nothing, cannot
   author), `agent` (self-declared MCPL body), `renderer` (invisible
-  volunteer that answers `snap` requests). Aux surfaces imply spectator.
+  volunteer that answers `snap` requests), `clock` (send the server's time
+  just before the snapshot; see `clock` below). Aux surfaces imply spectator.
 - Rate caps, enforced server-side, excess silently dropped: **60 msgs/s**
   per client (`MSG_RATE`), **12 authored verbs / 4s** (`VERB_RATE`, refusal
   message sent once per window).
@@ -68,7 +69,7 @@ Every message belongs to exactly one plane:
 
 | type | plane | who may send | shape (essentials) | notes |
 |---|---|---|---|---|
-| `join` | — | anyone admitted | `{world, id?, token?, avatar?, surface?, spectate?, agent?, renderer?, agentToken?, session?}` | `session`: the page's own id (8–64 of `A-Za-z0-9_-`), relayed as its presence `session` (§4). travel = leave A, join B on the same socket. Verified sessions: `id` ignored, login name wins. Answers `snapshot` (§4). First embodied joiner of a brand-new world is granted owner via the log. |
+| `join` | — | anyone admitted | `{world, id?, token?, avatar?, surface?, spectate?, agent?, renderer?, agentToken?, session?, clock?}` | `session`: the page's own id (8–64 of `A-Za-z0-9_-`), relayed as its presence `session` (§4). travel = leave A, join B on the same socket. Verified sessions: `id` ignored, login name wins. Answers `snapshot` (§4). First embodied joiner of a brand-new world is granted owner via the log. |
 | `verb` | authored | embodied, rank-gated | `{verb, args}` | the ONLY door to the log. Closed verb set (§5); refusals teach the extension lanes (comp/use/behavior). |
 | `history` | read | anyone incl. spectators | `{before?, after?, limit?≤300, verbs?, reqId?}` | pages the log newest-first; answers `history`. |
 | `debug` | read | anyone incl. spectators | `{limit?, kinds?}` or `{behavior}` or `{behaviors:true}` | the flight recorder + behavior consoles; answers `debug`. |
@@ -92,6 +93,12 @@ Every message belongs to exactly one plane:
 
 ## 4. Server → client messages
 
+- `clock` — `{t}`: the server's time in ms, sent just before each `snapshot`
+  to a join that asks (`clock: true`), a join's or a travel's, so the client
+  has a sample of the server's clock before anything needs it, in an idle
+  world too. A client that asks finds the snapshot by its type, not by its
+  place among a join's messages. A join that doesn't ask gets no `clock`,
+  and its messages are as they were.
 - `snapshot` — the join answer: `{world, you, gen, yourSurfaces, recording,
   state, throughSeq, entries (tail), avatars (roster), yourRights, restore,
   present[{id, avatar, pose, agent, surfaces, session}]}`. State + tail is the whole

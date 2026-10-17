@@ -11,3 +11,7 @@ export const audioContext = () => { throw new Error('sound-guard-test builds no 
 export const audioContextState = () => 'none';
 export const playWhenAllowed = () => {};
 export const volumeFor = () => 1;
+// remotes.js's smoothed server clock: sounds.js stamps and seeks the shared
+// playhead against it (sound-clock-test exercises that; here the editor block
+// is only rendered, so the value is never read)
+export const serverNow = () => 0;

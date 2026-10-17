@@ -19,9 +19,12 @@ export const remotes = new Map(); // id -> LiteRow
 // because importing it would pull the engine in — the one duplication in this file,
 // and it is eight lines of arithmetic with no dependencies of its own.
 let clockOffset = null;
-export function noteServerTime(t) {
+// `at` is the performance.now() when `t`'s message event ran, for a message
+// that waited to be handled (the early socket's drain, net.js connect());
+// otherwise now.
+export function noteServerTime(t, at = performance.now()) {
   if (typeof t !== 'number') return;
-  const sample = t - performance.timeOrigin - performance.now();
+  const sample = t - performance.timeOrigin - at;
   clockOffset = clockOffset === null ? sample : clockOffset * 0.92 + sample * 0.08;
 }
 export const serverNow = () => performance.timeOrigin + performance.now() + (clockOffset ?? 0);

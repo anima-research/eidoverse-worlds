@@ -213,6 +213,7 @@ export function sendJoin() {
     renderer: CONFIG.renderer,
     token: CONFIG.token,
     session: PAGE_SESSION,
+    clock: true,   // the server's time just before the snapshot ('clock' below)
   }));
 }
 
@@ -403,9 +404,13 @@ export async function connect() {
       // message can slip between the two.
       while (early.buffered.length) {
         const raw = early.buffered.shift();
+        // When the boot script's message handler ran, so the server's `t` it
+        // carries is sampled then rather than after the wait for this drain. Undefined
+        // from a boot script older than `arrived`: the sample is taken now.
+        const at = early.arrived?.shift();
         let msg;
         try { msg = JSON.parse(raw); } catch { continue; }
-        try { await handle(msg); } catch (e) { report(`net ${msg.type}`, e); }
+        try { await handle(msg, at); } catch (e) { report(`net ${msg.type}`, e); }
       }
       wireSocket(net.ws);   // live delivery takes over (onopen stays the boot script's)
       return;
@@ -528,8 +533,16 @@ function noteStalePresence(id) {
   console.warn(`[net] presence for unannounced id "${id}" dropped (straggler from a departed generation?)`);
 }
 
-async function handle(msg) {
+/** `at`: the performance.now() when the boot script's handler took an
+ *  early-socket message (the drain in connect()); undefined for a message
+ *  handled as its event runs. */
+async function handle(msg, at) {
   switch (msg.type) {
+    // The server's time, sent just before each snapshot to a join that asks
+    // (sendJoin's and the boot script's do), so every sound the snapshot
+    // carries is seeked, and every stamp the editor makes, in server time
+    // (remotes.js serverNow).
+    case 'clock': noteServerTime(msg.t, at); break;
     case 'snapshot': return onSnapshot(msg);
 
     case 'your-rights': {
@@ -584,7 +597,7 @@ async function handle(msg) {
       // id. Same law as `pose`: update-only, never create — and with no
       // creation there is no fire-and-forget load whose completion could
       // deliver a departed generation's sample into a successor's buffer.
-      noteServerTime(msg.t);
+      noteServerTime(msg.t, at);
       for (const [id, pose] of Object.entries(msg.poses)) {
         if (id === net.myId) continue; // our own echo — local prediction owns this body
         if (remotes.has(id)) pushPose(id, pose, msg.t);
