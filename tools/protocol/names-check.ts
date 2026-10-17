@@ -114,7 +114,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a clip def may be called live", "shared/animdefs.js", "  if (isReservedAnimName(name)) errs.push(", "  if (false) errs.push(", ["K4"]],
   ["an object may hold live", "shared/grab.js", "  if (isReservedAnimName(v.anim)) return bad(", "  if (false) return bad(", ["K4"]],
   ["a station may play live", "shared/sockbody.js", "  if (isReservedAnimName(v.anim)) return bad(", "  if (false) return bad(", ["K4"]],
-  ["the tool forgets the rest", "mcpl/tools.ts", " — never the bind pose; the body-mode is unchanged", "", ["K5"]],
+  ["the tool forgets the rest", "mcpl/tools.ts", "and rests in your body-mode's own anim (stand: idle, sit: the sit loop, lie: lie, swim: tread, fly: soar) — never the bind pose; the body-mode is unchanged", "", ["K5"]],
   ["the spec has no rest rule", "spec/PROTOCOL.md", "CURRENT body-mode's own anim (`stand`: idle; `sit`: its sit loop; `lie`;\n    `swim`: tread; `fly`: its hover), never the bind pose, and its", "CURRENT body-mode's own anim, and its", ["K5"]],
   ["sit asks for no body-mode", "mcpl/tools.ts", "const ANIM_BODY: Record<string, \"stand\" | \"sit\" | \"lie\"> = { sit: \"sit\", sitchair: \"sit\", lie: \"lie\", stand: \"stand\" };", "const ANIM_BODY: Record<string, \"stand\" | \"sit\" | \"lie\"> = {};", ["B1"]],
   ["an old sample's clip isn't read", "shared/bodymode.js", "return isBodyMode(sample.bodyMode) ? sample.bodyMode : (typeof sample.clip === 'string' ? modeFromClip(sample.clip) : null);", "return isBodyMode(sample.bodyMode) ? sample.bodyMode : null;", ["B2"]],
@@ -587,8 +587,9 @@ const cases: Case[] = [
   { id: "K5", what: "…the words: the anim tool's description and AGENTS.md spell out stop (true: every layer, the body-mode's rest, never the bind pose, body-mode unchanged; a name: that layer; \"live\": the ad-libbed ones, a reserved name), and the spec gives the rest rule and the relay's anim {stop: true}", run() {
       const t = readText("mcpl/tools.ts"); const i = t.indexOf('name: "anim", description: "'); const d = i < 0 ? "" : t.slice(i, t.indexOf("\n", i));
       const a = readText("AGENTS.md"), md = readText("spec/PROTOCOL.md");
-      const says = (x: string) => /never the bind pose/i.test(x) && /body-mode[^.]{0,40}unchanged/i.test(x) && /stop: \\?"live\\?"/.test(x) && /reserved/.test(x) && /that layer/.test(x);
-      return { tool: says(d), agents: says(a), spec: /never the bind pose/i.test(md) && /`\{type: "anim", stop: true\}`/.test(md) && /`live` is reserved/.test(md) }; },
+      const says = (x: string) => /rests in your body-mode's own anim \(stand: idle/.test(x) && /never the bind pose/i.test(x) && /body-mode[^.]{0,40}unchanged/i.test(x) && /stop: \\?"live\\?"/.test(x) && /reserved/.test(x) && /that layer/.test(x);
+      const body = md.slice(0, md.indexOf("## Version history"));
+      return { tool: says(d), agents: says(a), spec: /never the bind pose/i.test(body) && /`\{type: "anim", stop: true\}`/.test(md) && /`live` is reserved/.test(md) }; },
     good: (o) => o.tool && o.agents && o.spec },
   // ---------------- E: the old name of a gesture, gone (R 10-17 16:26) ----------------
   { id: "E1", what: "(R 16:26) presence pose.anim: the agent's once anim rides the next packet as anim (never the old key); the browser sends pose.anim; a receiver (browser, agent) reads either key; the server remembers neither", async run() {
