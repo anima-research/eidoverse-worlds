@@ -30,8 +30,8 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 // [name, file under the tree, find, replace, rows]
 const MUTANTS: [string, string, string, string, string[]][] = [
   ["a sit from anywhere", "shared/protocol/authority/use.js", "if (!inSitReach(from, sp, SIT_REACH.lag)) refuse(", "if (false) refuse(", ["S1"]],
-  ["every seat re-anchors", "shared/protocol/authority.js", "|| w.presence.seats?.[who]?.near !== true) return null;", ") return null;", ["S2"]],
-  ["the first step keeps the seat", "shared/protocol/authority.js", "if (w.presence.seats?.[actor]) clearSeat(w, actor); }", "}", ["S3"]],
+  ["every seat re-anchors", "shared/protocol/authority/riders.js", "|| w.presence.seats?.[who]?.near !== true) return null;", ") return null;", ["S2"]],
+  ["the first step keeps the seat", "shared/protocol/authority/bodyverbs.js", "if (w.presence.seats?.[actor]) clearSeat(w, actor); }", "}", ["S3"]],
   ["lastTouch: a restore doesn't step over its delete", "shared/protocol/authority.js", "if (o.verb === \"delete\" && restored) { restored = false; continue; } return null; }", "return null; }", ["H1"]],
   ["creatorOf: a restore doesn't step over its delete", "shared/protocol/authority/rights.js", "if (o.verb === \"delete\" && fu.has(k) && restored && comp !== undefined", "if (false && comp !== undefined", ["H2"]],
   ["lastSetterOf: a restore doesn't step over its delete", "shared/protocol/authority/rights.js", "if (restored) { restored = false; continue; } }   // r9 H1, r10 M2", "}", ["H2"]],
@@ -45,7 +45,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the set-down is the deleter's write", "shared/protocol/authority.js", "ops.push(followUp(setOp(id, \"transform\", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] })));", "ops.push(setOp(id, \"transform\", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] }));", ["F2"]],
   ["no unseated when a socket goes", "shared/protocol/authority.js", "if (typeof to === \"string\") inboxPush(w.presence, who, { type: \"unseated\"", "if (false) inboxPush(w.presence, who, { type: \"unseated\"", ["U1"]],
   ["the browser ignores unseated.at", "client/lib/localbody.js", "dismountMe('script', unseatedAt(u))", "dismountMe('script')", ["U2"]],
-  ["the ride counts follow-ups as edits", "shared/protocol/authority.js", "(lastTouch(w, from, key, { authored: true })?.seq ?? Infinity) < since", "(lastTouch(w, from, key)?.seq ?? Infinity) < since", ["U3"]],
+  ["the ride counts follow-ups as edits", "shared/protocol/authority/riders.js", "(lastTouch(w, from, key, { authored: true })?.seq ?? Infinity) < since", "(lastTouch(w, from, key)?.seq ?? Infinity) < since", ["U3"]],
   ["undo restores references to things gone since", "shared/protocol/authority/undo.js", "const nv = since.size ? withoutRefs(id, comp, old, since) : old;", "const nv = old;", ["L1"]],
   ["a body verb read through the prototype", "mcpl/tools.ts", "if (Object.hasOwn(BODY_VERBS, verb)) return", "if (BODY_VERBS[verb]) return", ["L2"]],
   ["CONTROL (no-op: must stay green)", "shared/protocol/authority.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],

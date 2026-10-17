@@ -64,7 +64,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["Add Path starts where it stands", "shared/editschema.js", "Path: { type: 'path', points: [p0, [p0[0], p0[1], round(p0[2] + 2, 4)]], speed: 1 } };", "Path: { type: 'path', points: [[0, 0, 0], [0, 0, 2]], speed: 1 } };", ["M5"]],
   ["help: physics.who's default", "shared/protocol/componentspec.js", "when it has no grabbable; default visitor)", "when it has no grabbable; default builder)", ["H1"]],
   ["help: punt's default", "shared/protocol/verbspec.js", "who may is physics.who (default visitor)", "who may is physics.who (default builder)", ["H1"]],
-  ["an open door is out of the way", "shared/protocol/authority.js", "except.has(id) || openNow(st, id)) continue;", "except.has(id)) continue;", ["O8"]],
+  ["an open door is out of the way", "shared/protocol/authority/physics.js", "except.has(id) || openNow(st, id)) continue;", "except.has(id)) continue;", ["O8"]],
   ["a person's refusal drops tool syntax", "shared/protocol/refusal.js", "const fix = typeof r.fix === \"string\" && r.fix && !TOOLISH.test(r.fix) ? r.fix : \"\";", "const fix = r.fix ?? \"\";", ["P1"]],
   ["a person's refusal names things", "shared/protocol/refusal.js", "const n = nameOf(id); if (!n) return m;", "const n = null; if (!n) return m;", ["P1", "P2"]],
   ["CONTROL (no-op: must stay green)", "shared/protocol/refusal.js", "// ---- for people (ship list 10-07", "// ----  for people (ship list 10-07", []],
