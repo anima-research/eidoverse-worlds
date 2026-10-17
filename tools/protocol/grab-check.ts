@@ -95,7 +95,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a throw's release says throw", "protocol/authority.js", "heldEvent(w, \"release\", a.id, { by: actor, how: verb, seq: act });", "heldEvent(w, \"release\", a.id, { by: actor, how: \"drop\", seq: act });", ["U4"]],
   ["the inspector adds grabbable with its defaults spelled out", "editschema.js", "const spec = Object.fromEntries(Object.entries(GRAB_DEFAULTS).filter(", "const spec = {} ?? Object.fromEntries(Object.entries(GRAB_DEFAULTS).filter(", ["I1"]],
   ["the card's edits are checked as the authority checks them", "editschema.js", "const bad = checkGrabbable(next);\n      if (bad)", "const bad = null;\n      if (bad)", ["I2"]],
-  ["look says what a hand may do with it", "protocol/authority.js", "    ...(g ? { grab: describeGrab(g, typeof name === \"string\" ? name : id) } : {}),", "", ["A1"]],
+  ["look says what a hand may do with it", "protocol/authority/blueprints.js", "    ...(g ? { grab: describeGrab(g, typeof name === \"string\" ? name : id) } : {}),", "", ["A1"]],
   ["review: a put's pos is reach-checked before it snaps", "protocol/authority.js", "const d0 = dist(handOf(me), a.pos); if (d0 > REACH) refuse(", "const d0 = 0; if (d0 > REACH) refuse(", ["F1"]],
   ["review: a refused orphan's hold still ends", "protocol/authority.js", "if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", "if (false) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", ["F2b"]],
   ["review: the up from whoever pressed down", "protocol/authority/use.js", "const lateUp = a.args?.phase === \"up\" && P[a.id]?.by === actor && hold?.by !== actor;", "const lateUp = false;", ["F3"]],

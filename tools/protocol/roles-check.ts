@@ -75,7 +75,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["ghost {who} is not the chosen mode", "protocol/authority.js", "|| (verb === \"ghost\" && args?.who !== undefined && args.who !== actor)", "", ["V4"]],
   ["leave passes the kick gate", "protocol/authority.js", "if (w.exists && tool !== \"help\" && tool !== \"leave\" && kickOf(w, actor))", "if (w.exists && tool !== \"help\" && kickOf(w, actor))", ["K5"]],
   ["a muted refusal isn't logged", "protocol/authority.js", "\"kicked\", \"ghost\", \"muted\"]);", "\"kicked\", \"ghost\"]);", ["V7"]],
-  ["look hides a ghost", "protocol/authority.js", ".filter(([id]) => id === actor || !ghostOf(w, id))", "", ["V8"]],
+  ["look hides a ghost", "protocol/authority/blueprints.js", ".filter(([id]) => id === actor || !ghostOf(w, id))", "", ["V8"]],
   ["custom ranks are range-checked on read", "protocol/roles.js", "|| d.rank < 1 || d.rank > 254) return null;", ") return null;", ["V9"]],
   ["seniority binds a capability's holder", "protocol/authority.js", "const cap = who.cap; if (cap && cap.kind !== \"reaction\" && cap.kind !== \"script\") return;", "const cap = who.cap; if (cap) return;", ["V10"]],
   ["a banned person is refused", "protocol/authority.js", "if (w.exists && tool !== \"help\" && tool !== \"leave\" && isBanned(w, actor)) refuse(\"banned\"", "if (false) refuse(\"banned\"", ["M2"]],
@@ -100,7 +100,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["guests rank by their guest role", "protocol/roles.js", "let r = isObj(wc[`roles:${id}`]) ? wc[`roles:${id}`].role : anon ? guestRoleOf(wc) : base;", "let r = isObj(wc[`roles:${id}`]) ? wc[`roles:${id}`].role : anon ? \"visitor\" : base;", ["M10", "R6"]],
   // ghost
   ["a ghost can't interact or talk", "protocol/authority.js", "args.who !== actor)) && ghostOf(w, actor)) {", "args.who !== actor)) && false) {", ["G1", "G3"]],
-  ["a ghost can't read chat", "protocol/authority.js", "const match = (e) => match0(e) && !(ghost && isE(e) && e.kind === \"say\");", "const match = (e) => match0(e);", ["G1"]],
+  ["a ghost can't read chat", "protocol/authority/blueprints.js", "const match = (e) => match0(e) && !(ghost && isE(e) && e.kind === \"say\");", "const match = (e) => match0(e);", ["G1"]],
   ["a ghost may look and walk", "protocol/authority.js", "const GHOST_OK = new Set([\"help\", \"look\",", "const GHOST_OK = new Set([\"help\",", ["G1"]],
   ["a sanction isn't the ghost's to end", "protocol/authority/moderation.js", "if (!a.on && inForceOf(w, actor, \"ghost\").length) refuse(\"ghost\"", "if (false) refuse(\"ghost\"", ["G2"]],
   ["the chosen mode", "protocol/authority/moderation.js", "const G = (w.presence.ghosts ??= {}); if (a.on) G[actor] = { ts: Math.floor(w.now()) }; else delete G[actor];", "const G = {};", ["G3"]],
