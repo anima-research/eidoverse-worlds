@@ -214,19 +214,22 @@ try {
   ag = new WorldAgent({ url: `ws://127.0.0.1:${PORT}/ws`, name: "seatbot", world: "seatlab",
     avatar: "eidoverse/assets/vrms/claude.vrm", agentToken: namedToken ?? "" });
   await ag.connect();
+  // R 10-17: the suite's names ride as placeholders (and the crate is labelled crate1: the tools take a label as an id)
+  const { idAliases } = await import("./protocol/idalias.ts"); const IDS = idAliases();
+  const areq = async (verb: string, args: any) => IDS.back(await ag!.request(verb, IDS.out(verb, args)));
   // building is door requests (the agent waits for each answer); sitting is presence (the sit tool, nothing logged)
-  const built = await ag.request("create", { id: "crate1", model: "eidoverse/assets/models/crate_large_blue.glb", components: { transform: { pos: [0, 0, 0] } } });
+  const built = await areq("create", { id: "crate1", model: "eidoverse/assets/models/crate_large_blue.glb", components: { transform: { pos: [0, 0, 0] }, label: "crate1" } });
   check("seatbot (the owner) builds the crate through the door", built?.ok === true, JSON.stringify(built?.refused ?? built));
   // a seat is a socket with a body block ({action, pose, anchor}); the legacy seat authors no support plane
   const seatL = { pos: [0, 1, 0], body: { action: "sit", pose: "sitchair" } };
-  const legacy = await ag.request("set", { id: "crate1", component: "sockets", value: { seatL } });
+  const legacy = await areq("set", { id: "crate1", component: "sockets", value: { seatL } });
   check("…and gives it a (legacy) seat", legacy?.ok === true, JSON.stringify(legacy?.refused ?? legacy));
   // the seat-profile correction keys on a socket that authors its support plane: its body anchors at the surface
   // (D14, R 10-12: body.anchor 'surface', one enum; client seatcore.js socketAnchor, world.js). Until the anchor carried it
   // (2026-10-07: a sibling seatAnchor the door never took) this seat couldn't be authored on a world at all.
   // (two of them: one body per socket since 10-12, R's ruling 7, and seatbot is still on seatS when probebot sits below)
   const seatS = { pos: [0, 1, 0], body: { action: "sit", pose: "sitchair", anchor: "surface" } };
-  const surface = await ag.request("set", { id: "crate1", component: "sockets", value: { seatL, seatS, seatS2: seatS } });
+  const surface = await areq("set", { id: "crate1", component: "sockets", value: { seatL, seatS, seatS2: seatS } });
   check("…and a seat that authors its support plane (body.anchor: surface)", surface?.ok === true, JSON.stringify(surface?.refused ?? surface));
   await sleep(600);
 

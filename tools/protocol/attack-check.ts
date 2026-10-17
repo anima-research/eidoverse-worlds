@@ -3,6 +3,7 @@
 // on the baseline and be refused (or harmless) now. Ported from the protocol lab's attack-check.js @ 11db981; only paths
 // and the optional control changed. usage: bun tools/protocol/attack-check.ts
 // @ts-nocheck — lab code, kept as written
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import { scratch, labAt, controlNote } from "./common.ts";
 import * as doorNow from "../../shared/protocol/authority.js";

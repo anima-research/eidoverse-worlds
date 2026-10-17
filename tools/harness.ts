@@ -266,19 +266,28 @@ export async function scratchBench(name: string, opts: ScratchOptions & { headed
  *  (#235/#236/#239/#241, 10-15) brought tests in that author their scenes this way; this keeps their scenes as they
  *  wrote them. spawn's scale and collide become the transform's scale and the collider component; comp is a set;
  *  mount of the agent itself is the attach tool's path (presence), of a thing a parent set; light is a light thing. */
+/** A scene's name for a thing (legacyVerb's spawn) → the id the authority minted for it. */
+export const sceneId = (a: any, n: string): string => a?.__sceneIds?.get(n) ?? n;
 export async function legacyVerb(a: any, v: string, x: any): Promise<any> {
+  if (x?.id === undefined && (v === "spawn" || v === "light")) x = { ...x };
   const { qFromYaw } = await import("../shared/rot.js");
   const tf = (o: any) => ({ ...(o.pos ? { pos: o.pos } : {}), ...(typeof o.yaw === "number" ? { q: qFromYaw(o.yaw) } : {}),
     ...(typeof o.scale === "number" ? { scale: [o.scale, o.scale, o.scale] } : {}) });
+  // R 10-17: a writer never chooses an id. A scene's name for a thing becomes a placeholder ('$tower') the authority mints an id
+  // for, and the thing's label (tools take a label as they take an id); later words map the name to the minted id
+  const ids: Map<string, string> = (a.__sceneIds ??= new Map());
+  const id = (n: any) => (typeof n === "string" ? ids.get(n) ?? n : n);
+  const made = (r: any, n: string) => { const m = r?.ids?.[`$${n}`]; if (m) ids.set(n, m); return r; };
+  const ph = (n: string) => `$${String(n).replace(/[^A-Za-z0-9_-]+/g, "-")}`;
   switch (v) {
-    case "spawn": return a.request("create", { id: x.id, model: x.lib, components: { transform: tf(x), ...(x.collide ? { collider: { shape: x.collide } } : {}) } });
-    case "place": return a.request("set", { id: x.id, component: "transform", value: tf(x), merge: true });
-    case "remove": return a.request("delete", { id: x.id });
-    case "comp": return x.data == null ? a.request("delete", { id: x.id, component: x.type }) : a.request("set", { id: x.id, component: x.type, value: x.data });
-    case "light": return a.request("create", { id: x.id, components: { transform: tf(x), light: { ...(x.intensity != null ? { intensity: x.intensity } : {}), ...(x.color != null ? { color: x.color } : {}), ...(x.range != null ? { range: x.range } : {}) } } });
+    case "spawn": return made(await a.request("create", { ...(x.id ? { id: ph(x.id) } : {}), model: x.lib, components: { transform: tf(x), ...(x.id ? { label: String(x.id) } : {}), ...(x.collide ? { collider: { shape: x.collide } } : {}) } }), ph(x.id).slice(1));
+    case "place": return a.request("set", { id: id(x.id), component: "transform", value: tf(x), merge: true });
+    case "remove": return a.request("delete", { id: id(x.id) });
+    case "comp": return x.data == null ? a.request("delete", { id: id(x.id), component: x.type }) : a.request("set", { id: id(x.id), component: x.type, value: x.data });
+    case "light": return made(await a.request("create", { ...(x.id ? { id: ph(x.id) } : {}), components: { transform: tf(x), ...(x.id ? { label: String(x.id) } : {}), light: { ...(x.intensity != null ? { intensity: x.intensity } : {}), ...(x.color != null ? { color: x.color } : {}), ...(x.range != null ? { range: x.range } : {}) } } }), ph(x.id).slice(1));
     case "mount": {
-      if (x.id === a.name) { const { handleTool } = await import("../mcpl/tools.ts"); return handleTool({ agent: a } as any, "attach", { to: x.to, ...(x.slot ? { socket: x.slot } : {}) }); }
-      return a.request("set", { id: x.id, component: "parent", value: { to: x.to } });
+      if (x.id === a.name) { const { handleTool } = await import("../mcpl/tools.ts"); return handleTool({ agent: a } as any, "attach", { to: id(x.to), ...(x.slot ? { socket: x.slot } : {}) }); }
+      return a.request("set", { id: id(x.id), component: "parent", value: { to: id(x.to) } });
     }
     default: throw new Error(`legacyVerb: no protocol request for '${v}'`);
   }

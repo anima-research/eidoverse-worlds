@@ -17,6 +17,7 @@
 //   P   privacy: arrivals and grabs log what correctness needs, not where people stood or what they are (M3)
 //   U   model values are content addresses after translation; the server and the client resolve them (H3)
 // @ts-nocheck
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -364,20 +365,20 @@ await C("W4", "script: the install check reads its lists from the registry (item
     && p.itemEnums?.on?.includes("changed:*") && p.scopeFields?.ids === "scope" && p.grammar?.src === "sha256" && JSON.stringify(p.required) === '["src","scope"]', [why(launch), why(ev), why(good), p.itemEnums]]; });
 
 // ---- I: ids (H5) ----
-const RAND = /-[a-z2-7]{26}$/;
-await C("I1", "the authority mints ids with 128+ random bits (<slug>-<26 base32>), never <slug>-<count>", () => {
+const RAND = /^[a-z2-7]{26}$/;   // R 10-17: opaque, no slug (ids-check O1/O2)
+await C("I1", "the authority mints ids with 128+ random bits (26 base32, nothing else), never <slug>-<count>", () => {
   const W = world(); const ids = []; for (let i = 0; i < 40; i++) { const r = W.call("create", { model: "crate" }); ids.push(r.refs?.[0]?.id); }
   const dup = W.call("create", { from: ids[0] }); const dupId = dup.refs?.[0]?.id;
   return [ids.every((x) => typeof x === "string" && RAND.test(x) && FOLD.isEntityId(x)) && new Set(ids).size === ids.length && RAND.test(dupId ?? ""), [ids.slice(0, 3), dupId]]; });
-await C("I2", "every client mints through one helper (shared/protocol/ids.js), the agent door mints nothing (the authority does); no 8-hex or coordinate ids remain", () => {
-  const files = ["client/lib/build.js", "client/lib/worldquad.js", "client/lib/structure_ui.js"];
+await C("I2", "no client mints an id (R 10-17: writers never choose ids): each create sends a $placeholder and reads the reply's ids map; the agent door mints nothing; no 8-hex or coordinate ids remain", () => {
+  const files = ["client/lib/build.js", "client/lib/worldquad.js", "client/lib/structure_ui.js", "client/lib/facemedia.js"];
   // the agent door mints NOTHING since the 10-14 tools rewrite: create {id omitted} lets the authority mint (mcpl/tools.ts #216
   // note). A client-side mint reappearing there — by any spelling — is the regression this guards.
   const doorMints = /mintId\(|randomUUID\(|randomPart\(|Math\.random\(\)\.toString\(36\)/.test(read("mcpl/tools.ts"));
-  const bad = files.filter((f) => /randomUUID\(\)\.slice\(0, 8\)|`house-\$\{Math\.floor/.test(read(f)) || !/mintId\(/.test(read(f)));
+  const bad = files.filter((f) => /randomUUID\(\)\.slice\(0, 8\)|`house-\$\{Math\.floor/.test(read(f)) || /mintId\(/.test(read(f)) || !/'\$[a-z]+'/.test(read(f)) || !/r\??\.ids\?\.|\.ids\?\.\[/.test(read(f)));
   if (doorMints) bad.push("mcpl/tools.ts (mints client-side; the authority mints)");
   return [!bad.length && fs.existsSync(path.join(T, "shared/protocol/ids.js")), bad]; });
-await C("I3", "mintId: 26 base32 characters of randomness, a slug prefix cut so the id stays within the grammar's 64", async () => {
+await C("I3", "mintId: 26 base32 characters of randomness, and no slug even when one is offered (R 10-17)", async () => {
   const I = await imp("shared/protocol/ids.js"); const xs = Array.from({ length: 2000 }, () => I.mintId("a".repeat(80)));
   const bare = I.mintId(); return [xs.every((x) => FOLD.isEntityId(x) && x.length <= 64 && RAND.test(x)) && new Set(xs).size === xs.length && /^[a-z2-7]{26}$/.test(bare), [xs[0], bare]]; });
 await C("I4", "an entity id shaped like a person's identity (u- + 20 base32) is refused: a reference to it could mean either", () => {

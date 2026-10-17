@@ -3,6 +3,7 @@
 // pure reader that carries it. Written red first, against the tree before the change.
 //   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/shape-attach-test.ts
 // @ts-nocheck
+import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { scratchWorld } from './protocol/scratchworld.ts';
 import { COMPONENTS, statusOf, pinOf, refsOf, mapRefs, materialize } from '../shared/protocol/componentspec.js';
 import { legacyHosts, liftHostOps, socketId } from '../shared/protocol/authority/sockets.js';

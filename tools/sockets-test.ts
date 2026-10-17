@@ -2,6 +2,7 @@
 // A socket is a named attachment point with a WHOLE rotation (Unreal sockets); with a `station` beside it a person
 // attaches by using it (VRChat Station, Roblox Seat). The Inspector's card still reads and writes the old map, each slot's
 // body block being its child's station (shape audit 10-16). usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/sockets-test.ts
+import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { inspectSchema, editOps } from '../shared/editschema.js';
 import { bodyOf, socketQ } from '../shared/components.js';
 import { localOf, kindHint } from '../shared/hierarchy.js';

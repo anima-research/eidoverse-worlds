@@ -18,6 +18,7 @@
 //   H   help text: physics.who and grabbable.who default to visitor (3b3ad8e2), and every place an agent reads says so
 //   P   people: a refusal in a person's words (no code, no tool syntax, things by label); warnings by label
 // @ts-nocheck
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";

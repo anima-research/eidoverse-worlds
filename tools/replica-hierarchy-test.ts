@@ -8,6 +8,7 @@
 // children, a create+parent in one batch — the index answers exactly what a fresh scan of the records answers, for
 // every id present (and for a carrier that is gone while something still names it: the scan's answer, the dangling
 // edge). Mutation: skip the index update on the ingest path and the first move goes red.
+import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { scratchWorld } from "./protocol/scratchworld.ts";
 import { makeReplica, wireState } from "../shared/protocol/replica.js";
 import { socketId } from "../shared/protocol/authority/sockets.js";

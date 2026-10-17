@@ -173,6 +173,31 @@ await C("S2", "world.create(components, id) is refused at api 2: a script never 
   const r = await SB.runScript({ text, self: "bell", key: "script:s", event: { on: "use" }, knobs: {}, now: 1, seed: "cd".repeat(32), st, reads: { near: [], count: [], names: [] }, limits: { wallMs: 10000 }, api: SR.API });
   return [SR.API === 2 && !(r.ops ?? []).some((o) => o.verb === "create") && /never chooses|mints/.test(JSON.stringify(r)), JSON.stringify(r).slice(0, 400)]; });
 
+// ---- H: handles and names (R 10-17 (5); duplicate labels stay allowed, ambiguity is surfaced) ----
+await C("H1", "resolveThing: an exact id, else a label (case and outer spaces ignored), else a unique id prefix of 4+", async () => {
+  const TR = await imp("shared/thingref.js");
+  const things = [{ id: "a7futnmnitnhrxbmcxvcjzhx3d", label: "Tower" }, { id: "a7fuzzzzzzzzzzzzzzzzzzzzzz", label: "shed" }, { id: "q2kkkkkkkkkkkkkkkkkkkkkkkk" }];
+  const r = [TR.resolveThing("a7futnmnitnhrxbmcxvcjzhx3d", things), TR.resolveThing("  tower ", things), TR.resolveThing("q2kk", things), TR.resolveThing("a7fut", things), TR.resolveThing("q2k", things)];
+  return [r[0].id === things[0].id && r[0].by === "id" && r[1].id === things[0].id && r[1].by === "label" && r[2].id === things[2].id && r[2].by === "prefix" && r[3].id === things[0].id && r[4].none, r]; });
+await C("H2", "a label two things share, or a prefix two ids share, is refused with the candidates — never resolved to one", async () => {
+  const TR = await imp("shared/thingref.js");
+  const things = [{ id: "a7futnmnitnhrxbmcxvcjzhx3d", label: "Belfry" }, { id: "a7fuzzzzzzzzzzzzzzzzzzzzzz", label: "belfry" }];
+  const l = TR.resolveThing("Belfry", things), p = TR.resolveThing("a7fu", things);
+  return [l.ambiguous?.length === 2 && l.by === "label" && !("id" in l) && p.ambiguous?.length === 2 && p.by === "prefix", [l, p]]; });
+await C("H3", "handleOf: the shortest unique prefix of 4+, lengthened until no other id starts with it; a short id is its own handle", async () => {
+  const TR = await imp("shared/thingref.js");
+  const ids = ["a7futnmnitnhrxbmcxvcjzhx3d", "a7fuzzzzzzzzzzzzzzzzzzzzzz", "q2kkkkkkkkkkkkkkkkkkkkkkkk", "tower"];
+  const h = ids.map((x) => TR.handleOf(x, ids));
+  return [JSON.stringify(h) === JSON.stringify(["a7fut", "a7fuz", "q2kk", "tower"]), h]; });
+await C("H4", "labelTwins marks only the things whose label another shares (the Hierarchy's dim disambiguator)", async () => {
+  const TR = await imp("shared/thingref.js");
+  const t = TR.labelTwins([{ id: "a", label: "Chair" }, { id: "b", label: "chair " }, { id: "c", label: "table" }, { id: "d" }]);
+  return [t.has("a") && t.has("b") && !t.has("c") && !t.has("d"), [...t]]; });
+await C("H5", "the editor's Hierarchy hides ids (an unlabelled row says what it is), marks only sibling twins with a short handle; the inspector shows the id only on its toggle", () => {
+  const ep = read("client/lib/editpanels.js");
+  return [/shownName = \(id\) => nameOnly\(id\) \?\? \(kindHint/.test(ep) && /handleOf\(id, all\)/.test(ep) && /badges\.unshift\(tw\)/.test(ep) && /k: 'showid'/.test(ep) && /k: 'copyid'/.test(ep) && /let showId = false/.test(ep)
+    && !/const labelOf = \(id\) => \{ const l = nameOnly\(id\); return l \? \(hopts\.ids \? `\$\{l\}  \(\$\{id\}\)` : l\) : id; \};/.test(ep), "editpanels"]; });
+
 // ---- G: the fixture seam ----
 await C("G1", "fixtureIds (tests' fixtures seed known ids, like a fork's copy) is called from no runtime file", () => {
   const roots = ["server", "mcpl", "client/lib", "client/src", "shared"]; const hits = [];

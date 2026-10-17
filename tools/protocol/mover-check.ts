@@ -24,6 +24,7 @@
 //   GH  a heightmap whose grid isn't here: no ground committed (refused with words, nothing logged); seated once it lands (F3);
 //       nothing launched (throw, drop, punt, shove) and no put {pos} judged on it (r4 F2/F3)
 // @ts-nocheck
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";

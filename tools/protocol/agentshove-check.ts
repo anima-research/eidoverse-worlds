@@ -57,6 +57,8 @@ const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: OPT, SKIP
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", TRUST_NAMES: "1", EIDO_FLIGHT_REHEARSAL: "", SESSIONS_PATH: path.join(root, "sessions.json"), ...extra });
 const r0 = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", "yard", "--owner", "Ann"], { cwd: ENGINE, env: env() });
 ok(r0.exitCode === 0, "(setup) found yard, Ann owns it", r0.stderr.toString().slice(-300));
+import { idAliases } from "./idalias.ts";
+const IDS = idAliases();
 let port = 9640; for (; port < 9740; port++) { try { const s = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } }); s.stop(true); break; } catch {} }
 const logf = path.join(root, "srv.log");
 const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: env({ PORT: String(port) }), stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
@@ -75,8 +77,9 @@ try {
     for (let i = 0; i < 80 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
     let rn = 0;
     return { ws, msgs, close: () => ws.close(),
-      req: async (verb, args = {}) => { const id = `q${++rn}`; ws.send(JSON.stringify({ type: "request", id, verb, args }));
-        for (let i = 0; i < 80; i++) { const r = msgs.find((m) => m.type === "reply" && m.id === id); if (r) return r.reply; await sleep(50); } return { ok: false, timeout: true }; } };
+      // R 10-17: the suite's names ride as placeholders and minted ids (tools/protocol/idalias.ts)
+      req: async (verb, args = {}) => { const id = `q${++rn}`; ws.send(JSON.stringify({ type: "request", id, verb, args: IDS.out(verb, args) }));
+        for (let i = 0; i < 80; i++) { const r = msgs.find((m) => m.type === "reply" && m.id === id); if (r) return IDS.back(r.reply); await sleep(50); } return { ok: false, timeout: true }; } };
   }
   ann = await sock("Ann");
   const { WorldAgent } = await import("../../mcpl/agent.ts");
@@ -87,17 +90,21 @@ try {
   ok(/^u-/.test(HEP ?? "") && ag.replica?.active, "(setup) the agent joins and folds the world");
   ok((await ann.req("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } })).ok, "(setup) the yard runs eidosim");
   // empty crates (20 and 30 kg): a body's push (BODY_MASS 70 kg, elastic) sends them well along; a full one wouldn't budge much
-  const crate = (id, model, pos, extra = {}, mass = 20) => ann.req("create", { id, model, components: { transform: { pos, q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", who: "visitor", mass }, ...extra } });
+  // R 10-17: a writer never chooses an id: each thing is made with a placeholder and labelled with its scene name; the
+  // authority mints its id (ID[name]); N(name) reads the scene name as that id
+  const N = (n) => IDS.of(n);
+  const mk = (name, args) => ann.req("create", { ...args, id: `$${name}`, components: { label: name, ...(args.components ?? {}) } });
+  const crate = (id, model, pos, extra = {}, mass = 20) => mk(id, { model, components: { transform: { pos, q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", who: "visitor", mass }, ...extra } });
   for (const [id, model, pos, extra, mass] of [["low", "test/lowcrate.glb", [0, 0, 2]], ["tall", "test/tallcrate.glb", [6, 0, 2], {}, 30], ["still", "test/lowcrate.glb", [12, 0, 2]], ["locked", "test/lowcrate.glb", [18, 0, 2], { lock: true }]] as any) {
     const r = await crate(id, model, pos, extra, mass); ok(r.ok, `(setup) ${id} crate`, r); }
-  for (let i = 0; i < 80 && !["low", "tall", "still", "locked"].every((id) => ag.replica?.st?.entities?.[id]?.c?.physics?.shape); i++) await sleep(50);
-  ok(["low", "tall", "still", "locked"].every((id) => Array.isArray(ag.replica?.st?.entities?.[id]?.c?.physics?.shape)), "(setup) the authority measured each crate's shape (the agent folds it)");
+  for (let i = 0; i < 80 && !["low", "tall", "still", "locked"].every((id) => ag.replica?.st?.entities?.[N(id)]?.c?.physics?.shape); i++) await sleep(50);
+  ok(["low", "tall", "still", "locked"].every((id) => Array.isArray(ag.replica?.st?.entities?.[N(id)]?.c?.physics?.shape)), "(setup) the authority measured each crate's shape (the agent folds it)");
   const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name);
   const entries = () => readLog(fs.readFileSync(path.join(W, "yard", "world.jsonl")));
-  const shoves = (id) => entries().filter((e) => e.kind === "act" && e.verb === "punt" && e.actor === HEP && !e.body?.refused && e.body?.request?.id === id && e.body?.request?.shove === true);
-  const anyPunt = (id) => entries().filter((e) => e.kind === "act" && e.verb === "punt" && e.actor === HEP && JSON.stringify(e.body ?? {}).includes(`"${id}"`));
-  const posOf = (id) => ag.replica?.st?.entities?.[id]?.c?.transform?.pos ?? null;
-  const settle = async (id) => { for (let i = 0; i < 100; i++) { await sleep(100); if (!ag.replica?.sim?.sim?.bodies?.[id]) { await ann.req("wait", {}); return; } } };
+  const shoves = (id) => entries().filter((e) => e.kind === "act" && e.verb === "punt" && e.actor === HEP && !e.body?.refused && e.body?.request?.id === N(id) && e.body?.request?.shove === true);
+  const anyPunt = (id) => entries().filter((e) => e.kind === "act" && e.verb === "punt" && e.actor === HEP && JSON.stringify(e.body ?? {}).includes(`"${N(id)}"`));
+  const posOf = (id) => ag.replica?.st?.entities?.[N(id)]?.c?.transform?.pos ?? null;
+  const settle = async (id) => { for (let i = 0; i < 100; i++) { await sleep(100); if (!ag.replica?.sim?.sim?.bodies?.[N(id)]) { await ann.req("wait", {}); return; } } };
 
   // AS1
   { const m0 = await call("move", { to: [0, 0] }); ok(!m0.isError, "(AS1 setup) the agent stands at the origin", T(m0));
@@ -124,9 +131,9 @@ try {
     const w = await call("move", { to: [18, 4] }); await sleep(800);
     ok(anyPunt("locked").length === 0, "AS4 a locked crate in the path: no punt (not even a refused one)", anyPunt("locked").map((e) => e.body)); }
   // AS5
-  { const r = await ann.req("create", { id: "fixed", model: "test/tallcrate.glb", components: { transform: { pos: [-6, 0, 2], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
+  { const r = await mk("fixed", { model: "test/tallcrate.glb", components: { transform: { pos: [-6, 0, 2], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
     ok(r.ok, "(AS5 setup) a static tall crate", r);
-    for (let i = 0; i < 80 && !Array.isArray(ag.replica?.st?.entities?.fixed?.c?.physics?.shape); i++) await sleep(50);
+    for (let i = 0; i < 80 && !Array.isArray(ag.replica?.st?.entities?.[N("fixed")]?.c?.physics?.shape); i++) await sleep(50);
     await sleep(1500);   // its collider is fitted (the mesh is fetched) before the walk plans
     const m0 = await call("move", { to: [-6, 0] }); ok(!m0.isError, "(AS5 setup) the agent stands south of the static crate", T(m0));
     const p0 = posOf("fixed"); let off = 0, walking = true;
@@ -139,7 +146,7 @@ try {
     ok(off > 0.3, "AS5 …routed round it: the body left the straight line", { off }); }
   // AS6
   { const r = await crate("heavy", "test/tallcrate.glb", [-12, 0, 2], {}, 2000); ok(r.ok, "(AS6 setup) a 2000 kg dynamic tall crate", r);
-    for (let i = 0; i < 80 && !Array.isArray(ag.replica?.st?.entities?.heavy?.c?.physics?.shape); i++) await sleep(50);
+    for (let i = 0; i < 80 && !Array.isArray(ag.replica?.st?.entities?.[N("heavy")]?.c?.physics?.shape); i++) await sleep(50);
     await sleep(1500);
     const m0 = await call("move", { to: [-12, 0] }); ok(!m0.isError, "(AS6 setup) the agent stands south of the heavy crate", T(m0));
     let off = 0, walking = true;
@@ -151,7 +158,7 @@ try {
     ok(off > 0.3, "AS6 …routed round it: the body left the straight line", { off }); }
   // AS7
   { const r = await crate("late", "test/tallcrate.glb", [-18, 0, 2], {}, 30); ok(r.ok, "(AS7 setup) a light tall crate", r);
-    for (let i = 0; i < 80 && !Array.isArray(ag.replica?.st?.entities?.late?.c?.physics?.shape); i++) await sleep(50);
+    for (let i = 0; i < 80 && !Array.isArray(ag.replica?.st?.entities?.[N("late")]?.c?.physics?.shape); i++) await sleep(50);
     await sleep(1500);
     const m0 = await call("move", { to: [-18, 0] }); ok(!m0.isError, "(AS7 setup) the agent stands south of it", T(m0));
     let off = 0, walking = true;
@@ -167,7 +174,7 @@ try {
     ok(off > 0.3, "AS7 …the body left the straight line", { off }); }
   // AS8
   { const r = await crate("late2", "test/tallcrate.glb", [0, 0, -10], {}, 30); ok(r.ok, "(AS8 setup) a light tall crate", r);
-    for (let i = 0; i < 80 && !Array.isArray(ag.replica?.st?.entities?.late2?.c?.physics?.shape); i++) await sleep(50);
+    for (let i = 0; i < 80 && !Array.isArray(ag.replica?.st?.entities?.[N("late2")]?.c?.physics?.shape); i++) await sleep(50);
     await sleep(1500);
     const m0 = await call("move", { to: [0, -12] }); ok(!m0.isError, "(AS8 setup) the agent stands south of it", T(m0));
     const wA = call("move", { to: [0, -7] });
@@ -187,8 +194,8 @@ try {
   // AS9
   { const m0 = await call("move", { to: [-18, 0] }); ok(!m0.isError, "(AS9 setup) the agent stands south of AS7's crate, still locked", T(m0));
     const ul = await ann.req("delete", { id: "late", component: "lock" });
-    for (let i = 0; i < 80 && ag.replica?.st?.entities?.late?.c?.lock; i++) await sleep(50);
-    ok(ul.ok && !ag.replica?.st?.entities?.late?.c?.lock, "(AS9 setup) unlocked where it stands", ul);
+    for (let i = 0; i < 80 && ag.replica?.st?.entities?.[N("late")]?.c?.lock; i++) await sleep(50);
+    ok(ul.ok && !ag.replica?.st?.entities?.[N("late")]?.c?.lock, "(AS9 setup) unlocked where it stands", ul);
     const w = call("move", { to: [-18, 5] });
     for (let i = 0; i < 100 && !ag.target; i++) await sleep(10);
     const planned = !!ag.target && Math.abs(ag.target.x + 18) < 1e-6;
@@ -199,7 +206,7 @@ try {
     for (const [id, x] of [["postw", 11], ["poste", 13]] as any) {
       const p = await ann.req("create", { id, model: "test/post.glb", components: { transform: { pos: [x, 0, -5.55], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" }, lock: true } });
       ok(p.ok, `(AS10 setup) a locked post behind it (${id})`, p); }
-    for (let i = 0; i < 80 && !["jam", "postw", "poste"].every((id) => Array.isArray(ag.replica?.st?.entities?.[id]?.c?.physics?.shape)); i++) await sleep(50);
+    for (let i = 0; i < 80 && !["jam", "postw", "poste"].every((id) => Array.isArray(ag.replica?.st?.entities?.[N(id)]?.c?.physics?.shape)); i++) await sleep(50);
     await sleep(1500);
     const m0 = await call("move", { to: [12, -9] }); ok(!m0.isError, "(AS10 setup) the agent stands south of it", T(m0));
     let off = 0, walking = true, stalled = null;
@@ -229,26 +236,27 @@ try {
   // AS12 (review r6 L1) — a thing on a table: move {to: it} is accepted and ends beside the table, on the floor
   { await writeBoxGlb(path.join(OPT, "test/table.glb"), [2, 0.8, 2]); await writeBoxGlb(path.join(OPT, "test/cup.glb"), [0.1, 0.12, 0.1]);
     const m0 = await call("move", { to: [-12, -14] }); ok(!m0.isError, "(AS12 setup) the agent stands at (-12, -14)", T(m0));
-    const tb = await ann.req("create", { id: "table", model: "test/table.glb", components: { transform: { pos: [-16, 0, -14], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
-    const cp = await ann.req("create", { id: "cup", model: "test/cup.glb", components: { transform: { pos: [-16, 0.8, -14], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
-    for (let i = 0; i < 80 && !["table", "cup"].every((id) => Array.isArray(ag.replica?.st?.entities?.[id]?.c?.physics?.shape)); i++) await sleep(50);
+    const tb = await mk("table", { model: "test/table.glb", components: { transform: { pos: [-16, 0, -14], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
+    const cp = await mk("cup", { model: "test/cup.glb", components: { transform: { pos: [-16, 0.8, -14], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
+    for (let i = 0; i < 80 && !["table", "cup"].every((id) => Array.isArray(ag.replica?.st?.entities?.[N(id)]?.c?.physics?.shape)); i++) await sleep(50);
     await sleep(1500);   // their colliders are fitted before the walk plans
-    ok(tb.ok && cp.ok && ["table", "cup"].every((id) => Array.isArray(ag.replica?.st?.entities?.[id]?.c?.physics?.shape)), "(AS12 setup) a 2×2 m table, 0.8 m tall, and a cup on it (shapes measured)", { tb, cp });
+    ok(tb.ok && cp.ok && ["table", "cup"].every((id) => Array.isArray(ag.replica?.st?.entities?.[N(id)]?.c?.physics?.shape)), "(AS12 setup) a 2×2 m table, 0.8 m tall, and a cup on it (shapes measured)", { tb, cp });
     const t = T(await call("move", { to: "cup" }));
     ok(/^arrived at \[cup\]/.test(t), "AS12 move {to: a cup on a table} is accepted and arrives", t);
     ok(Math.abs(ag.pos.y) < 0.05 && ag.pos.x > -15 && ag.pos.x < -14 && Math.abs(ag.pos.z + 14) < 1.1, "AS12 …beside the table, on the floor", ag.pos); }
   // AS13 (review r6 L2) — a child thing with no physics shape, on an offset parent: aimed at where it IS (its world position),
   // and of two things with one label the nearest is judged by where they are, not by a child's parent-relative offset
   { const me = { x: ag.pos.x, z: ag.pos.z }, L = [me.x + 1.5, 1.2, me.z + 1.5], P = [16, 0, 16], W = [P[0] + L[0], P[2] + L[2]];
-    const pl = await ann.req("create", { id: "plinth", model: "test/post.glb", components: { transform: { pos: P, q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
-    const lp = await ann.req("create", { id: "lamp", components: { transform: { pos: L, q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: "plinth" }, label: "beacon" } });
-    const mk = await ann.req("create", { id: "marker", model: "test/post.glb", components: { transform: { pos: [me.x + 5, 0, me.z], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: "beacon" } });
-    for (let i = 0; i < 80 && !["plinth", "lamp", "marker"].every((id) => ag.entities.get(id)); i++) await sleep(50);
-    ok(pl.ok && lp.ok && mk.ok && !ag.replica?.st?.entities?.lamp?.c?.physics, "(AS13 setup) a lamp (no model, so no physics) on a plinth at (16, 16), parent-relative ~2 m from the body: it stands ~25 m off", { pl: pl.ok, lp, mk: mk.ok, L, W, c: ag.replica?.st?.entities?.lamp?.c });
-    const d = ag.destination("lamp");
+    const pl = await mk("plinth", { model: "test/post.glb", components: { transform: { pos: P, q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
+    const lp = await mk("lamp", { components: { transform: { pos: L, q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: N("plinth") }, label: "beacon" } });
+    const mr = await mk("marker", { model: "test/post.glb", components: { transform: { pos: [me.x + 5, 0, me.z], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: "beacon" } });
+    for (let i = 0; i < 80 && !["plinth", "lamp", "marker"].every((id) => ag.entities.get(N(id))); i++) await sleep(50);
+    ok(pl.ok && lp.ok && mr.ok && !ag.replica?.st?.entities?.[N("lamp")]?.c?.physics, "(AS13 setup) a lamp (no model, so no physics) on a plinth at (16, 16), parent-relative ~2 m from the body: it stands ~25 m off", { pl: pl.ok, lp, mk: mr.ok, L, W, c: ag.replica?.st?.entities?.[N("lamp")]?.c });
+    const d = ag.destination(ag.handle(N("lamp")));   // by its handle: its label is "beacon", which the marker wears too
     ok(!("refusal" in d) && Math.hypot(d.x - W[0], d.z - W[1]) < 1.0, "AS13 move {to: the lamp} aims at its world position, not its offset from the plinth", { d, W, me });
+    // R 10-17 (binding): a label two things share is refused with both candidates, never resolved to the nearest
     const b = ag.destination("beacon");
-    ok(!("refusal" in b) && b.label === "[marker]", "AS13 …and of two things labelled \"beacon\" the nearest by where they stand is taken (the marker 5 m off, not the lamp ~25 m off)", b); }
+    ok("refusal" in b && /"beacon" is the label of 2 things/.test(b.refusal) && b.refusal.includes(`[${ag.handle(N("lamp"))}]`) && b.refusal.includes(`[${ag.handle(N("marker"))}]`), "AS13 …and of two things labelled \"beacon\", move {to: \"beacon\"} is refused with both (label, what, where, handle)", b); }
   // AS14 (pure; review r6 L3) — a misjudged crate rescaled in place (its mass goes with its size) is judged afresh
   { const b = new WorldAgent({ url: "ws://127.0.0.1:1/ws", name: "Bea", world: "w", avatar: "" });
     const box = { c: { transform: { pos: [0, 0, 2], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", density: 40, shape: [[-0.3, 0, -0.3], [0.3, 1.2, 0.3]] } } };

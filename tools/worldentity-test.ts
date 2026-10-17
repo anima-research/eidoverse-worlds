@@ -18,6 +18,7 @@
 //
 // the protocol port (2026-10-06): the world is read from the view (shared/protocol/view.js viewState); every result is the
 // door's (tools/protocol/scratchworld.ts). worldInverse is gone: undo is the door's `undo`, checked as such.
+import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { canon, RECORDS, addable, componentsOf } from '../shared/components.js';

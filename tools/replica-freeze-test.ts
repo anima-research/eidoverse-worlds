@@ -5,6 +5,7 @@
 //
 // Why: the realizer's `comps` clone (models.js syncComps, gone in C7c) was the only thing between an evaluator's stray
 // `bag.x = …` and this client's fold. With every reader on replica.st, the guard has to be the record itself.
+import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { scratchWorld } from "./protocol/scratchworld.ts";
 import { makeReplica, wireState } from "../shared/protocol/replica.js";
 import { digest } from "../shared/protocol/fold.js";

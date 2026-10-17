@@ -24,7 +24,7 @@ const { FLOOR, UPPER, boxes, buildGlb, boxMesh } = await import("./two-storey-fi
 const { Document, NodeIO } = await import("@gltf-transform/core");
 const { ALL_EXTENSIONS } = await import("@gltf-transform/extensions");
 type Box = [number, number, number, number, number, number];
-const { scratchSequencer, mkCheck, sleep, legacyVerb } = await import("./harness.ts");
+const { scratchSequencer, mkCheck, sleep, legacyVerb, sceneId } = await import("./harness.ts");
 const { check, tally } = mkCheck();
 
 const bounds = (p: Float32Array) => {
@@ -207,7 +207,7 @@ try {
       check("(at the test ground, x 19)", there && Math.abs(a.pos.x - 19) < 0.15, `at (${a.pos.x.toFixed(2)}, ${a.pos.z.toFixed(2)})`);
       const wy = a.heightAt(20, 10);
       await legacyVerb(a, "spawn", { id: "wall", lib: wallLib, pos: [21, wy, 10], yaw: 0, collide: "exact" });
-      for (let i = 0; i < 40 && !a.entities.get("wall"); i++) await sleep(25);
+      for (let i = 0; i < 40 && !a.entities.get(sceneId(a, "wall")); i++) await sleep(25);
       const crossed = await walk(21, 10);
       check("a pen spawned just now, its shape still downloading: a walk into it waits for it, then is refused — never passes through its wall",
         // (the protocol merge: the authority walks this body too, and its own solids stop a walk at the pen's wall either

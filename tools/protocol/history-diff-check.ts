@@ -1,6 +1,7 @@
 // @ts-nocheck
 // history {id}: each entry says WHAT changed (R 10-10 23:55: "does the World log actually not know what I set?").
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/history-diff-check.ts
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { request } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { scratch } from "./common.ts";

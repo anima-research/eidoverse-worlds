@@ -10,6 +10,7 @@
 // S7 (rights) and S8 (locks) are the punt's own gates, held twice (at the punt and again where its rest is admitted), so no
 // single mutation reaches them; grab-check G6 and eidosim-live pin those.
 // @ts-nocheck
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";

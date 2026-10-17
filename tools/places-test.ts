@@ -18,7 +18,7 @@ process.env.AGENT_BODY_ENGINE = "verlet";
 process.env.WORLD_TOKEN = "";
 const { FLOOR, UPPER, boxes, building, buildGlb } = await import("./two-storey-fixture.ts");
 const P = await import("../mcpl/places.ts");
-const { scratchSequencer, mkCheck, sleep, legacyVerb } = await import("./harness.ts");
+const { scratchSequencer, mkCheck, sleep, legacyVerb, sceneId } = await import("./harness.ts");
 const { check, tally } = mkCheck();
 
 console.log("places.ts (pure):");
@@ -122,14 +122,14 @@ try {
   check("name_place names the spot where the body stands, on the thing it is in", /named this spot "landing" on \[tower\]/.test(r), r);
   await sleep(300);
   check("...as an entry in that thing's places component, in its own frame",
-    Array.isArray(a.entities.get("tower")?.places?.landing?.at) && near(a.entities.get("tower").places.landing.at[1], UPPER, 0.06),
-    JSON.stringify(a.entities.get("tower")?.places));
+    Array.isArray(a.entities.get(sceneId(a, "tower"))?.places?.landing?.at) && near(a.entities.get(sceneId(a, "tower")).places.landing.at[1], UPPER, 0.06),
+    JSON.stringify(a.entities.get(sceneId(a, "tower"))?.places));   // "tower" is its label: the authority minted its id (R 10-17)
   await tool("walk_to", { to: "entrance", run: true });
   r = await tool("walk_to", { to: "the top of the stair", run: true });
   check("...and walk_to reaches it by its label, from outside, up the stair", /arrived at tower\/landing/.test(r) && near(a.pos.y, gy + UPPER) && near(a.pos.x, 2.2, 0.15), `${r} ${at()}`);
 
   // a raw comp edit: re-point the name, retire a model place
-  const cur = { ...a.entities.get("tower").places, landing: { at: [-2, FLOOR, -2], label: "the corner" }, upstairs: null };
+  const cur = { ...a.entities.get(sceneId(a, "tower")).places, landing: { at: [-2, FLOOR, -2], label: "the corner" }, upstairs: null };
   await legacyVerb(a, "comp", { id: "tower", type: "places", data: cur });
   await sleep(400);
   r = await tool("walk_to", { to: "tower/landing", run: true });
@@ -137,12 +137,12 @@ try {
   r = await tool("walk_to", { to: "tower/upstairs" });
   check("a place the model declared can be retired (null)", /has no place called "upstairs"/.test(r), r);
   r = await tool("name_place", { name: "upstairs", remove: true, on: "tower" });
-  check("name_place remove on a model place keeps it hidden", /retired "upstairs"/.test(r) && a.entities.get("tower").places.upstairs === null, r);
+  check("name_place remove on a model place keeps it hidden", /retired "upstairs"/.test(r) && a.entities.get(sceneId(a, "tower")).places.upstairs === null, r);
 
   // a footstool a step above a named spot on the floor is not that spot
   const stool = await upload("stool", await buildGlb([[-0.25, 0, -0.2, 0.25, 0.32, 0.2]]));
   await legacyVerb(a, "spawn", { id: "stool", lib: stool, pos: [-1.5, gy + FLOOR, 1.0], yaw: 0, collide: "box" });
-  await legacyVerb(a, "comp", { id: "tower", type: "places", data: { ...a.entities.get("tower").places, by_stool: { at: [-1.0, FLOOR, 1.0] } } });
+  await legacyVerb(a, "comp", { id: "tower", type: "places", data: { ...a.entities.get(sceneId(a, "tower")).places, by_stool: { at: [-1.0, FLOOR, 1.0] } } });
   for (let i = 0; i < 40 && !a.supportIds?.get("stool"); i++) await sleep(50);
   await a.supportReady(); await sleep(400);
   await tool("walk_to", { to: "tower/entrance", run: true });
@@ -170,32 +170,32 @@ try {
   }
   // review r4 claims C1: nor does a person whose name is a thing's LABEL (a display name, not its id)
   {
-    await a.request("set", { id: "tower2", component: "label", value: "Belfry" });
-    for (let i = 0; i < 40 && a.entities.get("tower2")?.label !== "Belfry"; i++) await sleep(50);
+    await a.request("set", { id: sceneId(a, "tower2"), component: "label", value: "Belfry" });
+    for (let i = 0; i < 40 && a.entities.get(sceneId(a, "tower2"))?.label !== "Belfry"; i++) await sleep(50);
     const squatter: any = new WorldAgent({ name: "Belfry", world: "places", url: URL_ });
     try {
       await squatter.connect();
       await squatter.walkTo(-15, -15, true);
       for (let i = 0; i < 40 && ![...a.people.keys()].some((k: string) => k.toLowerCase() === "belfry"); i++) await sleep(50);
-      check("(tower2 is labelled \"Belfry\", and a visitor named \"Belfry\" is here)", a.entities.get("tower2")?.label === "Belfry" && [...a.people.keys()].some((k: string) => k.toLowerCase() === "belfry"), [...a.people.keys()].join(","));
+      check("(tower2 is labelled \"Belfry\", and a visitor named \"Belfry\" is here)", a.entities.get(sceneId(a, "tower2"))?.label === "Belfry" && [...a.people.keys()].some((k: string) => k.toLowerCase() === "belfry"), [...a.people.keys()].join(","));
       r = await tool("move", { to: "belfry", run: true });
-      check("move {to: \"belfry\"} goes to the thing labelled Belfry (its entrance), not to the person called Belfry", /arrived at tower2\/entrance/.test(r), `${r} ${at()}`);
+      check("move {to: \"belfry\"} goes to the thing labelled Belfry (its entrance), not to the person called Belfry", /arrived at Belfry\/entrance/.test(r), `${r} ${at()}`);   // a thing is read by its label (R 10-17)
     } finally { try { squatter.close(); } catch { /* gone */ } }
   }
 
   // the nearest of two
   await tool("walk_to", { x: 30, z: 7, run: true });
   r = await tool("walk_to", { to: "the hall", run: true });
-  check("with two things offering the same place, the nearest is taken", /arrived at tower2\/hall/.test(r) && a.pos.x > 25, `${r} ${at()}`);
+  check("with two things offering the same place, the nearest is taken", /arrived at Belfry\/hall/.test(r) && a.pos.x > 25, `${r} ${at()}`);
 
   // moved things take their places with them
   await legacyVerb(a, "place", { id: "tower2", pos: [30, a.heightAt(30, -20), -20], yaw: Math.PI / 2 });
-  for (let i = 0; i < 40 && a.entities.get("tower2")?.pos?.[2] !== -20; i++) await sleep(50);
+  for (let i = 0; i < 40 && a.entities.get(sceneId(a, "tower2"))?.pos?.[2] !== -20; i++) await sleep(50);
   await a.supportReady(); await sleep(400);
-  r = await tool("walk_to", { to: "tower2/entrance", run: true });
+  r = await tool("walk_to", { to: "Belfry/entrance", run: true });   // tower2 is labelled Belfry since the C1 rows
   // entrance [0,0,5] in the model frame, turned a quarter and moved to (30, -20)
   const want = P.toWorld({ id: "tower2", pos: [30, 0, -20], yaw: Math.PI / 2 }, [0, 0, 5]);
-  check("a thing that is moved and turned takes its places with it", /arrived at tower2\/entrance/.test(r) && Math.hypot(a.pos.x - want[0], a.pos.z - want[2]) < 0.6, `${r} ${at()} want (${want[0].toFixed(2)}, ${want[2].toFixed(2)})`);
+  check("a thing that is moved and turned takes its places with it", /arrived at Belfry\/entrance/.test(r) && Math.hypot(a.pos.x - want[0], a.pos.z - want[2]) < 0.6, `${r} ${at()} want (${want[0].toFixed(2)}, ${want[2].toFixed(2)})`);
 
   // a long room whose middle is full: reached at the clear floor it has
   const ry = a.heightAt(50, -20);
@@ -226,18 +226,18 @@ try {
   // name_place's coordinates: x and z, y found; never silently dropped
   r = await tool("name_place", { name: "rug_end", x: 55, z: -20, on: "rug" });
   check("name_place with x and z only names the floor there", /named this spot "rug_end" on \[rug\]/.test(r)
-    && near(a.entities.get("rug")?.places?.rug_end?.at?.[1], 0.05) && near(a.entities.get("rug").places.rug_end.at[0], 5), `${r} ${JSON.stringify(a.entities.get("rug")?.places?.rug_end)}`);
+    && near(a.entities.get(sceneId(a, "rug"))?.places?.rug_end?.at?.[1], 0.05) && near(a.entities.get(sceneId(a, "rug")).places.rug_end.at[0], 5), `${r} ${JSON.stringify(a.entities.get(sceneId(a, "rug"))?.places?.rug_end)}`);
   r = await tool("name_place", { name: "nowhere", y: 2 });
-  check("...and with y alone is refused, not quietly named where the body stands", /need x and z/.test(r) && !a.entities.get("rug").places.nowhere, r);
+  check("...and with y alone is refused, not quietly named where the body stands", /need x and z/.test(r) && !a.entities.get(sceneId(a, "rug")).places.nowhere, r);
   await legacyVerb(a, "light", { id: "lamp", pos: [50, ry + 2, -20], intensity: 5 });
-  for (let i = 0; i < 40 && !a.entities.get("lamp"); i++) await sleep(50);
+  for (let i = 0; i < 40 && !a.entities.get(sceneId(a, "lamp")); i++) await sleep(50);
   r = await tool("name_place", { name: "glow", on: "lamp" });
-  check("a light cannot carry places — refused, not saved where nothing reads it", /has no model/.test(r) && !a.entities.get("lamp")?.places, r);
+  check("a light cannot carry places — refused, not saved where nothing reads it", /has no model/.test(r) && !a.entities.get(sceneId(a, "lamp"))?.places, r);
   // two names in a row, before the first echo: both land
   const [r1, r2] = await Promise.all([
     tool("name_place", { name: "west_end", x: 45, z: -20, on: "rug" }),
     tool("name_place", { name: "east_end", x: 55.5, z: -20, on: "rug" })]);
-  const pl = a.entities.get("rug").places;
+  const pl = a.entities.get(sceneId(a, "rug")).places;
   check("two name_place calls at once both land — the second does not erase the first",
     /named/.test(r1) && /named/.test(r2) && pl.west_end && pl.east_end && pl.rug_end && pl.long_room, `${r1} | ${r2} | ${Object.keys(pl).join(",")}`);
 
@@ -248,13 +248,13 @@ try {
     a.sendOps = async (ops: any[], extra: any = {}) => {
       if (once) {   // another writer lands a name after this replica was read and before the remove is sent
         once = false;
-        await a.request("set", { id: "rug", component: "places", value: { late: { at: [2, 0.05, 0] } }, merge: true });
+        await a.request("set", { id: sceneId(a, "rug"), component: "places", value: { late: { at: [2, 0.05, 0] } }, merge: true });
       }
       return orig(ops, extra);
     };
     try { r = await tool("name_place", { name: "rug_end", remove: true, on: "rug" }); } finally { a.sendOps = orig; }
     await sleep(300);
-    const pl2 = a.entities.get("rug").places;
+    const pl2 = a.entities.get(sceneId(a, "rug")).places;
     check("name_place remove, raced by another write: the name written in between survives, and the remove still lands",
       /retired "rug_end"/.test(r) && !!pl2.late && pl2.rug_end === null, `${r} | ${JSON.stringify(pl2)}`);
   }
@@ -302,8 +302,11 @@ try {
     {
       const { ag, went } = mk([{ id: "far", pos: [50, 0, 0], label: "Belfry" }, { id: "nearb", pos: [3, 0, 0], label: "Belfry" }], []);
       const r = txt(await HANDLERS.move(ag, { to: "belfry" }, {}, "move")), w = went();
-      check("two things labelled \"Belfry\", neither with an entrance: move {to: \"belfry\"} walks up to the nearer",
-        !!w && w[0] > 1 && w[0] < 3 && /nearb/.test(r), `walked to ${JSON.stringify(w)} | ${r}`);
+      // R 10-17 (ID HARDENING 5, binding): a label two things share is refused with the candidates, never resolved to one
+      check("two things labelled \"Belfry\": move {to: \"belfry\"} is refused with both candidates (label, what, where, handle), and the body stays",
+        !w && /is the label of 2 things/.test(r) && /\[far\]/.test(r) && /\[nearb\]/.test(r) && /\(50\.0, 0\.0, 0\.0\)/.test(r), `walked to ${JSON.stringify(w)} | ${r}`);
+      const r2 = txt(await HANDLERS.move(ag, { to: "nearb" }, {}, "move")), w2 = went();
+      check("...and the handle the refusal named walks there", !!w2 && w2[0] > 1 && w2[0] < 3, `walked to ${JSON.stringify(w2)} | ${r2}`);
       try { ag.close(); } catch { /* never joined */ }
     }
   }

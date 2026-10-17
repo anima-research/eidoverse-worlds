@@ -16,6 +16,7 @@
 //   T   S5 translation: v1 gen/fly → can
 //   P   S6 the person menu (personActions, pure)
 // @ts-nocheck
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";

@@ -15,6 +15,7 @@
 // the list needs: scripts run only with a sandbox (openLive's default is QuickJS, SANDBOX), and blobs are PER WORLD DIR
 // there (<dir>/blobs, livehost.ts:52) where filehost's store is per ROOT (filehost.ts:26) — C2 is a test of exactly that.
 // @ts-nocheck
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
 import { scratch } from "./common.ts";

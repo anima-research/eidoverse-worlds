@@ -18,11 +18,14 @@
 // WORLD-ground, WORLD-light and WORLD-pose must exist, owned by the names this
 // suite joins as (alice, groundskeeper, lampsmith; on a TRUST_NAMES=1 server).
 
+import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foundWorlds, freePort } from "./harness.ts";
+import { idAliases } from "./protocol/idalias.ts";
+const IDS = idAliases();
 
 const EXTERNAL = process.env.URL;
 // a FREE port, never a fixed default: 8987 is a live sequencer on this host, and a fixed port lets a suite talk to
@@ -74,8 +77,8 @@ class Client {
   req(verb: string, args: unknown = {}): Promise<any> {
     const id = `${this.id}-${++this.n}`;
     return new Promise((res) => {
-      this.waiters.set(id, res);
-      this.send({ type: "request", id, verb, args });
+      this.waiters.set(id, (m: any) => { IDS.back(m?.reply); res(m); });   // R 10-17: names ride as placeholders and minted ids
+      this.send({ type: "request", id, verb, args: IDS.out(verb, args) });
       setTimeout(() => { if (this.waiters.delete(id)) res({ ok: false, reply: { refused: { code: "timeout" } } }); }, 6000);
     });
   }
@@ -186,7 +189,7 @@ try {
   // --- a second body sees the world by its cut
   const bob = await joined("bob", WORLD, { agent: true });
   check("a late joiner's cut holds the world as it is now (box1 where it was moved)",
-    JSON.stringify(bob.snapshot.cut.state?.box1?.c?.transform?.v?.pos ?? bob.snapshot.cut.state?.[Object.keys(bob.snapshot.cut.state).find((k) => k.includes("box1")) ?? ""]?.c?.transform?.v?.pos) === "[5,0,5]",
+    JSON.stringify(bob.snapshot.cut.state?.[IDS.of("box1")]?.c?.transform?.v?.pos) === "[5,0,5]",
     JSON.stringify(Object.keys(bob.snapshot.cut.state ?? {})));
   check("a late joiner gets the chat window", (bob.snapshot.state?.recentChat ?? []).some((c: any) => c.text === "hello world" && c.actor === "alice"), JSON.stringify(bob.snapshot.state));
   check("late joiner sees who is present", bob.snapshot.present.some((p: any) => p.id === "alice"));
@@ -222,9 +225,9 @@ try {
   check("held whispers still never touch the log", !logText().includes("held for later"));
 
   // --- drag is transient too
-  alice.send({ type: "drag", id: "box1", pos: [9, 0, 9], yaw: 0.5 });
+  alice.send({ type: "drag", id: IDS.of("box1"), pos: [9, 0, 9], yaw: 0.5 });
   await sleep(250);
-  check("drag relays to others", bob.of("drag").some((m) => m.id === "box1"));
+  check("drag relays to others", bob.of("drag").some((m) => m.id === IDS.of("box1")));
   check("drag is never logged", quiet() === n0);
 
   // --- typing is pure presence
@@ -381,7 +384,7 @@ try {
     const p = await owner.req("set", { id: "lamp1", component: "transform", value: { pos: [5, 1.5, -2] }, merge: true });
     check("a light is created and moved through the door", c.ok && p.ok, JSON.stringify([c.reply?.refused, p.reply?.refused]));
     const late = await joined("lightlate", lw);
-    const key = Object.keys(late.snapshot.cut.state).find((k) => k.endsWith("lamp1")) ?? "";
+    const key = IDS.of("lamp1");
     const ent = late.snapshot.cut.state[key]?.c ?? {};
     check("a light is a thing with a light component (no model)", !!ent.light && !ent.model, JSON.stringify(ent));
     check("a light carries its colour and intensity", ent.light?.v?.color === 0xffcc88 && ent.light?.v?.intensity === 20, JSON.stringify(ent.light));

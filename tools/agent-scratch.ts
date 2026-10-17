@@ -12,6 +12,7 @@
 // pattern), its clock pinned through PROTOCOL_NOW: each request is stamped at `at`, or one second after the last. `who` is
 // the display name the agent's percepts attribute the change to (the door's actor in a scratch world is its founder).
 // @ts-nocheck
+import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { scratch } from "./protocol/common.ts";
 import { request, LAB_CATALOGUE } from "../shared/protocol/authority.js";
 import { openWorld } from "../server/filehost.ts";

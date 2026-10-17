@@ -5,6 +5,7 @@
 // so liftWorld treats them as old, which is exactly what a log written before the audit looks like.
 //   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/shape-repair-test.ts
 // @ts-nocheck
+import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from 'node:fs';
 import { scratchWorld } from './protocol/scratchworld.ts';
 import { worldOf, CHANGE } from '../shared/protocol/authority/storage.js';

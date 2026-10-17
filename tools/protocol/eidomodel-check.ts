@@ -15,6 +15,7 @@
 //   U6  EIDO-URIS.md: `model`'s media is fixed by its role, so a bare eido: string is complete there
 //   U7  credits by path (review r7 F3); U8 the catalogue's sha256 at measure; U9 a door-written world carries (r7 F4)
 // @ts-nocheck
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";

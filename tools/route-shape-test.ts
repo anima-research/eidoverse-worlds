@@ -17,6 +17,8 @@ import { tmpdir } from "node:os";
 import { foundWorlds } from "./harness.ts";
 import { makeReplica } from "../shared/protocol/replica.js";
 import { viewOf } from "../shared/protocol/view.js";
+import { idAliases } from "./protocol/idalias.ts";
+const IDS = idAliases();   // R 10-17: the suite's names ride as placeholders and minted ids
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -80,7 +82,7 @@ async function client(port: number, world: string, id: string) {
   const err = msgs.find((m) => m.type === "error"); if (err) throw new Error(`join ${id}@${world}: ${err.error}`);
   return {
     rep,
-    req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${id}-${++n}`; waiters.set(rid, res); ws.send(J({ type: "request", id: rid, verb, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 6000); }),
+    req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${id}-${++n}`; waiters.set(rid, (r: any) => res(IDS.back(r))); ws.send(J({ type: "request", id: rid, verb, args: IDS.out(verb, args) })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 6000); }),
     close: () => ws.close(),
   };
 }

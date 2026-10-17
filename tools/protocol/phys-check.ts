@@ -1,6 +1,7 @@
 // Physics checks (design 20). Every scenario is built through the authority's ordinary tools, at pinned clock times.
 // Ported from the protocol lab's phys-check.js @ 11db981; only paths changed. usage: bun tools/protocol/phys-check.ts
 // @ts-nocheck — lab code, kept as written
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import { request, settle, forkCopy } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";

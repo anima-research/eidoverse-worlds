@@ -10,6 +10,7 @@
 // `kind` field (view.js never emits one; translate-v1 rewrites a v1 light to c.light and skips `kind`), so a reader branching
 // on `ent.kind === 'light'` is dead.
 process.env.WORLD_TOKEN = "";
+import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { kindOf as plannerKindOf } from "../client/lib/realize/models_field.js";
 import { kindHint } from "../shared/hierarchy.js";
 import { viewOf, viewState } from "../shared/protocol/view.js";
@@ -71,20 +72,23 @@ console.log("2. the route and the inspect head, over an owned sequencer");
     const ag: any = new WorldAgent({ name: "kind-writer", world: "kind", url: h.BASE.replace("http", "ws") + "/ws" });
     await ag.connect();
     const must = (r: any, what: string) => { if (!r?.ok) throw new Error(`${what} refused: ${JSON.stringify(r?.refused ?? r)}`); };
+    // R 10-17: the fixtures' names ride as placeholders; the authority mints the ids (IDS.of(name) reads them back)
+    const { idAliases } = await import("./protocol/idalias.ts"); const IDS = idAliases();
+    const areq = async (verb: string, args: any) => IDS.back(await ag.request(verb, IDS.out(verb, args)));
     const tf = (pos: number[]) => ({ pos, q: [0, 0, 0, 1], scale: [1, 1, 1] });
-    must(await ag.request("create", { id: "bulb", components: { transform: tf([0, 2, 0]), light: LIGHT } }), "bulb");
-    must(await ag.request("create", { id: "marker", components: { transform: tf([3, 0, 0]) } }), "marker");
-    must(await ag.request("create", { id: "table", model: TABLE, components: { transform: tf([6, 0, 0]) } }), "table");
-    must(await ag.request("create", { id: "table-light", components: { transform: tf([0, 1, 0]), light: LIGHT, parent: { to: "table", order: "a0" } } }), "table-light");
+    must(await areq("create", { id: "bulb", components: { transform: tf([0, 2, 0]), light: LIGHT } }), "bulb");
+    must(await areq("create", { id: "marker", components: { transform: tf([3, 0, 0]) } }), "marker");
+    must(await areq("create", { id: "table", model: TABLE, components: { transform: tf([6, 0, 0]) } }), "table");
+    must(await areq("create", { id: "table-light", components: { transform: tf([0, 1, 0]), light: LIGHT, parent: { to: "table", order: "a0" } } }), "table-light");
     const body = await (await fetch(`${h.BASE}/geom?world=kind&boxes=0`)).json() as any;
     const byId = Object.fromEntries((body.entities ?? []).map((e: any) => [e.id, e]));
-    for (const [id, want] of Object.entries(WANT)) check(`GET /geom?world kind ${id} = ${want}`, routeKind(byId[id]?.kind) === want, String(byId[id]?.kind));
-    check("the route's kind is kindOf of the route's own record", Object.keys(WANT).every((id) => byId[id] && kindOf(byId[id]) === byId[id].kind));
+    for (const [id, want] of Object.entries(WANT)) check(`GET /geom?world kind ${id} = ${want}`, routeKind(byId[IDS.of(id)]?.kind) === want, String(byId[IDS.of(id)]?.kind));
+    check("the route's kind is kindOf of the route's own record", Object.keys(WANT).every((id) => byId[IDS.of(id)] && kindOf(byId[IDS.of(id)]) === byId[IDS.of(id)].kind));
     const ctx = { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } };
     for (const [id, want] of Object.entries(WANT)) {
-      const r = await handleTool(ctx, "inspect", { id });
-      const text = r.content?.[0]?.text ?? "";
-      check(`mcpl inspect head ${id} says ${want}`, headKind(text, id) === want, headKind(text, id));
+      const r = await handleTool(ctx, "inspect", { id: IDS.of(id) });
+      const text = r.content?.[0]?.text ?? ""; const h = ag.handle(IDS.of(id));   // the head reads [<handle>] (R 10-17)
+      check(`mcpl inspect head ${id} says ${want}`, headKind(text, h) === want, headKind(text, h));
     }
     ag.close?.();
   } finally { await h.cleanup(tally.failed ? 1 : 0); }

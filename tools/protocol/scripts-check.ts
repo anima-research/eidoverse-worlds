@@ -18,6 +18,8 @@ import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
+import { idAliases } from "./idalias.ts";
+const IDS = idAliases();   // the real-server rows: the suite's names ride as placeholders and minted ids (R 10-17)
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -149,6 +151,7 @@ if (argv.includes("--control")) {
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const tryImport = async (p: string) => { try { return await import(p); } catch (e) { if (!argv.includes("--expect-absent")) throw e; return null; } };
 const D = await import(TREE + "shared/protocol/authority.js");
+D.fixtureIds?.(true);   // the fixtures below seed the ids they read (R 10-17: a writer never chooses one; ids-check covers the refusal)
 const F = await import(TREE + "shared/protocol/fold.js");
 const SB = await tryImport(TREE + "shared/protocol/sandbox.js");
 const AU = await tryImport(TREE + "shared/protocol/scriptaudit.js");
@@ -860,7 +863,7 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a worl
       await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
       ws.send(JSON.stringify({ type: "join", world: "chimes", id: name, avatar: "", replica: true }));
       for (let i = 0; i < 60 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
-      return { ws, msgs, you: msgs.find((m) => m.type === "snapshot")?.cut?.you, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "request", id: rid, verb, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 8000); }),
+      return { ws, msgs, you: msgs.find((m) => m.type === "snapshot")?.cut?.you, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, (r: any) => res(IDS.back(r))); ws.send(JSON.stringify({ type: "request", id: rid, verb, args: IDS.out(verb, args) })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 8000); }),
         send: (m: any) => ws.send(JSON.stringify(m)) }; };
     const ann = await client("Ann");
     const mk = await ann.req("create", { id: "bell1" });
@@ -873,15 +876,16 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a worl
     const ring = await bob.req("use", { id: "bell1", action: "ring" });
     await sleep(11500); // two 5 s periods on the server's 1 s clock (the first only arms the timer)
     const L = F.readLog(fs.readFileSync(path.join(W4, "chimes", "world.jsonl")));
-    const st0 = F.fold(L).entities.bell1?.c ?? {};
-    const tickActs = L.filter((e: any) => e.kind === "act" && e.actor === "script:bell1" && e.body?.on === "tick").length;
+    const B1 = IDS.of("bell1");   // the id the authority minted for the suite's bell1 (R 10-17)
+    const st0 = F.fold(L).entities[B1]?.c ?? {};
+    const tickActs = L.filter((e: any) => e.kind === "act" && e.actor === `script:${B1}` && e.body?.on === "tick").length;
     const dbg = await new Promise<any>((res) => { const on = (ev: any) => { const m = JSON.parse(String(ev.data)); if (m.type === "debug" && m.reqId === "d1") { ann.ws.removeEventListener("message", on); res(m); } };
       ann.ws.addEventListener("message", on); ann.send({ type: "debug", scripts: true, reqId: "d1" }); setTimeout(() => res(null), 3000); });
     const srvLog = fs.readFileSync(logf, "utf8") + (fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8") : "");
     ann.ws.close(); bob.ws.close();
     return { mk: mk.ok, inst: show(inst), clock: show(clock), ring: ring.script?.status, rung: st0["t/bell"]?.rung, tickActs, beats: st0["t/beats"], hello: st0["t/hello"] === bob.you,
-      sawScript: bob.msgs.some((m) => m.type === "log" && m.entries.some((e: any) => e.actor === "script:bell1" && e.body?.on === "tick")),
-      roster: dbg?.events?.map((e: any) => `${e.id}:${e.status}`), v1Host: /\[behaviors\]|behavior tick/.test(srvLog), malformed: F.fold(L).diagnostics.filter(([, c]: any) => String(c).startsWith("malformed")).length };
+      sawScript: bob.msgs.some((m) => m.type === "log" && m.entries.some((e: any) => e.actor === `script:${B1}` && e.body?.on === "tick")),
+      roster: dbg?.events?.map((e: any) => `${String(e.id).replace(B1, "bell1")}:${e.status}`), v1Host: /\[behaviors\]|behavior tick/.test(srvLog), malformed: F.fold(L).diagnostics.filter(([, c]: any) => String(c).startsWith("malformed")).length };
   } finally { proc.kill(); }
 }, good: (o) => o.mk && o.inst === "ok" && o.clock === "ok" && o.ring === "ran" && o.rung === 1 && o.tickActs >= 1 && o.beats >= 1 && o.hello && o.sawScript
   && o.roster?.includes("bell1/bell:active") && o.roster?.includes("bell1/clock:active") && !o.v1Host && o.malformed === 0 }];
@@ -904,7 +908,7 @@ serverCases.push({ id: "S2", server: true, what: "the server: while a hostile sc
         await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
         ws.send(JSON.stringify({ type: "join", world, id: name, avatar: "", replica: true }));
         for (let i = 0; i < 60 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
-        return { ws, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "request", id: rid, verb, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 30000); }) }; };
+        return { ws, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, (r: any) => res(IDS.back(r))); ws.send(JSON.stringify({ type: "request", id: rid, verb, args: IDS.out(verb, args) })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 30000); }) }; };
       const ann = await client("alpha", "Ann"), bea = await client("beta", "Bea");
       await ann.req("create", { id: "box" });
       const u = await ann.req("upload", { text: `world.on("use", () => { const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b"); });\n` });

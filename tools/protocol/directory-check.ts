@@ -1,6 +1,7 @@
 // tools/protocol/directory-check.ts — the authority directory (server/directory.ts): who an identity is lives outside the log
 // (§2.3), an id is reached only through an account, and typing someone's name yields nothing (round-2 review R1, R2).
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/directory-check.ts
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";

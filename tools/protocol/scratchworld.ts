@@ -4,7 +4,7 @@
 // request(openWorld(root, name), actor, verb, args), a `create-world` first to found the world (its founder is its owner).
 // @ts-nocheck
 import { scratch } from "./common.ts";
-import { request, LAB_CATALOGUE, liftWorld } from "../../shared/protocol/authority.js";
+import { request, LAB_CATALOGUE, liftWorld, fixtureIds } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { viewState } from "../../shared/protocol/view.js";
 import { enc, encName } from "../../shared/protocol/names.js";
@@ -12,6 +12,9 @@ import { localOf } from "../../shared/hierarchy.js";
 import { qNorm, qFromYaw } from "../../shared/rot.js";
 
 import { recordComponents } from "../../shared/protocol/view.js";
+// a fixture seeds the ids its test reads (seed(), and the suites' own creates), as a fork's copy keeps ids: the authority's
+// in-process fixture seam (R 10-17: a WRITER never chooses an id; ids-check holds runtime files to never calling it)
+fixtureIds(true);
 let T = 1800000000000;
 // the engine's catalogue is the library's GLB paths (server/modelcatalogue.ts); a scratch world names any path the tests
 // use: the lab's measured models where they exist, else a model the authority can name but not measure (no `size`)

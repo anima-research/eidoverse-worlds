@@ -4,6 +4,7 @@
 // the change (wt/w2-physics, ec535895).
 //   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/shape-render-test.ts
 // @ts-nocheck
+import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from 'node:fs';
 import { scratchWorld } from './protocol/scratchworld.ts';
 import { COMPONENTS, statusOf, pinOf, materialize } from '../shared/protocol/componentspec.js';
@@ -108,22 +109,22 @@ await tryRow('AD', async () => {
   const ids0 = new Set(Object.keys(W.state().entities));
   let r = W.call('create', { from: 'box' });
   const dup = Object.keys(W.state().entities).find((k) => !ids0.has(k));
-  check('AD4 a copy of a thing with an old address gets an id from a word, not the hash (create {from})', r.ok && /^thing-[a-z2-7]{26}$/.test(dup ?? ''), [r.refused, dup]);
+  check('AD4 a copy of a thing with an old address gets an opaque id, never the hash (create {from}; R 10-17: no word either)', r.ok && /^[a-z2-7]{26}$/.test(dup ?? ''), [r.refused, dup]);
   const ids1 = new Set(Object.keys(W.state().entities));
   r = W.call('create', { from: 'cr' });
   const dup2 = Object.keys(W.state().entities).find((k) => !ids1.has(k));
-  check('AD4 …a copy of one with a path takes its file\'s name', r.ok && /^crate-wood-[a-z2-7]{26}$/.test(dup2 ?? ''), [r.refused, dup2]);
+  check('AD4 …a copy of one with a path too (its name is its label, never its id)', r.ok && /^[a-z2-7]{26}$/.test(dup2 ?? ''), [r.refused, dup2]);
   const ids2 = new Set(Object.keys(W.state().entities));
   r = W.call('create', { model: ADDR, components: { transform: { pos: [6, 0, 0] } } });
   const mk = Object.keys(W.state().entities).find((k) => !ids2.has(k));
-  check('AD4 …and so does a create that names an address and no id', r.ok && /^thing-[a-z2-7]{26}$/.test(mk ?? ''), [r.refused, mk]);
-  check('AD5 a script\'s world.create mints from a word too (no lookups: a re-run mints the same id)', /isEido\(comps\.model\)/.test(read('shared/protocol/sandbox.js')), '');
+  check('AD4 …and so does a create that names an address and no id', r.ok && /^[a-z2-7]{26}$/.test(mk ?? ''), [r.refused, mk]);
+  check('AD5 a script\'s api-1 world.create (an older act re-run) still mints from a word (no lookups: a re-run mints the same id)', /isEido\(comps\.model\)/.test(read('shared/protocol/sandbox.js')), '');
   const { ENGINE_CATALOGUE } = await import('../server/modelcatalogue.ts');
   const cold = ENGINE_CATALOGUE.get(`eido:sha256/${'f'.repeat(64)}`);
   check('AD6 the engine\'s catalogue never labels an address by its hex (a cold entry: "thing")', cold && !/[0-9a-f]{16}/.test(cold.label), cold);
   // the client and agent readers can't run headless here: each is held to the shared word (and not to the value's file name)
   const OLD = /model\??\.split\(['"]\/['"]\)|\(meta\?\.model \?\? meta\?\.kind[^)]*\)\.split|libLabels\.get\(one\.model\) \?\? libLabel|String\(lib \?\? ''\)\.split\('\/'\)|String\(ghost\.lib \?\? ''\)\.split|String\(e?\.?model\)\.split\(["']\/["']\)|String\(rec\.model\)\.split|String\(meta\.model\)\.split|String\(a\.model\)\.split|libLabels\.get\(libPath\) \?\? libPath\.split/;
-  const FILES = ['client/lib/build.js', 'client/lib/seatedit.js', 'client/lib/editpanels.js', 'client/lib/scenegraph.js', 'client/lib/plainwords.js', 'client/lib/perfscope.js', 'client/lib/assets.js', 'client/lib/worldquad.js', 'mcpl/agent.ts', 'mcpl/tools.ts', 'shared/hierarchy.js', 'shared/editschema.js', 'shared/protocol/authority.js'];
+  const FILES = ['client/lib/build.js', 'client/lib/seatedit.js', 'client/lib/editpanels.js', 'client/lib/scenegraph.js', 'client/lib/plainwords.js', 'client/lib/perfscope.js', 'client/lib/assets.js', 'mcpl/agent.ts', 'mcpl/tools.ts', 'shared/hierarchy.js', 'shared/editschema.js'];   // worldquad and the authority minted from a word: R 10-17, they mint nothing readable now
   const stale = FILES.filter((f) => OLD.test(read(f)) || !/modelWord|modelName/.test(read(f)));
   check('AD7 every client and agent reader that names a thing by its model goes through the shared word', stale.length === 0, stale);
   // the sim (shiplist FL1, 10-16): an addressed dynamic thing is stamped, punted, and flies in the authority and in a client's fold

@@ -3,6 +3,7 @@
 // on the baseline and GOOD now. Ported from the protocol lab's hostile-check.js @ 11db981; only paths changed.
 // usage: bun tools/protocol/hostile-check.ts [--verbose]
 // @ts-nocheck — lab code, kept as written
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import { readLog, fold, digest, worldIdOf, parseLine } from "../../shared/protocol/fold.js";
 import { ENGINE, LAB, scratch, controlNote } from "./common.ts";

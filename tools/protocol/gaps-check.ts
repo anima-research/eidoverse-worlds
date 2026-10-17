@@ -8,6 +8,7 @@
 // Ported from the protocol lab's gaps-check.js @ 11db981; the "before" door (lab c9b4a67) is the control arm and runs only
 // with PROTOCOL_LAB (see common.ts). usage: bun tools/protocol/gaps-check.ts
 // @ts-nocheck — lab code, kept as written
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import { scratch, labAt, controlNote } from "./common.ts";
 import * as doorNow from "../../shared/protocol/authority.js";

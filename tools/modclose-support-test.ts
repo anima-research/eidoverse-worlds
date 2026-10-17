@@ -23,6 +23,8 @@ import { join } from "node:path";
 import { foundWorlds, freePort } from "./harness.ts";
 import { WorldAgent } from "../mcpl/agent.ts";
 import { supportHolders } from "../mcpl/physics.ts";
+import { idAliases } from "./protocol/idalias.ts";
+const IDS = idAliases();   // R 10-17: the suite's names ride as placeholders and minted ids
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : freePort(9460);   // a free port, never a fixed default
 const URL_ = `ws://127.0.0.1:${PORT}/ws`;
@@ -64,8 +66,8 @@ await sleep(1500);
 const warden = new WebSocket(URL_);
 const seen: any[] = []; const results = new Map<string, any>(); let rq = 0;
 warden.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); seen.push(m); if (m.type === "reply") results.set(m.id, m); };
-const wardenReq = async (verb: string, args: any) => { const id = `w${++rq}`; warden.send(JSON.stringify({ type: "request", id, verb, args }));
-  for (let i = 0; i < 60 && !results.has(id); i++) await sleep(50); return results.get(id); };
+const wardenReq = async (verb: string, args: any) => { const id = `w${++rq}`; warden.send(JSON.stringify({ type: "request", id, verb, args: IDS.out(verb, args) }));
+  for (let i = 0; i < 60 && !results.has(id); i++) await sleep(50); const m = results.get(id); IDS.back(m?.reply); return m; };
 /** a person's directory identity, as their arrival announced it (moderation names identities, never typed names) */
 const idOf = (name: string) => seen.find((m) => m.type === "arrive" && m.id === name)?.actorId;
 await new Promise<void>((res, rej) => {

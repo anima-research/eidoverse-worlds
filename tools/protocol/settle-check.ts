@@ -2,6 +2,7 @@
 // tools/protocol/settle-check.ts — what a thing at rest is attached to (settleSim). R's gym, 10-10: a pyramid's top crate
 // over the gap between two crates was parented to the crate a row lower (read under its centre), and rode along 0.5 m
 // above it when that one was carried.   Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/settle-check.ts
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { request } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { fold } from "../../shared/protocol/fold.js";

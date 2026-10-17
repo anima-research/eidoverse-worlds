@@ -13,6 +13,7 @@
 //   SV  against a real server whose world log runs AHEAD of wall time: frames and the clock reply carry the authority's
 //       clock (the one that stamps entries' ts), poses keep t/seq, a state sample is validated and refused as reserved
 // @ts-nocheck
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";

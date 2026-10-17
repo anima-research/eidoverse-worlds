@@ -21,6 +21,7 @@
 //   A   what an agent reads: look, inspect and help
 //   F   the independent review's findings (10-06), each red before its fix
 // @ts-nocheck
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import { ENGINES } from "../../shared/protocol/simlayer.js";
 import path from "node:path";

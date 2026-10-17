@@ -7,6 +7,7 @@
 // B  one binding: the files that used to carry their own copy of a reach or a rounding import shared/protocol/physconst.js
 //    or shared/protocol/round.js, and no copy of the literal is back.
 // @ts-nocheck
+import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
 import { request } from "../shared/protocol/authority.js";

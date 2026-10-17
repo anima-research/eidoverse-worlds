@@ -137,9 +137,14 @@ await ag.connect(); for (let i = 0; i < 60 && !ag.cut; i++) await sleep(50);
 const HEP = ag.cut?.you;
 ok(/^u-/.test(HEP ?? "") && ag.replica?.active, "(setup) the agent joins and folds the world", ag.cut);
 ok((await ann.req("set", { id: "@world", component: `roles:${HEP}`, value: { role: "builder" } })).ok, "(setup) Ann makes the agent a builder");
-ok((await ann.req("create", { id: "wall", model: "test/wall.glb", components: { transform: { pos: [0, 0, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] } } })).ok, "(setup) Ann builds a wall across z = 3");
-ok((await ann.req("create", { id: "mug", model: "test/cup.glb", components: { transform: { pos: [6.4, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, grabbable: { who: "visitor" } } })).ok, "(setup) …and a mug anyone may carry, at x = 6.4");
-for (let i = 0; i < 60 && !(ag.entities.has("wall") && ag.entities.has("mug")); i++) await sleep(50);
+// R 10-17: a writer never chooses an id. Ann names each thing with a placeholder and a label; the authority mints its id
+// (ID[name]); the agent's tools reach it by that label, by its handle, or by any unique prefix of its id
+const ID: Record<string, string> = {};
+const make = async (name: string, args: any) => { const r = await ann.req("create", { ...args, id: `$${name}`, components: { ...(args.components ?? {}), label: name } }); if (r?.ids?.[`$${name}`]) ID[name] = r.ids[`$${name}`]; return r; };
+ok((await make("wall", { model: "test/wall.glb", components: { transform: { pos: [0, 0, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] } } })).ok, "(setup) Ann builds a wall across z = 3");
+ok((await make("mug", { model: "test/cup.glb", components: { transform: { pos: [6.4, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, grabbable: { who: "visitor" } } })).ok, "(setup) …and a mug anyone may carry, at x = 6.4");
+for (let i = 0; i < 60 && !(ag.entities.has(ID.wall) && ag.entities.has(ID.mug)); i++) await sleep(50);
+ok(/^[a-z2-7]{26}$/.test(ID.mug ?? ""), "(setup) the authority minted the mug an opaque id", ID);
 const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name);
 
 // ---- AT5: a light is create {components: {light}} (the light tool folded; #216's id rule rides create's own) ----
@@ -153,11 +158,11 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   const b2 = [...ag.entities.keys()].length;
   const r = await call("create", { components: { light: { intensity: 8 } } });
   for (let i = 0; i < 40 && [...ag.entities.keys()].length === b2; i++) await sleep(50);
-  const lid = (T(r).match(/\[([a-z0-9-]+)\]/) ?? [])[1];
+  const lid = (T(r).match(/ id ([a-z2-7]{26})/) ?? [])[1];
   const lrec = lid ? ag.foldRecord(lid) : null;
   ok(!r.isError && [...ag.entities.keys()].length === b2 + 1 && lrec?.light?.intensity === 8 && Number.isFinite(lrec?.pos?.[1]) && lrec.pos[1] > 1, "AT5b create {components: {light}} with nowhere said: one new light, in front of you at about eye height", [T(r), lrec?.pos]);
   const r2 = await call("create", { components: { light: { color: 0xff5533 } }, at: [1, 2.5, 1] }); await sleep(200);
-  const lid2 = (T(r2).match(/\[([a-z0-9-]+)\]/) ?? [])[1]; const p2 = lid2 ? ag.foldRecord(lid2)?.pos : null;
+  const lid2 = (T(r2).match(/ id ([a-z2-7]{26})/) ?? [])[1]; const p2 = lid2 ? ag.foldRecord(lid2)?.pos : null;
   ok(!r2.isError && Array.isArray(p2) && Math.abs(p2[0] - 1) < 0.01 && Math.abs(p2[1] - 2.5) < 0.01 && Math.abs(p2[2] - 1) < 0.01, "AT5c create {…, at: [x, y, z]} puts it exactly there (no model, so no place solve)", [T(r2), p2]);
   const e = await call("edit", { id: lid2, set: { "light.intensity": 24 } }); await sleep(200);
   ok(!e.isError && ag.foldRecord(lid2)?.light?.intensity === 24 && ag.foldRecord(lid2)?.light?.color === 0xff5533, "AT5d edit {\"light.intensity\"} dims it and keeps its colour (the old light-update path)", [T(e), ag.foldRecord(lid2)?.light]);
@@ -175,8 +180,8 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   const away = await call("move", { to: [10, 0], run: true });
   ok(!away.isError && Math.abs(ag.pos.x - 10) < 0.05, "AT1c it walks on carrying the mug", T(away));
   const put = await call("act", { verb: "put", args: { id: "mug" } }); await sleep(300);
-  const mx = ag.foldRecord("mug")?.pos?.[0];
-  ok(!put.isError && Number.isFinite(mx) && Math.abs(mx - 10) < 1.6, "AT1c …and puts it down where it IS (x≈10), not where the authority last saw it (the probe's 'two bodies')", [T(put).slice(0, 200), ag.foldRecord("mug")?.pos]);
+  const mx = ag.foldRecord(ID.mug)?.pos?.[0];
+  ok(!put.isError && Number.isFinite(mx) && Math.abs(mx - 10) < 1.6, "AT1c …and puts it down where it IS (x≈10), not where the authority last saw it (the probe's 'two bodies')", [T(put).slice(0, 200), ag.foldRecord(ID.mug)?.pos]);
   // a body moved without walking (a flight, a seat, a drag): the authority's track is stale; the next walk re-arrives it
   ag.pos.x = 10; ag.pos.z = -9;
   const stale = await call("move", { to: [10, -8] });
@@ -190,15 +195,20 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   vee.close(); }
 
 // ---- AT2: duplicate from the tool ----
-{ const d1 = await call("create", { from: "mug", at: [8, 2] }); await sleep(200);
-  const made = (T(d1).match(/\[([a-z0-9-]+)\]/) ?? [])[1];
+{ const d1 = await call("create", { from: "mug", at: [8, 2] }); await sleep(200);   // by its label
+  const made = (T(d1).match(/ id ([a-z2-7]{26})/) ?? [])[1];
   const p = made ? ag.foldRecord(made)?.pos : null;
-  ok(!d1.isError && made && made !== "mug" && Array.isArray(p) && Math.abs(p[0] - 8) < 0.01 && Math.abs(p[2] - 2) < 0.01, "AT2a create {from: <id>, at: [x, z]} duplicates the thing there", [T(d1), p]);
-  const d2 = await call("create", { from: "mug" }); await sleep(200);
-  const made2 = (T(d2).match(/\[([a-z0-9-]+)\]/) ?? [])[1];
-  ok(!d2.isError && made2 && made2 !== made && ag.foldRecord(made2), "AT2b create {from: <id>} with no at puts the copy beside its source", T(d2));
-  const d3 = await call("create", { from: "mug", at: { pos: [9, 0, 2] } });
-  ok(!d3.isError, "AT2c …and the authority's own {pos, yaw|q} still passes through", T(d3)); }
+  ok(!d1.isError && made && made !== ID.mug && Array.isArray(p) && Math.abs(p[0] - 8) < 0.01 && Math.abs(p[2] - 2) < 0.01, "AT2a create {from: <label>, at: [x, z]} duplicates the thing there", [T(d1), p]);
+  // the copy wears the label too: "mug" now names two things, and a lookup by it is refused with both (R 10-17), never one picked
+  const amb = await call("create", { from: "mug" });
+  ok(amb.isError && /"mug" is the label of 2 things/.test(T(amb)) && T(amb).includes(`[${ag.handle(ID.mug)}]`) && T(amb).includes(`[${ag.handle(made)}]`), "AT2d a label two things share is refused with the candidates (label, what, where, handle)", T(amb));
+  const d2 = await call("create", { from: ag.handle(ID.mug) }); await sleep(200);   // by its handle
+  const made2 = (T(d2).match(/ id ([a-z2-7]{26})/) ?? [])[1];
+  ok(!d2.isError && made2 && made2 !== made && ag.foldRecord(made2), "AT2b create {from: <handle>} with no at puts the copy beside its source", T(d2));
+  const d3 = await call("create", { from: ID.mug.slice(0, 9), at: { pos: [9, 0, 2] } });   // by a longer prefix of its id
+  ok(!d3.isError, "AT2c …and the authority's own {pos, yaw|q} still passes through (a unique id prefix names the source)", T(d3));
+  const chosen = await call("create", { id: "my-mug", model: "test/cup.glb" });
+  ok(chosen.isError && /mint/.test(T(chosen)) && /\$my-mug/.test(T(chosen)), "AT2e an id the agent chooses is refused, and the words name the placeholder", T(chosen)); }
 
 // ---- AT3: a refused shove is an error ----
 { const vic = await sock("Vic"); await sleep(200);
@@ -248,8 +258,8 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   const prev = await call("library", { preview: "test/cup.glb" });
   ok(!prev.isError && (prev.content.some((c) => c.type === "image") || /no preview/.test(T(prev))), "AT6j library {preview} is one item (library_preview folded)", T(prev));
   // walking by name (socketteer's walk-by-place-name, as move {to: <name>}): a thing's id walks you up to it
-  const mp = ag.foldRecord("mug")?.pos;
-  const byName = await call("move", { to: "mug" });   // walking: a run this long rides the authority's token bucket at its edge (walkTo pacing, not this tool's)
+  const mp = ag.foldRecord(ID.mug)?.pos;
+  const byName = await call("move", { to: ag.handle(ID.mug) });   // its handle ("mug" names its copies too since AT2)   // walking: a run this long rides the authority's token bucket at its edge (walkTo pacing, not this tool's)
   ok(!byName.isError && /arrived/.test(T(byName)) && Math.hypot(ag.pos.x - mp[0], ag.pos.z - mp[2]) < 1.2 && Math.hypot(ag.pos.x - mp[0], ag.pos.z - mp[2]) > 0.3, "AT6k move {to: \"mug\"} walks up to the thing and stops beside it", [T(byName), ag.pos, mp]);
   const noName = await call("move", { to: "no-such-thing" });
   ok(noName.isError && /no-such-thing/.test(T(noName)), "AT6k …and an unknown name is an error naming it", T(noName));
@@ -267,12 +277,14 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   vic.close(); }
 
 // ---- AT5: look points at the real tool ----
-{ ok((await ann.req("create", { id: "post", model: "test/cup.glb", components: { transform: { pos: [12, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, lock: true, hidden: true } })).ok, "(AT5 setup) a locked, hidden post");
-  for (let i = 0; i < 60 && !ag.entities.has("post"); i++) await sleep(50);
-  const line = T(await call("look")).split("\n").find((l) => /\[post\]/.test(l)) ?? "";
-  ok(/locked/.test(line) && /edit \{id: "post", set: \{"flags\.lock": false\}\}/.test(line) && /edit \{id: "post", set: \{"flags\.hidden": false\}\}/.test(line) && !/act \{verb: "delete"/.test(line), "AT5 look teaches edit flags.lock / flags.hidden, not act delete", line);
-  const un = await call("edit", { id: "post", set: { "flags.lock": false, "flags.hidden": false } }); await sleep(200);
-  ok(!un.isError && !ag.foldRecord("post")?.lock && !ag.foldRecord("post")?.hidden, "AT5 …and what it teaches works", T(un)); }
+{ ok((await make("post", { model: "test/cup.glb", components: { transform: { pos: [12, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, lock: true, hidden: true } })).ok, "(AT5 setup) a locked, hidden post");
+  for (let i = 0; i < 60 && !ag.entities.has(ID.post); i++) await sleep(50);
+  const h = ag.handle(ID.post);
+  const line = T(await call("look")).split("\n").find((l) => l.includes(`[${h}]`)) ?? "";
+  ok(h.length >= 4 && h.length < 26 && ID.post.startsWith(h) && /"post"/.test(line) && !line.includes(ID.post), "AT5a look reads a thing by its label, what it is and a short handle (a unique prefix of its id, never the whole 26)", [h, line]);
+  ok(/locked/.test(line) && line.includes(`edit {id: "${h}", set: {"flags.lock": false}}`) && line.includes(`edit {id: "${h}", set: {"flags.hidden": false}}`) && !/act \{verb: "delete"/.test(line), "AT5 look teaches edit flags.lock / flags.hidden, not act delete", line);
+  const un = await call("edit", { id: "post", set: { "flags.lock": false, "flags.hidden": false } }); await sleep(200);   // by its label
+  ok(!un.isError && !ag.foldRecord(ID.post)?.lock && !ag.foldRecord(ID.post)?.hidden, "AT5 …and what it teaches works (by its label too)", T(un)); }
 
 // ---- AT7: an alias runs the new tool with the OLD argument shape (review 10-15 #5: walk_to {x, z} was a shape error) ----
 { const { handleTool } = await import("../../mcpl/tools.ts");
@@ -282,11 +294,12 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   ok(!w.isError && /is now called move/.test(T(w)) && Math.abs(ag.pos.x - (x0 + 1.5)) < 0.25, "AT7 walk_to {x, z, tolerance} walks the body (move {to}), and says the new name", { text: T(w).slice(0, 160), x: ag.pos.x, x0 });
   const n0 = ag.entities.size;
   const sp = await handleTool(ctx as any, "spawn", { lib: "test/cup.glb", x: x0 + 3, z: z0 + 3, id: "alias-cup" });
-  for (let i = 0; i < 60 && !ag.entities.has("alias-cup"); i++) await sleep(50);
-  ok(!sp.isError && ag.entities.has("alias-cup") && ag.entities.size === n0 + 1, "AT7 spawn {lib, x, z, id} creates the thing (create {model, id, at})", T(sp).slice(0, 200));
+  const named = (n) => { const t = ag.thingRef(n); return "id" in t ? t.id : null; };   // the old spawn's id is the thing's label now (R 10-17)
+  for (let i = 0; i < 60 && !named("alias-cup"); i++) await sleep(50);
+  ok(!sp.isError && !!named("alias-cup") && ag.entities.size === n0 + 1, "AT7 spawn {lib, x, z, id} creates the thing (create {model, at}, the id its label: the authority mints ids)", T(sp).slice(0, 200));
   // M1 (holes review 10-15): with a yaw the alias builds at {pos, yaw}, which buildCreate never read: ok, at the origin.
   // Mutation (must go red): drop the `a.at` branch in authority.js buildCreate.
-  const spAt = async (args, id) => { const r = await handleTool(ctx as any, "spawn", { lib: "test/cup.glb", ...args, id }); for (let i = 0; i < 60 && !ag.foldRecord(id); i++) await sleep(50); return { r, rec: ag.foldRecord(id) as any }; };
+  const spAt = async (args, id) => { const r = await handleTool(ctx as any, "spawn", { lib: "test/cup.glb", ...args, id }); for (let i = 0; i < 60 && !named(id); i++) await sleep(50); return { r, rec: ag.foldRecord(named(id)) as any }; };
   const near = (p, x, z) => Array.isArray(p) && Math.abs(p[0] - x) < 0.05 && Math.abs(p[2] - z) < 0.05;
   const xz = await spAt({ x: x0 - 3, z: z0 + 3 }, "alias-cup-xz");
   ok(!xz.r.isError && near(xz.rec?.pos, x0 - 3, z0 + 3), "AT7 spawn {lib, x, z} lands at x, z (not the origin)", [T(xz.r).slice(0, 200), xz.rec?.pos]);

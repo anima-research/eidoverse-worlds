@@ -9,6 +9,7 @@
 //   F   the client's fold (shared/protocol/replica.js): adopt a cut (mid-flight too), fold the authority's entries, and its own
 //       presentation flight comes to rest bit for bit where the authority logs the rest
 // @ts-nocheck
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import { scratch } from "./common.ts";
 import { request } from "../../shared/protocol/authority.js";

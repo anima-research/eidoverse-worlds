@@ -2,6 +2,7 @@
 // PROTOCOL alone) on every conformance log: status, digest, and diagnostic codes. Ported from
 // the protocol lab's conformance/compare.js @ 11db981. Also runs the reference reader's own tests (test_reader.py,
 // test_chain.py; the latter needs python3 `cryptography`). usage: bun tools/protocol/compare.ts  (exit 1 on any difference)
+import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import { readLog, fold, digest } from "../../shared/protocol/fold.js";
 import { ENGINE } from "./common.ts";
