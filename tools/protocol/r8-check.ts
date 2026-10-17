@@ -28,7 +28,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a delete clears script scopes again", "protocol/authority.js", "baseOf(k) === \"script\" || ", "", ["H1"]],
   ["a fork's copy stamps model-hash", "protocol/authority.js", "if (!ids.size || CTX.forking) return ops;", "if (!ids.size) return ops;", ["H2"]],
   ["ref clears admitted on the deleter's rights", "protocol/authority.js", "const fu = raw[FOLLOW_UP] === true;", "const fu = false;", ["R1", "R2", "R3", "R4"]],
-  ["undo's ref restores on the undoer's rights", "protocol/authority.js", "const g = setOp(id, comp, nv); g[FOLLOW_UP] = true;", "const g = setOp(id, comp, nv);", ["R4"]],
+  ["undo's ref restores on the undoer's rights", "protocol/authority/undo.js", "const g = setOp(id, comp, nv); g[FOLLOW_UP] = true;", "const g = setOp(id, comp, nv);", ["R4"]],
   ["no repair marker at founding", "protocol/authority.js", "w.append(actEntry(w, \"system\", \"repair-shapes\", { v: SHAPES_VERSION, ids: [], founding: true }));", "", ["M1"]],
   ["the founding's marker read bare", "protocol/shaperepair.js", "if (e.verb === \"create-world\" && !founded) { founded = true; const b = bodyOf(i);", "if (e.verb === \"create-world\" && !founded) { founded = true; const b = e.body;", ["M2"]],
   ["the load reads the marker without readback", "protocol/authority.js", "if (!shapesMarked(w.entries, (q) => readback(w, q))) try {", "if (!shapesMarked(w.entries)) try {", ["M2"]],

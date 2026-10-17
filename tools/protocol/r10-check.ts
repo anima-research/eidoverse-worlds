@@ -46,7 +46,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["no unseated when a socket goes", "shared/protocol/authority.js", "if (typeof to === \"string\") inboxPush(w.presence, who, { type: \"unseated\"", "if (false) inboxPush(w.presence, who, { type: \"unseated\"", ["U1"]],
   ["the browser ignores unseated.at", "client/lib/localbody.js", "dismountMe('script', unseatedAt(u))", "dismountMe('script')", ["U2"]],
   ["the ride counts follow-ups as edits", "shared/protocol/authority.js", "(lastTouch(w, from, key, { authored: true })?.seq ?? Infinity) < since", "(lastTouch(w, from, key)?.seq ?? Infinity) < since", ["U3"]],
-  ["undo restores references to things gone since", "shared/protocol/authority.js", "const nv = since.size ? withoutRefs(id, comp, old, since) : old;", "const nv = old;", ["L1"]],
+  ["undo restores references to things gone since", "shared/protocol/authority/undo.js", "const nv = since.size ? withoutRefs(id, comp, old, since) : old;", "const nv = old;", ["L1"]],
   ["a body verb read through the prototype", "mcpl/tools.ts", "if (Object.hasOwn(BODY_VERBS, verb)) return", "if (BODY_VERBS[verb]) return", ["L2"]],
   ["CONTROL (no-op: must stay green)", "shared/protocol/authority.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
 ];

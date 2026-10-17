@@ -56,7 +56,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["scripts permission gates upload", "protocol/authority.js", "if (!may(w.state(), actor, \"scripts\")) refuse(\"rights\", `uploading", "if (false) refuse(\"rights\", `uploading", ["S3"]],
   ["who reads custom ranks", "protocol/authority.js", "const whoRank = (st, name) => R.roleDef(wcOf(st), name)?.rank ?? RANK.owner;", "const whoRank = (st, name) => ({ visitor: 0, builder: 100, moderator: 200, owner: 255 })[name] ?? 0;", ["S4"]],
   ["a who names a role here", "protocol/authority.js", "if (comp === \"grabbable\" && obj) whoOk(v.who, at);", "", ["S4"]],
-  ["undo along rank", "protocol/authority.js", "if (!eo || me < them) refuse(\"rank\"", "if (!eo) refuse(\"rank\"", ["S5"]],
+  ["undo along rank", "protocol/authority/undo.js", "if (!eo || me < them) refuse(\"rank\"", "if (!eo) refuse(\"rank\"", ["S5"]],
   ["generate gates the world's assets", "protocol/authority.js", "  if (base === \"assets\") return \"generate\";", "  if (base === \"assets\") return \"build\";", ["S6"]],
   ["default-role can opens generate to strangers", "protocol/roles.js", "if (!entry && !opts.anon && isObj(dr?.can)) Object.assign(can, pickPermissions(dr.can));", "", ["S6"]],
   ["a lock is lifted only by who may edit it", "protocol/authority.js", "const mayUnlock = !who.cap && !lacks(w, st, who.actor, { verb: \"delete\", id: k, comp: \"lock\" });", "const mayUnlock = !who.cap;", ["S7"]],

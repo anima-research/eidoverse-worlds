@@ -30,7 +30,7 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 const MUTANTS: [string, string, string, string, string[]][] = [
   ["follow-ups not recorded in the entry", "shared/protocol/authority.js", "body: { ops, ...(fu.length ? { followUps: [...fu] } : {}) }", "body: { ops }", ["H1", "H2", "H3", "H4"]],
   ["lastTouch {authored} reads follow-ups as authors", "shared/protocol/authority.js", "if (fu?.has(k)) { if (o.verb === \"set\") { restored = true; continue; } if (o.verb === \"delete\" && restored) { restored = false; continue; } return null; }", "", ["H1", "H2", "H3"]],
-  ["undo marks any ref restore as a follow-up", "shared/protocol/authority.js", "if (!goneHere.size || !fuHere.has(o) ||", "if (!goneHere.size ||", ["H5"]],
+  ["undo marks any ref restore as a follow-up", "shared/protocol/authority/undo.js", "if (!goneHere.size || !fuHere.has(o) ||", "if (!goneHere.size ||", ["H5"]],
   ["the fold takes any followUps", "shared/protocol/fold.js", "if (\"followUps\" in body) followUpsCheck(body.followUps, body.ops.length);", "", ["H6"]],
   ["the ride ignores when the rider sat", "shared/protocol/authority.js", "if (own && rootOf(s.to) === own && rideBefore(s.since)) continue;", "if (own && rootOf(s.to) === own) continue;", ["M1", "M2"]],
   ["no escape from a script seat", "shared/sockbody.js", "if (kind === 'script' || kind === 'escape') return true;", "if (kind === 'script') return true;", ["E1", "E2"]],
