@@ -102,6 +102,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["name and joints guessed", "mcpl/tools.ts", "  if (a.name != null && (a.joints != null || a.tracks != null)) return", "  if (false) return", ["L3"]],
   ["no body-mode on the wire", "mcpl/agent.ts", "clip: this.clip, bodyMode: this.bodyModeNow(), clipTime: this.animHold ?? this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: this.animHold != null ? 0 : 1,\n        ...wingFoldPresence(this.wingsFolded),\n        // a physics bag", "clip: this.clip, clipTime: this.animHold ?? this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: this.animHold != null ? 0 : 1,\n        ...wingFoldPresence(this.wingsFolded),\n        // a physics bag", ["B1"]],
   ["an anim's end keeps its body-mode", "mcpl/agent.ts", "if (a.bodyMode && why !== \"stopped\") this.bodyMode = \"stand\";", "", ["B1"]],
+  ["declaring stand leaves the body sitting", "mcpl/tools.ts", "{ const rest = ag.restClip(ag.bodyModeNow()); if (rest) ag.clip = rest; }", "{ }", ["B1"]],
   ["stop drops the body-mode", "mcpl/agent.ts", "if (a.bodyMode && why !== \"stopped\") this.bodyMode = \"stand\";", "if (a.bodyMode) this.bodyMode = \"stand\";", ["K1", "B1"]],
   ["stop rests in idle whatever the mode", "mcpl/agent.ts", "const rest = this.restClip(this.bodyModeNow());", "const rest = \"idle\";", ["K1", "K2"]],
   ["stop on a station stands the occupant up", "mcpl/agent.ts", "const rest = this.restClip(this.bodyModeNow()); if (rest) { this.stop(); this.clip = rest; }", "const rest = this.restClip(this.bodyModeNow()); if (rest) { this.stop(); this.clip = rest; } else this.setPosture(\"idle\");", ["K1"]],
@@ -524,10 +525,10 @@ const cases: Case[] = [
   { id: "B1", what: "(R 15:34 D, 16:26) body-mode is its own presence field (bodyMode), apart from the clip: anim sit publishes sit; anim {stop} leaves it sit, a declared stand or a walk returns to stand", async run() {
       const { ag, call, sent } = await animAgent(); const pk = () => { ag.joined = true; ag.tick(); ag.joined = false; return sent.filter((m: any) => m.type === "pose").at(-1)?.pose ?? null; };
       const s0 = pk()?.bodyMode; await call("anim", { name: "sitchair" }); const s1 = pk(); await call("anim", { stop: true }); const s2 = pk()?.bodyMode;
-      await call("anim", { bodyMode: "stand" }); const s2b = pk()?.bodyMode;
+      const clip2 = ag.clip; await call("anim", { bodyMode: "stand" }); const s2b = pk()?.bodyMode, clip2b = ag.clip;
       await call("anim", { name: "lie" }); const s3 = pk()?.bodyMode; ag.clip = "walk"; ag.tick(); const s4 = pk()?.bodyMode;
-      return { s0, s1: s1?.bodyMode, clip1: s1?.clip, s2, s2b, s3, s4 }; },
-    good: (o) => o.s0 === "stand" && o.s1 === "sit" && o.clip1 === "sitchair" && o.s2 === "sit" && o.s2b === "stand" && o.s3 === "lie" && o.s4 === "stand" },
+      return { s0, s1: s1?.bodyMode, clip1: s1?.clip, s2, clip2, s2b, clip2b, s3, s4 }; },
+    good: (o) => o.s0 === "stand" && o.s1 === "sit" && o.clip1 === "sitchair" && o.s2 === "sit" && o.clip2 === "sitchair" && o.s2b === "stand" && o.clip2b === "idle" && o.s3 === "lie" && o.s4 === "stand" },
   { id: "B2", what: "…a sample written before (no bodyMode) is read from its clip (sitchair → sit, lie → lie, tread → swim); the server's fence keeps only the grammar", async run() {
       const BM = await import(TREE + "shared/bodymode.js"); const PC = await import(TREE + "server/posecheck.ts");
       const ok1 = PC.sanePose({ p: [0, 0, 0], bodyMode: "lie" }), bad = PC.sanePose({ p: [0, 0, 0], bodyMode: "infected" });

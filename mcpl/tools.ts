@@ -1279,6 +1279,9 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
   if (a.bodyMode != null) { if (!isBodyMode(a.bodyMode)) return { content: [{ type: "text", text: `anim: bodyMode is ${BODY_MODES.join(" | ")} (got ${JSON.stringify(a.bodyMode)})` }], isError: true };
     if (a.target) return { content: [{ type: "text", text: "anim {bodyMode} declares your own body's mode" }], isError: true };
     ag.bodyMode = String(a.bodyMode);
+    // alone, it rests the body in the new mode's own anim (declaring stand stands you up, R 16:26), unless a clip anim plays
+    // or a walk is under way (the walk's clip is the mover's)
+    if (a.name == null && a.joints == null && a.tracks == null && !ag.target && ag.clip !== "ragdoll" && !ag.anims.some((x: any) => x.kind === "clip")) { const rest = ag.restClip(ag.bodyModeNow()); if (rest) ag.clip = rest; }
     if (a.name == null && a.joints == null && a.tracks == null) return text(`${JSON.stringify({ bodyMode: String(a.bodyMode) })} — declared, for looks: it holds until a real transition (water, a take-off, a fall, a landing) or your next declaration, and grants nothing`); }
   const forms = ["name", "joints", "tracks", "stop", "ragdoll"].filter((k) => a[k] != null && a[k] !== false);
   if (a.name != null && (a.joints != null || a.tracks != null)) return { content: [{ type: "text", text: "anim: a name OR live keys (joints, or tracks), not both — a named anim plays as it is; nothing was guessed and nothing played" }], isError: true };
