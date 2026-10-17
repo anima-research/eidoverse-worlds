@@ -12,17 +12,21 @@
 // (agent-framework's test/channel-registry-typing.test.ts owns when it sends them). The full client runs in
 // Chromium, joined to the same world, and a raw socket beside it logs what the world broadcasts, in order.
 //
-// The page is judged by the client's own state. Two of the agent avatar's methods (client/lib/avatar.js) are
-// wrapped in the page, and their calls logged in one sequence: each typing signal the client applies, with the
-// window it set, and the state each update of the render loop left, which is where the client decides whether
-// the pill is drawn. A signal is setTyping with anything but null: an agent's typing frames carry no state
-// (mcpl/agent.ts typing(), which the door's relay calls), so the client applies setTyping(undefined), which
-// opens the window as a state would. So every update must draw the pill exactly when the window is open at the
-// update's own `now` and no bubble shows; each signal must open a window ending 4 s after it; and each frame the
-// world sent must be applied, in order, by the page's second update after the frame reached this side, since a
-// page that rendered meanwhile wasn't blocked. The page and this side both stamp with Date.now(), the
-// machine's one wall clock. With no state on the frames, the live-mic pill, which the client keeps up over a
-// bubble, can't arise here, and the first rule relies on that.
+// The page is judged by the client's own state, in one sequence the page logs. Two of the agent avatar's
+// methods (client/lib/avatar.js) are wrapped: each typing signal the client applies, with the window it set,
+// and the state each update of the render loop left, which is where the client decides whether the pill is
+// drawn. A signal is setTyping with anything but null: an agent's typing frames carry no state (mcpl/agent.ts
+// typing(), which the door's relay calls), so the client applies setTyping(undefined), which opens the window
+// as a state would. A listener on the client's socket, added after the client's own handler, logs each typing
+// frame the page received, and a requestAnimationFrame loop logs each frame the page rendered. So every update
+// must draw the pill exactly when the window is open at the update's own `now` and no bubble shows; each
+// signal must open a window ending 4 s after it; the page must receive every typing frame the world sent; and
+// the client must apply each one after the one before it and before the page renders again. A loaded page
+// lets its socket's messages queue while it renders, so a deadline counted from this side's own receipt of a
+// frame would fail a working client; one counted from the page's own receipt doesn't. With no state on the
+// frames, the live-mic pill, which the client keeps up over a bubble, can't arise here, and the first rule
+// relies on that. Where a wait compares the page's times with this side's, both are Date.now(), the machine's
+// one wall clock.
 //
 // The raw socket judges the door's contract, what the world broadcasts, by this side's clock. A heartbeat
 // records every gap between its ticks past their 100 ms, and each stamp is allowed only the stall that ended
@@ -169,7 +173,7 @@ try {
   // counted anew.
   await pg.evaluate(() => {
     const g = globalThis as any;
-    g.__log = { seq: 0, signals: [] as unknown[], updates: [] as unknown[], avatars: 0, sockets: 0 };
+    g.__log = { seq: 0, signals: [] as unknown[], updates: [] as unknown[], receipts: [] as unknown[], renders: [] as number[], avatars: 0, sockets: 0 };
     const wrap = (av: any) => {
       if (!av || av.__probed) return;
       av.__probed = true;
@@ -192,15 +196,30 @@ try {
         return r;
       };
     };
+    // Each typing frame for the agent the page's socket received. The client sets its socket's onmessage when
+    // it opens it (client/lib/net.js), so this listener, added later, runs after the client's handler, in the
+    // same task, and the client applies a typing frame synchronously in its handler.
+    const listen = (sock: any) => sock?.addEventListener("message", (ev: MessageEvent) => {
+      if (typeof ev.data !== "string" || !ev.data.includes('"typing"')) return;
+      let m: any; try { m = JSON.parse(ev.data); } catch { return; }
+      if (m.type === "typing" && m.id === "claude") g.__log.receipts.push({ t: Date.now(), seq: ++g.__log.seq });
+    });
+    // Each frame the page rendered, after the client's own render loop in that frame.
+    const render = () => { g.__log.renders.push(++g.__log.seq); requestAnimationFrame(render); };
+    requestAnimationFrame(render);
     let ws = g.EW.net.ws;
-    const watch = () => { wrap(g.EW.remotes.get("claude")?.avatar); if (g.EW.net.ws !== ws) { ws = g.EW.net.ws; g.__log.sockets++; } };
+    listen(ws);
+    const watch = () => { wrap(g.EW.remotes.get("claude")?.avatar); if (g.EW.net.ws !== ws) { ws = g.EW.net.ws; g.__log.sockets++; listen(ws); } };
     watch();
     setInterval(watch, 100);
   });
   type Signal = { t: number; seq: number; p0: number; p1: number; until: number };
   type Update = { t: number; seq: number; drawn: boolean; bubble: boolean; win: boolean; hidden: boolean };
-  type PageLog = { signals: Signal[]; updates: Update[]; avatars: number; sockets: number };
+  type Seq = { t: number; seq: number };
+  type PageLog = { signals: Signal[]; updates: Update[]; receipts: Seq[]; renders: number[]; avatars: number; sockets: number };
   const readLog = () => pg.evaluate(() => (globalThis as any).__log) as Promise<PageLog>;
+  // The signals and updates alone, for a wait that looks often: the renders run to thousands.
+  const readWindows = () => pg.evaluate(() => { const l = (globalThis as any).__log; return { signals: l.signals, updates: l.updates }; }) as Promise<Pick<PageLog, "signals" | "updates">>;
   // The first update after `since` for which pred holds, polled for up to ms, or null. A far avatar updates
   // only on its level-of-detail ticks (client/lib/remotes.js), which a loaded page spaces seconds apart, and
   // between updates its pill stays as the last one left it.
@@ -221,7 +240,7 @@ try {
     const until = Date.now() + 25000;
     let last: Signal | undefined;
     while (Date.now() < until) {
-      const log = await readLog();
+      const log = await readWindows();
       last = log.signals.filter((s) => s.t >= from).at(-1);
       const u = last && log.updates.find((u) => u.seq > last!.seq && !u.win);
       if (u) return check(name, true, `the last signal at ${Math.round(last!.t - T0)} ms; the update at ${Math.round(u.t - T0)} ms found the window shut`);
@@ -278,8 +297,8 @@ try {
   const backPending = !responses.has(backWalk);
   const closeAt = Date.now(); host.close();
   // Its start opened one 4 s window. A page whose updates come further apart than that may never draw the
-  // dots in it, which is the machine's pace, not a defect; that the page applied the start is the order
-  // check's, and that it drew nothing once the window shut is the update rule's.
+  // dots in it, which is the machine's pace, not a defect; that the page received and applied the start is
+  // for the receipt checks, and that it drew nothing once the window shut is the update rule's.
   await shut("once it disconnects, the page's window runs out", goneFrom);
   // Long enough after the close for a relay that outlived it to have signalled twice.
   await sleep(Math.max(0, closeAt + 6000 - Date.now()));
@@ -326,21 +345,20 @@ try {
   const misset = S.filter((s) => !(s.until >= s.p0 + 4000 - 1e-6 && s.until <= s.p1 + 4000 + 1e-6));
   check("each signal opens a window that runs out 4 s after it", S.length > 0 && misset.length === 0,
     misset.length ? `${misset.length} of ${S.length}; the first ran ${Math.round(misset[0]!.until - misset[0]!.p0)} ms` : `${S.length} signals`);
-  // Each frame the world sent, matched in order to the signal that applied it: none before its frame could
-  // have reached the page (its stamp, less the stall it waited in, less 50 ms between two sockets on one
-  // machine), and none after the page's second update past the frame's arrival here.
-  const pairs = frames.slice(0, S.length).map((f, i) => {
-    const s = S[i]!, second = U.filter((u) => u.t > f.t)[1];
-    return { f, s, early: s.t < f.t - waitedIn(f.t) - 50, waited: U.filter((u) => u.t > f.t && u.seq < s.seq).length, due: second ? s.seq < second.seq : null };
+  // The page's socket received each typing frame the world sent, and the client applied each one in its turn:
+  // after the page received the one before it, and before the page rendered again once this one came. The
+  // page's renders are in sequence order, so the first one past a receipt is the next frame it drew.
+  const R = log.receipts;
+  check("the page's socket received each typing frame the world sent", R.length === frames.length,
+    `${frames.length} frames, ${R.length} received; its socket replaced ${log.sockets} times`);
+  const turns = R.map((r, i) => {
+    const s = S[i], next = log.renders.find((seq) => seq > r.seq);
+    return { r, s, inTurn: !!s && s.seq > (i ? R[i - 1]!.seq : 0) && next !== undefined && s.seq < next };
   });
-  const early = pairs.filter((p) => p.early), overdue = pairs.filter((p) => p.due === false), undecided = pairs.filter((p) => p.due === null);
-  check("the page applied each typing frame the world sent, in order, by its second update after the frame arrived",
-    S.length === frames.length && early.length === 0 && overdue.length === 0 && undecided.length === 0,
-    `${frames.length} frames, ${S.length} signals; the most updates any frame waited ${Math.max(0, ...pairs.map((p) => p.waited))}` +
-      `${early.length ? `; ${early.length} applied before their frame could have come, the first ${early[0]!.f.t - early[0]!.s.t} ms before its frame's stamp` : ""}` +
-      `${overdue.length ? `; ${overdue.length} not applied by the second update, the first frame at ${Math.round(overdue[0]!.f.t - T0)} ms, applied after ${overdue[0]!.waited} updates` : ""}` +
-      `${undecided.length ? `; ${undecided.length} with no second update after them` : ""}` +
-      `; its socket replaced ${log.sockets} times, the agent's avatar wrapped ${log.avatars} times`);
+  const outOfTurn = turns.filter((x) => !x.inTurn), o0 = outOfTurn[0];
+  check("the client applied each typing frame its page received after the one before it, and before the page rendered again",
+    R.length > 0 && S.length === R.length && outOfTurn.length === 0,
+    `${R.length} received, ${S.length} applied${o0 ? `; ${outOfTurn.length} out of turn, the first received at ${Math.round(o0.r.t - T0)} ms and ${o0.s ? `applied ${o0.s.t - o0.r.t} ms from it` : "never applied"}` : ""}; the agent's avatar wrapped ${log.avatars} times`);
 
   // What the turn showed.
   check("the walk is still under way 15 s in", walkPending15);
@@ -360,10 +378,9 @@ try {
 
   check("the page threw nothing", errs.length === 0, errs.slice(0, 3).join(" | "));
   const long = hb.filter(([, excess]) => excess > 250);
-  // How finely the page was judged: a client that deferred every frame by more than twice the longest of
-  // these gaps would have failed the order check above, and one deferring by less might not have.
+  // How often the update rule had a decision of the client's to judge.
   const gaps = U.slice(1).map((u, i) => u.t - U[i]!.t).sort((a, b) => a - b);
-  console.log(`  the page applied ${S.length} typing signals over ${U.length} updates of the agent's avatar, a median ${gaps[gaps.length >> 1] ?? "-"} ms and at most ${gaps.at(-1) ?? "-"} ms apart; this side's heartbeat ran late ${long.length} times by over 250 ms, the most by ${Math.max(0, ...hb.map(([, excess]) => excess))} ms`);
+  console.log(`  the page rendered ${log.renders.length} frames and updated the agent's avatar ${U.length} times, a median ${gaps[gaps.length >> 1] ?? "-"} ms and at most ${gaps.at(-1) ?? "-"} ms apart; this side's heartbeat ran late ${long.length} times by over 250 ms, the most by ${Math.max(0, ...hb.map(([, excess]) => excess))} ms`);
 } catch (e) {
   fail++;
   console.log(`FATAL ${(e as Error).message}\n${(e as Error).stack}`);
