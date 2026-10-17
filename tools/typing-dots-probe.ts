@@ -4,8 +4,7 @@
 //   bun tools/typing-dots-probe.ts
 //
 // Needs the door's sibling built (../mcpl-core-ts, which the door imports: mcpl/net-server.ts) and a Chromium
-// that tools/probe-harness.mjs can find. A run takes two to three minutes on a loaded machine: 103 to 177 s at
-// loads of 27 to 92.
+// that tools/probe-harness.mjs can find. A run takes two to three minutes on a loaded machine.
 //
 // A scratch world and the door are children of this run, each proved ours by a per-run nonce it echoes
 // (the ownership pattern of tools/door-cap-gate-live-test.mjs). A raw MCPL host stands in for
@@ -284,8 +283,10 @@ try {
   // that the door's relay stopped at the speech, since it would otherwise signal every 2.5 s.
   await nextStart(); await sleep(300);
   say(SAY); const sayAt = Date.now();
-  const bubbleShown = await pollPage((u) => u.bubble, 20000, sayAt);
-  const bubbleGone = bubbleShown && await pollPage((u) => !u.bubble, 40000, bubbleShown.t);
+  // The bubble's waits allow the avatar's updates to come 30 s apart, past the bubble's 22 s; at a load of 92
+  // they came up to 15 s apart.
+  const bubbleShown = await pollPage((u) => u.bubble, 30000, sayAt);
+  const bubbleGone = bubbleShown && await pollPage((u) => !u.bubble, 22000 + 30000, bubbleShown.t);
   // The turn's starts keep the window open, so the update the bubble went at draws the dots already.
   const backUp = bubbleGone && await pollPage((u) => u.drawn, 30000, bubbleGone.t - 1);
   await sleep(2000);
