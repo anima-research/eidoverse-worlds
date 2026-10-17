@@ -181,6 +181,7 @@ for (const n of Object.keys(ANNOTATIONS)) if (!TOOL_ROWS.some((t) => t.name === 
 
 import { readdirSync } from "node:fs";
 import { recordComponents } from "../shared/protocol/view.js";
+import { modelWord } from "../shared/eido.js";
 // §24k R0 (survey A5): this fallback used to be a hardcoded developer home
 // directory — the SAME bug mcpl/server.ts:120 fixed with an incident note
 // ("hardcoded Mac path threw for everyone else"); this copy never got the
@@ -949,7 +950,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const made = (r.notes ?? []).find((n: any) => n?.copied)?.as ?? r.refs?.[0]?.id ?? (r.would ?? []).find((o: any) => o?.verb === "create")?.id ?? Object.keys(r.after ?? {})[0];
       const id = a.id ?? made ?? "?";
       const pos = r.after?.[id]?.transform?.pos;
-      return text(`${a.dry ? "would create" : "created"} [${id}]${a.model ? ` ${String(a.model).split("/").pop()}` : ""}${Array.isArray(pos) ? ` at (${pos.map((v: number) => (+v).toFixed(2)).join(", ")})` : ""}${r.notes?.length ? `\nnotes: ${JSON.stringify(r.notes).slice(0, 600)}` : ""}`);
+      return text(`${a.dry ? "would create" : "created"} [${id}]${a.model ? ` ${modelWord(a.model)}` : ""}${Array.isArray(pos) ? ` at (${pos.map((v: number) => (+v).toFixed(2)).join(", ")})` : ""}${r.notes?.length ? `\nnotes: ${JSON.stringify(r.notes).slice(0, 600)}` : ""}`);
 
   },
   place: async (ag, a, ctx, name) => {
@@ -1064,7 +1065,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const schema = inspectSchema(rec, id, { world, box: rec.model ? await ag.modelBox(String(rec.model)) : null });
       if (a.json) return text(JSON.stringify(schema));
       const kids = childrenOf(world, id);
-      const head = `[${id}] ${kindOf(rec) === "model" ? String(rec.model).split("/").pop() : kindOf(rec)}${rec?.label ? ` "${rec.label}"` : ""}`
+      const head = `[${id}] ${kindOf(rec) === "model" ? modelWord(rec.model) : kindOf(rec)}${rec?.label ? ` "${rec.label}"` : ""}`
         + `\nparent: ${rec.parent ? `${ag.seatName(rec.parent.to)} — its Transform below is LOCAL to ${rec.parent.to}` : "none (a root: its Transform is the world's)"}`
         + `\nchildren: ${kids.length ? kids.join(", ") : "none"}`
         + (() => { const h = String((rec as any)?.["copy-of"]?.hash ?? "").replace(/^sha256:/, ""); if (!h) return ""; const b = ag.worldBlueprints()[h]; return `\nblueprint: a copy of \"${b?.name ?? "?"}\" (${h.slice(0, 12)})`; })();
@@ -1112,9 +1113,9 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const line = (e: any) => {
         const c = recordComponents(e);
         const comps = Object.keys(c).filter((k) => k !== "lock" && k !== "label").map((k) => (k === "motion" || k.startsWith("motion:")) ? `${k}(${c[k]?.type ?? "…"})` : k === "socket" ? `socket(${c.socket?.name ?? ""}: ${socketRole(c)})` : k);
-        return `[${e.id}]${c.label ? ` "${c.label}"` : ""} ${e.kind === "model" ? String(e.model).split("/").pop() : e.kind}${comps.length ? ` · ${comps.join(" · ")}` : ""}${c.lock ? " · 🔒" : ""}${c.hidden ? " · hidden" : ""}`;
+        return `[${e.id}]${c.label ? ` "${c.label}"` : ""} ${e.kind === "model" ? modelWord(e.model) : e.kind}${comps.length ? ` · ${comps.join(" · ")}` : ""}${c.lock ? " · 🔒" : ""}${c.hidden ? " · hidden" : ""}`;
       };
-      const hit = (e: any) => !q || [e.id, e.model, e?.label ?? "", ...Object.keys(recordComponents(e))].join(" ").toLowerCase().includes(q);
+      const hit = (e: any) => !q || [e.id, e.model, e.model ? modelWord(e.model) : "", e?.label ?? "", ...Object.keys(recordComponents(e))].join(" ").toLowerCase().includes(q);
       const L: string[] = [];
       const walk = (id: string, depth: number): boolean => {
         const e = ag.entities.get(id) as any; if (!e) return false;

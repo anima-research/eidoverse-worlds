@@ -31,6 +31,7 @@ import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND,
 import { livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
 import { shapeRepairOps } from "./shaperepair.js";
 import { atWrite } from "./assetref.js";
+import { isEido, modelWord } from "../eido.js";
 import { trustRefusal } from "../drafts.js";
 import { planLaunch } from "./launchplan.js";
 import { REACH, HAND_Y, MAX_HELD, KICK, SHOVE, BODY_REACH } from "./physconst.js";
@@ -1275,6 +1276,9 @@ function merge7396(target, patch) {
 }
 // a fresh id: never one this world has had (§3d H7), nor one already used in this request
 // review 10-07 H5: <slug>-<26 base32> (shared/protocol/ids.js), never <slug>-<count>, which two forks minted alike
+// a thing's word for a minted id (gate 21, 10-16): the door stores a model as its content address, whose file name is a hex;
+// an address is named by the catalogue's label for it (the file it names here), else the word the host learned, else "thing"
+const idWord = (m) => (isEido(m) ? modelWord(m, (x) => modelOf(x)?.label) : m);
 function mint(st, base) { const ever = CTX.mintW?.everIds() ?? new Set(); let id;
   do id = mintId(slug(base)); while (st.entities[id] || ever.has(id)); return id; }
 
@@ -1300,7 +1304,7 @@ function buildCreate(ctx, a) {
   const comps = { ...(a.components ?? {}) };
   if (a.model) comps.model = a.model;
   const placeAt = createAt(a, comps);
-  const id = a.id ?? mint(ctx.st, comps.model ?? "thing");
+  const id = a.id ?? mint(ctx.st, idWord(comps.model) ?? "thing");   // the writer's own name for it where it gave one
   if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§3.1: a–z, 0–9 and '-', up to 64; or leave id out and the authority mints one");
   if (ctx.st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id, or leave id out and the server mints one");
   for (const k of Object.keys(comps)) if (!isComponent(k)) refuse("shape", `'${k}' isn't a component name`, "§3.1: [a-z][a-z0-9-]*, optionally <domain>/, @<n> and :<key>", { didYouMean: guess(k, Object.keys(COMPONENTS)) });
@@ -2666,7 +2670,7 @@ function buildDuplicate(ctx, a) {
   if (src === "@world" || !st.entities[src]) refuse("not-found", `no thing called '${src}' to copy`, "from takes a blueprint hash (sha256:…) or the id of a thing here", { didYouMean: guess(String(src), Object.keys(st.entities)) });
   const all = [src, ...descendants(st, src)];
   const sc = st.entities[src].c;
-  const id = a.id ?? mint(st, typeof sc.label === "string" ? sc.label : typeof sc.model === "string" ? sc.model.split("/").pop().replace(/\.[a-z0-9]+$/i, "") : src);
+  const id = a.id ?? mint(st, typeof sc.label === "string" ? sc.label : typeof sc.model === "string" ? idWord(sc.model).split("/").pop().replace(/\.[a-z0-9]+$/i, "") : src);
   if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§3.1: a–z, 0–9 and '-', up to 64; or leave id out");
   if (st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id for the copy");
   const ids = partIds(st, id, src, all);

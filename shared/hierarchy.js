@@ -24,6 +24,7 @@ import { socketQ, lightOf } from './components.js';
 import { kindOf } from './protocol/kind.js';
 import { socketRole } from './sockbody.js';
 import { r9 } from './protocol/round.js';
+import { modelWord } from './eido.js';
 
 const conj = (q) => [-q[0], -q[1], -q[2], q[3]];
 /** A pure turn about +Y (no tilt): such an orientation travels as a bare yaw. */
@@ -129,7 +130,7 @@ export function kindHint(ent) {
   const plus = lightOf(ent) ? ' + light' : '';
   if (kind === 'mesh') return `${(ent.c ?? ent).mesh.shape}${plus}`;
   if (kind !== 'model') return kind;
-  return `${String(ent.model).split('/').pop().replace(/\.glb$/, '').split('_').slice(0, 3).join(' ')}${plus}`;
+  return `${modelWord(ent.model).split('_').slice(0, 3).join(' ')}${plus}`;   // an address: the word for it, never its hex (shared/eido.js)
 }
 
 /** { roots, kids } from the fold: a thing whose carrier is absent, or whose

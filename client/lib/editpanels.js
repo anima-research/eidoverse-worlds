@@ -42,7 +42,7 @@ import { openNewScript, mayScript } from './scriptnew.js';
 import { structureTools, currentTool as structureTool, setTool as setStructureTool, newBuilding } from './structure_ui.js';
 import { starterModels } from './catalog.js';
 import { spawnAhead } from './worldquad.js';
-import { libLabels } from './assets.js';
+import { libLabels, modelName } from './assets.js';
 import { offIn } from './realize/models_field.js';
 import { schemaFor, commitEdit, commitMany, planEdit, setEditHooks, endGesture, foldRecord, mayShape } from './inspect.js';
 import { channels, fieldAt, ADD_WORDS, libLabel } from '../../shared/editschema.js';
@@ -267,7 +267,7 @@ function hierarchyFields() {
   const nameOnly = (id) => { const c = bagOf(id); const l = c?.label; return typeof l === 'string' && l ? l : typeof c?.socket?.name === 'string' ? c.socket.name : null; };
   const labelOf = (id) => { const l = nameOnly(id); return l ? (hopts.ids ? `${l}  (${id})` : l) : id; };
   const only = ONLY[hopts.only]?.test ?? null;
-  const textHit = (id) => [id, world[id]?.label ?? '', world[id]?.model ?? '', kindHint(world[id]), ...Object.keys(recordComponents(world[id]))].join(' ').toLowerCase().includes(q);
+  const textHit = (id) => [id, world[id]?.label ?? '', world[id]?.model ?? '', world[id]?.model != null ? modelName(world[id].model) : '', kindHint(world[id]), ...Object.keys(recordComponents(world[id]))].join(' ').toLowerCase().includes(q);
   const matches = q || only ? (id) => (!q || textHit(id)) && (!only || only(id, world)) : null;
   // a rider's or a component's row matches only where its thing passes the row filter too (review 10-12 S3-2)
   const underOk = (id) => !only || only(id, world);
@@ -1113,7 +1113,7 @@ function buildDispatch(action, payload) {
       // asked, as Roblox's "Save to Roblox" and SL's Take name what they keep (review 10-07 S5: it saved as "4177f489").
       // The offer is a person's word for it: its label, else its model's name (the inspector's header), else its id
       const one = ids.length === 1 ? foldRecord(ids[0]) : null;
-      const offer = ids.length === 1 ? String(one?.label ?? (one?.model != null ? libLabels.get(one.model) ?? libLabel(one.model) : ids[0])) : `${ids.length} things`;
+      const offer = ids.length === 1 ? String(one?.label ?? (one?.model != null ? modelName(one.model) : ids[0])) : `${ids.length} things`;
       (xrActive() ? Promise.resolve(offer) : askCenter({ title: 'Save as blueprint', body: 'A name for it in Blueprints › saved here, where you place copies of it.', value: offer, ok: 'Save' }))
         .then((name) => { if (!name) return;
           Edits.publish(ids, name).then((r) => { if (r.ok) flashHint(html`saved <b>${name}</b> as a blueprint — it's in Blueprints › saved here`, 4000); repaintAll(); }); });

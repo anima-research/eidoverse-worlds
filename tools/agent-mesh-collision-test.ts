@@ -187,13 +187,18 @@ try {
     // a closed pen 2m across, its model download held up 2.5s: there is no
     // way into it, so a walk planned against it is refused — and one planned
     // before it exists here walks straight in
-    const wallUp = await fetch(`${h.BASE}/upload?name=pen`, { method: "POST", body: await buildGlb([
-      [-1.1, 0, -1.1, 1.1, 3, -0.9], [-1.1, 0, 0.9, 1.1, 3, 1.1], [-1.1, 0, -1.1, -0.9, 3, 1.1], [0.9, 0, -1.1, 1.1, 3, 1.1]]) });
+    const penGlb = await buildGlb([
+      [-1.1, 0, -1.1, 1.1, 3, -0.9], [-1.1, 0, 0.9, 1.1, 3, 1.1], [-1.1, 0, -1.1, -0.9, 3, 1.1], [0.9, 0, -1.1, 1.1, 3, 1.1]]);
+    const wallUp = await fetch(`${h.BASE}/upload?name=pen`, { method: "POST", body: penGlb });
     const wallLib = ((await wallUp.json()) as { path: string }).path;
+    // the door stores the model as its content address (shape audit 10-16): the agent fetches /library/<that>, so the
+    // held-up download is matched by either spelling — the path the upload answered or the address of its bytes
+    const wallHex = new Bun.CryptoHasher("sha256").update(penGlb as any).digest("hex");
+    const isWallFetch = (u: string) => u.includes(`/library/${wallLib}`) || (u.includes("/library/") && u.includes(wallHex));
     const realFetch = globalThis.fetch;
     let delayed = 0;
     globalThis.fetch = (async (u: any, o?: any) => {
-      if (String(u).includes(`/library/${wallLib}`)) { delayed++; await sleep(2500); }
+      if (isWallFetch(String(u))) { delayed++; await sleep(2500); }
       return realFetch(u, o);
     }) as typeof fetch;
     try {

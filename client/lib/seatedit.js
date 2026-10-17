@@ -16,7 +16,7 @@ import * as OP from '../../shared/protocol/requests.js';
 import { sendOps } from './editwrites.js';
 import { THREE, camera } from './core.js';
 import { bus } from './base.js';
-import { libLabels } from './assets.js';
+import { modelName } from './assets.js';
 import { entities, metaOf, bags, bagOf, parentIdOf, findPart } from './world.js';
 import { state } from './state.js';
 import { socketMapIn } from '../../shared/sockbody.js';
@@ -110,7 +110,7 @@ export function selectSeat(pick) {
   refreshSeatHighlight();
   engage('seatTurn');
   const meta = metaOf(pick.id) ?? {};
-  const label = libLabels.get(meta.model) ?? meta.model?.split('/').pop()?.replace(/\.glb$/, '') ?? pick.id;
+  const label = meta.model != null ? modelName(meta.model) : pick.id;
   setInspectorHtml(
     html`<span><b>${pick.slot}</b> anchor on <b>${label.slice(0, 24)}</b></span><span style="color:var(--dim)">drag move · <kbd>Q</kbd><kbd>E</kbd> face · <kbd>Del</kbd> remove · <kbd>Esc</kbd> done</span>`);   // one html``: markup + markup would concatenate to a plain (text) string
 }

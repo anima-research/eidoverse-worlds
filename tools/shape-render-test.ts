@@ -70,6 +70,76 @@ await tryRow('MD', async () => {
   check('MD4 model\'s help says a name or path is resolved to its content address at write', /content address/.test(COMPONENTS.model.help) && /at write|resolved/.test(COMPONENTS.model.help), COMPONENTS.model.help);
 });
 
+// ===================================================================== the readers of an addressed model (gate 21, 10-16): every
+// reader that read a word, an id, a URL, a type or a cache key off `model` as if it were a path
+await tryRow('AD', async () => {
+  const E = await import('../shared/eido.js');
+  const H = 'c'.repeat(64), ADDR = `eido:sha256/${H}`, ADDR2 = `eido:sha256/${'d'.repeat(64)}`, ADDR3 = `eido:sha256/${'e'.repeat(64)}`;
+  const hx = E.hexOfLibRel;
+  check('AD1 /library/<model> fetches an address as stored (eido:sha256/<hex>, the colon raw or %3A) as well as libRelOf\'s spelling',
+    hx(`eido:sha256/${H}`) === H && hx(`eido%3Asha256/${H}`) === H && hx(E.libRelOf(ADDR)) === H && hx(`eido:sha256/${H}.glb`) === null && hx('props/crate.glb') === null, [hx(`eido:sha256/${H}`), hx(`eido%3Asha256/${H}`)]);
+  check('AD1 …and the route names the file it served (x-library-path), so a reader learns an address\'s word from the bytes it fetched',
+    /hexOfLibRel\(rel0\)/.test(read('server/routes.ts')) && /x-library-path/.test(read('server/routes.ts')) && /x-library-path/.test(read('client/lib/assets.js')) && /x-library-path/.test(read('mcpl/agent.ts')), '');
+  check('AD2 one word for a model (shared/eido.js modelWord): an address nobody can name is "thing", never its hex',
+    typeof E.modelWord === 'function' && E.modelWord(ADDR) === 'thing' && E.modelWord(ADDR, () => H) === 'thing' && E.modelWord(ADDR, () => ADDR) === 'thing', E.modelWord?.(ADDR));
+  E.learnModelPath?.(ADDR2, 'eidoverse/assets/models/crate_wood.glb');
+  check('AD2 …an address this host learned the path of reads as that file\'s name; a name given wins; a path reads as its file name',
+    E.modelWord?.(ADDR2) === 'crate_wood' && E.modelWord?.(ADDR2, () => 'Wooden crate') === 'Wooden crate' && E.modelWord?.('props/ball.glb') === 'ball' && E.modelWord?.(ADDR3, null) === 'thing', [E.modelWord?.(ADDR2)]);
+  const { kindHint } = await import('../shared/hierarchy.js');
+  const { libLabel } = await import('../shared/editschema.js');
+  check('AD3 the shared readers say a word for an addressed model: the Hierarchy\'s kind hint and the inspector\'s lib label',
+    kindHint({ model: ADDR, c: { model: ADDR } }) === 'thing' && libLabel(ADDR) === 'thing' && kindHint({ model: ADDR2, c: { model: ADDR2 } }) === 'crate wood' && libLabel(ADDR2) === 'crate wood', [kindHint({ model: ADDR, c: { model: ADDR } }), libLabel(ADDR), libLabel(ADDR2)]);
+  E.learnModelPath?.(ADDR3, 'avatars/statue.vrm');
+  const { defaultLayer } = await import('../shared/layers.js');
+  check('AD3 …and the layer guess still knows a VRM by the file an address names', defaultLayer({ model: ADDR3, c: { model: ADDR3 } }) === 'people', defaultLayer({ model: ADDR3, c: { model: ADDR3 } }));
+  const W = scratchWorld('w2r-addr').seed({ box: { model: ADDR, pos: [0, 0, 0] }, cr: { model: ADDR2, pos: [3, 0, 0] } });
+  const ids0 = new Set(Object.keys(W.state().entities));
+  let r = W.call('create', { from: 'box' });
+  const dup = Object.keys(W.state().entities).find((k) => !ids0.has(k));
+  check('AD4 a copy of an addressed thing gets an id from a word, not the hash (create {from})', r.ok && /^thing-[a-z2-7]{26}$/.test(dup ?? ''), [r.refused, dup]);
+  const ids1 = new Set(Object.keys(W.state().entities));
+  r = W.call('create', { from: 'cr' });
+  const dup2 = Object.keys(W.state().entities).find((k) => !ids1.has(k));
+  check('AD4 …a copy of one whose file this host knows takes that file\'s name', r.ok && /^crate-wood-[a-z2-7]{26}$/.test(dup2 ?? ''), [r.refused, dup2]);
+  const ids2 = new Set(Object.keys(W.state().entities));
+  r = W.call('create', { model: ADDR, components: { transform: { pos: [6, 0, 0] } } });
+  const mk = Object.keys(W.state().entities).find((k) => !ids2.has(k));
+  check('AD4 …and so does a create that names an address and no id', r.ok && /^thing-[a-z2-7]{26}$/.test(mk ?? ''), [r.refused, mk]);
+  check('AD5 a script\'s world.create mints from a word too (no lookups: a re-run mints the same id)', /isEido\(comps\.model\)/.test(read('shared/protocol/sandbox.js')), '');
+  const { ENGINE_CATALOGUE } = await import('../server/modelcatalogue.ts');
+  const cold = ENGINE_CATALOGUE.get(`eido:sha256/${'f'.repeat(64)}`);
+  check('AD6 the engine\'s catalogue never labels an address by its hex (a cold entry: "thing")', cold && !/[0-9a-f]{16}/.test(cold.label), cold);
+  // the client and agent readers can't run headless here: each is held to the shared word (and not to the value's file name)
+  const OLD = /model\??\.split\(['"]\/['"]\)|\(meta\?\.model \?\? meta\?\.kind[^)]*\)\.split|libLabels\.get\(one\.model\) \?\? libLabel|String\(lib \?\? ''\)\.split\('\/'\)|String\(ghost\.lib \?\? ''\)\.split|String\(e?\.?model\)\.split\(["']\/["']\)|String\(rec\.model\)\.split|String\(meta\.model\)\.split|String\(a\.model\)\.split|libLabels\.get\(libPath\) \?\? libPath\.split/;
+  const FILES = ['client/lib/build.js', 'client/lib/seatedit.js', 'client/lib/editpanels.js', 'client/lib/scenegraph.js', 'client/lib/plainwords.js', 'client/lib/perfscope.js', 'client/lib/assets.js', 'client/lib/worldquad.js', 'mcpl/agent.ts', 'mcpl/tools.ts', 'shared/hierarchy.js', 'shared/editschema.js', 'shared/protocol/authority.js'];
+  const stale = FILES.filter((f) => OLD.test(read(f)) || !/modelWord|modelName/.test(read(f)));
+  check('AD7 every client and agent reader that names a thing by its model goes through the shared word', stale.length === 0, stale);
+  // the sim (shiplist FL1, 10-16): an addressed dynamic thing is stamped, punted, and flies in the authority and in a client's fold
+  {
+    const { request, LAB_CATALOGUE } = await import('../shared/protocol/authority.js');
+    const { readLog } = await import('../shared/protocol/fold.js');
+    const { openLive } = await import('../server/livehost.ts');
+    const { makeReplica, clientCutOf } = await import('../shared/protocol/replica.js');
+    const { scratch } = await import('./protocol/common.ts');
+    const CA = `eido:sha256/${'5'.repeat(64)}`;
+    const cat = { get: (n: string) => LAB_CATALOGUE.get(n === CA ? 'crate' : n), list: (q: string) => LAB_CATALOGUE.list(q), address: (n: string) => (n === 'crate' ? CA : null) };
+    const dir = `${scratch('w2r-addr-fly')}w/`; fs.mkdirSync(dir, { recursive: true }); let now = 1800000000000;
+    const lw = openLive(dir, 'w', { now: () => ++now, catalogue: cat, custodyFile: `${dir}../custody.json`, nameOf: () => null, kindOf: () => 'human' });
+    const lc = (a: string, v: string, x: any = {}, st = 100) => { now += st; return request(lw, a, v, x); };
+    const LL = () => readLog(fs.readFileSync(dir + 'world.jsonl'));
+    lc('rowan', 'create-world', { title: 'fly' });
+    lc('rowan', 'set', { id: '@world', component: 'physics-engine', value: { engine: 'eidosim@1.0.0' } });
+    lc('rowan', 'create', { id: 'cuball', model: 'crate', components: { physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [0, 0, 0], scale: 0.3 } } });
+    lc('rowan', 'move', { to: [0, 0, -0.5] });
+    const rep = makeReplica(); rep.adopt(JSON.parse(JSON.stringify({ ...clientCutOf(lw), you: 'vic' })));
+    const from = LL().length; const pr = lc('rowan', 'punt', { id: 'cuball', power: 6 }); rep.ingest(LL().slice(from), from);
+    const flown: string[] = []; for (let t = 0; t < 40; t++) { const b = rep.simAt?.(now + t * 33)?.bodies?.cuball; if (b) flown.push(b.p.join()); }
+    const c0 = lw.state().entities.cuball.c;
+    check('AD8 an addressed dynamic thing is stamped with its measured shape, punted, and flies in a client\'s fold (guard: the shared sim keys by the stored model)',
+      c0.model === CA && Array.isArray(c0.physics?.shape) && pr.ok && new Set(flown).size > 10, [c0.model, c0.physics, pr.refused, new Set(flown).size]);
+  }
+});
+
 // ===================================================================== particles: Essentials as content addresses, legacy list dropped, on thing
 await tryRow('PT', async () => {
   const P = COMPONENTS.particles;

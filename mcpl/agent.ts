@@ -83,6 +83,7 @@ import { worldPose } from "../shared/protocol/simlayer.js";
 import { colliderFor } from "../client/lib/bodyscale.js";
 
 import { recordComponents } from "../shared/protocol/view.js";
+import { modelWord, learnModelPath } from "../shared/eido.js";
 (globalThis as any).THREE = Object.assign({}, THREE_W, TSL);
 
 /** The body's clock: one stride of shared/mover.js (the one walker: the client's and the authority's too) per tick. */
@@ -2006,6 +2007,7 @@ export class WorldAgent {
     p = meshSlot(async () => {
       const r = await fetch(`${this.httpBase}/library/${lib}`, { signal: AbortSignal.timeout(MESH_FETCH_MS) });
       if (!r.ok) return fallback(`HTTP ${r.status}`);
+      learnModelPath(lib, r.headers.get("x-library-path") ?? "");   // an address names its file here: the word for it (routes.ts)
       const len = Number(r.headers.get("content-length"));
       if (len > MESH_MAX_BYTES) { void r.body?.cancel(); return fallback(`${(len / 1e6).toFixed(0)}MB is over the ${MESH_MAX_BYTES / 1e6 | 0}MB exact-collision limit`); }
       const b = await r.arrayBuffer();
@@ -4606,7 +4608,7 @@ export class WorldAgent {
     for (const e of ordered) {
       const f = fx.get(e.id)!;
       // an Empty (PROTOCOL §3.2) has no lib and is not a light: say so, not ""
-      const short = (e.model || "(empty)").split("/").pop()!.replace(".glb", "").split("_").slice(0, 5).join(" ")
+      const short = (e.model ? modelWord(e.model) : "(empty)").split("_").slice(0, 5).join(" ")   // an address: its word, never its hex (shared/eido.js)
         + (typeof e?.label === "string" && e.label ? ` "${e.label}"` : "");   // a display name someone gave it (comp label)
       // Affordances read out loud: a thing that can be sat on, used, or is
       // moving SAYS SO in text-tier perception — this is how the capability

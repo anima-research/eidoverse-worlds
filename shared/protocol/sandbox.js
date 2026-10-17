@@ -26,6 +26,7 @@
 import { jcs, isEntityId, isComponent } from "./fold.js";
 import { LIMITS, isParamName } from "./scriptrules.js";
 import { materialize } from "./componentspec.js";
+import { isEido, modelWord } from "../eido.js";
 
 let Q = null, unavailable = null;
 try { const mod = await import("quickjs-emscripten"); Q = await mod.getQuickJS(); }
@@ -168,7 +169,7 @@ export function makeHost(x) {
       case "delete": { write(); const id = wantId(self(a[0]), "world.delete"); const op = a[1] === null ? { verb: "delete", id } : { verb: "delete", id, comp: wantComp(a[1], "world.delete") }; ops.push(op); apply(op); return null; }
       case "create": { const comps = a[0]; if (!comps || typeof comps !== "object" || Array.isArray(comps)) throw new HostError("world.create(components, id?): components is an object");
         // a minted id carries 128 bits of the activation's seed (review 10-07 H5: 32 bits collided across forks), so a re-run mints it again
-        const id = a[1] !== null ? wantId(a[1], "world.create") : `${slug(comps.model ?? comps.label ?? "thing")}-${x.seed.slice(0, 32)}${minted ? `-${minted}` : ""}`; minted++;
+        const id = a[1] !== null ? wantId(a[1], "world.create") : `${slug(isEido(comps.model) ? comps.label ?? modelWord(comps.model, null) : comps.model ?? comps.label ?? "thing")}-${x.seed.slice(0, 32)}${minted ? `-${minted}` : ""}`; minted++;
         for (const c of Object.keys(comps)) wantComp(c, "world.create");
         write(); const mk = { verb: "create", id }; ops.push(mk); apply(mk);
         for (const [c, v] of Object.entries(comps)) { write(); const op = { verb: "set", id, comp: c, value: materialize(c, v).value }; ops.push(op); apply(op); }

@@ -4,8 +4,9 @@
 import { bagOf, entities } from './world.js';
 import { state } from './state.js';
 import { plainRefusal, warningText } from '../../shared/protocol/refusal.js';
+import { modelWord } from '../../shared/eido.js';
 
-const stem = (lib) => String(lib).split('/').pop().replace(/\.glb$/i, '').replace(/[_-]+/g, ' ').replace(/\s+\d+$/, '').trim();
+const stem = (lib) => modelWord(lib).replace(/[_-]+/g, ' ').replace(/\s+\d+$/, '').trim();
 /** How a person knows thing `id`: “its label”, else "the <model>", else "that thing"; null when `id` isn't a thing here. */
 export function nameOf(id) {
   const rec = state.st?.entities?.[id];
