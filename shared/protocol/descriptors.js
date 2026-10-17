@@ -5,7 +5,7 @@
 // records (shared/components.js RECORDS) and the agent's `edit` tool use where they differ from the wire's:
 //   an axis is a letter to the editor (x, -y) and a unit vector on the wire ([1, 0, 0]);
 //   a spin's or an orbit's rate is one number to the editor (°/s) and degPerSec | period | rpm on the wire;
-//   a light's `burns at noon` is the wire's daytime: 'full'; a uniform scale is one number to the editor, [s, s, s] on the wire;
+//   a light's `burns at noon` (address light.daytime, a check: on = the wire's daytime: 'full', off = 'dim'; R 10-17: was light.noon); a uniform scale is one number to the editor, [s, s, s] on the wire;
 //   a Grabbable, a Sockets, a Reactions card is its whole value ({spec: {}}): the wire bag is the editor's own.
 // A descriptor is {key, card, type?, fields: [{k, param, t, path, wire?: {to, from}, ui?}], extra}: key is the registry name
 // the value lives under (comp.<key>), card the record name (RECORDS[card]), type the motion type when the key is shared,
@@ -101,7 +101,7 @@ const CARDS = {
   Light: { key: 'light', show: ['color', 'intensity', 'range', 'decay', 'important', 'daytime'], writeDp: null,
     editor: { color: { ui: { t: 'color' } }, intensity: { ui: { t: 'num', step: 1, dp: 0, softMax: 64 } }, range: { ui: { t: 'num', step: 1, dp: 0, softMin: 1, softMax: 40 } },
       decay: { ui: { t: 'num', step: 0.1, dp: 2 } },
-      important: { ui: { t: 'check', sparse: true } }, daytime: { k: 'noon', param: 'burnsAtNoon', wire: NOON, ui: { t: 'check', sparse: true } } } },
+      important: { ui: { t: 'check', sparse: true } }, daytime: { k: 'daytime', param: 'burnsAtNoon', wire: NOON, ui: { t: 'check', sparse: true } } } },
   // a motion's part is its KEY (motion:<part>), never a field of the value (shape audit 10-16): the card's own row
   ...Object.fromEntries(Object.entries(MOTION).map(([card, m]) => [card, { key: 'motion', type: m.type, show: m.show, extra: ['part'], writeDp: 4, editor: { ...MOTION_EDITOR, ...m.editor } }])),
   Sockets: { key: 'sockets', whole: 'slots', hand: true },

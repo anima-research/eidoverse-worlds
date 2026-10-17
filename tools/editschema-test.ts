@@ -114,7 +114,7 @@ console.log("\nedits → the fewest door ops:");
   check("del keeps the rest", val(rd, "sockets").seat === undefined && val(rd, "sockets").side);
   const rd2 = editOps({ ...chair, sockets: { seat: { pos: [0, 0.5, 0] } } }, "c1", { "sockets.del": "seat" });
   check("deleting the last slot removes the comp (delete sockets)", dels(rd2, "sockets").length === 1 && sets(rd2, "sockets").length === 0, JSON.stringify(rd2));
-  const rL = editOps(lamp, "lamp", { "light.intensity": "-=10%", "light.noon": true, "light.color": "#00ff00" });
+  const rL = editOps(lamp, "lamp", { "light.intensity": "-=10%", "light.daytime": true, "light.color": "#00ff00" });
   const lv = sets(rL, "light");
   check("light edits = ONE set light: intensity 18, daytime full (was day:false), color parsed, range and important kept", lv.length === 1 && flat(rL.ops).length === 1 && lv[0].args.value.intensity === 18 && lv[0].args.value.daytime === "full" && lv[0].args.value.color === 0x00ff00 && lv[0].args.value.range === 6 && lv[0].args.value.important === true, JSON.stringify(lv));
   const rM = editOps(swing, "s", { "motion.amp": "+=10", "motion.plank|degPerSec": 90 });

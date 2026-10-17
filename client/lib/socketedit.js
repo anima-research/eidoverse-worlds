@@ -310,7 +310,7 @@ addEventListener('mouseup', () => {
 
 // ---- the inspector's sockets GESTURES + preview --------------------------------
 // The fields are declared in shared/editschema.js. What only this module can
-// add: '+ seat here' arms the click-to-place, a row click selects the gizmo,
+// add: '+ socket here' arms the click-to-place, a row click selects the gizmo,
 // a live drag on a slot's channels moves the gizmo before the merged comp
 // commits (the shared path merges and pushes the undo).
 // Components ▸ + seat…: the first seat in ONE step (before, a sockets comp had to exist first)

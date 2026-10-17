@@ -183,9 +183,10 @@ export function worldSchema(st, live = {}) {
   const real = realClock(sky);
   const s = isBag(sky) ? sky : {};
   const skyFields = [
-    { t: 'enum', k: 'clock', label: 'clock', value: real ? 'real' : 'authored', def: 'authored', options: [{ v: 'authored', label: 'authored' }, { v: 'real', label: 'real time' }], ...ro,
-      hint: ro.hint ?? 'authored: the hour and rate below; real time: the hour IS a timezone\'s wall hour' },
-    ...(real ? [{ t: 'text', k: 'tz', label: 'timezone', value: s.tz ?? DEFAULT_TZ, ...ro }] : []),
+    // the sky's own field (R 10-17: the editor's old `clock` enum is gone, as the wire's is): a timezone means the hour IS
+    // its wall hour; empty is the authored clock (the hour and rate below)
+    { t: 'text', k: 'tz', label: 'timezone', value: real ? (s.tz ?? DEFAULT_TZ) : '', ...ro,
+      hint: ro.hint ?? `a timezone (e.g. ${DEFAULT_TZ}): the hour IS its wall hour; empty: the hour and rate below` },
   ];
   for (const [k, label, min, softMax, step, def, unit] of SKY_NUMS) {
     const clocked = real && (k === 'hours' || k === 'rate');
@@ -294,16 +295,16 @@ export function worldEditOps(st, edits, live = {}) {
       case 'sky':
         if (k === 'remove') { noSky = true; break; }
         skyPatch ??= {};
-        if (k === 'clock') {
-          if (v === 'real') Object.assign(skyPatch, { clock: 'real', tz: sky?.tz ?? DEFAULT_TZ });
+        if (k === 'tz') {
+          if (v) skyPatch.tz = v;
           else {
-            // back to the authored clock: the fold parked the rated clock under
+            // back to the authored clock (an empty timezone): an older fold parked the rated clock under
             // dormantRated (#65); hand it back, as the sky panel does
-            Object.assign(skyPatch, { clock: undefined, tz: undefined });
+            Object.assign(skyPatch, { tz: undefined });
             const d = sky?.dormantRated;
             if (isBag(d)) { if (d.rate != null) skyPatch.rate = d.rate; if (d.hours != null) skyPatch.hours = round(d.rate ? hoursAt({ hours: d.hours, rate: d.rate, ts: d.ts }, now) : d.hours, 4); }
           }
-        } else if (k === 'tz') { if (!v) { errors.push('timezone: empty'); continue; } skyPatch.tz = v; }
+        }
         else if (k === 'azimuth') skyPatch.azimuth = round(v / DEG, 6);   // shown in degrees, stored in radians
         else skyPatch[k] = v;
         break;

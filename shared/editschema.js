@@ -188,7 +188,7 @@ const HAND = {
           // the station's reserved keys (fromSeat, enter/leave, input, look, reach…: shape audit 10-16) have no rows: the door refuses them
         }
       }
-      fields.push({ t: 'btn', k: 'add', label: '+ seat here', hint: 'click the spot on the thing where a sitter goes', client: true });
+      fields.push({ t: 'btn', k: 'add', label: '+ socket here', hint: 'click the spot on the thing where a body (or a thing) attaches', client: true });
       return { group: 'sockets', label: 'sockets', types: ['sockets'], fields };
     },
     write({ id, k, raw, f, c, comps, errors, num, bool }) {
@@ -196,7 +196,7 @@ const HAND = {
       if (k === 'del' && !next[raw]) { errors.push(`sockets.del: no slot ${JSON.stringify(raw)} on ${id}`); return; }
       if (k === 'del') { delete next[raw]; comps.set('sockets', Object.keys(next).length ? next : null); return; }
       const [slot, what, idx, sub] = k.split('|');
-      const cur = next[slot] ?? (next[slot] = { pos: [0, 0.5, 0], body: {} });   // a new slot is a seat, as '+ seat' makes
+      const cur = next[slot] ?? (next[slot] = { pos: [0, 0.5, 0], body: {} });   // a new slot takes a body, as '+ socket' makes
       if (what === 'body') { if (bool(raw)) cur.body = cur.body ?? {}; else delete cur.body; comps.set('sockets', next); return; }
       if (what === 'action') { const v = String(raw).trim().toLowerCase(); if (!/^[a-z][a-z0-9-]{0,31}$/.test(v)) { errors.push(`sockets.${slot}|action: a verb in lower case (sit, ride)`); return; }
         cur.body = { ...(cur.body ?? {}), action: v }; if (v === 'sit') delete cur.body.action; comps.set('sockets', next); return; }
@@ -489,7 +489,7 @@ export function inspectSchema(ent, id, live = {}) {
       L('intensity', { label: 'brightness', softMax: Math.max(64, src.intensity ?? 16) }),
       L('range', { label: 'range', softMax: Math.max(40, src.range ?? 10) }),
       L('important', { label: 'important', hint: 'always casts: first claim on a light slot, never governor-shed' }),
-      L('noon', { label: 'burns at noon', hint: 'opts out of the day cycle' }),
+      L('daytime', { label: 'burns at noon', hint: 'on: daytime full (opts out of the day cycle); off: daytime dim' }),
     ];
     if (live.casting === false) fields.push({ t: 'info', label: '', value: 'glow-only right now (slot pool spent) — it may still cast for others' });
     groups.push({ group: 'light', label: 'light', types: ['light'], fields });
@@ -777,7 +777,7 @@ export function inspectSchema(ent, id, live = {}) {
   // a picture needs an image and a part, a sound a file. Both are uploads.
   if (!c.picture) fields.push({ t: 'btn', k: 'add:picture', label: '+ picture…', client: true, hint: 'upload an image and hang it on this thing (make sure you own the rights to it)' });
   if (!c.sound) fields.push({ t: 'btn', k: 'add:sound', label: '+ sound…', client: true, hint: 'upload audio and put it on this thing (make sure you own the rights to it)' });
-  if (!c.sockets && live.parts) fields.push({ t: 'btn', k: 'add:seat', label: '+ seat…', client: true, hint: 'click the spot on the thing where a sitter goes' });
+  if (!c.sockets && live.parts) fields.push({ t: 'btn', k: 'add:seat', label: '+ socket…', client: true, hint: 'click the spot on the thing where a body (or a thing) attaches' });
   fields.push({ t: 'text', k: '+', label: '+ component', value: '', placeholder: 'type (local/recipe, example.org/notice…) ⏎', hint: 'attach a component — any type folds, evaluators give known ones behavior' });
   groups.push({ group: 'comp', label: `Components (${rest.length})`, fields });
 
