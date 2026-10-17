@@ -28,21 +28,21 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 
 // [name, file under the tree, find, replace, rows]
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["follow-ups not recorded in the entry", "shared/protocol/authority.js", "body: { ops, ...(fu.length ? { followUps: [...fu] } : {}) }", "body: { ops }", ["H1", "H2", "H3", "H4"]],
-  ["lastTouch {authored} reads follow-ups as authors", "shared/protocol/authority.js", "if (fu?.has(k)) { if (o.verb === \"set\") { restored = true; continue; } if (o.verb === \"delete\" && restored) { restored = false; continue; } return null; }", "", ["H1", "H2", "H3"]],
-  ["undo marks any ref restore as a follow-up", "shared/protocol/authority.js", "if (!goneHere.size || !fuHere.has(o) ||", "if (!goneHere.size ||", ["H5"]],
+  ["follow-ups not recorded in the entry", "shared/protocol/authority/writes.js", "body: { ops, ...(fu.length ? { followUps: [...fu] } : {}) }", "body: { ops }", ["H1", "H2", "H3", "H4"]],
+  ["lastTouch {authored} reads follow-ups as authors", "shared/protocol/authority/followups.js", "if (fu?.has(k)) { if (o.verb === \"set\") { restored = true; continue; } if (o.verb === \"delete\" && restored) { restored = false; continue; } return null; }", "", ["H1", "H2", "H3"]],
+  ["undo marks any ref restore as a follow-up", "shared/protocol/authority/undo.js", "if (!goneHere.size || !fuHere.has(o) ||", "if (!goneHere.size ||", ["H5"]],
   ["the fold takes any followUps", "shared/protocol/fold.js", "if (\"followUps\" in body) followUpsCheck(body.followUps, body.ops.length);", "", ["H6"]],
-  ["the ride ignores when the rider sat", "shared/protocol/authority.js", "if (own && rootOf(s.to) === own && rideBefore(s.since)) continue;", "if (own && rootOf(s.to) === own) continue;", ["M1", "M2"]],
+  ["the ride ignores when the rider sat", "shared/protocol/authority/riders.js", "if (own && rootOf(s.to) === own && rideBefore(s.since)) continue;", "if (own && rootOf(s.to) === own) continue;", ["M1", "M2"]],
   ["no escape from a script seat", "shared/sockbody.js", "if (kind === 'script' || kind === 'escape') return true;", "if (kind === 'script') return true;", ["E1", "E2"]],
   ["the auditor skips every arrival mismatch", "shared/protocol/scriptaudit.js", "if (!agree) { skipped.push(", "if (true) { skipped.push(", ["A1"]],
   ["the agent ignores unseated", "mcpl/agent.ts", "if (unseatedFromMine(m, this.mySeat)) {", "if (false) {", ["U1"]],
   ["unseated from any seat", "shared/sockbody.js", "u.seat === mount.to);", "true);", ["U2"]],
-  ["no re-anchor on a step off a seat", "shared/protocol/authority.js", "if (sat && unseatAt(w, st, actor, sat.to)) me = w.presence.bodies[actor];", "", ["T1"]],
-  ["no re-anchor on an unseat", "shared/protocol/authority.js", "w.presence.bodies[who] = { ...b, at, ts: w.pace ? w.pace() : w.now(), tokens: TRACK.cap }; w.presenceDirty = true;", "", ["T1", "T2"]],
+  ["no re-anchor on a step off a seat", "shared/protocol/authority/bodyverbs.js", "if (sat && unseatAt(w, st, actor, sat.to)) me = w.presence.bodies[actor];", "", ["T1"]],
+  ["no re-anchor on an unseat", "shared/protocol/authority/riders.js", "w.presence.bodies[who] = { ...b, at, ts: w.pace ? w.pace() : w.now(), tokens: TRACK.cap }; w.presenceDirty = true;", "", ["T1", "T2"]],
   ["a verb read through the prototype", "shared/protocol/authority.js", "const h = Object.hasOwn(VERBS, verb) ? VERBS[verb] : undefined;", "const h = VERBS[verb];", ["L1"]],
   ["every create-world counts as the founding", "shared/protocol/shaperepair.js", "if (e.verb === \"create-world\" && !founded) {", "if (e.verb === \"create-world\") {", ["L2"]],
-  ["an unlogged grab records who", "shared/protocol/authority.js", "const anon = ANON_EVENTS.has(ev.on) || (HAND_EVENTS.has(ev.on) && ev.seq === undefined);", "const anon = ANON_EVENTS.has(ev.on);", ["L3"]],
-  ["CONTROL (no-op: must stay green)", "shared/protocol/authority.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
+  ["an unlogged grab records who", "shared/protocol/authority/scriptrun.js", "const anon = ANON_EVENTS.has(ev.on) || (HAND_EVENTS.has(ev.on) && ev.seq === undefined);", "const anon = ANON_EVENTS.has(ev.on);", ["L3"]],
+  ["CONTROL (no-op: must stay green)", "shared/protocol/authority/gate.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
   const args = ["bun", path.join(ENGINE, "tools/protocol/r9-check.ts"), "--tree", tree, ...(only ? ["--only", only.join(",")] : [])];

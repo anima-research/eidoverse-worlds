@@ -17,3 +17,8 @@ export const CTX = {
   cat: null, through: false, isAnon: () => false, knownId: (_id) => true, nameOf: null, mintW: null,
   work: { left: Infinity, until: Infinity, k: 0 }, forking: false,
 };
+// UP: the functions a leaf calls in a layer ABOVE it (the gate, or a leaf split out of authority.js after it). A leaf may not
+// import those (authority-layers-check: the import graph can't cycle), so each such leaf names them through a one-line
+// forwarder over UP, and authority.js binds UP once, at load, after every module has evaluated (refactor split, 2026-10-17).
+// Not per-call state: enter() saves and restores CTX, never UP.
+export const UP = {};

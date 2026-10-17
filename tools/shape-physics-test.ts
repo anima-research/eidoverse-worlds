@@ -20,6 +20,8 @@ const near = (a: number[], b: number[], e = 1e-9) => Array.isArray(a) && Array.i
 const tryRow = async (name: string, f: () => any) => { try { await f(); } catch (e) { check(`${name} (threw)`, false, String(e?.stack ?? e).slice(0, 300)); } };
 const ENGINE = new URL('..', import.meta.url).pathname;
 const read = (p: string) => fs.readFileSync(ENGINE + p, 'utf8');
+// the authority is authority.js and its leaves under authority/ (refactor split, 2026-10-17): a source check reads them all
+const readAuthority = () => ['shared/protocol/authority.js', ...fs.readdirSync(ENGINE + 'shared/protocol/authority').filter((f) => f.endsWith('.js')).sort().map((f) => 'shared/protocol/authority/' + f)].map(read).join('\n');
 
 // ===================================================================== transform: glTF TRS, pinned; the composition rule written down
 await tryRow('TF', () => {
@@ -101,7 +103,7 @@ await tryRow('MO', async () => {
   const st = { entities: { '@world': { c: {} }, s: { c: { motion: { type: 'pendulum', amp: 0.3, period: 2, damp: 0 } } }, t: { c: { motion: { type: 'spin', axis: 'y' } } } } };
   const ops = shapeRepairOps(st);
   check('MO9 the load\'s ops: a pivot for the pendulum that relied on [0, 2, 0], a vector axis for the spin', ops.some((o: any) => o.id === 's' && o.comp === 'pivot' && JSON.stringify(o.value) === '{"pos":[0,2,0]}') && ops.some((o: any) => o.id === 't' && o.comp === 'motion' && JSON.stringify(o.value.axis) === '[0,1,0]') && ops.length === 2, ops);
-  const Ld = read('shared/protocol/authority.js');
+  const Ld = readAuthority();
   check('MO9 …and the server\'s first load applies them (liftWorld: repair-shapes)', /shapeRepairOps\(/.test(Ld.slice(Ld.indexOf('export function liftWorld'), Ld.indexOf('export function liftWorld') + 4000)) && /"repair-shapes"/.test(Ld), '');
 
   const old = [{ seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 2, dialect: 'eidoverse-log', roles: { ann: { role: 'owner' } } } },
@@ -150,7 +152,7 @@ await tryRow('PE', () => {
   const E = COMPONENTS['physics-engine'];
   check('PE1 physics-engine: tickMs default 33 in the registry, its range the engine\'s (TICK_MS), ms; build a string', E.defaults?.tickMs === 33 && E.ranges?.tickMs?.min === TICK_MS.min && E.ranges?.tickMs?.max === TICK_MS.max && E.units?.tickMs === 'ms' && E.fields.build === 'string', E);
   check('PE1 …gravity is documented as the engine\'s own', /−9\.81|-9\.81/.test(E.help) && /gravity/.test(JSON.stringify(E.absentMeans ?? {})), E.help);
-  const A = read('shared/protocol/authority.js');
+  const A = readAuthority();
   check('PE2 the authority reads the default from the registry, not a literal 33', /COMPONENTS\["physics-engine"\]\.defaults\.tickMs/.test(A) && !/tickMs\) \? v\.tickMs : 33/.test(A), '');
 });
 await tryRow('CO', () => {

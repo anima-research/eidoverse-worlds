@@ -33,19 +33,19 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["an invented verb's name is logged", "protocol/authority.js", "const asVerb = Object.hasOwn(VERBS, verb) || Object.hasOwn(RESERVED_VERBS, verb) ? verb : \"unknown-verb\";", "const asVerb = verb;", ["L4"]],
   ["presence verbs' refusals are logged", "protocol/authority.js", "    if (PRESENCE_VERBS.has(verb)) return;", "", ["L5"]],
   ["the refusal ring", "protocol/authority.js", "  ring.push(rec); if (ring.length > REFUSAL_RING) ring.splice(0, ring.length - REFUSAL_RING);", "", ["L3"]],
-  ["look shows everyone's table", "protocol/authority.js", "...(id === actor ? { shield: shieldOf(P, id) } : {}),", "shield: shieldOf(P, id),", ["K1"]],
-  ["look shows who touches whom", "protocol/authority.js", ".filter(([k, r]) => r.to === id && (id === actor || k === actor)).map(([k]) => k) }));", ".filter(([k, r]) => r.to === id).map(([k]) => k) }));", ["K2"]],
-  ["edits unseat no one", "protocol/authority.js", "const unseat = CTX.forking || who.lifting ? [] : unseatsFor(w, st, who, norm);", "const unseat = [];", ["O1", "O2", "O7", "O8"]],
-  ["only the first rider is let go", "protocol/authority.js", "for (const r of riders) { if (out.has(r)) continue;", "for (const r of riders) { if (out.size) break;", ["O7"]],
-  ["the seat's own ride unseats", "protocol/authority.js", "      if (own && rootOf(s.to) === own && rideBefore(s.since)) continue;", "", ["O3"]],
-  ["moving your own seat unseats you", "protocol/authority.js", "const riders = Object.keys(w.presence.seats ?? {}).filter((k) => k !== who.actor);", "const riders = Object.keys(w.presence.seats ?? {});", ["O4"]],
-  ["restamp reads a purged cause act", "protocol/authority.js", "if (b === null) return true;   // a purged cause: unknown chooser, so never restamped", "if (b === null) return false;", ["Q1"]],
+  ["look shows everyone's table", "protocol/authority/blueprints.js", "...(id === actor ? { shield: shieldOf(P, id) } : {}),", "shield: shieldOf(P, id),", ["K1"]],
+  ["look shows who touches whom", "protocol/authority/blueprints.js", ".filter(([k, r]) => r.to === id && (id === actor || k === actor)).map(([k]) => k) }));", ".filter(([k, r]) => r.to === id).map(([k]) => k) }));", ["K2"]],
+  ["edits unseat no one", "protocol/authority/gate.js", "const unseat = CTX.forking || who.lifting ? [] : unseatsFor(w, st, who, norm);", "const unseat = [];", ["O1", "O2", "O7", "O8"]],
+  ["only the first rider is let go", "protocol/authority/riders.js", "for (const r of riders) { if (out.has(r)) continue;", "for (const r of riders) { if (out.size) break;", ["O7"]],
+  ["the seat's own ride unseats", "protocol/authority/riders.js", "      if (own && rootOf(s.to) === own && rideBefore(s.since)) continue;", "", ["O3"]],
+  ["moving your own seat unseats you", "protocol/authority/riders.js", "const riders = Object.keys(w.presence.seats ?? {}).filter((k) => k !== who.actor);", "const riders = Object.keys(w.presence.seats ?? {});", ["O4"]],
+  ["restamp reads a purged cause act", "protocol/authority/physics.js", "if (b === null) return true;   // a purged cause: unknown chooser, so never restamped", "if (b === null) return false;", ["Q1"]],
   ["entryBy reads a purged cause act", "protocol/authority/rights.js", "if (b === null) return { seq: e.seq, by, rights: null };", "if (b === null) return { seq: e.seq, by, rights: by };", ["Q2"]],
   ["readback ignores the purge index", "protocol/authority/storage.js", "if (purgedSeqs(w).has(seq)) return null;", "", ["Q3"]],
-  ["an unregistered refusal code", "protocol/authority.js", "refuse(\"stale\", `${a.id}.${key}", "refuse(\"stale-x\", `${a.id}.${key}", ["G1"]],
+  ["an unregistered refusal code", "protocol/authority/scriptrun.js", "refuse(\"stale\", `${a.id}.${key}", "refuse(\"stale-x\", `${a.id}.${key}", ["G1"]],
   ["a verb without a row", "protocol/verbspec.js", "  inbox: {", "  inbox_gone: {", ["V1"]],
   ["a reserved request is just unknown", "protocol/authority.js", "if (!h && Object.hasOwn(RESERVED_VERBS, verb)) refuse(\"reserved\"", "if (false) refuse(\"reserved\"", ["X4"]],
-  ["CONTROL (no-op: must stay green)", "protocol/authority.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
+  ["CONTROL (no-op: must stay green)", "protocol/authority/gate.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
   const args = ["bun", path.join(ENGINE, "tools/protocol/scars-check.ts"), "--tree", tree, ...(only ? ["--only", only.join(",")] : [])];
@@ -306,7 +306,7 @@ const cases: Case[] = [
     for (const f of files) { const src = read(f);
       for (const m of src.matchAll(/\brefuse\("([a-z0-9-]+)"/g)) used.set(m[1], f);
       for (const m of src.matchAll(/\bcode: "([a-z0-9-]+)"/g)) used.set(m[1], f);
-      for (const m of src.matchAll(/\brefuse\(([a-zA-Z_][\w.?]*)[,)]/g)) if (f.endsWith("authority.js")) dynamic.push(m[1]); }
+      for (const m of src.matchAll(/\brefuse\(([a-zA-Z_][\w.?]*)[,)]/g)) if (f.endsWith("authority.js") || f.startsWith("shared/protocol/authority/")) dynamic.push(m[1]); }
     const reg = new Set(Object.keys(REG.REFUSAL_CODES));
     const missing = [...used.keys()].filter((c) => !reg.has(c) && !REG.NOT_REFUSALS.includes(c));
     const unused = [...reg].filter((c) => !used.has(c) && !REG.REFUSAL_CODES[c].reserved);

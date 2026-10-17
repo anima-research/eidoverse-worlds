@@ -32,10 +32,10 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the authority reads a building's walls", "shared/protocol/authority.js", "const geomE = (e) => (e?.c.structure !== undefined ? structGeom(e.c.structure) : geomOf(e?.c.model));", "const geomE = (e) => geomOf(e?.c.model);", ["W1", "W2", "W3"]],
   ["a doorway is the absence of a box (every wall edge solid)", "shared/structure.js", "    const ap = level.apertures.get(k);\n    if (!ap) continue;\n    boxes.push(...wallBoxes(edge, ap, g, floorY));", "    const ap = level.apertures.get(k);\n    if (!ap) continue;\n    boxes.push(edgeSpan(edge.axis, (edge.axis === 0 ? edge.z : edge.x) * g.tile, (edge.axis === 0 ? edge.x : edge.z) * g.tile, (edge.axis === 0 ? edge.x + 1 : edge.z + 1) * g.tile, -g.wallT / 2, g.wallT / 2, floorY, floorY + g.wallH, edge.mat, 'wall'));", ["W1", "W2"]],
   ["floors are surfaces", "shared/protocol/authority.js", "      surfaces.push({ y, x: [x0, x1], z: [z0, z1] }); floors.push", "      floors.push", ["W3"]],
-  ["a key already taken falls back (no twins)", "shared/protocol/authority.js", "const k = taken.has(want) ? null : want;", "const k = want;", ["N4"]],
+  ["a key already taken falls back (no twins)", "shared/protocol/authority/blueprints.js", "const k = taken.has(want) ? null : want;", "const k = want;", ["N4"]],
   ["a new script never takes over the thing's own use", "shared/protocol/newscript.js", "  if (!r.use || mine(\"use\")) return \"use\";", "  return \"use\";", ["K2"]],
   ["a use script gets its reaction", "shared/protocol/newscript.js", "...(action ? [set(form.id, \"reactions\"", "...(false ? [set(form.id, \"reactions\"", ["K1", "K2"]],
-  ["an old record's twin keys each get an id", "shared/protocol/authority.js", "if (!seen.has(p.key)) { seen.add(p.key); return ids.get(p.key); }", "return ids.get(p.key);", ["N3"]],
+  ["an old record's twin keys each get an id", "shared/protocol/authority/blueprints.js", "if (!seen.has(p.key)) { seen.add(p.key); return ids.get(p.key); }", "return ids.get(p.key);", ["N3"]],
 ];
 
 function copyTree(tag: string) {

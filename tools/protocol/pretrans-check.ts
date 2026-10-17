@@ -88,7 +88,7 @@ await C("S2", "the spec carries the alpha note (no guarantee, we try not to brea
 // PROTOCOL.md (or PHYSICS.md when it says PHYSICS); lab-era names (§2.3, §3d, L1–L7, R8…) are gone from those words
 const HEAD = new Set([...SPEC.matchAll(/^#{2,3} (\d+[a-z]?(?:\.\d+)?)\.?\s/gm)].map((m) => m[1]));   // "## 7a." is a section too
 const PHYS = new Set([...read("spec/PHYSICS.md").matchAll(/^#{2,3} (\d+(?:\.\d+)?)\./gm)].map((m) => m[1]));
-const SAID = ["shared/protocol/authority.js", "shared/protocol/componentspec.js", "shared/protocol/verbspec.js", "shared/protocol/refusal.js", "shared/protocol/roles.js", "mcpl/tools.ts", "shared/grab.js", "shared/sockbody.js"];
+const SAID = ["shared/protocol/authority.js", ...fs.readdirSync(path.join(T, "shared/protocol/authority")).filter((f) => f.endsWith(".js")).map((f) => `shared/protocol/authority/${f}`), "shared/protocol/componentspec.js", "shared/protocol/verbspec.js", "shared/protocol/refusal.js", "shared/protocol/roles.js", "mcpl/tools.ts", "shared/grab.js", "shared/sockbody.js"];
 function literals(src: string) {   // string literals, comments skipped (a small scanner: enough for these files)
   const out: string[] = []; let i = 0;
   while (i < src.length) { const c = src[i];

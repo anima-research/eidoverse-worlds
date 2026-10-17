@@ -130,4 +130,7 @@ export function lastSetterOf(w, id, comp) {
 // Who made a thing: the view inspect shows (no stored `placer`).
 const madeBy = (w, id) => creatorOf(w, id)?.by ?? null;
 
-export { RANK, backward, banFrom, effective, entryBy, ghostFrom, inForce, isScriptActor, kickFrom, latestOf, madeBy, may, modHolder, muteFrom, ownersOf, rankOf, recsOf, roleOf, sinceLift, strongest, wcOf, whoRank };
+// (refactor split, 2026-10-17: moved here from authority.js's "the authority" section; request, undo and the hands' returns read it)
+const RESERVED = new Set(["system", "sim", "world"]); // the authority's own identities: a request can never be stamped as one
+
+export { RANK, RESERVED, backward, banFrom, effective, entryBy, ghostFrom, inForce, isScriptActor, kickFrom, latestOf, madeBy, may, modHolder, muteFrom, ownersOf, rankOf, recsOf, roleOf, sinceLift, strongest, wcOf, whoRank };

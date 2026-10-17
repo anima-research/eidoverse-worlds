@@ -36,8 +36,8 @@ const EXEMPT: [string, RegExp, string][] = [
   ["shared/blueprint.js", /params\.lib/, "the component LIST's Model params: leaves with the schema-layer merge"],
   ["mcpl/tools.ts", /a\.lib\b|lib=\$\{/, "the find tool's own `lib` argument and the /library URL's query name"],
   ["server/routes.ts", /resolveLibFile|\/library/, "the library route's own file lookup"],
-  ["shared/protocol/authority.js", /out\.comp = op\.comp|\bh\.comp\b|toggleOf\(h\)\.comp/, "an op being shaped (out) and a reaction handler (h) name the OP's component"],
-  ["shared/protocol/authority.js", /activate\(w, id, name, \{ on: `changed:/, "a reaction's activation record names the OP's component (PROTOCOL §3), not a record's bag"],
+  ["shared/protocol/authority", /out\.comp = op\.comp|\bh\.comp\b|toggleOf\(h\)\.comp/, "an op being shaped (out) and a reaction handler (h) name the OP's component"],
+  ["shared/protocol/authority", /activate\(w, id, name, \{ on: `changed:/, "a reaction's activation record names the OP's component (PROTOCOL §3), not a record's bag"],
   ["shared/sim.js", /sim\.boxes\[/, "the first eidosim's box table, keyed by library path (retires with it)"],
   ["client/lib/water.js", /\bA\.comp\[/, "the water analysis's connected-component labels (shared/waterkind.js analyzeWater), an array, not a record's bag"],
 ];

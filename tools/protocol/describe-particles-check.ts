@@ -51,8 +51,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the translator modernizes particles", "tools/protocol/import-v1/translate-v1.js", ": k === \"particles\" ? newParticles(v) : v;", ": v;", ["X10"]],
   ["openable's state is generated", "shared/a11y.js", "if (isObj(c.openable)) out.state.push(", "if (false) out.state.push(", ["D2", "D3"]],
   ["openable's affordance is generated", "shared/a11y.js", "if (isObj(c.openable)) out.can.push(", "if (false) out.can.push(", ["D2"]],
-  ["a description is bounded", "shared/protocol/authority.js", "if (def.maxLen !== undefined && graphemes(v) > def.maxLen) refuse(", "if (false) refuse(", ["D1"]],
-  ["look clips a description", "shared/protocol/authority.js", "full || graphemes(ax.description) <= 200 ? ax.description", "true ? ax.description", ["D4"]],
+  ["a description is bounded", "shared/protocol/authority/checks.js", "if (def.maxLen !== undefined && graphemes(v) > def.maxLen) refuse(", "if (false) refuse(", ["D1"]],
+  ["look clips a description", "shared/protocol/authority/blueprints.js", "full || graphemes(ax.description) <= 200 ? ax.description", "true ? ax.description", ["D4"]],
   ["CONTROL (no-op: must stay green)", "shared/a11y.js", "// a11y — how", "//  a11y — how", []],
 ];
 if (argv.includes("--mutants")) {
