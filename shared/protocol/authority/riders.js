@@ -1,7 +1,7 @@
 // shared/protocol/authority/riders.js — who rides what (presence, never logged): a body on a station (sitting, today),
-// setting and clearing it, being unseated when what it rides is moved or let go, and the occupant rule that keeps a thing
+// setting and clearing it, being unseated when what it rides is moved or let go, and the rider rule that keeps a thing
 // someone rides from being kicked, shoved, grabbed or thrown out from under them (refactor split, 2026-10-17; moved from
-// authority.js's "physics" section unchanged; seatRights, a socket joining a host, from its gate section). lastTouch,
+// authority.js's "physics" section unchanged; socketRights, a socket joining a host, from its gate section). lastTouch,
 // lacks, lockCheck and needWords (the write path's and the gate's) are above it, reached through UP.
 import { TRACK } from "../../mover.js";
 import { baseOf } from "../componentspec.js";
@@ -23,12 +23,12 @@ const needWords = (...a) => UP.needWords(...a);
 // A body that walks more than a metre from its seat has stood up (a seated client sends no steps; standing, it walks)
 // Who sits where (presence, never logged: review 10-12 S1-1): {to: <socket id>}. A seat whose socket is gone or switched
 // off is no seat (its occupant was let go by every client), so a reader never sees one.
-function seatOf(w, st, who) { const s = w.presence.seats?.[who];
+function rideOf(w, st, who) { const s = w.presence.seats?.[who];
   return s && typeof s.to === "string" && isSocketC(st.entities[s.to]?.c) && !offChain(st, s.to) ? s : null; }
 // `since`: the log's length when they sat (review r9 M1): what was written from then on isn't part of the ride they consented to
 // `near`: the body was tracked within sitting reach when it sat (review r10 M1): only then does leaving re-anchor the track at the seat
-const setSeat = (w, who, to, near = false) => { (w.presence.seats ??= {})[who] = { to, since: w.entries.length, ...(near ? { near: true } : {}) }; w.presenceDirty = true; };
-const clearSeat = (w, who) => { if (w.presence.seats?.[who]) { delete w.presence.seats[who]; w.presenceDirty = true; } };
+const setRide = (w, who, to, near = false) => { (w.presence.seats ??= {})[who] = { to, since: w.entries.length, ...(near ? { near: true } : {}) }; w.presenceDirty = true; };
+const clearRide = (w, who) => { if (w.presence.seats?.[who]) { delete w.presence.seats[who]; w.presenceDirty = true; } };
 // Leaving a seat is presence, like arriving (scars r9 M2): a seated client sends no steps, so the authority's track of the
 // body is where it boarded. When the seat lets them go (unseated, the socket removed or switched off, or their own first
 // step off it), the track starts again from the seat's world pose with a full speed budget, writing nothing to the log: the
@@ -37,32 +37,32 @@ const clearSeat = (w, who) => { if (w.presence.seats?.[who]) { delete w.presence
 // budget covers it). Returns where, or null (no body tracked).
 // Only for a body that boarded within reach (`near`, review r10 M1); otherwise the track stays where it was (a presence file from
 // before r10 has no `near`: its riders keep their old track, the safe direction).
-function unseatAt(w, st, who, seat) {
+function letGoAt(w, st, who, seat) {
   const b = w.presence.bodies?.[who]; if (!b || !st?.entities[seat] || w.presence.seats?.[who]?.near !== true) return null;
   const at = worldT(st, seat).pos.map(r3); if (!at.every(Number.isFinite)) return null;
   w.presence.bodies[who] = { ...b, at, ts: w.pace ? w.pace() : w.now(), tokens: TRACK.cap }; w.presenceDirty = true;
   return at;
 }
 // another present body seated on this socket (one body per socket: VRChat Station, Roblox Seat), or the thing sitting in it
-function sitterOn(w, st, sock, actor) {
-  for (const who of Object.keys(w.presence.seats ?? {})) if (who !== actor && w.presence.bodies[who] && seatOf(w, st, who)?.to === sock) return { who };
+function socketRider(w, st, sock, actor) {
+  for (const who of Object.keys(w.presence.seats ?? {})) if (who !== actor && w.presence.bodies[who] && rideOf(w, st, who)?.to === sock) return { who };
   const thing = Object.keys(st.entities).find((k) => st.entities[k].c.parent?.to === sock); return thing ? { thing } : null; }
-function leftSeat(w, st, actor, to) {
-  const s = seatOf(w, st, actor); if (!s) return clearSeat(w, actor);
+function leftRide(w, st, actor, to) {
+  const s = rideOf(w, st, actor); if (!s) return clearRide(w, actor);
   const p = worldT(st, s.to).pos;
-  if (Math.hypot(to[0] - p[0], to[2] - p[2]) > 1) clearSeat(w, actor);
+  if (Math.hypot(to[0] - p[0], to[2] - p[2]) > 1) clearRide(w, actor);
 }
 // Who a hand or a foot acting on `id` would move with it: another present body seated on it or on anything riding it, or
 // standing on it or on anything riding it (review 10-12 S1-1/S1-2: a kick, a shove, a grab or a throw went round body
 // consent through the chair). Bodies are presence and never things, so this is the only way one is moved by moving a thing.
-function occupant(w, st, id, actor) {
+function riderOf(w, st, id, actor) {
   const fam = new Set([id, ...descendants(st, id)]);
-  for (const who of Object.keys(w.presence.seats ?? {})) { const s = seatOf(w, st, who); if (who !== actor && s && fam.has(s.to)) return { who, how: "sits on" }; }
+  for (const who of Object.keys(w.presence.seats ?? {})) { const s = rideOf(w, st, who); if (who !== actor && s && fam.has(s.to)) return { who, how: "sits on" }; }
   const boxes = [...fam].map((k) => aabb(st, k)).filter(Boolean);
   for (const [who, b] of Object.entries(w.presence.bodies)) if (who !== actor && Array.isArray(b?.at) && boxes.some((x) => feetOn(x, b.at))) return { who, how: "is standing on" };
   return null;
 }
-// Riders (scars r8 M1 / holes M2; replaces consent gaps 1's occupant check on edits): sitting is consent, standing up is the
+// Riders (scars r8 M1 / holes M2; replaces consent gaps 1's occupant check on edits, then `occupant`, now riderOf): sitting is consent, standing up is the
 // exit (Second Life's sit, VRChat's station). A seat carries its rider through whatever moves it, and an edit never waits on
 // or is refused for a body on it:
 //   - an edit by anyone but the rider that would move a seat someone sits on (transform, parent or motion of the seat or of
@@ -76,7 +76,7 @@ function occupant(w, st, id, actor) {
 // The authority's follow-ups (rest, system), a hand (handle: the hand verbs refuse `occupied` themselves, before admit), the
 // load's lift and a fork's copy unseat no one.
 const MOVES_BODIES = (comp) => comp === "transform" || comp === "parent" || baseOf(comp) === "motion";
-function unseatsFor(w, st, who, norm) {
+function releasedRiders(w, st, who, norm) {
   const cap = who.cap; if (cap && ["rest", "system", "handle"].includes(cap.kind)) return [];
   const riders = Object.keys(w.presence.seats ?? {}).filter((k) => k !== who.actor); if (!riders.length) return [];
   const rootOf = (id) => { const a = ancestors(st, id); return a.length ? a[a.length - 1] : id; };
@@ -93,14 +93,14 @@ function unseatsFor(w, st, who, norm) {
   for (const op of norm) {
     if (op.verb === "create" || op.comp === undefined || !MOVES_BODIES(op.comp) || !st.entities[op.id]) continue;
     const fam = new Set([op.id, ...descendants(st, op.id)]);
-    for (const r of riders) { if (out.has(r)) continue; const s = seatOf(w, st, r); if (!s || !fam.has(s.to)) continue;
+    for (const r of riders) { if (out.has(r)) continue; const s = rideOf(w, st, r); if (!s || !fam.has(s.to)) continue;
       if (own && rootOf(s.to) === own && rideBefore(s.since)) continue;   // the seat's own assembly moving it, as it was when they sat: the ride
       out.set(r, { who: r, seat: s.to, host: st.entities[s.to]?.c.parent?.to ?? null, id: op.id, field: op.comp }); } }
   return [...out.values()];
 }
-const unseatWhy = (u) => `${u.id}.${u.field} was changed by someone else, and it moves the seat ${u.who} sat on: they were let go where they were, standing (sitting is consent to the seat's own ride, not to anyone's edit)`;
-function occupiedRefuse(w, st, id, actor, what) {
-  const o = occupant(w, st, id, actor);
+const releasedWhy = (u) => `${u.id}.${u.field} was changed by someone else, and it moves the seat ${u.who} sat on: they were let go where they were, standing (sitting is consent to the seat's own ride, not to anyone's edit)`;
+function riddenRefuse(w, st, id, actor, what) {
+  const o = riderOf(w, st, id, actor);
   if (o) refuse("occupied", `${said(o.who)} ${o.how} ${id} (or something on it), so it can't be ${what}`, "wait till they get up or step off", { by: o.who });
 }
 // A socket is part of its host (review 10-12 S1-1): before the cut a seat was the host's own `sockets` component, so
@@ -111,7 +111,7 @@ function occupiedRefuse(w, st, id, actor, what) {
 // had and the host it ends on.
 // The legacy map's lifted creates are in `norm`, so both spellings meet the same rule. A host made in this same write is
 // the asker's own. The authority's follow-ups (rest, system: the load's lift) and a hand carry no seat edits.
-function seatRights(w, st, s, who, role, norm, made) {
+function socketRights(w, st, s, who, role, norm, made) {
   const cap = who.cap; if (cap && cap.kind !== "reaction" && cap.kind !== "script") return;
   const holder = cap?.kind === "reaction" ? cap.author : cap?.kind === "script" ? cap.sponsor : who.actor;
   const hosts = new Map(); const joins = new Set();
@@ -129,4 +129,4 @@ function seatRights(w, st, s, who, role, norm, made) {
     const k = lockedC(st.entities[h]?.c) ? h : ancestors(st, h).find((x) => lockedC(st.entities[x]?.c));
     if (k) lockCheck(w, st, who, role, k, { ...as, id: op.id }, at); }
 }
-export { clearSeat, leftSeat, occupiedRefuse, seatOf, seatRights, setSeat, sitterOn, unseatAt, unseatWhy, unseatsFor };
+export { clearRide, leftRide, riddenRefuse, rideOf, socketRights, setRide, socketRider, letGoAt, releasedWhy, releasedRiders };

@@ -1,5 +1,5 @@
 // shared/protocol/authority/bodyverbs.js — the verbs a body performs (move, grab, put, throw, drop, punt, leave, wait) as
-// PHYSICS_VERBS, which authority.js spreads into VERBS first (refactor split, 2026-10-17; moved from authority.js's
+// EMBODIED_VERBS, which authority.js spreads into VERBS first (refactor split, 2026-10-17; moved from authority.js's
 // "physics" section unchanged). They stand on physics.js, riders.js and manipulate.js; the gate is above them, through UP.
 import { TRACK, tokensAfter } from "../../mover.js";
 import { DEFAULT_WHO, grabOf, offsetOk } from "../../grab.js";
@@ -15,9 +15,9 @@ import { may, rankOf, roleOf, whoRank } from "./rights.js";
 import { BODY_VERBS, forgetReaches } from "./bodyconsent.js";
 import { thingSaid } from "./blueprints.js";
 import { heldEvent } from "./scriptrun.js";
-import { clearSeat, leftSeat, occupiedRefuse, seatOf, unseatAt } from "./riders.js";
-import { arrivalBox, body, dist, handOf, holdOf, pathBlocked, shearFree, sizeOf, solidAt } from "./physics.js";
-import { fliesIn, flyingWorld, holdHow, launch, recentRests, releasePos, returnHome, returnPlan, secondHand, shaped, shoveGate, snapTarget } from "./manipulate.js";
+import { clearRide, leftRide, riddenRefuse, rideOf, letGoAt } from "./riders.js";
+import { arrivalBox, body, dist, gripPoint, gripOf, pathBlocked, shearFree, sizeOf, solidAt } from "./physics.js";
+import { fliesIn, flyingWorld, gripHow, launch, recentRests, releasePos, returnHome, returnPlan, secondGrip, shaped, shoveGate, snapTarget } from "./manipulate.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const actEntry = (...a) => UP.actEntry(...a);
@@ -36,7 +36,7 @@ const warnings = (...a) => UP.warnings(...a);
 // review 10-07 M3: hand acts (grab, put, drop, throw, punt) record the request about the THING (and who handled it), never
 // the body's position or hand: the put's change carries where the thing went, a launch's sim entry where it left from
 // and how fast (what the engine needs, PHYSICS §4). The gate's view of the body stays presence.
-const PHYSICS_VERBS = {
+const EMBODIED_VERBS = {
   move(w, actor, a) {
     if (!Array.isArray(a.to) || a.to.length !== 3 || a.to.some((n) => !Number.isFinite(n))) refuse("shape", "move needs to: [x, y, z]", "");
     const st = w.state(); const B = boundsOf(st);
@@ -59,19 +59,19 @@ const PHYSICS_VERBS = {
       // at a time is not history the world needs). A TELEPORT while present is an act, because it resets the speed
       // track: who did it and when is on the record; never where from, where to, or what kind of client they are
       const act = me ? w.append(actOf(w, actor, "move", { teleport: true })) : undefined;
-      w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(size ? { size } : {}) }; leftSeat(w, st, actor, to); w.savePresence();
+      w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(size ? { size } : {}) }; leftRide(w, st, actor, to); w.savePresence();
       return { ok: true, at: to, ...(act !== undefined ? { recorded: true, act } : {}) };
     }
     // still seated in the authority's view: a seated client sends no steps, so this is their first step off the seat (a
     // person's stand-up is presence, never a request): it is measured from the seat, not from where they boarded (r9 M2)
     // the first step is the stand-up (holes r10 L5): the seat clears now, wherever the step goes
-    { const sat = seatOf(w, st, actor); if (sat && unseatAt(w, st, actor, sat.to)) me = w.presence.bodies[actor]; if (w.presence.seats?.[actor]) clearSeat(w, actor); }
+    { const sat = rideOf(w, st, actor); if (sat && letGoAt(w, st, actor, sat.to)) me = w.presence.bodies[actor]; if (w.presence.seats?.[actor]) clearRide(w, actor); }
     const d = dist(me.at, to); const tokens = tokensAfter(me.tokens, now - (me.ts ?? now));
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${TRACK.speed} m/s, ${TRACK.cap} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
     const block = pathBlocked(w, st, me.at, to, size);
     if (block?.ground) refuse("solid", block.reason, "walk around it: a gentler slope, or out of the water where the bank is lower", { at: me.at, blocker: "ground" });
     if (block) refuse("solid", `${thingSaid(st, block)} is in the way`, "walk around it (or through a door someone opens)", { at: me.at, blocker: block });
-    const prev = me.at; w.presence.bodies[actor] = { ...me, at: to, ts: now, tokens: tokens - d }; if (size) w.presence.bodies[actor].size = size; else delete w.presence.bodies[actor].size; leftSeat(w, st, actor, to);
+    const prev = me.at; w.presence.bodies[actor] = { ...me, at: to, ts: now, tokens: tokens - d }; if (size) w.presence.bodies[actor].size = size; else delete w.presence.bodies[actor].size; leftRide(w, st, actor, to);
     const carrying = [];
     for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === actor) { h.pose.pos = h.pose.pos.map((n, i) => n + to[i] - prev[i]); carrying.push(id); }
     w.savePresence();
@@ -85,7 +85,7 @@ const PHYSICS_VERBS = {
     const held = w.presence.holds[a.id];
     if (a.hand !== undefined && !["left", "right"].includes(a.hand)) refuse("shape", "hand is left or right", "");
     if (a.offset !== undefined && !offsetOk(a.offset)) refuse("shape", "offset is {pos: [x, y, z] (within 2 m), q: [x, y, z, w]}: where it sits in your hand", "a VR hand sends where it took hold");
-    if (held?.by === actor) return secondHand(w, actor, a, held, e);
+    if (held?.by === actor) return secondGrip(w, actor, a, held, e);
     // grabOf (shared/grab.js) is the one reader: grabbable, or a dynamic thing's physics.who (the migration fallback)
     const g = grabOf(e.c);
     if (!g) refuse("not-grabbable", `${a.id} isn't something you can pick up`, `a builder can make it so: set {id: '${a.id}', component: 'grabbable', value: {who: 'visitor'}} (anyone may; {} for builders only)`);
@@ -93,7 +93,7 @@ const PHYSICS_VERBS = {
     const need = g.who; const role = roleOf(st, actor); if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may pick up ${a.id}`, `ask someone who can, or ask the owner to set ${g.source}.who: 'visitor'`);
     if (held && !g.steal && role !== "owner") refuse("held", `${said(held.by)} is holding ${a.id}, and it can't be taken from a hand (grabbable.steal is false)`, "wait till they let go (an owner may take it)");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be picked up`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
-    occupiedRefuse(w, st, a.id, actor, "picked up");
+    riddenRefuse(w, st, a.id, actor, "picked up");
     // two things at once (R, 10-10, an avatar walking about with five crates: "maybe two, since VR players can pick up two
     // things"; a number, not a claim about hands: "avatars can have more (or none!)")
     { const mine = Object.keys(w.presence.holds).filter((k) => k !== a.id && w.presence.holds[k].by === actor);
@@ -104,10 +104,10 @@ const PHYSICS_VERBS = {
     // presence ease on every client), never a hold at a distance (the reach check is the anti-cheat)
     // reach is to the NEAREST POINT of its box when it stands in the world, not to its origin (a barrel's origin is at its
     // base: standing against it is in reach; R 10-11 23:27). In a hand or in the air: to where it is.
-    const hp = handOf(me), bx = !held && !live && !eb ? aabb(st, a.id) : null;
+    const hp = gripPoint(me), bx = !held && !live && !eb ? aabb(st, a.id) : null;
     const reachPt = bx ? [0, 1, 2].map((i) => Math.min(bx.max[i], Math.max(bx.min[i], hp[i]))) : here;
     const d = dist(hp, reachPt); if (d > g.range) refuse("out-of-reach", `${a.id} is ${r3(d)} m from you; you can reach ${g.range} m`, `move {to: [${r3(here[0])}, ${me.at[1]}, ${r3(here[2])}]} (your feet stay on the floor; your hand reaches ${HAND_Y} m up) first`);
-    const how = holdHow(a, g); // which hand, by which grip or offset: refused before anything is written
+    const how = gripHow(a, g); // which hand, by which grip or offset: refused before anything is written
     const prev = w.presence.holds[a.id]; const notes = [];
     if (d > REACH) notes.push({ id: a.id, pulled: r3(d), why: `it was ${r3(d)} m away; its grabbable.range lets it fly to your hand` });
     if (prev && prev.by !== actor) notes.push({ id: a.id, takenFrom: prev.by, why: "the latest grab wins; they were told" });
@@ -166,7 +166,7 @@ const PHYSICS_VERBS = {
       }
     }
     const handled = [...new Set([...(prev?.handled ?? []), actor])];
-    const hand = handOf(me); // in your hand now (a VR client would send the hand's pose)
+    const hand = gripPoint(me); // in your hand now (a VR client would send the hand's pose)
     w.presence.holds[a.id] = { by: actor, since: w.now(), pose: { pos: hand, q: (live && sf.sim.bodies[a.id]?.q) ? sf.sim.bodies[a.id].q.slice() : t.q, scale: t.scale }, handled, ...how }; // caught mid-air: as it's turned now
     w.savePresence();
     heldEvent(w, "grab", a.id, { by: actor, hand: how.hand, ...(how.grip ? { grip: how.grip } : {}), ...(act !== null ? { seq: act } : {}) });
@@ -176,14 +176,14 @@ const PHYSICS_VERBS = {
   // grabbable says where it goes (research §3): home (release: return), into a socket that accepts it (fits), where
   // the hand let go (release: stay), or straight down onto what's below (drop, the default).
   put(w, actor, a, how = "put") {
-    const me = body(w, actor); const h = holdOf(w, actor, a.id);
-    const st = w.state(); occupiedRefuse(w, st, a.id, actor, "set down"); const t = worldT(st, a.id); const g = grabOf(st.entities[a.id].c);
+    const me = body(w, actor); const h = gripOf(w, actor, a.id);
+    const st = w.state(); riddenRefuse(w, st, a.id, actor, "set down"); const t = worldT(st, a.id); const g = grabOf(st.entities[a.id].c);
     const facts = () => ({ handled: h.handled });
     // review 10-06: the claim is checked before anything acts on it: a pos is [x, y, z] within reach (a far or malformed
     // pos snapped into a socket across the world), and the holder's rank NOW still covers carrying it (the return and the
     // snap are the holder's settlements too, as a plain put is)
     if (a.pos !== undefined) { if (!Array.isArray(a.pos) || a.pos.length !== 3 || a.pos.some((n) => !Number.isFinite(n))) refuse("shape", "put takes pos: [x, y, z] (or nothing: straight down)", "");
-      const d0 = dist(handOf(me), a.pos); if (d0 > REACH) refuse("out-of-reach", `that's ${r3(d0)} m from you; you can reach ${REACH} m`, "move closer first"); }
+      const d0 = dist(gripPoint(me), a.pos); if (d0 > REACH) refuse("out-of-reach", `that's ${r3(d0)} m from you; you can reach ${REACH} m`, "move closer first"); }
     { const role = roleOf(st, actor); if (g && rankOf(st, actor) < whoRank(st, g.who)) refuse("rights", `only a ${g.who} may move ${a.id} by hand; you are ${role}`, `ask the owner to set ${g.source}.who`); }
     // home: the holder's act, then the authority's return (its own act, caused by the release)
     if (g?.release === "return" && g.home) {
@@ -222,7 +222,7 @@ const PHYSICS_VERBS = {
       const sup = supportBelow(st, x, z, h.pose.pos[1], fam);
       pos = [r3(x), r3(sup.y + under), r3(z)]; }
     if (!Array.isArray(pos) || pos.length !== 3 || pos.some((n) => !Number.isFinite(n))) refuse("shape", "put takes pos: [x, y, z] (or nothing: straight down)", "");
-    const d = dist(handOf(me), pos); if (d > REACH) refuse("out-of-reach", `that's ${r3(d)} m from you; you can reach ${REACH} m`, "move closer first");
+    const d = dist(gripPoint(me), pos); if (d > REACH) refuse("out-of-reach", `that's ${r3(d)} m from you; you can reach ${REACH} m`, "move closer first");
     const q = a.q ?? h.pose.q; const value = { pos, q, scale: t.scale };
     const ops = [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", value)];
     // the one gate first (your role and its locks NOW, not when you picked it up), then the physical claim on top
@@ -231,7 +231,7 @@ const PHYSICS_VERBS = {
       .filter((x) => !(x.with && w.presence.holds[x.with]));   // not "inside" a thing that is in someone's hand (the log has it where it was picked up)
     // set down where it doesn't fit (against a neighbour, on a ledge): in a world that runs physics a loose thing is let
     // go there instead, from the hand's height, and physics finds where it rests. Only for the plain put (no pos claimed).
-    if (bad.length && a.pos === undefined && !stay && fliesIn(st, a.id)) return PHYSICS_VERBS.drop(w, actor, { id: a.id, pos: [pos[0], r3(h.pose.pos[1]), pos[2]] });
+    if (bad.length && a.pos === undefined && !stay && fliesIn(st, a.id)) return EMBODIED_VERBS.drop(w, actor, { id: a.id, pos: [pos[0], r3(h.pose.pos[1]), pos[2]] });
     if (bad.length) refuse("implausible", `physics wouldn't leave ${a.id} there: ${bad.map((b) => b.kind + (b.with ? ` ${b.with}` : b.above ? ` above ${b.above}` : b.into ? ` into ${b.into}` : "")).join("; ")}`, "a settlement is a claim the authority checks; put it where it would really rest, or leave pos out to set it straight down", { problems: bad });
     const act = w.append(actOf(w, actor, "put", a, { ...facts(), ...(stay ? { release: "stay" } : {}) }));
     const seq = changeEntry(w, plan, act);
@@ -249,13 +249,13 @@ const PHYSICS_VERBS = {
     const why = !fliesIn(w.state(), a.id) ? (w.state().entities["@world"]?.c["physics-engine"] ? `${a.id} isn't physics {kind: 'dynamic'}, so it doesn't fly: it was set down` : "this world doesn't run physics, so it was set down")
       : g?.throw === 0 ? `${a.id} can't be thrown (its grabbable.throw is 0): it was let go` : g?.release === "return" ? null : undefined;
     if (why !== undefined) {
-      const r = PHYSICS_VERBS.drop(w, actor, { id: a.id, ...(a.pos !== undefined ? { pos: a.pos } : {}) }, "throw");
+      const r = EMBODIED_VERBS.drop(w, actor, { id: a.id, ...(a.pos !== undefined ? { pos: a.pos } : {}) }, "throw");
       return r.ok && why ? { ...r, notes: [...(r.notes ?? []), { id: a.id, thrown: "set down", why }] } : r;
     }
     return launch(w, actor, a, "throw", g);
   },
   drop(w, actor, a, how = "drop") {
-    if (a.hand !== undefined) { const h = holdOf(w, actor, a.id); if (!["left", "right"].includes(a.hand)) refuse("shape", "hand is left or right", "");
+    if (a.hand !== undefined) { const h = gripOf(w, actor, a.id); if (!["left", "right"].includes(a.hand)) refuse("shape", "hand is left or right", "");
       if (h.second && (a.hand === h.second.hand || a.hand === h.hand)) { // one hand of two lets go: the other keeps it (presence, unlogged)
         if (a.hand === h.hand) { h.hand = h.second.hand; delete h.offset; if (h.second.grip) h.grip = h.second.grip; else delete h.grip; }
         delete h.second; w.savePresence(); return { ok: true, recorded: false, holding: a.id, hand: h.hand, note: `your ${a.hand} hand let go; your ${h.hand} hand still holds it` }; }
@@ -264,8 +264,8 @@ const PHYSICS_VERBS = {
     // what doesn't fly is set down from where the hand let go; so is what goes home, into a socket, or stays
     const sets = !fliesIn(st, a.id) || g?.release === "return" || g?.release === "stay" || (g && w.presence.holds[a.id]?.by === actor && snapTarget(st, a.id, g, a.pos ?? w.presence.holds[a.id].pose.pos).to);
     if (sets) {
-      if (a.pos !== undefined) { const me = body(w, actor); const h = holdOf(w, actor, a.id); h.pose.pos = releasePos(me, a.pos); }
-      return PHYSICS_VERBS.put(w, actor, { id: a.id }, how); }
+      if (a.pos !== undefined) { const me = body(w, actor); const h = gripOf(w, actor, a.id); h.pose.pos = releasePos(me, a.pos); }
+      return EMBODIED_VERBS.put(w, actor, { id: a.id }, how); }
     return launch(w, actor, { ...a, v: [0, 0, 0] }, "drop", g);
   },
   // a kick (/punt, an agent's punt request), as a sim intent (design 20, P4: "punt is a sim intent
@@ -282,7 +282,7 @@ const PHYSICS_VERBS = {
     const need = ph.who ?? DEFAULT_WHO; if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may punt ${a.id}`, "ask the owner to set physics.who: 'visitor'");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be punted`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
     const held = w.presence.holds[a.id]; if (held) refuse("held", `${said(held.by)} is holding ${a.id}`, "grab it to take it (the latest grab wins), or wait till they let go");
-    occupiedRefuse(w, st, a.id, actor, "punted");
+    riddenRefuse(w, st, a.id, actor, "punted");
     shaped(e, a.id, st.entities["@world"]?.c["physics-engine"] ?? null);
     if (a.v !== undefined && a.power !== undefined) refuse("shape", "punt takes v or power, not both", "v: [x, y, z] in m/s, or power (m/s) along the line from your feet through it");
     const sf = w.sim(); const b = sf.sim?.bodies[a.id]; const flying = !!(sf.launched[a.id] && b && !b.resting);
@@ -315,7 +315,7 @@ const PHYSICS_VERBS = {
       const st = w.state(); if (st.entities[id] && st.entities["@world"]?.c["physics-engine"]) { const t = st.entities[id].c.transform;
         if (t) { const p = admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]);
           changeEntry(w, p, w.append(actEntry(w, "system", "return-held", { id, holder: actor, why: r.refused?.code }))); } } }
-    delete w.presence.bodies[actor]; forgetReaches(w.presence, actor); clearSeat(w, actor); w.savePresence();   // F3 (b): a yes ends when either person leaves
+    delete w.presence.bodies[actor]; forgetReaches(w.presence, actor); clearRide(w, actor); w.savePresence();   // F3 (b): a yes ends when either person leaves
     return { ok: true, left: true, dropped: out.map(({ id, r }) => ({ id, ok: r.ok, ...(r.refused ? { refused: r.refused.reason } : {}) })) };
   },
   wait(w) {
@@ -327,4 +327,4 @@ const PHYSICS_VERBS = {
     return { ok: true, inFlight: livePoses(sf), ...(rests.length ? { cameToRest: rests } : {}), ...(stuck.length ? { unsettled: stuck } : {}) };
   },
 };
-export { PHYSICS_VERBS };
+export { EMBODIED_VERBS };

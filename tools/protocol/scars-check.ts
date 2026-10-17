@@ -35,7 +35,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the refusal ring", "protocol/authority.js", "  ring.push(rec); if (ring.length > REFUSAL_RING) ring.splice(0, ring.length - REFUSAL_RING);", "", ["L3"]],
   ["look shows everyone's table", "protocol/authority/blueprints.js", "...(id === actor ? { shield: shieldOf(P, id) } : {}),", "shield: shieldOf(P, id),", ["K1"]],
   ["look shows who touches whom", "protocol/authority/blueprints.js", ".filter(([k, r]) => r.to === id && (id === actor || k === actor)).map(([k]) => k) }));", ".filter(([k, r]) => r.to === id).map(([k]) => k) }));", ["K2"]],
-  ["edits unseat no one", "protocol/authority/gate.js", "const unseat = CTX.forking || who.lifting ? [] : unseatsFor(w, st, who, norm);", "const unseat = [];", ["O1", "O2", "O7", "O8"]],
+  ["edits unseat no one", "protocol/authority/gate.js", "const released = CTX.forking || who.lifting ? [] : releasedRiders(w, st, who, norm);", "const released = [];", ["O1", "O2", "O7", "O8"]],
   ["only the first rider is let go", "protocol/authority/riders.js", "for (const r of riders) { if (out.has(r)) continue;", "for (const r of riders) { if (out.size) break;", ["O7"]],
   ["the seat's own ride unseats", "protocol/authority/riders.js", "      if (own && rootOf(s.to) === own && rideBefore(s.since)) continue;", "", ["O3"]],
   ["moving your own seat unseats you", "protocol/authority/riders.js", "const riders = Object.keys(w.presence.seats ?? {}).filter((k) => k !== who.actor);", "const riders = Object.keys(w.presence.seats ?? {});", ["O4"]],

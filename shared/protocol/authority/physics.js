@@ -26,7 +26,7 @@ const unknownKeys = (...a) => UP.unknownKeys(...a);
 
 // ---------- physics (design 20) ----------
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-const handOf = (me) => [me.at[0], me.at[1] + HAND_Y, me.at[2]]; // reach is measured from the hand, not the feet
+const gripPoint = (me) => [me.at[0], me.at[1] + HAND_Y, me.at[2]]; // reach is measured from the hand, not the feet
 // P5 + L3: the sequencer logs where unheld motion came to rest. The rest is the engine's value and nothing else: its
 // cause is the launch, it goes through admit like every write, and admit checks it against the engine. The engine
 // digest is its own `sim` entry. Whatever the authority then does about it (attach it to what it rests on, return a thing
@@ -184,7 +184,7 @@ function body(w, actor) {
   if (!b) refuse("not-here", "your body isn't in the world yet", "move {to: [x, y, z]} puts it somewhere (bodies are presence: never logged)");
   return b;
 }
-function holdOf(w, actor, id) {
+function gripOf(w, actor, id) {
   const h = w.presence.holds[id];
   // gone first: a delete now releases the hold itself (9d7bc99b), so a put of a deleted thing found no hold and said
   // 'not-holding' when the truth is that the thing is gone (attack-check L1low)
@@ -289,4 +289,4 @@ function arrivalBox(st, p, size) {
   const b = bodyAt(st, p); const r = floorStep({ y: b.y, ground0: b.ground, level0: G.level, f: b.ground, level1: G.level, height, scale });
   return bodyBox(p, scale, r.swim ? G.level : null);
 }
-export { arrivalBox, body, buildEpoch, dist, handOf, holdOf, lawOf, pathBlocked, restampEngine, settleSim, shearFree, sizeOf, solidAt };
+export { arrivalBox, body, buildEpoch, dist, gripPoint, gripOf, lawOf, pathBlocked, restampEngine, settleSim, shearFree, sizeOf, solidAt };

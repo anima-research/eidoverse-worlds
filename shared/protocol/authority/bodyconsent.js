@@ -1,6 +1,6 @@
 // shared/protocol/authority/bodyconsent.js — body consent: every act on another body is gated here, before delivery, and
 // the BODY_VERBS (consent, body, reach, inbox) answer for it (refactor split, 2026-10-17; moved from authority.js's "body
-// consent" section unchanged). Presence only: nothing here is ever appended. The body's own track (body, dist, handOf)
+// consent" section unchanged). Presence only: nothing here is ever appended. The body's own track (body, dist, gripPoint)
 // lives in the physics section above it, reached through UP.
 import * as C from "../consent.js";
 import { REACH, BODY_REACH } from "../physconst.js";
@@ -12,7 +12,7 @@ import { isScriptActor } from "./rights.js";
 // authority.js binds at load
 const body = (...a) => UP.body(...a);
 const dist = (...a) => UP.dist(...a);
-const handOf = (...a) => UP.handOf(...a);
+const gripPoint = (...a) => UP.gripPoint(...a);
 
 // ---------- body consent (L6 as revised 21:45; research 42). Presence only: none of this is ever appended. ----------
 // The authority keeps every body's table (consent.js) beside `bodies` and `holds`, refuses BEFORE delivery, and keeps an
@@ -143,7 +143,7 @@ const BODY_VERBS = {
   reach(w, actor, a) { const me = body(w, actor); const P = w.presence; let to, cls, point = a.point ?? null; expireAsks(w);
     if (Array.isArray(a.at)) { if (a.at.length !== 3 || a.at.some((n) => !Number.isFinite(n))) refuse("shape", "at: [x, y, z]", "");
       for (const [k, b] of Object.entries(P.bodies)) { if (k === actor) continue; const c = C.pointClass(b.at, a.at); if (c) { to = k; cls = c; break; } }
-      if (dist(handOf(me), a.at) > REACH) refuse("out-of-reach", `that point is ${r3(dist(handOf(me), a.at))} m from your hand`, "walk closer");
+      if (dist(gripPoint(me), a.at) > REACH) refuse("out-of-reach", `that point is ${r3(dist(gripPoint(me), a.at))} m from your hand`, "walk closer");
       if (!to) { (P.reaches ??= {})[actor] = { at: a.at.slice() }; w.presenceDirty = true; return { ok: true, touching: null, recorded: false }; } }
     else { to = bodyRef(a.who); if (!to || !point) refuse("shape", "reach {who, point} or {at: [x, y, z]}", "points: " + C.REACH_POINTS.join(", "));
       const np = C.namedPointClass(point); if (!np) refuse("shape", `no point '${point}'`, C.REACH_POINTS.join(", "));   // the relay's own classifier (F5)

@@ -538,7 +538,7 @@ export function initLocalBody({ logChat: logChatFn }) {
   // the controller's own layers (geometry seat pans, then the ground sit).
   setMountedHook(() => avatarMounts.has(CONFIG.name));
   // sitting is consent, standing up is the exit (scars r8 M1): someone else's edit moved the seat I sat on, and the
-  // authority let me go (its `unseated` inbox message, authority.js unseatsFor). Get off as when the world lets go.
+  // authority let me go (its `unseated` inbox message, authority/riders.js releasedRiders). Get off as when the world lets go.
   bus.on('body-inbox', (msg) => {
     // only from the seat I'm on now (review r9 L4): a late message (after a reconnect) never stands me up from a seat taken since
     const u = Array.isArray(msg?.messages) ? msg.messages.find((m) => m?.type === 'unseated') : null;

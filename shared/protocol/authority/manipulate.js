@@ -20,8 +20,8 @@ import { allSockets, socketPoint } from "./sockets.js";
 import { RESERVED } from "./rights.js";
 import { actIndexOf } from "./undo.js";
 import { heldEvent } from "./scriptrun.js";
-import { occupiedRefuse, sitterOn } from "./riders.js";
-import { body, dist, handOf, holdOf, lawOf, solidAt } from "./physics.js";
+import { riddenRefuse, socketRider } from "./riders.js";
+import { body, dist, gripPoint, gripOf, lawOf, solidAt } from "./physics.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const actOf = (...a) => UP.actOf(...a);
@@ -78,7 +78,7 @@ function shoveGate(w, st, me, a, flying, actor) {
 // Transform) or at which offset (held where it was grabbed: Unreal Free, Unity dynamic attach). A thing with grips is held
 // by one; a named grip must exist and suit the hand. Every client derives where it's drawn from the holder's hand bone and
 // this record: nothing streams, nothing is logged.
-function holdHow(a, g) {
+function gripHow(a, g) {
   const names = Object.keys(g.grips);
   if (a.grip !== undefined) {
     if (!names.length) refuse("no-grip", `it has no grips (grabbable.grips); it's held where you take it`, "leave grip out");
@@ -93,7 +93,7 @@ function holdHow(a, g) {
 // Grabbing what you already hold with your OTHER hand: a two-handed thing takes it in both (the second hand on a
 // secondary grip steers it: Godot SECOND, Unity Multiple); anything else swaps hands (Godot SWAP). The same hand, or no
 // hand named, is a no-op, as before.
-function secondHand(w, actor, a, h, e) {
+function secondGrip(w, actor, a, h, e) {
   const g = grabOf(e.c); const hand = a.hand;
   if (!g || hand === undefined || hand === h.hand || hand === h.second?.hand) return { ok: true, recorded: false, holding: a.id, inHandAt: h.pose.pos.map(r3), hand: h.hand, note: "you're already holding it" };
   if (g.twoHanded) {
@@ -102,7 +102,7 @@ function secondHand(w, actor, a, h, e) {
     h.second = { hand, ...(grip ? { grip } : {}) }; w.savePresence();
     return { ok: true, recorded: false, holding: a.id, hand: h.hand, second: h.second, note: "in both hands: the second steers it" };
   }
-  const how = holdHow(a, g); delete h.grip; delete h.offset; delete h.second; Object.assign(h, how); w.savePresence();
+  const how = gripHow(a, g); delete h.grip; delete h.offset; delete h.second; Object.assign(h, how); w.savePresence();
   return { ok: true, recorded: false, holding: a.id, ...how, note: `moved to your ${hand} hand` };
 }
 // a release flies (a sim launch) only for a dynamic thing in a world that runs physics; anything else is set down
@@ -123,7 +123,7 @@ function snapTarget(st, id, g, p, w = null) {
     const d = dist(socketPoint(st, x), p); if (d > socketRadius(sk)) continue;
     const where = { to: x.id };
     if (Object.entries(st.entities).some(([k, y]) => k !== id && y.c.parent?.to === x.id)) { out.notes.push({ passedOver: where, why: "something already sits in that socket" }); continue; }
-    const sat = w ? sitterOn(w, st, x.id, null) : null; if (sat?.who) { out.notes.push({ passedOver: where, why: `${said(sat.who)} sits in that socket` }); continue; }
+    const sat = w ? socketRider(w, st, x.id, null) : null; if (sat?.who) { out.notes.push({ passedOver: where, why: `${said(sat.who)} sits in that socket` }); continue; }
     const lk = [at, ...ancestors(st, at)].find((k) => lockedC(st.entities[k]?.c)); if (lk) { out.notes.push({ passedOver: where, why: `${lk} is locked` }); continue; }
     if (!out.to || d < out.to.d) out.to = { ...x, d, where };
   }
@@ -145,12 +145,12 @@ function returnHome(w, id, plan, cause) {
 }
 // What moved a thing last, when it was a hand or physics (a settlement, a punt, a rest, the authority's follow-up to one):
 // the entry and the release that caused it. An edit, a script or a return isn't one (they don't send it home).
-const HAND_VERBS = new Set(["put", "drop", "throw", "punt", "leave"]), SYSTEM_AFTER = new Set(["settle", "return-lost", "return-held"]);
+const MANIPULATE_VERBS = new Set(["put", "drop", "throw", "punt", "leave"]), SYSTEM_AFTER = new Set(["settle", "return-lost", "return-held"]);
 function lastRelease(w, id) {
   const lt = lastTouch(w, id, "transform"); if (!lt) return null;
   const se = w.entries[lt.seq]; const c = w.entries[se?.cause]; if (!isE(c)) return null;
-  const byHand = (c.kind === "act" && (HAND_VERBS.has(c.verb) && !RESERVED.has(c.actor) || (c.actor === "system" && SYSTEM_AFTER.has(c.verb)))) || (c.kind === "sim" && c.verb === "launch");
-  return byHand ? { seq: lt.seq, ts: se.ts, release: c.kind === "sim" ? c.cause : se.cause } : null;
+  const byManipulation = (c.kind === "act" && (MANIPULATE_VERBS.has(c.verb) && !RESERVED.has(c.actor) || (c.actor === "system" && SYSTEM_AFTER.has(c.verb)))) || (c.kind === "sim" && c.verb === "launch");
+  return byManipulation ? { seq: lt.seq, ts: se.ts, release: c.kind === "sim" ? c.cause : se.cause } : null;
 }
 const sameHome = (st, id, home) => { const e = st.entities[id]; const t = e?.c.transform; if (!t || !home) return false;
   const near = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-3);
@@ -236,11 +236,11 @@ function shaped(e, id, spec = null) {
 // where the hand lets go (a VR hand, or the desktop hand the person sees): within reach of the authority's track of the body
 function releasePos(me, pos) {
   if (!Array.isArray(pos) || pos.length !== 3 || pos.some((n) => !Number.isFinite(n))) refuse("shape", "pos is [x, y, z]: where your hand lets go", "");
-  const d = dist(handOf(me), pos); if (d > REACH) refuse("out-of-reach", `[${pos.map(r3).join(", ")}] is ${r3(d)} m from your hand as the authority tracks your body; you can reach ${REACH} m`, "move first, or leave pos out");
+  const d = dist(gripPoint(me), pos); if (d > REACH) refuse("out-of-reach", `[${pos.map(r3).join(", ")}] is ${r3(d)} m from your hand as the authority tracks your body; you can reach ${REACH} m`, "move first, or leave pos out");
   return pos.map(noNeg0);
 }
 function launch(w, actor, a, verb, g = null) {
-  const me = body(w, actor); const h = holdOf(w, actor, a.id); occupiedRefuse(w, w.state(), a.id, actor, verb === "drop" ? "dropped" : "thrown");
+  const me = body(w, actor); const h = gripOf(w, actor, a.id); riddenRefuse(w, w.state(), a.id, actor, verb === "drop" ? "dropped" : "thrown");
   const spec = flyingWorld(w.state());
   shaped(w.state().entities[a.id], a.id, spec);
   if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "throw needs v: [x, y, z] in m/s", "e.g. v: [0, 3, 4] tosses it up and forward (+z)");
@@ -282,4 +282,4 @@ function launch(w, actor, a, verb, g = null) {
   delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: verb, seq: act });
   return { ok: true, seq, act, flying: a.id, from: h.pose.pos.map(r3), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
 }
-export { fliesIn, flyingWorld, holdHow, homeScale, launch, recentRests, releasePos, returnDue, returnHome, returnPlan, sameHome, secondHand, shaped, shoveGate, snapTarget, stampHomes, stampResetHomes, vec3s };
+export { fliesIn, flyingWorld, gripHow, homeScale, launch, recentRests, releasePos, returnDue, returnHome, returnPlan, sameHome, secondGrip, shaped, shoveGate, snapTarget, stampHomes, stampResetHomes, vec3s };

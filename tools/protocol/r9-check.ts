@@ -37,11 +37,11 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the auditor skips every arrival mismatch", "shared/protocol/scriptaudit.js", "if (!agree) { skipped.push(", "if (true) { skipped.push(", ["A1"]],
   ["the agent ignores unseated", "mcpl/agent.ts", "if (unseatedFromMine(m, this.mySeat)) {", "if (false) {", ["U1"]],
   ["unseated from any seat", "shared/sockbody.js", "u.seat === mount.to);", "true);", ["U2"]],
-  ["no re-anchor on a step off a seat", "shared/protocol/authority/bodyverbs.js", "if (sat && unseatAt(w, st, actor, sat.to)) me = w.presence.bodies[actor];", "", ["T1"]],
+  ["no re-anchor on a step off a seat", "shared/protocol/authority/bodyverbs.js", "if (sat && letGoAt(w, st, actor, sat.to)) me = w.presence.bodies[actor];", "", ["T1"]],
   ["no re-anchor on an unseat", "shared/protocol/authority/riders.js", "w.presence.bodies[who] = { ...b, at, ts: w.pace ? w.pace() : w.now(), tokens: TRACK.cap }; w.presenceDirty = true;", "", ["T1", "T2"]],
   ["a verb read through the prototype", "shared/protocol/authority.js", "const h = Object.hasOwn(VERBS, verb) ? VERBS[verb] : undefined;", "const h = VERBS[verb];", ["L1"]],
   ["every create-world counts as the founding", "shared/protocol/shaperepair.js", "if (e.verb === \"create-world\" && !founded) {", "if (e.verb === \"create-world\") {", ["L2"]],
-  ["an unlogged grab records who", "shared/protocol/authority/scriptrun.js", "const anon = ANON_EVENTS.has(ev.on) || (HAND_EVENTS.has(ev.on) && ev.seq === undefined);", "const anon = ANON_EVENTS.has(ev.on);", ["L3"]],
+  ["an unlogged grab records who", "shared/protocol/authority/scriptrun.js", "const anon = ANON_EVENTS.has(ev.on) || (GRIP_EVENTS.has(ev.on) && ev.seq === undefined);", "const anon = ANON_EVENTS.has(ev.on);", ["L3"]],
   ["CONTROL (no-op: must stay green)", "shared/protocol/authority/gate.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {

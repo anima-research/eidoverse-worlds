@@ -402,7 +402,7 @@ export class WorldAgent {
   private simTicker: ReturnType<typeof setInterval> | null = null;
   private walkDone: ((arrived: boolean) => void) | null = null;
   // ---- the authority's track of this body (E1, tools audit 10-07: "two bodies") ----
-  // The authority keeps its own body for every actor (authority.js PHYSICS_VERBS.move: 6 m/s, 4 m at most in one go, not
+  // The authority keeps its own body for every actor (authority.js EMBODIED_VERBS.move: 6 m/s, 4 m at most in one go, not
   // through what it calls solid) and every hand verb measures from it. A person's client streams `move` steps to it
   // (client/lib/thingphysics.js track); this body walks the same way: it asks the authority for each stretch BEFORE it
   // walks it, so a wall the authority refuses stops this body exactly where the authority's stops.

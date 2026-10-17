@@ -45,7 +45,7 @@ const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq
 // list the authority would keep for any script that listens. Its activation records no identity (no trigger actor, no
 // event.by); the script still hears `by` live, and what it writes itself is its own (and in its scope). The auditor re-runs
 // it with a stand-in arrival (scriptaudit.js)
-const ANON_EVENTS = new Set(["enter", "leave"]), HAND_EVENTS = new Set(["grab", "release"]);
+const ANON_EVENTS = new Set(["enter", "leave"]), GRIP_EVENTS = new Set(["grab", "release"]);
 const anonEvent = ({ by: _by, ...rest }) => rest;
 const overBudget = (B, cfg, key, sponsor, cost) => (B.mine >= cfg.rate ? `${key} logged ${B.mine} activations in the last minute; the rate is ${cfg.rate}`
   : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget} (@world.script-settings.budget)`
@@ -105,7 +105,7 @@ function activate(w, id, name, ev) {
   // identity (review r9 claims O2): the log would otherwise hold who handled what only because a script listened. A hand
   // event with an act of its own (a grab the sim had to be told of, a release's settlement) already names its actor there,
   // so its activation keeps `trigger` (and the auditor its `by`)
-  const anon = ANON_EVENTS.has(ev.on) || (HAND_EVENTS.has(ev.on) && ev.seq === undefined);
+  const anon = ANON_EVENTS.has(ev.on) || (GRIP_EVENTS.has(ev.on) && ev.seq === undefined);
   const actE = { kind: "act", actor: `script:${id}`, verb: "script", ...(cause !== undefined ? { cause } : {}),
     body: { script: key, src: v.src, sponsor: sp.sponsor, sponsorAt: sp.sponsorAt, on: ev.on, ...(ev.by && !anon ? { trigger: { actor: ev.by, ...(ev.seq !== undefined ? { seq: ev.seq } : {}) } } : {}),
       event: anon ? anonEvent(recorded(event)) : recorded(event), head: actSeq - 1, seed, depth, engine: SR.ENGINE, api: SR.API, ...(res.reads ? { reads: res.reads } : {}),

@@ -63,10 +63,10 @@ import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, installCheck, logRt
 export { DUTY, scriptCeiling, scriptDefaults, setScriptConfig, setScriptDuty, unpaused } from "./authority/scripts.js";
 import { SCRIPT_VERBS, activate, drainHeld, drainScripts, heldEvent } from "./authority/scriptrun.js";
 export { ORPHANS, liftWorld, presenceEvent, scriptsView, settle, settleOrphans, tick } from "./authority/scriptrun.js";
-import { clearSeat, leftSeat, occupiedRefuse, seatOf, seatRights, setSeat, sitterOn, unseatAt, unseatWhy, unseatsFor } from "./authority/riders.js";
-import { arrivalBox, body, buildEpoch, dist, handOf, holdOf, lawOf, pathBlocked, restampEngine, settleSim, shearFree, sizeOf, solidAt } from "./authority/physics.js";
-import { fliesIn, flyingWorld, holdHow, homeScale, launch, recentRests, releasePos, returnDue, returnHome, returnPlan, sameHome, secondHand, shaped, shoveGate, snapTarget, stampHomes, stampResetHomes, vec3s } from "./authority/manipulate.js";
-import { PHYSICS_VERBS } from "./authority/bodyverbs.js";
+import { clearRide, leftRide, riddenRefuse, rideOf, socketRights, setRide, socketRider, letGoAt, releasedWhy, releasedRiders } from "./authority/riders.js";
+import { arrivalBox, body, buildEpoch, dist, gripPoint, gripOf, lawOf, pathBlocked, restampEngine, settleSim, shearFree, sizeOf, solidAt } from "./authority/physics.js";
+import { fliesIn, flyingWorld, gripHow, homeScale, launch, recentRests, releasePos, returnDue, returnHome, returnPlan, sameHome, secondGrip, shaped, shoveGate, snapTarget, stampHomes, stampResetHomes, vec3s } from "./authority/manipulate.js";
+import { EMBODIED_VERBS } from "./authority/bodyverbs.js";
 import { CAPACITY, CAPACITY_CEILING, capacityCheck } from "./authority/capacity.js";
 export { CAPACITY, CAPACITY_CEILING } from "./authority/capacity.js";
 import { isLookAt, isNum, nearMiss, restCheck, unknownKeys, valueCheck } from "./authority/checks.js";
@@ -304,7 +304,7 @@ function guess(s, opts) {
 }
 
 // ---------- L7, the one gate: authority/gate.js ----------
-// ---------- seatRights (a socket joining a host): authority/riders.js ----------
+// ---------- socketRights (a socket joining a host): authority/riders.js ----------
 // ---------- how much a world holds: authority/capacity.js ----------
 // ---------- the gate's value checks: authority/checks.js ----------
 // ---------- the write path: authority/writes.js ----------
@@ -325,7 +325,7 @@ function guess(s, opts) {
 // ---------- acting on a person: authority/moderation.js ----------
 // ---------- the verb table's bodies: authority/verbs.js ----------
 const VERBS = {
-  ...PHYSICS_VERBS,
+  ...EMBODIED_VERBS,
   ...BODY_VERBS,
   ...FOUNDING_VERBS,
   ...READ_VERBS,
@@ -342,4 +342,4 @@ const VERBS = {
 export const VERB_NAMES = Object.freeze(Object.keys(VERBS));
 export function forkCopy(w, actor, args) { CTX.forking = true; try { return request(w, actor, "fork-copy", args); } finally { CTX.forking = false; } }
 // the leaves reach the layers above them through UP (authority/ctx.js): bound here, once every module has loaded
-Object.assign(UP, { actEntry, actOf, activate, admit, body, boundsOf, changeEntry, changeShape, commit, danglingRefs, dist, enter, guess, handOf, historyDiff, holdsRefs, homeScale, isNum, lacks, lastTouch, lockCheck, mint, nearMiss, needThing, needWords, notAThing, offRefuse, opsTouching, outsideWorld, rateCheck, request, resolve, restampEngine, returnDue, returnHome, returnPlan, sameHome, seatOf, seatRights, serverWritten, setSeat, settleSim, sitterOn, touchedOf, unknownKeys, vec3s, warnings, withoutRefs });
+Object.assign(UP, { actEntry, actOf, activate, admit, body, boundsOf, changeEntry, changeShape, commit, danglingRefs, dist, enter, guess, gripPoint, historyDiff, holdsRefs, homeScale, isNum, lacks, lastTouch, lockCheck, mint, nearMiss, needThing, needWords, notAThing, offRefuse, opsTouching, outsideWorld, rateCheck, request, resolve, restampEngine, returnDue, returnHome, returnPlan, sameHome, rideOf, socketRights, serverWritten, setRide, settleSim, socketRider, touchedOf, unknownKeys, vec3s, warnings, withoutRefs });
