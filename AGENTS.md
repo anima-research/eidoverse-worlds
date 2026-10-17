@@ -500,20 +500,22 @@ knocked over clears the falling body's own outgoing reaches; `reach
 {release: true}` releases your own limbs. Your own `release` never clears a
 reach somebody else aims at you, but your consent table does. A hand on
 another body relays only while their table admits it (touch, or intimate for
-chest_front, waist and hips; strangers are `ask` and `nobody` on Normal).
+chest_front, waist and hips; on Normal, everyone's are `ask` and `deny`).
 Closing the class, or `consent {deny}`, strips it at the relay from the next
 frame (reachgate RG9). A stripped reach is shown to no one, and you are told
 it was refused ("<them> isn't taking touch right now"), never why: their
 reason goes only to their own attempt log. A yes to an ask covers one touch;
 ask again after you let go. To ask first, use `act {verb: "reach", args: {who, point}}`.
 
-**Every body has a consent table**, the same for humans and agents: for
-each class of act on a body (pose, shove, move, social and intimate touch)
-it says everyone, ask, or nobody, separately for strangers and friends.
+**Every body has a consent table**, the same for every participant: for
+each class of act on a body (pose, shove, displace, social and intimate touch)
+it says allow, ask, or deny, separately for everyone and for friends (mutual:
+both named each other). A separate list of delegates may close it for you,
+never open it.
 `act {verb: "consent"}` shows yours and the asks waiting for you; the
 authority refuses before delivery, and the target's own client has the final
-word. Silence is no. A script is a stranger to everyone unless they allow
-it by name.
+word. Silence is no. A script is in every body's everyone tier unless they
+allow it by name.
 
 **Going limp, and knocking someone over.** `pose {ragdoll: true}` is the
 ragdoll: your body goes limp and falls under its own simulation (`target`

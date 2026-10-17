@@ -17,5 +17,5 @@ export const SHOVE = Object.freeze({ reach: 0.9, beneath: 0.1, above: 2.0, maxV:
 // BODY_RANGE. Three layers, three numbers, each named here so none is a stray literal.
 export const BODY_REACH = REACH + 0.5;
 export const SHOVE_REACH = 2.5;
-export const BODY_RANGE = Object.freeze({ shove: 3, move: 3, pose: 10 });
+export const BODY_RANGE = Object.freeze({ shove: 3, displace: 3, pose: 10 });
 export const USE_REACH = 2.5;  // m, feet to a thing the use prompt offers (Roblox's prompt reaches ~10 studs ≈ 2.8 m)

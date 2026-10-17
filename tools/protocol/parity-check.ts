@@ -258,7 +258,7 @@ const cases: Case[] = [
       const occ = s.call("olive", "body", { to: "vic", kind: "occupy" }), seat = s.call("olive", "body", { to: "vic", kind: "seat" });
       const SK = await import(TREE + "shared/sockbody.js"); const C = await import(TREE + "shared/protocol/consent.js");
       return { occ: show(occ), seat: show(seat), reach: !!SK.OCCUPY_REACH, old: "SIT_REACH" in SK || "SEAT_REACH" in SK, cls: C.KIND_CLASS?.occupy ?? null, oldCls: C.KIND_CLASS?.seat ?? null }; },
-    good: (o) => !/^refused shape/.test(o.occ) && /^refused shape/.test(o.seat) && o.reach && !o.old && o.cls === "move" && o.oldCls === null },
+    good: (o) => !/^refused shape/.test(o.occ) && /^refused shape/.test(o.seat) && o.reach && !o.old && o.cls === "displace" && o.oldCls === null },
   { id: "O4", what: "…the readers and the words follow: sockbody's vacatedAt/vacatedFromMine read `socket`, the browser and the agent read `vacated`, the spec, AGENTS.md, SCRIPTS.md and WIRE.md say `vacated {socket, …}` and never `unseated`, and the version history records it", async run() {
       const SK = await import(TREE + "shared/sockbody.js"); const lb = readText("client/lib/localbody.js"), ag = readText("mcpl/agent.ts"), md = readText("spec/PROTOCOL.md"), a = readText("AGENTS.md"), sc = readText("docs/SCRIPTS.md"), wi = readText("docs/WIRE.md");
       return { mine: SK.vacatedFromMine?.({ socket: "s1" }, { to: "s1" }) === true && SK.vacatedFromMine?.({ seat: "s1" }, { to: "s1" }) === false, at: JSON.stringify(SK.vacatedAt?.({ at: [1, 2, 3] })),

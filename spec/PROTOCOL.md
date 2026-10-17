@@ -610,12 +610,16 @@ request moves a copy to a newer version, keeping its own overrides.
   rest caused by its launch). The log never depends on reconstructing where
   a ride was.
 - **Body consent.** Every body has one table of act classes (near, follow,
-  social touch, intimate touch, pose, shove, move, voice; `carry` is
+  social touch, intimate touch, pose, shove, displace — someone else dragging,
+  carrying or occupying-with you, never your own `move` — and voice; `carry` is
   reserved, PHYSICS §4.1), each set to
-  everyone, ask, or nobody, separately for strangers and friends — the same
+  `allow`, `ask`, or `deny`, separately for two tiers: `everyone` and
+  `friends` (mutual: both named each other in their `friends` list) — the same
   table for every participant, and its defaults are one preset for every body
-  (`shared/protocol/consent.js` `DEFAULT_PRESET`). Silence is no. For touch, pose, shove and
-  move the authority refuses before delivery (a reach at the relay, above),
+  (`shared/protocol/consent.js` `DEFAULT_PRESET`). A separate `delegates` list
+  names who may close your table for you (pause, deny), never open it; only you
+  open it. Silence is no. For touch, pose, shove and
+  displace the authority refuses before delivery (a reach at the relay, above),
   and the target's own client has the final word. *Near, follow and voice
   are in the table and the settings, but nothing enforces them yet.* Consent is
   presence: it is never logged and is not a grant.
@@ -840,7 +844,7 @@ person's own word tell them no over people); it has a documented override
 reaches another person's body — standing close, following, touching
 (plainly or intimately), posing, knocking over, carrying, speaking into the
 ear — is decided by **their** consent table (§5): per class, per tier
-(strangers / friends), `everyone` | `ask` | `nobody`, with `ask` filing a
+(`everyone` / `friends`), `allow` | `ask` | `deny`, with `ask` filing a
 20-second question they answer or let lapse (silence is no), and a per-person
 `deny` that outlasts the answer for the stay. No role, including owner,
 overrides a consent refusal: this is the one veto standing *outside* the

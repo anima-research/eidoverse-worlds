@@ -11,5 +11,5 @@ ok(r2.ok === false, "C2 an unknown class is refused", r2);
 ok(typeof Object.prototype.toString === "function" && !Object.getOwnPropertyNames(Object.prototype).some((k) => /^(touch|toString)$/.test(k) && typeof (Object.prototype as any)[k] !== "function"), "C3 Object.prototype is untouched (toString is still a function)", typeof Object.prototype.toString);
 const r3 = setConsent(P, "u-alice", { deny: "u-bbbbbbbbbbbbbbbbbbbb", class: "touch" }, now);
 ok(r3.ok === true && Object.getPrototypeOf(P.consent["u-alice"].over) === null, "C4 a real deny still works, on a prototype-less table", r3);
-ok(decide(P, "u-bbbbbbbbbbbbbbbbbbbb", "u-alice", "touch", now) !== "everyone", "C5 …and is honoured");
+ok(decide(P, "u-bbbbbbbbbbbbbbbbbbbb", "u-alice", "touch", now) .mode === "deny", "C5 …and is honoured");
 console.log(`[consent-check] ${fails ? fails + " failed" : "all pass"}`); process.exit(fails ? 1 : 0);

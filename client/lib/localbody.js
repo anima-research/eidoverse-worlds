@@ -527,7 +527,7 @@ function applyShove(lean, by) {
 export function initLocalBody({ logChat: logChatFn }) {
   logChat = logChatFn;
 
-  // my whole consent table (every class × strangers/friends) as the authority takes it (consentsync.js: the preset, then
+  // my whole consent table (every class × everyone/friends) as the authority takes it (consentsync.js: the preset, then
   // the cells that depart from it): every arrival, every change; a refusal
   // is a toast and a retry
   const consentSync = makeConsentSync({ table: bodyTable, send: sendRequest, toast, on: (ev, fn) => bus.on(ev, fn), enabled: () => !(CONFIG.renderer || CONFIG.spectate) });

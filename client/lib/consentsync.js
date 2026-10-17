@@ -1,7 +1,7 @@
-// My whole consent table (every class × strangers/friends), as the authority takes it (consent.js bodyTable: ONE preset,
+// My whole consent table (every class × everyone/friends), as the authority takes it (consent.js bodyTable: ONE preset,
 // which resets the server's cells to Normal, then one `set` per cell that departs from it, in order on one socket): the
 // server checks it before it forwards anyone's knock-over, pose, grab or touch, so a table that never lands leaves me on
-// Normal (strangers: nobody) while my switch says everyone — and the server refuses in my name. The sync is sent on
+// Normal (everyone: deny) while my switch says allow — and the server refuses in my name. The sync is sent on
 // every arrival (a world's presence plane is its own) and every change; a refusal is said once and the table is sent
 // again on a timer and on the next arrival. The last word is still my client's: it re-checks the switch when a puppet or shove arrives (localbody.js).
 // A leaf like consent.js — everything it touches comes in, so tools/consent-switch-test.ts can drive it.

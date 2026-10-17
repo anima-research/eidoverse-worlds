@@ -83,12 +83,13 @@ export const VERBSPEC = {
   // ---- the rest of the authority's verbs (rows added 10-17: names and types; each handler still judges its values) ----
   leave: { doc: "leave the world: whatever you hold is dropped (the server sends this when you disconnect)", args: {} },
   wait: { doc: "what physics did lately: things in flight, things that came to rest in the last minute, and any not yet on the record", args: {} },
-  consent: { doc: "your body's consent table (presence: never logged). Bare: read it, with asks waiting for you and the last attempts on you. preset/set/allow/deny/pause/friend change it (only you open it; someone you named trusted may close it, of: <you>); answer replies to an ask", args: {
-      preset: { type: "any", doc: "normal | open | friends-only | performer" }, set: { type: "any", doc: "{class, tier: strangers|friends, mode: everyone|ask|nobody}" },
+  consent: { doc: "your body's consent table (presence: never logged). Bare: read it, with asks waiting for you and the last attempts on you. preset/set/allow/deny/pause/friend/delegate change it (only you open it; a delegate you named may close it, of: <you>); answer replies to an ask", args: {
+      preset: { type: "any", doc: "normal | open | friends-only | performer" }, set: { type: "any", doc: "{class, tier: everyone|friends, mode: allow|ask|deny} (the words before 10-17, strangers and everyone|nobody, are still taken)" },
       allow: { type: "any", doc: "an identity allowed (every class, or `class`) for `for` ms (default 1 h, at most 30 days)" }, deny: { type: "any", doc: "an identity refused (every class, or `class`) until lifted" },
-      class: { type: "any", doc: "near | follow | touch | intimate | pose | shove | move | voice" }, for: { type: "any", doc: "ms an allow lasts" }, pause: { type: "any", doc: "true: every class is nobody, friends included" },
-      friend: { type: "any", doc: "name someone you trust (they may close your table, never open it)" }, of: { type: "any", doc: "act on someone else's table (closing only, if they named you trusted)" },
-      answer: { type: "any", doc: "an ask's id" }, yes: { type: "any", doc: "with answer: true allows it this once" } }, example: { set: { class: "touch", tier: "strangers", mode: "ask" } } },
+      class: { type: "any", doc: "near | follow | touch | intimate | pose | shove | displace | voice (displace: someone dragging, carrying or occupying-with your body; `move` is its old spelling)" }, for: { type: "any", doc: "ms an allow lasts" }, pause: { type: "any", doc: "true: every class is deny, friends included" },
+      friend: { type: "any", doc: "name a friend: the friends tier is mutual (both of you named each other)" }, delegate: { type: "any", doc: "name a delegate: they may close your table (pause, deny), never open it" },
+      of: { type: "any", doc: "act on someone else's table (closing only, if they named you a delegate)" },
+      answer: { type: "any", doc: "an ask's id" }, yes: { type: "any", doc: "with answer: true allows it this once" } }, example: { set: { class: "touch", tier: "everyone", mode: "ask" } } },
   body: { doc: "act on another body (pose, anim, shove, drag, occupy, carry): their consent decides, at once or after they answer an ask (20 s; silence is no)", args: {
       to: { type: "any", doc: "their identity" }, kind: { type: "any", doc: "pose | anim | shove | drag | occupy | carry" }, spec: { type: "any", doc: "what the act carries (a pose, a clip)" }, why: { type: "any", doc: "a line they see with the ask" } },
     required: ["to", "kind"], example: { to: "u-…", kind: "pose", spec: { clip: "wave" } } },

@@ -9,6 +9,7 @@ import * as R from "../roles.js";
 import { simFold } from "../simlayer.js";
 import { r3 } from "../round.js";
 import { refuse } from "./refuse.js";
+import { migratePresence } from "../consent.js";
 // a state that is changed in place after it's read (a batch's working copy, and previews of it): indexed whole, never
 // derived from or kept as the last (a derivation compares entity objects, which such a state changes under them)
 const VOLATILE = new WeakSet();
@@ -45,6 +46,9 @@ export function worldOf(io) {
   // a presence file written before R 10-17 13:46 named who occupies what `seats`: read it as `occupants`, keep only the new key
   if (w.presence.seats && !w.presence.occupants) w.presence.occupants = w.presence.seats;
   delete w.presence.seats;
+  // …and consent tables in the words before R 10-17 14:41 (strangers/everyone/nobody/move, one friends list): read them,
+  // rewrite them in today's (consent.js migratePresence: once, marked in the plane)
+  if (migratePresence(w.presence)) w.presenceDirty = true;
   w.savePresence = () => io.savePresence?.(w.presence);
   // Governance keys (§2.4) live outside the log. Custody is authority practice (§5 identity), injected like storage:
   // io.custody = { sequencer() → "ed25519:…", keyOf(who, make?) → "ed25519:…" | null } (server/filehost.ts keeps the keys).

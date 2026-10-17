@@ -42,7 +42,7 @@ function bodyGate(w, from, to, kind, extra = {}) {
   if (P.throttle?.[`${from}:${cls}`] > now) return result("refused", { ok: false, code: "cool-down", class: cls, reason: `${from} is on a cool-down for ${cls} after repeated refusals (moderator log)`, fix: "ask people first; this lifts by itself" });
   let d = C.decide(P, from, to, cls, now);
   if (isScriptActor(from) && extra.sponsor && !C.tableOf(P, to).overrides[from]?.[cls] && C.tableOf(P, to).overrides[`scripts-by:${extra.sponsor}`]?.[cls]) d = C.decide(P, `scripts-by:${extra.sponsor}`, to, cls, now);
-  if (d.mode === "nobody") { noteRefusal(w, from, to, cls, now); ringPush(P, { ts: now, from, to, cls, verdict: "refused", why: d.why }); w.presenceDirty = true;
+  if (d.mode === "deny") { noteRefusal(w, from, to, cls, now); ringPush(P, { ts: now, from, to, cls, verdict: "refused", why: d.why }); w.presenceDirty = true;
     return { ok: false, code: "consent", class: cls, reason: C.refusalWords(to, cls), fix: C.REFUSAL_FIX }; }   // the why is the target's (ring) only
   if (d.mode === "ask") {
     if (isScriptActor(from)) return result("refused", { ok: false, code: "consent", class: cls, reason: `${to}'s ${cls} is 'ask'; a behaviour can't wait for an answer`, fix: `${to} may allow ${from} by name` });
@@ -60,7 +60,7 @@ function bodyGate(w, from, to, kind, extra = {}) {
 // review 10-15 item 1): may `from`'s hand rest on `to` as `cls` (touch | intimate) right now? Asked per presence packet, so it
 // is presence only: nothing is appended, no ask is made (the relay can't wait; the `reach` verb asks), and the refusal
 // counter that leads to a moderator-log cool-down is NOT fed (a stream of frames is one attempt, not fifty). Admitted when
-// `to`'s table says everyone (a standing allow included), or when the `reach` verb already admitted this touch (an ask
+// `to`'s table says allow (a standing allow included), or when the `reach` verb already admitted this touch (an ask
 // answered yes: P.reaches, which revokeAfter clears when the table closes). A refusal is said to the reacher in the body
 // inbox, and to the target's attempt ring, once per (from, to, cls) per C.REACH_NOTE_MS; `noted` says whether it was now.
 export function reachAdmits(w, from, to, cls, { point = null, limb = null } = {}) {
@@ -73,7 +73,7 @@ export function reachAdmits(w, from, to, cls, { point = null, limb = null } = {}
   let r;
   if (P.throttle?.[`${from}:${cls}`] > now) r = { code: "cool-down", reason: `${from} is on a cool-down for ${cls} after repeated refusals (moderator log)`, fix: "ask people first; this lifts by itself" };
   else { const d = C.decide(P, from, to, cls, now);
-    if (d.mode === "everyone") return { ok: true, consent: d.standing === "allow" ? "allowed" : "standing" };
+    if (d.mode === "allow") return { ok: true, consent: d.standing === "allow" ? "allowed" : "standing" };
     r = d.mode === "ask"
       ? { code: "consent", reason: `${to}'s ${cls} for you is ask: a hand isn't streamed onto them until they say yes`, fix: `ask first with the reach request: reach {who: "${to}", point: "${point ?? "<point>"}"} (they have 20 s; silence is no)` }
       : { code: "consent", reason: C.refusalWords(to, cls), fix: C.REFUSAL_FIX, why: d.why }; }
@@ -99,25 +99,25 @@ const reachModes = (P, to, now) => Object.fromEntries(Object.entries(P.reaches ?
 function deliver(w, from, to, kind, cls, extra, consent) {
   const P = w.presence, b = P.bodies[to];
   if (cls === "pose") { b.pose = extra.spec ?? {}; b.poseBy = from; }
-  if (cls === "move") b.draggedBy = from;
+  if (cls === "displace") b.draggedBy = from;
   if (cls === "shove") b.tumble = { by: from, ts: w.now() };
   if (cls === "touch" || cls === "intimate") (P.reaches ??= {})[from] = { to, cls, point: extra.spec?.point ?? null, until: w.now() + C.REACH_GRANT_MS };
   inboxPush(P, to, { type: "body", from, kind, cls, consent, ...(extra.spec ? { spec: extra.spec } : {}) }); w.presenceDirty = true;
 }
 // After any change to `to`'s table: whatever someone is doing to them that the table now says nobody to ends NOW, and the
-// actor hears body-revoked once (42 §4.6). A pose or drag granted by an ask outlives a later 'ask' cell; only 'nobody' ends
-// it. A touch is held to more (r2 holes F3 (c)): its cell moving to anything but everyone is a change of mind, and ends it
+// actor hears body-revoked once (42 §4.6). A pose or drag granted by an ask outlives a later 'ask' cell; only 'deny' ends
+// it. A touch is held to more (r2 holes F3 (c)): its cell moving to anything but allow is a change of mind, and ends it
 // (`before`: reachModes before the change, so a change to some other class leaves a yes standing).
 function revokeAfter(w, to, before = {}) { const P = w.presence, b = P.bodies[to], now = w.now(); if (!b) return [];
-  const ended = []; const end = (actor, cls, clear) => { if (C.decide(P, actor, to, cls, now).mode !== "nobody") return; clear(); ended.push({ actor, class: cls }); inboxPush(P, actor, { type: "body-revoked", by: to, class: cls }); };
+  const ended = []; const end = (actor, cls, clear) => { if (C.decide(P, actor, to, cls, now).mode !== "deny") return; clear(); ended.push({ actor, class: cls }); inboxPush(P, actor, { type: "body-revoked", by: to, class: cls }); };
   if (b.poseBy) end(b.poseBy, "pose", () => { delete b.pose; delete b.poseBy; });
-  if (b.draggedBy) end(b.draggedBy, "move", () => { delete b.draggedBy; });
+  if (b.draggedBy) end(b.draggedBy, "displace", () => { delete b.draggedBy; });
   for (const [actor, r] of Object.entries(P.reaches ?? {})) if (r?.to === to) { const m = C.decide(P, actor, to, r.cls, now).mode;
-    if (m === "nobody" || (m !== "everyone" && m !== before[actor])) { delete P.reaches[actor]; ended.push({ actor, class: r.cls }); inboxPush(P, actor, { type: "body-revoked", by: to, class: r.cls }); } }
+    if (m === "deny" || (m !== "allow" && m !== before[actor])) { delete P.reaches[actor]; ended.push({ actor, class: r.cls }); inboxPush(P, actor, { type: "body-revoked", by: to, class: r.cls }); } }
   w.presenceDirty = true; return ended; }
-const shieldOf = (P, who) => { const t = C.tableOf(P, who); return { preset: t.preset, strangers: Object.fromEntries(C.ENFORCED.map((c) => [c, t.strangers[c]])), ...(t.paused ? { paused: true } : {}) }; };
+const shieldOf = (P, who) => { const t = C.tableOf(P, who); return { preset: t.preset, everyone: Object.fromEntries(C.ENFORCED.map((c) => [c, t.everyone[c]])), ...(t.paused ? { paused: true } : {}) }; };
 const BODY_VERBS = {
-  // L6: the person's own table. `of: <who>` acts on someone else's: closing only, and only if they named you trusted.
+  // L6: the person's own table. `of: <who>` acts on someone else's: closing only, and only if they named you a delegate.
   consent(w, actor, a) { const P = w.presence, now = w.now(); expireAsks(w);
     if (a.answer !== undefined) { const k = P.asks?.[a.answer]; if (!k || k.to !== actor) refuse("not-found", `no ask '${a.answer}' waiting for you`, "consent {} lists them");
       delete P.asks[a.answer];
@@ -125,11 +125,11 @@ const BODY_VERBS = {
         deliver(w, k.from, actor, k.kind, k.cls, { spec: k.spec }, "asked"); ringPush(P, { ts: now, from: k.from, to: actor, cls: k.cls, verdict: "allowed (asked)" }); inboxPush(P, k.from, { type: "body-reply", ask: k.id, ok: true, applied: true }); }
       else { coolDown(P, k, now); ringPush(P, { ts: now, from: k.from, to: actor, cls: k.cls, verdict: "refused (asked)" }); inboxPush(P, k.from, { type: "body-reply", ask: k.id, ok: false, why: C.refusalWords(actor, k.cls) }); }
       w.presenceDirty = true; return { ok: true, answered: a.answer, yes: a.yes === true }; }
-    const changing = ["preset", "set", "allow", "deny", "pause", "friend"].some((k) => a[k] !== undefined);
-    if (changing) { const before = reachModes(P, typeof a.of === "string" ? a.of : actor, now); const r = C.setConsent(P, actor, a, now); if (!r.ok) refuse(r.code, r.reason, r.fix ?? "anyone you trust may close your shield; only you may open it (§5)");
+    const changing = ["preset", "set", "allow", "deny", "pause", "friend", "delegate"].some((k) => a[k] !== undefined);
+    if (changing) { const before = reachModes(P, typeof a.of === "string" ? a.of : actor, now); const r = C.setConsent(P, actor, a, now); if (!r.ok) refuse(r.code, r.reason, r.fix ?? "a delegate you named may close your table; only you may open it (§5)");
       const ended = revokeAfter(w, r.target, before); w.presenceDirty = true; return { ok: true, recorded: false, of: r.target, ...(ended.length ? { ended } : {}), table: C.tableOf(P, r.target) }; }
     const t = C.tableOf(P, actor);
-    return { ok: true, table: { preset: t.preset, strangers: t.strangers, friends: t.friends, paused: t.paused, trusted: t.friendsList }, asks: Object.values(P.asks ?? {}).filter((k) => k.to === actor),
+    return { ok: true, table: { preset: t.preset, everyone: t.everyone, friends: t.friends, paused: t.paused, friendsList: t.friendsList, delegates: t.delegates }, asks: Object.values(P.asks ?? {}).filter((k) => k.to === actor),
       attempts: (P.ring ?? []).filter((r) => r.to === actor).slice(-10) }; },
   // one shape for every act on a body (42 §4.4): pose, anim, shove, drag. Waits for nothing in the lab; says what happened.
   body(w, actor, a) { const me = body(w, actor); const to = bodyRef(a.to); expireAsks(w);

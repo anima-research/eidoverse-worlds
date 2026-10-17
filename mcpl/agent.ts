@@ -1126,7 +1126,7 @@ export class WorldAgent {
               // pulling one of this body's nails: the server has already
               // checked this body's consent table (one table and one preset
               // for every body, PROTOCOL §6a), and this runtime applies what
-              // reached it (the browser re-reads its strangers row: one shared
+              // reached it (the browser re-reads its everyone row: one shared
               // final word is open, research parity #13). The live sim lets go
               // of that joint and the body sags from what remains.
               const j = String(msg.unpin.joint ?? "");
