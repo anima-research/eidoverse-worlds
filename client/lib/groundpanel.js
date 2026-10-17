@@ -84,7 +84,7 @@ export function paintGround(body) {
       const lvl = document.createElement('input');
       lvl.type = 'number'; lvl.step = '0.25'; lvl.title = 'water level (m)';
       lvl.style.cssText = 'width:4.5em;font-size:11px';
-      const cur = currentTerrainArgs()?.water?.level;
+      const cur = (state.st?.water ?? currentTerrainArgs()?.water)?.level;   // water is its own component (shape audit 10-16)
       if (Number.isFinite(cur)) lvl.value = String(cur);
       else fetch(`/heightmap?world=${encodeURIComponent(CONFIG.world)}&format=json`).then((r) => (r.ok ? r.json() : null))
         .then((m) => { if (m && !lvl.value) lvl.value = (m.min + (m.max - m.min) * 0.25).toFixed(1); }).catch(() => {});
@@ -96,10 +96,10 @@ export function paintGround(body) {
         btn('fill', () => {
           const level = Number(lvl.value);
           if (!Number.isFinite(level)) { flashHint('set a water level first'); return; }
-          growTerrain({ water: { ...(terrainEditBase()?.water ?? {}), level } });
+          ground('water', { ...(state.st?.water ?? {}), level });
           flashHint(`water at ${level} m`);
         }),
-        btn('drain', () => { growTerrain({ water: null }); flashHint('water drained'); }),
+        btn('drain', () => { ground('water', null); flashHint('water drained'); }),
       ));
     }
 

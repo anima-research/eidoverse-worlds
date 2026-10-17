@@ -231,14 +231,17 @@ export const WALK_SPEED = MOVER.walk.speed;   // the walking pace waterCost pric
 /** @deprecated wading has no depth limit now — kept so callers of the old rule still read one. */
 export const WADE_DEPTH = 1.0;
 const HEX = /^#[0-9a-fA-F]{6}$/;
-/** A world's water, normalized — or null when it has none.
- *  @param {Record<string, any>} a  terrain-verb args */
+/** @world's water (shape audit 10-16: its own component, @world.water; an older world's terrain.water until the load moves
+ *  it), or undefined. @param {Record<string, any>} c  @world's components (or a view: {water, terrain}) */
+export const worldWater = (c) => c?.water ?? c?.terrain?.water;
+/** A world's water, normalized — or null when it has none. Its colour is an int (0xRRGGBB) or an older '#rrggbb'.
+ *  @param {Record<string, any>} a  terrain-verb args carrying `water` (the water component riding on them) */
 export function waterParams(a) {
   const w = a?.water;
   if (!w || typeof w.level !== 'number' || !Number.isFinite(w.level)) return null;
   return {
     level: clamp(w.level, -500, 500),
-    color: typeof w.color === 'string' && HEX.test(w.color) ? w.color : '#1d5a6e',
+    color: Number.isInteger(w.color) && w.color >= 0 && w.color <= 0xffffff ? `#${w.color.toString(16).padStart(6, '0')}` : typeof w.color === 'string' && HEX.test(w.color) ? w.color : '#1d5a6e',
     opacity: clamp(num(w.opacity, 0.82), 0.1, 1),
   };
 }

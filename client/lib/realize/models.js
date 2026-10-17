@@ -596,7 +596,7 @@ function syncCompLight(id) {
   if (!L) { dropCompLight(id); return; }
   const host = entities.get(id) ?? null;
   const spec = {
-    color: L.color, intensity: L.intensity, range: L.range, keep: L.important, dayAware: L.day,   // the rig's `keep` tier is light.important
+    color: L.color, intensity: L.intensity, range: L.range, decay: L.decay, keep: L.important, dayAware: L.daytime !== 'full',   // the rig's `keep` tier is light.important; decay is the value's (shape audit 10-16)
     spot: L.kind === 'spot' ? { angle: L.angle, inner: L.inner } : null,
     obj: host, pos: host ? null : [...(ent.pos ?? [0, 0, 0])],
   };

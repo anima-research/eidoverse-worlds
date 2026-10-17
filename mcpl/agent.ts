@@ -1611,7 +1611,8 @@ export class WorldAgent {
     // the world's own keys: the ground this body walks on, the sky, the grass
     const W = this.st as any;
     try {
-      if (d.world.includes("terrain") && W.terrain) await this.buildTerrain(W.terrain);
+      // the world's water is its own component (shape audit 10-16): it rides on the terrain args the ground is built from
+      if ((d.world.includes("terrain") || d.world.includes("water")) && W.terrain) await this.buildTerrain(W.water ? { ...W.terrain, water: W.water } : W.terrain);
       if (d.world.includes("terrain")) { if (W.terrain) this.worldInfo.terrain = { seed: W.terrain.seed, size: W.terrain.size, amplitude: W.terrain.amplitude, flatRadius: W.terrain.flatRadius }; else delete this.worldInfo.terrain; }
       if (d.world.includes("sky")) this.skyState = W.sky as typeof this.skyState;
       if (d.world.includes("grass")) { if (W.grass) this.worldInfo.grass = this.grassInfo(W.grass); else delete this.worldInfo.grass; }
@@ -4624,7 +4625,7 @@ export class WorldAgent {
       // brightness, reach — read off the FOLDED record (the perception view
       // above thins a light's fields away) through the one shared reading.
       const lit = lightOf((this.st.entities as Record<string, any>)[e.id]);
-      if (lit) aff.push(`light: #${lit.color.toString(16).padStart(6, "0")}, brightness ${+lit.intensity.toFixed(2)}, reaches ${+lit.range.toFixed(2)}m${lit.important ? ", important (always casts)" : ""}${lit.day ? "" : ", burns at noon"}`);
+      if (lit) aff.push(`light: #${lit.color.toString(16).padStart(6, "0")}, brightness ${+lit.intensity.toFixed(2)}, reaches ${+lit.range.toFixed(2)}m${lit.important ? ", important (always casts)" : ""}${lit.daytime === "full" ? ", burns at noon" : ""}`);
       // a declared collider (the collider component)
       const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
       if (col === "mesh" || col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its mesh (its triangles)");

@@ -102,27 +102,28 @@ const END = (session = S1, gen = 5) => ({ ...(normalizeCaptionArgs({ id: "cinema
 check("a client-supplied gen never survives the shape", (normalizeCaptionArgs({ id: "cinema", session: S1, n: 1, t0: 0, t1: 1, text: "x", gen: 99 }) as any).args.gen === undefined);
 check("an empty screen refuses nothing but an end", captionRefusal(undefined, L(1, 0, "a")) === null && /no captions to end/.test(captionRefusal(undefined, END()) ?? ""));
 let bag = foldCaption(undefined, L(1, 0, "a", S1, { title: "a film" }));
-check("the first line folds a bag: session, n, title, mediaTime, one-line window", !!bag && bag.session === S1 && bag.n === 1 && bag.title === "a film" && bag.mediaTime === 1 && bag.window.length === 1, JSON.stringify(bag));
+// shape audit 10-16 (render-media-env §11): the bag holds its current line, once (no window, no mediaTime: the log is the transcript)
+check("the first line folds a bag: session, n, title, its line (no window, no mediaTime)", !!bag && bag.session === S1 && bag.n === 1 && bag.title === "a film" && bag.line?.text === "a" && bag.line?.t1 === 1 && !("window" in bag) && !("mediaTime" in bag), JSON.stringify(bag));
 check("n at the high-water is a duplicate: refused", /duplicate or out of order/.test(captionRefusal(bag, L(1, 0, "a")) ?? ""));
 check("...and told the n its session needs next", /next line needs n=2 or higher/.test(captionRefusal(bag, L(1, 0, "a")) ?? ""), captionRefusal(bag, L(1, 0, "a")) ?? "accepted");
 check("n after it is taken", captionRefusal(bag, L(2, 1, "b")) === null);
 bag = foldCaption(bag, L(2, 1, "b"));
-check("…and appends, keeping the title and advancing mediaTime and n", !!bag && bag.window.length === 2 && bag.title === "a film" && bag.mediaTime === 2 && bag.n === 2);
+check("…and holds the new line in place of the last, keeping the title and advancing n", !!bag && bag.line?.text === "b" && bag.title === "a film" && bag.n === 2 && !("window" in bag));
 check("n below the high-water is old: refused", /n=1 is not after the folded high-water n=2/.test(captionRefusal(bag, L(1, 5, "late")) ?? ""), captionRefusal(bag, L(1, 5, "late")) ?? "accepted");
 check("a LOWER generation is refused: a superseded leg, whatever its session says", /captioned by a newer leg \(generation 5; yours is 4\)/.test(captionRefusal(bag, L(9, 9, "z", S2, {}, 4)) ?? "") && /superseded/.test(captionRefusal(bag, L(9, 9, "z", S1, {}, 4)) ?? ""), captionRefusal(bag, L(9, 9, "z", S2, {}, 4)) ?? "accepted");
 check("…and so is its end", /superseded/.test(captionRefusal(bag, END(S1, 4)) ?? ""));
 check("…and a superseded leg is told how to take the screen back", /rejoin/.test(captionRefusal(bag, L(9, 9, "z", S1, {}, 4)) ?? ""), captionRefusal(bag, L(9, 9, "z", S1, {}, 4)) ?? "accepted");
 check("the same leg under a DIFFERENT session is taken (a reattach: a new clock)", captionRefusal(bag, L(1, 0, "z", S2)) === null);
 const bag2 = foldCaption(bag, L(1, 0, "z", S2));
-check("…and starts a fresh window under the new session (title not carried: a new attach says its own)", !!bag2 && bag2.session === S2 && bag2.n === 1 && bag2.gen === 5 && bag2.window.length === 1 && bag2.window[0].text === "z" && bag2.title === undefined, JSON.stringify(bag2));
-check("a HIGHER generation continuing the same session is taken and the bag follows it (a reconnect)", captionRefusal(bag2, L(2, 1, "y", S2, {}, 7)) === null && foldCaption(bag2, L(2, 1, "y", S2, {}, 7))!.gen === 7 && foldCaption(bag2, L(2, 1, "y", S2, {}, 7))!.window.length === 2);
-check("a higher generation with an EARLIER-looking session still takes over (clock rollback is not a claim the door reads)", captionRefusal(bag2, L(1, 0, "w", "2026-09-16T00:00:00.000Z-back", {}, 8)) === null && foldCaption(bag2, L(1, 0, "w", "2026-09-16T00:00:00.000Z-back", {}, 8))!.window.length === 1);
+check("…and starts a fresh window under the new session (title not carried: a new attach says its own)", !!bag2 && bag2.session === S2 && bag2.n === 1 && bag2.gen === 5 && bag2.line?.text === "z" && bag2.title === undefined, JSON.stringify(bag2));
+check("a HIGHER generation continuing the same session is taken and the bag follows it (a reconnect)", captionRefusal(bag2, L(2, 1, "y", S2, {}, 7)) === null && foldCaption(bag2, L(2, 1, "y", S2, {}, 7))!.gen === 7 && foldCaption(bag2, L(2, 1, "y", S2, {}, 7))!.line.text === "y");
+check("a higher generation with an EARLIER-looking session still takes over (clock rollback is not a claim the door reads)", captionRefusal(bag2, L(1, 0, "w", "2026-09-16T00:00:00.000Z-back", {}, 8)) === null && foldCaption(bag2, L(1, 0, "w", "2026-09-16T00:00:00.000Z-back", {}, 8))!.line.text === "w");
 check("an end for the wrong session is refused", /captioned under session/.test(captionRefusal(bag2, END(S1)) ?? ""));
 check("...and names the session that would end what the screen shows", (captionRefusal(bag2, END(S1)) ?? "").includes(`end session ${S2}`), captionRefusal(bag2, END(S1)) ?? "accepted");
 check("an end for the right session is taken and clears the bag", captionRefusal(bag2, END(S2)) === null && foldCaption(bag2, END(S2)) === null);
 let big = foldCaption(undefined, L(1, 0, "line 1"));
 for (let i = 2; i <= CAPTIONS_MAX_LINES + 5; i++) big = foldCaption(big, L(i, i, `line ${i}`));
-check(`the folded window is bounded: newest ${CAPTIONS_MAX_LINES}, oldest first`, !!big && big.window.length === CAPTIONS_MAX_LINES && big.window[0].text === "line 6" && big.n === CAPTIONS_MAX_LINES + 5, JSON.stringify(big?.window.map((w: any) => w.text)));
+check("a value never grows with its session: the last line only, however many came before", !!big && big.line?.text === `line ${CAPTIONS_MAX_LINES + 5}` && big.n === CAPTIONS_MAX_LINES + 5 && JSON.stringify(big).length < 300, JSON.stringify(big));
 
 console.log(`\n${pass} ok, ${fail} failed`);
 process.exit(fail ? 1 : 0);

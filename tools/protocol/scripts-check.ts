@@ -250,7 +250,7 @@ const cases: Case[] = [
     good: (o) => o.r === "refused scope" && o.a === null && o.b === null && o.scripted === 0 },
   { id: "B5", what: "41 #6 the heart: a 5 s timer re-asserting one light, 2 h simulated, nobody present: 0 entries, asleep; `always` and already lit: still 0 (elided)", run(s) { cast(s);
       if (!D.tick) return { absent: true };
-      const LIT = { kind: "point", color: 16711680, intensity: 1, range: 6, shadows: false };
+      const LIT = { kind: "point", color: 16711680, intensity: 1, range: 6, decay: 2 };   // shadows was cut (shape audit 10-16)
       s.call("bob", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } }); s.call("olive", "create", { id: "lamp2", components: { label: "lamp2", light: LIT, transform: { pos: [2, 0, 0] } } });
       const HEART = `world.on("tick", () => world.set("self", "light", ${JSON.stringify(LIT)}));\nworld.on("wake", () => world.set("self", "light", ${JSON.stringify(LIT)}));\n`;
       install(s, "bob", "lamp", "heart", HEART, { scope: { ids: "self", comps: ["light"] }, every: 5 });
@@ -347,7 +347,7 @@ const cases: Case[] = [
     good: (o) => o.r === "suspended" && o.status === "suspended" && /banned/.test(o.why) && JSON.stringify(o.newKinds) === '{"act":1}' && !o.worldLogHasBan && o.modLog },
   { id: "B16", what: "no-op elision (a stated rule for script batches, §3d): a use that re-sets the same value logs the visitor's act and nothing else", run(s) { cast(s);
       s.call("bob", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } });
-      install(s, "bob", "lamp", "on", onUse(`world.set("self", "light", { kind: "point", color: 1, intensity: 1, range: 6, shadows: false });`), { scope: { ids: "self", comps: ["light"] }, on: ["use"] });
+      install(s, "bob", "lamp", "on", onUse(`world.set("self", "light", { kind: "point", color: 1, intensity: 1, range: 6, decay: 2 });`), { scope: { ids: "self", comps: ["light"] }, on: ["use"] });
       s.call("bob", "set", { id: "lamp", component: "reactions", value: { on: { kind: "script", script: "on" } } });
       const n0 = s.entries().length; const a = s.call("vic", "use", { id: "lamp", action: "on" }); const n1 = s.entries().length; const b = s.call("vic", "use", { id: "lamp", action: "on" });
       return { first: a.script?.status, second: b.script?.status, firstKinds: kinds(s.entries().slice(n0, n1)), secondKinds: kinds(s.entries().slice(n1)) }; },

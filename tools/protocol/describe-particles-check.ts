@@ -122,9 +122,11 @@ const cases: Case[] = [
   { id: "K1", what: "label is still a plain string name, and story is still the titled placard {title, text, marks?}", run(s) { cast(s); thing(s, "tree");
       return { l: show(s.call("olive", "set", { id: "tree", component: "label", value: "the first marker tree" })), st: show(s.call("olive", "set", { id: "tree", component: "story", value: { title: "The first marker tree", text: "Mica's fire." } })) }; },
     good: (o) => o.l === "ok" && o.st === "ok" },
-  { id: "K2", what: "the particles name is still registered with every field the first protocol had (a stored value is read forever)", run() {
-      return { f: Object.keys(CS.COMPONENTS.particles?.fields ?? {}) }; },
-    good: (o) => ["preset", "seed", "origin", "count", "quality", "size", "area", "texture", "speed", "opacity", "lifetime"].every((k) => o.f.includes(k)) },
+  // shape audit 10-16 (render-media-env §4): the first protocol's ten fields left the registry (no v4 value holds them); the
+  // older bag is still READ by instanceOf, for the translator (X9, X10)
+  { id: "K2", what: "the particles name registers the instance only; the first protocol's bag is still read (instanceOf), for the translator", run() {
+      return { f: Object.keys(CS.COMPONENTS.particles?.fields ?? {}), old: PE.instanceOf?.({ preset: "fire", origin: [0, 1, 0], count: 3 }) }; },
+    good: (o) => JSON.stringify(o.f) === JSON.stringify(["effect", "part", "at", "seed", "playing", "scale", "params"]) && o.old?.effect === "fire" && o.old?.params?.count === 3 },
 
   // ---------------- D: description ----------------
   { id: "D1", what: "description is registered: a plain string (alt text) is taken; 501 characters, an object, or a direction override are refused", run(s) { cast(s); thing(s, "lamp");
@@ -153,7 +155,7 @@ const cases: Case[] = [
   // ---------------- X: particles ----------------
   { id: "X1", what: "particles {effect: 'fire'} is taken, and its defaults are written (playing: true, scale: 1)", run(s) { cast(s); thing(s, "hearth");
       return { r: show(s.call("olive", "set", { id: "hearth", component: "particles", value: { effect: "fire", at: [0, 0.18, 0] } })), v: comp(s, "hearth", "particles") }; },
-    good: (o) => o.r === "ok" && o.v?.playing === true && o.v?.scale === 1 && o.v?.effect === "fire" },
+    good: (o) => o.r === "ok" && o.v?.playing === true && o.v?.scale === 1 && o.v?.effect === PE.essentialAddress?.("fire") },   // an Essential is stored as its address (shape audit 10-16)
   { id: "X2", what: "the first protocol's flat bag is refused in a write, and the refusal says today's spelling (effect, params, at) and cites PROTOCOL §4", run(s) { cast(s); thing(s, "hearth");
       const r = s.call("olive", "set", { id: "hearth", component: "particles", value: { preset: "fire", count: 100, origin: [0, 0.2, 0] } }); return { code: code(r), why: r.refused?.reason, fix: r.refused?.fix }; },
     good: (o) => o.code === "shape" && /effect: 'fire'/.test(o.why ?? "") && /params: \{count\}/.test(o.why ?? "") && /at: \[x, y, z\]/.test(o.why ?? "") && /PROTOCOL §4/.test(o.fix ?? "") },
@@ -197,7 +199,8 @@ const cases: Case[] = [
         { seq: 2, ts: 3, actor: "mica", verb: "comp", args: { id: "f78c7ab8", type: "particles", data: { preset: "fire", seed: 781526, origin: [0, 0.18, 0], count: 150, quality: "auto", glow: true } } }];
       const r = TV1.translate(L); const ents = r.final?.translated ?? {}; const c = Object.values<any>(ents).find((x) => x.particles) ?? {};
       return { tr: TV1.TRANSLATOR, p: c.particles, imp: c["imported:particles"], back: PE.instanceOf?.({ preset: "fire", seed: 781526, origin: [0, 0.18, 0], count: 150, quality: "auto" }) }; },
-    good: (o) => /@9$/.test(o.tr) && JSON.stringify(o.p) === JSON.stringify({ effect: "fire", seed: 781526, at: [0, 0.18, 0], params: { count: 150, quality: "auto" } }) && o.imp?.glow === true && JSON.stringify(o.back) === JSON.stringify(o.p) },
+    // @12 (the shape audit's wave 2, 10-16): an Essential is stored as its pinned document address, as the door and the load write it
+    good: (o) => /@12$/.test(o.tr) && JSON.stringify(o.p) === JSON.stringify({ effect: PE.essentialAddress?.("fire"), seed: 781526, at: [0, 0.18, 0], params: { count: 150, quality: "auto" } }) && o.imp?.glow === true && JSON.stringify({ ...o.back, effect: PE.essentialAddress?.(o.back?.effect) }) === JSON.stringify(o.p) },
   { id: "X11", what: "look says what an emitter is doing: emitting fire; can emit smoke (stopped) when playing is off", run(s) { cast(s);
       thing(s, "a", { particles: { effect: "fire" } }); thing(s, "b", { particles: { effect: "smoke", playing: false } });
       return { a: lookOf(s, "a")?.state, b: lookOf(s, "b")?.state }; },

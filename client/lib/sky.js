@@ -1377,7 +1377,7 @@ async function renderSkyMesh(a) {
   const day = Math.max(0, Math.sin(((hours - 6) / 12) * Math.PI)); // 0 night → 1 noon
   const elev = -8 + 68 * day;
   const phi = THREE.MathUtils.degToRad(90 - elev);
-  const theta = THREE.MathUtils.degToRad(a.azimuth ?? 180);
+  const theta = a.azimuth ?? Math.PI;   // radians (shape audit 10-16: azimuth was degrees, default 180)
   const sunPos = new THREE.Vector3().setFromSphericalCoords(1, phi, theta);
   skyMesh.sunPosition.value.copy(sunPos);
   // Haze thickens as the sun drops — that's what actually paints a sunset dome;

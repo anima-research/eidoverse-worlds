@@ -14,7 +14,25 @@
 //   collider exact → mesh (one vocabulary with shapes.js, KHR, Unity, Godot).
 //   physics  no kind read as the old materialized default, dynamic; material → surface (renamed); layers, mask, ccd
 //            (cut, never read) are dropped.
+// …and the render-media-env family (render-media-env.md §3, §4, §13–§15), the same callers:
+//   light      no decay fell off as the rig's three.js decay 1.7: written (a NEW light's default is 2); day → daytime
+//              (true dim, false full); shadows (read by nothing) dropped
+//   particles  an Essentials name → that Essential's pinned address (the derived seed reads the name either way)
+//   @world (repairWorld):
+//   sky        clock 'real' + dormantRated {hours, rate, ts} → tz, with hours/rate/ts the parked clock (it is the fallback
+//              now); another clock → no tz; azimuth degrees → radians;
+//              weatherSeconds → transition; forecast dwellSec/transitionSec → dwell/transition; sun, fill, world (never
+//              stored on Burrow) dropped
+//   terrain    layer colours "#rrggbb" → ints; the sim's defaults (terrainmath.js) written where absent; terrain.water →
+//              the water component (its colour an int)
+//   grass      the first protocol's makeGrass knobs → the flora spelling (mapGrassArgs, the reader's own mapping); a preset
+//              → its strokes (presetStrokes over shared/flora_presets.js, as the door expands one)
+import { essentialAddress } from "../particle_effects.js";
+import { grassAtWrite } from "./assetref.js";
+import { COMPONENTS } from "./componentspec.js";
 const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+/** The light rig's falloff before a light said its own (client/lib/lightrig.js, three.js decay). */
+export const OLD_LIGHT_DECAY = 1.7;
 export const AXIS_VECTORS = Object.freeze({ x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], "-x": [-1, 0, 0], "-y": [0, -1, 0], "-z": [0, 0, -1] });
 /** The pendulum readings that lived only in the reader (client/lib/motioneval.js, before 10-16). */
 export const OLD_READINGS = Object.freeze({ pendulumPeriod: 3.5, pendulumDamp: 0, wholePendulumPivot: Object.freeze([0, 2, 0]) });
@@ -59,16 +77,76 @@ export function repairComps(c0) {
     if ("material" in p) { edit(); if (p.surface === undefined) p.surface = p.material; delete p.material; }
     for (const k of ["layers", "mask", "ccd"]) if (k in p) { edit(); delete p[k]; }
     if (p !== c.physics) put("physics", p); }
+  if (bag(c.light)) { let L = c.light; const edit = () => (L === c.light ? (L = { ...c.light }) : L);
+    if (L.decay === undefined) { edit(); L.decay = OLD_LIGHT_DECAY; }
+    if ("day" in L) { edit(); if (L.daytime === undefined && typeof L.day === "boolean") L.daytime = L.day ? "dim" : "full"; delete L.day; }
+    if (L.daytime === undefined) { edit(); L.daytime = "dim"; }
+    if ("shadows" in L) { edit(); delete L.shadows; }
+    if (L !== c.light) put("light", L); }
+  for (const k of Object.keys(c)) if ((k === "particles" || k.startsWith("particles:")) && bag(c[k]) && essentialAddress(c[k].effect)) put(k, { ...c[k], effect: essentialAddress(c[k].effect) });
   return set.size || del.size ? { c, set: [...set], del: [...del] } : { c: c0, set: [], del: [] };
 }
 
-/** The ops that repair a folded state (every thing; @world holds none of these names): [{verb: "set"|"delete", id, comp,
- *  value?}], in id order. [] when nothing needs it. */
+const HEXC = /^#[0-9a-f]{6}$/i;
+const hexInt = (x) => (typeof x === "string" && HEXC.test(x) ? parseInt(x.slice(1), 16) : x);
+/** One stored sky in today's spelling (or the same object). */
+export function repairSky(sky) {
+  if (!bag(sky)) return sky;
+  let out = sky; const edit = () => (out === sky ? (out = { ...sky }) : out);
+  if ("clock" in out || "dormantRated" in out) { edit();
+    if (out.clock === "real") { if (typeof out.tz !== "string" || !out.tz) out.tz = "America/Los_Angeles";
+      const d = out.dormantRated; if (bag(d)) { if (Number.isFinite(d.hours)) out.hours = d.hours; if (Number.isFinite(d.rate)) out.rate = d.rate; if (Number.isFinite(d.ts)) out.ts = d.ts; } }
+    else delete out.tz;   // a clock other than real: the rated clock governs
+    delete out.clock; delete out.dormantRated; }
+  // a tz with no clock is today's spelling (it governs). The audit's pre-#65 case (a tz that meant nothing without clock) is
+  // indistinguishable from it, and no stored sky on Burrow held one (all 16 tz values sat beside clock: 'real'): kept
+  if (typeof out.azimuth === "number") { edit(); out.azimuth = out.azimuth * Math.PI / 180; }
+  if ("weatherSeconds" in out) { edit(); if (out.transition === undefined && out.weatherSeconds != null) out.transition = out.weatherSeconds; delete out.weatherSeconds; }
+  if (bag(out.forecast) && ("dwellSec" in out.forecast || "transitionSec" in out.forecast)) { edit(); const f = { ...out.forecast };
+    if ("dwellSec" in f) { if (f.dwell === undefined) f.dwell = f.dwellSec; delete f.dwellSec; }
+    if ("transitionSec" in f) { if (f.transition === undefined) f.transition = f.transitionSec; delete f.transitionSec; }
+    out.forecast = f; }
+  for (const k of ["sun", "fill", "world"]) if (k in out) { edit(); delete out[k]; }
+  return out;
+}
+/** @world's components repaired: {c, set, del}, as repairComps. Only the world's look is touched. A sky is repaired once:
+ *  its azimuth is then radians, and a second run must not convert it again (repairWorld is only ever handed a value
+ *  stored before 10-16 once, by the load's one system act; a translated world is written repaired). */
+export function repairWorld(c0) {
+  if (!bag(c0)) return { c: c0, set: [], del: [] };
+  const c = { ...c0 }; const set = new Set(), del = new Set();
+  const put = (k, v) => { c[k] = v; set.add(k); del.delete(k); };
+  if (bag(c.sky) && needsSky(c.sky)) put("sky", withSkyDefaults(repairSky(c.sky)));   // the old readers' readings of absence ARE the registry's defaults (hours 12, azimuth 180° = π, …)
+  if (bag(c.terrain)) { let t = c.terrain; const edit = () => (t === c.terrain ? (t = { ...c.terrain }) : t);
+    if (Array.isArray(t.layers) && t.layers.some((l) => bag(l) && typeof l.color === "string" && HEXC.test(l.color))) { edit(); t.layers = t.layers.map((l) => (bag(l) ? { ...l, color: hexInt(l.color) } : l)); }
+    if (t.kind === undefined || t.kind === "noise") for (const [k, v] of Object.entries(COMPONENTS.terrain.defaults)) if (t[k] === undefined) { edit(); t[k] = v; }
+    if ("water" in t) { edit(); const w = t.water; delete t.water;
+      if (bag(w) && !bag(c.water)) put("water", Object.fromEntries(Object.entries(w).map(([k, v]) => [k, k === "color" ? hexInt(v) : v]))); }
+    if (t !== c.terrain) put("terrain", t); }
+  if (bag(c.grass)) { let g = c.grass; try { g = grassAtWrite(c.grass).value; } catch { g = c.grass; }   // an unknown preset stays as it was (its readers say so)
+    if (g !== c.grass) put("grass", g); }
+  return set.size || del.size ? { c, set: [...set], del: [...del] } : { c: c0, set: [], del: [] };
+}
+// a stored sky that still speaks before 10-16. Every sky written since carries all of the registry's defaults (the sky act
+// and a set materialize them: hours, rate, clouds, azimuth, fog, exposure, ambient), and the repair writes them too, so: a
+// sky with a field only the old spelling had, a forecast in the old spelling, an azimuth above 2π (degrees), or one
+// missing any default, is old; a second load finds nothing. The one ambiguity, an old sky that happened to hold all seven
+// and none of the rest with an azimuth ≤ 2π degrees, is read as today's
+function needsSky(sky) {
+  if (["clock", "dormantRated", "weatherSeconds", "sun", "fill", "world"].some((k) => k in sky)) return true;
+  if (bag(sky.forecast) && ("dwellSec" in sky.forecast || "transitionSec" in sky.forecast)) return true;
+  if (typeof sky.azimuth === "number" && Math.abs(sky.azimuth) > 2 * Math.PI) return true;
+  return Object.keys(COMPONENTS.sky.defaults).some((k) => sky[k] === undefined);
+}
+const withSkyDefaults = (sky) => { const out = { ...sky }; for (const [k, v] of Object.entries(COMPONENTS.sky.defaults)) if (out[k] === undefined) out[k] = v; return out; };
+
+/** The ops that repair a folded state (every thing, and @world's look): [{verb: "set"|"delete", id, comp, value?}], in
+ *  id order. [] when nothing needs it. */
 export function shapeRepairOps(st, purged = null) {
   const ops = [];
-  for (const id of Object.keys(st?.entities ?? {}).sort()) { if (id === "@world") continue;
+  for (const id of Object.keys(st?.entities ?? {}).sort()) {
     const c0 = st.entities[id].c; if (purged && Object.values(c0).some((v) => v === purged)) continue;   // a purged value is no one's to rewrite
-    const { c, set, del } = repairComps(c0);
+    const { c, set, del } = id === "@world" ? repairWorld(c0) : repairComps(c0);
     for (const k of del) ops.push({ verb: "delete", id, comp: k });
     for (const k of set) ops.push({ verb: "set", id, comp: k, value: c[k] }); }
   return ops;

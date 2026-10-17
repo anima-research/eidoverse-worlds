@@ -25,7 +25,7 @@ const IMP = "imported:", IMP_BANS = "imported-bans:";
 export const DERIVED = new Set(["id", "pos", "q", "yaw", "scale", "scale3", "born", "kind", "actor", "ts", "placer"]);
 /** The components on a record (its facts), without the derived fields. */
 export const recordComponents = (rec) => { const out = {}; for (const k in rec ?? {}) if (!DERIVED.has(k)) out[k] = rec[k]; return out; };
-export const emptyView = () => ({ entities: {}, terrain: null, grass: null, sky: null, assets: [], recentChat: [], chatTotal: 0, roles: {}, bans: {} });
+export const emptyView = () => ({ entities: {}, terrain: null, grass: null, sky: null, water: null, assets: [], recentChat: [], chatTotal: 0, roles: {}, bans: {} });
 
 /** The fold record's transform as readers hold it: {pos, q, yaw, scale (one number), scale3? ([x,y,z] when non-uniform)}.
  *  A missing or malformed part is its default (the origin, no turn, unit scale), never undefined. */
@@ -96,7 +96,7 @@ export function viewState(folded, { recentChat = [], chatTotal = 0 } = {}) {
     if (id === "@world") {
       for (const [k, v] of Object.entries(c)) {
         if (HIDDEN_WORLD.has(k) || k.startsWith("imported-behavior:")) continue;
-        if (k === "sky" || k === "terrain" || k === "grass") st[k] = clone(v);
+        if (k === "sky" || k === "terrain" || k === "grass" || k === "water") st[k] = clone(v);   // water: its own component (shape audit 10-16)
         else if (k === "default-role") st.roles["*"] = clone(v);
         else if (k.startsWith("roles:")) st.roles[idOut(k.slice(6))] = clone(v);
         else if (k.startsWith(IMP_BANS)) st.bans[idOut(k.slice(IMP_BANS.length))] = clone(v);

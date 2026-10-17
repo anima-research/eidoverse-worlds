@@ -16,7 +16,7 @@ import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
 import { modernize as newParticles } from "../../../shared/particle_effects.js";
-import { repairComps } from "../../../shared/protocol/shaperepair.js";
+import { repairComps, repairWorld } from "../../../shared/protocol/shaperepair.js";
 import * as eidosim from "./eidosim-v1.js";   // HER engine (the first eidosim, dialect 3): what a v1 punt did. Importer-only.
 import { ENGINES, DEFAULT_ENGINE } from "../../../shared/protocol/simlayer.js";
 
@@ -108,6 +108,10 @@ export const TRANSLATOR = "eidoverse/translate-v1@12";
 // @12, wave 2 (the shape audit's physics-motion family): a stored value's old spelling is written in today's (shapeRepaired,
 // below; shared/protocol/shaperepair.js, the same rules the server's first load applies to a stored v4 world), and a
 // parent carries no order. Output differs on any log with a motion, a collider or a mount.
+// @12, wave 2 (the shape audit's render-media-env family): the same repair's render rules: a light carries decay 1.7 (the
+// rig's old falloff) and daytime (was day), no shadows; a particle Essential is its pinned address; @world's sky, terrain
+// (+ the water component) and grass in today's spelling. Output differs on any log with a light, particles, sky, terrain
+// or grass.
 // @12, wave 2 (the shape audit's attach-interact family): a lock is written in its one spelling, {rank: 'builder'} (a v1
 // lock: true, and a guard merged into it, were true). Sockets stay the v1 map with each seat's body block: the server's
 // lift (authority/sockets.js) makes them socket children with a station at first load, as for any older v4 log.
@@ -266,7 +270,10 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   for (const [k, v] of Object.entries(st.behaviors ?? {})) w[keyed("imported-behavior", k)] = who && v && typeof v.author === "string" && !SYSTEM.has(v.author) ? { ...v, author: who(v.author, {}) } : v;
   const known = new Set(["entities", "sky", "terrain", "grass", "assets", "roles", "bans", "behaviors", "mounts", "recentChat", "chatTotal"]);
   for (const [k, v] of Object.entries(st)) if (!known.has(k) && v != null) w[keyed("imported", k)] = v;
-  out["@world"] = w; // @world is live from genesis (§2.3)
+  // @12, wave 2 (render-media-env): the world's look in today's spelling, as the load repairs a stored one (repairWorld: the sky's
+  // clock as tz, radians, transition; the terrain's int colours and the sim's defaults, its water as the water component;
+  // grass in the flora spelling, a preset as its strokes)
+  out["@world"] = repairWorld(w).c; // @world is live from genesis (§2.3)
   for (const c of Object.values(out)) { splitUnknown(c); namespaceUnknown(c, ns); }
   return clone(out); // a copy: the old fold mutates some records in place (bstate), and aliasing would hide the change
 }

@@ -27,6 +27,9 @@ import { simFold, EIDOSIM_BUILD, EIDOSIM_FILES, DEFAULT_ENGINE } from "../../sha
 import { emptyState as v1Empty, foldEntry } from "./import-v1/fold.js";
 import * as eidosim from "./import-v1/eidosim-v1.js";   // HER engine (the first eidosim): what v1 logs mean
 import { localOf } from "../../shared/hierarchy.js";
+import { ESSENTIAL_ADDRESSES } from "../../shared/particle_effects.js";   // data: the pinned address of each Essential
+import { mapGrassArgs, presetStrokes, isLegacyArgs } from "../../shared/flora_args.js";   // the grass READER's own mapping (not the repair)
+import { FLORA_PRESETS } from "../../shared/flora_presets.js";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => { if (ok) pass++; else { fail++; console.log(`  FAIL ${name}${detail ? ` — ${detail}` : ""}`); } };
@@ -133,7 +136,11 @@ function oldNorm(st: any, phys: any = null) {
         if (c(m) !== c(C[k])) C[k] = m; }
       if (isB(C.motion) && "pivot" in C.motion) { const { pivot, ...r } = C.motion; C.motion = r; if (!isB(C.pivot) && Array.isArray(pivot) && pivot.length === 3 && pivot.every(Number.isFinite)) C.pivot = { pos: pivot }; }
       if (isB(C.motion) && C.motion.type === "pendulum" && !isB(C.pivot)) C.pivot = { pos: [0, 2, 0] };
-      if (isB(C.collider) && C.collider.shape === "exact") C.collider = { ...C.collider, shape: "mesh" }; }
+      if (isB(C.collider) && C.collider.shape === "exact") C.collider = { ...C.collider, shape: "mesh" };
+      // declared (translate-v1@12, the shape audit's render-media-env family): a light falls off as the rig's old decay 1.7
+      // and says daytime (v1's day: false = full), no shadows; a particle Essential is its pinned address
+      if (isB(C.light)) { const { day, shadows: _sh, ...L } = C.light; C.light = { ...L, decay: L.decay ?? 1.7, daytime: L.daytime ?? (day === false ? "full" : "dim") }; }
+      if (isB(C.particles) && typeof C.particles.preset === "string" && Object.hasOwn(ESSENTIAL_ADDRESSES, C.particles.preset)) C.particles = { ...C.particles, preset: (ESSENTIAL_ADDRESSES as any)[C.particles.preset] }; }
     if (phys?.restAt[id]) n.pos = phys.restAt[id].slice();
     if (phys?.sim.boxes && typeof e0.lib === "string" && phys.sim.boxes[e0.lib]) n.comp = { ...(n.comp ?? {}), physics: { kind: phys.dynamic?.(id) ? "dynamic" : "static", shape: phys.sim.boxes[e0.lib] } };   // @11: what the log punts (this incarnation) is dynamic, from its start (R 10-08)
     if (n.comp && !Object.keys(n.comp).length) delete n.comp;
@@ -148,6 +155,29 @@ function oldNorm(st: any, phys: any = null) {
   if (world.sky && typeof world.sky === "object") { const { seq, by, ...sky } = world.sky;
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }
     world.sky = sky; }
+  // declared (translate-v1@12, the shape audit's render-media-env family), written independently of shared/protocol/shaperepair.js:
+  // the sky's clock is a tz (clock 'real' + its parked clock as hours/rate/ts; no clock, no tz), azimuth radians, transition
+  // and the forecast's dwell/transition, sun/fill/world gone, the registry's defaults written; the terrain's layer colours
+  // ints, the sim's defaults (terrainmath.js) written, its water the water component; grass through the reader's mapping,
+  // a preset as its strokes
+  const isO = (v: any) => !!v && typeof v === "object" && !Array.isArray(v);
+  if (isO(world.sky)) { const k: any = { ...world.sky };
+    if (k.clock === "real") { k.tz = typeof k.tz === "string" && k.tz ? k.tz : "America/Los_Angeles"; const d = k.dormantRated; if (isO(d)) { for (const f of ["hours", "rate", "ts"]) if (Number.isFinite(d[f])) k[f] = d[f]; } }
+    else if ("clock" in k) delete k.tz;   // another clock: rated (a tz with no clock is today's spelling: kept)
+    delete k.clock; delete k.dormantRated;
+    if (typeof k.azimuth === "number") k.azimuth = k.azimuth / 180 * Math.PI;
+    if ("weatherSeconds" in k) { if (k.transition === undefined && k.weatherSeconds != null) k.transition = k.weatherSeconds; delete k.weatherSeconds; }
+    if (isO(k.forecast)) { const f: any = { ...k.forecast }; if ("dwellSec" in f) { f.dwell ??= f.dwellSec; delete f.dwellSec; } if ("transitionSec" in f) { f.transition ??= f.transitionSec; delete f.transitionSec; } k.forecast = f; }
+    for (const f of ["sun", "fill", "world"]) delete k[f];
+    world.sky = { hours: 12, rate: 0, clouds: "cumulus", azimuth: Math.PI, fog: 1, exposure: 1, ambient: 1, ...k }; }
+  if (isO(world.terrain)) { const t: any = { ...world.terrain }; const hx = (x: any) => (typeof x === "string" && /^#[0-9a-f]{6}$/i.test(x) ? parseInt(x.slice(1), 16) : x);
+    if (Array.isArray(t.layers)) t.layers = t.layers.map((l: any) => (isO(l) ? { ...l, color: hx(l.color) } : l));
+    if (t.kind === undefined || t.kind === "noise") world.terrain = { kind: "noise", seed: 1, size: 80, amplitude: 3, octaves: 4, frequency: 2.5, flatRadius: 0, flatHeight: 0, ...t }; else world.terrain = t;
+    if ("water" in world.terrain) { const { water, ...rest } = world.terrain; world.terrain = rest; if (isO(water)) world.water = Object.fromEntries(Object.entries<any>(water).map(([k, v]) => [k, k === "color" ? hx(v) : v])); } }
+  if (isO(world.grass)) { let g: any = world.grass;
+    if (isLegacyArgs(g)) { const m = mapGrassArgs(g); g = { ...Object.fromEntries(Object.entries<any>(g).filter(([k]) => !["bladeHeight", "spacing", "perCell", "colorTip", "windSpeed", "lean", "fade", "fadeStart", "fadeEnd", "fadeColor", "backlight", "color"].includes(k) && !(k in m))), ...m }; }
+    if (g.preset != null) { try { const strokes = presetStrokes(g, FLORA_PRESETS); const { preset: _p, ...r } = g; g = { ...r, strokes }; } catch { /* an unknown preset stays */ } }
+    world.grass = g; }
   // @11 (declared): her own law becomes today's eidosim; an engine she didn't carry keeps its name (nothing flies); an epoch
   // her sim refused never started, so it stays a record
   if (phys?.sim.epoch && world.epoch) world.epoch = { sim: phys.sim.epoch.foreign ? world.epoch.sim : DEFAULT_ENGINE, tickMs: world.epoch.tickMs };
@@ -177,7 +207,7 @@ function unproject(ents0: any) {
   for (const [id, comps] of Object.entries<any>(ents0)) {
     if (id === "@world") {
       for (const [k, v] of Object.entries<any>(comps)) {
-        if (["sky", "terrain", "grass"].includes(k)) world[k] = v;
+        if (["sky", "terrain", "grass", "water"].includes(k)) world[k] = v;
         else if (k === "physics-engine") world.epoch = { sim: v.engine, tickMs: v.tickMs };   // translate-v1@10: a dialect-3 epoch
         else if (k.startsWith("assets:")) (world.assets ??= []).push(Object.keys(v).length ? v : dec(k.slice("assets:".length)));
         else if (k === "default-role") (world.roles ??= {})["*"] = fromCan(v); // DROPPED: roles['*']

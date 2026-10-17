@@ -294,7 +294,7 @@ let HV = '';   // the record's hash, "sha256:<hex>"
     near(arm.pos, [10, 1, -2.4]) && Math.abs(arm.scale - 1) < 1e-6 && Math.abs(E[id('arm')!].q[0]) > 0.1, J(arm));
   const shade = E[id('shade')!], glow = E[id('glow')!];
   check('the shade is locked (lock true is stored {rank: builder}: shape audit 10-16), spins, and keeps its rotation order', J(shade?.lock) === J({ rank: 'builder' }) && shade?.motion?.type === 'spin' && shade?.['hesperus/rot-order'] === 'ZXY', J(shade.comp));
-  check('the glow is an Empty whose light burns at noon; the base collides as a box', glow.model === undefined && glow?.light?.day === false && glow.light.color === 0xff8800 && E.desk2?.collider?.shape === 'box', J([glow, E.desk2.comp]));
+  check('the glow is an Empty whose light burns at noon; the base collides as a box', glow.model === undefined && glow?.light?.daytime === 'full' && glow.light.color === 0xff8800 && E.desk2?.collider?.shape === 'box', J([glow, E.desk2.comp]));
   // a lock binds removal (§5), and undoing a create removes: the door refuses the bare undo `locked` (v1's inverses
   // unlocked first). The person is asked "Move anyway?" (editwrites: undo offers through, not unlock); throughLock takes it.
   const u0 = W.call('undo', {});

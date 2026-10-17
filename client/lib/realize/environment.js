@@ -21,9 +21,12 @@ import { applyTerrainState, applyGrassState, applySkyFolded, applyAssetState } f
 // the sky and still had clouds (10-11 14:05). The same at join, so a removal looks the same after a reload.
 const NO_SKY = Object.freeze({ clouds: 'clear' });
 
+// the ground's builder fills water on the ground it builds: the world's water component (shape audit 10-16) rides on its args
+const groundArgs = (st) => (st.terrain ? (st.water ? { ...st.terrain, water: st.water } : st.terrain) : null);
+
 function reconcileEnvironment() {
   const st = state.st;
-  if (st.terrain) applyTerrainState(st.terrain);
+  if (st.terrain) applyTerrainState(groundArgs(st));
   if (st.grass) applyGrassState(st.grass);
   applySkyFolded(st.sky ?? NO_SKY, st.sky?.ts);
   for (const a of st.assets ?? []) applyAssetState(a);
@@ -32,7 +35,7 @@ function reconcileEnvironment() {
 function onWorld({ key, ts }) {
   const st = state.st;
   switch (key) {
-    case 'terrain': applyTerrainState(st.terrain ?? null); break;   // removed: the default flat ground
+    case 'terrain': case 'water': applyTerrainState(groundArgs(st)); break;   // removed: the default flat ground
     // a mown lawn folds to null; the realizer is told to clear
     case 'grass': applyGrassState(st.grass ?? { clear: true }); break;
     // the fold merged this change into st.sky already; its ts anchors live transition timing

@@ -25,8 +25,11 @@ export const COMPONENTS = {
     ranges: { pos: { min: -1e5, max: 1e5 }, scale: { min: -1e3, max: 1e3 } },
     docs: { pos: "where it stands, [x, y, z] in metres, in its parent's frame (the world's when it has no parent)", q: "its orientation, a unit quaternion [x, y, z, w] (glTF order), in its parent's frame; normalized on write", scale: "its size per axis, [x, y, z] (1 = as made), each within ±1000 and never within 1e-4 of zero; a negative one mirrors (physics reads its size, |scale|)" },
     help: "where it is, glTF's node TRS: pos (m), q (unit quaternion [x, y, z, w]), scale [x, y, z], all in its parent's frame. Composed as glTF composes a node: local = T · R · S, world = parent's world × local (PROTOCOL §9.3)" },
-  model:     { on: "thing", type: "string", help: "which model it shows: a name from find {kind: 'model'}, or its content address eido:sha256/<64 hex> (spec/EIDO-URIS.md; a glTF binary by its role)" },
-  label:     { type: "string", maxLen: 80, help: "its display name, a short string (its name to every reader: the accessible name; description says what it is)" },
+  // shape audit 10-16 (render-media-env §2): stored as a content address. A name or a library path is a write-time convenience
+  // the door resolves (shared/protocol/assetref.js) when this server can say what the bytes are; an older stored path or name
+  // still reads through the catalogue as this host has it (best effort, which is why new writes are addresses)
+  model:     { on: "thing", type: "string", help: "which model it shows: its content address eido:sha256/<64 hex> (spec/EIDO-URIS.md; a glTF binary by its role). A name from find {kind: 'model'} or a library path is taken and resolved at write to its content address when this server can say what its bytes are (else kept as written)" },
+  label:     { on: "thing", type: "string", maxLen: 80, help: "its display name, a short string (its name to every reader: the accessible name; description says what it is)" },
   // R 10-07 (our answer to upstream PR #168's label {name, description, visibility, offset}): the accessibility model's
   // name / description / role+state. label stays the name; description is how the thing is described to any text-based
   // reader (alt text), one plain string, like label and picture.alt; what it can do and its state are GENERATED from its
@@ -66,19 +69,29 @@ export const COMPONENTS = {
   // the punctual light every engine shares (glTF KHR_lights_punctual, Godot OmniLight3D/SpotLight3D, Unity Light,
   // three.js): kind, color, intensity, range; a spot adds its cone as HALF-angles in radians (glTF outer/innerConeAngle,
   // Godot spot_angle, three.js angle/penumbra) and shines along the thing's local -Z (glTF, Godot)
-  light:     { fields: { kind: "string", color: "int", intensity: "number", range: "number", angle: "number", inner: "number", shadows: "bool", important: "bool", day: "bool" }, defaults: { kind: "point", color: 0xffd9a0, intensity: 16, range: 10, shadows: false, important: false, day: true }, enums: { kind: ["point", "spot"] },
+  // shape audit 10-16 (render-media-env §3): the falloff law is part of the value (decay, glTF's and Godot's exponent: 2 =
+  // inverse square, so intensity is candela as in KHR_lights_punctual); a light stored before it was written fell off as
+  // three.js decay 1.7 (the rig's constant), and the load repair writes 1.7 on it so it keeps its look. shadows was read by
+  // nothing (it returns, absent = false, when the rig reads it); day (a double negative) is daytime: dim | full
+  light:     { on: "thing", fields: { kind: "string", color: "int", intensity: "number", range: "number", angle: "number", inner: "number", decay: "number", important: "bool", daytime: "string" },
+    defaults: { kind: "point", color: 0xffd9a0, intensity: 16, range: 10, decay: 2, important: false, daytime: "dim" }, enums: { kind: ["point", "spot"], daytime: ["dim", "full"] },
+    dropped: { shadows: "read by nothing (it returns when the light rig reads it; absent = no shadows)", day: "renamed daytime: 'dim' (true) | 'full' (false); a write of day is taken and stored as daytime" },
     when: [{ if: { kind: "spot" }, set: { angle: Math.PI / 4, inner: 0 } }],
-    ranges: { color: { min: 0, max: 0xffffff }, intensity: { min: 0 }, range: { gt: 0 }, angle: { gt: 0, max: Math.PI / 2 }, inner: { min: 0, max: Math.PI / 2 } },
+    ranges: { color: { min: 0, max: 0xffffff }, intensity: { min: 0 }, range: { gt: 0 }, angle: { gt: 0, max: Math.PI / 2 }, inner: { min: 0, max: Math.PI / 2 }, decay: { min: 0, max: 4 } },
     units: { range: "m", angle: "rad", inner: "rad" },
-    docs: { kind: "point (shines every way) or spot (a cone along its -Z)", color: "its colour, 0xRRGGBB", intensity: "how bright it is", range: "how far it reaches, in metres", angle: "a spot's cone half-angle, radians",
-      inner: "where a spot's edge starts to soften, radians", shadows: "it casts shadows", important: "always casts: first claim on a light slot, never governor-shed", day: "false: it burns at noon too (opts out of the day cycle)" },
-    help: "a light on this thing: {kind: point|spot, color (0xRRGGBB), intensity, range (m), shadows}; a spot shines along the thing's -Z with angle (its cone's half-angle, rad, default π/4) and inner (where the edge starts to soften, rad, default 0)" },
+    absentMeans: { decay: "1.7: the falloff exponent the light rig used before it was written (three.js decay); a value stored before 10-16 is repaired to 1.7 at its first load",
+      daytime: "dim: it follows the day cycle (an older value's day: false meant full)" },
+    docs: { kind: "point (shines every way) or spot (a cone along its -Z)", color: "its colour, 0xRRGGBB, sRGB", intensity: "how bright it is: candela at decay 2 (KHR_lights_punctual); three.js units under this light's decay otherwise", range: "a hard cutoff, metres: nothing beyond it is lit", angle: "a spot's cone half-angle, radians",
+      inner: "where a spot's edge starts to soften, radians", decay: "how it falls off with distance, an exponent: 2 = inverse square (physical, glTF), 0 = not at all", important: "always casts: first claim on a light slot, never governor-shed", daytime: "dim (it dims by day, follows the day cycle) | full (it burns at noon too)" },
+    help: "a light on this thing: {kind: point|spot, color (0xRRGGBB, sRGB), intensity (candela at decay 2), range (m, a hard cutoff), decay (falloff exponent, default 2 = inverse square), important, daytime: dim|full}; a spot shines along the thing's -Z with angle (its cone's half-angle, rad, default π/4) and inner (where the edge starts to soften, rad, default 0). day (true/false) is taken and stored as daytime" },
   // a parametric body on a model-less thing (R 10-12: Create ▸ Box/Sphere/…, as Create ▸ Light is an Empty with a light).
   // Base-centred like a measured model (boxOfM): y runs 0..size[1], so a mesh thing stands on its own origin. Registered
   // bare at once (ladder rung 3): the authority needs its size to place it, stack on it and stamp its physics shape. No
   // colour: its one material slot is 'surface', and hesperus/material colours it as it colours a model's.
   mesh:      { on: "thing", fields: { shape: "string", size: "vec3" }, defaults: { shape: "box", size: [1, 1, 1] }, enums: { shape: ["box", "sphere", "cylinder", "plane", "capsule"] },
     ranges: { size: { min: 0.05, max: 200 } },   // a vec3's range holds for each element (valueCheck)
+    // pinned facts (shape audit 10-16): where it stands on its origin, and what a primitive does with the axes it ignores
+    absentMeans: { origin: "the centre of its base: it stands on its own origin (every referent centres primitives; ours stands, as a model does)", ignored: "a sphere ignores size[1] and size[2], a cylinder and a capsule size[2], a plane size[1]" },
     units: { size: "m" }, docs: { shape: "box, sphere, cylinder, plane (flat on the ground, drawn on both sides) or capsule; it stands on its own origin", size: "its size [x, y, z] in metres; a sphere reads x as its diameter, a cylinder or capsule x as diameter and y as height, a plane x × z" },
     help: "a parametric body drawn without a model: {shape: box|sphere|cylinder|plane|capsule, size: [x, y, z] (m, each 0.05..200)}. Its origin is the centre of its base (it stands on its own pos, as a model does). A sphere reads size[0] as its diameter; a cylinder and a capsule read size[0] as diameter and size[1] as height (a capsule is at least its diameter tall); a plane is size[0] × size[2] on the ground plane, 0.05 thick (it collides as a thin slab; things rest on it at 0.05), drawn on both sides. Never on a thing with a model or a light (one place per thing: give it a child). Its one material slot is 'surface' (hesperus/material:surface)" },
   // the closed forms every client and the agent evaluate (client/lib/motioneval.js). Rates are degrees a second (Unreal's
@@ -286,20 +299,25 @@ export const COMPONENTS = {
   sound:      { on: "thing", fields: { src: "string", playing: "bool", loop: "bool", volume: "number", pitch: "number", near: "number", radius: "number", spatial: "bool", t0: "number", alt: "string" },
                 defaults: { playing: true, loop: true, volume: 0.8, pitch: 1, near: 1.5, radius: 12, spatial: true }, required: ["src"],
                 ranges: { volume: { min: 0, max: 1 }, pitch: { min: 0.5, max: 2 }, near: { gt: 0, max: 100 }, radius: { min: 1, max: 100 }, src: { maxLen: 2048 }, alt: { maxLen: 200 } }, clean: { alt: "line" },
-                units: { near: "m", radius: "m" },
-                docs: { src: "the sound file: store/audio/…, eidoverse/assets/…, or an https link", playing: "it plays now (false: paused)", loop: "plays again when it ends", volume: "0 silent to 1 full", pitch: "playback rate: 2 = an octave up and twice as fast",
-                  near: "full volume within this many metres", radius: "silent at and beyond this many metres: nobody further hears it at all", spatial: "positional; off: heard evenly everywhere inside its radius (room tone, music in a hall)", t0: "when it started (the authority stamps it)",
+                units: { near: "m", radius: "m", t0: "ms" },
+                // pinned (shape audit 10-16, render-media-env §6): the distance law every client hears (shared/sound.js gainAt);
+                // a future curve choice is an addition (rolloff, absent = this law)
+                absentMeans: { law: "gain = min(1, near / distance) (inverse distance, full volume inside near), then a (1−t)² taper over the last 5% of radius to exactly 0 at radius: shared/sound.js gainAt" },
+                docs: { src: "the sound file: store/audio/…, eidoverse/assets/…, or an https link", playing: "it plays now (false: paused)", loop: "plays again when it ends", volume: "linear amplitude gain (not dB): 0 silent to 1 full", pitch: "playback rate: 2 = an octave up and twice as fast",
+                  near: "full volume within this many metres", radius: "silent at and beyond this many metres: nobody further hears it at all", spatial: "positional; off: heard evenly everywhere inside its radius (room tone, music in a hall)", t0: "when it started, epoch ms (the authority stamps it)",
                   alt: "what is playing, in words: for people who can't hear it and for agents" },
-                help: "a sound this thing plays: {src (store/audio/…, eidoverse/assets/…, or an https link: an allowlisted host's plays for everyone, any other only for viewers who allow untrusted links), playing? (default true), loop?, volume? 0..1, pitch? 0.5..2 (playback rate), near? m (full volume inside it), radius? m (≤ 100: silent at and beyond it), spatial? (false: heard evenly inside radius, no panning), t0? (stamped by the authority when it starts), alt? (what is playing, in words: what agents and people who can't hear it read)}. A reaction {kind: 'play'} plays it again from the top" },
-  // an image on a thing (shared/picture.js; batch 2): with no part it's a framed quad of its own (width m, height from the
-  // image's aspect, facing +Z), with part it textures that model node's material. src as sound's, for images
-  picture:    { on: "thing", fields: { src: "string", part: "string", width: "number", alt: "string", lit: "string", flip: "bool" },
-                defaults: { lit: "scene", flip: false, width: 1 }, required: ["src"], enums: { lit: ["scene", "self"] },
-                ranges: { width: { gt: 0, max: 20 }, part: { maxLen: 64 }, src: { maxLen: 2048 }, alt: { maxLen: 200 } }, clean: { alt: "line" },
+                help: "a sound this thing plays: {src (store/audio/…, eidoverse/assets/…, or an https link: an allowlisted host's plays for everyone, any other only for viewers who allow untrusted links), playing? (default true), loop?, volume? 0..1, pitch? 0.5..2 (playback rate), near? m (full volume inside it), radius? m (≤ 100: silent at and beyond it; inverse distance from near, a (1−t)² taper over the last 5% to 0 at radius), spatial? (false: heard evenly inside radius, no panning), t0? (stamped by the authority when it starts), alt? (what is playing, in words: what agents and people who can't hear it read)}. A reaction {kind: 'play'} plays it again from the top" },
+  // an image on a thing (shared/picture.js; batch 2): a framed quad of its own (width m, height from the image's aspect,
+  // facing +Z on its origin). src as sound's, for images. Shape audit 10-16 (render-media-env §5): texturing one node of a
+  // model (part, flip) is a material override, the reserved `material`'s, not a picture of its own: both are cut (0 stored)
+  picture:    { on: "thing", fields: { src: "string", width: "number", alt: "string", lit: "string" },
+                defaults: { lit: "scene", width: 1 }, required: ["src"], enums: { lit: ["scene", "self"] },
+                dropped: { part: "texturing a node of a model is a material override: the reserved material component's (a picture is a quad of its own)", flip: "a part's upside-down UVs are the reserved material's, with part" },
+                ranges: { width: { gt: 0, max: 20 }, src: { maxLen: 2048 }, alt: { maxLen: 200 } }, clean: { alt: "line" },
                 units: { width: "m" },
-                docs: { src: "the image: store/images/…, eidoverse/assets/…, or an https link", part: "a node of its model to texture; absent: a picture of its own, a quad facing its front", width: "the quad's width, metres; its height follows the image", alt: "what it shows, in words: for people who can't see it and for agents",
-                  lit: "scene (takes the scene's light) | self (a screen, unlit)", flip: "for a part whose UVs were exported upside down" },
-                help: "an image on this thing: {src (store/images/…, eidoverse/assets/…, or an https link: see sound), part? (a model node to texture; absent = a picture of its own, a quad facing +Z), width? m (the quad's; its height follows the image), alt? (alternative text: what it shows, for people who can't see it and for agents), lit?: scene|self (self = a screen, unlit), flip?}" },
+                docs: { src: "the image: store/images/…, eidoverse/assets/…, or an https link", width: "the quad's width, metres; its height follows the image", alt: "what it shows, in words: for people who can't see it and for agents",
+                  lit: "scene (takes the scene's light) | self (a screen, unlit)" },
+                help: "an image on this thing: {src (store/images/…, eidoverse/assets/…, or an https link: see sound), width? m (the quad's, facing +Z on its origin; its height follows the image), alt? (alternative text: what it shows, for people who can't see it and for agents), lit?: scene|self (self = a screen, unlit)}. To texture a node of its model: the material component (reserved)" },
   // why a thing is here (batch 2; R: {title, text, marks?}): a museum label's title and text. Who wrote it is a view over
   // the log (History), never stored. The world's own blurb is @world.about
   story:      { on: "thing", fields: { title: "string", text: "string", marks: "refs" }, required: ["title", "text"],
@@ -309,7 +327,8 @@ export const COMPONENTS = {
   // words in the world (batch 2): signage, on the canvas text path (a browser font stack: CJK, RTL and emoji). Long-form
   // text (a book, a library) will be its own component; this one stays a sign
   text:       { on: "thing", fields: { text: "string", size: "number", width: "number", align: "string", color: "int", outline: "bool", outlineColor: "int", background: "int", billboard: "string", lit: "string" },
-                absentMeans: { outlineColor: "the edge takes the colour that contrasts with the text colour: black behind light text, white behind dark" },
+                absentMeans: { outlineColor: "the edge takes the colour that contrasts with the text colour: black behind light text, white behind dark",
+                  anchor: "the block is centred on its origin in its local X–Y plane, facing +Z (horizontally by align's box of width, vertically on the middle of its lines): pinned (shape audit 10-16)" },
                 defaults: { size: 0.15, width: 2, align: "center", color: 0xffffff, outline: true, billboard: "off", lit: "self" }, required: ["text"],
                 enums: { align: ["left", "center", "right"], billboard: ["off", "yaw", "full"], lit: ["self", "scene"] },
                 ranges: { text: { maxLen: 400 }, size: { min: 0.02, max: 2 }, width: { min: 0.1, max: 10 }, color: { min: 0, max: 0xffffff }, background: { min: 0, max: 0xffffff }, outlineColor: { min: 0, max: 0xffffff } }, clean: { text: "lines" },
@@ -330,17 +349,51 @@ export const COMPONENTS = {
                 help: "it turns to face something: {target (a thing's id, @viewer: each viewer's own eyes, @nearest: whoever is nearest within range, or a person's identity u-…), mode?: yaw (turns about up only, stays upright) | aim (tilts too), forward? ([x, y, z] in its own frame, default [0, 0, 1], its front; a letter x|y|z is taken and stored as its vector; a negative one is a vector, [0, 0, -1]), up? (default [0, 1, 0]), yaw? [min, max] and pitch? [min, max] (radians from rest), speed? rad/s (default 240°/s; 0 = at once), range? m (a person beyond it: back to rest)}. look-at:<part> turns one model part" },
   // captions (a screen's live subtitles): written only by the caption request, a line at a time (shared/captions.js);
   // who may caption a screen is the screen's own captioners list (R leaned that way, 10-06, as the roles branch's CAPTION_ON_SCREENS does)
-  captions:   { on: "thing", fields: { session: "string", n: "int", gen: "number", title: "string", mediaTime: "number", window: "array" },
-                docs: { session: "the captioning session's id", n: "the line's number in its session", gen: "the generation of the feed", title: "what is playing", mediaTime: "the media's playhead, seconds", window: "the lines on screen: [{t0, t1, text, speaker?}]" }, help: "a screen's captions, written by the caption request only: {session, n, gen, title?, mediaTime, window: [{t0, t1, text, speaker?}]}" },
+  // shape audit 10-16 (render-media-env §11): each caption write holds ITS line, once (WebVTT/TTML store a cue once); the 20-line
+  // window re-logged each line up to twenty times, the very cost the caption request was made to remove. A reader wanting
+  // the last lines reads the last captions changes (the log is the transcript); mediaTime was line.t1
+  captions:   { on: "thing", fields: { session: "string", n: "int", gen: "number", title: "string", line: "object" }, required: ["session", "n", "line"],
+                ranges: { title: { maxLen: 120 } }, units: { gen: "the leg's generation" },
+               absentMeans: { line: "an older value's window [{t0, t1, text, speaker?}]: its last entry is the line on screen" },
+                docs: { session: "the captioning session's id", n: "the line's number in its session", gen: "the generation of the feed", title: "what is playing", line: "the line on screen now: {t0, t1 (seconds of media time), text (≤ 240), speaker? (≤ 48)}" },
+                help: "a screen's captions, written by the caption request only: {session, n, gen, title?, line: {t0, t1, text, speaker?}} (the current line; earlier ones are the earlier captions changes)" },
   captioners: { on: "thing", fields: { ids: "people" }, help: "who may caption this screen with the caption request: {ids: [<identity u-…>]}; anyone who may edit the screen may caption it too" },
   // round-2 review R8 (2026-10-05): names the engine reads, carried by imported worlds, registered with their old
   // meaning so it's fixed (L5). Fields from every old world log on Burrow, translated. A name not here is a world's own
   // invention (heart, inscription…): admitted, unless it's a near-miss of one of these (ligth).
-  sky:       { on: "world", fields: { hours: "number", rate: "number", ts: "number", azimuth: "number", clouds: "string", weather: "string", forecast: "object", override: "object", weatherK: "number", clock: "string", tz: "string", dormantRated: "object", weatherSeconds: "number", fog: "number", exposure: "number", ambient: "number", sun: "number", fill: "number", world: "string" }, help: "on @world: the sky and its clock {hours, rate, weather, clouds, forecast, fog…}" },
-  grass:     { on: "world", fields: { width: "number", depth: "number", center: "array", bladeHeight: "number", wind: "number", spacing: "number", perCell: "number", color: "any", colorTip: "number", species: "string", height: "number", density: "number", preset: "string", rows: "object", corn: "object" },
-               ranges: { width: { gt: 0, max: 1000 }, depth: { gt: 0, max: 1000 }, bladeHeight: { gt: 0, max: 5 }, height: { gt: 0, max: 10 }, density: { min: 0, max: 4 },
-                         spacing: { min: 0.05, max: 10 }, perCell: { min: 1, max: 32 }, wind: { min: 0, max: 10 } }, units: { width: "m", depth: "m", bladeHeight: "m", height: "m", spacing: "m" },
-               docs: { width: "the field's width, metres", depth: "the field's depth, metres", density: "how thickly it grows (0..4)", height: "blade height, metres", species: "what grows", preset: "a planting by name" }, help: "a grass or crop field {width, depth, center, species, density…}" },
+  // shape audit 10-16 (render-media-env §13): 19 fields → 14. clock and dormantRated (fold bookkeeping) are gone: a tz present
+  // means the wall clock governs, and hours/rate/ts stay as the rated fallback; sun, fill and world (never stored) and
+  // weatherSeconds (now transition: no unit in a name) are gone; azimuth is radians. ts, override and a forecast's epoch
+  // are stamped by the authority's sky and weather acts, never taken from a writer (stamped). The forecast's segment law is
+  // forecast@1: shared/forecast.js's draw order (dwell, then state, then intensity) at this commit; a changed law is a new name
+  sky:       { on: "world", fields: { hours: "number", rate: "number", ts: "number", tz: "string", clouds: "string", weather: "string", weatherK: "number", transition: "number", azimuth: "number", fog: "number", exposure: "number", ambient: "number", forecast: "object", override: "object" },
+               defaults: { hours: 12, rate: 0, clouds: "cumulus", azimuth: Math.PI, fog: 1, exposure: 1, ambient: 1 },
+               enums: { clouds: ["clear", "cumulus", "stratus", "cirrus"], weather: ["clear", "fair", "sunshower", "overcast", "rain", "storm", "cyclone", "darkstorm"] },
+               stamped: ["ts", "override", "forecast.epoch"],
+               dropped: { clock: "a tz present means the wall clock governs: {tz: 'Europe/Paris'}", dormantRated: "fold bookkeeping: hours and rate stay put as the fallback clock", sun: "a knob on the renderer's own light rig (never stored)", fill: "a knob on the renderer's own light rig (never stored)", world: "a one-member enum (earth), never stored", weatherSeconds: "renamed transition (seconds)" },
+               ranges: { hours: { min: 0, max: 24 }, rate: { min: -1000, max: 1000 }, azimuth: { min: -2 * Math.PI, max: 2 * Math.PI }, fog: { min: 0 }, exposure: { min: 0 }, ambient: { min: 0 }, transition: { gt: 0, max: 600 }, weatherK: { min: 0, max: 2 }, tz: { maxLen: 64 } },
+               units: { hours: "h", rate: "world hours per real hour", ts: "ms", azimuth: "rad", transition: "s" },
+               absentMeans: { tz: "no wall clock: hours, rate and ts govern the day", weather: "no authored weather (a forecast may still say one)", weatherK: "1: full intensity", transition: "the renderer's own ease (30 s in a forecast)",
+                 forecast: "no forecast: the authored weather holds", override: "no manual weather inside the current forecast segment", law: "forecast@1: shared/forecast.js segmentAt's draw order (dwell, then state, then intensity) per (seed, segment) at this commit" },
+               docs: { hours: "the hour of day at ts, 0 ≤ h ≤ 24", rate: "world hours a real hour (0: the sun stands still)", ts: "the instant hours held, epoch ms (stamped by the authority)", tz: "an IANA time zone: present, the world's hour is that zone's wall clock", clouds: "clear | cumulus | stratus | cirrus", weather: "clear | fair | sunshower | overcast | rain | storm | cyclone | darkstorm",
+                 weatherK: "the weather's intensity, 0..2", transition: "how long a change of weather eases in, seconds", azimuth: "where the sun stands round the horizon, radians (π: the default)", fog: "× this renderer's own fog curve", exposure: "× this renderer's tone mapping", ambient: "× this renderer's ambient curve",
+                 forecast: "a weather policy {seed, states: [name | {state, weight}], dwell: [min, max] s, k: [min, max], transition: s, epoch (stamped)}", override: "a weather act inside a forecast segment {state, k?, ts} (stamped)" },
+               help: "on @world: the sky and its clock {hours, rate, tz? (present: the wall clock of that zone governs), clouds, weather, weatherK, transition (s), azimuth (rad), fog, exposure, ambient (× this renderer's own curves), forecast?}. ts, override and forecast.epoch are stamped by the sky and weather acts; the sky act also takes clock: 'real' (stored as tz) and weatherSeconds (stored as transition)" },
+  // shape audit 10-16 (render-media-env §14): ONE spelling, the flora one. The first protocol's makeGrass knobs (bladeHeight,
+  // spacing, perCell, colorTip, an int colour) are taken at write and stored through the reader's own mapping (flora_args
+  // mapGrassArgs), once; a preset is a name for strokes held in a mutable file (defs/flora/_presets.json), so it is expanded
+  // at write (shared/protocol/assetref.js) and the stored value holds its strokes, never the name (the sky presets' law).
+  // seed and size were read and refused: registered. colour stays a palette name or a [r, g, b] multiplier: the flora
+  // palette's recolors (defs/flora/_colors.json) aren't an sRGB int (deviation from the audit's int)
+  grass:     { on: "world", fields: { species: "string", width: "number", depth: "number", size: "number", center: "array", height: "number", density: "number", wind: "number", color: "any", seed: "int", rows: "object", corn: "object", heading: "number", strokes: "array" },
+               dropped: { bladeHeight: "the flora spelling is height (a write of the old knobs is taken and mapped)", spacing: "the flora spelling is density", perCell: "the flora spelling is density", colorTip: "the flora spelling is color (a multiplier)", preset: "expanded at write into strokes (a preset is a name for strokes in a file that may change)" },
+               ranges: { width: { gt: 0, max: 1000 }, depth: { gt: 0, max: 1000 }, size: { gt: 0, max: 1000 }, height: { gt: 0, max: 10 }, density: { min: 0, max: 4 }, wind: { min: 0, max: 10 }, strokes: { maxItems: 16 } },
+               units: { width: "m", depth: "m", size: "m", height: "m", heading: "rad" },
+               absentMeans: { size: "80 m wide and 70 m deep when width and depth aren't given either (a stroke's own: 30 m)", species: "grass", width: "size, else 80 m (a stroke's own: 30 m)", depth: "size, else 70 m (a stroke's own: 30 m)", center: "[0, 0]", height: "the species' own", density: "1", wind: "1", color: "the species' own", seed: "7",
+                 strokes: "one stroke: the value itself (a species' own composition, corn's and sunflower's rows, still applies)", heading: "-0.6 rad for sunflowers (they face one way together)" },
+               docs: { species: "what grows (a flora def: grass, corn, sunflower, galleta_dry…)", width: "the field's width, metres", depth: "the field's depth, metres", size: "width and depth when they aren't given, metres", center: "[x, z] of the field's middle, metres", height: "plant height, metres", density: "how thickly it grows (0..4)", wind: "how much it sways (×)", color: "a palette name (defs/flora/_colors.json) or a multiplier [r, g, b]", seed: "the planting's random seed",
+                 rows: "a crop's rows {spacing, plant, stride?, phase?}", corn: "corn's own knobs {peel?, peelChance?}", heading: "the way sunflowers face, radians", strokes: "the plantings this field is made of (a preset, expanded at write): [{species, width, depth, center, seed, density, variant?, footprint?}]" },
+               help: "a grass or crop field {species, width, depth (or size), center, height, density, wind, color, seed} or {width, depth, seed, strokes: […]}; a preset ({preset: 'mojave'}) is expanded at write into its strokes, and the first protocol's knobs (bladeHeight, spacing, perCell, colorTip) are taken and stored in this spelling" },
   // carried from the first protocol, with real readers (shared/structure.js; shape audit 10-16, physics-motion §9): its grid numbers and its nested
   // grammar were only in structure.js (GRID_DEFAULTS, APERTURES, normalize), "a CONTRACT". Pinned here; tools/shape-physics-test
   // holds them equal to structure.js. A level entry a reader can't parse reads as absent (normalize skips it)
@@ -357,22 +410,24 @@ export const COMPONENTS = {
   // address, with the document's own params. The first protocol's bag (preset, origin, count, quality, size, area,
   // texture, speed, opacity, lifetime) stays here because a stored value is read forever (PROTOCOL §4): it reads as
   // {effect: preset, at: origin, params: {count, …}} (instanceOf), and the authority no longer takes it in a write
-  particles: { fields: { preset: "string", seed: "number", origin: "array", count: "number", quality: "string", size: "number", area: "any", texture: "string", speed: "number", opacity: "number", lifetime: "number",
-                 effect: "string", part: "string", at: "vec3", playing: "bool", scale: "number", params: "object" },
-               defaults: { playing: true, scale: 1 },
-               legacy: ["preset", "origin", "count", "quality", "size", "area", "texture", "speed", "opacity", "lifetime"],
+  // shape audit 10-16 (render-media-env §4): an Essential's NAME is a write-time convenience; the stored effect is the address
+  // of that Essential's canonical document (shared/particle_effects.js ESSENTIAL_ADDRESSES, pinned there), so retuning fire in
+  // code can't silently change every stored fire (Resonite's PhotonDust lesson). The first protocol's ten fields are gone from
+  // the registry: no v4 value holds them; a v1 bag is read (instanceOf) only by the translator
+  particles: { on: "thing", fields: { effect: "string", part: "string", at: "vec3", seed: "number", playing: "bool", scale: "number", params: "object" },
+               defaults: { playing: true, scale: 1 }, required: ["effect"],
                ranges: { scale: { min: 0.01, max: 100 }, part: { maxLen: 64 }, effect: { maxLen: 80 }, at: { min: -8, max: 8 } },
-               units: { at: "m" },
-               docs: { effect: "an Essential (fire, sparks, embers, smoke, dust, snow, magic, stars, muzzle) or a stored effect document's address", part: "a node of its model it emits from", at: "where it emits, [x, y, z] metres in its own frame, each within ±8", seed: "the random seed; absent: derived from its id",
-                 playing: "off: no new particles; the living finish", scale: "its size, 0.01..100", params: "the effect's own knobs {<name>: value}" },
+               units: { at: "m", scale: "×" },
+               docs: { effect: "the effect document's content address (eido:sha256/… for an Essential, sha256:… for one uploaded here); an Essentials name (fire, sparks, embers, smoke, dust, snow, magic, stars, muzzle) is taken and stored as its address", part: "a node of its model it emits from", at: "where it emits, [x, y, z] metres in its own frame, each within ±8", seed: "the random seed; absent: derived from its id",
+                 playing: "off: no new particles; the living finish", scale: "every length in the effect (positions, sizes, speeds, accelerations) × this, on top of the thing's own transform scale; 0.01..100", params: "the effect's own knobs {<name>: value}" },
                absentMeans: {
-                 effect: "an older value (the first protocol's): its preset names the effect, and its count, size, opacity, speed, lifetime, area, texture and quality are that effect's params of the same names",
                  part: "it emits from the thing itself, not one node of its model",
-                 at: "[0, 0, 0] in its own frame; in an older value, its origin",
+                 at: "[0, 0, 0] in its own frame",
+                 seed: "derived from its id and its effect's name (hashSeed(`${id}:${name}`))",
                  playing: "playing: it emits (the component's presence was its state)",
                  scale: "1: the effect at its own size",
-                 params: "none: the effect's own defaults (in an older value, its own knobs: see effect)" },
-               help: "it emits particles: {effect (an Essentials name: fire, sparks, embers, smoke, dust, snow, magic, stars, muzzle; or a stored effect document's address sha256:<64 hex>: upload {effect: {…}} stores one), part? (a node of its model it emits from), at? [x, y, z] (m in its own frame, ±8), seed? (absent: derived from its id), playing? (false: no new particles; the living finish), scale? (0.01..100, its size), params? {<name>: value} (the effect's own knobs, schema {component: 'particles'} and the inspector list them; every Essential takes count, size, opacity, speed, lifetime, area, texture, quality)}. An effect document is emitters of modules: spawn, shape, velocity, forces, rotation, size, color, render (spec in shared/particle_effects.js)" },
+                 params: "none: the effect's own defaults" },
+               help: "it emits particles: {effect (an effect document's address; an Essentials name, fire, sparks, embers, smoke, dust, snow, magic, stars, muzzle, is taken and stored as its address; upload {effect: {…}} stores a document of your own, sha256:<64 hex>), part? (a node of its model it emits from), at? [x, y, z] (m in its own frame, ±8), seed? (absent: derived from its id), playing? (false: no new particles; the living finish), scale? (0.01..100: every length in the effect × this, on top of the thing's own scale), params? {<name>: value} (the effect's own knobs, schema {component: 'particles'} and the inspector list them; every Essential takes count, size, opacity, speed, lifetime, area, texture, quality)}. An effect document is emitters of modules: spawn, shape, velocity, forces, rotation, size, color, render (spec in shared/particle_effects.js)" },
   "imported-behavior": { on: "world", keyed: true, key: "instance", fields: { src: "string", attach: "string", caps: "object", knobs: "object", author: "string", ts: "number", state: "object" }, help: "keyed by name: an imported world's old runtime-script binding, carried from translation (scripts are script:<name>)" },
   assets:    { on: "world", keyed: true, key: "instance", fields: { name: "string", path: "string" }, help: "on @world, keyed: one of the world's assets (a model added here)" },
   imported:  { keyed: true, key: "instance", help: "keyed: a field an imported world's translation had no mapping for, carried as it was" },
@@ -396,19 +451,36 @@ export const COMPONENTS = {
   spawn:     { on: "world", fields: { pos: "vec3", radius: "number" }, required: ["pos"], units: { pos: "m", radius: "m" }, ranges: { radius: { min: 0, max: 100 } },
                absentMeans: { radius: "2 m" }, docs: { pos: "where visitors arrive, [x, y, z] world metres", radius: "a visitor's arrival must lie within this many metres of pos (the client chooses where inside)" },
                help: "on @world: where visitors arrive {pos: [x, y, z], radius? (m, 0..100; absent, 2 m): a visitor's arrival must lie within radius of pos}" },
-  // research 40 §6.1: today's noise bag with `kind` explicit, or an imported raster as a value blob. Keys by kind.
+  // research 40 §6.1, trimmed by the shape audit 10-16 (render-media-env §15): the noise ground. Its defaults ARE the sim's law
+  // (shared/terrainmath.js terrainParams, pinned by EIDOSIM_BUILD), written into every stored value, so the sim, the mesh and
+  // the inspector read one ground. raster had no reader anywhere: reserved (refused) until one exists, its fields
+  // unregistered. Layer colours are ints (sRGB), like every colour here ("#rrggbb" is taken at write). Water is its own
+  // component (everyone separates water from ground): terrain.water is refused with where it went
   terrain:   { on: "world", fields: { kind: "string", seed: "int", size: "number", amplitude: "number", octaves: "int", frequency: "number", flatRadius: "number", flatHeight: "number",
-                         blob: "string", w: "int", h: "int", spacing: "number", origin: "array", format: "string", segments: "int", layers: "any",
-                         features: "array", heightmap: "object", water: "any" },   // upstream #237/#242 (merged 10-15): shared/terrainshape.js reads and bounds them
-               defaultKind: "noise", byKind: { noise: ["kind", "seed", "size", "amplitude", "octaves", "frequency", "flatRadius", "flatHeight", "segments", "layers", "features", "heightmap", "water"], raster: ["kind", "blob", "w", "h", "spacing", "origin", "format", "water"] },
+                         segments: "int", layers: "array", features: "array", heightmap: "object" },   // upstream #237/#242 (merged 10-15): shared/terrainshape.js reads and bounds them
+               defaults: { kind: "noise", seed: 1, size: 80, amplitude: 3, octaves: 4, frequency: 2.5, flatRadius: 0, flatHeight: 0 },
+               enums: { kind: ["noise"] },
+               reservedKinds: { raster: "an imported height raster {blob, w, h, spacing, origin, format: 'i32-mm-le'}: no reader draws or walks it yet" },
+               dropped: { water: "water is its own component on @world: set {id: '@world', component: 'water', value: {level, color?, opacity?, kind?, flow?}}" },
                // what every visitor's client can build: past these a single write freezes or breaks everyone (review T0)
                ranges: { size: { gt: 0, max: 4096 }, segments: { min: 2, max: 512 }, octaves: { min: 1, max: 8 }, frequency: { gt: 0, max: 64 },
-                         amplitude: { min: -500, max: 500 }, flatRadius: { min: 0, max: 4096 }, features: { maxItems: 64 }, w: { min: 2, max: 4096 }, h: { min: 2, max: 4096 }, spacing: { gt: 0, max: 64 } },
-               nullable: ["features", "heightmap", "water"],   // null = removed (a merge patch can take one away; water: null drains)
-               absentMeans: { features: "no placed shapes: the base alone is the ground", heightmap: "no image: the noise (or raster) is the base", water: "no water: dry ground everywhere" },
-               units: { size: "m", amplitude: "m", flatRadius: "m", flatHeight: "m", spacing: "m" },
-               docs: { seed: "the noise seed", size: "the ground's size, metres", amplitude: "its relief: how high the ground rises, metres", segments: "samples per side", flatRadius: "flat within this many metres of the centre", octaves: "noise octaves (1–8)", frequency: "noise frequency", features: "placed shapes over the base, in order (at most 64): {type: hill|ridge|flatten, …} (shared/terrainshape.js)", heightmap: "an uploaded grayscale grid as the base: {grid: 'store/heightmaps/<hash>.json', min, max} (m)", water: "one water level for the world: {level (m), color?, opacity?, kind?: still|river|ocean, flow?: [x, z]}; null drains it" },
-               help: "the ground's base: {kind: 'noise', seed, size, amplitude, octaves, frequency, flatRadius, flatHeight, features?, heightmap?, water?} or {kind: 'raster', blob, w, h, spacing, origin: [x, z], format: 'i32-mm-le'}" },
+                         amplitude: { min: -500, max: 500 }, flatRadius: { min: 0, max: 4096 }, features: { maxItems: 64 }, layers: { maxItems: 8 } },
+               nullable: ["features", "heightmap"],   // null = removed (a merge patch can take one away)
+               absentMeans: { features: "no placed shapes: the base alone is the ground", heightmap: "no image: the noise is the base", segments: "the renderer's own mesh resolution (a drawing choice, not part of the height law)", layers: "one plain layer, 0x4a5d33 repeated 16 times across its size",
+                 law: "the ground's height is shared/terrainmath.js makeHeightField over these numbers, pinned by EIDOSIM_BUILD (then features and heightmap: shared/terrainshape.js)" },
+               units: { size: "m", amplitude: "m", flatRadius: "m", flatHeight: "m" },
+               docs: { seed: "the noise seed", size: "the ground's size, metres", amplitude: "its relief: how high the ground rises, metres", segments: "samples per side (the drawn mesh's resolution)", flatRadius: "flat within this many metres of the centre", flatHeight: "the height of that flat centre, metres", octaves: "noise octaves (1–8)", frequency: "noise frequency", layers: "its colour layers, at most 8: [{color: 0xRRGGBB (sRGB), repeat: tiles across its size}]", features: "placed shapes over the base, in order (at most 64): {type: hill|ridge|flatten, …} (shared/terrainshape.js)", heightmap: "an uploaded grayscale grid as the base: {grid: 'store/heightmaps/<hash>.json', min, max} (m)" },
+               help: "the ground's base: {kind: 'noise', seed, size, amplitude, octaves, frequency, flatRadius, flatHeight, segments, layers? [{color: 0xRRGGBB, repeat}], features?, heightmap?} (absent numbers are the sim's: seed 1, size 80 m, amplitude 3 m, octaves 4, frequency 2.5, flat radius 0); a raster kind is reserved; water is its own component" },
+  // split out of terrain (shape audit 10-16, render-media-env §15): one water level for the world, SL's per-region water.
+  // A keyed water:<name> with bounds is a later addition. shared/terrainshape.js waterParams reads it (an older terrain.water
+  // too, until the load moves it)
+  water:     { on: "world", fields: { level: "number", color: "int", opacity: "number", kind: "string", flow: "array" }, required: ["level"],
+               enums: { kind: ["still", "river", "ocean"] },
+               ranges: { level: { min: -500, max: 500 }, color: { min: 0, max: 0xffffff }, opacity: { min: 0.1, max: 1 } },
+               units: { level: "m", flow: "m/s" },
+               absentMeans: { color: "0x1d5a6e", opacity: "0.82", kind: "decided from the ground it fills (shared/waterkind.js)", flow: "still: no current" },
+               docs: { level: "the water's surface height, metres (world y)", color: "its colour, 0xRRGGBB (sRGB)", opacity: "0.1..1", kind: "still | river | ocean", flow: "a current [x, z], metres a second" },
+               help: "on @world: the world's water {level (m), color? 0xRRGGBB, opacity? 0.1..1, kind?: still|river|ocean, flow? [x, z] m/s}; delete it to drain" },
   "terrain-grid": { status: "reserved", on: "world", fields: { spacing: "number", tile: "int", origin: "array", extent: "array", limits: "object" }, help: "the sculpt grid: {spacing (m), tile (samples per side), origin [x, z], extent [nx, nz] tiles, limits {raise, lower} (mm)}; fixed while any terrain-tile exists" },
   "terrain-tile": { status: "reserved", on: "world", keyed: true, key: "partition", fields: { mm: "array" }, help: "keyed <i>-<j>: {mm: [tile² integer millimetres, row-major]}, a delta over the base; written whole by sculpt" },
   // research 41 §3.2: a behaviour. Keyed, so §5's creator rule decides who may change it and who its SPONSOR is.

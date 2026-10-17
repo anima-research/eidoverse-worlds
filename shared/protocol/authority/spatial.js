@@ -8,7 +8,7 @@ import { LAB_CATALOGUE, geomE } from "./catalogue.js";
 import { aabb, boxToObb, obbs, overlap, satCost, satDepth, surfacesOf } from "./math.js";
 import { VOLATILE } from "./storage.js";
 import { terrainParams, makeHeightField } from "../../terrainmath.js";
-import { shapeParams, shapeReady, waterParams } from "../../terrainshape.js";
+import { shapeParams, shapeReady, waterParams, worldWater } from "../../terrainshape.js";
 // The authority is synchronous and every world on a server shares its one thread, so no request may cost the world's size
 // squared. Every hot path (support under a point, overlap warnings, a body's track, place's search, delete's set-down,
 // what rests on a thing picked up) asks the index "what could touch this box?" instead of every entity.
@@ -172,14 +172,16 @@ const GROUND = new WeakMap();
 const FLAT = Object.freeze({ terrain: false, ready: true, height: () => 0, level: null });
 const loading = () => refuse("ground-loading", "this world's ground is still loading: its heightmap's grid isn't on this server yet, and the authority won't stand anything (or judge a step) on a guessed height",
   "try again in a moment; if it stays missing, an owner can upload the heightmap image again");
+// the water level is @world.water's (shape audit 10-16: its own component; an older terrain.water until the load moves it),
+// so a cached ground is rebuilt when either the terrain or the water changes
 function groundOf(st) {
-  const t = st.entities["@world"]?.c.terrain;
-  if (!t || typeof t !== "object") return FLAT;
+  const wc = st.entities["@world"]?.c; const t = wc?.terrain; const w = worldWater(wc);
+  const level = waterParams({ water: w })?.level ?? null;
+  if (!t || typeof t !== "object") return level === null ? FLAT : { ...FLAT, level };
   let g = GROUND.get(t);
-  if (!g) {
-    const level = waterParams(t)?.level ?? null;
+  if (!g || g.water !== w) {
     if (!shapeReady(shapeParams(t))) return { terrain: true, ready: false, height: loading, level };
-    g = Object.freeze({ terrain: true, ready: true, height: makeHeightField(terrainParams(t)), level }); GROUND.set(t, g);
+    g = Object.freeze({ terrain: true, ready: true, height: g?.height ?? makeHeightField(terrainParams(t)), level, water: w }); GROUND.set(t, g);
   }
   return g;
 }

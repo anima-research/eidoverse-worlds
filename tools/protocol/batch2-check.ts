@@ -56,7 +56,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the falloff reaches silence (no taper)", "shared/sound.js", "return inv * (1 - t) * (1 - t);", "return inv;", ["S6"]],
   ["the falloff is 0 at radius", "shared/sound.js", "if (d >= radius) return 0;", "", ["S6"]],
   ["a sound plays by default (R: no start-paused)", "shared/protocol/componentspec.js", "defaults: { playing: true, loop: true, volume: 0.8,", "defaults: { playing: false, loop: true, volume: 0.8,", ["S7"]],
-  ["the defaults are written out (picture)", "shared/protocol/componentspec.js", "defaults: { lit: \"scene\", flip: false, width: 1 }, required: [\"src\"]", "required: [\"src\"]", ["P1"]],
+  ["the defaults are written out (picture)", "shared/protocol/componentspec.js", "defaults: { lit: \"scene\", width: 1 }, required: [\"src\"]", "required: [\"src\"]", ["P1"]],
   ["look-at's target names something", "shared/protocol/authority.js", "if (!s.entities[T] || T === \"@world\") refuse(\"not-found\", `${at}.target", "if (false) refuse(\"not-found\", `${at}.target", ["L2"]],
   ["look-at's @-words are a closed list", "shared/protocol/authority.js", "if (typeof T === \"string\" && T.startsWith(\"@\") && !LOOK_WORDS.includes(T)) refuse(", "if (false) refuse(", ["L2"]],
   ["look-at can't face itself or what rides it", "shared/protocol/authority.js", "if (T === id || ancestors(s, T).includes(id)) refuse(\"loop\"", "if (false) refuse(\"loop\"", ["L2"]],
@@ -169,10 +169,11 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } });
       return { r: code(s.call("olive", "set", { id: "lamp", component: "look", value: { target: "lamp" } })) }; },
     good: (o) => o.r === "schema" },
-  { id: "K2", what: "a store picture on a part and a store sound keep working (today's shapes, minus the renamed look)", run(s) { cast(s);
+  // shape audit 10-16 (render-media-env §5): a picture is a quad of its own; texturing a model's part is the reserved material's
+  { id: "K2", what: "a store picture and a store sound keep working (today's shapes, minus the renamed look); a picture's part is refused (the reserved material's)", run(s) { cast(s);
       s.call("olive", "create", { id: "tv", model: "crate", place: { at: [0, 0] } });
-      return { p: show(s.call("olive", "set", { id: "tv", component: "picture", value: { src: IMG, part: "screen" } })), s: show(s.call("olive", "set", { id: "tv", component: "sound", value: { src: AUD, volume: 0.5 } })) }; },
-    good: (o) => o.p === "ok" && o.s === "ok" },
+      return { p: show(s.call("olive", "set", { id: "tv", component: "picture", value: { src: IMG } })), part: code(s.call("olive", "set", { id: "tv", component: "picture", value: { src: IMG, part: "screen" } })), s: show(s.call("olive", "set", { id: "tv", component: "sound", value: { src: AUD, volume: 0.5 } })) }; },
+    good: (o) => o.p === "ok" && o.part === "schema" && o.s === "ok" },
 
   // ---------------- W: words ----------------
   { id: "W1", what: "story {title, text, marks?}: admitted; an unknown key (practice) refused with the list; a story with no text refused; a 1001-character text refused", run(s) { cast(s);
@@ -246,7 +247,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "poster", components: { transform: { pos: [0, 0, 0] } } });
       const r = s.call("olive", "set", { id: "poster", component: "picture", value: { src: IMG, alt: "a print of the hearth at dusk" } });
       return { r: show(r), v: comp(s, "poster", "picture"), noted: (r.notes ?? []).some((n: any) => /isn't a component/.test(n.why)) }; },
-    good: (o) => o.r === "ok" && o.v?.lit === "scene" && o.v?.flip === false && o.v?.width === 1 && !o.noted },
+    good: (o) => o.r === "ok" && o.v?.lit === "scene" && !("flip" in (o.v ?? {})) && o.v?.width === 1 && !o.noted },
   { id: "P2", what: "picture src: http://, a dot segment, %2e, an IP address, localhost, user:pw@ and a port of its own are refused (shape)", run(s) { cast(s);
       s.call("olive", "create", { id: "poster", components: { transform: { pos: [0, 0, 0] } } });
       const bad = ["http://x.org/a.png", "store/images/../a.png", "store/images/%2e.png", "https://192.168.1.1/a.png", "https://localhost/a.png", "https://me:pw@cdn.example.org/a.png", "https://cdn.example.org:8443/a.png", "https://printer.local/a.png", "javascript:alert(1)"];
@@ -264,10 +265,10 @@ const cases: Case[] = [
   { id: "P5", what: "the authority's look says a picture: «alt» (quad), on its part, or by file name with no alt", run(s) { cast(s);
       s.call("olive", "create", { id: "poster", components: { transform: { pos: [0, 0, 0] } } }); s.call("olive", "create", { id: "tv", model: "crate", place: { at: [2, 0] } }); s.call("olive", "create", { id: "bare", components: { transform: { pos: [4, 0, 0] } } });
       s.call("olive", "set", { id: "poster", component: "picture", value: { src: IMG, alt: "the hearth at dusk" } });
-      s.call("olive", "set", { id: "tv", component: "picture", value: { src: IMG, part: "screen", alt: "static" } });
+      s.call("olive", "set", { id: "tv", component: "picture", value: { src: IMG, alt: "static" } });
       s.call("olive", "set", { id: "bare", component: "picture", value: { src: IMG } });
       return { q: sayLines(s, "poster")?.[0], p: sayLines(s, "tv")?.[0], b: sayLines(s, "bare")?.[0] }; },
-    good: (o) => o.q === "a picture: «the hearth at dusk»" && o.p === "a picture on its screen: «static»" && o.b === "a picture (0123456789abcdef.png)" },
+    good: (o) => o.q === "a picture: «the hearth at dusk»" && o.p === "a picture: «static»" && o.b === "a picture (0123456789abcdef.png)" },
 
   { id: "P6", what: "upload: an image's pixel size is read from its header (PNG, JPEG, WebP) so a 9000-px decompression bomb is refused before any viewer decodes it (cap 8192)", async run() {
       const UP = await import(TREE + "server/upload.ts").catch(none); if (!UP.imageDims) return { none: true };

@@ -30,6 +30,9 @@ import { translate } from './protocol/import-v1/translate-v1.js';
 import { emptyState, applyInPlace, opsOf } from '../shared/protocol/fold.js';
 import { v1FoldBuild } from './protocol/import-v1/build.ts';
 import { scratchWorld, flat } from './protocol/scratchworld.ts';
+import { COMPONENTS as SPEC } from '../shared/protocol/componentspec.js';
+const SKY_DEFAULTS = SPEC.sky.defaults;
+const hexInt = (x: any) => (typeof x === 'string' && /^#[0-9a-f]{6}$/i.test(x) ? parseInt(x.slice(1), 16) : x);   // a layer colour is stored as an int (shape audit 10-16)
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
@@ -86,7 +89,7 @@ console.log('1. the alias both ways, through the real door:');
   const ov = W2.call('weather', { weather: 'storm' });   // the override (the KNOWN BUG above refuses it)
   const types = worldComponents(W2.view()).components.map((c: any) => `${c.type}:${Object.keys(c.params).sort().join(',')}`);
   check('…and reads as Sky (the day, the clouds) + Weather (weather, forecast, override) — not one opaque bag (KNOWN BUG above: the override is refused)',
-    canon(types) === canon(['Sky:clouds,hours,rate', 'Weather:forecast,override,weather']), `${types.join(' | ')} ${ov.ok ? '' : `(weather refused: ${ov.refused?.reason})`}`);
+    canon(types) === canon(['Sky:ambient,azimuth,clouds,exposure,fog,hours,rate', 'Weather:forecast,override,weather']), /* the registry's defaults are written (shape audit 10-16) */ `${types.join(' | ')} ${ov.ok ? '' : `(weather refused: ${ov.refused?.reason})`}`);
   check('the world records are components (one engine record each), never addable to a thing',
     ['Sky', 'Weather', 'Terrain', 'Grass'].every((t) => /^[0-9a-f]{64}$/.test((RECORDS as any)[t]?.hash ?? '') && (RECORDS as any)[t].category === 'World')
     && !addable(componentsOf({ pos: [0, 0, 0] }).components).some((a: any) => (RECORDS as any)[a.name]?.world));
@@ -118,7 +121,7 @@ console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
 {
   const W = scratchWorld('worldentity');
   // the storm is authored with the sky (not a weather override under the forecast: see the KNOWN BUG in section 1)
-  const s0 = W.call('sky', { hours: 8, rate: 24, clouds: 'stratus', exposure: 0.7, fog: 2, azimuth: 90, weather: 'storm', forecast: { seed: 7, states: ['clear', 'rain'], dwellSec: [600, 1800], transitionSec: 45 } });
+  const s0 = W.call('sky', { hours: 8, rate: 24, clouds: 'stratus', exposure: 0.7, fog: 2, azimuth: Math.PI / 2, weather: 'storm', forecast: { seed: 7, states: ['clear', 'rain'], dwellSec: [600, 1800], transitionSec: 45 } });
   check('(setup) a sky with a storm and a forecast', s0.ok && W.view().sky.weather === 'storm' && !!W.view().sky.forecast, JSON.stringify(s0.refused));
   const st = () => W.view();
   const policy = (s: any) => { const { epoch: _e, seq: _s, by: _b, ...p } = s.forecast ?? {}; return canon(p); };
@@ -129,7 +132,7 @@ console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
   const sent = W.sendAll(r.ops);
   const sky = () => worldComponents(st()).components.find((c: any) => c.type === 'Sky');
   const { doc: _d, ...golden } = PRESETS.golden;
-  check('…the door takes it; after it, the Sky IS the preset: no rate, exposure, fog or azimuth left from the old sky', sent.ok && canon(sky()?.params) === canon(golden), JSON.stringify([sent.refused, sky()?.params]));
+  check('…the door takes it; after it, the Sky IS the preset: no rate, exposure, fog or azimuth left from the old sky', sent.ok && canon(sky()?.params) === canon({ ...SKY_DEFAULTS, ...golden }), JSON.stringify([sent.refused, sky()?.params]));
   check('…there is one Sky (one per entity, one world entity)', worldComponents(st()).components.filter((c: any) => c.type === 'Sky').length === 1);
   check('…the Weather component keeps its weather and its forecast policy', st().sky.weather === before.weather && policy(st().sky) === before.policy, `${st().sky.weather} ${policy(st().sky)}`);
   check('…and the world reads the preset by name', skyPresetOf(st().sky, PRESETS) === 'golden' && worldChoice(st(), { presets: PRESETS, now: now() }).sky === 'golden');
@@ -140,7 +143,7 @@ console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
   const P = { lit: { hours: 6, clouds: 'stratus', exposure: 0.8, fog: 0.4 }, bare: { hours: 12 } };
   W.sendAll(worldPick(st(), 'sky', 'lit', { presets: P, now: now() }).ops);
   W.sendAll(worldPick(st(), 'sky', 'bare', { presets: P, now: now() }).ops);
-  check('picking "bare" after "lit" leaves exactly {hours: 12} — the old clouds, exposure and fog are replaced, not merged', canon(sky()?.params) === canon({ hours: 12 }), canon(sky()?.params));
+  check('picking "bare" after "lit" leaves exactly {hours: 12} — the old clouds, exposure and fog are replaced, not merged', canon(sky()?.params) === canon({ ...SKY_DEFAULTS, hours: 12 }), canon(sky()?.params));   /* + the registry's defaults, written (shape audit 10-16) */
   check('…and the weather is still the storm', st().sky.weather === 'storm');
   check('a preset that names weather itself wins over the carried one', pickSky(st().sky, { hours: 3, weather: 'clear' }).weather === 'clear');
   check('an unknown preset is refused by name, nothing sent', worldPick(st(), 'sky', 'nope', { presets: P }).ops.length === 0 && /nope/.test(worldPick(st(), 'sky', 'nope', { presets: P }).errors[0]));
@@ -151,9 +154,9 @@ console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
   const pk = (kind: string, v: string) => { const r = worldPick(g(), kind, v, { pal: PAL, now: now() }); const s = G.sendAll(r.ops); if (!s.ok) check(`the door takes the ${kind} pick`, false, JSON.stringify(s.refused)); return r; };
   const shape = pk('shape', 'rugged');
   check('a ground pick is ONE set @world terrain', shape.ops.length === 1 && shape.ops[0].verb === 'set' && shape.ops[0].args.id === WORLD_ID && shape.ops[0].args.component === 'terrain', JSON.stringify(shape.ops));
-  check('a shape on a world with no ground grows the panel\'s ground in that shape (the default tint)', g().terrain?.amplitude === PAL.shapes.rugged && g().terrain.layers[0].color === PAL.tints.meadow.layer && g().terrain.size === 160, canon(g().terrain));
+  check('a shape on a world with no ground grows the panel\'s ground in that shape (the default tint)', g().terrain?.amplitude === PAL.shapes.rugged && g().terrain.layers[0].color === hexInt(PAL.tints.meadow.layer) && g().terrain.size === 160, canon(g().terrain));
   pk('tint', 'arid');
-  check('…a tint pick changes the colour and keeps the shape', g().terrain.amplitude === PAL.shapes.rugged && g().terrain.layers[0].color === PAL.tints.arid.layer, canon(g().terrain));
+  check('…a tint pick changes the colour and keeps the shape', g().terrain.amplitude === PAL.shapes.rugged && g().terrain.layers[0].color === hexInt(PAL.tints.arid.layer), canon(g().terrain));
   G.call(...terrainReq({ ...g().terrain, size: 300 }));
   pk('shape', 'flat');
   check('…a shape pick keeps a hand-authored size', g().terrain.size === 300 && g().terrain.amplitude === PAL.shapes.flat);

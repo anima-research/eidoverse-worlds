@@ -10,9 +10,12 @@
 // folds into the entity's comp bag, SERVER-WRITTEN (a client's `comp {type:
 // "captions"}` is refused, so the bag has one writer path):
 //
-//   comp.captions = {session, n, title?, mediaTime, window: [
-//     {t0, t1, text, speaker?}, …      // oldest first, the newest MAX_LINES
-//   ]}
+//   captions = {session, n, gen, title?, line: {t0, t1, text, speaker?}}
+//
+// Each write holds ITS line, once (shape audit 10-16, render-media-env §11; WebVTT and TTML store a cue once). Until then
+// the bag carried the newest twenty lines (`window`) and the playhead (`mediaTime`), so every caption change re-logged up to
+// twenty lines: the very cost the caption verb was made to remove. A reader that wants the last lines reads the last
+// captions changes (the log is the transcript); an older stored value's window still reads.
 //
 // Rung 2 of the projector ladder (anima_dev/eidoverse_projector_design.md):
 // the music player — audio in, captions the models can read, no video yet.
@@ -66,7 +69,7 @@ export const CAPTIONS_SPEAKER_MAX = 48;
 export const CAPTION_SESSION_MAX = 64;
 /** Sessions are `<ISO attach time>-<nonce>`: ordered by when the bot attached. */
 export const SESSION_RX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z-[A-Za-z0-9]{2,16}$/;
-const KNOWN_KEYS = new Set(['session', 'n', 'gen', 'title', 'mediaTime', 'window']);
+const KNOWN_KEYS = new Set(['session', 'n', 'gen', 'title', 'line', 'mediaTime', 'window']);   // mediaTime and window: an older value's
 
 function cleanText(s, max) {
   return String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -160,35 +163,31 @@ export function captionRefusal(bag, args) {
 }
 
 /** Fold normalized args into the bag (pure; returns the new bag, or null when
- *  the screen went quiet). A new session starts a fresh window; the same
- *  session appends and keeps the newest MAX_LINES. */
+ *  the screen went quiet): the current line only. The title carries within a
+ *  session; a new session starts fresh. */
 export function foldCaption(bag, args) {
   if (args.end) return null;
   const cur = bag && typeof bag === 'object' && bag.session === args.session ? bag : null;
   const line = { t0: args.t0, t1: args.t1, text: args.text, ...(args.speaker ? { speaker: args.speaker } : {}) };
-  const window = [...(Array.isArray(cur?.window) ? cur.window : []), line].slice(-CAPTIONS_MAX_LINES);
   const title = args.title ?? cur?.title;
-  return {
-    session: args.session, n: args.n, gen: Number(args.gen) || 0,
-    ...(title ? { title } : {}),
-    mediaTime: Math.max(args.t1, Number(cur?.mediaTime) || 0),
-    window,
-  };
+  return { session: args.session, n: args.n, gen: Number(args.gen) || 0, ...(title ? { title } : {}), line };
 }
 
 /** Validate a folded bag as a reader (look(), an overlay). `ok:false` carries
  *  WHY; `ok:true` the normalized captions plus notes for anything coerced. */
 export function normalizeCaptions(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return { ok: false, why: 'captions must be an object {session, n, window: [...], title?, mediaTime?}' };
+    return { ok: false, why: 'captions must be an object {session, n, gen, title?, line: {t0, t1, text, speaker?}}' };
   }
-  if (!Array.isArray(data.window)) return { ok: false, why: 'window must be an array of {t0, t1, text, speaker?}' };
+  // today's value holds its current line; an older one its window of lines
+  const lines0 = data.line !== undefined ? [data.line] : data.window;
+  if (!Array.isArray(lines0)) return { ok: false, why: 'line must be {t0, t1, text, speaker?} (an older value: window, an array of them)' };
   const notes = [];
   const unknown = Object.keys(data).filter((k) => !KNOWN_KEYS.has(k) && !k.startsWith('_'));
   if (unknown.length) notes.push(`ignored: ${unknown.join(', ')} (accepted: ${[...KNOWN_KEYS].join(', ')})`);
   let dropped = 0;
   let window = [];
-  for (const c of data.window) {
+  for (const c of lines0) {
     const n = normalizeCaption(c);
     if (n) window.push(n); else dropped++;
   }
@@ -234,11 +233,14 @@ export function describeCaptions(data) {
   return `a screen, ${showing}, ${clock(captions.mediaTime ?? last.t1)}, last line: ${line}`;
 }
 
-/** The `captions` detail level: the rolling window, oldest first, one line
- *  each, at most `lines` of them (default: all of the window). */
-export function captionsDetail(data, lines = CAPTIONS_MAX_LINES) {
+/** The `captions` detail level: the lines, oldest first, one each, at most
+ *  `lines` of them. A value holds its current line (an older one its window);
+ *  `earlier` is the screen's earlier captions values, oldest first (the log's
+ *  captions changes), for a reader that wants the lines before it. */
+export function captionsDetail(data, lines = CAPTIONS_MAX_LINES, earlier = []) {
   const n = normalizeCaptions(data);
   if (!n.ok) return [];
-  const w = n.captions.window.slice(-Math.max(0, lines));
+  const before = (Array.isArray(earlier) ? earlier : []).flatMap((b) => { const m = normalizeCaptions(b); return m.ok && m.captions.session === n.captions.session ? m.captions.window : []; });
+  const w = [...before, ...n.captions.window].slice(-Math.max(0, lines));
   return w.map((c) => `[${clock(c.t0)}–${clock(c.t1)}] ${c.speaker ? `${c.speaker}: ` : ''}${c.text}`);
 }

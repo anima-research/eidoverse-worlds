@@ -5,7 +5,7 @@
 // records (shared/components.js RECORDS) and the agent's `edit` tool use where they differ from the wire's:
 //   an axis is a letter to the editor (x, -y) and a unit vector on the wire ([1, 0, 0]);
 //   a spin's or an orbit's rate is one number to the editor (°/s) and degPerSec | period | rpm on the wire;
-//   a light's `burns at noon` is the wire's day: false; a uniform scale is one number to the editor, [s, s, s] on the wire;
+//   a light's `burns at noon` is the wire's daytime: 'full'; a uniform scale is one number to the editor, [s, s, s] on the wire;
 //   a Grabbable, a Sockets, a Reactions card is its whole value ({spec: {}}): the wire bag is the editor's own.
 // A descriptor is {key, card, type?, fields: [{k, param, t, path, wire?: {to, from}, ui?}], extra}: key is the registry name
 // the value lives under (comp.<key>), card the record name (RECORDS[card]), type the motion type when the key is shared,
@@ -47,7 +47,7 @@ export const rateOf = (m) => (Number.isFinite(m?.degPerSec) ? m.degPerSec : Numb
 
 const AXIS = { to: (v) => axisVector(v) ?? v, from: (v) => axisLetter(v) ?? v };
 const RATE = { to: (v) => v, from: (_, m) => rateOf(m) };
-const NOON = { to: (b) => !b, from: (d) => d === false };
+const NOON = { to: (b) => (b ? 'full' : 'dim'), from: (d) => d === 'full' };   // daytime (shape audit 10-16: was day: false)
 const UNIFORM = { to: (s) => (typeof s === 'number' ? [s, s, s] : s), from: (v) => (Array.isArray(v) && v[0] === v[1] && v[1] === v[2] ? v[0] : v) };
 const AMP = { to: (v) => v, from: (v, m) => v ?? m?.amplitude };   // the first protocol spelled a pendulum's amp `amplitude`
 
@@ -98,9 +98,10 @@ const CARDS = {
   // a mesh thing (primitives, R 10-12): its shape from the table; its size's three channels are the card's own rows (extra),
   // one vec3 on the wire, as a pivot's are
   Mesh: { key: 'mesh', show: ['shape'], extra: ['size.x', 'size.y', 'size.z'], editor: { shape: { ui: { t: 'enum' } } } },
-  Light: { key: 'light', show: ['color', 'intensity', 'range', 'important', 'day'], writeDp: null,
+  Light: { key: 'light', show: ['color', 'intensity', 'range', 'decay', 'important', 'daytime'], writeDp: null,
     editor: { color: { ui: { t: 'color' } }, intensity: { ui: { t: 'num', step: 1, dp: 0, softMax: 64 } }, range: { ui: { t: 'num', step: 1, dp: 0, softMin: 1, softMax: 40 } },
-      important: { ui: { t: 'check', sparse: true } }, day: { k: 'noon', param: 'burnsAtNoon', wire: NOON, ui: { t: 'check', sparse: true } } } },
+      decay: { ui: { t: 'num', step: 0.1, dp: 2 } },
+      important: { ui: { t: 'check', sparse: true } }, daytime: { k: 'noon', param: 'burnsAtNoon', wire: NOON, ui: { t: 'check', sparse: true } } } },
   // a motion's part is its KEY (motion:<part>), never a field of the value (shape audit 10-16): the card's own row
   ...Object.fromEntries(Object.entries(MOTION).map(([card, m]) => [card, { key: 'motion', type: m.type, show: m.show, extra: ['part'], writeDp: 4, editor: { ...MOTION_EDITOR, ...m.editor } }])),
   Sockets: { key: 'sockets', whole: 'slots', hand: true },
@@ -117,8 +118,8 @@ const CARDS = {
   Reactions: { key: 'reactions', whole: 'actions', floor: true },
   Particles: { key: 'particles', show: ['effect', 'part', 'at', 'seed', 'playing', 'scale', 'params'], writeDp: 3, extra: ['param'],
     editor: { effect: { ui: { t: 'enum', def: false } }, playing: { ui: { t: 'check' } }, scale: { ui: { t: 'num', step: 0.1, dp: 2 } }, part: { ui: { t: 'text' } } } },
-  Picture: { key: 'picture', show: ['src', 'part', 'width', 'alt', 'lit', 'flip'], writeDp: 3,
-    editor: { src: { ui: { t: 'text' } }, part: { ui: { t: 'enum', def: false } }, width: { ui: { t: 'num', step: 0.1, dp: 2, softMin: 0.05 } }, alt: { ui: { t: 'text' } }, lit: { ui: { t: 'enum', def: false } }, flip: { ui: { t: 'check' } } } },
+  Picture: { key: 'picture', show: ['src', 'width', 'alt', 'lit'], writeDp: 3,
+    editor: { src: { ui: { t: 'text' } }, width: { ui: { t: 'num', step: 0.1, dp: 2, softMin: 0.05 } }, alt: { ui: { t: 'text' } }, lit: { ui: { t: 'enum', def: false } } } },
   Sound: { key: 'sound', show: ['src', 'playing', 'loop', 'volume', 'pitch', 'near', 'radius', 'spatial', 't0', 'alt'], writeDp: 3, extra: ['rings', 'mute'],
     editor: { src: { ui: { t: 'text' } }, alt: { ui: { t: 'text' } }, loop: { ui: { t: 'check' } }, spatial: { ui: { t: 'check' } },
       volume: { ui: { t: 'num', step: 0.05, dp: 2 } }, pitch: { ui: { t: 'num', step: 0.05, dp: 2 } },

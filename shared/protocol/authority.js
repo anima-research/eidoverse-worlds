@@ -27,9 +27,10 @@ import { graphemes, cleanText } from "../text.js";
 import { mediaTier, tierWords } from "../mediasrc.js";
 import { saysOf } from "../says.js";
 import { readOut } from "../a11y.js";
-import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES } from "../particle_effects.js";
+import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES, isEssential, LEGACY_FIELDS } from "../particle_effects.js";
 import { livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
 import { shapeRepairOps } from "./shaperepair.js";
+import { atWrite } from "./assetref.js";
 import { trustRefusal } from "../drafts.js";
 import { planLaunch } from "./launchplan.js";
 import { REACH, HAND_Y, MAX_HELD, KICK, SHOVE, BODY_REACH } from "./physconst.js";
@@ -455,7 +456,7 @@ function shapeOneOrRefuse(verb, op, i) {
 //                     bounds, spawn (EDIT_WORLD_PERMISSION; off = owner)
 //   @world.roles:*    the grant rule (grantCheck): an owner, or grantRoles below your rank with only permissions you hold
 //   the rest of @world (role-defs, default-role, access, physics-engine, script-settings, schemas, imported records…): owner, never a permission
-const WORLD_LOOK = new Set(["about", "sky", "terrain", "terrain-grid", "grass", "bounds", "spawn"]);
+const WORLD_LOOK = new Set(["about", "sky", "terrain", "terrain-grid", "grass", "water", "bounds", "spawn"]);
 const needOf = (op) => {
   if (op.id !== "@world") return "thing";
   const base = String(op.comp ?? "").split(":")[0];
@@ -719,6 +720,12 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
       if (h.kind === "script" && !(typeof h.script === "string" && isComponent(`script:${h.script}`))) refuse("shape", `reactions.${act} (script) names the script: {kind: 'script', script: '<name>'} for the script:<name> on this thing`, "e.g. {ring: {kind: 'script', script: 'bell'}}");
       handlerCheck(at, act, h); effectCheck(s, id, act, h); } }
   mediaCheck(s, id, comp, v, at, obj);
+  // a held kind (componentspec reservedKinds: terrain's raster, shape audit 10-16) is refused as reserved, in its own words
+  if (comp === "terrain" && obj && !carry && Object.hasOwn(COMPONENTS.terrain.reservedKinds, v.kind)) refuse("reserved", `${at}.kind '${v.kind}' is reserved: ${COMPONENTS.terrain.reservedKinds[v.kind]}`, "terrain {kind: 'noise', seed, size, amplitude, …}; an image as the base is heightmap {grid, min, max}", { status: "reserved" });
+  // the first protocol's particles bag (preset, origin, count…): its fields left the registry (shape audit 10-16), so say today's
+  // spelling in particlesCheck's own words before the schema calls them unknown keys
+  if (baseOf(comp) === "particles" && obj && !carry && LEGACY_FIELDS.some((k) => k in v)) refuse("shape", `${at}: ${instanceProblem(v, null)}`, `PROTOCOL §4 (effects are documents): {effect: '${ESSENTIAL_NAMES[0]}'} or an uploaded effect's address; schema {component: 'particles'} lists the Essentials and their params`);
+  if (comp === "water" && obj && v.flow !== undefined && !(Array.isArray(v.flow) && v.flow.length === 2 && v.flow.every(isNum) && v.flow.every((x) => Math.abs(x) <= 100))) refuse("shape", `${at}.flow is a current [x, z] in metres a second, each within ±100`, COMPONENTS.water.help);
   for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(":")[0]]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
   schemaCheck(at, comp, v, { carry });
   // physics.material (a surface's name) is renamed physics.surface and reserved with surfaces (shape audit 10-16): the
@@ -816,16 +823,12 @@ function terrainShapeCheck(at, v, def) {
     if (Math.abs(min) > 500 || Math.abs(max) > 500) refuse("bounds", `${at}.heightmap min/max are ${min}/${max}; each must be within ±500 (m), the ground every client builds`, def.help);
     if (!(min < max)) refuse("bounds", `${at}.heightmap.min (${min}) must be below max (${max})`, def.help);
   }
-  const w = v.water;
-  if (w != null) {
-    if (typeof w !== "object" || Array.isArray(w)) refuse("shape", `${at}.water must be {level, color?, opacity?, kind?, flow?} or null`, def.help);
-    if (!fin(w.level)) refuse("shape", `${at}.water.level must be a finite number (m)`, def.help);
-    if (Math.abs(w.level) > 500) refuse("bounds", `${at}.water.level is ${w.level}; it must be within ±500 (m)`, def.help);
-    if (w.opacity !== undefined && !(fin(w.opacity) && w.opacity >= 0.1 && w.opacity <= 1)) refuse("bounds", `${at}.water.opacity must be 0.1..1`, def.help);
-    if (w.color !== undefined && !(typeof w.color === "string" && HEX.test(w.color))) refuse("shape", `${at}.water.color must be #rrggbb`, def.help);
-    if (w.kind !== undefined && !["still", "river", "ocean"].includes(w.kind)) refuse("schema", `${at}.water.kind must be still | river | ocean`, def.help);
-    if (w.flow !== undefined && !(Array.isArray(w.flow) && w.flow.length === 2 && w.flow.every(fin))) refuse("shape", `${at}.water.flow must be [x, z]`, def.help);
-  }
+  // its colour layers (shape audit 10-16): [{color: 0xRRGGBB, repeat > 0}], at most 8 (the registry's maxItems). Water is its
+  // own component now (componentspec water: its level, opacity and kind are the registry's ranges and enum)
+  if (Array.isArray(v.layers)) v.layers.forEach((l, i) => { const here = `${at}.layers[${i}]`;
+    if (!l || typeof l !== "object" || Array.isArray(l) || Object.keys(l).some((k) => k !== "color" && k !== "repeat")) refuse("shape", `${here} must be {color?: 0xRRGGBB, repeat?: tiles across its size}`, def.help);
+    if (l.color !== undefined && !(Number.isInteger(l.color) && l.color >= 0 && l.color <= 0xffffff)) refuse("shape", `${here}.color is an int 0xRRGGBB (sRGB)`, def.help);
+    if (l.repeat !== undefined && !(fin(l.repeat) && l.repeat > 0 && l.repeat <= 4096)) refuse("bounds", `${here}.repeat is how many times it tiles across the ground, 0 < repeat ≤ 4096`, def.help); });
 }
 // where a cut field went (componentspec `dropped`), for the refusal's fix
 const DROPPED_FIX = {
@@ -836,8 +839,14 @@ const DROPPED_FIX = {
   "physics.mask": "collision filters come back as named groups; leave it out",
   "physics.ccd": "eidosim sweeps every body; leave it out",
   "parent.order": "leave it out: siblings have no stored order",
+  "light.shadows": "leave it out: no light here casts its own shadows yet (important claims a light slot)",
+  "picture.part": "a picture is a quad of its own; texturing a node of a model is the material component's (reserved: not written yet)",
+  "picture.flip": "a part's upside-down UVs are the material component's (reserved), with part",
+  "terrain.water": "set {id: '@world', component: 'water', value: {level, color?, opacity?, kind?, flow?}}",
+  "sky.clock": "a tz present is the wall clock: {tz: 'Europe/Paris'} (the sky act still takes clock: 'real')",
+  "sky.weatherSeconds": "transition (seconds) is the one spelling",
 };
-const DROPPED_DYM = { "motion.amplitude": ["amp"], "physics.material": ["surface"] };
+const DROPPED_DYM = { "motion.amplitude": ["amp"], "physics.material": ["surface"], "light.day": ["daytime"], "sky.weatherSeconds": ["transition"], "sky.clock": ["tz"], "terrain.water": ["water"] };
 function unknownKeys(at, v, allowed, what) {
   for (const k of Object.keys(v)) if (!allowed.includes(k)) { const dym = guessKey(k, allowed);
     refuse("schema", `${at}: unknown key '${k}'${dym.length ? `; did you mean '${dym[0]}'?` : ""}`, `${what} takes: ${allowed.join(", ")}`, { didYouMean: dym }); }
@@ -1226,6 +1235,20 @@ function resolve(ctx, id, comp, value, prev) {
   // one spelling per meaning (shape audit 10-16): what a write may say the short way is stored the one way
   if (comp === "lock" && value === true) { ctx.notes.push({ id, component: "lock", sent: true, kept: { rank: "builder" }, why: "a lock is {rank}; true is the builder level" }); value = { rank: "builder" }; }
   if (comp === "home" && value && typeof value === "object" && !Array.isArray(value) && typeof value.scale === "number") value = { ...value, scale: [value.scale, value.scale, value.scale] };
+  // names resolved at the write door (shape audit 10-16, render-media-env; shared/protocol/assetref.js): a model's path or
+  // name → its content address, a particle Essential's name → its document's address, a grass preset → its strokes and the
+  // first protocol's makeGrass knobs → the flora spelling
+  if (comp === "model" || baseOf(comp) === "particles" || comp === "grass") { let r;
+    try { r = atWrite(comp, value, { catalogue: CTX.cat }); } catch (x) { refuse("shape", `${id}.${comp}: ${String(x?.message ?? x).replace(/^\[flora\] /, "")}`, COMPONENTS.grass.help); }
+    for (const n of r.notes) ctx.notes.push({ id, component: comp, ...n }); value = r.value; }
+  // a light's day (a double negative) is daytime (shape audit 10-16): true = dim, false = full
+  if (comp === "light" && value && typeof value === "object" && !Array.isArray(value) && typeof value.day === "boolean") { const { day, ...rest } = value;
+    value = { ...rest, daytime: rest.daytime ?? (day ? "dim" : "full") }; ctx.notes.push({ id, component: comp, field: "day", sent: day, kept: value.daytime, why: "a light's day is daytime: dim | full" }); }
+  // a terrain layer's colour is an int, as every colour (shape audit 10-16): "#rrggbb" is taken
+  if (comp === "terrain" && value && typeof value === "object" && !Array.isArray(value) && Array.isArray(value.layers) && value.layers.some((l) => typeof l?.color === "string" && /^#[0-9a-f]{6}$/i.test(l.color)))
+    value = { ...value, layers: value.layers.map((l) => (typeof l?.color === "string" && /^#[0-9a-f]{6}$/i.test(l.color) ? { ...l, color: parseInt(l.color.slice(1), 16) } : l)) };
+  // a sky written by hand is stamped like the sky act's: ts is the instant its hours held (the stamped fields are refused in buildSet)
+  if (comp === "sky" && value && typeof value === "object" && !Array.isArray(value) && value.ts === undefined) value = { ...value, ts: Math.floor(ctx.w.now()) };
   if (isLookAt(comp) && value && typeof value === "object" && !Array.isArray(value)) { const AXV = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };   // the letters the door takes (tools/lookat-forward-check: no negative letter)
     for (const f of ["forward", "up"]) if (typeof value[f] === "string" && AXV[value[f]]) value = { ...value, [f]: AXV[value[f]].slice() }; }
   // every parameter written down (PROTOCOL §4): the definition's defaults and per-kind rules (componentspec materialize)
@@ -1319,6 +1342,11 @@ function buildSet(ctx, a) {
     return [setOp(a.id, "parent", resolve(ctx, a.id, "parent", v)), setOp(a.id, "transform", t)];
   }
   if (a.id === "@world" && a.component === "physics-engine") return buildEpoch(ctx, v, a);
+  // a field the authority stamps (componentspec `stamped`: the sky's ts, override, a forecast's epoch) is never taken from a
+  // writer (shape audit 10-16): the act that owns it stamps it (sky, weather)
+  for (const f of defOf(a.component)?.stamped ?? []) { const path = f.split("."); let x = a.value;
+    for (const k of path) x = x && typeof x === "object" && !Array.isArray(x) ? x[k] : undefined;
+    if (x !== undefined) refuse("stamped", `${a.id}.${a.component}.${f} is stamped by the authority, never written`, a.component === "sky" ? "leave it out: the sky act stamps ts and a forecast's epoch, the weather act an override (sky {…} / weather {weather})" : "leave it out"); }
   v = resolve(ctx, a.id, a.component, v);
   ctx.refs.add(a.id);
   return [setOp(a.id, a.component, v)];
@@ -1761,7 +1789,7 @@ function scriptRights(w, st, cap, op, at, made) {
 // taken in a write: its spelling would be a second way to say one thing. A held thing's fx carries a particles value too.
 function particlesCheck(w, op) {
   const one = (v, at) => { if (!v || typeof v !== "object" || Array.isArray(v)) return;
-    const b = effectBlobName(v.effect); let doc = null;
+    const b = isEssential(v.effect) ? null : effectBlobName(v.effect); let doc = null;   // an Essential's address is its own document (shape audit 10-16), not this world's blob
     if (b) { try { doc = w.getBlob(b); } catch { /* not stored here: said below */ }
       if (doc && (doc.kind !== EFFECT_KIND || effectProblem(doc))) refuse("shape", `${at}.effect: ${b} isn't a particle effect this protocol runs (${doc.kind !== EFFECT_KIND ? "not a particle-effect document" : effectProblem(doc)})`, "upload {effect: {kind: 'particle-effect', v: 1, emitters: [...]}} stores one and says why it can't"); }
     else doc = effectFor(v.effect);
@@ -2294,7 +2322,7 @@ function skyValue(prev, verb, args, now) {
   const out = clone(foldSkyEntry(prev, { verb, args: a, ts: Math.floor(now), seq: 0, actor: "system" }));
   delete out.seq; delete out.by;
   for (const k of ["forecast", "override"]) if (out[k] && typeof out[k] === "object") { delete out[k].seq; delete out[k].by; }
-  return out;
+  return materialize("sky", out).value;   // every parameter written down (shape audit 10-16: the sky's defaults are the registry's)
 }
 function buildSky(ctx, a, w) { return [setOp("@world", "sky", skyValue(null, "sky", a, w.now()))]; }
 function buildWeather(ctx, a, w) { return [setOp("@world", "sky", skyValue(ctx.st.entities["@world"]?.c.sky ?? null, "weather", a, w.now()))]; }

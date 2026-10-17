@@ -131,7 +131,9 @@ function worldParams(key, hand) {
   for (const [name, h] of Object.entries(hand)) {
     const t = def.fields?.[name];
     for (const k of ['t', 'min', 'max', 'unit', 'hint']) if (t && k in h) throw new Error(`components: ${key}.${name} restates ${k}; it is the registry's`);
-    const p = { ...h, t: h.t ?? (t ? UNIT_OF[t] ?? 'json' : 'json') };
+    // a default is the registry's where it has one (shape audit 10-16: the inspector's terrain disagreed with the sim's law)
+    if ('default' in h && def.defaults && name in def.defaults) throw new Error(`components: ${key}.${name} restates its default; it is the registry's`);
+    const p = { ...h, t: h.t ?? (t ? UNIT_OF[t] ?? 'json' : 'json'), ...(def.defaults && name in def.defaults ? { default: def.defaults[name] } : {}) };
     if (h.options) p.t = 'choice';
     const r = def.ranges?.[name]; if (r && r.maxLen === undefined) { if (r.min !== undefined) p.min = r.min; else if (r.gt !== undefined) p.min = r.gt; if (r.max !== undefined) p.max = r.max; }
     if (def.units?.[name]) p.unit = def.units[name]; if (def.docs?.[name]) p.hint = def.docs[name];
@@ -247,23 +249,21 @@ const DEFS = [
   // verbs fold wholesale; the registry writes none); types, limits, units and
   // docs are the registry's (worldParams).
   { name: 'Sky', category: 'World', world: true, summary: 'the time of day, the clock, clouds and light',
-    params: worldParams('sky', { hours: { default: 12 }, rate: { default: 0 },
-      clock: { options: ['real'], default: null }, tz: { default: null },
-      clouds: { options: [...CLOUDS], default: 'cumulus' },
-      azimuth: { default: 180 }, sun: { default: 1 }, ambient: { default: 1 }, fill: { default: 1 },
-      exposure: { default: 1 }, fog: { default: 1 }, dormantRated: { default: null } }),
+    params: worldParams('sky', { hours: {}, rate: {}, tz: { default: null },
+      clouds: { options: [...CLOUDS] },
+      azimuth: {}, ambient: {}, exposure: {}, fog: {} }),
     fallback: { text: 'the sky at <hour>' }, note: 'wire: the sky verb, folded wholesale into state.sky; presets are authoring conveniences (defs/sky/_presets.json), never logged by name' },
   { name: 'Weather', category: 'World', world: true, summary: 'what the sky is doing: rain, storm, clear — or a forecast policy',
     params: worldParams('sky', { weather: { options: [...WEATHERS], default: null },
-      weatherK: { default: 1 }, weatherSeconds: { default: null }, forecast: { default: null }, override: { default: null } }),
+      weatherK: { default: 1 }, transition: { default: null }, forecast: { default: null }, override: { default: null } }),
     fallback: { text: 'weather <state>' }, note: 'wire: the weather verb (merges onto state.sky), and the sky verb\'s forecast policy' },
   { name: 'Terrain', category: 'World', world: true, summary: 'the terrain: its shape, size and colour',
-    params: worldParams('terrain', { seed: { default: 7 }, size: { default: 160 }, segments: { default: 200 }, amplitude: { default: 0 },
-      flatRadius: { default: 16 }, layers: { default: [] } }),
+    params: worldParams('terrain', { seed: {}, size: {}, segments: { default: 200 }, amplitude: {},
+      flatRadius: {}, layers: { default: [] } }),
     fallback: { text: 'the ground' }, note: 'wire: the terrain verb, folded wholesale into state.terrain' },
   { name: 'Grass', category: 'World', world: true, summary: 'what grows on the ground',
-    params: worldParams('grass', { species: { default: null }, preset: { default: null }, width: { default: null }, depth: { default: null },
-      density: { default: 1 }, height: { default: null } }),
+    params: worldParams('grass', { species: { default: null }, width: { default: null }, depth: { default: null },
+      density: { default: 1 }, height: { default: null }, strokes: { default: null } }),
     fallback: { text: 'grass' }, note: 'wire: the grass verb, folded wholesale into state.grass; grass {clear:true} mows it' },
 ];
 
@@ -311,15 +311,17 @@ const omit = (o, keys) => Object.fromEntries(Object.entries(o).filter(([k]) => !
 
 const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 // A comp-bag Light/Collider: the bag's keys map to the record's params by their
-// wire names (Light's `day: false` is the record's burnsAtNoon, as on the legacy
-// spelling); a `day` other than false is kept verbatim in `wire`, and keys the
-// record has no param for ride `extra.unknown`, so the bytes always come back.
-const COMP_WIRE = { Light: { color: 'color', intensity: 'intensity', range: 'range', important: 'important' }, Collider: { shape: 'shape' } };
+// wire names (Light's `daytime: 'full'` is the record's burnsAtNoon, as an older
+// value's `day: false` was); any other daytime (or an older day) is kept verbatim in
+// `wire`, and keys the record has no param for ride `extra.unknown`, so the bytes
+// always come back.
+const COMP_WIRE = { Light: { color: 'color', intensity: 'intensity', range: 'range', decay: 'decay', important: 'important' }, Collider: { shape: 'shape' } };
 function compInstance(type, key, data) {
   const params = {}; const extra = {}; let wire;
   for (const [k, v] of Object.entries(data)) {
     if (COMP_WIRE[type][k]) params[COMP_WIRE[type][k]] = v;
-    else if (type === 'Light' && k === 'day') { if (v === false) params.burnsAtNoon = true; else wire = { day: v }; }
+    else if (type === 'Light' && k === 'daytime') { if (v === 'full') params.burnsAtNoon = true; else wire = { ...(wire ?? {}), daytime: v }; }
+    else if (type === 'Light' && k === 'day') { if (v === false) params.burnsAtNoon = true; wire = { ...(wire ?? {}), day: v }; }   // the older spelling, remembered so its bytes come back
     else (extra.unknown ??= {})[k] = v;
   }
   return { type, key, params, ...(wire ? { wire } : {}), ...(Object.keys(extra).length ? { extra } : {}) };
@@ -327,9 +329,11 @@ function compInstance(type, key, data) {
 function compBag(inst) {
   const p = inst.params ?? {}; const bag = {};
   for (const [k, v] of Object.entries(p)) {
-    if (k === 'burnsAtNoon') { if (v === true) bag.day = false; } else bag[k] = v;
+    if (k === 'burnsAtNoon') { if (v === true) { if (inst.wire?.day !== undefined) bag.day = false; else bag.daytime = 'full'; } } else bag[k] = v;
   }
-  if (inst.wire?.day !== undefined && bag.day === undefined) bag.day = inst.wire.day;
+  if (inst.wire?.daytime !== undefined && bag.daytime === undefined && bag.day === undefined) bag.daytime = inst.wire.daytime;
+  // an older day: true comes back as written; an older day: false only while it still burns at noon (else it was edited off)
+  if (inst.wire?.day !== undefined && bag.day === undefined && bag.daytime === undefined && (inst.wire.day !== false || p.burnsAtNoon === true)) bag.day = inst.wire.day;
   return Object.assign(bag, inst.extra?.unknown ?? {});
 }
 
@@ -506,16 +510,22 @@ const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 
 /** The light an entity casts, normalized, or null: a plain-object comp.light on any entity (a bare light, or an imported
  *  lamp that is a model too). A field of the wrong type reads as its default — never a throw, never NaN reaching the rig. */
+// shape audit 10-16: a value a reader can't read is that component absent (one rule with kind.js isMeshBag): an unknown
+// kind is no light, never a point light. decay is part of the value (absent: the rig's old 1.7); daytime is dim | full (an
+// older value's day: false is full)
 export function lightOf(ent) {
   if (!ent || typeof ent !== 'object') return null;
   const src = isBag(ent?.light) ? ent.light : null;
   if (!src) return null;
+  if (src.kind !== undefined && !COMPONENTS.light.enums.kind.includes(src.kind)) return null;
+  if (src.daytime !== undefined && !COMPONENTS.light.enums.daytime.includes(src.daytime)) return null;
   return {
     color: finite(src.color) && src.color >= 0 && src.color <= 0xffffff ? Math.round(src.color) : LIGHT_DEFAULTS.color,
     intensity: finite(src.intensity) && src.intensity >= 0 ? src.intensity : LIGHT_DEFAULTS.intensity,
     range: finite(src.range) && src.range > 0 ? src.range : LIGHT_DEFAULTS.range,
     important: src.important === true,
-    day: src.day !== false,
+    decay: finite(src.decay) && src.decay >= 0 && src.decay <= 4 ? src.decay : 1.7,
+    daytime: src.daytime ?? (src.day === false ? 'full' : 'dim'),
     // a spot's cone, glTF's half-angles (rad): angle = outer (default π/4), inner where the edge starts to soften
     // a point light is the default and says nothing more; a spot adds its kind and cone
     ...(src.kind === 'spot' ? (() => { const angle = finite(src.angle) && src.angle > 0 && src.angle <= Math.PI / 2 ? src.angle : Math.PI / 4;
@@ -568,12 +578,14 @@ export function compRefusal(type, data, ent = null) {
   }
   if (type === 'light') {
     if (isBag(ent?.mesh)) return `${ONE_PLACE.reason('this thing', 'mesh', 'light')} (one place per thing) — Add Component ▸ Light makes that child`;
-    if (!isBag(data)) return 'a light component is an object: {color?, intensity?, range?, important?, day?}';
+    if (!isBag(data)) return 'a light component is an object: {color?, intensity?, range?, decay?, important?, daytime?}';
     if (data.color !== undefined && !(Number.isInteger(data.color) && data.color >= 0 && data.color <= 0xffffff)) return 'light color is an integer 0…0xffffff (e.g. 16767392 for 0xffd9a0)';
     if (data.intensity !== undefined && !(finite(data.intensity) && data.intensity >= 0)) return 'light intensity is a number ≥ 0';
     if (data.range !== undefined && !(finite(data.range) && data.range > 0)) return 'light range is a number of metres > 0';
     if (data.important !== undefined && typeof data.important !== 'boolean') return 'light important is true or false';
-    if (data.day !== undefined && typeof data.day !== 'boolean') return 'light day is true or false (false = burns at noon)';
+    if (data.day !== undefined && typeof data.day !== 'boolean') return 'light day is true or false (false = burns at noon; it is stored as daytime)';
+    if (data.daytime !== undefined && !COMPONENTS.light.enums.daytime.includes(data.daytime)) return 'light daytime is dim (follows the day) or full (burns at noon too)';
+    if (data.decay !== undefined && !(finite(data.decay) && data.decay >= 0 && data.decay <= 4)) return 'light decay is a falloff exponent 0..4 (2 = inverse square)';
     return null;
   }
   if (type === 'rotOrder') {

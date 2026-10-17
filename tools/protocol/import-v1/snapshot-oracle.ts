@@ -63,6 +63,7 @@ const { liftWorld } = await import("../../../shared/protocol/authority.js");
 const { legacyHosts, liftHostOps, isSocketC } = await import("../../../shared/protocol/authority/sockets.js");
 const { socketQ } = await import("../../../shared/components.js");
 const { shapeRepairOps } = await import("../../../shared/protocol/shaperepair.js");
+const FA = await import("../../../shared/flora_args.js"), FP = await import("../../../shared/flora_presets.js");   // the grass reader's own mapping, for C
 const { directoryFileIn } = await import("../../../server/keyfiles.ts");
 
 const TOL = 1e-9;
@@ -182,9 +183,28 @@ function coreCheck(snapState, newA, content) {
   // a key the v4 component doesn't define rides beside it in imported:<k> (translate-v1 splitUnknown, R10: carried, never
   // dropped): the world's ground is the two together (under-the-eves' terrain `amp`, a key no terrain reader ever read)
   const W = newA["@world"] ?? {};
-  for (const k of ["terrain", "grass"]) { const n = W[k] == null && W[`imported:${k}`] == null ? null : { ...(W[k] ?? {}), ...(W[`imported:${k}`] ?? {}) };
-    for (const d of deepDiff(snapState[k] ?? null, n)) push("@world", `${k}${d.path}`, d.old, d.new); }
+  for (const k of ["terrain", "grass", "water"]) { const n = W[k] == null && W[`imported:${k}`] == null ? null : { ...(W[k] ?? {}), ...(W[`imported:${k}`] ?? {}) };
+    for (const d of deepDiff(declaredGround(snapState)[k] ?? null, n)) push("@world", `${k}${d.path}`, d.old, d.new); }
   return diffs;
+}
+
+// declared (translate-v1@12, the shape audit's render-media-env family), written here independently of shared/protocol/shaperepair.js:
+// a terrain's layer colours are ints, the sim's defaults (shared/terrainmath.js) are written where absent, and its water is
+// the world's water component (its colour an int); grass is read in the flora spelling (the grass READER's own mapping:
+// flora_args) with a preset as its strokes
+function declaredGround(snap) {
+  const isO = (v) => !!v && typeof v === "object" && !Array.isArray(v); const hx = (x) => (typeof x === "string" && /^#[0-9a-f]{6}$/i.test(x) ? parseInt(x.slice(1), 16) : x);
+  const out = { terrain: snap.terrain ?? null, grass: snap.grass ?? null, water: null };
+  if (isO(out.terrain)) { let t = { ...out.terrain };
+    if (Array.isArray(t.layers)) t.layers = t.layers.map((l) => (isO(l) ? { ...l, color: hx(l.color) } : l));
+    if (t.kind === undefined || t.kind === "noise") t = { kind: "noise", seed: 1, size: 80, amplitude: 3, octaves: 4, frequency: 2.5, flatRadius: 0, flatHeight: 0, ...t };
+    if ("water" in t) { const { water, ...rest } = t; t = rest; if (isO(water)) out.water = Object.fromEntries(Object.entries(water).map(([k, v]) => [k, k === "color" ? hx(v) : v])); }
+    out.terrain = t; }
+  if (isO(out.grass)) { let g = out.grass;
+    if (FA.isLegacyArgs(g)) { const m = FA.mapGrassArgs(g); g = { ...Object.fromEntries(Object.entries(g).filter(([k]) => !["bladeHeight", "spacing", "perCell", "colorTip", "windSpeed", "lean", "fade", "fadeStart", "fadeEnd", "fadeColor", "backlight", "color"].includes(k) && !(k in m))), ...m }; }
+    if (g.preset != null) { try { const strokes = FA.presetStrokes(g, FP.FLORA_PRESETS); const { preset: _p, ...r } = g; g = { ...r, strokes }; } catch { /* an unknown preset stays */ } }
+    out.grass = g; }
+  return out;
 }
 
 export function oracleWorld(dir) {

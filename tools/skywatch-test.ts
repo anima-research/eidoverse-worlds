@@ -169,12 +169,13 @@ async function rig(args: any, who = "antra") {
 //  instead.)
 
 {
-  const { ag } = await rig({ hours: 8, rate: 24, clouds: "cumulus", azimuth: 200, forecast: policyArgs });
+  const AZ = 200 * Math.PI / 180;   // radians (shape audit 10-16: azimuth was degrees)
+  const { ag } = await rig({ hours: 8, rate: 24, clouds: "cumulus", azimuth: AZ, forecast: policyArgs });
   ag.look();
   const sky = ag.worldInfo.sky;
   check("World.sky is an object, not a string", typeof sky === "object" && sky !== null && typeof sky !== "string");
   check("authored/folded fields survive (hours, clouds, azimuth, ts, forecast)",
-    sky.hours === 8 && sky.clouds === "cumulus" && sky.azimuth === 200 && sky.ts === T0 && !!sky.forecast,
+    sky.hours === 8 && sky.clouds === "cumulus" && sky.azimuth === AZ && sky.ts === T0 && !!sky.forecast,
     JSON.stringify(sky));
   check("derived fields ride alongside",
     typeof sky.currentHour === "number" && typeof sky.description === "string"
@@ -207,11 +208,12 @@ async function rig(args: any, who = "antra") {
   check("#65 the door takes the clock flip (the standing bag re-issued)", flip.ok, JSON.stringify(flip.refused));
   ag.look();
   const sky = ag.worldInfo.sky;
-  check("#65 look(): no stale active-looking hours/rate under a real clock",
-    sky.rate === undefined && sky.hours === undefined && sky.clock === "real",
-    JSON.stringify({ hours: sky.hours, rate: sky.rate, clock: sky.clock }));
-  check("#65 look(): prior rated clock is explicit inactive provenance",
-    sky.dormantRated?.hours === 6.8 && sky.dormantRated?.rate === 24, JSON.stringify(sky.dormantRated));
+  // shape audit 10-16 (render-media-env §13): the tz alone says the wall clock governs; hours/rate stay as the rated fallback
+  check("#65 look(): the clock flip is stored as its tz (no clock field, no dormantRated park)",
+    sky.tz === "America/Los_Angeles" && sky.clock === undefined && sky.dormantRated === undefined,
+    JSON.stringify({ tz: sky.tz, clock: sky.clock, dormant: sky.dormantRated }));
+  check("#65 look(): the rated clock stays as the fallback, and the effective clock is the wall clock",
+    sky.hours === 6.8 && sky.rate === 24 && sky.effectiveClock?.mode === "real", JSON.stringify({ hours: sky.hours, rate: sky.rate, ck: sky.effectiveClock }));
   check("#65 look(): canonical effectiveClock rides alongside",
     sky.effectiveClock?.mode === "real" && sky.effectiveClock?.tz === "America/Los_Angeles"
       && typeof sky.effectiveClock?.hour === "number"

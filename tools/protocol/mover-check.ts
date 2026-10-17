@@ -224,6 +224,10 @@ if (M) {
   const root = scratch("ground"); let T = 1_800_000_000_000;
   const call = (world, actor, verb, args = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, world), actor, verb, args); };
   const r3 = (n) => Math.round(n * 1000) / 1000;
+  // a world's ground: its terrain, and its water as the water component (shape audit 10-16: water split out of terrain; the
+  // fixtures below still describe a ground as one bag, {…terrain, water}, as the readers' args carry it)
+  const ground = (world, value) => { const { water, ...terrain } = value; const t = call(world, "olive", "set", { id: "@world", component: "terrain", value: terrain });
+    if (!t.ok || !water) return t; const w = call(world, "olive", "set", { id: "@world", component: "water", value: water }); return w.ok ? t : w; };
   const fieldOf = (terrain) => makeHeightField(terrainParams(terrain));
   // a box {min, max} of a mesh box placed by its bottom centre (as A0's), and the authority's own overlap rule (a touch is not a hit)
   const meshBox = (p, s) => ({ min: [p[0] - s[0] / 2, p[1], p[2] - s[2] / 2], max: [p[0] + s[0] / 2, p[1] + s[1], p[2] + s[2] / 2] });
@@ -272,7 +276,7 @@ if (M) {
   // ---- G1 terrain: a hill (2.5 m, radius 6) on flat ground; up it, over its top and down the far side
   const HILL = { amplitude: 0, size: 80, features: [{ type: "hill", x: 10, z: 0, radius: 6, height: 2.5 }] };
   call("hill", "olive", "create-world", { title: "hill" });
-  ok(call("hill", "olive", "set", { id: "@world", component: "terrain", value: HILL }).ok, "G0 the hill world's terrain");
+  ok(ground("hill", HILL).ok, "G0 the hill world's terrain");
   const hH = fieldOf(HILL), envH = envOf(hH, null, []);
   ok(call("hill", "ann", "move", { to: [0, 0, 0], client: "agent" }).ok, "G0 ann arrives");
   for (const claim of ["mover", "bed"]) {
@@ -288,7 +292,7 @@ if (M) {
   // vertical rim AT the waterline, and a pond whose bank stands 0.6 m above its water
   const POOL = { amplitude: 0, size: 120, features: [{ type: "hill", x: 0, z: 0, radius: 8, height: -3 }, { type: "flatten", x: 14, z: 12, radius: 4, height: -2, edge: 0.01 }], water: { level: 0 } };
   call("pool", "olive", "create-world", { title: "pool" });
-  ok(call("pool", "olive", "set", { id: "@world", component: "terrain", value: POOL }).ok, "G0 the pool world's terrain and water");
+  ok(ground("pool", POOL).ok, "G0 the pool world's terrain and water");
   // …and a rock under the swim (its top 0.8 m under the surface: a swimmer stands up on it) and a stone in the shallows
   // (its top 0.4 m above the water: a wader walks into it, where a swimmer's box would pass over)
   const D5 = { id: "dock5", p: [4, -3.2, 0], s: [4, 3.7, 2] }, D6 = { id: "dock6", p: [0, -3.2, 4], s: [2, 3.8, 4] };
@@ -315,7 +319,7 @@ if (M) {
   // a pond whose terrain bank stands 0.6 m above its water: a wall from the water, to the mover AND the authority
   const POND = { amplitude: 0, size: 80, features: [{ type: "flatten", x: 0, z: 0, radius: 4, height: -2.6, edge: 0.01 }], water: { level: -0.6 } };
   call("pond", "olive", "create-world", { title: "pond" });
-  ok(call("pond", "olive", "set", { id: "@world", component: "terrain", value: POND }).ok, "G0 the pond's terrain and water");
+  ok(ground("pond", POND).ok, "G0 the pond's terrain and water");
   const hQ = fieldOf(POND), envQ = envOf(hQ, -0.6, []);
   ok(call("pond", "ann", "move", { to: [0, -2.6, 0], client: "agent" }).ok, "G0 ann arrives in the pond");
   for (const claim of ["mover", "bed"]) {
@@ -333,7 +337,7 @@ if (M) {
   const DEEP = { amplitude: 0, size: 80, features: [{ type: "flatten", x: 0, z: 0, radius: 4, height: -2.0, edge: 0.01 }], water: { level: -0.5 } };
   const SHELF = { amplitude: 0, size: 80, features: [{ type: "flatten", x: 10, z: 0, radius: 4, height: 1.2, edge: 0.01 }, { type: "flatten", x: -10, z: 0, radius: 4, height: 0.6, edge: 0.01 }, { type: "flatten", x: 0, z: 10, radius: 4, height: 2.0, edge: 0.01 }] };
   const worlds6 = { shallow: SHALLOW, deep: DEEP, shelf: SHELF };
-  for (const [wn, tv] of Object.entries(worlds6)) { call(wn, "olive", "create-world", { title: wn }); ok(call(wn, "olive", "set", { id: "@world", component: "terrain", value: tv }).ok, `G0 the ${wn} world's terrain`); }
+  for (const [wn, tv] of Object.entries(worlds6)) { call(wn, "olive", "create-world", { title: wn }); ok(ground(wn, tv).ok, `G0 the ${wn} world's terrain`); }
   const hS = fieldOf(SHALLOW), hD = fieldOf(DEEP), hF = fieldOf(SHELF);
   const envS = envOf(hS, -0.5, []), envD = envOf(hD, -0.5, []), envF = envOf(hF, null, []);
   const both = (r) => r.moverRef && r.authRef && !r.authRef.ok && r.mism === null;
@@ -384,7 +388,7 @@ if (M) {
   }
   { const SLOPE = { amplitude: 0, size: 80, features: [{ type: "flatten", x: 0, z: 0, radius: 4, height: -3, edge: 0.2 }], water: { level: -0.5 } };
     call("slope", "olive", "create-world", { title: "slope" });
-    ok(call("slope", "olive", "set", { id: "@world", component: "terrain", value: SLOPE }).ok, "G0 a pit with a sloped rim (20 cm edge), water 0.5 m below its bank");
+    ok(ground("slope", SLOPE).ok, "G0 a pit with a sloped rim (20 cm edge), water 0.5 m below its bank");
     const hL = fieldOf(SLOPE), envL = envOf(hL, -0.5, []), from = [4.0, -0.5 - 0.75 * 1.7, 0];
     const m = stepWalk({ pos: from, dir: [1, 0], dt: 0.25, cap: 0.2 }, envL);
     ok(m.blocked === null && near(m.pos[0], 4.2) && near(m.pos[1], 0, 1e-6) && hL(4.1, 0) < -0.5 - 0.8 && hL(4.1, 0) > from[1], "G7 the mover: one stride from swimming at the rim's foot onto the bank (the sweep's mid point stands at ~-1.5, wading)", { m, mid: hL(4.1, 0) });
@@ -402,7 +406,7 @@ if (M) {
   { const { registerGrid } = await import(ENGINE + "shared/terrainshape.js");
     const REF = "store/heightmaps/f3f3f3f3f3f3f3f3.json", HM = { amplitude: 3, size: 80, heightmap: { grid: REF, min: 0, max: 0.01 } };
     call("hm", "olive", "create-world", { title: "hm" });
-    ok(call("hm", "olive", "set", { id: "@world", component: "terrain", value: HM }).ok, "GH0 a heightmap terrain whose grid isn't on this server");
+    ok(ground("hm", HM).ok, "GH0 a heightmap terrain whose grid isn't on this server");
     const yOf = (id) => openWorld(root, "hm").state().entities[id]?.c.transform?.pos?.[1];   // a crate's origin is its bottom
     const c = call("hm", "olive", "create", { id: "hc1", model: "crate", at: [12, -7] });
     ok(!c.ok && c.refused?.code === "ground-loading" && /loading/.test(c.refused.reason) && !openWorld(root, "hm").state().entities.hc1,

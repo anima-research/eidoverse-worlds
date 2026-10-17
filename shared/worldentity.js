@@ -21,10 +21,11 @@
 
 import * as OP from './protocol/requests.js';
 import { RECORDS } from './components.js';
-import { WEATHERS, CLOUDS, hoursAt, effectiveSky } from './forecast.js';
+import { WEATHERS, CLOUDS, hoursAt, ratedHoursAt, effectiveSky } from './forecast.js';
 import { terrainArgs, grassArgs, groundChoice, paletteDefaults } from './grounddefs.js';
 import { fieldAt, parseEntry, limitsOf } from './editschema.js';
 import { TRUSTED } from './drafts.js';
+import { COMPONENTS as SPEC } from './protocol/componentspec.js';
 
 export const WORLD_ID = '@world';
 export const isWorldId = (id) => id === WORLD_ID;
@@ -32,7 +33,7 @@ export const isWorldId = (id) => id === WORLD_ID;
 // state.sky's keys that are the Weather component's (written by the weather
 // verb, or the sky verb's forecast policy and the fold's override stamp), and
 // the ones the fold stamps on the bag. Everything else in state.sky is the Sky.
-const WEATHER_KEYS = ['weather', 'weatherK', 'weatherSeconds', 'forecast', 'override'];
+const WEATHER_KEYS = ['weather', 'weatherK', 'transition', 'weatherSeconds', 'forecast', 'override'];
 const SKY_STAMPS = ['ts', 'seq', 'by'];
 const DEFAULT_TZ = 'America/Los_Angeles';
 
@@ -94,10 +95,14 @@ export function worldOf({ components = [], stamps = {} } = {}) {
  *  itself (ts/seq/by, the override, a forecast's epoch/seq/by). A rated clock is
  *  re-anchored at `now` (unless the patch sets hours) so the day doesn't snap
  *  back to the hour it was last authored at — the weather fold's own rule. */
+// a tz present is the wall clock (shape audit 10-16); an older value said so with clock: 'real'
+const realClock = (sky) => isBag(sky) && (typeof sky.tz === 'string' || sky.clock === 'real');
+const DEG = 180 / Math.PI;
 export function skyReissue(sky, patch = {}, now = 0) {
   const base = isBag(sky) ? omit(sky, [...SKY_STAMPS, 'override']) : {};
   if (isBag(base.forecast)) base.forecast = omit(base.forecast, ['epoch', 'seq', 'by']);
-  if (isBag(sky) && (sky.rate ?? 0) !== 0 && sky.clock !== 'real' && !('hours' in patch)) base.hours = round(hoursAt(sky, now), 4);
+  // the RATED clock re-anchors (under a tz it is the fallback, and stays continuous too)
+  if (isBag(sky) && (sky.rate ?? 0) !== 0 && !('hours' in patch)) base.hours = round(ratedHoursAt(sky, now), 4);
   for (const [k, v] of Object.entries(patch)) { if (v === undefined) delete base[k]; else base[k] = clone(v); }
   return base;
 }
@@ -110,7 +115,8 @@ export function skyPresetOf(sky, presets) {
   for (const [name, p] of Object.entries(presets)) {
     if (name === 'doc' || !isBag(p)) continue;
     const keys = Object.keys(p).filter((k) => !WEATHER_KEYS.includes(k));
-    if (keys.every((k) => own[k] === p[k]) && Object.keys(own).every((k) => keys.includes(k))) return name;
+    // a key the preset doesn't name may still stand at the registry's default (the door writes every default: shape audit 10-16)
+    if (keys.every((k) => own[k] === p[k]) && Object.keys(own).every((k) => keys.includes(k) || own[k] === SPEC.sky.defaults?.[k])) return name;
   }
   return null;
 }
@@ -119,7 +125,7 @@ export function skyPresetOf(sky, presets) {
  *  preset's and nothing else. The Weather component is carried (the sky verb
  *  would otherwise wipe it); a preset that names weather itself wins. */
 export function pickSky(sky, preset) {
-  const weather = isBag(sky) ? pick(sky, ['weather', 'weatherK', 'weatherSeconds', 'forecast']) : {};
+  const weather = isBag(sky) ? pick(sky, ['weather', 'weatherK', 'transition', 'weatherSeconds', 'forecast']) : {};
   if (isBag(weather.forecast)) weather.forecast = omit(weather.forecast, ['epoch', 'seq', 'by']);
   return { ...clone(weather), ...omit(clone(preset) ?? {}, ['doc']) };
 }
@@ -135,8 +141,9 @@ const grassOp = (args) => (args == null ? OP.unset(WORLD_ID, 'grass') : OP.set(W
 
 const SKY_NUMS = [   // the sky panel's sliders (client/lib/skypanel.js SLIDERS): key, label, min, softMax, step, default, unit
   ['hours', 'time of day', 0, 24, 0.1, 12, 'h'], ['rate', 'rate', 0, 48, 0.5, 0, '×'],
-  ['azimuth', 'sun azimuth', 0, 360, 5, 180, '°'], ['sun', 'sun', 0, 2.5, 0.05, 1], ['ambient', 'ambient', 0, 2.5, 0.05, 1],
-  ['fill', 'fill', 0, 2.5, 0.05, 1], ['exposure', 'exposure', 0.3, 1.8, 0.05, 1], ['fog', 'fog', 0, 3, 0.05, 1],
+  // azimuth is stored in radians (shape audit 10-16) and shown in degrees; sun and fill were cut (knobs on the renderer's own rig)
+  ['azimuth', 'sun azimuth', 0, 360, 5, 180, '°'], ['ambient', 'ambient', 0, 2.5, 0.05, 1],
+  ['exposure', 'exposure', 0.3, 1.8, 0.05, 1], ['fog', 'fog', 0, 3, 0.05, 1],
 ];
 const hex = (n) => `#${(n >>> 0 & 0xffffff).toString(16).padStart(6, '0')}`;
 const colorInt = (s) => (typeof s === 'string' && /^#[0-9a-f]{6}$/i.test(s) ? parseInt(s.slice(1), 16) : null);
@@ -155,7 +162,7 @@ export function describeWorld(st, now = 0, { presets = null, clock = true } = {}
     if (e.weather) parts.push(`${e.weather}${e.source !== 'authored' ? ` (${e.source})` : ''}`);
   } else parts.push('default sky');
   parts.push(isBag(terrain) ? `ground ${terrain.amplitude ?? 0} m relief` : 'flat ground');
-  if (isBag(grass)) parts.push(`${grass.preset ?? grass.species ?? 'grass'} growing`);
+  if (isBag(grass)) parts.push(`${grass.preset ?? grass.species ?? (Array.isArray(grass.strokes) ? grass.strokes[0]?.species : null) ?? 'grass'} growing`);
   return parts.join(' · ');
 }
 
@@ -173,7 +180,7 @@ export function worldSchema(st, live = {}) {
   const groups = [];
 
   // Sky
-  const real = isBag(sky) && sky.clock === 'real';
+  const real = realClock(sky);
   const s = isBag(sky) ? sky : {};
   const skyFields = [
     { t: 'enum', k: 'clock', label: 'clock', value: real ? 'real' : 'authored', def: 'authored', options: [{ v: 'authored', label: 'authored' }, { v: 'real', label: 'real time' }], ...ro,
@@ -182,7 +189,7 @@ export function worldSchema(st, live = {}) {
   ];
   for (const [k, label, min, softMax, step, def, unit] of SKY_NUMS) {
     const clocked = real && (k === 'hours' || k === 'rate');
-    const value = k === 'hours' ? round(isBag(sky) ? hoursAt(sky, now) : def, 2) : (typeof s[k] === 'number' ? s[k] : def);
+    const value = k === 'hours' ? round(isBag(sky) ? hoursAt(sky, now) : def, 2) : k === 'azimuth' ? (typeof s.azimuth === 'number' ? round(s.azimuth * DEG, 2) : def) : (typeof s[k] === 'number' ? s[k] : def);
     skyFields.push({ t: 'num', k, label, value, def, min, ...(k === 'hours' ? { max: 24 } : { softMax }), step, dp: step < 0.1 ? 2 : 1, ...(unit ? { unit } : {}),
       ...(clocked ? { disabled: true, hint: `the clock is real: the hour is ${s.tz ?? DEFAULT_TZ}'s` } : ro),
       ...(k === 'hours' && !clocked && (s.rate ?? 0) !== 0 ? { hint: ro.hint ?? 'the hour now — the day turns at the rate below; setting it re-anchors the day here' } : {}) });
@@ -205,15 +212,16 @@ export function worldSchema(st, live = {}) {
 
   // Terrain
   const t = isBag(terrain) ? terrain : null;
-  const layerColor = colorInt(Array.isArray(t?.layers) ? t.layers[0]?.color : null);
+  const lc = Array.isArray(t?.layers) ? t.layers[0]?.color : null; const layerColor = Number.isInteger(lc) ? lc : colorInt(lc);   // an int (shape audit 10-16), or an older hex string
   // hard limits and units are the registry's (componentspec terrain / grass, through limitsOf); the slider's soft ends are this card's
-  const T = (k) => limitsOf('terrain', k), G = (k) => limitsOf('grass', k);
+  const T = (k) => limitsOf('terrain', k), G = (k) => limitsOf('grass', k), TD = SPEC.terrain.defaults;
   const terrainFields = t ? [
-    { t: 'num', k: 'amplitude', label: 'relief', value: t.amplitude ?? 0, def: 0, ...T('amplitude'), softMin: 0, softMax: 12, step: 0.1, dp: 1, ...ro },
-    { t: 'num', k: 'seed', label: 'seed', value: t.seed ?? 0, step: 1, dp: 0, ...ro },
-    { t: 'num', k: 'size', label: 'size', value: t.size ?? 160, ...T('size'), softMin: 1, softMax: 1000, step: 10, dp: 0, ...ro },
+    // an absent number is the sim's (componentspec terrain defaults = shared/terrainmath.js), never this card's own
+    { t: 'num', k: 'amplitude', label: 'relief', value: t.amplitude ?? TD.amplitude, def: TD.amplitude, ...T('amplitude'), softMin: 0, softMax: 12, step: 0.1, dp: 1, ...ro },
+    { t: 'num', k: 'seed', label: 'seed', value: t.seed ?? TD.seed, step: 1, dp: 0, ...ro },
+    { t: 'num', k: 'size', label: 'size', value: t.size ?? TD.size, ...T('size'), softMin: 1, softMax: 1000, step: 10, dp: 0, ...ro },
     { t: 'num', k: 'segments', label: 'segments', value: t.segments ?? 200, ...T('segments'), step: 1, dp: 0, ...ro },
-    { t: 'num', k: 'flatRadius', label: 'flat within', value: t.flatRadius ?? 0, ...T('flatRadius'), softMax: 200, step: 1, dp: 0, ...ro },
+    { t: 'num', k: 'flatRadius', label: 'flat within', value: t.flatRadius ?? TD.flatRadius, ...T('flatRadius'), softMax: 200, step: 1, dp: 0, ...ro },
     ...(layerColor != null ? [{ t: 'color', k: 'color', label: 'colour', value: layerColor, ...ro }] : []),
   ] : [{ t: 'info', label: '', value: 'no terrain authored: the default flat ground. Pick a shape in Build ▸ World' }];
   if (terrain != null) terrainFields.push({ t: 'btn', k: 'remove', label: 'remove the terrain', danger: true, hint: 'back to the default flat ground', ...ro });
@@ -222,7 +230,7 @@ export function worldSchema(st, live = {}) {
   // Grass
   const g = isBag(grass) ? grass : null;
   const grassFields = g ? [
-    { t: 'info', label: 'planting', value: String(g.preset ?? g.species ?? '?') },
+    { t: 'info', label: 'planting', value: String(g.preset ?? g.species ?? (Array.isArray(g.strokes) ? g.strokes.map((x) => x?.species).filter(Boolean).join(', ') : null) ?? '?') },
     { t: 'num', k: 'density', label: 'density', value: g.density ?? 1, def: 1, ...G('density'), softMin: 0.05, softMax: 3, step: 0.05, dp: 2, ...ro },
     ...(g.height != null ? [{ t: 'num', k: 'height', label: 'blade height', value: g.height, ...G('height'), softMin: 0.02, softMax: 2, step: 0.01, dp: 2, ...ro }] : []),
     ...(g.width != null ? [{ t: 'num', k: 'width', label: 'width', value: g.width, ...G('width'), softMin: 1, softMax: 400, step: 1, dp: 0, ...ro }] : []),
@@ -296,13 +304,14 @@ export function worldEditOps(st, edits, live = {}) {
             if (isBag(d)) { if (d.rate != null) skyPatch.rate = d.rate; if (d.hours != null) skyPatch.hours = round(d.rate ? hoursAt({ hours: d.hours, rate: d.rate, ts: d.ts }, now) : d.hours, 4); }
           }
         } else if (k === 'tz') { if (!v) { errors.push('timezone: empty'); continue; } skyPatch.tz = v; }
+        else if (k === 'azimuth') skyPatch.azimuth = round(v / DEG, 6);   // shown in degrees, stored in radians
         else skyPatch[k] = v;
         break;
       case 'weather': weather = v; break;
       case 'terrain':
         if (k === 'remove') { noGround = true; break; }
         ground ??= {};
-        if (k === 'color') ground.layers = (Array.isArray(terrain?.layers) ? terrain.layers : [{ repeat: 16 }]).map((l, i) => (i ? l : { ...l, color: hex(v) }));
+        if (k === 'color') ground.layers = (Array.isArray(terrain?.layers) ? terrain.layers : [{ repeat: 16 }]).map((l, i) => (i ? l : { ...l, color: v }));   // an int (shape audit 10-16)
         else ground[k] = v;
         break;
       case 'grass': if (k === 'mow') mow = true; else (grassPatch ??= {})[k] = v; break;

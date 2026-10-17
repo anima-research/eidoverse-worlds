@@ -33,7 +33,7 @@ import { normalizePicture, PICTURE_LIT, PICTURE_ALT_MAX, ALT_HINT } from './pict
 import { normalizeSound, SOUND_ALT_MAX, SOUND_MAX_RADIUS } from './sound.js';
 import { mediaTier, tierWords } from './mediasrc.js';
 import { graphemes } from './text.js';
-import { ESSENTIAL_NAMES, instanceOf, effectFor, effectBlobName, modernize, instanceProblem, paramShown } from './particle_effects.js';
+import { ESSENTIAL_NAMES, instanceOf, effectFor, effectBlobName, modernize, instanceProblem, paramShown, essentialNameOf } from './particle_effects.js';
 import { readOut, readLine } from './a11y.js';
 import { COMPONENTS as SPEC, registered, outOfRange, rangeWords, statusOf } from './protocol/componentspec.js';
 import { LOCK_LEVELS, lockLevel } from './protocol/roles.js';
@@ -641,7 +641,9 @@ export function inspectSchema(ent, id, live = {}) {
     // R 10-07: the instance is {effect, part?, at?, seed?, playing?, scale?, params?}; the knobs are the effect's own params
     // (an Essential's: count, size, opacity, speed, lifetime, area, texture, quality). An older value (the first
     // protocol's flat bag) is shown in today's shape and written back in it on the first edit
-    const inst = instanceOf(c.particles) ?? {}; const doc = effectFor(inst.effect, live.effects ?? (() => null)); const at = Array.isArray(inst.at) ? inst.at : [0, 0, 0];
+    // an Essential is stored as its address (shape audit 10-16) and shown, and written, by its name (the door stores the address)
+    const inst0 = instanceOf(c.particles) ?? {}; const inst = essentialNameOf(inst0.effect) ? { ...inst0, effect: essentialNameOf(inst0.effect) } : inst0;
+    const doc = effectFor(inst.effect, live.effects ?? (() => null)); const at = Array.isArray(inst.at) ? inst.at : [0, 0, 0];
     const effects = ESSENTIAL_NAMES.includes(inst.effect) ? ESSENTIAL_NAMES : [...ESSENTIAL_NAMES, inst.effect ?? '?'];
     const params = Object.entries(doc?.params ?? {}).flatMap(([name, p]) => { const v = inst.params?.[name] ?? paramShown(doc, name); const k = `param|${name}`, hint = p.help;
       if (p.type === 'number') return [{ t: 'num', k, label: name, value: v, step: (p.max ?? 10) - (p.min ?? 0) > 20 ? 10 : 0.05, dp: Number.isInteger(v) && (p.max ?? 0) > 20 ? 0 : 2, min: p.min, max: p.max, hint }];
@@ -665,19 +667,16 @@ export function inspectSchema(ent, id, live = {}) {
   // picture (shared/picture.js): an image on a part of its model, or (no part) a framed picture of its own. Every field
   // edit merges into the bag and must pass normalizePicture before a verb goes out.
   if (c.picture && typeof c.picture === 'object') {
-    const p = c.picture; const parts = live.parts ?? [];
-    const partOpts = [{ v: '', label: '(its own: a framed picture)' }, ...[...new Set([...(p.part && !parts.includes(p.part) ? [p.part] : []), ...parts])].map((v) => ({ v, label: v }))];
+    const p = c.picture;
     const tier = mediaTier(p.src, 'image');
     const PI = (k, over) => rowOf('Picture', k, p, over);
     const fields = [
       PI('src', { label: 'image', value: p.src ?? '', placeholder: 'upload, or store/images/…, or an https link', hint: tier.tier === 'bad' ? 'a file in the store, or an https link' : tierWords(tier, 'image') }),
       ...(tier.tier === 'link' && live.untrusted === false ? [{ t: 'info', label: '', value: '🛡 you don\'t see this: it links to a site that isn\'t trusted (Settings › 🛡 safety)' }] : []),
       { t: 'btn', k: 'upload', label: 'upload image…', client: true, hint: 'PNG, JPEG or WebP into this server\'s store; the path fills in. Make sure you own the rights to it before you upload it' },
-      PI('part', { label: 'where', value: p.part ?? '', options: partOpts, hint: 'on its own (a picture facing its front, sized by width), or on one of its model\'s parts' }),
-      ...(p.part ? [] : [PI('width', { label: 'width', hint: 'its height follows the image' })]),
+      PI('width', { label: 'width', hint: 'its height follows the image' }),
       PI('alt', { label: 'alt text', value: p.alt ?? '', placeholder: 'what it shows, in words', hint: `${ALT_HINT} (≤${PICTURE_ALT_MAX})` }),
       PI('lit', { label: 'lit', value: p.lit === 'self' ? 'self' : 'scene', options: Object.entries(PICTURE_LIT).map(([v, label]) => ({ v, label })) }),
-      PI('flip', { label: 'flip', hint: 'for a part whose UVs were exported upside down' }),
     ];
     const n = normalizePicture(p);
     if (!n.ok) fields.unshift({ t: 'info', label: '', value: `⚠ not shown: ${n.why}` });
@@ -1415,7 +1414,7 @@ export function editOps(ent, id, edits, live = {}) {
           if (v == null || v === '') { const { [name]: _, ...rest } = next.params ?? {}; if (Object.keys(rest).length) next.params = rest; else delete next.params; }
           else next.params = { ...(next.params ?? {}), [name]: f?.t === 'num' ? round(v) : v }; }
         else if (k === 'part') { const v = String(raw ?? '').trim(); if (v) next.part = v; else delete next.part; }
-        else if (k === 'effect') { if (String(raw) !== next.effect) { next.effect = String(raw); delete next.params; } }   // another effect's knobs aren't these
+        else if (k === 'effect') { if (String(raw) !== next.effect && String(raw) !== essentialNameOf(next.effect)) { next.effect = String(raw); delete next.params; } }   // another effect's knobs aren't these (an Essential's name is its stored address)
         else if (!writeField('Particles', k, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
         // the authority's rules, here first: a known effect (an Essential, or a stored one the viewer has), or a name that is
         // neither an Essential nor an address; an address the viewer hasn't loaded is the door's to judge
@@ -1427,10 +1426,10 @@ export function editOps(ent, id, edits, live = {}) {
       case 'picture': {
         if (k === 'down') { bags.set('picture', null); break; }
         const b = bag('picture', () => ({})); if (!b) { errors.push('picture: taken down in this same edit'); break; }
-        if (!['part', 'src', 'alt', 'lit', 'flip', 'width'].includes(k)) { errors.push(`${key}: no such field`); break; }
+        if (!['src', 'alt', 'lit', 'width'].includes(k)) { errors.push(`${key}: no such field`); break; }
         if (writeField('Picture', k, key, f, raw, b)) break;
         if (k === 'width') { const n = num({ value: b.width ?? 1 }, raw); if (n == null || outOfDoor('picture', 'width', round(n), key)) break; b.width = round(n); }   // no row yet: the picture is being made
-        else { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'alt' || k === 'part') delete b[k]; else b[k] = v; }
+        else { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'alt') delete b[k]; else b[k] = v; }
         break;
       }
       case 'sound': {
