@@ -491,11 +491,19 @@ class Reader:
             raise Malformed("verb", verb)
         if verb == "batch":
             # GUESS-06: body = {"ops": [ {verb, id, comp?, value?}, ... ]}
-            if set(body) - {"ops"}:
-                raise Malformed("batch-field", ",".join(sorted(set(body) - {"ops"})))
+            if set(body) - {"ops", "followUps"}:
+                raise Malformed("batch-field", ",".join(sorted(set(body) - {"ops", "followUps"})))
             ops = body.get("ops")
             if not isinstance(ops, list):
                 raise Malformed("batch-ops")
+            if "followUps" in body:
+                # the authority's follow-up ops in this batch (strictly ascending indices, in range): applied like any op
+                f = body["followUps"]
+                if not isinstance(f, list) or not f:
+                    raise Malformed("batch-followups", "not a non-empty array")
+                for i, k in enumerate(f):
+                    if not _int(k) or k >= len(ops) or (i > 0 and k <= f[i - 1]):
+                        raise Malformed("batch-followups", repr(k))
             out = []
             for i, op in enumerate(ops):
                 if not isinstance(op, dict):

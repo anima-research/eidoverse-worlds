@@ -3,7 +3,7 @@
 // rotation a log takes; scratch is the preview the index files). Two lines ride along from elsewhere because this is where
 // they are read: VOLATILE (the spatial section's "indexed whole" mark, which scratch propagates) and opsQuiet (the rights
 // section's quiet opsOf, which worldOf's presence fold uses).
-import { readLog, fold, opsOf, applyInPlace, cloneState, cowState, applyCow, checkEntry, jcs, sha256, worldIdOf, Malformed, PURGED } from "../fold.js";
+import { readLog, fold, opsOf, followUpsOf, applyInPlace, cloneState, cowState, applyCow, checkEntry, jcs, sha256, worldIdOf, Malformed, PURGED } from "../fold.js";
 import { sha256Bytes, hexBytes } from "../hash.js";
 import * as R from "../roles.js";
 import { simFold } from "../simlayer.js";
@@ -196,4 +196,5 @@ const scratch = (st, ops) => { const s = applyCow(cowState(st), ops); if (VOLATI
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "thing";
 
 const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
+export { followUpsOf };
 export { CHANGE, IMPORTED_ONLY, VOLATILE, bodyCommit, chainStep, clone, createOps, delOp, isE, lockedC, nonce16, opCommit, opsQuiet, qr3, scratch, setOp, skelOp, skeleton, slug, versionOf, versionSeq };

@@ -4,7 +4,7 @@
 import * as R from "../roles.js";
 import { CTX } from "./ctx.js";
 import { said } from "./refuse.js";
-import { isE, opsQuiet, readback } from "./storage.js";
+import { followUpsOf, isE, opsQuiet, readback } from "./storage.js";
 // The ladder, the closed permission list and the effective set live in shared/protocol/roles.js (the Sanctioned Society: ranked
 // membership only; banned and ghost are states outside it). Every rank comparison in the authority goes through rankOf /
 // whoRank below, so a custom role (any id an owner defined in @world.role-defs) stands where its rank says.
@@ -104,8 +104,9 @@ function* backward(w, id) {
 export function creatorOf(w, id, comp) {
   let found = null;
   for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
-    const ops = opsQuiet(e);
+    const ops = opsQuiet(e); const fu = followUpsOf(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
+      if (o.verb === "set" && fu.has(k)) continue;   // the authority's follow-up (a reference cleared or put back) authors nothing (review r9 H1)
       if (comp === undefined) { if (o.verb === "create") return entryBy(w, e); if (o.verb === "delete" && o.comp === undefined) return null; continue; }
       if (o.verb === "set" && o.comp === comp) found = e;
       else if ((o.verb === "delete" && (o.comp === comp || o.comp === undefined)) || o.verb === "create") return found && entryBy(w, found); } }
@@ -114,8 +115,8 @@ export function creatorOf(w, id, comp) {
 // Who last set (or deleted) component `comp` on a thing: { seq, by, rights, deleted } or null if nobody ever has.
 export function lastSetterOf(w, id, comp) {
   for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
-    const ops = opsQuiet(e);
-    for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id || o.comp !== comp || o.verb === "create") continue;
+    const ops = opsQuiet(e); const fu = followUpsOf(e);
+    for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id || o.comp !== comp || o.verb === "create" || (o.verb === "set" && fu.has(k))) continue;
       return { ...entryBy(w, e), deleted: o.verb === "delete" }; } }
   return null;
 }

@@ -135,6 +135,15 @@ r = run("06-nested-batch", [GEN_LINE, ACT,
                          {"verb": "batch", "ops": [{"verb": "create", "id": "b"}]}]})])
 check("06 nested batch: whole entry shapes nothing", r.view() == {"@world": {}} and codes(r) == [(2, "malformed:nested-batch")], codes(r))
 
+# 6b a batch's followUps (review r9 H1): the indices of the authority's follow-up ops, applied like any op; well formed or
+# the whole entry is malformed (non-empty, strictly ascending integers, in range)
+r = run("06b-followups", [GEN_LINE, ACT,
+    st("batch", {"ops": [{"verb": "create", "id": "a"}, {"verb": "set", "id": "a", "comp": "label", "value": "x"}], "followUps": [1]})])
+check("06b followUps: a well-formed list folds like any batch", r.view() == {"@world": {}, "a": {"label": {"v": "x"}}} and not r.diag, codes(r))
+for nm, f in [("06c-followups-empty", []), ("06d-followups-desc", [1, 0]), ("06e-followups-range", [2]), ("06f-followups-frac", [0.5]), ("06g-followups-str", "1")]:
+    r = run(nm, [GEN_LINE, ACT, st("batch", {"ops": [{"verb": "create", "id": "a"}, {"verb": "create", "id": "b"}], "followUps": f})])
+    check("%s: malformed, the whole entry shapes nothing" % nm[:3], r.view() == {"@world": {}} and codes(r) == [(2, "malformed:batch-followups")], codes(r))
+
 # 7 unknown / wrong-typed version (genesis {dialect, v}), and another log's dialect
 for nm, field, v in [("07a-version-5", "v", 5), ("07b-version-str", "v", "4"), ("07c-version-missing", "v", None), ("07d-version-4.0", "v", 4.0),
                      ("07e-dialect-other", "dialect", "some-other-log"), ("07f-dialect-missing", "dialect", None)]:

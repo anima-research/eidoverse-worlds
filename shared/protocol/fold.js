@@ -178,8 +178,9 @@ const OP_FIELDS = { create: ["id"], delete: ["id", "comp"], set: ["id", "comp", 
 export function opsOf(e) {
   const { verb, body } = e;
   if (verb === "batch") {
-    const extra = Object.keys(body).filter((k) => k !== "ops"); if (extra.length) bad("batch-field", extra.join(","));
+    const extra = Object.keys(body).filter((k) => k !== "ops" && k !== "followUps"); if (extra.length) bad("batch-field", extra.join(","));
     if (!Array.isArray(body.ops)) bad("batch-ops");
+    if ("followUps" in body) followUpsCheck(body.followUps, body.ops.length);
     return body.ops.map((o, i) => {
       if (o === null || typeof o !== "object" || Array.isArray(o)) bad("batch-op", String(i));
       if (o.verb === "batch") bad("nested-batch", `op ${i}`); // L1: a batch never contains a batch
@@ -187,6 +188,19 @@ export function opsOf(e) {
     });
   }
   return [shapeOne(verb, body, false, "")];
+}
+// `followUps` (review r9 H1 / scars M3): the indices of the ops in this batch that the AUTHORITY wrote as a consequence of the
+// asker's own ops (clearing the references to a thing the batch deleted; an undo putting such a reference back). The fold
+// applies them like any op; readers that derive authorship from the log (who set up a handler, who created a key) skip
+// them, so a follow-up never makes the asker the author of someone else's value. Strictly ascending, in range, non-empty.
+function followUpsCheck(f, n) {
+  if (!Array.isArray(f) || !f.length) bad("batch-followups", "not a non-empty array");
+  f.forEach((k, i) => { if (!Number.isInteger(k) || k < 0 || k >= n || (i > 0 && k <= f[i - 1])) bad("batch-followups", JSON.stringify(k)); });
+}
+/** The set of op indices a change entry marks as the authority's follow-ups (empty for anything else). */
+export function followUpsOf(e) {
+  const f = e?.kind === "change" && e.verb === "batch" ? e.body?.followUps : undefined;
+  return new Set(Array.isArray(f) ? f.filter(Number.isInteger) : []);
 }
 export function shapeOne(verb, b, inner, where) {
   const allowed = OP_FIELDS[verb]; if (!allowed) bad("verb", `${where} ${JSON.stringify(verb)}`);
