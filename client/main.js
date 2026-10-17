@@ -42,7 +42,9 @@ import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js'
 // now (it must carry the protocol for lite.js, which has no bodies to register), and
 // this is the real, body-building implementation of that interface.
 import * as participants from './lib/remotes.js';
-import { setWaveClock } from './lib/water.js';
+import { setWaveClock, surfaceHeightAt } from './lib/water.js';
+import { updateSplashes, splash, splashDebug } from './lib/splashes.js';
+import { addRipple } from './lib/ripples.js';
 import { snapshot, setSnapReadiness } from './lib/net_snap.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
@@ -609,6 +611,7 @@ registerSystem('bodydrag', (dt, t, now) => updateBodyDrag(dt, now)); // before r
 registerSystem('physobj', (dt, t, now) => tickPhysObj(dt, now)); // entity leases I hold
 registerSystem('mods', (dt, t, now) => tickMods(dt, now));       // 🧩 runtime scripts
 registerSystem('remotes', (dt, t, now) => updateRemotes(dt, now));
+registerSystem('splashes', (dt) => updateSplashes(dt));   // after every body has moved: wakes, rings, thrown water
 registerSystem('gaze', (dt, t, now) => updateGaze(myState.pos, getMe(), CONFIG.name, now));
 // the hover card beside a nameplate (desktop pointer, touch tap, VR laser) — after gaze, before render
 initPlates({ camera, canvas, scene, remotes, myPos: () => (getMe() ? myState.pos : null), presenting: () => isPresenting(),
@@ -891,6 +894,11 @@ const EW = globalThis.EW = {
     return next;
   },
   get terrainArgs() { return currentTerrainArgs(); },
+  // WATER FX (this page only): EW.splash(x, z, power 0..1) throws water at the surface there; EW.ripple(x, z,
+  // strength) rings it; EW.waterFx() counts the drops in the air and the rings on the water
+  splash: (x, z, power = 0.8) => { const y = surfaceHeightAt(x, z); if (y == null) return false; splash(x, y, z, power); return true; },
+  ripple: (x, z, strength = 0.6) => addRipple(x, z, strength),
+  waterFx: () => splashDebug(),
   // the ground as walking reads it, and whether a heightmap terrain is still waiting on its image
   groundAt: (x, z) => heightAt(x, z), get hasTerrain() { return hasTerrain(); },
   get terrainPending() { return terrainPending(); },
