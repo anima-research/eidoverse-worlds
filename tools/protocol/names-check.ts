@@ -17,6 +17,9 @@
 //       no text sets humans against agents
 //   O   leftover seat words → the occupy family (agent, client modules, socketRole, user-visible strings)
 //   S   stale agent-visible addresses: light.daytime, sky.tz, the measure tool's socket child
+//   A   grabbable.anim / station.anim (an open name of a pose or a clip; unknown → the body's default), grasp, anim-pose
+//       reserved; old spellings taken at the door and renamed at load; wings-folded is a named pose; pose/animate by name
+//   U   the action bar (UI ids and strings; was the emote bar)
 //   X   the version history records it
 // @ts-nocheck
 import fs from "node:fs";
@@ -61,6 +64,20 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["sky.clock again", "shared/worldentity.js", "    { t: 'text', k: 'tz', label: 'timezone', value: real ? (s.tz ?? DEFAULT_TZ) : '', ...ro,", "    { t: 'enum', k: 'clock', label: 'clock', value: real ? 'real' : 'authored', def: 'authored', options: [{ v: 'authored', label: 'authored' }, { v: 'real', label: 'real time' }] },\n    { t: 'text', k: 'tz', label: 'timezone', value: real ? (s.tz ?? DEFAULT_TZ) : '', ...ro,", ["S2"]],
   ["measure teaches set sockets", "mcpl/tools.ts", "a socket is a child entity, made with create {components: {parent: {to: id}", "act {verb: 'set', args: {id, component: 'sockets', value: {seat: {pos: [cx, y, cz], body: {pose: 'sitchair'}}}}} — or create {components: {parent: {to: id}", ["S3"]],
   ["the history forgets", "spec/PROTOCOL.md", "the refusal codes `hold-limit`, `beneath`, `not-pushable`", "the refusal codes", ["X1"]],
+  ["the registry keeps pose", "shared/protocol/componentspec.js", "hold: \"string\", anim: \"string\", grips:", "hold: \"string\", pose: \"string\", grips:", ["A1"]],
+  ["no door translation", "shared/protocol/authority/writes.js", "if (comp === \"grabbable\" || comp === \"station\") { const r = renameFields(comp, value);", "if (false) { const r = renameFields(comp, value);", ["A2"]],
+  ["two-hand is a name", "shared/protocol/shaperepair.js", "if (comp === \"grabbable\" && p === \"two-hand\") {", "if (false) {", ["A2"]],
+  ["an unknown name is refused", "shared/grab.js", "if (v.anim !== undefined && !(typeof v.anim === 'string' && ANIM_RE.test(v.anim)))", "if (v.anim !== undefined && !HOLD_POSES.includes(v.anim))", ["A3"]],
+  ["an unknown name is held as written", "shared/grab.js", "if (g?.anim && ARMS[g.anim] && g.anim !== BOTH_HANDS) return g.anim;", "if (g?.anim) return g.anim;", ["A3"]],
+  ["no field renames at load", "shared/protocol/shaperepair.js", "export const RENAMED_FIELDS = Object.freeze({ grabbable: Object.freeze({ pose: \"anim\", \"grips.*.fingers\": \"grasp\" }), station: Object.freeze({ pose: \"anim\" }) });", "export const RENAMED_FIELDS = Object.freeze({});", ["A2", "A4"]],
+  ["the lift keeps pose", "shared/protocol/authority/sockets.js", "const b = \"pose\" in b0 && !(\"anim\" in b0) ? (({ pose, ...r }) => ({ ...r, anim: pose }))(b0) : b0;", "const b = b0;", ["A5"]],
+  ["the wire says wingsFolded", "shared/wingpresence.js", "return { poses: folded === true ? [WINGS_FOLDED] : [] };", "return { wingsFolded: folded === true };", ["A6"]],
+  ["the old flag isn't read", "shared/wingpresence.js", "return typeof sample.wingsFolded === 'boolean' ? sample.wingsFolded : null;", "return null;", ["A6"]],
+  ["the fence drops poses", "server/posecheck.ts", "if (\"poses\" in p) { const c = cleanPoses(p.poses); if (c) p.poses = c; else delete p.poses; }", "delete p.poses;", ["A6"]],
+  ["pose takes no name", "mcpl/tools.ts", "properties: { name: { type: \"string\", description: \"a pose by name (\\\"wings-folded\\\"), instead of bones\" }, bones:", "properties: { bones:", ["A7"]],
+  ["anim-pose not reserved", "shared/protocol/componentspec.js", "  \"anim-pose\": \"a pose: one frame", "  \"x-anim-pose\": \"a pose: one frame", ["A1"]],
+  ["the frame is emotes again", "client/lib/windows.js", "  actions:  { x: 'center'", "  emotes:   { x: 'center'", ["U1"]],
+  ["the lite row is lite-emotes", "client/lib/emotebar_lite.js", "row.className = 'lite-actions';", "row.className = 'lite-emotes';", ["U1"]],
   ["CONTROL (no-op: must stay green)", "shared/protocol/consent.js", "// Ported from the protocol lab (2026-10-05);", "//  Ported from the protocol lab (2026-10-05);", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -313,12 +330,75 @@ const cases: Case[] = [
     good: (o) => o.keys.includes("tz") && !o.keys.includes("clock") && o.err.length > 0 && /"tz":"Europe\/Paris"/.test(o.tz) && !/"clock"/.test(o.tz) },
   { id: "S3", what: "…the measure tool teaches a socket child (create {components: {parent, transform, socket, station}}), never set sockets; the inspect tool lists light.daytime and sky.tz", run() {
       const t = readText("mcpl/tools.ts"); const at = (n: string) => { const i = t.indexOf(`name: "${n}", description: "`); return i < 0 ? "" : t.slice(i, t.indexOf("inputSchema", i)); }; const m = at("measure"), i = at("inspect");
-      return { m: /create \{components: \{parent: \{to: id\}, transform: \{pos: \[cx, y, cz\]\}, socket: \{name: 'seat'\}, station: \{pose: 'sitchair'\}\}\}/.test(m), old: /component: 'sockets'/.test(m), i: /light\.daytime/.test(i) && /sky\.tz/.test(i) && !/light\.noon|sky\.clock/.test(i) }; },
+      return { m: /create \{components: \{parent: \{to: id\}, transform: \{pos: \[cx, y, cz\]\}, socket: \{name: 'seat'\}, station: \{anim: 'sitchair'\}\}\}/.test(m), old: /component: 'sockets'/.test(m), i: /light\.daytime/.test(i) && /sky\.tz/.test(i) && !/light\.noon|sky\.clock/.test(i) }; },
     good: (o) => o.m && !o.old && o.i },
+  // ---------------- A: anim (R 10-17 15:09/15:11) ----------------
+  { id: "A1", what: "(R 15:09/15:11) the registry: grabbable.anim and station.anim (no pose, no closed enum), a grip's grasp, anim-pose reserved beside anim-clip", run() {
+      const G = CS.COMPONENTS.grabbable, S = CS.COMPONENTS.station; const GR = readText("shared/grab.js");
+      return { g: Object.keys(G.fields), genum: G.enums?.pose ?? null, s: Object.keys(S.fields), ap: CS.COMPONENTS["anim-pose"]?.status ?? null, ac: CS.COMPONENTS["anim-clip"]?.status ?? null, grasp: /GRIP_KEYS = \['pos', 'q', 'hand', 'role', 'grasp', 'part'\]/.test(GR) }; },
+    good: (o) => o.g.includes("anim") && !o.g.includes("pose") && o.genum === null && o.s.includes("anim") && !o.s.includes("pose") && o.ap === "reserved" && o.ac === "reserved" && o.grasp },
+  { id: "A2", what: "…a write in the old spelling is taken and stored in the new, with a note: grabbable {pose: torch, grips.fingers} → {anim: torch, grips.grasp}; pose two-hand → twoHanded: true; station {pose} → anim", run(s) {
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } }); s.call("olive", "create", { id: "rod", model: "book", place: { at: [2, 0] } });
+      const a = s.call("olive", "set", { id: "cup", component: "grabbable", value: { pose: "torch", grips: { h: { pos: [0, 0.1, 0], fingers: "pinch" } } } });
+      const b = s.call("olive", "set", { id: "rod", component: "grabbable", value: { pose: "two-hand" } });
+      s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
+      const c = s.call("olive", "create", { components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "bunk" }, station: { action: "lie", pose: "lie" } } });
+      const E = s.w().state().entities; const kid = Object.keys(E).find((k) => E[k].c.socket?.name === "bunk");
+      return { a: show(a), b: show(b), c: show(c), cup: E.cup?.c.grabbable ?? null, rod: E.rod?.c.grabbable ?? null, st: kid ? E[kid].c.station : null, notes: JSON.stringify(a.notes ?? []) }; },
+    good: (o) => o.a === "ok" && o.b === "ok" && o.c === "ok" && o.cup?.anim === "torch" && !("pose" in o.cup) && o.cup?.grips?.h?.grasp === "pinch" && !("fingers" in o.cup.grips.h)
+      && o.rod?.twoHanded === true && !("pose" in o.rod) && !("anim" in o.rod) && o.st?.anim === "lie" && !("pose" in o.st) && /renamed before release/.test(o.notes) },
+  { id: "A3", what: "…anim is an OPEN name: one the body doesn't know is admitted and held as the body's default (by size), never refused; a built-in one (torch) is held as named", async run(s) {
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } });
+      const r = s.call("olive", "set", { id: "cup", component: "grabbable", value: { anim: "juggle-overhand" } });
+      const GB = await import(TREE + "shared/grab.js"); const g = GB.grabOf(s.w().state().entities.cup?.c ?? {});
+      return { r: show(r), held: GB.holdPoseOf(g, [0.2, 0.2, 0.2]), big: GB.holdPoseOf(g, [1, 1, 1]), torch: GB.holdPoseOf(GB.grabOf({ grabbable: { anim: "torch" } }), [0.2, 0.2, 0.2]), two: GB.holdPoseOf(GB.grabOf({ grabbable: { twoHanded: true } }), [0.2, 0.2, 0.2]), named: GB.HOLD_POSES ?? null }; },
+    good: (o) => o.r === "ok" && o.held === "hand" && o.big === "carry" && o.torch === "torch" && o.two === "both-hands" && JSON.stringify(o.named) === '["hand","carry","torch","pistol","shoulder"]' },
+  { id: "A4", what: "…a log holding grabbable.pose / a grip's fingers / station.pose is renamed at load (rename-components, every load, idempotent): anim, grasp, twoHanded", run(s) {
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
+      s.call("olive", "create", { components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "bunk" }, station: { action: "lie" } } });
+      const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world; const ts = L.at(-1).ts; const n = L.length;
+      const E0 = s.w().state().entities; const kid = Object.keys(E0).find((k) => E0[k].c.socket?.name === "bunk");
+      const gv = { who: "visitor", pose: "pistol", grips: { h: { pos: [0, 0.1, 0], fingers: "point" } } }, sv = { action: "lie", anchor: "root", pose: "lie" };
+      fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [
+        { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: "cup", component: "grabbable", value: gv } }, ts: ts + 1 },
+        { world: wid, kind: "change", actor: "olive", cause: n, verb: "set", body: { id: "cup", comp: "grabbable", value: gv }, ts: ts + 1 },
+        { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: kid, component: "station", value: sv } }, ts: ts + 2 },
+        { world: wid, kind: "change", actor: "olive", cause: n + 2, verb: "set", body: { id: kid, comp: "station", value: sv }, ts: ts + 2 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+      T += 1000; process.env.PROTOCOL_NOW = String(T);
+      const w1 = s.reopen(); D.liftWorld(w1); const w2 = s.reopen(); const E = w2.state().entities;
+      const k = w2.entries.length; D.liftWorld(w2); const again = s.reopen().entries.length - k;
+      const act = w2.entries.findLast((e: any) => e.kind === "act" && e.verb === "rename-components");
+      return { g: E.cup?.c.grabbable ?? null, st: E[kid]?.c.station ?? null, again, renamed: act?.body?.renamed ?? null, status: w2.state().status }; },
+    good: (o) => o.status === "ok" && o.g?.anim === "pistol" && !("pose" in o.g) && o.g?.grips?.h?.grasp === "point" && !("fingers" in o.g.grips.h) && o.st?.anim === "lie" && !("pose" in o.st) && o.again === 0 && Array.isArray(o.renamed) && o.renamed.some((r: any) => r.component === "station") },
+  { id: "A5", what: "…the legacy sockets map's body block keeps pose: the lift makes it station.anim, and the map's readers get body.pose back (slotOf)", async run(s) {
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
+      const r = s.call("olive", "set", { id: "bench", component: "sockets", value: { bunk: { pos: [0, 0.5, 0], body: { action: "lie", pose: "lie" } } } });
+      const E = s.w().state().entities; const kid = Object.keys(E).find((k) => E[k].c.socket?.name === "bunk");
+      const SK = await import(TREE + "shared/sockbody.js"); const slot = kid ? SK.slotOf(E[kid].c.socket, E[kid].c.transform, E[kid].c.station) : null;
+      return { r: show(r), st: kid ? E[kid].c.station : null, body: slot?.body ?? null, b: SK.bodyOf?.(kid ? E[kid].c.station : null)?.clip ?? null }; },
+    good: (o) => o.r === "ok" && o.st?.anim === "lie" && !("pose" in o.st) && o.body?.pose === "lie" && !("anim" in o.body) && o.b === "lie" },
+  { id: "A6", what: "(R 15:09) folded wings are the named pose wings-folded on the wire (poses: [names]; [] holds none); an older sample's wingsFolded still reads; the server's fence keeps a clean poses list", async run() {
+      const WP = await import(TREE + "shared/wingpresence.js"); const PC = await import(TREE + "server/posecheck.ts");
+      const keep = PC.sanePose({ p: [0, 0, 0], poses: ["wings-folded"] }), bad = PC.sanePose({ p: [0, 0, 0], poses: [1, 2] });
+      return { on: JSON.stringify(WP.wingFoldPresence(true)), off: JSON.stringify(WP.wingFoldPresence(false)), old: [WP.foldedIn?.({ wingsFolded: true }), WP.foldedIn?.({ wingsFolded: false }), WP.foldedIn?.({})],
+        keep: JSON.stringify(keep?.poses ?? null), bad: bad ? "poses" in bad : "dropped" }; },
+    good: (o) => o.on === '{"poses":["wings-folded"]}' && o.off === '{"poses":[]}' && JSON.stringify(o.old) === "[true,false,null]" && o.keep === '["wings-folded"]' && o.bad === false },
+  { id: "A7", what: "…the agent's pose takes a name (wings-folded) or bones; animate takes a name or tracks, looped: true to loop (loop its old spelling); neither requires the inline keys", run() {
+      const t = readText("mcpl/tools.ts"); const at = (n: string) => { const i = t.indexOf(`name: "${n}", description: "`); return i < 0 ? "" : t.slice(i, t.indexOf("\n", i)); };
+      const p = at("pose"), a = at("animate");
+      return { pname: /properties: \{ name: \{ type: "string"/.test(p), aname: /properties: \{ name: \{ type: "string"/.test(a), looped: /looped: \{ type: "boolean"/.test(a), req: /required: \["dur", "tracks"\]/.test(a), handler: /if \(n === WINGS_FOLDED\) return text\(await ag\.foldWings\(true\)\)/.test(t) }; },
+    good: (o) => o.pname && o.aname && o.looped && !o.req && o.handler },
+  // ---------------- U: the action bar ----------------
+  { id: "U1", what: "(R 15:18, the UI half) the emote bar is the action bar: its frame id, the lite client's ids and classes, its titles and strings say action", run() {
+      const wn = readText("client/lib/windows.js"), eb = readText("client/lib/emotebar.js"), el = readText("client/lib/emotebar_lite.js"), ix = readText("client/index.html"), ui = readText("client/lib/ui.js"), lt = readText("client/lite.js");
+      return { layout: /^  actions:  \{ x: 'center'/m.test(wn) && !/^  emotes:/m.test(wn), frame: /makeFrame\('actions'/.test(eb) && /title: 'action bar'/.test(eb), lite: /lite-actions/.test(el) && !/lite-emote/.test(el + ix + lt),
+        title: /actions: 'action bar'/.test(ui) && !/'emote bar'/.test(ui), strings: !/chat, emotes/.test(lt + ui) }; },
+    good: (o) => o.layout && o.frame && o.lite && o.title && o.strings },
   // ---------------- X: the record ----------------
   { id: "X1", what: "the version history records the renames at minor 0, and the spec body speaks the new words (§5 consent, §7a rule 4)", run() {
       const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")); const body = md.slice(0, md.indexOf("## Version history"));
-      return { vh: ["`hold-limit`", "`contact`", "`trusted-components`", "`rename-components`", "`displace`", "`delegates`"].every((w) => vh.includes(w)),
+      return { vh: ["`hold-limit`", "`contact`", "`trusted-components`", "`rename-components`", "`displace`", "`delegates`", "`grabbable.anim`", "`grasp`", "`anim-pose`", "`wings-folded`"].every((w) => vh.includes(w)),
         body: /`allow`, `ask`, or `deny`/.test(body) && /\(`everyone` \/ `friends`\), `allow` \| `ask` \| `deny`/.test(body) && !/everyone, ask, or nobody/.test(body) && !/\(strangers \/ friends\)/.test(body) }; },
     good: (o) => o.vh && o.body },
 ];
