@@ -1,13 +1,13 @@
 // eidoverse-worlds sequencer — advisory lint (TEL0S_NOTES §15, step 7a).
-// The flight-recorder courtesy for motion and particles components, plus the
+// The flight-recorder courtesy for spawns, motion and particles, plus the
 // ONE resolveLibFile (§15.1 named the /geom duplicate; it imports this now).
 // The linters take a structural {state, debug} — the same two things they
 // ever read off the World — so this module needs geometry and shared code,
 // never server.ts.
 
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join, normalize } from "node:path";
-import { OPT_DIR, LIBRARY_DIR } from "./config.ts";
+import { LADDER } from "./config.ts";
 import { summarizeGlb } from "./geometry.ts";
 // Likewise for the `particles` component: one validator, so the flight
 // recorder's opinion about an emitter is the renderer's own opinion.
@@ -39,14 +39,107 @@ export const MOTION_TYPES: Record<string, Set<string>> = {
   path: new Set(["type", "points", "speed", "duration", "loop", "face", "t0", "part", "cause", "by"]),
 };
 
-export function resolveLibFile(lib: string): string | null {
-  const rel = normalize(lib).replace(/^\/+/, "");
-  if (rel.includes("..") || !/\.(glb|vrm)$/i.test(rel)) return null;
-  for (const base of [OPT_DIR, LIBRARY_DIR]) {
+/** The /library path a lib names, as the asset route will look it up, or
+ *  null when it names none with that extension. Mirrors the client's
+ *  /library/<lib> URL: percent-encoding of spaces/Unicode, and query and
+ *  fragment removed. The route uses URL.pathname verbatim (it does not decode
+ *  it back to a disk filename). A parent-traversal segment is refused; a name
+ *  that merely contains two dots, such as robot..v2.glb, is served and kept. */
+export function libraryPath(lib: unknown, extension: RegExp): string | null {
+  if (typeof lib !== "string") return null;
+  if (lib.split(/[?#]/, 1)[0].includes("\0")) return null;
+  const pathname = new URL("/library/" + lib, "http://library.invalid").pathname;
+  if (!pathname.startsWith("/library/")) return null;
+  const rel = normalize(pathname.slice("/library/".length)).replace(/^\/+/, "");
+  return rel.split("/").includes("..") || !extension.test(rel) ? null : rel;
+}
+
+const MODEL = /\.(glb|vrm)$/i;
+const modelPath = (lib: unknown) => libraryPath(lib, MODEL);
+
+/** What a rung holds at `p`, as the route's existsSync sees it: a regular
+ *  file, some other entry (a directory named like a model), or nothing.
+ *  statSync throws for more than a missing entry: a path through a file
+ *  (ENOTDIR, in bun) and a name past the filesystem's limit (ENAMETOOLONG).
+ *  existsSync reports each as nothing, and a spawner's long name must not
+ *  turn a lookup into a throw. */
+function entryAt(p: string): "file" | "other" | null {
+  try { return statSync(p).isFile() ? "file" : "other"; } catch { return null; }
+}
+
+/** The file /library serves for `rel`. The route takes the first rung where
+ *  any entry exists, so a directory named like a model there is no model,
+ *  even over a file of that name on a lower rung: the route answers it with
+ *  an error, not the lower file. */
+export function onLadder(rel: string): string | null {
+  for (const base of LADDER) {
     const p = normalize(join(base, rel));
-    if (p.startsWith(base) && existsSync(p)) return p;
+    if (!p.startsWith(base)) continue;
+    const entry = entryAt(p);
+    if (entry !== null) return entry === "file" ? p : null;
   }
   return null;
+}
+
+// The recorder is a bounded diagnosis, not another copy of arbitrary args.
+// Keep normal values verbatim; the committed seq points to the full input.
+function diagnosticValue(value: unknown): unknown {
+  if (typeof value === "string") return value.length > 512 ? value.slice(0, 512) + "… [truncated]" : value;
+  if (value && typeof value === "object") return Array.isArray(value) ? "[array]" : "[object]";
+  return value;
+}
+
+export function resolveLibFile(lib: string): string | null {
+  const rel = modelPath(lib);
+  // Geometry and route callers deliberately see the same patched/upload/base
+  // bytes as /library, not a different unpatched model behind the same name.
+  return rel === null ? null : onLadder(rel);
+}
+
+// The recorder is a 300-entry ring shared by every kind: a script spawning
+// the same unresolvable lib again and again must not evict everything else.
+// One record per world, lib and reason a minute. The next record's `repeats`
+// counts the spawns of that lib, for that reason, that went unrecorded since
+// the previous record; a burst that stops is counted only when the lib is
+// spawned again after the minute.
+const SPAWN_LINT_WINDOW_MS = 60_000;
+const spawnLintSeen = new WeakMap<object, Map<string, { at: number; since: number }>>();
+
+/** A spawn still folds when its library cannot resolve. Tell the author why
+ * through world_debug instead of leaving only every joiner's failed fetch.
+ * Run after dispatch, contain every failure, and never edit world history. */
+export function lintSpawn(w: LintHost, entry: LogEntry, now: () => number = Date.now): void {
+  queueMicrotask(() => {
+    try {
+      const a = entry.args;
+      // Match the fold's spawn guard: these entries never create or replace
+      // an entity, so do not diagnose its unchanged model as malformed.
+      if (!a?.id || !a.lib) return;
+      const lib = a.lib;
+      const malformed = modelPath(lib) === null;
+      if (!malformed && resolveLibFile(lib as string)) return;
+      const reason = malformed ? "malformed" : "not-found";
+      let seen = spawnLintSeen.get(w);
+      if (!seen) { seen = new Map(); spawnLintSeen.set(w, seen); }
+      const key = reason + "\0" + (typeof lib === "string" ? lib : JSON.stringify(diagnosticValue(lib)));
+      const last = seen.get(key), at = now();
+      if (last && at - last.at < SPAWN_LINT_WINDOW_MS) { last.since++; return; }
+      seen.set(key, { at, since: 0 });
+      w.debug("spawn-lint", {
+        // The fold keys an entity by String(id); name it by that key.
+        entity: diagnosticValue(String(a.id)), by: diagnosticValue(entry.actor), seq: entry.seq, lib: diagnosticValue(lib),
+        reason,
+        ...(last?.since ? { repeats: last.since } : {}),
+        why: malformed
+          ? "spawn lib is malformed: use a library-relative .glb or .vrm path without parent traversal"
+          : "spawn lib was not found in the patched assets, upload overlay or asset library; check the path or upload the asset",
+      });
+    } catch (err) {
+      // Advisory lint must never escape into the sequencer, and a broken one
+      // must not look like a quiet world.
+      console.error("[lint] spawn-lint failed for seq " + entry.seq + ":", err);
+    }
+  });
 }
 
 export function lintMotion(w: LintHost, entry: LogEntry): void {

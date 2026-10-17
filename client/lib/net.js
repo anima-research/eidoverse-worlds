@@ -15,7 +15,7 @@ import { pending, P } from './scheduler.js';
 // the net → chat → net cycle). One writer per verb, always.
 
 import { wingFoldPresence } from '../../shared/wingpresence.js';
-import { presenceWire } from '../../shared/presencewire.js';
+import { presenceWire, voiceWire, bodyWire } from '../../shared/presencewire.js';
 import { presence } from './presence.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
 import { markPhase } from './boot.js';
@@ -49,6 +49,7 @@ let hooks = {
   me: () => null,
   onRestore: () => {},
   onSnapshotDone: () => {},
+  myVoice: () => null,   // { mic, hear } — main.js reads the HUD glyphs' own state (mictoggle.js)
 };
 
 // The participant registry, the asset ledger and the snapshot renderer are INJECTED
@@ -107,10 +108,12 @@ export function sendAnim(data) {
     net.ws.send(JSON.stringify({ type: 'anim', ...data }));
   }
 }
-/** Ask another body to hold a pose or play an animation. */
-export function sendPuppet(target, { pose = null, anim = null, ragdoll = null } = {}) {
+/** Ask another body to hold a pose or play an animation. `merge`: pose only
+ *  the bones sent, over what they already hold (a null bone releases it);
+ *  without it the pose replaces theirs whole. */
+export function sendPuppet(target, { pose = null, merge = false, anim = null, ragdoll = null } = {}) {
   if (net.joined && net.ws?.readyState === 1) {
-    net.ws.send(JSON.stringify({ type: 'puppet', target, pose, anim, ragdoll }));
+    net.ws.send(JSON.stringify({ type: 'puppet', target, pose, ...(merge ? { merge: true } : {}), anim, ragdoll }));
   }
 }
 
@@ -237,8 +240,10 @@ export function sendPose(now) {
     pitch: Math.round((ov?.pitch ?? s.pitch ?? 0) * 100) / 100,
     ...wingFoldPresence(s.wingsFolded),
     ...presenceWire(presence()),        // present / away / busy — for the Who panel (R, 09-05)
+    ...voiceWire(hooks.myVoice()),      // mic live / headphones on — the hover card, agents' look
   };
   const avatar = hooks.me();
+  Object.assign(pose, bodyWire({ scale: avatar.userScale, plateY: avatar.plateY }));   // this body's size / plate lift — only when not default
   if (!avatar.emote && !avatar._limp && Number.isFinite(avatar.current?.time)) {
     pose.clipTime = avatar.current.time;
     pose.clipTimeSlot = avatar.currentSlot;

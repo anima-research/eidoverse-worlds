@@ -63,7 +63,7 @@ measured on the fields above (see `fixtures/README.md`).
 | `genesis` | `{v, dialect}` | nothing (version marker) |
 | `spawn` | `{id, lib, pos?, yaw?, scale?, collide?}` | create **or replace** entity (see §3.1) |
 | `place` | `{id, pos?, yaw?, scale?}` | update transform; re-stamps rest pose |
-| `light` | `{id, pos?, color?, intensity?, range?, keep?, day?}` | create light entity; re-issuing on an id that already folds as a light is a **partial update** (absent fields keep their prior value); a non-light holding the id is replaced wholesale (§3.1) |
+| `light` | `{id, pos?, color?, intensity?, range?, keep?, day?}` | create light entity; re-issuing on an id that already folds as a light is a **partial update** (absent fields keep their prior value); a non-light holding the id is replaced wholesale (§3.1). A sequencer refuses new `light` intent whose `id` isn't a string with at least one non-whitespace character; the fold reads history as it always has: an entry whose id is missing or falsy folds to nothing, and any other id folds under its text, so `5` and `"5"` are one light |
 | `remove` | `{id}` | delete entity; children mounted on it get their **absolute pose computed and stamped** (parent pos + yaw-rotated offset), then orphaned; body mounts onto it are cleared |
 | `comp` | `{id, type, data\|null}` | `entities[id].comp[type] = data`; null deletes. **Blind**: data is opaque to the fold. Writers SHOULD keep data ≤ 8 KB |
 | `motion` | `{id, type, …params}` | sugar: `comp[motion] = args-minus-id`; `type: null` deletes. If `t0` absent, fold stamps `t0 = entry.ts` |
@@ -146,6 +146,23 @@ Everything else in a bag is somebody's annotation. Preserve it.
   server relays the bag opaquely. Semantic rig state travels the same way:
   `pose.wingsFolded` is a boolean intent, never implementation-specific wing
   quaternions; each renderer applies it through the worn rig's own fold path.
+  The same packet carries a body's size and a person's voice state, each
+  optional, absence meaning the default (or, for voice, *unknown*):
+  - `pose.scale` — the wearer's chosen size multiplier for the whole body
+    (mesh, eyes, stride, collider); absent = 1. Range 0.5–2.
+  - `pose.plateY` — metres the nameplate hangs above the body's measured
+    crown, at its authored size (it grows with `scale`); absent = 0 (auto).
+    Range −0.3…+0.8.
+  - `pose.mic` — this person's microphone is live; `pose.hear` — they are
+    hearing voices. Booleans; absent = unknown, never "off".
+
+  Receivers MUST clamp `scale`/`plateY` to their ranges and read a
+  non-number as absent; a non-boolean `mic`/`hear` is absent
+  (shared/presencewire.js holds the clamps; the sequencer's pose fence
+  applies the same ones). `scale`/`plateY` are body state and ride the
+  settled pose a sequencer keeps for late joiners, as `wingsFolded` does;
+  `mic`/`hear` are a live reading re-sent with every packet and are never
+  part of it.
 - **The plane-transition invariant**: anything returning from live motion to
   rest MUST stamp its absolute pose into the verb that ends the ride
   (`dismount {pos, yaw}`; `motion {type: null}` + `place`). The log never

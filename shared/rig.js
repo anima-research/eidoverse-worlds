@@ -113,8 +113,12 @@ export function rigMath(THREE) {
     }
     root.updateMatrixWorld(true);
 
+    // `pivot` is this stand-in's vrm.scene: the node a chosen body size lives on
+    // (client/lib/avatar.js _applyBodyScale), between the unscaled root that
+    // carries position/yaw and the bones. Never aliased as vrm.scene — readers
+    // of that (landmarks.js) expect a mesh-bearing scene this has none of.
     const av = {
-      root, nodes, poses: 0, limp: false,
+      root, pivot, nodes, poses: 0, limp: false,
       vrm: { meta: { metaVersion: vrm0 ? "0" : "1" }, humanoid: {
         normalizedRestPose: Object.fromEntries(Object.entries(nodes).map(([k, n]) => [k, { position: n.position.toArray(), rotation: [0, 0, 0, 1] } ])),
         humanBones: Object.fromEntries(Object.keys(nodes).map((k) => [k, {}])),

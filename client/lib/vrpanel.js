@@ -4,7 +4,8 @@
 // frame loop reads them without a round trip. Visible whether or not a
 // headset is sensed — the first row says which, so the rest make sense.
 import { makeSection, flashHint } from './ui.js';
-import { checkRow, selectRow, btn } from './rows.js';
+import { checkRow, selectRow, btn, sliderTable } from './rows.js';
+import { currentGrade, setGrade, GRADE_DEFAULT, GRADE_RANGE } from './quadcolour.js';
 import { xrPrefs, setXrPref, recentreXR, isPresenting } from './xr.js';
 import { xrGlyphAvailable } from './mictoggle.js';
 
@@ -28,6 +29,13 @@ export function initVRPanel() {
     turn.title = 'smooth: continuous, like a desktop mouse — the default. snap: the world pivots 30° per stick flick, a comfort option.';
     body.appendChild(turn);
 
+    // eye resolution: 'auto' is what the headset's runtime asks for; each step is per axis, so pixels go as its square
+    const RES_OPTS = [['auto', 'auto (the headset asks)'], ['85', '85% (≈ ¾ the pixels)'], ['70', '70% (≈ ½ the pixels)'], ['50', '50% (¼ the pixels)']];
+    const { row: res } = selectRow('resolution', RES_OPTS, String(xrPrefs.res ?? 'auto'),
+      (v) => { setXrPref('res', v); flashHint(`VR resolution ${RES_OPTS.find(([k]) => k === v)?.[1] ?? v}${isPresenting() ? ' — applies next time you enter VR' : ''}`); });
+    res.title = 'auto: the size your headset runtime asks for (in SteamVR, its own resolution slider sets this; it is larger than the panel because the lens magnifies the centre). Lower is softer and faster. Takes effect when a session starts.';
+    body.appendChild(res);
+
     const vig = checkRow('comfort vignette', () => !!xrPrefs.vignette,
       (on) => { setXrPref('vignette', !!on); flashHint(`VR vignette ${on ? 'on' : 'off'}`); });
     vig.title = 'darkens the edges of your view while you move or turn on the stick; opens again when you stop.';
@@ -45,6 +53,18 @@ export function initVRPanel() {
       (on) => { setXrPref('seated', !!on); flashHint(`VR seated ${on ? 'on' : 'off'}`); if (isPresenting()) recentreXR('seated'); });
     seated.title = 'playing from a chair: the body stands at its own height under your head, and your real height is not measured. Recentres when toggled.';
     body.appendChild(seated);
+
+    // the VR panels' look (owner, 09-30: colours read less vibrant in the headset): saturation and contrast applied to
+    // the panel quads only (quadcolour.js), never the design tokens or the desktop. Live while presenting; persisted.
+    const g = { ...currentGrade() };
+    const grade = sliderTable([['saturation', ...GRADE_RANGE.saturation, 0.05], ['contrast', ...GRADE_RANGE.contrast, 0.02]], g, {
+      set: (k, v) => { g[k] = v; Object.assign(g, setGrade({ [k]: v })); },
+      fmt: (k, v) => Number(v).toFixed(2), label: (k) => (k === 'saturation' ? 'panel sat' : 'panel contr'), nmW: '64px', vW: '34px',
+    });
+    grade.el.title = 'VR panels only: how saturated and how contrasty the panels look in the headset. The desktop and your style colours are untouched.';
+    body.appendChild(grade.el);
+    body.appendChild(btn('panel look: defaults', () => { Object.assign(g, setGrade(GRADE_DEFAULT)); grade.repaint(); flashHint(`VR panels: saturation ${GRADE_DEFAULT.saturation}, contrast ${GRADE_DEFAULT.contrast}`); }));
+
     const rc = btn('recentre now', () => { if (!recentreXR('settings')) flashHint('recentre: enter VR first'); else flashHint('recentred'); });
     rc.title = 'body under your head, facing where you face. Also on the VR ring (right-stick press).';
     body.appendChild(rc);

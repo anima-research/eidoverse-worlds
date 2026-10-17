@@ -16,7 +16,7 @@
 // (select: "starred"): candidates render as thumbnails, clicking one stars
 // it, the chain resumes into mesh generation.
 //
-// ?orrery=<url> (or localStorage ew-orrery-url) overrides the service for
+// ?orrery=<http(s) base: origin + path> (or localStorage ew-orrery-url) overrides the service for
 // dev — a MOCK_APIS Orrery instance makes the whole flow testable offline.
 
 import { CONFIG, bus, report } from './base.js';
@@ -26,10 +26,20 @@ import { sendVerb, net } from './net.js';
 import { holdGhost } from './build.js';
 import { logChat } from './chat.js';
 
-const ORRERY = CONFIG.params.get('orrery')
-  || localStorage.getItem('ew-orrery-url')
-  || 'https://orrery.animalabs.ai';
-if (CONFIG.params.get('orrery')) localStorage.setItem('ew-orrery-url', ORRERY);
+// A self-hosted Orrery may be named by ?orrery= (remembered). Only an http(s) BASE is taken — origin plus path, as the
+// URL parser re-serialises them (a path of plain segments only; no query, hash or credentials): the value is interpolated into this
+// panel's markup and into fetches, and a link someone sends you must not be able to smuggle markup or a javascript:
+// URL in through it (it was a reflected XSS that also persisted via localStorage). An Orrery served under a path
+// (https://host/orrery) keeps its path (review of 4098ff7, Oscar-1808 #4).
+export const originOf = (v) => {
+  try { const u = new URL(String(v ?? '')); if (!/^https?:$/.test(u.protocol) || u.username || u.password) return null;
+    const path = u.pathname.replace(/\/$/, ''); return /^(\/[A-Za-z0-9._-]+)*$/.test(path) ? u.origin + path : u.origin; }   // a path of plain segments rides; anything else is dropped to the origin
+  catch { return null; }
+};
+const asked = originOf(CONFIG.params.get('orrery'));
+const ORRERY = asked ?? originOf(localStorage.getItem('ew-orrery-url')) ?? 'https://orrery.animalabs.ai';
+if (asked) localStorage.setItem('ew-orrery-url', asked);
+const isHttpUrl = (v) => { try { return /^https?:$/.test(new URL(String(v)).protocol); } catch { return false; } };
 
 const api = async (path, opts = {}) => {
   const r = await fetch(`${ORRERY}${path}`, {
@@ -156,6 +166,7 @@ async function paint(body) {
     body.querySelector('#cj-connect').onclick = async () => {
       try {
         const cfg = await api('/api/auth/config');
+        if (!isHttpUrl(cfg.login_url)) throw new Error('orrery sent a login link that is not http(s)');
         const w = window.open(cfg.login_url, 'orrery-auth', 'width=520,height=680');
         // 🔴 DO NOT DEPEND ON postMessage FROM THE POPUP (2026-08-16). Under
         // COOP `same-origin` — which cross-origin isolation requires, and which
@@ -226,7 +237,7 @@ async function paint(body) {
     if (j.status === 'waiting_selection') {
       inner = `<div class="cj-pick">${imageCandidates(j).map((c) => `
         <img crossorigin="use-credentials"
-             src="${ORRERY}/api/assets/${esc(c.img.id)}/file" data-star="${esc(c.node.id)}"
+             src="${esc(ORRERY)}/api/assets/${esc(c.img.id)}/file" data-star="${esc(c.node.id)}"
              title="use this one (starts the mesh)">`).join('')
         || '<span class="sub">candidates finished but none readable — open orrery</span>'}</div>`;
     } else if (j.status === 'completed') {
@@ -256,7 +267,7 @@ async function paint(body) {
     </div>
     ${genOk ? '' : '<p class="sub">bringing new objects into this world needs the <b>gen</b> capability — ask its owner (<b>/grant you +gen</b>)</p>'}
     <div id="cj-jobs">${rows || '<p class="sub">nothing cooking — your conjures queue here with progress, and pause for your pick of the image candidates before any mesh is spent.</p>'}</div>
-    <p class="sub" style="margin-top:6px"><a href="${ORRERY}/" target="_blank" rel="noopener">open orrery ↗</a> for refs, retries, rigging and the full version tree.</p>`;
+    <p class="sub" style="margin-top:6px"><a href="${esc(ORRERY)}/" target="_blank" rel="noopener">open orrery ↗</a> for refs, retries, rigging and the full version tree.</p>`;
 
   const promptEl = body.querySelector('#cj-prompt');
   const go = async () => {

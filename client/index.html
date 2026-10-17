@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- the favicon: the hand-set 32 and 16 px masters (notes: logo small/mark-{32,16}.svg; 16 has no room for
+     the peg's head, so its peg is a bar), inline so it costs no request. Brand mint on a dark tab strip, a
+     deeper mint on a light one (mint on white all but vanishes). /favicon.ico (server/routes.ts) is the 32. -->
+<link rel="icon" type="image/svg+xml" sizes="32x32" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}</style><path d="M6.361 4 L25 4 L25 12 L21 12 L21 8 L2.407 8 A14.5 14.5 0 0 1 6.361 4 Z"/><path d="M2.407 24 L21 24 L21 20 L25 20 L25 28 L6.361 28 A14.5 14.5 0 0 1 2.407 24 Z"/><path d="M9.335 14 L28.861 14 A14.5 14.5 0 0 1 28.861 18 L9.335 18 A5.539 5.539 0 0 1 9.335 14 Z"/></svg>'>
+<link rel="icon" type="image/svg+xml" sizes="16x16" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}</style><path d="M3.894 2 L13 2 L13 14 L3.894 14 A7 7 0 0 1 1.755 12 L11 12 L11 4 L1.755 4 A7 7 0 0 1 3.894 2 Z"/><path d="M3.275 7 L13 7 L13 9 L3.275 9 Z"/></svg>'>
 <title>eidoverse-worlds</title>
 <style>
 /* ===========================================================================
@@ -26,6 +31,10 @@
      glass legibility collapses over bright scenes, so the floor is one
      user-ownable number away. /panels <0.3-1> sets it, persisted. */
   --panel-a:   0.7;
+  /* --xr-panel-a is the VR quads' panel alpha (Settings › Style › VR panel
+     opacity; domquad.js). 1 = opaque, as VR panels always were: a quad has
+     no viewport under it for the desktop's glass to tint. */
+  --xr-panel-a: 1;
   --panel-rgb: 5 20 20;    /* deep-ocean teal — saturated dark that the brand seafoam sits IN, not ON */
   --panel:     rgb(var(--panel-rgb) / var(--panel-a));
   --chip:      rgb(0 0 0 / .62);       /* tabs & floating chips */
@@ -81,7 +90,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); }
    by the LIVE --brand (CSS url() can't read vars) and publishes it as
    --cur-loupe; the rule falls back to the native cursor until then. */
 button, .btn, select, a, label, .mrow, .mpin, .dbg-row, .ps-row, .card,
-.ac-row, .chat-gear, .fr-btn, .sec > .head, .chat-tabs button,
+.ac-row, .chat-gear, .fr-btn, .chat-tabs button,
 .chat-side-tog, .sp-skip { cursor: pointer; }
 body.loupe-on canvas { cursor: var(--cur-loupe, crosshair); }
 /* ONE house scrollbar — the standard properties, nothing else. On Chromium,
@@ -176,6 +185,7 @@ select option:checked { background: var(--well); color: var(--brand); font-weigh
 select.dd-native { position: absolute !important; opacity: 0; pointer-events: none; width: 1px; height: 1px; margin: 0; }
 .dd { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 88px; max-width: 100%;
   padding: 3px 8px 3px 9px; background: var(--well); border: 1px solid var(--edge); border-radius: 6px; color: var(--fg); font-size: var(--fs-sm); cursor: pointer; text-align: left; }
+.row.wide .dd { min-width: min(88px, 100%); }   /* a narrow pane (a 200 px phone frame: 7rem label + 74 px) must not push the trigger past its edge */
 .dd:hover { border-color: color-mix(in srgb, var(--brand) 45%, var(--edge)); }
 .dd[aria-expanded="true"] { border-color: var(--brand); }
 .dd svg, .dd-caret { flex: none; color: var(--dim); }
@@ -220,17 +230,23 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 #splash.gone { opacity: 0; visibility: hidden; pointer-events: none; }
 .sp-rays { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: block; z-index: 0; }
 #splash > :not(.sp-rays) { position: relative; z-index: 1; }
-/* THE MARK IS STILL, BY DESIGN (live, 09-05 17:41: "I keep feeling unsure about
-   it and that's usually a sign I'm trying too hard"). Two motions were
-   removed here — the ∃'s three strokes assembling with load progress, and a
-   compositor-side opacity breath — plus the finish glow. The splash's one
-   moving thing is the ground light (.sp-rays, worker-driven): it means
-   "alive"; the mark means "us", and holds. */
+/* THE MARK HOLDS (live, 09-05 17:41: "I keep feeling unsure about it and that's
+   usually a sign I'm trying too hard"). Two motions were removed here — the old
+   ∃'s three strokes assembling with load progress, and a compositor-side opacity
+   breath — plus the finish glow. ONE motion came back with the new mark (owner,
+   09-29 23:53): the PEG enters from the sphere's left skin, through the doorway,
+   and comes to rest at 100% — it IS the progress (boot.js paint(), eased exactly
+   as the logo notes' splash/doorway.html). Nothing else moves: the frame stands
+   at full strength from the first paint, and once loaded the mark is the still
+   mark (no transform, no clip). The other moving thing is the ground light
+   (.sp-rays, worker-driven): it means "alive"; the mark means "us". */
 .sp-logo {
   width: 200px; height: 210px; transform: translateY(10px) scale(.4); transform-origin: center;   /* drawn 2x, shown at 0.8x (live 09-07 23:05: 'a bit too big'), nudged down onto the mark */
   margin: -52px 0 -64px; color: var(--brand); overflow: visible;
 }
 .sp-logo-wrap { position: relative; display: grid; place-items: center; }
+.sp-peg { transition: transform .3s ease; }   /* the bar's own .3s: a jump in real progress is entered, not snapped */
+@media (prefers-reduced-motion: reduce) { .sp-peg { transition: none; } }
 .sp-mark {
   font-size: 26px; letter-spacing: .34em; color: var(--brand); opacity: .9;
   text-transform: lowercase; font-weight: 500; margin-left: .34em; /* recenter over tracking */
@@ -260,7 +276,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .sp-items { width: var(--sp-w); min-height: 1.4em; display: flex; flex-direction: column; gap: 4px; margin-top: -8px; font-size: var(--fs-sm); color: var(--dim); font-variant-numeric: tabular-nums; }   /* two rows reserved always, so the column never jumps when names appear */
 /* the VR veil (xr.js xrVeilShow): the splash's furniture over the world while a session starts or ends.
    Class-based on purpose — .sp-logo/.sp-mark/.sp-phase are global, so the veil IS the splash's look. The
-   ellipsis breathes here (and only here): the splash's mark is still by design; a veil is a wait. */
+   ellipsis breathes here (and only here): the veil clones the mark at rest (the peg home); a veil is a wait. */
 .xr-veil {
   position: fixed; inset: 0; z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 22px; padding: 28px; box-sizing: border-box; background: var(--bg); font: var(--fs)/1.6 var(--font); color: var(--fg);
@@ -356,12 +372,14 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
   border-radius: 0; color: var(--dim); font-size: 12px;
 }
 .chat-side-tog:hover { color: var(--fg); background: rgb(255 255 255 / .05); }
-.chat-cols.side-closed .chat-side-tog { border-left-color: transparent; border-right-color: transparent; }   /* no pane, no grab edge, no line — on EITHER side (live 09-07: left leaked a line) */
-.chat-side { flex: none; display: flex; flex-direction: column; position: relative; min-height: 0; }
+.chat-side-tog { display: none; }   /* the 14px strip toggler is retired (the node stays: ui.js Tab and mods address it): collapsed, the tab-row chip opens the column; open, the column's header closes it */
+.chat-cols.side-closed .chat-side-tog { display: none; }   /* collapsed: no strip at all, so the chat sits centred; the tab row's presence chip opens it (R, 09-29) */   /* no pane, no grab edge, no line — on EITHER side (live 09-07: left leaked a line) */
+.chat-side { flex: none; display: flex; flex-direction: column; position: relative; min-height: 0; border-left: 1px solid var(--edge); }
+.chat-cols.side-left .chat-side { border-left: none; border-right: 1px solid var(--edge); }   /* the line between log and column is the column's own edge now */
 .chat-side.closed { display: none; }
 /* the grip straddles the LINE you can see (the toggler's border, between the log
    and the 14px strip) — it used to sit on the strip's far side, invisible (live, 09-04) */
-.chat-side-grip { position: absolute; left: calc(-14px - 4px); top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 3; }
+.chat-side-grip { position: absolute; left: -5px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 3; }
 /* the affordance is the LINE itself, not a band: a 1px stroke that turns brand under the pointer */
 .chat-side-grip::before { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px; background: transparent; }
 .chat-side-grip:hover::before, .chat-side-grip:active::before { background: var(--brand); }
@@ -381,21 +399,35 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .chat-side-list .who-row .d { color: var(--dim); font-size: var(--fs-xs); margin-left: auto; }
 .chat-side-list .who-empty { color: var(--dim); font-size: var(--fs-sm); }
 .chat-side-head { flex: none; padding: 6px 6px 2px; font-size: var(--fs-xs); color: var(--dim); text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
+/* OPEN, the header is the column's close control: a chevron pointing at the edge it collapses to (chat.js data-chev) —
+   at the header's outer end, on whichever side the column sits */
+.chat-side-head[role="button"] { display: flex; align-items: center; gap: 5px; margin: 4px 4px 0; padding: 3px 6px; border-radius: 5px; cursor: pointer; }
+.chat-side-head[role="button"]:hover, .chat-side-head[role="button"]:focus-visible { color: var(--fg); background: var(--hov); outline: none; }
+.chat-side-head[data-chev]::after { content: attr(data-chev); margin-left: auto; font-size: 15px; line-height: 1; letter-spacing: 0; opacity: .8; }
+.chat-cols.side-left .chat-side-head[data-chev]::after { content: none; }
+.chat-cols.side-left .chat-side-head[data-chev]::before { content: attr(data-chev); font-size: 15px; line-height: 1; letter-spacing: 0; opacity: .8; }
 .chat-cols.side-left { flex-direction: row-reverse; }
 .chat-cols.side-left .chat-side-tog { border-left: none; border-right: 1px solid var(--edge); }
 .chat-cols.side-left.side-closed .chat-side-tog { border-right-color: transparent; }   /* closed = no line, same as the right (live 09-07 10:55) */
-.chat-cols.side-left .chat-side-grip { left: auto; right: calc(-14px - 4px); }   /* mirror of the right: over the toggler's border line, not the pane's own edge (live, 09-06 23:34: 'the right behaviour is preferred') */
-.chat-tabs .chat-gear {
-  /* min-width:0 because `.chat-tabs button`'s min-width matches the gear too,
-     and inheriting the tabs' floor made the gear eat strip space they needed. */
-  /* LIFTED off the rail. With the strip bottom-aligned the gear sat level with
-     the separator and crowded it — R, 2026-09-11 item 4: "Move the
-     'Chat>Settings' icon up to be in line with the other tab icons so it
-     doesn't get so close to the separator line". */
-  flex: none; min-width: 0; margin-left: 2px; padding: 3px 6px; align-self: center;
+.chat-cols.side-left .chat-side-grip { left: auto; right: -5px; }   /* mirror of the right: over the toggler's border line, not the pane's own edge (live, 09-06 23:34: 'the right behaviour is preferred') */
+/* the gear: a settings affordance INSIDE the compose field, at its right end (its popover opens upward, chat.js) */
+.chat-compose > .chat-gear {
+  position: absolute; right: 11px; bottom: 10px;   /* on the compose box's last line as it grows */
+  width: 24px; height: 24px; padding: 0; display: grid; place-items: center;
   background: none; border: none; color: var(--dim); border-radius: 5px;
-  display: grid; place-items: center;
 }
+.chat-compose > .chat-gear[aria-expanded="true"] { opacity: 1; color: var(--fg); background: var(--hov); }
+.chat-tabs .chat-who { flex: none; min-width: 0; align-self: center; display: inline-flex; align-items: center; gap: 6px;
+  margin-left: 4px; padding: 2px 8px; background: none; border: 1px solid transparent; border-radius: 999px;
+  color: var(--dim); font-size: var(--fs-xs); white-space: nowrap; cursor: pointer; }
+.chat-tabs .chat-who:hover { color: var(--fg); background: var(--hov); }
+.chat-tabs .chat-who.at-left { margin-left: 0; margin-right: 4px; }
+.chat-tabs .chat-who[hidden] { display: none; }
+.chat-who .who-dots { display: inline-flex; }
+.chat-who .who-dot { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 1.5px rgb(var(--panel-rgb)), 0 0 0 2.5px var(--ok); }
+.chat-who .who-dot + .who-dot { margin-left: -3px; }
+.chat-who .who-dot[data-presence="away"] { box-shadow: 0 0 0 1.5px rgb(var(--panel-rgb)), 0 0 0 2.5px var(--attn); opacity: .7; }
+.chat-who .who-dot[data-presence="busy"] { box-shadow: 0 0 0 1.5px rgb(var(--panel-rgb)), 0 0 0 2.5px var(--err); }
 .chat-gear { opacity: .4; }   /* quieter than the tabs — it's furniture, not content */
 .chat-gear:hover { opacity: 1; color: var(--fg); background: var(--hov); }
 .chat-gearpop { position: absolute; z-index: 8; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; font-size: var(--fs-sm);
@@ -508,6 +540,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
   user-select: text; -webkit-user-select: text;
 }
 .chat-log .line { padding: 1px 0; word-wrap: break-word; overflow-wrap: anywhere; }
+.chat-log .line .body { white-space: pre-line; }   /* a message typed on several lines (Shift+Enter) keeps its breaks; runs of spaces still collapse */
 .chat-log .line.filtered { display: none; }
 .chat-log .line .t { color: var(--dim); font-size: var(--fs-xs); margin-right: 6px; opacity: .6; }
 .chat-log .line .who { color: var(--fg); font-weight: 600; }
@@ -544,7 +577,13 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .chat-jump.ping { background: var(--accent-dk); border-color: var(--ping); color: var(--ping); }
 
 .chat-compose { position: relative; padding: 6px; flex: none; }
-.chat-compose input { width: 100%; box-sizing: border-box; font-size: var(--fs); }
+/* the compose box is a textarea that grows (chat.js sizeInput); it wears the text input's skin */
+.chat-compose textarea {
+  display: block; width: 100%; box-sizing: border-box; resize: none; overflow-y: hidden;
+  font: var(--fs) var(--font); line-height: 1.35; color: var(--fg); background: var(--well);
+  border: 1px solid var(--edge); border-radius: 5px; padding: 6px 32px 6px 8px;
+}
+.chat-compose textarea::placeholder { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .ac {
   position: absolute; left: 6px; right: 6px; bottom: calc(100% - 4px);
@@ -589,37 +628,49 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 }
 
 /* ------------------------------------------------------------ panel frames */
-.sec { display: flex; flex-direction: column; gap: 5px; }
-.sec > .head {
-  display: flex; align-items: center; gap: 9px;
-  font-weight: 500; background: none; border: none; text-align: left;
-  padding: 6px 10px; border-radius: 6px; color: var(--dim);
-}
-.sec > .head svg { flex: none; opacity: .8; color: var(--icon); }
-.sec > .head:hover { background: var(--hov); }
-.sec.open > .head {
-  position: relative; background: rgb(255 255 255 / 0.05); font-weight: 600;
-  color: color-mix(in srgb, var(--brand) 35%, var(--fg));
-}
-.sec.open > .head svg { opacity: 1; color: var(--brand); }
-/* no left bar on an extended section: first seen on Debug; not the panels' convention — the brand icon + lifted body edge carry 'extended' */
-.sec.open > .body { border-color: var(--edge-hi); }
-.sec > .body {
-  display: none; flex-direction: column; gap: 4px;
-  padding: 6px; max-height: 44vh; overflow-y: auto;
-  border: 1px solid var(--edge); border-radius: 5px;
-}
-.sec.open > .body { display: flex; }
-/* debug subsections: collapsible with a ▸/▾ arrow (Debug is split into
-   subareas). Looser than panel sections, so arrow not icon; tighter spacing. */
-.dbg-sec { margin-top: 4px; }
-.dbg-sec > .head { display: flex; align-items: center; gap: 7px; padding: 5px 8px; color: var(--dim); }
-.dbg-sec.open > .head { color: color-mix(in srgb, var(--brand) 35%, var(--fg)); }
-.dbg-sec .dbg-arrow { font-size: 13px; width: 13px;   /* was 9: "teensy, very hard to see" (live, 09-04) */ color: var(--icon); flex: none; }
-/* panel content hierarchy: heads = fg with brand-whisper glyphs,
-   body copy = dim; outlined buttons hug their text, never stretch the column */
-.sec > .body { color: var(--dim); }
+/* World and Settings are TABBED (ui.js tabbedFrame/makeSection; owner 09-29, the A-kit mockup): the
+   strip is the profile's .pf-tabs recipe, the pane is one .sec at a time. The strip tightens as the frame
+   narrows (data-fit, measured in ui.js): '' full labels · compact = the chosen tab alone keeps its
+   label · icons = glyphs only · then it scrolls, bar hidden. */
+.tabbed { display: flex; flex-direction: column; min-height: 0; }
+.pf-tabs.sec-tabs { flex: none; margin: 6px 7px 0; overflow-x: auto; scrollbar-width: none; }
+.sec-tabs::-webkit-scrollbar { display: none; }
+.sec-tabs .pf-tab { flex: none; white-space: nowrap; padding: 6px 8px 7px; }
+.pf-tabs[data-fit="compact"] .pf-tab:not(.on):has(svg) > span,
+.pf-tabs[data-fit="icons"] .pf-tab:has(svg) > span { display: none; }
+.pf-tabs[data-fit="icons"] .pf-tab { padding: 6px 7px 7px; }
+.sec { display: none; flex-direction: column; }
+.sec.open { display: flex; }
+.sec > .body { display: flex; flex-direction: column; gap: 4px; color: var(--dim); }
+/* panel content hierarchy: body copy = dim; outlined buttons hug their text, never stretch the column */
 .sec > .body button { align-self: flex-start; width: fit-content; }
+/* Debug's tabs are TEXT, by job (debug.js dbgTabs) — the same strip, no glyphs; its groups inside a tab
+   are quiet captions, not more collapsing */
+.pf-tabs.dbg-tabs { margin: 0 0 6px; flex: none; overflow-x: auto; scrollbar-width: none; }
+.dbg-pane { display: none; flex-direction: column; gap: 4px; }
+.dbg-pane.open { display: flex; }
+.dbg-group-body > button { align-self: flex-start; }   /* the panes' rule: a lone button hugs its words */
+/* a caption inside a pane: groups rows without another level of collapsing (Debug's groups, the mods pane).
+   It must read as the START of a sub-area (owner, 10-01: "looks nearly identical to other text"): a hairline
+   above, brand-tinted capitals, more air above than below. The VR quad (htmlmesh) paints uppercase, the weight,
+   the colour and a one-sided border, but not letter-spacing, so the caption holds up without the spacing. */
+.dbg-group, .sec-cap { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--brand) 70%, var(--dim)); border-top: 1px solid var(--edge); padding-top: 7px; margin: 10px 0 2px; }
+.dbg-group:first-child, .sec-cap:first-child { margin-top: 2px; padding-top: 0; border-top: 0; }
+/* a list nested in a pane is not a second scroller: the frame's .stack scrolls, this one only groups */
+.sec .stack { padding: 0; flex: none; min-height: auto; }
+/* the mods pane (mods.js): name + what it is on the left, its control on the right; a row with several
+   controls puts them under its text */
+.mod-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.mod-row.stacked { flex-direction: column; align-items: stretch; gap: 4px; }
+.mod-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mod-nm { color: var(--fg); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.mod-note { color: var(--dim); font-size: var(--fs-xs); line-height: 1.35; }
+.mod-note.warn { color: color-mix(in srgb, var(--attn) 70%, var(--dim)); }
+.mod-row > button { flex: none; }
+.sec > .body .mod-btns { display: flex; flex-wrap: wrap; gap: 4px; }
+.sec > .body .mod-btns > button { padding: 3px 8px; font-size: var(--fs-xs); }
+.sec > .body #mod-src { font: 11px/1.4 ui-monospace, monospace; width: 100%; box-sizing: border-box; resize: vertical; }
 .stack { padding: 7px; gap: 6px; display: flex; flex-direction: column; overflow-y: auto; flex: 1; min-height: 0; }
 
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
@@ -824,8 +875,8 @@ body.arranging #dock #hud.emark {
 .pf-pop-row { display: flex; align-items: center; gap: 10px; text-align: left; padding: 6px 10px; border: none; border-radius: 6px; background: none; color: var(--fg); font-size: var(--fs-sm); cursor: pointer; }
 .pf-pop-row:hover { background: rgb(255 255 255 / .06); }
 .pf-pop-row.on { background: var(--well); color: var(--brand); font-weight: 600; }
-.pf-tabs { display: flex; gap: 2px; margin: 10px 0 8px; border-bottom: 1px solid var(--edge); }
-.pf-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px 7px; border: none; border-bottom: 1px solid transparent; background: none; color: var(--dim); font-size: var(--fs-sm); cursor: pointer; border-radius: 6px 6px 0 0; }   /* INSIDE the box, same as the chat strip: one tab mechanism, not two (R, 2026-09-11: "Should we consolidate style here") */
+.pf-tabs { display: flex; gap: 2px; margin: 10px 0 8px; border-bottom: 1px solid var(--edge); overflow-x: auto; scrollbar-width: none; }   /* past icons-only (frames.js fitTabStrip) the strip scrolls rather than clip */
+.pf-tab { flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px 7px; border: none; border-bottom: 1px solid transparent; background: none; color: var(--dim); font-size: var(--fs-sm); cursor: pointer; border-radius: 6px 6px 0 0; }   /* INSIDE the box, same as the chat strip: one tab mechanism, not two (R, 2026-09-11: "Should we consolidate style here") */
 .pf-tab svg { opacity: .8; color: var(--icon); }          /* the section-head recipe: desaturated brand at .8 when idle (live, 09-05) */
 /* THE PROFILE TABS NEVER OPTED OUT OF THE GLOBAL BUTTON CHAIN, and it showed:
    measured with a real mouse hover, `.pf-tab:hover` painted NOTHING while
@@ -842,49 +893,55 @@ body.arranging #dock #hud.emark {
 .pf-tab.on svg { opacity: 1; color: var(--brand); }
 .pf-pane { flex: 1; min-height: 0; overflow: auto; }
 .pf-stub { color: var(--dim); font-size: var(--fs-sm); padding: 10px 2px; line-height: 1.5; }   /* empty BY DESIGN, and says so — the .who-empty idiom (R, 2026-09-11) */
-#emenu {
-  position: fixed; top: 54px; left: 10px; z-index: 40;
-  display: flex; flex-direction: column; min-width: 168px; padding: 6px;
-  cursor: grab;   /* the menu itself is a panel: drag its empty parts */
+/* the ∃ menu — a File-style dropdown hanging from the ∃ (ui.js anchorBeside), and its one flyout (Panels ▸ / About ▸).
+   z 50: OVER the mic/ear/visor glyphs and the status chips (45) it opens across; under notices (60) and the door. */
+#emenu, #emenu-sub {
+  position: fixed; top: 54px; left: 10px; z-index: 50;
+  display: flex; flex-direction: column; min-width: 184px; padding: 6px;
 }
-#emenu:active { cursor: grabbing; }
-#emenu .mrow, #emenu .mpin { cursor: pointer; }
-#emenu[hidden] { display: none; }
-/* the menu wears the frames' own arrange chrome — one grammar to maintain */
-#emenu { overflow: visible; }
-#emenu .fr-head {
-  display: flex; position: absolute; bottom: 100%; left: calc(var(--r) + 2px); right: calc(var(--r) + 2px);
-  justify-content: space-between; align-items: flex-end; pointer-events: none;
-  padding: 0; background: none; border: none;   /* the base .fr-head strip bleeds in otherwise */
-}
-#emenu .fr-head .fr-title { flex: 0 1 auto; }
-#emenu .fr-head .fr-title, #emenu .fr-head .fr-btns {
-  pointer-events: auto;
-  background: var(--chip); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  border-radius: 7px 7px 0 0; padding: 3px 10px; font-size: var(--fs-sm); color: var(--dim);
-  margin-bottom: -1px;
-}
-#emenu .fr-head .fr-title { cursor: grab; }
-#emenu .fr-head .fr-btns { padding: 3px 5px; }
-#emenu .mrow.dead { opacity: .42; cursor: not-allowed; }   /* listed, not offered: no headset sensed */
-#emenu .mrow.dead .mpin { pointer-events: none; }
-#emenu .mrow {
-  display: flex; align-items: center; gap: 9px; padding: 7px 9px;
+#emenu-sub { min-width: 196px; max-height: calc(100vh - 8px); overflow-y: auto; }
+#emenu[hidden], #emenu-sub[hidden], #layoutbar[hidden] { display: none; }
+#emenu .mrow, #emenu-sub .mrow, #emenu .mpin, #emenu-sub .mpin { cursor: pointer; }
+#emenu .mrow.dead, #emenu-sub .mrow.dead { opacity: .42; cursor: not-allowed; }   /* listed, not offered */
+#emenu .mrow.dead.soft { cursor: help; }   /* …and a press says why (ui.js topRow) */
+#emenu-sub .mrow.dead .mpin { pointer-events: none; }
+#emenu .mrow, #emenu-sub .mrow {
+  display: flex; align-items: center; gap: 9px; padding: 7px 9px; min-height: 32px; box-sizing: border-box;
   background: none; border: none; border-radius: 6px; color: var(--dim);
   font-size: var(--fs-sm); text-align: left;
 }
-#emenu .mrow:hover { background: var(--hov); }
-#emenu .mrow > svg:first-child { flex: none; opacity: .8; color: var(--icon); }
-#emenu .mrow .mname { flex: 1; }
-#emenu .mrow.open { color: color-mix(in srgb, var(--brand) 35%, var(--fg)); }
-#emenu .mrow.open svg:first-child { opacity: 1; }
-#emenu .mpin {
-  flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; line-height: 0;
-  background: none; border: none; border-radius: 5px; color: var(--dim); opacity: .35;
+#emenu .mrow:hover, #emenu-sub .mrow:hover, #emenu .mrow.subopen { background: var(--hov); color: var(--fg); }
+#emenu .mrow.dead:hover { color: var(--dim); }
+#emenu .mrow > svg:first-child, #emenu-sub .mrow > svg:first-child { flex: none; opacity: .8; color: var(--icon); }
+#emenu .mrow .mname, #emenu-sub .mrow .mname { flex: 1; white-space: nowrap; }
+#emenu .mdetail { font-style: normal; color: var(--dim); opacity: .8; margin-left: 4px; }
+#emenu .mcaret { display: flex; opacity: .6; margin-right: -2px; }
+#emenu .mrow.subopen .mcaret { opacity: 1; color: var(--brand); }
+#emenu .mkey { font-size: var(--fs-xs); min-width: 18px; text-align: center; }
+#emenu .mtag { font-size: var(--fs-xs); color: var(--dim); }
+#emenu-sub .mrow.open { color: color-mix(in srgb, var(--brand) 35%, var(--fg)); }
+#emenu-sub .mrow.open svg:first-child { opacity: 1; }
+#emenu-sub .mrow[data-layout].open { background: color-mix(in srgb, var(--brand) 14%, transparent); }
+/* the pin is the whole right end of its row, not a 22px dot: a near miss used to land on the row and toggle the
+   window instead of pinning it */
+#emenu-sub .mpin {
+  flex: none; display: grid; place-items: center; width: 34px; height: 32px; margin: -7px -9px -7px 0; padding: 0; line-height: 0;
+  background: none; border: none; border-radius: 0 6px 6px 0; color: var(--dim); opacity: .35;
 }
-#emenu .mpin:hover { opacity: 1; background: var(--hov); }
-#emenu .mpin.on { opacity: 1; color: var(--brand); }
-#emenu .msep { height: 1px; background: var(--edge); margin: 5px 4px; }
+#emenu-sub .mpin:hover { opacity: 1; background: var(--hov); }
+#emenu-sub .mpin.on { opacity: 1; color: var(--brand); }
+#emenu .msep, #emenu-sub .msep { height: 1px; background: var(--edge); margin: 5px 4px; }
+#emenu-sub .minfo { padding: 5px 9px; font-size: var(--fs-sm); color: var(--fg); white-space: nowrap; }
+#emenu-sub .minfo.dim { color: var(--dim); }
+/* HUD layout mode's marker, beside the ∃ where the menu opens (the menu covers it while open) */
+#layoutbar {
+  position: fixed; z-index: 46; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 4px 0 10px;
+  font-size: var(--fs-sm); color: var(--fg); white-space: nowrap;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 45%, transparent);
+}
+#layoutbar > svg { color: var(--brand); flex: none; }
+#layoutbar kbd { font-size: var(--fs-xs); }
+#layoutbar .lb-done { height: 24px; padding: 0 10px; border-radius: 6px; }
 /* headers exist only while arranging (the ∃ menu is open) — and they FLOAT
    above the frame (below, when the frame hugs the top edge) so opening the
    menu never shifts a single window's geometry. */
@@ -984,6 +1041,111 @@ body.edit-mode::after {
 }
 #hintbar kbd { font-size: var(--fs-xs); }
 #hintbar.gone { opacity: 0; }
+
+/* ---- the lantern (lib/lantern.js): one line for talk, /commands and actions.
+   Ported from the HUD redesign mockups (the lantern direction, desktop and open).
+   ONE element owns bottom-centre: the resting line. The hint bar borrows that same
+   spot while it has something to say ("X — sit", a flash) and the line steps aside;
+   the open panel replaces it. --ln-x (lantern.js place()) is the shared axis: the
+   viewport centre, or the free span beside the chat compose box when centre would
+   sit on it.
+   z 38: over frames (≤25), the rail (27) and the frame rim (30); under the ∃
+   menu and the scrims (40), the glyphs (45), notices (60) and the door (120). */
+#hintbar { bottom: var(--ln-b, 24px); left: var(--ln-x, 50%); height: 36px; box-sizing: border-box;
+  display: flex; align-items: center; padding: 0 14px; border-radius: 999px; font-size: 13px; }
+#hintbar:empty { display: none; }
+#hintbar:not(.gone):not(:empty) ~ #lantern-pill { visibility: hidden; }
+body.lantern-open #hintbar { visibility: hidden; }   /* the open panel's footer sits in this band (both bottom 24px); on a phone its list can reach it */
+/* toasts and the loading tray stack from above the resting line's band, not into it
+   (the line can sit in the free span right of the chat frame — the tray's corner) */
+@media (min-width: 601px) { #trayzone { bottom: 72px; } }
+#lantern-pill {
+  position: fixed; bottom: var(--ln-b, 24px); left: var(--ln-x, 50%); transform: translateX(-50%); z-index: 38;
+  display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 6px 0 12px; border-radius: 999px;
+  font: 400 13px/1 var(--font); color: var(--dim); cursor: text; white-space: nowrap;
+  border: none; outline: none;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .07), 0 0 0 1px rgb(255 255 255 / .055), 0 2px 6px rgb(0 0 0 / .28);
+}
+#lantern-pill:hover { color: var(--fg); }
+#lantern-pill.open { visibility: hidden; }
+/* HUD layout mode (owner, 10-01): the resting line is one more thing to arrange — dashed like the frames, grabbable
+   (lantern.js drags it, --ln-x/--ln-b); it shows even while the hint bar would borrow its spot */
+body.arranging:not(.ui-locked) #lantern-pill { cursor: grab; outline: 1px dashed rgb(255 255 255 / .3); outline-offset: 3px; }
+body.arranging:not(.ui-locked) #lantern-pill:active { cursor: grabbing; }
+body.arranging #hintbar { visibility: hidden; }
+body.arranging #hintbar:not(.gone):not(:empty) ~ #lantern-pill { visibility: visible; }
+/* unpinned in the ∃ menu, or put away with the panels by Esc (lantern.js paintRest): no resting line. Ctrl/Cmd+K
+   still opens the lantern; the hint bar sits on --ln-x on its own, so "panels hidden" still shows in this spot */
+#lantern-pill.unpinned, #lantern-pill.quiet { display: none; }
+#lantern-pill .lp-glyph { display: flex; color: var(--brand); }
+#lantern-pill .lp-text q { color: var(--brand); quotes: '‘' '’'; }
+#lantern-pill .lp-text kbd { margin-right: 2px; }
+#lantern-pill kbd, #lantern kbd, #hintbar kbd {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; box-sizing: border-box;
+  padding: 0 5px; border: 0; border-radius: 4px; background: rgb(0 0 0 / .34);
+  box-shadow: inset 0 0 0 1px var(--edge), inset 0 -1px 0 rgb(255 255 255 / .04);
+  font: 400 var(--fs-xs)/1 var(--font-code); color: var(--dim);
+}
+/* first visit: the lit line (the mockup's glow) */
+#lantern-pill.fresh {
+  height: 44px; gap: 10px; padding: 0 8px 0 16px; font-size: var(--fs); color: #c6d6d0;
+  background: rgb(var(--panel-rgb) / .78); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .08), 0 0 0 1px color-mix(in srgb, var(--brand) 30%, transparent),
+    0 0 22px color-mix(in srgb, var(--brand) 16%, transparent), 0 0 60px color-mix(in srgb, var(--brand) 7%, transparent);
+}
+#lantern-pill.fresh .lp-glyph { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--brand) 55%, transparent)); }
+
+#lantern {
+  position: fixed; bottom: var(--ln-b, 24px); left: var(--ln-px, var(--ln-x, 50%)); transform: translateX(-50%); z-index: 38;
+  width: min(580px, calc(100vw - 24px)); max-height: calc(100vh - var(--ln-b, 24px) - 24px); padding: 0; overflow: hidden;
+  display: flex; flex-direction: column; border-radius: 14px;
+  background: rgb(var(--panel-rgb) / .9); backdrop-filter: blur(20px) saturate(1.15); -webkit-backdrop-filter: blur(20px) saturate(1.15);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .08), 0 0 0 1px color-mix(in srgb, var(--brand) 28%, transparent),
+    0 0 30px color-mix(in srgb, var(--brand) 10%, transparent), 0 24px 60px rgb(0 0 0 / .55);
+}
+#lantern[hidden] { display: none; }
+/* a pill moved into the top half: the panel hangs down from it instead of growing off the top (lantern.js place) */
+#lantern.down { top: var(--ln-t); bottom: auto; max-height: calc(100vh - var(--ln-t) - 12px); }
+#lantern .ln-head { display: flex; align-items: center; gap: 12px; height: 54px; flex: none; padding: 0 14px 0 18px;
+  box-shadow: inset 0 -1px 0 var(--edge); }
+#lantern .ln-mark { display: flex; color: var(--brand); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--brand) 50%, transparent)); }
+#lantern .ln-input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: none; background: none; box-shadow: none;
+  font: 400 16px/1 var(--font); color: var(--fg); caret-color: var(--brand); }
+#lantern .ln-input::placeholder { color: var(--dim); opacity: .7; }
+#lantern .ln-list { flex: 0 1 auto; min-height: 0; max-height: min(52vh, 440px); overflow-y: auto; padding: 6px 6px 4px; }
+#lantern .ln-group { padding: 10px 12px 4px; font: 600 var(--fs-xs)/1 var(--font); color: var(--dim); }
+#lantern .ln-row { display: flex; align-items: center; gap: 12px; height: 36px; padding: 0 8px 0 12px; border-radius: 8px;
+  font: 400 var(--fs)/1 var(--font); color: #d9d9db; cursor: pointer; }
+#lantern .ln-row .ln-ic { width: 18px; flex: none; display: grid; place-items: center; color: var(--icon); }
+#lantern .ln-row .ln-ic svg { display: block; }
+#lantern .ln-emo { font-size: 15px; line-height: 1; }
+#lantern .ln-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .55; }
+#lantern .ln-name { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; white-space: nowrap; overflow: hidden; }
+#lantern .ln-title { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+#lantern .ln-title u { text-decoration: none; color: var(--brand); font-weight: 600; }
+#lantern .ln-sub { font-style: normal; font-size: var(--fs-sm); color: var(--dim); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#lantern .ln-keys { flex: none; display: flex; gap: 4px; align-items: center; }
+#lantern .ln-row.sel { background: color-mix(in srgb, var(--brand) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 22%, transparent); color: var(--fg); }
+#lantern .ln-row.sel .ln-ic { color: var(--brand); }
+#lantern .ln-row.sel .ln-do { color: var(--fg); }
+#lantern .ln-row.say .ln-title, #lantern .ln-row.raw .ln-title { color: var(--fg); }
+#lantern .ln-row.say .ln-ic, #lantern .ln-row.raw .ln-ic { color: var(--brand); }
+#lantern .ln-empty { padding: 10px 12px; color: var(--dim); font-size: var(--fs-sm); }
+#lantern .ln-foot { display: flex; flex: none; gap: 16px; align-items: center; height: 36px; padding: 0 18px;
+  box-shadow: inset 0 1px 0 var(--edge); font: 400 var(--fs-xs)/1 var(--font); color: var(--dim); }
+#lantern .ln-foot kbd { height: 18px; min-width: 18px; font-size: 10px; margin-right: 4px; }
+#lantern .ln-foot .ln-grow { flex: 1; }
+/* a phone: the keyboard owns the bottom, so the line opens at the TOP and the resting
+   line is a glyph in the top-right corner (the world panel no longer lives there by default) */
+@media (max-width: 600px) {
+  #lantern-pill, #lantern-pill.fresh { top: 10px; bottom: auto; left: auto; right: 10px; transform: none; height: 36px; padding: 0 10px; }
+  #lantern-pill .lp-text, #lantern-pill kbd { display: none; }
+  #lantern { top: 52px; bottom: auto; left: 50%; max-height: calc(100vh - 64px); }
+  #lantern .ln-foot { display: none; }
+  #hintbar { bottom: 10px; left: 50%; }
+  #hintbar:not(.gone):not(:empty) ~ #lantern-pill { visibility: visible; }
+}
 
 /* dock: one row of toggles so a closed frame is never lost */
 #dock {
@@ -1196,39 +1358,11 @@ kbd {
   font-size: var(--fs); background: none; border: none; color: var(--dim);
 }
 
-/* capability notice: a persistent card, bottom-centre, until dismissed */
+/* the lite client's "Light version" card (lite.js liteBanner). The full client's capability notices were the same card
+   and are now chips on the status strip (#hudstatus below, statuschips.js); lite.js places this one under its emote row
+   inline. The history of the old placements is in git (#185 B2). */
 .capnotice {
-  /* a one-line STRIP along the bottom edge — off the body, which stands
-     centre-stage (live, 09-05); the long explanation is the title tooltip */
-  /* TOP-RIGHT, because the top-CENTRE stopped being empty. This card sat at
-     left:50%/top:8 with the note 'the top-centre gap: nothing lives there by
-     default' (09-09) — true until 288a5da put the emote bar at x:'center', y:10
-     this morning. The card is z-index 60 and frames cap at Z_HI=25, so the bar
-     can never paint above it: measured 9 of 9 tiles unclickable at 1280x720 AND
-     1904x844 on any browser without WebGPU, and reachable again the moment the
-     card was dismissed. The bar is a primary control the owner placed
-     deliberately; this is transient chrome on a reduced path, so the chrome
-     moves.
-     2026-09-12, CORRECTING MY OWN CLAIM ABOVE: I wrote that "top-right is the one
-     region no fixed element claims (#dock/#emenu top-left, #hintbar bottom-centre,
-     #trayzone/#toasts bottom-right, #stick bottom-left)". That enumerated FIXED
-     CHROME and was true of it — and false of the screen. DEFAULT_LAYOUT (frames.js)
-     opens `world` at x:-8 y:8 w:407 h:363, i.e. top-right, and has since 06f4a0f.
-     I checked one list and never checked the layout the product actually ships.
-     Measured at 1280x720: card [930..1270]x[8..43] over world [865..1272]x[8..381];
-     of world's 8 interactive elements, BUTTON.head [872,20,387,29] is ~85% covered
-     (only x 872..930 stays clickable). The body and the other 7 are reachable, so
-     this is one blocked control, not a dead panel — narrower than the rereview's
-     wording and still a real defect.
-     The card moves BELOW world instead. NOTE THE TRAP I fell into first: world's
-     DECLARED h is 363 (bottom 371), but the live frame measures bottom 381 — the
-     chrome is not in the declared height — so top:379 still left a 2px kiss. The
-     value below is derived from the MEASURED bottom, not the declaration. It lands
-     in the `settings` slot, which DEFAULT_LAYOUT ships CLOSED
-     ([381..824] at every width). The top strip between `emotes` and `world` cannot
-     host it — that gap is -57px at 1068, 49 at 1280, 129 at 1440, 249 at 1680, and
-     the card needs min(320px,46vw). antra-tess #185 rereview B2. */
-  position: fixed; left: 50%; transform: translateX(-50%); top: 8px; z-index: 60;   /* top-centre; capnotice.js drops it below whatever actually occupies its span (owner, 09-19) */
+  position: fixed; left: 50%; transform: translateX(-50%); top: 8px; z-index: 95;   /* top-centre, over everything until dismissed (owner, 09-27; capnotice.js says why) */
   max-width: min(320px, 46vw);   /* NARROW, not merely right-anchored: at 720px the card still reached back across the centred emote bar and blocked 7 of 9 tiles even from top-right. The long text is the title tooltip anyway (09-05 note above). #185 B2. */ padding: 5px 10px; font-size: var(--fs-sm); line-height: 1.4;
   display: flex; flex-direction: row; align-items: center; gap: 10px; border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--attn) 70%, transparent); background: color-mix(in srgb, var(--attn) 10%, var(--bg));   /* THE attention amber: a message they must click through (owner, 09-19) */
@@ -1246,23 +1380,9 @@ kbd {
    #emenu, #stick and #hintbar in BOTH orientations. The card is transient chrome
    on a reduced-capability browser and it yields; the bar is a primary control. */
 @media (max-width: 900px) {
-  /* 102px, not 64: the bar CLAMPS to the room available now (emotebar.js
-     show()), so on a phone it opens 6 wide and TWO ROWS tall — bottom 94,
-     measured — and the 64 I picked when it was one row lands on row two.
-     A constant chosen against one layout does not survive the next. */
-  .capnotice { top: 102px; left: 50px; right: 8px; max-width: none; transform: none; }
+  .capnotice { left: 50px; right: 8px; max-width: none; transform: none; }   /* stretched on a phone */
 }
 
-/* THE MID BAND, 901-1067px (measured 2026-09-12). The card is right-anchored at
-   vw-10 with width 340, and the centred bar's right edge is (vw+352)/2, so they
-   clear only from vw >= 352 + 2*(340+10+8) = 1068. Measured: the card steals one
-   tile at 950 and 1000, none from 1100 up — the arithmetic agrees with all seven
-   sampled widths. The phone branch above is the WRONG shape here (left:50 +
-   right:8 would stretch a ~940px card across a laptop), so the card keeps its
-   size and right anchor and simply drops below the bar's band. */
-@media (min-width: 901px) and (max-width: 1067px) {
-  .capnotice { top: 64px; }
-}
 .capnotice > * { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; flex: 1; }   /* title + text, buttons wrap under */
 .capnotice b { display: inline; margin: 0; white-space: nowrap; color: var(--attn); }
 .capnotice p { margin: 0; color: var(--dim); flex: 1 1 100%; font-size: var(--fs-sm); line-height: 1.35; }   /* its own full-width line under the title; `flex:1; min-width:0` in a wrapping row shrank it to one word per line (owner, 09-19: 'go home you're drunk') */   /* wraps — the 09-12 ellipsis left 'T…' beside the title (owner, 09-19) */
@@ -1270,7 +1390,85 @@ kbd {
 .capnotice .cn-btns button { padding: 4px 10px; font-size: var(--fs-xs); }
 /* photo mode hides every chrome layer but keeps the canvas */
 body.photo .frame, body.photo #hud, body.photo #trayzone,
-body.photo #hintbar, body.photo #dock { display: none !important; }
+body.photo #hintbar, body.photo #dock, body.photo #lantern-pill,
+body.photo #hudstatus, body.photo #stpop, body.photo #platecard { display: none !important; }
+
+/* THE STATUS STRIP (statuschips.js): small pills on the ∃'s status line, past the mic/ear glyphs — "WebGL 2 ⓘ",
+   "reduced detail", "graphics reset". Amber = a caveat, red = a failure. statuschips.js writes left/top; the strip runs
+   along the ∃'s row on a vertical rail and down (up) its column on a horizontal one. z 45: the glyphs' own layer —
+   over frames (≤25), the rail (27) and the ∃ menu (40, which opens clear of it), under hints/toasts (60). */
+#hudstatus { position: fixed; z-index: 45; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }   /* wraps when the row runs out (statuschips.js sets max-width to the room) */
+#hudstatus[hidden] { display: none; }
+#hudstatus[data-edge="right"] { flex-direction: row-reverse; }
+#hudstatus[data-edge="top"] { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; }
+#hudstatus[data-edge="bottom"] { flex-direction: column-reverse; flex-wrap: nowrap; align-items: flex-start; }
+.stchip {
+  --c: var(--attn);
+  display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px 0 9px; border-radius: 999px;
+  font: var(--fs-xs) var(--font); letter-spacing: .01em; color: var(--c); white-space: nowrap; cursor: pointer;
+  background: var(--chip); border: 1px solid color-mix(in srgb, var(--c) 40%, transparent);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.stchip[data-level="err"] { --c: var(--err); }
+.stchip svg { opacity: .75; flex: none; }
+.stchip:hover, .stchip[aria-expanded="true"] { border-color: var(--c); background: color-mix(in srgb, var(--c) 12%, var(--chip)); }
+.stchip:hover svg, .stchip[aria-expanded="true"] svg { opacity: 1; }
+#stpop {
+  --c: var(--attn);
+  position: fixed; z-index: 46; width: min(300px, calc(100vw - 16px)); box-sizing: border-box; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); line-height: 1.4; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--c) 55%, transparent);
+  background: color-mix(in srgb, var(--c) 8%, rgb(var(--panel-rgb) / .96));   /* floats over the world: near-opaque, like the chat gear pop */
+}
+#stpop[hidden] { display: none; }
+#stpop[data-level="err"] { --c: var(--err); }
+#stpop b { color: var(--c); font-weight: 600; }
+#stpop p { margin: 0; color: var(--dim); }
+#stpop .st-btns { display: flex; gap: 6px; margin-top: 4px; }
+#stpop .st-btns button { padding: 4px 10px; font-size: var(--fs-xs); }
+/* THE PRE-VR MIC STEP (vrmic.js): the door's grammar at a third of its size — title chip, a sentence, one outlined action.
+   Over the visor (#xrbtn sits at z 45), under the door (120). */
+#vrmic { z-index: 50; background: rgb(8 12 14 / .62); }
+#vrmic .sheet { width: min(380px, 100%); padding: 0; overflow: visible; background: rgb(var(--panel-rgb) / .96); border: 1px solid rgb(255 255 255 / .14); box-shadow: 0 0 0 1px rgb(0 0 0 / .5), 0 24px 60px rgb(0 0 0 / .5); }
+#vrmic .fr-head { display: flex; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--edge); background: rgb(var(--panel-rgb) / .35); }
+#vrmic .fr-title { font-size: var(--fs-sm); color: var(--fg); font-weight: 600; letter-spacing: .02em; }
+#vrmic .vrmic-body { padding: 14px 16px 16px; }
+#vrmic .vrmic-say { margin: 0 0 8px; line-height: 1.45; }
+#vrmic .sheet p.sub { margin: 0; }
+#vrmic .vrmic-btns { display: flex; gap: 8px; align-items: stretch; margin-top: 16px; }
+#vrmic .vrmic-btns .go { margin-top: 0; flex: 1; padding: 9px 14px; }
+#vrmic .vrmic-btns button:not(.go) { padding: 9px 14px; }
+
+/* THE NAMEPLATE CARD (platecard.js): an in-world tooltip beside a person's nameplate — hover a plate 300 ms, or tap it
+   on a touch screen. The status-chip popover's recipe in the neutral edge instead of amber: nothing here is a caveat.
+   z 9: a thing in the world, so every panel (frames.js Z_LO 10 … 25) and all chrome sit over it as it follows. */
+#platecard {
+  position: fixed; z-index: 9; min-width: 150px; max-width: min(220px, calc(100vw - 16px)); box-sizing: border-box;
+  padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); line-height: 1.35;
+  border-radius: 8px; border: 1px solid var(--edge-hi); background: rgb(var(--panel-rgb) / .94);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); pointer-events: auto;
+  animation: platecard-in .12s ease-out;
+}
+@keyframes platecard-in { from { opacity: 0; } }
+#platecard[hidden] { display: none; }
+#platecard .pc-head { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; min-width: 0; }
+#platecard .pc-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+#platecard .pc-name { font-weight: 600; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#platecard .pc-pres { font-size: var(--fs-xs); color: var(--dim); flex: none; }
+#platecard .pc-pres[data-presence="away"] { color: var(--attn); }
+#platecard .pc-pres[data-presence="busy"] { color: var(--err); }
+#platecard .pc-row { display: flex; align-items: center; gap: 6px; color: var(--dim); }
+#platecard .pc-row svg { flex: none; opacity: .8; }
+#platecard .pc-row[data-on="true"] { color: var(--fg); }
+#platecard .pc-row[data-on="true"] svg { color: var(--ok); opacity: 1; }
+#platecard .pc-where { margin-left: auto; padding-left: 8px; font-size: var(--fs-xs); color: var(--dim); flex: none; }
+#platecard .pc-btns { display: flex; gap: 6px; margin-top: 4px; }
+#platecard .pc-btns button { padding: 4px 10px; font-size: var(--fs-xs); }
+/* VR: the same card rasterised onto a quad beside the plate (platecard.js). The quad has no world behind it to blur or
+   see through, so it is opaque like the VR panels; no fade-in (a raster taken mid-fade would keep it); the "message"
+   button opens a desktop tab, so it is not drawn there. */
+#platecard[data-xr] { animation: none; backdrop-filter: none; -webkit-backdrop-filter: none; background: rgb(var(--panel-rgb)); }
+#platecard[data-xr] .pc-btns { display: none; }
 
 #touch { position: fixed; inset: 0; z-index: 3; display: none; pointer-events: none; }
 body.touch #touch { display: block; }
@@ -1601,9 +1799,11 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     // "this device cannot hold THAT world", and would strand a phone in lite on worlds
     // it handles comfortably.
     const tripKey = (params) => `ew-boot-attempt:${params.get('world') || 'default'}`;
+    const retryKey = (params) => `ew-boot-retried:${params.get('world') || 'default'}`;   // a desktop's one retry (rule 2)
+    globalThis.__ewRetryKey = retryKey;   // boot.js and litechoice.js clear it with the trip key
     globalThis.__ewTripKey = tripKey;   // boot.js disarms the same key
 
-    const decideLite = ({ params, stored, lastBootDied, deviceMemory, gpuApi }) => {
+    const decideLite = ({ params, stored, lastBootDied, retried, deviceMemory, gpuApi, mobile }) => {
       // 1. An explicit ask wins, both directions, and is shareable — the reliable
       //    way back for someone whose device just died mid-boot.
       if (params.has('lite')) return { lite: params.get('lite') !== '0', why: 'url' };
@@ -1617,36 +1817,72 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
       //    the page never finishes loading to offer one. Evidence outranks a stale
       //    preference; (1) is still the override, and it is a URL, so it survives a
       //    browser that never got far enough to run any of our code.
-      if (lastBootDied) return { lite: true, why: 'crash' };
+      //
+      //    PHONES AND TABLETS ONLY. Lite exists for a device that cannot hold the engine
+      //    in RAM; a desktop or a headset can, and the things that leave this flag behind
+      //    on one (a tab killed while a shader compiled, a browser force-quit, an OS
+      //    update mid-load) say nothing about whether it fits. Demoting a desktop
+      //    stranded people in the chat-only client with no idea how to get into the
+      //    world (owner, 2026-10-01: "should only be default *on mobile*"). A desktop
+      //    whose last boot died boots full again and is told so ('retry') - ONCE. If the retry dies too it never
+      //    reaches main.js, where the pill offering lite lives, so a second death in a row lands in lite after all
+      //    (review of #212: "the visitor has no in-page way out of the failed-boot cycle"), and lite's ∃ offers 3D
+      //    again. A browser with no 3D API at all is told that, not retried.
+      if (lastBootDied) {
+        if (mobile || retried) return { lite: true, why: 'crash' };
+        return gpuApi ? { lite: false, why: 'retry' } : { lite: true, why: 'no-gpu' };
+      }
       // 3. A deliberate past choice outranks anything we merely infer below.
       if (stored === '1' || stored === '0') return { lite: stored === '1', why: 'saved' };
       // 4. No rendering API at all. Not a heuristic — a fact.
       if (!gpuApi) return { lite: true, why: 'no-gpu' };
-      // 5. The one hardware guess, kept deliberately timid. deviceMemory is capped at
-      //    8 and rounded, and plenty of phones that cannot run this still report 4, so
-      //    this catches only the obviously-incapable. Everything else is allowed to
-      //    TRY — which is affordable precisely because (3) means it only ever fails
-      //    once, and never silently.
-      if (deviceMemory > 0 && deviceMemory <= 2) return { lite: true, why: 'ram' };
+      // 4b. A PHONE OR TABLET STARTS IN LITE (owner, 10-01: "why can't phones load the lite client by
+      //     default?"). A phone visitor would rather start in chat than watch the world crash, and the
+      //     ∃ logo there ("Tap the ∃ to load the full 3D world") is one press, saved per device (3) so it isn't asked again;
+      //     a saved "3D" that then dies is caught by (2), once. Desktops and headsets start full.
+      if (mobile) return { lite: true, why: 'phone' };
+      // (A low-memory guess once lived here; a phone or tablet now starts in lite at 4b, and a desktop or headset
+      //  that reports little memory is allowed to TRY - the tripwire catches it, and the pill offers lite.)
       return { lite: false, why: 'default' };
     };
     globalThis.__ewDecideLite = decideLite;   // test seam
 
+    // A phone or tablet, by what the browser says about itself. Client Hints first
+    // (Chromium: mobile is false on a desktop AND on a Quest), then the user agent:
+    // Android (tablets omit "Mobile"), iPhone/iPod/iPad, and iPadOS, which reports a
+    // Mac but has touch. A headset's browser can say Android and even Mobile (older Quest builds, Pico:
+    // "Mobile VR Safari"), so a headset is excluded by name - it is
+    // not a phone here - it needs the full client for VR. Unknown → not mobile: the
+    // wrong guess in that direction costs a slow load, the other costs the world.
+    const isMobile = (nav) => {
+      if (nav.userAgentData && typeof nav.userAgentData.mobile === 'boolean' && nav.userAgentData.mobile) return true;
+      const ua = String(nav.userAgent || '');
+      if (/Android|iPhone|iPod|iPad|Mobile|Silk|Kindle/i.test(ua) && !/Quest|OculusBrowser|Pico|\bVR\b/i.test(ua)) return true;
+      return /Macintosh/.test(ua) && (nav.maxTouchPoints || 0) > 1;
+    };
+    globalThis.__ewIsMobile = isMobile;   // test seam
+
     const params = new URLSearchParams(location.search);
-    let stored = null, lastBootDied = false;
+    let stored = null, lastBootDied = false, retried = false;
     try {
       stored = localStorage.getItem('ew-lite');
       lastBootDied = localStorage.getItem(tripKey(params)) !== null;
+      retried = localStorage.getItem(retryKey(params)) !== null;
     } catch { /* storage blocked (private window) — every signal below still applies */ }
 
     const { lite, why } = decideLite({
       params,
       stored,
       lastBootDied,
+      retried,
       deviceMemory: navigator.deviceMemory ?? 0,
       gpuApi: ('gpu' in navigator) || !!globalThis.WebGL2RenderingContext,
+      mobile: isMobile(navigator),
     });
     globalThis.__ewLite = lite;
+    // the one retry is spent the moment it is taken; a boot that survives (boot.js), a deliberate exit (pagehide) or a
+    // chosen 3D (litechoice.js) gives it back
+    try { if (why === 'retry') localStorage.setItem(retryKey(params), String(Date.now())); } catch { /* storage blocked */ }
     globalThis.__ewLiteWhy = why;
     document.documentElement.classList.toggle('lite', lite);
     console.log(`[lite] ${lite ? 'LITE' : 'full'} client (${why})`);
@@ -1658,10 +1894,19 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     // which fires when there is somewhere to stand and leaves the world's assets still
     // streaming. The phone that prompted all this survives the arrival on the commons
     // and dies during that tail, so a disarm at finishBoot would clear the flag moments
-    // before the very crash it exists to catch. A tab closed during a slow load trips it
-    // too — a false positive costing one lite session with a visible way out, which is
-    // the cheap direction to be wrong in when the alternative is a crash loop.
-    try { localStorage.setItem(tripKey(params), String(Date.now())); } catch { /* as above */ }
+    // before the very crash it exists to catch.
+    //
+    // PAGEHIDE listens from the moment the flag is written, not from arrival: closing or
+    // reloading a tab mid-load is a deliberate exit, and it used to trip the flag because
+    // nothing was listening yet (the owner, 09-28: "I closed Chrome in the middle of
+    // loading and it still dropped me down to the lite client"). An OOM kill or a hung
+    // renderer runs no handler, so those still count. A bfcache restore re-arms, unless
+    // boot.js has already disarmed for good.
+    const armKey = tripKey(params);
+    const arm = () => { try { localStorage.setItem(armKey, String(Date.now())); } catch { /* as above */ } };
+    arm();
+    addEventListener('pagehide', () => { try { localStorage.removeItem(armKey); localStorage.removeItem(retryKey(params)); } catch { /* as above */ } });
+    addEventListener('pageshow', (e) => { if (e.persisted && !globalThis.__ewTripDisarmed) arm(); });
 
     for (const href of [
       './node_modules/three/build/three.webgpu.js',
@@ -1680,6 +1925,16 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
   })();
 </script>
 <style>
+/* confirmcenter.js: a yes/no in the middle of the screen, over everything */
+#confirm-center { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / .55); }
+#confirm-center .cc-card { width: min(420px, 100%); padding: 16px 18px; border-radius: 10px; border: 1px solid var(--edge-hi); box-shadow: var(--rim); display: flex; flex-direction: column; gap: 10px; }
+#confirm-center b { color: var(--fg); font-size: 15px; font-weight: 600; }
+#confirm-center p { margin: 0; color: var(--dim); font-size: var(--fs-sm, 12px); line-height: 1.45; }
+#confirm-center .cc-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+#confirm-center .cc-btns button { min-height: 34px; padding: 0 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+#confirm-center .cc-no { background: var(--chip); color: var(--fg); border: 1px solid var(--edge); }
+#confirm-center .cc-ok { background: var(--brand-deep); color: var(--ink-on-brand, var(--bg)); border: 1px solid var(--brand); font-weight: 600; }
+
 /* ---------------------------------------------------------------- lite client
    The renderer-free surface (client/lite.js). It shares the token sheet above and
    hexes nothing, per docs/MODDING-UI.md: a restyle reaches this the same as it
@@ -1693,6 +1948,38 @@ html.lite, html.lite body { height: 100%; overflow: hidden; }
   background: var(--panel); border-bottom: 1px solid var(--edge); box-shadow: var(--rim);
 }
 .lite-emotes { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+/* THE PHONE LAYOUT (owner, 10-01). One top bar: the ∃ (the way into 3D) first, then the emotes on one line. */
+/* WIDE SCREENS (owner, 10-01: "make sure it's not formatted in an insane way" on a desktop): lite is a column at most
+   720 px wide, centred; --lite-x is the margin either side of it (0 on any phone, so the phone layout is unchanged). The
+   bar's background still spans the screen; its contents, the card and the chat keep to the column. */
+html.lite { --lite-x: max(0px, calc((100vw - 720px) / 2)); }
+#lite-emote-host { display: flex; align-items: center; gap: 8px; padding-left: calc(var(--lite-x) + 8px); padding-right: calc(var(--lite-x) + 8px); }
+/* the emotes share the row in equal cells (owner, 10-01: "can they all sit comfortably on that top row?"): six fit a
+   360 px phone beside the ∃ at ~44 px each; if more are ever added, a cell won't go under 40 px and the row scrolls */
+#lite-emote-host .lite-emotes { flex: 1; min-width: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(40px, 52px); justify-content: start; gap: 6px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+#lite-emote-host .lite-emotes::-webkit-scrollbar { display: none; }
+#lite-emote-host .lite-emote { width: 100%; min-width: 0; height: 44px; padding: 0; display: grid; place-items: center; font-size: 24px; line-height: 1; border-radius: 10px; }
+/* the card spans the column under the bar, not the full client's narrow top-centre notice */
+html.lite #lite-banner { left: calc(var(--lite-x) + 8px); right: calc(var(--lite-x) + 8px); transform: none; max-width: none; }
+/* the chat fills everything below the bar (and the card while it's up): frames.js sizes frames inline, so these win with !important */
+html.lite .frame.chat-frame {
+  /* edge to edge (owner, 10-01: "seems silly to have a panel at all if that's all there is") */
+  position: fixed !important; left: var(--lite-x) !important; right: var(--lite-x) !important; width: auto !important; max-width: none;
+  top: var(--lite-top, 72px) !important; height: auto !important; bottom: 0 !important;
+  border-radius: 0; border-left: none; border-right: none; border-bottom: none; box-shadow: none;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+/* …and its insides follow: frames.js pins the body to the frame's stored height inline, which left the compose
+   row floating mid-panel once the box stretched */
+html.lite .frame.chat-frame { display: flex; flex-direction: column; }
+html.lite .frame.chat-frame > .fr-body { height: auto !important; flex: 1 1 auto; min-height: 0; }
+/* the ∃ leads the top bar and is the way into the 3D world (lite.js) */
+/* on a screen wider than the column the chat gets its side edges back, so it reads as a pane, not a page */
+@media (min-width: 721px) { html.lite .frame.chat-frame { border-left: 1px solid var(--edge); border-right: 1px solid var(--edge); } }
+html.lite #lite-emote-host #hud.emark { position: static; flex: none; width: 44px; height: 44px; padding: 0;   /* the house 9 px side padding left a 24 px box the 30 px mark overflowed to the right (measured 3 px off-centre, owner 10-01) */ border-radius: 10px; color: var(--brand); background: var(--chip); border: 1px solid var(--edge); }
+html.lite #lite-emote-host #hud.emark:active { background: var(--act); }
+html.lite #lite-emote-host #hud.emark:disabled { color: var(--dim); cursor: default; }
+html.lite #lite-emote-host #hud.emark svg { width: 30px; height: 30px; }   /* matched to the emoji glyphs beside it (owner, 10-01) */
 .lite-emote {
   min-width: 44px; min-height: 44px; font-size: 22px; line-height: 1;
   background: var(--chip); color: var(--fg);
@@ -1703,17 +1990,7 @@ html.lite, html.lite body { height: 100%; overflow: hidden; }
 .lite-emote.fired { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 35%, transparent); }
 .lite-emotes-wait { color: var(--dim); font-size: var(--fs-sm, 12px); padding: 12px; }
 
-#lite-dock {
-  position: fixed; right: 8px; z-index: 30;
-  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-  display: flex; gap: 6px;
-}
-#lite-dock button {
-  min-width: 44px; min-height: 44px; font-size: 20px;
-  background: var(--panel); color: var(--fg);
-  border: 1px solid var(--edge); border-radius: 10px; cursor: pointer;
-}
-#lite-dock button:active { background: var(--act); }
+#lite-banner .cn-btns button { min-height: 44px; font-size: 15px; }
 
 /* The key door. A first-time key-gated visitor has no other way in, and the full
    client is not an option for the device this exists for. */
@@ -1751,10 +2028,17 @@ html.lite .frame.panel { max-width: 100%; }
 <!-- Static so it paints before any module loads. boot.js only fills it in. -->
 <div id="splash">
   <canvas class="sp-rays" aria-hidden="true"></canvas>
-  <div class="sp-logo-wrap"><svg class="sp-logo" viewBox="-70 -40 1372 1372" aria-hidden="true" fill="currentColor">
-    <path class="pc-top" d="M 92 82 Q 616 140 1072 78 Q 1024 290 1012 511 L 852 511 L 852 228 Q 440 218 68 232 Q 88 155 92 82 Z"/>
-    <path class="pc-arm" d="M 420 522 C 490 562 565 585 700 588 L 1140 586 Q 1168 583 1178 576 Q 1186 572 1185 582 Q 1180 653 1185 724 Q 1186 734 1178 730 Q 1168 723 1140 720 L 700 718 C 565 721 490 744 420 784 Q 436 653 420 522 Z"/>
-    <path class="pc-bot" d="M 120 1212 Q 616 1152 1080 1216 Q 1024 1002 1012 796 L 852 796 L 852 1064 Q 440 1074 62 1062 Q 88 1137 120 1212 Z"/>
+  <div class="sp-logo-wrap"><svg class="sp-logo" viewBox="0.8 0 100 100" aria-hidden="true" fill="currentColor">
+    <!-- the mark (notes: logo r6-E3-concentric, R 09-29): a sphere r40 at (48,50); two hooks cut by its
+         skin make the frame, and the peg — R/φ² entry arc, R exit arc — passes through the doorway. The
+         viewBox's 0.8 x-offset is the master's translate(-0.8 0). Plain paths, no clip on the frame, so
+         the XR curtain (render.js) can fill them as Path2D and the veil can clone them. -->
+    <path class="sp-frame" d="M23.347 18.5 L74 18.5 L74 38.5 L63 38.5 L63 29.5 L13.652 29.5 A40 40 0 0 1 23.347 18.5 Z"/>
+    <path class="sp-frame" d="M13.652 70.5 L63 70.5 L63 61.5 L74 61.5 L74 81.5 L23.347 81.5 A40 40 0 0 1 13.652 70.5 Z"/>
+    <clipPath id="sp-sphere"><circle cx="48" cy="50" r="40"/></clipPath>
+    <!-- the peg exists only inside the sphere while it travels; boot.js drops the clip (and the
+         transform) once it rests, so the loaded mark is exactly the still one -->
+    <g class="sp-travel" clip-path="url(#sp-sphere)"><path class="sp-peg" style="transform: translateX(-80.5px)" d="M33.746 44.5 L87.620 44.5 A40 40 0 0 1 87.620 55.5 L33.746 55.5 A15.279 15.279 0 0 1 33.746 44.5 Z"/></g>
   </svg></div>
   <div class="sp-mark">eidoverse</div>
   <div class="sp-mark-sub">worlds</div>
@@ -1770,14 +2054,17 @@ html.lite .frame.panel { max-width: 100%; }
      panel's backdrop-filter (blur + saturate) re-processes the rail beneath
      it — a subtly brighter square that read as a mistake -->
 <button id="hud" class="emark" title="eidoverse — menu">
-  <!-- ∃ drawn as geometry, not typed as a glyph: no font can vary it, and it
-       scales like a mark, not like text. Rounded caps, mid-arm a hair short. -->
-  <!-- the serifed mark (art/eido-logo/emark.svg): three cut pieces, the arm
-       passing through the parted spine. Filled geometry, still no font. -->
-  <svg viewBox="-60 -30 1352 1352" width="24" height="24" aria-hidden="true" fill="currentColor">
-    <path d="M 92 82 Q 616 140 1072 78 Q 1024 290 1012 511 L 852 511 L 852 228 Q 440 218 68 232 Q 88 155 92 82 Z"/>
-    <path d="M 420 522 C 490 562 565 585 700 588 L 1140 586 Q 1168 583 1178 576 Q 1186 572 1185 582 Q 1180 653 1185 724 Q 1186 734 1178 730 Q 1168 723 1140 720 L 700 718 C 565 721 490 744 420 784 Q 436 653 420 522 Z"/>
-    <path d="M 120 1212 Q 616 1152 1080 1216 Q 1024 1002 1012 796 L 852 796 L 852 1064 Q 440 1074 62 1062 Q 88 1137 120 1212 Z"/>
+  <!-- the mark drawn as geometry, not typed as a glyph: no font can vary it. This is the HAND-SET 24 px
+       master (notes: logo small/mark-24.svg — 3 px arms and peg on whole pixels, wider doorways than the
+       splash's master scaled down), its sphere clip baked into the two hook outlines so the drawing
+       carries no ids (the lantern copies this svg, lantern.js EMARK). The splash's #splash .sp-logo is
+       the large master; the favicon (<head>) is the 32/16 px masters.
+       The PEG is scaled straight from the big master (owner, 10-01): as thick as the arms (3.025 units), not the
+       whole-pixel 2 it once was, which read thin beside the arms at every size; at 1x it lands on half pixels. -->
+  <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="currentColor">
+    <path d="M4.675 3 L19 3 L19 9 L16 9 L16 6 L1.780 6 A11 11 0 0 1 4.675 3 Z"/>
+    <path d="M1.780 18 L16 18 L16 15 L19 15 L19 21 L4.675 21 A11 11 0 0 1 1.780 18 Z"/>
+    <path d="M7.080 10.488 L21.896 10.488 A11 11 0 0 1 21.896 13.512 L7.080 13.512 A4.202 4.202 0 0 1 7.080 10.488 Z"/>
   </svg>
 </button>
 <div id="dock" class="panel"></div>

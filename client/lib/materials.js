@@ -40,12 +40,13 @@
 // the same meadow.
 
 import { THREE, TSL, sun, ground, renderer } from './core.js';
-import { report } from './base.js';
+import { report, CONFIG } from './base.js';
+import { registerFoliage } from './foliage.js';
 import { state } from './state.js';
 import { effectiveSky } from '../../shared/forecast.js';
 
 const {
-  Fn, uniform, texture, float, vec2, vec3, vec4, mix, clamp, smoothstep,
+  Fn, If, uniform, texture, float, vec2, vec3, vec4, mix, clamp, smoothstep,
   fract, floor, dot, length, positionWorld, positionView, normalWorld,
   materialColor, materialRoughness, materialMetalness,
 } = TSL;
@@ -169,6 +170,16 @@ function cloudShade() {
   return float(1).sub(smoothstep(U.cloudLo, U.cloudHi, n).mul(U.cloudStrength));
 }
 
+// the pre-2026-09-24 puddle noise, unconditional — only for the ?pudgate=0 A/B
+function pnUngated() {
+  const warp = vec2(
+    vnoise2(positionWorld.xz.mul(0.045)),
+    vnoise2(positionWorld.xz.mul(0.045).add(vec2(37.7, 11.3))),
+  ).sub(0.5).mul(2.2);
+  return vnoise2(positionWorld.xz.mul(0.35).add(warp))
+    .add(vnoise2(positionWorld.xz.mul(0.09)).mul(0.6));
+}
+
 function wrapMaterial(mat, receiver, pbr) {
   const upMask = clamp(normalWorld.y, 0, 1).pow(2).mul(U.wet);
   // crossed-card foliage carries upward normals for clump lighting, so
@@ -178,12 +189,26 @@ function wrapMaterial(mat, receiver, pbr) {
   const flat = smoothstep(0.985, 0.998, normalWorld.y);
   // puddle mask: threshold value noise near its MIDDLE (near-max contours
   // grid up), coarse octave warps the fine one so outlines meander
-  const warp = vec2(
-    vnoise2(positionWorld.xz.mul(0.045)),
-    vnoise2(positionWorld.xz.mul(0.045).add(vec2(37.7, 11.3))),
-  ).sub(0.5).mul(2.2);
-  const pn = vnoise2(positionWorld.xz.mul(0.35).add(warp))
-    .add(vnoise2(positionWorld.xz.mul(0.09)).mul(0.6));
+  // COST GATES (2026-09-24, both value-exact): the noise below is 4 value-noise taps (16 hashes) per fragment on every
+  // PBR surface. (1) A material that opted out of puddles (grass, foliage cards) multiplied it by a literal 0 — GLSL
+  // cannot fold x*0 (NaN/inf), so it paid in full for nothing; now it is never built. (2) At runtime the puddle factor
+  // is smoothstep(0.35, 0.9, wet), exactly 0 at wet <= 0.35 (clear/fair/overcast), and pShape only reaches the image
+  // through mix(…, puddle) — so the taps run only above that, in a uniform branch (every fragment takes the same side).
+  const gates = CONFIG.params.get('pudgate') !== '0';   // ?pudgate=0 builds the pre-gate graph (tools/puddle-gate-probe.mjs A/B)
+  const noPud = gates && (!pbr || !!(mat.userData?.noPuddles || receiver?.userData?.noPuddles));
+  const pnNode = noPud ? null : !gates ? pnUngated() : Fn(() => {
+    const pnv = float(0).toVar();
+    If(U.wet.greaterThan(0.35), () => {
+      const warp = vec2(
+        vnoise2(positionWorld.xz.mul(0.045)),
+        vnoise2(positionWorld.xz.mul(0.045).add(vec2(37.7, 11.3))),
+      ).sub(0.5).mul(2.2);
+      const pn = vnoise2(positionWorld.xz.mul(0.35).add(warp))
+        .add(vnoise2(positionWorld.xz.mul(0.09)).mul(0.6));
+      pnv.assign(pn);
+    });
+    return pnv;
+  })();
   // distance-faded: procedural noise has no mips — far wet ground should
   // read as uniform sheen, not aggregated swamp
   // NON-PBR (MToon bodies) NEVER BUILD THE PUDDLE TERM. Its distance fade reads `cameraPosition`, a
@@ -201,8 +226,8 @@ function wrapMaterial(mat, receiver, pbr) {
   const pDist = pbr ? length(positionView) : null;
   // shape × gate, always: sharpening after the wetness multiply would zero
   // all puddles in any state below full wet
-  const pShape = pbr
-    ? smoothstep(0.97, 1.13, pn).mul(flat).mul(U.puddleK).mul(puddleGate).mul(float(1).sub(smoothstep(160, 450, pDist)))
+  const pShape = (pbr && !noPud)
+    ? smoothstep(0.97, 1.13, pnNode).mul(flat).mul(U.puddleK).mul(puddleGate).mul(float(1).sub(smoothstep(160, 450, pDist)))
     : float(0);
   const puddle = pbr ? smoothstep(0.25, 0.6, pShape).mul(smoothstep(0.35, 0.9, U.wet)) : float(0);
   // normalize color roots to RGBA once — alpha must survive for cutout
@@ -406,7 +431,7 @@ export function setBodyShadows(root, on = true) {
   return n;
 }
 
-export function prepareObject(root, { kind = 'model' } = {}) {
+export function prepareObject(root, { kind = 'model', foliage = true } = {}) {
   // A missing root is a no-op, not a crash. The module-init call below passes
   // `ground`, which is null before the terrain exists (and in any harness that
   // stubs core.js) -- and an exception at import time takes the whole client
@@ -471,6 +496,9 @@ export function prepareObject(root, { kind = 'model' } = {}) {
       prepareMaterial(m, o);
     }
   });
+  // blended textured leaves get the two-pass twin in 'fast' foliage mode (foliage.js; Video › foliage)
+  // (a loaded PROTOTYPE passes foliage:false and each placed clone registers itself: assets.js)
+  if (kind === 'model' && foliage) registerFoliage(root);
   return root;
 }
 
@@ -545,6 +573,9 @@ export function updateMaterials(nowMs) {
 }
 
 /** Debug surface (EW.materials). */
+/** Test seam: the shared material uniforms (probes pin wet/cloud for a deterministic render). */
+export const materialUniforms = () => U;
+
 export const materialsDebug = () => ({
   ...stats,
   wet: +U.wet.value.toFixed(3),

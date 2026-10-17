@@ -21,6 +21,9 @@ import { prepareObject } from './materials.js';
 import { beginWork } from './loadwork.js';
 import { reindexCollider } from './colliders.js';
 import { setTerrain, setGrass, clearGrass, heightAt } from './terrain.js';
+import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, gridRetryIn, shapeReady } from '../../shared/terrainshape.js';
+setGridFetcher(async (ref) => { const r = await fetch(`/library/${ref}`); if (!r.ok) throw new Error(`${r.status}`); return r.json(); });
+import { applyWater } from './water.js';
 import { buildFloraField, warmField, loadFloraModule } from './flora.js';
 import { applySky, whenSkyWarm } from './sky.js';
 import { whenBooted, bootDone } from './boot.js';
@@ -112,14 +115,28 @@ let lastGrassArgs = null;
 export function applyTerrainState(args) {
   if (!args) return;
   const key = JSON.stringify(args);
+  if (pendingTerrain && JSON.stringify(pendingTerrain.args) === key) pendingTerrain = null;   // our edit, echoed
   if (lastTerrainArgs === key) return;
   lastTerrainArgs = key;
   enqueueWorldBuild('terrain', async () => {
     await loadEidoModule('terrain.js');
+    // A heightmap's grid is fetched BEFORE the build, so the ground arrives shaped rather than snapping from
+    // noise to image a moment later (and the walking heightAt never disagrees with the mesh in between).
+    // No grid, no build: the ground already standing stays (noise is not this world's ground), and the
+    // build runs once the grid lands — the same readiness the sim waits on (shapeReady).
+    const shape = shapeParams(args);
+    if (shape?.heightmap && !(await requestGrid(shape.heightmap.grid))) {
+      if (lastTerrainArgs !== key) return;
+      report(`heightmap ${shape.heightmap.grid} has not loaded — keeping the ground already here, retrying`, new Error('grid unavailable'));
+      retryTerrainWhenGridLands(args, key, shape.heightmap.grid);
+      return;
+    }
+    if (lastTerrainArgs !== key) return;   // a newer terrain arrived while the grid was in flight
     const layers = (args.layers ?? []).map((l) => ({
       map: noiseTexture(l.color ?? '#4a5d33'), repeat: l.repeat ?? 16,
     }));
     const t = globalThis.makeTerrain({ ...args, layers });
+    if (t && shape) reshapeTerrain(t, args);
     // the layer textures ride the engine's colorNode, unreachable from
     // material properties — carry them so terrain disposal can free them
     // (review S5)
@@ -145,6 +162,8 @@ export function applyTerrainState(args) {
       await warm('compile terrain', () => renderer.compileAsync(t.mesh, camera, scene).catch(() => {}), { p: P_GATE });
     }
     setTerrain(t);
+    // the water reads the ground it fills (its per-vertex depth), so it is built on THIS terrain
+    try { applyWater(args, heightAt); } catch (e) { report('water', e); }
     // re-seat only ground-level entities — anything with a meaningful y
     // (seated on furniture, elevated) keeps its logged height
     for (const [id, obj] of entities) {
@@ -155,6 +174,53 @@ export function applyTerrainState(args) {
       }
     }
   });
+}
+
+// A heightmap terrain whose grid did not come: ask again as the fetch backoff allows (shared/terrainshape.js
+// gridRetryIn), and build THIS bag once — unless a newer terrain has arrived meanwhile.
+let terrainRetry = null;
+function retryTerrainWhenGridLands(args, key, ref) {
+  clearTimeout(terrainRetry);
+  terrainRetry = setTimeout(async () => {
+    if (lastTerrainArgs !== key) return;
+    if (!(await requestGrid(ref))) { if (lastTerrainArgs === key) retryTerrainWhenGridLands(args, key, ref); return; }
+    if (lastTerrainArgs !== key) return;
+    lastTerrainArgs = null;   // let the same bag through the dedupe, this once
+    applyTerrainState(args);
+  }, Math.max(250, gridRetryIn(ref)));
+}
+/** Whether the world's terrain is waiting on its heightmap's grid (the ground shown is the last one built). */
+export const terrainPending = () => terrainRetry !== null && lastTerrainArgs !== null && !shapeReady(shapeParams(JSON.parse(lastTerrainArgs)));
+
+/** The authored terrain bag this client last built from — what EW.terrain(patch) edits. */
+export function currentTerrainArgs() { return lastTerrainArgs ? JSON.parse(lastTerrainArgs) : null; }
+
+// Edits sent but not yet echoed: two quick patches must compose (the second builds on the first), not both
+// build on the last echo and the second erase the first. A sent bag stands as the base until the world
+// echoes something, or PENDING_MS passes with no echo (the edit was refused).
+let pendingTerrain = null;   // { args, at }
+const PENDING_MS = 5000;
+/** The bag a new terrain edit should build on: the newest sent-but-unechoed edit, else the built one. */
+export function terrainEditBase() {
+  if (pendingTerrain && Date.now() - pendingTerrain.at < PENDING_MS) return structuredClone(pendingTerrain.args);
+  return currentTerrainArgs();
+}
+/** Record a terrain bag as sent, so the next edit composes with it. Returns the bag. */
+export function noteTerrainSent(args) { pendingTerrain = { args, at: Date.now() }; return args; }
+
+/** Placed features and heightmaps (shared/terrainshape.js) over the toolkit's noise mesh: the same law the
+ *  agents and the sim ground bodies on. Every vertex re-heighted, normals redone, and the walking heightAt
+ *  swapped for the shaped one — so what you see is what you stand on. The vertex-colour layer weights stay
+ *  the toolkit's (baked from the unshaped noise); the panel's single-layer ground has none to disagree. */
+function reshapeTerrain(t, args) {
+  const hf = shapedHeightAt(t.heightAt, args);
+  const pos = t.mesh.geometry.attributes.position;
+  for (let i = 0; i < pos.count; i++) pos.setY(i, hf(pos.getX(i), pos.getZ(i)));
+  pos.needsUpdate = true;
+  t.mesh.geometry.computeVertexNormals();
+  t.mesh.geometry.computeBoundingBox();
+  t.mesh.geometry.computeBoundingSphere();
+  t.heightAt = hf;
 }
 
 // Def hot-reload (§24): the sequencer pushes `defs-updated` when a def file

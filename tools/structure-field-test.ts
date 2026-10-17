@@ -13,7 +13,7 @@
 //    empty plan rather than a throw (house rule 3, one layer down).
 
 import {
-  planStructure, normalize, wallBoxes, deriveRooms, derivePortals, roomAt, levelAt, storeyAt,
+  planStructure, normalize, wallBoxes, deriveRooms, derivePortals, roomAt, levelAt,
   edgeCells, edgeBetween, edgeKey, cellKey, APERTURES, GRID_DEFAULTS,
   describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns, wallPolylines, sweepProfile, wallProfile, levelSweeps, capProfile, clipProfileV, refineProfile, makeShader, diagOf, halfTriangle, triPrism, halfFloored, segmentEnds, nodeAtPoint, nodeGraph, cellNodes, routeCells, routeLocal, passable, makeShader,
 } from "../shared/structure.js";

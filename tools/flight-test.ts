@@ -686,6 +686,28 @@ console.log('\nDEFAULT-DENY -- a compatible rig is evidence, never permission');
   const wingless = { boneNames: ['hips', 'spine', 'head'] };
   check('a grant does not make a wingless body fly',
         !resolveFlight(withRights({ role: 'owner', fly: true }), { identity: 'm', avatar: wingless }).enabled);
+  // Each denial's reason, by the branch that gives it: who acts, and what the
+  // body lacks, in the names a wearer knows.
+  const reasonOf = (r: any, avatar: any = av) =>
+    resolveFlight(withRights(r), { identity: 'm', ...(avatar ? { avatar } : {}) }).reason ?? '';
+  const granted = { role: 'owner', fly: true };
+  check('no rights says they have not arrived, and what to do if they never do',
+        /haven't arrived/.test(reasonOf(null)) && /ask whoever runs it/.test(reasonOf(null)), reasonOf(null));
+  check('no grant names the grant verb and that the owner sends it, to themselves too',
+        /its owner grants it, to themselves too/.test(reasonOf({ role: 'owner', fly: false })) &&
+        /grant \{id: <your id>, fly: true\}/.test(reasonOf({ role: 'owner', fly: false })), reasonOf({ role: 'owner', fly: false }));
+  check('a wingless body is told it has no wing bones', /no wing bones/.test(reasonOf(granted, wingless)), reasonOf(granted, wingless));
+  const oneChain = { boneNames: ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'L_Wing_Upper_2', 'L_Wing_Upper_3'] };
+  check('four wing bones in one chain are counted as such, not called too few',
+        /wings have 4 bone\(s\) in 1 chain\(s\)/.test(reasonOf(granted, oneChain)) && !/too few/.test(reasonOf(granted, oneChain)),
+        reasonOf(granted, oneChain));
+  const coreless = { boneNames: ['Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1'] };
+  check('missing core bones are named as a wearer knows them (hips, spine)',
+        /missing: hips, spine\)/.test(reasonOf(granted, coreless)), reasonOf(granted, coreless));
+  check('no bone list is its own reason, in both providers',
+        /bones aren't known/.test(reasonOf(granted, null)) &&
+        /bones aren't known/.test(resolveFlight(devFlightProvider({ allow: ['m'] }), { identity: 'm' }).reason ?? ''),
+        reasonOf(granted, null));
   // Live, not captured: revoking grounds a body that was already flying.
   {
     let rights: any = { role: 'builder', fly: true };
@@ -766,7 +788,7 @@ console.log('\nT6 -- fold_down grounds the flier, and unfolding is deliberate');
   const refused = takeOff(cfg, s, { groundY: 0 });
   check('T6: take_off REFUSES while folded', refused.phase === 'GROUND');
   check('...for the stated reason',
-        refused.events.some((e: any) => e.kind === 'takeoff.refused' && e.reason === 'wings folded'));
+        refused.events.some((e: any) => e.kind === 'takeoff.refused' && e.reason === 'your wings are folded; unfold them first'));
   check('...and take_off does not quietly unfold for you', refused.wings === 'FOLDED');
 
   const open = unfold(cfg, s);
@@ -781,11 +803,29 @@ console.log('\nT6 -- fold_down grounds the flier, and unfolding is deliberate');
   // A limp body's wings belong to the ragdoll, not to a posture.
   const limp = foldDown(cfg, { ...ground(), wings: 'LIMP' });
   check('a limp body cannot strike a posture', limp.wings === 'LIMP');
+  // ...and a body down after a cut is told it is down, not airborne.
+  const downed = foldDown(cfg, { ...ground(), phase: 'RAGDOLL', wings: 'LIMP' });
+  check('folding while down says so, not that the body is in the air',
+        downed.events.some((e: any) => e.kind === 'fold.refused' && /not on your feet \(ragdoll\)/.test(e.reason)) &&
+        !downed.events.some((e: any) => /airborne/.test(e.reason ?? '')));
   // Idempotence, both ways, with an event that says nothing happened.
   check('folding twice is refused, not doubled',
         foldDown(cfg, s).events.some((e: any) => e.reason === 'already folded'));
   check('unfolding open wings is refused',
         unfold(cfg, ground()).events.some((e: any) => e.kind === 'unfold.refused'));
+  // Each refusal's reason, by the branch that gives it.
+  check('...as already open', unfold(cfg, ground()).events.some((e: any) => e.reason === 'already open'));
+  check('unfolding limp wings says they reopen on recovery, not that they are open',
+        unfold(cfg, { ...ground(), phase: 'RAGDOLL', wings: 'LIMP' }).events.some((e: any) =>
+          e.kind === 'unfold.refused' && /limp, not folded/.test(e.reason)));
+  check('folding in the air says to land first',
+        midair.events.some((e: any) => e.kind === 'fold.refused' && /^airborne \(pilot\).*land first/.test(e.reason)));
+  check('take_off with limp wings says they reopen on recovery',
+        takeOff(cfg, { ...ground(), phase: 'RAGDOLL', wings: 'LIMP' }, { groundY: 0 }).events.some((e: any) =>
+          e.kind === 'takeoff.refused' && /limp; they open again/.test(e.reason)));
+  check('take_off in the air says the body is already airborne',
+        takeOff(cfg, air, { groundY: 0 }).events.some((e: any) =>
+          e.kind === 'takeoff.refused' && e.reason === 'already airborne (pilot)'));
 
   // The pose the silhouette is made of: authored in Blender, read from the
   // action rather than typed, and checked here for the transposition that

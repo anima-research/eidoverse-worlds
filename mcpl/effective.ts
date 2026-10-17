@@ -28,6 +28,10 @@ export type EffectiveView = {
    *  verdict both read as "no profile": this module never defaults a contact
    *  and never rederives one. */
   seatVerdict?(id: string): { pose?: string; status: string; contactY?: number; refusal?: string; which?: string } | undefined;
+  /** A seated BODY's chosen size (presence `pose.scale`, clamped; absent = 1) —
+   *  the browser's riderScalar input (seats.js: root scale × avatar.bodyScale()).
+   *  Absent method reads as 1. */
+  riderScale?(id: string): number;
 };
 
 export type Effective =
@@ -102,17 +106,19 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
     // The profile correction (#101), bodies only: contact plane onto the
     // authored socket plane, along WORLD up (a mounted body renders upright —
     // yaw only — so the parent's tilted normal would smear it laterally; the
-    // B2 discriminator). contactY is RIDER-root-local and multiplies the
-    // rider's own scalar — which is 1 for every headless body by the named
-    // shared definition (no code path scales an avatar root today); the
-    // parent's scale must NOT touch it. The gate here is the contract half
+    // B2 discriminator). contactY is measured at the rider's AUTHORED size and
+    // multiplies the rider's own scalar — its chosen body size, which the
+    // browser feeds riderScalar from avatar.bodyScale() (a 2× body's seat
+    // contact sits twice as far below its root); the parent's scale must NOT
+    // touch it. The gate here is the contract half
     // (seatGateCore): this reader has no mixer, so the contract IS its
     // runtime truth; steady-state parity with the renderer is pinned by test.
     let seat: { state: "profiled" | "approximate"; reason?: string } | undefined;
     if (isBody) {
       const g = seatGateCore({ sock, verdict: view.seatVerdict?.(id), pose: sock?.pose ?? "sitchair" });
       if (g.apply) {
-        const c = applySeatCorrection(pos, g.contactY, 1);
+        const rs = view.riderScale?.(id) ?? 1;
+        const c = applySeatCorrection(pos, g.contactY, Number.isFinite(rs) && rs > 0 ? rs : 1);
         if (c) { pos = c as [number, number, number]; seat = { state: "profiled" }; }
         else seat = { state: "approximate", reason: "non-finite correction" };
       } else seat = { state: "approximate", reason: g.reason };

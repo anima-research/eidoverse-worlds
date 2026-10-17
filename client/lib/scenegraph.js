@@ -36,6 +36,7 @@ import './lights.js';   // for its registered light editor (world.js pulls it in
 import { sendVerb, requestDebug } from './net.js';
 import { guardedByOther, placerOf, placerName } from './placer.js';   // the server's who-may-author rule, mirrored — and its one name
 import { makeSection, flashHint } from './ui.js';
+import { html } from './markup.js';   // hint markup is opt-in: html`` escapes what it interpolates
 import { logChat } from './chat.js';
 import { myState } from './controller.js';
 
@@ -208,7 +209,7 @@ function paintScene(force = false) {
     const obj = entities.get(selected);
     if (!obj) return;
     const p = obj.getWorldPosition(_wp);
-    flashHint(`<b>${esc(selected)}</b> is ${p.distanceTo(myState.pos).toFixed(0)}m away at (${p.x.toFixed(0)}, ${p.z.toFixed(0)})`, 5000);
+    flashHint(html`<b>${selected}</b> is ${p.distanceTo(myState.pos).toFixed(0)}m away at (${p.x.toFixed(0)}, ${p.z.toFixed(0)})`, 5000);
   });
   sceneBody.querySelector('[data-act="attach"]')?.addEventListener('click', () => {
     arming = arming === selected ? null : selected;
@@ -249,7 +250,7 @@ function paintScene(force = false) {
     if (!type) { flashHint('component needs a type name', 4000); return; }
     let data;
     try { data = JSON.parse(sceneBody.querySelector('[data-ce="json"]').value); }
-    catch (err) { flashHint(`not valid JSON: ${esc(err.message)}`, 5000); return; }
+    catch (err) { flashHint(`not valid JSON: ${err.message}`, 5000); return; }
     sendVerb('comp', { id: selected, type, data });
     editingComp = null;
     paintScene(true);

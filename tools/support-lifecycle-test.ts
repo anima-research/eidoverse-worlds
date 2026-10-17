@@ -480,10 +480,16 @@ try {
     h.close(); ag.close?.();
   }
 
-  // ---- 12. the palm: canopy is not a floor (B2) ---------------------------
+  // ---- 12. the palm: canopy is not an invented floor (B2) -----------------
   // Every one of the palm's bands fills between 0.094 and 0.143 — fronds
   // bounding a wide rectangle around almost nothing. Before the fill gate a
-  // body released over it rested in the canopy.
+  // body released over it rested on a summary DECK spanning that rectangle:
+  // a floor the model does not have. Now the agent fits the palm's own
+  // triangles (registerMeshSupport), so no deck is registered at all, and a
+  // falling body is caught by fronds exactly where a browser's would be —
+  // there ARE fronds over the band's centre (colliders.surfaceUnder finds
+  // 4.43m there, 5.45m a metre and a half out). What must still hold: support
+  // comes from the triangles, and nothing holds the body above the model.
   {
     const PALM = "eidoverse/assets/models/palm_date_tree_tropical_deseert_oasis_plant.glb";
     const g = await geom(PALM);
@@ -504,8 +510,13 @@ try {
     const dropAt = [at[0] + cx, at[2] + cz];
     ag.pos.x = dropAt[0]; ag.pos.z = dropAt[1];
     const y = await dropOver(h, ag, "palm-bot", dropAt, canopy.y, "release");
-    check("a body released over a palm falls THROUGH the canopy to the ground",
-      onTerrain(y), `root=${y.toFixed(2)} canopy would have been ${(canopy.y - hipsOffset).toFixed(2)}`);
+    const { supportShape } = await import("../mcpl/physics.ts");
+    check("the palm's support is fitted from its triangles — an exact collider, no summary decks",
+      JSON.stringify((ag as any).supportIds.get("palm")) === JSON.stringify([`${W}/palm`]) && supportShape(`${W}/palm`) === "exact",
+      `${JSON.stringify((ag as any).supportIds.get("palm"))} fitted as ${supportShape(`${W}/palm`)}`);
+    check("a body released over a palm rests in its real fronds or below them, never on a floor above the model",
+      y + hipsOffset <= g.bbox.max[1] + 0.15,
+      `root=${y.toFixed(2)} (surface ${(y + hipsOffset).toFixed(2)}) palm top ${g.bbox.max[1]}`);
     h.close(); ag.close?.();
   }
 

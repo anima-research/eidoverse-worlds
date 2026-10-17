@@ -1,0 +1,4 @@
+{
+  "autoReview": ["open"],
+  "disabledLabels": ["no-greptile"]
+}
