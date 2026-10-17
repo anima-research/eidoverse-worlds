@@ -984,7 +984,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   },
   act: async (ag, a, ctx) => {
       const verb = String(a.verb ?? ""), args = (a.args && typeof a.args === "object" ? a.args : {}) as Record<string, any>;
-      if (BODY_VERBS[verb]) return BODY_VERBS[verb](ag, args, ctx, verb);   // answered by this body, or moderation by name
+      if (Object.hasOwn(BODY_VERBS, verb)) return BODY_VERBS[verb](ag, args, ctx, verb);   // answered by this body, or moderation by name
       if (typeof args.who === "string") { const rw = await resolveWho(ag, args.who, verb); if ("err" in rw) return rw.err; args.who = rw.who; }   // warn/mute/ghost/…: a name works here too
       const named = namedThings(ag, args, THING_KEYS.filter((k) => k !== "to" || verb !== "move")); if ("err" in named) return named.err;   // a thing by id, label or prefix (move's to is a point)
       const r = await ag.request(verb, named.args);

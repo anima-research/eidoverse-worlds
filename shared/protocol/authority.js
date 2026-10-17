@@ -1546,6 +1546,16 @@ function buildDelete(ctx, a) {
 // root). Parent links need nothing here: the children went with it. The reply's note lists every reference cleared.
 const refComps = new Map();   // component name → does it hold references (the registry's typed fields)
 const holdsRefs = (k) => { let v = refComps.get(k); if (v === undefined) { v = refFields(k).length > 0; refComps.set(k, v); } return v; };
+// v with its references to `gone` nulled, and what can't stand without them dropped; undefined when the whole value goes
+function withoutRefs(id, k, v, gone, cleared = [], dropped = []) {
+  const r = mapRefs(k, v, (x, at) => { if (!gone.has(x)) return x; cleared.push({ from: `${id}.${at.replace(/^[^.]*/, k)}`, was: x }); return null; });
+  let nv = r.value;
+  if (nv !== undefined && baseOf(k) === "reactions") { nv = { ...nv };
+    for (const [act, hd] of Object.entries(nv)) if (hd && typeof hd === "object" && Array.isArray(hd.targets) && !hd.targets.length) { delete nv[act]; dropped.push(`${id}.${k}.${act}`); } }
+  if (nv !== undefined && baseOf(k) === "home" && nv.parent && typeof nv.parent === "object" && nv.parent.to === undefined) { const { parent, ...rest } = nv; nv = rest; }
+  if (nv === undefined || (baseOf(k) === "reactions" && !Object.keys(nv).length)) { dropped.push(`${id}.${k}`); return undefined; }
+  return nv;
+}
 function clearRefsTo(ctx, gone) {
   const ops = [], cleared = [], dropped = [];
   for (const [id, e] of Object.entries(ctx.st.entities)) { if (gone.has(id)) continue;
@@ -1553,12 +1563,8 @@ function clearRefsTo(ctx, gone) {
     // reused (§3d H7), and a write to script:<name> would re-sponsor it to the deleter (sponsorOf: the latest non-pause write)
     for (const [k, v] of Object.entries(e.c)) { if (k === "parent" || baseOf(k) === "script" || baseOf(k) === "parent" || !holdsRefs(k) || v === PURGED) continue;
       if (!refsOf(k, v).some((r) => gone.has(r.id))) continue;
-      const r = mapRefs(k, v, (x, at) => { if (!gone.has(x)) return x; cleared.push({ from: `${id}.${at.replace(/^[^.]*/, k)}`, was: x }); return null; });
-      let nv = r.value;
-      if (nv !== undefined && baseOf(k) === "reactions") { nv = { ...nv };
-        for (const [act, hd] of Object.entries(nv)) if (hd && typeof hd === "object" && Array.isArray(hd.targets) && !hd.targets.length) { delete nv[act]; dropped.push(`${id}.${k}.${act}`); } }
-      if (nv !== undefined && baseOf(k) === "home" && nv.parent && typeof nv.parent === "object" && nv.parent.to === undefined) { const { parent, ...rest } = nv; nv = rest; }
-      if (nv === undefined || (baseOf(k) === "reactions" && !Object.keys(nv).length)) { ops.push(followUp(delOp(id, k))); dropped.push(`${id}.${k}`); }
+      const nv = withoutRefs(id, k, v, gone, cleared, dropped);
+      if (nv === undefined) ops.push(followUp(delOp(id, k)));
       else ops.push(followUp(setOp(id, k, nv)));
       ctx.refs.add(id); } }
   if (cleared.length) ctx.notes.push({ cleared, ...(dropped.length ? { removed: dropped } : {}), why: `references to what you deleted were cleared in the same act${dropped.length ? " (a value that can't stand without its reference, or a reset left with nothing to send home, went with it)" : ""}` });
@@ -2610,7 +2616,14 @@ function buildUndo(ctx, a, w) {
       if (old === PURGED) { skipped.push({ id, component: comp, why: "its old value was purged" }); continue; }
       // (sockets: a host's socket children stand for the map it held before the cut; their delete is translated at the door)
       if (old === undefined) { if (now.entities[id] && (comp in now.entities[id].c || (comp === "sockets" && socketsOf(now, id).some((x) => x.id)))) groups.push([delOp(id, comp)]); }
-      else if (now.entities[id]) { const g = setOp(id, comp, old); if (refRestore(o)) g[FOLLOW_UP] = true; groups.push([g]); } }
+      else if (now.entities[id]) {
+        if (!refRestore(o)) groups.push([setOp(id, comp, old)]);
+        // a follow-up restore names what this undo brings back; a reference to anything else gone since stays cleared (holes r10 L1:
+        // a second delete no longer refuses the whole undo)
+        else { const since = new Set(refsOf(comp, old).map((r) => r.id).filter((x) => !now.entities[x] && !goneHere.has(x)));
+          const nv = since.size ? withoutRefs(id, comp, old, since) : old;
+          if (since.size) (ctx.notes ??= []).push({ id, component: comp, kept: [...since], why: `${[...since].join(", ")} ${since.size > 1 ? "are" : "is"} gone since, so ${since.size > 1 ? "their references stay" : "its reference stays"} cleared` });
+          if (nv !== undefined) { const g = setOp(id, comp, nv); g[FOLLOW_UP] = true; groups.push([g]); } } } }
     ctx.refs.add(id);
   }
   // an undo must not land my old state on someone else's later work (spatial conflict, not just same-component)
