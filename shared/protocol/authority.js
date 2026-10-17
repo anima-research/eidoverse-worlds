@@ -29,7 +29,7 @@ import { saysOf } from "../says.js";
 import { readOut } from "../a11y.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES, isEssential, LEGACY_FIELDS } from "../particle_effects.js";
 import { livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
-import { shapeRepairOps } from "./shaperepair.js";
+import { shapeRepairOps, shapesMarked, SHAPES_VERSION } from "./shaperepair.js";
 import { atWrite } from "./assetref.js";
 import { isEido, modelWord } from "../eido.js";
 import { trustRefusal } from "../drafts.js";
@@ -2148,17 +2148,26 @@ export function liftWorld(w) {
         changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "lift-sockets", body: { id: h, made, moved, ...(author ? { capability: { author } } : {}) } }));
         out.push({ host: h, made, moved });
       } catch (x) { out.push({ host: h, failed: { code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) } }); } }
-    // shape audit 10-16 (physics-motion): what a value stored before wave 2 meant, written in today's spelling, in one system
-    // act (shared/protocol/shaperepair.js: a part's motion to its key, amplitude, letter axes, the old pendulum readings and
-    // swing point, collider exact, physics kind/material). A second load finds nothing to repair; a refusal is reported
-    // like a host's and the world is left as it was, to repair at the next load
-    try {
-      const st = w.state(); const ops = shapeRepairOps(st, PURGED);
-      if (ops.length) { const ids = [...new Set(ops.map((o) => o.id))], comps = [...new Set(ops.map((o) => o.comp))];
-        const plan = admit(w, st, { actor: "system", cap: { kind: "system", ids, comps }, lifting: true }, ops);
-        changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "repair-shapes", body: { ids, why: "values stored before the shape audit (10-16), in today's spelling with the meaning their readers gave them" } }));
-        out.push({ repaired: ids }); }
-    } catch (x) { out.push({ repair: true, failed: { code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) } }); }
+    // shape audit 10-16: what a value stored before the audit meant, written in today's spelling (shared/protocol/shaperepair.js).
+    // ONCE per world (review r7 F2): the act it writes is the marker (shapesMarked), as is a founding or a translation
+    // that already wrote today's spelling, so the rules that read an ABSENT field (a pendulum's [0, 2, 0] hinge, physics
+    // kind dynamic, a light's decay 1.7, the sky's defaults) only ever see values stored before it, never a write made
+    // since: a pendulum set today without a pivot keeps none, a deleted pivot stays deleted. Admitted per thing (F5): a
+    // thing whose repair the door refuses is left as it was and named in the act ({failed}); the rest repair. The act is
+    // written even when there is nothing to repair, so the next load finds the marker and does nothing
+    if (!shapesMarked(w.entries)) try {
+      const st = w.state(); const all = shapeRepairOps(st, PURGED);
+      const byId = new Map(); for (const o of all) { if (!byId.has(o.id)) byId.set(o.id, []); byId.get(o.id).push(o); }
+      const kept = [], failed = [];
+      for (const [id, ops] of byId) {
+        try { admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: [...new Set(ops.map((o) => o.comp))] }, lifting: true }, ops); kept.push(...ops); }
+        catch (x) { if (!(x instanceof Refusal)) throw x; failed.push({ id, code: x.code, reason: String(x.reason ?? "").slice(0, 300) }); } }
+      const ids = [...new Set(kept.map((o) => o.id))];
+      const act = { kind: "act", actor: "system", verb: "repair-shapes", body: { v: SHAPES_VERSION, ids, ...(failed.length ? { failed } : {}), why: "values stored before the shape audit (10-16), in today's spelling with the meaning their readers gave them; once per world" } };
+      if (kept.length) { const plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids, comps: [...new Set(kept.map((o) => o.comp))] }, lifting: true }, kept); changeEntry(w, plan, w.append(act)); }
+      else w.append(act);
+      out.push({ repair: { repaired: ids, failed } });
+    } catch (x) { out.push({ repair: { repaired: [], failed: [{ id: null, code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) }] } }); }
     return out; });
 }
 // Things the log has lifted out of the engine (a grab's lift, a catch) with nothing after that puts them back: no launch,
@@ -3754,7 +3763,8 @@ const VERBS = {
     const ops = [setOp("@world", "about", { name: a.title ?? w.name, text: a.text ?? "" }), setOp("@world", "bounds", { min: [-20, 0, -20], max: [20, 12, 20] }),
       setOp("@world", `roles:${actor}`, { role: "owner" })];
     const plan = admit(w, w.state(), { actor, cap: { kind: "founding", ids: ["@world"], comps: ops.map((o) => o.comp) } }, ops);
-    changeEntry(w, plan, w.append(actOf(w, actor, "create-world", a)));
+    // born in today's spelling (shapes: the shape repair's version): the load's repair never runs on this world (liftWorld)
+    changeEntry(w, plan, w.append(actOf(w, actor, "create-world", a, { shapes: SHAPES_VERSION })));
     return { ok: true, world: w.name, you: "owner", ...(a.ownerKey ? {} : { governance: "tier 0 is empty: this server's operator key is the world's top governance key (PROTOCOL §13). Founding with ownerKey (your own ed25519 key) puts you there instead; tier 0 can't be filled later" }) };
   },
   help(w, actor, a) {

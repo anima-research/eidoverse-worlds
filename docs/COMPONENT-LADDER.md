@@ -34,11 +34,12 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
     `layers`, `mask`, `ccd` are cut, not held.
 - **cut fields that say where they went** (the registry's `dropped`): a write of one is refused with a pointer, a
   stored one is repaired at a world's first load (shared/protocol/shaperepair.js) and by translate-v1@12: `motion.amplitude`
-  (→ `amp`), `motion.part` (→ the key `motion:<part>`), `physics.material` (→ `surface`), `sky.weatherSeconds` (→
+  (→ `amp`), `motion.part` (→ `motion:<slot> {node: <part>}`: a node's name from a model file is data in the value, never part of a key; readers find the part by `node`), `physics.material` (→ `surface`), `sky.weatherSeconds` (→
   `transition`; the sky act still takes it), `sky.clock` (→ `tz`; likewise), `terrain.water` (→ the `water` component).
   Some are taken at the door instead and stored in today's spelling: `parent.order` (dropped), `light.day` (→
-  `daytime`), `grass.preset` (→ its strokes) and the first protocol's grass knobs. The load's act is `repair-shapes`;
-  PROTOCOL §4 lists everything it repairs, and the one sky it can't tell apart.
+  `daytime`), `grass.preset` (→ its strokes) and the first protocol's grass knobs. The load's act is `repair-shapes`, once
+  per world (its act, a founding stamped `shapes`, or a translate-v1@12 act marks the world); PROTOCOL §4 lists
+  everything it repairs.
 - **a component split out of another**: `water` (trial, 10-16) left `terrain`, as every engine keeps water apart from
   ground. `@world`'s `water {level (m, required), color?, opacity?, kind?: still|river|ocean, flow? [x, z] m/s}`; no
   `water` is a dry world, and absent fields read as `0x1d5a6e`, 0.82, a kind decided from the ground

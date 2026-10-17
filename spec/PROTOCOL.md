@@ -193,7 +193,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   their fields, defaults and meanings are in `shared/protocol/componentspec.js`; a
   authority answers `schema {component?}` with the same. Among them: `transform
   {pos, q, scale}`, `model` (a library path), `label`, `description`, `parent {to}`,
-  `pivot {pos}`, `light`, `mesh`, `motion` (a whole thing's; `motion:<part>` moves one node of its model), `socket {name, part?, accepts?, radius?}` (an attach point: a
+  `pivot {pos}`, `light`, `mesh`, `motion` (a whole thing's; `motion:<slot> {node, …}` moves one node of its model: `node` is the node's name as the model file spells it, any characters, DATA and never part of a key; `<slot>` is a short local tag, and readers find the part by `node`), `socket {name, part?, accepts?, radius?}` (an attach point: a
   child entity of the thing it is on, carrying `parent {to: <host>}`), `station {action, pose, anchor,
   exit?, leaveBy?, who?}` (what a person's body does at that socket, on the same entity; `sockets`, the old
   map spelling, is reserved and lift-only: the authority lifts it into socket children with their stations
@@ -246,11 +246,24 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   draft (a namespaced name, below) has no status: it isn't admitted.
 - **An old spelling is repaired once, at load.** When a trial shape changes,
   the authority's first load of a stored world writes what its old values
-  meant, in today's spelling, in one system act, `repair-shapes`
-  (shared/protocol/shaperepair.js: `repairComps` for each thing,
-  `repairWorld` for `@world`'s look); a second load finds nothing, and a
-  purged value is left alone. The shape audit (10-16) repairs: a bare motion
-  naming a part → `motion:<part>`, `amplitude` → `amp`, letter axes →
+  meant, in today's spelling, in one system act, `repair-shapes {v, ids,
+  failed?}` (shared/protocol/shaperepair.js: `repairComps` for each thing,
+  `repairWorld` for `@world`'s look). It runs **once per world**: that act is
+  the world's marker, as is a founding act stamped `shapes` (a world founded
+  since) and a `translated` act by translate-v1@12 or later
+  (`shapesMarked`, a pure view over the log, so every replica agrees). The
+  rules that read an absent field (a pendulum's swing point, physics kind,
+  a light's decay and daytime, the sky's and terrain's defaults) therefore
+  only ever see values stored before the marker, never a write made since:
+  a pendulum set today without a pivot keeps none, and a deleted pivot
+  stays deleted. The act is written even when nothing needs repair. Each
+  thing is admitted on its own: a thing the door refuses keeps its old
+  spelling and is named in the act's `failed`; the rest repair. A purged
+  value is left alone. The shape audit (10-16) repairs: a bare motion
+  naming a part → `motion:<slot> {node: <part>}` (the slot is `partSlot`
+  of the name, shared/protocol/names.js: the name itself when it is a tag,
+  else a sanitized form with 8 hex of its sha256), a keyed motion without
+  `node` → its key's tag as `node`, `amplitude` → `amp`, letter axes →
   vectors, the old pendulum readings written down (period 3.5 s, damp 0, a
   whole pendulum's `[0, 2, 0]` swing point as its `pivot`), a motion's
   `pivot` → the `pivot` component; `collider` exact → mesh; `physics` with no
@@ -267,11 +280,10 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   projection through the same functions, so a translated world needs no
   repair, and the old-world oracle mirrors the load with them; the sweep's
   declared projection and the oracle's core check are written independently,
-  a second hand on the same rules. One ambiguity is accepted: a sky is old
-  when it holds a field only the old spelling had, an old forecast, an
-  azimuth above 2π or not every default, so an old sky that happened to hold
-  all seven defaults and nothing else old, with an azimuth ≤ 2π degrees,
-  reads as today's (radians) and isn't converted.
+  a second hand on the same rules. Because the repair runs once, every
+  stored sky's azimuth is converted from degrees exactly once (a turn
+  beyond a full one first wraps: 400° is 40°), and a `weatherSeconds`
+  today's range can't hold (0, or above 600 s) is dropped.
 - **Every parameter is written down.** The authority writes a component's
   defaults into the stored value when it is created or set, so a reader never
   supplies a value the log doesn't hold, and a later change to a default

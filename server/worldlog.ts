@@ -105,7 +105,12 @@ export class WorldLog {
       if (done.length) console.log(`[world:${name}] lifted ${done.length} socket host(s) to socket children: ${JSON.stringify(done).slice(0, 300)}`);
       for (const f of failed) console.error(`[world:${name}] lifting ${f.host}'s sockets failed (${f.failed.code}): ${f.failed.reason}; it keeps the old spelling, with no seats, until a load lifts it`);
       for (const k of skipped) console.warn(`[world:${name}] not lifting its sockets (${k.skipped}): ${k.why}; seats stored in the old spelling don't work on this server`);
-      this.liftNotes = [...failed.map((f) => ({ host: f.host, ...f.failed })), ...skipped.map((k) => ({ skipped: k.skipped, why: k.why }))]; }
+      // the shape repair (once per world, authority.js liftWorld): its own line, never a socket host's
+      const rep = lifted.find((x) => x.repair)?.repair;
+      if (rep?.repaired.length) console.log(`[world:${name}] repaired ${rep.repaired.length} thing(s) stored before the shape audit, in today's spelling (once; repair-shapes): ${rep.repaired.slice(0, 20).join(", ")}${rep.repaired.length > 20 ? ", …" : ""}`);
+      else if (rep && !rep.failed.length) console.log(`[world:${name}] the shape repair found nothing to change (marked: it won't run again)`);
+      for (const f of rep?.failed ?? []) console.error(`[world:${name}] the shape repair skipped ${f.id ?? "the world"} (${f.code}): ${f.reason}; ${f.id ? "it keeps its old spelling (the rest of the world was repaired)" : "nothing was repaired; the next load tries again"}`);
+      this.liftNotes = [...failed.map((f) => ({ host: f.host, ...f.failed })), ...skipped.map((k) => ({ skipped: k.skipped, why: k.why })), ...(rep?.failed ?? []).map((f) => ({ repair: true, ...f }))]; }
     catch (err) { console.error(`[world:${name}] lifting sockets`, err); }
     const st = this.live.state();
     if (st.status !== "ok") console.warn(`[world:${name}] log folds to '${st.status}': the authority will refuse writes`);
@@ -117,9 +122,9 @@ export class WorldLog {
     if (fs.existsSync(this.posesPath)) { try { this.poses = JSON.parse(fs.readFileSync(this.posesPath, "utf8")); } catch { /* corrupt = fresh */ } }
     void warm(Object.values(st.entities ?? {}).map((e: Any) => e.c.model)); // standing models, measured for the authority
   }
-  /** what the load's socket lift couldn't do (per host), said to the flight recorder when a world attaches */
+  /** what the load's socket lift couldn't do (per host) and what the shape repair skipped (per thing), said to the flight recorder when a world attaches */
   private liftNotes: Record<string, unknown>[] = [];
-  attach(host: LogHost) { this.host = host; for (const n of this.liftNotes) host.debug("lift-sockets", n); }
+  attach(host: LogHost) { this.host = host; for (const n of this.liftNotes) host.debug(n.repair ? "repair-shapes" : "lift-sockets", n); }
 
   private view(): WorldView {
     return viewState(this.live.state(), { recentChat: this._state?.recentChat ?? [], chatTotal: this._state?.chatTotal ?? 0 }) as WorldView;

@@ -107,8 +107,12 @@ export function repairSky(sky) {
     delete out.clock; delete out.dormantRated; }
   // a tz with no clock is today's spelling (it governs). The audit's pre-#65 case (a tz that meant nothing without clock) is
   // indistinguishable from it, and no stored sky on Burrow held one (all 16 tz values sat beside clock: 'real'): kept
-  if (typeof out.azimuth === "number") { edit(); out.azimuth = out.azimuth * Math.PI / 180; }
-  if ("weatherSeconds" in out) { edit(); if (out.transition === undefined && out.weatherSeconds != null) out.transition = out.weatherSeconds; delete out.weatherSeconds; }
+  // degrees → radians, once (the load's marker makes it once: liftWorld). A turn more than a full one is the same bearing
+  // (400° is 40°), so it lands inside the registry's ±2π instead of refusing the world's whole repair (review r7 F5)
+  if (typeof out.azimuth === "number" && Number.isFinite(out.azimuth)) { edit(); out.azimuth = (out.azimuth % 360) * Math.PI / 180; }
+  // weatherSeconds → transition; a value today's range can't hold (0, or more than 600 s) is dropped: absent, the
+  // renderer's own ease (review r7 F5)
+  if ("weatherSeconds" in out) { edit(); const ws = out.weatherSeconds; if (out.transition === undefined && Number.isFinite(ws) && ws > 0 && ws <= 600) out.transition = ws; delete out.weatherSeconds; }
   if (bag(out.forecast) && ("dwellSec" in out.forecast || "transitionSec" in out.forecast)) { edit(); const f = { ...out.forecast };
     if ("dwellSec" in f) { if (f.dwell === undefined) f.dwell = f.dwellSec; delete f.dwellSec; }
     if ("transitionSec" in f) { if (f.transition === undefined) f.transition = f.transitionSec; delete f.transitionSec; }
@@ -116,14 +120,15 @@ export function repairSky(sky) {
   for (const k of ["sun", "fill", "world"]) if (k in out) { edit(); delete out[k]; }
   return out;
 }
-/** @world's components repaired: {c, set, del}, as repairComps. Only the world's look is touched. A sky is repaired once:
- *  its azimuth is then radians, and a second run must not convert it again (repairWorld is only ever handed a value
- *  stored before 10-16 once, by the load's one system act; a translated world is written repaired). */
+/** @world's components repaired: {c, set, del}, as repairComps. Only the world's look is touched. NOT idempotent on a sky:
+ *  its azimuth is converted from degrees every time it is handed one. Each caller hands it a stored value once: the
+ *  load's repair runs once per world (liftWorld: the log's marker, shapesMarked), translate-v1@12 once per translation
+ *  (and its output carries the marker), the oracle once per projection. */
 export function repairWorld(c0) {
   if (!bag(c0)) return { c: c0, set: [], del: [] };
   const c = { ...c0 }; const set = new Set(), del = new Set();
   const put = (k, v) => { c[k] = v; set.add(k); del.delete(k); };
-  if (bag(c.sky) && needsSky(c.sky)) put("sky", withSkyDefaults(repairSky(c.sky)));   // the old readers' readings of absence ARE the registry's defaults (hours 12, azimuth 180° = π, …)
+  if (bag(c.sky)) { const sky = withSkyDefaults(repairSky(c.sky)); if (JSON.stringify(sky) !== JSON.stringify(c.sky)) put("sky", sky); }   // the old readers' readings of absence ARE the registry's defaults (hours 12, azimuth 180° = π, …)
   if (bag(c.terrain)) { let t = c.terrain; const edit = () => (t === c.terrain ? (t = { ...c.terrain }) : t);
     if (Array.isArray(t.layers) && t.layers.some((l) => bag(l) && typeof l.color === "string" && HEXC.test(l.color))) { edit(); t.layers = t.layers.map((l) => (bag(l) ? { ...l, color: hexInt(l.color) } : l)); }
     if (t.kind === undefined || t.kind === "noise") for (const [k, v] of Object.entries(COMPONENTS.terrain.defaults)) if (t[k] === undefined) { edit(); t[k] = v; }
@@ -134,18 +139,22 @@ export function repairWorld(c0) {
     if (g !== c.grass) put("grass", g); }
   return set.size || del.size ? { c, set: [...set], del: [...del] } : { c: c0, set: [], del: [] };
 }
-// a stored sky that still speaks before 10-16. Every sky written since carries all of the registry's defaults (the sky act
-// and a set materialize them: hours, rate, clouds, azimuth, fog, exposure, ambient), and the repair writes them too, so: a
-// sky with a field only the old spelling had, a forecast in the old spelling, an azimuth above 2π (degrees), or one
-// missing any default, is old; a second load finds nothing. The one ambiguity, an old sky that happened to hold all seven
-// and none of the rest with an azimuth ≤ 2π degrees, is read as today's
-function needsSky(sky) {
-  if (["clock", "dormantRated", "weatherSeconds", "sun", "fill", "world"].some((k) => k in sky)) return true;
-  if (bag(sky.forecast) && ("dwellSec" in sky.forecast || "transitionSec" in sky.forecast)) return true;
-  if (typeof sky.azimuth === "number" && Math.abs(sky.azimuth) > 2 * Math.PI) return true;
-  return Object.keys(COMPONENTS.sky.defaults).some((k) => sky[k] === undefined);
-}
 const withSkyDefaults = (sky) => { const out = { ...sky }; for (const [k, v] of Object.entries(COMPONENTS.sky.defaults)) if (out[k] === undefined) out[k] = v; return out; };
+
+/** The shape repair's version: carried by its act (repair-shapes {v}) and by a founding (create-world {shapes}). */
+export const SHAPES_VERSION = 1;
+/** Has this log been through the shape repair already, or been written in today's spelling from its start? True when it
+ *  holds the repair's own act (any version: the first one, before 10-16's review, repaired everything before it or
+ *  nothing), a founding stamped with `shapes` (a world founded since), or a translation by translate-v1@12 or later (which
+ *  writes the repaired spelling). A pure view over the log, so every replica and every server answers the same. */
+export function shapesMarked(entries) {
+  for (const e of entries ?? []) {
+    if (!e || e.kind !== "act" || !e.body || typeof e.body !== "object") continue;
+    if (e.verb === "repair-shapes" && e.actor === "system") return true;
+    if (e.verb === "create-world" && Number.isInteger(e.body.shapes)) return true;
+    if (e.verb === "translated" && e.actor === "system") { const m = /@(\d+)$/.exec(String(e.body.from?.translator ?? "")); if (m && +m[1] >= 12) return true; } }
+  return false;
+}
 
 /** The ops that repair a folded state (every thing, and @world's look): [{verb: "set"|"delete", id, comp, value?}], in
  *  id order. [] when nothing needs it. */
