@@ -13,7 +13,7 @@ import { mayLeave } from '../../shared/sockbody.js';
 import { driveSeat, releaseSeat } from './seatbody.js';
 import { serverNow } from './remotes.js';
 import { sendRequest } from './net.js';
-import { plain } from './plainwords.js';
+import { plain, called, typeable } from './plainwords.js';
 import { usePromptHint } from './useprompt.js';
 import { handsHint, physicsApi as _phys } from './thingphysics.js';
 const myHoldsNow = () => _phys.mine().length > 0;
@@ -284,10 +284,10 @@ export function trySitOn(arg, slot = null) {
   if (best && slot && best.slot !== slot) { const o = socketsOn(best.id).find((x) => x.name === slot); const b = bodyOf(o?.station); if (b) Object.assign(best, { sock: o.id, slot, body: b }); }
   if (!best) {
     const far = arg ? null : nearestSeat(null, 30);
-    if (far) logChat('*', `nearest seat is ${far.id} (${far.slot}), ${far.d.toFixed(0)}m away — walk closer, or /sit ${far.id}`);
+    if (far) logChat('*', `nearest seat is on ${called(far.id)} (${far.slot}), ${far.d.toFixed(0)}m away — walk closer, or /sit ${typeable(far.id)}`);
     return false;
   }
-  if (mine && !best.body.fromSeat) { logChat('*', `get up first — ${best.id} (${best.slot}) doesn't take you straight from another seat`); return true; }
+  if (mine && !best.body.fromSeat) { logChat('*', `get up first — ${called(best.id)} (${best.slot}) doesn't take you straight from another seat`); return true; }
   const ticket = ++sitTicket;
   const take = () => {
     // only the latest ask may seat me, and only if I haven't sat, moved or stood since asking: a late answer (a slow
@@ -296,7 +296,7 @@ export function trySitOn(arg, slot = null) {
     if (mine) releaseSeat(getMe());
     setBodySeat(CONFIG.name, { to: best.sock });   // presence: my frames carry the seat, the socket's id (world.js)
     const lb = best.body.leaveBy;
-    logChat('*', `you ${best.body.action} on ${best.id} (${best.slot}) — ${lb === 'script' ? 'it lets you go when the world does' : lb === 'menu' ? 'X to get up' : lb === 'jump' ? 'Space or X to get up' : 'X or move to get off'}`);
+    logChat('*', `you ${best.body.action} on ${called(best.id)} (${best.slot}) — ${lb === 'script' ? 'it lets you go when the world does' : lb === 'menu' ? 'X to get up' : lb === 'jump' ? 'Space or X to get up' : 'X or move to get off'}`);
   };
   sendRequest('use', { id: best.sock, action: best.body.action }).then((r) => {
     if (r?.ok) take(); else logChat('*', plain(`${best.body.action} on ${best.id}`, r));   // a person's words (plainwords.js)

@@ -46,6 +46,7 @@ import { makeSection, flashHint, html } from './ui.js';
 import { logChat } from './chat.js';
 import { myState } from './controller.js';
 import { modelWord } from '../../shared/eido.js';
+import { called } from './plainwords.js';
 
 
 const esc = (v) => String(v).replace(/[&<>"]/g, (c) => (
@@ -321,7 +322,7 @@ function doAttach(childId, parentId) {
   if (childId === parentId) return;
   const r = commitEdit(childId, 'parent.to', parentId);
   if (r.errors?.length) return logChat('*', r.errors.join(' · '));
-  logChat('*', `${childId} now rides ${parentId} — it moves when ${parentId} moves`);
+  logChat('*', `${called(childId)} now rides ${called(parentId)} — it moves when ${called(parentId)} moves`);
 }
 
 export function sceneDetach(id) { doDetach(id); }

@@ -19,7 +19,7 @@ import { entities } from './world.js';
 import * as OP from '../../shared/protocol/requests.js';
 import { enc, dec, actorName } from '../../shared/protocol/names.js';
 import { refusalText, lockVerb, lockQuestion, lockChoices, lockBody } from '../../shared/protocol/refusal.js';
-import { plain, warnPlain } from './plainwords.js';
+import { plain, warnPlain, nameOf as thingName } from './plainwords.js';
 import { chooseCenter } from './confirmcenter.js';
 import { chooseXR, xrActive } from './xrask.js';
 import { flashHint, toast, claimStatus } from './ui.js';
@@ -115,7 +115,7 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
     const destructive = verb === 'Delete' || verb === 'Replace';
     const choices = lockChoices(verb).filter((c) => record || c.v !== 'unlock').map((c) => (destructive && c.v === 'through' ? { ...c, danger: true } : c));
     console.info('[editwrites] lock:', refusalText(what, r));
-    const choice = await (xrActive() ? chooseXR : chooseCenter)({ title: lockQuestion(verb), body: lockBody(r, req.args?.id), choices, cancel: 'cancel', ...(destructive ? { focus: 'cancel' } : {}) });   // a DOM card isn't drawn in a headset (xrask.js)
+    const choice = await (xrActive() ? chooseXR : chooseCenter)({ title: lockQuestion(verb), body: lockBody(r, req.args?.id, thingName), choices, cancel: 'cancel', ...(destructive ? { focus: 'cancel' } : {}) });   // a DOM card isn't drawn in a headset (xrask.js)
     bus.emit('edit-lock-asked', { what, yes: choice === 'through', choice });
     if (choice === 'through') { r = await sendRequest(req.verb, { ...req.args, throughLock: true }); break; }
     if (choice !== 'unlock') { cancelled = true; break; }

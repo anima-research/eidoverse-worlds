@@ -59,6 +59,7 @@ import { agoWords, touchWords } from '../../shared/protocol/refusal.js';
 import { recordComponents } from '../../shared/protocol/view.js';
 import { RANK, lockLevel, lockRank } from '../../shared/protocol/roles.js';
 import { KEYHINTS, withKeys } from './keyhints.js';   // slice 3b: these panels' writes are requests
+import { called } from './plainwords.js';
 
 const _wp = new THREE.Vector3();
 const round = (v, dp = 3) => +(+v).toFixed(dp);
@@ -199,7 +200,7 @@ function completeRefPick(targetId) {
   if (targetId === id) { flashHint(key === 'parent.to' ? 'a thing can\'t be its own parent' : 'a thing can\'t reference itself', 3000); repaintAll(); return true; }
   const r = commitEdit(id, key, targetId);
   if (r.errors?.length) flashHint(r.errors.join(' · '), 5000);
-  else flashHint(html`${what} → <b>${targetId}</b>`, 3000);
+  else flashHint(html`${what} → <b>${called(targetId)}</b>`, 3000);
   repaintAll();
   return true;
 }
@@ -441,7 +442,7 @@ function duplicate(id) {
   const nudge = n === 2 && !rec?.['copy-of'] ? html` · copies are <b>independent</b>: for copies that stay in step, <b>Save as blueprint</b> and place them from Build ▸ Blueprints` : '';
   // the authority copies it, and what's attached to it: create {from: id}, one act
   Edits.duplicate(id).then((r) => { const nid = r.ok && r.refs?.[0]?.id; if (!nid) return;
-    const out = Edits.idOut(nid); flashHint(html`<b>${out}</b> — a copy of ${id}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
+    const out = Edits.idOut(nid); flashHint(html`<b>${called(out)}</b> — a copy of ${called(id)}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
 }
 
 // lock levels (R, 10-07): who may lift a lock is its level and up, or whoever set it (the authority decides; this only
@@ -849,7 +850,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     const f = fieldByKey(painted, action);
     if (f?.t === 'ref') {
       if (armingRef && armingRef.id === id && armingRef.key === key) { armingRef = null; flashHint('pick cancelled', 2500); }
-      else { armingRef = { id, key }; flashHint(key === 'parent.to' ? html`now click <b>${id}</b>'s new parent — a row here, or the thing itself in the world` : html`now click <b>${key.split('.').pop()}</b>'s target — a row here, or the thing itself in the world`, 5000); }
+      else { armingRef = { id, key }; flashHint(key === 'parent.to' ? html`now click <b>${called(id)}</b>'s new parent — a row here, or the thing itself in the world` : html`now click <b>${key.split('.').pop()}</b>'s target — a row here, or the thing itself in the world`, 5000); }
       repaintAll();
       return;
     }
@@ -927,7 +928,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     case 'unbind': Edits.sendOps(unbindOps(payload), { what: `remove ${payload}`, expect: false }); setTimeout(refreshBehaviors, 400); break;
     case 'scripts': watchScript(payload); break;   // a script row → the Console, watching it
     case 'newscript': openNewScript(id).then(async (r) => { if (!r.ok) return; await refreshBehaviors(); watchScript(`${r.id}/${r.name}`);
-      flashHint(html`script <b>${r.name}</b> is on ${r.id}${r.action ? ` — use it (${r.action}) to run it` : ''}; its log is in the Console`, 5000); }); break;
+      flashHint(html`script <b>${r.name}</b> is on ${called(r.id)}${r.action ? ` — use it (${r.action}) to run it` : ''}; its log is in the Console`, 5000); }); break;
     default: if (action.startsWith('uncomp:')) commitEdit(id, `comp.${action.slice(7)}`, null);
   }
   repaintAll();

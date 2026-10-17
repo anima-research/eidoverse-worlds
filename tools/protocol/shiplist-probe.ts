@@ -23,7 +23,7 @@ let worldsDir = "";
 import { pagedEval } from "./idalias.ts";
 // R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); every page answer brings the
 // minted ids back (NODE), and N(name) reads a scene name as its id for the node-side checks
-const NAMES = ["acbox", "anchor", "atbox", "box1", "clbox", "cloud", "ctbox", "cuball", "gate", "getool", "hdsign", "hpball", "htcrate", "hysign", "nhball", "nlbox", "pobase", "potop", "rbbtn", "rbtgt", "slcrate", "slfloor", "sthigh", "stlow", "syb", "syorb", "wbcrate", "wgcrate", "sba", "sbb", "crate-2", "crate-3"];
+const NAMES = ["mta", "mtb", "prbox0", "prbox1", "acbox", "anchor", "atbox", "box1", "clbox", "cloud", "ctbox", "cuball", "gate", "getool", "hdsign", "hpball", "htcrate", "hysign", "nhball", "nlbox", "pobase", "potop", "rbbtn", "rbtgt", "slcrate", "slfloor", "sthigh", "stlow", "syb", "syorb", "wbcrate", "wgcrate", "sba", "sbb", "crate-2", "crate-3"];
 const NODE = new Map<string, string>(); const N = (n: string) => NODE.get(n) ?? n;
 const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("shiplist", {
   prepare: (scratch) => {
@@ -113,7 +113,7 @@ try {
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: '@world', component: 'bounds' });`).catch(() => null);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'wbcrate' });`).catch(() => null);
   await page(`const c = await import('/lib/controller.js'); await c.walkTo(${me0[0]}, ${me0[1]}, { ms: 6000 }); c.myState.yaw = ${me0[2]}; await new Promise((z) => setTimeout(z, 600)); return true;`);   // and face the way I did: later stages place things where I look
-  const after = await page(`const n = await import('/lib/net.js'); const c = await import('/lib/controller.js'); return { bounds: n.replica.st?.entities?.['@world']?.c?.bounds ?? null, crate: !!n.replica.st?.entities?.wbcrate, back: +Math.hypot(c.myState.pos.x - (${me0[0]}), c.myState.pos.z - (${me0[1]})).toFixed(3), yaw: +c.myState.yaw.toFixed(3) };`);
+  const after = await page(`const n = await import('/lib/net.js'); const c = await import('/lib/controller.js'); return { bounds: n.replica.st?.entities?.['@world']?.c?.bounds ?? null, crate: !!n.replica.st?.entities?.['wbcrate'], back: +Math.hypot(c.myState.pos.x - (${me0[0]}), c.myState.pos.z - (${me0[1]})).toFixed(3), yaw: +c.myState.yaw.toFixed(3) };`);
   check("WB2 (cleanup) the test's edge and crate are gone again", !after.bounds && !after.crate, after);
   const fence2 = await evalJson(`import('/lib/edge.js').then((e) => e.worldEdgeShown())`);
   check("WB2b …and so is the fence", fence2 && fence2.box === null, fence2);
@@ -122,10 +122,10 @@ try {
   await stage("F", async () => {
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'box1', model: '${CRATE}', components: { label: 'Toy box' }, place: { at: [${at[0] + 3}, ${at[1]}] } });`);
   const r0 = await evalJson(`__refused.length`);
-  await page(`const e = await import('/lib/editwrites.js'); return (await e.send({ verb: 'set', args: { id: 'box1', component: 'reactions', value: { open: { kind: 'toggle' } } } }, { what: 'change box1' })).ok;`);
+  await page(`const e = await import('/lib/editwrites.js'); return (await e.send({ verb: 'set', args: { id: 'box1', component: 'reactions', value: { open: { kind: 'toggle' } } } }, { what: 'change ' + 'box1' })).ok;`);   // the request names the thing by its id, as the editor does
   check("F1 a refusal is shown", await waitFor(`__refused.length > ${r0}`));
   const f = await evalJson(`__refused.at(-1)`);
-  check("F2 …in a person's words: what and why, the thing by its label, no refusal code, no tool syntax, no ids", f && /^Couldn't change “Toy box”/.test(f.text) && !/no-target|\{|box1|openable \{/.test(f.text) && /\(no-target\)/.test(f.agentText ?? ""), f);
+  check("F2 …in a person's words: what and why, the thing by its label, no refusal code, no tool syntax, no ids", f && /^Couldn't change “Toy box”/.test(f.text) && !/no-target|\{|openable \{/.test(f.text) && !f.text.includes(N("box1")) && /\(no-target\)/.test(f.agentText ?? ""), f);
   check("F3 …the same words on screen (a toast)", await waitFor(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes("Couldn't change “Toy box”"))`, 3000));
 
   });
@@ -529,14 +529,14 @@ try {
   const pixel = await page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('ctbox'); o.updateWorldMatrix(true, true);
     const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera), r = c.canvas.getBoundingClientRect(); return [r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height];`);
   const before = await at();
-  check("CT0 a click on it finds it", before === 'ctbox', before);
+  check("CT0 a click on it finds it", before === N('ctbox'), before);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('set', { id: 'ctbox', component: 'clickthrough', value: true });`); await sleep(600);
   const after = await at();
   // what lies behind it is the earlier stages' business (the full run leaves box1 there): the same pixel with ctbox gone
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'ctbox' });`).catch(() => null);
   await waitFor(`import('/lib/world.js').then((m) => !m.entities.has('ctbox'))`, 8000); await sleep(300);
   const behind = await page(`const cu = await import('/lib/clickuse.js'); return cu.thingAt(${pixel[0]}, ${pixel[1]});`);
-  check("CT1 with clickthrough set, the same click passes through it to whatever is behind (as if it were gone)", after !== 'ctbox' && after === behind, { after, behind });
+  check("CT1 with clickthrough set, the same click passes through it to whatever is behind (as if it were gone)", after !== N('ctbox') && after === behind, { after, behind });
   });
   // ---- CL: a live drag by someone else is a claim: an amber box and 'editing: <name>' in the Hierarchy, gone on end ----
   await stage("CL", async () => {
@@ -548,20 +548,20 @@ try {
   const seen = await page(`const b = await import('/lib/base.js'); b.bus.emit('drag', { id: 'clbox', pos: [${me[0]} + 1.6, 0, ${me[1]} + 1], yaw: 0, by: 'Zed' }); await new Promise((r) => setTimeout(r, 350));
     const bd = await import('/lib/build.js'); const rows = [...document.querySelectorAll('[data-frame="hierarchy"] .schema-scroll *')].map((e) => e.textContent).filter((t) => /editing: Zed/.test(t)).length;
     return { claims: bd.claimsNow(), rows };`);
-  check("CL1 while Zed's drag samples flow, clbox is claimed by Zed and the Hierarchy row says so", seen?.claims?.clbox === 'Zed' && seen.rows > 0, seen);
+  check("CL1 while Zed's drag samples flow, clbox is claimed by Zed and the Hierarchy row says so", seen?.claims?.[N('clbox')] === 'Zed' && seen.rows > 0, seen);
   const ended = await page(`const b = await import('/lib/base.js'); b.bus.emit('drag', { id: 'clbox', pos: [${me[0]} + 1.6, 0, ${me[1]} + 1], yaw: 0, by: 'Zed', end: true }); await new Promise((r) => setTimeout(r, 300));
     const bd = await import('/lib/build.js'); return bd.claimsNow();`);
-  check("CL2 the last sample (end) drops the claim at once", !ended?.clbox, ended);
+  check("CL2 the last sample (end) drops the claim at once", !ended?.[N('clbox')], ended);
   const lapsed = await page(`const b = await import('/lib/base.js'); b.bus.emit('drag', { id: 'clbox', pos: [${me[0]} + 1.6, 0, ${me[1]} + 1], yaw: 0, by: 'Zed' }); await new Promise((r) => setTimeout(r, 2200));
     const bd = await import('/lib/build.js'); return bd.claimsNow();`);
-  check("CL3 …and silence drops it after 1.5 s", !lapsed?.clbox, lapsed);
+  check("CL3 …and silence drops it after 1.5 s", !lapsed?.[N('clbox')], lapsed);
   // E2: a live scrub of a transform channel goes out as a drag (with the size), and its commit sends the last sample with end
   const sent = await page(`const ins = await import('/lib/inspect.js'); const out = []; const orig = WebSocket.prototype.send;
     WebSocket.prototype.send = function (s) { try { const m = JSON.parse(s); if (m.type === 'drag') out.push(m); } catch {} return orig.call(this, s); };
     const bd = await import('/lib/build.js'); bd.buildApi?.select?.('clbox');
     ins.commitEdit('clbox', 'pos.x', ${me[0]} + 1.9, { live: true }); ins.commitEdit('clbox', 'pos.x', ${me[0]} + 2.0, { live: true }); ins.commitEdit('clbox', 'pos.x', ${me[0]} + 2.0, {});
     await new Promise((r) => setTimeout(r, 400)); WebSocket.prototype.send = orig; return out;`);
-  check("CL4 a live scrub of pos.x sends drag samples with the size, and the commit's last one says end", Array.isArray(sent) && sent.length >= 3 && sent.every((m) => m.id === 'clbox' && Array.isArray(m.scale)) && sent.at(-1).end === true && !sent[0].end, sent);
+  check("CL4 a live scrub of pos.x sends drag samples with the size, and the commit's last one says end", Array.isArray(sent) && sent.length >= 3 && sent.every((m) => m.id === N('clbox') && Array.isArray(m.scale)) && sent.at(-1).end === true && !sent[0].end, sent);
   await key("KeyE"); await sleep(300);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'clbox' });`).catch(() => null); await sleep(300);
   });
@@ -822,7 +822,7 @@ try {
   const w = await evalJson(`(() => { const l = ${H}.querySelector('.sp-list .sp-item-main'); const ic = l?.querySelector('.sp-ico')?.getBoundingClientRect(), lb = l?.querySelector('.sp-item-label')?.getBoundingClientRect(); return { label: l?.querySelector('.sp-item-label')?.textContent, icon: !!l?.querySelector('.sp-ico svg'), inline: !!ic && !!lb && Math.abs((ic.top + ic.height / 2) - (lb.top + lb.height / 2)) < 6 && lb.left > ic.right - 1, title: l?.title }; })()`);
   check("HQ1 the World row says which world it is (WORLD, then its name), with its glyph on the same line and a tooltip", /^World\S/.test(w?.label ?? "") && w?.icon && w?.inline && /world itself/.test(w?.title ?? ""), w);
   const r0 = await row();
-  check("HQ2 a row is the name alone; its id and kind are on hover", r0?.label === "Clicker" && r0.sub === null && /id cuball/.test(r0.title), r0);
+  check("HQ2 a row is the name alone; its id and kind are on hover", r0?.label === "Clicker" && r0.sub === null && r0.title.includes(`id ${N("cuball")}`), r0);
   const pick = async (k: string) => { await evalJson(`(${H}.querySelector('.sp-pop-btn').click(), true)`); await waitFor(`!!document.querySelector('.sp-pop-item')`, 2000);
     await evalJson(`([...document.querySelectorAll('.sp-pop-item')].find((b) => b.textContent.includes('${k}'))?.click(), true)`); await sleep(400); };
   await pick("show ids");
@@ -832,10 +832,10 @@ try {
     // read off the menu, not counted (the row filters joined it 10-12): each line once, the three view switches among them
     && new Set(face.items).size === face.items.length && ["show ids", "show kinds", "list components"].every((w) => face.items.some((t) => t.endsWith(w)))
     && face.items.filter((t) => /expand all|collapse all/.test(t)).length === 2 && face.search < 2, face);
-  check("HQ3 Options ▸ show ids: the row carries its id again", /Clicker\s+\(cuball\)/.test(r1?.label ?? ""), r1);
+  check("HQ3 Options ▸ show ids: the row carries its id again", new RegExp(`Clicker\\s+\\(${N("cuball")}\\)`).test(r1?.label ?? ""), r1);
   await pick("list components");
   // R 10-11 00:03: with components listed, things start FOLDED; opening one shows its components
-  const compRows = () => evalJson(`[...${H}.querySelectorAll('.sp-tree-row')].filter((x) => (x.dataset.id ?? '').startsWith('comp:cuball:')).map((x) => x.querySelector('.sp-item-label').textContent)`);
+  const compRows = () => evalJson(`[...${H}.querySelectorAll('.sp-tree-row')].filter((x) => (x.dataset.id ?? '').startsWith('comp:' + 'cuball' + ':')).map((x) => x.querySelector('.sp-item-label').textContent)`);
   const shut = await compRows();
   await evalJson(`(${H}.querySelector('.sp-tree-row[data-id="cuball"] .sp-disc')?.click(), true)`); await sleep(400);
   const cs = await compRows();

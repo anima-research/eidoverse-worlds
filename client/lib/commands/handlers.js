@@ -447,8 +447,9 @@ register('use', (arg) => {
 
 register('sit', (arg) => {
   // /sit [thing] [slot] — a declared seat nearby wins; otherwise sit on the ground
-  const [thing, slot] = (arg || '').trim().split(/\s+/);
-  if (!trySitOn(thing || null, slot || null)) setPosture('sit');
+  const [word, slot] = (arg || '').trim().split(/\s+/);
+  const t = thingNamed(word); if (t?.err) return logChat('*', t.err);   // by id, label or handle (R 10-17)
+  if (!trySitOn(t?.id ?? (word || null), slot || null)) setPosture('sit');
 });
 
 register('seatpose', (arg) => {

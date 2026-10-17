@@ -46,7 +46,7 @@ import { REACH, HAND_Y, KICK } from '../../shared/protocol/physconst.js';
 import { r3 } from '../../shared/protocol/round.js';
 import { clockRtt } from './serverclock.js';
 import { onWorldChange } from './state.js';
-import { plain, nameOf } from './plainwords.js';
+import { plain, nameOf, called } from './plainwords.js';
 import { html } from './markup.js';
 import { xrActive } from './xrask.js';
 import { grabOf, holdPoseOf, fingerPose, armPose, bothArms, pickGrip, HAND_REACH, NEAR_GRAB } from '../../shared/grab.js';
@@ -582,7 +582,7 @@ export async function grab(name) {
   await track(true);
   const r = await sendRequest('grab', { id });
   if (!r?.ok) return refused('grab', r, id);
-  flashHint(`holding ${id}${r.notes?.some((n) => n.takenFrom) ? ' (taken from someone)' : ''} — T puts it down, C throws`);
+  flashHint(`holding ${called(id)}${r.notes?.some((n) => n.takenFrom) ? ' (taken from someone)' : ''} — T puts it down, C throws`);
   return r;
 }
 /** Set down what you hold (straight down onto what's below your hand). */
@@ -674,7 +674,7 @@ export async function punt(arg) {
   await track(true);
   const r = await sendRequest('punt', { id, power });
   if (!r?.ok) return refused('punt', r, id);
-  flashHint(`you punt ${id}${r.volley ? ' (a volley)' : ''}`);
+  flashHint(`you punt ${called(id)}${r.volley ? ' (a volley)' : ''}`);
   return r;
 }
 

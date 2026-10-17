@@ -204,7 +204,7 @@ try {
   check("X3 Esc left the selection alone (it cancelled the drag, not the edit)", await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === '${crate}')`));
 
   // ---- L: a lock refusal and Move anyway ----
-  check("(setup) bob builds a table with a cup on it and locks the table", (await bobReq("create", { id: "tbl", model: RED, components: { transform: { pos: [6, 0, 0] } } })).ok
+  check("(setup) bob builds a table with a cup on it and locks the table", (await bobReq("create", { id: "tbl", model: RED, components: { transform: { pos: [6, 0, 0] }, label: "tbl" } })).ok
     && (await bobReq("create", { id: "cup", model: CRATE, components: { transform: { pos: [0, 1, 0], scale: [0.3, 0.3, 0.3] }, parent: { to: "tbl", order: "a0" } } })).ok
     && (await bobReq("set", { id: "tbl", component: "lock", value: true })).ok);
   check("L0 the page has the cup on the table", await waitFor(`import('/lib/world.js').then((m) => m.entities.get('cup')?.userData?.mountedTo === 'tbl')`, 12000));
@@ -212,11 +212,11 @@ try {
   await page(`(await import('/lib/inspect.js')).commitEdit('cup', 'pos.x', 0.4); return true;`);
   check("L1 moving the cup on bob's locked table asks first: 'This is locked. Move anyway?'", await waitFor(`${dlgTitle} === 'This is locked. Move anyway?'`), await evalJson(dlgTitle));
   const body = await evalJson(`document.querySelector('#confirm-center #cc-body')?.textContent ?? ''`);
-  check("L2 …saying in one line which thing is locked and by whom, no agent teaching (R, 10-04)", body === "It rides tbl, which is locked by bob.", body);
+  check("L2 …saying in one line which thing is locked and by whom, no agent teaching (R, 10-04)", body === "It rides “tbl”, which is locked by bob."   /* the table by its label, never its id (R 10-17) */, body);
   check("L3 …and the refused try changed nothing; the attempt itself is on the record (round-2 R7)", myActs().length === n0 && myRefused() >= 1, myRefused());
   await dlgClick("Move anyway");
   check("L4 Move anyway: ONE act, the same request with throughLock: true", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.body.request.throughLock === true && myActs().at(-1).e.body.request.id === IDS.of("cup")), myActs().slice(n0).map((a) => a.e.body.request));
-  check("L5 …the cup moved, and the table is still locked", Math.abs(disk().entities.cup.c.transform.pos[0] - 0.4) < 1e-9 && disk().entities.tbl.c.lock?.rank === "builder", [disk().entities.cup.c.transform, disk().entities.tbl.c.lock]);
+  check("L5 …the cup moved, and the table is still locked", Math.abs(disk().entities[IDS.of("cup")].c.transform.pos[0] - 0.4) < 1e-9 && disk().entities[IDS.of("tbl")].c.lock?.rank === "builder", [disk().entities[IDS.of("cup")].c.transform, disk().entities[IDS.of("tbl")].c.lock]);
   check("L6 the dialog's answer was recorded as yes", await evalJson(`__asked.length === ${a0 + 1} && __asked.at(-1).yes === true`));
 
   // ---- D: duplicate ----
@@ -447,7 +447,7 @@ try {
   const sLabels = await evalJson(`[...${insp}.querySelectorAll('.sp-row .sp-label')].map((l) => l.textContent).filter((t) => /scale/.test(t))`);
   check("I13 the Transform shows scale x / y / z", JSON.stringify(sLabels) === JSON.stringify(["scale x", "scale y", "scale z"]), sLabels);
   await page(`(await import('/lib/inspect.js')).commitEdit('pebble', 'pos.sx', 2); return true;`);
-  check("I14 …editing scale x writes [2, y, z] to the log (one act)", await waitDisk(() => { const sc = disk().entities.pebble?.c.transform.scale; return sc && sc[0] === 2 && sc[1] !== 2; }), disk().entities.pebble?.c.transform);
+  check("I14 …editing scale x writes [2, y, z] to the log (one act)", await waitDisk(() => { const sc = disk().entities[IDS.of("pebble")]?.c.transform.scale; return sc && sc[0] === 2 && sc[1] !== 2; }), disk().entities[IDS.of("pebble")]?.c.transform);
   check("I15 …and the page draws it stretched, not uniform", await waitFor(`import('/lib/world.js').then((m) => { const s = m.entities.get('pebble').scale; return Math.abs(s.x - 2) < 1e-6 && Math.abs(s.y - 0.4) < 1e-6 && s.y === s.z; })`), await evalJson(`import('/lib/world.js').then((m) => m.entities.get('pebble').scale.toArray())`));
 
   // R 10-04: a reload made in edit mode came back with the edit frames floating, squashed, outside edit mode. An edit
@@ -489,7 +489,7 @@ try {
     c.object.quaternion.setFromAxisAngle({ x: 0, y: 1, z: 0, isVector3: true, clone() { return this; } }, Math.PI / 2); c.object.updateMatrixWorld(true);
     c.dispatchEvent({ type: 'objectChange' }); c.dispatchEvent({ type: 'dragging-changed', value: false }); return true; })()`);
   check("PV2 a quarter turn about the pivot is ONE act", await waitDisk(() => myActs().length === nPv + 1), myActs().slice(nPv).map((a) => a.e.verb));
-  const pvT = disk().entities.pv?.c.transform;
+  const pvT = disk().entities[IDS.of("pv")]?.c.transform;
   check("PV3 …the crate swung round the pivot: its origin went from (10, 0, 10) to (11, 0, 11)", pvT && Math.abs(pvT.pos[0] - 11) < 1e-3 && Math.abs(pvT.pos[2] - 11) < 1e-3, pvT);
   check("PV4 …and the pivot itself stayed where it was (11, 0, 10)", await waitFor(`(() => { const g = __gizmo(); return Math.abs(g.proxyPos[0] - 11) < 1e-3 && Math.abs(g.proxyPos[2] - 10) < 1e-3; })()`), await evalJson(`__gizmo().proxyPos`));
   await page(`(await import('/lib/build.js')).setTool('select'); return true;`);
@@ -500,15 +500,15 @@ try {
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('pt'); (await import('/lib/build.js')).setTool('select'); return true;`);
   await key("KeyP"); await sleep(400);
   check("PT1 P arms the pivot tool: the handles sit at its origin (no pivot yet)", await waitFor(`import('/lib/build.js').then((B) => { const g = __gizmo(); return B.getTool() === 'pivot' && g.attached === 'pt' && g.viaProxy && Math.abs(g.proxyPos[0] - 14) < 1e-6 && Math.abs(g.proxyPos[2] - 10) < 1e-6; })`), await evalJson(`({ g: __gizmo().proxyPos, a: __gizmo().attached })`));
-  const ptBefore = JSON.stringify(disk().entities.pt.c.transform);
+  const ptBefore = JSON.stringify(disk().entities[IDS.of("pt")].c.transform);
   const nPt = myActs().length;
   const centre = await page(`const W = await import('/lib/world.js'); const M = await import('/lib/realize/models.js'); const S = await import('/lib/state.js');
     const box = M.boxOf('pt'); const mid = [0, 1, 2].map((i) => (box[0][i] + box[1][i]) / 2);
     const o = W.entities.get('pt'); o.updateWorldMatrix(true, false); const c = __gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true });
     c.object.position.set(mid[0] + 0.05, mid[1] + 0.03, mid[2]).applyMatrix4(o.matrixWorld); c.object.updateMatrixWorld(true);
     c.dispatchEvent({ type: 'objectChange' }); c.dispatchEvent({ type: 'dragging-changed', value: false }); return JSON.stringify(mid.map((v) => Math.round(v * 1e4) / 1e4));`);
-  check("PT2 releasing near the middle snaps the pivot to the model's centre: ONE pivot write", await waitDisk(() => myActs().length === nPt + 1 && JSON.stringify(disk().entities.pt?.c.pivot?.pos) === centre), { centre, pivot: disk().entities.pt?.c.pivot, acts: myActs().slice(nPt).map((a) => a.e.body?.request) });
-  check("PT3 …and the crate itself did not move", JSON.stringify(disk().entities.pt.c.transform) === ptBefore, [ptBefore, disk().entities.pt.c.transform]);
+  check("PT2 releasing near the middle snaps the pivot to the model's centre: ONE pivot write", await waitDisk(() => myActs().length === nPt + 1 && JSON.stringify(disk().entities[IDS.of("pt")]?.c.pivot?.pos) === centre), { centre, pivot: disk().entities[IDS.of("pt")]?.c.pivot, acts: myActs().slice(nPt).map((a) => a.e.body?.request) });
+  check("PT3 …and the crate itself did not move", JSON.stringify(disk().entities[IDS.of("pt")].c.transform) === ptBefore, [ptBefore, disk().entities[IDS.of("pt")].c.transform]);
   await page(`(await import('/lib/build.js')).setTool('select'); return true;`);
 
   // 👁 Hidden in MY view (R 10-04: "Hidden" is the local one; research 51): never logged, and you can't lose track of it
@@ -517,7 +517,7 @@ try {
   await evalJson(`(${eyeOf("pt")}?.click(), true)`);
   check("E1 the row's eye hides it in my view (not drawn here)", await waitFor(`import('/lib/world.js').then((m) => m.entities.get('pt')?.visible === false)`), await evalJson(`import('/lib/world.js').then((m) => m.entities.get('pt')?.visible)`));
   await sleep(500);
-  check("E2 …and writes NOTHING to the world (a view filter, never logged)", entries().length === nEye && !disk().entities.pt.c.hidden, entries().length - nEye);
+  check("E2 …and writes NOTHING to the world (a view filter, never logged)", entries().length === nEye && !disk().entities[IDS.of("pt")].c.hidden, entries().length - nEye);
   check("E3 …the Hierarchy says so: '1 hidden in your view · show all'", await waitFor(`[...${hier}.querySelectorAll('.sp-btn')].some((b) => /1 hidden in your view/.test(b.textContent))`), await evalJson(`[...${hier}.querySelectorAll('.sp-btn')].map((b) => b.textContent)`));
   await evalJson(`[...${hier}.querySelectorAll('.sp-btn')].find((b) => /hidden in your view/.test(b.textContent))?.click(), true`);
   check("E4 …and 'show all' brings it back", await waitFor(`import('/lib/world.js').then((m) => m.entities.get('pt')?.visible === true)`));

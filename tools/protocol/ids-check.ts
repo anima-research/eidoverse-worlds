@@ -215,6 +215,13 @@ await C("H5", "the editor's Hierarchy hides ids (an unlabelled row says what it 
   return [/shownName = \(id\) => nameOnly\(id\) \?\? \(kindHint/.test(ep) && /handleOf\(id, all\)/.test(ep) && /badges\.unshift\(tw\)/.test(ep) && /k: 'showid'/.test(ep) && /k: 'copyid'/.test(ep) && /let showId = false/.test(ep)
     && !/const labelOf = \(id\) => \{ const l = nameOnly\(id\); return l \? \(hopts\.ids \? `\$\{l\}  \(\$\{id\}\)` : l\) : id; \};/.test(ep), "editpanels"]; });
 
+await C("H6", "a person's lock question names the locked thing by what they call it (its label, or what it is), never its opaque id", async () => {
+  const RF = await imp("shared/protocol/refusal.js"); const id = "jyxc32e5nz242uonrboteprqbw";
+  const r = { refused: { code: "locked", lock: id, by: "bob" } };
+  const named = RF.lockBody(r, "kid", (x) => (x === id ? "“tbl”" : null)), bare = RF.lockBody(r, "kid");
+  const ep = read("client/lib/editwrites.js");
+  return [named === "It rides “tbl”, which is locked by bob." && bare.includes(id) && /lockBody\(r, req\.args\?\.id, thingName\)/.test(ep), [named, bare]]; });
+
 // ---- G: the fixture seam ----
 await C("G1", "fixtureIds (tests' fixtures seed known ids, like a fork's copy) is called from no runtime file", () => {
   const roots = ["server", "mcpl", "client/lib", "client/src", "shared"]; const hits = [];

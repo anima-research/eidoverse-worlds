@@ -29,7 +29,7 @@ const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
 import { inPage } from "./idalias.ts";
 // R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); NODE holds the minted ids
-const NODE = new Map<string, string>(); const NAMES = ["box2", "bench5", "lockd", "signbox", "bpbox"];
+const NODE = new Map<string, string>(); const NAMES = ["box2", "bench5", "lockd", "signbox", "bpbox", "child1"];
 const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("party", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
