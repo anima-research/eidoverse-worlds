@@ -686,6 +686,14 @@ function buildSnapshot(w: World, c: Client) {
 const server = Bun.serve({
   port: PORT,
   hostname: "0.0.0.0",
+  // Bun closes a connection after 10s with no bytes moving (its default
+  // idleTimeout) — and that includes a response mid-stream. Over a relayed or
+  // transcontinental link a big download (a VRM, an unoptimized library glb)
+  // routinely stalls longer than that, so the transfer was cut short and the
+  // client saw a truncated body. 255s is Bun's maximum: a stalled transfer
+  // rides it out, and a connection that stays silent is still closed after
+  // 255s (by this same timer; TCP alone would take far longer to notice).
+  idleTimeout: 255,
   async fetch(req, srv) {
     // The whole HTTP surface is routes.ts's table (§15, 7c) — one row per
     // endpoint, first match wins, in exactly the order the if-chain had.
