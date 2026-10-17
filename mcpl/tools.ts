@@ -236,8 +236,11 @@ const rehearse = (ag: ToolAgent, a: Record<string, any>, name: string) => {
     ? ag.flightBodyDown(String(a.eventId ?? "rehearsal"))
     : ag.flightBodyRecovered(String(a.eventId ?? "rehearsal"), "gen-rehearsal"));
 };
-/** A coordinate or altitude the call can't fly to: missing, or not a number. */
-const notANumber = (v: unknown) => v == null || v === "" || !Number.isFinite(Number(v));
+/** A coordinate or altitude the call can't fly to: missing, or not a number.
+ *  A number flies, and so does a string that reads as one, as `Number()`
+ *  always took "5"; a boolean, a blank, a list or an object doesn't. */
+const notANumber = (v: unknown) => typeof v === "number" ? !Number.isFinite(v)
+  : typeof v !== "string" || v.trim() === "" || !Number.isFinite(Number(v));
 
 type ToolHandler = (ag: WorldAgent, a: Record<string, any>, ctx: ToolCtx, name: string)
   => Promise<Record<string, unknown>> | Record<string, unknown>;
@@ -329,17 +332,23 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!want.includes("/") && !/\.(glb|jpg)$/i.test(want)) tries.push(`${ag.httpBase}/thumb/${encodeURIComponent(want)}.png`);
       const stem = (want.includes("/") ? want : `eidoverse/assets/models/${want}`).replace(/(_preview\.jpg|\.jpg|\.glb)$/i, "");
       tries.push(`${ag.httpBase}/library/${stem}_preview.jpg`);
-      // A fetch that throws never reached the sequencer, which is not the
-      // same as a sequencer that answered with no preview.
+      // A fetch that throws, or a 5xx from what fronts the sequencer, never
+      // got the sequencer's answer, which is not the same as a sequencer that
+      // answered with no preview.
       let unreached: string | null = null, answered = false;
       for (const url of tries) {
+        let r: Response;
+        try { r = await fetch(url); } catch (e) { unreached ??= (e as Error).message; continue; }
+        if (r.status >= 500) { unreached ??= `it answered ${r.status}`; continue; }
+        answered = true;
+        if (!r.ok) continue;
         try {
-          const r = await fetch(url);
-          answered = true;
-          if (r.ok) return { content: [{ type: "image", data: Buffer.from(await r.arrayBuffer()).toString("base64"), mimeType: r.headers.get("content-type")?.split(";")[0] ?? "image/jpeg" }] };
-        } catch (e) { unreached ??= (e as Error).message; }
+          return { content: [{ type: "image", data: Buffer.from(await r.arrayBuffer()).toString("base64"), mimeType: r.headers.get("content-type")?.split(";")[0] ?? "image/jpeg" }] };
+        } catch (e) {
+          return fail(`the world's server sent a preview of "${want}" that couldn't be read: ${(e as Error).message}`);
+        }
       }
-      if (!answered) return fail(`couldn't reach the world's server for a preview of "${want}": ${unreached}`);
+      if (!answered) return fail(`couldn't reach the world's server for a preview of "${want}" (${unreached}); calling again may work once it answers`);
       return fail(`no preview for "${want}" — avatar portraits appear once a body has been worn; library models ship _preview.jpg files`);
 
   },
@@ -472,7 +481,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
   },
   whisper: async (ag, a, ctx, name) => {
       if (!WHISPERS_ENABLED) return fail("whispers are disabled in this world");
-      ag.whisper(String(a.to), String(a.text).slice(0, 4000));
+      if (typeof a.to !== "string" || !a.to || typeof a.text !== "string" || !a.text) {
+        return fail("whisper needs `to`, the name of someone here, and `text`, what to say to them");
+      }
+      ag.whisper(a.to, a.text.slice(0, 4000));
       return text(`whispered to ${a.to}`);
 
   },
@@ -524,7 +536,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   clear_pose: async (ag, a, ctx, name) => {
-      if (a.target) { ag.puppet(String(a.target), { pose: {} }); return text(`released ${a.target}'s pose`); }
+      if (a.target) { ag.puppet(String(a.target), { pose: {} }); return text(`asked ${a.target} to release their pose. They decide whether to.`); }
       ag.setPose(null);
       return text("released pose");
 
@@ -552,7 +564,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   clear_reach: async (ag, a, ctx, name) => {
-      return act(ag.releaseReach(typeof a.limb === "string" ? a.limb : null));
+      if (a.limb != null && typeof a.limb !== "string") return fail("clear_reach's `limb`, when given, is one limb's name, such as rightHand; leave it out to release every reach");
+      return act(ag.releaseReach(a.limb ?? null));
 
   },
   ragdoll: async (ag, a, ctx, name) => {
@@ -570,7 +583,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         if (d > 0.05) lean = [(dx / d) * pow, 0, (dz / d) * pow];
       }
       ag.puppet(to, { ragdoll: lean ? { lean } : true });
-      return text(`you shove ${to}${lean ? " — they go down the way you pushed" : " — asked them to go limp"}`);
+      return text(`you shove ${to}${lean ? ", asking them to go down the way you pushed" : ", asking them to go limp"}. They decide whether to.`);
 
   },
   animate: async (ag, a, ctx, name) => {
@@ -884,5 +897,9 @@ export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, a
   // handler that throws, such as verb()'s "not joined", answers as a failed
   // call rather than as a protocol error.
   try { return await h(ctx.agent, a, ctx, name); }
-  catch (e) { return fail(e instanceof Error ? e.message : String(e)); }
+  catch (e) {
+    // The host no longer sees the throw, so the operator's log does.
+    console.error(`[door] ${name} threw:`, e);
+    return fail(e instanceof Error ? e.message : String(e));
+  }
 }

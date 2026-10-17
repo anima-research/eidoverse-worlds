@@ -2620,6 +2620,8 @@ export class WorldAgent {
     // nothing folded is the no-op it would be on any rig.
     const bones = this.bodyBoneNames;
     if (bones == null && fold) {
+      // Wings already folded are what a fold asks for, bones known or not.
+      if (this.flight ? this.flight.wings === "FOLDED" : this.wingsFolded) return done(`wings are already folded`);
       return refused(`wings unchanged — ${BONES_NOT_KNOWN}; calling again reads the model again`);
     }
     const body = inspectBody(bones ?? []);
@@ -2748,19 +2750,24 @@ export class WorldAgent {
     f.stamina = Math.max(0, f.stamina - spend);
     const climbRate = 2.0;   // m/s of ascent while flying forward
     f.climbTo = reach; f.climbRate = climbRate; f.climbT = 0;  // consumed by flightTick
-    const climbed = Math.max(0, reach - from);
+    // The wait is for the distance either way: a lower target is a descent.
+    const climbed = Math.abs(reach - from);
     const got = await this.flightAwait((st) => {
       if (st.phase === "RAGDOLL") return "cut";
       if (st.climbTo == null) return "there";
       return null;
     }, Math.min(120_000, (climbed / climbRate) * 1000 + 8000));
-    if (got === "cut") return refused(`cut mid-climb at ${this.flight.pos.y.toFixed(1)}m`);
+    if (got === "cut") {
+      // A cut body keeps no climb, so it doesn't resume one when it recovers.
+      if (this.flight) this.flight.climbTo = null;
+      return refused(`cut mid-climb at ${(this.flight?.pos.y ?? 0).toFixed(1)}m`);
+    }
     // The wait's own timeout is the other answer that isn't "there": the climb
     // didn't finish, so it isn't reported as reaching the target. It stops
     // here too, so the body is where the answer says, not still climbing.
     if (got !== "there") {
       if (this.flight) this.flight.climbTo = null;
-      return refused(`${got} at ${(this.flight?.pos.y ?? 0).toFixed(1)}m, short of the climb, which stops there`);
+      return refused(`${got} at ${(this.flight?.pos.y ?? 0).toFixed(1)}m, short of the climb; the climbing stops there and you fly on`);
     }
     const target = this.flight?.pos.y ?? reach;
     if (winded) {
@@ -2794,13 +2801,19 @@ export class WorldAgent {
         : (s.phase === "LANDED" || s.phase === "GROUND") ? "down" : null, 60_000);
     }
     this.flightEnd();
+    // A cut mid-glide is a fall, which the glide's own answer already says.
+    if (flare == null) return refused(glide.text);
     const at = `(${this.pos.x.toFixed(1)}, ${this.pos.z.toFixed(1)})`;
     // How the flare ended is read after it, so a cut during it is a fall too.
     if (flare === "cut") return refused(`${glide.text} — cut during the flare, down at ${at}`);
     // The flare's own timeout: the body didn't come down, and flightEnd set it down.
-    if (flare != null && flare !== "down") return refused(`${glide.text} — the flare ${flare}, so the body was set down at ${at}`);
-    const where = `${glide.text} — landed at ${at}`;
-    // Landed where it was asked only if the glide arrived there.
+    if (flare !== "down") return refused(`${glide.text} — the flare ${flare}, so the body was set down at ${at}`);
+    // A flare after an arrival sinks on the circle held over the point, so
+    // the answer says how far from it the body came down.
+    const off = Math.hypot(x - this.pos.x, z - this.pos.z);
+    const where = `${glide.text} — landed at ${at}, ${off.toFixed(1)}m from (${x.toFixed(1)}, ${z.toFixed(1)})`;
+    // Done when the glide reached the point (arrived over it, or touched down
+    // within its 2 m) and the landing was deliberate.
     return glide.ok ? done(where) : refused(where);
   }
 
@@ -2815,7 +2828,7 @@ export class WorldAgent {
    *  NOT verbs the pilot may call. Reachable only from a rehearsal control or,
    *  later, the Connectome adapter. */
   flightBodyDown(eventId: string): ActResult {
-    if (!this.flight) return refused("not airborne");
+    if (!this.flight) return refused("not airborne — take_off first");
     this.flight = flightDown(this.flight, { eventId });
     // R2 hands the body to the REAL ragdoll, from altitude. HeadlessBody.begin
     // already takes a rootY "for a lifted drop", so a cut at 20m is the case it
@@ -2858,7 +2871,12 @@ export class WorldAgent {
   /** Air model for the limp fall. Config, like everything else in flight. */
   leafCfg: any = { ...LEAF_FORCE };
   flightBodyRecovered(eventId: string, recoveryGeneration?: string): ActResult {
-    if (!this.flight) return refused("not airborne");
+    if (!this.flight) return refused("not airborne — take_off first");
+    // Only a body that is down has anything to recover from; bodyRecovered
+    // leaves every other phase as it is.
+    if (this.flight.phase !== "LEAF" && this.flight.phase !== "RAGDOLL") {
+      return refused(`nothing to recover from — the body isn't down (${this.flight.phase.toLowerCase()})`);
+    }
     this.flight = flightRecovered(this.flight, { eventId, recoveryGeneration });
     return done(`recovering`);
   }
@@ -3757,11 +3775,11 @@ export class WorldAgent {
   /** Play a one-off animation on yourself — relayed once, never logged.
    *  Over your held pose and other animations; `replace` ends them first. */
   animate(data: { dur: number; loop?: boolean; replace?: boolean; tracks: Record<string, { t: number; q: number[] }[]> }) {
+    // Sent or refused, as puppet() is: an animation that never left must not read as playing.
+    if (!this.joined || this.ws?.readyState !== 1) throw new Error("not joined");
     if (data.replace) this.setPose(null);
-    if (this.joined && this.ws?.readyState === 1) {
-      this.ws.send(JSON.stringify({ type: "anim", dur: data.dur, loop: !!data.loop, tracks: data.tracks,
-        replace: data.replace === true }));
-    }
+    this.ws.send(JSON.stringify({ type: "anim", dur: data.dur, loop: !!data.loop, tracks: data.tracks,
+      replace: data.replace === true }));
   }
 
   /** Ask another body to hold a pose or play an animation. It decides.
