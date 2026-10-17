@@ -557,7 +557,7 @@ export const COMPONENTS = {
 for (const [name, what] of Object.entries({
   material: "appearance: a surface's look (glTF material, KHR extensions). The physical surface a thing names is physics.surface",
   "anim-pose": "a pose: one frame, only the bones it names (R 10-17 15:09; a station's or a grabbable's anim may name one)",
-  "anim-clip": "an animation clip (more than one key) and its playhead",
+  "anim-clip": "an animation clip (more than one key) and its playhead; when it has a shape, its own mode (once | loop | hold) and the bodyMode it asks for are fields of it (R 10-17: the agent's anim reads both)",
   "anim-states": "an animation state machine (states, transitions, params driving clips)",
   camera: "a camera a world places (a view, a screen's source)",
   zone: "a named world area; effects attach to it as siblings",
