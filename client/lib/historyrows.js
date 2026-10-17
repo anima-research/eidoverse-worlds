@@ -41,15 +41,22 @@ export function historyView(list, nameOf, { mode = 'time', who = null } = {}) {
   return { mode: 'time', rows };
 }
 
-/** A thing's history page merged into what is already read (editpanels' History; client-check HT6, 10-17): rows unique by
- *  their log seq, newest first. `more` (an Older… read) appends and takes its cursor. A refresh of the newest page keeps
- *  what was read where it meets the new page (no gap a cursor would skip) and the deeper Older… cursor with it; one that
- *  doesn't meet starts over. {entries, next} */
-export function mergeHistory({ entries, next }, rows, rNext, more) {
+/** A thing's history page merged into what the panel shows (editpanels' History; client-check HT4-HT6, 10-17), against the
+ *  authority's reply: `history {id, limit, before?}` → {entries: [{seq (the change entry's seq), diff (computed by the
+ *  authority against the whole log, never against the page), …}], next: the last row's seq, or null at the beginning}; a
+ *  `before` page holds the rows with seq < before. R 10-04: recent by default, deeper on request.
+ *  - an Older… read (`more`) appends, by seq, and takes its cursor; it marks the panel `paged`;
+ *  - a refresh (the thing changed) shows the newest page and its cursor — unless the person has paged: then the pages
+ *    they read stay where they meet the new page, with the deeper cursor (a refresh landing after an Older… read never
+ *    undoes it); one that doesn't meet starts over.
+ *  {entries, next, paged} */
+export function mergeHistory({ entries, next, paged = false }, rows, rNext, more) {
+  const sorted = (xs) => { const m = new Map(); for (const e of xs) m.set(e.seq, e); return [...m.values()].sort((a, b) => b.seq - a.seq); };
+  if (more) return { entries: sorted([...entries, ...rows]), next: rNext, paged: true };
+  if (!paged) return { entries: sorted(rows), next: rNext, paged: false };
   const oldestNew = rows.length ? Math.min(...rows.map((e) => e.seq)) : Infinity;
-  const meets = more || rNext == null || entries.some((e) => e.seq >= oldestNew);
-  const old = meets ? entries : [];
-  const deeper = !more && old.some((e) => e.seq < oldestNew);
-  const bySeq = new Map(); for (const e of [...old, ...rows]) bySeq.set(e.seq, e);
-  return { entries: [...bySeq.values()].sort((a, b) => b.seq - a.seq), next: more ? rNext : deeper ? next : rNext };
+  const meets = rNext == null || entries.some((e) => e.seq >= oldestNew);
+  if (!meets) return { entries: sorted(rows), next: rNext, paged: false };
+  const deeper = entries.some((e) => e.seq < oldestNew);
+  return { entries: sorted([...entries, ...rows]), next: deeper ? next : rNext, paged: true };
 }

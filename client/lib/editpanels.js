@@ -1166,12 +1166,10 @@ function buildVRDispatch(action, payload) {
 // Credits are filter modes here (R 10-07: no third tab, no hand credits): by time, by person, biggest contributors, by
 // what changed (client/lib/historyrows.js historyView). The view's mode is this viewer's, never logged.
 // (mergeHistory: client/lib/historyrows.js)
-const hist = { key: null, entries: [], next: null, loading: false, id: null, mode: 'time', who: null, gen: 0 };
-// A thing's history is re-read whenever the thing changes (its components are in the key), so a refresh of the newest page
-// can land while — or after — the person reads Older… pages. The two never undo each other: a thing's rows are merged by
-// their log seq (newest first), a refresh keeps the older pages already read (and their Older… cursor), and a refresh
-// answered after a newer refresh was sent is dropped. Before (seen in client-check HT6, 10-17), a refresh that landed after
-// an Older… read replaced the list with the newest page alone: the older rows vanished and Older… started over.
+const hist = { key: null, entries: [], next: null, loading: false, id: null, mode: 'time', who: null, gen: 0, paged: false };
+// A thing's history is re-read whenever the thing changes (its components are in the key). A refresh shows the newest page;
+// once the person has read Older… pages, a refresh never undoes them (historyrows.js mergeHistory), and a refresh answered
+// after a newer refresh was sent is dropped (client-check HT6, 10-17: a late refresh replaced an Older… read).
 function histLoad(id, more = false) {
   const before = more ? hist.next : undefined;
   const gen = more ? hist.gen : ++hist.gen;
@@ -1180,7 +1178,7 @@ function histLoad(id, more = false) {
     if (!r?.ok || hist.id !== id || (!more && gen !== hist.gen)) return;
     const rows = id ? r.entries : worldHistoryRows(r.entries, Edits.nameOf);
     if (!id) { hist.entries = more ? [...hist.entries, ...rows] : rows; hist.next = r.next ?? null; }
-    else ({ entries: hist.entries, next: hist.next } = mergeHistory(hist, rows, r.next ?? null, more));
+    else ({ entries: hist.entries, next: hist.next, paged: hist.paged } = mergeHistory(hist, rows, r.next ?? null, more));
     hist.loading = false; repaintAll();
   }).catch(() => { hist.loading = false; });
 }
@@ -1188,7 +1186,7 @@ function historyFields() {
   const id = worldSel() ? null : sceneSelected() ?? null;
   // re-read when the selection changes or the thing does (its components), or the world log moves (nothing selected)
   const key = id ? `${id}|${JSON.stringify(Edits.compsOf(id))}` : `@|${entities.size}|${Math.floor(Date.now() / 3000)}`;
-  if (key !== hist.key) { hist.key = key; if (hist.id !== id) { hist.entries = []; hist.next = null; hist.who = null; } hist.id = id; histLoad(id); }
+  if (key !== hist.key) { hist.key = key; if (hist.id !== id) { hist.entries = []; hist.next = null; hist.who = null; hist.paged = false; } hist.id = id; histLoad(id); }
   const f = [{ t: 'info', label: id ? 'history of' : 'history', value: id ? (bagOf(id)?.label ?? id) : 'the whole world, newest first — select a thing for its own', hint: 'from the world log: who did what, when' }];
   const view = historyView(hist.entries, Edits.nameOf, { mode: hist.mode, who: hist.who });
   const people = historyView(hist.entries, Edits.nameOf, { mode: 'top' }).people ?? [];
