@@ -1,8 +1,9 @@
-// shared/protocol/authority/behaviours.js — behaviours, the running half: one activation (activate), withAuthority, the
-// server's settle/tick/checkpoint beat, orphan settlement and liftWorld (the load's lift), the presence and hand events
-// and their drains, the status view, and the script verbs (upload, effect, adopt, scripts) as SCRIPT_VERBS, which
-// authority.js spreads into VERBS where they stood (refactor split, 2026-10-17; moved from authority.js's "behaviours"
-// section and the VERBS table unchanged). The gate, the engine's settle and the hands' returns are above it, through UP.
+// shared/protocol/authority/scriptrun.js — scripts, the running half (activation): one activation (activate),
+// withAuthority, the server's settle/tick/checkpoint beat, orphan settlement and liftWorld (the load's lift), the presence
+// and hand events and their drains, the status view, and the script verbs (upload, effect, adopt, scripts) as SCRIPT_VERBS,
+// which authority.js spreads into VERBS where they stood (refactor split, 2026-10-17; moved from authority.js's
+// "behaviours" section and the VERBS table unchanged; the standing half is authority/scripts.js). The gate, the engine's
+// settle and the returns home are above it, through UP.
 import { grabOf } from "../../grab.js";
 import { isIdentity, PURGED } from "../fold.js";
 import { dec } from "../names.js";

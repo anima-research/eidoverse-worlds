@@ -61,8 +61,8 @@ import { actIndexOf, buildSculpt, buildSky, buildUndo, buildWeather } from "./au
 export { actIndexFresh, actIndexOf, entityBefore } from "./authority/undo.js";
 import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, installCheck, logRt, overCpu, particlesCheck, pauseOnly, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptCeiling, scriptDefaults, scriptDepth, scriptMemo, scriptRights, scriptsCfg, sponsorOf, uploadEffect } from "./authority/scripts.js";
 export { DUTY, scriptCeiling, scriptDefaults, setScriptConfig, setScriptDuty, unpaused } from "./authority/scripts.js";
-import { SCRIPT_VERBS, activate, drainHeld, drainScripts, heldEvent } from "./authority/behaviours.js";
-export { ORPHANS, liftWorld, presenceEvent, scriptsView, settle, settleOrphans, tick } from "./authority/behaviours.js";
+import { SCRIPT_VERBS, activate, drainHeld, drainScripts, heldEvent } from "./authority/scriptrun.js";
+export { ORPHANS, liftWorld, presenceEvent, scriptsView, settle, settleOrphans, tick } from "./authority/scriptrun.js";
 
 
 // ---------- storage: authority/storage.js ----------
@@ -1816,7 +1816,7 @@ function warnings(st, ids, strict = false) {
 // a view, never a stored field. Every activation is a fresh admission with capability {kind: "script"}: the sponsor's
 // rights NOW, narrowed to the scope. The visitor who triggers it adds nothing. An activation that changes something is
 // ---------- behaviours, standing: authority/scripts.js ----------
-// ---------- behaviours, running: authority/behaviours.js ----------
+// ---------- behaviours, running: authority/scriptrun.js ----------
 
 // ---------- the act index, undo: authority/undo.js ----------
 // ---------- blueprints, reads: authority/blueprints.js ----------

@@ -1,8 +1,8 @@
-// shared/protocol/authority/scripts.js — behaviours, the standing half: the server's script settings and an owner's
-// @world.script-settings, a script's rights and install checks, particles and effect uploads, the runtime console ring,
-// sponsors and pauses, the per-state script memo, and the budgets (rate, duty, CPU) an activation is held to (refactor
-// split, 2026-10-17; moved from authority.js's "behaviours" section unchanged; activation and its drains are
-// authority/behaviours.js). The gate's rights words (lacks, needWords, nearMiss) are above it, reached through UP.
+// shared/protocol/authority/scripts.js — scripts, the standing half (settings and registration): the server's script
+// settings and an owner's @world.script-settings, a script's rights and install checks, particles and effect uploads, the
+// runtime console ring, sponsors and pauses, the per-state script memo, and the budgets (rate, duty, CPU) an activation is
+// held to (refactor split, 2026-10-17; moved from authority.js's "behaviours" section unchanged; the running half is
+// authority/scriptrun.js). The gate's rights words (lacks, needWords, nearMiss) are above it, reached through UP.
 import { isEntityId, isComponent, jcs, PURGED } from "../fold.js";
 import { COMPONENTS, registered, baseOf } from "../componentspec.js";
 import * as SR from "../scriptrules.js";
