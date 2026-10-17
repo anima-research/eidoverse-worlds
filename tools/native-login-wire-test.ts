@@ -51,20 +51,17 @@ try{
  const grant=await post("/native/poll",{device_code:p.device_code});assert.equal(grant.status,200);
  const native=cookie(grant);assert.ok(native&&native!==browser,"independent session");
  assert.equal((await post("/native/poll",{device_code:p.device_code})).status,410);
- const wrong=await connect("not-water",native);assert.equal(wrong.closed,4003);
- assert.ok(!existsSync(join(scratch,"worlds","not-water")),"restriction checked before world creation");
- const good=await connect("water",native);const snap=good.messages.find(m=>m.type==="snapshot");assert.ok(snap);
- assert.equal(snap.you,"Native Fixture");
- good.ws.close();
- const multi=await(await post("/native/start",{})).json();
- assert.equal((await post("/native/approve",{user_code:multi.user_code,all_worlds:true},{cookie:browser,origin})).status,200);
- const multiGrant=await post("/native/poll",{device_code:multi.device_code});assert.equal(multiGrant.status,200);
- const multiCookie=cookie(multiGrant);assert.equal((await multiGrant.json()).world_scope,"*");
- const second=await connect("native-multi-world",multiCookie);assert.equal(second.messages.find(m=>m.type==="snapshot")?.world,"native-multi-world");second.ws.close();
- assert.equal((await post("/logout",{},{cookie:multiCookie})).status,200);
+ // an ordinary sign-in: any world the account may join, as the browser's session would
+ for(const w of ["water","commons","native-elsewhere"]){
+  const c=await connect(w,native);const snap=c.messages.find(m=>m.type==="snapshot");
+  assert.ok(snap,`joined ${w}`);assert.equal(snap.world,w);assert.equal(snap.you,"Native Fixture");c.ws.close();
+ }
+ // and it never approves another native pairing
+ const relay=await(await post("/native/start",{})).json();
+ assert.equal((await post("/native/approve",{user_code:relay.user_code},{cookie:native,origin})).status,403);
  assert.equal((await post("/logout",{},{cookie:native})).status,200);
  assert.equal((await fetch(origin+"/whoami",{headers:{cookie:native}})).status,401);
  assert.equal((await fetch(origin+"/whoami",{headers:{cookie:browser}})).status,200);
  assert.equal(statSync(join(scratch,"sessions.json")).mode&0o777,0o600);
- console.log("NATIVE_LOGIN_WIRE_PASS: browser auth, approval, independent session, replay refusal, verified water join, other-world rejection, logout isolation, private scratch persistence");
+ console.log("NATIVE_LOGIN_WIRE_PASS: browser auth, approval, independent session, replay refusal, verified joins in three worlds, no re-delegation, logout isolation, private scratch persistence");
 }finally{for(const ws of sockets)ws.close();server.kill();await server.exited;}

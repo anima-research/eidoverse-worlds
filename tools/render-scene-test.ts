@@ -124,19 +124,20 @@ test('foreign physics epochs keep barrier poses; ordinary props are never snappe
   expect(a.simulation).toMatchObject({enabled:true,foreign:true,activeBodies:0});expect(a.transforms[0].p).toEqual([2,8,4]);expect(f.world.sim).toEqual(before);
   f.world.sim=emptySim();expect(f.request(1300).transforms[0].p).toEqual([0,7,0]);
 });
-test("all-world native access requires explicit browser approval; old grants stay water-only",async()=>{
+test("native pairing issues the browser's sign-in for every world, never a fenced one",async()=>{
   const issued:any[]=[];const origin="https://example.test";
   const handler=createNativeLogin({origin,login:"https://identity.test",enabled:true,now:()=>1000,
     session:c=>c==="browser"?{sub:"human:test",name:"test",scopes:["worlds:join","admin"],exp:100000}:null,
     issue:s=>{issued.push(s);return "a".repeat(64);}});
   const post=(path:string,body:any,auth=false)=>handler(new Request(origin+path,{method:"POST",headers:{"content-type":"application/json",...(auth?{origin,cookie:"browser"}:{})},body:JSON.stringify(body)}));
+  // an old client's all_worlds field is ignored: every grant is the same
   for(const all of [false,true]){
     const p=await(await post("/native/start",{all_worlds:true})).json();
     expect((await post("/native/approve",{user_code:p.user_code,all_worlds:all})).status).toBe(403);
     expect((await post("/native/approve",{user_code:p.user_code,all_worlds:all},true)).status).toBe(200);
-    const r=await(await post("/native/poll",{device_code:p.device_code})).json();expect(r.world_scope).toBe(all?"*":"water");
+    const r=await(await post("/native/poll",{device_code:p.device_code})).json();expect(r.world_scope).toBe("*");
   }
-  expect(issued.map(s=>s.nativeWorld)).toEqual(["water","*"]);expect(issued[1].scopes).toEqual(["worlds:join"]);
+  expect(issued.map(s=>[s.native,s.nativeWorld])).toEqual([[true,undefined],[true,undefined]]);expect(issued[1].scopes).toEqual(["worlds:join"]);
   expect(captureCapability({version:1,engine:"unreal",scene:"world-projection"})?.scene).toBe("world-projection");
 });
 
