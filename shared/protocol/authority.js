@@ -63,7 +63,7 @@ import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, installCheck, logRt
 export { DUTY, scriptCeiling, scriptDefaults, setScriptConfig, setScriptDuty, unpaused } from "./authority/scripts.js";
 import { SCRIPT_VERBS, activate, drainHeld, drainScripts, heldEvent } from "./authority/scriptrun.js";
 export { ORPHANS, liftWorld, presenceEvent, scriptsView, settle, settleOrphans, tick } from "./authority/scriptrun.js";
-import { clearSeat, leftSeat, occupiedRefuse, seatOf, setSeat, sitterOn, unseatAt, unseatWhy, unseatsFor } from "./authority/riders.js";
+import { clearSeat, leftSeat, occupiedRefuse, seatOf, seatRights, setSeat, sitterOn, unseatAt, unseatWhy, unseatsFor } from "./authority/riders.js";
 import { arrivalBox, body, buildEpoch, dist, handOf, holdOf, lawOf, pathBlocked, restampEngine, settleSim, shearFree, sizeOf, solidAt } from "./authority/physics.js";
 import { fliesIn, flyingWorld, holdHow, homeScale, launch, recentRests, releasePos, returnDue, returnHome, returnPlan, sameHome, secondHand, shaped, shoveGate, snapTarget, stampHomes, stampResetHomes, vec3s } from "./authority/manipulate.js";
 import { PHYSICS_VERBS } from "./authority/bodyverbs.js";
@@ -304,32 +304,7 @@ function guess(s, opts) {
 }
 
 // ---------- L7, the one gate: authority/gate.js ----------
-// A socket is part of its host (review 10-12 S1-1): before the cut a seat was the host's own `sockets` component, so
-// adding one to someone else's thing needed editOthers on it and an owner-level lock refused it. Now it's a child entity,
-// and a create needs only build, and a lock check reads the op's own id. So a socket JOINING a host (made under it,
-// re-parented onto it, or a thing under it made a socket) needs the host's rights (as `set <host>.sockets`), and every
-// write touching a socket child (those, and any set or delete on one) meets the locks over its host's chain, the host it
-// had and the host it ends on.
-// The legacy map's lifted creates are in `norm`, so both spellings meet the same rule. A host made in this same write is
-// the asker's own. The authority's follow-ups (rest, system: the load's lift) and a hand carry no seat edits.
-function seatRights(w, st, s, who, role, norm, made) {
-  const cap = who.cap; if (cap && cap.kind !== "reaction" && cap.kind !== "script") return;
-  const holder = cap?.kind === "reaction" ? cap.author : cap?.kind === "script" ? cap.sponsor : who.actor;
-  const hosts = new Map(); const joins = new Set();
-  for (const op of norm) { const was = st.entities[op.id]?.c, now = s.entities[op.id]?.c;
-    const h0 = isSocketC(was) ? was.parent?.to : null, h1 = isSocketC(now) ? now.parent?.to : null;
-    for (const h of [h0, h1]) if (h && !hosts.has(h)) hosts.set(h, op);
-    if (h1 && h1 !== h0) joins.add(h1); }
-  for (const [h, op] of hosts) { if (made.has(h) || !st.entities[h]) continue;
-    const at = h + "'s sockets (" + op.verb + " " + op.id + (op.comp !== undefined ? "." + op.comp : "") + ")"; const as = { verb: "set", id: h, comp: "sockets" };
-    // a socket joining h (made, re-parented onto it, or a thing made one) needs h's rights; an edit of a socket already
-    // on h is judged on the socket's own rights in rights() (its creator, or the builder the load's lift names: RL4)
-    const n = joins.has(h) ? lacks(w, st, holder, as, made, { viaCap: !!cap }) : null;
-    const whose = cap ? " (" + said(holder) + "'s, whose rights this write carries)" : "; you are " + role;
-    if (n) refuse("rights", "a socket is part of its host, so " + op.id + " is an edit of " + at + ": that needs " + needWords(n) + whose, "ask " + h + "'s builder or an owner; a socket on a thing of your own needs nothing more", { needs: n, host: h });
-    const k = lockedC(st.entities[h]?.c) ? h : ancestors(st, h).find((x) => lockedC(st.entities[x]?.c));
-    if (k) lockCheck(w, st, who, role, k, { ...as, id: op.id }, at); }
-}
+// ---------- seatRights (a socket joining a host): authority/riders.js ----------
 // ---------- how much a world holds: authority/capacity.js ----------
 // ---------- the gate's value checks: authority/checks.js ----------
 // ---------- the write path: authority/writes.js ----------
@@ -367,4 +342,4 @@ const VERBS = {
 export const VERB_NAMES = Object.freeze(Object.keys(VERBS));
 export function forkCopy(w, actor, args) { CTX.forking = true; try { return request(w, actor, "fork-copy", args); } finally { CTX.forking = false; } }
 // the leaves reach the layers above them through UP (authority/ctx.js): bound here, once every module has loaded
-Object.assign(UP, { actEntry, actOf, activate, admit, body, boundsOf, changeEntry, changeShape, commit, danglingRefs, dist, enter, guess, handOf, historyDiff, holdsRefs, homeScale, isNum, lacks, lastTouch, mint, nearMiss, needThing, needWords, notAThing, offRefuse, opsTouching, outsideWorld, rateCheck, request, resolve, restampEngine, returnDue, returnHome, returnPlan, sameHome, seatOf, seatRights, serverWritten, setSeat, settleSim, sitterOn, touchedOf, unknownKeys, vec3s, warnings, withoutRefs });
+Object.assign(UP, { actEntry, actOf, activate, admit, body, boundsOf, changeEntry, changeShape, commit, danglingRefs, dist, enter, guess, handOf, historyDiff, holdsRefs, homeScale, isNum, lacks, lastTouch, lockCheck, mint, nearMiss, needThing, needWords, notAThing, offRefuse, opsTouching, outsideWorld, rateCheck, request, resolve, restampEngine, returnDue, returnHome, returnPlan, sameHome, seatOf, seatRights, serverWritten, setSeat, settleSim, sitterOn, touchedOf, unknownKeys, vec3s, warnings, withoutRefs });

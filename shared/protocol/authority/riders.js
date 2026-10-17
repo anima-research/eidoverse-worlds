@@ -1,7 +1,8 @@
 // shared/protocol/authority/riders.js — who rides what (presence, never logged): a body on a station (sitting, today),
 // setting and clearing it, being unseated when what it rides is moved or let go, and the occupant rule that keeps a thing
 // someone rides from being kicked, shoved, grabbed or thrown out from under them (refactor split, 2026-10-17; moved from
-// authority.js's "physics" section unchanged). lastTouch (the write path's) is above it, reached through UP.
+// authority.js's "physics" section unchanged; seatRights, a socket joining a host, from its gate section). lastTouch,
+// lacks, lockCheck and needWords (the write path's and the gate's) are above it, reached through UP.
 import { TRACK } from "../../mover.js";
 import { baseOf } from "../componentspec.js";
 import { offChain } from "../simlayer.js";
@@ -9,11 +10,15 @@ import { feetOn } from "../../shove.js";
 import { r3 } from "../round.js";
 import { UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
+import { lockedC } from "./storage.js";
 import { aabb, ancestors, descendants, worldT } from "./math.js";
 import { isSocketC } from "./sockets.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
+const lacks = (...a) => UP.lacks(...a);
 const lastTouch = (...a) => UP.lastTouch(...a);
+const lockCheck = (...a) => UP.lockCheck(...a);
+const needWords = (...a) => UP.needWords(...a);
 
 // A body that walks more than a metre from its seat has stood up (a seated client sends no steps; standing, it walks)
 // Who sits where (presence, never logged: review 10-12 S1-1): {to: <socket id>}. A seat whose socket is gone or switched
@@ -98,4 +103,30 @@ function occupiedRefuse(w, st, id, actor, what) {
   const o = occupant(w, st, id, actor);
   if (o) refuse("occupied", `${said(o.who)} ${o.how} ${id} (or something on it), so it can't be ${what}`, "wait till they get up or step off", { by: o.who });
 }
-export { clearSeat, leftSeat, occupiedRefuse, seatOf, setSeat, sitterOn, unseatAt, unseatWhy, unseatsFor };
+// A socket is part of its host (review 10-12 S1-1): before the cut a seat was the host's own `sockets` component, so
+// adding one to someone else's thing needed editOthers on it and an owner-level lock refused it. Now it's a child entity,
+// and a create needs only build, and a lock check reads the op's own id. So a socket JOINING a host (made under it,
+// re-parented onto it, or a thing under it made a socket) needs the host's rights (as `set <host>.sockets`), and every
+// write touching a socket child (those, and any set or delete on one) meets the locks over its host's chain, the host it
+// had and the host it ends on.
+// The legacy map's lifted creates are in `norm`, so both spellings meet the same rule. A host made in this same write is
+// the asker's own. The authority's follow-ups (rest, system: the load's lift) and a hand carry no seat edits.
+function seatRights(w, st, s, who, role, norm, made) {
+  const cap = who.cap; if (cap && cap.kind !== "reaction" && cap.kind !== "script") return;
+  const holder = cap?.kind === "reaction" ? cap.author : cap?.kind === "script" ? cap.sponsor : who.actor;
+  const hosts = new Map(); const joins = new Set();
+  for (const op of norm) { const was = st.entities[op.id]?.c, now = s.entities[op.id]?.c;
+    const h0 = isSocketC(was) ? was.parent?.to : null, h1 = isSocketC(now) ? now.parent?.to : null;
+    for (const h of [h0, h1]) if (h && !hosts.has(h)) hosts.set(h, op);
+    if (h1 && h1 !== h0) joins.add(h1); }
+  for (const [h, op] of hosts) { if (made.has(h) || !st.entities[h]) continue;
+    const at = h + "'s sockets (" + op.verb + " " + op.id + (op.comp !== undefined ? "." + op.comp : "") + ")"; const as = { verb: "set", id: h, comp: "sockets" };
+    // a socket joining h (made, re-parented onto it, or a thing made one) needs h's rights; an edit of a socket already
+    // on h is judged on the socket's own rights in rights() (its creator, or the builder the load's lift names: RL4)
+    const n = joins.has(h) ? lacks(w, st, holder, as, made, { viaCap: !!cap }) : null;
+    const whose = cap ? " (" + said(holder) + "'s, whose rights this write carries)" : "; you are " + role;
+    if (n) refuse("rights", "a socket is part of its host, so " + op.id + " is an edit of " + at + ": that needs " + needWords(n) + whose, "ask " + h + "'s builder or an owner; a socket on a thing of your own needs nothing more", { needs: n, host: h });
+    const k = lockedC(st.entities[h]?.c) ? h : ancestors(st, h).find((x) => lockedC(st.entities[x]?.c));
+    if (k) lockCheck(w, st, who, role, k, { ...as, id: op.id }, at); }
+}
+export { clearSeat, leftSeat, occupiedRefuse, seatOf, seatRights, setSeat, sitterOn, unseatAt, unseatWhy, unseatsFor };
