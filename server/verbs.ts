@@ -19,6 +19,7 @@ import { normalizeCaptionArgs, captionRefusal } from "../shared/captions.js";
 import { lintMotion, lintParticles } from "./lint.ts";
 import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
+import { lightArgsError } from "./verb-shapes.ts";
 import { ROLE_RANK, type LogEntry, type WorldState } from "../shared/fold.js";
 import { SIM_ID } from "../shared/sim.js";
 import { boxOf, worldLibs } from "./boxes.ts";
@@ -437,10 +438,21 @@ function vSpawn(ctx: VerbCtx, args: Record<string, unknown>) {
   return { args: box ? { ...rest, box } : rest };
 }
 
+function vLight(ctx: VerbCtx, args: Record<string, unknown>) {
+  const error = lightArgsError(args);
+  if (error) {
+    ctx.w.debug("rejected", { who: ctx.c.id, verb: "light", why: error });
+    return { error };
+  }
+  // Keep the sparse bag: the fold merges partial updates with a standing light.
+  return { args };
+}
+
 const extras: Record<string, Pick<VerbRow, "selfRankZero" | "validate" | "after">> = {
   say: { validate: vSay },
   caption: { validate: vCaption },
   spawn: { validate: vSpawn },
+  light: { validate: vLight },
   // A `use` is a cause; reactions turn it into logged effects.
   use: { after: (ctx, entry) => reactToUse(ctx.w, entry) },
   mount: { selfRankZero: true, validate: vMount },
@@ -553,6 +565,15 @@ export function runVerb(ctx: VerbCtx, verb: string, rawArgs: unknown): void {
     c.ws.send(JSON.stringify({ type: "error", error: "slow down — verb rate limit" }));
     return;
   }
+  // A verb is a string. Property lookup would coerce anything else (a wire
+  // verb of ["light"] finds the "light" row) past the checks below, which
+  // test the verb's name, so nothing else reaches the table.
+  if (typeof (verb as unknown) !== "string") {
+    const why = "a verb is a string, such as \"light\"";
+    w.debug("rejected", { who: c.id, verb: String(verb), why });
+    c.ws.send(JSON.stringify({ type: "error", error: why }));
+    return;
+  }
   // verb allow-list + per-world rights (rights.ts owns the ladder).
   const row = VERBS[verb];
   if (!row) {
@@ -563,12 +584,7 @@ export function runVerb(ctx: VerbCtx, verb: string, rawArgs: unknown): void {
       error: `verb not allowed: ${verb} — the verb set is closed by design; extend state with comp {id, type, data}, interactions with use {id, action}, semantics with behavior scripts (see AGENTS.md). New verbs are protocol amendments.` }));
     return;
   }
-  // Table dispatch keys on the ROW, but property lookup coerces (a wire verb
-  // of ["say"] finds the "say" row where the unsplit `===` chains matched
-  // nothing) — so every per-verb branch below stays string-gated, exactly
-  // the refusal surface the unsplit file had.
-  const isVerbStr = typeof (verb as unknown) === "string";
-  const selfMount = isVerbStr && Boolean(row.selfRankZero)
+  const selfMount = Boolean(row.selfRankZero)
     && String((rawArgs as Record<string, unknown> | undefined)?.id ?? "") === c.id;
   const needRank = selfMount ? 0 : row.rank;
   const rights = rightsOf(w.state, c.id, c.sub);
@@ -608,7 +624,7 @@ export function runVerb(ctx: VerbCtx, verb: string, rawArgs: unknown): void {
     return;
   }
   let args = (rawArgs ?? {}) as Record<string, unknown>;
-  if (isVerbStr && row.validate) {
+  if (row.validate) {
     const r = row.validate(ctx, args);
     if ("error" in r) {
       c.ws.send(JSON.stringify({ type: "error", error: r.error }));
@@ -621,10 +637,10 @@ export function runVerb(ctx: VerbCtx, verb: string, rawArgs: unknown): void {
   // subject (when the door vouched for one), stamped here after validation
   // and stripped from whatever the client sent. A behavior bind records its
   // author's subject the same way, so a script's creations can freeze it.
-  if (isVerbStr && (verb === "spawn" || verb === "light")) {
+  if (verb === "spawn" || verb === "light") {
     const { placer: _clientPlacer, ...rest } = args;
     args = { ...rest, placer: { id: c.id, ...(c.sub ? { sub: c.sub } : {}) } };
-  } else if (isVerbStr && verb === "behavior") {
+  } else if (verb === "behavior") {
     const { bySub: _clientSub, ...rest } = args;
     args = c.sub && !rest.remove ? { ...rest, bySub: c.sub } : rest;
   }
@@ -633,5 +649,5 @@ export function runVerb(ctx: VerbCtx, verb: string, rawArgs: unknown): void {
   // After-hooks run once the CAUSE is on the wire, so the effect entries
   // they commit publish in seq order.
   const entry = w.commit(c.id, verb, args);
-  if (isVerbStr) row.after?.(ctx, entry);
+  row.after?.(ctx, entry);
 }

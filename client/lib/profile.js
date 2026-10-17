@@ -9,7 +9,7 @@ import { getMyAvatarName, getMe } from './mybody.js';
 import { bodiesFields, bodiesDispatch, mountBodies } from './bodies.js';
 import { presence, setPresence, STATES } from './presence.js';
 import { renderDOM } from './panels.js';
-import { makeFrame } from './frames.js';
+import { makeFrame, fitTabStrip } from './frames.js';
 import { fsvg } from './icons.js';
 
 let frame = null;
@@ -118,6 +118,10 @@ function paint() {
     b.onclick = () => { tab = b.dataset.tab; try { localStorage.setItem(TAB_KEY, tab); } catch {} paint(); };
   });
   paintPane(frame.body.querySelector('.pf-pane'));
+  // the four tabs fit a phone-width frame by dropping the unchosen tabs' words (frames.js fitTabStrip)
+  const fit = () => fitTabStrip(frame.body.querySelector('.pf-tabs'));
+  fit();
+  if (!frame.body._fitRO && typeof ResizeObserver !== 'undefined') { frame.body._fitRO = new ResizeObserver(fit); frame.body._fitRO.observe(frame.body); }
 }
 
 let bodiesHost = null;   // mounted ONCE: mountBodies subscribes bus listeners, so re-mounting per repaint would leak them

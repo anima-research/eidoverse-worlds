@@ -113,8 +113,12 @@ export function rigMath(THREE) {
     }
     root.updateMatrixWorld(true);
 
+    // `pivot` is this stand-in's vrm.scene: the node a chosen body size lives on
+    // (client/lib/avatar.js _applyBodyScale), between the unscaled root that
+    // carries position/yaw and the bones. Never aliased as vrm.scene — readers
+    // of that (landmarks.js) expect a mesh-bearing scene this has none of.
     const av = {
-      root, nodes, poses: 0, limp: false,
+      root, pivot, nodes, poses: 0, limp: false,
       vrm: { meta: { metaVersion: vrm0 ? "0" : "1" }, humanoid: {
         normalizedRestPose: Object.fromEntries(Object.entries(nodes).map(([k, n]) => [k, { position: n.position.toArray(), rotation: [0, 0, 0, 1] } ])),
         humanBones: Object.fromEntries(Object.keys(nodes).map((k) => [k, {}])),
@@ -137,5 +141,18 @@ export function rigMath(THREE) {
 
     return av;
   }
-  return { worldPositions, makeAvatar };
+
+  /** A body's standing height in metres: its humanoid head joint at rest plus
+   *  a forehead, the rule the browser's Avatar.bodyHeight and portrait pass use
+   *  (client/lib/avatar.js). Meshes don't count, so hair or a crown weighted to
+   *  the head bone doesn't raise it. Null for a file with no humanoid head, or
+   *  a height outside 0.5 to 4 m, which the browser clamps into that range
+   *  instead (avatar.js bodyHeight). */
+  function stature(g) {
+    const hb = humanBones(g);
+    if (!hb || !Number.isInteger(hb.head)) return null;
+    const y = worldPositions(g)(hb.head).y + 0.13;
+    return y > 0.5 && y < 4 ? y : null;
+  }
+  return { worldPositions, makeAvatar, stature };
 }

@@ -14,10 +14,10 @@ import { PORT, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_R
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
 import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal, guardRefusal } from "./rights.ts";
-import { resolveLibFile } from "./lint.ts";
+import { resolveLibFile, lintSpawn } from "./lint.ts";
 // The authored plane's dispatch — table + shell (§15, 7b). It pulls in lint's
-// linters, reactions, and the behavior cap itself; server.ts keeps only what
-// the presence plane and HTTP surface still touch directly.
+// motion/particle linters, reactions, and the behavior cap itself; spawn lint
+// subscribes to all live commits below, including script-authored spawns.
 import { wireBehaviorGate, wireBehaviorStore } from "./behaviors.ts";
 import { summarizeGlb } from "./geometry.ts";
 // The world itself — WorldLog + WorldSession behind the unsplit facade, with
@@ -52,6 +52,7 @@ import { OPT_DIR, PATCH_DIR } from "./config.ts";
 // Relay-floor (#104): transport selection + durable voice-service identity.
 import { relayEnabled, bootIncarnation, currentIncarnation, voiceTransport } from "./transport.ts";
 import { installSfuTransportGuard } from "./sfuguard.ts";
+import { nameAtDoor } from "./names.ts";
 import { onVoiceServiceChange, markVoiceDegraded, voiceServiceState } from "./sfusupervisor.ts";
 import { mintSfuCredential, setSfuConsent, setSfuModeratorMute, revokeSfuLeg, sfuDiag,
   sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender, admitSfuLeg, liveLegState, sfuLegAdmitted, markSfuLegAdmitted } from "./sfuadapter.ts";
@@ -146,7 +147,9 @@ wireBehaviorGate((w, author, verb, args, authorSub) => {
  *  Held bones (pose.pose) survive both: an enacted pose is a place. */
 function settledPose(pose: unknown): Record<string, unknown> | null {
   if (!pose) return null;
-  const { emote: _emote, ...still } = pose as Record<string, unknown>;
+  // mic/hear are a live reading the sender re-sends every packet; remembered, they came back in `restore` and a
+  // client replayed a voice state its new session never had (review 09-30 S2)
+  const { emote: _emote, mic: _mic, hear: _hear, ...still } = pose as Record<string, unknown>;
   if (still.clip === "ragdoll") { still.clip = "idle"; delete still.pose; }
   return still;
 }
@@ -161,6 +164,10 @@ wireSettledPose(settledPose);
 // subscribe here instead of teaching another append site to fan out.
 onEntryCommitted("client-fanout", (w, entry) => w.broadcast({ type: "log", entry }));
 onEntryCommitted("behaviors", (w, entry) => w.bhv.onEntry(entry));
+// Live commits only: includes script-authored spawns, never replay or joins.
+onEntryCommitted("spawn-lint", (w, entry) => {
+  if (entry.verb === "spawn") lintSpawn(w as World, entry);
+});
 
 // ------------------------------------------------------------------ presence
 
@@ -331,6 +338,13 @@ const clients = new Map<unknown, Client>();
 // never collides across worlds or after a world reload; never persisted — an
 // epoch outliving the process would defeat its purpose.
 let GEN = 0;
+// The sender lifetime presence consumers scope a speaker's utterance counter
+// by (`session` on arrive and snapshot.present): the joining page's own id,
+// which outlives a reconnect as its counter does, else a fresh token for this
+// leg. Opaque and observational: authority still uses the credential and leg
+// checks, and nothing here reveals the process's connection count.
+const PAGE_SESSION_RE = /^[A-Za-z0-9_-]{8,64}$/;
+const presenceSession = (c: Client) => (c.presenceSession ??= crypto.randomUUID());
 
 /** The placeholder tier's bbox side-channel, sent AFTER the snapshot as its
  *  own message: summaries are async, and the join handler's synchronous
@@ -393,6 +407,17 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // (Hesperus finding #3: an unauthenticated join as "world" produced
     // entries indistinguishable from the sequencer's own.)
     c.id = c.id.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+    // ...and no markup characters (< > "): a typed name carrying them is refused in words; in a name the identity
+    // service gave, each becomes a look-alike (‹ › ″; server/names.ts). Names are shown everywhere; none should ever parse as a tag.
+    {
+      const door = nameAtDoor(c.id, { typed: !auth });
+      if (door.refused) {
+        ws.send(JSON.stringify({ type: "error", error: door.refused }));
+        ws.close(4004, "bad name");
+        return null;
+      }
+      c.id = door.name;
+    }
     if (!c.id || /^(world|\*)$/i.test(c.id) || /^bhv:/i.test(c.id)) {
       ws.send(JSON.stringify({ type: "error", error: `that name is reserved for the world itself` }));
       ws.close(4004, "reserved name");
@@ -426,6 +451,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       }
     }
     c.spectator = Boolean(msg.spectate) || c.surface !== "world";
+    if (typeof msg.session === "string" && PAGE_SESSION_RE.test(msg.session)) c.presenceSession = msg.session;
     c.agent = Boolean(msg.agent);
     c.renderer = Boolean(msg.renderer);
     if (c.renderer) c.spectator = true; // renderers are invisible by definition
@@ -655,7 +681,7 @@ function buildSnapshot(w: World, c: Client) {
         // settledPose, not lastPose: a joiner must not inherit someone
         // else's mid-ragdoll frame (#61). Same normalization `restore`
         // above already gets via rememberPose.
-        id: o.id, avatar: o.avatar, pose: settledPose(o.lastPose), agent: o.agent,
+        id: o.id, avatar: o.avatar, pose: settledPose(o.lastPose), agent: o.agent, session: presenceSession(o),
         // #57 matrix 7: which aux legs this identity has live NOW —
         // inspectable surface summary on the one roster, never a second body
         surfaces: [...w.clients]
@@ -814,14 +840,16 @@ const server = Bun.serve({
           ws.send(JSON.stringify({ type: "clock", t: Date.now() }));
           ws.send(JSON.stringify(buildSnapshot(w, c)));
           sendGeomFollowup(w, c);
-          if (!c.spectator) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent }, c);
+          if (!c.spectator) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, session: presenceSession(c) }, c);
           if (!c.spectator) w.bhv.onPresence("enter", c.id);
           // Whispers that arrived while this identity was away. Held in memory
           // only — see the `whisper` case for why they must never reach the log.
           if (!c.spectator) {
             const held = pendingWhispers.get(whisperKey(w.name, c.id));
             if (held?.length) {
-              for (const m of held) ws.send(JSON.stringify(m));
+              // The client must distinguish catch-up from a live addressed event
+              // for private attention UI. This flag is server-authored, never logged.
+              for (const m of held) ws.send(JSON.stringify({ ...m, replay: true }));
               pendingWhispers.delete(whisperKey(w.name, c.id));
               console.log(`[world:${w.name}] delivered ${held.length} held whisper(s) to ${c.id}`);
             }

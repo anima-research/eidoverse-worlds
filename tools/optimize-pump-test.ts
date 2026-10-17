@@ -18,12 +18,17 @@ v=$(cat "$src.verdict" 2>/dev/null || echo 0)
 case "$v" in
   0) mkdir -p "$(dirname "$dest")"; printf 'tiny' > "$dest"; exit 0;;
   sig) kill -SEGV $$;;
+  long) i=0; while [ $i -lt 30 ]; do echo "[optimize] per-texture note $i: no sharp to resize it — a long line padded out to well over one hundred characters of text" >&2; i=$((i+1)); done
+        echo "[optimize] not smaller (1.00x) recipe=texel1024 __TOOLS__" >&2; exit 2;;
   *) echo "fake verdict $v" >&2; exit "$v";;
 esac
 `); chmodSync(fake, 0o755);
 process.env.SKIP_OPT_SWEEP = "1";   // the parent's own boot timers must not sweep the real library through the fake
 process.env.WORLDS_DIR = join(root, "worlds"); process.env.OPT_DIR = join(root, "opt"); process.env.JOIN_TOKEN = "t"; process.env.OPT_CMD = fake;   // OPT_DIR: NEVER the checkout's store
 process.env.OPT_MEM_BUDGET_MB = "10"; process.env.OPT_COST_FACTOR = "1"; process.env.KTX2_TOKTX = "";
+// the verdict names the tools it was measured with (tools-stamp.ts) — THIS process's, which the pump also reads by
+const { toolsStamp } = await import("../server/tools-stamp.ts");
+writeFileSync(fake, readFileSync(fake, "utf8").replace("__TOOLS__", toolsStamp()));
 const { queueOptimize, optIdle } = await import("../server/upload.ts");
 const { STORE_MIN } = await import("../server/config.ts");
 const src = (name: string, bytes: number, verdict: string) => {
@@ -43,6 +48,12 @@ ok(existsSync(storeDest(s2)) && !existsSync(storeDest(s2) + ".deferred"), "succe
 // 3. exit 2 = not smaller → .failed marker, no .deferred
 const s3 = src("s3.glb", 1000, "2"); queueOptimize(s3); await optIdle();
 ok(existsSync(storeDest(s3) + ".failed") && !existsSync(storeDest(s3)), "exit 2 → .failed marker, no variant");
+// 3b. a long stderr (per-texture notes, then the verdict LAST): the marker keeps the TAIL, so the stamped verdict stands
+const { verdictStands } = await import("../server/store-variants.ts");
+const s3b = src("s3b.glb", 1000, "long"); queueOptimize(s3b); await optIdle();
+const m3b = existsSync(storeDest(s3b) + ".failed") ? readFileSync(storeDest(s3b) + ".failed", "utf8") : "";
+let r3b: any = null; try { r3b = JSON.parse(m3b); } catch { /* not a record */ }
+ok(r3b?.kind === "size" && r3b.recipe === "texel1024" && r3b.tail.trimEnd().endsWith(`recipe=texel1024 ${toolsStamp()}`) && verdictStands(m3b), `long stderr → the marker keeps the verdict tail (${m3b.length} chars, ends: ${m3b.slice(-50)})`);
 // 4. a variant that exists already (done elsewhere) retires a stale .deferred without spawning
 const s4 = src("s4.glb", 1000, "0"); mkdirSync(STORE_MIN, { recursive: true }); writeFileSync(storeDest(s4), "done-elsewhere"); writeFileSync(storeDest(s4) + ".deferred", "stale");
 queueOptimize(s4); await optIdle();
@@ -84,5 +95,17 @@ const sweep = (skip: boolean) => {
 const skipped = sweep(true), ran = sweep(false);
 ok(skipped.invoked.length === 0 && skipped.status.queued === 0, `SKIP_OPT_SWEEP=1: the child was never invoked (${skipped.invoked.length} receipts)`);
 ok(ran.invoked.some((d) => d.includes("planted.glb")), `SKIP_OPT_SWEEP unset: the planted GLB reached the child (${ran.invoked.length} receipts)`);
+// 8. the library sweep never queues a (source, mode) that is already waiting (Greptile #207): a second sweep, or a ↻
+//    rebuild pressed before the boot sweep, must not run the same encode twice. The costly case: a ↻ queues both passes
+//    FORCED (one starts, one waits), then the sweep adds the same passes unforced; the pump prefers unforced items, so the
+//    waiting pass ran unforced AND forced (a plain unforced duplicate is harmless: the pump skips a fresh dest).
+//    One planted library model: exactly one --ktx2 and one --lod invocation for it.
+{ const lib = join(root, "lib"), models = join(lib, "eidoverse", "assets", "models"); mkdirSync(models, { recursive: true });
+  writeFileSync(join(models, "dup.glb"), Buffer.alloc(500, 2));
+  const rf = join(receipts, "dup.txt"); writeFileSync(rf, "");
+  spawnSync(process.execPath, ["-e", 'const u = await import("./server/upload.ts"); u.rebuildAsset("eidoverse/assets/models/dup.glb"); u.sweepLibrary(); await u.optIdle();'],
+    { env: { ...process.env, SKIP_OPT_SWEEP: "0", OPT_RECEIPTS: rf, EIDOVERSE_DIR: lib }, cwd: import.meta.dir + "/..", encoding: "utf8" });
+  const got = readFileSync(rf, "utf8").split("\n").filter((d) => d.includes("dup.glb"));
+  ok(got.length === 2, `a ↻ then the boot sweep, one model: ${got.length} encode(s) for it (want 2: one --ktx2, one --lod) ${JSON.stringify(got)}`); }
 import("node:fs").then((fs) => fs.rmSync(root, { recursive: true, force: true }));
 console.log("optimize-pump: cases passed");

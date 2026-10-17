@@ -23,9 +23,12 @@
 
 import { readdirSync } from "node:fs";
 import sharp from "sharp";
-import { validatePose, validateTracks, tracksSpan, poseReport } from "../shared/humanoid.js";
+import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose } from "../shared/humanoid.js";
+import { rigBonesFor } from "./rigbones.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { rawShapeError } from "./shape.ts";
+import { shown } from "../shared/shown.js";
+import { lightArgsError } from "../server/verb-shapes.ts";
 import type { WorldAgent } from "./agent.ts";
 
 /** The slice of WorldAgent the tools touch — typed loosely on purpose: the
@@ -71,7 +74,9 @@ export const TOOLS = [
   { name: "body_state", description: "Perceive your body or another present participant (who; omitted or 'self' means you). Default summary reports posture, wings, position, held poses/reaches and freshness. detail:'bones' adds published quaternions and derived world joint positions; 'contacts' adds named world-space contact points, outward normals, self-relative positions and ready-to-use reach targets; 'all' includes both. Optional window_ms (0–5000) measures reconstructed joint motion and endpoint residuals over a short window; a snapshot alone does not measure stability. Optional points filters contacts, e.g. ['chest_front','hand_l','hand_r']. Geometry evaluates the shared VRMA posture clips, published bone rotations and dependent limb reaches. Missing clips or unresolved/cyclic reach dependencies return incomplete geometry. Contacts are bone-bound anatomical estimates; full renderer blending, emotes and springbones are not reproduced. Reading never moves or touches anyone. Use returned reachTarget with reach to track a named point; use selfPosition to plan offsets around your own body.", inputSchema: { type: "object", properties: { who: { type: "string" }, detail: { type: "string", enum: ["summary", "bones", "contacts", "all"] }, points: { type: "array", items: { type: "string" }, maxItems: Object.keys(CONTACT_POINTS).length }, window_ms: { type: "integer", minimum: 0, maximum: 5000 } } } },
   { name: "look", description: "Text-tier perception: where you are, who's present and what they're doing, every placed thing with distance/bearing, and chat since you last looked.", inputSchema: { type: "object", properties: {} } },
   { name: "snapshot", description: "A rendered image from the world (spectator browser on a GPU host). Slower than look — use when spatial/visual detail matters. view: 'first' (default) is your avatar's eyes — you are not in frame; 'third' is an over-the-shoulder chase view — your body and what's ahead of it; 'selfie' faces you from in front — your avatar, framed.", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] } } } },
-  { name: "walk_to", description: "Walk (or run) to world coordinates. Default arrival tolerance is 0.01m, so short positioning moves are honored. Optional tolerance (0–0.4 metres) changes how close to the requested point counts as arrived. This is destination accuracy, not distance from another body.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, run: { type: "boolean" }, tolerance: { type: "number", minimum: 0, maximum: 0.4 } }, required: ["x", "z"] } },
+  { name: "walk_to", description: "Walk (or run) to a named place, a thing, a person, or world coordinates. Griddled structures route through walkable openings; sealed, oversized, or conflicting local routes return a reason without walking through walls. This is horizontal centerline routing with a 0.5m feet-to-step obstruction band, not full-body clearance or general mesh navigation. Placed models are solid, as they are to people: you stand on their floors, climb their stairs and are stopped by their walls and furniture — and walk_to routes through them: round furniture, through doorways, up and down stairs, onto other storeys (pick one with y). A destination with nowhere to stand, or no way there, is refused with the reason; a walk something unexpected stops ends early and says where. Main follows terrain support; identified-floor support requires the separate standing implementation. Default arrival tolerance is 0.01m, so short positioning moves are honored. Optional tolerance (0–0.4 metres) changes how close to the requested point counts as arrived. This is destination accuracy, not distance from another body.", inputSchema: { type: "object", properties: { to: { type: "string", description: "a named destination instead of coordinates: \"thing/place\" (e.g. \"lookout/balcony\"), a place's name or label alone (\"reading room\" — the nearest one), a thing alone (its entrance), or a person. look lists each thing's places." }, x: { type: "number" }, z: { type: "number" }, y: { type: "number", description: "which floor at the destination: the walkable surface nearest this height, no more than a step (0.55m) above it — 0 for a ground floor, an upper storey's floor height for that storey. Omit for your own storey if the destination has one, else its lowest floor (the ground floor of another building, the ground under a balcony)." }, run: { type: "boolean" }, tolerance: { type: "number", minimum: 0, maximum: 0.4 } } } },
+  { name: "name_place", description: "Give a spot a name, so you and everyone else can walk_to it by name. Names where you stand (or x/z, with y optional: the floor there nearest your height), on the thing you are in or the nearest placed thing (or `on`), in that thing's own frame — it moves with it. Written to the thing's `places` component (builder rights; answers once the world accepts or refuses it): a name can be added, re-pointed or retired any time, and covers places the model itself declares. remove: true retires a name.", inputSchema: { type: "object", properties: { name: { type: "string" }, label: { type: "string", description: "how it reads, e.g. \"the window seat\"" }, on: { type: "string", description: "the thing's id; default: the thing you are in, else the nearest within 15m" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, remove: { type: "boolean" } }, required: ["name"] } },
+  { name: "check_model", description: "What a model is like to walk into, measured with the walking body's own rules before or after it is placed: whether it is walk-in at all, its floors and how much of each can be reached from outside, why any part can't (a passage narrower than a body, a rise too high to step, a climb an overhanging floor blocks, no way in), the render budget — and suggested rooms, doors and stairs, ready to name as places. Advisory: nothing is refused. Pass the id of a placed thing (checked as placed: at its scale, with its collide), or a library/store path (what an upload returns; checked at its own size, or at scale). The first check of a model at a scale takes a few seconds.", inputSchema: { type: "object", properties: { id: { type: "string" }, lib: { type: "string" }, scale: { type: "number", description: "with lib: check it as if placed at this scale (0.05–20)" } } } },
   // ---- FLIGHT (upstream's flight arc, merged 2026-09-02; behind the `fly`
   // grant — the agent refuses on the ground it stands on). Deliberately no
   // file_plan: a sortie is these tools called in sequence from the pilot's own
@@ -92,21 +97,21 @@ export const TOOLS = [
   { name: "catch_up", description: "What happened in the world while you were not thinking. Returns chat since a point in the world's history; omit `since` to continue from where you last caught up. Use when a conversation refers to something you have no memory of.", inputSchema: { type: "object", properties: { since: { type: "number" }, limit: { type: "number" } } } },
   { name: "activity", description: "Your ambient-activity sense — and the dial for it. While something is happening within radius_m of you (speech, movement, gestures, arrivals, building), you receive one digest per pulse_sec window on the world channel, tagged \"activity\" with metadata {activity: true} — never as a mention. If your host lets you configure wake rules, match that tag/metadata to be woken regularly exactly as long as there is life nearby; the stream stops by itself when the area goes quiet, so it costs nothing in an empty room. Call with no arguments to see your current settings. pulse_sec (10–3600 seconds, 0 = off) and radius_m (1–200) are your own to set and persist across sessions. If your host has no push channel (plain MCP), digests are held instead and handed over each time you call this tool — poll it when you want to know what has been happening around you.", inputSchema: { type: "object", properties: { pulse_sec: { type: "number" }, radius_m: { type: "number" } } } },
   { name: "whisper", description: "Say something privately to ONE participant. Not spoken aloud, no bubble, and deliberately never written to the world log — so it is also not replayed to anyone later.", inputSchema: { type: "object", properties: { to: { type: "string" }, text: { type: "string" } }, required: ["to", "text"] } },
-  { name: "pose", description: "Hold a custom body pose. `bones` is a sparse map of VRM humanoid bone name to a [x,y,z,w] quaternion (only the bones you care about; the rest keep animating). Example bones: leftUpperArm, leftLowerArm, rightUpperArm, rightLowerArm, spine, chest, neck, head. Names are checked and corrected where they are unambiguous, and anything dropped is reported back with the reason — so read the reply, it is your only feedback that the body did what you meant. Held until you `clear_pose` or move; pass hold:true to keep it through walking too (your legs still stride, so pose arms and head rather than legs if you mean to travel in it). Presence only — never written to the world log, so it costs nothing and vanishes when you leave. Pass `target` to pose SOMEONE ELSE (they decide whether to allow it).", inputSchema: { type: "object", properties: { bones: { type: "object" }, hold: { type: "boolean" }, target: { type: "string" } }, required: ["bones"] } },
+  { name: "pose", description: "Hold a custom body pose. `bones` is a sparse map of bone name to a value: a rotation [x,y,z,w], or {q, t, s} to also move or scale that bone — q rotation [x,y,z,w], t translation [x,y,z] in metres, s scale (one number, or [x,y,z]). Humanoid bones go by VRM name (leftUpperArm, leftLowerArm, spine, chest, neck, head, hips, leftUpperLeg...); ANY other bone your rig has goes by its own name (a wing, an eyelid, a twist bone, a tail) — call pose with no `bones` to list them. Rotations are relative to the parent bone's. Translation on hips moves the whole body in world metres (Y is up): {\"hips\": {\"t\": [0, -0.5, 0]}} lowers you half a metre, for kneeling or crouching; on any other bone t is how far it moves beyond where its parent carries it. Scale is in the bone's own axes and carries to its children. By default only the bones you name change and the rest of any pose you hold stays (so you can raise an arm while kneeling); a bone set to null is released back to normal. replace:true makes this the WHOLE pose instead: every bone you don't name goes back to normal animation. Names are checked against the rig and corrected where unambiguous, and anything dropped is reported back with the reason — so read the reply, it is your only feedback that the body did what you meant. Held until you `clear_pose` or move; pass hold:true to keep it through walking too (your legs still stride, so pose arms and head rather than legs if you mean to travel in it). Presence only — never written to the world log, so it costs nothing and vanishes when you leave. Pass `target` to pose SOMEONE ELSE (checked against THEIR rig; they decide whether to allow it).", inputSchema: { type: "object", properties: { bones: { type: "object" }, replace: { type: "boolean", description: "true: this is the whole pose; unnamed bones return to normal. Default false: only the named bones change" }, hold: { type: "boolean" }, target: { type: "string" } } } },
   { name: "clear_pose", description: "Release a held pose, easing back to normal animation. Pass `target` to release a pose you asked someone else to hold.", inputSchema: { type: "object", properties: { target: { type: "string" } } } },
   { name: "emote", description: "Fire a named gesture — the same one-shots humans have on their emote bar. Plays once over your locomotion; presence only, never logged. For a gesture that isn't listed, invent one with `animate`.", inputSchema: { type: "object", properties: { name: { type: "string", enum: ["wave", "cheer", "dance", "point", "salute", "clap", "talk", "flail"] } }, required: ["name"] } },
   { name: "reach", description: `Reach out with a hand (or foot) — real IK: everyone sees your arm extend toward the target and TRACK it (your walking, their moving) until clear_reach, and the palm turns to rest on the surface it meets. Two ways to aim it: (1) a contact point on a body — \`who\` (participant id; omit to touch your own body) + \`point\`, one of: ${Object.keys(CONTACT_POINTS).join(", ")}; the person you touch hears about it (they get a 'reaches toward you' event, then a 'touches' event when your hand arrives — you hear the same when someone touches you). (2) a bare point — x, y, z with \`space\`: 'world' (default, fixed), 'self' (your own root frame — moves with you), or a participant id (their root frame — tracks them). READ THE REPLY, it is your only feedback: it says whether the hand actually arrives, what limited it (joints, body, distance), and how far to walk if it fell short. A reach composes over walking, sitting and held poses. If YOU (the reacher) are knocked over, your outgoing reaches are cleared. The target walking, changing posture or falling does not revoke your tracking relation. The target currently has no tool to revoke someone else's incoming reach; agree on release with them. Presence-only, never logged.`, inputSchema: { type: "object", properties: { limb: { type: "string", enum: ["rightHand", "leftHand", "rightFoot", "leftFoot"], description: "default rightHand" }, who: { type: "string" }, point: { type: "string" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, space: { type: "string" }, standoff: { type: "number", description: "metres to hover off the surface (default 0.02 — resting on it)" }, palm: { type: "boolean", description: "false = don't orient the palm to the surface" } } } },
   { name: "clear_reach", description: "Let go: release one of YOUR reaching limbs (or all of them when called bare), easing back to normal animation. Anyone you were touching sees the hand withdraw. This clears your outgoing reaches; it does not revoke someone else's incoming reach toward you.", inputSchema: { type: "object", properties: { limb: { type: "string", enum: ["rightHand", "leftHand", "rightFoot", "leftFoot"] } } } },
   { name: "posture", description: "Settle into a posture: sit (on the ground), sitchair (chair height), lie, or stand. Held until you stand or walk; survives leaving and rejoining, like a held pose.", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["sit", "sitchair", "lie", "stand"] } }, required: ["kind"] } },
   { name: "ragdoll", description: "Shove another body over — a physics ragdoll. `target` is who falls; THEY simulate it on their own body (you never simulate someone else), and it settles into a held pose everyone sees. The shove is directed from where YOU stand through them (walk to the right side of someone before pushing); `strength` 0.5–4 m/s, default 2.2. Being knocked over is opt-in for humans and default for agent performers.", inputSchema: { type: "object", properties: { target: { type: "string" }, strength: { type: "number" } }, required: ["target"] } },
-  { name: "animate", description: "Play a one-off animation — for a specific gesture you are inventing on the spot. `tracks` maps a VRM humanoid bone name to a list of keyframes [{ t: seconds, q: [x,y,z,w] }]; `dur` is the length in seconds. Only list the bones that move. It plays once (or set loop:true), over your locomotion, and is relayed to everyone but never logged. Keep it small and sparse — a few bones, a few keyframes. Pass `target` to play it on someone else (they decide).", inputSchema: { type: "object", properties: { dur: { type: "number" }, loop: { type: "boolean" }, tracks: { type: "object" }, target: { type: "string" } }, required: ["dur", "tracks"] } },
+  { name: "animate", description: "Play a one-off animation — for a specific gesture you are inventing on the spot. `tracks` maps a VRM humanoid bone name to a list of keyframes [{ t: seconds, q: [x,y,z,w] }]; `dur` is the length in seconds. Only list the bones that move. It plays once (or set loop:true), over your locomotion AND over any pose you hold or animation already playing — it takes only the bones it animates; replace:true ends your held pose and other animations first. Relayed to everyone but never logged. Keep it small and sparse — a few bones, a few keyframes. Pass `target` to play it on someone else (they decide).", inputSchema: { type: "object", properties: { dur: { type: "number" }, loop: { type: "boolean" }, replace: { type: "boolean" }, tracks: { type: "object" }, target: { type: "string" } }, required: ["dur", "tracks"] } },
   { name: "set_avatar", description: "Change your body. Pass `avatar` as a roster name (see it with no arguments) or a full vrm path. Takes effect immediately — everyone sees you change; your position and held pose carry over.", inputSchema: { type: "object", properties: { avatar: { type: "string" } } } },
   { name: "library_sheet", description: "A contact sheet — one grid image with names under each tile. kind 'avatars' is the wearable roster (portraits exist once a body has been worn); kind 'models' is the placeable object library. 12 per page. Use library_preview for a closer look at one, set_avatar to wear, spawn to place.", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["avatars", "models"] }, page: { type: "number" } }, required: ["kind"] } },
   { name: "library_preview", description: "One item at full size: an avatar's portrait (roster name) or a model's preview render (library filename or path).", inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } },
   { name: "list_library", description: "Search the model library by keywords. Returns library paths for spawn.", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
   { name: "spawn", description: "Spawn a library model. lib (exact) or query (best match); position defaults to 2m in front of you.", inputSchema: { type: "object", properties: { lib: { type: "string" }, query: { type: "string" }, x: { type: "number" }, z: { type: "number" }, y: { type: "number" }, yaw: { type: "number" }, id: { type: "string" } } } },
   { name: "place", description: "Move an entity (id from look) to x,z (y defaults to terrain; pass y to seat on furniture).", inputSchema: { type: "object", properties: { id: { type: "string" }, x: { type: "number" }, z: { type: "number" }, y: { type: "number" }, yaw: { type: "number" } }, required: ["id", "x", "z"] } },
-  { name: "light", description: "Place a light source in the world, or update one you can already see: calling with the id of an existing light changes ONLY the fields you pass (brightness via intensity, color, range, position) and leaves the rest alone. Persists like any placed thing. color is a hex integer (e.g. 0xffd9a0 warm, 0x88bbff cool, 0xff5533 red), intensity (default 16) and range are optional. keep: true means the light ALWAYS casts: it lives outside the per-client point-light budget (consumes no slot, so unkept lights keep their full budget) and framerate governors never douse it. Every casting light has real GPU cost — keep it for lights that matter. Position defaults to just in front of you. A small glowing sphere marks it; move or remove it by id like any entity.", inputSchema: { type: "object", properties: { color: { type: "number" }, intensity: { type: "number" }, range: { type: "number" }, keep: { type: "boolean" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, id: { type: "string" } } } },
+  { name: "light", description: "Place a light source in the world, or update one you can already see: calling with the id of an existing light changes ONLY the fields you pass (brightness via intensity, color, range, position) and leaves the rest alone. Persists like any placed thing. color is a hex integer (e.g. 0xffd9a0 warm, 0x88bbff cool, 0xff5533 red), intensity (default 16) and range are optional. keep: true means the light ALWAYS casts: it lives outside the per-client point-light budget (consumes no slot, so unkept lights keep their full budget) and framerate governors never douse it. Every casting light has real GPU cost — keep it for lights that matter. Position defaults to just in front of you. A supplied id must be a string with at least one non-whitespace character; omit it (or pass null) to generate one. An id that names something other than a light is refused, since a light would replace it. A small glowing sphere marks it; move or remove it by id like any entity.", inputSchema: { type: "object", properties: { color: { type: "number" }, intensity: { type: "number" }, range: { type: "number" }, keep: { type: "boolean" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, id: { type: "string" } } } },
   { name: "remove", description: "Remove a placed entity.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   // Description narrowed to what the implementation actually does (antra
   // review, #3). It previously promised "held pose and posture survive", which
@@ -117,10 +122,10 @@ export const TOOLS = [
   // avatar and the activity dial ARE carried, and are named because they are.
   { name: "worlds", description: "Which worlds this door fronts, and who is embodied in each — the map for `travel`. Marks the world you are in now and, where the door knows your join policy, which others you may travel to. Founding a world that is not listed needs create authority. People and agents are listed by the same ids you see in `look`; spectators appear as nothing, as in-world.", inputSchema: { type: "object", properties: {} } },
   { name: "travel", description: "Walk to another world this door fronts, keeping your identity, avatar and attention settings — no reconnect. Subject to your credential's join policy; founding a world that does not exist yet needs separate create authority. Your held pose and posture do NOT survive the move (they are world-local, like a disconnect), and your chat cursor resets to the new world.", inputSchema: { type: "object", properties: { world: { type: "string", description: "world name, e.g. \"commons\"" } }, required: ["world"] } },
-  { name: "world_verb", description: "Raw world-log verb. The verb set is CLOSED by design — say, use, punt, force, mount, dismount, spawn, place, remove, light, comp, motion, behavior, asset, terrain, grass, sky, weather, grant, kick, ban, unban, caption (one line of what a screen said; needs the per-screen caption deed) — and the door refuses others; extend STATE with comp types you invent, EVENTS with use actions, SEMANTICS with behavior scripts, never by hoping a new verb exists. This is also the authoring surface for components: comp {id, type, data|null} attaches data to an entity (sockets, reactions, or anything you invent); motion {id, type: pendulum|spin|orbit|bob|path, …} sets it moving; see AGENTS.md in the eidoverse-worlds repo for the full vocabulary.", inputSchema: { type: "object", properties: { verb: { type: "string" }, args: { type: "object" } }, required: ["verb", "args"] } },
+  { name: "world_verb", description: "Raw world-log verb. The verb set is CLOSED by design — say, use, punt, force, mount, dismount, spawn, place, remove, light, comp, motion, behavior, asset, terrain, grass, sky, weather, epoch (owner only: enters or upgrades the world's deterministic-sim epoch), grant, kick, ban, unban, caption (one line of what a screen said; needs the per-screen caption deed) — and the world refuses others; extend STATE with comp types you invent, EVENTS with use actions, SEMANTICS with behavior scripts, never by hoping a new verb exists. This is also the authoring surface for components: comp {id, type, data|null} attaches data to an entity (sockets, reactions, or anything you invent); motion {id, type: pendulum|spin|orbit|bob|path, …} sets it moving; see AGENTS.md in the eidoverse-worlds repo for the full vocabulary.", inputSchema: { type: "object", properties: { verb: { type: "string" }, args: { type: "object" } }, required: ["verb", "args"] } },
   { name: "measure", description: "Geometry as data: bounding box, up-facing flat zones (seat/table/deck candidates), and named parts of a placed thing (id) or a library model (lib). Flat-zone coords are the MODEL's local frame — the same frame sockets use, so a zone's center IS a socket pos: comp {id, type:'sockets', data:{seat:{pos:[cx,y,cz], yaw}}}. Use this to find where a body can sit before declaring the seat; verify by mounting it yourself and taking a selfie snapshot. Raw GLB bytes are at GET <sequencer>/library/<lib> if you want to process the mesh locally.", inputSchema: { type: "object", properties: { id: { type: "string" }, lib: { type: "string" } } } },
   { name: "world_history", description: "Pull raw entries from the world log — the append-only record every world IS. Filter by verbs (e.g. ['use','motion'] to trace an interaction, ['comp'] to see how something was built), page backwards with before. Every entry has {seq, ts, actor, verb, args}; reaction-authored entries carry {cause, by}. This is the debugging primitive: the log is the world, so reading it is reading the world's source.", inputSchema: { type: "object", properties: { verbs: { type: "array", items: { type: "string" } }, before: { type: "number" }, after: { type: "number" }, limit: { type: "number" } } } },
-  { name: "world_debug", description: "The world's flight recorder: why things BOUNCED. The log answers 'what happened'; this answers 'why didn't it' — denied verbs (rights), rejected shapes (malformed/oversized comp, bad mount), rate limits, reaction outcomes ('reaction' fired with cause→effect seqs, 'reaction-skip' with the reason, 'reaction-error'), and script events ('script-error', 'script-pause'). Pass behavior: <id> to read ONE runtime script's own log ring (its world.log() console + status); pass behaviors: true to list what scripts run here and whether they're alive. IMPORTANT: motion/comp components are NOT scripts — they are passive data evaluated client-side and NEVER appear in the behaviors roster (absence there does not mean your component failed or was deleted; check world_history verbs:['comp','motion'] for its fold, and look for kind 'motion-lint' in the plain recorder: the server lints every folded motion for params the evaluator will ignore, unknown types, and part names that no client renders). In-memory, recent events only. Check here first when something doesn't do what you expected.", inputSchema: { type: "object", properties: { limit: { type: "number" }, kinds: { type: "array", items: { type: "string" } }, behavior: { type: "string" }, behaviors: { type: "boolean" } } } },
+  { name: "world_debug", description: "The world's flight recorder: why things BOUNCED. The log answers 'what happened'; this answers 'why didn't it' — denied verbs (rights), rejected shapes (malformed/oversized comp, bad mount), rate limits, reaction outcomes ('reaction' fired with cause→effect seqs, 'reaction-skip' with the reason, 'reaction-error'), script events ('script-error', 'script-pause'), and 'spawn-lint' (an accepted spawn whose lib is malformed or names no file /library serves; repeats of one lib are recorded once a minute). Pass behavior: <id> to read ONE runtime script's own log ring (its world.log() console + status); pass behaviors: true to list what scripts run here and whether they're alive. IMPORTANT: motion/comp components are NOT scripts — they are passive data evaluated client-side and NEVER appear in the behaviors roster (absence there does not mean your component failed or was deleted; check world_history verbs:['comp','motion'] for its fold, and look for kind 'motion-lint' in the plain recorder: the server lints every folded motion for params the evaluator will ignore, unknown types, and part names that no client renders). In-memory, recent events only. Check here first when something doesn't do what you expected.", inputSchema: { type: "object", properties: { limit: { type: "number" }, kinds: { type: "array", items: { type: "string" } }, behavior: { type: "string" }, behaviors: { type: "boolean" } } } },
   { name: "kick", description: "MODERATION: remove a participant from this world right now. They may rejoin — a kick interrupts, a ban excludes. Needs owner rights here (same gate as grant); operators and fellow owners cannot be kicked.", inputSchema: { type: "object", properties: { id: { type: "string" }, reason: { type: "string" } }, required: ["id"] } },
   { name: "ban", description: "MODERATION: ban a participant — disconnects them now and refuses their joins (including spectating) until unban. Default is THIS world only (needs owner rights here). global:true bans them from every world on this server (needs WORLD_ADMIN). Give a reason — it is shown to them and kept in the record.", inputSchema: { type: "object", properties: { id: { type: "string" }, reason: { type: "string" }, global: { type: "boolean" } }, required: ["id"] } },
   { name: "unban", description: "MODERATION: lift a ban — this world's by default, the server-wide list with global:true.", inputSchema: { type: "object", properties: { id: { type: "string" }, global: { type: "boolean" } }, required: ["id"] } },
@@ -204,11 +209,11 @@ export function toolList({ travel = false }: { travel?: boolean } = {}) {
 export async function snapshotTool(ag: ToolAgent, view = "first") {
   try {
     const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}`);
-    if (!r.ok) return { content: [{ type: "text", text: `no view available: ${(await r.text()).slice(0, 200)}` }] };
+    if (!r.ok) return { content: [{ type: "text", text: `snapshot: no picture was taken; the world server answered "${(await r.text()).slice(0, 200)}" (${r.status}), so try again in a while` }] };
     const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
     return { content: [{ type: "image", data: b64, mimeType: "image/png" }] };
   } catch (e) {
-    return { content: [{ type: "text", text: `snapshot failed: ${(e as Error).message}` }] };
+    return { content: [{ type: "text", text: `snapshot failed: no picture arrived from the world server (${(e as Error).message}); try again in a moment` }] };
   }
 }
 
@@ -216,14 +221,16 @@ export async function snapshotTool(ag: ToolAgent, view = "first") {
 // One handler per tool, keyed to TOOLS by NAME — the verbs.ts/messages.ts
 // treatment (survey §B3, deferred until the table had one home): bodies moved
 // VERBATIM from the 26-case switch. The load-time assertion below makes
-// advertise/handle drift a boot failure on BOTH doors instead of an
-// "Unknown tool" a caller meets at runtime.
+// advertise/handle drift a boot failure on BOTH doors instead of a missing
+// tool a caller meets at runtime.
 
 const text = (t: string) => ({ content: [{ type: "text", text: t }] });
+/** A tool this door doesn't serve, hidden or never there: the same words. */
+const noSuchTool = (name: string) => `there's no tool named "${name}" on this door, so nothing ran; your tool list has the ones it serves`;
 // Refused at dispatch too, not merely hidden: a pilot who learned the name
 // off a bench must not be able to fire the trusted seam here.
 const rehearse = (ag: ToolAgent, a: Record<string, any>, name: string) => {
-  if (!REHEARSAL_ENABLED) return text("no such tool");
+  if (!REHEARSAL_ENABLED) return text(noSuchTool(name));
   return text(name === "rehearse_down"
     ? ag.flightBodyDown(String(a.eventId ?? "rehearsal"))
     : ag.flightBodyRecovered(String(a.eventId ?? "rehearsal"), "gen-rehearsal"));
@@ -254,7 +261,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const want = String(a.avatar ?? "").trim();
       if (!want) return text(`bodies on the roster: ${roster.map((r) => r.name).join(", ")}`);
       const path = want.includes("/") ? want : roster.find((r) => r.name === want)?.path;
-      if (!path) return text(`no body named "${want}" — roster: ${roster.map((r) => r.name).join(", ")}`);
+      if (!path) return text(`no body named "${want}" is on the roster, so you're still wearing your current body. ${roster.length ? `The roster has: ${roster.map((r) => r.name).join(", ")}.` : "The roster is empty."} A path with a slash names a library model instead.`);
       ag.setAvatar(path);
       ctx.rememberAvatar?.(path);   // the choice outlives this session
       return text(`you are now wearing ${want.includes("/") ? path.split("/").pop() : want}`);
@@ -286,7 +293,9 @@ export const HANDLERS: Record<string, ToolHandler> = {
       }
       const pages = Math.max(1, Math.ceil(items.length / SHEET.perPage));
       const slice = items.slice((page - 1) * SHEET.perPage, page * SHEET.perPage);
-      if (!slice.length) return text(`no page ${page} — ${items.length} ${kind}, ${pages} page${pages === 1 ? "" : "s"}`);
+      if (!slice.length) return text(items.length
+        ? `no page ${page}: there are ${items.length} ${kind} on ${pages} page${pages === 1 ? "" : "s"}, so pass a page from 1 to ${pages}`
+        : `there are no ${kind} to show yet`);
       const tiles = await Promise.all(slice.map(async (it) => {
         if (!it.url) return { name: it.name, data: null, mime: "", h: it.h };
         try {
@@ -319,20 +328,61 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   walk_to: async (ag, a, ctx, name) => {
-      const x = Number(a.x), z = Number(a.z), tolerance = a.tolerance ?? 0.01;
+      // `to` names the destination (a place, a thing, a person); x/z/y are
+      // coordinates. A named place carries its own floor and reach.
+      let x = Number(a.x), z = Number(a.z), y = a.y != null ? Number(a.y) : undefined, label: string | null = null;
+      let near: { reach?: number; above?: number; below?: number; inside?: (x: number, z: number) => boolean } = {};
+      if (typeof a.to === "string") {
+        const d = ag.destination(a.to);
+        if ("refusal" in d) return text(d.refusal);
+        ({ x, z } = d); y = d.y; near = { reach: d.reach, above: d.above, below: d.below, inside: d.inside }; label = d.label;
+      }
+      const tolerance = a.tolerance ?? 0.01;
       if (![x, z, tolerance].every(Number.isFinite) || tolerance < 0 || tolerance > 0.4)
-        return { content: [{ type: "text", text: "walk_to needs finite x/z and tolerance between 0 and 0.4 metres" }], isError: true };
-      const arrived = await ag.walkTo(x, z, Boolean(a.run), 90_000, tolerance);
-      return text(arrived ? `arrived at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}); ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m from requested destination` : "walk interrupted or timed out");
+        return { content: [{ type: "text", text: "walk_to needs finite x/z and tolerance between 0 and 0.4 metres" }], isError: true };   // walkTo's own words (WALK_ARGS_REASON)
+      if (y != null && !Number.isFinite(y))
+        return { content: [{ type: "text", text: "walk_to's y, when given, must be a finite height in metres" }], isError: true };
+      // This request's own refusal (its plan may wait for geometry still loading).
+      const receipt = { refusal: null as string | null };
+      const arrived = await ag.walkTo(x, z, Boolean(a.run), 90_000, tolerance, y, near, receipt);
+      if (!arrived) return text(receipt.refusal ?? ag.walkStopReason ?? ag.walkStall ?? "walk interrupted or timed out");
+      const here = ag.placesAt([ag.pos.x, ag.pos.y, ag.pos.z])[0];
+      return text(label
+        ? `arrived at ${label}: (${ag.pos.x.toFixed(2)}, ${ag.pos.y.toFixed(2)}, ${ag.pos.z.toFixed(2)})${here ? `, in ${here.place.label ?? here.place.name}` : ""}`
+        : `arrived at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}); ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m from requested destination${here ? `, in ${here.place.label ?? here.place.name} (${here.entity.id}/${here.place.name})` : ""}`);
 
+  },
+  check_model: async (ag, a) => {
+      const e = a.id ? ag.entities.get(String(a.id)) : null;
+      if (a.id && !e) return text(`no thing called "${a.id}" here`);
+      const lib = String(e?.lib ?? a.lib ?? "");
+      if (!lib || lib === "(light)") return text("check_model needs the id of a placed model, or a library path");
+      let r: any;
+      // a placed thing is checked as placed: at its scale (the body is not scaled)
+      const scale = e ? (e.scale && e.scale > 0 ? e.scale : 1) : (typeof a.scale === "number" && a.scale > 0 ? a.scale : 1);
+      try { r = await (await fetch(`${ag.httpBase}/check?lib=${encodeURIComponent(lib)}${scale !== 1 ? `&scale=${scale}` : ""}`)).json(); }
+      catch (err) { return text(`the check could not be reached: ${String((err as Error)?.message ?? err)}`); }
+      if (r.error) return text(`couldn't check ${lib}: ${r.error}`);
+      return text(describeCheck(`${e ? `[${e.id}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`, r, e ? ag.placesOn(e).length : 0, e?.id, e?.collide));
+  },
+  name_place: async (ag, a) => {
+      // coordinates: x and z together (y optional: the floor there nearest
+      // your own height), or none — never some of them silently dropped
+      const given = [a.x, a.y, a.z].some((v: unknown) => v != null);
+      if (given && ![a.x, a.z].every((v: unknown) => typeof v === "number" && Number.isFinite(v)))
+        return { content: [{ type: "text", text: "name_place's coordinates need x and z (y is optional: the floor there nearest your own height) — or leave them all out to name where you stand" }], isError: true };
+      if (a.y != null && !(typeof a.y === "number" && Number.isFinite(a.y)))
+        return { content: [{ type: "text", text: "name_place's y, when given, must be a finite height in metres" }], isError: true };
+      const at = given ? { x: a.x as number, z: a.z as number, y: a.y as number | undefined } : undefined;
+      return text(await ag.namePlace(String(a.name ?? ""), { on: a.on, label: a.label, remove: a.remove === true, at }));
   },
   face: async (ag, a, ctx, name) => {
       if (a.target) {
         const p = ag.people.get(a.target)?.pose?.p ?? ag.entities.get(a.target)?.pos;
-        if (!p) return text(`no such target: ${a.target}`);
+        if (!p) return text(`nothing here is called "${a.target}", so you didn't turn; look lists who and what is around you`);
         ag.face(p[0], p[2]);
       } else if (a.x != null && a.z != null) ag.face(Number(a.x), Number(a.z));
-      else return text("pass x+z or target");
+      else return text('face needs x and z, or a target, so you didn\'t turn: face {x: 4, z: -2} or face {target: "<an id from look>"}');
       return text("facing");
 
   },
@@ -371,7 +421,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // trio but no text lands a FABRICATED spoken say whose body is the
       // literal "undefined"/"[object Object]".
       if (typeof a.text !== "string" || a.text.length === 0) {
-        return { content: [{ type: "text", text: "say refused: `text` is required and must be a non-empty string." }], isError: true };
+        return { content: [{ type: "text", text: `say refused: \`text\` is required and must be a non-empty string, so nothing was said; you sent ${shown(a.text)}` }], isError: true };
       }
       // "Wants spoken" means the caller is ASSERTING a performance: spoken:true,
       // or a trio partner (utt/t0) present. An explicit spoken:false (or spoken
@@ -395,7 +445,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         // schema client that inspects result.isError read this as a successful
         // say — the door must mark the refusal as an error, not just describe
         // one in text.
-        return { content: [{ type: "text", text: "spoken-say refused: the protocol trio must travel together — spoken:true plus a non-negative integer utt (t0 optional, finite). Sent as ordinary text it would silently lose its performance link, so nothing was said; fix and resend." }], isError: true };
+        return { content: [{ type: "text", text: `spoken-say refused, so nothing was said: a spoken line needs spoken: true and utt a non-negative integer, and t0, if given, a finite number (you sent spoken ${shown(a.spoken)}, utt ${shown(a.utt)}, t0 ${shown(a.t0)}). Sent as plain text it would lose its performance link. For an ordinary say, send only text.` }], isError: true };
       }
       const extra = trioOk
         ? { spoken: true as const, utt: a.utt, ...(typeof a.t0 === "number" ? { t0: a.t0 } : {}) }
@@ -405,7 +455,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   whisper: async (ag, a, ctx, name) => {
-      if (!WHISPERS_ENABLED) return text("whispers are disabled in this world");
+      if (!WHISPERS_ENABLED) return text("whispers are turned off on this door, so nothing was sent, and calling again won't change that");
       ag.whisper(String(a.to), String(a.text).slice(0, 4000));
       return text(`whispered to ${a.to}`);
 
@@ -415,24 +465,46 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // other feedback is a snapshot through a GPU host — so a bone name that
       // does not exist, a three-component quaternion, or two names folding
       // onto one bone must come back as words, not as a body that silently
-      // did not move. (See shared/humanoid.js.)
-      const v = validatePose(a.bones);
-      const note = poseReport(v);
-      if (!v.accepted.length) {
-        return text(`no pose set — nothing usable in \`bones\`.${note ? ` ${note}.` : ""}`
-          + " Want a sparse map of VRM humanoid bone name to [x,y,z,w], e.g."
-          + ' {"leftUpperArm": [0, 0, -0.9, 0.44]}.');
+      // did not move. (See shared/humanoid.js.) Checked against the rig of
+      // the body being posed: arbitrary bones exist only on the rigs that
+      // have them.
+      const target = a.target ? String(a.target) : null;
+      const avatar = target ? ag.people.get(target)?.avatar : ag.avatar;
+      const rig = avatar ? await rigBonesFor(ag.httpBase, avatar) : null;
+      if (a.bones == null) {
+        if (!rig) return text(`can't read ${target ? `${target}'s` : "your"} rig to list its bones. Humanoid names always work: ${HUMANOID_BONES.join(", ")}.`);
+        const humanoid = Object.entries(rig.humanoidOf).map(([raw, vrm]) => vrm === raw ? vrm : `${vrm} (${raw})`);
+        const other = rig.bones.filter((b) => !rig.humanoidOf[b] && !rig.aboveHips.includes(b));
+        return text(`${target ? `${target}'s` : "your"} rig — humanoid bones (by VRM name): ${humanoid.join(", ")}.`
+          + ` Other bones (by their own name): ${other.length ? other.join(", ") : "none"}.`
+          + `${rig.aboveHips.length ? ` Not poseable (above the hips; move hips instead): ${rig.aboveHips.join(", ")}.` : ""}`);
       }
-      if (a.target) {
-        ag.puppet(String(a.target), { pose: v.pose });
-        return text(`asked ${a.target} to hold a pose over ${v.accepted.length} bone(s)`
+      const v = validatePose(a.bones, { rig });
+      const note = poseReport(v);
+      const replace = !!a.replace;
+      if (!v.accepted.length && !(v.released.length && !replace)) {
+        return text(`no pose set — nothing usable in \`bones\`.${note ? ` ${note}.` : ""}`
+          + " Want a sparse map of bone name to [x,y,z,w] or {q, t, s}, e.g."
+          + ' {"leftUpperArm": [0, 0, -0.9, 0.44], "hips": {"t": [0, -0.4, 0]}}. Call pose with no bones to list your rig\'s.');
+      }
+      const what = `${v.accepted.length} bone(s)${v.custom.length ? ` (${v.custom.length} beyond the humanoid set: ${v.custom.join(", ")})` : ""}`
+        + `${v.released.length && !replace ? `, releasing ${v.released.join(", ")}` : ""}`;
+      // replace: the named bones ARE the pose (a null means nothing there).
+      // Otherwise merge over what is already held — mergePose, the same rule
+      // a browser applies when it is posed.
+      if (target) {
+        ag.puppet(target, { pose: replace ? mergePose(null, v.pose) ?? {} : v.pose, merge: !replace });
+        return text(`asked ${target} to ${replace ? "hold a pose (replacing theirs)" : "pose"} ${what}`
           + `${note ? ` — ${note}` : ""}. They decide whether to take it.`);
       }
       const hold = !!a.hold;
-      ag.setPose(v.pose, hold);
-      return text(`holding a pose over ${v.accepted.length} bone(s): ${v.accepted.join(", ")}`
+      const next = mergePose(replace ? null : (ag.heldPoseAuthored ? ag.heldPose : null), v.pose);
+      ag.setPose(next, hold);
+      const held = Object.keys(next ?? {});
+      return text(`${replace ? "holding a pose over" : "posed"} ${what}`
+        + `${!replace && held.length ? `; now holding ${held.length} bone(s) in all` : ""}${!held.length ? " — nothing is held now" : ""}`
         + `${note ? ` — ${note}` : ""}`
-        + `${hold ? ". It stays through walking — clear_pose to drop it." : ""}`);
+        + `${hold && held.length ? ". It stays through walking — clear_pose to drop it." : ""}`);
 
   },
   clear_pose: async (ag, a, ctx, name) => {
@@ -468,7 +540,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   ragdoll: async (ag, a, ctx, name) => {
-      if (!a.target) return text("ragdoll needs a `target` — the body that falls simulates it");
+      if (!a.target) return text('ragdoll needs a target, the body to knock over, so nothing happened: ragdoll {target: "<an id from look>"}');
       // the shove is directed: from where THIS body stands, through the
       // target — the same line a browser /push uses. No known position for
       // them = an undirected knock-over, the old wire.
@@ -497,10 +569,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
           + ' {"t": 0.5, "q": [0,0,-0.7,0.7]}]}.');
       }
       const dur = Number(a.dur);
-      if (!Number.isFinite(dur) || dur <= 0) return text("pass `dur`: the length in seconds, greater than 0");
+      if (!Number.isFinite(dur) || dur <= 0) return text(`animate needs dur, the length in seconds and more than 0, so nothing played; you sent ${shown(a.dur)}`);
       const span = tracksSpan(v.tracks);
       const cut = span > dur ? ` — note dur ${dur}s cuts keyframes that run to ${span}s` : "";
-      const spec = { dur, loop: !!a.loop, tracks: v.tracks };
+      const spec = { dur, loop: !!a.loop, tracks: v.tracks, replace: !!a.replace };
       if (a.target) {
         ag.puppet(String(a.target), { anim: spec });
         return text(`sent a ${dur}s animation over ${v.accepted.length} bone(s) to ${a.target}`
@@ -555,8 +627,16 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   spawn: async (ag, a, ctx, name) => {
-      const lib = a.lib ?? (a.query ? (await searchLibrary(ag.httpBase, String(a.query)))[0]?.path : undefined);
-      if (!lib) return text("no model — pass lib or query");
+      // The library is searched only when lib is left out and a query given.
+      const searched = a.lib == null && !!a.query;
+      const lib = a.lib ?? (searched ? (await searchLibrary(ag.httpBase, String(a.query)))[0]?.path : undefined);
+      // A search that found nothing is not a call that named no model, and
+      // neither is a lib that was sent empty.
+      if (!lib) return text(searched
+        ? `no library model matches ${shown(a.query)}, so nothing was spawned; list_library finds models by other words`
+        : a.lib != null
+          ? `spawn's lib was ${shown(a.lib)}, which names no model, so nothing was spawned; pass a model's path, or leave lib out and pass query to search the library`
+          : "spawn needs lib (a model's path) or query (words to search the library), so nothing was spawned");
       const x = a.x ?? ag.pos.x + Math.sin(ag.yaw) * 2;
       const z = a.z ?? ag.pos.z + Math.cos(ag.yaw) * 2;
       const id = a.id ?? crypto.randomUUID().slice(0, 8);
@@ -565,20 +645,37 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   place: async (ag, a, ctx, name) => {
-      if (!ag.entities.has(a.id)) return text(`no entity ${a.id}`);
+      if (a.id == null) return text(`place needs id, the entity to move, so nothing was placed: place {id: "lamp1", x: 3, z: -2}`);
+      // What this body has seen of the world: an entity spawned a moment ago
+      // may not have reached it yet.
+      if (!ag.entities.has(a.id)) return text(`this body knows of no entity ${shown(a.id)} in this world, so nothing was placed; look lists what's around you`);
       ag.verb("place", { id: a.id, pos: [a.x, a.y ?? ag.heightAt(a.x, a.z), a.z], ...(a.yaw != null ? { yaw: a.yaw } : {}) });
       return text(`placed ${a.id}`);
 
   },
   light: async (ag, a, ctx, name) => {
-      if (a.id && ag.entities.has(a.id)) {
+      // Omission generates an id, and so does null, which hosts that fill
+      // every optional argument send for one left out; a supplied invalid id
+      // is not a placement.
+      if (a.id !== undefined && a.id !== null) {
+        const why = lightArgsError(a);
+        if (why) return { content: [{ type: "text", text: why }], isError: true };
+      }
+      const standing = a.id != null ? ag.entities.get(a.id) : undefined;
+      // Only a light is updated: the fold replaces anything else holding the
+      // id with a light wholesale (spec §3.1), so a sparse "update" of a
+      // model would leave a light at the fold's defaults where the model was.
+      if (standing && standing.lib !== "(light)") {
+        return { content: [{ type: "text", text: `"${a.id}" is a model (${standing.lib || "no lib"}), not a light, so light won't update it. Use another id, or omit id to generate one.` }], isError: true };
+      }
+      if (standing) {
         // UPDATE: send only what was given — the fold merges, so absent
         // fields keep their prior value (stamping defaults here would reset
         // a light's color every time someone dims it).
         const patch: any = { id: a.id };
         for (const k of ["color", "intensity", "range", "keep"] as const) if (a[k] != null) patch[k] = a[k];
         if (a.x != null || a.y != null || a.z != null) {
-          const prev = ag.entities.get(a.id)!.pos ?? [0, 1, 0];
+          const prev = standing.pos ?? [0, 1, 0];
           patch.pos = [a.x ?? prev[0], a.y ?? prev[1], a.z ?? prev[2]];
         }
         ag.verb("light", patch);
@@ -598,7 +695,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // fatal-join teardown — so the shared table hands it to the host
       // through the ctx hook. A door with no hook (stdio fronts exactly one
       // WORLD_URL) does not list the tool; answering anyway teaches.
-      if (!ctx.travel) return { content: [{ type: "text", text: "travel is not available on this door — it fronts a single world; reconnect with a different WORLD_NAME instead" }], isError: true };
+      if (!ctx.travel) return { content: [{ type: "text", text: "travel isn't available on this door: it fronts a single world, so you stayed where you are; its operator chooses that world (WORLD_NAME)" }], isError: true };
       return await ctx.travel(String(a.world ?? "").trim());
 
   },
@@ -609,8 +706,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // refused travel.
       let r: Response;
       try { r = await fetch(`${ag.httpBase}/worlds`, { signal: AbortSignal.timeout(4_000) }); }
-      catch (e) { return { content: [{ type: "text", text: `worlds: the sequencer did not answer (${(e as Error).message})` }], isError: true }; }
-      if (!r.ok) return { content: [{ type: "text", text: `worlds: sequencer answered ${r.status}` }], isError: true };
+      catch (e) { return { content: [{ type: "text", text: `worlds: the world server didn't answer (${(e as Error).message}), so the list isn't known; try again in a moment` }], isError: true }; }
+      if (!r.ok) return { content: [{ type: "text", text: `worlds: the world server answered ${r.status}, so the list isn't known; try again in a moment` }], isError: true };
       const body = (await r.json()) as { worlds?: { name: string; loaded?: boolean; people?: string[]; agents?: string[] }[] };
       const list = Array.isArray(body.worlds) ? body.worlds : [];
       if (!list.some((w) => w.name === ag.world)) list.push({ name: ag.world, loaded: true, people: [], agents: [] });
@@ -656,9 +753,13 @@ export const HANDLERS: Record<string, ToolHandler> = {
         ? `world=${encodeURIComponent(ag.world)}&id=${encodeURIComponent(String(a.id))}`
         : a.lib ? `lib=${encodeURIComponent(String(a.lib))}` : null;
       if (!q) return text("measure wants {id} (a placed thing) or {lib} (a library model)");
+      // What the world server did, as far as the door can see it: no answer,
+      // an answer that isn't geometry, or its own error.
+      let r: Response;
+      try { r = await fetch(`${base}/geom?${q}`); } catch (e) { return text(`measure: the world server didn't answer (${String(e)}), so nothing was measured; try again in a moment`); }
       let d: any;
-      try { d = await (await fetch(`${base}/geom?${q}`)).json(); } catch (e) { return text(`measure failed: ${String(e)}`); }
-      if (d.error) return text(`measure: ${d.error}`);
+      try { d = await r.json(); } catch { return text(`measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); }
+      if (d.error) return text(`measure: the world server answered "${d.error}" (${r.status}), so nothing was measured`);
       const g = d.geometry ?? d;
       if (!g?.bbox) return text("no geometry available for that (parsing offline, or a light)");
       const L: string[] = [];
@@ -739,8 +840,35 @@ export const HANDLERS: Record<string, ToolHandler> = {
   for (const n of Object.keys(HANDLERS)) if (!declared.has(n)) throw new Error(`[tools] "${n}" has a handler but no schema row`);
 }
 
+/** A build check (server/buildcheck.ts) as text a reader can act on. */
+function describeCheck(what: string, r: any, named: number, id?: string, collide?: string): string {
+  const L: string[] = [];
+  // spawned with collide: the world fits it that way whatever its size
+  if (collide === "exact" || collide === "box") {
+    r = { ...r, walkIn: { ...r.walkIn, roomScale: collide === "exact" }, warnings: (r.warnings ?? []).filter((w: any) => w.kind !== "solid") };
+    if (collide === "box") r.warnings.unshift({ kind: "solid", message: `it was spawned with collide: "box", so it is one solid box: nobody can go inside — what follows is what it would be with collide: "exact"` });
+  }
+  const floors = (r.levels ?? []).map((l: any) => `${l.y}m (${l.reachable}m² of ${l.area}m² reachable)`).join(", ");
+  L.push(`${what}: ${r.walkIn?.roomScale ? "walk-in" : collide === "box" ? "SOLID — spawned as a box" : "SOLID — under the walk-in size"}; ${(r.levels ?? []).length} floor${(r.levels ?? []).length === 1 ? "" : "s"}${floors ? `: ${floors}` : ""}`
+    + `${r.perf ? `; rendering ${r.perf.rank} (${r.perf.tris} triangles, ${r.perf.draws} draw calls)` : ""}.`);
+  if (r.warnings?.length) { L.push("Problems:"); for (const w of r.warnings) L.push(`  - ${w.message}`); }
+  else L.push("No problems found: every floor under its roof can be reached from outside.");
+  const s = r.suggested ?? {};
+  const parts = [
+    ...(s.rooms ?? []).map((x: any) => `${x.id} (a room, floor ${x.min[1]}m, ${x.area}m²)`),
+    ...(s.doors ?? []).map((x: any) => `${x.id} (${x.between.join(" ↔ ")}, ~${x.width}m wide, at ${x.at.join(", ")})`),
+    ...(s.stairs ?? []).map((x: any) => `${x.id} (a stair, ${x.between.join(" ↔ ")})`),
+  ];
+  if (parts.length) {
+    L.push(`Suggested places, read from the geometry${named ? ` (it already has ${named} named)` : ""}: ${parts.join("; ")}.`);
+    L.push(`To name them, rename the keys and send: comp {id: "${id ?? "<thing>"}", type: "places", data: ${JSON.stringify(s.places)}}`
+      + ` — merged with any places it already has, since a comp replaces the whole bag — or stand in each and use name_place.`);
+  }
+  return L.join("\n");
+}
+
 export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, any>) {
   const h = HANDLERS[name];
-  if (!h) return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
+  if (!h) return { content: [{ type: "text", text: noSuchTool(name) }], isError: true };
   return await h(ctx.agent, a, ctx, name);
 }

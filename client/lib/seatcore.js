@@ -142,11 +142,11 @@ export function socketAnchor(sock) {
 // ---- rider scale (B5) -------------------------------------------------------
 
 /** The named shared definition of riderEffectiveScale: the rider avatar
- *  root's world scalar scale at compose time. No current code path scales an
- *  avatar root, so this is 1 everywhere today — but the definition is stated
- *  here, once, so that if body scaling ever ships it plugs in at this seam
- *  instead of diverging per consumer. Nonuniform scale is an abstention,
- *  never an average. */
+ *  root's world scalar scale at compose time, times its chosen body size —
+ *  which shipped (bodyscale.js) and plugs in at this seam: seats.js passes
+ *  root scale × avatar.bodyScale(), and the text tier passes the rider's
+ *  presence `scale` (mcpl/effective.ts riderScale). Nonuniform scale is an
+ *  abstention, never an average. */
 export function riderScalar(scaleVec3) {
   if (scaleVec3 == null) return { ok: true, s: 1 };
   const [sx, sy, sz] = scaleVec3;

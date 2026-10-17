@@ -71,7 +71,8 @@ try { mkdirSync(OPT_DIR, { recursive: true }); } catch { /* the first write will
 // retired with the braid (video is an asset library now); the grass engine
 // lives in client/lib/vegetation/ as first-class client code. Only assets
 // belong here, and each one is a candidate for upstreaming to the library.
-export const PATCH_DIR = join(ROOT, "patched");
+// A test instance points it elsewhere, as it does WORLDS_DIR and OPT_DIR.
+export const PATCH_DIR = resolve(process.env.PATCH_DIR ?? join(ROOT, "patched"));
 // Optimized shadows of store uploads (draco+webp@1024, see server/optimize.ts).
 // Originals in store/ are never touched; /library serving prefers a store-min
 // sibling when one exists. `.failed` markers stop hopeless files from being

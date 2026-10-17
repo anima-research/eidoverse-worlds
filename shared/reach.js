@@ -112,10 +112,12 @@ export function clampBehind(v, fwd, minFwd) {
  */
 export function solveTwoBone(o) {
   const { root, target, L1, L2 } = o;
-  if (!(L1 > 1e-6) || !(L2 > 1e-6)) return { ok: false, why: 'bone lengths must be positive' };
+  if (!(L1 > 1e-6) || !(L2 > 1e-6)) return { ok: false, why: "a bone in this limb has no length in this body's rig, so the limb can't be solved" };
   const to = sub(target, root);
   const d0 = len(to);
-  if (d0 < 1e-6) return { ok: false, why: 'target sits on the joint itself' };
+  if (d0 < 1e-6) {
+    return { ok: false, why: "the target is on the limb's root joint itself (the shoulder, or the hip for a leg), so there's no direction to reach in; aim at a point away from that joint" };
+  }
 
   const lim = o.limits ?? {};
   const bound = [];

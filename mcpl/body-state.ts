@@ -7,12 +7,18 @@ import { normalizeReachBag, TOUCH_GAP, sameReach } from "../shared/reachwire.js"
 import { ReachBody } from "./physics.ts";
 import { PoseClips } from "./pose-clips.ts";
 import { CLIP_SLOTS } from "../shared/clipdefs.js";
+import { swimTargets, SWIM_CLIPS } from "../shared/swimpose.js";
 import { planReaches, reachKey } from "../shared/reachorder.js";
+import { poseChannels } from "../shared/humanoid.js";
+import { clampBodyScale } from "../shared/presencewire.js";
 
 export type PublicPose = {
   p: number[]; yaw: number; speed: number; clip: string;
   pose?: Record<string, number[]> | null; wingsFolded?: boolean; reach?: unknown;
   clipTime?: number; clipRate?: number; clipTimeSlot?: string; pitch?: number;
+  /** The wearer's chosen body size (shared/presencewire.js bodyWire): sent only
+   *  when not 1, so absent = 1; untrusted, read through clampBodyScale. */
+  scale?: number;
 };
 export type BodyObservation = {
   who: string; avatar: string; generation: number; self: boolean;
@@ -77,7 +83,17 @@ function freshness(o: BodyObservation, now = Date.now()) {
  * pose remain supported. The actual posture evaluator is tracked by #179. */
 function postureUnavailable(o: BodyObservation) {
   const p = o.pose;
-  return !CLIP_SLOTS.includes(p?.clip) && p?.clip !== "sitchair" && !(p?.clip === "ragdoll" && Object.keys(p.pose ?? {}).length > 0);
+  return !CLIP_SLOTS.includes(p?.clip) && !SWIM_CLIPS.includes(p?.clip) && p?.clip !== "sitchair" && !(p?.clip === "ragdoll" && Object.keys(p.pose ?? {}).length > 0);
+}
+
+/** The swim stroke (or treading, m = 0) at full weight, over whatever the clip left — the browser's
+ *  _swimLayer once it has eased in. Its bones only; the published pose still wins any it names. */
+function applySwim(body: any, m: number, t: number) {
+  const e = new THREE.Euler();
+  for (const [name, x, y, z] of swimTargets(m, t) as [string, number, number, number][]) {
+    const node = body.av.nodes[name];
+    if (node) node.quaternion.setFromEuler(e.set(x, y, z, "YZX"));
+  }
 }
 
 function missingPosture(out: any, o: BodyObservation) {
@@ -87,6 +103,13 @@ function missingPosture(out: any, o: BodyObservation) {
       reason: "posture_not_evaluated", currentBodyTargets: false } };
 }
 
+// The ROOT frame is unscaled metres in every tier. A chosen body size lives
+// below the root (browser: vrm.scene; here: the stand-in's pivot, applied by
+// ReachBody.poseAt), so joints and contacts grow about the root position while
+// a root-frame point — reach `space: 'self' | <id>`, a selfPosition — means the
+// same metres at any size, exactly as reachnet.js's root.localToWorld. These
+// two are inverses; neither may apply scale, or a selfPosition handed back as a
+// `space: 'self'` target would miss the joint it came from.
 function rootPoint(p: number[], pose: PublicPose) {
   const c = Math.cos(pose.yaw), s = Math.sin(pose.yaw);
   return [pose.p[0] + p[0] * c + p[2] * s, pose.p[1] + p[1], pose.p[2] - p[0] * s + p[2] * c];
@@ -189,8 +212,9 @@ export class BodyStateReader {
         ok: f.status === "current", who, avatar: o.avatar || null, self: o.self,
         bodyGeneration: { scope: "this observer", value: o.generation }, freshness: f,
         frame: o.frame ?? { source: "presence" },
-        summary: `${who}: ${f.status}; ${valid ? `${p!.clip || "posture unknown"}${wing} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s), ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
+        summary: `${who}: ${f.status}; ${valid ? `${p!.clip || "posture unknown"}${wing}${clampBodyScale(p!.scale) !== 1 ? `, ${clampBodyScale(p!.scale)}× size` : ""} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s), ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
         root: valid ? { position: [...p!.p], yaw: p!.yaw, forward: [Math.sin(p!.yaw), 0, Math.cos(p!.yaw)] } : null,
+        scale: clampBodyScale(p?.scale),
         posture: p?.clip ?? null, wingsFolded: typeof p?.wingsFolded === "boolean" ? p.wingsFolded : null,
         overrides: { state: valid ? count ? "held" : "none" : "unknown", count, source: o.source,
           sourceBasis: o.self ? "owner state" : o.source === "physics" ? "ragdoll clip; original author unknown" : "producer does not publish provenance" },
@@ -214,7 +238,8 @@ export class BodyStateReader {
       if (!body) throw new Error("CPU skeleton evaluator is unavailable");
       let animation = null;
       if (o.pose?.clip !== "ragdoll") {
-        animation = await this.clips.load(o.pose?.clip ?? "idle");
+        // a swimmer is the idle clip under the procedural stroke (shared/swimpose.js), as the browser draws it
+        animation = await this.clips.load(SWIM_CLIPS.includes(o.pose?.clip) ? "idle" : o.pose?.clip ?? "idle");
       }
       loaded.set(o.who, { observation: o, body, animation, clip: o.pose?.clip ?? "idle", rigKey: rig });
     };
@@ -250,18 +275,22 @@ export class BodyStateReader {
         }
         item.observation = o;
         const mapped = Object.fromEntries(Object.entries(o.pose!.pose ?? {}).filter(([name]) => Object.hasOwn(item.body.av.nodes, name)));
-        item.body.poseAt(o.pose!.p, o.pose!.yaw, null);
+        item.body.poseAt(o.pose!.p, o.pose!.yaw, null, o.pose!.scale);
         if (item.animation) this.clips.apply(item.animation, item.body, hasClipPhase(o.pose!) ? o.pose!.clipTime! : 0, item.rigKey);
+        if (SWIM_CLIPS.includes(o.pose!.clip)) applySwim(item.body, o.pose!.clip === "swim" ? 1 : 0, Date.now() / 1000);
         if (Number.isFinite(o.pose!.pitch) && item.body.av.nodes.head) item.body.av.nodes.head.quaternion.premultiply(
           new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.max(-.5, Math.min(.6, o.pose!.pitch!))));
-        for (const [name, q] of Object.entries(mapped)) item.body.av.nodes[name].quaternion.fromArray(q);
+        for (const [name, v] of Object.entries(mapped)) { const q = poseChannels(v)?.q; if (q) item.body.av.nodes[name].quaternion.fromArray(q); }
         item.body.av.root.updateMatrixWorld(true);
       }
       const own = loaded.get(who)!;
       const pose = own.observation.pose!;
       out.publishedRotations = structuredClone(pose.pose ?? {});
-      out.poseEvaluation = { clip: pose.clip, source: own.animation ? "vrma" : pose.clip === "ragdoll" ? "published_physics" : "rest_pose_estimate",
-        time: hasClipPhase(pose) ? pose.clipTime : 0, phase: hasClipPhase(pose) ? "published" : "initial_frame_estimate" };
+      out.poseEvaluation = SWIM_CLIPS.includes(pose.clip)
+        // the stroke's shape is shared; its beat runs on each viewer's clock, so the phase is this reader's own
+        ? { clip: pose.clip, source: "procedural_swim", time: Date.now() / 1000, phase: "reader_clock" }
+        : { clip: pose.clip, source: own.animation ? "vrma" : pose.clip === "ragdoll" ? "published_physics" : "rest_pose_estimate",
+          time: hasClipPhase(pose) ? pose.clipTime : 0, phase: hasClipPhase(pose) ? "published" : "initial_frame_estimate" };
       out.unmappedBones = Object.keys(pose.pose ?? {}).filter(n => !Object.hasOwn(own.body.av.nodes, n));
       out.reachEvaluation = {};
       const entries: any[] = [];

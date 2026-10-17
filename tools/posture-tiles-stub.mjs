@@ -30,4 +30,4 @@ export function findSeat() { return world.seat; }
 export const chat = { open() {}, isOpen: false };
 export const isOverlayOpen = () => false;
 export const hints = [];
-export function flashHint(t) { hints.push(t); }
+export function flashHint(t) { hints.push(String(t)); }   // a hint may be html`` markup (client/lib/markup.js); record its text form

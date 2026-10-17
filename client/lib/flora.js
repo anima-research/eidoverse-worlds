@@ -271,6 +271,19 @@ const TILE_MAX_EDGE = 28;          // m — §22h: the nearest-edge budget over-
                                    // round-6 regression) — smaller tiles halve the
                                    // waste while the dither keeps them invisible
 const TILE_MIN_OCC = 256;          // can't reach this per tile → stay whole
+// GLOBAL-RANK tiling (2026-09-24): a blades stroke the rules above refuse (the Commons meadow: 1729 tufts on 80×70 m →
+// 9 tiles of 192) stayed ONE InstancedMesh — never culled behind you, every tuft through the vertex program, far ones
+// killed there by the dither. It now tiles WITHOUT changing a blade: every tuft keeps the whole-stroke rank the untiled
+// path wrote (the shader's keep test is unchanged), and a tile's count is only a CEILING the shader then refines — the
+// tile's entries are in global order, so a count prefix drops exactly the tufts whose rank exceeds keep at the tile's
+// nearest XZ point (the shader's own distance: aPR.xz − cameraPosition.xz), less GR_MARGIN for the eye moving between
+// re-applies. Strokes the old rules already tile keep their per-tile rank untouched. ?grassgrank=0 = the old refusal.
+const GR_ON = CONFIG.params.get('grassgrank') !== '0';
+const GR_MIN_INSTANCES = 1000;
+const GR_MIN_OCC = 128;
+const GR_MARGIN = 2;               // m — re-applied whenever the eye has moved GR_MARGIN/2 (hooks run before the move
+                                   // systems, so the budget is one frame behind: exact below ~1 m/frame; a teleport can
+                                   // under-draw ONE frame)
 const TILE_MAX_AXIS = 12;          // §22n: was 8 (§13.2). Finer tiles pin the
                                    // nearest-edge budget to the dither curve:
                                    // measured on the lush meadow at 2×, 12×12
@@ -339,6 +352,7 @@ const VLOD_ON = CONFIG.params.get('grassvlod') === 'on';
 const BLADE_LOD_OUT = VLOD_ON ? 45 : Infinity;   // m — tile swaps to coarse past this
 const BLADE_LOD_IN = VLOD_ON ? 38 : Infinity;    // m — and back only inside this
 const _tv = new THREE.Vector3();
+const _eye = new THREE.Vector3();   // the camera in WORLD space (see applyTiles)
 
 /** The uniform-vs-attribute fork for the identity instanceMatrix, read off
  *  the live backend (WebGPU: device.limits.maxUniformBufferBindingSize —
@@ -356,9 +370,9 @@ function matrixPathCaps() {
   return { threshold, cross: cross * 64 <= 262144 ? cross : 0 };
 }
 
-function tileField(f, bladeLod = false) {
+function tileField(f, bladeLod = false, globalRank = false) {
   // the shrub archetype pairs a stem mesh sharing backing arrays — skip it
-  if (f.stemMesh || (f.count ?? 0) < TILE_MIN_INSTANCES) return false;
+  if (f.stemMesh || (f.count ?? 0) < (globalRank ? GR_MIN_INSTANCES : TILE_MIN_INSTANCES)) return false;
   const src = f.mesh.geometry;
   const names = ['aPosRot', 'aScaleVar', 'aPhase'];
   const inst = names.map((n) => src.getAttribute(n));
@@ -387,7 +401,12 @@ function tileField(f, bladeLod = false) {
   nx = Math.max(nx, Math.ceil(spanX / TILE_MAX_EDGE));
   nz = Math.max(nz, Math.ceil(spanZ / TILE_MAX_EDGE));
   if (nx * nz < 4) return false;     // culling can't win on a postage stamp
-  if (n / (nx * nz) < TILE_MIN_OCC) return false;   // sparse: stroke sphere already culls
+  if (n / (nx * nz) < (globalRank ? GR_MIN_OCC : TILE_MIN_OCC)) return false;   // sparse: stroke sphere already culls
+  if (globalRank) {                  // the untiled path's whole-stroke rank, written BEFORE slicing (buildFloraField)
+    const ph = src.getAttribute('aPhase');
+    for (let k = 0; k < n; k++) ph.array[k * 3] = (Math.PI * 2 * k) / n;
+    ph.needsUpdate = true;
+  }
   const buckets = Array.from({ length: nx * nz }, () => []);
   for (let i = 0; i < n; i++) {      // STABLE scan — preserves the shuffle
     const tx = Math.min(nx - 1, Math.floor((posRot.getX(i) - minX) / spanX * nx));
@@ -417,6 +436,7 @@ function tileField(f, bladeLod = false) {
   container.userData = { ...f.mesh.userData };
   const tiles = [];
   const lodGeos = new Map();         // tile → { near, far } geometry twins (§17b)
+  const grTiles = new Map();         // tile → { gIdx (ascending global indices), XZ bounds } — global-rank path
   const m4 = new THREE.Matrix4();
   for (const idx of buckets) {
     if (!idx.length) continue;
@@ -444,7 +464,7 @@ function tileField(f, bladeLod = false) {
     // refined continuously: no double-thinning, no tile seams. The rank
     // rides as phase (×2π) so the flutter stays uniform per location —
     // the order IS the density shuffle, spatially random.
-    {
+    if (!globalRank) {
       const ph = tg.getAttribute('aPhase');
       if (ph) for (let k = 0; k < idx.length; k++) ph.array[k * 3] = (Math.PI * 2 * k) / idx.length;
     }
@@ -470,6 +490,14 @@ function tileField(f, bladeLod = false) {
     tm.castShadow = false;
     tm.receiveShadow = f.mesh.receiveShadow;
     tm.userData.fullCount = idx.length;
+    if (globalRank) {
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (const i of idx) {
+        const x = posRot.getX(i), z = posRot.getZ(i);
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z;
+      }
+      grTiles.set(tm, { gIdx: Int32Array.from(idx), x0, x1, z0, z1 });   // idx ascending: the stable scan
+    }
     // §17b — the tile's far-LOD twin: the same shared vertex attribute
     // objects, the SAME sliced instanced attribute objects (zero copies —
     // the density shuffle permuted instanced data before tiling, and an
@@ -506,9 +534,31 @@ function tileField(f, bladeLod = false) {
   f.tiled = true;
   f.tiles = tiles;
   let eff = 1;
+  let grEyeX = Infinity, grEyeZ = Infinity;   // where the global-rank budget was last evaluated
   const applyTiles = () => {
+    // WORLD position: in XR the camera is a child of the rig (xr.js rig.add(camera)) and three decomposes the head pose
+    // into the camera's LOCAL transform, so camera.position is rig-relative — every tiled meadow budgeted from the
+    // wrong point in VR (2026-09-24 audit). On the desktop the camera has no parent and this is the same number.
+    camera.getWorldPosition(_eye);
+    grEyeX = _eye.x; grEyeZ = _eye.z;
     for (const t of tiles) {
-      const d = _tv.copy(t.boundingSphere.center).distanceTo(camera.position);
+      const gr = grTiles.get(t);
+      if (gr) {
+        const dx = Math.max(gr.x0 - _eye.x, 0, _eye.x - gr.x1), dz = Math.max(gr.z0 - _eye.z, 0, _eye.z - gr.z1);
+        const dN = Math.max(0, Math.hypot(dx, dz) - GR_MARGIN);
+        const fall = dN >= GRASS_FAR ? 0
+          : dN <= GRASS_NEAR ? 1
+            : (1 - (dN - GRASS_NEAR) / (GRASS_FAR - GRASS_NEAR)) ** GRASS_FALL_EXP;
+        const scope = diagScope ? (dN < DIAG_SCOPE_EDGE ? diagScope.near : diagScope.far) : 1;
+        // +2: the shader keeps rank ≤ keep (so rank 0 survives keep 0) and compares float32 ranks
+        const lim = Math.min(eff <= 0 ? 0 : densityCount(n, eff), Math.floor(fall * scope * denseAt(dN) * n) + 2);
+        let lo = 0, hi = gr.gIdx.length;           // count of entries with global index < lim
+        while (lo < hi) { const m = (lo + hi) >> 1; if (gr.gIdx[m] < lim) lo = m + 1; else hi = m; }
+        t.count = lo;
+        t.visible = lo > 0;
+        continue;
+      }
+      const d = _tv.copy(t.boundingSphere.center).distanceTo(_eye);
       // §22f: the CPU count is a BUDGET evaluated at the tile's NEAREST
       // point (keep(dNearest) ≥ keep(d) for every instance in it), and the
       // shader dither shapes the VISIBLE density per instance at the exact
@@ -555,6 +605,10 @@ function tileField(f, bladeLod = false) {
   let lastTick = 0;
   f._tileTick = () => {              // buildFloraField hangs this on autoHooks
     const now = performance.now();
+    if (grTiles.size) {
+      camera.getWorldPosition(_tv);
+      if ((_tv.x - grEyeX) ** 2 + (_tv.z - grEyeZ) ** 2 > (GR_MARGIN / 2) ** 2) { lastTick = now; applyTiles(); return; }
+    }
     if (now - lastTick < 300) return;
     lastTick = now;
     applyTiles();
@@ -685,7 +739,9 @@ export async function buildFloraField(rawArgs, { scene, heightFn }) {
       // archetype carries blade-LOD twins (§17b) — corn/shrub/yucca
       // geometry has no per-blade run structure to subset
       const arch = mod.FLORA_SPECIES[st.species ?? 'grass']?.archetype;
-      if (!tileField(f, arch === 'blades')) {
+      // global-rank second chance: only while the shader dither owns density (it is what refines the ceiling)
+      const grOk = GR_ON && blades && lodMode !== 'nodither';
+      if (!tileField(f, arch === 'blades') && !(grOk && tileField(f, arch === 'blades', true))) {
         wireFieldCulling(f);
         // §22f: untiled strokes get the whole-stroke draw-order rank in the
         // flutter lane (the tiled path writes it per tile) — the shader
@@ -714,6 +770,7 @@ export async function buildFloraField(rawArgs, { scene, heightFn }) {
   // the sky's scene-diff claim must never own the meadow (§17c) — a grass
   // build regularly overlaps an async sky build at boot
   group.userData.skyExempt = true;
+  group.userData.odTag = 'grass';   // overdraw.js category
   scene.add(group);
   return field;
 }

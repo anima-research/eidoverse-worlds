@@ -413,3 +413,68 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
   if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
   return sum;
 }
+
+/** A model's triangles as one indexed soup in the model's ROOT frame — every
+ *  scene-reachable mesh node with its world matrix applied, orphans excluded
+ *  (the same "what the world renders" rule summarizeGlb applies). This is the
+ *  geometry a browser's collider is fitted from, handed to a process with no
+ *  renderer: the agent fits client/lib/colliders.js against it, so a body
+ *  standing in an agent's process is held up and held back by exactly the
+ *  surfaces a person's browser uses. Takes BYTES (what GET /library/<lib>
+ *  serves — usually the draco-compressed optimized copy, which this decodes)
+ *  rather than a path, because its caller is a client of that route.
+ *  Triangle-list primitives only: strips, fans, lines and points contribute
+ *  nothing (three's GLTFLoader turns strips/fans into lists; none ship here).
+ *  `building` is the model's own description of itself when a scene node
+ *  carries one in its glTF extras (rooms, portals, seats, arrivals — what
+ *  mcpl/places.ts reads named places from), parsed if it was stored as a
+ *  JSON string, as Blender's exporter stores custom properties.
+ *  null when parsing is unavailable or the bytes are not a readable GLB. */
+export async function collisionTriangles(bytes: Uint8Array): Promise<{ positions: Float32Array; indices: Uint32Array; building?: unknown } | null> {
+  const io = await getIO();
+  if (!io) return null;
+  let doc: any;
+  try { doc = await io.readBinary(bytes); } catch (err) {
+    console.warn("[geometry] collisionTriangles: unreadable GLB:", String(err).slice(0, 200));
+    return null;
+  }
+  // the scene a browser shows: three's GLTFLoader loads the default scene
+  // (else the first), never the others a file may carry
+  const inScene = new Set<any>();
+  const shown = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0];
+  shown?.traverse((n: any) => inScene.add(n));
+  const pos: number[] = [], idx: number[] = [];
+  const p = [0, 0, 0];
+  for (const node of doc.getRoot().listNodes()) {
+    if (!inScene.has(node)) continue;
+    const mesh = node.getMesh();
+    if (!mesh) continue;
+    const m = node.getWorldMatrix();
+    for (const prim of mesh.listPrimitives()) {
+      if (prim.getMode() !== 4) continue;                       // TRIANGLES
+      const posAcc = prim.getAttribute("POSITION");
+      if (!posAcc) continue;
+      const base = pos.length / 3;
+      for (let i = 0; i < posAcc.getCount(); i++) {
+        posAcc.getElement(i, p);
+        pos.push(m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12],
+          m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
+          m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]);
+      }
+      const idxAcc = prim.getIndices();
+      const count = idxAcc ? idxAcc.getCount() : posAcc.getCount();
+      for (let t = 0; t + 2 < count; t += 3) {
+        for (let k = 0; k < 3; k++) idx.push(base + (idxAcc ? idxAcc.getScalar(t + k) : t + k));
+      }
+    }
+  }
+  if (!idx.length) return null;
+  let building: unknown;
+  for (const node of inScene) {
+    const b = node.getExtras?.()?.building;
+    if (b == null) continue;
+    try { building = typeof b === "string" ? JSON.parse(b) : b; } catch { /* not ours to repair */ }
+    if (building) break;
+  }
+  return { positions: new Float32Array(pos), indices: new Uint32Array(idx), ...(building ? { building } : {}) };
+}
