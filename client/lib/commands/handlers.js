@@ -33,7 +33,7 @@ import { punt as puntThing, grab, put, drop, throwHeld } from '../thingphysics.j
 import { logChat } from '../chat.js';
 import { toggleHelp, flashHint } from '../ui.js';
 import { sceneAttach, sceneDetach } from '../scenegraph.js';
-import { EMOTE_ORDER, EMOTES } from '../avatar.js';
+import { ANIM_ORDER, ANIM_CLIPS } from '../avatar.js';
 import { setPushable, pushable } from '../consent.js';
 import { trySitOn, chooseSeatPose } from '../localbody.js';
 import { getMe } from '../mybody.js';
@@ -461,13 +461,13 @@ register('seatpose', (arg) => {
   if (name !== 'default' && !menu.includes(name)) return logChat('*', `no pose "${name}" here — ${menu.join(', ') || 'only its own'}`);
 });
 
-register('emote', (arg) => {
+register('anim', (arg) => {
   const name = (arg || '').trim().toLowerCase();
-  if (!EMOTE_ORDER.includes(name) && !Object.keys(EMOTES).includes(name)) {
-    return logChat('*', `actions: ${Object.keys(EMOTES).join(', ')}`);
+  if (!ANIM_ORDER.includes(name) && !Object.keys(ANIM_CLIPS).includes(name)) {
+    return logChat('*', `actions: ${Object.keys(ANIM_CLIPS).join(', ')}`);
   }
-  getMe()?.playEmote(name);
-  myState.emote = name;
+  getMe()?.playOnce(name);
+  myState.anim = name;
 });
 
 register('goto', (arg) => {

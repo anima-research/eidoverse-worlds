@@ -360,7 +360,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
    content, so the chrome has to get out of the way on the user's terms. */
 .frame {
   position: fixed; display: flex; flex-direction: column;
-  z-index: 10; /* must equal Z_LO in windows.js */ min-width: 170px;   /* PRE-PAINT DEFAULT ONLY: windows.js paint() overwrites this with the frame's own minW (an inline style, so it wins). This line was a floor BENEATH the JS one and silently clipped any frame declaring less — measured: the emote bar asking for 48px rendered at 170 with 4 columns. (R, 2026-09-11) */ overflow: hidden;
+  z-index: 10; /* must equal Z_LO in windows.js */ min-width: 170px;   /* PRE-PAINT DEFAULT ONLY: windows.js paint() overwrites this with the frame's own minW (an inline style, so it wins). This line was a floor BENEATH the JS one and silently clipped any frame declaring less — measured: the action bar asking for 48px rendered at 170 with 4 columns. (R, 2026-09-11) */ overflow: hidden;
 }
 .fr-head {
   display: flex; align-items: center; gap: 6px;
@@ -1301,10 +1301,10 @@ button.keybtn:active { box-shadow: inset 0 1px 3px rgb(0 0 0 / .6); }
 .pf-who > span b { color: var(--fg); font-weight: 550; }
  /* 🔴 TILES — the one tile, shared: profile's stubs and the action bar both use it.
    A tile is a quiet well with an icon/glyph, a name, and an optional note or key.
-   .on = lit (the playing emote, the chosen thing). No private tile rules. */
+   .on = lit (the playing gesture, the chosen thing). No private tile rules. */
 .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1; min-height: 0; }
 /* action bar tiles are FIXED width and flow: widen the frame and they go to one
-   line; the frame snaps to whole tiles on release (emotebar.js). Even gutters. */
+   line; the frame snaps to whole tiles on release (actionbar.js). Even gutters. */
 .tiles.fixed { grid-template-columns: repeat(auto-fill, 32px); grid-auto-rows: 32px; gap: 6px; justify-content: center; align-content: start; flex: none; padding: 0; }   /* 30 px buttons, 6 px gutters: 'bring back the buffers and put the buttons on a diet' (live 09-05 22:00) */
 .tile {
   position: relative; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
@@ -1417,7 +1417,7 @@ kbd {
 }
 
 /* the lite client's "Light version" card (lite.js liteBanner). The full client's capability notices were the same card
-   and are now chips on the status strip (#hudstatus below, statuschips.js); lite.js places this one under its emote row
+   and are now chips on the status strip (#hudstatus below, statuschips.js); lite.js places this one under its action row
    inline. The history of the old placements is in git (#185 B2). */
 .capnotice {
   position: fixed; left: 50%; transform: translateX(-50%); top: 8px; z-index: 95;   /* top-centre, over everything until dismissed (owner, 09-27; capnotice.js says why) */
@@ -2269,7 +2269,7 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
      import behind a user action and preloading it would tax the very
      window this exists to shorten.
 
-     INJECTED rather than static, because lite mode (phones: chat, emotes and
+     INJECTED rather than static, because lite mode (phones: chat, gestures and
      who's here, no world) must not download an engine it will never run, and a
      static tag cannot be recalled once the parser has seen it.
 

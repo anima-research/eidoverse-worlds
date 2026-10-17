@@ -1,19 +1,19 @@
-// emote bar (client/lib/emotebar.js) — nine tiles, whole-tile snapping, postures that act on the desktop
+// action bar (client/lib/actionbar.js) — nine tiles, whole-tile snapping, postures that act on the desktop
 // body AND announce themselves to the VR entry, and a fired tile that stays lit after net.js has already
-// cleared myState.emote. Drives the REAL module against tools/emotebar-stub.mjs recorders.
+// cleared myState.anim. Drives the REAL module against tools/actionbar-stub.mjs recorders.
 //
-//   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/emotebar-test.ts
+//   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/actionbar-test.ts
 //
 // Each block names the product line that would silence it:
 //   posture('sit') no longer calling sitHere          → "sit tile runs the controller seat search" goes red
-//   lit tile following only myState.emote (old code)  → "fired tile stays lit after net.js clears" goes red
+//   lit tile following only myState.anim (old code)  → "fired tile stays lit after net.js clears" goes red
 import { plugin } from 'bun';
 const here = (f: string) => new URL(f, import.meta.url).pathname;
 plugin({
-  name: 'emotebar-stubs',
+  name: 'actionbar-stubs',
   setup(b) {
-    for (const m of ['windows', 'avatar', 'emotedefs', 'controller', 'mybody', 'xrpanels', 'base']) {
-      b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./emotebar-stub.mjs') }));
+    for (const m of ['windows', 'avatar', 'animnames', 'controller', 'mybody', 'xrpanels', 'base']) {
+      b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./actionbar-stub.mjs') }));
     }
   },
 });
@@ -32,9 +32,9 @@ const _setInterval = globalThis.setInterval;
 let nowMs = 10_000;
 performance.now = () => nowMs;
 
-const stub = await import('./emotebar-stub.mjs');
-const { initEmoteBar, ringEmoteEntries } = await import('../client/lib/emotebar.js');
-const { EMOTE_ORDER, myState, postureCalls, busLog, played, xrPanels, bus } = stub;
+const stub = await import('./actionbar-stub.mjs');
+const { initActionBar, ringActionEntries } = await import('../client/lib/actionbar.js');
+const { ANIM_ORDER, myState, postureCalls, busLog, played, xrPanels, bus } = stub;
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => {
@@ -47,24 +47,24 @@ const TILE = 32, GAP = 6, PAD = 7, ROW_H = 32;
 const widthFor = (c: number) => c * TILE + (c - 1) * GAP + PAD * 2 + 2;
 const heightFor = (c: number, n = 9) => Math.ceil(n / c) * ROW_H + (Math.ceil(n / c) - 1) * GAP;
 
-const f = initEmoteBar();
+const f = initActionBar();
 const paint = intervals.find((fn) => typeof fn === 'function')!;
 const tile = (sel: string) => f.body.querySelector(sel) as HTMLButtonElement;
 const tiles = () => [...f.body.querySelectorAll('.tile')] as HTMLButtonElement[];
 
-console.log('EMOTEBAR — nine tiles, one row');
-check('3 posture tiles + 6 emote tiles = 9', tiles().length === 9, `${tiles().length}`);
+console.log('ACTIONBAR — nine tiles, one row');
+check('3 posture tiles + 6 action tiles = 9', tiles().length === 9, `${tiles().length}`);
 check('postures lead, in sit/stand/lie order', tiles().slice(0, 3).map((t) => t.dataset.posture).join() === 'sit,stand,lie');
-check('emotes follow in EMOTE_ORDER with their number key', tiles().slice(3).every((t, i) => t.dataset.emote === EMOTE_ORDER[i] && t.title === `${EMOTE_ORDER[i]} — key ${i + 1}`));
+check('gestures follow in ANIM_ORDER with their number key', tiles().slice(3).every((t, i) => t.dataset.anim === ANIM_ORDER[i] && t.title === `${ANIM_ORDER[i]} — key ${i + 1}`));
 // minW is widthFor(1), NOT widthFor(3). A real resize clamps at f.minW
 // (windows.js:155), so a 124px floor made ONE column unreachable by drag however
-// snapTo computed — R: "Emote bar still can't go 1x wide, 9x tall." The 3-column
+// snapTo computed — R: "Action bar still can't go 1x wide, 9x tall." The 3-column
 // floor still applies on the WIDTH-ONLY path inside snapTo (see below); it just
 // no longer blocks the frame itself.
 check('default frame is 9×1: w=widthFor(9)=352, h=ROW_H, minW=widthFor(1) so 1 column is draggable', f.opts.w === 352 && f.opts.w === widthFor(9) && f.opts.h === ROW_H && f.opts.minW === widthFor(1), JSON.stringify(f.opts));
-check('an XR panel registers with 3 postures + 6 emotes', xrPanels.length === 1 && xrPanels[0].fields().map((x: any) => x.k).join() === 'sit,stand,lie,' + EMOTE_ORDER.join());
+check('an XR panel registers with 3 postures + 6 gestures', xrPanels.length === 1 && xrPanels[0].fields().map((x: any) => x.k).join() === 'sit,stand,lie,' + ANIM_ORDER.join());
 
-console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #185)');
+console.log('ACTIONBAR — B2: a clamp that cannot help stands down (antra-tess #185)');
 {
   // The rereview's symptom is a HEIGHT flip: [464,10,352,46] -> [616,10,48,350].
   // snapTo derives columns from width and rows follow, so the discriminator is the
@@ -186,8 +186,8 @@ console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #
   // to require the opposite ("a stretched .capnotice in the bar row DOES constrain it
   // — the list entry is live"), and it was right for the design it was written against.
   //
-  // The owner's ordering rule (15:04) replaced that design: "Compute emote bar first
-  // relative to the dock. capnotice lands under the emote bar (or just over it, tbh,
+  // The owner's ordering rule (15:04) replaced that design: "Compute action bar first
+  // relative to the dock. capnotice lands under the action bar (or just over it, tbh,
   // because you can dismiss it)." One direction. The bar sizes against the rail and its
   // glyphs; the card then places itself from the bar's settled rect. So `.capnotice` is
   // out of roomFor()'s obstacle list, and a stretched card in the bar's row must now
@@ -196,7 +196,7 @@ console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #
   // WHY THE OLD DESIGN HAD TO GO: the two measured each other. The card's top came from
   // every obstacle above it, the bar included; the bar's width came from every obstacle
   // in its band, the card included. It had no fixed point — the same probe measured the
-  // card at 361 on one run and 95 on the next. And emotebar.js:99-104 had already
+  // card at 361 on one run and 95 on the next. And actionbar.js:99-104 had already
   // written down what would happen if the card entered the band: "room goes negative
   // (measured -6 ... reflowed the 9-across bar to a 48x350 column)". That shipped to a
   // phone on 2026-09-12: nine tiles in one 48px column down the right edge.
@@ -298,7 +298,7 @@ console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #
   (window as any).innerWidth = vw0;
 }
 
-console.log('EMOTEBAR — snapTo / widthFor / heightFor');
+console.log('ACTIONBAR — snapTo / widthFor / heightFor');
 f.opts.onResize(200); await sleep(230);
 check('a 200px drag snaps to 5 columns: w=200, h=2 rows', f._state.w === widthFor(5) && f._state.h === heightFor(5) && f.paints > 0, `w=${f._state.w} h=${f._state.h}`);
 f.opts.onResize(10); await sleep(230);
@@ -327,14 +327,14 @@ check('never more columns than tiles: back to 9×1', f._state.w === 352 && f._st
 f.show();
 check('show() refits the saved size (still 9×1)', f.visible && f._state.w === 352 && f._state.h === 32);
 { // the vocabulary arrives async — an empty list must not shrink a saved 9×1 bar to 3×3
-  const saved = EMOTE_ORDER.splice(0);
-  bus.emit('emotes-updated');
-  check('empty EMOTE_ORDER rebuilds to the 3 posture tiles only', tiles().length === 3, `${tiles().length}`);
+  const saved = ANIM_ORDER.splice(0);
+  bus.emit('animnames-updated');
+  check('empty ANIM_ORDER rebuilds to the 3 posture tiles only', tiles().length === 3, `${tiles().length}`);
   check('…and does NOT snap the frame down (352×32 stays)', f._state.w === 352 && f._state.h === 32, `w=${f._state.w} h=${f._state.h}`);
-  EMOTE_ORDER.push(...saved); bus.emit('emotes-updated');
+  ANIM_ORDER.push(...saved); bus.emit('animnames-updated');
   check('the hydrated list rebuilds nine tiles', tiles().length === 9); }
 
-console.log('EMOTEBAR — posture tiles act on the body AND announce to VR');
+console.log('ACTIONBAR — posture tiles act on the body AND announce to VR');
 postureCalls.length = 0; busLog.length = 0;
 tile('[data-posture=sit]').onclick!(new Event('click'));
 check('sit tile runs the controller seat search: sitHere()', postureCalls.length === 1 && postureCalls[0] === 'sitHere', JSON.stringify(postureCalls));
@@ -350,45 +350,45 @@ postureCalls.length = 0;
 xrPanels[0].dispatch('sit');
 check('the XR quad\'s sit button takes the same path', postureCalls[0] === 'sitHere');
 postureCalls.length = 0;
-ringEmoteEntries().find((e: any) => e.label === 'stand')!.act();
+ringActionEntries().find((e: any) => e.label === 'stand')!.act();
 check('the ring\'s stand entry takes the same path', postureCalls[0] === 'standUp');
 myState.clip = 'sit'; paint();
 check('the sit tile is lit while the body\'s clip is sit', tile('[data-posture=sit]').classList.contains('on') && !tile('[data-posture=stand]').classList.contains('on'));
 myState.clip = null; paint();
 
-console.log('EMOTEBAR — the fired tile stays lit ~1.5 s');
+console.log('ACTIONBAR — the fired tile stays lit ~1.5 s');
 played.length = 0;
-tile('[data-emote=wave]').onclick!(new Event('click'));
-check('the tile plays the emote on my body and sets myState.emote', played[0] === 'wave' && myState.emote === 'wave');
-check('the fired tile is lit', tile('[data-emote=wave]').classList.contains('on'));
-myState.emote = null;   // net.js clears it on the first pose send
+tile('[data-anim=wave]').onclick!(new Event('click'));
+check('the tile plays the gesture on my body and sets myState.anim', played[0] === 'wave' && myState.anim === 'wave');
+check('the fired tile is lit', tile('[data-anim=wave]').classList.contains('on'));
+myState.anim = null;   // net.js clears it on the first pose send
 paint();
-check('fired tile stays lit after net.js clears myState.emote (t+0)', tile('[data-emote=wave]').classList.contains('on'));
+check('fired tile stays lit after net.js clears myState.anim (t+0)', tile('[data-anim=wave]').classList.contains('on'));
 nowMs += 1400; paint();
-check('still lit at t+1.4 s', tile('[data-emote=wave]').classList.contains('on'));
+check('still lit at t+1.4 s', tile('[data-anim=wave]').classList.contains('on'));
 nowMs += 200; paint();
-check('dark at t+1.6 s', !tile('[data-emote=wave]').classList.contains('on'));
+check('dark at t+1.6 s', !tile('[data-anim=wave]').classList.contains('on'));
 check('no other tile was ever lit by it', tiles().every((t) => !t.classList.contains('on')));
-myState.emote = 'clap'; paint();   // a number key set it elsewhere
-check('a number-key emote (myState.emote) lights its tile', tile('[data-emote=clap]').classList.contains('on') && !tile('[data-emote=wave]').classList.contains('on'));
-myState.emote = null; paint();
+myState.anim = 'clap'; paint();   // a number key set it elsewhere
+check('a number-key gesture (myState.anim) lights its tile', tile('[data-anim=clap]').classList.contains('on') && !tile('[data-anim=wave]').classList.contains('on'));
+myState.anim = null; paint();
 
-console.log('EMOTEBAR — a defs push rebuilds the lantern\'s emote actions, not just the tiles');
+console.log('ACTIONBAR — a defs push rebuilds the lantern\'s gesture actions, not just the tiles');
 {
   // register() MERGES and skips undefined fields, so re-registering on top of the old
-  // entries kept a moved emote's old number and a removed emote's row
+  // entries kept a moved gesture's old number and a removed gesture's row
   const A = await import('../client/lib/actions.js');
-  const saved = EMOTE_ORDER.splice(0);
-  EMOTE_ORDER.push('clap', 'cheer', 'dance', 'point', 'salute', 'bow', 'shrug', 'nod', 'spin', 'wave');
-  bus.emit('emotes-updated');
-  check('a moved emote takes its new number key (clap → 1)', A.get('bar:clap')?.key === '1', `key=${A.get('bar:clap')?.key}`);
-  check('an emote moved past nine loses its key (wave, 1st → 10th)', !!A.get('bar:wave') && A.get('bar:wave').key === undefined, `key=${A.get('bar:wave')?.key}`);
-  EMOTE_ORDER.splice(0, EMOTE_ORDER.length, 'wave', 'cheer');
-  bus.emit('emotes-updated');
-  check('a removed emote leaves the lantern (clap gone)', A.get('bar:clap') === null);
+  const saved = ANIM_ORDER.splice(0);
+  ANIM_ORDER.push('clap', 'cheer', 'dance', 'point', 'salute', 'bow', 'shrug', 'nod', 'spin', 'wave');
+  bus.emit('animnames-updated');
+  check('a moved gesture takes its new number key (clap → 1)', A.get('bar:clap')?.key === '1', `key=${A.get('bar:clap')?.key}`);
+  check('a gesture moved past nine loses its key (wave, 1st → 10th)', !!A.get('bar:wave') && A.get('bar:wave').key === undefined, `key=${A.get('bar:wave')?.key}`);
+  ANIM_ORDER.splice(0, ANIM_ORDER.length, 'wave', 'cheer');
+  bus.emit('animnames-updated');
+  check('a removed gesture leaves the lantern (clap gone)', A.get('bar:clap') === null);
   check('the kept ones are still there with their keys', A.get('bar:wave')?.key === '1' && A.get('bar:cheer')?.key === '2');
   check('posture:stand survives the rebuild', !!A.get('posture:stand'));
-  EMOTE_ORDER.splice(0, EMOTE_ORDER.length, ...saved); bus.emit('emotes-updated');
+  ANIM_ORDER.splice(0, ANIM_ORDER.length, ...saved); bus.emit('animnames-updated');
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

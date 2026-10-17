@@ -1,4 +1,4 @@
-// emotebar-test substitutes this for every neighbour emotebar.js imports except icons.js (pure). ONE file,
+// actionbar-test substitutes this for every neighbour actionbar.js imports except icons.js (pure). ONE file,
 // resolved for windows.js / avatar.js / controller.js / mybody.js / xrpanels.js / base.js — each module's
 // names are disjoint, so one export table serves them all. Everything is a recorder the test reads.
 
@@ -12,7 +12,7 @@ export const bus = {
 export const CONFIG = { name: 'tester' };
 export function report() {}
 
-// ---- windows.js: a frame that carries the refs emotebar rides (_state, _paint, show)
+// ---- windows.js: a frame that carries the refs actionbar.js rides (_state, _paint, show)
 export const frames = [];
 export function makeFrame(key, opts = {}) {
   const el = document.createElement('div');
@@ -37,11 +37,11 @@ export const allFrames = () => frames;
 export const getFrame = (k) => frames.find((f) => f.key === k) ?? null;
 
 // ---- avatar.js: the def-hydrated vocabulary, MUTABLE like the real one
-export const EMOTE_ORDER = ['wave', 'cheer', 'dance', 'point', 'salute', 'clap'];
-export const EMOTE_ICONS = {};
+export const ANIM_ORDER = ['wave', 'cheer', 'dance', 'point', 'salute', 'clap'];
+export const ANIM_ICONS = {};
 
 // ---- controller.js
-export const myState = { emote: null, clip: null, posture: null, seat: null };
+export const myState = { anim: null, clip: null, posture: null, seat: null };
 export const postureCalls = [];
 export function setPosture(p) { postureCalls.push(p); }
 export function sitHere() { postureCalls.push('sitHere'); }
@@ -50,17 +50,17 @@ export const getPosture = () => null;
 
 // ---- mybody.js
 export const played = [];
-export const getMe = () => ({ playEmote: (n) => played.push(n) });
+export const getMe = () => ({ playOnce: (n) => played.push(n) });
 
 // ---- xrpanels.js
 export const xrPanels = [];
 export function registerXRPanel(p) { xrPanels.push(p); }
 
 // ---- windows.js: chromeCost is RE-EXPORTED FROM THE REAL MODULE, not stubbed.
-// This suite drives the real emotebar.js against recorders, and roomFor()'s whole
+// This suite drives the real actionbar.js against recorders, and roomFor()'s whole
 // job is the anchor arithmetic chromeCost() performs. A stubbed copy would make
 // every assertion a statement about THIS FILE rather than about the product.
-// The specifier is deliberately '../client/lib/...': emotebar-test's resolver
+// The specifier is deliberately '../client/lib/...': actionbar-test's resolver
 // filter is `^\./windows\.js$`, anchored to a leading './', so this is not
 // rewritten back to the stub.
 export { chromeCost } from '../client/lib/windows.js';

@@ -19,7 +19,7 @@ export const COMMANDS = [
   { name: 'r', aliases: ['reply'], help: 'reply to the last whisper you got' },
   { name: 'name', aliases: ['rename'], help: 'what the world calls you (choose it at the authority: renaming mid-visit isn\'t supported yet)' },
   { name: 'me', help: 'describe an action — "/me waves"' },
-  { name: 'emote', help: '/emote <name> — the emote bar\'s gestures (🎭, or number keys)' },
+  { name: 'anim', help: '/anim <name> — play one of the action bar\'s anims once (🎭, or number keys)' },
   { name: 'sit', help: '/sit [thing] [slot] — sit down, on a seat if one is near (or the one you name)' },
   { name: 'seatpose', help: '/seatpose [name] — one of your seat\'s named poses (no name: the list; default: its own)' },
   { name: 'push', aliases: ['shove'], help: '/push [name] [power] — shove someone within reach (their client decides); /push <thing> works the thing' },

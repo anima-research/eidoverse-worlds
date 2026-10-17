@@ -12,7 +12,7 @@ import { chooseClient } from './lib/litechoice.js';
 import { THREE, scene, camera, renderer, canvas } from './lib/core.js';
 import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
 import { CONFIG, bus, report, tee, colorFor } from './lib/base.js';
-import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, EMOTE_ORDER } from './lib/avatar.js';
+import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, ANIM_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
 import { setSkyArgsSource, entities, buildsPending, avatarMounts, roleOf, worldHasOwner, bagOf, bags, seatSocket, socketsOn, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
 import { presence } from './lib/presence.js';
@@ -122,7 +122,7 @@ import {
 } from './lib/localbody.js';
 import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
 import { updateVoiceMouths } from './lib/voicemouths.js';
-import { initEmoteBar } from './lib/emotebar.js';
+import { initActionBar } from './lib/actionbar.js';
 import { initXRKeyboard } from './lib/xrkeyboard.js';
 import { initXRAsk } from './lib/xrask.js';
 import { initCommands, saveScreenshot } from './lib/commands/handlers.js';
@@ -184,7 +184,7 @@ initPeople({ openConvo, presenting: () => isPresenting(), toast, openModLog: (wh
 initRolesPanels();
 // the lantern prompt (Ctrl/Cmd+K): actions from lib/actions.js, speech and /commands through chat's own submit
 initLantern({ submit: chatApi.submit, whisperTarget: chatApi.whisperTarget });
-initEmoteBar();
+initActionBar();
 initXRKeyboard();   // C16: types into the last-focused text input; a quad in VR
 initXRAsk();        // the lock question and refusals, on a quad in VR (the centre card is DOM-only)
 initWorldQuad();
@@ -505,17 +505,17 @@ bus.on('key', (e) => {
   if (k) { if (k.prevent) e.preventDefault(); k.run(); return; }
   // any movement stands you back up
   if (isDowned() && ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) getUp();
-  // emotes on the number row — the world is a performance space and there was
+  // gestures on the number row — the world is a performance space and there was
   // no way to wave at anyone
   // the range follows the def-hydrated bar order (§24l) — a ninth listed
-  // emote in _emotes.json gets a key with no code change
+  // gesture in _actionbar.json gets a key with no code change
   const n = /^Digit([1-9])$/.exec(e.code);
   const me = getMe();
   if (n && me) {
-    const name = EMOTE_ORDER[Number(n[1]) - 1];
+    const name = ANIM_ORDER[Number(n[1]) - 1];
     if (!name) return;
-    me.playEmote(name);
-    myState.emote = name;
+    me.playOnce(name);
+    myState.anim = name;
     flashHint(name);
   }
 });

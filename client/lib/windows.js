@@ -17,7 +17,7 @@ import { bus } from './base.js';
 // viewport that produced it is part of what it means — and every symptom of that is a
 // separate patch that fights the last one:
 //   · a bar the owner widened to 352 at 1280x800 reopens at 390x844 with `sit` and
-//     `stand` under #micbtn/#earbtn, unreachable (measured 2026-09-12; emotebar.js
+//     `stand` under #micbtn/#earbtn, unreachable (measured 2026-09-12; actionbar.js
 //     show() has the detail and why no local fix is worth taking)
 //   · the width and height ratchets fixed in bcbe9f7/cdca5c2 are both the same shape:
 //     a value derived under one viewport outliving the condition that produced it
@@ -263,7 +263,7 @@ document.body.classList.toggle('ui-locked', locked);
  */
 // The newcomer's layout is a hand-arranged one, not the panels' individual guesses: the tester's desktop
 // (a 1904×844 window, 09-06) exported from a live session and anchored to edges so it holds on
-// other screens. Chat and the emote bar are open; everything else is closed but pinned to the dock.
+// other screens. Chat and the action bar are open; everything else is closed but pinned to the dock.
 // World starts CLOSED (the quiet defaults): on arrival it is eight collapsed section names on
 // a third of the screen of glass — nothing to show until you ask, and the rail button or the lantern
 // ("sky", "build") opens it. A frame's own saved state (its owner's moves) still wins; resetLayout returns HERE.
@@ -273,24 +273,24 @@ const DEFAULT_LAYOUT = {
   settings: { x: -8,  y: 381, w: 407, h: 443, hidden: true },
   profile:  { x: 48,  y: 46,  w: 505, h: 452, hidden: true },
   debug:    { x: -414, y: 8,  w: 342, h: 453, hidden: true },
-  actions:  { x: 'center', y: 10, h: 32, hidden: false },  // one bar across the TOP, OPEN by default — moved from y:-10 on 2026-09-11 because the hint bar and toasts live at the bottom (owner: "all the helper notifications display at the bottom where it currently is"); the bar sizes its WIDTH itself (emotebar.js snapTo) and its ROWS from a dragged height, but ROW_H is fixed — carried here so fitsDefaults stops counting the bar as zero-height (round 4)
+  actions:  { x: 'center', y: 10, h: 32, hidden: false },  // one bar across the TOP, OPEN by default — moved from y:-10 on 2026-09-11 because the hint bar and toasts live at the bottom (owner: "all the helper notifications display at the bottom where it currently is"); the bar sizes its WIDTH itself (actionbar.js snapTo) and its ROWS from a dragged height, but ROW_H is fixed — carried here so fitsDefaults stops counting the bar as zero-height (round 4)
 };
 // Can this viewport hold the hand-arranged default at all? Derived from
 // DEFAULT_LAYOUT rather than a hardcoded breakpoint, so it stays true if the
 // defaults change: the arrangement needs room for its widest frame, and for its
 // open frames stacked. A phone fails on width, a 1280x720 desktop on height —
-// this is NOT a mobile special case (live 09-10 23:53: world, emotes and the
+// this is NOT a mobile special case (live 09-10 23:53: world, gestures and the
 // world palette stacked on top of chat on a phone, every rect legally inside the
 // viewport and none overlapping, because the palette is makeSection mounting
 // into world's stack and no rect test can see it). CHROME is the title bar a
 // body height does not include.
-const EMOTE_BAR_W = 352;   // widthFor(9) in emotebar.js — the bar sizes itself, so DEFAULT_LAYOUT carries no w for it
+const ACTION_BAR_W = 352;   // widthFor(9) in actionbar.js — the bar sizes itself, so DEFAULT_LAYOUT carries no w for it
 const CHROME = 26;
 // The open defaults are EDGE-ANCHORED ON OPPOSITE CORNERS — world x:-8 y:8
 // (top-right), chat x:10 y:-10 (bottom-left) — so they never share a column
 // and summing their heights modelled an arrangement that does not exist. That
 // over-reach made 1280x720 and 800x700 report "cannot fit", closing the world
-// panel and the emote bar on ordinary laptops and split windows; and because
+// panel and the action bar on ordinary laptops and split windows; and because
 // the LAYOUT_VERSION bump in this same PR purges saved layouts once, the
 // "a saved layout always wins" escape hatch could not protect anyone on the
 // upgrade. (agent review round 4; R handed me the call, 2026-09-11.)
@@ -308,7 +308,7 @@ function fitsDefaults() {
   // so they must sit side by side and the arrangement needs the SUM. At 800px
   // the widest frame (545) fits comfortably while 545+407=952 does not, so
   // auto-minimize left both open and the top-docked bar landed on world:
-  // `emotes [224,10,576,56] x world [385,8,792,381]`, 191x46px, both axes.
+  // `actions [224,10,576,56] x world [385,8,792,381]`, 191x46px, both axes.
   // Boot-check has been red at 800x700 since the bar moved to the top (288a5da)
   // and I did not see it because I ran only 1280x720 and 390x844 all day.
   const sideBySide = open
@@ -316,7 +316,7 @@ function fitsDefaults() {
     .reduce((sum, d) => sum + (d.w ?? 0), 0);
   // A CENTRED STRIP IS PART OF THE ROW TOO (2026-09-12, found because R asked
   // whether a window can even get that small). sideBySide sums only frames with a
-  // NUMERIC x, so the emote bar — x:'center' — was never counted: the predicate
+  // NUMERIC x, so the action bar — x:'center' — was never counted: the predicate
   // asked "do chat(545) and world(407) fit?" while a 352px bar sat across the
   // middle of the same band. Below ~968 the sum already says no and the bar is
   // hidden; above the threshold a centred bar clears a right-anchored panel on its
@@ -329,7 +329,7 @@ function fitsDefaults() {
   // by 9px, trading an overlap bug for a spurious-minimise one.
 
   const centredW = open.filter((d) => d.x === 'center')
-    .reduce((m, d) => Math.max(m, d.w ?? EMOTE_BAR_W), 0);
+    .reduce((m, d) => Math.max(m, d.w ?? ACTION_BAR_W), 0);
   const rightAnchored = Math.max(0, ...open
     .filter((d) => typeof d.x === 'number' && d.x < 0).map((d) => d.w ?? 0));
   const centredRow = centredW && rightAnchored ? centredW + 2 * (rightAnchored + 8) : 0;
@@ -390,7 +390,7 @@ export function makeFrame(id, opts = {}) {
     // a squeezed window was imposing at the time (review C4); an edge-resize chooses
     // the axes its zone moved.
     const markMoved = (axes = 'xywh') => { moved = true; placed = true; state.placed = true; commitRest(axes); };
-  // R, 2026-09-11, on the bug this exists for: the emote bar "will always pop
+  // R, 2026-09-11, on the bug this exists for: the action bar "will always pop
   // sideways to the right regardless if there's room for it" — snapTo calls
   // _fit() 180ms after every drag settles, and fit() re-centred an x:'center'
   // frame each time because the guard tested `saved`, captured once at
@@ -423,7 +423,7 @@ export function makeFrame(id, opts = {}) {
     // in shape to the autoHidden bug fixed in 2256cba, three lines above, which I
     // fixed while leaving its twin in place.
     //
-    // Measured at 1280x800 on the emote bar: markMoved + save -> `_placed: true`;
+    // Measured at 1280x800 on the action bar: markMoved + save -> `_placed: true`;
     // reload -> `_placed: false`; one hide/show -> storage carries no `placed` key at
     // all. A bar the owner deliberately resized is forgotten by the next refresh and
     // goes back to being auto-managed — losing the fit() re-derive exemption
@@ -470,7 +470,7 @@ export function makeFrame(id, opts = {}) {
   // docking, the frame remembers only how it floats.
   const api = {
     id, el: root, body, head,
-    // live refs for riders that own their own sizing (the emote bar snaps itself
+    // live refs for riders that own their own sizing (the action bar snaps itself
     // to whole tiles). _fit is here because writing _state and calling _paint
     // alone BYPASSES the viewport clamp: the bar reflowed to three rows and
     // painted itself past the bottom edge (#185 review, 800x700).
@@ -557,7 +557,7 @@ export function makeFrame(id, opts = {}) {
         // The SAME rule the construction path applies (see the hidden: line
         // above). Reset removes the save first, so there is no arrangement to
         // protect — and without this, one tap of "reset layout" on a phone
-        // reopened world and emotes stacked over chat: the precise state
+        // reopened world and gestures stacked over chat: the precise state
         // auto-minimize exists to prevent, reached through this PR's own
         // reset button. (agent review round 2)
         hidden: hidden || (id !== 'chat' && !fitsDefaults()),
@@ -629,7 +629,7 @@ export function makeFrame(id, opts = {}) {
     root.style.width = `${vrSize?.w ?? state.w}px`;
     // PUBLISH THE FRAME'S OWN FLOOR. index.html's `.frame { min-width: 170px }`
     // is a CSS floor sitting BENEATH this JS one, and it silently won whenever a
-    // frame declared a smaller minW. Measured in Chromium: the emote bar asking
+    // frame declared a smaller minW. Measured in Chromium: the action bar asking
     // for w=48/86/124/162 all rendered at frameW=170 with 4 columns and 3 rows —
     // which is R's report in one line, "won't go thinner than 4x, but will
     // forcibly go 9x down and not wrap to the buttons at all": the body was
@@ -755,9 +755,9 @@ export function makeFrame(id, opts = {}) {
     // then expands it again without touching any panel, it should be identical."
     // Store intent, derive presentation — the declared size IS the intent, and a
     // frame that has never been dragged or resized has no other claim on a width.
-    // WIDTH ONLY, deliberately. `emotes` is the one frame that declares a height
+    // WIDTH ONLY, deliberately. `actions` (the action bar) is the one frame that declares a height
     // without a width ({x:'center', y:10, h:32}) — and its height is DERIVED, not
-    // declared: heightFor(cols) = rowsFor(cols)*ROW_H + gaps (emotebar.js:37). The
+    // declared: heightFor(cols) = rowsFor(cols)*ROW_H + gaps (actionbar.js:37). The
     // 32 is a one-row seed, so re-asserting it every pass fought the bar's own row
     // computation, reflowed it wider, and slid keys 4-6 under the right-hand chrome
     // — boot-check@390x844 went red on "point/salute/clap covered". Width is a
@@ -781,7 +781,7 @@ export function makeFrame(id, opts = {}) {
     // follows its edge through a resize. Gating the clamp too was tried and
     // reverted: it stranded every ordinary bottom-anchored frame (rotate 700->500
     // left an untouched bar at y=370 where 428 was wanted).
-    // R, 2026-09-11: "the emote bar is a little broken now, it can't be
+    // R, 2026-09-11: "the action bar is a little broken now, it can't be
     // arbitrarily placed anywhere."
     if (!moved && opts.y != null && opts.y < 0) state.y = Math.max(8, innerHeight + opts.y - hh);
     state.y = clamp(state.y, 8, Math.max(8, innerHeight - hh - 8));
@@ -821,7 +821,7 @@ export function makeFrame(id, opts = {}) {
         // which is what drove `avail` to -6 and floored a 407px frame to its 210 minW.
         let clearRight = 0, clearFromRight = 0;
         // .capnotice is NOT in this list: the card steps aside for frames (capnotice.js placeTop measures its span and
-        // drops below them); a frame yielding to the card as well drove the 1000×700 emote bar to 313 px under the dock
+        // drops below them); a frame yielding to the card as well drove the 1000×700 action bar to 313 px under the dock
         // (round 3 B1 — its declared right anchor charged a centred card as 671 px of right chrome)
         for (const sel of (placed ? ['#dock'] : ['#dock', '#micbtn', '#earbtn', '#hudstatus'])) {   // a placed frame yields to the DOCK only
           const g = document.querySelector(sel)?.getBoundingClientRect();
@@ -935,7 +935,7 @@ const CHROME_ANCHOR = {
 // TOP/BOTTOM is welded to a horizontal edge, which says nothing about the
 //   horizontal axis — a rail at [10..304] along the top is genuinely LEFT-positioned
 //   there. So it falls through to the positional test rather than costing zero.
-//   Returning {0,0} for it was the bug that put an emote tile under a top-docked
+//   Returning {0,0} for it was the bug that put an action tile under a top-docked
 //   rail at 844x390 ("sit" covered by #dock, the corpus row-33 witness).
 export function chromeCost(sel, g, extent) {
   const el = document.querySelector(sel);
@@ -1014,7 +1014,7 @@ addEventListener('resize', () => {
   // fitsDefaults() was consulted only at construction and in resetLayout() —
   // both one-shot — while this listener clamped each frame's rect
   // INDEPENDENTLY and never re-checked the arrangement. A session opened wide and
-  // then narrowed kept all three defaults open: measured emotes x world
+  // then narrowed kept all three defaults open: measured gestures x world
   // overlapping 352x46px at 390x844 and 136x46px at 844x390 after a live resize.
   // Only frames the owner has NOT moved are minimized: a deliberately arranged
   // layout is theirs, and yanking it around on a window drag would be worse than

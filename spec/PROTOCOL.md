@@ -475,7 +475,7 @@ request moves a copy to a newer version, keeping its own overrides.
 
 - **Authored plane**: the log. Low frequency, high value, persisted forever.
 - **Presence plane**: bodies and whatever a hand is holding or dragging —
-  poses, emotes, transient gestures, reach descriptors — ~15 Hz,
+  poses, gestures (`pose.anim`), reach descriptors — ~15 Hz,
   interpolated, lossy, **never persisted**. Anything at frame rate belongs
   here; writing per-frame values into the log is non-conforming. A reach
   travels as a *declarative relation* (`pose.reach`, shared/reachwire.js) —

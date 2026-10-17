@@ -150,7 +150,7 @@ A `grabbable` thing's use button (desktop left click, the phone's action button,
 That is for **discrete state changes**: a hose turns on, then off; a lamp lights; a gun's magazine empties by one.
 **Continuous or rapid cosmetic effects while held and pressed** (a muzzle flash, a hose's spray, a beam) are never a
 stream of logged acts. They are presence: the holder's pose carries `use {id, hand}` while the button is down (unlogged,
-broadcast like an emote), and every client draws the thing's own `grabbable.fx` from its component data for as long as
+broadcast like a gesture), and every client draws the thing's own `grabbable.fx` from its component data for as long as
 it rides. A script that counts shots counts presses (`use.down`), within the rate above; it never sees a frame.
 
 ## What an activation is, in the log

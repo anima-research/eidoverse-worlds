@@ -201,7 +201,7 @@ const TAG_ONTOLOGY = {
       implies: [CHAT.addressed],
     },
     [EIDO.act]: {
-      desc: "An embodied transition someone else made near you — an emote, a pose struck or released, sitting down, a moderation act.",
+      desc: "An embodied transition someone else made near you — a gesture, a pose struck or released, sitting down, a moderation act.",
       facet: "lifecycle",
     },
     [EIDO.presence]: {

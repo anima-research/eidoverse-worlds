@@ -2,7 +2,7 @@
 //
 // Born from Fable's field report (2026-08-02), which ranked the noise from
 // live logs: client arrive/leave flaps (tens of pairs in minutes), posture/
-// emote cycles (40+ jump pairs in an evening), self-echo, and "walked up to
+// gesture cycles (40+ jump pairs in an evening), self-echo, and "walked up to
 // you" firing six times for someone strolling nearby. The doctrine that fell
 // out of it: **noisiness is a property of an event's CONTEXT, not its type**
 // — the first arrive of a new identity is gold; the fifteenth of the same
@@ -22,7 +22,7 @@
 //  2. DECAYING CHARGE + REFRACTORY for everything ambient. Each narrated
 //     presence event charges that identity; the charge decays exponentially;
 //     above the limit, further arrive/leave narration from that identity is
-//     dropped until it cools. Acts (emotes, posture starts) repeat silently
+//     dropped until it cools. Acts (gestures, posture starts) repeat silently
 //     within a per-(identity, act) refractory window.
 //
 // Mentions, whispers, and says are never gated here — being addressed is
@@ -204,7 +204,7 @@ export class NoiseGate {
     s.pending = { kind, ts, timer };
   }
 
-  /** An embodied act (emote, posture start, pose strike…). `key` names the
+  /** An embodied act (gesture, posture start, pose strike…). `key` names the
    *  act class for the refractory — same key from the same identity repeats
    *  silently within the window. */
   act(id: string, key: string, text: string, ts = Date.now()) {

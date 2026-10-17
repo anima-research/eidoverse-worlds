@@ -284,7 +284,7 @@ const cases: Case[] = [
       return { sit: show(sit), d: show(d), cleared: comp(s, "carousel", "reactions")?.sweep === undefined, turn: show(turn), seated: seated(s, "vic") }; },
     good: (o) => o.sit === "ok" && o.d === "ok" && o.cleared && o.turn === "ok" && o.seated },
   { id: "E1", what: "(claims R6) the stand tile pressed and held escapes a script seat, as X held does (touch and phone parity): the tile says so on pointer down and up, and the per-frame escape reads it", run() {
-      const lb = readText("client/lib/localbody.js"), eb = readText("client/lib/emotebar.js");
+      const lb = readText("client/lib/localbody.js"), eb = readText("client/lib/actionbar.js");
       return { emits: /k === 'stand'\) \{ b\.onpointerdown = \(\) => bus\.emit\('escape-hold', true\); b\.onpointerup = b\.onpointerleave = b\.onpointercancel = \(\) => bus\.emit\('escape-hold', false\)/.test(eb),
         hears: /bus\.on\('escape-hold', \(on\) => \{ escapeTile = !!on; \}\)/.test(lb), reads: /\(keys\.has\('KeyX'\) \|\| escapeTile\) && !mayLeave\(body, 'menu'\)/.test(lb), hold: SK.ESCAPE_HOLD_S }; },
     good: (o) => o.emits && o.hears && o.reads && o.hold === 1.5 },

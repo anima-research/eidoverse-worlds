@@ -43,7 +43,7 @@ async function writeBoxGlb(file, [sx, sy, sz]) {
 }
 
 // ---- AT4 needs no server: the table itself ----
-const { HANDLERS, TOOLS, toolList, handleTool: handleToolDoor } = await import("../../mcpl/tools.ts");
+const { HANDLERS, TOOLS, TOOL_ALIASES, toolList, handleTool: handleToolDoor } = await import("../../mcpl/tools.ts");
 { const listed = [...toolList({ travel: true }), ...toolList({ travel: false })];
   const HINTS = ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"];
   const bad = listed.filter((t) => typeof t.title !== "string" || !t.title.trim() || !t.annotations || HINTS.some((h) => typeof t.annotations[h] !== "boolean"));
@@ -70,7 +70,7 @@ const { HANDLERS, TOOLS, toolList, handleTool: handleToolDoor } = await import("
     "clear_pose", "clear_reach", "posture", "ragdoll", "library_sheet", "library_preview", "list_library", "light", "remove", "blueprint_place", "kick", "ban", "unban", "list_bans"];
   ok(names.length <= 32 && names.length >= 28, `AT6 the table is ~30 tools (${names.length})`, names);
   ok(!folded.some((n) => names.includes(n)), "AT6 none of the folded names is a tool of its own", folded.filter((n) => names.includes(n)));
-  ok(["move", "act", "anim", "reach", "library", "set_avatar", "create", "edit", "body_state"].every((n) => names.includes(n)) && !["pose", "animate", "emote", "posture"].some((n) => names.includes(n)), "AT6 the general tools they folded into exist (anim: R 10-17 15:31; pose, animate, emote and posture are hidden aliases of it)");
+  ok(["move", "act", "anim", "reach", "library", "set_avatar", "create", "edit", "body_state"].every((n) => names.includes(n)) && !Object.keys(TOOL_ALIASES).filter((n) => TOOL_ALIASES[n] === "anim").some((n) => names.includes(n)) && Object.values(TOOL_ALIASES).filter((v) => v === "anim").length === 4, "AT6 the general tools they folded into exist (anim: R 10-17 15:31; the four old body tools are hidden aliases of it)");
   ok(/mode/.test(desc.move) && /fly/.test(desc.move) && /altitude/.test(desc.move) && /name/.test(desc.move), "AT6 move documents mode: \"fly\" (altitude) and to: <a name>", desc.move.slice(0, 300));
   ok(/land/.test(desc.act) && /kick/.test(desc.act) && /\bbans\b/.test(desc.act) && /delete/.test(desc.act), "AT6 act documents land, kick/ban/unban/bans and delete", desc.act.slice(0, 200));
   ok(/wings-folded/.test(desc.anim) && /stop/.test(desc.anim) && /mode/.test(desc.anim) && /joints/.test(desc.anim) && /tracks/.test(desc.anim), "AT6 anim documents names (wings-folded), mode, joints, tracks and stop");

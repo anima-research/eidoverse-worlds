@@ -1,5 +1,5 @@
 // actions — the one list of things a person can DO here: every panel, section,
-// emote, key and slash command registers once, where it is defined, and every
+// gesture, key and slash command registers once, where it is defined, and every
 // surface that offers actions (the lantern prompt today; the help sheet, the ∃
 // menu and VR's wrist later) reads this list instead of keeping its own copy.
 //
@@ -14,14 +14,14 @@
 //              without either site knowing the other's wording.
 //     title    what the row says
 //     keywords extra words that find it ("mute", "voice" for the mic)
-//     group    the heading it lists under ("emotes", "panels", "world", …)
+//     group    the heading it lists under ("gestures", "panels", "world", …)
 //     key      the keyboard key that does the same thing, shown right-aligned —
 //              the keys teach themselves
 //     run      () => void. Required (unless merging into an entry that has one).
 //     when     () => bool — hidden while false (a builder-only wrench)
 //     fill     text a prompt should put in its line instead of running (a command
 //              that needs an argument: '/w ')
-//     icon     optional: an icons.js glyph name, or an emoji literal (an emote
+//     icon     optional: an icons.js glyph name, or an emoji literal (a gesture
 //              tile's own face) — how a row looks, never how it matches
 //     detail   optional: a dim second phrase ("open the sky section"; a command's
 //              help line) — display only, never matched

@@ -75,14 +75,14 @@ initDock([
   { id: "edit", label: "🔧", icon: "wrench", last: true, action: () => { editFired++; editOn = !editOn; }, active: () => editOn, gate: () => editGate },
 ]);
 await tick();   // initPanels' dynamic imports land and repaint
-// DEFAULT_LAYOUT opens world/chat/emotes at birth; every rail assertion below starts from CLOSED
+// DEFAULT_LAYOUT opens world/chat/gestures at birth; every rail assertion below starts from CLOSED
 for (const id of ["chat", "world", "actions", "debug"]) getFrame(id)!.hide();
 bus.emit("frames");
 check("∃ leads the rail", dock().firstElementChild?.id === "hud");
 check("profile leads the buttons (right under the ∃); the wrench closes the list; the grip is last",
   order()[0] === "profile" && order()[order().length - 1] === "edit" && dock().lastElementChild?.classList.contains("dock-grip"), order().join());
-// search sits between emotes and debug (owner, 10-01: "Search almost feels like a less-standard feature, so maybe
-// should be docked by default between emotes and debug"), pinned by default
+// search sits between gestures and debug (owner, 10-01: "Search almost feels like a less-standard feature, so maybe
+// should be docked by default between gestures and debug"), pinned by default
 check("dock order follows the entry list, search between actions and debug", order().join() === "profile,chat,world,nofrx,actions,search,debug,edit", order().join());
 check("…and search is pinned by default (shown while the lantern is closed)", btn("search")!.hidden === false && JSON.parse(localStorage.getItem("ew-dock-pins") ?? '["search"]').includes("search"));
 { // the search entry: the lantern prompt's way in, wearing the magnifying glass, its chord in the tooltip
@@ -144,7 +144,7 @@ toggleEMenu(false);
   const s2 = makeSection("🐞 debug", null, { id: "sec-debug" });
   check("makeSection('🐞 …') head wears the bug fill glyph", wears(s2.head.innerHTML, "bug") && !s2.head.textContent!.includes("🐞"));
   const s4 = makeSection("🧱 build", null, { id: "sec-build" });
-  const s5 = makeSection("👋 emotes", null, { id: "sec-emotes" });
+  const s5 = makeSection("👋 gestures", null, { id: "sec-gestures" });
   check("makeSection: 🧱 → hammer, 👋 → hand-waving", wears(s4.head.innerHTML, "hammer") && wears(s5.head.innerHTML, "hand-waving"));
   const s3 = makeSection("🦄 unmapped", null, { id: "sec-unk" });
   check("an UNMAPPED emoji keeps its text (no silent puzzle-piece)", s3.head.textContent === "🦄 unmapped" && !s3.head.querySelector("svg"));

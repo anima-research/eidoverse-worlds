@@ -40,6 +40,7 @@ import { MOVER, TRACK, walkToward, toleranceOf, waterStance } from "../shared/mo
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
 import { inspectBody } from "../shared/flightbody.js";
 import { foldedIn, wingFoldPresence } from "../shared/wingpresence.js";
+import { onceAnimOf } from "../shared/onceanim.js";
 import { bodyModeTracker, isBodyMode, readBodyMode } from "../shared/bodymode.js";
 import { clampBodyScale } from "../shared/presencewire.js";
 import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
@@ -1508,7 +1509,7 @@ export class WorldAgent {
   }
 
   /** Embodied acts as events. The presence stream is 15Hz noise; what an
-   *  agent should hear about is TRANSITIONS — an emote fired, a pose struck
+   *  agent should hear about is TRANSITIONS — a gesture fired, a pose struck
    *  or released, someone sitting down or getting up. Edge-triggered, so a
    *  held pose (or a ragdoll, which streams through the same field) speaks
    *  once when it starts and once when it ends, never per-frame.
@@ -1518,9 +1519,10 @@ export class WorldAgent {
    *  speak once per window instead of per repetition; and a non-locomotion
    *  stint shorter than SHORT_STINT_MS earns no "gets up" — the start
    *  already told the story, a jump is one thing, not two. */
-  private noteActs(id: string, prev: Pose | null, pose: Pose & { emote?: string; pose?: Record<string, unknown> | null }, dist = Infinity) {
+  private noteActs(id: string, prev: Pose | null, pose: Pose & { anim?: string; pose?: Record<string, unknown> | null }, dist = Infinity) {
     const acts: { key: string; text: string }[] = [];
-    if (pose.emote) acts.push({ key: `emote:${pose.emote}`, text: `emotes: ${pose.emote}` });
+    const once = onceAnimOf(pose);   // pose.anim (its pre-release key still read for one release)
+    if (once) acts.push({ key: `anim:${once}`, text: `plays ${once} (once)` });
     const prevHeld = Boolean((prev as { pose?: unknown } | null)?.pose);
     const nowHeld = Boolean(pose.pose);
     if (nowHeld && !prevHeld) acts.push({ key: "pose", text: `strikes a pose (${Object.keys(pose.pose!).length} bones held)` });
@@ -2464,12 +2466,12 @@ export class WorldAgent {
         // immortal (#61): rememberPose kept it, restore re-armed it, forever.
         ...(this.heldPose && (this.heldPoseAuthored || this.clip === "ragdoll") ? { pose: this.heldPose } : {}),
         ...(this.pins.size ? { pins: [...this.pins].map(([j, at]) => ({ j, at })) } : {}),
-        ...(this.pendingEmote ? { emote: this.pendingEmote } : {}),
+        ...(this.pendingAnim ? { anim: this.pendingAnim } : {}),
         ...(this.reaches.size ? { reach: Object.fromEntries(this.reaches) } : {}),
         ...(this.myOccupancy ? { seat: this.myOccupancy } : {}),
       },
     }));
-    this.pendingEmote = null; // one-shot: rides exactly one packet
+    this.pendingAnim = null; // one-shot: rides exactly one packet
   }
 
   /** Being pushed. Consent first; then the REAL tumble — this body runs the
@@ -4426,11 +4428,11 @@ export class WorldAgent {
     }
   }
 
-  /** Fire a named emote — a one-shot rider on the next presence packet, the
-   *  same channel the browser's emote bar uses. Receivers resolve the name
-   *  to a library clip; nothing is logged. */
-  emote(name: string) { this.pendingEmote = name; }
-  private pendingEmote: string | null = null;
+  /** Play a named anim once — pose.anim, a rider on the next presence packet,
+   *  the same channel the browser's action bar uses. Receivers resolve the
+   *  name to a library clip; nothing is logged. */
+  playOnce(name: string) { this.pendingAnim = name; }
+  private pendingAnim: string | null = null;
 
   /** Settle into a posture clip (sit/sitchair/lie/idle). Rides the presence
    *  stream like locomotion does; walking replaces it, restore re-applies it. */

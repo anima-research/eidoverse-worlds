@@ -9,6 +9,7 @@
 import { THREE, camera, scene } from './core.js';
 import { report, angleDelta, CONFIG } from './base.js';
 import { makeAvatar, makeCapsuleAvatar } from './avatar.js';
+import { onceAnimOf } from '../../shared/onceanim.js';
 import { avatarMounts, setBodySeat } from './world.js';
 import { driveOccupied, releaseOccupied } from './occupybody.js';
 import { declareOccupyState, clearOccupyState } from './occupants.js';
@@ -314,7 +315,7 @@ export function applyRemoteBody(r, s) {
   r.avatar?.setPlateY?.(r.plateY);
 }
 
-/** Presence extras that aren't position or bones: emotes and the locomotion
+/** Presence extras that aren't position or bones: a once anim (pose.anim) and the locomotion
  *  clip. Driven by the NEWER sample of the pair and never blended — these are
  *  discrete events, and half a wave is not a wave. Applied in BOTH the
  *  interpolated and single-sample paths so a late joiner isn't missing them. */
@@ -324,13 +325,14 @@ function applyPresenceExtras(r, s) {
   applyVoiceWire(r, s);              // mic / hear, for the hover card
   applyRemoteBody(r, s);             // their chosen size / plate lift (absence = default)
   const clip = s.clip ?? 'idle';
-  if (s.emote && s.emote !== r.lastEmote) {
-    r.lastEmote = s.emote;
-    r.avatar.playEmote(s.emote);
+  const once = onceAnimOf(s);
+  if (once && once !== r.lastAnim) {
+    r.lastAnim = once;
+    r.avatar.playOnce(once);
   } else {
-    // the one-shot has passed — forget it, so the SAME emote can fire again
-    // later (lastEmote never resetting meant nobody could wave twice)
-    if (!s.emote) r.lastEmote = null;
+    // the once anim has passed — forget it, so the SAME one can fire again
+    // later (lastAnim never resetting meant nobody could wave twice)
+    if (!once) r.lastAnim = null;
     if (clip !== r.lastClip) r.lastClip = clip;
     // 'ragdoll' is not a clip and never was: setClip walks CLIP_FALLBACK,
     // finds no entry for it, and hands _setAction undefined — which returns at
@@ -401,8 +403,8 @@ export function updateRemotes(dt, now = performance.now()) {
         r.avatar.setSeatApprox(sw.seatState === 'approximate');
         declareOccupyState(r.id, sw.host ?? sw.to, sw.slot, sw.seatState, sw.seatReason);
         // The seat owns WHERE the body is and its base clip — never its
-        // expressiveness. The newest presence sample still delivers emotes
-        // (one-shots layer over the sit; setClip is emote-aware and won't
+        // expressiveness. The newest presence sample still delivers gestures
+        // (one-shots layer over the sit; setClip is gesture-aware and won't
         // cut a wave short) and held bone poses (gesturing from the seat).
         // `animate` streams arrive on their own channel and never pass here.
         const s = buf[buf.length - 1];
@@ -414,15 +416,16 @@ export function updateRemotes(dt, now = performance.now()) {
           applyPresenceWire(r, s);
           applyVoiceWire(r, s);
           applyRemoteBody(r, s);
-          if (s.emote && s.emote !== r.lastEmote) {
-            r.lastEmote = s.emote;
-            r.avatar.playEmote(s.emote);
-          } else if (!s.emote) r.lastEmote = null;
+          const once = onceAnimOf(s);
+          if (once && once !== r.lastAnim) {
+            r.lastAnim = once;
+            r.avatar.playOnce(once);
+          } else if (!once) r.lastAnim = null;
           applyRemoteReach(r, s);   // a seated body still puts a hand out
           applyXRPresence(r, s, s, 1);   // …and still looks around / points
         }
         r.avatar.setLimp(false);
-        r.lastClip = seated.clip;   // the seat's pose layer owns the base clips (avatar.setSeatBlend); emotes still play over it
+        r.lastClip = seated.clip;   // the seat's pose layer owns the base clips (avatar.setSeatBlend); gestures still play over it
         const d = r.avatar.root.position.distanceTo(eye);
         const every = Math.round((d < LOD_NEAR ? 1 : d < LOD_MID ? 2 : 4) * lodBias);
         r.lodAcc += dt;

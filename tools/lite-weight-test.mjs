@@ -102,7 +102,7 @@ check('a lite boot is dramatically lighter overall',
 //
 // Playwright's `framesent` was the instrument here and it is not reliable: this suite
 // reported 19/19 locally while an independent reviewer got 18/19 on the same commit,
-// the emote frame missing from the observer while an in-page receipt proved the product
+// the gesture frame missing from the observer while an in-page receipt proved the product
 // had sent it (#188 B4). A gate that flakes is worse than no gate - it taught us the
 // wrong thing about our own code. So we patch WebSocket.prototype.send before any app
 // script runs and keep the frames ourselves: same object the client actually calls,
@@ -149,7 +149,7 @@ const framesOf = (page) => page.evaluate(() => globalThis.__frames ?? { sent: []
   await page.close();
 }
 
-// B2: an emote must carry the remembered body UNCHANGED and add only the one-shot.
+// B2: a gesture must carry the remembered body UNCHANGED and add only the one-shot.
 // Specimen shape borrowed from the review: a seated, pitched, wing-folded resident
 // holding a custom pose. Before the fix a wave emitted idle/0/false and no held pose.
 {
@@ -178,7 +178,7 @@ const framesOf = (page) => page.evaluate(() => globalThis.__frames ?? { sent: []
   }, STORED);
   await page.waitForTimeout(1200);
 
-  // Now arrive in lite under that identity and tap one emote.
+  // Now arrive in lite under that identity and tap one gesture.
   await page.goto(`${world.origin}/?world=staging&name=bodykeep&key=${world.key}&lite=1`, { waitUntil: 'load' });
   await page.waitForFunction(() => document.querySelectorAll('.lite-action').length > 0, { timeout: 20000 })
     .catch(() => {});
@@ -187,24 +187,24 @@ const framesOf = (page) => page.evaluate(() => globalThis.__frames ?? { sent: []
     const b = document.querySelector('.lite-action');
     if (!b) return null;
     b.click();
-    return b.dataset.emote;
+    return b.dataset.anim;
   });
   await page.waitForTimeout(1500);
   const f2 = await framesOf(page);
-  const poses = f2.sent.filter((x) => x.includes('"type":"pose"') && x.includes('"emote"'));
+  const poses = f2.sent.filter((x) => x.includes('"type":"pose"') && x.includes('"anim"'));
   let sentPose = null;
   try { sentPose = JSON.parse(poses[poses.length - 1]).pose; } catch { /* none */ }
-  console.log(`\n  emote: tapped=${tapped} pose-frames=${poses.length}`);
+  console.log(`\n  gesture: tapped=${tapped} pose-frames=${poses.length}`);
   if (sentPose) console.log(`      ${JSON.stringify(sentPose).slice(0, 190)}`);
 
-  check('an emote button exists to tap', !!tapped);
-  check('an emote leaves as a presence pose, not a verb', !!sentPose,
-    'there is no emote verb; it rides pose.emote and needs a finite p');
+  check('a gesture button exists to tap', !!tapped);
+  check('a gesture leaves as a presence pose, not a verb', !!sentPose,
+    'there is no gesture verb; it rides pose.anim and needs a finite p');
   if (sentPose) {
-    check('the emote itself rides along', sentPose.emote === tapped);
+    check('the gesture itself rides along', sentPose.anim === tapped);
     check('a seated resident stays seated', sentPose.clip === STORED.clip,
       `clip=${sentPose.clip} (stored ${STORED.clip})`);
-    check('pitch survives the emote', sentPose.pitch === STORED.pitch,
+    check('pitch survives the gesture', sentPose.pitch === STORED.pitch,
       `pitch=${sentPose.pitch} (stored ${STORED.pitch})`);
     check('folded wings stay folded', sentPose.wingsFolded === true,
       `wingsFolded=${sentPose.wingsFolded}`);
@@ -422,12 +422,12 @@ const back = await weigh('&lite=0', 'escape hatch (?lite=0)');
 check('?lite=0 forces the full client back', back.lite === false && back.why === 'url');
 check('?lite=0 fetches the engine again', back.engine.length > 0);
 
-// THE FULL CLIENT MUST STILL BE ABLE TO PLAY AN EMOTE.
+// THE FULL CLIENT MUST STILL BE ABLE TO PLAY A GESTURE.
 //
-// Splitting the emote table out from behind avatar.js's engine imports left avatar.js
-// re-exporting EMOTES without a local binding, so playEmote threw ReferenceError - and
+// Splitting the gesture table out from behind avatar.js's engine imports left avatar.js
+// re-exporting ANIM_CLIPS without a local binding, so playOnce threw ReferenceError - and
 // nothing noticed, because every gate here boots the client and none of them presses a
-// button a person presses. Reported from a phone as a red "EMOTES is not defined" toast.
+// button a person presses. Reported from a phone as a red "ANIM_CLIPS is not defined" toast.
 // tools/reexport-binding-test.mjs catches the class; this catches the behaviour.
 {
   const page = await mkPage();
@@ -435,25 +435,25 @@ check('?lite=0 fetches the engine again', back.engine.length > 0);
   page.on('pageerror', (e) => errs.push(e.message));
   const toasts = [];
   page.on('console', (m) => { if (/is not defined|ReferenceError/i.test(m.text())) toasts.push(m.text()); });
-  await page.goto(`${world.origin}/?world=staging&name=emoteplay&key=${world.key}&lite=0`, { waitUntil: 'load' });
+  await page.goto(`${world.origin}/?world=staging&name=onceplay&key=${world.key}&lite=0`, { waitUntil: 'load' });
   await page.waitForFunction(
     () => { const el = document.getElementById('splash'); return !el || el.classList.contains('gone'); },
     { timeout: 60000 },
   ).catch(() => {});
-  const tile = await page.waitForSelector('[data-emote]', { timeout: 20000 }).catch(() => null);
+  const tile = await page.waitForSelector('[data-anim]', { timeout: 20000 }).catch(() => null);
   let played = null;
   if (tile) {
     played = await page.evaluate(() => {
-      const t = document.querySelector('[data-emote]');
+      const t = document.querySelector('[data-anim]');
       t.click();
-      return t.dataset.emote;
+      return t.dataset.anim;
     });
     await page.waitForTimeout(2000);
   }
   const refErrs = [...errs, ...toasts].filter((e) => /is not defined|ReferenceError/i.test(e));
-  console.log(`\n  full client emote: tile=${played} referenceErrors=${refErrs.length}`);
+  console.log(`\n  full client gesture: tile=${played} referenceErrors=${refErrs.length}`);
   for (const e of refErrs.slice(0, 2)) console.log(`      ! ${e.slice(0, 140)}`);
-  check('the full client still has an emote tile to press', !!played);
+  check('the full client still has an action tile to press', !!played);
   check('pressing it raises no ReferenceError', refErrs.length === 0, refErrs[0]?.slice(0, 120));
   await page.close();
 }

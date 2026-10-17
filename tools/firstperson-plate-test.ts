@@ -20,7 +20,7 @@ plugin({
 });
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 GlobalRegistrator.register();
-globalThis.fetch = (() => new Promise(() => {})) as any;   // avatar.js's emote defs ask the server; there is none here
+globalThis.fetch = (() => new Promise(() => {})) as any;   // avatar.js's gesture defs ask the server; there is none here
 
 const stub: any = await import('./posture-tiles-stub.mjs');
 const ctl: any = await import('../client/lib/controller.js');

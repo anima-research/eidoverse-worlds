@@ -367,13 +367,13 @@ export function sendPose(now) {
   };
   const avatar = hooks.me();
   Object.assign(pose, bodyWire({ scale: avatar.userScale, plateY: avatar.plateY }));   // this body's size / plate lift — only when not default
-  if (!avatar.emote && !avatar._limp && Number.isFinite(avatar.current?.time)) {
+  if (!avatar.onceAnim && !avatar._limp && Number.isFinite(avatar.current?.time)) {
     pose.clipTime = avatar.current.time;
     pose.clipTimeSlot = avatar.currentSlot;
     pose.clipRate = avatar.current.paused ? 0 : avatar.current.timeScale ?? 1;
   }
   if (ov?.xr) pose.xr = ov.xr;   // C18: tracked head/hands, facing-relative (xrbody.js) — presence, never the log
-  if (s.emote) { pose.emote = s.emote; s.emote = null; } // one-shot: send once
+  if (s.anim) { pose.anim = s.anim; s.anim = null; } // an anim played once (pose.anim): sent once
   // what I press while I hold a thing (grabbable's presence tier: every receiver draws its fx while this rides;
   // absent = not pressing). Never logged: a use.down/up that changes the world is a request of its own
   if (s.useHeld) pose.use = s.useHeld;
@@ -1018,7 +1018,7 @@ async function onSnapshot(msg) {
   const s = hooks.myState;
   // `s &&` used to be part of this test, which quietly made the restore undeliverable to
   // any client without a live body - and a renderer-free one has none by construction
-  // (#188 B2: its emote went out carrying defaults because the remembered body never
+  // (#188 B2: its gesture went out carrying defaults because the remembered body never
   // arrived to carry instead). What the guard actually protects is a body that has
   // ALREADY MOVED this session; no body cannot have moved, so it has nothing to protect
   // and the restore should land.

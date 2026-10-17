@@ -681,7 +681,7 @@ class Session {
         this.deliver(`(whispers to you) ${ev.text}`, { id: ev.who, name: ev.who },
           { tags: tags(CHAT.dm, CHAT.private, CHAT.addressed, EIDO.whisper, from), mentioned: true });
       } else if (ev.kind === "act") {
-        // embodied transitions — an emote, a pose struck or released, someone
+        // embodied transitions — a gesture, a pose struck or released, someone
         // sitting down. Ambient by nature: a closed door mutes them.
         if (this.channelOpen) this.deliver(`* ${ev.who} ${ev.text}`, { id: "world", name: this.agent.world },
           { tags: tags(CHAT.ambient, EIDO.act, from) });

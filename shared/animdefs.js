@@ -21,15 +21,15 @@ export const isReservedAnimName = (n) => typeof n === 'string' && RESERVED_ANIM_
 
 const isStr = (v) => typeof v === 'string' && v.length > 0;
 
-/** Validate the emote sidecar (defs/animations/_emotes.json): each entry
+/** Validate the action bar's sidecar (defs/animations/_actionbar.json): each entry
  *  {clip (required), icon?, listed?}. Key order is bar order — normative.
- *  @param {unknown} emotes @returns {string[]} */
-export function validateEmotes(emotes) {
-  if (emotes == null || typeof emotes !== 'object' || Array.isArray(emotes)) return ['_emotes must be a JSON object'];
+ *  @param {unknown} bar @returns {string[]} */
+export function validateActionBar(bar) {
+  if (bar == null || typeof bar !== 'object' || Array.isArray(bar)) return ['_actionbar must be a JSON object'];
   const errs = [];
-  for (const [name, e] of Object.entries(emotes)) {
+  for (const [name, e] of Object.entries(bar)) {
     if (name === 'doc') continue;
-    if (!ANIM_NAME_RE.test(name)) { errs.push(`emote name "${name}" fails the name rule`); continue; }
+    if (!ANIM_NAME_RE.test(name)) { errs.push(`action bar name "${name}" fails the name rule`); continue; }
     if (isReservedAnimName(name)) { errs.push(`"${name}" is reserved (it names ad-libbed anims)`); continue; }
     if (e == null || typeof e !== 'object' || Array.isArray(e)) { errs.push(`${name} must be an object`); continue; }
     if (!isStr(/** @type {any} */ (e).clip)) errs.push(`${name}.clip is required (string)`);

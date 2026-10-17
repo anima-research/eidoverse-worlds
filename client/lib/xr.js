@@ -32,7 +32,7 @@ import { stroke, fillPath } from './icons.js';
 import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsAt, xrPanelsPress, xrPanelsDrag, xrPanelsReleasePress, showXRPanel, xrPanelHas, xrPanelOpen, xrPanelsGrab, xrPanelRelease, xrPanelsShown, xrPanelsHideToggle, xrPanelsHidden } from './xrpanels.js';
 import { TEXT_SEL, domQuadsScroll, domQuadResizeBegin, domQuadResizeMove, domQuadResizeEnd, domQuadsRevealOnly, domQuadMesh } from './domquad.js';
 import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from './controller.js';
-import { ringEmoteEntries } from './emotebar.js';
+import { ringActionEntries } from './actionbar.js';
 import { entities, bagOf, socketsOn } from './world.js';
 import { xrHand as grabHand, bindPresenting as bindGrabPresenting } from './thingphysics.js';   // world grabbing: the grabbable component's VR hands
 import { flashHint, toast } from './ui.js';
@@ -561,7 +561,7 @@ function releaseGrab() {
  *  drawn from their own SVGs so the ring and the rail cannot drift; a frame
  *  with no VR surface yet is still a slot — dim, and honest about it — because
  *  parity means the gap is visible until the sweep fills it. sit/lie live in
- *  the emote quad now, not here. */
+ *  the action quad now, not here. */
 let ringLevel = 'root';   // 'root' | 'actions' — the sub-wheel in view
 const SPACER = { spacer: true, has: false, label: '', on: () => false, act: () => {} };
 const BACK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 26 26" fill="none" stroke="#f2f7f5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-7 7 7 7"/></svg>';
@@ -571,7 +571,7 @@ const BACK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52"
 // plus a back slot at 6 o'clock. Toggles stay open and show state; everything else closes on activation.
 export function radialEntries() {   // exported with makeRadial for the headless ring screenshot
   if (ringLevel === 'actions') {
-    const e = ringEmoteEntries();                    // postures + emotes, bar order, 12 o'clock first
+    const e = ringActionEntries();                    // postures + gestures, bar order, 12 o'clock first
     const back = { svg: BACK_SVG, label: 'back', on: () => false, sub: 'root', act: () => {} };
     const half = Math.ceil(e.length / 2);
     const out = [...e.slice(0, half), back, ...e.slice(half)];
@@ -580,10 +580,10 @@ export function radialEntries() {   // exported with makeRadial for the headless
   }
   const panels = { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 26 26"><text x="13" y="19.5" font-family="system-ui, sans-serif" font-size="19" font-weight="700" text-anchor="middle" fill="#f2f7f5">∃</text></svg>', label: 'panels', on: () => xrPanelsShown(), act: ringPanelsAct };
   const leave = { svg: xrGlyph(52), label: 'leave VR', on: () => true, close: true, guard: true, act: () => leaveVR('ring') };   // guard: trigger only — a stick brush toward 6 o'clock threw the owner out (22:29)
-  // emotes is its own strip on the desk, not a dock panel — a fixed slot, first on the right (1 o'clock)
+  // gestures is its own strip on the desk, not a dock panel — a fixed slot, first on the right (1 o'clock)
   const right = [{ icon: 'hand-waving', label: 'actions', sub: 'actions', on: () => false, act: () => {} }];
   for (const e of dockPins()) {
-    if (e.id === 'actions') continue;   // the sub-wheel slot above IS emotes (owner, 09-07 22:57: 'you have emotes twice')
+    if (e.id === 'actions') continue;   // the sub-wheel slot above IS gestures (owner, 09-07 22:57: 'you have gestures twice')
     const has = xrPanelHas(e.id);
     right.push({ icon: e.icon, label: e.id, has, on: () => xrPanelOpen(e.id), close: true,
       act: () => { if (has) showXRPanel(e.id); else tee(`[xr] ring: ${e.id} has no VR surface yet`); } });
@@ -627,7 +627,7 @@ function ringIconTexture(s, focused) {
     const img = new Image();
     img.onload = () => { g.save(); g.translate(64, 64); g.drawImage(img, -30, -30, 60, 60); g.restore(); tex.needsUpdate = true; };
     // an <svg> without xmlns renders INLINE but paints NOTHING as an <img> data-URI — mic/ears/VR came from the HUD's
-    // inline glyphs and were the exact icons missing on the ring (owner, 09-07 23:34); the ∃/recentre/emote SVGs carried it
+    // inline glyphs and were the exact icons missing on the ring (owner, 09-07 23:34); the ∃/recentre/gesture SVGs carried it
     let svg = (typeof s.svg === 'function' ? s.svg() : s.svg).replace(/stroke="#f2f7f5"/g, `stroke="${ink}"`).replace(/fill="#f2f7f5"/g, `fill="${ink}"`);
     if (!/xmlns=/.test(svg)) svg = svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
     img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);

@@ -992,9 +992,9 @@ Lesson: sparse pose maps need per-bone fallback to the side that HAS the bone.
 Lesson: allocate at sample rate, not frame rate; this path "runs per bone, per
 remote, per frame — nothing on that path may allocate" (`remotes.js:88-89`).
 
-**lastEmote never resetting meant nobody could wave twice**
+**lastAnim never resetting meant nobody could wave twice**
 `client/lib/remotes.js:147-153`
-"the one-shot has passed — forget it, so the SAME emote can fire again later."
+"the one-shot has passed — forget it, so the SAME gesture can fire again later."
 Lesson: one-shot presence fields need an explicit clear on the frame they are
 absent.
 
@@ -1071,16 +1071,16 @@ the skeleton at its REST pose. That is the T-pose."
 Lesson: `clipAction()` + weight is not enough; an action must be played once to
 be evaluated.
 
-**A LoopOnce emote holds its final frame at full weight, forever**
+**A LoopOnce gesture holds its final frame at full weight, forever**
 `client/lib/avatar.js:316-326`
 "It is a LoopOnce action with clampWhenFinished, so when it ends it holds its
 final frame at full weight — forever. Simply forgetting about it (this.current =
 null) left that frozen pose blended into everything that came after, which is why
 sitting and standing were wrong once you had pointed at something."
-Lesson: cancelling an emote must fade the action out, not just drop the
+Lesson: cancelling a gesture must fade the action out, not just drop the
 reference.
 
-**Moving cancels an emote**
+**Moving cancels a gesture**
 `client/lib/avatar.js:245-249`
 "Standing frozen mid-cheer while walking away is worse than cutting the cheer
 short."
@@ -1186,7 +1186,7 @@ motion.js this frame) composed with the socket. This is what makes a sitter
 visibly ride the swing mid-pendulum — presence samples are ignored while mounted,
 so a stale stream can't fight the seat." But: "The seat owns WHERE the body is
 and its base clip — never its expressiveness. The newest presence sample still
-delivers emotes… and held bone poses (gesturing from the seat)."
+delivers gestures… and held bone poses (gesturing from the seat)."
 Lesson: derivation replaces position, not expression.
 
 **A late joiner with one sample must still apply its held bones**
@@ -2244,7 +2244,7 @@ strangers.
 snapshot's `restore` (your own body) went through rememberPose and came back
 normalized, while `present` (everyone else's bodies) shipped lastPose raw. So a
 resident mid-ragdoll looked fine to herself and arrived collapsed for every joiner —
-for weeks, with no way to tell from inside her own session." Normalization: emote
+for weeks, with no way to tell from inside her own session." Normalization: gesture
 is dropped ("a one-shot is a moment, not a place. Replaying it at every wake would
 make a wave into a tic"); ragdoll is dropped ("physics in flight, not an enacted
 pose. The get-up path only exists in the session that fell, so anyone receiving it
@@ -2666,7 +2666,7 @@ Lesson: novelty-gate ambient signals; measure movement as accumulated displaceme
 **Noisiness is a property of an event's CONTEXT, not its type**
 `mcpl/denoise.ts:1-30` (from Fable's field report, 2026-08-02)
 "which ranked the noise from live logs: client arrive/leave flaps (tens of pairs in
-minutes), posture/emote cycles (40+ jump pairs in an evening), self-echo, and 'walked
+minutes), posture/gesture cycles (40+ jump pairs in an evening), self-echo, and 'walked
 up to you' firing six times for someone strolling nearby. The doctrine that fell out
 of it: noisiness is a property of an event's CONTEXT, not its type — the first arrive
 of a new identity is gold; the fifteenth of the same identity in ten minutes is a
@@ -3442,7 +3442,7 @@ Lesson: a stream with no sim behind it still has velocity; measure it.
 no live sim wakes one "so the body sags from what remains and settles honestly."
 Lesson: the body is always its own final authority.
 
-**Emotes were invisible unless you read the help**
+**Gestures were invisible unless you read the help**
 `client/main.js:933-937`
 "On a performance platform the gestures should be somewhere you can see them."
 Lesson: an affordance nobody can discover is indistinguishable from one that does

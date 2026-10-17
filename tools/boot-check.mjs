@@ -117,7 +117,7 @@ try {
           const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return bt === h || bt.contains(h); }); })(),   // EVERY item's (U4)
       // how many control surfaces were MEASURABLE at all. A check that reports
       // green from an empty collection is worse than no check: at 390x844 the
-      // emote bar is hidden by fitsDefaults, so `.frame .tile` yields nine
+      // action bar is hidden by fitsDefaults, so `.frame .tile` yields nine
       // zero-size nodes, every one filtered out, and the run passed while my
       // standalone probe measured a stolen tile at the same instant.
       tilesSized: [...document.querySelectorAll('.frame .tile')].filter((t) => { const r = t.getBoundingClientRect(); return r.width && r.height; }).length,
@@ -161,11 +161,11 @@ try {
   // These two checks used to be inline and therefore ran exactly once, at the boot
   // viewport. The review asked for a real setViewportSize() product test: a page
   // that boots wide and is then narrowed keeps all three defaults open and they
-  // overlap (emotes x world 352x46px at 390x844) — a state no fixed-viewport boot
+  // overlap (actions x world 352x46px at 390x844) — a state no fixed-viewport boot
   // can reach. Same assertions, same failure text, plus the phase that produced it.
   const checkGeometry = (g, where) => {
     // OVERLAP (#185 review req 2): two frames collide only when they overlap on
-    // BOTH axes. chat is bottom-LEFT and the emote bar bottom-CENTRE, so at a wide
+    // BOTH axes. chat is bottom-LEFT and the action bar bottom-CENTRE, so at a wide
     // viewport they miss entirely and at a narrow one the centred bar slides onto
     // chat's composer. Checking one axis alone answers "always" or "never" — both wrong.
     const pairs = [];
@@ -212,7 +212,7 @@ try {
   checkGeometry(s, `boot ${s.vw}x${s.vh}`);
 
   // OPEN THE CONTROLS THE REVIEW IS ABOUT, then look again (antra-tess #185 B2).
-  // At phone widths fitsDefaults() hides the emote bar, so `.frame .tile` yields
+  // At phone widths fitsDefaults() hides the action bar, so `.frame .tile` yields
   // nine ZERO-SIZE nodes and the hit-test above has nothing to measure: the run
   // goes green because the collection is empty, not because the tiles are
   // reachable. Her repro is a user tapping the dock to open the bar — so do that,
@@ -223,21 +223,21 @@ try {
     // the dock button closed it and the guard below then fired on my own action
     // (FAIL at 1280x720, tilesInDom=9 tilesSized=0). Only click when it is hidden.
     const isOpen = () => [...document.querySelectorAll('.frame')]
-      .some((f) => /emote/i.test(f.querySelector('.fr-title')?.textContent || '')
+      .some((f) => /action bar/i.test(f.querySelector('.fr-title')?.textContent || '')
                 && getComputedStyle(f).display !== 'none');
     if (isOpen()) return 'already open';
     const btn = [...document.querySelectorAll('#dock button')]
-      .find((b) => /emote/i.test(b.title || b.getAttribute('aria-label') || ''));
-    if (!btn) return 'no emote dock button';
+      .find((b) => /action bar/i.test(b.title || b.getAttribute('aria-label') || ''));
+    if (!btn) return 'no action bar dock button';
     btn.click();
     await new Promise((r) => setTimeout(r, 900));
     return isOpen() ? 'opened' : 'click did not open it';
   });
   if (opened === 'opened' || opened === 'already open') {
     const s3 = await state();
-    if (!s3.tilesSized) { fail(`the emote bar was opened from the dock but no tile has a size (tilesInDom=${s3.tilesInDom}) — the B2 hit-test would measure nothing`); }
-    checkGeometry(s3, `emote bar open at ${s3.vw}x${s3.vh}`);
-    barOpened = ` · emote bar ${opened}: ${s3.tilesSized} tiles measured, none covered`;
+    if (!s3.tilesSized) { fail(`the action bar was opened from the dock but no tile has a size (tilesInDom=${s3.tilesInDom}) — the B2 hit-test would measure nothing`); }
+    checkGeometry(s3, `action bar open at ${s3.vw}x${s3.vh}`);
+    barOpened = ` · action bar ${opened}: ${s3.tilesSized} tiles measured, none covered`;
   }
   if (/(^|&)webgl=1(&|$)/.test(QUERY) && s.backend !== 'webgl') { fail(`?webgl=1 but backend=${s.backend}`); }
   if (wantXR && s.backend !== 'webgl') { fail(`XR boot without WebGPU-XR must ride WebGL, got backend=${s.backend}`); }
@@ -285,7 +285,7 @@ try {
   // "boot-check.mjs starts at one fixed viewport and never changes it" — so the
   // claim that a wide->narrow shrink keeps every frame inside was asserted and
   // never executed. It was also false: containment is per-frame, arrangement is
-  // global, and each frame clamping itself legally still let emotes x world
+  // global, and each frame clamping itself legally still let gestures x world
   // overlap 352x46px at 390x844. fitsDefaults() now re-fires on viewport change;
   // this is the product path that proves it, at the only moment it can be seen.
   if (RESIZE_TO) {

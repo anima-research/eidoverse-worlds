@@ -18,12 +18,14 @@
 // (tools/ragdoll-test.ts needs the shipped rigs and is the right home for the
 // solver, not for this).
 
+import { withoutOnceAnim, ONCE_KEYS } from "../shared/onceanim.js";
+
 // Mirror of server.ts's settledPose. Kept in sync by the assertions below —
 // if the server's version changes shape, these fail loudly rather than
 // silently testing a stale copy.
 function settledPose(pose: unknown): Record<string, unknown> | null {
   if (!pose) return null;
-  const { emote: _emote, mic: _mic, hear: _hear, ...still } = pose as Record<string, unknown>;
+  const { mic: _mic, hear: _hear, ...still } = withoutOnceAnim(pose as Record<string, unknown>);
   if (still.clip === "ragdoll") { still.clip = "idle"; delete still.pose; }
   return still;
 }
@@ -60,11 +62,12 @@ const ck = (n: string, got: unknown, want: unknown) => {
   ck("  ...without becoming a bone override", out.pose, undefined);
 }
 
-// ── a one-shot emote is a MOMENT, not a place ──────────────────────────────
+// ── a gesture is a MOMENT, not a place ──────────────────────────────
 {
-  const waving = { clip: "idle", emote: "wave", p: [0, 0, 0] };
+  const waving = { clip: "idle", anim: "wave", p: [0, 0, 0] };
   const out = settledPose(waving)!;
-  ck("an emote does not persist (a wave would become a tic)", out.emote, undefined);
+  ck("a gesture (pose.anim) does not persist (a wave would become a tic)", out.anim, undefined);
+  ck("  ...nor under its pre-release key", ONCE_KEYS[1] in settledPose({ clip: "idle", [ONCE_KEYS[1]]: "wave", p: [0, 0, 0] })!, false);
   ck("  ...the underlying clip does", out.clip, "idle");
 }
 
@@ -79,12 +82,12 @@ const ck = (n: string, got: unknown, want: unknown) => {
   ck("  ...the body's size and plate lift do", [out.scale, out.plateY], [1.5, 0.3]);
 }
 
-// ── a ragdoll mid-emote: both rules apply, neither leaks ───────────────────
+// ── a ragdoll mid-gesture: both rules apply, neither leaks ───────────────────
 {
-  const knockedMidWave = { clip: "ragdoll", emote: "wave", pose: { hips: [0, 0, 0, 1] }, p: [5, 1.2, 5] };
+  const knockedMidWave = { clip: "ragdoll", anim: "wave", pose: { hips: [0, 0, 0, 1] }, p: [5, 1.2, 5] };
   const out = settledPose(knockedMidWave)!;
   ck("knocked over mid-wave: clip settles", out.clip, "idle");
-  ck("  ...emote dropped", out.emote, undefined);
+  ck("  ...gesture dropped", out.anim, undefined);
   ck("  ...tumble bones dropped", out.pose, undefined);
 }
 
@@ -118,6 +121,8 @@ const ck = (n: string, got: unknown, want: unknown) => {
      /still\.clip === "ragdoll".*still\.clip = "idle".*delete still\.pose/s.test(src), true);
   ck("the real function drops mic and hear",
      /function settledPose\([^]*?const \{[^}]*\bmic: _\w+[^}]*\bhear: _\w+[^}]*\.\.\.still \}/.test(src), true);
+  ck("the real function drops the once anim (pose.anim, either key)",
+     /function settledPose\([^]*?= withoutOnceAnim\(pose/.test(src), true);
   ck("the JOIN SNAPSHOT uses it (this is the fix; reverting it fails here)",
      /pose: settledPose\(o\.lastPose\)/.test(src), true);
   ck("no raw lastPose ships to other clients",
