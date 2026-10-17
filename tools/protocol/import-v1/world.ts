@@ -53,10 +53,11 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey }
     if (e?.verb === "grant" && typeof a.id === "string" && typeof a.sub === "string") who(a.id, { sub: a.sub });
     if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*" && typeof v?.sub === "string") who(k, { sub: v.sub }); }
   const cust = custodyAt(custodyFileIn(path.dirname(destDir)));
-  // models by content address (review 10-07 H3): the original bytes on this host, hashed; recorded so this server resolves them
+  // a model's bytes (R 10-17: the path is the reference; this is model-hash beside it): the original bytes on this host, hashed;
+  // recorded so this server answers /eido/sha256/<hex> for them
   const addressed = new Map<string, string>();
-  const content = (p: string) => { const h = contentAddressOf(p); if (!h) return null; addressed.set(h, p); if (!storeNameMatches(p)) renamedBlobs.push(p); return `eido:sha256/${h}`; };
-  const renamedBlobs: string[] = [];   // store blobs whose bytes no longer hash to their name: addressed by what's here
+  const content = (p: string) => { const h = contentAddressOf(p); if (!h) return null; addressed.set(h, p); if (!storeNameMatches(p)) renamedBlobs.push(p); return `sha256:${h}`; };
+  const renamedBlobs: string[] = [];   // store blobs whose bytes no longer hash to their name: hashed by what's here
   if (founderKey !== undefined && !keyOk(founderKey)) throw new Error(`${founderKey}: not a governance key (ed25519:<base64url of 32 bytes>, PROTOCOL §13)`);
   const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, namespace: path.basename(destDir), content, ...(founderKey ? { founder: founderKey } : {}) });
   if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);

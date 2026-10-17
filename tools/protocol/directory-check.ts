@@ -325,8 +325,9 @@ const file = path.join(tmp, "worlds", ".directory.json");
     const named = people.filter((e: any) => !["system", "world", "sim"].includes(e.actor) && !isMinted(e.actor)).map((e: any) => e.actor);
     const launchBy = t.lines.filter((e: any) => e.kind === "sim" && e.verb === "launch").every((e: any) => e.actor === t.lines[e.cause]?.actor);
     out.identities = [!named.length && launchBy && people.some((e: any) => isMinted(e.actor) && t.dir.entry(e.actor)), { named: [...new Set(named)].slice(0, 5), launchBy }];
-    // content addresses: every model whose bytes this host has is eido:sha256/<its bytes>; a collider's box rides as physics.shape
-    const wrongModel = Object.entries<any>(st.entities).filter(([id, e]) => typeof e.lib === "string" && addresses[e.lib] && E[TV1.enc(id)]?.c.model !== `eido:sha256/${addresses[e.lib]}`).map(([id]) => id);
+    // R 10-17: every model is its library path, with model-hash sha256:<its bytes> beside it where this host has them; a
+    // collider's box rides as physics.shape
+    const wrongModel = Object.entries<any>(st.entities).filter(([id, e]) => typeof e.lib === "string" && (E[TV1.enc(id)]?.c.model !== e.lib || (addresses[e.lib] && E[TV1.enc(id)]?.c["model-hash"] !== `sha256:${addresses[e.lib]}`))).map(([id]) => id);
     out.addresses = [Object.keys(addresses).length > 0 && !wrongModel.length, wrongModel.slice(0, 5)];
     const shapes = sim.boxes ? Object.entries<any>(st.entities).filter(([, e]) => typeof e.lib === "string" && sim.boxes[e.lib]) : [];
     const noShape = shapes.filter(([id, e]) => JSON.stringify(E[TV1.enc(id)]?.c.physics?.shape) !== JSON.stringify(sim.boxes[e.lib])).map(([id]) => id);
@@ -352,7 +353,7 @@ const file = path.join(tmp, "worlds", ".directory.json");
   for (const name of fs.readdirSync(FIX).filter((d) => fs.existsSync(path.join(FIX, d, "log.jsonl"))).sort()) {
     const L = parseLog(path.join(FIX, name, "log.jsonl")); const lib = fixtureLib();
     const t = importer(name, L, { lib });
-    report("EP1", `${name}: a physics-epoch log translates through the importer, and every body rests where her sim rests (founder, identities, content addresses, physics.shape; the authority's sim layer re-checks every rest)`, facts(t, L, { addresses: addrOf(lib), launches: L.filter((e: any) => e.verb === "punt").length }));
+    report("EP1", `${name}: a physics-epoch log translates through the importer, and every body rests where her sim rests (founder, identities, model paths and their hashes, physics.shape; the authority's sim layer re-checks every rest)`, facts(t, L, { addresses: addrOf(lib), launches: L.filter((e: any) => e.verb === "punt").length }));
   }
 
   // EP2: LEAVING the epoch (PROTOCOL_v2 §3): the sequencer releases every live body with result-shaped `place` entries

@@ -107,14 +107,17 @@ export const TRANSLATOR = "eidoverse/translate-v1@12";
 // below; shared/protocol/shaperepair.js, the same rules the server's first load applies to a stored v4 world), and a
 // parent carries no order. Output differs on any log with a motion, a collider or a mount.
 // @12, wave 2 (the shape audit's render-media-env family): the same repair's render rules: a light carries decay 1.7 (the
-// rig's old falloff) and daytime (was day), no shadows; a particle Essential is its pinned address; @world's sky, terrain
+// rig's old falloff) and daytime (was day), no shadows; @world's sky, terrain
 // (+ the water component) and grass in today's spelling. Output differs on any log with a light, particles, sky, terrain
 // or grass.
+// @12 (R 10-17): a model stays its library path, with model-hash sha256:<64 hex> beside it when the caller's resolver knows the
+// bytes (was @8's eido:sha256/<64 hex> in its place); a particle Essential keeps its name and a grass preset its name (the
+// wave-2 render notes above wrote the address and the strokes). Output differs on any log with a model, particles or grass.
 // @12, wave 2 (the shape audit's attach-interact family): a lock is written in its one spelling, {rank: 'builder'} (a v1
 // lock: true, and a guard merged into it, were true). Sockets stay the v1 map with each seat's body block: the server's
 // lift (authority/sockets.js) makes them socket children with a station at first load, as for any older v4 log.
 // @10 (2026-10-08): a dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) is translated with her sim run beside the
-// v1 fold (what translate-d3 did on its own, now on this one path with its identities, content addresses, founder key and
+// v1 fold (what translate-d3 did on its own, now on this one path with its identities, model hashes, founder key and
 // namespace): a punt is a logged launch with its exact stamped state, every rest a logged result the authority's sim layer
 // re-checks (design 20, P5/L3), the epoch is @world physics-engine and each collider's stamped box its physics.shape.
 // Before this, @9 kept a punt only as an imported act and left the thing where it was punted FROM. A log with no epoch
@@ -220,10 +223,11 @@ function namespaceUnknown(c, ns) {
     const to = `${ns}/${k}`; if (to in c) continue;   // never overwrite (a world that already used both spellings keeps the bare one)
     c[to] = c[k]; delete c[k]; }
 }
-// @8 (review 10-07 H3, R's ruling): a model is named by its content address, eido:sha256/<64 hex> (spec/EIDO-URIS.md), when
-// the caller can say what the bytes are (`content(path)` → the address, or null): a host path would bake this host's library
-// layout into the permanent history and into every fork. A path the resolver can't place stays as it was (and is listed);
-// the imported act keeps the path as it was written either way.
+// @12 (R 10-17, binding: "definitely serve path again alongside hash"; this replaces @8's address): a model is its LIBRARY
+// PATH, as v1 wrote it (the portable reference: the world loads anywhere the library exists). When the caller can say what
+// the bytes are (`content(path)` → sha256:<64 hex>, or null) the hash rides beside it as model-hash; a path it can't hash
+// carries none (and is listed). The imported act keeps the path as it was written either way.
+const hashOf = (a) => { if (typeof a !== "string") return null; const m = /^(?:sha256:|eido:sha256\/)([0-9a-f]{64})$/.exec(a); return m ? `sha256:${m[1]}` : null; };
 export function project(st, seen = null, who = null, ns = NAMESPACE, content = null) {
   const out = {};
   const person = (k, v) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? asSub(k) }) : enc(k));
@@ -233,7 +237,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     const t = { pos: e.pos ?? [0, 0, 0], q: Array.isArray(e.q) ? e.q : yawQ(e.yaw ?? 0), scale: typeof e.scale === "number" ? [e.scale, e.scale, e.scale] : (e.scale ?? [1, 1, 1]) };
     const ride = rideOf(st, e); if (ride) { t.pos = ride.pos; t.q = ride.q; }
     c.transform = t;
-    if (e.lib !== undefined) c.model = content && typeof e.lib === "string" ? content(e.lib) ?? e.lib : e.lib;
+    if (e.lib !== undefined) { c.model = e.lib; const h = content && typeof e.lib === "string" ? hashOf(content(e.lib)) : null; if (h) c["model-hash"] = h; }
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
     for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") {
       // a node's motion (v1 motion:<node name>): the name is data, motion:<partSlot(name)> {node: name} (@12, review r7 F1)
@@ -273,7 +277,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   for (const [k, v] of Object.entries(st)) if (!known.has(k) && v != null) w[keyed("imported", k)] = v;
   // @12, wave 2 (render-media-env): the world's look in today's spelling, as the load repairs a stored one (repairWorld: the sky's
   // clock as tz, radians, transition; the terrain's int colours and the sim's defaults, its water as the water component;
-  // grass in the flora spelling, a preset as its strokes)
+  // grass in the flora spelling, a preset kept by its name)
   out["@world"] = repairWorld(w).c; // @world is live from genesis (§2.3)
   for (const c of Object.values(out)) { splitUnknown(c); namespaceUnknown(c, ns); }
   return clone(out); // a copy: the old fold mutates some records in place (bstate), and aliasing would hide the change
@@ -340,7 +344,7 @@ export { unNegZero };
 
 export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace, content } = {}) {
   const ns = namespace === undefined ? NAMESPACE : namespaceOf(namespace);
-  const seenModels = new Map();   // path → its address (or null): each path resolved once, and counted
+  const seenModels = new Map();   // path → its hash (or null): each path hashed once, and counted
   const addr = content ? (p) => { if (!seenModels.has(p)) seenModels.set(p, content(p) ?? null); return seenModels.get(p); } : null;
   const v1 = v1Empty(); const v4 = v4Empty(); const out = [];
   const stats = { in: oldEntries.length, out: 0, change: 0, verbs: {}, ops: 0, divergences: 0, firstDivergence: null, renamed: 0, guards: 0, guardsLive: 0 };
@@ -428,7 +432,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     logRests(Math.max(clock(), ...Object.values(restTicks).map(tsAt)));
   }
   stats.out = out.length;
-  if (addr) { stats.modelsRewritten = [...seenModels.values()].filter(Boolean).length; stats.modelsKept = [...seenModels].filter(([, a]) => !a).map(([p]) => p); }
+  if (addr) { stats.modelsHashed = [...seenModels.values()].filter(Boolean).length; stats.modelsUnhashed = [...seenModels].filter(([, a]) => !a).map(([p]) => p); }
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
   return { out, stats, final: { v1: physical(v1, sim, recorded, project(v1, null, who, ns, addr), dynamic), translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
 }

@@ -14,7 +14,7 @@
 //      the snapshot put through the translator's own mapping table (translate-v1 `project`: lib→model, comp→flat
 //      components, yaw→q, light fields, door→openable, guard→lock, motion rpm, sockets' v4 spelling, imported:<k>, the
 //      namespace), with the translated world's identities (read back from its directory: a name → the id it was given)
-//      and content addresses (computed here from the same host files) in place of names and paths;
+//      and model hashes (computed here from the same host files) beside the paths;
 //   B. the SERVER's view: the same world opened as the server opens it (server/livehost.ts openLive with the engine's
 //      catalogue), then lifted as server/worldlog.ts lifts it at first load (authority.js liftWorld: a stored `sockets`
 //      map becomes socket child entities, a mounted thing's parent names the child, its pose is re-expressed in the
@@ -28,7 +28,7 @@
 // usage: bun tools/protocol/import-v1/snapshot-oracle.ts [<world dir> …]
 //   no args: ORACLE_WORLDS=<dir>[:<dir>…] (a world dir, or a dir of worlds), else PROTOCOL_WORLDS, else the checkout's parent
 //   (walked like the sweep), each distinct complete snapshot once. Exit 0 only when every compared world has 0 differences.
-//   OPT_DIR=<serving checkout>/assets/opt so store models get the content address they get on this host (read only).
+//   OPT_DIR=<serving checkout>/assets/opt so store models get the model-hash they get on this host (read only).
 //   ORACLE_SCRATCH=<dir> where the scratch worlds go (default $PROTOCOL_SCRATCH or the OS temp dir); ORACLE_KEEP=1 keeps it.
 // @ts-nocheck
 import fs from "node:fs";
@@ -39,7 +39,7 @@ import crypto from "node:crypto";
 const ENGINE = path.resolve(import.meta.dir, "../../..");
 // the server modules read WORLDS_DIR and OPT_DIR at import: a scratch for both before any of them loads. OPT_DIR holds
 // the model index the translator writes (eido-index.json); the store's blobs are read through a link to the real store
-// (read only), so a store model gets the same content address it gets on this host
+// (read only), so a store model gets the same model-hash it gets on this host
 const SCRATCH = fs.mkdtempSync(path.join(process.env.ORACLE_SCRATCH ?? process.env.PROTOCOL_SCRATCH ?? os.tmpdir(), "oracle-"));
 if (!process.env.ORACLE_KEEP) process.on("exit", () => fs.rmSync(SCRATCH, { recursive: true, force: true }));
 const realOpt = path.resolve(process.env.OPT_DIR ?? path.join(ENGINE, "assets", "opt"));
@@ -63,7 +63,7 @@ const { liftWorld } = await import("../../../shared/protocol/authority.js");
 const { legacyHosts, liftHostOps, isSocketC } = await import("../../../shared/protocol/authority/sockets.js");
 const { socketQ } = await import("../../../shared/components.js");
 const { shapeRepairOps, shapesMarked } = await import("../../../shared/protocol/shaperepair.js");
-const FA = await import("../../../shared/flora_args.js"), FP = await import("../../../shared/flora_presets.js");   // the grass reader's own mapping, for C
+const FA = await import("../../../shared/flora_args.js");   // the grass reader's own mapping, for C
 const { directoryFileIn } = await import("../../../server/keyfiles.ts");
 
 const TOL = 1e-9;
@@ -162,8 +162,8 @@ function liftPlain(P, ever, repair = true) {
 }
 
 /** C, independent of the translator's projection (so a bug in `project` itself, which side A shares, still shows): the
- *  fields the old engine's snapshot states plainly, read straight off it — every thing's id, its model (the content
- *  address of its lib on this host, else the lib), its pose (pos; q, else a yaw turn; scale, uniform) when it rides
+ *  fields the old engine's snapshot states plainly, read straight off it — every thing's id, its model (its lib as written)
+ *  and model-hash (the sha256 of that lib's bytes on this host, else none), its pose (pos; q, else a yaw turn; scale, uniform) when it rides
  *  nothing, and what it rides (parent.to, and the slot as parent.socket); the world's terrain and grass as they are (with
  *  any key v4's component doesn't define read from imported:<k> beside it, the translator's documented carry). */
 function coreCheck(snapState, newA, content) {
@@ -172,7 +172,9 @@ function coreCheck(snapState, newA, content) {
   for (const [id0, e] of Object.entries(snapState.entities ?? {})) {
     const id = enc(id0), c = newA[id];
     if (!c) { push(id, "(the thing)", "present", undefined); continue; }
-    if (e.lib !== undefined) { const want = (typeof e.lib === "string" && content(e.lib)) || e.lib; if (c.model !== want) push(id, "model", want, c.model); }
+    // R 10-17: the model is v1's path as written; its bytes' hash beside it where this host has them
+    if (e.lib !== undefined) { if (c.model !== e.lib) push(id, "model", e.lib, c.model);
+      const h = typeof e.lib === "string" ? content(e.lib) ?? undefined : undefined; if (c["model-hash"] !== h) push(id, "model-hash", h, c["model-hash"]); }
     else if (c.model !== undefined) push(id, "model", undefined, c.model);
     if (!e.parent) {
       const want = { pos: e.pos ?? [0, 0, 0], q: Array.isArray(e.q) ? e.q : yq(e.yaw ?? 0), scale: typeof e.scale === "number" ? [e.scale, e.scale, e.scale] : (e.scale ?? [1, 1, 1]) };
@@ -193,7 +195,7 @@ function coreCheck(snapState, newA, content) {
 // declared (translate-v1@12, the shape audit's render-media-env family), written here independently of shared/protocol/shaperepair.js:
 // a terrain's layer colours are ints, the sim's defaults (shared/terrainmath.js) are written where absent, and its water is
 // the world's water component (its colour an int); grass is read in the flora spelling (the grass READER's own mapping:
-// flora_args) with a preset as its strokes
+// flora_args), a preset kept by its name (R 10-17)
 function declaredGround(snap) {
   const isO = (v) => !!v && typeof v === "object" && !Array.isArray(v); const hx = (x) => (typeof x === "string" && /^#[0-9a-f]{6}$/i.test(x) ? parseInt(x.slice(1), 16) : x);
   const out = { terrain: snap.terrain ?? null, grass: snap.grass ?? null, water: null };
@@ -204,7 +206,6 @@ function declaredGround(snap) {
     out.terrain = t; }
   if (isO(out.grass)) { let g = out.grass;
     if (FA.isLegacyArgs(g)) { const m = FA.mapGrassArgs(g); g = { ...Object.fromEntries(Object.entries(g).filter(([k]) => !["bladeHeight", "spacing", "perCell", "colorTip", "windSpeed", "lean", "fade", "fadeStart", "fadeEnd", "fadeColor", "backlight", "color"].includes(k) && !(k in m))), ...m }; }
-    if (g.preset != null) { try { const strokes = FA.presetStrokes(g, FP.FLORA_PRESETS); const { preset: _p, ...r } = g; g = { ...r, strokes }; } catch { /* an unknown preset stays */ } }
     out.grass = g; }
   return out;
 }
@@ -229,7 +230,7 @@ export function oracleWorld(dir) {
   const newA = v4comps(st);
   // the snapshot through the translator's own mapping, with the translated world's people and model addresses
   const { who, unresolved, people } = whoFrom(worldsDir);
-  const content = (p) => { const h = contentAddressOf(p); return h ? `eido:sha256/${h}` : null; };
+  const content = (p) => { const h = contentAddressOf(p); return h ? `sha256:${h}` : null; };
   const snapState = jclone(c.snap.state);
   const oldA = project(snapState, null, who, namespaceOf(name), content);
   const A = compareWorlds(oldA, newA);

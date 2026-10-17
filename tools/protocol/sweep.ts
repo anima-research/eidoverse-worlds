@@ -28,9 +28,7 @@ import { simFold, EIDOSIM_BUILD, EIDOSIM_FILES, DEFAULT_ENGINE } from "../../sha
 import { emptyState as v1Empty, foldEntry } from "./import-v1/fold.js";
 import * as eidosim from "./import-v1/eidosim-v1.js";   // HER engine (the first eidosim): what v1 logs mean
 import { localOf } from "../../shared/hierarchy.js";
-import { ESSENTIAL_ADDRESSES } from "../../shared/particle_effects.js";   // data: the pinned address of each Essential
-import { mapGrassArgs, presetStrokes, isLegacyArgs } from "../../shared/flora_args.js";   // the grass READER's own mapping (not the repair)
-import { FLORA_PRESETS } from "../../shared/flora_presets.js";
+import { mapGrassArgs, isLegacyArgs } from "../../shared/flora_args.js";   // the grass READER's own mapping (not the repair)
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => { if (ok) pass++; else { fail++; console.log(`  FAIL ${name}${detail ? ` — ${detail}` : ""}`); } };
@@ -143,9 +141,9 @@ function oldNorm(st: any, phys: any = null) {
       if (isB(C.motion) && C.motion.type === "pendulum" && !isB(C.pivot)) C.pivot = { pos: [0, 2, 0] };
       if (isB(C.collider) && C.collider.shape === "exact") C.collider = { ...C.collider, shape: "mesh" };
       // declared (translate-v1@12, the shape audit's render-media-env family): a light falls off as the rig's old decay 1.7
-      // and says daytime (v1's day: false = full), no shadows; a particle Essential is its pinned address
+      // and says daytime (v1's day: false = full), no shadows; a particle Essential keeps its name (R 10-17)
       if (isB(C.light)) { const { day, shadows: _sh, ...L } = C.light; C.light = { ...L, decay: L.decay ?? 1.7, daytime: L.daytime ?? (day === false ? "full" : "dim") }; }
-      if (isB(C.particles) && typeof C.particles.preset === "string" && Object.hasOwn(ESSENTIAL_ADDRESSES, C.particles.preset)) C.particles = { ...C.particles, preset: (ESSENTIAL_ADDRESSES as any)[C.particles.preset] }; }
+    }
     if (phys?.restAt[id]) n.pos = phys.restAt[id].slice();
     if (phys?.sim.boxes && typeof e0.lib === "string" && phys.sim.boxes[e0.lib]) n.comp = { ...(n.comp ?? {}), physics: { kind: phys.dynamic?.(id) ? "dynamic" : "static", shape: phys.sim.boxes[e0.lib] } };   // @11: what the log punts (this incarnation) is dynamic, from its start (R 10-08)
     if (n.comp && !Object.keys(n.comp).length) delete n.comp;
@@ -164,7 +162,7 @@ function oldNorm(st: any, phys: any = null) {
   // the sky's clock is a tz (clock 'real' + its parked clock as hours/rate/ts; no clock, no tz), azimuth radians, transition
   // and the forecast's dwell/transition, sun/fill/world gone, the registry's defaults written; the terrain's layer colours
   // ints, the sim's defaults (terrainmath.js) written, its water the water component; grass through the reader's mapping,
-  // a preset as its strokes
+  // a preset kept by its name (R 10-17)
   const isO = (v: any) => !!v && typeof v === "object" && !Array.isArray(v);
   if (isO(world.sky)) { const k: any = { ...world.sky };
     if (k.clock === "real") { k.tz = typeof k.tz === "string" && k.tz ? k.tz : "America/Los_Angeles"; const d = k.dormantRated; if (isO(d)) { for (const f of ["hours", "rate", "ts"]) if (Number.isFinite(d[f])) k[f] = d[f]; } }
@@ -181,7 +179,6 @@ function oldNorm(st: any, phys: any = null) {
     if ("water" in world.terrain) { const { water, ...rest } = world.terrain; world.terrain = rest; if (isO(water)) world.water = Object.fromEntries(Object.entries<any>(water).map(([k, v]) => [k, k === "color" ? hx(v) : v])); } }
   if (isO(world.grass)) { let g: any = world.grass;
     if (isLegacyArgs(g)) { const m = mapGrassArgs(g); g = { ...Object.fromEntries(Object.entries<any>(g).filter(([k]) => !["bladeHeight", "spacing", "perCell", "colorTip", "windSpeed", "lean", "fade", "fadeStart", "fadeEnd", "fadeColor", "backlight", "color"].includes(k) && !(k in m))), ...m }; }
-    if (g.preset != null) { try { const strokes = presetStrokes(g, FLORA_PRESETS); const { preset: _p, ...r } = g; g = { ...r, strokes }; } catch { /* an unknown preset stays */ } }
     world.grass = g; }
   // @11 (declared): her own law becomes today's eidosim; an engine she didn't carry keeps its name (nothing flies); an epoch
   // her sim refused never started, so it stays a record
