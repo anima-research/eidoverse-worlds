@@ -180,8 +180,8 @@ A `change` entry's `verb` and `body` are one of:
   (a key written by anyone else in between is a new life, never merged with
   the old). A verifier re-running the gate re-runs it on the **unmarked ops
   only**. A tool that rewrites a batch's `ops` remaps `followUps` with
-  them. (This field was added to the batch body before v4's release, at
-  minor 0: see §10.)
+  them. (This field was added to the batch body before this protocol's
+  release, at minor 0: see §10.)
 - A shape or grammar error anywhere in an entry (an unknown field, a bad id
   or component name, a nested batch) makes the **whole entry** malformed. A
   semantic no-op (a missing entity, an absent component) skips only that
@@ -1011,8 +1011,8 @@ the thing's (or part's) own frame before scale; `motion.center` and
   Changing them is a new `minor` (or a new `v`) in genesis; a reader that
   doesn't know a world's minor refuses the world rather than folding it to
   a different digest. One exception, before release: the batch body's
-  `followUps` (§3) was added to v4 **at minor 0**, because v4 had not been
-  released. Every v4 log written so far was written by the reference
+  `followUps` (§3) was added to this protocol **at minor 0**, because it had
+  not been released. Every such log written so far was written by the reference
   authority on its own branch, and every one folds to the same digest with
   or without the field (the fold applies marked ops like any op); the only
   readers that refuse it are that branch's own earlier builds. Bumping to

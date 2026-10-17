@@ -36,7 +36,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["creatorOf: a restore doesn't step over its delete", "shared/protocol/authority/rights.js", "if (o.verb === \"delete\" && fu.has(k) && restored && comp !== undefined", "if (false && comp !== undefined", ["H2"]],
   ["lastSetterOf: a restore doesn't step over its delete", "shared/protocol/authority/rights.js", "if (restored) { restored = false; continue; } }   // r9 H1, r10 M2", "}", ["H2"]],
   ["creatorAt: a restore doesn't step over its delete", "shared/protocol/scriptaudit.js", "if (o.verb === \"delete\" && fu.has(k) && restored && (o.comp === comp || o.comp === undefined)) { restored = false; continue; }   // reversed", "if (false) { continue; }   // reversed", ["H2"]],
-  ["sponsorAt: a restore doesn't step over its delete", "shared/protocol/scriptaudit.js", "{ restored = false; continue; }   // r10 M2", "{ continue; }   // r10 M2", ["H2"]],
+  ["sponsorAt: a restore doesn't step over its delete", "shared/protocol/scriptaudit.js", "{ restored = false; continue; }   // r10 M2", "{ restored = false; }   // r10 M2", ["H2"]],
   ["the stand tile held does nothing", "client/lib/localbody.js", "if ((keys.has('KeyX') || escapeTile) && !mayLeave(body, 'menu'))", "if (keys.has('KeyX') && !mayLeave(body, 'menu'))", ["E1"]],
   ["creatorOf merges a new life", "shared/protocol/authority/rights.js", "if (o.verb === \"set\" && o.comp === comp) restored = false;", "", ["H3"]],
   ["the second stand-in is person-shaped", "shared/protocol/scriptaudit.js", "export const ARRIVAL_STAND_IN_2 = \"zq-stand-in\";", "export const ARRIVAL_STAND_IN_2 = \"u-\" + \"b\".repeat(20);", ["A1", "A2"]],
@@ -310,7 +310,7 @@ cases.push(
       const md = PROTO(); const s3 = section(md, /\n## 3\. /); const s10 = section(md, /\n## 10\. /); const vh = md.slice(md.indexOf("## Version history"));
       return { row: /\| `batch` \| `\{ops: \[[^`]*\], followUps\?: \[i, …\]\}`/.test(s3), shape: /non-empty, strictly ascending list of integer indices/.test(s3) && /`batch-followups`/.test(s3) && /whole entry\*\* malformed/.test(s3),
         inv: /without the asker's rights or locks/.test(s3) && /applies them like\s+any op/.test(s3) && /\*\*authorship\*\*/.test(s3) && /steps over\s+the marked `delete` it reverses/.test(s3) && /\*\*unmarked ops\s+only\*\*/.test(s3) && /remaps `followUps`/.test(s3),
-        minor: /`followUps` \(§3\) was added to v4 \*\*at minor 0\*\*/.test(s10) && /minor 0 gained the batch body's `followUps`/.test(vh) }; },
+        minor: /`followUps` \(§3\) was added to this protocol \*\*at minor 0\*\*/.test(s10) && /minor 0 gained the batch body's `followUps`/.test(vh) }; },
     good: (o) => o.row && o.shape && o.inv && o.minor },
   { id: "X2", what: "(scars M3; claims R2, R3) §7: the gate's follow-up exception (named in followUps), and one table of the authority's consequences (clears and set-down: followUps; resettle: the system's own act; stamps: the asker's); §4's deletion names the clears and sets down what rested", run() {
       const md = PROTO(); const s7 = section(md, /\n## 7\. /); const s4 = section(md, /\n## 4\. /);

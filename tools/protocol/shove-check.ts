@@ -31,7 +31,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["along the ground", "protocol/authority.js", "if (vh < 1e-6 || vy < 0 || vy > SHOVE.lift * vh + 1e-9) refuse(\"shape\"", "if (false) refuse(\"shape\"", ["S9"]],
   ["a shove carries v", "protocol/authority.js", "refuse(\"shape\", \"a shove carries v", "(\"shape\", \"a shove carries v", ["S9"]],
   ["occupied: a seat", "protocol/authority.js", "if (who !== actor && s && fam.has(s.to)) return { who, how: \"sits on\" };", "if (false) return { who, how: \"sits on\" };", ["S12", "S21"]],
-  ["occupied: the seat is kept", "protocol/authority.js", "if (probe.attach?.to) setSeat(w, actor, probe.attach.to);", "", ["S12", "S21", "S22"]],
+  ["occupied: the seat is kept", "protocol/authority.js", "if (probe.attach?.to) setSeat(w, actor, probe.attach.to, probe.near);", "", ["S12", "S21", "S22"]],
   ["occupied: a seat is left by walking off", "protocol/authority.js", "if (Math.hypot(to[0] - p[0], to[2] - p[2]) > 1) clearSeat(w, actor);", "", ["S12", "S21"]],
   ["occupied: one body per socket", "protocol/authority.js", "{ const t = taken(pick); if (t) refuse(\"occupied\"", "{ const t = null; if (t) refuse(\"occupied\"", ["S22"]],
   ["occupied: the free socket is picked", "protocol/authority.js", "ok.find((x) => !taken(x)) ?? ok[0]", "ok[0]", ["S22"]],
