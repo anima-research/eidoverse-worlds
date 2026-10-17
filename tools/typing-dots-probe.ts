@@ -4,7 +4,8 @@
 //   bun tools/typing-dots-probe.ts
 //
 // Needs the door's sibling built (../mcpl-core-ts, which the door imports: mcpl/net-server.ts) and a Chromium
-// that tools/probe-harness.mjs can find. Two runs took 163 s and 187 s on a machine at a load of 70 to 96.
+// that tools/probe-harness.mjs can find. A run takes two to three minutes on a loaded machine: 103 to 177 s at
+// loads of 27 to 92.
 //
 // A scratch world and the door are children of this run, each proved ours by a per-run nonce it echoes
 // (the ownership pattern of tools/door-cap-gate-live-test.mjs). A raw MCPL host stands in for
@@ -21,19 +22,30 @@
 // frame the page received, and a requestAnimationFrame loop logs each frame the page rendered. So every update
 // must draw the pill exactly when the window is open at the update's own `now` and no bubble shows; each
 // signal must open a window ending 4 s after it; the page must receive every typing frame the world sent; and
-// the client must apply each one after the one before it and before the page renders again. A loaded page
-// lets its socket's messages queue while it renders, so a deadline counted from this side's own receipt of a
-// frame would fail a working client; one counted from the page's own receipt doesn't. With no state on the
-// frames, the live-mic pill, which the client keeps up over a bubble, can't arise here, and the first rule
-// relies on that. Where a wait compares the page's times with this side's, both are Date.now(), the machine's
-// one wall clock.
+// the client must apply each one after the one before it and before the page renders again. A loaded page lets
+// its socket's messages queue while it renders, so a deadline counted from this side's own receipt of a frame
+// would fail a working client; one counted from the page's own receipt doesn't. With no state on the frames,
+// the live-mic pill, which the client keeps up over a bubble, can't arise here, and the first rule relies on
+// that. The agent's plate is never hidden on the viewer's page, since hideLabel and firstPersonView are set
+// only on the viewer's own avatar (client/lib/xr.js selfFirstPerson, client/lib/controller.js), so an update
+// that hid it would be a defect, and the first rule counts it as one. The client decides the pill only at an
+// update, and updates a remote avatar only on its level-of-detail ticks, further apart the further it is and
+// the more loaded the page (client/lib/remotes.js), so between updates the pill stays as the last one left it:
+// the probe judges each decision, and the run prints how far apart they came. Where a wait compares the page's
+// times with this side's, both are Date.now(), the machine's one wall clock.
 //
-// The raw socket judges the door's contract, what the world broadcasts, by this side's clock. A heartbeat
-// records every gap between its ticks past their 100 ms, and each stamp is allowed only the stall that ended
-// at it, the one its frame waited in: a stall that ended before the frame arrived delayed nothing.
+// The raw socket judges the door's contract, what the world broadcasts, by this side's clock, as a viewer
+// would see it. So only this side's own stalls are excused, since they delay a stamp and not the dots: a door
+// or world slowed past a bound's margin fails it, and the run prints the machine's load. A heartbeat records
+// every gap between its ticks past their 100 ms. A frame that arrives while this side is stalled is read in
+// the same backlog as the late tick that ends the stall, so a stamp is allowed the stall whose late tick ran
+// within 20 ms of it, and a stall that ended earlier delayed nothing. This side can't tell when in a stall a
+// frame arrived, so it allows the whole stall, erring toward the door by at most that stall; a step between
+// two frames is judged by the shortest gap their stamps allow, for the same reason. The times this side sends
+// at are read after each send, so a stall before a send delays its time with it.
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { loadavg, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import { launchBrowser } from "./probe-harness.mjs";
@@ -52,6 +64,7 @@ const check = (name: string, ok: boolean, extra = "") => {
   ok ? pass++ : fail++;
 };
 
+const load0 = loadavg()[0]!;
 const NONCE = `dots${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
 const WPORT = await freePort(), MPORT = await freePort();
 const scratch = mkdtempSync(join(tmpdir(), "eido-dots-"));
@@ -91,10 +104,11 @@ const door = child("door", ["mcpl/net-server.ts"], { MCPL_PORT: String(MPORT), W
 let hbLast = Date.now();
 const hb: Array<[number, number]> = [];
 const heartbeat = setInterval(() => { const now = Date.now(); if (now - hbLast > 100) hb.push([now, now - hbLast - 100]); hbLast = now; }, 100);
-// The stall a stamp at `b` waited in. A frame that arrives while this side is stalled is read when the stall
-// ends, in the same backlog as the late tick that ended it: so that tick began late before `b` and ended
-// within a tick of it. A stall that ended before the frame arrived delayed nothing, so it isn't allowed.
-const waitedIn = (b: number) => Math.max(0, ...hb.filter(([end, excess]) => end - excess <= b && b <= end + 100).map(([, excess]) => excess));
+// The stall a stamp at `b` was read in. A frame that arrives while this side is stalled is read when the stall
+// ends, in the same backlog as the late tick that ends it, within a few milliseconds of it (Bun 1.4.3 read 94
+// held frames from 0.3 ms before that tick to 2.3 ms after it, stalled by a busy loop or by SIGSTOP): so the
+// tick ran within 20 ms of `b`. A stall that ended earlier delayed nothing, so it isn't allowed.
+const waitedIn = (b: number) => Math.max(0, ...hb.filter(([end]) => Math.abs(b - end) <= 20).map(([, excess]) => excess));
 let browser: { close(): Promise<void> } | null = null;
 try {
   const launched = await launchBrowser();
@@ -162,15 +176,17 @@ try {
   const say = (text: string) => rpc({ jsonrpc: "2.0", id: nextId++, method: "channels/publish",
     params: { channelId: "world:commons", content: [{ type: "text", text }] } });
   const walk = (x: number) => { const id = nextId++; rpc({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "walk_to", arguments: { x, z: 0 } } }); return id; };
-  // Each start this side sends for this world, by its clock; nextStart() resolves on the next one.
+  // Each start this side sends for this world, by its clock, read once it's sent; nextStart() resolves on the
+  // next one.
   const starts: number[] = [];
   let onStart: (() => void) | null = null;
-  const sendStart = () => { const at = Date.now(); starts.push(at); typing("start"); onStart?.(); return at; };
+  const sendStart = () => { typing("start"); const at = Date.now(); starts.push(at); onStart?.(); return at; };
   const nextStart = () => new Promise<void>((res) => { onStart = () => { onStart = null; res(); }; });
 
   await pg.waitForFunction(() => !!(globalThis as any).EW?.remotes?.get("claude")?.avatar?.label, null, { timeout: 90000 });
-  // The page's log (see the header), in one sequence. A replaced avatar, or a replaced socket, is wrapped or
-  // counted anew.
+  // The page's log (see the header), in one sequence. A replaced avatar is wrapped, and a replaced socket
+  // listened to, at the next look 100 ms on, so a frame in between would be logged on one side only. In the run
+  // the page keeps one socket and the agent one avatar throughout, and the receipt checks' messages count both.
   await pg.evaluate(() => {
     const g = globalThis as any;
     g.__log = { seq: 0, signals: [] as unknown[], updates: [] as unknown[], receipts: [] as unknown[], renders: [] as number[], avatars: 0, sockets: 0 };
@@ -196,9 +212,10 @@ try {
         return r;
       };
     };
-    // Each typing frame for the agent the page's socket received. The client sets its socket's onmessage when
-    // it opens it (client/lib/net.js), so this listener, added later, runs after the client's handler, in the
-    // same task, and the client applies a typing frame synchronously in its handler.
+    // Each typing frame for the agent the page's socket received. The client applies a typing frame
+    // synchronously in its socket's onmessage (client/lib/net.js), so this listener logs it in the same task.
+    // That onmessage was set when the socket opened (by client/index.html's boot script for its early socket,
+    // which net.js reassigns, keeping its place), so this listener, added later, runs just after it.
     const listen = (sock: any) => sock?.addEventListener("message", (ev: MessageEvent) => {
       if (typeof ev.data !== "string" || !ev.data.includes('"typing"')) return;
       let m: any; try { m = JSON.parse(ev.data); } catch { return; }
@@ -266,25 +283,30 @@ try {
   // The speech goes 300 ms after a start, so the host's next start is about 6.7 s after it: long enough to see
   // that the door's relay stopped at the speech, since it would otherwise signal every 2.5 s.
   await nextStart(); await sleep(300);
-  const sayAt = Date.now(); say(SAY);
+  say(SAY); const sayAt = Date.now();
   const bubbleShown = await pollPage((u) => u.bubble, 20000, sayAt);
   const bubbleGone = bubbleShown && await pollPage((u) => !u.bubble, 40000, bubbleShown.t);
-  const backUp = bubbleGone && await pollPage((u) => u.drawn, 15000, bubbleGone.t);
+  // The turn's starts keep the window open, so the update the bubble went at draws the dots already.
+  const backUp = bubbleGone && await pollPage((u) => u.drawn, 30000, bubbleGone.t - 1);
   await sleep(2000);
   await waitFor("the walk's reply", async () => responses.has(walkId), 30000).catch(() => {});
   const walkReply = responses.get(walkId);
   // The stop goes 300 ms after a start too, so a relay that ignored it would go on signalling for about 10 s.
   await nextStart(); await sleep(300);
   clearInterval(refresher);
-  const stopAt = Date.now(); typing("stop");
+  typing("stop"); const stopAt = Date.now();
   await shut("after the host's stop, the page's window runs out", T0);
 
-  // Another channel's typing raises no dots here, and a start for this world after it does.
-  const otherAt = Date.now(); typing("start", "world:elsewhere");
+  // Another channel's typing raises no dots here, and starts for this world after it do.
+  typing("start", "world:elsewhere"); const otherAt = Date.now();
   await pollPage(() => true, 25000, otherAt + 1000);
   const ctlAt = sendStart();
+  // Every 7 s, as a turn sends them, until the page draws the dots: one start keeps the relay signalling for
+  // about 10 s, and a loaded page can update the agent's avatar further apart than that.
+  const ctlRefresher = setInterval(sendStart, 7000);
   const ctl = await pollPage((u) => u.drawn, 25000, ctlAt);
-  const ctlStopAt = Date.now(); typing("stop");
+  clearInterval(ctlRefresher);
+  typing("stop"); const ctlStopAt = Date.now();
   await shut("…and after its stop, the window runs out again", ctlAt);
 
   // The host disconnects mid-walk, with no stop, 300 ms after a start: the door's relay ends with the
@@ -295,7 +317,7 @@ try {
   const goneFrom = sendStart();
   await sleep(300);
   const backPending = !responses.has(backWalk);
-  const closeAt = Date.now(); host.close();
+  host.close(); const closeAt = Date.now();
   // Its start opened one 4 s window. A page whose updates come further apart than that may never draw the
   // dots in it, which is the machine's pace, not a defect; that the page received and applied the start is
   // for the receipt checks, and that it drew nothing once the window shut is the update rule's.
@@ -318,7 +340,9 @@ try {
     turnFrames.length > 0 && sayEntry !== null && steps.every((s) => s.step - s.stall < 4000),
     sayEntry === null ? "the world logged no speech" : `${turnFrames.length} frames; the start to the first ${steps[0]?.step} ms, the last to the speech ${steps.at(-1)?.step} ms; the longest step less its stall ${slowest.step - slowest.stall} ms (${slowest.step} ms, ${slowest.stall} ms of it a stall)`);
   // By order and by this side's own send times: a frame that came after the speech's log entry, and before the
-  // host's next start was even sent, can only be the relay's. A stall here makes a frame look later, never sooner.
+  // host's next start was even sent, can only be the relay's. A stall makes a frame look later, never sooner, so
+  // at most it moves one past the next start's send; a relay that went on signals within 2.5 s of the speech
+  // (starts don't reset its phase), over 4 s before the next start.
   const nextAfterSay = starts.find((s) => s > sayAt) ?? null;
   const relayed = sayEntry === null || nextAfterSay === null ? null : frames.filter((f) => f.seq > sayEntry!.seq && f.t < nextAfterSay);
   check("the speech ends the door's relay: no typing frame comes after the world logs it and before the host's next start is sent",
@@ -380,7 +404,7 @@ try {
   const long = hb.filter(([, excess]) => excess > 250);
   // How often the update rule had a decision of the client's to judge.
   const gaps = U.slice(1).map((u, i) => u.t - U[i]!.t).sort((a, b) => a - b);
-  console.log(`  the page rendered ${log.renders.length} frames and updated the agent's avatar ${U.length} times, a median ${gaps[gaps.length >> 1] ?? "-"} ms and at most ${gaps.at(-1) ?? "-"} ms apart; this side's heartbeat ran late ${long.length} times by over 250 ms, the most by ${Math.max(0, ...hb.map(([, excess]) => excess))} ms`);
+  console.log(`  the page rendered ${log.renders.length} frames and updated the agent's avatar ${U.length} times, a median ${gaps[gaps.length >> 1] ?? "-"} ms and at most ${gaps.at(-1) ?? "-"} ms apart; this side's heartbeat ran late ${long.length} times by over 250 ms, the most by ${Math.max(0, ...hb.map(([, excess]) => excess))} ms; the machine's load average was ${load0.toFixed(1)} at the start and ${loadavg()[0]!.toFixed(1)} at the end`);
 } catch (e) {
   fail++;
   console.log(`FATAL ${(e as Error).message}\n${(e as Error).stack}`);
