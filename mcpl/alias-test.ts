@@ -17,7 +17,9 @@ ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ to: "?" })) === JSON.stringify({ to:
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, y: 3.3, z: 2, tolerance: 0.1 })) === JSON.stringify({ to: [1, 3.3, 2], tolerance: 0.1 }), "walk_to {x, y, z} → move {to: [x, y, z]} (y picks the floor)");
 ok(JSON.stringify(TOOL_ALIAS_ARGS.check_model({ id: "tower" })) === JSON.stringify({ id: "tower", check: true }), "check_model {id} → measure {id, check: true}");
 ok(JSON.stringify(TOOL_ALIAS_ARGS.spawn({ lib: "a.glb", x: 1, z: 2 })) === JSON.stringify({ model: "a.glb", at: [1, 2] }), "spawn {lib, x, z} → create {model, at: [x, z]}");
-ok(JSON.stringify(TOOL_ALIAS_ARGS.spawn({ lib: "a.glb", x: 1, y: 3, z: 2, yaw: 1.5, id: "k" })) === JSON.stringify({ model: "a.glb", id: "k", at: { pos: [1, 3, 2], yaw: 1.5 } }), "spawn with y, yaw and id → create {model, id, at: {pos, yaw}}");
+{ const t: any = TOOL_ALIAS_ARGS.spawn({ lib: "a.glb", x: 1, y: 3, z: 2, yaw: 1.5, id: "k" });   // writers never choose ids (R 10-17): the old id is the thing's label
+  ok(JSON.stringify(t) === JSON.stringify({ model: "a.glb", components: { label: "k" }, at: { pos: [1, 3, 2], yaw: 1.5 } }) && !("id" in t),
+    "spawn with y, yaw and id → create {model, components: {label: id}, at: {pos, yaw}}, no id sent (the authority mints it)", t); }
 { const t: any = TOOL_ALIAS_ARGS.spawn({ lib: "a.glb", x: 1, z: 2, yaw: 1.5 }); const f = t.place?.facing ?? [];
   ok(t.model === "a.glb" && t.at === undefined && JSON.stringify(t.place?.at) === "[1,2]" && Math.abs(Math.atan2(f[0] - 1, f[1] - 2) - 1.5) < 1e-9,
     "spawn {lib, x, z, yaw} → create {model, place: {at: [x, z], facing along yaw}} (seated on what's under it, as without yaw; review r2 F8)", t); }
