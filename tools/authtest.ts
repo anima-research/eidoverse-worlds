@@ -9,7 +9,7 @@
 // independently-produced bytes — format drift between the repos shows up as
 // failures here, not in production.
 import { generateKeyPairSync, createPublicKey, sign as cryptoSign } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { verifyToken } from "../server/aid1.ts";
@@ -74,9 +74,11 @@ const worldsDir = mkdtempSync(join(tmpdir(), "ew-authtest-"));
 // process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on Windows
 // whose pid dies immediately, orphaning the real sequencer on this port where
 // it poisons the next run.
+const optDir = mkdtempSync(join(tmpdir(), "authtest-opt-"));
 const proc = Bun.spawn([process.execPath, "run", join(import.meta.dir, "..", "server", "server.ts")], {
   env: {
-    ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: DOOR,
+    // a scratch store too: the upload legs write files, and they belong in the scratch dir, not assets/opt
+    ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, OPT_DIR: optDir, JOIN_TOKEN: DOOR,
     HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0",
   },
   stdout: "ignore", stderr: "inherit",
@@ -149,6 +151,33 @@ try {
   check("garbage aid1 at /upload → 401", (await up("aid1.not.real")).status === 401);
   check("spectate-only scope at /upload → 401",
     (await up(mint({ kind: "agent", scopes: ["worlds:spectate"], jti: undefined }))).status === 401);
+
+  // ---- /upload gate: a person signed in through the home node (session cookie, no door key) ----
+  const png = (() => {   // a 2×2 grayscale PNG — the smallest thing the heightmap door takes
+    const { PNG } = require("pngjs");
+    const p = new PNG({ width: 2, height: 2, colorType: 0, inputColorType: 0, inputHasAlpha: false });
+    p.data = Buffer.from([0, 85, 170, 255]);
+    return PNG.sync.write(p, { colorType: 0, inputColorType: 0, inputHasAlpha: false });
+  })();
+  const upAs = (headers: Record<string, string>, q = "") =>
+    fetch(`${HTTP}/upload?as=heightmap&name=h.png${q}`, { method: "POST", body: png, headers });
+  const hm1 = await upAs({ cookie: a1.cookie, "sec-fetch-site": "same-origin" }, "&by=someone-else");
+  const hm1body = hm1.status === 200 ? await hm1.json() : null;
+  check("signed-in session (same-origin) uploads a heightmap with no door key", hm1.status === 200 && typeof hm1body?.grid === "string",
+    `status=${hm1.status} ${hm1.status !== 200 ? await hm1.text() : ""}`);
+  // who it is credited to: the session's name, whatever ?by= claims — read back from the store's own
+  // provenance (an image's manifest entry; heightmaps keep none)
+  const im = await fetch(`${HTTP}/upload?as=image&name=pic.png&by=someone-else`, { method: "POST", body: png, headers: { cookie: a1.cookie, "sec-fetch-site": "same-origin" } });
+  const imPath = im.status === 200 ? (await im.json()).path as string : "";
+  const manifest = imPath ? JSON.parse(readFileSync(join(optDir, "store", "images", "manifest.json"), "utf8")) : {};
+  const entry = manifest[imPath.replace(/^store\/images\//, "").replace(/\.[a-z]+$/, "")];
+  check("...credited to the signed-in name, not the forged ?by=", entry?.by === "Guest One", `status=${im.status} by=${entry?.by}`);
+  check("...the cookie from another site's page is not taken", (await upAs({ cookie: a1.cookie, "sec-fetch-site": "same-site" })).status === 401);
+  check("...nor a cookie with no fetch-site at all", (await upAs({ cookie: a1.cookie })).status === 401);
+  check("no session, no key → 401", (await upAs({ "sec-fetch-site": "same-origin" })).status === 401);
+  const spectOnly = await auth(mint({ sub: "human:discord:7770001", name: "Watcher", scopes: ["worlds:spectate"] }));
+  check("a spectate-only login cannot upload", spectOnly.cookie.length > 0
+    && (await upAs({ cookie: spectOnly.cookie, "sec-fetch-site": "same-origin" })).status === 401);
 
   // ---- agent-door verifier (the same copy net-server.ts uses) ----
   const agentTok = mint({ sub: "agent:ferro@guest", kind: "agent", name: "Ferro", scopes: ["worlds:join"], jti: undefined });

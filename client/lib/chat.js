@@ -6,9 +6,10 @@
 // no highlight when one arrived, and no unread state. That asymmetry is the
 // same one build mode fixed, in a different place.
 //
-// The mention pattern here is deliberately IDENTICAL to mcpl/agent.ts's — what
-// a person sees highlighted must be exactly what pings the agent, or the two
-// species are reading different rooms.
+// The mention pattern here is a simpler one than the agent's (mcpl/mention.ts):
+// @name, or the bare name as a whole word. The agent's rule also handles a
+// qualified display name such as `Artie (kube)` and treats a hyphen as part
+// of a name, so a person's highlight and an agent's ping can differ.
 
 import { CONFIG, bus, colorFor, assignColors } from './base.js';
 // NOT importing xrpanels.js: it reaches the engine through domquad -> htmlmesh, and
@@ -16,6 +17,7 @@ import { CONFIG, bus, colorFor, assignColors } from './base.js';
 // EXPORTED instead and main.js registers it — the dependency inverted rather than made
 // conditional, so there is no lite-mode flag buried in a chat file.
 import { lastWhy } from './debuglog.js';
+import { initAttention, attentionWhisper, mountAttentionControls } from './attention.js';
 import { makeFrame } from './frames.js';
 import { fsvg } from './icons.js';
 import { requestHistory } from './net.js';
@@ -47,7 +49,8 @@ let historyIdx = -1;
 
 // ---------------------------------------------------------------- mentions
 
-/** Same rule as the agent side: @name, or the bare name as a whole word. */
+/** @name, or the bare name as a whole word: simpler than the agent side's
+ *  rule (mcpl/mention.ts), which handles qualified names. */
 export function mentionRx(name) {
   const safe = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(@${safe}\\b|\\b${safe}\\b)`, 'i');
@@ -123,20 +126,125 @@ const escapeRx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // the page before it, so nothing said is actually out of reach; it is just not
 // paid for up front.
 
-let oldestShownSeq = null;
+// The arrival window is NOT a contiguous slice of history: trimRecentChat
+// (shared/fold.js) makes room by dropping the loudest speaker's oldest line,
+// so a quiet visitor's last words from yesterday can sit at the top of the
+// window above hours of conversation that was trimmed out from under it.
+// Paging from the oldest line SHOWN jumps straight over that gap — scrolling
+// up landed on older days and the trimmed talk was never reachable. So the
+// cursor comes only from what paging itself has walked: it starts at the
+// present, lines already on screen are skipped, and the missing ones are
+// slotted into place by seq.
+let pageCursor = null;              // next page is everything below this seq; null = from now
 let loadingOlder = false;
 let noMoreHistory = false;
+let trimmedThrough = -1;            // highest seq the MAX_LINES trim has removed
+const MAX_SKIP_PAGES = 25;          // pages of already-shown lines walked per scroll
 
-export function noteSeq(seq) {
-  // synthetic entries from a folded snapshot carry negative seq — they are not
-  // positions in history and must not become the paging cursor
-  if (typeof seq === 'number' && seq >= 0
-      && (oldestShownSeq === null || seq < oldestShownSeq)) oldestShownSeq = seq;
+/** Keep the log to MAX_LINES rows, dropping from the top. A trimmed row is
+ *  history again, not "already shown": every seq it shows leaves renderedSeqs
+ *  so paging brings it back, and if the backward walk had already passed it,
+ *  the walk starts over from the present (skipping what is still on screen)
+ *  instead of stepping over the new hole. A walk that ended at the present,
+ *  its first page empty, has passed everything. */
+function trimLog() {
+  while (logEl.children.length > MAX_LINES) {
+    const row = logEl.firstElementChild;
+    for (const seq of seqsOf(row)) {
+      renderedSeqs.delete(seq);
+      if (seq > trimmedThrough) trimmedThrough = seq;
+      const passed = pageCursor === null ? noMoreHistory : seq >= pageCursor;
+      if (passed) { pageCursor = null; noMoreHistory = false; }
+    }
+    row.remove();
+  }
 }
 
-function prependLine(who, text, ts, seq) {
-  noteSeq(seq);
-  logEl.prepend(buildLine(who, text, { ts, historical: true }));
+/** Every seq a row shows: one, or several when logChat merged the rest of a
+ *  spoken utterance into it (dataset.seqs). */
+function seqsOf(row) {
+  if (row.dataset.seqs) return row.dataset.seqs.split(',').map(Number);
+  return row.dataset.seq !== undefined ? [+row.dataset.seq] : [];
+}
+
+/** Put one paged-in line where it belongs: straight after the last row that
+ *  is older than it. NOT "before the first row that is newer" — a spoken row
+ *  is placed by when its speech began (logChat's t0), so it can sit above
+ *  rows with lower seqs, and anchoring on it would land later talk above
+ *  earlier talk. Spoken rows only ever move EARLIER, so the last older row is
+ *  always a sound left neighbour. Nothing older on screen: it goes on top. */
+function insertHistorical(who, text, ts, seq) {
+  renderedSeqs.add(seq);
+  const line = buildLine(who, text, { ts, historical: true });
+  line.dataset.seq = String(seq);
+  line.dataset.author = who;
+  line.dataset.tsn = String(ts ?? 0);
+  let prev = null;
+  for (const c of logEl.children) {
+    if (c.dataset.seq !== undefined && +c.dataset.seq < seq) prev = c;
+  }
+  if (prev) prev.after(line); else logEl.prepend(line);
+  // a grouped row that now sits under a different speaker must reprint its
+  // name (sys rows pass through a group, as in logChat)
+  let below = line.nextElementSibling;
+  while (below && below.dataset.kind === 'system') below = below.nextElementSibling;
+  if (below && below.dataset.author !== who) below.classList.remove('cont');
+}
+
+/** Hold what the reader is looking at still while rows land around it. A
+ *  fill lands below the top of the view as often as above it, so pin the
+ *  first visible row, not the distance from the bottom — and measure in
+ *  screen coordinates: offsetTop is relative to the offsetParent
+ *  (.chat-main), not to the log that scrolls. Returns the restore step. */
+function pinView() {
+  const top = logEl.getBoundingClientRect().top;
+  let anchor = null;
+  for (const c of logEl.children) {
+    const r = c.getBoundingClientRect();
+    if (r.height && r.bottom > top) { anchor = c; break; }
+  }
+  if (!anchor) return () => {};
+  const was = anchor.getBoundingClientRect().top;
+  return () => {
+    if (anchor.isConnected) logEl.scrollTop += anchor.getBoundingClientRect().top - was;
+  };
+}
+
+/** Slot one page of history into the log; returns how many rows were new. */
+function insertPage(entries) {
+  const fresh = (entries ?? []).filter((e) => typeof e.seq === 'number' && !renderedSeqs.has(e.seq));
+  if (!fresh.length) return 0;
+  // a re-join's fill can land below the pinned row; a reader who was
+  // following the end must still be, not left with the newest lines below
+  // the fold and live-follow stopped
+  const following = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
+  const restore = pinView();
+  for (const e of fresh) insertHistorical(e.actor, e.args?.text ?? '', e.ts, e.seq);
+  restore();
+  if (following) logEl.scrollTop = logEl.scrollHeight;
+  return fresh.length;
+}
+
+/** A reconnect hands over a NEW arrival window, trimmed the same fair way —
+ *  so what was said while the socket was down can be missing from it, near
+ *  the bottom of the log, where a backward walk would reach it last. net.js
+ *  calls this as a re-join's snapshot lands, with the last seq the old socket
+ *  delivered; what was said after it is fetched, newest first, up to
+ *  MAX_SKIP_PAGES pages of 40, and slotted in. Anything older than that comes
+ *  back by scrolling up. A first join (nothing on screen yet) has no hole to
+ *  fill. */
+export async function resyncChatAfter(seq) {
+  if (!logEl || !renderedSeqs.size || typeof seq !== 'number' || seq < 0) return;
+  let before = null;
+  for (let page = 0; page < MAX_SKIP_PAGES; page++) {
+    const r = await requestHistory({
+      after: seq, ...(before !== null ? { before } : {}), limit: 40, verbs: ['say'],
+    });
+    if (!r.entries?.length) return;
+    insertPage(r.entries);
+    if (r.entries.length < 40) return;
+    before = typeof r.oldestSeq === 'number' ? r.oldestSeq : r.entries[0].seq;
+  }
 }
 
 /** Tell an arrival that what they are looking at is a window, not the room's
@@ -168,26 +276,33 @@ async function loadOlder() {
   marker.textContent = '… loading earlier messages';
   logEl.prepend(marker);
   try {
-    const r = await requestHistory({
-      ...(oldestShownSeq !== null ? { before: oldestShownSeq } : {}),
-      limit: 40, verbs: ['say'],
-    });
+    let added = 0;
+    for (let page = 0; !added && !noMoreHistory && page < MAX_SKIP_PAGES; page++) {
+      const from = pageCursor;
+      const r = await requestHistory({
+        ...(from !== null ? { before: from } : {}),
+        limit: 40, verbs: ['say'],
+      });
+      const entries = r.entries ?? [];
+      // A trim that passed the cursor while this page was in flight has
+      // restarted the walk (trimLog is the only other writer of the cursor).
+      // The page's lines still slot in, but where the walk stands, and
+      // whether it has reached the beginning, now come from the restart.
+      if (pageCursor === from) {
+        if (entries.length) pageCursor = typeof r.oldestSeq === 'number' ? r.oldestSeq : entries[0].seq;
+        if (!entries.length || !r.hasMore) noMoreHistory = true;
+      }
+      marker.remove();               // out before pinView measures, or it could be the anchor
+      added = insertPage(entries);
+      if (!added && !noMoreHistory) logEl.prepend(marker);
+    }
     marker.remove();
-    if (!r.entries?.length) {
-      noMoreHistory = true;
+    if (noMoreHistory) {
       const end = document.createElement('div');
       end.className = 'line sys';
       end.textContent = '— the beginning of this world —';
       logEl.prepend(end);
-      return;
     }
-    // grow the top without moving what the reader is looking at
-    const anchorH = logEl.scrollHeight - logEl.scrollTop;
-    for (const e of [...r.entries].reverse()) {
-      prependLine(e.actor, e.args?.text ?? '', e.ts, e.seq);
-    }
-    logEl.scrollTop = logEl.scrollHeight - anchorH;
-    if (!r.hasMore) noMoreHistory = true;
   } catch {
     marker.remove();
   } finally { loadingOlder = false; }
@@ -206,10 +321,12 @@ const renderedSeqs = new Set();
 
 export function logChat(who, text, kind = '', meta = {}) {
   if (typeof meta.seq === 'number' && meta.seq >= 0) {
-    if (renderedSeqs.has(meta.seq)) return;
+    // ...or trimmed off the top: a re-join's window can replay such a line,
+    // and appending it would put it under hours of newer talk. Paging slots
+    // it back where it belongs.
+    if (renderedSeqs.has(meta.seq) || meta.seq <= trimmedThrough) return;
     renderedSeqs.add(meta.seq);
   }
-  noteSeq(meta.seq);
   // the VR quad reads the tail of the log from here — every line, merged
   // continuations included, twelve deep
   recent.push({ who, text: String(text).slice(0, 140), kind });
@@ -225,6 +342,11 @@ export function logChat(who, text, kind = '', meta = {}) {
       lastLineEl.dataset.author === who && lastLineEl.dataset.utt === String(meta.utt)) {
     const body = lastLineEl.querySelector('.body');
     if (body) {
+      // the row now shows this say too: a trim must release its seq with
+      // the row's own, or paging would treat it as still on screen
+      if (typeof meta.seq === 'number' && meta.seq >= 0) {
+        lastLineEl.dataset.seqs = [...seqsOf(lastLineEl), meta.seq].join(',');
+      }
       const wasAtBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
       body.append(' ', renderBody(text, namesForHighlight()));
       lastAt = Date.now();
@@ -236,6 +358,8 @@ export function logChat(who, text, kind = '', meta = {}) {
     }
   }
   const line = buildLine(who, text, { kind, ...meta });
+  // seq is where paged-in history slots in around this line (insertHistorical)
+  if (typeof meta.seq === 'number' && meta.seq >= 0) line.dataset.seq = String(meta.seq);
   line.dataset.author = who;
   line.dataset.tsn = String(meta.ts ?? Date.now());
   if (meta.spoken && meta.utt != null) line.dataset.utt = String(meta.utt);
@@ -276,7 +400,7 @@ export function logChat(who, text, kind = '', meta = {}) {
       +(line.dataset.tsn ?? 0) - +(prev.dataset.tsn ?? 0) < 90_000;
     line.classList.toggle('cont', near);
   } else logEl.appendChild(line);
-  while (logEl.children.length > MAX_LINES) logEl.removeChild(logEl.firstChild);
+  trimLog();
 
   account(line, { who, text, merged: false,
     newlyPinged: line.dataset.kind === 'mention', wasAtBottom });
@@ -854,7 +978,7 @@ function applyChatPrefs() {
   if (logEl) logEl.style.fontSize = `${chatFs}px`;
   sideEl('cols')?.classList.toggle('side-left', sideSt.pos === 'left');
 }
-let gearToggle = null, gearAnchor = null;
+let gearToggle = null, gearAnchor = null, placeGear = () => {};
 let chatFs = 14;
 const CMD_LS = 'ew-chat-md';
 let chatMd = true;   // *italic* **bold** `code` in the log — on by default (live, 09-05)
@@ -863,6 +987,26 @@ export const chatMarkdownOn = () => chatMd;
 try { chatFs = Math.min(20, Math.max(11, parseFloat(localStorage.getItem(CFS_LS)) || 14)) } catch {}
 function initChatGear() {
   const pop = frame.body.querySelector('.chat-gearpop');
+  placeGear = () => {
+    if (pop.hidden || !gearAnchor) return;
+    const a = gearAnchor.getBoundingClientRect(), f = frame.el.getBoundingClientRect();
+    const body = frame.body.getBoundingClientRect();
+    const minTop = Math.max(4, body.top - f.top + 4);
+    const bottom = Math.min(frame.el.clientHeight, body.bottom - f.top) - 4;
+    // Open below the gear when the options fit there, else UPWARD from it, its
+    // bottom edge above the gear: the compose row's gear has the log above and
+    // the frame's edge below. When neither side fits, the side with more room
+    // takes it, and a short frame scrolls the options instead of clipping them.
+    const below = a.bottom - f.top + 6, above = a.top - f.top - 6;
+    pop.style.maxHeight = 'none';
+    const height = pop.offsetHeight;
+    const roomBelow = bottom - below, roomAbove = above - minTop;
+    const down = height <= roomBelow || (height > roomAbove && roomBelow >= roomAbove);
+    const room = Math.max(1, down ? roomBelow : roomAbove);
+    pop.style.maxHeight = `${room}px`;
+    pop.style.top = `${down ? below : Math.max(minTop, above - Math.min(height, room))}px`;
+    pop.style.right = `${Math.max(4, Math.min(f.right - a.right, frame.el.clientWidth - pop.offsetWidth - 4))}px`;
+  };
   const paintPop = () => {
     pop.innerHTML = `
       <div class="gp-row"><span>text size</span>
@@ -873,6 +1017,8 @@ function initChatGear() {
       <div class="gp-row"><span>People Here</span>
         <button data-side="left" class="${sideSt.pos === 'left' ? 'on' : ''}">left</button>
         <button data-side="right" class="${sideSt.pos !== 'left' ? 'on' : ''}">right</button></div>`;
+    mountAttentionControls(pop);
+    placeGear();
   };
   pop.onclick = (e) => {
     const fs = e.target?.dataset?.fs, sd = e.target?.dataset?.side, md = e.target?.dataset?.md;
@@ -893,11 +1039,6 @@ function initChatGear() {
     gearAnchor = anchor;
     if (!pop.hidden) {
       paintPop();
-      // UPWARD from the compose row's gear, its right edge on the gear's: the log is above, the frame's edge below
-      const a = anchor.getBoundingClientRect(), f = frame.el.getBoundingClientRect();
-      pop.style.right = `${Math.max(4, f.right - a.right)}px`;
-      pop.style.top = 'auto';
-      pop.style.bottom = `${f.bottom - a.top + 6}px`;
     }
   };
   // the gear lives at the right end of the compose box, like a settings affordance in a text field
@@ -934,6 +1075,7 @@ function sizeInput() {
 function setInput(v) { if (!inputEl) return; inputEl.value = v; sizeInput(); }
 
 export function initChat({ send, whisper, typing, people }) {
+  initAttention({ bus, me: () => CONFIG.name, scope: () => CONFIG.world, mentions: mentionsMe });
   onSend = send;
   onWhisper = whisper ?? (() => {});
   onTyping = typing ?? (() => {});
@@ -951,7 +1093,7 @@ export function initChat({ send, whisper, typing, people }) {
       // tab that's off-screen because the panel is too narrow"). frames.js has
       // called onResize(w, h) all along (frames.js:437); chat simply never
       // passed one. Debounced like emotebar's (emotebar.js:53).
-      onResize: () => { clearTimeout(_arrowT); _arrowT = setTimeout(() => paintTabs(), 120); },
+      onResize: () => { placeGear(); clearTimeout(_arrowT); _arrowT = setTimeout(() => paintTabs(), 120); },
   });
 
   frame.body.innerHTML = `
@@ -1102,7 +1244,9 @@ export function initChat({ send, whisper, typing, people }) {
 // you never see because you were on another tab is worse than no tabs at all.
 // The tab is for following a thread, not for hiding it.
 
-export function logWhisper({ from, to, text, echo }) {
+export function logWhisper(msg) {
+  const { from, to, text, echo } = msg;
+  attentionWhisper(msg);
   const other = echo ? to : from;
   if (!echo) lastWhisperFrom = from;
   ensureConvo(other);
@@ -1128,7 +1272,7 @@ export function logWhisper({ from, to, text, echo }) {
   applyFilter(line);
   const atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
   logEl.appendChild(line);
-  while (logEl.children.length > MAX_LINES) logEl.removeChild(logEl.firstChild);
+  trimLog();
 
   if (!echo) {
     const c = convos.get(other);

@@ -245,7 +245,7 @@ console.log(osOwnership
 check("stale state tmp from a previous incarnation swept at boot", !existsSync(`${statePath}.tmp`));
 
 /** Minimal MCPL 0.5 host: initialize, grant, then request/notification I/O. */
-async function connectHost(token: string, query = "", mode: "accept" | "decline" | "mute" = "accept") {
+async function connectHost(token: string, query = "", mode: "accept" | "decline" | "mute" | "error" = "accept") {
   const ws = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=${token}${query}`);
   let nextId = 10;
   const pending = new Map<number, (m: any) => void>();
@@ -262,6 +262,10 @@ async function connectHost(token: string, query = "", mode: "accept" | "decline"
     if (m.id !== undefined && m.method) {
       if (m.method === "channels/changed" && mode !== "accept") {
         if (mode === "mute") return;                       // never answer: server must fail closed
+        if (mode === "error") {                            // answer with an error, not a verdict
+          rpc({ jsonrpc: "2.0", id: m.id, error: { code: -32000, message: "policy store unavailable" } });
+          return;
+        }
         const added = (m.params?.added ?? []) as { id: string }[];
         rpc({ jsonrpc: "2.0", id: m.id, result: { results: added.map((c) => ({ id: c.id, accepted: false, reason: "test_decline" })) } });
         return;
@@ -396,7 +400,7 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   await sleep(1200);
   const outside = await roamer2.request("tools/call", { name: "travel", arguments: { world: "elsewhere" } });
   check("worlds:[annex] credential denied for other worlds",
-    outside.result?.isError === true && /not in this credential's join policy/.test(txt(outside)), txt(outside));
+    outside.result?.isError === true && /^travel refused, so you're still in "commons": world "elsewhere" is not in this credential's join policy/.test(txt(outside)), txt(outside));
   roamer2.ws.close();
 
   // ── 4. dial-time ?world= under the same policy ────────────────────────────
@@ -455,7 +459,13 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   await sleep(1200);
   const wouldFound = await nofound.request("tools/call", { name: "travel", arguments: { world: "brand-new-place" } });
   check("worlds:['*'] without create CANNOT found a world",
-    wouldFound.result?.isError === true && /founding requires create authority/.test(txt(wouldFound)), txt(wouldFound));
+    wouldFound.result?.isError === true && /^travel refused, so you're still in "commons": no world named "brand-new-place" exists, and this credential can't found one/.test(txt(wouldFound)), txt(wouldFound));
+  // world_verb forwards any verb; the world, not the door, refuses one it doesn't take.
+  const unknownVerb = await nofound.request("tools/call", { name: "world_verb", arguments: { verb: "fly_away", args: {} } });
+  await sleep(800);
+  const afterVerb = await nofound.request("tools/call", { name: "look", arguments: {} });
+  check("an unknown verb goes to the world, which refuses it",
+    txt(unknownVerb) === "sent fly_away" && /verb not allowed: fly_away/.test(txt(afterVerb)), `${txt(unknownVerb)} / ${txt(afterVerb).slice(0, 600)}`);
   // …and prove it wasn't created as a side effect anyway (review F)
   // 🔴 PAIRED WITH ITS POSITIVE CONTROL (adversarial review, 2026-08-17).
   // `!existsSync(...)` alone passes for a build where founding writes NOTHING
@@ -539,7 +549,8 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   await sleep(1200);
   const declined = await decliner.request("tools/call", { name: "travel", arguments: { world: "annex" } });
   check("host decline aborts the join (refusal, nothing moved)",
-    declined.result?.isError === true && /channel not permitted/.test(txt(declined)), txt(declined));
+    declined.result?.isError === true && /your host declined the move/.test(txt(declined))
+      && /still in "commons"/.test(txt(declined)), txt(declined));
   const stillHome = await decliner.request("channels/list", {});
   check("declined join left the body where it was", stillHome.result?.channels?.[0]?.id === "world:commons", JSON.stringify(stillHome.result));
   // 🔴 …AND THE HOST WAS NOT TOLD OTHERWISE (adversarial review, 2026-08-17).
@@ -562,8 +573,19 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   await sleep(1200);
   const timedOut = await mute.request("tools/call", { name: "travel", arguments: { world: "annex" } });
   check("mute host is treated as declining (fail-closed)",
-    timedOut.result?.isError === true && /channel not permitted/.test(txt(timedOut)), txt(timedOut));
+    timedOut.result?.isError === true && /didn't confirm the move to "annex" within 5 seconds, so trying again may work/.test(txt(timedOut)), txt(timedOut));
   mute.ws.close();
+
+  // A host that answers the move with an error refuses it too, and only the
+  // timeout above suggests trying again.
+  const erring = await connectHost("roamer-token", "", "error");
+  await sleep(1200);
+  const errored = await erring.request("tools/call", { name: "travel", arguments: { world: "annex" } });
+  check("an error answer is a refusal in the host's words, without its JSON-RPC code or a retry hint",
+    errored.result?.isError === true
+      && txt(errored) === `travel refused, so you're still in "commons": your host didn't accept the move to "annex" (policy store unavailable)`,
+    txt(errored));
+  erring.ws.close();
 
   // ── 4g. LANE 1: the `travel` tool ─────────────────────────────────────────
   // Same mechanism as channels/open, reachable by a plain-MCP client that has
@@ -618,7 +640,8 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   check("a refused travel moved nothing", stayed.result?.channels?.[0]?.id === "world:commons", JSON.stringify(stayed.result));
 
   const badName = await bound2.request("tools/call", { name: "travel", arguments: { world: "../etc/passwd" } });
-  check("travel rejects a malformed world name", badName.result?.isError === true, JSON.stringify(badName.result));
+  check("travel rejects a malformed world name, with the rule, and the body stays",
+    badName.result?.isError === true && txt(badName) === `travel refused, so you're still in "commons": "../etc/passwd" isn't a valid world name; a name is 1 to 64 lowercase letters, digits, _ or -`, JSON.stringify(badName.result));
   bound2.ws.close();
 
   // ── 4i. PLAIN-MCP travel: the lane the PR advertises and never tested ────
@@ -643,10 +666,10 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
     await sleep(1200);
     const refused = await plainBound.request("tools/call", { name: "travel", arguments: { world: "annex" } });
     check("plain-MCP travel still obeys the join policy",
-      refused.result?.isError === true && /not in this credential's join policy/.test(txt(refused)), txt(refused));
+      refused.result?.isError === true && /^travel refused, so you're still in "commons": world "annex" is not in this credential's join policy/.test(txt(refused)), txt(refused));
     const noCreate = await plainBound.request("tools/call", { name: "travel", arguments: { world: "never-made" } });
     check("plain-MCP founding still needs create authority",
-      noCreate.result?.isError === true, txt(noCreate));
+      noCreate.result?.isError === true && /^travel refused, so you're still in "commons": /.test(txt(noCreate)), txt(noCreate));
     check("…and refused founding left nothing on disk", !existsSync(join(worldsDir, "never-made")));
     plainBound.ws.close();
   }
@@ -665,7 +688,7 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
     });
     const denied2 = await stingy.request("tools/call", { name: "travel", arguments: { world: "annex" } });
     check("MCPL host WITHOUT channels.lifecycle is still refused (#1 did not widen)",
-      denied2.result?.isError === true && /capability denied/.test(txt(denied2)), txt(denied2));
+      denied2.result?.isError === true && txt(denied2) === `travel refused, so you're still in "commons": your host hasn't granted this door channels.lifecycle, which travel needs, and calling again won't change that; if you need it, ask whoever runs your host`, txt(denied2));
     const where = await stingy.request("channels/list", {});
     check("…and that refusal moved nothing", where.result?.channels?.[0]?.id === "world:commons", JSON.stringify(where.result));
     stingy.ws.close();
@@ -712,7 +735,7 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
     }).catch(() => { /* refusing a re-initialize outright is equally fine */ });
     const escape = await escapee.request("tools/call", { name: "travel", arguments: { world: "annex" } });
     check("a denied host stays denied — MCPL-ness is fixed at initialize, not re-declarable",
-      escape.result?.isError === true && /capability denied/.test(txt(escape)), txt(escape));
+      escape.result?.isError === true && /your host hasn't granted this door channels\.lifecycle/.test(txt(escape)), txt(escape));
     const stillOpen = await escapee.request("channels/list", {});
     check("…and the refused host is still in its own world, undisturbed",
       stillOpen.result?.channels?.[0]?.id === "world:commons", JSON.stringify(stillOpen.result));
@@ -736,6 +759,24 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
     check("…and the new world's door is OPEN, as its descriptor promised the host",
       reopened.result?.channel?.id === "world:annex" && reopened.result?.channel?.initiallyOpen === true,
       JSON.stringify(reopened.result?.channel));
+    // The world it left is no longer this connection's channel, and the
+    // refusals say which one is.
+    const stalePublish = await shutter.request("channels/publish", { channelId: "world:commons", content: [{ type: "text", text: "hello" }] });
+    check("a publish to the world it left names the current channel, and that nothing was posted",
+      stalePublish.error?.code === -32023 && /this connection's channel is "world:annex", and the publish named "world:commons", so nothing was posted/.test(stalePublish.error?.message ?? ""),
+      JSON.stringify(stalePublish.error));
+    const staleClose = await shutter.request("channels/close", { channelId: "world:commons" });
+    check("…and so does a close of it",
+      staleClose.error?.code === -32023 && /this connection's channel is "world:annex", and the request named "world:commons", so nothing was closed/.test(staleClose.error?.message ?? ""),
+      JSON.stringify(staleClose.error));
+    const namelessClose = await shutter.request("channels/close", {});
+    check("…and a close naming no channel says so, not \"undefined\"",
+      namelessClose.error?.code === -32023 && /and the request named nothing, so nothing was closed/.test(namelessClose.error?.message ?? ""),
+      JSON.stringify(namelessClose.error));
+    const crossed = await shutter.request("channels/open", { channelId: "world:annex", type: "world", address: { world: "commons" } });
+    check("an open naming two different worlds says so, and opens nothing",
+      crossed.error?.code === -32602 && /name different worlds, so nothing was opened/.test(crossed.error?.message ?? ""),
+      JSON.stringify(crossed.error));
     shutter.ws.close();
   }
 
@@ -753,7 +794,8 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   check("attach failure is reported, and names the closure",
     failed.result?.isError === true
     && /past the point of no return/.test(txt(failed))
-    && /CLOSED/.test(txt(failed)), txt(failed));
+    && /CLOSED/.test(txt(failed))
+    && /your host has to reconnect to the door for a new body\.$/.test(txt(failed)), txt(failed));
   const closed = await new Promise<boolean>((res) => {
     if (victim.ws.readyState === WebSocket.CLOSED) return res(true);
     victim.ws.onclose = () => res(true);

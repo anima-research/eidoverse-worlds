@@ -297,17 +297,17 @@ check('an unfold of a wingless body changes nothing, and is done',
 
 console.log('\nOTHER TOOLS');
 r = await call('spawn', {});
-check('spawn with no model is failed', failed(r) && /no model/.test(said(r)), said(r));
+check('spawn with no model is failed', failed(r) && /^spawn needs lib \(a model's path\) or query/.test(said(r)), said(r));
 r = await call('place', { id: 'nothing-here', x: 0, z: 0 });
-check('place of an unknown entity is failed', failed(r) && /no entity nothing-here/.test(said(r)), said(r));
+check('place of an unknown entity is failed', failed(r) && /knows of no entity "nothing-here"/.test(said(r)), said(r));
 r = await call('posture', { kind: 'cartwheel' });
 check('an unknown posture is failed, with the kinds', failed(r) && /posture kinds/.test(said(r)), said(r));
 r = await call('emote', { name: 'juggle' });
 check('an unknown emote is failed, with the names', failed(r) && /^emotes: /.test(said(r)), said(r));
 r = await call('face', {});
-check('face with neither a target nor x and z is failed', failed(r) && /pass x\+z or target/.test(said(r)), said(r));
+check('face with neither a target nor x and z is failed', failed(r) && /^face needs x and z, or a target/.test(said(r)), said(r));
 r = await call('face', { target: 'nobody' });
-check('face of an unknown target is failed', failed(r) && /no such target: nobody/.test(said(r)), said(r));
+check('face of an unknown target is failed', failed(r) && /nothing here is called "nobody"/.test(said(r)), said(r));
 r = await call('library_preview', {});
 check('library_preview with no name is failed', failed(r) && /pass `name`/.test(said(r)), said(r));
 r = await call('reach', {});
@@ -319,7 +319,7 @@ check('an unknown contact point is failed', failed(r) && /unknown contact point/
 r = await call('reach', { limb: 'tail', x: 1, y: 1, z: 1 });
 check('a reach with an unknown limb is failed', failed(r) && /^unknown limb "tail"/.test(said(r)), said(r));
 r = await call('ragdoll', {});
-check('ragdoll with no target is failed', failed(r) && /ragdoll needs a `target`/.test(said(r)), said(r));
+check('ragdoll with no target is failed', failed(r) && /^ragdoll needs a target/.test(said(r)), said(r));
 r = await call('animate', { tracks: {}, dur: 1 });
 check('animate with no usable track is failed', failed(r) && /^nothing played/.test(said(r)), said(r));
 r = await call('measure', {});
@@ -343,7 +343,7 @@ check('a pose with nothing usable is failed', failed(r) && /^no pose set — not
 r = await call('pose', {});
 check('a pose that cannot read the rig to list its bones is failed', failed(r) && /^can't read your rig to list its bones/.test(said(r)), said(r));
 r = await call('animate', { tracks: { leftUpperArm: [{ t: 0, q: [0, 0, 0, 1] }, { t: 0.5, q: [0, 0, -0.7, 0.7] }] } });
-check('animate with no duration is failed', failed(r) && /^pass `dur`/.test(said(r)), said(r));
+check('animate with no duration is failed', failed(r) && /^animate needs dur/.test(said(r)), said(r));
 // With the link down, nothing reaches the world, and the call says so as verb() does.
 // A handler that throws is answered in the result, where the model reads it, not as a protocol error.
 for (const a of [{ to: 'someone' }, { text: 'hello' }, { to: 'someone', text: '' }, { to: '', text: 'hello' },
@@ -375,7 +375,7 @@ const realConsoleError = console.error;
 console.error = (...a: unknown[]) => { logged.push(a.map(String).join(' ')); };
 r = await call('say', { text: 'hello' });
 console.error = realConsoleError;
-check('a say with the link down, which verb() refuses, is failed in the result', failed(r) && said(r) === 'not joined', said(r));
+check('a say with the link down, which verb() refuses, is failed in the result', failed(r) && /^this body is reconnecting to the world, so nothing was sent/.test(said(r)), said(r));
 check('...and the throw is in the operator\'s log, naming the tool', logged.some((l) => l.startsWith('[door] say threw:')), logged.join(' | '));
 // What the world's HTTP side answers, stood in for.
 const realFetch = globalThis.fetch;
@@ -383,12 +383,12 @@ const serve = (handler: (url: string) => Response) => { globalThis.fetch = (asyn
 const unreachable = () => { globalThis.fetch = (async () => { throw new Error('connect ECONNREFUSED'); }) as any; };
 serve(() => new Response('[]', { status: 200 }));
 r = await call('library_sheet', {});
-check('a library sheet of an empty roster is an answer, not a failure', !failed(r) && said(r) === 'the roster has no bodies yet', said(r));
+check('a library sheet of an empty roster is an answer, not a failure', !failed(r) && said(r) === 'there are no avatars to show yet', said(r));
 r = await call('library_sheet', { kind: 'models' });
-check('a library sheet of an empty library is an answer, not a failure', !failed(r) && said(r) === 'the library has no models yet', said(r));
+check('a library sheet of an empty library is an answer, not a failure', !failed(r) && said(r) === 'there are no models to show yet', said(r));
 serve(() => new Response(JSON.stringify([{ name: 'kestrel', height: 1.7 }]), { status: 200 }));
 r = await call('library_sheet', { page: 5 });
-check('a library sheet page past the end is failed', failed(r) && /^no page 5 — 1 avatars, 1 page$/.test(said(r)), said(r));
+check('a library sheet page past the end is failed', failed(r) && /^no page 5: there are 1 avatars on 1 page/.test(said(r)), said(r));
 serve(() => new Response(JSON.stringify([{ name: 'kestrel', path: 'avatars/kestrel.vrm' }]), { status: 200 }));
 r = await call('set_avatar', { avatar: 'heron' });
 check('wearing a body not on the roster is failed', failed(r) && /^no body named "heron"/.test(said(r)), said(r));
@@ -425,10 +425,10 @@ r = await call('library_preview', { name: 'heron' });
 check('a preview the library has is shown when the portrait can\'t be read', !failed(r) && r?.content?.[0]?.type === 'image' && r.content[0].data === 'AQID', JSON.stringify(r).slice(0, 200));
 serve(() => new Response('no renderer', { status: 503 }));
 r = await call('snapshot', {});
-check('a snapshot with no view available is failed', failed(r) && /^no view available: no renderer$/.test(said(r)), said(r));
+check('a snapshot with no view available is failed', failed(r) && /^snapshot: no picture was taken; the world server answered "no renderer" \(503\)/.test(said(r)), said(r));
 unreachable();
 r = await call('snapshot', {});
-check('a snapshot that cannot reach the world is failed', failed(r) && /^snapshot failed: connect ECONNREFUSED$/.test(said(r)), said(r));
+check('a snapshot that cannot reach the world is failed', failed(r) && /^snapshot failed: no picture arrived from the world server \(connect ECONNREFUSED\)/.test(said(r)), said(r));
 globalThis.fetch = realFetch;
 // From here the world takes every verb, and the test keeps what was sent.
 const sent: [string, unknown][] = [];
@@ -442,7 +442,7 @@ check('spawn with an empty lib and a query searches, as with lib left out',
   !failed(r) && /^spawned \[.*\] chair\.glb/.test(said(r)) && (sent.at(-1)?.[1] as any)?.lib === 'furniture/chair.glb',
   `${said(r)}; sent ${JSON.stringify(sent.at(-1))}`);
 r = await call('spawn', { lib: '' });
-check('spawn with an empty lib and no query is failed', failed(r) && /no model/.test(said(r)), said(r));
+check('spawn with an empty lib and no query is failed', failed(r) && /^spawn needs lib \(a model's path\) or query/.test(said(r)), said(r));
 globalThis.fetch = realFetch;
 // What a whisper and a say send, with the world taking them.
 const whispers: [string, string][] = [], says: string[] = [];
@@ -553,8 +553,8 @@ const child = Bun.spawnSync([process.execPath, import.meta.path], {
 });
 let off: any = {};
 try { off = JSON.parse(child.stdout.toString().trim().split('\n').pop() ?? '{}'); } catch { /* checked below */ }
-check('a whisper while whispers are off is failed', off.whisper?.failed === true && off.whisper.text === 'whispers are disabled in this world', JSON.stringify(off.whisper) + child.stderr.toString().slice(0, 300));
-check('a rehearsal tool while rehearsal is off is failed', off.rehearse?.failed === true && off.rehearse.text === 'no such tool', JSON.stringify(off.rehearse));
+check('a whisper while whispers are off is failed', off.whisper?.failed === true && off.whisper.text === "whispers are turned off on this door, so nothing was sent, and calling again won't change that", JSON.stringify(off.whisper) + child.stderr.toString().slice(0, 300));
+check('a rehearsal tool while rehearsal is off is failed', off.rehearse?.failed === true && off.rehearse.text === 'there\'s no tool named "rehearse_down" on this door, so nothing ran; your tool list has the ones it serves', JSON.stringify(off.rehearse));
 
 console.log('\nWALK');
 const walker: any = {
