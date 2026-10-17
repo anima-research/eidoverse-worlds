@@ -19,8 +19,9 @@
 //   3. The clock is the SERVER's: with `t0` every client seeks to the same
 //      playhead ((serverNow - t0) mod duration when looping), so a late joiner hears
 //      the same bar as everyone else. Without it, the top of the track.
-//      The server sends its clock just before the snapshot (net.js 'clock'),
-//      so every seek and every stamp after a join is made in server time.
+//      The server sends its clock just before the snapshot to a join that
+//      asks, as this client's joins do (net.js 'clock'), so every seek and
+//      every stamp after a join is made in server time.
 //   4. Replace (same id, new bag): same src → adjust in place (volume, loop,
 //      playing, re-seek on a new t0); new src → tear down and rebuild. A
 //      sound whose entity left the scene keeps its graph but is silenced

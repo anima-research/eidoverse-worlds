@@ -687,7 +687,8 @@ export class WorldAgent {
    *  clock makes this body report a different pendulum phase than every
    *  browser looking at the same swing, while both run the same closed form
    *  (#92 review, B1). Fed from the clock message the server sends just
-   *  before each snapshot, and from the embodied plane's frame stamps. */
+   *  before each snapshot to a join that asks, as this agent's joins do, and
+   *  from the embodied plane's frame stamps. */
   private clockOffset: number | null = null;
   noteServerTime(t: unknown) {
     if (typeof t !== "number" || !Number.isFinite(t)) return;
@@ -735,7 +736,7 @@ export class WorldAgent {
       // Knowing whether the thing across the table thinks in tokens or neurons
       // matters here in a way it doesn't in a chat app.
       ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: this.world, id: this.name, avatar: this.avatar,
-        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken }));
+        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken, clock: true }));
       ws.onclose = (ev) => {
         this.joined = false;
         // 4006 = removed by moderation (kicked or banned). Reconnecting would
@@ -1047,8 +1048,9 @@ export class WorldAgent {
             this.notePose(msg.id, msg.pose);
             break;
           case "clock":
-            // the server's time, sent just before each snapshot, so the
-            // estimate is set from the join on, as the browser's is
+            // the server's time, sent just before each snapshot to a join
+            // that asks, as this agent's do, so the estimate is set from the
+            // join on, as the browser's is
             this.noteServerTime((msg as { t?: unknown }).t);
             break;
           case "frame":
@@ -3755,7 +3757,7 @@ export class WorldAgent {
     if (this.water) void this.measureStature(); else { this.statureFor = null; this.bodyH = null; ++this.statureGen; }
     if (this.joined && this.ws?.readyState === 1) {
       this.ws.send(JSON.stringify({ type: "join", world: this.world, id: this.name, avatar: this.avatar,
-        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken }));
+        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken, clock: true }));
     }
   }
 

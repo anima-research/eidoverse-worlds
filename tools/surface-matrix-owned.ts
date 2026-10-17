@@ -54,7 +54,6 @@ try {
       const t = setTimeout(() => { ws.close(); res(false); }, 1500);
       ws.onopen = () => ws.send(JSON.stringify({ type: "join", token: TOK, world: "ownprobe", id: "harness-probe", spectate: true }));
       ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data));
-        if (m.type === "clock") return;   // the server's time, sent just before the snapshot
         clearTimeout(t);
         if (m.type === "snapshot") { ws.close(); res(true); }
         else { ws.close(); throw new Error(`port ${PORT} is served by a server that refused OUR token — foreign process, refusing to test it (${JSON.stringify(m).slice(0, 80)})`); } };

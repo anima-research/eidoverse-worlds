@@ -1750,7 +1750,7 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     // the page's presence session (net.js PAGE_SESSION reads the same one): one id for the page's life
     const session = (globalThis.__ewPageSession ??= globalThis.crypto?.randomUUID?.()
       ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
-    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token, session }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token, session, clock: true }));
     ws.onmessage = (ev) => {
       stash.buffered.push(ev.data);
       stash.arrived.push(performance.now());

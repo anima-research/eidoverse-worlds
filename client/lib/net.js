@@ -213,6 +213,7 @@ export function sendJoin() {
     renderer: CONFIG.renderer,
     token: CONFIG.token,
     session: PAGE_SESSION,
+    clock: true,   // the server's time just before the snapshot ('clock' below)
   }));
 }
 
@@ -537,9 +538,10 @@ function noteStalePresence(id) {
  *  handled as its event runs. */
 async function handle(msg, at) {
   switch (msg.type) {
-    // The server's time, sent just before each snapshot, so every sound the
-    // snapshot carries is seeked, and every stamp the editor makes, in server
-    // time (remotes.js serverNow).
+    // The server's time, sent just before each snapshot to a join that asks
+    // (sendJoin's and the boot script's do), so every sound the snapshot
+    // carries is seeked, and every stamp the editor makes, in server time
+    // (remotes.js serverNow).
     case 'clock': noteServerTime(msg.t, at); break;
     case 'snapshot': return onSnapshot(msg);
 

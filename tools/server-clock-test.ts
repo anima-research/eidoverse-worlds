@@ -1,20 +1,23 @@
 /**
- * Server clock test: the server sends its time just before every snapshot,
- * and the browser takes it as its server clock, so a shared sound's playhead
+ * Server clock test: the server sends its time just before every snapshot
+ * to a join that asks (`clock: true`), and the browser takes it as its server clock, so a shared sound's playhead
  * is seeked, and its start stamped, in server time from the first snapshot on.
  *
- * The server half joins a real server three ways (embodied, spectating, and
- * travelling to a second world on the same socket) and checks that the
- * message just before each snapshot is `{type: "clock", t}`, with `t` the
- * server's Date.now() at the join. It also checks that an agent
- * (mcpl/agent.ts), which keeps its own estimate of the server's clock, has
- * that estimate at the server's time once its snapshot lands, on a machine
- * whose clock runs 5 s behind. The browser half runs net.js's handler under
- * happy-dom with the stubs remotes-lifecycle-test uses, and checks that a
- * `clock` message moves serverNow() to the server's time on a machine whose
- * own clock is 5 s behind it, both as it arrives and when the early socket
- * (client/index.html's boot script) buffered it and connect() drains it
- * later.
+ * The server half joins a real server three ways that ask (embodied,
+ * spectating, and travelling to a second world on the same socket) and
+ * checks that the message just before each snapshot is `{type: "clock", t}`,
+ * with `t` the server's Date.now() at the join; then two ways that don't
+ * (spectating and embodied), which get no clock, the spectator's first
+ * message being the snapshot. It also checks that an agent (mcpl/agent.ts),
+ * which keeps its own estimate of the server's clock, has that estimate at
+ * the server's time once its snapshot lands, on a machine whose clock runs
+ * 5 s behind, and that its re-join on an avatar change asks too. The browser
+ * half runs net.js's handler under happy-dom with the stubs
+ * remotes-lifecycle-test uses: it checks that the early socket's join and
+ * net.js's join ask, and that a `clock` message moves serverNow() to the
+ * server's time on a machine whose own clock is behind it, both as it
+ * arrives and when the early socket (client/index.html's boot script)
+ * buffered it and connect() drains it later.
  *
  * Run: bun run tools/server-clock-test.ts
  */
@@ -86,12 +89,26 @@ const WORLD = `clock-${Math.random().toString(36).slice(2, 8)}`;
 console.log(`\nserver clock — world "${WORLD}"\n`);
 try {
   check("the server came up", up && proc.exitCode === null, `exit code ${proc.exitCode}`);
-  console.log("\n— the server sends its clock just before each snapshot —\n");
+  console.log("\n— the server sends its clock just before each snapshot, to a join that asks —\n");
   const ra = await connect();
-  checkJoin("an embodied join", await joinWorld(ra, { world: WORLD, id: "ra" }));
+  checkJoin("an embodied join", await joinWorld(ra, { world: WORLD, id: "ra", clock: true }));
   const eye = await connect();
-  checkJoin("a spectator's join", await joinWorld(eye, { world: WORLD, id: "eye", spectate: true }));
-  checkJoin("a travel to another world on the same socket", await joinWorld(ra, { world: `${WORLD}-b`, id: "ra" }));
+  checkJoin("a spectator's join", await joinWorld(eye, { world: WORLD, id: "eye", spectate: true, clock: true }));
+  checkJoin("a travel to another world on the same socket", await joinWorld(ra, { world: `${WORLD}-b`, id: "ra", clock: true }));
+  // A join that doesn't ask gets the messages it always did: into a world
+  // that already exists (no grant for a first joiner), its first message is
+  // the snapshot, and no clock comes at all.
+  const plain = await connect();
+  const pr = await joinWorld(plain, { world: WORLD, id: "plain", spectate: true });
+  check("a join that doesn't ask for the clock gets the snapshot as its first message",
+    pr.got[0]?.type === "snapshot", pr.got.map((m) => m.type).join(","));
+  check("…and no clock message", !pr.got.some((m) => m.type === "clock"), pr.got.map((m) => m.type).join(","));
+  plain.ws.close();
+  const walker = await connect();
+  const wr = await joinWorld(walker, { world: WORLD, id: "walker" });
+  check("an embodied join that doesn't ask gets no clock either",
+    wr.got.some((m) => m.type === "snapshot") && !wr.got.some((m) => m.type === "clock"), wr.got.map((m) => m.type).join(","));
+  walker.ws.close();
   // An agent keeps its own estimate of the server's clock (mcpl/agent.ts
   // serverNow) and takes the same message. Nobody in this world has sent a
   // pose, so the server has sent no frame, and only the clock message can
@@ -105,6 +122,13 @@ try {
   try { await agent.connect(); } finally { Date.now = realNow; }
   check("an agent's clock estimate is the server's time once its snapshot lands",
     typeof agent.clockOffset === "number" && Math.abs(agent.clockOffset - 5_000) < 2_000, `clockOffset=${agent.clockOffset}`);
+  // its re-join on an avatar change, on the same socket, asks too
+  const agentSent: string[] = [];
+  const agentSend = agent.ws.send.bind(agent.ws);
+  agent.ws.send = (s: string) => { agentSent.push(s); return agentSend(s); };
+  agent.setAvatar(agent.avatar);
+  const rejoin = agentSent.map((s) => { try { return JSON.parse(s); } catch { return null; } }).find((m) => m?.type === "join");
+  check("an agent's re-join on an avatar change asks for the clock", rejoin?.clock === true, String(agentSent[0]));
   agent.close();
   ra.ws.close(); eye.ws.close();
 } catch (e) {
@@ -154,7 +178,7 @@ console.log("\n— the browser takes the clock as its server clock —\n");
   check("the boot script's early socket is in client/index.html", !!boot);
   if (boot) {
     let sock: any = null;
-    class FakeSocket { readyState = 1; constructor() { sock = this; } send() {} close() { this.readyState = 3; } }
+    class FakeSocket { readyState = 1; sent: string[] = []; constructor() { sock = this; } send(s: string) { this.sent.push(s); } close() { this.readyState = 3; } }
     const fakeLocation = { search: `?name=${encodeURIComponent(CONFIG.name)}&world=${encodeURIComponent(CONFIG.world)}`, protocol: "http:", host: "localhost" };
     const fakeStorage = { getItem: () => null, setItem: () => {} };
     let lag = 0;
@@ -162,6 +186,8 @@ console.log("\n— the browser takes the clock as its server clock —\n");
     new Function("location", "localStorage", "WebSocket", "performance", boot.replace(/^<script>/, "").replace(/<\/script>$/, ""))
       (fakeLocation, fakeStorage, FakeSocket, behind);
     const serverAt = () => performance.timeOrigin + behind.now() + AHEAD;
+    sock.onopen();   // the boot script sends its join when the socket opens
+    check("the early socket's join asks for the clock", JSON.parse(sock.sent[0] ?? "{}").clock === true, String(sock.sent[0]));
     lag = 120_000; sock.onmessage({ data: JSON.stringify({ type: "clock", t: serverAt() }) });
     lag = 80_000; sock.onmessage({ data: "not json" });
     lag = 40_000; sock.onmessage({ data: JSON.stringify({ type: "frame", t: serverAt(), poses: {} }) });
@@ -169,6 +195,10 @@ console.log("\n— the browser takes the clock as its server clock —\n");
     globalThis.fetch = (async () => new Response("null", { status: 404 })) as any;   // no identity service here
     await netMod.connect();
     check("connect() adopted the early socket", netMod.net.ws === sock, `net.ws is ${netMod.net.ws === sock ? "it" : "another"}`);
+    const sentBefore = sock.sent.length;
+    netMod.sendJoin();   // every connect's and reconnect's join
+    check("net.js's join asks for the clock", sock.sent.length === sentBefore + 1 && JSON.parse(sock.sent.at(-1) ?? "{}").clock === true,
+      `${sock.sent.length - sentBefore} sent: ${String(sock.sent.at(-1))}`);
     const drained = remotesMod.serverNow() - machine(), want = blend(blend(before, AHEAD), AHEAD);
     check("a clock message and a frame the early socket buffered are each sampled when its own handler ran, not at the drain",
       Math.abs(drained - want) < MARGIN, `serverNow - machine = ${drained} ms, want ${want}`);
