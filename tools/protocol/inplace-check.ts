@@ -18,6 +18,8 @@
 //   IP8  the two-name form still translates into a new name and leaves the old directory as it was
 //   IP9  the world's own inventions are namespaced by its NAME, never by the temporary directory's
 //   IP10 a name with no old log refuses with that reason
+//   IP11 a snapshot.json the oracle can't compare (a fold of part of the log) doesn't block the translation: it says,
+//        in its output, that the snapshot was NOT compared and why, and keeps it as snapshot.original.json
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/inplace-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -167,6 +169,12 @@ const waiting = oldWorld("waiting");
 { fs.mkdirSync(path.join(W, "hollow"), { recursive: true });
   const r = tool(["translate", "hollow", "--no-founder-key"]);
   ok(r.code !== 0 && /holds no old log/.test(r.out) && !temps().length, "IP10 a directory with no old log refuses with that reason", r.out); }
+
+// ================= IP11: a snapshot the oracle can't compare is reported, not compared =================
+{ const d = oldWorld("partial"); const sf = path.join(d, "snapshot.json"); const S = JSON.parse(fs.readFileSync(sf, "utf8")); S.seq -= 1; fs.writeFileSync(sf, JSON.stringify(S));
+  const fp = fingerprint(d); const r = tool(["translate", "partial", "--no-founder-key"]);
+  ok(r.code === 0 && /snapshot\.json NOT compared: snapshot\.seq \d+ ≠ the log's last seq/.test(r.out) && isWorldDir(d) && same(fingerprint(d)["snapshot.original.json"], fp["snapshot.json"]),
+    "IP11 a partial snapshot.json is reported as NOT compared (with the oracle's reason), and kept as snapshot.original.json", r.out.slice(-700)); }
 
 console.log(`inplace: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
