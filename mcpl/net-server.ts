@@ -200,8 +200,14 @@ class Session {
   /** The credential's home world (its `world` claim), whatever world this
    *  session started or travelled to — what lastWorld is recorded against. */
   readonly home: string;
-  constructor(private auth: Auth, ws: WebSocket, private agentToken = "", home?: string) {
+  /** Record where this session STARTS, once the body has actually joined
+   *  there? False when the resume check could not run: the agent was started
+   *  at home only because the memory could not be verified, and that must not
+   *  overwrite it (Greptile #261). */
+  private readonly recordStart: boolean;
+  constructor(private auth: Auth, ws: WebSocket, private agentToken = "", home?: string, recordStart = true) {
     this.home = home ?? auth.world ?? "commons";
+    this.recordStart = recordStart;
     this.conn = McplConnection.fromWebSocket(ws as never);
     this.agent = this.createAgent(auth.world ?? "commons");
     this.channelId = `world:${this.agent.world}`;
@@ -431,7 +437,7 @@ class Session {
     // The credential can only NARROW (an operator keeping an agent to a list
     // of worlds); the WORLD decides who may come in. Both are asked before
     // anything moves, so a refusal leaves the body where it was.
-    if (!joinAllowed(this.auth, target))
+    if (!joinAllowed(this.auth, target, this.home))
       return { ok: false, code: -32017, why: `world "${target}" is outside the worlds this credential is limited to; worlds marks where you may travel` };
     const a = await accessProbe(target, this.agentToken);
     if (!a) return { ok: false, code: -32024, why: `the world server didn't say whether you may go to "${target}", so nothing moved; try again in a moment` };
@@ -730,6 +736,11 @@ class Session {
     // before the body even joins — a decision, not a per-session default
     if (activityCfg[this.auth.id]) this.agent.setActivity(activityCfg[this.auth.id]);
     await this.agent.connect();
+    // where this session started is where the agent now IS — written only now
+    // that the body has joined (a join that never happened must not move the
+    // memory), and never when the start was a fallback from an unverifiable
+    // memory (Greptile #261)
+    if (this.recordStart) rememberWorld(this.auth.id, this.agent.world, this.home);
 
     // world events → channel traffic (this is the push path — no host code).
     //
@@ -1246,7 +1257,7 @@ class Session {
       rememberAvatar: (path) => { chosenAvatar[this.auth.id] = path; persistState(); },
       rememberActivity: (cfg) => { activityCfg[this.auth.id] = cfg; persistState(); },
       travel: (world) => this.travelTool(world),
-      worldPolicy: { canJoin: (world) => joinAllowed(this.auth, world), canFound: this.auth.create !== false },
+      worldPolicy: { canJoin: (world) => joinAllowed(this.auth, world, this.home), canFound: this.auth.create !== false },
     };
   }
 
@@ -1384,10 +1395,14 @@ async function accessProbe(name: string, token: string): Promise<AccessAnswer | 
  *  validation): the door refusing early is one closed loop instead of a
  *  granted join dying against the sequencer 8s later. */
 const WORLD_NAME_RE = /^[a-z0-9_-]{1,64}$/;
-function joinAllowed(auth: Auth, world: string): boolean {
+function joinAllowed(auth: Auth, world: string, home = auth.world ?? "commons"): boolean {
   if (!WORLD_NAME_RE.test(world)) return false;
   if (!auth.worlds) return true;
-  return world === (auth.world ?? "commons") || auth.worlds.some((w) => w === "*" || w === world);
+  // the credential's HOME is always allowed — passed explicitly by a session,
+  // whose auth.world may have been rewritten to where it started (a dial-time
+  // ?world= or a resume): checking that instead stranded an agent away from
+  // home (Greptile #261)
+  return world === home || auth.worlds.some((w) => w === "*" || w === world);
 }
 /** Per-world watermark key for missed-mention replay. World-fixed identity was
  *  a safe assumption before RFC-005; a commons seq is meaningless in annex.
@@ -1496,7 +1511,16 @@ wss.on("connection", (ws, req) => {
   // when it left; if it is gone, it is gone).
   const memo = !dialWorld ? lastWorld[auth.id] : undefined;
   const resume = memo && memo.home === mintedWorld && memo.world !== mintedWorld
-    && WORLD_NAME_RE.test(memo.world) && joinAllowed(auth, memo.world) ? memo.world : undefined;
+    && WORLD_NAME_RE.test(memo.world) && joinAllowed(auth, memo.world, mintedWorld) ? memo.world : undefined;
+  // every skipped resume says why, so a trip home reads as expected rather
+  // than as lost memory (Greptile #261)
+  if (memo && !resume && memo.world !== mintedWorld) {
+    const why = memo.home !== mintedWorld ? `its home changed from "${memo.home}" to "${mintedWorld}"`
+      : !WORLD_NAME_RE.test(memo.world) ? "the remembered name is not a world name"
+        : "its credential no longer allows that world";
+    console.log(`[${ts()}] [mcpl] ${auth.id}: not resuming in "${memo.world}" — ${why}; starting at home "${mintedWorld}"`);
+  }
+  let recordStart = true;   // false: started at home only because the memory could not be verified
   {
     void (async () => {
       if (resume) {
@@ -1506,7 +1530,8 @@ wss.on("connection", (ws, req) => {
           auth = { ...auth!, world: resume };
           admit(); return;
         }
-        console.log(`[${ts()}] [mcpl] ${auth!.id}: last world "${resume}" ${!r ? "could not be checked" : !r.exists ? "no longer exists" : "isn't open to it now"} — starting at home "${mintedWorld}"`);
+        if (!r) recordStart = false;   // keep the memory: the next reconnect tries it again
+        console.log(`[${ts()}] [mcpl] ${auth!.id}: last world "${resume}" ${!r ? "could not be checked (memory kept)" : !r.exists ? "no longer exists" : "isn't open to it now"} — starting at home "${mintedWorld}"`);
       }
       const wname = auth!.world ?? "commons";
       const a = await accessProbe(wname, token ?? "");
@@ -1559,8 +1584,7 @@ wss.on("connection", (ws, req) => {
     // cleanly killed instead of rubberbanding against its successor
     const prev = sessions.get(auth!.id);
     if (prev) { console.log(`[${ts()}] [mcpl] ${auth!.id} reconnected — taking over previous session`); prev.close(); }
-    const session = new Session(auth!, ws, token ?? "", mintedWorld);
-    rememberWorld(auth!.id, auth!.world ?? "commons", mintedWorld);   // where this session starts is where it is
+    const session = new Session(auth!, ws, token ?? "", mintedWorld, recordStart);
     wire.rememberAuthor(auth!);
     sessions.set(auth!.id, session);
     startSession(session, ws, auth!);

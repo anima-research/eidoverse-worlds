@@ -93,10 +93,22 @@ const world = spawnChild([process.execPath, "server/server.ts"], {
 // interrupted (the pre-fix failure was a kill-timing flake for exactly that
 // reason: the check only bit when the race landed).
 writeFileSync(`${statePath}.tmp`, "");
-const mcpl = spawnChild([process.execPath, "mcpl/net-server.ts"], {
+const doorEnv = {
   MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,
   MCPL_TOKENS: tokensPath, MCPL_STATE: statePath, MCPL_INSTANCE_NONCE: NONCE,
-});
+};
+let mcpl = spawnChild([process.execPath, "mcpl/net-server.ts"], doorEnv);
+/** Restart ONLY the door — same port, same state file, same nonce — and wait
+ *  until the new process proves it is ours. (§4l: what a door restart keeps.) */
+async function restartDoor() {
+  try { mcpl.kill(); } catch { /* already gone */ }
+  await Promise.race([(mcpl as unknown as { exited: Promise<unknown> }).exited, sleep(5000)]);
+  mcpl = spawnChild([process.execPath, "mcpl/net-server.ts"], doorEnv);
+  await waitFor("restarted door /healthz echoes our nonce", async () => {
+    const r = await fetch(`http://127.0.0.1:${MPORT}/healthz`);
+    return r.ok && (await r.text()).trim() === `ok ${NONCE}`;
+  });
+}
 // Last-resort net: if anything between here and the try throws, or the process
 // dies by signal, the children still go. process.exit does NOT run finally
 // blocks, so this cannot be left to the one at the bottom.
@@ -780,6 +792,28 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
     reg["nofound-token"].world = "commons";
     writeFileSync(tokensPath, JSON.stringify(reg));
     await sleep(300);
+    // the trip HOME stays allowed after a resume: roamer2 is limited to
+    // ["annex"] with home commons, and its home must not be read from where it
+    // resumed (Greptile #261)
+    const b1 = await connectHost("roamer2-token");
+    await sleep(1200);
+    const tb1 = txt(await b1.request("tools/call", { name: "travel", arguments: { world: "annex" } }));
+    check("roamer2 (limited to annex) travels to annex", /Arrived in "annex"/.test(tb1), tb1);
+    b1.ws.close(); await sleep(600);
+    const b2 = await connectHost("roamer2-token", RESUME);
+    await sleep(1200);
+    check("roamer2 resumes in annex", (await where(b2)) === "world:annex", String(await where(b2)));
+    const homeTrip = txt(await b2.request("tools/call", { name: "travel", arguments: { world: "commons" } }));
+    check("…and may still travel home (its credential's home, not where it resumed)", /Arrived in "commons"/.test(homeTrip), homeTrip);
+    const backTrip = txt(await b2.request("tools/call", { name: "travel", arguments: { world: "annex" } }));
+    check("…and back to annex", /Arrived in "annex"/.test(backTrip), backTrip);
+    b2.ws.close(); await sleep(600);
+    // a DOOR RESTART: the memory is on disk, so it outlives the process
+    await restartDoor();
+    const b3 = await connectHost("roamer2-token", RESUME);
+    await sleep(1200);
+    check("after the door itself restarts, roamer2 resumes in annex", (await where(b3)) === "world:annex", String(await where(b3)));
+    b3.ws.close(); await sleep(600);
   }
 
   // ── 4j. THE FIX FOR #1 MUST NOT WIDEN MCPL AUTHORITY ─────────────────────
@@ -910,6 +944,17 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   // the opposite of the old post-detach outcome, and the better one
   await sleep(500);
   check("…and the host's connection to the door was not torn down", victim.ws.readyState === WebSocket.OPEN, `readyState=${victim.ws.readyState}`);
+  // a reconnect while the world server is DOWN must not move the memory: the
+  // resume check cannot run and nothing joins, so where the agent was is kept
+  // for when the server is back (Greptile #261)
+  {
+    const before = JSON.parse(readFileSync(statePath, "utf8")).__world?.roamer2?.world;
+    const c5 = await Promise.race([connectHost("roamer2-token", RESUME), sleep(8000).then(() => null)]);
+    await sleep(3000);
+    const after = JSON.parse(readFileSync(statePath, "utf8")).__world?.roamer2?.world;
+    check("a reconnect while the world server is down keeps where the agent was", before === "annex" && after === "annex", `${before} → ${after}`);
+    try { (c5 as any)?.ws?.close(); } catch { /* gone */ }
+  }
 } finally {
   // Verified termination: kill(), then AWAIT the exit. `kill()` alone returns
   // immediately, so the old teardown could return while children still held
