@@ -152,27 +152,28 @@ const laneOf = (name: string): Lane => (CORE.includes(name) ? "core" : BROWSER.i
 // what a suite needs beyond bun and this checkout (a scratch dir, loopback ports: every suite may use those)
 const NEEDS: Record<string, string> = { conformance: "python3 + cryptography" };
 for (const n of BROWSER) NEEDS[n] = "Chromium";
-// seconds each suite took on the reference host (WSL2, 16 threads, 7 GB; 2026-10-18, one suite at a time). The timeout
+// seconds each suite took on the reference host (WSL2, 16 threads, 7 GB; 2026-10-18, one suite at a time, inside this gate's
+// hermetic env; the browser lane from the house gate's run the same day). The timeout
 // is 5x that, at least 180 s: a slow host gets room, a hung suite is still killed.
 const EXPECT: Record<string, number> = {
-  "agent-mesh-collision": 93, "nov1": 0.8, "vocab": 3.4, "nonumber": 1.6, "hostile": 0.4, "attack": 2.5,
-  "libfile": 0.1, "gaps": 6.3, "phys": 4.3, "physlive": 1.3, "phystick": 6.0, "sclock": 2.8, "physseeds": 2.3,
-  "eidosim": 12, "eidosim-live": 1.5, "mover": 5.0, "colliders": 0.2, "lying-support": 16, "replay": 0.4,
-  "conformance": 2.9, "sweep": 2, "oracle": 5, "inplace": 15, "oldworlds": 1.2, "browser": 1.5, "descriptors": 0.1,
-  "light-readers": 0.4, "ghost-mesh-size": 0.5, "boot-init": 0.7, "editor-range": 0.2, "lookat-forward": 0.5,
+  "agent-mesh-collision": 92, "nov1": 0.7, "vocab": 3.5, "nonumber": 1.4, "hostile": 0.3, "attack": 1.5,
+  "libfile": 0.1, "gaps": 5.6, "phys": 3.9, "physlive": 1.2, "phystick": 5.7, "sclock": 2.8, "physseeds": 2.1,
+  "eidosim": 12, "eidosim-live": 1.5, "mover": 4.5, "colliders": 0.2, "lying-support": 16, "replay": 0.4,
+  "conformance": 2.9, "sweep": 0.3, "oracle": 0.4, "inplace": 15, "oldworlds": 1.2, "browser": 1.5, "descriptors": 0.1,
+  "light-readers": 0.4, "ghost-mesh-size": 0.5, "boot-init": 0.5, "editor-range": 0.3, "lookat-forward": 0.5,
   "role-grammar": 0.3, "lock-level": 0.1, "rot": 0.1, "dismount-height": 0.2, "build-gate": 0.3,
-  "capsule-recovery": 10, "debug-tabs": 0.4, "governor-xr": 0.2, "unknown-comp": 1.1, "reach-order": 1,
-  "editcommit": 0.8, "hierarchy-commit": 0.5, "verbclasses": 0.0, "authority-layers": 0.0, "authority": 8.6,
-  "ids": 1.5, "scars": 1.0, "r8": 1.0, "r9": 1.5, "r10": 1.8, "r11": 0.6, "names": 2.3, "parity": 5.4,
-  "directory": 87, "keyhints": 0.1, "client": 60, "refusedjoin": 126, "server": 44, "identity": 45,
-  "fork-reset": 8.0, "reset-race": 0.5, "scripts": 60, "grab": 4.6, "shove": 2.4, "shove-walker": 0.2,
-  "agentshove": 166, "hands": 1.4, "reset": 2.3, "settle": 6.0, "disabled": 1.2, "histdiff": 0.3, "reachgate": 22,
-  "consent": 0.0, "history-rows": 0.5, "scale": 131, "roles": 3.4, "access": 8.3, "batch2": 1.9,
-  "describe-particles": 1.1, "client-b2": 19, "build": 1.6, "counter": 2.2, "build-client": 8.1, "shiplist": 1.7,
-  "shiplist-probe": 197, "agenttools": 22, "presence": 10, "modhole": 0.1, "xss-probe": 15, "pretrans": 3.0,
-  "soundclock": 0.5, "eidomodel": 0.8, "party-probe": 486, "colour-picker": 8.1, "alias": 0.4, "navgrid": 64,
-  "navgrid-edge": 0.7, "places": 146, "places-scale": 16, "shape-attach": 1.7, "shape-physics": 1.4,
-  "shape-repair": 0.7, "buildcheck": 36, "buildcheck-queue": 11, "buildcheck-route": 38, "client-tools": 202
+  "capsule-recovery": 10, "debug-tabs": 0.3, "governor-xr": 0.2, "unknown-comp": 1.1, "reach-order": 1.5,
+  "editcommit": 0.8, "hierarchy-commit": 0.6, "verbclasses": 0.0, "authority-layers": 0.0, "authority": 9.0,
+  "ids": 1.4, "scars": 1.0, "r8": 0.9, "r9": 1.5, "r10": 1.7, "r11": 0.6, "names": 2.1, "parity": 5.4,
+  "directory": 13, "keyhints": 0.0, "client": 60, "refusedjoin": 126, "server": 40, "identity": 42,
+  "fork-reset": 6.0, "reset-race": 0.4, "scripts": 48, "grab": 3.8, "shove": 2.0, "shove-walker": 0.1,
+  "agentshove": 165, "hands": 1.2, "reset": 1.7, "settle": 5.4, "disabled": 1.2, "histdiff": 0.3, "reachgate": 22,
+  "consent": 0.0, "history-rows": 0.6, "scale": 125, "roles": 3.1, "access": 8.3, "batch2": 1.9,
+  "describe-particles": 1.1, "client-b2": 19, "build": 1.5, "counter": 2.2, "build-client": 8.1, "shiplist": 1.7,
+  "shiplist-probe": 197, "agenttools": 20, "presence": 10, "modhole": 0.1, "xss-probe": 15, "pretrans": 2.8,
+  "soundclock": 0.2, "eidomodel": 0.7, "party-probe": 486, "colour-picker": 8.1, "alias": 0.4, "navgrid": 64,
+  "navgrid-edge": 0.6, "places": 130, "places-scale": 6.3, "shape-attach": 0.7, "shape-physics": 0.7,
+  "shape-repair": 0.4, "buildcheck": 18, "buildcheck-queue": 7.4, "buildcheck-route": 22, "client-tools": 202
 };
 // PROTOCOL_TIMEOUT_SCALE=<factor> stretches (or, to test the kill, shrinks) every timeout; the manifest shows factor 1
 const TIMEOUT_SCALE = Number(process.env.PROTOCOL_TIMEOUT_SCALE ?? 1) > 0 ? Number(process.env.PROTOCOL_TIMEOUT_SCALE ?? 1) : 1;
