@@ -381,20 +381,39 @@ const file = path.join(tmp, "worlds", ".directory.json");
   // EP3: an epoch entered mid-log after thousands of instant-fold entries: the local Commons copy (commons-0927, 15k
   // entries, no epoch) with her eidosim-0.5 epoch and punts appended, their ids remapped onto real Commons things, models
   // addressed from this host's real library. The thousands before the epoch must come out exactly as they did without it.
-  { const roots = [path.resolve(import.meta.dir, "../../.."), path.resolve(import.meta.dir, "../../worlds")];
-    const found = roots.flatMap((r) => { try { return fs.readdirSync(r).flatMap((d) => [path.join(r, d, "worlds", "commons-0927", "log.jsonl"), path.join(r, d, "commons-0927", "log.jsonl"), path.join(r, "commons-0927", "log.jsonl")]); } catch { return []; } })
-      .filter((f) => fs.existsSync(f));
-    if (process.env.PROTOCOL_COMMONS) found.unshift(process.env.PROTOCOL_COMMONS);   // a commons-0927 log.jsonl elsewhere
-    if (!found.length) console.log("  SKIP EP3: no commons-0927 log on this host (looked beside the checkout); EP3 is unchecked here");
-    else {
-      const C = parseLog(found[0]); const st: any = v1Empty(); for (const e of C) foldEntry(st, e);
-      const { LIBRARY_DIR } = await import("../../server/config.ts");
+  // The copy is the repo's own unless a host names its real one: a Commons-sized v1 log made here (deterministic: 40 things
+  // on six stand-in library models, then ~3000 instant-fold entries of moves, components, says, removals and respawns), its
+  // models stand-in bytes in the probe's scratch library. PROTOCOL_COMMONS=<commons-0927 log.jsonl> (models from
+  // PROTOCOL_COMMONS_LIBRARY, else this server's library) runs it on the real one; without it, an OPTIONAL line says so.
+  { const syntheticCommons = () => {
+      const models = ["crate.glb", "ball.glb", "wall.glb", "deck.glb", "lamp.glb", "bench.glb"], lib: Record<string, Buffer> = {};
+      for (const m of models) lib[m] = Buffer.from(`a stand-in model for ${m} (synthetic Commons)`);
+      let seed = 0x9e3779b9; const rnd = () => ((seed = (Math.imul(seed ^ (seed >>> 15), 0x2c1b3c6d) + 0x6d2b79f5) >>> 0) / 2 ** 32);
+      const r2 = (x: number) => Math.round(x * 100) / 100; let seq = -1, ts = 1785635177077; const L: any[] = [];
+      const put = (actor: string, verb: string, args: any) => L.push({ seq: ++seq, ts: (ts += 1 + Math.floor(rnd() * 4000)), actor, verb, args });
+      const people = ["founder", "helper", "visitor1", "visitor2", "visitor3"];
+      put("world", "grant", { id: "founder", role: "owner", gen: true }); put("founder", "grant", { id: "helper", role: "builder" }); put("founder", "grant", { id: "*", gen: true });
+      const things = Array.from({ length: 40 }, (_, i) => `thing_${String(i).padStart(2, "0")}`);
+      for (const [i, id] of things.entries()) put(people[i % 2], "spawn", { id, lib: models[i % models.length], pos: [r2(rnd() * 60 - 30), 0, r2(rnd() * 60 - 30)], yaw: r2(rnd() * 6) });
+      const alive = new Set(things);
+      for (let k = 0; k < 3000; k++) { const who = people[Math.floor(rnd() * people.length)], id = things[Math.floor(rnd() * things.length)], x = rnd();
+        if (!alive.has(id)) { put(who, "spawn", { id, lib: models[Math.floor(rnd() * models.length)], pos: [r2(rnd() * 60 - 30), 0, r2(rnd() * 60 - 30)], yaw: r2(rnd() * 6) }); alive.add(id); }
+        else if (x < 0.45) put(who, "place", { id, pos: [r2(rnd() * 60 - 30), 0, r2(rnd() * 60 - 30)], yaw: r2(rnd() * 6) });
+        else if (x < 0.6) put(who, "comp", { id, type: "label", data: `note ${k}` });
+        else if (x < 0.95) put(who, "say", { text: `line ${k}` });
+        else if (alive.size > 20) { put(who, "remove", { id }); alive.delete(id); } }
+      return { C: L, lib }; };
+    let C: any[], lib: Record<string, Buffer> = {}, libDir: string | null = null, src: string;
+    if (process.env.PROTOCOL_COMMONS) { C = parseLog(process.env.PROTOCOL_COMMONS); libDir = process.env.PROTOCOL_COMMONS_LIBRARY ?? (await import("../../server/config.ts")).LIBRARY_DIR; src = "the Commons copy"; }
+    else { ({ C, lib } = syntheticCommons()); src = "a synthetic Commons-sized copy"; console.log("OPTIONAL ep3-real-commons: EP3 ran on its synthetic Commons-sized log (set PROTOCOL_COMMONS=<a commons-0927 log.jsonl> and PROTOCOL_COMMONS_LIBRARY=<its library> for the real one)"); }
+    const modelBytes = (l: string) => (libDir ? (fs.existsSync(path.join(libDir, l)) ? fs.readFileSync(path.join(libDir, l)) : null) : lib[l] ?? null);
+    { const st: any = v1Empty(); for (const e of C) foldEntry(st, e);
       // library models only (a store/ path resolves under OPT_DIR, which the probe gives a scratch one)
-      const libs = [...new Set(Object.values<any>(st.entities).map((e) => e.lib).filter((l) => typeof l === "string" && /\.glb$/i.test(l) && !l.startsWith("store/") && fs.existsSync(path.join(LIBRARY_DIR, l))))];
+      const libs = [...new Set(Object.values<any>(st.entities).map((e) => e.lib).filter((l) => typeof l === "string" && /\.glb$/i.test(l) && !l.startsWith("store/") && modelBytes(l)))];
       const pick = Object.entries<any>(st.entities).filter(([, e]) => typeof e.lib === "string" && libs.includes(e.lib) && !e.parent && !e.kind && Array.isArray(e.pos) && e.pos.every(Number.isFinite)).sort(([a], [b]) => (a < b ? -1 : 1));
       const byLib = new Map<string, string>(); for (const [id, e] of pick) if (!byLib.has(e.lib)) byLib.set(e.lib, id);
       const four = [...byLib.values()].slice(0, 4);
-      if (four.length < 4) ok(false, "EP3 the Commons copy has four modelled things on distinct library models to punt", four);
+      if (four.length < 4) ok(false, `EP3 ${src} has four modelled things on distinct library models to punt`, four);
       else {
         const F = parseLog(path.join(FIX, "eidosim-0.5", "log.jsonl")); const ep = F.find((e: any) => e.verb === "epoch");
         const as: Record<string, string> = { crate: four[0], ball: four[1], wall: four[2], deck: four[3] };
@@ -408,9 +427,9 @@ const file = path.join(tmp, "worlds", ".directory.json");
           if (e.verb === "punt") return shift({ ...e, actor: e.args.id === "ball" ? "antra" : "janus", args: { ...e.args, id: as[e.args.id] } });
           return shift(e); });
         const X = [...C, ...tail];
-        const addresses = Object.fromEntries(libs.map((l) => [l, shaHex(fs.readFileSync(path.join(LIBRARY_DIR, l)))]));
-        const t = importer("commons", X, { libDir: LIBRARY_DIR });
-        report("EP3", `an epoch entered after ${C.length} instant-fold entries (the Commons copy, her epoch and punts on ${four.join(", ")}): every body rests where her sim rests, through the importer`, facts(t, X, { addresses, launches: tail.filter((e: any) => e.verb === "punt").length }));
+        const addresses = Object.fromEntries(libs.map((l) => [l, shaHex(modelBytes(l)!)]));
+        const t = importer("commons", X, libDir ? { libDir } : { lib });
+        report("EP3", `an epoch entered after ${C.length} instant-fold entries (${src}, her epoch and punts on ${four.join(", ")}): every body rests where her sim rests, through the importer`, facts(t, X, { addresses, launches: tail.filter((e: any) => e.verb === "punt").length }));
         // the thousands before it: the pure translator over the copy alone and over the copy + epoch agree entry for entry
         // up to the epoch's act (the second entry, the translator's stamp, differs by design: @10 says the sim ran)
         const nonce = "ZXAzLXNhbWUtbm9uY2UtMDAw";   // one world id for both (the default nonce hashes the whole source)
