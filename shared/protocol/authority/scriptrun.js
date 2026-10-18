@@ -276,7 +276,7 @@ export function liftWorld(w) {
       out.push({ repair: { repaired: ids, failed } });
     } catch (x) { out.push({ repair: { repaired: [], failed: [{ id: null, code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) }] } }); }
     // names renamed before release (shaperepair.js RENAMED_COMPONENTS: @world trusted → trusted-components; RENAMED_FIELDS:
-    // grabbable/station pose → anim, a grip's fingers → grasp; R 10-17): a pure
+    // grabbable/station pose → anim, a grip's fingers → grasp, a motion's type bob → oscillate; R 10-17): a pure
     // rename, so every load does it (no marker); nothing to rename writes nothing. One system act, admitted PER THING as the
     // repair is (review r11 L3): a thing whose rename the door refuses is left as it was and named in the act's `failed`,
     // and the rest rename. When nothing renames, nothing is written (a refused thing is said in the load's output only, so

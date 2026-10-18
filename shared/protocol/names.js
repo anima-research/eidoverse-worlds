@@ -58,6 +58,18 @@ export function motionNode(key, m) {
   return m && typeof m.node === "string" && m.node ? m.node : key.slice(7);
 }
 
+// A motion's type (R 10-17 21:40: the back-and-forth along an axis is `oscillate`; it was bob before release). The old
+// spelling is READ for one release (a value an older log stored, a replica that folded it before the load's rename); the
+// door takes it and stores today's, and every load renames a stored one (shaperepair.js renameFields, rename-components).
+// The one reading every reader shares (renderer, seat signals, editor, agent): the old word is spelled here and nowhere
+// else in a reader (tools/protocol/vocab-check.ts).
+export const OLD_MOTION_TYPES = Object.freeze({ bob: "oscillate" });
+/** @param {any} m a motion value @returns {any} its type in today's spelling (anything else as it is) */
+export function motionType(m) {
+  const t = m?.type;
+  return typeof t === "string" && Object.hasOwn(OLD_MOTION_TYPES, t) ? OLD_MOTION_TYPES[t] : t;
+}
+
 /** @param {string} s @returns {string | null} the original name, or null when it was hashed (h--) */
 export function dec(s) {
   if (typeof s !== "string") return null;

@@ -36,7 +36,7 @@
 import { grassAtWrite } from "./assetref.js";
 import { eidoHex } from "../eido.js";
 import { COMPONENTS } from "./componentspec.js";
-import { partSlot } from "./names.js";
+import { partSlot, motionType } from "./names.js";
 const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 /** The light rig's falloff before a light said its own (client/lib/lightrig.js, three.js decay). */
 export const OLD_LIGHT_DECAY = 1.7;
@@ -187,9 +187,15 @@ export const RENAMED_COMPONENTS = Object.freeze({ "@world": Object.freeze({ trus
  *  the old spelling is taken and stored in the new: writes.js resolve) and the load (renameOps). Idempotent; a value
  *  already spelled today is returned as the same object; an old field stored as null is removed, never renamed to a null
  *  (to: null in its note). {value, renamed: [{field, from, to}]} */
-export const RENAMED_FIELDS = Object.freeze({ grabbable: Object.freeze({ pose: "anim", "grips.*.fingers": "grasp" }), station: Object.freeze({ pose: "anim" }) });
-export function renameFields(comp, v) {
+export const RENAMED_FIELDS = Object.freeze({ grabbable: Object.freeze({ pose: "anim", "grips.*.fingers": "grasp" }), station: Object.freeze({ pose: "anim" }),
+  // a VALUE renamed (R 10-17 21:40): a motion's type bob is oscillate, on a whole motion and on every motion:<slot>
+  motion: Object.freeze({ "type=bob": "type=oscillate" }) });
+/** The RENAMED_FIELDS entry a component key reads by: a part's motion (motion:<slot>) is a motion. */
+export const renamedFieldsKey = (comp) => (typeof comp === "string" && comp.startsWith("motion:") ? "motion" : comp);
+export function renameFields(comp0, v) {
+  const comp = renamedFieldsKey(comp0);
   if (!bag(v) || !Object.hasOwn(RENAMED_FIELDS, comp)) return { value: v, renamed: [] };
+  if (comp === "motion") { const t = motionType(v); return t === v.type ? { value: v, renamed: [] } : { value: { ...v, type: t }, renamed: [{ field: "type", from: v.type, to: t }] }; }
   let out = v; const renamed = []; const edit = () => (out === v ? (out = { ...v }) : out);
   if ("pose" in out) { edit(); const p = out.pose; delete out.pose;
     if (comp === "grabbable" && p === "two-hand") { if (out.twoHanded === undefined) out.twoHanded = true; renamed.push({ field: "pose", from: p, to: { twoHanded: out.twoHanded } }); }
@@ -209,7 +215,7 @@ export function renameOps(st, purged = null) {
     for (const [from, to] of Object.entries(map)) { if (!(from in c) || c[from] === purged) continue;
       ops.push({ verb: "delete", id, comp: from }); if (!(to in c)) ops.push({ verb: "set", id, comp: to, value: c[from] }); } }
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const c = st.entities[id].c; if (!bag(c)) continue;
-    for (const comp of Object.keys(RENAMED_FIELDS)) { if (!bag(c[comp]) || c[comp] === purged) continue;
+    for (const comp of Object.keys(c).filter((k) => Object.hasOwn(RENAMED_FIELDS, renamedFieldsKey(k))).sort()) { if (!bag(c[comp]) || c[comp] === purged) continue;
       const r = renameFields(comp, c[comp]); if (r.renamed.length) ops.push({ verb: "set", id, comp, value: r.value, renamed: r.renamed }); } }
   return ops;
 }
