@@ -254,8 +254,14 @@ console.log(osOwnership
 check("stale state tmp from a previous incarnation swept at boot", !existsSync(`${statePath}.tmp`));
 
 /** Minimal MCPL 0.5 host: initialize, grant, then request/notification I/O. */
+/** Every connection here starts at the credential's HOME unless it names a
+ *  world: an agent with no world asked for now RESUMES where it last was
+ *  (§4l), and these sections are about what happens from home. RESUME (the
+ *  marker) dials with no world at all, which is what §4l tests. */
+const RESUME = "__resume";
+const startAt = (query: string) => query === RESUME ? "" : /[?&]world=/.test(query) ? query : `${query}&world=commons`;
 async function connectHost(token: string, query = "", mode: "accept" | "decline" | "mute" | "error" = "accept") {
-  const ws = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=${token}${query}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=${token}${startAt(query)}`);
   let nextId = 10;
   const pending = new Map<number, (m: any) => void>();
   const inbound: any[] = [];
@@ -305,7 +311,7 @@ async function connectHost(token: string, query = "", mode: "accept" | "decline"
  *  lane" was advertised and never once exercised, which is exactly how it
  *  shipped always-denied. */
 async function connectPlain(token: string) {
-  const ws = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=${token}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=${token}${startAt("")}`);
   let nextId = 10;
   const pending = new Map<number, (m: any) => void>();
   const inbound: any[] = [];
@@ -721,6 +727,59 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
     const reopened = txt(await owner.request("tools/call", { name: "world_access", arguments: { action: "mode", mode: "open" } }));
     check("the owner opens it again (the rest of the suite expects it open)", /open/.test(reopened), reopened);
     free.ws.close(); owner.ws.close();
+  }
+
+  // ── 4l. AN AGENT RESUMES WHERE IT WAS ─────────────────────────────────────
+  // A reconnect with no world asked for lands where the agent last was, not
+  // at its home — unless that world no longer lets it in, or its home claim
+  // changed since. An explicit ?world= always wins.
+  {
+    const where = async (h: any) => (await h.request("channels/list", {})).result?.channels?.[0]?.id;
+    const a1 = await connectHost("nofound-token");           // home commons, worlds ["*"]
+    await sleep(1200);
+    const t1 = txt(await a1.request("tools/call", { name: "travel", arguments: { world: "annex" } }));
+    check("an agent travels to annex", /Arrived in "annex"/.test(t1), t1);
+    a1.ws.close(); await sleep(600);
+    const a2 = await connectHost("nofound-token", RESUME);
+    await sleep(1200);
+    check("reconnecting with no world asked for resumes in annex", (await where(a2)) === "world:annex", String(await where(a2)));
+    a2.ws.close(); await sleep(600);
+    const a3 = await connectHost("nofound-token", "&world=commons");
+    await sleep(1200);
+    check("an explicit ?world= still wins", (await where(a3)) === "world:commons", String(await where(a3)));
+    a3.ws.close(); await sleep(600);
+    const a4 = await connectHost("nofound-token", RESUME);
+    await sleep(1200);
+    check("…and is remembered: the next plain reconnect starts there (commons)", (await where(a4)) === "world:commons", String(await where(a4)));
+    const t4 = txt(await a4.request("tools/call", { name: "travel", arguments: { world: "annex" } }));
+    check("back to annex", /Arrived in "annex"/.test(t4), t4);
+    a4.ws.close(); await sleep(600);
+    // the world it left no longer lets it in → home, not a refusal
+    const owner = await connectHost("roamer-token", "&world=annex");
+    await sleep(1200);
+    check("the owner closes annex", /members only/.test(txt(await owner.request("tools/call", { name: "world_access", arguments: { action: "mode", mode: "members" } }))));
+    const a5 = await connectHost("nofound-token", RESUME);
+    await sleep(1200);
+    check("an agent whose last world is now closed to it wakes up at home", (await where(a5)) === "world:commons", String(await where(a5)));
+    a5.ws.close();
+    check("the owner reopens annex", /open/.test(txt(await owner.request("tools/call", { name: "world_access", arguments: { action: "mode", mode: "open" } }))));
+    owner.ws.close(); await sleep(600);
+    // an operator who changes the agent's HOME has said where it lives now
+    const a6 = await connectHost("nofound-token");
+    await sleep(1200);
+    const t6 = txt(await a6.request("tools/call", { name: "travel", arguments: { world: "annex" } }));
+    check("annex once more", /Arrived in "annex"/.test(t6), t6);
+    a6.ws.close(); await sleep(600);
+    const reg = JSON.parse(readFileSync(tokensPath, "utf8"));
+    reg["nofound-token"].world = "free-place";
+    writeFileSync(tokensPath, JSON.stringify(reg));
+    const a7 = await connectHost("nofound-token", RESUME);
+    await sleep(1200);
+    check("after its home claim changes, it starts at the new home, not the old memory", (await where(a7)) === "world:free-place", String(await where(a7)));
+    a7.ws.close();
+    reg["nofound-token"].world = "commons";
+    writeFileSync(tokensPath, JSON.stringify(reg));
+    await sleep(300);
   }
 
   // ── 4j. THE FIX FOR #1 MUST NOT WIDEN MCPL AUTHORITY ─────────────────────
