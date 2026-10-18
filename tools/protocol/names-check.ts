@@ -606,7 +606,7 @@ const cases: Case[] = [
     good: (o) => o.first === "wave" && o.firstOld === false && o.second === false && JSON.stringify(o.read) === '["wave","cheer",null]' && o.drop === '{"a":1}' && o.srv && o.net && o.rem === 2 },
   { id: "E2", what: "…the action bar's modules and defs: actionbar.js, actionbar_lite.js, animnames.js, defs/animations/_actionbar.json (the registry's actionbar key, validateActionBar); the old files are gone; the slash command is /anim", async run() {
       const AD: any = await import(TREE + "shared/animdefs.js"); const defs = readText("server/defs.ts"), reg = readText("client/lib/commands/registry.js");
-      const olds = fs.readdirSync(TREE + "client/lib").concat(fs.readdirSync(TREE + "defs/animations")).filter((f: string) => f.toLowerCase().includes(EM));
+      const olds = fs.readdirSync(TREE + "client/lib").concat(fs.readdirSync(TREE + "defs/animations")).filter((f: string) => new RegExp(`(?<![rd])${EM}`, "i").test(f));
       return { now: ["client/lib/actionbar.js", "client/lib/actionbar_lite.js", "client/lib/animnames.js", "defs/animations/_actionbar.json"].every(exists), olds,
         key: /actionbar: loadSidecar\("animations\/_actionbar\.json", validateActionBar\)/.test(defs), v: typeof AD.validateActionBar === "function" && AD.validateActionBar({ wave: { clip: "raise" } }).length === 0,
         slash: /\{ name: 'anim', help: '\/anim <name>/.test(reg) }; },
