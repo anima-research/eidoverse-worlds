@@ -430,7 +430,7 @@ const cases: Case[] = [
   { id: "P3", what: "personActions: a moderator acting on a moderator gets no acts, and one dim line saying rank is why", run() {
       const mo = { id: "m", rank: 200, permissions: ["mute", "kick", "ban", "grantRoles"] };
       return RL.personActions?.(mo, { id: "m2", rank: 200, role: "moderator", name: "Moderator" }); },
-    good: (o) => Array.isArray(o) && o.map((x: any) => x.id).join() === "message,rank-line,history" && /moderator; you can't act on equal or higher ranks/.test(o[1].label) && o[1].dim },
+    good: (o) => Array.isArray(o) && o.map((x: any) => x.id).join() === "mention,rank-line,history" && /moderator; you can't act on equal or higher ranks/.test(o[1].label) && o[1].dim },
   { id: "P4", what: "badges: none for a visitor, 'guest' for someone without an account, the role's name otherwise", run() { const B = RL.badgeOf;
       return { v: B?.({ role: "visitor" }), g: B?.({ role: "builder", anon: true }), o: B?.({ role: "owner", name: "Owner" }), c: B?.({ role: "crew", name: "Crew" }) }; },
     good: (o) => o.v === null && o.g?.text === "guest" && o.o?.text === "owner" && o.o.tone === "owner" && o.c?.text === "crew" && o.c.tone === "role" },

@@ -22,7 +22,7 @@ const ran: string[] = [];
 A.clear();
 A.register({ id: 'body:sit', title: 'sit', group: 'body', key: 'X', run: () => ran.push('body:sit') });
 A.register({ id: 'bar:wave', title: 'wave', group: 'action bar', key: '1', run: () => ran.push('bar:wave') });
-A.register({ id: 'cmd:anim', title: '/anim', group: 'commands', keywords: ['emote'], detail: '/anim <name> — play an anim once', fill: '/anim ' });
+A.register({ id: 'cmd:anim', title: '/anim', group: 'commands', keywords: ['clip'], detail: '/anim <name> — play an anim once', fill: '/anim ' });
 A.register({ id: 'cmd:who', title: '/who', group: 'commands', detail: 'list everyone present', run: () => ran.push('cmd:who') });
 
 const hint = document.createElement('div'); hint.id = 'hintbar'; document.body.append(hint);
@@ -63,7 +63,7 @@ reset(); L.openLantern('/who');
 check('"/who": the pass-through row first', rowKinds()[0] === 'raw', rowKinds().join());
 key('Enter');
 check('"/who" + Enter goes through the command path', said.join() === '/who' && ran.length === 0, JSON.stringify({ said, ran }));
-reset(); L.openLantern('emote'); key('Tab');
+reset(); L.openLantern('clip'); key('Tab');
 check('a fill command on Tab fills the line and stays open', input.value === '/anim ' && L.isLanternOpen() && said.length === 0, JSON.stringify({ v: input.value, said }));
 L.closeLantern();
 
