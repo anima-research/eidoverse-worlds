@@ -29,6 +29,9 @@
 //   E   the old name of a gesture is gone (R 10-17 16:26): presence pose.anim (the old key read for one release), the
 //       action bar's modules and defs, every identifier, comment and string; it is spelled in exactly two places: the
 //       hidden tool alias's entry and the old key's read (EM below builds the word, so this file never spells it)
+//   OS  a motion's back-and-forth along an axis is oscillate (R 10-17 21:40; was bob): the registry, the door (old spelling
+//       taken, stored new), the load's rename (a field VALUE, per thing, every load, idempotent), the readers (the old spelling
+//       read for one release: names.js motionType), the editor's card, the translator (@14), the docs
 //   X   the version history records it
 // @ts-nocheck
 import fs from "node:fs";
@@ -131,6 +134,20 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a comment says the old word", "client/lib/avatar.js", "  /** Play a gesture over locomotion.", `  /** Play an ${EM} over locomotion.`, ["E3"]],
   ["the spec says the old word", "spec/PROTOCOL.md", "poses, gestures (`pose.anim`), reach descriptors", `poses, ${EM}s, reach descriptors`, ["E3"]],
   ["the alias also translates", "mcpl/tools.ts", "  posture: (a) => { const k", `  ${EM}: (a) => ({ name: a.name, mode: "once" }),\n  posture: (a) => { const k`, ["M5", "E3"]],
+  ["the registry says bob", "shared/protocol/componentspec.js", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"oscillate\", \"path\"]", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\", \"path\"]", ["OS1"]],
+  ["the card is still Bob", "shared/protocol/descriptors.js", "  Oscillate: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", "  Bob: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", ["OS1"]],
+  ["the door stores bob as written", "shared/protocol/authority/writes.js", "if (comp === \"motion\" || comp.startsWith(\"motion:\")) { const r = renameFields(comp, value);", "if (false) { const r = renameFields(comp, value);", ["OS2"]],
+  ["no motion rename", "shared/protocol/shaperepair.js", "  motion: Object.freeze({ \"type=bob\": \"type=oscillate\" }) });", "  });", ["OS2", "OS3"]],
+  ["the load renames only bare keys", "shared/protocol/shaperepair.js", "for (const comp of Object.keys(c).filter((k) => Object.hasOwn(RENAMED_FIELDS, renamedFieldsKey(k))).sort())", "for (const comp of Object.keys(RENAMED_FIELDS))", ["OS3"]],
+  ["the old word isn't read", "shared/protocol/names.js", "  return typeof t === \"string\" && Object.hasOwn(OLD_MOTION_TYPES, t) ? OLD_MOTION_TYPES[t] : t;", "  return t;", ["OS2", "OS3", "OS4"]],
+  ["the closed form reads the raw type", "client/lib/motioneval.js", "  let r;\n  switch (motionType(m)) {", "  let r;\n  switch (m.type) {", ["OS4"]],
+  ["the seat signals read the raw type", "client/lib/socksignals.js", "  switch (motionType(m)) {", "  switch (m.type) {", ["OS4"]],
+  ["the editor's card reads the raw type", "shared/editschema.js", "      const ty = motionType(m);", "      const ty = m.type;", ["OS4"]],
+  ["bob finds nothing", "shared/editschema.js", "Oscillate: ['float', 'hover', 'bob', 'back and forth', 'piston', 'sine']", "Oscillate: ['float', 'hover', 'back and forth', 'piston', 'sine']", ["OS5"]],
+  ["Add Component writes bob", "shared/editschema.js", "Oscillate: { type: 'oscillate', amp: 0.3, period: 4 }", "Oscillate: { type: 'bob', amp: 0.3, period: 4 }", ["OS5"]],
+  ["the translator keeps bob", "tools/protocol/import-v1/translate-v1.js", "  const m = motionType(m0) === m0.type ? m0 : { ...m0, type: motionType(m0) };", "  const m = m0;", ["OS6"]],
+  ["AGENTS.md says bob", "AGENTS.md", "`{type: pendulum\\|spin\\|orbit\\|oscillate\\|path, …}`", "`{type: pendulum\\|spin\\|orbit\\|bob\\|path, …}`", ["OS7"]],
+  ["the history forgets oscillate", "spec/PROTOCOL.md", "; and a motion's back-and-forth along an axis is `oscillate` (R 10-17 21:40; was `bob`:", "; and a motion's back-and-forth along an axis is the new word (R 10-17 21:40; was the old:", ["OS7"]],
   ["CONTROL (no-op: must stay green)", "shared/protocol/consent.js", "// Ported from the protocol lab (2026-10-05);", "//  Ported from the protocol lab (2026-10-05);", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -147,6 +164,12 @@ function copyTree(tag: string) { const d = scratch(tag);
   for (const k of fs.readdirSync(path.join(ENGINE, "client"))) if (k !== "lib") fs.symlinkSync(path.join(ENGINE, "client", k), path.join(d, "client", k));
   fs.cpSync(path.join(ENGINE, "client", "lib"), path.join(d, "client", "lib"), { recursive: true });
   fs.copyFileSync(path.join(ENGINE, "AGENTS.md"), path.join(d, "AGENTS.md"));
+  fs.copyFileSync(path.join(ENGINE, "DESIGN.md"), path.join(d, "DESIGN.md"));
+  // tools/protocol/import-v1 copied (the OS rows read the translator), the rest of tools/ linked back, entry by entry
+  fs.mkdirSync(path.join(d, "tools", "protocol"), { recursive: true });
+  for (const k of fs.readdirSync(path.join(ENGINE, "tools"))) if (k !== "protocol") fs.symlinkSync(path.join(ENGINE, "tools", k), path.join(d, "tools", k));
+  for (const k of fs.readdirSync(path.join(ENGINE, "tools", "protocol"))) if (k !== "import-v1") fs.symlinkSync(path.join(ENGINE, "tools", "protocol", k), path.join(d, "tools", "protocol", k));
+  fs.cpSync(path.join(ENGINE, "tools", "protocol", "import-v1"), path.join(d, "tools", "protocol", "import-v1"), { recursive: true });
   for (const k of fs.readdirSync(ENGINE)) if (![".git", "worlds", "store"].includes(k) && !fs.existsSync(path.join(d, k))) try { fs.symlinkSync(path.join(ENGINE, k), path.join(d, k)); } catch { /* best effort */ }
   return d; }
 if (argv.includes("--mutants")) {
@@ -165,7 +188,7 @@ if (argv.includes("--mutants")) {
   console.log(`[names-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its rows red; the control must stay green)`); process.exit(bad ? 1 : 0);
 }
 if (argv.includes("--control")) {
-  const d = scratch("namesctl"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${BASE} shared server mcpl client spec docs AGENTS.md | tar -x -C ${d}`], { cwd: ENGINE });
+  const d = scratch("namesctl"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${BASE} shared server mcpl client spec docs AGENTS.md DESIGN.md tools/protocol/import-v1 | tar -x -C ${d}`], { cwd: ENGINE });
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
   fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   try { fs.symlinkSync(path.join(ENGINE, "mcpl", "node_modules"), path.join(d, "mcpl", "node_modules")); } catch { /* none */ }
@@ -626,6 +649,66 @@ const cases: Case[] = [
       const T: any = await import(TREE + "mcpl/tools.ts"); const OA = exists("shared/onceanim.js") ? await import(TREE + "shared/onceanim.js") : null;
       return { stray: hits.filter((h) => !allowed(h)).slice(0, 12), nStray: hits.filter((h) => !allowed(h)).length, kept: hits.filter(allowed).length, alias: T.resolveTool?.(EM)?.name ?? null, read: OA?.onceAnimOf({ [EM]: "wave" }) ?? null }; },
     good: (o) => o.nStray === 0 && o.kept === 3 && o.alias === "anim" && o.read === "wave" },
+  // ---------------- OS: oscillate (R 10-17 21:40) ----------------
+  { id: "OS1", what: "(R 21:40) the registry: motion.type is pendulum | spin | orbit | oscillate | path (no bob); oscillate's per-type defaults and units; the editor's card is Oscillate (descriptors, the component list, MOTION_TYPES)", async run() {
+      const M = CS.COMPONENTS.motion; const DS: any = await import(TREE + "shared/protocol/descriptors.js"); const CO: any = await import(TREE + "shared/components.js"); const ES: any = await import(TREE + "shared/editschema.js");
+      const m = CS.materialize("motion", { type: "oscillate" }).value;
+      return { enum: M.enums.type, unit: M.units.amp, m, cards: Object.keys(DS.DESCRIPTORS ?? {}).filter((k: string) => /^(Bob|Oscillate)$/.test(k)), list: Object.keys(CO.RECORDS ?? {}).filter((k: string) => /^(Bob|Oscillate)$/.test(k)), types: ES.MOTION_TYPES, help: M.help }; },
+    good: (o) => JSON.stringify(o.enum) === '["pendulum","spin","orbit","oscillate","path"]' && o.unit?.oscillate === "m" && !("bob" in (o.unit ?? {})) && JSON.stringify(o.m.axis) === "[0,1,0]" && o.m.amp === 0.3 && o.m.period === 4 && o.m.phase === 0
+      && JSON.stringify(o.cards) === '["Oscillate"]' && JSON.stringify(o.list) === '["Oscillate"]' && JSON.stringify(o.types) === '["pendulum","spin","orbit","oscillate","path"]' && /oscillate \{axis, amp \(m\), period \(s\), phase\}/.test(o.help) && !/\bbob\b/.test(o.help) },
+  { id: "OS2", what: "…the door takes the old spelling for one release and stores oscillate, with a note (a whole motion and a part's motion:<slot>); its defaults are oscillate's", run(s) {
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "drone", model: "book", place: { at: [0, 0] } }); s.call("olive", "create", { id: "arm", model: "book", place: { at: [2, 0] } });
+      const a = s.call("olive", "set", { id: "drone", component: "motion", value: { type: "bob", amp: 0.4, period: 3 } });
+      const b = s.call("olive", "set", { id: "arm", component: "motion:piston", value: { type: "bob", node: "Piston", axis: "x" } });
+      const c = s.call("olive", "set", { id: "drone", component: "motion", value: { type: "oscillate", amp: 0.5 } });
+      const E = s.w().state().entities;
+      return { a: show(a), b: show(b), c: show(c), notes: JSON.stringify(a.notes ?? []), arm: E.arm?.c["motion:piston"] ?? null, drone: E.drone?.c.motion ?? null }; },
+    good: (o) => o.a === "ok" && o.b === "ok" && o.c === "ok" && /"field":"type","from":"bob","to":"oscillate"/.test(o.notes) && /renamed before release/.test(o.notes)
+      && o.arm?.type === "oscillate" && o.arm?.amp === 0.3 && o.arm?.period === 4 && JSON.stringify(o.arm?.axis) === "[1,0,0]" && o.drone?.type === "oscillate" && o.drone?.amp === 0.5 },
+  { id: "OS3", what: "…a log holding a motion of type bob (whole, and a part's) is renamed at load (rename-components: the value kept, its type oscillate, per thing); the next load writes nothing", run(s) {
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "drone", model: "book", place: { at: [0, 0] } }); s.call("olive", "create", { id: "arm", model: "book", place: { at: [2, 0] } });
+      const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world; const ts = L.at(-1).ts; const n = L.length;
+      const mv = { type: "bob", axis: [0, 1, 0], amp: 0.4, period: 3, phase: 0, t0: 1700000000000 }, pv = { type: "bob", node: "Piston", axis: [1, 0, 0], amp: 0.2, period: 2, phase: 0, t0: 1700000000000 };
+      fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [
+        { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: "drone", component: "motion", value: mv } }, ts: ts + 1 },
+        { world: wid, kind: "change", actor: "olive", cause: n, verb: "set", body: { id: "drone", comp: "motion", value: mv }, ts: ts + 1 },
+        { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: "arm", component: "motion:piston", value: pv } }, ts: ts + 2 },
+        { world: wid, kind: "change", actor: "olive", cause: n + 2, verb: "set", body: { id: "arm", comp: "motion:piston", value: pv }, ts: ts + 2 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+      T += 1000; process.env.PROTOCOL_NOW = String(T);
+      const w1 = s.reopen(); const before = w1.state().entities.drone?.c.motion?.type; D.liftWorld(w1); const w2 = s.reopen(); const E = w2.state().entities;
+      const k = w2.entries.length; D.liftWorld(w2); const again = s.reopen().entries.length - k;
+      const act = w2.entries.findLast((e: any) => e.kind === "act" && e.verb === "rename-components");
+      return { before, drone: E.drone?.c.motion ?? null, arm: E.arm?.c["motion:piston"] ?? null, again, renamed: act?.body?.renamed ?? null, actor: act?.actor ?? null, status: w2.state().status }; },
+    good: (o) => o.status === "ok" && o.before === "bob" && o.drone?.type === "oscillate" && o.drone?.amp === 0.4 && o.drone?.t0 === 1700000000000 && o.arm?.type === "oscillate" && o.arm?.node === "Piston" && o.again === 0 && o.actor === "system"
+      && Array.isArray(o.renamed) && ["motion", "motion:piston"].every((c) => o.renamed.some((r: any) => r.component === c && r.field === "type" && r.from === "bob" && r.to === "oscillate")) },
+  { id: "OS4", what: "…the readers read the old spelling for one release (names.js motionType): the closed form, the seat signals, the editor's channels and card draw a stored bob as an oscillate", async run() {
+      const ME: any = await import(TREE + "client/lib/motioneval.js"), SS: any = await import(TREE + "client/lib/socksignals.js"), ES: any = await import(TREE + "shared/editschema.js"), NM: any = await import(TREE + "shared/protocol/names.js");
+      const base = { pos: [1, 2, 3], yaw: 0 }, m = (type: string) => ({ type, axis: [0, 0, 1], amp: 0.5, period: 2, phase: 0.3, t0: 1000 });
+      const now = ME.evalWholeMotion(base, m("oscillate"), 1700), old = ME.evalWholeMotion(base, m("bob"), 1700);
+      const sch = ES.inspectSchema({ id: "d", model: "book", pos: [0, 0, 0], motion: m("bob") }, "d");
+      const groups = JSON.stringify(sch); 
+      return { now: now.ok && now.pos, old: old.ok && old.pos, cyc: [SS.cycleOf(m("oscillate"), 1700), SS.cycleOf(m("bob"), 1700)].map((c: any) => JSON.stringify(c)), ch: [ES.motionChannels(m("oscillate")), ES.motionChannels(m("bob"))].map((c: any) => [...c.t].join() + "|" + [...c.r].join()),
+        card: /"Oscillate"/.test(groups), bobCard: /"Bob"/.test(groups), read: NM.motionType ? [NM.motionType({ type: "bob" }), NM.motionType({ type: "spin" }), NM.motionType(null)] : null }; },
+    good: (o) => Array.isArray(o.now) && JSON.stringify(o.now) === JSON.stringify(o.old) && Math.abs(o.now[2] - 3) > 0.01 && o.cyc[0] === o.cyc[1] && o.ch[0] === o.ch[1] && o.ch[0] === "z|" && o.card && !o.bobCard && JSON.stringify(o.read) === '["oscillate","spin",null]' },
+  { id: "OS5", what: "…Add Component offers Oscillate (bob, float, hover find it) and writes type oscillate", async run() {
+      const ES: any = await import(TREE + "shared/editschema.js");
+      const r = ES.addOps({ id: "d", model: "book", pos: [0, 0, 0] }, "d", "Oscillate");
+      return { words: ES.ADD_WORDS?.Oscillate ?? null, old: "Bob" in (ES.ADD_WORDS ?? {}), ops: JSON.stringify(r?.ops ?? null), errors: r?.errors ?? null }; },
+    good: (o) => Array.isArray(o.words) && ["bob", "float", "hover"].every((w) => o.words.includes(w)) && !o.old && /"type":"oscillate"/.test(o.ops) && !/"type":"bob"/.test(o.ops) && !(o.errors ?? []).length },
+  { id: "OS6", what: "…the translator (@14) writes a v1 motion of type bob as oscillate (whole and a node's); its DROPPED table says so", async run() {
+      const TV: any = await import(TREE + "tools/protocol/import-v1/translate-v1.js");
+      const v1 = [{ seq: 0, ts: 1, actor: "world", verb: "grant", args: { id: "antra", role: "owner", gen: true } },
+        { seq: 1, ts: 2, actor: "antra", verb: "spawn", args: { id: "drone", lib: "store/0123456789abcdef.glb", pos: [0, 1, 0] } },
+        { seq: 2, ts: 3, actor: "antra", verb: "comp", args: { id: "drone", type: "motion", data: { type: "bob", amp: 0.4, period: 3 } } },
+        { seq: 3, ts: 4, actor: "antra", verb: "comp", args: { id: "drone", type: "motion:Rotor", data: { type: "bob", amp: 0.1 } } }];
+      const r = TV.translate(v1, {}); const e = r.final.translated.drone ?? {};
+      return { t: TV.TRANSLATOR, s: TV.TRANSLATOR_SIM, whole: e.motion?.type ?? null, part: Object.entries(e).filter(([k]) => k.startsWith("motion:")).map(([, v]: any) => v.type), dropped: TV.DROPPED?.["motion.type"] ?? null, div: r.divergences?.length ?? 0 }; },
+    good: (o) => /@14$/.test(o.t) && /@14$/.test(o.s) && o.whole === "oscillate" && JSON.stringify(o.part) === '["oscillate"]' && /oscillate/.test(o.dropped ?? "") },
+  { id: "OS7", what: "…the docs say oscillate and never bob as a motion type (AGENTS.md, PROTOCOL.md, PHYSICS.md, DESIGN.md, the agent); the version history and the registry changelog record the rename", run() {
+      const files = ["AGENTS.md", "spec/PROTOCOL.md", "spec/PHYSICS.md", "DESIGN.md", "mcpl/agent.ts"]; const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history"));
+      const motionBob = /pendulum[^\n]{0,40}\bbob\b|\bbob\b[^\n]{0,40}\bpath\b|type: ?['"]bob['"]/;
+      return { stale: files.filter((f) => motionBob.test(readText(f))), says: files.filter((f) => /\boscillate\b/.test(readText(f))), vh: /`oscillate`/.test(vh) && /`bob`/.test(vh), cl: /oscillate/.test(readText("spec/REGISTRY-CHANGELOG.md").split("\n").filter((l: string) => /^- 2026-10-17/.test(l)).join("\n")) }; },
+    good: (o) => !o.stale.length && o.says.length === 5 && o.vh && o.cl },
   // ---------------- X: the record ----------------
   { id: "X1", what: "the version history records the renames at minor 0, and the spec body speaks the new words (§5 consent, §7a rule 4)", run() {
       const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")); const body = md.slice(0, md.indexOf("## Version history"));
