@@ -82,7 +82,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["two-hand is a name", "shared/protocol/shaperepair.js", "if (comp === \"grabbable\" && p === \"two-hand\") {", "if (false) {", ["A2"]],
   ["an unknown name is refused", "shared/grab.js", "if (v.anim !== undefined && !(typeof v.anim === 'string' && ANIM_RE.test(v.anim)))", "if (v.anim !== undefined && !HOLD_POSES.includes(v.anim))", ["A3"]],
   ["an unknown name is held as written", "shared/grab.js", "if (g?.anim && ARMS[g.anim] && g.anim !== BOTH_HANDS) return g.anim;", "if (g?.anim) return g.anim;", ["A3"]],
-  ["no field renames at load", "shared/protocol/shaperepair.js", "export const RENAMED_FIELDS = Object.freeze({ grabbable: Object.freeze({ pose: \"anim\", \"grips.*.fingers\": \"grasp\" }), station: Object.freeze({ pose: \"anim\" }) });", "export const RENAMED_FIELDS = Object.freeze({});", ["A2", "A4"]],
+  ["no field renames at load", "shared/protocol/shaperepair.js", "export const RENAMED_FIELDS = Object.freeze({ grabbable: Object.freeze({ pose: \"anim\", \"grips.*.fingers\": \"grasp\" }), station: Object.freeze({ pose: \"anim\" }),", "export const RENAMED_FIELDS = Object.freeze({", ["A2", "A4"]],
   ["the lift keeps pose", "shared/protocol/authority/sockets.js", "const b = \"pose\" in b0 && !(\"anim\" in b0) ? (({ pose, ...r }) => ({ ...r, anim: pose }))(b0) : b0;", "const b = b0;", ["A5"]],
   ["the wire says wingsFolded", "shared/wingpresence.js", "return { poses: folded === true ? [WINGS_FOLDED] : [] };", "return { wingsFolded: folded === true };", ["A6"]],
   ["the old flag isn't read", "shared/wingpresence.js", "return typeof sample.wingsFolded === 'boolean' ? sample.wingsFolded : null;", "return null;", ["A6"]],
@@ -688,8 +688,8 @@ const cases: Case[] = [
       const sch = ES.inspectSchema({ id: "d", model: "book", pos: [0, 0, 0], motion: m("bob") }, "d");
       const groups = JSON.stringify(sch); 
       return { now: now.ok && now.pos, old: old.ok && old.pos, cyc: [SS.cycleOf(m("oscillate"), 1700), SS.cycleOf(m("bob"), 1700)].map((c: any) => JSON.stringify(c)), ch: [ES.motionChannels(m("oscillate")), ES.motionChannels(m("bob"))].map((c: any) => [...c.t].join() + "|" + [...c.r].join()),
-        card: /"Oscillate"/.test(groups), bobCard: /"Bob"/.test(groups), read: NM.motionType ? [NM.motionType({ type: "bob" }), NM.motionType({ type: "spin" }), NM.motionType(null)] : null }; },
-    good: (o) => Array.isArray(o.now) && JSON.stringify(o.now) === JSON.stringify(o.old) && Math.abs(o.now[2] - 3) > 0.01 && o.cyc[0] === o.cyc[1] && o.ch[0] === o.ch[1] && o.ch[0] === "z|" && o.card && !o.bobCard && JSON.stringify(o.read) === '["oscillate","spin",null]' },
+        card: /"Oscillate"/.test(groups), typeRow: /"t":"enum","k":"type","label":"type","value":"oscillate"/.test(groups) && !/"value":"bob"/.test(groups), bobCard: /"Bob"/.test(groups), read: NM.motionType ? [NM.motionType({ type: "bob" }), NM.motionType({ type: "spin" }), NM.motionType(null)] : null }; },
+    good: (o) => Array.isArray(o.now) && JSON.stringify(o.now) === JSON.stringify(o.old) && Math.abs(o.now[2] - 3) > 0.01 && o.cyc[0] === o.cyc[1] && o.ch[0] === o.ch[1] && o.ch[0] === "z|" && o.card && o.typeRow && !o.bobCard && JSON.stringify(o.read) === '["oscillate","spin",null]' },
   { id: "OS5", what: "…Add Component offers Oscillate (bob, float, hover find it) and writes type oscillate", async run() {
       const ES: any = await import(TREE + "shared/editschema.js");
       const r = ES.addOps({ id: "d", model: "book", pos: [0, 0, 0] }, "d", "Oscillate");
