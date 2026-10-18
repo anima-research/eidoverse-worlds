@@ -38,6 +38,8 @@ const worldsDir = mkdtempSync(join(tmpdir(), "eido-join-"));
 const tokensPath = join(worldsDir, "tokens.json");
 // the worlds an agent may join exist before the run (joining never founds one; a world is founded by its operator)
 foundWorlds(worldsDir, ["commons", "annex"]);
+// (ported 10-17) a world the roamer agent owns, for THE WORLD DECIDES below (its owner closes and opens it)
+foundWorlds(worldsDir, ["keep"], "agent:token:roamer");
 // Bound to worldsDir, per the review: the door's durable state lives with the
 // rest of this run's scratch and dies with it.
 const statePath = join(worldsDir, "state.json");
@@ -470,12 +472,11 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   const wouldFound = await nofound.request("tools/call", { name: "travel", arguments: { world: "brand-new-place" } });
   check("create:false CANNOT found a world",
     wouldFound.result?.isError === true && /^travel refused, so you're still in "commons": no world named "brand-new-place" exists, and this credential may not found one/.test(txt(wouldFound)), txt(wouldFound));
-  // world_verb forwards any verb; the world, not the door, refuses one it doesn't take.
-  const unknownVerb = await nofound.request("tools/call", { name: "world_verb", arguments: { verb: "fly_away", args: {} } });
-  await sleep(800);
-  const afterVerb = await nofound.request("tools/call", { name: "look", arguments: {} });
+  // act forwards any verb; the world's authority, not the door, refuses one it doesn't take (ported: act is the
+  // general request tool, and its answer is the authority's own)
+  const unknownVerb = await nofound.request("tools/call", { name: "act", arguments: { verb: "fly_away", args: {} } });
   check("an unknown verb goes to the world, which refuses it",
-    txt(unknownVerb) === "sent fly_away" && /verb not allowed: fly_away/.test(txt(afterVerb)), `${txt(unknownVerb)} / ${txt(afterVerb).slice(0, 600)}`);
+    unknownVerb.result?.isError === true && /"ok": false/.test(txt(unknownVerb)) && /fly_away|unknown/.test(txt(unknownVerb)), txt(unknownVerb).slice(0, 600));
   // …and prove it wasn't created as a side effect anyway (review F)
   // 🔴 PAIRED WITH ITS POSITIVE CONTROL (adversarial review, 2026-08-17).
   // `!existsSync(...)` alone passes for a build where founding writes NOTHING
@@ -488,9 +489,12 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   nofound.ws.close();
   const founder = await connectHost("roamer-token");
   await sleep(1200);
+  // (ported 10-17) joining never founds a world on this server, whatever the credential: the door asks the world
+  // (/access) and refuses before anything moves, saying so
   const founded = await founder.request("tools/call", { name: "travel", arguments: { world: "founded-place" } });
-  check("create:true CAN found, and says so",
-    !founded.result?.isError && /Founded and entered "founded-place"/.test(txt(founded)), txt(founded));
+  check("create:true doesn't found by travelling either: joining never founds, and the reply says so",
+    founded.result?.isError === true && /joining never founds/.test(txt(founded)), txt(founded));
+  check("…and that refusal left nothing on disk", !existsSync(join(worldsDir, "founded-place")));
   // 🔴 THE POSITIVE CONTROL FOR THE on-disk CHECK ABOVE (adversarial review,
   // 2026-08-17). `!existsSync(brand-new-place)` alone also passes for a build
   // where founding writes nothing anywhere, or writes somewhere else entirely
@@ -504,7 +508,9 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   // wrong in the direction that would have looked like a product bug.
   await sleep(400);              // the sequencer writes the log dir on join
   check("…and the CONTROL: a world that WAS founded IS on disk at that path",
-    existsSync(join(worldsDir, "founded-place")), `worldsDir=${worldsDir}`);
+    existsSync(join(worldsDir, "annex")), `worldsDir=${worldsDir}`);
+  // (ported) the first transition is a travel to an existing world, the second back
+  await founder.request("tools/call", { name: "travel", arguments: { world: "annex" } });
   // ── 4c. §3.2.3d epoch across transitions ─────────────────────────────────
   // The epoch is read from the channels/changed descriptor the server pushes
   // to the HOST — which is where §3.2.3d says a client learns it, and the only
@@ -513,8 +519,8 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   const epochOf = (c: any) => c.inbound.filter((m: any) => m.method === "channels/changed")
     .map((m: any) => m.params?.added?.[0]?.metadata?.epoch).filter((e: any) => typeof e === "number");
   const e1s = epochOf(founder);
-  check("founding announced an epoch to the host", e1s.length > 0, JSON.stringify(e1s));
-  await founder.request("tools/call", { name: "travel", arguments: { world: "annex" } });
+  check("a transition announced an epoch to the host", e1s.length > 0, JSON.stringify(e1s));
+  await founder.request("tools/call", { name: "travel", arguments: { world: "commons" } });
   await sleep(600);
   const e2s = epochOf(founder);
   check("epoch increments across transitions", e2s.length > e1s.length && e2s[e2s.length - 1] > e1s[e1s.length - 1],
@@ -622,7 +628,7 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   check("worlds marks the current world", /^- annex ←: .*you are here/m.test(mapText), mapText);
   check("worlds lists the world you came from as travelable (worlds:[\"*\"])", /^- commons: .*may travel/m.test(mapText), mapText);
   check("worlds shows the body in its row", /^- annex ←: .*roamer \(agent\)/m.test(mapText), mapText);
-  check("worlds says travelling to a new name founds it", /founds a new world there/.test(mapText), mapText);
+  check("worlds says joining never founds a world here", /joining never founds one here/.test(mapText), mapText);
 
   const noop = await tv.request("tools/call", { name: "travel", arguments: { world: "annex" } });
   check("travel to where you already are is a no-op, not an error",
@@ -690,37 +696,44 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   {
     const free = await connectHost("free-token");          // no `worlds`, no `create`
     await sleep(1200);
+    // (ported 10-17: no founding by travel; an owner changes who may come in with ordinary requests on @world —
+    // access, roles:<id> — the tool is act; whois finds the identity a role names)
     const fm = txt(await free.request("tools/call", { name: "travel", arguments: { world: "free-place" } }));
-    check("a credential with no list may found (every member may)", /Founded and entered "free-place"/.test(fm), fm);
-    const back = txt(await free.request("tools/call", { name: "travel", arguments: { world: "commons" } }));
-    check("…and travels to an open world it was never listed for", /Arrived in "commons"/.test(back), back);
+    check("a credential with no list still can't found by travelling", /joining never founds/.test(fm), fm);
+    const there = txt(await free.request("tools/call", { name: "travel", arguments: { world: "keep" } }));
+    check("…and travels to an open world it was never listed for", /Arrived in "keep"/.test(there), there);
+    // says hello while there: a world's lookup (whois) knows the people it has seen act or be remembered, never everyone
+    await free.request("tools/call", { name: "say", arguments: { text: "hello, keep" } }); await sleep(300);
+    const home = txt(await free.request("tools/call", { name: "travel", arguments: { world: "commons" } }));
+    check("…and back", /Arrived in "commons"/.test(home), home);
 
-    const owner = await connectHost("roamer-token");       // roamer founded annex, so it owns it
+    const owner = await connectHost("roamer-token");       // keep was founded for the roamer agent, so it owns it
     await sleep(1200);
-    const ot = txt(await owner.request("tools/call", { name: "travel", arguments: { world: "annex" } }));
-    check("the owner goes to its world", /Arrived in "annex"|Already in/.test(ot), ot);
-    const closed = txt(await owner.request("tools/call", { name: "world_access", arguments: { action: "mode", mode: "members" } }));
-    check("the owner agent closes it with world_access", /members only/.test(closed), closed);
-    const refused = await free.request("tools/call", { name: "travel", arguments: { world: "annex" } });
+    const ot = txt(await owner.request("tools/call", { name: "travel", arguments: { world: "keep" } }));
+    check("the owner goes to its world", /Arrived in "keep"|Already in/.test(ot), ot);
+    const closed = await owner.request("tools/call", { name: "act", arguments: { verb: "set", args: { id: "@world", component: "access", value: { join: "listed" } } } });
+    check("the owner agent closes it (set @world.access {join: listed})", !closed.result?.isError, txt(closed));
+    const refused = await free.request("tools/call", { name: "travel", arguments: { world: "keep" } });
     check("travel into the closed world is refused, saying only that it isn't open",
-      refused.result?.isError === true && /"annex" isn't open to you/.test(txt(refused)), txt(refused));
+      refused.result?.isError === true && /"keep" isn't open to you/.test(txt(refused)), txt(refused));
     const still = await free.request("channels/list", {});
     check("…and nothing moved", still.result?.channels?.[0]?.id === "world:commons", JSON.stringify(still.result));
     const fmap = txt(await free.request("tools/call", { name: "worlds", arguments: {} }));
-    check("the closed world is not on the outsider's map", !/^- annex/m.test(fmap), fmap);
-    const granted = txt(await owner.request("tools/call", { name: "world_access", arguments: { action: "grant", id: "free", role: "visitor" } }));
-    check("the owner lets it in by name from inside the world", /free — visitor/.test(granted), granted);
-    check("…and world_access says how the grant was bound, not only the listing", /by name only|bound to/.test(granted) && /who can come into/.test(granted), granted);
-    const inNow = txt(await free.request("tools/call", { name: "travel", arguments: { world: "annex" } }));
-    check("…and now it travels in", /Arrived in "annex"/.test(inNow), inNow);
+    check("the closed world is not on the outsider's map", !/^- keep/m.test(fmap), fmap);
+    const whoText = txt(await owner.request("tools/call", { name: "whois", arguments: { name: "free" } }));
+    const freeId = (whoText.match(/u-[a-z2-7]{20}/) ?? [])[0];
+    const granted = await owner.request("tools/call", { name: "act", arguments: { verb: "set", args: { id: "@world", component: `roles:${freeId}`, value: { role: "visitor" } } } });
+    check("the owner lets it in from inside the world (roles:<its identity>, found by whois)", !!freeId && !granted.result?.isError, `${whoText.slice(0, 200)} / ${txt(granted).slice(0, 300)}`);
+    const inNow = txt(await free.request("tools/call", { name: "travel", arguments: { world: "keep" } }));
+    check("…and now it travels in", /Arrived in "keep"/.test(inNow), inNow);
     // a member reads the closed world's geometry AS ITSELF (Greptile #258: measure
     // fetched /geom anonymously, and a closed world answers that as nonexistent)
-    await owner.request("tools/call", { name: "world_verb", arguments: { verb: "spawn", args: { id: "accbox", lib: "eidoverse/assets/models/crate_large_red.glb", pos: [2, 0, 2] } } });
+    const made = txt(await owner.request("tools/call", { name: "create", arguments: { model: "eidoverse/assets/models/crate_large_red.glb", at: [2, 2], components: { label: "accbox" } } }));
     await sleep(600);
     const meas = txt(await free.request("tools/call", { name: "measure", arguments: { id: "accbox" } }));
-    check("measure works for a member of a closed world", !/no such world/.test(meas) && /accbox|geometry/.test(meas), meas);
-    const reopened = txt(await owner.request("tools/call", { name: "world_access", arguments: { action: "mode", mode: "open" } }));
-    check("the owner opens it again (the rest of the suite expects it open)", /open/.test(reopened), reopened);
+    check("measure works for a member of a closed world", !/no such world/.test(meas) && /accbox|geometry|bbox|crate/.test(meas), `${made.slice(0, 120)} / ${meas.slice(0, 300)}`);
+    const reopened = await owner.request("tools/call", { name: "act", arguments: { verb: "delete", args: { id: "@world", component: "access" } } });
+    check("the owner opens it again", !reopened.result?.isError, txt(reopened));
     free.ws.close(); owner.ws.close();
   }
 
