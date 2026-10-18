@@ -334,14 +334,14 @@ function heldPose(id, h, obj) {
   obj.getWorldScale(_ws);
   if (!tracked(h.by) && g && bothArms(holdPoseOf(g, sizeOf(id, obj))) && !grip) {
     const a = palmOf(h.by, 'right', P1), b = palmOf(h.by, 'left', P2);
-    if (a && b) { obj.getWorldQuaternion(_hq); _held.copy(localCentre(id, obj)).applyQuaternion(_hq); _tp.copy(a.p).lerp(b.p, 0.5);
+    if (a && b) { _tp.copy(a.p).lerp(b.p, 0.5);
       // carried in both arms it sits AGAINST the body, not around it: its centre goes out in front by what it is deep,
       // less the arm's reach to the palms (R, 10-10: a wrecking ball held by its centre swallowed the avatar)
       const av = avatarOf(h.by), sz = sizeOf(id, obj);
       if (av?.root && Array.isArray(sz)) { const fx = _tp.x - av.root.position.x, fz = _tp.z - av.root.position.z, fl = Math.hypot(fx, fz);
         const push = Math.max(0, Math.max(sz[0], sz[2]) / 2 - Math.max(0, fl - 0.12));
         if (fl > 1e-3 && push > 0) { _tp.x += fx / fl * push; _tp.z += fz / fl * push; } }
-      return { p: _tp.sub(_held), q: null }; }
+      return { p: _tp, q: null, centre: localCentre(id, obj) }; }
   }
   const palm = (grip || h.offset) ? palmOf(h.by, side, P1) : null;
   if (palm && grip) {
@@ -356,8 +356,7 @@ function heldPose(id, h, obj) {
   }
   if (palm && h.offset) { _tq.copy(palm.q).multiply(_gq.fromArray(h.offset.q)); _tp.copy(palm.p).add(_gv.fromArray(h.offset.pos).applyQuaternion(palm.q)); return { p: _tp, q: _tq }; }
   const hand = handOf(h.by, side); if (!hand) return null;
-  obj.getWorldQuaternion(_hq); _held.copy(localCentre(id, obj)).applyQuaternion(_hq);
-  return { p: _tp.copy(hand).sub(_held), q: null };
+  return { p: _tp.copy(hand), q: null, centre: localCentre(id, obj) };
 }
 // R 10-10 evening: a thing held with no grip (or carried in both arms) kept its world orientation as she turned. It now
 // keeps the turn it had relative to the holder's body when it was taken (yaw only: the body turns about up).
@@ -365,17 +364,28 @@ const heldTurn = new Map();   // `${id}|${by}` → the thing's rotation in the h
 const _bq = new THREE.Quaternion(), _bodyQ = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0);
 function bodyYawQ(by) { const av = avatarOf(by); if (!av?.root) return null; av.root.getWorldQuaternion(_bq);
   const f = new THREE.Vector3(0, 0, 1).applyQuaternion(_bq); return _bodyQ.setFromAxisAngle(_up, Math.atan2(f.x, f.z)); }
+// Where a held thing is drawn this frame, rotation included. A thing held by its centre (heldPose's centre: no grip) turns
+// with the body, and its origin goes where hand - q * centre puts it with THIS frame's q (R 10-17 20:21: a barrel whose
+// model sits 1.95 m from its origin was placed with last frame's turn and then turned, so every frame the body turned it
+// was drawn metres off the hand: it swung wide on A-D-A).
+function placeHeld(id, h, obj) {
+  const at = heldPose(id, h, obj); if (!at) return null;
+  if (at.q) return at;
+  const bq = bodyYawQ(h.by); let q;
+  if (bq) { const key = `${id}|${h.by}`; let r = heldTurn.get(key);
+    if (!r) { r = bq.clone().invert().multiply(obj.getWorldQuaternion(new THREE.Quaternion())); heldTurn.set(key, r); }
+    q = bq.clone().multiply(r); }
+  else q = obj.getWorldQuaternion(new THREE.Quaternion());   // no body to turn with: it keeps the turn it has
+  at.p.sub(_held.copy(at.centre).applyQuaternion(q)); at.q = q;
+  return at;
+}
 function drawHeld() {
   const now = performance.now();
   for (const k of heldTurn.keys()) { const [id, by] = k.split('|'); if (holds[id]?.by !== by) heldTurn.delete(k); }
   for (const [id, h] of Object.entries(holds)) {
     if (pres?.bodies?.[id]) continue;              // thrown or dropped: the launch is folded, the flight draws it
     const obj = entities.get(id); if (!obj) continue;
-    const at = heldPose(id, h, obj); if (!at) continue;
-    if (!at.q) { const bq = bodyYawQ(h.by);
-      if (bq) { const key = `${id}|${h.by}`; let r = heldTurn.get(key);
-        if (!r) { r = bq.clone().invert().multiply(obj.getWorldQuaternion(new THREE.Quaternion())); heldTurn.set(key, r); }
-        at.q = bq.clone().multiply(r); } }
+    const at = placeHeld(id, h, obj); if (!at) continue;
     const pull = pulls.get(id);
     if (pull) { const k = Math.min(1, (now - pull.t0) / pull.dur); if (k >= 1) pulls.delete(id); else at.p.lerpVectors(pull.from, at.p, easeOut(k)); }
     setWorldPose(obj, at.p, at.q);
@@ -904,7 +914,7 @@ export const physicsApi = { grab, put, drop, throw: throwHeld, punt, canPunt, gr
   grabbable: (id) => grabOf(compsOf(id)),
   /** probe surface: where a held thing should be drawn now (heldPose, fresh) beside where it is drawn */
   heldAt: (id) => { const h = holds[id], obj = entities.get(id); if (!h || !obj) return null; obj.updateWorldMatrix(true, false);
-    const at = heldPose(id, h, obj); return { want: at ? { p: at.p.toArray(), q: at.q?.toArray() ?? null } : null, drawn: { p: obj.getWorldPosition(new THREE.Vector3()).toArray(), q: obj.getWorldQuaternion(new THREE.Quaternion()).toArray() }, rec: h }; },
+    const at = placeHeld(id, h, obj); return { want: at ? { p: at.p.toArray(), q: at.q?.toArray() ?? null } : null, drawn: { p: obj.getWorldPosition(new THREE.Vector3()).toArray(), q: obj.getWorldQuaternion(new THREE.Quaternion()).toArray() }, rec: h }; },
   /** probe surface: the palm frame a holder's hand gives ({p, q} world arrays), and the hold pose a body wears */
   palm: (actorId, side = 'right') => { const o = palmOf(actorId ?? net.you, side, { p: new THREE.Vector3(), q: new THREE.Quaternion() }); return o ? { p: o.p.toArray(), q: o.q.toArray() } : null; },
   track: () => track(true), request: (verb, args) => sendRequest(verb, args), frame: (wall) => frame(wall),
