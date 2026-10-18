@@ -167,6 +167,12 @@ check("`particles:smoke` is an emitter key", isParticlesKey("particles:smoke"));
 check("a malformed name is not, and the lint can say why",
   !isParticlesKey("particles:two words") && !isParticlesKey("particles:")
   && emitterKeyProblem("particles:two words")!.includes("not an emitter key"));
+check("an emitter name is at most 22 characters, so the whole key fits the 32-character component type",
+  isParticlesKey(`particles:${"n".repeat(22)}`) && !isParticlesKey(`particles:${"n".repeat(23)}`)
+  && emitterKeyProblem(`particles:${"n".repeat(23)}`)!.includes("1–22"));
+check("`__proto__` is just a name (every host keys emitters by Map, never by plain object)",
+  isParticlesKey("particles:__proto__")
+  && JSON.stringify(emittersIn(JSON.parse('{"particles:__proto__":{"preset":"fire"}}')).map(([k]) => k)) === '["particles:__proto__"]');
 check("ordinary components are none of its business",
   !isParticlesKey("motion:door") && emitterKeyProblem("motion:door") === null && emitterKeyProblem("particles") === null);
 check("emittersIn lists the default first, then by name, and skips removed ones",

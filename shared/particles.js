@@ -77,9 +77,15 @@ const TEXTURE_DIR = 'eidoverse/assets/particle_textures/';
 
 // ---- which components are emitters ------------------------------------------
 
+/** The longest emitter name: the server caps a component type at 32
+ *  characters (server/verbs.ts vComp), so `particles:` leaves 22. A longer
+ *  name must be refused, never cut — two names that share their first 22
+ *  characters would otherwise fold into one emitter. */
+export const EMITTER_NAME_MAX = 32 - 'particles:'.length;
+
 /** An emitter's name in `particles:<name>`: short, and plain enough to read in
  *  a look() line and type into a verb. */
-const EMITTER_NAME = /^[A-Za-z0-9_-]{1,32}$/;
+const EMITTER_NAME = new RegExp(`^[A-Za-z0-9_-]{1,${EMITTER_NAME_MAX}}$`);
 
 /** Is this component key an emitter? `particles` (the entity's default
  *  emitter) or `particles:<name>` with a well-formed name. A malformed
@@ -94,7 +100,7 @@ export function isParticlesKey(type) {
  *  it isn't trying to be). */
 export function emitterKeyProblem(type) {
   if (typeof type !== 'string' || !type.startsWith('particles:') || isParticlesKey(type)) return null;
-  return `"${type}" is not an emitter key — a name after "particles:" must be 1–32 of A–Z a–z 0–9 _ - (it folds as an ordinary component and renders nothing)`;
+  return `"${type}" is not an emitter key — a name after "particles:" must be 1–${EMITTER_NAME_MAX} of A–Z a–z 0–9 _ - (it folds as an ordinary component and renders nothing)`;
 }
 
 /** The emitters in a component bag, as [key, data] pairs: the default

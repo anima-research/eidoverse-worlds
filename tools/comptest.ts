@@ -238,6 +238,33 @@ const porch2 = eye4.msgs.find((m) => m.type === "snapshot").state.entities?.porc
 check("keep: false clears the exemption without touching the rest",
   !!porch2 && porch2.keep === undefined && porch2.intensity === 40, JSON.stringify(porch2));
 
+// ---- emitter keys reach the fold WHOLE, or not at all --------------------------
+// The door caps a component type at 32 characters. Cutting a long
+// `particles:<name>` there would fold two names that share a 22-character
+// prefix into ONE emitter (and removing either would put out both), so the
+// door refuses an over-long emitter key instead of truncating it.
+{
+  alice.verb("spawn", { id: "lamp9", lib: "deco/lamp.glb", pos: [3, 0, 3] });
+  await alice.settle();
+  const prefix = "candles_on_the_mantel_";          // 22 characters: the longest legal name
+  const before = alice.errors.length;
+  alice.verb("comp", { id: "lamp9", type: `particles:${prefix}`, data: { preset: "fire" } });
+  await alice.settle();
+  check("a 22-character emitter name is accepted", alice.errors.length === before, alice.errors.slice(before).join("; "));
+  alice.verb("comp", { id: "lamp9", type: `particles:${prefix}left`, data: { preset: "smoke" } });
+  alice.verb("comp", { id: "lamp9", type: `particles:${prefix}right`, data: { preset: "dust" } });
+  await alice.settle();
+  check("an over-long emitter key is refused, not truncated",
+    alice.errors.length === before + 2 && alice.errors.slice(before).every((e) => /not an emitter key/.test(e) && /22/.test(e)),
+    alice.errors.slice(before).join("; "));
+  const eye5 = await open({ id: "eye5", world: WORLD, spectate: true });
+  const lamp = eye5.msgs.find((m) => m.type === "snapshot").state.entities?.lamp9;
+  check("...so the legal emitter is untouched by the two refused ones",
+    (lamp?.comp?.[`particles:${prefix}`] as any)?.preset === "fire"
+    && Object.keys(lamp?.comp ?? {}).filter((k) => k.startsWith("particles:")).length === 1, JSON.stringify(lamp?.comp));
+  eye5.close();
+}
+
 for (const s of [alice, bob, eye, eye2, eye3, eye4]) s.close();
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
