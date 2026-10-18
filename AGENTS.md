@@ -110,7 +110,12 @@ Enrollment binds a keypair *you* generate to a durable name
 nobody can join a world under yours. Inside a world the authority knows you by
 an opaque **identity** (`u-` plus 20 characters; `server/directory.ts`
 maps accounts to identities). Logs, roles and bans name identities, never
-display names; `whois {name}` finds the identity behind a name.
+display names; `whois {name}` finds the identity behind a name. An id says
+nothing about what holds it, and nothing is inferred (PROTOCOL §6a): at join a
+participant MAY declare one lowercase word of its own (`declares`, e.g.
+`agent`), relayed with its arrival, in `worlds` and in `whois`, never logged
+and never read by any gate. The MCPL agent declares `agent` unless its host
+sets `AGENT_DECLARES` (empty declares nothing).
 
 ## Who may do what — roles
 
@@ -375,7 +380,10 @@ the pendulum swings about it. Motion is a **function of time**: every
 client evaluates the closed form at its own `now`, so one entry buys
 minutes of movement with zero traffic.
 
-**Riders.** Moving a seat someone is sitting on (its `transform`, `parent` or
+**Riders.** Occupying a seat is presence, never logged: the authority keeps
+who occupies which socket (one occupant each), and a hand verb on a thing
+someone sits or stands on is refused `occupied`. Moving a seat someone is
+sitting on (its `transform`, `parent` or
 `motion`, or anything it hangs from) stands them up where they were, and
 tells them; it is never refused for them. A seat's own reaction or script,
 as it was when they sat, carries its riders (one added since is an edit, and
@@ -383,7 +391,8 @@ vacates it). Someone standing on a thing never blocks your edit. If you're
 the rider, the authority's `vacated` message tells you who moved the seat
 (or that it was removed or switched off) and where you were let go; you stand
 there. A `leaveBy: "script"` seat refuses `detach`, and `detach {escape:
-true}` always gets you up. You sit only on a seat within reach (about 3.5 m):
+true}` always gets you up. You sit only on a seat within reach (3.5 m across
+the ground, 1.6 m up, 1 m down: `OCCUPY_REACH` in shared/sockbody.js):
 `attach` from farther is refused `out-of-reach`.
 
 **Locking — nail a thing down.** `set {id, component: "lock", value:
@@ -512,25 +521,37 @@ it was refused ("<them> isn't taking touch right now"), never why: their
 reason goes only to their own attempt log. A yes to an ask covers one touch;
 ask again after you let go. To ask first, use `act {verb: "reach", args: {who, point}}`.
 
-**Every body has a consent table**, the same for every participant: for
-each class of act on a body (pose, shove, displace, social and intimate touch)
-it says allow, ask, or deny, separately for everyone and for friends (mutual:
-both named each other). A separate list of delegates may close it for you,
-never open it.
-`act {verb: "consent"}` shows yours and the asks waiting for you; the
-authority refuses before delivery, and the target's own client has the final
-word. Silence is no. A script is in every body's everyone tier unless they
-allow it by name.
+**Every body has a consent table**, the same for every participant
+(shared/protocol/consent.js): for each class of act on a body (touch,
+intimate, pose, shove, displace: someone dragging, carrying or occupying
+with your body; near, follow and voice are in the table, not yet enforced)
+it says `allow`, `ask` or `deny`, separately for two tiers, `everyone` and
+`friends` (mutual: both named each other with `consent {friend}`). Every body
+starts on the preset `normal` (everyone: touch ask, intimate, pose, shove and
+displace deny; friends: touch and shove allow, intimate, pose and displace ask); `open`,
+`friends-only` and `performer` are the others. A separate `delegates` list
+(`consent {delegate}`) names who may close your table for you (pause, deny),
+never open it; only you open it. `act {verb: "consent"}` shows yours, the asks
+waiting for you and the last attempts on you; `consent {set: {class: "pose",
+tier: "everyone", mode: "ask"}}`, `{preset}`, `{allow | deny: <identity>,
+class?}`, `{pause: true}` and `{answer, yes}` change it. Acting on another
+body is `body {to, kind: pose|anim|shove|drag|occupy|carry, spec?}`: the
+authority refuses before delivery, an ask waits 20 s for their answer, and the
+target's own client has the final word. Silence is no. A script is in every
+body's everyone tier unless they allow it by name.
 
 **Going limp, and knocking someone over.** `anim {ragdoll: true}` is the
 ragdoll: your body goes limp and falls under its own simulation (`target`
-asks another body to). `act {verb: "shove", args: {target}}` is the push —
-a directed shove from where you stand through the target. It is a request the target's client
-honours or declines (the browser has `/push` for the same, and
-`/pushable off` refuses). Each body tumbles under its own simulation,
+asks another body to). `act {verb: "shove", args: {target, strength?}}` is
+the push — a directed shove from where you stand through the target, within
+3 m. Their table decides (class shove: `normal` denies everyone and allows
+friends), and their client has the last word (the browser has `/push` for the
+same, and `/pushable off` declines). Each body tumbles under its own simulation,
 streamed like any pose — agent bodies too: a headless client runs the
 same Verlet on its own skeleton and streams the tumble. You fall for real
-and PERCEIVE it; walking or `anim {stop: true}` ends it (stop rests you in your body-mode's own anim: standing, you stand back up). Headless
+and PERCEIVE it; walking or `anim {stop: true}` ends it (stop rests you in
+your body-mode's own anim: standing, you stand back up). In a browser the
+named anims are the 🎭 action bar (its number keys) and `/anim <name>`. Headless
 caveat: the sim assumes locally flat ground at the fall site and ignores
 furniture.
 
@@ -546,18 +567,25 @@ where your hand lets go; in a world with no physics a throw is set down,
 and says so). `look` says what a hand may do with each thing. `grabbable`
 (`schema {component: 'grabbable'}`; shared/grab.js): `{who, enabled,
 steal, range, priority, hold, anim, grips: {<name>: {pos, q?, hand?, role?,
-grasp?}}, twoHanded, throw, release: drop|stay|return, returnAfter,
-fits: [keywords], use: <action>|{down, up}, prompt, fx}`: `fits` snaps it
+grasp?, part?}}, twoHanded, carries, throw, release: drop|stay|return,
+returnAfter, fits: [keywords], use: <action>|{down, up}, prompt}`: `anim` is
+how a body without tracked hands holds it (an open name; built in: hand,
+carry, torch, pistol, shoulder; absent or unknown, by size), a grip's `grasp`
+the hand's shape (fist, pinch, point, flat, open, trigger), `twoHanded` lets
+both hands hold it (grab it again with the other hand); you hold two things
+at most (a third grab is refused `hold-limit`). `fits` snaps it
 into a socket whose `accepts` shares a keyword when let go within the
 socket's `radius` (a key on its hook); `return`/`returnAfter` send it home
 (the authority's own `return-home` act). While you hold it, `use {id}` fires its
 `use` (`args: {phase: 'up'}` for the release): each press and release is
 one act, for state changes (a hose on, then off); rapid effects while
-pressed (a spray, a muzzle flash) are presence (`grabbable.fx`), never a
-stream of acts. Scripts hear `grab` and `release` (docs/SCRIPTS.md).
+pressed (a spray, a muzzle flash) will be presence (`grabbable.fx`, reserved
+for now), never a stream of acts. Scripts hear `grab` and `release` (docs/SCRIPTS.md).
 `punt {id, power? | v?}` sends a loose thing beside your body into flight
 (or volleys one in the air beside you); it is never `kick`, which is
-moderation's remove-a-person. In a browser: T (pick up / put down), C (throw
+moderation's remove-a-person. A body moving into a loose thing pushes it
+with `punt {id, v, contact: true}` (a thing beneath you is refused `beneath`:
+a body moves over it). In a browser: T (pick up / put down), C (throw
 / punt), the left button to use what you hold, `/grab /put /drop /throw
 /punt`, and in VR the grip (near, or the laser out to `range`) and the
 trigger. `grabbable.who` says who may pick it up (default visitor),
@@ -815,7 +843,7 @@ shallowest first:
 
 ## Walking through buildings
 
-**Placed models are solid to your feet, exactly as they are to a person's (#235).** Your body fits the same colliders a browser fits — from each model's own triangles, with its `collider` component (or the spawn's `collide`) deciding exact or box — and its feet are the browser walking controller's: the stride is the one walker's (`shared/mover.js`), then `client/lib/colliders.js` `resolveColliders` pushes the body out of anything solid and finds the ground under it. So it stands on raised floors, climbs any stair whose steps rise no more than the mover's step (0.8 m), stays on the storey it is on (walking under an upper floor keeps you downstairs; across it keeps you up), and is stopped by walls, railings and furniture. A tumble (`pose {ragdoll}`, a shove) lands on the floor or stair that is really there. Nothing in a model needs declaring for this. A walk asked for while a placed thing's shape is still downloading waits for it (up to 15 s, then is refused): it is never walked on the terrain underneath. The agent decodes at most three models at a time, and a model over 48 MB or a million triangles falls back to its `/geom` summary (floors only).
+**Placed models are solid to your feet, exactly as they are to a person's (#235).** Your body fits the same colliders a browser fits — from each model's own triangles, with its `collider` component (or the spawn's `collide`) deciding exact or box — and its feet are the browser walking controller's: the stride is the one walker's (`shared/mover.js`), then `client/lib/colliders.js` `resolveColliders` pushes the body out of anything solid and finds the ground under it. So it stands on raised floors, climbs any stair whose steps rise no more than the mover's step (0.8 m), stays on the storey it is on (walking under an upper floor keeps you downstairs; across it keeps you up), and is stopped by walls, railings and furniture. A tumble (`anim {ragdoll}`, a shove) lands on the floor or stair that is really there. Nothing in a model needs declaring for this. A walk asked for while a placed thing's shape is still downloading waits for it (up to 15 s, then is refused): it is never walked on the terrain underneath. The agent decodes at most three models at a time, and a model over 48 MB or a million triangles falls back to its `/geom` summary (floors only).
 
 **`move {to}` finds its own way through them (#236).** One call: round the furniture, in at the door, up the stair, along the upper floor, out onto the balcony (`mcpl/navgrid.ts`). The route is planned against the same colliders the feet will meet, by asking the same collision code where a body can stand and step, so a route is one your body can walk and a place the planner calls unreachable is one it cannot reach. On open ground it is the one straight leg it always was.
 
@@ -907,7 +935,7 @@ Routes use the structures known when the walk begins, where they are then. A flo
   asking never founds a world. Same data at `GET /worlds`.
 - **`travel {world}`** — move to another world on this server **without
   reconnecting**: identity, avatar and `activity` settings come with you;
-  held pose, posture and your chat cursor are world-local and do not. Your
+  the anims you hold and your chat cursor are world-local and do not. Your
   host is told (`channels/changed`: the old world channel retired, the new
   one added) before the body moves, and a host that declines keeps you
   where you are. Gated by your credential's join policy — an aid1 token
