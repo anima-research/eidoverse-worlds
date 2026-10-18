@@ -92,7 +92,7 @@ const FIELDS = [
   { t: "group", k: "flags", label: "Flags", open: true },
   { t: "check", k: "flags.lock", label: "locked", value: false },
   { t: "check", k: "flags.hidden", label: "hidden", value: true },
-  { t: "enum", k: "motion.type", label: "type", value: "bob", options: ["none", "pendulum", "spin", "orbit", "bob", "path"].map((v) => ({ v, label: v })) },
+  { t: "enum", k: "motion.type", label: "type", value: "oscillate", options: ["none", "pendulum", "spin", "orbit", "oscillate", "path"].map((v) => ({ v, label: v })) },
   { t: "color", k: "light.color", label: "color", value: 0xffd9a0 },
   { t: "range", k: "r", label: "mix", value: 0.3 },
   { t: "ref", k: "look.at", label: "look at", value: "lamp2" },
@@ -151,7 +151,7 @@ console.log("\nC. the same dispatch as the legacy painter:");
   check("every legacy target exists on the edit painter", lost.length === 0, lost.join(" · "));
   check("…and a row the desktop shows no lock for gets none (an occupant)", [...noLock].every((k) => !eset.has(k)) && noLock.size === 1);
   check("…and the only extras are enum options legacy clipped off its row", extra.every((k) => k.startsWith("motion.type|")), extra.join(" · "));
-  check("every enum option is reachable on the edit painter", ["none", "pendulum", "spin", "orbit", "bob", "path"].every((v) => eset.has(`motion.type|"${v}"|`)));
+  check("every enum option is reachable on the edit painter", ["none", "pendulum", "spin", "orbit", "oscillate", "path"].every((v) => eset.has(`motion.type|"${v}"|`)));
   check("a disabled field takes no hits", !E.regions.some((r: any) => r.action === "ch:locked"));
   check("a collapsed group's rows are not painted", !E.regions.some((r: any) => r.action === "hidden:num"));
   check("tree order kept: the disclosure is the FIRST region (it wins over its row)", E.regions[0]?.action === "open" && E.regions[0]?.payload === "benchlamp", JSON.stringify(E.regions[0]));

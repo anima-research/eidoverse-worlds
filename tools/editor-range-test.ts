@@ -22,7 +22,7 @@ const R2D = 180 / Math.PI;
 
 const MOTION = { Pendulum: { type: "pendulum", axis: [1, 0, 0], amp: 0.3, period: 2.4, damp: 0.08, maxAmp: 0.9, phase: 0 },
   Spin: { type: "spin", axis: [0, 1, 0], degPerSec: 36, phase: 0 }, Orbit: { type: "orbit", radius: 2, degPerSec: 36, phase: 0 },
-  Bob: { type: "bob", axis: [0, 1, 0], amp: 0.3, period: 4, phase: 0 }, Path: { type: "path", points: [[0, 0, 0], [1, 0, 0]], speed: 1, duration: 4, loop: "loop" } };
+  Oscillate: { type: "oscillate", axis: [0, 1, 0], amp: 0.3, period: 4, phase: 0 }, Path: { type: "path", points: [[0, 0, 0], [1, 0, 0]], speed: 1, duration: 4, loop: "loop" } };
 const FIXTURE: Record<string, [string, any][]> = {
   Light: [["light", { light: { color: 0xffd9a0, intensity: 16, range: 10 } }]],
   ...Object.fromEntries(Object.entries(MOTION).map(([card, m]) => [card, [["motion", { motion: m }]]])),

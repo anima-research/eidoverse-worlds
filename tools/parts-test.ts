@@ -139,7 +139,7 @@ console.log('\n━━ regression: whole-entity motion unchanged ━━');
 {
   const { root } = makeSwing();
   entities.set('swing5', root);
-  comps.set('swing5', { motion: { type: 'bob', axis: [0, 1, 0], amp: 0.3, period: 4, phase: Math.PI / 2, t0: Date.now() } });
+  comps.set('swing5', { motion: { type: 'oscillate', axis: [0, 1, 0], amp: 0.3, period: 4, phase: Math.PI / 2, t0: Date.now() } });
   tickMotion();
   check('root bob still works', Math.abs(root.position.y - 0.3) < 0.02, `y=${root.position.y.toFixed(3)}`);
 }

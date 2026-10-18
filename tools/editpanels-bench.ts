@@ -6,7 +6,7 @@
 // panels-test.ts binds the factory headless; this is the seam it cannot see:
 // the frames mount in the real dock, edit mode shows them, a placed light
 // (no asset needed) lands in the tree, the Inspector draws ONE card per
-// component (design §5: Transform with its channel box, Light, Bob, Seats …,
+// component (design §5: Transform with its channel box, Light, Oscillate, Seats …,
 // then Add Component) from the one fields declaration, and a typed `+=4` on
 // brightness reaches the light through dispatch → updateLight → the coalesced
 // `light` verb. (Before components-B the inspector was a flat channel strip
@@ -343,11 +343,11 @@ console.log('\nEsc mid-scrub, in a real browser (the key lands on the document, 
   check('…and the light never left 10 (nothing committed)', (await evalJson(`import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.light?.range)`)) === 10);
 }
 
-console.log('\nmotion: a bob on the light — a Bob card, driven channels, an edit that keeps t0:');
-await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('motion', { id: 'benchlamp', type: 'bob', amp: 0.3, period: 2 })), true`);
-// B: the motion's type IS the card ("Bob"), not a type dropdown inside a Motion group — changing it is
+console.log('\nmotion: an oscillate on the light — an Oscillate card, driven channels, an edit that keeps t0:');
+await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('motion', { id: 'benchlamp', type: 'oscillate', amp: 0.3, period: 2 })), true`);
+// B: the motion's type IS the card ("Oscillate"), not a type dropdown inside a Motion group — changing it is
 // remove + add — so the check reads the card title and its own fields (axis / amp / period / phase)
-check('a Bob card renders from motion.js (the type is the card, not a dropdown)', await waitFor(`(() => { const T = ${cardTitles}; const L = ${numLabels}; return T.includes('Bob') && !T.some((t) => /^motion/i.test(t)) && L.includes('amp') && L.includes('period') && ![...${insp}.querySelectorAll('select.sp-enum')].some((s) => s.value === 'bob'); })()`), JSON.stringify(await evalJson(cardTitles)));
+check('an Oscillate card renders from motion.js (the type is the card, not a dropdown)', await waitFor(`(() => { const T = ${cardTitles}; const L = ${numLabels}; return T.includes('Oscillate') && !T.some((t) => /^motion/i.test(t)) && L.includes('amp') && L.includes('period') && ![...${insp}.querySelectorAll('select.sp-enum')].some((s) => s.value === 'bob'); })()`), JSON.stringify(await evalJson(cardTitles)));
 check('pos channels are DRIVEN (rest pose, marked)', await evalJson(`${insp}.querySelectorAll('.sp-f-num.driven').length >= 3`));
 {
   // axis AND driven at once (R, 09-30): the label keeps x/y/z; the FIELD wears the amber edge and a ~
@@ -357,15 +357,15 @@ check('pos channels are DRIVEN (rest pose, marked)', await evalJson(`${insp}.que
   check('…the field carries driven: amber edge + a ~ marker', ['x', 'y', 'z'].every((a) => L[a]?.edge === 'rgba(201, 162, 74, 0.45)' && L[a]?.mark === '~'), JSON.stringify(L));
   check('…titled "driven by motion — editing moves its rest pose"', ['x', 'y', 'z'].every((a) => L[a]?.title?.startsWith('driven by motion — editing moves its rest pose')), JSON.stringify(L.x?.title));   // + the scrub modifiers line
 }
-check('amp / period are the Bob card\'s rows, once each (no "motion · " lane)', await evalJson(`(() => { const L = ${numLabels}; return L.filter((l) => l === 'amp').length === 1 && L.filter((l) => l === 'period').length === 1 && !L.some((l) => /^motion · /.test(l)); })()`), JSON.stringify(await evalJson(numLabels)));
+check('amp / period are the Oscillate card\'s rows, once each (no "motion · " lane)', await evalJson(`(() => { const L = ${numLabels}; return L.filter((l) => l === 'amp').length === 1 && L.filter((l) => l === 'period').length === 1 && !L.some((l) => /^motion · /.test(l)); })()`), JSON.stringify(await evalJson(numLabels)));
 const t0 = await evalJson(`import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.motion?.t0)`);
 check('the fold stamped a t0', typeof t0 === 'number' && t0 > 0, String(t0));
 await evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === 'amp').querySelector('.sp-num'); i.value = '+=0.2'; i.dispatchEvent(new Event('change')); return true; })()`);
 check('amp is 0.5 after +=0.2', await waitFor(`import('/lib/world.js').then((m) => Math.abs((m.bagOf('benchlamp')?.motion?.amp ?? 0) - 0.5) < 1e-9)`));
 check('…and t0 was kept (no phase restart)', (await evalJson(`import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.motion?.t0)`)) === t0);
 // was the Motion group's "come to rest" button; B's card carries its own remove (the same verb: motion type null)
-await evalJson(`(() => { const b = [...${insp}.querySelectorAll('.sp-btn')].find((x) => x.textContent === 'remove Bob'); b.dispatchEvent(new PointerEvent('pointerdown', { clientX: 1, clientY: 1, bubbles: true })); b.click(); return true; })()`);
-check('the Bob card\'s "remove Bob" removes the motion', await waitFor(`import('/lib/world.js').then((m) => !m.bagOf('benchlamp')?.motion)`));
+await evalJson(`(() => { const b = [...${insp}.querySelectorAll('.sp-btn')].find((x) => x.textContent === 'remove Oscillate'); b.dispatchEvent(new PointerEvent('pointerdown', { clientX: 1, clientY: 1, bubbles: true })); b.click(); return true; })()`);
+check('the Oscillate card\'s "remove Oscillate" removes the motion', await waitFor(`import('/lib/world.js').then((m) => !m.bagOf('benchlamp')?.motion)`));
 
 console.log('\nsockets: a seat on the light — a Seats card, list, per-slot channels, ✕ through the merged write:');
 await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('comp', { id: 'benchlamp', type: 'sockets', data: { seat: { pos: [0, 0.5, 0], yaw: 0 } } })), true`);

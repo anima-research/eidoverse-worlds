@@ -114,16 +114,16 @@ console.log("\n━━ orbit ━━");
   check("defaults: center=base, radius 3, 12°/s", dflt.ok && near3(dflt.pos, [7 + 3 * Math.sin(ad), 0.5, 7 + 3 * Math.cos(ad)]));
 }
 
-// ---- bob: off-axis, default amp, rot policy --------------------------------
-console.log("\n━━ bob ━━");
+// ---- oscillate: off-axis, default amp, rot policy --------------------------------
+console.log("\n━━ oscillate ━━");
 {
   const base = { pos: [2, 3, 4], yaw: 0.9 };
   const t = 0.8;
   const offv = Math.sin((2 * Math.PI / 1.9) * t + 0.6) * 0.45;
-  const r = evalWholeMotion(base, { type: "bob", axis: "-x", amp: 0.45, period: 1.9, phase: 0.6, t0: T0 }, T0 + 800);
-  check("off-axis bob displaces along −x only", r.ok && near3(r.pos, [2 - offv, 3, 4]), JSON.stringify(r));
-  check("bob never touches rotation", r.ok && r.rot === false && near(r.yaw, 0.9));
-  const d = evalWholeMotion(base, { type: "bob", period: 1.9, phase: 0.6, t0: T0 }, T0 + 800);
+  const r = evalWholeMotion(base, { type: "oscillate", axis: "-x", amp: 0.45, period: 1.9, phase: 0.6, t0: T0 }, T0 + 800);
+  check("off-axis oscillate displaces along −x only", r.ok && near3(r.pos, [2 - offv, 3, 4]), JSON.stringify(r));
+  check("oscillate never touches rotation", r.ok && r.rot === false && near(r.yaw, 0.9));
+  const d = evalWholeMotion(base, { type: "bob" /* the old spelling, read as oscillate */, period: 1.9, phase: 0.6, t0: T0 }, T0 + 800);
   check("default amp 0.3 on default axis y", d.ok && near3(d.pos, [2, 3 + Math.sin((2 * Math.PI / 1.9) * t + 0.6) * 0.3, 4]));
 }
 
@@ -152,12 +152,12 @@ console.log("\n━━ path ━━");
 console.log("\n━━ missing t0 ━━");
 {
   const base = { pos: [1, 1, 1], yaw: 0 };
-  const m: any = { type: "bob", amp: 0.5, period: 2 };            // phase 0, no t0
+  const m: any = { type: "oscillate", amp: 0.5, period: 2 };            // phase 0, no t0
   const first = evalWholeMotion(base, m, T0);
   check("first evaluation anchors: t=0, at base", first.ok && near3(first.pos, [1, 1, 1]));
   const later = evalWholeMotion(base, m, T0 + 500);               // same object → t=0.5s
   check("same object keeps its anchor", later.ok && near3(later.pos, [1, 1 + Math.sin((2 * Math.PI / 2) * 0.5) * 0.5, 1]));
-  const fresh = evalWholeMotion(base, { type: "bob", amp: 0.5, period: 2 }, T0 + 500);
+  const fresh = evalWholeMotion(base, { type: "oscillate", amp: 0.5, period: 2 }, T0 + 500);
   check("a new object anchors fresh (re-folded comp = new epoch)", fresh.ok && near3(fresh.pos, [1, 1, 1]));
   check("evaluation never mutates the component bag", !("_t0" in m) && !("_len" in m), JSON.stringify(Object.keys(m)));
 }
@@ -189,8 +189,8 @@ console.log("\n━━ refusals ━━");
   const tip = [Math.SQRT1_2, 0, 0, Math.SQRT1_2];               // 90° about +X: local up → world +Z
   const r = evalWholeMotion({ pos: [0, 0, 0], yaw: 0, q: tip }, { type: "spin", degPerSec: 90, t0: T0 }, T0 + 1000);
   check("tilted base: a spin keeps its own axis where the tilt put it", r.ok && near3(qApply(r.quat, [0, 1, 0]), [0, 0, 1]), JSON.stringify(r.quat));
-  const b = evalWholeMotion({ pos: [0, 0, 0], yaw: 0, q: tip }, { type: "bob", t0: T0 }, T0 + 500);
-  check("tilted base: a bob carries the tilt through", b.ok && near3(qApply(b.quat, [0, 1, 0]), [0, 0, 1]));
+  const b = evalWholeMotion({ pos: [0, 0, 0], yaw: 0, q: tip }, { type: "oscillate", t0: T0 }, T0 + 500);
+  check("tilted base: an oscillate carries the tilt through", b.ok && near3(qApply(b.quat, [0, 1, 0]), [0, 0, 1]));
 }
 
 console.log("");

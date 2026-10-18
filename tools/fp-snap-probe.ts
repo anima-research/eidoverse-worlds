@@ -212,7 +212,7 @@ else check("selfie differs from first (avatar is the subject)", meanDiff(highSel
 
 // moving socket: bob the tower; the eye must ride it. Two frames half a
 // period apart must differ far more than two frames of a still scene.
-await puppet.verb("comp", { id: "tower", type: "motion", data: { type: "bob", amp: 0.7, period: 2.4 } });
+await puppet.verb("comp", { id: "tower", type: "motion", data: { type: "oscillate", amp: 0.7, period: 2.4 } });
 await sleep(600);
 const bobA = await snap("puppet", "first", "bighead-bob-a");
 await sleep(1200);
