@@ -71,7 +71,7 @@ export const VERBSPEC = {
     example: { id: "ball-1", power: 6 } },
   // people (research roles 10-06): every act names an identity (whois {name} finds it) ranked below you
   warn: { doc: "warn someone: a record in the moderator log, and a notice they must dismiss. Needs mute, kick or ban; they must rank below you", args: { who: { type: "string", doc: "their identity (u-…)" }, reason: { type: "string", doc: "why (they see it)" } }, required: ["who", "reason"], example: { who: "u-…", reason: "please keep it friendly" } },
-  mute: { doc: "mute someone's voice and/or chat for everyone, for a while (at most 7 days). Needs mute; they must rank below you. A chat-muted person may still whisper to a moderator", args: { who: { type: "string", doc: "their identity" }, minutes: { type: "number", doc: "how long: 5, 60, 1440…" }, channels: { type: "any", doc: "['voice'], ['chat'] or both (default both)" }, reason: { type: "string" } }, required: ["who", "minutes"], example: { who: "u-…", minutes: 60, channels: ["voice"], reason: "spam" } },
+  mute: { doc: "mute someone's voice and/or chat for everyone, for a while (at most 7 days). Needs mute; they must rank below you", args: { who: { type: "string", doc: "their identity" }, minutes: { type: "number", doc: "how long: 5, 60, 1440…" }, channels: { type: "any", doc: "['voice'], ['chat'] or both (default both)" }, reason: { type: "string" } }, required: ["who", "minutes"], example: { who: "u-…", minutes: 60, channels: ["voice"], reason: "spam" } },
   unmute: { doc: "end a mute early (its author, an owner, or someone who outranks its author)", args: { who: { type: "string" } }, required: ["who"] },
   kick: { doc: "remove someone now; they can't come back for minutes (default 10, at most 60). Needs kick; they must rank below you; never an owner", args: { who: { type: "string" }, minutes: { type: "number", doc: "the cooldown before they may rejoin (1–60, default 10)" }, reason: { type: "string" } }, required: ["who"], example: { who: "u-…", minutes: 10, reason: "harassment" } },
   ban: { doc: "keep someone out: for days (at most 30 below owner), or, for owners, until lifted (leave days out). Needs ban; they must rank below you; never an owner", args: { who: { type: "string" }, days: { type: "number", doc: "1, 7, 30… (owners: leave out for until lifted)" }, reason: { type: "string" } }, required: ["who"], example: { who: "u-…", days: 7, reason: "spam" } },
@@ -134,6 +134,13 @@ export const VERBSPEC = {
 export const RESERVED_VERBS = Object.freeze({
   arrive: { args: { wearing: { type: "any", doc: "{avatar, hash}: the body a person arrives wearing; the world records only this, never the body's parts (they live in the wearer's log)" } },
     why: "reserved (PROTOCOL §7a): avatar entity trees aren't built; arriving is a body's first move today" },
+});
+// Requests the protocol had and removed. The authority refuses each by name (`removed`), never as an unknown verb, so a
+// client built before the removal is told what happened and what to do instead. whisper was a server ws message, never
+// an authority verb; the server's door answers it with this row too (server/messages.ts).
+export const REMOVED_VERBS = Object.freeze({
+  whisper: { why: "speech in a world is public and arrival-only (R 10-18): everyone present hears a say, the world's log keeps it, and only the world's admins read it back. Direct messages will live at the identity level (client and profile), not in world chat",
+    fix: "say it to everyone here (say {text, to} addresses one person in public), or reach them outside the world" },
 });
 // the sky and weather verbs take the sky component's own fields (componentspec), its old spellings (the fold translates
 // them: forecast.js skySpelling) and weather's keepSky

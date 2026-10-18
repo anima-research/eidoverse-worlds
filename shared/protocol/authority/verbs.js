@@ -72,10 +72,10 @@ const WRITE_VERBS = {
 };
 const SAY_VERBS = {
   say(w, actor, a) { if (!a.text) refuse("shape", "say needs text", "");
-    // a chat mute refuses every say: a say with `to` is still a public line in the log (review 10-07). Asking a moderator
-    // why goes as a WHISPER (point-to-point, never logged; the server lets a muted person whisper moderators only)
+    // a chat mute refuses every say: a say with `to` is still a public line in the log (review 10-07). There is no private
+    // channel in world chat (whisper was removed, R 10-18): the refusal says until when, and why when a reason was given
     { const m = muteOf(w, actor, "chat"); if (m)
-      refuse("muted", `you're muted in this world's chat${m.until !== undefined ? ` until ${new Date(m.until).toISOString()}` : ""}${m.reason ? ` (${m.reason})` : ""}`, "you may still whisper to a moderator (/w <name>)", { until: m.until ?? null }); }
+      refuse("muted", `you're muted in this world's chat${m.until !== undefined ? ` until ${new Date(m.until).toISOString()}` : ""}${m.reason ? ` (${m.reason})` : ""}`, "it ends on its own; the moderator who muted you can lift it sooner", { until: m.until ?? null }); }
     if (typeof a.text !== "string" || a.text.length > SAY_MAX) refuse("too-big", `a say is at most ${SAY_MAX} characters (this one is ${String(a.text).length})`, "split it, or put a long text in a blob");
     if (a.to !== undefined && (typeof a.to !== "string" || a.to.length > 64)) refuse("shape", "say.to names one person: a string of at most 64 characters", "say {text, to: '<identity>'}");
     const body = { text: a.text, ...(a.to ? { to: a.to } : {}), ...spokenOf(a, w.now()) };

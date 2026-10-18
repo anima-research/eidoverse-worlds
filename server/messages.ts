@@ -9,9 +9,9 @@
 // snapshot) stay in server.ts, where the source-text gates that pin
 // settledPose expect them.
 //
-// Two suites regex THIS file's source now (they used to pin server.ts):
-// tools/whisper-disable-test.ts and tools/voice-wiring-test.ts — moving a
-// body again means moving their patterns with it.
+// A suite regexes THIS file's source now (it used to pin server.ts):
+// tools/voice-wiring-test.ts — moving a body again means moving its patterns
+// with it.
 
 import { WORLDS_DIR } from "./config.ts";
 import { LIMITS } from "./limits.ts";
@@ -21,24 +21,16 @@ import { BODY_RANGE } from "../shared/protocol/physconst.js";
 import { currentIncarnation } from "./transport.ts";
 import { isOperator } from "./operators.ts";
 import { directoryFor } from "./directory.ts";
-import { actorOf as actorIdOf, whois } from "./requestwire.ts";
+import { actorOf as actorIdOf } from "./requestwire.ts";
 import { qNorm } from "../shared/rot.js";
 import { decide as consentDecide, refusalWords } from "../shared/protocol/consent.js";
 import { worlds, type World, type Client, authorityNow } from "./world.ts";
 import { stateSampleError } from "../shared/presencewire.js";
 import { snapshots } from "./snapshots.ts";
+import { REMOVED_VERBS } from "../shared/protocol/verbspec.js";
 import { globalBans, saveGlobalBans } from "./moderation.ts";
 
-// ---- whispers: held-in-memory machinery (moved with its only writers) ------
-// join's held-whisper delivery imports these back — one-way, like
-// the screenshot broker's pending requests.
-export const pendingWhispers = new Map<string, unknown[]>();
-/** Held whispers are keyed by the recipient's IDENTITY (their actor id), never a display name: anyone can join wearing an
- *  absent person's name (security review 10-06 pass 2, H-B: a second "Marigold" received the first one's whisper). */
-export const whisperKey = (world: string, recipientId: string) => `${world}\u0000${recipientId}`;
-export const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
-
-/** Who a presence message (puppet, bodydrag, typing, whisper) is FOR (security pass 3, H2). A sender that knows the
+/** Who a presence message (puppet, bodydrag, typing) is FOR (security pass 3, H2). A sender that knows the
  *  identity names it by its opaque actor id (`targetActor` / `toActor` — every arrive carries one); then that identity's
  *  embodied leg is the target, whatever name anyone wears, and an actor who isn't here is simply not here (the name
  *  beside it is NOT a fallback: that would hand the message to whoever wears the name). A sender with no actor id (an
@@ -122,62 +114,12 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       .slice(-limit);
     ws.send(JSON.stringify({ type: "debug", reqId: msg.reqId ?? null, events }));
   },
-  "whisper": ({ c, ws, now, expel }, msg) => {
-    if (!WHISPERS_ENABLED) {
-      ws.send(JSON.stringify({ type: "error", error: "whispers are disabled in this world" }));
-      return;
-    }
-    // A private message between two bodies.
-    //
-    // It must NEVER reach the world log. The log is append-only, public,
-    // replayed in full to every future joiner, and forkable — a whisper
-    // written there would be permanently readable by everyone who ever
-    // enters this world, including people who weren't born yet when it
-    // was sent. So whispers route point-to-point and are never appended.
-    //
-    // The cost of that choice is durability: there is no log to replay
-    // from. So an undelivered whisper is held in MEMORY for a while and
-    // handed over when its recipient next joins. Lost on restart, which
-    // is the honest trade — a private message should be more willing to
-    // vanish than to become permanent public record.
-    if (!c.world || c.spectator) return;
-    const to = String(msg.to ?? "").slice(0, LIMITS.ID_LEN);
-    const text = String(msg.text ?? "").slice(0, LIMITS.WHISPER_LEN);
-    if (!to || !text) return;
-    // a world's sanctions reach whispers too (research roles §5): a ghost or a role-less person doesn't talk, and a
-    // chat mute leaves only whispers to someone holding a moderation power (so they can ask why); a ghost isn't sent any
-    const log = c.world.log;
-    if (log && c.actorId) {
-      if (log.ghostHere(c.actorId) || log.rightsOf(c.actorId).role === "none") { ws.send(JSON.stringify({ type: "error", error: "ghosts and people without a role here don't talk" })); return; }
-      const m = log.mutedHere(c.actorId, "chat");
-      if (m) { const t0 = presenceTarget(c.world, msg.toActor, to).tc; const mod = !!t0?.actorId && (() => { const e = log.rightsOf(t0.actorId!); return e.role === "owner" || ["mute", "kick", "ban"].some((k) => e.permissions.includes(k)); })();
-        if (!mod) { ws.send(JSON.stringify({ type: "error", error: `you're muted in this world's chat until ${new Date(m.until).toISOString().slice(11, 16)} UTC — you may whisper to a moderator` })); return; } }
-    }
-    // present: the identity named (toActor), or the one person here wearing the name (their embodied leg, never an aux leg)
-    const pt = presenceTarget(c.world, msg.toActor, to);
-    const packet = { type: "whisper", from: c.id, ...(c.actorId ? { fromActor: c.actorId } : {}), to: pt.tc?.id ?? to, ...(pt.byActor ? { toActor: pt.actor } : {}), text, ts: Date.now() };
-    const targets = pt.tc && !(log && c.world.isGhost(pt.tc)) ? [pt.tc] : [];   // never to a ghost (review 10-07)
-    if (targets.length) {
-      for (const t of targets) t.ws.send(JSON.stringify(packet));
-      ws.send(JSON.stringify({ ...packet, echo: true })); // your own sent copy
-      return;
-    }
-    // absent: held for the identity named (an account the directory knows), or the ONE identity this world knows by that
-    // name (whois) — never for whoever next wears the name
-    const known = pt.byActor ? directoryFor(WORLDS_DIR).entry(pt.actor!) : null;
-    const r: any = pt.byActor ? null : whois(c.world, { name: to });
-    const ids: string[] = pt.byActor ? (known && known.kind !== "anon" ? [pt.actor!] : []) : r?.ok ? r.people.map((p: any) => p.id) : [];
-    if (ids.length !== 1) {
-      ws.send(JSON.stringify({ type: "error", error: ids.length ? `more than one person called ${to} has been here — whisper them when they're here` : `nobody called ${to} has been in this world` }));
-      return;
-    }
-    const key = whisperKey(c.world.name, ids[0]);
-    const q = pendingWhispers.get(key) ?? [];
-    q.push(packet);
-    while (q.length > LIMITS.WHISPER_HOLD) q.shift();
-    pendingWhispers.set(key, q);
-    ws.send(JSON.stringify({ ...packet, echo: true }));
-    ws.send(JSON.stringify({ type: "error", error: `${to} isn't here — they'll get it when they arrive` }));
+  // whisper was removed (R 10-18): speech is public and arrival-only, and direct messages will live at the identity level
+  // (client/profile), not in world chat. A client still sending one is told so in the registry's words (refusalcodes.js
+  // `removed`); its text goes nowhere — not delivered, not held, not logged.
+  "whisper": ({ ws }, msg) => {
+    const r = REMOVED_VERBS.whisper;
+    ws.send(JSON.stringify({ type: "error", error: `whisper was removed: ${r.why}`, about: "whisper", refused: { code: "removed", reason: `whisper was removed: ${r.why}`, fix: r.fix }, ...(msg?.reqId !== undefined ? { reqId: msg.reqId } : {}) }));
   },
   "anim": ({ c, ws, now, expel }, msg) => {
     // A one-off animation: relayed once to everyone, never logged. It is

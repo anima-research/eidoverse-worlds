@@ -14,7 +14,7 @@ import { DEFAULT_WHO, grabOf, homeOf, checkGrabbable, wantsHome, fitsSocket, soc
 import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
 import { mintId, PERSON_ID, isPlaceholder } from "./ids.js";
 import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, refsOf, refFields, outOfRange, rangeWords, resolveVersioned, statusOf, canonicalName, STATUSES } from "./componentspec.js";
-import { validate, verbHelp, VERBSPEC, RESERVED_VERBS } from "./verbspec.js";
+import { validate, verbHelp, VERBSPEC, RESERVED_VERBS, REMOVED_VERBS } from "./verbspec.js";
 import { dec, partSlot } from "./names.js";
 import { READ_ONLY, GHOST_OK } from "./verbclasses.js";
 import { isRefusalCode } from "./refusalcodes.js";
@@ -127,6 +127,7 @@ export function request(w, actor, verb, args = {}) {
     // old pose, the shape audit's values) loads and refuses every WRITE until the maintenance command runs (maintenanceNeeds)
     if (h && w.exists && !READ_ONLY.has(verb) && verb !== "leave" && CTX.operator !== actor) { const n = maintenanceNeeds(w);
       if (n.blocking.length) refuse("repair-needed", `this world needs maintenance before it can be written: ${n.blocking.join(", ")} (its values are stored in an old spelling no reader here serves)`, n.fix); }
+    if (!h && Object.hasOwn(REMOVED_VERBS, verb)) refuse("removed", `'${verb}' was removed: ${REMOVED_VERBS[verb].why}`, REMOVED_VERBS[verb].fix);
     if (!h && Object.hasOwn(RESERVED_VERBS, verb)) refuse("reserved", `'${verb}' is a reserved request: ${RESERVED_VERBS[verb].why}`, "help lists every verb");
     if (!h) refuse("unknown-verb", `there is no '${verb}'`, "help lists every verb", { didYouMean: guess(verb, Object.keys(VERBS)) });
     // `leave` passes: it settles their own presence (the server sends it when it removes them; review 10-07: a kicked
@@ -270,7 +271,7 @@ function logRefusal(w, actor, verb, args, code) {
     const body = { args: names.known, refused: { code } }; if (names.unknown) body.unknownArgs = names.unknown;
     // a verb the authority doesn't have is recorded as `unknown-verb`: its name is the visitor's text (32 characters of it,
     // in a permanent, forkable record), so it goes to the ring only, as argument values do (scars r8 M3)
-    const asVerb = Object.hasOwn(VERBS, verb) || Object.hasOwn(RESERVED_VERBS, verb) ? verb : "unknown-verb";
+    const asVerb = Object.hasOwn(VERBS, verb) || Object.hasOwn(RESERVED_VERBS, verb) || Object.hasOwn(REMOVED_VERBS, verb) ? verb : "unknown-verb";
     const miss = (w.unrecorded ??= new Map()); const n = miss.get(actor) ?? 0; if (n) body.unrecorded = n;
     try { rateCheck(w, actor, "act", jcs(body).length + 256); } catch (x) { if (x instanceof Refusal) { miss.set(actor, n + 1); return; } throw x; }
     w.append(actEntry(w, actor, asVerb, body)); miss.delete(actor);

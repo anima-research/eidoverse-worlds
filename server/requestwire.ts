@@ -174,7 +174,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
         for (const [k, e] of Object.entries(globalBans)) if ((e as Any)?.who === args.who && (e as Any)?.world === w.name) { delete globalBans[k]; n++; }
         if (n) saveGlobalBans(); }
       // a ban or kick the authority accepted takes the person out NOW (H4b: a ban used to leave the banned person present,
-      // talking and whispering until they chose to leave). A guest has no account to ban, so their ban also names their
+      // talking until they chose to leave). A guest has no account to ban, so their ban also names their
       // connection's address in this world for a day (moderation.ts) — or they'd simply reconnect as a fresh guest.
       if (r?.ok && (verb === "ban" || verb === "kick")) {
         const who = String(args.who);

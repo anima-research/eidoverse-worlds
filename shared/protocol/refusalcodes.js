@@ -16,6 +16,7 @@ export const REFUSAL_CODES = Object.freeze({
   "unreadable":     { meaning: "the log folds to a status the authority won't write to", when: "a write while the fold says no-world/unknown-version" },
   "repair-needed":  { meaning: "the world's stored values are in an old spelling no reader serves; the maintenance command must run first", when: "any write (not a read, not leave) to a world needing lift-sockets, a grabbable rename or repair-shapes (authority maintenanceNeeds); the text names `bun tools/protocol/world.ts repair <name>`" },
   "unknown-verb":   { meaning: "no such request", when: "a verb the authority doesn't have (help lists them)" },
+  "removed":        { meaning: "the protocol had that request and removed it", when: "a request named in verbspec.js REMOVED_VERBS (whisper, removed 2026-10-18: speech is public and arrival-only)" },
   "banned":         { meaning: "the actor is banned from this world", when: "any request but help/leave from a banned identity" },
   "kicked":         { meaning: "the actor was removed and may come back later", when: "any request but help/leave inside a kick's cooldown" },
   "ghost":          { meaning: "ghosts don't interact or talk", when: "a non-ghost verb from someone ghosted (by choice or by sanction)" },

@@ -37,7 +37,7 @@ import { directoryFor, foldName } from "./directory.ts";
 import { route, avatarRoster } from "./routes.ts";
 import { snapshots } from "./snapshots.ts";
 import { registerSystem, startTick } from "./tick.ts";
-import { MESSAGES, pendingWhispers, whisperKey } from "./messages.ts";
+import { MESSAGES } from "./messages.ts";
 import { LIMITS } from "./limits.ts";
 import { defsFingerprint } from "./defs.ts";
 // Seat profiles (#101, upstream; write-half ported §24r): the store, its
@@ -296,16 +296,6 @@ try {
 // Old-format worlds are not served, and the operator is TOLD (they were skipped in silence above): one block per world with
 // the translator's command, this WORLDS_DIR filled in (server/oldworlds.ts).
 try { const notice = bootNotice(WORLDS_DIR); if (notice) console.log(notice); } catch (err) { console.error("[boot] old-world notice failed", err); }
-
-/** Whispers waiting for someone who wasn't here. Memory only, deliberately:
- *  see the `whisper` message case.
- *
- *  The key is built in ONE place because it is written on one code path and
- *  read on another — they drifted once already (a stray separator character
- *  made every held whisper unreachable, silently), and the failure mode is a
- *  private message that simply never arrives. */
-// held-whisper machinery lives with its writers in messages.ts now (R2);
-// join's delivery of held whispers imports it back, one-way.
 
 let nextClientNum = 1;
 const clients = new Map<unknown, Client>();
@@ -1005,18 +995,6 @@ const server = Bun.serve({
           if (!c.spectator && !c.ghostHidden) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, ...(c.declares ? { declares: c.declares } : {}), session: presenceSession(c), ...(c.actorId ? { actorId: c.actorId } : {}), ...(w.log && c.anonymous ? { guest: true } : {}) }, c);
           if (w.log) sanctionSweep(w);   // a voice mute in force is re-applied on join (keyed on the identity, never a name)
           if (!c.spectator && !c.ghostHidden) w.scripts.onPresence("enter", c.id, c.actorId);   // scripts don't sense a ghost
-          // Whispers that arrived while this identity was away. Held in memory
-          // only — see the `whisper` case for why they must never reach the log.
-          if (!c.spectator && !c.ghostHidden) {   // a ghost gets held whispers when the ghost ends (its next join)
-            const held = c.actorId ? pendingWhispers.get(whisperKey(w.name, c.actorId)) : undefined;
-            if (held?.length) {
-              // The client must distinguish catch-up from a live addressed event
-              // for private attention UI (#217). This flag is server-authored, never logged.
-              for (const m of held) ws.send(JSON.stringify({ ...m, replay: true }));
-              pendingWhispers.delete(whisperKey(w.name, c.actorId!));
-              console.log(`[world:${w.name}] delivered ${held.length} held whisper(s) to ${c.id}`);
-            }
-          }
           console.log(`[world:${w.name}] ${describe(w)}${c.spectator ? ` — ${c.id} watching` : ` — ${c.id} joined`}`);
           break;
         }
