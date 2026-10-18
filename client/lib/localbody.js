@@ -233,19 +233,6 @@ export function updateMountedMe(dt) {
   else escapeHeld = 0;
 }
 
-/** Pick one of my seat's named poses (its `poses` menu), or its default (null). Rides my seat frames with the time I
- *  chose it, so a sync group follows the latest choice on every screen. Returns the menu, or null when not seated. */
-export function chooseSeatPose(name) {
-  const m = avatarMounts.get(CONFIG.name); const b = occupiedBody();
-  if (!m || !b) return null;
-  const menu = Object.keys(b.poses);
-  if (name == null || name === '') return menu;   // just asking
-  if (name === 'default') { delete m.pose; delete m.at; return menu; }
-  if (!menu.includes(name)) return menu;
-  m.pose = name; m.at = serverNow();
-  return menu;
-}
-
 /** Nearest declared seat: distance to the SOCKET's world point, not the
  *  entity's origin — a swing's pivot frame is not where you sit, and on a
  *  ferry the helm can be a deck-length from the hull's center. Every slot

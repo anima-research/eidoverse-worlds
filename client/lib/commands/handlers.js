@@ -35,7 +35,7 @@ import { toggleHelp, flashHint } from '../ui.js';
 import { sceneAttach, sceneDetach } from '../scenegraph.js';
 import { ANIM_ORDER, ANIM_CLIPS } from '../avatar.js';
 import { setPushable, pushable } from '../consent.js';
-import { trySitOn, chooseSeatPose } from '../localbody.js';
+import { trySitOn } from '../localbody.js';
 import { getMe } from '../mybody.js';
 import { setMyReach, clearMyReach } from '../reachnet.js';
 import { SIM_ID } from '../../../shared/sim.js';
@@ -450,15 +450,6 @@ register('sit', (arg) => {
   const [word, slot] = (arg || '').trim().split(/\s+/);
   const t = thingNamed(word); if (t?.err) return logChat('*', t.err);   // by id, label or handle (R 10-17)
   if (!trySitOn(t?.id ?? (word || null), slot || null)) setPosture('sit');
-});
-
-register('seatpose', (arg) => {
-  // /seatpose [name] — one of your seat's named poses (its menu); no name: the list; 'default': back to its own
-  const name = (arg || '').trim();
-  const menu = chooseSeatPose(name || undefined);
-  if (!menu) return logChat('*', 'you are not on a seat');
-  if (!name) return logChat('*', menu.length ? `this seat's poses: ${menu.join(', ')} (or default)` : 'this seat has only its own pose');
-  if (name !== 'default' && !menu.includes(name)) return logChat('*', `no pose "${name}" here — ${menu.join(', ') || 'only its own'}`);
 });
 
 register('anim', (arg) => {

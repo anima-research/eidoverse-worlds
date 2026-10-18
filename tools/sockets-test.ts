@@ -193,7 +193,7 @@ const carLive = () => ({ world: W.view().entities });
 const carSocks = () => socketMapIn(W.view().entities, 'car') ?? {};
 const carRows = () => inspectSchema(W.rec('car'), 'car', carLive()).groups.find((g: any) => g.group === 'sockets')?.fields ?? [];
 const has = (k: string) => carRows().some((f: any) => f.k === k);
-check('the Sockets card has rows for the station\'s core (anchor, pose, leave by, who) and none for its reserved keys', ['driver|anchor', 'driver|pose', 'driver|leaveBy', 'driver|who'].every(has)
+check('the Sockets card has rows for the station\'s core (anchor, anim, leave by, who) and none for its reserved keys', ['driver|anchor', 'driver|anim', 'driver|leaveBy', 'driver|who'].every(has)
   && !['driver|input|move', 'driver|input|look', 'driver|look|yaw|0', 'driver|look|up', 'driver|reach', 'driver|fromSeat', 'driver|enter'].some(has), carRows().map((f: any) => f.k));
 // review 10-12 S3-4: a thing's seats are read from its socket children: the Inspector's "reads as", inspect's `can`, and
 // the Parent card of something on a socket (it read the old map and the old parent.socket, and said nothing)

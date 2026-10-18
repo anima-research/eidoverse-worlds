@@ -250,7 +250,7 @@ is 30 tools, and what used to be bespoke verbs are their modes:
 | tool | what it is, and its modes |
 |---|---|
 | `look` · `screenshot {view\|at}` · `body_state {who?, detail?}` | perceive: text, a render, a body (yours carries `flight`: altitude, heading, stamina — or "on the ground") |
-| `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]`, or `[x, y, z]` where `y` picks the floor there) or a **name**: `"thing/place"`, a thing (id, label or handle: its entrance, else beside it), a place's name or label, then a person here (in that order: see Named places); `"?"` lists the named places (nearest 200; `"?<text>"` narrows). The walk routes round placed models, through doors and up stairs. `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig) |
+| `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]`, or `[x, y, z]` where `y` picks the floor there) or a **name**: `"thing/place"`, a thing by id (its entrance, else beside it), a place's name or label, a thing's label or handle, then a person here (in that order: see Named places); `"?"` lists the named places (nearest 200; `"?<text>"` narrows). The walk routes round placed models, through doors and up stairs. `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig) |
 | `name_place {name, label?, on?, x?, y?, z?, remove?}` | name the spot where you stand (or x/z) as a place on the thing you are in, or the nearest (or `on`; `"@world"` for none): a `set` of its `places` component in the thing's own frame; `remove: true` retires a name |
 | `face {x, z \| target}` · `stop` | turn, halt |
 | `say {text}` · `whisper {to, text}` · `catch_up` · `activity` | high-volume social sugar (the MUD argument) |
@@ -294,7 +294,7 @@ thing's rotation order) · `rot.qx rot.qy rot.qz rot.qw` · `rot.order`
 light.intensity light.range light.important light.daytime` · `motion.type motion.axis motion.amp
 motion.period motion.phase motion.damp …` (a part's motion as
 `motion.<part>|amp`; `motion.rest` stops it) · `sockets.<slot>|pos|0..2
-sockets.<slot>|rot|0..2 sockets.<slot>|pose sockets.del` (a host's socket
+sockets.<slot>|rot|0..2 sockets.<slot>|anim sockets.del` (a host's socket
 children, read and written as one map) · `particles.*` · `comp.<type>` (raw JSON
 for any component no group speaks for; `comp.+` adds one) · `parent.to` /
 `parent.unparent`. The transform channels become one `set transform`;

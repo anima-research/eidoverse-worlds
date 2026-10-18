@@ -181,8 +181,10 @@ const HAND = {
           const raw = s.body ?? {}; const d = ACTION_DEFAULTS[b.action] ?? ACTION_DEFAULTS.sit;
           fields.push({ t: 'text', k: `${slot}|action`, label: `${slot} action`, value: b.action, hint: "what using it is called: sit, ride, lie, stand, drive… (it also picks the default pose and anchor)" });
           fields.push({ t: 'enum', k: `${slot}|anchor`, label: `${slot} anchor`, value: b.anchor, def: d.anchor, options: ANCHORS.map((v) => ({ v, label: v })), hint: 'the body point that lands on the socket: hips (a seat), feet (a place to stand), head, or the root' });
-          if (typeof b.pose === 'string') fields.push({ t: 'enum', k: `${slot}|pose`, label: `${slot} pose`, value: b.pose, def: d.pose, options: [...new Set([...SOCKET_POSES, b.pose])].map((v) => ({ v, label: v })), hint: 'the clip the body holds (any animation-library name; a blend or a phase-locked clip: edit as JSON)' });
-          else fields.push({ t: 'json', k: `${slot}|pose`, label: `${slot} pose`, value: JSON.stringify(b.pose, null, 2), hint: '{clip, time: "phase"} or a blend {by: "speed", clips: [[0, "idle"], [2, "walk"]]}; a clip name string makes it one clip again' });
+          // its anim (R 10-17: station.pose → anim; the legacy map's body block keeps the word pose, and the lift makes it
+          // the station's anim). Addressed |anim; |pose is still taken on a write (below)
+          if (typeof b.pose === 'string') fields.push({ t: 'enum', k: `${slot}|anim`, label: `${slot} anim`, value: b.pose, def: d.pose, options: [...new Set([...SOCKET_POSES, b.pose])].map((v) => ({ v, label: v })), hint: 'the clip the body holds (any animation-library name; a blend or a phase-locked clip: edit as JSON)' });
+          else fields.push({ t: 'json', k: `${slot}|anim`, label: `${slot} anim`, value: JSON.stringify(b.pose, null, 2), hint: '{clip, time: "phase"} or a blend {by: "speed", clips: [[0, "idle"], [2, "walk"]]}; a clip name string makes it one clip again' });
           fields.push({ t: 'enum', k: `${slot}|leaveBy`, label: `${slot} leave by`, value: b.leaveBy, def: 'any', options: [['any', 'moving, jumping or X'], ['jump', 'jump or X'], ['menu', 'X only'], ['script', 'only the world (a script)']].map(([v, label]) => ({ v, label })) });
           fields.push({ t: 'enum', k: `${slot}|who`, label: `${slot} who`, value: b.who ?? 'anyone', def: 'anyone', options: [['anyone', 'anyone'], ['builder', 'builders'], ['owner', 'owners']].map(([v, label]) => ({ v, label })) });
           // the station's reserved keys (fromSeat, enter/leave, input, look, reach…: shape audit 10-16) have no rows: the door refuses them
@@ -195,7 +197,7 @@ const HAND = {
       const next = comps.get('sockets') ?? JSON.parse(JSON.stringify(c.sockets ?? {}));
       if (k === 'del' && !next[raw]) { errors.push(`sockets.del: no slot ${JSON.stringify(raw)} on ${id}`); return; }
       if (k === 'del') { delete next[raw]; comps.set('sockets', Object.keys(next).length ? next : null); return; }
-      const [slot, what, idx, sub] = k.split('|');
+      const [slot, what0, idx, sub] = k.split('|'); const what = what0 === 'anim' ? 'pose' : what0;   // |anim, and the old |pose
       const cur = next[slot] ?? (next[slot] = { pos: [0, 0.5, 0], body: {} });   // a new slot takes a body, as '+ socket' makes
       if (what === 'body') { if (bool(raw)) cur.body = cur.body ?? {}; else delete cur.body; comps.set('sockets', next); return; }
       if (what === 'action') { const v = String(raw).trim().toLowerCase(); if (!/^[a-z][a-z0-9-]{0,31}$/.test(v)) { errors.push(`sockets.${slot}|action: a verb in lower case (sit, ride)`); return; }

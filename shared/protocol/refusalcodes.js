@@ -25,7 +25,7 @@ export const REFUSAL_CODES = Object.freeze({
   // ---- rights, ranks and consent ----
   "rights":         { meaning: "the actor's role doesn't allow this", when: "a missing permission (build, editOthers, scripts…), someone else's key, a world setting below owner, a rollback below owner" },
   "rank":           { meaning: "the other side ranks at or above you", when: "a lock above your rank, undoing someone ranked above you, a sanction on an equal or higher rank, an authority act" },
-  "consent":        { meaning: "that person isn't taking this right now", when: "a body act (touch, pose, shove, move…) their table refuses, or an edit that would move them (they sit or stand on it): the same words whatever the cause" },
+  "consent":        { meaning: "that person isn't taking this right now", when: "a body act (touch, pose, shove, displace…) their table refuses: the same words whatever the cause (an edit that moves a seat vacates its riders, never refused for them: §5)" },
   "body":           { meaning: "that's part of someone's body", when: "reserved (PROTOCOL §7a): a write under a body root by anyone but its owner and their grantees, said with no ids, creator or did-you-mean", reserved: true },
   "last-owner":     { meaning: "the world would be left with no owner", when: "a write that removes or demotes the last owner" },
   "held":           { meaning: "people still hold that role", when: "deleting a custom role that someone holds" },

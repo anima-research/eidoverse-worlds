@@ -200,7 +200,7 @@ const cases: Case[] = [
   { id: "D4", what: "(docs pass) replies and help in today's words: travel names anims and body-mode (not held pose and posture); ragdoll and live-pose replies name anim; /pushable says everyone (not a stranger); the inspector's sockets.<slot>|anim (|pose still read)", run() {
       const net = readText("mcpl/net-server.ts"), tl = readText("mcpl/tools.ts"), reg = readText("client/lib/commands/registry.js"), es = readText("shared/editschema.js"), ag = readText("AGENTS.md");
       return { net: !/held pose and posture/.test(net), tl: !/a posture, or walking, stands you back up/.test(tl) && !/`pose \{ragdoll\} refused/.test(tl) && !/pose \{clear: true\} drops it/.test(tl) && !/sockets\.<slot>\|pose/.test(tl),
-        reg: !/stranger/.test(reg.split("\n").find((l) => l.includes("'pushable'")) ?? ""), es: /k: `\$\{slot\}\|anim`/.test(es) && /what === 'pose' \|\| what === 'anim'|\['anim', 'pose'\]\.includes\(what\)/.test(es), ag: /sockets\.<slot>\|anim/.test(ag) }; },
+        reg: !/stranger/.test(reg.split("\n").find((l) => l.includes("'pushable'")) ?? ""), es: /k: `\$\{slot\}\|anim`/.test(es) && /what0 === 'anim' \? 'pose'/.test(es), ag: /sockets\.<slot>\|anim/.test(ag) }; },
     good: (o) => o.net && o.tl && o.reg && o.es && o.ag },
 ];
 
