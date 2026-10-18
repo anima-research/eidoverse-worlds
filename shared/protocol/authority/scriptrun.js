@@ -277,14 +277,22 @@ export function liftWorld(w) {
     } catch (x) { out.push({ repair: { repaired: [], failed: [{ id: null, code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) }] } }); }
     // names renamed before release (shaperepair.js RENAMED_COMPONENTS: @world trusted → trusted-components; RENAMED_FIELDS:
     // grabbable/station pose → anim, a grip's fingers → grasp; R 10-17): a pure
-    // rename, so every load does it (no marker); nothing to rename writes nothing. One system act, admitted as the repair is
-    try { const ops = renameOps(w.state(), PURGED);
-      if (ops.length) { const ids = [...new Set(ops.map((o) => o.id))], comps = [...new Set(ops.map((o) => o.comp))];
-        const renamed = [...ops.filter((o) => o.verb === "delete").map((o) => ({ id: o.id, from: o.comp, to: RENAMED_TO(o.id, o.comp) })),
-          ...ops.filter((o) => o.renamed).flatMap((o) => o.renamed.map((r) => ({ id: o.id, component: o.comp, ...r })))];
-        const plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids, comps }, lifting: true }, ops.map(({ renamed: _r, ...o }) => o));
-        changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "rename-components", body: { renamed, why: "component names renamed before release (protocol minor 0): the value kept, under its new name" } }));
-        out.push({ rename: { renamed } }); } }
+    // rename, so every load does it (no marker); nothing to rename writes nothing. One system act, admitted PER THING as the
+    // repair is (review r11 L3): a thing whose rename the door refuses is left as it was and named in the act's `failed`,
+    // and the rest rename. When nothing renames, nothing is written (a refused thing is said in the load's output only, so
+    // the log doesn't grow by a note at every load)
+    try { const all = renameOps(w.state(), PURGED);
+      if (all.length) { const st = w.state(); const byId = new Map(); for (const o of all) { if (!byId.has(o.id)) byId.set(o.id, []); byId.get(o.id).push(o); }
+        const kept = [], failed = [];
+        for (const [id, ops] of byId) {
+          try { admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: [...new Set(ops.map((o) => o.comp))] }, lifting: true }, ops.map(({ renamed: _r, ...o }) => o)); kept.push(...ops); }
+          catch (x) { if (!(x instanceof Refusal)) throw x; failed.push({ id, code: x.code, reason: String(x.reason ?? "").slice(0, 300) }); } }
+        const renamed = [...kept.filter((o) => o.verb === "delete").map((o) => ({ id: o.id, from: o.comp, to: RENAMED_TO(o.id, o.comp) })),
+          ...kept.filter((o) => o.renamed).flatMap((o) => o.renamed.map((r) => ({ id: o.id, component: o.comp, ...r })))];
+        if (kept.length) { const ids = [...new Set(kept.map((o) => o.id))], comps = [...new Set(kept.map((o) => o.comp))];
+          const plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids, comps }, lifting: true }, kept.map(({ renamed: _r, ...o }) => o));
+          changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "rename-components", body: { renamed, ...(failed.length ? { failed } : {}), why: "component names renamed before release (protocol minor 0): the value kept, under its new name" } })); }
+        out.push({ rename: { renamed, ...(failed.length ? { failed } : {}) } }); } }
     catch (x) { out.push({ rename: { renamed: [], failed: { code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) } } }); }
     return out; });
 }

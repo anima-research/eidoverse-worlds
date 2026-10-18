@@ -302,7 +302,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   of it is refused (one refusal, code `reserved`); `stable`: promised, it only
   grows by additions. `schema` reports each one. None is stable at v1. A
   draft (a namespaced name, below) has no status: it isn't admitted.
-- **An old spelling is repaired once, at load.** When a trial shape changes,
+- **An old shape is repaired once, at load** (a pure rename is not: below). When a trial shape changes,
   the authority's first load of a stored world writes what its old values
   meant, in today's spelling, in one system act, `repair-shapes {v, ids,
   failed?}` (shared/protocol/shaperepair.js: `repairComps` for each thing,
@@ -350,6 +350,19 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   stored sky's azimuth is converted from degrees exactly once (a turn
   beyond a full one first wraps: 400° is 40°), and a `weatherSeconds`
   today's range can't hold (0, or above 600 s) is dropped.
+- **A pure rename runs at every load.** A component or field renamed before
+  release (shared/protocol/shaperepair.js `RENAMED_COMPONENTS`: `@world`
+  `trusted` → `trusted-components`; `RENAMED_FIELDS`: `grabbable.pose` and
+  `station.pose` → `anim`, a grip's `fingers` → `grasp`) is not marker-gated,
+  unlike the once-per-world repair above: a rename means the same whenever it
+  runs, so every load renames what it finds, as the system's
+  `rename-components {renamed, failed?, why}` act and its change, and writes nothing
+  when there is nothing to rename. A value already under the new name wins
+  (the old one is deleted), an old field stored as null is removed, and each
+  thing is admitted per thing, as the repair is: a thing the door refuses
+  keeps its old spelling and is named in the act's `failed` (written only
+  when something else renamed). The door takes a write in the old spelling
+  and stores it in the new.
 - **Every parameter is written down.** The authority writes a component's
   defaults into the stored value when it is created or set, so a reader never
   supplies a value the log doesn't hold, and a later change to a default
@@ -782,6 +795,7 @@ Only what the asker could have written themselves, on what they are writing anyw
 | a deletion's set-down of unparented things resting on what it removes | the asker's change | the asker | no rights, locks or keys (shape checks) | `followUps` |
 | riders set down or dropped when a host's geometry changes | its own act `resettle {hosts, riders, asked}`, caused by the asker's act, and its change | `system` | the system's capability, scoped to those riders | the actor |
 | settle, return-lost, return-held, restamp-engine, lift-sockets, repair-shapes | their own act and change | `system` | the system's capability | the actor |
+| components and fields renamed before release (§4), at every load | its own act `rename-components {renamed, why}` and its change | `system` | the system's capability, per thing | the actor |
 | a physics rest | its own change, caused by the launch | `sim` | the rest capability | the actor |
 | stamps on what the asker is writing (a physics shape, a home, a media or model hash; a home for a reset's target) | the asker's change | the asker | the asker's rights (a target they may not edit refuses the write) | no: they are the asker's |
 

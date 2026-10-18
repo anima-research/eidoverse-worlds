@@ -185,17 +185,20 @@ export const RENAMED_COMPONENTS = Object.freeze({ "@world": Object.freeze({ trus
 /** Fields renamed before release (R 10-17 15:09/15:11): grabbable.pose and station.pose → anim (an open name of a pose or a
  *  clip; grabbable's 'two-hand' → twoHanded: true), a grip's fingers → grasp. One pure function for the door (a write in
  *  the old spelling is taken and stored in the new: writes.js resolve) and the load (renameOps). Idempotent; a value
- *  already spelled today is returned as the same object. {value, renamed: [{field, from, to}]} */
+ *  already spelled today is returned as the same object; an old field stored as null is removed, never renamed to a null
+ *  (to: null in its note). {value, renamed: [{field, from, to}]} */
 export const RENAMED_FIELDS = Object.freeze({ grabbable: Object.freeze({ pose: "anim", "grips.*.fingers": "grasp" }), station: Object.freeze({ pose: "anim" }) });
 export function renameFields(comp, v) {
   if (!bag(v) || !Object.hasOwn(RENAMED_FIELDS, comp)) return { value: v, renamed: [] };
   let out = v; const renamed = []; const edit = () => (out === v ? (out = { ...v }) : out);
   if ("pose" in out) { edit(); const p = out.pose; delete out.pose;
     if (comp === "grabbable" && p === "two-hand") { if (out.twoHanded === undefined) out.twoHanded = true; renamed.push({ field: "pose", from: p, to: { twoHanded: out.twoHanded } }); }
+    else if (p === null) renamed.push({ field: "pose", to: null });   // a stored null is a removal (review r11 L3: anim is never null)
     else { if (out.anim === undefined) out.anim = p; renamed.push({ field: "pose", to: "anim" }); } }
   if (comp === "grabbable" && bag(out.grips) && Object.values(out.grips).some((g) => bag(g) && "fingers" in g)) { edit();
     out.grips = Object.fromEntries(Object.entries(out.grips).map(([k, g]) => { if (!bag(g) || !("fingers" in g)) return [k, g];
-      const { fingers, ...r } = g; renamed.push({ field: `grips.${k}.fingers`, to: "grasp" }); return [k, { ...r, ...(r.grasp === undefined ? { grasp: fingers } : {}) }]; })); }
+      const { fingers, ...r } = g; renamed.push({ field: `grips.${k}.fingers`, to: fingers === null ? null : "grasp" });
+      return [k, { ...r, ...(r.grasp === undefined && fingers !== null ? { grasp: fingers } : {}) }]; })); }
   return { value: out, renamed };
 }
 /** The ops that rename stored components (RENAMED_COMPONENTS) and fields (RENAMED_FIELDS): [{verb, id, comp, value?}], []
