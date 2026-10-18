@@ -6,7 +6,11 @@
 > `shared/protocol/access.js`; the server's doors are `server/access.ts` (entryFor, doorFor, settleAccess, sweepAccess);
 > the browser has `/access`, `/grant … for 2h`, `/revoke`, `/members` and World Settings › Access; agents use ordinary
 > requests. Not carried over: a founding cap (joining never founds a world here), the directory search of everyone who
-> has signed in, a per-person `spectator` rung, and the `world_access` tool. What follows is upstream's design as written.
+> has signed in, a per-person `spectator` rung, and the `world_access` tool. An idle world's door (`doorFor`) is read
+> without loading it: `@world`'s access, default-role, role-defs and roles:* from `world.jsonl`, and the moderator log
+> `world.mod.jsonl` (ban / kick / unban), cached until either file changes, so a ban or kick refuses every HTTP read
+> (`/worlds`, `/geom`, `/heightmap`, `/access`) of an unloaded world exactly as of a loaded one. What follows is upstream's
+> design as written.
 
 Status: implemented on branch `feat/world-access`: world access, the owner
 panel (World › 🔒 access) and agent travel rules. What is left is operator

@@ -30,6 +30,8 @@ import { directoryFor } from "./directory.ts";
 import { accountAgeRefusal } from "./accountage.ts";
 import { effectiveOf, MOD_POWERS } from "../shared/protocol/roles.js";
 import { opsOf } from "../shared/protocol/fold.js";
+import { isBanned, kickOf } from "../shared/protocol/authority.js";
+import { modLogAt } from "./custody.ts";
 import { entryOf, doorOf as doorOfWc, listedIn, timedGrants, leftWords, ACCESS_WARN_MS } from "../shared/protocol/access.js";
 import type { World, Client } from "./world.ts";
 
@@ -44,7 +46,8 @@ export const NOT_YET_CLOSE = 4011;
  *  opaque id for it (server/directory.ts); `trustedRenderer`: the renderers' credential (may watch anywhere, never
  *  embody); `addr`: a guest's hashed address (bans name it). */
 export type Who = { account: string | null; actorId?: string | null; trustedRenderer?: boolean; addr?: string | null };
-export type Door = { name: string; wc: Record<string, any>; label: string; world?: World };
+/** `mod`: an unloaded world's moderator log, read from disk with its door (a loaded world's own log is the truth). */
+export type Door = { name: string; wc: Record<string, any>; label: string; world?: World; mod?: any[] };
 export type EntryMode = "embody" | "watch";
 export type Refusal = { code: number; reason: "banned" | "kicked" | "no-access" | "full" | "age"; why: string; until?: number };
 
@@ -59,8 +62,10 @@ export function doorOf(w: World): string { return doorOfWc(wcOfWorld(w)); }
 // Listing and HTTP reads must answer "may this caller see world X?" for worlds nobody is in. Loading them would do it,
 // but a loaded world is never unloaded, so a /worlds call would pull every world on disk into memory for good. Instead:
 // the change entries in world.jsonl that touch @world's access, default-role, role-defs and roles:*, folded set/delete in order,
-// cached until the file changes. (Only those keys: nothing else about the world is read.)
-const doorCache = new Map<string, { key: string; wc: Record<string, any> }>();
+// cached until the file changes. (Only those keys: nothing else about the world is read.) Its moderator log
+// (world.mod.jsonl, never in the world log) comes with it: a ban or kick there must close the door before the world is
+// loaded, as after (Antra's review of f91840e5 P1: a banned member's first /geom after a restart answered 200).
+const doorCache = new Map<string, { key: string; wc: Record<string, any>; mod: any[] }>();
 const DOOR_LINE = /"id"\s*:\s*"@world"/;
 const isDoorComp = (k: unknown) => typeof k === "string" && (k === "access" || k === "default-role" || k === "role-defs" || k.startsWith("roles:"));   // role-defs: a custom role's powers (the moderation bypass)
 /** Set by server.ts: the loaded worlds (a loaded world's own fold is the truth). */
@@ -74,9 +79,13 @@ export function doorFor(name: string): Door | null {
   if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return null;
   const file = join(WORLDS_DIR, name, "world.jsonl");
   let st; try { st = statSync(file); } catch { return null; }
-  const key = `${st.size}:${st.mtimeMs}`;
+  const modFile = join(WORLDS_DIR, name, "world.mod.jsonl");
+  let ms: { size: number; mtimeMs: number } | null = null; try { ms = statSync(modFile); } catch { ms = null; }
+  const key = `${st.size}:${st.mtimeMs}:${ms ? `${ms.size}:${ms.mtimeMs}` : "-"}`;
   const hit = doorCache.get(name);
-  if (hit?.key === key) return { name, wc: hit.wc, label: doorOfWc(hit.wc) };
+  if (hit?.key === key) return { name, wc: hit.wc, label: doorOfWc(hit.wc), mod: hit.mod };
+  // unreadable moderator log: no door (as an unreadable world log), never a door that forgets its bans
+  let mod: any[]; try { mod = modLogAt(modFile).mod; } catch { return null; }
   const wc: Record<string, any> = {};
   try {
     for (const line of readFileSync(file, "utf8").split("\n")) {
@@ -91,8 +100,8 @@ export function doorFor(name: string): Door | null {
       }
     }
   } catch { return null; }
-  doorCache.set(name, { key, wc });
-  return { name, wc, label: doorOfWc(wc) };
+  doorCache.set(name, { key, wc, mod });
+  return { name, wc, label: doorOfWc(wc), mod };
 }
 
 /** May `who` be in this world — with a body, or watching? null = yes; else the refusal (code, reason, words).
@@ -102,10 +111,14 @@ export function entryFor(door: Door, who: Who, mode: EntryMode, { now = Date.now
   // exclusion outranks everything but the operator: a global ban closes every door, a world's ban this one. Watching
   // counts — a ban is exclusion, not just silencing
   if (!isOperator(account)) {
+    // the world's own moderator log: the loaded world's, else the one read from disk with its door (same views, at `now`)
+    const off = !door.world && door.mod ? { mod: door.mod, now: () => now } : null;
+    const bannedHere = (id: string) => door.world ? !!door.world.log?.bannedHere(id) : !!off && isBanned(off, id);
+    const kickedHere = (id: string) => door.world ? door.world.log?.kickedHere(id) : off ? kickOf(off, id) : null;
     const gb = findBan(globalBans, account, addr);
-    const ban = gb ?? findBan(globalBans, account, addr, now, door.name) ?? (door.world && actorId && door.world.log?.bannedHere(actorId) ? { by: "a moderator" } as any : null);
+    const ban = gb ?? findBan(globalBans, account, addr, now, door.name) ?? (actorId && bannedHere(actorId) ? { by: "a moderator" } as any : null);
     if (ban) return { code: 4006, reason: "banned", why: `you are banned from ${gb ? "these worlds" : `"${door.name}"`}${ban.reason ? ` — ${ban.reason}` : ""}` };
-    const k = door.world && actorId ? door.world.log?.kickedHere(actorId) : null;
+    const k = actorId ? kickedHere(actorId) : null;
     if (k) { const mins = Math.max(1, Math.ceil((k.until - now) / 60000));
       return { code: 4006, reason: "kicked", why: `you were removed from "${door.name}" and may come back in ${mins} min${k.reason ? ` — ${k.reason}` : ""}`, until: k.until }; }
   }

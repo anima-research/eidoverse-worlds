@@ -11,6 +11,9 @@
 //       writes its end (expire-roles) and the door removes them (4010)
 //   A6  until is refused in the past and on an owner
 //   A7  a reset keeps a members-only world's door and members
+//   A8  a ban or kick in the moderator log closes the door after a restart too, before the world is loaded: a banned
+//       (and a kicked) caller still listed in a members-only world gets 404 from /geom and /heightmap, finds it on no
+//       map, and /access says none — the refusal never loads the world (Antra's review of f91840e5 P1: /geom was 200)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -23,7 +26,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const W = path.join(root, "w"); fs.mkdirSync(W, { recursive: true });
 const TOK = path.join(root, "tokens.json");
-fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-moss": { id: "Moss" } }));
+fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-moss": { id: "Moss" }, "tok-wren": { id: "Wren" }, "tok-fen": { id: "Fen" } }));
 const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", AGENT_TOKENS_PATH: TOK, SESSIONS_PATH: path.join(root, "sessions.json"),
   TRUST_NAMES: "1", ACCESS_SWEEP_MS: "250", ...extra });
@@ -64,7 +67,7 @@ const own = await sock(srv.port); const jo = await own.join("keep", "Ann");
 ok(!!jo.snapshot && jo.snapshot.yourRights?.role === "owner", "(setup) Ann joins as the owner", [jo.errors, jo.snapshot?.yourRights]);
 // people the world has seen (a role names an identity it knows): Rowan (an enrolled agent), Pip (a person), Moss
 const ids: Record<string, string> = {};
-for (const [name, extra] of [["Rowan", { agentToken: "tok-rowan" }], ["Pip", {}], ["Moss", { agentToken: "tok-moss" }]] as const) {
+for (const [name, extra] of [["Rowan", { agentToken: "tok-rowan" }], ["Pip", {}], ["Moss", { agentToken: "tok-moss" }], ["Wren", { agentToken: "tok-wren" }]] as const) {
   const s = await sock(srv.port); const j = await s.join("keep", name, extra); ids[name] = you(j); s.close(); }
 await sleep(150);
 ok(Object.values(ids).every(Boolean), "(setup) Rowan, Pip and Moss have identities here", ids);
@@ -136,6 +139,15 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   const rowan = ops.find((o) => o.id === "@world" && o.comp === `roles:${ids.Rowan}`)?.value;
   ok(access?.join === "listed" && rowan?.role === "visitor", "A7 a reset keeps a members-only world's door and its members", [access, rowan, ops.length, own.closed, own.msgs.slice(k0).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]); }
 
+// ---- A8 (setup, loaded): Moss and Wren are listed; Moss is banned, Wren kicked for 30 min; the loaded door refuses both ----
+const geomAs = async (port, world, bearer) => (await fetch(`http://127.0.0.1:${port}/geom?world=${world}`, { headers: { authorization: `Bearer ${bearer}` } })).status;
+{ const lm = await own.req("set", { id: "@world", component: `roles:${ids.Moss}`, value: { role: "visitor" } });
+  const lw = await own.req("set", { id: "@world", component: `roles:${ids.Wren}`, value: { role: "visitor" } });
+  const bm = await own.req("ban", { who: ids.Moss, reason: "A8" }), kw = await own.req("kick", { who: ids.Wren, minutes: 30, reason: "A8" });
+  const gm = await geomAs(srv.port, "keep", "tok-moss"), gw = await geomAs(srv.port, "keep", "tok-wren"), gr = await geomAs(srv.port, "keep", "tok-rowan");
+  ok(lm.ok && lw.ok && bm.ok && kw.ok && gm === 404 && gw === 404 && gr === 200, "(A8 setup) listed, then banned / kicked: the loaded world's /geom refuses both (404), a member still reads it",
+    [lm.refused, lw.refused, bm.refused, kw.refused, gm, gw, gr]); }
+
 own.close();
 try { srv.proc.kill(); } catch {}
 await sleep(300);
@@ -143,9 +155,18 @@ await sleep(300);
 // ---- A3 (idle): after a restart, nobody in it, the members-only world's door is read from its log without loading it ----
 { const s2 = await start();
   const anon = await worldsAs(s2.port), member = (await worldsAs(s2.port, "tok-rowan")).find((x) => x.name === "keep");
-  const a1 = await accessAs(s2.port, "keep", "tok-moss");
+  const a1 = await accessAs(s2.port, "keep", "tok-fen");   // a stranger (Moss is listed by now, for A8)
   ok(!s2.dead && !anon.some((x) => x.name === "keep") && member?.loaded === false && member?.access === "members" && member?.you === "enter" && a1.body?.you === "none",
     "A3 an idle world's door is read from its log (not loaded): a stranger's map lacks it; a member's shows it, members, enter", [anon.map((x) => x.name), member, a1.body]);
+  // A8: the same world, still not loaded — the moderator log is read with the door
+  for (const [who, tok] of [["banned Moss", "tok-moss"], ["kicked Wren", "tok-wren"]]) {
+    const map = await worldsAs(s2.port, tok), acc = await accessAs(s2.port, "keep", tok);
+    const g1 = await geomAs(s2.port, "keep", tok), g2 = await geomAs(s2.port, "keep", tok);
+    const hm = await fetch(`http://127.0.0.1:${s2.port}/heightmap?world=keep&format=json`, { headers: { authorization: `Bearer ${tok}` } }); const hmText = await hm.text();
+    const still = (await worldsAs(s2.port, "tok-rowan")).find((x) => x.name === "keep");
+    ok(!map.some((x) => x.name === "keep") && acc.body?.you === "none" && g1 === 404 && g2 === 404 && hm.status === 404 && /no such world/.test(hmText) && still?.loaded === false,
+      `A8 after a restart, the world unloaded: the ${who} (still listed) is refused by /worlds, /access, /geom (404, twice) and /heightmap, and the refusal loads nothing`,
+      { map: map.map((x) => x.name), access: acc.body, geom: [g1, g2], heightmap: [hm.status, hmText.slice(0, 60)], loaded: still?.loaded }); }
   try { s2.proc.kill(); } catch {} }
 { // A9 (final review M1): a members-only door is not opened by default-role / role-defs powers handed to everyone
   const { entryFor } = await import(path.join(ENGINE, "server/access.ts"));
