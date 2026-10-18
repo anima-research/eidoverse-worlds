@@ -209,5 +209,28 @@ check('same-pose put: t=120 exactly the fold\'s pose (it never stays drawn in th
 // ---- a launch (a throw/drop: the engine's flight owns it) is not a put: left to the flight's own smoothing
 // (pres.bodies is the flight's; with no engine here there is none, so this only pins the guard's shape)
 
+// ---- R 10-17 20:14 ("holding this crate from far away"): a crate the physics stacked on another is that one's scene child,
+// and its own scale is LOCAL (1 under a 0.25 host). A held thing is drawn by its centre and its size (localCentre, sizeOf),
+// and both read obj.scale: 4x too big for a child, so it was drawn a metre off the hand. Held, a child and a root of the same
+// world size are drawn at the same world place.
+{
+  const box = { min: new THREE.Vector3(-1.25, 0, -0.75), max: new THREE.Vector3(1.25, 2, 0.75) };
+  const host = new THREE.Group(); host.scale.setScalar(0.25); host.position.set(-3, 0, 0); scene.add(host);
+  const kid = new THREE.Group(); kid.position.set(0, 2, 0); host.add(kid);
+  const solo = new THREE.Group(); solo.scale.setScalar(0.25); solo.position.set(3, 0, 0); scene.add(solo);
+  for (const [id, o] of [['kid', kid], ['solo', solo]] as const) { S.entities.set(id, o); S.colliders.set(id, { box }); S.replica.st.entities[id] = { c: { grabbable: {} } }; }
+  const drawnAt = (id: string, t0: number) => { tick(t0); bus.emit('holds', { [id]: { by: 'me' } }); for (let t = t0; t <= t0 + 600; t += 16) { tick(t); frame(); } const w = world(S.entities.get(id)); bus.emit('holds', {}); return w; };
+  const a = drawnAt('solo', 30000), b = drawnAt('kid', 31000);
+  check('held: a stacked crate (a scene child, local scale 1 under a 0.25 host) is drawn where the same crate unstacked is', a.p.distanceTo(b.p) < 1e-6, `root ${J(a.p.toArray())} child ${J(b.p.toArray())}`);
+  // …and carried in both arms (a body with hand bones: the crate is 0.625 m, a carry), where its SIZE sets how far out in
+  // front of the body it sits: the same place again, against the body (not a metre out)
+  const bones: any = {}; for (const [n, x] of [['rightHand', -0.18], ['leftHand', 0.18]] as const) { const o = new THREE.Object3D(); o.position.set(x, 1.0, 0.3); me.root.add(o); bones[n] = o; }
+  (me as any).vrm = { humanoid: { getRawBoneNode: (n: string) => bones[n] ?? null, getNormalizedBoneNode: (n: string) => bones[n] ?? null }, userData: {} };
+  const c = drawnAt('solo', 32000), d = drawnAt('kid', 33000);
+  (me as any).vrm = null; for (const o of Object.values(bones)) me.root.remove(o as any);
+  check('carried in both arms: the stacked crate sits where the unstacked one does, against the body', c.p.distanceTo(d.p) < 1e-6 && Math.abs(c.p.z) < 0.6, `root ${J(c.p.toArray())} child ${J(d.p.toArray())}`);
+  for (const id of ['kid', 'solo']) { S.entities.delete(id); S.colliders.delete(id); delete S.replica.st.entities[id]; }
+}
+
 console.log(`\n${pass} passed, ${fail} failed${MUTANT ? ' (mutant: duration 0 — red is the expected shape)' : ''}`);
 process.exit(fail ? 1 : 0);
