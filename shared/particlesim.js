@@ -10,6 +10,11 @@
 // Godot's ParticleProcessMaterial's. What is ours, and why:
 //   - local coordinates only: a particles component hangs off its thing and rides it (the first protocol's contract), so
 //     the emission transform is the identity and every radial/tangential force is about the emitter's own origin;
+//   - gravity alone is WORLD-down (Unity's convention, lead 10-17): the document's gravity is a world-space vector, and
+//     the renderer turns it into the emitter's frame every frame (setGravity(localGravity(…)): the inverse of the
+//     emitter's world rotation, its world scale undone), so a tipped brazier's smoke still rises. Godot's local_coords
+//     turns gravity with the node; here only velocity, linear/radial/tangential and the shape stay in the emitter's
+//     frame, and tangential's axis is the document's gravity as written, read in that frame;
 //   - no 2D (DISABLE_Z), no emission points, no attractors, no turbulence, no orbit velocity (Godot's is 2D-only here);
 //   - `sphere` is uniform by VOLUME (the cube root of the draw) and has per-axis extents (an ellipsoid). Godot lerps a
 //     surface point toward the centre by a plain uniform draw, which crowds the centre; the toolkit's builder, whose
@@ -96,6 +101,28 @@ export function sampleRamp(g, x, out = [1, 1, 1, 1]) {
   return out;
 }
 
+/** v rotated by the unit quaternion q = [x, y, z, w]. */
+export function qRotate(q, v, out = [0, 0, 0]) {
+  const [x, y, z, w] = q, a = v[0], b = v[1], c = v[2];
+  const ix = w * a + y * c - z * b, iy = w * b + z * a - x * c, iz = w * c + x * b - y * a, iw = -x * a - y * b - z * c;
+  out[0] = ix * w - iw * x - iy * z + iz * y; out[1] = iy * w - iw * y - iz * x + ix * z; out[2] = iz * w - iw * z - ix * y + iy * x;
+  return out;
+}
+/**
+ * The document's gravity (a WORLD vector, m/s², lead 10-17) in an emitter's own frame, given the emitter's world rotation
+ * q [x, y, z, w] and world scale s [x, y, z] (three's matrixWorld.decompose). The emitter's frame is scaled with its thing
+ * (`scale`: every length in the effect, accelerations too, × the thing's scale), so the gravity that lands in the world is
+ * the document's × the thing's mean scale (∛|sx·sy·sz|), pointing exactly where the document says: v = S⁻¹ · R⁻¹ · (k·g).
+ * At identity it is g as written.
+ */
+const _QI = [0, 0, 0, 1], _R = [0, 0, 0];   // scratch: the renderer calls this every frame per emitter
+export function localGravity(g, q = [0, 0, 0, 1], s = [1, 1, 1], out = [0, 0, 0]) {
+  const qi = _QI; qi[0] = -q[0]; qi[1] = -q[1]; qi[2] = -q[2]; qi[3] = q[3];   // a unit quaternion's inverse is its conjugate
+  const k = Math.cbrt(Math.abs(s[0] * s[1] * s[2])) || 1;
+  const r = qRotate(qi, g, _R);
+  out[0] = (r[0] * k) / (s[0] || 1); out[1] = (r[1] * k) / (s[1] || 1); out[2] = (r[2] * k) / (s[2] || 1);
+  return out;
+}
 const norm3 = (v) => { const l = Math.hypot(v[0], v[1], v[2]); return l > 0 ? [v[0] / l, v[1] / l, v[2] / l] : [0, 0, 0]; };
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 // Godot's hue rotation (cpu_particles_3d.cpp): xform_inv of a basis built from three fixed matrices
@@ -148,7 +175,8 @@ export function makeSim(em, { seed = 0 } = {}) {
   const d0 = V.direction ?? [0, 1, 0]; const dl0 = Math.hypot(d0[0], d0[1], d0[2]); const dirN = dl0 > 0 ? [d0[0] / dl0, d0[1] / dl0, d0[2] / dl0] : [0, 0, 1];
   let bin = cross([0, 1, 0], dirN); if (bin[0] * bin[0] + bin[1] * bin[1] + bin[2] * bin[2] < 1e-8) bin = [0, 0, 1];
   bin = norm3(bin); const nrm = cross(bin, dirN);
-  const gN = norm3(F.gravity), gx = F.gravity[0], gy = F.gravity[1], gz = F.gravity[2];
+  const gN = norm3(F.gravity);   // tangential's axis: the document's gravity, in the emitter's frame (it doesn't turn with the world)
+  let gx = F.gravity[0], gy = F.gravity[1], gz = F.gravity[2];   // gravity in the emitter's frame: as written until the renderer says how the emitter stands (setGravity)
   const hueOn = C.hue[0] !== 0 || C.hue[1] !== 0;
   const base = (seed >>> 0);
   let alt = 0;
@@ -296,6 +324,9 @@ export function makeSim(em, { seed = 0 } = {}) {
     output();
     return sim;
   };
+  /** Gravity in the emitter's own frame (localGravity: the document's world-down gravity turned into it), read from the
+   *  next step on. Without a call the document's gravity is used as written: an emitter standing upright, at scale 1. */
+  sim.setGravity = (v) => { gx = +v[0]; gy = +v[1]; gz = +v[2]; return sim; };
   /** Godot's emitting: off lets the living finish; on again starts emitting where the cycle stands. */
   sim.setEmitting = (on) => { on = !!on; if (on === sim.emitting) return; sim.emitting = on; if (on) { sim.active = true; sim.finished = false; } };
   sim.liveCount = () => { let c = 0; for (let i = 0; i < n; i++) c += sim.alive[i]; return c; };

@@ -45,7 +45,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a ring's cone is in radians", "shared/particlesim.js", "Math.tan(Math.PI / 2 - SH.cone)", "Math.tan((90 - SH.cone) * DEG)", ["P2"]],
   ["the validator holds spread to 0..π", "shared/particle_effects.js", "between(v.spread, [0, Math.PI], 'velocity.spread')", "between(v.spread, [0, 180], 'velocity.spread')", ["P1"]],
   ["fire's spin is written in radians", "shared/particle_effects.js", "rotation: { angle: [0, TAU4], velocity: [-P.rotate, P.rotate] }", "rotation: { angle: [0, 360], velocity: [r4(-P.rotate * 180 / Math.PI), r4(P.rotate * 180 / Math.PI)] }", ["P1"]],
-  ["gravity is turned into the emitter's frame", "shared/particlesim.js", "const r = qRotate(qi, g);", "const r = [g[0], g[1], g[2]];", ["P4"]],
+  ["gravity is turned into the emitter's frame", "shared/particlesim.js", "const r = qRotate(qi, g, _R);", "const r = [g[0], g[1], g[2]];", ["P4"]],
   ["the sim takes the frame's gravity", "shared/particlesim.js", "gx = +v[0]; gy = +v[1]; gz = +v[2];", "", ["P4"]],
   ["the renderer hands the sim its world gravity", "client/lib/particlefx.js", "sim.setGravity(localGravity(", "void (", ["P5"]],
   ["the reader skips what it doesn't know", "shared/particle_effects.js", "  const doc = readable ? readableEffect(raw) : raw;", "  const doc = raw;", ["P6"]],
