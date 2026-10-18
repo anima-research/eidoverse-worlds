@@ -141,7 +141,7 @@ const cases: Case[] = [
     good: (o) => JSON.stringify(o.was) === '["carol"]' && o.un === "ok" && /^refused consent/.test(o.p) && JSON.stringify(o.fl) === '["carol"]' && o.uf === "ok" && JSON.stringify(o.dl) === "[]" && JSON.stringify(o.fl2) === "[]" },
   { id: "C5", what: "(stern M1) said where it's read: §5 (only you add or remove a delegate; removing a friend ends the mutual tier at once), the verb row's doc, AGENTS.md and the act tool name unfriend and undelegate", run() {
       const s5 = section(PROTO(), /\n## 5\. /); const ag = readText("AGENTS.md"); const tl = readText("mcpl/tools.ts"); const doc = VS.VERBSPEC?.consent?.doc ?? "";
-      return { s5: /only you add or remove a delegate/.test(s5) && /`unfriend`/.test(s5) && /`undelegate`/.test(s5) && /mutual tier ends at once/.test(s5),
+      return { s5: /only you add or remove a delegate/.test(s5) && /\{unfriend\}`/.test(s5) && /\{undelegate\}`/.test(s5) && /mutual tier ends at once/.test(s5),
         doc: /unfriend/.test(doc) && /undelegate/.test(doc), ag: /`consent \{unfriend\}`/.test(ag) && /`\{undelegate\}`/.test(ag), tl: /friend, unfriend, delegate, undelegate/.test(tl) }; },
     good: (o) => o.s5 && o.doc && o.ag && o.tl },
   // ---------------- X: the spec says it ----------------

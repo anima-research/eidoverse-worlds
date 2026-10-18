@@ -125,7 +125,7 @@ const BODY_VERBS = {
         deliver(w, k.from, actor, k.kind, k.cls, { spec: k.spec }, "asked"); ringPush(P, { ts: now, from: k.from, to: actor, cls: k.cls, verdict: "allowed (asked)" }); inboxPush(P, k.from, { type: "body-reply", ask: k.id, ok: true, applied: true }); }
       else { coolDown(P, k, now); ringPush(P, { ts: now, from: k.from, to: actor, cls: k.cls, verdict: "refused (asked)" }); inboxPush(P, k.from, { type: "body-reply", ask: k.id, ok: false, why: C.refusalWords(actor, k.cls) }); }
       w.presenceDirty = true; return { ok: true, answered: a.answer, yes: a.yes === true }; }
-    const changing = ["preset", "set", "allow", "deny", "pause", "friend", "delegate"].some((k) => a[k] !== undefined);
+    const changing = ["preset", "set", "allow", "deny", "pause", "friend", "delegate", "unfriend", "undelegate"].some((k) => a[k] !== undefined);
     if (changing) { const before = reachModes(P, typeof a.of === "string" ? a.of : actor, now); const r = C.setConsent(P, actor, a, now); if (!r.ok) refuse(r.code, r.reason, r.fix ?? "a delegate you named may close your table; only you may open it (§5)");
       const ended = revokeAfter(w, r.target, before); w.presenceDirty = true; return { ok: true, recorded: false, of: r.target, ...(ended.length ? { ended } : {}), table: C.tableOf(P, r.target) }; }
     const t = C.tableOf(P, actor);

@@ -653,7 +653,12 @@ request moves a copy to a newer version, keeping its own overrides.
   table for every participant, and its defaults are one preset for every body
   (`shared/protocol/consent.js` `DEFAULT_PRESET`). A separate `delegates` list
   names who may close your table for you (pause, deny), never open it; only you
-  open it. Silence is no. For touch, pose, shove and
+  open it, and only you add or remove a delegate or a friend (`consent
+  {delegate}` / `{undelegate}`, `{friend}` / `{unfriend}`; a delegate's removal
+  closes nothing for you, so it is never one of their closings). Removing a
+  friend takes them off your list, and the mutual tier ends at once: what only
+  the friends tier allowed them ends as any closing of your table does.
+  Silence is no. For touch, pose, shove and
   displace the authority refuses before delivery (a reach at the relay, above),
   and the target's own client has the final word. *Near, follow and voice
   are in the table and the settings, but nothing enforces them yet.* Consent is

@@ -526,12 +526,14 @@ ask again after you let go. To ask first, use `act {verb: "reach", args: {who, p
 intimate, pose, shove, displace: someone dragging, carrying or occupying
 with your body; near, follow and voice are in the table, not yet enforced)
 it says `allow`, `ask` or `deny`, separately for two tiers, `everyone` and
-`friends` (mutual: both named each other with `consent {friend}`). Every body
+`friends` (mutual: both named each other with `consent {friend}`; `consent {unfriend}`
+takes someone off your list and the mutual tier ends at once). Every body
 starts on the preset `normal` (everyone: touch ask, intimate, pose, shove and
 displace deny; friends: touch and shove allow, intimate, pose and displace ask); `open`,
 `friends-only` and `performer` are the others. A separate `delegates` list
 (`consent {delegate}`) names who may close your table for you (pause, deny),
-never open it; only you open it. `act {verb: "consent"}` shows yours, the asks
+never open it; only you open it, and only you add or remove a delegate
+(`{undelegate}` takes one off). `act {verb: "consent"}` shows yours, the asks
 waiting for you and the last attempts on you; `consent {set: {class: "pose",
 tier: "everyone", mode: "ask"}}`, `{preset}`, `{allow | deny: <identity>,
 class?}`, `{pause: true}` and `{answer, yes}` change it. Acting on another

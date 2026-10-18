@@ -7,7 +7,8 @@
 //          both named each other in their `friends` list)
 //   presets: the SAME for every body. Normal is the default for every participant; Performer is opt-in.
 //   silence is no: a body that never sent a table gets Normal; an ask nobody answers within 20 s is a no.
-//   delegates: the people YOU named (a list apart from friends) may close your table (pause, deny); only you may open it.
+//   delegates: the people YOU named (a list apart from friends) may close your table (pause, deny); only you may open it,
+//          and only you add or remove a friend or a delegate (friend/unfriend, delegate/undelegate)
 // Renamed before release (protocol minor 0, R 10-17 14:41): tier `strangers` → `everyone`; cells everyone|ask|nobody →
 // allow|ask|deny; class `move` → `displace` (someone else displacing your body; `move` is your own walk); the one `friend`
 // list split into the mutual `friends` tier and `delegates`. The old words are still taken on the wire (LEGACY_* below), and
@@ -90,6 +91,10 @@ export function setConsent(P, actor, a, now) {
   const t = ((P.consent ??= bag())[target] ??= bag());
   const set = a.set && typeof a.set === "object" ? { ...a.set, class: classOf(a.set.class), tier: tierOf(a.set.tier ?? "everyone"), mode: modeOf(a.set.mode) } : a.set;
   const opening = a.preset !== undefined || (set && set.mode !== "deny") || a.allow !== undefined || a.pause === false || a.friend !== undefined || a.delegate !== undefined;
+  // who is on your lists is yours alone (review r11 M1): naming, and removing, a friend or a delegate. A removal closes
+  // nothing a delegate could close for you, so it is never one of their closings
+  const lists = a.unfriend !== undefined || a.undelegate !== undefined;
+  if (!self && lists) return { ok: false, code: "consent", reason: `only ${target} may change who ${target}'s friends and delegates are` };
   if (!self && (opening || !(t.delegates ?? []).includes(actor))) return { ok: false, code: "consent", reason: opening ? `only ${target} may open ${target}'s consent` : `${target} hasn't named you a delegate` };
   if (a.preset !== undefined) { if (typeof a.preset !== "string" || !Object.hasOwn(PRESETS, a.preset)) return { ok: false, code: "shape", reason: `no preset '${a.preset}'`, fix: Object.keys(PRESETS).join(", ") }; t.preset = a.preset; t.cells = bag(); }
   if (set) { const { class: c, tier, mode } = set;
@@ -103,8 +108,14 @@ export function setConsent(P, actor, a, now) {
   if (a.pause !== undefined) t.paused = !!a.pause;
   if (a.friend !== undefined && !isWho(a.friend)) return { ok: false, code: "shape", reason: "friend: an identity" };
   if (a.delegate !== undefined && !isWho(a.delegate)) return { ok: false, code: "shape", reason: "delegate: an identity" };
+  if (a.unfriend !== undefined && !isWho(a.unfriend)) return { ok: false, code: "shape", reason: "unfriend: an identity" };
+  if (a.undelegate !== undefined && !isWho(a.undelegate)) return { ok: false, code: "shape", reason: "undelegate: an identity" };
   if (a.friend !== undefined) t.friends = [...new Set([...(t.friends ?? []), a.friend])];
   if (a.delegate !== undefined) t.delegates = [...new Set([...(t.delegates ?? []), a.delegate])];
+  // removing: a friend off your list ends the mutual tier at once (isFriend reads both lists on every decision; the caller's
+  // revokeAfter ends what the friends tier alone allowed); a delegate off it can no longer close your table
+  if (a.unfriend !== undefined) t.friends = (t.friends ?? []).filter((x) => x !== a.unfriend);
+  if (a.undelegate !== undefined) t.delegates = (t.delegates ?? []).filter((x) => x !== a.undelegate);
   return { ok: true, target };
 }
 /** The presence plane's consent tables in today's shape. A table stored before 10-17 (cells.strangers, everyone/nobody,
