@@ -133,7 +133,13 @@ try {
     let at: number[] = []; const t0 = Date.now();
     while (Date.now() - t0 < 45000) { at = await evalJson(`window.__joinAt ?? []`).catch(() => []); if (at.length >= 4) break; await sleep(500); }
     const gaps = at.slice(1).map((t, i) => Math.round(t - at[i]));
-    check("W8 here (stays full): the redials back off — the second and third waits each longer than the one before", gaps.length >= 3 && gaps[1] > gaps[0] * 1.2 && gaps[2] > gaps[1] * 1.2, { gaps });
+    // the schedule the page must keep, from the shared rule itself at rand 0.5 (5000, 7500, 12500 ms today). Each observed gap
+    // is at least its scheduled wait (a page redialling every 5 s fails the second); only lower bounds, because a gap also
+    // holds the page's own work (the first one its boot), which a slower host stretches. The schedule itself must grow.
+    const { redialer, REDIAL } = await import("../../shared/redial.js"); const R = redialer();
+    const want = [0, 1, 2].map(() => R.next(REDIAL.full, () => 0.5));
+    check("W8 here (stays full): the redials back off — each wait at least its scheduled, growing, wait", gaps.length >= 3 && want[1] > want[0] * 1.2 && want[2] > want[1] * 1.2
+      && want.every((w, i) => gaps[i] >= w - 50), { gaps, want });
     await cdp.send("Page.navigate", { url: "about:blank" }); await sleep(500);   // the page stops dialling: the seat is the agent's
     // W9 (review r4 claims C2): an AGENT dialling a full world waits too — refused in the server's words, it dials again by
     // itself (the same backoff, shared/redial.js) and gets in once a seat frees; it never gives the world up
