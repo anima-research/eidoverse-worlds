@@ -1,8 +1,10 @@
 // LAB: World Settings' tabs and Settings' safety tab, rendered, for a look (R 10-10: "a bunch of stuff that looks a bit broken in every tab").
 // @ts-nocheck
 import { scratchBench, sleep } from "../harness.ts";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 process.env.TRUST_NAMES = "1";
-const OUT = process.env.SHOT_DIR ?? "/home/claude/eido/logs/ws-shots";
+const OUT = process.env.SHOT_DIR ?? join(tmpdir(), "ws-shots");
 (await import("node:fs")).mkdirSync(OUT, { recursive: true });
 import path from "node:path"; import fs from "node:fs";
 const ENGINE = path.resolve(import.meta.dir, "../..");

@@ -104,7 +104,7 @@ export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'd
   // cannot run TS. An absolute bun serves both (house rule's target is
   // Windows PATH shims); BUN_PATH overrides for other layouts.
   const BUN = process.execPath.includes('bun') ? process.execPath
-    : (process.env.BUN_PATH || '/home/claude/.bun/bin/bun');
+    : (process.env.BUN_PATH || 'bun');
   for (const name of new Set(['staging', 'commons', ...worlds])) {
     const r = spawnSync(BUN, ['tools/protocol/world.ts', 'found', name, '--owner', owner], { env: { ...process.env, WORLDS_DIR: scratch, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' }, encoding: 'utf8' });
     if (r.status !== 0) { try { rmSync(scratch, { recursive: true, force: true }); } catch {} throw new Error(`ownedWorld: founding "${name}" failed: ${r.stdout}${r.stderr}`); }

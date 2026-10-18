@@ -71,7 +71,7 @@ const snapState = () => existsSync(REPO_STATE)
       hash: new Bun.CryptoHasher("sha256").update(readFileSync(REPO_STATE)).digest("hex") }
   : { exists: false, mtimeMs: 0, hash: "" };
 const repoStateBefore = snapState();
-const BUN = process.execPath.includes("bun") ? process.execPath : "/home/claude/.bun/bin/bun";
+const BUN = process.execPath.includes("bun") ? process.execPath : "bun";
 
 let pass = 0, fail = 0;
 const check = (name, ok, extra = "") => {
