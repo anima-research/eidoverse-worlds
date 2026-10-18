@@ -485,6 +485,21 @@ const gateWas = new Map();
 let pins = new Set();
 // every panel starts pinned to the dock; unpinning is the personal choice, not pinning (live, 09-06 23:34)
 const DEFAULT_PINS = ['search', 'profile', 'world', 'chat', 'actions', 'debug', 'settings', 'edit'];   // 'edit' too (live 09-07 10:55) — its ownership gate still decides visibility
+// THE ACTION BAR HAD ANOTHER ID UNTIL 10-17 (ad90009f), and its id keys two things a returning person saved: their dock
+// pins and the frame's place/size/open state (windows.js `ew-frame-<id>`). Renamed without carrying them, R's bar lost
+// its rail icon and fell back to the default spot hard against the dock and the mic/ear glyphs (gym 10-17 20:00: "it
+// looks a bit closer to the dock than it used to"). Carried once, here, before anything reads either key; a state saved
+// under 'actions' is newer and wins. The old id is spelled on this one line only (names-check E3 allows it).
+export const ACTIONBAR_OLD_ID = 'emotes';
+export function carryRenamedPanel(from, to, ls = localStorage) {
+  try {
+    const oldFrame = ls.getItem(`ew-frame-${from}`);
+    if (oldFrame != null) { if (ls.getItem(`ew-frame-${to}`) == null) ls.setItem(`ew-frame-${to}`, oldFrame); ls.removeItem(`ew-frame-${from}`); }
+    const saved = JSON.parse(ls.getItem(PINS_LS) ?? 'null');
+    if (Array.isArray(saved) && saved.includes(from)) ls.setItem(PINS_LS, JSON.stringify([...new Set(saved.map((p) => (p === from ? to : p)))]));
+  } catch { /* storage off: nothing saved to carry */ }
+}
+carryRenamedPanel(ACTIONBAR_OLD_ID, 'actions');
 try { pins = new Set(JSON.parse(localStorage.getItem(PINS_LS) ?? JSON.stringify(DEFAULT_PINS))) } catch { pins = new Set(DEFAULT_PINS); }
 // the search entry arrived after people had saved their pins: pin it ONCE for them, then their unpin is theirs
 try { if (!localStorage.getItem('ew-dock-search-seen')) { localStorage.setItem('ew-dock-search-seen', '1'); pins.add('search'); } } catch {}

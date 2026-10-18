@@ -36,6 +36,14 @@ document.body.innerHTML = `
 const { bus } = await import("./dock-stub.mjs");
 const { fsvg } = await import("../client/lib/icons.js");
 const { makeFrame, getFrame, isLocked } = await import("../client/lib/windows.js");
+// a returning person's storage from before the action bar's rename (ad90009f, 10-17): pins and frame state under its old
+// id. The old id is ui.js's ACTIONBAR_OLD_ID (the word lives on that one line, names-check E3); a literal copy here would
+// be a second spelling, so it is read the only way that does not import ui.js first: from the source line.
+// Seeded after windows.js has stamped its layout version (so the frame key is not purged) and before ui.js reads pins.
+const OLD = /export const ACTIONBAR_OLD_ID = '(\w+)';/.exec(await Bun.file(here("../client/lib/ui.js")).text())![1];
+const RENAMED_FRAME = JSON.stringify({ x: 336, y: 10, w: 352, h: 32 });
+localStorage.setItem("ew-dock-pins", JSON.stringify(["search", "profile", "world", "chat", OLD, "debug", "settings", "edit"]));
+localStorage.setItem(`ew-frame-${OLD}`, RENAMED_FRAME);
 const ui = await import("../client/lib/ui.js");
 const { initDock, registerPanel, dockPins, toggleEMenu, makeSection, settingsFrame, paintPresence } = ui;
 
@@ -45,6 +53,18 @@ const check = (name: string, ok: boolean, detail = "") => {
   else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ""}`); }
 };
 const tick = () => new Promise((r) => setTimeout(r, 0));
+{
+  // R, gym 10-17 20:00: the bar sat "closer to the dock than it used to" — its saved place was under the old id
+  const p = JSON.parse(localStorage.getItem("ew-dock-pins") ?? "null");
+  check("rename carry: a saved pin under the old id is the action bar's 'actions' pin after load", Array.isArray(p) && p.includes("actions") && !p.includes(OLD), JSON.stringify(p));
+  check("rename carry: the action bar's saved place/size moves to ew-frame-actions", localStorage.getItem("ew-frame-actions") === RENAMED_FRAME && localStorage.getItem(`ew-frame-${OLD}`) == null,
+    String(localStorage.getItem("ew-frame-actions")));
+  // a state saved under the new id is newer and wins; the stale old key still goes
+  localStorage.setItem(`ew-frame-${OLD}`, "{\"x\":1}"); localStorage.setItem("ew-frame-actions", "{\"x\":2}");
+  ui.carryRenamedPanel(OLD, "actions");
+  check("rename carry: an existing 'actions' state is not overwritten by the old one", localStorage.getItem("ew-frame-actions") === "{\"x\":2}" && localStorage.getItem(`ew-frame-${OLD}`) == null);
+  localStorage.setItem("ew-frame-actions", RENAMED_FRAME);
+}
 const dock = () => document.getElementById("dock")!;
 const menu = () => document.getElementById("emenu")!;
 const btn = (id: string) => dock().querySelector(`button[data-toggles="${id}"]`) as HTMLButtonElement | null;

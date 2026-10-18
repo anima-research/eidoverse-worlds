@@ -799,6 +799,7 @@ async function handle(msg) {
     case 'sfu-ice':   bus.emit('sfu-ice', msg);   break;
     case 'sfu-route': bus.emit('sfu-route', msg); break;
     case 'relay-cred':          // #104: the minted media credential (voicerelay.js)
+      window.__voiceRelayAbsent = false;   // a relay answered: an earlier "no relay" (a server restarted without voice) is over
       bus.emit('relay-cred', msg);
       break;
     case 'voice-consent':       // #104: server's ack of a receive-consent change

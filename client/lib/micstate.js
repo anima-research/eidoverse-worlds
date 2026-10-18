@@ -27,7 +27,8 @@
 // static form dragged all of ui.js (and its THREE import) into every context
 // that touches the mic — including headless ones with no DOM at all.
 import { bus } from './base.js';
-const flashHint = (msg) => import('./ui.js').then((u) => u.flashHint(msg)).catch(() => {});
+// tone 'attn': a press that did not turn the mic on is "something you asked for didn't happen, and why" (ui.js flashHint)
+const flashHint = (msg) => import('./ui.js').then((u) => u.flashHint(msg, 4000, 'attn')).catch(() => {});
 import { sendTyping } from './net.js';
 import { gateThreshold, pttMode } from './voiceconsent.js';
 import { gateStream, attachSource, detachSource, driveGate, driveRawTracks, setMonitor, monitoring,
@@ -220,7 +221,11 @@ export function gateRelease() {
  *  one transport there is no routing left to do, only the call. */
 export async function toggleMic() {
   const fn = typeof window !== 'undefined' ? window.__sfuMic : null;
-  if (!fn) {
+  // THE SERVER'S "NO RELAY" OUTRANKS THE HOOK (R, gym 10-17 20:00: "it just stays gray and doesn't do anything").
+  // voicesfubridge installs __sfuMic at init whatever the server runs, so with the hint below behind `!fn` alone a world
+  // without VOICE_TRANSPORT=sfu handed every press to sfuMic, which parks the intent on a pc that never comes and returns
+  // off: grey glyph, no word. net.js sets __voiceRelayAbsent from the server's refusal of relay-cred at join.
+  if (!fn || (typeof window !== 'undefined' && window.__voiceRelayAbsent)) {
     // no bridge yet. Two very different reasons look identical from here: the
     // relay is still connecting, or this world has none (staging, 09-04 — the
     // glyph stayed off with no prompt and no word). net.js flags the second.
