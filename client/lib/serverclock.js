@@ -11,6 +11,7 @@
 let clockOffset = null;       // from frames (one-way)
 let rtt = [];                 // [{rtt, offset}] most recent round trips
 const RTT_KEEP = 8;
+const STEP_SLACK_MS = 50;     // drift between asks a sample may show and still be the same clock (0.6 ms/s over 80 s)
 export const localNow = () => performance.timeOrigin + performance.now();
 export function noteServerTime(t) {
   if (typeof t !== 'number' || !Number.isFinite(t)) return;
@@ -20,7 +21,13 @@ export function noteServerTime(t) {
 /** One round trip: t0 when the ask left (localNow), t the authority's clock in the answer, t1 when it came back. */
 export function noteRoundTrip(t0, t, t1) {
   if (![t0, t, t1].every((x) => typeof x === 'number' && Number.isFinite(x)) || t1 < t0) return;
-  rtt.push({ rtt: t1 - t0, offset: t - (t0 + t1) / 2 });
+  const s = { rtt: t1 - t0, offset: t - (t0 + t1) / 2 };
+  // Two honest samples of one clock agree within half their round trips summed (queuing can only misplace a sample by
+  // its own rtt/2). One that doesn't was taken on a clock that has since STEPPED (a wall-clock resync, a laptop waking:
+  // the page's monotonic clock and the authority's wall clock part by the jump): the older ones are retired, or the
+  // minimum filter keeps the stale offset for up to RTT_KEEP asks and every flight is drawn behind the sim (10-18).
+  rtt = rtt.filter((x) => Math.abs(x.offset - s.offset) <= (x.rtt + s.rtt) / 2 + STEP_SLACK_MS);
+  rtt.push(s);
   if (rtt.length > RTT_KEEP) rtt.shift();
 }
 const bestOffset = () => (rtt.length ? rtt.reduce((a, b) => (b.rtt < a.rtt ? b : a)).offset : clockOffset ?? 0);
