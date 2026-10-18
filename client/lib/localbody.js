@@ -25,6 +25,7 @@ import { html } from './markup.js';   // hint markup is opt-in: html`` escapes w
 import { posable, pushable } from './consent.js';
 import { clearMyReach } from './reachnet.js';
 import { getMe } from './mybody.js';
+import { floorUnderLyingBody } from './getup.js';
 
 let logChat = () => {};
 
@@ -74,9 +75,11 @@ export function getUp() {
   myState.pose = null; me?.clearPose();
   me?.setLimp(false);
   myState.clip = 'idle';
-  // resume from where the body ended up
+  // resume from where the body ended up, on the floor it lay on (getup.js) —
+  // not at height 0, which put the feet inside a stair landing or under an
+  // upper floor
   myState.pos.copy(me.root.position);
-  myState.pos.y = 0;
+  myState.pos.y = me ? floorUnderLyingBody(me) : 0;
 }
 // ---------------------------------------------------------------- mounted
 // While seated/riding, my body is DERIVED from the parent entity's live

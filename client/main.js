@@ -119,6 +119,7 @@ import { deriveLandmarks, debugMarkers, landmarkWorld } from './lib/landmarks.js
 import { measureChain, solveChain } from './lib/reachbone.js';
 import { canonicalPoint } from '../shared/contact.js';
 import { initReachNet, setMyReach, clearMyReach } from './lib/reachnet.js';
+import { standingYFromLyingRoot } from './lib/getup.js';
 
 // (Crash breadcrumbs live in lib/bc.js now; the frame loop stamps each
 // system's name as it runs. avatar.js still reads globalThis.__ewBC.)
@@ -414,7 +415,9 @@ wireNet({
     // you stood on. It rides the next presence packet, so everyone sees it.
     // EXCEPT a remembered ragdoll frame (pre-sanitizer entries): that is
     // wreckage, not authorship — wake standing instead of hung mid-tumble.
-    if (r.clip === 'ragdoll') { myState.pos.y = 0; return; }
+    // Its remembered root lies below the floor the body lay on; wake just
+    // above that floor and settle onto it, not at height 0 (getup.js).
+    if (r.clip === 'ragdoll') { myState.pos.y = standingYFromLyingRoot(fin(r.p[1])); return; }
     if (r.pose) myState.pose = r.pose;
     setFolded(r.wingsFolded === true);
   },
