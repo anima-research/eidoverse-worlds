@@ -211,7 +211,7 @@ export function renderScene(c: Client, msg: any, now = Date.now()): object | nul
     if (sim && !sim.epoch?.foreign) advanceSim(sim, tickOf(sim, now));
     const activeBodies = sim && !sim.epoch?.foreign ? Object.values(sim.bodies).filter(b => !b.resting).length : 0;
     // The pose each entity is at NOW: a live lease (a piloted vessel) beats the sim beats the fold — resolved
-    // through the whole mount chain, so cargo and riders ride where the leased carrier actually is.
+    // through the whole mount chain, so cargo and occupants ride where the leased carrier actually is.
     const view = { entity: (id: string) => {
       const e = w.state.entities[id], s = w.leases?.get(id)?.lastState, b = sim?.bodies[id];
       if (e && s && Array.isArray(s.p)) return { ...e, pos: s.p, yaw: s.yaw ?? 0, livePose: { q: s.q }, comp: { ...e.comp, motion: null } };

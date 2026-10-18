@@ -156,8 +156,8 @@ if (YAML) {
   check('the caption tap stays on IPv4 loopback', c?.rtspAddress === '127.0.0.1:8554', String(c?.rtspAddress));
   const lo = parsed(render({ PROJECTOR_BIND: '::1' }));
   check('::1 still becomes 127.0.0.1, unbracketed', lo?.rtmpAddress === '127.0.0.1:1935', String(lo?.rtmpAddress));
-  const v4 = parsed(render(base));
-  check('an IPv4 bind is left as it is', v4?.rtmpAddress === '0.0.0.0:1935', String(v4?.rtmpAddress));
+  const ipFour = parsed(render(base));
+  check('an IPv4 bind is left as it is', ipFour?.rtmpAddress === '0.0.0.0:1935', String(ipFour?.rtmpAddress));
 }
 
 rmSync(dir, { recursive: true, force: true });

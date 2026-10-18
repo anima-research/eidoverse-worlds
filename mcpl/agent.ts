@@ -4214,8 +4214,7 @@ export class WorldAgent {
     return this.request("say", { text: args.text, ...(args.to ? { to: args.to } : {}), ...(args.spoken ? { spoken: true, utt: args.utt, ...(args.t0 !== undefined ? { t0: args.t0 } : {}) } : {}) }).then((r: any) => { if (r && !r.ok) console.warn(`[agent] say refused: ${r.refused?.reason ?? r.refused?.code}`); return r; });
   }
 
-  /** Called after each `say` verb this body sends (say() or a raw world_verb
-   *  `say`), so whoever keeps its typing dots up (the door's TypingRelay) can
+  /** Called after each `say` this body sends (say()), so whoever keeps its typing dots up (the door's TypingRelay) can
    *  let them end with the bubble. */
   onSaid: (() => void) | null = null;
 

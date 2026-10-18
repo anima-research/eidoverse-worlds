@@ -1,4 +1,6 @@
 // watervolumes — data-driven water VOLUMES (the 'water'/'air' components: pools, oceans in a box,
+// (On this protocol the volume components aren't registered yet — an entity's `water` would collide with @world.water —
+// so no world carries a volume and only the LEVEL's underwater optics below draw; the readers already read records flat.)
 // dry interiors that move). Distinct from water.js, the world's one water LEVEL.
 // Data-driven water volumes and moving dry interiors. No world names or layouts.
 import { THREE, TSL, scene, camera, sun, hemi } from './core.js';
@@ -114,7 +116,7 @@ export function applyEnvLight(){if(!envLight)return;sun.color.copy(envLight.colo
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion();
 const entries = () => Object.entries(state.st.entities).sort(([a],[b])=>a.localeCompare(b));
 export function environmentSettings() {
-  return entries().map(([,e])=>e.comp?.environment).find(Boolean) ?? null;
+  return entries().map(([,e])=>e.environment).find(Boolean) ?? null;   // a component sits flat on the record (view.js)
 }
 export function movementBounds() { const env=environmentSettings(); return env?.bounds ?? (env || waters.length ? {} : null); }
 export function waterAt(p) { return mediumAt(Array.isArray(p)?p:[p.x,p.y,p.z],waters,airs,clock.value); }
@@ -245,7 +247,7 @@ export function updateWater() {
   if(rebuild){rebuilds++;clearSurfaces();volumeIds.clear();if(particles){scene.remove(particles);particles.geometry.dispose();particles.material.dispose();particles=null;}}
   waters.length=0;airs.length=0;
   for(const [id,e] of entries()) {
-    const comp=e.comp??{}, matrix=matrixFor(id,e);
+    const comp=e, matrix=matrixFor(id,e);   // the record's components, flat (view.js): water / air / environment
     if(rebuild&&(comp.water||comp.environment))volumeIds.add(id);
     if(comp.water) {
       if(waters.length>=MAX_WATER){warn(`Water renderer supports ${MAX_WATER} water volumes; extra volumes are inactive`);continue;}
@@ -284,7 +286,7 @@ const volumeIds = new Set();   // owners at the last rebuild: a same-id respawn 
 function touchesVolume(id) {
   if (id == null) return false;
   if (volumeIds.has(id)) return true;
-  const c = state.st.entities[id]?.comp;
+  const c = state.st.entities[id];
   if (c?.water || c?.environment) return true;
   for (const v of volumeIds) {   // is `id` a carrier somewhere above a volume owner?
     let p = state.st.entities[v]?.parent?.to;
