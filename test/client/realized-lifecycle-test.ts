@@ -259,6 +259,26 @@ console.log('\nrealized lifecycle — four registries, one id, every seam\n');
   noErrors('directional light');
 }
 
+// ---- 12. a thing taken off its carrier is fit root-local, as the promote tail fits it (R 10-17: tower-4 at 0.25 held a
+// metre off her hands; BUG-HUNT "Held crate drawn far from the hand").
+{
+  const T = stub.THREE;
+  const fitIsLocal = (id: string) => { const c = stub.colliders.get(id); if (!c) return false; if (c.opts?.localFrame) return true;
+    c.obj.updateMatrixWorld(true); return c.obj.matrixWorld.equals(new T.Matrix4()); };
+  bus.emit('lib-geom', { [lib('crate')]: GEOM });
+  door('create', { id: 'base12', model: lib('crate'), components: { transform: { pos: [3, 0, 4], scale: [0.25, 0.25, 0.25] } } });
+  door('create', { id: 'top12', model: lib('crate'), components: { transform: { pos: [3, 0.5, 4], scale: [0.25, 0.25, 0.25] } } });
+  await settle(); drain();
+  check('a root crate at 0.25 is fit root-local at its promote tail', fitIsLocal('top12'), JSON.stringify(stub.colliders.get('top12')?.opts));
+  door('set', { id: 'top12', component: 'parent', value: { to: 'base12' } }); await settle(); drain();
+  door('delete', { id: 'top12', component: 'parent' }); await settle(); drain();
+  const o = stub.entities.get('top12');
+  check('taken off its carrier it stands in the scene again', !!o && (o.parent === null || o.parent?.isScene || !o.parent?.userData?.entityId), JSON.stringify({ parent: o?.parent?.userData }));
+  check('…and its collider is fit root-local again (not its world box read as its own)', fitIsLocal('top12'), JSON.stringify({ opts: stub.colliders.get('top12')?.opts, pos: o?.position.toArray(), scale: o?.scale.toArray() }));
+  door('delete', { id: 'top12' }); door('delete', { id: 'base12' });
+  noErrors('dismount');
+}
+
 console.log(`\n${failures ? `\x1b[31m${failures} failed\x1b[0m` : '\x1b[32mall passed\x1b[0m'}\n`);
 W.close?.();
 process.exit(failures ? 1 : 0);
