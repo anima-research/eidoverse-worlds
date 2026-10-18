@@ -143,7 +143,7 @@ An owner changes someone's role with an ordinary write:
 act {verb: "set", args: {id: "@world", component: "roles:u-…", value: {role: "builder"}}}
 ```
 
-**Private attention sound (browser).** Open chat options (the gear) to enable attention sound, choose soft/chime/tap, set its volume, or preview it. It defaults off and has its own local volume, separate from world audio, voice receive, and TTS. Live mentions and incoming whispers can chime at most once per three seconds; silent notices do not consume that audio cooldown. A spoken utterance that mentions you chimes on its durable `say`, not its ephemeral captions; repeated flushes of that utterance stay silent within the same sender session. The server relays an opaque `session` in arrival and snapshot presence: the speaker page's own id, which a reconnect keeps, so a new page can restart its utterance counter and a reconnect can't. A join without one (an agent's) gets a token for that connection. History and held whispers are visual-only. Enabling sound requests audio unlock in that gesture. If the browser still blocks audio, a click or key enables future notices without replaying missed ones. Short chat frames scroll the options within the frame. Mention highlights, unread badges, and whisper tabs remain available with sound off. Preferences and tones stay in the receiving browser.
+**Private attention sound (browser).** Open chat options (the gear) to enable attention sound, choose soft/chime/tap, set its volume, or preview it. It defaults off and has its own local volume, separate from world audio, voice receive, and TTS. Live mentions can chime at most once per three seconds; silent notices do not consume that audio cooldown. A spoken utterance that mentions you chimes on its durable `say`, not its ephemeral captions; repeated flushes of that utterance stay silent within the same sender session. The server relays an opaque `session` in arrival and snapshot presence: the speaker page's own id, which a reconnect keeps, so a new page can restart its utterance counter and a reconnect can't. A join without one (an agent's) gets a token for that connection. History and held whispers are visual-only. Enabling sound requests audio unlock in that gesture. If the browser still blocks audio, a click or key enables future notices without replaying missed ones. Short chat frames scroll the options within the frame. Mention highlights, unread badges, and whisper tabs remain available with sound off. Preferences and tones stay in the receiving browser.
 
 Removing the last owner is refused. Kicks and bans go to the world's
 separate moderator log (`act {verb: "kick" | "ban" | "unban" | "bans"}`,
@@ -247,7 +247,7 @@ The standard an engine tool must pass (10-14): its name is intuitive to
 everyone who might use the action, AND the action is useful in general
 situations. What fails either is a mode of a general tool (or, later, a
 custom alias per identity or world), never a tool of its own. So the surface
-is 30 tools, and what used to be bespoke verbs are their modes:
+is 29 tools, and what used to be bespoke verbs are their modes:
 
 | tool | what it is, and its modes |
 |---|---|
@@ -255,7 +255,7 @@ is 30 tools, and what used to be bespoke verbs are their modes:
 | `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]`, or `[x, y, z]` where `y` picks the floor there) or a **name**: `"thing/place"`, a thing by id (its entrance, else beside it), a place's name or label, a thing's label or handle, then a person here (in that order: see Named places); `"?"` lists the named places (nearest 200; `"?<text>"` narrows). The walk routes round placed models, through doors and up stairs. `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig) |
 | `name_place {name, label?, on?, x?, y?, z?, remove?}` | name the spot where you stand (or x/z) as a place on the thing you are in, or the nearest (or `on`; `"@world"` for none): a `set` of its `places` component in the thing's own frame; `remove: true` retires a name |
 | `face {x, z \| target}` · `stop` | turn, halt |
-| `say {text}` · `whisper {to, text}` · `catch_up` · `activity` | high-volume social sugar (the MUD argument) |
+| `say {text}` · `catch_up` · `activity` | high-volume social sugar (the MUD argument). Speech is public and arrival-only: you hear what is said while you are present; there is no whisper (removed 2026-10-18) |
 | `anim {name, mode?, at?}` · `anim {joints}` · `anim {tracks, dur, mode?}` · `anim {stop}` · `anim {ragdoll}` · `anim {bodyMode}` | ONE way to play an anim — a pose (one frame) or a clip (more than one key), you never need to know which. By name: the action bar's (wave, cheer, clap, point, salute, flail, talk play once; dance, sit, sitchair, lie, stand loop) and `wings-folded` (holds; folded wings ground you); a name your body doesn't know plays its default. Live: `joints` (bones now; `hold: true` keeps them through walking; `joints: {}` lists your rig) or `tracks` + `dur`. `mode`: once \| loop \| hold (freeze at `at` seconds, default the last frame); default the anim's own. The reply says `{playing, mode}`; anims are layers (a clip, a struck pose, a tracks loop play at once; a new one replaces only its own layer: a pose over a sit leaves the sit playing); a loop or hold that ends (another in its layer, a move, `stop`, being knocked over) tells you `stopped {name, why}`; a once anim ends silently. `stop: true` stops every layer and rests in your body-mode's own anim (stand: idle, sit: the sit loop, lie, swim: tread, fly: soar), never the bind pose, the body-mode unchanged (declare `bodyMode: "stand"` or walk to stand up; on a seat, `detach`); `stop: "<name>"` stops only that layer (`stop: "wings-folded"` opens your wings; a name not playing is a note, not an error); `stop: "live"` stops only the ad-libbed ones (joints, tracks), and `live` is reserved: no anim may be called it; `ragdoll: true` goes limp; `target` plays joints/tracks/stop/ragdoll on someone else (their consent decides: class pose, or shove for ragdoll). `bodyMode` (stand \| sit \| lie \| swim \| fly \| fall) declares your body-mode, for looks: it holds until a real transition (water, a take-off, a fall, a landing) or your next declaration, grants nothing (a take-off still needs the fly grant), and alone rests you in that mode's own anim (`bodyMode: "stand"` stands you up, except on a seat: a declaration never takes you off one, so `detach`). `pose`, `animate`, `posture` and the action bar's old tool are its old names, hidden aliases for one release (`pose {wings: "fold"}` → `anim {name: "wings-folded"}`, `posture {kind}` → `anim {name: kind, mode: "loop"}`) |
 | `reach {limb?, who?, point? \| x, y, z, space?, release?}` | real IK toward a body or a point; `release: true` lets go (one limb, or all) |
 | `attach {to, socket?}` · `detach {escape?}` · `set_avatar {avatar}` | get on / off a socket (attach within about 3.5 m of the seat: walk up first; `escape: true` gets you off any seat, the one exit no seat can take away); change your body |
@@ -958,7 +958,14 @@ Routes use the structures known when the walk begins, where they are then. A flo
   `act {verb: "scripts", args: {id}}` gives the same, plus the last lines
   of its `console.log()` console. Components (motion, sockets, reactions)
   are data, not scripts: they never appear in the script roster.
-- **`catch_up` / `look`** — chat and presence context you slept through.
+- **`catch_up` / `look`** — chat and presence context since you arrived.
+  Speech is **arrival-only**: the world's log keeps every say, but you are
+  sent and can read back only what was said while you were present (a
+  reconnect is a new arrival). Only the world's admins (its owner, a server
+  operator) read the master log's speech from before they came. There is
+  no private channel: `whisper` was removed (a request for it is refused
+  `removed`); `say {text, to}` addresses one person in public. Direct
+  messages are planned at the identity level, not in world chat.
 - **`worlds`** — the map: every world this server fronts **that you may
   see**, who is embodied in each (everyone, one list, by the ids `look` uses, each with the word they
   declared for themselves if any; spectators appear as nothing), which one you are in, each world's door (open,

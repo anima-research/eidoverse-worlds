@@ -73,8 +73,8 @@ Every message belongs to exactly one plane:
   immediately before the authority's synchronous call.
 - **Presence** — relayed or batched, never persisted, gone when it's gone:
   `pose`/`frame`, `typing`, `caption`, `drag`, `anim`, `puppet`,
-  `bodydrag`, `holds` (who holds what), `attest`/`performed`, `whisper`
-  (held in memory for absent recipients, lost on restart — deliberately).
+  `bodydrag`, `holds` (who holds what), `attest`/`performed`. (`whisper`
+  was here until it was removed, 2026-10-18: spec/PROTOCOL.md §5 "Speech".)
   Presence crosses into the log only through checked requests
   (arriving, put, throw, drop).
 
@@ -83,7 +83,7 @@ Every message belongs to exactly one plane:
 | type | plane | who may send | shape (essentials) | notes |
 |---|---|---|---|---|
 | `join` | — | anyone admitted | `{world, id?, token?, avatar?, surface?, spectate?, declares?, renderer?, roam?, agentToken?, replica, session?}` | travel = leave A, join B on the same socket. Verified sessions: `id` ignored, login name wins. An embodied (`world` surface) join must say `replica: true` — it folds the log itself — or it is refused. `session`: the page's own id (8–64 of `A-Za-z0-9_-`), relayed as its presence `session` (§4). `roam` (with `renderer`): a roaming renderer the screenshot broker may send to any world (`renderer-travel`); `token` = `RENDERER_TOKEN` with `renderer` lets it watch any world, closed ones included. The door's refusals: 4005 (a bad link, no such world, a client that doesn't fold the log; 4005 "full" is transient), 4006 (moderation), 4010 (this world isn't open to you, `@world.access`), 4011 (nothing to watch yet: redial). Answers `snapshot` (§4). |
-| `history` | read | anyone incl. spectators | `{before?, after?, limit?≤300, verbs?, reqId?}` | pages the log newest-first; answers `history`. |
+| `history` | read | anyone incl. spectators | `{before?, after?, limit?≤300, verbs?, reqId?}` | pages the chat newest-first; answers `history`. Arrival-only: only lines said since this connection arrived, unless it is an admin's (the world's owner, an operator), who pages the master log. |
 | `debug` | read | anyone incl. spectators | `{limit?, kinds?}` or `{behavior}` or `{behaviors:true}` | the flight recorder (every refusal) + script status; answers `debug`. |
 | `pose` | presence | embodied | `{pose}` | latest-wins into the world's dirty map; fanned out in stage `frame`s at ~15Hz. Bag fields incl. the C18 `xr` tracked-body contract: **docs/pose-wire.md**. Non-finite / malformed samples are refused at the source (`server/posecheck.ts`, 09-06). |
 | `clock` | presence | any | `{t0}` | answered `{type: "clock", t0, t}`: `t` on the world's authority clock (spec/PHYSICS.md §5.1). Never logged. |
@@ -94,7 +94,7 @@ Every message belongs to exactly one plane:
 | `anim` | presence | embodied | `{dur, tracks≤64KB, loop?}` | one-shot custom clip, relayed once. |
 | `puppet` | presence | embodied | `{target, pose?, anim?, ragdoll?}` | ROUTED to target, who decides; ragdoll = `true` or `{lean:[x,y,z]}`. |
 | `bodydrag` | presence | embodied | `{target, grab?/end?/pose?/p?/yaw?/sim?/pinAt?/unpin?/pins?}` | ragdoll takeover stream, routed to the body's owner; `sim` = ≤24 joints × {j,p,v}. |
-| `whisper` | presence | embodied | `{to, text≤4000}` | point-to-point, NEVER logged; ≤20 held per absent recipient, lost on restart. |
+| `whisper` | removed | — | — | removed 2026-10-18: answered `error {about: "whisper", refused: {code: "removed", reason, fix}}`; the text goes nowhere (not delivered, held or logged). |
 | `rtc` | presence | embodied or aux leg | `{to, toSurface?, payload≤20KB}` | signaling, addressed per (id, surface); server stamps `fromGen`/`fromSurface`. |
 | `attest` | presence | bound voice leg only | `{seq, digest, gen}` | per-utterance performance receipt; verified against `recentSays` (≤300s, sha256 of text, current gen) then broadcast as `performed`. |
 | `bc` | dev | anyone | `{tag}` | crash breadcrumbs, printed on disconnect. |
@@ -110,8 +110,8 @@ Every message belongs to exactly one plane:
 
 - `snapshot` — the join answer: `{world, you, gen, yourSurfaces, recording,
   cut: {dialect, v, head, worldId, verbs, state, sim, names, holds, mine, you},
-  state (the chat
-  window), avatars (roster), yourRights, restore, present[{id, avatar, pose,
+  state (the chat window: always `recentChat: []`, since speech is arrival-only;
+  `chatTotal` is the master log's line count for an admin, else 0), avatars (roster), yourRights, restore, present[{id, avatar, pose,
   declares?, surfaces, session}]}`. `cut.state` is the fold at `head` (each component
   wrapped `{v}` or `{purged: true}`, as in the digest); a joiner adopts that
   cut and folds on from `head + 1`. Cost scales with the world, not its
@@ -153,8 +153,7 @@ Every message belongs to exactly one plane:
 - `error` — `{error}`: every refusal, human-readable. `mod` — `{text}`:
   moderation query/act summaries.
 - `history`, `debug` — request answers (echo `reqId`).
-- `whisper` (with `echo:true` on your own sent copy, and `replay:true` on a
-  held whisper delivered when its recipient joins), `anim`, `puppet`,
+- `anim`, `puppet`,
   `bodydrag`, `caption`, `typing`, `drag`, `rtc`, `performed` — presence
   relays, shapes as sent (see §3) plus attribution stamps.
 - `capture` — `{id, follow?, view?, at?, width?, height?, frame?}`: server asks a renderer leg (or an opt-in native donor, `capture-capabilities`) for a PNG; answered by `capture-result {id, dataUrl? | error?}` (server/snapshots.ts, the broker: roaming renderers, PNG validation, generations). `at` frames a placed thing instead of a body. `width` and `height` are the image size (960 × 540). `frame` is the optional framing, `{dist?, height?, pitch?}`, normalised by `shared/snapframe.js` on both ends and sent only when a field is given; absent = the fixed default framing. It is nested so that no field of the message itself, such as the image's `height`, is read as framing. Its fields:
@@ -230,7 +229,8 @@ client must currently reproduce, and a candidate for a deliberate ruling:
 3. `snapshot.yourRights` is advisory — clients re-derive rights from
    `@world.roles:*` in their own fold; the authority re-checks everything
    anyway.
-4. Whisper durability is memory-only and restart-lossy, deliberately
-   (privacy > durability). Any future queue must not touch the log.
+4. There is no private channel on this wire (whisper was removed 2026-10-18).
+   Direct messages are planned at the identity level, above any one world;
+   whatever carries them must not touch a world's log.
 5. `bc` and `capture-result` are service lanes (forensics, render volunteering)
    riding the same socket as gameplay.

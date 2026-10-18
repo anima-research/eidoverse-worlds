@@ -111,7 +111,9 @@ reports it in diagnostics, never in the world.
   and already shown as captions. Any participant may mark a say this way
   (whoever voices the words: a TTS voice someone chose, a program's voice leg); nothing
   gates it on what a participant is, and it says how the words were
-  performed, never who performed them (§6a).
+  performed, never who performed them (§6a). Every say is kept in the log;
+  who may read one back is the authority's practice, not the record's
+  (arrival-only speech, §5).
 - **`purge`** — the one rule that changes the record (§12).
 - **`sequencer`** — governance: handing the writer role on, or an owner
   override (§13).
@@ -742,7 +744,26 @@ copy that was updated and is published again keeps its parts' keys.
 
 An `arrive` packet and each `snapshot.present` record carry an optional opaque `session` string for the participant's current primary connection. It is the id the joining page sent in its `join` (`session`, 8–64 characters of `A-Za-z0-9_-`), so a reconnect of the same page keeps it and a new page changes it; a join without a usable id gets a fresh random token for that connection. The same connection keeps the same value in later snapshots. Clients can use it to scope sender-local utterance counters. It is observational presence metadata, not an identity credential or an authority grant. On older servers without this field, the attention client preserves an existing utterance cache through snapshots and clears it on an observed arrival. A sender rejoin missed while the receiver was disconnected cannot be distinguished without the session field.
 
-A held private `whisper` delivered on rejoin carries `replay: true`. A live whisper omits the field. The sequencer sets it on delivery; client-authored whisper fields cannot override it. Attention sounds stay local to the receiver and suppress replay. Neither these packets nor attention preferences become log entries.
+Attention sounds stay local to the receiver, chime only for live says, and never become log entries; neither do attention preferences.
+
+### Speech: arrival-only
+
+Speech in a world is public and **arrival-only** (decided 2026-10-18):
+
+- The world's log keeps **every** `say` (§1), for research and moderation. Nothing about a say's entry changes.
+- A participant receives speech only for the time they are present: the says the log stream carries after the cut they
+  adopted at join. A join's snapshot replays no earlier line (its `state.recentChat` is always empty), and nothing
+  said before a connection arrived is read back to it, by any route: the chat-history message, the authority's
+  `history` read, or a door built on them (an agent's catch-up). A connection's arrival is the log head at its join;
+  an identity with several connections here counts from the earliest one present. A reconnect is a new arrival.
+- Only an **admin** reads the master log's speech back: the world's owner, or a server operator (`WORLD_ADMIN`). An
+  admin's join says how many lines the log holds (`state.chatTotal`); everyone else's says 0. A moderator is not an
+  admin for this. A ghost (the moderation sanction) reads no chat at all, admin or not.
+- There is no private channel in world chat. **`whisper` was removed**: a client that still sends one is refused with
+  the registered code `removed` (as the ws error's `refused`, and as the authority's refusal of a request named
+  `whisper`), and its text goes nowhere: not delivered, not held, not logged. `say {text, to}` addresses one person in
+  public. Direct messages are planned at the identity level (client and profile), above any one world, not in world
+  chat.
 
 ## 6. Actors
 
@@ -845,7 +866,8 @@ flood the log, such as rate limits, are answered without an entry. A
 refusal of what a body does or says about itself (`move`, `body`, `reach`,
 `consent`, `inbox`, `wait`, `leave`) is presence and is never logged. A verb
 the authority doesn't have is recorded as `unknown-verb`, because its name is
-the visitor's own text. **Every
+the visitor's own text; one the protocol had and removed (`whisper`) is refused
+and recorded by name as `removed`. **Every
 code is registered** (shared/protocol/refusalcodes.js: code, meaning, when):
 a code is written into signed entries, so it never changes meaning, and a
 new one is a new row. **Every appended `change` passes the gate** (`admit`), except that the
