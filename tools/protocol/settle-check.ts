@@ -6,7 +6,7 @@ import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writer
 import { request } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { fold } from "../../shared/protocol/fold.js";
-import { ENGINES, restsOf } from "../../shared/protocol/simlayer.js";
+import { ENGINES, restsOf, worldPose } from "../../shared/protocol/simlayer.js";
 import { scratch } from "./common.ts";
 const ENG = { engine: Object.keys(ENGINES).find((k) => k.startsWith("eidosim@")) };
 let pass = 0, fail = 0;
@@ -118,6 +118,23 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   const c5 = st(W).entities.crate.c;
   ok(del.ok && (del.notes ?? []).some((n) => n.fell?.includes("crate")) && !(del.notes ?? []).some((n) => n.stamped) && !c5.parent && c5.transform.pos[1] < 0.05, "SE16 deleting the plinth's mesh re-drops the crate (it lands on the floor, unparented); the reply says unstamped, not stamped (r2 S2.3)", { notes: del.notes, pos: c5.transform.pos, parent: c5.parent ?? null });
   ok(q3.ok && on && sc.ok && (sc.notes ?? []).some((n) => n.fell?.includes("crate3")) && Math.abs(w4 - 0.3) < 0.05 && ws.every((v) => Math.abs(v - 1) < 1e-3), "SE13 shrinking a MODEL plinth's scale under a resting crate re-drops it too (its own scale stays 1, it is not sheared): lands at world y = 0.3", { walk, punt: q3.ok ? true : q3.refused, on, set: sc.ok ? sc.notes : sc.refused, pos: c4.transform.pos, worldScale: ws, parent: c4.parent ?? null }); }
+
+// R 10-17 20:05 (the gym log, pyr-7): a crate came to rest leaning across two crates and the settle parented it to ONE of
+// them (pyr-6). She took the OTHER one out from under it (pyr-7), and it stayed in mid-air: a grab let fall only its own
+// descendants and the unparented things over it, so a thing resting on it but parented elsewhere was never launched, and
+// the engine wakes a sleeper only when a moving body touches it (PHYSICS "Waking and knocking"), not when a support leaves.
+{ const W = "straddle"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
+  box(W, "l", [-0.36, 0, 0]); box(W, "r", [0.36, 0, 0]); box(W, "top", [0, 0.6, 0]);
+  call(W, "vic", "move", { to: [0, 0, -0.6] }); const p = call(W, "vic", "punt", { id: "top", v: [0, 1.2, 0] }); T += 6000; call(W, "vic", "look", {});
+  // and a hat on top: over the taken crate's top but not touching it, so it isn't launched by the grab; the engine knocks it
+  // when top, falling, moves under it
+  box(W, "hat", [0, 1.4, 0], [0.5, 0.5, 0.5]); call(W, "vic", "punt", { id: "hat", v: [0, 0.6, 0] }); T += 6000; call(W, "vic", "look", {});
+  const hatOn = st(W).entities.hat.c.parent?.to;
+  const on = st(W).entities.top.c.parent?.to; const other = on === "l" ? "r" : "l"; const y0 = st(W).entities.top.c.transform.pos[1];
+  call(W, "vic", "move", { to: [other === "l" ? -0.36 : 0.36, 0, -0.75] }); const g = call(W, "vic", "grab", { id: other }); call(W, "vic", "move", { to: [0, 0, -3] }); T += 8000; call(W, "vic", "look", {});
+  const s = st(W); const t = s.entities.top.c; const wy = worldPose(s, "top").pos[1];
+  ok(p.ok && ["l", "r"].includes(on) && g.ok && (g.notes ?? []).some((n) => n.fell?.includes("top")) && t.parent?.to !== other && wy < 0.3 && hatOn === "top" && !(g.notes ?? []).some((n) => n.fell?.includes("hat")) && worldPose(s, "hat").pos[1] < 0.7,
+    "SE17 taking out the crate a straddling crate is NOT parented to still lets it fall: it rested on both, and with one gone it tips off (R 10-17, pyr-7 under pyr-9); what rides on it is not launched by the grab (it never touched the taken crate) but knocked down by the fall", { punt: p.ok ?? p.refused, on, other, y0, grab: g.ok ?? g.refused, notes: g.notes, parent: t.parent ?? null, worldY: wy, hatOn, hatY: worldPose(s, "hat").pos[1] }); }
 
 console.log(`[settle-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
