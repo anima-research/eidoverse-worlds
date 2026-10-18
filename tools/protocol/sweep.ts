@@ -136,6 +136,7 @@ function oldNorm(st: any, phys: any = null) {
         if ("amplitude" in m) { if (m.amp === undefined && typeof m.amplitude === "number") m.amp = m.amplitude; delete m.amplitude; }
         if (typeof m.axis === "string" && AX[m.axis.toLowerCase()]) m.axis = AX[m.axis.toLowerCase()];
         if (m.type === "pendulum") { if (m.period === undefined) m.period = 3.5; if (m.damp === undefined) m.damp = 0; }
+        if (m.type === "bob") m.type = "oscillate";   // declared (translate-v1@14 DROPPED motion.type), written independently of names.js
         if (c(m) !== c(C[k])) C[k] = m; }
       if (isB(C.motion) && "pivot" in C.motion) { const { pivot, ...r } = C.motion; C.motion = r; if (!isB(C.pivot) && Array.isArray(pivot) && pivot.length === 3 && pivot.every(Number.isFinite)) C.pivot = { pos: pivot }; }
       if (isB(C.motion) && C.motion.type === "pendulum" && !isB(C.pivot)) C.pivot = { pos: [0, 2, 0] };

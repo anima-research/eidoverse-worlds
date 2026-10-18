@@ -281,10 +281,10 @@ const cases: Case[] = [
       const act = s.entries().findLast((e: any) => e.kind === "act" && e.verb === "script");
       return { ins: show(ins), g: show(g), heard: comp(s, "cup", "t/g")?.heard, logged: !!g.act || !!g.recorded, trigger: act?.body?.trigger ?? null, by: act?.body?.event?.by ?? null }; },
     good: (o) => o.ins === "ok" && o.g === "ok" && o.heard === true && (o.logged || (o.trigger === null && o.by === null)) },
-  { id: "L4", what: "(claims O3) the translator that writes the repair-shapes marker is named @13 (both names)", async run() {
+  { id: "L4", what: "(claims O3) the translator that writes the repair-shapes marker is named @13 or later (both names; @14 renamed a motion type)", async run() {
       const f = fs.existsSync(TREE + "tools/protocol/import-v1/translate-v1.js") ? TREE : ENGINE;
       const TV = await import(f + "tools/protocol/import-v1/translate-v1.js"); return { t: TV.TRANSLATOR, s: TV.TRANSLATOR_SIM }; },
-    good: (o) => /@13$/.test(o.t) && /@13$/.test(o.s) },
+    good: (o) => /@(1[3-9]|[2-9]\d)$/.test(o.t) && /@(1[3-9]|[2-9]\d)$/.test(o.s) },
 ];
 
 let pass = 0, fail = 0;

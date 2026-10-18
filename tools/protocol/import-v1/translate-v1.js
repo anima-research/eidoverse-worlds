@@ -11,7 +11,7 @@
 import { emptyState as v1Empty, foldEntry } from "./fold.js";
 import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, DIALECT, VERSION } from "../../../shared/protocol/fold.js";
 import { unNegZero } from "../../../shared/protocol/round.js";
-import { enc, encName, dec, partSlot } from "../../../shared/protocol/names.js";
+import { enc, encName, dec, partSlot, motionType } from "../../../shared/protocol/names.js";
 import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
@@ -72,8 +72,11 @@ function newStory(v) {
 }
 // v1's spin took rpm or degPerSec; v4's is degPerSec (rpm × 6, lossless: the renderer read rpm × 6). degPerSec wins
 // when both were written, as the renderer had it.
-function newMotion(m) {
-  if (!m || typeof m !== "object" || Array.isArray(m) || !("rpm" in m)) return m;
+// @14 (R 10-17 21:40): v1's back-and-forth along an axis is written under today's name, oscillate (motionType: its one reading).
+function newMotion(m0) {
+  if (!m0 || typeof m0 !== "object" || Array.isArray(m0)) return m0;
+  const m = motionType(m0) === m0.type ? m0 : { ...m0, type: motionType(m0) };
+  if (!("rpm" in m)) return m;
   const { rpm, ...rest } = m;
   return rest.degPerSec !== undefined || typeof rpm !== "number" ? rest : { ...rest, degPerSec: rpm * 6 };
 }
@@ -98,7 +101,9 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@13";
+export const TRANSLATOR = "eidoverse/translate-v1@14";
+// @14 (R 10-17 21:40): a motion's type is written in today's spelling: v1's back-and-forth along an axis is oscillate (the load
+// renames a stored one the same way: shaperepair.js renameFields). Output differs from @13 on any log with that motion. Both names.
 // @13 (review r9 claims O3, 2026-10-17): every translation writes the system's repair-shapes act right after `translated`
 // (the shape repair's once-per-world marker, review r8 M3), one entry @12 didn't. Its projection is @12's; its log is one
 // entry longer. Both names move to @13 (the name says which output you got).
@@ -130,7 +135,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@13";
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@13";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@14";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -188,6 +193,7 @@ export const DROPPED = {
   "comp.door": "renamed `openable` (R 10-07), and a reaction's component 'door' with it: the same value under v4's name (@5)",
   "roles.sub / bans.sub": "an account subject is person data (PROTOCOL §9.2): never written into a value (@12). With an identity mapper it is how the person's id is found (the key); without one it is dropped",
   "motion.rpm": "becomes degPerSec = rpm × 6 (@5): the rate the renderer drew, under the authority's one name for it",
+  "motion.type": "the back-and-forth along an axis is written oscillate (@14, R 10-17 21:40; shared/protocol/names.js OLD_MOTION_TYPES holds the old word): the same motion under today's name",
   "motion.part": "a bare motion naming a part becomes motion:<slot> {node: <the part's name>} (@12; the slot is shared/protocol/names.js partSlot of the name: the name itself when it is a §2.3 tag, else a sanitized form with 8 hex of its sha256): when the thing already has a motion on that node, that one wins and the bare one is dropped (the renderer drew both on one node, the keyed one last). A keyed motion carries node (its key's tag, the old reading)",
   "a mounted thing's own pos/yaw/q": "v1 keeps a riding thing's pre-mount pose, unused until a dismount; v4's transform IS the pose it rides at (local to its parent: v1's offset, or its socket's pos, and q/yaw). The parent's offset/yaw/q are that transform, not a second copy (L2)",
 };
