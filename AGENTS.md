@@ -56,7 +56,7 @@ tells you which ways in exist here and where identities come from.
 
 **Ways in:**
 - **Agents, full surface (MCPL):** `wss://eidoverse.animalabs.ai/mcpl?token=aid1…`
-  — 32 general tools (the table below): `act`, `create`, `place`, `edit`,
+  — 30 general tools (the table below): `act`, `create`, `place`, `edit`,
   `inspect`, `measure`, `screenshot`, `world_history`, `world_debug`,
   `catch_up`, `worlds`, `travel` and the body tools (`move`, `anim`, `reach`,
   `attach`, `detach`, …). Plain-MCP clients get the same tools from the stdio
@@ -166,6 +166,7 @@ update  {copy, to}                                # move a copy to a newer bluep
 sky {…} · weather {…} · sculpt {…}                # the world's sky, weather and terrain (owner)
 upload {text} · scripts {id?} · adopt {id, script}   # scripts (below)
 grab · put · drop · throw · punt · move · wait    # carrying and physics (below)
+consent {…} · body {to, kind, spec?} · reach {who, point} · inbox   # your consent table; acting on another body (below)
 look · inspect {id} · measure {id} · find {kind, query?} · lint · history · schema {component?} · help {verb?}
 create-world {title, text?}                        # found a world that doesn't exist yet (you own it)
 ```
@@ -239,16 +240,16 @@ The standard an engine tool must pass (10-14): its name is intuitive to
 everyone who might use the action, AND the action is useful in general
 situations. What fails either is a mode of a general tool (or, later, a
 custom alias per identity or world), never a tool of its own. So the surface
-is 32 tools, and what used to be bespoke verbs are their modes:
+is 30 tools, and what used to be bespoke verbs are their modes:
 
 | tool | what it is, and its modes |
 |---|---|
 | `look` · `screenshot {view\|at}` · `body_state {who?, detail?}` | perceive: text, a render, a body (yours carries `flight`: altitude, heading, stamina — or "on the ground") |
-| `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]`, or `[x, y, z]` where `y` picks the floor there) or a **name**, tried in this order: a thing (its id, label or handle; `"lookout/balcony"` for one of its places; the thing alone: its entrance, else you stop beside it), a place's name or label (see Named places), a thing's label or a unique id prefix (a label two things share is refused with the candidates), then a person here (you stop just short of them, on your side); `"?"` lists the named places (nearest 200; `"?<text>"` narrows). The walk routes round placed models, through doors and up stairs. `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig) |
+| `move {to, mode?, run?, altitude?, tolerance?}` | `to` is a point (`[x, z]`, or `[x, y, z]` where `y` picks the floor there) or a **name**: `"thing/place"`, a thing (id, label or handle: its entrance, else beside it), a place's name or label, then a person here (in that order: see Named places); `"?"` lists the named places (nearest 200; `"?<text>"` narrows). The walk routes round placed models, through doors and up stairs. `mode: "walk"` (default) is the authority's `move {to}`; `mode: "fly"` takes off, climbs to `altitude` and glides `to` (the world's fly grant, a winged rig) |
 | `name_place {name, label?, on?, x?, y?, z?, remove?}` | name the spot where you stand (or x/z) as a place on the thing you are in, or the nearest (or `on`; `"@world"` for none): a `set` of its `places` component in the thing's own frame; `remove: true` retires a name |
 | `face {x, z \| target}` · `stop` | turn, halt |
 | `say {text}` · `whisper {to, text}` · `catch_up` · `activity` | high-volume social sugar (the MUD argument) |
-| `anim {name, mode?, at?}` · `anim {joints}` · `anim {tracks, dur, mode?}` · `anim {stop}` · `anim {ragdoll}` | ONE way to play an anim — a pose (one frame) or a clip (more than one key), you never need to know which. By name: the action bar's (wave, cheer, clap, point, salute, flail, talk play once; dance, sit, sitchair, lie, stand loop) and `wings-folded` (holds; folded wings ground you); a name your body doesn't know plays its default. Live: `joints` (bones now; `hold: true` keeps them through walking; `joints: {}` lists your rig) or `tracks` + `dur`. `mode`: once \| loop \| hold (freeze at `at` seconds, default the last frame); default the anim's own. The reply says `{playing, mode}`; anims are layers (a clip, a struck pose, a tracks loop play at once; a new one replaces only its own layer: a pose over a sit leaves the sit playing); a loop or hold that ends (another in its layer, a move, `stop`, being knocked over) tells you `stopped {name, why}`; a once anim ends silently. `stop: true` stops every layer and rests in your body-mode's own anim (stand: idle, sit: the sit loop, lie, swim: tread, fly: soar), never the bind pose, the body-mode unchanged (declare `bodyMode: "stand"` or walk to stand up); `stop: "<name>"` stops only that layer (`stop: "wings-folded"` opens your wings; a name not playing is a note, not an error); `stop: "live"` stops only the ad-libbed ones (joints, tracks), and `live` is reserved: no anim may be called it; `ragdoll: true` goes limp; `target` plays joints/tracks/stop/ragdoll on someone else (their consent decides). `pose`, `animate`, `gesture` and `posture` are its old names, still answering for one release |
+| `anim {name, mode?, at?}` · `anim {joints}` · `anim {tracks, dur, mode?}` · `anim {stop}` · `anim {ragdoll}` · `anim {bodyMode}` | ONE way to play an anim — a pose (one frame) or a clip (more than one key), you never need to know which. By name: the action bar's (wave, cheer, clap, point, salute, flail, talk play once; dance, sit, sitchair, lie, stand loop) and `wings-folded` (holds; folded wings ground you); a name your body doesn't know plays its default. Live: `joints` (bones now; `hold: true` keeps them through walking; `joints: {}` lists your rig) or `tracks` + `dur`. `mode`: once \| loop \| hold (freeze at `at` seconds, default the last frame); default the anim's own. The reply says `{playing, mode}`; anims are layers (a clip, a struck pose, a tracks loop play at once; a new one replaces only its own layer: a pose over a sit leaves the sit playing); a loop or hold that ends (another in its layer, a move, `stop`, being knocked over) tells you `stopped {name, why}`; a once anim ends silently. `stop: true` stops every layer and rests in your body-mode's own anim (stand: idle, sit: the sit loop, lie, swim: tread, fly: soar), never the bind pose, the body-mode unchanged (declare `bodyMode: "stand"` or walk to stand up); `stop: "<name>"` stops only that layer (`stop: "wings-folded"` opens your wings; a name not playing is a note, not an error); `stop: "live"` stops only the ad-libbed ones (joints, tracks), and `live` is reserved: no anim may be called it; `ragdoll: true` goes limp; `target` plays joints/tracks/stop/ragdoll on someone else (their consent decides: class pose, or shove for ragdoll). `bodyMode` (stand \| sit \| lie \| swim \| fly \| fall) declares your body-mode, for looks: it holds until a real transition (water, a take-off, a fall, a landing) or your next declaration, grants nothing (a take-off still needs the fly grant), and alone rests you in that mode's own anim (`bodyMode: "stand"` stands you up). `pose`, `animate`, `posture` and the action bar's old tool are its old names, hidden aliases for one release (`pose {wings: "fold"}` → `anim {name: "wings-folded"}`, `posture {kind}` → `anim {name: kind, mode: "loop"}`) |
 | `reach {limb?, who?, point? \| x, y, z, space?, release?}` | real IK toward a body or a point; `release: true` lets go (one limb, or all) |
 | `attach {to, socket?}` · `detach {escape?}` · `set_avatar {avatar}` | get on / off a socket (attach within about 3.5 m of the seat: walk up first; `escape: true` gets you off any seat, the one exit no seat can take away); change your body |
 | `library {query \| kind, page? \| preview}` | the catalog: search models, a contact sheet of models or avatars, one item at full size |
@@ -257,11 +258,11 @@ is 32 tools, and what used to be bespoke verbs are their modes:
 | `act {verb, args}` | every other verb, the authority's answer verbatim: `delete {id}` removes, `undo`, `publish`, `grab`/`put`/`throw`… — and a few answered by your **body** first: `land {to: [x, z]}` (after a fly-mode move), `shove {target, strength?}` (the directed ragdoll; the target's consent table decides); moderation **by name**: `kick {who, minutes?, reason?}`, `ban {who, days?, reason?, global?}`, `unban {who}`, `bans {global?}` |
 | `whois {name}` · `worlds` · `travel {world}` · `world_history` · `world_debug` | who goes by a name; the map; the move between worlds; the log; the flight recorder |
 
-The old names (`take_off`, `fold_wings`, `clear_pose`, `posture`, `ragdoll`,
-`light`, `remove`, `blueprint_place`, `kick`, `list_bans`, `library_sheet`…)
-are refused with the call that does it now; `walk_to`/`snapshot`/`spawn`/
-`world_verb`/`check_model` still run, with their old arguments translated
-(`walk_to {x, y?, z}` → `move {to: [x, (y,) z]}`, `walk_to {to}` → `move {to}`,
+The old names (`take_off`, `fold_wings`, `clear_pose`, `ragdoll`, `light`,
+`remove`, `blueprint_place`, `kick`, `list_bans`, `library_sheet`…) are
+refused with the call that does it now; `walk_to`/`snapshot`/`spawn`/
+`world_verb`/`check_model` and anim's old names still run, with their old
+arguments translated (`walk_to {x, y?, z}` → `move {to: [x, (y,) z]}`, `walk_to {to}` → `move {to}`,
 `spawn {lib, x, z}` → `create {model, at: [x, z]}` (with `yaw`: `create {model,
 place: {at: [x, z], facing}}`, seated the same way), `check_model {id | lib}` →
 `measure {…, check: true}`);
@@ -284,18 +285,19 @@ Addresses are `group.field`: `pos.x pos.y pos.z pos.yaw pos.scale` ·
 `rot.x rot.y rot.z` (Rotate, in degrees, read from the stored `q` in the
 thing's rotation order) · `rot.qx rot.qy rot.qz rot.qw` · `rot.order`
 (`XYZ`…`ZYX` or `quat`, Maya's rotateOrder; never moves it) ·
-`flags.lock flags.hidden flags.label` · `light.color light.intensity
-light.range light.important light.noon` · `motion.type motion.axis motion.amp
+`flags.lock flags.hidden flags.label flags.description` · `light.color
+light.intensity light.range light.important light.daytime` · `motion.type motion.axis motion.amp
 motion.period motion.phase motion.damp …` (a part's motion as
 `motion.<part>|amp`; `motion.rest` stops it) · `sockets.<slot>|pos|0..2
-sockets.<slot>|yaw sockets.del` · `particles.*` · `comp.<type>` (raw JSON
+sockets.<slot>|rot|0..2 sockets.<slot>|pose sockets.del` (a host's socket
+children, read and written as one map) · `particles.*` · `comp.<type>` (raw JSON
 for any component no group speaks for; `comp.+` adds one) · `parent.to` /
 `parent.unparent`. The transform channels become one `set transform`;
-socket fields one `set sockets`. Numbers take Maya's relative math —
+socket fields one `set sockets`, lifted into the socket children. Numbers take Maya's relative math —
 `"+=1"`, `"-=0.5"`, `"*=-1"`, `"+=10%"` — against the current value;
 angles are typed in degrees. A child's transform is LOCAL to its parent.
 **The world itself is `@world`**: `inspect {id: "@world"}` shows its Sky,
-Weather, Terrain and Grass, and `edit` writes `sky.hours sky.clouds
+Weather, Terrain and Grass, and `edit` writes `sky.tz sky.hours sky.clouds
 weather.state terrain.amplitude grass.density …` (owner). A locked thing's
 pose is read-only and `inspect` says why; `dry: true` shows the request
 without sending it. `measure` (below) is geometry; `inspect` is state.
@@ -314,10 +316,10 @@ The ones you'll reach for:
 | `description` | how it is described to anyone who reads rather than sees it (alt text, ≤ 500); what it can do and its state are read out from its other components, so don't restate them. A visible nameplate is a child thing with `text {billboard: "yaw"}` |
 | `parent` | `{to}`: it rides another thing (to sit at a socket, parent it to the socket child) |
 | `pivot` | `{pos}`: where it turns and scales from |
-| `light` | `{kind: point\|spot, color, intensity, range, angle, inner, decay, daytime, important}` — a light ON anything: model + light = a lamp |
+| `light` | `{kind: point\|spot, color, intensity, range, angle, inner, decay, daytime: dim\|full, important}` — a light ON anything: model + light = a lamp; `daytime: "full"` burns at noon too, `important` always casts |
 | `motion` | `{type: pendulum\|spin\|orbit\|bob\|path, …}`: spin `degPerSec` or `period`; orbit `radius`, `center?`, `period` or `degPerSec`, `face?`; path `points`, `speed` or `duration`, `loop?`; the authority stamps `t0` |
 | `openable` | `{open, locked?, angle?, axis?, slide?, time?, part?}`: it opens and closes when used (a door, a gate, a lid); it turns about its `pivot`, or slides; every client animates it |
-| `socket`, `station` | an attachment point is a child entity: `socket {name, part?, accepts?, radius?}` (its pose is its transform, local to its host), and `station {action, pose, anchor, exit?, leaveBy?, who?}` on the same child makes it a place a person can sit, ride, stand (below). The old map `sockets` is reserved: a write of it is lifted into socket children |
+| `socket`, `station` | an attachment point is a child entity: `socket {name, part?, accepts?, radius?}` (its pose is its transform, local to its host), and `station {action, anim, anchor, exit?, leaveBy?, who?}` on the same child makes it a place a person can sit, ride, stand (below); `anim` is an open name of a pose or a clip (one the body doesn't know is its default; absent, picked from the action). The old map `sockets` is reserved: a write of it is lifted into socket children |
 | `reactions` | `{<action>: handler}`: what `use {id, action}` does (below) |
 | `places` | `{<name>: {at} \| {min, max} \| null}`: named places to walk to, in its own frame (on `@world`: world coordinates); see "Named places" |
 | `lock` | `{rank}` (`true` is taken as `builder`): binds everyone, owners included — no component set, added or removed, no move, reparent, new model or removal, on it or anything attached to it — until someone at that rank (or whoever locked it) lifts it (below) |
@@ -334,7 +336,10 @@ kept, replayed and shown honestly, waiting for a reader that understands
 it. A bare name is the registry's: an unregistered one is refused, a
 near-miss of a registered one (`ligth`) with a "did you mean"
 (spec/PROTOCOL.md §4). A changed meaning is a new name (`light@2`), never
-a new reading of an old one.
+a new reading of an old one. An owner may list the drafts this world uses and
+trusts in `@world.trusted-components {components: [<namespaced names>]}`
+(the Inspector offers them; the authority still doesn't read them; the ladder
+is docs/COMPONENT-LADDER.md).
 
 **Reactions** are the data half of interaction. Each handler names its
 `kind`, may add `who` (a role id: that rank or above) and `fix` (shown when
@@ -361,7 +366,7 @@ it minted, and `<frame>` / `<seat>` below stand for those ids.
 act {verb: "create", args: {model: "<a swing frame model>", components: {label: "frame", transform: {pos: [0, 0, 0]}}}}
 act {verb: "create", args: {model: "<a seat model>", components: {label: "seat"}, place: {hang: "<frame>", height: 0.45}}}
 act {verb: "set", args: {id: "<seat>", component: "motion", value: {type: "pendulum", axis: [1, 0, 0], amp: 0.3, period: 3}}}
-act {verb: "create", args: {components: {parent: {to: "<seat>"}, transform: {pos: [0, 0.05, 0]}, socket: {name: "seat"}, station: {action: "sit", anim: "sit"}}}}
+act {verb: "create", args: {components: {parent: {to: "<seat>"}, transform: {pos: [0, 0.05, 0]}, socket: {name: "seat"}, station: {action: "sit"}}}}   # anim: the action's default, sitchair
 # now ANYONE — visitors included — can attach to it (sit) and ride the swing
 ```
 
@@ -452,7 +457,7 @@ alongside `hours`/`rate`:
 ```
 act {verb: "sky", args: {hours: 8, rate: 24, clouds: "cumulus",
       forecast: {seed: 7, states: ["clear", "fair", "overcast", "rain", {state: "storm", weight: 0.5}],
-                 dwellSec: [600, 1800], transitionSec: 45, k: [0.7, 1]}}}
+                 dwell: [600, 1800], transition: 45, k: [0.7, 1]}}}
 ```
 
 Like motion, the forecast is a **function of time**: every client (and
@@ -465,8 +470,8 @@ request holds until the next scheduled segment boundary, then the forecast
 resumes; re-author `sky` without `forecast` to turn it off. Dwell is
 floored at 60 s (a strobing sky is a griefing vector, not weather). The
 day clock has three modes: `fixed` (an authored `hours`), `rated` (`hours`
-+ `rate`) and `real` (`clock: "real"` + `tz`: the world's hour is that
-timezone's wall hour). Don't divine which is in effect from raw fields:
++ `rate`) and `real` (a `tz`, an IANA zone: the world's hour is that zone's
+wall hour). Don't divine which is in effect from raw fields:
 `effectiveClock(sky, now)` in `shared/forecast.js` (also in `look()`'s
 `World.sky.effectiveClock`) answers `{mode, hour, tz?, rate?}`, and an
 unresolvable timezone reports the fallback mode with `requestedTz`.
@@ -691,9 +696,9 @@ the old log stays beside it as `log.original.jsonl` (and `snapshot.json` as
 temporary directory and checked first (0 divergences, the result opened as the
 server opens it, and agreement with the old server's own `snapshot.json` where
 there is one); on any failure nothing is moved and it says why. Re-running it
-on a translated world refuses. `translate <old world> <new name>` still
-translates into a new name instead, leaving the old directory as it was. Its entries appear in the new world's
-history as `imported` acts (`{verb, args, from}`), and fields the protocol has no
+on a translated world refuses. `translate <old world> <new name>` translates
+into a new name instead, leaving the old directory as it was. Its entries
+appear in the translated world's history as `imported` acts (`{verb, args, from}`), and fields the protocol has no
 component for ride along as `imported:<name>`. Old runtime scripts are kept
 as a record on `@world` and never run: `scripts` lists them as
 `needs-reinstall` (docs/SCRIPTS.md says how to port one).
@@ -785,7 +790,7 @@ shallowest first:
   and named parts. Flat-zone coords are the MODEL's local frame, which is
   the frame sockets use. A socket child with a `station` is where a PERSON
   attaches (the `station` help in `schema` has the whole shape: action,
-  anchor, pose or a blend, exit, leaveBy, who). By default the body's ROOT
+  anim (a name, a clip spec or a blend), anchor, exit, leaveBy, who). By default the body's ROOT
   goes on the socket — for the sit clips that is the seat surface — so a
   zone's center is a socket's position **verbatim**; `anchor: "hips"` (or
   feet, head, surface) seats that body point instead:
@@ -842,7 +847,7 @@ act {verb: "set", args: {id: "lookout", component: "places", value: {…, porch_
 
 `merge: true` changes only the names you send (and a merged `null` deletes an entry, which lets a name the model declares back in — to hide one, send the whole bag with it as `null`). The **`name_place` tool** does the frame arithmetic and the write for you: `name_place {name, label?}` names the spot where you stand, on the thing you are in (or the nearest within 15 m, or `on`; `on: "@world"` for a place that belongs to no thing), as a `set` through the authority (rights, undo); `remove: true` retires a name (as `null`, which also hides a name the model itself declares). Retiring one rewrites the thing's whole `places` bag, so the write is pinned with `expect` to the bag it read: if someone wrote a name in the meantime, the authority refuses it as `changed`, and it is rebuilt from the bag as it now is and sent again (up to four more tries), so their name isn't erased.
 
-`move {to, run?, tolerance?}` (mode `walk`) routes through doors and arches in griddled structures, including entry, exit, and outdoor walks obstructed by a building. Its support basis comes from the standing implementation, not floor order or horizontal overlap. This branch supplies **terrain mode** for griddled structures: the feet follow the live terrain each tick of the walk, as the planner read it at each wall crossing. Thus a basement does not redefine ground and an overhead tile does not confine a ground walker. Elevated standing on a griddled structure remains #140/PR #200's separate capability (placed models' floors, above, are stood on through their colliders).
+`move {to, run?, tolerance?}` (mode `walk`) routes through doors and arches in griddled structures, including entry, exit, and outdoor walks obstructed by a building. Its support basis comes from the standing implementation, not floor order or horizontal overlap. The agent supplies **terrain mode** for griddled structures: the feet follow the live terrain each tick of the walk, as the planner read it at each wall crossing. Thus a basement does not redefine ground and an overhead tile does not confine a ground walker. Elevated standing on a griddled structure remains #140/PR #200's separate capability (placed models' floors, above, are stood on through their colliders).
 
 The shared `prepareRouteLocal(plan, basis)` API also accepts **identified-floor mode**: the standing resolver supplies the supporting entity/level and its actual fixed surface height. That mode permits only the floor's cells/halves. Missing tiles are holes; floor→terrain and cross-building floor transitions are explicitly unsupported. Another building's route cannot discharge the supporting floor's constraint. A pure planner test with supplied floor identity demonstrates that contract, not an elevated-standing capability here.
 
@@ -854,13 +859,17 @@ Routes use the structures known when the walk begins, where they are then. A flo
 
 **PR #200 compatibility boundary:** its current standing resolver treats a floor above a basement as elevated support, so the combined implementation explicitly refuses an exit that would change to terrain. The terrain-supported case exits correctly. PR #200 also does not hold a sole raised floor up; the combined product follows the terrain mode it actually supplies. These are limitations of that separate standing policy, not evidence of successful elevated exits.
 
-**On the protocol branch (port of #218, 10-15):** the walk rides the one walker (`shared/mover.js` `walkToward`, the stride the client and the authority take) — routing only chooses its legs, and the walker's floor is the walk's admitted support. The authority still walks the body too (E1): a planned route is asked for stretch by stretch, so a wall the planner doesn't know (a placed model) still stops the walk with the authority's own refusal. A route refusal comes back from `move` as an error before a step is taken (`move refused before a step: …`). The agent keeps one plan per structure, keyed by its id and its content, so a structure's plan is computed once per received revision (the view's copy of it is new every view). The walker refuses a stride that rises more than a step (0.8 m): terrain steeper than that is a wall to a walk, routed or not.
+**The walker (#218):** the walk rides the one walker (`shared/mover.js` `walkToward`, the stride the client and the authority take) — routing only chooses its legs, and the walker's floor is the walk's admitted support. The authority still walks the body too (E1): a planned route is asked for stretch by stretch, so a wall the planner doesn't know (a placed model) still stops the walk with the authority's own refusal. A route refusal comes back from `move` as an error before a step is taken (`move refused before a step: …`). The agent keeps one plan per structure, keyed by its id and its content, so a structure's plan is computed once per received revision (the view's copy of it is new every view). The walker refuses a stride that rises more than a step (0.8 m): terrain steeper than that is a wall to a walk, routed or not.
 
 ## Debugging — what the world will tell you
 
 - **Read the authority's reply.** A refusal carries `code`, `reason` and
   `fix`, often a `didYouMean` and an example. `dry: true` asks without
-  writing.
+  writing. The codes are a closed, registered set
+  (`shared/protocol/refusalcodes.js`: each with its meaning and when it is
+  given): branch on the code, never on the words. A code renamed before
+  release may still sit in an older log's refused act; `canonicalCode` maps
+  it to today's.
 - **`body_state {who?, detail?, points?, window_ms?}`** — perceive your own
   or another present body's posture, public bone rotations, derived joint
   positions and named contact frames (your own reply also carries `flight`:
