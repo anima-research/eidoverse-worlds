@@ -29,9 +29,9 @@ import { pathData } from './icons.js';
 // matches perceived weight rather than nominal colour.
 // glyph inks come from the token sheet (no hex outside it) —
 // read fresh each paint (1Hz + events): live token edits restyle us too.
-// Read off the BUTTON (it inherits the sheet's tokens): edit mode re-points them on the glyphs alone
-// (index.html body.edit-workspace #micbtn…) so they sit grey-on-grey in the editor bar while the HUD
-// outside edit mode reads exactly what it always read.
+// Read off the BUTTON (it inherits the sheet's tokens): edit mode re-points the OFF inks on the glyphs alone
+// (index.html body.edit-workspace #micbtn…: --dim, --edge-hi) so an off glyph sits grey-on-grey in the editor bar;
+// live stays the brand and hot the attention gold there too (R, gym 10-17 20:44: they stayed grey when live).
 const tok = (n, fb) => (getComputedStyle((micBtn?.isConnected && micBtn) || document.documentElement).getPropertyValue(n) || fb).trim();
 const INK = {
   get off()   { return tok('--dim', '#7d8f8a'); },
@@ -49,7 +49,7 @@ const MIC_SVG = (on, hot) => {
   return `
 <svg viewBox="0 0 32 32" width="26" height="26" style="${hot ? `filter:drop-shadow(0 0 5px ${INK.hot})` : ''}">
   <g fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round">
-    <rect x="12" y="5" width="8" height="14" rx="4" fill="${hot ? 'rgba(255,214,107,.35)' : 'none'}"/>
+    <rect x="12" y="5" width="8" height="14" rx="4" fill="${hot ? c : 'none'}"${hot ? ' fill-opacity=".35"' : ''}/>
     <path d="M8 15 a8 8 0 0 0 16 0"/>
     <line x1="16" y1="23" x2="16" y2="27"/>
     <line x1="11" y1="27" x2="21" y2="27"/>
@@ -241,6 +241,9 @@ export const xrGlyph = (size = 16) => XR_SVG(xrLive()).replace('width="26" heigh
 export const micIndicatorState = () => (!micIsOn() ? 'off' : micHot ? 'hot' : 'on');
 export const micIndicatorSvg = (size = 64) => MIC_SVG(micIsOn(), micHot).replace('width="26" height="26"', `width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg"`);
 export const micGlyph = (size = 16) => MIC_SVG(micIsOn(), false).replace('width="26" height="26"', `width="${size}" height="${size}"`);
+/** The glyphs for a given state, in the inks they would paint now (harness: client-check MIC reads them in and out of edit mode). */
+export const micGlyphFor = (on, hot) => MIC_SVG(!!on, !!hot);
+export const earGlyphFor = (on) => EAR_SVG(!!on);
 export const earGlyph = (size = 16) => { let on = false; try { on = receivingVoice() && !isHushed(); } catch {} return EAR_SVG(on).replace('width="26" height="26"', `width="${size}" height="${size}"`); };
 
 async function flipMic() {

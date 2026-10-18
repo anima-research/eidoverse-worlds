@@ -2069,12 +2069,12 @@ body.edit-workspace #dock .dock-more.on { color: var(--e-accent, var(--brand)); 
    on the HUD, and editlayout's spacer (fitSeat) starts the menus after them. */
 body.edit-workspace #dock { top: -1px !important; left: 3px !important; gap: 2px; z-index: 28;   /* the normal dock's gap: 8 px read "exploded" next to it (R 10-11 14:41: 42 px pitch against 36) */
   background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }   /* no HUD-tinted card behind the ∃ and the wrench: the bar and the rail ARE its ground */
-/* …grey-on-grey: the glyphs read their inks off themselves (mictoggle tok), so re-pointing the house
-   tokens on these three elements alone re-inks them for the bar and nowhere else */
-body.edit-workspace :is(#micbtn, #earbtn, #xrbtn) { --dim: var(--e-dim); --brand: var(--e-text); --attn: var(--e-text); --edge-hi: var(--e-faint);
+/* …grey-on-grey when OFF: the glyphs read their inks off themselves (mictoggle tok), so re-pointing the off tokens on these
+   three elements alone re-inks them for the bar and nowhere else. Live keeps the brand and hot the attention gold, as on
+   the HUD (R, gym 10-17 20:44: 'they stay grey even when live') */
+body.edit-workspace :is(#micbtn, #earbtn, #xrbtn) { --dim: var(--e-dim); --edge-hi: var(--e-faint);
   border-radius: 3px; }
 body.edit-workspace :is(#micbtn, #earbtn, #xrbtn):hover { background: var(--e-hover); box-shadow: 0 0 0 3px var(--e-hover); }
-body.edit-workspace #micbtn svg rect[fill^="rgba"] { fill: rgb(216 216 220 / .22); }   /* the "voice registering" fill, in the bar's grey */
 .edit-viewbtns { display: flex; gap: 2px; margin-left: 10px; padding-left: 10px; border-left: 1px solid rgb(255 255 255 / .1); }
 .edit-vbtn { width: 30px; height: 28px; padding: 0; font-size: 15px; line-height: 1; background: none; border: none; color: #b8b8bd; border-radius: 5px; cursor: pointer; }
 .edit-vbtn:hover { background: rgb(255 255 255 / .08); color: #fff; }

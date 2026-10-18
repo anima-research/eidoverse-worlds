@@ -61,10 +61,11 @@ console.log('\nthe corner (R, 09-30): ∃ top-left, mic / ear beside it as on th
   const below = await evalJson(`(() => { const d = [...document.querySelectorAll('#dock button[data-toggles]')].filter((b) => getComputedStyle(b).display !== 'none'); const t = document.querySelector('.edit-tool'); return { firstDock: d[0].getBoundingClientRect().top, ear: document.querySelector('#earbtn').getBoundingClientRect().bottom, lastDock: d.at(-1).getBoundingClientRect().bottom, tool: t.getBoundingClientRect().top }; })()`);
   check('…the panel buttons start under the bar, and the tools start below the wrench', (below as any).firstDock >= 40 && (below as any).tool >= (below as any).lastDock, below);
   check('the wrench closes the dock, in the column', !!g.wrench && g.wrench.t >= 40 && g.wrench.r <= 48, JSON.stringify(g.wrench));
-  // grey-on-grey: the glyph strokes are the editor's greys, not the HUD's teal (mictoggle reads its inks off the button)
+  // grey-on-grey when OFF: the editor's dim grey, not the HUD's; live is the brand teal here too (R, gym 10-17 20:44), so it
+  // is never the bar's text grey (mictoggle reads its inks off the button)
   const ink = await evalJson(`(() => { const s = (sel) => { const g = document.querySelector(sel + ' svg g'); return g ? getComputedStyle(g).stroke : null; }; const probe = document.createElement('i'); document.body.append(probe); const c = (v) => { probe.style.color = v; return getComputedStyle(probe).color; }; const out = { mic: s('#micbtn'), ear: s('#earbtn'), dim: c('#8e8e96'), text: c('#d8d8dc'), brand: c(getComputedStyle(document.documentElement).getPropertyValue('--brand').trim()) }; probe.remove(); return out; })()`);
   const k = ink as any;
-  check('mic / ear ink is the editor grey (dim off, text on) — not the HUD brand', [k.mic, k.ear].every((v) => v === k.dim || v === k.text) && k.mic !== k.brand, JSON.stringify(k));
+  check('mic / ear ink: the editor grey when off, the brand when live — never the bar\'s text grey', [k.mic, k.ear].every((v) => v === k.dim || v === k.brand) && k.mic !== k.text, JSON.stringify(k));
 }
 
 console.log('\na 1366×768 laptop (≈ 620 px) fits the whole dock; a very short screen (480 px) folds it under ⋯, the tools never fold:');

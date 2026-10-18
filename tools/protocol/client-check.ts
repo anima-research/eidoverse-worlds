@@ -527,6 +527,16 @@ try {
   check("PT3 …and the crate itself did not move", JSON.stringify(disk().entities[IDS.of("pt")].c.transform) === ptBefore, [ptBefore, disk().entities[IDS.of("pt")].c.transform]);
   await page(`(await import('/lib/build.js')).setTool('select'); return true;`);
 
+
+  // ---- MIC: the ∃ line's mic and ear glyphs in edit mode read the brand when live and the attention gold when hot (R, gym 10-17 20:44) ----
+  const micInks = `(async () => { const M = await import('/lib/mictoggle.js'); const b = document.getElementById('micbtn'); const root = getComputedStyle(document.documentElement);
+      const st = (svg) => (/stroke="([^"]+)"/.exec(svg ?? '') ?? [])[1] ?? null;
+      return { brand: root.getPropertyValue('--brand').trim(), attn: root.getPropertyValue('--attn').trim(), btn: !!b, edit: document.body.classList.contains('edit-workspace'),
+        on: st(M.micGlyphFor?.(true, false)), hot: st(M.micGlyphFor?.(true, true)), hotSvg: M.micGlyphFor?.(true, true) ?? '', off: st(M.micGlyphFor?.(false, false)), ear: st(M.earGlyphFor?.(true)), earOff: st(M.earGlyphFor?.(false)) }; })()`;
+  { const inks = await evalJson(micInks);
+    check("MIC1 in edit mode the live mic and ear glyphs are the brand teal (var(--brand)), not the bar's grey", inks?.edit && inks?.btn && inks?.on === inks?.brand && inks?.ear === inks?.brand && inks?.off !== inks?.brand && inks?.earOff !== inks?.brand, inks);
+    check("MIC2 …and the mic picking up sound is the attention gold (var(--attn)), glowing, its capsule filled in the same gold", inks?.hot === inks?.attn && inks.hotSvg.includes(`drop-shadow(0 0 5px ${inks?.attn})`) && inks.hotSvg.includes(`fill="${inks?.attn}"`) && !/rgba\(/.test(inks.hotSvg), inks);
+  }
   // 👁 Hidden in MY view (R 10-04: "Hidden" is the local one; research 51): never logged, and you can't lose track of it
   const eyeOf = (id: string) => `[...${hier}.querySelectorAll('.sp-tree-row')].find((r) => r.dataset.id === ${JSON.stringify(id)})?.querySelector('.sp-eye')`;
   const nEye = entries().length;
@@ -797,6 +807,8 @@ try {
     // hides or restores the panel set (Tab does); F11 is the PAGE's full screen, so the browser's own Esc leaves it; Esc still
     // closes the transient things. Out of edit mode (build.js claims Esc there), with two panels open.
     { await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+      { await waitFor(`!document.body.classList.contains('edit-workspace')`); const inks = await evalJson(micInks);
+        check("MIC3 outside edit mode the same: live = the brand, hot = the attention gold", !inks?.edit && inks?.on === inks?.brand && inks?.ear === inks?.brand && inks?.hot === inks?.attn && inks?.off !== inks?.brand, inks); }
       await page(`const w = await import('/lib/windows.js'); const base = await import('/lib/base.js'); globalThis.__quiet = []; base.bus.on('esc-quiet', (d) => __quiet.push(d)); for (const f of w.allFrames()) f.hide(); w.getFrame('chat')?.show(); w.getFrame('settings')?.show(); document.activeElement?.blur?.(); return true;`);
       const openIds = `import('/lib/windows.js').then((w) => w.allFrames().filter((f) => f.visible).map((f) => f.id).sort().join())`;
       const press = (k: string) => evalJson(`(() => { const e = new KeyboardEvent('keydown', { key: '${k}', code: '${k}', bubbles: true, cancelable: true }); const t = document.activeElement ?? document.body; const ok = t.dispatchEvent(e); t.dispatchEvent(new KeyboardEvent('keyup', { key: '${k}', code: '${k}', bubbles: true })); return { prevented: !ok }; })()`);   // at the focused element, as a real key is: document listeners (a context menu's) see it too
