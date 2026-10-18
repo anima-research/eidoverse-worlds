@@ -33,6 +33,8 @@ export const lastBlockedTop = () => null;
 export const raySegment = () => Infinity;
 export const world = { seat: null };            // { id, x, y, z, yaw } → findSeat returns it
 export function findSeat() { return world.seat; }
+// arrivalhold.js: nothing is arriving here (its real module pulls in the whole models realizer)
+export const heightHeld = () => false; export function holdHeightUntilSolid() {}
 
 // ---- chat.js / ui.js
 export const chat = { open() {}, isOpen: false };

@@ -16,6 +16,7 @@ import { walkSpeed, stickSpeed, easeSpeed, stepWalk, waterStance, floatDepth, MO
 import { waterLevel, waterAt, waveTime } from '../water.js';
 import { surfaceOffset } from '../../../shared/waves.js';
 import { floatStep, footprintSurface } from '../../../shared/buoyancy.js';
+import { heightHeld } from '../arrivalhold.js';
 import { chat } from '../ui/chat.js';
 import { isOverlayOpen, flashHint, html } from '../ui/ui.js';
 import { selectClip, AIRBORNE_GRACE } from '../avatar/locomotion_clip.js';
@@ -190,6 +191,7 @@ export const myState = {
   q: undefined,        // full-body orientation while swimming (docs/reference/UNDERWATER-PRESENCE.md); undefined = upright, by yaw
   locomotion: undefined, // {mode, medium, body} while swimming: presence, descriptive only
   seat: null,        // { id, chair } while seated on something
+  floor: undefined,  // while lying limp: the floor the body lies on (getup.js) — presence, so a rejoin stands there
 };
 
 export const keys = new Set();
@@ -755,7 +757,11 @@ export function updateMe(dt, me) {
         grounded = false;
       } else { vy = 5.6; grounded = false; jumped = true; }   // a DELIBERATE jump: the clip may start this frame, no airborne grace
     }
-    if (!mantle) {
+    if (!mantle && heightHeld(myState.pos)) {
+      // just restored, and the building under the body is still arriving
+      // (arrivalhold.js): keep its height until it is solid
+      vy = 0; grounded = true;
+    } else if (!mantle) {
       // reaching the water starts the float (a body walking off a high bank falls first, then dunks). A float not
       // stepped for 250 ms is stale: something else (a ragdoll, a mantle, a flight) moved the body.
       const nowMs = performance.now();

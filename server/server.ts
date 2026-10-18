@@ -95,7 +95,17 @@ function settledPose(pose: unknown): Record<string, unknown> | null {
   // never had
   // t/seq: a sample's capture time and count (spec/PHYSICS.md §5.1) belong to that one sample, never to a remembered body
   const { mic: _mic, hear: _hear, t: _t, seq: _seq, ...still } = withoutOnceAnim(pose as Record<string, unknown>);
-  if (still.clip === "ragdoll") { still.clip = "idle"; delete still.pose; }
+  if (still.clip === "ragdoll") {
+    still.clip = "idle"; delete still.pose;
+    // A lying body's root lies BELOW the floor it lies on (it follows the
+    // hips a hips-height lower). Remembered standing, it must stand on that
+    // floor — the one the client measured (presence `floor`, getup.js) —
+    // not at its root, inside a stair landing or under an upper floor.
+    const p = still.p as number[] | undefined;
+    if (typeof still.floor === "number" && Number.isFinite(still.floor) && Array.isArray(p) && p.length === 3)
+      still.p = [p[0], still.floor, p[2]];
+  }
+  delete still.floor;
   return still;
 }
 // the log's rememberPose settles through this same function; world.ts takes it by injection (settled-pose-test pins the definition here)

@@ -375,6 +375,9 @@ export function sendPose(now) {
   if (s.anim) { pose.anim = s.anim; s.anim = null; } // an anim played once (pose.anim): sent once
   if (s.useHeld) pose.use = s.useHeld;   // what I press while holding a thing (receivers draw its fx); a use that changes the world is a request
   // full-body orientation and locomotion (docs/reference/UNDERWATER-PRESENCE.md): presence only, never authority
+  // lying limp: the floor under the body, so the server remembers it standing THERE
+  // (server.ts settledPose) — its root, which presence carries, lies below that floor
+  if (s.clip === 'ragdoll' && Number.isFinite(s.floor)) pose.floor = s.floor;
   if (s.q) pose.q = s.q;
   if (s.locomotion) pose.locomotion = s.locomotion;
   if (s.climb) pose.climb = s.climb;   // on a climb route: {host, progress} (shared/climb.js), resolved by each receiver through the host
