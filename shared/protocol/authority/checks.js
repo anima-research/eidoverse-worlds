@@ -329,7 +329,7 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
   // (motion.amplitude, motion.part, physics.layers…) says where it went. A carried value (a fork's copy, the load's lift)
   // keeps what it was written with
   if (!carry) { const held = def.reservedFields?.find((k) => k in v);
-    if (held !== undefined && name !== "grabbable" && name !== "station") refuse("reserved", `${at}.${held} is a reserved field: no engine here reads it yet, so nothing may write it (the name and its meaning are held: schema {component: '${name}'})`, def.help, { status: "reserved" });
+    if (held !== undefined && name !== "grabbable" && name !== "station") refuse("reserved", def.reservedWhy?.[held] ? `${at}.${held} is reserved: not built yet (${def.reservedWhy[held]}); nothing may write it` : `${at}.${held} is a reserved field: no engine here reads it yet, so nothing may write it (the name and its meaning are held: schema {component: '${name}'})`, def.help, { status: "reserved" });
     const gone = Object.keys(def.dropped ?? {}).find((k) => k in v);
     if (gone !== undefined) refuse("schema", `${at}.${gone} is gone: ${def.dropped[gone]}`, DROPPED_FIX[`${name}.${gone}`] ?? def.help, DROPPED_DYM[`${name}.${gone}`] ? { didYouMean: DROPPED_DYM[`${name}.${gone}`] } : undefined); }
   unknownKeys(at, v, carry ? [...fields, ...(def.reservedFields ?? []), ...Object.keys(def.dropped ?? {})] : fields, name);

@@ -64,6 +64,24 @@ const FIELDS = {
   render: ['texture', 'blend', 'flipbook'],
 };
 export const SHAPES = ['point', 'sphere', 'sphere-surface', 'box', 'ring'];
+const DOC_FIELDS = ['kind', 'v', 'name', 'reads', 'emitters', 'params'];
+const FLIPBOOK_FIELDS = ['h', 'v', 'speed', 'offset', 'loop'];
+const PARAM_FIELDS = ['type', 'default', 'min', 'max', 'values', 'help', 'to'];
+const BINDING_FIELDS = ['path', 'op', 'times', 'map', 'round'];
+const BINDING_PATH = /^emitters\.(\*|[0-3])\.[a-z]+\.[a-zA-Z]+$/;
+// RESERVED (lead 10-17, REVIEW-particles-shape §5): names held for what the effect document is expected to grow, so nobody
+// spends them on something else. Refused at upload ("reserved: not built yet"); a reader skips them as it skips any field
+// it doesn't know. The instance's t0 is held in the registry (componentspec particles.reservedFields).
+export const RESERVED_EMITTER = Object.freeze({
+  space: 'local | world: a world-space emitter, whose particles stay where they were born (smoke trailing a carried torch)',
+  collision: 'particles that hit the world and bounce or die',
+  sub: 'a sub-emitter: another emitter of this document fired on a particle\'s birth, death or collision',
+});
+export const RESERVED_FIELDS = Object.freeze({
+  spawn: Object.freeze({ rate: 'particles a second, independent of lifetime (amount becomes the pool cap)', bursts: 'a list of bursts {t, count, cycles?, interval?}' }),
+  render: Object.freeze({ mode: 'billboard | stretched | horizontal | vertical | velocity | mesh', trail: 'a ribbon behind each particle {lifetime, width?, curve?}' }),
+});
+const reservedWhy = (where, what) => `${where} is reserved: not built yet (${what}); the name is held so it can't come to mean anything else`;
 export const PARAM_TYPES = ['number', 'area', 'vec3', 'color', 'texture', 'enum', 'bool'];
 /** The document's angle fields (radians, PROTOCOL §9.2): an editor shows them in degrees and stores radians. */
 export const ANGLE_FIELDS = Object.freeze(['velocity.spread', 'shape.cone', 'rotation.angle', 'rotation.velocity']);
@@ -75,9 +93,11 @@ export const angleParam = (p) => p?.type === 'number' && Array.isArray(p.to) && 
 
 function checkEmitter(e, at) {
   if (!isObj(e)) return `${at} is an emitter: an object of modules (${MODULES.join(', ')})`;
+  for (const k of Object.keys(e)) if (RESERVED_EMITTER[k]) return reservedWhy(`${at}.${k}`, RESERVED_EMITTER[k]);
   for (const k of Object.keys(e)) if (!MODULES.includes(k)) return `${at}: '${k}' isn't a module (${MODULES.join(', ')})`;
   for (const [m, fs] of Object.entries(FIELDS)) if (e[m] !== undefined) {
     if (!isObj(e[m])) return `${at}.${m} is an object {${fs.join(', ')}}`;
+    for (const k of Object.keys(e[m])) if (RESERVED_FIELDS[m]?.[k]) return reservedWhy(`${at}.${m}.${k}`, RESERVED_FIELDS[m][k]);
     for (const k of Object.keys(e[m])) if (!fs.includes(k)) return `${at}.${m}: '${k}' isn't one of its fields (${fs.join(', ')})`;
   }
   const between = (x, [lo, hi], where) => (x === undefined || (isNum(x) && x >= lo && x <= hi) ? null : `${at}.${where} is a number ${lo}..${hi}`);
@@ -129,7 +149,7 @@ function checkEmitter(e, at) {
     if (r.texture !== undefined && !(typeof r.texture === 'string' && TEXTURE_RE.test(r.texture))) return `${at}.render.texture is a .png in ${TEXTURE_DIR}`;
     if (r.blend !== undefined && !['add', 'alpha'].includes(r.blend)) return `${at}.render.blend is add | alpha`;
     if (r.flipbook !== undefined) { const f = r.flipbook;
-      if (!isObj(f) || Object.keys(f).some((k) => !['h', 'v', 'speed', 'offset', 'loop'].includes(k))) return `${at}.render.flipbook is {h, v, speed?, offset?, loop?}`;
+      if (!isObj(f) || Object.keys(f).some((k) => !FLIPBOOK_FIELDS.includes(k))) return `${at}.render.flipbook is {h, v, speed?, offset?, loop?}`;
       if (![f.h, f.v].every((x) => Number.isInteger(x) && x >= 1 && x <= L.frames)) return `${at}.render.flipbook.h and .v are whole numbers 1..${L.frames}`;
       const x = rangeIn(f.speed, -L.animSpeed, L.animSpeed, 'render.flipbook.speed') ?? rangeIn(f.offset, 0, 1, 'render.flipbook.offset'); if (x) return x;
       if (f.loop !== undefined && typeof f.loop !== 'boolean') return `${at}.render.flipbook.loop is true or false`; } }
@@ -140,17 +160,17 @@ function checkEmitter(e, at) {
 function checkParam(name, p, at) {
   if (!/^[a-z][a-zA-Z0-9_-]{0,31}$/.test(name)) return `${at}: '${name}' isn't a param name (a lowercase letter, then letters, digits, _ or -, ≤ 32)`;
   if (!isObj(p)) return `${at}.${name} is {type, default?, min?, max?, to: [{path, op?}]}`;
-  for (const k of Object.keys(p)) if (!['type', 'default', 'min', 'max', 'values', 'help', 'to'].includes(k)) return `${at}.${name}: '${k}' isn't a param field (type, default, min, max, values, help, to)`;
+  for (const k of Object.keys(p)) if (!PARAM_FIELDS.includes(k)) return `${at}.${name}: '${k}' isn't a param field (type, default, min, max, values, help, to)`;
   if (!PARAM_TYPES.includes(p.type)) return `${at}.${name}.type is one of ${PARAM_TYPES.join(' | ')}`;
   if ((p.min !== undefined && !isNum(p.min)) || (p.max !== undefined && !isNum(p.max)) || (isNum(p.min) && isNum(p.max) && p.min > p.max)) return `${at}.${name}: min and max are numbers, min ≤ max`;
   if (p.type === 'enum' && !(Array.isArray(p.values) && p.values.length >= 1 && p.values.length <= 16 && p.values.every((v) => typeof v === 'string' && v.length <= 32))) return `${at}.${name}.values is 1..16 strings`;
   if (p.help !== undefined && !(typeof p.help === 'string' && p.help.length <= 200)) return `${at}.${name}.help is a string ≤ 200`;
   if (!Array.isArray(p.to) || p.to.length < 1 || p.to.length > L.bindings) return `${at}.${name}.to is 1..${L.bindings} bindings [{path, op?, times?, map?}]`;
   for (const b of p.to) {
-    if (!isObj(b) || typeof b.path !== 'string' || !/^emitters\.(\*|[0-3])\.[a-z]+\.[a-zA-Z]+$/.test(b.path)) return `${at}.${name}.to: each binding has a path "emitters.<n|*>.<module>.<field>"`;
+    if (!isObj(b) || typeof b.path !== 'string' || !BINDING_PATH.test(b.path)) return `${at}.${name}.to: each binding has a path "emitters.<n|*>.<module>.<field>"`;
     const [, , mod, field] = b.path.split('.');
     if (!FIELDS[mod]?.includes(field)) return `${at}.${name}.to: ${b.path} names no module field`;
-    for (const k of Object.keys(b)) if (!['path', 'op', 'times', 'map', 'round'].includes(k)) return `${at}.${name}.to: '${k}' isn't a binding field (path, op, times, map, round)`;
+    for (const k of Object.keys(b)) if (!BINDING_FIELDS.includes(k)) return `${at}.${name}.to: '${k}' isn't a binding field (path, op, times, map, round)`;
     if (b.op !== undefined && !['set', 'mul'].includes(b.op)) return `${at}.${name}.to: op is set | mul`;
     if (b.times !== undefined && !(isNum(b.times) || isVec(b.times))) return `${at}.${name}.to: times is a number or [x, y, z]`;
     if (b.map !== undefined && !(isObj(b.map) && Object.values(b.map).every(isNum))) return `${at}.${name}.to: map is {<value>: number}`;
@@ -175,12 +195,13 @@ export function paramValueProblem(p, v) {
   return 'an unknown type';
 }
 
-/** Why a document isn't a particle effect this protocol runs, or null. Bounded in size, shape and cost. */
+/** Why a document isn't a particle effect this protocol runs, or null. Bounded in size, shape and cost. STRICT: this is the
+ *  authority's door (upload), where an unknown field or module is refused; a reader uses readableEffect. */
 export function effectProblem(doc) {
   if (!isObj(doc)) return 'a particle effect is an object {kind: "particle-effect", v: 1, emitters: [...]}';
   let bytes = 0; try { bytes = JSON.stringify(doc).length; } catch { return 'a particle effect is plain JSON'; }
   if (bytes > L.bytes) return `a particle effect is at most ${L.bytes} bytes of JSON (this one is ${bytes})`;
-  for (const k of Object.keys(doc)) if (!['kind', 'v', 'name', 'reads', 'emitters', 'params'].includes(k)) return `'${k}' isn't a field of a particle effect (kind, v, name, reads, emitters, params)`;
+  for (const k of Object.keys(doc)) if (!DOC_FIELDS.includes(k)) return `'${k}' isn't a field of a particle effect (kind, v, name, reads, emitters, params)`;
   if (doc.kind !== EFFECT_KIND) return `kind must be "${EFFECT_KIND}"`;
   if (doc.v !== 1) return 'v must be 1 (the only version of the effect document)';
   for (const k of ['name', 'reads']) if (doc[k] !== undefined && !(typeof doc[k] === 'string' && doc[k].length <= L.text && !/[\u0000-\u001f‪-‮⁦-⁩]/.test(doc[k]))) return `${k} is one line of text ≤ ${L.text}`;
@@ -194,6 +215,35 @@ export function effectProblem(doc) {
       for (const b of p.to) { const [, idx] = b.path.split('.'); if (idx !== '*' && +idx >= doc.emitters.length) return `params.${n}.to: ${b.path} names an emitter the effect doesn't have`; } }
   }
   return null;
+}
+
+// ---- the reader: skip what this build doesn't know ---------------------------------------------------------------------
+const pick = (o, keys, at, skipped) => { const out = {}; for (const [k, x] of Object.entries(o)) { if (keys.includes(k)) out[k] = x; else skipped.push(`${at}${k}`); } return out; };
+/**
+ * UNKNOWN-FIELD POLICY (lead 10-17): a renderer draws what it understands. The document with every field, module, param
+ * field and binding this build doesn't know left out (their paths pushed onto `skipped`), if what remains is an effect this
+ * protocol runs; else null. A document a newer authority stored, using an addition this client predates (a trail, a noise
+ * module), still draws its known parts here, instead of nothing. The authority's validator (effectProblem, at upload)
+ * stays strict, so nothing it stores is a field it doesn't know. An unknown VALUE of a known field (a new shape type, a
+ * new blend) isn't skipped: the document isn't readable, and draws nothing.
+ */
+export function readableEffect(doc, skipped = []) {
+  if (!isObj(doc)) return null;
+  const out = pick(doc, DOC_FIELDS, '', skipped);
+  if (Array.isArray(out.emitters)) out.emitters = out.emitters.map((e, i) => { if (!isObj(e)) return e;
+    const o = pick(e, MODULES, `emitters[${i}].`, skipped);
+    for (const [m, fs] of Object.entries(FIELDS)) if (isObj(o[m])) o[m] = pick(o[m], fs, `emitters[${i}].${m}.`, skipped);
+    if (isObj(o.render?.flipbook)) o.render.flipbook = pick(o.render.flipbook, FLIPBOOK_FIELDS, `emitters[${i}].render.flipbook.`, skipped);
+    return o; });
+  if (isObj(out.params)) { const ps = {};
+    for (const [n, p] of Object.entries(out.params)) { if (!isObj(p)) { ps[n] = p; continue; }
+      const q = pick(p, PARAM_FIELDS, `params.${n}.`, skipped);
+      if (Array.isArray(q.to)) { q.to = q.to.filter((b) => { const known = isObj(b) && typeof b.path === 'string' && BINDING_PATH.test(b.path) && FIELDS[b.path.split('.')[2]]?.includes(b.path.split('.')[3]);
+        if (!known) skipped.push(`params.${n}.to: ${isObj(b) ? b.path : '?'}`); return known; }).map((b) => pick(b, BINDING_FIELDS, `params.${n}.to.`, skipped));
+        if (!q.to.length) { skipped.push(`params.${n}`); continue; } }
+      ps[n] = q; }
+    out.params = ps; }
+  return effectProblem(out) ? null : out;
 }
 
 // ---- params: an instance's knobs written into a copy of the document ------------------------------------------------
@@ -432,12 +482,17 @@ export const QUALITY_TIERS = Object.freeze({ auto: 1, high: 1, med: 0.5, low: 0.
 export function resolveParticles(v, { entityId = '', lookup = () => null } = {}) {
   const inst = instanceOf(v);
   if (!inst) return { ok: false, why: 'particles data must be an object {effect, …}' };
-  const doc = effectFor(inst.effect, lookup);
-  if (!doc) {
+  const raw = effectFor(inst.effect, lookup);
+  if (!raw) {
     const stored = effectBlobName(inst.effect);
     return { ok: false, pending: !!stored, why: stored ? `effect ${inst.effect} isn't loaded (yet)` : `effect ${JSON.stringify(inst.effect ?? null)} isn't one this client knows (${ESSENTIAL_NAMES.join('/')}): it reads as an emitter but shows nothing` };
   }
-  const notes = []; const params = {};
+  // a stored document is read under the unknown-field policy (readableEffect): its known parts draw, the rest is noted.
+  // An Essential is this build's own document, read as it is
+  const readable = !isEssential(inst.effect); const skipped = [];
+  const doc = readable ? readableEffect(raw, skipped) : raw;
+  if (!doc) return { ok: false, why: `the effect: ${effectProblem(raw)}` };
+  const notes = skipped.length ? [`this client skips what it doesn't know in the effect: ${skipped.slice(0, 8).join(', ')}${skipped.length > 8 ? ', …' : ''}`] : []; const params = {};
   for (const [k, x] of Object.entries(inst.params ?? {})) {
     const p = doc.params?.[k]; if (!p) { notes.push(`params.${k}: not a param of ${doc.name ?? 'this effect'}`); continue; }
     let val = x;

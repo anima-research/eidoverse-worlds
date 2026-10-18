@@ -48,7 +48,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["gravity is turned into the emitter's frame", "shared/particlesim.js", "const r = qRotate(qi, g, _R);", "const r = [g[0], g[1], g[2]];", ["P4"]],
   ["the sim takes the frame's gravity", "shared/particlesim.js", "gx = +v[0]; gy = +v[1]; gz = +v[2];", "", ["P4"]],
   ["the renderer hands the sim its world gravity", "client/lib/particlefx.js", "sim.setGravity(localGravity(", "void (", ["P5"]],
-  ["the reader skips what it doesn't know", "shared/particle_effects.js", "  const doc = readable ? readableEffect(raw) : raw;", "  const doc = raw;", ["P6"]],
+  ["the reader skips what it doesn't know", "shared/particle_effects.js", "  const doc = readable ? readableEffect(raw, skipped) : raw;", "  const doc = raw;", ["P6"]],
   ["the client's fetch keeps a document it can partly read", "client/lib/emitters.js", "readableEffect(r.effect)", "(effectProblem(r.effect) ? null : r.effect)", ["P6"]],
   ["the upload validator stays strict", "shared/particle_effects.js", "for (const k of Object.keys(e)) if (!MODULES.includes(k)) return", "for (const k of Object.keys(e)) if (false) return", ["P6"]],
   ["reserved names say so", "shared/particle_effects.js", "if (RESERVED_EMITTER[k]) return reservedWhy(`${at}.${k}`, RESERVED_EMITTER[k]);", "", ["P7"]],

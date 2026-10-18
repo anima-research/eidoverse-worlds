@@ -1542,7 +1542,10 @@
    "scale": "1: the effect at its own size",
    "params": "none: the effect's own defaults"
   },
-  "on": "thing"
+  "on": "thing",
+  "reservedFields": [
+   "t0"
+  ]
  },
  "imported-behavior": {
   "status": "trial",

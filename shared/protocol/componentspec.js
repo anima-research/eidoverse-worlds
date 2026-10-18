@@ -432,6 +432,9 @@ export const COMPONENTS = {
   // the registry: no current value holds them; a first-protocol bag is read (instanceOf) only by the translator
   particles: { on: "thing", fields: { effect: "string", part: "string", at: "vec3", seed: "number", playing: "bool", scale: "number", params: "object" },
                defaults: { playing: true, scale: 1 }, required: ["effect"],
+               // lead 10-17: held for a synced start instant (as sound.t0), so every viewer fires a one-shot or a burst together
+               reservedFields: ["t0"],
+               reservedWhy: { t0: "a synced start instant (epoch ms, as sound.t0) so every viewer fires a one-shot or a burst together" },
                ranges: { scale: { min: 0.01, max: 100 }, part: { maxLen: 64 }, effect: { maxLen: 80 }, at: { min: -8, max: 8 } },
                units: { at: "m", scale: "×" },
                docs: { effect: "an Essentials name (fire, sparks, embers, smoke, dust, snow, magic, stars, muzzle), stored as written, or the content address sha256:<64 hex> of a document uploaded here (an Essential's eido:sha256/… address stored before 10-17 still reads as that Essential)", part: "a node of its model it emits from", at: "where it emits, [x, y, z] metres in its own frame, each within ±8", seed: "the random seed; absent: derived from its id",
