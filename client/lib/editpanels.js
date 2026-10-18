@@ -568,7 +568,7 @@ function cardRow(schema, id, addr) {
 /** The cards (design §5): one per component, each owning its fields by their
  *  group.k address — a thing's (inspectSchema) and the world's (worldSchema) alike. */
 function pushCards(f, schema, id, opts = {}) {
-  const { locked = false, afterTransform = [] } = opts;
+  const { locked = false, afterTransform = [], away = null } = opts;
   const touched = id !== WORLD_ID ? authorityInspect(id)?.touched ?? {} : {};
   for (const sec of schema.sections.list) {
     if (sec.type === 'Parent' && !opts.withParent) continue;   // R 10-10: parenting is the Hierarchy's (and Attributes')
@@ -578,7 +578,7 @@ function pushCards(f, schema, id, opts = {}) {
     // provenance (R 10-10: 'a colored dot'): amber = a draft this client reads (docs/COMPONENT-LADDER.md), hollow = a
     // namespaced component nothing here reads; a core component has none
     const dot = sec.trusted ? 'trusted' : sec.draft ? 'draft' : (sec.key && String(sec.key).includes('/') ? 'foreign' : null);
-    f.push({ t: 'group', k: key, actions: acts, ...(dot ? { dot } : {}), label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}${sec.present === false ? (sec.type === 'Parent' ? ' · none' : ' · default') : ''}`, hint: `${prov ? `${prov}\n` : ''}${sec.summary} — ${sec.category} · engine record ${(sec.hash ?? 'draft').slice(0, 12)}${sec.status ? ` · ${sec.status}${sec.status === 'trial' ? ' (its shape may change during the alpha)' : ''}` : ''}${sec.part ? ` · part: ${sec.part}` : ''}`, open: isOpen(id, key), ...(prov ? { prov } : {}) });
+    f.push({ t: 'group', k: key, actions: acts, ...(dot ? { dot } : {}), label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}${sec.present === false ? (sec.type === 'Parent' ? ' · none' : ' · default') : ''}`, ...(away && sec.type === 'Transform' ? away : {}), hint: `${prov ? `${prov}\n` : ''}${sec.summary} — ${sec.category} · engine record ${(sec.hash ?? 'draft').slice(0, 12)}${sec.status ? ` · ${sec.status}${sec.status === 'trial' ? ' (its shape may change during the alpha)' : ''}` : ''}${sec.part ? ` · part: ${sec.part}` : ''}`, open: isOpen(id, key), ...(prov ? { prov } : {}) });
     for (const [label, value] of sec.info ?? []) f.push({ t: 'info', label, value });
     // the channel box: an alias (pos.yaw, the heading) stays addressable for
     // agents but is not drawn; the Quaternion row folds under its own header,
@@ -655,7 +655,6 @@ function lastChange(id) {
 }
 
 const thingName = (id) => { const l = bagOf(id)?.label; return typeof l === 'string' && l ? l : (kindHint(state.st.entities?.[id]) || 'thing'); };   // never the id (R 10-17)
-let showId = false;   // the inspector's 'show id' toggle (R 10-17: ids hidden by default)
 /** The ENABLED box that leads every thing's Inspector header (Unity's and Resonite's convention; R 10-12): ticked = on.
  *  It is the `disabled` component (5d5eef5c) read the other way round, so it is there whether the thing is on or off. */
 const enabledBox = (id) => { const on = state.st.entities[id]?.disabled !== true;
@@ -663,6 +662,12 @@ const enabledBox = (id) => { const on = state.st.entities[id]?.disabled !== true
     : 'Switched off for everyone: nobody downloads, sees or touches it. Tick to switch it back on.';
   return { t: 'check', k: 'henabled', label: '', vrLabel: 'enabled', value: on, settle: enabledSettle, bar: true, cls: 'sp-enabled', path: 'flags.disabled',
     hint: withKeys(words, 'toggleEnabled') }; };
+let lastAway = null;   // { id, m }: the distance the Inspector's Transform title last showed (its ticker repaints on a change)
+/** the thing's short handle (shared/thingref.js handleOf over every id but the world's, exactly as the Hierarchy's twins) */
+const idHandle = (id) => handleOf(id, Object.keys(state.st.entities ?? {}).filter((k) => k !== WORLD_ID));
+/** the name line's dim #handle: the id agents and the log use; clicking copies the full id */
+const idHandleRow = (id) => ({ t: 'btn', k: 'copyid', label: `#${idHandle(id)}`, bar: true, deskOnly: true, cls: 'sp-iconbtn sp-handle',
+  hint: `#${idHandle(id)} is its id (${id}), the one agents and the log use. It is permanent, minted by the world, and can't be renamed: the name is its label. Click to copy the full id.` });
 function inspectorFields() {
   if (worldSel()) return worldFields();
   const id = sceneSelected();
@@ -673,23 +678,24 @@ function inspectorFields() {
   // the fold knows the thing before its model arrives: entities holds null
   // while the GLB loads (scenegraph guards the same seam)
   const schema = schemaFor(id);           // ONE declaration: shared/editschema.js
-  // R 10-17 (ID HARDENING 3): the id is hidden by default; a toggle shows it (copyable), marked as never renamed
-  const idHint = 'its permanent id, minted by the world: the log, scripts and agents point at this, so it never changes and can\'t be renamed (its name is its label, like a Maya node\'s UUID under its name)';
-  const idRows = showId ? [{ t: 'info', label: 'id', value: id, dim: true, hint: idHint }, { t: 'btn', k: 'copyid', label: 'copy id', hint: 'copy it (not renameable: rename changes the label)' }, { t: 'btn', k: 'showid', label: 'hide id' }]
-    : [{ t: 'btn', k: 'showid', label: 'show id', hint: idHint }];
+  // R 10-17 20:30: no show-id button (awkward, under the attributes); the name line carries the thing's short handle, dim,
+  // after the name: the same #handle the Hierarchy shows twins by and agents use (computed over every id, as hierarchyFields
+  // does, so the two agree). Click it to copy the full id.
+  const handleRow = idHandleRow(id);
   if (!obj && offIn(state.st.entities, id)) {   // switched off: nothing loaded, so no transform to show; the way back on
     const self = state.st.entities[id]?.disabled === true; let up = id; if (!self) for (let k = state.st.entities[id]?.parent?.to; k; k = state.st.entities[k]?.parent?.to) if (state.st.entities[k]?.disabled === true) { up = k; break; }
-    return [enabledBox(id), { t: 'info', label: '', vrLabel: 'name', value: thingName(id), bar: true, cls: 'sp-title' }, ...idRows,
+    return [enabledBox(id), { t: 'info', label: '', vrLabel: 'name', value: thingName(id), bar: true, cls: 'sp-title' }, handleRow,
       { t: 'info', label: 'state', value: self ? 'switched off: nobody downloads, sees or touches it' : `switched off with ${thingName(up)}, which it hangs under` },
       ...(self ? [] : [{ t: 'btn', k: `selup:${up}`, label: `select ${thingName(up)}` }])]; }
-  if (!obj) return [...idRows, { t: 'info', label: 'state', value: 'loading…', hint: 'its model is still downloading' }];
+  if (!obj) return [{ t: 'info', label: 'state', value: 'loading…', hint: 'its model is still downloading' }];
   const locked = !!bag.lock;
-  const wp = obj.getWorldPosition(_wp);
+  // R 10-17 20:34: no 'world' row; how far it is rides the Transform card's title line, dim ('Transform · 12 m away'),
+  // its world coordinates on that line's tooltip. The ticker below repaints it as you move.
+  const wp = obj.getWorldPosition(_wp); const awayM = Math.round(wp.distanceTo(myState.pos)); lastAway = { id, m: awayM };
+  const away = { sub: `${awayM} m away`, subHint: `${awayM} m from you; in the world at (${wp.x.toFixed(1)}, ${wp.y.toFixed(1)}, ${wp.z.toFixed(1)})` };
 
   const f = [
-    ...idRows,
     { t: 'info', label: 'placed by', value: placedBy(id), hint: 'who first made it' },
-    { t: 'info', label: 'world', value: `(${wp.x.toFixed(1)}, ${wp.y.toFixed(1)}, ${wp.z.toFixed(1)}) · ${wp.distanceTo(myState.pos).toFixed(0)}m away`, hint: 'where it is in the world, and how far from you' },
   ];
 
   // B: one card per component (shared/components.js via schema.sections), each
@@ -704,7 +710,7 @@ function inspectorFields() {
     { const mine = isMineHidden(id), lk = bagOf(id)?.lock;
       const line = [
         enabledBox(id),
-        ...(nameRow ? [{ ...nameRow, label: '', bar: true, cls: 'sp-title', placeholder: 'name it', vrLabel: 'name' }] : []),
+        ...(nameRow ? [{ ...nameRow, label: '', bar: true, cls: 'sp-title', placeholder: 'name it', vrLabel: 'name' }, handleRow] : []),
         { t: 'btn', k: 'myhide', icon: mine ? 'eyeOff' : 'eye', label: '', on: mine, bar: true, deskOnly: true, cls: 'sp-iconbtn sp-mine',
           hint: mine ? 'Only you: hidden in YOUR view (not drawn, not clickable, still solid). Everyone else still sees it. Click to show it again.' : 'Only you: hide it in YOUR view. Nobody else is affected (the eye in the Hierarchy is the same switch).' },
         { t: 'btn', k: 'hlock', icon: lk ? 'lock' : 'lockOpen', label: '', on: !!lk, bar: true, deskOnly: true, cls: 'sp-iconbtn',
@@ -740,7 +746,7 @@ function inspectorFields() {
     // that group's header would fold into it)
     if (id !== WORLD_ID) { const at = adds.findIndex((r) => r.vrOnly && r.t === 'group'); adds.splice(at < 0 ? adds.length : at, 0, { t: 'btn', k: 'newscript', label: 'Add Script…', icon: 'scrollText', cls: 'sp-add', deskOnly: true, unfold: true, bar: true, disabled: !mayScript(),
       hint: mayScript() ? 'write a script that runs when someone uses this, or on a timer' : 'making scripts needs the scripts switch (the owner gives it)' }); }
-    pushCards(f, schema, id, { locked, afterTransform: adds });
+    pushCards(f, schema, id, { locked, afterTransform: adds, away });
     // the foot of the cards: the latest change to this thing, in one line (research 56: history lives beside the
     // Inspector, not in it; this line is the doorway)
     const lc = lastChange(id);
@@ -822,8 +828,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
   if (action.startsWith('selup:')) { sceneSelect(action.slice(6)); return; }
   if (action === 'henabled' && id && id !== WORLD_ID) { setEnabled(id, payload !== false); return; }
   if (action === 'myhide' && id && id !== WORLD_ID) { myHide(id); return; }
-  if (action === 'showid') { showId = !showId; repaintAll(); return; }
-  if (action === 'copyid' && id) { try { void navigator.clipboard?.writeText(String(id)); } catch { /* no clipboard: the row shows it to select */ } return; }
+  if (action === 'copyid' && id) { try { void navigator.clipboard?.writeText(String(id)); flashHint(`copied its id: ${id}`); } catch { /* no clipboard: the tooltip shows it */ } return; }
   if (action === 'ed:grabbable.gripedit') { openGripEditor(id); return; }
   if (action === 'ed:home.sethere') { void Edits.setHomeHere([id]); return; }   // the Home card's button: where it is now (editwrites)   // the grip editor (gripedit.js)
   if (id === WORLD_ID && WORLD_PICKS[action]) { pickWorld(action, payload); repaintAll(); return; }   // the Terrain card's shape tiles (S15)
@@ -1227,6 +1232,7 @@ function attributesFields() {
   if (hid) f.push({ ...hid, label: 'hidden for all', hint: 'Hidden from EVERYONE in this world (a world edit). The eye in the Inspector and the Hierarchy hides it in your view only.' });
   const lk = cardRow(schema, id, 'flags.lock'); if (lk) f.push({ ...lk, label: 'locked' });
   const ly = cardRow(schema, id, 'flags.layer'); if (ly) f.push(ly);   // the selection layer (Select ▾ in the viewport bar)
+  const ct = cardRow(schema, id, 'flags.clickthrough'); if (ct) f.push(ct);   // clicks go through: beside the layer, which it may merge into (R 10-17 20:36; left the Inspector)
   // the Transform's advanced rows (were the Inspector's 'Advanced'): rotation order and the quaternion as stored
   const tsec = schema.sections?.list?.find((x) => x.type === 'Transform');
   const adv = (tsec?.fields ?? []).map((addr) => [addr, cardRow(schema, id, addr)]).filter(([addr, r]) => r && !r.alias && (r.row === 'quat' || addr === 'rot.order')).map(([, r]) => r);
@@ -1268,6 +1274,7 @@ function repaintAll() {
   requestAnimationFrame(() => {
     queued = false;
     globalThis.__panelTrace?.push(['paint', performance.now() | 0]);
+    lastAway = null;   // inspectorFields sets it again if it still shows a thing's distance
     for (const p of PANELS) frames.get(p.id)?.set(p.fields(), (a, v, fld, o) => p.dispatch(a, v, fld, o));
     bus.emit('xr:repaint');
   });
@@ -1295,6 +1302,9 @@ export function initEditPanels() {
     if (p.id === 'inspector') scrubFeelButtons(sf.frame.el);
     frames.set(p.id, sf);
   }
+  // the Transform title's 'N m away' follows you: twice a second, repaint only when the whole metres changed (an in-place update)
+  setInterval(() => { if (!lastAway || document.hidden || !frames.get('inspector')?.frame?.el?.getClientRects().length) return; const id = sceneSelected(); const o = id === lastAway.id ? entities.get(id) : null;
+    if (!o) { lastAway = null; return; } if (Math.round(o.getWorldPosition(_wp).distanceTo(myState.pos)) !== lastAway.m) repaintAll(); }, 500);
   bus.on('selection', () => { const id = sceneSelected(); if (id) revealPath(id); });   // before the paint: a selected child shows, its ancestors unfold (design §5)
   for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'selection', 'structure-tool', 'tool', 'your-rights', 'log-applied']) bus.on(ev, repaintAll);   // log-applied: a world's library lives on @world, which the realizers never touch
   // the world entity's components are the fold's sky / terrain / grass: repaint when a world verb folds
