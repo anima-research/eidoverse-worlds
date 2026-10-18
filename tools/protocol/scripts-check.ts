@@ -165,6 +165,17 @@ const await_ES = await import(TREE + "shared/editschema.js"), await_RV = await i
 // the process-wide script duty (DUTY, authority.js) is about real seconds; these cases fire hundreds of activations in a tight
 // loop on a simulated clock, so it's opened wide here, and I2 sets it on purpose
 const DUTY0 = D.setScriptDuty ? D.setScriptDuty({ maxMs: 1e9 }) : null;
+// the warm processes started and SAID ready (the pool's own count), not a fixed 800 ms: on a slow host QuickJS takes longer
+// to load, and a case that measures the deadline must start from the state it names ("the pool is warm"). Bounded: 30 s
+function warmUp(want = 2, limitMs = 30000) { if (!SB?.warm) return; SB.warm(); const t = performance.now();
+  while ((SB.isolationStats?.().warm ?? want) < want && performance.now() - t < limitMs) Bun.sleepSync(20); }
+// "unavailable" is the sandbox's own verdict that the HOST starved the run (its process got too little CPU before the
+// deadline: not the script's doing, not evidence either way). A case about what a script does asks again, bounded, after
+// the pool is warm; it never retries a real verdict (ran, failed, refused)
+const UNAVAILABLE_RETRIES = 4;
+function useSteady(s: any, actor: string, args: any) { let r: any;
+  for (let i = 0; i <= UNAVAILABLE_RETRIES; i++) { r = s.call(actor, "use", args); if (r?.script?.code !== "unavailable") break; warmUp(); Bun.sleepSync(300); }
+  return r; }
 const root = scratch("scripts");
 
 // a world on disk over THIS tree's door (as server/filehost.ts does with the checkout's)
@@ -215,6 +226,7 @@ function bell(s: any, who: string) { s.call(who, "create", { id: "bell1", model:
   s.call(who, "set", { id: "bell1", component: "reactions", value: { ring: { kind: "script", script: "bell" } } }); return r; }
 const NAMES: Record<string, string> = { vic: "Vic" }; // a stand-in for the authority's directory (M1)
 const onUse = (body: string) => `world.on("use", (e) => {\n${body}\n});\n`;
+const HEAVY = onUse(`for (let i = 0; i < 31; i++) world.set("self", "t/n", i); world.get("self"); world.set("self", "t/m", world.ids().length); world.children("box");`);
 
 // E5's stand-in for the sandbox: a host whose script callback re-enters the authority with a request of its own (the shape
 // enter() guards: a nested call must not reset the outer call's queues under it)
@@ -232,9 +244,10 @@ const cases: Case[] = [
       return { install: r, stored: !!comp(s, "kiosk", "script:promo") }; },
     good: (o) => code(o.install) === "rights" && /roles:\*/.test(o.install.refused.reason) && !o.stored },
   { id: "B2", what: "41 #2 demotion: the sponsor is demoted; the next use's write is refused, the visitor's use still logs, the status says dormant and why", run(s) { cast(s);
-      const { u } = bell(s, "bob"); const first = s.call("vic", "use", { id: "bell1", action: "ring" });
-      s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "visitor" } }); const n0 = s.entries().length;
-      const after = s.call("vic", "use", { id: "bell1", action: "ring" }); const sv = s.call("olive", "scripts", {}).scripts?.[0];
+      const { u } = bell(s, "bob"); const first = useSteady(s, "vic", { id: "bell1", action: "ring" });
+      s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "visitor" } }); let n0 = s.entries().length;
+      let after: any; for (let a = 0; a <= UNAVAILABLE_RETRIES; a++) { n0 = s.entries().length; after = s.call("vic", "use", { id: "bell1", action: "ring" }); if (after?.script?.code !== "unavailable") break; warmUp(); }   // what the last use logged
+      const sv = s.call("olive", "scripts", {}).scripts?.[0];
       return { u: show(u), first: st(s, first), after: st(s, after), newKinds: kinds(s.entries().slice(n0)), status: sv?.status, why: sv?.why }; },
     good: (o) => o.first === "ran" && o.after === "refused rights" && JSON.stringify(o.newKinds) === '{"act":1}' && o.status === "dormant" && /sponsor bob \(visitor now.*bell1\.t\/bell/.test(o.why) },
   { id: "B3", what: "41 #3 confused deputy: an OWNER uses a script installed by bob (owner then, builder now) that writes roles:mal; the trigger adds no rights", run(s) { cast(s);
@@ -511,9 +524,10 @@ const cases: Case[] = [
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "box", "clock", onUse(`const t0 = Date.now(); let x = 0; for (let i = 0; i < 2e5; i++) x += i; world.set("self", "t/t", { now: Date.now(), same: Date.now() === t0 && new Date().getTime() === t0 && world.now === t0, r: [Math.random(), Math.random()] });`), { scope: { ids: "self", comps: ["t/t"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "clock" } } });
-      const r1 = s.call("vic", "use", { id: "box", action: "go" }); const t1 = comp(s, "box", "t/t"); const act1 = s.entries()[r1.script?.act];
-      const r2 = s.call("vic", "use", { id: "box", action: "go" }); const t2 = comp(s, "box", "t/t");
-      const again = SB.runScript({ text: s.w().getBlob(act1.body.src).text, self: "box", key: "script:clock", event: act1.body.event, now: act1.ts, seed: act1.body.seed, st: F.fold(s.entries(), { until: act1.body.head }) });
+      const r1 = useSteady(s, "vic", { id: "box", action: "go" }); const t1 = comp(s, "box", "t/t"); const act1 = s.entries()[r1.script?.act];
+      const r2 = useSteady(s, "vic", { id: "box", action: "go" }); const t2 = comp(s, "box", "t/t");
+      // the re-run is about determinism, not time: a slow host gets the whole 30 s to replay it (wallMs is only the backstop)
+      const again = SB.runScript({ text: s.w().getBlob(act1.body.src).text, self: "box", key: "script:clock", event: act1.body.event, now: act1.ts, seed: act1.body.seed, st: F.fold(s.entries(), { until: act1.body.head }), limits: { wallMs: 30000 } });
       return { nowIsTs: t1?.now === act1?.ts, same: t1?.same, r1: t1?.r, r2: t2?.r, rerun: again.ops?.[0]?.value?.r }; },
     good: (o) => o.nowIsTs && o.same === true && JSON.stringify(o.r1) === JSON.stringify(o.rerun) && JSON.stringify(o.r1) !== JSON.stringify(o.r2) },
   { id: "D3", what: "the sandbox's time zone is UTC wherever the authority runs: local-time methods, parsing and Date() agree under TZ=UTC and TZ=Asia/Tokyo", run() {
@@ -573,20 +587,25 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const HOSTILE = { idx: `const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`, pow: `(7n ** 300000n).toString().length;`, fill: `let a = []; for (;;) a.push(new Array(1e5).fill(1));` };
       for (const [k, body] of Object.entries(HOSTILE)) install(s, "bob", "box", k, onUse(body), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: Object.fromEntries(Object.keys(HOSTILE).map((k) => [k, { kind: "script", script: k }])) });
-      SB.warm(); Bun.sleepSync(800); // warm processes, as an authority with scripts has at load
-      const k0 = SB.isolationStats().kills; const runs: any[] = [];
+      warmUp(); // warm processes, as an authority with scripts has at load
+      const k0 = SB.isolationStats().kills; const runs: any[] = [], starved: any[] = [];
       // spaced as the process's script duty spaces them in a door (I2 tests the duty): a killed process's spare is warm again
-      for (const k of Object.keys(HOSTILE)) { Bun.sleepSync(800); const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: k }); const ms = performance.now() - t0;
+      // a run the host starved (unavailable) is stopped at the same deadline but says nothing about the builtin: asked again
+      // (bounded), and every attempt must still be back within the deadline with the other world answering at once
+      for (const k of Object.keys(HOSTILE)) for (let a = 0; a <= UNAVAILABLE_RETRIES; a++) { Bun.sleepSync(800); warmUp(); const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: k }); const ms = performance.now() - t0;
         const t1 = performance.now(); const other = s2.call("olive", "inspect", { id: "cup" }); const otherMs = performance.now() - t1;
-        runs.push({ k, r: st(s, r), why: r.script?.why, ms: Math.round(ms), other: other.ok, otherMs: Math.round(otherMs) }); }
+        const run = { k, r: st(s, r), why: r.script?.why, ms: Math.round(ms), other: other.ok, otherMs: Math.round(otherMs) };
+        if (run.r === "unavailable unavailable" && a < UNAVAILABLE_RETRIES) { starved.push(run); continue; } runs.push(run); break; }
       const counted = (s.w().presence.scriptRuns ?? []).filter((x: any) => x.sponsor === "bob").map((x: any) => x.ms);
-      const after = s.call("vic", "use", { id: "box", action: "idx" }); // the 4th failure in a row is still counted, never a hang
-      return { runs, counted, kills: SB.isolationStats().kills - k0, fails: s.w().presence.scripts?.["box|idx"]?.fails }; },
-    good: (o) => o.runs.every((x: any) => x.r === "failed time" && /killed/.test(x.why) && x.ms < 700 && x.other && x.otherMs < 150)
+      s.advance(61000);   // a fresh minute of the sponsor's CPU: three ~500 ms kills sit at its edge (on a loaded host, past it: refused budget)
+      const after = useSteady(s, "vic", { id: "box", action: "idx" }); // the 4th failure in a row is still counted, never a hang (a starved run isn't a failure: asked again)
+      const brief = (x: any) => ({ k: x.k, r: x.r, ms: x.ms, other: x.other, otherMs: x.otherMs, killed: /killed/.test(x.why ?? "") });
+      return { fails: s.w().presence.scripts?.["box|idx"]?.fails, kills: SB.isolationStats().kills - k0, counted, after: st(s, after), starved: starved.map(brief), runs: runs.map(brief) }; },
+    good: (o) => o.runs.every((x: any) => x.r === "failed time" && x.killed && x.ms < 700 && x.other && x.otherMs < 150) && o.starved.every((x: any) => x.ms < 700 && x.other && x.otherMs < 150)
       && o.kills >= 3 && o.counted.length >= 3 && o.counted.every((ms: number) => ms >= 250) && o.fails === 2 },
   { id: "I3", what: "isolation, back to back (duty opened, no spacing): kills faster than spares can start; each activation still returns within the warm-process wait + the deadline (300 + 500 ms), as time or unavailable, never longer", run(s) { cast(s);
       if (!SB?.isolationStats) return { absent: true };
-      SB.warm(); Bun.sleepSync(800);
+      warmUp();
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "box", "idx", onUse(`const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { idx: { kind: "script", script: "idx" } } });
@@ -599,7 +618,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
     good: (o) => o.worst < 300 + 500 + 200 && o.runs.every((x: string) => ["failed time", "unavailable unavailable", "paused", "refused budget"].includes(x)) && o.runs.includes("failed time") && o.runs.includes("unavailable unavailable") },
   { id: "I4", what: "review r2 #1: dry runs spend the authority's thread too: a visitor's 12 back-to-back dry uses of a hostile script are held to the duty and a dry-run rate (they used to run unmetered, 6 s)", run(s) { cast(s);
       if (!D.setScriptDuty) return { absent: true };
-      SB.warm(); Bun.sleepSync(800);
+      warmUp();
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "box", "idx", onUse(`const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { idx: { kind: "script", script: "idx" } } });
@@ -610,16 +629,28 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
     good: (o) => o.ms < DUTY0.maxMs + 500 + 400 && o.rs.some((x: string) => /refused (busy|rate)/.test(x)) },
   { id: "I5", what: "review r2 #2: the authority's own work in a host call stays small: on a big world (1500 things with 300-number arrays), 32 writes then a read cost no whole-world copies", run(s) { cast(s);
       const big = Array.from({ length: 300 }, (_, i) => i);
-      for (let b = 0; b < 15; b++) s.call("olive", "batch", { ops: Array.from({ length: 100 }, (_, i) => ({ verb: "create", args: { id: `t${b}-${i}`, components: { "t/data": { xs: big } } } })) }, 11000); // each batch alone in the 10 s byte window: the charge is PRE-paid since C0 (10-15), so 6 s steps held two batches and tripped the cap
+      // a batch the authority finds too costly for one request (its time cap is real time: a slow host reaches it sooner) is
+      // sent again as two halves; the setup only needs the 1500 things
+      const refusedBatches: string[] = [];
+      const put = (ops: any[]) => { const rb = s.call("olive", "batch", { ops }, 11000);
+        if (!rb?.ok && rb?.refused?.code === "too-costly" && ops.length > 1) { refusedBatches.push(`split ${ops.length}`); put(ops.slice(0, ops.length >> 1)); put(ops.slice(ops.length >> 1)); }
+        else if (!rb?.ok) refusedBatches.push(show(rb)); };
+      for (let b = 0; b < 15; b++) put(Array.from({ length: 100 }, (_, i) => ({ verb: "create", args: { id: `t${b}-${i}`, components: { "t/data": { xs: big } } } }))); // each batch alone in the 10 s byte window: the charge is PRE-paid since C0 (10-15), so 6 s steps held two batches and tripped the cap
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "box", "heavy", onUse(`for (let i = 0; i < 31; i++) world.set("self", "t/n", i); world.get("self"); world.set("self", "t/m", world.ids().length); world.children("box");`), { scope: { ids: "self", comps: ["t/n", "t/m"] }, on: ["use"] });
+      install(s, "bob", "box", "heavy", HEAVY, { scope: { ids: "self", comps: ["t/n", "t/m"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "heavy" } } });
-      const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: "go" }); const ms = performance.now() - t0;
-      return { r: st(s, r), ms: Math.round(ms), m: comp(s, "box", "t/m"), things: Object.keys(s.w().state().entities).length }; },
-    good: (o) => o.r === "ran" && o.ms < 400 && o.m === 1000 && o.things > 1500 },
+      // the same script on an empty world, on this host, now: what the run costs without any world to copy. A whole-world
+      // copy per write (the mutants below) costs ~32 copies of 1500 x 300 numbers, far past both bounds
+      const s0 = session(); cast(s0); s0.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
+      install(s0, "bob", "box", "heavy", HEAVY, { scope: { ids: "self", comps: ["t/n", "t/m"] }, on: ["use"] });
+      s0.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "heavy" } } });
+      warmUp(); const b0 = performance.now(); const r0 = useSteady(s0, "vic", { id: "box", action: "go" }); const ms0 = performance.now() - b0;
+      warmUp(); const t0 = performance.now(); const r = useSteady(s, "vic", { id: "box", action: "go" }); const ms = performance.now() - t0;
+      return { r: st(s, r), r0: st(s0, r0), ms: Math.round(ms), ms0: Math.round(ms0), m: comp(s, "box", "t/m"), things: Object.keys(s.w().state().entities).length, refusedBatches }; },
+    good: (o) => o.r === "ran" && o.r0 === "ran" && o.ms < Math.max(400, 2 * o.ms0 + 150) && o.m === 1000 && o.things > 1500 },
   { id: "I6", what: "review r2 #4: a sandbox process that dies mid-run is noticed at once (end of file on its pipe), not at the deadline, even before it's reaped", run(s) { cast(s);
       if (!SB?.isolationStats) return { absent: true };
-      SB.warm(); Bun.sleepSync(800);
+      warmUp();
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "box", "long", onUse(`const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "long" } } });
@@ -630,7 +661,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
     good: (o) => o.r === "failed sandbox" && /died/.test(o.why) && o.ms < 400 },
   { id: "I7", what: "review r2 (design note): fairness between worlds: one world's storm of short activations stops at its share of the authority's second, so another world's script still runs in that second", run(s) { cast(s, [["cat", "builder"]]); const s2 = session(); cast(s2);
       if (!D.setScriptDuty) return { absent: true };
-      SB.warm(); Bun.sleepSync(800);
+      warmUp();
       s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 40 } });
       for (let i = 0; i < 30; i++) { const who = ["bob", "cat", "ann"][i % 3]; s.call(who, "create", { id: `ear${i}`, model: "crate", place: { at: [i % 10 - 5, Math.floor(i / 10)] } });
         install(s, who, `ear${i}`, "grind", `world.on("say", () => { let x = 0; for (let k = 0; k < 1e5; k++) x += Math.sqrt(k); });\n`, { scope: { ids: "self", comps: ["t/n"] }, on: ["say"] }); }
@@ -647,7 +678,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
     good: (o) => o.ranA >= 1 && o.busyA >= 1 && o.B === "ran" },
   { id: "I8", what: "a process the host never got round to running (stopped here: SIGSTOP, as an overloaded machine would starve it) is still stopped at the deadline, but it reads 'the host was too busy' (unavailable) and isn't the script's failure", run(s) { cast(s);
       if (!SB?.isolationStats) return { absent: true };
-      SB.warm(); Bun.sleepSync(800);
+      warmUp();
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "box", "calm", onUse(`let x = 0; for (let k = 0; k < 2e4; k++) x += k; world.set("self", "t/n", x);`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "calm" } } });
@@ -660,7 +691,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
   { id: "I9", what: "re-review: reads that keep the AUTHORITY busy (a slow answer, 64 times) can't outlast the deadline (it's checked between answers too) and count as the script's own time, never as a starved host", opts: { nameOf: (id: string) => { const t = performance.now(); while (performance.now() - t < 30) { /* a slow directory */ } return id; } },
     run(s) { cast(s);
       if (!SB?.isolationStats) return { absent: true };
-      SB.warm(); Bun.sleepSync(800);
+      warmUp();
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "box", "ask", onUse(`for (let i = 0; i < 64; i++) world.name("vic");`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "ask" } } });
@@ -670,7 +701,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
   { id: "I2", what: "isolation, a whole request: one say wakes 12 hostile listeners; the authority's script time is capped per second for the process (DUTY), so the request returns within about DUTY + one deadline, the rest are refused busy (not failures), and another world answers at once",
     run(s) { cast(s, [["cat", "builder"]]); const s2 = session(); cast(s2); s2.call("olive", "create", { id: "cup", model: "crate", place: { at: [0, 0] } });
       if (!D.setScriptDuty) return { absent: true };
-      SB.warm(); Bun.sleepSync(800); D.setScriptDuty({ maxMs: DUTY0.maxMs, windowMs: DUTY0.windowMs });
+      warmUp(); D.setScriptDuty({ maxMs: DUTY0.maxMs, windowMs: DUTY0.windowMs });
       for (let i = 0; i < 12; i++) { const who = i % 2 ? "bob" : "cat"; s.call(who, "create", { id: `ear${i}`, model: "crate", place: { at: [i - 6, 2] } });
         install(s, who, `ear${i}`, "spin", `world.on("say", () => { const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b"); });\n`, { scope: { ids: "self", comps: ["t/n"] }, on: ["say"] }); }
       s.advance(61000); s.call("olive", "look", {}); // fresh minute; the pool is warm
@@ -905,18 +936,27 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a worl
     await ann.req("set", { id: "bell1", component: "reactions", value: { ring: { kind: "script", script: "bell" } } });
     const up2 = await ann.req("upload", { text: `world.on("tick", () => world.set("self", "t/beats", (world.get("self", "t/beats") ?? 0) + 1));\nworld.on("enter", (e) => world.set("self", "t/hello", e.by));\n` });
     const clock = await ann.req("set", { id: "bell1", component: "script:clock", value: { src: up2.src, scope: { ids: "self", comps: ["t/beats", "t/hello"] }, on: ["enter"], every: 5 } });
-    const bob = await client("Bob"); await sleep(300);
-    const ring = await bob.req("use", { id: "bell1", action: "ring" });
-    await sleep(11500); // two 5 s periods on the server's 1 s clock (the first only arms the timer)
-    const L = F.readLog(fs.readFileSync(path.join(W4, "chimes", "world.jsonl")));
+    let bob = await client("Bob"); await sleep(300);
+    // "busy" is the authority's fairness answer (its script duty: 500 ms of each real second, 300 for one world), not this
+    // path failing: on a slow or loaded host the enter script's first run can spend this world's share, so the use waits
+    // for the next second and asks again (nothing was written by the refused one, so rung stays exact)
+    let ring: any, ringBusy = 0;
+    for (;;) { ring = await bob.req("use", { id: "bell1", action: "ring" }); if (ring.script?.code !== "busy" || ringBusy >= 10) break; ringBusy++; await sleep(1100); }
     const B1 = IDS.of("bell1");   // the id the authority minted for the suite's bell1 (R 10-17)
-    const st0 = F.fold(L).entities[B1]?.c ?? {};
-    const tickActs = L.filter((e: any) => e.kind === "act" && e.actor === `script:${B1}` && e.body?.on === "tick").length;
+    const readWorld = () => { const L = F.readLog(fs.readFileSync(path.join(W4, "chimes", "world.jsonl"))); const st = F.fold(L).entities[B1]?.c ?? {};
+      return { L, st0: st, tickActs: L.filter((e: any) => e.kind === "act" && e.actor === `script:${B1}` && e.body?.on === "tick").length }; };
+    // two 5 s periods on the server's 1 s clock (the first only arms the timer): at least 11.5 s, then up to 30 s more on a
+    // slow host; an enter refused busy is asked again by joining again (each join is an enter)
+    let w: any, waited = 0, rejoined = 0; await sleep(11500);
+    for (;;) { w = readWorld(); if ((w.tickActs >= 1 && w.st0["t/beats"] >= 1 && w.st0["t/hello"] === bob.you) || waited >= 30000) break;
+      if (w.st0["t/hello"] !== bob.you && waited && waited % 10000 === 0 && rejoined < 2) { const seen = bob.msgs; bob.ws.close(); await sleep(300); bob = await client("Bob"); bob.msgs.unshift(...seen); rejoined++; }
+      await sleep(1000); waited += 1000; }
+    const { L, st0, tickActs } = w;
     const dbg = await new Promise<any>((res) => { const on = (ev: any) => { const m = JSON.parse(String(ev.data)); if (m.type === "debug" && m.reqId === "d1") { ann.ws.removeEventListener("message", on); res(m); } };
       ann.ws.addEventListener("message", on); ann.send({ type: "debug", scripts: true, reqId: "d1" }); setTimeout(() => res(null), 3000); });
     const srvLog = fs.readFileSync(logf, "utf8") + (fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8") : "");
     ann.ws.close(); bob.ws.close();
-    return { mk: mk.ok, inst: show(inst), clock: show(clock), ring: ring.script?.status, rung: st0["t/bell"]?.rung, tickActs, beats: st0["t/beats"], hello: st0["t/hello"] === bob.you,
+    return { mk: mk.ok, inst: show(inst), clock: show(clock), ring: ring.script?.status, ringBusy, waited, rejoined, ringWhy: ring.script?.status === "ran" ? undefined : `${ring.script?.code}: ${ring.script?.why ?? show(ring)}`.slice(0, 160), rung: st0["t/bell"]?.rung, tickActs, beats: st0["t/beats"], hello: st0["t/hello"] === bob.you,
       sawScript: bob.msgs.some((m) => m.type === "log" && m.entries.some((e: any) => e.actor === `script:${B1}` && e.body?.on === "tick")),
       roster: dbg?.events?.map((e: any) => `${String(e.id).replace(B1, "bell1")}:${e.status}`), v1Host: /\[behaviors\]|behavior tick/.test(srvLog), malformed: F.fold(L).diagnostics.filter(([, c]: any) => String(c).startsWith("malformed")).length };
   } finally { proc.kill(); }
@@ -949,7 +989,9 @@ serverCases.push({ id: "S2", server: true, what: "the server: while a hostile sc
       await ann.req("set", { id: "box", component: "reactions", value: { spin: { kind: "script", script: "spin" } } });
       await sleep(800); // the world now holds a script: its sandbox processes warm
       const rounds = [];
-      for (let i = 0; i < 3; i++) {
+      // three rounds the script really ran in (a round the host starved says "unavailable": stopped at the same deadline,
+      // but no verdict on the script, so it doesn't count toward the three; at most 8 rounds in all)
+      for (let i = 0; i < 8 && rounds.filter((r: any) => r.code !== "unavailable").length < 3; i++) {
         const t0 = performance.now(); let done: any = null; const p = ann.req("use", { id: "box", action: "spin" }).then((r) => { done = { r, ms: performance.now() - t0 }; });
         const lat: number[] = []; while (!done && performance.now() - t0 < 20000) { const t1 = performance.now(); await bea.req("look", {}); lat.push(performance.now() - t1); await sleep(20); }
         await p; rounds.push({ status: done.r.script?.status, code: done.r.script?.code, ms: Math.round(done.ms), maxOther: Math.round(Math.max(...lat)), looks: lat.length });
@@ -959,7 +1001,7 @@ serverCases.push({ id: "S2", server: true, what: "the server: while a hostile sc
       ann.ws.close(); bea.ws.close();
       return { inst: show(inst), rounds, status: sv.scripts?.[0]?.status, last: sv.scripts?.[0]?.last?.at(-1)?.code };
     } finally { proc.kill(); }
-  }, good: (o) => o.inst === "ok" && o.rounds.length === 3 && o.rounds.every((r: any) => r.status === "failed" && r.code === "time" && r.ms < 800 && r.maxOther < 800) && o.last === "time" });
+  }, good: (o) => o.inst === "ok" && o.rounds.filter((r: any) => r.code !== "unavailable").length === 3 && o.rounds.every((r: any) => (r.code === "unavailable" || (r.status === "failed" && r.code === "time")) && r.ms < 800 && r.maxOther < 800) && o.last === "time" });
 
 // ---------------- run ----------------
 let pass = 0, fail = 0;
