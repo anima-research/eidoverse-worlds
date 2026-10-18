@@ -80,5 +80,17 @@ function walks(from: any, points: any[]) {
   const ms = performance.now() - t0;
   check("a destination 100km away is refused for its size, quickly", "refusal" in r && /too far to plan/.test((r as any).refusal) && ms < 5000, `${ms.toFixed(0)}ms ${JSON.stringify(r).slice(0, 120)}`);
 }
+{
+  // floors finished with a thin layer: a slab 3.1–3.28 under a 2cm skin to
+  // 3.3, and the same at 6.1–6.3 — a hidden face 2cm below each floor. The
+  // floor scan steps 2cm under every surface it finds, onto that hidden face.
+  const g = world([[-4, 3.1, -4, 4, 3.28, 4], [-4, 3.28, -4, 4, 3.3, 4], [-4, 6.1, -4, 4, 6.28, 4], [-4, 6.28, -4, 4, 6.3, 4]]);
+  const ls = g.layers(g.cell(0.5), g.cell(0.5)).map((y: number) => +y.toFixed(2));
+  check("floors finished with a thin layer are all floors: the roof, the storey under it, the ground",
+    [6.3, 3.3, 0].every((y) => ls.some((v: number) => Math.abs(v - y) < 0.02)), JSON.stringify(ls));
+  const under = C.surfaceUnder(0.5, 0.5, flat, 6.28).y;
+  check("...because a surface just above the limit no longer hides the rest of the thing below it",
+    under < 6.2 && under > 3, `surfaceUnder(maxY 6.28) = ${under.toFixed(3)}`);
+}
 console.log(`\n${tally.passed} passed, ${tally.failed} failed`);
 process.exit(tally.failed ? 1 : 0);
