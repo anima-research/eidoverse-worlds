@@ -12,6 +12,7 @@ export const KEYHINTS = {
   meshMove:      { before: 'drag the thing itself · Shift+drag raises and lowers · Esc cancels', during: '<kbd>Shift</kbd> raises and lowers · <kbd>Esc</kbd> cancels' },
   treeFold:      { before: 'Shift- or Alt-click an arrow opens or closes the whole branch', during: null },
   selectExtend:  { before: 'Ctrl- or Shift-click adds to the selection · Shift-drag on empty space draws a box', during: null },
+  treeSelect:    { before: 'Ctrl-click adds or drops one · Shift-click selects every row from the last one clicked to this one (Ctrl+Shift adds them)', during: null },
   undo:          { before: 'Ctrl+Z undo · Ctrl+Shift+Z or Ctrl+Y redo', during: null },
   jsonCommit:    { before: 'Ctrl+Enter commits · Esc reverts', during: null },
   toggleEnabled: { before: 'Alt+Shift+A switches the selection on or off, for everyone (Unity\'s toggle active)', during: null },

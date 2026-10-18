@@ -571,6 +571,32 @@ try {
     check("MS6 a channel that differs across the selection shows '—' in its field; no label carries '≠'", chans?.differ && /translate x/.test(chans?.lab ?? "") && chans?.xval === "—" && !chans?.neq, chans);
     await clickRow(B, { ctrlKey: true }); await sleep(300);
     check("MS7 Ctrl-click on a selected row drops it", same(await selNow(), [A]), await selNow());
+    await clickRow(A); await clickRow(D, { shiftKey: true }); await sleep(400);
+    const now = (await rowsNow()) ?? []; const want4 = now.slice(now.indexOf(A), now.indexOf(D) + 1);
+    check("MS8 Shift-click selects the RANGE from the last row clicked to this one, in displayed order; the one clicked is active", same(await selNow(), want4) && (await activeNow()) === D, { sel: await selNow(), want4, active: await activeNow() });
+    await clickRow(B, { shiftKey: true }); await sleep(400);
+    check("MS9 …a second Shift-click re-ranges from the same anchor (the run shrinks to A..B)", same(await selNow(), [A, B]), await selNow());
+    // a folded branch: its children are not displayed, so a range across it leaves them out
+    const fold = await evalJson(`'msb'`);
+    {
+      const kids = await evalJson(`(async () => { const s = await import('/lib/state.js'); return Object.keys(s.state.st.entities).filter((k) => s.state.st.entities[k]?.parent?.to === ${JSON.stringify(fold)}); })()`);
+      await evalJson(`(__editPanels().hierDo('open', ${JSON.stringify(fold)}), true)`); await sleep(400);
+      const shut = await rowsNow();
+      await clickRow(shut[0]); await clickRow(shut.at(-1), { shiftKey: true }); await sleep(400);   // every displayed row: across the fold
+      const s = await selNow();
+      check("MS10 a range across a folded branch leaves its hidden children out (only rows as displayed)", same(s, shut) && shut.indexOf(fold) >= 0 && shut.indexOf(fold) < shut.length - 1 && kids?.length > 0 && !kids.some((k: string) => s?.includes(k)), { fold, kids, s, shut });
+      await evalJson(`(__editPanels().hierDo('open', ${JSON.stringify(fold)}), true)`); await sleep(300);
+    }
+    // the filter: a range covers only the rows it shows
+    await evalJson(`(__editPanels().hierDo('filter', 'ms '), true)`); await sleep(400);
+    const fl = await rowsNow();
+    await clickRow(fl[0]); await clickRow(fl.at(-1), { shiftKey: true }); await sleep(400);
+    const fs2 = await selNow();
+    const allRows = (await evalJson(`(async () => { const s = await import('/lib/state.js'); return Object.keys(s.state.st.entities).filter((k) => k !== '@world'); })()`)) ?? [];
+    check("MS11 under a filter, a range covers only the rows it shows", fl?.length >= 4 && same(fs2, fl) && allRows.length > fl.length && MS.every((id: string) => fl.includes(id)), { fl, fs2 });
+    await evalJson(`(__editPanels().hierDo('filter', ''), true)`); await sleep(300);
+    const tip = await evalJson(`${rowEl(A)}?.querySelector('.sp-item-main')?.title ?? ''`);
+    check("MS12 a row's tooltip says Ctrl-click adds or drops one and Shift-click selects the run", /Ctrl/.test(tip) && /Shift-click selects/.test(tip), tip);
     await page(`const s = await import('/lib/scenegraph.js'); ${selBefore ? `s.sceneSelect(${JSON.stringify(selBefore)})` : "s.sceneDeselect()"}; return true;`); await sleep(400);
   }
 

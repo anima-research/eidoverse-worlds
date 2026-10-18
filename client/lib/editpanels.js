@@ -211,6 +211,19 @@ export function selection() {
   const s = Sel.selection();
   return s.kind === 'things' ? s.ids.filter((id) => entities.get(id)) : [];
 }
+/** Shift-click in the Hierarchy: every displayed row from the anchor (the last row clicked; else the active thing) to
+ *  `id`, replacing the selection (Ctrl+Shift: added to it). The anchor stays where it is, so a second Shift-click re-ranges
+ *  from it; the row clicked is active. false when there is no anchor among the displayed rows (the caller selects `id`). */
+let hAnchor = null;
+function rangeSelect(id, add) {
+  const rows = visibleRows.filter((r) => entities.get(r));
+  const from = [hAnchor, Sel.active()].find((a) => a != null && rows.includes(a) && Sel.isSelected(a));   // a stale anchor (since deselected) gives way
+  const i = rows.indexOf(from), j = rows.indexOf(id);
+  if (i < 0 || j < 0) { sceneSelect(id); hAnchor = id; return true; }
+  const run = i <= j ? rows.slice(i, j + 1) : rows.slice(j, i + 1).reverse();   // the anchor first (the primary), the row clicked last
+  Sel.set(add ? [...selection(), ...run.filter((r) => !Sel.isSelected(r))] : run, 'things', id);
+  return true;
+}
 function extendSelection(id) {
   if (!entities.get(id)) return;
   Sel.toggle(id);   // taking the primary out promotes the next and keeps the rest, in one event
@@ -376,8 +389,11 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
       if (String(payload).startsWith('comp:')) payload = payload.slice(5, payload.lastIndexOf(':'));   // a component's row selects its thing
       if (armingRef && completeRefPick(payload)) break;   // a row click names a ref target
       if (arming && payload !== arming) { const child = arming; arming = null; reparent(child, payload); sceneSelect(child); break; }
-      if (opts.extend) { extendSelection(payload); return; }
-      sceneSelect(payload);
+      // R, gym 10-17 20:41: Shift selects the RANGE from the last row clicked to this one, in the rows as displayed (folded
+      // branches and the filter respected); Ctrl/Cmd toggles one; a plain click selects one. Older callers send only `extend`
+      if (opts.range && rangeSelect(payload, !!opts.toggle)) return;
+      if (opts.toggle || (opts.extend && !opts.range)) { extendSelection(payload); hAnchor = payload; return; }
+      sceneSelect(payload); hAnchor = payload;
       break;
     }
     case 'lock': toggleLock(payload); break;

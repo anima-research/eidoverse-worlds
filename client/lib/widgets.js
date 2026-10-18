@@ -848,8 +848,9 @@ export const WIDGETS = {
         const main = el('span', 'sp-item-main');
         main.append(put(el('span', 'sp-item-label'), r.label, ro.icons));
         if (r.sub || r.badges?.length) main.append(put(el('span', 'sp-item-sub'), [r.sub, ...(r.badges ?? [])].filter(Boolean).join(' · '), ro.icons));
-        main.onclick = (e) => edit(f.k, r.id, f, { extend: e.shiftKey || e.ctrlKey || e.metaKey });   // keys: selectExtend
-        main.title = withKeys(r.title ?? (r.sub ? `${r.label} — ${r.sub}` : r.label), 'selectExtend');   // r.title: what the row left out (its id, its kind)
+        // Ctrl/Cmd toggles one; Shift selects the run from the last row clicked (Ctrl+Shift adds the run); `extend` is either
+        main.onclick = (e) => edit(f.k, r.id, f, { extend: e.shiftKey || e.ctrlKey || e.metaKey, toggle: e.ctrlKey || e.metaKey, range: e.shiftKey });   // keys: treeSelect
+        main.title = withKeys(r.title ?? (r.sub ? `${r.label} — ${r.sub}` : r.label), 'treeSelect');   // r.title: what the row left out (its id, its kind)
         // inline rename (Godot F2 / Blender double-click): a row that carries `rename` (its
         // current label) swaps the label for an input; Enter or blur commits
         // edit('rename', id, f, {value}), Esc cancels. The panel holds repaints while it's focused.
