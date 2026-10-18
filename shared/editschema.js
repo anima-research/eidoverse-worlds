@@ -973,7 +973,8 @@ function componentSections(ent, groups, live = {}, id = '?') {
   const model = components.find((c) => c.type === 'Model')?.params.lib;
   const lib = model != null ? String(model) : null;
   // parenting lives on the Parent card (R, 10-04), not the header
-  return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden' || f.k === 'disabled' || f.k === 'clickthrough' || f.k === 'description' || f.k === 'reads'), list: out, add,
+  // clicks-go-through left the Inspector's header for Attributes (R 10-17 20:36: a less-used option, beside the selection layer)
+  return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden' || f.k === 'disabled' || f.k === 'description' || f.k === 'reads'), list: out, add,
     model: lib, libLabel: lib != null ? libLabel(lib) : isBag(ent?.mesh) && MESH_SHAPES.includes(ent.mesh.shape) ? ent.mesh.shape : ent?.light ? 'light' : 'empty' };
 }
 

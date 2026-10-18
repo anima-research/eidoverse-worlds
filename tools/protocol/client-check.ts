@@ -416,11 +416,26 @@ try {
   // R 10-10 23:48: the name is the first line's title (no label; the eye and padlock beside it), then the id; R 10-12: the
   // ENABLED box leads that line
   const firstIsTitle = await evalJson(`(() => { const r = [...${insp}.querySelectorAll('.sp-row')]; return r[0]?.classList.contains('sp-enabled') && r[1]?.classList.contains('sp-title'); })()`);
-  // R 10-17 ID HARDENING: the id is hidden behind "show id" by default (it can't be renamed; the label is the name)
-  check("I1 the Inspector leads with the ENABLED box and the name (its title line); the id row is hidden by default", firstIsTitle && labels?.[0] === "" && labels?.[1] === "" && !labels?.includes("id"), { firstIsTitle, labels: labels?.slice(0, 3) });
+  // R 10-17 ID HARDENING: no id row (it can't be renamed; the label is the name)
+  check("I1 the Inspector leads with the ENABLED box and the name (its title line); no id row", firstIsTitle && labels?.[0] === "" && labels?.[1] === "" && !labels?.includes("id"), { firstIsTitle, labels: labels?.slice(0, 3) });
+  // R 10-17 20:30: the 'show id' button is gone; the name line carries the short #handle, dim, right after the name: the same
+  // one the Hierarchy shows twins by and agents use (shared/thingref.js handleOf over every id but the world's)
+  { const want = await evalJson(`Promise.all([import('/lib/state.js'), import('/shared/thingref.js')]).then(([s, t]) => '#' + t.handleOf('pebble', Object.keys(s.state.st.entities).filter((k) => k !== '@world')))`);
+    const got = await evalJson(`(() => { const r = [...${insp}.querySelectorAll('.sp-row')]; const i = r.findIndex((x) => x.classList.contains('sp-title')); const h = r[i + 1]; return { cls: h?.className ?? null, text: h?.textContent?.trim() ?? null, title: h?.title ?? '', opacity: h ? getComputedStyle(h.querySelector('.sp-btn')).opacity : null }; })()`);
+    const btns = await evalJson(`[...${insp}.querySelectorAll('.sp-btn')].map((b) => b.textContent.trim())`);
+    check("I1b the name line shows the same #handle the Hierarchy and agents use, dim, right after the name; its tooltip says agents and the log use it and it can't be renamed; no 'show id' button", !!want && got?.text === want && /sp-handle/.test(got?.cls ?? "") && Number(got?.opacity) < 1 && /agents/.test(got?.title) && /log/.test(got?.title) && /renamed/.test(got?.title) && /copy/i.test(got?.title) && !btns?.some((t) => /^(show|hide|copy) id$/.test(t)), { want, got, btns }); }
   // R 10-10: parent moved to the Attributes tab ("I don't think we should show 'parent' here at all - this seems like a Hierarchy thing")
   check("I2 …no lib line (the Model card has it), no filter box; no Parent card (it lives in Attributes now)", !labels?.includes("lib") && !(await evalJson(`!!${insp}.querySelector('input[placeholder^="filter"]')`)) && !labels?.includes("parent") && !labels?.includes("children") && !labels?.includes("on"), labels);
   check("I3 …placed by names who made it (the authority's inspect, as an agent asks it)", await waitFor(`[...${insp}.querySelectorAll('.sp-row')].some((r) => r.querySelector('.sp-label')?.textContent === 'placed by' && r.textContent.includes('bob'))`), await evalJson(`[...${insp}.querySelectorAll('.sp-row')].map((r) => r.textContent).slice(0, 5)`));
+  // R 10-17 20:34: no 'world' row; the distance rides the Transform card's title line, dim ("Transform · 12 m away"), and follows you
+  { const tf = `[...${insp}.querySelectorAll('.sp-group')].find((b) => b.querySelector('.sp-group-name')?.textContent.startsWith('Transform'))`;
+    const want = await evalJson(`Promise.all([import('/lib/world.js'), import('/lib/controller.js')]).then(([w, c]) => { const o = w.entities.get('pebble'); return Math.round(o.getWorldPosition(new o.position.constructor()).distanceTo(c.myState.pos)); })`);
+    const head = await evalJson(`(() => { const b = ${tf}; const s = b?.querySelector('.sp-group-sub'); return b ? { sub: s?.textContent ?? null, op: s ? getComputedStyle(s).opacity : null, tip: s?.title ?? '' } : null; })()`);
+    check("I3b no 'world' row; the Transform card's title line carries the distance, dim ('Transform · N m away'), its world coordinates on hover", !labels?.includes("world") && head?.sub === ` · ${want} m away` && Number(head?.op) < 1 && /world at \(/.test(head?.tip), { want, head, labels }); }
+  // R 10-17 20:36: "clicks go through" left the Inspector's header for Attributes, beside the selection layer
+  { const attrLabels = await evalJson(`[...document.querySelector('[data-frame="attributes"]').querySelectorAll('.sp-row .sp-label')].map((l) => l.textContent)`);
+    const at = attrLabels?.indexOf("clicks go through") ?? -1;
+    check("I3c 'clicks go through' is not in the Inspector; Attributes has it, right after the selection layer", !labels?.includes("clicks go through") && at > 0 && attrLabels[at - 1] === "layer", { labels: labels?.slice(0, 6), attrLabels }); }
   check("I4 …rotation order sits inside the folded Advanced group, not in the main Transform", await evalJson(`![...${insp}.querySelectorAll('.sp-row .sp-label')].some((l) => /order/i.test(l.textContent))`), labels);
   check("I5 Add Component is ONE button", await evalJson(`[...${insp}.querySelectorAll('.sp-pop-btn')].length === 1 && ![...${insp}.querySelectorAll('.sp-btn')].some((b) => /^\\+ (Light|Pendulum|Spin)/.test(b.textContent))`), await evalJson(`[...${insp}.querySelectorAll('.sp-btn')].map((b) => b.textContent)`));
   await evalJson(`${insp}.querySelector('.sp-pop-btn').click(), true`);

@@ -736,7 +736,9 @@ export const WIDGETS = {
       const DOT = { draft: ['draft', 'a draft component: not part of the engine yet (it can still change); unproven: this client reads it, the engine doesn\'t'], trusted: ['trusted here', 'not engine-official, but used and trusted in this world (the owner\'s word); the engine still doesn\'t read it'], foreign: ['unknown', 'a component this client has no reader for: kept and replayed, not drawn'] };
       const head = (hh, ff) => { hh.textContent = ''; hh.append(document.createTextNode(`${ff.open === false ? '▸' : '▾'} `));
         if (ff.dot && DOT[ff.dot]) { const d = el('span', `sp-pill sp-pill-${ff.dot}`, DOT[ff.dot][0]); d.title = DOT[ff.dot][1]; hh.append(d); }
-        hh.append(put(el('span', 'sp-group-name'), ff.label, ro.icons)); return hh; };
+        hh.append(put(el('span', 'sp-group-name'), ff.label, ro.icons));
+        if (ff.sub) { const d = el('span', 'sp-group-sub', ` · ${ff.sub}`); if (ff.subHint) d.title = ff.subHint; hh.append(d); }   // dim, after the name (the Transform card's 'N m away')
+        return hh; };
       const h = head(el('button', 'sp-group'), f);
       h.onclick = () => edit('fold', f.k);
       row.innerHTML = ''; row.append(h);
@@ -754,14 +756,14 @@ export const WIDGETS = {
     legacy(f, P) { const { g, regions, C, font, pad, width, rowH, y } = P;
       g.fillStyle = C.line; g.fillRect(pad, y + rowH - 6, width - pad * 2, 1);
       font(14, 600); g.fillStyle = C.accent;
-      g.fillText(`${f.open === false ? '▸' : '▾'} ${f.label}`, pad, y + rowH * 0.62);
+      g.fillText(`${f.open === false ? '▸' : '▾'} ${f.label}${f.sub ? ` · ${f.sub}` : ''}`, pad, y + rowH * 0.62);
       regions.push({ x: pad, y, w: width - pad * 2, h: rowH, action: 'fold', payload: f.k });
     },
     edit(f, P) { const { g, regions, font, text, fill, icon, pad, width, rowH, y } = P;
       fill(g, T.bg2, 0, y + 2, width, rowH - 2);
       fill(g, T.line, 0, y, width, V.minLine);
       icon(g, f.open === false ? 'chevronRight' : 'chevronDown', pad + 9, y + rowH / 2 + 1, 18, T.dim);
-      font(V.minText, 600); text(g, f.label, pad + 24, y + rowH / 2 + 1, T.text, width - pad * 2 - 24);
+      font(V.minText, 600); text(g, f.sub ? `${f.label} · ${f.sub}` : f.label, pad + 24, y + rowH / 2 + 1, T.text, width - pad * 2 - 24);
       regions.push({ x: pad, y, w: width - pad * 2, h: rowH, action: 'fold', payload: f.k });
     },
   },
