@@ -330,12 +330,15 @@ const READ_VERBS = {
     if (a.before !== undefined && a.after !== undefined) refuse("shape", "page one way: before or after, not both", "before: older than that seq (the reply's next); after: newer than it");
     const lim = Math.max(1, Math.min(200, a.limit ?? 12)); const vs = a.verbs?.length ? new Set(a.verbs) : null;   // [] = no filter
     const ghost = !!ghostOf(w, actor); // a ghost can't read chat (PLAN 10-06): says leave the page
+    // speech is arrival-only (R 10-18): a say from before the asker arrived leaves the page too, unless the host says they're
+    // an admin (no floor). The log keeps every say; only an admin reads one back from before they came (storage.js sayFloor)
+    const floor = typeof w.sayFloor === "function" ? w.sayFloor(actor) : null;
     const match0 = (e) => !vs || !isE(e) ? !vs : vs.has(e.verb) || vs.has(e.kind) || (e.verb === "imported" && vs.has(e.body?.verb));
-    const match = (e) => match0(e) && !(ghost && isE(e) && e.kind === "say");
+    const match = (e, seq) => match0(e) && !(isE(e) && e.kind === "say" && (ghost || (floor !== null && !(seq > floor))));
     const row = (e, seq) => isE(e) ? { seq, actor: e.actor, ts: e.ts, kind: e.kind, verb: e.verb, ...(e.cause !== undefined ? { cause: e.cause } : {}), body: e.kind === "act" || e.kind === "say" ? e.body : JSON.stringify(e.body).slice(0, 160) } : { seq, malformed: e.code };
     const out = []; let more = false;
-    if (a.after !== undefined) { for (let i = Math.max(0, a.after + 1); i < w.entries.length; i++) { if (!match(w.entries[i])) continue; if (out.length === lim) { more = true; break; } out.push(row(w.entries[i], i)); } }
-    else { for (let i = Math.min(w.entries.length, a.before ?? Infinity) - 1; i >= 0; i--) { if (!match(w.entries[i])) continue; if (out.length === lim) { more = true; break; } out.push(row(w.entries[i], i)); } out.reverse(); }
+    if (a.after !== undefined) { for (let i = Math.max(0, a.after + 1); i < w.entries.length; i++) { if (!match(w.entries[i], i)) continue; if (out.length === lim) { more = true; break; } out.push(row(w.entries[i], i)); } }
+    else { for (let i = Math.min(w.entries.length, a.before ?? Infinity) - 1; i >= 0; i--) { if (!match(w.entries[i], i)) continue; if (out.length === lim) { more = true; break; } out.push(row(w.entries[i], i)); } out.reverse(); }
     return { ok: true, entries: out, ...(more ? a.after !== undefined ? { next: out.at(-1).seq, more: "send after: next for newer" } : { next: out[0].seq, more: "send before: next for older" } : {}) }; },
 };
 export { READ_VERBS, buildCreateFrom, buildPublish, buildUpdate, thingSaid };

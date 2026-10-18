@@ -809,9 +809,10 @@ function buildSnapshot(w: World, c: Client) {
       // the world: the authority's cut (its fold, head, your undoable acts, names, holds), which the joiner folds and then
       // advances with the `log` stream. A joiner's cost is the size of the WORLD, not the length of its history.
       cut: { ...w.log.info(), ...w.log.clientCut(actorIdOf(c)) },
-      // chat isn't world state: the window of recent lines, how many came before it, and the chat cursor (seq × 1000)
-      // a history page continues from
-      state: w.isGhost(c) ? { recentChat: [], chatTotal: 0 } : { recentChat: w.state.recentChat ?? [], chatTotal: w.state.chatTotal ?? 0 },   // a ghost reads no chat (PLAN 10-06)
+      // chat isn't world state, and speech is arrival-only (R 10-18): a joiner is sent no line said before it came, so the
+      // window is always empty. chatTotal is how many lines a history page could still show this joiner: for an admin
+      // (owner, operator) every line the master log holds; for everyone else none. A ghost reads no chat (PLAN 10-06)
+      state: { recentChat: [], chatTotal: !w.isGhost(c) && w.isAdmin(c) ? (w.state.chatTotal ?? 0) : 0 },
       throughSeq: w.log.snapSeq,
       // the body roster rides along — a joiner resolves names with no
       // extra round-trip (bbox geometry follows as its own message)
@@ -995,6 +996,9 @@ const server = Bun.serve({
           }
           c.replica = msg.replica === true;
           installJoin(c, w);
+          // speech is arrival-only (R 10-18): this connection hears says after the cut it is about to adopt, and reads back
+          // none at or below it (history, the authority's history) unless it is an admin's (world.ts sayFloor)
+          c.arrivedSeq = w.log.head;
           ws.send(JSON.stringify(buildSnapshot(w, c)));
           sendGeomFollowup(w, c);
           if (w.log) { c.ghostHidden = w.isGhost(c); }   // a ghost arrives unseen (PLAN 10-06); the sweep shows them when it ends

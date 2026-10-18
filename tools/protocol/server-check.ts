@@ -452,7 +452,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(seatC?.socket?.name === "seat" && seatC.parent?.to === enc("lamp_1") && JSON.stringify(seatC.transform.pos) === "[0.3,0.75,0.1]" && !("socket" in replica[enc("mug_1")].c.parent) && replica[enc("mug_1")].c.transform.pos.every((v) => Math.abs(v) < 1e-9),
     "S6 a translated mount is in the authority's shape once the world is loaded: the socket is lamp_1's child at the socket's pos, and the mug rides it (parent {to: <the socket>}, at its origin)", [replica[enc("mug_1")].c.parent, replica[enc("mug_1")].c.transform, seatC]);
   ok(neu.snapshot.cut?.dialect === "eidoverse-log" && neu.snapshot.cut?.v === 4 && neu.snapshot.yourRights?.role === "owner" && !old.snapshot.cut, "S6 the new copy says {dialect, v}, and Ann still owns it (the original log is read only by the translator)", [neu.snapshot.yourRights, old.snapshot.cut]);
-  ok(neu.snapshot.state.recentChat?.some((m) => m.text === "hello from v1"), "S6 the chat window comes across");
+  { const h = await neu.req("history", { verbs: ["say"], limit: 50 });   // arrival-only (R 10-18): no window on join; the owner reads the master log
+    ok(JSON.stringify(neu.snapshot.state.recentChat) === "[]" && (h.entries ?? []).some((e: any) => e.body?.text === "hello from v1"), "S6 the chat comes across into the log (its owner reads it back; nobody's join replays it)", [neu.snapshot.state.recentChat, (h.entries ?? []).length]); }
   const ed = await neu.req("set", { id: enc("lamp_1"), component: "label", value: "the new table" });
   ok(ed.ok, "S6 the translated world takes edits from its owner", ed);
   void old; neu.close(); }
@@ -565,16 +566,31 @@ srv.proc.kill();
   let said = 0; for (let i = 0; i < lines; i++) { const r = await t.req("say", { text: `line ${i}` }); if (r.ok) said++; else { await sleep(1100); i--; } }
   t.close(); srvA.proc.kill(); await sleep(300);
   const srvB = await startServer(ENGINE, W4, OPT, "sh2");   // a restart: only what's on disk
-  const r = await client(srvB.port, "garden", "Bob", REPLICA);
-  const page = (before?: number) => new Promise<any>((res) => { const id = `h${Math.random()}`; const on = (ev: any) => { const m = JSON.parse(String(ev.data)); if (m.type === "history" && m.reqId === id) { r.ws.removeEventListener("message", on); res(m); } };
-    r.ws.addEventListener("message", on); r.send({ type: "history", reqId: id, limit: 25, verbs: ["say"], ...(before !== undefined ? { before } : {}) }); });
-  const got: any[] = []; let p = await page(); got.unshift(...p.entries); let guard = 0;
-  while (p.hasMore && guard++ < 20) { p = await page(p.oldestSeq); got.unshift(...p.entries); }
-  const texts = got.map((e) => e.args?.text);
-  ok(got.length === N0 + lines && texts.at(-1) === `line ${lines - 1}` && texts.indexOf("line 0") === N0 && !p.hasMore,
-    "SH1 after a restart, paging back with history reaches every chat line ever said here, in order, and says when it's done", [got.length, N0 + lines, texts.slice(0, 3), p.hasMore]);
-  ok(r.snapshot?.state?.chatTotal === N0 + lines, "SH2 the join's chatTotal counts every line, not the ones since load", [r.snapshot?.state?.chatTotal, N0 + lines]);
-  r.close(); srvB.proc.kill(); }
+  // speech is arrival-only (R 10-18): the master log keeps every say; an admin (Ann owns garden) pages back through all of
+  // it, anyone else reads back only what was said since they arrived
+  const pager = (r: any) => (before?: number, verbs: string[] | undefined = ["say"]) => new Promise<any>((res) => { const id = `h${Math.random()}`; const on = (ev: any) => { const m = JSON.parse(String(ev.data)); if (m.type === "history" && m.reqId === id) { r.ws.removeEventListener("message", on); res(m); } };
+    r.ws.addEventListener("message", on); r.send({ type: "history", reqId: id, limit: 25, ...(verbs ? { verbs } : {}), ...(before !== undefined ? { before } : {}) }); });
+  const all = async (r: any) => { const page = pager(r); const got: any[] = []; let p = await page(); got.unshift(...p.entries); let guard = 0;
+    while (p.hasMore && guard++ < 20) { p = await page(p.oldestSeq); got.unshift(...p.entries); } return { got, last: p }; };
+  const r = await client(srvB.port, "garden", "Ann", REPLICA);
+  { const { got, last: p } = await all(r); const texts = got.map((e) => e.args?.text);
+    ok(got.length === N0 + lines && texts.at(-1) === `line ${lines - 1}` && texts.indexOf("line 0") === N0 && !p.hasMore,
+      "SH1 after a restart, an admin (the owner) paging back with history reaches every chat line ever said here, in order, and says when it's done", [got.length, N0 + lines, texts.slice(0, 3), p.hasMore]); }
+  ok(r.snapshot?.state?.chatTotal === N0 + lines && JSON.stringify(r.snapshot?.state?.recentChat) === "[]", "SH2 the owner's join: no line replayed, and chatTotal counts every line the master log holds (not the ones since load)", [r.snapshot?.state?.chatTotal, N0 + lines, r.snapshot?.state?.recentChat?.length]);
+  const bob = await client(srvB.port, "garden", "Bob", REPLICA);
+  ok(JSON.stringify(bob.snapshot?.state?.recentChat) === "[]" && bob.snapshot?.state?.chatTotal === 0, "SH3 a non-admin's join carries no say from before it arrived (no backscroll) and no count of them", [bob.snapshot?.state?.recentChat?.length, bob.snapshot?.state?.chatTotal]);
+  { const { got } = await all(bob); const unf = await pager(bob)(undefined, undefined);
+    ok(got.length === 0 && unf.entries.length === 0, "SH4 a non-admin's history page (filtered by say, or not) holds no line said before it arrived", [got.length, unf.entries.length, got.slice(0, 2)]); }
+  { const hb = await bob.req("history", { verbs: ["say"], limit: 200 }); const ha = await r.req("history", { verbs: ["say"], limit: 200 });
+    const hbAll = await bob.req("history", { limit: 200 });
+    ok(hb.ok && (hb.entries ?? []).length === 0 && !(hbAll.entries ?? []).some((e: any) => e.kind === "say") && (ha.entries ?? []).filter((e: any) => e.kind === "say").length === Math.min(200, N0 + lines),
+      "SH5 the authority's history request: a non-admin reads no say body from before it arrived (by verbs or not); the owner reads them all", [(hb.entries ?? []).length, (hbAll.entries ?? []).filter((e: any) => e.kind === "say").length, (ha.entries ?? []).length]); }
+  ok((await r.req("say", { text: "after bob came" })).ok, "SH6 (Ann speaks once Bob is here)");
+  for (let i = 0; i < 60 && !bob.of("log").some((m: any) => (m.entries ?? []).some((e: any) => e.kind === "say" && e.body?.text === "after bob came")); i++) await sleep(50);
+  { const { got } = await all(bob); const hb = await bob.req("history", { verbs: ["say"] });
+    ok(got.map((e) => e.args?.text).join("|") === "after bob came" && (hb.entries ?? []).map((e: any) => e.body?.text).join("|") === "after bob came",
+      "SH6 what was said while Bob was present reaches him live and reads back in his history (both routes), and nothing older", [got.map((e) => e.args?.text), (hb.entries ?? []).map((e: any) => e.body?.text)]); }
+  bob.close(); r.close(); srvB.proc.kill(); }
 
 // ================= SK: the server is killed while someone holds a thing (no clean close: no leave, no drop) =================
 // The live server keeps presence in memory, so the hold is gone after a restart, but in a world that runs physics the

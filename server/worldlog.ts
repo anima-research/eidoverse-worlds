@@ -60,6 +60,9 @@ export type LogHost = {
   broadcastLog?(msg: unknown, ghostMsg: unknown): void;
   /** send to one identity's embodied leg(s); false when they aren't here */
   toActor?(actor: string, msg: unknown): boolean;
+  /** speech is arrival-only (R 10-18): the seq at or below which this identity may not read a say back (null = an admin:
+   *  no floor). The World answers from its connections (world.ts sayFloor); the authority's history reads it. */
+  sayFloor?(actor: string): number | null;
 };
 
 export class WorldLog {
@@ -91,7 +94,9 @@ export class WorldLog {
     this.name = name;
     this.dir = path.join(WORLDS_DIR, name);
     this.posesPath = path.join(this.dir, "poses.json");
-    this.live = openLive(this.dir, name, { catalogue: ENGINE_CATALOGUE, present: () => this.host?.present?.() ?? [] });
+    // a host that can't say when someone arrived (none attached yet) hides every say: a floor at the head (fail closed)
+    this.live = openLive(this.dir, name, { catalogue: ENGINE_CATALOGUE, present: () => this.host?.present?.() ?? [],
+      sayFloor: (a: string) => (this.host?.sayFloor ? this.host.sayFloor(a) : Infinity) });
     for (const e of this.live.entries) if (e && typeof e.actor === "string") this.actors.add(e.actor);
     // a world opened after a crash: what was held when the host stopped is settled now (nobody is connected yet), and
     // logged, so a joiner's cut already has it back in the world (authority.js settleOrphans)
@@ -284,13 +289,15 @@ export class WorldLog {
   }
 
   // ---- what the World and server.ts read ----
-  /** A page of chat history, newest first by `before` (the whole log is in memory: every line ever said here). */
-  readHistory({ before = Infinity, after = -Infinity, limit = 50, verbs = null as Set<string> | null }) {
+  /** A page of chat history, newest first by `before` (the whole log is in memory: every line ever said here). `floor`:
+   *  speech is arrival-only (R 10-18), so a say at or below this log seq isn't read back (null = an admin: every say). */
+  readHistory({ before = Infinity, after = -Infinity, limit = 50, verbs = null as Set<string> | null, floor = Infinity as number | null }) {
     // the whole log is in memory (live.entries): page back through every chat line ever said, not the ones heard since
     // load (Commons audit #2: scrollback stopped at 40 and told people it was "the beginning of this world")
     if (verbs && !verbs.has("say")) return { entries: [], oldestSeq: null, hasMore: false };
     const out: ChatLine[] = []; let more = false; const E = this.live.entries;
     for (let i = E.length - 1; i >= 0; i--) { const e = E[i]; if (!e || e.kind !== "say" || e.body?.commit !== undefined) continue;
+      if (floor !== null && !(e.seq > floor)) break;   // before the asker arrived: older lines are older still
       const seq = e.seq * 1000; if (seq >= before) continue; if (seq <= after) break;
       if (out.length === limit) { more = true; break; } out.push(this.sayLine(e)); }
     out.reverse();

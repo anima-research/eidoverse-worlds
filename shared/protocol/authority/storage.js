@@ -41,6 +41,10 @@ export function worldOf(io) {
   w.scripts = io.scripts ?? null;
   // who is present beyond the authority's own bodies (a server's connected people): () => [{id, at: [x,y,z] | null}]
   w.present = io.present ?? null;
+  // speech is arrival-only (R 10-18): the newest seq at or below which this asker may NOT read a say's body, from the host
+  // (a server knows when each person arrived and who its admins are): () => number | null. null = no floor (an admin, or a
+  // host with no presence of its own: a lab, a replay). The log keeps every say; this only gates who READS one back.
+  w.sayFloor = io.sayFloor ?? null;
   // the presence plane: bodies and holds. Transient, never logged (P1, P2)
   w.presence = io.presence ?? { bodies: {}, holds: {} };
   // a presence file written before R 10-17 13:46 named who occupies what `seats`: read it as `occupants`, keep only the new key

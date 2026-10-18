@@ -14,6 +14,7 @@ import { WORLDS_DIR } from "./config.ts";
 import { WorldLog, isWorldSaved, resetWorld } from "./worldlog.ts";
 import { WorldScripts, type ScriptHost } from "./scripts.ts";
 import type { HnSession } from "./auth.ts";
+import { isOperator } from "./operators.ts";
 
 // The settle rule — what a pose looks like TO SOMEONE ELSE — is pinned to
 // server.ts by source-text gates (§15.1: settled-pose-test regexes the file
@@ -77,6 +78,9 @@ export type Client = {
   msgWin: number; msgCount: number;   // all messages, per second
   /** this connection's requests, one at a time in the order sent (server/requestwire.ts) */
   verbQueue?: Promise<void>;
+  /** the log head when this connection arrived in its world (server.ts join, beside the snapshot's cut). Speech is
+   *  arrival-only (R 10-18): a say at or below it is never sent back to this connection unless it is an admin's. */
+  arrivedSeq?: number;
 };
 
 // --------------------------------------------------------------- the world
@@ -128,6 +132,21 @@ export class World {
   sfuMutedIds?: Set<string>;   // display ids the sweep has muted at the SFU (released when that connection is gone)
   sfuDeafIds?: Set<string>;    // display ids the sweep has deafened at the SFU (ghosts; released likewise)
   isGhost(c: Client): boolean { return !!(this.log && c.actorId && this.log.ghostHere(c.actorId)); }
+  /** Speech is arrival-only (R 10-18): the world's log keeps every say, people receive speech only for the time they were
+   *  present, and only an ADMIN reads the master log's speech back: this world's owner, or a server operator (WORLD_ADMIN). */
+  isAdmin(c: Client): boolean { return isOperator(c.account) || (!!c.actorId && this.log.roleOf(c.actorId) === "owner"); }
+  /** The log seq at or below which this identity may not read a say back: null for an admin (no floor), else the
+   *  earliest arrival among its connections here now; nobody here under it = Infinity (every say hidden). */
+  sayFloor(actor: string): number | null {
+    let floor = Infinity;
+    for (const c of this.clients) if (c.actorId === actor) { if (this.isAdmin(c)) return null; if (Number.isInteger(c.arrivedSeq)) floor = Math.min(floor, c.arrivedSeq!); }
+    return floor;
+  }
+  /** …for one connection (a connection with no identity: its own arrival). */
+  sayFloorFor(c: Client): number | null {
+    if (this.isAdmin(c)) return null;
+    return c.actorId ? this.sayFloor(c.actorId) : (Number.isInteger(c.arrivedSeq) ? c.arrivedSeq! : Infinity);
+  }
   /** The hooks a log needs from the world around it. A ghost is left out of `present` (scripts don't sense them) and
    *  is sent the log with every say emptied (it can't read chat). */
   private logHost(log: WorldLog) {
@@ -142,6 +161,7 @@ export class World {
       toActor: (actor: string, msg: unknown) => { const d = JSON.stringify(msg); let n = 0;
         for (const c of this.clients) if (c.actorId === actor && !c.spectator && (c.surface ?? "world") === "world") { try { c.ws.send(d); n++; } catch { /* gone */ } }
         return n > 0; },
+      sayFloor: (actor: string) => this.sayFloor(actor),
     };
   }
 
@@ -172,7 +192,7 @@ export class World {
     const data = JSON.stringify(msg);
     for (const c of this.clients) if (c !== except) c.ws.send(data);
   }
-  readHistory(opts: { before?: number; after?: number; limit?: number; verbs?: Set<string> | null }) {
+  readHistory(opts: { before?: number; after?: number; limit?: number; verbs?: Set<string> | null; floor?: number | null }) {
     return this.log.readHistory(opts);
   }
   rememberPose(id: string, pose: unknown) { this.log.rememberPose(id, pose, settle); }

@@ -80,8 +80,9 @@ export type MsgCtx = {
 
 export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   "history": ({ c, ws, now, expel }, msg) => {
-    // Deliberately available to spectators too: watching a show and
-    // reading back what was said before you arrived is the same act.
+    // Speech is arrival-only (R 10-18): the log keeps every say, but a page holds only the lines said since this
+    // connection arrived, unless it is an admin's (owner, operator: world.ts sayFloorFor), who reads the master log.
+    // Spectators page like anyone else: what they were present for.
     if (!c.world) return;
     // a ghost can't read chat (PLAN 10-06): its scrollback is empty, as its log stream's says are (review 10-07)
     if (c.world.log && c.world.isGhost(c)) { ws.send(JSON.stringify({ type: "history", reqId: msg.reqId ?? null, entries: [], oldestSeq: null, hasMore: false })); return; }
@@ -90,6 +91,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       after: typeof msg.after === "number" ? msg.after : -Infinity,
       limit: Math.min(LIMITS.PAGE_MAX, Math.max(1, Number(msg.limit ?? LIMITS.PAGE_DEFAULT))),
       verbs: Array.isArray(msg.verbs) && msg.verbs.length ? new Set(msg.verbs.map(String)) : null,
+      floor: c.world.sayFloorFor(c),
     });
     ws.send(JSON.stringify({ type: "history", reqId: msg.reqId ?? null, ...r }));
   },

@@ -44,7 +44,8 @@ export type LiveOpts = { now?: () => number; /** the speed track's elapsed-time 
   /** id → display name (the authority directory, server/directory.ts); default: that worlds dir's directory */ nameOf?: (id: string) => string | null;
   /** id → account|anon|imported (the directory; the authority reads only "anon"); default: that worlds dir's directory */ kindOf?: (id: string) => string | null;
   /** the script sandbox (default QuickJS, shared/protocol/sandbox.js; null = none) */ scripts?: Any;
-  /** who is connected beyond the authority's own bodies: [{id, at}] (server/worldlog.ts, from the World's clients) */ present?: () => { id: string; at: number[] | null }[] };
+  /** who is connected beyond the authority's own bodies: [{id, at}] (server/worldlog.ts, from the World's clients) */ present?: () => { id: string; at: number[] | null }[];
+  /** speech is arrival-only (R 10-18): the seq at or below which this asker may not read a say's body; null = no floor (storage.js worldOf) */ sayFloor?: (actor: string) => number | null };
 
 /** Open (or prepare to found) the world stored in `dir`. */
 export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
@@ -75,7 +76,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
 
   const w: Any = worldOf({
     name, entries, getBlob, putBlob, now, pace, catalogue: opts.catalogue,
-    scripts: opts.scripts === undefined ? SANDBOX : opts.scripts, present: opts.present,
+    scripts: opts.scripts === undefined ? SANDBOX : opts.scripts, present: opts.present, sayFloor: opts.sayFloor,
     writeLine: (line: string) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {} }, savePresence: () => {},
     custody: custodyAt(opts.custodyFile ?? custodyFileIn(path.dirname(dir))),
