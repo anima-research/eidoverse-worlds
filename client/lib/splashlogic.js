@@ -64,10 +64,12 @@ export function makeSplashTracker(surfaceAt, emit) {
       // ---- moving through, or standing in, the water
       if (surf == null || ry > surf || surf - ry > b.height + SPLASH.DEEP) { s.wake = null; continue; }   // dry, or wholly under
       const w = s.wake;
-      if (!w) { s.wake = { x: rx, z: rz, d: 0, t: clock }; continue; }
+      // just in the water (walked in, or arrived): its first idle ring waits — it has only now begun to stand there
+      const settle = () => { s.idleT = clock + SPLASH.IDLE_GAP * (0.5 + 0.5 * Math.random()); };
+      if (!w) { s.wake = { x: rx, z: rz, d: 0, t: clock }; settle(); continue; }
       const step = Math.hypot(rx - w.x, rz - w.z), speed = dt > 0 ? step / dt : 0;
       w.x = rx; w.z = rz;
-      if (step > SPLASH.JUMP) { w.d = 0; continue; }   // a teleport leaves no wake behind it
+      if (step > SPLASH.JUMP) { w.d = 0; settle(); continue; }   // a teleport leaves no wake behind it
       if (speed >= SPLASH.WAKE_SPEED) {
         w.d += step;
         const gap = Math.max(SPLASH.WAKE_MIN_GAP, SPLASH.WAKE_STEP / Math.max(speed, 0.01));
