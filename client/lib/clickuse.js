@@ -42,7 +42,7 @@ export function offersOf(id, { spot = null } = {}) {
   const inHand = physicsApi.mine().find((h) => h !== id);
   if (!held && inHand && spot) { const H = bagOf(inHand)?.label, hn = typeof H === 'string' && H.trim() ? H.trim().slice(0, 40) : (nameOf(inHand) ?? inHand);
     out.push({ k: 'puton', label: `put ${hn} on ${name}`, parts: [`put ${hn} on `, name, ''], run: () => putAtSpot(inHand, onTop(id, spot)) }); }
-  else if (canGrab(id)) add('grab', 'pick up ', '', () => physicsApi.grab(id), near);
+  else if (!held && canGrab(id)) add('grab', 'pick up ', '', () => physicsApi.grab(id), near);   // what I hold is never offered to pick up (R 10-17 20:26)
   for (const a of actionsOf(id)) add(`use:${a.action}`, `${a.verb} `, a.barred ? ` (${a.barred})` : '', () => useThing(id, a.action, a.verb), near);
   const seat = occupiableOf(id);
   if (seat) add('sit', `${seat.action ?? 'sit'} on `, '', () => trySitOn(id), near);
@@ -59,7 +59,10 @@ export function thingAt(clientX, clientY) {
   const targets = [];
   // clickthrough (componentspec): a click passes through it to whatever is behind (R 10-11: a per-thing switch)
   const through = (id) => bagOf(id)?.clickthrough === true;
-  for (const [id, o] of entities) if (o && !through(id) && (canGrab(id) || actionsOf(id).length || occupiableOf(id) || physicsApi.mine().includes(id))) targets.push(o);
+  // holding something, any thing is a place to put it (R 10-17 20:26: right-clicking the desk while holding a crate offered
+  // nothing to put it on: the desk offers nothing of its own, so the ray never saw it)
+  const holding = physicsApi.mine().length > 0;
+  for (const [id, o] of entities) if (o && !through(id) && (holding || canGrab(id) || actionsOf(id).length || occupiableOf(id) || physicsApi.mine().includes(id))) targets.push(o);
   if (!targets.length) return null;
   // not a surface the camera is standing in (an orbit camera pulled up against a gate saw only the gate, 7 cm away)
   let root = ray.intersectObjects(targets, true).find((h) => h.distance > NEAR && !outOfMyView(h.object))?.object;
@@ -125,10 +128,12 @@ addEventListener('mouseup', (e) => {
   // holding something, a left-click that isn't on a thing to use: set it down at that spot
   if (!over && heldNow && p.b === 0) { const spot = aimPoint(e.clientX, e.clientY); void (spot ? putAtSpot(heldNow, spot) : physicsApi.put(heldNow)); return; }
   const id = over ?? heldNow; if (!id) return;
-  const offers = offersOf(id); if (!offers.length) return;
+  // holding something, over another thing: the menu offers putting what I hold on it where the click landed; a left-click
+  // keeps the thing's own first use (a ball is still picked up), and puts it there only on a thing with none (a desk)
+  const own = offersOf(id), spotted = over && heldNow && (p.b === 2 || !own.length) ? offersOf(id, { spot: aimPoint(e.clientX, e.clientY) }) : null;
+  const offers = spotted ?? own; if (!offers.length) return;
   if (p.b === 0) { void (offers[0].reach ? fetchIt(id, offers[0]) : offers[0].run()); return; }
-  const menu = over && heldNow ? offersOf(id, { spot: aimPoint(e.clientX, e.clientY) }) : offers;
-  contextMenu(e.clientX, e.clientY, menu.map((o) => ({ k: o.k, label: o.label, parts: o.parts })), (k) => { const o = menu.find((x) => x.k === k); if (o) void (o.reach ? fetchIt(id, o) : o.run()); });
+  contextMenu(e.clientX, e.clientY, offers.map((o) => ({ k: o.k, label: o.label, parts: o.parts })), (k) => { const o = offers.find((x) => x.k === k); if (o) void (o.reach ? fetchIt(id, o) : o.run()); });
 });
 let hoverAt = 0, hand = '';
 canvas.addEventListener('mousemove', (e) => {
