@@ -26,7 +26,8 @@ import path from "node:path";
 import { scratchBench, mkCheck, sleep } from "../harness.ts";
 
 process.env.AGENT_BODY_ENGINE = "verlet";
-const V1 = process.env.V1_LOG ?? "/home/claude/eido/staging/worlds/staging/log.jsonl";
+// any first-protocol log will do (a v1 world is recognised by its genesis line): the repo's own fixture unless V1_LOG names one
+const V1 = process.env.V1_LOG ?? path.resolve(import.meta.dir, "../../spec/fixtures/01-build/log.jsonl");
 const { evalJson, cdp, cleanup, die, BASE, SCRATCH } = await scratchBench("refusedjoin", { worlds: ["here"], owner: "keeper", serverEnv: { TRUST_NAMES: "1" },
   prepare: (scratch) => {
     const d = path.join(scratch, "worlds", "old-x"); fs.mkdirSync(d, { recursive: true });

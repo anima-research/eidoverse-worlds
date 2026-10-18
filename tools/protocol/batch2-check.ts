@@ -274,7 +274,7 @@ const cases: Case[] = [
   { id: "P6", what: "upload: an image's pixel size is read from its header (PNG, JPEG, WebP) so a 9000-px decompression bomb is refused before any viewer decodes it (cap 8192)", async run() {
       const UP = await import(TREE + "server/upload.ts").catch(none); if (!UP.imageDims) return { none: true };
       const png = new Uint8Array(32); png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0); new DataView(png.buffer).setUint32(16, 9000); new DataView(png.buffer).setUint32(20, 10);
-      const moon = new Uint8Array(fs.readFileSync(path.resolve(ENGINE, "../eidoverse-video/eidoverse/assets/sky/moon_color_1k.jpg")).buffer.slice(0));
+      const moon = new Uint8Array(fs.readFileSync(path.resolve(ENGINE, "tools/protocol/fixtures/dims-1024x512.jpg")).buffer.slice(0));
       return { png: UP.imageDims(png, "png"), moon: UP.imageDims(moon, "jpg"), cap: UP.MAX_IMAGE_PX }; },
     good: (o) => !o.none && JSON.stringify(o.png) === "[9000,10]" && JSON.stringify(o.moon) === "[1024,512]" && o.cap === 8192 },
 

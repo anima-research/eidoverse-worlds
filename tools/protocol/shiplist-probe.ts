@@ -25,7 +25,7 @@ import { pagedEval } from "./idalias.ts";
 // minted ids back (NODE), and N(name) reads a scene name as its id for the node-side checks
 const NAMES = ["mta", "mtb", "prbox0", "prbox1", "prbox2", "acbox", "anchor", "atbox", "box1", "clbox", "cloud", "ctbox", "cuball", "gate", "getool", "hdsign", "hpball", "htcrate", "hysign", "nhball", "nlbox", "pobase", "potop", "rbbtn", "rbtgt", "slcrate", "slfloor", "sthigh", "stlow", "syb", "syorb", "wbcrate", "wgcrate", "sba", "sbb", "crate-2", "crate-3"];
 const NODE = new Map<string, string>(); const N = (n: string) => NODE.get(n) ?? n;
-const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("shiplist", {
+const { cdp, evalJson: evalRaw, cleanup, die, BASE, SCRATCH } = await scratchBench("shiplist", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
     const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", WORLD, "--owner", ME, "--title", "ship list probe"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worldsDir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
@@ -401,7 +401,7 @@ try {
       const h = rc.intersectObjects(objs, true)[0]; if (!h) continue; let o = h.object; while (o && !o.userData.entityId) o = o.parent; if (o === want) return [r.left + gx * r.width, r.top + gy * r.height]; }
     return null;`);
   const cratePx = await find("slcrate"), floorPx = await find("slfloor");
-  if (!cratePx || !floorPx) { const sh = await cdp.send("Page.captureScreenshot", { format: "png" }); (await import("node:fs")).writeFileSync("/home/claude/eido/logs/insp-shots/sl.png", Buffer.from(sh.data, "base64")); }
+  if (!cratePx || !floorPx) { const sh = await cdp.send("Page.captureScreenshot", { format: "png" }); const shot = path.join(process.env.PROBE_SHOTS ?? SCRATCH, "sl.png"); fs.writeFileSync(shot, Buffer.from(sh.data, "base64")); console.log(`(screenshot: ${shot})`); }
   check("(setup) both the crate and the floor are on screen", !!cratePx && !!floorPx, { cratePx, floorPx });
   if (!cratePx || !floorPx) return;
   const m = (type, x, y) => cdp.send("Input.dispatchMouseEvent", { type, x: Math.round(x), y: Math.round(y), button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 });

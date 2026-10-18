@@ -406,16 +406,18 @@ const cases: Case[] = [
       const key = Object.keys(w["@world"]).find((k) => k.startsWith("roles:") && k.includes("alice")); const id = key?.slice(6); const bo = Object.keys(w["@world"]).find((k) => k.includes("bo") && k.startsWith("roles:"));
       return { v: w["@world"][key], bo: w["@world"][bo], imported: Object.keys(w["@world"]).filter((k) => k.startsWith("imported:roles")), sw: RL.effectiveOf?.(w["@world"], id)?.permissions, tag: TV1.TRANSLATOR }; },
     good: (o) => o.v?.role === "builder" && o.v.can?.fly === true && o.v.can?.generate === true && !("gen" in o.v) && !("fly" in o.v) && !("fly" in (o.bo ?? {})) && o.imported.length === 0 && o.sw?.includes("fly") && o.sw?.includes("generate") && o.tag?.startsWith("eidoverse/translate-v1@") && +o.tag.split("@")[1] >= 7 },   // @4 brought fly → can.fly, @7 gen → can.generate
-  { id: "T2", what: "the Commons (staging's v1 commons-0927, read-only, translated here): a stranger is still a builder and now builds and generates by its default-role can.generate; a guest is a visitor", run() {
+  { id: "T2", what: "the Commons (its v1 governance lines, the repo fixture or V1_COMMONS=<a v1 Commons log>, translated here): a stranger is still a builder and now builds and generates by its default-role can.generate; a guest is a visitor", run() {
       // PROTOCOL_COMMONS: an already-translated world log; else the v1 Commons translated in process (R 10-07: the Commons is
       // re-translated from its latest v1 log at merge time, so a saved translation would only test an older importer)
-      const commonsLog = process.env.PROTOCOL_COMMONS, v1f = process.env.V1_COMMONS ?? "/home/claude/eido/staging/worlds/commons-0927/log.jsonl";
-      if (!commonsLog && !fs.existsSync(v1f)) return { skipped: v1f };
+      // With neither, the repo's own fixture: the Commons' governance lines alone (its founder's grant, a builder's, and
+      // the `*` gen grant), so the row always runs; the real log is an optional, louder test (V1_COMMONS=<its log.jsonl>).
+      const commonsLog = process.env.PROTOCOL_COMMONS, v1f = process.env.V1_COMMONS ?? path.resolve(ENGINE, "tools/protocol/fixtures/v1-commons-shape.jsonl");
+      if (!commonsLog && !fs.existsSync(v1f)) throw new Error(`T2: no Commons log at ${v1f} (V1_COMMONS)`);
       const st = commonsLog ? F.fold(F.readLog(fs.readFileSync(commonsLog)))
         : F.fold(TV1.translate(fs.readFileSync(v1f, "utf8").split("\n").filter((l: string) => l.trim()).map((l: string) => JSON.parse(l))).out);
       const e = D.effectiveIn?.(st, "u-aaaaaaaaaaaaaaaaaaaa"), g = D.effectiveIn?.(st, "u-bbbbbbbbbbbbbbbbbbbb", { anon: true });
       return { role: D.roleIn(st, "u-aaaaaaaaaaaaaaaaaaaa"), sw: e?.permissions, guest: g?.role }; },
-    good: (o) => !!o.skipped || (o.role === "builder" && ["build", "editOthers", "scripts", "generate"].every((k) => o.sw?.includes(k)) && o.guest === "visitor") },
+    good: (o) => (o.role === "builder" && ["build", "editOthers", "scripts", "generate"].every((k) => o.sw?.includes(k)) && o.guest === "visitor") },
 
   // ---------------- P: S6 the person menu (pure) ----------------
   { id: "P1", what: "personActions: a visitor sees only Message, for anyone", run() { const A = RL.personActions;
