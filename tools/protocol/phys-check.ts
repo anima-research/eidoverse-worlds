@@ -8,6 +8,7 @@ import { openWorld } from "../../server/filehost.ts";
 import { fold, readLog } from "../../shared/protocol/fold.js";
 import { simFold, restsOf, ENGINES, EIDOSIM_BUILD } from "../../shared/protocol/simlayer.js";
 import { ENGINE, scratch } from "./common.ts";
+import { worldT } from "../../shared/protocol/authority/math.js";
 
 const root = scratch("phys");
 let T = 1800000000000, fails = 0, passes = 0;
@@ -138,6 +139,19 @@ function playground(name) {
     const box7 = call(W7, "rowan", "set", { id: "rb", component: "collider", value: { shape: "box" } }), back7 = fold(log(W7)).entities.rb?.c.physics?.shape;
     const sph7 = call(W7, "rowan", "set", { id: "rb", component: "collider", value: { shape: "sphere" } });
     ok(box7.ok && sph7.ok && JSON.stringify(back7) === JSON.stringify([[-0.11, 0, -0.11], [0.11, 0.22, 0.11]]), "D7 …asking for a box again re-stamps the box", { back7 });
+  }
+  { // Antra's review of f91840e5 (P2): a forced cut writes the engine's WORLD pose; a thrown ball still carrying its logged
+    // parent (a table at x 10) must lose it there, as an ordinary rest does, or the parent's offset is applied twice (x 10 → 20)
+    const W9 = playground("pc-d9");
+    const c9 = call(W9, "rowan", "create", { id: "pad", model: "table", place: { at: [10, 0] } });
+    const b9 = call(W9, "rowan", "create", { id: "kid", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" }, parent: { to: "pad" }, transform: { pos: [0, 0.75, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+    const m9 = call(W9, "rowan", "move", { to: [10, 0, -0.5], teleport: true }); if (!m9.ok) console.log("D9 move", JSON.stringify(m9.refused));
+    const x0 = worldT(fold(log(W9)), "kid").pos[0];
+    const g9 = call(W9, "rowan", "grab", { id: "kid" }), t9 = call(W9, "rowan", "throw", { id: "kid", v: [0, 6, 0] });
+    const f9 = call(W9, "rowan", "delete", { id: "@world", component: "physics-engine", force: true }, 200);
+    const st9 = fold(log(W9)), x9 = worldT(st9, "kid").pos[0];
+    ok(c9.ok && b9.ok && g9.ok && t9.ok && f9.ok && Math.abs(x0 - 10) < 0.01, "D9 setup: a ball on a table at x 10, thrown up, physics forced off", { c: c9.refused, b: b9.refused, g: g9.refused, t: t9.refused, f: f9.refused, x0 });
+    ok(Math.abs(x9 - 10) < 0.05 && !st9.entities.kid.c.parent, "D9 a forced cut freezes a parented thrown ball where it was (x 10, not 20) and clears its parent", { x: x9, parent: st9.entities.kid.c.parent ?? null });
   }
   if (RIGID) {
     const W7 = playground("pc-d7r");

@@ -162,7 +162,9 @@ function restampEngine(w) {
 function buildEpoch(ctx, v, a) {
   const sf = ctx.w.sim(); const live = [...new Set([...Object.keys(livePoses(sf)), ...sf.rested.map((r) => r.id)])]; // at rest but not on the record counts (33 F2): P6's "free" needs every result logged
   if (live.length && !a.force) refuse("busy", `${live.length} thing(s) are still in flight or not yet on the record (${live.join(", ")}); all at rest in about ${r3((restEta(sf) ?? 0) / 1000)} s`, "try again then, or force: true to freeze them where they are now (they'll be logged there)");
-  const ops = live.map((id) => { const b = sf.sim.bodies[id]; return setOp(id, "transform", { ...worldT(sf.st, id), pos: b.p.slice(), ...(b.q ? { q: b.q.slice() } : {}) }); }); // a rigid engine's origin only means something with its own q
+  // a rigid engine's origin only means something with its own q. The pose is the engine's WORLD pose, so a logged parent goes,
+  // as an ordinary rest drops it (settleSim's opsFor): kept, its offset would be applied again (Antra's review of f91840e5: x 10 → 20)
+  const ops = live.flatMap((id) => { const b = sf.sim.bodies[id]; return [...(sf.st.entities[id]?.c.parent ? [delOp(id, "parent")] : []), setOp(id, "transform", { ...worldT(sf.st, id), pos: b.p.slice(), ...(b.q ? { q: b.q.slice() } : {}) })]; });
   for (const id of live) ctx.refs.add(id);
   if (live.length) ctx.notes.push({ frozen: live, why: "forced cut: stopped mid-air and logged where they were" });
   if (v === null) return [...ops, delOp("@world", "physics-engine")];
