@@ -232,5 +232,25 @@ check('same-pose put: t=120 exactly the fold\'s pose (it never stays drawn in th
   for (const id of ['kid', 'solo']) { S.entities.delete(id); S.colliders.delete(id); delete S.replica.st.entities[id]; }
 }
 
+// ---- R 10-17 20:21/20:22: carrying a barrel, it swung ~1 m away when she turned, worst strafing A-D-A. The barrel's model
+// sits 1.95 m from its own origin (its box z -2.25..-1.65), so it is held by its centre: drawn at hand - q * centre. The
+// centre was turned by the q it was drawn with LAST frame, and the body's new turn applied after: every frame the body
+// turned, the barrel was drawn 2 x 1.95 x sin(turn/2) off the hand. Turned, its centre is still in the hand, that frame.
+{
+  const box = { min: new THREE.Vector3(-0.3, 0, -2.25), max: new THREE.Vector3(0.3, 1, -1.65) };
+  const barrel = new THREE.Group(); barrel.position.set(5, 0, 5); scene.add(barrel);
+  S.entities.set('barrel', barrel); S.colliders.set('barrel', { box }); S.replica.st.entities.barrel = { c: { grabbable: {} } };
+  const centreAt = () => { barrel.updateWorldMatrix(true, false); const c = new THREE.Vector3((box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, (box.min.z + box.max.z) / 2); return c.applyQuaternion(barrel.getWorldQuaternion(new THREE.Quaternion())).add(barrel.getWorldPosition(new THREE.Vector3())); };
+  const handAt = () => { me.root.updateWorldMatrix(true, false); const f = new THREE.Vector3(); me.root.getWorldDirection(f); f.y = 0; f.normalize(); return me.root.getWorldPosition(new THREE.Vector3()).addScaledVector(f, 0.35); };   // in the ground plane (handOf's fallback: 0.35 m in front of the chest)
+  const offXZ = () => { const c = centreAt(), hnd = handAt(); return Math.hypot(c.x - hnd.x, c.z - hnd.z); };
+  tick(40000); bus.emit('holds', { barrel: { by: 'me' } }); for (let t = 40000; t <= 40600; t += 16) { tick(t); frame(); }
+  const before = offXZ();
+  const errs: number[] = [];
+  for (const [k, yaw] of [[1, Math.PI / 2], [2, -Math.PI / 2], [3, Math.PI / 2], [4, 0]] as const) { me.root.rotation.y = yaw; tick(40600 + 16 * k); frame(); errs.push(offXZ()); }
+  check('a carried barrel held by its far-off centre stays in the hand as the body turns (A-D-A): its centre is where the hand is, every frame', before < 0.05 && errs.every((e) => e < 0.05), `still ${before.toFixed(3)} m, turning ${J(errs)} m`);
+  bus.emit('holds', {}); me.root.rotation.y = 0; for (let t = 40700; t <= 40900; t += 16) { tick(t); frame(); }
+  S.entities.delete('barrel'); S.colliders.delete('barrel'); delete S.replica.st.entities.barrel;
+}
+
 console.log(`\n${pass} passed, ${fail} failed${MUTANT ? ' (mutant: duration 0 — red is the expected shape)' : ''}`);
 process.exit(fail ? 1 : 0);
