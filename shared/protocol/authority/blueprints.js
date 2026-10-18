@@ -155,6 +155,13 @@ function buildUpdate(ctx, a, w) {
       if (choice === "theirs") { const cur = ops.findLast((o) => o.id === id && o.comp === c.component)?.value ?? clone(ctx.st.entities[id].c[c.component]);
         const v = f ? { ...cur, [f]: c.theirs[f] } : c.theirs; ops.push(setOp(id, c.component, v)); } } }
   ops.push(setOp(a.copy, "copy-of", { ...root.c["copy-of"], from: a.to }));
+  // every part of this lineage still in the record advances with the root (Antra's review of f91840e5: only the root's
+  // copy-of.from moved, so re-publishing an updated copy keyed its parts by id — partKeys keeps a key only for parts from
+  // the root's record — and updating another copy to that record found two bulbs where there was one). A part nested
+  // from another record keeps its own lineage; one gone upstream (orphaned) is no longer the record's.
+  const was = root.c["copy-of"].from;
+  for (const [key, id] of have) { const c = ctx.st.entities[id]?.c["copy-of"];
+    if (id !== a.copy && T[key] && c?.from === was) ops.push(setOp(id, "copy-of", { ...c, from: a.to })); }
   ops.unshift(...made);
   if (orphaned.length) ctx.notes.push({ orphaned, why: "gone upstream but you changed them here: kept, still yours" });
   if (kept.length) ctx.notes.push({ keptYours: kept });

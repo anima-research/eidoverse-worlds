@@ -12,7 +12,9 @@
 //       then one batch) run, and the script panel's read (scripts {id}) lists it active
 //   (founding a world, item 5, needs a real server: tools/protocol/fork-reset-check.ts FD; the editor's gestures:
 //    tools/protocol/build-probe.ts, a real browser)
-//   U   blueprint updates (Antra's review of f91840e5): a part reparented upstream is reparented by update (U1)
+//   U   blueprint updates (Antra's review of f91840e5): a part reparented upstream is reparented by update (U1); a copy
+//       updated to a newer record and re-published keeps its parts' keys, so updating another copy matches part to
+//       part — one child, not two (U2)
 //   G   guards (green at base too)
 // @ts-nocheck
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
@@ -37,6 +39,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a new script never takes over the thing's own use", "shared/protocol/newscript.js", "  if (!r.use || mine(\"use\")) return \"use\";", "  return \"use\";", ["K2"]],
   ["a use script gets its reaction", "shared/protocol/newscript.js", "...(action ? [set(form.id, \"reactions\"", "...(false ? [set(form.id, \"reactions\"", ["K1", "K2"]],
   ["update merges a part's parent", "shared/protocol/authority/blueprints.js", "const unmerged = new Set([\"copy-of\"]);", "const unmerged = new Set([\"copy-of\", \"parent\"]);", ["U1"]],
+  ["a lineage's parts advance with the root", "shared/protocol/authority/blueprints.js", "if (id !== a.copy && T[key] && c?.from === was)", "if (false)", ["U2"]],
   ["an old record's twin keys each get an id", "shared/protocol/authority/blueprints.js", "if (!seen.has(p.key)) { seen.add(p.key); return ids.get(p.key); }", "return ids.get(p.key);", ["N3"]],
 ];
 
@@ -249,6 +252,23 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const bb = partOf("b", "bulb");
       return { re: show(re), up: show(up), parent: E()[bb]?.c.parent?.to === partOf("b", "shade") ? "shade" : E()[bb]?.c.parent?.to === "b" ? "root" : E()[bb]?.c.parent?.to ?? null, at: bb ? at(bb) : null, want: [9, 0.6, 5] }; },
     good: (o) => o.re === "ok" && o.up === "ok" && o.parent === "shade" && JSON.stringify(o.at) === JSON.stringify(o.want) },
+  { id: "U2", what: "an updated copy re-published keeps its parts' keys (their lineage advanced with the root): updating another customized copy to it leaves one bulb, not two", run(s) { cast(s);
+      s.call("bob", "create", { id: "lamp", model: "crate", components: { transform: T0([0, 0, 0]) } });
+      s.call("bob", "create", { id: "bulb", model: "book", components: { transform: T0([0, 0.6, 0]), parent: { to: "lamp" } } });
+      const v1 = s.call("bob", "publish", { from: "lamp", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
+      for (const [id, x] of [["a", 5], ["b", 9], ["c", 13]] as const) s.call("bob", "create", { id, from: v1, at: { pos: [x, 0, 5] } });
+      const E = () => s.w().state().entities;
+      const partOf = (copy: string, key: string) => Object.keys(E()).find((k) => E()[k].c["copy-of"]?.key === key && E()[k].c.parent?.to === copy);
+      s.call("bob", "set", { id: "a", component: "label", value: "lamp v2" });
+      const v2 = s.call("bob", "publish", { from: "a", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
+      const ub = s.call("bob", "update", { copy: "b", to: v2 });                       // b: an upgraded copy
+      const v3 = s.call("bob", "publish", { from: "b", name: "lamp" }).notes?.find((n: any) => n.record)?.record;   // …re-published
+      const keys = s.w().getBlob(v3).parts.map((p: any) => p.key).sort();
+      const cb = partOf("c", "bulb"); const cl = s.call("bob", "set", { id: cb, component: "transform", value: T0([0, 0.7, 0]) });   // c: customized (a part the record also says)
+      const uc = s.call("bob", "update", { copy: "c", to: v3 });
+      const kids = Object.keys(E()).filter((k) => E()[k].c.parent?.to === "c");
+      return { cl: show(cl), ub: show(ub), uc: show(uc), keys, kids: kids.length, same: partOf("c", "bulb") === cb, y: E()[cb]?.c.transform?.pos?.[1] ?? null, root: E().c.c.label ?? null }; },
+    good: (o) => o.cl === "ok" && o.ub === "ok" && o.uc === "ok" && JSON.stringify(o.keys) === '["bulb","lamp"]' && o.kids === 1 && o.same && o.y === 0.7 && o.root === "lamp v2" },
   { id: "G1", what: "guard: re-publishing an edited copy keeps its parts' keys, so update {copy, to} still merges part by part", run(s) { cast(s);
       s.call("bob", "create", { id: "lamp", model: "crate", components: { transform: T0([0, 0, 0]) } });
       s.call("bob", "create", { id: "bulb", model: "book", components: { transform: T0([0, 0.6, 0]), parent: { to: "lamp" } } });

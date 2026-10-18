@@ -496,7 +496,8 @@ explicit batch carrying every component (each part marked with
 request moves a copy to a newer version, keeping its own overrides: a three-way
 merge per part, per component, per field, a part's `parent` included (a part
 reparented upstream is reparented in the copy; the copy's root stays where it
-is).
+is). Every part of the copy moves to the new version (`copy-of.from`), so a
+copy that was updated and is published again keeps its parts' keys.
 
 ## 5. Two planes
 
