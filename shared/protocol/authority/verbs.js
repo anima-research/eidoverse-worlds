@@ -8,6 +8,7 @@ import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../../caption
 import { effectFor, ESSENTIAL_NAMES } from "../../particle_effects.js";
 import { SHAPES_VERSION } from "../shaperepair.js";
 import { CTX } from "./ctx.js";
+import { validate } from "../verbspec.js";
 import { Refusal, refuse } from "./refuse.js";
 import { VOLATILE, delOp, nonce16, setOp } from "./storage.js";
 import { SPATIAL, clockMs, spend } from "./spatial.js";
@@ -117,6 +118,14 @@ function buildBatch(ctx, a, w) { {
       // cached on that copy is dropped after each op; per-thing geometry checks what it read (geoOf)
       const all = []; let st = ctx.st; let work = null;
       const forget = (x) => { SPATIAL.delete(x); scriptMemo.delete(x); };
+      // every child request is checked against its verb's arguments BEFORE any is built, exactly as it would be outside a
+      // batch (review of PR #260, verbs.js:127): unchecked, {verb: "delete", args: {id, componnent}} built a whole-entity delete
+      (a.ops ?? []).forEach((o, i) => {
+        if (!o || typeof o !== "object" || Array.isArray(o)) refuse("shape", `batch op ${i} is {verb, args}, got ${JSON.stringify(o)}`, "batch takes ops [{verb, args}, …]", { op: i });
+        if (o.args !== undefined && (!o.args || typeof o.args !== "object" || Array.isArray(o.args))) refuse("shape", `batch op ${i}: args is an object, got ${JSON.stringify(o.args)}`, "batch takes ops [{verb, args}, …]", { op: i });
+        const bad = validate(o.verb, o.args ?? {}) ?? (o.verb === "create" && o.args?.place ? validate("place", { ...o.args.place, id: "x" }) : null);
+        if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, `batch op ${i}${o.verb === "create" && o.args?.place && !validate(o.verb, o.args ?? {}) ? " place" : ""}: ${reason}`, fix, { ...rest, op: i }); }
+      });
       (a.ops ?? []).forEach((o, i) => {
         if (clockMs() > CTX.work.until) spend(Infinity, `a batch of ${a.ops.length} ops`, "split it into smaller batches");   // the clock backstop
         // sky/weather are sets on @world.sky with the old merge meaning, so they batch like any set (one act, one undo)

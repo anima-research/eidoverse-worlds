@@ -1324,6 +1324,22 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const left = Object.keys(openWorld(root, name).state().entities).filter((k) => k.startsWith("junk-"));
   ok(rb.ok && !left.length && !JSON.stringify(rb).includes("skipped"), "TC2 the owner's rollback of someone takes back all their work, nothing skipped", [rb.refused ?? rb.notes, left]); }
 
+// ---- BT: a batch checks every child request against its verb's arguments before building anything (review of PR #260,
+// verbs.js:127; Antra's repro): a delete with a misspelt `componnent` was ok:true and deleted the whole entity, children too
+{ const name = "batchtypo";
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const ents = () => openWorld(root, name).state().entities;
+  call("olive", "create-world", { title: "batch typo" });
+  call("olive", "create", { id: "lamp", model: "crate", components: { description: "a lamp" } });
+  call("olive", "create", { id: "shade", model: "crate", components: { parent: { to: "lamp" } } });
+  const n0 = openWorld(root, name).entries.length;
+  const r = call("olive", "batch", { ops: [{ verb: "delete", args: { id: "lamp", componnent: "description" } }] });
+  ok(!r.ok && code(r) === "unknown-arg" && r.refused?.op === 0 && ents().lamp && ents().shade, "BT1 batch delete {id, componnent} is refused unknown-arg (op 0), as it is outside a batch; the entity and its child stay", [r.refused ?? r, !!ents().lamp, !!ents().shade]);
+  const r2 = call("olive", "batch", { ops: [{ verb: "set", args: { id: "lamp", component: "description", value: "ok" } }, { verb: "create", args: { model: "crate", place: { on: "lamp", oops: 1 } } }] });
+  ok(!r2.ok && code(r2) === "unknown-arg" && r2.refused?.op === 1 && ents().lamp?.c?.description === "a lamp", "BT2 a nested create.place is checked too, and an earlier valid op isn't written", [r2.refused ?? r2, ents().lamp?.c?.description]);
+  const changes = openWorld(root, name).entries.slice(n0).filter((e) => e.kind === "change").length;
+  ok(changes === 0, "BT3 neither refused batch wrote a change", changes); }
+
 // ---- ST: persist before publishing (review of PR #260, storage.js:110; Antra's repro): a line whose durable write throws
 // never reaches memory (the live chain never runs ahead of the disk), and the file, its state now unknown, takes no more
 // writes until it is reopened. The moderator log likewise.

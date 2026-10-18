@@ -772,7 +772,10 @@ Every write reaches the log through the world's **authority**. A request
 `undo`, `publish`, `update`, `grab`, `put`, `throw`, `drop`, `punt`… — is
 first turned into the state writes it would make, whatever word or path
 produced it (a request verb, a `use` handler, an undo, a blueprint update, a script,
-a rest). Then **one gate, `admit`**, checks those writes, keyed on:
+a rest). A `batch` request's children are each checked against their own verb's arguments (a `create`'s
+`place` too) before any of them is built, exactly as they would be alone: a misspelt argument in any child
+refuses the whole batch with that child's code and its index (`op`), never builds a different write. Then
+**one gate, `admit`**, checks those writes, keyed on:
 
 - the stamped asker (and, later, the grant it cites);
 - the components the writes change, with old and new values (deleting a
