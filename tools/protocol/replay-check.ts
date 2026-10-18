@@ -58,7 +58,7 @@ for (const [name, raw] of logs) {
   const named = hosts.every(([h, e]: any) => Object.keys(e.c.sockets).every((slot) => Object.values(after.entities).some((x: any) => x.c.parent?.to === h && x.c.socket?.name === slot)));
   rl(L.all.subarray(0, raw.length).equals(raw) && prefix && after.status === before.status && (before.status === "ok" || !L.lines.length) && worst < 1e-8 && !legacy && named,
     `RL1 ${name}: its head folds byte-identically after the lift; ${hosts.length} host(s) keep their seats by name, ${legacy} old spellings left, every thing within ${worst.toExponential(1)} of where it was (${L.lines.length} lines appended)`, { status: [before.status, after.status], prefix, worst, legacy, named });
-  if (L.lines.length) { const again = loadLift(L.all); rl(!again.lines.length && !again.lifted.length, `RL2 ${name}: a second load appends nothing`, again.lifted); }
+  if (L.lines.length) { const again = loadLift(L.all); rl(!again.lines.length && !again.lifted.filter((x: any) => !x.repairNeeded).length, `RL2 ${name}: a second load appends nothing (a 'needs the shape repair' note is said, never written: item 9)`, again.lifted); }
   if (L.lines.length && before.status === "ok") { const s0 = simFold(L.entries, L.T), s1 = simFold(readLog(L.all), L.T);
     rl((s0.sim ? digestOf(s0.sim) : null) === (s1.sim ? digestOf(s1.sim) : null), `RL5 ${name}: the sim's bodies are unchanged by the lift (${s0.sim ? "an engine world" : "no engine"})`, [s0.sim && digestOf(s0.sim), s1.sim && digestOf(s1.sim)]); }
 }

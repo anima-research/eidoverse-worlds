@@ -365,14 +365,14 @@ if (cmd === "found") {
     if (dryRun) { const r = repairShapes(w, { by, dryRun: true }) as any;
       if (r.refused) die(`repair refused: ${r.refused.code}: ${r.refused.reason}`);
       if (r.marked) { console.log(`${name} is already marked (its log holds the repair-shapes marker, a stamped founding or a translation in today's spelling): nothing to repair`); process.exit(0); }
-      console.log(`dry run: ${r.repaired.length} thing(s) would be repaired${r.repaired.length ? `: ${r.repaired.join(", ")}` : ""}; ${r.failed.length} refused${r.failed.length ? `: ${JSON.stringify(r.failed)}` : ""}; ${r.ops.length} op(s)`);
+      console.log(`dry run: ${r.repaired.length} entity(ies) would be repaired${r.repaired.length ? `: ${r.repaired.join(", ")}` : ""}; ${r.failed.length} refused${r.failed.length ? `: ${JSON.stringify(r.failed)}` : ""}; ${r.ops.length} op(s)`);
       for (const o of r.ops) console.log(`  ${o.verb} ${o.id} ${o.comp}`); process.exit(0); }
     const backup = backupBeforeRepair(dir, { by });
     let r: any; try { r = repairShapes(w, { by }); } catch (e) { dropBackup(backup); throw e; }
     if (r.refused) { dropBackup(backup); die(`repair refused: ${r.refused.code}: ${r.refused.reason}`); }
     if (r.marked) { dropBackup(backup); console.log(`${name} is already marked: nothing to repair, nothing written (no backup kept)`); process.exit(0); }
     const m = sealBackup(backup);
-    console.log(`repaired ${name}: ${r.repaired.length} thing(s)${r.repaired.length ? ` (${r.repaired.slice(0, 20).join(", ")}${r.repaired.length > 20 ? ", …" : ""})` : ""}, ${r.failed.length} refused${r.failed.length ? ` ${JSON.stringify(r.failed).slice(0, 400)}` : ""}; the system's repair-shapes act at seq ${r.seq}${by ? `, by ${by}` : ""}`);
+    console.log(`repaired ${name}: ${r.repaired.length} entity(ies)${r.repaired.length ? ` (${r.repaired.slice(0, 20).join(", ")}${r.repaired.length > 20 ? ", …" : ""})` : ""}, ${r.failed.length} refused${r.failed.length ? ` ${JSON.stringify(r.failed).slice(0, 400)}` : ""}; the system's repair-shapes act at seq ${r.seq}${by ? `, by ${by}` : ""}`);
     console.log(`pre-repair log kept: ${backup} (${m.before.size} bytes, sha256 ${m.before.sha256}); to undo: bun tools/protocol/world.ts repair ${name} --rollback`);
   }
 } else die("usage: found <name> --owner <id> [--title …] | translate <world> [<new name>] --dry-run … | translate <world> [<new name>] (--founder-key <key> --approved <hash> --approve-sig <sig> | --no-founder-key --approved <hash>) | rollback <world> [--discard-changes] | owner-key <key> <sig> | info <name>   | repair <name> [--dry-run] [--by <id>] | repair <name> --rollback [--force]   (WORLDS_DIR=<dir>)");
