@@ -1061,8 +1061,8 @@ async function onSnapshot(msg) {
   // a RE-join: lastSeq is still the last entry the old socket delivered, and
   // what was said after it may be trimmed out of this snapshot's chat window
   // (fair, not contiguous). Fetch it before lastSeq moves on. A first join has rendered nothing and is a no-op.
-  // Chat lines are numbered seq × 1000 (server/worldlog.ts readHistory); lastSeq is the log's own seq.
-  if (lastSeq >= 0) void resyncChatAfter(lastSeq * 1000);
+  // lastSeq is already in the chat's numbering (seq × 1000: onLog, the server's window and readHistory alike).
+  if (lastSeq >= 0) void resyncChatAfter(lastSeq);
   if (typeof msg.throughSeq === 'number' && msg.throughSeq > lastSeq) lastSeq = msg.throughSeq;
   bus.emit('net', net);
   bus.emit('participant-sessions', msg.present ?? []);

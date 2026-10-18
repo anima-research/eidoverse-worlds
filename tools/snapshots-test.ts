@@ -1,3 +1,4 @@
+// (ported 10-17: the broker speaks `capture` here, and an agent is a body with an agent's enrolment, tokenVerified — never a declaration)
 import { test, expect } from "bun:test";
 import { createSnapshotBroker, captureCapability, pngFromDataURL } from "../server/snapshots.ts";
 import type { World, Client } from "../server/world.ts";
@@ -31,7 +32,7 @@ test("auto selects Unreal; exact socket/session/world owns response; duplicate i
   const { broker, world, make, donor } = setup();
   const thief = make("other", { renderer: true, spectator: true });
   const result = broker.request(world, "agent", "selfie");
-  const request = donor.messages[0]; expect(request).toMatchObject({ type: "snap", follow: "agent", view: "selfie", width: 960, height: 540 });
+  const request = donor.messages[0]; expect(request).toMatchObject({ type: "capture", follow: "agent", view: "selfie", width: 960, height: 540 });
   broker.receive(thief.c, { id: request.id, dataUrl: png }); expect(broker.pendingCount).toBe(1);
   donor.c.gen = 2; broker.receive(donor.c, { id: request.id, dataUrl: png }); expect(broker.pendingCount).toBe(1); donor.c.gen = 1;
   donor.c.world = null; broker.receive(donor.c, { id: request.id, dataUrl: png }); expect(broker.pendingCount).toBe(1); donor.c.world = world;
@@ -101,7 +102,7 @@ test("an agent alone in a world gets a roaming renderer sent there, and its snap
   // the renderer re-joins: a NEW connection in the new world, still roaming
   leave(roamer.c); const arrived = join(build, "renderer-mac-gpu-roam-commons", { renderer: true, roam: true, spectator: true });
   await Bun.sleep(40);
-  const snap = arrived.messages.find((m) => m.type === "snap"); expect(snap).toMatchObject({ follow: "agent", view: "third" });
+  const snap = arrived.messages.find((m) => m.type === "capture"); expect(snap).toMatchObject({ follow: "agent", view: "third" });
   broker.receive(arrived.c, { id: snap.id, dataUrl: png });
   expect(await result).toMatchObject({ ok: true });
 });
@@ -115,7 +116,7 @@ test("a world already served is never summoned to; a roamer busy elsewhere is no
   const other = await broker.request(b, "agentB", "first");      // its only roamer is mid-shot in a
   expect(other).toMatchObject({ ok: false, status: 503 });
   expect(String((other as any).err)).toMatch(/no roaming renderer could come/);
-  broker.receive(roamer.c, { id: roamer.messages.find((m) => m.type === "snap").id, dataUrl: png }); await busy;
+  broker.receive(roamer.c, { id: roamer.messages.find((m) => m.type === "capture").id, dataUrl: png }); await busy;
 });
 test("no roamer: an explicit 503; an Unreal-only request is never summoned", async () => {
   const { broker, worldOf, join } = roamSetup();
@@ -129,7 +130,7 @@ test("a renderer still loading says so: its words reach the asker as a retryable
   const { broker, worldOf, join } = roamSetup();
   const w = worldOf("w"); const r = join(w, "renderer", { renderer: true, spectator: true }); join(w, "agent");
   const result = broker.request(w, "agent");
-  const snap = r.messages.find((m) => m.type === "snap");
+  const snap = r.messages.find((m) => m.type === "capture");
   broker.receive(r.c, { id: snap.id, error: "the renderer is still loading this world — 3 models still loading (12 in); try again in a few seconds" });
   expect(await result).toMatchObject({ ok: false, status: 503, err: expect.stringMatching(/still loading this world — 3 models/) });
 });
@@ -148,16 +149,16 @@ test("rotation: a parked roamer goes before one an agent is using; pre-warm neve
   const busyWorld = worldOf("busy"), parked = worldOf("parked"), fresh = worldOf("fresh"), fresh2 = worldOf("fresh2");
   // a roamer an agent is actively using (it asked a snapshot just now) — and one parked where nobody is
   const inUse = join(busyWorld, "roam-a", { renderer: true, roam: true, spectator: true });
-  join(busyWorld, "agentBusy", { agent: true });
+  join(busyWorld, "agentBusy", { tokenVerified: true });
   const shot = broker.request(busyWorld, "agentBusy");
-  broker.receive(inUse.c, { id: inUse.messages.find((m) => m.type === "snap").id, dataUrl: png }); await shot;
+  broker.receive(inUse.c, { id: inUse.messages.find((m) => m.type === "capture").id, dataUrl: png }); await shot;
   const free = join(parked, "roam-b", { renderer: true, roam: true, spectator: true });
   // a new agent elsewhere: the PARKED roamer is sent, not the one in use
-  join(fresh, "agentFresh", { agent: true }); broker.prewarm(fresh);
+  join(fresh, "agentFresh", { tokenVerified: true }); broker.prewarm(fresh);
   expect(free.messages.at(-1)).toEqual({ type: "renderer-travel", world: "fresh" });
   expect(inUse.messages.some((m) => m.type === "renderer-travel")).toBe(false);
   // with only the in-use roamer left: a pre-warm does NOT take it…
-  leave(free.c); join(fresh2, "agentFresh2", { agent: true }); broker.prewarm(fresh2);
+  leave(free.c); join(fresh2, "agentFresh2", { tokenVerified: true }); broker.prewarm(fresh2);
   expect(inUse.messages.some((m) => m.type === "renderer-travel")).toBe(false);
   // …but a snapshot actually asked does (never refused while a roamer exists)
   await Bun.sleep(450);   // the unanswered pre-warm summons for fresh expires
