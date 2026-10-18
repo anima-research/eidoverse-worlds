@@ -30,6 +30,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["undelegate removes nobody", "shared/protocol/consent.js", "if (a.undelegate !== undefined) t.delegates = (t.delegates ?? []).filter((x) => x !== a.undelegate);", "", ["C1", "C4"]],
   ["unfriend removes nobody", "shared/protocol/consent.js", "if (a.unfriend !== undefined) t.friends = (t.friends ?? []).filter((x) => x !== a.unfriend);", "", ["C2", "C4"]],
   ["a delegate may remove", "shared/protocol/consent.js", "if (!self && lists) return", "if (false && lists) return", ["C3"]],
+  ["an unfriend re-checks only the unfriender", "shared/protocol/authority/bodyconsent.js", ", ...(ex ? revokeAfter(w, ex, beforeEx) : [])]", "]", ["C6"]],
   ["the door doesn't take the words", "shared/protocol/verbspec.js", "unfriend: { type: \"any\"", "unfriendX: { type: \"any\"", ["C2", "C3"]],
   ["the verb reads a removal as a read", "shared/protocol/authority/bodyconsent.js", "\"delegate\", \"unfriend\", \"undelegate\"].some", "\"delegate\"].some", ["C1", "C2"]],
   ["§7 forgets rename-components", "spec/PROTOCOL.md", "\n| components and fields renamed before release (§4), at every load | its own act `rename-components {renamed, why, failed?}` and its change | `system` | the system's capability, per thing | the actor |", "", ["X1"]],
