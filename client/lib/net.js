@@ -259,6 +259,9 @@ export function sendPose(now) {
     pose.clipRate = avatar.current.paused ? 0 : avatar.current.timeScale ?? 1;
   }
   if (ov?.xr) pose.xr = ov.xr;   // C18: tracked head/hands, facing-relative (xrbody.js) — presence, never the log
+  // lying limp: the floor under the body, so the server remembers it standing THERE
+  // (server.ts settledPose) — its root, which presence carries, lies below that floor
+  if (s.clip === 'ragdoll' && Number.isFinite(s.floor)) pose.floor = s.floor;
   if (s.q) pose.q = s.q;
   if (s.locomotion) pose.locomotion = s.locomotion;
   if (s.emote) { pose.emote = s.emote; s.emote = null; } // one-shot: send once

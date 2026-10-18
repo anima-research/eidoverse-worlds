@@ -73,12 +73,22 @@ for (const [where, x, y, z, floor] of [
   check('a rig whose hips cannot be read still gets up on the landing (root + a typical hips height)', !r.hipsRead && Math.abs(r.up - LANDING) < 0.02, `hips read: ${r.hipsRead}; root ${r.rootY.toFixed(2)} → ${r.up.toFixed(2)}m`);
 }
 {
-  // a rejoin while lying on the landing: the remembered root is below the
-  // landing; the body wakes above it and settles onto it, never under it
+  // a rejoin while lying on the landing
   const r = fallAndGetUp(2.8, LANDING, -2.3);
+  check('rejoining mid-heap with the floor recorded wakes exactly on it', standingYFromLyingRoot(r.rootY, { floor: LANDING }) === LANDING);
   const wake = standingYFromLyingRoot(r.rootY);
-  check('rejoining mid-heap on the landing wakes at or above the landing, within a step of it', wake >= LANDING - 0.01 && wake - LANDING < 0.55,
+  check('...and a record without one (before `floor` existed) wakes at or above the landing, within a step of it', wake >= LANDING - 0.01 && wake - LANDING < 0.55,
     `root ${r.rootY.toFixed(2)} → wakes at ${wake.toFixed(2)} (landing ${LANDING})`);
+}
+{
+  // body-relative: the same heap at twice the size lies twice as far below
+  // its floor — the fallback grows with the body, so it never wakes inside it
+  const rootY2 = LANDING - 2 * 1.06;          // this rig's root-to-floor gap, doubled
+  const wake2 = standingYFromLyingRoot(rootY2, { scale: 2 });
+  check('a 2× body\'s legacy record still wakes at or above its floor', wake2 >= LANDING - 0.01, `root ${rootY2.toFixed(2)} → ${wake2.toFixed(2)}`);
+  const rootYs = LANDING - 0.5 * 1.06;         // a half-size body
+  const wakes = standingYFromLyingRoot(rootYs, { scale: 0.5 });
+  check('...and a half-size body\'s within its (smaller) step of it', wakes >= LANDING - 0.01 && wakes - LANDING < 0.55 * 0.5 + 0.05, `root ${rootYs.toFixed(2)} → ${wakes.toFixed(2)}`);
 }
 console.log(`\n${tally.passed} passed, ${tally.failed} failed`);
 process.exit(tally.failed ? 1 : 0);
