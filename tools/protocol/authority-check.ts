@@ -13,7 +13,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import { scratch } from "./common.ts";
-import { request, creatorOf, liftWorld, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore, fixtureIds } from "../../shared/protocol/authority.js";
+import { request, worldOf, creatorOf, liftWorld, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore, fixtureIds } from "../../shared/protocol/authority.js";
 fixtureIds(true);   // the fixtures below seed the ids they read (R 10-17: a writer never chooses one; ids-check covers the refusal)
 import { fold, readLog, digest, opsOf, PURGED } from "../../shared/protocol/fold.js";
 import { makeReplica, wireState, stateFromWire } from "../../shared/protocol/replica.js";
@@ -1323,6 +1323,20 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const rb = call("olive", "undo", { actor: "gil", since: { seq: mark.seq, head: mark.head } });
   const left = Object.keys(openWorld(root, name).state().entities).filter((k) => k.startsWith("junk-"));
   ok(rb.ok && !left.length && !JSON.stringify(rb).includes("skipped"), "TC2 the owner's rollback of someone takes back all their work, nothing skipped", [rb.refused ?? rb.notes, left]); }
+
+// ---- ST: persist before publishing (review of PR #260, storage.js:110; Antra's repro): a line whose durable write throws
+// never reaches memory (the live chain never runs ahead of the disk), and the file, its state now unknown, takes no more
+// writes until it is reopened. The moderator log likewise.
+{ let failing = true; const lines: string[] = [], mods: object[] = [];
+  const w = worldOf({ name: "st", entries: [], custody: custodyAt(root + "keys/custody.json"), getBlob: () => { throw new Error("no blobs"); }, putBlob: () => "sha256:" + "0".repeat(64), now: () => T,
+    writeLine: (l: string) => { if (failing) throw new Error("EIO: disk gone"); lines.push(l); },
+    appendMod: (r: object) => { if (failing) throw new Error("EIO: disk gone"); mods.push(r); } });
+  let threw: any = null; try { request(w, "olive", "create-world", { title: "st" }); } catch (x) { threw = x; }
+  ok(threw && /EIO/.test(String(threw?.message)) && w.entries.length === 0 && !w.exists, "ST1 writeLine throws: the append throws and the entry never reaches memory (entries.length stays 0)", [String(threw?.message), w.entries.length]);
+  failing = false; let again: any = null; try { request(w, "olive", "create-world", { title: "st" }); } catch (x) { again = x; }
+  ok(again && /earlier write failed/.test(String(again?.message)) && w.entries.length === 0 && lines.length === 0, "ST2 after a failed write the log takes no more lines (its state on disk is unknown) until the world is reopened", [String(again?.message), w.entries.length, lines.length]);
+  failing = true; let mthrew: any = null; try { w.appendMod({ actor: "olive", verb: "warn", who: "bob" }); } catch (x) { mthrew = x; }
+  ok(mthrew && w.mod.length === 0, "ST3 a moderator-log write that throws never reaches the live moderation list", [String(mthrew?.message), w.mod.length]); }
 
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

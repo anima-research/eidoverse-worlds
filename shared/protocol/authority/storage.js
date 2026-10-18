@@ -55,7 +55,15 @@ export function worldOf(io) {
   w.custody = () => io.custody ?? null;
   // §2.1: moderation lives in a SEPARATE moderator log with the authority's enforcement, never in the world log
   w.mod = io.mod ?? [];
-  w.appendMod = (e) => { const r = { ts: Math.floor(w.now()), ...e }; w.mod.push(r); io.appendMod?.(r); };
+  // Persist before publishing (review of PR #260, storage.js:110): a line reaches memory only after durable storage took it.
+  // A failed write may have left part of a line on disk (open, write and sync are not one step), so the file's state is
+  // unknown: the world refuses every later write (fail closed) until it is reopened from what the disk actually holds.
+  // Each file is wedged on its own: a failed moderator-log write stops moderator-log writes, a failed log write stops log writes.
+  w.wedged = {};
+  const durably = (what, write) => {
+    if (w.wedged[what]) throw new Error(`storage: ${name}'s ${what} is not written: an earlier write failed (${w.wedged[what]}), so what is on disk is unknown; reopen the world from disk`);
+    try { write(); } catch (x) { w.wedged[what] = String(x?.message ?? x); throw x; } };
+  w.appendMod = (e) => { const r = { ts: Math.floor(w.now()), ...e }; durably("moderator log", () => io.appendMod?.(r)); w.mod.push(r); };
   let cache = null; // the folded state is a view, rebuilt when the log grows (callers never mutate it)
   // incremental when the new lines are plain entries this server wrote (state/act/sim/say): clone + apply their ops, which
   // is what the fold does for them; anything else (a purge, a governance entry, a malformed line) re-folds from scratch
@@ -107,7 +115,8 @@ export function worldOf(io) {
     if (e.kind === "change" && token !== CHANGE) throw new Error("authority bug: a change entry must come from changeEntry (§7: one gate)");
     w.fits(e); const { line, parsed, bad } = render(e, entries.length, true); const seq = entries.length;
     if (bad) throw new Error(`authority bug: would write a malformed entry (${bad.code} ${bad.detail})`); // e.g. the chain fields tipped it over a cap
-    entries.push(posAt(parsed, seq)); Object.defineProperty(parsed, "bytes", { value: line.length, enumerable: false }); io.writeLine(line);
+    durably("log", () => io.writeLine(line));   // on disk first; only then the live chain and fold see it
+    entries.push(posAt(parsed, seq)); Object.defineProperty(parsed, "bytes", { value: line.length, enumerable: false });
     if (e.kind === "genesis") w.worldId = worldIdOf(parsed);
     w.exists = true; return seq;
   };

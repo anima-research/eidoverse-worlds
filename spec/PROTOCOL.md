@@ -808,6 +808,12 @@ check (shape and value checks still apply) and are named in the entry's `followU
 checks (length, rate, the sayer's rights), and a `sim` entry is written by the authority itself from a grab, a launch
 (throw, punt, a release with velocity) or a settle, never by a client.
 
+**Durable before live.** An entry reaches the authority's live state (its chain head, its fold, what it
+publishes) only after durable storage has taken its line; the same holds for the moderator log. A write
+that fails may have left part of a line behind, so the authority then refuses every later write to that
+file until the world is reopened from what the disk holds (the reader cuts a torn last line): it never
+chains a new entry onto one the disk may not have.
+
 **The authority's consequences are follow-ups** (one rule, review r10): what the authority writes because of
 an asker's write is never written as the asker's own. A consequence that must be atomic with the asker's
 change rides in it, marked; one that may stand alone is the system's own act, caused by the asker's.
