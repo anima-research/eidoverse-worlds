@@ -13,7 +13,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import { scratch } from "./common.ts";
-import { request, isBanned, worldOf, creatorOf, liftWorld, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore, fixtureIds } from "../../shared/protocol/authority.js";
+import { request, isBanned, worldOf, creatorOf, liftWorld, maintain, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore, fixtureIds } from "../../shared/protocol/authority.js";
 fixtureIds(true);   // the fixtures below seed the ids they read (R 10-17: a writer never chooses one; ids-check covers the refusal)
 import { fold, readLog, digest, opsOf, PURGED } from "../../shared/protocol/fold.js";
 import * as AUTH from "../../shared/protocol/authority.js";
@@ -295,6 +295,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     { seq: 8, ts: 9, actor: "ann", verb: "spawn", args: { id: "stray", lib: "ball", pos: [6, 0, 6] } },
     { seq: 9, ts: 10, actor: "ann", verb: "mount", args: { id: "stray", to: "nowhere", offset: [0, 5, 0] } }];      // its carrier doesn't exist
   const r = translate(old, DOORKEYS()); fs.writeFileSync(root + "worlds/tr-mounts.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  maintain(openWorld(root, "tr-mounts"));   // lead 10-18: the load writes nothing; the command lifts the pre-cut spelling before anyone writes
   const v1 = v1Empty(); for (const e of old) v1fold(v1, e);
   const tc = (verb, args) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "tr-mounts"), "ann", verb, args); };
   ok(!r.stats.divergences && r.final.translated.box.parent?.to !== undefined && !("order" in r.final.translated.box.parent) && !("offset" in r.final.translated.box.parent), "M1 a translated mount is door-shaped: parent {to} (no order since the shape audit, 10-16), no offset copy (L2)", r.final.translated.box.parent);
@@ -1096,6 +1097,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const S = () => openWorld(root, "tr-lift").state();
   const was = worldT(S(), "bell");
   ok(S().entities.tbl.c.sockets?.seat && S().entities.bell.c.parent?.socket === "perch", "LS2 (the fixture) the translated world stores the old spelling: tbl.sockets {perch, seat}, bell on parent {to: tbl, socket: perch}", [S().entities.tbl.c.sockets, S().entities.bell.c.parent]);
+  maintain(openWorld(root, "tr-lift"));   // lead 10-18: the lift is the command's (the load refuses writes until it has run: repair-needed)
   const u = tc("undo", {});
   const st = S(); const socks = Object.entries(st.entities).filter(([, e]) => e.c.parent?.to === "tbl" && e.c.socket).map(([k, e]) => [k, e.c.socket.name]);
   const now = worldT(st, "bell"); const near = (a, b, e = 1e-8) => a.every((v, i) => Math.abs(v - b[i]) < e);
@@ -1212,7 +1214,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   out.push({ world: out[1].world, kind: "act", actor: "ann", verb: "set", body: { request: { id: "@world", component: "capacity", value: capv } }, ts },
     { world: out[1].world, kind: "change", actor: "ann", cause: n0, verb: "batch", body: { ops: [{ verb: "set", id: "@world", comp: "capacity", value: capv }] }, ts });
   fs.writeFileSync(root + "worlds/sockcap-lift.jsonl", out.map((e) => JSON.stringify(e)).join("\n") + "\n");
-  const lw = openWorld(root, "sockcap-lift"); const cap0 = lw.state().entities["@world"]?.c.capacity?.entities; let threw = null; try { liftWorld(lw); } catch (x) { threw = String(x?.message ?? x); }
+  const lw = openWorld(root, "sockcap-lift"); const cap0 = lw.state().entities["@world"]?.c.capacity?.entities; let threw = null; try { maintain(lw); } catch (x) { threw = String(x?.message ?? x); }
   const st = openWorld(root, "sockcap-lift").state(); const n = Object.values(st.entities).filter((e) => e.c.parent?.to === "wall" && e.c.socket).length;
   ok(!threw && cap0 === 1 && n === 70 && st.entities.wall.c.sockets === undefined, "SR2e the load's lift is a carry: a pre-cut host of 70 slots lifts whole, past the per-host ceiling and past a spent capacity.entities (1)", { threw, n, cap0 }); }
 
@@ -1237,7 +1239,7 @@ const nearly = (a, b, e = 1e-8) => !!a && !!b && a.every((v, i) => Math.abs(v - 
   const moved = { pos: [b0.transform.pos[0], b0.transform.pos[1] + 0.2, b0.transform.pos[2]], q: b0.transform.q, scale: b0.transform.scale };
   precut("sru1", [], [["ann", [{ id: "bell", comp: "transform", value: moved }]]]);
   const before = worldT(fold(readLog(fs.readFileSync(root + "worlds/sru1.jsonl")).slice(0, -2)), "bell");
-  liftWorld(W()); T += 100; process.env.PROTOCOL_NOW = String(T); const u = request(W(), "ann", "undo", {});
+  maintain(W()); T += 100; process.env.PROTOCOL_NOW = String(T); const u = request(W(), "ann", "undo", {});
   const st = W().state(); const after = worldT(st, "bell"); const on = st.entities[st.entities.bell.c.parent?.to]?.c.socket?.name;
   ok(u.ok && !(u.skipped?.length) && nearly(after.pos, before.pos) && nearly(after.q, before.q) && on === "perch", "SRU1 undo of a pre-cut move of cargo on a socket puts the bell back exactly (within 1e-8), still on the perch", { u: u.refused ?? u.skipped, before: before.pos, after: after.pos, on }); }
 
@@ -1246,7 +1248,7 @@ const nearly = (a, b, e = 1e-8) => !!a && !!b && a.every((v, i) => Math.abs(v - 
 for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "delete"]]) {
   const W = () => openWorld(root, name);
   precut(name, [{ seq: 6, ts: 6, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 }, seat: { pos: [0, 0.5, 0], sit: true } } } }]);
-  liftWorld(W()); const R = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); return request(W(), actor, verb, args); };
+  maintain(W()); const R = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); return request(W(), actor, verb, args); };
   const kidOf = (n) => { const st = W().state(); return Object.keys(st.entities).find((k) => st.entities[k].c.parent?.to === "tbl" && st.entities[k].c.socket?.name === n); };
   const perch = kidOf("perch"), seat = kidOf("seat");
   const b = work === "hook" ? R("bob", "create", { id: "bobhook", components: { parent: { to: "tbl" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } })
@@ -1270,7 +1272,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const seat = (extra = {}) => ({ seat: { pos: [0, 0.5, 0], body: { action: "sit", ...extra } } });
   write("srw1", [{ verb: "set", id: "@world", comp: "role-defs", value: { crew: { name: "Crew", rank: 150, can: { build: true } } } },
     { verb: "set", id: "a-chair", comp: "sockets", value: seat({ who: "crew" }) }, { verb: "set", id: "b-chair", comp: "sockets", value: seat() }, { verb: "delete", id: "@world", comp: "role-defs" }]);
-  let threw = null, out = null; try { out = liftWorld(openWorld(root, "srw1")); } catch (x) { threw = String(x?.message ?? x).slice(0, 200); }
+  let threw = null, out = null; try { out = maintain(openWorld(root, "srw1")).steps.lift; } catch (x) { threw = String(x?.message ?? x).slice(0, 200); }
   const st = openWorld(root, "srw1").state(); const kids = (h) => Object.values(st.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
   T += 100; process.env.PROTOCOL_NOW = String(T); const sit = request(openWorld(root, "srw1"), "ann", "use", { id: "b-chair", action: "sit" });
   ok(!threw && kids("a-chair") === 1 && kids("b-chair") === 1 && !st.entities["a-chair"].c.sockets && !st.entities["b-chair"].c.sockets && sit.ok, "SRW1 a seat whose who names a role since deleted lifts anyway (the lift is a carry), and so does the healthy host after it", { threw, out, a: kids("a-chair"), b: kids("b-chair"), sit: sit.refused });
@@ -1278,11 +1280,11 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   // skipped, and the hosts after it still lift: liftWorld never throws for one host
   write("srw2", [{ verb: "set", id: "a-chair", comp: "sockets", value: seat() }, { verb: "set", id: "b-chair", comp: "sockets", value: seat() }, { verb: "set", id: "c-chair", comp: "sockets", value: seat() }]);
   const w2 = openWorld(root, "srw2"); const real = w2.append.bind(w2); let n = 0; w2.append = (e, ...more) => { if (e.kind === "act" && e.verb === "lift-sockets" && e.body?.id === "a-chair" && !n++) throw new Error("disk full"); return real(e, ...more); };
-  let t2 = null, o2 = null; try { o2 = liftWorld(w2); } catch (x) { t2 = String(x?.message ?? x); }
+  let t2 = null, o2 = null; try { const m2 = maintain(w2).steps.lift; o2 = [...m2.made, ...m2.failed]; } catch (x) { t2 = String(x?.message ?? x); }
   const s2 = openWorld(root, "srw2").state(); const k2 = (h) => Object.values(s2.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
-  const failed = (o2 ?? []).find((x) => x.host === "a-chair" && x.failed);
+  const failed = (o2 ?? []).find((x) => x.host === "a-chair" && x.code); if (failed) failed.failed = failed;
   ok(!t2 && !!failed && /disk full/.test(failed.failed.reason ?? "") && k2("b-chair") === 1 && k2("c-chair") === 1 && !!s2.entities["a-chair"].c.sockets, "SRW2 a host whose lift fails is reported ({host, failed}) and left as it was; the hosts after it lift", { t2, o2, b: k2("b-chair"), c: k2("c-chair") });
-  const again = liftWorld(openWorld(root, "srw2")); const s3 = openWorld(root, "srw2").state();
+  const again = maintain(openWorld(root, "srw2")).steps.lift.made; const s3 = openWorld(root, "srw2").state();
   ok(again.some((x) => x.host === "a-chair" && x.made) && Object.values(s3.entities).filter((e) => e.c.parent?.to === "a-chair" && e.c.socket).length === 1, "SRW2 …and the next load lifts it", again); }
 
 // LG1 (a grep-pin, as nonumber-check is): past the door nothing reads the old spelling. The authority's state readers name

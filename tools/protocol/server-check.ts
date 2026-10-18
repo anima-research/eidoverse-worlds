@@ -620,12 +620,17 @@ const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dia
 fs.mkdirSync(path.join(W, "liftw"), { recursive: true }); fs.writeFileSync(path.join(W, "liftw", "world.jsonl"), translate(old, keys).out.map((e) => JSON.stringify(e)).join("\\n") + "\\n");
 const { WorldLog } = await import(E + "/server/worldlog.ts");
 const log = new WorldLog("liftw"); const notes = []; log.attach({ broadcast() {}, rightsChanged() {}, debug: (k, d) => notes.push({ kind: k, ...d }) });
+const st0 = log.live.state(); const kids0 = (h) => Object.values(st0.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
+const atLoad = { notes, a: kids0("a-cart"), aMap: !!st0.entities["a-cart"].c.sockets, b: kids0("b-bench"), entries: log.live.entries.length };
+// the operator runs the maintenance command from inside the world (operator-repair {verb: "repair"}): the healthy host lifts, the one the door refuses is named
+const r = log.operatorRepair("opie", "repair", {});
 const st = log.live.state(); const kids = (h) => Object.values(st.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
-console.log("SL " + JSON.stringify({ notes, a: kids("a-cart"), aMap: !!st.entities["a-cart"].c.sockets, b: kids("b-bench") }));
+console.log("SL " + JSON.stringify({ atLoad, r: { ok: r.ok, lift: r.steps?.lift }, a: kids("a-cart"), aMap: !!st.entities["a-cart"].c.sockets, b: kids("b-bench"), by: log.live.entries.find((e) => e?.verb === "lift-sockets")?.body?.by }));
 `);
   const r = Bun.spawnSync(["bun", script], { env: { ...process.env, WORLDS_DIR: path.join(WS, "worlds"), ENGINE }, stdout: "pipe", stderr: "pipe" });
   const line = String(r.stdout).split("\n").find((l) => l.startsWith("SL ")); const got = line ? JSON.parse(line.slice(3)) : null;
-  ok(!!got && got.b === 1 && got.a === 0 && got.aMap && got.notes.some((n) => n.kind === "lift-sockets" && n.host === "a-cart" && n.code === "shape"), "SL1 at load, a host the lift can't write is left as it was and said to the flight recorder (lift-sockets, its id and why); the healthy host after it lifts", got ?? String(r.stderr).slice(-400)); }
+  ok(!!got && got.atLoad.a === 0 && got.atLoad.b === 0 && got.atLoad.aMap && got.atLoad.notes.some((n) => n.kind === "repair-needed" && n.steps?.includes("lift-sockets") && n.blocking?.includes("lift-sockets")), "SL1 at load nothing is lifted (a load never writes: lead 10-18); the flight recorder is told the world needs lift-sockets and refuses writes meanwhile (repair-needed)", got);
+  ok(!!got && got.r.ok && got.b === 1 && got.a === 0 && got.aMap && got.by === "opie" && got.r.lift?.failed?.some((f) => f.host === "a-cart" && f.code === "shape") && got.r.lift?.made?.some((m) => m.host === "b-bench"), "SL1 …the operator's repair (operator-repair {verb: repair}) lifts the healthy host, recorded with the operator's id, and names the host the door refuses ({host, code}), left as it was", got); }
 
 console.log(`[server-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -35,13 +35,14 @@ console.log(fails.length ? `FAIL ${fails.join("; ")}` : "replay: ok (status ok, 
 // Replay is untouched (the log up to its head folds byte-identically; the fold reads no socket); the LOADED world gains
 // one system act and change per host. Every log in spec/, plus the copies in RL_WORLDS (a scratch dir of world logs,
 // never a live world dir: copy the Commons and the gym there), is lifted in memory and checked.
-const { worldOf, posAt, liftWorld, request } = await import("../../shared/protocol/authority.js");
+const { worldOf, posAt, liftWorld, maintain, request } = await import("../../shared/protocol/authority.js");
 const { worldPose, simFold, digestOf } = await import("../../shared/protocol/simlayer.js");
 const { translate } = await import("./import-v1/translate-v1.js");
 let rlFail = 0; const rl = (c: any, what: string, d?: any) => { if (!c) { rlFail++; console.log(`FAIL ${what}${d !== undefined ? ` — ${JSON.stringify(d).slice(0, 300)}` : ""}`); } else console.log(`ok   ${what}`); };
 const loadLift = (raw: Buffer, now?: number) => { const entries = readLog(raw); const lines: string[] = []; const T = now ?? (entries.findLast?.((e: any) => Number.isInteger(e?.ts))?.ts ?? 0) + 1000;
   const w = worldOf({ name: "rl", entries: entries.map(posAt), getBlob: () => { throw new Error("no blob"); }, putBlob: () => "", writeLine: (l: string) => lines.push(l), now: () => T });
-  const lifted = liftWorld(w); const all = Buffer.concat([raw, Buffer.from(lines.map((l) => l + "\n").join(""))]); return { entries, lines, lifted, all, w, T }; };
+  const m = maintain(w); const lifted = m.refused ? [] : m.steps.lift.made;   // lead 10-18: the load writes nothing; the command lifts (RL rows exercise the command)
+  const all = Buffer.concat([raw, Buffer.from(lines.map((l) => l + "\n").join(""))]); return { entries, lines, lifted, all, w, T }; };
 const logs: [string, Buffer][] = [];
 const walk = (d: string) => { for (const f of fs.readdirSync(d, { withFileTypes: true })) { const p = `${d}/${f.name}`; if (f.isDirectory()) walk(p); else if (f.name.endsWith(".jsonl")) logs.push([p.slice(ENGINE.length), fs.readFileSync(p)]); } };
 walk(ENGINE + "spec");
@@ -58,7 +59,7 @@ for (const [name, raw] of logs) {
   const named = hosts.every(([h, e]: any) => Object.keys(e.c.sockets).every((slot) => Object.values(after.entities).some((x: any) => x.c.parent?.to === h && x.c.socket?.name === slot)));
   rl(L.all.subarray(0, raw.length).equals(raw) && prefix && after.status === before.status && (before.status === "ok" || !L.lines.length) && worst < 1e-8 && !legacy && named,
     `RL1 ${name}: its head folds byte-identically after the lift; ${hosts.length} host(s) keep their seats by name, ${legacy} old spellings left, every thing within ${worst.toExponential(1)} of where it was (${L.lines.length} lines appended)`, { status: [before.status, after.status], prefix, worst, legacy, named });
-  if (L.lines.length) { const again = loadLift(L.all); rl(!again.lines.length && !again.lifted.filter((x: any) => !x.repairNeeded).length, `RL2 ${name}: a second load appends nothing (a 'needs the shape repair' note is said, never written: item 9)`, again.lifted); }
+  if (L.lines.length) { const again = loadLift(L.all); rl(!again.lines.length && !again.lifted.length, `RL2 ${name}: a second run of the command appends nothing`, again.lifted); }
   if (L.lines.length && before.status === "ok") { const s0 = simFold(L.entries, L.T), s1 = simFold(readLog(L.all), L.T);
     rl((s0.sim ? digestOf(s0.sim) : null) === (s1.sim ? digestOf(s1.sim) : null), `RL5 ${name}: the sim's bodies are unchanged by the lift (${s0.sim ? "an engine world" : "no engine"})`, [s0.sim && digestOf(s0.sim), s1.sim && digestOf(s1.sim)]); }
 }
@@ -101,7 +102,7 @@ for (const [name, raw] of logs) {
   const s1 = seatOf(W.state(), "chair1");
   const del = R("ann", "delete", { id: s1 }); const lines: string[] = [];
   const reopened = worldOf({ name: "rl", entries: W.entries, getBlob: () => { throw new Error(); }, putBlob: () => "", writeLine: (l: string) => lines.push(l), now: () => T + 1000 });
-  const again = liftWorld(reopened);
+  const again = liftWorld(reopened);   // the LOAD: it must write nothing and need nothing
   rl(L.lifted.length === 2 && !!s1 && del.ok && !again.length && !lines.length && !seatOf(reopened.state(), "chair1"), "RL7 a lab chair from before the cut gets its seat child at load; a seat then deleted stays deleted at the next load", [L.lifted, del.refused, again]);
   const u = R("ann", "undo", {});   // ann's latest act: the delete; then the chair2 spawn
   const u2 = R("ann", "undo", {}); const st8 = W.state();

@@ -9,7 +9,9 @@ import { directoryFor, mintId, type Entry } from "../../../server/directory.ts";
 import { agentTokens } from "../../../server/auth.ts";
 import { custodyAt, modLogAt } from "../../../server/custody.ts";
 import { custodyFileIn } from "../../../server/keyfiles.ts";
-import { seal } from "../../../shared/protocol/authority.js";
+import { seal, maintain } from "../../../shared/protocol/authority.js";
+import { openLive } from "../../../server/livehost.ts";
+import { ENGINE_CATALOGUE } from "../../../server/modelcatalogue.ts";
 import { readLog, fold, digest, keyOk } from "../../../shared/protocol/fold.js";
 import { simFold } from "../../../shared/protocol/simlayer.js";
 import { translate, TRANSLATOR, DROPPED, deferredFeatures, deferredRefusal } from "./translate-v1.js";
@@ -137,6 +139,14 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   const tmp = path.join(destDir, "world.jsonl.tmp");
   fs.writeFileSync(tmp, text);
   fs.renameSync(tmp, path.join(destDir, "world.jsonl"));
+  // lead's ruling 10-18: a LOAD never writes, so the translation runs the maintenance command on its own output here: the
+  // v1 sockets maps become socket children (lift-sockets, the system's act with by: "translate"); the renames and the shape
+  // repair are already in the projection and write nothing. A translated world therefore needs no step when it is served.
+  const live = openLive(destDir, name ?? path.basename(destDir), { catalogue: ENGINE_CATALOGUE, scripts: null });
+  const m: Any = maintain(live, { by: "translate" });
+  if (m.refused) throw new Error(`the translated world could not be lifted: ${m.refused.code}: ${m.refused.reason}`);
+  const maintenance = { lifted: m.steps.lift.made.length, liftFailed: m.steps.lift.failed, renamed: m.steps.rename.renamed.length, repaired: m.repaired.length, entries: live.entries.length };
+  if (maintenance.liftFailed.length) throw new Error(`the translated world's seats could not all be lifted: ${JSON.stringify(maintenance.liftFailed).slice(0, 300)}`);
   if (!deferIdentities) dir.put(planned);
   for (const [h, p] of addressed) recordEido(h, p);
   // v1 bans are the moderator's record in v4 (the authority reads bans only from world.mod.jsonl): file each one there, or a
@@ -151,6 +161,8 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   if (fs.existsSync(oldPoses)) { try { const P = JSON.parse(fs.readFileSync(oldPoses, "utf8")); const out: Record<string, unknown> = {};
     for (const [name, pose] of Object.entries<Any>(P ?? {})) { const id = memo.get(`name:${name}`); if (id && pose) { out[id] = pose; poses++; } }
     if (poses) fs.writeFileSync(path.join(destDir, "poses.json"), JSON.stringify(out)); } catch { /* an unreadable poses file: nobody's place is remembered */ } }
-  return { source, planned, identities: Object.keys(planned).length, renamedBlobs, addressed: [...addressed.keys()], stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back), poses, ...(sim ? { sim } : {}) };
+  // the approval act (translation-approved, bound to the dry-run report) sits right after the translation's marker, BEFORE the
+  // content it approves; the maintenance acts (lift-sockets by: "translate") come at the tail, derived from that approved content
+  return { source, planned, identities: Object.keys(planned).length, renamedBlobs, addressed: [...addressed.keys()], stats: r.stats, entries: live.entries.length, worldId: back.worldId, digest: digest(live.state()), maintenance, poses, ...(sim ? { sim } : {}) };
 }
 

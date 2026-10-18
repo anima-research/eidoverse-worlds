@@ -7,7 +7,7 @@
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts rollback <world> [--discard-changes]       (undo an in-place translation: the old files back, everything it made removed)
 //   bun tools/protocol/world.ts owner-key <ed25519:…> <signature>      (the ceremony's check: import-v1/README.md)
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts info <name>
-//   WORLDS_DIR=<dir> bun tools/protocol/world.ts repair <name> [--dry-run] [--by <who asked>]     the shape repair (PROTOCOL §4), recorded
+//   WORLDS_DIR=<dir> bun tools/protocol/world.ts repair <name> [--dry-run] [--by <who asked>]     maintenance: lift-sockets, rename-components, repair-shapes (PROTOCOL §4), each recorded
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts repair <name> --rollback [--force]               the pre-repair log put back, byte-identical
 //
 // The server never makes a world by itself (it serves only worlds in this protocol, and refuses a directory holding only an old log). A directory is a world because it holds world.jsonl
@@ -38,7 +38,7 @@ import { custodyFileIn } from "../../server/keyfiles.ts";
 import { TRANSLATOR } from "./import-v1/translate-v1.js";
 import { openLive, isWorldDir } from "../../server/livehost.ts";
 import { digest, keyOk } from "../../shared/protocol/fold.js";
-import { repairShapes } from "../../shared/protocol/authority.js";
+import { maintain } from "../../shared/protocol/authority.js";
 import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
 import { backupBeforeRepair, sealBackup, dropBackup, rollbackRepair } from "../../server/repairfiles.ts";
 
@@ -348,7 +348,7 @@ if (cmd === "found") {
     entities: Object.keys(st.entities).length - 1, entitiesNote: "not counting @world, the world's own entity",
     roles: Object.fromEntries(Object.entries(st.entities["@world"].c).filter(([k]) => k.startsWith("roles:"))), digest: digest(st) }, null, 1));
 } else if (cmd === "repair") {
-  // reviewer item 9 (10-18): the shape repair is a MAINTENANCE COMMAND, never the load's. Stop the server that serves the world
+  // reviewer item 9 + lead's ruling (10-18): a load never writes; the three stored-value rewrites are ONE maintenance command. Stop the server that serves the world
   // first (two writers of one log). Recorded: the system's repair-shapes act carries command and --by (PROTOCOL §4); its
   // rollback is the file's: the pre-repair log is kept under <world>/repair-backups/<stamp>/ and --rollback puts it back
   // byte-identical (server/repairfiles.ts), refusing when the log has grown since (unless --force).
@@ -362,17 +362,19 @@ if (cmd === "found") {
   } else {
     const w = openLive(dir, name, { catalogue: ENGINE_CATALOGUE, scripts: null });
     const by = flag("by") ?? null, dryRun = rest.includes("--dry-run");
-    if (dryRun) { const r = repairShapes(w, { by, dryRun: true }) as any;
+    const say = (r: any) => { const L = r.steps.lift, R = r.steps.rename, P = r.steps.repair;
+      console.log(`  lift-sockets:      ${L.made.length} host(s)${L.made.length ? ` (${L.made.map((m: any) => m.host).join(", ")})` : ""}, ${L.failed.length} refused${L.failed.length ? ` ${JSON.stringify(L.failed).slice(0, 300)}` : ""}`);
+      console.log(`  rename-components: ${R.renamed.length} rename(s)${R.renamed.length ? ` (${R.renamed.map((x: any) => `${x.id}.${x.from ?? x.component}`).slice(0, 12).join(", ")})` : ""}, ${R.failed.length} refused${R.failed.length ? ` ${JSON.stringify(R.failed).slice(0, 300)}` : ""}`);
+      console.log(`  repair-shapes:     ${P.marked ? "already marked (nothing to repair)" : `${P.repaired.length} entity(ies)${P.repaired.length ? ` (${P.repaired.slice(0, 20).join(", ")}${P.repaired.length > 20 ? ", …" : ""})` : ""}, ${P.failed.length} refused${P.failed.length ? ` ${JSON.stringify(P.failed).slice(0, 300)}` : ""}`}`); };
+    if (dryRun) { const r = maintain(w, { by, dryRun: true }) as any;
       if (r.refused) die(`repair refused: ${r.refused.code}: ${r.refused.reason}`);
-      if (r.marked) { console.log(`${name} is already marked (its log holds the repair-shapes marker, a stamped founding or a translation in today's spelling): nothing to repair`); process.exit(0); }
-      console.log(`dry run: ${r.repaired.length} entity(ies) would be repaired${r.repaired.length ? `: ${r.repaired.join(", ")}` : ""}; ${r.failed.length} refused${r.failed.length ? `: ${JSON.stringify(r.failed)}` : ""}; ${r.ops.length} op(s)`);
-      for (const o of r.ops) console.log(`  ${o.verb} ${o.id} ${o.comp}`); process.exit(0); }
+      console.log(`dry run of ${name} (nothing written): lift-sockets, rename-components, repair-shapes`); say(r); process.exit(0); }
     const backup = backupBeforeRepair(dir, { by });
-    let r: any; try { r = repairShapes(w, { by }); } catch (e) { dropBackup(backup); throw e; }
+    const n0 = w.entries.length; let r: any; try { r = maintain(w, { by }); } catch (e) { dropBackup(backup); throw e; }
     if (r.refused) { dropBackup(backup); die(`repair refused: ${r.refused.code}: ${r.refused.reason}`); }
-    if (r.marked) { dropBackup(backup); console.log(`${name} is already marked: nothing to repair, nothing written (no backup kept)`); process.exit(0); }
+    if (w.entries.length === n0) { dropBackup(backup); console.log(`${name} needs nothing: already lifted, renamed and marked; nothing written (no backup kept)`); say(r); process.exit(0); }
     const m = sealBackup(backup);
-    console.log(`repaired ${name}: ${r.repaired.length} entity(ies)${r.repaired.length ? ` (${r.repaired.slice(0, 20).join(", ")}${r.repaired.length > 20 ? ", …" : ""})` : ""}, ${r.failed.length} refused${r.failed.length ? ` ${JSON.stringify(r.failed).slice(0, 400)}` : ""}; the system's repair-shapes act at seq ${r.seq}${by ? `, by ${by}` : ""}`);
+    console.log(`repaired ${name}: ${w.entries.length - n0} entr(y|ies) appended${by ? `, by ${by}` : ""}`); say(r);
     console.log(`pre-repair log kept: ${backup} (${m.before.size} bytes, sha256 ${m.before.sha256}); to undo: bun tools/protocol/world.ts repair ${name} --rollback`);
   }
 } else die("usage: found <name> --owner <id> [--title …] | translate <world> [<new name>] --dry-run … | translate <world> [<new name>] (--founder-key <key> --approved <hash> --approve-sig <sig> | --no-founder-key --approved <hash>) | rollback <world> [--discard-changes] | owner-key <key> <sig> | info <name>   | repair <name> [--dry-run] [--by <id>] | repair <name> --rollback [--force]   (WORLDS_DIR=<dir>)");

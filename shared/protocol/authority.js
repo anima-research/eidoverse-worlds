@@ -61,8 +61,8 @@ import { actIndexOf, buildSculpt, buildSky, buildUndo, buildWeather } from "./au
 export { actIndexFresh, actIndexOf, entityBefore } from "./authority/undo.js";
 import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, installCheck, logRt, overCpu, particlesCheck, pauseOnly, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptCeiling, scriptDefaults, scriptDepth, scriptMemo, scriptRights, scriptsCfg, sponsorOf, uploadEffect } from "./authority/scripts.js";
 export { DUTY, scriptCeiling, scriptDefaults, setScriptConfig, setScriptDuty, unpaused } from "./authority/scripts.js";
-import { SCRIPT_VERBS, activate, drainHeld, drainScripts, heldEvent, repairShapes } from "./authority/scriptrun.js";
-export { ORPHANS, expireRoles, liftWorld, presenceEvent, repairShapes, scriptsView, settle, settleOrphans, tick } from "./authority/scriptrun.js";
+import { SCRIPT_VERBS, activate, drainHeld, drainScripts, heldEvent, maintain, maintenanceNeeds } from "./authority/scriptrun.js";
+export { ORPHANS, expireRoles, liftWorld, maintain, maintenanceNeeds, presenceEvent, repairShapes, scriptsView, settle, settleOrphans, tick } from "./authority/scriptrun.js";
 import { clearOccupant, leftOccupied, occupiedRefuse, occupantOf, occupyRights, setOccupant, occupantOn, vacateAt, vacateWhy, vacatesFor } from "./authority/occupants.js";
 import { arrivalBox, body, buildEpoch, dist, gripPoint, gripOf, lawOf, pathBlocked, restampEngine, settleSim, shearFree, sizeOf, solidAt } from "./authority/physics.js";
 import { fliesIn, flyingWorld, gripHow, homeScale, launch, recentRests, releasePos, returnDue, returnHome, returnPlan, sameHome, secondGrip, shaped, shoveGate, snapTarget, stampHomes, stampResetHomes, vec3s } from "./authority/manipulate.js";
@@ -123,6 +123,10 @@ export function request(w, actor, verb, args = {}) {
     if (h && w.exists && w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer && !READ_ONLY.has(verb))
       refuse("custody", "this server doesn't hold the key that signs this world (its genesis names another sequencer)", "the operator restores the world's custody file, or hands the sequencer over (§13 handoff); reads still work");
     if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log folds to '${w.state().status}'`, "the authority won't write to a log its own reader refuses");
+    // lead's ruling 10-18: a load never writes; a world whose old shapes no reader serves (an un-lifted seat, a grabbable's
+    // old pose, the shape audit's values) loads and refuses every WRITE until the maintenance command runs (maintenanceNeeds)
+    if (h && w.exists && !READ_ONLY.has(verb) && verb !== "leave" && CTX.operator !== actor) { const n = maintenanceNeeds(w);
+      if (n.blocking.length) refuse("repair-needed", `this world needs maintenance before it can be written: ${n.blocking.join(", ")} (its values are stored in an old spelling no reader here serves)`, n.fix); }
     if (!h && Object.hasOwn(RESERVED_VERBS, verb)) refuse("reserved", `'${verb}' is a reserved request: ${RESERVED_VERBS[verb].why}`, "help lists every verb");
     if (!h) refuse("unknown-verb", `there is no '${verb}'`, "help lists every verb", { didYouMean: guess(verb, Object.keys(VERBS)) });
     // `leave` passes: it settles their own presence (the server sends it when it removes them; review 10-07: a kicked
@@ -354,10 +358,10 @@ export function operatorRepair(w, actor, verb, args = {}) {
   const door = (verb === "set" || verb === "delete") && args && args.id === "@world" && REPAIR_COMP(args.component);
   // reviewer item 9 (10-18): the shape repair is a maintenance command, never the load's; an operator runs it here, recorded
   // with the operator's id (the act's `by`, operator: true). Not a request word: it has no verb at the door
-  if (verb === "repair-shapes") { const r = repairShapes(w, { by: actor, operator: true, dryRun: args?.dryRun === true });
+  if (verb === "repair" || verb === "repair-shapes") { const r = maintain(w, { by: actor, operator: true, dryRun: args?.dryRun === true });
     return r.refused ? { ok: false, refused: r.refused } : { ok: true, ...r }; }
   if (!(door || verb === "unban"))
-    return { ok: false, refused: { code: "rights", reason: `an operator's repair covers @world's roles, access, default-role and role-defs (set, delete), lifting a ban or kick (unban) and the shape repair (repair-shapes); not ${String(verb).slice(0, 32)}${args?.component !== undefined ? ` ${String(args.component).slice(0, 64)}` : ""}`,
+    return { ok: false, refused: { code: "rights", reason: `an operator's repair covers @world's roles, access, default-role and role-defs (set, delete), lifting a ban or kick (unban) and the maintenance command (repair: lift-sockets, rename-components, repair-shapes); not ${String(verb).slice(0, 32)}${args?.component !== undefined ? ` ${String(args.component).slice(0, 64)}` : ""}`,
       fix: "anything else goes through the world's own roles: repair a role (set {id: '@world', component: 'roles:<id>', value: {role: 'owner'}}), then act as that person" } };
   CTX.operator = actor; try { return request(w, actor, verb, args); } finally { CTX.operator = false; }
 }

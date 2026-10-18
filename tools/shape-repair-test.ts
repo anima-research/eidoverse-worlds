@@ -10,7 +10,7 @@ import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-1
 import fs from 'node:fs';
 import { scratchWorld } from './protocol/scratchworld.ts';
 import { worldOf, CHANGE } from '../shared/protocol/authority/storage.js';
-import { request, liftWorld, repairShapes, LAB_CATALOGUE } from '../shared/protocol/authority.js';
+import { request, liftWorld, repairShapes, maintain, maintenanceNeeds, posAt, LAB_CATALOGUE } from '../shared/protocol/authority.js';
 import { openWorld } from '../server/filehost.ts';
 import { isComponent } from '../shared/protocol/fold.js';
 import { partSlot, motionNode } from '../shared/protocol/names.js';
@@ -161,9 +161,9 @@ await tryRow('RP9', () => {
   const r2 = W.call('create', { id: 'rack', model: 'crate', components: { transform: TF, sockets: { hook: { pos: [0, 1, 0] } } } });
   const kids = Object.entries(W.state().entities).filter(([, e]) => e.c.parent?.to === 'rack' && e.c.socket);
   check('RP9 …nor does the old map spelling, lifted at the door (a slot with no body makes a socket child with no station)', r2.ok && kids.length === 1 && !kids[0][1].c.station, [r2.refused, kids]);
-  const w3 = legacyWorld({ coatrack: { model: 'crate', sockets: { peg: { pos: [0, 1.5, 0] } } } }); liftWorld(w3); repairShapes(w3);
+  const w3 = legacyWorld({ coatrack: { model: 'crate', sockets: { peg: { pos: [0, 1.5, 0] } } } }); maintain(w3);
   const k3 = Object.entries(w3.state().entities).filter(([, e]) => e.c.parent?.to === 'coatrack' && e.c.socket);
-  check('RP9 …nor a stored world\'s socket map with no body, lifted at its first load', k3.length === 1 && !k3[0][1].c.station, k3);
+  check('RP9 …nor a stored world\'s socket map with no body, lifted by the command', k3.length === 1 && !k3[0][1].c.station, k3);
 });
 
 // ===================================================================== R 10-17: a model is its library path again. A world stored with
@@ -194,7 +194,8 @@ await tryRow('RP11', async () => {
   const n = w.entries.length; const out = liftWorld(w);
   check('RP11 the load of an unrepaired world writes NO repair-shapes act and does not rewrite values (motion keeps amplitude, the light has no decay)', !w.entries.some((e) => e?.verb === 'repair-shapes') && w.entries.length === n && C(w, 'bell').motion?.amplitude === 0.3 && C(w, 'bell').motion?.axis === 'x' && C(w, 'lamp').light?.decay === undefined, [out, C(w, 'bell'), C(w, 'lamp')]);
   check('RP11 …but says the world needs repair, naming the command', out.some((x) => x.repairNeeded && /world\.ts repair/.test(x.repairNeeded.fix ?? '')), out);
-  check('RP11 …and the world behaves: folds ok, an owner still writes, and the unrepaired thing is still readable (readers\' own fallbacks: motioneval reads amplitude and a letter axis)', w.state().status === 'ok' && request(w, 'olive', 'create', { id: 'new1', model: 'crate', components: { transform: TF } }).ok && request(w, 'olive', 'set', { id: 'lamp', component: 'label', value: 'old lamp' }).ok, C(w, 'lamp'));
+  const wr = request(w, 'olive', 'create', { id: 'new1', model: 'crate', components: { transform: TF } }), rd = request(w, 'olive', 'look', {});
+  check('RP11 …the world loads (folds ok) and reads, but every write is refused with repair-needed naming the command: the shape audit\'s old values (a sky in degrees, an address model) have no reader that serves them (lead 10-18: fail closed, never silently wrong)', w.state().status === 'ok' && rd.ok && !wr.ok && wr.refused.code === 'repair-needed' && /world\.ts repair/.test(wr.refused.fix) && /repair-shapes/.test(wr.refused.reason), [wr.refused, rd.ok]);
   const ME = read('client/lib/motioneval.js');
   check('RP11 …(the reader fallbacks are real: motioneval.js reads m.amplitude and a letter axis)', /m\.amp \?\? m\.amplitude/.test(ME) && /axis: "x"/.test(ME), '');
   const { repairShapes } = await import('../shared/protocol/authority.js') as any;
@@ -202,6 +203,7 @@ await tryRow('RP11', async () => {
   check('RP11 the explicit command repairs it (amp, a vector axis, decay 1.7) and records who asked and what ran (provenance in the act)', r.repaired.includes('bell') && r.repaired.includes('lamp') && C(w, 'bell').motion?.amp === 0.3 && JSON.stringify(C(w, 'bell').motion?.axis) === '[1,0,0]' && C(w, 'lamp').light?.decay === 1.7 && act?.actor === 'system' && act.body.command === 'repair-shapes' && act.body.by === 'olive' && act.body.v === SHAPES_VERSION, [r, act?.body]);
   const m = w.entries.length; const r2 = repairShapes(w);
   check('RP11 …a second run finds the marker and writes nothing (marked: true)', r2.marked === true && w.entries.length === m, [r2, w.entries.length - m]);
+  check('RP11 …and once repaired the owner writes again', request(w, 'olive', 'create', { id: 'new1', model: 'crate', components: { transform: TF } }).ok && maintenanceNeeds(w).steps.length === 0, maintenanceNeeds(w));
 });
 
 await tryRow('RP12', async () => {
@@ -216,10 +218,10 @@ await tryRow('RP12', async () => {
   const before = sha(file), size0 = fs.statSync(file).size;
   const run = (...a: string[]) => spawnSync('bun', [ENGINE + 'tools/protocol/world.ts', 'repair', 'oldw', ...a], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' }, encoding: 'utf8' });
   const dry = run('--dry-run');
-  check('RP12 --dry-run names what would change and writes nothing', dry.status === 0 && /bell/.test(dry.stdout) && sha(file) === before, [dry.status, dry.stdout.slice(0, 300), dry.stderr.slice(0, 300)]);
+  check('RP12 --dry-run names all three steps and what would change, and writes nothing', dry.status === 0 && /bell/.test(dry.stdout) && /lift-sockets/.test(dry.stdout) && /rename-components/.test(dry.stdout) && /repair-shapes/.test(dry.stdout) && sha(file) === before, [dry.status, dry.stdout.slice(0, 300), dry.stderr.slice(0, 300)]);
   const rep = run('--by', 'olive');
   const L = fs.readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l)); const act = L.find((e) => e.verb === 'repair-shapes');
-  check('RP12 repair writes the act (provenance: command, by) and its change, and keeps a backup of the pre-repair log', rep.status === 0 && act?.body.by === 'olive' && act.body.command === 'repair-shapes' && L.length > w.entries.length && fs.existsSync(path.join(dir, 'repair-backups')), [rep.status, rep.stdout.slice(0, 300), rep.stderr.slice(0, 300)]);
+  check('RP12 repair writes the act (provenance: command, by) and its change, and keeps a backup of the pre-repair log', rep.status === 0 && act?.body.by === 'olive' && act.body.command === 'repair' && L.length > w.entries.length && fs.existsSync(path.join(dir, 'repair-backups')), [rep.status, rep.stdout.slice(0, 300), rep.stderr.slice(0, 300)]);
   const backups = fs.existsSync(path.join(dir, 'repair-backups')) ? fs.readdirSync(path.join(dir, 'repair-backups')) : [];
   check('RP12 …the backup is the pre-repair file, byte-identical (sha256), with a manifest', backups.length === 1 && sha(path.join(dir, 'repair-backups', backups[0], 'world.jsonl')) === before && JSON.parse(fs.readFileSync(path.join(dir, 'repair-backups', backups[0], 'manifest.json'), 'utf8')).before?.sha256 === before, backups);
   const again = run();
@@ -238,7 +240,56 @@ await tryRow('RP13', async () => {
   const w = legacyWorld({ lamp: { light: { kind: 'point', color: 1, intensity: 16, range: 10 } } });
   const r = operatorRepair(w, 'opie', 'repair-shapes', {});
   const act = w.entries.find((e) => e?.verb === 'repair-shapes');
-  check('RP13 a server operator\'s repair-shapes through operatorRepair runs the same repair, recorded with the operator\'s id', r.ok && r.repaired?.includes('lamp') && act?.body.by === 'opie' && act.body.operator === true && C(w, 'lamp').light?.decay === 1.7, [r, act?.body]);
+  check('RP13 a server operator\'s repair-shapes through operatorRepair runs the same repair, recorded with the operator\'s id', r.ok && r.repaired?.includes('lamp') && act?.body.by === 'opie' && act.body.operator === true && act.body.command === 'repair' && C(w, 'lamp').light?.decay === 1.7, [r, act?.body]);
+});
+
+// ===================================================================== lead's ruling (10-18): a load never writes. lift-sockets and rename-components join the command
+// Rows red first against 685879c4 (the load still lifted and renamed): shown by reverting scriptrun.js to that commit and running them.
+await tryRow('RP14', () => {
+  const w = legacyWorld({ bench: { model: 'crate', sockets: { seat: { pos: [0, 0.5, 0], body: { action: 'sit' } } } } });
+  const n = w.entries.length; const out = liftWorld(w); const need = out.find((x) => x.repairNeeded)?.repairNeeded;
+  check('RP14 a pre-socket world loads without a write: no lift-sockets act, the sockets map still stored, and the load names lift-sockets as needed AND blocking (no reader serves an un-lifted seat)', w.entries.length === n && !w.entries.some((e) => e?.verb === 'lift-sockets') && !!C(w, 'bench').sockets && need?.steps.includes('lift-sockets') && need.blocking.includes('lift-sockets') && /world\.ts repair/.test(need.fix), out);
+  const wr = request(w, 'olive', 'set', { id: 'bench', component: 'label', value: 'a bench' }), rd = request(w, 'olive', 'inspect', { id: 'bench' }), lv = request(w, 'olive', 'leave', {});
+  check('RP14 …every write is refused with repair-needed (the text names the command); reads and leave still work', !wr.ok && wr.refused.code === 'repair-needed' && /lift-sockets/.test(wr.refused.reason) && /world\.ts repair/.test(wr.refused.fix) && rd.ok && lv.ok, [wr.refused, rd.ok, lv.refused]);
+  const r = maintain(w, { by: 'olive' }); const act = w.entries.find((e) => e?.verb === 'lift-sockets');
+  const kid = Object.entries(w.state().entities).find(([, e]) => e.c.parent?.to === 'bench' && e.c.socket?.name === 'seat');
+  check('RP14 the command lifts it (its own act, with provenance), the seat is a socket child with a station, the map is gone, and writes work again', r.steps.lift.made.length === 1 && act?.actor === 'system' && act.body.command === 'repair' && act.body.by === 'olive' && !!kid && kid[1].c.station?.action === 'sit' && !C(w, 'bench').sockets && request(w, 'olive', 'set', { id: 'bench', component: 'label', value: 'a bench' }).ok && maintenanceNeeds(w).steps.length === 0, [r.steps.lift, act?.body, kid?.[1].c]);
+});
+
+await tryRow('RP15', () => {
+  // renames whose old spelling today's readers serve (trusted → drafts.trustedOf; bob → motionType; a station's pose → bodyOf): the world works as it is
+  const a = legacyWorld({ buoy: { model: 'crate', motion: { type: 'bob', amp: 0.2, period: 3, axis: [0, 1, 0], phase: 0 } } }, { trusted: { components: ['hesperus/material'] } });
+  // …a stored world that is otherwise in today's spelling (marked): only the renames are needed
+  a.append({ kind: 'act', actor: 'system', verb: 'repair-shapes', body: { v: SHAPES_VERSION, ids: [], founding: true } });
+  const outA = liftWorld(a); const needA = outA.find((x) => x.repairNeeded)?.repairNeeded;
+  const wA = request(a, 'olive', 'set', { id: 'buoy', component: 'label', value: 'buoy' });
+  check('RP15 a world needing only served renames loads, is said to need rename-components (not blocking), and takes writes', JSON.stringify(needA?.steps) === '["rename-components"]' && needA.blocking.length === 0 && wA.ok && C(a, '@world').trusted && C(a, 'buoy').motion?.type === 'bob', [outA, wA.refused]);
+  const rA = maintain(a, { by: 'olive' }); const actA = a.entries.find((e) => e?.verb === 'rename-components');
+  check('RP15 …the command renames them in one act with provenance; nothing is renamed at load', rA.steps.rename.renamed.length === 2 && actA?.body.command === 'repair' && actA.body.by === 'olive' && C(a, '@world')['trusted-components'] && !C(a, '@world').trusted && C(a, 'buoy').motion?.type === 'oscillate', [rA.steps.rename, C(a, '@world')]);
+  // a rename no reader serves (a grabbable's pose: grab.js reads anim only): fail closed
+  const b = legacyWorld({ cup: { model: 'crate', grabbable: { pose: 'pistol' } } });
+  b.append({ kind: 'act', actor: 'system', verb: 'repair-shapes', body: { v: SHAPES_VERSION, ids: [], founding: true } });
+  const outB = liftWorld(b); const needB = outB.find((x) => x.repairNeeded)?.repairNeeded; const wB = request(b, 'olive', 'set', { id: 'cup', component: 'label', value: 'cup' });
+  check('RP15 a stored grabbable.pose blocks writes (repair-needed names rename-components) until the command renames it to anim', needB?.blocking.includes('rename-components') && !wB.ok && wB.refused.code === 'repair-needed' && maintain(b).steps.rename.renamed.length === 1 && C(b, 'cup').grabbable?.anim === 'pistol' && request(b, 'olive', 'set', { id: 'cup', component: 'label', value: 'cup' }).ok, [outB, wB.refused, C(b, 'cup')]);
+});
+
+await tryRow('RP16', async () => {
+  // a v1 world translated today needs NO maintenance step: the translator lifts, renames and repairs in its projection
+  const old = [{ seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 2, dialect: 'eidoverse-log', roles: { ann: { role: 'owner' } } } },
+    { seq: 1, ts: 2, actor: 'ann', verb: 'spawn', args: { id: 'bench', lib: 'crate', pos: [0, 0, 0] } },
+    { seq: 2, ts: 3, actor: 'ann', verb: 'comp', args: { id: 'bench', type: 'sockets', data: { seat: { pos: [0, 0.5, 0], body: { action: 'sit' } } } } },
+    { seq: 3, ts: 4, actor: 'ann', verb: 'spawn', args: { id: 'cup', lib: 'crate', pos: [1, 0, 0] } },
+    { seq: 4, ts: 5, actor: 'ann', verb: 'comp', args: { id: 'cup', type: 'grabbable', data: { pose: 'pistol' } } },
+    { seq: 5, ts: 6, actor: 'ann', verb: 'comp', args: { id: 'cup', type: 'motion', data: { type: 'bob', amp: 0.1, period: 2 } } },
+    { seq: 6, ts: 7, actor: 'ann', verb: 'comp', args: { id: 'bench', type: 'light', data: { kind: 'point', day: true } } }];
+  // the translate COMMAND (import-v1/world.ts translateV1World, what `world.ts translate` runs): its projection renames and repairs, and it runs the maintenance command on its output (lift-sockets)
+  const { translateV1World } = await import('./protocol/import-v1/world.ts');
+  const root = fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? process.env.TMPDIR ?? '/tmp', 'rp16-')); fs.mkdirSync(path.join(root, 'old'));
+  fs.writeFileSync(path.join(root, 'old', 'log.jsonl'), old.map((e) => JSON.stringify(e)).join('\n') + '\n');
+  const r = translateV1World(path.join(root, 'old'), path.join(root, 'new'), { name: 'new' });
+  const { openLive } = await import('../server/livehost.ts'); const w = openLive(path.join(root, 'new'), 'new', { scripts: null });
+  const need = maintenanceNeeds(w); const E = w.state().entities; const lifts = w.entries.filter((e) => e?.verb === 'lift-sockets');
+  check('RP16 a v1 world translated today (sockets, a grabbable pose, a bob motion, a light with day) needs no step when served: the translation lifted its seats (one lift-sockets act, by: translate), renamed and repaired in its projection; the load writes nothing and writes work', r.maintenance.lifted === 1 && lifts.length === 1 && lifts[0].body.by === 'translate' && w.state().status === 'ok' && need.steps.length === 0 && liftWorld(w).length === 0 && Object.values(E).some((e) => e.c.socket?.name === 'seat') && !Object.values(E).some((e) => e.c.sockets || e.c.grabbable?.pose || e.c.motion?.type === 'bob' || 'day' in (e.c.light ?? {})) && request(w, 'n' + 'ann', 'look', {}).ok, [need, r.maintenance, Object.values(E).map((e) => Object.keys(e.c))]);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

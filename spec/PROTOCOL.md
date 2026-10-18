@@ -256,7 +256,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `grabbable.anim`, is an open name of a pose (one frame, only the bones it names) or a clip (more than one key):
   a name the body doesn't know plays its default, never a refusal; `sockets`, the old
   map spelling, is reserved and lift-only: the authority lifts it into socket children with their stations
-  on write and at a stored world's first load, and a socket's old `body` block into its station),
+  on write, and the maintenance command's `lift-sockets` step does the same for a stored world (never the load), and a socket's old `body` block into its station),
   `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
   `collider {shape}` (mesh, box or sphere; absent, its size decides), `places` (named places to walk to, in the
   thing's own frame; on `@world`, world coordinates),
@@ -318,21 +318,36 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `spec/kernel-vectors/` that the old reader (snapshotted from git at re-pin
   time) refuses and the new reader folds clean; the pin records the three and
   the gate verifies them at every run, so none can be dropped afterwards.
-- **An old shape is repaired once, by an explicit maintenance command — never
-  by a load or a read** (a pure rename is not: below). When a trial shape changes,
-  a stored world keeps its old values as they are: loading never rewrites them
-  (its readers keep their own fallbacks for the old spellings, and the load
-  says the world needs repair, naming the command). An operator then runs the
-  repair, `bun tools/protocol/world.ts repair <name>` (or, from inside the
-  world, a server operator's `operator-repair {verb: "repair-shapes"}`), which
-  writes what the old values meant, in today's spelling, in one system act,
-  `repair-shapes {v, ids, failed?, command: "repair-shapes", by?, operator?}`
+- **A load never writes to the log; stored values are rewritten only by one
+  explicit maintenance command.** Three rewrites exist, each the system's own
+  recorded act: `lift-sockets` (a world stored before sockets were entities:
+  its `sockets` maps and body blocks become socket children with stations),
+  `rename-components` (names and fields renamed before release, below) and
+  `repair-shapes` (the shape audit's one-way repair, below). None runs at load
+  or on read. A stored world keeps its old values as they are; the load says
+  which steps it needs, naming the command, and **fails closed** where
+  today's readers don't serve the old shape: a world needing `lift-sockets`
+  (no reader serves an un-lifted seat), a grabbable rename (`shared/grab.js`
+  reads `anim` and `grasp` only) or `repair-shapes` (a sky's azimuth in
+  degrees would read as radians) loads and reads, but refuses every write
+  (not `leave`) with the registered code `repair-needed`, whose text names
+  the command. Renames whose old spelling the readers serve (`@world`
+  `trusted`, a motion's `bob`, a station's `pose`) leave the world writable.
+  An operator then runs `bun tools/protocol/world.ts repair <name>` (or, from
+  inside the world, a server operator's `operator-repair {verb: "repair"}`),
+  which runs the three steps in that order, each its own act carrying
+  `command: "repair"` and `by` (who asked; `operator: true` from the wire):
+  `lift-sockets {id, made, moved, capability?}`, `rename-components
+  {renamed, failed?}`, `repair-shapes {v, ids, failed?}`
   (shared/protocol/shaperepair.js: `repairComps` for each thing, `repairWorld`
-  for `@world`'s look; the authority's `repairShapes`). **Provenance:** the act
-  carries `command` and `by` (who asked). **Rollback:** the command keeps the
-  pre-repair log beside the world (`repair-backups/<stamp>/world.jsonl`, with a
-  manifest of its size and sha256) and `repair <name> --rollback` puts it back
+  for `@world`'s look; the authority's `maintain`). `--dry-run` reports all
+  three and writes nothing. **Rollback:** the command keeps the pre-repair
+  log beside the world (`repair-backups/<stamp>/world.jsonl`, with a manifest
+  of its size and sha256) and `repair <name> --rollback` puts it back
   byte-identical, refusing when the log has grown since (`--force` overrides).
+  A v1 world translated today needs no step: the translate command runs the
+  same maintenance on its output (its `lift-sockets` act says `by:
+  "translate"`; §14).
   The repair runs **once per world**: the system's `repair-shapes` act is the world's
   marker, read by verb and actor only (they survive a purge), and a world
   founded or translated today gets one beside its founding or its `translated`
@@ -376,14 +391,14 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   stored sky's azimuth is converted from degrees exactly once (a turn
   beyond a full one first wraps: 400° is 40°), and a `weatherSeconds`
   today's range can't hold (0, or above 600 s) is dropped.
-- **A pure rename runs at every load.** A component or field renamed before
+- **A pure rename is the command's second step, idempotent.** A component or field renamed before
   release (shared/protocol/shaperepair.js `RENAMED_COMPONENTS`: `@world`
   `trusted` → `trusted-components`; `RENAMED_FIELDS`: `grabbable.pose` and
   `station.pose` → `anim`, a grip's `fingers` → `grasp`; a field's VALUE: a
   motion's `type` `bob` → `oscillate`, on `motion` and every `motion:<slot>`)
-  is not marker-gated and not a command,
+  is not marker-gated,
   unlike the once-per-world repair above: a rename means the same whenever it
-  runs, so every load renames what it finds, as the system's
+  runs, so the command renames whatever it finds, as the system's
   `rename-components {renamed, failed?, why}` act and its change, and writes nothing
   when there is nothing to rename. A value already under the new name wins
   (the old one is deleted), an old field stored as null is removed, and each

@@ -252,85 +252,112 @@ export function settleOrphans(w, present = []) {
   if (out.length) w.savePresence();
   return out;
 }
-/** A world stored before sockets were entities, lifted at its first load: per host, one system act (lift-sockets: the
- *  children it made, what it moved, and whose rights authored the sockets, so their builder still edits them) and its
- *  change. Not bounded like ORPHANS (a half-lifted world would need both readers), and not undoable (a system act). A
- *  second load finds nothing to lift. A server that can't sign for the world doesn't write to it, as request won't. */
+// ---------- maintenance (lead's ruling 2026-10-18: a LOAD NEVER WRITES TO THE LOG) ----------
+// Three rewrites of stored values exist, each a recorded system act: lift-sockets (a pre-socket world's `sockets` maps and
+// body blocks → socket children + stations), rename-components (names and fields renamed before release: shaperepair.js
+// RENAMED_COMPONENTS / RENAMED_FIELDS) and repair-shapes (the shape audit's one-way repair, marker-gated: shapesMarked). None
+// runs at load any more. One explicit command runs the three in that order (maintain; `bun tools/protocol/world.ts repair
+// <name>`, or a server operator's operator-repair {verb: "repair"}), each step its own act carrying `command: "repair"` and
+// `by`; the command's caller keeps the pre-repair log for a byte-identical rollback (server/repairfiles.ts).
+// A world that needs a step still LOADS. Whether it may be WRITTEN depends on whether today's readers serve the old shape:
+//   lift     no reader serves an un-lifted seat (sitting works on socket children only): BLOCKS writes
+//   rename   @world trusted (drafts.js trustedOf reads both), a motion's bob (names.js motionType), a station's pose
+//            (sockbody.js bodyOf) are read in the old spelling: served; a grabbable's pose or a grip's fingers are not
+//            (shared/grab.js reads anim and grasp only): BLOCKS writes
+//   repair   the sky's azimuth in degrees reads as radians, an address model reads as "thing": BLOCKS writes
+// A blocked world refuses every write (not the reads, not leave) with the registered code `repair-needed`, whose text names
+// the command (authority.js request). Never a silent wrong behaviour; never a write the operator didn't ask for.
+const needsCache = new WeakMap();
+const SERVED_RENAMES = (op) => !(op.comp === "grabbable" || op.comp.startsWith("grabbable:"));   // what no reader serves in the old spelling
+/** What maintenance a world needs: {steps: ["lift-sockets", "rename-components", "repair-shapes"] (those needed, in order),
+ *  blocking: the subset whose old shape no reader serves, lift: [hosts], rename: [ops], repair: bool, fix}. Cached per log
+ *  length (a needed step is only ever removed by the command, which appends). */
+export function maintenanceNeeds(w) {
+  if (!w.exists || w.state().status !== "ok") return { steps: [], blocking: [], lift: [], rename: [], repair: false };
+  const c = needsCache.get(w); if (c && c.n === w.entries.length) return c.v;
+  const st = w.state(); const lift = [];
+  for (const h of legacyHosts(st, w.everIds())) { if (!st.entities[h]) continue; try { if (liftHostOps(st, w.everIds(), h).ops.length) lift.push(h); } catch { lift.push(h); } }
+  const rename = renameOps(st, PURGED);
+  const repair = !shapesMarked(w.entries, (q) => readback(w, q));   // READBACK act:create-world / act:translated: a purged one is marked
+  const steps = [...(lift.length ? ["lift-sockets"] : []), ...(rename.length ? ["rename-components"] : []), ...(repair ? ["repair-shapes"] : [])];
+  const blocking = steps.filter((s) => s !== "rename-components" || rename.some((o) => !SERVED_RENAMES(o)));
+  const v = { steps, blocking, lift, rename, repair, fix: steps.length ? `run \`bun tools/protocol/world.ts repair <name>\` (${steps.join(", ")}: each recorded as the system's own act, with a backup to roll back), or a server operator's operator-repair {verb: 'repair'}` : null };
+  needsCache.set(w, { n: w.entries.length, v }); return v;
+}
+/** The load. It WRITES NOTHING: it says what the world needs ([{repairNeeded: {steps, blocking, why, fix}}]) or nothing. Kept
+ *  under its old name for its callers (the server's open, scratch worlds). A world this server can't sign for is said too. */
 export function liftWorld(w) {
   if (!w.exists || w.state().status !== "ok") return [];
   if (w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer) return [{ skipped: "custody", why: "this server doesn't hold the key that signs this world" }];
-  return withAuthority(w, () => { const out = [];
-    // one host at a time, each on its own (review 10-12 S2-3): a host whose lift fails is reported ({host, failed}: the
-    // server says it to the flight recorder) and left as it was, to lift at the next load; the hosts after it still lift
+  const n = maintenanceNeeds(w); if (!n.steps.length) return [];
+  return [{ repairNeeded: { steps: n.steps, blocking: n.blocking, why: `this world holds values in an old spelling (${n.steps.join(", ")}); loading never rewrites them${n.blocking.length ? `, and no reader serves ${n.blocking.join(", ")}'s old shape, so every write is refused (repair-needed) until the command runs` : " (its readers serve the old spelling: it works as it is)"}`, fix: n.fix } }];
+}
+
+/** The maintenance command: lift-sockets, then rename-components, then repair-shapes, each its own recorded system act
+ *  (provenance: command: "repair", by, operator). Per host / per thing admission as before: what the door refuses is left
+ *  as it was and named in the act's `failed`. Returns {steps: {lift, rename, repair}, repaired, failed, marked, seq?, dryRun?}
+ *  (repaired/failed/marked/seq are the repair-shapes step's, for its callers). dryRun computes every step and writes nothing. */
+export function maintain(w, { by = null, operator = false, dryRun = false } = {}) {
+  if (!w.exists || w.state().status !== "ok") return { refused: { code: "no-world", reason: "the world doesn't fold to a state" } };
+  if (w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer) return { refused: { code: "custody", reason: "this server doesn't hold the key that signs this world" } };
+  const prov = { command: "repair", ...(typeof by === "string" && by ? { by } : {}), ...(operator ? { operator: true } : {}) };
+  return withAuthority(w, () => { const steps = {};
+    // 1. lift-sockets: one host at a time, each on its own (review 10-12 S2-3)
+    const lift = { made: [], failed: [] };
     for (const h of legacyHosts(w.state(), w.everIds())) {
-      try {
-        const st = w.state(); if (!st.entities[h]) continue;
+      try { const st = w.state(); if (!st.entities[h]) continue;
         const { ops, made, moved } = liftHostOps(st, w.everIds(), h); if (!ops.length) continue;
         const author = (lastSetterOf(w, h, "sockets") ?? lastSetterOf(w, h, "model") ?? creatorOf(w, h))?.rights ?? null;
         const ids = [...new Set(ops.map((o) => o.id))], comps = [...new Set(ops.map((o) => o.comp))];
         const plan = admit(w, st, { actor: "system", cap: { kind: "system", ids, comps }, lifting: true }, ops);
-        changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "lift-sockets", body: { id: h, made, moved, ...(author ? { capability: { author } } : {}) } }));
-        out.push({ host: h, made, moved });
-      } catch (x) { out.push({ host: h, failed: { code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) } }); } }
-    // shape audit 10-16, reviewer item 9 (10-18): the load NEVER repairs. A world holding values from before the audit (no
-    // marker: shapesMarked) loads as it is (its readers keep their own fallbacks: motioneval reads amplitude and a letter
-    // axis, the light rig a missing decay) and the load SAYS so, naming the maintenance command (repairShapes, below:
-    // `bun tools/protocol/world.ts repair <name>`, or a server operator's operator-repair repair-shapes), which is recorded
-    // and can be rolled back
-    if (!shapesMarked(w.entries, (q) => readback(w, q))) out.push({ repairNeeded: { why: "this world holds values stored before the shape audit (10-16), in their old spelling; loading never rewrites them", fix: "run `bun tools/protocol/world.ts repair <name>` (recorded as the system's repair-shapes act, with a backup to roll back), or a server operator's operator-repair {verb: 'repair-shapes'}" } });
-    // names renamed before release (shaperepair.js RENAMED_COMPONENTS: @world trusted → trusted-components; RENAMED_FIELDS:
-    // grabbable/station pose → anim, a grip's fingers → grasp, a motion's type bob → oscillate; R 10-17): a pure
-    // rename, so every load does it (no marker); nothing to rename writes nothing. One system act, admitted PER THING as the
-    // repair is (review r11 L3): a thing whose rename the door refuses is left as it was and named in the act's `failed`,
-    // and the rest rename. When nothing renames, nothing is written (a refused thing is said in the load's output only, so
-    // the log doesn't grow by a note at every load)
+        if (!dryRun) changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "lift-sockets", body: { id: h, made, moved, ...(author ? { capability: { author } } : {}), ...prov } }));
+        lift.made.push({ host: h, made, moved });
+      } catch (x) { lift.failed.push({ host: h, code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) }); } }
+    steps.lift = lift;
+    // 2. rename-components: one system act, admitted PER THING (review r11 L3)
+    const rename = { renamed: [], failed: [] };
     try { const all = renameOps(w.state(), PURGED);
       if (all.length) { const st = w.state(); const byId = new Map(); for (const o of all) { if (!byId.has(o.id)) byId.set(o.id, []); byId.get(o.id).push(o); }
-        const kept = [], failed = [];
+        const kept = [];
         for (const [id, ops] of byId) {
           try { admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: [...new Set(ops.map((o) => o.comp))] }, lifting: true }, ops.map(({ renamed: _r, ...o }) => o)); kept.push(...ops); }
-          catch (x) { if (!(x instanceof Refusal)) throw x; failed.push({ id, code: x.code, reason: String(x.reason ?? "").slice(0, 300) }); } }
-        const renamed = [...kept.filter((o) => o.verb === "delete").map((o) => ({ id: o.id, from: o.comp, to: RENAMED_TO(o.id, o.comp) })),
+          catch (x) { if (!(x instanceof Refusal)) throw x; rename.failed.push({ id, code: x.code, reason: String(x.reason ?? "").slice(0, 300) }); } }
+        rename.renamed = [...kept.filter((o) => o.verb === "delete").map((o) => ({ id: o.id, from: o.comp, to: RENAMED_TO(o.id, o.comp) })),
           ...kept.filter((o) => o.renamed).flatMap((o) => o.renamed.map((r) => ({ id: o.id, component: o.comp, ...r })))];
-        if (kept.length) { const ids = [...new Set(kept.map((o) => o.id))], comps = [...new Set(kept.map((o) => o.comp))];
+        if (kept.length && !dryRun) { const ids = [...new Set(kept.map((o) => o.id))], comps = [...new Set(kept.map((o) => o.comp))];
           const plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids, comps }, lifting: true }, kept.map(({ renamed: _r, ...o }) => o));
-          changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "rename-components", body: { renamed, ...(failed.length ? { failed } : {}), why: "component names renamed before release (protocol minor 0): the value kept, under its new name" } })); }
-        out.push({ rename: { renamed, ...(failed.length ? { failed } : {}) } }); } }
-    catch (x) { out.push({ rename: { renamed: [], failed: { code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) } } }); }
-    return out; });
+          changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "rename-components", body: { renamed: rename.renamed, ...(rename.failed.length ? { failed: rename.failed } : {}), ...prov, why: "component names renamed before release (protocol minor 0): the value kept, under its new name" } })); } } }
+    catch (x) { rename.failed.push({ id: null, code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) }); }
+    steps.rename = rename;
+    // 3. repair-shapes: once per world (the act is the marker)
+    const repair = repairShapesStep(w, prov, dryRun); steps.repair = repair;
+    needsCache.delete(w);
+    return { steps, repaired: repair.repaired ?? [], failed: repair.failed ?? [], ...(repair.marked ? { marked: true } : {}), ...(repair.seq !== undefined ? { seq: repair.seq } : {}), ...(dryRun ? { dryRun: true, ops: repair.ops ?? [] } : {}) };
+  });
 }
-/** The shape repair as an EXPLICIT maintenance command (reviewer item 9, 10-18; never run by a load or a read). What a value
- *  stored before the shape audit meant, written in today's spelling (shared/protocol/shaperepair.js), ONCE per world: the act
- *  it writes is the marker (shapesMarked), as is a founding or a translation that already wrote today's spelling, so the
- *  rules that read an ABSENT field (a pendulum's [0, 2, 0] hinge, physics kind dynamic, a light's decay 1.7, the sky's
- *  defaults) only ever see values stored before it. Admitted per thing (review r7 F5): a thing whose repair the door
- *  refuses is left as it was and named in the act ({failed}); the rest repair. The act is written even when there is
- *  nothing to repair, so the next run finds the marker and does nothing. PROVENANCE: the act's body carries `command:
- *  "repair-shapes"` and `by` (who asked: the CLI's --by, or the operator's id, with operator: true), beside {v, ids, failed?,
- *  why}. ROLLBACK is the file's: the CLI keeps the pre-repair log beside the world (repair-backups/) and restores it
- *  byte-identical (tools/protocol/world.ts repair --rollback).
- *  Returns {marked: true} when the world is already marked (nothing written), else {repaired: ids, failed, seq, dryRun?}.
- *  dryRun: true computes the ops and writes nothing. */
+function repairShapesStep(w, prov, dryRun) {
+  if (shapesMarked(w.entries, (q) => readback(w, q))) return { marked: true, repaired: [], failed: [] };
+  const st = w.state(); const all = shapeRepairOps(st, PURGED, { pathOf: (m) => { try { return CTX.cat.pathOf?.(m) ?? null; } catch { return null; } } });
+  const byId = new Map(); for (const o of all) { if (!byId.has(o.id)) byId.set(o.id, []); byId.get(o.id).push(o); }
+  const kept = [], failed = [];
+  for (const [id, ops] of byId) {
+    try { admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: [...new Set(ops.map((o) => o.comp))] }, lifting: true }, ops); kept.push(...ops); }
+    catch (x) { if (!(x instanceof Refusal)) throw x; failed.push({ id, code: x.code, reason: String(x.reason ?? "").slice(0, 300) }); } }
+  const ids = [...new Set(kept.map((o) => o.id))];
+  if (dryRun) return { dryRun: true, repaired: ids, failed, ops: kept.map(({ verb, id, comp }) => ({ verb, id, comp })) };
+  const act = { kind: "act", actor: "system", verb: "repair-shapes", body: { v: SHAPES_VERSION, ids, ...(failed.length ? { failed } : {}), ...prov,
+    why: "values stored before the shape audit (10-16), in today's spelling with the meaning their readers gave them; once per world; run as a maintenance command, never by a load" } };
+  let seq;
+  if (kept.length) { const plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids, comps: [...new Set(kept.map((o) => o.comp))] }, lifting: true }, kept); seq = w.append(act); changeEntry(w, plan, seq); }
+  else seq = w.append(act);
+  return { repaired: ids, failed, seq };
+}
+/** The shape-repair step alone, as a command (its older name; the same provenance). Prefer maintain. */
 export function repairShapes(w, { by = null, operator = false, dryRun = false } = {}) {
   if (!w.exists || w.state().status !== "ok") return { refused: { code: "no-world", reason: "the world doesn't fold to a state" } };
   if (w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer) return { refused: { code: "custody", reason: "this server doesn't hold the key that signs this world" } };
-  if (shapesMarked(w.entries, (q) => readback(w, q))) return { marked: true, repaired: [], failed: [] };   // READBACK act:create-world / act:translated: a purged one is marked
-  return withAuthority(w, () => {
-    const st = w.state(); const all = shapeRepairOps(st, PURGED, { pathOf: (m) => { try { return CTX.cat.pathOf?.(m) ?? null; } catch { return null; } } });
-    const byId = new Map(); for (const o of all) { if (!byId.has(o.id)) byId.set(o.id, []); byId.get(o.id).push(o); }
-    const kept = [], failed = [];
-    for (const [id, ops] of byId) {
-      try { admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: [...new Set(ops.map((o) => o.comp))] }, lifting: true }, ops); kept.push(...ops); }
-      catch (x) { if (!(x instanceof Refusal)) throw x; failed.push({ id, code: x.code, reason: String(x.reason ?? "").slice(0, 300) }); } }
-    const ids = [...new Set(kept.map((o) => o.id))];
-    if (dryRun) return { dryRun: true, repaired: ids, failed, ops: kept.map(({ verb, id, comp }) => ({ verb, id, comp })) };
-    const act = { kind: "act", actor: "system", verb: "repair-shapes", body: { v: SHAPES_VERSION, ids, ...(failed.length ? { failed } : {}), command: "repair-shapes", ...(typeof by === "string" && by ? { by } : {}), ...(operator ? { operator: true } : {}),
-      why: "values stored before the shape audit (10-16), in today's spelling with the meaning their readers gave them; once per world; run as a maintenance command, never by a load" } };
-    let seq;
-    if (kept.length) { const plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids, comps: [...new Set(kept.map((o) => o.comp))] }, lifting: true }, kept); seq = w.append(act); changeEntry(w, plan, seq); }
-    else seq = w.append(act);
-    return { repaired: ids, failed, seq };
-  });
+  const r = withAuthority(w, () => repairShapesStep(w, { command: "repair-shapes", ...(typeof by === "string" && by ? { by } : {}), ...(operator ? { operator: true } : {}) }, dryRun));
+  needsCache.delete(w); return r;
 }
 const RENAMED_TO = (id, comp) => RENAMED_COMPONENTS[id]?.[comp] ?? null;
 // Things the log has lifted out of the engine (a grab's lift, a catch) with nothing after that puts them back: no launch,

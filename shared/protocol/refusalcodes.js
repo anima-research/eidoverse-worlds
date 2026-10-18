@@ -14,6 +14,7 @@ export const REFUSAL_CODES = Object.freeze({
   "no-world":       { meaning: "there is no such world", when: "any verb but create-world/help on a world that hasn't been founded" },
   "custody":        { meaning: "this server can't sign for the world", when: "a write to a world whose genesis names another sequencer key" },
   "unreadable":     { meaning: "the log folds to a status the authority won't write to", when: "a write while the fold says no-world/unknown-version" },
+  "repair-needed":  { meaning: "the world's stored values are in an old spelling no reader serves; the maintenance command must run first", when: "any write (not a read, not leave) to a world needing lift-sockets, a grabbable rename or repair-shapes (authority maintenanceNeeds); the text names `bun tools/protocol/world.ts repair <name>`" },
   "unknown-verb":   { meaning: "no such request", when: "a verb the authority doesn't have (help lists them)" },
   "banned":         { meaning: "the actor is banned from this world", when: "any request but help/leave from a banned identity" },
   "kicked":         { meaning: "the actor was removed and may come back later", when: "any request but help/leave inside a kick's cooldown" },

@@ -61,6 +61,8 @@ const { contentAddressOf } = await import("../../../server/eidoindex.ts");
 const { openLive } = await import("../../../server/livehost.ts");
 const { ENGINE_CATALOGUE } = await import("../../../server/modelcatalogue.ts");
 const { liftWorld } = await import("../../../shared/protocol/authority.js");
+const { opsOf: _opsOf } = await import("../../../shared/protocol/fold.js");
+const opsQuiet = (e: any) => { try { return _opsOf(e); } catch { return []; } };
 const { legacyHosts, liftHostOps, isSocketC } = await import("../../../shared/protocol/authority/sockets.js");
 const { socketQ } = await import("../../../shared/components.js");
 const { shapeRepairOps, shapesMarked } = await import("../../../shared/protocol/shaperepair.js");
@@ -253,9 +255,15 @@ export function oracleWorld(given) {
   const tTranslate = performance.now();
   // A. the strict reader and the real fold over what was written
   const text = fs.readFileSync(path.join(dest, "world.jsonl"));
-  const st = fold(readLog(text));
+  // the translate command runs the maintenance command on its output (lead 10-18: a load never writes; the lift is the
+  // translation's own act, by: "translate"). A compares the PROJECTION, so it folds the log up to that lift; B compares the
+  // served state (lifted) with the snapshot put through the same lift
+  const all = readLog(text); const liftAt = all.findIndex((e: any) => e?.kind === "act" && e.verb === "lift-sockets" && e.actor === "system" && e.body?.by === "translate");
+  const preLift = liftAt >= 0 ? all.slice(0, liftAt) : all;
+  const st = fold(preLift);
   if (st.status !== "ok") return { name, dir, error: `the translated world folds to ${st.status}` };
   const newA = v4comps(st);
+  const everPre = new Set(Object.keys(st.entities)); for (const e of preLift) if ((e as any)?.kind === "change") for (const o of opsQuiet(e)) if (o.verb === "create") everPre.add(o.id);
   // the snapshot through the translator's own mapping, with the translated world's people and model addresses
   const { who, unresolved, people } = whoFrom(worldsDir);
   const content = (p) => { const h = contentAddressOf(p); return h ? `sha256:${h}` : null; };
@@ -266,8 +274,8 @@ export function oracleWorld(given) {
   const tA = performance.now();
   // B. the server's view: opened as the server opens it, lifted as it lifts at first load
   const live = openLive(dest, name, { catalogue: ENGINE_CATALOGUE, scripts: null });
-  const ever = new Set(live.everIds());
-  const lifted = liftWorld(live);
+  const ever = everPre;   // what the lift saw: the ids before it (its children's ids are minted against these)
+  const lifted = liftWorld(live);   // the LOAD: writes nothing; says what the world still needs (nothing, for a translation)
   const failedLift = lifted.filter((x) => x.failed || x.skipped);
   const newB = v4comps(live.state());
   const { lifted: oldB, hosts } = liftPlain(oldA, ever, !shapesMarked(live.entries));

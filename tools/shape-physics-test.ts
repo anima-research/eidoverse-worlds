@@ -105,8 +105,8 @@ await tryRow('MO', async () => {
   check('MO9 the load\'s ops: a pivot for the pendulum that relied on [0, 2, 0], a vector axis for the spin', ops.some((o: any) => o.id === 's' && o.comp === 'pivot' && JSON.stringify(o.value) === '{"pos":[0,2,0]}') && ops.some((o: any) => o.id === 't' && o.comp === 'motion' && JSON.stringify(o.value.axis) === '[0,1,0]') && ops.length === 2, ops);
   const Ld = readAuthority();
   // item 9 (10-18): the repair is the explicit command's (repairShapes), never the load's (liftWorld computes no repair ops)
-  const lift = Ld.slice(Ld.indexOf('export function liftWorld'), Ld.indexOf('export function repairShapes')), cmd = Ld.slice(Ld.indexOf('export function repairShapes'));
-  check('MO9 …and the repair command applies them (repairShapes: repair-shapes), while the load never does', !/shapeRepairOps\(/.test(lift) && /shapeRepairOps\(/.test(cmd) && /"repair-shapes"/.test(cmd), '');
+  const lift = Ld.slice(Ld.indexOf('export function liftWorld'), Ld.indexOf('export function maintain')), cmd = Ld.slice(Ld.indexOf('export function maintain'));
+  check('MO9 …and the maintenance command applies them (maintain: repair-shapes), while the load never does', !/shapeRepairOps\(/.test(lift) && /shapeRepairOps\(/.test(cmd) && /"repair-shapes"/.test(cmd), '');
 
   const old = [{ seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 2, dialect: 'eidoverse-log', roles: { ann: { role: 'owner' } } } },
     { seq: 1, ts: 2, actor: 'ann', verb: 'spawn', args: { id: 'bell', lib: 'crate', pos: [0, 0, 0] } },

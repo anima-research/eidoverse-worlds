@@ -320,9 +320,9 @@ const cases: Case[] = [
       fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [{ world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: "@world", component: "trusted", value: v } }, ts: ts + 1 },
         { world: wid, kind: "change", actor: "olive", cause: n, verb: "set", body: { id: "@world", comp: "trusted", value: v }, ts: ts + 1 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
       T += 1000; process.env.PROTOCOL_NOW = String(T);
-      const w1 = s.reopen(); const before = Object.keys(w1.state().entities["@world"].c); const out = D.liftWorld(w1);
+      const w1 = s.reopen(); const before = Object.keys(w1.state().entities["@world"].c); const out = D.maintain(w1);
       const w2 = s.reopen(); const c = w2.state().entities["@world"].c; const acts = w2.entries.filter((e: any) => e.kind === "act" && e.verb === "rename-components" && e.actor === "system");
-      const k = w2.entries.length; D.liftWorld(w2); const again = s.reopen().entries.length - k;
+      const k = w2.entries.length; D.maintain(w2); const again = s.reopen().entries.length - k;
       return { before, out: JSON.stringify(out).slice(0, 300), keys: Object.keys(c), val: c["trusted-components"] ?? null, acts: acts.length, body: acts[0]?.body ?? null, again, status: w2.state().status }; },
     good: (o) => o.before.includes("trusted") && !o.keys.includes("trusted") && JSON.stringify(o.val) === '{"components":["hesperus/material"]}' && o.acts === 1 && o.body?.renamed?.[0]?.to === "trusted-components" && o.again === 0 && o.status === "ok" },
   { id: "T3", what: "…drafts.js: TRUSTED is trusted-components and trustedOf reads a world not yet reloaded (the old key) too", async run() {
@@ -459,8 +459,8 @@ const cases: Case[] = [
         { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: kid, component: "station", value: sv } }, ts: ts + 2 },
         { world: wid, kind: "change", actor: "olive", cause: n + 2, verb: "set", body: { id: kid, comp: "station", value: sv }, ts: ts + 2 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
       T += 1000; process.env.PROTOCOL_NOW = String(T);
-      const w1 = s.reopen(); D.liftWorld(w1); const w2 = s.reopen(); const E = w2.state().entities;
-      const k = w2.entries.length; D.liftWorld(w2); const again = s.reopen().entries.length - k;
+      const w1 = s.reopen(); D.maintain(w1); const w2 = s.reopen(); const E = w2.state().entities;
+      const k = w2.entries.length; D.maintain(w2); const again = s.reopen().entries.length - k;
       const act = w2.entries.findLast((e: any) => e.kind === "act" && e.verb === "rename-components");
       return { g: E.cup?.c.grabbable ?? null, st: E[kid]?.c.station ?? null, again, renamed: act?.body?.renamed ?? null, status: w2.state().status }; },
     good: (o) => o.status === "ok" && o.g?.anim === "pistol" && !("pose" in o.g) && o.g?.grips?.h?.grasp === "point" && !("fingers" in o.g.grips.h) && o.st?.anim === "lie" && !("pose" in o.st) && o.again === 0 && Array.isArray(o.renamed) && o.renamed.some((r: any) => r.component === "station") },
@@ -675,8 +675,8 @@ const cases: Case[] = [
         { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: "arm", component: "motion:piston", value: pv } }, ts: ts + 2 },
         { world: wid, kind: "change", actor: "olive", cause: n + 2, verb: "set", body: { id: "arm", comp: "motion:piston", value: pv }, ts: ts + 2 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
       T += 1000; process.env.PROTOCOL_NOW = String(T);
-      const w1 = s.reopen(); const before = w1.state().entities.drone?.c.motion?.type; D.liftWorld(w1); const w2 = s.reopen(); const E = w2.state().entities;
-      const k = w2.entries.length; D.liftWorld(w2); const again = s.reopen().entries.length - k;
+      const w1 = s.reopen(); const before = w1.state().entities.drone?.c.motion?.type; D.maintain(w1); const w2 = s.reopen(); const E = w2.state().entities;
+      const k = w2.entries.length; D.maintain(w2); const again = s.reopen().entries.length - k;
       const act = w2.entries.findLast((e: any) => e.kind === "act" && e.verb === "rename-components");
       return { before, drone: E.drone?.c.motion ?? null, arm: E.arm?.c["motion:piston"] ?? null, again, renamed: act?.body?.renamed ?? null, actor: act?.actor ?? null, status: w2.state().status }; },
     good: (o) => o.status === "ok" && o.before === "bob" && o.drone?.type === "oscillate" && o.drone?.amp === 0.4 && o.drone?.t0 === 1700000000000 && o.arm?.type === "oscillate" && o.arm?.node === "Piston" && o.again === 0 && o.actor === "system"

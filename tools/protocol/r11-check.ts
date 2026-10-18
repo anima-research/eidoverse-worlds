@@ -210,7 +210,7 @@ const cases: Case[] = [
         { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: kid, component: "station", value: sv } }, ts: ts + 2 },
         { world: wid, kind: "change", actor: "olive", cause: n + 2, verb: "set", body: { id: kid, comp: "station", value: sv }, ts: ts + 2 }]);
       T += 1000; process.env.PROTOCOL_NOW = String(T);
-      const w1 = s.reopen(); const out = D.liftWorld(w1); const w2 = s.reopen(); const E = w2.state().entities;
+      const w1 = s.reopen(); const out = D.maintain(w1); const w2 = s.reopen(); const E = w2.state().entities;
       const act = w2.entries.findLast((e: any) => e.kind === "act" && e.verb === "rename-components");
       return { g: E.cup?.c.grabbable ?? null, st: E[kid]?.c.station ?? null, failed: act?.body?.failed ?? null, renamed: act?.body?.renamed ?? null, out: JSON.stringify(out).slice(0, 300), status: w2.state().status, kid }; },
     good: (o) => o.status === "ok" && o.g?.anim === "pistol" && !("pose" in o.g) && o.st?.pose === "live" && Array.isArray(o.failed) && o.failed.some((f: any) => f.id === o.kid) && o.renamed?.some((r: any) => r.id === "cup") },
