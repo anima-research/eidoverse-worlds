@@ -6,15 +6,15 @@
 import { isEntityId, isComponent } from "../fold.js";
 import { mintId } from "../ids.js";
 import { COMPONENTS, defOf, isNamespaced, materialize } from "../componentspec.js";
-import { offChain } from "../simlayer.js";
+import { offChain, carried, ENGINES } from "../simlayer.js";
 import { atWrite } from "../assetref.js";
 import { r3 } from "../round.js";
 import { CTX, UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
 import { modelOf, boxOfM, geomE } from "./catalogue.js";
-import { CHANGE, clone, createOps, delOp, followUp, nonce16, qr3, scratch, setOp, versionSeq } from "./storage.js";
+import { CHANGE, clone, createOps, delOp, followUp, lockedC, nonce16, qr3, scratch, setOp, versionSeq } from "./storage.js";
 import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, surfacesOf, worldT, yawQ } from "./math.js";
-import { hitsIx, near, spatial, spend, supportBelow } from "./spatial.js";
+import { groundReady, hitsIx, near, spatial, spend, supportBelow } from "./spatial.js";
 import { isSocketC, socketsOf } from "./sockets.js";
 import { madeBy, roleOf } from "./rights.js";
 import { inboxPush } from "./bodyconsent.js";
@@ -74,13 +74,17 @@ function commit(w, actor, verb, args, build) {
   const settle = planResettle(w, actor, plan.ops, st, plan.after);
   const actE = actOf(w, actor, verb, sent, CTX.operator && CTX.operator === actor && !ctx.cap ? { ...(ctx.actExtra ?? {}), operator: true } : ctx.actExtra);   // an operator's repair says so, in the act
   const changeE = changeShape(plan, w.entries.length, w);
-  w.fits(actE, changeE, ...resettleEntries(w, settle, w.entries.length)); // every line fits, or none is written
+  // what a delete woke (buildDelete: things resting on what it removed as well as on their parent) falls from rest after the
+  // change, caused by the act; only things the write leaves standing (a later batch op may have removed one)
+  const wakes = (ctx.launches ?? []).filter((b) => plan.after.entities[b.id]).map((b) => ({ kind: "sim", actor, cause: w.entries.length, verb: "launch", body: b }));
+  w.fits(actE, changeE, ...resettleEntries(w, settle, w.entries.length), ...wakes); // every line fits, or none is written
   // the budget counts THIS write too, not only what came before it (review 10-14 C0: a 300 KiB batch in an empty window passed a 256 KiB cap)
   if (!ctx.cap || ctx.cap.kind === "reaction" || ctx.cap.kind === "handle") rateCheck(w, actor, "act", JSON.stringify(actE).length + JSON.stringify(changeE).length);
   const act = w.append(actE);
   const seq = changeEntry(w, plan, act);
   const after = w.state();
   applyResettle(w, settle, act, ctx.notes);
+  for (const e of wakes) w.append({ ...e, cause: act });
   // an edit that moves, re-parents or removes a thing in someone's hand takes it out of the hand: it is where the edit
   // put it now. (R, 10-10: moved a held barrel in edit mode; her client let go, the authority didn't, and every throw
   // after was refused from a hand the two no longer agreed on.)
@@ -301,6 +305,23 @@ function buildDelete(ctx, a) {
     const now = supportBelow(after, (b.min[0] + b.max[0]) / 2, (b.min[2] + b.max[2]) / 2, b.min[1], new Set([id]));
     const t = worldT(after, id); ops.push(followUp(setOp(id, "transform", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] }))); setDown.push({ id, onto: now.id }); ctx.refs.add(id); }
   if (setDown.length) ctx.notes.push({ setDown, why: "they were resting on what you deleted, so they were set down on what's below" });
+  // review of PR #260 (writes.js:296), as grab does (R 10-17 20:05, pyr-7 under pyr-9): under a carried engine, a dynamic thing
+  // the physics rested on TWO supports is parented to one and resting on the other all the same. Deleting that other one
+  // left it asleep in mid-air (the engine wakes a sleeper only when a moving body touches it, never when its support goes).
+  // So a dynamic thing parented to something that stays, whose box TOUCHES one of the deleted things' tops (the thin slab
+  // just over it), falls from rest: a zero-velocity launch, logged after the change; the engine decides whether the
+  // support it keeps still holds it. Held, flying, locked (or under a lock) things stay; so does everything while the
+  // ground is still loading (a fall would rest on a guessed height), said so.
+  const spec = ctx.st.entities["@world"]?.c["physics-engine"];
+  if (spec && carried(spec)) { const wake = [];
+    const tops = [...gone].flatMap((g) => ixb.rec.get(g)?.surfs ?? []);
+    for (const k of over) { const c = after.entities[k]?.c;
+      if (!c || gone.has(k) || !c.parent || c.physics?.kind !== "dynamic" || ctx.w?.presence.holds?.[k] || sf?.launched?.[k] || [k, ...ancestors(after, k)].some((x) => lockedC(after.entities[x]?.c))) continue;
+      if (tops.some((s) => hitsIx(ctx.st, { min: [s.min[0], s.y - 0.01, s.min[1]], max: [s.max[0], s.y + 0.03, s.max[1]] }, k, 0))) wake.push(k); }
+    if (wake.length && !groundReady(ctx.st)) ctx.notes.push({ kept: wake, why: "they were resting on what you deleted too, but this world's ground is still loading: they are left as they are rather than fall onto a guessed height" });
+    else if (wake.length) { const rot = ENGINES[spec.engine]?.rotates;
+      (ctx.launches ??= []).push(...wake.map((k) => { const t = worldT(after, k); return { id: k, p: t.pos.slice(), yaw: qYaw(t.q), ...(rot ? { q: t.q.slice() } : {}), v: [0, 0, 0], handled: [ctx.actor] }; }));
+      ctx.notes.push({ fell: wake, why: "they were resting on what you deleted as well as on what they hang from; they fall from rest, and physics decides whether what's left holds them" }); } }
   return ops;
 }
 

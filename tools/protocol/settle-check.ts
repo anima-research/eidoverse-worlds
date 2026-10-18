@@ -136,5 +136,16 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   ok(p.ok && ["l", "r"].includes(on) && g.ok && (g.notes ?? []).some((n) => n.fell?.includes("top")) && t.parent?.to !== other && wy < 0.3 && hatOn === "top" && !(g.notes ?? []).some((n) => n.fell?.includes("hat")) && worldPose(s, "hat").pos[1] < 0.7,
     "SE17 taking out the crate a straddling crate is NOT parented to still lets it fall: it rested on both, and with one gone it tips off (R 10-17, pyr-7 under pyr-9); what rides on it is not launched by the grab (it never touched the taken crate) but knocked down by the fall", { punt: p.ok ?? p.refused, on, other, y0, grab: g.ok ?? g.refused, notes: g.notes, parent: t.parent ?? null, worldY: wy, hatOn, hatY: worldPose(s, "hat").pos[1] }); }
 
+// review of PR #260 (writes.js:296): DELETING the crate a straddling crate is not parented to lets it fall too (it rested on
+// both). Before, delete skipped every resting thing with a parent, so it stayed asleep in mid-air at its old pose.
+{ const W = "straddle-delete"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
+  box(W, "l", [-0.36, 0, 0]); box(W, "r", [0.36, 0, 0]); box(W, "top", [0, 0.6, 0]);
+  call(W, "vic", "move", { to: [0, 0, -0.6] }); const p = call(W, "vic", "punt", { id: "top", v: [0, 1.2, 0] }); T += 6000; call(W, "vic", "look", {});
+  const on = st(W).entities.top.c.parent?.to; const other = on === "l" ? "r" : "l"; const y0 = worldPose(st(W), "top").pos[1];
+  const d = call(W, "rowan", "delete", { id: other }); T += 8000; call(W, "vic", "look", {});
+  const s = st(W); const wy = worldPose(s, "top").pos[1];
+  ok(p.ok && ["l", "r"].includes(on) && d.ok && (d.notes ?? []).some((n) => n.fell?.includes("top")) && !s.entities[other] && wy < y0 - 0.2,
+    "SE18 deleting the crate a straddling crate is NOT parented to lets it fall (it rested on both); the engine decides, from rest", { punt: p.ok ?? p.refused, on, other, del: d.ok ?? d.refused, notes: d.notes, y0, worldY: wy }); }
+
 console.log(`[settle-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

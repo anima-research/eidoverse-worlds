@@ -124,6 +124,12 @@ eidosim@1.0.0, the law (its constants are its version):
   distance, as Box3D and Jolt both wake), flies under the launch whose flight
   touched it, and rests as that launch's (§1). Everything else at rest is a
   collider.
+  A sleeper is never woken by a support leaving, so the authority does it: when
+  a grab takes up, or a delete removes, a thing that a dynamic sleeper touches
+  from above (its box meets the thin slab just over one of the thing's tops),
+  that sleeper is launched from rest (`v: [0, 0, 0]`) even when it is parented
+  to another support it also rested on, and the engine decides whether what is
+  left holds it. Held, flying and locked things stay.
 - **Rest**: a body that sleeps comes to rest and is a collider (or a sleeper)
   again. A runaway backstop rests a body after 20000 ticks. A launch's spin is
   capped so no corner moves faster than 20 m/s, as `v` is.

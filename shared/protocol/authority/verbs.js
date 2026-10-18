@@ -132,11 +132,12 @@ function buildBatch(ctx, a, w) { {
         const B = { create: buildCreate, set: buildSet, delete: buildDelete, place: buildPlace,
           sky: (c, x) => buildSky(c, x, w), weather: (c, x) => buildWeather(c, x, w) }[o.verb];
         if (!B) refuse("shape", `batch op ${i}: '${o.verb}' can't go in a batch`, "batch takes create, set, delete, place, sky, weather");
-        const sub = { ...ctx, st };
+        const sub = { ...ctx, st, launches: undefined };
         let ops; try { ops = B(sub, o.args ?? {}); } catch (e) { if (e instanceof Refusal) { e.op = i; } throw e; }
         if (!work) { work = cowState(ctx.st); VOLATILE.add(work.entities); }
         all.push(...ops); st = applyCow(work, ops); forget(st); sub.refs.forEach((r) => ctx.refs.add(r));
         if (sub.cap) ctx.cap = sub.cap;
+        if (sub.launches) { (ctx.launches ??= []).push(...sub.launches); sub.launches = undefined; }   // a delete's woken things (buildDelete)
       });
       return all;
 } }
