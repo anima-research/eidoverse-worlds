@@ -246,12 +246,14 @@ function stepper(value, f, commit) {
   const soft = (w) => Math.min(cur.softMax ?? cur.max ?? Infinity, Math.max(cur.softMin ?? cur.min ?? -Infinity, w));
   let wire = +value;
   let shownFace = '';   // the text show() last put in the field (onchange: the same text is no edit)
-  const show = (w) => { num.value = toFace(w); shownFace = num.value; };
+  // mixed: the selection disagrees on this value, so the field says — (Unity's multi-object convention; R, gym 10-17 20:39)
+  // until an edit makes them one; a drag or an arrow starts from the value shown on the active thing
+  const show = (w) => { num.value = cur.mixed ? '—' : toFace(w); shownFace = num.value; };
   show(wire);
-  const send = (w, o) => { wire = hard(w); show(wire); commit(wire, o); };
+  const send = (w, o) => { cur.mixed = false; wire = hard(w); show(wire); commit(wire, o); };
   // typed: written AS TYPED. The row's min/max are the slider's, not the door's: the editor's own check (editschema
   // editOps, D4a) refuses what the door would refuse and says why, so nothing here clamps (tools/editor-range-test.ts)
-  const sendTyped = (w) => { wire = w; show(wire); commit(wire); };
+  const sendTyped = (w) => { cur.mixed = false; wire = w; show(wire); commit(wire); };
 
   // typed entry: relative math against the CURRENT face value, no clamp (sendTyped). ONE commit per typing: Enter commits and
   // blurs, and the blur's own native `change` must not commit again with a stale expect (review 10-07 B2: every Enter
@@ -261,7 +263,7 @@ function stepper(value, f, commit) {
     if (num.value === shownFace) return;
     const face = parseEntry(num.value, +toFace(wire));
     if (face == null) { show(wire); return; }
-    if (face === +toFace(wire)) { show(wire); num.blur(); return; }   // the value it already has: nothing to write
+    if (face === +toFace(wire) && !cur.mixed) { show(wire); num.blur(); return; }   // the value it already has: nothing to write (a mixed one: it makes them one)
     sendTyped(toWire(face));
     num.blur();   // release focus so held repaints resume
   };
@@ -289,14 +291,14 @@ function stepper(value, f, commit) {
     num.classList.remove('scrub');
     try { (d.src ?? num).releasePointerCapture(d.id); } catch { /* already released */ }
     scrubHint(false);
-    if (d.armed) { show(d.w0); commit(d.w0, { live: true }); wire = d.w0; for (const q of d.peers ?? []) q.p.peer.restore(q.w0); }
+    if (d.armed) { cur.mixed = d.mixed; show(d.w0); commit(d.w0, { live: true }); wire = d.w0; for (const q of d.peers ?? []) q.p.peer.restore(q.w0); }
   };
   // the same drag from the value box and from the channel's NAME (R, 10-10: "make the channel lines themselves
   // selectable and scrub-able just like their value boxes. This is a Maya feature that I love")
   // a peer is another selected channel's stepper: it begins where it stands, follows the same face delta, and commits
   // or restores with the leader (the channel box's run, R 10-11 23:13: "scrubbing on then only affects one still")
   wrap.peer = { begin: () => ({ w0: wire, face0: +toFace(wire) }),
-    to: (face, live) => { const w = soft(toWire(face)); wire = w; show(w); commit(w, live ? { live: true } : undefined); },
+    to: (face, live) => { cur.mixed = false; const w = soft(toWire(face)); wire = w; show(w); commit(w, live ? { live: true } : undefined); },
     restore: (w0) => { show(w0); commit(w0, { live: true }); wire = w0; } };
   const peersOf = () => (wrap.peers?.() ?? []).filter((p) => p && p !== wrap && p.peer).map((p) => ({ p, ...p.peer.begin() }));
   const bindScrub = (src, onClick) => {
@@ -315,7 +317,7 @@ function stepper(value, f, commit) {
     drag.dist += dx * (e.shiftKey ? 0.1 : 1);   // keys: scrub
     if (!drag.armed) {
       if (Math.abs(e.clientX - drag.x0) < 4) return;           // click-vs-drag slop
-      drag.armed = true;
+      drag.armed = true; drag.mixed = !!cur.mixed; cur.mixed = false;   // a scrub shows numbers; Esc puts the — back
       try { src.setPointerCapture(drag.id); } catch { /* no capture here */ }
       num.classList.add('scrub');
       num.blur();
@@ -369,7 +371,7 @@ function stepper(value, f, commit) {
 
   // in-place update from a repaint: never under a caret or a drag
   wrap.update = (nf) => {
-    Object.assign(cur, nf);
+    Object.assign(cur, nf); cur.mixed = !!nf.mixed;   // a field that stopped differing must stop saying —
     if (drag || document.activeElement === num) return;
     wire = +nf.value; show(wire);
   };
@@ -590,7 +592,7 @@ function paintStepper(g, regions, C, f, val, x, y, rowH, k, axis, dp = 2, w = 15
   g.fillText('−', x + 8, y + rowH * 0.62);
   g.fillText('+', x + bump + mid + 7, y + rowH * 0.62);
   g.font = '500 14px system-ui';
-  const face = f.deg ? `${Math.round(val * R2D)}°` : trimNum(val, dp) + (f.unit ? ` ${f.unit}` : '');
+  const face = f.mixed ? '—' : f.deg ? `${Math.round(val * R2D)}°` : trimNum(val, dp) + (f.unit ? ` ${f.unit}` : '');   // mixed: the selection differs
   g.fillText(face, x + bump + 8, y + rowH * 0.62);
   const d = FACTS.delta(f);
   regions.push({ x, y: y + 7, w: bump, h: rowH - 14, action: k, payload: { axis, delta: -d } });

@@ -33,7 +33,7 @@ import { idAliases, inPage } from "./idalias.ts";
 // R 10-17: the scene's names ride as placeholders and minted ids — bob's through IDS (node), the page's own through the page
 // helper (pageIds); every expression sent to the page reads the quoted names as ids (inPage)
 const IDS = idAliases();
-const NAMES = ["cup", "tbl", "plinth", "pebble", "pv", "pt", "ststool", "ststool-seat", "bell"];
+const NAMES = ["cup", "tbl", "plinth", "pebble", "pv", "pt", "ststool", "ststool-seat", "bell", "msa", "msb", "msc", "msd", "mse"];
 const { cdp, evalJson: evalRaw, cleanup, die, BASE, SCRATCH } = await scratchBench("client", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
@@ -479,6 +479,7 @@ try {
   const wrow = await evalJson(`document.querySelector('[data-frame="hierarchy"] .sp-item')?.textContent ?? null`);
   check("W1 the Hierarchy's World row reads WORLD then its name (one line, 38b82c6a), not '(@world)'", /^World\s*client check/.test(wrow ?? "") && !wrow.includes("@world"), wrow);
 
+
   // transform space (R 10-04: "gimbal/object/world rotations... a way to switch between them")
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('pebble'); const B = await import('/lib/build.js'); B.setSpace('rotate', 'world'); B.setTool('select'); return true;`);
   await key("KeyE"); await sleep(300);
@@ -527,6 +528,51 @@ try {
   check("PT3 …and the crate itself did not move", JSON.stringify(disk().entities[IDS.of("pt")].c.transform) === ptBefore, [ptBefore, disk().entities[IDS.of("pt")].c.transform]);
   await page(`(await import('/lib/build.js')).setTool('select'); return true;`);
 
+  // ---- MS: the multi-selection Inspector and the Hierarchy's Ctrl / Shift clicks (R, gym 10-17 20:39-20:44) ----
+  {
+    const rowEl = (id: string) => `[...${hier}.querySelectorAll('.sp-tree-row')].find((r) => r.dataset.id === ${JSON.stringify(id)})`;
+    const clickRow = (id: string, mods: any = {}) => evalJson(`(() => { const m = ${rowEl(id)}?.querySelector('.sp-item-main'); if (!m) return false; m.dispatchEvent(new MouseEvent('click', { bubbles: true, ${Object.entries(mods).map(([k, v]) => `${k}: ${v}`).join(", ")} })); return true; })()`);
+    const selNow = () => evalJson(`import('/lib/editpanels.js').then((m) => m.selection())`);
+    const activeNow = () => evalJson(`import('/lib/edit/selection.js').then((m) => m.active())`);
+    const rowsNow = () => evalJson(`(async () => { const W = await import('/lib/world.js'); return __editPanels().rows.filter((id) => !!W.entities.get(id)); })()`);
+    const same = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
+    // four labelled crates at the root, and a fifth riding the second (a branch to fold)
+    let made = true; const ms = ["msa", "msb", "msc", "msd"];
+    for (const [i, n] of ms.entries()) made = (await bobReq("create", { id: n, model: CRATE, components: { transform: { pos: [20 + i * 2.5, 0, -6 + i * 0.5] }, label: `ms ${n.slice(2)}` } })).ok && made;
+    made = (await bobReq("create", { id: "mse", model: CRATE, components: { transform: { pos: [0, 1, 0], scale: [0.3, 0.3, 0.3] }, parent: { to: "msb", order: "a0" }, label: "ms e" } })).ok && made;
+    const selBefore = await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelected())`);   // put back after: the blocks below read the selected thing
+    check("(setup) bob builds four labelled crates and a fifth on the second", made && await waitFor(`import('/lib/world.js').then((m) => ['msa', 'msb', 'msc', 'msd', 'mse'].every((n) => !!m.entities.get(n)))`, 12000));
+    await page(`(await import('/lib/scenegraph.js')).sceneDeselect(); return true;`); await sleep(400);
+    const MS = await evalJson(`['msa', 'msb', 'msc', 'msd']`);   // their minted ids (the page reads the quoted names as ids)
+    const rows = await rowsNow();
+    const mine = (rows ?? []).filter((id: string) => MS?.includes(id));
+    const [A, B, , D] = mine;
+    // the names a person sees for A and B: their Hierarchy rows; the handle: shared/thingref.js over every id but @world
+    const shown = await evalJson(`Promise.all([import('/lib/state.js'), import('/shared/thingref.js')]).then(([s, t]) => { const all = Object.keys(s.state.st.entities).filter((k) => k !== '@world');
+      return Object.fromEntries([${JSON.stringify(A)}, ${JSON.stringify(B)}].map((id) => [id, { name: ${rowEl("__ID__").replace('"__ID__"', "id")}?.querySelector('.sp-item-label')?.textContent ?? null, handle: '#' + t.handleOf(id, all) }])); })`);
+    await clickRow(A); await sleep(300);
+    check("MS1 a plain click on a Hierarchy row selects that one", same(await selNow(), [A]), await selNow());
+    await clickRow(B, { ctrlKey: true }); await sleep(500);
+    check("MS2 Ctrl-click adds a row: two selected, the one clicked last is active", same(await selNow(), [A, B]) && (await activeNow()) === B, { sel: await selNow(), active: await activeNow() });
+    const head = await evalJson(`(() => { const r = [...${insp}.querySelectorAll('.sp-row')]; const t = r.findIndex((x) => x.classList.contains('sp-title')); const h = r[t + 1], m = r[t + 2];
+      return { title: r[t]?.textContent?.trim() ?? null, handle: h?.classList.contains('sp-handle') ? h.textContent.trim() : null, more: m?.classList.contains('sp-more') ? m.textContent.trim() : null, tip: m?.title ?? '',
+        line: !!m && !!h && [h, m].every((x) => Math.abs(x.getBoundingClientRect().top - r[t].getBoundingClientRect().top) < 4) && m.getBoundingClientRect().right <= r[t].parentElement.getBoundingClientRect().right + 1,
+        top: r.slice(0, Math.max(t + 4, 3)).map((x) => x.textContent + ' ' + (x.classList.contains('sp-handle') ? '' : x.title ?? '')).join(' | ') }; })()`);   // the #handle's own tooltip is the single Inspector's: it names the full id to copy
+    check("MS3 the multi Inspector's top line is the ACTIVE thing's name line: '<name> #<handle> + 1 more' on one line (the single Inspector's and the Hierarchy's handle)",
+      head?.title === shown?.[B]?.name && head?.handle === shown?.[B]?.handle && head?.more === "+ 1 more" && head?.line, { head, shown });
+    check("MS4 …hovering '+ 1 more' names the others (never a raw id), and no raw id is anywhere in the header",
+      head?.tip?.includes(shown?.[A]?.name) && !head?.top?.includes(A) && !head?.top?.includes(B), { head, A, B });
+    check("MS5 …the hint still says typing sets every one, Ctrl-click drops one, one undo", await evalJson(`${insp}.textContent.includes('Ctrl-click to drop one') && ${insp}.textContent.includes('one undo')`));
+    // differing values: Unity's '—' in the field, never a '≠' on the label
+    const chans = await evalJson(`(async () => { const W = await import('/lib/world.js'); const a = W.entities.get(${JSON.stringify(A)}).position, b = W.entities.get(${JSON.stringify(B)}).position;
+      const x = [...${insp}.querySelectorAll('.sp-row')].find((r) => r.dataset.axis === 'x');   // the first x channel: translate x
+      const lab = x?.querySelector('.sp-label')?.textContent ?? null;
+      return { lab, differ: Math.abs(a.x - b.x) > 1e-6, xval: x?.querySelector('input')?.value ?? null, neq: [...${insp}.querySelectorAll('.sp-label')].some((l) => l.textContent.includes('≠')) }; })()`);
+    check("MS6 a channel that differs across the selection shows '—' in its field; no label carries '≠'", chans?.differ && /translate x/.test(chans?.lab ?? "") && chans?.xval === "—" && !chans?.neq, chans);
+    await clickRow(B, { ctrlKey: true }); await sleep(300);
+    check("MS7 Ctrl-click on a selected row drops it", same(await selNow(), [A]), await selNow());
+    await page(`const s = await import('/lib/scenegraph.js'); ${selBefore ? `s.sceneSelect(${JSON.stringify(selBefore)})` : "s.sceneDeselect()"}; return true;`); await sleep(400);
+  }
 
   // ---- MIC: the ∃ line's mic and ear glyphs in edit mode read the brand when live and the attention gold when hot (R, gym 10-17 20:44) ----
   const micInks = `(async () => { const M = await import('/lib/mictoggle.js'); const b = document.getElementById('micbtn'); const root = getComputedStyle(document.documentElement);

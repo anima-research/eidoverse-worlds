@@ -212,7 +212,8 @@ export const WIDGETS = {
     dom(f, D) { const { row, setLabel, ro, el, put } = D;
       const s = put(el('span', 'sp-info'), f.value, ro.icons);
       // a long value is cut at the panel's edge: hover shows it whole, a click unfolds it in place (R 10-11: 'reads as')
-      const full = () => { const t = s.textContent ?? ''; s.title = t.length > 40 ? t : ''; s.classList.toggle('sp-info-long', t.length > 40); };
+      // a short value carries no title of its own: an empty one would hide the row's hint (an element's title="" is 'no advice')
+      const full = () => { const t = s.textContent ?? ''; if (t.length > 40) s.title = t; else s.removeAttribute('title'); s.classList.toggle('sp-info-long', t.length > 40); };
       full(); s.onclick = () => { if (s.classList.contains('sp-info-long')) s.classList.toggle('sp-info-open'); };
       row.append(s);
       row.update = (nf) => { setLabel(nf); put(s, nf.value, ro.icons); full(); };
@@ -457,6 +458,7 @@ export const WIDGETS = {
       const inp = el('input');
       inp.type = 'checkbox';
       inp.checked = !!f.value;
+      inp.indeterminate = !!f.mixed;   // mixed: some of the selection are, some aren't (the box shows a dash)
       inp.disabled = !!f.disabled;
       // R 10-10 23:48: in a busy world every frame repaints, and until the authority's answer folded in, each repaint put
       // the box back to the old value: it looked unclicked, so she clicked again and sent it twice. A clicked box keeps what
@@ -464,7 +466,7 @@ export const WIDGETS = {
       // A field that bumps `settle` has had its answer (a refusal too): the record wins from then on, so a refused click
       // can't leave the box lying (review 10-12 S2-1); so does the record once the 3 s are up, repaint or not.
       let pending = null, rec = !!f.value, settle = f.settle;
-      inp.onchange = () => { pending = { v: inp.checked, until: performance.now() + 3000 }; edit(f.k, inp.checked);
+      inp.onchange = () => { inp.indeterminate = false; pending = { v: inp.checked, until: performance.now() + 3000 }; edit(f.k, inp.checked);
         setTimeout(() => { if (pending && performance.now() >= pending.until) { pending = null; inp.checked = rec; } }, 3050); };
       // a mouse click must not leave focus here: a focused input holds the panel's repaint until blur, and the world's keys
       // (WASD, B, Enter) stop (review 10-12 S2-3). Keyboard focus (Tab) still lands
@@ -473,7 +475,7 @@ export const WIDGETS = {
       row.update = (nf) => { setLabel(nf); const v = !!nf.value; rec = v;
         if (nf.settle !== settle) { settle = nf.settle; pending = null; }
         if (pending && v !== pending.v && performance.now() < pending.until) { inp.checked = pending.v; return; }
-        pending = null; inp.checked = v; };
+        pending = null; inp.checked = v; inp.indeterminate = !!nf.mixed; };
     },
     legacy(f, P) { const { g, regions, C, vx, rowH, y } = P;
       const s = rowH - 16;

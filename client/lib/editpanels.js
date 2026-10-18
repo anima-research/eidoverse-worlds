@@ -507,25 +507,34 @@ function restPose(id, obj) {
     : { pos: [round(obj.position.x), round(obj.position.y), round(obj.position.z)], yaw: round(obj.rotation.y, 4), scale: round(obj.scale?.x ?? 1) };
 }
 
-/** Godot's MultiNodeEdit: the channels EVERY selected thing has, the
- *  primary's value shown, ≠ where they differ; flags intersect the same way. */
+/** Godot's MultiNodeEdit, Unity's multi-object editing: the channels EVERY selected thing has, the ACTIVE one's value
+ *  shown and '—' where they differ (Unity's convention; R, gym 10-17 20:39); flags intersect the same way. The top line
+ *  is the active (last-clicked) thing's name line, '<name> #<handle> + N more': the single Inspector's handle; hovering
+ *  '+ N more' names the others (never a raw id). */
 function multiFields(ids) {
-  const schemas = ids.map((id) => schemaFor(id));
+  const act = ids.includes(Sel.active()) ? Sel.active() : ids[0];
+  const order = [act, ...ids.filter((x) => x !== act)];   // the active one's values lead
+  const schemas = order.map((id) => schemaFor(id));
   const chans = schemas.map((sc) => new Map(channels(sc).map((c) => [c.key, c])));
-  const f = [{ t: 'info', label: 'selection', value: `${ids.length} selected — ${ids.join(', ')}` }, { t: 'info', label: '', value: 'typing sets every one · Ctrl-click to drop one · one undo' }];
+  const others = order.slice(1).map(thingName);
+  const f = [
+    { t: 'info', label: '', vrLabel: 'selection', value: thingName(act), bar: true, cls: 'sp-title' }, idHandleRow(act),
+    { t: 'info', label: '', value: `+ ${ids.length - 1} more`, bar: true, cls: 'sp-more', hint: `also selected: ${others.join(', ')}` },
+    { t: 'info', label: '', value: 'typing sets every one · Ctrl-click to drop one · one undo' },
+  ];
   f.push({ t: 'group', k: 'channels', label: 'Channels (shared)', open: true });
   for (const c of chans[0].values()) {
     const all = chans.map((m) => m.get(c.key)).filter(Boolean);
     if (all.length !== ids.length) continue;
     const mixed = all.some((x) => Math.abs(x.value - c.value) > 1e-9);
-    f.push({ ...c, k: `ch:${c.key}`, label: `${c.group === 'pos' ? c.label : `${c.group} · ${c.label ?? c.k}`}${mixed ? ' ≠' : ''}`, compact: true,
-      disabled: all.some((x) => x.disabled), driven: undefined, hint: mixed ? 'differs across the selection — typing sets all' : c.hint });
+    f.push({ ...c, k: `ch:${c.key}`, label: c.group === 'pos' ? c.label : `${c.group} · ${c.label ?? c.k}`, compact: true, mixed,
+      disabled: all.some((x) => x.disabled), driven: undefined, hint: mixed ? '— : it differs across the selection; typing sets every one' : c.hint });
   }
   f.push({ t: 'group', k: 'flags', label: 'Flags', open: true });
   for (const k of ['lock', 'hidden']) {
     const vals = ids.map((id) => bagOf(id)?.[k] === true);
     const on = vals.every(Boolean), mixed = vals.some(Boolean) && !on;
-    f.push({ t: 'check', k: `ed:flags.${k}`, label: `${k === 'lock' ? 'locked in place' : 'hidden'}${mixed ? ' ≠' : ''}`, value: on, hint: mixed ? 'differs — checking sets all' : undefined });
+    f.push({ t: 'check', k: `ed:flags.${k}`, label: k === 'lock' ? 'locked in place' : 'hidden', value: on, mixed, hint: mixed ? '— : some are, some aren\'t; checking sets every one' : undefined });
   }
   f.push({ t: 'btn', k: 'remove', label: `remove ${ids.length}`, danger: true, vrOnly: true });   // desktop removes with Del / Backspace / X / right-click / Edit ▸ delete; a headset has no keys
   painted = f;
@@ -828,7 +837,8 @@ function inspectorDispatch(action, payload, field, opts = {}) {
   if (action.startsWith('selup:')) { sceneSelect(action.slice(6)); return; }
   if (action === 'henabled' && id && id !== WORLD_ID) { setEnabled(id, payload !== false); return; }
   if (action === 'myhide' && id && id !== WORLD_ID) { myHide(id); return; }
-  if (action === 'copyid' && id) { try { void navigator.clipboard?.writeText(String(id)); flashHint(`copied its id: ${id}`); } catch { /* no clipboard: the tooltip shows it */ } return; }
+  if (action === 'copyid' && id) { const cid = selection().includes(Sel.active()) ? Sel.active() : id;   // the name line's thing: the active one when several are selected
+    try { void navigator.clipboard?.writeText(String(cid)); flashHint(`copied its id: ${cid}`); } catch { /* no clipboard: the tooltip shows it */ } return; }
   if (action === 'ed:grabbable.gripedit') { openGripEditor(id); return; }
   if (action === 'ed:home.sethere') { void Edits.setHomeHere([id]); return; }   // the Home card's button: where it is now (editwrites)   // the grip editor (gripedit.js)
   if (id === WORLD_ID && WORLD_PICKS[action]) { pickWorld(action, payload); repaintAll(); return; }   // the Terrain card's shape tiles (S15)

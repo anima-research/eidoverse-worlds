@@ -71,8 +71,8 @@ export function paintEdit(canvas, fields, { width = 522, title = '' } = {}) {
     icon(g, 'plus', x + w - bump / 2, top + V.minHit / 2, 16, f.disabled ? T.faint : T.dim);
     fill(g, T.line, x + bump, top + 6, V.minLine, V.minHit - 12);
     fill(g, T.line, x + w - bump - V.minLine, top + 6, V.minLine, V.minHit - 12);
-    const face = f.deg ? `${Math.round(val * R2D)}` : val.toFixed(f.dp ?? 2);
-    const unit = f.deg ? '°' : (f.unit ?? '');
+    const face = f.mixed ? '—' : f.deg ? `${Math.round(val * R2D)}` : val.toFixed(f.dp ?? 2);   // mixed: the selection differs (Unity's —)
+    const unit = f.mixed ? '' : f.deg ? '°' : (f.unit ?? '');
     font(V.minText, 500);
     const uw = unit ? g.measureText(unit).width + 4 : 0;
     text(g, face, x + w - bump - 8 - uw, top + V.minHit / 2, f.disabled ? T.dim : T.text, w - bump * 2 - 16 - uw, 'right');

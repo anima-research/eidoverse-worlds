@@ -2028,6 +2028,9 @@ body.edit-workspace #dock button.edit-overflow { display: none !important; }
 .frame.edit .sp-group .sp-group-sub { color: var(--e-dim); font-weight: 400; opacity: 0.8; }   /* 'Transform · 12 m away' (R 10-17 20:34) */
 .frame.edit .sp-row.sp-title:has(+ .sp-handle) { width: calc(100% - 78px - 62px); }   /* the dim #handle after the name (R 10-17 20:30) */
 .frame.edit .sp-row.sp-iconbtn.sp-handle .sp-btn { width: auto; max-width: 62px; padding: 0 3px; font: 11px ui-monospace, monospace; color: var(--e-dim); opacity: 0.75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; line-height: 24px; }
+.frame.edit .sp-row.sp-title:has(+ .sp-handle + .sp-more) { width: calc(100% - 62px - 86px); }   /* several selected: no ☑ / eye / padlock, '+ N more' after the #handle (R 10-17 20:39) */
+.frame.edit .sp-row.sp-more .sp-label { display: none; }
+.frame.edit .sp-row.sp-more .sp-info { color: var(--e-dim); font-size: 12px; white-space: nowrap; line-height: 24px; cursor: default; }
 .edit-marquee { position: fixed; z-index: 30; pointer-events: none; border: 1px dashed var(--e-accent, #4d8ae0); background: color-mix(in srgb, var(--e-accent, #4d8ae0) 12%, transparent); }
 /* the grip editor's panel: floats under the viewport bar (gripedit.js) */
 .gripedit { position: fixed; z-index: 29; width: 236px; display: flex; flex-direction: column; gap: 6px; padding: 6px 7px; border-radius: 6px;
