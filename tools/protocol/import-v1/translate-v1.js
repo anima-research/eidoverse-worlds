@@ -197,6 +197,42 @@ export const DROPPED = {
   "motion.part": "a bare motion naming a part becomes motion:<slot> {node: <the part's name>} (@12; the slot is shared/protocol/names.js partSlot of the name: the name itself when it is a §2.3 tag, else a sanitized form with 8 hex of its sha256): when the thing already has a motion on that node, that one wins and the bare one is dropped (the renderer drew both on one node, the keyed one last). A keyed motion carries node (its key's tag, the old reading)",
   "a mounted thing's own pos/yaw/q": "v1 keeps a riding thing's pre-mount pose, unused until a dismount; v4's transform IS the pose it rides at (local to its parent: v1's offset, or its socket's pos, and q/yaw). The parent's offset/yaw/q are that transform, not a second copy (L2)",
 };
+// DEFERRED (review of PR #260, Mica, item 7): features main's merges gave v1 worlds that THIS protocol does not carry yet.
+// Each is a component the old renderer read (tools/water/README.md: the water/air/vehicle/traversal/collision table,
+// server/render-scene.ts PASS_THROUGH). The translator never carries one of these quietly: a log that uses one is REFUSED
+// at `translate`, naming the feature and where it was used (deferredFeatures below), and the dry-run report lists them, so
+// the owner decides with the loss in front of them. `water` is registered in v4 as the WORLD's water level (componentspec:
+// water on @world {level,…}); a `water` on anything else, or one shaped as a volume, is the deferred water volume.
+export const DEFERRED = {
+  water:     { feature: "water volume", since: "main #248 (Unreal native client) / #254", shape: "water {center, size, absorption?, scatter?, speed?, waves?} on an entity" },
+  air:       { feature: "air box (dry interior)", since: "main #248", shape: "air {boxes: [{center, size, q?}]}" },
+  traversal: { feature: "climb route", since: "main #248", shape: "traversal {routes: [{name, path, radius, speed}]}" },
+  vehicle:   { feature: "vehicle", since: "main #248", shape: "vehicle {helm, exit, speed, turnRate, minY?, maxY?, probes}" },
+  collision: { feature: "collision on/off toggle", since: "main #248", shape: "collision {enabled: false}" },
+};
+const VOLUME_FIELDS = ["center", "size", "absorption", "scatter", "waves"];
+/** Every use in a v1 log of a feature v4 doesn't carry yet: [{component, feature, id, seq, actor, ts}], in log order. A `comp`
+ *  that removes one (data null) is not a use. Empty for every old world on Burrow and every fixture (checked 2026-10-18). */
+export function deferredFeatures(oldEntries) {
+  const out = [];
+  oldEntries.forEach((e, k) => {
+    if (e?.verb !== "comp" || typeof e.args?.type !== "string" || e.args.data == null) return;
+    const t = e.args.type, d = e.args.data;
+    if (!Object.hasOwn(DEFERRED, t)) return;
+    if (t === "water" && e.args.id === "@world" && !(d && typeof d === "object" && VOLUME_FIELDS.some((f) => f in d))) return;   // the world's water level: carried
+    out.push({ component: t, feature: DEFERRED[t].feature, id: String(e.args.id), seq: Number.isInteger(e.seq) ? e.seq : k, actor: String(e.actor ?? "?"), ...(Number.isInteger(e.ts) ? { ts: e.ts } : {}) });
+  });
+  return out;
+}
+/** The refusal, in words: which feature, on what, by whom, when (seq). One line per use; null when nothing is deferred. */
+export function deferredRefusal(uses, world = "this world") {
+  if (!uses.length) return null;
+  const kinds = [...new Set(uses.map((u) => u.feature))];
+  return `can't translate ${world}: it uses ${uses.length} thing(s) this protocol (v4) does not carry yet — ${kinds.join(", ")} — and translating would drop them silently. `
+    + `Nothing was written. Where:\n` + uses.map((u) => `  seq ${u.seq}: ${u.feature} (\`${u.component}\` component) on "${u.id}", set by ${u.actor}${u.ts ? ` at ${new Date(u.ts).toISOString()}` : ""}`).join("\n")
+    + `\nThese came from main's merges (${[...new Set(uses.map((u) => DEFERRED[u.component].since))].join("; ")}) and are deferred in v4. Either wait for the protocol to carry them, or remove them from the old world first (the old server's \`comp\` with data null) and translate again.`;
+}
+
 // v1's mount, read the way the renderer realizes it (shared/hierarchy.js localOf, written independently here): a
 // riding thing sits at parent.offset, else its socket's pos, else the carrier's origin; turned by parent.q, else
 // parent.yaw, else the socket's yaw. Only while its carrier exists: a thing whose carrier is gone stays where its own

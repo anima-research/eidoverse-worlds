@@ -12,11 +12,47 @@ import { custodyFileIn } from "../../../server/keyfiles.ts";
 import { seal } from "../../../shared/protocol/authority.js";
 import { readLog, fold, digest, keyOk } from "../../../shared/protocol/fold.js";
 import { simFold } from "../../../shared/protocol/simlayer.js";
-import { translate } from "./translate-v1.js";
+import { translate, TRANSLATOR, DROPPED, deferredFeatures, deferredRefusal } from "./translate-v1.js";
+import { sha256 } from "../../../shared/protocol/hash.js";
 import { v1FoldBuild } from "./build.ts";
 import { contentAddressOf, recordEido, storeNameMatches } from "../../../server/eidoindex.ts";
 
 type Any = any;
+
+/** The owner's approval of a translation, bound to the dry-run report's hash (review of PR #260, Mica, item 6). `founder`: the
+ *  founder signed `approvalText(world, report)` with their own governance key (the ceremony's key, import-v1/README.md), checked
+ *  by world.ts before anything is written. `operator`: no founder key (tier 0 empty): the operator running the tool read the
+ *  report and typed its hash back; recorded as the operator's act (the line is sealed and signed by the host's custody like
+ *  every line, but no owner signature exists — said plainly in the act). */
+export type Approval = { report: string; by: "founder"; key: string; sig: string } | { report: string; by: "operator"; key: string };
+export const approvalText = (world: string, report: string) => `eidoverse-approve-translation:${world}:${report}`;
+
+/** The dry-run report: everything the translation would do that an owner should see before it does, and nothing that varies
+ *  between runs (no minted identities, no nonce, no signatures), so its hash is the same for the same old log, the same tool
+ *  build and the same founder key. `deferred` (features v4 doesn't carry yet) non-empty means the translation is REFUSED. */
+export function reportV1World(srcDir: string, { founderKey, name, content }: { founderKey?: string; name?: string; content?: (p: string) => string | null } = {}) {
+  const src = path.join(srcDir, "log.jsonl");
+  if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
+  const srcBytes = fs.readFileSync(src);
+  const old = srcBytes.toString("utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
+  const world = name ?? path.basename(srcDir);
+  const deferred = deferredFeatures(old);
+  // the pure translation (no directory, no custody key: the conformance key, no nonce): the same stats the real one has
+  const r = translate(old, { foldBuild: v1FoldBuild(), namespace: world, ...(content ? { content } : {}), ...(founderKey ? { founder: founderKey } : {}) });
+  const report = {
+    v: 1, world, source: { file: "log.jsonl", size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex") },
+    translator: TRANSLATOR, fold: v1FoldBuild(), founderKey: founderKey ?? null,
+    entries: { old: r.stats.in, new: r.out.length, change: r.stats.change, divergences: r.stats.divergences },
+    actorsRenamed: r.stats.renamed, tsClamped: r.stats.tsClamped ?? 0,
+    guards: { becameLocks: r.stats.guards, stillGuardedAtEnd: r.stats.guardsLive },
+    ...(r.stats.launches !== undefined ? { physics: { launches: r.stats.launches, rests: r.stats.rests } } : {}),
+    ...(r.stats.modelsHashed !== undefined ? { models: { hashed: r.stats.modelsHashed, unhashed: r.stats.modelsUnhashed } } : {}),
+    dropped: DROPPED,            // what every translation drops or renames BY DESIGN (the translator's own table)
+    deferred,                    // uses of features v4 doesn't carry yet: any → refused
+    refused: deferred.length ? deferredRefusal(deferred, `"${world}"`) : null,
+  };
+  return { report, hash: sha256(JSON.stringify(report)) };
+}
 
 /** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir. `founderKey`: the
  *  founder's own governance key (ed25519:…), made on their machine, for tier 0 (README.md, "The Commons ceremony").
@@ -25,11 +61,14 @@ type Any = any;
  *  planned identities to the shared directory; return them (`planned`) for the caller to write once the world is really
  *  in place (an in-place translation writes into a temporary sibling that may still be thrown away: review of PR #260,
  *  import-v1/world.ts:86 — a failed attempt left its minted identities behind, and every retry minted more). */
-export function translateV1World(srcDir: string, destDir: string, { founderKey, name, deferIdentities = false }: { founderKey?: string; name?: string; deferIdentities?: boolean } = {}) {
+export function translateV1World(srcDir: string, destDir: string, { founderKey, name, deferIdentities = false, approval }: { founderKey?: string; name?: string; deferIdentities?: boolean; approval?: Approval } = {}) {
   const src = path.join(srcDir, "log.jsonl");
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
   if (fs.existsSync(path.join(destDir, "world.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) throw new Error(`${destDir} already holds a world`);
   const srcBytes = fs.readFileSync(src);
+  // features v4 doesn't carry yet are never dropped quietly (DEFERRED): the log is refused, naming each use
+  { const uses = deferredFeatures(srcBytes.toString("utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } }));
+    if (uses.length) throw new Error(deferredRefusal(uses, `"${name ?? path.basename(destDir)}"`)!); }
   // the bytes this translation is OF: an in-place translation checks the old log still holds exactly these before it swaps
   // (world.ts translateInPlace; review of PR #260, world.ts:99 — a server still writing to it would lose those edits)
   const source = { size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex") };
@@ -71,6 +110,13 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   if (founderKey !== undefined && !keyOk(founderKey)) throw new Error(`${founderKey}: not a governance key (ed25519:<base64url of 32 bytes>, PROTOCOL §13)`);
   const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, namespace: name ?? path.basename(destDir), content, ...(founderKey ? { founder: founderKey } : {}) });
   if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
+  // the owner's approval, bound to the dry-run report's hash, rides in the world's own log right after the system's
+  // repair-shapes act (index 2): provenance a reader can check against `reportV1World` of log.original.jsonl. The fold never
+  // reads acts (PROTOCOL §1), so this changes no state; a translation nothing approved carries none (the pure callers: sweep, oracle)
+  if (approval) { const at = r.out.findIndex((e: Any) => e.kind === "act" && e.verb === "repair-shapes") + 1;
+    r.out.splice(at || 3, 0, { world: r.out[1].world, kind: "act", actor: "system", verb: "translation-approved", ts: r.out[1].ts ?? 0,
+      body: { report: approval.report, approval: approval.by === "founder" ? { by: "founder", key: approval.key, sig: approval.sig, over: approvalText(name ?? path.basename(destDir), approval.report) }
+        : { by: "operator", key: approval.key, note: "no founder key: the operator running the tool read the dry-run report and typed its hash back; this act is sealed by the host's custody like every line, and is not an owner's signature" } } }); }
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
   const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
   // the strict reader must accept every line, and fold to the translator's own final state, before the file exists
@@ -105,6 +151,6 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   if (fs.existsSync(oldPoses)) { try { const P = JSON.parse(fs.readFileSync(oldPoses, "utf8")); const out: Record<string, unknown> = {};
     for (const [name, pose] of Object.entries<Any>(P ?? {})) { const id = memo.get(`name:${name}`); if (id && pose) { out[id] = pose; poses++; } }
     if (poses) fs.writeFileSync(path.join(destDir, "poses.json"), JSON.stringify(out)); } catch { /* an unreadable poses file: nobody's place is remembered */ } }
-  return { source, planned, identities: Object.keys(planned).length, renamedBlobs, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back), poses, ...(sim ? { sim } : {}) };
+  return { source, planned, identities: Object.keys(planned).length, renamedBlobs, addressed: [...addressed.keys()], stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back), poses, ...(sim ? { sim } : {}) };
 }
 

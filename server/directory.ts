@@ -49,9 +49,10 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
   const anon = new Map<string, Entry>();   // in memory only: an anonymous id is never written, never outlives the process
   // two writers (the CLI tools and a running server) share this file: re-read and merge before every write, so neither
   // drops the other's entries (M2). Ours win on a clash (the same id can only be minted by one of them).
+  const tomb = new Set<string>();   // ids this process forgot (forgetPlanned): the merge below must not bring them back from disk
   const save = () => {
     const disk = fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, "utf8")) as File) : null;
-    if (disk) for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id]) { d.ids[id] = unkind(e); index(id, e); }
+    if (disk) for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id] && !tomb.has(id)) { d.ids[id] = unkind(e); index(id, e); }
     fs.mkdirSync(path.dirname(file), { recursive: true }); const tmp = `${file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(d, null, 1), { mode: 0o600 }); fs.renameSync(tmp, file); fs.chmodSync(file, 0o600);
   };
@@ -90,6 +91,15 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
       for (const [id, e] of Object.entries(entries)) { d.ids[id] = e; index(id, e); } save(); },
     /** a person changed the name they type (not a collision suffix, not a sign-in's name): starts the rename cooldown */
     markRenamed(id: string) { const e = d.ids[id]; if (e) { e.renamedAt = now(); save(); } },
+    /** Forget identities a translation minted, when it is rolled back (tools/protocol/world.ts rollback): only those still
+     *  EXACTLY as the translation wrote them (`planned`: nobody has bound an account or renamed them since) are removed;
+     *  the rest are returned as kept, and said. Saved only if something was removed. */
+    forgetPlanned(planned: Record<string, Entry>): { removed: string[]; kept: string[] } {
+      refresh(); const removed: string[] = [], kept: string[] = [];
+      for (const [id, was] of Object.entries(planned)) { const e = d.ids[id]; if (!e) continue;
+        if (JSON.stringify(e) === JSON.stringify(was)) { delete d.ids[id]; tomb.add(id); for (const s of was.subs) byKey.delete(e.world ? `${s}|${e.world}` : s); removed.push(id); } else kept.push(id); }
+      if (removed.length) save(); return { removed, kept };
+    },
     nameOf: (id: string): string | null => get(id)?.name ?? null,
     entry: (id: string): Entry | null => get(id),
     /** the display names an account-holding identity has claimed here (an anonymous joiner may not take one: H1/M3) */
