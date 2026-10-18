@@ -566,7 +566,7 @@ class Session {
       this.conn.sendNotification(method.CHANNELS_CHANGED, { removed: [leaving] });
     } catch { /* peer gone — the close path is already handling that */ }
     console.log(`[${ts()}] [mcpl:${this.auth.id}] joined world "${w}" epoch=${this.epoch}${founding ? " (FOUNDED)" : ""} (RFC-005)`);
-    rememberWorld(this.auth.id, w, this.home);   // a reconnect resumes here
+    if (sessions.get(this.auth.id) === this) rememberWorld(this.auth.id, w, this.home);   // a reconnect resumes here (current sessions only)
     // §3.4 audit: a join is an authorization event, and on a found-on-attach
     // server a founding join is TWO. Logged with the permanence of an auth
     // event, per §13.2.
@@ -740,7 +740,11 @@ class Session {
     // that the body has joined (a join that never happened must not move the
     // memory), and never when the start was a fallback from an unverifiable
     // memory (Greptile #261)
-    if (this.recordStart) rememberWorld(this.auth.id, this.agent.world, this.home);
+    // …and only while this is still the agent's CURRENT session: connect() can
+    // take a while (terrain), and a replacement that started meanwhile — say,
+    // dialled to another world — may already have joined and recorded; a
+    // superseded session finishing late must not overwrite it (Greptile #261)
+    if (this.recordStart && sessions.get(this.auth.id) === this) rememberWorld(this.auth.id, this.agent.world, this.home);
 
     // world events → channel traffic (this is the push path — no host code).
     //
