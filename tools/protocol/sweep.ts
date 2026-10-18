@@ -1,5 +1,5 @@
 // tools/protocol/sweep.ts — the translators against real logs, and the pins the core relies on.
-//   bun tools/protocol/sweep.ts                  # every distinct log.jsonl under the checkout's parent directory
+//   bun tools/protocol/sweep.ts                  # every distinct log.jsonl under spec/fixtures (the repo's own)
 //   PROTOCOL_WORLDS=<dir>[:<dir>…] bun tools/protocol/sweep.ts
 // Required, for every distinct world log found:
 //   - translate-v1: 0 divergences (the fold agrees with the projection of the engine's own fold after EVERY
@@ -259,7 +259,10 @@ function lossAt(oldSt: any, st: any, phys: any = null) {
   return { other: true };
 }
 
-const roots = (process.env.PROTOCOL_WORLDS ?? path.resolve(ENGINE, "..")).split(":");
+// the gate's sweep is hermetic: the repo's own old-format logs (spec/fixtures), plus any PROTOCOL_WORLDS a host adds (this
+// box's real worlds, say). It never walks outside the checkout unasked: the parent directory is a different place on
+// every host. Not sweeping local worlds is reported as an OPTIONAL line the gate counts.
+const roots = [path.join(ENGINE, "spec/fixtures"), ...(process.env.PROTOCOL_WORLDS ? process.env.PROTOCOL_WORLDS.split(":") : [])];
 const logs: string[] = [];
 const walk = (d: string, depth = 0) => { if (depth > 5) return; let ents: string[] = []; try { ents = fs.readdirSync(d); } catch { return; }
   for (const n of ents) { if (n === "node_modules" || n === ".git") continue; const p = path.join(d, n);
@@ -306,5 +309,6 @@ for (const p of logs.sort()) {
 console.log(`[sweep] ${total} distinct world logs, ${entries} entries, divergences ${divergences}, malformed-on-read-back ${malformed}, lossy ${lossy}, renamed actors ${renamed}, ts clamped ${clamped}, ${Math.round(performance.now() - t0)} ms`);
 console.log(`[sweep] translate-v1@2: ${mountVerbs} v1 mounts translated; ${mounted} things ride a parent at the end (door-shaped: transform local, parent {to, socket?}); ${guards} guards became locks in ${guardWorlds} world(s)`);
 console.log(`[sweep] DROPPED (by design): ${Object.keys(DROPPED).join("; ")}`);
+if (!process.env.PROTOCOL_WORLDS) console.log("OPTIONAL sweep-local-worlds: swept the repo fixtures only (set PROTOCOL_WORLDS=<dir>[:<dir>…] to add a host's own world logs)");
 console.log(`[sweep] ${pass} passed, ${fail} failed`);
 process.exit(fail || !total ? 1 : 0);
