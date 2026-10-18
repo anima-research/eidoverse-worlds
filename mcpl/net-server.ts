@@ -659,17 +659,20 @@ class Session {
     if (mediaPort > 0) this.startMediaBridge(mediaPort);
 
     this.agent.onEvent = (ev) => {
-      // §16.2 sender facet. The world reports `agent: true` for bodies driven by
-      // a model, so `chat:from-agent` rests on something. There is no
-      // corresponding evidence for humanity — a browser client simply omits the
-      // flag — so `chat:from-human` is NOT emitted from an absence. Claiming it
-      // would put an unmarked bot in the band a resident reserves for people.
-      const from = this.agent.isAgent(ev.who) ? CHAT.fromAgent : null;
+      // §16.2 sender facet: none is emitted. A participant's status is only ever
+      // its own declaration (PROTOCOL §6a rule 3), relayed by the world as sent;
+      // it rides along as metadata.declares, its word verbatim, and no tag is
+      // read from it (review r11 L2: reading "agent" alone as chat:from-agent
+      // left a participant declaring "ai" untagged, and any tag here would be
+      // this library's inference, not their word). chat:from-human likewise
+      // never comes from an absence.
+      const declares = this.agent.declaresOf(ev.who);
+      const md = declares ? { metadata: { declares } } : {};
       if (ev.kind === "say") {
         if (!this.channelOpen && !ev.mention) return; // door closed: chatter stops, knocks get through
         this.deliver(ev.text!, { id: ev.who, name: ev.who }, ev.mention
-          ? { tags: tags(CHAT.mention, CHAT.addressed, from), mentioned: true }
-          : { tags: tags(CHAT.ambient, from) });
+          ? { tags: tags(CHAT.mention, CHAT.addressed), mentioned: true, ...md }
+          : { tags: tags(CHAT.ambient), ...md });
       } else if (ev.kind === "whisper") {
         // A closed door does not stop a whisper — being addressed privately IS
         // the knock. Rendered with its privacy stated, because an agent that
@@ -679,12 +682,12 @@ class Session {
         // you. `chat:dm` ⇒ addressed + private under §16.3's closure, emitted
         // directly here as §16.3 recommends.
         this.deliver(`(whispers to you) ${ev.text}`, { id: ev.who, name: ev.who },
-          { tags: tags(CHAT.dm, CHAT.private, CHAT.addressed, EIDO.whisper, from), mentioned: true });
+          { tags: tags(CHAT.dm, CHAT.private, CHAT.addressed, EIDO.whisper), mentioned: true, ...md });
       } else if (ev.kind === "act") {
         // embodied transitions — a gesture, a pose struck or released, someone
         // sitting down. Ambient by nature: a closed door mutes them.
         if (this.channelOpen) this.deliver(`* ${ev.who} ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, EIDO.act, from) });
+          { tags: tags(CHAT.ambient, EIDO.act), ...md });
       } else if (ev.kind === "activity") {
         // The ambient-activity pulse: at most one per window, and ONLY while
         // something is happening within this body's activity radius. Overheard,
@@ -721,19 +724,19 @@ class Session {
           this.heldActivity.push(`[${new Date(ev.ts).toISOString().slice(11, 16)}Z] ${ev.text}`);
           if (this.heldActivity.length > 8) this.heldActivity.shift();
         } else if (this.channelOpen) this.deliver(`* ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, EIDO.worldChange, EIDO.particles, from), metadata: { worldChange: true } });
+          { tags: tags(CHAT.ambient, EIDO.worldChange, EIDO.particles), metadata: { worldChange: true, ...(declares ? { declares } : {}) } });
       } else if (this.channelOpen) {
         this.deliver(`* ${ev.who} ${ev.kind === "arrive" ? "arrived in the world" : "left the world"}`,
-          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.presence, from) });
+          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.presence), ...md });
       }
     };
     this.agent.onPing = (p) => {
       // The ping→channel mapping (approach addressed+mentioned, depart
       // ambient, reach/touch worded by the agent) lives in ping-wire.ts,
       // where a test can hold it to what declaration.ts promises.
-      const d = pingDelivery(p as WirePing, this.agent.isAgent(p.who));
+      const d = pingDelivery(p as WirePing, this.agent.declaresOf(p.who));
       if (d) this.deliver(d.text, { id: "world", name: this.agent.world },
-        { tags: d.tags, ...(d.mentioned ? { mentioned: true } : {}) });
+        { tags: d.tags, ...(d.mentioned ? { mentioned: true } : {}), ...(d.declares ? { metadata: { declares: d.declares } } : {}) });
     };
 
     // §5.3 ORDERING (the discord-mcpl canary's rule: NOTHING runs between

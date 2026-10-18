@@ -200,7 +200,7 @@ type Entity = { id: string; model: string; kind: Kind; pos: number[]; yaw: numbe
   /** component bag (sockets, reactions, motion, …) — what a thing can DO;
    *  this is how affordances reach text-tier perception */
   comp?: Record<string, any> };
-type Person = { id: string; avatar: string; pose: Pose | null; agent?: boolean; observedAt?: number | null; bodyGeneration?: number };
+type Person = { id: string; avatar: string; pose: Pose | null; declares?: string | null; observedAt?: number | null; bodyGeneration?: number };
 
 // ---- walking through buildings (#218, Sage; ported onto the one walker 10-15) ----
 /** What a walk's feet stand on: the terrain (followed live, tick by tick), or one identified floor of one structure at a
@@ -1048,7 +1048,7 @@ export class WorldAgent {
             this.restoredPose = true;
             // a (re)join: the authority's track of this body ended when it left, so the next walk arrives again
             this.trackArrived = false; this.trackAt = null;
-            for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, p.declares === "agent"); if (typeof p.actorId === "string") this.actorIds.set(p.id, p.actorId); }
+            for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, p.declares); if (typeof p.actorId === "string") this.actorIds.set(p.id, p.actorId); }
             // adopt the authority's cut and read the view of this body's own fold of it; the snapshot's `state` is the
             // chat window (chat isn't world state): its lines land in the inbox once, as history
             if (!(msg as any).cut?.state) { this.closed = true; clearTimeout(timeout); reject(new Error("the server sent no world cut (an old server?)")); break; }
@@ -1220,7 +1220,7 @@ export class WorldAgent {
           case "arrive":
             // the people map is truth and updates NOW; the narration goes
             // through the gate, where a reconnect flap collapses to nothing
-            this.rememberBody(msg.id, msg.avatar, null, msg.declares === "agent");
+            this.rememberBody(msg.id, msg.avatar, null, msg.declares);
             if (typeof msg.actorId === "string") this.actorIds.set(msg.id, msg.actorId);
             this.gate.presence(msg.id, "arrive");
             break;
@@ -1257,9 +1257,9 @@ export class WorldAgent {
     });
   }
 
-  private rememberBody(id: string, avatar: string, pose: Pose | null, agent: boolean) {
+  private rememberBody(id: string, avatar: string, pose: Pose | null, declares: unknown) {
     this.bodyReader?.forget(id);
-    this.people.set(id, { id, avatar, pose, agent, observedAt: pose ? Date.now() : null,
+    this.people.set(id, { id, avatar, pose, declares: typeof declares === "string" && declares ? declares : null, observedAt: pose ? Date.now() : null,
       bodyGeneration: ++this.bodyGenerationCounter });
   }
 
@@ -1314,11 +1314,11 @@ export class WorldAgent {
     return this.bodyReader.readWindow(who === "self" ? this.name : who, detail, points, windowMs, id => this.bodyObservation(id));
   }
 
-  /** Has this participant DECLARED itself an agent (PROTOCOL §6a)? The server relays a declaration in the join
-   *  snapshot (`present[].declares`) and `arrive` broadcasts, and never infers one; an undeclared agent reads false.
-   *  This is the reader the denoiser and chat-tagging lean on (their own filter over a declared field). */
-  isAgent(who: string): boolean {
-    return !!this.people.get(who)?.agent;
+  /** What this participant DECLARED at its door (PROTOCOL §6a rule 3), exactly as relayed in the join snapshot
+   *  (`present[].declares`) and `arrive`, or null (undeclared). Passed on as data; nothing here reads a kind from it
+   *  (review r11 L2: comparing it to "agent" filtered a participant declaring "ai" as not-one). */
+  declaresOf(who: string): string | null {
+    return this.people.get(who)?.declares ?? null;
   }
 
   /** Track someone's latest pose + fire the approach ping when they cross

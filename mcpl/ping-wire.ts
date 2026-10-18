@@ -48,17 +48,20 @@ export function pingLine(p: WirePing): string {
  *     verbatim.
  *   - reach / touch: a hand aimed at (or resting on) this body — directed like
  *     an approach, worded by the agent. */
-export function pingDelivery(p: WirePing, fromAgent: boolean):
-  { text: string; tags: string[]; mentioned?: true } | null {
-  const from = fromAgent ? CHAT.fromAgent : null;
+/*  `declares` (PROTOCOL §6a rule 3): the sender's own declared status, exactly as they sent it, or null (undeclared).
+ *  It rides along as data, `declares: <their word>`, and nothing is read from it: no word is mapped to a kind and no
+ *  tag is chosen by it (review r11 L2: "ai" was read as not-an-agent, because only "agent" was). */
+export function pingDelivery(p: WirePing, declares: string | null):
+  { text: string; tags: string[]; mentioned?: true; declares?: string } | null {
+  const d = typeof declares === "string" && declares ? { declares } : {};
   switch (p.kind) {
     case "approach":
-      return { text: `* ${p.who} walked up to you`, tags: tags(CHAT.addressed, EIDO.approach, from), mentioned: true };
+      return { text: `* ${p.who} walked up to you`, tags: tags(CHAT.addressed, EIDO.approach), mentioned: true, ...d };
     case "depart":
-      return { text: `* ${p.who} ${p.text ?? "is no longer nearby"}`, tags: tags(CHAT.ambient, EIDO.depart, from) };
+      return { text: `* ${p.who} ${p.text ?? "is no longer nearby"}`, tags: tags(CHAT.ambient, EIDO.depart), ...d };
     case "reach":
     case "touch":
-      return { text: `* ${p.who} ${p.text}`, tags: tags(CHAT.addressed, p.kind === "touch" ? EIDO.touch : EIDO.reach, from), mentioned: true };
+      return { text: `* ${p.who} ${p.text}`, tags: tags(CHAT.addressed, p.kind === "touch" ? EIDO.touch : EIDO.reach), mentioned: true, ...d };
     default:
       return null;
   }

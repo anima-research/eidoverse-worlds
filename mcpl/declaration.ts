@@ -36,9 +36,8 @@ export const CHAT = {
   fromHuman: "chat:from-human",
   fromBot: "chat:from-bot",
   fromSelf: "chat:from-self",
-  // from a participant that DECLARED itself an agent (PROTOCOL §6a): the server relays a declaration and never infers one,
-  // so an undeclared agent's words carry no such tag. Loop prevention can't rest on it alone; a rate guard isn't kind-based.
-  fromAgent: "chat:from-agent",
+  // (no chat:from-agent: a sender's declared status rides along as metadata.declares, as they sent it, and no tag is read
+  // from it — PROTOCOL §6a rule 3, review r11 L2)
   private: "chat:private",
   group: "chat:group",
   thread: "chat:thread",
@@ -165,7 +164,6 @@ const TAG_ONTOLOGY = {
   // here says only "this server emits these", never what they mean (§16.4).
   coreTags: [
     CHAT.addressed, CHAT.mention, CHAT.dm, CHAT.private, CHAT.ambient,
-    CHAT.fromAgent,
   ],
   tags: {
     [EIDO.whisper]: {
