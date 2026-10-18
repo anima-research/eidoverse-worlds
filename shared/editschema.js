@@ -357,7 +357,7 @@ export function inspectSchema(ent, id, live = {}) {
   // transform — the entity's LOCAL frame: a root's is the world (`place`), a
   // child's is its parent's (`mount` with the new offset / relative q; scale
   // stays the child's own, so it is still a `place`). Only a part socket's
-  // rider is read-only: its pose is baked at the moving part's phase.
+  // occupant is read-only: its pose is baked at the moving part's phase.
   const partRide = mounted && L.part;
   const tf = { disabled: !!partRide, hint: locked ? 'locked — moving it asks first' : partRide ? `rides ${ent.parent.to}'s moving part ${L.part} — its pose is set where it mounted; unparent and parent it again to move it` : undefined };
   const pos = pv.pos ?? [0, 0, 0];

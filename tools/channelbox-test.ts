@@ -172,11 +172,11 @@ console.log('rotate order: changing it never changes q');
   check('locked: the door refuses a Rotate edit `locked` and the thing keeps its q', turn.res.ok === false && turn.res.refused?.code === 'locked' && JSON.stringify(turn.after.q) === JSON.stringify(turn.before.q), JSON.stringify(turn.res));
   const reorder = W.send(editOps(L, turn.id, { 'rot.order': 'XYZ' }).ops[0]);
   check('locked: …but the door takes a rotate-order change (it moves nothing)', reorder.ok && W.rec(turn.id).rotOrder === undefined && W.rec(turn.id).lock === true, JSON.stringify(reorder));
-  // step 4: a child's Rotate reads its RELATIVE orientation (the mount's), editable; only a part-socket rider is read-only
+  // step 4: a child's Rotate reads its RELATIVE orientation (the mount's), editable; only a part-socket occupant is read-only
   const mounted = inspectSchema({ ...ent, parent: { to: 'cart', yaw: 0.5 } }, 'e');
   check('mounted: Rotate reads the mount\'s relative turn, editable', !fieldAt(mounted, 'rot.y')!.disabled && Math.abs(fieldAt(mounted, 'rot.y')!.value - 0.5) < 1e-9);
   const riding = inspectSchema({ ...ent, parent: { to: 'cart', socket: 'deck' } }, 'e', { world: { e: ent, cart: { model: 'cart.glb', pos: [0, 0, 0], sockets: { deck: { pos: [0, 1, 0], part: 'plank' } } } } });
-  check('a part-socket rider: Rotate is read-only and names the carrier and part', fieldAt(riding, 'rot.y')!.disabled && /cart/.test(fieldAt(riding, 'rot.y')!.hint) && /plank/.test(fieldAt(riding, 'rot.y')!.hint));
+  check('a part-socket occupant: Rotate is read-only and names the carrier and part', fieldAt(riding, 'rot.y')!.disabled && /cart/.test(fieldAt(riding, 'rot.y')!.hint) && /plank/.test(fieldAt(riding, 'rot.y')!.hint));
   const swing = inspectSchema({ ...ent, motion: { type: 'pendulum', amp: 0.3 } }, 'e');
   check('a whole-entity motion: Rotate is the rest pose, tinted driven', fieldAt(swing, 'rot.x')!.driven === 'motion');
 }

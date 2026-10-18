@@ -103,7 +103,7 @@ const FIELDS = [
   { t: "list", k: "ed:sockets.slots", label: "sockets", rows: [{ id: "seat", label: "seat", actions: [{ k: "ed:sockets.del", label: "✕", danger: true }] }] },
   { t: "tree", k: "sel", rows: [
     { id: "benchlamp", label: "benchlamp", sub: "light", badges: ["📜watch", "🛡"], depth: 0, kids: 1, open: true, locked: false, active: true },
-    { id: "rider:ana", label: "🧍 ana", depth: 1, noDrag: true },
+    { id: "occupant:ana", label: "🧍 ana", depth: 1, noDrag: true },
     { id: "crate1", label: "crate1", sub: "unit quad picture", depth: 0, kids: 0, locked: true } ] },
   { t: "log", lines: ["one", "two"] },
   { t: "group", k: "closed", label: "Closed", open: false },
@@ -128,7 +128,7 @@ const E = paint("edit");
   check(`every glyph >= ${EDIT_VR.minText} px (${E.rec.texts.length} fillText calls)`, E.rec.texts.length > 20 && small.length === 0, JSON.stringify(small.slice(0, 4)));
   const picto = E.rec.texts.filter((t) => PICTO.test(t.s));
   check("no pictograph handed to fillText (the canvas emoji trap)", picto.length === 0, JSON.stringify(picto.slice(0, 4)));
-  check("…yet the words around them still paint (guard line, badges, rider)", ["guarded by ana", "watch", "ana"].every((w) => E.rec.texts.some((t) => t.s.includes(w))), JSON.stringify(E.rec.texts.map((t) => t.s).filter((s) => /ana|watch/.test(s))));
+  check("…yet the words around them still paint (guard line, badges, occupant)", ["guarded by ana", "watch", "ana"].every((w) => E.rec.texts.some((t) => t.s.includes(w))), JSON.stringify(E.rec.texts.map((t) => t.s).filter((s) => /ana|watch/.test(s))));
   check("the canvas is the quad's width, rows at the VR row height", E.c.width === 522 && E.c.height > 20 * EDIT_VR.rowH);
   // axis + driven at once (R, 09-30): the label keeps its axis colour; the FIELD carries driven (edge + ~)
   const lab = (s: string) => E.rec.texts.find((t) => t.s === s)?.color?.toLowerCase();
@@ -144,12 +144,12 @@ console.log("\nC. the same dispatch as the legacy painter:");
   const L = paint(null);
   const key = (r: any) => `${r.action}|${JSON.stringify(r.payload ?? null)}|${r.slider ? "slider" : ""}`;
   const eset = new Set(E.regions.map(key)), lset = new Set(L.regions.map(key));
-  // legacy paints a lock on EVERY tree row, riders included (locked undefined → a lock that dispatches 'lock' on
-  // 'rider:…'); the desktop shows a lock only where the row carries `locked` — the edit painter follows the desktop
+  // legacy paints a lock on EVERY tree row, occupants included (locked undefined → a lock that dispatches 'lock' on
+  // 'occupant:…'); the desktop shows a lock only where the row carries `locked` — the edit painter follows the desktop
   const noLock = new Set(FIELDS.flatMap((f: any) => (f.t === "tree" ? f.rows.filter((r: any) => r.locked == null).map((r: any) => `lock|${JSON.stringify(r.id)}|`) : [])));
   const lost = [...lset].filter((k) => !eset.has(k) && !noLock.has(k)), extra = [...eset].filter((k) => !lset.has(k));
   check("every legacy target exists on the edit painter", lost.length === 0, lost.join(" · "));
-  check("…and a row the desktop shows no lock for gets none (a rider)", [...noLock].every((k) => !eset.has(k)) && noLock.size === 1);
+  check("…and a row the desktop shows no lock for gets none (an occupant)", [...noLock].every((k) => !eset.has(k)) && noLock.size === 1);
   check("…and the only extras are enum options legacy clipped off its row", extra.every((k) => k.startsWith("motion.type|")), extra.join(" · "));
   check("every enum option is reachable on the edit painter", ["none", "pendulum", "spin", "orbit", "bob", "path"].every((v) => eset.has(`motion.type|"${v}"|`)));
   check("a disabled field takes no hits", !E.regions.some((r: any) => r.action === "ch:locked"));

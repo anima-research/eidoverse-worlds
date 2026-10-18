@@ -3,7 +3,7 @@
 // Two sections in the world panel:
 //
 //   🌳 scene    every entity as a row; mounted things indent under their
-//               parent, seated bodies show as riders. Click a row → the
+//               parent, seated bodies show as occupants. Click a row → the
 //               INSPECTOR, which is layered the same way the fold is:
 //               · a generic transform editor (pos / yaw / scale → `place`);
 //               · SEMANTIC editors registered by evaluator modules via
@@ -82,12 +82,12 @@ export function treeData() {
       kids.get(p).push(id);
     } else roots.push(id);
   }
-  const riders = new Map();
-  for (const [rid, m] of avatarMounts) {
-    if (!riders.has(m.to)) riders.set(m.to, []);
-    riders.get(m.to).push(rid);   // m.to is the socket: the rider's row hangs under the socket's
+  const occupants = new Map();
+  for (const [oid, m] of avatarMounts) {
+    if (!occupants.has(m.to)) occupants.set(m.to, []);
+    occupants.get(m.to).push(oid);   // m.to is the socket: the occupant's row hangs under the socket's
   }
-  return { roots, kids, riders };
+  return { roots, kids, occupants };
 }
 
 let editingComp = null;    // comp type whose JSON is open, or true for a new one
@@ -105,7 +105,7 @@ function paintScene(force = false) {
     const ae = document.activeElement;
     if (sceneBody.contains(ae) && /^(INPUT|TEXTAREA)$/.test(ae?.tagName ?? '')) return;
   }
-  const { roots, kids, riders } = treeData();
+  const { roots, kids, occupants } = treeData();
   const rows = [];
   const row = (id, depth) => {
     const meta = metaOf(id);
@@ -116,7 +116,7 @@ function paintScene(force = false) {
     rows.push(`<div class="who-row sg-row${id === selected ? ' sel' : ''}" data-id="${esc(id)}" style="cursor:pointer;padding-left:${depth * 14}px">
       <span class="n">${depth ? '└ ' : ''}<b>${esc(id)}</b> <span style="color:var(--dim)">${esc(short)}</span></span>
       <span class="d">${esc([...badges, ...scripts].join(' · '))}</span></div>`);
-    for (const r of riders.get(id) ?? []) {
+    for (const r of occupants.get(id) ?? []) {
       rows.push(`<div class="who-row" style="padding-left:${(depth + 1) * 14}px"><span class="n">└ 🧍 ${esc(r)}</span></div>`);
     }
     for (const k of kids.get(id) ?? []) row(k, depth + 1);

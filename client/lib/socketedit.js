@@ -190,7 +190,7 @@ export function armSocketPlacement(id) {
   if (!id || !entities.get(id)) return;
   setEditMode(true, { quiet: true });
   seatArm = id;
-  flashHint(html`click the spot where a sitter goes — the arrow will face you · <kbd>Esc</kbd> cancels`, 8000);
+  flashHint(html`click the spot where the occupant goes — the arrow will face you · <kbd>Esc</kbd> cancels`, 8000);
 }
 
 export function cancelSocketArm() {
@@ -210,7 +210,7 @@ function placeSeatAt(e) {
   if (!hit) { flashHint(html`that missed the thing — click ON it, or <kbd>Esc</kbd>`); return; }
   seatArm = null;
   const { pos, part } = seatFromHit(id, root, hit);
-  // face the declarer: you are looking at the seat from where a sitter's
+  // face the declarer: you are looking at the seat from where an occupant's
   // knees would point. Q/E refines from there.
   const yaw = +(Math.atan2(camera.position.x - hit.point.x, camera.position.z - hit.point.z) - worldYawOf(root)).toFixed(3);
   const sockets = socketsOf(id);

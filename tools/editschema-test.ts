@@ -192,11 +192,11 @@ console.log("\ndescribeSchema reads like an inspector:");
   check("names what each group writes in the protocol's terms (set <component>), not a v1 verb", /light \(light\.\* → set light\)/.test(t) && /\(pos\.\* → set transform\)/.test(t) && !/→ (place|mount|comp|light)\)/.test(t), t.split("\n").filter((l) => /→/.test(l)).join(" || "));
   const t2 = describeSchema(inspectSchema(cargo, "k"));
   check("a child says its frame and its parent", /frame: local to its parent, truck/.test(t2) && /parent\.to = truck/.test(t2));
-  // a read-only field: a rider on a carrier's MOVING PART socket (its pose is baked at the part's phase)
+  // a read-only field: an occupant on a carrier's MOVING PART socket (its pose is baked at the part's phase)
   const world = { truck: { model: "truck.glb", pos: [0, 0, 0], yaw: 0, sockets: { bed: { pos: [0, 1, 0], yaw: 0, part: "arm" } } },
     k: { ...cargo, parent: { to: "truck", socket: "bed" } } };
   const t3 = describeSchema(inspectSchema(world.k, "k", { world }));
-  check("read-only fields say why (a part-socket rider)", /read-only: rides truck's moving part arm/.test(t3), t3.split("\n").filter((l) => /pos\.x/.test(l)).join(" || "));
+  check("read-only fields say why (a part-socket occupant)", /read-only: rides truck's moving part arm/.test(t3), t3.split("\n").filter((l) => /pos\.x/.test(l)).join(" || "));
   const t4 = describeSchema(inspectSchema({ ...cargo, lock: true }, "k"));
   check("a locked thing is NOT read-only in the description (the door asks; §5)", !/read-only/.test(t4) && /pos\.x = 0/.test(t4), t4.split("\n").filter((l) => /pos\.x/.test(l)).join(" || "));
   check("parseEntry passes numbers and refuses garbage", parseEntry(4, 0) === 4 && parseEntry("x", 0) === null);

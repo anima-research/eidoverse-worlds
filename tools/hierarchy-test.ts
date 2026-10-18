@@ -58,8 +58,8 @@ console.log('tree building from a world\'s view');
   const hit = treeRows(W, { collapsed: new Set(['table', 'lamp']), matches: m('bulb') });
   check('a filter match inside a FOLDED parent shows the parent path, dimmed, opened', hit.map((r: any) => `${r.id}${r.dim ? '~' : ''}${r.open ? '' : '!'}`).join(',') === 'table~,lamp~,bulb', JSON.stringify(hit));
   check('a filter with no match is empty', treeRows(W, { matches: m('zzz') }).length === 0);
-  const ex = treeRows(W, { extra: (id: string) => (id === 'chair' ? [{ id: 'rider:ann', match: true }] : []) });
-  check('extra rows (a seated person) nest under their carrier and count as children', ex[1]?.id === 'rider:ann' && ex[1].depth === 1 && ex[0].kids === 1, JSON.stringify(ex.slice(0, 2)));
+  const ex = treeRows(W, { extra: (id: string) => (id === 'chair' ? [{ id: 'occupant:ann', match: true }] : []) });
+  check('extra rows (a seated person) nest under their carrier and count as children', ex[1]?.id === 'occupant:ann' && ex[1].depth === 1 && ex[0].kids === 1, JSON.stringify(ex.slice(0, 2)));
   check('kind hints: model stem, an Empty with a light (a bulb), a bare Empty; an imported lamp (model + light) says both', kindHint(W.table) === 'table oak round' && kindHint(W.lamp) === 'lamp brass desk' && kindHint(W.bulb) === 'light' && kindHint(W.porch) === 'light' && kindHint(W.marker) === 'empty'
     && kindHint({ ...W.lamp, light: { color: 1 } }) === 'lamp brass desk + light',
     JSON.stringify(['table', 'lamp', 'bulb', 'porch', 'marker'].map((k) => kindHint(W[k]))));
@@ -240,10 +240,10 @@ console.log("a child's channel box: local, and an edit writes one local transfor
   // a root: its world transform, as always
   const e5 = editOps(W.lamp, 'lamp', { 'pos.x': 11 }, { world: W });
   check('a root writes its world transform', flat(e5.ops).length === 1 && tfOf(e5).pos[0] === 11 && tfOf(e5).pos[2] === 10);
-  // a part-socket rider: read-only, says why
-  const ride: any = { cart: { model: LIB, pos: [0, 0, 0], sockets: { deck: { pos: [0, 1, 0], part: 'plank' } } }, box: { model: LIB, pos: [0, 0, 0], parent: { to: 'cart', socket: 'deck' } } };
-  const e6 = editOps(ride.box, 'box', { 'pos.x': 1 }, { world: ride });
-  check('a rider of a moving part: translate refused with the reason', e6.ops.length === 0 && /moving part plank/.test(e6.errors.join()));
+  // a part-socket occupant: read-only, says why
+  const cartWorld: any = { cart: { model: LIB, pos: [0, 0, 0], sockets: { deck: { pos: [0, 1, 0], part: 'plank' } } }, box: { model: LIB, pos: [0, 0, 0], parent: { to: 'cart', socket: 'deck' } } };
+  const e6 = editOps(cartWorld.box, 'box', { 'pos.x': 1 }, { world: cartWorld });
+  check('an occupant of a moving part: translate refused with the reason', e6.ops.length === 0 && /moving part plank/.test(e6.errors.join()));
 }
 
 // ---------------------------------------------------------------- 5. undo (the door's)

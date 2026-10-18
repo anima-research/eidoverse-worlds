@@ -187,7 +187,7 @@ console.log('\nBuild — Blueprints · Tools · World, and the world entity (des
   await evalJson(`import('/lib/build.js').then((m) => (m.deselectAll(), true))`);
   check('seat waits for a selection (disabled, saying so)', await waitFor(`(() => { const t = ${tile('seat')}; return !!t && t.disabled && /select a thing first/.test(t.title); })()`), await evalJson(`${tile('seat')}?.title ?? null`));
   await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('benchlamp'), true))`);
-  check('…and with a thing selected, says where the sitter goes', await waitFor(`(() => { const t = ${tile('seat')}; return !!t && !t.disabled && /on benchlamp/.test(t.title); })()`), await evalJson(`${tile('seat')}?.title ?? null`));
+  check('…and with a thing selected, says where the occupant goes', await waitFor(`(() => { const t = ${tile('seat')}; return !!t && !t.disabled && /on benchlamp/.test(t.title); })()`), await evalJson(`${tile('seat')}?.title ?? null`));
 
   // World: the presets come from the defs; a sky pick REPLACES the sky
   check('World: sky presets, ground shapes and tints, plantings + mow, weathers', await waitFor(`['golden', 'dusk', 'hills', 'rugged', 'arid', 'meadow', 'tufts', 'mow', 'rain', 'storm'].every((l) => !!([...${bf}.querySelectorAll('.sp-tile')].find((t) => t.textContent.trim() === l)))`), await evalJson(`[...${bf}.querySelectorAll('.sp-tile')].map((t) => t.textContent.trim()).join(',')`));
@@ -432,7 +432,7 @@ console.log('\ndrag-reparent in the tree: detach onto empty space, attach onto a
 await sleep(1500);   // verb window
 const rowOf = (id) => `[...${hier}.querySelectorAll('.sp-tree-row')].find((x) => x.querySelector('.sp-item-label').textContent.includes(${JSON.stringify('')} + ${JSON.stringify(id)}))`;
 const dragTo = async (id, targetExpr) => evalJson(`(() => { const src = ${rowOf(id)}; const dst = ${targetExpr}; if (!src || !dst) return 'missing:' + !!src + !!dst; src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() })); dst.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })); dst.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })); src.dispatchEvent(new DragEvent('dragend', { bubbles: true })); return 'ok'; })()`);
-check('rows are draggable; riders are not', await evalJson(`${rowOf('lamp3')}?.draggable === true`));
+check('rows are draggable; occupants are not', await evalJson(`${rowOf('lamp3')}?.draggable === true`));
 check('lamp3 starts mounted on benchlamp', await evalJson(`import('/lib/state.js').then((m) => m.state.st.entities.lamp3?.parent?.to === 'benchlamp')`));
 const d1 = await dragTo('lamp3', `${hier}.querySelector('.sp-tree')`);
 check('drop onto empty tree space → detached (dismount, absolute pose stamped)', await waitFor(`import('/lib/state.js').then((m) => !m.state.st.entities.lamp3?.parent)`), d1 + ' parent=' + JSON.stringify(await evalJson(`import('/lib/state.js').then((m) => m.state.st.entities.lamp3?.parent)`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));

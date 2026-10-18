@@ -29,6 +29,8 @@ import { openGripEditor } from './gripedit.js';
 import { makeSchemaFrame, resolveDelta, getScrubFeel, setScrubFeel, SCRUB_SPEEDS } from './panels.js';
 import { registerXRPanel } from './xrpanels.js';
 import { treeData, sceneSelected, sceneSelect } from './scenegraph.js';
+// a seated person's row in the hierarchy (not an entity: no drag, no lock, no selection)
+const OCC_ROW = 'occupant:';
 import * as Sel from './edit/selection.js';
 import { state, onWorldChange } from './state.js';
 import { treeRows, kindHint, ancestors } from '../../shared/hierarchy.js';
@@ -194,7 +196,7 @@ function fieldByKey(fields, action) { return (fields ?? []).find((f) => f.k === 
 /** Complete an armed ref pick: commit the target id into the waiting field.
  *  Returns true if a pick was pending and consumed. */
 function completeRefPick(targetId) {
-  if (!armingRef || !targetId || String(targetId).startsWith('rider:')) return false;
+  if (!armingRef || !targetId || String(targetId).startsWith(OCC_ROW)) return false;
   const { id, key } = armingRef; armingRef = null;
   const what = key === 'parent.to' ? 'parent' : key.split('.').pop();
   if (targetId === id) { flashHint(key === 'parent.to' ? 'a thing can\'t be its own parent' : 'a thing can\'t reference itself', 3000); repaintAll(); return true; }
@@ -260,8 +262,8 @@ let claimsByOthers = {};   // id -> name, from build.js's drag claims (bus 'clai
 bus.on('claims', (c) => { claimsByOthers = c ?? {}; repaintAll(); });
 function hierarchyFields() {
   // the tree is the FOLD's (shared/hierarchy.js): a child whose model is still
-  // loading sits under its parent, not at the root; seated people ride as rows
-  const { riders } = treeData();
+  // loading sits under its parent, not at the root; seated people show as rows
+  const { occupants } = treeData();
   const world = state.st.entities ?? {};
   const sel = sceneSelected();
   const q = filter.trim().toLowerCase();
@@ -277,15 +279,15 @@ function hierarchyFields() {
   const only = ONLY[hopts.only]?.test ?? null;
   const textHit = (id) => [id, world[id]?.label ?? '', world[id]?.model ?? '', world[id]?.model != null ? modelName(world[id].model) : '', kindHint(world[id]), ...Object.keys(recordComponents(world[id]))].join(' ').toLowerCase().includes(q);
   const matches = q || only ? (id) => (!q || textHit(id)) && (!only || only(id, world)) : null;
-  // a rider's or a component's row matches only where its thing passes the row filter too (review 10-12 S3-2)
+  // an occupant's or a component's row matches only where its thing passes the row filter too (review 10-12 S3-2)
   const underOk = (id) => !only || only(id, world);
-  const ridersOf = (id) => (riders.get(id) ?? []).map((r) => ({ id: `rider:${r}`, match: (q ? r.toLowerCase().includes(q) : !only) && underOk(id) }));
+  const occupantsOf = (id) => (occupants.get(id) ?? []).map((r) => ({ id: `${OCC_ROW}${r}`, match: (q ? r.toLowerCase().includes(q) : !only) && underOk(id) }));
   // with 'list components' on, a thing's components are greyed rows under it (they fold with it, like its children)
   const compsOfRow = (id) => (hopts.comps ? compKeys(bagOf(id)).filter((k) => k !== 'label').sort().map((k) => ({ id: `comp:${id}:${k}`, match: (q ? k.toLowerCase().includes(q) : !only) && underOk(id) })) : []);
-  const underOf = (id) => [...ridersOf(id), ...compsOfRow(id)];
+  const underOf = (id) => [...occupantsOf(id), ...compsOfRow(id)];
   const rows = treeRows(world, { collapsed: { has: isFolded }, matches, extra: underOf }).map((t) => {
     if (t.extra && t.id.startsWith('comp:')) return { id: t.id, label: t.id.slice(t.id.lastIndexOf(':') + 1), depth: t.depth, noDrag: true, dim: true, title: `a component of ${t.id.slice(5, t.id.lastIndexOf(':'))}: click to select it` };
-    if (t.extra) return { id: t.id, label: `🧍 ${t.id.slice(6)}`, depth: t.depth, noDrag: true };
+    if (t.extra) return { id: t.id, label: `🧍 ${t.id.slice(OCC_ROW.length)}`, depth: t.depth, noDrag: true };
     const id = t.id; const bag = bagOf(id) ?? {};
     const badges = hopts.kinds ? badgesFor(id) : [];   // what it carries (grabbable · physics) is 'show kinds'; state badges below always show
     const off = offIn(world, id);   // switched off (itself or above): not loaded, so not 'loading…'
@@ -309,7 +311,7 @@ function hierarchyFields() {
       kids: t.kids, open: t.open, ...(t.dim ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open
   });
   for (const r of rows) {
-    if (String(r.id).startsWith('rider:') || String(r.id).startsWith('comp:')) continue;
+    if (String(r.id).startsWith(OCC_ROW) || String(r.id).startsWith('comp:')) continue;
     const mounted = !!world[r.id]?.parent;
     const lab = bagOf(r.id)?.label;
     r.rename = typeof lab === 'string' ? lab : '';   // the label comp; empty = the row says what it is (its kind), never its id
@@ -326,7 +328,7 @@ function hierarchyFields() {
       { k: 'remove', label: 'remove  (X)', danger: true },
     ];
   }
-  visibleRows = rows.filter((r) => !String(r.id).startsWith('rider:') && !String(r.id).startsWith('comp:')).map((r) => r.id);
+  visibleRows = rows.filter((r) => !String(r.id).startsWith(OCC_ROW) && !String(r.id).startsWith('comp:')).map((r) => r.id);
   return [
     { t: 'text', k: 'filter', label: '', value: filter, placeholder: 'filter — id, label, lib, component ⏎', hint: 'non-matches hide; a match keeps its ancestors' },
     // Options ▾ (R, 10-10: the 'View: ids' face was drawn twice and the list carried a search box and a 'recent'
@@ -370,7 +372,7 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
     }
     case 'envdel': removeEnv(String(payload ?? '').slice(4)); return;   // ✕ on an environment row
     case 'sel': {
-      if (String(payload).startsWith('rider:')) return;
+      if (String(payload).startsWith(OCC_ROW)) return;
       if (String(payload).startsWith('comp:')) payload = payload.slice(5, payload.lastIndexOf(':'));   // a component's row selects its thing
       if (armingRef && completeRefPick(payload)) break;   // a row click names a ref target
       if (arming && payload !== arming) { const child = arming; arming = null; reparent(child, payload); sceneSelect(child); break; }
@@ -1312,11 +1314,11 @@ export function initEditPanels() {
     const id = kind === 'things' ? ids[0] ?? null : null;
     // a ref pick armed from the inspector: the world-clicked id is the target.
     // Re-select the entity being edited so the inspector stays on it.
-    if (armingRef && id && id !== armingRef.id && !String(id).startsWith('rider:')) {
+    if (armingRef && id && id !== armingRef.id && !String(id).startsWith(OCC_ROW)) {
       const back = armingRef.id;
       if (completeRefPick(id)) { sceneSelect(back); return; }
     }
-    if (!arming || !id || id === arming || String(id).startsWith('rider:')) return;
+    if (!arming || !id || id === arming || String(id).startsWith(OCC_ROW)) return;
     const child = arming; arming = null;
     reparent(child, id);
     sceneSelect(child);
