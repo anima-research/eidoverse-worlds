@@ -75,6 +75,30 @@ for (const rel of OPERATOR) {
       offences.push(`${rel}:${i + 1}  an operator tool counts "things" (the protocol's word is entities): ${line.trim().slice(0, 100)}`);
   });
 }
+// The occupy family is the one word for a body (or thing) in a seat (R 10-17 19:46: "I thought it was seated or occupiers or
+// whatever it is now, not riders"): occupy / occupant / vacate. "rider" may not appear in runtime code (comments included),
+// the protocol spec or AGENTS.md. A wire or log name that once said rider keeps being READ under the old spelling: those
+// reads are listed in RIDER_OK, each with why. (Second Life / VRChat may be quoted as "sitter": it isn't this word.)
+const RIDER = /\b[Rr]iders?\b|\bRIDERS?\b|[Rr]ider(?=[A-Z_0-9])|(?<=[a-z0-9_$])Riders?(?![a-z])|_riders?\b/;
+const RIDER_DOCS = ["spec/PROTOCOL.md", "AGENTS.md"];
+const RIDER_OK: [string, RegExp, string][] = [
+  ["spec/PROTOCOL.md", /`resettle \{hosts, occupants, asked\}` \(`riders` in entries before 10-17\)/, "the log entry's old field name, said so a reader of an old log knows it"],
+];
+const riderScan = (rel: string, text: string) => text.split("\n").forEach((line, i) => {
+  if (!RIDER.test(line) || RIDER_OK.some(([f, re]) => rel === f && re.test(line))) return;
+  offences.push(`${rel}:${i + 1}  says "rider" (the word is occupant: occupy / occupant / vacate): ${line.trim().slice(0, 100)}`);
+});
+const riderWalk = (dir: string) => {
+  if (!fs.existsSync(dir)) return;
+  for (const name of fs.readdirSync(dir)) {
+    if (SKIP_DIR.has(name)) continue;
+    const p = path.join(dir, name);
+    if (fs.statSync(p).isDirectory()) { riderWalk(p); continue; }
+    if (EXT.test(name) || /\.html$/.test(name)) riderScan(path.relative(ROOT, p), fs.readFileSync(p, "utf8"));
+  }
+};
+for (const d of [...RUNTIME, ...DEPLOYED]) riderWalk(path.join(ROOT, d));
+for (const rel of RIDER_DOCS) { const p = path.join(ROOT, rel); if (fs.existsSync(p)) riderScan(rel, fs.readFileSync(p, "utf8")); else offences.push(`${rel}: missing (RIDER_DOCS lists it)`); }
 for (const o of offences) console.log("  " + o);
 console.log(`[vocab-check] ${offences.length ? `${offences.length} old-spelling read(s)` : "one vocabulary: every runtime reader speaks the record in the protocol's names"}`);
 process.exit(offences.length ? 1 : 0);
