@@ -7,6 +7,8 @@
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts rollback <world> [--discard-changes]       (undo an in-place translation: the old files back, everything it made removed)
 //   bun tools/protocol/world.ts owner-key <ed25519:…> <signature>      (the ceremony's check: import-v1/README.md)
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts info <name>
+//   WORLDS_DIR=<dir> bun tools/protocol/world.ts repair <name> [--dry-run] [--by <who asked>]     the shape repair (PROTOCOL §4), recorded
+//   WORLDS_DIR=<dir> bun tools/protocol/world.ts repair <name> --rollback [--force]               the pre-repair log put back, byte-identical
 //
 // The server never makes a world by itself (it serves only worlds in this protocol, and refuses a directory holding only an old log). A directory is a world because it holds world.jsonl
 // whose line 0 is a genesis saying {dialect, v: 4}, and only this tool writes one (shell access to the host, like every other operator
@@ -36,6 +38,9 @@ import { custodyFileIn } from "../../server/keyfiles.ts";
 import { TRANSLATOR } from "./import-v1/translate-v1.js";
 import { openLive, isWorldDir } from "../../server/livehost.ts";
 import { digest, keyOk } from "../../shared/protocol/fold.js";
+import { repairShapes } from "../../shared/protocol/authority.js";
+import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
+import { backupBeforeRepair, sealBackup, dropBackup, rollbackRepair } from "../../server/repairfiles.ts";
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flag = (k: string) => { const i = rest.indexOf(`--${k}`); return i >= 0 ? rest[i + 1] : undefined; };
@@ -342,4 +347,32 @@ if (cmd === "found") {
   console.log(JSON.stringify({ name, worldId: w.worldId, entries: w.entries.length, status: st.status,
     entities: Object.keys(st.entities).length - 1, entitiesNote: "not counting @world, the world's own entity",
     roles: Object.fromEntries(Object.entries(st.entities["@world"].c).filter(([k]) => k.startsWith("roles:"))), digest: digest(st) }, null, 1));
-} else die("usage: found <name> --owner <id> [--title …] | translate <world> [<new name>] --dry-run … | translate <world> [<new name>] (--founder-key <key> --approved <hash> --approve-sig <sig> | --no-founder-key --approved <hash>) | rollback <world> [--discard-changes] | owner-key <key> <sig> | info <name>   (WORLDS_DIR=<dir>)");
+} else if (cmd === "repair") {
+  // reviewer item 9 (10-18): the shape repair is a MAINTENANCE COMMAND, never the load's. Stop the server that serves the world
+  // first (two writers of one log). Recorded: the system's repair-shapes act carries command and --by (PROTOCOL §4); its
+  // rollback is the file's: the pre-repair log is kept under <world>/repair-backups/<stamp>/ and --rollback puts it back
+  // byte-identical (server/repairfiles.ts), refusing when the log has grown since (unless --force).
+  const name = rest[0]; if (!name || !NAME.test(name)) die("usage: repair <name> [--dry-run] [--by <id>] | repair <name> --rollback [--force]");
+  if (!isWorldSaved(name)) die(`${name} is not a world (no world.jsonl with a genesis)`);
+  const dir = path.join(WORLDS_DIR, name);
+  if (rest.includes("--rollback")) {
+    const r = rollbackRepair(dir, { force: rest.includes("--force") });
+    if (!r.ok) die(`rollback refused: ${r.why}`);
+    console.log(`restored ${path.join(dir, "world.jsonl")} from ${r.backup}: ${r.restored.size} bytes, sha256 ${r.restored.sha256} (byte-identical to the pre-repair log; ${r.dropped} bytes written by the repair and since are gone)`);
+  } else {
+    const w = openLive(dir, name, { catalogue: ENGINE_CATALOGUE, scripts: null });
+    const by = flag("by") ?? null, dryRun = rest.includes("--dry-run");
+    if (dryRun) { const r = repairShapes(w, { by, dryRun: true }) as any;
+      if (r.refused) die(`repair refused: ${r.refused.code}: ${r.refused.reason}`);
+      if (r.marked) { console.log(`${name} is already marked (its log holds the repair-shapes marker, a stamped founding or a translation in today's spelling): nothing to repair`); process.exit(0); }
+      console.log(`dry run: ${r.repaired.length} thing(s) would be repaired${r.repaired.length ? `: ${r.repaired.join(", ")}` : ""}; ${r.failed.length} refused${r.failed.length ? `: ${JSON.stringify(r.failed)}` : ""}; ${r.ops.length} op(s)`);
+      for (const o of r.ops) console.log(`  ${o.verb} ${o.id} ${o.comp}`); process.exit(0); }
+    const backup = backupBeforeRepair(dir, { by });
+    let r: any; try { r = repairShapes(w, { by }); } catch (e) { dropBackup(backup); throw e; }
+    if (r.refused) { dropBackup(backup); die(`repair refused: ${r.refused.code}: ${r.refused.reason}`); }
+    if (r.marked) { dropBackup(backup); console.log(`${name} is already marked: nothing to repair, nothing written (no backup kept)`); process.exit(0); }
+    const m = sealBackup(backup);
+    console.log(`repaired ${name}: ${r.repaired.length} thing(s)${r.repaired.length ? ` (${r.repaired.slice(0, 20).join(", ")}${r.repaired.length > 20 ? ", …" : ""})` : ""}, ${r.failed.length} refused${r.failed.length ? ` ${JSON.stringify(r.failed).slice(0, 400)}` : ""}; the system's repair-shapes act at seq ${r.seq}${by ? `, by ${by}` : ""}`);
+    console.log(`pre-repair log kept: ${backup} (${m.before.size} bytes, sha256 ${m.before.sha256}); to undo: bun tools/protocol/world.ts repair ${name} --rollback`);
+  }
+} else die("usage: found <name> --owner <id> [--title …] | translate <world> [<new name>] --dry-run … | translate <world> [<new name>] (--founder-key <key> --approved <hash> --approve-sig <sig> | --no-founder-key --approved <hash>) | rollback <world> [--discard-changes] | owner-key <key> <sig> | info <name>   | repair <name> [--dry-run] [--by <id>] | repair <name> --rollback [--force]   (WORLDS_DIR=<dir>)");

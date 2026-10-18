@@ -34,11 +34,11 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
     `density` stay open: the body shove reads them.
     `layers`, `mask`, `ccd` are cut, not held.
 - **cut fields that say where they went** (the registry's `dropped`): a write of one is refused with a pointer, a
-  stored one is repaired at a world's first load (shared/protocol/shaperepair.js) and by translate-v1@12 and later: `motion.amplitude`
+  stored one is repaired by the explicit repair command (shared/protocol/shaperepair.js; `bun tools/protocol/world.ts repair <name>`, never at load: reviewer item 9, 10-18) and by translate-v1@12 and later: `motion.amplitude`
   (→ `amp`), `motion.part` (→ `motion:<slot> {node: <part>}`: a node's name from a model file is data in the value, never part of a key; readers find the part by `node`), `physics.material` (→ `surface`), `sky.weatherSeconds` (→
   `transition`; the sky act still takes it), `sky.clock` (→ `tz`; likewise), `terrain.water` (→ the `water` component).
   Some are taken at the door instead and stored in today's spelling: `parent.order` (dropped), `light.day` (→
-  `daytime`) and the first protocol's grass knobs. The load's act is `repair-shapes`, once per world (the system's
+  `daytime`) and the first protocol's grass knobs. The command's act is `repair-shapes` (with `command` and `by`: provenance; the pre-repair log is kept under `repair-backups/` for `--rollback`), once per world (the system's
   `repair-shapes` act marks the world; a founding or translation writes one; older worlds' markers are read back, and a
   purged one counts as marked); PROTOCOL §4 lists everything it repairs.
 - **references are stored as written** (R 10-17, binding: "definitely serve path again alongside hash"): `model` is its
@@ -46,7 +46,7 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
   cheap, un-expanding impossible). `model-hash` (trial, 10-17; `sha256:<64 hex>`, written by the server) rides beside a
   model when the catalogue already knows its bytes, the way Godot's `ext_resource` carries `uid` beside `path` and a lock
   file `integrity` beside `resolved`: optional, never the reference. A model stored as `eido:sha256/<hex>` (translate-v1
-  @8–@11) gets its path back at its first load where the host's index knows it (repair v2), else it still loads as it is.
+  @8–@11) gets its path back when the repair command runs where the host's index knows it (repair v2), else it still loads as it is.
 - **a component split out of another**: `water` (trial, 10-16) left `terrain`, as every engine keeps water apart from
   ground. `@world`'s `water {level (m, required), color?, opacity?, kind?: still|river|ocean, flow? [x, z] m/s}`; no
   `water` is a dry world, and absent fields read as `0x1d5a6e`, 0.82, a kind decided from the ground

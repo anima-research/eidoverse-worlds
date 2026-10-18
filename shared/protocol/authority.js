@@ -61,8 +61,8 @@ import { actIndexOf, buildSculpt, buildSky, buildUndo, buildWeather } from "./au
 export { actIndexFresh, actIndexOf, entityBefore } from "./authority/undo.js";
 import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, installCheck, logRt, overCpu, particlesCheck, pauseOnly, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptCeiling, scriptDefaults, scriptDepth, scriptMemo, scriptRights, scriptsCfg, sponsorOf, uploadEffect } from "./authority/scripts.js";
 export { DUTY, scriptCeiling, scriptDefaults, setScriptConfig, setScriptDuty, unpaused } from "./authority/scripts.js";
-import { SCRIPT_VERBS, activate, drainHeld, drainScripts, heldEvent } from "./authority/scriptrun.js";
-export { ORPHANS, expireRoles, liftWorld, presenceEvent, scriptsView, settle, settleOrphans, tick } from "./authority/scriptrun.js";
+import { SCRIPT_VERBS, activate, drainHeld, drainScripts, heldEvent, repairShapes } from "./authority/scriptrun.js";
+export { ORPHANS, expireRoles, liftWorld, presenceEvent, repairShapes, scriptsView, settle, settleOrphans, tick } from "./authority/scriptrun.js";
 import { clearOccupant, leftOccupied, occupiedRefuse, occupantOf, occupyRights, setOccupant, occupantOn, vacateAt, vacateWhy, vacatesFor } from "./authority/occupants.js";
 import { arrivalBox, body, buildEpoch, dist, gripPoint, gripOf, lawOf, pathBlocked, restampEngine, settleSim, shearFree, sizeOf, solidAt } from "./authority/physics.js";
 import { fliesIn, flyingWorld, gripHow, homeScale, launch, recentRests, releasePos, returnDue, returnHome, returnPlan, sameHome, secondGrip, shaped, shoveGate, snapTarget, stampHomes, stampResetHomes, vec3s } from "./authority/manipulate.js";
@@ -352,8 +352,12 @@ export function forkCopy(w, actor, args) { CTX.forking = true; try { return requ
  *  message); no request word does. */
 export function operatorRepair(w, actor, verb, args = {}) {
   const door = (verb === "set" || verb === "delete") && args && args.id === "@world" && REPAIR_COMP(args.component);
+  // reviewer item 9 (10-18): the shape repair is a maintenance command, never the load's; an operator runs it here, recorded
+  // with the operator's id (the act's `by`, operator: true). Not a request word: it has no verb at the door
+  if (verb === "repair-shapes") { const r = repairShapes(w, { by: actor, operator: true, dryRun: args?.dryRun === true });
+    return r.refused ? { ok: false, refused: r.refused } : { ok: true, ...r }; }
   if (!(door || verb === "unban"))
-    return { ok: false, refused: { code: "rights", reason: `an operator's repair covers @world's roles, access, default-role and role-defs (set, delete) and lifting a ban or kick (unban); not ${String(verb).slice(0, 32)}${args?.component !== undefined ? ` ${String(args.component).slice(0, 64)}` : ""}`,
+    return { ok: false, refused: { code: "rights", reason: `an operator's repair covers @world's roles, access, default-role and role-defs (set, delete), lifting a ban or kick (unban) and the shape repair (repair-shapes); not ${String(verb).slice(0, 32)}${args?.component !== undefined ? ` ${String(args.component).slice(0, 64)}` : ""}`,
       fix: "anything else goes through the world's own roles: repair a role (set {id: '@world', component: 'roles:<id>', value: {role: 'owner'}}), then act as that person" } };
   CTX.operator = actor; try { return request(w, actor, verb, args); } finally { CTX.operator = false; }
 }

@@ -1,7 +1,7 @@
 // shared/protocol/shaperepair.js — a value stored before the shape audit's wave 2 (physics-motion, 10-16), in today's
 // spelling, with the meaning its readers gave it. Pure: a thing's components in, the repaired components out. Three
-// callers, one rule set: the server's first load of a stored world (authority.js liftWorld: one system act,
-// `repair-shapes`, ONCE per world: shapesMarked below), translate-v1@12's projection (so a translated world needs no
+// callers, one rule set: the explicit repair command (authority repairShapes — never a load, reviewer item 9 10-18: one system
+// act, `repair-shapes`, ONCE per world: shapesMarked below), translate-v1@12's projection (so a translated world needs no
 // repair, and is marked), and the old-world oracle's mirror of the load. The rules that read an absent field may only
 // ever see values stored before the audit: that is the marker's job, not these functions' (review r7 F2).
 //
@@ -21,7 +21,7 @@
 //              (true dim, false full); shadows (read by nothing) dropped
 //   model      (R 10-17, v2) a content address eido:sha256/<hex> (translate-v1@8–@11 wrote them) → the library path this
 //              host's index names for it, with the address's hash beside it as model-hash sha256:<hex>; only with a resolver
-//              (the load passes the catalogue's pathOf: host-local, which is fine for a logged act every replica folds as
+//              (the command passes the catalogue's pathOf: host-local, which is fine for a logged act every replica folds as
 //              written); an address no file here names is kept, and still loads
 //   @world (repairWorld):
 //   sky        clock 'real' + dormantRated {hours, rate, ts} → tz, with hours/rate/ts the parked clock (it is the fallback
@@ -130,7 +130,7 @@ export function repairSky(sky) {
 }
 /** @world's components repaired: {c, set, del}, as repairComps. Only the world's look is touched. NOT idempotent on a sky:
  *  its azimuth is converted from degrees every time it is handed one. Each caller hands it a stored value once: the
- *  load's repair runs once per world (liftWorld: the log's marker, shapesMarked), translate-v1@12 once per translation
+ *  repair command runs once per world (repairShapes: the log's marker, shapesMarked), translate-v1@12 once per translation
  *  (and its output carries the marker), the oracle once per projection. */
 export function repairWorld(c0) {
   if (!bag(c0)) return { c: c0, set: [], del: [] };

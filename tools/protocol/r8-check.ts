@@ -31,7 +31,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["undo's ref restores on the undoer's rights", "protocol/authority/undo.js", "const g = setOp(id, comp, nv); g[FOLLOW_UP] = true;", "const g = setOp(id, comp, nv);", ["R4"]],
   ["no repair marker at founding", "protocol/authority/verbs.js", "w.append(actEntry(w, \"system\", \"repair-shapes\", { v: SHAPES_VERSION, ids: [], founding: true }));", "", ["M1"]],
   ["the founding's marker read bare", "protocol/shaperepair.js", "if (e.verb === \"create-world\" && !founded) { founded = true; const b = bodyOf(i);", "if (e.verb === \"create-world\" && !founded) { founded = true; const b = e.body;", ["M2"]],
-  ["the load reads the marker without readback", "protocol/authority/scriptrun.js", "if (!shapesMarked(w.entries, (q) => readback(w, q))) try {", "if (!shapesMarked(w.entries)) try {", ["M2"]],
+  ["the repair command reads the marker without readback", "protocol/authority/scriptrun.js", "if (shapesMarked(w.entries, (q) => readback(w, q))) return { marked: true, repaired: [], failed: [] };", "if (shapesMarked(w.entries)) return { marked: true, repaired: [], failed: [] };", ["M2"]],
   ["enter records who", "protocol/authority/scriptrun.js", "const anon = ANON_EVENTS.has(ev.on) || (GRIP_EVENTS.has(ev.on) && ev.seq === undefined);", "const anon = false;", ["P1", "P2"]],
   ["the auditor re-runs an arrival with no one", "protocol/scriptaudit.js", "if (anonWho) event.by = ARRIVAL_STAND_IN;", "", ["P1"]],
   ["the auditor flags an arrival it can't re-run", "protocol/scriptaudit.js", "    if (anonWho) { const r2 =", "    if (false) { const r2 =", ["P2"]],
@@ -174,7 +174,7 @@ const cases: Case[] = [
       // act (in memory), so the stub alone decides, and a purged founding is unknown, which is marked
       const j = w.entries.findIndex((e: any) => e.kind === "act" && e.verb === "repair-shapes"); if (j >= 0) w.entries[j] = { ...w.entries[j], verb: "x-not-a-marker" };
       const old = w.entries;
-      const n = w.entries.length; s.step(); const out = D.liftWorld(w);
+      const n = w.entries.length; s.step(); D.liftWorld(w); const out = D.repairShapes(w);   // item 9 (10-18): the load never repairs; the command reads the marker through readback
       return { m: show(m), k: show(k), n, after: w.entries.length, az: comp(s, "@world", "sky")?.azimuth, az0, mo: JSON.stringify(comp(s, "swing", "motion")), mo0, out,
         markedOld: SR.shapesMarked(old, (q: number) => (q === i ? null : old[q]?.body)) }; },
     good: (o) => o.m === "ok" && o.k === "ok" && o.after === o.n && o.az === o.az0 && o.mo === o.mo0 && o.markedOld === true },

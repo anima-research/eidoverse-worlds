@@ -16,7 +16,8 @@ a later version: not a component's shape, not a field or message name, and not
 mistake this period exists to avoid. What we promise instead is care: we try
 not to break things, every change is recorded (`REGISTRY-CHANGELOG.md` beside
 this document, and the version history at the end), and where a change would
-break stored logs we ship a **log translator** or a load repair with it, so
+break stored logs we ship a **log translator** or a recorded shape repair (a
+maintenance command, §4) with it, so
 that existing worlds move forward rather than strand. Translators are the
 migration path for the trial period. Every registered component is `trial`
 until it is promised. Implementations SHOULD NOT add anything they are not
@@ -302,12 +303,22 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   of it is refused (one refusal, code `reserved`); `stable`: promised, it only
   grows by additions. `schema` reports each one. None is stable at v1. A
   draft (a namespaced name, below) has no status: it isn't admitted.
-- **An old shape is repaired once, at load** (a pure rename is not: below). When a trial shape changes,
-  the authority's first load of a stored world writes what its old values
-  meant, in today's spelling, in one system act, `repair-shapes {v, ids,
-  failed?}` (shared/protocol/shaperepair.js: `repairComps` for each thing,
-  `repairWorld` for `@world`'s look).
-  It runs **once per world**: the system's `repair-shapes` act is the world's
+- **An old shape is repaired once, by an explicit maintenance command — never
+  by a load or a read** (a pure rename is not: below). When a trial shape changes,
+  a stored world keeps its old values as they are: loading never rewrites them
+  (its readers keep their own fallbacks for the old spellings, and the load
+  says the world needs repair, naming the command). An operator then runs the
+  repair, `bun tools/protocol/world.ts repair <name>` (or, from inside the
+  world, a server operator's `operator-repair {verb: "repair-shapes"}`), which
+  writes what the old values meant, in today's spelling, in one system act,
+  `repair-shapes {v, ids, failed?, command: "repair-shapes", by?, operator?}`
+  (shared/protocol/shaperepair.js: `repairComps` for each thing, `repairWorld`
+  for `@world`'s look; the authority's `repairShapes`). **Provenance:** the act
+  carries `command` and `by` (who asked). **Rollback:** the command keeps the
+  pre-repair log beside the world (`repair-backups/<stamp>/world.jsonl`, with a
+  manifest of its size and sha256) and `repair <name> --rollback` puts it back
+  byte-identical, refusing when the log has grown since (`--force` overrides).
+  The repair runs **once per world**: the system's `repair-shapes` act is the world's
   marker, read by verb and actor only (they survive a purge), and a world
   founded or translated today gets one beside its founding or its `translated`
   act (`ids: []`, with `founding: true` or `translated: true`). Worlds from
@@ -344,7 +355,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `terrain.water` → `water`; `grass` in the flora spelling (a preset keeps
   its name). The translator (`translate-v1@14`, §14) writes its
   projection through the same functions, so a translated world needs no
-  repair, and the old-world oracle mirrors the load with them; the sweep's
+  repair, and the old-world oracle mirrors the repair with them; the sweep's
   declared projection and the oracle's core check are written independently,
   a second hand on the same rules. Because the repair runs once, every
   stored sky's azimuth is converted from degrees exactly once (a turn
@@ -355,7 +366,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `trusted` → `trusted-components`; `RENAMED_FIELDS`: `grabbable.pose` and
   `station.pose` → `anim`, a grip's `fingers` → `grasp`; a field's VALUE: a
   motion's `type` `bob` → `oscillate`, on `motion` and every `motion:<slot>`)
-  is not marker-gated,
+  is not marker-gated and not a command,
   unlike the once-per-world repair above: a rename means the same whenever it
   runs, so every load renames what it finds, as the system's
   `rename-components {renamed, failed?, why}` act and its change, and writes nothing
@@ -904,7 +915,7 @@ map: `{ok: true, ids: {"$table": "<minted>"}, …}` (a dry run maps them too).
 The `act` is the request with the minted ids in it: **a placeholder never
 reaches the log**. A placeholder defined twice, or used where a thing is named
 without a create defining it, is refused by name. System acts that must keep
-ids — a fork's copy, a translation, a merge, the load's repair — copy them
+ids — a fork's copy, a translation, a merge, the shape repair — copy them
 verbatim. A script's `world.create(components)` returns the id it was minted
 (script API 2; it takes none).
 

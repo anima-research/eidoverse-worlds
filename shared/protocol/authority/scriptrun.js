@@ -272,26 +272,12 @@ export function liftWorld(w) {
         changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "lift-sockets", body: { id: h, made, moved, ...(author ? { capability: { author } } : {}) } }));
         out.push({ host: h, made, moved });
       } catch (x) { out.push({ host: h, failed: { code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) } }); } }
-    // shape audit 10-16: what a value stored before the audit meant, written in today's spelling (shared/protocol/shaperepair.js).
-    // ONCE per world (review r7 F2): the act it writes is the marker (shapesMarked), as is a founding or a translation
-    // that already wrote today's spelling, so the rules that read an ABSENT field (a pendulum's [0, 2, 0] hinge, physics
-    // kind dynamic, a light's decay 1.7, the sky's defaults) only ever see values stored before it, never a write made
-    // since: a pendulum set today without a pivot keeps none, a deleted pivot stays deleted. Admitted per thing (F5): a
-    // thing whose repair the door refuses is left as it was and named in the act ({failed}); the rest repair. The act is
-    // written even when there is nothing to repair, so the next load finds the marker and does nothing
-    if (!shapesMarked(w.entries, (q) => readback(w, q))) try {   // READBACK act:create-world / act:translated: a purged one is marked
-      const st = w.state(); const all = shapeRepairOps(st, PURGED, { pathOf: (m) => { try { return CTX.cat.pathOf?.(m) ?? null; } catch { return null; } } });
-      const byId = new Map(); for (const o of all) { if (!byId.has(o.id)) byId.set(o.id, []); byId.get(o.id).push(o); }
-      const kept = [], failed = [];
-      for (const [id, ops] of byId) {
-        try { admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: [...new Set(ops.map((o) => o.comp))] }, lifting: true }, ops); kept.push(...ops); }
-        catch (x) { if (!(x instanceof Refusal)) throw x; failed.push({ id, code: x.code, reason: String(x.reason ?? "").slice(0, 300) }); } }
-      const ids = [...new Set(kept.map((o) => o.id))];
-      const act = { kind: "act", actor: "system", verb: "repair-shapes", body: { v: SHAPES_VERSION, ids, ...(failed.length ? { failed } : {}), why: "values stored before the shape audit (10-16), in today's spelling with the meaning their readers gave them; once per world" } };
-      if (kept.length) { const plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids, comps: [...new Set(kept.map((o) => o.comp))] }, lifting: true }, kept); changeEntry(w, plan, w.append(act)); }
-      else w.append(act);
-      out.push({ repair: { repaired: ids, failed } });
-    } catch (x) { out.push({ repair: { repaired: [], failed: [{ id: null, code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) }] } }); }
+    // shape audit 10-16, reviewer item 9 (10-18): the load NEVER repairs. A world holding values from before the audit (no
+    // marker: shapesMarked) loads as it is (its readers keep their own fallbacks: motioneval reads amplitude and a letter
+    // axis, the light rig a missing decay) and the load SAYS so, naming the maintenance command (repairShapes, below:
+    // `bun tools/protocol/world.ts repair <name>`, or a server operator's operator-repair repair-shapes), which is recorded
+    // and can be rolled back
+    if (!shapesMarked(w.entries, (q) => readback(w, q))) out.push({ repairNeeded: { why: "this world holds values stored before the shape audit (10-16), in their old spelling; loading never rewrites them", fix: "run `bun tools/protocol/world.ts repair <name>` (recorded as the system's repair-shapes act, with a backup to roll back), or a server operator's operator-repair {verb: 'repair-shapes'}" } });
     // names renamed before release (shaperepair.js RENAMED_COMPONENTS: @world trusted → trusted-components; RENAMED_FIELDS:
     // grabbable/station pose → anim, a grip's fingers → grasp, a motion's type bob → oscillate; R 10-17): a pure
     // rename, so every load does it (no marker); nothing to rename writes nothing. One system act, admitted PER THING as the
@@ -312,6 +298,39 @@ export function liftWorld(w) {
         out.push({ rename: { renamed, ...(failed.length ? { failed } : {}) } }); } }
     catch (x) { out.push({ rename: { renamed: [], failed: { code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) } } }); }
     return out; });
+}
+/** The shape repair as an EXPLICIT maintenance command (reviewer item 9, 10-18; never run by a load or a read). What a value
+ *  stored before the shape audit meant, written in today's spelling (shared/protocol/shaperepair.js), ONCE per world: the act
+ *  it writes is the marker (shapesMarked), as is a founding or a translation that already wrote today's spelling, so the
+ *  rules that read an ABSENT field (a pendulum's [0, 2, 0] hinge, physics kind dynamic, a light's decay 1.7, the sky's
+ *  defaults) only ever see values stored before it. Admitted per thing (review r7 F5): a thing whose repair the door
+ *  refuses is left as it was and named in the act ({failed}); the rest repair. The act is written even when there is
+ *  nothing to repair, so the next run finds the marker and does nothing. PROVENANCE: the act's body carries `command:
+ *  "repair-shapes"` and `by` (who asked: the CLI's --by, or the operator's id, with operator: true), beside {v, ids, failed?,
+ *  why}. ROLLBACK is the file's: the CLI keeps the pre-repair log beside the world (repair-backups/) and restores it
+ *  byte-identical (tools/protocol/world.ts repair --rollback).
+ *  Returns {marked: true} when the world is already marked (nothing written), else {repaired: ids, failed, seq, dryRun?}.
+ *  dryRun: true computes the ops and writes nothing. */
+export function repairShapes(w, { by = null, operator = false, dryRun = false } = {}) {
+  if (!w.exists || w.state().status !== "ok") return { refused: { code: "no-world", reason: "the world doesn't fold to a state" } };
+  if (w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer) return { refused: { code: "custody", reason: "this server doesn't hold the key that signs this world" } };
+  if (shapesMarked(w.entries, (q) => readback(w, q))) return { marked: true, repaired: [], failed: [] };   // READBACK act:create-world / act:translated: a purged one is marked
+  return withAuthority(w, () => {
+    const st = w.state(); const all = shapeRepairOps(st, PURGED, { pathOf: (m) => { try { return CTX.cat.pathOf?.(m) ?? null; } catch { return null; } } });
+    const byId = new Map(); for (const o of all) { if (!byId.has(o.id)) byId.set(o.id, []); byId.get(o.id).push(o); }
+    const kept = [], failed = [];
+    for (const [id, ops] of byId) {
+      try { admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: [...new Set(ops.map((o) => o.comp))] }, lifting: true }, ops); kept.push(...ops); }
+      catch (x) { if (!(x instanceof Refusal)) throw x; failed.push({ id, code: x.code, reason: String(x.reason ?? "").slice(0, 300) }); } }
+    const ids = [...new Set(kept.map((o) => o.id))];
+    if (dryRun) return { dryRun: true, repaired: ids, failed, ops: kept.map(({ verb, id, comp }) => ({ verb, id, comp })) };
+    const act = { kind: "act", actor: "system", verb: "repair-shapes", body: { v: SHAPES_VERSION, ids, ...(failed.length ? { failed } : {}), command: "repair-shapes", ...(typeof by === "string" && by ? { by } : {}), ...(operator ? { operator: true } : {}),
+      why: "values stored before the shape audit (10-16), in today's spelling with the meaning their readers gave them; once per world; run as a maintenance command, never by a load" } };
+    let seq;
+    if (kept.length) { const plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids, comps: [...new Set(kept.map((o) => o.comp))] }, lifting: true }, kept); seq = w.append(act); changeEntry(w, plan, seq); }
+    else seq = w.append(act);
+    return { repaired: ids, failed, seq };
+  });
 }
 const RENAMED_TO = (id, comp) => RENAMED_COMPONENTS[id]?.[comp] ?? null;
 // Things the log has lifted out of the engine (a grab's lift, a catch) with nothing after that puts them back: no launch,

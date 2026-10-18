@@ -1,6 +1,7 @@
 // shape-repair-test — the load's shape repair after review round 7 (notes/eidoverse/REVIEW-holes-r7-2026-10-16.md F1, F2, F5)
 // and R's rulings of 10-16: a node's name from a model file is DATA (motion:<slot> {node}), the repair runs ONCE per world
-// (a marker the log carries), and one bad value never blocks the rest. Each row was written red against wt/repair @
+// (a marker the log carries), and one bad value never blocks the rest. Reviewer item 9 (10-18): the repair is an EXPLICIT maintenance
+// command (authority repairShapes; world.ts repair, with a backup and --rollback; an operator's operator-repair), never the load's. Each row was written red against wt/repair @
 // 080a8fef. Stored "pre-audit" worlds are built in memory (worldOf, unsigned, no custody): their founding has no stamp,
 // so liftWorld treats them as old, which is exactly what a log written before the audit looks like.
 //   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/shape-repair-test.ts
@@ -9,7 +10,7 @@ import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-1
 import fs from 'node:fs';
 import { scratchWorld } from './protocol/scratchworld.ts';
 import { worldOf, CHANGE } from '../shared/protocol/authority/storage.js';
-import { request, liftWorld, LAB_CATALOGUE } from '../shared/protocol/authority.js';
+import { request, liftWorld, repairShapes, LAB_CATALOGUE } from '../shared/protocol/authority.js';
 import { openWorld } from '../server/filehost.ts';
 import { isComponent } from '../shared/protocol/fold.js';
 import { partSlot, motionNode } from '../shared/protocol/names.js';
@@ -42,6 +43,8 @@ function legacyWorld(things: Record<string, Record<string, any>>, world: Record<
 }
 const C = (w, id) => w.state().entities[id]?.c ?? {};
 const repairOf = (out) => out.find((x) => x.repair)?.repair;
+// reviewer item 9 (10-18): the load never repairs; a stored world is repaired by the explicit command. These rows load, then run it
+const repairOut = (w) => { liftWorld(w); const r = repairShapes(w); return [{ repair: { repaired: r.repaired ?? [], failed: r.failed ?? [] } }]; };
 
 // ===================================================================== F1: a node's name is data (motion:<slot> {node})
 await tryRow('RP1', () => {
@@ -58,8 +61,8 @@ await tryRow('RP1', () => {
 
 await tryRow('RP2', () => {
   const w = legacyWorld({ swing: { model: 'crate', motion: { type: 'pendulum', part: 'tripo_part_3', amp: 0.3, period: 2, damp: 0 } }, mill: { model: 'crate', motion: { type: 'spin', part: 'tripo_part_fused_0', degPerSec: 20 } } });
-  const out = liftWorld(w); const rep = repairOf(out);
-  check('RP2 the load repairs a world whose parts are named tripo_part_3 / tripo_part_fused_0 (the Commons; was refused whole)', rep && rep.repaired.includes('swing') && rep.repaired.includes('mill') && !rep.failed.length, out);
+  const out = repairOut(w); const rep = repairOf(out);
+  check('RP2 the repair command repairs a world whose parts are named tripo_part_3 / tripo_part_fused_0 (the Commons; was refused whole)', rep && rep.repaired.includes('swing') && rep.repaired.includes('mill') && !rep.failed.length, out);
   const k = `motion:${partSlot('tripo_part_3')}`;
   check('RP2 …the swing\'s part motion is at motion:<slot>, naming its node', C(w, 'swing')[k]?.node === 'tripo_part_3' && C(w, 'swing')[k]?.type === 'pendulum' && !C(w, 'swing').motion, C(w, 'swing'));
   check('RP2 …readers find it by node (motionNode)', motionNode(k, C(w, 'swing')[k]) === 'tripo_part_3' && motionNode('motion:plank', { type: 'spin' }) === 'plank' && motionNode('motion', { type: 'spin' }) === null, '');
@@ -69,8 +72,8 @@ await tryRow('RP2', () => {
 await tryRow('RP3', () => {
   const w = legacyWorld({ bell: { model: 'crate', motion: { type: 'pendulum', amp: 0.3, period: 2, damp: 0 } } });
   check('RP3 a log written before the audit is unmarked', !shapesMarked(w.entries), '');
-  liftWorld(w);
-  check('RP3 the first load writes the old swing point as its pivot (pre-audit data)', JSON.stringify(C(w, 'bell').pivot) === '{"pos":[0,2,0]}', C(w, 'bell'));
+  repairOut(w);
+  check('RP3 the repair writes the old swing point as its pivot (pre-audit data)', JSON.stringify(C(w, 'bell').pivot) === '{"pos":[0,2,0]}', C(w, 'bell'));
   const n = w.entries.length; const again = liftWorld(w);
   check('RP3 …and marks the world: a second load writes nothing and reports no repair', shapesMarked(w.entries) && w.entries.length === n && !repairOf(again), [again, w.entries.length - n]);
   // today's writes, on the repaired world
@@ -78,8 +81,8 @@ await tryRow('RP3', () => {
   check('RP3 the owner deletes the pivot', r.ok, r.refused);
   r = request(w, 'olive', 'create', { id: 'swing-x', model: 'crate', components: { transform: TF } }); const r2 = request(w, 'olive', 'set', { id: 'swing-x', component: 'motion', value: { type: 'pendulum', amp: 0.4 } });
   check('RP3 a pendulum is set today without a pivot', r.ok && r2.ok && !C(w, 'swing-x').pivot, [r.refused, r2.refused]);
-  const m = w.entries.length; liftWorld(w);
-  check('RP3 …a reload keeps the deleted pivot deleted', !C(w, 'bell').pivot, C(w, 'bell'));
+  const m = w.entries.length; liftWorld(w); repairShapes(w);
+  check('RP3 …a reload (and another repair run) keeps the deleted pivot deleted', !C(w, 'bell').pivot, C(w, 'bell'));
   check('RP3 …and gives today\'s pendulum no pivot (it swings about its origin, as it did when it was set)', !C(w, 'swing-x').pivot && w.entries.length === m, [C(w, 'swing-x'), w.entries.length - m]);
 });
 
@@ -96,7 +99,7 @@ await tryRow('RP4', () => {
 // ===================================================================== F5: per thing; the sky's azimuth once
 await tryRow('RP5', () => {
   const w = legacyWorld({ good: { light: { kind: 'point', color: 1, intensity: 16, range: 10 } }, bad: { light: { kind: 'point', color: 1, intensity: 16, range: 0 } } });
-  const out = liftWorld(w); const rep = repairOf(out);
+  const out = repairOut(w); const rep = repairOf(out);
   check('RP5 one thing the door refuses (a light with range 0) doesn\'t block the rest: the good light is repaired (decay 1.7)', C(w, 'good').light?.decay === 1.7 && rep?.repaired.includes('good'), [out, C(w, 'good')]);
   check('RP5 …the refused thing keeps its old spelling and is named', C(w, 'bad').light?.decay === undefined && rep?.failed.some((f) => f.id === 'bad' && f.reason), rep);
   const act = w.entries.filter((e) => e?.kind === 'act' && e.verb === 'repair-shapes');
@@ -106,14 +109,14 @@ await tryRow('RP5', () => {
 
 await tryRow('RP6', () => {
   const w = legacyWorld({}, { sky: { hours: 10, rate: 0, azimuth: 90, weatherSeconds: 0 } });
-  const out = liftWorld(w); const sky = C(w, '@world').sky;
+  const out = repairOut(w); const sky = C(w, '@world').sky;
   check('RP6 a stored azimuth of 90° becomes π/2 rad; weatherSeconds 0 (outside today\'s range) is dropped, not refused', Math.abs(sky?.azimuth - Math.PI / 2) < 1e-12 && !('weatherSeconds' in sky) && !('transition' in sky) && repairOf(out)?.repaired.includes('@world'), [out, sky]);
-  liftWorld(w);
-  check('RP6 …converted exactly once (a second load leaves it)', Math.abs(C(w, '@world').sky.azimuth - Math.PI / 2) < 1e-12, C(w, '@world').sky);
-  const w2 = legacyWorld({}, { sky: { hours: 10, azimuth: 400 } }); const o2 = liftWorld(w2);
+  liftWorld(w); repairShapes(w);
+  check('RP6 …converted exactly once (a reload and a second repair run leave it)', Math.abs(C(w, '@world').sky.azimuth - Math.PI / 2) < 1e-12, C(w, '@world').sky);
+  const w2 = legacyWorld({}, { sky: { hours: 10, azimuth: 400 } }); const o2 = repairOut(w2);
   check('RP6 …400° is the bearing 40° (inside ±2π), so the sky is repaired instead of refusing', Math.abs(C(w2, '@world').sky?.azimuth - 40 * Math.PI / 180) < 1e-12 && !repairOf(o2)?.failed.length, [o2, C(w2, '@world').sky]);
   const S = read('server/worldlog.ts');
-  check('RP6 the server says the repair\'s outcome on its own line (never "lifting undefined\'s sockets")', /console\.error\(`\[world:\$\{name\}\] the shape repair skipped/.test(S) && !/lifting \$\{f\.host\}'s sockets failed[^\n]*\n[^\n]*rep/.test(S) && /repaired \$\{rep\.repaired\.length\} thing/.test(S) && /"repair-shapes" : "lift-sockets"/.test(S), '');
+  check('RP6 the server says a world needs repair on its own line, naming the command, and never repairs at load', /needs the shape repair/.test(S) && /world\.ts repair/.test(S) && !/repairShapes\(/.test(S), '');
 });
 
 // ===================================================================== the door and the readers speak node
@@ -154,11 +157,11 @@ await tryRow('RP9', () => {
   const r = W.call('create', { id: 'peg', components: { parent: { to: 'hatstand' }, transform: { pos: [0, 1.6, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: 'peg' } } });
   check('RP9 a socket created today with no station (a hat peg) has none after the write', r.ok && !W.state().entities.peg?.c.station, [r.refused, W.state().entities.peg?.c]);
   const w2 = openWorld(W.root, W.name); w2.catalogue = ANY; liftWorld(w2);
-  check('RP9 …nor after a reload through the load\'s lift and repair', !!w2.state().entities.peg && !w2.state().entities.peg.c.station, w2.state().entities.peg?.c);
+  check('RP9 …nor after a reload through the load\'s lift', !!w2.state().entities.peg && !w2.state().entities.peg.c.station, w2.state().entities.peg?.c);
   const r2 = W.call('create', { id: 'rack', model: 'crate', components: { transform: TF, sockets: { hook: { pos: [0, 1, 0] } } } });
   const kids = Object.entries(W.state().entities).filter(([, e]) => e.c.parent?.to === 'rack' && e.c.socket);
   check('RP9 …nor does the old map spelling, lifted at the door (a slot with no body makes a socket child with no station)', r2.ok && kids.length === 1 && !kids[0][1].c.station, [r2.refused, kids]);
-  const w3 = legacyWorld({ coatrack: { model: 'crate', sockets: { peg: { pos: [0, 1.5, 0] } } } }); liftWorld(w3);
+  const w3 = legacyWorld({ coatrack: { model: 'crate', sockets: { peg: { pos: [0, 1.5, 0] } } } }); liftWorld(w3); repairShapes(w3);
   const k3 = Object.entries(w3.state().entities).filter(([, e]) => e.c.parent?.to === 'coatrack' && e.c.socket);
   check('RP9 …nor a stored world\'s socket map with no body, lifted at its first load', k3.length === 1 && !k3[0][1].c.station, k3);
 });
@@ -170,14 +173,72 @@ await tryRow('RP10', () => {
   const H = '7'.repeat(64), H2 = '8'.repeat(64);
   const CAT = { ...ANY, get: ANY.get, list: ANY.list, pathOf: (m: string) => (m === `eido:sha256/${H}` ? 'eidoverse/assets/models/crow.glb' : null) };
   const w = legacyWorld({ crow: { model: `eido:sha256/${H}` }, ghost: { model: `eido:sha256/${H2}` }, plain: { model: 'crate' } }, {}, CAT);
-  const out = liftWorld(w);
+  const out = repairOut(w);
   check('RP10 a stored address this host can name becomes its library path, with the address\'s hash beside it as model-hash', C(w, 'crow').model === 'eidoverse/assets/models/crow.glb' && C(w, 'crow')['model-hash'] === `sha256:${H}` && repairOf(out)?.repaired.includes('crow'), [out, C(w, 'crow')]);
   check('RP10 …one no file here names stays as stored (it still loads, and reads as "thing"); a path is untouched', C(w, 'ghost').model === `eido:sha256/${H2}` && !('model-hash' in C(w, 'ghost')) && C(w, 'plain').model === 'crate' && !('model-hash' in C(w, 'plain')), [C(w, 'ghost'), C(w, 'plain')]);
   check('RP10 …the act carries the repair\'s version (2: the rule set with the paths)', SHAPES_VERSION === 2 && w.entries.some((e) => e?.verb === 'repair-shapes' && e.body?.v === 2), SHAPES_VERSION);
-  const n = w.entries.length; liftWorld(w);
-  check('RP10 …once per world (a second load writes nothing)', w.entries.length === n, w.entries.length - n);
+  const n = w.entries.length; liftWorld(w); repairShapes(w);
+  check('RP10 …once per world (a reload and a second repair run write nothing)', w.entries.length === n, w.entries.length - n);
   const R = repairComps({ model: `eido:sha256/${H}` });
   check('RP10 the pure rule with no resolver changes nothing (the translator and the lab have none)', R.set.length === 0, R);
+});
+
+// ===================================================================== reviewer item 9 (10-18): repair is an explicit maintenance command, never the load's
+// Each row below was red first: RP11 against the load that still repaired (a732d74e), RP12/RP13 against a world.ts with no `repair`.
+import crypto from 'node:crypto';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+const sha = (f: string) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
+await tryRow('RP11', async () => {
+  const w = legacyWorld({ bell: { model: 'crate', motion: { type: 'pendulum', amplitude: 0.3, axis: 'x', period: 2, damp: 0 } }, lamp: { light: { kind: 'point', color: 1, intensity: 16, range: 10 } } });
+  const n = w.entries.length; const out = liftWorld(w);
+  check('RP11 the load of an unrepaired world writes NO repair-shapes act and does not rewrite values (motion keeps amplitude, the light has no decay)', !w.entries.some((e) => e?.verb === 'repair-shapes') && w.entries.length === n && C(w, 'bell').motion?.amplitude === 0.3 && C(w, 'bell').motion?.axis === 'x' && C(w, 'lamp').light?.decay === undefined, [out, C(w, 'bell'), C(w, 'lamp')]);
+  check('RP11 …but says the world needs repair, naming the command', out.some((x) => x.repairNeeded && /world\.ts repair/.test(x.repairNeeded.fix ?? '')), out);
+  check('RP11 …and the world behaves: folds ok, an owner still writes, and the unrepaired thing is still readable (readers\' own fallbacks: motioneval reads amplitude and a letter axis)', w.state().status === 'ok' && request(w, 'olive', 'create', { id: 'new1', model: 'crate', components: { transform: TF } }).ok && request(w, 'olive', 'set', { id: 'lamp', component: 'label', value: 'old lamp' }).ok, C(w, 'lamp'));
+  const ME = read('client/lib/motioneval.js');
+  check('RP11 …(the reader fallbacks are real: motioneval.js reads m.amplitude and a letter axis)', /m\.amp \?\? m\.amplitude/.test(ME) && /axis: "x"/.test(ME), '');
+  const { repairShapes } = await import('../shared/protocol/authority.js') as any;
+  const r = repairShapes(w, { by: 'olive' }); const act = w.entries.find((e) => e?.verb === 'repair-shapes');
+  check('RP11 the explicit command repairs it (amp, a vector axis, decay 1.7) and records who asked and what ran (provenance in the act)', r.repaired.includes('bell') && r.repaired.includes('lamp') && C(w, 'bell').motion?.amp === 0.3 && JSON.stringify(C(w, 'bell').motion?.axis) === '[1,0,0]' && C(w, 'lamp').light?.decay === 1.7 && act?.actor === 'system' && act.body.command === 'repair-shapes' && act.body.by === 'olive' && act.body.v === SHAPES_VERSION, [r, act?.body]);
+  const m = w.entries.length; const r2 = repairShapes(w);
+  check('RP11 …a second run finds the marker and writes nothing (marked: true)', r2.marked === true && w.entries.length === m, [r2, w.entries.length - m]);
+});
+
+await tryRow('RP12', async () => {
+  // a legacy world on disk, the server's layout (<WORLDS_DIR>/<name>/world.jsonl), repaired by the CLI and rolled back byte-identical
+  const root = fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? process.env.TMPDIR ?? '/tmp', 'rp12-')); const dir = path.join(root, 'oldw'); fs.mkdirSync(dir);
+  // the CLI signs with the worlds dir's custody (<root>/.custody.json): the stored world's sequencer must be that key
+  const { custodyAt } = await import('../server/custody.ts'); const { custodyFileIn } = await import('../server/keyfiles.ts');
+  const seqKey = custodyAt(custodyFileIn(root)).sequencer();
+  const w = legacyWorld({ bell: { model: 'crate', motion: { type: 'pendulum', amplitude: 0.3, period: 2, damp: 0 } } });
+  const lines = w.entries.map((e, i) => JSON.stringify(i === 0 ? { ...e, body: { ...e.body, owners: [[], [seqKey]], sequencer: seqKey } } : e));
+  const file = path.join(dir, 'world.jsonl'); fs.writeFileSync(file, lines.join('\n') + '\n');
+  const before = sha(file), size0 = fs.statSync(file).size;
+  const run = (...a: string[]) => spawnSync('bun', [ENGINE + 'tools/protocol/world.ts', 'repair', 'oldw', ...a], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' }, encoding: 'utf8' });
+  const dry = run('--dry-run');
+  check('RP12 --dry-run names what would change and writes nothing', dry.status === 0 && /bell/.test(dry.stdout) && sha(file) === before, [dry.status, dry.stdout.slice(0, 300), dry.stderr.slice(0, 300)]);
+  const rep = run('--by', 'olive');
+  const L = fs.readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l)); const act = L.find((e) => e.verb === 'repair-shapes');
+  check('RP12 repair writes the act (provenance: command, by) and its change, and keeps a backup of the pre-repair log', rep.status === 0 && act?.body.by === 'olive' && act.body.command === 'repair-shapes' && L.length > w.entries.length && fs.existsSync(path.join(dir, 'repair-backups')), [rep.status, rep.stdout.slice(0, 300), rep.stderr.slice(0, 300)]);
+  const backups = fs.existsSync(path.join(dir, 'repair-backups')) ? fs.readdirSync(path.join(dir, 'repair-backups')) : [];
+  check('RP12 …the backup is the pre-repair file, byte-identical (sha256), with a manifest', backups.length === 1 && sha(path.join(dir, 'repair-backups', backups[0], 'world.jsonl')) === before && JSON.parse(fs.readFileSync(path.join(dir, 'repair-backups', backups[0], 'manifest.json'), 'utf8')).before?.sha256 === before, backups);
+  const again = run();
+  check('RP12 …a second repair finds the marker and changes nothing', again.status === 0 && /marked|nothing/.test(again.stdout + again.stderr) && backups.length === fs.readdirSync(path.join(dir, 'repair-backups')).length, [again.status, again.stdout.slice(0, 200)]);
+  const rb = run('--rollback');
+  check('RP12 --rollback restores the pre-repair log byte-identical (size and sha256) and says so', rb.status === 0 && sha(file) === before && fs.statSync(file).size === size0 && /restored/.test(rb.stdout), [rb.status, rb.stdout.slice(0, 300), rb.stderr.slice(0, 300)]);
+  const rep2 = run(); fs.appendFileSync(file, JSON.stringify({ ...L.at(-1), kind: 'say', actor: 'olive', verb: 'say', body: { text: 'later' } }) + '\n');
+  const rb2 = run('--rollback');
+  check('RP12 …a rollback refuses when the log has grown since the repair (later writes would be lost), unless --force', rep2.status === 0 && rb2.status !== 0 && /grown|since/.test(rb2.stderr + rb2.stdout) && sha(file) !== before, [rb2.status, rb2.stderr.slice(0, 300)]);
+  const rb3 = run('--rollback', '--force');
+  check('RP12 …--force restores it anyway, byte-identical', rb3.status === 0 && sha(file) === before, [rb3.status, rb3.stderr.slice(0, 200)]);
+});
+
+await tryRow('RP13', async () => {
+  const { operatorRepair } = await import('../shared/protocol/authority.js') as any;
+  const w = legacyWorld({ lamp: { light: { kind: 'point', color: 1, intensity: 16, range: 10 } } });
+  const r = operatorRepair(w, 'opie', 'repair-shapes', {});
+  const act = w.entries.find((e) => e?.verb === 'repair-shapes');
+  check('RP13 a server operator\'s repair-shapes through operatorRepair runs the same repair, recorded with the operator\'s id', r.ok && r.repaired?.includes('lamp') && act?.body.by === 'opie' && act.body.operator === true && C(w, 'lamp').light?.decay === 1.7, [r, act?.body]);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);
