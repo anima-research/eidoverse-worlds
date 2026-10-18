@@ -111,7 +111,10 @@ export function entryFor(door: Door, who: Who, mode: EntryMode, { now = Date.now
   }
   // operators, owners and holders of a moderation power always get in (what @world.access always said)
   const eff = actorId ? effectiveOf(door.wc, actorId, { anon: !account }) : null;
-  const bypass = isOperator(account) || eff?.role === "owner" || MOD_POWERS.some((p: string) => eff?.permissions?.includes(p));
+  // the bypass is for people this world LISTS (an explicit role row): a power handed to everyone through default-role or
+  // role-defs must not open a members-only door (final review M1, 10-18)
+  const listed = !!actorId && listedIn(door.wc, actorId);
+  const bypass = isOperator(account) || (listed && (eff?.role === "owner" || MOD_POWERS.some((p: string) => eff?.permissions?.includes(p))));
   const e = entryOf(door.wc, { actor: actorId ?? undefined, anon: !account, bypass, trustedRenderer: !!who.trustedRenderer }, door.name);
   if (e.may === "none" || (mode === "embody" && e.may === "watch")) return { code: ACCESS_CLOSE, reason: "no-access", why: e.why ?? `"${door.name}" isn't open to you` };
   if (bypass) return null;

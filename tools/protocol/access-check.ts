@@ -147,5 +147,19 @@ await sleep(300);
   ok(!s2.dead && !anon.some((x) => x.name === "keep") && member?.loaded === false && member?.access === "members" && member?.you === "enter" && a1.body?.you === "none",
     "A3 an idle world's door is read from its log (not loaded): a stranger's map lacks it; a member's shows it, members, enter", [anon.map((x) => x.name), member, a1.body]);
   try { s2.proc.kill(); } catch {} }
+{ // A9 (final review M1): a members-only door is not opened by default-role / role-defs powers handed to everyone
+  const { entryFor } = await import(path.join(ENGINE, "server/access.ts"));
+  const base = { access: { join: "listed" } };
+  const cases = [
+    ["default-role {can:{kick}}", { ...base, "default-role": { role: "visitor", can: { kick: true } } }],
+    ["default-role {role: moderator}", { ...base, "default-role": { role: "moderator" } }],
+    ["role-defs.visitor.can.mute", { ...base, "default-role": { role: "visitor" }, "role-defs": { visitor: { can: { mute: true } } } }],
+  ];
+  const got = cases.map(([n, wc]) => [n, entryFor({ name: "m1", wc, label: "members" }, { account: "acct-stranger", actorId: "u-stranger00000000000000", addr: "1.2.3.4" }, "embody")?.code ?? "admitted"]);
+  ok(got.every(([, c]) => c !== "admitted"), "A9 a stranger in a members-only world stays out even when the default role (or a role-def) carries a moderation power", got);
+  const mem = { ...cases[1][1], "roles:u-member0000000000000000": { role: "moderator" } };
+  const m = entryFor({ name: "m1", wc: mem, label: "members" }, { account: "acct-m", actorId: "u-member0000000000000000", addr: "1.2.3.5" }, "embody");
+  ok(m === null, "A9 a LISTED moderator still gets in", m);
+}
 console.log(`[access-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
