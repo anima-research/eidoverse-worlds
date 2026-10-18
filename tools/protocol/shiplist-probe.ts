@@ -23,7 +23,7 @@ let worldsDir = "";
 import { pagedEval } from "./idalias.ts";
 // R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); every page answer brings the
 // minted ids back (NODE), and N(name) reads a scene name as its id for the node-side checks
-const NAMES = ["mta", "mtb", "prbox0", "prbox1", "acbox", "anchor", "atbox", "box1", "clbox", "cloud", "ctbox", "cuball", "gate", "getool", "hdsign", "hpball", "htcrate", "hysign", "nhball", "nlbox", "pobase", "potop", "rbbtn", "rbtgt", "slcrate", "slfloor", "sthigh", "stlow", "syb", "syorb", "wbcrate", "wgcrate", "sba", "sbb", "crate-2", "crate-3"];
+const NAMES = ["mta", "mtb", "prbox0", "prbox1", "prbox2", "acbox", "anchor", "atbox", "box1", "clbox", "cloud", "ctbox", "cuball", "gate", "getool", "hdsign", "hpball", "htcrate", "hysign", "nhball", "nlbox", "pobase", "potop", "rbbtn", "rbtgt", "slcrate", "slfloor", "sthigh", "stlow", "syb", "syorb", "wbcrate", "wgcrate", "sba", "sbb", "crate-2", "crate-3"];
 const NODE = new Map<string, string>(); const N = (n: string) => NODE.get(n) ?? n;
 const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("shiplist", {
   prepare: (scratch) => {
@@ -635,6 +635,23 @@ try {
   check("PR1 with prediction the crate leaves the hand at least 150 ms sooner than without, under the same lag", real?.ok && real.left !== null && control?.left !== null && real.left < control.left - 150, { real: real?.left, control: control?.left });
   check("PR2 …and when the real entry lands no single frame moves it more than 35 cm (the guess and the truth agree, or the difference decays)", real?.ok && real.jump < 0.35, real);
   check("PR3 …and nothing is left pending once the entry is in", real?.ok && Object.keys(real.pending ?? {}).length === 0, real?.pending);
+  // PR4: the page's clock STEPS (10-18: this box's wall clock jumps +1.6 s every ~32 s against the page's monotonic one, and
+  // the shiplist went red — PR0 "left": null — whenever a jump fell between clock asks: the estimate kept the old offset,
+  // the replica folded the launch at the authority's tick, and the screen drew it ~50 ticks early, i.e. not at all). Here
+  // the step is made on purpose: performance.timeOrigin (read only by serverclock.js) moves back 1.6 s, so the page's
+  // "now" is 1.6 s behind the authority's, as after a real jump. No prediction, no lag: the throw must still leave the hand
+  // within half a second (the launch's own stamp floors the clock and the client re-measures at once)
+  const stepped = await (async () => { await mk('prbox2'); return page(`const t = await import('/lib/thingphysics.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE;
+    const r = await t.physicsApi.grab('prbox2'); if (!r?.ok) return { grab: r }; await new Promise((res) => setTimeout(res, 900));
+    const o0 = performance.timeOrigin; Object.defineProperty(performance, 'timeOrigin', { value: o0 - 1600, configurable: true });
+    t.physicsApi.predict(false);
+    const o = w.entities.get('prbox2'), v = new T.Vector3(); const at = () => { o.updateWorldMatrix(true, false); return o.getWorldPosition(v).toArray(); };
+    const p0 = at(), t0 = performance.now(); let left = null;
+    const done = t.physicsApi.throw(2);
+    await new Promise((res) => { const f = () => { const p = at(), now = performance.now() - t0; if (left === null && Math.hypot(p[0] - p0[0], p[1] - p0[1], p[2] - p0[2]) > 0.05) left = now; if (now < 1500) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
+    const reply = await done; t.physicsApi.predict(true); await new Promise((res) => setTimeout(res, 2000));
+    return { ok: !!reply?.ok, left, clock: (await import('/lib/serverclock.js')).clockDebug() };`); })();
+  check("PR4 after the page's clock steps 1.6 s (as this box's does), a throw with no prediction still leaves the hand within 500 ms", stepped?.ok && stepped.left !== null && stepped.left < 500, stepped);
   // back where this stage found me: later stages move relative to here
   await page(`const c = await import('/lib/controller.js'), b = await import('/lib/base.js'); c.myState.pos.x -= 9; c.myState.pos.z += 9; b.bus.emit('cut-adopted'); return true;`);
   await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 8000); await sleep(800);
