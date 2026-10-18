@@ -272,7 +272,7 @@ const cases: Case[] = [
       return { ang: alive(s).map((i) => s.angle[i]), narrow: ring(Math.PI / 4), straight: ring(Math.PI / 2) }; },
     good: (o) => o.ang.length > 0 && o.ang.every((a: number) => Math.abs(a - 1) < 1e-6) && o.narrow < 0.2 && o.straight > 0.9 },
   { id: "P3", what: "every vector field of the effect document names its frame in the spec text (gravity: the world's; the rest: the emitter's own)", run() {
-      const src = fs.readFileSync(TREE + "shared/particle_effects.js", "utf8"); const head = src.slice(0, src.indexOf("import "));
+      const src = fs.readFileSync(TREE + "shared/particle_effects.js", "utf8"); const head = src.slice(0, src.indexOf("\nimport "));
       return { g: /gravity[^\n]*WORLD frame/.test(head), local: ["direction", "axis", "extents", "min", "linear", "radial", "tangential"].filter((k) => !new RegExp(`${k}[^\\n]*(emitter's (own )?frame|emitter frame)`).test(head)), at: /FRAMES/.test(head) }; },
     good: (o) => o.g && o.at && o.local.length === 0 },
   { id: "P4", what: "gravity is WORLD-down (Unity's convention): an emitter turned 90° about z still drops its particle ½gt² straight down in world terms; its scale doesn't turn it; tangential stays about the document's gravity axis in the emitter's frame", run() {
@@ -309,7 +309,7 @@ const cases: Case[] = [
       out.t0 = `${code(t0)}|${t0.refused?.reason}`; return out; },
     good: (o) => Object.values(o).every((x: any) => /^reserved\|/.test(x) && /reserved: not built yet/.test(x)) },
   { id: "P8", what: "the spec, AGENTS and the effect file say in one honest sentence that the effect document format is trial and expected to grow (additions additive; a breaking change ships with a translator)", run() {
-      const t = (f: string) => fs.readFileSync(TREE + f, "utf8"); const re = /effect document format is (a )?trial and expected to grow/i;
+      const t = (f: string) => fs.readFileSync(TREE + f, "utf8").replace(/\s*\n\s*(\/\/\s*)?/g, " ") /* prose wraps: one line, comment marks dropped */; const re = /effect document format is (a )?trial and expected to grow/i;
       return { pe: re.test(t("shared/particle_effects.js")), spec: re.test(t("spec/PROTOCOL.md")), agents: re.test(t("AGENTS.md")), tr: /translator/.test(t("spec/PROTOCOL.md").match(/effect document format is[^.]*\.[^.]*\./i)?.[0] ?? "") }; },
     good: (o) => o.pe && o.spec && o.agents && o.tr },
   { id: "P9", what: "the inspector shows an angle param in degrees and stores radians (as the transform rows do): a param bound straight to velocity.spread is a degree row; 30 typed stores π/6", run() {

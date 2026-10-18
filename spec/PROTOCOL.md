@@ -468,8 +468,17 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   colour, render) and whose `params` are the knobs an instance may set. A
   document is bounded (how many particles, how long, how fast) and checked
   when it is stored and when it is named, because it runs on every
-  visitor's machine. The first protocol's flat bag is still read (a stored
-  value is read forever) and no longer written.
+  visitor's machine. Its angles are radians (§9.2); its `gravity` is a
+  world-frame vector (down stays down on a tipped thing) and every other
+  vector is in the emitter's own frame. A reader skips an optional field or
+  module it doesn't know and draws what it understands; the authority's
+  validator refuses one at upload, and names held for later (`space`,
+  `collision`, `sub`, `render.mode`, `render.trail`, `spawn.rate`,
+  `spawn.bursts`, the instance's `t0`) are refused as reserved. The effect
+  document format is trial and expected to grow: additions are designed to
+  be additive, and a breaking change would ship with a translator. The
+  first protocol's flat bag is still read (a stored value is read forever)
+  and no longer written.
 - **Parameters, never code.** A component holds data. Code lives in a blob
   that a `script:<name>` component names (§8). Nothing writes a component
   per frame: motion is stored as a function of time (`motion`), evaluated by
@@ -1065,11 +1074,14 @@ away from it.
   The shape audit (10-16) moved the last degrees: `look-at`'s yaw, pitch and
   speed (rad, rad/s) and `sky.azimuth` (where the sun stands round the
   horizon: default π, within ±2π; a stored degree value is converted at
-  load, §4); `grass.heading` was registered in radians.
+  load, §4); `grass.heading` was registered in radians. A particle effect
+  document's angles (`spread`, `cone`, `rotation.angle`, `rotation.velocity`)
+  moved to radians on 10-17, before any document was stored.
 - **Rotations** are unit quaternions `[x, y, z, w]` (§9.1). **Axes** are
   3-vectors (`[0, 1, 0]`), not letters.
 - **Every vector names its frame** in its definition: the thing's own frame,
-  its parent's, or the world's.
+  its parent's, or the world's. (A particle effect's `gravity` is the
+  world's; its other vectors are the emitter's: shared/particle_effects.js.)
 - **Colours** are integers, sRGB (`0xffd9a0`).
 - **Asset references are stored as written** (R 10-17, binding: "definitely
   serve path again alongside hash"): a `model` is its library path, a

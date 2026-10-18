@@ -443,7 +443,14 @@ its address, `sha256:<64 hex>`). `effect {name}` returns any effect's
 document: its emitters are modules in Godot's vocabulary (spawn, shape,
 velocity, forces, rotation, size, color, render) and its `params` are the
 knobs an instance may set (every Essential takes `count` ≤ 600, `size`,
-`opacity`, `speed`, `lifetime`, `area`, `texture`, `quality`). `at` is
+`opacity`, `speed`, `lifetime`, `area`, `texture`, `quality`). In a
+document, angles are radians and `gravity` is world-down (a tipped brazier's
+smoke still rises); every other vector is in the emitter's own frame. The
+effect document format is trial and expected to grow: additions are
+designed to be additive, and a breaking change would ship with a
+translator. Names held for later (`space`, `collision`, `sub`,
+`render.mode`, `render.trail`, `spawn.rate`, `spawn.bursts`, instance
+`t0`) are refused as reserved: not built yet. `at` is
 ENTITY-RELATIVE metres (±8): the emitter rides every move its thing makes;
 `part` hangs it on one node of its model. `seed` makes the spawn
 deterministic (omit it and one is derived from the entity id). `playing:

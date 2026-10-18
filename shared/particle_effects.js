@@ -15,7 +15,7 @@
 //     shape?:   {type: point | sphere | sphere-surface | box | ring, extents? [x, y, z] (m: a sphere's semi-axes, a box's
 //                half-sizes), radius? (a round sphere), ring: radius, inner, height, cone (rad, 0..π/2), axis},
 //     velocity?:{direction? [x, y, z], spread? (rad, 0..π), flatness? 0..1, speed? [min, max] (m/s)}  |  {min: [x,y,z], max: [x,y,z]},
-//     forces?:  {gravity? [x, y, z] (m/s²), linear?, radial?, tangential? ([min, max] m/s²), damping? ([min, max] m/s²)},
+//     forces?:  {gravity? [x, y, z] (m/s², WORLD frame), linear?, radial?, tangential? ([min, max] m/s²), damping? ([min, max] m/s²)},
 //     rotation?:{angle? [min, max] (rad), velocity? [min, max] (rad/s)},
 //     size?:    {base (m, a quad's side), random? [min, max] (×), curve? [[t, ×], …] over life},
 //     color?:   {base? 0xRRGGBB, alpha? 0..1, ramp? [[t, 0xRRGGBB, alpha], …] over life, initial? (a ramp, sampled once at
@@ -27,6 +27,33 @@
 //   Param = {type: number | area | vec3 | color | texture | enum | bool, default?, min?, max?, values? (enum), help?,
 //            to: [{path ("emitters.*.spawn.amount"; * = every emitter), op?: set | mul, times? (× the value: a number or
 //            [x, y, z]), map? {<enum value>: number}, round?}, …] (1–8)}
+//
+// FRAMES (PROTOCOL §9.2: every vector names its frame). The emitter's frame is its thing's own (moved to `at`, hung on
+// `part`), scaled by the thing's scale × the instance's `scale`:
+//   forces.gravity     the WORLD frame (Unity's convention, lead 10-17): down stays down on a tipped or spinning thing, so a
+//                      knocked-over brazier's smoke still rises; the renderer turns it into the emitter's frame every step
+//                      (particlesim localGravity), and a scaled thing's gravity scales with it as every length does
+//   velocity.direction the emitter's frame
+//   velocity.min / max the emitter's frame (a box of launch velocities along its axes)
+//   shape.axis         the emitter's frame (a ring's axis)
+//   shape.extents      the emitter's frame (half-sizes, or semi-axes, along its axes)
+//   forces.linear      along each particle's own velocity, in the emitter's frame
+//   forces.radial      from the emitter's origin, in the emitter's frame
+//   forces.tangential  about the document's gravity axis as written, read in the emitter's frame (it does not turn with
+//                      the world: a spiral stays a spiral about the thing's own up)
+// UNITS: metres, seconds, and RADIANS for every angle (PROTOCOL §9.2, lead 10-17): velocity.spread (0..π), shape.cone
+// (0..π/2), rotation.angle, rotation.velocity (rad/s); drift/swirl/flicker rates are rad/s. color.hue is in turns of the
+// colour wheel (a hue rotation, not a direction).
+//
+// UNKNOWN FIELDS (lead 10-17): a reader (every renderer, the inspector) SKIPS an optional field, module, param field or
+// binding it doesn't know and draws what it understands (readableEffect); the authority's validator (effectProblem) stays
+// strict at upload, so what a world stores is always what its authority knew. An unknown value of a known field (a new
+// shape type) is not skipped: that document isn't readable here.
+// RESERVED (not built yet; refused at upload "reserved: not built yet", so the names can't come to mean anything else):
+// emitter `space` (local | world), `collision`, `sub` (sub-emitters); `render.mode`, `render.trail`; `spawn.rate`,
+// `spawn.bursts`; and the instance's `t0` (a synced start, as sound.t0).
+// TRIAL: the effect document format is trial and expected to grow. Additions are designed to be additive (an optional
+// field whose absence means today's behaviour), and a breaking change would ship with a translator.
 //
 // Every number is bounded (EFFECT_LIMITS): a document is authored by anyone who may build, and it runs on every visitor's
 // machine, so "how much may one effect cost" is part of what it means, checked at the door, not left to one client.
