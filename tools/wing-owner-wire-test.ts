@@ -41,7 +41,7 @@ mock.module(base+'state.js', () => ({ state: { st: { entities: {}, roles: {}, re
 mock.module(base+'scheduler.js', () => ({ pending:new Map(), P:{} }));
 mock.module(base+'remotes.js', () => ({ remotes:new Map(), ensureRemote:async()=>null, dropRemote:()=>null, pushPose() {}, noteServerTime() {}, noteSpeaking() {} }));
 mock.module(base+'reachnet.js', () => ({ myReachBag:()=>undefined }));
-mock.module(base+'chat.js', () => ({ chat:{}, logChat() {}, logWhisper() {}, noteTyping() {}, noteHistoryContext() {}, async resyncChatAfter() {} }));
+mock.module(base+'chat.js', () => ({ chat:{}, logChat() {}, noteTyping() {}, noteHistoryContext() {}, async resyncChatAfter() {} }));
 mock.module(base+'fp_view.js', () => ({ resolveFirstPersonAnchor:()=>null, FP_FORWARD:0, FP_EYE_LIFT:0, FP_GAZE_AHEAD:0, FP_GAZE_DROP:0, composeFirstPerson() {} }));
 mock.module(base+'boot.js', () => ({ markPhase() {}, refuseBoot() {}, waitBoot() {} }));
 const { html } = await import(base+'markup.js');

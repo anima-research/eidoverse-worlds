@@ -56,7 +56,7 @@ const { HANDLERS, TOOLS, TOOL_ALIASES, toolList, handleTool: handleToolDoor } = 
   ok(writes.every((n) => by[n]?.readOnlyHint === false), "AT4 everything that changes the world or a body is not read-only", writes.filter((n) => by[n]?.readOnlyHint !== false));
   ok(["act", "edit"].every((n) => by[n]?.destructiveHint === true) && ["create", "say", "move"].every((n) => by[n]?.destructiveHint === false), "AT4 act (delete, kick, ban…) and editing in place are destructive; making, saying and walking are not",
     Object.fromEntries(["act", "edit", "create", "say", "move"].map((n) => [n, by[n]?.destructiveHint])));
-  ok(["say", "whisper", "act", "anim"].every((n) => by[n]?.openWorldHint === true) && ["look", "inspect", "move"].every((n) => by[n]?.openWorldHint === false), "AT4 what reaches other people is open-world; reading the world and walking in it are not");
+  ok(["say", "act", "anim"].every((n) => by[n]?.openWorldHint === true) && !by.whisper && ["look", "inspect", "move"].every((n) => by[n]?.openWorldHint === false), "AT4 what reaches other people is open-world; reading the world and walking in it are not");
   // the stdio host adds one tool of its own (mcpl/server.ts can't be imported here: it connects at load)
   const src = fs.readFileSync(path.join(ENGINE, "mcpl/server.ts"), "utf8");
   const pp = src.slice(src.indexOf("const PENDING_PINGS_TOOL"), src.indexOf("};", src.indexOf("const PENDING_PINGS_TOOL")));
@@ -86,7 +86,7 @@ const { HANDLERS, TOOLS, TOOL_ALIASES, toolList, handleTool: handleToolDoor } = 
   const gone2 = await handleTool({ agent: null } as any, "kick", {});
   ok(gone2.isError && /act \{verb: "kick"/.test(gone2.content[0].text), "AT6 …kick too", gone2.content[0].text);
   { // AT7 (parity sweep 10-14): an agent is a body under the same consent as a person. It sends its table on join (the
-    // server's default preset by NAME, never a literal), carries no private "pushable" flag, and can whisper through say.
+    // server's default preset by NAME, never a literal), carries no private "pushable" flag, and can address someone through say.
     const agentSrc = fs.readFileSync(path.join(ENGINE, "mcpl/agent.ts"), "utf8"), toolsSrc = fs.readFileSync(path.join(ENGINE, "mcpl/tools.ts"), "utf8");
     ok(!/\bpushable\b/.test(agentSrc), "AT7a agent.ts has no `pushable` flag: the authority's consent table is the one answer to a shove");
     ok(/this\.request\("consent", \{ preset: DEFAULT_PRESET \}\)/.test(agentSrc) && /import \{[^}]*\bDEFAULT_PRESET\b[^}]*\} from "\.\.\/shared\/protocol\/consent\.js"/.test(agentSrc), "AT7b agent.ts sends consent {preset: DEFAULT_PRESET} (the server's name for it) after joining");

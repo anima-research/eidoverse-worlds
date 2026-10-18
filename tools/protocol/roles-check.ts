@@ -420,13 +420,13 @@ const cases: Case[] = [
     good: (o) => (o.role === "builder" && ["build", "editOthers", "scripts", "generate"].every((k) => o.sw?.includes(k)) && o.guest === "visitor") },
 
   // ---------------- P: S6 the person menu (pure) ----------------
-  { id: "P1", what: "personActions: a visitor sees only Message, for anyone", run() { const A = RL.personActions;
+  { id: "P1", what: "personActions: a visitor sees only Mention (a public @name; Message opened a DM tab until whisper was removed, R 10-18), for anyone", run() { const A = RL.personActions;
       const vis = { id: "v", rank: 0, permissions: [] }; return { a: A?.(vis, { id: "b", rank: 100, role: "builder" }).map((x: any) => x.id), b: A?.(vis, { id: "n", rank: -1, role: "none" }).map((x: any) => x.id) }; },
-    good: (o) => JSON.stringify(o.a) === '["message"]' && JSON.stringify(o.b) === '["message"]' },
+    good: (o) => JSON.stringify(o.a) === '["mention"]' && JSON.stringify(o.b) === '["mention"]' },
   { id: "P2", what: "personActions: a moderator acting on a builder gets warn, mute, kick, ghost, ban, role and history", run() {
       const mo = { id: "m", rank: 200, permissions: RL.BUILTIN?.moderator ? RL.PERMISSION_NAMES.filter((k: string) => RL.BUILTIN.moderator.can[k]) : [] };
       return { ids: RL.personActions?.(mo, { id: "b", rank: 100, role: "builder" }).map((x: any) => x.id), muted: RL.personActions?.(mo, { id: "b", rank: 100 }, { muted: true }).map((x: any) => x.id) }; },
-    good: (o) => JSON.stringify(o.ids) === '["message","warn","mute","kick","ghost","ban","role","history"]' && o.muted?.includes("unmute") && !o.muted?.includes("mute") },
+    good: (o) => JSON.stringify(o.ids) === '["mention","warn","mute","kick","ghost","ban","role","history"]' && o.muted?.includes("unmute") && !o.muted?.includes("mute") },
   { id: "P3", what: "personActions: a moderator acting on a moderator gets no acts, and one dim line saying rank is why", run() {
       const mo = { id: "m", rank: 200, permissions: ["mute", "kick", "ban", "grantRoles"] };
       return RL.personActions?.(mo, { id: "m2", rank: 200, role: "moderator", name: "Moderator" }); },
@@ -479,7 +479,7 @@ const cases: Case[] = [
       s.call("olive", "mute", { who: "vic", minutes: 600 }); s.call("mo", "mute", { who: "vic", minutes: 5 });
       return { un: code(s.call("mo", "unmute", { who: "vic" })), still: !!D.muteOf(s.w(), "vic") }; },
     good: (o) => o.un === "rank" && o.still },
-  { id: "V3", what: "a chat mute refuses every server say, `to` included (a door say with `to` is public, in the log): asking a moderator is a whisper", run(s) { cast(s);
+  { id: "V3", what: "a chat mute refuses every server say, `to` included (a door say with `to` is public, in the log); there is no private channel to ask on (whisper was removed, R 10-18)", run(s) { cast(s);
       s.call("mo", "mute", { who: "vic", minutes: 5, channels: ["chat"] });
       return { to: code(s.call("vic", "say", { text: "why?", to: "mo" })) }; },
     good: (o) => o.to === "muted" },

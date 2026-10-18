@@ -10,14 +10,15 @@
 //   H5  an owner can't demote the founder; default-role can't be owner; an owner can't be banned
 //   ID  one account is the same identity in every world on the authority (per-world ids, review M6, withdrawn: R 10-06)
 //   HB  presence is keyed by identity, never a display name (pass 2 H-B): a second account asking to be "Marigold" is shown
-//       with a disambiguator (pass 3 H2), and gets neither the first
-//       one's held whisper nor her remembered pose; the real one gets both
+//       with a disambiguator (pass 3 H2), and doesn't get the first one's remembered pose; the real one does
 //   MA  a pose past the size cap isn't relayed or remembered; one websocket message past the cap closes the socket
 //   LC  on a box with a JOIN_TOKEN, /worlds, /snap and /geom?world need a key a join would take
 //   RS  roles and moderation at the server (research roles S4): your-rights from the authority, voice-moderate as the authority's
 //       identity-keyed logged mute (surviving a reconnect), a kick's cooldown at join, ghost hidden server-side, warn and
 //       mute notices, access (listed / max with the moderator bypass); RS7 reset is the most senior owner's, fork is rate-limited;
-//       RS8 whispers obey mutes and ghost; RS9 ghost history/presence, the ban list, a guest's kick by address
+//       RS8 whisper is removed (R 10-18: refused `removed`, delivered to nobody); RS9 ghost history/presence, the ban list,
+//       a guest's kick by address; RS10 speech is arrival-only: no say before you arrived reaches a non-admin by either
+//       history route or the join, a moderator included; an owner who joins later reads the master log
 //   GG  a guest's mute and ghost carry by hashed address to the next guest from it (R 10-07: reconnecting sheds nothing);
 //       lifting them lifts the address record; a signed-in person is untouched
 //   AG  @world.access.minAccountDays: a Discord account's age from its snowflake (pure), and the join gate (young human
@@ -298,18 +299,18 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const forks = own.msgs.slice(k2).filter((m) => m.type === "world-forked" || m.type === "error").map((m) => m.type === "error" ? m.error : `forked ${m.to}`);
     ok(junior?.type === "error" && /most senior/.test(junior.error) && forks[0] === "forked heath-copy" && /copied .* ago/.test(forks[1] ?? ""),
       "RS7 a junior owner can't erase the world (the most senior owner's act); a second copy within a minute is refused", [junior, forks]); }
-  // RS8: whispers travel point-to-point (never logged), around the authority: a chat mute and ghost must reach them too
+  // RS8: whisper was removed (R 10-18): the ws message is refused in the registry's words (`removed`) and reaches nobody,
+  // held for nobody; the authority's request of that name is refused `removed` too, never as an unknown verb
   { const vy = await sock(S4.port); const jv = await vy.join("heath", "Vole", { agentToken: mint({ kind: "agent", name: "Vole", sub: "agent:vole@home.test" }) });
     const mo = await sock(S4.port); await mo.join("heath", "Fern", { agentToken: "tok-fern" });   // Fern: still a moderator
-    await own.req("mute", { who: you(jv), minutes: 10, channels: ["chat"] }); await sleep(200);
-    const k = vy.msgs.length; vy.raw({ type: "whisper", to: "Rowan-b", text: "psst" }); vy.raw({ type: "whisper", to: "Fern", text: "why was I muted?" }); await sleep(400);
-    const vyErr = vy.msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error);
-    const fernGot = mo.msgs.some((m) => m.type === "whisper" && m.text === "why was I muted?");
-    await own.req("unmute", { who: you(jv) }); await own.req("ghost", { who: you(jv), minutes: 10 }); await sleep(300);
+    const k = vy.msgs.length; vy.raw({ type: "whisper", to: "Fern", text: "why was I muted?" }); await sleep(400);
+    const vyRef = vy.msgs.slice(k).find((m) => m.type === "error" && m.about === "whisper");
+    const rq = await vy.req("whisper", { to: "Fern", text: "psst" });
+    const fernGot = mo.msgs.some((m) => m.type === "whisper" || JSON.stringify(m).includes("why was I muted") || JSON.stringify(m).includes("psst"));
+    ok(vyRef?.refused?.code === "removed" && /removed/.test(vyRef?.error ?? "") && rq.ok === false && rq.refused?.code === "removed" && !fernGot,
+      "RS8 whisper is removed: the message is refused as `removed` in words, the request of that name likewise, and nothing reaches the person named", [vyRef, rq.refused, fernGot]);
+    await own.req("ghost", { who: you(jv), minutes: 10 }); await sleep(300);
     const VOLE = jv.snapshot?.you ?? "Vole";   // the display id the server gave this connection (an aid1 agent's may differ from its name)
-    const k2 = vy.msgs.length; mo.raw({ type: "whisper", to: VOLE, text: "secret" }); vy.raw({ type: "whisper", to: "Fern", text: "boo" }); await sleep(400);
-    const ghostGot = vy.msgs.slice(k2).some((m) => m.type === "whisper" && m.text === "secret"), ghostSent = mo.msgs.some((m) => m.type === "whisper" && m.text === "boo");
-    ok(vyErr.some((e) => /muted/.test(e)) && fernGot && !ghostGot && !ghostSent, "RS8 a chat-muted person's whisper reaches only a moderator; a ghost neither receives nor sends whispers", [VOLE, vyErr, fernGot, ghostGot, ghostSent]);
     // RS9 (review 10-07): the ghost (Vole) reads no chat through the history message, and its presence messages
     // (an anim) reach nobody; a visitor can't read the ban list; a guest's kick holds against a fresh guest connection
     const k3 = vy.msgs.length; vy.raw({ type: "history", reqId: "h1" }); await sleep(400);
@@ -323,7 +324,20 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const g2 = await sock(S4.port); const jg2 = await g2.join("heath", "visitor-y");
     ok(hist && (hist.entries ?? []).length === 0 && !animSeen && /moderation power/.test(visBans) && kk.ok && !jg2.snapshot,
       "RS9 a ghost's history is empty and its anim reaches nobody; the ban list is for moderators; a guest's kick holds against a fresh guest from the same address", [hist?.entries?.length, animSeen, visBans.slice(0, 60), kk.ok, jg2.errors]);
-    for (const x of [vy, mo, gv, g2]) x.close(); }
+    // RS10 (R 10-18): speech is arrival-only. "the secret word is heron" was said (RS4) before Fern's new leg (mo) and Newt
+    // arrived: neither a moderator nor a stranger reads it back, by the history message, the authority's history or the
+    // join's window; an owner (Wren, an owner since RS7) joining later reads the master log, and its join counts it
+    const hist2 = (c) => new Promise((res) => { const id = `h${Math.random()}`; const k5 = c.msgs.length; c.raw({ type: "history", reqId: id, limit: 300 });
+      setTimeout(() => res(c.msgs.slice(k5).find((m) => m.type === "history" && m.reqId === id) ?? null), 500); });
+    const nt = await sock(S4.port); const jn = await nt.join("heath", "Newt", { agentToken: mint({ kind: "agent", name: "Newt", sub: "agent:newt@home.test" }) });
+    const w2 = await sock(S4.port); const jw2 = await w2.join("heath", "Wren", { agentToken: "tok-wren" });   // a takeover of Wren's leg: a fresh arrival
+    const heron = (x) => JSON.stringify(x ?? null).includes("heron");
+    const seen10 = { newtWs: heron(await hist2(nt)), newtReq: heron(await nt.req("history", { limit: 200 })), newtJoin: heron(jn.snapshot?.state) || jn.snapshot?.state?.chatTotal !== 0,
+      fernWs: heron(await hist2(mo)), fernReq: heron(await mo.req("history", { verbs: ["say"], limit: 200 })),
+      ownerWs: heron(await hist2(w2)), ownerReq: heron(await w2.req("history", { verbs: ["say"], limit: 200 })), ownerTotal: jw2.snapshot?.state?.chatTotal, ownerWindow: jw2.snapshot?.state?.recentChat?.length };
+    ok(!!jn.snapshot && !!jw2.snapshot && !seen10.newtWs && !seen10.newtReq && !seen10.newtJoin && !seen10.fernWs && !seen10.fernReq && seen10.ownerWs && seen10.ownerReq && seen10.ownerTotal > 0 && seen10.ownerWindow === 0,
+      "RS10 speech is arrival-only: a stranger and a moderator who arrived after a say read none of it back (history, the authority's history, the join); an owner arriving later reads the master log", seen10);
+    for (const x of [vy, mo, gv, g2, nt, w2]) x.close(); }
   for (const x of [own, fern, wren]) x.close(); S4.proc.kill(); }
 
 // ---- AG (pure): a Discord account's age is its snowflake's timestamp; the gate's policy, case by case ----
@@ -419,26 +433,23 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok(you(ja) && you(ja) === you(jb), "ID one account is the same identity in every world on the authority", [you(ja), you(jb)]);
   a.close(); b.close(); }
 
-// ---- HB: presence by identity (pass 2 H-B). Marigold (an aid1 human) leaves; a guest whispers to "Marigold"; a different
-// account (TRUST_NAMES: a typed name is local:<name>) joins wearing her name: no whisper, no remembered pose ----
+// ---- HB: presence by identity (pass 2 H-B). Marigold (an aid1 human) leaves; a different account (TRUST_NAMES: a typed
+// name is local:<name>) joins wearing her name: no remembered pose (a held whisper was checked here too, until whisper
+// was removed, R 10-18) ----
 { const tokR = () => mint({ kind: "agent", name: "Marigold", sub: "agent:marigold@home.test" });   // an aid1 account (an agent: a person signs in by cookie)
   const r1 = await sock(srv.port); const j1 = await r1.join("garden", "x", { agentToken: tokR() });
   const name = j1.snapshot?.you ?? "marigold";
   r1.raw({ type: "pose", pose: { p: [7, 0, -3], yaw: 0.5, speed: 0, clip: "idle" } }); await sleep(250); r1.close(); await sleep(300);
-  const g = await sock(srv.port); await g.join("garden", "Tansy");
-  g.raw({ type: "whisper", to: name, text: "the authority code is 4471" }); await sleep(250);
   const other = await sock(srv.port); const jo = await other.join("garden", name);   // TRUST_NAMES: local:<name>, another account
   await sleep(250);
   // since pass 3 (H2) the second account isn't even SHOWN as her: a name another account claimed gets a disambiguator
-  // (presence-check PN); what it may never get is hers either way — her held whisper and her remembered pose
+  // (presence-check PN); what it may never get is hers either way — her remembered pose
   ok(!!j1.snapshot && !!jo.snapshot && you(jo) !== you(j1) && jo.snapshot.you !== name && jo.snapshot.you.startsWith(name), "HB (setup) two accounts asking for one display name: the second is shown with a disambiguator", [you(j1), you(jo), jo.snapshot?.you, name, j1.errors, jo.errors]);
-  ok(!other.msgs.some((m) => m.type === "whisper"), "HB a different account wearing an absent person's name doesn't receive her held whisper", other.msgs.filter((m) => m.type === "whisper"));
-  ok(!jo.snapshot?.restore, "HB …nor inherit her remembered pose", jo.snapshot?.restore);
+  ok(!jo.snapshot?.restore, "HB a different account wearing an absent person's name doesn't inherit her remembered pose", jo.snapshot?.restore);
   other.close(); await sleep(300);
   const r2 = await sock(srv.port); const j2 = await r2.join("garden", "x", { agentToken: tokR() }); await sleep(250);
-  ok(r2.msgs.some((m) => m.type === "whisper" && m.text === "the authority code is 4471"), "HB the real Marigold gets the whisper held for her", r2.msgs.filter((m) => m.type === "whisper"));
-  ok(Array.isArray(j2.snapshot?.restore?.p) && j2.snapshot.restore.p[0] === 7, "HB …and wakes where she stood", j2.snapshot?.restore);
-  r2.close(); g.close(); }
+  ok(Array.isArray(j2.snapshot?.restore?.p) && j2.snapshot.restore.p[0] === 7, "HB the real Marigold wakes where she stood", j2.snapshot?.restore);
+  r2.close(); }
 
 // ---- MA: a pose past the cap is dropped, never relayed or remembered; one message past the cap closes the socket ----
 { const a = await sock(srv.port); await a.join("garden", "Sorrel"); const b = await sock(srv.port); await b.join("garden", "Yarrow");

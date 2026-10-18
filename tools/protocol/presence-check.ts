@@ -8,9 +8,9 @@
 //       bodydrag grab (→ move) are checked against the TARGET's consent table (shared/protocol/consent.js; silence is
 //       Normal: strangers' shove/pose/move are nobody) and a sane range BEFORE they're forwarded; 'ask' refuses with how to
 //       ask; the authority's body inbox (asks, replies, acts) is pushed to its person's socket
-//   PR  puppet / bodydrag / typing / whisper reach the IDENTITY the sender named (targetActor / toActor, the opaque
-//       u-… id every arrive carries), not whoever wears a name: the actor wins over the name; an actor who isn't here is
-//       refused (or, for a whisper, held for exactly that identity); a sender with no actor id still reaches by name
+//   PR  puppet / bodydrag / typing reach the IDENTITY the sender named (targetActor / toActor, the opaque u-… id every
+//       arrive carries), not whoever wears a name: the actor wins over the name; an actor who isn't here is refused; a
+//       sender with no actor id still reaches by name. (whisper did too until it was removed, R 10-18: now it reaches nobody)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -78,17 +78,18 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
   const ty = bob.since(kb).find((m) => m.type === "typing" && m.id === "Mallory");
   ok(ty && ty.to === "Carol" && ty.toActor === carolActor, "PR a typing-to names the identity (toActor), not whoever wears the typed name", { bob: bob.since(kb).filter((m) => m.type === "typing"), carol: carol.since(kc).filter((m) => m.type === "typing") });
   kb = bob.msgs.length; kc = carol.msgs.length;
-  mal.send({ type: "whisper", to: "Bob", toActor: carolActor, text: "for carol" }); await sleep(400);
-  ok(carol.since(kc).some((m) => m.type === "whisper" && m.text === "for carol") && !bob.since(kb).some((m) => m.type === "whisper"), "PR a whisper likewise", { carol: carol.since(kc).filter((m) => m.type === "whisper"), bob: bob.since(kb).filter((m) => m.type === "whisper") });
+  { const km0 = mal.msgs.length; mal.send({ type: "whisper", to: "Bob", toActor: carolActor, text: "for carol" }); await sleep(400);
+    const leaked = [...carol.since(kc), ...bob.since(kb)].some((m) => m.type === "whisper" || JSON.stringify(m).includes("for carol"));
+    ok(!leaked && mal.since(km0).some((m) => m.type === "error" && m.refused?.code === "removed"), "PR a whisper (removed, R 10-18) reaches neither the identity named nor the name: the sender is told it was removed", { mal: mal.since(km0), leaked }); }
   // an actor who isn't here: refused, never re-routed by the name beside it
   kb = bob.msgs.length; const km = mal.msgs.length;
   mal.send({ type: "puppet", target: "Bob", targetActor: "u-aaaaaaaaaaaaaaaaaaaa", ragdoll: true }); await sleep(400);
   ok(!bob.since(kb).some((m) => m.type === "puppet") && mal.since(km).some((m) => m.type === "error" && /isn't here/.test(m.error)), "PR an actor who isn't here is refused (the name beside it is not a fallback)", mal.since(km));
-  // a whisper to an absent identity is held for exactly that identity
+  // a whisper to an absent identity is held for nobody now (it was held for exactly that identity, until whisper was removed)
   const carolId = carolActor; carol.close(); await sleep(300);
   mal.send({ type: "whisper", to: "Carol", toActor: carolId, text: "held for carol" }); await sleep(300);
   const carol2 = await sock("Carol"); await sleep(400);
-  ok(carol2.msgs.some((m) => m.type === "whisper" && m.text === "held for carol"), "PR a whisper to an absent identity is held for that identity, and handed over when it arrives", carol2.msgs.filter((m) => m.type === "whisper"));
+  ok(!carol2.msgs.some((m) => m.type === "whisper" || JSON.stringify(m).includes("held for carol")), "PR a whisper to an absent identity is held for nobody: nothing is handed over when they arrive", carol2.msgs.filter((m) => m.type === "whisper"));
   // the old wire (an agent, an older client): a name alone still reaches its person
   kb = bob.msgs.length;
   mal.send({ type: "puppet", target: "Bob", pose: { head: [0, 0, 0, 1] } }); await sleep(400);

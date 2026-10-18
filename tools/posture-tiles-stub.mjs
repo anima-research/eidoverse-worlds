@@ -91,7 +91,6 @@ export function suspendCollider() {}
 // chat.js
 export const chatLog = [];
 export function logChat(who, text, kind = '') { chatLog.push({ who, text, kind }); }
-export function logWhisper(m) { chatLog.push({ whisper: m }); }
 export function noteHistoryContext() {}
 export function noteTyping() {}
 // ui.js

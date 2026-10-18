@@ -1,5 +1,7 @@
-// Real MCPL routing for display names: whispers, both replay cursors, history,
+// Real MCPL routing for display names: speech, both replay cursors (which deliver
+// nothing from before a non-admin arrived: speech is arrival-only, R 10-18), history,
 // travel, aid1 alias policy, duplicate credentials, and a refused registry reload.
+// (Whisper checks lived here until whisper was removed, R 10-18.)
 // Own all listeners/state via the scratch harness; never contact a live world.
 // Run: bun tools/mention-delivery-test.ts
 import { generateKeyPairSync, sign } from "node:crypto";
@@ -22,7 +24,7 @@ const registry = {
   "listener-token": { id: "listener", name: "Listener", worlds: ["*"], create: true },
   "other-artie-token": { id: "artie-kube", name: "Other credential" },
 };
-const authEnv = { HN_ISSUER_KEY: issuer, HN_ISS: "issuer.example", HN_AUD: "eidoverse", HN_REQUIRE_LOGIN: "0", EIDO_WHISPERS_ENABLED: "1" };
+const authEnv = { HN_ISSUER_KEY: issuer, HN_ISS: "issuer.example", HN_AUD: "eidoverse", HN_REQUIRE_LOGIN: "0" };
 const serverEnv: Record<string, string> = { ...authEnv, SKIP_OPT_SWEEP: "1" };
 let tokenPath = "";
 // (ported 10-17: the worlds are founded first — joining never founds one)
@@ -124,19 +126,17 @@ try {
   const legacy = await listener.message("legacy-name-marker");
   check("speech uses the admitted credential despite a duplicate registry id", legacy.author.name === "Artie (kube)");
   check("rendered speech retains the id prefix", legacy.content[0].text === "artie-kube: legacy-name-marker");
-  await artie.tool("whisper", { to: "listener", text: "legacy-whisper-marker" });
-  check("legacy whispers carry the display name", (await listener.message("legacy-whisper-marker")).author.name === "Artie (kube)");
 
   await listener.say("@Visitor timestamp-short-marker");
   await listener.say("@Visitor (guest) timestamp-full-marker");
   await artie.message("timestamp-full-marker");
   let visitor = await new Host(visitorToken).init();
-  check("timestamp replay delivers the full enrolled name", (await visitor.message("timestamp-full-marker")).tags.includes("eidoverse:catchup"));
-  check("timestamp replay does not grant an enrolled short alias", !visitor.find("timestamp-short-marker"));
+  // arrival-only (R 10-18): said before the visitor arrived, so its catch-up replays neither (it replayed the full-name one)
+  // a catch_up round trip on the same socket: its reply comes after the door's own catch-up history read, so any replay is in by now
+  await visitor.tool("catch_up", {});
+  check("timestamp replay delivers nothing said before a non-admin arrived (arrival-only)", !visitor.find("timestamp-full-marker") && !visitor.find("timestamp-short-marker"));
   await visitor.say("aid1-name-marker");
   check("aid1 speech carries its verified display name", (await listener.message("aid1-name-marker")).author.name === "Visitor (guest)");
-  await visitor.tool("whisper", { to: "listener", text: "aid1-whisper-marker" });
-  check("aid1 whispers carry their verified display name", (await listener.message("aid1-whisper-marker")).author.name === "Visitor (guest)");
 
   for (const world of ["commons", "annex"]) {
     if (world === "annex") for (const host of [artie, listener, visitor]) await host.tool("travel", { world });
@@ -160,15 +160,15 @@ try {
   await listener.say("@Visitor sequence-short-marker");
   await listener.say("@Visitor (guest) sequence-full-marker");
   visitor = await new Host(visitorToken, "annex").init();
-  check("sequence replay delivers the full enrolled name", (await visitor.message("sequence-full-marker")).tags.includes("eidoverse:catchup"));
-  check("sequence replay does not grant an enrolled short alias", !visitor.find("sequence-short-marker"));
+  await visitor.tool("catch_up", {});
+  check("sequence replay delivers nothing said while a non-admin was away (arrival-only)", !visitor.find("sequence-full-marker") && !visitor.find("sequence-short-marker"));
 
   await listener.close();
   await visitor.say("@Listener absent-author-marker");
   await visitor.close();
   listener = await new Host("listener-token", "annex").init();
-  const replay = await listener.message("absent-author-marker");
-  check("catch-up retains a disconnected aid1 author's name", replay.author.name === "Visitor (guest)" && replay.tags.includes("eidoverse:catchup"));
+  await listener.tool("catch_up", {});
+  check("catch-up replays nothing said while a non-admin was away, even a mention of them (arrival-only)", !listener.find("absent-author-marker"));
 
   writeFileSync(tokenPath, "{");
   const refused = new Host("artie-token");

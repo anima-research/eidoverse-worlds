@@ -838,7 +838,10 @@ class Session {
 
     // Missed-mention replay: anything that addressed you while you slept
     // greets you as tagged channel traffic — a wake-worthy summary, not
-    // just scrollback. (Full history stays available via look.)
+    // just scrollback. Speech is arrival-only (R 10-18): the world reads back
+    // says from before this body arrived only to an admin (its owner, an
+    // operator), so for everyone else these reads come back empty and nothing
+    // is replayed; the code stays for an admin's door.
     // Every message replayed below is REPLAY, and says so: `eidoverse:catchup`
     // rides alongside each message's ORIGINAL addressing (§16, issue #1). Tagged
     // as bare mentions, a reconnect looked identical to ten people addressing

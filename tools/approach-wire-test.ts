@@ -67,14 +67,12 @@ const P = (kind: any, text?: string) => ({ ts: 1, kind, who: "digi", ...(text !=
 
 {
   check("mention pings ride the say event, never this path", pingDelivery(P("mention", "hi"), null) === null);
-  check("whisper pings ride their own delivery, never this path", pingDelivery(P("whisper", "psst"), null) === null);
 }
 
 // ---------------------------------------------------------------- the pending_pings lines
 
 {
   check("pending: mention", pingLine(P("mention", "come look at this")) === "@ digi: come look at this");
-  check("pending: whisper", pingLine(P("whisper", "psst")) === "@ digi whispers: psst");
   check("pending: approach", pingLine(P("approach")) === "≈ digi walked up to you");
   check("pending: depart, agent-worded", pingLine(P("depart", "walked away")) === "≈ digi walked away");
   check("pending: depart, actor-neutral", pingLine(P("depart", "is no longer nearby")) === "≈ digi is no longer nearby");

@@ -50,7 +50,6 @@ export const parentIdOf = () => null;
 
 // chat / ui / boot / fp_view
 export const logChat = () => {};
-export const logWhisper = () => {};
 export const noteTyping = () => {};
 export const noteHistoryContext = () => {};
 export const resyncCalls = [];   // chat-resync-wire-test reads what net.js asked for
