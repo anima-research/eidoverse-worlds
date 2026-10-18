@@ -1354,14 +1354,50 @@ argument will be short.
 ## 14. Worlds from the first protocol
 
 The first protocol (an untyped verb log) is retired. An old world's log can
-be translated once, one way, into a world of this protocol
-(`bun tools/protocol/world.ts translate <world> --founder-key <key>`, or
-`--no-founder-key` to leave tier 0 empty for ever, §13). It is translated in
-place: the world keeps its name, and the old log stays beside the new one as
-`log.original.jsonl`, renamed, never written (the swap refuses unless the old log
-still holds exactly the bytes that were translated: nothing an old server wrote meanwhile is dropped); a directory whose `world.jsonl` is a
-world of this protocol is served as one whatever else it holds. (`translate <old>
-<new>` translates into a new name instead.) Each old entry appears in the new log as an `act` with verb
+be translated once, one way, into a world of this protocol, in two steps.
+`bun tools/protocol/world.ts translate <world> --dry-run --founder-key <key>`
+(or `--no-founder-key`, to leave tier 0 empty for ever, §13) writes nothing
+and prints the **dry-run report** — the old log's size and sha256, the
+translator and fold build, the founder key, the counts (entries, changes,
+guards that become locks, models without bytes here), the translator's
+DROPPED table (what every translation drops or renames by design), and
+`deferred`: every use of a feature this protocol does not carry yet — and the
+report's sha256. The translation itself takes `--approved <that hash>`: the
+report is recomputed from the old log as it stands and must hash to it (else
+refused, both hashes named: the log, the tool or the key changed since the
+owner read it), and with a founder key the founder's ed25519 signature over
+`eidoverse-approve-translation:<world>:<hash>` must verify (`--approve-sig`;
+the same key and scheme as the `owner-key` ceremony). Without a founder key
+the operator's typed hash is recorded as the operator's act, which the act
+says is no owner's signature. The approval rides in the new log as the
+system's `translation-approved` act right after `repair-shapes`
+(`body {report, approval: {by: "founder", key, sig, over} | {by: "operator",
+key, note}}`): provenance a reader checks against `log.original.jsonl`. The
+fold never reads it (§1).
+
+A world that uses a **deferred feature** — a water volume, an air box, a
+climb route, a vehicle, a collision toggle (`water`/`air`/`traversal`/
+`vehicle`/`collision` components on an entity, from main's #248/#254 merges;
+`water` on `@world` is the world's water level and is carried) — is
+**refused**, naming each use (component, entity, actor, seq); an approval
+cannot override the refusal. Nothing of a world is ever dropped quietly.
+
+It is translated in place: the world keeps its name, and the old log stays
+beside the new one as `log.original.jsonl`, renamed, never written (the swap
+refuses unless the old log still holds exactly the bytes that were
+translated: nothing an old server wrote meanwhile is dropped); a directory
+whose `world.jsonl` is a world of this protocol is served as one whatever
+else it holds. (`translate <old> <new>` translates into a new name instead.)
+The swap also writes `translation.json`: every file it renamed, every file
+it made (`world.jsonl`, `poses.json`, `world.mod.jsonl` for imported bans)
+with its sha256, the identities it minted, the report hash and the approval.
+`bun tools/protocol/world.ts rollback <world>` undoes the whole swap from
+it: the made files removed, the originals renamed back (the same files: bytes,
+inode, mtime), the minted identities forgotten (those nobody has bound or
+renamed since), the manifest removed — the world directory and the shared
+directory byte-identical to before. A made file the server has written to
+since refuses the rollback unless `--discard-changes`, so no history is lost
+unknowingly. Each old entry appears in the new log as an `act` with verb
 `imported` (`body {verb, args, from}`) or as a `say`, followed by the change it
 produced; fields with no component in this protocol ride along as `imported:<name>`. A
 translated world is an ordinary world from then on.

@@ -135,7 +135,8 @@ await C("G3", "§13 writes the governance body down: {key?, owners?, fork?, sigs
 // ---- K: the Commons' keys and owners (H4) ----
 const TV1 = await imp("tools/protocol/import-v1/translate-v1.js");
 const KEYS = await imp("shared/protocol/fold.js");
-const FOUNDER = "ed25519:" + Buffer.from(require("node:crypto").generateKeyPairSync("ed25519").publicKey.export({ format: "der", type: "spki" })).subarray(12).toString("base64url");
+const FOUNDER_KP = require("node:crypto").generateKeyPairSync("ed25519");   // the founder's key: the private half signs the translation's approval (K3)
+const FOUNDER = "ed25519:" + Buffer.from(FOUNDER_KP.publicKey.export({ format: "der", type: "spki" })).subarray(12).toString("base64url");
 const v1commons = () => [{ seq: 0, ts: 1, actor: "world", verb: "grant", args: { id: "antra", role: "owner", gen: true } },
   { seq: 1, ts: 2, actor: "antra", verb: "grant", args: { id: "Digi_Rat", role: "builder" } },
   { seq: 2, ts: 3, actor: "antra", verb: "grant", args: { id: "fable", role: "owner" } },
@@ -153,7 +154,10 @@ await C("K3", "the translate command refuses to found a world without the founde
   const W = scratch("ktr"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
   fs.writeFileSync(path.join(W, "old", "log.jsonl"), v1commons().map((e) => JSON.stringify(e)).join("\n") + "\n");
   const run = (...extra: string[]) => Bun.spawnSync(["bun", path.join(T, "tools/protocol/world.ts"), "translate", "old", ...extra], { cwd: T, env: { ...process.env, WORLDS_DIR: W, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
-  const bare = run("new1"); const withKey = run("new2", "--founder-key", FOUNDER);
+  // review of PR #260 item 6: a translation is bound to the owner's approval of its dry-run report, so the founder's run is three steps
+  const bare = run("new1"); const dry = run("new2", "--dry-run", "--founder-key", FOUNDER); const hash = /^report-hash ([0-9a-f]{64})$/m.exec(dry.stdout.toString())?.[1] ?? "no-hash";
+  const sig = require("node:crypto").sign(null, Buffer.from(`eidoverse-approve-translation:new2:${hash}`), FOUNDER_KP.privateKey).toString("base64");
+  const withKey = run("new2", "--founder-key", FOUNDER, "--approved", hash, "--approve-sig", sig);
   const g = fs.existsSync(path.join(W, "new2", "world.jsonl")) ? JSON.parse(fs.readFileSync(path.join(W, "new2", "world.jsonl"), "utf8").split("\n")[0]).body : null;
   return [bare.exitCode !== 0 && !fs.existsSync(path.join(W, "new1", "world.jsonl")) && withKey.exitCode === 0 && g?.owners?.[0]?.[0] === FOUNDER,
     { bare: bare.exitCode, bareSaid: bare.stderr.toString().slice(0, 200), withKey: withKey.exitCode, said: withKey.stderr.toString().slice(0, 300), owners: g?.owners }]; });
