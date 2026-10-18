@@ -322,7 +322,7 @@ The ones you'll reach for:
 | `parent` | `{to}`: it rides another thing (to sit at a socket, parent it to the socket child) |
 | `pivot` | `{pos}`: where it turns and scales from |
 | `light` | `{kind: point\|spot, color, intensity, range, angle, inner, decay, daytime: dim\|full, important}` — a light ON anything: model + light = a lamp; `daytime: "full"` burns at noon too, `important` always casts |
-| `motion` | `{type: pendulum\|spin\|orbit\|bob\|path, …}`: spin `degPerSec` or `period`; orbit `radius`, `center?`, `period` or `degPerSec`, `face?`; path `points`, `speed` or `duration`, `loop?`; the authority stamps `t0` |
+| `motion` | `{type: pendulum\|spin\|orbit\|oscillate\|path, …}`: spin `degPerSec` or `period`; oscillate `axis`, `amp` (m), `period`, `phase?` (back and forth along its axis, a sine; up by default); orbit `radius`, `center?`, `period` or `degPerSec`, `face?`; path `points`, `speed` or `duration`, `loop?`; the authority stamps `t0` |
 | `openable` | `{open, locked?, angle?, axis?, slide?, time?, part?}`: it opens and closes when used (a door, a gate, a lid); it turns about its `pivot`, or slides; every client animates it |
 | `socket`, `station` | an attachment point is a child entity: `socket {name, part?, accepts?, radius?}` (its pose is its transform, local to its host), and `station {action, anim, anchor, exit?, leaveBy?, who?}` on the same child makes it a place a person can sit, ride, stand (below); `anim` is an open name of a pose or a clip (one the body doesn't know is its default; absent, picked from the action). The old map `sockets` is reserved: a write of it is lifted into socket children |
 | `reactions` | `{<action>: handler}`: what `use {id, action}` does (below) |

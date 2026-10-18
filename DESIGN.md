@@ -118,7 +118,7 @@ parameters, never code, and nothing writes a component per-frame.**
 Building blocks:
 
 - **`motion`** — the log stores *functions of time*, never frames:
-  `pendulum` (swings), `spin` (windmills), `orbit`, `bob`. Every client —
+  `pendulum` (swings), `spin` (windmills), `orbit`, `oscillate` (back and forth along an axis). Every client —
   live, late-joining, replaying a fork — evaluates the same closed form at
   its own `now`: no integration, no drift, no ongoing traffic.
   Sequencer-not-simulator, applied to dynamics. New motion types are pure
