@@ -8,7 +8,7 @@ export async function commandsFor(getMe:()=>any, messages:string[]) {
     'base.js':{CONFIG:{name:'owner'},bus:{on:noop,emit:noop},report:noop},
     'capture.js':{captureFrame:noop},
     'world.js':{entities:new Map(),bagOf:()=>null,roleOf:noop,worldHasOwner:()=>false},   // bagOf: handlers.js resolves a thing by its label (R 10-17)
-    'net.js':{net:{myId:'owner'},identityOf:()=>null,replicaActive:()=>true,sendRequest:async()=>({ok:true}),sendMod:noop,sendPuppet:noop,sendWorldFork:noop,sendWorldFound:noop,sendWorldReset:noop,requestDebug:noop,sendAnim:noop,sendDrag:noop},
+    'net.js':{net:{myId:'owner'},identityOf:()=>null,replica:{st:{entities:{}},active:true},replicaActive:()=>true,sendRequest:async()=>({ok:true}),sendMod:noop,sendPuppet:noop,sendWorldFork:noop,sendWorldFound:noop,sendWorldReset:noop,requestDebug:noop,sendAnim:noop,sendDrag:noop},
     'remotes.js':{remotes:new Map()},
     'controller.js':{myState:{pos:{x:0,y:0,z:0}},setPosture:noop,flightReport:()=>''},
     'thingphysics.js':{punt:noop,grab:noop,put:noop,drop:noop,throwHeld:noop},'chat.js':{logChat:(_who:string,text:string)=>messages.push(text)},
