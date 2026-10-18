@@ -21,6 +21,9 @@
 //   IP12 the snapshot oracle re-runs on a translated world's kept originals (log.original.jsonl, snapshot.original.json)
 //   IP13 the process dies between swap steps (WORLD_TS_DIE_AT_STEP, no rollback): a re-run sees the half-swapped
 //        directory and finishes the swap, saying so (review r11 L4)
+//   IP14 an old log written to during the translation (a server still running): the swap refuses and moves nothing
+//   IP15 a write that slips in mid-swap (injected: WORLD_TS_TOUCH_SOURCE_AT_STEP) undoes the swap
+//   IP16 finishing an interrupted swap refuses when the old log changed since the translation read it
 //   IP11 a snapshot.json the oracle can't compare (a fold of part of the log) doesn't block the translation: it says,
 //        in its output, that the snapshot was NOT compared and why, and keeps it as snapshot.original.json
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/inplace-check.ts
@@ -202,6 +205,34 @@ for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); 
     && same(Object.keys(after).sort(), ["log.original.jsonl", "poses.json", "poses.original.json", "snapshot.original.json", "world.jsonl"]) && !temps().some((t) => t.includes(name)) && after["world.jsonl"][0] === mid["world.jsonl"][0],
     `IP13 (k=${k}) the re-run notices the interrupted swap and finishes it: the originals renamed beside it (the same files), the translated files moved in, no temporary directory left, and it says so`, { code: r.code, out: r.out.slice(-600), keys: Object.keys(after) });
   ok(again.code !== 0 && /already translated/.test(again.out) && info.code === 0 && /"status": "ok"/.test(info.out), `IP13 (k=${k}) …then it's a translated world like any other (a third run says so; info opens it)`, { again: again.out.slice(-300), info: info.out.slice(-300) }); }
+
+// ================= IP14–IP16: the old log must not change under the translation (review of PR #260, world.ts:99) =================
+// IP14 a writer (an old server still running) appends to log.jsonl the whole time the translation runs: the swap refuses
+//      (it says the old log changed and to stop the old server), moves nothing, and every line the writer wrote is still there
+{ const name = "stillwriting"; const d = oldWorld(name); fs.rmSync(path.join(d, "snapshot.json"));   // no oracle (it would refuse on a growing log for its own reason)
+  const logf = path.join(d, "log.jsonl"); let n = 0;
+  const writer = setInterval(() => { try { fs.appendFileSync(logf, JSON.stringify({ seq: 100 + n, ts: T0 + 100000 + n, actor: "Bob", verb: "say", args: { text: `late ${n}` } }) + "\n"); n++; } catch { /* gone */ } }, 2);
+  const proc = Bun.spawn(["bun", "tools/protocol/world.ts", "translate", name, "--no-founder-key"], { cwd: ENGINE, stdout: "pipe", stderr: "pipe",
+    env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, OPT_DIR: OPT, PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const code = await proc.exited; clearInterval(writer);
+  const out = (await new Response(proc.stdout).text()) + (await new Response(proc.stderr).text());
+  const lines = fs.readFileSync(logf, "utf8").split("\n").filter(Boolean).length;
+  ok(code !== 0 && /changed while it was being translated/.test(out) && !fs.existsSync(path.join(d, "world.jsonl")) && fs.existsSync(logf) && lines === L.length + n && !temps().some((t) => t.includes(name)),
+    "IP14 an old log written to during the translation: the swap refuses (stop the old server), nothing moves, and every line written is still there", { code, out: out.slice(-500), world: fs.existsSync(path.join(d, "world.jsonl")), lines, wrote: n }); }
+// IP15 a write that slips in mid-swap (injected after 2 renames: world.jsonl landed, log.jsonl renamed beside it) undoes the swap
+{ const name = "midswap"; const d = oldWorld(name);
+  const r = tool(["translate", name, "--no-founder-key"], { WORLD_TS_TOUCH_SOURCE_AT_STEP: "2" }); const after = fingerprint(d);
+  ok(r.code !== 0 && /changed while it was being translated/.test(r.out) && /put back/.test(r.out) && !after["world.jsonl"] && !!after["log.jsonl"] && !after["log.original.jsonl"] && !temps().some((t) => t.includes(name))
+    && fs.readFileSync(path.join(d, "log.jsonl"), "utf8").includes("written during the swap"),
+    "IP15 a write that slips in mid-swap: the swap is undone (everything put back, the late line kept in log.jsonl)", { code: r.code, out: r.out.slice(-500), keys: Object.keys(after) }); }
+// IP16 the recovery of an interrupted swap checks the same: a death after world.jsonl landed, then the old log is written to;
+//      the re-run refuses to finish (it would drop that write) and moves nothing
+{ const name = "halfwritten"; const d = oldWorld(name);
+  const died = tool(["translate", name, "--no-founder-key"], { WORLD_TS_DIE_AT_STEP: "1" });
+  fs.appendFileSync(path.join(d, "log.jsonl"), JSON.stringify({ seq: 50, ts: T0 + 50000, actor: "Bob", verb: "say", args: { text: "after the crash" } }) + "\n");
+  const mid = fingerprint(d); const r = tool(["translate", name, "--no-founder-key"]); const after = fingerprint(d);
+  ok(died.code !== 0 && r.code !== 0 && /changed while it was being translated/.test(r.out) && same(after, mid) && temps().some((t) => t.includes(name)),
+    "IP16 finishing an interrupted swap refuses when the old log changed since it was read, and moves nothing", { died: died.code, code: r.code, out: r.out.slice(-500), same: same(after, mid) }); }
 
 console.log(`inplace: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

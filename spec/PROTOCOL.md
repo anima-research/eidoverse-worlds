@@ -1358,7 +1358,8 @@ be translated once, one way, into a world of this protocol
 (`bun tools/protocol/world.ts translate <world> --founder-key <key>`, or
 `--no-founder-key` to leave tier 0 empty for ever, §13). It is translated in
 place: the world keeps its name, and the old log stays beside the new one as
-`log.original.jsonl`, renamed, never written; a directory whose `world.jsonl` is a
+`log.original.jsonl`, renamed, never written (the swap refuses unless the old log
+still holds exactly the bytes that were translated: nothing an old server wrote meanwhile is dropped); a directory whose `world.jsonl` is a
 world of this protocol is served as one whatever else it holds. (`translate <old>
 <new>` translates into a new name instead.) Each old entry appears in the new log as an `act` with verb
 `imported` (`body {verb, args, from}`) or as a `say`, followed by the change it

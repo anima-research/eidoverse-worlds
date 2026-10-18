@@ -26,7 +26,11 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   const src = path.join(srcDir, "log.jsonl");
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
   if (fs.existsSync(path.join(destDir, "world.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) throw new Error(`${destDir} already holds a world`);
-  const old = fs.readFileSync(src, "utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
+  const srcBytes = fs.readFileSync(src);
+  // the bytes this translation is OF: an in-place translation checks the old log still holds exactly these before it swaps
+  // (world.ts translateInPlace; review of PR #260, world.ts:99 — a server still writing to it would lose those edits)
+  const source = { size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex") };
+  const old = srcBytes.toString("utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
   // A dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) gets its outcomes from her sim: translate-v1@11 runs it
   // beside the v1 fold and writes each rest as a plain change by `sim` (no launch, no digest: nothing asks a reader to fly
   // her engine), and below, the sealed text is read by the live host's sim layer before anything is written. (Until 2026-10-08 such a log was
@@ -97,6 +101,6 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   if (fs.existsSync(oldPoses)) { try { const P = JSON.parse(fs.readFileSync(oldPoses, "utf8")); const out: Record<string, unknown> = {};
     for (const [name, pose] of Object.entries<Any>(P ?? {})) { const id = memo.get(`name:${name}`); if (id && pose) { out[id] = pose; poses++; } }
     if (poses) fs.writeFileSync(path.join(destDir, "poses.json"), JSON.stringify(out)); } catch { /* an unreadable poses file: nobody's place is remembered */ } }
-  return { identities: Object.keys(planned).length, renamedBlobs, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back), poses, ...(sim ? { sim } : {}) };
+  return { source, identities: Object.keys(planned).length, renamedBlobs, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back), poses, ...(sim ? { sim } : {}) };
 }
 
