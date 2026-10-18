@@ -13,9 +13,12 @@
 // @ts-nocheck
 import fs from "node:fs";
 import { scratch } from "./common.ts";
-import { request, worldOf, creatorOf, liftWorld, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore, fixtureIds } from "../../shared/protocol/authority.js";
+import { request, isBanned, worldOf, creatorOf, liftWorld, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore, fixtureIds } from "../../shared/protocol/authority.js";
 fixtureIds(true);   // the fixtures below seed the ids they read (R 10-17: a writer never chooses one; ids-check covers the refusal)
 import { fold, readLog, digest, opsOf, PURGED } from "../../shared/protocol/fold.js";
+import * as AUTH from "../../shared/protocol/authority.js";
+// the operator's repair path; before it existed an operator had only the ordinary request (OP rows are red there, not a crash)
+const operatorRepair = AUTH.operatorRepair ?? ((w, a, v, x) => request(w, a, v, x));
 import { makeReplica, wireState, stateFromWire } from "../../shared/protocol/replica.js";
 import { simFold, digestOf, restsOf } from "../../shared/protocol/simlayer.js";
 import { MODELS } from "../../shared/protocol/labmodels.js";
@@ -1339,6 +1342,37 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   ok(!r2.ok && code(r2) === "unknown-arg" && r2.refused?.op === 1 && ents().lamp?.c?.description === "a lamp", "BT2 a nested create.place is checked too, and an earlier valid op isn't written", [r2.refused ?? r2, ents().lamp?.c?.description]);
   const changes = openWorld(root, name).entries.slice(n0).filter((e) => e.kind === "change").length;
   ok(changes === 0, "BT3 neither refused batch wrote a change", changes); }
+
+// ---- OP: a server operator's recorded repair (review of PR #260, server.ts:742: WORLD_ADMIN entered but could mend nothing).
+// operatorRepair is NARROW (@world's roles/access/default-role/role-defs, unban) and RECORDED (the operator's act, body
+// operator: true; the moderator-log record likewise); the operator's ordinary requests stay what their role here allows.
+{ const name = "oprepair";
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const opr = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return operatorRepair(openWorld(root, name), actor, verb, args); };
+  const wc = () => openWorld(root, name).state().entities["@world"]?.c ?? {};
+  call("olive", "create-world", { title: "orphaned" });
+  call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "visitor" } });
+  call("olive", "ban", { who: "opal", reason: "a mistake" });
+  call("olive", "set", { id: "@world", component: "access", value: { join: "listed" } });
+  // the operator as an ordinary asker: banned here, so refused; and as a visitor they could not grant ownership anyway
+  const plain = call("opal", "set", { id: "@world", component: "roles:bob", value: { role: "owner" } });
+  const plainUnban = call("opal", "unban", { who: "opal" });
+  ok(code(plain) === "banned" && code(plainUnban) === "banned" && wc()["roles:bob"]?.role === "visitor", "OP1 (control) the operator's ordinary requests are the world's to judge: banned here, refused", [plain.refused, plainUnban.refused]);
+  const grant = opr("opal", "set", { id: "@world", component: "roles:bob", value: { role: "owner" } });
+  const lift = opr("opal", "unban", { who: "opal" });
+  const door = opr("opal", "set", { id: "@world", component: "access", value: { join: "anyone" } });
+  const w2 = openWorld(root, name); const acts = w2.entries.filter((e) => e.kind === "act" && e.actor === "opal" && e.body?.operator === true);
+  const modRec = w2.mod.find((m) => m.verb === "unban" && m.who === "opal");
+  ok(grant.ok && lift.ok && door.ok && wc()["roles:bob"]?.role === "owner" && wc().access?.join === "anyone" && !isBanned(w2, "opal"),
+    "OP2 operatorRepair mends roles (grants an owner), lifts a ban (their own, too) and repairs access", [grant.refused, lift.refused, door.refused, wc()["roles:bob"], wc().access]);
+  ok(acts.length === 2 && acts.every((e) => ["set"].includes(e.verb)) && modRec?.actor === "opal" && modRec?.operator === true,
+    "OP3 every repair is recorded with operator authorship: the operator's act carries operator: true, the unban's moderator-log record too", [acts.map((e) => [e.verb, e.body]), modRec]);
+  const narrow = [opr("opal", "create", { model: "crate" }), opr("opal", "set", { id: "@world", component: "about", value: { name: "x", text: "" } }),
+    opr("opal", "ban", { who: "bob" }), opr("opal", "set", { id: "lamp", component: "roles:bob", value: { role: "owner" } })];
+  ok(narrow.every((r) => code(r) === "rights"), "OP4 it is narrow: a create, another @world component, a ban, a roles key off @world are all refused (rights)", narrow.map((r) => r.refused?.reason ?? r));
+  const last = opr("opal", "delete", { id: "@world", component: "roles:olive" }), last2 = opr("opal", "delete", { id: "@world", component: "roles:bob" });
+  const afterOwners = Object.entries(wc()).filter(([k, v]) => k.startsWith("roles:") && v?.role === "owner").length;
+  ok(last.ok && code(last2) === "last-owner" && afterOwners === 1, "OP5 not god mode: the world's own checks still hold (the last owner can't be removed)", [last.refused, last2.refused, afterOwners]); }
 
 // ---- ST: persist before publishing (review of PR #260, storage.js:110; Antra's repro): a line whose durable write throws
 // never reaches memory (the live chain never runs ahead of the disk), and the file, its state now unknown, takes no more

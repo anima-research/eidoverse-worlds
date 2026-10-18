@@ -13,9 +13,12 @@
 //   mintW    the world whose ids a mint must avoid (§3d H7)
 //   work     the call's work budget {left, until, k}; outside any call (a test reading the index): no budget
 //   forking  the server's own fork copy is in progress (forkCopy → request("fork-copy")); set outside enter(), carried through it
+//   operator the identity whose recorded operator repair is in progress, else false (operatorRepair → request): only @world's door components
+//            (roles:*, access, default-role, role-defs) and lifting a ban or kick pass without the world's own rights;
+//            set outside enter(), carried through it
 export const CTX = {
   cat: null, through: false, isAnon: () => false, knownId: (_id) => true, nameOf: null, mintW: null,
-  work: { left: Infinity, until: Infinity, k: 0 }, forking: false,
+  work: { left: Infinity, until: Infinity, k: 0 }, forking: false, operator: false,
 };
 // UP: the functions a leaf calls in a layer ABOVE it (the gate, or a leaf split out of authority.js after it). A leaf may not
 // import those (authority-layers-check: the import graph can't cycle), so each such leaf names them through a one-line

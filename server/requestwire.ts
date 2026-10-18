@@ -21,6 +21,7 @@ import { WORLDS_DIR } from "./config.ts";
 import { isBanned } from "../shared/protocol/authority.js";
 import { WIRE_READS, PERSON_ACTS } from "../shared/protocol/verbclasses.js";
 import { readMeter, authorityTime } from "./readmeter.ts";
+import { isOperator } from "./operators.ts";
 
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string, until?: number | null) => void; sweep?: (w: World) => void };
 type Any = any;
@@ -189,6 +190,28 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
           expel(w, t, `you were ${verb === "ban" ? "banned from" : "removed from"} "${w.name}"${args.reason ? ` — ${String(args.reason)}` : ""}${back}`, r.until ?? null);
         }
       }
+    });
+  },
+  // operator-repair {id, verb, args} → {type: "reply", id, verb, ok, operator: true, reply}: a WORLD_ADMIN account mends the
+  // world it is in, through the authority (review of PR #260, server.ts:742: an operator entered every world but could repair
+  // nothing in it). NARROW — set/delete of @world's roles:<id>, access, default-role, role-defs, and unban (a ban or a kick)
+  // — and RECORDED: the operator's own identity's act, its body operator: true (an unban's moderator-log record likewise),
+  // and a server log line naming the account. Its rights are the account's (isOperator), checked here and never read from
+  // the payload; the world's own rights don't gate it, its shape/value/roles/last-owner checks still do.
+  "operator-repair": ({ c, ws, sweep }, msg) => {
+    const w = c.world; if (!w) return;
+    const rid = msg.id ?? null; const verb = String(msg.verb ?? "");
+    const args = msg.args && typeof msg.args === "object" && !Array.isArray(msg.args) ? msg.args : {};
+    const reply = (r: Any) => ws.send(JSON.stringify({ type: "reply", id: rid, verb, ok: r.ok === true, operator: true, reply: r }));
+    if (!isOperator(c.account)) { reply({ ok: false, refused: { code: "rights", reason: "operator-repair needs a server operator's account (WORLD_ADMIN)", fix: "repair through the world's own roles: ask an owner" } }); return; }
+    if (!c.actorId) { reply({ ok: false, refused: { code: "identity", reason: "this connection has no identity here", fix: "join the world first" } }); return; }
+    const gen = c.gen;
+    inOrder(c, ws, async () => {
+      if (!(c.world === w && !c.superseded && w.clients.has(c) && c.gen === gen)) return;   // the same capability recheck as request
+      const r = w.log.operatorRepair(actorOf(c), verb, args);
+      console.log(`[world:${w.name}] operator repair by ${c.account} (${c.id}): ${verb.slice(0, 32)} ${String((args as Any).component ?? (args as Any).who ?? "").slice(0, 64)} → ${r?.ok ? "ok" : r?.refused?.code}`);
+      reply(r);
+      if (r?.ok) sweep?.(w);   // an unban or a role change applies now (the sanctions sweep; the role change re-sends rights itself)
     });
   },
   // Copy the world you're standing in to a new name: a new world (its own identity) whose founding act names this one,

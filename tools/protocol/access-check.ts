@@ -184,6 +184,29 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
       "A10 a native session narrowed to water is no one at another world's door over HTTP (/geom 404, not on /worlds, /access none); the same account unnarrowed reads it",
       { geom: [gN, gF], map: [mapN.map((x) => x.name), mapF.map((x) => x.name)], access: [aN, aF] }); }
   try { s2.proc.kill(); } catch {} }
+{ // A11 (review of PR #260, server.ts:742): an operator (WORLD_ADMIN) has a NARROW, RECORDED repair capability through the
+  // authority: Fen, an operator not listed in the members-only world, gets in (the bypass) but an ordinary write is still the
+  // world's to judge; operator-repair lifts Moss's ban and lists Fen, each the operator's own act / record marked operator;
+  // a non-operator's operator-repair is refused
+  const s3 = await start({ WORLD_ADMIN: "agent:token:fen" });
+  const fen = await sock(s3.port); const jf = await fen.join("keep", "Fen", { agentToken: "tok-fen" }); const fenId = you(jf);
+  let k = 0; const repair = async (s, verb, args) => { const id = `op${++k}`; s.raw({ type: "operator-repair", id, verb, args });
+    await waitFor(() => s.msgs.some((m) => m.type === "reply" && m.id === id), 4000); return s.msgs.find((m) => m.type === "reply" && m.id === id); };
+  const plain = await fen.req("set", { id: "@world", component: `roles:${fenId}`, value: { role: "owner" } });
+  const unban = await repair(fen, "unban", { who: ids.Moss });
+  const list = await repair(fen, "set", { id: "@world", component: `roles:${fenId}`, value: { role: "visitor" } });
+  const wide = await repair(fen, "set", { id: "@world", component: "about", value: { name: "x", text: "" } });
+  const row = await sock(s3.port); const jr = await row.join("keep", "Rowan", { agentToken: "tok-rowan" });
+  const notOp = await repair(row, "unban", { who: ids.Moss });
+  const mossGeom = await geomAs(s3.port, "keep", "tok-moss");
+  const log = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const mod = fs.readFileSync(path.join(W, "keep", "world.mod.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const act = log.find((e) => e.kind === "act" && e.actor === fenId && e.body?.operator === true && e.body?.request?.component === `roles:${fenId}`);
+  const rec = mod.find((m) => m.verb === "unban" && m.who === ids.Moss && m.actor === fenId && m.operator === true);
+  ok(!!jf.snapshot && !plain.ok && plain.refused?.code === "rights" && unban?.reply?.ok && list?.reply?.ok && wide?.reply?.refused?.code === "rights" && !!jr.snapshot && notOp?.reply?.refused?.code === "rights" && mossGeom === 200 && !!act && !!rec,
+    "A11 an operator repairs through the authority, narrowly and on the record: ordinary write refused, operator-repair unbans and lists (act / mod record marked operator), another component refused, a non-operator refused",
+    { join: jf.errors, plain: plain.refused, unban: unban?.reply, list: list?.reply, wide: wide?.reply?.refused, notOp: notOp?.reply?.refused, mossGeom, act: !!act, rec: !!rec });
+  fen.close(); row.close(); try { s3.proc.kill(); } catch {} await sleep(300); }
 { // A9 (final review M1): a members-only door is not opened by default-role / role-defs powers handed to everyone
   const { entryFor } = await import(path.join(ENGINE, "server/access.ts"));
   const base = { access: { join: "listed" } };

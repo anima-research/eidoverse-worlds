@@ -68,7 +68,7 @@ function commit(w, actor, verb, args, build) {
     if (gone.size) ops.push(...clearRefsTo({ ...ctx, st: after }, gone)); }
   const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops); ctx.notes.push(...plan.notes);
   if (args.dry) return { ok: true, dry: true, would: plan.ops, notes: ctx.notes, ...warnOrNot(warnings(plan.after, [...ctx.refs])) };
-  const actE = actOf(w, actor, verb, sent, ctx.actExtra);
+  const actE = actOf(w, actor, verb, sent, CTX.operator && CTX.operator === actor && !ctx.cap ? { ...(ctx.actExtra ?? {}), operator: true } : ctx.actExtra);   // an operator's repair says so, in the act
   const changeE = changeShape(plan, w.entries.length, w);
   w.fits(actE, changeE); // both lines fit, or neither is written
   // the budget counts THIS write too, not only what came before it (review 10-14 C0: a 300 KiB batch in an empty window passed a 256 KiB cap)

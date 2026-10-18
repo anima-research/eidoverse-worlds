@@ -15,7 +15,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
-import { forkCopy, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles } from "../shared/protocol/authority.js";
+import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { clientCutOf, spokenOf } from "../shared/protocol/replica.js";
 import { viewState } from "../shared/protocol/view.js";
@@ -166,6 +166,17 @@ export class WorldLog {
     const t0 = performance.now(); const r = authorityRequest(this.live, actor, verb, args); if (r && typeof r === "object") authorityTime.set(r, performance.now() - t0);
     if (this.live.entries.length > from) this.afterWrite(from);
     if (this.holdsKey() !== held) this.host?.broadcast({ type: "holds", world: this.name, holds: this.holds() });
+    this.forwardInbox();
+    return r;
+  }
+  /** A server operator's recorded repair (authority.js operatorRepair: @world's roles/access/default-role/role-defs, unban;
+   *  recorded as the operator's act with operator: true). Only server/requestwire.ts's operator-repair reaches it, behind
+   *  isOperator. Synchronous, like requestSync: there is no await between the check and the write. */
+  operatorRepair(actor: string, verb: string, args: Record<string, unknown> = {}) {
+    if (this.retired) return WorldLog.RESET;
+    const from = this.live.entries.length;
+    const r = authorityOperatorRepair(this.live, actor, verb, args);
+    if (this.live.entries.length > from) this.afterWrite(from);
     this.forwardInbox();
     return r;
   }

@@ -923,6 +923,15 @@ role holds `build`). The *invoker* (whoever's request this is). The
 *affected participant* (whoever's body a request touches). A *sponsor*
 (whoever's rights a script acts with, §8).
 
+**Operator repair (narrow, recorded).** A server operator (an account the host names, `WORLD_ADMIN`) enters every
+world, but its ordinary requests are judged by the world like anyone's. To mend a world whose owners are gone or locked
+out it has one more capability, reached only by the server's `operator-repair` message, never by a request word: `set`
+and `delete` of @world's door components (`roles:<id>`, `access`, `default-role`, `role-defs`) and `unban` (lifting a
+ban or a kick, its own included). These pass without the world's rights, keys, grant rule or the operator's own
+sanctions there; every other check (shape, value, `rolesCheck`, the last owner) still applies, and nothing else is
+opened. Each repair is the operator identity's own act whose body carries `operator: true` (an `unban`'s
+moderator-log record likewise), so history and the moderation log say who mended what and by what right.
+
 **1. Standing: what a role may do.** A role is a set of named permissions,
 each one sentence (`roles.js`): `build` (make things; change or delete what
 you made; publish blueprints), `editOthers` (change or delete what others

@@ -79,6 +79,12 @@ function rateOf(w, actor) {
     bytes += bytesOf(e); }
   return { acts, says, bytes };
 }
+// A server operator's recorded repair (CTX.operator, authority.js operatorRepair): the door's own components on @world —
+// who holds which role, who may come in — pass without the world's rights, keys or grant rule, so an operator can mend a
+// world whose owners are gone or locked out. Shape, value, roles and last-owner checks still apply; nothing else is opened.
+export const REPAIR_COMP = (c) => c === "access" || c === "default-role" || c === "role-defs" || (typeof c === "string" && c.startsWith("roles:"));
+// …the operator's OWN ops only: never a capability (a script or handler a repair sets off runs on its own rights)
+const operatorRepairs = (who, op) => !!CTX.operator && CTX.operator === who.actor && !who.cap && op.id === "@world" && REPAIR_COMP(op.comp) && (op.verb === "set" || op.verb === "delete");
 function admit(w, st, who, ops) {
   const { actor, cap } = who;
   if (!cap || cap.kind === "reaction" || cap.kind === "handle") rateCheck(w, actor);
@@ -122,7 +128,7 @@ function admit(w, st, who, ops) {
     if (op.verb === "set" && statusOf(op.comp) === "reserved" && !defOf(op.comp)?.lifted && !(CTX.forking || who.lifting)) { const b = canonicalName(baseOf(op.comp));
       refuse("reserved", `${at}: '${b}' is a reserved name: it is held for a shape that isn't settled yet, and nothing may write it`, COMPONENTS[b].instead ?? `schema {component: '${b}'} says what it is held for`, { status: "reserved" }); }
     const pause = op.verb === "set" && op.comp.startsWith("script:") && pauseOnly(op.value, s.entities[op.id]?.c[op.comp]);
-    if (!fu) { rights(w, st, s, who, role, op, at, made, pause);
+    if (!fu && !operatorRepairs(who, op)) { rights(w, st, s, who, role, op, at, made, pause);
       keyRights(w, st, s, who, op, at, keysMade, pause);
       seniority(w, st, who, op); }
     // §3d H7: deleting an entity is admitted as deleting each of its components, so the creator rule applies per key

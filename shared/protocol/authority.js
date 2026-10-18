@@ -71,7 +71,7 @@ import { CAPACITY, CAPACITY_CEILING, capacityCheck } from "./authority/capacity.
 export { CAPACITY, CAPACITY_CEILING } from "./authority/capacity.js";
 import { isLookAt, isNum, nearMiss, restCheck, unknownKeys, valueCheck } from "./authority/checks.js";
 export { schemaRefusal } from "./authority/checks.js";
-import { Admitted, SAY_MAX, admit, lacks, lockCheck, needWords, rateCheck, spokenOf } from "./authority/gate.js";
+import { Admitted, REPAIR_COMP, SAY_MAX, admit, lacks, lockCheck, needWords, rateCheck, spokenOf } from "./authority/gate.js";
 export { keyKind, seniorOwnerOf } from "./authority/gate.js";
 import { clearRefsTo, danglingRefs, historyDiff, holdsRefs, lastTouch, opsTouching, resettleOccupants, stampMedia, stampModelHash, stampShapes, stripDry, touched, touchedOf, warnOrNot, warnings, withoutRefs } from "./authority/followups.js";
 export { TOUCH_HORIZON } from "./authority/followups.js";
@@ -127,15 +127,16 @@ export function request(w, actor, verb, args = {}) {
     if (!h) refuse("unknown-verb", `there is no '${verb}'`, "help lists every verb", { didYouMean: guess(verb, Object.keys(VERBS)) });
     // `leave` passes: it settles their own presence (the server sends it when it removes them; review 10-07: a kicked
     // body and what it held were never released)
-    if (w.exists && verb !== "help" && verb !== "leave" && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
-    if (w.exists && verb !== "help" && verb !== "leave" && kickOf(w, actor)) refuse("kicked", `${said(actor)} was removed from this world and may come back in ${Math.ceil((kickOf(w, actor).until - w.now()) / 60000)} min`, "wait; the moderator log says who and why");
+    // an operator's recorded repair (operatorRepair) is not the person's own request: their sanctions and role here don't gate it
+    if (w.exists && verb !== "help" && verb !== "leave" && CTX.operator !== actor && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
+    if (w.exists && verb !== "help" && verb !== "leave" && CTX.operator !== actor && kickOf(w, actor)) refuse("kicked", `${said(actor)} was removed from this world and may come back in ${Math.ceil((kickOf(w, actor).until - w.now()) / 60000)} min`, "wait; the moderator log says who and why");
     // ghost (PLAN 10-06): in the world, outside society. A ghost may look, walk and leave; never interact or talk.
     // legacy role `none` (a demotion below visitor): outside membership, it holds no permission and no voice; it may look,
     // walk and leave, as a ghost may (top-down review 10-06: none passed say and a reaction's use)
-    if (w.exists && !GHOST_OK.has(verb) && verb !== "ghost" && w.state().entities?.["@world"] && roleOf(w.state(), actor) === "none")
+    if (w.exists && CTX.operator !== actor && !GHOST_OK.has(verb) && verb !== "ghost" && w.state().entities?.["@world"] && roleOf(w.state(), actor) === "none")
       refuse("rights", `${said(actor)} has no role here (none: below visitor), so can't ${verb}`, "an owner or a grantRoles holder can give a role", { needs: "a role" });
     // ghost: only the chosen mode's own toggle (ghost {on}) passes; ghost {who} is a sanction, an act on someone
-    if (w.exists && (!GHOST_OK.has(verb) || (verb === "ghost" && args?.who !== undefined && args.who !== actor)) && ghostOf(w, actor)) { const g = ghostOf(w, actor);
+    if (w.exists && CTX.operator !== actor && (!GHOST_OK.has(verb) || (verb === "ghost" && args?.who !== undefined && args.who !== actor)) && ghostOf(w, actor)) { const g = ghostOf(w, actor);
       refuse("ghost", g.chosen ? `you're a ghost here (you chose it): ghosts don't interact or talk` : `you're a ghost here${g.until ? ` until ${new Date(g.until).toISOString()}` : ""}: ghosts don't interact or talk`, g.chosen ? "ghost {on: false} brings you back" : "a moderator ranked at or above whoever did it can bring you back"); }
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
     // the authority's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them.
@@ -342,5 +343,19 @@ const VERBS = {
 /** Every verb the authority answers (VERBSPEC must have a row for each: scars-check's verb-row check). */
 export const VERB_NAMES = Object.freeze(Object.keys(VERBS));
 export function forkCopy(w, actor, args) { CTX.forking = true; try { return request(w, actor, "fork-copy", args); } finally { CTX.forking = false; } }
+/** A server operator's recorded repair (review of PR #260, server.ts:742: WORLD_ADMIN entered every world but could mend
+ *  nothing in it). NARROW: set / delete of @world's door components (roles:<id>, access, default-role, role-defs) and unban
+ *  (which lifts a ban or a kick); everything else is refused here, before the authority is entered. RECORDED: the act is the
+ *  operator's own identity's, its body carries `operator: true` (an unban's moderator-log record likewise), so history and
+ *  modlog say who mended what and by what right. Not god mode: shape, value, roles and last-owner checks all still apply,
+ *  and no other component, thing or verb is opened. Only the server reaches it (a WORLD_ADMIN account's operator-repair
+ *  message); no request word does. */
+export function operatorRepair(w, actor, verb, args = {}) {
+  const door = (verb === "set" || verb === "delete") && args && args.id === "@world" && REPAIR_COMP(args.component);
+  if (!(door || verb === "unban"))
+    return { ok: false, refused: { code: "rights", reason: `an operator's repair covers @world's roles, access, default-role and role-defs (set, delete) and lifting a ban or kick (unban); not ${String(verb).slice(0, 32)}${args?.component !== undefined ? ` ${String(args.component).slice(0, 64)}` : ""}`,
+      fix: "anything else goes through the world's own roles: repair a role (set {id: '@world', component: 'roles:<id>', value: {role: 'owner'}}), then act as that person" } };
+  CTX.operator = actor; try { return request(w, actor, verb, args); } finally { CTX.operator = false; }
+}
 // the leaves reach the layers above them through UP (authority/ctx.js): bound here, once every module has loaded
 Object.assign(UP, { actEntry, actOf, activate, admit, body, boundsOf, changeEntry, changeShape, commit, danglingRefs, dist, enter, guess, gripPoint, historyDiff, holdsRefs, homeScale, isNum, lacks, lastTouch, lockCheck, mint, nearMiss, needThing, needWords, notAThing, offRefuse, opsTouching, outsideWorld, rateCheck, request, resolve, restampEngine, returnDue, returnHome, returnPlan, sameHome, occupantOf, occupyRights, serverWritten, setOccupant, settleSim, occupantOn, touchedOf, unknownKeys, vec3s, warnings, withoutRefs });

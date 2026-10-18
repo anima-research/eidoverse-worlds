@@ -75,8 +75,10 @@ const MOD_VERBS = {
     const until = a.days === undefined ? undefined : Math.floor(w.now() + a.days * 86400000);
     w.appendMod({ actor, verb: "ban", who: a.who, ...(until !== undefined ? { until } : {}), ...reasonOf(a) }); return { ok: true, banned: a.who, ...(until !== undefined ? { until } : { until: null }), ...t, logged: "moderator log" }; },
   unban: (w, actor, a) => { if (!isIdentity(a.who)) refuse("shape", "unban {who}", "");
-    personLift(w, actor, a, "ban", [...inForceOf(w, a.who, "ban"), ...inForceOf(w, a.who, "kick")], { strict: true });
-    w.appendMod({ actor, verb: "unban", who: a.who }); return { ok: true, unbanned: a.who }; },
+    // an operator's recorded repair lifts any ban or kick here, their own included (authority.js operatorRepair), and says so
+    const op = !!CTX.operator && CTX.operator === actor;
+    if (!op) personLift(w, actor, a, "ban", [...inForceOf(w, a.who, "ban"), ...inForceOf(w, a.who, "kick")], { strict: true });
+    w.appendMod({ actor, verb: "unban", who: a.who, ...(op ? { operator: true } : {}) }); return { ok: true, unbanned: a.who, ...(op ? { operator: true } : {}) }; },
   // ghost (PLAN 10-06): `ghost {on}` with no who is the mode you choose (presence: never logged; spectate);
   // `ghost {who, minutes?, reason}` is a sanction (kick holders, on a rank below; capped like a mute below owner)
   ghost: (w, actor, a) => {
