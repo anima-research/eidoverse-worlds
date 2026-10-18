@@ -1,14 +1,14 @@
 // The JS fold (shared/protocol/fold.js) against the Python reference reader (spec/conformance/reader.py, written from
 // PROTOCOL alone) on every conformance log: status, digest, and diagnostic codes. Ported from
 // the protocol lab's conformance/compare.js @ 11db981. Also runs the reference reader's own tests (test_reader.py,
-// test_chain.py; the latter needs python3 `cryptography`). usage: bun tools/protocol/compare.ts  (exit 1 on any difference)
+// test_chain.py; the latter needs python3 `cryptography`). usage: bun tools/protocol/compare.ts  (exit 1 on any difference; PYTHON=<interpreter>, default python3 on PATH)
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import { readLog, fold, digest } from "../../shared/protocol/fold.js";
 import { ENGINE } from "./common.ts";
 
 const here = ENGINE + "spec/conformance/";
-const py = (args: string[]) => Bun.spawnSync(["python3", "-B", ...args], { cwd: here, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
+const py = (args: string[]) => Bun.spawnSync([process.env.PYTHON || "python3", "-B", ...args], { cwd: here, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
 const files = ["EXAMPLE-01.jsonl", ...fs.readdirSync(here + "logs").sort().map((f) => "logs/" + f)];
 // Where §2.3/§2.4 (normative) and the reference reader disagree, the JS fold follows the spec; list each here.
 const KNOWN: Record<string, string> = {};

@@ -40,4 +40,5 @@ export function labAt(commit: string, files: string[], tag: string) {
   return d;
 }
 
-export const controlNote = () => (LAB ? `control arm: lab ${LAB}` : "control arm skipped (set PROTOCOL_LAB=<protocol lab checkout> to run it)");
+// an OPTIONAL line (the gate counts and lists these: an optional extension that did not run, never a skip of the gate)
+export const controlNote = () => (LAB ? `control arm: lab ${LAB}` : "OPTIONAL control-arm: not run (set PROTOCOL_LAB=<protocol lab checkout> to run the pre-fix control arm)");
