@@ -1837,7 +1837,7 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit .sp-step.compact .sp-num:hover { border-color: var(--e-line); }
 .frame.edit .sp-label.sp-chan { cursor: ew-resize; user-select: none; border-radius: 3px; padding: 1px 0 1px 4px; margin: 0; }   /* no negative margins: they pulled every number field 8 px left of the other rows (R 10-10, spin's axis vs rate) */
 /* a selected channel: a soft, slightly larger block behind the name, no outline (R 10-11 23:13: "not so harsh to look at") */
-.frame.edit .sp-row.chan-sel .sp-label.sp-chan { background: color-mix(in srgb, var(--e-accent) 22%, transparent); padding: 3px 6px 3px 6px; margin: -2px 0 -2px -2px; border-radius: 4px; }
+.frame.edit .sp-row.chan-sel .sp-label.sp-chan { background: color-mix(in srgb, var(--e-accent) 22%, transparent); border-radius: 4px; }   /* same padding and margin as unselected: the name never moves, and the block stays on the label's side of the gap (R 10-17 21:36) */
 .frame.edit .sp-row.chan-sel .sp-num { background: color-mix(in srgb, var(--e-accent) 12%, transparent); }
 /* a number: the unit sits INSIDE the field's right end (no ragged unit column); steppers' − + move inside too */
 .frame.edit .sp-step { position: relative; }
@@ -2026,9 +2026,9 @@ body.edit-workspace #dock button.edit-overflow { display: none !important; }
 .frame.edit .sp-row.sp-enabled input[type="checkbox"] { width: 15px; height: 15px; margin: 4px 3px 0 2px; accent-color: var(--e-accent); cursor: pointer; }
 .frame.edit .sp-row.sp-title .sp-info { font-size: 15px; font-weight: 600; padding-left: 2px; }
 .frame.edit .sp-group .sp-group-sub { color: var(--e-dim); font-weight: 400; opacity: 0.8; }   /* 'Transform · 12 m away' (R 10-17 20:34) */
-.frame.edit .sp-row.sp-title:has(+ .sp-handle) { width: calc(100% - 78px - 62px); }   /* the dim #handle after the name (R 10-17 20:30) */
-.frame.edit .sp-row.sp-iconbtn.sp-handle .sp-btn { width: auto; max-width: 62px; padding: 0 3px; font: 11px ui-monospace, monospace; color: var(--e-dim); opacity: 0.75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; line-height: 24px; }
-.frame.edit .sp-row.sp-title:has(+ .sp-handle + .sp-more) { width: calc(100% - 62px - 86px); }   /* several selected: no ☑ / eye / padlock, '+ N more' after the #handle (R 10-17 20:39) */
+.frame.edit .sp-row.sp-title:has(+ .sp-handle) { width: calc(100% - 78px - 110px); }   /* the dim #handle after the name (R 10-17 20:30) */
+.frame.edit .sp-row.sp-iconbtn.sp-handle .sp-btn { width: auto; max-width: 110px; padding: 0 3px; font: 11px ui-monospace, monospace; color: var(--e-dim); opacity: 0.75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; line-height: 24px; }
+.frame.edit .sp-row.sp-title:has(+ .sp-handle + .sp-more) { width: calc(100% - 110px - 86px); }   /* several selected: no ☑ / eye / padlock, '+ N more' after the #handle (R 10-17 20:39) */
 .frame.edit .sp-row.sp-more .sp-label { display: none; }
 .frame.edit .sp-row.sp-more .sp-info { color: var(--e-dim); font-size: 12px; white-space: nowrap; line-height: 24px; cursor: default; }
 .edit-marquee { position: fixed; z-index: 30; pointer-events: none; border: 1px dashed var(--e-accent, #4d8ae0); background: color-mix(in srgb, var(--e-accent, #4d8ae0) 12%, transparent); }
