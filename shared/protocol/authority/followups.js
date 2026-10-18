@@ -32,34 +32,38 @@ const outsideWorld = (...a) => UP.outsideWorld(...a);
 // stack rides along, as it always did.
 // The authority's consequence, not the asker's write (scars r10 M3): written by `system` under its own act, `resettle {hosts,
 // occupants}`, caused by the asker's act (as settle and return-lost are), so the entry never says the asker moved someone else's things.
-function resettleOccupants(w, asker, ops, before, after0, cause, notes) { let after = after0; const actor = "system"; let act = null;
-  const own = (occupants) => (act ??= w.append({ kind: "act", actor, verb: "resettle", cause, body: { hosts: [...hosts], occupants, asked: asker } }));
+// Planned BEFORE the asker's write commits (review of PR #260, followups.js:58): every consequence is computed and admitted
+// against the state the write will leave (the asker's admitted preview), so a refusal refuses the whole request with nothing
+// written; after the commit, applyResettle only appends what was planned and can't refuse. A child the same write creates
+// has no pose before it: it is read from the new state (it was there before only if the old state has it).
+function planResettle(w, asker, ops, before, after0) { let after = after0; const actor = "system";
   // what a host's top depends on: its geometry (a mesh's size, a model's measured box, or none) and its scale. A write that
   // leaves these as they were (the same value re-asserted, a move, a turn) re-drops nothing (review r2 S2.1); a delete of the
   // geometry is a change like any other (r2 S2.3)
   const geomKey = (st, id) => { const e = st.entities[id]; const m = e ? geomE(e) : null; return JSON.stringify([m ? boxOfM(m) : null, e?.c.transform?.scale ?? [1, 1, 1]]); };
   const hosts = new Set(ops.filter((o) => (o.verb === "set" || o.verb === "delete") && before.entities[o.id] && after.entities[o.id] && (o.comp === "mesh" || o.comp === "model" || o.comp === "transform") && geomKey(before, o.id) !== geomKey(after, o.id)).map((o) => o.id));
-  if (!hosts.size) return;
+  if (!hosts.size) return null;
   // a child on a SOCKET is the socket's child, which has no top: never an occupant (r2 S2.2: a cup on its perch was torn off and dropped)
   const occupants = Object.keys(after.entities).filter((k) => { const c = after.entities[k].c;
     return hosts.has(c.parent?.to) && c.physics?.kind === "dynamic" && !lockedC(c) && !w.presence.holds[k] && !w.presence.holds[c.parent.to] && !after.entities[k].c.disabled && aabb(after, k); });
-  if (!occupants.length) return;
+  if (!occupants.length) return null;
   const spec = after.entities["@world"]?.c["physics-engine"];
   // the ground still loading: a fall would rest on a guessed height (review r4 F2) — they are left as they are on the host
   // (its local pose kept: a rescaled host carries them with it, r5 F6), said so
-  if (!groundReady(after)) { notes.push({ kept: occupants, why: "they were resting on a thing whose shape changed, but this world's ground is still loading: they are left as they are on it (a rescaled host carries them with it) rather than fall onto a guessed height" }); return; }
+  if (!groundReady(after)) return { actor, asker, hosts, occupants: [], admitted: null, launches: [], note: { kept: occupants, why: "they were resting on a thing whose shape changed, but this world's ground is still loading: they are left as they are on it (a rescaled host carries them with it) rather than fall onto a guessed height" } };
   if (spec && carried(spec)) {
     const flying = new Set(Object.keys(w.sim?.()?.launched ?? {}));
     const dropped = occupants.filter((k) => !flying.has(k));
+    if (!dropped.length) return null;
     // out from under the host first, standing where it stood in the world: its rest re-attaches it to whatever it lands on
     // with a fresh local pose (a rest keeps a child's recorded scale, and that scale was compensation for the OLD host size)
-    // (as it stood BEFORE the write: a model host's new scale had already carried the child's world pose and size with it)
-    if (dropped.length) { const free = dropped.flatMap((k) => { const t = worldT(before, k); return [delOp(k, "parent"), setOp(k, "transform", { pos: t.pos.map(r3), q: qr3(t.q), scale: t.scale.map(r3) })]; });
-      const plan = admit(w, after, { actor, cap: { kind: "system", ids: dropped, comps: ["transform", "parent"] } }, free); changeEntry(w, plan, own(dropped)); after = w.state(); }
-    for (const k of dropped) { const t = worldT(before, k);
-      w.append({ kind: "sim", actor, cause: own(dropped), verb: "launch", body: { id: k, p: t.pos.slice(), yaw: qYaw(t.q), ...(ENGINES[spec.engine]?.rotates ? { q: t.q.slice() } : {}), v: [0, 0, 0], handled: [asker] } }); }
-    if (dropped.length) notes.push({ fell: dropped, why: "they were resting on a thing whose shape changed; they fall to its new top (physics will log where they land)" });
-    return;
+    // (as it stood BEFORE the write: a model host's new scale had already carried the child's world pose and size with it;
+    // a child this write creates stands where the write puts it)
+    const was = (k) => (before.entities[k] ? worldT(before, k) : null) ?? worldT(after, k);
+    const free = dropped.flatMap((k) => { const t = was(k); return [delOp(k, "parent"), setOp(k, "transform", { pos: t.pos.map(r3), q: qr3(t.q), scale: t.scale.map(r3) })]; });
+    const admitted = admit(w, after, { actor, cap: { kind: "system", ids: dropped, comps: ["transform", "parent"] } }, free);
+    const launches = dropped.map((k) => { const t = was(k); return { id: k, p: t.pos.slice(), yaw: qYaw(t.q), ...(ENGINES[spec.engine]?.rotates ? { q: t.q.slice() } : {}), v: [0, 0, 0], handled: [asker] }; });
+    return { actor, asker, hosts, occupants: dropped, admitted, launches, note: { fell: dropped, why: "they were resting on a thing whose shape changed; they fall to its new top (physics will log where they land)" } };
   }
   // no engine: set each occupant down from ABOVE the host's new top (a grown host would otherwise bury it: supportUnder only
   // counts faces at or below where the occupant stands; r2 S1.1). A host that lost its body frees its occupants to the world
@@ -69,10 +73,28 @@ function resettleOccupants(w, asker, ops, before, after0, cause, notes) { let af
     if (!hb) return [delOp(k, "parent"), setOp(k, "transform", { pos: wpos, q: qr3(wt.q), scale: wt.scale.map(r3) })];
     const lt = localFrom(after, host, { ...wt, pos: wpos });
     const v = { ...after.entities[k].c.transform, pos: lt.pos }; return JSON.stringify(v) === JSON.stringify(after.entities[k].c.transform) ? [] : [setOp(k, "transform", v)]; });
-  if (!setOps.length) return;
-  const plan = admit(w, after, { actor, cap: { kind: "system", ids: occupants, comps: ["transform", "parent"] } }, setOps);
-  changeEntry(w, plan, own([...new Set(setOps.map((o) => o.id))]));
-  notes.push({ setDown: [...new Set(setOps.map((o) => o.id))], why: "they were resting on a thing whose shape changed; with no physics running they were set straight down onto what is under them now" });
+  if (!setOps.length) return null;
+  const admitted = admit(w, after, { actor, cap: { kind: "system", ids: occupants, comps: ["transform", "parent"] } }, setOps);
+  const moved = [...new Set(setOps.map((o) => o.id))];
+  return { actor, asker, hosts, occupants: moved, admitted, launches: [], note: { setDown: moved, why: "they were resting on a thing whose shape changed; with no physics running they were set straight down onto what is under them now" } };
+}
+// the entries a plan will append, in order, for w.fits() before the asker's write commits (askerAct: where the asker's act
+// will stand; its change follows it, then the resettle act, whose own change and launches name it)
+function resettleEntries(w, plan, askerAct) {
+  if (!plan || (!plan.admitted && !plan.launches.length)) return [];
+  const own = askerAct + 2;
+  const act = { kind: "act", actor: plan.actor, verb: "resettle", cause: askerAct, body: { hosts: [...plan.hosts], occupants: plan.occupants, asked: plan.asker } };
+  return [act, ...(plan.admitted ? [UP.changeShape(plan.admitted, own, w)] : []), ...plan.launches.map((b) => ({ kind: "sim", actor: plan.actor, cause: own, verb: "launch", body: b }))];
+}
+// …and after it: append exactly what was planned and admitted (no check here can refuse)
+function applyResettle(w, plan, cause, notes) {
+  if (!plan) return;
+  if (plan.admitted || plan.launches.length) {
+    const act = w.append({ kind: "act", actor: plan.actor, verb: "resettle", cause, body: { hosts: [...plan.hosts], occupants: plan.occupants, asked: plan.asker } });
+    if (plan.admitted) changeEntry(w, plan.admitted, act);
+    for (const b of plan.launches) w.append({ kind: "sim", actor: plan.actor, cause: act, verb: "launch", body: b });
+  }
+  notes.push(plan.note);
 }
 // P7 + Covenant III: a thing is in the sim by its `physics` component, and its geometry enters the sim only through the
 // log, as physics.shape: the AUTHORITY's measurement of its model (model-local box [[min], [max]]), never the asker's word.
@@ -303,4 +325,4 @@ function warnings(st, ids, strict = false) {
   } finally { CTX.work.what = was; }
   return out;
 }
-export { clearRefsTo, danglingRefs, historyDiff, holdsRefs, lastTouch, opsTouching, resettleOccupants, stampMedia, stampModelHash, stampShapes, stripDry, touched, touchedOf, warnOrNot, warnings, withoutRefs };
+export { applyResettle, clearRefsTo, danglingRefs, historyDiff, holdsRefs, lastTouch, opsTouching, planResettle, resettleEntries, stampMedia, stampModelHash, stampShapes, stripDry, touched, touchedOf, warnOrNot, warnings, withoutRefs };

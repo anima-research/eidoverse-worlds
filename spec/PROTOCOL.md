@@ -835,6 +835,12 @@ Only what the asker could have written themselves, on what they are writing anyw
 A reader deriving authorship skips marked ops, and a `system` or `sim` write is authored by `system` or `sim`,
 never by the asker; a verifier re-runs the gate on the unmarked ops of an asker's change with the asker's rights.
 
+**Consequences are planned before the commit.** Every consequence the authority writes for a request (a
+`resettle`'s change and launches included) is computed and admitted against the state the asker's write leaves, and
+every line is checked to fit, before the first line is appended: a consequence the gate refuses refuses the whole
+request with nothing written, and nothing after the commit may refuse. A thing the same write creates is read where
+that write puts it (it has no pose before it).
+
 **Roles** are components on `@world`: `roles:<identity>` = `{role}`, and
 `default-role` for everyone without one (absent: visitor). The reference
 authority's ladder is `visitor` < `builder` < `owner` (a `moderator` rank sits

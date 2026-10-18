@@ -42,6 +42,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the second stand-in is minted-shaped", "shared/protocol/scriptaudit.js", "export const ARRIVAL_STAND_IN_2 = \"zq-stand-in\";", "export const ARRIVAL_STAND_IN_2 = \"u-\" + \"b\".repeat(20);", ["A1", "A2"]],
   ["an arrival mismatch is a forgery", "shared/protocol/scriptaudit.js", "if (anonWho) { flags.push({ seq, check: \"rerun-anon\"", "if (false) { flags.push({ seq, check: \"rerun-anon\"", ["A3"]],
   ["resettle under the asker", "shared/protocol/authority/followups.js", "let after = after0; const actor = \"system\";", "let after = after0; const actor = asker;", ["F1"]],
+  ["a created child's pose is read from before the write", "shared/protocol/authority/followups.js", "const was = (k) => (before.entities[k] ? worldT(before, k) : null) ?? worldT(after, k);", "const was = (k) => worldT(before, k);", ["F3"]],
   ["the set-down is the deleter's write", "shared/protocol/authority/writes.js", "ops.push(followUp(setOp(id, \"transform\", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] })));", "ops.push(setOp(id, \"transform\", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] }));", ["F2"]],
   ["no vacated when a socket goes", "shared/protocol/authority/writes.js", "if (typeof to === \"string\") inboxPush(w.presence, who, { type: \"vacated\"", "if (false) inboxPush(w.presence, who, { type: \"vacated\"", ["U1"]],
   ["the browser ignores vacated.at", "client/lib/localbody.js", "dismountMe('script', vacatedAt(u))", "dismountMe('script')", ["U2"]],
@@ -252,6 +253,23 @@ const cases: Case[] = [
       const cause = ch ? E[ch.cause] : null;
       return { c: show(c), r: show(r), parent: comp(s, "crate", "parent")?.to, actor: ch?.actor ?? null, causeVerb: cause?.verb ?? null, causeActor: cause?.actor ?? null, askerAct: cause ? E[cause.cause]?.actor : null, set: JSON.stringify(r.notes ?? []).includes("setDown") }; },
     good: (o) => o.c === "ok" && o.r === "ok" && o.parent === "plinth" && o.set && o.actor === "system" && o.causeVerb === "resettle" && o.causeActor === "system" && o.askerAct === "bob" },
+  { id: "F3", what: "(review of PR #260, followups.js:58) under a running engine, ONE batch resizes a plinth and creates a dynamic crate on it: the request lands whole (no throw after the commit), the crate is re-dropped from where the write put it (the system's resettle, its launch from the crate's new pose)", run(s) {
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
+      s.call("olive", "create", { id: "plinth", components: { mesh: { shape: "box", size: [1.5, 0.8, 1.5] }, transform: { pos: [0, 0, 0] } } });
+      const n0 = s.entries().length;
+      const r = s.call("olive", "batch", { ops: [{ verb: "set", args: { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } } },
+        { verb: "create", args: { id: "crate", components: { mesh: { shape: "box", size: [0.4, 0.4, 0.4] }, physics: { kind: "dynamic" }, parent: { to: "plinth" }, transform: { pos: [0, 0.6, 0] } } } }] });
+      const E = s.entries().slice(n0); const rs = E.find((e: any) => e.kind === "act" && e.verb === "resettle"); const ln = E.find((e: any) => e.kind === "sim" && e.verb === "launch" && e.body?.id === "crate");
+      return { r: show(r), resettle: rs?.body?.occupants ?? null, launchY: ln?.body?.p?.[1] ?? null, crate: !!comp(s, "crate", "physics") }; },
+    good: (o) => o.r === "ok" && JSON.stringify(o.resettle) === '["crate"]' && typeof o.launchY === "number" && o.crate },
+  { id: "F4", what: "(review of PR #260, followups.js:58) a resettle the gate would refuse (the speck freed from its scaled host would stand at world scale 1800, past the stored ±1000) refuses the asker's write whole: nothing is written, the host keeps its scale", run(s) {
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
+      s.call("olive", "create", { id: "big", components: { mesh: { shape: "box", size: [1, 0.5, 1] }, transform: { pos: [0, 0, 0], scale: [100, 100, 100] } } });
+      const c = s.call("olive", "create", { id: "speck", components: { mesh: { shape: "box", size: [0.05, 0.05, 0.05] }, physics: { kind: "dynamic" }, parent: { to: "big" }, transform: { pos: [0, 0.6, 0], scale: [20, 20, 20] } } });
+      const n0 = s.entries().length;
+      const r = s.call("olive", "set", { id: "big", component: "transform", value: { pos: [0, 0, 0], scale: [90, 90, 90] } });
+      return { c: show(c), r: show(r), refused: r?.refused?.code ?? null, wrote: s.entries().length - n0, scale: comp(s, "big", "transform")?.scale?.[0] }; },
+    good: (o) => o.c === "ok" && o.refused !== null && !String(o.r).startsWith("CRASH") && o.wrote <= 1 && o.scale === 100 },
   { id: "F2", what: "(scars M3) builder vic deletes his crate with owner olive's locked vase resting on it (unparented): the delete lands, the vase is set down as the authority's follow-up (named in followUps), and the vase stays olive's", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "builder" });
       s.call("vic", "create", { id: "crate", components: { mesh: { shape: "box", size: [1, 1, 1] }, transform: { pos: [3, 0, 0] } } });

@@ -73,7 +73,7 @@ import { isLookAt, isNum, nearMiss, restCheck, unknownKeys, valueCheck } from ".
 export { schemaRefusal } from "./authority/checks.js";
 import { Admitted, REPAIR_COMP, SAY_MAX, admit, lacks, lockCheck, needWords, rateCheck, spokenOf } from "./authority/gate.js";
 export { keyKind, seniorOwnerOf } from "./authority/gate.js";
-import { clearRefsTo, danglingRefs, historyDiff, holdsRefs, lastTouch, opsTouching, resettleOccupants, stampMedia, stampModelHash, stampShapes, stripDry, touched, touchedOf, warnOrNot, warnings, withoutRefs } from "./authority/followups.js";
+import { clearRefsTo, danglingRefs, historyDiff, holdsRefs, lastTouch, opsTouching, stampMedia, stampModelHash, stampShapes, stripDry, touched, touchedOf, warnOrNot, warnings, withoutRefs } from "./authority/followups.js";
 export { TOUCH_HORIZON } from "./authority/followups.js";
 import { actEntry, actOf, boundsOf, buildCreate, buildDelete, buildPlace, buildSet, buildTurn, changeEntry, changeShape, commit, mint, needThing, notAThing, offRefuse, outsideWorld, resolve, serverWritten } from "./authority/writes.js";
 import { BATCH_VERBS, FOUNDING_VERBS, SAY_VERBS, SCHEMA_VERBS, WRITE_VERBS } from "./authority/verbs.js";

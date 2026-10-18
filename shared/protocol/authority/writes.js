@@ -25,7 +25,7 @@ import { buildEpoch } from "./physics.js";
 import { stampHomes, stampResetHomes } from "./manipulate.js";
 import { isLookAt } from "./checks.js";
 import { Admitted, admit, rateCheck } from "./gate.js";
-import { clearRefsTo, lastTouch, resettleOccupants, stampMedia, stampModelHash, stampShapes, stripDry, touched, warnOrNot, warnings } from "./followups.js";
+import { applyResettle, clearRefsTo, lastTouch, planResettle, resettleEntries, stampMedia, stampModelHash, stampShapes, stripDry, touched, warnOrNot, warnings } from "./followups.js";
 import { renameFields } from "../shaperepair.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
@@ -68,15 +68,19 @@ function commit(w, actor, verb, args, build) {
     if (gone.size) ops.push(...clearRefsTo({ ...ctx, st: after }, gone)); }
   const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops); ctx.notes.push(...plan.notes);
   if (args.dry) return { ok: true, dry: true, would: plan.ops, notes: ctx.notes, ...warnOrNot(warnings(plan.after, [...ctx.refs])) };
+  // the write's consequences (occupants re-dropped off a host whose shape changed) are planned and admitted HERE, against the
+  // state the write leaves, before anything is appended: a refusal refuses the whole request, never half of it (review of
+  // PR #260, followups.js:58: a throw after the commit left a saved edit nobody was sent)
+  const settle = planResettle(w, actor, plan.ops, st, plan.after);
   const actE = actOf(w, actor, verb, sent, CTX.operator && CTX.operator === actor && !ctx.cap ? { ...(ctx.actExtra ?? {}), operator: true } : ctx.actExtra);   // an operator's repair says so, in the act
   const changeE = changeShape(plan, w.entries.length, w);
-  w.fits(actE, changeE); // both lines fit, or neither is written
+  w.fits(actE, changeE, ...resettleEntries(w, settle, w.entries.length)); // every line fits, or none is written
   // the budget counts THIS write too, not only what came before it (review 10-14 C0: a 300 KiB batch in an empty window passed a 256 KiB cap)
   if (!ctx.cap || ctx.cap.kind === "reaction" || ctx.cap.kind === "handle") rateCheck(w, actor, "act", JSON.stringify(actE).length + JSON.stringify(changeE).length);
   const act = w.append(actE);
   const seq = changeEntry(w, plan, act);
   const after = w.state();
-  resettleOccupants(w, actor, plan.ops, st, after, act, ctx.notes);
+  applyResettle(w, settle, act, ctx.notes);
   // an edit that moves, re-parents or removes a thing in someone's hand takes it out of the hand: it is where the edit
   // put it now. (R, 10-10: moved a held barrel in edit mode; her client let go, the authority didn't, and every throw
   // after was refused from a hand the two no longer agreed on.)
