@@ -1,6 +1,6 @@
 // the water level seen from under it (#254): fog, the background, Snell's window (watervolumes.js); authored water volumes,
 // air boxes and environments (#248) wait for their components to be registered (PROTOCOL §4)
-import { updateWater, updateWaterView, setWaterObjects, setWaterClock, environmentSettings, waterDebug, applyEnvLight } from './lib/watervolumes.js';
+import { updateWater, updateWaterView, setWaterObjects, setWaterClock, setSkyHider, environmentSettings, waterDebug, applyEnvLight } from './lib/watervolumes.js';
 // eidoverse-worlds browser client.
 //
 // Two planes: the world log (verbs, ordered, replayed on join) and presence
@@ -16,7 +16,7 @@ import { THREE, scene, camera, renderer, canvas } from './lib/core.js';
 import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
 import { CONFIG, bus, report, tee, colorFor } from './lib/base.js';
 import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, ANIM_ORDER } from './lib/avatar.js';
-import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
+import { updateSky, updateAutoSystems, skyArgs, setCloudQuality, hideSkyForWater } from './lib/sky.js';
 import { setSkyArgsSource, entities, buildsPending, anyBuildsPending, avatarMounts, roleOf, worldHasOwner, bagOf, bags, seatSocket, socketsOn, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
 import { presence } from './lib/presence.js';
 import { initWorldQuad } from './lib/worldquad.js';
@@ -617,6 +617,7 @@ registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots f
 registerSystem('sounds', () => tickSounds(), { every: 2 });      // panners follow entities, the listener the camera
 setWaterObjects(() => entities);
 setWaterClock(serverNow);
+setSkyHider(hideSkyForWater);
 registerSystem('water', updateWater);
 registerSystem('me-drive', (dt) => {
   if (CONFIG.renderer) { /* camera is driven per snap request */ }

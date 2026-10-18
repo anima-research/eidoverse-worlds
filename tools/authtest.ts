@@ -84,7 +84,7 @@ const proc = Bun.spawn([process.execPath, "run", join(import.meta.dir, "..", "se
   env: {
     // a scratch store too: the upload legs write files, and they belong in the scratch dir, not assets/opt
     ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: DOOR,
-    HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0", AGENT_TOKENS_PATH: tokensPath, SKIP_OPT_SWEEP: "1", OPT_DIR: join(worldsDir, "opt"),
+    HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0", AGENT_TOKENS_PATH: tokensPath, SKIP_OPT_SWEEP: "1", OPT_DIR: optDir,
   },
   stdout: "ignore", stderr: "inherit",
 });

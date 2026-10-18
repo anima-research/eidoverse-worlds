@@ -4069,6 +4069,9 @@ export class WorldAgent {
    *  fix}}. */
   request(verb: string, args: Record<string, unknown> = {}): Promise<any> {
     if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ ok: false, refused: { code: "not-joined", reason: "not in a world" } });
+    // speech ends composing, by whichever route it's sent (say(), or act {verb: "say"}): the throttle clears, and whoever
+    // keeps this body's typing dots up (the door's TypingRelay, #234) lets them end with the bubble
+    if (verb === "say") { this._typingUntil = 0; this.onSaid?.(); }
     // holes r3 F2: the authority judges this body's water with the stature its mover is handed (in water: stature())
     if (verb === "move" && this.water && args.height === undefined) args = { ...args, height: this.stature() };
     const id = `v${++this.histId}`;
@@ -4200,10 +4203,7 @@ export class WorldAgent {
   // disagree on well-formed are one layer). Malformed trio → plain say: an
   // internal caller's bug must not silently ride protocol keys.
   say(text: string, extra?: { spoken?: boolean; utt?: number; t0?: number; to?: string }): Promise<any> {
-    // speech ends composing: the throttle clears, and whoever keeps this body's typing dots up (the door's TypingRelay,
-    // #234) lets them end with the bubble
-    this._typingUntil = 0;
-    this.onSaid?.();
+    // (speech ends composing: request() clears the typing throttle and calls onSaid for every say)
     const args: Record<string, unknown> = { text, ...(typeof extra?.to === "string" && extra.to ? { to: extra.to } : {}) };
     if (extra?.spoken === true && Number.isSafeInteger(extra.utt) && (extra.utt as number) >= 0) {
       args.spoken = true;
@@ -4214,7 +4214,7 @@ export class WorldAgent {
     return this.request("say", { text: args.text, ...(args.to ? { to: args.to } : {}), ...(args.spoken ? { spoken: true, utt: args.utt, ...(args.t0 !== undefined ? { t0: args.t0 } : {}) } : {}) }).then((r: any) => { if (r && !r.ok) console.warn(`[agent] say refused: ${r.refused?.reason ?? r.refused?.code}`); return r; });
   }
 
-  /** Called after each `say` this body sends (say()), so whoever keeps its typing dots up (the door's TypingRelay) can
+  /** Called after each `say` this body sends (say(), or act {verb: "say"}: request()), so whoever keeps its typing dots up (the door's TypingRelay) can
    *  let them end with the bubble. */
   onSaid: (() => void) | null = null;
 

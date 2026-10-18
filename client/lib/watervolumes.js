@@ -9,7 +9,10 @@ import { state, onWorldChange } from './state.js';
 import { MAX_WATER, MAX_AIR, waterParams, mediumAt, vector } from '../../shared/water.js';
 import { setEnvironmentFloor } from './terrain.js';
 import { levelWaterInfo, surfaceHeightAt, waterAt as levelWaterAt } from './water.js';
-import { hideSkyForWater } from './sky.js';
+// the sky's under-water switch, injected by main.js (setSkyHider): importing sky.js here pulled the whole sky (assets,
+// the boot gate, the baked domes) into everything that imports the controller
+let hideSkyForWater = (_on) => {};
+export function setSkyHider(fn) { hideSkyForWater = typeof fn === 'function' ? fn : () => {}; }
 const { uniform, uniformArray, positionWorld, cameraPosition, output, Fn, Loop, If, Break, Continue, float, int, bool, vec2, vec3, vec4,
   array, select, min, max, exp, distance, all } = TSL;
 let objects = () => new Map();
