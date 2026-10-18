@@ -707,7 +707,7 @@ const cases: Case[] = [
   { id: "OS7", what: "…the docs say oscillate and never bob as a motion type (AGENTS.md, PROTOCOL.md, PHYSICS.md, DESIGN.md, the agent); the version history and the registry changelog record the rename", run() {
       const files = ["AGENTS.md", "spec/PROTOCOL.md", "spec/PHYSICS.md", "DESIGN.md", "mcpl/agent.ts"]; const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history"));
       const motionBob = /pendulum[^\n]{0,40}\bbob\b|\bbob\b[^\n]{0,40}\bpath\b|type: ?['"]bob['"]/;
-      return { stale: files.filter((f) => motionBob.test(readText(f))), says: files.filter((f) => /\boscillate\b/.test(readText(f))), vh: /`oscillate`/.test(vh) && /`bob`/.test(vh), cl: /oscillate/.test(readText("spec/REGISTRY-CHANGELOG.md").split("\n").filter((l: string) => /^- 2026-10-17/.test(l)).join("\n")) }; },
+      return { stale: files.filter((f) => motionBob.test(readText(f))), says: files.filter((f) => /\boscillate\b/.test(readText(f))), vh: /`oscillate`/.test(vh) && /`bob`/.test(vh), cl: /oscillate/.test(readText("spec/REGISTRY-CHANGELOG.md").split("\n").filter((l: string) => /^- 2026-10-1[78]/.test(l)).join("\n")) }; },
     good: (o) => !o.stale.length && o.says.length === 5 && o.vh && o.cl },
   // ---------------- X: the record ----------------
   { id: "X1", what: "the version history records the renames at minor 0, and the spec body speaks the new words (§5 consent, §7a rule 4)", run() {
