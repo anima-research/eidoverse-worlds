@@ -271,6 +271,22 @@ if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
     CHROME ? CHROME : "the browser lane is REQUIRED: set CHROME=/path/to/chrome (Chromium or Chrome for Testing), or `bunx playwright install chromium`");
   if (CHROME && !v) problems.push(`${CHROME} --version printed nothing: is it a Chromium?`);
 }
+// The browser pages load the asset library (Skye's toolkit modules, sky, avatars): a separate public repo, pinned here.
+// Declared like Chrome: required for the browser lane, never fetched silently, never read from a guessed path.
+const LIBRARY_REPO = "https://github.com/SkyeShark/eidoverse-video.git";
+const LIBRARY_PIN = "e9f80d02529176a87f292fb0e3aeafad3a9ba09f";
+let LIBRARY: string | null = null;
+if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
+  const want = process.env.EIDOVERSE_DIR;
+  const fix = `git clone ${LIBRARY_REPO} <dir> && git -C <dir> checkout ${LIBRARY_PIN}, then EIDOVERSE_DIR=<dir>`;
+  if (!want) problems.push(`the browser lane needs the asset library: set EIDOVERSE_DIR (${fix})`);
+  else if (!fs.existsSync(path.join(want, "eidoverse", "terrain.js"))) problems.push(`EIDOVERSE_DIR=${want} is not an eidoverse-video checkout (no eidoverse/terrain.js): ${fix}`);
+  else {
+    LIBRARY = path.resolve(want);
+    const head = spawnSync("git", ["-C", LIBRARY, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout?.trim() ?? "";
+    console.log(`  library   ${head ? head.slice(0, 12) : "(not a git checkout)"}  pinned ${LIBRARY_PIN.slice(0, 12)}  ${LIBRARY}${head && head !== LIBRARY_PIN ? "  (note: not the pinned commit)" : ""}`);
+  }
+}
 if (problems.length) {
   console.log(`\nprotocol gate: FAILED before any suite ran:`); for (const p of problems) console.log(`  - ${p}`);
   process.exit(1);
@@ -296,6 +312,7 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
     WORLDS_DIR: path.join(dir, "worlds"), PATCH_DIR: path.join(dir, "patched"), SKIP_OPT_SWEEP: "1" };
   if (PY) env.PYTHON = PY;
   if (CHROME) env.CHROME = CHROME;
+  if (LIBRARY && laneOf(name) === "browser") env.EIDOVERSE_DIR = LIBRARY;   // read-only use; every other lane keeps its empty library
   const [script, ...args] = file.split(" ");
   let cmd = [process.execPath, path.resolve(ENGINE, "tools/protocol", script), ...args];
   const lock = process.env.PROTOCOL_HEADLESS_LOCK, guard = process.env.PROTOCOL_PERF_GUARD;

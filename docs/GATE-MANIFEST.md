@@ -9,7 +9,7 @@ disagree, so the table can't drift.
 
 ```sh
 bun install --frozen-lockfile                 # in the checkout root, in client/, and in mcpl/
-CHROME=/path/to/chrome bun tools/protocol/run.ts    # or: bun run test:protocol
+CHROME=/path/to/chrome EIDOVERSE_DIR=/path/to/eidoverse-video bun tools/protocol/run.ts    # or: bun run test:protocol
 ```
 
 Exit 0 means the gate passed. Exit 1 means a suite failed, a suite or a check was skipped, or the preflight found a
@@ -73,7 +73,7 @@ as its own process group, with this environment:
 |---|---|---|
 | `HOME` | `<suite dir>/home` (empty) | nothing in `~` is read: no playwright cache, no `~/eido`, no dotfiles |
 | `TMPDIR`, `PROTOCOL_SCRATCH` | `<suite dir>` | every `mkdtemp`, scratch world, sandbox FIFO and Chromium profile lands here |
-| `EIDOVERSE_DIR` | `<suite dir>/library` (empty) | the asset library (`../eidoverse-video` by default) is host data; the gate never sees it |
+| `EIDOVERSE_DIR` | `<suite dir>/library` (empty) for core and main; **the browser lane requires it** | the asset library is a separate public repo, `SkyeShark/eidoverse-video`, pinned at `e9f80d02529176a87f292fb0e3aeafad3a9ba09f`. Set `EIDOVERSE_DIR` to a checkout of it; without one the gate fails before any suite runs, naming the clone command. Only browser suites see it, read-only |
 | `OPT_DIR`, `WORLDS_DIR`, `PATCH_DIR` | `<suite dir>/{opt,worlds,patched}` | nothing writes into the checkout's `assets/opt`, `worlds/` or `patched/` |
 | `PATH` | the gate's bun directory, then the host's PATH | a nested `bun` is the declared bun |
 | `BUN_RUNTIME_TRANSPILER_CACHE_PATH` | `0` | a cached transpile once hid a stale module |
