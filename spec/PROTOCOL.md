@@ -493,7 +493,10 @@ world's blueprints (`@world.blueprints:<hash>`) by a `publish` request; a
 **copy** is made by `create {from: <hash>}`, which the authority expands into an
 explicit batch carrying every component (each part marked with
 `copy-of {from, key}`), so a copy folds with no resolver. An `update`
-request moves a copy to a newer version, keeping its own overrides.
+request moves a copy to a newer version, keeping its own overrides: a three-way
+merge per part, per component, per field, a part's `parent` included (a part
+reparented upstream is reparented in the copy; the copy's root stays where it
+is).
 
 ## 5. Two planes
 

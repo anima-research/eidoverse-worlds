@@ -119,20 +119,24 @@ function buildUpdate(ctx, a, w) {
   const have = new Map(); for (const id of [a.copy, ...descendants(ctx.st, a.copy)]) { const k = ctx.st.entities[id].c["copy-of"]?.key; if (k !== undefined && !have.has(k)) have.set(k, id); }
   const fresh = partIds(ctx.st, a.copy, base.root, theirs.parts.map((p) => p.key).filter((k) => !have.has(k)));
   const idOf = (key) => (key === base.root ? a.copy : have.get(key) ?? fresh.get(key));
-  // references are merged as values in this world's ids: a part key → its id here (an unknown key is unbound, as on copy)
-  const inIds = (c) => rebindAll(clone(c), (x) => idOf(x) ?? null);
+  // references are merged as values in this world's ids: a part key → its id here (an unknown key is unbound, as on copy).
+  // A part's parent too: it merges like any component, so a part reparented upstream is reparented here (Antra's review
+  // of f91840e5: the merge skipped parent for every existing part, leaving a reparented part's new local transform under
+  // its old parent, 3 m off). The copy's root has no parent in a record (where the copy sits is its own).
+  const inIds = (c) => { const o = rebindAll(clone(c), (x) => idOf(x) ?? null); if (o.parent) o.parent = { ...o.parent, to: idOf(o.parent.to) }; return o; };
   const B = Object.fromEntries(base.parts.map((p) => [p.key, inIds(p.components)])), T = Object.fromEntries(theirs.parts.map((p) => [p.key, inIds(p.components)]));
   const eq = (x, y) => JSON.stringify(x) === JSON.stringify(y);
-  const ops = [], conflicts = [], kept = [], orphaned = [];
-  const skipComp = new Set(["copy-of", "parent"]);
+  const ops = [], made = [], conflicts = [], kept = [], orphaned = [];
+  const skipComp = new Set(["copy-of", "parent"]);   // "is this gone part still as the record left it?" (copy-of, parent: placement)
+  const unmerged = new Set(["copy-of"]);
   for (const key of new Set([...Object.keys(B), ...Object.keys(T)])) {
     const id = idOf(key), mineE = ctx.st.entities[id];
-    if (!B[key]) { const c = clone(T[key]); if (c.parent) c.parent = { ...c.parent, to: idOf(c.parent.to) }; c["copy-of"] = { from: a.to, key };
-      ops.push(...createOps(id, c)); continue; }
+    if (!B[key]) { const c = clone(T[key]); c["copy-of"] = { from: a.to, key };   // its parent is already in ids (inIds)
+      made.push(...createOps(id, c)); continue; }   // made first: an existing part may be reparented onto a new one
     if (!T[key]) { if (mineE && Object.keys(B[key]).every((k) => skipComp.has(k) || eq(B[key][k], mineE.c[k]))) ops.push(delOp(id)); else if (mineE) orphaned.push(id); continue; }
     if (!mineE) { kept.push({ id, why: "you deleted it in this copy" }); continue; }
     for (const comp of new Set([...Object.keys(B[key]), ...Object.keys(T[key])])) {
-      if (skipComp.has(comp) || (key === base.root && comp === "transform")) continue;
+      if (unmerged.has(comp) || (key === base.root && (comp === "transform" || comp === "parent"))) continue;
       const b = B[key][comp], t = T[key][comp], m = mineE.c[comp];
       if (eq(b, t)) continue; // nothing new upstream
       if (eq(m, b)) { ops.push(t === undefined ? delOp(id, comp) : setOp(id, comp, t)); continue; }
@@ -151,6 +155,7 @@ function buildUpdate(ctx, a, w) {
       if (choice === "theirs") { const cur = ops.findLast((o) => o.id === id && o.comp === c.component)?.value ?? clone(ctx.st.entities[id].c[c.component]);
         const v = f ? { ...cur, [f]: c.theirs[f] } : c.theirs; ops.push(setOp(id, c.component, v)); } } }
   ops.push(setOp(a.copy, "copy-of", { ...root.c["copy-of"], from: a.to }));
+  ops.unshift(...made);
   if (orphaned.length) ctx.notes.push({ orphaned, why: "gone upstream but you changed them here: kept, still yours" });
   if (kept.length) ctx.notes.push({ keptYours: kept });
   for (const o of ops) ctx.refs.add(o.id);
