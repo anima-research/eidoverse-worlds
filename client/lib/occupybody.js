@@ -1,6 +1,6 @@
 // seatbody — a body at a socket, every frame: where it is, how it got there, and what it does there.
 //
-// One driver for every seated body — mine (localbody.js) and everyone else's (remotes.js) — so a sitter looks the same
+// One driver for every seated body — mine (localbody.js) and everyone else's (remotes.js) — so an occupant looks the same
 // on every screen: the same transform (world.js mountTransform: the socket, its part's motion, the anchor), the same
 // signals (client/lib/socksignals.js: closed forms of the thing's motion, the occupant's input from their presence), the
 // same pose evaluation (shared/sockbody.js evalPose) and the same reach targets. What the socket says is data
@@ -29,14 +29,14 @@ const _m = new THREE.Matrix4(), _mv = new THREE.Vector3(), _mq = new THREE.Quate
 
 /** The pose choices that bear on one occupant: their own, and (in a sync group) every occupant's of the same thing
  *  whose socket shares the group — all from presence, so every client gathers the same list. */
-export function occupyChoices(riderId, m, body) {
+export function occupyChoices(occupantId, m, body) {
   if (!body?.sync) return m?.pose ? [{ name: m.pose, at: m.at ?? 0 }] : [];
   const host = seatSocket(m.to)?.host;
   const out = [];
   for (const [id, o] of avatarMounts) {
     if (!o.pose) continue;
     const s = o.to === m.to ? null : seatSocket(o.to);   // another seat on the same thing, in the same group
-    if (id !== riderId && (!s || s.host !== host || bodyOf(s.station)?.sync !== body.sync)) continue;
+    if (id !== occupantId && (!s || s.host !== host || bodyOf(s.station)?.sync !== body.sync)) continue;
     out.push({ name: o.pose, at: o.at ?? 0 });
   }
   return out;
@@ -65,8 +65,8 @@ function thingPoint(id, at, part, out, qIn = null, qOut = null) {
  *  the clip name presence should carry, and how far into getting on it is — or null when it isn't seated (or its seat
  *  isn't live yet: the thing is still loading). `xr` is a remote occupant's tracked-hands sample (presence `xr`); the
  *  local occupant's hands are read from the headset. */
-export function driveOccupied(av, riderId, { dt, nowMs, path = null, local = false, xr = null }) {
-  const m = avatarMounts.get(riderId);
+export function driveOccupied(av, occupantId, { dt, nowMs, path = null, local = false, xr = null }) {
+  const m = avatarMounts.get(occupantId);
   if (!m || !av) return null;
   const seat = seatSocket(m.to);   // m.to is the socket; what it hangs on carries the motion, the reach and exit frames
   const sock = seat?.sock;
@@ -79,9 +79,9 @@ export function driveOccupied(av, riderId, { dt, nowMs, path = null, local = fal
   // keys, the look (aimYaw/aimPitch) unless the view is locked — the same filter on every client
   const inp = m.in ? { ...(body.input.move !== 'none' ? { throttle: m.in.throttle, steer: m.in.steer } : {}), ...(body.input.look !== 'locked' ? { aimYaw: m.in.aimYaw, aimPitch: m.in.aimPitch } : {}) } : null;
   const signals = socketSignals({ comp, sock, base, nowMs, input: inp });
-  const chosen = choosePose(body, occupyChoices(riderId, m, body));
+  const chosen = choosePose(body, occupyChoices(occupantId, m, body));
   const ev = evalPose(chosen.spec, signals);
-  const sw = mountTransform(riderId, _p, { path, av }, ev.offset);
+  const sw = mountTransform(occupantId, _p, { path, av }, ev.offset);
   if (!sw) return null;
 
   // ---- getting on (the transition starts the first frame this client sees the body on this seat)
@@ -103,7 +103,7 @@ export function driveOccupied(av, riderId, { dt, nowMs, path = null, local = fal
     // origin) is simply there: a glide across the world would be a lie about how they got on
     st.instant = st.from.distanceTo(_p) > 6;
   }
-  // the socket's data changed under the sitter (an edit, a script): re-read hold and reach
+  // the socket's data changed under the occupant (an edit, a script): re-read hold and reach
   const sig = JSON.stringify(sock);
   if (st.sig !== sig) { st.sig = sig; releaseLimbs(av, st); av.setSeatHold(body.hold); }
 

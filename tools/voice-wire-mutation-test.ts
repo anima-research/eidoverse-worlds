@@ -19,7 +19,7 @@ const cases = [
     to: "const { t: _t, seq: _seq, ...still } = withoutOnceAnim(",
     witness: "without mic or hear (the next live frame brings them)" },
   { name: "look drops the voice note", file: "mcpl/agent.ts",
-    from: "${winged}${riding}${voiceNote(p.pose)}`);", to: "${winged}${riding}`);",
+    from: "${winged}${occupying}${voiceNote(p.pose)}`);", to: "${winged}${occupying}`);",
     witness: "the agent's look says it in words" },
 ];
 async function run(m?: object) {

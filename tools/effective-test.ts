@@ -158,8 +158,8 @@ if (!EFF) {
 
   // a body seat: no entity record, on a socket child → the socket itself (the browser's mountTransform)
   {
-    const r = eff("rider", view({ bench: { pos: [4, 0, 4], yaw: 0 }, "bench.seat": { pos: [0, 0.5, 0], socket: { name: "seat", body: {} } } },
-      { "bench.seat": { to: "bench", offset: [0, 0.5, 0] }, rider: { to: "bench.seat" } }), T0);
+    const r = eff("occupant", view({ bench: { pos: [4, 0, 4], yaw: 0 }, "bench.seat": { pos: [0, 0.5, 0], socket: { name: "seat", body: {} } } },
+      { "bench.seat": { to: "bench", offset: [0, 0.5, 0] }, occupant: { to: "bench.seat" } }), T0);
     check("a mounted body sits on its socket", r.ok && near3(r.pos, [4, 0.5, 4]), JSON.stringify(r));
   }
 
@@ -233,7 +233,7 @@ const distOf = (line: string) => { const m = line.match(/:\s*([\d.]+)m\s+(\w+)\s
   // the origin-standing agent; t=2s → a=π → (0,·,−5) = N. Same distance.
   const p1 = distOf(crateLine(a.look(T0)));
   const p2 = distOf(crateLine(a.look(T0 + 2000)));
-  check("bearing follows the ride (S → N)", p1?.b === "S" && p2?.b === "N", JSON.stringify({ p1, p2 }));
+  check("bearing follows the motion (S → N)", p1?.b === "S" && p2?.b === "N", JSON.stringify({ p1, p2 }));
   check("distance is measured to the effective position", p1 != null && near(p1.d, 5, 0.15) && p2 != null && near(p2.d, 5, 0.15), JSON.stringify({ p1, p2 }));
   a.close();
 }
@@ -434,44 +434,44 @@ console.log("\n━━ precision: mount chain wins over own motion ━━");
 }
 
 // ---- body size (pose.scale): a profiled seat's contact is measured at the
-// rider's AUTHORED size, so it multiplies the rider's chosen size — the
-// browser's occupants.js riderScalar(root × avatar.bodyScale()) — and nothing else.
-console.log("\n━━ body size: a profiled seat lowers a scaled rider in proportion ━━");
+// occupant's AUTHORED size, so it multiplies the occupant's chosen size — the
+// browser's occupants.js occupantScalar(root × avatar.bodyScale()) — and nothing else.
+console.log("\n━━ body size: a profiled seat lowers a scaled occupant in proportion ━━");
 if (EFF) {
   // chair at the origin, unscaled; a surface socket 0.5 up; contact plane 0.45
-  // below the rider root at authored size → root y = 0.5 − 0.45·u
+  // below the occupant root at authored size → root y = 0.5 − 0.45·u
   // the seat: a socket child whose station anchors at the surface (D14; the station since the shape audit 10-16)
   const chair = { pos: [0, 0, 0], yaw: 0, scale: 1 };
   const seat = { pos: [0, 0.5, 0], yaw: 0, socket: { name: "seat" }, station: { action: "sit", anchor: "surface", anim: "sitchair" } };
   const seatMount = { to: "chair", offset: [0, 0.5, 0] };
-  const view = (riderScale?: (id: string) => number) => ({
+  const view = (occupantScale?: (id: string) => number) => ({
     entity: (id: string) => (id === "chair" ? chair : id === "chair.seat" ? seat : undefined),
-    mount: (id: string) => (id === "rider" ? { to: "chair.seat" } : id === "chair.seat" ? seatMount : undefined),
+    mount: (id: string) => (id === "occupant" ? { to: "chair.seat" } : id === "chair.seat" ? seatMount : undefined),
     seatVerdict: () => ({ status: "countersigned", pose: "sitchair", contactY: 0.45 }),
-    ...(riderScale ? { riderScale } : {}),
+    ...(occupantScale ? { occupantScale } : {}),
   });
   for (const [u, y] of [[1, 0.05], [0.5, 0.275], [2, -0.4]] as const) {
-    const r = EFF.effectiveWorldTransform("rider", view(() => u), T0);
-    check(`a ${u}× rider's root sits at y = 0.5 − 0.45·${u} = ${y}`, r.ok && near3(r.pos, [0, y, 0]) && r.seat?.state === "profiled", JSON.stringify(r));
+    const r = EFF.effectiveWorldTransform("occupant", view(() => u), T0);
+    check(`a ${u}× occupant's root sits at y = 0.5 − 0.45·${u} = ${y}`, r.ok && near3(r.pos, [0, y, 0]) && r.seat?.state === "profiled", JSON.stringify(r));
   }
-  const absent = EFF.effectiveWorldTransform("rider", view(), T0);
-  check("a view without riderScale reads the rider as 1×", absent.ok && near3(absent.pos, [0, 0.05, 0]), JSON.stringify(absent));
+  const absent = EFF.effectiveWorldTransform("occupant", view(), T0);
+  check("a view without occupantScale reads the occupant as 1×", absent.ok && near3(absent.pos, [0, 0.05, 0]), JSON.stringify(absent));
 
-  // the agent's own view feeds riderScale from the rider's presence sample
+  // the agent's own view feeds occupantScale from the occupant's presence sample
   // (clamped; absent = 1) — the seam the text tier's seated perception reads
   const a = offlineAgent() as any;
   a.entities.set("chair", { id: "chair", model: "x.glb", actor: "t", ...chair });
   a.entities.set("chair.seat", { id: "chair.seat", model: "", actor: "t", ...seat });
   a.mounts.set("chair.seat", seatMount);
-  a.mounts.set("rider", { to: "chair.seat" });
+  a.mounts.set("occupant", { to: "chair.seat" });
   a.seatVerdictFor = () => ({ status: "countersigned", pose: "sitchair", contactY: 0.45 });
-  a.people.set("rider", { id: "rider", avatar: "", pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "sitchair", scale: 2 } });
-  const big = a.eff("rider", T0);
-  check("the agent seats a 2× rider (presence scale 2) at y = −0.4", big.ok && near3(big.pos, [0, -0.4, 0]), JSON.stringify(big));
-  a.people.get("rider").pose.scale = 9;
-  check("…and clamps an untrusted presence scale (9 → 2)", near3(a.eff("rider", T0).pos, [0, -0.4, 0]));
-  delete a.people.get("rider").pose.scale;
-  check("…and an absent presence scale is 1×", near3(a.eff("rider", T0).pos, [0, 0.05, 0]));
+  a.people.set("occupant", { id: "occupant", avatar: "", pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "sitchair", scale: 2 } });
+  const big = a.eff("occupant", T0);
+  check("the agent seats a 2× occupant (presence scale 2) at y = −0.4", big.ok && near3(big.pos, [0, -0.4, 0]), JSON.stringify(big));
+  a.people.get("occupant").pose.scale = 9;
+  check("…and clamps an untrusted presence scale (9 → 2)", near3(a.eff("occupant", T0).pos, [0, -0.4, 0]));
+  delete a.people.get("occupant").pose.scale;
+  check("…and an absent presence scale is 1×", near3(a.eff("occupant", T0).pos, [0, 0.05, 0]));
   a.close();
 }
 

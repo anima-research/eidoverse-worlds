@@ -464,8 +464,8 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
       Object.defineProperty(P, "__wingBones", { value: Object.keys(wingParent), enumerable: false });
     }
     // VRM 0.x bodies face -Z; the reach frame algebra needs to know (six of
-    // the shipped rigs). The ragdoll never asked, so this rides as a
-    // non-enumerable rider rather than a change to its P contract.
+    // the shipped rigs). The ragdoll never asked, so this travels as a
+    // non-enumerable extra rather than a change to its P contract.
     Object.defineProperty(P, "__vrm0", { value: !!g.extensions?.VRM, enumerable: false });
     skeletons.set(key, P);
     return P;

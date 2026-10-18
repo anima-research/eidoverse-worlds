@@ -150,7 +150,7 @@ const WORLD_ENTITY = "@world", PLACE_SIGHT_M = 30, PLACE_LOOK_MAX = 12, PLACE_LI
 /** A thing with no entrance is walked up to: stopped this far short of its origin (its footprint unknown) / out from its
  *  footprint's nearest point (metres; the body's own, not the thing's). */
 const THING_STOP = 0.8, THING_STANDOFF = 0.5;
-/** This body's walking capsule: an agent's body is its authored size (no agent sets a scale: riderScale answers 1 for
+/** This body's walking capsule: an agent's body is its authored size (no agent sets a scale: occupantScale answers 1 for
  *  it), so its walk resolves with colliderFor(1) (mcpl/physics.ts WALKING), and its shoves and stalls touch with the same. */
 const BODY_CAP = colliderFor(1);
 const GEOMETRY_LOADING = "things placed nearby are still loading their shape, so a walk now could pass through them — try again in a moment";
@@ -434,7 +434,7 @@ export class WorldAgent {
   /** a shove gave a thing this body's momentum: for a moment it walks at most what it kept (shared/shove.js keptOf) */
   private walkCap: { v: number; until: number } | null = null;
   entities = new Map<string, Entity>();
-  /** who/what rides what: mount verbs, keyed by the rider (body or thing) */
+  /** who/what occupies what: mount verbs, keyed by the occupant (body or thing) */
   /** Every mount's full wire shape — offset/yaw OVERRIDE socket defaults in
    *  the world transform (#82), so dropping them here made the composed
    *  position disagree with every renderer. */
@@ -599,8 +599,8 @@ export class WorldAgent {
   /** participant -> when their current non-locomotion stint began (jump, sit…) */
   private nonLocoSince = new Map<string, number>();
   /** My live reach descriptors, one entry per limb (shared/reachwire.js).
-   *  They ride every presence packet; every receiver re-solves the relation
-   *  against its own scene. The `reached` rider is MY solver's attestation,
+   *  They travel on every presence packet; every receiver re-solves the relation
+   *  against its own scene. The `reached` flag is MY solver's attestation,
    *  kept honest by reachTick(). */
   reaches = new Map<string, { t: any; palm?: false; reached?: true }>();
   private reachBodies = new Map<string, ReachBody | null>();               // avatar path -> solver body
@@ -4428,7 +4428,7 @@ export class WorldAgent {
     }
   }
 
-  /** Play a named anim once — pose.anim, a rider on the next presence packet,
+  /** Play a named anim once — pose.anim, a field on the next presence packet,
    *  the same channel the browser's action bar uses. Receivers resolve the
    *  name to a library clip; nothing is logged. */
   playOnce(name: string) { this.pendingAnim = name; }
@@ -4579,9 +4579,9 @@ export class WorldAgent {
       entity: (eid) => this.entities.get(eid),
       mount: (eid) => this.mounts.get(eid),
       seatVerdict: (eid) => this.seatVerdictFor(eid),
-      // a rider's chosen size, from its own presence (absent = 1). An agent's own
+      // an occupant's chosen size, from its own presence (absent = 1). An agent's own
       // body is its authored size: no agent sets `scale`, so its wire carries none.
-      riderScale: (eid) => eid === this.name ? 1 : clampBodyScale(this.people.get(eid)?.pose?.scale),
+      occupantScale: (eid) => eid === this.name ? 1 : clampBodyScale(this.people.get(eid)?.pose?.scale),
     }, nowMs);
   }
 
@@ -4597,8 +4597,8 @@ export class WorldAgent {
   /** The declared-approximation suffix for a seated person's line (#101):
    *  the same reason string the browser consoles and the nameplate ≈ carry —
    *  one contract, three declarations. Empty when the seat is profiled. */
-  private seatSuffix(id: string, ride: { to: string }): string {
-    const station = this.socketRec(ride.to)?.station;
+  private seatSuffix(id: string, occ: { to: string }): string {
+    const station = this.socketRec(occ.to)?.station;
     const g = seatGateCore({ sock: station, verdict: this.seatVerdictFor(id), pose: bodyOf(station)?.clip ?? "sitchair" });
     return g.apply ? "" : ` (seat approximate: ${g.reason})`;
   }
@@ -4645,14 +4645,14 @@ export class WorldAgent {
     // header says so and every dependent distance/bearing below is
     // suppressed — never measured from the stale controller pos while the
     // same line claims "seated on" (#92, B2).
-    const selfRide = this.mounts.get(this.name);
-    const selfEff = selfRide ? this.eff(this.name, nowMs) : null;
-    const meKnown = !selfRide || selfEff?.ok === true;
+    const selfOcc = this.mounts.get(this.name);
+    const selfEff = selfOcc ? this.eff(this.name, nowMs) : null;
+    const meKnown = !selfOcc || selfEff?.ok === true;
     const me = selfEff?.ok ? { x: selfEff.pos[0], y: selfEff.pos[1], z: selfEff.pos[2] } : this.pos;
     // #101: an uncorrected seat composition is never silent — the same
     // "(seat approximate: reason)" every renderer consumer declares.
     const selfSeatNote = selfEff?.ok && selfEff.seat?.state === "approximate" ? ` (seat approximate: ${selfEff.seat.reason})` : "";
-    const seated = selfRide ? `, seated on ${this.socketName(selfRide.to)}${selfEff?.ok && selfEff.moving ? ` (riding its ${selfEff.moving})` : ""}${selfSeatNote}` : "";
+    const seated = selfOcc ? `, seated on ${this.socketName(selfOcc.to)}${selfEff?.ok && selfEff.moving ? ` (carried by its ${selfEff.moving})` : ""}${selfSeatNote}` : "";
     if (meKnown) {
       L.push(`You are "${this.name}" in world "${this.world}" at (${me.x.toFixed(1)}, ${me.z.toFixed(1)}), ground height ${(this.float.on ? this.heightAt(me.x, me.z) : me.y).toFixed(2)}m${this.waterHere(me.x, me.z, me.y)}, facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}.`);
     } else {
@@ -4717,9 +4717,9 @@ export class WorldAgent {
       const posed = held ? `, holding a pose (${Object.keys(held).length} bones)` : "";
       const winged = foldedIn(p.pose) === true ? ", wings folded" : "";
       const moded = ((m) => (m && m !== "stand" ? `, ${m === "sit" ? "sitting" : m === "lie" ? "lying down" : m === "swim" ? "swimming" : m === "fly" ? "flying" : "falling"}` : ""))(readBodyMode(p.pose));
-      const ride = this.mounts.get(p.id);
-      const riding = ride ? ` — on ${this.socketName(ride.to)}${this.seatSuffix(p.id, ride)}` : "";
-      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${moded}${winged}${riding}${voiceNote(p.pose)}`);
+      const occ = this.mounts.get(p.id);
+      const occupying = occ ? ` — on ${this.socketName(occ.to)}${this.seatSuffix(p.id, occ)}` : "";
+      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${moded}${winged}${occupying}${voiceNote(p.pose)}`);
     }
 
     // a socket is part of its host (a seat, a hook): listed under the host, never as a thing of its own
@@ -4814,12 +4814,12 @@ export class WorldAgent {
       if (col === "mesh" || col === "exact" || col === "box") spoken.push("collider");
       const extra = Object.keys(c).filter((k) => !spoken.includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
-      const ride = this.mounts.get(e.id);
-      if (ride) aff.push(`mounted on ${this.socketName(ride.to)}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);
-      // who and what ride it: on it directly, or in one of its sockets (said with the socket's name)
+      const mnt = this.mounts.get(e.id);
+      if (mnt) aff.push(`mounted on ${this.socketName(mnt.to)}${f.ok && f.moving ? ` (carried by its ${f.moving})` : ""}`);
+      // who and what occupy it: on it directly, or in one of its sockets (said with the socket's name)
       const sockIds = new Set(socks.map((x) => x.id));
-      const riders = [...this.mounts.entries()].filter(([rid, m]) => !sockIds.has(rid) && (m.to === e.id || sockIds.has(m.to))).map(([rid, m]) => `${rid}${sockIds.has(m.to) ? ` (${this.socketRec(m.to)?.name})` : ""}`);
-      if (riders.length) aff.push(`carrying: ${riders.join(", ")}`);
+      const occupants = [...this.mounts.entries()].filter(([oid, m]) => !sockIds.has(oid) && (m.to === e.id || sockIds.has(m.to))).map(([oid, m]) => `${oid}${sockIds.has(m.to) ? ` (${this.socketRec(m.to)?.name})` : ""}`);
+      if (occupants.length) aff.push(`carrying: ${occupants.join(", ")}`);
       if (f.ok) {
         // the EFFECTIVE position — mount chain and motion composed at nowMs.
         // For an unmounted, unmoving thing this is exactly the folded pos.
@@ -4831,7 +4831,7 @@ export class WorldAgent {
         // composed (a part socket, an unknown motion type, a malformed link),
         // perception says whose frame the thing rides and why the coordinate
         // is withheld — never the stale pre-mount pos next to "mounted on".
-        const where = ride ? `position rides ${this.socketName(ride.to)}` : `position unavailable`;
+        const where = mnt ? `position rides ${this.socketName(mnt.to)}` : `position unavailable`;
         L.push(`  - [${this.handle(e.id)}] ${short}: ${where} — ${f.why}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
       }
     }

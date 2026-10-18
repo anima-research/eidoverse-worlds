@@ -30,9 +30,9 @@ export type EffectiveView = {
    *  and never rederives one. */
   seatVerdict?(id: string): { pose?: string; status: string; contactY?: number; refusal?: string; which?: string } | undefined;
   /** A seated BODY's chosen size (presence `pose.scale`, clamped; absent = 1) —
-   *  the browser's riderScalar input (occupants.js: root scale × avatar.bodyScale()).
+   *  the browser's occupantScalar input (occupants.js: root scale × avatar.bodyScale()).
    *  Absent method reads as 1. */
-  riderScale?(id: string): number;
+  occupantScale?(id: string): number;
 };
 
 export type Effective =
@@ -71,7 +71,7 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
 
   // A socket that rides a model part: the browser carries it in the part's node (animated from loaded geometry, part
   // rest transforms this side does not possess). Refusing is the honest option — slice one of #82; part support follows
-  // when the geometry does. Everything on it (a sitter, cargo) inherits the refusal through the chain.
+  // when the geometry does. Everything on it (an occupant, cargo) inherits the refusal through the chain.
   const ownSock = socketOf(e);
   if (ownSock && typeof ownSock.part === "string")
     return { ok: false, why: `socket "${ownSock.name}" rides part "${ownSock.part}" of ${m?.to ?? "its host"} — part geometry unavailable here`, link: m?.to ?? id };
@@ -108,9 +108,9 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
     // The profile correction (#101), bodies only: contact plane onto the
     // authored socket plane, along WORLD up (a mounted body renders upright —
     // yaw only — so the parent's tilted normal would smear it laterally; the
-    // B2 discriminator). contactY is measured at the rider's AUTHORED size and
-    // multiplies the rider's own scalar — its chosen body size, which the
-    // browser feeds riderScalar from avatar.bodyScale() (a 2× body's seat
+    // B2 discriminator). contactY is measured at the occupant's AUTHORED size and
+    // multiplies the occupant's own scalar — its chosen body size, which the
+    // browser feeds occupantScalar from avatar.bodyScale() (a 2× body's seat
     // contact sits twice as far below its root); the parent's scale must NOT
     // touch it. The gate here is the contract half
     // (seatGateCore): this reader has no mixer, so the contract IS its
@@ -120,7 +120,7 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
       const station = (view.entity(m.to) as any)?.station;   // what a body does at the socket (shape audit 10-16: once socket.body)
       const g = seatGateCore({ sock: station, verdict: view.seatVerdict?.(id), pose: typeof (station?.anim ?? station?.pose) === "string" ? (station.anim ?? station.pose) : "sitchair" });   // anim (R 10-17; pose before)
       if (g.apply) {
-        const rs = view.riderScale?.(id) ?? 1;
+        const rs = view.occupantScale?.(id) ?? 1;
         const c = applySeatCorrection(pos, g.contactY, Number.isFinite(rs) && rs > 0 ? rs : 1);
         if (c) { pos = c as [number, number, number]; seat = { state: "profiled" }; }
         else seat = { state: "approximate", reason: "non-finite correction" };

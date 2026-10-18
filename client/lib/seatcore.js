@@ -144,20 +144,20 @@ export function socketAnchor(sock) {
   return (sock?.anchor ?? sock?.body?.anchor) === "surface" ? "surface" : "legacy-root";
 }
 
-// ---- rider scale (B5) -------------------------------------------------------
+// ---- occupant scale (B5) ----------------------------------------------------
 
-/** The named shared definition of riderEffectiveScale: the rider avatar
+/** The named shared definition of occupantEffectiveScale: the occupant avatar
  *  root's world scalar scale at compose time, times its chosen body size —
  *  which shipped (bodyscale.js) and plugs in at this seam: occupants.js passes
- *  root scale × avatar.bodyScale(), and the text tier passes the rider's
- *  presence `scale` (mcpl/effective.ts riderScale). Nonuniform scale is an
+ *  root scale × avatar.bodyScale(), and the text tier passes the occupant's
+ *  presence `scale` (mcpl/effective.ts occupantScale). Nonuniform scale is an
  *  abstention, never an average. */
-export function riderScalar(scaleVec3) {
+export function occupantScalar(scaleVec3) {
   if (scaleVec3 == null) return { ok: true, s: 1 };
   const [sx, sy, sz] = scaleVec3;
-  if (!fin(sx) || !fin(sy) || !fin(sz)) return { ok: false, why: "non-finite rider scale" };
+  if (!fin(sx) || !fin(sy) || !fin(sz)) return { ok: false, why: "non-finite occupant scale" };
   if (Math.abs(sx - sy) > SCALE_UNIFORM_EPS || Math.abs(sy - sz) > SCALE_UNIFORM_EPS)
-    return { ok: false, why: "nonuniform rider scale" };
+    return { ok: false, why: "nonuniform occupant scale" };
   return { ok: true, s: sy };
 }
 
@@ -216,9 +216,9 @@ export function nameFromAvatarPath(path) {
  *  the body's contact geometry stays world-vertical: contactY·sin(tilt) of
  *  pure error, the named discriminator in the pitch/roll fixture. Body
  *  orientation-to-plane is a separate future mechanic, not this one. */
-export function applySeatCorrection(socketPoint, contactY, riderScale = 1) {
-  if (!fin3(socketPoint) || !fin(contactY) || !fin(riderScale)) return null;
-  return [socketPoint[0], socketPoint[1] - contactY * riderScale, socketPoint[2]];
+export function applySeatCorrection(socketPoint, contactY, occupantScale = 1) {
+  if (!fin3(socketPoint) || !fin(contactY) || !fin(occupantScale)) return null;
+  return [socketPoint[0], socketPoint[1] - contactY * occupantScale, socketPoint[2]];
 }
 
 // ---- the passive instrument's seat claim (the _v lesson) --------------------

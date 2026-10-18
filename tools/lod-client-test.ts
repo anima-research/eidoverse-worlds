@@ -31,7 +31,7 @@
 //
 // Negative controls, each named in its check: the churn of the first field
 // run (an "already light" answer re-asked every cooldown), a held tier swap
-// landing over a rider / cargo / a part motion / an edit hold, a lod ask a
+// landing over an occupant / cargo / a part motion / an edit hold, a lod ask a
 // non-KTX2 browser reports without ever sending, an authored `recipe`
 // extra read as a served lod, a governor lever overriding the resident's
 // "full detail". Dies at import on main (no lod_policy.js).
@@ -227,7 +227,7 @@ const sinceMark = (mark: number, id: string) => stub.colliderLog.slice(mark).fil
     && sinceMark(mark, 'ctl').includes('fit'), JSON.stringify(sinceMark(mark, 'ctl')));
 }
 const deps: [string, (id: string) => void][] = [
-  ['a body sits on it (avatarMounts)', (id) => stub.avatarMounts.set(`rider-of-${id}`, { to: id })],
+  ['a body sits on it (avatarMounts)', (id) => stub.avatarMounts.set(`occupant-of-${id}`, { to: id })],
   ['cargo is parented to it (parent.to)', (id) => { spawnAt(`cargo-${id}`, 10); door('set', { id: `cargo-${id}`, component: 'parent', value: { to: id } }); }],
   ['a part motion arrives (comp.motion.part)', (id) => door('set', { id, component: 'motion', value: { type: 'pendulum', part: 'Door', axis: [0, 1, 0], amp: 0.3, period: 2 } })],   // a swinging door is a pendulum now
   ['an edit hold begins (editHolds)', (id) => stub.editHolds.add(id)],

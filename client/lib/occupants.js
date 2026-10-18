@@ -9,14 +9,14 @@
 // lesson wearing seat-profile clothes).
 //
 // The runtime gate (seatcore.seatGate) additionally needs two local truths
-// the server cannot know: which mixer slot is ACTUALLY playing on the rider
+// the server cannot know: which mixer slot is ACTUALLY playing on the occupant
 // (setClip's fallback walk must never let "sit" consume a chair profile),
 // and the digest of the clip bytes this page really loaded (assets.js
 // hashes them once at fetch — a filename is not an identity).
 
 import { bus } from './base.js';
 import { vrmaShaLoaded } from './assets.js';
-import { makeVerdictCache, seatGate, riderScalar, nameFromAvatarPath, SEAT_CLIP_FILE } from './seatcore.js';
+import { makeVerdictCache, seatGate, occupantScalar, nameFromAvatarPath, SEAT_CLIP_FILE } from './seatcore.js';
 
 // The cache logic — epochs, pending demotion, event-rev floors — lives ONCE
 // in seatcore.makeVerdictCache, shared verbatim with the headless agent and
@@ -40,26 +40,26 @@ export function initOccupants() {
   cache.init();
 }
 
-/** The full gate for one mounted rider, assembled from the served verdict
- *  plus this page's runtime truths. `rider` is {path, av} — the avatar path
+/** The full gate for one mounted occupant, assembled from the served verdict
+ *  plus this page's runtime truths. `occ` is {path, av} — the avatar path
  *  the roster knows the body by, and the live wrapper (null while loading).
  *  Returns {applied:true, contactY, scale} or {applied:false, reason} — the
  *  reason is the declared string, shared verbatim with the other readers. */
-export function occupyCorrectionFor(rider, sock) {
-  if (!rider || !rider.path) return { applied: false, reason: 'no rider context' };
-  if (!rider.av) return { applied: false, reason: 'body loading' };
-  const name = nameFromAvatarPath(rider.path);
-  if (!name) return { applied: false, reason: 'no rider context' };
+export function occupyCorrectionFor(occ, sock) {
+  if (!occ || !occ.path) return { applied: false, reason: 'no occupant context' };
+  if (!occ.av) return { applied: false, reason: 'body loading' };
+  const name = nameFromAvatarPath(occ.path);
+  if (!name) return { applied: false, reason: 'no occupant context' };
   const verdict = cache.get(name);
   // body scaling shipped (Profile › Avatar, bodyscale.js) — on vrm.scene, not the root (the root carries the
-  // screen-sized plate). The body's own multiplier × whatever the root may carry is the rider's effective scale.
-  const bs = rider.av.bodyScale?.() ?? 1;
-  const sc = riderScalar([rider.av.root.scale.x * bs, rider.av.root.scale.y * bs, rider.av.root.scale.z * bs]);
+  // screen-sized plate). The body's own multiplier × whatever the root may carry is the occupant's effective scale.
+  const bs = occ.av.bodyScale?.() ?? 1;
+  const sc = occupantScalar([occ.av.root.scale.x * bs, occ.av.root.scale.y * bs, occ.av.root.scale.z * bs]);
   if (!sc.ok) return { applied: false, reason: sc.why };
   const g = seatGate({
     sock, verdict,
     pose: typeof sock?.pose === 'string' ? sock.pose : 'sitchair',   // sock: the seat's station
-    currentSlot: rider.av.currentSlot,
+    currentSlot: occ.av.currentSlot,
     loadedClipSha256: vrmaShaLoaded(SEAT_CLIP_FILE),
     currentClipSha256: verdict?.clipSha256,
   });
@@ -68,16 +68,16 @@ export function occupyCorrectionFor(rider, sock) {
 }
 
 // ---- declaration bookkeeping ------------------------------------------------
-// One console line per state CHANGE per rider — a seat that stays approximate
+// One console line per state CHANGE per occupant — a seat that stays approximate
 // through a whole sit logs once, not per frame; standing up clears the key so
 // the next sit declares afresh.
 
-const declared = new Map(); // riderId → last declared "to/slot state reason"
-export function declareOccupyState(riderId, to, slot, state, reason) {
+const declared = new Map(); // occupantId → last declared "to/slot state reason"
+export function declareOccupyState(occupantId, to, slot, state, reason) {
   const key = `${to}/${slot ?? 'seat'} ${state} ${reason ?? ''}`;
-  if (declared.get(riderId) === key) return;
-  declared.set(riderId, key);
-  if (state === 'approximate') console.info(`[seat] ${riderId} on ${to}/${slot ?? 'seat'}: seat approximate — ${reason}`);
-  else console.info(`[seat] ${riderId} on ${to}/${slot ?? 'seat'}: seat ${state}`);
+  if (declared.get(occupantId) === key) return;
+  declared.set(occupantId, key);
+  if (state === 'approximate') console.info(`[seat] ${occupantId} on ${to}/${slot ?? 'seat'}: seat approximate — ${reason}`);
+  else console.info(`[seat] ${occupantId} on ${to}/${slot ?? 'seat'}: seat ${state}`);
 }
-export function clearOccupyState(riderId) { declared.delete(riderId); }
+export function clearOccupyState(occupantId) { declared.delete(occupantId); }

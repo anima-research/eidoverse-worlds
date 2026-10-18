@@ -2136,7 +2136,7 @@ export class Avatar {
     this._puppet = v; this._applyBodyScale();
     return true;
   }
-  /** The body's model→root multiplier: chosen size × VR fit. The seat seam (occupants.js riderScalar) reads this. */
+  /** The body's model→root multiplier: chosen size × VR fit. The seat seam (occupants.js occupantScalar) reads this. */
   bodyScale() { return (this.userScale ?? 1) * (this._puppet ?? 1); }
   _applyBodyScale() {
     const sc = this.vrm?.scene;

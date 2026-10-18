@@ -19,7 +19,7 @@ export const resolveColliders = (pos, terrainAt) => terrainAt(pos.x, pos.z);
 
 // remotes.js (same cone, via motion.js) reads the mount table. Nothing under
 // test mounts anything, so an empty table and a "not riding" answer are the
-// honest stubs — mountTransform returns null for a rider with no mount.
+// honest stubs — mountTransform returns null for an occupant with no mount.
 export const avatarMounts = new Map();
 export const mountTransform = () => null;
 

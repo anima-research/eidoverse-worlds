@@ -32,7 +32,7 @@ import { buildFloraField, warmField, loadFloraModule } from './flora.js';
 import { applySky, whenSkyWarm } from './sky.js';
 import { whenBooted, bootDone } from './boot.js';
 import { warm, P_GATE } from './warmqueue.js';
-// seat correction for mounted riders (upstream #101) — the me-drive frame
+// seat correction for mounted occupants (upstream #101) — the me-drive frame
 // calls these for every seated body; their import fell on the fork side of
 // a merge hunk while the call site auto-merged, and every SIT threw 56
 // ReferenceErrors a second (antra, live, from a swing in commons2)
@@ -79,7 +79,7 @@ export function seatSocket(id) {
   if (c.disabled === true || ancestorsOf(id).some((a) => bagOf(a)?.disabled === true)) return null;
   return { id: String(id), host: parentIdOf(id), name: c.socket.name, sock: c.socket, station: c.station && typeof c.station === 'object' ? c.station : null };
 }
-/** Avatar attachments (a sitter, a passenger) — bodies aren't entities, so
+/** Avatar attachments (an occupant: sitting, standing at a station) — bodies aren't entities, so
  *  their mounts live here for remotes/controller to consume. {to: <socket id>, pose?, at?, in?} */
 export const avatarMounts = new Map();
 /** A body's seat is PRESENCE (PROTOCOL: bodies aren't entities; nothing is logged): its owner's pose frame carries
@@ -448,24 +448,24 @@ export function socketWorldPos(id, out) {
 // A seated body's world transform, live: the SOCKET's realized object (realize/models.js: an Empty attached to its host,
 // or into the host's moving part at rest), read through its matrixWorld — the host's CURRENT transform (mid-pendulum,
 // mid-path: motion.js has already ticked it this frame), the part's displacement when the socket rides one, then the
-// socket's own pose. This is what makes a sitter actually RIDE the swing: their body is derived, not streamed. The
-// scene graph carries the part, so a sitter and a thing on that socket ride it the same way.
+// socket's own pose. This is what makes an occupant actually RIDE the swing: their body is derived, not streamed. The
+// scene graph carries the part, so an occupant and a thing on that socket ride it the same way.
 const _mtQ = new THREE.Quaternion();
 const _mtF = new THREE.Vector3();
 const _mtV = new THREE.Vector3();
 const _mtR = new THREE.Quaternion(), _mtS = new THREE.Quaternion(), _UP = new THREE.Vector3(0, 1, 0);
-/** Fill outPos with the rider's ROOT position on its seat; returns {q (the root's whole rotation), socketPos, socketQ,
+/** Fill outPos with the occupant's ROOT position on its seat; returns {q (the root's whole rotation), socketPos, socketQ,
  *  body, sock, upright, yaw, pose, to (the socket), host, slot (its name), seatState, seatReason} or null when not
- *  mounted (or the socket isn't live yet). `rider` is {path, av} — the roster path and live wrapper of the body.
+ *  mounted (or the socket isn't live yet). `occ` is {path, av} — the roster path and live wrapper of the body.
  *
  *  Where the root goes is the socket's ANCHOR (shared/sockbody.js): the body point that lands on the socket — hips for
- *  a seat, feet for a standing place, head, or the root itself — measured from the rider's posed skeleton
+ *  a seat, feet for a standing place, head, or the root itself — measured from the occupant's posed skeleton
  *  (avatar.anchorOffset), so any body in any clip puts its hips on the cushion. A pose may add an offset (socket frame).
  *  Until the body has been measured the root sits at the socket, declared approximate. A socket whose body anchors at
  *  'surface' (the seat authors its support plane, D14) takes the seat-profile correction (#101) instead. */
 const _mtP = new THREE.Vector3(), _mtW = new THREE.Quaternion();
-export function mountTransform(riderId, outPos, rider, poseOffset = null) {
-  const m = avatarMounts.get(riderId);
+export function mountTransform(occupantId, outPos, occ, poseOffset = null) {
+  const m = avatarMounts.get(occupantId);
   if (!m) return null;
   const s = seatSocket(m.to);
   const sObj = s ? entities.get(s.id) : null;
@@ -476,7 +476,7 @@ export function mountTransform(riderId, outPos, rider, poseOffset = null) {
   _mtF.setFromMatrixPosition(sObj.matrixWorld);
   // the socket's whole world rotation (a rocket seat lies on its back), part displacement and host included
   const socketQw = sObj.getWorldQuaternion(_mtW);
-  // the rider's: the socket's, or, where the rider set its own heading, the socket's frame without its own turn (the
+  // the occupant's: the socket's, or, where the occupant set its own heading, the socket's frame without its own turn (the
   // host's, a part's displacement included) then that heading
   if (Number.isFinite(m.yaw)) { const lq = bagOf(s.id)?.transform?.q; _mtR.copy(socketQw).multiply(_mtS.fromArray(Array.isArray(lq) && lq.length === 4 ? lq : [0, 0, 0, 1]).invert()).multiply(_mtQ.setFromAxisAngle(_UP, m.yaw)); }
   else _mtR.copy(socketQw);
@@ -487,14 +487,14 @@ export function mountTransform(riderId, outPos, rider, poseOffset = null) {
     if (poseOffset) _mtF.add(_mtP.fromArray(poseOffset).applyQuaternion(socketQw));
     if (body.anchor === 'root') state = 'anchored';
     else {
-      rider?.av?.setAnchorWant?.(body.anchor);
-      const off = rider?.av?.anchorOffset?.();
-      if (off) { _mtF.sub(_mtP.fromArray(off).multiply(rider.av.root.scale).applyQuaternion(_mtR)); state = 'anchored'; }
-      else reason = rider?.av ? `measuring the ${body.anchor}` : 'body loading';
+      occ?.av?.setAnchorWant?.(body.anchor);
+      const off = occ?.av?.anchorOffset?.();
+      if (off) { _mtF.sub(_mtP.fromArray(off).multiply(occ.av.root.scale).applyQuaternion(_mtR)); state = 'anchored'; }
+      else reason = occ?.av ? `measuring the ${body.anchor}` : 'body loading';
     }
   } else {
     // the seat-height correction (#101) is a world-up subtraction, so it only holds while the socket stands upright
-    const seat = upright ? occupyCorrectionFor(rider, s.station) : { applied: false, reason: 'the socket is tilted (the seat profile assumes upright)' };
+    const seat = upright ? occupyCorrectionFor(occ, s.station) : { applied: false, reason: 'the socket is tilted (the seat profile assumes upright)' };
     if (seat.applied) { const c = applySeatCorrection([_mtF.x, _mtF.y, _mtF.z], seat.contactY, seat.scale); if (c) _mtF.set(c[0], c[1], c[2]); state = 'profiled'; }
     else reason = seat.reason;
   }

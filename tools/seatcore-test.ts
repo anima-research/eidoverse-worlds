@@ -5,7 +5,7 @@
  * that placeholder-shaped patch evidence is INVALID evidence), the serve-time
  * status verdict, the B1 socket-anchor rule (nothing infers intent), the B3
  * runtime gate (the action that actually ran, the exact clip bytes), the B5
- * rider-scale definition (uniform-or-abstain), the B2 world-up correction
+ * occupant-scale definition (uniform-or-abstain), the B2 world-up correction
  * with the pitch/roll DISCRIMINATOR (hand-computed lateral term that fails a
  * parent-normal implementation by name), the seat-claim purity regression
  * (the _v alias lesson — nonzero-Y socket), and the generation guard (a slow
@@ -17,7 +17,7 @@
 
 import {
   validateProfile, profileStatus, socketAnchor, seatGate, seatGateCore,
-  applySeatCorrection, riderScalar, seatClaim, makeGenerationGuard, makeVerdictCache,
+  applySeatCorrection, occupantScalar, seatClaim, makeGenerationGuard, makeVerdictCache,
   SEAT_METHOD, MIN_PATCH_VERTS, MAX_PATCH_SPREAD_Y,
 } from "../client/lib/seatcore.js";
 import { qAxisAngle } from "../client/lib/motioneval.js";
@@ -140,13 +140,13 @@ console.log("runtime gate (B3)");
   check("core gate still refuses a legacy socket", !seatGateCore({ sock: {}, verdict: accepted }).apply);
 }
 
-// ---- B5: rider scale -------------------------------------------------------
-console.log("rider scale (B5)");
+// ---- B5: occupant scale -------------------------------------------------------
+console.log("occupant scale (B5)");
 {
-  check("no scale vector → 1 (today's every body)", (() => { const r = riderScalar(null); return r.ok && r.s === 1; })());
-  check("uniform scale passes through", (() => { const r = riderScalar([1.25, 1.25, 1.25]); return r.ok && near(r.s, 1.25); })());
-  check("nonuniform scale abstains, never averages", !riderScalar([1, 1.2, 1]).ok);
-  check("non-finite scale abstains", !riderScalar([1, NaN, 1]).ok);
+  check("no scale vector → 1 (today's every body)", (() => { const r = occupantScalar(null); return r.ok && r.s === 1; })());
+  check("uniform scale passes through", (() => { const r = occupantScalar([1.25, 1.25, 1.25]); return r.ok && near(r.s, 1.25); })());
+  check("nonuniform scale abstains, never averages", !occupantScalar([1, 1.2, 1]).ok);
+  check("non-finite scale abstains", !occupantScalar([1, NaN, 1]).ok);
 }
 
 // ---- B2: world-up correction + the pitch/roll discriminator ----------------

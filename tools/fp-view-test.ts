@@ -45,7 +45,7 @@ console.log("anchor resolution");
   // Head bone present: the eye is the LIVE bone position plus the eye lift —
   // no root-relative constant anywhere. A seated head at 1.13 gives a 1.19
   // eye; main's fixed formula would have put it at root+1.52 regardless.
-  const a = fp.resolveFirstPersonAnchor({ head: [4, 1.13, -2], name: "sitter" });
+  const a = fp.resolveFirstPersonAnchor({ head: [4, 1.13, -2], name: "occupant" });
   check("head anchor uses the live bone position", a.mode === "head"
     && near(a.eye[0], 4) && near(a.eye[1], 1.13 + fp.FP_EYE_LIFT) && near(a.eye[2], -2));
 
@@ -95,7 +95,7 @@ console.log("frame composition");
   const cam = fakeCamera();
   const seq: Array<boolean | string> = [];
   fp.composeFirstPerson({
-    camera: cam, yaw, head: [3, 1.4, 5], name: "rider",
+    camera: cam, yaw, head: [3, 1.4, 5], name: "occupant",
     setOwnVisible: (v: boolean) => seq.push(v),
     render: () => { seq.push("render"); return "frame-bytes"; },
   });

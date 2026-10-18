@@ -89,7 +89,7 @@ export function getUp() {
   myState.pos.y = 0;
 }
 // ---------------------------------------------------------------- mounted
-// While seated/riding, my body is DERIVED from the parent entity's live
+// While I occupy a seat, my body is DERIVED from the parent entity's live
 // transform + socket (same math remotes use for me: occupybody.js) — so I visibly
 // swing on the swing I'm sitting on. Getting off is the socket's to allow
 // (body.leaveBy, shared/sockbody.js mayLeave): moving, jumping, the explicit
