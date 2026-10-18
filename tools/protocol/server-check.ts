@@ -419,7 +419,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   { const { WorldAgent } = await import("../../mcpl/agent.ts");   // an agent is told the same, as its join's error (not a join timeout)
     const ag: any = new WorldAgent({ url: `ws://127.0.0.1:${srv.port}/ws`, name: "Bob", world: "oldtown", avatar: "" });
     let why = ""; try { await ag.connect(); } catch (e) { why = String((e as Error).message); } try { ag.close(); } catch {}
-    ok(why === OLD_SAY, "S6 an agent joining the old world is refused with the same words (its connect rejects with them; mcpl travel reports them)", why); }
+    // the world's words as the cause inside the agent's own sentence (upstream #247: "the world refused the join: …")
+    ok(why === `the world refused the join: ${OLD_SAY.replace(/\.+$/, "")}`, "S6 an agent joining the old world is refused with the same words (its connect rejects with them; mcpl travel reports them)", why); }
   // a log of this protocol's family saved before the 2026-10-07 names pass: its genesis stated its number in its own field
   ok(tool(["found", "prenamed", "--owner", "Ann"]).code === 0, "S6 a world to age into a pre-names one");
   { const fp = path.join(W4, "prenamed", "world.jsonl"); const lines = fs.readFileSync(fp, "utf8").split("\n");

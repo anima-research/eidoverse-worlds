@@ -29,6 +29,7 @@ import { sessionFromCookie, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { directoryFor } from "./directory.ts";
 import { accountAgeRefusal } from "./accountage.ts";
 import { effectiveOf, MOD_POWERS } from "../shared/protocol/roles.js";
+import { opsOf } from "../shared/protocol/fold.js";
 import { entryOf, doorOf as doorOfWc, listedIn, timedGrants, leftWords, ACCESS_WARN_MS } from "../shared/protocol/access.js";
 import type { World, Client } from "./world.ts";
 
@@ -82,7 +83,7 @@ export function doorFor(name: string): Door | null {
       if (!line || !DOOR_LINE.test(line)) continue;
       let e: any; try { e = JSON.parse(line); } catch { continue; }
       if (e?.kind !== "change") continue;
-      const ops = Array.isArray(e.body?.ops) ? e.body.ops : [];
+      let ops: any[] = []; try { ops = opsOf(e); } catch { continue; }   // a batch's ops, or a single set/delete's own body
       for (const o of ops) {
         if (o?.id !== "@world" || !isDoorComp(o.comp)) continue;
         if (o.verb === "set" && o.value && typeof o.value === "object") wc[o.comp] = o.value;
@@ -189,10 +190,10 @@ export function sweepAccess(worlds: Iterable<World>, expel: Expel, now = Date.no
       if (g.until - now > ACCESS_WARN_MS || g.until <= now) continue;
       const k = `${w.name}\u0000${g.actor}\u0000${g.until}`;
       if (warned.has(k)) continue;
-      warned.add(k);
       const closes = listedIn(wc, g.actor) && wc.access?.join === "listed";
+      // marked warned only once it reached them: someone who arrives inside the last five minutes is told on the next sweep
       for (const c of w.clients) if (c.actorId === g.actor && (c.surface ?? "world") === "world")
-        try { c.ws.send(JSON.stringify({ type: "notice", text: `your ${g.role} grant in "${w.name}" ends in ${leftWords(g.until, now).replace(" left", "")}${closes ? ` — this world admits only people listed, so you'll have to leave then` : ""}` })); } catch { /* gone */ }
+        try { c.ws.send(JSON.stringify({ type: "notice", text: `your ${g.role} grant in "${w.name}" ends in ${leftWords(g.until, now).replace(" left", "")}${closes ? ` — this world admits only people listed, so you'll have to leave then` : ""}` })); warned.add(k); } catch { /* gone */ }
     }
     const ended = w.log.expireRoles();
     if (ended.length) { console.log(`[world:${w.name}] timed grant(s) ended: ${ended.join(", ")}`); settleAccess(w, expel, now); }

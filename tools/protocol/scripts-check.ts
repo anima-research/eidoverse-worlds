@@ -248,6 +248,18 @@ const cases: Case[] = [
       const act = s.entries().find((e: any) => e.actor === "script:kiosk" && e.kind === "act");
       return { promote: promote.script ? `${promote.script.status} ${promote.script.code}: ${promote.script.why}` : show(promote), mal: comp(s, "@world", "roles:mal") ?? null, hello: hello.script?.status, trigger: act?.body?.trigger?.actor, sponsor: act?.body?.sponsor }; },
     good: (o) => /^refused rights: script:promo's sponsor bob can't change @world\.roles:mal/.test(o.promote) && o.mal === null && o.hello === "ran" && o.trigger === "olive" && o.sponsor === "bob" },
+  { id: "BA", what: "upstream #258 in our terms: an OWNER's script can't change who may come in (@world.access, default-role) or time a grant; an ordinary grant by it still lands", run(s) { cast(s);
+      s.call("olive", "create", { id: "kiosk", model: "crate", place: { at: [0, 0] } });
+      install(s, "olive", "kiosk", "close", onUse(`world.set("@world", "access", { join: "listed" });`), { scope: { ids: ["@world"], comps: ["access"] }, on: ["use"] });
+      install(s, "olive", "kiosk", "timed", onUse(`world.set("@world", "roles:mal", { role: "visitor", until: 9e15 });`), { scope: { ids: ["@world"], comps: ["roles:*"] }, on: ["use"] });
+      install(s, "olive", "kiosk", "grant", onUse(`world.set("@world", "roles:mal", { role: "builder" });`), { scope: { ids: ["@world"], comps: ["roles:*"] }, on: ["use"] });
+      s.call("olive", "set", { id: "kiosk", component: "reactions", value: { close: { kind: "script", script: "close" }, timed: { kind: "script", script: "timed" }, grant: { kind: "script", script: "grant" } } });
+      const close = s.call("vic", "use", { id: "kiosk", action: "close" }), timed = s.call("vic", "use", { id: "kiosk", action: "timed" });
+      const access = comp(s, "@world", "access") ?? null, timedRole = comp(s, "@world", "roles:mal") ?? null;
+      const grant = s.call("vic", "use", { id: "kiosk", action: "grant" });
+      return { close: close.script ? `${close.script.status} ${close.script.code}: ${close.script.why}` : show(close), timed: timed.script ? `${timed.script.status} ${timed.script.code}` : show(timed),
+        access, timedRole, grant: st(s, grant), mal: comp(s, "@world", "roles:mal")?.role ?? null }; },
+    good: (o) => /^refused rights: .*who may come into a world/.test(o.close) && o.timed === "refused rights" && o.access === null && o.timedRole === null && o.grant === "ran" && o.mal === "builder" },
   { id: "B4", what: "41 #5 half an activation: the third of three writes is outside the scope; nothing lands (v1 committed two)", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "box", "three", onUse(`world.set("self", "t/a", 1); world.set("self", "t/b", 2); world.set("self", "t/c", 3);`), { scope: { ids: "self", comps: ["t/a", "t/b"] }, on: ["use"] });

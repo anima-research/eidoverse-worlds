@@ -286,7 +286,8 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const fz = await sock(S4.port); const jfz = await fz.join("heath", "Fern", { agentToken: "tok-fern" });
     const full = await sock(S4.port); const jfull = await full.join("heath", "Other", { agentToken: mint({ kind: "agent", name: "Other", sub: "agent:other@home.test" }) });
     await own.req("delete", { id: "@world", component: "access" });
-    ok(!js.snapshot && /only people with a role/.test(js.errors.join(" ")) && !!jfz.snapshot && !jfull.snapshot && /full/.test(jfull.errors.join(" ")),
+    // the words (upstream #258's decision 4): a refusal says only that the world isn't open to you, nothing about who is listed
+    ok(!js.snapshot && /isn't open to you/.test(js.errors.join(" ")) && !!jfz.snapshot && !jfull.snapshot && /full/.test(jfull.errors.join(" ")),
       "RS6 access: 'listed' refuses someone with no role here; past max a moderator still gets in, a stranger doesn't", [js.errors, !!jfz.snapshot, jfull.errors]);
     for (const x of [st, fz, full, rejoin, late]) x.close(); }
   // RS7 (review 10-06): erasing is the most senior owner's; a fork can't run in a loop
@@ -396,7 +397,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const [b0, jb0] = await as(ckMod, "Bud"); await own.req("set", { id: "@world", component: `roles:${you(jb0)}`, value: { role: "moderator" } }); b0.close(); await sleep(200);
     const set = await own.req("set", { id: "@world", component: "access", value: { join: "anyone", minAccountDays: 7 } });
     const [y, jy] = await as(ckYoung, "Sprout"); const [o, jo2] = await as(ckOld, "Oak");
-    ok(set.ok && !!ckYoung && !jy.snapshot && /at least 7 days old/.test(jy.errors.join(" ")) && /in 5 days/.test(jy.errors.join(" ")) && y.closed === 4005 && !!jo2.snapshot,
+    ok(set.ok && !!ckYoung && !jy.snapshot && /at least 7 days old/.test(jy.errors.join(" ")) && /in 5 days/.test(jy.errors.join(" ")) && y.closed === 4010 && !!jo2.snapshot,   // 4010: the door's own refusal (server/access.ts), not redialled
       "AG3 minAccountDays: a Discord account younger than the rule is refused and told when it qualifies; an older one comes in", [set.ok, set.refused, jy.errors, y.closed, !!jo2.snapshot, jo2.errors]);
     const [gq, jg] = await guest("passerby");
     const ag = await sock(S5.port); const ja = await ag.join("moor", "Wren", { agentToken: "tok-wren" });
