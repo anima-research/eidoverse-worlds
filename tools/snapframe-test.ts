@@ -63,14 +63,21 @@ check("pitch keeps the heading (yaw 0 → +z, no x drift)", near(up.dx, 0) && ne
 // ---- 3. the wire ------------------------------------------------------------
 console.log("wire (scratch sequencer + fake renderer + plain-door agent)");
 const PORT = 8000 + Math.floor(Math.random() * 900), WORLD = "framing", TOKEN = "snapframe-test";
+// (ported 10-17: the world is founded first — joining never founds one — joins fold the log (replica: true), the broker
+// speaks capture / capture-result, the agent's tool is screenshot, and a box with a door key keeps /worlds and /snap
+// behind it)
+const WORLDS = mkdtempSync(join(tmpdir(), "snapframe-"));
+const { foundWorlds } = await import("./harness.ts");
+foundWorlds(WORLDS, [WORLD]);
+const KEY = { headers: { authorization: `Bearer ${TOKEN}` } };
 const seq = Bun.spawn(["bun", "server/server.ts"], {
-  env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: TOKEN, SKIP_OPT_SWEEP: "1", WORLDS_DIR: mkdtempSync(join(tmpdir(), "snapframe-")) },
+  env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: TOKEN, SKIP_OPT_SWEEP: "1", WORLDS_DIR: WORLDS },
   stdout: "ignore", stderr: "ignore",
 });
 let mcp: ReturnType<typeof Bun.spawn> | null = null;
 process.on("exit", () => { try { mcp?.kill(); } catch {} seq.kill(); });
 let up2 = false;
-for (let i = 0; i < 60 && !up2; i++) { try { await fetch(`http://127.0.0.1:${PORT}/worlds`); up2 = true; } catch { await Bun.sleep(200); } }
+for (let i = 0; i < 60 && !up2; i++) { try { await fetch(`http://127.0.0.1:${PORT}/worlds`, KEY); up2 = true; } catch { await Bun.sleep(200); } }
 if (!up2) { console.error("FATAL: scratch sequencer never came up (bun install in the repo root?)"); process.exit(2); }
 
 // fake renderer legs: each answers every snap with a 1×1 PNG. They record each
@@ -90,15 +97,15 @@ for (let i = 1; i <= 10; i++) {
   await new Promise<void>((res, rej) => {
     const timer = setTimeout(() => rej(new Error(`renderer-fake-${i}'s join had no answer in 10 s`)), 10_000);
     ws.onerror = () => { clearTimeout(timer); rej(new Error(`renderer-fake-${i}'s socket failed`)); };
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: WORLD, id: `renderer-fake-${i}`, spectate: true, renderer: true, token: TOKEN }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: WORLD, id: `renderer-fake-${i}`, spectate: true, renderer: true, token: TOKEN, replica: true }));
     ws.onmessage = (ev) => { if (JSON.parse(String(ev.data)).type === "snapshot") { clearTimeout(timer); res(); } };
   });
   ws.onmessage = (ev) => {
     const m = JSON.parse(String(ev.data));
-    if (m.type === "snap") {
+    if (m.type === "capture") {
       const flat = m.frame ? Object.keys(m.frame).filter((k) => m[k] === m.frame[k]) : [];
       asked.push({ view: m.view, ...(m.frame === undefined ? {} : { frame: m.frame }), ...(flat.length ? { flat } : {}) });
-      ws.send(JSON.stringify({ type: "snap-result", id: m.id, dataUrl: PNG }));
+      ws.send(JSON.stringify({ type: "capture-result", id: m.id, dataUrl: PNG }));
     }
   };
 }
@@ -124,16 +131,16 @@ const rpc = (method: string, params?: unknown) => new Promise<any>((res, rej) =>
 await rpc("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "snapframe-test", version: "0" } });
 stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n"); stdin.flush();
 let joined = false;
-for (let i = 0; i < 50; i++) { const r = await fetch(`http://127.0.0.1:${PORT}/worlds`).then((r) => r.json()).catch(() => null);
+for (let i = 0; i < 50; i++) { const r = await fetch(`http://127.0.0.1:${PORT}/worlds`, KEY).then((r) => r.json()).catch(() => null);
   if (JSON.stringify(r ?? "").includes("framer")) { joined = true; break; } await Bun.sleep(200); }
 check("the door's agent joined the world", joined);
 
-const schema = (await rpc("tools/list")).result.tools.find((t: any) => t.name === "snapshot")?.inputSchema?.properties ?? {};
-check("snapshot tool advertises pitch, dist and height", ["pitch", "dist", "height"].every((k) => k in schema), Object.keys(schema).join(","));
+const schema = (await rpc("tools/list")).result.tools.find((t: any) => t.name === "screenshot")?.inputSchema?.properties ?? {};
+check("screenshot tool advertises pitch, dist and height", ["pitch", "dist", "height"].every((k) => k in schema), Object.keys(schema).join(","));
 
 async function viaTool(args: Record<string, unknown>) {
   const before = asked.length;
-  const r = await rpc("tools/call", { name: "snapshot", arguments: args });
+  const r = await rpc("tools/call", { name: "screenshot", arguments: args });
   const note = r.result?.content?.find((c: any) => c.type === "text")?.text as string | undefined;
   if (note?.includes("(429)")) check(BUSY, false, note);
   return { img: r.result?.content?.[0]?.type === "image", note, got: asked.length > before ? asked.at(-1) : undefined };
@@ -155,7 +162,7 @@ t = await viaTool({ height: 1 });
 check("tool, height with the default view → named as ignored", t.img && t.note === "height applies only to views third and selfie; ignored", String(t.note));
 
 const before = asked.length;
-const h = await fetch(`http://127.0.0.1:${PORT}/snap?world=${WORLD}&follow=framer&view=third&dist=abc&height=-5&pitch=10`);
+const h = await fetch(`http://127.0.0.1:${PORT}/snap?world=${WORLD}&follow=framer&view=third&dist=abc&height=-5&pitch=10`, KEY);
 if (h.status === 429) check(BUSY, false, await h.text());
 check("HTTP /snap query → normalised before the wire", h.status === 200 && asked.length > before && same(asked.at(-1), { view: "third", frame: { height: 0, pitch: 10 } }), JSON.stringify(asked.at(-1)));
 

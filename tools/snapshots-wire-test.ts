@@ -1,10 +1,14 @@
 // Real HTTP + WS integration; --native holds an isolated sequencer for the UE probe.
+// (ported 10-17: worlds are founded first — joining never founds one — joins fold the log (replica: true), and the
+// broker speaks capture / capture-result here (main: snap / snap-result))
+import { foundWorlds } from "./harness.ts";
 import { strict as assert } from "node:assert";
 import { mkdtempSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 const scratch = mkdtempSync(join(tmpdir(), "ew-snapshots-"));
 mkdirSync(join(scratch, "opt"));
+foundWorlds(join(scratch, "worlds"), ["snapshot-test", "other-world"]);
 const port = 18998, origin = `http://127.0.0.1:${port}`;
 const native = process.argv.includes("--native");
 for (const p of native ? [port, 18994] : [port]) {
@@ -24,11 +28,13 @@ async function wait(fn: () => boolean, label: string) {
 }
 async function connect(id: string, extras = {}, world = "snapshot-test") {
   const messages: any[] = []; const ws = new WebSocket(origin.replace("http:", "ws:") + "/ws"); sockets.push(ws);
-  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id, token: "snapshot-test-door", ...extras }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id, token: "snapshot-test-door", replica: true, ...extras }));
   ws.onmessage = e => messages.push(JSON.parse(String(e.data)));
   await wait(() => messages.some(m => m.type === "snapshot"), id + " join");
   return { ws, messages, send: (m: object) => ws.send(JSON.stringify(m)) };
 }
+// a box with a door key keeps its world reads behind it (identity-check LC): every /snap carries the key
+const KEY = { headers: { authorization: "Bearer snapshot-test-door" } };
 const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=";
 try {
   let ready = false;
@@ -36,7 +42,7 @@ try {
     if (child.exitCode !== null) throw Error("Scratch server exited: " + await new Response(child.stderr).text());
     try { ready = (await fetch(origin + "/version")).ok; } catch {} if (ready) break; await Bun.sleep(50);
   } assert.ok(ready);
-  const target = await connect("snapshot-agent", { agent: true, avatar: "eidoverse/assets/vrms/claude.vrm" });
+  const target = await connect("snapshot-agent", { avatar: "eidoverse/assets/vrms/claude.vrm" });
   const pose = (p = [15, -29, 65], q = [0, 0, 0, 1]) => target.send({ type: "pose", pose: { p, q, yaw: 0, clip: "idle", locomotion: { mode: "swim" } } });
   pose();
   if (native) {
@@ -53,26 +59,24 @@ try {
     const observer = await connect("observer", { spectate: true });
     assert.ok(observer.messages[0].present.some((p: any) => p.id === "unreal-player"), "donor stays embodied");
     const url = origin + "/snap?world=snapshot-test&follow=snapshot-agent";
-    const response = fetch(url); await wait(() => donor.messages.some(m => m.type === "snap"), "capture dispatched");
-    const request = donor.messages.find(m => m.type === "snap");
-    // a renderer watches a world that EXISTS — watching an unfounded name founds
-    // nothing (server/access.ts: 4011, retried) — so someone founds it first
-    await connect("other-founder", {}, "other-world");
+    const response = fetch(url, KEY); await wait(() => donor.messages.some(m => m.type === "capture"), "capture dispatched");
+    const request = donor.messages.find(m => m.type === "capture");
+    // a renderer watches a world that EXISTS (watching an unfounded name is 4011, retried): other-world is founded above
     const other = await connect("other-renderer", { renderer: true }, "other-world");
-    other.send({ type: "snap-result", id: request.id, dataUrl: png });
-    assert.equal((await fetch(url)).status, 429);
-    donor.send({ type: "snap-result", id: request.id, dataUrl: png });
+    other.send({ type: "capture-result", id: request.id, dataUrl: png });
+    assert.equal((await fetch(url, KEY)).status, 429);
+    donor.send({ type: "capture-result", id: request.id, dataUrl: png });
     const r = await response; assert.equal(r.status, 200); assert.equal(r.headers.get("x-eidoverse-renderer"), "unreal");
     assert.equal(r.headers.get("x-eidoverse-scene"), "underwater-prototype");
     assert.equal(Buffer.from(await r.arrayBuffer()).toString("base64"), png.split(",")[1]);
-    donor.send({ type: "capture-capabilities", capture: null }); await Bun.sleep(50); assert.equal((await fetch(url)).status, 503);
+    donor.send({ type: "capture-capabilities", capture: null }); await Bun.sleep(50); assert.equal((await fetch(url, KEY)).status, 503);
     const legacy = await connect("legacy", { renderer: true });
-    const oldResponse = fetch(url + "&renderer=browser"); await wait(() => legacy.messages.some(m => m.type === "snap"), "browser capture");
-    legacy.send({ type: "snap-result", id: legacy.messages.find(m => m.type === "snap").id, dataUrl: png }); assert.equal((await oldResponse).status, 200);
+    const oldResponse = fetch(url + "&renderer=browser", KEY); await wait(() => legacy.messages.some(m => m.type === "capture"), "browser capture");
+    legacy.send({ type: "capture-result", id: legacy.messages.find(m => m.type === "capture").id, dataUrl: png }); assert.equal((await oldResponse).status, 200);
     donor.send({ type: "capture-capabilities", capture: cap }); await Bun.sleep(2100);
-    const pending = fetch(url + "&renderer=unreal"); await wait(() => donor.messages.filter(m => m.type === "snap").length === 2, "second capture");
+    const pending = fetch(url + "&renderer=unreal", KEY); await wait(() => donor.messages.filter(m => m.type === "capture").length === 2, "second capture");
     donor.ws.close(); assert.equal((await pending).status, 503);
-    const log = readFileSync(join(scratch, "worlds", "snapshot-test", "log.jsonl"), "utf8");
+    const log = readFileSync(join(scratch, "worlds", "snapshot-test", "world.jsonl"), "utf8");
     assert.ok(!log.includes("snap-result") && !log.includes("capture-capabilities"), "capture is ephemeral");
     console.log("SNAPSHOTS_WIRE_PASS: embodied donor, PNG route, ownership, quota, opt-out, legacy browser, disconnect cleanup, no log writes");
   }
