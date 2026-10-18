@@ -691,6 +691,12 @@ request moves a copy to a newer version, keeping its own overrides.
   are in the table and the settings, but nothing enforces them yet.* Consent is
   presence: it is never logged and is not a grant.
 
+### Private attention metadata
+
+An `arrive` packet and each `snapshot.present` record carry an optional opaque `session` string for the participant's current primary connection. It is the id the joining page sent in its `join` (`session`, 8–64 characters of `A-Za-z0-9_-`), so a reconnect of the same page keeps it and a new page changes it; a join without a usable id gets a fresh random token for that connection. The same connection keeps the same value in later snapshots. Clients can use it to scope sender-local utterance counters. It is observational presence metadata, not an identity credential or an authority grant. On older servers without this field, the attention client preserves an existing utterance cache through snapshots and clears it on an observed arrival. A sender rejoin missed while the receiver was disconnected cannot be distinguished without the session field.
+
+A held private `whisper` delivered on rejoin carries `replay: true`. A live whisper omits the field. The sequencer sets it on delivery; client-authored whisper fields cannot override it. Attention sounds stay local to the receiver and suppress replay. Neither these packets nor attention preferences become log entries.
+
 ## 6. Actors
 
 - `actor` is the attribution ink of the permanent record, stamped by the

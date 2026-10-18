@@ -10,16 +10,53 @@ import { retireField } from './flora_field.js';
 import { makeGrassQuality, GRASS_QUALITY } from './grass_quality.js';
 
 let current = null;
+let environmentFloor = null;
+export function setEnvironmentFloor(y) {
+  environmentFloor = Number.isFinite(y) ? y : null;
+  if (!current) {
+    if (ground) ground.visible = environmentFloor === null;
+    if (grid) grid.visible = environmentFloor === null;
+  }
+}
 
-export const heightAt = (x, z) => (current ? current.heightAt(x, z) : 0);
+export const heightAt = (x, z) => (current ? current.heightAt(x, z) : (environmentFloor ?? 0));
 // THE WATER, for whatever floats in it (the ragdolls — ammodoll.js). The same seam as the ground and for the
 // same reason: the browser and the agents' headless bodies both load this module, and each hands it its
 // own water — the browser from client/lib/water.js, an agent from mcpl/physics.ts setWaterField.
 // {level, sample(x, z) → shared/waterkind.js sample | null, time() → wave seconds} or null for no water.
 let water = null;
 export const waterField = () => water;
-export function setWaterField(f) { water = f ?? null; }
+export function setWaterField(f) { water = f ?? null; bus.emit('ground-changed'); }
 export const hasTerrain = () => current !== null;
+
+/** Where the rain lands (the sky's splash ground — weather_system's groundHeightAt): the terrain, or
+ *  the water standing over it, whichever is higher. null past the terrain's edge: there is no ground
+ *  out there, so no splash. With no terrain, whatever floor heightAt stands on. The weather system
+ *  bakes this into a heightfield around the camera, so it is called a few thousand times when the
+ *  rain starts or the camera roams far, not per frame. 'ground-changed' (below) re-bakes it. */
+export function rainSurfaceAt(x, z) {
+  if (!current) return heightAt(x, z);
+  const box = extentOf(current);
+  if (box && (x < box.minX || x > box.maxX || z < box.minZ || z > box.maxZ)) return null;
+  const h = current.heightAt(x, z);
+  const level = water?.level;
+  return typeof level === 'number' && level > h ? level : h;
+}
+// The terrain's horizontal footprint in world space, from its mesh (a PlaneGeometry of the verb's
+// `size`, centred where the mesh stands). Agents' terrains have no mesh: no edge, ground everywhere.
+const extents = new WeakMap();
+function extentOf(t) {
+  if (!t.mesh?.geometry) return null;
+  let e = extents.get(t);
+  if (!e) {
+    const g = t.mesh.geometry;
+    if (!g.boundingBox) g.computeBoundingBox();
+    const p = t.mesh.position ?? { x: 0, z: 0 };
+    e = { minX: g.boundingBox.min.x + p.x, maxX: g.boundingBox.max.x + p.x, minZ: g.boundingBox.min.z + p.z, maxZ: g.boundingBox.max.z + p.z };
+    extents.set(t, e);
+  }
+  return e;
+}
 /** §22m diag: the terrain mesh, for cost-attribution phases. */
 export const getTerrainMesh = () => current?.mesh ?? null;
 
@@ -59,10 +96,12 @@ export function setTerrain(t) {
     if (grid) grid.visible = false;
     if (axisLines) axisLines.visible = false;
   } else {
-    if (ground) ground.visible = true;
-    if (grid) grid.visible = true;
-    if (axisLines) axisLines.visible = true;
+    if (ground) ground.visible = environmentFloor === null;
+    if (grid) grid.visible = environmentFloor === null;
+    if (axisLines) axisLines.visible = environmentFloor === null;
   }
+  // the ground moved: whatever stands on it by height (the rain's splashes, via sky.js) re-reads it
+  bus.emit('ground-changed');
 }
 
 // ---- grass -----------------------------------------------------------------

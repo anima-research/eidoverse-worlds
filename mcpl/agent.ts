@@ -11,7 +11,7 @@ import { describeBody, mayLeave, resolveSeat, socketsUnder, vacatedFromMine, vac
 import { grabOf, describeGrab } from "../shared/grab.js";
 import { r3 } from "../shared/protocol/round.js";
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
-import { mentionRegex } from "./mention.ts";
+import { mentionRegexFor } from "./mention.ts";
 import { mergePose } from "../shared/humanoid.js";
 import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, shapeReady, waterParams } from "../shared/terrainshape.js";
 import { bodyHeightFor } from "./rigbones.ts";
@@ -333,7 +333,8 @@ export function voiceNote(pose: unknown): string {
 }
 
 export class WorldAgent {
-  url: string; name: string; world: string; avatar: string; agentToken = "";
+  url: string; name: string; displayName: string; world: string; avatar: string; agentToken = "";
+  private dropMentionQualifiers: boolean;
   /** The status this body declares at join (PROTOCOL §6a): "agent" unless told otherwise (AGENT_DECLARES; "" declares
    *  nothing). The harness chooses it; the server relays it and never sets it from the credential. */
   declares: string | null = "agent";
@@ -727,9 +728,18 @@ export class WorldAgent {
   private pendingDebug = new Map<string, (m: any) => void>();
   private histId = 0;
 
-  constructor(opts: { url?: string; name?: string; world?: string; avatar?: string; agentToken?: string; declares?: string | null } = {}) {
+  /** Does `text` mention this body: its name, or the display name its credential gave it (#184)? */
+  mentionsMe(text: string): boolean {
+    return !!mentionRegexFor([this.name, this.displayName], { dropQualifiers: this.dropMentionQualifiers })?.test(text);
+  }
+
+  constructor(opts: { url?: string; name?: string; displayName?: string; dropMentionQualifiers?: boolean; world?: string; avatar?: string; agentToken?: string; declares?: string | null } = {}) {
     this.url = opts.url ?? process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws";
     this.name = opts.name ?? process.env.AGENT_NAME ?? "claude";
+    // The token's display name ("Artie (kube)"): a second form the body
+    // answers to in chat. The id stays the addressing handle everywhere else.
+    this.displayName = opts.displayName ?? process.env.AGENT_DISPLAY_NAME ?? "";
+    this.dropMentionQualifiers = opts.dropMentionQualifiers ?? true;
     this.world = opts.world ?? process.env.WORLD_NAME ?? "commons";
     this.avatar = opts.avatar ?? process.env.AGENT_AVATAR ?? "eidoverse/assets/vrms/claude.vrm";
     // The agent's own bearer (the one that opened the MCPL door). Forwarded at
@@ -875,7 +885,7 @@ export class WorldAgent {
       const ws = new WebSocket(this.url);
       this.ws = ws;
       this.joinRefused = null;
-      const timeout = setTimeout(() => reject(new Error(this.joinRefused ?? "join timeout")), 8000);
+      const timeout = setTimeout(() => reject(new Error(this.joinRefused ?? "the world didn't answer the join within 8 seconds")), 8000);
       // `agent: true` is not a capability — it changes nothing about what this
       // body may do. It exists so the world can SAY who it is talking to.
       // Knowing whether the thing across the table thinks in tokens or neurons
@@ -924,7 +934,9 @@ export class WorldAgent {
           return;
         }
         if (refused !== null) { this.closed = true; clearTimeout(timeout); reject(new Error(refused)); }
-        if (code === 4005) { this.close(); return; }
+        // 4010 = this world is not open to this identity (server/access.ts): refused at the door, or its access ended or
+        // changed. Same answer as a ban for redialling: the door will not open on its own, so the body stays down.
+        if (code === 4005 || code === 4010) { this.close(); return; }
         // any other drop (an outage, a restart): dialled again on the browser's schedule (shared/redial.js, reset by a join),
         // not a fixed 1.5 s that every agent of a restarted server would keep in step (review r5 F4)
         if (!this.closed) setTimeout(() => this.connect().catch(() => {}), this.redial.next());
@@ -946,9 +958,12 @@ export class WorldAgent {
             // silent join-timeout loop this used to be.
             if (!this.joined) {
               // a cooldown isn't final: onclose 4006 dials again after it. Any other refusal's close says whether it is
-              // final (4005 "full" is not: onclose dials again); onclose answers this connect() with these words
-              if (typeof msg.until === "number") { clearTimeout(timeout); reject(new Error(String(msg.error ?? "join refused"))); }
-              else this.joinRefused = String(msg.error ?? "join refused");
+              // final (4005 "full" is not: onclose dials again); onclose answers this connect() with these words. The
+              // world's own words, as the cause inside whatever sentence carries this (travel's, for one) (#247)
+              const said = String(msg.error ?? "").trim().replace(/\.+$/, "");
+              const words = said ? `the world refused the join: ${said}` : "the world refused the join without giving a reason";
+              if (typeof msg.until === "number") { clearTimeout(timeout); reject(new Error(words)); }
+              else this.joinRefused = words;
             } else {
               // A mid-life refusal (insufficient rank, a bad moderation
               // target, being kicked…). Verbs are fire-and-forget, so this is
@@ -962,6 +977,17 @@ export class WorldAgent {
           case "mod":
             // Moderation replies (ban lists, global-ban confirmations).
             this.lastMod = { ts: Date.now(), text: String(msg.text ?? "") };
+            // …kept briefly as a short list too: one change can answer in more
+            // than one line (a grant's "bound to <subject>" echo, then the
+            // listing), and a tool must be able to hand back all of them
+            this.recentMods.push(this.lastMod);
+            if (this.recentMods.length > 20) this.recentMods.shift();
+            break;
+          case "notice":
+            // The world telling this identity something that is not a refusal
+            // — today, that its access here ends soon. Into the inbox, so the
+            // next look() carries it.
+            this.inbox.push({ ts: Date.now(), kind: "act", who: "world", text: String(msg.text ?? "") });
             break;
           case "moderated":
             // someone was removed or banned here, or a ban lifted: what bystanders are told (names only; the reason went
@@ -1019,7 +1045,7 @@ export class WorldAgent {
             // nothing ever injected one, that fallback WAS the policy. A
             // server that never sends this leaves myRights null, which the
             // provider reads as no.
-            if (msg.yourRights) this.acceptEffectiveRights(msg.yourRights, "snapshot");
+            if (msg.yourRights) this.acceptEffectiveRights(msg.yourRights, "world");
             this.entities.clear(); this.people.clear(); this.mounts.clear();
             this.bodyReader?.forget();
             this.selfBodyGeneration = ++this.bodyGenerationCounter;
@@ -1727,8 +1753,7 @@ export class WorldAgent {
       // A null regex means this body has no usable name (a malformed tokens
       // entry). Not being mentionable is degraded, not fatal — the body still
       // hears the room; it just cannot be addressed by name.
-      const rx = mentionRegex(this.name);
-      const mention = rx ? rx.test(String(args.text)) : false;
+      const mention = this.mentionsMe(String(args.text));   // the name, or the credential's display name (#184)
       if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
       this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
     }
@@ -2657,7 +2682,7 @@ export class WorldAgent {
         this.flight.phase !== "RAGDOLL" && this.flight.phase !== "LEAF") {
       this.flight = flightDown(this.flight, { eventId: "capability-revoked" });
       this.inbox.push({ ts: Date.now(), kind: "act", who: actor,
-        text: "your flight capability was withdrawn — descending under the falling-leaf reflex" });
+        text: "withdrew your flight while you were aloft, so you're coming down under the falling-leaf reflex; you can fly again once the world's owner grants it" });
     }
   }
 
@@ -2924,11 +2949,12 @@ export class WorldAgent {
     // state in step; otherwise the semantic presence field is the whole act.
     if (this.flight) {
       this.flightCfg ??= flightConfig();
-      const before = this.flight.wings;
       this.flight = fold ? flightFold(this.flightCfg, this.flight)
                          : flightUnfold(this.flightCfg, this.flight);
       const ref = this.flight.events.find((e: any) => /refused$/.test(e.kind));
-      if (ref) return `wings stay ${before.toLowerCase()} — ${flightFixInOurTools(ref.reason)}`;
+      // The reason says why the wings didn't change (shared/flight.js); many reasons name the wings' state too, and
+      // flight_status always gives it, so the sentence around the reason doesn't add the state (#247)
+      if (ref) return `wings stay as they are — ${flightFixInOurTools(ref.reason)}`;
     } else if (this.wingsFolded === fold) {
       return fold ? `wings are already folded` : `wings are already open`;
     }
@@ -3213,7 +3239,9 @@ export class WorldAgent {
       const length = points.slice(1).reduce((sum: number, p: Vec2, i: number) => sum + Math.hypot(p.x - points[i].x, p.z - points[i].z), 0);
       candidates.push({ points, length, owner: s });
     }
-    if (!candidates.length) return refusals.length ? { refusal: "no route: " + refusals.join("; ") } : { points: [from, to] };
+    // One structure's reason per line: a reason carries its remedy after a
+    // semicolon, so joining structures with one too would run them together.
+    if (!candidates.length) return refusals.length ? { refusal: "no route:\n" + refusals.join("\n") } : { points: [from, to] };
     candidates.sort((a, b) => a.length - b.length || (a.owner.id < b.owner.id ? -1 : a.owner.id > b.owner.id ? 1 : 0));
     const obstructed: string[] = [];
     for (const candidate of candidates) {
@@ -3230,7 +3258,7 @@ export class WorldAgent {
     return { refusal: [structures.some((s) => s.route.confined)
       ? "no local route preserves the supporting upper-floor path (multi-building floor composition is unavailable)"
       : "no local route is clear of all structures (multi-building route search is unavailable)",
-      ...obstructed, ...refusals].join("; ") };
+      ...obstructed, ...refusals].join("\n") };
   }
 
   /** The legs of a walk from where the body stands to `to`, or why there is
@@ -3264,7 +3292,7 @@ export class WorldAgent {
         refusals.add(route.refusal);
       }
       // Each side's own reason, so the refusal says why none of them served.
-      return { refusal: `the body stands in a wall, and from beside it: ${[...refusals].join("; from another side: ")}` };
+      return { refusal: `the body stands in a wall, and from beside it:\n${[...refusals].join("\nfrom another side: ")}` };
     }
     return { refusal: "the body stands in a wall, with no clear point within half a metre to step out to" };
   }
@@ -4028,6 +4056,15 @@ export class WorldAgent {
 
   face(x: number, z: number) { this.yaw = Math.atan2(x - this.pos.x, z - this.pos.z); }
 
+  /** Why a send can't go out: a body between connections redials on its own
+   *  (onclose), and one that is closed never will, so only the first is worth
+   *  calling again. */
+  private notJoined(): Error {
+    return new Error(this.closed
+      ? "this body's connection to the world has ended for good (the world removed or refused it, or the door closed it), so nothing was sent, and calling again won't change that"
+      : "this body is reconnecting to the world, so nothing was sent; it rejoins on its own once the world answers, so try again shortly");
+  }
+
   /** One request to the world's authority, answered by it: {ok: true, …} or {ok: false, refused: {code, reason,
    *  fix}}. */
   request(verb: string, args: Record<string, unknown> = {}): Promise<any> {
@@ -4094,12 +4131,14 @@ export class WorldAgent {
   /** The world's most recent mid-life refusal / moderation reply. */
   lastRefusal: { ts: number; text: string } | null = null;
   lastMod: { ts: number; text: string } | null = null;
+  /** The last few `mod` replies, oldest first (see the "mod" case). */
+  recentMods: { ts: number; text: string }[] = [];
 
   /** Moderation messages that aren't requests: 'world-bans' (list this
    *  world's bans — anyone present), 'global-ban' / 'global-unban' /
    *  'global-bans' (server: WORLD_ADMIN only). Answers arrive as `mod`. */
   sendMod(type: "world-bans" | "global-ban" | "global-unban" | "global-bans", extra: Record<string, unknown> = {}) {
-    if (!this.joined || this.ws?.readyState !== 1) throw new Error("not joined");
+    if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
     this.ws.send(JSON.stringify({ type, ...extra }));
   }
 
@@ -4107,7 +4146,7 @@ export class WorldAgent {
    *  Only the embodied primary may — which is this server. The answer arrives as
    *  a `relay-cred` frame on onMedia; a sidecar then publishes on it. */
   requestMediaCredential(scopes: { publish?: boolean; subscribe?: boolean } = {}) {
-    if (!this.joined || this.ws?.readyState !== 1) throw new Error("not joined");
+    if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
     this.ws.send(JSON.stringify({ type: "relay-cred", ...scopes }));
   }
 
@@ -4161,7 +4200,10 @@ export class WorldAgent {
   // disagree on well-formed are one layer). Malformed trio → plain say: an
   // internal caller's bug must not silently ride protocol keys.
   say(text: string, extra?: { spoken?: boolean; utt?: number; t0?: number; to?: string }): Promise<any> {
+    // speech ends composing: the throttle clears, and whoever keeps this body's typing dots up (the door's TypingRelay,
+    // #234) lets them end with the bubble
     this._typingUntil = 0;
+    this.onSaid?.();
     const args: Record<string, unknown> = { text, ...(typeof extra?.to === "string" && extra.to ? { to: extra.to } : {}) };
     if (extra?.spoken === true && Number.isSafeInteger(extra.utt) && (extra.utt as number) >= 0) {
       args.spoken = true;
@@ -4172,17 +4214,25 @@ export class WorldAgent {
     return this.request("say", { text: args.text, ...(args.to ? { to: args.to } : {}), ...(args.spoken ? { spoken: true, utt: args.utt, ...(args.t0 !== undefined ? { t0: args.t0 } : {}) } : {}) }).then((r: any) => { if (r && !r.ok) console.warn(`[agent] say refused: ${r.refused?.reason ?? r.refused?.code}`); return r; });
   }
 
+  /** Called after each `say` verb this body sends (say() or a raw world_verb
+   *  `say`), so whoever keeps its typing dots up (the door's TypingRelay) can
+   *  let them end with the bubble. */
+  onSaid: (() => void) | null = null;
+
   /** Show "composing" over this body. Presence-only (never logged), the same
    *  signal a human client sends while typing in the chat box. The world relays
    *  it and renderers draw the dots above the head for ~4s. Called repeatedly
-   *  as an agent streams its generation (MCPL channels/outgoing/chunk), so it
-   *  is throttled to one packet per second — the world extends the 4s window on
-   *  each, so a long generation keeps the dots up continuously. `say()` clears
-   *  it, because the bubble that follows is the natural end of composing. */
+   *  while the host says the agent's turn runs (MCPL channels/typing, through
+   *  the door's TypingRelay), so it is throttled to one packet per second — the
+   *  world extends the 4s window on each, so a long turn keeps the dots up
+   *  continuously. A `say` verb clears the throttle and calls `onSaid`, which
+   *  stops the relay: the bubble that follows ends the dots, and the host's
+   *  next `start` raises them again if the turn goes on. The throttle runs on a
+   *  monotonic clock, so a wall clock stepping back can't hold the signals. */
   private _typingUntil = 0;
   typing() {
     if (!this.joined || this.ws?.readyState !== 1) return;
-    const now = Date.now();
+    const now = performance.now();
     if (now < this._typingUntil) return;   // throttle: at most ~1/s
     this._typingUntil = now + 1000;
     this.ws.send(JSON.stringify({ type: "typing", to: null }));

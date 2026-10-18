@@ -41,6 +41,8 @@ export const CONFIG = {
   world: params.get('world') || 'commons',
   spectate: params.has('spectate'),
   renderer: params.has('renderer'),
+  // a roaming renderer: the server may send it to any world a snapshot is asked of (server/snapshots.ts)
+  roam: params.has('renderer') && params.has('roam'),
   follow: params.get('follow'),
   // Door key: ?key=… once, remembered for this origin thereafter.
   token: params.get('key') || store?.getItem('ew-key') || '',
@@ -57,6 +59,17 @@ store?.setItem('ew-name', CONFIG.name);
 { let acct = params.get('account') || store?.getItem('ew-account') || '';
   if (!acct && !/^guest-/.test(CONFIG.name)) acct = CONFIG.name;
   CONFIG.account = acct || null; if (acct) store?.setItem('ew-account', acct); }
+
+/** The name a join ack says we have, minus the transport prefix sendJoin put
+ *  on the wire id ("renderer-" / "retina-"). Pure, for net.js onSnapshot.
+ *  A VERIFIED identity (the ack carries yourSub) is the server's own name for
+ *  us — it ignored the requested id — so it is kept whole: a signed-in viewer
+ *  really called "retina-helen" must not be shortened to "helen". */
+export function nameFromJoinAck(you, { renderer = false, spectate = false, verified = false } = {}) {
+  if (!you || verified) return you;
+  const prefix = renderer ? 'renderer-' : spectate ? 'retina-' : '';
+  return prefix && you.startsWith(prefix) ? you.slice(prefix.length) : you;
+}
 
 /** Rename in place (the front-door panel calls this before connecting). */
 export function setName(name) {

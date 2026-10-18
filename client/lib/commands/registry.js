@@ -41,7 +41,10 @@ export const COMMANDS = [
   // person with a silent mic is exactly who needs it.
   { name: 'audio', help: '/audio [stt|say] — why voice or captions are not working; `say` posts it to the room' },
   { name: 'role', help: 'what you may do here (or /role <name>: anyone this world has seen)' },
-  { name: 'grant', help: '/grant <name> owner|builder|visitor — owner only; /grant * builder|visitor sets it for everyone signed in' },
+  { name: 'grant', help: '/grant <name> <role> [+gen] [+fly] [for 2h|forever] — owner (or grantRoles, below your rank); /grant * builder|visitor sets it for everyone signed in' },
+  { name: 'revoke', help: '/revoke <name> — take back a role; they hold this world\'s default again (in a world for people listed only, they must leave)' },
+  { name: 'access', help: '/access members|watch|visitors|open — who may come into this world (owner); /access alone shows it. World Settings › Access does this with buttons' },
+  { name: 'members', help: 'who can come into this world, and until when' },
   { name: 'ban', help: '/ban <name> [reason] — ban someone from this world, here or not (owner)' },
   { name: 'unban', help: '/unban <name> — lift a ban here (owner)' },
   { name: 'bans', help: 'who is banned, muted or a ghost here right now (moderators)' },

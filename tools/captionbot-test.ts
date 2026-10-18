@@ -16,7 +16,14 @@
 //      clock, tells the caller (who rotates the session), and respawns with
 //      a backoff — close() ends it for good;
 //   H. the world client, offline: the queue is BOUNDED and overflow is loud
-//      and spooled; a restart re-queues what the spool never saw confirmed.
+//      and spooled; a restart re-queues what the spool never saw confirmed;
+//   I. the spool fails CLOSED: a line whose `queued` row cannot be written
+//      is refused and intake halts, out loud; what was queued still drains;
+//      `end` still goes through; SPOOL_BEST_EFFORT states the weaker promise;
+//   J. a failed `end` row is said and counted, even as the first write to fail,
+//      with the fail-closed spool and with SPOOL_BEST_EFFORT=1.
+//   K. a failed overflow row says that a restart may send the line this run
+//      dropped.
 //
 //   bun tools/captionbot-test.ts   (run from a tree where tools/captionbot has its deps)
 import type { SttProvider, SttSession, SttTranscript, SttSessionOptions } from '@animalabs/voice-kit';
@@ -199,6 +206,80 @@ console.log('— H. the world client, offline —');
   check('a restart re-queues exactly the unconfirmed lines (4 and 5; 3 was confirmed, 1–2 overflowed)', w2.pendingCount === 2 && (w2 as any).pending.map((p: any) => p.args.n).join() === '4,5', JSON.stringify((w2 as any).pending.map((p: any) => p.key)));
   check('…under a session that follows the old one, so they drain first', w2.session > w.session && (w2 as any).pending[0].args.session === w.session);
   check('rotateSession refuses to go backwards', (() => { try { w2.rotateSession(w.session); return false; } catch { return true; } })());
+}
+
+console.log('— I. the spool fails closed —');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'captionbot-spool-'));
+  const good = join(dir, 'spool.jsonl');
+  const logs: string[] = [];
+  const w = new WorldClient({ url: 'ws://127.0.0.1:1/ws', token: 't', world: 'w', actor: 'cap', screenId: 'cinema', spool: good, log: (m) => logs.push(m), agent: false });
+  w.caption({ t0: 1, t1: 1.5, text: 'before the disk went' });
+  check('a writable spool takes the line', w.pendingCount === 1 && w.spoolRefused === 0 && w.spoolFailed === null);
+  // the disk goes away under a running bot: the spool path is now unwritable
+  (w as any).opts.spool = join(dir, 'no-such-dir', 'spool.jsonl');
+  w.caption({ t0: 2, t1: 2.5, text: 'first line after' });
+  check('the first line whose row cannot be written is refused, not queued', w.pendingCount === 1 && w.spoolRefused === 1 && /ENOENT/.test(w.spoolFailed ?? ''), `pending=${w.pendingCount} refused=${w.spoolRefused} failed=${w.spoolFailed}`);
+  check('…out loud, naming the halt and the way out', logs.some((l) => /⛔ spool write failed .*intake halted.*1 already queued still drain.*SPOOL_BEST_EFFORT=1/.test(l)), JSON.stringify(logs));
+  w.caption({ t0: 3, t1: 3.5, text: 'second line after' });
+  check('intake stays halted: later lines are refused and counted, without per-line noise', w.pendingCount === 1 && w.spoolRefused === 2 && logs.filter((l) => /⛔/.test(l)).length === 1, `pending=${w.pendingCount} refused=${w.spoolRefused} ⛔-lines=${logs.filter((l) => /⛔/.test(l)).length}`);
+  w.end();
+  check('end is not a line: it goes through with the spool down', w.pendingCount === 2 && (w as any).pending[1].args.end === true, `pending=${w.pendingCount}`);
+  const rows = readFileSync(good, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  check('the good spool holds exactly the line it took', rows.length === 1 && rows[0].state === 'queued' && rows[0].args.text === 'before the disk went');
+  check('the unkept promise is countable, for the exit status: two lines refused, and the end queued without its row', w.spoolLost === 3 && w.spoolRefused === 2 && w.spoolMissed === 0 && w.endMissed === 1, `lost=${w.spoolLost} refused=${w.spoolRefused} endMissed=${w.endMissed}`);
+  // the weaker promise, stated
+  const logs2: string[] = [];
+  const w2 = new WorldClient({ url: 'ws://127.0.0.1:1/ws', token: 't', world: 'w', actor: 'cap', screenId: 'cinema', spool: join(dir, 'no-such-dir', 'spool.jsonl'), spoolBestEffort: true, log: (m) => logs2.push(m), agent: false });
+  w2.caption({ t0: 1, t1: 1.5, text: 'best effort' });
+  w2.caption({ t0: 2, t1: 2.5, text: 'best effort 2' });
+  check('SPOOL_BEST_EFFORT: the line queues anyway and nothing is refused', w2.pendingCount === 2 && w2.spoolRefused === 0, `pending=${w2.pendingCount} refused=${w2.spoolRefused}`);
+  check('…and the failure is still recorded', /ENOENT/.test(w2.spoolFailed ?? ''), String(w2.spoolFailed));
+  check('…and said out loud once, not per line, naming what a restart would lose', logs2.filter((l) => /⚠ spool write failed .*SPOOL_BEST_EFFORT=1.*restart.*loses it/.test(l)).length === 1, JSON.stringify(logs2));
+  check('…and counted: two lines are not in the spool, and that is the exit status', w2.spoolMissed === 2 && w2.spoolLost === 2, `missed=${w2.spoolMissed} lost=${w2.spoolLost}`);
+}
+
+console.log('— J. a failed end row is said and counted —');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'captionbot-end-'));
+  const good = join(dir, 'spool.jsonl');
+  const logs: string[] = [];
+  const w = new WorldClient({ url: 'ws://127.0.0.1:1/ws', token: 't', world: 'w', actor: 'cap', screenId: 'cinema', spool: good, log: (m) => logs.push(m), agent: false });
+  w.caption({ t0: 1, t1: 1.5, text: 'first' });
+  w.caption({ t0: 2, t1: 2.5, text: 'second' });
+  // the disk goes after both lines' rows are on it, before the end's: the
+  // end's row is the first write to fail
+  (w as any).opts.spool = join(dir, 'no-such-dir', 'spool.jsonl');
+  w.end();
+  check('the end still queues', w.pendingCount === 3 && (w as any).pending[2].args.end === true, `pending=${w.pendingCount}`);
+  check('…its failed write is said, naming what a restart would replay without it', logs.some((l) => /⚠ spool write failed .*session's end queues anyway.*replays this session's lines without it/.test(l)), JSON.stringify(logs));
+  check('…and counted, for the exit status', w.endMissed === 1 && w.spoolLost === 1 && w.spoolRefused === 0 && w.spoolMissed === 0, `endMissed=${w.endMissed} lost=${w.spoolLost}`);
+  const rows = readFileSync(good, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  check('the spool holds the two lines and no end', rows.length === 2 && rows.every((r) => r.args?.text), JSON.stringify(rows.map((r) => r.args?.text ?? 'end')));
+  // the same with the weaker promise: the end's row is not a line's, so
+  // best-effort changes nothing about it
+  const be: string[] = [];
+  const w2 = new WorldClient({ url: 'ws://127.0.0.1:1/ws', token: 't', world: 'w', actor: 'cap', screenId: 'cinema', spool: join(dir, 'spool-be.jsonl'), spoolBestEffort: true, log: (m) => be.push(m), agent: false });
+  w2.caption({ t0: 1, t1: 1.5, text: 'first' });
+  w2.caption({ t0: 2, t1: 2.5, text: 'second' });
+  (w2 as any).opts.spool = join(dir, 'no-such-dir', 'spool.jsonl');
+  w2.end();
+  check('with SPOOL_BEST_EFFORT=1, the failed end row is said and counted too',
+    be.some((l) => /session's end queues anyway/.test(l)) && w2.endMissed === 1 && w2.spoolLost === 1 && w2.spoolMissed === 0,
+    `endMissed=${w2.endMissed} lost=${w2.spoolLost} missed=${w2.spoolMissed}`);
+}
+
+console.log('— K. a failed overflow row says what a restart may do —');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'captionbot-overflow-'));
+  const logs: string[] = [];
+  const w = new WorldClient({ url: 'ws://127.0.0.1:1/ws', token: 't', world: 'w', actor: 'cap', screenId: 'cinema', spool: join(dir, 'spool.jsonl'), spoolBestEffort: true, maxPending: 1, log: (m) => logs.push(m), agent: false });
+  w.caption({ t0: 1, t1: 1.5, text: 'first' });   // its queued row is on disk
+  (w as any).opts.spool = join(dir, 'no-such-dir', 'spool.jsonl');
+  w.caption({ t0: 2, t1: 2.5, text: 'second' });  // queues without its row, and pushes the first out
+  check('the first line is dropped for overflow', w.overflow === 1, `overflow=${w.overflow}`);
+  check('…and its failed overflow row says a restart may send it, not that the door dedupes',
+    logs.some((l) => /spool write failed on an overflow row for .* — a restart may send this line, though this run dropped it/.test(l)), JSON.stringify(logs));
 }
 
 console.log(`\n${pass} ok, ${fail} failed`);

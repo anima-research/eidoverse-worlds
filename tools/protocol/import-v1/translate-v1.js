@@ -188,7 +188,7 @@ export const DROPPED = {
   "mounts": "bodies sitting: presence in v4, never history (00:50 ruling 1); their old entries survive as acts",
   "recentChat / chatTotal": "the chat window: a reader of `say` entries does this in v4, not world state",
   "placer": "who placed it: a view over the log in v4 (L2: no stored derived values); the old value survives in the old entry",
-  "roles['*']": "becomes @world `default-role` (the declared role for anyone not named); '*' is not an identity (§2.3)",
+  "roles['*']": "becomes @world `default-role` (the declared role for anyone not named); '*' is not an identity (§2.3); a `*` of none / spectator (upstream world access) becomes @world `access` {join: listed (, watch: anyone)}",
   "comp.guard": "merged into `lock` (PROTOCOL-v4 §5, R 19:58): a truthy guard becomes lock {rank: 'builder'} (@12; was true), which binds everyone (the placer too) and any builder may lift; the guard's authorship protection is dropped by design. stats.guards counts the things this happened to, so the world's owners can be told",
   "comp.door": "renamed `openable` (R 10-07), and a reaction's component 'door' with it: the same value under v4's name (@5)",
   "roles.sub / bans.sub": "an account subject is person data (PROTOCOL §9.2): never written into a value (@12). With an identity mapper it is how the person's id is found (the key); without one it is dropped",
@@ -278,7 +278,15 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   const toCan = (v) => { if (!v || typeof v !== "object" || !("fly" in v || "gen" in v)) return v; const { fly, gen, ...rest } = v;
     const can = { ...(rest.can ?? {}), ...(fly === true ? { fly: true } : {}), ...(gen === true ? { generate: true } : {}) };
     return Object.keys(can).length ? { ...rest, can } : rest; };
-  for (const [k, v] of Object.entries(st.roles ?? {})) if (k === "*") w["default-role"] = toCan(v); else w[`roles:${person(k, v)}`] = toCan(unsub(v));
+  // upstream #258's world access rode the same map: `*` none = members only, `*` spectator = watch only. Here entry is
+  // @world.access (shared/protocol/access.js); a person's own none / spectator is a record that lists no one (role none:
+  // in, they watch only where the world lets everyone watch). A timed grant keeps its `until` (the load's sweep ends one
+  // already past).
+  const DOOR_OF = { none: { join: "listed" }, spectator: { join: "listed", watch: "anyone" } };
+  for (const [k, v] of Object.entries(st.roles ?? {})) {
+    if (k === "*") { if (DOOR_OF[v?.role]) { w.access = { ...DOOR_OF[v.role] }; const { role: _r, until: _u, ...rest } = toCan(v); if (Object.keys(rest).length) w["default-role"] = { role: "visitor", ...rest }; } else { const { until: _u, ...dr } = toCan(v) ?? {}; w["default-role"] = dr; } }
+    else { const r = toCan(unsub(v)); w[`roles:${person(k, v)}`] = r && (r.role === "spectator") ? { ...r, role: "none" } : r; }
+  }
   for (const [k, v] of Object.entries(st.bans ?? {})) w[`imported-bans:${person(k, v)}`] = unsub(v);
   // a binding's author is a person: their identity, not their name (R1), when a who() mapper is given
   for (const [k, v] of Object.entries(st.behaviors ?? {})) w[keyed("imported-behavior", k)] = who && v && typeof v.author === "string" && !SYSTEM.has(v.author) ? { ...v, author: who(v.author, {}) } : v;

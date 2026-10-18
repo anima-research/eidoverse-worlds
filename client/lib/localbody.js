@@ -158,8 +158,10 @@ function stepLeaving(dt) {
   const k = u * u * (3 - 2 * u);
   myState.pos.copy(leaving.from).lerp(leaving.to, k);
   myState.yaw = leaving.yaw; myState.speed = 0; myState.clip = leaving.clip;
+  myState.q = undefined; myState.locomotion = undefined;
   if (me) {
     me.root.position.copy(myState.pos);
+    me.locomotion = null;
     me.root.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), leaving.yaw), Math.min(1, 10 * dt));
     me.setSeatBlend([[leaving.clip, 1]], u);
     updateFollowCamera(dt, me);

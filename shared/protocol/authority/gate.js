@@ -157,7 +157,7 @@ function admit(w, st, who, ops) {
   occupyRights(w, st, s, who, role, norm.filter((o) => !fuOps.has(o)), made);
   const vacate = CTX.forking || who.lifting ? [] : vacatesFor(w, st, who, norm);
   capacityCheck(w, st, s, who, norm);
-  for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: CTX.forking || !!who.lifting }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
+  for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: CTX.forking || !!who.lifting, now: w.now() }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
   { const bad = socketRules(s, new Set(norm.map((o) => o.id))); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
   if (!(CTX.forking || who.lifting)) { const bad = actionRules(s, new Set(norm.map((o) => o.id))); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
   rolesCheck(st, s, norm);
@@ -273,7 +273,16 @@ function rights(w, st, s, who, role, op, at, made, pause) {
     const n = lacks(w, st, actor, op, made); if (!n) { if (needOf(op) === "grant") grantCheck(w, st, s, actor, op, at); return; }
     refuse("rights", `changing ${at} needs ${needWords(n)}; you are ${role}`, n === "owner" ? "ask the world's owner (say {text, to: <owner>}); help shows your role and permissions" : `ask a moderator or an owner for ${n}; help shows your role and permissions`, { needs: n });
   }
-  if (cap.kind === "script") return scriptRights(w, st, cap, op, at, made);
+  if (cap.kind === "script") {
+    // WHO MAY COME IN is changed by the world's owners directly, never by a script (upstream #258): a script closing a
+    // world, or timing someone's grant, would skip the door's settle pass (server/access.ts) and leave people inside who
+    // may no longer be; and in a world that admits only people listed, a script grants nothing at all (demoting the last
+    // listed owner there would leave nobody able to open it). Ordinary role grants stay open to an owner's scripts.
+    if (op.id === "@world" && (op.comp === "access" || op.comp === "default-role")) refuse("rights", `a script can't change ${at}: who may come into a world is changed by its owners directly`, "change it yourself: set {id: '@world', component: '" + op.comp + "', value}");
+    if (op.id === "@world" && op.comp?.startsWith("roles:") && ((op.verb === "set" && op.value?.until !== undefined) || st.entities["@world"]?.c?.access?.join === "listed"))
+      refuse("rights", `a script can't ${op.value?.until !== undefined ? "time a grant" : "grant in a world that admits only people listed"} (${at})`, "who may come into a world is changed by its owners directly");
+    return scriptRights(w, st, cap, op, at, made);
+  }
   if (!cap.ids.includes(op.id) || !cap.comps.includes(op.comp)) refuse("rights", `${cap.kind === "reaction" ? `the '${cap.action}' handler` : cap.kind} may change only ${cap.comps.join("/")} of ${cap.ids.join(", ")}, not ${op.verb} ${at}`, "a capability is scoped to what it names");
   if (cap.kind === "reaction" && lacks(w, st, cap.author, op, made, { viaCap: true })) refuse("rights", `'${cap.action}' was set up by ${said(cap.author)}, who can't change ${at} any more`, "ask someone with the rights to set the reactions again");
   // a hand's settlement: who may is grabbable.who (grabOf: the one reader, with the physics fallback); a punt is a launch,

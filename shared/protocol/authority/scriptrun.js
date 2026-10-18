@@ -191,6 +191,23 @@ export function tick(w) {
     return ran;
   });
 }
+/** TIMED GRANTS end (upstream #258, PROTOCOL §7 Roles): every roles:<id> whose `until` has passed by the authority's clock
+ *  is deleted, in one system act `expire-roles {ids}` and its change, so the end is in the log (a replay, a fork and an
+ *  audit all see when someone's access ended). The host calls it about once a second; between `until` and that write the
+ *  grant still stands. → the identities whose grant ended. */
+export function expireRoles(w) {
+  if (!w.exists || w.state().status !== "ok") return [];
+  return withAuthority(w, () => {
+    const now = w.now(), wc = w.state().entities["@world"]?.c ?? {};
+    const ids = Object.keys(wc).filter((k) => k.startsWith("roles:") && Number.isSafeInteger(wc[k]?.until) && wc[k].until <= now).map((k) => k.slice(6));
+    if (!ids.length) return [];
+    const ops = ids.map((id) => delOp("@world", `roles:${id}`));
+    let plan; try { plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids: ["@world"], comps: ids.map((id) => `roles:${id}`) } }, ops); }
+    catch (x) { if (!(x instanceof Refusal)) throw x; return []; }   // e.g. it would leave the world with no owner: never (owners don't expire)
+    changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "expire-roles", body: { ids, why: "timed grants whose until has passed" } }));
+    return ids;
+  });
+}
 /** A world opened after its host stopped without settling presence (a crash, a SIGKILL: no leave ran). Holds are
  *  presence. A host that persists presence (server/filehost.ts) still has the hold, with no one connected to let go: it's
  *  settled as `leave` settles it (a drop as the holder, which its grabbable may send home, into a socket or straight

@@ -2,4 +2,4 @@
 import * as THREE from "three";
 import { rigMath } from "../shared/rig.js";
 export { glbJson, humanBones, isVrm0, PARENT } from "../shared/rig.js";
-export const { worldPositions, makeAvatar } = rigMath(THREE);
+export const { worldPositions, makeAvatar, stature } = rigMath(THREE);

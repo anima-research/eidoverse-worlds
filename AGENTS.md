@@ -143,6 +143,8 @@ An owner changes someone's role with an ordinary write:
 act {verb: "set", args: {id: "@world", component: "roles:u-…", value: {role: "builder"}}}
 ```
 
+**Private attention sound (browser).** Open chat options (the gear) to enable attention sound, choose soft/chime/tap, set its volume, or preview it. It defaults off and has its own local volume, separate from world audio, voice receive, and TTS. Live mentions and incoming whispers can chime at most once per three seconds; silent notices do not consume that audio cooldown. A spoken utterance that mentions you chimes on its durable `say`, not its ephemeral captions; repeated flushes of that utterance stay silent within the same sender session. The server relays an opaque `session` in arrival and snapshot presence: the speaker page's own id, which a reconnect keeps, so a new page can restart its utterance counter and a reconnect can't. A join without one (an agent's) gets a token for that connection. History and held whispers are visual-only. Enabling sound requests audio unlock in that gesture. If the browser still blocks audio, a click or key enables future notices without replaying missed ones. Short chat frames scroll the options within the frame. Mention highlights, unread badges, and whisper tabs remain available with sound off. Preferences and tones stay in the receiving browser.
+
 Removing the last owner is refused. Kicks and bans go to the world's
 separate moderator log (`act {verb: "kick" | "ban" | "unban" | "bans"}`,
 by name), never into the world log.
@@ -279,6 +281,26 @@ edited on a placed thing is declared ONCE as a pure function of its record
 (`shared/editschema.js`); the browser's Inspector panel, its VR quad and
 these tools all read that one declaration, so anything a browser can click
 there, you can say.
+
+**Who may come in — the world decides** (upstream #258, in this protocol's terms; shared/protocol/access.js). Entry is
+the world's own components on `@world`, changed by its owners with ordinary requests (agents and people alike; the
+browser has `/access`, `/grant … for 2h`, `/revoke`, `/members` and World Settings › Access):
+
+```
+act {verb: "set", args: {id: "@world", component: "access", value: {join: "listed"}}}                    # members only
+act {verb: "set", args: {id: "@world", component: "access", value: {join: "listed", watch: "anyone"}}}   # watch only
+act {verb: "set", args: {id: "@world", component: "roles:u-…", value: {role: "visitor", until: <epoch ms>}}}  # let someone in, for a while
+act {verb: "delete", args: {id: "@world", component: "roles:u-…"}}                                         # take it back
+```
+
+`join` is `anyone` (absent), `signed-in`, or `listed` (only people with a `roles:<id>` whose role isn't `none`); a
+listed-only world is unlisted in `worlds` and every read of it answers as if it didn't exist, for everyone it doesn't
+list — unless `watch: "anyone"` lets the rest watch (a spectator: no body). `default-role` is what everyone else holds
+once inside. A grant with `until` ends then: its holder is told five minutes before, and the authority writes the end
+into the log (`expire-roles`, a system act); ownership never expires. When a role or the door changes, whoever may no
+longer be here is removed (close code 4010, which a body doesn't redial). Owners and holders of a moderation power
+always get in; a script can't change who may come in. `travel` asks before it moves you, so a refusal leaves you where
+you are; `whois {name}` finds the identity a role names. Joining never founds a world here.
 
 ```
 hierarchy {filter?}          # the scene tree: parents, children, occupants, components, labels
@@ -937,20 +959,22 @@ Routes use the structures known when the walk begins, where they are then. A flo
   of its `console.log()` console. Components (motion, sockets, reactions)
   are data, not scripts: they never appear in the script roster.
 - **`catch_up` / `look`** — chat and presence context you slept through.
-- **`worlds`** — the map: every world this server fronts, who is embodied in
-  each (everyone, one list, by the ids `look` uses, each with the word they
-  declared for themselves if any; spectators appear as nothing), which one you are in, and — where the authority knows your
-  credential's join policy — which others you may travel to. Read-only;
-  asking never founds a world. Same data at `GET /worlds`.
+- **`worlds`** — the map: every world this server fronts **that you may
+  see**, who is embodied in each (everyone, one list, by the ids `look` uses, each with the word they
+  declared for themselves if any; spectators appear as nothing), which one you are in, each world's door (open,
+  visitors, signed-in, watch, members) and whether you may enter or only watch. Read-only;
+  asking never founds a world. Same data at `GET /worlds` (send `Authorization: Bearer <your key>` to see the
+  private worlds you belong to).
 - **`travel {world}`** — move to another world on this server **without
   reconnecting**: identity, avatar and `activity` settings come with you;
   the anims you hold and your chat cursor are world-local and do not. Your
   host is told (`channels/changed`: the old world channel retired, the new
   one added) before the body moves, and a host that declines keeps you
-  where you are. Gated by your credential's join policy — an aid1 token
-  with a `worlds` claim (`["*"]` = any existing world) or a legacy token's
-  `worlds` list; no list means no travel. Founding a world that does not
-  exist yet needs the separate `create` claim.
+  where you are. **Each world decides who may come in** (its owners' access and roles, see *Who may come in*
+  above); the door asks it (`GET /access`, as you) before anything moves, so a refusal leaves you where you were.
+  Your credential can only narrow this: a `worlds` list on it keeps you to those worlds, and no list means no
+  narrowing. Joining never founds a world: a name that doesn't exist is refused (a signed-in person founds one with
+  `world-found`; an operator founds one for an agent).
 - **`activity {pulse_sec?, radius_m?}`** (MCPL) — your ambient-activity
   sense, and the dial for it. While anything happens within `radius_m` of
   you (speech, movement, gestures, arrivals, building), one digest per

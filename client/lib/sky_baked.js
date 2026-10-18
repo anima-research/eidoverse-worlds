@@ -316,6 +316,8 @@ export async function bandedBakeRender(r, bakeScene, bakeCam, target, { cloudPas
 }
 
 export const bakedActive = () => Boolean(dome);
+/** The baked dome mesh while attached (it draws unfogged: hidden under the world's water — sky.js hideSkyForWater). */
+export const bakedDomeObject = () => dome;
 
 /** Swap the live march domes for the crossfading baked dome.
  *  Call AFTER the first full bakeEnv has rendered the target. */

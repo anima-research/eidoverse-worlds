@@ -50,18 +50,23 @@ export type Client = {
   // roles S4 / ghost: what the sanctions sweep (server.ts sanctionSweep) last applied to this connection
   sfuMuted?: boolean; sfuDeaf?: boolean; ghostHidden?: boolean; sanctionKey?: string;
   tokenVerified?: boolean; // this leg presented the identity's own bearer at join
+  trustedRenderer?: boolean; // a renderer that presented RENDERER_TOKEN: may watch any world (access.ts)
   auxBound?: boolean;  // this aux leg is bound to the primary's identity authority (token bearer OR matching login sub) — the B1 admission result, reused by the B3 attest gate
   gen?: number;        // surfaceSession (#57 B2): server-issued transport epoch for THIS leg.
   legGen?: number;     // this leg's WORLD-scoped generation (World.legGen): survives sequencer restarts, rides caption entries
                        // Monotonic, never reused. Every rtc/attestation message is stamped with
                        // it, and a superseded generation's messages are refused structurally —
                        // takeover retires the GENERATION, not just the socket.
+                       // Deferred authored verbs capture it and recheck before committing.
+  presenceSession?: string; // `session` on arrive and snapshot.present: the joining page's id, else a token for this leg (server.ts presenceSession)
   surface?: string;    // (name, surface) session model: "world" = the embodied primary (default);
                        // anything else = an auxiliary media leg (voice, vr-hands, …) — invisible,
                        // poseless, log-mute, rtc-capable, and REAPED when its primary dies.
                        // Per-surface last-writer-wins replaces the flat one-body rule (2026-08-07;
                        // prior art: Discord voice legs keyed to gateway sessions, XMPP resources).
-  renderer?: boolean;  // donates rendering: can answer snap requests for its world
+  renderer?: boolean;  // an invisible browser renderer (legacy): donates rendering for its world
+  roam?: boolean;      // a renderer the snapshot broker may send to any world that has none (snapshots.ts)
+  capture?: import("./snapshots.ts").CaptureCapability; // opt-in embodied/native donor
   account?: string | null; // the account this connection PROVED at its first join (fixed for the socket's life); null = anonymous
   addr?: string | null; // the connection's address, hashed at upgrade (a guest's ban names it)
   anonymous?: boolean; // no account: a guest (capped at visitor; named as one)

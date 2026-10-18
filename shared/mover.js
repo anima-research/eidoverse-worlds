@@ -62,6 +62,14 @@ export const MOVER = Object.freeze({
     run: 1.5,      // m/s, swimming hard
     at: 0.75,      // of body height: the chest; deeper water at the feet floats the body
     climb: 0.5,    // m above the SURFACE a swimmer can haul out onto (a quay, a pool's edge); higher is a wall from the water
+    // UNDER the surface (upstream #248's 3D swim and #254's diving, moved here 2026-10-17 so the float a diver comes back
+    // up to is the float a wader swims at): stepSwim below. A diver's stroke is `dive` × the stroke; Shift is `fast` × it.
+    dive: 1.4,     // × speed: the stroke under a water level (WASD where you look, Space up, C / Ctrl down)
+    fast: 1.65,    // × the stroke while swimming hard under water
+    buoy: 0.16,    // m/s an idle swimmer drifts up toward the surface
+    latch: 0.12,   // m under the float line: a rising swimmer this close is back AT the surface (the float takes it)
+    ease: 5,       // 1/s: a swimmer's velocity eases toward what it asks for
+    deep: 1.3,     // of body height × at: deeper than this under the feet, a swimmer may dive (shallower is wading)
   }),
 });
 /** The modes that step here. `fly` is shared/flight.js's integrator until its state moves in. */
@@ -164,11 +172,39 @@ const sm01 = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
  *  is the wading drag (1 dry, ~0.5 waist-deep); null when swimming (the stroke has its own speeds). `level` null = dry. */
 export function waterStance(level, ground, height = MOVER.body.height) {
   if (level == null || !Number.isFinite(level)) return { y: ground, depth: 0, swimming: false, speedFactor: 1 };
-  const depth = level - ground, floatY = level - MOVER.swim.at * height;
+  const depth = level - ground, floatY = level - floatDepth(height);
   if (ground < floatY) return { y: floatY, depth, swimming: true, speedFactor: null };
   const f = (depth > 0 ? depth : 0) / height;
   return { y: ground, depth, swimming: false, speedFactor: 1 - 0.5 * sm01((f - 0.08) / 0.67) };
 }
+/** How far under the water's surface a floating body's feet ride: `at` of its height (the chest at the surface). One
+ *  number for the surface float (waterStance), the 3D swim's surface latch (stepSwim) and the dive handover, so a diver
+ *  coming up meets the float exactly (upstream's 3D swim floated its root 1.1 m under for a 100% body; it is this now). */
+export const floatDepth = (height = MOVER.body.height) => MOVER.swim.at * height;
+
+/** One step of the THREE-DIMENSIONAL swim (upstream #248 swimStep; diving under a water level, #254). The caller
+ *  substeps it for collision. `input`: {direction:[x,y,z] (any length; > 1 is clamped), dive?, rise?, fast?, height? (m,
+ *  the body's own stature; absent: MOVER.body.height)}. `water`: {speed (m/s, the stroke here), surfaceAt(x, z) → the
+ *  surface's y this instant (the level plus its wave)}. Idle swimmers drift up gently; diving releases the surface
+ *  latch, and releasing an ascent never jumps the body out. → {pos, velocity, mode: 'swim' | 'surface'}. Pure. */
+export function stepSwim(pos, velocity, input, water, dt) {
+  const S = MOVER.swim, fin = (x, d) => (Number.isFinite(x) ? x : d);
+  dt = Math.max(0, Math.min(0.1, fin(dt, 0)));
+  const speed = fin(water.speed, S.speed) * (input.fast ? S.fast : 1);
+  const raw = Array.isArray(input.direction) && input.direction.length === 3 && input.direction.every(Number.isFinite) ? input.direction : [0, 0, 0];
+  const length = Math.max(1, Math.hypot(raw[0], raw[1], raw[2]));
+  const target = raw.map((v) => (v / length) * speed);
+  if (!input.dive && !input.rise) target[1] += S.buoy;
+  const blend = 1 - Math.exp(-S.ease * dt);
+  const vel = velocity.map((v, i) => v + (target[i] - v) * blend);
+  const next = pos.map((v, i) => v + vel[i] * dt);
+  const H = typeof input.height === "number" && input.height > 0 ? input.height : MOVER.body.height;
+  const surface = water.surfaceAt(next[0], next[2]) - floatDepth(H);
+  let mode = "swim";
+  if (!input.dive && next[1] >= surface - S.latch) { next[1] = surface; vel[1] = 0; mode = "surface"; }
+  return { pos: next, velocity: vel, mode };
+}
+
 /** How much longer a metre takes here than on dry ground (a planner's price for water): 1 dry, ~2 chest-deep, ~1.7 swimming. */
 export function waterCost(level, ground, height = MOVER.body.height) {
   const s = waterStance(level, ground, height);

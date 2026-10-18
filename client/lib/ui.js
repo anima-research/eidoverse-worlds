@@ -25,7 +25,7 @@ const EMOJI_ICON = {
   '💬': 'chat-circle',
   '👋': 'hand-waving',
   '🐞': 'bug',
-  '🧱': 'hammer', '🧍': 'person-arms-spread', '🌿': 'plant', '☀': 'sun',
+  '🧱': 'hammer', '🧍': 'person-arms-spread', '🌿': 'plant', '☀': 'sun', '🔒': 'lock',
   '✨': 'sparkle', '🌳': 'tree', '📜': 'scroll', '🧩': 'puzzle-piece', '🔊': 'speaker-high', '🎨': 'palette', '🖥': 'monitor', '🥽': 'virtual-reality', '🛡': 'shield',
 };
 // The load list is INJECTED, not imported: assets.js reaches the engine (GLTFLoader),

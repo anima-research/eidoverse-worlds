@@ -11,6 +11,10 @@
 import { CONFIG, bus, report } from '../base.js';
 import { SHOVE_REACH } from '../../../shared/protocol/physconst.js';
 import { CUSTOM_ID } from '../../../shared/protocol/roles.js';
+import { DOORS, doorOf, doorWrites, durationMs, leftWords } from '../../../shared/protocol/access.js';
+import { actorName as actorLabel } from '../../../shared/protocol/names.js';
+/** This world's @world components, from this client's own fold (roles, access, the default role). */
+const worldComponents = () => replica.st?.entities?.['@world']?.c ?? {};
 import { captureFrame } from '../capture.js';
 import { register, dispatch } from './registry.js';
 import { entities, worldHasOwner, bagOf } from '../world.js';
@@ -25,9 +29,9 @@ function thingNamed(word) {
   return null;
 }
 import {
-  net, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldFound, sendWorldReset, requestDebug, sendRequest,
+  net, replica, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldFound, sendWorldReset, requestDebug, sendRequest,
 } from '../net.js';
-import { remotes } from '../remotes.js';
+import { remotes, serverNow } from '../remotes.js';
 import { myState, setPosture, flightReport } from '../controller.js';
 import { punt as puntThing, grab, put, drop, throwHeld } from '../thingphysics.js';
 import { logChat } from '../chat.js';
@@ -112,21 +116,30 @@ register('role', (arg) => {
 });
 
 register('grant', (arg) => {
-  // /grant <name> <role> [+gen|-gen] [+fly|-fly] — a role is any role this world has (visitor, builder, moderator, owner,
-  // or one its owner defined); +gen/+fly are per-person exceptions (roles:<id>.can.generate / .fly, research roles S5).
-  // The authority decides: owners grant anything, a grantRoles holder only roles ranked below their own, with permissions they hold.
+  // /grant <name> <role> [+gen|-gen] [+fly|-fly] [for 2h|forever] — a role is any role this world has (visitor, builder,
+  // moderator, owner, or one its owner defined); +gen/+fly are per-person exceptions (roles:<id>.can.generate / .fly,
+  // research roles S5); `for <duration>` ends the grant then (roles:<id>.until; 30m, 2h, 1d, 1w), `forever` clears an end
+  // (upstream #258). The authority decides: owners grant anything, a grantRoles holder only roles ranked below their own,
+  // with permissions they hold; ownership never ends by itself.
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const id = parts[0];
-  const role = parts.slice(1).map((p) => p.toLowerCase()).find((p) => CUSTOM_ID.test(p));
+  const forAt = parts.findIndex((p, i) => i > 0 && p.toLowerCase() === 'for');
+  const durWord = forAt > 0 ? parts.slice(forAt + 1, forAt + 3).join(' ').match(/^\d+(?:\.\d+)?\s*[a-z]+/i)?.[0] : undefined;
+  const dur = durWord ? durationMs(durWord) : null;
+  const forever = parts.some((p, i) => i > 0 && /^(forever|permanent|permanently)$/i.test(p));
+  if (forAt > 0 && !dur) return logChat('*', 'for wants a duration: 30m, 2h, 1d or 1w (at most a year)');
+  const words = new Set(['for', 'forever', 'permanent', 'permanently', ...(durWord ? durWord.toLowerCase().split(/\s+/) : [])]);
+  const role = parts.slice(1).map((p) => p.toLowerCase()).find((p) => CUSTOM_ID.test(p) && !words.has(p));
   const flag = (k) => { const f = parts.find((p) => p === `+${k}` || p === `-${k}`); return f === undefined ? undefined : f[0] === '+'; };
   const gen = flag('gen'), fly = flag('fly');
-  if (!id || (!role && gen === undefined && fly === undefined)) {
-    return logChat('*', 'usage: /grant <name> <role> [+gen] [+fly] — roles: visitor, builder, moderator, owner, or one this world defines; /grant * <role> for everyone who signed in');
+  if (!id || (!role && gen === undefined && fly === undefined && !dur && !forever)) {
+    return logChat('*', 'usage: /grant <name> <role> [+gen] [+fly] [for 2h|forever] — roles: visitor, builder, moderator, owner, or one this world defines; /grant * <role> for everyone who signed in');
   }
   const can = gen !== undefined || fly !== undefined ? { ...(gen !== undefined ? { generate: gen } : {}), ...(fly !== undefined ? { fly } : {}) } : null;
   // * = the world's default role for people who signed in (guests stay visitors unless the world opts in)
   if (id === '*') {
     if (role === 'owner') return logChat('*', 'everyone can\'t be an owner — /grant * builder or /grant * visitor');
+    if (dur || forever) return logChat('*', 'the world\'s default role never expires — /access members|watch closes a world instead');
     if (!role) return logChat('*', 'usage: /grant * <role> (exceptions like +fly go to one person)');
     // merge: the default role also carries the world's guest opt-in (guests) and gen, which /grant * must not wipe
     send({ verb: 'set', args: { id: '@world', component: 'default-role', value: { role }, merge: true } }, { what: `make everyone ${role}` });
@@ -134,9 +147,49 @@ register('grant', (arg) => {
   }
   // a role goes to the person's IDENTITY (the u-… id the world knows them by), never to a typed name
   onePerson(id, 'grant').then((who) => { if (!who) return;
-    const value = { ...(role ? { role } : {}), ...(can ? { can } : {}) };
-    send({ verb: 'set', args: { id: '@world', component: `roles:${who}`, value, ...(role ? {} : { merge: true }) } }, { what: `${role ? `make ${id} ${role}` : `change ${id}'s exceptions`}` }); });
+    const cur = worldComponents()[`roles:${who}`];
+    if (!role && (dur || forever) && !cur) return logChat('*', `${id} holds no role here to time — /grant ${id} <role> for ${durWord ?? '2h'}`);
+    // forever = the same grant without its end (a set, not a merge: a merge can't remove a field)
+    const { until: _u, ...rest } = cur ?? {};
+    const value = forever ? { ...rest, ...(role ? { role } : {}), ...(can ? { can: { ...(rest.can ?? {}), ...can } } : {}) }
+      : { ...(role ? { role } : {}), ...(can ? { can } : {}), ...(dur ? { until: serverNow() + dur } : {}) };
+    const merge = !forever && !role;
+    send({ verb: 'set', args: { id: '@world', component: `roles:${who}`, value, ...(merge ? { merge: true } : {}) } },
+      { what: `${role ? `make ${id} ${role}` : forever ? `make ${id}'s grant permanent` : dur ? `time ${id}'s grant` : `change ${id}'s exceptions`}${dur ? ` for ${durWord}` : ''}` }); });
 });
+
+// /revoke <name> — take back someone's role: they hold this world's default role again (in a world that admits only
+// people listed, that means they may not come in, and the door removes them).
+register('revoke', (arg) => {
+  const id = (arg || '').trim();
+  if (!id) return logChat('*', 'usage: /revoke <name>');
+  onePerson(id, 'revoke').then((who) => { if (!who) return;
+    if (!worldComponents()[`roles:${who}`]) return logChat('*', `${id} holds no role here — nothing to take back`);
+    send({ verb: 'delete', args: { id: '@world', component: `roles:${who}` } }, { what: `take back ${id}'s role` }); });
+});
+
+// /access [members|watch|visitors|open] — who may come into this world (@world.access and default-role; the four doors of
+// shared/protocol/access.js DOORS). No argument: show it, and who is listed. Owner-only to change; the authority decides.
+register('access', (arg) => {
+  const a = (arg || '').trim().toLowerCase();
+  if (!a) return showMembers();
+  const door = { members: 'members', private: 'members', closed: 'members', listed: 'members', watch: 'watch', spectators: 'watch',
+                 visitors: 'visitors', visitor: 'visitors', open: 'open', builders: 'open' }[a];
+  if (!door) return logChat('*', 'usage: /access members|watch|visitors|open — or /access to see who can come in');
+  const ws = doorWrites(door, worldComponents());
+  const ops = ws.map((w) => ({ verb: 'set', args: { id: '@world', component: w.component, value: w.value } }));
+  send(ops.length === 1 ? ops[0] : { verb: 'batch', args: { ops } }, { what: `make this world ${door === 'members' ? 'members only' : door === 'watch' ? 'watch only' : door}` });
+});
+register('members', () => showMembers());
+/** Who may come into this world, and until when: the door (shared/protocol/access.js) and everyone listed, from this
+ *  client's own fold. */
+function showMembers() {
+  const wc = worldComponents(), now = serverNow();
+  const door = doorOf(wc);
+  const rows = Object.entries(wc).filter(([k, v]) => k.startsWith('roles:') && v && typeof v === 'object')
+    .map(([k, v]) => `${actorLabel(k.slice(6))} — ${v.role}${Number.isSafeInteger(v.until) ? ` (${leftWords(v.until, now)})` : ''}`);
+  logChat('*', `who can come into "${CONFIG.world}": ${door === 'signed-in' ? 'anyone signed in' : DOORS[door]}${rows.length ? `\n${rows.join('\n')}` : '\nnobody is listed by name'}`);
+}
 
 // /kick <name> [minutes] [reason…], /ban <name> [days|forever] [reason…], /mute <name> [minutes] [voice|chat] [reason…],
 // /warn <name> <reason…>, /ghost <name> [minutes] [reason…]: the authority enforces the permission and the rank (only below you);

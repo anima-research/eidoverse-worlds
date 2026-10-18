@@ -78,8 +78,7 @@ Every message belongs to exactly one plane:
 
 | type | plane | who may send | shape (essentials) | notes |
 |---|---|---|---|---|
-| `join` | — | anyone admitted | `{world, id?, token?, avatar?, surface?, spectate?, declares?, renderer?, agentToken?, replica}` | travel = leave A, join B on the same socket. Verified sessions: `id` ignored, login name wins. An embodied (`world` surface) join must say `replica: true` — it folds the log itself — or it is refused. Answers `snapshot` (§4). |
-| `request` | authored | embodied; spectators may only read | `{id?, verb, args}` | the ONLY way into the log: one request (create, set, delete, place, batch, use, say, undo, publish, update, grab/put/throw/drop/punt/move/wait, sky/weather/sculpt, upload/adopt, kick/ban/unban, and the reads look/inspect/measure/find/lint/history/schema/scripts/help/whois). The asker is stamped from the connection, never read from the payload. Answers `reply`. There is no other write path. |
+| `join` | — | anyone admitted | `{world, id?, token?, avatar?, surface?, spectate?, declares?, renderer?, roam?, agentToken?, replica, session?}` | travel = leave A, join B on the same socket. Verified sessions: `id` ignored, login name wins. An embodied (`world` surface) join must say `replica: true` — it folds the log itself — or it is refused. `session`: the page's own id (8–64 of `A-Za-z0-9_-`), relayed as its presence `session` (§4). `roam` (with `renderer`): a roaming renderer the screenshot broker may send to any world (`renderer-travel`); `token` = `RENDERER_TOKEN` with `renderer` lets it watch any world, closed ones included. The door's refusals: 4005 (a bad link, no such world, a client that doesn't fold the log; 4005 "full" is transient), 4006 (moderation), 4010 (this world isn't open to you, `@world.access`), 4011 (nothing to watch yet: redial). Answers `snapshot` (§4). |
 | `history` | read | anyone incl. spectators | `{before?, after?, limit?≤300, verbs?, reqId?}` | pages the log newest-first; answers `history`. |
 | `debug` | read | anyone incl. spectators | `{limit?, kinds?}` or `{behavior}` or `{behaviors:true}` | the flight recorder (every refusal) + script status; answers `debug`. |
 | `pose` | presence | embodied | `{pose}` | latest-wins into the world's dirty map; fanned out in stage `frame`s at ~15Hz. Bag fields incl. the C18 `xr` tracked-body contract: **docs/pose-wire.md**. Non-finite / malformed samples are refused at the source (`server/posecheck.ts`, 09-06). |
@@ -96,6 +95,7 @@ Every message belongs to exactly one plane:
 | `attest` | presence | bound voice leg only | `{seq, digest, gen}` | per-utterance performance receipt; verified against `recentSays` (≤300s, sha256 of text, current gen) then broadcast as `performed`. |
 | `bc` | dev | anyone | `{tag}` | crash breadcrumbs, printed on disconnect. |
 | `capture-result` | service | renderer legs | `{id, dataUrl?/error?}` | answers a server `capture` request (backs HTTP `/snap`). |
+| `capture-capabilities` | service | embodied legs | `{capture: {version: 1, engine: "unreal", scene}}` | an opt-in native donor says it can capture (server/snapshots.ts captureCapability); anything else clears it. |
 | `world-fork` | admin | owner | `{to}` | a new world (its own genesis) whose founding act names this one, holding a copy of its current state; answers `world-forked`. |
 | `world-reset` | admin | owner | `{name}` (must equal the world's) | archives the log beside it and re-founds the world for the same owners. |
 | `world-bans` | read | anyone present | `{}` | answers a `mod` text summary. |
@@ -107,7 +107,7 @@ Every message belongs to exactly one plane:
   cut: {dialect, v, head, worldId, verbs, state, sim, names, holds, mine, you},
   state (the chat
   window), avatars (roster), yourRights, restore, present[{id, avatar, pose,
-  declares?, surfaces}]}`. `cut.state` is the fold at `head` (each component
+  declares?, surfaces, session}]}`. `cut.state` is the fold at `head` (each component
   wrapped `{v}` or `{purged: true}`, as in the digest); a joiner adopts that
   cut and folds on from `head + 1`. Cost scales with the world, not its
   history.
@@ -131,20 +131,33 @@ Every message belongs to exactly one plane:
 - `frame` — `{seq, t, poses{id: pose}}`: the ~15Hz stage tick, latest-wins,
   dropped for clients with >32KB backlog (skip-to-current, never queue). `t` is
   the world's AUTHORITY clock (the one that stamps entries' `ts`; never behind
-  the log), not raw wall time (spec/PHYSICS.md §5.1).
+  the log), not raw wall time (spec/PHYSICS.md §5.1). A pose MAY carry `q` (a
+  normalized `[x,y,z,w]`: the full body's orientation, e.g. a swimmer's tilt) and
+  `locomotion` (`{mode?, medium?, body?}`, strings ≤ 32: descriptive, never
+  authority; docs/UNDERWATER-PRESENCE.md); both ride `frame`, `present[].pose`
+  and `restore`.
 - `clock` — `{t0, t}`: the answer to a client's `clock {t0}` (`t0` echoed, `t`
   the authority clock): a round-trip clock sample (`client/lib/serverclock.js`).
-- `arrive` / `leave` — embodied presence transitions. `arrive` carries `{id, avatar, declares?, actorId?, guest?}`:
-  `declares` only when the participant declared one (§6a).
+- `arrive` / `leave` — embodied presence transitions. `arrive` carries `{id, avatar, declares?, session, actorId?, guest?}`:
+  `declares` only when the participant declared one (§6a). `session` (also on
+  each `present` record) is opaque presence metadata: the joining page's own
+  id, else a token for the leg. A reconnect of the same page keeps it, so
+  clients can scope a sender's utterance counter by it. It grants nothing.
   `surface-transition` — `{id, surface, gen, retired}`: aux-leg
   join/takeover visibility (rtc re-keying, TTS hold capability).
 - `error` — `{error}`: every refusal, human-readable. `mod` — `{text}`:
   moderation query/act summaries.
 - `history`, `debug` — request answers (echo `reqId`).
-- `whisper` (with `echo:true` on your own sent copy), `anim`, `puppet`,
+- `whisper` (with `echo:true` on your own sent copy, and `replay:true` on a
+  held whisper delivered when its recipient joins), `anim`, `puppet`,
   `bodydrag`, `caption`, `typing`, `drag`, `rtc`, `performed` — presence
   relays, shapes as sent (see §3) plus attribution stamps.
-- `capture` — `{id, follow?, view?}`: server asks a renderer leg for a PNG.
+- `capture` — `{id, follow?, view?, at?, width?, height?, frame?}`: server asks a renderer leg (or an opt-in native donor, `capture-capabilities`) for a PNG; answered by `capture-result {id, dataUrl? | error?}` (server/snapshots.ts, the broker: roaming renderers, PNG validation, generations). `at` frames a placed thing instead of a body. `width` and `height` are the image size (960 × 540). `frame` is the optional framing, `{dist?, height?, pitch?}`, normalised by `shared/snapframe.js` on both ends and sent only when a field is given; absent = the fixed default framing. It is nested so that no field of the message itself, such as the image's `height`, is read as framing. Its fields:
+  - `dist`: `third`/`selfie` only. Flat distance from the body in metres, clamped to [0.5, 30]. The camera sits behind the body for `third` and in front for `selfie`. Defaults: 3.4 for `third`, 2.6 for `selfie`.
+  - `height`: `third`/`selfie` only. Camera height above the body's feet in metres, clamped to [0, 30]. Defaults: 2.1 for `third`, 1.6 for `selfie`.
+  - `pitch`: `first` only. Gaze tilt in degrees, clamped to [-85, 85]; positive looks up, negative looks down. Omitted keeps the existing gaze of about −4.3° (dropped 0.6 m over 8 m).
+- `renderer-travel` — `{world}`: the broker sends an idle roaming renderer to a world no renderer serves; it re-joins there on the same socket.
+- `notice` — `{text}`: something the person should know now that isn't chat (a timed grant ending in five minutes). Shown as a toast and a chat line.
 - `world-forked`, `world-reset` — admin outcomes.
 - `avatar-updated` / `avatar-profile-updated` — library changes (VRM upload,
   profile edit), broadcast to every world.
@@ -195,6 +208,11 @@ a def file changed on disk; clients re-fetch /defs and regrow what the
 changed content shapes; presence-plane, never logged).
 
 ## 7. Quirks recorded, not yet ruled on
+
+Underwater/native-client extension (2026-09-10): optional `pose.q` normalized
+body quaternion and `pose.locomotion` descriptive metadata are validated and
+relayed on the existing presence lane. See `UNDERWATER-PRESENCE.md`. No new
+verb, permission, server physics or log dialect is introduced.
 
 Flagged for the phase-1 protocol review — each is as-built behavior a new
 client must currently reproduce, and a candidate for a deliberate ruling:

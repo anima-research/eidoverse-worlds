@@ -1,3 +1,6 @@
+// the water level seen from under it (#254): fog, the background, Snell's window (watervolumes.js); authored water volumes,
+// air boxes and environments (#248) wait for their components to be registered (PROTOCOL §4)
+import { updateWater, updateWaterView, setWaterObjects, setWaterClock, environmentSettings, waterDebug, applyEnvLight } from './lib/watervolumes.js';
 // eidoverse-worlds browser client.
 //
 // Two planes: the world log (verbs, ordered, replayed on join) and presence
@@ -14,7 +17,7 @@ import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
 import { CONFIG, bus, report, tee, colorFor } from './lib/base.js';
 import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, ANIM_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
-import { setSkyArgsSource, entities, buildsPending, avatarMounts, roleOf, worldHasOwner, bagOf, bags, seatSocket, socketsOn, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
+import { setSkyArgsSource, entities, buildsPending, anyBuildsPending, avatarMounts, roleOf, worldHasOwner, bagOf, bags, seatSocket, socketsOn, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
 import { presence } from './lib/presence.js';
 import { initWorldQuad } from './lib/worldquad.js';
 import { foldParity } from './lib/parity.js';
@@ -45,7 +48,7 @@ import { initOccupants } from './lib/occupants.js';
 // now (it must carry the protocol for lite.js, which has no bodies to register), and
 // this is the real, body-building implementation of that interface.
 import * as participants from './lib/remotes.js';
-import { capture } from './lib/net_capture.js';
+import { capture, setSnapReadiness } from './lib/net_capture.js';
 import { setWaveClock } from './lib/water.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
@@ -153,6 +156,15 @@ const isViewer = CONFIG.spectate || CONFIG.renderer;
 
 setSkyArgsSource(skyArgs);
 setResidencyFocus(() => myState?.pos ?? null);   // the body anchors residency too (§13.3)
+// a renderer takes a snapshot only once the world is realized around the body it follows (net_snap.js settle): the
+// body in the scene, the world's builds done, no model loading or standing in. (Shaders still warming do not block:
+// the renderer compiles any it meets — a stall, never a missing object.)
+setSnapReadiness(async (follow) => {
+  const r = residencyDebug(), warm = warmStats();
+  const body = !!remotes.get(follow)?.avatar, builds = anyBuildsPending();
+  return { ready: body && !builds && !r.loading && !r.standins, body, builds, models: r.real,
+    loading: r.loading + r.standins, compiling: warm.pending + (warm.running ? 1 : 0) };
+});
 // The realizers project folded state into the scene. Wired before connect()
 // so the hydrated event of the very first snapshot finds them listening;
 // livechat.js takes the fold-inert live verbs off the 'live-entry' bus.
@@ -407,6 +419,7 @@ setLoadingItems(loadingItems);
 setBootAssets({ items: loadingItems, bytes: bootBytes });
 registerXRPanel(chatXRPanel);
 
+let restoredPosition = false;
 wireNet({
   participants,
   myReachBag,
@@ -422,6 +435,8 @@ wireNet({
     // was stored as [null,0,null] and every rejoin put the owner back on it): only
     // finite numbers are a place; anything else is the origin
     const fin = (v, fb = 0) => (Number.isFinite(v) ? v : fb);
+    restoredPosition = true;
+    myState.q = r.q; myState.locomotion = r.locomotion;
     myState.pos.set(fin(r.p[0]), fin(r.p[1]), fin(r.p[2]));
     myState.yaw = r.yaw ?? 0;
     setCamYaw(myState.yaw + Math.PI); // camera behind you, facing your way
@@ -541,7 +556,13 @@ function people() {
 // instantaneous and looked broken.
 
 let hydrated = false, propsWait = false;
-bus.on('hydrated', () => { hydrated = true; checkReady(); });
+bus.on('hydrated', () => {
+  updateWater();
+  const spawn = environmentSettings()?.spawn;
+  if (!restoredPosition && Array.isArray(spawn) && spawn.length === 3 && spawn.every(Number.isFinite)) myState.pos.fromArray(spawn);
+  hydrated = true; checkReady();
+});
+bus.on('world-reset', () => { restoredPosition=false;myState.q=undefined;myState.locomotion=undefined; });
 
 // An empty world is indistinguishable from a broken one: no ground, no sky,
 // no objects, no explanation. That is what a mistyped world name gets you,
@@ -590,14 +611,17 @@ registerSystem('motion', () => tickMotion());                   // the world's m
 registerSystem('lookat', () => tickLookAt());                   // look-at: things turn to face something (after motion)
 registerSystem('texts', () => tickTexts());                     // signs that turn to face you
 registerSystem('openable', () => tickOpenables());           // doors, gates and lids tween to their state
-registerSystem('sky', (dt, t, now) => updateSky(now, t));
+registerSystem('sky', (dt, t, now) => { updateSky(now, t); applyEnvLight(); });   // an authored environment's sun wins, before the rig fits shadows
 registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather → uniforms
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests
 registerSystem('sounds', () => tickSounds(), { every: 2 });      // panners follow entities, the listener the camera
+setWaterObjects(() => entities);
+setWaterClock(serverNow);
+registerSystem('water', updateWater);
 registerSystem('me-drive', (dt) => {
   if (CONFIG.renderer) { /* camera is driven per snap request */ }
   else if (CONFIG.spectate) updateSpectator(dt, CONFIG.follow ? remotes.get(CONFIG.follow) : null);
-  else if (isDowned()) stepRagdoll(dt);     // the controller yields while limp
+  else if (isDowned()) { myState.q = undefined; myState.locomotion = undefined; const me = getMe(); if (me) me.locomotion = null; stepRagdoll(dt); }     // the controller yields while limp
   else if (avatarMounts.has(CONFIG.name) || seatLeaving()) updateMountedMe(dt);  // seated (or being carried off a seat): derived, not driven
   else updateMe(dt, getMe());
   updateSeatHint(dt);            // "X — sit" while a declared seat is in reach
@@ -635,6 +659,7 @@ registerSystem('debug', (dt, t, now) => updateDebug(now));       // F3 wireframe
 registerSystem('send-pose', (dt, t, now) => sendPose(now));
 // XR: read hands → fill intent (updateMe already moved the body) → rig follows
 registerSystem('xr', (dt) => updateXR(dt));
+registerSystem('water-view', () => updateWaterView());   // after the camera's last move this frame (movement, XR): the level's fog and background
 registerSystem('xrvignette', (dt) => tickXRVignette(dt));   // comfort tunnel, on the XR camera (Settings › VR)
 registerSystem('pixel-ratio', () => applyPendingPixelRatio());   // a resize clears the canvas: before the draw, never after
 registerSystem('render', renderWorld);
@@ -644,6 +669,7 @@ bus.on('xr:sit', () => { if (!xrTrySitOn(null)) setPosture('sit'); });
 bus.on('xr:stand', () => xrDismountMe('menu'));
 bus.on('xr:mic', async () => { const { xrMicPress } = await import('./lib/vrmic.js'); await xrMicPress(); });   // in VR an open mic permission gets one bounded try, never a hang (vrmic.js); otherwise exactly toggleMic
 bus.on('xr:select', (id) => sceneSelect(id));
+globalThis.__waterDebug = waterDebug;
 let _pulseAt = 0;
 registerSystem('pulse', (dt, t, now) => {
   if (now - _pulseAt < 1000) return;
@@ -1076,6 +1102,7 @@ const EW = globalThis.EW = {
   simShown,                    // the sim as drawn: a copy of this client's sim layer at the server's clock
   grassDiag,                   // §22: `await EW.grassDiag()` — the meadow's GPU cost, attributed by difference
   setCloudQuality,             // §22b: the sky pane's tier knob, console-reachable for diagnosis
+  water: waterDebug,
   warm: warmStats,             // the conductor's queue (§16.2.A)
   budget: budgetStats,         // the shared per-frame background budget: share, debt, per-lane spend/grants/denials
   lanes: () => ({ sched: schedLaneStats(), load: loadLaneStats() }),  // queue depths vs caps

@@ -29,7 +29,7 @@ import { CAPACITY_CEILING } from "./capacity.js";
 const guess = (...a) => UP.guess(...a);
 
 // Sanity and shape of the values the authority's own engine reads (what the change IS, not which word carried it).
-function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
+function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {}) {
   const at = `${id}.${comp}`; const obj = v && typeof v === "object" && !Array.isArray(v);
   // where a component goes (catalogue `on`): world settings on a chair, or a transform on @world, were taken and then
   // meant different things to the authority and the renderer (component review T1a/T1b)
@@ -57,7 +57,15 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   if (id === "@world" && comp.startsWith("roles:") && (!obj || (v.role !== "none" && !R.roleDef(wcS, v.role))))
     refuse("shape", `${at}.role must be a role here (${roleIds().join(", ")}; got ${JSON.stringify(v?.role)})`, "role-defs (the owner) defines custom roles", { didYouMean: guess(String(v?.role), roleIds()) });
   if (id === "@world" && comp.startsWith("roles:") && obj) {
-    for (const k of Object.keys(v)) if (!["role", "can", "note"].includes(k)) refuse("schema", `${at}: unknown key '${k}'`, "roles:<id> is {role, can?, note?}", { didYouMean: guessKey(k, ["role", "can", "note"]) });
+    for (const k of Object.keys(v)) if (!["role", "can", "note", "until"].includes(k)) refuse("schema", `${at}: unknown key '${k}'`, "roles:<id> is {role, can?, note?, until?}", { didYouMean: guessKey(k, ["role", "can", "note", "until"]) });
+    // a timed grant (upstream #258): `until` is when it ends (epoch ms, the authority's clock); the authority writes its end
+    // (expire-roles) and warns the holder five minutes before. Ownership never ends by itself (an ownerless world would
+    // open), and a new end is in the future, at most a year out
+    if (v.until !== undefined) {
+      if (v.role === "owner") refuse("shape", `${at}: ownership never expires`, "give a timed grant a role below owner, or leave until out");
+      if (!Number.isSafeInteger(v.until)) refuse("shape", `${at}.until is a time in epoch milliseconds`, "until: Date.now() + 2 * 3600000 for two hours from now");
+      if (!carry && now != null && (v.until <= now || v.until > now + 366 * 86400000)) refuse("bounds", `${at}.until must be in the future and at most a year away (it is ${v.until <= now ? "already past" : "more than a year out"})`, "until: Date.now() + <duration in ms>; to end a grant now, delete roles:<id>");
+    }
     if (v.note !== undefined && !(typeof v.note === "string" && v.note.length <= 80)) refuse("shape", `${at}.note is up to 80 characters`, "");
     if (v.can !== undefined) { const bad = R.checkCan(v.can, at); if (bad) refuse(bad.code, bad.reason, bad.fix, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
       // dependencies are checked on the EFFECTIVE set at write (research §3): editOthers on without build is refused

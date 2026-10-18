@@ -14,10 +14,10 @@ import { join } from "node:path";
 import { TRUST_NAMES } from "./config.ts";
 // how often a person may change the name they show (moderation: a name is how people recognise who did what)
 const RENAME_COOLDOWN_MS = Math.max(0, Number(process.env.RENAME_COOLDOWN_DAYS ?? 7)) * 86400000;
-import { PORT, HOST, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
+import { PORT, HOST, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
-import { globalBans, findBan, addrSanctionsFor, saveAddrSanctions } from "./moderation.ts";
-import { accountAgeRefusal } from "./accountage.ts";
+import { addrSanctionsFor, saveAddrSanctions } from "./moderation.ts";
+import { entryFor, doorOfWorld, whoOf, settleAccess, sweepAccess, setLoadedWorlds, NOT_YET_CLOSE, type Expel } from "./access.ts";
 import { isOperator } from "./operators.ts";
 import { resolveLibFile } from "./libfile.ts";
 import { summarizeGlb } from "./geometry.ts";
@@ -36,6 +36,7 @@ import { directoryFor, foldName } from "./directory.ts";
 // 7c). fetch() below delegates; avatarRoster rides back for the join
 // snapshot, pendingCaptures for the renderer's capture-result replies.
 import { route, avatarRoster } from "./routes.ts";
+import { snapshots } from "./snapshots.ts";
 import { registerSystem, startTick } from "./tick.ts";
 import { MESSAGES, pendingWhispers, whisperKey } from "./messages.ts";
 import { LIMITS } from "./limits.ts";
@@ -137,8 +138,11 @@ function settledPose(pose: unknown): Record<string, unknown> | null {
 // (§15.1: settled-pose-test regexes this file) pin the definition here.
 wireSettledPose(settledPose);
 // A role change re-sends everyone's rights.
+// …and whoever may no longer be here (a closed door, an ended grant, a demotion in a world that admits only people
+// listed) is removed (server/access.ts settleAccess, 4010), as upstream #258's settle pass did.
 wireRights(
-  (w) => { for (const c of w.clients) { try { c.ws.send(JSON.stringify({ type: "your-rights", rights: rightsFor(w, c) })); } catch { /* gone */ } } },
+  (w) => { for (const c of w.clients) { try { c.ws.send(JSON.stringify({ type: "your-rights", rights: rightsFor(w, c) })); } catch { /* gone */ } }
+    settleAccess(w, expel as Expel); },
 );
 
 // ------------------------------------------------------------------ presence
@@ -179,6 +183,7 @@ function reapAuxLegs(w: World, primary: Client, closeReason: string) {
   for (const t of [...w.clients]) {
     if (t !== primary && t.id === primary.id && (t.surface ?? "world") !== "world") {
       retireAuxLeg(w, t, primary);
+      snapshots.retire(t);
       w.clients.delete(t); clients.delete(t.ws);
       t.ws.close?.(4007, closeReason);
       console.log(`[world:${w.name}] ${primary.id}/${t.surface} reaped — ${closeReason}`);
@@ -186,10 +191,12 @@ function reapAuxLegs(w: World, primary: Client, closeReason: string) {
   }
 }
 
-function expel(w: World, target: Client, why: string, until?: number | null) {
-  // `until`: when they may come back (a kick's cooldown, a timed ban); an agent host reconnects then instead of never
+function expel(w: World, target: Client, why: string, until?: number | null, code = 4006) {
+  // `until`: when they may come back (a kick's cooldown, a timed ban); an agent host reconnects then instead of never.
+  // `code`: 4006 removed by moderation; 4010 (access.ts ACCESS_CLOSE) this world is no longer open to you — neither is redialled
   try { target.ws.send(JSON.stringify({ type: "error", error: why, ...(until ? { until } : {}) })); } catch { /* going anyway */ }
   const wasEmbodied = !target.spectator;
+  snapshots.retire(target);
   // an expelled AUX leg announces its own death; an expelled PRIMARY takes
   // its aux legs with it (kick/ban target the identity, not one socket) —
   // review finding 5: expel unmapped + superseded the target, so the close
@@ -201,7 +208,7 @@ function expel(w: World, target: Client, why: string, until?: number | null) {
   w.clients.delete(target);
   clients.delete(target.ws);
   target.world = null;
-  target.ws.close?.(4006, "removed by moderation");
+  target.ws.close?.(code, code === 4010 ? "access ended" : "removed by moderation");
   // a ghost already left everyone's view (and the scripts' senses) when it became one: never a second leave
   if (wasEmbodied && !target.ghostHidden) { w.broadcast({ type: "leave", id: target.id }); w.scripts.onPresence("leave", target.id, target.actorId); }
   if (wasEmbodied && target.actorId) w.log?.departed(target.actorId); // what they held drops into the world (design 20, orphans)
@@ -223,6 +230,13 @@ function describe(w: World): string {
 // the running server notices here: reload, diff, and push the same
 // generation-bearing event a proposal gets. Late profile arrival is
 // event-driven for every consumer, not wishful polling.
+// World access expiry (access.ts): warn five minutes out, then the authority writes each passed `until` into the log
+// (expire-roles) and whoever lost entry with it is removed. Every second: between `until` and the sweep the grant still
+// stands (it ends when its end is written, so a replay agrees).
+setLoadedWorlds(() => worlds);
+registerSystem({ name: "access-sweep", everyMs: Math.max(250, Number(process.env.ACCESS_SWEEP_MS ?? 1000)),
+  fn: (now) => sweepAccess(worlds.values(), expel as Expel, now) });
+
 registerSystem({ name: "seat-store-poll", everyMs: 5000, fn: () => {
   const ext = seatStore.pollExternalChange();
   if (!ext) return;
@@ -296,10 +310,20 @@ try { const notice = bootNotice(WORLDS_DIR); if (notice) console.log(notice); } 
 
 let nextClientNum = 1;
 const clients = new Map<unknown, Client>();
+snapshots.setClients(() => clients.values());   // roaming renderers are found across worlds
+// …and sent only where they will be let in (a roamer with the renderers' credential goes anywhere — access.ts)
+snapshots.setAdmission((w, c) => c.trustedRenderer || !w.log?.access() || w.log.access().join === "anyone");
 // #57 B2: transport-epoch source. Global (not per-world) so a generation number
 // never collides across worlds or after a world reload; never persisted — an
 // epoch outliving the process would defeat its purpose.
 let GEN = 0;
+// The sender lifetime presence consumers scope a speaker's utterance counter
+// by (`session` on arrive and snapshot.present): the joining page's own id,
+// which outlives a reconnect as its counter does, else a fresh token for this
+// leg. Opaque and observational: authority still uses the credential and leg
+// checks, and nothing here reveals the process's connection count.
+const PAGE_SESSION_RE = /^[A-Za-z0-9_-]{8,64}$/;
+const presenceSession = (c: Client) => (c.presenceSession ??= crypto.randomUUID());
 
 /** The placeholder tier's bbox side-channel, sent AFTER the snapshot as its
  *  own message: summaries are async, and the join handler's synchronous
@@ -349,6 +373,11 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // with an explanation and a close code the client knows not to retry
     // (retrying a name that can never exist is just a polite DoS).
     const wname = String(msg.world ?? "commons");
+    if (auth?.nativeWorld && auth.nativeWorld !== "*" && wname !== auth.nativeWorld) {
+      ws.send(JSON.stringify({ type: "error", error: "this native session is limited to its approved world; sign in again for multi-world access" }));
+      ws.close(4003, "native session world restriction");
+      return null;
+    }
     if (!/^[a-z0-9_-]{1,64}$/i.test(wname)) {
       ws.send(JSON.stringify({ type: "error", error: `"${wname}" is not a world name — check the link that brought you here` }));
       c.ws.close?.(4005, "bad world name");
@@ -368,6 +397,13 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       return null;
     }
     if (!worldExists(wname)) {
+      // nothing to watch YET is not a refusal (upstream #258: 4011, redialled): an observer started before the world is
+      // founded gets in once someone founds it. A body is refused as before (joining never founds).
+      if (msg.spectate || msg.renderer) {
+        ws.send(JSON.stringify({ type: "error", error: `there's no world called "${wname}" yet — nothing to watch` }));
+        c.ws.close?.(NOT_YET_CLOSE, "no such world yet");
+        return null;
+      }
       ws.send(JSON.stringify({ type: "error", error: `there's no world called "${wname}" here — check the link that brought you here` }));
       c.ws.close?.(4005, "no such world");
       return null;
@@ -439,7 +475,14 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // present list, never inferred from the credential, the client or anything else, never logged, never read by a gate.
     // Absent is undeclared: no word is assumed. One short lowercase word; anything else is no declaration.
     c.declares = declarationOf(msg.declares) ?? undefined;
+    // the joining page's own id (#234/#217: a page's typing and attention follow its own session), relayed as `session`
+    if (typeof msg.session === "string" && PAGE_SESSION_RE.test(msg.session)) c.presenceSession = msg.session;
     c.renderer = Boolean(msg.renderer);
+    c.roam = c.renderer && Boolean(msg.roam);
+    // re-derived on every join, like the rest of identity: the renderers' own
+    // credential, presented WITH the renderer flag on this very join
+    c.trustedRenderer = c.renderer && Boolean(RENDERER_TOKEN) && String(msg.token ?? "") === RENDERER_TOKEN;
+    snapshots.configure(c, msg.capture);
     if (c.renderer) c.spectator = true; // renderers are invisible by definition
     // ---- who this join is: an ACCOUNT, proven by this join's credential (C1/C2) ----
     //   a verified session → its sub ("human:discord:…");
@@ -520,41 +563,26 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // never yields their id, so it never yields their role.
     c.actorId = directoryFor(WORLDS_DIR).resolve({ sub: c.account ?? null, name: c.id });
     if (c.renamed && c.actorId) directoryFor(WORLDS_DIR).markRenamed(c.actorId);
-    // Bans — checked once identity is SETTLED (id/sub/reserved names all
-    // resolved above), before the body enters. A global ban closes every
-    // door; a per-world ban closes this one. Spectating counts: a ban is
-    // exclusion, not just silencing. WORLD_ADMIN passes everywhere — an
-    // operator can never be locked out, which is also the unban path of
-    // last resort.
+    // ENTRY — checked once identity is SETTLED (account, actor id, reserved names all resolved above), before the body
+    // enters. One decision, server/access.ts entryFor, the same one every other door asks (a listing, an HTTP read, the
+    // settle after a role change): bans first (a global ban closes every door, a world's ban this one; watching counts —
+    // a ban is exclusion, not just silencing), a kick's cooldown, then the world's own @world.access (who may come in
+    // with a body; watch: anyone lets the rest spectate), account age, and capacity for a body. Operators, owners and
+    // holders of a moderation power always get in — an operator can never be locked out, which is also the unban path
+    // of last resort.
     {
-      // by ACCOUNT, or a guest by its hashed address while that ban lasts (H4); an operator is never locked out
-      const gb = findBan(globalBans, c.account, c.addr);
-      const ban = gb ?? findBan(globalBans, c.account, c.addr, Date.now(), w.name) ?? (c.actorId && w.log!.bannedHere(c.actorId) ? { by: "a moderator" } as any : null);
-      if (ban && !isOperator(c.account)) {
-        console.log(`[world:${w.name}] join refused: ${c.id} is banned ${gb ? "from this server" : "here"}`);
-        ws.send(JSON.stringify({ type: "error", error: `you are banned from ${gb ? "these worlds" : `"${w.name}"`}${ban.reason ? ` — ${ban.reason}` : ""}` }));
-        c.ws.close?.(4006, "banned");
+      const here = [...w.clients].filter((o) => !o.spectator && (o.surface ?? "world") === "world" && o.actorId !== c.actorId).length;
+      const r = entryFor(doorOfWorld(w), whoOf(c), c.spectator ? "watch" : "embody", { here });
+      if (r) {
+        console.log(`[world:${w.name}] join refused: ${c.id} — ${r.reason}`);
+        ws.send(JSON.stringify({ type: "error", error: r.why, ...(r.until ? { until: r.until } : {}) }));
+        // "full" is its own close reason: it is transient (someone leaves), so a client waits and tries again rather than
+        // showing it as the answer (review r3 F6); the other refusals won't change by retrying
+        c.ws.close?.(r.code, r.reason === "full" ? "full" : r.reason === "banned" ? "banned" : r.reason === "kicked" ? "kicked" : "no access");
         return null;
       }
     }
-    // research roles S4: a kick's cooldown bars rejoining until it ends (the record's until), and @world.access decides
-    // who may come in (anyone / signed-in / listed, accounts at least `minAccountDays` old, and at most `max` at once);
-    // moderators and owners always get in
     if (w.log && c.actorId && !isOperator(c.account)) {
-      const k = w.log.kickedHere(c.actorId);
-      if (k) { const mins = Math.max(1, Math.ceil((k.until - Date.now()) / 60000));
-        ws.send(JSON.stringify({ type: "error", error: `you were removed from "${w.name}" and may come back in ${mins} min${k.reason ? ` — ${k.reason}` : ""}`, until: k.until }));
-        c.ws.close?.(4006, "kicked"); return null; }
-      const acc = w.log.access();
-      if (acc && !accessBypass(w, c.actorId)) {
-        const here = [...w.clients].filter((o) => !o.spectator && (o.surface ?? "world") === "world" && o.actorId !== c.actorId).length;
-        const why = acc.join === "signed-in" && c.anonymous ? `"${w.name}" is for signed-in people` : acc.join === "listed" && !w.log.listedHere(c.actorId) ? `"${w.name}" admits only people with a role here` :
-          accountAgeRefusal({ world: w.name, minDays: acc.minAccountDays, account: c.account, anonymous: !!c.anonymous, now: Date.now() });
-        const full = !why && Number.isInteger(acc.max) && !c.spectator && (c.surface ?? "world") === "world" && here >= acc.max ? `"${w.name}" is full (${acc.max} at once)` : null;
-        // "full" is its own close reason: it is transient (someone leaves), so a client waits and tries again rather than
-        // showing it as the answer (review r3 F6); the other access refusals won't change by retrying
-        if (why || full) { ws.send(JSON.stringify({ type: "error", error: why ?? full })); c.ws.close?.(4005, why ? "access" : "full"); return null; }
-      }
       // a guest is a fresh identity per connection: a mute or ghost a guest was given here is also filed against their
       // hashed address (moderation.ts), and every new guest from that address is given it too, written to the moderator
       // log as the moderator's own act on the new identity (so it shows, applies and lifts like any other) (R 10-07)
@@ -661,6 +689,7 @@ function installJoin(c: Client, w: World) {
             && (other.surface ?? "world") === c.surface
             && !(other.spectator && (other.surface ?? "world") === "world")) {
           other.superseded = true;
+          snapshots.retire(other);
           retiredGen = other.gen;
           w.clients.delete(other);
           clients.delete(other.ws);
@@ -677,6 +706,10 @@ function installJoin(c: Client, w: World) {
     c.gen = ++GEN;   // B2: this leg's surfaceSession, issued on acceptance
     c.legGen = w.legGen();   // the world-scoped generation caption entries carry (survives restarts)
     w.clients.add(c);
+    // a body arriving with an agent's enrolment (its credential, never a declaration: §6a) where no renderer serves: send a
+    // roaming renderer now, so its first snapshot finds the world loaded (server/snapshots.ts prewarm; a no-op when one
+    // already serves or none roams)
+    if (c.tokenVerified && !c.spectator) snapshots.prewarm(w);
     // B4 (#57): a same-surface takeover must be VISIBLE to subscribers —
     // the lab found a listener bound to a dead voice leg until page
     // reload. This event is the no-reload path: "retire the old peer,
@@ -710,7 +743,6 @@ function rightsFor(w: World, c: Client) {
     ...(g ? { ghost: { chosen: !!g.chosen, ...(g.until ? { until: g.until } : {}) } } : {}), ...(m ? { muted: { channels: m.channels, until: m.until } } : {}) };
 }
 /** Does this identity hold a power that lets it in past access rules (research: moderators and owners bypass max)? */
-const accessBypass = (w: World, id: string) => { const e = w.log!.rightsOf(id); return e.role === "owner" || MOD_POWERS.some((k: string) => e.permissions.includes(k)); };
 
 /** The sanctions sweep (research roles S4; PLAN ghost): every couple of seconds, and right after a moderation act, make
  *  each world's live state match the moderator log by the authority's clock. Nothing is written when a sanction ends;
@@ -758,6 +790,7 @@ function buildSnapshot(w: World, c: Client) {
     // snapshot = the authority's cut of the world (the joiner folds it, then the log stream) + who's present now
     return {
       type: "snapshot",
+      renderSceneVersion: 1,
       world: w.name,
       you: c.id,
       // when this account may next change its name (and the name it just tried, if that was too soon)
@@ -791,7 +824,7 @@ function buildSnapshot(w: World, c: Client) {
         // settledPose, not lastPose: a joiner must not inherit someone
         // else's mid-ragdoll frame (#61). Same normalization `restore`
         // above already gets via rememberPose.
-        id: o.id, avatar: o.avatar, pose: settledPose(o.lastPose), ...(o.declares ? { declares: o.declares } : {}),   // §6a: relayed as declared; absent = undeclared
+        id: o.id, avatar: o.avatar, pose: settledPose(o.lastPose), ...(o.declares ? { declares: o.declares } : {}), session: presenceSession(o),   // §6a: relayed as declared; absent = undeclared
         // a world: the identity the log and roles know them by (granting a role names this id, never a name)
         ...(o.actorId ? { actorId: o.actorId } : {}),
         ...(w.log && o.anonymous ? { guest: true } : {}),   // no account: the people list's 'guest' badge (research roles S6)
@@ -838,6 +871,7 @@ const server = Bun.serve({
       try {
         const c = clients.get(ws);
         if (!c) return;
+        snapshots.retire(c);
         clients.delete(ws);
         // dev crash forensics (?bc=1 clients): the last thing a dying renderer
         // was doing, printed at the only moment we learn it died
@@ -917,7 +951,10 @@ const server = Bun.serve({
           // JOIN_TOKEN as before. Both may be live at once — invite links for
           // the show, Discord login for everyone with the role.
           const auth = c.auth && c.auth.exp > Date.now() ? c.auth : null;
-          if (!auth && JOIN_TOKEN && String(msg.token ?? "") !== JOIN_TOKEN) {
+          // …and a renderer may come through on the RENDERERS' credential
+          // instead (config.ts RENDERER_TOKEN) — only as a renderer
+          const rendererKey = Boolean(RENDERER_TOKEN) && Boolean(msg.renderer) && String(msg.token ?? "") === RENDERER_TOKEN;
+          if (!auth && JOIN_TOKEN && String(msg.token ?? "") !== JOIN_TOKEN && !rendererKey) {
             ws.send(JSON.stringify({ type: "error", error: "bad or missing join token" }));
             c.ws.close?.(4003, "bad token");
             return;
@@ -936,6 +973,7 @@ const server = Bun.serve({
           // still rtc- and attest-capable with no living primary, the exact
           // state the 4008 orphan refusal exists to prevent.
           if (c.world) {
+            snapshots.retire(c);
             c.world.clients.delete(c);
             retireAuxLeg(c.world, c);
             if (!c.spectator) {
@@ -960,7 +998,7 @@ const server = Bun.serve({
           ws.send(JSON.stringify(buildSnapshot(w, c)));
           sendGeomFollowup(w, c);
           if (w.log) { c.ghostHidden = w.isGhost(c); }   // a ghost arrives unseen (PLAN 10-06); the sweep shows them when it ends
-          if (!c.spectator && !c.ghostHidden) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, ...(c.declares ? { declares: c.declares } : {}), ...(c.actorId ? { actorId: c.actorId } : {}), ...(w.log && c.anonymous ? { guest: true } : {}) }, c);
+          if (!c.spectator && !c.ghostHidden) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, ...(c.declares ? { declares: c.declares } : {}), session: presenceSession(c), ...(c.actorId ? { actorId: c.actorId } : {}), ...(w.log && c.anonymous ? { guest: true } : {}) }, c);
           if (w.log) sanctionSweep(w);   // a voice mute in force is re-applied on join (keyed on the identity, never a name)
           if (!c.spectator && !c.ghostHidden) w.scripts.onPresence("enter", c.id, c.actorId);   // scripts don't sense a ghost
           // Whispers that arrived while this identity was away. Held in memory
@@ -968,7 +1006,9 @@ const server = Bun.serve({
           if (!c.spectator && !c.ghostHidden) {   // a ghost gets held whispers when the ghost ends (its next join)
             const held = c.actorId ? pendingWhispers.get(whisperKey(w.name, c.actorId)) : undefined;
             if (held?.length) {
-              for (const m of held) ws.send(JSON.stringify(m));
+              // The client must distinguish catch-up from a live addressed event
+              // for private attention UI (#217). This flag is server-authored, never logged.
+              for (const m of held) ws.send(JSON.stringify({ ...m, replay: true }));
               pendingWhispers.delete(whisperKey(w.name, c.actorId!));
               console.log(`[world:${w.name}] delivered ${held.length} held whisper(s) to ${c.id}`);
             }

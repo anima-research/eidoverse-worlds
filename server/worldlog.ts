@@ -15,7 +15,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
-import { forkCopy, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo } from "../shared/protocol/authority.js";
+import { forkCopy, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { clientCutOf, spokenOf } from "../shared/protocol/replica.js";
 import { viewState } from "../shared/protocol/view.js";
@@ -216,6 +216,14 @@ export class WorldLog {
     if (this.live.state().status !== "ok") return;
     const from = this.live.entries.length;
     try { authorityTick(this.live); } finally { if (this.live.entries.length > from) this.afterWrite(from); }
+  }
+  /** Timed grants (server/access.ts sweepAccess, once a second): the authority writes the end of every roles:<id> whose
+   *  `until` has passed (expire-roles), sent out like any write. → the identities whose grant ended. */
+  expireRoles(): string[] {
+    if (this.retired || this.live.state().status !== "ok") return [];
+    const from = this.live.entries.length; let ended: string[] = [];
+    try { ended = authorityExpireRoles(this.live); } finally { if (this.live.entries.length > from) this.afterWrite(from); }
+    return ended;
   }
   /** The engine's heartbeat (server.ts `physics`): rests log at tick cadence with nobody asking, and requests no longer
    *  carry the settling (DESIGN-physics-responsiveness §1; STRIKES PH-S1-2: 150–500 ms per request during a cascade). */
@@ -478,6 +486,18 @@ export function resetWorld(log: WorldLog): string {
     if (!r0.ok) throw new Error(`founding again refused: ${r0.refused?.reason}`);
     for (const o of owners.slice(1)) { const r = authorityRequest(w, owners[0], "set", { id: "@world", component: `roles:${o}`, value: { role: "owner" } });
       if (!r.ok) throw new Error(`restoring owner ${o} refused: ${r.refused?.reason}`); }
+    // a world that admits only people LISTED stays closed, with them (upstream #258): erasing the content must not be what
+    // opens a members-only world to everyone. Its door (access, default-role) and every live role come back; a timed
+    // grant keeps its end, one already past is left behind.
+    const wc = st.entities["@world"]?.c ?? {};
+    if ((wc.access as Any)?.join === "listed") {
+      const now = Date.now();
+      const keep: [string, Any][] = Object.entries<Any>(wc).filter(([k, v]) => (k === "access" || k === "default-role" || k === "role-defs"
+        || (k.startsWith("roles:") && v?.role !== "owner")) && !(Number.isSafeInteger(v?.until) && v.until <= now));
+      keep.sort(([a], [b]) => (a === "role-defs" ? -1 : b === "role-defs" ? 1 : 0));   // custom roles first: a role refers to them
+      for (const [k, v] of keep) { const r = authorityRequest(w, owners[0], "set", { id: "@world", component: k, value: v });
+        if (!r.ok) throw new Error(`keeping ${k} through the reset refused: ${r.refused?.reason}`); }
+    }
   } catch (e) { fs.rmSync(fresh, { recursive: true, force: true }); throw e; }
   const arch = path.join(dir, `reset-${new Date().toISOString().replace(/[:.]/g, "-")}`);
   fs.mkdirSync(arch, { recursive: true });

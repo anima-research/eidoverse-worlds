@@ -26,12 +26,12 @@ import { qNorm } from "../shared/rot.js";
 import { decide as consentDecide, refusalWords } from "../shared/protocol/consent.js";
 import { worlds, type World, type Client, authorityNow } from "./world.ts";
 import { stateSampleError } from "../shared/presencewire.js";
-import { pendingCaptures } from "./routes.ts";
+import { snapshots } from "./snapshots.ts";
 import { globalBans, saveGlobalBans } from "./moderation.ts";
 
 // ---- whispers: held-in-memory machinery (moved with its only writers) ------
 // join's held-whisper delivery imports these back — one-way, like
-// routes.ts's pendingCaptures.
+// the screenshot broker's pending requests.
 export const pendingWhispers = new Map<string, unknown[]>();
 /** Held whispers are keyed by the recipient's IDENTITY (their actor id), never a display name: anyone can join wearing an
  *  absent person's name (security review 10-06 pass 2, H-B: a second "Marigold" received the first one's whisper). */
@@ -92,6 +92,26 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       verbs: Array.isArray(msg.verbs) && msg.verbs.length ? new Set(msg.verbs.map(String)) : null,
     });
     ws.send(JSON.stringify({ type: "history", reqId: msg.reqId ?? null, ...r }));
+  },
+  "inspect": ({ c, ws, now }, msg) => {
+    // One entity's authored component bag, for native inspectors. The browser
+    // folds the whole log and reads the same bag locally; render-scene only
+    // projects what renderers need. Open to spectators for the reason history
+    // is: the log is public to everyone in the world. Read-only; edits are
+    // `comp` verbs through the normal gate.
+    if (!c.world || typeof msg.id !== "string" || msg.id.length > 128) return;
+    const last = inspectAt.get(c) ?? 0;
+    if (now - last < 50) return;
+    inspectAt.set(c, now);
+    const e: any = c.world.state.entities[msg.id];
+    const reply: Record<string, unknown> = { type: "inspect", id: msg.id, reqId: msg.reqId ?? null };
+    if (!e) { ws.send(JSON.stringify({ ...reply, error: "not_found" })); return; }
+    const comp = e.comp ?? {};
+    const size = JSON.stringify(comp).length;
+    Object.assign(reply, { lib: e.lib ?? null, kind: e.kind ?? "model", parent: e.parent ?? null });
+    if (size > INSPECT_MAX) Object.assign(reply, { error: "too_large", types: Object.keys(comp), size });
+    else reply.comp = comp;
+    ws.send(JSON.stringify(reply));
   },
   "debug": ({ c, ws, now, expel }, msg) => {
     // The flight recorder (World.debugLog): why things bounced —
@@ -444,16 +464,10 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // presence: batched into stage frames by the tick loop, never persisted
     c.world.dirty.set(c.id, pose);
   },
-  "capture-result": ({ c, ws, now, expel }, msg) => {
-    const pending = pendingCaptures.get(msg.id);
-    if (!pending || !c.renderer) return;
-    pendingCaptures.delete(msg.id);
-    if (typeof msg.dataUrl === "string" && msg.dataUrl.startsWith("data:image/png;base64,")) {
-      pending.resolve({ ok: true, png: Buffer.from(msg.dataUrl.slice("data:image/png;base64,".length), "base64") });
-    } else {
-      pending.resolve({ ok: false, err: String(msg.error ?? "renderer returned no image"), status: 502 });
-    }
-  },
+  // a renderer (or an opt-in native donor) says what it can capture, and answers a `capture` request (server/snapshots.ts,
+  // the broker: roaming renderers, PNG validation, the generation check)
+  "capture-capabilities": ({ c }, msg) => { if (c.world) snapshots.configure(c, msg.capture); },
+  "capture-result": ({ c }, msg) => { snapshots.receive(c, msg); },
   "world-bans": ({ c, ws, now, expel }, msg) => {
     // Who is banned from the world you are standing in. Available to
     // anyone present — the moderator's record is public in its outline (who,

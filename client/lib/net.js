@@ -1,7 +1,7 @@
 // net — the wire. One socket carrying two planes: the world log (ordered,
 // persisted, replayed on join) and presence (batched, lossy, never persisted).
 
-import { CONFIG, report, bus } from './base.js';
+import { CONFIG, report, bus, nameFromJoinAck } from './base.js';
 import { avatarMounts } from './world.js';
 // The world as data (TEL0S_NOTES §11.2): every snapshot and live entry
 // folds here — synchronously, through the same shared/fold.js the
@@ -21,7 +21,7 @@ import { wingFoldPresence } from '../../shared/wingpresence.js';
 import { presenceWire, voiceWire, bodyWire } from '../../shared/presencewire.js';
 import { serverNow, localNow, noteRoundTrip, clockRtt } from './serverclock.js';
 import { presence } from './presence.js';
-import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
+import { logChat, logWhisper, noteTyping, noteHistoryContext, resyncChatAfter } from './chat.js';
 import { markPhase, refuseBoot, waitBoot } from './boot.js';
 // this client folds the authority's own stream (shared/protocol/replica.js) and derives the view the realizers draw from it,
 // locally; edit mode sends requests (editwrites.js) and waits for the authority.
@@ -261,6 +261,13 @@ export function sendDrag(id, pos, yaw, q = null, { end = false, scale = null } =
   }
 }
 
+/** This page's presence session: one id for as long as the page lives, sent
+ *  with every join, so listeners can tell a reconnect (the same page, whose
+ *  utterance counter goes on) from a new page (whose counter starts again).
+ *  index.html's early socket sends the first join, with the same id. */
+const PAGE_SESSION = (globalThis.__ewPageSession ??= globalThis.crypto?.randomUUID?.()
+  ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
+
 export function sendJoin() {
   const id = CONFIG.renderer ? `renderer-${CONFIG.name}`
     : CONFIG.spectate ? `retina-${CONFIG.name}` : CONFIG.name;
@@ -269,10 +276,12 @@ export function sendJoin() {
     avatar: hooks.myAvatarPath(),
     spectate: CONFIG.spectate || CONFIG.renderer,
     renderer: CONFIG.renderer,
+    ...(CONFIG.roam ? { roam: true } : {}),
     token: CONFIG.token,
     ...(CONFIG.account ? { account: CONFIG.account } : {}),
     // this client folds the world's log stream itself (the server refuses a client that doesn't)
     replica: true,
+    session: PAGE_SESSION,
   }));
 }
 
@@ -377,6 +386,9 @@ export function sendPose(now) {
   // what I press while I hold a thing (grabbable's presence tier: every receiver draws its fx while this rides;
   // absent = not pressing). Never logged: a use.down/up that changes the world is a request of its own
   if (s.useHeld) pose.use = s.useHeld;
+  // full-body orientation and a locomotion bag (docs/UNDERWATER-PRESENCE.md): presence only, optional, never authority
+  if (s.q) pose.q = s.q;
+  if (s.locomotion) pose.locomotion = s.locomotion;
   // A held custom pose rides the presence packet (and therefore lastPose, so
   // late joiners see it) — but never the log. `null` explicitly clears it.
   if (s.pose !== undefined) pose.pose = s.pose;
@@ -621,6 +633,21 @@ function onSocketClosed(ev) {
     toast('you were removed from this world — reload if you believe you may return', 'warn', 60000);
     return;
   }
+  // 4010 = this world is not open to you (access.ts ACCESS_CLOSE): refused at the door (listed people only, watch only),
+  // or your access just ended or was changed. The server said why in an `error` just before closing. No retry — the
+  // door won't open on its own; coming back is a deliberate reload (or ?spectate, when it said you may watch).
+  if (ev.code === 4010) {
+    showRefusal(joinRefusal ?? `you're not in "${CONFIG.world}" — reload if your access changes`);
+    return;
+  }
+  // 4011 = there's nothing to watch here YET (a spectator of a world nobody has founded): not a refusal — try again,
+  // backing off, so an observer started early joins once the world exists.
+  if (ev.code === 4011) {
+    net.status = 'retrying';
+    bus.emit('net', net);
+    setTimeout(connect, redial.next(REDIAL.full));
+    return;
+  }
   // 4005 = a refused join: a malformed name, no such world, an old-format world, a client that doesn't fold the log.
   // No retry — the answer won't change, so reconnecting is just hammering the authority. The server says why in an `error` just before this close; that sentence is shown. Without one, the close
   // reason picks the words (the server's reasons: "old-format world", "no such world", "bad world name", …).
@@ -738,6 +765,7 @@ async function handle(msg) {
       // present — and ensureRemote resets the mesh's transient expressions
       // before transplanting it into a fresh record.
       if (remotes.has(msg.id)) bus.emit('participant-teardown', msg.id);
+      bus.emit('participant-session', { id: msg.id, session: msg.session });
       ensureRemote(msg.id, msg.avatar, { declares: msg.declares ?? null, authority: true });   // §6a: a declared status (any word), absent = undeclared; shown as said, never sorted into kinds
       if (msg.actorId) identities.set(msg.id, msg.actorId);
       if (msg.guest) guests.add(msg.id); else guests.delete(msg.id);
@@ -874,6 +902,14 @@ async function handle(msg) {
     case 'log': onLog(msg); break;
     case 'reply': onReply(msg); break;
 
+    case 'renderer-travel':
+      // a roaming renderer is wanted elsewhere (server/snapshots.ts summon): go there — the same in-page re-join a
+      // person's travel uses. Only a roaming renderer obeys; anyone else ignores it.
+      if (CONFIG.renderer && CONFIG.roam && typeof msg.world === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(msg.world) && msg.world !== CONFIG.world) {
+        CONFIG.world = msg.world; rejoin();
+      }
+      return;
+
     case 'capture':
       // The reply is the snapshot's to produce and the wire's to send, so a client
       // without a renderer answers with an error instead of going quiet on an id
@@ -960,6 +996,20 @@ async function handle(msg) {
       bus.emit('roster');
       break;
 
+    case 'access-state':        // the world panel's 🔒 access tab (accesspanel.js)
+    case 'access-directory':
+      bus.emit(msg.type, msg);
+      break;
+
+    case 'notice':
+      // The world telling YOU something that is not a refusal — today, that
+      // your access here ends soon. Toast (it matters now) and chat (so it is
+      // still there when you look). Not an `error`: that would also tell every
+      // optimistic preview its verb was refused.
+      toast(String(msg.text ?? ''), 'warn', 20000);
+      logChat('*', String(msg.text ?? ''));
+      break;
+
     case 'error':
       // the world tells us it has no voice relay only when we try to use one —
       // remember it, so the mic glyph can say WHY it stays off (R, 09-04)
@@ -996,14 +1046,26 @@ async function onSnapshot(msg) {
   // The server's `you` is authoritative (verified identity, or a suffixed name
   // when two people share a nick). If it differs from what this client thinks,
   // adopt it — and say so, a silently different nameplate is confusing.
-  if (msg.you && msg.you !== CONFIG.name && !msg.renameRefused) {
-    CONFIG.name = msg.you;
-    localStorage.setItem('ew-name', msg.you);
+  // Renderer/spectator clients join under a transport prefix ("renderer-" /
+  // "retina-", see sendJoin) that is part of the wire id, not the name. Strip
+  // it before comparing and storing, or ew-name grows one prefix per reload
+  // (renderer-renderer-…) — unless the ack is a verified identity, which the
+  // server named itself (base.js nameFromJoinAck).
+  const you = nameFromJoinAck(msg.you, { renderer: CONFIG.renderer, spectate: CONFIG.spectate, verified: !!msg.yourSub });
+  if (you && you !== CONFIG.name && !msg.renameRefused) {
+    CONFIG.name = you;
+    localStorage.setItem('ew-name', you);
     toast(`you're appearing as “${msg.you}”`, 'info', 8000);
   } else if (msg.renameRefused) { CONFIG.name = msg.you; localStorage.setItem('ew-name', msg.you);
     try { const u = new URL(location.href); if (u.searchParams.has('name')) { u.searchParams.set('name', msg.you); history.replaceState(null, '', u); } } catch { /* fine */ } }
+  // a RE-join: lastSeq is still the last entry the old socket delivered, and
+  // what was said after it may be trimmed out of this snapshot's chat window
+  // (fair, not contiguous). Fetch it before lastSeq moves on. A first join has rendered nothing and is a no-op.
+  // Chat lines are numbered seq × 1000 (server/worldlog.ts readHistory); lastSeq is the log's own seq.
+  if (lastSeq >= 0) void resyncChatAfter(lastSeq * 1000);
   if (typeof msg.throughSeq === 'number' && msg.throughSeq > lastSeq) lastSeq = msg.throughSeq;
   bus.emit('net', net);
+  bus.emit('participant-sessions', msg.present ?? []);
   // #57 matrix 7: who has which aux legs live NOW (surface-transition keeps it
   // current after this). Consumers key hold-then-fallback TTS on it.
   bus.emit('surfaces', [...(msg.present ?? []),

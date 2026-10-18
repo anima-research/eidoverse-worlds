@@ -22,6 +22,8 @@ import { bus, report } from './base.js';
 import { net, sendRequest, replica, identities } from './net.js';
 import { makeSection, moderationFrame, worldSettingsFrame, setDockEntry, toast } from './ui.js';
 import * as R from '../../shared/protocol/roles.js';
+import { DOORS, doorOf, doorWrites, leftWords, listedIn } from '../../shared/protocol/access.js';
+import { serverNow } from './remotes.js';
 import { COMPONENTS, resolveVersioned, rangeWords, outOfRange } from '../../shared/protocol/componentspec.js';
 import { SIM_ID } from '../../shared/sim.js';
 
@@ -136,7 +138,12 @@ function paintRoles(body) {
   const head = (r) => `<th scope="col"><div class="rp-rname">${esc(r.name)}</div><div class="rp-dim">${holdersOf(r.id).length} ${holdersOf(r.id).length === 1 ? 'holder' : 'holders'}</div>`
     + (edit && r.custom ? `<select class="rp-above" data-r="${esc(r.id)}" title="place it above…">${roles.filter((x) => x.id !== r.id && x.id !== 'owner').map((x) => `<option value="${esc(x.id)}" ${R.rolesOf(wc()).find((y) => y.rank < r.rank)?.id === x.id ? 'selected' : ''}>above ${esc(x.name)}</option>`).join('')}</select><button type="button" class="rp-x" data-del="${esc(r.id)}" title="delete ${esc(r.name)}">×</button>` : '') + '</th>';
   const holders = (r) => { const ids = holdersOf(r.id); if (!ids.length) return '';
-    return `<div class="rp-holders"><b>${esc(r.name)}</b>: ${ids.map((id) => `<span class="rp-holder">${esc(nameOf(id))}${grant && (isOwner() || (rankOfId(id) < me().rank && r.rank < me().rank)) && r.id !== 'owner' ? ` <select class="rp-change" data-who="${esc(id)}"><option value="">change ▸</option>${R.grantableRoles(wc(), { ...me(), permissions: me().permissions }).filter((x) => x.id !== r.id && x.id !== 'owner').map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}<option value="::remove">remove (default role)</option></select>` : ''}</span>`).join(' · ')}</div>`; };
+    return `<div class="rp-holders"><b>${esc(r.name)}</b>: ${ids.map((id) => `<span class="rp-holder">${esc(nameOf(id))}${grant && (isOwner() || (rankOfId(id) < me().rank && r.rank < me().rank)) && r.id !== 'owner' ? ` <select class="rp-change" data-who="${esc(id)}"><option value="">change ▸</option>${R.grantableRoles(wc(), { ...me(), permissions: me().permissions }).filter((x) => x.id !== r.id && x.id !== 'owner').map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}<option value="::remove">remove (default role)</option></select>` : ''}${timeOf(id, r, grant)}</span>`).join(' · ')}</div>`; };
+  // a timed grant (roles:<id>.until, upstream #258): how long is left, and (for whoever may change it) when it should end —
+  // picking a time restarts it from now; "no end" makes it permanent. Ownership never ends by itself.
+  const timeOf = (id, r, may) => { const u = wc()[`roles:${id}`]?.until; const left = Number.isSafeInteger(u) ? ` <span class="rp-dim">(${esc(leftWords(u, Date.now()))})</span>` : '';
+    if (!may || r.id === 'owner' || !(isOwner() || (rankOfId(id) < me().rank && r.rank < me().rank))) return left;
+    return `${left} <select class="rp-until" data-who="${esc(id)}"><option value="">ends ▸</option><option value="never">no end</option><option value="3600000">in 1 hour</option><option value="86400000">in 1 day</option><option value="604800000">in 1 week</option></select>`; };
   let html;
   if (narrow(body)) {   // one role at a time (phone, VR, a squeezed panel)
     if (!roles.some((r) => r.id === gridRole)) gridRole = roles[0]?.id;
@@ -163,6 +170,9 @@ function paintRoles(body) {
     const d = defsValue(); d[rid] = { ...d[rid], rank }; writeDefs(d, `place ${rid} above ${below.name}`).then(() => paintRoles(body)); }; });
   body.querySelectorAll('select.rp-change').forEach((s) => { s.onchange = () => { const v = s.value; if (!v) return; const who = s.dataset.who;
     (v === '::remove' ? act('delete', { id: '@world', component: `roles:${who}` }, `${nameOf(who)}: back to the default role`) : act('set', { id: '@world', component: `roles:${who}`, value: { role: v }, ...(wc()[`roles:${who}`] ? { merge: true } : {}) }, `make ${nameOf(who)} ${v}`)).then(() => paintRoles(body)); }; });
+  body.querySelectorAll('select.rp-until').forEach((s) => { s.onchange = () => { const v = s.value; if (!v) return; const who = s.dataset.who;
+    const { until: _u, ...cur } = wc()[`roles:${who}`] ?? {};
+    act('set', { id: '@world', component: `roles:${who}`, value: v === 'never' ? cur : { ...cur, until: serverNow() + Number(v) } }, `${nameOf(who)}: ${v === 'never' ? 'no end' : `ends ${ends(serverNow() + Number(v))}`}`).then(() => paintRoles(body)); }; });
   body.querySelectorAll('button[data-del]').forEach((b) => { b.onclick = () => deleteRole(b.dataset.del, body); });
   body.querySelector('button[data-add]')?.addEventListener('click', () => addRole(body));
 }
@@ -207,18 +217,31 @@ function paintAccess(body) {
   const def = R.roleDef(wc(), dr.role ?? 'visitor');
   const warn = def && (R.MOD_POWERS.some((k) => def.can[k]) || def.can.generate || dr.can?.generate) ? `<p class="rp-warn">Everyone who arrives is ${esc(def.name)}: they ${R.MOD_POWERS.some((k) => def.can[k]) ? 'may moderate people ranked below them (guests and visitors)' : ''}${R.MOD_POWERS.some((k) => def.can[k]) && (def.can.generate || dr.can?.generate) ? ' and ' : ''}${def.can.generate || dr.gen ? "spend the world's generation credit" : ''}.</p>` : '';
   const sel = (k, opts, v) => `<select data-k="${k}" ${edit ? '' : 'disabled'}>${opts.map(([x, l]) => `<option value="${esc(x)}" ${x === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
-  body.innerHTML = `<label class="rp-field">Who can come in ${sel('join', [['anyone', 'Anyone'], ['signed-in', 'Signed-in people'], ['listed', 'Only people with a role here']], a.join ?? 'anyone')}</label>`
+  // the four doors (upstream #258's World › access buttons; shared/protocol/access.js DOORS), the current one marked; closing
+  // while people with no role are here asks first and says how many will have to leave
+  const door = doorOf(wc());
+  body.innerHTML = `<div class="rp-actions rp-doors">${Object.keys(DOORS).map((d) => `<button type="button" class="rp-btn${d === door ? ' rp-on' : ''}" data-door="${d}" title="${esc(DOORS[d])}" ${edit ? '' : 'disabled'}>${d === 'members' ? 'members only' : d === 'watch' ? 'watch only' : d}</button>`).join('')}</div>`
+    + `<p class="rp-dim">${esc(door === 'signed-in' ? 'anyone signed in may come in' : DOORS[door])}</p>`
+    + `<label class="rp-field">Who can come in ${sel('join', [['anyone', 'Anyone'], ['signed-in', 'Signed-in people'], ['listed', 'Only people with a role here']], a.join ?? 'anyone')}</label>`
+    + (a.join === 'listed' ? `<label class="rp-field">Everyone else ${sel('watch', [['', 'can\'t see this world'], ['anyone', 'may watch (no body)']], a.watch ?? '')}</label>` : '')
     + `<label class="rp-field">People who arrive are ${sel('role', roles.map((r) => [r.id, r.name]), dr.role ?? 'visitor')}</label>`
     + `<label class="rp-field">People without an account are ${sel('guests', roles.filter((r) => !R.GUESTS_AT_MOST_DEFAULT || r.rank <= (def?.rank ?? 0)).map((r) => [r.id, r.name]), dr.guests ?? 'visitor')}</label>`
     + `<label class="rp-field">Most people at once <input type="number" min="1" max="200" data-k="max" value="${a.max ?? ''}" placeholder="no limit" ${edit ? '' : 'disabled'}></label>`
     + `<label class="rp-field">Accounts at least <input type="number" min="0" max="365" step="1" data-k="minAccountDays" value="${a.minAccountDays || ''}" placeholder="any age" ${edit ? '' : 'disabled'}> days old</label>`
     + `<p class="rp-dim">when set, guests can't come in; agents are exempt</p>`
     + `<p class="rp-dim">moderators and owners always get in${a.soft ? ` · recommended: ${a.soft}` : ''}</p>${warn}${edit ? '' : ro()}`;
+  body.querySelectorAll('button[data-door]').forEach((bt) => { bt.onclick = () => { const d = bt.dataset.door; if (d === door) return;
+    const out = d === 'members' || d === 'watch' ? [...new Set(identities.values())].filter((id) => !listedIn(wc(), id)).length : 0;
+    if (out && !confirm(`${out} ${out === 1 ? 'person' : 'people'} here ${out === 1 ? 'has' : 'have'} no role and will have to leave${d === 'watch' ? ' (they may watch)' : ''}. Close the door?`)) return;
+    const ops = doorWrites(d, wc()).map((w) => ({ verb: 'set', args: { id: '@world', component: w.component, value: w.value } }));
+    act(ops.length === 1 ? ops[0].verb : 'batch', ops.length === 1 ? ops[0].args : { ops }, `door: ${d}`).then(() => paintAccess(body)); }; });
   body.querySelectorAll('[data-k]').forEach((x) => { x.addEventListener('keydown', (e) => e.stopPropagation()); x.onchange = () => {
     const k = x.dataset.k;
     if (k === 'role' || k === 'guests') act('set', { id: '@world', component: 'default-role', value: { [k]: x.value }, merge: true }, `${k === 'role' ? 'arrivals' : 'guests'}: ${x.value}`).then(() => paintAccess(body));
     else { const v = { ...(wc().access ?? { join: 'anyone' }) }; if (k === 'max') { if (x.value) v.max = Math.max(1, Math.min(200, Number(x.value))); else delete v.max; }
-      else if (k === 'minAccountDays') { const d = Math.round(Number(x.value)); if (x.value && d > 0) v.minAccountDays = Math.min(365, d); else delete v.minAccountDays; } else v[k] = x.value;
+      else if (k === 'minAccountDays') { const d = Math.round(Number(x.value)); if (x.value && d > 0) v.minAccountDays = Math.min(365, d); else delete v.minAccountDays; }
+      else if (k === 'watch') { if (x.value) v.watch = x.value; else delete v.watch; }
+      else { v[k] = x.value; if (k === 'join' && x.value !== 'listed') delete v.watch; }
       act('set', { id: '@world', component: 'access', value: v }, 'access').then(() => paintAccess(body)); } }; });
 }
 // World: the owner's dials over @world components that already exist (capacity, physics-engine).
