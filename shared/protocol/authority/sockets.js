@@ -240,6 +240,18 @@ const modelSeatsDue = (st, ever, k) => { const c = st.entities[k].c; const ms = 
 /** The hosts a stored world still holds in the old spelling, in id order: one that stores a map; one a parent or a home
  *  names a slot of; one whose model declares seats it was never given (none of their ids was ever made, so a seat
  *  someone deleted stays deleted). */
+/** The hosts a stored world holds in the OLD STORED FORMAT (a sockets map, a parent or home naming a slot, a socket child
+ *  with a body block): the subset of legacyHosts that is a stale stored format rather than a catalogue model that gained
+ *  sockets after the host was stored (modelSeatsDue: a library update, lead 10-18, never a reason to refuse writes). */
+export function storedLegacyHosts(st) {
+  const hosts = new Set();
+  for (const [k, e] of Object.entries(st.entities)) { const c = e.c;
+    if (bag(c.sockets)) hosts.add(k);
+    if (legacyParent(c.parent) && st.entities[c.parent.to]) hosts.add(c.parent.to);
+    if (legacyHome(c.home) && st.entities[c.home.parent.to]) hosts.add(c.home.parent.to);
+    if (isSocketC(c) && c.socket.body !== undefined && st.entities[c.parent?.to]) hosts.add(c.parent.to); }
+  return [...hosts].sort();
+}
 export function legacyHosts(st, ever = new Set()) {
   const hosts = new Set();
   for (const [k, e] of Object.entries(st.entities)) { const c = e.c;

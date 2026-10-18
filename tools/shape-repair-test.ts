@@ -292,5 +292,18 @@ await tryRow('RP16', async () => {
   check('RP16 a v1 world translated today (sockets, a grabbable pose, a bob motion, a light with day) needs no step when served: the translation lifted its seats (one lift-sockets act, by: translate), renamed and repaired in its projection; the load writes nothing and writes work', r.maintenance.lifted === 1 && lifts.length === 1 && lifts[0].body.by === 'translate' && w.state().status === 'ok' && need.steps.length === 0 && liftWorld(w).length === 0 && Object.values(E).some((e) => e.c.socket?.name === 'seat') && !Object.values(E).some((e) => e.c.sockets || e.c.grabbable?.pose || e.c.motion?.type === 'bob' || 'day' in (e.c.light ?? {})) && request(w, 'n' + 'ann', 'look', {}).ok, [need, r.maintenance, Object.values(E).map((e) => Object.keys(e.c))]);
 });
 
+// ===================================================================== lead 10-18: a catalogue model that GAINED sockets is a library update, not a stale stored format
+// Red first (the old classification refused the write with repair-needed); green once modelSeatsDue is an optional step.
+await tryRow('RP17', () => {
+  const CAT = { ...ANY, get: (n) => (n === 'chair' ? { label: 'chair', surfaces: [], sockets: { seat: { pos: [0, 0.5, 0], body: { action: 'sit' } } } } : ANY.get(n)) };
+  const w = legacyWorld({ ch: { model: 'chair' } }, {}, CAT);
+  w.append({ kind: 'act', actor: 'system', verb: 'repair-shapes', body: { v: SHAPES_VERSION, ids: [], founding: true } });   // otherwise in today's spelling
+  const out = liftWorld(w); const need = out.find((x) => x.repairNeeded)?.repairNeeded;
+  const wr = request(w, 'olive', 'set', { id: 'ch', component: 'label', value: 'a chair' });
+  check('RP17 a world whose only need is a model that gained sockets stays writable: the load lists lift-sockets as OPTIONAL (not blocking), the write is accepted, and the seat is not there yet', wr.ok && need?.optional?.includes('lift-sockets') && need.blocking.length === 0 && /optional/.test(need.why) && !Object.values(w.state().entities).some((e) => e.c.socket), [out, wr.refused]);
+  const r = maintain(w, { by: 'olive' });
+  check('RP17 …the command makes the seat child (lift-sockets, recorded), and the world needs nothing after', r.steps.lift.made.length === 1 && Object.values(w.state().entities).some((e) => e.c.socket?.name === 'seat' && e.c.parent?.to === 'ch') && liftWorld(w).length === 0, [r.steps.lift, maintenanceNeeds(w)]);
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

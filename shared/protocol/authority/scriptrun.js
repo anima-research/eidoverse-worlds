@@ -15,7 +15,7 @@ import { CTX, UP } from "./ctx.js";
 import { Refusal, refuse, said } from "./refuse.js";
 import { readback, delOp, isE, opsQuiet, setOp, versionSeq } from "./storage.js";
 import { worldT } from "./math.js";
-import { legacyHosts, liftHostOps } from "./sockets.js";
+import { legacyHosts, liftHostOps, storedLegacyHosts } from "./sockets.js";
 import { creatorOf, isBanned, isScriptActor, lastSetterOf, may, roleOf } from "./rights.js";
 import { bodyGate, expireAsks } from "./bodyconsent.js";
 import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, logRt, overCpu, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptDepth, scriptsCfg, sponsorOf, uploadEffect } from "./scripts.js";
@@ -277,11 +277,17 @@ export function maintenanceNeeds(w) {
   const c = needsCache.get(w); if (c && c.n === w.entries.length) return c.v;
   const st = w.state(); const lift = [];
   for (const h of legacyHosts(st, w.everIds())) { if (!st.entities[h]) continue; try { if (liftHostOps(st, w.everIds(), h).ops.length) lift.push(h); } catch { lift.push(h); } }
+  // a stored format (a sockets map, a parent/home naming a slot, a body block) is stale and blocks; a host whose CATALOGUE
+  // model gained sockets since (modelSeatsDue) is a library update: optional, never blocking (lead 10-18). The new seats
+  // simply aren't seatable until the command runs
+  const stored = new Set(storedLegacyHosts(st)); const liftStored = lift.filter((h) => stored.has(h)), liftOptional = lift.filter((h) => !stored.has(h));
   const rename = renameOps(st, PURGED);
   const repair = !shapesMarked(w.entries, (q) => readback(w, q));   // READBACK act:create-world / act:translated: a purged one is marked
   const steps = [...(lift.length ? ["lift-sockets"] : []), ...(rename.length ? ["rename-components"] : []), ...(repair ? ["repair-shapes"] : [])];
-  const blocking = steps.filter((s) => s !== "rename-components" || rename.some((o) => !SERVED_RENAMES(o)));
-  const v = { steps, blocking, lift, rename, repair, fix: steps.length ? `run \`bun tools/protocol/world.ts repair <name>\` (${steps.join(", ")}: each recorded as the system's own act, with a backup to roll back), or a server operator's operator-repair {verb: 'repair'}` : null };
+  const optional = !liftStored.length && liftOptional.length ? ["lift-sockets"] : [];
+  const blocking = steps.filter((s) => (s === "lift-sockets" ? liftStored.length > 0 : s === "rename-components" ? rename.some((o) => !SERVED_RENAMES(o)) : true));
+  const words = steps.map((s) => (s === "lift-sockets" && optional.length ? `lift-sockets (optional): ${liftOptional.length} host(s)' models gained sockets; run repair to make them seatable` : s));
+  const v = { steps, blocking, optional, lift, liftOptional, rename, repair, fix: steps.length ? `run \`bun tools/protocol/world.ts repair <name>\` (${words.join("; ")}: each recorded as the system's own act, with a backup to roll back), or a server operator's operator-repair {verb: 'repair'}` : null };
   needsCache.set(w, { n: w.entries.length, v }); return v;
 }
 /** The load. It WRITES NOTHING: it says what the world needs ([{repairNeeded: {steps, blocking, why, fix}}]) or nothing. Kept
@@ -290,7 +296,10 @@ export function liftWorld(w) {
   if (!w.exists || w.state().status !== "ok") return [];
   if (w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer) return [{ skipped: "custody", why: "this server doesn't hold the key that signs this world" }];
   const n = maintenanceNeeds(w); if (!n.steps.length) return [];
-  return [{ repairNeeded: { steps: n.steps, blocking: n.blocking, why: `this world holds values in an old spelling (${n.steps.join(", ")}); loading never rewrites them${n.blocking.length ? `, and no reader serves ${n.blocking.join(", ")}'s old shape, so every write is refused (repair-needed) until the command runs` : " (its readers serve the old spelling: it works as it is)"}`, fix: n.fix } }];
+  const stale = n.steps.filter((s) => !n.optional.includes(s));
+  const why = [stale.length ? `this world holds values in an old spelling (${stale.join(", ")}); loading never rewrites them${n.blocking.length ? `, and no reader serves ${n.blocking.join(", ")}'s old shape, so every write is refused (repair-needed) until the command runs` : " (its readers serve the old spelling: it works as it is)"}` : "",
+    n.optional.length ? `lift-sockets (optional): ${n.liftOptional.length} host(s)' models gained sockets since they were stored (a library update); the world stays writable and those seats aren't seatable until repair runs` : ""].filter(Boolean).join(". ");
+  return [{ repairNeeded: { steps: n.steps, blocking: n.blocking, optional: n.optional, why, fix: n.fix } }];
 }
 
 /** The maintenance command: lift-sockets, then rename-components, then repair-shapes, each its own recorded system act
