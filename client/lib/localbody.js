@@ -147,7 +147,7 @@ export function dismountMe(kind = 'menu', at = null) {
     myState.clip = leaveClip;
   } else {
     me?.root.rotation.set(0, exitYaw, 0);  // stand upright again (a rocket seat may have had me on my back)
-    myState.pos.set(off.x, 0, off.z); myState.yaw = exitYaw;
+    myState.pos.set(off.x, off.y, off.z); myState.yaw = exitYaw;   // at the height I'm let go at: a seat upstairs stands me upstairs (review of PR #260)
     setPosture('stand');
   }
   return true;
@@ -168,7 +168,7 @@ function stepLeaving(dt) {
   }
   if (u >= 1) {
     me?.setSeatBlend(null); me?.root.rotation.set(0, leaving.yaw, 0);
-    myState.pos.y = 0; myState.clip = 'idle'; leaving = null;
+    myState.pos.copy(leaving.to); myState.clip = 'idle'; leaving = null;   // where the carry ended, its height kept (never reset to 0)
     setPosture('stand');
   }
 }

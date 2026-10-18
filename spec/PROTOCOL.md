@@ -532,7 +532,9 @@ copy that was updated and is published again keeps its parts' keys.
   included — lands and **vacates** it: every occupant is let go where they
   were, standing, and told why and where (`vacated {socket, by,
   why, at}`, presence, never logged), and the authority's track of their
-  body starts again from where the seat let them go; a seat removed or
+  body starts again from where the seat let them go (a client stands its body
+  at all three of `at`'s coordinates, height included: a seat upstairs lets
+  its occupant go upstairs); a seat removed or
   switched off lets its occupant go the same way. The track restarts there
   only because a sit is **within reach**: the authority refuses a sit
   (`out-of-reach`) unless the body it tracks, or the seat it moves straight
