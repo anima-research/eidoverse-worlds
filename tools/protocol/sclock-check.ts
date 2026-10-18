@@ -1,7 +1,7 @@
 // tools/protocol/sclock-check.ts — the client's server clock slews (DESIGN-physics-responsiveness §3; STRIKES PH-S2 'display
 // clock jumps'): a new minimum-RTT sample moves the shown offset gradually, a large one at once. usage: bun tools/protocol/sclock-check.ts
 // @ts-nocheck
-import { noteRoundTrip, serverNow, localNow, clockDebug } from "../../client/lib/serverclock.js";
+import { noteRoundTrip, serverNow, localNow, clockDebug, noteServerFloor, onClockDoubt } from "../../client/lib/serverclock.js";
 let fails = 0, passes = 0; const ok = (c, what, d) => { if (c) passes++; else { fails++; console.log("FAIL", what, d !== undefined ? JSON.stringify(d) : ""); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const t = localNow();
@@ -29,4 +29,16 @@ ok(Math.abs(f.best - 4620) < 1 && Math.abs(f.shown - 4620) < 1, "C5 a sample tha
 noteRoundTrip(s0 - 40, s0 + 4620 + 15 - 20, s0);                       // a slow but honest sample, consistent within its rtt: kept, not a step
 serverNow(); const g = clockDebug();
 ok(Math.abs(g.best - 4620) < 1, "C6 …while a slow sample that agrees within its own round trip changes nothing", g);
+// …and the step is noticed before the next ask: anything the authority stamped (a log entry's ts, a frame's t) was true on
+// its clock no later than it arrives, so it is a FLOOR on the offset. A floor above the estimate (by more than its slack)
+// means the estimate is stale: the client asks again at once (rate-limited), rather than drawing a launch it already
+// folded seconds behind for up to CLOCK_MS
+let asks = 0; onClockDoubt(() => asks++);
+const h0 = localNow();
+noteServerFloor(h0 + 4620 - 30);                                     // an entry stamped a moment ago, on the estimate: fine
+ok(asks === 0, "C7 a floor the estimate already clears asks nothing", { asks });
+noteServerFloor(localNow() + 4620 + 1620);                           // stamped 1.6 s past what we think the authority's now is
+ok(asks === 1, "C8 a floor above the estimate asks for a round trip at once", { asks });
+noteServerFloor(localNow() + 4620 + 1620); noteServerFloor(localNow() + 4620 + 1700);
+ok(asks === 1, "C9 …once, not per entry (one ask a second)", { asks });
 console.log(`sclock: ${passes} ok, ${fails} failed`); process.exit(fails ? 1 : 0);

@@ -17,6 +17,7 @@ export function noteServerTime(t) {
   if (typeof t !== 'number' || !Number.isFinite(t)) return;
   const sample = t - localNow();
   clockOffset = clockOffset === null ? sample : clockOffset * 0.92 + sample * 0.08;
+  noteServerFloor(t);
 }
 /** One round trip: t0 when the ask left (localNow), t the authority's clock in the answer, t1 when it came back. */
 export function noteRoundTrip(t0, t, t1) {
@@ -44,6 +45,18 @@ function shownOffset() {
   return shown.v;
 }
 export const serverNow = () => localNow() + shownOffset();
+// A floor: anything the authority stamped (a log entry's ts, a frame's t) was true on its clock no later than now, so the
+// offset is at least t − localNow(). A floor above the estimate by more than its slack means the clock stepped since the
+// last round trip: ask again at once (net.js hands askClock in) instead of drawing what the replica already folded seconds
+// behind until the next CLOCK_MS ask (10-18: the thrown crate waited in the hand). One ask a second at most.
+let doubt = null, doubtAt = -Infinity;
+const DOUBT_EVERY_MS = 1000;
+export const onClockDoubt = (fn) => { doubt = fn; };
+export function noteServerFloor(t) {
+  if (typeof t !== 'number' || !Number.isFinite(t) || !rtt.length || !doubt) return;
+  const now = localNow(); if (t - now <= bestOffset() + clockRtt() / 2 + STEP_SLACK_MS || now - doubtAt < DOUBT_EVERY_MS) return;
+  doubtAt = now; doubt();
+}
 /** Probe/test surface: the raw best estimate and what is shown. */
 export const clockDebug = () => ({ best: bestOffset(), shown: shown?.v ?? null });
 /** The smallest recent round trip (ms), or null before the first: how sure the estimate is. */
