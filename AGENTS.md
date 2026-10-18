@@ -469,7 +469,7 @@ comp {id: "candle1", type: "particles",
 ```
 
 **An entity can carry several emitters.** `particles` is its default one;
-`particles:<name>` (name: 1–32 of `A–Z a–z 0–9 _ -`) adds more, each its own
+`particles:<name>` (name: 1–22 of `A–Z a–z 0–9 _ -`, so the key fits the 32-character component type) adds more, each its own
 component — attached, replaced, removed, perceived and narrated on its own,
 the way `motion:<part>` works for motions:
 

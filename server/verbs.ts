@@ -19,6 +19,7 @@ import { settleAccess, resolveName, principalOf, canEnter, whoOf, SUB_RE, type A
 import { entryRestrictedIn } from "../shared/rightsfold.js";
 import { normalizeCaptionArgs, captionRefusal } from "../shared/captions.js";
 import { lintMotion, lintParticles } from "./lint.ts";
+import { emitterKeyProblem } from "../shared/particles.js";
 import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
 import { lightArgsError } from "./verb-shapes.ts";
@@ -401,7 +402,16 @@ function vComp(ctx: VerbCtx, args: Record<string, unknown>) {
   // data is opaque but BOUNDED — components are parameters, not
   // payloads; anything bigger belongs in /upload + a path here.
   const id = String(args.id ?? "").slice(0, 64);
-  const type = String(args.type ?? "").slice(0, 32);
+  const rawType = String(args.type ?? "");
+  // An emitter key must reach the fold WHOLE: cutting `particles:<a long
+  // name>` to 32 would silently merge two emitters that share a prefix (and
+  // removing either would put out both). Refuse it instead, saying why.
+  if (rawType.startsWith("particles:") && rawType.length > 32) {
+    const why = emitterKeyProblem(rawType) ?? `emitter key too long (32 characters max)`;
+    w.debug("rejected", { who: c.id, verb: "comp", why: `${why} on ${id}` });
+    return { error: why };
+  }
+  const type = rawType.slice(0, 32);
   if (!id || !type) {
     w.debug("rejected", { who: c.id, verb: "comp", why: "malformed — wants {id, type, data|null}" });
     return { error: "comp wants {id, type, data|null}" };
