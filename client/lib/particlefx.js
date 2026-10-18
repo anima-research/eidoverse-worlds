@@ -16,9 +16,10 @@
 // governor thins drawn particles, never the simulation's meaning), and distance (an emitter farther than FAR is neither
 // stepped nor drawn: a cosmetic, per-viewer simulation needs no continuity nobody sees).
 import { THREE, TSL, camera } from './core.js';
-import { makeSim } from '../../shared/particlesim.js';
+import { makeSim, localGravity } from '../../shared/particlesim.js';
 
 export const FAR = 90;   // m: past this an emitter sleeps (its quads would be sub-pixel long before)
+const _qa = [0, 0, 0, 1], _sa = [1, 1, 1], _ga = [0, 0, 0];   // scratch for localGravity (nothing allocated per frame)
 const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _qi = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
 
 /**
@@ -79,9 +80,13 @@ export function buildEmitter(em, { map = null, seed = 0, name = 'particles', bud
     const cam = camera;
     if (!mesh.parent || _p.distanceTo(cam.getWorldPosition(_v)) > FAR) { mesh.visible = false; return; }
     mesh.visible = true;
+    // how the emitter stands in the world: its gravity is the document's WORLD-down vector turned into its frame (lead
+    // 10-17: a tipped brazier's smoke still rises), set before the step so the preprocess sees it too
+    mesh.matrixWorld.decompose(_p, _q, _s); _qi.copy(_q).invert();
+    _qa[0] = _q.x; _qa[1] = _q.y; _qa[2] = _q.z; _qa[3] = _q.w; _sa[0] = _s.x; _sa[1] = _s.y; _sa[2] = _s.z;
+    sim.setGravity(localGravity(em.forces.gravity, _qa, _sa, _ga));
     sim.step(dt);
     // the camera's basis, in the emitter's own frame (its rotation undone; its scale kept, so quads grow with the thing)
-    mesh.matrixWorld.decompose(_p, _q, _s); _qi.copy(_q).invert();
     cam.updateMatrixWorld();
     uRight.value.setFromMatrixColumn(cam.matrixWorld, 0).normalize().applyQuaternion(_qi);
     uUp.value.setFromMatrixColumn(cam.matrixWorld, 1).normalize().applyQuaternion(_qi);

@@ -13,10 +13,10 @@
 //     spawn:    {amount (1–600), lifetime (s), lifetimeRandom? 0..1, explosiveness? 0..1, randomness? 0..1, oneShot?,
 //                preprocess? (s simulated before the first frame), speedScale?, ratio? 0..1 (the share of amount drawn)},
 //     shape?:   {type: point | sphere | sphere-surface | box | ring, extents? [x, y, z] (m: a sphere's semi-axes, a box's
-//                half-sizes), radius? (a round sphere), ring: radius, inner, height, cone (°), axis},
-//     velocity?:{direction? [x, y, z], spread? (°), flatness? 0..1, speed? [min, max] (m/s)}  |  {min: [x,y,z], max: [x,y,z]},
-//     forces?:  {gravity? [x, y, z] (m/s²), linear?, radial?, tangential? ([min, max] m/s²), damping? ([min, max] m/s²)},
-//     rotation?:{angle? [min, max] (°), velocity? [min, max] (°/s)},
+//                half-sizes), radius? (a round sphere), ring: radius, inner, height, cone (rad, 0..π/2), axis},
+//     velocity?:{direction? [x, y, z], spread? (rad, 0..π), flatness? 0..1, speed? [min, max] (m/s)}  |  {min: [x,y,z], max: [x,y,z]},
+//     forces?:  {gravity? [x, y, z] (m/s², WORLD frame), linear?, radial?, tangential? ([min, max] m/s²), damping? ([min, max] m/s²)},
+//     rotation?:{angle? [min, max] (rad), velocity? [min, max] (rad/s)},
 //     size?:    {base (m, a quad's side), random? [min, max] (×), curve? [[t, ×], …] over life},
 //     color?:   {base? 0xRRGGBB, alpha? 0..1, ramp? [[t, 0xRRGGBB, alpha], …] over life, initial? (a ramp, sampled once at
 //                birth), hue? [min, max] (turns)},
@@ -27,6 +27,33 @@
 //   Param = {type: number | area | vec3 | color | texture | enum | bool, default?, min?, max?, values? (enum), help?,
 //            to: [{path ("emitters.*.spawn.amount"; * = every emitter), op?: set | mul, times? (× the value: a number or
 //            [x, y, z]), map? {<enum value>: number}, round?}, …] (1–8)}
+//
+// FRAMES (PROTOCOL §9.2: every vector names its frame). The emitter's frame is its thing's own (moved to `at`, hung on
+// `part`), scaled by the thing's scale × the instance's `scale`:
+//   forces.gravity     the WORLD frame (Unity's convention, lead 10-17): down stays down on a tipped or spinning thing, so a
+//                      knocked-over brazier's smoke still rises; the renderer turns it into the emitter's frame every step
+//                      (particlesim localGravity), and a scaled thing's gravity scales with it as every length does
+//   velocity.direction the emitter's frame
+//   velocity.min / max the emitter's frame (a box of launch velocities along its axes)
+//   shape.axis         the emitter's frame (a ring's axis)
+//   shape.extents      the emitter's frame (half-sizes, or semi-axes, along its axes)
+//   forces.linear      along each particle's own velocity, in the emitter's frame
+//   forces.radial      from the emitter's origin, in the emitter's frame
+//   forces.tangential  about the document's gravity axis as written, read in the emitter's frame (it does not turn with
+//                      the world: a spiral stays a spiral about the thing's own up)
+// UNITS: metres, seconds, and RADIANS for every angle (PROTOCOL §9.2, lead 10-17): velocity.spread (0..π), shape.cone
+// (0..π/2), rotation.angle, rotation.velocity (rad/s); drift/swirl/flicker rates are rad/s. color.hue is in turns of the
+// colour wheel (a hue rotation, not a direction).
+//
+// UNKNOWN FIELDS (lead 10-17): a reader (every renderer, the inspector) SKIPS an optional field, module, param field or
+// binding it doesn't know and draws what it understands (readableEffect); the authority's validator (effectProblem) stays
+// strict at upload, so what a world stores is always what its authority knew. An unknown value of a known field (a new
+// shape type) is not skipped: that document isn't readable here.
+// RESERVED (not built yet; refused at upload "reserved: not built yet", so the names can't come to mean anything else):
+// emitter `space` (local | world), `collision`, `sub` (sub-emitters); `render.mode`, `render.trail`; `spawn.rate`,
+// `spawn.bursts`; and the instance's `t0` (a synced start, as sound.t0).
+// TRIAL: the effect document format is trial and expected to grow. Additions are designed to be additive (an optional
+// field whose absence means today's behaviour), and a breaking change would ship with a translator.
 //
 // Every number is bounded (EFFECT_LIMITS): a document is authored by anyone who may build, and it runs on every visitor's
 // machine, so "how much may one effect cost" is part of what it means, checked at the door, not left to one client.
@@ -41,7 +68,7 @@ export const effectBlobName = (s) => { const m = typeof s === 'string' ? EFFECT_
 
 export const EFFECT_LIMITS = Object.freeze({
   emitters: 4, amount: 600, totalAmount: 1000, lifetime: [0.05, 30], preprocess: [0, 30], speedScale: [0.01, 10],
-  extent: 32, speed: 50, accel: 100, damping: 100, angle: 3600, angularVelocity: 3600, size: [0.001, 8], random: [0, 10],
+  extent: 32, speed: 50, accel: 100, damping: 100, angle: 20 * Math.PI, angularVelocity: 20 * Math.PI, size: [0.001, 8], random: [0, 10],
   points: 16, curveValue: [0, 16], hue: [-1, 1], params: 16, bindings: 8, frames: 16, animSpeed: 64,
   drift: 2, rate: 60, swirl: 2, bytes: 16384, text: 80,
 });
@@ -64,13 +91,40 @@ const FIELDS = {
   render: ['texture', 'blend', 'flipbook'],
 };
 export const SHAPES = ['point', 'sphere', 'sphere-surface', 'box', 'ring'];
+const DOC_FIELDS = ['kind', 'v', 'name', 'reads', 'emitters', 'params'];
+const FLIPBOOK_FIELDS = ['h', 'v', 'speed', 'offset', 'loop'];
+const PARAM_FIELDS = ['type', 'default', 'min', 'max', 'values', 'help', 'to'];
+const BINDING_FIELDS = ['path', 'op', 'times', 'map', 'round'];
+const BINDING_PATH = /^emitters\.(\*|[0-3])\.[a-z]+\.[a-zA-Z]+$/;
+// RESERVED (lead 10-17, REVIEW-particles-shape §5): names held for what the effect document is expected to grow, so nobody
+// spends them on something else. Refused at upload ("reserved: not built yet"); a reader skips them as it skips any field
+// it doesn't know. The instance's t0 is held in the registry (componentspec particles.reservedFields).
+export const RESERVED_EMITTER = Object.freeze({
+  space: 'local | world: a world-space emitter, whose particles stay where they were born (smoke trailing a carried torch)',
+  collision: 'particles that hit the world and bounce or die',
+  sub: 'a sub-emitter: another emitter of this document fired on a particle\'s birth, death or collision',
+});
+export const RESERVED_FIELDS = Object.freeze({
+  spawn: Object.freeze({ rate: 'particles a second, independent of lifetime (amount becomes the pool cap)', bursts: 'a list of bursts {t, count, cycles?, interval?}' }),
+  render: Object.freeze({ mode: 'billboard | stretched | horizontal | vertical | velocity | mesh', trail: 'a ribbon behind each particle {lifetime, width?, curve?}' }),
+});
+const reservedWhy = (where, what) => `${where} is reserved: not built yet (${what}); the name is held so it can't come to mean anything else`;
 export const PARAM_TYPES = ['number', 'area', 'vec3', 'color', 'texture', 'enum', 'bool'];
+/** The document's angle fields (radians, PROTOCOL §9.2): an editor shows them in degrees and stores radians. */
+export const ANGLE_FIELDS = Object.freeze(['velocity.spread', 'shape.cone', 'rotation.angle', 'rotation.velocity']);
+/** Is this a number param whose value IS an angle (every binding lands it, unscaled, on an angle field)? Then its value is
+ *  radians, and an editor shows it in degrees (the transform rows' convention). A scaled or mapped binding is the
+ *  author's own unit, and isn't. */
+export const angleParam = (p) => p?.type === 'number' && Array.isArray(p.to) && p.to.length > 0
+  && p.to.every((b) => b.times === undefined && b.map === undefined && ANGLE_FIELDS.includes(String(b.path).split('.').slice(2).join('.')));
 
 function checkEmitter(e, at) {
   if (!isObj(e)) return `${at} is an emitter: an object of modules (${MODULES.join(', ')})`;
+  for (const k of Object.keys(e)) if (RESERVED_EMITTER[k]) return reservedWhy(`${at}.${k}`, RESERVED_EMITTER[k]);
   for (const k of Object.keys(e)) if (!MODULES.includes(k)) return `${at}: '${k}' isn't a module (${MODULES.join(', ')})`;
   for (const [m, fs] of Object.entries(FIELDS)) if (e[m] !== undefined) {
     if (!isObj(e[m])) return `${at}.${m} is an object {${fs.join(', ')}}`;
+    for (const k of Object.keys(e[m])) if (RESERVED_FIELDS[m]?.[k]) return reservedWhy(`${at}.${m}.${k}`, RESERVED_FIELDS[m][k]);
     for (const k of Object.keys(e[m])) if (!fs.includes(k)) return `${at}.${m}: '${k}' isn't one of its fields (${fs.join(', ')})`;
   }
   const between = (x, [lo, hi], where) => (x === undefined || (isNum(x) && x >= lo && x <= hi) ? null : `${at}.${where} is a number ${lo}..${hi}`);
@@ -86,7 +140,7 @@ function checkEmitter(e, at) {
   if (e.shape) { const s = e.shape;
     if (s.type !== undefined && !SHAPES.includes(s.type)) return `${at}.shape.type is one of ${SHAPES.join(' | ')}`;
     const x = vecIn(s.extents, L.extent, 'shape.extents') ?? between(s.radius, [0, L.extent], 'shape.radius') ?? between(s.inner, [0, L.extent], 'shape.inner') ?? between(s.height, [0, L.extent], 'shape.height')
-      ?? between(s.cone, [0, 90], 'shape.cone') ?? vecIn(s.axis, 1e3, 'shape.axis');
+      ?? between(s.cone, [0, Math.PI / 2], 'shape.cone') ?? vecIn(s.axis, 1e3, 'shape.axis');
     if (x) return x;
     if (s.extents && s.extents.some((v) => v < 0)) return `${at}.shape.extents are ≥ 0`; }
   if (e.velocity) { const v = e.velocity;
@@ -94,7 +148,7 @@ function checkEmitter(e, at) {
     if (box && (v.direction !== undefined || v.spread !== undefined || v.flatness !== undefined || v.speed !== undefined)) return `${at}.velocity is a cone {direction, spread, flatness, speed} or a box {min, max}, not both`;
     if (box) { const x = vecIn(v.min, L.speed, 'velocity.min') ?? vecIn(v.max, L.speed, 'velocity.max'); if (x) return x;
       if (!isVec(v.min) || !isVec(v.max) || v.min.some((m, i) => m > v.max[i])) return `${at}.velocity's box needs min and max, min ≤ max on each axis`; }
-    else { const x = vecIn(v.direction, 1e3, 'velocity.direction') ?? between(v.spread, [0, 180], 'velocity.spread') ?? between(v.flatness, [0, 1], 'velocity.flatness') ?? rangeIn(v.speed, 0, L.speed, 'velocity.speed'); if (x) return x; } }
+    else { const x = vecIn(v.direction, 1e3, 'velocity.direction') ?? between(v.spread, [0, Math.PI], 'velocity.spread') ?? between(v.flatness, [0, 1], 'velocity.flatness') ?? rangeIn(v.speed, 0, L.speed, 'velocity.speed'); if (x) return x; } }
   if (e.forces) { const f = e.forces;
     const x = vecIn(f.gravity, L.accel, 'forces.gravity') ?? rangeIn(f.linear, -L.accel, L.accel, 'forces.linear') ?? rangeIn(f.radial, -L.accel, L.accel, 'forces.radial')
       ?? rangeIn(f.tangential, -L.accel, L.accel, 'forces.tangential') ?? rangeIn(f.damping, 0, L.damping, 'forces.damping'); if (x) return x; }
@@ -122,7 +176,7 @@ function checkEmitter(e, at) {
     if (r.texture !== undefined && !(typeof r.texture === 'string' && TEXTURE_RE.test(r.texture))) return `${at}.render.texture is a .png in ${TEXTURE_DIR}`;
     if (r.blend !== undefined && !['add', 'alpha'].includes(r.blend)) return `${at}.render.blend is add | alpha`;
     if (r.flipbook !== undefined) { const f = r.flipbook;
-      if (!isObj(f) || Object.keys(f).some((k) => !['h', 'v', 'speed', 'offset', 'loop'].includes(k))) return `${at}.render.flipbook is {h, v, speed?, offset?, loop?}`;
+      if (!isObj(f) || Object.keys(f).some((k) => !FLIPBOOK_FIELDS.includes(k))) return `${at}.render.flipbook is {h, v, speed?, offset?, loop?}`;
       if (![f.h, f.v].every((x) => Number.isInteger(x) && x >= 1 && x <= L.frames)) return `${at}.render.flipbook.h and .v are whole numbers 1..${L.frames}`;
       const x = rangeIn(f.speed, -L.animSpeed, L.animSpeed, 'render.flipbook.speed') ?? rangeIn(f.offset, 0, 1, 'render.flipbook.offset'); if (x) return x;
       if (f.loop !== undefined && typeof f.loop !== 'boolean') return `${at}.render.flipbook.loop is true or false`; } }
@@ -133,17 +187,17 @@ function checkEmitter(e, at) {
 function checkParam(name, p, at) {
   if (!/^[a-z][a-zA-Z0-9_-]{0,31}$/.test(name)) return `${at}: '${name}' isn't a param name (a lowercase letter, then letters, digits, _ or -, ≤ 32)`;
   if (!isObj(p)) return `${at}.${name} is {type, default?, min?, max?, to: [{path, op?}]}`;
-  for (const k of Object.keys(p)) if (!['type', 'default', 'min', 'max', 'values', 'help', 'to'].includes(k)) return `${at}.${name}: '${k}' isn't a param field (type, default, min, max, values, help, to)`;
+  for (const k of Object.keys(p)) if (!PARAM_FIELDS.includes(k)) return `${at}.${name}: '${k}' isn't a param field (type, default, min, max, values, help, to)`;
   if (!PARAM_TYPES.includes(p.type)) return `${at}.${name}.type is one of ${PARAM_TYPES.join(' | ')}`;
   if ((p.min !== undefined && !isNum(p.min)) || (p.max !== undefined && !isNum(p.max)) || (isNum(p.min) && isNum(p.max) && p.min > p.max)) return `${at}.${name}: min and max are numbers, min ≤ max`;
   if (p.type === 'enum' && !(Array.isArray(p.values) && p.values.length >= 1 && p.values.length <= 16 && p.values.every((v) => typeof v === 'string' && v.length <= 32))) return `${at}.${name}.values is 1..16 strings`;
   if (p.help !== undefined && !(typeof p.help === 'string' && p.help.length <= 200)) return `${at}.${name}.help is a string ≤ 200`;
   if (!Array.isArray(p.to) || p.to.length < 1 || p.to.length > L.bindings) return `${at}.${name}.to is 1..${L.bindings} bindings [{path, op?, times?, map?}]`;
   for (const b of p.to) {
-    if (!isObj(b) || typeof b.path !== 'string' || !/^emitters\.(\*|[0-3])\.[a-z]+\.[a-zA-Z]+$/.test(b.path)) return `${at}.${name}.to: each binding has a path "emitters.<n|*>.<module>.<field>"`;
+    if (!isObj(b) || typeof b.path !== 'string' || !BINDING_PATH.test(b.path)) return `${at}.${name}.to: each binding has a path "emitters.<n|*>.<module>.<field>"`;
     const [, , mod, field] = b.path.split('.');
     if (!FIELDS[mod]?.includes(field)) return `${at}.${name}.to: ${b.path} names no module field`;
-    for (const k of Object.keys(b)) if (!['path', 'op', 'times', 'map', 'round'].includes(k)) return `${at}.${name}.to: '${k}' isn't a binding field (path, op, times, map, round)`;
+    for (const k of Object.keys(b)) if (!BINDING_FIELDS.includes(k)) return `${at}.${name}.to: '${k}' isn't a binding field (path, op, times, map, round)`;
     if (b.op !== undefined && !['set', 'mul'].includes(b.op)) return `${at}.${name}.to: op is set | mul`;
     if (b.times !== undefined && !(isNum(b.times) || isVec(b.times))) return `${at}.${name}.to: times is a number or [x, y, z]`;
     if (b.map !== undefined && !(isObj(b.map) && Object.values(b.map).every(isNum))) return `${at}.${name}.to: map is {<value>: number}`;
@@ -168,12 +222,13 @@ export function paramValueProblem(p, v) {
   return 'an unknown type';
 }
 
-/** Why a document isn't a particle effect this protocol runs, or null. Bounded in size, shape and cost. */
+/** Why a document isn't a particle effect this protocol runs, or null. Bounded in size, shape and cost. STRICT: this is the
+ *  authority's door (upload), where an unknown field or module is refused; a reader uses readableEffect. */
 export function effectProblem(doc) {
   if (!isObj(doc)) return 'a particle effect is an object {kind: "particle-effect", v: 1, emitters: [...]}';
   let bytes = 0; try { bytes = JSON.stringify(doc).length; } catch { return 'a particle effect is plain JSON'; }
   if (bytes > L.bytes) return `a particle effect is at most ${L.bytes} bytes of JSON (this one is ${bytes})`;
-  for (const k of Object.keys(doc)) if (!['kind', 'v', 'name', 'reads', 'emitters', 'params'].includes(k)) return `'${k}' isn't a field of a particle effect (kind, v, name, reads, emitters, params)`;
+  for (const k of Object.keys(doc)) if (!DOC_FIELDS.includes(k)) return `'${k}' isn't a field of a particle effect (kind, v, name, reads, emitters, params)`;
   if (doc.kind !== EFFECT_KIND) return `kind must be "${EFFECT_KIND}"`;
   if (doc.v !== 1) return 'v must be 1 (the only version of the effect document)';
   for (const k of ['name', 'reads']) if (doc[k] !== undefined && !(typeof doc[k] === 'string' && doc[k].length <= L.text && !/[\u0000-\u001f‪-‮⁦-⁩]/.test(doc[k]))) return `${k} is one line of text ≤ ${L.text}`;
@@ -187,6 +242,35 @@ export function effectProblem(doc) {
       for (const b of p.to) { const [, idx] = b.path.split('.'); if (idx !== '*' && +idx >= doc.emitters.length) return `params.${n}.to: ${b.path} names an emitter the effect doesn't have`; } }
   }
   return null;
+}
+
+// ---- the reader: skip what this build doesn't know ---------------------------------------------------------------------
+const pick = (o, keys, at, skipped) => { const out = {}; for (const [k, x] of Object.entries(o)) { if (keys.includes(k)) out[k] = x; else skipped.push(`${at}${k}`); } return out; };
+/**
+ * UNKNOWN-FIELD POLICY (lead 10-17): a renderer draws what it understands. The document with every field, module, param
+ * field and binding this build doesn't know left out (their paths pushed onto `skipped`), if what remains is an effect this
+ * protocol runs; else null. A document a newer authority stored, using an addition this client predates (a trail, a noise
+ * module), still draws its known parts here, instead of nothing. The authority's validator (effectProblem, at upload)
+ * stays strict, so nothing it stores is a field it doesn't know. An unknown VALUE of a known field (a new shape type, a
+ * new blend) isn't skipped: the document isn't readable, and draws nothing.
+ */
+export function readableEffect(doc, skipped = []) {
+  if (!isObj(doc)) return null;
+  const out = pick(doc, DOC_FIELDS, '', skipped);
+  if (Array.isArray(out.emitters)) out.emitters = out.emitters.map((e, i) => { if (!isObj(e)) return e;
+    const o = pick(e, MODULES, `emitters[${i}].`, skipped);
+    for (const [m, fs] of Object.entries(FIELDS)) if (isObj(o[m])) o[m] = pick(o[m], fs, `emitters[${i}].${m}.`, skipped);
+    if (isObj(o.render?.flipbook)) o.render.flipbook = pick(o.render.flipbook, FLIPBOOK_FIELDS, `emitters[${i}].render.flipbook.`, skipped);
+    return o; });
+  if (isObj(out.params)) { const ps = {};
+    for (const [n, p] of Object.entries(out.params)) { if (!isObj(p)) { ps[n] = p; continue; }
+      const q = pick(p, PARAM_FIELDS, `params.${n}.`, skipped);
+      if (Array.isArray(q.to)) { q.to = q.to.filter((b) => { const known = isObj(b) && typeof b.path === 'string' && BINDING_PATH.test(b.path) && FIELDS[b.path.split('.')[2]]?.includes(b.path.split('.')[3]);
+        if (!known) skipped.push(`params.${n}.to: ${isObj(b) ? b.path : '?'}`); return known; }).map((b) => pick(b, BINDING_FIELDS, `params.${n}.to.`, skipped));
+        if (!q.to.length) { skipped.push(`params.${n}`); continue; } }
+      ps[n] = q; }
+    out.params = ps; }
+  return effectProblem(out) ? null : out;
 }
 
 // ---- params: an instance's knobs written into a copy of the document ------------------------------------------------
@@ -230,7 +314,7 @@ export function paramShown(doc, name) {
 }
 
 // ---- resolved: every module present, every default written (what particlesim.js runs) -------------------------------
-/** Godot's defaults where Godot has one (gravity −9.8 m/s², spread 45°, lifetime 1 s), ours where the meaning is ours. */
+/** Godot's defaults where Godot has one (gravity −9.8 m/s², spread π/4 (Godot's 45°), lifetime 1 s), ours where the meaning is ours. */
 export function resolveEmitter(e) {
   const S = e.spawn ?? {}, sh = e.shape ?? {}, v = e.velocity ?? {}, f = e.forces ?? {}, r = e.rotation ?? {}, z = e.size ?? {}, c = e.color ?? {}, rd = e.render ?? {}, fb = rd.flipbook ?? {};
   const type = sh.type ?? (sh.extents || sh.radius !== undefined ? 'sphere' : 'point');
@@ -240,8 +324,8 @@ export function resolveEmitter(e) {
   return {
     spawn: { amount: S.amount, lifetime: S.lifetime ?? 1, lifetimeRandom: S.lifetimeRandom ?? 0, explosiveness: S.explosiveness ?? 0, randomness: S.randomness ?? 0,
       oneShot: S.oneShot === true, preprocess: S.preprocess ?? 0, speedScale: S.speedScale ?? 1, ratio: S.ratio ?? 1 },
-    shape: { type, extents, radius: sh.radius ?? 1, inner: sh.inner ?? 0, height: sh.height ?? 0, cone: sh.cone ?? 90, axis: sh.axis ?? [0, 0, 1] },
-    velocity: box ? { mode: 'box', min: v.min, max: v.max } : { mode: 'cone', direction: v.direction ?? [0, 1, 0], spread: v.spread ?? 45, flatness: v.flatness ?? 0, speed: range(v.speed, [0, 0]) },
+    shape: { type, extents, radius: sh.radius ?? 1, inner: sh.inner ?? 0, height: sh.height ?? 0, cone: sh.cone ?? Math.PI / 2, axis: sh.axis ?? [0, 0, 1] },
+    velocity: box ? { mode: 'box', min: v.min, max: v.max } : { mode: 'cone', direction: v.direction ?? [0, 1, 0], spread: v.spread ?? Math.PI / 4, flatness: v.flatness ?? 0, speed: range(v.speed, [0, 0]) },
     forces: { gravity: f.gravity ?? [0, -9.8, 0], linear: range(f.linear, [0, 0]), radial: range(f.radial, [0, 0]), tangential: range(f.tangential, [0, 0]), damping: range(f.damping, [0, 0]) },
     rotation: { angle: range(r.angle, [0, 0]), velocity: range(r.velocity, [0, 0]) },
     size: { base: z.base ?? 0.1, random: range(z.random, [1, 1]), curve: z.curve ?? null },
@@ -274,6 +358,7 @@ const BUILDER = {
 // stars' area is 22 m: the builder had no cap on a preset's own area (only an authored one was held to 8), so its document
 // carries it; the limit binds what anyone writes
 const r4 = (x) => Math.round(x * 1e4) / 1e4;
+const TAU4 = r4(2 * Math.PI);   // a full turn, as the document writes it
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const FADE = (t) => Math.min(1, t / 0.12) * Math.min(1, (1 - t) / 0.35);
 const STOPS = [0, 0.06, 0.12, 0.2, 0.3, 0.4, 0.5, 0.65, 0.75, 0.85, 0.93, 1];
@@ -297,7 +382,7 @@ function builderEffect(name, P) {
     ...(P.swirl ? { swirl: { radius: r4(P.swirl * 0.15), rate: P.swirl } } : {}),
     ...(P.converge ? { converge: { amount: P.converge } } : {}),
     ...(P.twinkle ? { flicker: { amount: P.twinkle, rate: 7 } } : {}),
-    ...(P.rotate ? { rotation: { angle: [0, 360], velocity: [r4(-P.rotate * 180 / Math.PI), r4(P.rotate * 180 / Math.PI)] } } : {}),
+    ...(P.rotate ? { rotation: { angle: [0, TAU4], velocity: [-P.rotate, P.rotate] } } : {}),   // radians (PROTOCOL §9.2; lead 10-17): the builder's own rad/s
     render: { blend: P.blend },
   };
   return { kind: EFFECT_KIND, v: 1, name, reads: P.reads, emitters: [e], params: LEGACY_PARAMS(P) };
@@ -334,9 +419,15 @@ export const ESSENTIAL_ADDRESSES = Object.freeze({
   magic: 'eido:sha256/0e413aa3b23d404a07d1d4736c9f23987e22cda1ab1b438df394712179dc384f',
   stars: 'eido:sha256/29d12840afa1437819259ba3026da37c083e10530e18c2d6b33708322386658f',
   muzzle: 'eido:sha256/aa2a6de4ec06157679bb1dd85219680f05bf661101297efbdf2f0a9ac5f90b84',
+  fire: 'eido:sha256/f7c0ed62fd9e23b4c179dbbf3e75103d26601bce2b47277a1bd0bee0ac5b8a94',   // its angles became radians (lead 10-17)
+});
+// An Essential's address from before a retune, still read as that Essential (a stored reference is read forever, PROTOCOL
+// §4). fire's degree-scale document (rotation.angle [0, 360], velocity ±20.05 °/s) was stored by this branch's door for a
+// day (10-16 → 10-17) before R's ruling stored Essentials by name; its look is unchanged by the move to radians.
+export const ESSENTIAL_FORMER_ADDRESSES = Object.freeze({
   fire: 'eido:sha256/1ca045801dca39db0ff6da4b5d7270836fecbd8578a25692a3d180829013132c',
 });
-const ESSENTIAL_BY_HEX = new Map(Object.entries(ESSENTIAL_ADDRESSES).map(([k, a]) => [a.slice('eido:sha256/'.length), k]));
+const ESSENTIAL_BY_HEX = new Map([...Object.entries(ESSENTIAL_FORMER_ADDRESSES), ...Object.entries(ESSENTIAL_ADDRESSES)].map(([k, a]) => [a.slice('eido:sha256/'.length), k]));
 /** The address an Essential is stored as, or null for a name that isn't one. */
 export const essentialAddress = (name) => (typeof name === 'string' && Object.hasOwn(ESSENTIAL_ADDRESSES, name) ? ESSENTIAL_ADDRESSES[name] : null);
 /** The Essential a stored effect names (its name, or its address in either spelling), or null. */
@@ -418,12 +509,17 @@ export const QUALITY_TIERS = Object.freeze({ auto: 1, high: 1, med: 0.5, low: 0.
 export function resolveParticles(v, { entityId = '', lookup = () => null } = {}) {
   const inst = instanceOf(v);
   if (!inst) return { ok: false, why: 'particles data must be an object {effect, …}' };
-  const doc = effectFor(inst.effect, lookup);
-  if (!doc) {
+  const raw = effectFor(inst.effect, lookup);
+  if (!raw) {
     const stored = effectBlobName(inst.effect);
     return { ok: false, pending: !!stored, why: stored ? `effect ${inst.effect} isn't loaded (yet)` : `effect ${JSON.stringify(inst.effect ?? null)} isn't one this client knows (${ESSENTIAL_NAMES.join('/')}): it reads as an emitter but shows nothing` };
   }
-  const notes = []; const params = {};
+  // a stored document is read under the unknown-field policy (readableEffect): its known parts draw, the rest is noted.
+  // An Essential is this build's own document, read as it is
+  const readable = !isEssential(inst.effect); const skipped = [];
+  const doc = readable ? readableEffect(raw, skipped) : raw;
+  if (!doc) return { ok: false, why: `the effect: ${effectProblem(raw)}` };
+  const notes = skipped.length ? [`this client skips what it doesn't know in the effect: ${skipped.slice(0, 8).join(', ')}${skipped.length > 8 ? ', …' : ''}`] : []; const params = {};
   for (const [k, x] of Object.entries(inst.params ?? {})) {
     const p = doc.params?.[k]; if (!p) { notes.push(`params.${k}: not a param of ${doc.name ?? 'this effect'}`); continue; }
     let val = x;

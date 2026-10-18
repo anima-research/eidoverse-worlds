@@ -86,7 +86,7 @@ function uploadEffect(w, actor, a) {
     if (U.length >= SR.LIMITS.uploads) refuse("rate", `${said(actor)} has uploaded ${U.length} documents in the last minute; at most ${SR.LIMITS.uploads}`, "slow down");
     U.push(now); w.presenceDirty = true; }
   const bad = effectProblem(a.effect);
-  if (bad) refuse("shape", `effect: ${bad}`, "PROTOCOL §4 (effects are documents): {kind: 'particle-effect', v: 1, emitters: [{spawn: {amount, lifetime}, …}], params?}; effect {name: 'fire'} shows an Essential's");
+  if (bad) refuse(/ is reserved: not built yet/.test(bad) ? "reserved" : "shape", `effect: ${bad}`, "PROTOCOL §4 (effects are documents): {kind: 'particle-effect', v: 1, emitters: [{spawn: {amount, lifetime}, …}], params?}; effect {name: 'fire'} shows an Essential's");
   if (a.dry) return { ok: true, dry: true, note: "a particle effect this protocol runs; nothing stored" };
   const h = w.putBlob(a.effect);
   return { ok: true, effect: h, next: `set {id, component: 'particles', value: {effect: '${h}'}}` };

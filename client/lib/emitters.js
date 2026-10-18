@@ -20,7 +20,7 @@ import { THREE, scene } from './core.js';
 import { bus } from './base.js';
 import { primeFiles } from './assets.js';
 import { entities, findPart } from './world.js';
-import { resolveParticles, effectBlobName, effectProblem, QUALITY_TIERS } from '../../shared/particle_effects.js';
+import { resolveParticles, effectBlobName, effectProblem, readableEffect, QUALITY_TIERS } from '../../shared/particle_effects.js';
 import { buildEmitter } from './particlefx.js';
 import { makeEmitterRegistry, retireEmitter } from './emitter_field.js';
 import { autoHooks as autos, ownHook } from './autohooks.js';
@@ -74,8 +74,8 @@ export const emitterCount = () => handles.size;
 
 // ---- stored effects ---------------------------------------------------------
 // A document stored in the world (effect: 'sha256:<hex>') is fetched once and kept: a content address names fixed bytes,
-// so a cached one is never stale. The authority checked it when it was named; it is checked again here (effectProblem)
-// because a viewer runs what it draws.
+// so a cached one is never stale. The authority checked it when it was named; it is checked again here (readableEffect: its
+// known parts, every bound) because a viewer runs what it draws.
 const stored = new Map();          // blob name → doc | null (refused) | Promise
 const waiting = new Map();         // blob name → Set of ids to re-apply when it lands
 function lookup(name) { const d = stored.get(name); return d && typeof d.then !== 'function' ? d : null; }
@@ -83,7 +83,9 @@ function fetchEffect(name, id) {
   (waiting.get(name) ?? waiting.set(name, new Set()).get(name)).add(id);
   if (stored.has(name)) return;
   stored.set(name, sendRequest('effect', { name }).then((r) => {
-    const doc = r?.ok && r.effect && !effectProblem(r.effect) ? r.effect : null;
+    // the unknown-field policy (lead 10-17): keep the parts this build knows (readableEffect), so a document using an
+    // addition this client predates draws what it can instead of nothing
+    const doc = r?.ok && r.effect ? readableEffect(r.effect) : null;
     if (!doc) console.warn(`[emitters] effect ${name}: ${r?.refused?.reason ?? (r?.effect ? effectProblem(r.effect) : 'not stored here')}`);
     stored.set(name, doc);
     for (const x of waiting.get(name) ?? []) { const v = lastValue.get(x); if (v !== undefined) applyFrom(x, v); }
