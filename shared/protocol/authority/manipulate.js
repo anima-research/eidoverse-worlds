@@ -21,7 +21,7 @@ import { RESERVED } from "./rights.js";
 import { actIndexOf } from "./undo.js";
 import { heldEvent } from "./scriptrun.js";
 import { occupiedRefuse, occupantOn } from "./occupants.js";
-import { body, dist, gripPoint, gripOf, lawOf, solidAt } from "./physics.js";
+import { body, dist, facingOf, gripPoint, gripOf, heldQ, lawOf, solidAt } from "./physics.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const actOf = (...a) => UP.actOf(...a);
@@ -254,6 +254,9 @@ function launch(w, actor, a, verb, g = null) {
   // bit for bit (DESIGN-physics-responsiveness §3). A unit quaternion, else refused.
   if (a.q !== undefined) { if (!(Array.isArray(a.q) && a.q.length === 4 && a.q.every(Number.isFinite) && Math.abs(Math.hypot(...a.q) - 1) < 1e-3)) refuse("shape", "q is the thing's orientation as let go: a unit quaternion [x, y, z, w]", "leave it out to use the hold's");
     h.pose.q = a.q.map(noNeg0); }
+  else h.pose.q = heldQ(w, h);   // let go as it was carried: turned with the body since it was taken (R 10-17 20:54)
+  // the rotation is now as of this facing (a refused launch leaves a hold that a later put must not turn twice)
+  { const f = facingOf(w, actor); if (f !== null) h.facing = f; else delete h.facing; }
   if (a.pos !== undefined) h.pose.pos = releasePos(me, a.pos);
   // L7 (33 F3): a launch writes no state now, but it decides a write (its rest). Admit the write it releases, as put
   // does: your role and its locks NOW, rate. The plan is a check only; the rest will be the engine's value.

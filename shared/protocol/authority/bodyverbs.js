@@ -16,7 +16,7 @@ import { BODY_VERBS, forgetReaches } from "./bodyconsent.js";
 import { thingSaid } from "./blueprints.js";
 import { heldEvent } from "./scriptrun.js";
 import { clearOccupant, leftOccupied, occupiedRefuse, occupantOf, vacateAt } from "./occupants.js";
-import { arrivalBox, body, dist, gripPoint, gripOf, pathBlocked, shearFree, sizeOf, solidAt } from "./physics.js";
+import { arrivalBox, body, dist, facingOf, gripPoint, gripOf, heldQ, pathBlocked, shearFree, sizeOf, solidAt } from "./physics.js";
 import { fliesIn, flyingWorld, gripHow, launch, recentRests, releasePos, returnHome, returnPlan, secondGrip, shaped, shoveGate, snapTarget } from "./manipulate.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
@@ -177,7 +177,11 @@ const EMBODIED_VERBS = {
     }
     const handled = [...new Set([...(prev?.handled ?? []), actor])];
     const hand = gripPoint(me); // in your hand now (a VR client would send the hand's pose)
-    w.presence.holds[a.id] = { by: actor, since: w.now(), pose: { pos: hand, q: (live && sf.sim.bodies[a.id]?.q) ? sf.sim.bodies[a.id].q.slice() : t.q, scale: t.scale }, handled, ...how }; // caught mid-air: as it's turned now
+    // as it's turned now: caught mid-air, the sim's; taken from another hand, as that hand turned it; else the log's. With the
+    // holder's facing as taken, so it keeps its turn relative to the body (heldQ)
+    const facing = facingOf(w, actor);
+    const q0 = (live && sf.sim.bodies[a.id]?.q) ? sf.sim.bodies[a.id].q.slice() : prev ? heldQ(w, prev) : t.q;
+    w.presence.holds[a.id] = { by: actor, since: w.now(), pose: { pos: hand, q: q0, scale: t.scale }, ...(facing !== null ? { facing } : {}), handled, ...how };
     w.savePresence();
     heldEvent(w, "grab", a.id, { by: actor, hand: how.hand, ...(how.grip ? { grip: how.grip } : {}), ...(act !== null ? { seq: act } : {}) });
     return { ok: true, recorded: act !== null, holding: a.id, inHandAt: hand.map(r3), ...how, ...(notes.length ? { notes } : {}) };
@@ -233,7 +237,7 @@ const EMBODIED_VERBS = {
       pos = [r3(x), r3(sup.y + under), r3(z)]; }
     if (!Array.isArray(pos) || pos.length !== 3 || pos.some((n) => !Number.isFinite(n))) refuse("shape", "put takes pos: [x, y, z] (or nothing: straight down)", "");
     const d = dist(gripPoint(me), pos); if (d > REACH) refuse("out-of-reach", `that's ${r3(d)} m from you; you can reach ${REACH} m`, "move closer first");
-    const q = a.q ?? h.pose.q; const value = { pos, q, scale: t.scale };
+    const q = a.q ?? heldQ(w, h); const value = { pos, q, scale: t.scale };   // turned with the body as it was carried (heldQ)
     const ops = [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", value)];
     // the one gate first (your role and its locks NOW, not when you picked it up), then the physical claim on top
     const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
