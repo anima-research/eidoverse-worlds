@@ -42,6 +42,7 @@ const STUBS: Record<string, string> = {
   consentsync: `export const makeConsentSync = () => ({});`,
   reachnet: `export const clearMyReach = () => {};`,
   mybody: `export let me = null; export const getMe = () => globalThis.__dm.me ?? null;`,
+  getup: `export const floorUnderLyingBody = () => 0;`,
 };
 plugin({
   name: 'dismount-stubs',

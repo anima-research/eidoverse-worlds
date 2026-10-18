@@ -135,6 +135,7 @@ import { foldedIn } from '../shared/wingpresence.js';
 import { readBodyMode } from '../shared/bodymode.js';
 import { isOwner } from '../shared/protocol/roles.js';
 import { DEFAULT_BODY } from '../shared/avatardefs.js';
+import { standingYFromLyingRoot } from './lib/getup.js';
 
 if (CONFIG.params.has('mintthumbs')) {
   // ?mintthumbs — seed the roster's portraits, then stop (lib/debug/portraits.js). The else below is the entire normal boot.
@@ -359,7 +360,9 @@ wireNet({
     { const m = readBodyMode(r); if (m === 'sit' || m === 'lie') setPosture(m); }   // the body-mode survives a rejoin (an older sample: read off its clip)
     // an enacted pose is authored content: wake holding it, like the spot you stood on. A remembered ragdoll
     // frame (pre-sanitizer entries) is wreckage: wake standing instead.
-    if (r.clip === 'ragdoll') { myState.pos.y = 0; return; }
+    // Its remembered root lies below the floor the body lay on; wake just
+    // above that floor and settle onto it, not at height 0 (getup.js).
+    if (r.clip === 'ragdoll') { myState.pos.y = standingYFromLyingRoot(fin(r.p[1])); return; }
     if (r.pose) myState.pose = r.pose;
     setFolded(foldedIn(r) === true);   // the named pose wings-folded (or an older record's wingsFolded)
   },
