@@ -19,7 +19,7 @@ import { pending, P } from './scheduler.js';
 
 import { wingFoldPresence } from '../../shared/wingpresence.js';
 import { presenceWire, voiceWire, bodyWire } from '../../shared/presencewire.js';
-import { serverNow, localNow, noteRoundTrip, clockRtt } from './serverclock.js';
+import { serverNow, localNow, noteRoundTrip, clockRtt, noteServerFloor, onClockDoubt } from './serverclock.js';
 import { presence } from './presence.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext, resyncChatAfter } from './chat.js';
 import { markPhase, refuseBoot, waitBoot } from './boot.js';
@@ -314,6 +314,8 @@ function onReply(msg) {
  *  realizers what changed, in the protocol's terms). Chat lines take the chat path (they aren't world state). */
 function onLog(msg) {
   if (!replica.active) return;
+  // each entry's ts was the authority's clock no later than now: a floor that catches a clock step before the next ask
+  for (const e of msg.entries ?? []) noteServerFloor(e?.ts);
   const r = replica.ingest(msg.entries ?? [], msg.from ?? -1, msg.names);
   if (r.resync) { console.warn(`[replica] can't continue this client's cut (${r.why}): asking for a fresh snapshot`); rejoin(); return; }
   // a chat line: into the window (the shared rule), then the live causes (bubbles, voice, chat log).
@@ -359,6 +361,7 @@ export const setPoseOverride = (fn) => { poseOverride = fn; };
 let poseSeq = 0, clockTimer = null;
 const CLOCK_MS = 10_000;
 function askClock() { if (net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'clock', t0: localNow() })); }
+onClockDoubt(askClock);   // a stamp from the authority says our clock estimate is stale (it stepped): measure it now
 function startClock() { clearInterval(clockTimer); askClock(); setTimeout(askClock, 1000); clockTimer = setInterval(askClock, CLOCK_MS); }
 export function sendPose(now) {
   const s = hooks.myState;
