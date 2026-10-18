@@ -93,6 +93,32 @@ check('set([]) clears (kind null), one event', J(Sel.selection()) === J({ ids: [
 Sel.set(['x'], 'things'); drain();
 check('isSelected', Sel.isSelected('x') && !Sel.isSelected('y'));
 
+// ---- the ACTIVE id (R, gym 10-17 20:39): the last one clicked, which the multi-selection Inspector names. It is NOT
+// the primary (the first, which the gizmo and every single-thing tool keep); it is only ever one of the ids.
+console.log('ACTIVE — the last one clicked');
+Sel.set(['a1']); drain();
+check('one selected: it is the active one', Sel.active() === 'a1');
+Sel.toggle('a2');
+check('a Ctrl-click adds it AND makes it active; the primary stays the first', Sel.active() === 'a2' && Sel.primary() === 'a1', J({ a: Sel.active(), p: Sel.primary() }));
+Sel.toggle('a3');
+check('…again: the newest is active', Sel.active() === 'a3' && J(Sel.selection().ids) === J(['a1', 'a2', 'a3']));
+Sel.toggle('a3');
+check('dropping the active one falls back to the primary (never an id no longer selected)', Sel.active() === 'a1' && !Sel.isSelected('a3'), String(Sel.active()));
+Sel.extend(['a4']);
+check('a box select (extend) leaves the active one alone', Sel.active() === 'a1', String(Sel.active()));
+drain();
+Sel.set(['r1', 'r2', 'r3'], 'things', 'r3');
+check("set(list, kind, active): a Shift range names the row clicked as active, the anchor stays primary", Sel.active() === 'r3' && Sel.primary() === 'r1' && drain().length === 1, String(Sel.active()));
+Sel.set(['r1', 'r2', 'r3'], 'things', 'r2');
+check('same ids, a new active one: a change (one event, so the Inspector repaints)', Sel.active() === 'r2' && drain().length === 1);
+Sel.set(['r1', 'r2', 'r3'], 'things', 'r2');
+check('…and the same again is a no-op (no event)', drain().length === 0);
+Sel.set(['r1', 'r2'], 'things', 'zz');
+check('an active id that is not in the list is ignored (the primary stands in)', Sel.active() === 'r1');
+Sel.clear();
+check('empty: active null', Sel.active() === null);
+drain();
+
 // ---- a listener's view: the payload is the state at emit time, and reading the store inside agrees
 {
   let seen: any = null; let agreed = false;
