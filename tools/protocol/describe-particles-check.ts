@@ -40,7 +40,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["oneShot stops emitting after a cycle", "shared/particlesim.js", "if (S.oneShot && sim.cycle > 0) sim.emitting = false;", "", ["G3"]],
   ["preprocess runs before the first frame", "shared/particlesim.js", "let todo = S.preprocess;", "let todo = 0;", ["G1"]],
   ["a sphere's y is its own extent", "shared/particlesim.js", "oy[i] = s * ex[1] * x;", "oy[i] = s * ex[0] * x;", ["G6"]],
-  ["the cone's spread is in radians", "shared/particlesim.js", "const a1 = (rng() * 2 - 1) * V.spread,", "const a1 = (rng() * 2 - 1) * V.spread * DEG,", ["G5", "P1"]],
+  ["the cone's spread is in radians", "shared/particlesim.js", "const a1 = (rng() * 2 - 1) * V.spread, a2 = (rng() * 2 - 1) * (1 - V.flatness) * V.spread;", "const a1 = (rng() * 2 - 1) * V.spread * DEG, a2 = (rng() * 2 - 1) * (1 - V.flatness) * V.spread * DEG;", ["G5"]],
   ["a particle's angle is in radians", "shared/particlesim.js", "c0[i] = ang;", "c0[i] = ang * DEG;", ["P2"]],
   ["a ring's cone is in radians", "shared/particlesim.js", "Math.tan(Math.PI / 2 - SH.cone)", "Math.tan((90 - SH.cone) * DEG)", ["P2"]],
   ["the validator holds spread to 0..π", "shared/particle_effects.js", "between(v.spread, [0, Math.PI], 'velocity.spread')", "between(v.spread, [0, 180], 'velocity.spread')", ["P1"]],
@@ -50,18 +50,18 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the renderer hands the sim its world gravity", "client/lib/particlefx.js", "sim.setGravity(localGravity(", "void (", ["P5"]],
   ["the reader skips what it doesn't know", "shared/particle_effects.js", "  const doc = readable ? readableEffect(raw, skipped) : raw;", "  const doc = raw;", ["P6"]],
   ["the client's fetch keeps a document it can partly read", "client/lib/emitters.js", "readableEffect(r.effect)", "(effectProblem(r.effect) ? null : r.effect)", ["P6"]],
-  ["the upload validator stays strict", "shared/particle_effects.js", "for (const k of Object.keys(e)) if (!MODULES.includes(k)) return", "for (const k of Object.keys(e)) if (false) return", ["P6"]],
+  ["the upload validator checks the whole document", "shared/protocol/authority/scripts.js", "const bad = effectProblem(a.effect);", "const bad = null;", ["P6", "P7", "X6"]],
   ["reserved names say so", "shared/particle_effects.js", "if (RESERVED_EMITTER[k]) return reservedWhy(`${at}.${k}`, RESERVED_EMITTER[k]);", "", ["P7"]],
   ["instance t0 is held", "shared/protocol/componentspec.js", 'reservedFields: ["t0"],', "", ["P7"]],
   ["an angle param shows degrees", "shared/editschema.js", "...(angleParam(p) ? { deg: true } : {})", "...({})", ["P9"]],
-  ["an Essential's former address still reads as it", "shared/particle_effects.js", "...Object.entries(ESSENTIAL_FORMER_ADDRESSES)", "...[]", ["K3"]],
+  ["an Essential's former address still reads as it", "shared/particle_effects.js", "...Object.entries(ESSENTIAL_FORMER_ADDRESSES)", "...[]", ["P10"]],
   ["not emitting: the living finish, none born", "shared/particlesim.js", "if (!sim.emitting) { active[i] = 0; continue; }", "", ["G7"]],
   ["the seed seeds each particle", "shared/particlesim.js", "pseed[i] = (base + 1 + i + Math.imul(sim.cycle, n)) >>> 0;", "pseed[i] = (1 + i + Math.imul(sim.cycle, n)) >>> 0;", ["G8"]],
   ["the older bag is refused in a write", "shared/particle_effects.js", "  if (legacy.length) return `${legacy.join", "  if (false) return `${legacy.join", ["X2"]],
   ["params are the effect's declared ones", "shared/particle_effects.js", "if (!Object.hasOwn(decl, k)) return `params.${k}:", "if (false) return `params.${k}:", ["X4"]],
   ["a document's amount is bounded", "shared/particle_effects.js", "S.amount >= 1 && S.amount <= L.amount)", "S.amount >= 1)", ["X6"]],
   ["a document's total is bounded", "shared/particle_effects.js", "if (total > L.totalAmount) return", "if (false) return", ["X6"]],
-  ["the authority checks particles at all", "shared/protocol/authority.js", "if (!FORKING) for (const op of norm) if (op.verb === \"set\") particlesCheck(w, op);", "", ["X2", "X3", "X4", "X8"]],
+  ["the authority checks particles at all", "shared/protocol/authority/gate.js", "if (!CTX.forking) for (const op of norm) if (op.verb === \"set\") particlesCheck(w, op);", "", ["X3", "X4"]],   /* X2 and X8 have a second gate (checks.js) since the shape audit */
   ["the translator modernizes particles", "tools/protocol/import-v1/translate-v1.js", ": k === \"particles\" ? newParticles(v) : v;", ": v;", ["X10"]],
   ["openable's state is generated", "shared/a11y.js", "if (isObj(c.openable)) out.state.push(", "if (false) out.state.push(", ["D2", "D3"]],
   ["openable's affordance is generated", "shared/a11y.js", "if (isObj(c.openable)) out.can.push(", "if (false) out.can.push(", ["D2"]],
@@ -73,7 +73,7 @@ if (argv.includes("--mutants")) {
   let wrongs = 0;
   for (const [name, file, find, repl, want] of MUTANTS) {
     const d = scratch("dpmut");
-    for (const sub of ["shared", "server", "tools", "defs", "client/lib"]) if (fs.existsSync(path.join(ENGINE, sub))) fs.cpSync(path.join(ENGINE, sub), path.join(d, sub), { recursive: true });
+    for (const sub of ["shared", "server", "tools", "defs", "client/lib", "spec", "AGENTS.md"]) if (fs.existsSync(path.join(ENGINE, sub))) fs.cpSync(path.join(ENGINE, sub), path.join(d, sub), { recursive: true });   // spec + AGENTS: P8 reads them
     fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
     const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
     if (src.split(find).length !== 2) { wrongs++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file}`); continue; }
@@ -89,6 +89,8 @@ if (argv.includes("--mutants")) {
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const none = () => ({});
 const D = await import(TREE + "shared/protocol/authority.js");
+// fixture-ids.ts opened the fixture seam on ENGINE's authority; a --tree run (mutants, control) imports another instance
+D.fixtureIds?.(true);
 const F = await import(TREE + "shared/protocol/fold.js");
 const CS = await import(TREE + "shared/protocol/componentspec.js");
 const PE = await import(TREE + "shared/particle_effects.js").catch(none);   // absent at the base
@@ -321,7 +323,7 @@ const cases: Case[] = [
         const r = E.editOps(ent, "l", { "particles.param|cone": "30" }, live); const v = r.ops.flatMap((o: any) => o.verb === "batch" ? o.args.ops : [o]).find((o: any) => o.args?.component === "particles")?.args?.value;
         return { deg: row?.deg, glowDeg: glow?.deg, stored: v?.params?.cone, errors: r.errors }; }); },
     good: (o) => o.deg === true && !o.glowDeg && Math.abs(o.stored - Math.PI / 6) < 1e-3 },
-  { id: "K3", what: "fire's former address (stored for a day before its angles became radians) still reads as fire; its pinned address is its new document's hash", run() {
+  { id: "P10", what: "fire's former address (stored for a day before its angles became radians) still reads as fire; its pinned address is its new document's hash", run() {
       const old = "eido:sha256/1ca045801dca39db0ff6da4b5d7270836fecbd8578a25692a3d180829013132c";
       return { old: PE.essentialNameOf?.(old), now: PE.ESSENTIAL_ADDRESSES?.fire === `eido:sha256/${PE.effectAddress(PE.ESSENTIALS.fire).slice(7)}` }; },
     good: (o) => o.old === "fire" && o.now },
