@@ -33,7 +33,7 @@ import { normalizePicture, PICTURE_LIT, PICTURE_ALT_MAX, ALT_HINT } from './pict
 import { normalizeSound, SOUND_ALT_MAX, SOUND_MAX_RADIUS } from './sound.js';
 import { mediaTier, tierWords } from './mediasrc.js';
 import { graphemes } from './text.js';
-import { ESSENTIAL_NAMES, instanceOf, effectFor, effectBlobName, modernize, instanceProblem, paramShown, essentialNameOf } from './particle_effects.js';
+import { ESSENTIAL_NAMES, instanceOf, effectFor, effectBlobName, modernize, instanceProblem, paramShown, essentialNameOf, angleParam } from './particle_effects.js';
 import { readOut, readLine } from './a11y.js';
 import { COMPONENTS as SPEC, registered, outOfRange, rangeWords, statusOf } from './protocol/componentspec.js';
 import { LOCK_LEVELS, lockLevel } from './protocol/roles.js';
@@ -650,7 +650,8 @@ export function inspectSchema(ent, id, live = {}) {
     const doc = effectFor(inst.effect, live.effects ?? (() => null)); const at = Array.isArray(inst.at) ? inst.at : [0, 0, 0];
     const effects = ESSENTIAL_NAMES.includes(inst.effect) ? ESSENTIAL_NAMES : [...ESSENTIAL_NAMES, inst.effect ?? '?'];
     const params = Object.entries(doc?.params ?? {}).flatMap(([name, p]) => { const v = inst.params?.[name] ?? paramShown(doc, name); const k = `param|${name}`, hint = p.help;
-      if (p.type === 'number') return [{ t: 'num', k, label: name, value: v, step: (p.max ?? 10) - (p.min ?? 0) > 20 ? 10 : 0.05, dp: Number.isInteger(v) && (p.max ?? 0) > 20 ? 0 : 2, min: p.min, max: p.max, hint }];
+      // an angle (radians in the document, PROTOCOL §9.2) is shown in degrees and stored in radians, as the transform rows are
+      if (p.type === 'number') return [{ t: 'num', k, label: name, value: v, step: angleParam(p) ? 5 : (p.max ?? 10) - (p.min ?? 0) > 20 ? 10 : 0.05, dp: Number.isInteger(v) && (p.max ?? 0) > 20 ? 0 : 2, min: p.min, max: p.max, hint, ...(angleParam(p) ? { deg: true } : {}) }];
       if (p.type === 'area') return [{ t: 'num', k, label: name, value: Array.isArray(v) ? v[0] : v, step: 0.05, dp: 2, min: p.min, max: p.max, unit: 'm', hint: `${hint ?? ''}${Array.isArray(v) ? ' (per-axis [x, y, z] in the JSON below)' : ''}` }];
       if (p.type === 'enum') return [{ t: 'enum', k, label: name, value: v ?? p.values[0], options: p.values.map((x) => ({ v: x, label: x })), hint }];
       if (p.type === 'bool') return [{ t: 'check', k, label: name, value: v === true, hint }];

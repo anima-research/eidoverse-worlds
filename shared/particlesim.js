@@ -20,6 +20,8 @@
 //     rand_from_seed (Park–Miller) and idhash are kept as they are, where Godot uses them;
 //   - hue variation applies without a curve (Godot 4.7's CPU path multiplies it by 0 unless a curve is set; its GPU path
 //     doesn't), and the anim-offset curve isn't the angle curve (a slip in the same file);
+//   - every angle is radians (spread, a ring's cone, angle, angular velocity: PROTOCOL §9.2), where Godot's material
+//     speaks degrees; the arithmetic is Godot's with its deg_to_rad dropped;
 //   - four positional modules the Essentials need and Godot has no word for, applied at output (they never feed back
 //     into the integration): drift (a slow sinusoidal sway, the builder's wobble), swirl (a small circle with age),
 //     converge (the horizontal offset from the axis narrows over life: a flame's taper), flicker (alpha twinkles).
@@ -43,7 +45,7 @@
 // The modifications in this file are part of eidoverse-worlds and are licensed under the AGPL-3.0 with it.
 
 const TAU = Math.PI * 2;
-const DEG = Math.PI / 180;
+const DEG = Math.PI / 180;   // Godot's material speaks degrees; an effect document speaks radians (PROTOCOL §9.2), so the sim never converts (kept for the tools' mutants)
 const CMP_EPSILON = 0.00001;
 export const MIN_SIZE = 0.005;   // the builder's floor on a quad's side (m): a shrinking spark never inverts
 
@@ -161,12 +163,12 @@ export function makeSim(em, { seed = 0 } = {}) {
     if (V.mode === 'box') { vx[i] = lerp(V.min[0], V.max[0], rng()); vy[i] = lerp(V.min[1], V.max[1], rng()); vz[i] = lerp(V.min[2], V.max[2], rng()); }
     else {
       // initiate velocity spread in 3D
-      const a1 = (rng() * 2 - 1) * V.spread * DEG, a2 = (rng() * 2 - 1) * (1 - V.flatness) * V.spread * DEG;
+      const a1 = (rng() * 2 - 1) * V.spread, a2 = (rng() * 2 - 1) * (1 - V.flatness) * V.spread;
       const sx = Math.sin(a1) * Math.cos(a2), sy = Math.sin(a2), sz = Math.cos(a1) * Math.cos(a2);
       const sp = lerp(V.speed[0], V.speed[1], rng());
       vx[i] = (bin[0] * sx + nrm[0] * sy + dirN[0] * sz) * sp; vy[i] = (bin[1] * sx + nrm[1] * sy + dirN[1] * sz) * sp; vz[i] = (bin[2] * sx + nrm[2] * sy + dirN[2] * sz) * sp;
     }
-    c0[i] = lerp(R.angle[0], R.angle[1], angleRand[i]) * DEG; c1[i] = 0; c2[i] = lerp(FB.offset[0], FB.offset[1], animRand[i]);
+    c0[i] = lerp(R.angle[0], R.angle[1], angleRand[i]); c1[i] = 0; c2[i] = lerp(FB.offset[0], FB.offset[1], animRand[i]);
     const c3 = 1 - rng() * S.lifetimeRandom;
     ptime[i] = 0; plife[i] = lifetime * c3;
     const ex = SH.extents;
@@ -176,7 +178,7 @@ export function makeSim(em, { seed = 0 } = {}) {
     } else if (SH.type === 'box') { ox[i] = (rng() * 2 - 1) * ex[0]; oy[i] = (rng() * 2 - 1) * ex[1]; oz[i] = (rng() * 2 - 1) * ex[2]; }
     else if (SH.type === 'ring') {
       const rc = Math.max(0.001, SH.radius), H = SH.height;
-      const top = Math.max(rc - Math.tan((90 - SH.cone) * DEG) * H, 0);
+      const top = Math.max(rc - Math.tan(Math.PI / 2 - SH.cone) * H, 0);
       let y = rng(); const skew = Math.max(Math.min(rc, top) / Math.max(rc, top), 0.5);
       y = rc < top ? Math.pow(y, skew) : 1 - Math.pow(y, skew);
       const ang = rng() * TAU;
@@ -243,7 +245,7 @@ export function makeSim(em, { seed = 0 } = {}) {
             if (v < 0) { vx[i] = 0; vy[i] = 0; vz[i] = 0; } else if (l > 0) { const k = v / l; vx[i] *= k; vy[i] *= k; vz[i] *= k; } } }
         let ang = lerp(R.angle[0], R.angle[1], angleRand[i]);
         ang += c1[i] * lifetime * lerp(R.velocity[0], R.velocity[1], rs());
-        c0[i] = ang * DEG;
+        c0[i] = ang;
         c2[i] = lerp(FB.offset[0], FB.offset[1], animRand[i]) + tv * lerp(FB.speed[0], FB.speed[1], rs());
       }
       // colour (ramp × base, hue rotated, × start colour), and the size
