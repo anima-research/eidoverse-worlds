@@ -893,16 +893,18 @@ export function surfaceUnder(x, z, terrainAt, maxY = Infinity, skipId = null) {
       _local.set(x - obj.position.x, 0, z - obj.position.z)
         .applyAxisAngle(UP, -obj.rotation.y).divideScalar(s);
       const fromY = (Math.min(maxY, obj.position.y + box.max.y * s) - obj.position.y) / s;
-      _ray.origin.set(_local.x, fromY + 0.01, _local.z);
+      // a hair above maxY so a surface AT maxY is found: a WORLD centimetre
+      // (the ray runs in the thing's own frame — at 20× scale, 0.01 there is
+      // 20cm here, and could start above a whole stack of layers)
+      _ray.origin.set(_local.x, fromY + 0.01 / Math.abs(s), _local.z);
       _ray.direction.set(0, -1, 0);
       let hit = exact.bvh.raycastFirst(_ray, THREE.DoubleSide);
-      // The ray starts a hair above maxY so a surface AT maxY is found. A
-      // surface inside that hair is above maxY — and must not hide the rest
+      // A surface inside that hair is above maxY — and must not hide the rest
       // of the thing beneath it: cast on from just under it. (A floor
       // finished with a thin layer has a hidden face 2cm down; the route
       // planner's floor scan probes 2cm under each surface, right onto it,
       // and lost every storey below.)
-      for (let k = 0; hit && k < 4 && obj.position.y + hit.point.y * s > maxY; k++) {
+      for (let k = 0; hit && k < 8 && obj.position.y + hit.point.y * s > maxY; k++) {
         _ray.origin.y = hit.point.y - 1e-4;
         hit = exact.bvh.raycastFirst(_ray, THREE.DoubleSide);
       }

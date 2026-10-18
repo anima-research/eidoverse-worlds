@@ -92,5 +92,25 @@ function walks(from: any, points: any[]) {
   check("...because a surface just above the limit no longer hides the rest of the thing below it",
     under < 6.2 && under > 3, `surfaceUnder(maxY 6.28) = ${under.toFixed(3)}`);
 }
+{
+  // the same at 20× scale: the model's own frame is small, the world's large.
+  // A structural slab topped at 6.20m (world) under ten 2cm underlay/finish
+  // layers from 6.28 to 6.48m — eleven faces in the 20cm a model-unit "1cm"
+  // head start would span at this scale, more than the ray will cast on past.
+  // surfaceUnder from 6.28 must find the slab: the head start is a WORLD cm.
+  const S = 20, layers: number[][] = [[-4, 6.0, -4, 4, 6.2, 4]];
+  for (let k = 0; k < 10; k++) layers.push([-4, 6.28 + 0.02 * k, -4, 4, 6.30 + 0.02 * k, 4]);
+  C.clearColliders();
+  const geom = mergeGeometries(layers.map(([x0, y0, z0, x1, y1, z1]) => {
+    const b = new THREE.BoxGeometry((x1 - x0) / S, (y1 - y0) / S, (z1 - z0) / S);
+    b.translate((x0 + x1) / 2 / S, (y0 + y1) / 2 / S, (z0 + z1) / 2 / S);
+    return b.index ? b.toNonIndexed() : b;
+  }), false);
+  const m = new THREE.Mesh(geom, undefined); m.scale.setScalar(S); m.updateMatrixWorld(true);
+  C.fitCollider("scaled", m, { collide: "exact" });
+  const r = C.surfaceUnder(0.5, 0.5, flat, 6.28);
+  check("at 20× scale, a stack of thin layers above the limit doesn't hide the slab beneath them",
+    r.onto === "scaled" && r.y > 6.1 && r.y <= 6.28 + 1e-6, JSON.stringify(r));
+}
 console.log(`\n${tally.passed} passed, ${tally.failed} failed`);
 process.exit(tally.failed ? 1 : 0);
