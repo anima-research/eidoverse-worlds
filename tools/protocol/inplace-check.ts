@@ -28,6 +28,27 @@
 //   IP18 the recovery of an interrupted swap writes the identities the interrupted run planned
 //   IP11 a snapshot.json the oracle can't compare (a fold of part of the log) doesn't block the translation: it says,
 //        in its output, that the snapshot was NOT compared and why, and keeps it as snapshot.original.json
+//   —— review of PR #260 (Mica) item 6: the owner's approval is bound to the dry-run report's hash; rollback is tested ——
+//   IP19 `--dry-run` writes nothing and prints a report whose hash is the same on a second run (nothing random in it)
+//   IP20 `translate` with no --approved refuses, names the dry run, and changes nothing
+//   IP21 an approval of a report that is no longer the world's (the old log changed since) is refused, both hashes named,
+//        nothing moved
+//   IP22 with a founder key, the founder's ed25519 signature over the approval text must verify (a wrong one refuses);
+//        the good one translates, and the world's log carries the system's translation-approved act: the report hash, the
+//        key and the signature, after repair-shapes
+//   IP23 with no founder key, the operator's typed hash is recorded as the operator's act, and said to be no owner's signature
+//   IP24 `rollback <world>` restores the WHOLE operational set: the renamed originals back (same bytes, inode, mtime), the
+//        made files (world.jsonl, poses.json, world.mod.jsonl, translation.json) removed, the minted identities forgotten: the
+//        world directory and the shared directory are byte-identical to before the translation, and it translates again
+//   IP25 a rollback that would lose history (the server wrote to world.jsonl since) refuses unless --discard-changes; a
+//        directory with no manifest refuses with that reason
+//   —— item 7: truthful refusals ——
+//   IP26 a world using features v4 doesn't carry yet (a water volume, air boxes, a climb route, a vehicle, a collision
+//        toggle) is REFUSED, naming each feature and where it was used (seq, entity, actor); the dry run lists them under
+//        `deferred`, and an approval of that report can't override the refusal; nothing is written. The world's water
+//        level (water on @world) is not a volume and does not refuse (control)
+//   IP27 a client that doesn't fold the log: a native (Unreal) session is told the Unreal client hasn't been ported to v4
+//        yet; anyone else is told to reload or update (the wire carries the latter; the native text is the pure switch)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/inplace-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -37,6 +58,9 @@ import { ENGINE, scratch } from "./common.ts";
 import { emptyState as v1Empty, foldEntry as v1Fold } from "./import-v1/fold.js";
 import { oldWorldAt, oldWorldsIn, bootNotice } from "../../server/oldworlds.ts";
 import { isWorldDir, isPreNamesDir } from "../../server/livehost.ts";
+import { noFoldRefusal } from "../../server/oldworlds.ts";
+import { approvalText } from "./import-v1/world.ts";
+import { readLog } from "../../shared/protocol/fold.js";
 
 const root = scratch("inplace");
 let pass = 0, fail = 0;
@@ -46,6 +70,12 @@ const W = path.join(root, "worlds"), OPT = path.join(root, "opt"); fs.mkdirSync(
 const tool = (args: string[], env: Record<string, string> = {}) => { const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", ...args], { cwd: ENGINE,
   env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, OPT_DIR: OPT, PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env } });
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
+/** The dry run's report hash for a world (review of PR #260 item 6: a translation needs the owner's approval bound to it). */
+const dryHash = (words: string[], env: Record<string, string> = {}) => { const r = tool(["translate", ...words, "--dry-run", "--no-founder-key"], env); return /^report-hash ([0-9a-f]{64})$/m.exec(r.out)?.[1] ?? "no-hash"; };
+/** `translate <words…> --no-founder-key`, approved: the dry run first, its hash typed back (the operator's act). */
+const xlate = (words: string[], env: Record<string, string> = {}) => tool(["translate", ...words, "--no-founder-key", "--approved", dryHash(words, env)], env);
+const MANIFEST = "translation.json";
+const dirf = path.join(W, ".directory.json");   // the shared identity directory
 
 // ---- an old (v1) world, as the old server left it: log.jsonl, a COMPLETE snapshot.json (the old fold of the whole log:
 // its last seq, the log's byte size) and poses.json (where each name last stood) ----
@@ -57,13 +87,13 @@ const L = [
   { actor: "Ann", verb: "comp", args: { id: "table_1", type: "heart", data: { beats: 3 } } },   // an invention: namespaced (IP9)
   { actor: "Ann", verb: "spawn", args: { id: "cup_1", lib: "test/cup.glb", pos: [4, 0, 2] } },
   { actor: "Bob", verb: "say", args: { text: "hello from the old days" } }];
-function oldWorld(name: string, { tamper = false } = {}) {
+function oldWorld(name: string, { tamper = false, extra = [] as any[] } = {}) {
   const d = path.join(W, name); fs.mkdirSync(d, { recursive: true });
-  const text = L.map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n";
+  const text = [...L, ...extra].map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n";
   fs.writeFileSync(path.join(d, "log.jsonl"), text);
   const st = v1Empty(); for (const l of text.split("\n").filter(Boolean)) v1Fold(st, JSON.parse(l));
   if (tamper) st.entities.cup_1.pos = [9, 0, 9];   // the old engine "said" the cup was elsewhere: the oracle must disagree
-  fs.writeFileSync(path.join(d, "snapshot.json"), JSON.stringify({ v: 1, seq: L.length - 1, bytes: Buffer.byteLength(text), ts: T0 + L.length * 1000, state: st }));
+  fs.writeFileSync(path.join(d, "snapshot.json"), JSON.stringify({ v: 1, seq: L.length + extra.length - 1, bytes: Buffer.byteLength(text), ts: T0 + L.length * 1000, state: st }));
   fs.writeFileSync(path.join(d, "poses.json"), JSON.stringify({ Ann: { p: [4, 0, 4], yaw: 0 } }));
   return d;
 }
@@ -105,7 +135,111 @@ const before = fingerprint(porch);
 const srv1 = await boot("boot1");
 { const j = await joinAs(srv1.port, "porch");
   ok(!j.snap && /older version of Eidoverse/.test(j.err ?? "") && /old-format world "porch"/.test(fs.readFileSync(srv1.log, "utf8")), "IP2 setup: before the translation, the running server flags \"porch\" at boot and refuses a visitor in plain words", j.types); }
-const r1 = tool(["translate", "porch", "--no-founder-key"]);
+// IP27 (wire half): a browser-like joiner that doesn't say replica (not a native session) is told to reload or update
+{ const ws = new WebSocket(`ws://127.0.0.1:${srv1.port}/ws`); const msgs: any[] = []; ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
+  await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+  // a current world to be refused at: found one
+  tool(["found", "current", "--owner", "Ann"]);
+  ws.send(JSON.stringify({ type: "join", world: "current", id: "Ann", avatar: "" }));
+  for (let i = 0; i < 80 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50); ws.close();
+  const err = msgs.find((m) => m.type === "error")?.error ?? "";
+  ok(err === noFoldRefusal("current", false) && /reload the page/.test(err) && !/Unreal/.test(err), "IP27 a joiner with no replica and no native session is told, on the wire, to reload the page or update the agent (the non-native text)", err); }
+ok(/Unreal client hasn't been ported to it yet/.test(noFoldRefusal("current", true)) && /current protocol \(v4\)/.test(noFoldRefusal("current", true)) && /Nothing is wrong with your sign-in/.test(noFoldRefusal("current", true)) && !/reload the page/.test(noFoldRefusal("current", true)),
+  "IP27 a native (Unreal) session gets the truthful text: the Unreal client hasn't been ported to v4 yet, nothing is wrong with it or the world", noFoldRefusal("current", true));
+
+// ================= IP19–IP21: the dry run and the approval it binds =================
+{ const d = oldWorld("careful"); const fp = fingerprint(d);
+  const a = tool(["translate", "careful", "--dry-run", "--no-founder-key"]), b = tool(["translate", "careful", "--dry-run", "--no-founder-key"]);
+  const ha = /^report-hash ([0-9a-f]{64})$/m.exec(a.out)?.[1], hb = /^report-hash ([0-9a-f]{64})$/m.exec(b.out)?.[1];
+  let rep: any = null; try { rep = JSON.parse(a.out.slice(a.out.indexOf("{"), a.out.lastIndexOf("}") + 1)); } catch {}
+  ok(a.code === 0 && !!ha && ha === hb && same(fingerprint(d), fp) && !temps().length && !isWorldDir(d), "IP19 --dry-run prints the report hash, the same on a second run, and writes nothing (the directory is as it was, no temporary directory)", { code: a.code, ha, hb, keys: Object.keys(fingerprint(d)) });
+  ok(rep && rep.source?.sha256 === fp["log.jsonl"][0] && rep.entries?.old === L.length && rep.guards && rep.dropped && Object.keys(rep.dropped).length >= 10 && Array.isArray(rep.deferred) && rep.deferred.length === 0 && rep.refused === null && rep.translator === "eidoverse/translate-v1@14",
+    "IP19 the report names the old log's bytes (sha256), the counts, the translator, the DROPPED table (what every translation drops by design) and an empty deferred list", rep && { source: rep.source, entries: rep.entries, dropped: Object.keys(rep.dropped ?? {}).length, deferred: rep.deferred, refused: rep.refused });
+  const no = tool(["translate", "careful", "--no-founder-key"]);
+  ok(no.code !== 0 && /needs the owner's approval of its dry-run report first/.test(no.out) && /--dry-run/.test(no.out) && /Nothing was changed/.test(no.out) && same(fingerprint(d), fp) && !temps().length, "IP20 translate with no --approved refuses, says to dry-run first, and changes nothing", no.out.slice(-600));
+  // the old log grows after the report was read: the approved hash is of a different log
+  fs.appendFileSync(path.join(d, "log.jsonl"), JSON.stringify({ seq: L.length, ts: T0 + 100000, actor: "Bob", verb: "say", args: { text: "after the dry run" } }) + "\n");
+  fs.rmSync(path.join(d, "snapshot.json"));   // (the snapshot is of the shorter log; not what this row is about)
+  const fp2 = fingerprint(d);
+  const stale = tool(["translate", "careful", "--no-founder-key", "--approved", ha!]);
+  const now = dryHash(["careful"]);
+  ok(stale.code !== 0 && /is not the one that was approved/.test(stale.out) && stale.out.includes(`approved ${ha}`) && stale.out.includes(`hashes to ${now}`) && now !== ha && /Nothing was changed/.test(stale.out) && same(fingerprint(d), fp2) && !temps().length && !isWorldDir(d),
+    "IP21 an approval of a report the world has since outgrown is refused, both hashes named, nothing moved", { code: stale.code, out: stale.out.slice(-700) });
+  const good = tool(["translate", "careful", "--no-founder-key", "--approved", now]);
+  ok(good.code === 0 && isWorldDir(d), "IP21 …and approving the report as it stands now translates", good.out.slice(-300)); }
+
+// ================= IP22–IP23: who approved, recorded =================
+const actsOf = (d: string) => readLog(fs.readFileSync(path.join(d, "world.jsonl"), "utf8")).filter((e: any) => e.kind === "act" && e.actor === "system").map((e: any) => [e.verb, e.body]);
+{ const d = oldWorld("founded"); const fp = fingerprint(d);
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+  const KEY = "ed25519:" + (publicKey.export({ format: "jwk" }) as any).x;
+  const dr = tool(["translate", "founded", "--dry-run", "--founder-key", KEY]); const h = /^report-hash ([0-9a-f]{64})$/m.exec(dr.out)?.[1]!;
+  const h0 = dryHash(["founded"]);
+  const sign = (msg: string) => crypto.sign(null, Buffer.from(msg), privateKey).toString("base64");
+  const bad = tool(["translate", "founded", "--founder-key", KEY, "--approved", h, "--approve-sig", sign(approvalText("founded", h0))]);   // signed the no-founder-key report, not this one
+  const none = tool(["translate", "founded", "--founder-key", KEY, "--approved", h]);
+  ok(h !== h0 && bad.code !== 0 && /approval signature doesn't verify/.test(bad.out) && bad.out.includes(approvalText("founded", h)) && none.code !== 0 && /needs the founder's signature/.test(none.out) && same(fingerprint(d), fp) && !temps().length,
+    "IP22 with a founder key the report hash includes it; a signature over another report, or none, refuses and moves nothing", { bad: bad.out.slice(-400), none: none.out.slice(-300) });
+  const good = tool(["translate", "founded", "--founder-key", KEY, "--approved", h, "--approve-sig", sign(approvalText("founded", h))]);
+  const acts = isWorldDir(d) ? actsOf(d) : []; const ap = acts.find(([v]) => v === "translation-approved")?.[1];
+  const sig = ap?.approval?.sig ?? ""; const verified = (() => { try { return crypto.verify(null, Buffer.from(approvalText("founded", h)), publicKey, Buffer.from(sig, "base64url")); } catch { return false; } })();
+  const g0 = readLog(fs.readFileSync(path.join(d, "world.jsonl"), "utf8"))[0];
+  ok(good.code === 0 && /approved by the founder/.test(good.out) && /signature verified/.test(good.out) && ap?.report === h && ap?.approval?.by === "founder" && ap?.approval?.key === KEY && verified && ap?.approval?.over === approvalText("founded", h)
+    && acts.map(([v]) => v).slice(0, 3).join(",") === "translated,repair-shapes,translation-approved" && JSON.stringify(g0.body?.owners?.[0]) === JSON.stringify([KEY]),
+    "IP22 the founder's good signature translates; the log carries the system's translation-approved act after repair-shapes: the report hash, by founder, the key (tier 0 of genesis), a signature that verifies over the approval text", { out: good.out.slice(-300), acts: acts.map(([v]) => v), ap }); }
+
+// ================= IP24–IP25: rollback restores the whole operational set =================
+{ const name = "undo"; const d = oldWorld(name, { extra: [{ actor: "Ann", verb: "ban", args: { id: "Troll", reason: "spam" } }] });   // a ban → world.mod.jsonl is made too
+  const fp = fingerprint(d); const dirBefore = fs.readFileSync(dirf, "utf8"); const eidoBefore = fs.existsSync(path.join(OPT, "eido-index.json")) ? fs.readFileSync(path.join(OPT, "eido-index.json"), "utf8") : null;
+  const t = xlate([name], { TRUST_NAMES: "" }); const mid = fingerprint(d);
+  ok(t.code === 0 && isWorldDir(d) && !!mid["world.mod.jsonl"] && !!mid["poses.json"] && !!mid[MANIFEST] && fs.readFileSync(dirf, "utf8") !== dirBefore,
+    "IP24 setup: translated in place (TRUST_NAMES off: identities minted), it made world.jsonl, poses.json, world.mod.jsonl (the ban) and translation.json, and grew the shared directory", { code: t.code, keys: Object.keys(mid) });
+  const m = JSON.parse(fs.readFileSync(path.join(d, MANIFEST), "utf8"));
+  ok(m.report === JSON.parse(fs.readFileSync(path.join(d, MANIFEST), "utf8")).approval.report && same(m.renamed, [["log.jsonl", "log.original.jsonl"], ["snapshot.json", "snapshot.original.json"], ["poses.json", "poses.original.json"]])
+    && same(Object.keys(m.made).sort(), ["poses.json", MANIFEST, "world.jsonl", "world.mod.jsonl"]) && Object.keys(m.identities).length >= 2 && m.made["world.jsonl"] === mid["world.jsonl"][0],
+    "IP24 the manifest names every rename, every made file with the sha256 it was made with, the minted identities and the approval", m);
+  const r = tool(["rollback", name], { TRUST_NAMES: "" }); const after = fingerprint(d);
+  ok(r.code === 0 && same(after, fp) && !isWorldDir(d) && oldWorldAt(W, name)?.kind === "translatable" && fs.readFileSync(dirf, "utf8") === dirBefore && !temps().length && /rolled back/.test(r.out) && /forgot 3 identities/.test(r.out),   // Ann, Bob and the banned Troll
+    "IP24 rollback: every file is byte-identical to before (same bytes, inode, mtime; nothing made is left), the shared directory is byte-identical (the minted identities forgotten), and it is an old world again", { code: r.code, out: r.out.slice(-700), same: same(after, fp), dir: fs.readFileSync(dirf, "utf8") === dirBefore, keys: Object.keys(after) });
+  ok((eidoBefore === null) === !fs.existsSync(path.join(OPT, "eido-index.json")) || fs.readFileSync(path.join(OPT, "eido-index.json"), "utf8") === eidoBefore, "IP24 the content-address index is left as it was (no model bytes on this host, so it never changed)");
+  const again = xlate([name]);
+  ok(again.code === 0 && isWorldDir(d), "IP24 …and it translates again after the rollback", again.out.slice(-300));
+  // IP25: the server has written to the v4 world since
+  fs.appendFileSync(path.join(d, "world.jsonl"), "\n");
+  const r2 = tool(["rollback", name]); const keep = fingerprint(d);
+  ok(r2.code !== 0 && /without losing history: world\.jsonl changed since/.test(r2.out) && /--discard-changes/.test(r2.out) && same(fingerprint(d), keep) && isWorldDir(d), "IP25 a rollback that would lose history refuses, names the file, and offers --discard-changes; nothing changed", r2.out.slice(-500));
+  const r3 = tool(["rollback", name, "--discard-changes"]);
+  ok(r3.code === 0 && same(fingerprint(d), fp) && /changes since the translation discarded/.test(r3.out), "IP25 --discard-changes rolls back anyway, saying what was discarded; the directory is byte-identical to the original again", r3.out.slice(-400));
+  const r4 = tool(["rollback", name]);
+  ok(r4.code !== 0 && /holds no translation\.json/.test(r4.out) && /Nothing was changed/.test(r4.out) && same(fingerprint(d), fp), "IP25 a directory with no manifest refuses with that reason", r4.out.slice(-300)); }
+
+// ================= IP26: features v4 doesn't carry yet refuse, truthfully =================
+{ const uses = [
+    { actor: "Ann", verb: "comp", args: { id: "table_1", type: "water", data: { center: [0, -2, 0], size: [10, 4, 10] } } },
+    { actor: "Ann", verb: "comp", args: { id: "table_1", type: "air", data: { boxes: [{ center: [0, 0, 0], size: [2, 2, 2] }] } } },
+    { actor: "Bob", verb: "comp", args: { id: "cup_1", type: "traversal", data: { routes: [{ name: "ladder", path: [[0, 0, 0], [0, 3, 0]], radius: 0.5, speed: 1 }] } } },
+    { actor: "Bob", verb: "comp", args: { id: "cup_1", type: "vehicle", data: { helm: [0, 1, 0], exit: [1, 0, 0], speed: 3, turnRate: 1 } } },
+    { actor: "Ann", verb: "comp", args: { id: "table_1", type: "collision", data: { enabled: false } } },
+    { actor: "Ann", verb: "comp", args: { id: "@world", type: "water", data: { level: 1.5 } } }];   // the world's water LEVEL: carried, not deferred (control)
+  const d = oldWorld("sunk", { extra: uses }); fs.rmSync(path.join(d, "snapshot.json")); const fp = fingerprint(d); const dirBefore = fs.readFileSync(dirf, "utf8");
+  const dr = tool(["translate", "sunk", "--dry-run", "--no-founder-key"]); let rep: any = null; try { rep = JSON.parse(dr.out.slice(dr.out.indexOf("{"), dr.out.lastIndexOf("}") + 1)); } catch {}
+  const h = /^report-hash ([0-9a-f]{64})$/m.exec(dr.out)?.[1];
+  const want = [["water volume", "table_1", 6, "Ann"], ["air box (dry interior)", "table_1", 7, "Ann"], ["climb route", "cup_1", 8, "Bob"], ["vehicle", "cup_1", 9, "Bob"], ["collision on/off toggle", "table_1", 10, "Ann"]];
+  ok(dr.code !== 0 && !!h && rep && same(rep.deferred?.map((u: any) => [u.feature, u.id, u.seq, u.actor]), want) && typeof rep.refused === "string",
+    "IP26 the dry run lists the five deferred uses (feature, entity, seq, actor) — and not the world's water level — and says the translation is refused (exit 1)", { code: dr.code, deferred: rep?.deferred });
+  const text = rep?.refused ?? "";
+  ok(/can't translate "sunk": it uses 5 thing\(s\) this protocol \(v4\) does not carry yet/.test(text) && /water volume, air box \(dry interior\), climb route, vehicle, collision on\/off toggle/.test(text) && /would drop them silently/.test(text) && /Nothing was written/.test(text)
+    && want.every(([f, id, seq, who]) => text.includes(`seq ${seq}: ${f} (`) && text.includes(`on "${id}", set by ${who}`)) && /deferred in v4/.test(text) && /remove them from the old world first/.test(text),
+    "IP26 the refusal names each feature, the component, the entity, the actor and the seq, says they came from main's merges and are deferred, and what to do", text);
+  const forced = tool(["translate", "sunk", "--no-founder-key", "--approved", h!]);
+  ok(forced.code !== 0 && /can't translate "sunk"/.test(forced.out) && /can't override this/.test(forced.out) && same(fingerprint(d), fp) && !temps().length && !isWorldDir(d) && fs.readFileSync(dirf, "utf8") === dirBefore,
+    "IP26 approving the refused report doesn't override it: refused again, nothing written, no identities added", forced.out.slice(-400));
+  const named = oldWorld("sunk-src", { extra: uses.slice(0, 1) }); const two = tool(["translate", "sunk-src", "sunk-new", "--no-founder-key", "--approved", dryHash(["sunk-src", "sunk-new"])]);
+  ok(two.code !== 0 && /can't translate "sunk-new"|can't translate "sunk-src"/.test(two.out) && /water volume/.test(two.out) && !fs.existsSync(path.join(W, "sunk-new")) && same(fingerprint(named), fingerprint(named)),
+    "IP26 the two-name form refuses the same way, and makes no new directory", two.out.slice(-300)); }
+
+// ================= IP1: in place, the happy path (continued) =================
+const r1 = xlate(["porch"]);
 const after = fingerprint(porch);
 ok(r1.code === 0 && /0 divergences/.test(r1.out) && /translated "porch" .*→ world "porch"/.test(r1.out), "IP1 translate <world> succeeds in place, 0 divergences", r1.out.slice(-1200));
 ok(isWorldDir(porch) && !fs.existsSync(path.join(porch, "log.jsonl")), "IP1 the world keeps its name: porch/ is now a world (world.jsonl), and log.jsonl is no longer there", Object.keys(after));
@@ -113,8 +247,12 @@ ok(same(after["log.original.jsonl"], before["log.jsonl"]), "IP1 log.original.jso
 ok(same(after["snapshot.original.json"], before["snapshot.json"]) && same(after["poses.original.json"], before["poses.json"]), "IP1 snapshot.json → snapshot.original.json and poses.json → poses.original.json, the same files", [after["snapshot.original.json"], after["poses.original.json"]]);
 { const P = JSON.parse(fs.readFileSync(path.join(porch, "poses.json"), "utf8"));
   ok(Object.keys(P).length === 1 && /^u-[a-z2-7]{20}$/.test(Object.keys(P)[0]), "IP1 the new poses.json is keyed by identity (the translated world's)", P); }
-ok(!temps().length && same(Object.keys(after).sort(), ["log.original.jsonl", "poses.json", "poses.original.json", "snapshot.original.json", "world.jsonl"]), "IP1 no temporary directory is left, and the directory holds exactly the new world and the kept originals", [temps(), Object.keys(after)]);
+ok(!temps().length && same(Object.keys(after).sort(), ["log.original.jsonl", "poses.json", "poses.original.json", "snapshot.original.json", MANIFEST, "world.jsonl"]), "IP1 no temporary directory is left, and the directory holds exactly the new world, the kept originals and the rollback manifest", [temps(), Object.keys(after)]);
 ok(/snapshot\.json agrees/.test(r1.out) && /mtime unchanged: true/.test(r1.out) && /keeps its name/.test(r1.out), "IP1 it says the snapshot oracle agreed, and that the original is kept with its mtime unchanged", r1.out.slice(-800));
+
+{ const ap = actsOf(porch).find(([v]) => v === "translation-approved")?.[1];
+  ok(ap && /^[0-9a-f]{64}$/.test(ap.report) && ap.approval?.by === "operator" && /^ed25519:/.test(ap.approval?.key ?? "") && /not an owner's signature/.test(ap.approval?.note ?? "") && !ap.approval?.sig,
+    "IP23 with no founder key the act records the operator's approval (the custody operator key) and says plainly it is no owner's signature", ap); }
 
 // ================= IP12: the oracle re-runs on the kept originals =================
 { const fp = fingerprint(porch);
@@ -136,8 +274,8 @@ ok(/snapshot\.json agrees/.test(r1.out) && /mtime unchanged: true/.test(r1.out) 
 const waiting = oldWorld("waiting");
 { ok(oldWorldAt(W, "porch") === null && !isPreNamesDir(porch), "IP3 a translated directory (world.jsonl + log.original.jsonl) is no old-format world: oldWorldAt null, not pre-names", oldWorldAt(W, "porch"));
   const names = oldWorldsIn(W).map((o) => o.name); const notice = bootNotice(W);
-  ok(same(names, ["waiting"]) && !/"porch"/.test(notice) && /"waiting"/.test(notice), "IP3 the boot notice names the world still waiting and not the translated one (control: a waiting world IS named)", [names, notice]);
-  ok(notice.includes(`WORLDS_DIR=${W} bun tools/protocol/world.ts translate waiting --founder-key <the founder's ed25519 key>`) && /keeps its name, so links to it keep working/.test(notice), "IP3 …and its command is the in-place form", notice); }
+  ok(names.includes("waiting") && !names.includes("porch") && !/"porch"/.test(notice) && /"waiting"/.test(notice), "IP3 the boot notice names the world still waiting and not the translated one (control: a waiting world IS named)", [names, notice]);
+  ok(notice.includes(`WORLDS_DIR=${W} bun tools/protocol/world.ts translate waiting --dry-run --founder-key <the founder's ed25519 key>`) && /translate waiting --founder-key <the founder's ed25519 key> --approved </.test(notice) && /keeps its name, so links to it keep working/.test(notice), "IP3 …and its commands are the in-place form: the dry run, then the approved translation", notice); }
 
 // ================= IP2: the server serves it under its original name =================
 // (the server running since before the translation picks it up with no restart — R's walkthrough keeps it running —
@@ -153,40 +291,40 @@ const waiting = oldWorld("waiting");
   srv2.proc.kill(); await sleep(200); }
 
 // ================= IP4: re-running refuses, and changes nothing =================
-{ const fp = fingerprint(porch); const r = tool(["translate", "porch", "--no-founder-key"]);
+{ const fp = fingerprint(porch); const r = xlate(["porch"]);
   ok(r.code !== 0 && /already translated/.test(r.out) && /log\.original\.jsonl/.test(r.out) && /Nothing was changed/.test(r.out), "IP4 translating a translated world refuses: it says it's already translated, where the original is, and that nothing changed", r.out);
   ok(same(fingerprint(porch), fp) && !temps().length, "IP4 …and nothing changed on disk", temps()); }
 
 // ================= IP5: a verification failure moves nothing =================
 { const d = oldWorld("crooked", { tamper: true }); const fp = fingerprint(d), dirf = path.join(W, ".directory.json"), dirBefore = fs.readFileSync(dirf, "utf8");
-  const r = tool(["translate", "crooked", "--no-founder-key"]);
+  const r = xlate(["crooked"]);
   ok(r.code !== 0 && /doesn't agree with the old engine's own snapshot\.json/.test(r.out) && /Nothing was moved/.test(r.out), "IP5 a translation that disagrees with snapshot.json is refused, and it says why (the snapshot oracle) and that nothing moved", r.out.slice(-1500));
   ok(same(fingerprint(d), fp) && !isWorldDir(d), "IP5 the original directory is exactly as it was (every file's bytes, inode, mtime)", fingerprint(d));
   ok(!temps().length && fs.readFileSync(dirf, "utf8") === dirBefore, "IP5 no temporary directory is left, and no identities were added (the oracle runs before anything is written)", temps()); }
 
 // ================= IP6: a failure at each step of the swap puts everything back =================
 { const d = oldWorld("swapper"); const fp = fingerprint(d);
-  // steps: world.jsonl in, log.jsonl → log.original.jsonl, snapshot.json → …, poses.json → …, poses.json in (the new one)
+  // steps: world.jsonl in, log.jsonl → log.original.jsonl, snapshot.json → …, poses.json → …, poses.json in (the new one), translation.json in
   const results: any[] = [];
-  for (let k = 0; k < 5; k++) { const r = tool(["translate", "swapper", "--no-founder-key"], { WORLD_TS_FAULT_AT_STEP: String(k) });
+  for (let k = 0; k < 6; k++) { const r = xlate(["swapper"], { WORLD_TS_FAULT_AT_STEP: String(k) });
     results.push({ k, code: r.code, restored: same(fingerprint(d), fp), temps: temps().length, said: /the swap failed: \(injected\) step \d+ failed; everything that had moved was put back/.test(r.out) }); }
-  ok(results.every((x) => x.code !== 0 && x.restored && x.temps === 0 && x.said), "IP6 a failure at any step of the swap (0..4) puts every moved file back, removes the temporary directory and says so", results);
-  const r = tool(["translate", "swapper", "--no-founder-key"]);
+  ok(results.every((x) => x.code !== 0 && x.restored && x.temps === 0 && x.said), "IP6 a failure at any step of the swap (0..5) puts every moved file back, removes the temporary directory and says so", results);
+  const r = xlate(["swapper"]);
   ok(r.code === 0 && isWorldDir(d) && same(fingerprint(d)["log.original.jsonl"], fp["log.jsonl"]), "IP6 …and a clean run afterwards translates it in place", r.out.slice(-600)); }
 
 // ================= IP8: the two-name form still works =================
 { const d = oldWorld("elsewhere"); const fp = fingerprint(d);
-  const r = tool(["translate", "elsewhere", "elsewhere-new", "--no-founder-key"]);
+  const r = xlate(["elsewhere", "elsewhere-new"]);
   ok(r.code === 0 && isWorldDir(path.join(W, "elsewhere-new")) && same(fingerprint(d), fp) && oldWorldAt(W, "elsewhere")?.kind === "translatable", "IP8 translate <old> <new> still makes a new world under the new name and leaves the old directory as it was", r.out.slice(-600)); }
 
 // ================= IP10: no old log =================
 { fs.mkdirSync(path.join(W, "hollow"), { recursive: true });
-  const r = tool(["translate", "hollow", "--no-founder-key"]);
+  const r = xlate(["hollow"]);
   ok(r.code !== 0 && /holds no old log/.test(r.out) && !temps().length, "IP10 a directory with no old log refuses with that reason", r.out); }
 
 // ================= IP11: a snapshot the oracle can't compare is reported, not compared =================
 { const d = oldWorld("partial"); const sf = path.join(d, "snapshot.json"); const S = JSON.parse(fs.readFileSync(sf, "utf8")); S.seq -= 1; fs.writeFileSync(sf, JSON.stringify(S));
-  const fp = fingerprint(d); const r = tool(["translate", "partial", "--no-founder-key"]);
+  const fp = fingerprint(d); const r = xlate(["partial"]);
   ok(r.code === 0 && /snapshot\.json NOT compared: snapshot\.seq \d+ ≠ the log's last seq/.test(r.out) && isWorldDir(d) && same(fingerprint(d)["snapshot.original.json"], fp["snapshot.json"]),
     "IP11 a partial snapshot.json is reported as NOT compared (with the oracle's reason), and kept as snapshot.original.json", r.out.slice(-700)); }
 
@@ -197,14 +335,14 @@ const waiting = oldWorld("waiting");
 // directory still there), finishes the renames and moves the rest of the translated files in, and says so; the original
 // log is the untouched file throughout, and a third run says it's already translated
 for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); const fp = fingerprint(d);
-  const died = tool(["translate", name, "--no-founder-key"], { WORLD_TS_DIE_AT_STEP: String(k) }); const mid = fingerprint(d); const midTemps = temps().filter((t) => t.includes(name)).length;
-  const r = tool(["translate", name, "--no-founder-key"]); const after = fingerprint(d);
-  const again = tool(["translate", name, "--no-founder-key"]);
+  const died = xlate([name], { WORLD_TS_DIE_AT_STEP: String(k) }); const mid = fingerprint(d); const midTemps = temps().filter((t) => t.includes(name)).length;
+  const r = tool(["translate", name, "--no-founder-key"]); const after = fingerprint(d);   // a recovery needs no new approval: it finishes the approved one
+  const again = xlate([name]);
   const info = tool(["info", name]);
   ok(died.code !== 0 && !!mid["world.jsonl"] && (k === 1 ? !!mid["log.jsonl"] : !!mid["snapshot.original.json"] && !!mid["poses.json"] && !mid["poses.original.json"]) && midTemps === 1,
     `IP13 (k=${k}) a death after ${k} rename(s) leaves the half-swapped directory (world.jsonl landed, the rest not) and its temporary directory`, { code: died.code, mid: Object.keys(mid), midTemps });
   ok(r.code === 0 && /interrupted/.test(r.out) && /finished/.test(r.out) && same(after["log.original.jsonl"], fp["log.jsonl"]) && same(after["snapshot.original.json"], fp["snapshot.json"]) && same(after["poses.original.json"], fp["poses.json"])
-    && same(Object.keys(after).sort(), ["log.original.jsonl", "poses.json", "poses.original.json", "snapshot.original.json", "world.jsonl"]) && !temps().some((t) => t.includes(name)) && after["world.jsonl"][0] === mid["world.jsonl"][0],
+    && same(Object.keys(after).sort(), ["log.original.jsonl", "poses.json", "poses.original.json", "snapshot.original.json", MANIFEST, "world.jsonl"]) && !temps().some((t) => t.includes(name)) && after["world.jsonl"][0] === mid["world.jsonl"][0],
     `IP13 (k=${k}) the re-run notices the interrupted swap and finishes it: the originals renamed beside it (the same files), the translated files moved in, no temporary directory left, and it says so`, { code: r.code, out: r.out.slice(-600), keys: Object.keys(after) });
   ok(again.code !== 0 && /already translated/.test(again.out) && info.code === 0 && /"status": "ok"/.test(info.out), `IP13 (k=${k}) …then it's a translated world like any other (a third run says so; info opens it)`, { again: again.out.slice(-300), info: info.out.slice(-300) }); }
 
@@ -214,23 +352,23 @@ for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); 
 { const name = "stillwriting"; const d = oldWorld(name); fs.rmSync(path.join(d, "snapshot.json"));   // no oracle (it would refuse on a growing log for its own reason)
   const logf = path.join(d, "log.jsonl"); let n = 0;
   const writer = setInterval(() => { try { fs.appendFileSync(logf, JSON.stringify({ seq: 100 + n, ts: T0 + 100000 + n, actor: "Bob", verb: "say", args: { text: `late ${n}` } }) + "\n"); n++; } catch { /* gone */ } }, 2);
-  const proc = Bun.spawn(["bun", "tools/protocol/world.ts", "translate", name, "--no-founder-key"], { cwd: ENGINE, stdout: "pipe", stderr: "pipe",
+  const proc = Bun.spawn(["bun", "tools/protocol/world.ts", "translate", name, "--no-founder-key", "--approved", dryHash([name])], { cwd: ENGINE, stdout: "pipe", stderr: "pipe",
     env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, OPT_DIR: OPT, PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   const code = await proc.exited; clearInterval(writer);
   const out = (await new Response(proc.stdout).text()) + (await new Response(proc.stderr).text());
   const lines = fs.readFileSync(logf, "utf8").split("\n").filter(Boolean).length;
-  ok(code !== 0 && /changed while it was being translated/.test(out) && !fs.existsSync(path.join(d, "world.jsonl")) && fs.existsSync(logf) && lines === L.length + n && !temps().some((t) => t.includes(name)),
-    "IP14 an old log written to during the translation: the swap refuses (stop the old server), nothing moves, and every line written is still there", { code, out: out.slice(-500), world: fs.existsSync(path.join(d, "world.jsonl")), lines, wrote: n }); }
+  ok(code !== 0 && /changed while it was being translated|is not the one that was approved/.test(out) && !fs.existsSync(path.join(d, "world.jsonl")) && fs.existsSync(logf) && lines === L.length + n && !temps().some((t) => t.includes(name)),
+    "IP14 an old log written to during the translation: the approval check or the swap refuses (the report changed / stop the old server), nothing moves, and every line written is still there", { code, out: out.slice(-500), world: fs.existsSync(path.join(d, "world.jsonl")), lines, wrote: n }); }
 // IP15 a write that slips in mid-swap (injected after 2 renames: world.jsonl landed, log.jsonl renamed beside it) undoes the swap
 { const name = "midswap"; const d = oldWorld(name);
-  const r = tool(["translate", name, "--no-founder-key"], { WORLD_TS_TOUCH_SOURCE_AT_STEP: "2" }); const after = fingerprint(d);
+  const r = xlate([name], { WORLD_TS_TOUCH_SOURCE_AT_STEP: "2" }); const after = fingerprint(d);
   ok(r.code !== 0 && /changed while it was being translated/.test(r.out) && /put back/.test(r.out) && !after["world.jsonl"] && !!after["log.jsonl"] && !after["log.original.jsonl"] && !temps().some((t) => t.includes(name))
     && fs.readFileSync(path.join(d, "log.jsonl"), "utf8").includes("written during the swap"),
     "IP15 a write that slips in mid-swap: the swap is undone (everything put back, the late line kept in log.jsonl)", { code: r.code, out: r.out.slice(-500), keys: Object.keys(after) }); }
 // IP16 the recovery of an interrupted swap checks the same: a death after world.jsonl landed, then the old log is written to;
 //      the re-run refuses to finish (it would drop that write) and moves nothing
 { const name = "halfwritten"; const d = oldWorld(name);
-  const died = tool(["translate", name, "--no-founder-key"], { WORLD_TS_DIE_AT_STEP: "1" });
+  const died = xlate([name], { WORLD_TS_DIE_AT_STEP: "1" });
   fs.appendFileSync(path.join(d, "log.jsonl"), JSON.stringify({ seq: 50, ts: T0 + 50000, actor: "Bob", verb: "say", args: { text: "after the crash" } }) + "\n");
   const mid = fingerprint(d); const r = tool(["translate", name, "--no-founder-key"]); const after = fingerprint(d);
   ok(died.code !== 0 && r.code !== 0 && /changed while it was being translated/.test(r.out) && same(after, mid) && temps().some((t) => t.includes(name)),
@@ -238,14 +376,13 @@ for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); 
 
 // ================= IP17–IP18: identities are written only once the world is in place (review of PR #260, import-v1/world.ts:86) =================
 // IP17 with no TRUST_NAMES, Ann and Bob are imported people with no account: each attempt mints them anew. A failure before,
-//      during or after the renames (injected at step 0, 2 and 5 — 5 is after the last rename) and a concurrent writer each
+//      during or after the renames (injected at step 0, 2 and 6 — 6 is after the last rename) and a concurrent writer each
 //      leave the shared directory exactly as it was; the clean run then adds them once
-const dirf = path.join(W, ".directory.json");
 const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).actor).filter((a: string) => /^u-/.test(a)))];
 { const name = "nameless"; const d = oldWorld(name); const before = fs.readFileSync(dirf, "utf8");
-  const runs = [0, 2, 5].map((k) => { const r = tool(["translate", name, "--no-founder-key"], { TRUST_NAMES: "", WORLD_TS_FAULT_AT_STEP: String(k) });
+  const runs = [0, 2, 6].map((k) => { const r = xlate([name], { TRUST_NAMES: "", WORLD_TS_FAULT_AT_STEP: String(k) });
     return { k, code: r.code, dirSame: fs.readFileSync(dirf, "utf8") === before, temps: temps().filter((t) => t.includes(name)).length }; });
-  const ok1 = tool(["translate", name, "--no-founder-key"], { TRUST_NAMES: "" });
+  const ok1 = xlate([name], { TRUST_NAMES: "" });
   const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {}; const was = JSON.parse(before).ids ?? {};
   const added = Object.keys(ids).filter((k) => !was[k]); const actors = actorsOf(d);
   ok(runs.every((x) => x.code !== 0 && x.dirSame && x.temps === 0), "IP17 a failed in-place translation (before, during or after the renames) adds no identity to the shared directory", runs);
@@ -253,7 +390,7 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
     "IP17 …and the clean run adds exactly the identities its world names, once (no leftovers from the failed attempts)", { code: ok1.code, out: ok1.out.slice(-300), added: added.length, actors: actors.length }); }
 // IP18 the recovery of an interrupted swap writes the identities the interrupted run planned (it died before writing them)
 { const name = "nameless2"; const d = oldWorld(name);
-  const died = tool(["translate", name, "--no-founder-key"], { TRUST_NAMES: "", WORLD_TS_DIE_AT_STEP: "1" });
+  const died = xlate([name], { TRUST_NAMES: "", WORLD_TS_DIE_AT_STEP: "1" });
   const mid = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {}; const actors = actorsOf(d);
   const r = tool(["translate", name, "--no-founder-key"], { TRUST_NAMES: "" }); const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {};
   ok(died.code !== 0 && actors.some((a) => !mid[a]) && r.code === 0 && actors.every((a) => ids[a]) && /identit/.test(r.out),

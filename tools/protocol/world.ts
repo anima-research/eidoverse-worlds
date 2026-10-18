@@ -220,7 +220,8 @@ function rollback(name: string) {
   // every renamed original must still be there, exactly as recorded for the log; every made file either as made or discarded knowingly
   const missing = m.renamed.filter(([, b]: string[]) => !fs.existsSync(path.join(D, b))).map(([, b]: string[]) => b);
   if (missing.length) die(`can't roll back "${name}": the kept original(s) ${missing.join(", ")} are gone from ${D}. Nothing was changed.`);
-  const back = m.renamed.filter(([a]: string[]) => fs.existsSync(path.join(D, a))).map(([a]: string[]) => a);
+  // a name the original goes back to must be free, unless it's one the translation made (removed first, below: the new poses.json)
+  const back = m.renamed.filter(([a]: string[]) => fs.existsSync(path.join(D, a)) && !(a in m.made)).map(([a]: string[]) => a);
   if (back.length) die(`can't roll back "${name}": ${back.join(", ")} already exist(s) in ${D}, where the original(s) would go back. Nothing was changed.`);
   const origNow = sourceChanged(path.join(D, ORIGINAL.log), m.source);
   if (origNow) die(`can't roll back "${name}": ${ORIGINAL.log} no longer holds the bytes that were translated (${m.source.size} bytes then, ${origNow.size} now): it was written to, and the original is lost. Nothing was changed.`);
@@ -228,8 +229,8 @@ function rollback(name: string) {
   if (changed.length && !discard) die(`can't roll back "${name}" without losing history: ${changed.join(", ")} changed since the translation made ${changed.length === 1 ? "it" : "them"} (the server has written to the v4 world: acts, places, bans). `
     + `Rolling back deletes that; if that is what you want, say so: rollback ${name} --discard-changes. Nothing was changed.`);
   const did: string[] = [];
-  for (const [a, b] of m.renamed) { fs.renameSync(path.join(D, b), path.join(D, a)); did.push(`${b} → ${a}`); }
   for (const f of Object.keys(m.made)) if (f !== MANIFEST && fs.existsSync(path.join(D, f))) { fs.rmSync(path.join(D, f)); did.push(`removed ${f}${changed.includes(f) ? " (its changes since the translation discarded)" : ""}`); }
+  for (const [a, b] of m.renamed) { fs.renameSync(path.join(D, b), path.join(D, a)); did.push(`${b} → ${a}`); }
   const ids = directoryFor(WORLDS_DIR).forgetPlanned(m.identities ?? {});
   if (ids.removed.length) did.push(`forgot ${ids.removed.length} identit${ids.removed.length === 1 ? "y" : "ies"} the translation minted`);
   if (ids.kept.length) did.push(`kept ${ids.kept.length} identit${ids.kept.length === 1 ? "y" : "ies"} the translation minted but someone has bound or renamed since (${ids.kept.join(", ")})`);
