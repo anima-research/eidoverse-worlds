@@ -1,5 +1,13 @@
 # World access: who may enter a world, decided by the world
 
+> **On this protocol (ported 2026-10-17):** the same doors, in this protocol's components rather than `grant` rungs —
+> `@world.access {join: anyone|signed-in|listed, watch?: "anyone"}`, `default-role`, and `roles:<id>.until` for a timed
+> grant, ended by the authority's system act `expire-roles` (PROTOCOL §7). One pure decision for every door is
+> `shared/protocol/access.js`; the server's doors are `server/access.ts` (entryFor, doorFor, settleAccess, sweepAccess);
+> the browser has `/access`, `/grant … for 2h`, `/revoke`, `/members` and World Settings › Access; agents use ordinary
+> requests. Not carried over: a founding cap (joining never founds a world here), the directory search of everyone who
+> has signed in, a per-person `spectator` rung, and the `world_access` tool. What follows is upstream's design as written.
+
 Status: implemented on branch `feat/world-access`: world access, the owner
 panel (World › 🔒 access) and agent travel rules. What is left is operator
 config on the home node and the Unreal client (see the end). Decisions from

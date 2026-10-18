@@ -58,11 +58,11 @@ export function doorOf(w: World): string { return doorOfWc(wcOfWorld(w)); }
 // ---- a world's door, without loading the world ----------------------------------------------------------------------
 // Listing and HTTP reads must answer "may this caller see world X?" for worlds nobody is in. Loading them would do it,
 // but a loaded world is never unloaded, so a /worlds call would pull every world on disk into memory for good. Instead:
-// the change entries in world.jsonl that touch @world's access, default-role and roles:*, folded set/delete in order,
+// the change entries in world.jsonl that touch @world's access, default-role, role-defs and roles:*, folded set/delete in order,
 // cached until the file changes. (Only those keys: nothing else about the world is read.)
 const doorCache = new Map<string, { key: string; wc: Record<string, any> }>();
 const DOOR_LINE = /"id"\s*:\s*"@world"/;
-const isDoorComp = (k: unknown) => typeof k === "string" && (k === "access" || k === "default-role" || k.startsWith("roles:"));
+const isDoorComp = (k: unknown) => typeof k === "string" && (k === "access" || k === "default-role" || k === "role-defs" || k.startsWith("roles:"));   // role-defs: a custom role's powers (the moderation bypass)
 /** Set by server.ts: the loaded worlds (a loaded world's own fold is the truth). */
 let loadedWorlds: () => Map<string, World> = () => new Map();
 export function setLoadedWorlds(fn: () => Map<string, World>) { loadedWorlds = fn; }

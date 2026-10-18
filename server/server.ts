@@ -29,7 +29,6 @@ import { isWorldSaved } from "./worldlog.ts";
 import { oldWorldAt, bootNotice } from "./oldworlds.ts";
 import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
 import { requestHandler, actorOf as actorIdOf, gagged, guestSanctionByAddress } from "./requestwire.ts";
-import { MOD_POWERS } from "../shared/protocol/roles.js";
 import { withoutOnceAnim } from "../shared/onceanim.js";
 import { directoryFor, foldName } from "./directory.ts";
 // The HTTP surface — one route table, /upload behind it in upload.ts (§15,
@@ -312,7 +311,7 @@ let nextClientNum = 1;
 const clients = new Map<unknown, Client>();
 snapshots.setClients(() => clients.values());   // roaming renderers are found across worlds
 // …and sent only where they will be let in (a roamer with the renderers' credential goes anywhere — access.ts)
-snapshots.setAdmission((w, c) => c.trustedRenderer || !w.log?.access() || w.log.access().join === "anyone");
+snapshots.setAdmission((w, c) => entryFor(doorOfWorld(w), whoOf(c), "watch") === null);
 // #57 B2: transport-epoch source. Global (not per-world) so a generation number
 // never collides across worlds or after a world reload; never persisted — an
 // epoch outliving the process would defeat its purpose.
@@ -790,7 +789,8 @@ function buildSnapshot(w: World, c: Client) {
     // snapshot = the authority's cut of the world (the joiner folds it, then the log stream) + who's present now
     return {
       type: "snapshot",
-      renderSceneVersion: 1,
+      // (no renderSceneVersion: upstream #248's render-scene projection isn't served here — server/render-scene.ts reads the
+      // first protocol's fold — so a native client isn't told to ask for it)
       world: w.name,
       you: c.id,
       // when this account may next change its name (and the name it just tried, if that was too soon)
