@@ -52,7 +52,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["…a toggle flips true/false", "shared/protocol/authority/checks.js", "if (h.kind === \"toggle\" && field !== undefined && ftype && ftype !== \"bool\" && ftype !== \"any\") refuse(", "if (false) refuse(", ["R4"]],
   ["…an impulse is a reserved kind", "shared/protocol/authority/checks.js", "if (!carry && Object.hasOwn(held, h?.kind)) refuse(\"reserved\"", "if (false) refuse(\"reserved\"", ["R6"]],
   ["a use with its component gone says so", "shared/protocol/authority/use.js", "if (!(e.c[comp] && typeof e.c[comp] === \"object\" && !Array.isArray(e.c[comp]))) refuse(\"no-handler\"", "if (false) refuse(\"no-handler\"", ["R5"]],
-  ["motion: path is a type", "shared/protocol/componentspec.js", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\", \"path\"],", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\"],", ["M1", "R1"]],
+  ["motion: path is a type", "shared/protocol/componentspec.js", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"oscillate\", \"path\"],", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"oscillate\"],", ["M1", "R1"]],
   ["motion: rpm is taught", "shared/protocol/authority/checks.js", "if (\"rpm\" in v) refuse(\"schema\"", "if (false) refuse(\"schema\"", ["M2"]],
   ["motion: one speed", "shared/protocol/authority/checks.js", "if ((v.type === \"spin\" || v.type === \"orbit\") && v.degPerSec !== undefined && v.period !== undefined) refuse(", "if (false) refuse(", ["M2"]],
   ["motion: a path's points", "shared/protocol/authority/checks.js", "if (v.type === \"path\" && !(Array.isArray(v.points)", "if (false && !(Array.isArray(v.points)", ["M2"]],
