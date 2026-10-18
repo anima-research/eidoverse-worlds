@@ -250,12 +250,15 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const letgo = await call("reach", { release: true });
   ok(!letgo.isError && /releas|let go|weren't reaching/.test(T(letgo)), "AT6g reach {release: true} lets go (clear_reach folded; nothing held: said)", T(letgo));
   // the library
-  // the sequencer's search walks eidoverse/assets/models only (server/routes.ts /library-models), and this scratch OPT_DIR
-  // has none there: the honest answers are "no matches" and an empty sheet — the dispatch is what this bench can prove
+  // the sequencer's search walks eidoverse/assets/models only (server/routes.ts /library-models): under the library checkout
+  // (EIDOVERSE_DIR, ../eidoverse-video by default) when the host has one, and this scratch OPT_DIR has none. With no
+  // library the honest answers are "no matches" and the sheet's own words for nothing ("there are no models to show
+  // yet": Antra's run of f91840e5 had no library and this read "0 models", wording the tool never printed). The dispatch
+  // is what this bench can prove; EIDOVERSE_DIR=<an empty dir> runs the no-library branch
   const lib = await call("library", { query: "cup" });
   ok(!lib.isError && /no matches|\.glb/.test(T(lib)), "AT6h library {query} searches models (list_library folded)", T(lib));
   const sheet = await call("library", { kind: "models" });
-  ok(!sheet.isError && (sheet.content.some((c) => c.type === "image") || /0 models/.test(T(sheet))), "AT6i library {kind} is the contact sheet (library_sheet folded)", T(sheet));
+  ok(!sheet.isError && (sheet.content.some((c) => c.type === "image") || /^there are no models to show yet$/.test(T(sheet))), "AT6i library {kind} is the contact sheet (library_sheet folded)", T(sheet));
   const none = await call("library", {});
   ok(none.isError && /query/.test(T(none)) && /preview/.test(T(none)), "AT6i …and library with nothing teaches its three forms", T(none));
   const prev = await call("library", { preview: "test/cup.glb" });
