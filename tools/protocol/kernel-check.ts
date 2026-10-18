@@ -12,6 +12,10 @@
 // command's alone, which refuses without the companions and RECORDS them in the pin; K3 then verifies them at every gate run
 // (the changelog line is in the file, the translator moved, the vectors still run old-red/new-green), so dropping a companion
 // after the re-pin is red too. Every row here was red before its code.
+// Live proof (2026-10-18, on c36fc283): ENVELOPE + "note" → K2 red; `--pin` and `--pin --ack` refused naming the missing
+// companions; with TRANSLATOR @14 → @15 and spec/kernel-vectors/proof-note (an act carrying note: old reader
+// malformed:unknown-field, new reader ok) the re-pin wrote the `kernel:` changelog line and recorded the companions, and the
+// check was 10/10; then the changelog line dropped → K3 red; the translator bump reverted → K3 red; everything reverted → 10/10.
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -45,9 +49,10 @@ async function runVectors(dir: string) {
 /** The old reader, from git, into the vectors dir (old-fold.js importing ./old-hash.js). */
 function snapshotOldReader(dir: string, base: string) {
   const d = path.join(T, VECTORS, dir); fs.mkdirSync(d, { recursive: true });
-  for (const [src, dst] of [["shared/protocol/fold.js", "old-fold.js"], ["shared/protocol/hash.js", "old-hash.js"]]) {
+  // the reader and its two leaves (fold → hash → sha256), their imports rewritten to the snapshot's own names
+  for (const [src, dst] of [["shared/protocol/fold.js", "old-fold.js"], ["shared/protocol/hash.js", "old-hash.js"], ["shared/sha256.js", "old-sha256.js"]]) {
     const r = spawnSync("git", ["-C", T, "show", `${base}:${src}`], { encoding: "utf8" }); if (r.status !== 0) throw new Error(`git show ${base}:${src}: ${r.stderr.trim()}`);
-    fs.writeFileSync(path.join(d, dst), r.stdout.replace('from "./hash.js"', 'from "./old-hash.js"')); }
+    fs.writeFileSync(path.join(d, dst), r.stdout.replace('from "./hash.js"', 'from "./old-hash.js"').replace("from '../sha256.js'", "from './old-sha256.js'")); }
 }
 
 if (argv.includes("--pin")) {
@@ -75,10 +80,11 @@ await C("K1", "the kernel's shapes carry status trial-kernel: envelope, fold, id
 await C("K2", "the code's kernel is what spec/kernel-pin.json pins (a difference is THE change: red until `kernel-check.ts --pin` with its companions)", () => {
   const d = pin ? KS.kernelDiff(pin.kernel, KS.kernelPinOf()) : ["no pin: bun tools/protocol/kernel-check.ts --pin"]; return [!d.length && pin?.status === "trial-kernel", d.slice(0, 12)]; });
 
-await C("K3", "the pin's recorded companions hold: the changelog line is in REGISTRY-CHANGELOG.md, the translator moved, and the vectors still run red on the old reader and green on the new (the initial pin, before any change, records none)", async () => {
+await C("K3", "the pin's recorded companions hold: the changelog line is in REGISTRY-CHANGELOG.md, the translator moved (and is still there), and the vectors still run red on the old reader and green on the new (the initial pin, before any change, records none)", async () => {
   const c = pin?.companions; if (!c) return [pin?.companions === null, "initial pin: no change yet, nothing to verify"];
   const log = read(CHANGELOG); const line = typeof c.changelog === "string" && log.includes(`- ${c.changelog}`);
-  const tr = KS.translatorN(c.translator?.to) > KS.translatorN(c.translator?.from) || !!c.translator?.step;
+  // the translator moved at re-pin time, AND is still at least there now (a bump reverted after the re-pin is red); a step names a file that exists
+  const tr = (KS.translatorN(c.translator?.to) > KS.translatorN(c.translator?.from) && KS.translatorN(TV1.TRANSLATOR) >= KS.translatorN(c.translator?.to)) || (typeof c.translator?.step === "string" && fs.existsSync(path.join(T, c.translator.step)));
   const r = await runVectors(c.vectors?.dir ?? ""); const names = (c.vectors?.names ?? []);
   const vec = !!r.ran && r.ran.length >= 1 && r.ran.every((x: any) => x.old !== "ok" && x.new === "ok") && names.every((n: string) => r.ran.some((x: any) => x.name === n));
   return [line && tr && vec, { line, tr, vectors: r.ran ?? r.why }]; });
@@ -108,7 +114,7 @@ await C("K7", "an unchanged kernel re-pins freely and keeps the old companions; 
 await C("K8", "the real readers run as vectors run them: today's fold reads a clean two-entry log as ok, and refuses an envelope field it doesn't know (malformed:unknown-field) — the shape a kernel vector takes", () => {
   const g = { kind: "genesis", actor: "system", verb: "genesis", body: { dialect: "eidoverse-log", v: 4, minor: 0, nonce: "j1783lQSA7cL_W-K6NwvNw", owners: [[]], sequencer: "ed25519:NP1SCq4fthEWnhu_stdrB1gT8wu06eXvKTemf02lqSw" } };
   const wid = FOLD.worldIdOf(g); const a = { world: wid, kind: "act", actor: "olive", verb: "x", ts: 1, body: {} };
-  return [verdict(FOLD, [g, a]) === "ok" && verdict(FOLD, [g, { ...a, note: 1 }]) === "malformed:unknown-field", [verdict(FOLD, [g, a]), verdict(FOLD, [g, { ...a, note: 1 }])]]; });
+  return [verdict(FOLD, [g, a]) === "ok" && verdict(FOLD, [g, { ...a, "zz-no-such-field": 1 }]) === "malformed:unknown-field", [verdict(FOLD, [g, a]), verdict(FOLD, [g, { ...a, "zz-no-such-field": 1 }])]]; });
 await C("K9", "the words: §4 of the spec and the ladder doc say what trial-kernel is and what a kernel change must carry; the gate runs this check in its core lane", () => {
   const spec = read("spec/PROTOCOL.md"), ladder = read("docs/COMPONENT-LADDER.md"), run = read("tools/protocol/run.ts");
   const need = ["trial-kernel", "kernel-pin.json", "translator", "REGISTRY-CHANGELOG", "vectors"];
