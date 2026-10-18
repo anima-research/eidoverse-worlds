@@ -1584,7 +1584,11 @@
   "fields": {
    "role": "string",
    "can": "object",
-   "note": "string"
+   "note": "string",
+   "until": "int"
+  },
+  "absentMeans": {
+   "until": "the grant has no end: it stands until someone with the right changes or removes it (every role written before 10-17)"
   },
   "keyed": true,
   "on": "world"
@@ -1606,6 +1610,7 @@
   "status": "trial",
   "fields": {
    "join": "string",
+   "watch": "string",
    "max": "int",
    "soft": "int",
    "minAccountDays": "int"
@@ -1615,6 +1620,9 @@
     "anyone",
     "signed-in",
     "listed"
+   ],
+   "watch": [
+    "anyone"
    ]
   },
   "ranges": {
@@ -1630,6 +1638,9 @@
     "min": 0,
     "max": 365
    }
+  },
+  "absentMeans": {
+   "watch": "watching follows join: whoever join turns away can't watch either, and a world that admits only people listed is invisible to everyone else (what every access before 10-17 meant)"
   },
   "on": "world"
  },
