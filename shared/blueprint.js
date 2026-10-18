@@ -320,7 +320,7 @@ function nodeLives(merged, path) {
 // "undefined").
 const DEFAULT_KEY = {
   Lock: 'lock', Guard: 'guard', Hidden: 'hidden', Label: 'label',
-  Pendulum: 'motion', Spin: 'motion', Orbit: 'motion', Bob: 'motion', Path: 'motion',
+  Pendulum: 'motion', Spin: 'motion', Orbit: 'motion', Oscillate: 'motion', Path: 'motion',
   Sockets: 'sockets', Reactions: 'reactions', Structure: 'structure', Captions: 'captions',
   LookAt: 'look', Stage: 'stage', Particles: 'particles', Picture: 'picture', Sound: 'sound',
 };

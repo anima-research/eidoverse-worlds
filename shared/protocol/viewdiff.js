@@ -7,7 +7,7 @@
 //           'parent' what it hangs from changed (attached, detached, or another parent / slot / offset)
 //           'comp'   one component (`comp`) was set, changed or removed
 //     world: the @world keys whose value changed (sky, terrain, grass, assets, roles, bans, blueprints, …)
-//     ids:   for a world key that's a map (roles, bans, behaviors), the entries in it that changed: {roles: ['Bob']}
+//     ids:   for a world key that's a map (roles, bans, behaviors), the entries in it that changed: {roles: ['Ann']}
 // A 'born' implies everything about the thing; it isn't followed by 'pose'/'parent'/'comp' for the same id.
 
 const EPS = 1e-9;

@@ -26,6 +26,7 @@ import { materialize, COMPONENTS } from './protocol/componentspec.js';
 import { DESCRIPTORS, editorDefault, AXES } from './protocol/descriptors.js';
 import { ESSENTIAL_NAMES } from './particle_effects.js';
 import { qNorm, qFromYaw } from './rot.js';
+import { motionType } from './protocol/names.js';
 import { WEATHERS, CLOUDS } from './forecast.js';
 
 // ------------------------------------------------------------ canonical bytes
@@ -146,9 +147,9 @@ const DEFS = [
   { name: 'Orbit', category: 'Motion', summary: 'circles a point',
     params: paramsOf('Orbit', { part, radius: { partDefault: 1 }, center: { default: null } }),
     fallback: { visual: 'stands still', text: 'in motion (orbit)' } },
-  { name: 'Bob', category: 'Motion', summary: 'floats up and down',
-    params: paramsOf('Bob', { part }),
-    fallback: { visual: 'stands still', text: 'in motion (bob)' } },
+  { name: 'Oscillate', category: 'Motion', summary: 'moves back and forth along an axis (up and down: a float)',
+    params: paramsOf('Oscillate', { part }),
+    fallback: { visual: 'stands still', text: 'in motion (oscillate)' } },
   { name: 'Path', category: 'Motion', summary: 'follows a list of points',
     params: paramsOf('Path', { part, points: { t: 'list', of: 'vec3', default: [] }, duration: { default: null } }),
     fallback: { visual: 'stands still', text: 'in motion (path)' } },
@@ -269,7 +270,7 @@ export const CATEGORIES = [...new Set(DEFS.map((d) => d.category))];
 export const recordFor = (name) => RECORDS[name] ?? null;
 
 // ------------------------------------------------------------ aliases: old spelling ⇄ components
-const MOTION = { pendulum: 'Pendulum', spin: 'Spin', orbit: 'Orbit', bob: 'Bob', path: 'Path' };
+const MOTION = { pendulum: 'Pendulum', spin: 'Spin', orbit: 'Orbit', oscillate: 'Oscillate', path: 'Path' };
 const MOTION_TYPE = Object.fromEntries(Object.entries(MOTION).map(([k, v]) => [v, k]));
 // keys a motion bag may carry that are not parameters: who/when stamps the
 // fold or a reaction wrote. Kept so the round trip is byte-exact.
@@ -338,8 +339,8 @@ export function componentsOf(ent) {
     if (key === 'hidden') { out.push({ type: 'Hidden', key, params: {}, wire: { value: data } }); continue; }
     if (key === 'label') { out.push({ type: 'Label', key, params: { text: data } }); continue; }
     if (key === 'description' && typeof data === 'string') { out.push({ type: 'Description', key, params: { text: data } }); continue; }
-    if ((key === 'motion' || key.startsWith('motion:')) && data && typeof data === 'object' && MOTION[data.type]) {
-      const type = MOTION[data.type];
+    if ((key === 'motion' || key.startsWith('motion:')) && data && typeof data === 'object' && MOTION[motionType(data)]) {
+      const type = MOTION[motionType(data)];   // a value stored before the rename reads as today's (and is written back in today's word)
       const known = Object.keys(RECORDS[type].params);
       const params = {}; const extra = {};
       for (const [k, v] of Object.entries(data)) {
@@ -348,7 +349,7 @@ export function componentsOf(ent) {
         if (known.includes(k)) params[k] = v;
         else if (type === 'Spin' && (k === 'degPerSec' || k === 'rpm')) { params.rate = v; (extra.rateKey ??= k); }
         else if (type === 'Orbit' && k === 'degPerSec') { params.rate = v; extra.rateKey = k; }
-        else if ((type === 'Pendulum' || type === 'Bob') && k === 'amplitude') { params.amp = v; extra.ampKey = k; }
+        else if ((type === 'Pendulum' || type === 'Oscillate') && k === 'amplitude') { params.amp = v; extra.ampKey = k; }
         else if (MOTION_STAMPS.includes(k)) (extra.stamps ??= {})[k] = v;
         else (extra.unknown ??= {})[k] = v;
       }
@@ -412,7 +413,7 @@ export function entityOf({ components, stamps = {} }) {
       case 'Lock': case 'Hidden': comp[inst.key] = inst.wire?.value ?? true; break;
       case 'Label': comp[inst.key ?? 'label'] = p.text; break;
       case 'Description': comp[inst.key ?? 'description'] = p.text; break;
-      case 'Pendulum': case 'Spin': case 'Orbit': case 'Bob': case 'Path': {
+      case 'Pendulum': case 'Spin': case 'Orbit': case 'Oscillate': case 'Path': {
         const x = inst.extra ?? {};
         const bag = { type: MOTION_TYPE[inst.type] };
         for (const [k, v] of Object.entries(p)) {
@@ -459,7 +460,7 @@ export const sameRecord = (a, b) => canon(a) === canon(b);
  *  `unmet: [names]` — the editor decides whether such a need is added for
  *  you or asked about (shared/editschema.js). `met(need)` may override the
  *  plain "a component of that type is present" test. */
-const REPEATABLE = new Set(['Pendulum', 'Spin', 'Orbit', 'Bob', 'Path', 'Annotation']);
+const REPEATABLE = new Set(['Pendulum', 'Spin', 'Orbit', 'Oscillate', 'Path', 'Annotation']);
 export function addable(components, { unmet = false, met = null } = {}) {
   const have = new Set(components.map((c) => c.type));
   const isMet = (n) => (met ? met(n) : have.has(n));

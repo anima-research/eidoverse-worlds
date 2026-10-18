@@ -46,7 +46,7 @@ import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { localOf, parentOps, childrenOf, worldPose } from './hierarchy.js';
 import { recordOf } from './protocol/view.js';
-import { partSlot, motionNode } from './protocol/names.js';
+import { partSlot, motionNode, motionType } from './protocol/names.js';
 import { modelWord } from './eido.js';
 import { DESCRIPTORS, fieldOf, claimOf, CLAIMED_KEYS, editorDefault, toWire } from './protocol/descriptors.js';
 
@@ -59,16 +59,18 @@ export function motionChannels(m) {
   const letter = (axis, dflt) => { const v = typeof axis === 'string' ? AXES[axis.toLowerCase()] : Array.isArray(axis) ? axis : AXES[dflt];
     if (!v) return all; const nz = [0, 1, 2].filter((i) => Math.abs(v[i]) > 1e-9); return nz.length === 1 ? new Set(['xyz'[nz[0]]]) : all; };
   const pivoted = Array.isArray(m?.pivot) && m.pivot.some((n) => Math.abs(n) > 1e-9);
-  switch (m?.type) {
+  switch (motionType(m)) {
     case 'spin': return { t: pivoted ? all : none(), r: letter(m.axis, 'y') };
     case 'pendulum': return { t: pivoted ? all : none(), r: letter(m.axis, 'x') };
-    case 'bob': return { t: letter(m.axis, 'y'), r: none() };
+    case 'oscillate': return { t: letter(m.axis, 'y'), r: none() };
     case 'orbit': return { t: new Set(['x', 'z']), r: m.face === false ? none() : new Set(['y']) };
     case 'path': return { t: all, r: m.rot === false ? none() : new Set(['y']) };
     default: return { t: all, r: all };
   }
 }
-export const MOTION_TYPES = ['pendulum', 'spin', 'orbit', 'bob', 'path'];
+export const MOTION_TYPES = ['pendulum', 'spin', 'orbit', 'oscillate', 'path'];
+/** A motion's type → its card's name (the type is the card). */
+export const MOTION_CARD = Object.freeze({ pendulum: 'Pendulum', spin: 'Spin', orbit: 'Orbit', oscillate: 'Oscillate', path: 'Path' });
 // a spin's or an orbit's rate in °/s, read as client/lib/motioneval.js rateOf reads it (shared/ can't import the client;
 // tools/protocol/shiplist-check.ts holds the two together): degPerSec, else 360 / period, else an old rpm × 6, else the default
 const rateOf = (m, def) => (Number.isFinite(m.degPerSec) ? m.degPerSec : Number.isFinite(m.period) && m.period > 0 ? 360 / m.period : Number.isFinite(m.rpm) ? m.rpm * 6 : def);
@@ -138,7 +140,7 @@ const uprightHint = (ent) => (ent?.q && Math.abs(ent.q[0]) < 1e-12 && Math.abs(e
 // A motion key is a Motion only when its value names a motion type. A `motion` holding something else — a reaction's
 // {cause, by} stamp with no `type` (components-inspector-test's swing1) — is not one: it falls to the raw-JSON floor, where
 // the card and the field agree, instead of a Motion card naming a comp.motion field nobody emits.
-const motionKeys = (ent) => Object.keys(recordComponents(ent)).filter((k) => (k === 'motion' || k.startsWith('motion:')) && ent[k] && typeof ent[k] === 'object' && MOTION_TYPES.includes(ent[k].type));
+const motionKeys = (ent) => Object.keys(recordComponents(ent)).filter((k) => (k === 'motion' || k.startsWith('motion:')) && ent[k] && typeof ent[k] === 'object' && MOTION_TYPES.includes(motionType(ent[k])));
 
 // ---------------------------------------------------------------- the hand-written cards
 // The four the descriptor table marks `hand` (shared/protocol/descriptors.js HAND_CARDS): their rows are not built from
@@ -404,7 +406,7 @@ export function inspectSchema(ent, id, live = {}) {
   if (driven) { const ch = motionChannels(c.motion);
     for (const f of [...transform, ...rotation]) { if (f.t !== 'num') continue; const lb = String(f.label ?? '');
       const hit = /^translate ([xyz])$/.test(lb) ? ch.t.has(lb.slice(-1)) : /^rotate ([xyz])$/.test(lb) ? ch.r.has(lb.slice(-1)) : /^quat /.test(lb) ? ch.r.size > 0 : lb === 'heading' ? ch.r.has('y') : false;
-      if (hit) { f.driven = driven; f.drivenBy = String(c.motion.type).replace(/^./, (x) => x.toUpperCase()); } } }
+      if (hit) { f.driven = driven; f.drivenBy = String(motionType(c.motion)).replace(/^./, (x) => x.toUpperCase()); } } }
   if (L.mounted) transform.unshift({ t: 'info', label: 'frame', value: `local to its parent, ${ent.parent.to} — translate and rotate write its mount; scale is its own (the parent's multiplies it)` });
   groups.push({ group: 'pos', label: 'Transform', verb: L.mounted ? 'mount' : 'place', fields: transform, ...(L.mounted ? { local: ent.parent.to } : {}) });
   if (rotation.length) groups.push({ group: 'rot', label: 'Rotate', verb: L.mounted ? 'mount' : 'place', fields: rotation, ...(gimbal ? { gimbal: true } : {}) });
@@ -530,18 +532,19 @@ export function inspectSchema(ent, id, live = {}) {
       const m = c[key];
       const P = key === 'motion' ? '' : `${motionNode(key, m)} · `;   // the node's name (its value's `node`); the row keys keep the slot
       const k = (p) => (key === 'motion' ? p : `${key.slice(7)}|${p}`);
-      const types = MOTION_TYPES.includes(m.type) ? MOTION_TYPES : [...MOTION_TYPES, m.type ?? '?'];
-      fields.push({ t: 'enum', k: k('type'), label: `${P}type`, value: m.type, options: types.map((v) => ({ v, label: v })) });
-      if (['pendulum', 'spin', 'bob'].includes(m.type)) {
-        const ax = axisName(m, m.type === 'pendulum' ? 'x' : 'y');
+      const ty = motionType(m);   // a value stored before the rename (an older replica) shows in today's word
+      const types = MOTION_TYPES.includes(ty) ? MOTION_TYPES : [...MOTION_TYPES, ty ?? '?'];
+      fields.push({ t: 'enum', k: k('type'), label: `${P}type`, value: ty, options: types.map((v) => ({ v, label: v })) });
+      if (['pendulum', 'spin', 'oscillate'].includes(ty)) {
+        const ax = axisName(m, ty === 'pendulum' ? 'x' : 'y');
         // x, y, z only (R 10-11: "not sure why we have a negative axis as an option when we can do negative degrees", and the
         // authority refused '-x'); a stored negative or custom axis still shows as itself
         const opts = ['x', 'y', 'z'].map((v) => ({ v, label: v }));
         fields.push({ t: 'enum', k: k('axis'), label: `${P}axis`, value: ax, options: opts.some((o) => o.v === ax) ? opts : [...opts, { v: ax, label: ax }] });
       }
-      const card = { pendulum: 'Pendulum', spin: 'Spin', orbit: 'Orbit', bob: 'Bob', path: 'Path' }[m.type];
+      const card = MOTION_CARD[ty];
       const M = (p, over = {}) => rowOf(card, p, m, { ...over, k: k(p), label: `${P}${over.label ?? p}` });
-      switch (m.type) {
+      switch (ty) {
         case 'pendulum':
           fields.push(M('amp'));
           // def is what a reset writes: the registry's (componentspec.js; tools/descriptor-defaults-test.ts). The value's
@@ -554,7 +557,7 @@ export function inspectSchema(ent, id, live = {}) {
         case 'orbit':
           fields.push(M('radius'), M('degPerSec', { label: 'rate', hint: 'degrees a second (a lap of 30 s is 12°/s)' }), M('face', { label: 'face along' }));
           break;
-        case 'bob':
+        case 'oscillate':
           fields.push(M('amp'), M('period'), M('phase'));
           break;
         case 'path':
@@ -802,7 +805,7 @@ const WIRE_BLOCKED = {
   LookAt: (_have, ent) => { const m = ent?.motion; if (m && ['pendulum', 'spin'].includes(m.type)) return `it already turns by its ${m.type}; one thing turns at a time — remove that first, or add LookAt to a part`;
     return ent?.physics?.kind === 'dynamic' ? 'physics turns it (it is dynamic): make it static, or add LookAt to a part' : null; },
 };
-const MOTION_GROUP = { Pendulum: 1, Spin: 1, Orbit: 1, Bob: 1, Path: 1 };
+const MOTION_GROUP = { Pendulum: 1, Spin: 1, Orbit: 1, Oscillate: 1, Path: 1 };
 // not offered by Add Component: what the authority refuses today (none: LookAt writes `look-at` since batch 2, and the
 // agent's add.LookAt already worked while this list still hid it from people: audit 10-07). tools/protocol/shiplist-check.ts
 // R1 sends every offered entry to the real door: all must be accepted.
@@ -818,7 +821,7 @@ export const ADD_WORDS = Object.freeze({
   Text: ['sign', 'label', 'words', 'caption', 'write'], Picture: ['image', 'poster', 'photo', 'painting', 'decal'],
   Sound: ['music', 'audio', 'speaker', 'song'], Openable: ['door', 'gate', 'lid', 'hatch'], Grabbable: ['pick up', 'carry', 'hold', 'item', 'pickup'],
   Light: ['lamp', 'bulb', 'torch', 'glow'], LookAt: ['face', 'turn to', 'track', 'follow', 'watch'], Collider: ['solid', 'collide', 'walk on'],
-  Particles: ['fire', 'smoke', 'sparks', 'fx', 'effect'], Spin: ['rotate', 'turn'], Bob: ['float', 'hover'], Story: ['description', 'info', 'plaque'],
+  Particles: ['fire', 'smoke', 'sparks', 'fx', 'effect'], Spin: ['rotate', 'turn'], Oscillate: ['float', 'hover', 'bob', 'back and forth', 'piston', 'sine'], Story: ['description', 'info', 'plaque'],
   Lock: ['pin', 'nail down', 'freeze'], Pivot: ['hinge', 'origin'],
 });
 /** A library path as the inspector header shows it: the file stem, first three words. */
@@ -1059,7 +1062,7 @@ function addOwnOps(ent, id, name, value) {
   // a path's points are in its parent's frame (as the renderer reads them): it starts where it stands and goes 2 m on
   const p0 = (Array.isArray(ent?.parent?.offset) ? ent.parent.offset : Array.isArray(ent?.pos) ? ent.pos : [0, 0, 0]).map((v) => round(+v || 0, 4));
   // a motion seed states what makes it visible (a swing of 15°, a 1 m orbit); the rest the authority writes (componentspec.js)
-  const motion = { Pendulum: { type: 'pendulum', amp: 0.26 }, Spin: { type: 'spin', degPerSec: 36 }, Orbit: { type: 'orbit', radius: 1, degPerSec: 12 }, Bob: { type: 'bob', amp: 0.3, period: 4 }, Path: { type: 'path', points: [p0, [p0[0], p0[1], round(p0[2] + 2, 4)]], speed: 1 } };
+  const motion = { Pendulum: { type: 'pendulum', amp: 0.26 }, Spin: { type: 'spin', degPerSec: 36 }, Orbit: { type: 'orbit', radius: 1, degPerSec: 12 }, Oscillate: { type: 'oscillate', amp: 0.3, period: 4 }, Path: { type: 'path', points: [p0, [p0[0], p0[1], round(p0[2] + 2, 4)]], speed: 1 } };
   if (motion[name]) {
     const part = typeof value === 'string' && value.trim() ? value.trim() : null;
     // a node's motion: motion:<slot> {node: <its name, as the file spells it>} (the node is data; partSlot makes the key)
@@ -1363,7 +1366,7 @@ export function editOps(ent, id, edits, live = {}) {
         const param = bar < 0 ? k : k.slice(bar + 1);
         const prev = c[mkey]; if (!prev) { errors.push(`${key}: no ${mkey} on ${id}`); break; }
         if (param === 'rest') { motions.set(mkey, null); break; }
-        const next = motions.get(mkey) ?? { ...prev };
+        const next = motions.get(mkey) ?? { ...prev, ...(prev.type !== motionType(prev) ? { type: motionType(prev) } : {}) };   // an edit writes today's type
         if (param === 'axis') { if (raw === 'custom') break; if (!AXES[String(raw).toLowerCase()]) { errors.push(`${key}: axis must be one of ${Object.keys(AXES).join(' ')}`); break; } next.axis = String(raw).toLowerCase(); }
         else if (param === 'type') {
           if (!MOTION_TYPES.includes(raw)) { errors.push(`${key}: type must be one of ${MOTION_TYPES.join(' ')}`); break; }
@@ -1373,7 +1376,7 @@ export function editOps(ent, id, edits, live = {}) {
           for (const p of Object.keys(next)) if (!['type', 'axis', 'pivot', 'phase', 't0', 'part', 'node'].includes(p)) delete next[p];
           next.type = raw;
         }
-        else if (!writeField({ pendulum: 'Pendulum', spin: 'Spin', orbit: 'Orbit', bob: 'Bob', path: 'Path' }[prev.type] ?? 'Spin', param, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
+        else if (!writeField(MOTION_CARD[motionType(prev)] ?? 'Spin', param, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
         motions.set(mkey, next);
         break;
       }

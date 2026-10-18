@@ -14,7 +14,7 @@
 //   pendulum {axis, pivot, amp, period, phase, damp, maxAmp, t0}   — swings
 //   spin     {axis?, pivot?, degPerSec|period, phase?, t0}         — windmills, carousels
 //   orbit    {center?, radius, degPerSec|period, phase?, face?, t0} — ferries, birds (rateOf: the one reading)
-//   bob      {axis?, amp, period, phase?, t0}                      — hover, buoys
+//   oscillate {axis?, amp, period, phase?, t0}                     — back and forth along an axis (a sine): hover, buoys, pistons
 //   path     {points, speed|duration, loop?: 'loop'|'pingpong'|'once', face?, t0}
 //
 // SUB-OBJECTS: a component keyed `motion:<slot>` whose value names a `node`
@@ -24,7 +24,7 @@
 // tripo_part_0, …). Several `motion:<part>` components coexist on one entity,
 // so a machine can have many moving parts. Coordinates are the PART's frame:
 // pivot/axis are relative to the part node's own origin (default pivot
-// [0,0,0] = the node origin, where a hinge usually lives), bob/orbit/path
+// [0,0,0] = the node origin, where a hinge usually lives), oscillate/orbit/path
 // positions are in the part's parent frame. `measure` reports each part's
 // `local` center/size in exactly this frame — a local center IS a pivot
 // candidate verbatim. The server folds all of it blindly; clients that
@@ -42,7 +42,7 @@ import { serverNow } from './remotes.js';
 // applying evaluated transforms to THREE objects, and the part-frame
 // machinery only a renderer with a loaded model can have.
 import { evalWholeMotion, evalPath, axisOf, ampOf, since, pendulumTheta, rateOf } from './motioneval.js';
-import { motionNode } from '../../shared/protocol/names.js';
+import { motionNode, motionType } from '../../shared/protocol/names.js';
 
 const _q = new THREE.Quaternion();
 const _ax = new THREE.Vector3();
@@ -77,7 +77,7 @@ function rotatePartAtPivot(obj, pbase, axis, pivot, theta) {
 
 /** One motion type evaluated on a part, in part-local terms. */
 function evalPart(m, t, obj, pbase) {
-  switch (m.type) {
+  switch (motionType(m)) {
     case 'pendulum':
       rotatePartAtPivot(obj, pbase, axisOf(m, [1, 0, 0]), m.pivot ?? [0, 0, 0], pendulumTheta(m, t));
       return true;
@@ -87,7 +87,7 @@ function evalPart(m, t, obj, pbase) {
         (m.phase ?? 0) + (rate * Math.PI / 180) * t);
       return true;
     }
-    case 'bob': {
+    case 'oscillate': {
       const off = Math.sin((2 * Math.PI / (m.period ?? 4)) * t + (m.phase ?? 0)) * ampOf(m, 0.3);
       _ax.set(...axisOf(m, [0, 1, 0])).normalize();
       obj.position.set(...pbase.pos).addScaledVector(_ax, off);
@@ -176,7 +176,7 @@ export function tickMotion() {
           continue;
         }
         obj.position.set(...r.pos);
-        // rot:false = this motion leaves authored rotation alone (bob;
+        // rot:false = this motion leaves authored rotation alone (oscillate;
         // face:false orbit/path) — matching the old per-case behavior.
         if (r.rot) obj.quaternion.set(...r.quat);
       }
