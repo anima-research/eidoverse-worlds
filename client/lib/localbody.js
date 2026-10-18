@@ -108,7 +108,7 @@ export function occupiedBody() {
 // The escape (review r9 scars M1): a seat that lets you go only when the world does still can't hold you. The explicit
 // get-up pressed again within ESCAPE_REPEAT_S of its refusal, or X held for ESCAPE_HOLD_S, always gets you up.
 let escapeArmedAt = -Infinity, escapeHeld = 0, escapeTile = false;
-bus.on('escape-hold', (on) => { escapeTile = !!on; });   // the stand tile pressed and held (emotebar.js), as X held
+bus.on('escape-hold', (on) => { escapeTile = !!on; });   // the stand tile pressed and held (actionbar.js), as X held
 // at: where the authority let me go ([x, y, z], its `vacated.at`: claims r10 O1): I stand there, so my body and its track start together
 export function dismountMe(kind = 'menu', at = null) {
   const m = avatarMounts.get(CONFIG.name);

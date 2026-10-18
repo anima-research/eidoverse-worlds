@@ -12,7 +12,7 @@ refuses non-finite or malformed samples at the source (`server/posecheck.ts`).
 | `yaw` | number | the body's **facing** (world yaw). Desktop: the controller's yaw. VR: `xrAvatarYaw()` = root + hips-latch + rest — remotes set their root to it |
 | `pitch` | number | head pitch (desktop look) |
 | `speed`, `clip` | | locomotion for the remote's mixer |
-| `emote` | string | one-shot; sent once |
+| `anim` | string | an anim played once (a gesture); sent once (its pre-release key is still read for one release) |
 | `pose` | `{bone: quat}` | a held custom pose (bodydrag / gestures); blended a→b by receivers |
 | `bodyMode` | string | stand \| sit \| lie \| swim \| fly \| fall: the body's mode, apart from `clip` (what plays); the mover sets it on real transitions, the owner may declare any for looks; it grants nothing (`shared/bodymode.js`; a sample without it: read off `clip`) |
 | `poses` | `[name]` | the poses this body holds by NAME (one frame each; R 10-17): `"wings-folded"` today, each rig resolving it its own way; `[]` holds none, absent says nothing (`shared/wingpresence.js`; was the boolean `wingsFolded`, still read) |
@@ -30,7 +30,7 @@ sets its root to that yaw, so its root frame *is* this frame; no calibration dat
 ```
 xr: {
   h: [qx, qy, qz, qw],               // head, relative to the facing (the look-chain input `qRel`)
-  l: [px, py, pz, qx, qy, qz, qw],   // left grip in the facing frame — absent if untracked / an emote owns the arms
+  l: [px, py, pz, qx, qy, qz, qw],   // left grip in the facing frame — absent if untracked / a gesture owns the arms
   r: [ … same … ],                   // right grip
   c: [lIndex, lGrip, rIndex, rGrip]  // finger curl 0..1
 }

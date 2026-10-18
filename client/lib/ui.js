@@ -582,7 +582,7 @@ function initPanels() {
     .catch((e) => report('ui panels', e));
   return [{ id: 'profile', icon: 'user-circle' }];
 }
-// Search & commands: the lantern prompt (Ctrl/Cmd+K). Between emotes and debug (owner, 10-01: "Search almost feels like
+// Search & commands: the lantern prompt (Ctrl/Cmd+K). Between gestures and debug (owner, 10-01: "Search almost feels like
 // a less-standard feature") — initDock places it. An action entry (not a frame): it lights while the prompt is open.
 // It registers no lantern row — a row that opens the prompt you are typing in would be noise.
 const SEARCH_ENTRY = { id: 'search', icon: 'magnifying-glass', label: 'Search & commands', noAction: true,
@@ -601,7 +601,7 @@ export function initDock(entries) {
   // built-ins lead; a mod registered before boot keeps its entry, once
   const seen = new Set();
   dockEntries = [...lead, ...entries, ...dockEntries].filter((e) => !seen.has(e.id) && seen.add(e.id));
-  // search goes in before debug, else after emotes, else ahead of the `last` entries (the sort below keeps those last)
+  // search goes in before debug, else after gestures, else ahead of the `last` entries (the sort below keeps those last)
   if (!seen.has(SEARCH_ENTRY.id)) {
     const at = dockEntries.findIndex((e) => e.id === 'debug'), after = dockEntries.findIndex((e) => e.id === 'actions');
     dockEntries.splice(at >= 0 ? at : after >= 0 ? after + 1 : dockEntries.length, 0, SEARCH_ENTRY);

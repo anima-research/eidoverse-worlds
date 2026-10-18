@@ -76,7 +76,7 @@ function stand({ constant = false } = {}) {
   action.setEffectiveWeight(1);                                          // ...then selected
 
   const self: any = {
-    _limp: false, _parked: null, _override: null, emote: null, pitch: 0,
+    _limp: false, _parked: null, _override: null, onceAnim: null, pitch: 0,
     root, mixer, actions: { idle: action }, current: action, currentSlot: 'idle',
     head: nodes.head,
     vrm: {
@@ -85,7 +85,7 @@ function stand({ constant = false } = {}) {
         getNormalizedBoneNode: (b: string) => nodes[b] ?? null,
       },
     },
-    cancelEmote() { this.emote = null; },
+    cancelOnce() { this.onceAnim = null; },
   };
   self._composed = new Map();
   // setLimp reaches into the eyes and the wings on the way past. Both find
@@ -353,7 +353,7 @@ function wingStand() {
     nodes[`${chain}_tip`] = tip;
   }
   const self: any = {
-    _limp: false, root, emote: null, _parked: null,
+    _limp: false, root, onceAnim: null, _parked: null,
     vrm: {
       scene: root,
       humanoid: {
@@ -361,7 +361,7 @@ function wingStand() {
         getNormalizedBoneNode: (n: string) => nodes[n] ?? null,
       },
     },
-    cancelEmote() { this.emote = null; },
+    cancelOnce() { this.onceAnim = null; },
   };
   for (const m of ['_findWings', '_flap', 'setLimp', 'setEyes', '_findLids',
                    '_resolveBones', '_humanoidBones', '_park', '_releaseHair', '_combHair']) {

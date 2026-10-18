@@ -72,7 +72,7 @@ try {
   const list = await rpc('tools/list');
   const names: string[] = (list.result?.tools ?? []).map((t: any) => t.name);
   check('the shared table serves this door (≥26 tools)', names.length >= 26, `${names.length}: ${names.join(',')}`);
-  const gained = ['pose', 'reach', 'emote', 'animate', 'measure', 'world_history', 'world_debug',
+  const gained = ['pose', 'reach', 'animate', 'measure', 'world_history', 'world_debug',
     'library', 'set_avatar', 'catch_up', 'activity', 'whisper'];   // the surface fold (10-14): clear_*/posture/ragdoll/light are modes
   const missing = gained.filter((n) => !names.includes(n));
   check('every formerly-missing tool is listed', missing.length === 0, missing.join(' '));

@@ -546,7 +546,7 @@ const viewRow = (label, key, onChange) => checkRow(label,
 export function initDebug(p = {}) {
   providers = p;
   frame = makeFrame('debug', {
-    // second right column, bottom-anchored ABOVE the emote row: emotes own the corner, world/settings the top
+    // second right column, bottom-anchored ABOVE the action row: gestures own the corner, world/settings the top
     title: 'debug', x: -270, y: -165, w: 250, h: 460, minW: 210, hidden: true,
   });
   const stack = document.createElement('div');

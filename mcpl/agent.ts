@@ -40,6 +40,7 @@ import { MOVER, TRACK, walkToward, toleranceOf, waterStance } from "../shared/mo
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
 import { inspectBody } from "../shared/flightbody.js";
 import { foldedIn, wingFoldPresence } from "../shared/wingpresence.js";
+import { onceAnimOf } from "../shared/onceanim.js";
 import { bodyModeTracker, isBodyMode, readBodyMode } from "../shared/bodymode.js";
 import { clampBodyScale } from "../shared/presencewire.js";
 import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
@@ -1508,7 +1509,7 @@ export class WorldAgent {
   }
 
   /** Embodied acts as events. The presence stream is 15Hz noise; what an
-   *  agent should hear about is TRANSITIONS — an emote fired, a pose struck
+   *  agent should hear about is TRANSITIONS — a gesture fired, a pose struck
    *  or released, someone sitting down or getting up. Edge-triggered, so a
    *  held pose (or a ragdoll, which streams through the same field) speaks
    *  once when it starts and once when it ends, never per-frame.
@@ -1518,9 +1519,10 @@ export class WorldAgent {
    *  speak once per window instead of per repetition; and a non-locomotion
    *  stint shorter than SHORT_STINT_MS earns no "gets up" — the start
    *  already told the story, a jump is one thing, not two. */
-  private noteActs(id: string, prev: Pose | null, pose: Pose & { emote?: string; pose?: Record<string, unknown> | null }, dist = Infinity) {
+  private noteActs(id: string, prev: Pose | null, pose: Pose & { anim?: string; pose?: Record<string, unknown> | null }, dist = Infinity) {
     const acts: { key: string; text: string }[] = [];
-    if (pose.emote) acts.push({ key: `emote:${pose.emote}`, text: `emotes: ${pose.emote}` });
+    const once = onceAnimOf(pose);   // pose.anim (its pre-release key still read for one release)
+    if (once) acts.push({ key: `anim:${once}`, text: `plays ${once} (once)` });
     const prevHeld = Boolean((prev as { pose?: unknown } | null)?.pose);
     const nowHeld = Boolean(pose.pose);
     if (nowHeld && !prevHeld) acts.push({ key: "pose", text: `strikes a pose (${Object.keys(pose.pose!).length} bones held)` });
@@ -2201,43 +2203,85 @@ export class WorldAgent {
   /** Every collider query a tick makes is about this agent's own world. */
   private tick() { inWorld(this.world, () => this.tickInWorld()); }
   // ---------------- anim (R 10-17 15:31/15:32): one way to play a pose or a clip, by name or live ----------------
-  /** The anim this body is in now, when it lasts (mode loop or hold); a once anim ends by itself, silently. kind: a clip
-   *  (held as the presence clip), the named pose wings-folded, or live joints / a held frame of live tracks. */
-  anim: { name: string; mode: "loop" | "hold"; kind: "clip" | "pose" | "live"; clip?: string; bodyMode?: string } | null = null;
+  /** The anims this body plays or holds now, when they last (mode loop or hold), oldest first; a once anim ends by itself,
+   *  silently. Each is a LAYER (R 10-17 16:26): a clip (held as the presence clip), the named pose wings-folded, a held
+   *  frame of live keys (joints, or tracks in mode hold: the held pose), or live tracks looping (relayed to every client).
+   *  A new one replaces only the one in its own layer: a pose struck over a sit leaves the sit playing. */
+  anims: { name: string; mode: "loop" | "hold"; kind: "clip" | "pose" | "live" | "track"; clip?: string; bodyMode?: string }[] = [];
+  /** The newest of them (or null). */
+  get anim() { return this.anims.at(-1) ?? null; }
   /** The body-mode (R 10-17 15:34/15:45: was posture, the clip label): stand | sit | lie | swim | fly | fall, every one
-   *  declarable for looks (anim {bodyMode}; an anim may ask for one: the built-in sit and lie do, and its end returns to
-   *  stand); the mover's real transitions (flight, water) set it and end a declaration. Published as presence bodyMode
-   *  (bodyModeNow). A self-declared description: it grants nothing (take-off still wants the fly permission). */
+   *  declarable for looks (anim {bodyMode}; an anim may ask for one: the built-in sit and lie do, and its end by a move,
+   *  another anim or a fall returns to stand; anim {stop} leaves it as it is, R 16:26); the mover's real transitions
+   *  (flight, water) set it and end a declaration. Published as presence bodyMode (bodyModeNow). A self-declared
+   *  description: it grants nothing (take-off still wants the fly permission). */
   modeTracker = bodyModeTracker();
   get bodyMode() { return this.modeTracker.declared ?? "stand"; }
   set bodyMode(m: string | null) { this.modeTracker.declare(m === "stand" ? null : m); }
   /** The mode this body publishes now: a declaration, else the mover's (fly, swim, stand); on a station, sit. */
   bodyModeNow() { const m = this.modeTracker.step({ flying: !!this.flight && this.clip !== "ragdoll", swimming: this.clip === "swim" || this.clip === "tread" }); return m === "stand" && this.myOccupancy ? "sit" : m; }
+  /** The clip a sit at rest plays: the last sitting anim's (sitchair keeps the chair's height), else sit. */
+  private sitRest = "sit";
+  /** A body-mode's own resting anim (R 10-17 16:26): stand → idle, sit → the sit loop, lie → lie, swim → tread, fly →
+   *  soar; null where something else owns the clip (a station's occupant, a real flight, a fall). Never the bind pose. */
+  restClip(mode: string): string | null {
+    if (mode === "stand") return this.myOccupancy ? null : "idle";
+    if (mode === "sit") return this.myOccupancy ? null : this.sitRest;
+    if (mode === "lie") return "lie";
+    if (mode === "swim") return "tread";
+    if (mode === "fly") return this.flight ? null : "soar";
+    return null;
+  }
   /** A clip held in mode hold: the time it freezes at (presence clipTime with clipRate 0). */
   animHold: number | null = null;
   /** The ends this body heard (newest last; presence only, never logged): what an agent reads as `stopped {name, why}`. */
   animStops: { name: string; why: string; ts: number }[] = [];
-  /** A loop or hold anim ended: tell the agent once, `stopped {name, why}`, and forget it. */
-  animEnded(why: string) {
-    const a = this.anim; if (!a) return;
-    this.anim = null; this.animHold = null; if (a.bodyMode) this.bodyMode = "stand";   // an anim that set the body-mode returns it to stand
-    const ts = Date.now(); this.animStops.push({ name: a.name, why, ts }); if (this.animStops.length > 20) this.animStops.shift();
-    const text = `stopped {name: ${JSON.stringify(a.name)}, why: ${JSON.stringify(why)}}`;
-    this.inbox.push({ ts, kind: "act", who: this.name, text }); this.onEvent?.({ ts, kind: "act", who: this.name, text });
+  /** Anims that lasted ended (every one, or those `which` picks): tell the agent once each, `stopped {name, why}`, and
+   *  forget them. Ended by anim {stop}, the body-mode stays; otherwise an anim that set it returns it to stand. */
+  animEnded(why: string, which: (a: WorldAgent["anims"][number]) => boolean = () => true) {
+    const gone = this.anims.filter(which); if (!gone.length) return;
+    this.anims = this.anims.filter((a) => !gone.includes(a));
+    for (const a of gone) {
+      if (a.kind === "clip") this.animHold = null;
+      if (a.bodyMode && why !== "stopped") this.bodyMode = "stand";
+      const ts = Date.now(); this.animStops.push({ name: a.name, why, ts }); if (this.animStops.length > 20) this.animStops.shift();
+      const text = `stopped {name: ${JSON.stringify(a.name)}, why: ${JSON.stringify(why)}}`;
+      this.inbox.push({ ts, kind: "act", who: this.name, text }); this.onEvent?.({ ts, kind: "act", who: this.name, text });
+    }
   }
-  /** Start an anim that lasts (the one before it ends with why "another anim"). */
-  animBegan(a: NonNullable<WorldAgent["anim"]>, holdAt: number | null = null) {
-    if (this.anim) this.animEnded("replaced");   // R 15:34: a new loop or hold replaces the one before (a once overlays it)
-    this.anim = a; if (a.bodyMode && isBodyMode(a.bodyMode)) this.bodyMode = a.bodyMode; this.animHold = a.kind === "clip" && a.mode === "hold" ? holdAt : null;
+  /** Start an anim that lasts: the one in its own layer before it ends with why "replaced" (R 15:34; a once overlays). */
+  animBegan(a: WorldAgent["anims"][number], holdAt: number | null = null) {
+    this.animEnded("replaced", (b) => b.kind === a.kind);
+    this.anims.push(a); if (a.bodyMode && isBodyMode(a.bodyMode)) { this.bodyMode = a.bodyMode; if (a.bodyMode === "sit" && a.clip) this.sitRest = a.clip; }
+    if (a.kind === "clip") this.animHold = a.mode === "hold" ? holdAt : null;
+  }
+  /** anim {stop} (R 10-17 16:26/16:27). which null: every anim this body plays or holds, each layer, and any held pose;
+   *  then the CURRENT body-mode's own resting anim plays (restClip; never the bind pose) and the body-mode is unchanged
+   *  (to stand up, declare stand or walk). A name: only that layer, the rest going on; "live" names every ad-libbed one
+   *  (joints, tracks). Returns what was stopped (empty: nothing by that name was playing, which is a note, not an error). */
+  async stopAnims(which: string | null): Promise<string[]> {
+    const hit = this.anims.filter((a) => which == null || a.name === which);
+    this.animEnded("stopped", (a) => hit.includes(a));
+    const kinds = new Set(hit.map((a) => a.kind));
+    if (which == null || kinds.has("live")) { if (this.heldPose && (which == null || this.heldPoseAuthored)) this.setPose(null); }
+    if ((which == null || kinds.has("track")) && this.joined && this.ws?.readyState === 1) this.ws.send(JSON.stringify({ type: "anim", stop: true }));
+    if ((which == null || kinds.has("pose")) && this.wingsFolded) await this.foldWings(false);
+    if (which == null || kinds.has("clip")) {
+      if (this.clip === "ragdoll") this.setPose(null);   // a slump ends in the rest too (setPose stands it, and stops its sim)
+      const rest = this.restClip(this.bodyModeNow()); if (rest) { this.stop(); this.clip = rest; }
+    }
+    return hit.map((a) => a.name);
   }
   /** Every tick: an anim that lasts ends when what holds it is gone (a walk took the clip, a ragdoll, a clear, the wings
    *  opened), with why: moved, knocked over, cleared, replaced. */
   private watchAnim() {
-    const a = this.anim; if (!a) return;
-    if (a.kind === "clip" && this.clip !== a.clip) this.animEnded(this.clip === "ragdoll" ? "knocked over" : ["walk", "run", "swim", "tread"].includes(this.clip) || this.target ? "moved" : "replaced");
-    else if (a.kind === "pose" && !this.wingsFolded) this.animEnded("stopped");
-    else if (a.kind === "live" && !this.heldPose) this.animEnded(this.clip === "ragdoll" ? "knocked over" : this.target ? "moved" : "cleared");
-    else if (a.kind === "live" && this.clip === "ragdoll") this.animEnded("knocked over");
+    for (const a of [...this.anims]) {
+      const end = (why: string) => this.animEnded(why, (b) => b === a);
+      if (a.kind === "clip" && this.clip !== a.clip) end(this.clip === "ragdoll" ? "knocked over" : ["walk", "run", "swim", "tread"].includes(this.clip) || this.target ? "moved" : "replaced");
+      else if (a.kind === "pose" && !this.wingsFolded) end("stopped");
+      else if (a.kind === "live" && !this.heldPose) end(this.clip === "ragdoll" ? "knocked over" : this.target ? "moved" : "cleared");
+      else if ((a.kind === "live" || a.kind === "track") && this.clip === "ragdoll") end("knocked over");
+    }
   }
   private tickInWorld() {
     this.watchAnim();
@@ -2422,12 +2466,12 @@ export class WorldAgent {
         // immortal (#61): rememberPose kept it, restore re-armed it, forever.
         ...(this.heldPose && (this.heldPoseAuthored || this.clip === "ragdoll") ? { pose: this.heldPose } : {}),
         ...(this.pins.size ? { pins: [...this.pins].map(([j, at]) => ({ j, at })) } : {}),
-        ...(this.pendingEmote ? { emote: this.pendingEmote } : {}),
+        ...(this.pendingAnim ? { anim: this.pendingAnim } : {}),
         ...(this.reaches.size ? { reach: Object.fromEntries(this.reaches) } : {}),
         ...(this.myOccupancy ? { seat: this.myOccupancy } : {}),
       },
     }));
-    this.pendingEmote = null; // one-shot: rides exactly one packet
+    this.pendingAnim = null; // one-shot: rides exactly one packet
   }
 
   /** Being pushed. Consent first; then the REAL tumble — this body runs the
@@ -4384,11 +4428,11 @@ export class WorldAgent {
     }
   }
 
-  /** Fire a named emote — a one-shot rider on the next presence packet, the
-   *  same channel the browser's emote bar uses. Receivers resolve the name
-   *  to a library clip; nothing is logged. */
-  emote(name: string) { this.pendingEmote = name; }
-  private pendingEmote: string | null = null;
+  /** Play a named anim once — pose.anim, a rider on the next presence packet,
+   *  the same channel the browser's action bar uses. Receivers resolve the
+   *  name to a library clip; nothing is logged. */
+  playOnce(name: string) { this.pendingAnim = name; }
+  private pendingAnim: string | null = null;
 
   /** Settle into a posture clip (sit/sitchair/lie/idle). Rides the presence
    *  stream like locomotion does; walking replaces it, restore re-applies it. */

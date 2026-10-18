@@ -196,7 +196,7 @@ export function initVideoPanel() {
     if (body.dataset.init) return;
     body.dataset.init = '1';
     body.appendChild(checkRow(UNTRUSTED_WORDS.label, UNTRUSTED_WORDS.hint, allowUntrusted(), (on) => {
-      setAllowUntrusted(on); flashHint(on ? 'links from any site play for you now' : 'only this server\'s files and trusted hosts play for you');   // no emoji outside Chat and Emotes (R)
+      setAllowUntrusted(on); flashHint(on ? 'links from any site play for you now' : 'only this server\'s files and trusted hosts play for you');   // no emoji outside Chat and the action bar (R)
     }));
     // the explanation runs the panel's full width (R 10-10: it was squeezed into the label column, a word a line)
     const p = document.createElement('div'); p.style.cssText = 'display:block;width:100%;box-sizing:border-box;padding:2px 8px 6px;font-size:11px;color:var(--dim);line-height:1.4';

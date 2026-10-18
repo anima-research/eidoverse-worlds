@@ -125,7 +125,7 @@ Examples:
   full humanoid hierarchy, including upperChest, shoulders and fingers.
   Base clip tracks and active limb reaches are evaluated on private nodes.
   Published head pitch and bone overrides are composed over the clip. Clip
-  crossfades, one-shot emotes, gaze, wing/springbone motion and rendering
+  crossfades, gestures, gaze, wing/springbone motion and rendering
   interpolation are not reproduced, so this is not final-frame pixel parity.
 - Contact positions/normals are labeled `anatomical_estimate`. The anatomical
   estimate is bound in bone-local space at rest and transformed with the live

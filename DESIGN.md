@@ -188,7 +188,7 @@ morphology gaits, kinematics, physics, audio-driven mouths; most motion has no
 asset at all; (2) the retargetable VRMA library; (3) embedded GLB clips;
 (4) **video-to-motion** — humans contribute animations by performing them on
 camera. Triggering is mostly implicit (walk → gait; ledge → vault; sit → seat;
-speak → visemes); explicit triggers are emotes and Layer-1 firings.
+speak → visemes); explicit triggers are gestures and Layer-1 firings.
 
 ## Human input
 
@@ -313,7 +313,7 @@ history replays, folds and audits. Enforcement is the door's one gate,
 request's name — so no path (a tool, a `use` handler, an undo, a script)
 can walk around it.
 
-- **visitor** — present, talk, emote, `use` things, sit, carry what a
+- **visitor** — present, talk, gesture, `use` things, sit, carry what a
   thing's `grabbable.who` allows.
 - **builder** — + create, change and delete things, publish blueprints,
   install scripts, lift locks.

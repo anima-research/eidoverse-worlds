@@ -41,6 +41,7 @@
 import { REACH_CHAINS } from './joints.js';
 import { HUMANOID_BONES } from './humanoid.js';
 import { checkAccepts } from './grab.js';
+import { isReservedAnimName } from './animdefs.js';
 import { BUILTIN_IDS, isRoleId } from './protocol/roles.js';
 import { COMPONENTS, materialize } from './protocol/componentspec.js';
 
@@ -277,6 +278,7 @@ export function checkStation(v, at = 'station') {
   let r = keys(at, v, STATION_KEYS, 'a station'); if (r) return r;
   // anim (R 10-17: was pose): a pose or clip by name, or {clip, …} / a blend: the body grammar's own check, under its name
   if (v.anim !== undefined && (r = checkPose(v.anim, `${at}.anim`))) return r;
+  if (isReservedAnimName(v.anim)) return bad('shape', `${at}.anim "${v.anim}" is reserved: it names ad-libbed anims, never a pose or clip`, 'name the pose or clip');
   const { anim: _a, ...rest } = v;
   return checkBody(rest, at);
 }
@@ -291,7 +293,7 @@ function checkBody(b, at) {
     if (!isObj(b.poses)) return bad('shape', `${at}.poses must be {<name>: pose}`);
     const names = Object.keys(b.poses);
     if (names.length > MAX_POSES) return bad('shape', `${at}.poses: at most ${MAX_POSES}`);
-    for (const n of names) { if (!NAME_RE.test(n)) return bad('shape', `${at}.poses: a pose's name is letters, digits, - and _ (up to 32)`); if ((r = checkPose(b.poses[n], `${at}.poses.${n}`))) return r; }
+    for (const n of names) { if (!NAME_RE.test(n) || isReservedAnimName(n)) return bad('shape', `${at}.poses: a pose's name is letters, digits, - and _ (up to 32), and never "live" (reserved: ad-libbed anims)`); if ((r = checkPose(b.poses[n], `${at}.poses.${n}`))) return r; }
   }
   if (b.sync !== undefined && !(typeof b.sync === 'string' && NAME_RE.test(b.sync))) return bad('shape', `${at}.sync names a group (letters, digits, - and _)`);
   if (b.approach !== undefined && !nums(b.approach, 4)) return bad('shape', `${at}.approach is [x, y, z, yaw] in the socket's frame (yaw in radians)`);

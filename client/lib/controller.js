@@ -256,7 +256,7 @@ export const myState = {
   pitch: 0,          // head pitch, mirrored from the camera
   speed: 0,
   clip: 'idle',
-  emote: null,       // one-shot, cleared after it's been sent once
+  anim: null,        // an anim played once: rides one pose packet, cleared after it has been sent
   pose: undefined,   // held custom bone override (null clears); presence only
   wingsFolded: false, // semantic body posture; each rig renders its own fold
   bodyMode: 'stand',  // what the body is doing as a whole (shared/bodymode.js): published as presence bodyMode
@@ -1113,7 +1113,7 @@ export function updateSpectator(dt, remote) {
 
 export function setCamYaw(v) { camYaw = Math.atan2(Math.sin(v), Math.cos(v)); }   // wrapped: the body's yaw must never carry a full turn (XR pop, 09-05)
 export function setPosture(p) { posture = p; }
-// the emote bar's posture tiles (emotebar.js): sit runs the same seat search as X, stand leaves seat and posture.
+// the action bar's posture tiles (actionbar.js): sit runs the same seat search as X, stand leaves seat and posture.
 // A declared-seat MOUNT (sockets, localbody.js) is neither posture nor myState.seat — the seat hook dismounts on X —
 // so the tiles ask first: sitting on a swing, 'sit' is a no-op and 'stand' is the dismount
 let mountedHook = () => false;

@@ -1,4 +1,4 @@
-// lite-banner-probe — on a PHONE a died boot demotes to lite and says so in a pinned card (under the emote
+// lite-banner-probe — on a PHONE a died boot demotes to lite and says so in a pinned card (under the gesture
 // row, surviving the history replay) whose first button enters the 3D world; someone who asked for lite gets
 // the card too (a way back, never "type ?lite=0"); a DESKTOP whose boot died is not demoted at all, and gets
 // a status-strip pill offering the light version instead (owner, 10-01: lite is default only on mobile).
@@ -39,7 +39,7 @@ try {
     await p.waitForTimeout(2500);
     const r = await p.evaluate(() => { const bn = document.getElementById('lite-banner'); const rc = bn?.getBoundingClientRect();
       return { lite: globalThis.__ewLite, why: globalThis.__ewLiteWhy, banner: bn?.textContent ?? null, onScreen: !!rc && rc.top >= 0 && rc.bottom <= innerHeight && rc.width > 0,
-        clearOfEmotes: (() => { const e = document.getElementById('lite-action-host')?.getBoundingClientRect(); return !bn || !e || rc.top >= e.bottom; })(),
+        clearOfActions: (() => { const e = document.getElementById('lite-action-host')?.getBoundingClientRect(); return !bn || !e || rc.top >= e.bottom; })(),
         chatTail: [...document.querySelectorAll('#chatlog > *')].slice(-1).map(e => e.textContent.slice(0, 30))[0] };
     });
     return { p, ctx, r, errs };
@@ -48,7 +48,7 @@ try {
   console.log('phone crash:', JSON.stringify(r));
   ok('a phone whose last boot died is lite (why=crash)', r.lite === true && r.why === 'crash');
   ok('…and SAYS so in a pinned card, on screen after the history replay', !!r.banner && /didn't finish loading/.test(r.banner) && r.onScreen, r.chatTail);
-  ok('…below the emote row, not over it (360 px wide, the row wraps)', r.clearOfEmotes === true);
+  ok('…below the action row, not over it (360 px wide, the row wraps)', r.clearOfActions === true);
   ok('…it names the way in (the ∃ logo), and its one button is got it', /Tap the \u2203 Eidoverse logo/.test(r.banner) /* a touch phone taps */ && await p.evaluate(() => { const c = document.getElementById('lite-banner'); return c.classList.contains('capnotice') && [...c.querySelectorAll('button')].map(b => b.textContent).join('|') === 'got it'; }));
   ok('…the ∃ mark is centred in its tile (within 1 px)', await p.evaluate(() => { const b = document.getElementById('hud').getBoundingClientRect(), g = document.querySelector('#hud svg').getBoundingClientRect(); return Math.abs((b.left + b.right) / 2 - (g.left + g.right) / 2) <= 1 && Math.abs((b.top + b.bottom) / 2 - (g.top + g.bottom) / 2) <= 1; }));
   ok('…the ∃ is a real tap target (≥ 44 px) leading the top bar', await p.evaluate(() => { const h = document.getElementById('hud'); const r = h.getBoundingClientRect(); return h.parentElement.id === 'lite-action-host' && h.parentElement.firstElementChild === h && r.height >= 44 && r.width >= 44 && !h.disabled; }));
@@ -84,7 +84,7 @@ try {
     ok('a fresh phone starts in lite (why=phone), and the card says why: on a phone', f.lite === true && f.why === 'phone' && /You're on a phone/.test(f.banner), JSON.stringify(f));
     const E = await p.evaluate(() => { const row = document.querySelector('#lite-action-host .lite-actions'); const t = [...row.querySelectorAll('.lite-action')].map((b) => b.getBoundingClientRect());
       return { n: t.length, fits: row.scrollWidth <= row.clientWidth + 1, inView: t.every((r) => r.left >= 0 && r.right <= innerWidth), w: Math.round(t[0]?.width ?? 0), h: Math.round(t[0]?.height ?? 0) }; });
-    ok('emotes: every one sits on the top row at 360 px, none scrolled off, tiles ≥ 40 px', E.n > 0 && E.fits && E.inView && E.w >= 40 && E.h >= 40, JSON.stringify(E));
+    ok('gestures: every one sits on the top row at 360 px, none scrolled off, tiles ≥ 40 px', E.n > 0 && E.fits && E.inView && E.w >= 40 && E.h >= 40, JSON.stringify(E));
     // the compose box grows with what you type, to a cap, then scrolls; Enter sends and it shrinks back
     await p.locator('#lite-banner .cn-ok').click();
     const box = p.locator('#chatline');
@@ -123,7 +123,7 @@ try {
       const card = R('#lite-banner'), chat = R('.frame.chat-frame'), hud = R('#hud');
       return { tileMax: Math.round(Math.max(...t.map((r) => r.width))), packed: t.length > 0 && t[0].left - hud.right < 20 && t.every((r, i) => !i || r.left - t[i - 1].right < 12),
         card: Math.round(card.width), chat: Math.round(chat.width), centred: Math.abs((chat.left + chat.right) / 2 - innerWidth / 2) <= 2 && Math.abs((card.left + card.right) / 2 - innerWidth / 2) <= 2 }; });
-    ok('wide desktop: emote tiles stay ≤ 52 px and pack against the ∃', W.tileMax <= 52 && W.packed, JSON.stringify(W));
+    ok('wide desktop: action tiles stay ≤ 52 px and pack against the ∃', W.tileMax <= 52 && W.packed, JSON.stringify(W));
     ok('wide desktop: the card and the chat keep to a centred column ≤ 720 px', W.card <= 720 && W.chat <= 720 && W.centred, JSON.stringify(W));
     await p.screenshot({ path: SHOT.replace('.png', '-wide.png') });
     await p.setViewportSize({ width: 1100, height: 700 });
@@ -138,7 +138,7 @@ try {
   ok('got it dismisses it', await p.evaluate(() => !document.getElementById('lite-banner')));
   await p.waitForTimeout(200);
   ok('…and the chat grows flush up to the bar', await p.evaluate(() => Math.abs(document.querySelector('.frame.chat-frame').getBoundingClientRect().top - document.getElementById('lite-action-host').getBoundingClientRect().bottom) <= 1));
-  ok('…and stops following the emote row (its ResizeObserver disconnects)', await p.evaluate(() => globalThis.__roOff === 1)); await ctx.close();
+  ok('…and stops following the action row (its ResizeObserver disconnects)', await p.evaluate(() => globalThis.__roOff === 1)); await ctx.close();
 
   { // a DESKTOP whose last boot died: full client, plus a pill offering the light version
     const ctx = await b.newContext(DESK); const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));

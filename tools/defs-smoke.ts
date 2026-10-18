@@ -83,9 +83,9 @@ check("broken def is NOT served", !names.includes("broken"));
     && Array.isArray(reg.uiHelp?.keys) && reg.uiHelp.keys.length >= 15
     && Array.isArray(reg.uiHelp?.sections) && reg.uiHelp.sections.length >= 4,
   `${reg.uiHelp?.keys?.length ?? 0} keys, ${reg.uiHelp?.sections?.length ?? 0} sections`);
-  check("the emote vocabulary rides the registry (order = key order)",
-    reg.emotes?.wave?.clip === "raise" && reg.emotes?.talk?.listed === false
-    && Object.keys(reg.emotes ?? {})[0] === "wave", Object.keys(reg.emotes ?? {}).join(", "));
+  check("the action bar's vocabulary rides the registry (order = key order)",
+    reg.actionbar?.wave?.clip === "raise" && reg.actionbar?.talk?.listed === false
+    && Object.keys(reg.actionbar ?? {})[0] === "wave", Object.keys(reg.actionbar ?? {}).join(", "));
 }
 
 // ---- animation overlay ------------------------------------------------------

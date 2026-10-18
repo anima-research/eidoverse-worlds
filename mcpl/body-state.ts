@@ -334,7 +334,7 @@ export class BodyStateReader {
       if (incomplete) { out.ok = false; out.error = "some held reaches could not be evaluated; geometry is incomplete"; }
       out.geometry = { status: incomplete ? "incomplete" : "derived", frame: "world", units: "metres", method: "humanoid skeleton + published rotations + limb IK",
         inputs: [...loaded.values()].map(({ observation: o }) => ({ who: o.who, observedAt: o.receivedAt, bodyGeneration: o.generation })),
-        limitations: ["Base VRMA posture, pitch, published rotations and reach relations are evaluated; clip blending, emotes, gaze, wing/springbone motion and renderer interpolation are not reproduced.",
+        limitations: ["Base VRMA posture, pitch, published rotations and reach relations are evaluated; clip blending, gestures, gaze, wing/springbone motion and renderer interpolation are not reproduced.",
           "Contact surfaces are bone-bound anatomical estimates, not mesh measurements. Reach producers are evaluated before dependants; cyclic dependencies are reported as incomplete."] };
       if (detail === "bones" || detail === "all") {
         out.joints = Object.fromEntries(Object.entries(own.body.av.nodes).map(([name, raw]) => {

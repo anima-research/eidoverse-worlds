@@ -14,6 +14,7 @@ import { sfuDiag } from "./sfuadapter.ts";
 import { join, normalize, dirname, basename } from "node:path";
 import { hexOfLibRel } from "../shared/eido.js";
 import { kindOf } from "../shared/protocol/kind.js";
+import { isReservedAnimName } from "../shared/animdefs.js";
 import { eidoFile, eidoRel } from "./eidoindex.ts";
 import { randomBytes } from "node:crypto";
 import { creditsFor } from "../shared/libcredits.js";
@@ -203,6 +204,7 @@ export function animationRoster(): { name: string; path: string; size: number }[
     if (!existsSync(dir)) continue;
     for (const f of readdirSync(dir)) {
       if (!f.endsWith(".vrma")) continue;
+      if (isReservedAnimName(f.replace(".vrma", ""))) { console.error(`[defs] animation "${f}": "live" is reserved (it names ad-libbed anims) — not served`); continue; }
       const file = Bun.file(join(dir, f));
       // size rides along so the prefetcher's byte budget still sees these
       // clips as it did when it read them from /library-list

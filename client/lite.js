@@ -7,7 +7,7 @@
 // nothing and still pay the whole ~2.1MB on a phone. The choice is made in the HTML,
 // ahead of the module graph; see the decision script there.
 //
-// What this is: chat, the emote row, and who's here. No scene, no camera, no renderer,
+// What this is: chat, the action row, and who's here. No scene, no camera, no renderer,
 // no bodies. You can talk to people in the eidoverse from a phone that cannot draw it.
 //
 // What it is NOT: a viewer. There is deliberately no canvas.
@@ -32,7 +32,7 @@ import {
 } from './lib/net.js';
 import { initBoot, markPhase, finishBoot } from './lib/boot.js';
 import * as participants from './lib/participants_lite.js';
-import { initLiteEmotes } from './lib/emotebar_lite.js';
+import { initLiteActions } from './lib/actionbar_lite.js';
 // Turns live world entries into chat lines — including your own 'say' coming back from
 // the server. Without it a lite client could SEND a message and never see it: the text
 // only appeared on reload, when history replayed through social.js instead. It is the
@@ -69,8 +69,8 @@ export function tryFullWorld() { chooseClient(false); }
 // stood someone up out of a sit, unfolded their wings and dropped their held pose
 // (#188 B2). We add the one-shot and change nothing else.
 //
-// An emote is not a verb, either: the verb set is closed by design, and asking for one
-// earns "verb not allowed: emote". It rides the presence pose, which is why a client
+// A gesture is not a verb, either: the verb set is closed by design, and asking for one
+// earns "verb not allowed: gesture". It rides the presence pose, which is why a client
 // with no body still has to have something to say about where that body is.
 let restored = null;
 
@@ -78,9 +78,9 @@ let restored = null;
  *  origin is all we can honestly claim, and sanePose() requires a finite `p`. */
 const rememberedBody = () => restored ?? { p: [0, 0, 0], yaw: 0 };
 
-/** One emote: the remembered body, unchanged, carrying a one-shot. */
-function emote(name) {
-  if (!sendPoseExact({ ...rememberedBody(), emote: name })) {
+/** One anim, played once: the remembered body, unchanged, carrying pose.anim. */
+function playOnce(name) {
+  if (!sendPoseExact({ ...rememberedBody(), anim: name })) {
     toast('not connected - action not sent', 'warn');
   }
 }
@@ -127,7 +127,7 @@ const NO_WAY_IN = new Set(['no-gpu']);
 // .cn-item > b, p, .cn-btns) so the two reduced paths read as one family. Built here, not
 // imported: capnotice.js pulls core.js, and core.js is the engine lite exists to avoid.
 // THE PHONE LAYOUT, one column (owner, 10-01: "the lite client UI is a bit of a hot mess"): the top bar
-// (emotes, scrolling sideways, and the way into the 3D world at its end), then the card if it's up, then the
+// (gestures, scrolling sideways, and the way into the 3D world at its end), then the card if it's up, then the
 // chat filling everything below it. The chat frame keeps its own machinery (tabs, people, compose); only its
 // box is set here, through --lite-top, which index.html's html.lite rules read.
 export function liteLayout() {
@@ -156,8 +156,8 @@ export function liteBanner(why) {
   item.querySelector('.cn-ok').addEventListener('click', () => { ro?.disconnect(); card.remove(); liteLayout(); });
   card.appendChild(item);
   document.body.appendChild(card);
-  // Under the emote row, never over it: that row is fixed to the top and its height
-  // depends on how many emotes wrap, so follow it instead of guessing a number.
+  // Under the action row, never over it: that row is fixed to the top and its height
+  // depends on how many gestures wrap, so follow it instead of guessing a number.
   const host = document.getElementById('lite-action-host');
   const place = () => { card.style.top = `${Math.round((host?.getBoundingClientRect().bottom ?? 0) + 8)}px`; liteLayout(); };
   place();
@@ -279,21 +279,21 @@ async function main() {
 
   // Chrome. None of it consumes socket traffic, but it costs nothing to have it
   // standing before the first message lands either.
-  const emoteHost = document.createElement('div');
-  emoteHost.id = 'lite-action-host';
-  document.body.appendChild(emoteHost);
-  initLiteEmotes(emoteHost, emote);
+  const actionHost = document.createElement('div');
+  actionHost.id = 'lite-action-host';
+  document.body.appendChild(actionHost);
+  initLiteActions(actionHost, playOnce);
   // THE LOGO IS THE WAY IN (owner, 10-01): the ∃ leads the top bar and loads the full 3D world. In the full
   // client it opens the menu; lite has no menu, so here it does the one thing lite can't. Not where the
   // browser has no 3D at all: there it is just the mark.
   const mark = document.getElementById('hud');
   if (mark) {
-    emoteHost.prepend(mark);
+    actionHost.prepend(mark);
     if (NO_WAY_IN.has(WHY)) { mark.disabled = true; mark.title = 'eidoverse'; }
     else { mark.title = 'load the full 3D world'; mark.setAttribute('aria-label', 'load the full 3D world'); mark.addEventListener('click', tryFullWorld); }
   }
   liteLayout();
-  if (globalThis.ResizeObserver) new ResizeObserver(liteLayout).observe(emoteHost);
+  if (globalThis.ResizeObserver) new ResizeObserver(liteLayout).observe(actionHost);
   addEventListener('resize', liteLayout);
   globalThis.__ewTryFullWorld = tryFullWorld;   // also reachable from the console
 

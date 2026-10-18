@@ -197,7 +197,7 @@ check("width clamps at minW", f.state.w >= 100, `w=${f.state.w} (delta ${tiny})`
 
 // THE FRAME PUBLISHES ITS OWN FLOOR. index.html carries `.frame { min-width:
 // 170px }`, a CSS floor sitting BENEATH the JS one — it silently won for any
-// frame declaring a smaller minW. Measured in Chromium before the fix: the emote
+// frame declaring a smaller minW. Measured in Chromium before the fix: the gesture
 // bar asking for w=48/86/124/162 ALL rendered at frameW=170, cols=4, rows=3.
 // That is R's report in one line ("won't go thinner than 4x, but will forcibly
 // go 9x down and not wrap"): the body was painted 336px tall while the clipped
@@ -213,7 +213,7 @@ check("width clamps at minW", f.state.w >= 100, `w=${f.state.w} (delta ${tiny})`
     `minWidth=${(wide.el as HTMLElement).style.minWidth}`); }
 
 // --- a glyph button over the edge band keeps its press (measured in the browser, 10-01: the ∃ menu's Panels flyout
-// hangs over the chat frame's top band, and its emotes pin never pinned — the topmost element under the pointer was
+// hangs over the chat frame's top band, and its gestures pin never pinned — the topmost element under the pointer was
 // the glyph's SVG <path>, which is not an HTMLElement, so the walk up to its <button> never started and the resize
 // took the press). Inside a frame the same: a glyph button within 6px of the frame's edge.
 for (const where of ["over the band, outside the frame", "inside the frame, at its edge"]) {

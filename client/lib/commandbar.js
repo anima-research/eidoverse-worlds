@@ -66,7 +66,7 @@ export function closeLantern() {
 // ---------------------------------------------------------------- rows
 
 // icon: an icons.js name (line weight first — the mockup's rows are line glyphs), an
-// emoji literal (emotes, as their tiles wear them), or a neutral dot
+// emoji literal (gestures, as their tiles wear them), or a neutral dot
 function iconHtml(icon) {
   if (icon && hasLine(icon)) return rsvg(icon, 16);
   if (icon && has(icon)) return svg(icon, 16);

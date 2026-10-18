@@ -99,7 +99,7 @@ console.log('grouping');
 A.register({ id: 'bar:wave2', title: 'wave hello', group: 'action bar', run: noop });
 A.register({ id: 'cmd:wavefile', title: '/wavefile', group: 'commands', run: noop });
 const g = A.grouped(A.list('wave'));
-check('grouped: the best row stays first (emotes group first, wave first in it)', g[0].group === 'action bar' && g[0].rows[0].action.id === 'bar:wave', JSON.stringify(g.map((x) => [x.group, x.rows.map((r) => r.action.id)])));
+check('grouped: the best row stays first (gestures group first, wave first in it)', g[0].group === 'action bar' && g[0].rows[0].action.id === 'bar:wave', JSON.stringify(g.map((x) => [x.group, x.rows.map((r) => r.action.id)])));
 check('grouped: each group appears once', new Set(g.map((x) => x.group)).size === g.length);
 check('empty query lists everything visible', A.list('').length === A.all().filter((a) => !a.when || a.when()).length);
 

@@ -255,20 +255,20 @@ const CLIP_FALLBACK = {
   swim: 'idle', tread: 'idle',
 };
 
-// Emote slots are loaded lazily — a body needs locomotion to exist, but it
+// Gesture slots are loaded lazily — a body needs locomotion to exist, but it
 // doesn't need to know how to dance until someone dances.
 //
-// The emote vocabulary now lives in emotedefs.js (the bar needs it without the
+// The action bar's vocabulary now lives in animnames.js (the bar needs it without the
 // engine). Re-exported here because these names were part of avatar.js's surface
 // before the split and several callers still read them from it — same objects, one
 // module instance, so the hydration trick is unaffected.
 // IMPORT then re-export, not `export ... from`. A bare re-export forwards the names to
-// importers without creating local bindings, so avatar.js's own `EMOTES[name]` (playEmote,
+// importers without creating local bindings, so avatar.js's own `ANIM_CLIPS[name]` (playOnce,
 // below) became a ReferenceError the moment the table moved out - and it only fires when
-// someone actually plays an emote, which no boot-level test does. Reported from a phone as
-// a red "EMOTES is not defined" toast.
-import { EMOTES, EMOTE_ORDER, EMOTE_ICONS, hydrateEmotes } from './emotedefs.js';
-export { EMOTES, EMOTE_ORDER, EMOTE_ICONS, hydrateEmotes };
+// someone actually plays a gesture, which no boot-level test does. Reported from a phone as
+// a red "ANIM_CLIPS is not defined" toast.
+import { ANIM_CLIPS, ANIM_ORDER, ANIM_ICONS, hydrateAnimNames } from './animnames.js';
+export { ANIM_CLIPS, ANIM_ORDER, ANIM_ICONS, hydrateAnimNames };
 // Seated postures differ by what you're sitting ON — the ground clip on a
 // chair leaves you cross-legged in mid-air.
 export const SEAT_CLIPS = { ground: 'sitting_on_ground', chair: SEAT_CLIP_FILE };
@@ -628,7 +628,7 @@ export class Avatar {
 
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.actions = {};
-    this.extraClips = new Map(); // lazily-loaded emote actions
+    this.extraClips = new Map(); // lazily-loaded gesture actions
     for (const [slot, clip] of Object.entries(clips)) {
       const a = this.mixer.clipAction(clip);
       a.enabled = true; a.setEffectiveWeight(0); a.play();
@@ -636,7 +636,7 @@ export class Avatar {
     }
     this.current = null;
     this.currentSlot = null;
-    this.emote = null;             // { action, until }
+    this.onceAnim = null;             // { action, until }
     // the ankles' height above the root at rest (no clip has posed it yet): a socket anchoring the FEET puts the soles
     // on the socket, not the ankle joints
     try { const h = vrm.humanoid; const f = h?.getRawBoneNode?.('leftFoot') ?? h?.getNormalizedBoneNode?.('leftFoot');
@@ -1132,10 +1132,10 @@ export class Avatar {
   // ---- locomotion / clips
   setClip(slot, speed = 0, { fade, ease = false } = {}) {
     this.postureSlot = slot;   // what was ASKED (the wire's clip), before any fallback: the plate reads posture from it
-    // Moving cancels an emote. Standing frozen mid-cheer while walking away
+    // Moving cancels a gesture. Standing frozen mid-cheer while walking away
     // is worse than cutting the cheer short.
-    if (this.emote && speed > 0.05) this.cancelEmote();
-    if (this.emote) return;        // otherwise it owns the body until it finishes
+    if (this.onceAnim && speed > 0.05) this.cancelOnce();
+    if (this.onceAnim) return;        // otherwise it owns the body until it finishes
     if (this._sb) return;          // a socket's pose (setSeatBlend) owns the base clips while it holds
     // any clip the library has, by name (a socket's enter/leave riding someone's presence `clip`): loaded on first
     // ask, the nearest loaded posture stands in meanwhile
@@ -1246,9 +1246,9 @@ export class Avatar {
     return this._hydrating;
   }
 
-  /** Play a one-shot emote over locomotion. Returns when it's queued, not done. */
-  async playEmote(name) {
-    const file = EMOTES[name];
+  /** Play a gesture over locomotion. Returns when it's queued, not done. */
+  async playOnce(name) {
+    const file = ANIM_CLIPS[name];
     if (!file) return;
     try {
       let action = this.extraClips.get(file);
@@ -1265,16 +1265,16 @@ export class Avatar {
       // emoting faded the walk out and faded in an action the mixer was not
       // looking at — leaving the skeleton at its REST pose. That is the T-pose.
       action.reset().play();
-      this.emote = null;           // let _setAction run
-      this._setAction(action, `emote:${name}`);
-      this.emote = { action, until: performance.now() + dur * 1000 };
-    } catch (e) { report(`emote ${name}`, e); }
+      this.onceAnim = null;           // let _setAction run
+      this._setAction(action, `once:${name}`);
+      this.onceAnim = { action, until: performance.now() + dur * 1000 };
+    } catch (e) { report(`gesture ${name}`, e); }
   }
-  cancelEmote() {
-    if (!this.emote) return;
-    const action = this.emote.action;
-    this.emote = null;
-    // The emote MUST be faded out here. It is a LoopOnce action with
+  cancelOnce() {
+    if (!this.onceAnim) return;
+    const action = this.onceAnim.action;
+    this.onceAnim = null;
+    // The gesture MUST be faded out here. It is a LoopOnce action with
     // clampWhenFinished, so when it ends it holds its final frame at full
     // weight — forever. Simply forgetting about it (this.current = null) left
     // that frozen pose blended into everything that came after, which is why
@@ -1412,6 +1412,9 @@ export class Avatar {
    *  the held pose is the AUTHOR's half of a replace — it lives in presence
    *  (myState.pose, an agent's heldPose), which this body only renders. */
   playAnimation(data) {
+    // {stop: true} (R 10-17 16:26): every layer fades out and hands its bones back to what is beneath (the held pose,
+    // the clip): the body rests in what it was doing, never the bind pose
+    if (data?.stop === true) { for (const l of this._anims ?? []) l.wantWeight = 0; return; }
     if (!data?.tracks) return;
     const tracks = new Map();
     for (const [n, keys] of Object.entries(data.tracks)) {
@@ -1616,7 +1619,7 @@ export class Avatar {
   // script's param), or a clip whose TIME is locked to the thing's motion (a swing's pump follows the swing). That is
   // a mixer job the locomotion slots can't do — they crossfade one action at a time — so a socket's pose is its own
   // layer over the mixer: several actions at once, weights set every frame, time optionally driven rather than
-  // advanced. While it holds, setClip yields (the seat owns the base clip) and emotes still play over it.
+  // advanced. While it holds, setClip yields (the seat owns the base clip) and gestures still play over it.
 
   /** The action for a clip name, loading it from the animation library on first ask (null until it lands). Slot
    *  names (idle, walk, sit, sitchair, lie…) come from hydrateClips; every other name is a library file. */
@@ -1649,7 +1652,7 @@ export class Avatar {
     }
     if (!this._sb) {
       // the clip playing now fades out under three's own fade; the blend's actions ease in under ours
-      if (this.current && this.current !== this.emote?.action) this.current.fadeOut(0.25);
+      if (this.current && this.current !== this.onceAnim?.action) this.current.fadeOut(0.25);
       this.current = null; this.currentSlot = null; this._xfade = null;
       this._sb = { w: new Map(), want: [], phase: null };
     }
@@ -1672,8 +1675,8 @@ export class Avatar {
       target.set(a, (target.get(a) ?? 0) + w);
     }
     for (const a of target.keys()) if (!sb.w.has(a)) { a.stopFading(); sb.w.set(a, a === this.current ? a.getEffectiveWeight() : 0); a.enabled = true; if (sb.phase == null) a.reset(); a.play(); }
-    // an emote plays over the seat; the seat yields exactly the weight it takes
-    const over = this.emote ? 1 - Math.min(1, this.emote.action.getEffectiveWeight()) : 1;
+    // a gesture plays over the seat; the seat yields exactly the weight it takes
+    const over = this.onceAnim ? 1 - Math.min(1, this.onceAnim.action.getEffectiveWeight()) : 1;
     const k = Math.min(1, 10 * dt);
     for (const [a, cur] of sb.w) {
       const want = target.get(a) ?? 0;
@@ -1866,7 +1869,7 @@ export class Avatar {
       this._parked = null;
       return;
     }
-    if (this.emote) this.cancelEmote();
+    if (this.onceAnim) this.cancelOnce();
     for (const l of this._anims ?? []) this._handBack(l);   // a falling body stops waving
     this._anims = null;
     const driven = new Set(DRIVEN_BONES);
@@ -2237,7 +2240,7 @@ export class Avatar {
 
   /** Upright in ordinary motion (plateanchor.js STAND_SLOTS), with nothing else owning the body: a gesture, a held
    *  pose and a ragdoll fall can crouch, bow or tumble it, so they keep the live anchor. */
-  _plateStanding() { return STAND_SLOTS.has(this.postureSlot) && !this.emote && !this._override && !this._limp; }
+  _plateStanding() { return STAND_SLOTS.has(this.postureSlot) && !this.onceAnim && !this._override && !this._limp; }
 
   /** Slide the hung plate off the head for THIS viewer's camera (plateanchor.js plateViewLift): along the camera's up,
    *  in world, so each client lifts every plate for its own eye and nothing rides the wire. Runs after _placePlate,
@@ -2390,8 +2393,8 @@ export class Avatar {
       if (u >= 1) { if (x.out && x.out !== x.in) x.out.setEffectiveWeight(0); this._xfade = null; }
     }
     const BC = globalThis.__ewBC ?? (() => {});
-    // emote expiry
-    if (this.emote && now > this.emote.until) this.cancelEmote();
+    // gesture expiry
+    if (this.onceAnim && now > this.onceAnim.until) this.cancelOnce();
 
     if (this._sb) this._applySeatBlend(dt);   // a socket's pose: its weights (and locked times) before the mixer samples
     BC('av:mixer');
@@ -2819,7 +2822,7 @@ function makeBlobShadow() {
 
 // ---------------------------------------------------------------- factory
 
-/** The body of last resort (capsulebody.js): a real Avatar over a capsule puppet — labels, emotes, the XR arm
+/** The body of last resort (capsulebody.js): a real Avatar over a capsule puppet — labels, gestures, the XR arm
  *  solver and the wire all work on it. Never throws; never touches the network. */
 export function makeCapsuleAvatar(id) {
   const av = new Avatar(id, makeCapsuleVrm(), {});

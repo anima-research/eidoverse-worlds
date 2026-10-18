@@ -76,12 +76,12 @@ check("a non-frame key (ew-ui-locked) survives the purge", localStorage.getItem(
   const world = makeFrame("world", { title: "world", x: -10, y: 52, w: 232, h: 300 });
     // THE BAR DOCKS AT THE TOP. R, 2026-09-11: "let's dock it at the top by
     // default since all the helper notifications display at the bottom where it
-    // currently is". DEFAULT_LAYOUT.emotes went y:-10 (a BOTTOM anchor — a
+    // currently is". DEFAULT_LAYOUT's action bar went y:-10 (a BOTTOM anchor — a
     // negative y re-resolves against innerHeight) to y:10, an absolute offset
     // from the top. A material DEFAULT_LAYOUT change, riding the LAYOUT_VERSION
     // bump this block already exercises.
     { const tbar = makeFrame("actions", { title: "actions", x: "center", y: -10, w: 352, h: 32 });
-      check("the emote bar's DEFAULT is the TOP edge, not the bottom",
+      check("the action bar's DEFAULT is the TOP edge, not the bottom",
         tbar.state.y < 100, `y=${tbar.state.y} vh=${innerHeight}`); }
   check("a frame with a purged save takes the DEFAULT, not the stale x:1",
     world.state.x !== 1 && world.state.x + world.state.w <= innerWidth - 8, JSON.stringify(world.state));
@@ -206,7 +206,7 @@ console.log("FRAMES — a narrow viewport (the header's 'can never leave the vie
 
 console.log("FRAMES — a viewport too small for the default arrangement opens only chat");
 {
-  // R's phone, 2026-09-10 23:53: world + emotes + the palette stacked on top of
+  // R's phone, 2026-09-10 23:53: world + gestures + the palette stacked on top of
   // chat, all legally inside the viewport and none overlapping by the pairwise
   // check — the palette is makeSection mounting into world's stack, not a frame
   // of its own, so no rect test can see it. The fix is not to pack them better
@@ -285,7 +285,7 @@ console.log("FRAMES — reset UNPLACES: the viewport rule reads `placed`, not `m
 
 console.log("FRAMES — reset obeys the viewport rule");
 {
-  // Round 2: one tap of "reset layout" on a phone reopened world+emotes stacked
+  // Round 2: one tap of "reset layout" on a phone reopened world+gestures stacked
   // over chat, and restored authoring-viewport widths uncapped (chat right=555
   // in a 390px viewport). Reset removes the save first, so there is no
   // arrangement to protect — the viewport rule and fit() both apply.
@@ -307,12 +307,12 @@ console.log("FRAMES — reset obeys the viewport rule");
 
 console.log("FRAMES — a hand-placed frame is never re-anchored");
 {
-  // R, 2026-09-11: the emote bar "will always pop sideways to the right
+  // R, 2026-09-11: the action bar "will always pop sideways to the right
   // regardless if there's room for it". x:'center' re-resolved on EVERY fit()
   // because the `!saved` guard reads a closure captured at construction, and a
-  // drag writes localStorage without ever refreshing it. The emote bar calls
+  // drag writes localStorage without ever refreshing it. The action bar calls
   // _fit() 180ms after each drag settles (snapTo), so the placement was undone
-  // every time. Only `emotes` uses x:'center', which is why it was the one.
+  // every time. Only `actions` (the action bar) uses x:'center', which is why it was the one.
   const vw0 = innerWidth, vh0 = innerHeight;
   (window as any).innerWidth = 1000; (window as any).innerHeight = 700;
   localStorage.removeItem("ew-frame-awcx");
@@ -355,7 +355,7 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
     `placed ${placed} -> ${bar.state.x}; anchor would give ${wouldCentre}`);
 
   // (4) reset must put the frame back UNDER the anchors — `moved = false`.
-  // THE Y ANCHOR, not just x. R, 2026-09-11: the emote bar "can't be arbitrarily
+  // THE Y ANCHOR, not just x. R, 2026-09-11: the action bar "can't be arbitrarily
   // placed anywhere". fit()'s `opts.y < 0` re-anchor was deliberately ungated —
   // round 2 gated the CLAMP as well and stranded every untouched bottom frame
   // (rotate 700->500 left a bar at y=370 where 428 was wanted), so it was
@@ -565,7 +565,7 @@ console.log("CHROME COST — the declared anchor");
 
   // (2) A TOP-DOCKED RAIL CHARGES POSITIONALLY, NOT ZERO. Welded to the top edge
   // says nothing about the horizontal axis: a rail at [10..304] in an 844 viewport
-  // is genuinely LEFT-positioned there. Returning {0,0} put an emote tile under the
+  // is genuinely LEFT-positioned there. Returning {0,0} put an action tile under the
   // rail at 844x390 ("sit" covered by #dock) — the corpus row-33 witness.
   const rail = (chromeCost as any)("#dock", { left: 10, right: 304, width: 294 }, 844);
   check("a top-docked rail charges the side it actually occupies, not zero",
@@ -592,7 +592,7 @@ console.log("AUTO-HIDDEN — survives a reload");
   // `markMoved()` sets `state.placed = true` ad-hoc and save() serialises the whole
   // object, so the flag reached storage the FIRST time. But the state literal had no
   // `placed` key, so the next construction built a state without it and the next
-  // save() erased it. Measured live at 1280x800 on the emote bar:
+  // save() erased it. Measured live at 1280x800 on the action bar:
   //   markMoved + _save -> placed:true · reload -> placed:true
   //   hide/show         -> the key is GONE from storage
   //   reload again      -> _placed:false
@@ -668,7 +668,7 @@ console.log("FRAMES — a shrink is not a decision: grow the window back and eve
     [stored.x, stored.y, stored.w, stored.h].join(",") === before[2], JSON.stringify(stored));
   (window as any).innerHeight = 700; window.dispatchEvent(new Event("resize"));
 
-  // A RIDER owns its frame's size (emotebar.js snapTo writes _state.w/h, then _fit).
+  // A RIDER owns its frame's size (actionbar.js snapTo writes _state.w/h, then _fit).
   // What it writes is the frame's size from then on, so a window resize must keep it
   // rather than re-projecting the size the frame had before the rider spoke.
   const rider: any = measurable(makeFrame("rt-rider", { title: "rider", x: 40, y: 400, w: 352, h: 32 })); rider.show();

@@ -2,7 +2,7 @@
  * Denoise gate test — no servers needed. Exercises the four noise classes
  * from Fable's 2026-08-02 field report:
  *   1. arrive/leave flaps collapse to nothing (both directions)
- *   2. posture/emote cycles: refractory + short-stint "gets up" swallow
+ *   2. posture/gesture cycles: refractory + short-stint "gets up" swallow
  *   3. self-echo: own say never fans out as an event
  *   4. approach: hysteresis re-arm + long refractory
  *
@@ -76,7 +76,7 @@ console.log("\n━━ acts: a burst speaks once per window ━━");
   const gate = new NoiseGate((ev) => out.push(ev.text!));
   for (let i = 0; i < 5; i++) gate.act("digi", "clip:jump", 'starts "jump"');
   check("5 rapid jumps → 1 event", out.length === 1, String(out.length));
-  gate.act("digi", "emote:dance", "emotes: dance");
+  gate.act("digi", "anim:dance", "plays dance (once)");
   check("a DIFFERENT act from the same person still speaks", out.length === 2, out.join(" | "));
   await sleep(250);
   gate.act("digi", "clip:jump", 'starts "jump"');

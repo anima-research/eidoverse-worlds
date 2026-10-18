@@ -1,4 +1,4 @@
-// posture tiles (client/lib/controller.js sitHere / standUp / setMountedHook / getPosture) — the emote bar's
+// posture tiles (client/lib/controller.js sitHere / standUp / setMountedHook / getPosture) — the action bar's
 // sit·stand·lie tiles share X's seat search, and a declared-seat MOUNT (sockets, localbody.js) is neither a
 // posture nor myState.seat: on a mount the sit tile is a no-op and the stand tile is the dismount. Drives the
 // REAL controller.js against tools/posture-tiles-stub.mjs (flat world, one optional chair pan) with the same
@@ -44,7 +44,7 @@ setOccupyHook(() => {
   if (socket.inReach) { socket.mounted = true; socket.mounts++; return true; }                            // trySitOn
   return false;
 });
-// a minimal body for updateMe: the clip is what the tiles' lit state reads (emotebar paint → myState.clip)
+// a minimal body for updateMe: the clip is what the tiles' lit state reads (actionbar.js paint → myState.clip)
 const me = { root: new THREE.Object3D(), clips: [] as string[], setClip(c: string) { this.clips.push(c); }, wingEffort: 0, pitch: 0,
   headWorldPosition: (v: any) => v.set(0, 1.5, 0), vrm: { scene: { visible: true } }, update() {} };
 const tick = () => { updateMe(1 / 60, me); return myState.clip; };

@@ -79,10 +79,10 @@ const fakeAvatar = () => ({
   transientResets: 0,
   resetTransients() { this.transientResets++; },   // the generation-end seam (#97)
   setTyping() {}, playAnimation() {}, setClip() {}, setPose() {}, clearPose() {},
-  setLimp() {}, playEmote() {}, setGazeTarget() {}, update() {},
+  setLimp() {}, playOnce() {}, setGazeTarget() {}, update() {},
 });
 
-export const makeCapsuleAvatar = (id) => ({ id, isCapsule: true, root: { position: { set() {}, copy() {} } }, vrm: { scene: {}, humanoid: null }, actions: {}, setClip() {}, setPose() {}, playEmote() {}, update() {}, dispose() {}, hydrateClips() { return Promise.resolve(); } });   // the floor makeAvatar falls to (fixes PR); shaped like the real one's surface
+export const makeCapsuleAvatar = (id) => ({ id, isCapsule: true, root: { position: { set() {}, copy() {} } }, vrm: { scene: {}, humanoid: null }, actions: {}, setClip() {}, setPose() {}, playOnce() {}, update() {}, dispose() {}, hydrateClips() { return Promise.resolve(); } });   // the floor makeAvatar falls to (fixes PR); shaped like the real one's surface
 export const makeAvatar = (id, path) => {
   avatarCalls.push({ id, path });
   if (!holdLoads) return Promise.resolve(fakeAvatar());

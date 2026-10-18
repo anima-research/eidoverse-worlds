@@ -1008,7 +1008,7 @@ export function initChat({ send, whisper, typing, people, person }) {
       // side-scroll buttons in the chat panel are missing, so you can't go to a
       // tab that's off-screen because the panel is too narrow"). windows.js has
       // called onResize(w, h) all along (windows.js:437); chat simply never
-      // passed one. Debounced like emotebar's (emotebar.js:53).
+      // passed one. Debounced like actionbar.js's (actionbar.js:53).
       onResize: () => { clearTimeout(_arrowT); _arrowT = setTimeout(() => paintTabs(), 120); },
   });
 

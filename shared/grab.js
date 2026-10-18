@@ -39,6 +39,7 @@
 import { REACH } from './protocol/physconst.js';
 import { materialize, COMPONENTS } from './protocol/componentspec.js';
 import { BUILTIN_IDS, isRoleId } from './protocol/roles.js';
+import { isReservedAnimName } from './animdefs.js';
 
 export const WHO = BUILTIN_IDS;
 // a `who` may also name a world's custom role: the shape is roles.js's, existence the authority's (whoRank)
@@ -266,6 +267,7 @@ export function checkGrabbable(v, at = 'grabbable') {
   if (v.who !== undefined && !isWho(v.who)) return bad('shape', `${at}.who is ${WHO.join(', ')} (who may pick it up)`);
   if (v.hold !== undefined && !HOLDS.includes(v.hold)) return bad('shape', `${at}.hold is ${HOLDS.join(', ')} (auto: press-to-hold in VR, sticky on desktop)`);
   if (v.anim !== undefined && !(typeof v.anim === 'string' && ANIM_RE.test(v.anim))) return bad('shape', `${at}.anim names a pose or clip (built in: ${HOLD_POSES.join(', ')}; a name the body doesn't know is held by size)`, 'leave it out: held by size');
+  if (isReservedAnimName(v.anim)) return bad('shape', `${at}.anim "${v.anim}" is reserved: it names ad-libbed anims, never a pose or clip`, 'name the pose or clip');
   if (v.release !== undefined && !RELEASES.includes(v.release)) return bad('shape', `${at}.release is ${RELEASES.join(', ')}`);
   for (const [k, lo, hi, what] of [['range', 0.1, 10, 'm from the hand'], ['throw', 0, 3, 'a multiplier on the release velocity'], ['returnAfter', 0, 3600, 's unheld before it goes home']])
     if (v[k] !== undefined && !(num(v[k]) && v[k] >= lo && v[k] <= hi)) return bad(num(v[k]) ? 'bounds' : 'shape', `${at}.${k} is ${v[k]}; it is ${lo}..${hi} (${what})`);

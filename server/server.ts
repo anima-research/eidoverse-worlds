@@ -30,6 +30,7 @@ import { oldWorldAt, bootNotice } from "./oldworlds.ts";
 import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
 import { requestHandler, actorOf as actorIdOf, gagged, guestSanctionByAddress } from "./requestwire.ts";
 import { MOD_POWERS } from "../shared/protocol/roles.js";
+import { withoutOnceAnim } from "../shared/onceanim.js";
 import { directoryFor, foldName } from "./directory.ts";
 // The HTTP surface — one route table, /upload behind it in upload.ts (§15,
 // 7c). fetch() below delegates; avatarRoster rides back for the join
@@ -116,7 +117,7 @@ function retireRelayLeg(w: World, id: string) {
  *  So a resident mid-ragdoll looked fine to herself and arrived collapsed for
  *  every joiner — for weeks, with no way to tell from inside her own session.
  *
- *  - emote: a one-shot is a moment, not a place. Replaying it at every wake
+ *  - anim (played once, pose.anim): a moment, not a place. Replaying it at every wake
  *    would make a wave into a tic.
  *  - ragdoll: physics in flight, not an enacted pose. The get-up path only
  *    exists in the session that fell, so anyone receiving it is stuck with a
@@ -127,7 +128,7 @@ function settledPose(pose: unknown): Record<string, unknown> | null {
   // mic/hear are a live reading the sender re-sends every packet; remembered, they came back in `restore` and a
   // client replayed a voice state its new session never had (review 09-30 S2)
   // t/seq: a sample's capture time and count (spec/PHYSICS.md §5.1) belong to that one sample, never to a remembered body
-  const { emote: _emote, mic: _mic, hear: _hear, t: _t, seq: _seq, ...still } = pose as Record<string, unknown>;
+  const { mic: _mic, hear: _hear, t: _t, seq: _seq, ...still } = withoutOnceAnim(pose as Record<string, unknown>);
   if (still.clip === "ragdoll") { still.clip = "idle"; delete still.pose; }
   return still;
 }
