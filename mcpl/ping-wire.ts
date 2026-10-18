@@ -13,21 +13,20 @@ import { CHAT, EIDO, tags } from "./declaration.ts";
 
 export type WirePing = {
   ts: number;
-  kind: "mention" | "approach" | "depart" | "whisper" | "reach" | "touch";
+  kind: "mention" | "approach" | "depart" | "reach" | "touch";
   who: string;
   text?: string;
 };
 
 /** One pending_pings line. Every kind renders as ITSELF. This used to be a
  *  binary — mention, or else "walked up to you" — which quietly mislabelled
- *  whispers, reaches and touches as approaches, discarding the wording each
+ *  reaches and touches as approaches, discarding the wording each
  *  of them had already built for itself (`touches your head_top (left
  *  hand)`). Depart carries its own wording too, because the agent is the only
  *  party that knows who moved (see stepApproach's anchor). */
 export function pingLine(p: WirePing): string {
   switch (p.kind) {
     case "mention": return `@ ${p.who}: ${p.text}`;
-    case "whisper": return `@ ${p.who} whispers: ${p.text}`;
     case "approach": return `≈ ${p.who} walked up to you`;
     case "depart": return `≈ ${p.who} ${p.text ?? "is no longer nearby"}`;
     default: return `≈ ${p.who} ${p.text}`;   // reach / touch carry their own phrasing
@@ -35,8 +34,8 @@ export function pingLine(p: WirePing): string {
 }
 
 /** The channel frame for a ping, or null for the kinds that reach the channel
- *  through the EVENT path instead (a mention rides its say, a whisper its own
- *  delivery) — pushing them from here too would say everything twice.
+ *  through the EVENT path instead (a mention rides its say) — pushing them from
+ *  here too would say everything twice.
  *
  *  The two product decisions live here, executably:
  *   - approach: directed at this body, but nothing was said, so it is not chat

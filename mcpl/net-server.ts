@@ -716,7 +716,7 @@ class Session {
     // world events → channel traffic (this is the push path — no host code).
     //
     // TAGS (§16). Four semantically different things used to be tagged
-    // `["mention"]` — speech, a whisper, a walk-up, and replayed history — which
+    // `["mention"]` — speech, a whisper (removed since, R 10-18), a walk-up, and replayed history — which
     // is a wake flag wearing a description's clothes. Each now says what it IS in
     // the reserved `chat:*` core (§16.2) plus this world's own namespace, and the
     // door decision below is still made from world state (`channelOpen`,
@@ -752,16 +752,6 @@ class Session {
         this.deliver(ev.text!, authorOf(ev.who), ev.mention
           ? { tags: tags(CHAT.mention, CHAT.addressed), mentioned: true, ...md }
           : { tags: tags(CHAT.ambient), ...md });
-      } else if (ev.kind === "whisper") {
-        // A closed door does not stop a whisper — being addressed privately IS
-        // the knock. Rendered with its privacy stated, because an agent that
-        // can't tell a whisper from a shout will answer one as if it were the
-        // other, in front of everyone.
-        // A whisper is a DM, not a mention: nobody said your name, they came to
-        // you. `chat:dm` ⇒ addressed + private under §16.3's closure, emitted
-        // directly here as §16.3 recommends.
-        this.deliver(`(whispers to you) ${ev.text}`, authorOf(ev.who),
-          { tags: tags(CHAT.dm, CHAT.private, CHAT.addressed, EIDO.whisper), mentioned: true, ...md });
       } else if (ev.kind === "act") {
         // embodied transitions — a gesture, a pose struck or released, someone
         // sitting down. Ambient by nature: a closed door mutes them.

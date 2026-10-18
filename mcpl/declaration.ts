@@ -47,7 +47,6 @@ export const CHAT = {
  *  name). The long tail of what a *world* is lives here — a world has events
  *  chat has no word for. */
 export const EIDO = {
-  whisper: "eidoverse:whisper",
   approach: "eidoverse:approach",
   depart: "eidoverse:depart",
   reach: "eidoverse:reach",
@@ -163,18 +162,10 @@ const TAG_ONTOLOGY = {
   // Descriptions of the reserved core are inherited from §16.2 — listing them
   // here says only "this server emits these", never what they mean (§16.4).
   coreTags: [
-    CHAT.addressed, CHAT.mention, CHAT.dm, CHAT.private, CHAT.ambient,
+    // (no chat:dm / chat:private: world chat has no private channel since whisper was removed, R 10-18)
+    CHAT.addressed, CHAT.mention, CHAT.ambient,
   ],
   tags: {
-    [EIDO.whisper]: {
-      desc: "Spoken privately to you alone in-world: no bubble, and never written to the world log, so it is never replayed to anyone later.",
-      facet: "locus",
-      // Advisory only (§16.3): a producer-declared edge into a reserved tag MUST
-      // NOT be applied unless this ontology has been explicitly accepted. The
-      // door emits chat:dm/chat:private/chat:addressed directly, so nothing
-      // depends on this edge being honoured.
-      implies: [CHAT.dm],
-    },
     [EIDO.approach]: {
       desc: "Someone walked up to your body and stopped within arm's reach. Directed at you, but not speech — nothing was said.",
       facet: "addressing",
@@ -261,7 +252,7 @@ export interface FeatureSetDecl {
 export const FEATURE_SETS: Record<string, FeatureSetDecl> = {
   "eidoverse.world": {
     description:
-      "Embodied presence in a world. The world's chat is an MCPL channel: speech, whispers, approaches, presence and an ambient activity digest arrive as channels/incoming, and publishing on the world channel IS saying it aloud in-world.",
+      "Embodied presence in a world. The world's chat is an MCPL channel: speech, approaches, presence and an ambient activity digest arrive as channels/incoming, and publishing on the world channel IS saying it aloud in-world.",
     // channels.lifecycle is here because the world an agent is IN can change —
     // see eidoverse.travel, which shares the leaf. Presence and travel are
     // separable feature sets so a host can take the world without the door.

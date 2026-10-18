@@ -530,10 +530,10 @@ export class WorldAgent {
    *  server restart re-appended history and the next look() dumped chat the
    *  agent had already seen. */
   private inboxSeen = -Infinity;
-  pings: { ts: number; kind: "mention" | "approach" | "depart" | "whisper" | "reach" | "touch"; who: string; text?: string }[] = [];
+  pings: { ts: number; kind: "mention" | "approach" | "depart" | "reach" | "touch"; who: string; text?: string }[] = [];
   onPing: ((p: { ts: number; kind: string; who: string; text?: string }) => void) | null = null;
   /** live world events (say/arrive/leave/activity) — the channel fan-out hook */
-  onEvent: ((ev: { ts: number; kind: "say" | "arrive" | "leave" | "whisper" | "act" | "activity" | "weather" | "world-change"; who: string; text?: string; mention?: boolean }) => void) | null = null;
+  onEvent: ((ev: { ts: number; kind: "say" | "arrive" | "leave" | "act" | "activity" | "weather" | "world-change"; who: string; text?: string; mention?: boolean }) => void) | null = null;
   /** MEDIA seam (#104 / #57): the SFU's publish path is gated to the EMBODIED
    *  PRIMARY (`relay-cred is the embodied primary's ask`, server.ts) — and for
    *  an agent, the primary IS this server. So an agent with a local synthesizer
@@ -658,8 +658,8 @@ export class WorldAgent {
     const rev = Number(res.headers.get("x-profiles-rev") ?? NaN);
     return { rev, entries: await res.json() as { name: string; seat?: any }[] };
   });
-  /** Stateful denoiser for ambient narration (arrive/leave/acts). Says,
-   *  mentions, and whispers never pass through it — a knock is not chatter.
+  /** Stateful denoiser for ambient narration (arrive/leave/acts). Says and
+   *  mentions never pass through it — a knock is not chatter.
    *  See denoise.ts for the doctrine. */
   private gate = new NoiseGate((ev) => {
     if (ev.kind === "arrive") this.act30.arrivals++;
@@ -1230,17 +1230,6 @@ export class WorldAgent {
           }
           case "body-inbox": {
             this.bodyInbox(msg.messages);
-            break;
-          }
-          case "whisper": {
-            // A private message addressed to this body. Whispers never touch
-            // the world log, so this is the ONLY delivery — treat it as an
-            // explicit mention regardless of whether the name appears in it,
-            // because being addressed directly is what a mention means.
-            if (msg.echo || msg.from === this.name) break;
-            this.inbox.push({ ts: msg.ts ?? Date.now(), kind: "say", who: msg.from, text: `(whisper) ${msg.text}` });
-            this.ping({ ts: msg.ts ?? Date.now(), kind: "whisper", who: msg.from, text: msg.text });
-            this.onEvent?.({ ts: msg.ts ?? Date.now(), kind: "whisper", who: msg.from, text: msg.text, mention: true });
             break;
           }
           case "arrive":
@@ -1856,7 +1845,7 @@ export class WorldAgent {
    *  🔴 BOUNDED (2026-08-16). This array grew forever: the live path is
    *  `onPing` (net-server subscribes), and `takePings` — the only drain — has no
    *  caller in this repo. So on a push host the array accumulated every mention,
-   *  approach and whisper for the life of the process and nothing ever read it.
+   *  approach and reach for the life of the process and nothing ever read it.
    *
    *  Kept rather than deleted because a PLAIN-MCP host has no push channel and
    *  polling is its documented path (AGENTS.md says digests are "held and handed
@@ -1865,7 +1854,7 @@ export class WorldAgent {
    *  unbounded buffer whose only consumer is optional is a leak with a plan. */
   private static readonly PING_RING = 64;
 
-  private ping(p: { ts: number; kind: "mention" | "approach" | "depart" | "whisper" | "reach" | "touch"; who: string; text?: string }) {
+  private ping(p: { ts: number; kind: "mention" | "approach" | "depart" | "reach" | "touch"; who: string; text?: string }) {
     this.pings.push(p);
     if (this.pings.length > WorldAgent.PING_RING) this.pings.splice(0, this.pings.length - WorldAgent.PING_RING);
     this.onPing?.(p);
@@ -4603,11 +4592,6 @@ export class WorldAgent {
   async missedSince(seq: number, limit = 120) {
     const { entries } = await this.history({ after: seq, limit, verbs: ["say"] });
     return entries.map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq }));
-  }
-  /** Private, point-to-point, never appended to the world log. */
-  whisper(to: string, text: string) {
-    if (!this.joined || this.ws?.readyState !== 1) return;
-    this.ws.send(JSON.stringify({ type: "whisper", to, text }));
   }
 
   // ---- perception (text tier) ----
