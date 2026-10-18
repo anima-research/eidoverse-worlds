@@ -18,7 +18,9 @@
 // verified (the importer's checks, the result opened as the server opens it, and, where the old server left a
 // snapshot.json, the snapshot oracle's agreement with the old engine), and only then swapped in under the original name,
 // with the old log kept beside it as log.original.jsonl (snapshot.json → snapshot.original.json): renamed, never
-// rewritten. On any failure the original is left as it was, the temporary directory is removed, and it says why.
+// rewritten. On any failure the original is left as it was, the temporary directory is removed, and it says why. If the
+// process itself dies mid-swap (no rollback runs), the next `translate <world>` sees the half-swapped directory and finishes
+// the swap (renames and moves only), saying so.
 import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
@@ -93,7 +95,8 @@ function translateInPlace(name: string, founderKey: string | undefined) {
   for (const f of fs.readdirSync(T)) if (f !== "world.jsonl") steps.push([path.join(T, f), path.join(D, f)]);
   const done: [string, string][] = [];
   const fault = Number(process.env.WORLD_TS_FAULT_AT_STEP ?? NaN);   // tests only: fail as if step k's rename had (tools/protocol/inplace-check.ts)
-  try { for (const [a, b] of steps) { if (done.length === fault) throw new Error(`(injected) step ${done.length} failed`); if (fs.existsSync(b)) throw new Error(`${b} appeared during the swap`); fs.renameSync(a, b); done.push([a, b]); } }
+  const death = Number(process.env.WORLD_TS_DIE_AT_STEP ?? NaN);      // tests only: the process dies after k renames, no rollback (IP13)
+  try { for (const [a, b] of steps) { if (done.length === death) process.exit(9); if (done.length === fault) throw new Error(`(injected) step ${done.length} failed`); if (fs.existsSync(b)) throw new Error(`${b} appeared during the swap`); fs.renameSync(a, b); done.push([a, b]); } }
   catch (x) {
     const stuck: string[] = [];
     for (const [a, b] of done.reverse()) { try { fs.renameSync(b, a); } catch (y) { stuck.push(`${b} (should be ${a}: ${(y as Error).message})`); } }
@@ -107,6 +110,41 @@ function translateInPlace(name: string, founderKey: string | undefined) {
   console.log(`in place: "${name}" keeps its name, so links to it keep working. The old log is kept beside it as ${ORIGINAL.log} — the same file, renamed, never written `
     + `(${after.size} bytes, mtime unchanged: ${before.mtimeMs === after.mtimeMs && before.size === after.size && before.ino === after.ino})`
     + `${fs.existsSync(path.join(D, ORIGINAL.snapshot)) ? `, and the old snapshot as ${ORIGINAL.snapshot}` : ""}; ${r!.poses} remembered place(s) carried over by identity`);
+}
+
+/** An in-place swap the process didn't live to finish (review r11 L4): world.jsonl landed (the directory is a world) but
+ *  the old files weren't all renamed beside it, or the translated files weren't all moved in. Seen by what's left: the
+ *  old log.jsonl still beside world.jsonl, or the temporary sibling (`.translating-<name>-*`) whose world.jsonl has gone.
+ *  Null when the directory is a whole translated world (or never was a swap). */
+function interruptedSwap(name: string): { D: string; temps: string[]; oldLog: boolean } | null {
+  const D = path.join(WORLDS_DIR, name);
+  if (!fs.existsSync(path.join(D, "world.jsonl"))) return null;
+  const temps = fs.readdirSync(WORLDS_DIR).filter((f) => f.startsWith(`.translating-${name}-`) && /^[0-9a-f]{8}$/.test(f.slice(`.translating-${name}-`.length))
+    && !fs.existsSync(path.join(WORLDS_DIR, f, "world.jsonl"))).map((f) => path.join(WORLDS_DIR, f));
+  const oldLog = fs.existsSync(path.join(D, "log.jsonl")) && !fs.existsSync(path.join(D, ORIGINAL.log));
+  return temps.length || oldLog ? { D, temps, oldLog } : null;
+}
+/** Finish an interrupted swap, in the swap's own order: the old files renamed beside the world (log.jsonl →
+ *  log.original.jsonl, snapshot.json → snapshot.original.json, poses.json → poses.original.json: renames, never writes),
+ *  then the rest of the translated files moved in from the temporary sibling, which is then removed. Nothing is deleted
+ *  or overwritten: a name already taken on both sides is left where it is and said. */
+function finishSwap(name: string, at: { D: string; temps: string[]; oldLog: boolean }) {
+  const { D, temps } = at;
+  if (temps.length > 1) die(`the in-place translation of "${name}" was interrupted, and more than one temporary directory is left (${temps.join(", ")}): `
+    + `move the translated files from the one whose files match ${D}/world.jsonl by hand, and remove the others. log.jsonl, if it's still in ${D}, is the untouched original: rename it to ${ORIGINAL.log}.`);
+  const did: string[] = [], stuck: string[] = [];
+  const mv = (a: string, b: string) => { if (!fs.existsSync(a)) return; if (fs.existsSync(b)) { stuck.push(`${a} (${b} is already there)`); return; } fs.renameSync(a, b); did.push(`${path.relative(WORLDS_DIR, a)} → ${path.relative(WORLDS_DIR, b)}`); };
+  mv(path.join(D, "log.jsonl"), path.join(D, ORIGINAL.log));
+  // the old snapshot and poses go only while the swap is visibly unfinished (a temporary directory left): once it's done,
+  // a poses.json beside the world is the world's own
+  if (temps.length || at.oldLog) { mv(path.join(D, "snapshot.json"), path.join(D, ORIGINAL.snapshot));
+    if (fs.existsSync(path.join(D, "poses.json")) && !fs.existsSync(path.join(D, ORIGINAL.poses)) && (!temps.length || fs.existsSync(path.join(temps[0], "poses.json")))) mv(path.join(D, "poses.json"), path.join(D, ORIGINAL.poses)); }
+  for (const T of temps) { for (const f of fs.readdirSync(T)) mv(path.join(T, f), path.join(D, f));
+    if (!fs.readdirSync(T).length) { fs.rmSync(T, { recursive: true, force: true }); did.push(`removed ${path.relative(WORLDS_DIR, T)}`); } }
+  if (stuck.length) die(`the in-place translation of "${name}" was interrupted; finishing it moved ${did.length ? did.join(", ") : "nothing"}, but these are in the way; move them by hand:\n  ${stuck.join("\n  ")}\n`
+    + `${ORIGINAL.log} (or log.jsonl) is the untouched original either way.`);
+  console.log(`the in-place translation of "${name}" was interrupted after world.jsonl landed (the process stopped mid-swap); finished it now: ${did.join(", ") || "nothing left to move"}. `
+    + `${ORIGINAL.log} is the untouched original log, renamed, never written. "${name}" is a translated world.`);
 }
 
 if (cmd === "found") {
@@ -133,6 +171,7 @@ if (cmd === "found") {
     + "       translate <old world> <new name> (--founder-key <ed25519:…> | --no-founder-key)   (into a new name; the old directory is left as it was)";
   if (!words.length || words.length > 2 || !words.every((w) => NAME.test(w))) die(USAGE);
   const [src, dest] = words;
+  { const half = isWorldSaved(src) ? interruptedSwap(src) : null; if (half) { finishSwap(src, half); process.exit(0); } }
   if (isWorldSaved(src)) die(fs.existsSync(path.join(WORLDS_DIR, src, ORIGINAL.log))
     ? `"${src}" is already translated: it's a world in this protocol, and its original old log is kept beside it as ${ORIGINAL.log}. Nothing was changed.`
     : `"${src}" is already a world in this protocol: there's nothing to translate. Nothing was changed.`);

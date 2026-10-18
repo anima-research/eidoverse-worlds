@@ -19,6 +19,8 @@
 //   IP9  the world's own inventions are namespaced by its NAME, never by the temporary directory's
 //   IP10 a name with no old log refuses with that reason
 //   IP12 the snapshot oracle re-runs on a translated world's kept originals (log.original.jsonl, snapshot.original.json)
+//   IP13 the process dies between swap steps (WORLD_TS_DIE_AT_STEP, no rollback): a re-run sees the half-swapped
+//        directory and finishes the swap, saying so (review r11 L4)
 //   IP11 a snapshot.json the oracle can't compare (a fold of part of the log) doesn't block the translation: it says,
 //        in its output, that the snapshot was NOT compared and why, and keeps it as snapshot.original.json
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/inplace-check.ts
@@ -182,6 +184,24 @@ const waiting = oldWorld("waiting");
   const fp = fingerprint(d); const r = tool(["translate", "partial", "--no-founder-key"]);
   ok(r.code === 0 && /snapshot\.json NOT compared: snapshot\.seq \d+ ≠ the log's last seq/.test(r.out) && isWorldDir(d) && same(fingerprint(d)["snapshot.original.json"], fp["snapshot.json"]),
     "IP11 a partial snapshot.json is reported as NOT compared (with the oracle's reason), and kept as snapshot.original.json", r.out.slice(-700)); }
+
+// ================= IP13: the process dies between swap steps; a re-run finishes the swap (review r11 L4) =================
+// WORLD_TS_DIE_AT_STEP=k (tests only) exits the process after k renames, with no rollback: a death, not a thrown error
+// (IP6 covers those). k=1: world.jsonl has landed (the directory is a world) and log.jsonl is still beside it; k=3: the
+// old snapshot is renamed and poses.json is not. The re-run notices (log.jsonl beside world.jsonl, or the temporary
+// directory still there), finishes the renames and moves the rest of the translated files in, and says so; the original
+// log is the untouched file throughout, and a third run says it's already translated
+for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); const fp = fingerprint(d);
+  const died = tool(["translate", name, "--no-founder-key"], { WORLD_TS_DIE_AT_STEP: String(k) }); const mid = fingerprint(d); const midTemps = temps().filter((t) => t.includes(name)).length;
+  const r = tool(["translate", name, "--no-founder-key"]); const after = fingerprint(d);
+  const again = tool(["translate", name, "--no-founder-key"]);
+  const info = tool(["info", name]);
+  ok(died.code !== 0 && !!mid["world.jsonl"] && (k === 1 ? !!mid["log.jsonl"] : !!mid["snapshot.original.json"] && !!mid["poses.json"] && !mid["poses.original.json"]) && midTemps === 1,
+    `IP13 (k=${k}) a death after ${k} rename(s) leaves the half-swapped directory (world.jsonl landed, the rest not) and its temporary directory`, { code: died.code, mid: Object.keys(mid), midTemps });
+  ok(r.code === 0 && /interrupted/.test(r.out) && /finished/.test(r.out) && same(after["log.original.jsonl"], fp["log.jsonl"]) && same(after["snapshot.original.json"], fp["snapshot.json"]) && same(after["poses.original.json"], fp["poses.json"])
+    && same(Object.keys(after).sort(), ["log.original.jsonl", "poses.json", "poses.original.json", "snapshot.original.json", "world.jsonl"]) && !temps().some((t) => t.includes(name)) && after["world.jsonl"][0] === mid["world.jsonl"][0],
+    `IP13 (k=${k}) the re-run notices the interrupted swap and finishes it: the originals renamed beside it (the same files), the translated files moved in, no temporary directory left, and it says so`, { code: r.code, out: r.out.slice(-600), keys: Object.keys(after) });
+  ok(again.code !== 0 && /already translated/.test(again.out) && info.code === 0 && /"status": "ok"/.test(info.out), `IP13 (k=${k}) …then it's a translated world like any other (a third run says so; info opens it)`, { again: again.out.slice(-300), info: info.out.slice(-300) }); }
 
 console.log(`inplace: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
