@@ -51,7 +51,9 @@ mock.module(lib("capture.js"), () => ({
 mock.module(lib("fp_view.js"), () => ({
   composeFirstPerson: (opts: Record<string, unknown>) => { composed.push(opts); return "frame"; },
 }));
-const { snapshot } = await import("../client/lib/net_snap.js");
+// (ported 10-17: the renderer leg is net_capture.js here, and its export is capture; it also reads world.js's entities, for `at`)
+mock.module(lib("world.js"), () => ({ entities: new Map() }));
+const { capture: snapshot } = await import("../client/lib/net_capture.js");
 
 const fwd = V(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y));
 const at = (up: number, ahead: number) => root.position.clone().add(V(0, up, 0)).addScaledVector(fwd, ahead);
