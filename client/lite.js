@@ -27,7 +27,7 @@ import { CONFIG, bus, report, setToken } from './lib/base.js';
 import { makeFrame } from './lib/windows.js';
 import { initChat, logChat } from './lib/chat.js';
 import {
-  net, connect, initIdentity, wireNet, sendWhisper, sendTyping, sendPoseExact,
+  net, connect, initIdentity, wireNet, sendTyping, sendPoseExact,
   loginUrl,
 } from './lib/net.js';
 import { initBoot, markPhase, finishBoot } from './lib/boot.js';
@@ -239,9 +239,9 @@ async function main() {
     // The SAME avatar the inline early socket joined with, published by index.html before
     // any of its guards. net.js adopts that socket only when the join it would send
     // matches byte for byte; asking for '' here missed, so the early socket was dropped
-    // and a second one opened - the server saw arrive -> leave -> arrive, and a held
-    // whisper delivered to the first socket could be marked delivered and then thrown
-    // away with it (#188 B1). We cannot DRAW the avatar; that was never what this
+    // and a second one opened - the server saw arrive -> leave -> arrive, and anything
+    // delivered to the first socket could be thrown away with it (#188 B1; it was a held
+    // whisper then, before whisper was removed). We cannot DRAW the avatar; that was never what this
     // answers. Everyone else draws our body, and it should be the right one.
     myAvatarPath: () => globalThis.__ewWantAvatar ?? 'claude',
     // null, both of them, and deliberately: sendPose() SAMPLES a live body and returns
@@ -259,23 +259,21 @@ async function main() {
   //
   // This used to run the other way round and it lost messages. The early socket is
   // adopted inside connect(), which then drains what raced ahead of us - the join
-  // snapshot, and any whisper the server held for us while we were away. The server
-  // deletes its pending copy the moment it sends one. So a chat window that did not
-  // exist yet meant logWhisper() threw inside the drain, connect() reported it and
-  // carried on, and a private message that was successfully delivered was gone for
-  // good (#188 round two). main.js has always had this order - initChat at module
+  // snapshot and the first live entries. A chat window that did not exist yet meant
+  // the drain threw, connect() reported it and carried on, and a message that was
+  // successfully delivered was gone for good (#188 round two: it was a held whisper
+  // then, before whisper was removed). main.js has always had this order - initChat at module
   // scope, connect() later - and the reason is exactly this.
   //
   // The rule, stated so it is not re-learned: anything that can receive buffered
   // arrival traffic is installed here, above the connect, with no await between.
   initChat({
     send: (text) => say(text),
-    whisper: sendWhisper,
     typing: (to) => sendTyping(to),   // no local avatar to show typing on
     people,
   });
   initCauses();        // live entries -> chat lines (says, builds, grants)
-  initRecentChat();    // the room's history, replayed out of the join snapshot
+  initRecentChat();    // the join snapshot's chat window (empty since speech became arrival-only, R 10-18)
 
   // Chrome. None of it consumes socket traffic, but it costs nothing to have it
   // standing before the first message lands either.

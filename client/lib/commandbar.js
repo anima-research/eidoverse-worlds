@@ -25,7 +25,7 @@ let sel = 0;
 let best = -1;        // the default highlight for this query (the best action row); -1: nothing to do
 let moved = false;    // the person moved the highlight themselves: Enter runs it
 let prevFocus = null; // what had focus when it opened: closing hands it back
-let deps = { submit: () => {}, whisperTarget: () => null };
+let deps = { submit: () => {} };
 
 const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -75,8 +75,8 @@ function iconHtml(icon) {
   return '<span class="ln-dot"></span>';
 }
 
-// a command's help line "/w <name> <message> — whisper, privately" reads as
-// title "whisper, privately", detail "<name> <message>", badge "/w"
+// a command's help line "/anim <name> — play one of the action bar's anims once" reads as
+// title "play one of …", detail "<name>", badge "/anim"
 function commandRow(a) {
   const help = String(a.detail ?? '');
   const m = help.match(/^\/\S+\s*(.*?)\s+—\s+(.*)$/);
@@ -98,8 +98,7 @@ function build(q) {
   const results = list(q, { limit: q ? 30 : 200 });
   const groups = grouped(results).map(({ group, rows: rs }) => ({ group, rows: rs.map(toRow) }));
   if (!q) return groups;
-  const to = deps.whisperTarget?.();
-  const say = { group: null, rows: [{ kind: 'say', title: to ? `whisper “${q}” to ${to}` : `say “${q}” in chat`, icon: 'chat-circle' }] };
+  const say = { group: null, rows: [{ kind: 'say', title: `say “${q}” in chat`, icon: 'chat-circle' }] };
   return [say, ...groups];   // speech first, always: Enter says it
 }
 function toRow({ action: a }) {
@@ -314,9 +313,9 @@ function paintPill() {
     + `<kbd class="lp-chord">${CHORD}</kbd>`;
 }
 
-export function initLantern({ submit, whisperTarget } = {}) {
+export function initLantern({ submit } = {}) {
   if (root) return;
-  deps = { submit: submit ?? deps.submit, whisperTarget: whisperTarget ?? deps.whisperTarget };
+  deps = { submit: submit ?? deps.submit };
 
   root = document.createElement('div');
   root.id = 'lantern'; root.className = 'panel'; root.hidden = true;

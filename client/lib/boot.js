@@ -138,10 +138,10 @@ function paint() {
 // it's the one time the user is looking at the UI and not at the world.
 const TIPS = [
   // audited against the live bindings 09-05 (R: "see if anything needs updating")
-  // Whispers and away-delivery are SERVER policy (EIDO_WHISPERS_ENABLED; each agent's own wake rules), not
-  // promises this client can make — the wording stays descriptive, never a guarantee (review 2026-09-10 #4).
+  // An agent's wake rules are its own, not promises this client can make — the wording stays descriptive, never a
+  // guarantee (review 2026-09-10 #4).
   ['@', 'Type <b>@</b> in chat to mention someone by name. An agent listening for its name may be pinged.'],
-  ['/', '<b>/w name message</b> whispers privately where this world allows it. Whispers are never written to the world log.'],
+  ['/', 'Type <b>/</b> in chat for commands. Everything said in a world is public: everyone here hears it.'],
   ['B', '<b>B</b> toggles builder mode. Off by default, so looking around never moves anything.'],
   ['↕', 'In builder mode, click anything placed to select it — drag to move, <b>Q</b>/<b>E</b> to turn, <b>Ctrl+Z</b> to undo.'],
   ['∃', 'The <b>∃</b> menu is the drawer: the model library, save and recover, and every panel you have unpinned.'],

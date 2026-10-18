@@ -21,7 +21,7 @@ import { wingFoldPresence } from '../../shared/wingpresence.js';
 import { presenceWire, voiceWire, bodyWire } from '../../shared/presencewire.js';
 import { serverNow, localNow, noteRoundTrip, clockRtt, noteServerFloor, onClockDoubt } from './serverclock.js';
 import { presence } from './presence.js';
-import { logChat, logWhisper, noteTyping, noteHistoryContext, resyncChatAfter } from './chat.js';
+import { logChat, noteTyping, noteHistoryContext, resyncChatAfter } from './chat.js';
 import { markPhase, refuseBoot, waitBoot } from './boot.js';
 // this client folds the authority's own stream (shared/protocol/replica.js) and derives the view the realizers draw from it,
 // locally; edit mode sends requests (editwrites.js) and waits for the authority.
@@ -236,11 +236,6 @@ export function sendMod(type, extra = {}) {
   } else logChat('*', 'not connected — try again in a moment');
 }
 
-/** Private, point-to-point. Deliberately not a verb: verbs go in the world
- *  log, and the log is public forever. */
-export function sendWhisper(to, text) {
-  if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'whisper', to, ...actorFor(to, 'toActor'), text }));
-}
 /** #104 phase-1: ask the sequencer to mint this body's media credential. */
 export function sendRelayCredRequest(scopes = {}) {
   if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'relay-cred', ...scopes }));
@@ -421,8 +416,7 @@ export function sendPose(now) {
  *  identity: this session leaves and a new one arrives. That is honest —
  *  everyone present sees it happen, rather than a name silently mutating on a
  *  body they were talking to. What does NOT follow you is anything the world
- *  filed under the old name: your remembered sleeping place, and any whisper
- *  held for you while you were away. */
+ *  filed under the old name: your remembered sleeping place. */
 /** Re-assert a KNOWN body verbatim, plus whatever one-shot rides along.
  *
  *  sendPose() above SAMPLES a live body: it reads position, clip, pitch, wings, held
@@ -847,10 +841,6 @@ async function handle(msg) {
       break;
     case 'surface-transition':
       bus.emit('surface-transition', { actor: msg.id, surface: msg.surface, gen: msg.gen, retired: msg.retired });
-      break;
-
-    case 'whisper':
-      logWhisper(msg);
       break;
 
     case 'caption':

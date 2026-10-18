@@ -52,7 +52,7 @@ import { capture, setSnapReadiness } from './lib/net_capture.js';
 import { setWaveClock } from './lib/water.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
-  replica, net, connect, initIdentity, loginUrl, wireNet, sendRequest, sendPose, sendWhisper, sendTyping,
+  replica, net, connect, initIdentity, loginUrl, wireNet, sendRequest, sendPose, sendTyping,
   setPoseOverride, sendPuppet, sendAnim,
 } from './lib/net.js';
 import { mergePose } from '../shared/humanoid.js';
@@ -93,7 +93,7 @@ fetch('/version').then((r) => r.json())
   .then(({ sha, commitTime, dirty, startedAt }) => console.log(`[eidoverse] server build ${sha}${dirty === true ? ' (DIRTY TREE)' : dirty === false ? '' : ' (dirty: unknown)'} (code from ${commitTime}), up since ${startedAt}`))
   .catch(() => console.log('[eidoverse] server build unknown (/version unavailable)'));
 import { dragSim, updateBodyDrag, dragState } from './lib/bodydrag.js';
-import { initChat, logChat, chatXRPanel, openConvo } from './lib/chat.js';
+import { initChat, logChat, chatXRPanel, mentionPerson } from './lib/chat.js';
 import { initPlates, updatePlates } from './lib/platecard.js';
 import { bodyEngine, setBodyEngine, listBodyEngines } from './lib/bodysim.js';
 import { initThingPhysics, physicsApi, simShown } from './lib/thingphysics.js';
@@ -186,16 +186,15 @@ initBoot({ world: CONFIG.world, name: CONFIG.name });
 buildHelp();
 const chatApi = initChat({
   send: (text) => say(text),
-  whisper: sendWhisper,
   typing: (to) => { sendTyping(to); getMe()?.setTyping(); },
   people,
   // the person menu and badges (research roles S6; client/lib/people.js)
   person: { menuAt: personMenuAt, sheetFor: personSheet, stripFor: personStrip, badgeHtml: personBadge, muted: (n) => personOf(n).muted, presenting: () => isPresenting() },
 });
-initPeople({ openConvo, presenting: () => isPresenting(), toast, openModLog: (who) => openModeration({ tab: 'log', who }) });
+initPeople({ mentionPerson, presenting: () => isPresenting(), toast, openModLog: (who) => openModeration({ tab: 'log', who }) });
 initRolesPanels();
 // the lantern prompt (Ctrl/Cmd+K): actions from lib/actions.js, speech and /commands through chat's own submit
-initLantern({ submit: chatApi.submit, whisperTarget: chatApi.whisperTarget });
+initLantern({ submit: chatApi.submit });
 initActionBar();
 initXRKeyboard();   // C16: types into the last-focused text input; a quad in VR
 initXRAsk();        // the lock question and refusals, on a quad in VR (the centre card is DOM-only)
@@ -649,7 +648,7 @@ registerSystem('remotes', (dt, t, now) => updateRemotes(dt, now));
 registerSystem('gaze', (dt, t, now) => updateGaze(myState.pos, getMe(), CONFIG.name, now));
 // the hover card beside a nameplate (desktop pointer, touch tap, VR laser) — after gaze, before render
 initPlates({ camera, canvas, scene, remotes, myPos: () => (getMe() ? myState.pos : null), presenting: () => isPresenting(),
-  openConvo, colorFor, personMenu: (n, x, y) => (isPhone() ? personSheet(n) : personMenuAt(n, x, y)), personStrip });
+  mentionPerson, colorFor, personMenu: (n, x, y) => (isPhone() ? personSheet(n) : personMenuAt(n, x, y)), personStrip });
 registerSystem('plates', (dt, t, now) => updatePlates(now));
 registerSystem('build', () => updateBuild());
 registerSystem('promote-tail', () => drainPromoteTail());        // §16.2.C: promote

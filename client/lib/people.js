@@ -1,7 +1,7 @@
 // people.js — who someone is here and what you may do to them (research roles 10-06, S6; PLAN decisions 10-06).
 //
 // ONE function decides the menu: personActions(me, them) in shared/protocol/roles.js (pure, tested in tools/protocol/roles-check.ts
-// P1–P3). It shows only what you may do to that one person, so a visitor sees "Message" and nothing else, and when rank
+// P1–P3). It shows only what you may do to that one person, so a visitor sees "Mention" and nothing else, and when rank
 // is the only reason nothing more shows, one dim line says so. This file draws it on three surfaces, and the authority
 // decides every act again (the menu is a courtesy, never the gate):
 //   desktop  right-click a row in Chat › People, or the ⋯ on a nameplate card: the house context menu; an act with
@@ -20,7 +20,7 @@ import { makeConsentInbox } from './consentinbox.js';
 import { CLASSES, CLASS_WORDS, cell, setCell } from './consent.js';
 import { PRESETS as CONSENT_PRESETS, DEFAULT_PRESET } from '../../shared/protocol/consent.js';
 
-let deps = { openConvo: () => {}, presenting: () => false, openModLog: () => {}, toast: () => {} };
+let deps = { mentionPerson: () => {}, presenting: () => false, openModLog: () => {}, toast: () => {} };
 export function initPeople(d) { deps = { ...deps, ...d }; }
 
 // ---------------------------------------------------------------- asks waiting for me (PROTOCOL L6; R 10-14: wire `ask`)
@@ -53,7 +53,7 @@ export const myself = () => personOf(CONFIG.name);
 /** The items the menu shows for this person (pure: roles.js personActions). */
 export function menuFor(display) {
   const me = myself(), them = personOf(display);
-  if (!them.id && !them.me) return [{ id: 'message', label: 'Message' }];   // not known to the authority yet (an old client)
+  if (!them.id && !them.me) return [{ id: 'mention', label: 'Mention' }];   // not known to the authority yet (an old client)
   const items = R.personActions(me, them, { muted: them.muted, ghosted: false });
   if (them.me) return items;
   // an ask waiting from this person comes first: it has 20 s to live (consentinbox.js)
@@ -79,7 +79,7 @@ const PRESETS = {
 };
 const REASONS = ['spam', 'harassment', 'other'];
 const VERB = { warn: 'Warn', mute: 'Mute', kick: 'Kick', ghost: 'Ghost', ban: 'Ban' };
-const SAY = { warn: 'They see a notice they must dismiss.', mute: 'Nobody hears them on the chosen channels until it ends. They may still whisper to a moderator.',
+const SAY = { warn: 'They see a notice they must dismiss.', mute: 'Nobody hears them on the chosen channels until it ends.',
   kick: "They're removed now and can't come back until it ends.", ghost: "They stay, unseen: they can look and walk, but not act or talk.", ban: "They're removed and kept out until it ends." };
 
 async function run(verb, args, what) {
@@ -91,7 +91,7 @@ async function run(verb, args, what) {
 export function act(item, display, surface = 'card') {
   const them = personOf(display);
   switch (item) {
-    case 'message': return deps.openConvo(display);
+    case 'mention': return deps.mentionPerson(display);
     case 'history': return deps.openModLog(them.id);
     case 'unmute': return run('unmute', { who: them.id }, `unmute ${display}`);
     case 'unghost': return run('unghost', { who: them.id }, `bring ${display} back`);

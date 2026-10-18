@@ -214,9 +214,10 @@ export function guessSwitch(k) {
 // ---------------- what one person may do to another (the person menu; pure, unit-tested) ----------------
 /** The items of the person menu `me` sees for `them`. me/them: {id, rank, permissions: [..], role?, name?} (from
  *  effectiveOf); state: {muted?: bool, ghosted?: bool, banned?: bool}. Returns [{id, label}] in menu order, plus
- *  {id: 'rank-line', label, dim: true} when rank is the only reason nothing more shows. Never yourself beyond Message. */
+ *  {id: 'rank-line', label, dim: true} when rank is the only reason nothing more shows. Never yourself beyond Mention
+ *  (a public @name in chat; it was Message, a DM tab, until whisper left world chat, R 10-18). */
 export function personActions(me, them, state = {}) {
-  const out = [{ id: "message", label: "Message" }];
+  const out = [{ id: "mention", label: "Mention" }];
   if (!me || !them || me.id === them.id) return out;
   const has = (k) => (me.permissions ?? []).includes(k);
   const anyMod = MOD_POWERS.some(has) || has("grantRoles");

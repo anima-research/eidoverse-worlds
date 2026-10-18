@@ -1,7 +1,8 @@
 // Replaying the room you just walked into.
 //
 // The join snapshot carries `state.st.recentChat` - what was said before you arrived -
-// and someone has to put it on screen. In the full client that is social.js, alongside
+// and someone has to put it on screen. Since speech became arrival-only (R 10-18) the
+// server sends it empty; the loop stays so an older server's window still shows. In the full client that is social.js, alongside
 // applying roles. But social.js imports world.js for those, and world.js
 // is the engine (core, materials, colliders, terrain), so a renderer-free client could
 // not reach the one loop it actually needed and arrived into a room with no history

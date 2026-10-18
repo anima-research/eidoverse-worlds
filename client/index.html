@@ -642,11 +642,6 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .ac-row.on .ac-l { color: var(--accent); }
 .ac-row .ac-h { color: var(--dim); font-size: var(--fs-xs); text-align: right; overflow: hidden; }
 
-.chat-log .line.whisper { background: rgba(160, 140, 220, .10); border-left: 2px solid #a08cdc;
-  margin-left: -10px; padding-left: 8px; }
-.chat-log .line.whisper .who { color: #c4b5f0; }
-.chat-log .line.whisper .who::before { content: '⤷ '; }
-.chat-log .line.whisper.me .who::before { content: '⤶ '; }
 .chat-tabs button.has-unread { color: var(--fg); font-weight: 600; }
 .chat-tabs button.has-x {
   /* A DM TAB IS SIZED BY ITS NAME, not by an equal share. `flex: 1 1 0` gave
@@ -2497,7 +2492,7 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
 #platecard .pc-more { padding: 4px 10px; font-weight: 700; letter-spacing: .1em; }
 #platecard .pm-strip { margin: 4px 0 0; }
 #platecard[data-xr] .pc-btns { display: flex; }
-#platecard[data-xr] .pc-btns button[data-act="dm"] { display: none; }
+#platecard[data-xr] .pc-btns button[data-act="mention"] { display: none; }
 .rp-h { margin: 10px 0 4px; font-size: var(--fs-xs); color: var(--dim); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
 .rp-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--edge); }
 .rp-main { min-width: 0; overflow-wrap: anywhere; font-size: var(--fs-sm); }

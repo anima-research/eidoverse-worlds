@@ -12,7 +12,7 @@
 // THE CARD: rest the pointer on a nameplate (or the head under it) for HOVER_MS (dwell.js: one dwell for every
 // "rest on it for a beat" in the client) and a small card opens beside the
 // plate — name, presence, mic and hearing in words, distance / VR / a declared word, and the one per-person action the people
-// column already offers (message → the DM tab, chat.js openConvo). It is DOM, projected to the plate each frame:
+// column already offers (mention → `@name ` in the chat box, chat.js mentionPerson). It is DOM, projected to the plate each frame:
 // crisp text at any distance, the house tokens and buttons for free, focusable, and it follows the plate while open.
 // (A sprite would need its own text rendering, its own hit-testing for the button and a repaint per state change.)
 // On a touch screen a TAP on a plate opens the same card; a tap elsewhere closes it. Esc closes it and goes no
@@ -23,7 +23,7 @@
 // a quad by the vendored HTMLMesh, the way domquad.js puts the real frames in the headset (one set of panels to
 // maintain), with the panels' colour handling (prepareQuadMaterial). It floats beside the plate at the plate's own
 // depth, upright, facing you, sized to a constant angle — at any distance it reads as a panel does at arm's length.
-// The "message" button is left out in VR: it opens the DM tab, a desktop surface (index.html #platecard[data-xr]).
+// The "mention" button is left out in VR: it types into the desktop chat box (index.html #platecard[data-xr]).
 // The trigger on a plate does nothing new.
 import * as THREE from 'three';
 import { claimEscape } from './windows.js';
@@ -45,7 +45,7 @@ const XR_RAD_PER_PX = 0.002, XR_RASTER = 2.5, XR_GAP_PX = 10;
 // stingy far away, where tremor is angular — 0.01 rad is that same 3 cm at 3 m. Staying ON a plate once there is the
 // pointer's stickiness, measured from the last point the laser had on it (this slack included), not stacked on top.
 
-let d = null;                      // injected: { camera, canvas, scene, remotes, myPos, presenting, openConvo, colorFor }
+let d = null;                      // injected: { camera, canvas, scene, remotes, myPos, presenting, mentionPerson, colorFor }
 let card = null, cardFor = null, openedBy = null, sig = '';
 let ptr = null;                    // { x, y } in client px while a mouse is over the canvas, else null
 let hoverId = null, hoverSince = 0, leftAt = 0;
@@ -66,7 +66,7 @@ export function initPlates(deps) {
   card.addEventListener('click', (e) => {
     const b = e.target.closest?.('button[data-act]');
     if (!b || !cardFor) return;
-    if (b.dataset.act === 'dm') { const who = cardFor; close(); d.openConvo?.(who); }
+    if (b.dataset.act === 'mention') { const who = cardFor; close(); d.mentionPerson?.(who); }
     // ⋯ (research roles S6): the person menu. Desktop: the house context menu under the button; a phone: the bottom
     // sheet; VR: its rows open INSIDE the card (no popups in a headset), the strip people.js draws
     if (b.dataset.act === 'more') { const who = cardFor; e.stopPropagation();
@@ -146,7 +146,7 @@ function updatePlatesXR(now) {
 }
 function enterXR() {
   close(); vr = true; hoverId = null; dismissed = null; dismissOff = 0;
-  card.dataset.xr = '';                                         // VR styling: opaque, no blur or fade-in, no message button
+  card.dataset.xr = '';                                         // VR styling: opaque, no blur or fade-in, no mention button
   card.style.left = '-100000px'; card.style.top = '0px';        // laid out but off the desktop mirror (HTMLMesh measures, never hit-tests)
 }
 function leaveXR() {
@@ -321,7 +321,7 @@ function paint() {
     + (pres !== 'present' ? `<span class="pc-pres" data-presence="${esc(pres)}">${esc(pres)}</span>` : '')
     + (where ? `<span class="pc-where">${esc(where)}</span>` : '') + `</div>`
     + rows.join('')
-    + `<div class="pc-btns"><button type="button" data-act="dm">message</button>${d.personMenu ? '<button type="button" class="pc-more" data-act="more" aria-haspopup="menu" title="more">⋯</button>' : ''}</div>`;
+    + `<div class="pc-btns"><button type="button" data-act="mention">mention</button>${d.personMenu ? '<button type="button" class="pc-more" data-act="more" aria-haspopup="menu" title="more">⋯</button>' : ''}</div>`;
   card.setAttribute('aria-label', `${r.id} — voice and actions`);
 }
 
