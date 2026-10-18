@@ -22,17 +22,32 @@ export type OldWorld = {
   file: string;
   /** a world name that is free in this directory (nothing on disk under it): a pre-names world's re-translation goes there */
   suggestedName: string;
-  /** the operator's command, WORLDS_DIR filled in, the founder's key a placeholder */
+  /** the operator's first command (the dry run: the report and its hash, nothing written), WORLDS_DIR filled in, the founder's key a placeholder */
   command: string;
+  /** the second: the translation, bound to the approved report hash (and the founder's signature of it) */
+  approve: string;
   /** pre-names only: refounding it empty under the suggested name, when its original log is gone */
   refound?: string;
   /** what a visitor is told: plain words, no command line */
   visitor: string;
 };
 
+/** What a client that doesn't fold the log is told at join (server.ts, the 4005 refusal). A NATIVE session (the Unreal client,
+ *  signed in through native-login: HnSession.nativeWorld) is told the truth about itself: it hasn't been ported to this protocol
+ *  yet (review of PR #260, Mica, item 7); until 2026-10-18 it was told to "reload the page", which it has none of. Anyone else
+ *  (an old page, an old agent build) is told to reload or update. */
+export function noFoldRefusal(world: string, native: boolean): string {
+  return native
+    ? `"${world}" is a world of the current protocol (v4), and the Unreal client hasn't been ported to it yet: it doesn't fold the world's log, so it can't join. Nothing is wrong with your sign-in or with the world; a browser client can join it now, and the Unreal client will when its port lands.`
+    : `"${world}" needs a client that folds its log, and this one doesn't — reload the page for the current client, or update the agent`;
+}
+
 const NAME = /^[a-z0-9_-]{1,64}$/i;
 const TOOL = "bun tools/protocol/world.ts";
 export const FOUNDER_KEY_PLACEHOLDER = "<the founder's ed25519 key>";
+export const HASH_PLACEHOLDER = "<the report hash the dry run printed>";
+export const SIG_PLACEHOLDER = "<the founder's signature of it>";
+const APPROVAL = "The dry run writes nothing: it prints what the translation would do (what is dropped by design, what it would refuse) and the report's hash. The founder reads it and signs the approval on their own machine; then translate it, bound to that hash:";
 const KEPT_IN_PLACE = "It keeps its name, so links to it keep working; the original log is kept untouched beside it as log.original.jsonl.";
 const KEPT = "the original log is kept untouched; translate into a new name, then point links at it (or rename the directories)";
 
@@ -65,13 +80,15 @@ export function oldWorldAt(dir: string, name: string): OldWorld | null {
   if (isPreNamesDir(d)) {   // checked first: such a log may be named log.jsonl too (an older file name)
     const file = fs.readdirSync(d).filter((f) => f.endsWith(".jsonl")).sort((a, b) => (a === "world.jsonl" ? -1 : b === "world.jsonl" ? 1 : a.localeCompare(b)))[0]!;
     return { name, kind: "pre-names", file: path.join(d, file), suggestedName,
-      command: `${head} translate <its-original-old-world> ${suggestedName} --founder-key ${FOUNDER_KEY_PLACEHOLDER}`,
+      command: `${head} translate <its-original-old-world> ${suggestedName} --dry-run --founder-key ${FOUNDER_KEY_PLACEHOLDER}`,
+      approve: `${head} translate <its-original-old-world> ${suggestedName} --founder-key ${FOUNDER_KEY_PLACEHOLDER} --approved ${HASH_PLACEHOLDER} --approve-sig ${SIG_PLACEHOLDER}`,
       refound: `${head} found ${suggestedName} --owner <your id>`, visitor: visitorText(name, "pre-names") };
   }
   const file = path.join(d, "log.jsonl");
   if (!fs.existsSync(file)) return null;
   return { name, kind: "translatable", file, suggestedName,
-    command: `${head} translate ${name} --founder-key ${FOUNDER_KEY_PLACEHOLDER}`, visitor: visitorText(name, "translatable") };
+    command: `${head} translate ${name} --dry-run --founder-key ${FOUNDER_KEY_PLACEHOLDER}`,
+    approve: `${head} translate ${name} --founder-key ${FOUNDER_KEY_PLACEHOLDER} --approved ${HASH_PLACEHOLDER} --approve-sig ${SIG_PLACEHOLDER}`, visitor: visitorText(name, "translatable") };
 }
 
 /** Every old world in `dir`, by name. */
@@ -88,13 +105,17 @@ export function bootNotice(dir: string): string {
     const at = path.relative(dir, o.file);
     return o.kind === "translatable"
       ? [`[boot] old-format world "${o.name}" (${at}) is NOT being served.`,
-         `  It was saved by an older version of Eidoverse (a log.jsonl of the first protocol). Translate it once, in place:`,
+         `  It was saved by an older version of Eidoverse (a log.jsonl of the first protocol). Translate it once, in place. First the dry run:`,
          `    ${o.command}`,
+         `  ${APPROVAL}`,
+         `    ${o.approve}`,
          `  The founder makes that key on their own machine and you check it with \`${TOOL} owner-key <key> <signature>\`; --no-founder-key instead leaves the world's top governance tier empty for ever.`,
          `  ${KEPT_IN_PLACE}`].join("\n")
       : [`[boot] old-format world "${o.name}" (${at}) is NOT being served.`,
-         `  It was saved before this server's protocol names changed (2026-10-07), so it can't be translated as it stands. Re-translate it from its original old log (the directory its first-protocol log.jsonl is in) into a new world:`,
+         `  It was saved before this server's protocol names changed (2026-10-07), so it can't be translated as it stands. Re-translate it from its original old log (the directory its first-protocol log.jsonl is in) into a new world. First the dry run:`,
          `    ${o.command}`,
+         `  ${APPROVAL}`,
+         `    ${o.approve}`,
          `  or, if that original is gone, refound it empty:`,
          `    ${o.refound}`,
          `  ${KEPT}`].join("\n");

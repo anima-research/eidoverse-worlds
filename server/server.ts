@@ -26,7 +26,7 @@ import { summarizeGlb } from "./geometry.ts";
 // policy, not world mechanics.
 import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wireRights, authorityNow } from "./world.ts";
 import { isWorldSaved } from "./worldlog.ts";
-import { oldWorldAt, bootNotice } from "./oldworlds.ts";
+import { oldWorldAt, bootNotice, noFoldRefusal } from "./oldworlds.ts";
 import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
 import { requestHandler, actorOf as actorIdOf, gagged, guestSanctionByAddress } from "./requestwire.ts";
 import { withoutOnceAnim } from "../shared/onceanim.js";
@@ -988,7 +988,7 @@ const server = Bun.serve({
           // with the reason; 4005 = a refused join, which clients know not to redial
           // (an aux surface, e.g. a voice leg, carries presence and audio, never world state: it isn't asked to)
           if (w.log && msg.replica !== true && (c.surface ?? "world") === "world") {
-            ws.send(JSON.stringify({ type: "error", error: `"${w.name}" needs a client that folds its log, and this one doesn't — reload the page for the current client, or update the agent` }));
+            ws.send(JSON.stringify({ type: "error", error: noFoldRefusal(w.name, !!auth?.nativeWorld) }));
             ws.close(4005, "this client doesn't fold the log");
             clients.delete(ws);
             return;

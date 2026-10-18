@@ -61,12 +61,15 @@ const ot = found.find((o) => o.name === "oldtown"), pn = found.find((o) => o.nam
 ok(ot?.file === path.join(W, "oldtown", "log.jsonl") && pn?.file === path.join(W, "prenamed", "world.jsonl"), "O2 each names the file it found", [ot?.file, pn?.file]);
 ok(ot?.suggestedName === "oldtown-3" && pn?.suggestedName === "prenamed-2" && !fs.existsSync(path.join(W, ot.suggestedName)),
   "O3 the suggested new name collides with nothing on disk (oldtown-2 is taken, even though it is empty)", [ot?.suggestedName, pn?.suggestedName]);
-const CMD = /^WORLDS_DIR=(\S+) bun tools\/protocol\/world\.ts translate ([a-z0-9_-]{1,64}) --founder-key <[^>]+>$/i;
+const CMD = /^WORLDS_DIR=(\S+) bun tools\/protocol\/world\.ts translate ([a-z0-9_-]{1,64}) --dry-run --founder-key <[^>]+>$/i;
 const m = CMD.exec(ot?.command ?? "");
-ok(m && m[1] === W && m[2] === "oldtown", "O4 the command is world.ts's own usage, in place (R 10-17: links keep working), with this WORLDS_DIR filled in and the founder key a placeholder", ot?.command);
-const pm = /^WORLDS_DIR=(\S+) bun tools\/protocol\/world\.ts translate (<[a-z-]+>) ([a-z0-9_-]{1,64}) --founder-key <[^>]+>$/i.exec(pn?.command ?? "");
-ok(pm && pm[1] === W && pm[3] === "prenamed-2" && pm[2] !== "prenamed" && /found prenamed-2 --owner/.test(pn?.refound ?? ""),
-  "O4 a pre-names world's command re-translates from its ORIGINAL old log (not itself), and a refound is offered", [pn?.command, pn?.refound]);
+ok(m && m[1] === W && m[2] === "oldtown", "O4 the command is world.ts's own usage, in place (R 10-17: links keep working), the DRY RUN first (review of PR #260 item 6), with this WORLDS_DIR filled in and the founder key a placeholder", ot?.command);
+const APPROVE = /^WORLDS_DIR=(\S+) bun tools\/protocol\/world\.ts translate ([a-z0-9_-]{1,64}) --founder-key <[^>]+> --approved <[^>]+> --approve-sig <[^>]+>$/i;
+const am = APPROVE.exec(ot?.approve ?? "");
+ok(am && am[1] === W && am[2] === "oldtown", "O4 …and the second command translates bound to the approved report hash and the founder's signature of it (placeholders)", ot?.approve);
+const pm = /^WORLDS_DIR=(\S+) bun tools\/protocol\/world\.ts translate (<[a-z-]+>) ([a-z0-9_-]{1,64}) --dry-run --founder-key <[^>]+>$/i.exec(pn?.command ?? "");
+ok(pm && pm[1] === W && pm[3] === "prenamed-2" && pm[2] !== "prenamed" && /found prenamed-2 --owner/.test(pn?.refound ?? "") && /translate <[a-z-]+> prenamed-2 --founder-key <[^>]+> --approved </.test(pn?.approve ?? ""),
+  "O4 a pre-names world's command re-translates from its ORIGINAL old log (not itself), dry run then approved, and a refound is offered", [pn?.command, pn?.approve, pn?.refound]);
 ok(oldWorldAt(W, "garden") === null && oldWorldAt(W, "oldtown-2") === null && oldWorldAt(W, "nowhere") === null && oldWorldAt(W, "oldtown")?.kind === "translatable",
   "O4 oldWorldAt answers one name: null for a current world, an empty dir and a missing one");
 
@@ -75,7 +78,9 @@ ok(oldWorldAt(W, "garden") === null && oldWorldAt(W, "oldtown-2") === null && ol
   ok(blocks.length === 2 && /"oldtown"/.test(blocks[0] + blocks[1]) && /"prenamed"/.test(blocks[0] + blocks[1]), "O6 one block per old world", n);
   const b1 = blocks.find((b) => /"oldtown"/.test(b)) ?? "", b2 = blocks.find((b) => /"prenamed"/.test(b)) ?? "";
   ok(/NOT being served/.test(b1) && /NOT being served/.test(b2), "O6 each says it is NOT being served");
-  ok(b1.includes(`WORLDS_DIR=${W} bun tools/protocol/world.ts translate oldtown --founder-key <the founder's ed25519 key>`), "O6 the translatable block carries the exact command (in place)", b1);
+  ok(b1.includes(`WORLDS_DIR=${W} bun tools/protocol/world.ts translate oldtown --dry-run --founder-key <the founder's ed25519 key>`)
+    && b1.includes(`WORLDS_DIR=${W} bun tools/protocol/world.ts translate oldtown --founder-key <the founder's ed25519 key> --approved <the report hash the dry run printed> --approve-sig <the founder's signature of it>`)
+    && /dry run writes nothing/.test(b1) && b1.indexOf("--dry-run") < b1.indexOf("--approved"), "O6 the translatable block carries both exact commands (in place): the dry run, then the translation bound to its approved hash", b1);
   ok(/re-translate/i.test(b2) && /refound/.test(b2) && b2.includes(`found prenamed-2 --owner`), "O6 the pre-names block says re-translate from its original, or refound", b2);
   ok(b1.includes("It keeps its name, so links to it keep working; the original log is kept untouched beside it as log.original.jsonl.")
     && b2.includes("the original log is kept untouched; translate into a new name, then point links at it (or rename the directories)"), "O6 each carries its kept-untouched line (in place: the name and links are kept)", [b1, b2]);
@@ -94,9 +99,14 @@ ok(oldWorldAt(W, "garden") === null && oldWorldAt(W, "oldtown-2") === null && ol
 { const argv = ((ot?.command ?? "x=y bun").replace(/--founder-key <[^>]+>$/, "--no-founder-key")).split(" ");
   const env = Object.fromEntries([argv.shift()!.split("=")]);
   ok(argv[0] === "bun" && argv[1] === "tools/protocol/world.ts", "O5 the command runs world.ts", argv);
-  const r = Bun.spawnSync(argv, { cwd: ROOT, env: { ...process.env, ...env, OPT_DIR: OPT, TRUST_NAMES: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const before = fs.readdirSync(path.join(W, "oldtown")).sort();
+  const d = Bun.spawnSync(argv, { cwd: ROOT, env: { ...process.env, ...env, OPT_DIR: OPT, TRUST_NAMES: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const dout = d.stdout.toString() + d.stderr.toString(); const hash = /^report-hash ([0-9a-f]{64})$/m.exec(dout)?.[1];
+  ok(d.exitCode === 0 && !!hash && JSON.stringify(fs.readdirSync(path.join(W, "oldtown")).sort()) === JSON.stringify(before) && !isWorldDir(path.join(W, "oldtown")), "O5 the first command (the dry run) prints the report hash and writes nothing", { code: d.exitCode, hash, out: dout.slice(-300) });
+  const argv2 = ((ot?.approve ?? "x=y bun").replace(/--founder-key <[^>]+> --approved <[^>]+> --approve-sig <[^>]+>$/, `--no-founder-key --approved ${hash}`)).split(" "); argv2.shift();
+  const r = Bun.spawnSync(argv2, { cwd: ROOT, env: { ...process.env, ...env, OPT_DIR: OPT, TRUST_NAMES: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   const out = r.stdout.toString() + r.stderr.toString();
-  ok(r.exitCode === 0 && /0 divergences/.test(out), "O5 run as printed (--no-founder-key for the test), it translates", out.slice(-600));
+  ok(r.exitCode === 0 && /0 divergences/.test(out) && /approved by the operator/.test(out), "O5 the second, run as printed (--no-founder-key and the dry run's hash for the test), translates", out.slice(-600));
   ok(isWorldDir(path.join(W, "oldtown")) && !fs.existsSync(oldLog), "O5 …in place: oldtown itself is now a current world");
   ok(Buffer.compare(oldBytes, fs.readFileSync(path.join(W, "oldtown", "log.original.jsonl"))) === 0, "O5 …and the original log is kept beside it as log.original.jsonl, its bytes unchanged");
   ok(oldWorldAt(W, "oldtown") === null && oldWorldsIn(W).map((o) => o.name).join() === "prenamed", "O5 …and it is no longer an old world (only prenamed is left)", oldWorldsIn(W).map((o) => o.name)); }
