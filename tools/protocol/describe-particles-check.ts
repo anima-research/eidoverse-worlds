@@ -40,7 +40,21 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["oneShot stops emitting after a cycle", "shared/particlesim.js", "if (S.oneShot && sim.cycle > 0) sim.emitting = false;", "", ["G3"]],
   ["preprocess runs before the first frame", "shared/particlesim.js", "let todo = S.preprocess;", "let todo = 0;", ["G1"]],
   ["a sphere's y is its own extent", "shared/particlesim.js", "oy[i] = s * ex[1] * x;", "oy[i] = s * ex[0] * x;", ["G6"]],
-  ["the cone's spread is in degrees", "shared/particlesim.js", "const a1 = (rng() * 2 - 1) * V.spread * DEG,", "const a1 = (rng() * 2 - 1) * V.spread,", ["G5"]],
+  ["the cone's spread is in radians", "shared/particlesim.js", "const a1 = (rng() * 2 - 1) * V.spread,", "const a1 = (rng() * 2 - 1) * V.spread * DEG,", ["G5", "P1"]],
+  ["a particle's angle is in radians", "shared/particlesim.js", "c0[i] = ang;", "c0[i] = ang * DEG;", ["P2"]],
+  ["a ring's cone is in radians", "shared/particlesim.js", "Math.tan(Math.PI / 2 - SH.cone)", "Math.tan((90 - SH.cone) * DEG)", ["P2"]],
+  ["the validator holds spread to 0..π", "shared/particle_effects.js", "between(v.spread, [0, Math.PI], 'velocity.spread')", "between(v.spread, [0, 180], 'velocity.spread')", ["P1"]],
+  ["fire's spin is written in radians", "shared/particle_effects.js", "rotation: { angle: [0, TAU4], velocity: [-P.rotate, P.rotate] }", "rotation: { angle: [0, 360], velocity: [r4(-P.rotate * 180 / Math.PI), r4(P.rotate * 180 / Math.PI)] }", ["P1"]],
+  ["gravity is turned into the emitter's frame", "shared/particlesim.js", "const r = qRotate(qi, g);", "const r = [g[0], g[1], g[2]];", ["P4"]],
+  ["the sim takes the frame's gravity", "shared/particlesim.js", "gx = +v[0]; gy = +v[1]; gz = +v[2];", "", ["P4"]],
+  ["the renderer hands the sim its world gravity", "client/lib/particlefx.js", "sim.setGravity(localGravity(", "void (", ["P5"]],
+  ["the reader skips what it doesn't know", "shared/particle_effects.js", "  const doc = readable ? readableEffect(raw) : raw;", "  const doc = raw;", ["P6"]],
+  ["the client's fetch keeps a document it can partly read", "client/lib/emitters.js", "readableEffect(r.effect)", "(effectProblem(r.effect) ? null : r.effect)", ["P6"]],
+  ["the upload validator stays strict", "shared/particle_effects.js", "for (const k of Object.keys(e)) if (!MODULES.includes(k)) return", "for (const k of Object.keys(e)) if (false) return", ["P6"]],
+  ["reserved names say so", "shared/particle_effects.js", "if (RESERVED_EMITTER[k]) return reservedWhy(`${at}.${k}`, RESERVED_EMITTER[k]);", "", ["P7"]],
+  ["instance t0 is held", "shared/protocol/componentspec.js", 'reservedFields: ["t0"],', "", ["P7"]],
+  ["an angle param shows degrees", "shared/editschema.js", "...(angleParam(p) ? { deg: true } : {})", "...({})", ["P9"]],
+  ["an Essential's former address still reads as it", "shared/particle_effects.js", "...Object.entries(ESSENTIAL_FORMER_ADDRESSES)", "...[]", ["K3"]],
   ["not emitting: the living finish, none born", "shared/particlesim.js", "if (!sim.emitting) { active[i] = 0; continue; }", "", ["G7"]],
   ["the seed seeds each particle", "shared/particlesim.js", "pseed[i] = (base + 1 + i + Math.imul(sim.cycle, n)) >>> 0;", "pseed[i] = (1 + i + Math.imul(sim.cycle, n)) >>> 0;", ["G8"]],
   ["the older bag is refused in a write", "shared/particle_effects.js", "  if (legacy.length) return `${legacy.join", "  if (false) return `${legacy.join", ["X2"]],
@@ -111,13 +125,13 @@ function cast(s: any) {
 const thing = (s: any, id: string, components: any = {}) => s.call("olive", "create", { id, components: { transform: { pos: [0, 0, 0] }, ...components } });
 const lookOf = (s: any, id: string, who = "olive") => (s.call(who, "look", {}).things ?? []).find((t: any) => t.id === id) ?? null;
 const DOOR = { openable: { open: false, locked: true }, reactions: { open: { kind: "toggle", unless: "locked" }, knock: { kind: "set", component: "label", value: "knocked" } } };   // (was an impulse: a reserved kind since the shape audit 10-16)
-const doc = (over: any = {}) => ({ kind: "particle-effect", v: 1, name: "lantern glow", reads: "a warm glow", emitters: [{ spawn: { amount: 40, lifetime: 2 }, shape: { type: "sphere", radius: 0.1 }, velocity: { direction: [0, 1, 0], spread: 20, speed: [0.1, 0.3] }, forces: { gravity: [0, 0.2, 0] }, size: { base: 0.08 }, color: { base: 0xffcc66, ramp: [[0, 0xffffff, 0], [0.2, 0xffffff, 1], [1, 0xffffff, 0]] }, render: { blend: "add" } }],
+const doc = (over: any = {}) => ({ kind: "particle-effect", v: 1, name: "lantern glow", reads: "a warm glow", emitters: [{ spawn: { amount: 40, lifetime: 2 }, shape: { type: "sphere", radius: 0.1 }, velocity: { direction: [0, 1, 0], spread: 0.349, speed: [0.1, 0.3] }, forces: { gravity: [0, 0.2, 0] }, size: { base: 0.08 }, color: { base: 0xffcc66, ramp: [[0, 0xffffff, 0], [0.2, 0xffffff, 1], [1, 0xffffff, 0]] }, render: { blend: "add" } }],
   params: { glow: { type: "number", min: 0, max: 1, to: [{ path: "emitters.0.color.alpha" }] } }, ...over });
 const em = (over: any = {}) => PE.resolveEmitter({ spawn: { amount: 64, lifetime: 1 }, ...over });
 const run = (e: any, secs: number, seed = 1) => { const s = PS.makeSim(e, { seed }); for (let t = 0; t < secs; t += 1 / 60) s.step(1 / 60); return s; };
 const alive = (s: any) => [...Array(s.amount).keys()].filter((i) => s.alive[i]);
 
-type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean };
+type Case = { id: string; what: string; run: (s: any) => any /* may return a promise: awaited */; good: (o: any) => boolean };
 const cases: Case[] = [
   // ---------------- K: kept ----------------
   { id: "K1", what: "label is still a plain string name, and story is still the titled placard {title, text, marks?}", run(s) { cast(s); thing(s, "tree");
@@ -221,12 +235,12 @@ const cases: Case[] = [
   { id: "G4", what: "damping takes speed to zero and never past it (Godot: v -= damp·dt, clamped)", run() { const s = run(em({ velocity: { direction: [1, 0, 0], spread: 0, speed: [5, 5] }, forces: { gravity: [0, 0, 0], damping: [100, 100] }, spawn: { amount: 8, lifetime: 2 } }), 0.6);
       return { v: alive(s).map((i) => Math.hypot(s.vel[i * 3], s.vel[i * 3 + 1], s.vel[i * 3 + 2])) }; },
     good: (o) => o.v.length > 0 && o.v.every((x: number) => x === 0) },
-  { id: "G5", what: "gravity integrates (a dropped particle falls about ½gt²), and a cone's spread holds its directions within the angle", run() {
+  { id: "G5", what: "gravity integrates (a dropped particle falls about ½gt²), and a cone's spread (radians) holds its directions within the angle and reaches it", run() {
       const s = run(em({ spawn: { amount: 1, lifetime: 5 }, forces: { gravity: [0, -9.8, 0] } }), 1);
-      const c = run(em({ spawn: { amount: 200, lifetime: 5, explosiveness: 1 }, velocity: { direction: [0, 1, 0], spread: 10, speed: [1, 1] }, forces: { gravity: [0, 0, 0] } }), 0.05);
+      const c = run(em({ spawn: { amount: 200, lifetime: 5, explosiveness: 1 }, velocity: { direction: [0, 1, 0], spread: 10 * Math.PI / 180, speed: [1, 1] }, forces: { gravity: [0, 0, 0] } }), 0.05);
       const off = alive(c).map((i) => Math.acos(Math.min(1, c.vel[i * 3 + 1] / Math.hypot(c.vel[i * 3], c.vel[i * 3 + 1], c.vel[i * 3 + 2]))) * 180 / Math.PI);
       return { y: s.pos[1], max: Math.max(...off) }; },
-    good: (o) => o.y < -4.2 && o.y > -5.6 && o.max <= 14.2 },
+    good: (o) => o.y < -4.2 && o.y > -5.6 && o.max <= 14.2 && o.max >= 5 },   // the spread is radians (PROTOCOL §9.2, lead 10-17): 10° written as 0.1745
   { id: "G6", what: "shapes: a box's points are inside its extents, a sphere's inside its ellipsoid, a ring's at its radius", run() {
       const box = run(em({ spawn: { amount: 200, lifetime: 9, explosiveness: 1 }, shape: { type: "box", extents: [1, 0.1, 2] }, forces: { gravity: [0, 0, 0] } }), 0.02);
       const sph = run(em({ spawn: { amount: 200, lifetime: 9, explosiveness: 1 }, shape: { type: "sphere", extents: [2, 0.5, 2] }, forces: { gravity: [0, 0, 0] } }), 0.02);
@@ -243,13 +257,81 @@ const cases: Case[] = [
   { id: "G8", what: "the same seed is the same effect on two machines; another seed is another", run() { const e = em({ velocity: { spread: 180, speed: [0, 2] } });
       const a = run(e, 0.7, 11), b = run(e, 0.7, 11), c = run(e, 0.7, 12); return { same: a.pos.join() === b.pos.join(), diff: a.pos.join() !== c.pos.join() }; },
     good: (o) => o.same && o.diff },
+
+  // ---------------- P: the pins before the trial ships (lead 10-17, REVIEW-particles-shape-2026-10-17 §5) ----------------
+  { id: "P1", what: "angles in an effect document are radians (PROTOCOL §9.2): spread π/9 is taken at upload, 20 (a degree value) refused (0..π); a cone's default spread is π/4 and a ring's cone π/2; fire spins in rad and rad/s", run(s) { cast(s);
+      const e0 = doc().emitters[0]; const up = (sp: number) => show(s.call("bob", "upload", { effect: doc({ emitters: [{ ...e0, velocity: { ...e0.velocity, spread: sp } }] }) }));
+      const r = PE.resolveEmitter({ spawn: { amount: 1 } }); const rot = PE.ESSENTIALS.fire.emitters[0].rotation;
+      return { small: up(Math.PI / 9), deg: up(20), spread: r.velocity.spread, cone: r.shape.cone, rot }; },
+    good: (o) => o.small === "ok" && /^refused shape: .*spread is a number 0\.\.3\.14/.test(o.deg) && Math.abs(o.spread - Math.PI / 4) < 1e-12 && Math.abs(o.cone - Math.PI / 2) < 1e-12
+      && o.rot?.angle?.[0] === 0 && Math.abs(o.rot?.angle?.[1] - 2 * Math.PI) < 1e-3 && o.rot?.velocity?.[0] === -0.35 && o.rot?.velocity?.[1] === 0.35 },
+  { id: "P2", what: "the simulation reads those radians: rotation.angle 1 draws a quad turned 1 rad; a ring with cone π/4 (radius 1, height 1) narrows to nothing at its top, one with π/2 stays a cylinder", run() {
+      const s = run(em({ spawn: { amount: 4, lifetime: 9 }, rotation: { angle: [1, 1] }, forces: { gravity: [0, 0, 0] } }), 0.1);
+      const ring = (cone: number) => { const r = run(em({ spawn: { amount: 400, lifetime: 9, explosiveness: 1 }, shape: { type: "ring", radius: 1, inner: 0, height: 1, cone, axis: [0, 1, 0] }, forces: { gravity: [0, 0, 0] } }), 0.02);
+        return Math.max(...alive(r).filter((i) => r.pos[i * 3 + 1] > 0.4).map((i) => Math.hypot(r.pos[i * 3], r.pos[i * 3 + 2]))); };
+      return { ang: alive(s).map((i) => s.angle[i]), narrow: ring(Math.PI / 4), straight: ring(Math.PI / 2) }; },
+    good: (o) => o.ang.length > 0 && o.ang.every((a: number) => Math.abs(a - 1) < 1e-6) && o.narrow < 0.2 && o.straight > 0.9 },
+  { id: "P3", what: "every vector field of the effect document names its frame in the spec text (gravity: the world's; the rest: the emitter's own)", run() {
+      const src = fs.readFileSync(TREE + "shared/particle_effects.js", "utf8"); const head = src.slice(0, src.indexOf("import "));
+      return { g: /gravity[^\n]*WORLD frame/.test(head), local: ["direction", "axis", "extents", "min", "linear", "radial", "tangential"].filter((k) => !new RegExp(`${k}[^\\n]*(emitter's (own )?frame|emitter frame)`).test(head)), at: /FRAMES/.test(head) }; },
+    good: (o) => o.g && o.at && o.local.length === 0 },
+  { id: "P4", what: "gravity is WORLD-down (Unity's convention): an emitter turned 90° about z still drops its particle ½gt² straight down in world terms; its scale doesn't turn it; tangential stays about the document's gravity axis in the emitter's frame", run() {
+      const q = [0, 0, Math.SQRT1_2, Math.SQRT1_2]; const g = [0, -9.8, 0];
+      const lg = PS.localGravity?.(g, q, [2, 2, 2]);
+      const rot = (q: number[], v: number[]) => { const [x, y, z, w] = q; const [a, b, c] = v; const ix = w * a + y * c - z * b, iy = w * b + z * a - x * c, iz = w * c + x * b - y * a, iw = -x * a - y * b - z * c;
+        return [ix * w + iw * -x + iy * -z - iz * -y, iy * w + iw * -y + iz * -x - ix * -z, iz * w + iw * -z + ix * -y - iy * -x]; };
+      const s = PS.makeSim(em({ spawn: { amount: 1, lifetime: 5 }, forces: { gravity: g } }), { seed: 1 }); s.setGravity?.(PS.localGravity?.(g, q, [1, 1, 1]));
+      for (let t = 0; t < 1; t += 1 / 60) s.step(1 / 60);
+      const world = rot(q, [s.pos[0], s.pos[1], s.pos[2]]);
+      // weightless frame (setGravity [0,0,0]): tangential still acts, about the document's gravity axis
+      const t = PS.makeSim(em({ spawn: { amount: 50, lifetime: 5, explosiveness: 1 }, shape: { type: "sphere-surface", radius: 1 }, forces: { gravity: g, tangential: [5, 5] } }), { seed: 2 }); t.setGravity?.([0, 0, 0]);
+      for (let k = 0; k < 30; k++) t.step(1 / 60);
+      const speeds = alive(t).map((i) => Math.hypot(t.vel[i * 3], t.vel[i * 3 + 1], t.vel[i * 3 + 2]));
+      return { lg, back: lg && rot(q, lg), world, tang: Math.max(...speeds) }; },
+    good: (o) => Array.isArray(o.lg) && Math.abs(o.back[0]) < 1e-9 && Math.abs(o.back[1] + 9.8) < 1e-9 && Math.abs(o.back[2]) < 1e-9 && Math.abs(o.world[0]) < 0.05 && o.world[1] < -4.2 && o.world[1] > -5.6 && o.tang > 1 },
+  { id: "P5", what: "the renderer hands each emitter's sim its gravity in the emitter's frame every frame (the inverse of its world rotation, its world scale), before it steps", run() {
+      const src = fs.readFileSync(TREE + "client/lib/particlefx.js", "utf8"); const i = src.indexOf("sim.setGravity(localGravity("), j = src.indexOf("sim.step(dt)");
+      return { i, j }; },
+    good: (o) => o.i > 0 && o.j > o.i },
+  { id: "P6", what: "unknown-field policy: a document with an unknown optional field, module and param path draws its known parts on the client reader (and the client's fetch keeps it), and the authority's upload validator refuses it", run(s) { cast(s);
+      const e0 = doc().emitters[0];
+      const future = doc({ emitters: [{ ...e0, noise: { strength: 1 }, render: { ...e0.render, glow: 2 } }], params: { ...doc().params, wobble: { type: "number", to: [{ path: "emitters.0.noise.strength" }] } }, author: "someone later" });
+      const h = `sha256:${"c".repeat(64)}`; const r = PE.resolveParticles({ effect: h, params: { glow: 0.5 } }, { entityId: "x", lookup: (b: string) => (b === h ? future : null) });
+      const em0 = r.emitters?.[0]; const fetchSrc = fs.readFileSync(TREE + "client/lib/emitters.js", "utf8");
+      return { ok: r.ok, why: r.why, amount: em0?.spawn?.amount, blend: em0?.render?.blend, alpha: em0?.color?.alpha, noise: em0 && "noise" in em0, fetch: /readableEffect\(r\.effect\)/.test(fetchSrc), up: show(s.call("bob", "upload", { effect: future })) }; },
+    good: (o) => o.ok === true && o.amount === 40 && o.blend === "add" && o.alpha === 0.5 && !o.noise && o.fetch && /^refused shape/.test(o.up) },
+  { id: "P7", what: "reserved names (space, render.mode, render.trail, collision, sub, spawn.rate, spawn.bursts; instance t0) are refused at upload / write with \"reserved: not built yet\"", run(s) { cast(s); thing(s, "torch");
+      const e0 = doc().emitters[0];
+      const tries = { space: { ...e0, space: "world" }, collision: { ...e0, collision: {} }, sub: { ...e0, sub: {} }, "render.mode": { ...e0, render: { mode: "stretched" } }, "render.trail": { ...e0, render: { trail: {} } },
+        "spawn.rate": { ...e0, spawn: { ...e0.spawn, rate: 10 } }, "spawn.bursts": { ...e0, spawn: { ...e0.spawn, bursts: [] } } };
+      const out: any = {}; for (const [k, e] of Object.entries(tries)) { const r = s.call("bob", "upload", { effect: doc({ emitters: [e] }) }); out[k] = `${code(r)}|${r.refused?.reason}`; }
+      const t0 = s.call("olive", "set", { id: "torch", component: "particles", value: { effect: "fire", t0: 1800000000000 } });
+      out.t0 = `${code(t0)}|${t0.refused?.reason}`; return out; },
+    good: (o) => Object.values(o).every((x: any) => /^reserved\|/.test(x) && /reserved: not built yet/.test(x)) },
+  { id: "P8", what: "the spec, AGENTS and the effect file say in one honest sentence that the effect document format is trial and expected to grow (additions additive; a breaking change ships with a translator)", run() {
+      const t = (f: string) => fs.readFileSync(TREE + f, "utf8"); const re = /effect document format is (a )?trial and expected to grow/i;
+      return { pe: re.test(t("shared/particle_effects.js")), spec: re.test(t("spec/PROTOCOL.md")), agents: re.test(t("AGENTS.md")), tr: /translator/.test(t("spec/PROTOCOL.md").match(/effect document format is[^.]*\.[^.]*\./i)?.[0] ?? "") }; },
+    good: (o) => o.pe && o.spec && o.agents && o.tr },
+  { id: "P9", what: "the inspector shows an angle param in degrees and stores radians (as the transform rows do): a param bound straight to velocity.spread is a degree row; 30 typed stores π/6", run() {
+      return import(TREE + "shared/editschema.js").then((E: any) => {
+        const h = `sha256:${"d".repeat(64)}`; const d = doc({ params: { cone: { type: "number", min: 0, max: Math.PI, to: [{ path: "emitters.0.velocity.spread" }] }, glow: doc().params.glow } });
+        const live = { effects: (b: string) => (b === h ? d : null) }; const ent = { model: "lamp.glb", pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, particles: { effect: h } };
+        const rows = E.inspectSchema(ent, "l", live).groups.flatMap((g: any) => g.fields ?? []);
+        const row = rows.find((f: any) => f.k === "param|cone"), glow = rows.find((f: any) => f.k === "param|glow");
+        const r = E.editOps(ent, "l", { "particles.param|cone": "30" }, live); const v = r.ops.flatMap((o: any) => o.verb === "batch" ? o.args.ops : [o]).find((o: any) => o.args?.component === "particles")?.args?.value;
+        return { deg: row?.deg, glowDeg: glow?.deg, stored: v?.params?.cone, errors: r.errors }; }); },
+    good: (o) => o.deg === true && !o.glowDeg && Math.abs(o.stored - Math.PI / 6) < 1e-3 },
+  { id: "K3", what: "fire's former address (stored for a day before its angles became radians) still reads as fire; its pinned address is its new document's hash", run() {
+      const old = "eido:sha256/1ca045801dca39db0ff6da4b5d7270836fecbd8578a25692a3d180829013132c";
+      return { old: PE.essentialNameOf?.(old), now: PE.ESSENTIAL_ADDRESSES?.fire === `eido:sha256/${PE.effectAddress(PE.ESSENTIALS.fire).slice(7)}` }; },
+    good: (o) => o.old === "fire" && o.now },
 ];
 
 const only = opt("only")?.split(",") ?? null;
 let bad = 0;
 for (const c of cases) {
   if (only && !only.includes(c.id)) continue;
-  let o: any, g = false; try { o = c.run(session()); g = !!c.good(o); } catch (e) { o = { threw: String(e?.message ?? e).slice(0, 200) }; }
+  let o: any, g = false; try { o = await c.run(session()); g = !!c.good(o); } catch (e) { o = { threw: String(e?.message ?? e).slice(0, 200) }; }
   if (!g) bad++;
   console.log(`${g ? "ok  " : "FAIL"} ${c.id} ${c.what}${g ? "" : `\n     ${JSON.stringify(o).slice(0, 400)}`}`);
 }
