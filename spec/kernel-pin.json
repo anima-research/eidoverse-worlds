@@ -1,0 +1,129 @@
+{
+ "status": "trial-kernel",
+ "translator": "eidoverse/translate-v1@14",
+ "companions": null,
+ "kernel": {
+  "envelope": {
+   "status": "trial-kernel",
+   "fields": [
+    "actor",
+    "body",
+    "by",
+    "cause",
+    "for",
+    "grant",
+    "head",
+    "kind",
+    "sig",
+    "ts",
+    "verb",
+    "world"
+   ],
+   "kinds": [
+    "act",
+    "change",
+    "genesis",
+    "purge",
+    "say",
+    "sequencer",
+    "sim"
+   ]
+  },
+  "fold": {
+   "status": "trial-kernel",
+   "ops": {
+    "create": [
+     "id"
+    ],
+    "delete": [
+     "id",
+     "comp"
+    ],
+    "set": [
+     "id",
+     "comp",
+     "value",
+     "salt",
+     "commit"
+    ]
+   },
+   "batch": [
+    "ops",
+    "followUps"
+   ]
+  },
+  "identity": {
+   "status": "trial-kernel",
+   "identity": "[a-z0-9-]{1,64}",
+   "entity": "^(?:[a-z0-9-]{1,64}|@world)$",
+   "component": "^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\/)?[a-z][a-z0-9-]*(?:@[1-9][0-9]{0,8})?(?::[a-z0-9-]{1,64})?$"
+  },
+  "version": {
+   "status": "trial-kernel",
+   "dialect": "eidoverse-log",
+   "v": 4,
+   "minors": [
+    0
+   ],
+   "genesis": [
+    "dialect",
+    "minor",
+    "nonce",
+    "owners",
+    "parent",
+    "quorum",
+    "rewind_window",
+    "sequencer",
+    "v"
+   ]
+  },
+  "transform": {
+   "status": "trial-kernel",
+   "fields": {
+    "pos": "vec3",
+    "q": "array",
+    "scale": "vec3"
+   },
+   "defaults": {
+    "pos": [
+     0,
+     0,
+     0
+    ],
+    "q": [
+     0,
+     0,
+     0,
+     1
+    ],
+    "scale": [
+     1,
+     1,
+     1
+    ]
+   },
+   "ranges": {
+    "pos": {
+     "min": -100000,
+     "max": 100000
+    },
+    "scale": {
+     "min": -1000,
+     "max": 1000
+    }
+   },
+   "on": "thing"
+  },
+  "parent": {
+   "status": "trial-kernel",
+   "fields": {
+    "to": "ref",
+    "socket": "string"
+   },
+   "required": [
+    "to"
+   ],
+   "on": "thing"
+  }
+ }
+}

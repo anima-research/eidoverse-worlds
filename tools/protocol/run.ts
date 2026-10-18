@@ -29,6 +29,7 @@ import { ENGINE, controlNote } from "./common.ts";
 
 type Lane = "core" | "main" | "browser";
 const SUITES: [string, string, number][] = [ // name, file, tail lines to show
+  ["kernel", "kernel-check.ts", 1],     // reviewer item 5 (10-18): the kernel (envelope, kinds, ops, identity grammar, version, transform, parent) is trial-kernel: a change is red unless the same change carries a translator, a changelog line and old-red/new-green vectors (spec/kernel-pin.json)
   ["nov1", "nov1-check.ts", 1],         // R 10-06 "no more v1 anywhere": no runtime file loads the old-world importer or speaks v1
   ["vocab", "vocab-check.ts", 1],       // R 10-14 one vocabulary: a record is read in the protocol's names (model, flat components), never lib / comp
   ["nonumber", "nonumber-check.ts", 1], // R 10-07 "a version number isn't a name": the protocol's number lives only in genesis {dialect, v}
@@ -141,7 +142,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
 
 // ---- lanes ----
 // CORE runs first, in this order, and a failure there stops the gate
-const CORE = ["nov1", "vocab", "authority", "access", "identity", "scars", "reset-race"];
+const CORE = ["kernel", "nov1", "vocab", "authority", "access", "identity", "scars", "reset-race"];
 // every suite that launches a Chromium (directly, through playwright, or through tools/harness.ts scratchBench). The
 // gate checks this list against the files themselves (browserMarkers), so a new browser suite can't hide in MAIN.
 // refusedjoin (scratchBench) and client-tools (run-client.ts runs every tools/*-test file, browser tests among them, those one
@@ -156,7 +157,7 @@ for (const n of BROWSER) NEEDS[n] = "Chromium";
 // hermetic env; the browser lane from the house gate's run the same day). The timeout
 // is 5x that, at least 180 s: a slow host gets room, a hung suite is still killed.
 const EXPECT: Record<string, number> = {
-  "agent-mesh-collision": 92, "nov1": 0.7, "vocab": 3.5, "nonumber": 1.4, "hostile": 0.3, "attack": 1.5,
+  "agent-mesh-collision": 92, "kernel": 0.5, "nov1": 0.7, "vocab": 3.5, "nonumber": 1.4, "hostile": 0.3, "attack": 1.5,
   "libfile": 0.1, "gaps": 5.6, "phys": 3.9, "physlive": 1.2, "phystick": 5.7, "sclock": 2.8, "physseeds": 2.1,
   "eidosim": 12, "eidosim-live": 1.5, "mover": 4.5, "colliders": 0.2, "lying-support": 16, "replay": 0.4,
   "conformance": 2.9, "sweep": 0.3, "oracle": 0.4, "inplace": 15, "oldworlds": 1.2, "browser": 1.5, "descriptors": 0.1,

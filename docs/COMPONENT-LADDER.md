@@ -8,10 +8,20 @@ is the checklist that follows from them. R and Hesperus, 2026-10-10.
 **Draft** is a rung of this ladder: a namespaced component (`<handle>/<name>`) the authority has **not admitted** to its
 registry. It is stored as written, but the engine doesn't know it and no rule reads it.
 
-**Trial**, **reserved** and **stable** are the *status* of a name that **is** in the registry (`status` on every
+**Trial**, **trial-kernel**, **reserved** and **stable** are the *status* of a name that **is** in the registry (`status` on every
 definition in `shared/protocol/componentspec.js`; `schema` returns it, and the Inspector shows it on the card):
 - **trial**: admitted and written, but its shape may still change during the alpha (about a year). When it changes we
   translate or repair stored values where we can. Every registered name that isn't reserved is trial at v1.
+- **trial-kernel** (reviewer item 5, 10-18): the kernel's status. `transform` and `parent` carry it in the registry, and
+  shared/protocol/kernelspec.js extends it below the registry to the log envelope and its kinds, the fold's operations and
+  batch body, the identity grammar and the version (PROTOCOL §1–§3, §13). The shapes are pinned in `spec/kernel-pin.json`;
+  tools/protocol/kernel-check.ts (the gate's core lane) is red the moment the code differs from the pin, and
+  `kernel-check.ts --pin` refuses to re-pin unless the same change carries all three companions: a translator change
+  (translate-v1's `TRANSLATOR` moved `@N → @N+1`, or `--translator <a new translate step>`), a `REGISTRY-CHANGELOG.md` line
+  (`--ack "<why>"`, written as `kernel: <why>` with the diff beneath), and vectors (`--vectors <dir>`:
+  `spec/kernel-vectors/<dir>/vectors.json`, entries the OLD reader — snapshotted from git into `old-fold.js` at re-pin time —
+  refuses and the NEW reader folds clean; the gate runs them). The pin records the companions and the check verifies them
+  at every run, so none can be dropped after the fact. Not an acknowledgement rung: `--ack` alone never re-pins the kernel.
 - **reserved**: the name is held (nobody else may take it) but every write is refused, with one refusal for all reserved
   names (code `reserved`; the definition's `instead` says what to use meanwhile). Today: `physics-joint` (the
   constraint between two bodies; renamed from `joint` 10-16, nothing stored it), `joint` (a skeleton node: Maya, glTF,

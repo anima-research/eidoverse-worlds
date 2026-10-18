@@ -1,6 +1,6 @@
 {
  "transform": {
-  "status": "trial",
+  "status": "trial-kernel",
   "fields": {
    "pos": "vec3",
    "q": "array",
@@ -126,7 +126,7 @@
   "on": "thing"
  },
  "parent": {
-  "status": "trial",
+  "status": "trial-kernel",
   "fields": {
    "to": "ref",
    "socket": "string"

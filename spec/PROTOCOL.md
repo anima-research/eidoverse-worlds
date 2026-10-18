@@ -303,6 +303,21 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   of it is refused (one refusal, code `reserved`); `stable`: promised, it only
   grows by additions. `schema` reports each one. None is stable at v1. A
   draft (a namespaced name, below) has no status: it isn't admitted.
+- **The kernel is `trial-kernel`.** Below the registry sits what every reader
+  agrees on before a component is read: the log envelope and its kinds (§1),
+  the fold's four operations and the batch body (§3), the identity grammar
+  (§3.1), the version (`{dialect, v}`, the minors, genesis's fields, §13), and
+  the two components every placement rests on, `transform` and `parent`
+  (§9.3). Like trial they may still change during the alpha, but never by an
+  acknowledgement alone. Their shapes are pinned in `spec/kernel-pin.json`
+  (shared/protocol/kernelspec.js), and the gate's core lane
+  (tools/protocol/kernel-check.ts) is red the moment the code's kernel differs
+  from the pin. A re-pin is refused unless the **same change** carries (a) a
+  translator change (translate-v1's name moved, or a new translate step), (b) a
+  `REGISTRY-CHANGELOG.md` line prefixed `kernel:`, and (c) vectors under
+  `spec/kernel-vectors/` that the old reader (snapshotted from git at re-pin
+  time) refuses and the new reader folds clean; the pin records the three and
+  the gate verifies them at every run, so none can be dropped afterwards.
 - **An old shape is repaired once, by an explicit maintenance command — never
   by a load or a read** (a pure rename is not: below). When a trial shape changes,
   a stored world keeps its old values as they are: loading never rewrites them
@@ -1216,6 +1231,8 @@ the thing's (or part's) own frame before scale; `motion.center` and
   authority's practice: it changes no old log, and it grants nothing — its writes pass
   `admit` like everyone's.
 - **The four operations, the envelope, the kinds and the fold are fixed.**
+  They are the kernel (`trial-kernel`, §4): the gate refuses a change to them
+  that doesn't carry its translator, changelog line and vectors.
   Changing them is a new `minor` (or a new `v`) in genesis; a reader that
   doesn't know a world's minor refuses the world rather than folding it to
   a different digest. One exception, before release: the batch body's

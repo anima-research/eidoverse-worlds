@@ -15,13 +15,16 @@ export const VERSION = 4;
 export const MINORS = new Set([0]); // §3d H6: a reader that doesn't know the minor refuses the world (L1: no world)
 const MAX_LINE = 1 << 20, MAX_DEPTH = 64, BIG = 2 ** 53;
 // §2.1 + §2.4: `ts` is the authority's admission time; `head`/`sig` mark chain points (§2.1 still says `prev`; §2.4 and the reference reader say `head`)
-const ENVELOPE = new Set(["world", "kind", "ts", "actor", "for", "grant", "by", "cause", "verb", "body", "head", "sig"]);
-const KINDS = new Set(["genesis", "change", "act", "sim", "say", "purge", "sequencer"]);
-const IDENT = "[a-z0-9-]{1,64}";
+// The KERNEL (trial-kernel, PROTOCOL §4; shared/protocol/kernelspec.js pins these): the envelope, the kinds, the identity
+// grammar, the ops, genesis. A change to any of them is refused by the gate unless the same commit carries a translator,
+// a changelog line and old-reader/new-reader vectors (tools/protocol/kernel-check.ts)
+export const ENVELOPE = new Set(["world", "kind", "ts", "actor", "for", "grant", "by", "cause", "verb", "body", "head", "sig"]);
+export const KINDS = new Set(["genesis", "change", "act", "sim", "say", "purge", "sequencer"]);
+export const IDENT = "[a-z0-9-]{1,64}";
 // §2.3: entity ids are minted opaque ids or @world. `body:<identity>` is a reference, never an entity.
-const ENTITY = /^(?:[a-z0-9-]{1,64}|@world)$/;
+export const ENTITY = /^(?:[a-z0-9-]{1,64}|@world)$/;
 const DOMAIN = "[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*/";
-const COMP = new RegExp(`^(?:${DOMAIN})?[a-z][a-z0-9-]*(?:@[1-9][0-9]{0,8})?(?::${IDENT})?$`);
+export const COMP = new RegExp(`^(?:${DOMAIN})?[a-z][a-z0-9-]*(?:@[1-9][0-9]{0,8})?(?::${IDENT})?$`);
 export const isEntityId = (s) => typeof s === "string" && ENTITY.test(s);
 export const isComponent = (s) => typeof s === "string" && COMP.test(s);
 export const isIdentity = (s) => typeof s === "string" && new RegExp(`^${IDENT}$`).test(s);
@@ -173,12 +176,13 @@ export function checkEntry(e, seq) {
   if (e.kind === "change" || "cause" in e) { const c = e.cause; if (!(Number.isInteger(c) && c >= 0 && c < seq)) bad("cause", JSON.stringify(c)); }
   if (!PARSED.has(e)) for (const k of Object.keys(e)) checkValue(e[k], 1);
 }
-const OP_FIELDS = { create: ["id"], delete: ["id", "comp"], set: ["id", "comp", "value", "salt", "commit"] }; // `commit` replaces value+salt once purged
+export const OP_FIELDS = { create: ["id"], delete: ["id", "comp"], set: ["id", "comp", "value", "salt", "commit"] };
+export const BATCH_FIELDS = ["ops", "followUps"]; // `commit` replaces value+salt once purged
 // A change entry as a flat list of ops. Any shape or grammar error anywhere makes the whole entry malformed.
 export function opsOf(e) {
   const { verb, body } = e;
   if (verb === "batch") {
-    const extra = Object.keys(body).filter((k) => k !== "ops" && k !== "followUps"); if (extra.length) bad("batch-field", extra.join(","));
+    const extra = Object.keys(body).filter((k) => !BATCH_FIELDS.includes(k)); if (extra.length) bad("batch-field", extra.join(","));
     if (!Array.isArray(body.ops)) bad("batch-ops");
     if ("followUps" in body) followUpsCheck(body.followUps, body.ops.length);
     return body.ops.map((o, i) => {
@@ -217,7 +221,7 @@ export function shapeOne(verb, b, inner, where) {
 // body {dialect: "eidoverse-log", v: 4, minor, nonce, rewind_window?, parent?, owners: [[<key>…], …], quorum?, sequencer}. A malformed
 // genesis means "no world"; an unknown minor means "unknown version". The minor is read before the shape, so a later
 // minor may add fields; within a known minor the fields are exact (a typo such as `rewind_n` is not a default).
-const GENESIS_FIELDS = new Set(["dialect", "v", "minor", "nonce", "rewind_window", "parent", "owners", "quorum", "sequencer"]);
+export const GENESIS_FIELDS = new Set(["dialect", "v", "minor", "nonce", "rewind_window", "parent", "owners", "quorum", "sequencer"]);
 // canonical unpadded base64url (one spelling per byte string), or null
 export function b64uDecode(s) {
   if (typeof s !== "string" || !/^[A-Za-z0-9_-]*$/.test(s) || s.length % 4 === 1) return null;

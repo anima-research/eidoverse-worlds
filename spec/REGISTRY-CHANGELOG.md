@@ -199,3 +199,6 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - motion.amp: its meaning of absence "pendulum 0 (still); bob 0.3 m" → "pendulum 0 (still); oscillate 0.3 m"
   - motion.axis: its meaning of absence "pendulum [1, 0, 0]; spin and bob [0, 1, 0]" → "pendulum [1, 0, 0]; spin and oscillate [0, 1, 0]"
 - 2026-10-18: roles.until and access.watch added (upstream #258 world access, ported 10-17): a timed grant, and who may watch a world that admits only people listed; each states its meaning of absence
+- 2026-10-18: kernel (reviewer item 5, 10-18): transform and parent are the kernel's, status trial-kernel: a change to either is refused by the gate unless the same change carries a translator, a changelog line and old-reader/new-reader vectors (shared/protocol/kernelspec.js, tools/protocol/kernel-check.ts, spec/kernel-pin.json)
+  - transform: status trial → trial-kernel
+  - parent: status trial → trial-kernel
