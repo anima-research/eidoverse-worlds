@@ -89,7 +89,7 @@ for (const [id, e] of ents) {
     const a = `${g.group}.${f.k}`;
     const replaced = /(^|\|)(type|rest)$/.test(f.k) && g.group === 'motion' || ['particles.out', 'picture.down', 'sound.silence', 'comp.+'].includes(a) || a.startsWith('comp.add:') || /\.json\|/.test(a)
       || (a === 'flags.lock' && addable.has('Lock'))
-      || a === 'flags.layer';   // the selection layer is a row of the Attributes tab (editpanels attributesFields), not a card
+      || a === 'flags.layer' || a === 'flags.clickthrough';   // the selection layer and clicks-go-through are rows of the Attributes tab (editpanels attributesFields), not a card (R 10-17 20:36)
     if (!owned.has(a) && !replaced && !(g.group === 'comp' && owned.has(`comp.${f.k}`))) probs.push(`${id}: ${a} is in no card`);
   }
 }
@@ -111,7 +111,7 @@ for (const [id, e] of ents) {
   for (const g of s.groups) for (const f of g.fields) {
     if (f.k == null || f.t === 'info') continue;
     const a = `${g.group}.${f.k}`;
-    const replaced = /(^|\|)(type|rest)$/.test(f.k) && g.group === 'motion' || ['particles.out', 'picture.down', 'sound.silence', 'comp.+'].includes(a) || a.startsWith('comp.add:') || /\.json\|/.test(a) || a === 'flags.layer';
+    const replaced = /(^|\|)(type|rest)$/.test(f.k) && g.group === 'motion' || ['particles.out', 'picture.down', 'sound.silence', 'comp.+'].includes(a) || a.startsWith('comp.add:') || /\.json\|/.test(a) || a === 'flags.layer' || a === 'flags.clickthrough';
     if (!owned.has(a) && !replaced) unowned.push(a);
   }
   const floor = s.groups.find((g: any) => g.group === 'comp')!.fields.filter((f: any) => f.t === 'json').map((f: any) => f.k);
