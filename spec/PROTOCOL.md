@@ -332,7 +332,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   degrees would read as radians) loads and reads, but refuses every write
   (not `leave`) with the registered code `repair-needed`, whose text names
   the command. Renames whose old spelling the readers serve (`@world`
-  `trusted`, a motion's `bob`, a station's `pose`) leave the world writable.
+  `trusted`, a motion's old type word, a station's `pose`) leave the world writable.
   An operator then runs `bun tools/protocol/world.ts repair <name>` (or, from
   inside the world, a server operator's `operator-repair {verb: "repair"}`),
   which runs the three steps in that order, each its own act carrying
