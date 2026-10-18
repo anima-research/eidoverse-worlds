@@ -25,7 +25,9 @@ const registry = {
 const authEnv = { HN_ISSUER_KEY: issuer, HN_ISS: "issuer.example", HN_AUD: "eidoverse", HN_REQUIRE_LOGIN: "0", EIDO_WHISPERS_ENABLED: "1" };
 const serverEnv: Record<string, string> = { ...authEnv, SKIP_OPT_SWEEP: "1" };
 let tokenPath = "";
+// (ported 10-17: the worlds are founded first — joining never founds one)
 const h = await scratchSequencer("mention-delivery", {
+  worlds: ["commons", "annex"],
   serverEnv,
   prepare: (scratch) => {
     tokenPath = join(scratch, "tokens.json");
