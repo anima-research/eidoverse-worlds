@@ -2,6 +2,11 @@
   "name": "eidoverse-worlds",
   "private": true,
   "description": "Root deps serve server/optimize.ts (the store's GLB diet) and server/behaviors.ts (quickjs-emscripten, the runtime-script sandbox — lazily imported; the sequencer boots without it, scripting just reports itself unavailable). The sequencer core itself stays dependency-free. Client and mcpl keep their own manifests.",
+  "engines": {
+    "bun": "1.3.14",
+    "python3": "3.12 (with cryptography; the conformance suite)",
+    "chromium": "151 (Chromium or Chrome for Testing, this major or newer: the browser lane)"
+  },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",
     "@gltf-transform/core": "^4.1.1",

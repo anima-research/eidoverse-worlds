@@ -1,13 +1,32 @@
-// tools/protocol/run.ts — every protocol suite, one command:
-//   bun run test:protocol           (= BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/run.ts)
-//   PROTOCOL_LAB=<protocol lab checkout>        also run the control arms (the lab's pre-fix door and fold; see common.ts)
-//   PROTOCOL_WORLDS=<dir>[:<dir>…]        where the sweep looks for world logs (default: the checkout's parent directory)
-//   bun tools/protocol/run.ts hostile phys    run only the named suites
-// Each suite runs in its own process (they pin the authority's clock through PROTOCOL_NOW). Prints each suite's tail; exits 1
-// if any suite fails.
-import { existsSync } from "node:fs";
+// tools/protocol/run.ts — the protocol gate: every protocol suite, one command, three required lanes.
+//   bun tools/protocol/run.ts                 the declared gate (= bun run test:protocol): core, then main, then browser
+//   bun tools/protocol/run.ts hostile phys    only the named suites (a PARTIAL run: it says so, and it is not the gate)
+//   bun tools/protocol/run.ts --lane core     only one lane (core | main | browser), also PARTIAL
+//   bun tools/protocol/run.ts --manifest      print the suite table docs/GATE-MANIFEST.md carries (generated from here)
+//   bun tools/protocol/run.ts --check-manifest   exit 1 if the doc's table is not what --manifest prints
+// Lanes, all required: CORE (transaction + security: the authority, access, durability, the reset race, identity, scars,
+// no-v1, one vocabulary) runs first and stops the gate on any failure; MAIN is every other non-browser suite; BROWSER is
+// every suite that drives a headless Chromium (no Chromium = the gate FAILS and names CHROME; it never skips).
+// Each suite runs in its own process GROUP with its own timeout, HOME, TMPDIR and scratch (the gate's temp dir, removed
+// after each suite); on exit, timeout or Ctrl-C the gate kills the whole group, so no server or Chromium outlives it.
+// Runtimes are pinned in package.json "engines" and checked before anything runs. The end prints passed / failed /
+// skipped (with reasons) / optional-not-run, and exits nonzero on any failure or any skip.
+// Suites mark: a failed check `FAIL …` or `✗ …`; a skipped check `SKIP <name>: <why>` (fails the gate: every lane is
+// required); exit code 77 = the whole suite skipped (fails the gate); `OPTIONAL <name>: <why>` = an optional extension
+// that did not run (host data, the lab's control arm) — counted and listed, never a failure.
+//   PROTOCOL_LAB=<protocol lab checkout>   also run the control arms (common.ts)
+//   PROTOCOL_WORLDS=<dir>[:<dir>…]         also sweep / oracle a host's own world logs (the repo's fixtures always)
+//   CHROME=<chromium binary>                the browser lane's Chromium (else playwright's, else /usr/bin/{google-chrome,chromium})
+//   PYTHON=<python3>                        the conformance suite's interpreter (else python3 on PATH)
+//   PROTOCOL_KEEP=1                         keep the gate's temp dir to read
+//   PROTOCOL_HEADLESS_LOCK=<file> PROTOCOL_PERF_GUARD=<script>   run browser suites under a host's flock + perf guard
+import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { ENGINE, controlNote } from "./common.ts";
 
+type Lane = "core" | "main" | "browser";
 const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["nov1", "nov1-check.ts", 1],         // R 10-06 "no more v1 anywhere": no runtime file loads the old-world importer or speaks v1
   ["vocab", "vocab-check.ts", 1],       // R 10-14 one vocabulary: a record is read in the protocol's names (model, flat components), never lib / comp
@@ -118,34 +137,218 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["buildcheck-route", "../buildcheck-route-test.ts", 1], // #241: GET /check and measure {check: true} (check_model)
   ["client-tools", "../run-client.ts --import-only", 14], // refactor plan 2 D5: every tools/*-{test,check} loads (a stub missing an export, a moved module); the full run is `bun tools/run-client.ts`
 ];
-const only = process.argv.slice(2);
-const env = { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }; // a cached transpile once hid a stale module (bun cache poison)
-let failed: string[] = [];
-const t0 = performance.now();
-for (const [name, file, tail] of SUITES) {
-  if (only.length && !only.includes(name)) continue;
-  const t = performance.now();
-  // the browser suite runs under the house guards when this host has them (one headless Chrome at a time, perf-guard,
-  // no boot re-encoder: memory reference_browser_probe_hygiene); a host with no Chrome skips it, and says so
-  const [script, ...scriptArgs] = file.split(" ");
-  let cmd = ["bun", ENGINE + "tools/protocol/" + script, ...scriptArgs]; let senv: Record<string, string | undefined> = env;
-  if (name === "client" || name === "client-b2" || name === "build-client" || name === "shiplist-probe" || name === "xss-probe" || name === "party-probe" || name === "colour-picker") {   // the browser suites
-    const home = process.env.HOME ?? "";
-    const chrome = process.env.CHROME ?? [`${home}/.local/chrome153/chrome-linux64/chrome`, "/usr/bin/google-chrome", "/usr/bin/chromium"].find((p) => existsSync(p));
-    if (!chrome) { console.log(`\n== ${name} (${file}) SKIPPED: no Chrome on this host (set CHROME)`); continue; }
-    senv = { ...env, CHROME: chrome, SKIP_OPT_SWEEP: "1" };
-    const lock = `${home}/eido/.headless.lock`, guard = "/mnt/c/Users/Claude/code/scripts/perf-guard.sh";
-    if (existsSync(guard) && existsSync(lock)) cmd = ["flock", lock, "bash", guard, "-t", name === "party-probe" ? "650" : "400", "--", ...cmd];   // the party probe drives ~12 stages by hand: ~6 min on this host
+
+// ---- lanes ----
+// CORE runs first, in this order, and a failure there stops the gate
+const CORE = ["nov1", "vocab", "authority", "access", "identity", "scars", "reset-race"];
+// every suite that launches a Chromium (directly, through playwright, or through tools/harness.ts scratchBench). The
+// gate checks this list against the files themselves (browserMarkers), so a new browser suite can't hide in MAIN.
+// refusedjoin (scratchBench) and client-tools (run-client.ts runs every tools/*-test file, browser tests among them, those one
+// at a time) once
+// sat in the non-browser list: a host without Chromium failed them, and this box ran Chromes it didn't budget for.
+const BROWSER = ["browser", "client", "refusedjoin", "client-b2", "build-client", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "client-tools"];
+const laneOf = (name: string): Lane => (CORE.includes(name) ? "core" : BROWSER.includes(name) ? "browser" : "main");
+// what a suite needs beyond bun and this checkout (a scratch dir, loopback ports: every suite may use those)
+const NEEDS: Record<string, string> = { conformance: "python3 + cryptography" };
+for (const n of BROWSER) NEEDS[n] = "Chromium";
+// seconds each suite took on the reference host (WSL2, 16 threads, 7 GB; 2026-10-18, one suite at a time). The timeout
+// is 5x that, at least 180 s: a slow host gets room, a hung suite is still killed.
+const EXPECT: Record<string, number> = {
+  "agent-mesh-collision": 93, "nov1": 0.8, "vocab": 3.4, "nonumber": 1.6, "hostile": 0.4, "attack": 2.5,
+  "libfile": 0.1, "gaps": 6.3, "phys": 4.3, "physlive": 1.3, "phystick": 6.0, "sclock": 2.8, "physseeds": 2.3,
+  "eidosim": 12, "eidosim-live": 1.5, "mover": 5.0, "colliders": 0.2, "lying-support": 16, "replay": 0.4,
+  "conformance": 2.9, "sweep": 2, "oracle": 5, "inplace": 15, "oldworlds": 1.2, "browser": 1.5, "descriptors": 0.1,
+  "light-readers": 0.4, "ghost-mesh-size": 0.5, "boot-init": 0.7, "editor-range": 0.2, "lookat-forward": 0.5,
+  "role-grammar": 0.3, "lock-level": 0.1, "rot": 0.1, "dismount-height": 0.2, "build-gate": 0.3,
+  "capsule-recovery": 10, "debug-tabs": 0.4, "governor-xr": 0.2, "unknown-comp": 1.1, "reach-order": 1,
+  "editcommit": 0.8, "hierarchy-commit": 0.5, "verbclasses": 0.0, "authority-layers": 0.0, "authority": 8.6,
+  "ids": 1.5, "scars": 1.0, "r8": 1.0, "r9": 1.5, "r10": 1.8, "r11": 0.6, "names": 2.3, "parity": 5.4,
+  "directory": 87, "keyhints": 0.1, "client": 60, "refusedjoin": 126, "server": 44, "identity": 45,
+  "fork-reset": 8.0, "reset-race": 0.5, "scripts": 60, "grab": 4.6, "shove": 2.4, "shove-walker": 0.2,
+  "agentshove": 166, "hands": 1.4, "reset": 2.3, "settle": 6.0, "disabled": 1.2, "histdiff": 0.3, "reachgate": 22,
+  "consent": 0.0, "history-rows": 0.5, "scale": 131, "roles": 3.4, "access": 8.3, "batch2": 1.9,
+  "describe-particles": 1.1, "client-b2": 19, "build": 1.6, "counter": 2.2, "build-client": 8.1, "shiplist": 1.7,
+  "shiplist-probe": 197, "agenttools": 22, "presence": 10, "modhole": 0.1, "xss-probe": 15, "pretrans": 3.0,
+  "soundclock": 0.5, "eidomodel": 0.8, "party-probe": 486, "colour-picker": 8.1, "alias": 0.4, "navgrid": 64,
+  "navgrid-edge": 0.7, "places": 146, "places-scale": 16, "shape-attach": 1.7, "shape-physics": 1.4,
+  "shape-repair": 0.7, "buildcheck": 36, "buildcheck-queue": 11, "buildcheck-route": 38, "client-tools": 202
+};
+const timeoutOf = (name: string) => Math.max(180, Math.ceil((EXPECT[name] ?? 60) * 5));
+
+// ---- the declared runtimes (package.json "engines": the one place) ----
+const ENGINES: Record<string, string> = JSON.parse(fs.readFileSync(ENGINE + "package.json", "utf8")).engines ?? {};
+const verOf = (s: string | undefined) => (s?.match(/\d+(?:\.\d+)*/)?.[0] ?? "").split(".").map(Number);
+// what launching a Chromium looks like in a suite or a local module it imports (tools/harness.ts defines scratchBench, so it
+// counts only where it is CALLED); a runner that starts other files says so with the marker comment `gate: launches a browser`
+const BROWSER_MARK = /\bscratchBench\s*\(|\bbrowserBench\s*\(|chromium\.launch|from ["']playwright["']|import\(["']playwright["']\)|puppeteer|--remote-debugging-port|gate: launches a browser/;
+function localImports(f: string, seen = new Set<string>()): Set<string> {
+  if (seen.has(f) || !fs.existsSync(f)) return seen; seen.add(f);
+  for (const m of fs.readFileSync(f, "utf8").matchAll(/(?:from|import\(|import)\s*["'`]([^"'`]+)["'`]/g)) {
+    if (!m[1].startsWith(".")) continue; let p = path.resolve(path.dirname(f), m[1]);
+    if (!fs.existsSync(p)) for (const e of [".ts", ".js", ".mjs"]) if (fs.existsSync(p + e)) { p += e; break; }
+    if (fs.existsSync(p) && fs.statSync(p).isFile() && /\/tools\//.test(p) && !p.endsWith("/tools/harness.ts")) localImports(p, seen);
   }
-  const r = Bun.spawnSync(cmd, { cwd: ENGINE, env: senv });
-  const out = (r.stdout.toString() + r.stderr.toString()).trimEnd().split("\n");
-  const fails = out.filter((l) => /^\s*FAIL\b|✗/.test(l));   // the browser probes mark a failed check with ✗, not FAIL
-  const ok = r.exitCode === 0;
-  if (!ok) failed.push(name);
-  console.log(`\n== ${name} (${file}) ${ok ? "PASS" : `FAIL (exit ${r.exitCode})`} ${((performance.now() - t) / 1000).toFixed(1)} s`);
-  for (const l of fails.slice(0, 20)) console.log(l);
-  for (const l of out.slice(-tail)) console.log(l);
+  return seen;
 }
-console.log(`\n${controlNote()}`);
-console.log(`protocol: ${failed.length ? `FAILED: ${failed.join(", ")}` : "all suites pass"} (${((performance.now() - t0) / 1000).toFixed(0)} s)`);
-process.exit(failed.length ? 1 : 0);
+
+type Result = { name: string; lane: Lane; status: "pass" | "fail" | "skip"; why?: string; ms: number; rowSkips: string[]; optional: string[]; leftovers: number };
+
+function suitePath(file: string) { return path.resolve(ENGINE, "tools/protocol", file.split(" ")[0]); }
+
+function manifest() {
+  const rows = ["| # | suite | lane | file | needs | expected | timeout |", "|---|---|---|---|---|---|---|"];
+  const ordered = [...CORE.map((n) => SUITES.find((s) => s[0] === n)!), ...SUITES.filter(([n]) => laneOf(n) === "main"), ...SUITES.filter(([n]) => laneOf(n) === "browser")];
+  ordered.forEach(([name, file], i) => rows.push(`| ${i + 1} | ${name} | ${laneOf(name)} | \`${path.relative(ENGINE, suitePath(file))}${file.includes(" ") ? " " + file.split(" ").slice(1).join(" ") : ""}\` | ${NEEDS[name] ?? "bun"} | ${EXPECT[name] !== undefined ? `${EXPECT[name]} s` : "?"} | ${timeoutOf(name)} s |`));
+  const sum = (l: Lane) => SUITES.filter(([n]) => laneOf(n) === l).reduce((a, [n]) => a + (EXPECT[n] ?? 0), 0);
+  rows.push("", `Lanes: core ${CORE.length} suites (~${Math.round(sum("core"))} s), main ${SUITES.filter(([n]) => laneOf(n) === "main").length} (~${Math.round(sum("main"))} s), browser ${BROWSER.length} (~${Math.round(sum("browser"))} s); ${SUITES.length} suites in all.`);
+  return rows.join("\n");
+}
+const DOC = ENGINE + "docs/GATE-MANIFEST.md", BEGIN = "<!-- BEGIN GENERATED: bun tools/protocol/run.ts --manifest -->", END = "<!-- END GENERATED -->";
+function manifestDrift(): string | null {
+  if (!fs.existsSync(DOC)) return `${path.relative(ENGINE, DOC)} is missing`;
+  const t = fs.readFileSync(DOC, "utf8"), a = t.indexOf(BEGIN), b = t.indexOf(END);
+  if (a < 0 || b < a) return `${path.relative(ENGINE, DOC)} has no generated block (${BEGIN} … ${END})`;
+  return t.slice(a + BEGIN.length, b).trim() === manifest().trim() ? null : `${path.relative(ENGINE, DOC)}'s suite table is not what --manifest prints (regenerate it: bun tools/protocol/run.ts --manifest)`;
+}
+
+const argv = process.argv.slice(2);
+if (argv.includes("--manifest")) { console.log(manifest()); process.exit(0); }
+if (argv.includes("--check-manifest")) { const d = manifestDrift(); console.log(d ?? "manifest: docs/GATE-MANIFEST.md matches run.ts"); process.exit(d ? 1 : 0); }
+const laneArg = argv.includes("--lane") ? argv[argv.indexOf("--lane") + 1] : null;
+const only = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--lane");
+for (const n of only) if (!SUITES.some(([s]) => s === n)) { console.log(`protocol gate: no suite named "${n}" (bun tools/protocol/run.ts --manifest lists them)`); process.exit(2); }
+if (laneArg && !["core", "main", "browser"].includes(laneArg)) { console.log(`protocol gate: no lane "${laneArg}" (core | main | browser)`); process.exit(2); }
+const selected = (name: string) => (!only.length || only.includes(name)) && (!laneArg || laneOf(name) === laneArg);
+const partial = only.length > 0 || !!laneArg;
+
+// ---- preflight: the gate's own shape, then the runtimes. Any problem here stops the gate before a suite runs ----
+const problems: string[] = [];
+for (const n of CORE) if (!SUITES.some(([s]) => s === n)) problems.push(`CORE names "${n}", which is not a suite`);
+for (const n of BROWSER) if (!SUITES.some(([s]) => s === n)) problems.push(`BROWSER names "${n}", which is not a suite`);
+for (const [name, file] of SUITES) {
+  const f = suitePath(file);
+  if (!fs.existsSync(f)) { problems.push(`${name}: ${path.relative(ENGINE, f)} does not exist`); continue; }
+  if (laneOf(name) !== "browser") for (const d of localImports(f)) if (BROWSER_MARK.test(fs.readFileSync(d, "utf8"))) { problems.push(`${name} launches a Chromium (${path.relative(ENGINE, d)}) but is not in the BROWSER lane`); break; }
+}
+if (!partial) { const d = manifestDrift(); if (d) problems.push(d); }
+for (const dir of ["", "client/", "mcpl/"]) if (!fs.existsSync(ENGINE + dir + "node_modules")) problems.push(`${dir || "./"}node_modules is missing: run \`bun install --frozen-lockfile\` in ${dir || "the checkout root"}`);
+
+console.log(`protocol gate @ ${ENGINE}`);
+const runtime = (label: string, found: string | null, want: string | undefined, rule: "major" | "min-major", extra = "") => {
+  if (!want) { problems.push(`package.json engines has no "${label}"`); return; }
+  if (!found) { problems.push(`${label}: not found${extra ? ` (${extra})` : ""}; declared ${want}`); console.log(`  ${label.padEnd(9)} NOT FOUND   declared ${want}`); return; }
+  const f = verOf(found), w = verOf(want);
+  const ok = rule === "major" ? f[0] === w[0] : f[0] >= w[0];
+  const exact = f.slice(0, w.length).join(".") === w.join(".");
+  console.log(`  ${label.padEnd(9)} ${found.padEnd(11)} declared ${want}${ok ? (exact ? "" : `  (note: not the tested ${w.join(".")}; ${rule === "major" ? "same major" : "same or newer major"}: accepted)`) : "  MISMATCH"}${extra ? `  ${extra}` : ""}`);
+  if (!ok) problems.push(`${label} ${found} does not match the declared ${want} (${rule === "major" ? "major must match" : `major must be >= ${w[0]}`})`);
+};
+const which = (cmd: string) => { if (cmd.includes("/")) return fs.existsSync(cmd) ? cmd : null;
+  for (const d of (process.env.PATH ?? "").split(":")) { const p = path.join(d || ".", cmd); try { fs.accessSync(p, fs.constants.X_OK); return p; } catch {} } return null; };
+console.log("runtimes (package.json engines):");
+runtime("bun", Bun.version, ENGINES.bun, "major", process.execPath);
+let PY: string | null = null;
+if (SUITES.some(([n]) => selected(n) && NEEDS[n]?.startsWith("python3"))) {
+  PY = which(process.env.PYTHON || "python3");
+  const r = PY ? spawnSync(PY, ["-c", "import sys; print(sys.version.split()[0]); import cryptography; print(cryptography.__version__)"], { encoding: "utf8" }) : null;
+  const [pv, cv] = (r?.stdout ?? "").trim().split("\n");
+  runtime("python3", pv || null, ENGINES.python3, "major", PY ? `${PY}${cv ? `, cryptography ${cv}` : ""}` : "set PYTHON or put python3 on PATH");
+  if (PY && pv && !cv) problems.push(`python3 at ${PY} has no 'cryptography' module (pip install cryptography): the conformance suite's test_chain.py needs it`);
+}
+let CHROME: string | null = null;
+if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
+  const candidates = [process.env.CHROME];
+  if (!process.env.CHROME) { try { const { chromium } = await import("playwright"); candidates.push(chromium.executablePath()); } catch {} candidates.push("/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"); }
+  CHROME = candidates.find((p) => p && fs.existsSync(p)) ?? null;
+  const v = CHROME ? spawnSync(CHROME, ["--version"], { encoding: "utf8", timeout: 20000 }).stdout?.trim() ?? "" : "";
+  if (process.env.CHROME && !CHROME) problems.push(`CHROME=${process.env.CHROME} does not exist`);
+  runtime("chromium", CHROME ? (v.match(/\d+\.\d+\.\d+\.\d+/)?.[0] ?? null) : null, ENGINES.chromium, "min-major",
+    CHROME ? CHROME : "the browser lane is REQUIRED: set CHROME=/path/to/chrome (Chromium or Chrome for Testing), or `bunx playwright install chromium`");
+  if (CHROME && !v) problems.push(`${CHROME} --version printed nothing: is it a Chromium?`);
+}
+if (problems.length) {
+  console.log(`\nprotocol gate: FAILED before any suite ran:`); for (const p of problems) console.log(`  - ${p}`);
+  process.exit(1);
+}
+
+// ---- running a suite: its own process group, timeout, HOME/TMPDIR/scratch; the group killed when it ends ----
+const GATE_TMP = fs.mkdtempSync(path.join(os.tmpdir(), "eido-gate-"));
+let current: { pid: number } | null = null;
+const killGroup = (pid: number, sig: NodeJS.Signals) => { try { process.kill(-pid, sig); } catch { /* gone */ } };
+const groupMembers = (pgid: number) => fs.readdirSync("/proc").filter((p) => /^\d+$/.test(p)).filter((p) => { try {
+  const s = fs.readFileSync(`/proc/${p}/stat`, "utf8"); const f = s.slice(s.lastIndexOf(")") + 2).split(" "); return f[0] !== "Z" && Number(f[2]) === pgid; } catch { return false; } }).length;
+const cleanup = () => { if (current) killGroup(current.pid, "SIGKILL"); if (!process.env.PROTOCOL_KEEP) fs.rmSync(GATE_TMP, { recursive: true, force: true }); };
+process.on("exit", cleanup);
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { console.log(`\nprotocol gate: ${sig}: killing the running suite's process group`); cleanup(); process.exit(130); });
+
+const PATH = `${path.dirname(process.execPath)}:${process.env.PATH ?? "/usr/bin:/bin"}`;   // a nested `bun` is this bun
+async function run(name: string, file: string): Promise<{ code: number | null; signal: string | null; out: string; timedOut: boolean; leftovers: number }> {
+  const dir = fs.mkdtempSync(path.join(GATE_TMP, `${name}-`));
+  for (const d of ["home", "library", "opt", "worlds", "patched"]) fs.mkdirSync(path.join(dir, d));
+  // hermetic: nothing the suite reads by default lies outside this checkout and this dir (no ~, no ../eidoverse-video)
+  const env: Record<string, string> = { ...process.env as Record<string, string>, PATH, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
+    HOME: path.join(dir, "home"), TMPDIR: dir, PROTOCOL_SCRATCH: dir, EIDOVERSE_DIR: path.join(dir, "library"), OPT_DIR: path.join(dir, "opt"),
+    WORLDS_DIR: path.join(dir, "worlds"), PATCH_DIR: path.join(dir, "patched"), SKIP_OPT_SWEEP: "1" };
+  if (PY) env.PYTHON = PY;
+  if (CHROME) env.CHROME = CHROME;
+  const [script, ...args] = file.split(" ");
+  let cmd = [process.execPath, path.resolve(ENGINE, "tools/protocol", script), ...args];
+  const lock = process.env.PROTOCOL_HEADLESS_LOCK, guard = process.env.PROTOCOL_PERF_GUARD;
+  if (laneOf(name) === "browser" && lock && guard) cmd = ["flock", lock, "bash", guard, "-t", String(timeoutOf(name)), "--", ...cmd];
+  const child = spawn(cmd[0], cmd.slice(1), { cwd: ENGINE, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+  current = { pid: child.pid! };
+  let out = "", timedOut = false; const keep = (b: Buffer) => { out += b.toString(); if (out.length > 4e6) out = out.slice(-2e6); };
+  child.stdout!.on("data", keep); child.stderr!.on("data", keep);
+  const timer = setTimeout(() => { timedOut = true; killGroup(child.pid!, "SIGTERM"); setTimeout(() => killGroup(child.pid!, "SIGKILL"), 5000).unref(); }, timeoutOf(name) * 1000);
+  const [code, signal] = await new Promise<[number | null, string | null]>((res) => { child.on("exit", (c, s) => res([c, s])); child.on("error", (e) => { out += `\nspawn failed: ${e.message}`; res([null, null]); }); });
+  clearTimeout(timer);
+  const leftovers = child.pid ? groupMembers(child.pid) : 0;   // anything the suite started and left running
+  if (child.pid) killGroup(child.pid, "SIGKILL");
+  await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000).unref(); });
+  current = null;
+  if (!process.env.PROTOCOL_KEEP) fs.rmSync(dir, { recursive: true, force: true });
+  return { code, signal, out, timedOut, leftovers };
+}
+
+// ---- the gate ----
+const results: Result[] = []; const t0 = performance.now();
+const order = [...CORE, ...SUITES.map(([n]) => n).filter((n) => laneOf(n) === "main"), ...SUITES.map(([n]) => n).filter((n) => laneOf(n) === "browser")];
+let stopped = "";
+for (const name of order) {
+  if (!selected(name)) continue;
+  const [, file, tail] = SUITES.find(([n]) => n === name)!; const lane = laneOf(name);
+  if (stopped) { results.push({ name, lane, status: "skip", why: stopped, ms: 0, rowSkips: [], optional: [], leftovers: 0 }); continue; }
+  const t = performance.now();
+  const r = await run(name, file);
+  const lines = r.out.trimEnd().split("\n");
+  const fails = lines.filter((l) => /^\s*FAIL\b|✗/.test(l));   // the browser probes mark a failed check with ✗, not FAIL
+  const rowSkips = lines.filter((l) => /^\s*SKIP\b/.test(l)).map((l) => l.trim());
+  const optional = lines.filter((l) => /^\s*OPTIONAL\b/.test(l)).map((l) => l.trim());
+  const ms = performance.now() - t;
+  let status: Result["status"] = r.code === 0 ? "pass" : r.code === 77 ? "skip" : "fail";
+  let why = r.timedOut ? `timed out after ${timeoutOf(name)} s (process group killed)` : r.code === 77 ? (rowSkips.at(-1) ?? lines.at(-1)) : r.code === 0 ? undefined : `exit ${r.code ?? r.signal}`;
+  if (status === "pass" && rowSkips.length) { status = "skip"; why = `${rowSkips.length} check(s) skipped`; }
+  if (r.timedOut) status = "fail";
+  results.push({ name, lane, status, why, ms, rowSkips, optional, leftovers: r.leftovers });
+  console.log(`\n== ${name} [${lane}] (${file}) ${status.toUpperCase()}${why ? ` (${why})` : ""} ${(ms / 1000).toFixed(1)} s${r.leftovers ? ` · killed ${r.leftovers} leftover process(es)` : ""}`);
+  for (const l of fails.slice(0, 20)) console.log(l);
+  for (const l of rowSkips.slice(0, 20)) console.log(l);
+  for (const l of lines.slice(-tail)) if (!fails.includes(l) && !rowSkips.includes(l)) console.log(l);
+  if (lane === "core" && status !== "pass") stopped = `not run: the core lane failed at ${name}`;
+}
+
+// ---- the tally ----
+const count = (l: Lane | null, s: Result["status"]) => results.filter((r) => (!l || r.lane === l) && r.status === s).length;
+console.log(`\n== protocol gate: tally (${((performance.now() - t0) / 1000).toFixed(0)} s)`);
+for (const l of ["core", "main", "browser"] as Lane[]) if (results.some((r) => r.lane === l)) console.log(`  ${l.padEnd(8)} ${count(l, "pass")} passed, ${count(l, "fail")} failed, ${count(l, "skip")} skipped`);
+console.log(`  total    ${count(null, "pass")} passed, ${count(null, "fail")} failed, ${count(null, "skip")} skipped (every lane is required: a skip fails the gate)`);
+for (const r of results.filter((r) => r.status === "fail")) console.log(`  FAILED  ${r.name} [${r.lane}]: ${r.why}`);
+for (const r of results.filter((r) => r.status === "skip")) { console.log(`  SKIPPED ${r.name} [${r.lane}]: ${r.why}`); for (const s of r.rowSkips) console.log(`          ${s}`); }
+const optional = new Map<string, string>(); for (const r of results) for (const o of r.optional) { const k = o.match(/^OPTIONAL\s+(\S+?):/)?.[1] ?? o; if (!optional.has(k)) optional.set(k, o.replace(/^OPTIONAL\s+\S+?:\s*/, "")); }
+if (!process.env.PROTOCOL_LAB) { const n = controlNote(); const k = n.match(/^OPTIONAL\s+(\S+?):/)?.[1]; if (k && !optional.has(k)) optional.set(k, n.replace(/^OPTIONAL\s+\S+?:\s*/, "")); }
+console.log(`  optional, not run: ${optional.size}${optional.size ? "" : " (none)"}`); for (const [k, v] of optional) console.log(`          ${k}: ${v}`);
+const left = results.reduce((a, r) => a + r.leftovers, 0); if (left) console.log(`  leftover processes killed with their suite's group: ${left}`);
+const bad = count(null, "fail") + count(null, "skip");
+const notRun = SUITES.filter(([n]) => !selected(n)).length;
+console.log(`protocol gate: ${bad ? "FAILED" : partial ? `PARTIAL PASS (${notRun} suite(s) not selected: this is not the gate)` : "PASS"}`);
+process.exit(bad ? 1 : 0);
