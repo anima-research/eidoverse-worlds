@@ -7,7 +7,8 @@ import { MOVER, bodyBox, bodyScale, floorStep, sweep } from "../../mover.js";
 import { COMPONENTS } from "../componentspec.js";
 import { livePoses, digestOf, restEta, ENGINES, carried, TICK_MS } from "../simlayer.js";
 import { HAND_Y } from "../physconst.js";
-import { r3 } from "../round.js";
+import { r3, noNeg0 } from "../round.js";
+import { qFromYaw, qMul } from "../../rot.js";
 import { UP } from "./ctx.js";
 import { Refusal, refuse, said } from "./refuse.js";
 import { readback, delOp, isE, opsQuiet, scratch, setOp } from "./storage.js";
@@ -184,6 +185,17 @@ function body(w, actor) {
   if (!b) refuse("not-here", "your body isn't in the world yet", "move {to: [x, y, z]} puts it somewhere (bodies are presence: never logged)");
   return b;
 }
+// R 10-17 20:54 (the gym): "the crates always spin around to orient the same way no matter how I put them down". A carried
+// thing turns with its holder's body (every client draws it so: thingphysics placeHeld), and the hold kept only its world
+// rotation as taken, so a put landed it at that, and it spun back on release. The hold now also keeps the holder's facing
+// as taken; what it is let go at is that rotation turned about up by as far as the body has turned since (yaw only: its
+// tilt is as it was). The facing is what the server relays of the body's pose (its root's yaw about +y, as every client
+// draws it): presence, the same number everyone's drawn carry turns by. Unknown (no relayed pose): as taken, as before.
+function facingOf(w, actor) { for (const p of w.present?.() ?? []) if (p && p.id === actor && Number.isFinite(p.yaw)) return p.yaw; return null; }
+/** A held thing's world rotation now: as it was taken, turned about up by how far its holder has turned since. */
+function heldQ(w, h) { const y = facingOf(w, h.by); const q = h.pose?.q;
+  if (!Number.isFinite(h.facing) || y === null || !Array.isArray(q)) return q;
+  return qMul(qFromYaw(y - h.facing), q).map((n) => noNeg0(Math.round(n * 1e6) / 1e6)); }
 function gripOf(w, actor, id) {
   const h = w.presence.holds[id];
   // gone first: a delete now releases the hold itself (9d7bc99b), so a put of a deleted thing found no hold and said
@@ -289,4 +301,4 @@ function arrivalBox(st, p, size) {
   const b = bodyAt(st, p); const r = floorStep({ y: b.y, ground0: b.ground, level0: G.level, f: b.ground, level1: G.level, height, scale });
   return bodyBox(p, scale, r.swim ? G.level : null);
 }
-export { arrivalBox, body, buildEpoch, dist, gripPoint, gripOf, lawOf, pathBlocked, restampEngine, settleSim, shearFree, sizeOf, solidAt };
+export { arrivalBox, body, buildEpoch, dist, facingOf, gripPoint, gripOf, heldQ, lawOf, pathBlocked, restampEngine, settleSim, shearFree, sizeOf, solidAt };

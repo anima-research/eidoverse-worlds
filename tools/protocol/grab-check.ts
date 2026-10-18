@@ -104,6 +104,11 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["review: a handover drops the old hand's offset", "protocol/authority/bodyverbs.js", "h.hand = h.second.hand; delete h.offset;", "h.hand = h.second.hand;", ["F6"]],
   ["review: what rests on it must be enabled", "protocol/authority/bodyverbs.js", "!(gk && gk.enabled && rankOf(st, actor) >= whoRank(st, gk.who))", "!(gk && rankOf(st, actor) >= whoRank(st, gk.who))", ["F6"]],
   ["the inspector's JSON hatch is checked too", "editschema.js", "if (k === 'grabbable' && data != null) { const bad = checkGrabbable(data);", "if (false) { const bad = checkGrabbable(data);", ["I3"]],
+  ["putyaw: a put lands as carried (turned with the body), not as taken", "protocol/authority/bodyverbs.js", "const q = a.q ?? heldQ(w, h);", "const q = a.q ?? h.pose.q;", ["Y1"]],
+  ["putyaw: the hold keeps the holder's facing as taken", "protocol/authority/bodyverbs.js", "...(facing !== null ? { facing } : {}), handled", "handled", ["Y1", "Y2", "Y3"]],
+  ["putyaw: a drop's launch starts as carried", "protocol/authority/manipulate.js", "else h.pose.q = heldQ(w, h);", "else;", ["Y2"]],
+  ["putyaw: a taker's hold starts as the giver's hand turned it", "protocol/authority/bodyverbs.js", ": prev ? heldQ(w, prev) : t.q;", ": t.q;", ["Y3"]],
+  ["putyaw: a launch re-bases the hold's facing (a refused one isn't turned twice)", "protocol/authority/manipulate.js", "{ const f = facingOf(w, actor); if (f !== null) h.facing = f; else delete h.facing; }", "", ["Y4"]],
   ["CONTROL (no-op: must stay green)", "grab.js", "// ---------------------------------------------------------------- reading", "// ----------------------------------------------------------------  reading", []],
 ];
 async function runSelf(tree: string, only: string[] | null, extra: string[] = []) {
@@ -250,6 +255,51 @@ const cases: Case[] = [
       const p = s.call("vic", "put", { id: "lantern" });
       return { g: show(g), carrying: w1.carrying, p: show(p), at: tf(s, "lantern")?.pos, held: held(s, "lantern") }; },
     good: (o) => o.g === "ok" && o.carrying?.includes("lantern") && o.p === "ok" && Math.abs(o.at[2] - 2.5) < 1e-6 && o.at[1] === 0 && o.held === null },
+  // R 10-17 20:54 (the gym): "Any reason why the crates always spin around to orient the same way no matter how I put them
+  // down?" A carried thing turns with its holder (every client draws it so); a put lands it as carried. The facing is the
+  // relayed pose's yaw (w.present, as server/world.ts gives it); qYaw of the landed rotation is the turn about up.
+  { id: "Y1", what: "a put lands a carried thing turned by as far as its holder turned while carrying it (yaw only), not back as it was taken", run(s) { cast(s);
+      const Q = (y: number) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)].map((n) => +n.toFixed(6));
+      s.call("olive", "create", { id: "box1", model: "book", components: { grabbable: { who: "visitor" }, transform: { pos: [0, 0, 0], q: Q(0.3), scale: [1, 1, 1] } } });
+      let face = 0.25; s.w().present = () => [{ id: "vic", at: null, yaw: face }];
+      s.call("vic", "move", { to: [0, 0, 0.5] }); const g = s.call("vic", "grab", { id: "box1" });
+      face = 0.25 + Math.PI / 2; s.call("vic", "move", { to: [0, 0, 1.5] }, 1000);   // turned a quarter left, and walked
+      const p = s.call("vic", "put", { id: "box1" }); const q = tf(s, "box1")?.q;
+      return { g: show(g), p: show(p), q, yaw: q ? +(2 * Math.atan2(q[1], q[3])).toFixed(4) : null, tilt: q ? +Math.hypot(q[0], q[2]).toFixed(6) : null }; },
+    good: (o) => o.g === "ok" && o.p === "ok" && Math.abs(o.yaw - (0.3 + Math.PI / 2)) < 1e-3 && o.tilt < 1e-5 },
+  { id: "Y2", what: "…and a drop in a world that runs physics launches it as carried (the launch's yaw), not as taken", run(s) { cast(s, true);
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      let face = 0; s.w().present = () => [{ id: "vic", at: null, yaw: face }];
+      s.call("vic", "move", { to: [0, 0, 0.5] }); const y0 = (() => { const q = tf(s, "ball").q; return 2 * Math.atan2(q[1], q[3]); })();
+      const g = s.call("vic", "grab", { id: "ball" }); face = -1; const n0 = s.entries().length;
+      const d = s.call("vic", "drop", { id: "ball" }); const L = s.entries().slice(n0).find((e: any) => e.kind === "sim" && e.verb === "launch")?.body;
+      return { g: show(g), d: show(d), y0: +y0.toFixed(4), yaw: L ? +L.yaw.toFixed(4) : null }; },
+    good: (o) => o.g === "ok" && o.d === "ok" && o.yaw !== null && Math.abs(o.yaw - (o.y0 - 1)) < 1e-3 },
+  { id: "Y3", what: "…and taken from one hand into another, it starts as the first hand had turned it (the taker's put turns by the taker's turn only)", run(s) { cast(s);
+      const faces: any = { vic: 0, ann: 2 };
+      s.call("olive", "create", { id: "box1", model: "book", components: { grabbable: { who: "visitor", steal: true }, transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+      s.w().present = () => Object.entries(faces).map(([id, yaw]) => ({ id, at: null, yaw }));
+      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("ann", "move", { to: [0.4, 0, 0.5] });
+      s.call("vic", "grab", { id: "box1" }); faces.vic = 0.5;            // vic turns half a radian with it
+      const a = s.call("ann", "grab", { id: "box1" }); faces.ann = 2.25;  // ann takes it, and turns a quarter radian
+      const p = s.call("ann", "put", { id: "box1" }); const q = tf(s, "box1")?.q;
+      return { a: show(a), p: show(p), yaw: q ? +(2 * Math.atan2(q[1], q[3])).toFixed(4) : null }; },
+    good: (o) => o.a === "ok" && o.p === "ok" && Math.abs(o.yaw - 0.75) < 1e-3 },
+  { id: "Y4", what: "…and a launch refused after it turned the hold (a let-go point out of reach) leaves it turned once: the put after it isn't turned twice", run(s) { cast(s, true);
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      let face = 0; s.w().present = () => [{ id: "vic", at: null, yaw: face }];
+      s.call("vic", "move", { to: [0, 0, 0.5] }); const y0 = (() => { const q = tf(s, "ball").q; return 2 * Math.atan2(q[1], q[3]); })();
+      s.call("vic", "grab", { id: "ball" }); face = 0.7;
+      const t = s.call("vic", "throw", { id: "ball", v: [0, 1, 1], pos: [9, 1, 9] });
+      const p = s.call("vic", "put", { id: "ball" }); const q = tf(s, "ball")?.q;
+      return { t: code(t), p: show(p), y0: +y0.toFixed(4), yaw: q ? +(2 * Math.atan2(q[1], q[3])).toFixed(4) : null }; },
+    good: (o) => o.t === "out-of-reach" && o.p === "ok" && Math.abs(o.yaw - (o.y0 + 0.7)) < 1e-3 },
+  { id: "M4", what: "…and with no relayed pose to turn by (no facing known), a put lands it as it was taken, as before", run(s) { cast(s);
+      const Q = (y: number) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)].map((n) => +n.toFixed(6));
+      s.call("olive", "create", { id: "box1", model: "book", components: { grabbable: { who: "visitor" }, transform: { pos: [0, 0, 0], q: Q(0.3), scale: [1, 1, 1] } } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "box1" }); const p = s.call("vic", "put", { id: "box1" }); const q = tf(s, "box1")?.q;
+      return { p: show(p), yaw: q ? +(2 * Math.atan2(q[1], q[3])).toFixed(4) : null }; },
+    good: (o) => o.p === "ok" && Math.abs(o.yaw - 0.3) < 1e-3 },
   { id: "G3", what: "…and in a world that runs physics: the grab lifts it out of the engine, a drop sets it down (it isn't dynamic, so it doesn't fly), a carrier agrees", run(s) { cast(s, true);
       s.call("olive", "create", { id: "lantern", model: "table-lamp", components: { grabbable: { who: "visitor" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const n0 = s.entries().length;

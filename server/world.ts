@@ -133,7 +133,7 @@ export class World {
         for (const c of this.clients) { try { c.ws.send(c.actorId && (S[c.actorId] as any)?.ghost ? g : d); } catch { /* gone */ } } },
       rightsChanged: () => onRightsChanged(this),
       debug: (kind: string, detail: Record<string, unknown>) => this.debug(kind, detail),
-      present: () => [...this.clients].filter((c) => !c.spectator && c.actorId && (c.surface ?? "world") === "world" && !log.ghostHere(c.actorId)).map((c) => ({ id: c.actorId!, at: Array.isArray(c.lastPose?.p) ? c.lastPose!.p! : null })),
+      present: () => [...this.clients].filter((c) => !c.spectator && c.actorId && (c.surface ?? "world") === "world" && !log.ghostHere(c.actorId)).map((c) => ({ id: c.actorId!, at: Array.isArray(c.lastPose?.p) ? c.lastPose!.p! : null, ...(Number.isFinite(c.lastPose?.yaw) ? { yaw: c.lastPose!.yaw as number } : {}) })),   // yaw: the facing a carried thing turns by (heldQ)
       toActor: (actor: string, msg: unknown) => { const d = JSON.stringify(msg); let n = 0;
         for (const c of this.clients) if (c.actorId === actor && !c.spectator && (c.surface ?? "world") === "world") { try { c.ws.send(d); n++; } catch { /* gone */ } }
         return n > 0; },
