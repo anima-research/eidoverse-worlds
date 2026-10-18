@@ -32,7 +32,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a delegate may remove", "shared/protocol/consent.js", "if (!self && lists) return", "if (false && lists) return", ["C3"]],
   ["the door doesn't take the words", "shared/protocol/verbspec.js", "unfriend: { type: \"any\"", "unfriendX: { type: \"any\"", ["C2", "C3"]],
   ["the verb reads a removal as a read", "shared/protocol/authority/bodyconsent.js", "\"delegate\", \"unfriend\", \"undelegate\"].some", "\"delegate\"].some", ["C1", "C2"]],
-  ["§7 forgets rename-components", "spec/PROTOCOL.md", "\n| components and fields renamed before release (§4), at every load | its own act `rename-components {renamed, why}` and its change | `system` | the system's capability, per thing | the actor |", "", ["X1"]],
+  ["§7 forgets rename-components", "spec/PROTOCOL.md", "\n| components and fields renamed before release (§4), at every load | its own act `rename-components {renamed, why, failed?}` and its change | `system` | the system's capability, per thing | the actor |", "", ["X1"]],
   ["§4 forgets the rename", "spec/PROTOCOL.md", "**A pure rename runs at every load.**", "**A pure rename runs.**", ["X1"]],
   ["a seated declaration says nothing", "mcpl/tools.ts", "and grants nothing${seated}`); }", "and grants nothing`); }", ["B1"]],
   ["a declaration dropped", "mcpl/ping-wire.ts", "const d = typeof declares === \"string\" && declares ? { declares } : {};", "const d = {};", ["B2"]],
@@ -137,6 +137,18 @@ const cases: Case[] = [
       return { before, r: show(r), touching, un: show(un), ended: un?.ended ?? null, still: !!s.w().presence.reaches?.bob, after: after.tier, mode: after.mode,
         hers: tableOf(s, "alice").friendsList, his: tableOf(s, "bob").friendsList }; },
     good: (o) => o.before === "friends" && o.r === "ok" && o.touching && o.un === "ok" && Array.isArray(o.ended) && o.ended.some((e: any) => e.actor === "bob") && !o.still && o.after === "everyone" && o.mode === "ask" && JSON.stringify(o.hers) === "[]" && JSON.stringify(o.his) === '["alice"]' },
+  { id: "C6", what: "(r12 M1) an unfriend re-checks the EX-FRIEND's body too (friendship is mutual): bob's friends tier allows pose; alice poses bob and her touch is on his shoulder; alice's consent {unfriend: bob} ends both on bob's body (her `ended`, body-revoked in her inbox) and her next reach is an ask, not the stale yes", run(s) {
+      s.call("olive", "create-world", { title: s.name });
+      s.call("alice", "move", { to: [0, 0, 0] }); s.call("bob", "move", { to: [0.5, 0, 0] });
+      s.call("alice", "consent", { friend: "bob" }); s.call("bob", "consent", { friend: "alice" });
+      s.call("bob", "consent", { set: { class: "pose", tier: "friends", mode: "allow" } }); s.call("bob", "consent", { set: { class: "touch", tier: "friends", mode: "allow" } });
+      const p = s.call("alice", "body", { to: "bob", kind: "pose", spec: { bones: {} } }); const r = s.call("alice", "reach", { who: "bob", point: "shoulder_l" });
+      const P0 = s.w().presence; const had = { pose: P0.bodies?.bob?.poseBy === "alice", reach: !!P0.reaches?.alice };
+      const un = s.call("alice", "consent", { unfriend: "bob" });
+      const P = s.w().presence; const ra = s.call("alice", "reach", { who: "bob", point: "shoulder_l" });
+      return { p: show(p), r: show(r), had, ended: (un?.ended ?? []).filter((e: any) => e.actor === "alice").map((e: any) => e.class).sort(),
+        poseBy: P.bodies?.bob?.poseBy ?? null, reach: !!P.reaches?.alice, again: ra?.outcome ?? show(ra) }; },
+    good: (o) => o.had.pose && o.had.reach && JSON.stringify(o.ended) === '["pose","touch"]' && o.poseBy === null && !o.reach && o.again === "asked" },
   { id: "C3", what: "(stern M1) only the owner removes: a delegate's {of, undelegate} and {of, unfriend} are refused `consent` (removing is not one of a delegate's closings); a non-identity is `shape`; the door takes both words (no unknown-arg)", run(s) {
       s.call("olive", "create-world", { title: s.name });
       s.call("alice", "consent", { delegate: "mallory" }); s.call("alice", "consent", { delegate: "dora" }); s.call("alice", "consent", { friend: "bob" });
@@ -162,7 +174,7 @@ const cases: Case[] = [
   // ---------------- X: the spec says it ----------------
   { id: "X1", what: "(stern M2) §7's table of the authority's consequences lists rename-components ({renamed, why}: the system's act and change); §4 says a pure rename is not marker-gated: every load renames what it finds and writes nothing when there's nothing", run() {
       const md = PROTO(); const s7 = section(md, /\n## 7\. /); const s4 = section(md, /\n## 4\. /);
-      return { s7: /\| [^\n]*`rename-components \{renamed, why\}`[^\n]*\| `system` \|/.test(s7),
+      return { s7: /\| [^\n]*`rename-components \{renamed, why, failed\?\}`[^\n]*\| `system` \|/.test(s7),
         s4: /\*\*A pure rename runs at every load\.\*\*/.test(s4) && /`RENAMED_COMPONENTS`/.test(s4) && /`RENAMED_FIELDS`/.test(s4) && /not marker-gated/.test(s4) && /writes nothing\s+when there is nothing to rename/.test(s4) && /admitted per thing/.test(s4) }; },
     good: (o) => o.s7 && o.s4 },
   // ---------------- B: the agent's body ----------------

@@ -670,7 +670,9 @@ request moves a copy to a newer version, keeping its own overrides.
   {delegate}` / `{undelegate}`, `{friend}` / `{unfriend}`; a delegate's removal
   closes nothing for you, so it is never one of their closings). Removing a
   friend takes them off your list, and the mutual tier ends at once: what only
-  the friends tier allowed them ends as any closing of your table does.
+  the friends tier allowed them ends as any closing of your table does, on
+  both bodies: the tier is mutual, so what only it allowed *you* on theirs
+  ends too.
   Silence is no. For touch, pose, shove and
   displace the authority refuses before delivery (a reach at the relay, above),
   and the target's own client has the final word. *Near, follow and voice
@@ -795,7 +797,7 @@ Only what the asker could have written themselves, on what they are writing anyw
 | a deletion's set-down of unparented things resting on what it removes | the asker's change | the asker | no rights, locks or keys (shape checks) | `followUps` |
 | riders set down or dropped when a host's geometry changes | its own act `resettle {hosts, riders, asked}`, caused by the asker's act, and its change | `system` | the system's capability, scoped to those riders | the actor |
 | settle, return-lost, return-held, restamp-engine, lift-sockets, repair-shapes | their own act and change | `system` | the system's capability | the actor |
-| components and fields renamed before release (§4), at every load | its own act `rename-components {renamed, why}` and its change | `system` | the system's capability, per thing | the actor |
+| components and fields renamed before release (§4), at every load | its own act `rename-components {renamed, why, failed?}` and its change | `system` | the system's capability, per thing | the actor |
 | a physics rest | its own change, caused by the launch | `sim` | the rest capability | the actor |
 | stamps on what the asker is writing (a physics shape, a home, a media or model hash; a home for a reset's target) | the asker's change | the asker | the asker's rights (a target they may not edit refuses the write) | no: they are the asker's |
 
