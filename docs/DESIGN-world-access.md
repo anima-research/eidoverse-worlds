@@ -160,7 +160,11 @@ join could leave a world behind.
 
 - **World policy** is the only thing that can *admit*.
 - **Credential narrowing** can only *refuse*. Examples: `nativeWorld`, and
-  `claims.worlds` at the MCPL door. Absent means unrestricted.
+  `claims.worlds` at the MCPL door. Absent means unrestricted. Narrowing
+  travels with the credential to every door: over HTTP (`httpCaller` →
+  `entryFor`, so `/geom`, `/heightmap`, `/snap`, `/worlds`, `/access`) a native
+  session approved for `water` is a guest at any other world (review of PR
+  #260); the WebSocket join refuses it outright (4003).
 
 ## Enforcement: one function
 

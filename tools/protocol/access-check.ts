@@ -153,6 +153,12 @@ try { srv.proc.kill(); } catch {}
 await sleep(300);
 
 // ---- A3 (idle): after a restart, nobody in it, the members-only world's door is read from its log without loading it ----
+// A10's sessions (restored at boot): Rowan's account as a cookie session, once narrowed to `water` (native pairing,
+// HnSession.nativeWorld) and once not
+const SID_NATIVE = "a".repeat(64), SID_FULL = "b".repeat(64);
+fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
+  [SID_NATIVE]: { sub: "agent:token:rowan", name: "Rowan", scopes: ["worlds:join"], exp: Date.now() + 3600_000, nativeWorld: "water" },
+  [SID_FULL]: { sub: "agent:token:rowan", name: "Rowan", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }));
 { const s2 = await start();
   const anon = await worldsAs(s2.port), member = (await worldsAs(s2.port, "tok-rowan")).find((x) => x.name === "keep");
   const a1 = await accessAs(s2.port, "keep", "tok-fen");   // a stranger (Moss is listed by now, for A8)
@@ -167,6 +173,16 @@ await sleep(300);
     ok(!map.some((x) => x.name === "keep") && acc.body?.you === "none" && g1 === 404 && g2 === 404 && hm.status === 404 && /no such world/.test(hmText) && still?.loaded === false,
       `A8 after a restart, the world unloaded: the ${who} (still listed) is refused by /worlds, /access, /geom (404, twice) and /heightmap, and the refusal loads nothing`,
       { map: map.map((x) => x.name), access: acc.body, geom: [g1, g2], heightmap: [hm.status, hmText.slice(0, 60)], loaded: still?.loaded }); }
+  { // A10 (review of PR #260, access.ts:161; Antra's repro): a native session approved only for `water` keeps that limit over
+    // HTTP — at the members-only world Rowan is listed in it is no one (/geom 404, off its /worlds map, /access none), while
+    // the same account's unnarrowed session reads it (200, on the map, enter)
+    const cookieGet = (sid, u) => fetch(`http://127.0.0.1:${s2.port}${u}`, { headers: { cookie: `ew_sess=${sid}` } });
+    const gN = (await cookieGet(SID_NATIVE, "/geom?world=keep")).status, gF = (await cookieGet(SID_FULL, "/geom?world=keep")).status;
+    const mapN = (await (await cookieGet(SID_NATIVE, "/worlds")).json()).worlds ?? [], mapF = (await (await cookieGet(SID_FULL, "/worlds")).json()).worlds ?? [];
+    const aN = await (await cookieGet(SID_NATIVE, "/access?world=keep")).json(), aF = await (await cookieGet(SID_FULL, "/access?world=keep")).json();
+    ok(gN === 404 && gF === 200 && !mapN.some((x) => x.name === "keep") && mapF.some((x) => x.name === "keep") && aN.you === "none" && aF.you === "enter",
+      "A10 a native session narrowed to water is no one at another world's door over HTTP (/geom 404, not on /worlds, /access none); the same account unnarrowed reads it",
+      { geom: [gN, gF], map: [mapN.map((x) => x.name), mapF.map((x) => x.name)], access: [aN, aF] }); }
   try { s2.proc.kill(); } catch {} }
 { // A9 (final review M1): a members-only door is not opened by default-role / role-defs powers handed to everyone
   const { entryFor } = await import(path.join(ENGINE, "server/access.ts"));

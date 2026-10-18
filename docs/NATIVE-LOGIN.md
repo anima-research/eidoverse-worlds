@@ -17,7 +17,8 @@ or Discord OAuth configuration changes, world verbs, or fold changes are needed.
 5. `/native/poll` returns 202 pending, 429 slow down, 403 denied/revoked or 410
    expired/used. A successful single-use redemption returns a separate `ew_sess`
    cookie plus name and remaining lifetime. Native cookies carry only join/spectate
-   scopes and `nativeWorld: water`; the WS join gate checks it before world creation.
+   scopes and `nativeWorld: water`; the WS join gate checks it before world creation,
+   and the HTTP reads treat it as a guest at any other world's door.
 6. Unreal offers a separate **Join water** button. Pairing itself never joins.
    Native logout revokes only the independent native session. No persistent client
    credential store; closing Play clears/revokes the session best-effort.
