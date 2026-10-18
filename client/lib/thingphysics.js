@@ -297,15 +297,18 @@ export function palmOf(actorId, side, out) {
   n.updateWorldMatrix(true, false); n.getWorldQuaternion(out.q).multiply(PALM_Q); out.p.copy(_pa);
   return out;
 }
-// a thing's visual centre, local to its origin (its collider box): held by its middle, not its base
-const _c = new THREE.Vector3(), _cq = new THREE.Quaternion();
+// a thing's visual centre, local to its origin (its collider box): held by its middle, not its base. Scaled by its WORLD
+// scale: a thing the physics stacked on another is that one's scene child, and its own scale is local (R 10-17 20:14: a
+// stacked crate, 1 under a 0.25 host, was drawn a metre off the hand)
+const _c = new THREE.Vector3(), _cq = new THREE.Quaternion(), _sc = new THREE.Vector3();
+const worldScaleOf = (obj) => (obj?.getWorldScale ? (obj.updateWorldMatrix?.(true, false), obj.getWorldScale(_sc)) : (obj?.scale ?? { x: 1, y: 1, z: 1 }));
 function localCentre(id, obj) {
   const b = colliders.get(id)?.box; if (!b) return _c.set(0, 0.1, 0);
-  const s = obj.scale ?? { x: 1, y: 1, z: 1 };
+  const s = worldScaleOf(obj);
   return _c.set((b.min.x + b.max.x) / 2 * (s.x || 1), (b.min.y + b.max.y) / 2 * (s.y || 1), (b.min.z + b.max.z) / 2 * (s.z || 1));
 }
-/** A thing's measured size (its collider box × scale), or null. */
-function sizeOf(id, obj) { const b = colliders.get(id)?.box; if (!b) return null; const s = obj?.scale ?? { x: 1, y: 1, z: 1 };
+/** A thing's measured size (its collider box × its world scale), or null. */
+function sizeOf(id, obj) { const b = colliders.get(id)?.box; if (!b) return null; const s = worldScaleOf(obj);
   return [(b.max.x - b.min.x) * (s.x || 1), (b.max.y - b.min.y) * (s.y || 1), (b.max.z - b.min.z) * (s.z || 1)]; }
 const _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _s = new THREE.Vector3();
 /** Draw obj at a WORLD pose whatever its scene parent (a thing that rested on a table may hang under it). */
