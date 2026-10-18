@@ -29,7 +29,9 @@ it swapped in: `world.jsonl` lands in the world's directory in one rename, and t
 the same files, never rewritten or deleted. The old log must hold exactly the bytes that were translated (their size
 and sha256, recorded in the temporary directory as `.source.json`) right before the swap and again after its last
 rename: an old server still writing to it refuses the swap (stop it, then translate again), and the recovery of an
-interrupted swap checks the same before it moves anything. On any failure, before or during the swap, whatever moved is
+interrupted swap checks the same before it moves anything. The identities the translation mints join the shared
+directory only once the swap has succeeded (kept until then in the temporary directory as `.identities.json`, which the
+recovery of an interrupted swap writes): a failed attempt leaves none behind, so retries don't pile up unused ones. On any failure, before or during the swap, whatever moved is
 put back, the temporary directory is removed, and it says why. A directory whose `world.jsonl` is a world is served as one, so the
 kept `log.original.jsonl` never makes it look old; translating it again refuses. `translate <old world> <new name>`
 still translates into a new name instead, leaving the old directory exactly as it was. At boot the server prints, for

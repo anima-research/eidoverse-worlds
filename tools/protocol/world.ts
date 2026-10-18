@@ -25,6 +25,7 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { WORLDS_DIR } from "../../server/config.ts";
+import { directoryFor } from "../../server/directory.ts";
 import { foundWorld, isWorldSaved } from "../../server/worldlog.ts";
 import { translateV1World } from "./import-v1/world.ts";
 import { openLive, isWorldDir } from "../../server/livehost.ts";
@@ -41,6 +42,13 @@ const ORIGINAL = { log: "log.original.jsonl", snapshot: "snapshot.original.json"
 // swap, and the recovery of an interrupted swap, refuse when the old log no longer holds exactly those bytes (review of
 // PR #260, world.ts:99: an old server still writing during the conversion would have had its later edits dropped)
 const SOURCE = ".source.json";
+// …and the identities the translation minted, written to the shared directory only once the swap has succeeded (a failed
+// attempt leaves none behind: review of PR #260, import-v1/world.ts:86), or by the recovery that finishes an interrupted one
+const IDENTITIES = ".identities.json";
+const putIdentities = (planned: Record<string, any>) => { const dir = directoryFor(WORLDS_DIR);
+  const fresh = Object.fromEntries(Object.entries(planned).filter(([id]) => !dir.entry(id)));   // a recovery after they landed adds nothing twice
+  if (Object.keys(fresh).length) dir.put(fresh); return Object.keys(fresh).length; };
+const TEMP_ONLY = new Set([SOURCE, IDENTITIES]);
 const sourceOf = (f: string) => { const b = fs.readFileSync(f); return { size: b.length, sha256: crypto.createHash("sha256").update(b).digest("hex") }; };
 const sourceChanged = (f: string, was: { size: number; sha256: string }) => { const now = sourceOf(f); return now.size !== was.size || now.sha256 !== was.sha256 ? now : null; };
 const stillWriting = (f: string, was: { size: number }, now: { size: number }) => `${f} changed while it was being translated (${was.size} bytes when it was read, ${now.size} now): something — an old server — is still writing to it, and the translation would leave out what it wrote. Stop the old server, then translate again.`;
@@ -90,19 +98,19 @@ function translateInPlace(name: string, founderKey: string | undefined) {
   //    checks (0 divergences, projection equality, strict read-back) run before it writes anything
   const T = path.join(WORLDS_DIR, `.translating-${name}-${crypto.randomBytes(4).toString("hex")}`);
   let r: ReturnType<typeof translateV1World>;
-  try { r = translateV1World(D, T, { founderKey, name }); } catch (x) { fail(`the translation failed: ${(x as Error).message}`, T); throw 0; }
+  try { r = translateV1World(D, T, { founderKey, name, deferIdentities: true }); } catch (x) { fail(`the translation failed: ${(x as Error).message}`, T); throw 0; }
   // 3. the result, opened as the server opens it: a world, folding to the importer's digest
   try { const live = openLive(T, name); const st = live.state();
     if (!isWorldDir(T) || st.status !== "ok" || digest(st) !== r.digest) throw new Error(`opened as the server opens it: ${isWorldDir(T) ? "" : "not a world, "}status ${st.status}, digest ${digest(st)} (the importer said ${r.digest})`); }
   catch (x) { fail(`the translated world didn't verify: ${(x as Error).message}`, T); }
   // 3b. the old log still holds exactly the bytes that were translated (recorded in the temporary sibling, for a recovery too)
-  fs.writeFileSync(path.join(T, SOURCE), JSON.stringify(r!.source));
+  fs.writeFileSync(path.join(T, SOURCE), JSON.stringify(r!.source)); fs.writeFileSync(path.join(T, IDENTITIES), JSON.stringify(r!.planned));
   { const now = sourceChanged(log, r!.source); if (now) fail(stillWriting(log, r!.source, now), T); }
   // 4. the swap. world.jsonl first: one rename makes the directory a world (the old log beside it is ignored from then on)
   const steps: [string, string][] = [[path.join(T, "world.jsonl"), path.join(D, "world.jsonl")], [log, path.join(D, ORIGINAL.log)]];
   if (fs.existsSync(path.join(D, "snapshot.json"))) steps.push([path.join(D, "snapshot.json"), path.join(D, ORIGINAL.snapshot)]);
   if (fs.existsSync(path.join(D, "poses.json"))) steps.push([path.join(D, "poses.json"), path.join(D, ORIGINAL.poses)]);
-  for (const f of fs.readdirSync(T)) if (f !== "world.jsonl" && f !== SOURCE) steps.push([path.join(T, f), path.join(D, f)]);
+  for (const f of fs.readdirSync(T)) if (f !== "world.jsonl" && !TEMP_ONLY.has(f)) steps.push([path.join(T, f), path.join(D, f)]);
   const done: [string, string][] = [];
   const fault = Number(process.env.WORLD_TS_FAULT_AT_STEP ?? NaN);   // tests only: fail as if step k's rename had (tools/protocol/inplace-check.ts)
   const death = Number(process.env.WORLD_TS_DIE_AT_STEP ?? NaN);      // tests only: the process dies after k renames, no rollback (IP13)
@@ -111,7 +119,11 @@ function translateInPlace(name: string, founderKey: string | undefined) {
       if (done.length === touch) fs.appendFileSync(fs.existsSync(log) ? log : path.join(D, ORIGINAL.log), '{"seq":999,"ts":1,"actor":"late","verb":"say","args":{"text":"written during the swap"}}\n');
       if (fs.existsSync(b)) throw new Error(`${b} appeared during the swap`); fs.renameSync(a, b); done.push([a, b]); }
     // …and once more after the last rename (the same file, renamed beside the world): a write that slipped in mid-swap undoes it
-    { const now = sourceChanged(path.join(D, ORIGINAL.log), r!.source); if (now) throw new Error(stillWriting(path.join(D, ORIGINAL.log), r!.source, now)); } }
+    { const now = sourceChanged(path.join(D, ORIGINAL.log), r!.source); if (now) throw new Error(stillWriting(path.join(D, ORIGINAL.log), r!.source, now)); }
+    // the swap has succeeded: only now do its identities join the shared directory (a refusal here, an account taken since,
+    // undoes the swap like any other failure)
+    if (Number(process.env.WORLD_TS_FAULT_AT_STEP ?? NaN) === steps.length) throw new Error(`(injected) step ${steps.length} failed`);
+    putIdentities(r!.planned); }
   catch (x) {
     const stuck: string[] = [];
     for (const [a, b] of done.reverse()) { try { fs.renameSync(b, a); } catch (y) { stuck.push(`${b} (should be ${a}: ${(y as Error).message})`); } }
@@ -162,7 +174,9 @@ function finishSwap(name: string, at: { D: string; temps: string[]; oldLog: bool
   // a poses.json beside the world is the world's own
   if (temps.length || at.oldLog) { mv(path.join(D, "snapshot.json"), path.join(D, ORIGINAL.snapshot));
     if (fs.existsSync(path.join(D, "poses.json")) && !fs.existsSync(path.join(D, ORIGINAL.poses)) && (!temps.length || fs.existsSync(path.join(temps[0], "poses.json")))) mv(path.join(D, "poses.json"), path.join(D, ORIGINAL.poses)); }
-  for (const T of temps) { fs.rmSync(path.join(T, SOURCE), { force: true }); for (const f of fs.readdirSync(T)) mv(path.join(T, f), path.join(D, f));
+  for (const T of temps) { fs.rmSync(path.join(T, SOURCE), { force: true });
+    if (fs.existsSync(path.join(T, IDENTITIES))) { const n = putIdentities(JSON.parse(fs.readFileSync(path.join(T, IDENTITIES), "utf8"))); fs.rmSync(path.join(T, IDENTITIES)); if (n) did.push(`${n} identit${n === 1 ? "y" : "ies"} added to the directory`); }
+    for (const f of fs.readdirSync(T)) mv(path.join(T, f), path.join(D, f));
     if (!fs.readdirSync(T).length) { fs.rmSync(T, { recursive: true, force: true }); did.push(`removed ${path.relative(WORLDS_DIR, T)}`); } }
   if (stuck.length) die(`the in-place translation of "${name}" was interrupted; finishing it moved ${did.length ? did.join(", ") : "nothing"}, but these are in the way; move them by hand:\n  ${stuck.join("\n  ")}\n`
     + `${ORIGINAL.log} (or log.jsonl) is the untouched original either way.`);

@@ -24,6 +24,8 @@
 //   IP14 an old log written to during the translation (a server still running): the swap refuses and moves nothing
 //   IP15 a write that slips in mid-swap (injected: WORLD_TS_TOUCH_SOURCE_AT_STEP) undoes the swap
 //   IP16 finishing an interrupted swap refuses when the old log changed since the translation read it
+//   IP17 a failed in-place translation adds no identity to the shared directory; the clean run adds them once
+//   IP18 the recovery of an interrupted swap writes the identities the interrupted run planned
 //   IP11 a snapshot.json the oracle can't compare (a fold of part of the log) doesn't block the translation: it says,
 //        in its output, that the snapshot was NOT compared and why, and keeps it as snapshot.original.json
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/inplace-check.ts
@@ -233,6 +235,29 @@ for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); 
   const mid = fingerprint(d); const r = tool(["translate", name, "--no-founder-key"]); const after = fingerprint(d);
   ok(died.code !== 0 && r.code !== 0 && /changed while it was being translated/.test(r.out) && same(after, mid) && temps().some((t) => t.includes(name)),
     "IP16 finishing an interrupted swap refuses when the old log changed since it was read, and moves nothing", { died: died.code, code: r.code, out: r.out.slice(-500), same: same(after, mid) }); }
+
+// ================= IP17–IP18: identities are written only once the world is in place (review of PR #260, import-v1/world.ts:86) =================
+// IP17 with no TRUST_NAMES, Ann and Bob are imported people with no account: each attempt mints them anew. A failure before,
+//      during or after the renames (injected at step 0, 2 and 5 — 5 is after the last rename) and a concurrent writer each
+//      leave the shared directory exactly as it was; the clean run then adds them once
+const dirf = path.join(W, ".directory.json");
+const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).actor).filter((a: string) => /^u-/.test(a)))];
+{ const name = "nameless"; const d = oldWorld(name); const before = fs.readFileSync(dirf, "utf8");
+  const runs = [0, 2, 5].map((k) => { const r = tool(["translate", name, "--no-founder-key"], { TRUST_NAMES: "", WORLD_TS_FAULT_AT_STEP: String(k) });
+    return { k, code: r.code, dirSame: fs.readFileSync(dirf, "utf8") === before, temps: temps().filter((t) => t.includes(name)).length }; });
+  const ok1 = tool(["translate", name, "--no-founder-key"], { TRUST_NAMES: "" });
+  const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {}; const was = JSON.parse(before).ids ?? {};
+  const added = Object.keys(ids).filter((k) => !was[k]); const actors = actorsOf(d);
+  ok(runs.every((x) => x.code !== 0 && x.dirSame && x.temps === 0), "IP17 a failed in-place translation (before, during or after the renames) adds no identity to the shared directory", runs);
+  ok(ok1.code === 0 && actors.length >= 2 && actors.every((a) => ids[a]) && added.length === actors.filter((a) => !was[a]).length,
+    "IP17 …and the clean run adds exactly the identities its world names, once (no leftovers from the failed attempts)", { code: ok1.code, out: ok1.out.slice(-300), added: added.length, actors: actors.length }); }
+// IP18 the recovery of an interrupted swap writes the identities the interrupted run planned (it died before writing them)
+{ const name = "nameless2"; const d = oldWorld(name);
+  const died = tool(["translate", name, "--no-founder-key"], { TRUST_NAMES: "", WORLD_TS_DIE_AT_STEP: "1" });
+  const mid = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {}; const actors = actorsOf(d);
+  const r = tool(["translate", name, "--no-founder-key"], { TRUST_NAMES: "" }); const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {};
+  ok(died.code !== 0 && actors.some((a) => !mid[a]) && r.code === 0 && actors.every((a) => ids[a]) && /identit/.test(r.out),
+    "IP18 an interrupted swap's identities aren't in the directory until the recovery finishes it, which adds them", { died: died.code, missingMid: actors.filter((a) => !mid[a]).length, code: r.code, out: r.out.slice(-300) }); }
 
 console.log(`inplace: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

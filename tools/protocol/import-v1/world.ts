@@ -21,8 +21,11 @@ type Any = any;
 /** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir. `founderKey`: the
  *  founder's own governance key (ed25519:…), made on their machine, for tier 0 (README.md, "The Commons ceremony").
  *  `name`: the world's name, when destDir's own name isn't it (an in-place translation writes into a temporary sibling
- *  first: world.ts translate <world>); the world's own inventions are namespaced by it. */
-export function translateV1World(srcDir: string, destDir: string, { founderKey, name }: { founderKey?: string; name?: string } = {}) {
+ *  first: world.ts translate <world>); the world's own inventions are namespaced by it. `deferIdentities`: don't write the
+ *  planned identities to the shared directory; return them (`planned`) for the caller to write once the world is really
+ *  in place (an in-place translation writes into a temporary sibling that may still be thrown away: review of PR #260,
+ *  import-v1/world.ts:86 — a failed attempt left its minted identities behind, and every retry minted more). */
+export function translateV1World(srcDir: string, destDir: string, { founderKey, name, deferIdentities = false }: { founderKey?: string; name?: string; deferIdentities?: boolean } = {}) {
   const src = path.join(srcDir, "log.jsonl");
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
   if (fs.existsSync(path.join(destDir, "world.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) throw new Error(`${destDir} already holds a world`);
@@ -38,7 +41,8 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // the sequencer key is this server's (the custody file every world in this worlds dir shares, server/custody.ts)
   // identities (round-2 review R1): every v1 person becomes an opaque id in the authority directory; an account seen in the
   // log (a role's sub, an agent's reserved name) keeps the id it already wears here. Planned in memory, written to the
-  // directory only after the log is: a failed translation leaves no identities behind.
+  // directory only after the log is — and, translating in place (deferIdentities), only once the swap has succeeded
+  // (world.ts): a failed translation leaves no identities behind.
   const dir = directoryFor(path.dirname(destDir)); const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
   const agents = agentTokens().names;
   const isAcct = (k: string) => /^(human|agent|aid1):/.test(k);
@@ -87,7 +91,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   const tmp = path.join(destDir, "world.jsonl.tmp");
   fs.writeFileSync(tmp, text);
   fs.renameSync(tmp, path.join(destDir, "world.jsonl"));
-  dir.put(planned);
+  if (!deferIdentities) dir.put(planned);
   for (const [h, p] of addressed) recordEido(h, p);
   // v1 bans are the moderator's record in v4 (the authority reads bans only from world.mod.jsonl): file each one there, or a
   // translated world quietly unbans everyone (component review, world-settings #3)
@@ -101,6 +105,6 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   if (fs.existsSync(oldPoses)) { try { const P = JSON.parse(fs.readFileSync(oldPoses, "utf8")); const out: Record<string, unknown> = {};
     for (const [name, pose] of Object.entries<Any>(P ?? {})) { const id = memo.get(`name:${name}`); if (id && pose) { out[id] = pose; poses++; } }
     if (poses) fs.writeFileSync(path.join(destDir, "poses.json"), JSON.stringify(out)); } catch { /* an unreadable poses file: nobody's place is remembered */ } }
-  return { source, identities: Object.keys(planned).length, renamedBlobs, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back), poses, ...(sim ? { sim } : {}) };
+  return { source, planned, identities: Object.keys(planned).length, renamedBlobs, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back), poses, ...(sim ? { sim } : {}) };
 }
 
