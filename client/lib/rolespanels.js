@@ -23,7 +23,7 @@ import { net, sendRequest, replica, identities } from './net.js';
 import { makeSection, moderationFrame, worldSettingsFrame, setDockEntry, toast } from './ui.js';
 import * as R from '../../shared/protocol/roles.js';
 import { DOORS, doorOf, doorWrites, leftWords, listedIn } from '../../shared/protocol/access.js';
-import { serverNow } from './remotes.js';
+import { serverNow } from './serverclock.js';   // straight from the clock: via remotes.js this closes an import cycle and the re-export is unbound at load
 import { COMPONENTS, resolveVersioned, rangeWords, outOfRange } from '../../shared/protocol/componentspec.js';
 import { SIM_ID } from '../../shared/sim.js';
 

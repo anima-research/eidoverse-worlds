@@ -31,7 +31,8 @@ function thingNamed(word) {
 import {
   net, replica, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldFound, sendWorldReset, requestDebug, sendRequest,
 } from '../net.js';
-import { remotes, serverNow } from '../remotes.js';
+import { remotes } from '../remotes.js';
+import { serverNow } from '../serverclock.js';   // straight from the clock: through remotes.js this closes an import cycle and the re-export is unbound at load
 import { myState, setPosture, flightReport } from '../controller.js';
 import { punt as puntThing, grab, put, drop, throwHeld } from '../thingphysics.js';
 import { logChat } from '../chat.js';
