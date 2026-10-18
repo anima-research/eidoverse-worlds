@@ -85,6 +85,8 @@ out, the gate sends SIGTERM to the whole group, waits 5 s, then sends SIGKILL. W
 whatever is left in its group: a server, a sandbox process or a Chromium the suite left running. The count shows on
 the suite's line as `killed N leftover process(es)` and again in the tally. The suite's directory is then removed.
 Ctrl-C, SIGTERM or SIGHUP to the gate kills the running suite's group and removes the gate's temp dir.
+`PROTOCOL_TIMEOUT_SCALE=<factor>` multiplies every timeout, for a very slow host (`2`) or to watch the kill work
+(`0.01`).
 `PROTOCOL_KEEP=1` keeps the temp dir so you can read it.
 
 Every fixture the gate needs is in the repo:

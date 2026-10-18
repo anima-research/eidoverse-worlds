@@ -19,6 +19,7 @@
 //   CHROME=<chromium binary>                the browser lane's Chromium (else playwright's, else /usr/bin/{google-chrome,chromium})
 //   PYTHON=<python3>                        the conformance suite's interpreter (else python3 on PATH)
 //   PROTOCOL_KEEP=1                         keep the gate's temp dir to read
+//   PROTOCOL_TIMEOUT_SCALE=<factor>         multiply every suite's timeout (a very slow host: 2)
 //   PROTOCOL_HEADLESS_LOCK=<file> PROTOCOL_PERF_GUARD=<script>   run browser suites under a host's flock + perf guard
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -173,7 +174,10 @@ const EXPECT: Record<string, number> = {
   "navgrid-edge": 0.7, "places": 146, "places-scale": 16, "shape-attach": 1.7, "shape-physics": 1.4,
   "shape-repair": 0.7, "buildcheck": 36, "buildcheck-queue": 11, "buildcheck-route": 38, "client-tools": 202
 };
-const timeoutOf = (name: string) => Math.max(180, Math.ceil((EXPECT[name] ?? 60) * 5));
+// PROTOCOL_TIMEOUT_SCALE=<factor> stretches (or, to test the kill, shrinks) every timeout; the manifest shows factor 1
+const TIMEOUT_SCALE = Number(process.env.PROTOCOL_TIMEOUT_SCALE ?? 1) > 0 ? Number(process.env.PROTOCOL_TIMEOUT_SCALE ?? 1) : 1;
+const baseTimeout = (name: string) => Math.max(180, Math.ceil((EXPECT[name] ?? 60) * 5));
+const timeoutOf = (name: string) => Math.max(1, Math.round(baseTimeout(name) * TIMEOUT_SCALE));
 
 // ---- the declared runtimes (package.json "engines": the one place) ----
 const ENGINES: Record<string, string> = JSON.parse(fs.readFileSync(ENGINE + "package.json", "utf8")).engines ?? {};
@@ -198,7 +202,7 @@ function suitePath(file: string) { return path.resolve(ENGINE, "tools/protocol",
 function manifest() {
   const rows = ["| # | suite | lane | file | needs | expected | timeout |", "|---|---|---|---|---|---|---|"];
   const ordered = [...CORE.map((n) => SUITES.find((s) => s[0] === n)!), ...SUITES.filter(([n]) => laneOf(n) === "main"), ...SUITES.filter(([n]) => laneOf(n) === "browser")];
-  ordered.forEach(([name, file], i) => rows.push(`| ${i + 1} | ${name} | ${laneOf(name)} | \`${path.relative(ENGINE, suitePath(file))}${file.includes(" ") ? " " + file.split(" ").slice(1).join(" ") : ""}\` | ${NEEDS[name] ?? "bun"} | ${EXPECT[name] !== undefined ? `${EXPECT[name]} s` : "?"} | ${timeoutOf(name)} s |`));
+  ordered.forEach(([name, file], i) => rows.push(`| ${i + 1} | ${name} | ${laneOf(name)} | \`${path.relative(ENGINE, suitePath(file))}${file.includes(" ") ? " " + file.split(" ").slice(1).join(" ") : ""}\` | ${NEEDS[name] ?? "bun"} | ${EXPECT[name] !== undefined ? `${EXPECT[name]} s` : "?"} | ${baseTimeout(name)} s |`));
   const sum = (l: Lane) => SUITES.filter(([n]) => laneOf(n) === l).reduce((a, [n]) => a + (EXPECT[n] ?? 0), 0);
   rows.push("", `Lanes: core ${CORE.length} suites (~${Math.round(sum("core"))} s), main ${SUITES.filter(([n]) => laneOf(n) === "main").length} (~${Math.round(sum("main"))} s), browser ${BROWSER.length} (~${Math.round(sum("browser"))} s); ${SUITES.length} suites in all.`);
   return rows.join("\n");
@@ -304,7 +308,7 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   clearTimeout(timer);
   const leftovers = child.pid ? groupMembers(child.pid) : 0;   // anything the suite started and left running
   if (child.pid) killGroup(child.pid, "SIGKILL");
-  await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000).unref(); });
+  await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000); });   // the last output, once the group is gone
   current = null;
   if (!process.env.PROTOCOL_KEEP) fs.rmSync(dir, { recursive: true, force: true });
   return { code, signal, out, timedOut, leftovers };
