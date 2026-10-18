@@ -150,8 +150,13 @@ export class WorldLog {
 
   /** One request, as `actor` (an identity the caller has already encoded). Warms any model it names first, so
    *  the authority can measure it; the authority call itself is synchronous. */
-  async request(actor: string, verb: string, args: Record<string, unknown> = {}) {
+  /** `still` (optional): the asker's capability, rechecked after the await and immediately before the synchronous authority
+   *  call (a connection that closed, was taken over or left while its request waited must not write: review of PR #260,
+   *  requestwire.ts:135). It returns null while the asker may still act, else the refusal's words; nothing is written then. */
+  async request(actor: string, verb: string, args: Record<string, unknown> = {}, still?: () => string | null) {
     await warm(modelsIn(args));
+    const gone = still?.();
+    if (gone) return { ok: false, refused: { code: "superseded", reason: gone, fix: "reconnect, then send it again from the connection that is in the world now" } };
     return this.requestSync(actor, verb, args);
   }
   requestSync(actor: string, verb: string, args: Record<string, unknown> = {}) {

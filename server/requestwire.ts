@@ -127,12 +127,18 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     // a caption carries the connection's leg generation, stamped here (never the client's word): a captioner that was
     // taken over (a newer leg of the same identity) can't write over its successor (shared/captions.js captionRefusal)
     if (verb === "caption") args.gen = c.legGen ?? 0;
+    // the connection's capability as it was when the request arrived: still in this world, not taken over (superseded),
+    // not closed (close takes it out of w.clients but leaves c.world set), the same accepted leg (gen). Checked before the
+    // queue runs it AND again after the await, immediately before the authority writes (review of PR #260, requestwire.ts:135)
+    const gen = c.gen;
+    const still = () => c.world === w && !c.superseded && w.clients.has(c) && c.gen === gen ? null
+      : "this connection left the world, was closed or was taken over by a newer one while the request waited; nothing was written";
     inOrder(c, ws, async () => {
-      if (c.world !== w) return;
+      if (still()) return;
       { const no = (metered ? reads.check(c, Date.now(), { timeOnly: true }) : null) ?? busy.check(c, Date.now()); if (no) { metered_no(no); return; } }
       const spent = busy.record(c, Date.now());
       const wasBanned = (verb === "ban" || verb === "unban") && typeof args.who === "string" ? isBanned(w.log.live, String(args.who)) : false;
-      const r = await w.log.request(actorOf(c), verb, args);
+      const r = await w.log.request(actorOf(c), verb, args, still);
       const ms = (r && typeof r === "object" && authorityTime.get(r)) || 0; if (mark) mark.ms = ms; spent.ms = ms;
       reply(r);
       // the flight recorder hears every refusal (world_debug, /debug): the authority logs refused WRITES as attempt acts, but

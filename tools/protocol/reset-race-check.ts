@@ -30,5 +30,39 @@ ok(r?.ok === false && r?.refused?.code === "reset", "RR2 the straggler is refuse
 ok(lines("race").length === before, "RR3 the new world's file gained no line from the old log", { before, after: lines("race").length });
 ok(!fresh.live.state().entities.straggler && fresh.live.entries.length === before, "RR4 the fresh log never saw it", { head: fresh.live.entries.length });
 ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset", "RR5 the old log stays retired for every later request");
+
+// ---- SR: a connection superseded (or closed) while its request awaits never writes (review of PR #260, requestwire.ts:135;
+// Antra's repro: the old tab's request still committed, wrote:true, ok reply). The await is held by a gate in front of the
+// real WorldLog.request (warm, the recheck, requestSync); the wire handler is the real REQUEST_MESSAGES.request.
+{ const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts");
+  const { owner } = foundWorld(path.join(process.env.WORLDS_DIR, "tabs"), "tabs", "olive");
+  const tw = new World("tabs");
+  const real = WorldLog.prototype.request;
+  let release = () => {}; let gate = Promise.resolve();
+  let entered = 0;
+  tw.log.request = function (...a) { entered++; return gate.then(() => real.apply(this, a)); };
+  const tab = (gen) => { const replies = []; const c = { id: "olive", world: tw, actorId: owner, gen, legGen: 0, ws: { send: (d) => { const m = JSON.parse(d); if (m.type === "reply") replies.push(m); } } };
+    tw.clients.add(c); return { c, replies }; };
+  const send = (t, rid, label) => REQUEST_MESSAGES.request({ c: t.c, ws: t.c.ws, now: Date.now(), expel: () => {} }, { id: rid, verb: "create", args: { components: { description: label } } });
+  const until = async (f) => { for (let i = 0; i < 200 && !f(); i++) await new Promise((r) => setTimeout(r, 10)); return f(); };
+  const described = (label) => Object.values(tw.log.live.state().entities).some((e) => e.c?.description === label);
+  const hold = () => { gate = new Promise((r) => { release = r; }); };
+  // superseded: the old tab's request is waiting when the same account's new tab takes over
+  hold(); const oldTab = tab(1); const n0 = tw.log.live.entries.length;
+  let e0 = entered; send(oldTab, "a1", "from-the-old-tab"); await until(() => entered > e0);   // it is inside the await now
+  oldTab.c.superseded = true; tw.clients.delete(oldTab.c); tab(2);   // the takeover path (server.ts admitJoin)
+  release(); await until(() => oldTab.replies.length);
+  const r1 = oldTab.replies[0];
+  ok(r1?.ok === false && r1?.reply?.refused?.code === "superseded" && !described("from-the-old-tab") && tw.log.live.entries.length === n0,
+    "SR1 a request waiting when its connection is superseded is refused (superseded) and writes nothing", { reply: r1, wrote: described("from-the-old-tab"), entries: [n0, tw.log.live.entries.length] });
+  // closed: close takes the connection out of the world's clients but leaves c.world set
+  hold(); const closing = tab(3); const n1 = tw.log.live.entries.length;
+  e0 = entered; send(closing, "b1", "from-a-closed-tab"); await until(() => entered > e0); tw.clients.delete(closing.c);
+  release(); await until(() => closing.replies.length);
+  ok(closing.replies[0]?.reply?.refused?.code === "superseded" && !described("from-a-closed-tab") && tw.log.live.entries.length === n1,
+    "SR2 a request waiting when its connection closes writes nothing", { reply: closing.replies[0], wrote: described("from-a-closed-tab") });
+  // the control: a connection that stays writes
+  hold(); const stays = tab(4); send(stays, "c1", "from-a-live-tab"); release(); await until(() => stays.replies.length);
+  ok(stays.replies[0]?.ok === true && described("from-a-live-tab"), "SR3 (control) a connection that is still in the world writes", stays.replies[0]); }
 fs.rmSync(root, { recursive: true, force: true });
 console.log(`[reset-race-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

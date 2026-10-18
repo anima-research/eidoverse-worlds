@@ -66,7 +66,11 @@ Every message belongs to exactly one plane:
   `reply`; every client gets the raw entries the authority appended as
   `{type:"log", from, entries}` and folds them itself with
   `shared/protocol/fold.js`. The stream is authoritative; clients must not
-  self-apply optimistically without reconciling against it.
+  self-apply optimistically without reconciling against it. A request is
+  the connection's, as it is when it arrives: one that left the world, closed
+  or was taken over (4002) while its request waited (a model warm-up) is
+  answered refused `superseded`, and nothing is written — the recheck sits
+  immediately before the authority's synchronous call.
 - **Presence** — relayed or batched, never persisted, gone when it's gone:
   `pose`/`frame`, `typing`, `caption`, `drag`, `anim`, `puppet`,
   `bodydrag`, `holds` (who holds what), `attest`/`performed`, `whisper`
