@@ -264,7 +264,7 @@ try {
   check("CU1 a press that travels 60 px is a drag (the camera's), not a click: nothing is picked up", at0?.onScreen && !(await holds())?.includes(N("cuball")), { at0, holds: await holds() });
   await click(2);
   const menu = await waitFor(`!!document.querySelector('.sp-ctx')`, 2000), items = await evalJson(`[...document.querySelectorAll('.sp-ctx-item')].map((b) => b.textContent)`);
-  check("CU2 right-click on it opens its menu: pick up first, kick among the rest", menu && /^pick up/.test(items?.[0] ?? "") && items?.some((t: string) => /^kick/.test(t)), items);
+  check("CU2 right-click on it opens its menu: pick up first, punt among the rest", menu && /^pick up/.test(items?.[0] ?? "") && items?.some((t: string) => /^punt/.test(t)), items);
   await evalJson(`(document.querySelector('.sp-ctx-item')?.click(), true)`);
   check("CU3 …and choosing 'pick up' there picks it up", await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.mine().includes('cuball'))`, 4000), { holds: await holds(), said: await evalJson(`__phys.slice(-2)`) });
   await page(`const m = await import('/lib/thingphysics.js'); await m.physicsApi.put('cuball'); return true;`);

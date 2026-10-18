@@ -38,6 +38,7 @@ plugin({
     b.onResolve({ filter: /^\.\/avatar\.js$/ }, () => ({ path: here('./recovery-avatar-stub.mjs') }));
     b.onResolve({ filter: /^\.\/world\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
     b.onResolve({ filter: /^\.\/seats\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
+    b.onResolve({ filter: /^\.\/occupants\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
     b.onResolve({ filter: /^\.\/reachnet\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
     b.onResolve({ filter: /^\.\/poseclips\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
     b.onResolve({ filter: /wingpresence\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
