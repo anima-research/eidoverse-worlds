@@ -25,7 +25,7 @@ import { buildEpoch } from "./physics.js";
 import { stampHomes, stampResetHomes } from "./manipulate.js";
 import { isLookAt } from "./checks.js";
 import { Admitted, admit, rateCheck } from "./gate.js";
-import { clearRefsTo, lastTouch, resettleRiders, stampMedia, stampModelHash, stampShapes, stripDry, touched, warnOrNot, warnings } from "./followups.js";
+import { clearRefsTo, lastTouch, resettleOccupants, stampMedia, stampModelHash, stampShapes, stripDry, touched, warnOrNot, warnings } from "./followups.js";
 import { renameFields } from "../shaperepair.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
@@ -44,9 +44,9 @@ function changeShape(plan, cause, w) {
 }
 function changeEntry(w, plan, cause) {
   if (!(plan instanceof Admitted)) throw new Error("authority bug: a state write that admit() didn't produce (§7)");
-  const pre = plan.vacate.length ? w.state() : null;   // where each rider was let go: the seat as it stood before the edit
+  const pre = plan.vacate.length ? w.state() : null;   // where each occupant was let go: the seat as it stood before the edit
   const seq = w.append(changeShape(plan, cause, w), CHANGE);
-  // the riders an edit lets go (vacatesFor): presence, after the write has landed, each told in their inbox (with where
+  // the occupants an edit lets go (vacatesFor): presence, after the write has landed, each told in their inbox (with where
   // they stand now: the authority's track of their body starts again there, scars r9 M2)
   for (const u of plan.vacate) if (w.presence.occupants?.[u.who]?.to === u.socket) { const at = vacateAt(w, pre, u.who, u.socket); clearOccupant(w, u.who);
     inboxPush(w.presence, u.who, { type: "vacated", socket: u.socket, ...(u.host ? { host: u.host } : {}), by: plan.who.actor, why: vacateWhy(u), ...(at ? { at } : {}) }); }
@@ -76,7 +76,7 @@ function commit(w, actor, verb, args, build) {
   const act = w.append(actE);
   const seq = changeEntry(w, plan, act);
   const after = w.state();
-  resettleRiders(w, actor, plan.ops, st, after, act, ctx.notes);
+  resettleOccupants(w, actor, plan.ops, st, after, act, ctx.notes);
   // an edit that moves, re-parents or removes a thing in someone's hand takes it out of the hand: it is where the edit
   // put it now. (R, 10-10: moved a held barrel in edit mode; her client let go, the authority didn't, and every throw
   // after was refused from a hand the two no longer agreed on.)
@@ -93,7 +93,7 @@ function commit(w, actor, verb, args, build) {
       if (!after.entities[id] || !ancestors(after, id).some((p) => offed.includes(p))) continue;
       delete w.presence.holds[id]; let_go = true; heldEvent(w, "release", id, { by: h.by, how: "edited", seq: act }); ctx.notes.push({ id, tookFromHand: h.by, why: "what it hangs under was switched off, so it left the hand that held it" }); }
     if (let_go) w.savePresence(); }
-  // a seat gone or switched off lets its rider go: told in their inbox like any vacate (holes r10 L6), with where the track restarts
+  // a seat gone or switched off lets its occupant go: told in their inbox like any vacate (holes r10 L6), with where the track restarts
   for (const who of Object.keys(w.presence.occupants ?? {})) if (!occupantOf(w, after, who)) { const to = w.presence.occupants[who]?.to; const why = "the socket they occupied was switched off or removed";
     const at = typeof to === "string" && st.entities[to] ? vacateAt(w, st, who, to) : null; clearOccupant(w, who); ctx.notes.push({ who, vacated: true, socket: to, why });
     if (typeof to === "string") inboxPush(w.presence, who, { type: "vacated", socket: to, by: actor, why: `${to}: ${why}`, ...(at ? { at } : {}) }); }
@@ -285,7 +285,7 @@ function buildDelete(ctx, a) {
   const ixb = spatial(ctx.st); const over = new Set();
   for (const g of gone) for (const s of ixb.rec.get(g)?.surfs ?? []) for (const id of near(ctx.st, [s.min[0], s.y - 0.02, s.min[1]], [s.max[0], Infinity, s.max[1]])) over.add(id);
   // the set-down is the authority's consequence of the delete, so a follow-up (scars r10 M3): admitted without the deleter's rights or
-  // the rider's lock, so nobody pins a thing against deletion by resting something of theirs on it. In a hand or in flight isn't resting
+  // the resting thing's lock, so nobody pins a thing against deletion by resting something of theirs on it. In a hand or in flight isn't resting
   const sf = ctx.w?.sim?.();
   for (const id of Object.keys(after.entities)) { if (!over.has(id)) continue; const b = aabb(after, id); if (!b || after.entities[id].c.parent) continue;
     if (ctx.w?.presence.holds?.[id] || sf?.launched?.[id]) continue;

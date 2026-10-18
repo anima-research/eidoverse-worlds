@@ -13,7 +13,7 @@
 //   A   the auditor's stand-ins are valid identities of two shapes (holes M3, L3); an arrival mismatch is `rerun-anon`, never `rerun`
 //   F   the authority's consequences are follow-ups (scars M3): resettle is the system's act; a delete's set-down passes no lock
 //   U   vacated: sent when a socket goes or is switched off (holes L6); the browser and agent stand at its `at` (claims O1);
-//       a follow-up on the seat isn't an edit of the ride (claims O3)
+//       a follow-up on the seat isn't an edit of the seat's own motion (claims O3)
 //   L   lows: undo drops references to things gone since (holes L1); a prototype key isn't a body verb (holes L2)
 //   X   the spec says it (holes M4 / scars M1, M2, M5; claims R1–R7)
 // @ts-nocheck
@@ -45,7 +45,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the set-down is the deleter's write", "shared/protocol/authority/writes.js", "ops.push(followUp(setOp(id, \"transform\", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] })));", "ops.push(setOp(id, \"transform\", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] }));", ["F2"]],
   ["no vacated when a socket goes", "shared/protocol/authority/writes.js", "if (typeof to === \"string\") inboxPush(w.presence, who, { type: \"vacated\"", "if (false) inboxPush(w.presence, who, { type: \"vacated\"", ["U1"]],
   ["the browser ignores vacated.at", "client/lib/localbody.js", "dismountMe('script', vacatedAt(u))", "dismountMe('script')", ["U2"]],
-  ["the ride counts follow-ups as edits", "shared/protocol/authority/occupants.js", "(lastTouch(w, from, key, { authored: true })?.seq ?? Infinity) < since", "(lastTouch(w, from, key)?.seq ?? Infinity) < since", ["U3"]],
+  ["the exemption counts follow-ups as edits", "shared/protocol/authority/occupants.js", "(lastTouch(w, from, key, { authored: true })?.seq ?? Infinity) < since", "(lastTouch(w, from, key)?.seq ?? Infinity) < since", ["U3"]],
   ["undo restores references to things gone since", "shared/protocol/authority/undo.js", "const nv = since.size ? withoutRefs(id, comp, old, since) : old;", "const nv = old;", ["L1"]],
   ["a body verb read through the prototype", "mcpl/tools.ts", "if (Object.hasOwn(BODY_VERBS, verb)) return", "if (BODY_VERBS[verb]) return", ["L2"]],
   ["CONTROL (no-op: must stay green)", "shared/protocol/authority/gate.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
@@ -167,7 +167,7 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0, 0, 0] });
       s.w().presence.occupants = { vic: { to: Object.keys(s.w().state().entities).find((k) => s.w().state().entities[k].c.parent?.to === "chair"), since: s.entries().length } };
       const m = s.call("vic", "move", { to: [20, 0, -0.6] });
-      // …and an edit unseating such a rider leaves the track where it was (no `at`)
+      // …and an edit unseating such an occupant leaves the track where it was (no `at`)
       s.w().presence.occupants = { vic: { to: Object.keys(s.w().state().entities).find((k) => s.w().state().entities[k].c.parent?.to === "chair"), since: s.entries().length } };
       const mv = s.call("bob", "set", { id: "chair", component: "transform", value: { pos: [24, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
       const msg = (s.w().presence.inbox?.vic ?? []).find?.((x: any) => x.type === "vacated");
@@ -315,7 +315,7 @@ cases.push(
   { id: "X2", what: "(scars M3; claims R2, R3) §7: the gate's follow-up exception (named in followUps), and one table of the authority's consequences (clears and set-down: followUps; resettle: the system's own act; stamps: the asker's); §4's deletion names the clears and sets down what rested", run() {
       const md = PROTO(); const s7 = section(md, /\n## 7\. /); const s4 = section(md, /\n## 4\. /);
       return { gate: /except that the\s+authority's own follow-ups inside a write pass it without the asker's rights, locks, keys or in-flight\s+check/.test(s7),
-        table: /\| a deletion's reference clears[^\n]*`followUps` \|/.test(s7) && /\| a deletion's set-down[^\n]*`followUps` \|/.test(s7) && /\| riders set down or dropped[^\n]*`resettle \{hosts, riders, asked\}`[^\n]*\| `system` \|/.test(s7) && /\| stamps on what the asker is writing[^\n]*\| the asker \|/.test(s7),
+        table: /\| a deletion's reference clears[^\n]*`followUps` \|/.test(s7) && /\| a deletion's set-down[^\n]*`followUps` \|/.test(s7) && /\| occupants set down or dropped[^\n]*`resettle \{hosts, occupants, asked\}`[^\n]*\| `system` \|/.test(s7) && /\| stamps on what the asker is writing[^\n]*\| the asker \|/.test(s7),
         del: /The change entry names them \(`followUps`, §3\)/.test(s4) && /set\s+down onto what is below, as a follow-up/.test(s4) && /translate-v1@13`, §14\)/.test(s4) }; },
     good: (o) => o.gate && o.table && o.del },
   { id: "X3", what: "(scars M2, M5) Body ownership: arrival is presence (the world's log records nothing about a body; the hash reaches the moderator log only when someone acts); B2 runs in admit on every op, follow-ups and system writes included, references nulled at read time; B5 doesn't end on leaving; `arrive` stays reserved", run() {
@@ -324,13 +324,13 @@ cases.push(
         b2: /\*\*B2\. One predicate, in `admit`, on every op\.\*\*/.test(b) && /follow-ups and system\s+writes/.test(b) && /\*\*at read time\*\*/.test(b) && !/top of `lacks\(\)`/.test(b),
         b5: !/when the grantee leaves the\s+world unless/.test(b) && /It does \*\*not\*\* end when the\s+grantee leaves/.test(b), reserved: /the request\s+`arrive`/.test(b) }; },
     good: (o) => o.b6 && o.b2 && o.b5 && o.reserved },
-  { id: "X4", what: "(claims R4–R7, R9) §8: unlogged grabs carry no identity (releases do), two stand-ins of two shapes, rerun-anon; §5: vacated {socket, by, why, at}, a sit within reach, the stand tile held; COMPONENT-LADDER @12 and later; SCRIPTS and AGENTS say the escape, the ride as when you sat, and where an agent stands", run() {
+  { id: "X4", what: "(claims R4–R7, R9) §8: unlogged grabs carry no identity (releases do), two stand-ins of two shapes, rerun-anon; §5: vacated {socket, by, why, at}, a sit within reach, the stand tile held; COMPONENT-LADDER @12 and later; SCRIPTS and AGENTS say the escape, the seat's own motion as when you sat, and where an agent stands", run() {
       const md = PROTO(); const s8 = section(md, /\n## 8\. /); const s5 = section(md, /\n## 5\. /);
       const lad = readText("docs/COMPONENT-LADDER.md"), sc = readText("docs/SCRIPTS.md"), ag = readText("AGENTS.md");
       return { s8: /a grab that isn't itself logged, records no trigger actor/.test(s8) && /a release\s+always has its own act/.test(s8) && /second stand-in of another shape/.test(s8) && /flagged `rerun-anon`/.test(s8),
         s5: /`vacated \{socket, by,\s+why, at\}`/.test(s5) && /\(`out-of-reach`\)/.test(s5) && /the stand tile pressed\s+and held/.test(s5),
         lad: /translate-v1@12 and later/.test(lad), sc: /pressing and holding the stand tile/.test(sc) && /`rerun-anon`/.test(sc),
-        ag: /`detach \{escape\?\}`/.test(ag) && /as it was when they sat, carries its riders/.test(ag) && /where you were let go; you stand\s+there/.test(ag) }; },
+        ag: /`detach \{escape\?\}`/.test(ag) && /as it was when they sat, carries its occupants/.test(ag) && /where you were let go; you stand\s+there/.test(ag) }; },
     good: (o) => o.s8 && o.s5 && o.lad && o.sc && o.ag },
   { id: "X5", what: "(claims O4) agenttools-check's rows have one id each: the alias rows are AT9, the consent rows AT7", run() {
       const t = readText("tools/protocol/agenttools-check.ts"); const at7 = [...t.matchAll(/"AT7[a-z]? /g)].length; const alias = /"AT9 walk_to/.test(t) && !/"AT7 walk_to/.test(t);

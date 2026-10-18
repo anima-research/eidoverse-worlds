@@ -1,5 +1,5 @@
 // shared/protocol/authority/followups.js — the authority's own consequences of a write, and the readers that know them:
-// riders resettled when a host's shape changes, the stamps a write gets (physics shapes, media, model hashes), the
+// occupants resettled when a host's shape changes, the stamps a write gets (physics shapes, media, model hashes), the
 // references a deletion clears (refComps, holdsRefs, withoutRefs, clearRefsTo), who last touched what (lastTouch, which
 // reads follow-ups as no author's), touchedOf, historyDiff, and the physical warnings and dangling references a write or
 // lint reports (refactor split, 2026-10-17; moved from authority.js's gate section unchanged). admit, changeEntry and
@@ -31,26 +31,26 @@ const outsideWorld = (...a) => UP.outsideWorld(...a);
 // what is under them. A held, locked or already flying child is left alone. A move or a turn is not a geometry write: the
 // stack rides along, as it always did.
 // The authority's consequence, not the asker's write (scars r10 M3): written by `system` under its own act, `resettle {hosts,
-// riders}`, caused by the asker's act (as settle and return-lost are), so the entry never says the asker moved someone else's things.
-function resettleRiders(w, asker, ops, before, after0, cause, notes) { let after = after0; const actor = "system"; let act = null;
-  const own = (riders) => (act ??= w.append({ kind: "act", actor, verb: "resettle", cause, body: { hosts: [...hosts], riders, asked: asker } }));
+// occupants}`, caused by the asker's act (as settle and return-lost are), so the entry never says the asker moved someone else's things.
+function resettleOccupants(w, asker, ops, before, after0, cause, notes) { let after = after0; const actor = "system"; let act = null;
+  const own = (occupants) => (act ??= w.append({ kind: "act", actor, verb: "resettle", cause, body: { hosts: [...hosts], occupants, asked: asker } }));
   // what a host's top depends on: its geometry (a mesh's size, a model's measured box, or none) and its scale. A write that
   // leaves these as they were (the same value re-asserted, a move, a turn) re-drops nothing (review r2 S2.1); a delete of the
   // geometry is a change like any other (r2 S2.3)
   const geomKey = (st, id) => { const e = st.entities[id]; const m = e ? geomE(e) : null; return JSON.stringify([m ? boxOfM(m) : null, e?.c.transform?.scale ?? [1, 1, 1]]); };
   const hosts = new Set(ops.filter((o) => (o.verb === "set" || o.verb === "delete") && before.entities[o.id] && after.entities[o.id] && (o.comp === "mesh" || o.comp === "model" || o.comp === "transform") && geomKey(before, o.id) !== geomKey(after, o.id)).map((o) => o.id));
   if (!hosts.size) return;
-  // a child on a SOCKET is the socket's child, which has no top: never a rider (r2 S2.2: a cup on its perch was torn off and dropped)
-  const riders = Object.keys(after.entities).filter((k) => { const c = after.entities[k].c;
+  // a child on a SOCKET is the socket's child, which has no top: never an occupant (r2 S2.2: a cup on its perch was torn off and dropped)
+  const occupants = Object.keys(after.entities).filter((k) => { const c = after.entities[k].c;
     return hosts.has(c.parent?.to) && c.physics?.kind === "dynamic" && !lockedC(c) && !w.presence.holds[k] && !w.presence.holds[c.parent.to] && !after.entities[k].c.disabled && aabb(after, k); });
-  if (!riders.length) return;
+  if (!occupants.length) return;
   const spec = after.entities["@world"]?.c["physics-engine"];
   // the ground still loading: a fall would rest on a guessed height (review r4 F2) — they are left as they are on the host
   // (its local pose kept: a rescaled host carries them with it, r5 F6), said so
-  if (!groundReady(after)) { notes.push({ kept: riders, why: "they were resting on a thing whose shape changed, but this world's ground is still loading: they are left as they are on it (a rescaled host carries them with it) rather than fall onto a guessed height" }); return; }
+  if (!groundReady(after)) { notes.push({ kept: occupants, why: "they were resting on a thing whose shape changed, but this world's ground is still loading: they are left as they are on it (a rescaled host carries them with it) rather than fall onto a guessed height" }); return; }
   if (spec && carried(spec)) {
     const flying = new Set(Object.keys(w.sim?.()?.launched ?? {}));
-    const dropped = riders.filter((k) => !flying.has(k));
+    const dropped = occupants.filter((k) => !flying.has(k));
     // out from under the host first, standing where it stood in the world: its rest re-attaches it to whatever it lands on
     // with a fresh local pose (a rest keeps a child's recorded scale, and that scale was compensation for the OLD host size)
     // (as it stood BEFORE the write: a model host's new scale had already carried the child's world pose and size with it)
@@ -61,16 +61,16 @@ function resettleRiders(w, asker, ops, before, after0, cause, notes) { let after
     if (dropped.length) notes.push({ fell: dropped, why: "they were resting on a thing whose shape changed; they fall to its new top (physics will log where they land)" });
     return;
   }
-  // no engine: set each rider down from ABOVE the host's new top (a grown host would otherwise bury it: supportUnder only
-  // counts faces at or below where the rider stands; r2 S1.1). A host that lost its body frees its riders to the world
-  const setOps = riders.flatMap((k) => { const host = after.entities[k].c.parent.to; const b = aabb(after, k); const hb = aabb(after, host); const wt = worldT(after, k);
+  // no engine: set each occupant down from ABOVE the host's new top (a grown host would otherwise bury it: supportUnder only
+  // counts faces at or below where the occupant stands; r2 S1.1). A host that lost its body frees its occupants to the world
+  const setOps = occupants.flatMap((k) => { const host = after.entities[k].c.parent.to; const b = aabb(after, k); const hb = aabb(after, host); const wt = worldT(after, k);
     const lift = hb ? Math.max(0, hb.max[1] - b.min[1]) : 0; const probe = { min: [b.min[0], b.min[1] + lift, b.min[2]], max: [b.max[0], b.max[1] + lift, b.max[2]] };
     const below = supportUnder(after, probe, new Set([k, ...descendants(after, k)])); const wpos = [wt.pos[0], r3(wt.pos[1] - (b.min[1] - below.y)), wt.pos[2]];
     if (!hb) return [delOp(k, "parent"), setOp(k, "transform", { pos: wpos, q: qr3(wt.q), scale: wt.scale.map(r3) })];
     const lt = localFrom(after, host, { ...wt, pos: wpos });
     const v = { ...after.entities[k].c.transform, pos: lt.pos }; return JSON.stringify(v) === JSON.stringify(after.entities[k].c.transform) ? [] : [setOp(k, "transform", v)]; });
   if (!setOps.length) return;
-  const plan = admit(w, after, { actor, cap: { kind: "system", ids: riders, comps: ["transform", "parent"] } }, setOps);
+  const plan = admit(w, after, { actor, cap: { kind: "system", ids: occupants, comps: ["transform", "parent"] } }, setOps);
   changeEntry(w, plan, own([...new Set(setOps.map((o) => o.id))]));
   notes.push({ setDown: [...new Set(setOps.map((o) => o.id))], why: "they were resting on a thing whose shape changed; with no physics running they were set straight down onto what is under them now" });
 }
@@ -303,4 +303,4 @@ function warnings(st, ids, strict = false) {
   } finally { CTX.work.what = was; }
   return out;
 }
-export { clearRefsTo, danglingRefs, historyDiff, holdsRefs, lastTouch, opsTouching, resettleRiders, stampMedia, stampModelHash, stampShapes, stripDry, touched, touchedOf, warnOrNot, warnings, withoutRefs };
+export { clearRefsTo, danglingRefs, historyDiff, holdsRefs, lastTouch, opsTouching, resettleOccupants, stampMedia, stampModelHash, stampShapes, stripDry, touched, touchedOf, warnOrNot, warnings, withoutRefs };

@@ -73,7 +73,7 @@ import { isLookAt, isNum, nearMiss, restCheck, unknownKeys, valueCheck } from ".
 export { schemaRefusal } from "./authority/checks.js";
 import { Admitted, SAY_MAX, admit, lacks, lockCheck, needWords, rateCheck, spokenOf } from "./authority/gate.js";
 export { keyKind, seniorOwnerOf } from "./authority/gate.js";
-import { clearRefsTo, danglingRefs, historyDiff, holdsRefs, lastTouch, opsTouching, resettleRiders, stampMedia, stampModelHash, stampShapes, stripDry, touched, touchedOf, warnOrNot, warnings, withoutRefs } from "./authority/followups.js";
+import { clearRefsTo, danglingRefs, historyDiff, holdsRefs, lastTouch, opsTouching, resettleOccupants, stampMedia, stampModelHash, stampShapes, stripDry, touched, touchedOf, warnOrNot, warnings, withoutRefs } from "./authority/followups.js";
 export { TOUCH_HORIZON } from "./authority/followups.js";
 import { actEntry, actOf, boundsOf, buildCreate, buildDelete, buildPlace, buildSet, buildTurn, changeEntry, changeShape, commit, mint, needThing, notAThing, offRefuse, outsideWorld, resolve, serverWritten } from "./authority/writes.js";
 import { BATCH_VERBS, FOUNDING_VERBS, SAY_VERBS, SCHEMA_VERBS, WRITE_VERBS } from "./authority/verbs.js";
@@ -319,7 +319,7 @@ function guess(s, opts) {
 // ---------- the act index, undo: authority/undo.js ----------
 // ---------- blueprints, reads: authority/blueprints.js ----------
 // ---------- physics (design 20): authority/physics.js ----------
-// ---------- riders: authority/occupants.js ----------
+// ---------- occupants: authority/occupants.js ----------
 // ---------- the verbs a body performs: authority/bodyverbs.js ----------
 // ---------- what a body does to a loose thing: authority/manipulate.js ----------
 // ---------- body consent: authority/bodyconsent.js ----------

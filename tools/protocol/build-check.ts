@@ -197,8 +197,8 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const keys = h ? s.w().getBlob(h).parts.map((p: any) => p.key) : null;
       const placed = s.call("bob", "create", { from: h, at: { pos: [20, 0, 0] } });
       const st = s.w().state(); const copies = Object.keys(st.entities).filter((x) => st.entities[x].c["copy-of"]?.from === h);
-      return { keys, placed: show(placed), n: copies.length, riders: copies.filter((x) => st.entities[x].c.parent).length }; },
-    good: (o) => Array.isArray(o.keys) && o.keys.length === 3 && new Set(o.keys).size === 3 && o.placed === "ok" && o.n === 3 && o.riders === 2 },
+      return { keys, placed: show(placed), n: copies.length, occupants: copies.filter((x) => st.entities[x].c.parent).length }; },
+    good: (o) => Array.isArray(o.keys) && o.keys.length === 3 && new Set(o.keys).size === 3 && o.placed === "ok" && o.n === 3 && o.occupants === 2 },
 
   // ---------------- K: a script from the editor ----------------
   // the card's requests (shared/protocol/newscript.js), as client/lib/scriptnew.js sends them: upload, then ONE batch

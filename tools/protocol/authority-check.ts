@@ -283,7 +283,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "tbl", lib: "table", pos: [2, 0, 3] } },
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "rack", lib: "table", pos: [-3, 0, 2], yaw: 0.5 } },
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "jar", lib: "bell", pos: [0, 0, 0] } },
-    { seq: 2, ts: 3, actor: "ann", verb: "mount", args: { id: "jar", to: "rack", offset: [0.3, 0.75, -0.1], q: [0, 0.3826834, 0, 0.9238795] } }, // a turned carrier, a turned rider
+    { seq: 2, ts: 3, actor: "ann", verb: "mount", args: { id: "jar", to: "rack", offset: [0.3, 0.75, -0.1], q: [0, 0.3826834, 0, 0.9238795] } }, // a turned carrier, a turned occupant
     { seq: 3, ts: 4, actor: "ann", verb: "spawn", args: { id: "box", lib: "crate", pos: [9, 4, -6] } },           // its pre-mount pose: far away
     { seq: 4, ts: 5, actor: "ann", verb: "mount", args: { id: "box", to: "tbl", offset: [0, 0.75, 0] } },          // rides at the table's centre
     { seq: 5, ts: 6, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 } } } },
@@ -987,8 +987,8 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   { const r = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "box", size: [2, 3, 4] } }); const sh = E("mb")?.physics?.shape;
     ok(r.ok && JSON.stringify(sh) === JSON.stringify([[-1, 0, -2], [1, 3, 2]]), "MS9 a mesh size change re-stamps its physics shape", r.refused ?? sh); }
 }
-// ---- MS (no engine): a resized host sets its resting riders down from above its new top (r2 S1.1: a grown host buried them);
-// a host that loses its body frees them (r2 S2.3); a socketed child is never a rider (r2 S2.2); a no-op write re-drops nothing (r2 S2.1)
+// ---- MS (no engine): a resized host sets its resting occupants down from above its new top (r2 S1.1: a grown host buried them);
+// a host that loses its body frees them (r2 S2.3); a socketed child is never an occupant (r2 S2.2); a no-op write re-drops nothing (r2 S2.1)
 { const name = "mesh-noeng"; T += 1000;
   const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
   const W = () => openWorld(root, name); const E = (id) => W().state().entities[id]?.c; const wy = (id) => call("bob", "measure", { id }).bounds?.min?.[1];
@@ -1002,7 +1002,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(s1.ok && Math.abs(wy("crate") - 0.3) < 1e-3 && (s1.notes ?? []).some((n) => n.setDown?.includes("crate")), "MS10a shrunk to 0.3: the crate is set down to 0.3 (no engine)", { y: wy("crate"), notes: s1.notes });
   const s2 = call("bob", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 1.0, 1.5] } });
   ok(s2.ok && Math.abs(wy("crate") - 1.0) < 1e-3 && E("crate")?.parent?.to === "plinth", "MS10b grown to 1.0: the crate is set down from ABOVE the new top, at 1.0, not buried inside (r2 S1.1)", { y: wy("crate"), notes: s2.notes });
-  ok(!!perch && E("cup")?.parent?.to === perch && JSON.stringify(E("cup")?.transform) === cup0, "MS10c the cup on the perch socket was never a rider: it stays on its socket (r2 S2.2; the socket is the plinth's perch child since the cut)", E("cup"));
+  ok(!!perch && E("cup")?.parent?.to === perch && JSON.stringify(E("cup")?.transform) === cup0, "MS10c the cup on the perch socket was never an occupant: it stays on its socket (r2 S2.2; the socket is the plinth's perch child since the cut)", E("cup"));
   const n0 = W().entries.length; const s3 = call("bob", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 1.0, 1.5] } });
   ok(s3.ok && W().entries.length - n0 === 2 && !(s3.notes ?? []).some((n) => n.setDown || n.fell), "MS10d re-asserting the same mesh value writes 2 rows and re-drops nothing (r2 S2.1)", { rows: W().entries.length - n0, notes: s3.notes });
   const d = call("bob", "delete", { id: "plinth", component: "mesh" });

@@ -1,7 +1,7 @@
 // tools/physconst-test.ts — C1 of PLAN-refactor-2026-10-12 (#8 constants, #14 rounding): the client's predicted throw entry
 // and the authority's launch entry are the same bytes, and every reach/rounding number both sides use is ONE binding.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/physconst-test.ts
-// A  byte-equal launch: for a few releases (a −0 in pos/q/v, the engine's speed cap, a throw with spin and riders) the
+// A  byte-equal launch: for a few releases (a −0 in pos/q/v, the engine's speed cap, a throw with spin and occupants) the
 //    entry client/lib/thingphysics.js planRelease predicts equals the body the authority logs: the engine folds the same
 //    bits (DESIGN-physics-responsiveness §3). −0 counts: a predicted −0 and a logged 0 are different bytes to a hash.
 // B  one binding: the files that used to carry their own copy of a reach or a rounding import shared/protocol/physconst.js
@@ -67,7 +67,7 @@ const ENG = "eidosim@1.0.0";
   ok(Math.hypot(...entryOf(W).v) <= ENGINES[ENG].maxSpeed + 1e-9, "A2 the logged speed is capped", entryOf(W).v);
   same("speed cap ×2 throw, spin", W, predicted("ball", pos, v, q, w, g(W, "ball"), ENG));
 }
-{ // A3 a thrown tray with a rider: the tray's entry is still the prediction; the rider's velocity (the authority's alone:
+{ // A3 a thrown tray with an occupant: the tray's entry is still the prediction; the occupant's velocity (the authority's alone:
   // the client predicts only the thing in its hand) is the same bits a carrier reads back from the log
   const W = playground("pc-a3");
   call(W, "rowan", "move", { to: [2, 0, -0.5] });
@@ -76,10 +76,10 @@ const ENG = "eidosim@1.0.0";
   const t = call(W, "rowan", "throw", { id: "tray", v, pos, q, w });
   ok(t.ok, "A3 throw accepted", t.refused ?? t);
   const L = launches(W); const tray = L.findLast((e) => e.body.id === "tray"), cup = L.findLast((e) => e.body.id === "cup");
-  ok(!!tray && !!cup && cup.cause === tray.cause, "A3 the rider flies under the same act", L.map((e) => [e.body.id, e.cause]));
+  ok(!!tray && !!cup && cup.cause === tray.cause, "A3 the occupant flies under the same act", L.map((e) => [e.body.id, e.cause]));
   const tb = { id: tray.body.id, p: tray.body.p, q: tray.body.q, v: tray.body.v, w: tray.body.w }; const pr = predicted("tray", pos, v, q, w, g(W, "tray"), ENG);
   ok(bytes(tb) === bytes({ id: pr.id, p: pr.p, q: pr.q, v: pr.v, w: pr.w }), "A3 the tray's entry is the prediction", { predicted: bytes(pr), logged: bytes(tb) });
-  ok(bytes(cup.body.v) === bytes(wire(cup.body.v)) && bytes(cup.body.p) === bytes(wire(cup.body.p)), "A3 the rider's p and v are the bits a reader of the log folds (no −0, 3 dp)", { v: bytes(cup.body.v), p: bytes(cup.body.p) });
+  ok(bytes(cup.body.v) === bytes(wire(cup.body.v)) && bytes(cup.body.p) === bytes(wire(cup.body.p)), "A3 the occupant's p and v are the bits a reader of the log folds (no −0, 3 dp)", { v: bytes(cup.body.v), p: bytes(cup.body.p) });
 }
 
 // ---------------- B: one binding ----------------

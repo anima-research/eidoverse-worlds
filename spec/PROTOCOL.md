@@ -510,27 +510,28 @@ request moves a copy to a newer version, keeping its own overrides.
   stand (and what the viewer is doing to them); another body's cells or
   pause would undo the uniform words. **Sitting is consent; standing up
   is the exit** (Second Life's sit, VRChat's station): a seat carries its
-  rider through whatever moves it, and an edit is never refused because a
-  body is on the thing. An edit by anyone but the rider that would move a
+  occupant through whatever moves it, and an edit is never refused because a
+  body is on the thing. An edit by anyone but the occupant that would move a
   seat — the `transform`, `parent` or `motion` of the seat or of anything
   it hangs from, by whatever verb, a handler or script on another thing
   included — lands and **vacates** it: every occupant is let go where they
   were, standing, and told why and where (`vacated {socket, by,
   why, at}`, presence, never logged), and the authority's track of their
   body starts again from where the seat let them go; a seat removed or
-  switched off lets its rider go the same way. The track restarts there
+  switched off lets its occupant go the same way. The track restarts there
   only because a sit is **within reach**: the authority refuses a sit
   (`out-of-reach`) unless the body it tracks, or the seat it moves straight
   from, is within the client's own sitting reach of the socket (3.5 m across
   the ground, 1.6 m up, 1 m down, plus 1 m for the track's lag:
   shared/sockbody.js `OCCUPY_REACH`), so sitting is never a way to cover
-  distance off the record. A rider's first step off is the stand-up. What the seat's own assembly does to it (a reaction or script on a
+  distance off the record. An occupant's first step off is the stand-up. What the seat's own assembly does to it (a reaction or script on a
   thing with the same root as the seat: a swing's push, a carousel's turn,
-  an elevator's script) is the ride, and carries them — the ride **as it
-  was when they sat**: a handler or script written after the rider sat, or
+  an elevator's script) is the seat's own motion, and carries them (the
+  occupant exemption) — that motion **as it
+  was when they sat**: a handler or script written after the occupant sat, or
   a thing hung under the seat's assembly since, is someone's edit, and
   vacates it (the authority's follow-ups, §3, are not edits). Physics resting a seat (something thrown into it) carries
-  its rider too. Moving the seat you sit on yourself is yours. A body
+  its occupant too. Moving the seat you sit on yourself is yours. A body
   standing on a thing never blocks an edit of it: what you stand on
   carries you. **A seat may make leaving deliberate, never impossible**: a
   station's `leaveBy: "script"` turns off the occupant's casual exits
@@ -656,7 +657,7 @@ request moves a copy to a newer version, keeping its own overrides.
 - **The plane-transition invariant**: anything returning from live motion
   to rest stamps its absolute state into the log (a put's transform, a
   rest caused by its launch). The log never depends on reconstructing where
-  a ride was.
+  a live motion was.
 - **Body consent.** Every body has one table of act classes (near, follow,
   social touch, intimate touch, pose, shove, displace — someone else dragging,
   carrying or occupying-with you, never your own `move` — and voice; `carry` is
@@ -795,7 +796,7 @@ Only what the asker could have written themselves, on what they are writing anyw
 |---|---|---|---|---|
 | a deletion's reference clears (§4), and their restoration by its undo | the asker's change | the asker | no rights, locks or keys (shape checks) | `followUps` |
 | a deletion's set-down of unparented things resting on what it removes | the asker's change | the asker | no rights, locks or keys (shape checks) | `followUps` |
-| riders set down or dropped when a host's geometry changes | its own act `resettle {hosts, riders, asked}`, caused by the asker's act, and its change | `system` | the system's capability, scoped to those riders | the actor |
+| occupants set down or dropped when a host's geometry changes | its own act `resettle {hosts, occupants, asked}` (`riders` in entries before 10-17), caused by the asker's act, and its change | `system` | the system's capability, scoped to those occupants | the actor |
 | settle, return-lost, return-held, restamp-engine, lift-sockets, repair-shapes | their own act and change | `system` | the system's capability | the actor |
 | components and fields renamed before release (§4), at every load | its own act `rename-components {renamed, why, failed?}` and its change | `system` | the system's capability, per thing | the actor |
 | a physics rest | its own change, caused by the launch | `sim` | the rest capability | the actor |
@@ -906,8 +907,8 @@ ear — is decided by **their** consent table (§5): per class, per tier
 overrides a consent refusal: this is the one veto standing *outside* the
 role ladder, and it is the affected party's, never the installer's or the
 invoker's. Sitting is not on the table: it is consent to the seat's own
-ride, as it was when you sat, and standing up is the exit (§5). An edit by
-anyone else that would move a seat therefore never asks its rider and is
+motion, as it was when you sat, and standing up is the exit (§5). An edit by
+anyone else that would move a seat therefore never asks its occupant and is
 never refused for them: it lands and vacates it, and the authority tells
 them why. A body standing on a thing is carried by it and never consulted.
 No seat can take away its occupant's escape (§5). *Intended, not yet enforced:* standing close,

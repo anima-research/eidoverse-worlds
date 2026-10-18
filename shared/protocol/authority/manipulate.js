@@ -263,11 +263,11 @@ function launch(w, actor, a, verb, g = null) {
   const L = planLaunch({ id: a.id, p: h.pose.pos, q: h.pose.q, v: a.v, ...(a.w !== undefined ? { w: a.w } : {}) }, g, ENGINES[spec.engine].maxSpeed, verb); const { v, notes } = L;
   const act = w.append(actOf(w, actor, verb, a, { handled: h.handled }));
   const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: L.p, yaw: qYaw(h.pose.q), ...(ENGINES[spec.engine].rotates ? { q: L.q } : {}), v, ...(a.w !== undefined ? { w: L.w } : {}), handled: h.handled } });
-  // R 10-10 evening: what rides on it (a tray's load, or a stack settled onto it) flies too, from where the hand has it,
+  // R 10-10 evening: what rests on it (a tray's load, or a stack settled onto it) flies too, from where the hand has it,
   // with the same velocity. Left as children they were carried rigidly by the thrown crate and sank with it into the ground.
-  const riders = []; { const st = w.state(); const t = worldT(st, a.id);
+  const occupants = []; { const st = w.state(); const t = worldT(st, a.id);
     const at = scratch(st, [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: h.pose.pos.slice(), q: h.pose.q ?? t.q, scale: t.scale })]);
-    // each rider leaves with the tray's velocity at ITS spot (v + w × r: the rim of a tumbling tray moves faster than its
+    // each occupant leaves with the tray's velocity at ITS spot (v + w × r: the rim of a tumbling tray moves faster than its
     // middle), plus a small scatter (6% of the speed per axis) for the flick. The scatter is a hash of the act and the id,
     // and the launch carries the result, so every client folds the same spray (R 10-10: "start to fly apart as soon as
     // they're launched from your hand").
@@ -278,8 +278,8 @@ function launch(w, actor, a, verb, g = null) {
       let vk = [0, 1, 2].map((i) => v[i] + wr[i] + jit(k, i) * 0.06 * sp); const sk = Math.hypot(...vk), max = ENGINES[spec.engine].maxSpeed;
       if (sk > max) vk = vk.map((n) => n * max / sk); vk = vk.map((n) => noNeg0(r3(n)));
       w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: k, p: tk.pos.map(noNeg0), yaw: qYaw(tk.q), ...(ENGINES[spec.engine].rotates ? { q: tk.q.slice() } : {}), v: vk, ...(a.w !== undefined ? { w: a.w.slice() } : {}), handled: h.handled } });
-      riders.push(k); } }
-  if (riders.length) notes.push({ flying: riders, why: `they were riding on ${a.id}; they fly with it` });
+      occupants.push(k); } }
+  if (occupants.length) notes.push({ flying: occupants, why: `they were resting on ${a.id}; they fly with it` });
   delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: verb, seq: act });
   return { ok: true, seq, act, flying: a.id, from: h.pose.pos.map(r3), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
 }

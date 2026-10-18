@@ -33,7 +33,7 @@ for (const carries of [false, true]) { const W = carries ? "tray" : "book";
   if (!carries) ok(stacked && g.ok && fell && !m.parent && m.transform.pos[1] < 0.05, "SE3 picking up the bottom of a stack takes that one: what the physics stacked on it falls off and lands (a book from a pile)", { stacked, grab: g.ok ?? g.refused, fell, mid: m.transform.pos, parent: m.parent });
   else ok(stacked && g.ok && !fell && m.parent?.to === "bot", "SE4 grabbable.carries ('can carry other entities', a tray): what rests on it comes along", { stacked, grab: g.ok ?? g.refused, fell, parent: m.parent }); }
 // R 10-10 evening (the gym log, 04:23Z): she picked up pyr-1; what was on it fell, and the settle parented it straight
-// back ONTO pyr-1, still standing in the log where it was picked up. She carried the stack off; thrown, the riders were
+// back ONTO pyr-1, still standing in the log where it was picked up. She carried the stack off; thrown, the occupants were
 // rigid children of the thrown crate and sank into the ground with it.
 { const W = "held"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
   // the gym's shape: 'top' sits across l and r; l is taken; top drops onto r and the floor-high step beside it ('step', as
@@ -64,7 +64,7 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   const L = openWorld(root, W).entries.slice(n0).filter((e) => e.kind === "sim" && e.verb === "launch"); const vOf = (id) => L.find((e) => e.body.id === id)?.body.v;
   const d = (x, y) => x && y ? Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]) : 0;
   ok(on && g.ok && th.ok && d(vOf("a"), vOf("tray")) > 0.05 && d(vOf("b"), vOf("tray")) > 0.05 && d(vOf("a"), vOf("b")) > 0.05,
-    "SE7 thrown with spin, each rider leaves with its own velocity (the tray's at its spot, and a flick), so the load fans out from the hand", { on, grab: g.ok ?? g.refused, throw: th.ok ?? th.refused, v: { tray: vOf("tray"), a: vOf("a"), b: vOf("b") } });
+    "SE7 thrown with spin, each occupant leaves with its own velocity (the tray's at its spot, and a flick), so the load fans out from the hand", { on, grab: g.ok ?? g.refused, throw: th.ok ?? th.refused, v: { tray: vOf("tray"), a: vOf("a"), b: vOf("b") } });
 }
 // R 10-11 23:36/23:47: a domino that came to rest on a FALLEN domino was parented under it — a child of a rotated,
 // non-uniformly scaled parent is sheared ("splortched"). A rest never parents under a non-uniform host unless the child
@@ -105,7 +105,7 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   const sc = call(W, "rowan", "set", { id: "mp", component: "transform", value: { pos: [-6, 0, 6], q: [0, 0, 0, 1], scale: [2.5, 0.5, 2.5] } }); T += 8000; call(W, "vic", "look", {});
   const c4 = st(W).entities.crate3.c; const w4 = c4.parent?.to === "mp" ? c4.transform.pos[1] * 0.5 : c4.transform.pos[1];
   const ws = c4.parent?.to === "mp" ? (c4.transform.scale ?? [1, 1, 1]).map((v, i) => v * [2.5, 0.5, 2.5][i]) : (c4.transform.scale ?? [1, 1, 1]);
-  // r2 S2.1/S2.2/S2.3 under an engine: a no-op write re-drops nothing; a socketed child rides its socket; a deleted body frees the riders
+  // r2 S2.1/S2.2/S2.3 under an engine: a no-op write re-drops nothing; a socketed child rides its socket; a deleted body frees the occupants
   call(W, "rowan", "set", { id: "plinth", component: "sockets", value: { perch: { pos: [0.5, 0.3, 0.5] } } });
   call(W, "rowan", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" }, parent: { to: "plinth", socket: "perch" }, transform: { pos: [0, 0, 0] } } });
   const n1 = openWorld(root, W).entries.length; const same = call(W, "rowan", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } }); T += 8000; call(W, "vic", "look", {});

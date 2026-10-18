@@ -9,11 +9,11 @@
 //   H   authorship never comes from a follow-up: a reference clear (or its undo) is named in its change entry
 //       (`followUps`), and who set up a handler skips it, live and read back from disk; only a recorded follow-up is
 //       restored as one by undo (holes L2); the fold takes `followUps` only well formed
-//   M   the ride is the seat's assembly as it was when the rider sat (a handler added since unseats them)
+//   M   the occupant exemption is the seat's assembly as it was when the occupant sat (a handler added since unseats them)
 //   E   a station's leaveBy "script" keeps the occupant's escape (sockbody, the agent's detach {escape})
 //   A   the auditor re-runs an arrival with two stand-ins: agreeing re-runs are compared with the log (a forgery is flagged)
 //   U   an agent hears `vacated` (its seat cleared, standing where the authority let it go); only for the seat it is on
-//   T   leaving a seat restarts the authority's track of the body at the seat (no too-fast after a ride)
+//   T   leaving a seat restarts the authority's track of the body at the seat (no too-fast after being carried)
 //   L   lows: a prototype key as a verb, the founding marker is the first create-world, an unlogged grab records no
 //       identity, the translator's name is @13
 // @ts-nocheck
@@ -32,7 +32,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["lastTouch {authored} reads follow-ups as authors", "shared/protocol/authority/followups.js", "if (fu?.has(k)) { if (o.verb === \"set\") { restored = true; continue; } if (o.verb === \"delete\" && restored) { restored = false; continue; } return null; }", "", ["H1", "H2", "H3"]],
   ["undo marks any ref restore as a follow-up", "shared/protocol/authority/undo.js", "if (!goneHere.size || !fuHere.has(o) ||", "if (!goneHere.size ||", ["H5"]],
   ["the fold takes any followUps", "shared/protocol/fold.js", "if (\"followUps\" in body) followUpsCheck(body.followUps, body.ops.length);", "", ["H6"]],
-  ["the ride ignores when the rider sat", "shared/protocol/authority/occupants.js", "if (own && rootOf(s.to) === own && rideBefore(s.since)) continue;", "if (own && rootOf(s.to) === own) continue;", ["M1", "M2"]],
+  ["the exemption ignores when the occupant sat", "shared/protocol/authority/occupants.js", "if (own && rootOf(s.to) === own && unchangedSinceSat(s.since)) continue;", "if (own && rootOf(s.to) === own) continue;", ["M1", "M2"]],
   ["no escape from a script seat", "shared/sockbody.js", "if (kind === 'script' || kind === 'escape') return true;", "if (kind === 'script') return true;", ["E1", "E2"]],
   ["the auditor skips every arrival mismatch", "shared/protocol/scriptaudit.js", "if (!agree) { skipped.push(", "if (true) { skipped.push(", ["A1"]],
   ["the agent ignores unseated", "mcpl/agent.ts", "if (vacatedFromMine(m, this.myOccupancy)) {", "if (false) {", ["U1"]],
@@ -178,7 +178,7 @@ const cases: Case[] = [
       return { none: t(undefined), good: t([1, 2]), empty: t([]), desc: t([2, 1]), dup: t([1, 1]), out: t([3]), neg: t([-1]), frac: t([1.5]), str: t("1"),
         set: [...F.followUpsOf({ kind: "change", verb: "batch", body: { ops, followUps: [1, 2] } })] }; },
     good: (o) => o.none === "ok" && o.good === "ok" && ["empty", "desc", "dup", "out", "neg", "frac", "str"].every((k) => o[k] === "batch-followups") && JSON.stringify(o.set) === "[1,2]" },
-  // ---------------- M: the ride as it was when you sat ----------------
+  // ---------------- M: the seat's own motion, as it was when you sat ----------------
   { id: "M1", what: "(q1) vic sits on olive's chair; builder bob adds a `fly` reaction to it, then uses it: it flies, and vic is unseated (told), not carried", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "visitor" });
       s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [4, 0] } });
@@ -188,7 +188,7 @@ const cases: Case[] = [
       s.call("bob", "move", { to: [4, 0, -1.5] }); const go = s.call("bob", "use", { id: "chair", action: "fly" });
       return { sit: show(sit), add: show(add), after, go: show(go), pos: comp(s, "chair", "transform")?.pos, seated: seated(s, "vic"), note: JSON.stringify(go.notes ?? []).includes("vacated"), inbox: inboxOf(s, "vic").includes("vacated") }; },
     good: (o) => o.sit === "ok" && o.add === "ok" && o.after && o.go === "ok" && o.pos?.[1] === 40 && !o.seated && o.note && o.inbox },
-  { id: "M2", what: "…the motion variant: a `spin` handler added after the sit, used: vic unseated; and a ride set up BEFORE the sit (the carousel) still carries", run(s) {
+  { id: "M2", what: "…the motion variant: a `spin` handler added after the sit, used: vic unseated; and a motion set up BEFORE the sit (the carousel) still carries", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "visitor", wes: "visitor" });
       s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); s.call("vic", "use", { id: "chair", action: "sit" });
@@ -242,7 +242,7 @@ const cases: Case[] = [
       return { mine: f?.({ type: "vacated", socket: "s1" }, { to: "s1" }), other: f?.({ type: "vacated", socket: "s1" }, { to: "s2" }), none: f?.({ type: "vacated", socket: "s1" }, null), noSeat: f?.({ type: "vacated" }, { to: "s1" }) }; },
     good: (o) => o.mine === true && o.other === false && o.none === false && o.noSeat === false },
   // ---------------- T: the track after a seat ----------------
-  { id: "T1", what: "(scars M2) a world with a spawn: visitor vic rides olive's ferry 15 m (a ride set up before he sat), then steps off it: the step is measured from the seat, not refused too-fast from where he boarded", run(s) {
+  { id: "T1", what: "(scars M2) a world with a spawn: visitor vic rides olive's ferry 15 m (a motion set up before he sat), then steps off it: the step is measured from the seat, not refused too-fast from where he boarded", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "visitor" });
       s.call("olive", "set", { id: "@world", component: "spawn", value: { pos: [4, 0, -0.6] } });
       s.call("olive", "create", { id: "ferry", model: "chair", components: { ...SEAT(), reactions: { cross: { kind: "set", component: "transform", value: { pos: [4, 0, 15], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } }, place: { at: [4, 0] } });

@@ -281,7 +281,7 @@ these tools all read that one declaration, so anything a browser can click
 there, you can say.
 
 ```
-hierarchy {filter?}          # the scene tree: parents, children, riders, components, labels
+hierarchy {filter?}          # the scene tree: parents, children, occupants, components, labels
 inspect   {id, json?}        # every editable field: value, unit, limits, why read-only
 edit      {id, set, dry?}    # change fields by address; ONE request for the whole edit
 ```
@@ -372,7 +372,7 @@ act {verb: "create", args: {model: "<a swing frame model>", components: {label: 
 act {verb: "create", args: {model: "<a seat model>", components: {label: "seat"}, place: {hang: "<frame>", height: 0.45}}}
 act {verb: "set", args: {id: "<seat>", component: "motion", value: {type: "pendulum", axis: [1, 0, 0], amp: 0.3, period: 3}}}
 act {verb: "create", args: {components: {parent: {to: "<seat>"}, transform: {pos: [0, 0.05, 0]}, socket: {name: "seat"}, station: {action: "sit"}}}}   # anim: the action's default, sitchair
-# now ANYONE — visitors included — can attach to it (sit) and ride the swing
+# now ANYONE — visitors included — can attach to it (sit) and swing on it
 ```
 
 `hang` writes the seat's pivot at the underside of what it hangs from, and
@@ -380,15 +380,15 @@ the pendulum swings about it. Motion is a **function of time**: every
 client evaluates the closed form at its own `now`, so one entry buys
 minutes of movement with zero traffic.
 
-**Riders.** Occupying a seat is presence, never logged: the authority keeps
+**Occupants.** Occupying a seat is presence, never logged: the authority keeps
 who occupies which socket (one occupant each), and a hand verb on a thing
 someone sits or stands on is refused `occupied`. Moving a seat someone is
 sitting on (its `transform`, `parent` or
 `motion`, or anything it hangs from) stands them up where they were, and
 tells them; it is never refused for them. A seat's own reaction or script,
-as it was when they sat, carries its riders (one added since is an edit, and
+as it was when they sat, carries its occupants (one added since is an edit, and
 vacates it). Someone standing on a thing never blocks your edit. If you're
-the rider, the authority's `vacated` message tells you who moved the seat
+the occupant, the authority's `vacated` message tells you who moved the seat
 (or that it was removed or switched off) and where you were let go; you stand
 there. A `leaveBy: "script"` seat refuses `detach`, and `detach {escape:
 true}` always gets you up. You sit only on a seat within reach (3.5 m across
@@ -682,7 +682,7 @@ House rules, learned the hard way (each one is a past incident):
 4. **Plane transitions stamp absolute state.** Anything returning from
    live motion to rest writes its pose into the log (a put, a rest caused
    by its launch, a stopped motion with its transform). The log must never
-   depend on reconstructing where a ride was.
+   depend on reconstructing where a live motion was.
 5. **Parameters, never code, in components.** Code has its own home (a
    `script:<name>` component naming an uploaded source blob, run by the
    authority in a sandbox), so components stay pure data. Engine-level
@@ -829,7 +829,7 @@ shallowest first:
   A socket may also name a **`part`** (a node that a `motion:<part>`
   component animates): coords stay model-frame, but the seat then RIDES
   that part's motion — `socket {name: "seat", part:
-  "tripo_part_fused_0"}` at `[0,-0.83,0]` puts a rider on the moving plank
+  "tripo_part_fused_0"}` at `[0,-0.83,0]` puts an occupant on the moving plank
   of a segmented swing instead of hanging still in the air while it arcs
   through them.
   Verify by attaching there yourself (`attach {to: "<swing>", socket: "seat"}`)
