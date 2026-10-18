@@ -4,10 +4,12 @@
 //   URL=ws://host:8940/ws WORLD=<name> bun tools/smoke.ts   # against a running one (see below)
 //
 // This covers the wire, not the renderer: join and the cut, door requests and
-// their order, presence batching, the two NON-logged channels (whisper, drag),
-// identity takeover, and the invariant that matters most — a private message
-// must never reach the world log, because the log is public, permanent, and
-// readable by everyone who ever joins.
+// their order, presence batching, the NON-logged channels (drag, typing),
+// identity takeover, and speech's rule (R 10-18): the world's log keeps every
+// say, people receive speech only for the time they were present (no backscroll
+// on join), and only an admin (the world's owner, an operator) reads the master
+// log back. There is no private channel: whisper was removed (a whisper is
+// refused as `removed`, reaches nobody and never the log).
 //
 // The world speaks the protocol (shared/protocol/authority.js): a join says `replica: true`,
 // the snapshot carries the authority's cut (`cut`) and the chat window (`state`), every
@@ -191,7 +193,7 @@ try {
   check("a late joiner's cut holds the world as it is now (box1 where it was moved)",
     JSON.stringify(bob.snapshot.cut.state?.[IDS.of("box1")]?.c?.transform?.v?.pos) === "[5,0,5]",
     JSON.stringify(Object.keys(bob.snapshot.cut.state ?? {})));
-  check("a late joiner gets the chat window", (bob.snapshot.state?.recentChat ?? []).some((c: any) => c.text === "hello world" && c.actor === "alice"), JSON.stringify(bob.snapshot.state));
+  check("a late joiner gets no chat from before it arrived (arrival-only: no window, no count)", JSON.stringify(bob.snapshot.state?.recentChat) === "[]" && bob.snapshot.state?.chatTotal === 0, JSON.stringify(bob.snapshot.state));
   check("late joiner sees who is present", bob.snapshot.present.some((p: any) => p.id === "alice"));
   await sleep(300);
   check("arrival is announced to those already here", alice.of("arrive").some((m) => m.id === "bob"));
@@ -207,22 +209,17 @@ try {
   check("frames carry a server timestamp", frames.every((f) => typeof f.t === "number"));
   check("poses are never written to the log", quiet() === n0);
 
-  // --- whispers: delivered, echoed, and NEVER logged
+  // --- whisper was removed (R 10-18): refused as `removed`, delivered to nobody, held for nobody, never logged
   bob.send({ type: "whisper", to: "alice", text: "a private thing" });
   await sleep(300);
-  const got = alice.of("whisper");
-  check("a whisper reaches its recipient", got.length === 1 && got[0].text === "a private thing", JSON.stringify(got));
-  check("the sender gets their own copy", bob.of("whisper").some((m) => m.echo && m.to === "alice"));
-  check("a whisper NEVER reaches the world log", !logText().includes("a private thing"));
-
-  // --- whispers to the absent are held, not dropped
+  check("a whisper is refused as removed, in words", bob.of("error").some((m) => m.refused?.code === "removed" && /removed/.test(String(m.error))), JSON.stringify(bob.of("error")));
+  check("…and reaches nobody", !alice.of("whisper").length && !JSON.stringify(alice.msgs).includes("a private thing"));
+  check("…and never the world log", !logText().includes("a private thing"));
   bob.send({ type: "whisper", to: "carol", text: "held for later" });
   await sleep(200);
-  check("whispering someone absent warns the sender", bob.of("error").some((m) => String(m.error).includes("carol")), JSON.stringify(bob.of("error")));
   const carol = await joined("carol");
   await sleep(400);
-  check("a held whisper is delivered when they arrive", carol.of("whisper").some((m) => m.text === "held for later"));
-  check("held whispers still never touch the log", !logText().includes("held for later"));
+  check("a whisper to someone absent is held for nobody", !carol.of("whisper").length && !JSON.stringify(carol.msgs).includes("held for later") && !logText().includes("held for later"));
 
   // --- drag is transient too
   alice.send({ type: "drag", id: IDS.of("box1"), pos: [9, 0, 9], yaw: 0.5 });
@@ -303,22 +300,27 @@ try {
     for (let i = 0; i < 120; i++) await talkers[i % 6].req("say", { text: `line ${i}` });
     await sleep(300);
 
+    // speech is arrival-only (R 10-18): an arrival is handed none of it and reads none of it back; the owner (alice) reads
+    // the master log, whenever she arrives
     const arrival = await joined("arrival", hw);
+    const owner = await joined("alice", hw);
     const recent = arrival.snapshot.state?.recentChat ?? [];
-    check("an arrival gets recent chat, not 120 messages", recent.length > 0 && recent.length <= 40, `${recent.length}`);
-    check("the recent chat is the LATEST chat", recent[recent.length - 1]?.text === "line 119", recent[recent.length - 1]?.text);
-    check("recent chat carries seq (to page history from)", recent.every((m: any) => typeof m.seq === "number"));
+    check("an arrival gets no chat from before it came (no window, no count)", recent.length === 0 && arrival.snapshot.state?.chatTotal === 0, `${recent.length} / ${arrival.snapshot.state?.chatTotal}`);
+    check("the owner's join replays nothing either, and counts what the master log holds", JSON.stringify(owner.snapshot.state?.recentChat) === "[]" && owner.snapshot.state?.chatTotal === 120, JSON.stringify(owner.snapshot.state));
 
-    const ask = (o: any) => new Promise<any>((res) => {
+    const askAs = (who: Client) => (o: any) => new Promise<any>((res) => {
       const reqId = `t${Math.random()}`;
       const h = (ev: MessageEvent) => {
         const m = JSON.parse(String(ev.data));
-        if (m.type === "history" && m.reqId === reqId) { arrival.ws.removeEventListener("message", h as any); res(m); }
+        if (m.type === "history" && m.reqId === reqId) { who.ws.removeEventListener("message", h as any); res(m); }
       };
-      arrival.ws.addEventListener("message", h as any);
-      arrival.send({ type: "history", reqId, ...o });
+      who.ws.addEventListener("message", h as any);
+      who.send({ type: "history", reqId, ...o });
     });
     const text = (e: any) => e?.args?.text ?? e?.text;
+    const early = await askAs(arrival)({ limit: 300, verbs: ["say"] });
+    check("an arrival's history holds nothing said before it came", early.entries.length === 0 && !early.hasMore, `${early.entries.length}`);
+    const ask = askAs(owner);
 
     const page1 = await ask({ limit: 25, verbs: ["say"] });
     check("history returns a bounded page", page1.entries.length === 25, `${page1.entries.length}`);
@@ -330,8 +332,11 @@ try {
     check("the whole conversation is reachable", all.entries.length === 120, `${all.entries.length} of 120`);
     check("history reaches the first line said", text(all.entries[0]) === "line 0", JSON.stringify(all.entries[0]));
     const sinceMid = await ask({ after: all.entries[99].seq, verbs: ["say"], limit: 100 });
-    check("an agent can ask only for what it missed", sinceMid.entries.length === 20 && text(sinceMid.entries[0]) === "line 100", `${sinceMid.entries.length} since`);
-    for (const t of talkers) t.close(); arrival.close();
+    check("an admin can ask only for what it missed", sinceMid.entries.length === 20 && text(sinceMid.entries[0]) === "line 100", `${sinceMid.entries.length} since`);
+    await owner.req("say", { text: "while you were here" }); await sleep(300);   // (each talker spent its 20 says)
+    const later = await askAs(arrival)({ limit: 300, verbs: ["say"] });
+    check("what is said while an arrival is present reads back in its history, and only that", later.entries.map(text).join("|") === "while you were here", JSON.stringify(later.entries.map(text)));
+    for (const t of talkers) t.close(); arrival.close(); owner.close();
   }
 
   // --- a loud speaker must not erase the room
@@ -346,13 +351,9 @@ try {
       okN === 20 && floods.filter((r) => !r.ok).every((r) => r.reply?.refused?.code === "rate"), `${okN} accepted; ${JSON.stringify(floods.find((r) => !r.ok)?.reply?.refused)}`);
     await sleep(300);
     const arrival = await joined("arrival2", nw);
-    const rc = arrival.snapshot.state?.recentChat ?? [];
-    const byActor: Record<string, number> = {};
-    for (const m of rc) byActor[m.actor] = (byActor[m.actor] ?? 0) + 1;
-    check("a flood does not erase the other speakers from the snapshot", !!byActor.human, JSON.stringify(byActor));
-    check("the loud speaker still dominates honestly", (byActor.bot ?? 0) > (byActor.human ?? 0), JSON.stringify(byActor));
-    check("the window stays bounded", rc.length <= 40, `${rc.length}`);
-    check("a joiner is told how much there is", (arrival.snapshot.state?.chatTotal ?? 0) >= 21, `${arrival.snapshot.state?.chatTotal}`);
+    // (the window's fairness — a flood can't erase the other speakers — reached a joiner until speech became arrival-only,
+    // R 10-18; a joiner is now handed no window at all)
+    check("a joiner after a flood is handed none of it", JSON.stringify(arrival.snapshot.state?.recentChat) === "[]" && arrival.snapshot.state?.chatTotal === 0, JSON.stringify(arrival.snapshot.state));
     human.close(); bot.close(); arrival.close();
   }
 

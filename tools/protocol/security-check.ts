@@ -155,7 +155,7 @@ console.log("\n=== C3: WORLD_ADMIN bare name → boot refused ===");
 
 console.log("\n=== H1: typed name takeover → actorId keyed ===");
 // H1: presence keyed by typed name allows impersonate/eavesdrop by typing name
-// Attack: join as "Alice", then someone else joins as "Alice" → same session/roles/whispers
+// Attack: join as "Alice", then someone else joins as "Alice" → same session/roles
 // Fix: key on c.actorId in worlds; takeover only same account; unique present names
 {
   // Use a separate server without TRUST_NAMES, so anonymous guests get assigned no account

@@ -19,7 +19,7 @@
 //     into the chat line reveals nothing;
 //   the card — a plate a wall hides opens none; resting on a plate opens it only after the delay; it names the person and says mic off / can't hear
 //     you; it follows the plate while the pointer rests on it; leaving plate and card closes it; Esc closes it and
-//     leaves the panels alone; "message" opens their DM tab;
+//     leaves the panels alone; "mention" puts @name in the chat line (it opened a DM tab until whisper was removed, R 10-18);
 //   phone (390×844, touch) — a tap on a plate opens the same card inside the viewport; a tap elsewhere closes it.
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 import { mkdirSync } from 'node:fs';
@@ -407,7 +407,7 @@ try {
   check('card: Esc closes it', k.open && !k2.open, JSON.stringify({ k, k2 }));
   check('…and goes no further: the open panels stay', framesBefore > 0 && framesAfter === framesBefore, JSON.stringify({ framesBefore, framesAfter }));
 
-  // the action: "message" opens their DM tab
+  // the action: "mention" puts @name in the chat line (the DM tab left with whisper, R 10-18)
   B.pose = { ...B.pose, presence: 'busy' };
   await pg.mouse.move(640, 690); await sleep(300);
   a = await plate(pg, 'nearhear');
@@ -420,11 +420,10 @@ try {
     && !hearRow.html.includes('M5.25 3 18.75 21'), hearRow.html.slice(0, 200));
   await shot(pg, '73-hover-card-hearing-busy.png');
   await pg.mouse.move(k.l + 20, k.b - 12); await sleep(100);
-  await pg.click('#platecard button[data-act="dm"]'); await sleep(400);
+  await pg.click('#platecard button[data-act="mention"]'); await sleep(400);
   const dm = await pg.evaluate(() => ({ card: !document.getElementById('platecard').hidden,
-    tab: [...document.querySelectorAll('.chat-frame .chat-tabs button')].map((b) => b.textContent.trim()).find((t) => /nearhear/.test(t)) ?? null,
-    focus: document.activeElement?.id }));
-  check('card: "message" opens their DM tab and closes the card', !dm.card && dm.tab && dm.focus === 'chatline', JSON.stringify(dm));
+    line: document.getElementById('chatline')?.value ?? null, focus: document.activeElement?.id }));
+  check('card: "mention" puts @nearhear in the chat line and closes the card', !dm.card && /@nearhear /.test(dm.line ?? '') && dm.focus === 'chatline', JSON.stringify(dm));
   await pg.keyboard.press('Escape'); await sleep(150);
 
   // a close look for the review: the hard-of-hearing peer a couple of metres from the camera

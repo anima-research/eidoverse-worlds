@@ -6,7 +6,7 @@
 //   A   end to end over a raw socket: the hostile name either never gets in (the door refuses it, in words) or, if a
 //       name with markup ever reaches the page, nothing it carries runs
 //   S   the client's own sinks, independent of the door (the input emulated at its seam, the bus): every presence
-//       message that names its sender (knock-over, grab, pose, release, refused drag, broke-free) and the chat/whisper
+//       message that names its sender (knock-over, grab, pose, release, refused drag, broke-free) and the chat
 //       lines show a hostile name as TEXT — the literal characters on screen, no element made from them, no script run
 //   C   the page runs under a Content-Security-Policy that refuses inline script: an injected inline handler and an
 //       injected <script> do not run, and the browser reports the violation
@@ -100,7 +100,7 @@ try {
     await emit("bodydrag", { by: SVG, grab: { joint: "hips" } });
     check("S5 a refused drag toasts the name as text", await waitFor(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes(${JSON.stringify(SVG + " tried to drag you")}))`, 3000));
     await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable?.(true), true)).catch(() => true)`);
-    // the chat log and a whisper
+    // the chat log (a whisper line too, until whisper was removed, R 10-18)
     await evalJson(`import('/lib/chat.js').then((m) => (m.logChat(${JSON.stringify(SVG)}, 'hello ' + ${JSON.stringify(SVG)}), true))`);
     check("S6 a chat line shows the name and words as text", await waitFor(`(document.getElementById('chatlog')?.textContent ?? '').includes('hello ' + ${JSON.stringify(SVG)})`, 3000));
     await sleep(300);
@@ -159,7 +159,7 @@ try {
       await new Promise((r) => { const t = d.transaction('scripts', 'readwrite'); t.objectStore('scripts').delete('byhand'); t.oncomplete = r; }); return true; })()`);
   });
 
-  // ---- P: the page names the people it reaches by identity (H2): puppet, drag, whisper and typing carry the actor id ----
+  // ---- P: the page names the people it reaches by identity (H2): puppet, drag and typing carry the actor id (whisper did, until it was removed, R 10-18) ----
   await stage("P", async () => {
     const wren = guest("Wren");
     const { snap } = await wren.join();
@@ -172,14 +172,14 @@ try {
     let rq = 0; const wreq = (verb: string, args: any) => { const id = `w${++rq}`; wren.send({ type: "request", id, verb, args }); };
     wreq("consent", { set: { class: "pose", tier: "everyone", mode: "allow" } }); wreq("consent", { set: { class: "displace", tier: "everyone", mode: "allow" } });
     await sleep(500);
-    await evalJson(`(() => { window.__sent = []; const s = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (['puppet', 'bodydrag', 'whisper', 'typing'].includes(m.type)) __sent.push(m); } catch {} return s.call(this, d); }; return true; })()`);
-    await evalJson(`import('/lib/net.js').then((m) => { m.sendPuppet('Wren', { pose: { head: [0, 0, 0, 1] } }); m.sendBodyDrag('Wren', { end: true }); m.sendWhisper('Wren', 'hi'); m.sendTyping('Wren'); return true; })`);
+    await evalJson(`(() => { window.__sent = []; const s = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (['puppet', 'bodydrag', 'typing'].includes(m.type)) __sent.push(m); } catch {} return s.call(this, d); }; return true; })()`);
+    await evalJson(`import('/lib/net.js').then((m) => { m.sendPuppet('Wren', { pose: { head: [0, 0, 0, 1] } }); m.sendBodyDrag('Wren', { end: true }); m.sendTyping('Wren'); return true; })`);
     const sent = await evalJson(`__sent`);
     const by = (t: string) => sent.find((m: any) => m.type === t) ?? null;
     check("P1 puppet and bodydrag name the identity (targetActor) beside the name", by("puppet")?.targetActor === wrenActor && by("bodydrag")?.targetActor === wrenActor, sent);
-    check("P2 whisper and typing name it too (toActor)", by("whisper")?.toActor === wrenActor && by("typing")?.toActor === wrenActor, sent);
+    check("P2 typing names it too (toActor)", by("typing")?.toActor === wrenActor, sent);
     await sleep(500);
-    check("P3 …and the server delivered them to that identity", wren.msgs.some((m) => m.type === "puppet" && m.by === me) && wren.msgs.some((m) => m.type === "whisper" && m.text === "hi"), wren.msgs.map((m) => m.type).slice(-12));
+    check("P3 …and the server delivered them to that identity", wren.msgs.some((m) => m.type === "puppet" && m.by === me), wren.msgs.map((m) => m.type).slice(-12));
     wren.ws.close();
   });
 

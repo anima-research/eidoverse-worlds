@@ -124,8 +124,8 @@ const framesOf = (page) => page.evaluate(() => globalThis.__frames ?? { sent: []
 // B1: one arrival, one socket generation. The inline early socket joins before the lite
 // decision exists, and net.js adopts it ONLY when the join it would send matches byte for
 // byte. lite asking for avatar:'' missed, so the early socket was discarded and a second
-// opened - the server saw arrive -> leave -> arrive, and a held whisper delivered to the
-// first socket could be marked delivered server-side and then thrown away with it.
+// opened - the server saw arrive -> leave -> arrive, and anything delivered to the first
+// socket could be thrown away with it (it was a held whisper then; whisper was removed, R 10-18).
 {
   const page = await mkPage();
   await page.addInitScript(SOCKET_SPY);
@@ -220,11 +220,12 @@ const framesOf = (page) => page.evaluate(() => globalThis.__frames ?? { sent: []
 // to put what it carries.
 //
 // Round two of the review found real message loss here: connect() adopts the early
-// socket and drains what raced ahead of us - the join snapshot, and any whisper the
-// server held while we were away. The server deletes its pending copy the moment it
-// sends one, so a chat window that did not exist yet meant logWhisper() threw inside the
-// drain, connect() reported it and carried on, and a successfully delivered private
-// message was gone for good. These gates hold the ordering that fixes it.
+// socket and drains what raced ahead of us - the join snapshot and the first live
+// entries. A chat window that did not exist yet meant the drain threw, connect()
+// reported it and carried on, and a delivered message was gone for good (it was a held
+// whisper then). These gates hold the ordering that fixes it. Since R 10-18 speech is
+// arrival-only and whisper is removed: what was said before the reader arrived, and a
+// whisper sent while it was away, must NOT appear; the drain must still not throw.
 //
 // `raw` drives a plain socket from inside the page: a second participant, no client.
 const RAW = `
@@ -247,7 +248,7 @@ const RAW = `
 {
   const WORLD = `arrival${Date.now().toString(36)}`;
   const READER = 'reader';
-  const SECRET = `held-whisper-${Date.now()}`;
+  const SECRET = `removed-whisper-${Date.now()}`;
   const PRIOR = `prior-say-${Date.now()}`;
 
   // A page that is NOT the reader, used only to drive the other participant.
@@ -257,8 +258,8 @@ const RAW = `
     { waitUntil: 'load' });
   await driver.waitForTimeout(1500);
 
-  // One ordinary say (becomes the room's pre-existing context), then a whisper to
-  // someone who is not here - which the server holds for delivery on arrival.
+  // One ordinary say before the reader arrives, then a whisper to it while it is away
+  // (refused as removed: held for nobody).
   await driver.evaluate(async ({ secret, prior, reader }) => {
     await globalThis.__raw([
       { type: 'request', id: 'prior-say', verb: 'say', args: { text: prior } },
@@ -289,15 +290,11 @@ const RAW = `
   const priorHits = countOf(body, PRIOR);
   const engine = asked.filter((u) => ENGINE.test(u)).length;
 
-  console.log(`\n  arrival delivery: held-whisper x${whisperHits}  prior-say x${priorHits}  engine=${engine}  pageErrors=${errs.length}  drainErrors=${consoleErrs.length}`);
+  console.log(`\n  arrival delivery: removed-whisper x${whisperHits}  prior-say x${priorHits}  engine=${engine}  pageErrors=${errs.length}  drainErrors=${consoleErrs.length}`);
   for (const e of consoleErrs.slice(0, 2)) console.log(`      ! ${e.slice(0, 140)}`);
 
-  check('a held whisper survives a lite arrival', whisperHits > 0,
-    'the server deletes its pending copy on send; a consumer built after the drain never sees it');
-  check('the held whisper arrives exactly once', whisperHits === 1, `seen ${whisperHits}x`);
-  check('pre-existing room chat is there on first arrival', priorHits > 0,
-    'state.st.recentChat is hydrated from the join snapshot; someone has to replay it');
-  check('pre-existing chat is not duplicated', priorHits === 1, `seen ${priorHits}x`);
+  check('a whisper sent while the reader was away never arrives (whisper removed, R 10-18)', whisperHits === 0, `seen ${whisperHits}x`);
+  check('chat said before the reader arrived is not replayed (arrival-only, R 10-18)', priorHits === 0, `seen ${priorHits}x`);
   check('nothing throws inside the drain', consoleErrs.length === 0, consoleErrs[0]?.slice(0, 120));
   check('arrival delivery raises no page errors', errs.length === 0, errs[0]?.slice(0, 120));
   check('none of this costs engine bytes', engine === 0);
