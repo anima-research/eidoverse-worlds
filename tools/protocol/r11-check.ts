@@ -27,6 +27,21 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 
 // [name, file under the tree, find, replace, rows]
 const MUTANTS: [string, string, string, string, string[]][] = [
+  ["undelegate removes nobody", "shared/protocol/consent.js", "if (a.undelegate !== undefined) t.delegates = (t.delegates ?? []).filter((x) => x !== a.undelegate);", "", ["C1", "C4"]],
+  ["unfriend removes nobody", "shared/protocol/consent.js", "if (a.unfriend !== undefined) t.friends = (t.friends ?? []).filter((x) => x !== a.unfriend);", "", ["C2", "C4"]],
+  ["a delegate may remove", "shared/protocol/consent.js", "if (!self && lists) return", "if (false && lists) return", ["C3"]],
+  ["the door doesn't take the words", "shared/protocol/verbspec.js", "unfriend: { type: \"any\"", "unfriendX: { type: \"any\"", ["C2", "C3"]],
+  ["the verb reads a removal as a read", "shared/protocol/authority/bodyconsent.js", "\"delegate\", \"unfriend\", \"undelegate\"].some", "\"delegate\"].some", ["C1", "C2"]],
+  ["§7 forgets rename-components", "spec/PROTOCOL.md", "\n| components and fields renamed before release (§4), at every load | its own act `rename-components {renamed, why}` and its change | `system` | the system's capability, per thing | the actor |", "", ["X1"]],
+  ["§4 forgets the rename", "spec/PROTOCOL.md", "**A pure rename runs at every load.**", "**A pure rename runs.**", ["X1"]],
+  ["a seated declaration says nothing", "mcpl/tools.ts", "and grants nothing${seated}`); }", "and grants nothing`); }", ["B1"]],
+  ["a declaration dropped", "mcpl/ping-wire.ts", "const d = typeof declares === \"string\" && declares ? { declares } : {};", "const d = {};", ["B2"]],
+  ["a stored null renamed to anim: null", "shared/protocol/shaperepair.js", "else if (p === null) renamed.push({ field: \"pose\", to: null });", "", ["R1"]],
+  ["renames all or nothing", "shared/protocol/authority/scriptrun.js", "if (kept.length) { const ids = [...new Set(kept.map((o) => o.id))], comps", "if (kept.length && !failed.length) { const ids = [...new Set(kept.map((o) => o.id))], comps", ["R2"]],
+  ["the consent code's old words", "shared/protocol/refusalcodes.js", "(touch, pose, shove, displace…)", "(touch, pose, shove, move…)", ["D1"]],
+  ["move's old name order", "AGENTS.md", "a thing by id (its entrance, else beside it), a place's name or label, a thing's label or handle,", "a thing (id, label or handle: its entrance, else beside it), a place's name or label,", ["D2"]],
+  ["attach takes pose again", "mcpl/tools.ts", ", action: { type: \"string\" } }, required: [\"to\"] } },", ", action: { type: \"string\" }, pose: { type: \"string\" } }, required: [\"to\"] } },", ["D3"]],
+  ["the inspector says |pose", "shared/editschema.js", "k: `${slot}|anim`, label: `${slot} anim`, value: b.pose, def", "k: `${slot}|pose`, label: `${slot} anim`, value: b.pose, def", ["D4"]],
   ["CONTROL (no-op: must stay green)", "shared/protocol/authority/gate.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -200,7 +215,7 @@ const cases: Case[] = [
   { id: "D4", what: "(docs pass) replies and help in today's words: travel names anims and body-mode (not held pose and posture); ragdoll and live-pose replies name anim; /pushable says everyone (not a stranger); the inspector's sockets.<slot>|anim (|pose still read)", run() {
       const net = readText("mcpl/net-server.ts"), tl = readText("mcpl/tools.ts"), reg = readText("client/lib/commands/registry.js"), es = readText("shared/editschema.js"), ag = readText("AGENTS.md");
       return { net: !/held pose and posture/.test(net), tl: !/a posture, or walking, stands you back up/.test(tl) && !/`pose \{ragdoll\} refused/.test(tl) && !/pose \{clear: true\} drops it/.test(tl) && !/sockets\.<slot>\|pose/.test(tl),
-        reg: !/stranger/.test(reg.split("\n").find((l) => l.includes("'pushable'")) ?? ""), es: /k: `\$\{slot\}\|anim`/.test(es) && /what0 === 'anim' \? 'pose'/.test(es), ag: /sockets\.<slot>\|anim/.test(ag) }; },
+        reg: !/stranger/.test(reg.split("\n").find((l) => l.includes("'pushable'")) ?? ""), es: (es.match(/k: `\$\{slot\}\|anim`/g) ?? []).length === 2 && !/k: `\$\{slot\}\|pose`/.test(es) && /what0 === 'anim' \? 'pose'/.test(es), ag: /sockets\.<slot>\|anim/.test(ag) }; },
     good: (o) => o.net && o.tl && o.reg && o.es && o.ag },
 ];
 
