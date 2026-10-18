@@ -100,7 +100,7 @@ for (const [id, e] of ents) {
 {
   const M = (k: string, x: any = {}) => materialize(k, x).value;
   const every: any = { model: 'store/x.glb', pos: [0, 0, 0], yaw: 0, light: { ...M('light'), day: false, important: true }, collider: { shape: 'box' }, pivot: { pos: [0, 1, 0] },
-    motion: { type: 'pendulum', amp: 0.2 }, 'motion:a': { type: 'spin' }, 'motion:b': { type: 'orbit' }, 'motion:c': { type: 'bob' }, 'motion:d': { type: 'path', points: [[0, 0, 0], [1, 1, 1]], duration: 2 },
+    motion: { type: 'pendulum', amp: 0.2 }, 'motion:a': { type: 'spin' }, 'motion:b': { type: 'orbit' }, 'motion:c': { type: 'oscillate' }, 'motion:d': { type: 'path', points: [[0, 0, 0], [1, 1, 1]], duration: 2 },
     openable: { open: true, angle: 1 }, grabbable: { fits: ['key'] }, sockets: { seat: { pos: [0, 0.5, 0], body: {} } },
     particles: { effect: 'fire', params: { count: 10 } }, picture: { src: 'store/a.png' }, sound: { src: 'store/a.mp3' }, story: { title: 't', text: 'x' },
     text: { text: 'hi', background: 0x202020 }, 'look-at': { target: '@viewer' }, 'look-at:head': { target: 'c1' },
@@ -133,10 +133,10 @@ for (const [id, e] of ents) {
   check(`no part-scoped card is titled with a generator's node name (${titled} part cards in the corpus)`, rawTitles.length === 0, rawTitles.slice(0, 6).join(' | '));
 }
 {
-  const sw = { model: 'store/swing.glb', pos: [0, 0, 0], 'motion:tripo_part_fused_0': { type: 'pendulum', amp: 0.2 }, 'motion:tripo_part_fused_3': { type: 'spin' }, 'motion:seat_plank': { type: 'bob' }, 'motion:mesh7': { type: 'bob' } };
+  const sw = { model: 'store/swing.glb', pos: [0, 0, 0], 'motion:tripo_part_fused_0': { type: 'pendulum', amp: 0.2 }, 'motion:tripo_part_fused_3': { type: 'spin' }, 'motion:seat_plank': { type: 'bob' } /* stored before the rename: reads as Oscillate */, 'motion:mesh7': { type: 'bob' } };
   const titles = (live: any = {}) => inspectSchema(sw, 's', live).sections.list.filter((c: any) => c.part).map((c: any) => c.title);
   check('part cards: "Pendulum · part 1" for tripo_part_fused_0 (its number + 1), the modeller\'s own word kept ("seat plank"), mesh7 → part 8',
-    JSON.stringify(titles()) === JSON.stringify(['Pendulum · part 1', 'Spin · part 4', 'Bob · seat plank', 'Bob · part 8']), JSON.stringify(titles()));
+    JSON.stringify(titles()) === JSON.stringify(['Pendulum · part 1', 'Spin · part 4', 'Oscillate · seat plank', 'Oscillate · part 8']), JSON.stringify(titles()));
   check('…with the model\'s parts known, the number is its place among them', JSON.stringify(titles({ parts: ['frame', 'tripo_part_fused_3', 'tripo_part_fused_0'] }).slice(0, 2)) === JSON.stringify(['Pendulum · part 3', 'Spin · part 2']), JSON.stringify(titles({ parts: ['frame', 'tripo_part_fused_3', 'tripo_part_fused_0'] })));
   check('…and the raw node name rides the card (the panel puts it in the hint)', inspectSchema(sw, 's').sections.list.find((c: any) => c.part === 'tripo_part_fused_0')?.title === 'Pendulum · part 1');
   check('partLabel: machine names (Cube.003, node_4, a uuid) become a place; words stay words', partLabel('Cube.003') === 'part 4' && partLabel('node_4') === 'part 5' && partLabel('3f2a9c1e-77aa-4c3b') === 'part 1' && partLabel('Door_Left') === 'Door Left' && partLabel('wheel2') === 'wheel2');

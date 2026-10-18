@@ -1018,7 +1018,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const s1 = sock("bench-seat");
   ok(s1.ok && E("bench-seat")?.socket?.name === "seat" && E("bench-seat")?.parent?.to === "bench", "SKE1 a socket child of a thing is taken", s1.refused ?? E("bench-seat"));
   ok(code(sock("bench-lamp", { light: { kind: "point" } }, { name: "lamp" })) === "one-place" && code(sock("bench-crate", { model: "crate" }, { name: "c2" })) === "one-place" && code(sock("bench-phys", { physics: { kind: "dynamic" } }, { name: "p2" })) === "one-place", "SKE2 a socket carries no model, light or physics: one-place");
-  ok(sock("bench-swing", { motion: { type: "bob", amp: 0.1, period: 2 } }, { name: "swing" }).ok, "SKE2 …but a motion of its own is allowed (R 10-12 20:44)");
+  ok(sock("bench-swing", { motion: { type: "oscillate", amp: 0.1, period: 2 } }, { name: "swing" }).ok, "SKE2 …but a motion of its own is allowed (R 10-12 20:44)");
   const dup = sock("bench-seat2");
   ok(code(dup) === "name-taken" && dup.refused?.taken === "bench-seat", "SKE3 a second socket called 'seat' on the same host is refused: name-taken, naming the first", dup);
   ok(R("ann", "create", { id: "stool", model: "crate" }).ok && R("ann", "create", { id: "stool-seat", components: { parent: { to: "stool" }, socket: { name: "seat" } } }).ok, "SKE3 …the same name on another host is fine");

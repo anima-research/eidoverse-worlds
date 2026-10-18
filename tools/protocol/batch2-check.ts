@@ -357,7 +357,7 @@ const cases: Case[] = [
       s.call("olive", "set", { id: "a", component: "motion", value: { type: "spin", axis: "y", degPerSec: 30 } }); const a = s.call("olive", "set", { id: "a", component: "look-at", value: LA0 });
       s.call("olive", "set", { id: "b", component: "look-at", value: LA0 }); const b = s.call("olive", "set", { id: "b", component: "motion", value: { type: "spin", axis: "y", degPerSec: 30 } });
       s.call("olive", "set", { id: "c", component: "motion:lid", value: { type: "spin", axis: "y", degPerSec: 30 } }); const c = s.call("olive", "set", { id: "c", component: "look-at", value: LA0 });
-      s.call("olive", "set", { id: "d", component: "motion", value: { type: "bob", axis: "y", amp: 0.1, period: 2 } }); const d = s.call("olive", "set", { id: "d", component: "look-at", value: LA0 });
+      s.call("olive", "set", { id: "d", component: "motion", value: { type: "oscillate", axis: "y", amp: 0.1, period: 2 } }); const d = s.call("olive", "set", { id: "d", component: "look-at", value: LA0 });
       s.call("olive", "set", { id: "e", component: "physics", value: { kind: "dynamic" } }); const e = s.call("olive", "set", { id: "e", component: "look-at", value: LA0 });
       return { a: code(a), aWhy: a.refused?.reason, b: code(b), c: show(c), d: show(d), e: code(e) }; },
     good: (o) => o.a === "conflict" && /spin/.test(o.aWhy) && o.b === "conflict" && o.c === "ok" && o.d === "ok" && o.e === "conflict" },

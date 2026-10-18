@@ -50,10 +50,10 @@ await tryRow('RP1', () => {
   check('RP1 a bare motion naming tripo_part_3 becomes motion:<slot> {node: "tripo_part_3"}, its key in the §2.3 grammar', keys.length === 1 && isComponent(keys[0]) && r.c[keys[0]].node === 'tripo_part_3' && !r.c.motion, r.c);
   check('RP1 …the slot is a pure function of the name (the same on every server): a tag keeps itself, any other is sanitized + 8 hex', partSlot('tripo_part_3') === partSlot('tripo_part_3') && partSlot('seat') === 'seat' && /^tripo-part-3-[0-9a-f]{8}$/.test(partSlot('tripo_part_3')) && partSlot('Tripo_Part') !== partSlot('tripo-part'), [partSlot('tripo_part_3'), partSlot('Tripo_Part'), partSlot('tripo-part')]);
   check('RP1 …a second run finds nothing to do', repairComps(r.c).set.length === 0 && repairComps(r.c).del.length === 0, repairComps(r.c));
-  const k2 = repairComps({ 'motion:plank': { type: 'bob', amp: 0.1, period: 2 } }).c;
+  const k2 = repairComps({ 'motion:plank': { type: 'oscillate', amp: 0.1, period: 2 } }).c;
   check('RP1 …a keyed motion stored before the node was data gets its key\'s tag as node (what motion.js read)', k2['motion:plank']?.node === 'plank', k2);
-  const k3 = repairComps({ motion: { type: 'spin', part: 'Seat Plank' }, 'motion:p0': { type: 'bob', node: 'Seat Plank' } }).c;
-  check('RP1 …a motion already on that node wins (the bare one is dropped)', !k3.motion && Object.keys(k3).filter((k) => k.startsWith('motion:')).length === 1 && k3['motion:p0'].type === 'bob', k3);
+  const k3 = repairComps({ motion: { type: 'spin', part: 'Seat Plank' }, 'motion:p0': { type: 'oscillate', node: 'Seat Plank' } }).c;
+  check('RP1 …a motion already on that node wins (the bare one is dropped)', !k3.motion && Object.keys(k3).filter((k) => k.startsWith('motion:')).length === 1 && k3['motion:p0'].type === 'oscillate', k3);
 });
 
 await tryRow('RP2', () => {

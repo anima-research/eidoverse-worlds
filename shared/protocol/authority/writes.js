@@ -148,6 +148,9 @@ function resolve(ctx, id, comp, value, prev) {
   // grabbable.pose / station.pose are anim, a grip's fingers its grasp (R 10-17 15:09/15:11): a write in the old spelling is
   // taken and stored in the new (shaperepair.js renameFields: the load renames a stored one the same way)
   if (comp === "grabbable" || comp === "station") { const r = renameFields(comp, value); if (r.renamed.length) { value = r.value; for (const n of r.renamed) ctx.notes.push({ id, component: comp, ...n, why: "renamed before release (R 10-17): pose is anim, fingers is grasp" }); } }
+  // a motion's type bob is oscillate (R 10-17 21:40): the old spelling is taken for one release and stored in the new (the
+  // load renames a stored one the same way: renameFields)
+  if (comp === "motion" || comp.startsWith("motion:")) { const r = renameFields(comp, value); if (r.renamed.length) { value = r.value; for (const n of r.renamed) ctx.notes.push({ id, component: comp, ...n, why: "renamed before release (R 10-17): a motion's bob is oscillate" }); } }
   // a light's day (a double negative) is daytime (shape audit 10-16): true = dim, false = full
   if (comp === "light" && value && typeof value === "object" && !Array.isArray(value) && typeof value.day === "boolean") { const { day, ...rest } = value;
     value = { ...rest, daytime: rest.daytime ?? (day ? "dim" : "full") }; ctx.notes.push({ id, component: comp, field: "day", sent: day, kept: value.daytime, why: "a light's day is daytime: dim | full" }); }

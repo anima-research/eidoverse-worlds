@@ -312,7 +312,7 @@ console.log("\nMaterial, the draft hesperus/material (docs/COMPONENT-LADDER.md):
     check("a spin about y marks only rotate y as driven (not translate, not scale, not the other rotations)", JSON.stringify(drv) === JSON.stringify(["rotate y"]), JSON.stringify(drv));
     const ax = g.flatMap((x: any) => x.fields).find((f: any) => f.t === "enum" && /axis/.test(f.label ?? ""));
     check("the motion axis menu offers x, y, z (a negative rate turns it the other way)", JSON.stringify(ax?.options?.map((o: any) => o.v)) === JSON.stringify(["x", "y", "z"]), JSON.stringify(ax?.options));
-    const bob = { ...sp, ...sp.comp, motion: { type: "bob", amplitude: 0.3 } };
+    const bob = { ...sp, ...sp.comp, motion: { type: "oscillate", amplitude: 0.3 } };
     const bd = inspectSchema(bob, "s1", {}).groups.flatMap((x: any) => x.fields).filter((f: any) => f.t === "num" && f.driven).map((f: any) => f.label).sort();
     check("a bob marks only translate y", JSON.stringify(bd) === JSON.stringify(["translate y"]), JSON.stringify(bd)); }
   const two = { materials: [{ slot: "material-020", name: "Material.020", color: 0x8a5a2b, roughness: 0.8, metalness: 0 }, { slot: "brass-trim", name: "Brass_trim", color: 0xb08d57, roughness: 0.3, metalness: 1 }] };

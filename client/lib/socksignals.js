@@ -4,7 +4,7 @@
 //   speed  m/s   how fast the thing (its whole-motion transform) is moving
 //   turn   rad/s how fast it is turning about its up axis (+ = counter-clockwise seen from above)
 //   phase  0..1  where the motion that carries the socket is in its cycle (a swing's period, a wheel's turn, a path's run)
-//   swing  -1..1 cos(2π·phase): a pendulum's normalised angle (θ/amp, damping included), a bob's normalised offset
+//   swing  -1..1 cos(2π·phase): a pendulum's normalised angle (θ/amp, damping included), an oscillate's normalised offset
 //                (a still swing — amp 0, or damped out — reads 0, and its phase stops: nothing pumps on a swing at rest)
 //   throttle, steer          -1..1  the occupant's movement input (input.move drive|walk), riding their presence
 //   aimYaw, aimPitch         rad    where the occupant looks, relative to the socket's forward (riding presence)
@@ -14,11 +14,11 @@
 // occupant's presence — so two clients looking at one swing put the occupant's clip at the same frame. (A thing moved by
 // physics, not by a motion component, reads speed/turn 0 here: physics is a later port.)
 //
-// Pure: imports only the motion closed forms (motioneval.js, itself pure and shared with the agent) and the node reader (names.js motionNode). It lives beside
+// Pure: imports only the motion closed forms (motioneval.js, itself pure and shared with the agent) and the node and type readers (names.js motionNode, motionType). It lives beside
 // them in client/lib because the browser is served client/ at its root: shared/ code can't reach back into it.
 
 import { evalWholeMotion, since, ampOf, rateOf } from './motioneval.js';
-import { motionNode } from '../../shared/protocol/names.js';
+import { motionNode, motionType } from '../../shared/protocol/names.js';
 
 const TAU = 2 * Math.PI;
 const frac = (x) => x - Math.floor(x);
@@ -39,18 +39,18 @@ export function carrierMotion(comp, sock) {
   return w?.type && typeof w.part !== 'string' ? { m: w, part: false } : null;
 }
 
-/** A pendulum or bob whose swing is below this (rad, or m for a bob) is still: its phase stops advancing, so a seat
+/** A pendulum or oscillate whose swing is below this (rad, or m for an oscillate) is still: its phase stops advancing, so a seat
  *  locked to it doesn't pump a body on a swing that isn't swinging (amp 0, or damped out). */
 export const STILL = 0.01;
 
 /** phase (0..1) and swing (-1..1) of one motion at nowMs. One meaning for every cyclic motion: phase 0 is the cycle's
  *  positive extreme and swing = cos(2π·phase) — scaled, for a damped pendulum, by how much of its swing is left. A
- *  pendulum (θ = amp·cos) and a bob (offset = amp·sin) are therefore both at phase 0 at their positive end. A still
+ *  pendulum (θ = amp·cos) and an oscillate (offset = amp·sin) are therefore both at phase 0 at their positive end. A still
  *  oscillator (amplitude below STILL) reads the phase it came to rest at, and swing 0. */
 export function cycleOf(m, nowMs) {
   if (!m?.type) return { phase: 0, swing: 0 };
   const t = since(m, nowMs);
-  switch (m.type) {
+  switch (motionType(m)) {
     case 'pendulum': {
       const w0 = TAU / (m.period ?? 3.5), damp = m.damp ?? 0, amp = Math.abs(ampOf(m));
       if (amp < STILL) return { phase: frac((m.phase ?? 0) / TAU), swing: 0 };
@@ -68,7 +68,7 @@ export function cycleOf(m, nowMs) {
       const a = (m.phase ?? 0) + (rateOf(m, 12) * Math.PI / 180) * t;
       return { phase: frac(a / TAU), swing: Math.cos(a) };
     }
-    case 'bob': {
+    case 'oscillate': {
       if (Math.abs(ampOf(m, 0.3)) < STILL) return { phase: frac(((m.phase ?? 0) - Math.PI / 2) / TAU), swing: 0 };
       const a = (TAU / (m.period ?? 4)) * t + (m.phase ?? 0);
       return { phase: frac((a - Math.PI / 2) / TAU), swing: Math.sin(a) };   // offset = amp·sin(a): its positive end is a = π/2

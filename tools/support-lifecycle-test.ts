@@ -121,7 +121,7 @@ const requestsOf = (v: string, a: any): { verb: string; args: any }[] => {
     case "spawn": return [{ verb: "create", args: { id: a.id, model: a.lib, components: { transform: tf(a) } } }];
     case "place": return [{ verb: "set", args: { id: a.id, component: "transform", value: tf(a), merge: true } }];
     case "remove": return [{ verb: "delete", args: { id: a.id } }];
-    case "motion": return a.type ? [{ verb: "set", args: { id: a.id, component: "motion", value: { type: "bob", axis: [0, 0, 1], amp: 3, period: 4 } } }]
+    case "motion": return a.type ? [{ verb: "set", args: { id: a.id, component: "motion", value: { type: "oscillate", axis: [0, 0, 1], amp: 3, period: 4 } } }]
       : [{ verb: "delete", args: { id: a.id, component: "motion" } }];
     case "mount": return [{ verb: "set", args: { id: a.id, component: "parent", value: { to: a.to } } }];
     case "dismount": return [{ verb: "delete", args: { id: a.id, component: "parent" } }, { verb: "set", args: { id: a.id, component: "transform", value: tf(a), merge: true } }];

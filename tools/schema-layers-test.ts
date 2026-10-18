@@ -81,7 +81,7 @@ const regUnit = (key: string, path: string, type?: string) => { const u = COMPON
 {
   const M = (k: string, x: any = {}) => materialize(k, x).value;
   const every: any = { model: "store/x.glb", pos: [0, 0, 0], yaw: 0, light: { ...M("light"), day: false, important: true }, collider: { shape: "box" }, pivot: { pos: [0, 1, 0] },
-    motion: { type: "pendulum", amp: 0.2 }, "motion:a": { type: "spin" }, "motion:b": { type: "orbit" }, "motion:c": { type: "bob" }, "motion:d": { type: "path", points: [[0, 0, 0], [1, 1, 1]], duration: 2 },
+    motion: { type: "pendulum", amp: 0.2 }, "motion:a": { type: "spin" }, "motion:b": { type: "orbit" }, "motion:c": { type: "oscillate" }, "motion:d": { type: "path", points: [[0, 0, 0], [1, 1, 1]], duration: 2 },
     openable: { open: true, angle: 1, slide: [1, 0, 0] }, grabbable: { fits: ["key"] }, particles: { effect: "fire" }, picture: { src: "store/a.png" }, sound: { src: "store/a.mp3" }, story: { title: "t", text: "x" },
     text: { text: "hi", background: 0x202020 }, "look-at": { target: "@viewer" }, physics: { kind: "dynamic", mass: 2 }, home: { pos: [0, 0, 0] } };
   const s = inspectSchema(every, "every", { parts: ["lid"], box: [[-1, 0, -1], [1, 2, 1]], materials: [], effects: () => null });

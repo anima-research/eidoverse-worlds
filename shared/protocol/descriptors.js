@@ -85,7 +85,7 @@ const MOTION = {
   Spin: { type: 'spin', show: ['axis', 'degPerSec', 'pivot', 'phase'], editor: { phase: { ui: PHASE } } },
   Orbit: { type: 'orbit', show: ['radius', 'center', 'degPerSec', 'phase', 'face'],
     editor: { radius: { ui: { t: 'num', step: 0.1, dp: 2 } }, phase: { ui: PHASE }, face: { ui: { t: 'check' } } } },
-  Bob: { type: 'bob', show: ['axis', 'amp', 'period', 'phase'],
+  Oscillate: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],
     editor: { amp: { wire: AMP, ui: { t: 'num', step: 0.05, dp: 2, softMin: 0, clears: ['amplitude'] } }, period: { ui: SEC }, phase: { ui: PHASE } } },
   Path: { type: 'path', show: ['points', 'speed', 'duration', 'loop', 'face'],
     editor: { speed: { ui: { t: 'num', step: 0.1, dp: 2 } }, duration: { ui: { t: 'num', step: 0.5, dp: 1, softMin: 0.1, def: false } }, loop: { ui: { t: 'enum', def: false } }, face: { ui: { t: 'check' } } } },

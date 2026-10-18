@@ -83,7 +83,7 @@ console.log("\nthe other restated defaults:");
 console.log("\nthe translation itself:");
 {
   check("axis: letter → vector → letter", same(toWire("Pendulum", "axis", "x"), [1, 0, 0]) && axisLetter([0, -1, 0]) === "-y" && axisLetter("Z") === "z" && axisLetter([0.5, 0, 0]) === null);
-  check("the registry's pendulum axis reads as x, spin's and bob's as y, openable's hinge as y", editorDefault("Pendulum", "axis") === "x" && editorDefault("Spin", "axis") === "y" && editorDefault("Bob", "axis") === "y" && editorDefault("Openable", "axis") === "y");
+  check("the registry's pendulum axis reads as x, spin's and oscillate's as y, openable's hinge as y", editorDefault("Pendulum", "axis") === "x" && editorDefault("Spin", "axis") === "y" && editorDefault("Oscillate", "axis") === "y" && editorDefault("Openable", "axis") === "y");
   check("rate: the registry's degPerSec reads as the editor's rate; a period reads as 360/period; an rpm as ×6", editorDefault("Spin", "degPerSec") === 36 && DESCRIPTORS.Spin.fields.find((f) => f.k === "degPerSec")!.wire!.from(undefined, { period: 10 }) === 36 && DESCRIPTORS.Orbit.fields.find((f) => f.k === "degPerSec")!.wire!.from(undefined, { rpm: 2 }) === 12);
   check("light: daytime dim reads as burns-at-noon off; on writes daytime: full (the address is light.daytime, R 10-17: was light.noon) (shape audit 10-16: was day: false)", editorDefault("Light", "daytime") === false && toWire("Light", "daytime", true) === "full" && toWire("Light", "daytime", false) === "dim");
   check("a whole-value card has exactly one path-less field (Grabbable.spec, Sockets.slots, Label.text…)", ["Grabbable", "Sockets", "Reactions", "Label", "Lock", "Hidden", "Openable"].every((c) => DESCRIPTORS[c].fields.filter((f) => f.path == null).length === 1));

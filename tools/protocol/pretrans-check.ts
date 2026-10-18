@@ -180,7 +180,7 @@ await C("K7", "no account subject is written (PROTOCOL §9.2): without a mapper 
   const acts = r.out.filter((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "grant");
   const W = world(); const sub = W.call("set", { id: "@world", component: "roles:vic", value: { role: "visitor", sub: "human:discord:9" } });
   return [w[`roles:${TV1.enc("janus")}`]?.role === "owner" && !("sub" in w[`roles:${TV1.enc("janus")}`]) && acts.length >= 4 && !JSON.stringify(acts).includes("human:discord") && !sub.ok && sub.refused.code === "schema"
-    && /@13$/.test(TV1.TRANSLATOR) && /@13$/.test(TV1.TRANSLATOR_SIM), [w[`roles:${TV1.enc("janus")}`], acts.map((a: any) => a.body.args), sub.refused, TV1.TRANSLATOR]]; });
+    && /@14$/.test(TV1.TRANSLATOR) && /@14$/.test(TV1.TRANSLATOR_SIM), [w[`roles:${TV1.enc("janus")}`], acts.map((a: any) => a.body.args), sub.refused, TV1.TRANSLATOR]]; });
 
 // ---- N: names (H1, M7) ----
 const mk = (W: any, id = "box") => { const r = W.call("create", { id, model: "crate" }); if (!r.ok) throw new Error(why(r)); return id; };
@@ -238,10 +238,10 @@ await C("D2", "an openable's turn is written (angle π/2, axis [0,1,0], time 1, 
 await C("D3", "a grabbable's defaults are written (range 1.5, who visitor, steal, throw, release…) and the authority still takes it", () => {
   const W = world(); mk(W, "g"); const r = W.call("set", { id: "g", component: "grabbable", value: {} }); const g = stored(W, "g", "grabbable");
   return [r.ok && g?.range === 1.5 && g.who === "visitor" && g.steal === true && g.throw === 1 && g.release === "drop" && g.hold === "auto" && g.enabled === true, [why(r), g]]; });
-await C("D4", "a motion's per-type defaults are written: spin's axis and rate, orbit's radius and rate, bob's amp and period, path's speed and loop", () => {
+await C("D4", "a motion's per-type defaults are written: spin's axis and rate, orbit's radius and rate, oscillate's amp and period, path's speed and loop", () => {
   const W = world(); for (const id of ["sp", "sp2", "or", "bo", "pa"]) mk(W, id);
   W.call("set", { id: "sp", component: "motion", value: { type: "spin" } }); W.call("set", { id: "sp2", component: "motion", value: { type: "spin", period: 10 } });
-  W.call("set", { id: "or", component: "motion", value: { type: "orbit" } }); W.call("set", { id: "bo", component: "motion", value: { type: "bob" } });
+  W.call("set", { id: "or", component: "motion", value: { type: "orbit" } }); W.call("set", { id: "bo", component: "motion", value: { type: "oscillate" } });
   W.call("set", { id: "pa", component: "motion", value: { type: "path", points: [[0, 0, 0], [0, 0, 2]] } });
   const m = (id: string) => stored(W, id, "motion");
   return [JSON.stringify(m("sp").axis) === "[0,1,0]" && m("sp").degPerSec === 36 && m("sp").phase === 0 && !("degPerSec" in m("sp2")) && m("or").radius === 3 && m("or").degPerSec === 12 && m("or").face === true

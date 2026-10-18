@@ -78,7 +78,7 @@ await tryRow('MO', async () => {
   check('MO3 …and motion:<part> is taken', W.call('set', { id: 'fan', component: 'motion:blade', value: { type: 'spin' } }).ok);
   r = W.call('set', { id: 'fan', component: 'motion', value: { type: 'spin', axis: 'x' } });
   check('MO4 a letter axis is stored as its vector', r.ok && JSON.stringify(C('fan').motion.axis) === '[1,0,0]', [r.refused, C('fan').motion]);
-  r = W.call('set', { id: 'fan', component: 'motion', value: { type: 'bob', axis: '-z' } });
+  r = W.call('set', { id: 'fan', component: 'motion', value: { type: 'oscillate', axis: '-z' } });
   check('MO4 …a negative one too', r.ok && JSON.stringify(C('fan').motion.axis) === '[0,0,-1]', [r.refused, C('fan').motion]);
   r = W.call('set', { id: 'swing', component: 'motion', value: { type: 'pendulum', pivot: [0, 2, 0] } });
   check('MO5 a whole motion\'s pivot is refused (not silently dropped): its hinge is the pivot component', code(r) === 'derived' && /pivot component|component: 'pivot'/.test(`${r.refused?.reason} ${r.refused?.fix}`), r.refused);
@@ -94,8 +94,8 @@ await tryRow('MO', async () => {
   check('MO8 …collider exact → mesh', R.collider?.shape === 'mesh', R.collider);
   const P2 = repairComps({ motion: { type: 'spin', part: 'arm', degPerSec: 10 } }).c;
   check('MO8 …a bare motion naming a part becomes motion:<slot> {node} (arm is a tag: its own slot)', !P2.motion && JSON.stringify(P2['motion:arm']) === '{"type":"spin","degPerSec":10,"node":"arm"}', P2);
-  const P3 = repairComps({ motion: { type: 'spin', part: 'arm' }, 'motion:arm': { type: 'bob' } }).c;
-  check('MO8 …an existing motion:<part> wins', !P3.motion && P3['motion:arm'].type === 'bob', P3);
+  const P3 = repairComps({ motion: { type: 'spin', part: 'arm' }, 'motion:arm': { type: 'oscillate' } }).c;
+  check('MO8 …an existing motion:<part> wins', !P3.motion && P3['motion:arm'].type === 'oscillate', P3);
   const P4 = repairComps({ motion: { type: 'spin', pivot: [0.1, 0.2, 0.3] } }).c;
   check('MO8 …a whole motion\'s pivot field moves to the pivot component', !('pivot' in P4.motion) && JSON.stringify(P4.pivot) === '{"pos":[0.1,0.2,0.3]}', P4);
   const P5 = repairComps({ motion: { type: 'pendulum', period: 2, damp: 0.1 }, pivot: { pos: [0, 1, 0] } });
@@ -141,7 +141,7 @@ await tryRow('PH', () => {
   const e = S.call('set', { id: '@world', component: 'physics-engine', value: { engine: 'eidosim@1.0.0' } });
   const K = (id: string) => S.state().entities[id].c.physics?.kind;
   check('PH6 a world that turns physics on stamps kinematic on what moves (openable, motion), static on the rest', e.ok && K('door') === 'kinematic' && K('wheel') === 'kinematic' && K('rock') === 'static', [e.refused, K('door'), K('wheel'), K('rock')]);
-  S.call('set', { id: 'rock', component: 'motion', value: { type: 'bob' } });
+  S.call('set', { id: 'rock', component: 'motion', value: { type: 'oscillate' } });
   check('PH6 …and a static thing that starts moving becomes kinematic', K('rock') === 'kinematic', K('rock'));
   check('PH7 mass\'s meaning of absence says the box, and agrees with eidosim (1000 kg/m³ × its box)', /bounding box/.test(P.absentMeans?.mass ?? '') && /1000 kg\/m³/.test(P.absentMeans?.mass ?? '') && /1000 kg\/m³/.test(P.absentMeans?.density ?? '') && /DENSITY = 1000/.test(read('shared/sim.js')), P.absentMeans);
   check('PH8 carrying keeps today\'s rule (physics.who reads as carry for a dynamic thing with no grabbable)', /physics\.who/.test(COMPONENTS.grabbable.help) && /pick it up/.test(P.docs?.who ?? ''), '');

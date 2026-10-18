@@ -275,7 +275,7 @@ superset of 32).
   hangs under, is stamped `kinematic` rather than `static` when the world runs
   physics, and a static thing that starts moving is restamped. Behaviour is
   unchanged under eidosim; the record no longer says "never moves".
-- **A thing with `motion`** (pendulum, spin, orbit, bob, path) is a closed
+- **A thing with `motion`** (pendulum, spin, orbit, oscillate, path) is a closed
   form of time, so it is a deterministic input (Covenant I). An engine that
   can carries it as a kinematic collider at its motion's pose; eidosim reads
   only the transform, so a thrown ball passes through a swinging pendulum

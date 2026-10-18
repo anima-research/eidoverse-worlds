@@ -4,7 +4,7 @@
 // agent's text-tier perception must agree on where a moving thing IS, and
 // the only way two runtimes agree forever is to evaluate the same file.
 // This module is deliberately dependency-free — no THREE, no DOM, no scene,
-// no clock: callers pass {base, motion, nowMs} in and get a transform out.
+// no clock (its one import is the pure type reader, names.js motionType): callers pass {base, motion, nowMs} in and get a transform out.
 // motion.js consumes it per frame; mcpl/agent.ts consumes it at read time.
 //
 // Contract: evalWholeMotion returns a FINITE transform or an explicit
@@ -16,6 +16,7 @@
 // Part-frame motion (`motion:<slot> {node}` keys, or an old `motion` carrying `part`: shared/protocol/names.js motionNode)
 // does not displace the entity's ROOT transform at all — those stay in
 // motion.js, THREE-side, and this module reports the root as unmoved.
+import { motionType } from '../../shared/protocol/names.js';
 
 // ---- quaternions, the four lines of them we need ---------------------------
 // [x, y, z, w], same layout THREE uses. Right-handed, Y-up, radians.
@@ -175,7 +176,7 @@ export function evalPath(m, t, base) {
  *          motion.js passes serverNow(), the agent passes its own estimate)
  *
  * Returns {ok:true, pos, yaw, quat, rot} — `rot: false` means this motion
- * type leaves the entity's authored rotation alone (bob; face:false orbit
+ * type leaves the entity's authored rotation alone (oscillate; face:false orbit
  * and path), which the renderer honors by not touching obj.rotation —
  * or {ok:false, why} for anything it will not vouch for: unknown types,
  * malformed paths, non-finite params. Part-frame motion (`m.part`) returns
@@ -189,7 +190,7 @@ export function evalWholeMotion(base, m, nowMs) {
   }
   const t = since(m, nowMs);
   let r;
-  switch (m.type) {
+  switch (motionType(m)) {
     case 'pendulum':
       r = { ok: true, rot: true, yaw: null,
         ...rotateAtPivot(base, axisOf(m, [1, 0, 0]), m.pivot ?? base.pivot ?? [0, 0, 0], pendulumTheta(m, t)) };   // base.pivot: the entity's pivot component (research 52); absent, its origin (shape audit 10-16: was [0, 2, 0], which a stored world's first load writes as its pivot)
@@ -211,7 +212,7 @@ export function evalWholeMotion(base, m, nowMs) {
         : { ok: true, pos, yaw: base.yaw ?? 0, quat: baseQuat(base), rot: false };
       break;
     }
-    case 'bob': {
+    case 'oscillate': {
       const off = Math.sin((2 * Math.PI / (m.period ?? 4)) * t + (m.phase ?? 0)) * ampOf(m, 0.3);
       const ax = axisOf(m, [0, 1, 0]);
       const n = Math.hypot(...ax) || 1;

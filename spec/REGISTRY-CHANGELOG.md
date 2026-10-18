@@ -191,3 +191,10 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - grabbable.pose: "two-hand" is no longer allowed
   - grabbable.pose: "shoulder" is no longer allowed
   - grabbable.pose: its meaning of absence "by size: one hand under 0.5 m, both arms at or above; two-hand if twoHanded" → gone
+- 2026-10-18: names (R 10-17 21:40): motion.type bob → oscillate (a sinusoidal back-and-forth along an axis; bob read as a float only); the door takes bob for one release and stores oscillate; stored values renamed at every load by the system's rename-components act (shaperepair.js RENAMED_FIELDS motion, names.js motionType)
+  - motion: a conditional default changed: {"if":{"type":"bob"},"set":{"axis":[0,1,0],"period":4,"phase":0}}
+  - motion: a conditional default changed: {"if":{"type":"bob"},"absent":["amp"],"set":{"amp":0.3}}
+  - motion.type: "bob" is no longer allowed
+  - motion.period: its meaning of absence "pendulum: 3.5 s; spin and orbit: their degPerSec; bob: 4 s" → "pendulum: 3.5 s; spin and orbit: their degPerSec; oscillate: 4 s"
+  - motion.amp: its meaning of absence "pendulum 0 (still); bob 0.3 m" → "pendulum 0 (still); oscillate 0.3 m"
+  - motion.axis: its meaning of absence "pendulum [1, 0, 0]; spin and bob [0, 1, 0]" → "pendulum [1, 0, 0]; spin and oscillate [0, 1, 0]"

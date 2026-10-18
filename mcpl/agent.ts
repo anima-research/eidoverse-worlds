@@ -2013,7 +2013,7 @@ export class WorldAgent {
   /** Is anything on this entity animating right now?
    *
    *  A motion component is PARAMETERS, not frames: the browser evaluates a
-   *  pendulum/spin/orbit/bob/path every frame and its collider rides along.
+   *  pendulum/spin/orbit/oscillate/path every frame and its collider rides along.
    *  A support box registered from the AUTHORED transform does not — it would
    *  sit where the swing used to be, and a body would come to rest on a floor
    *  that is no longer there. A ghost floor is worse than no floor: no floor
