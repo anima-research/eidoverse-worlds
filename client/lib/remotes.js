@@ -385,12 +385,12 @@ export function updateRemotes(dt, now = performance.now()) {
 
     // A mounted body is DERIVED, not streamed: its transform comes from the
     // parent entity's live transform (already ticked by motion.js this frame)
-    // composed with the socket. This is what makes a sitter visibly ride the
+    // composed with the socket. This is what makes an occupant visibly ride the
     // swing mid-pendulum — presence samples are ignored while mounted, so a
     // stale stream can't fight the seat.
     if (avatarMounts.has(r.id)) {
       const s0 = buf[buf.length - 1];
-      // the same driver my own seat runs (occupybody.js): socket, anchor, signals, pose, reach, look — so a sitter looks
+      // the same driver my own seat runs (occupybody.js): socket, anchor, signals, pose, reach, look — so an occupant looks
       // the same on every screen
       const seated = driveOccupied(r.avatar, r.id, { dt, nowMs: serverNow(), path: r.avatarPath, xr: s0?.xr ?? null });
       const sw = seated?.sw;

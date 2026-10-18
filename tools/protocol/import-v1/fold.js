@@ -108,7 +108,7 @@ function bornOf(prev, kind, a, e) {
  *   parent-relative.
  * @property {Record<string, { to: string, slot?: string, offset?: number[],
  *   yaw?: number }>} [mounts]
- *   Attachments of non-entity bodies (avatars) — a sitter on a swing seat, a
+ *   Attachments of non-entity bodies (avatars) — an occupant on a swing seat, a
  *   passenger on a deck. Same shape as entity.parent, keyed by principal.
  * @property {{ sim: string, tickMs: number, ts: number, seq: number }} [epoch]
  *   The active deterministic-sim epoch (dialect 3, PROTOCOL_v2 §3). `ts` is
@@ -315,7 +315,7 @@ export function foldEntry(st, e) {
           const off = child.parent.offset ?? [0, 0, 0];
           if (gone.q || child.parent.q) {
             // full rotation: the offset turns with the carrier's whole
-            // orientation, and the rider's own relative turn composes on it
+            // orientation, and the occupant's own relative turn composes on it
             const qg = gone.q ?? qFromYaw(gone.yaw ?? 0);
             const r = qRotate(qg, [Number(off[0]) || 0, Number(off[1]) || 0, Number(off[2]) || 0]);
             child.pos = [gone.pos[0] + r[0], gone.pos[1] + r[1], gone.pos[2] + r[2]];

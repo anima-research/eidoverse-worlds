@@ -434,7 +434,7 @@ export function placeRefusal(rec) {
  *  Order: per part, `spawn` (parents first) → `mount` → its comps → its link;
  *  then every lock and guard, because a locked part refuses its own mount.
  *  The inverses unlock what the copy locked, then remove the parts leaves
- *  first (a removed carrier would otherwise stamp its riders down first). */
+ *  first (a removed carrier would otherwise stamp its occupants down first). */
 export function placeVerbs(rec, at, { hash = null, taken = () => false } = {}) {
   const why = placeRefusal(rec);
   if (why) return { verbs: [], inverses: [], parts: {}, errors: [why] };

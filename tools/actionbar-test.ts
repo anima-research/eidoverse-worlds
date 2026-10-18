@@ -306,7 +306,7 @@ check('a 10px drag floors at ONE column, wrapping to 9 rows', f._state.w === wid
 // VERTICAL. R, 2026-09-11: "can you also make it arrange vertically? I can't
 // make it stack 1 wide 9 tall, for example." snapTo derived BOTH w and h from
 // the column count, so the bar could only ever be as tall as its width implied.
-// windows.js:427 already passes (state.w, state.h); this rider was discarding the
+// windows.js:427 already passes (state.w, state.h); this self-sizer was discarding the
 // second argument. The 1-column floor applies only when a height was asked for,
 // so the width-only path below still clamps at 3.
 // VERTICAL, BY WRAPPING. R, 2026-09-11: "1 wide 9 tall". Columns come from the

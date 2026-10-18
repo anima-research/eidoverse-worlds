@@ -51,7 +51,7 @@ export function initActionBar() {
     // SNAP TO WHOLE TILES on release: drag the frame to any width, and when the
     // drag settles it fits itself to the tiles that row holds (live, 09-04). The
     // frame owns its size, so we write its state and repaint through the refs it
-    // exposes for exactly this kind of rider.
+    // exposes for exactly this kind of self-sizing frame.
     onResize: (w) => { clearTimeout(snapT); snapT = setTimeout(() => snapTo(w), 180); },
   });
 

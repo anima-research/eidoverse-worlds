@@ -80,7 +80,7 @@ export function boxOf(id) {
   const ent = state.st.entities?.[id]; const known = ent?.model ? libBox(ent.model) : null; if (known) return known;
   const obj = entities.get(id); if (!obj) return null;
   obj.updateWorldMatrix(true, true); _ib.copy(obj.matrixWorld).invert(); _bx.makeEmpty();
-  const walk = (m) => {   // its own meshes only: a rider (another entity mounted here) is a child in three, not part of it
+  const walk = (m) => {   // its own meshes only: an occupant (another entity mounted here) is a child in three, not part of it
     if (m !== obj && m.userData?.entityId != null && m.userData.entityId !== id) return;
     if (m.isMesh && m.geometry && !m.userData?.isGizmo) { if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
       _mb.copy(m.geometry.boundingBox).applyMatrix4(new THREE.Matrix4().multiplyMatrices(_ib, m.matrixWorld)); _bx.union(_mb); }
@@ -226,7 +226,7 @@ function scheduleLoad(id, ent, gen, tier = null) {
       // down, cargo mounted, a part motion or socket arrived, an edit hold
       // begun — each makes the swap illegal now. The loaded clone is simply
       // not worn (nothing was retained for it; the proto stays pooled) and
-      // the standing object keeps its collider, lamps, riders and mounts.
+      // the standing object keeps its collider, lamps, occupants and mounts.
       // The sweep may try again after its cooldown, through the same gate.
       const standing = entities.get(id);
       if (standing && !isPlaceholder(standing) && standing.userData?.lib && !canRetier(id, cur)) {
@@ -326,8 +326,8 @@ function realizeModel(id, cur, obj) {
 const promoteTail = new Map();
 
 /** Sharing the per-lib collider derivations is sound exactly when the
- *  subtree is the pristine clone: no rider glued in (a mount verb may have
- *  landed in the gap; stepped-out riders sit at the scene root and don't
+ *  subtree is the pristine clone: no occupant glued in (a mount verb may have
+ *  landed in the gap; stepped-out occupants sit at the scene root and don't
  *  count), no part motion that may already have bent a named node since the
  *  clone was cut. Everything else builds per-entity — correctness beats
  *  sharing (§16.2.C). */
@@ -521,7 +521,7 @@ export function previewMesh(id, m) {
 /** A light is an Empty that casts (syncCompLight hangs the cast and the gizmo on it); a mesh is its own drawn thing — each
  *  tracked under its own kind so the planner's identity rule and the residency sweep read the same word the fold does. */
 // A socket (PLAN-sockets-entities) is an Empty that is only ever a frame: attached to its host (or into the host's moving
-// part, at rest: execMount), so a sitter's seat and the cargo on it ride whatever carries the socket through the scene graph.
+// part, at rest: execMount), so an occupant's seat and the cargo on it ride whatever carries the socket through the scene graph.
 const CREATE = { light: (id, ent) => createHost(id, ent, 'light'), mesh: createMesh, empty: createEmpty, model: createModel, socket: (id, ent) => createHost(id, ent, 'socket') };
 
 // An Empty is invisible, so in EDIT MODE it wears a small wireframe marker
@@ -635,7 +635,7 @@ function refreshModel(id, ent) {
   // A MOUNTED child's transform is parent-relative (its record pos IS the
   // offset) and the mount owns it: re-applying it here on every reconnect
   // reconcile is what the mount-pose parity bucket caught (review B1). The
-  // dismount stamp brings the fold's word back when the ride ends.
+  // dismount stamp brings the fold's word back when the mount ends.
   if (!obj.userData.mountedTo) {
     if (ent.pos) obj.position.set(...ent.pos);
     if (ent.q || ent.yaw != null) orientObj(obj, ent);
@@ -852,7 +852,7 @@ function execDismount(id, ent) {
     delete obj.userData.mountedTo;
     delete obj.userData.mountRel;
     indexSceneMount(id, null);
-    // plane-transition stamp wins over wherever the ride left it
+    // plane-transition stamp wins over wherever the mount left it
     if (ent?.pos) obj.position.set(...ent.pos);
     if (ent?.q || ent?.yaw != null) orientObj(obj, ent);
     // …and so does the fold's scale: attach() baked the carrier's scale into
@@ -905,7 +905,7 @@ export function dialModelQuality(v) {
     : `models: ${q} (yours only) — reduced tiers cannot be asked from this browser; everything stays full detail`;
 }
 /** Only a placement nothing depends on may change tier in place — the same
- *  predicate as demotion (no riders, no seats, no part motion): a tier swap
+ *  predicate as demotion (no occupants, no seats, no part motion): a tier swap
  *  is a demote-and-promote with the placeholder frame skipped. */
 const canRetier = (id, ent) => canDemote(id, ent);
 
@@ -956,7 +956,7 @@ function canDemote(id, ent) {
   const kids = childrenOf(id);
   for (const k of kids) { const sk = state.st.entities[k]?.socket; if (!sk || typeof sk.part === 'string' || childrenOf(k).length) return false; }
   // a body in its seat: someone is sitting on it, wherever WE are standing
-  // (avatarMounts is rider-keyed and bounded by bodies present, not
+  // (avatarMounts is occupant-keyed and bounded by bodies present, not
   // entities — the scan stays)
   for (const rel of avatarMounts.values()) if (rel.to === id || kids.includes(rel.to)) return false;
   const bag = recordComponents(state.st.entities[id]);
@@ -1060,7 +1060,7 @@ export const residencyDebug = () => {
 /** One id, after its identity may have changed: create, retire, rebuild, or
  *  refresh — the fold's current word is final. */
 /** A thing and everything under it, after it was switched off or on (or moved under / out from under something off): off
- *  goes deepest first, on comes top first, by real depth, with the parent index rebuilt so each load re-seats its riders. */
+ *  goes deepest first, on comes top first, by real depth, with the parent index rebuilt so each load re-seats its occupants. */
 function reconcileSubtree(id) {
   const E = state.st.entities; const depth = (k) => { let n = 0; for (let p = E[k]?.parent?.to; p && n < 33; p = E[p]?.parent?.to) n++; return n; };
   const under = Object.keys(E).filter((k) => { for (let p = E[k]?.parent?.to, n = 0; p && n < 33; p = E[p]?.parent?.to, n++) if (p === id) return true; return false; });

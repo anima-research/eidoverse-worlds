@@ -190,7 +190,7 @@ try {
         + stolen.map((c) => `"${c.id}" covered by ${c.owner}`).join('\n  '));
     }
     // The PRODUCT promises right <= innerWidth - 8 (windows.js clamp, snapPosition,
-    // and the resize rider all use the same 8px margin). Checking only
+    // and the resize self-sizer all use the same 8px margin). Checking only
     // `right > vw + 1` left a 9px band where a frame violates the clamp and still
     // passes — so this could never catch the most likely way that invariant
     // breaks: someone dropping the -8. Bind the promise, keeping the +1 sub-pixel

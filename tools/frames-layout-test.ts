@@ -670,14 +670,14 @@ console.log("FRAMES — a shrink is not a decision: grow the window back and eve
 
   // A RIDER owns its frame's size (actionbar.js snapTo writes _state.w/h, then _fit).
   // What it writes is the frame's size from then on, so a window resize must keep it
-  // rather than re-projecting the size the frame had before the rider spoke.
-  const rider: any = measurable(makeFrame("rt-rider", { title: "rider", x: 40, y: 400, w: 352, h: 32 })); rider.show();
-  rider._state.w = 124; rider._state.h = 108; rider._fit();
+  // rather than re-projecting the size the frame had before the self-sizer spoke.
+  const sizer: any = measurable(makeFrame("rt-sizer", { title: "sizer", x: 40, y: 400, w: 352, h: 32 })); sizer.show();
+  sizer._state.w = 124; sizer._state.h = 108; sizer._fit();
   (window as any).innerWidth = 1001; window.dispatchEvent(new Event("resize"));
   // Height is the binding axis: an UNPLACED frame's width is re-derived from its
-  // declared w by fit() on purpose (the width-ratchet fix), with or without a rider.
-  check("a rider's height survives the next window resize",
-    rider.state.h === 108, rect(rider));
+  // declared w by fit() on purpose (the width-ratchet fix), with or without a self-sizer.
+  check("a self-sizer's height survives the next window resize",
+    sizer.state.h === 108, rect(sizer));
   (window as any).innerWidth = 1000; window.dispatchEvent(new Event("resize"));
 
   // Reset is the deliberate act of un-placing: after it, a resize must not drag the

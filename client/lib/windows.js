@@ -436,7 +436,7 @@ export function makeFrame(id, opts = {}) {
 
   // THE REST RECT: where this frame belongs, and the viewport it was authored in. The
   // displayed rect (`state`) is DERIVED from it on every viewport change and may be
-  // clamped freely; only a deliberate act (drag end, resize end, reset) or a rider that
+  // clamped freely; only a deliberate act (drag end, resize end, reset) or a self-sizer that
   // owns the frame's size writes here. Clamping `state` directly was a ratchet: shrink
   // the window until panels collide, grow it back, and they stayed collided, because
   // the small viewport's answer had become the frame's layout (reported 2026-09-24).
@@ -470,7 +470,7 @@ export function makeFrame(id, opts = {}) {
   // docking, the frame remembers only how it floats.
   const api = {
     id, el: root, body, head,
-    // live refs for riders that own their own sizing (the action bar snaps itself
+    // live refs for self-sizers that own their own sizing (the action bar snaps itself
     // to whole tiles). _fit is here because writing _state and calling _paint
     // alone BYPASSES the viewport clamp: the bar reflowed to three rows and
     // painted itself past the bottom edge (#185 review, 800x700).
@@ -478,7 +478,7 @@ export function makeFrame(id, opts = {}) {
     // VR's size for this frame (domquad.js): set while staged, null to give the frame back its desktop size
     _setVrSize: (s) => { vrSize = s && Number.isFinite(s.w) && Number.isFinite(s.h) ? { w: s.w, h: s.h } : null; root.style.width = `${vrSize?.w ?? state.w}px`; body.style.height = `${vrSize?.h ?? state.h}px`; },
     get _vrSize() { return vrSize && { ...vrSize }; },
-    // a rider writing _state.w/h is setting the frame's size, so that is the rest size
+    // a self-sizer writing _state.w/h is setting the frame's size, so that is the rest size
     _fit: () => { rest.w = state.w; rest.h = state.h; fit(); },
       // READER for the same flag (#185 B1): the api carried a SETTER only, so the
       // viewport rule below had no way to ask whether the owner placed this frame.

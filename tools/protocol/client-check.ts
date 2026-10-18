@@ -634,7 +634,7 @@ try {
     await evalJson(`(window.__gp.remove(), true)`); }
 
   // ---- ST: a seat on a socket that's switched off is no seat on the client either (review 10-12 S3-3) ----
-  // The authority clears its record when a socket is disabled; the sitter's own client must let go too (not stay mounted,
+  // The authority clears its record when a socket is disabled; the occupant's own client must let go too (not stay mounted,
   // sending seat {to} frames), so a second body can't come to render on the same socket after a re-enable.
   { const made = await page(`const n = await import('/lib/net.js');
       const a = await n.sendRequest('create', { id: 'ststool', model: '${CRATE}', place: { at: [7, 7] } });

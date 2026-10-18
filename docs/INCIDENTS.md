@@ -1396,7 +1396,7 @@ re-indexed.
 scale still classify by their real-world size."
 Lesson: classify on final size, not authored size.
 
-**Part sockets: without the ride, a rider sat still while the plank swung through them**
+**Part sockets: without the part's motion, an occupant sat still while the plank swung through them**
 `client/lib/world.js:523-538`
 "When the socket names a `part`, the seat point additionally rides that part's
 motion… At rest the displacement is identity, so a part socket sits exactly where
@@ -1414,7 +1414,7 @@ must go through the full matrix so scale is honoured.
 "Ignores the part's motion on purpose: 'how far is the seat' should not oscillate
 with the swing." The editing gizmo is parented in the same rest frame for the
 same reason.
-Lesson: a distance used for an affordance check must be stable; the ride belongs
+Lesson: a distance used for an affordance check must be stable; the part's motion belongs
 only to the render path.
 
 **Part lookups retry once a second rather than caching a miss forever**

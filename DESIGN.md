@@ -125,10 +125,10 @@ Building blocks:
   `f(params, t) → transform` added client-side.
 - **`parent` and `sockets`** — scene-graph attachment in the log. A child's
   transform is local to its parent; cargo rides the parent frame with zero
-  per-rider traffic. A socket with a `body` is where a person sits, rides
+  per-occupant traffic. A socket with a `body` is where a person sits, rides
   or stands — and sitting is presence, not a log entry. **Invariant: any
   transition back to rest stamps absolute state into the log** — the log
-  stays self-sufficient, never dependent on reconstructing a ride.
+  stays self-sufficient, never dependent on reconstructing a live motion.
 - **`use`** — the universal interact, open to visitors: a *request*, kept
   in the log as an act, whose *effects* are the change entries it caused.
 - **`reactions`** — the data half of interaction: an entity's component

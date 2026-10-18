@@ -11,7 +11,7 @@
 //   param.<name>             the thing's `params` component (scripts write it)
 //
 // Every value here is a closed form of data every client already has — the motion component, the server clock, the
-// occupant's presence — so two clients looking at one swing put the rider's clip at the same frame. (A thing moved by
+// occupant's presence — so two clients looking at one swing put the occupant's clip at the same frame. (A thing moved by
 // physics, not by a motion component, reads speed/turn 0 here: physics is a later port.)
 //
 // Pure: imports only the motion closed forms (motioneval.js, itself pure and shared with the agent) and the node reader (names.js motionNode). It lives beside

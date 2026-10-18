@@ -139,7 +139,7 @@ socket off or removing it, a ride ending. It turns off the occupant's casual exi
 all of them: holding X (or pressing and holding the stand tile) for about 1.5 s, pressing the get-up again (X, the tile, the
 menu) within 2 s of its refusal, or an agent's
 `detach {escape: true}` always stands them up, and no seat or script can take that away (PROTOCOL §5: a seat may make
-leaving deliberate, never impossible). Build a ride that ends by letting go, not one that can't be left. The ride itself
+leaving deliberate, never impossible). Build a ride that ends by letting go, not one that can't be left. The seat's own motion
 is the assembly as it was when they sat: a handler or script added to the seat's assembly after someone sat down vacates
 it when it moves the seat, as anyone's edit does.
 
