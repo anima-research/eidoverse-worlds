@@ -957,18 +957,18 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const t0 = Date.now();
       if (action === "mode") {
         const rung = ({ members: "none", watch: "spectator", visitors: "visitor", open: "builder" } as Record<string, string>)[String(a.mode ?? "")];
-        if (!rung) return { content: [{ type: "text", text: "world_access mode wants mode: members, watch, visitors or open" }], isError: true };
+        if (!rung) return fail("world_access mode wants mode: members, watch, visitors or open");
         ag.verb("grant", { id: "*", role: rung });
       } else if (action === "grant") {
         const id = String(a.id ?? "").trim();
-        if (!id || !a.role) return { content: [{ type: "text", text: "world_access grant wants id and role (owner|builder|visitor|spectator|none), and optionally for: '2h'" }], isError: true };
+        if (!id || !a.role) return fail("world_access grant wants id and role (owner|builder|visitor|spectator|none), and optionally for: '2h'");
         ag.verb("grant", { id, role: String(a.role), ...(a.for ? { for: String(a.for) } : {}) });
       } else if (action === "revoke") {
         const id = String(a.id ?? "").trim();
-        if (!id) return { content: [{ type: "text", text: "world_access revoke wants the id of whoever to revoke" }], isError: true };
+        if (!id) return fail("world_access revoke wants the id of whoever to revoke");
         ag.verb("grant", { id, revoke: true });
       } else if (action !== "show") {
-        return { content: [{ type: "text", text: "world_access action is one of show, mode, grant, revoke" }], isError: true };
+        return fail("world_access action is one of show, mode, grant, revoke");
       }
       ag.sendMod("world-access");
       // Wait for THE LISTING (or a refusal): a change is also echoed as a
@@ -979,14 +979,17 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // returned WITH the listing, not dropped (Greptile #258).
       const deadline = Date.now() + 2000;
       while (Date.now() < deadline) {
-        if (ag.lastRefusal && ag.lastRefusal.ts >= t0) return text(`refused: ${ag.lastRefusal.text}`);
+        if (ag.lastRefusal && ag.lastRefusal.ts >= t0) return fail(`refused: ${ag.lastRefusal.text}`);
         if (ag.lastMod && ag.lastMod.ts >= t0 && ag.lastMod.text.startsWith("who can come into")) {
           const echo = ag.recentMods.filter((m) => m.ts >= t0 && !m.text.startsWith("who can come into")).map((m) => m.text);
           return text([...echo, ag.lastMod.text].join("\n"));
         }
         await new Promise((r) => setTimeout(r, 50));
       }
-      return text("no reply from the world (timeout)");
+      // A show with no listing told nothing, as list_bans's does. A change with no listing yet was still sent, as a
+      // ban with no echo yet is, so it isn't failed, and the answer says so.
+      if (action === "show") return fail("no reply from the world (timeout)");
+      return text("sent the change, but the world's listing didn't come within 2 s; world_access show tells where the door stands");
 
   },
 };

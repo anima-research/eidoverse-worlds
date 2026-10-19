@@ -596,6 +596,32 @@ check('a ban sent with no echo yet is not failed', ok(r) && /no echo from the wo
 ag.sendMod = () => {};
 r = await call('list_bans', {});
 check('a ban list that never arrives is failed', failed(r) && /no reply from the world/.test(said(r)), said(r));
+// world_access: its own refusals, the world's refusal and a show with no listing are failed. A change with no
+// listing yet was still sent, as a ban with no echo yet is, so it isn't.
+for (const [a, words] of [
+  [{ action: 'mode', mode: 'bogus' }, /^world_access mode wants mode: members, watch, visitors or open$/],
+  [{ action: 'grant', id: 'someone' }, /^world_access grant wants id and role /],
+  [{ action: 'revoke' }, /^world_access revoke wants the id of whoever to revoke$/],
+  [{ action: 'close' }, /^world_access action is one of show, mode, grant, revoke$/],
+] as const) {
+  r = await call('world_access', a);
+  check(`world_access ${JSON.stringify(a)} is failed, with its words`, failed(r) && words.test(said(r)), said(r));
+}
+ag.recentMods = [];
+ag.sendMod = () => { ag.lastRefusal = { ts: Date.now(), text: 'only an owner may change who comes in' }; };
+r = await call('world_access', { action: 'grant', id: 'someone', role: 'visitor' });
+check('a world_access change the world refused is failed, with its words', failed(r) && said(r) === 'refused: only an owner may change who comes in', said(r));
+ag.sendMod = () => { ag.lastMod = { ts: Date.now(), text: 'who can come into is-error-bench: its members' }; };
+r = await call('world_access', { action: 'show' });
+check('a world_access listing is done', ok(r) && said(r) === 'who can come into is-error-bench: its members', said(r));
+ag.sendMod = () => {};
+ag.lastRefusal = null;
+ag.lastMod = null;
+r = await call('world_access', { action: 'show' });
+check('a world_access show with no listing is failed', failed(r) && said(r) === 'no reply from the world (timeout)', said(r));
+r = await call('world_access', { action: 'revoke', id: 'someone' });
+check('a world_access change with no listing yet is not failed, and says it was sent',
+  ok(r) && said(r) === "sent the change, but the world's listing didn't come within 2 s; world_access show tells where the door stands", said(r));
 
 console.log('\nNAMING A PLACE');
 r = await call('name_place', { name: '!!' });
