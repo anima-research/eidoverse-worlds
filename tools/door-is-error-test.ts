@@ -97,17 +97,57 @@ r = await call('fold_wings');
 check('folding in the air is failed', failed(r) && /airborne/.test(said(r)), said(r));
 // A climb whose wait times out didn't reach its altitude: it isn't reported as there.
 const realAwait = ag.flightAwait;
-let waitedMs = 0;
-ag.flightAwait = async (_test: unknown, ms: number) => { waitedMs = ms; return 'timed out aloft'; };
+ag.flightAwait = async () => 'timed out aloft';
 r = await call('climb_to', { altitude: 40 });
 check('a climb that times out is failed, not reported at its target',
   failed(r) && /^timed out aloft at .*short of the climb; the climbing stops there and you fly on$/.test(said(r)), said(r));
 check('...and it stops climbing, so the body is where the answer says', !!ag.flight && ag.flight.climbTo == null, String(ag.flight?.climbTo));
-// A descent waits for its distance too: 40 m at 2 m/s, beside the 8 s every climb gets.
-ag.flight.pos.y = 50;
-r = await call('climb_to', { altitude: 10 });
-check('a descent of 40 m waits at least the 28 s it takes', waitedMs >= 28_000, String(waitedMs));
 ag.flightAwait = realAwait;
+// A climb, a descent and a landing's flare, flown by the agent's own flight tick, each end inside their wait. A climb
+// rises at its lift less the polar's sink once the lift has eased in, about 1.5 m/s where the lift alone is 2 m/s,
+// and a flare comes down at the polar's sink, about 0.46 m/s.
+/** Fly an act through the agent's own flight tick, 0.1 s a tick as the main tick steps, until it answers. Its waits are
+ *  the real flightAwait's, with flight time standing in for the clock: each wait's length is kept, with the flight time it took. */
+const flownByTicks = async (act: () => Promise<any>) => {
+  const waits: { ms: number; took: number }[] = [];
+  let t = 0, answered = false;
+  ag.flightAwait = (test: (s: any) => string | null, ms = 120_000) => {
+    const w = { ms, took: -1 }, from = t;
+    waits.push(w);
+    return realAwait.call(ag, test, 3_600_000).then((v: string) => { w.took = t - from; return v; });
+  };
+  const answer = act().then((a) => { answered = true; return a; });
+  for (let i = 0; i < 400 && !waits.length; i++) await new Promise((res) => setTimeout(res, 5));
+  while (!answered && t < 600) {
+    await new Promise((res) => setTimeout(res, 0));
+    if (answered) break;
+    if (ag.flight) ag.flightTick(0.1);
+    t = Math.round((t + 0.1) * 10) / 10;
+  }
+  ag.flightAwait = realAwait;
+  return { waits, answer: await answer };
+};
+/** The wait outlasts the flight time its leg took, even were the tick that flew it 50% late, as a loaded host's timer can run. */
+const inside = (w: { ms: number; took: number }[], i: number) => w.length > i && w[i].took >= 0 && w[i].ms > w[i].took * 1000 * 1.5;
+/** A fresh flight at height y, with take-off's launch impulse spent, so the climb's own lift is all that lifts it. */
+const flyingAt = async (y: number) => {
+  await relaunch();
+  ag.flight.stamina = 1e6; ag.flight.pos.x = 0; ag.flight.pos.z = 0; ag.flight.pos.y = y;
+  ag.flight.vel.y = 0; ag.flight.launchV = 0; ag.flight.launchT = 0;
+};
+await flyingAt(10);
+let flown = await flownByTicks(() => call('climb_to', { altitude: 60 }));
+check('a 50 m climb flown by the tick gets there', ok(flown.answer) && /^at 60\.0m — 50 stamina spent/.test(said(flown.answer)), said(flown.answer));
+check('...inside its wait, with ticks 50% late', inside(flown.waits, 0), JSON.stringify(flown.waits));
+await flyingAt(50);
+flown = await flownByTicks(() => call('climb_to', { altitude: 10 }));
+check('a 40 m descent flown by the tick gets there, inside its wait with ticks 50% late', ok(flown.answer) && /^at 10\.0m/.test(said(flown.answer)) && inside(flown.waits, 0),
+  `${said(flown.answer)}; ${JSON.stringify(flown.waits)}`);
+await flyingAt(45);
+flown = await flownByTicks(() => call('land_at', { x: 20, z: 0 }));
+check('a landing from 45 m flown by the tick comes down by its flare', ok(flown.answer) && / — landed at \(.*\), [0-9.]+m from \(20\.0, 0\.0\)$/.test(said(flown.answer)), said(flown.answer));
+check('...inside the flare\'s wait, with ticks 50% late', inside(flown.waits, 1), JSON.stringify(flown.waits));
+await relaunch();
 // The integrator's part of a climb, as the tick does it: it reaches the target and clears it.
 const climbs = (altitude: number) => midway(ag, call('climb_to', { altitude }), () => {
   ag.flight.pos.y = ag.flight.climbTo; ag.flight.climbTo = null;
@@ -327,6 +367,24 @@ check('rehearse_recover of a body that is flying, not down, is failed',
 ag.flightRagdoll = async () => {}; // the real ragdoll needs a physics body this bench hasn't got
 r = await call('rehearse_down', {});
 check('rehearse_down in flight is done', ok(r) && /^down — /.test(said(r)), said(r));
+// A down answers a climb or a glide waiting on the flight at once. From the down the ragdoll's sim runs, and the flight
+// tick, which settles waits, doesn't, so nothing else would answer the wait until the body came to rest.
+for (const [tool, a, words] of [
+  ['climb_to', { altitude: 40 }, /^cut mid-climb at /],
+  ['glide_to', { x: 60, z: 0 }, /^cut mid-glide — you are falling at /],
+] as const) {
+  await relaunch(); ag.flight.stamina = 1e6;
+  const waiting = call(tool, a);
+  for (let i = 0; i < 400 && !ag.flightWaiters.length; i++) await new Promise((res) => setTimeout(res, 5));
+  const waited = ag.flightWaiters.length > 0;
+  await call('rehearse_down', {});
+  const answer = await Promise.race([waiting, new Promise((res) => setTimeout(() => res({ rejected: 'still waiting 1 s after the down' }), 1000))]);
+  check(`a down answers ${tool === 'climb_to' ? 'a climb' : 'a glide'} waiting on the flight at once, as cut`, waited && failed(answer) && words.test(said(answer)),
+    waited ? said(answer) : 'the act registered no flight wait');
+  ag.flightWaiters.splice(0); // a wait the down didn't answer would answer for the next call
+}
+await relaunch();
+r = await call('rehearse_down', {});
 r = await call('rehearse_recover', {});
 check('rehearse_recover of a body that is down is done', ok(r) && said(r) === 'recovering', said(r));
 const begun = ag.flight?.recoverAt;

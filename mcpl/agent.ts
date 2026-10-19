@@ -56,6 +56,13 @@ const downRefusal = (f: { phase: string; recoverAt?: number | null }) => f.phase
     ? "you're falling limp (leaf) with your recovery under way — you fly again once it's done, unless you reach the ground first"
     : "you're falling limp (leaf) — once you're down on the ground, take_off launches you again"
   : `you're down on the ground (${f.phase.toLowerCase()}) — take_off to fly again`;
+/** The climb's lift eases in on this time constant (flightTick), so a climb runs about climbRate × this many
+ *  metres behind its full rate. */
+const CLIMB_SPOOL_S = 1.6;
+/** How long a flight wait allows for a leg the flight model flies in `legS` seconds of its own time. The tick that
+ *  flies it is a timer and runs late under load, so it allows half again, and 8 s beside; at most 10 minutes, which
+ *  only a polar whose sink leaves a climb almost no rise would reach. */
+const legWaitMs = (legS: number) => Math.min(600_000, Math.round((legS * 1.5 + 8) * 1000));
 
 /** integrator yaw (atan2(dz,dx), forward = (cos,sin)) -> world yaw
  *  (atan2(dx,dz), which every renderer and walkTo already speak). */
@@ -2746,7 +2753,7 @@ export class WorldAgent {
     let climbLift = 0;
     if (this.flight.climbTo != null && this.flight.phase === "PILOT") {
       this.flight.climbT = (this.flight.climbT ?? 0) + dt;
-      const spool = 1 - Math.exp(-this.flight.climbT / 1.6);     // ~2s to full
+      const spool = 1 - Math.exp(-this.flight.climbT / CLIMB_SPOOL_S);     // ~2s to full
       climbLift = Math.sign(this.flight.climbTo - this.flight.pos.y)
         * (this.flight.climbRate ?? 2.0) * spool;
       this.flight.flapping = true;
@@ -3036,8 +3043,12 @@ export class WorldAgent {
     f.stamina = Math.max(0, f.stamina - spend);
     const climbRate = 2.0;   // m/s of ascent while flying forward
     f.climbTo = reach; f.climbRate = climbRate; f.climbT = 0;  // consumed by flightTick
-    // The wait is for the distance either way: a lower target is a descent.
+    // The wait is for the distance either way: a lower target is a descent. A climb rises at its lift less the
+    // polar's sink, once the lift has eased in. stepPilot takes its pitch from the stick, which the door doesn't
+    // give, so the airspeed settles at the polar's minimum-sink speed, and the wait is sized from the rise there:
+    // about 1.5 m/s with the default polar, where the lift alone is 2 m/s. A descent sinks faster than its lift.
     const climbed = Math.abs(reach - from);
+    const rate = reach > from ? Math.max(0.1, climbRate - cfg.polar.sinkAtMinSink) : climbRate;
     const got = await this.flightAwait((st) => {
       if (isDown(st.phase)) return "cut";
       // A climb that meets the ground ends there, at the height asked (within the tick's 0.4 m) or not. Asked,
@@ -3045,7 +3056,7 @@ export class WorldAgent {
       if (st.phase === "LANDED" || st.phase === "GROUND") return Math.abs(st.pos.y - alt) < 0.4 ? "touched down" : "landed";
       if (st.climbTo == null) return "there";
       return null;
-    }, Math.min(120_000, (climbed / climbRate) * 1000 + 8000));
+    }, legWaitMs((climbed + climbRate * CLIMB_SPOOL_S) / rate));
     if (got === "cut") {
       // A cut body keeps no climb, so it doesn't resume one when it recovers.
       if (this.flight) this.flight.climbTo = null;
@@ -3097,8 +3108,12 @@ export class WorldAgent {
     // than dropping. This is the one place a landing animation is correct --
     // T4 forbids it only for a body that never chose to land.
     f.phase = "PILOT"; f.pitch = 0.2;
+    // The flare comes down at the polar's sink: stepPilot takes its pitch from the stick, which the door doesn't
+    // give, so the airspeed settles at the minimum-sink speed, about 0.46 m/s of sink with the default polar.
+    // So the wait is sized from the height left above the ground under the body.
+    const above = Math.max(0, f.pos.y - this.heightAt(f.pos.x, f.pos.z));
     const flare = await this.flightAwait((s) => isDown(s.phase) ? "cut"
-      : (s.phase === "LANDED" || s.phase === "GROUND") ? "down" : null, 60_000);
+      : (s.phase === "LANDED" || s.phase === "GROUND") ? "down" : null, legWaitMs(above / this.flightCfg.polar.sinkAtMinSink));
     // How the flare ended is read after it, so a cut during it is a fall too,
     // and the cut body keeps its flight state for its recovery.
     if (flare === "cut") {
@@ -3134,6 +3149,10 @@ export class WorldAgent {
   flightBodyDown(eventId: string): ActResult {
     if (!this.flight) return refused("not airborne — take_off first");
     this.flight = flightDown(this.flight, { eventId });
+    // A wait on the flight hears of the down now. The ragdoll's sim, started below, owns the body from its first
+    // step, and the flight tick, which settles waits, doesn't run while it does, so a climb, glide or flare
+    // waiting could otherwise hear of the cut only once the body came to rest, or at its wait's end.
+    this.flightSettle();
     // R2 hands the body to the REAL ragdoll, from altitude. HeadlessBody.begin
     // already takes a rootY "for a lifted drop", so a cut at 20m is the case it
     // was written for -- and using it means a cut body is hit by props, catches
