@@ -6,7 +6,7 @@
 // its input closes (the authority went away).
 //   in:  {text, input, event, limits, max}      a job        out: {ready: true}   once QuickJS is loaded
 //   in:  <json>                                  a host answer      {h: <json>}   a host call
-//                                                                   {done: {fuel, ran?, fail?}}
+//                                                                   {go: true} on taking a job, then {done: {fuel, ran?, fail?}}
 import fs from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import { vmRun } from "./sandbox.js";
@@ -26,6 +26,7 @@ write({ ready: true });
 for (;;) {
   const line = readLine(); if (line === null) process.exit(0);
   let job; try { job = JSON.parse(line); } catch { process.exit(1); }
+  write({ go: true }); // "I got it and I'm running": a process the host never scheduled never says this (sandbox.js killAt)
   const call = (q) => { if (q.length > job.max) return JSON.stringify({ err: "that call is too big to pass to the world", name: "WorldError" });
     write({ h: q }); const r = readLine(); if (r === null) process.exit(0); return r; };
   write({ done: vmRun(job.text, job.input, job.event, job.limits, call) });

@@ -4,6 +4,7 @@
 //   bun tools/protocol/run.ts --lane core     only one lane (core | main | browser), also PARTIAL
 //   bun tools/protocol/run.ts --manifest      print the suite table docs/GATE-MANIFEST.md carries (generated from here)
 //   bun tools/protocol/run.ts --check-manifest   exit 1 if the doc's table is not what --manifest prints
+//   bun tools/protocol/run.ts --receipt <file>   also write a JSON receipt of this run (head, OS, runtimes, library, per-suite results and output hashes)
 // Lanes, all required: CORE (transaction + security: the authority, access, durability, the reset race, identity, scars,
 // no-v1, one vocabulary) runs first and stops the gate on any failure; MAIN is every other non-browser suite; BROWSER is
 // every suite that drives a headless Chromium (no Chromium = the gate FAILS and names CHROME; it never skips).
@@ -23,7 +24,7 @@
 //   PROTOCOL_HEADLESS_LOCK=<file> PROTOCOL_PERF_GUARD=<script>   run browser suites under a host's flock + perf guard
 import { killSuite, suiteMembers } from "./procgroup.ts";
 import { spawn, spawnSync } from "node:child_process";
-import fs from "node:fs";
+import fs from "node:fs"; import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { ENGINE, controlNote } from "./common.ts";
@@ -204,7 +205,7 @@ function localImports(f: string, seen = new Set<string>()): Set<string> {
   return seen;
 }
 
-type Result = { name: string; lane: Lane; status: "pass" | "fail" | "skip"; why?: string; ms: number; rowSkips: string[]; optional: string[]; leftovers: number };
+type Result = { name: string; lane: Lane; status: "pass" | "fail" | "skip"; why?: string; ms: number; rowSkips: string[]; optional: string[]; leftovers: number; outSha256?: string };
 
 function suitePath(file: string) { return path.resolve(ENGINE, "tools/protocol", file.split(" ")[0]); }
 
@@ -228,7 +229,7 @@ const argv = process.argv.slice(2);
 if (argv.includes("--manifest")) { console.log(manifest()); process.exit(0); }
 if (argv.includes("--check-manifest")) { const d = manifestDrift(); console.log(d ?? "manifest: docs/GATE-MANIFEST.md matches run.ts"); process.exit(d ? 1 : 0); }
 const laneArg = argv.includes("--lane") ? argv[argv.indexOf("--lane") + 1] : null;
-const only = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--lane");
+const only = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--lane" && argv[i - 1] !== "--receipt");
 for (const n of only) if (!SUITES.some(([s]) => s === n)) { console.log(`protocol gate: no suite named "${n}" (bun tools/protocol/run.ts --manifest lists them)`); process.exit(2); }
 if (laneArg && !["core", "main", "browser"].includes(laneArg)) { console.log(`protocol gate: no lane "${laneArg}" (core | main | browser)`); process.exit(2); }
 const selected = (name: string) => (!only.length || only.includes(name)) && (!laneArg || laneOf(name) === laneArg);
@@ -247,7 +248,9 @@ if (!partial) { const d = manifestDrift(); if (d) problems.push(d); }
 for (const dir of ["", "client/", "mcpl/"]) if (!fs.existsSync(ENGINE + dir + "node_modules")) problems.push(`${dir || "./"}node_modules is missing: run \`bun install --frozen-lockfile\` in ${dir || "the checkout root"}`);
 
 console.log(`protocol gate @ ${ENGINE}`);
+const RUNTIMES: Record<string, { found: string | null; declared?: string; where?: string }> = {};   // for --receipt
 const runtime = (label: string, found: string | null, want: string | undefined, rule: "major" | "min-major", extra = "") => {
+  RUNTIMES[label] = { found, declared: want, where: extra || undefined };
   if (!want) { problems.push(`package.json engines has no "${label}"`); return; }
   if (!found) { problems.push(`${label}: not found${extra ? ` (${extra})` : ""}; declared ${want}`); console.log(`  ${label.padEnd(9)} NOT FOUND   declared ${want}`); return; }
   const f = verOf(found), w = verOf(want);
@@ -285,7 +288,7 @@ if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
 // Declared like Chrome: required for the browser lane, never fetched silently, never read from a guessed path.
 const LIBRARY_REPO = "https://github.com/SkyeShark/eidoverse-video.git";
 const LIBRARY_PIN = "e9f80d02529176a87f292fb0e3aeafad3a9ba09f";
-let LIBRARY: string | null = null;
+let LIBRARY: string | null = null, LIBRARY_HEAD: string | null = null;
 if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
   const want = process.env.EIDOVERSE_DIR;
   const fix = `git clone ${LIBRARY_REPO} <dir> && git -C <dir> checkout ${LIBRARY_PIN}, then EIDOVERSE_DIR=<dir>`;
@@ -293,7 +296,7 @@ if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
   else if (!fs.existsSync(path.join(want, "eidoverse", "terrain.js"))) problems.push(`EIDOVERSE_DIR=${want} is not an eidoverse-video checkout (no eidoverse/terrain.js): ${fix}`);
   else {
     LIBRARY = path.resolve(want);
-    const head = spawnSync("git", ["-C", LIBRARY, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout?.trim() ?? "";
+    const head = spawnSync("git", ["-C", LIBRARY, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout?.trim() ?? ""; LIBRARY_HEAD = head || null;
     console.log(`  library   ${head ? head.slice(0, 12) : "(not a git checkout)"}  pinned ${LIBRARY_PIN.slice(0, 12)}  ${LIBRARY}${head && head !== LIBRARY_PIN ? "  (note: not the pinned commit)" : ""}`);
   }
 }
@@ -365,7 +368,7 @@ for (const name of order) {
   let why = r.timedOut ? `timed out after ${timeoutOf(name)} s (process group killed)` : r.code === 77 ? (rowSkips.at(-1) ?? lines.at(-1)) : r.code === 0 ? undefined : `exit ${r.code ?? r.signal}`;
   if (status === "pass" && rowSkips.length) { status = "skip"; why = `${rowSkips.length} check(s) skipped`; }
   if (r.timedOut) status = "fail";
-  results.push({ name, lane, status, why, ms, rowSkips, optional, leftovers: r.leftovers });
+  results.push({ name, lane, status, why, ms, rowSkips, optional, leftovers: r.leftovers, outSha256: createHash("sha256").update(r.out).digest("hex") });
   console.log(`\n== ${name} [${lane}] (${file}) ${status.toUpperCase()}${why ? ` (${why})` : ""} ${(ms / 1000).toFixed(1)} s${r.leftovers ? ` · killed ${r.leftovers} leftover process(es)` : ""}`);
   for (const l of fails.slice(0, 20)) console.log(l);
   for (const l of rowSkips.slice(0, 20)) console.log(l);
@@ -387,4 +390,22 @@ const left = results.reduce((a, r) => a + r.leftovers, 0); if (left) console.log
 const bad = count(null, "fail") + count(null, "skip");
 const notRun = SUITES.filter(([n]) => !selected(n)).length;
 console.log(`protocol gate: ${bad ? "FAILED" : partial ? `PARTIAL PASS (${notRun} suite(s) not selected: this is not the gate)` : "PASS"}`);
+// --receipt <file>: a machine-readable record of THIS run at THIS head (review #260 rereview: "a durable exact-head gate
+// receipt: environment/runtime identities, source head, pinned library head, tally, and log/artifact hash")
+const receiptAt = argv.includes("--receipt") ? argv[argv.indexOf("--receipt") + 1] : null;
+if (receiptAt) {
+  const git = (a: string[]) => spawnSync("git", ["-C", ENGINE, ...a], { encoding: "utf8" }).stdout?.trim() ?? "";
+  const suites = results.map(({ name, lane, status, why, ms, leftovers, outSha256 }) => ({ name, lane, status, why, ms: Math.round(ms), leftovers, outSha256 }));
+  const receipt = {
+    v: 1, verdict: bad ? "FAILED" : partial ? "PARTIAL" : "PASS", head: git(["rev-parse", "HEAD"]), dirty: git(["status", "--porcelain"]) !== "",
+    os: { platform: process.platform, release: os.release(), arch: process.arch }, runtimes: { ...RUNTIMES, bun: { ...RUNTIMES.bun, found: Bun.version } },
+    library: LIBRARY ? { head: LIBRARY_HEAD, pinned: LIBRARY_PIN } : null, seconds: Math.round((performance.now() - t0) / 1000),
+    tally: Object.fromEntries((["core", "main", "browser"] as Lane[]).map((l) => [l, { pass: count(l, "pass"), fail: count(l, "fail"), skip: count(l, "skip") }])),
+    notSelected: notRun, suites,
+    // one hash over every suite's captured output, in run order: the log this verdict rests on
+    logSha256: createHash("sha256").update(suites.map((x) => `${x.name}\t${x.outSha256 ?? ""}`).join("\n")).digest("hex"),
+  };
+  fs.writeFileSync(receiptAt, JSON.stringify(receipt, null, 1) + "\n");
+  console.log(`receipt: ${receiptAt} (head ${receipt.head.slice(0, 12)}${receipt.dirty ? ", DIRTY tree" : ""}, ${receipt.verdict})`);
+}
 process.exit(bad ? 1 : 0);

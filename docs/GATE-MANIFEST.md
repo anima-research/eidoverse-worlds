@@ -144,6 +144,22 @@ On a host with its own guards (a flock that keeps headless Chromes one at a time
 `PROTOCOL_HEADLESS_LOCK=<lock file>` and `PROTOCOL_PERF_GUARD=<script>`. Each browser suite then runs as
 `flock <lock> bash <script> -t <timeout> -- bun <suite>`. Neither is needed anywhere else.
 
+## Operating systems and receipts
+
+The gate is meant to run the same on **Linux, macOS and Windows**. A suite's leftover processes are found and killed per
+OS (`tools/protocol/procgroup.ts`: `/proc` on Linux, `ps` on macOS, the process tree on Windows), and PATH is searched
+with the OS's own separator. The script sandbox tells a starved process from a stuck script with `/proc` CPU time on
+Linux and, where there is no `/proc`, by whether the process ever took the job (scripts-check I8 and I8n).
+
+`.github/workflows/protocol-gate.yml` runs the whole gate on all three OSes at the exact head of every PR, and each run
+uploads a receipt (`--receipt <file>`): the head, whether the tree was dirty, OS, runtimes, the asset library's head,
+every suite's result and a hash of its output, and one hash over all of them. That receipt, not a sentence in a PR
+comment, is the evidence of a pass.
+
+Known gap, said plainly: the macOS and Windows paths were written and tested on Linux (the macOS process path against
+`ps`, the Windows tree walk on fixed tables, the no-`/proc` sandbox path by switching the reading off). Their first real
+runs are that workflow's.
+
 ## Suites
 
 The expected times come from the reference host (WSL2, 16 threads, 7 GB, 2026-10-18), with one suite running at a

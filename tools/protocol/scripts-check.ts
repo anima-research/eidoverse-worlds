@@ -688,6 +688,23 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const next = s.call("vic", "use", { id: "box", action: "go" }, 2000);
       return { r: st(s, r), why: r.script?.why, ms: Math.round(ms), fails: s.w().presence.scripts?.["box|calm"]?.fails ?? 0, next: st(s, next) }; },
     good: (o) => o.r === "unavailable unavailable" && /too busy/.test(o.why) && o.ms < 700 && o.fails === 0 && o.next === "ran" },
+  { id: "I8n", what: "review #260 rereview (macOS red): the same starved process on a host with no /proc (macOS, Windows: no CPU reading) still reads 'too busy', from the job never being taken (`go`), while a script that took its job and stuck in a slow builtin is still its own failure (`time`); a process the host never got round to running (stopped here: SIGSTOP, as an overloaded machine would starve it) is still stopped at the deadline, but it reads 'the host was too busy' (unavailable) and isn't the script's failure", run(s) { cast(s); process.env.EIDO_SANDBOX_CPU = "none"; try {
+      if (!SB?.isolationStats) return { absent: true };
+      warmUp();
+      s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "box", "calm", onUse(`let x = 0; for (let k = 0; k < 2e4; k++) x += k; world.set("self", "t/n", x);`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
+      s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "calm" } } });
+      const pid = SB.isolationStats().next; if (!pid) return { pid: null };
+      Bun.spawn(["sh", "-c", `kill -STOP ${pid}`]); Bun.sleepSync(100);
+      const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: "go" }); const ms = performance.now() - t0;
+      const next = s.call("vic", "use", { id: "box", action: "go" }, 2000);
+      s.call("bob", "create", { id: "spin", model: "crate", place: { at: [2, 0] } });
+      install(s, "bob", "spin", "loop", onUse(`const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
+      s.call("bob", "set", { id: "spin", component: "reactions", value: { go: { kind: "script", script: "loop" } } });
+      Bun.sleepSync(800); warmUp(); // a fresh warm process (the starved one was killed), as I1 spaces its runs
+      const busy = st(s, s.call("vic", "use", { id: "spin", action: "go" }));
+      return { r: st(s, r), why: r.script?.why, ms: Math.round(ms), fails: s.w().presence.scripts?.["box|calm"]?.fails ?? 0, next: st(s, next), busy };  } finally { delete process.env.EIDO_SANDBOX_CPU; } },
+    good: (o) => o.r === "unavailable unavailable" && /too busy/.test(o.why) && o.ms < 700 && o.fails === 0 && o.next === "ran" && o.busy === "failed time" },
   { id: "I9", what: "re-review: reads that keep the AUTHORITY busy (a slow answer, 64 times) can't outlast the deadline (it's checked between answers too) and count as the script's own time, never as a starved host", opts: { nameOf: (id: string) => { const t = performance.now(); while (performance.now() - t < 30) { /* a slow directory */ } return id; } },
     run(s) { cast(s);
       if (!SB?.isolationStats) return { absent: true };

@@ -344,11 +344,13 @@ export function warm() { if (canIsolate()) { refill(); pollReady(); } }
 /** A view for tests and status: is isolation on, how many processes were killed, how many were started. */
 export const isolationStats = () => (fsm && pollReady(), { isolated: canIsolate(), kills, spawned, warm: pool.filter((c) => c.ready || c.opened).length, next: pool.find((c) => c.ready || c.opened)?.proc.pid ?? null });
 if (globalThis.process?.on) process.on("exit", () => { for (const c of pool) closeChild(c, true); });
-// the CPU a process has used, ms (Linux /proc: utime + stime, clock ticks; null where there's no /proc). At a deadline it
+// the CPU a process has used, ms (Linux /proc: utime + stime, clock ticks; null where there's no /proc: macOS and Windows fall
+// back to whether the process ever said `go`). At a deadline it
 // tells a script that kept its process busy (a loop, a native call: `time`, its failure) from a process the host never
 // got round to running (a loaded machine: `unavailable`, not the script's failure). The kill happens either way.
 const TICK_MS = 10; // USER_HZ is 100 on Linux (getconf CLK_TCK)
-function cpuMs(pid) { try { const f = fsm.readFileSync(`/proc/${pid}/stat`, "utf8"); const r = f.slice(f.lastIndexOf(")") + 2).split(" ");
+function cpuMs(pid) { if (globalThis.process?.env?.EIDO_SANDBOX_CPU === "none") return null; // tests: the macOS/Windows path on Linux
+  try { const f = fsm.readFileSync(`/proc/${pid}/stat`, "utf8"); const r = f.slice(f.lastIndexOf(")") + 2).split(" ");
   return (Number(r[11]) + Number(r[12])) * TICK_MS; } catch { return null; } }
 export const STARVED = 0.3; // a job that got under this share of the deadline's wall time on a CPU was starved, not stuck
 /** Run one activation with its VM side in a sandbox process. Same input and result as runScript. */
@@ -357,7 +359,7 @@ export function runIsolated(x) {
   if (!Q) return h.finish({ fuel: 0, fail: { code: "unavailable", why: `the script sandbox isn't available on this server (${unavailable})` } });
   const c = takeReady(performance.now() + WARM_MS);
   if (!c) return h.finish({ fuel: 0, fail: { code: "unavailable", why: "no sandbox process is ready" } });
-  const sentAt = performance.now(), deadline = sentAt + L.wallMs + GRACE, cpu0 = cpuMs(c.proc.pid); let hostMs = 0;
+  const sentAt = performance.now(), deadline = sentAt + L.wallMs + GRACE, cpu0 = cpuMs(c.proc.pid); let hostMs = 0, started = false;
   const stop = (fail) => { pool.splice(pool.indexOf(c), 1); closeChild(c, true); refill(); return h.finish(fail); };
   if (!send(c, JSON.stringify({ text: x.text, input: h.input, event: x.event, limits: L, max: MAX }), deadline)) return stop({ fuel: null, fail: { code: "sandbox", why: "couldn't hand the job to the sandbox process" } });
   for (;;) {
@@ -365,6 +367,7 @@ export function runIsolated(x) {
     if (l === null) { const died = dead(c); if (died) return stop({ fuel: null, fail: { code: "sandbox", why: "the sandbox process died" } });
       return killAt(); }
     let m; try { m = JSON.parse(l); } catch { return stop({ fuel: null, fail: { code: "sandbox", why: "the sandbox process said something unreadable" } }); }
+    if (m.go === true) { started = true; continue; } // the process took the job: it was scheduled (the no-/proc starvation signal)
     if (typeof m.h === "string") {
       if (performance.now() > deadline) return killAt(); // a stream of host calls never leaves the pipe empty: check here too
       const t1 = performance.now(); const ans = h.call(m.h); const ok = send(c, ans, deadline); hostMs += performance.now() - t1;
@@ -377,7 +380,10 @@ export function runIsolated(x) {
   // was most of the run (a review found heavy reads could make a busy script look starved)
   function killAt() {
       kills++; const cpu1 = cpuMs(c.proc.pid), wall = performance.now() - sentAt, used = cpu0 !== null && cpu1 !== null ? cpu1 - cpu0 : null, own = wall - hostMs;
-      if (used !== null && own > 0.5 * wall && used < STARVED * own) return stop({ fuel: null, fail: { code: "unavailable", why: `stopped at the ${L.wallMs + GRACE} ms deadline, but the host was too busy to run it (its process had ${used} ms of CPU in ${Math.round(wall)} ms): not the script's doing` } });
+      // where there's no /proc (macOS, Windows) the CPU reading is null; then a process that never even said it took the job
+      // (`go`) by the deadline was never run by the host: the same verdict, from the one signal every OS gives
+      const starved = used !== null ? own > 0.5 * wall && used < STARVED * own : !started && own > 0.5 * wall;
+      if (starved) return stop({ fuel: null, fail: { code: "unavailable", why: `stopped at the ${L.wallMs + GRACE} ms deadline, but the host was too busy to run it (${used !== null ? `its process had ${used} ms of CPU in ${Math.round(wall)} ms` : `its process never took the job in ${Math.round(wall)} ms`}): not the script's doing` } });
       return stop({ fuel: null, fail: { code: "time", why: `stopped at the ${L.wallMs + GRACE} ms deadline: its sandbox process was killed (a loop, a native call that wouldn't yield, or reads that kept the authority busy${used !== null ? `; ${used} ms of CPU, ${Math.round(hostMs)} ms answering it` : ""})` } });
   }
 }
