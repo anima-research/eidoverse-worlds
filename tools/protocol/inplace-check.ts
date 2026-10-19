@@ -28,7 +28,7 @@
 //   IP18 the recovery of an interrupted swap writes the identities the interrupted run planned
 //   IP11 a snapshot.json the oracle can't compare (a fold of part of the log) doesn't block the translation: it says,
 //        in its output, that the snapshot was NOT compared and why, and keeps it as snapshot.original.json
-//   —— review of PR #260 (Mica) item 6: the owner's approval is bound to the dry-run report's hash; rollback is tested ——
+//   —— review of PR #260 (Mica) item 6: the approval is bound to the dry-run report's hash; rollback is tested ——
 //   IP19 `--dry-run` writes nothing and prints a report whose hash is the same on a second run (nothing random in it)
 //   IP19t the report carries the trial-period line (hash-bound) and --dry-run prints it
 //   IP20 `translate` with no --approved refuses, names the dry run, and changes nothing
@@ -82,7 +82,7 @@ const W = path.join(root, "worlds"), OPT = path.join(root, "opt"); fs.mkdirSync(
 const tool = (args: string[], env: Record<string, string> = {}) => { const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", ...args], { cwd: ENGINE,
   env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, OPT_DIR: OPT, PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env } });
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
-/** The dry run's report hash for a world (review of PR #260 item 6: a translation needs the owner's approval bound to it). */
+/** The dry run's report hash for a world (review of PR #260 item 6: a translation needs an approval bound to it). */
 const dryHash = (words: string[], env: Record<string, string> = {}) => { const r = tool(["translate", ...words, "--dry-run", "--no-founder-key"], env); return /^report-hash ([0-9a-f]{64})$/m.exec(r.out)?.[1] ?? "no-hash"; };
 /** `translate <words…> --no-founder-key`, approved: the dry run first, its hash typed back (the operator's act). */
 const xlate = (words: string[], env: Record<string, string> = {}) => tool(["translate", ...words, "--no-founder-key", "--operator-only-no-owner", "--approved", dryHash(words, env)], env);
@@ -170,7 +170,7 @@ ok(/Unreal client hasn't been ported to it yet/.test(noFoldRefusal("current", tr
   ok(rep && /trial period/.test(rep.trial ?? "") && /translate this world again/.test(rep.trial) && /^trial period: .*Approving this report accepts that/m.test(a.out),
     "IP19t the report (so the hash the owner signs) says the protocol is in a trial period and the world may be translated again, and --dry-run prints it (Mica, #260: alpha worlds should know they accepted translation churn)", rep && rep.trial);
   const no = tool(["translate", "careful", "--no-founder-key"]);
-  ok(no.code !== 0 && /needs the owner's approval of its dry-run report first/.test(no.out) && /--dry-run/.test(no.out) && /Nothing was changed/.test(no.out) && same(fingerprint(d), fp) && !temps().length, "IP20 translate with no --approved refuses, says to dry-run first, and changes nothing", no.out.slice(-600));
+  ok(no.code !== 0 && /needs the operator's approval of its dry-run report first/.test(no.out) && /--dry-run/.test(no.out) && /Nothing was changed/.test(no.out) && same(fingerprint(d), fp) && !temps().length, "IP20 translate with no --approved refuses, says to dry-run first, and changes nothing", no.out.slice(-600));
   // the old log grows after the report was read: the approved hash is of a different log
   fs.appendFileSync(path.join(d, "log.jsonl"), JSON.stringify({ seq: L.length, ts: T0 + 100000, actor: "Bob", verb: "say", args: { text: "after the dry run" } }) + "\n");
   fs.rmSync(path.join(d, "snapshot.json"));   // (the snapshot is of the shorter log; not what this row is about)

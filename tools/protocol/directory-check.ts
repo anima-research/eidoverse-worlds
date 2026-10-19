@@ -271,7 +271,7 @@ const file = path.join(tmp, "worlds", ".directory.json");
 // eidosim@0.5.0 from seq 15641; translate-v1@9 kept each punt as an `imported` record and left the punted thing where it
 // was punted FROM, reporting "0 divergences" because it compared only against the instant fold (her sim rests it
 // elsewhere). The importer refused such logs until translate-v1@10 ran her sim beside the v1 fold. Each case goes
-// through the real importer (translateV1World, in a child with a scratch library: epoch-probe.ts) with the founder's key,
+// through the real importer (translateV1World, in a child with a scratch library: epoch-probe.ts), tier 0 empty (a translation names no founder),
 // directory identities and content addresses, and is compared with HER sim (shared/sim.js beside the v1 fold, as sweep §3).
 { const { emptyState: v1Empty, foldEntry } = await import("./import-v1/fold.js");
   const eidosim = await import("./import-v1/eidosim-v1.js");   // HER engine: what the v1 log means
@@ -281,7 +281,7 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const crypto = await import("node:crypto");
   const FIX = path.join(import.meta.dir, "../../spec/fixtures/replay");
   const parseLog = (f: string) => fs.readFileSync(f, "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
-  const founder = "ed25519:" + (crypto.generateKeyPairSync("ed25519").publicKey.export({ format: "jwk" }) as any).x;
+  const salt = crypto.randomBytes(16).toString("hex");   // makes this run's stand-in model bytes its own
   const shaHex = (b: Buffer) => crypto.createHash("sha256").update(b).digest("hex");
   // her world: the v1 fold composed with her sim, settled far past the end as her replaybench does
   const hers = (L: any[]) => { const st: any = v1Empty(), sim: any = eidosim.emptySim(); for (const e of L) { foldEntry(st, e); eidosim.simEntry(sim, e, st); }
@@ -293,7 +293,7 @@ const file = path.join(tmp, "worlds", ".directory.json");
     fs.mkdirSync(path.join(W, "worlds", "old"), { recursive: true }); fs.mkdirSync(OPT, { recursive: true });
     for (const [p, b] of Object.entries(lib)) { fs.mkdirSync(path.dirname(path.join(LIB, p)), { recursive: true }); fs.writeFileSync(path.join(LIB, p), b); }
     fs.writeFileSync(path.join(W, "worlds", "old", "log.jsonl"), L.map((e) => JSON.stringify(e)).join("\n") + "\n");
-    const run = Bun.spawnSync(["bun", path.join(import.meta.dir, "epoch-probe.ts"), path.join(W, "worlds", "old"), path.join(W, "worlds", "new"), founder],
+    const run = Bun.spawnSync(["bun", path.join(import.meta.dir, "epoch-probe.ts"), path.join(W, "worlds", "old"), path.join(W, "worlds", "new")],
       { env: { ...process.env, OPT_DIR: OPT, EIDOVERSE_DIR: LIB, TRUST_NAMES: "" }, stdout: "pipe", stderr: "pipe" });
     const line = run.stdout.toString().trim().split("\n").pop() ?? ""; let res: any; try { res = JSON.parse(line); } catch { res = { ok: false, err: `probe printed ${JSON.stringify(line.slice(0, 200))}; stderr ${run.stderr.toString().slice(-400)}` }; }
     const file = path.join(W, "worlds", "new", "world.jsonl");
@@ -318,7 +318,7 @@ const file = path.join(tmp, "worlds", ".directory.json");
     out.carrier = [t.r.sim && !flown && !sf.checks.disagree.length && t.r.sim.rests === t.r.sim.launches && (launches < 0 || t.r.sim.launches === launches)
       && (!t.r.sim.engine || t.r.sim.engine.engine === DEFAULT_ENGINE), { flown, checks: sf.checks, sim: t.r.sim }];
     out.strict = [t.back.status === "ok" && !t.back.diagnostics.some(([, c]: any) => String(c).startsWith("malformed")), t.back.diagnostics.slice(0, 3)];
-    out.founder = [JSON.stringify(t.lines[0].body.owners[0]) === JSON.stringify([founder]), t.lines[0].body.owners];
+    out.tier0 = [Array.isArray(t.lines[0].body.owners[0]) && t.lines[0].body.owners[0].length === 0, t.lines[0].body.owners];   // #260 rereview blocker 1: no founder
     out.stamp = [t.lines[1].body.from.translator === TV1.TRANSLATOR_SIM, t.lines[1].body.from.translator];
     // identities: every old actor's act (and the launch it caused) is an opaque directory id, never the old name
     const people = t.lines.filter((e: any) => (e.kind === "act" && e.verb === "imported") || (e.kind === "sim" && e.verb === "launch"));
@@ -347,14 +347,14 @@ const file = path.join(tmp, "worlds", ".directory.json");
   };
   const report = (id: string, what: string, f: Record<string, [boolean, unknown]>) => { const broken = Object.entries(f).filter(([, [p]]) => !p);
     ok(!broken.length, `${id} ${what}`, Object.fromEntries(broken.map(([k, [, why]]) => [k, why]))); };
-  const fixtureLib = () => Object.fromEntries(["wall.glb", "deck.glb", "crate.glb"].map((p) => [p, Buffer.from(`a stand-in model for ${p} ${founder}`)]));
+  const fixtureLib = () => Object.fromEntries(["wall.glb", "deck.glb", "crate.glb"].map((p) => [p, Buffer.from(`a stand-in model for ${p} ${salt}`)]));
   const addrOf = (lib: Record<string, Buffer>) => Object.fromEntries(Object.entries(lib).map(([p, b]) => [p, shaHex(b)]));
 
   // EP1: her four fixtures, as the importer makes them
   for (const name of fs.readdirSync(FIX).filter((d) => fs.existsSync(path.join(FIX, d, "log.jsonl"))).sort()) {
     const L = parseLog(path.join(FIX, name, "log.jsonl")); const lib = fixtureLib();
     const t = importer(name, L, { lib });
-    report("EP1", `${name}: a physics-epoch log translates through the importer, and every body rests where her sim rests (founder, identities, model paths and their hashes, physics.shape; the authority's sim layer re-checks every rest)`, facts(t, L, { addresses: addrOf(lib), launches: L.filter((e: any) => e.verb === "punt").length }));
+    report("EP1", `${name}: a physics-epoch log translates through the importer, and every body rests where her sim rests (tier 0 empty, identities, model paths and their hashes, physics.shape; the authority's sim layer re-checks every rest)`, facts(t, L, { addresses: addrOf(lib), launches: L.filter((e: any) => e.verb === "punt").length }));
   }
 
   // EP2: LEAVING the epoch (PROTOCOL_v2 §3): the sequencer releases every live body with result-shaped `place` entries
