@@ -212,7 +212,7 @@ function suitePath(file: string) { return path.resolve(ENGINE, "tools/protocol",
 function manifest() {
   const rows = ["| # | suite | lane | file | needs | expected | timeout |", "|---|---|---|---|---|---|---|"];
   const ordered = [...CORE.map((n) => SUITES.find((s) => s[0] === n)!), ...SUITES.filter(([n]) => laneOf(n) === "main"), ...SUITES.filter(([n]) => laneOf(n) === "browser")];
-  ordered.forEach(([name, file], i) => rows.push(`| ${i + 1} | ${name} | ${laneOf(name)} | \`${path.relative(ENGINE, suitePath(file))}${file.includes(" ") ? " " + file.split(" ").slice(1).join(" ") : ""}\` | ${NEEDS[name] ?? "bun"} | ${EXPECT[name] !== undefined ? `${EXPECT[name]} s` : "?"} | ${baseTimeout(name)} s |`));
+  ordered.forEach(([name, file], i) => rows.push(`| ${i + 1} | ${name} | ${laneOf(name)} | \`${path.relative(ENGINE, suitePath(file)).split(path.sep).join("/")}${file.includes(" ") ? " " + file.split(" ").slice(1).join(" ") : ""}\` | ${NEEDS[name] ?? "bun"} | ${EXPECT[name] !== undefined ? `${EXPECT[name]} s` : "?"} | ${baseTimeout(name)} s |`));
   const sum = (l: Lane) => SUITES.filter(([n]) => laneOf(n) === l).reduce((a, [n]) => a + (EXPECT[n] ?? 0), 0);
   rows.push("", `Lanes: core ${CORE.length} suites (~${Math.round(sum("core"))} s), main ${SUITES.filter(([n]) => laneOf(n) === "main").length} (~${Math.round(sum("main"))} s), browser ${BROWSER.length} (~${Math.round(sum("browser"))} s); ${SUITES.length} suites in all.`);
   return rows.join("\n");
@@ -222,7 +222,8 @@ function manifestDrift(): string | null {
   if (!fs.existsSync(DOC)) return `${path.relative(ENGINE, DOC)} is missing`;
   const t = fs.readFileSync(DOC, "utf8"), a = t.indexOf(BEGIN), b = t.indexOf(END);
   if (a < 0 || b < a) return `${path.relative(ENGINE, DOC)} has no generated block (${BEGIN} … ${END})`;
-  return t.slice(a + BEGIN.length, b).trim() === manifest().trim() ? null : `${path.relative(ENGINE, DOC)}'s suite table is not what --manifest prints (regenerate it: bun tools/protocol/run.ts --manifest)`;
+  return t.slice(a + BEGIN.length, b).replace(/\r\n/g, "\n").trim() === manifest().trim() ? null   // a Windows checkout may carry CRLF
+     : `${path.relative(ENGINE, DOC)}'s suite table is not what --manifest prints (regenerate it: bun tools/protocol/run.ts --manifest)`;
 }
 
 const argv = process.argv.slice(2);
@@ -278,7 +279,11 @@ if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
   const candidates = [process.env.CHROME];
   if (!process.env.CHROME) { try { const { chromium } = await import("playwright"); candidates.push(chromium.executablePath()); } catch {} candidates.push("/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"); }
   CHROME = candidates.find((p) => p && fs.existsSync(p)) ?? null;
-  const v = CHROME ? spawnSync(CHROME, ["--version"], { encoding: "utf8", timeout: 20000 }).stdout?.trim() ?? "" : "";
+  let v = CHROME ? spawnSync(CHROME, ["--version"], { encoding: "utf8", timeout: 20000 }).stdout?.trim() ?? "" : "";
+  // Chrome on Windows writes nothing to a console for --version; its version is in the executable's file properties
+  if (CHROME && !v && process.platform === "win32")
+    v = spawnSync("powershell.exe", ["-NoProfile", "-Command", `(Get-Item -LiteralPath '${CHROME.replace(/'/g, "''")}').VersionInfo.ProductVersion`],
+      { encoding: "utf8", timeout: 20000 }).stdout?.trim() ?? "";
   if (process.env.CHROME && !CHROME) problems.push(`CHROME=${process.env.CHROME} does not exist`);
   runtime("chromium", CHROME ? (v.match(/\d+\.\d+\.\d+\.\d+/)?.[0] ?? null) : null, ENGINES.chromium, "min-major",
     CHROME ? CHROME : "the browser lane is REQUIRED: set CHROME=/path/to/chrome (Chromium or Chrome for Testing), or `bunx playwright install chromium`");

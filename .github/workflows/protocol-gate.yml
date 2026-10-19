@@ -47,7 +47,8 @@ jobs:
           git clone -q https://github.com/anima-research/mcpl-core-ts.git ../mcpl-core-ts
           git -C ../mcpl-core-ts checkout -q e17f773a9247c41d5c872d760aac7f243748d134
           (cd mcpl && bun install --frozen-lockfile)
-          bunx playwright install chromium
+          # the project's own playwright, so the browser revision is the one run.ts's import of it looks for
+          bun node_modules/playwright/cli.js install chromium
       - name: asset library (pinned in run.ts)
         shell: bash
         run: |
