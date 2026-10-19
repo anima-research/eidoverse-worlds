@@ -107,10 +107,10 @@ if (!(await waitUp(A.port)) || !(await waitUp(C.port))) { console.error("FATAL: 
 const cBody = await join_(C.port, { id: "target" });
 const cRenderer = await fakeRenderer(C.port, "renderer-slow");
 cRenderer.reply = (id) => setTimeout(() => cRenderer.ws.send(JSON.stringify({ type: "capture-result", id, dataUrl: PNG })), 13_000);
-const longT0 = Date.now();
+const longT0 = performance.now();   // durations on the monotonic clock: a step of the wall clock (WSL resyncs it by a second or more) isn't time waited
 const longSnap = fetch(`http://127.0.0.1:${C.port}/snap?world=snapt&follow=target`)
-  .then(async (r) => ({ status: r.status, body: Buffer.from(await r.arrayBuffer()), ms: Date.now() - longT0 }),
-        (e) => ({ status: -1, body: Buffer.alloc(0), ms: Date.now() - longT0, err: String(e) }));
+  .then(async (r) => ({ status: r.status, body: Buffer.from(await r.arrayBuffer()), ms: performance.now() - longT0 }),
+        (e) => ({ status: -1, body: Buffer.alloc(0), ms: performance.now() - longT0, err: String(e) }));
 
 const body = await join_(A.port, { id: "target" });
 const renderer = await fakeRenderer(A.port, "renderer-fake");
@@ -153,9 +153,9 @@ renderer.reply = () => {};
 const lateId = renderer.next();
 let mark = A.log.length;
 await cooldown();
-const t0 = Date.now();
+const t0 = performance.now();
 r = await snap();
-const waited = Date.now() - t0;
+const waited = performance.now() - t0;
 check("reply after the window → 504", r.status === 504, String(r.status));
 check("…answered at ~2s, not 12s", waited >= 1800 && waited < 10_000, `${waited}ms`);
 check("timeout is logged with the snap, follow and renderer",
