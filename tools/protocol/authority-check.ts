@@ -1276,16 +1276,16 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const st = openWorld(root, "srw1").state(); const kids = (h) => Object.values(st.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
   T += 100; process.env.PROTOCOL_NOW = String(T); const sit = request(openWorld(root, "srw1"), "ann", "use", { id: "b-chair", action: "sit" });
   ok(!threw && kids("a-chair") === 1 && kids("b-chair") === 1 && !st.entities["a-chair"].c.sockets && !st.entities["b-chair"].c.sockets && sit.ok, "SRW1 a seat whose who names a role since deleted lifts anyway (the lift is a carry), and so does the healthy host after it", { threw, out, a: kids("a-chair"), b: kids("b-chair"), sit: sit.refused });
-  // a host the lift can't write at all (here: the first append for it throws, as a full disk would) is said and
-  // skipped, and the hosts after it still lift: liftWorld never throws for one host
+  // a host the lift can't WRITE (here: the first append for it throws, as a full disk would) is not a refused host: the line's
+  // disk state is unknown, so the throw PROPAGATES out of maintain (review r14 H1, 10-18; the caller reports ambiguous) and
+  // nothing is lifted in that run. A refusal (the door's) is still per host: SRW1 above.
   write("srw2", [{ verb: "set", id: "a-chair", comp: "sockets", value: seat() }, { verb: "set", id: "b-chair", comp: "sockets", value: seat() }, { verb: "set", id: "c-chair", comp: "sockets", value: seat() }]);
   const w2 = openWorld(root, "srw2"); const real = w2.append.bind(w2); let n = 0; w2.append = (e, ...more) => { if (e.kind === "act" && e.verb === "lift-sockets" && e.body?.id === "a-chair" && !n++) throw new Error("disk full"); return real(e, ...more); };
   let t2 = null, o2 = null; try { const m2 = maintain(w2).steps.lift; o2 = [...m2.made, ...m2.failed]; } catch (x) { t2 = String(x?.message ?? x); }
   const s2 = openWorld(root, "srw2").state(); const k2 = (h) => Object.values(s2.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
-  const failed = (o2 ?? []).find((x) => x.host === "a-chair" && x.code); if (failed) failed.failed = failed;
-  ok(!t2 && !!failed && /disk full/.test(failed.failed.reason ?? "") && k2("b-chair") === 1 && k2("c-chair") === 1 && !!s2.entities["a-chair"].c.sockets, "SRW2 a host whose lift fails is reported ({host, failed}) and left as it was; the hosts after it lift", { t2, o2, b: k2("b-chair"), c: k2("c-chair") });
+  ok(/disk full/.test(t2 ?? "") && o2 === null && k2("a-chair") === 0 && k2("b-chair") === 0 && k2("c-chair") === 0 && !!s2.entities["a-chair"].c.sockets, "SRW2 a host whose lift's WRITE throws (disk full) is not reported as a refused host: the throw propagates out of maintain (ambiguous to the caller, r14 H1), and nothing was written in that run", { t2, o2, a: k2("a-chair"), b: k2("b-chair"), c: k2("c-chair") });
   const again = maintain(openWorld(root, "srw2")).steps.lift.made; const s3 = openWorld(root, "srw2").state();
-  ok(again.some((x) => x.host === "a-chair" && x.made) && Object.values(s3.entities).filter((e) => e.c.parent?.to === "a-chair" && e.c.socket).length === 1, "SRW2 …and the next load lifts it", again); }
+  ok(["a-chair", "b-chair", "c-chair"].every((h) => again.some((x) => x.host === h && x.made) && Object.values(s3.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length === 1), "SRW2 …and the next maintenance run (the disk back) lifts all three", again); }
 
 // LG1 (a grep-pin, as nonumber-check is): past the door nothing reads the old spelling. The authority's state readers name
 // socket children; only authority/sockets.js (the translator and the load's lift) reads a stored `sockets` map, a
