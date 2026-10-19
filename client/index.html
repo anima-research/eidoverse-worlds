@@ -1742,14 +1742,18 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     const avatar = wantAvatar;   // resolved above, and published for lite.js to match
     const sent = { world, id: name, avatar, token };
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
-    const stash = { ws, sent, buffered: [], failed: false, closeInfo: null };
+    // `arrived` holds each buffered message's performance.now() when its
+    // message event ran, the earliest the page can see it: a clock sample
+    // taken when net.js drains it would be late by the whole wait.
+    const stash = { ws, sent, buffered: [], arrived: [], failed: false, closeInfo: null };
     globalThis.__ewEarlySocket = stash;
     // the page's presence session (net.js PAGE_SESSION reads the same one): one id for the page's life
     const session = (globalThis.__ewPageSession ??= globalThis.crypto?.randomUUID?.()
       ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
-    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token, session }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token, session, clock: true }));
     ws.onmessage = (ev) => {
       stash.buffered.push(ev.data);
+      stash.arrived.push(performance.now());
       if (stash.buffered.length > 5000) {   // a runaway stream: bail to the normal path
         stash.failed = true;
         try { ws.close(); } catch (e) { /* dying */ }

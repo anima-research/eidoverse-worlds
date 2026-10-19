@@ -14,10 +14,11 @@ writeFileSync(join(patched, "patched-only.glb"), "fixture");
 // Lint checks resolvability, not GLB decode; no optimizer or renderer runs.
 writeFileSync(join(library, "library.glb"), "fixture");
 writeFileSync(join(overlay, "upload.VRM"), "fixture");
-// The route keeps URL.pathname encoded: literal disk names alone are not
-// fetchable under these URLs; encoded-name fixtures are a separate case.
-writeFileSync(join(library, "space model.glb"), "literal-only");
-writeFileSync(join(library, "café.glb"), "literal-only");
+// The route decodes URL.pathname (libraryRel), so a disk name with a space or
+// an accent is served under its encoded URL; a disk name that is itself the
+// encoded form is still served as itself (raw wins over decoding).
+writeFileSync(join(library, "space model.glb"), "literal");
+writeFileSync(join(library, "café.glb"), "literal");
 writeFileSync(join(library, "encoded%20model.glb"), "fixture");
 writeFileSync(join(library, "caf%C3%A9-served.glb"), "fixture");
 // A directory on a higher rung shadows the file below it: the route stops at
@@ -25,14 +26,14 @@ writeFileSync(join(library, "caf%C3%A9-served.glb"), "fixture");
 mkdirSync(join(patched, "shadow.glb")); writeFileSync(join(library, "shadow.glb"), "fixture");
 mkdirSync(join(overlay, "body.vrm")); writeFileSync(join(library, "body.vrm"), "fixture");
 // Animation defs name clips by library path, and the clip roster lists a
-// def's clip only where /library serves it: under its encoded name.
+// def's clip where /library serves it: under its encoded or its literal name.
 const defs = join(assets, "defs");
 mkdirSync(join(defs, "animations"), { recursive: true });
 mkdirSync(join(library, "clips"));
 writeFileSync(join(defs, "animations", "encoded-clip.json"), JSON.stringify({ vrma: "clips/space clip.vrma" }));
 writeFileSync(join(library, "clips", "space%20clip.vrma"), "fixture");
 writeFileSync(join(defs, "animations", "literal-clip.json"), JSON.stringify({ vrma: "clips/literal clip.vrma" }));
-writeFileSync(join(library, "clips", "literal clip.vrma"), "literal-only");
+writeFileSync(join(library, "clips", "literal clip.vrma"), "literal");
 const run = await scratchSequencer("spawn-lint", {
   portFrom: 9180,
   serverEnv: {
@@ -85,8 +86,8 @@ try {
     ["fragment", "library.glb#mesh", null],
     ["query-fragment", "library.glb?v=123#mesh", null],
     ["missing-versioned", "absent.glb?v=123", "not-found"],
-    ["literal-space", "space model.glb", "not-found"],
-    ["literal-unicode", "café.glb", "not-found"],
+    ["literal-space", "space model.glb", null],
+    ["literal-unicode", "café.glb", null],
     ["encoded-space", "encoded model.glb", null],
     ["encoded-unicode", "café-served.glb", null],
     ["already-encoded", "encoded%20model.glb", null],
@@ -120,13 +121,16 @@ try {
     !!encodedClip && /^clips\/space clip\.vrma\?v=\d+$/.test(encodedClip.path), JSON.stringify(clips));
   const servedClip = await fetch(run.BASE + "/library/" + encodedClip?.path);
   check("the listed clip's path is served", servedClip.ok && await servedClip.text() === "fixture");
-  check("a clip only its literal disk name holds is not listed, since /library can't serve it",
-    !clips.some(c => c.name === "literal-clip"), JSON.stringify(clips));
-  for (const [lib, available] of [["space model.glb", false], ["café.glb", false],
-      ["encoded model.glb", true], ["café-served.glb", true], ["encoded%20model.glb", true]] as const) {
+  const literalClip = clips.find(c => c.name === "literal-clip");
+  check("a clip only its literal disk name holds is listed, since /library decodes to it",
+    !!literalClip && /^clips\/literal clip\.vrma\?v=\d+$/.test(literalClip.path), JSON.stringify(clips));
+  const servedLiteralClip = await fetch(run.BASE + "/library/" + literalClip?.path);
+  check("the listed literal clip's path is served", servedLiteralClip.ok && await servedLiteralClip.text() === "literal");
+  for (const [lib, body] of [["space model.glb", "literal"], ["café.glb", "literal"],
+      ["encoded model.glb", "fixture"], ["café-served.glb", "fixture"], ["encoded%20model.glb", "fixture"]] as const) {
     const served = await fetch(run.BASE + "/library/" + lib);
     check("URL-encoded pathname agrees with the actual route for " + lib,
-      available ? served.ok && await served.text() === "fixture" : served.status === 404);
+      served.ok && await served.text() === body, String(served.status));
   }
   const eye = await open("observer");
   check("invalid library spawns still fold and appear on late join",

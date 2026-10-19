@@ -7,6 +7,7 @@
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegexFor } from "./mention.ts";
 import { mergePose } from "../shared/humanoid.js";
+import { foldOffset } from "../shared/clockoffset.js";
 import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, shapeReady, waterParams, waterStance, SWIM_SPEED, SWIM_RUN } from "../shared/terrainshape.js";
 import { bodyHeightFor } from "./rigbones.ts";
 import { surfaceOffset, waveClock } from "../shared/waves.js";
@@ -57,7 +58,7 @@ import { radialForce, FORCE_MIN } from "../shared/force.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
-import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
+import { describeParticles, emitterTransition, transitionLine, isParticlesKey, emittersIn } from "../shared/particles.js";
 import { describePicture } from "../shared/picture.js";
 import { describeCaptions } from "../shared/captions.js";
 import { describeSound } from "../shared/sound.js";
@@ -82,6 +83,8 @@ const BONES_NOT_KNOWN = "this body's bones aren't known (its model hasn't loaded
  *  one line. Long enough to swallow a slider drag, short enough that "puts the
  *  fire out" still arrives while you are looking at it. */
 const EMITTER_COALESCE_MS = Number(process.env.EW_EMITTER_COALESCE_SEC ?? 4) * 1000;
+/** One narration window per (entity, emitter component). */
+const emitterSlot = (id: string, key: string) => (key === "particles" ? id : `${id}\u0000${key}`);
 
 type Vec2 = { x: number; z: number };
 type CollisionMesh = { positions: Float32Array; indices: Uint32Array; building?: unknown };
@@ -431,9 +434,10 @@ export class WorldAgent {
     this.ws.send(JSON.stringify({ type: "attest", seq, digest, gen: this.surfaceGen }));
     return true;
   }
-  /** Open coalescing windows for world-change narration, keyed by entity id.
+  /** Open coalescing windows for world-change narration, one per (entity,
+   *  emitter component) — see emitterSlot.
    *  See noteEmitter. */
-  private emitterNarration = new Map<string, { announced: unknown; latest: unknown; actor: string; timer: ReturnType<typeof setTimeout> }>();
+  private emitterNarration = new Map<string, { announced: unknown; latest: unknown; actor: string; key: string; timer: ReturnType<typeof setTimeout> }>();
   private lastNear = new Map<string, number>(); // participant -> last approach-ping ts
   /** approach re-arm: after a walk-up ping, the SAME person must actually go
    *  away (> REARM_RADIUS) before another boundary crossing can ever count —
@@ -681,21 +685,31 @@ export class WorldAgent {
     console.error(`[agent ${this.name}] malformed ${verb} entry — position kept: ${JSON.stringify(args)?.slice(0, 160)}`);
   }
 
-  /** Server-to-local clock offset, smoothed — the headless serverNow()
-   *  (mirrors client/lib/remotes.js: same source, same 0.92/0.08 EMA).
+  /** Server-to-local clock offset — the headless serverNow(), kept as
+   *  client/lib/remotes.js keeps it: the same samples, by the same rule
+   *  (shared/clockoffset.js: the least-delayed sample wins, so a late frame
+   *  moves it by no more than the leak), on the same kind of clock: this
+   *  process's monotonic one (localNow), which a step of the host's wall
+   *  clock can't move.
    *  Motion is a function of SEQUENCER time; evaluating it on a skewed host
    *  clock makes this body report a different pendulum phase than every
    *  browser looking at the same swing, while both run the same closed form
-   *  (#92 review, B1). Fed from the embodied plane's frame stamps. */
-  private clockOffset: number | null = null;
+   *  (#92 review, B1). Fed from the clock message the server sends just
+   *  before each snapshot to a join that asks, as this agent's joins do, and
+   *  from the embodied plane's frame stamps. */
+  private clock: { offset: number; at: number } | null = null;
+  /** This process's own clock in epoch ms, monotonic: performance.now() from
+   *  its origin, as a browser's serverNow() reads its own. */
+  localNow(): number { return performance.timeOrigin + performance.now(); }
   noteServerTime(t: unknown) {
     if (typeof t !== "number" || !Number.isFinite(t)) return;
-    const sample = t - Date.now();
-    this.clockOffset = this.clockOffset === null ? sample : this.clockOffset * 0.92 + sample * 0.08;
+    const now = this.localNow();
+    this.clock = foldOffset(this.clock, t - now, now);
   }
   /** Epoch ms on the sequencer's clock, best estimate. Before the first
-   *  frame lands this is local time — the browser's exact fallback. */
-  serverNow(): number { return Date.now() + (this.clockOffset ?? 0); }
+   *  clock message or frame lands this is local time — the browser's exact
+   *  fallback. */
+  serverNow(): number { return this.localNow() + (this.clock?.offset ?? 0); }
 
   /** A composition gap is a perception limit, not a world error: say so a
    *  few times (the noteMalformed bound), then stay quiet. Callers that hit
@@ -733,7 +747,7 @@ export class WorldAgent {
       // Knowing whether the thing across the table thinks in tokens or neurons
       // matters here in a way it doesn't in a chat app.
       ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: this.world, id: this.name, avatar: this.avatar,
-        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken }));
+        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken, clock: true }));
       ws.onclose = (ev) => {
         this.joined = false;
         // 4006 = removed by moderation (kicked or banned). Reconnecting would
@@ -746,6 +760,11 @@ export class WorldAgent {
         // door, holding up bodies in later worlds at the same coordinates
         // (#83; the #17 symptom reached through a ban).
         if ((ev as { code?: number } | undefined)?.code === 4006) { this.close(); return; }
+        // 4010 = this world is not open to this identity: refused at the door
+        // (members only, watch only), or its access ended or was changed.
+        // Same answer as a ban for reconnecting: the door will not open on
+        // its own, so the body stays down until its host decides otherwise.
+        if ((ev as { code?: number } | undefined)?.code === 4010) { this.close(); return; }
         // 4005 = the sequencer REFUSED the join (bad/reserved name, bad token).
         // A refusal is an answer, not an outage — redialing it every 1.5s is
         // the polite-DoS the sequencer's own comments warn about (RFC-005
@@ -788,6 +807,17 @@ export class WorldAgent {
           case "mod":
             // Moderation replies (ban lists, global-ban confirmations).
             this.lastMod = { ts: Date.now(), text: String(msg.text ?? "") };
+            // …kept briefly as a short list too: one change can answer in more
+            // than one line (a grant's "bound to <subject>" echo, then the
+            // listing), and a tool must be able to hand back all of them
+            this.recentMods.push(this.lastMod);
+            if (this.recentMods.length > 20) this.recentMods.shift();
+            break;
+          case "notice":
+            // The world telling this identity something that is not a refusal
+            // — today, that its access here ends soon. Into the inbox, so the
+            // next look() carries it.
+            this.inbox.push({ ts: Date.now(), kind: "act", who: "world", text: String(msg.text ?? "") });
             break;
           // ── media signalling (see onMedia) ─────────────────────────────
           // Forwarded verbatim to whoever holds this identity's audio. The
@@ -1054,10 +1084,16 @@ export class WorldAgent {
           case "pose":
             this.notePose(msg.id, msg.pose);
             break;
+          case "clock":
+            // the server's time, sent just before each snapshot to a join
+            // that asks, as this agent's do, so the estimate is set from the
+            // join on, as the browser's is
+            this.noteServerTime((msg as { t?: unknown }).t);
+            break;
           case "frame":
             // batched embodied plane: latest pose per id, one message per tick.
             // The frame's server stamp also feeds the clock estimate — the
-            // same source the browser smooths into serverNow() (#92, B1).
+            // same samples the browser folds into serverNow() (#92, B1).
             this.noteServerTime((msg as { t?: unknown }).t);
             for (const [id, pose] of Object.entries(msg.poses as Record<string, Pose>)) {
               if (id !== this.name) this.notePose(id, pose);
@@ -1438,7 +1474,7 @@ export class WorldAgent {
         // in the world — the one component type with a live sensory event.
         // Replay reconstructs the state above and stops there: a fire that was
         // lit last week is in look(), not in your ears (#25).
-        if (args.type === "particles" && live) {
+        if (isParticlesKey(args.type) && live) {
           // proximity-gate on where the emitter's owner ACTUALLY is — a
           // carried lantern is judged at the carrier, not at its pre-mount
           // spot (#82). When the chain cannot compose, ABSTAIN: gating on
@@ -1446,7 +1482,7 @@ export class WorldAgent {
           // an abandoned address and miss those beside the actual carrier
           // (#92, B2). The gap is logged, bounded, not performed.
           const fx = this.eff(String(args.id), this.serverNow());
-          if (fx.ok) this.noteEmitter(actor, String(args.id), before, args.data ?? null, fx.pos, ts);
+          if (fx.ok) this.noteEmitter(actor, String(args.id), before, args.data ?? null, fx.pos, ts, args.type);
           else this.noteEffGap(String(args.id), fx.why);
         }
         // a motion arriving or leaving changes whether this thing may hold a
@@ -1596,7 +1632,8 @@ export class WorldAgent {
    * A live `particles` attach / replace / remove near this body — ONE ambient
    * world-change percept, never per particle and never per frame (#25).
    *
-   * Coalesced by (entity, component): the first change in a quiet period
+   * Coalesced by (entity, component) — `particles` and `particles:smoke` on
+   * one hearth are two emitters and narrate apart: the first change in a quiet period
    * speaks at once (someone lighting a fire beside you is news the moment it
    * happens), and everything inside the following window is folded into at
    * most one further line describing the NET result. So dragging a parameter
@@ -1609,43 +1646,44 @@ export class WorldAgent {
    * `nowMs`/`setTimer` are injectable for tests.
    */
   private noteEmitter(actor: string | undefined, id: string, before: unknown, after: unknown,
-                      pos: number[] | undefined, ts: number) {
+                      pos: number[] | undefined, ts: number, key = "particles") {
     if (!actor || actor === this.name || actor === "world") return;
     if (pos && Math.hypot(pos[0] - this.pos.x, pos[2] - this.pos.z) > this.activityRadiusM) return;
-    const slot = this.emitterNarration.get(id);
+    const slot = this.emitterNarration.get(emitterSlot(id, key));
     if (slot) {                       // inside the quiet window — fold, don't speak
       slot.latest = after;
       slot.actor = actor;
       return;
     }
-    const line = transitionLine(actor, id, emitterTransition(before, after));
+    const line = transitionLine(actor, id, emitterTransition(before, after), key);
     if (line) {
       this.act30.builds++;            // it feeds the activity digest like any build
       this.onEvent?.({ ts, kind: "world-change", who: actor, text: line });
     }
-    this.openEmitterWindow(id, actor, after);
+    this.openEmitterWindow(id, actor, after, key);
   }
 
-  private openEmitterWindow(id: string, actor: string, announced: unknown) {
+  private openEmitterWindow(id: string, actor: string, announced: unknown, key = "particles") {
+    const slotKey = emitterSlot(id, key);
     const close = () => {
-      const slot = this.emitterNarration.get(id);
+      const slot = this.emitterNarration.get(slotKey);
       if (!slot) return;
-      this.emitterNarration.delete(id);
+      this.emitterNarration.delete(slotKey);
       const t = emitterTransition(slot.announced, slot.latest);
       if (!t) return;                 // the burst netted out to what we already said
-      const line = transitionLine(slot.actor, id, t);
+      const line = transitionLine(slot.actor, id, t, key);
       if (line) {
         this.act30.builds++;
         this.onEvent?.({ ts: Date.now(), kind: "world-change", who: slot.actor, text: line });
       }
       // A continuous burst speaks once per window rather than being silenced
       // forever by its own persistence — same rule the act refractory uses.
-      this.openEmitterWindow(id, slot.actor, slot.latest);
+      this.openEmitterWindow(id, slot.actor, slot.latest, key);
     };
     const timer = setTimeout(close, EMITTER_COALESCE_MS);
     // never hold the process open for a decoration
     (timer as unknown as { unref?: () => void }).unref?.();
-    this.emitterNarration.set(id, { announced, latest: announced, actor, timer });
+    this.emitterNarration.set(slotKey, { announced, latest: announced, actor, key, timer });
   }
 
   /** The push half of sky perception (the pull half is look()). Runs at 1Hz
@@ -3403,11 +3441,13 @@ export class WorldAgent {
   /** The world's most recent mid-life refusal / moderation reply. */
   lastRefusal: { ts: number; text: string } | null = null;
   lastMod: { ts: number; text: string } | null = null;
+  /** The last few `mod` replies, oldest first (see the "mod" case). */
+  recentMods: { ts: number; text: string }[] = [];
 
   /** Moderation messages that are not world verbs: 'world-bans' (list this
    *  world's bans — anyone present), 'global-ban' / 'global-unban' /
    *  'global-bans' (server: WORLD_ADMIN only). Answers arrive as `mod`. */
-  sendMod(type: "world-bans" | "global-ban" | "global-unban" | "global-bans", extra: Record<string, unknown> = {}) {
+  sendMod(type: "world-bans" | "world-access" | "global-ban" | "global-unban" | "global-bans", extra: Record<string, unknown> = {}) {
     if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
     this.ws.send(JSON.stringify({ type, ...extra }));
   }
@@ -3769,7 +3809,7 @@ export class WorldAgent {
     if (this.water) void this.measureStature(); else { this.statureFor = null; this.bodyH = null; ++this.statureGen; }
     if (this.joined && this.ws?.readyState === 1) {
       this.ws.send(JSON.stringify({ type: "join", world: this.world, id: this.name, avatar: this.avatar,
-        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken }));
+        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken, clock: true }));
     }
   }
 
@@ -4018,7 +4058,14 @@ export class WorldAgent {
       const winged = p.pose.wingsFolded === true ? ", wings folded" : "";
       const ride = this.mounts.get(p.id);
       const riding = ride ? ` — on ${ride.to}${ride.slot ? ` (${ride.slot})` : ""}${this.seatSuffix(p.id, ride)}` : "";
-      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${winged}${riding}${voiceNote(p.pose)}`);
+      // Their heading is on the wire (pose.yaw, world yaw like our own) — say it,
+      // or an agent can't tell which side of someone it will see. A rider's body
+      // follows the seat's socket, so their root yaw isn't where they face. A body
+      // knocked over (ragdoll) or lying down keeps its standing yaw — the clip
+      // changes, not the heading — so for those too say nothing rather than lie.
+      const lying = p.pose.clip === "ragdoll" || p.pose.clip === "lie";
+      const facing = !ride && !lying && Number.isFinite(p.pose.yaw) ? `, facing ${this.bearing(Math.sin(p.pose.yaw), Math.cos(p.pose.yaw))}` : "";
+      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${facing}${posed}${winged}${riding}${voiceNote(p.pose)}`);
     }
 
     const ents = [...this.entities.values()];
@@ -4052,7 +4099,9 @@ export class WorldAgent {
       // `components: particles`. Nothing is claimed about heat, light, sound
       // or contact: separate authored components would provide those, and a
       // resident who reads "warm" acts on it.
-      if (c.particles) aff.push(describeParticles(c.particles));
+      // Every emitter it carries, the default first: a hearth reads "emitting
+      // fire …; emitting smoke (particles:smoke …)", each on its own terms.
+      for (const [k, v] of emittersIn(c)) aff.push(describeParticles(v, k));
       // A picture is named by what its author SAID it shows, on the part that
       // carries it — never by its pixels. Rung 1 of the projector ladder.
       if (c.picture) aff.push(describePicture(c.picture));
@@ -4084,7 +4133,7 @@ export class WorldAgent {
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure"].includes(k));
+      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure"].includes(k) && !isParticlesKey(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
       if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);

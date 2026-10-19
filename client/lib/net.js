@@ -211,8 +211,10 @@ export function sendJoin() {
     avatar: hooks.myAvatarPath(),
     spectate: CONFIG.spectate || CONFIG.renderer,
     renderer: CONFIG.renderer,
+    ...(CONFIG.roam ? { roam: true } : {}),
     token: CONFIG.token,
     session: PAGE_SESSION,
+    clock: true,   // the server's time just before the snapshot ('clock' below)
   }));
 }
 
@@ -258,6 +260,8 @@ export function sendPose(now) {
     pose.clipRate = avatar.current.paused ? 0 : avatar.current.timeScale ?? 1;
   }
   if (ov?.xr) pose.xr = ov.xr;   // C18: tracked head/hands, facing-relative (xrbody.js) — presence, never the log
+  if (s.q) pose.q = s.q;
+  if (s.locomotion) pose.locomotion = s.locomotion;
   if (s.emote) { pose.emote = s.emote; s.emote = null; } // one-shot: send once
   // A held custom pose rides the presence packet (and therefore lastPose, so
   // late joiners see it) — but never the log. `null` explicitly clears it.
@@ -403,9 +407,13 @@ export async function connect() {
       // message can slip between the two.
       while (early.buffered.length) {
         const raw = early.buffered.shift();
+        // When the boot script's message handler ran, so the server's `t` it
+        // carries is sampled then rather than after the wait for this drain. Undefined
+        // from a boot script older than `arrived`: the sample is taken now.
+        const at = early.arrived?.shift();
         let msg;
         try { msg = JSON.parse(raw); } catch { continue; }
-        try { await handle(msg); } catch (e) { report(`net ${msg.type}`, e); }
+        try { await handle(msg, at); } catch (e) { report(`net ${msg.type}`, e); }
       }
       wireSocket(net.ws);   // live delivery takes over (onopen stays the boot script's)
       return;
@@ -441,6 +449,17 @@ function wireSocket(ws) {
       net.status = 'rejected';
       bus.emit('net', net);
       toast('you were removed from this world — reload if you believe you may return', 'warn', 60000);
+      return;
+    }
+    // 4010 = this world is not open to you: refused at the door (members
+    // only, watch only), or your access just ended or was changed. The server
+    // said why in an error toast just before closing. No retry — the door
+    // will not open on its own; coming back is a deliberate reload (or
+    // ?spectate, when the toast says you may watch).
+    if (ev.code === 4010) {
+      net.status = 'rejected';
+      bus.emit('net', net);
+      toast(`you're not in "${CONFIG.world}" — reload if your access changes`, 'warn', 60000);
       return;
     }
     // 4005 = the world name itself is malformed (a mangled link). No retry —
@@ -528,8 +547,17 @@ function noteStalePresence(id) {
   console.warn(`[net] presence for unannounced id "${id}" dropped (straggler from a departed generation?)`);
 }
 
-async function handle(msg) {
+/** `at`: the performance.now() when the boot script's handler took an
+ *  early-socket message (the drain in connect()); undefined for a message
+ *  handled as its event runs. */
+async function handle(msg, at) {
   switch (msg.type) {
+    // The server's time, sent just before each snapshot to a join that asks
+    // (sendJoin's and the boot script's do): a sample for serverNow()'s
+    // estimate (remotes.js), taken before the snapshot's sounds are seeked
+    // or the editor stamps anything. How closely that estimate follows the
+    // server's clock is shared/clockoffset.js's to say.
+    case 'clock': noteServerTime(msg.t, at); break;
     case 'snapshot': return onSnapshot(msg);
 
     case 'your-rights': {
@@ -584,7 +612,7 @@ async function handle(msg) {
       // id. Same law as `pose`: update-only, never create — and with no
       // creation there is no fire-and-forget load whose completion could
       // deliver a departed generation's sample into a successor's buffer.
-      noteServerTime(msg.t);
+      noteServerTime(msg.t, at);
       for (const [id, pose] of Object.entries(msg.poses)) {
         if (id === net.myId) continue; // our own echo — local prediction owns this body
         if (remotes.has(id)) pushPose(id, pose, msg.t);
@@ -694,6 +722,14 @@ async function handle(msg) {
       }
       break;
 
+    case 'renderer-travel':
+      // a roaming renderer is wanted elsewhere (server/snapshots.ts summon): go there — the same in-page re-join a
+      // person's travel uses. Only a roaming renderer obeys; anyone else ignores it.
+      if (CONFIG.renderer && CONFIG.roam && typeof msg.world === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(msg.world) && msg.world !== CONFIG.world) {
+        CONFIG.world = msg.world; rejoin();
+      }
+      return;
+
     case 'snap':
       // The reply is the snapshot's to produce and the wire's to send, so a client
       // without a renderer answers with an error instead of going quiet on an id
@@ -753,6 +789,20 @@ async function handle(msg) {
       // Moderation replies (ban lists, global-ban confirmations) — chat is
       // where the person is looking when they issue the command.
       for (const line of String(msg.text ?? '').split('\n')) logChat('*', line);
+      break;
+
+    case 'access-state':        // the world panel's 🔒 access tab (accesspanel.js)
+    case 'access-directory':
+      bus.emit(msg.type, msg);
+      break;
+
+    case 'notice':
+      // The world telling YOU something that is not a refusal — today, that
+      // your access here ends soon. Toast (it matters now) and chat (so it is
+      // still there when you look). Not an `error`: that would also tell every
+      // optimistic preview its verb was refused.
+      toast(String(msg.text ?? ''), 'warn', 20000);
+      logChat('*', String(msg.text ?? ''));
       break;
 
     case 'error':

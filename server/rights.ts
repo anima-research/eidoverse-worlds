@@ -16,6 +16,8 @@ import { rightsIn, worldHasOwnerIn } from "../shared/rightsfold.js";
 // roles map is the principal — today a self-asserted name (humans) or a
 // token-verified agent name; when archipelago-home lands, aid1 `sub`s slot in
 // here without the model changing. Rights ladder:
+//   none     may not come in; the world is invisible to them  (entry — access.ts)
+//   spectator  may watch, no body                             (entry — access.ts)
 //   visitor  present, talk, emote           (say)
 //   builder  + spawn / place / remove / drag         (build)
 //   owner    + terrain / grass / sky / weather / grant  (shape the world)
@@ -33,7 +35,7 @@ export function worldHasOwner(st: WorldState): boolean {
   return worldHasOwnerIn(st as any);
 }
 export type CaptionDeed = { id: string; born?: number };
-export function rightsOf(state: WorldState, id: string, sub?: string): { role: string; gen: boolean; fly: boolean; caption?: CaptionDeed } {
+export function rightsOf(state: WorldState, id: string, sub?: string, now = Date.now(), opts?: { nameKeyed?: boolean }): { role: string; gen: boolean; fly: boolean; caption?: CaptionDeed; until?: number } {
   // Grants are honored under either handle: the display id (what owners see
   // and type) or the durable principal sub (what survives a rename —
   // home-node.md §5: key state by sub). WORLD_ADMIN accepts both too.
@@ -53,7 +55,7 @@ export function rightsOf(state: WorldState, id: string, sub?: string): { role: s
   // One implementation, in shared/rightsfold.js, so a client cannot drift from
   // this. The admin override above stays here: WORLD_ADMIN is an environment
   // fact, not a world fact, and reaches a client only as a computed answer.
-  return rightsIn(state as any, id, sub);
+  return rightsIn(state as any, id, sub, now, opts);
 }
 /** What each verb demands. `asset` is the spend gate; `grant` is owner-only. */
 export const VERB_NEEDS: Record<string, { rank: number; gen?: boolean; caption?: boolean }> = {

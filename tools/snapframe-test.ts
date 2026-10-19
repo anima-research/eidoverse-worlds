@@ -8,9 +8,9 @@
 //   2. client/lib/fp_view.js — composeFirstPerson's pitch: + looks up,
 //      − looks down, omitted keeps the old gaze exactly.
 //   3. the wire — a scratch sequencer, a plain-door agent calling the
-//      snapshot tool, an HTTP /snap, and a fake renderer leg recording the
-//      view and framing of each `snap` it is asked for. Absent fields must
-//      put no `frame` on the wire.
+//      snapshot tool, an HTTP /snap, and ten fake renderer legs recording
+//      the view and framing of each `snap` they're asked for. Absent fields
+//      must put no `frame` on the wire.
 
 import { normalizeSnapFrame, SNAP_DIST, SNAP_HEIGHT, SNAP_PITCH } from "../shared/snapframe.js";
 import * as fp from "../client/lib/fp_view.js";
@@ -73,22 +73,38 @@ let up2 = false;
 for (let i = 0; i < 60 && !up2; i++) { try { await fetch(`http://127.0.0.1:${PORT}/worlds`); up2 = true; } catch { await Bun.sleep(200); } }
 if (!up2) { console.error("FATAL: scratch sequencer never came up (bun install in the repo root?)"); process.exit(2); }
 
-// fake renderer leg: answer every snap with a 1×1 PNG. It records each snap's
-// view and frame, and any framing value also copied to the message's top level,
-// where it could be read as framing or collide with a field such as an image
-// size. Other fields aren't compared, so a sender can add its own.
+// fake renderer legs: each answers every snap with a 1×1 PNG. They record each
+// snap's view and frame, and any framing value also copied to the message's top
+// level, where it could be read as framing or collide with a field such as an
+// image size. Other fields aren't compared, so a sender can add its own.
+// There are ten, more than the snapshots this test takes, because the broker
+// rests each renderer for 2 s from the request it sends it, and answers 429 at
+// once when no renderer it could use is free. Each joins before the next, and
+// the test goes on once the sequencer has answered all ten joins.
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const asked: Record<string, unknown>[] = [];
-const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
-await new Promise<void>((res) => { ws.onopen = () => { ws.send(JSON.stringify({ type: "join", world: WORLD, id: "renderer-fake", spectate: true, renderer: true, token: TOKEN })); res(); }; });
-ws.onmessage = (ev) => {
-  const m = JSON.parse(String(ev.data));
-  if (m.type === "snap") {
-    const flat = m.frame ? Object.keys(m.frame).filter((k) => m[k] === m.frame[k]) : [];
-    asked.push({ view: m.view, ...(m.frame === undefined ? {} : { frame: m.frame }), ...(flat.length ? { flat } : {}) });
-    ws.send(JSON.stringify({ type: "snap-result", id: m.id, dataUrl: PNG }));
-  }
-};
+const renderers: WebSocket[] = [];
+for (let i = 1; i <= 10; i++) {
+  const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
+  renderers.push(ws);
+  await new Promise<void>((res, rej) => {
+    const timer = setTimeout(() => rej(new Error(`renderer-fake-${i}'s join had no answer in 10 s`)), 10_000);
+    ws.onerror = () => { clearTimeout(timer); rej(new Error(`renderer-fake-${i}'s socket failed`)); };
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: WORLD, id: `renderer-fake-${i}`, spectate: true, renderer: true, token: TOKEN }));
+    ws.onmessage = (ev) => { if (JSON.parse(String(ev.data)).type === "snapshot") { clearTimeout(timer); res(); } };
+  });
+  ws.onmessage = (ev) => {
+    const m = JSON.parse(String(ev.data));
+    if (m.type === "snap") {
+      const flat = m.frame ? Object.keys(m.frame).filter((k) => m[k] === m.frame[k]) : [];
+      asked.push({ view: m.view, ...(m.frame === undefined ? {} : { frame: m.frame }), ...(flat.length ? { flat } : {}) });
+      ws.send(JSON.stringify({ type: "snap-result", id: m.id, dataUrl: PNG }));
+    }
+  };
+}
+// A 429 means no fake renderer was free, so say why rather than fail on a
+// missing picture alone.
+const BUSY = "the broker answered 429: no fake renderer was free for this snapshot, though the test joins ten so that each finds one that isn't resting or busy";
 
 // plain-door agent over MCP stdio
 mcp = Bun.spawn(["bun", "mcpl/server.ts"], {
@@ -119,6 +135,7 @@ async function viaTool(args: Record<string, unknown>) {
   const before = asked.length;
   const r = await rpc("tools/call", { name: "snapshot", arguments: args });
   const note = r.result?.content?.find((c: any) => c.type === "text")?.text as string | undefined;
+  if (note?.includes("(429)")) check(BUSY, false, note);
   return { img: r.result?.content?.[0]?.type === "image", note, got: asked.length > before ? asked.at(-1) : undefined };
 }
 let t = await viaTool({});
@@ -139,8 +156,9 @@ check("tool, height with the default view → named as ignored", t.img && t.note
 
 const before = asked.length;
 const h = await fetch(`http://127.0.0.1:${PORT}/snap?world=${WORLD}&follow=framer&view=third&dist=abc&height=-5&pitch=10`);
+if (h.status === 429) check(BUSY, false, await h.text());
 check("HTTP /snap query → normalised before the wire", h.status === 200 && asked.length > before && same(asked.at(-1), { view: "third", frame: { height: 0, pitch: 10 } }), JSON.stringify(asked.at(-1)));
 
-ws.close();
+for (const ws of renderers) ws.close();
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

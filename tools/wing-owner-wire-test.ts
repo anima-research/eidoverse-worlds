@@ -32,10 +32,11 @@ mock.module(base+'core.js', () => ({
 // the bench's bus must be the one base.js hands out, or a pressed G reaches
 // nobody. The real module's other exports ride along untouched.
 mock.module(base+'base.js', () => ({ ...realBase, CONFIG: BENCH_CONFIG, bus, report() {} }));
-mock.module(base+'terrain.js', () => ({ heightAt:()=>0 }));
+mock.module(base+'terrain.js', () => ({ heightAt:()=>0, setEnvironmentFloor() {} }));
 mock.module(base+'colliders.js', () => ({ resolveColliders:()=>{}, lastBlockedTop:0, findSeat:()=>null, raySegment:()=>null }));
 mock.module(base+'assets.js', () => ({ forgetBytes() {} }));
-mock.module(base+'state.js', () => ({ hydrate() {}, foldLive() {}, reset() {} }));
+// controller.js reaches water.js (swimming), which subscribes at load and reads the fold.
+mock.module(base+'state.js', () => ({ hydrate() {}, foldLive() {}, reset() {}, state: { st: { entities: {} } }, onWorldChange: () => () => {} }));
 mock.module(base+'scheduler.js', () => ({ pending:new Map(), P:{} }));
 mock.module(base+'remotes.js', () => ({ remotes:new Map(), ensureRemote:async()=>null, dropRemote:()=>null, pushPose() {}, noteServerTime() {}, noteSpeaking() {} }));
 mock.module(base+'reachnet.js', () => ({ myReachBag:()=>undefined }));
