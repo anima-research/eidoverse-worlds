@@ -22,50 +22,44 @@ import { contentAddressOf, recordEido, storeNameMatches } from "../../../server/
 type Any = any;
 
 /** The approval of a translation, bound to the dry-run report's hash (review of PR #260, Mica, item 6: "owner/operator
- *  countersign"). TWO signatures over the same text, approvalText(world, report): the OWNER's (the founder's own governance
- *  key, the ceremony's: import-v1/README.md) and the OPERATOR's (the host's custody operator key, server/custody.ts
- *  signOperator: the countersignature). Both are checked by world.ts before anything is written and AGAIN here, before the log
- *  is written (approvalProblem): a translation with either missing, not verifying, or over another hash is refused. A world
- *  with no founder key (tier 0 empty) has no owner who can sign: by default that is refused; `owner: null` is admitted only
- *  when `noOwner` carries NO_OWNER verbatim (the CLI's --operator-only-no-owner), and the act records that no owner approved. */
+ *  countersign"; rereview blocker 1). A translation names NO founder and carries NO owner's signature: v1 logs record accounts,
+ *  never keys, so nothing can yet bind a key to the old world's owner, and a key the CLI was handed would be the operator's
+ *  choice recorded as "the owner approved" (and installed as tier 0). Until something can attest that a key is the v1 owner's
+ *  (a home-node attestation, later), the approval is the OPERATOR's countersignature alone (the host's custody operator key,
+ *  server/custody.ts signOperator) over approvalText(world, report), with `owner: null` and NO_OWNER recorded verbatim (the
+ *  CLI's --operator-only-no-owner). Checked by world.ts before anything is written and AGAIN here, before the log is written
+ *  (approvalProblem): an approval carrying an owner's signature, or with the countersignature missing, not verifying, or over
+ *  another hash, is refused. */
 export type Sig = { key: string; sig: string };
-export type Approval = { report: string; owner: Sig | null; operator: Sig; noOwner?: string };
+export type Approval = { report: string; owner: null; operator: Sig; noOwner: string };
 export const approvalText = (world: string, report: string) => `eidoverse-approve-translation:${world}:${report}`;
-export const NO_OWNER = "no owner approved this translation: the world has no founder key (tier 0 empty), so no owner's signature exists; the operator ran it with --operator-only-no-owner, and the operator's countersignature is the only signature";
+/** Why a translation names no founder: the CLI's refusal of --founder-key / --approve-sig and the writer's of a founder key. */
+export const NO_FOUNDER = "nothing can yet bind a key to the old world's owner (v1 logs record accounts, not keys), so a translation can't name a founder or carry an owner's signature";
+export const NO_OWNER = "no owner approved this translation: nothing can yet bind a key to the old world's owner (v1 logs record accounts, not keys), so no owner was attested and the world's tier 0 is empty; the operator ran it with --operator-only-no-owner, and the operator's countersignature is the only signature";
 const ed25519Pub = (key: string) => crypto.createPublicKey({ key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(key.slice(8), "base64url")]), format: "der", type: "spki" });
 /** Does `sig` (base64 or base64url) verify over `msg` for the governance key `key`? */
 export const verifySig = (key: string, msg: string, sig: string) => { try { return !!key && !!sig && crypto.verify(null, Buffer.from(msg), ed25519Pub(key), Buffer.from(String(sig).replace(/-/g, "+").replace(/_/g, "/"), "base64")); } catch { return false; } };
-const b64url = (sig: string) => sig.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-/** Why this approval can't stand for world `world`, or null when both signatures verify over approvalText(world, report)
- *  (or the owner's absence is declared with NO_OWNER). The one rule for the CLI and the writer. */
+/** Why this approval can't stand for world `world`, or null when the operator's countersignature verifies over
+ *  approvalText(world, report), the owner is null and NO_OWNER is recorded. The one rule for the CLI and the writer. */
 export function approvalProblem(world: string, a: Approval | null | undefined): string | null {
   if (!a || typeof a !== "object" || !/^[0-9a-f]{64}$/.test(String(a.report ?? ""))) return "the approval names no report hash (64 hex, as --dry-run prints it)";
+  if ((a as any).owner !== null) return `it carries an owner's signature (owner must be null): ${NO_FOUNDER}; translate on the operator's countersignature alone with --no-founder-key --operator-only-no-owner`;
   const text = approvalText(world, a.report);
-  if (!a.operator?.key || !a.operator?.sig) return `no operator countersignature: the host's custody operator key must sign "${text}" too (world.ts signs it from .custody.json)`;
+  if (!a.operator?.key || !a.operator?.sig) return `no operator countersignature: the host's custody operator key must sign "${text}" (world.ts signs it from .custody.json)`;
   if (!keyOk(a.operator.key)) return `the operator's key ${a.operator.key} is not a governance key (ed25519:<base64url of 32 bytes>)`;
   if (!verifySig(a.operator.key, text, a.operator.sig)) return `the operator's countersignature doesn't verify for ${a.operator.key} over "${text}": not this host's countersignature of this report`;
-  if (a.owner) {
-    if (!a.owner.key || !a.owner.sig) return `the owner's approval names ${a.owner.key ? "no signature" : "no key"}`;
-    if (!keyOk(a.owner.key)) return `the owner's key ${a.owner.key} is not a governance key (ed25519:<base64url of 32 bytes>)`;
-    if (!verifySig(a.owner.key, text, a.owner.sig)) return `the owner's approval signature doesn't verify for ${a.owner.key} over "${text}": not this founder's approval of this report`;
-    return null;
-  }
-  if (a.noOwner !== NO_OWNER) return `no owner's signature: a translation needs the owner's signature AND the operator's countersignature over the same report; a world with no founder key translates only with --operator-only-no-owner, which records that no owner approved`;
+  if (a.noOwner !== NO_OWNER) return `no owner's signature can exist (${NO_FOUNDER}), so a translation runs on the operator's countersignature alone, and only with --operator-only-no-owner, which records that no owner was attested`;
   return null;
 }
-/** The approval as the CLI builds it: the owner's signature (checked), the operator's countersignature (made here, from the
- *  host's custody), or, with no founder key and the flag, the operator alone with NO_OWNER recorded. */
-export function makeApproval(world: string, report: string, { founderKey, ownerSig, operator, operatorOnlyNoOwner = false }: { founderKey?: string; ownerSig?: string; operator: { key: string; sign: (msg: string) => string }; operatorOnlyNoOwner?: boolean }): Approval {
-  const text = approvalText(world, report);
-  const op = { key: operator.key, sig: operator.sign(text) };
-  if (founderKey) return { report, owner: { key: founderKey, sig: b64url(ownerSig ?? "") }, operator: op };
-  return { report, owner: null, operator: op, ...(operatorOnlyNoOwner ? { noOwner: NO_OWNER } : {}) };
+/** The approval as the CLI builds it: the operator's countersignature (made here, from the host's custody), owner null, NO_OWNER. */
+export function makeApproval(world: string, report: string, { operator }: { operator: { key: string; sign: (msg: string) => string } }): Approval {
+  return { report, owner: null, operator: { key: operator.key, sig: operator.sign(approvalText(world, report)) }, noOwner: NO_OWNER };
 }
 
 /** The dry-run report: everything the translation would do that an owner should see before it does, and nothing that varies
- *  between runs (no minted identities, no nonce, no signatures), so its hash is the same for the same old log, the same tool
- *  build and the same founder key. `deferred` (features v4 doesn't carry yet) non-empty means the translation is REFUSED. */
-export function reportV1World(srcDir: string, { founderKey, name, content }: { founderKey?: string; name?: string; content?: (p: string) => string | null } = {}) {
+ *  between runs (no minted identities, no nonce, no signatures), so its hash is the same for the same old log and the same tool
+ *  build. `deferred` (features v4 doesn't carry yet) non-empty means the translation is REFUSED. */
+export function reportV1World(srcDir: string, { name, content }: { name?: string; content?: (p: string) => string | null } = {}) {
   const src = path.join(srcDir, "log.jsonl");
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
   const srcBytes = fs.readFileSync(src);
@@ -73,14 +67,14 @@ export function reportV1World(srcDir: string, { founderKey, name, content }: { f
   const world = name ?? path.basename(srcDir);
   const deferred = deferredFeatures(old);
   // the pure translation (no directory, no custody key: the conformance key, no nonce): the same stats the real one has
-  const r = translate(old, { foldBuild: v1FoldBuild(), namespace: world, ...(content ? { content } : {}), ...(founderKey ? { founder: founderKey } : {}) });
+  const r = translate(old, { foldBuild: v1FoldBuild(), namespace: world, ...(content ? { content } : {}) });
   const report = {
     v: 1, world,
-    // Mica, #260 (10-17): "Worlds using alpha should know they accepted translation churn." In the report, so the hash the
-    // owner signs covers it (PROTOCOL.md, the trial-period paragraph).
+    // Mica, #260 (10-17): "Worlds using alpha should know they accepted translation churn." In the report, so the hash that is
+    // approved covers it (PROTOCOL.md, the trial-period paragraph).
     trial: "This protocol is in a trial period (about a year): later versions may translate this world again, and stored data may change shape between them (PROTOCOL.md, start). Approving this report accepts that.",
     source: { file: "log.jsonl", size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex") },
-    translator: TRANSLATOR, fold: v1FoldBuild(), founderKey: founderKey ?? null,
+    translator: TRANSLATOR, fold: v1FoldBuild(), founderKey: null,   // a translation names no founder (NO_FOUNDER): tier 0 empty
     entries: { old: r.stats.in, new: r.out.length, change: r.stats.change, divergences: r.stats.divergences },
     actorsRenamed: r.stats.renamed, tsClamped: r.stats.tsClamped ?? 0,
     guards: { becameLocks: r.stats.guards, stillGuardedAtEnd: r.stats.guardsLive },
@@ -93,14 +87,14 @@ export function reportV1World(srcDir: string, { founderKey, name, content }: { f
   return { report, hash: sha256(JSON.stringify(report)) };
 }
 
-/** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir. `founderKey`: the
- *  founder's own governance key (ed25519:…), made on their machine, for tier 0 (README.md, "The Commons ceremony").
- *  `name`: the world's name, when destDir's own name isn't it (an in-place translation writes into a temporary sibling
+/** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir, with tier 0 of its
+ *  genesis EMPTY: a translation names no founder (NO_FOUNDER), and a `founderKey` handed here is refused. `name`: the world's name, when destDir's own name isn't it (an in-place translation writes into a temporary sibling
  *  first: world.ts translate <world>); the world's own inventions are namespaced by it. `deferIdentities`: don't write the
  *  planned identities to the shared directory; return them (`planned`) for the caller to write once the world is really
  *  in place (an in-place translation writes into a temporary sibling that may still be thrown away: review of PR #260,
  *  import-v1/world.ts:86 — a failed attempt left its minted identities behind, and every retry minted more). */
-export function translateV1World(srcDir: string, destDir: string, { founderKey, name, deferIdentities = false, approval }: { founderKey?: string; name?: string; deferIdentities?: boolean; approval?: Approval } = {}) {
+export function translateV1World(srcDir: string, destDir: string, { founderKey, name, deferIdentities = false, approval }: { founderKey?: unknown; name?: string; deferIdentities?: boolean; approval?: Approval } = {}) {
+  if (founderKey !== undefined) throw new Error(`a translation takes no founder key: ${NO_FOUNDER}. Nothing written`);
   const src = path.join(srcDir, "log.jsonl");
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
   if (fs.existsSync(path.join(destDir, "world.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) throw new Error(`${destDir} already holds a world`);
@@ -146,19 +140,16 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   const addressed = new Map<string, string>();
   const content = (p: string) => { const h = contentAddressOf(p); if (!h) return null; addressed.set(h, p); if (!storeNameMatches(p)) renamedBlobs.push(p); return `sha256:${h}`; };
   const renamedBlobs: string[] = [];   // store blobs whose bytes no longer hash to their name: hashed by what's here
-  if (founderKey !== undefined && !keyOk(founderKey)) throw new Error(`${founderKey}: not a governance key (ed25519:<base64url of 32 bytes>, PROTOCOL §13)`);
-  const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, namespace: name ?? path.basename(destDir), content, ...(founderKey ? { founder: founderKey } : {}) });
+  const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, namespace: name ?? path.basename(destDir), content });
   if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
-  // the owner's approval, bound to the dry-run report's hash, rides in the world's own log right after the system's
+  // the approval (the operator's countersignature; no owner attested), bound to the dry-run report's hash, rides in the world's own log right after the system's
   // repair-shapes act (index 2): provenance a reader can check against `reportV1World` of log.original.jsonl. The fold never
   // reads acts (PROTOCOL §1), so this changes no state; a translation nothing approved carries none (the pure callers: sweep, oracle)
   if (approval) { const world = name ?? path.basename(destDir); const bad = approvalProblem(world, approval);
     if (bad) throw new Error(`the approval is refused: ${bad}. Nothing written`);
-    if (approval.owner && founderKey && approval.owner.key !== founderKey) throw new Error(`the approval is refused: the owner's key ${approval.owner.key} is not the founder key ${founderKey} the world is founded with. Nothing written`);
     const at = r.out.findIndex((e: Any) => e.kind === "act" && e.verb === "repair-shapes") + 1;
     r.out.splice(at || 3, 0, { world: r.out[1].world, kind: "act", actor: "system", verb: "translation-approved", ts: r.out[1].ts ?? 0,
-      body: { report: approval.report, approval: { over: approvalText(world, approval.report), owner: approval.owner ? { key: approval.owner.key, sig: approval.owner.sig } : null, operator: { key: approval.operator.key, sig: approval.operator.sig },
-        ...(approval.owner ? {} : { noOwner: NO_OWNER }) } } }); }
+      body: { report: approval.report, approval: { over: approvalText(world, approval.report), owner: null, operator: { key: approval.operator.key, sig: approval.operator.sig }, noOwner: NO_OWNER } } }); }
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
   const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
   // the strict reader must accept every line, and fold to the translator's own final state, before the file exists
