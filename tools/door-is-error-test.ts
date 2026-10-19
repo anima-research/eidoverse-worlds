@@ -116,7 +116,7 @@ ag.flight.stamina = 1e6;
 const ceiling = ag.flightCfg.bounds.ceiling;
 r = await climbs(ceiling + 50);
 check('a climb asked above the ceiling stops there and is failed, naming the ceiling',
-  failed(r) && new RegExp(`^at ${ceiling.toFixed(1)}m, the ceiling here, short of the ${ceiling + 50}m you asked for`).test(said(r)), said(r));
+  failed(r) && new RegExp(`^at ${ceiling.toFixed(1)}m, the ceiling here, short of the ${(ceiling + 50).toFixed(1)}m you asked for`).test(said(r)), said(r));
 r = await climbs(ceiling - 1);
 check('a climb that gets there is done, at the height asked', ok(r) && new RegExp(`^at ${(ceiling - 1).toFixed(1)}m.*stamina spent`).test(said(r)), said(r));
 // The pool pays for half a metre of the one asked for: the body climbs that far and no farther.
@@ -510,6 +510,14 @@ r = await call('say', { text: 'hello' });
 console.error = realConsoleError;
 ag.verb = realVerb;
 check('a handler that throws something other than an Error is failed with what it threw', failed(r) && said(r) === 'the world socket is busy', said(r));
+// A throw with nothing to say still answers with words.
+ag.verb = () => { throw new TypeError(''); };
+console.error = (...a: unknown[]) => { logged.push(a.map(String).join(' ')); };
+r = await call('say', { text: 'hello' });
+console.error = realConsoleError;
+ag.verb = realVerb;
+check('a handler that throws an Error with no message is failed, saying the error gave no reason',
+  failed(r) && said(r) === 'say failed, and its error gave no reason (TypeError)', said(r));
 // What the world's HTTP side answers, stood in for.
 const realFetch = globalThis.fetch;
 const serve = (handler: (url: string) => Response) => { globalThis.fetch = (async (u: any) => handler(String(u))) as any; };

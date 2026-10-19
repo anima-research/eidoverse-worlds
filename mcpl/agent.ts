@@ -3075,7 +3075,7 @@ export class WorldAgent {
     }
     const left = `${spend.toFixed(0)} stamina spent, ${(this.flight?.stamina ?? 0).toFixed(0)} left`;
     // Flown to the ceiling, which is below what was asked: short of the climb.
-    if (alt > want) return refused(`at ${target.toFixed(1)}m, the ceiling here, short of the ${alt}m you asked for — ${left}`);
+    if (alt > want) return refused(`at ${target.toFixed(1)}m, the ceiling here, short of the ${alt.toFixed(1)}m you asked for — ${left}`);
     return done(`at ${target.toFixed(1)}m — ${left}`);
   }
 

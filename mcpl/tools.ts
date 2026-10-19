@@ -1045,6 +1045,8 @@ export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, a
   catch (e) {
     // The host no longer sees the throw, so the operator's log does.
     console.error(`[door] ${name} threw:`, e);
-    return fail(e instanceof Error ? e.message : String(e));
+    // A throw with nothing to say, such as an Error with no message, still tells the model the call failed.
+    const why = e instanceof Error ? e.message : String(e);
+    return fail(why || `${name} failed, and its error gave no reason${e instanceof Error ? ` (${e.name})` : ""}`);
   }
 }
