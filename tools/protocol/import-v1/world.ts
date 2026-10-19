@@ -75,7 +75,11 @@ export function reportV1World(srcDir: string, { founderKey, name, content }: { f
   // the pure translation (no directory, no custody key: the conformance key, no nonce): the same stats the real one has
   const r = translate(old, { foldBuild: v1FoldBuild(), namespace: world, ...(content ? { content } : {}), ...(founderKey ? { founder: founderKey } : {}) });
   const report = {
-    v: 1, world, source: { file: "log.jsonl", size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex") },
+    v: 1, world,
+    // Mica, #260 (10-17): "Worlds using alpha should know they accepted translation churn." In the report, so the hash the
+    // owner signs covers it (PROTOCOL.md, the trial-period paragraph).
+    trial: "This protocol is in a trial period (about a year): later versions may translate this world again, and stored data may change shape between them (PROTOCOL.md, start). Approving this report accepts that.",
+    source: { file: "log.jsonl", size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex") },
     translator: TRANSLATOR, fold: v1FoldBuild(), founderKey: founderKey ?? null,
     entries: { old: r.stats.in, new: r.out.length, change: r.stats.change, divergences: r.stats.divergences },
     actorsRenamed: r.stats.renamed, tsClamped: r.stats.tsClamped ?? 0,

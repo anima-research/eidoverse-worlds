@@ -30,6 +30,7 @@
 //        in its output, that the snapshot was NOT compared and why, and keeps it as snapshot.original.json
 //   —— review of PR #260 (Mica) item 6: the owner's approval is bound to the dry-run report's hash; rollback is tested ——
 //   IP19 `--dry-run` writes nothing and prints a report whose hash is the same on a second run (nothing random in it)
+//   IP19t the report carries the trial-period line (hash-bound) and --dry-run prints it
 //   IP20 `translate` with no --approved refuses, names the dry run, and changes nothing
 //   IP21 an approval of a report that is no longer the world's (the old log changed since) is refused, both hashes named,
 //        nothing moved
@@ -160,6 +161,8 @@ ok(/Unreal client hasn't been ported to it yet/.test(noFoldRefusal("current", tr
   ok(a.code === 0 && !!ha && ha === hb && same(fingerprint(d), fp) && !temps().length && !isWorldDir(d), "IP19 --dry-run prints the report hash, the same on a second run, and writes nothing (the directory is as it was, no temporary directory)", { code: a.code, ha, hb, keys: Object.keys(fingerprint(d)) });
   ok(rep && rep.source?.sha256 === fp["log.jsonl"][0] && rep.entries?.old === L.length && rep.guards && rep.dropped && Object.keys(rep.dropped).length >= 10 && Array.isArray(rep.deferred) && rep.deferred.length === 0 && rep.refused === null && rep.translator === "eidoverse/translate-v1@15",
     "IP19 the report names the old log's bytes (sha256), the counts, the translator, the DROPPED table (what every translation drops by design) and an empty deferred list", rep && { source: rep.source, entries: rep.entries, dropped: Object.keys(rep.dropped ?? {}).length, deferred: rep.deferred, refused: rep.refused });
+  ok(rep && /trial period/.test(rep.trial ?? "") && /translate this world again/.test(rep.trial) && /^trial period: .*Approving this report accepts that/m.test(a.out),
+    "IP19t the report (so the hash the owner signs) says the protocol is in a trial period and the world may be translated again, and --dry-run prints it (Mica, #260: alpha worlds should know they accepted translation churn)", rep && rep.trial);
   const no = tool(["translate", "careful", "--no-founder-key"]);
   ok(no.code !== 0 && /needs the owner's approval of its dry-run report first/.test(no.out) && /--dry-run/.test(no.out) && /Nothing was changed/.test(no.out) && same(fingerprint(d), fp) && !temps().length, "IP20 translate with no --approved refuses, says to dry-run first, and changes nothing", no.out.slice(-600));
   // the old log grows after the report was read: the approved hash is of a different log

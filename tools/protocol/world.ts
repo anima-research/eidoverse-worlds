@@ -121,6 +121,7 @@ const sha = (f: string) => crypto.createHash("sha256").update(fs.readFileSync(f)
 function dryRun(D: string, name: string, founderKey: string | undefined) {
   const { report, hash } = reportNow(D, name, founderKey);
   console.log(`dry-run report of "${name}" (nothing was written):`); console.log(JSON.stringify(report, null, 1));
+  console.log(`trial period: ${report.trial}`);
   console.log(`report-hash ${hash}`);
   if (report.refused) { console.error(report.refused); process.exit(1); }
   console.log(`to translate: approve exactly this report. ${founderKey ? `The founder signs "${approvalText(name, hash)}" with their key and you run: translate ${name} --founder-key ${founderKey} --approved ${hash} --approve-sig <signature>   (this host's operator key countersigns the same text)`
