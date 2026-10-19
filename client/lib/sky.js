@@ -21,12 +21,13 @@ import { report, bus, tee, teeNow, CONFIG } from './base.js';
 import { loadEidoModule, primeFiles, listLibrary, fetchBytes } from './assets.js';
 import { markPhase } from './boot.js';
 import { bandCuts, bandedBakeRender, bakeGeneration } from './sky_baked.js';
+import { bakedDomeObject } from './sky_baked.js';
 import { BAKE_INTERCEPT, attachBakedDome, detachBakedDome, updateBakedDome, bakedActive, requestBake, holdLiveDomes, releaseLiveDomes, liveDomesHeld, takeHeldDomes,
   envTexture, adoptEnvironment, whenBakeReady, bakedRefreshing } from './sky_baked.js';
 import { beginWork } from './loadwork.js';
 import { makeSwapChain, SHOWN_UNKNOWN } from './sky_swapchain.js';
 import { serializeBakes as serializeBakesWith, BAKE_GUARD, BAKE_AFTER, BAKE_HELD } from './sky_bakelock.js';
-import { showInterimSky, updateInterimSky, hideInterimSky, interimSkyShown } from './sky_interim.js';
+import { showInterimSky, interimSkyObject, updateInterimSky, hideInterimSky, interimSkyShown } from './sky_interim.js';
 import { busy as loadingBusy } from './framebudget.js';
 import { bootDone } from './boot.js';
 import { setDayness, releaseForeignLights } from './lightrig.js';
@@ -70,6 +71,15 @@ export const skyImpl = () => impl;
 /** §22m diag: the sky-owned scene roots, for cost-attribution phases that
  *  hide the sky's DRAW without touching its state. Read-only. */
 export const skyOwnedObjects = () => skyOwned ?? [];
+/** Under the world's water (watervolumes.js): the sky draws unfogged, so it is hidden while the camera is below the
+ *  surface and the scene background paints the far water instead. Each object goes back to the visibility it had. */
+const hiddenForWater = new Map();
+export function hideSkyForWater(hide) {
+  // every unfogged sky object: the basic SkyMesh, the eidoverse sky's domes, the baked dome (the default tiers) and the
+  // interim gradient shown while a sky builds
+  if (hide) { for (const o of [skyMesh, ...(skyOwned ?? []), bakedDomeObject(), interimSkyObject()]) if (o && !hiddenForWater.has(o)) { hiddenForWater.set(o, o.visible); o.visible = false; } }
+  else { for (const [o, v] of hiddenForWater) o.visible = v; hiddenForWater.clear(); }
+}
 /** 0 at night → 1 at noon. Lamps and other night-aware things read this. */
 export let dayness = 1;
 

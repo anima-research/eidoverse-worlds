@@ -546,10 +546,35 @@ export function constrainMovement(pos) {
     const r = Math.hypot(pos.x,pos.z); if(r>78){pos.x*=78/r;pos.z*=78/r;}
   }
 }
+// DIVING in the world's water LEVEL (water.js: lakes, rivers, the sea). Swimming there is a surface float
+// (shared/buoyancy.js, below in updateMe); diving takes the body under it into the same 3D swim the authored volumes
+// use — WASD where you look, Space up, C / Ctrl down — with the surface at the wave above you. Coming back up to the
+// surface (not diving) hands the body back to the float.
+let levelDiving = false;
+const levelDiveKeys = () => keys.has('KeyC') || keys.has('ControlLeft') || keys.has('ControlRight');
+function levelDiveWater(me) {
+  const wl = flight ? null : waterLevel();
+  const w = wl == null ? null : waterAt(myState.pos.x, myState.pos.z);
+  if (!w) { levelDiving = false; return null; }
+  const stature = deskEyeY(me?.userScale) / deskEyeY(1);
+  if (!levelDiving) {
+    // only from a swim (deep enough to float), and only when asked: C / Ctrl, or a headset heading down
+    const wantDive = levelDiveKeys() || (xrIntent.active && xrIntent.fwd * Math.sin(xrIntent.pitchDown) > .3);
+    if (!wantDive || !(w.depth > 1.3 * stature)) return null;
+    // only from IN the water (review #254): falling over a lake with C held must not start a swim in mid-air —
+    // the body is at least half under the surface (afloat sits 1.1·stature under it)
+    const top = wl + surfaceOffset(w, myState.pos.x, myState.pos.z, waveTime());
+    if (!(myState.pos.y < top - 0.6 * stature)) return null;
+    levelDiving = true; swimVelocity = [0, -0.6, 0];
+  }
+  return { level: true, top: wl + surfaceOffset(w, myState.pos.x, myState.pos.z, waveTime()), waves: [],
+    speed: scaledSpeed(SWIM_SPEED, me?.userScale) * 1.4 };
+}
+export const isLevelDiving = () => levelDiving;   // probes and tests
 function updateSwimming(dt, me, fwd, strafe) {
   _swimProbe.copy(myState.pos); _swimProbe.y += .7;
-  const water = volumeAt(_swimProbe);
-  if (!water || myState.seat) { swimVelocity=[0,0,0];return false; }
+  const water = volumeAt(_swimProbe) ?? levelDiveWater(me);
+  if (!water || myState.seat) { swimVelocity=[0,0,0];levelDiving=false;return false; }
   _swimProbe.copy(myState.pos);
   const floor = resolveColliders(_swimProbe,heightAt);
   // a headset swims where it looks: A/X (its jump) rises, and looking down while pushing forward dives —
@@ -558,7 +583,7 @@ function updateSwimming(dt, me, fwd, strafe) {
   const rise=keys.has('Space')||(xr&&xrIntent.jump), dive=keys.has('KeyC')||keys.has('ControlLeft')||keys.has('ControlRight');
   // Wading is still walking. At a deep shoreline gravity hands over to swim.
   const stature=deskEyeY(me?.userScale)/deskEyeY(1);   // this body's size: float depth, handover and head sweep follow it
-  if(floor >= waveHeight(water,myState.pos.x,myState.pos.z,waterTime())-1.1*stature && !rise) return false;
+  if(floor >= waveHeight(water,myState.pos.x,myState.pos.z,waterTime())-1.1*stature && !rise) { levelDiving=false; return false; }
   if(flight){flight=null;releaseWings();}
   if(!myState.locomotion)flashHint('swimming — WASD move, Space rise, C / Ctrl dive, Shift faster');
   mantle=null;posture=null;grounded=false;vy=0;airborneFor=0;
@@ -587,6 +612,8 @@ function updateSwimming(dt, me, fwd, strafe) {
     if(myState.pos.y<bottom){myState.pos.y=bottom;swimVelocity[1]=Math.max(0,swimVelocity[1]);}
     constrainMovement(myState.pos);
   }
+  // back at the level's surface and not diving: the float (updateMe) takes the body from here
+  if(water.level&&mode==='surface'&&!input.dive){levelDiving=false;}
   const horizontal=Math.hypot(swimVelocity[0],swimVelocity[2]);
   if(horizontal>.05)myState.yaw+=angleDelta(myState.yaw,Math.atan2(swimVelocity[0],swimVelocity[2]))*Math.min(1,dt*8);
   myState.speed=Math.hypot(...swimVelocity);myState.clip='idle';

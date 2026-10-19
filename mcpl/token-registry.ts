@@ -3,9 +3,11 @@ import { existsSync, readFileSync } from "node:fs";
 
 export type TokenAuth = {
   id: string; name: string; world?: string; avatar?: string;
-  /** Existing-world travel policy ("*" = any existing world). */
+  /** NARROWING only: keeps this agent to these worlds ("*" = any). Absent =
+   *  no narrowing — the worlds themselves decide who comes in (server/access.ts). */
   worlds?: string[];
-  /** Founding authority is separate from travel policy. */
+  /** `false` narrows founding away. Absent = founding as any member (the
+   *  sequencer's daily cap applies). */
   create?: boolean;
 };
 

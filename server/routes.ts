@@ -64,6 +64,8 @@ const CLIENTLOG_UNKNOWN = "~unknown";   // '~' is outside the world-name alphabe
 try { mkdirSync(CLIENTLOG_DIR, { recursive: true }); } catch (e) { console.warn(`[clientlog] cannot create ${CLIENTLOG_DIR}: ${(e as Error)?.message ?? e}`); }
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
+import { httpCaller, visibleTo, worldForAccess, notePrincipal, entryRightsOf, canEnter, foundingRefusal } from "./access.ts";
+import { entryOf, wildcardRoleIn } from "../shared/rightsfold.js";
 
 /** What the routes need from Bun's server object, structurally: the WS
  *  upgrade and the socket address (X-Real-IP's fallback). */
@@ -521,6 +523,7 @@ const ROUTES: Route[] = [
       saveSessions();
       const secure = (req.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "")) === "https" ? "; Secure" : "";
       console.log(`[auth] session for ${p.sub} ("${p.name}") [${p.scopes.join(" ")}]`);
+      notePrincipal(p.sub, p.name, p.kind === "agent" ? "agent" : "human");
       return new Response(JSON.stringify({ ok: true, name: p.name, sub: p.sub }), {
         headers: {
           "content-type": "application/json",
@@ -560,7 +563,7 @@ const ROUTES: Route[] = [
   },
   {
     match: (u) => u.pathname === "/geom",
-    handler: async ({ url }) => {
+    handler: async ({ req, url }) => {
       // Geometry as DATA, for beings who perceive by reading. Three tiers:
       //   /geom?lib=<path>           one asset: bbox, flat zones, named parts
       //   /geom?world=W&id=<entity>  that asset + the entity's world transform
@@ -578,11 +581,14 @@ const ROUTES: Route[] = [
         const sum = await summarizeGlb(file);
         return sum ? j({ lib, ...sum }) : j({ error: "geometry parsing unavailable" }, 503);
       }
-      // read-only: answer for LOADED or on-disk worlds, never create one
+      // read-only: answer for LOADED or on-disk worlds, never create one —
+      // and only for worlds this caller may see. A world closed to them reads
+      // exactly like one that does not exist (access.ts).
       if (!/^[a-z0-9_-]{1,64}$/i.test(wname)
         || (!worlds.has(wname) && !existsSync(join(WORLDS_DIR, wname, "log.jsonl")))) {
         return j({ error: "no such world" }, 404);
       }
+      { const door = worldForAccess(wname, worlds); if (!door || !visibleTo(door, httpCaller(req))) return j({ error: "no such world" }, 404); }
       const w = getWorld(wname);
       // COMPOSE with the sim (PROTOCOL_v2 §5): a punted body's fold position
       // is its last AUTHORED word, which under an epoch can be a spawn point
@@ -661,10 +667,10 @@ const ROUTES: Route[] = [
   },
   {
     match: (u) => u.pathname === "/snap",
-    handler: async ({ url }) => {
+    handler: async ({ req, url }) => {
       const w = worlds.get(url.searchParams.get("world") ?? "commons");
       const follow = url.searchParams.get("follow") ?? "";
-      if (!w) return new Response("unknown world", { status: 404 });
+      if (!w || !visibleTo(w, httpCaller(req))) return new Response("unknown world", { status: 404 });
       const q = url.searchParams;
       const frame = normalizeSnapFrame({ dist: q.get("dist"), height: q.get("height"), pitch: q.get("pitch") });
       const r = await snapshots.request(w, follow, q.get("view") ?? "first", q.get("renderer") ?? "auto", frame);
@@ -689,6 +695,7 @@ const ROUTES: Route[] = [
       const name = url.searchParams.get("world") ?? "commons";
       if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return new Response("bad world name", { status: 400 });
       if (!worlds.has(name) && !existsSync(join(WORLDS_DIR, name, "log.jsonl"))) return new Response("no such world", { status: 404 });
+      { const door = worldForAccess(name, worlds); if (!door || !visibleTo(door, httpCaller(req))) return new Response("no such world", { status: 404 }); }
       const t = getWorld(name).state.terrain;
       if (!t) return new Response("this world has no terrain (it is flat)", { status: 404 });
       if (url.searchParams.get("format") === "json") return Response.json({ ...heightRange(t as Record<string, unknown>), world: name });
@@ -706,25 +713,65 @@ const ROUTES: Route[] = [
   },
   {
     match: (u) => u.pathname === "/worlds",
-    handler: () => {
+    handler: ({ req }) => {
       const names = new Set<string>(worlds.keys());
       try {
         for (const n of readdirSync(WORLDS_DIR)) {
           if (/^[a-z0-9_-]{1,64}$/i.test(n) && existsSync(join(WORLDS_DIR, n, "log.jsonl"))) names.add(n);
         }
       } catch { /* no worlds dir yet: only loaded worlds */ }
-      const out = [...names].sort().map((name) => {
+      // PER CALLER: a world closed to whoever is asking is not on their map at
+      // all — members-only worlds are unlisted and invisible (access.ts). The
+      // caller is the cookie session or an Authorization bearer; anonymous
+      // callers see what everyone may see. `access` is the world's door for
+      // everyone not named; `you` is what THIS caller may do there.
+      const caller = httpCaller(req);
+      const DOOR: Record<string, string> = { none: "members", spectator: "watch", visitor: "open", builder: "open" };
+      const out = [...names].sort().flatMap((name) => {
+        const door = worldForAccess(name, worlds);
+        if (!door || !visibleTo(door, caller)) return [];
         const w = worlds.get(name);
         const present = w ? [...w.clients].filter((c) => !c.spectator && !c.superseded) : [];
-        return {
+        const mine = entryOf(entryRightsOf(door.state, caller ?? { id: "" }));
+        return [{
           name,
           loaded: !!w,
+          access: DOOR[wildcardRoleIn(door.state as any)] ?? "open",
+          you: mine === "embody" ? "enter" : "watch",
           people: present.filter((c) => !c.agent).map((c) => c.id),
           agents: present.filter((c) => c.agent).map((c) => c.id),
-        };
+        }];
       });
       return new Response(JSON.stringify({ worlds: out }),
         { headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    },
+  },
+  {
+    // "May I go there?" — asked BEFORE moving, so a refused trip never strands
+    // a body (the MCPL door's travel gate asks this as the agent). Answers for
+    // the CALLER only, and only for a signed-in caller (cookie session or
+    // Authorization bearer): an anonymous probe is 401. For a world the caller
+    // may not see it says `you: "none"` and `exists: true` — that a name is
+    // taken cannot be hidden (founding it would fail), and a join attempt
+    // reveals exactly as much; nothing about who is inside or why.
+    //   { world, exists, you: "enter"|"watch"|"none", why?, found?: {ok, why?} }
+    match: (u) => u.pathname === "/access",
+    handler: ({ req, url }) => {
+      const j = (o: unknown, status = 200) => new Response(JSON.stringify(o),
+        { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+      const caller = httpCaller(req);
+      if (!caller) return j({ error: "sign in (cookie) or send Authorization: Bearer <your credential>" }, 401);
+      const name = url.searchParams.get("world") ?? "";
+      if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return j({ error: `"${name}" is not a world name` }, 400);
+      const door = worldForAccess(name, worlds);
+      if (!door) {
+        const why = foundingRefusal(caller);
+        return j({ world: name, exists: false, you: "none", found: why ? { ok: false, why } : { ok: true } });
+      }
+      const embody = canEnter(door, caller, "embody");
+      if (embody.ok) return j({ world: name, exists: true, you: "enter" });
+      const watch = canEnter(door, caller, "watch");
+      return j({ world: name, exists: true, you: watch.ok ? "watch" : "none", why: embody.why });
     },
   },
   {
@@ -763,8 +810,13 @@ const ROUTES: Route[] = [
   {
     // #104 diagnostics: the adapter's live SFU view — legs, gens, consent, incarnation.
     match: (u) => u.pathname === "/relay-diag",
-    handler: ({ url }) => new Response(
-      JSON.stringify(sfuDiag(url.searchParams.get("world") ?? "staging")),
+    handler: ({ req, url }) => new Response(
+      JSON.stringify((() => {
+        // a world the caller may not see answers like one with no voice at all
+        const name = url.searchParams.get("world") ?? "staging";
+        const w = worlds.get(name);
+        return w && !visibleTo(w, httpCaller(req)) ? { transport: "sfu", active: false } : sfuDiag(name);
+      })()),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {
