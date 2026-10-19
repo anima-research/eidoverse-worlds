@@ -138,23 +138,44 @@ const escapeRx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 let pageCursor = null;              // next page is everything below this seq; null = from now
 let loadingOlder = false;
 let noMoreHistory = false;
+let endMarker = null;               // the "beginning of this world" row, while the walk is finished
 let trimmedThrough = -1;            // highest seq the MAX_LINES trim has removed
-const MAX_SKIP_PAGES = 25;          // pages of already-shown lines walked per scroll
+// The most pages of 40 a scroll walks past already-shown lines, and the most
+// pages a re-join's catch-up fetches (resyncChatAfter).
+const MAX_SKIP_PAGES = 25;
+
+/** Start the backward walk again, from no lower than `cursor` (null: the
+ *  present). A trim that passed it restarts it, and so do a trim of the end
+ *  marker and a catch-up that stopped short. A restart only ever moves the
+ *  cursor up, so whichever started higher covers the others. Lines still on
+ *  screen are skipped as the walk passes them again, so starting higher costs
+ *  requests, not lines. The walk isn't finished any more, so the end marker
+ *  goes. */
+function restartWalk(cursor) {
+  if (pageCursor !== null && (cursor === null || cursor > pageCursor)) pageCursor = cursor;
+  noMoreHistory = false;
+  endMarker?.remove();
+  endMarker = null;
+}
 
 /** Keep the log to MAX_LINES rows, dropping from the top. A trimmed row is
  *  history again, not "already shown": every seq it shows leaves renderedSeqs
  *  so paging brings it back, and if the backward walk had already passed it,
  *  the walk starts over from the present (skipping what is still on screen)
  *  instead of stepping over the new hole. A walk that ended at the present,
- *  its first page empty, has passed everything. */
+ *  its first page empty, has passed everything. Trimming the end marker
+ *  restarts the walk at its own cursor: when the trim takes the marker alone,
+ *  the next scroll-up asks once more and, finding nothing older, puts the
+ *  marker back. */
 function trimLog() {
   while (logEl.children.length > MAX_LINES) {
     const row = logEl.firstElementChild;
+    if (row === endMarker) restartWalk(pageCursor);
     for (const seq of seqsOf(row)) {
       renderedSeqs.delete(seq);
       if (seq > trimmedThrough) trimmedThrough = seq;
       const passed = pageCursor === null ? noMoreHistory : seq >= pageCursor;
-      if (passed) { pageCursor = null; noMoreHistory = false; }
+      if (passed) restartWalk(null);
     }
     row.remove();
   }
@@ -227,24 +248,34 @@ function insertPage(entries) {
 
 /** A reconnect hands over a NEW arrival window, trimmed the same fair way —
  *  so what was said while the socket was down can be missing from it, near
- *  the bottom of the log, where a backward walk would reach it last. net.js
- *  calls this as a re-join's snapshot lands, with the last seq the old socket
- *  delivered; what was said after it is fetched, newest first, up to
- *  MAX_SKIP_PAGES pages of 40, and slotted in. Anything older than that comes
- *  back by scrolling up. A first join (nothing on screen yet) has no hole to
- *  fill. */
+ *  the bottom of the log. net.js calls this as a re-join's snapshot lands,
+ *  with the last seq the old socket delivered; what was said after it is
+ *  fetched, newest first, up to MAX_SKIP_PAGES pages of 40, and slotted in.
+ *  A catch-up that stops before it gets back to that seq, at the cap or on a
+ *  page that fails, restarts the backward walk no lower than where it
+ *  stopped, so scrolling up reaches the rest. Without that, a walk whose
+ *  cursor is already below the missed lines, or that ended at the beginning,
+ *  doesn't come back to them until a trim restarts it. A first join (nothing
+ *  on screen yet) has no hole to fill. */
 export async function resyncChatAfter(seq) {
   if (!logEl || !renderedSeqs.size || typeof seq !== 'number' || seq < 0) return;
   let before = null;
   for (let page = 0; page < MAX_SKIP_PAGES; page++) {
-    const r = await requestHistory({
-      after: seq, ...(before !== null ? { before } : {}), limit: 40, verbs: ['say'],
-    });
+    let r;
+    try {
+      r = await requestHistory({
+        after: seq, ...(before !== null ? { before } : {}), limit: 40, verbs: ['say'],
+      });
+    } catch {
+      restartWalk(before);           // this page and everything below it is still to fetch
+      return;
+    }
     if (!r.entries?.length) return;
     insertPage(r.entries);
     if (r.entries.length < 40) return;
     before = typeof r.oldestSeq === 'number' ? r.oldestSeq : r.entries[0].seq;
   }
+  restartWalk(before);               // the cap, with a full last page: older lines may be left
 }
 
 /** Tell an arrival that what they are looking at is a window, not the room's
@@ -284,10 +315,11 @@ async function loadOlder() {
         limit: 40, verbs: ['say'],
       });
       const entries = r.entries ?? [];
-      // A trim that passed the cursor while this page was in flight has
-      // restarted the walk (trimLog is the only other writer of the cursor).
-      // The page's lines still slot in, but where the walk stands, and
-      // whether it has reached the beginning, now come from the restart.
+      // A trim that passed the cursor, or a catch-up that stopped short,
+      // while this page was in flight has restarted the walk (restartWalk is
+      // the only other writer of the cursor). The page's lines still slot in,
+      // but where the walk stands, and whether it has reached the beginning,
+      // now come from the restart.
       if (pageCursor === from) {
         if (entries.length) pageCursor = typeof r.oldestSeq === 'number' ? r.oldestSeq : entries[0].seq;
         if (!entries.length || !r.hasMore) noMoreHistory = true;
@@ -298,12 +330,15 @@ async function loadOlder() {
     }
     marker.remove();
     if (noMoreHistory) {
-      const end = document.createElement('div');
-      end.className = 'line sys';
-      end.textContent = '— the beginning of this world —';
-      logEl.prepend(end);
+      endMarker = document.createElement('div');
+      endMarker.className = 'line sys';
+      endMarker.textContent = '— the beginning of this world —';
+      logEl.prepend(endMarker);
     }
   } catch {
+    // a page that failed (requestHistory rejects: no socket, or no answer)
+    // leaves the walk's cursor as it stands, so the next scroll-up asks
+    // again from there
     marker.remove();
   } finally { loadingOlder = false; }
 }
