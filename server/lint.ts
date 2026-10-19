@@ -11,7 +11,7 @@ import { LADDER } from "./config.ts";
 import { summarizeGlb } from "./geometry.ts";
 // Likewise for the `particles` component: one validator, so the flight
 // recorder's opinion about an emitter is the renderer's own opinion.
-import { normalizeParticles } from "../shared/particles.js";
+import { normalizeParticles, emitterKeyProblem } from "../shared/particles.js";
 import type { LogEntry, WorldState } from "../shared/fold.js";
 
 /** What the linters need from a world: folded state to read, the flight
@@ -193,14 +193,20 @@ export function lintParticles(w: LintHost, entry: LogEntry): void {
   try {
     const a = entry.args as Record<string, unknown>;
     const id = String(a.id ?? "");
+    const key = typeof a.type === "string" ? a.type : "particles";
+    // which emitter, when it isn't the default one — a hearth with three
+    // emitters needs the lint to say WHICH bag was clamped
+    const which = key === "particles" ? {} : { component: key };
+    const bad = emitterKeyProblem(key);
+    if (bad) { w.debug("particles-lint", { entity: id, by: entry.actor, ...which, why: bad }); return; }
     if (a.data == null) return;                      // put out — nothing to lint
-    const r = normalizeParticles(a.data, { entityId: id });
+    const r = normalizeParticles(a.data, { entityId: id, key });
     if (!r.ok) {
-      w.debug("particles-lint", { entity: id, by: entry.actor, why: r.why });
+      w.debug("particles-lint", { entity: id, by: entry.actor, ...which, why: r.why });
       return;
     }
     if (r.notes.length) {
-      w.debug("particles-lint", { entity: id, by: entry.actor, why: r.notes.join(" · ") });
+      w.debug("particles-lint", { entity: id, by: entry.actor, ...which, why: r.notes.join(" · ") });
     }
   } catch { /* lint must never hurt anything */ }
 }

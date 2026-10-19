@@ -69,7 +69,8 @@ import { THREE } from './core.js';
 import { heightAt, waterField } from './terrain.js';
 import { surfaceOffset } from '../../shared/waves.js';
 import { partWaterForce, waterCurrent, swellRise, WATER_ANG_DRAG } from '../../shared/buoyancy.js';
-import { nearColliders } from './colliders.js';
+import { nearColliders, surfaceUnder } from './colliders.js';
+import { why } from './debuglog.js';
 import { SEGMENTS, segDistance, rigFrameOf, snapshotPacker, seedJoints } from './rigmeasure.js';
 import { BodyEngineBase } from './bodyengine.js';
 
@@ -124,6 +125,83 @@ function boxesInertia(boxes, mass) {
     zz += m * (t.x * t.x + t.y * t.y);
   }
   return { x: xx, y: yy, z: zz };
+}
+
+/** How far from a fall an interior's triangles are handed to Bullet: a
+ *  tumble covers a few metres at most; a large building's far wings stay out. */
+const INTERIOR_REACH = 8;
+/** At most this many interior triangles go to Bullet for one fall, all
+ *  interiors together: building them into Bullet is synchronous, and a dense
+ *  model (exact collision admits up to a million) would hitch the frame or
+ *  exhaust Ammo's heap. Past it, nearer (INTERIOR_NEAR), then a floor slab. */
+export const INTERIOR_MAX_TRIS = 20_000;
+const INTERIOR_NEAR = 3;
+/** Things already warned about on the console (bounded): a fallback is said
+ *  once per thing there, and always to the `ragdoll` debuglog topic, which
+ *  keeps the last few. Constructor-time only — never per frame. */
+const fallbackWarned = new Set();
+function reportInteriorFallback(id, msg) {
+  why('ragdoll', `interior fallback — ${msg}; its walls are left out of this fall`);
+  if (fallbackWarned.has(id) || fallbackWarned.size >= 64) return;
+  fallbackWarned.add(id);
+  console.warn(`[ammodoll] interior fallback — ${msg}; its walls are left out of the fall (further ones: lastWhy('ragdoll'))`);
+}
+
+/** An interior collider's triangles within `reach` of `at` (horizontally), in
+ *  world space, flat [x,y,z, x,y,z, x,y,z, ...]. The collider's geometry is
+ *  root-local (colliders.js buildExact); the entity's scale, rotation and
+ *  position put it in the world, the same law colliders.js queries by. */
+/** Does a triangle's footprint (xz) overlap the square `reach` either side
+ *  of `at`? Separating axes: the square's two, then the triangle's three
+ *  edge normals. Not its corners being near — a big floor is two triangles
+ *  whose corners can all be far from a body lying in the middle of it. */
+function overlapsSquare(v, at, reach) {
+  const x0 = at.x - reach, x1 = at.x + reach, z0 = at.z - reach, z1 = at.z + reach;
+  if (Math.max(v[0].x, v[1].x, v[2].x) < x0 || Math.min(v[0].x, v[1].x, v[2].x) > x1) return false;
+  if (Math.max(v[0].z, v[1].z, v[2].z) < z0 || Math.min(v[0].z, v[1].z, v[2].z) > z1) return false;
+  for (let k = 0; k < 3; k++) {
+    const a = v[k], b = v[(k + 1) % 3], c = v[(k + 2) % 3];
+    const nx = -(b.z - a.z), nz = b.x - a.x;          // the edge's normal in xz
+    if (nx === 0 && nz === 0) continue;
+    const side = Math.sign(nx * (c.x - a.x) + nz * (c.z - a.z));
+    if (side === 0) continue;                          // seen edge-on: no axis
+    // the square lies wholly on the far side of this edge from the triangle?
+    let far = true;
+    for (const [x, z] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) {
+      if (Math.sign(nx * (x - a.x) + nz * (z - a.z)) !== -side) { far = false; break; }
+    }
+    if (far) return false;
+  }
+  return true;
+}
+
+export function interiorTriangles(c, at, reach, max = INTERIOR_MAX_TRIS) {
+  // Asked of the collider's own BVH, not by scanning every triangle: only
+  // the nodes near the fall are visited, and the walk stops at `max` — a
+  // dense interior costs its budget, never its size.
+  const o = c.obj, s = o.scale?.x || 1, q = o.quaternion, p = o.position;
+  // the reach square in the thing's own frame (it turns about Y only: a
+  // circle of reach·√2 holds the square however it is turned)
+  const l = new THREE.Vector3(at.x - p.x, 0, at.z - p.z);
+  if (q) l.applyQuaternion(q.clone().invert());
+  l.divideScalar(s);
+  const R = reach * Math.SQRT2 / s;
+  const qbox = new THREE.Box3(new THREE.Vector3(l.x - R, -1e9, l.z - R), new THREE.Vector3(l.x + R, 1e9, l.z + R));
+  const out = [];
+  let over = false;
+  const v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  c.exact.bvh.shapecast({
+    intersectsBounds: (box) => box.intersectsBox(qbox),
+    intersectsTriangle: (tri) => {
+      v[0].copy(tri.a); v[1].copy(tri.b); v[2].copy(tri.c);
+      for (const w of v) { w.multiplyScalar(s); if (q) w.applyQuaternion(q); w.add(p); }
+      if (!overlapsSquare(v, at, reach)) return false;
+      if (out.length / 9 >= max) { over = true; return true; }   // stops the walk
+      out.push(v[0].x, v[0].y, v[0].z, v[1].x, v[1].y, v[1].z, v[2].x, v[2].y, v[2].z);
+      return false;
+    },
+  });
+  return { tris: out, over };
 }
 
 export async function ensureAmmo() {
@@ -749,8 +827,9 @@ export class AmmoRagdoll extends BodyEngineBase {
     info.set_m_splitImpulsePenetrationThreshold(-0.02);
 
     this._statics = [];
-    const addStatic = (halfX, halfY, halfZ, pos, quat, friction) => {
-      const shape = keep(new AMMO.btBoxShape(new AMMO.btVector3(halfX, halfY, halfZ)));
+    const addStatic = (halfX, halfY, halfZ, pos, quat, friction) =>
+      addStaticShape(keep(new AMMO.btBoxShape(new AMMO.btVector3(halfX, halfY, halfZ))), pos, quat, friction);
+    const addStaticShape = (shape, pos, quat, friction) => {
       _bt1.setIdentity();
       _bv1.setValue(pos.x, pos.y, pos.z); _bt1.setOrigin(_bv1);
       if (quat) { _bq1.setValue(quat.x, quat.y, quat.z, quat.w); _bt1.setRotation(_bq1); }
@@ -820,6 +899,43 @@ export class AmmoRagdoll extends BodyEngineBase {
         Math.max(size.x / 2, 0.02), Math.max(size.y / 2, 0.02), Math.max(size.z / 2, 0.02),
         centre, obj.quaternion ?? null, 0.8,
       );
+    }
+    // ROOM-SCALE INTERIORS: their real triangles. An interior is skipped
+    // above because its box would seal the room into a solid block — and
+    // nothing stood in its place, so a body that went limp inside a house had
+    // no floor under it at all and dropped through to the terrain beneath,
+    // from the ground floor and from every storey above it. colliders.js
+    // already holds the merged root-local triangles the walking body uses
+    // (entry.exact); the ones near the fall go to Bullet, in world space, as
+    // one static triangle mesh per thing.
+    // Bounded (INTERIOR_MAX_TRIS across them all): too many within reach,
+    // and only those within INTERIOR_NEAR go; still too many, and the body
+    // gets the floor under it as a slab — no walls, but never no floor.
+    let budget = INTERIOR_MAX_TRIS;
+    this.interiorFallback = null;
+    for (const [id, c] of nearColliders(hips.x, hips.z, 8)) {
+      if (!c.obj || !c.interior || !c.exact?.bvh) continue;
+      let got = interiorTriangles(c, hips, INTERIOR_REACH, budget);
+      if (got.over) got = interiorTriangles(c, hips, INTERIOR_NEAR, budget);
+      if (got.over) {
+        const floor = surfaceUnder(hips.x, hips.z, heightAt, hips.y + 0.3).y;
+        addStatic(INTERIOR_NEAR, 0.25, INTERIOR_NEAR, { x: hips.x, y: floor - 0.25, z: hips.z }, null, 0.8);
+        this.interiorFallback = `${id}: over ${INTERIOR_MAX_TRIS} triangles within ${INTERIOR_NEAR}m — a floor slab at ${floor.toFixed(2)}m stands in`;
+        reportInteriorFallback(id, this.interiorFallback);
+        continue;
+      }
+      const tri = got.tris;
+      if (!tri.length) continue;
+      budget -= tri.length / 9;
+      const mesh = keep(new AMMO.btTriangleMesh());
+      const a = keep(new AMMO.btVector3(0, 0, 0)), b = keep(new AMMO.btVector3(0, 0, 0)), d = keep(new AMMO.btVector3(0, 0, 0));
+      for (let k = 0; k < tri.length; k += 9) {
+        a.setValue(tri[k], tri[k + 1], tri[k + 2]);
+        b.setValue(tri[k + 3], tri[k + 4], tri[k + 5]);
+        d.setValue(tri[k + 6], tri[k + 7], tri[k + 8]);
+        mesh.addTriangle(a, b, d, false);
+      }
+      addStaticShape(keep(new AMMO.btBvhTriangleMeshShape(mesh, true, true)), { x: 0, y: 0, z: 0 }, null, 0.8);
     }
 
     // ---- torso: one rigid body, rest-aligned -------------------------------

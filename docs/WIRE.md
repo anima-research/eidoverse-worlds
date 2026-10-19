@@ -123,7 +123,10 @@ Every message belongs to exactly one plane:
   held whisper delivered when its recipient joins), `anim`, `puppet`,
   `bodydrag`, `caption`, `typing`, `drag`, `rtc`, `performed` — presence
   relays, shapes as sent (see §3) plus attribution stamps.
-- `snap` — `{id, follow?, view?}`: server asks a renderer leg for a PNG.
+- `snap` — `{id, follow?, view?, width?, height?, frame?}`: server asks a renderer leg for a PNG. `width` and `height` are the image size; the screenshot broker (`server/snapshots.ts`) sends 960 × 540. `frame` is the optional framing, `{dist?, height?, pitch?}`, normalised by `shared/snapframe.js` on both ends and sent only when a field is given; absent = the fixed default framing. It is nested so that no field of the message itself, such as the image's `height`, is read as framing. Its fields:
+  - `dist`: `third`/`selfie` only. Flat distance from the body in metres, clamped to [0.5, 30]. The camera sits behind the body for `third` and in front for `selfie`. Defaults: 3.4 for `third`, 2.6 for `selfie`.
+  - `height`: `third`/`selfie` only. Camera height above the body's feet in metres, clamped to [0, 30]. Defaults: 2.1 for `third`, 1.6 for `selfie`.
+  - `pitch`: `first` only. Gaze tilt in degrees, clamped to [-85, 85]; positive looks up, negative looks down. Omitted keeps the existing gaze of about −4.3° (dropped 0.6 m over 8 m).
 - `world-forked`, `world-reset` — admin outcomes.
 - `avatar-updated` / `avatar-profile-updated` — library changes (VRM upload,
   profile edit), broadcast to every world.
@@ -183,6 +186,11 @@ a def file changed on disk; clients re-fetch /defs and regrow what the
 changed content shapes; presence-plane, never logged).
 
 ## 7. Quirks recorded, not yet ruled on
+
+Underwater/native-client extension (2026-09-10): optional `pose.q` normalized
+body quaternion and `pose.locomotion` descriptive metadata are validated and
+relayed on the existing presence lane. See `UNDERWATER-PRESENCE.md`. No new
+verb, permission, server physics or log dialect is introduced.
 
 Flagged for the phase-1 protocol review — each is as-built behavior a new
 client must currently reproduce, and a candidate for a deliberate ruling:

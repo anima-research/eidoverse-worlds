@@ -19,6 +19,7 @@ import {
   PARTICLE_PRESETS, PARTICLE_MAX_COUNT, normalizeParticles, resolvedCount,
   describeParticles, emitterTransition, transitionLine, emitterSeed,
   mulberry32, withSeededRandom,
+  isParticlesKey, emitterKeyProblem, emittersIn, builderOverrides, parseColor,
 } from "../shared/particles.js";
 import {
   makeEmitterRegistry, retireEmitter, retireRawSystem, adoptSystem,
@@ -57,9 +58,9 @@ const far = normalizeParticles({ preset: "fire", origin: [0, 0, 400] }, { entity
 check("origin stays entity-relative (bounded)", far.ok && far.emitter.origin[2] === 8);
 check("...and says so", far.ok && far.notes.some((n: string) => n.includes("entity-relative")));
 
-const junk = normalizeParticles({ preset: "fire", wobble: 3, spin: true }, { entityId: "hearth" });
+const junk = normalizeParticles({ preset: "fire", jitter: 3, spin: true }, { entityId: "hearth" });
 check("params the evaluator ignores are named, not dropped in silence",
-  junk.ok && junk.notes.some((n: string) => n.includes("wobble") && n.includes("spin")));
+  junk.ok && junk.notes.some((n: string) => n.includes("jitter") && n.includes("spin")));
 
 const badTex = normalizeParticles({ preset: "fire", texture: "../../etc/passwd" }, { entityId: "hearth" });
 check("a texture outside the particle library is refused", badTex.ok && badTex.emitter.texture === undefined);
@@ -121,6 +122,62 @@ check("authored med + client med does not compound", resolvedCount(
   normalizeParticles({ preset: "fire", count: 200, quality: "med" }, { entityId: "h" }).emitter, "med") === 100);
 check("authored auto is an opinion-free identity",
   resolvedCount(emitter, "med") === 100 && resolvedCount(emitter, "auto") === 200);
+
+// ---- 1b. the preset as a starting point: authored motion, look, scale -----
+console.log("\nauthoring — the preset's motion and look, the emitter's own scale\n");
+
+const tuned = normalizeParticles({
+  preset: "fire", scale: 0.025, wobble: 0.1, up: 0.3, spread: 0.05, grow: -0.5, swirl: 1,
+  twinkle: 0.5, converge: 0.9, rotate: 0.2, gravity: -2, color: "#ffa040", blending: "normal",
+}, { entityId: "candle" });
+check("every motion/look knob is accepted, with no notes", tuned.ok && tuned.notes.length === 0,
+  tuned.ok ? tuned.notes.join(" · ") : "");
+check("scale is carried", tuned.ok && tuned.emitter.scale === 0.025);
+check("a vertical gravity becomes [0, g, 0]", tuned.ok && JSON.stringify(tuned.emitter.gravity) === "[0,-2,0]");
+check("colour becomes 0xRRGGBB", tuned.ok && tuned.emitter.color === 0xffa040);
+check("blending is carried", tuned.ok && tuned.emitter.blending === "normal");
+const ov = tuned.ok ? builderOverrides(tuned.emitter) : {};
+check("the builder gets every motion/look override verbatim",
+  ["wobble", "up", "spread", "grow", "swirl", "twinkle", "converge", "rotate", "gravity", "color", "blending"]
+    .every((k) => k in ov));
+check("...but not scale (the host's: it scales the mesh) nor preset/seed/origin/quality/count",
+  !["scale", "preset", "seed", "origin", "quality", "count"].some((k) => k in ov));
+check("an untouched preset sends no overrides at all",
+  Object.keys(builderOverrides(normalizeParticles({ preset: "smoke" }, { entityId: "x" }).emitter)).length === 0);
+
+const wild = normalizeParticles({ preset: "fire", scale: 900, wobble: -1, converge: 3, gravity: [0, 99, -99] },
+  { entityId: "x" });
+check("out-of-range knobs are clamped",
+  wild.ok && wild.emitter.scale === 20 && wild.emitter.wobble === 0 && wild.emitter.converge === 1
+  && JSON.stringify(wild.emitter.gravity) === "[0,20,-20]");
+check("...and every clamp is reported", wild.ok && ["scale", "wobble", "converge", "gravity"]
+  .every((k) => wild.notes.some((n: string) => n.startsWith(k))));
+const wrong = normalizeParticles({ preset: "fire", gravity: "down", color: "warm", blending: "screen" }, { entityId: "x" });
+check("malformed gravity/colour/blending fall back to the preset, legibly",
+  wrong.ok && wrong.emitter.gravity === undefined && wrong.emitter.color === undefined
+  && wrong.emitter.blending === undefined
+  && ["gravity", "color", "blending"].every((k) => wrong.notes.some((n: string) => n.startsWith(k))));
+check("colour forms: #rgb, #rrggbb, integer; nonsense is null",
+  parseColor("#f80") === 0xff8800 && parseColor("ff8800") === 0xff8800 && parseColor(0x123456) === 0x123456
+  && parseColor("#12345") === null && parseColor(-1) === null && parseColor(0x1000000) === null);
+
+// several emitters on one entity: `particles:<name>`
+check("`particles` is an emitter key", isParticlesKey("particles"));
+check("`particles:smoke` is an emitter key", isParticlesKey("particles:smoke"));
+check("a malformed name is not, and the lint can say why",
+  !isParticlesKey("particles:two words") && !isParticlesKey("particles:")
+  && emitterKeyProblem("particles:two words")!.includes("not an emitter key"));
+check("ordinary components are none of its business",
+  !isParticlesKey("motion:door") && emitterKeyProblem("motion:door") === null && emitterKeyProblem("particles") === null);
+check("emittersIn lists the default first, then by name, and skips removed ones",
+  JSON.stringify(emittersIn({ "particles:z": {}, motion: {}, particles: {}, "particles:a": {}, "particles:gone": null })
+    .map(([k]) => k)) === JSON.stringify(["particles", "particles:a", "particles:z"]));
+check("a named emitter's seed folds its name in (two fires on one entity are two fires)",
+  emitterSeed("hearth", { preset: "fire" }, "particles:left") !== emitterSeed("hearth", { preset: "fire" }, "particles:right")
+  && emitterSeed("hearth", { preset: "fire" }, "particles:left") !== emitterSeed("hearth", { preset: "fire" }));
+check("...while the default emitter keeps the seed it always had (no re-roll on upgrade)",
+  emitterSeed("hearth", { preset: "fire" }, "particles") === emitterSeed("hearth", { preset: "fire" })
+  && normalizeParticles({ preset: "fire" }, { entityId: "hearth" }).emitter.seed === emitterSeed("hearth", { preset: "fire" }));
 
 // ---- 2. lifecycle ----------------------------------------------------------
 console.log("\nlifecycle — attach, replace, remove, late join, no hook growth\n");
@@ -347,6 +404,46 @@ check("a same-preset retune narrates as a retune", tuneLine!.includes("retunes")
 const endLine = transitionLine("antra", "hearth", emitterTransition({ preset: "fire" }, null));
 check("an end narrates as an end", endLine!.includes("puts out"));
 check("no line for a non-change", transitionLine("antra", "hearth", null) === null);
+check("a named emitter reads under its own key",
+  describeParticles({ preset: "smoke", origin: [0, 1, 0] }, "particles:chimney").includes("(particles:chimney;"));
+check("a scaled emitter says so (size is a shared fact)",
+  describeParticles({ preset: "fire", scale: 0.025 }).includes("scale 0.025"));
+check("...and a tinted one names its colour",
+  describeParticles({ preset: "smoke", color: "#334" }).includes("tinted #333344"));
+check("an untouched bag reads exactly as before",
+  describeParticles({ preset: "fire", origin: [0, 0.25, 0] }) === "emitting fire (particles; local origin [0, 0.25, 0]; active)");
+check("the live line names a named emitter",
+  transitionLine("antra", "hearth", emitterTransition(null, { preset: "smoke" }), "particles:chimney")!
+    .endsWith("(particles:chimney)"));
+
+// ---- 4. several emitters per entity in the registry ------------------------
+console.log("\nregistry — one slot per (entity, component), retired together\n");
+{
+  const autos: (() => void)[] = [];
+  const built: string[] = [];
+  const reg = makeEmitterRegistry({
+    autos,
+    build: (e: { preset: string }, { id, key }: { id: string; key: string }) => {
+      built.push(`${id}/${key}/${e.preset}`);
+      const update = () => {}; autos.push(update);
+      return { update, dispose() {} };
+    },
+  });
+  await reg.apply("hearth", { preset: "fire" }, { entity: "hearth", key: "particles" });
+  await reg.apply("hearth\u0000particles:smoke", { preset: "smoke" }, { entity: "hearth", key: "particles:smoke" });
+  await reg.apply("brazier", { preset: "fire" }, { entity: "brazier", key: "particles" });
+  check("build learns the entity AND the component", built.includes("hearth/particles:smoke/smoke")
+    && built.includes("hearth/particles/fire"), built.join(", "));
+  check("two emitters on one entity are two slots", reg.slotsOf("hearth").length === 2 && autos.length === 3);
+  await reg.apply("hearth\u0000particles:smoke", null, { entity: "hearth", key: "particles:smoke" });
+  check("putting out one leaves the other burning", reg.slotsOf("hearth").length === 1 && autos.length === 2);
+  await reg.apply("hearth\u0000particles:smoke", { preset: "smoke" }, { entity: "hearth", key: "particles:smoke" });
+  check("retireEntity takes every emitter the entity owns", reg.retireEntity("hearth") === 2
+    && reg.slotsOf("hearth").length === 0 && autos.length === 1);
+  check("...and nobody else's", reg.has("brazier"));
+  check("the one-emitter call shape still works (slot = entity)", (await reg.apply("lamp", { preset: "magic" })) != null
+    && built.at(-1) === "lamp/particles/magic");
+}
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 if (failed) process.exit(1);

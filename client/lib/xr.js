@@ -1102,6 +1102,9 @@ export function updateXR(dtSec = 1 / 72) {
   if (!Number.isFinite(myState.speed)) myState.speed = 0;
   if (!Number.isFinite(camYaw)) setCamYaw(0);
 
+  // the head's pitch (+ looking down) — swimming goes where the headset looks
+  { const e = renderer.xr.getCamera().matrixWorld.elements; const pd = Math.asin(Math.max(-1, Math.min(1, e[9])));
+    xrIntent.pitchDown = Number.isFinite(pd) ? pd : 0; }
   // sticks → intent (deadzone-with-rescale; snap cooldown — exultation math)
   const L = sourceFor('left')?.gamepad, R = sourceFor('right')?.gamepad;
   if (L) {

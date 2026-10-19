@@ -1,5 +1,5 @@
 // emitter_field — the `particles` component's LIFECYCLE, DOM-free and
-// THREE-free so it can be unit-tested without a browser (tools/emitters-test.ts).
+// THREE-free so it can be unit-tested without a browser (tools/particles-test.ts).
 //
 // The upstream builder (`eidoverse/particles.js`) is a one-way door: it makes a
 // mesh, adds it to a scene, pushes its billboard `update` into the global
@@ -80,21 +80,27 @@ export function adoptSystem(sys, autos, attach) {
 /**
  * The world's emitter registry.
  *
- * `build(emitter, {id})` is the host's (THREE-bound) half: it returns — or
- * resolves to — a handle `{mesh?, update?, hooks?, dispose()}`. `autos` is the
- * per-frame hook array the engine drains (`globalThis._autoParticleSystems`).
+ * `build(emitter, {id, key})` is the host's (THREE-bound) half: it returns —
+ * or resolves to — a handle `{mesh?, update?, hooks?, dispose()}`. `id` is the
+ * owning ENTITY and `key` the component (`particles` or `particles:<name>`).
+ * `autos` is the per-frame hook array the engine drains
+ * (`globalThis._autoParticleSystems`).
  *
- * `apply(id, emitter)` is the ONLY entry point the fold uses: pass the
- * normalized emitter to attach or replace, `null` to end it.
+ * `apply(slot, emitter, {entity, key})` is the ONLY entry point the fold uses:
+ * pass the normalized emitter to attach or replace, `null` to end it. `slot`
+ * names one emitter — one per (entity, component); with one emitter per entity
+ * the slot can simply be the entity id, which is what `entity` defaults to.
  */
 export function makeEmitterRegistry({ autos, build, onError } = {}) {
-  /** id -> { gen, key, handle|null, emitter } — one live emitter per entity. */
+  /** slot -> { gen, key, entity, component, handle|null, emitter } — one live
+   *  emitter per (entity, component). `key` is the emitter's identity for the
+   *  idempotence check; `entity` lets an entity's removal retire all of them. */
   const live = new Map();
   let gen = 0;
 
   const keyOf = (emitter) => (emitter ? JSON.stringify(emitter) : null);
 
-  async function apply(id, emitter) {
+  async function apply(id, emitter, { entity = id, key: component = 'particles' } = {}) {
     const key = keyOf(emitter);
     const cur = live.get(id);
     // Idempotence: re-authoring the identical bag (a replay of the same entry,
@@ -112,11 +118,11 @@ export function makeEmitterRegistry({ autos, build, onError } = {}) {
     }
     if (!emitter) return null;
 
-    const slot = { gen: mine, key, handle: null, emitter };
+    const slot = { gen: mine, key, entity, component, handle: null, emitter };
     live.set(id, slot);
     let handle = null;
     try {
-      handle = await build(emitter, { id });
+      handle = await build(emitter, { id: entity, key: component });
     } catch (e) {
       if (live.get(id) === slot) live.delete(id);
       onError?.(e, id);
@@ -145,10 +151,20 @@ export function makeEmitterRegistry({ autos, build, onError } = {}) {
     for (const id of [...live.keys()]) retire(id);
   }
 
+  /** Every emitter an entity owns — its removal, demotion or replacement takes
+   *  them all, whatever their names. Returns how many went. */
+  function retireEntity(entity) {
+    let n = 0;
+    for (const [slot, cur] of [...live.entries()]) if (cur.entity === entity && retire(slot)) n++;
+    return n;
+  }
+
   return {
     apply,
     retire,
     retireAll,
+    retireEntity,
+    slotsOf: (entity) => [...live.entries()].filter(([, cur]) => cur.entity === entity).map(([slot]) => slot),
     has: (id) => live.has(id),
     get: (id) => live.get(id)?.handle ?? null,
     emitterOf: (id) => live.get(id)?.emitter ?? null,

@@ -16,13 +16,16 @@
 //
 // Nothing here moves bodies — wading is the controller's (and the agents') rule, from the same level.
 import { THREE, scene } from './core.js';
-import { attribute, mix, smoothstep, vec3, float, positionGeometry, uniform, sin, cos, max, normalize, color, transformNormalToView } from 'three/tsl';
-import { OCEAN, RIVER, STILL, waveClock, cyc } from '../../shared/waves.js';
+import { attribute, mix, smoothstep, vec3, float, positionGeometry, uniform, sin, cos, max, normalize, color, transformNormalToView, faceDirection, positionWorld, cameraPosition } from 'three/tsl';
+import { OCEAN, RIVER, STILL, waveClock, cyc, surfaceOffset } from '../../shared/waves.js';
 import { setWaterField } from './terrain.js';
+import { onWorldChange } from './state.js';
+import { dryAt } from './watervolumes.js';   // the dry boxes' mask (a cycle, used only at build time)
 import { waterParams } from '../../shared/terrainshape.js';
 import { analyzeWater, waterGridSeg } from '../../shared/waterkind.js';
 
 let current = null;   // { mesh, level }
+const _eye = new THREE.Vector3();
 
 // THE WAVE CLOCK (shared/waves.js): the surface runs on the world's synced time, wrapped to WAVE_PERIOD, so a
 // swell a swimmer rises on is the swell everyone sees. main.js hands in the synced clock; until it does,
@@ -36,6 +39,14 @@ export const waveTime = () => waveClock(clock());
 
 /** The world's water level, or null when it has none. */
 export const waterLevel = () => current?.level ?? null;
+/** The level water's look and extent, for the underwater optics (watervolumes.js), or null. */
+export const levelWaterInfo = () => current ? { level: current.level, color: current.color, size: current.size } : null;
+/** Where the water's surface stands at (x, z) this instant — the level plus the same wave swimmers and floating
+ *  bodies ride (shared/waves.js) — or null where there is no water (dry ground, no level). */
+export function surfaceHeightAt(x, z) {
+  const w = current?.analysis?.sample(x, z);
+  return w ? current.level + surfaceOffset(w, x, z, waveTime()) : null;
+}
 
 /** Build (or replace, or remove) the water for terrain-verb args over the ground `heightAt`. */
 export function applyWater(args, heightAt) {
@@ -57,7 +68,7 @@ export function applyWater(args, heightAt) {
   // x = -size/2 + i·cell, z = -size/2 + j·cell, row by row — the same order waterkind indexes
   const A = analyzeWater(heightAt, size, { level: W.level, kind: args.water?.kind, flow: args.water?.flow }, seg);
   // The level is the world's whether or not the sheet shows: wading, depth and floating read it, not the mesh.
-  current = { mesh: null, level: W.level, analysis: A };
+  current = { mesh: null, level: W.level, analysis: A, color: W.color, size };
   // what floats reads the same water (ammodoll.js, through terrain.js's seam)
   setWaterField({ level: W.level, sample: (x, z) => A.sample(x, z), time: waveTime });
   const geo = new THREE.PlaneGeometry(size, size, seg, seg);
@@ -110,7 +121,8 @@ export function applyWater(args, heightAt) {
   geo.setAttribute('wflow', new THREE.BufferAttribute(flow, 3));
   geo.setAttribute('wshore', new THREE.BufferAttribute(shore, 3));
 
-  const mat = new THREE.MeshStandardNodeMaterial({ transparent: true, depthWrite: false, roughness: 0.08, metalness: 0 });
+  // a swimmer looks UP at the same sheet: two-sided while a camera is near or under it (onBeforeRender, below)
+  const mat = new THREE.MeshStandardNodeMaterial({ transparent: true, depthWrite: false, roughness: 0.08, metalness: 0, side: THREE.FrontSide });
   const d = attribute('depth'), K = attribute('wkind'), F = attribute('wflow'), S = attribute('wshore');
   const still = K.x, river = K.y, ocean = K.z;
   // the RAW vertex position (before the waves lift it), so the vertex and fragment stages compute the same
@@ -183,20 +195,46 @@ export function applyWater(args, heightAt) {
   const base = color(W.color);
   const deepCol = base.mul(still).add(mix(base, vec3(0.2, 0.3, 0.22), 0.25).mul(river)).add(mix(base, vec3(0.04, 0.2, 0.36), 0.55).mul(ocean));
   const shallowCol = base.mul(0.55).add(vec3(0.18, 0.24, 0.2)).mul(still.add(river)).add(vec3(0.22, 0.56, 0.56).mul(ocean));
-  mat.colorNode = mix(mix(shallowCol, deepCol, deep), vec3(0.9, 0.95, 0.94), foam);
+  const aboveCol = mix(mix(shallowCol, deepCol, deep), vec3(0.9, 0.95, 0.94), foam);
   // where the wave has drawn back, the beach is dry: no water to see (the ground hides most of it anyway;
   // this keeps the last centimetres from shimmering against the sand)
-  mat.opacityNode = mix(float(0.38), float(W.opacity), deep).add(foam.mul(0.3)).mul(smoothstep(-0.02, 0.04, wet)).clamp(0, 1);
+  const aboveOpacity = mix(float(0.38), float(W.opacity), deep).add(foam.mul(0.3)).mul(smoothstep(-0.02, 0.04, wet)).clamp(0, 1);
+  // ---- from below: Snell's window ----------------------------------------------------------------------
+  // Looking up from under water, the sky shows only inside a cone about 48.6° from straight up (the critical
+  // angle: cos ≈ 0.66); past it the surface is a mirror of the dim water below (total internal reflection).
+  // So the underside is clear looking steeply up, and a dark, nearly opaque ceiling at grazing angles.
+  const up = normalize(positionWorld.sub(cameraPosition)).y;
+  const snell = smoothstep(0.6, 0.72, up);
+  const belowCol = mix(deepCol.mul(0.35), base.mul(1.15).add(vec3(0.08, 0.1, 0.1)), snell);
+  const belowOpacity = mix(float(0.92), float(0.5), snell).mul(smoothstep(-0.02, 0.04, wet));   // the window still tints the sky
+  // front (from above) = 1, back (from below) = 0, as plain arithmetic: a select() here typed the colour as a vec3
+  // while generating a vec4 variable, and the weather system's wetness wrap — vec4(colorNode).rgb … .a — then
+  // produced invalid WGSL (`vec4(<vec4>, 1.0)`) on worlds with the full sky: the sheet's pipeline failed and no
+  // water drew at all. The colour stays a vec3, as upstream's always was.
+  const front = faceDirection.mul(0.5).add(0.5);
+  mat.colorNode = mix(belowCol, aboveCol, front);
+  // no water across the mouth of a dry shaft or room that reaches up through the surface
+  mat.opacityNode = mix(belowOpacity, aboveOpacity, front).mul(float(1).sub(dryAt(positionWorld)));
 
   const mesh = new THREE.Mesh(geo, mat);
   mesh.name = 'water';
   mesh.position.y = W.level;
   mesh.renderOrder = 2;   // after the ground and the opaque world: it is seen THROUGH
-  mesh.onBeforeRender = () => { waveT.value = waveTime(); };   // one synced wave time per frame
+  // one synced wave time per frame; and the underside only when a camera could see it — a two-sided transparent
+  // sheet draws twice, which above the water would be pure cost (the swell reaches ~0.6 m over the level)
+  mesh.onBeforeRender = (_r, _s, cam) => {
+    waveT.value = waveTime();
+    const side = cam.getWorldPosition(_eye).y < W.level + 1 ? THREE.DoubleSide : THREE.FrontSide;
+    if (mat.side !== side) { mat.side = side; mat.needsUpdate = true; }
+  };
   mesh.userData.bodies = A.bodies.map((b) => ({ kind: b.kind, area: Math.round(b.area), width: +b.width.toFixed(1), length: +b.length.toFixed(1) }));
   scene.add(mesh);
   current.mesh = mesh;
 }
+
+// Travel resets the world; a destination with no terrain never rebuilds the water, so the old level (its sheet,
+// its fog and the under-water background) would follow. Clear it with the world.
+onWorldChange((ev) => { if (ev.type === 'reset') applyWater(null); });
 
 /** What kind of water is at a point, for the HUD and probes (shared/waterkind.js sample). */
 export const waterAt = (x, z) => current?.analysis?.sample(x, z) ?? null;

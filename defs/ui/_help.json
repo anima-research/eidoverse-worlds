@@ -20,6 +20,18 @@
       "<kbd>Space</kbd> — against a low ledge, mantles onto it"
     ],
     [
+      "Swim",
+      "<kbd>WASD</kbd> move · <kbd>Space</kbd> rise · <kbd>C</kbd> / <kbd>Ctrl</kbd> dive · <kbd>Shift</kbd> faster"
+    ],
+    [
+      "Ladders",
+      "<kbd>E</kbd> near a ladder to climb up / down · <kbd>E</kbd> while climbing to let go"
+    ],
+    [
+      "Vehicle helm",
+      "<kbd>E</kbd> at a helm to pilot / exit · <kbd>W/S</kbd> thrust · <kbd>A/D</kbd> steer · <kbd>Space</kbd> / <kbd>C</kbd> rise / dive"
+    ],
+    [
       "Sit / lie",
       "<kbd>X</kbd> / <kbd>Z</kbd> — near a seat, sits ON it"
     ],

@@ -211,6 +211,7 @@ export function sendJoin() {
     avatar: hooks.myAvatarPath(),
     spectate: CONFIG.spectate || CONFIG.renderer,
     renderer: CONFIG.renderer,
+    ...(CONFIG.roam ? { roam: true } : {}),
     token: CONFIG.token,
     session: PAGE_SESSION,
     clock: true,   // the server's time just before the snapshot ('clock' below)
@@ -259,6 +260,8 @@ export function sendPose(now) {
     pose.clipRate = avatar.current.paused ? 0 : avatar.current.timeScale ?? 1;
   }
   if (ov?.xr) pose.xr = ov.xr;   // C18: tracked head/hands, facing-relative (xrbody.js) — presence, never the log
+  if (s.q) pose.q = s.q;
+  if (s.locomotion) pose.locomotion = s.locomotion;
   if (s.emote) { pose.emote = s.emote; s.emote = null; } // one-shot: send once
   // A held custom pose rides the presence packet (and therefore lastPose, so
   // late joiners see it) — but never the log. `null` explicitly clears it.
@@ -446,6 +449,17 @@ function wireSocket(ws) {
       net.status = 'rejected';
       bus.emit('net', net);
       toast('you were removed from this world — reload if you believe you may return', 'warn', 60000);
+      return;
+    }
+    // 4010 = this world is not open to you: refused at the door (members
+    // only, watch only), or your access just ended or was changed. The server
+    // said why in an error toast just before closing. No retry — the door
+    // will not open on its own; coming back is a deliberate reload (or
+    // ?spectate, when the toast says you may watch).
+    if (ev.code === 4010) {
+      net.status = 'rejected';
+      bus.emit('net', net);
+      toast(`you're not in "${CONFIG.world}" — reload if your access changes`, 'warn', 60000);
       return;
     }
     // 4005 = the world name itself is malformed (a mangled link). No retry —
@@ -708,6 +722,14 @@ async function handle(msg, at) {
       }
       break;
 
+    case 'renderer-travel':
+      // a roaming renderer is wanted elsewhere (server/snapshots.ts summon): go there — the same in-page re-join a
+      // person's travel uses. Only a roaming renderer obeys; anyone else ignores it.
+      if (CONFIG.renderer && CONFIG.roam && typeof msg.world === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(msg.world) && msg.world !== CONFIG.world) {
+        CONFIG.world = msg.world; rejoin();
+      }
+      return;
+
     case 'snap':
       // The reply is the snapshot's to produce and the wire's to send, so a client
       // without a renderer answers with an error instead of going quiet on an id
@@ -767,6 +789,20 @@ async function handle(msg, at) {
       // Moderation replies (ban lists, global-ban confirmations) — chat is
       // where the person is looking when they issue the command.
       for (const line of String(msg.text ?? '').split('\n')) logChat('*', line);
+      break;
+
+    case 'access-state':        // the world panel's 🔒 access tab (accesspanel.js)
+    case 'access-directory':
+      bus.emit(msg.type, msg);
+      break;
+
+    case 'notice':
+      // The world telling YOU something that is not a refusal — today, that
+      // your access here ends soon. Toast (it matters now) and chat (so it is
+      // still there when you look). Not an `error`: that would also tell every
+      // optimistic preview its verb was refused.
+      toast(String(msg.text ?? ''), 'warn', 20000);
+      logChat('*', String(msg.text ?? ''));
       break;
 
     case 'error':

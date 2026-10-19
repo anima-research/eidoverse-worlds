@@ -11,6 +11,7 @@ import { makeSection, toast, escapeHtml } from './ui.js';
 import { holdGhost } from './build.js';
 import { paintGround } from './groundpanel.js';
 import { paintSky } from './skypanel.js';
+import { paintAccess } from './accesspanel.js';
 
 // The starter vocabulary. Everything else arrives through the catalog or an
 // `asset` verb, so this list is a doorway, not a limit.
@@ -34,6 +35,8 @@ export function initPalette() {
   makeSection('🧍 avatar', paintAvatars, { id: 'avatar' });
   makeSection('🌿 ground', paintGround, { id: 'ground' });
   makeSection('☀ sky', paintSky, { id: 'sky' });
+  // who may come into this world — owners edit, everyone else reads
+  makeSection('🔒 access', paintAccess, { id: 'access' });
 }
 
 // ---- models ----------------------------------------------------------------
