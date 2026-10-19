@@ -385,7 +385,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   sun/fill/world dropped, the registry's seven defaults written; `terrain`
   layer colours `"#rrggbb"` → ints, the sim's defaults written,
   `terrain.water` → `water`; `grass` in the flora spelling (a preset keeps
-  its name). The translator (`translate-v1@14`, §14) writes its
+  its name). The translator (`translate-v1@15`, §14) writes its
   projection through the same functions, so a translated world needs no
   repair, and the old-world oracle mirrors the repair with them; the sweep's
   declared projection and the oracle's core check are written independently,
@@ -523,7 +523,11 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   document format is trial and expected to grow: additions are designed to
   be additive, and a breaking change would ship with a translator. The
   first protocol's flat bag is still read (a stored value is read forever)
-  and no longer written.
+  and no longer written; its `scale` is the instance's. A thing carries one
+  `particles`: emitters that burn together are one document's `emitters`
+  (1–4), and an emitter lit and put out on its own is a child thing with its
+  own `particles` (the translator writes the first protocol's
+  `particles:<name>` that way, §14).
 - **Parameters, never code.** A component holds data. Code lives in a blob
   that a `script:<name>` component names (§8). Nothing writes a component
   per frame: motion is stored as a function of time (`motion`), evaluated by

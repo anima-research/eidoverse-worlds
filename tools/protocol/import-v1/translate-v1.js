@@ -15,7 +15,7 @@ import { enc, encName, dec, partSlot, motionType } from "../../../shared/protoco
 import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
-import { modernize as newParticles } from "../../../shared/particle_effects.js";
+import { modernize as newParticles, hashSeed } from "../../../shared/particle_effects.js";
 import { repairComps, repairWorld, SHAPES_VERSION } from "../../../shared/protocol/shaperepair.js";
 import * as eidosim from "./eidosim-v1.js";   // HER engine (the first eidosim, dialect 3): what a v1 punt did. Importer-only.
 import { ENGINES, DEFAULT_ENGINE } from "../../../shared/protocol/simlayer.js";
@@ -101,7 +101,17 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@14";
+export const TRANSLATOR = "eidoverse/translate-v1@15";
+// @15 (2026-10-18, merging upstream #256, particles v2): v1 gained more than one emitter per thing, `particles:<name>` beside
+// `particles` (name: 1–32 of A–Z a–z 0–9 _ -), each lit, retuned and put out on its own. v4 keeps one `particles` per thing
+// (several emitters that burn together are one effect document's emitters); an emitter lit and put out on its own is its
+// own thing. So a v1 `particles:<name>` on X becomes a child thing of X (parent {to: X}, label <name>, at X's origin) whose
+// `particles` is the emitter in today's spelling, its id derived (emitterChildId: the same from every translation), its
+// seed the one v1 drew it with (hashSeed(`<X>:particles:<name>:<preset>`), unless it wrote one). Putting it out removes
+// the child. A malformed `particles:…` key was never an emitter in v1 either: it is carried as any invented component.
+// v2's look and motion knobs (wobble, up, spread, gravity, grow, swirl, twinkle, converge, rotate, color, blending) are
+// the old builder's table, which an effect document's modules say in full: they ride in imported:particles (carried,
+// not drawn), and v2's `scale` is the instance's scale. Output differs from @14 on any log with a named emitter.
 // @14 (R 10-17 21:40): a motion's type is written in today's spelling: v1's back-and-forth along an axis is oscillate (the load
 // renames a stored one the same way: shaperepair.js renameFields). Output differs from @13 on any log with that motion. Both names.
 // @13 (review r9 claims O3, 2026-10-17): every translation writes the system's repair-shapes act right after `translated`
@@ -135,7 +145,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@14";
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@14";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@15";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -192,6 +202,8 @@ export const DROPPED = {
   "comp.guard": "merged into `lock` (PROTOCOL-v4 §5, R 19:58): a truthy guard becomes lock {rank: 'builder'} (@12; was true), which binds everyone (the placer too) and any builder may lift; the guard's authorship protection is dropped by design. stats.guards counts the things this happened to, so the world's owners can be told",
   "comp.door": "renamed `openable` (R 10-07), and a reaction's component 'door' with it: the same value under v4's name (@5)",
   "roles.sub / bans.sub": "an account subject is person data (PROTOCOL §9.2): never written into a value (@12). With an identity mapper it is how the person's id is found (the key); without one it is dropped",
+  "comp['particles:<name>']": "a thing's second (third, …) emitter (upstream #256) becomes a child thing carrying it: parent {to: the thing}, label <name>, its own `particles`, its seed the one v1 drew it with (@15). v4 keeps one particles per thing",
+  "particles.wobble / up / spread / gravity / grow / swirl / twinkle / converge / rotate / color / blending": "upstream #256's preset overrides (the old builder's table): carried in imported:particles, not drawn; v4 says that look in an effect document's modules (velocity, forces.gravity, size.curve, color, render.blend, drift, swirl, converge, flicker, rotation). `scale` is the instance's own scale",
   "motion.rpm": "becomes degPerSec = rpm × 6 (@5): the rate the renderer drew, under the authority's one name for it",
   "motion.type": "the back-and-forth along an axis is written oscillate (@14, R 10-17 21:40; shared/protocol/names.js OLD_MOTION_TYPES holds the old word): the same motion under today's name",
   "motion.part": "a bare motion naming a part becomes motion:<slot> {node: <the part's name>} (@12; the slot is shared/protocol/names.js partSlot of the name: the name itself when it is a §2.3 tag, else a sanitized form with 8 hex of its sha256): when the thing already has a motion on that node, that one wins and the bare one is dropped (the renderer drew both on one node, the keyed one last). A keyed motion carries node (its key's tag, the old reading)",
@@ -273,6 +285,10 @@ function namespaceUnknown(c, ns) {
 // the bytes are (`content(path)` → sha256:<64 hex>, or null) the hash rides beside it as model-hash; a path it can't hash
 // carries none (and is listed). The imported act keeps the path as it was written either way.
 const hashOf = (a) => { if (typeof a !== "string") return null; const m = /^(?:sha256:|eido:sha256\/)([0-9a-f]{64})$/.exec(a); return m ? `sha256:${m[1]}` : null; };
+// upstream #256's emitter name, and the id of the child thing a named emitter becomes (@15): readable (its name first), the
+// same from every translation of the same world, never a person's id
+const EMITTER_NAME = /^[A-Za-z0-9_-]{1,32}$/;
+export const emitterChildId = (host, name) => `${name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 20).replace(/-+$/, "") || "emitter"}-${sha256(`eido-emitter\0${host}\0${name}`).slice(0, 26)}`;
 export function project(st, seen = null, who = null, ns = NAMESPACE, content = null) {
   const out = {};
   const person = (k, v) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? asSub(k) }) : enc(k));
@@ -284,7 +300,9 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     c.transform = t;
     if (e.lib !== undefined) { c.model = e.lib; const h = content && typeof e.lib === "string" ? hashOf(content(e.lib)) : null; if (h) c["model-hash"] = h; }
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
+    const emitters = [];   // v1 particles:<name> (upstream #256): each becomes a child thing (@15)
     for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") {
+      if (k.startsWith("particles:") && EMITTER_NAME.test(k.slice(10))) { if (v != null) emitters.push([k.slice(10), v]); continue; }
       // a node's motion (v1 motion:<node name>): the name is data, motion:<partSlot(name)> {node: name} (@12, review r7 F1)
       if (k.startsWith("motion:") && v && typeof v === "object" && !Array.isArray(v)) { const node = k.slice(7); c[`motion:${partSlot(node)}`] = { ...newMotion(v), node: typeof v.node === "string" && v.node ? v.node : node }; continue; }
       c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" ? newMotion(v) : k === "particles" ? newParticles(v) : v; }
@@ -299,6 +317,10 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       c[keyed("imported", k)] = v; // anything the mapping doesn't know is carried, never dropped (R10)
     }
     out[enc(id)] = shapeRepaired(c);
+    for (const [name, v] of emitters) {
+      const seeded = v && typeof v === "object" && !Array.isArray(v) && !Number.isFinite(v.seed) ? { ...v, seed: hashSeed(`${id}:particles:${name}:${v.preset ?? ""}`) } : v;
+      out[emitterChildId(enc(id), name)] = shapeRepaired({ transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: enc(id) }, label: name, particles: newParticles(seeded) });
+    }
   }
   const w = {};
   for (const k of ["sky", "terrain", "grass"]) if (st[k] != null) w[k] = st[k];

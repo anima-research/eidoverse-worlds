@@ -454,7 +454,8 @@ export function instanceOf(v) {
   if (!isObj(v)) return null;
   if (v.effect === undefined && v.preset !== undefined) {
     const params = {}; for (const k of LEGACY_PARAM_KEYS) if (v[k] !== undefined) params[k] = v[k];
-    return { effect: v.preset, ...(v.seed !== undefined ? { seed: v.seed } : {}), ...(v.origin !== undefined ? { at: v.origin } : {}), ...(Object.keys(params).length ? { params } : {}) };
+    // upstream #256 (particles v2) gave the bag `scale`, the emitter's own frame: the instance's scale exactly
+    return { effect: v.preset, ...(v.seed !== undefined ? { seed: v.seed } : {}), ...(v.origin !== undefined ? { at: v.origin } : {}), ...(typeof v.scale === 'number' ? { scale: v.scale } : {}), ...(Object.keys(params).length ? { params } : {}) };
   }
   const out = {}; for (const k of INSTANCE_FIELDS) if (v[k] !== undefined) out[k] = v[k];
   return out;

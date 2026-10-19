@@ -67,6 +67,9 @@ export function describeParticles(data, { lookup = () => null } = {}) {
   const o = Array.isArray(inst.at) && inst.at.length === 3 && inst.at.every((n) => typeof n === 'number' && Number.isFinite(n)) ? inst.at : null;
   bits.push(`local origin [${(o ?? [0, 0, 0]).join(', ')}]`);
   if (typeof inst.part === 'string') bits.push(`on its ${quoted(inst.part, 64)}`);
+  // size is a shared fact a resident can act on (a candle flame is not a bonfire: upstream #256), so a scaled emitter
+  // says so; at its own size (absent, or 1) nothing is claimed
+  if (typeof inst.scale === 'number' && Number.isFinite(inst.scale) && inst.scale !== 1) bits.push(`scale ${+inst.scale.toPrecision(3)}`);
   if (!known && !effectBlobName(inst.effect)) bits.push('effect unknown to this client');
   // the component IS the emitter's state: present and playing means it is emitting now
   bits.push(inst.playing === false ? 'stopped' : 'active');

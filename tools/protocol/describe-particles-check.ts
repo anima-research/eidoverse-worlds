@@ -63,6 +63,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a document's total is bounded", "shared/particle_effects.js", "if (total > L.totalAmount) return", "if (false) return", ["X6"]],
   ["the authority checks particles at all", "shared/protocol/authority/gate.js", "if (!CTX.forking) for (const op of norm) if (op.verb === \"set\") particlesCheck(w, op);", "", ["X3", "X4"]],   /* X2 and X8 have a second gate (checks.js) since the shape audit */
   ["the translator modernizes particles", "tools/protocol/import-v1/translate-v1.js", ": k === \"particles\" ? newParticles(v) : v;", ": v;", ["X10"]],
+  ["a named emitter becomes a child thing", "tools/protocol/import-v1/translate-v1.js", "if (k.startsWith(\"particles:\") && EMITTER_NAME.test(k.slice(10)))", "if (false)", ["X13"]],
+  ["a scaled emitter says its scale", "shared/particles.js", "inst.scale !== 1) bits.push(", "inst.scale !== 1 && false) bits.push(", ["X14"]],
   ["openable's state is generated", "shared/a11y.js", "if (isObj(c.openable)) out.state.push(", "if (false) out.state.push(", ["D2", "D3"]],
   ["openable's affordance is generated", "shared/a11y.js", "if (isObj(c.openable)) out.can.push(", "if (false) out.can.push(", ["D2"]],
   ["a description is bounded", "shared/protocol/authority/checks.js", "if (def.maxLen !== undefined && graphemes(v) > def.maxLen) refuse(", "if (false) refuse(", ["D1"]],
@@ -94,6 +96,7 @@ D.fixtureIds?.(true);
 const F = await import(TREE + "shared/protocol/fold.js");
 const CS = await import(TREE + "shared/protocol/componentspec.js");
 const PE = await import(TREE + "shared/particle_effects.js").catch(none);   // absent at the base
+const PD = await import(TREE + "shared/particles.js").catch(none);
 const PS = await import(TREE + "shared/particlesim.js").catch(none);
 const AX = await import(TREE + "shared/a11y.js").catch(none);
 const TV1 = await import(TREE + "tools/protocol/import-v1/translate-v1.js");
@@ -217,7 +220,30 @@ const cases: Case[] = [
       const r = TV1.translate(L); const ents = r.final?.translated ?? {}; const c = Object.values<any>(ents).find((x) => x.particles) ?? {};
       return { tr: TV1.TRANSLATOR, p: c.particles, imp: c["imported:particles"], back: PE.instanceOf?.({ preset: "fire", seed: 781526, origin: [0, 0.18, 0], count: 150, quality: "auto" }) }; },
     // @12 (R 10-17): an Essential keeps its name, as the door and the load keep it
-    good: (o) => /@14$/.test(o.tr) && JSON.stringify(o.p) === JSON.stringify({ effect: "fire", seed: 781526, at: [0, 0.18, 0], params: { count: 150, quality: "auto" } }) && o.imp?.glow === true && JSON.stringify(o.back) === JSON.stringify(o.p) },
+    good: (o) => /@1[45]$/.test(o.tr) && JSON.stringify(o.p) === JSON.stringify({ effect: "fire", seed: 781526, at: [0, 0.18, 0], params: { count: 150, quality: "auto" } }) && o.imp?.glow === true && JSON.stringify(o.back) === JSON.stringify(o.p) },
+  { id: "X13", what: "upstream #256: a v1 thing's named emitter (particles:<name>) is translated as a child thing carrying it (one particles per thing), lit and put out on its own; v2's scale is the instance's, its look knobs ride in imported:particles", run(s) {
+      const L = [{ seq: 0, ts: 1, actor: "door", verb: "genesis", args: {} }, { seq: 1, ts: 2, actor: "mica", verb: "spawn", args: { id: "hearth", lib: "x.glb", pos: [0, 0, 0] } },
+        { seq: 2, ts: 3, actor: "mica", verb: "comp", args: { id: "hearth", type: "particles", data: { preset: "fire", origin: [0, 0.25, 0], scale: 0.5, wobble: 0.1 } } },
+        { seq: 3, ts: 4, actor: "mica", verb: "comp", args: { id: "hearth", type: "particles:smoke", data: { preset: "smoke", origin: [0, 0.9, 0], color: "#3a3a44", gravity: 0.7 } } },
+        { seq: 4, ts: 5, actor: "mica", verb: "comp", args: { id: "hearth", type: "particles:sparks", data: { preset: "embers", seed: 7 } } },
+        { seq: 5, ts: 6, actor: "mica", verb: "comp", args: { id: "hearth", type: "particles:two words", data: { preset: "fire" } } }];
+      const off = [...L, { seq: 6, ts: 7, actor: "mica", verb: "comp", args: { id: "hearth", type: "particles:sparks", data: null } }];
+      const r = TV1.translate(L), r2 = TV1.translate(off); const E = r.final?.translated ?? {}, E2 = r2.final?.translated ?? {};
+      const kids = (X: any) => Object.entries<any>(X).filter(([, c]) => c.parent?.to === "hearth").map(([id, c]) => ({ id, label: c.label, p: c.particles, imp: c["imported:particles"] }));
+      // the authority takes the child's shape as it is (a thing with no model: parent, label, particles)
+      cast(s); thing(s, "hearth", { particles: { effect: "fire" } });
+      const made = s.call("olive", "create", { id: "smoke-k", components: { transform: { pos: [0, 0, 0] }, parent: { to: "hearth" }, label: "smoke", particles: { effect: "smoke", at: [0, 0.9, 0] } } });
+      return { div: [r.stats?.divergences, r2.stats?.divergences], host: E.hearth, kids: kids(E), after: kids(E2), keys: Object.keys(E.hearth ?? {}), made: show(made), same: TV1.emitterChildId?.("hearth", "smoke") === TV1.emitterChildId?.("hearth", "smoke"),
+        seed: PE.hashSeed?.("hearth:particles:smoke:smoke") }; },
+    good: (o) => o.div[0] === 0 && o.div[1] === 0 && o.host?.particles?.scale === 0.5 && o.host?.["imported:particles"]?.wobble === 0.1
+      && !o.keys.some((k: string) => k.startsWith("particles:")) && o.kids.length === 2
+      && o.kids.some((k: any) => k.label === "smoke" && k.p?.effect === "smoke" && JSON.stringify(k.p.at) === "[0,0.9,0]" && k.p.seed === o.seed && k.imp?.color === "#3a3a44" && k.imp?.gravity === 0.7)
+      && o.kids.some((k: any) => k.label === "sparks" && k.p?.effect === "embers" && k.p.seed === 7)
+      && o.after.length === 1 && o.after[0].label === "smoke" && o.same && /^ok/.test(o.made) },
+  { id: "X14", what: "a scaled emitter says how big it is in every text reading (upstream #256: size is a shared fact, a candle flame is not a bonfire); at its own size nothing is claimed", run() {
+      return { small: PD.describeParticles?.({ effect: "fire", scale: 0.025 }), plain: PD.describeParticles?.({ effect: "fire", at: [0, 0.25, 0] }), one: PD.describeParticles?.({ effect: "fire", scale: 1 }),
+        old: PE.instanceOf?.({ preset: "fire", scale: 0.025 })?.scale }; },
+    good: (o) => o.small?.includes("scale 0.025") && o.plain === "emitting fire (particles; local origin [0, 0.25, 0]; active)" && !o.one?.includes("scale") && o.old === 0.025 },
   { id: "X11", what: "look says what an emitter is doing: emitting fire; can emit smoke (stopped) when playing is off", run(s) { cast(s);
       thing(s, "a", { particles: { effect: "fire" } }); thing(s, "b", { particles: { effect: "smoke", playing: false } });
       return { a: lookOf(s, "a")?.state, b: lookOf(s, "b")?.state }; },

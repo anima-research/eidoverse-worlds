@@ -474,7 +474,16 @@ translator. Names held for later (`space`, `collision`, `sub`,
 `render.mode`, `render.trail`, `spawn.rate`, `spawn.bursts`, instance
 `t0`) are refused as reserved: not built yet. `at` is
 ENTITY-RELATIVE metres (±8): the emitter rides every move its thing makes;
-`part` hangs it on one node of its model. `seed` makes the spawn
+`part` hangs it on one node of its model. `scale` (0.01–100) multiplies
+every length in the effect (sizes, the space it fills, speeds, gravity) on
+top of the thing's own scale, so a fire tuned at hearth size sits on a
+candle wick without retuning a number (`{effect: "fire", at: [0, 0.11, 0],
+scale: 0.025}`), and `look` says `scale 0.025`. A thing has one `particles`:
+emitters that burn together (a fire and its smoke) are one effect
+document's `emitters` (up to 4, each its own modules), and one you light
+and put out on its own (the sparks) is a child thing with its own
+`particles` (`create {components: {parent: {to: "hearth"}, label: "sparks",
+particles: {...}}}`), narrated under its own name. `seed` makes the spawn
 deterministic (omit it and one is derived from the entity id). `playing:
 false` stops new particles (the living finish). `quality` is an authored
 UPPER BOUND on what any viewer draws; each client's perf governor may lower
