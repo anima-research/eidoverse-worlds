@@ -1,5 +1,5 @@
 // tools/protocol/txn-check.ts — the transaction service and the request capability (reviewer items 1 and 2, 10-18;
-// notes DESIGN-txn-capability-2026-10-18). Real World, real WorldLog, real authority, real files; the wire handler is the
+// docs/DESIGN-txn-capability.md). Real World, real WorldLog, real authority, real files; the wire handler is the
 // real REQUEST_MESSAGES. Storage faults are injected at node:fs (the calls server/durable.ts makes), and a slow warm() is a
 // gate held in front of the real WorldLog.request (the same stub reset-race-check uses).
 //   T1  a durable write throws on the 2nd line of a commit → ambiguous, `from` = that line; the 1st line is published

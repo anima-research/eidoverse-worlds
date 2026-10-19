@@ -1,4 +1,4 @@
-// server/reqcap.ts — one immutable capability per request (reviewer item 2, 10-18; DESIGN-txn-capability).
+// server/reqcap.ts — one immutable capability per request (reviewer item 2, 10-18; docs/DESIGN-txn-capability.md).
 //
 // A request is admitted under WHO the connection was when it arrived: its identity, account, spectator flag, operator
 // status, the credential's world narrowing, the door's decision, its role here, its leg (gen). capture() freezes that once;
