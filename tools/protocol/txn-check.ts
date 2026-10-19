@@ -12,6 +12,7 @@
 //   T8  a short write is looped to the end, and a write that takes nothing throws
 //   T9  operator-repair: operator status revoked while queued → refused
 //   T10 no false refusals: 100 serial requests from an unchanged guest connection all committed
+//   T11 (r14 M1) server.ts writes only through requestwire (voice-moderate via requestAs); no direct w.log.request caller
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/txn-check.ts
 //        … --mutants   each row's mutation, applied to a scratch copy of the tree: every one must turn its rows red
 // @ts-nocheck
@@ -247,4 +248,11 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   ok(t.replies.length === 100 && !bad.length && said(X, "n97") && t.replies.filter((m) => m.verb === "say").length === 14, "T10 100 serial requests from an unchanged guest connection: all committed, no false refusal", { n: t.replies.length, bad: bad.slice(0, 2) }); }
 
 ok(!publishedNotOnDisk.length, "T3d every line any client was sent was on disk when it was sent", publishedNotOnDisk);
+// ---------------- T11 (review r14 M1, 10-18) ----------------
+// every write a socket sends goes through requestwire (one capability, the queue, the meters, both recheck seams): server.ts
+// itself calls w.log.request nowhere; voice-moderate goes through requestAs. A static row: the wire has no other door to a write.
+{ const srv = fs.readFileSync(path.join(ENGINE, "server/server.ts"), "utf8"); const rw = fs.readFileSync(path.join(ENGINE, "server/requestwire.ts"), "utf8");
+  const direct = srv.split("\n").map((l, i) => [i + 1, l] as const).filter(([, l]) => /\.log\.request\(/.test(l) && !/^\s*\/\//.test(l)).map(([n, l]) => `${n}: ${l.trim().slice(0, 100)}`);
+  ok(!direct.length && /requestAs\(c, ws, w,/.test(srv) && /export function requestAs\(/.test(rw) && /recheck\(cap\)/.test(rw.slice(rw.indexOf("export function requestAs"))),
+    "T11 server.ts has no direct w.log.request caller (voice-moderate goes through requestwire.requestAs: capture, the connection's queue, the busy meter, recheck at both seams)", direct); }
 console.log(`[txn-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
