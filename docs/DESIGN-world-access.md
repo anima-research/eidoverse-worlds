@@ -240,12 +240,14 @@ stays down instead of reconnecting.
   and give it to the roaming renderers as their key. Until then roamers can
   serve open worlds only, and a snapshot asked in a members-only world says
   why.
-- **Pre-existing, not from this work:** a `/snap` sends nothing while it waits
-  for a roamer to arrive (up to 25 s, `travelMs`) and then for its snapshot
-  (up to 40 s, `arrivalTimeoutMs`). `Bun.serve`'s `idleTimeout` of 255 s
-  outlasts that, but behind `deploy/nginx-show.conf`, whose `location /` sets
-  no `proxy_read_timeout`, nginx's 60 s default can still cut one that waits
-  past 60 s.
+- **Proxy timeout (deploy):** `GET /snap` sets its own per-request timeout
+  from the broker's longest wait, so Bun's idle timer doesn't reset a `/snap`
+  while it waits. But `deploy/nginx-show.conf`'s `location /` sets no
+  `proxy_read_timeout`, so nginx's 60 s default still cuts any `/snap` that
+  waits past 60 s. A roamed one can at the defaults, which allow 25 s for the
+  roamer to arrive (`travelMs`) and 40 s for its first frame, and any one can
+  once `SNAP_TIMEOUT_SEC` is above 60. Raise it to at least the broker's
+  longest wait (see `SNAP_TIMEOUT_SEC` in `server/config.ts`).
 
 ## Review (independent, 2026-10-17)
 

@@ -60,6 +60,22 @@ export const OPT_MEM_BUDGET_MB = envNumber("OPT_MEM_BUDGET_MB", Math.floor(usabl
 // estimate above: measured 259MB for a 5.4MB store GLB (x48). The KTX2/LOD
 // arms were not measured separately and are assumed the same order.
 export const OPT_COST_FACTOR = envNumber("OPT_COST_FACTOR", 48, (n) => n > 0);
+// How long the snapshot broker (snapshots.ts) waits for a renderer's frame
+// before GET /snap answers 504. 12s suits a GPU renderer; a software-rendered
+// one (SwiftShader, --disable-gpu) running a full world can need 10-20s per
+// frame, and loses most races at 12. A summoned roamer first travels (up to
+// 25s) and then has at least 40s for its first frame, so the broker's longest
+// wait is 25s plus the larger of 40s and this window. /snap sends nothing while
+// it waits, and GET /snap sets its own per-request timeout a little past that
+// longest wait (5s), capped at 255s, the largest idleTimeout Bun.serve
+// accepts. So the most this window can be is 225 (255, less the 25s journey
+// and the 5s): a larger value is refused like any other invalid one, and 12 is
+// used with a warning. A proxy in front must allow the same longest wait.
+// Behind deploy/nginx-show.conf, `location /` sets no proxy_read_timeout, so
+// nginx's 60s default cuts any /snap that waits past 60s, which a roamed one
+// can at the defaults (25s + 40s), and any one can once SNAP_TIMEOUT_SEC is
+// above 60.
+export const SNAP_TIMEOUT_MS = envNumber("SNAP_TIMEOUT_SEC", 12, (n) => n > 0 && n <= 225) * 1000;
 export const ROOT = resolve(import.meta.dir, "..");
 // Dev instances point this elsewhere so a scratch sequencer can't append to the
 // live worlds' logs (they are append-only and forever — a stray dev spawn is
