@@ -36,6 +36,10 @@ import { recordComponents } from '../../../shared/protocol/view.js';
 import { R_BASE, residencyRadiusFor } from '../../../shared/lod-distance.js';   // shared with the server's LOD budget
 import { worldPose, ancestors } from '../../../shared/hierarchy.js';
 
+/** Has this entity's model failed to load (and is waiting out its back-off)?
+ *  A thing that failed won't be solid soon — arrivalhold.js stops waiting on it. */
+export const modelLoadFailed = (id) => Boolean(tracked.get(id)?.failedAt);
+
 // Orientation (spec/PROTOCOL.md §9): the fold's q when the thing is more than turned, else its yaw. base carries q
 // too, so motion composes on the real tilt instead of snapping a toppled thing upright.
 function orientObj(obj, ent) {
