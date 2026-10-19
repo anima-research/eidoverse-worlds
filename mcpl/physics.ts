@@ -60,7 +60,7 @@ let simMods: {
   Ragdoll: any;
   Body: any;                 // the engine that actually runs: AmmoRagdoll or Ragdoll
   engine: string;
-  rig: { glbJson: any; humanBones: any; worldPositions: any; makeAvatar: any };
+  rig: { glbJson: any; humanBones: any; worldPositions: any; worldRotations: any; makeAvatar: any };
   THREE: any;
   terrain: any;
   colliders: any;
@@ -400,9 +400,9 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
     const g = m.rig.glbJson(buf);
     const bones = m.rig.humanBones(g);
     if (!bones) throw new Error("no humanoid extension");
-    const wp = m.rig.worldPositions(g);
-    const P: Record<string, any> = {};
-    for (const [b, n] of Object.entries(bones)) if (g.nodes[n as number]) P[b] = wp(n);
+    const wp = m.rig.worldPositions(g), wr = m.rig.worldRotations(g);
+    const P: Record<string, any> = {}, restAxes: Record<string, number[]> = {};
+    for (const [b, n] of Object.entries(bones)) if (g.nodes[n as number]) { P[b] = wp(n); restAxes[b] = wr(n).toArray(); }
     if (!P.hips) throw new Error("no hips bone");
     // Hair chains too, with their real parenting.
     //
@@ -467,6 +467,7 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
     // the shipped rigs). The ragdoll never asked, so this travels as a
     // non-enumerable extra rather than a change to its P contract.
     Object.defineProperty(P, "__vrm0", { value: !!g.extensions?.VRM, enumerable: false });
+    Object.defineProperty(P, "__restAxes", { value: restAxes, enumerable: false });
     skeletons.set(key, P);
     return P;
   } catch (e) {
@@ -482,16 +483,20 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
 export class HeadlessBody {
   private m: NonNullable<typeof simMods>;
   private av: any;
+  private vrm0: boolean;
   rd: any = null;
 
   private constructor(m: NonNullable<typeof simMods>, P: Record<string, any>) {
     this.m = m;
+    this.vrm0 = !!(P as any).__vrm0;
     // realParent carries the NON-HUMANOID chains -- hair, and now wings.
     // Without it makeAvatar drops any bone that is not in its humanoid PARENT
     // table, which is every one of them.
+    // vrm0: three-vrm's half-turn as the pivot the bones hang from, so a
+    // VRM0 body faces, holds its pose and falls in the browser's frame.
     const hp = (P as any).__hairParent;
-    this.av = hp ? m.rig.makeAvatar(P, { realParent: { ...(m.rig as any).PARENT, ...hp } })
-      : m.rig.makeAvatar(P);
+    this.av = hp ? m.rig.makeAvatar(P, { vrm0: this.vrm0, realParent: { ...(m.rig as any).PARENT, ...hp } })
+      : m.rig.makeAvatar(P, { vrm0: this.vrm0 });
   }
 
   /** This body's water, read on every step it floats (ammodoll.js _water) — set by its agent, so a body
@@ -508,40 +513,57 @@ export class HeadlessBody {
   }
 
   /** Reset the stand-in to a pose at a place, standing on the live ground.
-   *  `pose` is a sparse bone->quat map (a streamed pose — e.g. where a
-   *  dragger's hand left this body); null means standing. */
+   *  `pose` is a sparse bone map (a streamed pose — e.g. where a dragger's
+   *  hand left this body — or the pose it held); null means standing. Only
+   *  rotations: a limp body in the browser leaves out a held pose's
+   *  translations and scales too (avatar.js _applyRawPose doesn't run while
+   *  limp), except a hips drop, which begin() moves onto the root. */
   private pose(x: number, z: number, yaw: number, pose: Record<string, unknown> | null) {
     this.av.root.position.set(x, this.m.terrain.heightAt(x, z), z);
     this.av.root.rotation.y = yaw;
     for (const n of Object.values(this.av.nodes) as any[]) n.quaternion.identity();
     if (pose) {
       for (const [j, v] of Object.entries(pose)) {
-        const n = this.av.nodes[j], q = poseChannels(v)?.q;   // rotation only: this stand-in has no t/s
-        if (n && q) n.quaternion.set(q[0], q[1], q[2], q[3]);
+        // a published name is the sender's; one an object inherits (`constructor`) is no bone
+        const n = Object.hasOwn(this.av.nodes, j) ? this.av.nodes[j] : null, q = poseChannels(v)?.q;
+        if (n && q) n.quaternion.set(q[0], q[1], q[2], q[3]).normalize();
       }
     }
     this.av.root.updateMatrixWorld(true);
   }
 
-  /** Start a tumble: from standing (pose null) with a topple lean, or from a
-   *  given pose (a drag release) falling free. Everything is WORLD y —
-   *  `rootY`, pins, the seed — and the sim clamps against the live height
-   *  field and registered supports as it runs. */
   /** The world this body falls in: its ragdoll sees that world's colliders only. */
   scope: string | null = null;
+  /** Start a tumble: from standing (pose null), or from a given pose (the
+   *  pose held when the blow landed, or where a drag release left the body),
+   *  with a topple lean or falling free. Everything is WORLD y — `rootY`,
+   *  pins, the seed — and the sim clamps against the live height field and
+   *  registered supports as it runs. A held hips drop in `pose` lowers the
+   *  root from `rootY` (or the ground) before the sim starts. */
   begin(opts: Parameters<HeadlessBody["beginIn"]>[0]) { return inWorld(this.scope, () => this.beginIn(opts)); }
   step(dt: number) { return inWorld(this.scope, () => this.stepIn(dt)); }
   private beginIn(opts: {
     x: number; z: number; yaw: number;
     lean?: number[] | null;
     pose?: Record<string, unknown> | null;
-    rootY?: number;                          // world y of the root at start (a lifted drop)
+    rootY?: number;                          // world y of the root before any held hips drop (a lifted drop)
     pins?: Array<{ j: string; at: number[] }>;
     sim?: { j: string[]; p: number[]; v: number[] } | null;   // a handover
   }) {
     this.pose(opts.x, opts.z, opts.yaw, opts.pose ?? null);
     if (opts.rootY != null) {
       this.av.root.position.y = opts.rootY;
+      this.av.root.updateMatrixWorld(true);
+    }
+    // A held pose that lowers the hips (kneeling) hands its drop to the root,
+    // as the browser does before its own sim (avatar.js bakeHipsIntoRoot):
+    // the fall starts where the body was drawn, not at standing height. The
+    // drop is in the frame the normalized hips moves in: the pivot, vrm.scene,
+    // turned half round for a VRM0 body.
+    const hipsT = poseChannels(opts.pose?.hips)?.t;
+    if (hipsT) {
+      const drop = new this.m.THREE.Vector3(hipsT[0], hipsT[1], hipsT[2]);
+      this.av.root.position.add(drop.applyMatrix3(new this.m.THREE.Matrix3().setFromMatrix4(this.av.pivot.matrixWorld)));
       this.av.root.updateMatrixWorld(true);
     }
     const lean = Array.isArray(opts.lean) && opts.lean.length === 3
@@ -713,7 +735,11 @@ export class ReachBody {
   av: any;
   private chains = new Map<string, any>();
   private restPositions = new Map<string, any>();
+  private restAxes: Record<string, number[]>;
   private landmarks = new Map<string, { node: any; offset: any; normal: any }>();
+  /** Whether the held pose's raw layer (holdPose) is in the nodes' matrices:
+   *  on for what is drawn (joints, contacts), off while the solver runs. */
+  private drawn = true;
 
   private constructor(m: NonNullable<typeof simMods>, P: Record<string, any>, realParent: Record<string, string | null> | null = null) {
     this.m = m;
@@ -721,7 +747,24 @@ export class ReachBody {
     // humanoid ancestry (shoulders, upperChest, fingers); chain measurement
     // still refuses a lower limb that is not its upper limb's direct child.
     this.av = m.rig.makeAvatar(P, { vrm0: !!(P as any).__vrm0, realParent });
-    for (const [name, n] of Object.entries(this.av.nodes) as [string, any][]) this.restPositions.set(name, n.position.clone());
+    this.restAxes = (P as any).__restAxes ?? {};
+    // A node's local matrix carries the held pose's raw layer while it is
+    // drawn: a translation added to the bone's offset from its parent, and a
+    // scale in the bone's own rest axes, which a rig rarely aligns with the
+    // model's, so it can't ride Object3D.scale (always the node's normalized
+    // axes). It is applied after the bone's rotation, to everything hanging
+    // from it, as a raw bone's scale is.
+    const body = this, at = new m.THREE.Vector3();
+    const updateMatrix = function (this: any) {
+      const raw = body.drawn ? this.userData : null;
+      this.matrix.compose(raw?.heldT ? at.copy(this.position).add(raw.heldT) : this.position, this.quaternion, this.scale);
+      if (raw?.heldScale) this.matrix.multiply(raw.heldScale);
+      this.matrixWorldNeedsUpdate = true;
+    };
+    for (const [name, n] of Object.entries(this.av.nodes) as [string, any][]) {
+      this.restPositions.set(name, n.position.clone());
+      n.updateMatrix = updateMatrix;
+    }
     for (const point of Object.keys(CONTACT_POINTS)) {
       const frame = this.estimateContact(point);
       const node = this.av.nodes[(CONTACT_POINTS as any)[point].bone];
@@ -756,7 +799,7 @@ export class ReachBody {
    *  stands for vrm.scene, never the root — so the root keeps its position and
    *  yaw, every joint and contact scales about it, and root-frame points
    *  (reach `space`) stay in unscaled metres like reachnet.js's localToWorld. */
-  poseAt(p: number[], yaw: number, pose: Record<string, unknown> | null, scale: unknown = 1) {
+  poseAt(p: number[], yaw: number, pose: Record<string, unknown> | null, scale: unknown = 1, raw = true) {
     const u = clampBodyScale(scale);
     if (this.av.pivot.scale.x !== u) {
       this.av.pivot.scale.setScalar(u);
@@ -766,18 +809,64 @@ export class ReachBody {
     }
     this.av.root.position.set(p[0], p[1] ?? 0, p[2]);
     this.av.root.rotation.y = yaw ?? 0;
-    for (const [name, n] of Object.entries(this.av.nodes) as [string, any][]) { n.quaternion.identity(); n.position.copy(this.restPositions.get(name)); }
-    if (pose) {
-      for (const [j, v] of Object.entries(pose)) {
-        const n = this.av.nodes[j], q = poseChannels(v)?.q;   // rotation only: this stand-in has no t/s
-        if (n && q) n.quaternion.set(q[0], q[1], q[2], q[3]);
-      }
+    for (const [name, n] of Object.entries(this.av.nodes) as [string, any][]) {
+      n.quaternion.identity(); n.position.copy(this.restPositions.get(name));
+      n.userData.heldT = null; n.userData.heldScale = null;
     }
+    if (pose) this.holdPose(pose, { raw });
     this.av.root.updateMatrixWorld(true);
   }
 
+  /** Lay a held pose over the stand-in as it stands, once, after poseAt and
+   *  after any clip. Its two layers are the renderer's (avatar.js):
+   *  - the normalized layer, which the reach solver sees, as _applyPoseSlot
+   *    lays it before the IK: `q` replaces the bone's rotation, and hips `t`
+   *    adds to the hips' offset in the frame the normalized hips moves in
+   *    (the pivot: vrm.scene, a VRM0 half-turn and the body's size included);
+   *  - the raw layer, which only what is drawn sees, as _applyRawPose lays it
+   *    after the IK and vrm.update: any other bone's `t` adds to its offset
+   *    from its parent, in the parent's rest axes turned by the parent's
+   *    pose, and `s` scales what hangs from the bone in its own rest axes.
+   *  Each bone is read as the renderer reads it (shared/humanoid.js
+   *  poseChannels): a rotation of no length normalizes to identity, the
+   *  bone's rest, and a scale at or below 0 collapses or mirrors what hangs
+   *  from the bone, as drawn. A limp body draws no raw layer (avatar.js:
+   *  _applyRawPose doesn't run while limp), so `raw: false` leaves it out. A
+   *  bone the stand-in lacks, a name an object inherits (`constructor`), or a
+   *  value with nothing usable in it, is skipped. body_state's reply names a
+   *  value with nothing usable in it (unreadableBones), and its bones detail
+   *  names a bone the stand-in lacks (unmappedBones). */
+  holdPose(pose: Record<string, unknown>, { raw = true } = {}) {
+    const T = this.m.THREE;
+    for (const [j, v] of Object.entries(pose)) {
+      const n = Object.hasOwn(this.av.nodes, j) ? this.av.nodes[j] : null, c = poseChannels(v);
+      if (!n || !c) continue;
+      if (c.q) n.quaternion.set(c.q[0], c.q[1], c.q[2], c.q[3]).normalize();
+      if (c.t && j === "hips") n.position.add(new T.Vector3(c.t[0], c.t[1], c.t[2]));
+      if (!raw) continue;
+      if (c.t && j !== "hips") n.userData.heldT = new T.Vector3(c.t[0], c.t[1], c.t[2]);
+      if (c.s) {
+        const axes = new T.Matrix4().makeRotationFromQuaternion(new T.Quaternion().fromArray(this.restAxes[j] ?? [0, 0, 0, 1]));
+        n.userData.heldScale = axes.clone().multiply(new T.Matrix4().makeScale(c.s[0], c.s[1], c.s[2])).multiply(axes.invert());
+      }
+    }
+  }
+
+  /** Run `fn` on the normalized layer alone, as the renderer's IK runs
+   *  before the raw layer is laid (avatar.js update: _applyReach, then
+   *  vrm.update, then _applyRawPose). Limb lengths and every solve see the
+   *  skeleton the browser's solver sees, whatever the held pose moves or
+   *  scales afterwards. */
+  private solverView<R>(fn: () => R): R {
+    if (!this.drawn) return fn();
+    this.drawn = false;
+    this.av.root.updateMatrixWorld(true);
+    try { return fn(); }
+    finally { this.drawn = true; this.av.root.updateMatrixWorld(true); }
+  }
+
   private chain(limb: string) {
-    if (!this.chains.has(limb)) this.chains.set(limb, this.m.reachbone.measureChain(this.av, limb));
+    if (!this.chains.has(limb)) this.chains.set(limb, this.solverView(() => this.m.reachbone.measureChain(this.av, limb)));
     return this.chains.get(limb);
   }
 
@@ -790,6 +879,10 @@ export class ReachBody {
   /** Solve one limb toward a world target at the CURRENT pose. Returns plain
    *  data — the same verdict fields the browser's reachStatus reports. */
   solve(limb: string, target: number[] | { pos: number[]; normal?: number[] }, opts: { palm?: boolean; apply?: boolean; history?: any; dt?: number } = {}) {
+    return this.solverView(() => this.solveNormalized(limb, target, opts));
+  }
+
+  private solveNormalized(limb: string, target: number[] | { pos: number[]; normal?: number[] }, opts: { palm?: boolean; apply?: boolean; history?: any; dt?: number }) {
     const ch = this.chain(limb);
     if (!ch) return { ok: false as const, why: `no measurable ${limb} chain on this rig` };
     const tw = Array.isArray(target) ? target : target.pos;
@@ -825,7 +918,18 @@ export class ReachBody {
     const mark = this.landmarks.get(point);
     if (!mark) return null;
     const p = mark.node.localToWorld(mark.offset.clone());
-    const n = mark.normal.clone().transformDirection(mark.node.matrixWorld);
+    // A normal goes through the inverse transpose, which a held non-uniform
+    // scale makes differ from the bone's own matrix. A scale with a 0 in it,
+    // on this bone or above it, collapses the surface, and the inverse then
+    // says nothing about which way it faces: all zeros, or, a rounding away
+    // from that, the collapsed axis. Then it faces as it would unscaled,
+    // which is how the reach solver sees the bone.
+    const T = this.m.THREE;
+    const facing = () => mark.normal.clone().applyMatrix3(new T.Matrix3().getNormalMatrix(mark.node.matrixWorld));
+    const m = new T.Matrix3().setFromMatrix4(mark.node.matrixWorld), e = m.elements;
+    const widest = Math.max(Math.hypot(e[0], e[1], e[2]), Math.hypot(e[3], e[4], e[5]), Math.hypot(e[6], e[7], e[8]));
+    const collapsed = Math.abs(m.determinant()) <= 1e-9 * widest ** 3;
+    const n = (collapsed ? this.solverView(facing) : facing()).normalize();
     return { pos: p.addScaledVector(n, standoff).toArray(), normal: n.toArray() };
   }
 

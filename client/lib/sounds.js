@@ -16,9 +16,14 @@
 //   2. Autoplay: the browser may refuse play() until a gesture. Every sound
 //      rides the shared unlock queue (client/lib/audiounlock.js), which retries
 //      all held elements on the first gesture and SAYS SO in chat.
-//   3. The clock is the author's: with `t0` every client seeks to the same
-//      playhead ((now - t0) mod duration when looping), so a late joiner hears
+//   3. The clock is the SERVER's: with `t0` every client seeks to the same
+//      playhead ((serverNow - t0) mod duration when looping), so a late joiner hears
 //      the same bar as everyone else. Without it, the top of the track.
+//      `t0` is the authority's stamp on its own clock, and serverNow() is this
+//      client's estimate of that clock (client/lib/serverclock.js): round trips
+//      once they land, and before the first, the `t` of the clock message the
+//      server sends just before the snapshot to a join that asks (net.js) and
+//      of each frame.
 //   4. Replace (same id, new bag): same src → adjust in place (volume, loop,
 //      playing, re-seek on a new t0); new src → tear down and rebuild. A
 //      sound whose entity left the scene keeps its graph but is silenced

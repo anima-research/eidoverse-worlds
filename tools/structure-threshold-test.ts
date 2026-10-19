@@ -96,8 +96,8 @@ check(along.kind==="routed"&&!along.points.some((q:number[],i:number)=>i>0&&alon
   &&Math.min(along.points[i-1][0],q[0])<1&&Math.max(along.points[i-1][0],q[0])>0),
   "a terrain leg along a projected wall is routed away from its line");
 
-// Floor-mode tests supply an explicit support owner/height. They do not
-// manufacture elevated standing on main, whose body remains terrain-clamped.
+// Floor-mode tests supply an explicit support owner/height, so the router's
+// floor mode is tested apart from the standing that selects it.
 const upper = structuredClone(house.levels[0]); upper.y = 3;
 const stacked = { levels: [{ ...structuredClone(house.levels[0]), y: 0 }, upper] };
 const floorRoute = (data: any, from: P, to: P, level=1, height=3.1) =>
@@ -139,9 +139,9 @@ async function walk(a: WorldAgent, to: P, tolerance=0, iterations=2000) {
   if ((a as any).target) { a.stop(); throw new Error("walk failed to finish within bounded ticks"); }
   return { arrived: await promise, samples, planned };
 }
-// A body held on an upper floor. Main's body stands on terrain only, so these
-// bodies are given the floor support the storey-standing work (#200) supplies,
-// as walkSupport answers it there; walkTo's floor branch serves that answer.
+// A body held on an upper floor, given the floor support walkSupport answers
+// there, so the router's floor branch is tested apart from the standing that
+// selects it; walkTo's floor branch serves that answer.
 function standOn(a: WorldAgent, entity: string, level: number, height: number) {
   (a as any).walkSupport=()=>({kind:"floor",height,entity,level});
 }

@@ -35,7 +35,7 @@ const nativeLogin = createNativeLogin({
   login: HN_LOGIN_URL, enabled: Boolean(HN_ISSUER_KEY), session: sessionFromCookie,
   issue: session => { const sid = randomBytes(32).toString("hex"); hnSessions.set(sid, session); saveSessions(); return sid; },
 });
-import { resolveLibFile } from "./libfile.ts";
+import { resolveLibFile, libraryFile, libraryRel } from "./libfile.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { vrmHeightFor } from "./vrmheight.ts";
 import { checkFile, checkScale, CheckRefused } from "./buildcheck-queue.ts";
@@ -93,6 +93,8 @@ import { recordComponents } from "../shared/protocol/view.js";
 export type Srv = {
   upgrade(req: Request, opts?: { data?: unknown }): boolean;
   requestIP(req: Request): { address: string } | null;
+  /** per-request idle timeout in seconds (overrides Bun.serve's idleTimeout) */
+  timeout?(req: Request, seconds: number): void;
 };
 
 // ---- snapshots: the world serves views of itself ---------------------------
@@ -220,18 +222,10 @@ export function animationRoster(): { name: string; path: string; size: number }[
   // same contract as the avatar roster. A def's `vrma` adds or repoints a
   // named clip; an unresolvable path is refused loudly and the discovered
   // roster stands. Non-path metadata (tags, doc) rides /defs, not here —
-  // this roster stays the prefetcher's byte-budget shape. Resolution walks
-  // the clip ladder above (resolveLibFile is the glb/vrm resolver and
-  // deliberately doesn't know .vrma or PATCH_DIR).
-  const resolveClip = (lib: string): string | null => {
-    const rel = normalize(lib).replace(/^\/+/, "");
-    if (rel.includes("..") || !/\.vrma$/i.test(rel)) return null;
-    for (const base of LADDER) {
-      const p = normalize(join(base, rel));
-      if (p.startsWith(base) && existsSync(p)) return p;
-    }
-    return null;
-  };
+  // this roster stays the prefetcher's byte-budget shape. Resolution reads
+  // the path as /library serves it (server/libfile.ts libraryFile: the same
+  // ladder, a name decoded as the route decodes it), so a listed clip loads.
+  const resolveClip = (lib: string): string | null => libraryFile(lib, /\.vrma$/i);
   const defs = animationDefs();
   for (const [name, d] of Object.entries(defs)) {
     if (!d.vrma) continue;
@@ -698,8 +692,17 @@ const ROUTES: Route[] = [
   },
   {
     match: (u) => u.pathname === "/snap",
-    handler: async ({ req, url }) => {
+    handler: async ({ req, url, srv }) => {
       if (!mayRead(req)) return unauthorized();
+      // /snap sends nothing while it waits for the frame, so it is an idle
+      // connection to Bun: give this request its own timeout a little past the
+      // broker's longest wait (a roamer's journey plus its frame), so the wait
+      // doesn't rest on the server-wide idleTimeout that server.ts sets.
+      // Capped at 255s, Bun.serve's own ceiling for idleTimeout, which this
+      // keeps to although the per-request call accepts more; config.ts keeps
+      // SNAP_TIMEOUT_SEC low enough (225) that the cap never cuts the broker's
+      // longest wait.
+      srv.timeout?.(req, Math.min(255, Math.ceil(snapshots.maxWaitMs / 1000) + 5));
       const w = worlds.get(url.searchParams.get("world") ?? "commons");
       const follow = url.searchParams.get("follow") ?? "";
       if (!w || !visibleTo(doorFor(w.name), httpCaller(req))) return new Response("unknown world", { status: 404 });
@@ -1134,7 +1137,11 @@ const ROUTES: Route[] = [
       // /library/eido/sha256/<hex>.glb (shared/eido.js libRelOf): the client loading a model by its address gets this
       // host's rendition of the file it names, through the same ladder as its path (review 10-07 H3)
       const rel0 = url.pathname.slice("/library/".length); const eh = hexOfLibRel(rel0);   // either spelling of an address stored before 10-17 (shared/eido.js)
-      const rel = eh ? eidoRel(eh) ?? rel0 : rel0;
+      // url.pathname keeps percent-encoding; libraryRel() decodes it to the disk name (and refuses a decoded ".."), the
+      // same function every resolver reads a lib through (server/libfile.ts), so they agree on every name
+      const dec = eh ? rel0 : libraryRel(rel0);
+      if (dec === null) return new Response("forbidden", { status: 403 });
+      const rel = eh ? eidoRel(eh) ?? rel0 : dec;
       // optimized mirror first (draco+webp): same path, ~30x smaller
       const versioned = url.searchParams.has("v") || rel.startsWith("store/"); // content-addressed = immutable
       // Native importers do not necessarily ship the browser's Draco/WebP

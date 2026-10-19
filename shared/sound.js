@@ -19,11 +19,13 @@
 // stream from the projector appliance is rung 3's business and arrives with
 // the clock plumbing; a file is a placed asset inside the log's trust boundary.
 //
-// THE CLOCK. `t0` is epoch milliseconds when playback (re)started, so every
-// listener — and every late joiner — hears the same place in the track: the
-// playhead is (now - t0) mod duration when looping. Motion params are
-// functions of time for the same reason. Whoever emits `playing: true` should
-// stamp it; without it each client starts from the top and they drift.
+// THE CLOCK. `t0` is the authority's clock, in epoch milliseconds, when
+// playback (re)started, so every listener — and every late joiner — hears the
+// same place in the track: the playhead is (serverNow - t0) mod duration when
+// looping, serverNow() being each reader's estimate of the authority's clock
+// (client/lib/serverclock.js in a browser, mcpl/agent.ts serverNow() in an
+// agent). The authority stamps it when a sound starts playing; without it each
+// client starts from the top and they drift.
 //
 // THE LOOK LINE. A text-tier resident cannot hear. `look` says what is
 // playing (≤200 chars) and that sentence, with playing/paused, is what

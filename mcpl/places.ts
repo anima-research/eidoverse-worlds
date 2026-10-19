@@ -140,7 +140,10 @@ export type Destination = { x: number; y: number; z: number; reach: number; labe
   /** a region: only places to stand inside it count, anywhere in it */
   inside?: (x: number, z: number) => boolean;
   /** where to walk instead when no walk reaches this spot: beside what the thing stands on (a cup on a table: review r6 L1) */
-  orBeside?: Destination };
+  orBeside?: Destination;
+  /** a person's own spot, short of which the walk stops: y is their root
+   *  there, and their floor the one their body is on */
+  bodyAt?: { x: number; z: number } };
 
 /** How far a named room's walkable floor may sit from its declared height —
  *  in world metres, the walking body's tolerance: the body does not scale
