@@ -3043,13 +3043,12 @@ export class WorldAgent {
     f.stamina = Math.max(0, f.stamina - spend);
     const climbRate = 2.0;   // m/s of ascent while flying forward
     f.climbTo = reach; f.climbRate = climbRate; f.climbT = 0;  // consumed by flightTick
-    // The wait is for the distance either way: a lower target is a descent. A climb rises at its lift less the
-    // polar's sink. stepPilot takes its pitch from the stick, which the door doesn't give, so the airspeed settles
-    // at the polar's minimum-sink speed, and the wait is sized from the rise there: about 1.5 m/s with the default
-    // polar, where the lift alone is 2 m/s. A descent goes down faster than its lift alone, which sizes its wait,
-    // from the ceiling down, since take-off's launch can still be carrying the body above where the descent began.
-    const leg = reach > from ? reach - from : cfg.bounds.ceiling - reach;
-    const rate = reach > from ? climbRate - cfg.polar.sinkAtMinSink : climbRate;
+    // The wait covers the longer of a rise to the height, at the lift less the polar's sink, and a descent to it from
+    // the ceiling, at the lift alone. stepPilot takes its pitch from the stick, which the door doesn't give, so the
+    // airspeed settles at the polar's minimum-sink speed, where a climb rises about 1.5 m/s with the default polar,
+    // and the lift alone is 2 m/s; a descent goes down faster than that. The descent is there for take-off's launch,
+    // which can carry the body up past a height below it or just above it, as high as the ceiling, before the climb
+    // brings it back down.
     const got = await this.flightAwait((st) => {
       if (isDown(st.phase)) return "cut";
       // A climb that meets the ground ends there, at the height asked (within the tick's 0.4 m) or not. Asked,
@@ -3057,7 +3056,7 @@ export class WorldAgent {
       if (st.phase === "LANDED" || st.phase === "GROUND") return Math.abs(st.pos.y - alt) < 0.4 ? "touched down" : "landed";
       if (st.climbTo == null) return "there";
       return null;
-    }, legWaitMs(leg / rate));
+    }, legWaitMs(Math.max((reach - from) / (climbRate - cfg.polar.sinkAtMinSink), (cfg.bounds.ceiling - reach) / climbRate)));
     if (got === "cut") {
       // A cut body keeps no climb, so it doesn't resume one when it recovers.
       if (this.flight) this.flight.climbTo = null;
@@ -3122,10 +3121,16 @@ export class WorldAgent {
       const fell = `(${(this.flight?.pos.x ?? this.pos.x).toFixed(1)}, ${(this.flight?.pos.z ?? this.pos.z).toFixed(1)})`;
       return refused(`${glide.text} — cut during the flare, down at ${fell}`);
     }
+    // The flare's own timeout leaves the body flying where it is. Its wait is sized for a flare from the ceiling, with
+    // half again for a late tick, so it runs out when the flight tick has stopped, or when a later call has taken the
+    // body elsewhere, as one can on the stdio door once a host has stopped waiting for this one. Setting the body
+    // down then would pull it out of that call's flight.
+    if (flare !== "down") {
+      const p = this.flight?.pos ?? this.pos;
+      return refused(`${glide.text} — the flare ${flare} at (${p.x.toFixed(1)}, ${p.z.toFixed(1)}), ${p.y.toFixed(1)}m up, and you fly on`);
+    }
     this.flightEnd();
     const at = `(${this.pos.x.toFixed(1)}, ${this.pos.z.toFixed(1)})`;
-    // The flare's own timeout: the body didn't come down, and flightEnd set it down.
-    if (flare !== "down") return refused(`${glide.text} — the flare ${flare}, so the body was set down at ${at}`);
     // A flare after an arrival sinks on the circle held over the point, so
     // the answer says how far from it the body came down.
     const off = Math.hypot(x - this.pos.x, z - this.pos.z);

@@ -165,6 +165,16 @@ await relaunch();
 flown = await flownByTicks(() => call('climb_to', { altitude: 0.3 }));
 check('a descent straight after take-off gets there, inside its wait with ticks 50% late', ok(flown.answer) && /^at 0\.3m/.test(said(flown.answer)) && inside(flown.waits, 0),
   `${said(flown.answer)}; ${JSON.stringify(flown.waits)}`);
+// A climb to just above the body, asked while the launch still lifts it, is carried up out of the climb's 0.4 m and
+// comes back down to it, so its wait is never shorter than a descent from the ceiling.
+await relaunch();
+for (let i = 0; i < 4; i++) ag.flightTick(0.1);
+{
+  const to = Math.round((ag.flight.pos.y + 0.1) * 10) / 10;
+  flown = await flownByTicks(() => call('climb_to', { altitude: to }));
+  check('a climb of a few centimetres asked 0.4 s into the launch gets there, inside its wait with ticks 50% late',
+    ok(flown.answer) && new RegExp(`^at ${to.toFixed(1)}m`).test(said(flown.answer)) && inside(flown.waits, 0), `${said(flown.answer)}; ${JSON.stringify(flown.waits)}`);
+}
 // Over ground far below 0, the flare comes down farther than the ceiling's height says.
 {
   const realHeight = ag.heightAt;
@@ -400,9 +410,16 @@ check('a landing cut in the air during its flare is failed', failed(r) && / — 
 await relaunch();
 ag.glideTo = async () => arrived;
 ag.flightAwait = async () => 'timed out aloft';
-r = await call('land_at', { x: 5, z: 5 });
-ag.glideTo = realGlide; ag.flightAwait = realAwait;
-check('a landing whose flare timed out is failed', failed(r) && / — the flare timed out aloft, so the body was set down at /.test(said(r)), said(r));
+{
+  const flight = ag.flight, y = ag.flight.pos.y;
+  r = await call('land_at', { x: 5, z: 5 });
+  ag.glideTo = realGlide; ag.flightAwait = realAwait;
+  check('a landing whose flare timed out is failed, saying where the body flies on',
+    failed(r) && new RegExp(` — the flare timed out aloft at \\(.*\\), ${y.toFixed(1)}m up, and you fly on$`).test(said(r)), said(r));
+  // A later call can have taken the body elsewhere by then, so the flare's timeout doesn't set it down.
+  check('...and leaves the body flying where it was', ag.flight === flight && ag.flight.phase === 'PILOT' && ag.flight.pos.y === y,
+    `${ag.flight === flight ? 'same flight' : 'flight replaced'}; ${ag.flight?.phase}; ${ag.flight?.pos.y}`);
+}
 // The flare sinks on the circle held over the point, so the answer says how far off it came down.
 r = await landing(arrived, 'down', { x: 12, z: 6 });
 check('a landing whose glide arrived and whose flare came down is done, saying how far from the point',
