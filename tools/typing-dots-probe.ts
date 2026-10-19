@@ -71,10 +71,11 @@ const tokensPath = join(scratch, "tokens.json");
 await Bun.write(tokensPath, JSON.stringify({ "dots-probe-token": { id: "claude", name: "Claude", world: "commons" } }));
 // Every child is registered before it can be lost, and keeps its stderr's tail for a failed run's report. The world
 // and the door take their settings from this run alone. Of the environment they get only what the runtime itself
-// reads: where programs, home and temporary files are, the locale, and Bun's own settings. And Bun loads no .env for
-// them, though they start in the checkout. A setting meant for a real world, from the shell or the checkout's .env,
-// would otherwise reach them: a join token the viewer and the watcher don't carry, a login the viewer doesn't, an
-// address to listen on, a directory outside the scratch.
+// reads: where programs, home and temporary files are, the locale, and Bun's own settings. The world also gets where
+// this machine keeps the asset library (below). And Bun loads no .env for them, though they start in the checkout. A
+// setting meant for a real world, from the shell or the checkout's .env, would otherwise reach them: a join token the
+// viewer and the watcher don't carry, a login the viewer doesn't, an address to listen on, a directory outside the
+// scratch.
 const kids: Array<{ p: ChildProcess; name: string; err: () => string }> = [];
 const RUNTIME = /^(PATH|HOME|TMPDIR|LANG|LC_[A-Z_]+|TZ|BUN_[A-Z0-9_]+)$/;
 const runtimeEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => RUNTIME.test(k)));
@@ -105,9 +106,11 @@ const waitFor = async (what: string, probe: () => Promise<boolean>, ms = 30000) 
 
 // The world's own files are the run's too: by default it checks agents' tokens against the checkout's mcpl/tokens.json,
 // which can reserve the agent's name for a token this run doesn't have (server/auth.ts), and keeps its relay's
-// incarnation in the checkout's assets/opt (server/server.ts).
+// incarnation in the checkout's assets/opt (server/server.ts). The asset library stays this machine's: EIDOVERSE_DIR,
+// which the README sets for a world to find it, passes through, as in tools/harness.ts.
 const world = child("world", ["server/server.ts"], { PORT: String(WPORT), WORLDS_DIR: scratch, OPT_DIR: join(scratch, "opt"),
-  AGENT_TOKENS_PATH: tokensPath, SKIP_OPT_SWEEP: "1", WORLD_INSTANCE_NONCE: NONCE });
+  AGENT_TOKENS_PATH: tokensPath, SKIP_OPT_SWEEP: "1", WORLD_INSTANCE_NONCE: NONCE,
+  ...(process.env.EIDOVERSE_DIR ? { EIDOVERSE_DIR: process.env.EIDOVERSE_DIR } : {}) });
 const door = child("door", ["mcpl/net-server.ts"], { MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,
   MCPL_TOKENS: tokensPath, MCPL_STATE: join(scratch, "mcpl-state.json"), MCPL_INSTANCE_NONCE: NONCE });
 // This side's own event-loop stalls, which would delay the watcher's stamps: every gap between the heartbeat's
