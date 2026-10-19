@@ -53,14 +53,18 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
   log = (line: string) => console.log(line), dropLogMs = 10_000 } = {}) {
   const pending = new Map<string, Pending>();
   // A failed snapshot used to leave no server-side trace: a frame arriving after the timeout, or from a client that
-  // was not the renderer asked, looked the same as no reply at all. Every failure after dispatch logs one [snap] line.
+  // was not the renderer asked, looked the same as no reply at all. Every failure after dispatch (the timeout, a failed
+  // send, a participant leaving, the renderer's refusal, an invalid image) logs one [snap] line, and so does a reply
+  // the broker drops, within the bound below.
   // Ids and error text are client text: bound and escape them, or a peer could print its own "log lines".
   const quote = (v: unknown, n: number = LIMITS.ID_LEN) => typeof v === "string" ? JSON.stringify(v.slice(0, n)) : "(invalid id)";
   const who = (c: Client) => quote(c.id);
   // A reply receive() drops costs its sender nothing, and any joined client can send one: the renderer and capture
   // flags are the client's own claims (join's `renderer`, capture-capabilities), so every drop below is reachable
-  // from any connection. Each connection logs a drop at most once per dropLogMs and counts the rest into its next
-  // line, so no client can write the log at its message rate, and a real renderer's occasional late frame still logs.
+  // from any connection. Each connection logs a drop at most once per dropLogMs: a drop inside that window is only
+  // counted, into the connection's next line, which a connection that goes quiet never writes. So no connection can
+  // write the log at its message rate, and a real renderer's late frame logs whenever its connection has logged no drop
+  // in the last dropLogMs.
   const dropLogged = new WeakMap<Client, { at: number; unlogged: number }>();
   function logDrop(c: Client, line: string) {
     const t = now(), d = dropLogged.get(c);

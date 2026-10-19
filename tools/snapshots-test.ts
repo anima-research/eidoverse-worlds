@@ -171,25 +171,37 @@ test("maxWaitMs: a roamer's journey, then the larger of its arrival window and t
   broker.setFrameTimeout(900);      // a frame window past the arrival window
   expect(broker.maxWaitMs).toBe(400 + 900);
 });
+test("at SNAP_TIMEOUT_SEC's cap, GET /snap's per-request timeout still covers the broker's longest wait", () => {
+  const broker = createSnapshotBroker();   // the server's defaults: a 25 s journey, a 40 s arrival window
+  broker.setFrameTimeout(225_000);         // config.ts's largest accepted window
+  // routes.ts sets min(255, ceil(maxWaitMs / 1000) + 5) seconds: at the cap, the 255 must not bind
+  expect(Math.ceil(broker.maxWaitMs / 1000) + 5).toBeLessThanOrEqual(255);
+});
+/** Resolve once `pred` holds, polling, or fail naming `what` after `ms`. */
+async function until(pred: () => boolean, what: string, ms = 5000) {
+  const end = Date.now() + ms;
+  while (!pred()) { if (Date.now() > end) throw new Error(`${what}: not within ${ms} ms`); await Bun.sleep(5); }
+}
 test("a summoned roamer gets the frame window when it is longer than the arrival window", async () => {
-  const { broker, worldOf, join, leave } = roamSetup();
-  broker.setFrameTimeout(2000);     // arrivalTimeoutMs is 400
+  // a journey long enough for the test's own steps; the arrival window stays 400 ms
+  const { broker, worldOf, join, leave } = roamSetup({ travelMs: 10_000 });
+  broker.setFrameTimeout(3000);
   const lobby = worldOf("commons"), build = worldOf("my-build");
   const roamer = join(lobby, "roam", { renderer: true, roam: true, spectator: true });
   join(build, "agent");
   const result = broker.request(build, "agent", "third");
-  await Bun.sleep(20);
+  await until(() => roamer.messages.some((m) => m.type === "renderer-travel"), "the summons");
   expect(roamer.messages.at(-1)).toEqual({ type: "renderer-travel", world: "my-build" });
   leave(roamer.c); const arrived = join(build, "roam", { renderer: true, roam: true, spectator: true });
-  await Bun.sleep(40);
-  const snap = arrived.messages.find((m) => m.type === "snap"); expect(snap).toBeDefined();
-  await Bun.sleep(1000);             // past the arrival window, inside the frame window
+  await until(() => arrived.messages.some((m) => m.type === "snap"), "the snap's dispatch");
+  const snap = arrived.messages.find((m) => m.type === "snap");
+  await Bun.sleep(1000);             // past the 400 ms arrival window, well inside the 3 s frame window
   broker.receive(arrived.c, { id: snap.id, dataUrl: png });
   expect(await result).toMatchObject({ ok: true });
 });
-test("a connection's dropped replies log one line per dropLogMs, the rest counted into its next line", () => {
+test("a connection's dropped replies log one line per dropLogMs (10 s by default), the rest counted into its next line", () => {
   let time = 0; const lines: string[] = [];
-  const { broker, worldOf, join } = roamSetup({ now: () => time, log: (l: string) => lines.push(l), dropLogMs: 10_000 });
+  const { broker, worldOf, join } = roamSetup({ now: () => time, log: (l: string) => lines.push(l) });
   const w = worldOf("w");
   const claimant = join(w, "claimant", { renderer: true, spectator: true });   // the renderer flag, claimed with no credential
   const other = join(w, "other", { spectator: true });                         // no renderer flag at all
@@ -201,4 +213,22 @@ test("a connection's dropped replies log one line per dropLogMs, the rest counte
   expect(lines).toHaveLength(2);
   time = 10_000; broker.receive(claimant.c, { id: "x6", dataUrl: png });
   expect(lines).toHaveLength(3); expect(lines[2]).toContain('"x6"'); expect(lines[2]).toContain("and 5 more");
+  // the window starts again at the line just written, and so does the count
+  time = 10_001; broker.receive(claimant.c, { id: "x7", dataUrl: png });
+  expect(lines).toHaveLength(3);
+  time = 20_000; broker.receive(claimant.c, { id: "x8", dataUrl: png });
+  expect(lines).toHaveLength(4); expect(lines[3]).toContain('"x8"'); expect(lines[3]).toContain("and 1 more");
+});
+test("a reply for a snap dispatched to another renderer is a drop like any other, bounded per connection", async () => {
+  const lines: string[] = [];
+  const { broker, world, make, donor } = setup({ log: (l: string) => lines.push(l) });
+  const other = make("other", { renderer: true, spectator: true });
+  const result = broker.request(world, "agent");
+  const request = donor.messages[0];
+  for (let i = 0; i < 5; i++) broker.receive(other.c, { id: request.id, dataUrl: png });
+  const fromOther = lines.filter((l) => l.includes('from "other"'));
+  expect(fromOther).toHaveLength(1); expect(fromOther[0]).toContain('it was sent to "player"');
+  expect(broker.pendingCount).toBe(1);
+  broker.receive(donor.c, { id: request.id, dataUrl: png });
+  expect(await result).toMatchObject({ ok: true });
 });

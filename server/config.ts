@@ -72,8 +72,9 @@ export const OPT_COST_FACTOR = envNumber("OPT_COST_FACTOR", 48, (n) => n > 0);
 // and the 5s): a larger value is refused like any other invalid one, and 12 is
 // used with a warning. A proxy in front must allow the same longest wait.
 // Behind deploy/nginx-show.conf, `location /` sets no proxy_read_timeout, so
-// nginx's 60s default already cuts a roamed snap that waits past 60s, which
-// the defaults allow (25s + 40s), whatever SNAP_TIMEOUT_SEC is.
+// nginx's 60s default cuts any /snap that waits past 60s, which a roamed one
+// can at the defaults (25s + 40s), and any one can once SNAP_TIMEOUT_SEC is
+// above 60.
 export const SNAP_TIMEOUT_MS = envNumber("SNAP_TIMEOUT_SEC", 12, (n) => n > 0 && n <= 225) * 1000;
 export const ROOT = resolve(import.meta.dir, "..");
 // Dev instances point this elsewhere so a scratch sequencer can't append to the

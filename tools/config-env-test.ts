@@ -1,9 +1,10 @@
 // bun tools/config-env-test.ts — env numbers are validated (config.ts envNumber): a nonsense or negative
-// OPT_MEM_BUDGET_MB falls back to the default with a warning; 0 stays 0 (no cap); a cost factor must be > 0.
+// OPT_MEM_BUDGET_MB falls back to the default with a warning; 0 stays 0 (no cap); a cost factor must be > 0;
+// SNAP_TIMEOUT_SEC is taken up to its cap of 225, and above it falls back to 12 with a warning.
 import { spawnSync } from "node:child_process";
 const ok = (v: unknown, why: string) => { if (!v) { console.error("FAIL", why); process.exit(1); } };
 const read = (env: Record<string, string>) => {
-  const r = spawnSync(process.execPath, ["-e", 'import { OPT_MEM_BUDGET_MB, OPT_COST_FACTOR } from "./server/config.ts"; console.log(JSON.stringify({ b: OPT_MEM_BUDGET_MB, f: OPT_COST_FACTOR }))'],
+  const r = spawnSync(process.execPath, ["-e", 'import { OPT_MEM_BUDGET_MB, OPT_COST_FACTOR, SNAP_TIMEOUT_MS } from "./server/config.ts"; console.log(JSON.stringify({ b: OPT_MEM_BUDGET_MB, f: OPT_COST_FACTOR, s: SNAP_TIMEOUT_MS }))'],
     { env: { ...process.env, WORLDS_DIR: process.env.WORLDS_DIR ?? "/tmp/config-env-test-worlds", ...env }, encoding: "utf8", cwd: import.meta.dir + "/.." });
   const line = r.stdout.trim().split("\n").pop() ?? "";
   return { v: JSON.parse(line), warn: r.stderr + r.stdout };
@@ -18,4 +19,9 @@ ok(read({ OPT_MEM_BUDGET_MB: "0" }).v.b === 0, "0 → 0 (no cap, documented)");
 ok(read({ OPT_MEM_BUDGET_MB: "512" }).v.b === 512, "512 → 512");
 ok(read({ OPT_COST_FACTOR: "0" }).v.f === 48 && read({ OPT_COST_FACTOR: "abc" }).v.f === 48, "cost factor 0 / 'abc' → 48");
 ok(read({ OPT_COST_FACTOR: "12" }).v.f === 12, "cost factor 12 → 12");
-console.log("config-env: 7 ok");
+ok(read({ SNAP_TIMEOUT_SEC: "" }).v.s === 12_000, "SNAP_TIMEOUT_SEC unset → a 12 s window");
+const cap = read({ SNAP_TIMEOUT_SEC: "225" });
+ok(cap.v.s === 225_000 && !/SNAP_TIMEOUT_SEC/.test(cap.warn), "SNAP_TIMEOUT_SEC 225 (the cap) → 225 s, no warning");
+const past = read({ SNAP_TIMEOUT_SEC: "226" });
+ok(past.v.s === 12_000 && /SNAP_TIMEOUT_SEC="226" is not valid/.test(past.warn), "SNAP_TIMEOUT_SEC 226 → 12 s, with a warning");
+console.log("config-env: 10 ok");

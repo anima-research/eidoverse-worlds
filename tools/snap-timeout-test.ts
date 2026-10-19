@@ -118,6 +118,16 @@ const snap = async () => {
   lastSnap = Date.now();
   return r;
 };
+/** Resolves once the server has handled everything `ws` sent before it: a socket's messages are handled in order,
+ *  each synchronously, and access-state is answered as it is handled. Messages on other sockets have no such order. */
+const handled = (ws: WebSocket) => new Promise<void>((res, rej) => {
+  const t = setTimeout(() => rej(new Error("no access-state answer in 5s")), 5000);
+  ws.addEventListener("message", function answered(ev) {
+    if (JSON.parse(String(ev.data)).type !== "access-state") return;
+    ws.removeEventListener("message", answered); clearTimeout(t); res();
+  });
+  ws.send(JSON.stringify({ type: "access-state" }));
+});
 /** A dropped reply's line comes from a connection that has logged no drop in the last 10s, so each case that needs
  *  one line from a renderer gets a fresh fake renderer of its own. */
 let freshN = 0;
@@ -128,7 +138,9 @@ renderer.reply = later(300);
 let r = await snap();
 check("reply inside the window → 200 PNG", r.status === 200 && r.headers.get("content-type") === "image/png", String(r.status));
 
-renderer.reply = later(3000);
+// the renderer holds this snap, and its frame goes once the 504 has come back: late, whatever the host's load
+renderer.reply = () => {};
+const lateId = renderer.next();
 let mark = A.log.length;
 await cooldown();
 const t0 = Date.now();
@@ -138,6 +150,7 @@ check("reply after the window → 504", r.status === 504, String(r.status));
 check("…answered at ~2s, not 12s", waited >= 1800 && waited < 10_000, `${waited}ms`);
 check("timeout is logged with the snap, follow and renderer",
   await logLine(A.log, mark, (l) => l.includes("[snap]") && l.includes(`follow="target"`) && l.includes("renderer-fake") && l.includes("in 2s")));
+renderer.ws.send(JSON.stringify({ type: "snap-result", id: await lateId, dataUrl: PNG }));
 check("the late frame's drop is logged as expired/unknown",
   await logLine(A.log, mark, (l) => l.includes("[snap]") && l.includes("expired or unknown") && l.includes("renderer-fake")));
 
@@ -173,8 +186,9 @@ if ("id" in first) {
 }
 mark = A.log.length;
 for (let i = 0; i < 50; i++) bystander.send(JSON.stringify({ type: "snap-result", id: `spam-${i}`, dataUrl: PNG_BYSTANDER }));
-// a reply sent after the spam, from a connection that has logged nothing yet, is a marker: once it is logged, the spam
-// has been handled (the bystander's replies are written first on localhost)
+// once the bystander's own socket says the spam is handled, a reply from a connection that has logged nothing yet is a
+// marker: its line is written after any line the spam wrote
+await handled(bystander);
 (await freshRenderer()).send(JSON.stringify({ type: "snap-result", id: "marker", dataUrl: PNG }));
 const marked = await logLine(A.log, mark, (l) => l.includes(`"marker"`));
 check("…and its next 50 replies inside 10s write no more lines", marked && !A.log.slice(mark).some((l) => l.includes("retina-bystander")),
@@ -185,6 +199,7 @@ console.log("a client that claims to be a renderer");
 const claimant = (await fakeRenderer(A.port, "renderer-claimed")).ws;
 mark = A.log.length;
 for (let i = 0; i < 50; i++) claimant.send(JSON.stringify({ type: "snap-result", id: `flood-${i}`, dataUrl: PNG }));
+await handled(claimant);
 (await freshRenderer()).send(JSON.stringify({ type: "snap-result", id: "marker2", dataUrl: PNG }));
 const marked2 = await logLine(A.log, mark, (l) => l.includes(`"marker2"`));
 const claimed = A.log.slice(mark).filter((l) => l.includes("renderer-claimed"));
@@ -202,7 +217,7 @@ await logLine(A.log, mark, (l) => l.includes("forged") && A.log.slice(mark).some
 const fresh = A.log.slice(mark);
 check("an id with newlines cannot start its own log line", !fresh.some((l) => l.startsWith("[perm]")) && fresh.some((l) => l.includes("\\n[perm] forged")), fresh.join(" | "));
 check("a non-string id logs as (invalid id)", fresh.some((l) => l.includes("(invalid id)")));
-check("a huge id is bounded in the log", fresh.length > 0 && fresh.every((l) => l.length < 400), String(Math.max(...fresh.map((l) => l.length))));
+check("a huge id is bounded in the log", fresh.some((l) => l.includes("xxxx")) && fresh.every((l) => l.length < 400), String(Math.max(0, ...fresh.map((l) => l.length))));
 [body, renderer.ws, bystander].forEach((w) => w.close());
 
 console.log("long window (SNAP_TIMEOUT_SEC=20, frame at ~13s)");
@@ -214,21 +229,14 @@ check("…after ~13s, not cut short", long.ms >= 12_500, `${long.ms}ms`);
 C.proc.kill();
 
 // ---- config validation ----------------------------------------------------------
+// (the values these fall back to, and the cap's own boundary, are read from config.ts in tools/config-env-test.ts)
 console.log("SNAP_TIMEOUT_SEC validation");
-{
-  // the largest window GET /snap's 255s timeout covers for a roamer (25s journey + window + 5s)
-  const B = await spawnSeq("225");
-  procs.push(B.proc);
-  await waitUp(B.port);
-  // a refusal's warning is printed at boot, before the server answers; give its pipe a second to deliver it
-  check("SNAP_TIMEOUT_SEC=225 is accepted", !(await logLine(B.log, 0, (l) => l.includes("SNAP_TIMEOUT_SEC"), 1000)), B.log.filter((l) => l.includes("config")).join(" | "));
-  B.proc.kill();
-}
-for (const bad of ["226", "300", "abc", "0", "-5"]) {
+for (const bad of ["300", "abc", "0", "-5"]) {
   const B = await spawnSeq(bad);
   procs.push(B.proc);
-  await waitUp(B.port);
-  check(`SNAP_TIMEOUT_SEC=${bad} falls back to 12 with a warning`, await logLine(B.log, 0, (l) => l.includes(`SNAP_TIMEOUT_SEC=${JSON.stringify(bad)} is not valid — using 12`)), B.log.filter((l) => l.includes("config")).join(" | "));
+  const up = await waitUp(B.port);
+  check(`SNAP_TIMEOUT_SEC=${bad} falls back to 12 with a warning`, up && await logLine(B.log, 0, (l) => l.includes(`SNAP_TIMEOUT_SEC=${JSON.stringify(bad)} is not valid — using 12`)),
+    up ? B.log.filter((l) => l.includes("config")).join(" | ") : "the sequencer never came up");
   B.proc.kill();
 }
 

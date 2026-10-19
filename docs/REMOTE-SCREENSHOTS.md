@@ -46,8 +46,10 @@ can request a present participant's view. Enabling sharing consents to that
 existing access model; this is not a private agent-to-agent screenshot channel.
 
 One in-flight request per renderer, at least two seconds between dispatches,
-sixteen pending globally, and a deadline that `SNAP_TIMEOUT_SEC` sets (twelve
-seconds by default). Busy requests return 429 with
+sixteen pending globally, and a frame deadline that `SNAP_TIMEOUT_SEC` sets
+(twelve seconds by default). A roaming renderer summoned for the request first
+travels (up to 25 seconds) and then has the longer of 40 seconds and that
+deadline for its first frame. Busy requests return 429 with
 Retry-After; missing renderers 503; missing participants 404; invalid images 502.
 Every response is tied to the exact renderer client/session/world and pending
 target. Retirement, travel, takeover, disconnect, and opt-out release requests.

@@ -243,10 +243,11 @@ stays down instead of reconnecting.
 - **Proxy timeout (deploy):** `GET /snap` now sets its own per-request timeout
   from the broker's longest wait, so Bun no longer resets a `/snap` that waits
   more than 10 s. But `deploy/nginx-show.conf`'s `location /` sets no
-  `proxy_read_timeout`, so nginx's 60 s default still cuts a roamed `/snap`
-  that waits past 60 s, which the defaults allow: 25 s for the roamer to
-  arrive (`travelMs`) and 40 s for its first frame. Raise it to at least the
-  broker's longest wait (see `SNAP_TIMEOUT_SEC` in `server/config.ts`).
+  `proxy_read_timeout`, so nginx's 60 s default still cuts any `/snap` that
+  waits past 60 s. A roamed one can at the defaults, which allow 25 s for the
+  roamer to arrive (`travelMs`) and 40 s for its first frame, and any one can
+  once `SNAP_TIMEOUT_SEC` is above 60. Raise it to at least the broker's
+  longest wait (see `SNAP_TIMEOUT_SEC` in `server/config.ts`).
 
 ## Review (independent, 2026-10-17)
 
