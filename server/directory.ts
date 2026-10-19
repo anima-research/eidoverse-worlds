@@ -107,6 +107,9 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     /** …claimed by an account OTHER than `sub` (security pass 3, H2: an account-holder may not appear under a name another
      *  account wears in this directory, present or not — the presence plane is read by people, who read names) */
     claimedByOther(name: string, sub: string): boolean { const k = foldName(name); for (const e of Object.values(d.ids)) if (e.subs.length && !e.subs.includes(sub) && foldName(e.name) === k) return true; return false; },
+    /** the accounts of every identity wearing this (folded) display name here: what a GLOBAL ban by name binds to (security
+     *  review 10-18 H1; an identity with no account is nobody to ban by account). */
+    accountsNamed(name: string): string[] { const k = foldName(name); const out: string[] = []; for (const e of Object.values(d.ids)) if (foldName(e.name) === k) out.push(...e.subs); return [...new Set(out)]; },
     /** id → display name for the ids given (what a client is sent; never subs). */
     names(ids: Iterable<string>): Record<string, string> { const o: Record<string, string> = {};
       for (const id of ids) { const n = get(id)?.name; if (n) o[id] = n; } return o; },

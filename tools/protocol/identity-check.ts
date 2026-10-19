@@ -1,7 +1,8 @@
 // tools/protocol/identity-check.ts — who a joiner is, against a real sequencer (security review 2026-10-06). Scratch port,
 // scratch WORLDS_DIR, its own tokens.json and a test aid1 issuer; never 8968/8970. usage: bun tools/protocol/identity-check.ts
 //   C1  a credential proven on one join never carries to a second join on the same socket
-//   C2  an aid1 credential is an agent only if its kind says agent; an enrolment's listed aid1 subject is that agent
+//   C2  an aid1 credential is an agent only if its kind says agent; an enrolment's listed aid1 subject is that agent;
+//       C2f (10-18 L11) a reserved name is matched folded ("Wre n", "wren." are Wren) and refused without the enrolment's proof
 //   C3  WORLD_ADMIN naming a bare display name refuses to boot
 //   H1  typing someone's name doesn't kick them, take over their session, or show as them; a guest is named a guest
 //   H3  a world name nobody founded is refused, and nothing appears on disk
@@ -120,6 +121,10 @@ ok(!srv.dead, "(setup) the server is up", srv.dead ? fs.readFileSync(srv.log + "
   const imp = await sock(srv.port); const j3 = await imp.join("garden", "x", { agentToken: mint({ kind: "agent", name: "Wren", sub: "agent:wren@elsewhere.test" }) });
   ok(!j3.snapshot || (j3.snapshot.you !== "Wren" && you(j3) !== you(j1)), "C2 another aid1 agent whose NAME slugs to an enrolled agent's isn't them (reserved, or its own identity)", [j3.snapshot?.you, j3.errors]);
   a1.close(); t1.close(); imp.close(); }
+// C2f (security review 10-18 L11): a reserved name is matched FOLDED, as display collisions are: "Wre n" and "wren." are Wren
+{ const out = [];
+  for (const typed of ["Wre n", "wren.", "WREN", "W r e n"]) { const s = await sock(srv.port); const j = await s.join("orchard", typed, {}); out.push([typed, j.errors, s.closed, !!j.snapshot]); s.close(); }
+  ok(out.every(([, errs, closed, got]) => !got && closed === 4004 && errs.some((e) => /reserved agent name/.test(e))), "C2f a reserved agent name folded (spaces, punctuation, case) is refused to anyone without that enrolment's proof", out); }
 
 // ---- H1: names aren't identities ----
 { const ann = await sock(srv.port); const ja = await ann.join("garden", "Ann");   // TRUST_NAMES: local:ann, the founder

@@ -20,7 +20,7 @@ import { gateReach } from "./reachgate.ts";
 import { BODY_RANGE } from "../shared/protocol/physconst.js";
 import { currentIncarnation } from "./transport.ts";
 import { isOperator } from "./operators.ts";
-import { directoryFor } from "./directory.ts";
+import { directoryFor, foldName } from "./directory.ts";
 import { actorOf as actorIdOf } from "./requestwire.ts";
 import { qNorm } from "../shared/rot.js";
 import { decide as consentDecide, refusalWords } from "../shared/protocol/consent.js";
@@ -28,7 +28,7 @@ import { worlds, type World, type Client, authorityNow } from "./world.ts";
 import { stateSampleError } from "../shared/presencewire.js";
 import { snapshots } from "./snapshots.ts";
 import { REMOVED_VERBS } from "../shared/protocol/verbspec.js";
-import { globalBans, saveGlobalBans } from "./moderation.ts";
+import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS } from "./moderation.ts";
 
 /** Who a presence message (puppet, bodydrag, typing) is FOR (security pass 3, H2). A sender that knows the
  *  identity names it by its opaque actor id (`targetActor` / `toActor` — every arrive carries one); then that identity's
@@ -419,8 +419,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       return;
     }
     if (msg.type === "global-bans") {
-      const list = Object.entries(globalBans).map(([id, b]) =>
-        `${id}${b.sub ? ` (${b.sub})` : ""} — by ${b.by}, ${new Date(b.ts).toISOString().slice(0, 10)}${b.reason ? `: ${b.reason}` : ""}`);
+      const list = Object.entries(globalBans).map(([k, b]) =>
+        `${b.name ?? k}${b.account ? ` (${b.account})` : b.addr ? " (a guest's connection)" : ""} — by ${b.by}, ${new Date(b.ts).toISOString().slice(0, 10)}${b.reason ? `: ${b.reason}` : ""}`);
       ws.send(JSON.stringify({ type: "mod", text: list.length ? `global bans (${list.length}):\n${list.join("\n")}` : "no global bans" }));
       return;
     }
@@ -429,45 +429,53 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       ws.send(JSON.stringify({ type: "error", error: `${msg.type} wants {id, reason?} — a specific participant, not everyone` }));
       return;
     }
+    const fold = (x: string) => foldName(x);
+    const dir = directoryFor(WORLDS_DIR);
     if (msg.type === "global-unban") {
-      const key = id.toLowerCase();
-      const had = key in globalBans || Object.values(globalBans).some((b) => b.sub === id);
-      delete globalBans[key];
-      for (const [k, b] of Object.entries(globalBans)) if (b.sub === id) delete globalBans[k];
+      // by the name it was filed under, by the account named, or by an account wearing that name here
+      const accts = new Set([id, ...dir.accountsNamed(id)]);
+      const gone = Object.entries(globalBans).filter(([k, b]) => k === id.toLowerCase() || (b.name && fold(b.name) === fold(id)) || (b.account && accts.has(b.account)) || (b as any).sub === id).map(([k]) => k);
+      for (const k of gone) delete globalBans[k];
       saveGlobalBans();
-      console.log(`[mod] ${c.id} lifted global ban on ${id}${had ? "" : " (was not banned)"}`);
-      ws.send(JSON.stringify({ type: "mod", text: had ? `${id} is no longer banned globally` : `${id} was not globally banned` }));
+      console.log(`[mod] ${c.id} lifted global ban on ${id}${gone.length ? ` (${gone.length} record(s))` : " (was not banned)"}`);
+      ws.send(JSON.stringify({ type: "mod", text: gone.length ? `${id} is no longer banned globally` : `${id} was not globally banned` }));
       return;
     }
-    // global-ban
-    const present = [...worlds.values()].flatMap((w) => [...w.clients]).find((o) => o.id.toLowerCase() === id.toLowerCase());
-    if (isOperator(present?.account)) {
+    // global-ban (security review 10-18 H1): a ban is filed against what the DOOR checks — the target's proven account, or a
+    // guest's hashed address — never a display name alone (findBan matches account/addr; a name-keyed record bound nothing until
+    // a restart rewrote it). Present anywhere: their account (or, a guest, their address); absent: every account the directory
+    // knows under that name. Nothing to bind → refused, said plainly.
+    const present = [...worlds.values()].flatMap((w) => [...w.clients]).filter((o) => fold(o.id) === fold(id) || (typeof msg.id === "string" && o.account === msg.id));
+    if (present.some((o) => isOperator(o.account))) {
       ws.send(JSON.stringify({ type: "error", error: `${id} is a world operator — remove them from WORLD_ADMIN first` }));
       return;
     }
-    if (id.toLowerCase() === c.id.toLowerCase()) {
+    if (fold(id) === fold(c.id) || present.some((o) => o === c)) {
       ws.send(JSON.stringify({ type: "error", error: "you cannot moderate yourself" }));
       return;
     }
     const reason = msg.reason != null ? String(msg.reason).slice(0, LIMITS.BAN_REASON_LEN) : undefined;
-    // catch the durable principal if the target is connected anywhere
-    let tsub: string | undefined;
-    for (const w2 of worlds.values()) {
-      const t = [...w2.clients].find((o) => o.id.toLowerCase() === id.toLowerCase());
-      if (t?.sub) { tsub = t.sub; break; }
+    const accounts = new Set<string>([...present.map((o) => o.account).filter((a): a is string => !!a), ...dir.accountsNamed(id), ...(/^(human|agent|aid1|local):/.test(id) ? [id] : [])]);
+    if ([...accounts].some((a) => isOperator(a))) { ws.send(JSON.stringify({ type: "error", error: `${id} is a world operator — remove them from WORLD_ADMIN first` })); return; }
+    const guestAddrs = new Set<string>(present.filter((o) => !o.account && o.addr).map((o) => o.addr as string));
+    if (!accounts.size && !guestAddrs.size) {
+      ws.send(JSON.stringify({ type: "error", error: `can't ban "${id}" globally: nobody by that name is here, and no account wears it in the directory, so there is nothing a ban could bind to (bans bind to accounts, or a present guest's connection)` }));
+      return;
     }
-    globalBans[id.toLowerCase()] = { by: c.id, ts: Date.now(), ...(reason ? { reason } : {}), ...(tsub ? { sub: tsub } : {}) };
+    const ts = Date.now();
+    for (const account of accounts) globalBans[banKey(account)] = { by: c.id, ts, name: id, account, ...(reason ? { reason } : {}) };
+    for (const addr of guestAddrs) globalBans[banKey(null, addr)] = { by: c.id, ts, name: id, addr, until: ts + ADDR_BAN_MS, ...(reason ? { reason } : {}) };
     saveGlobalBans();
     let expelled = 0;
     for (const w2 of worlds.values()) {
       for (const other of [...w2.clients]) {
         if (other === c) continue;
-        if (other.id.toLowerCase() !== id.toLowerCase() && !(tsub && other.sub === tsub)) continue;
+        if (!((other.account && accounts.has(other.account)) || (!other.account && other.addr && guestAddrs.has(other.addr)))) continue;
         expel(w2, other, `you were banned from these worlds by ${c.id}${reason ? ` — ${reason}` : ""}`);
         expelled++;
       }
     }
-    console.log(`[mod] ${c.id} banned ${id} globally${reason ? ` (${reason})` : ""}${expelled ? ` — ${expelled} session(s) disconnected` : ""}`);
+    console.log(`[mod] ${c.id} banned ${id} globally (${accounts.size} account(s), ${guestAddrs.size} guest address(es))${reason ? ` (${reason})` : ""}${expelled ? ` — ${expelled} session(s) disconnected` : ""}`);
     ws.send(JSON.stringify({ type: "mod", text: `${id} is banned from all worlds${reason ? ` — ${reason}` : ""}${expelled ? ` (${expelled} live session${expelled === 1 ? "" : "s"} disconnected)` : ""}` }));
     return;
   }

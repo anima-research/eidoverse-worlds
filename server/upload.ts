@@ -7,6 +7,7 @@
 // was down. routes.ts delegates the endpoint here; nothing else changes hands.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync, rmSync } from "node:fs";
+import { addressOf } from "./peer.ts";
 import { join, basename, dirname, relative } from "node:path";
 import { JOIN_TOKEN, UPLOAD_CAP, IMAGE_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR, SKIP_OPT_SWEEP, OPT_MEM_BUDGET_MB, OPT_COST_FACTOR } from "./config.ts";
 // merge 2026-09-01 (anima a468cba, geometry LOD): upstream's LOD names ride
@@ -481,10 +482,8 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     return new Response("sign in, or bring the door key (token required)", { status: 401 });
   // a signed-in person is who the session says, whatever ?by= claims
   const upBy = (upPerson ?? url.searchParams.get("by") ?? upAgent ?? "?").slice(0, 64);
-  // Behind the show's nginx front every socket is 127.0.0.1 — the real
-  // client address rides X-Real-IP. (Spoofable only when directly exposed,
-  // which is the tailnet dev case where rate limits hardly matter.)
-  const ip = req.headers.get("x-real-ip") ?? srv.requestIP(req)?.address ?? "?";
+  // the client's address: X-Real-IP only from a trusted proxy (server/peer.ts; security review 10-18 H2)
+  const ip = addressOf(req, srv);
   const u = uploadWin.get(ip) ?? { t: 0, n: 0 };
   if (Date.now() - u.t > 60_000) { u.t = Date.now(); u.n = 0; }
   u.n++; uploadWin.set(ip, u);

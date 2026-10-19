@@ -498,7 +498,10 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         agentName = viaEnrolment ?? a.slug;
       }
       if (agentName) { c.id = nameAtDoor(agentName.slice(0, LIMITS.ID_LEN), { typed: false }).name; c.tokenVerified = true; }   // an aid1 slug is the credential issuer's: no markup in it either. The credential proves WHO (the enrolment, the reserved name), never what kind: §6a
-      if (at.names.has(c.id.toLowerCase()) && account !== `agent:token:${c.id.toLowerCase()}`) {
+      // a reserved name is matched FOLDED (foldName: case, spaces, punctuation), as display collisions are — "Hes perus" and
+      // "hesperus." are the enrolled name too (security review 10-18 L11); the enrolment's own proof is the only way to wear it
+      const reservedAs = [...at.names].find((n) => foldName(n) === foldName(c.id)) ?? null;
+      if (reservedAs && account !== `agent:token:${reservedAs}`) {
         console.log(`[perm] join refused: "${c.id}" is a reserved agent name (no proof of that enrolment)`);
         ws.send(JSON.stringify({ type: "error", error: `"${c.id}" is a reserved agent name` }));
         c.ws.close?.(4004, "reserved name");

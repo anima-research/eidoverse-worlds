@@ -14,6 +14,12 @@
 //   A8  a ban or kick in the moderator log closes the door after a restart too, before the world is loaded: a banned
 //       (and a kicked) caller still listed in a members-only world gets 404 from /geom and /heightmap, finds it on no
 //       map, and /access says none — the refusal never loads the world (Antra's review of f91840e5 P1: /geom was 200)
+//   A12 (security review 10-18 H1) an operator's GLOBAL ban binds to the target's account NOW: a present target is removed and
+//       can't reconnect (4006, "these worlds"), an absent one can't join; the record carries the account; unban lifts it
+//   A13 (10-18 H2) the client's address: X-Real-IP / X-Forwarded-For honoured only from a trusted proxy (loopback, TRUSTED_PROXIES);
+//       from any other peer the socket's own address is used (a guest can't pick or frame an address)
+//   A14 (10-18 M6) a timed grant whose until has passed is ABSENT on every read, loaded or not: an unloaded world's /access and
+//       /worlds refuse the ex-member before any sweep, and so does the join, while the log still holds the grant
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -26,7 +32,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const W = path.join(root, "w"); fs.mkdirSync(W, { recursive: true });
 const TOK = path.join(root, "tokens.json");
-fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-moss": { id: "Moss" }, "tok-wren": { id: "Wren" }, "tok-fen": { id: "Fen" } }));
+fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-moss": { id: "Moss" }, "tok-wren": { id: "Wren" }, "tok-fen": { id: "Fen" }, "tok-ivy": { id: "Ivy" } }));
 const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", AGENT_TOKENS_PATH: TOK, SESSIONS_PATH: path.join(root, "sessions.json"),
   TRUST_NAMES: "1", ACCESS_SWEEP_MS: "250", ...extra });
@@ -67,7 +73,7 @@ const own = await sock(srv.port); const jo = await own.join("keep", "Ann");
 ok(!!jo.snapshot && jo.snapshot.yourRights?.role === "owner", "(setup) Ann joins as the owner", [jo.errors, jo.snapshot?.yourRights]);
 // people the world has seen (a role names an identity it knows): Rowan (an enrolled agent), Pip (a person), Moss
 const ids: Record<string, string> = {};
-for (const [name, extra] of [["Rowan", { agentToken: "tok-rowan" }], ["Pip", {}], ["Moss", { agentToken: "tok-moss" }], ["Wren", { agentToken: "tok-wren" }]] as const) {
+for (const [name, extra] of [["Rowan", { agentToken: "tok-rowan" }], ["Pip", {}], ["Moss", { agentToken: "tok-moss" }], ["Wren", { agentToken: "tok-wren" }], ["Fen", { agentToken: "tok-fen" }]] as const) {
   const s = await sock(srv.port); const j = await s.join("keep", name, extra); ids[name] = you(j); s.close(); }
 await sleep(150);
 ok(Object.values(ids).every(Boolean), "(setup) Rowan, Pip and Moss have identities here", ids);
@@ -148,6 +154,9 @@ const geomAs = async (port, world, bearer) => (await fetch(`http://127.0.0.1:${p
   ok(lm.ok && lw.ok && bm.ok && kw.ok && gm === 404 && gw === 404 && gr === 200, "(A8 setup) listed, then banned / kicked: the loaded world's /geom refuses both (404), a member still reads it",
     [lm.refused, lw.refused, bm.refused, kw.refused, gm, gw, gr]); }
 
+// (A14 setup) Fen is listed for 2.5 s; the server is stopped BEFORE that ends, so no sweep can write the end: the log keeps the grant
+const fenUntil = Date.now() + 2500;
+{ const r = await own.req("set", { id: "@world", component: `roles:${ids.Fen}`, value: { role: "visitor", until: fenUntil } }); ok(r.ok, "(A14 setup) Fen holds a timed grant", r.refused); }
 own.close();
 try { srv.proc.kill(); } catch {}
 await sleep(300);
@@ -161,9 +170,17 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   [SID_FULL]: { sub: "agent:token:rowan", name: "Rowan", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }));
 { const s2 = await start();
   const anon = await worldsAs(s2.port), member = (await worldsAs(s2.port, "tok-rowan")).find((x) => x.name === "keep");
-  const a1 = await accessAs(s2.port, "keep", "tok-fen");   // a stranger (Moss is listed by now, for A8)
+  const a1 = await accessAs(s2.port, "keep", "tok-ivy");   // a stranger (Moss is listed by now, for A8; Fen holds A14's timed grant)
   ok(!s2.dead && !anon.some((x) => x.name === "keep") && member?.loaded === false && member?.access === "members" && member?.you === "enter" && a1.body?.you === "none",
     "A3 an idle world's door is read from its log (not loaded): a stranger's map lacks it; a member's shows it, members, enter", [anon.map((x) => x.name), member, a1.body]);
+  // A14 (security review 10-18 M6): Fen's grant has ended but no sweep ran (the world is unloaded, the log still holds it): the reads refuse
+  while (Date.now() <= fenUntil + 50) await sleep(50);
+  { const logHas = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes(`"roles:${ids.Fen}"`) && !fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes("expire-roles");
+    const map = await worldsAs(s2.port, "tok-fen"), acc = await accessAs(s2.port, "keep", "tok-fen"), g = await geomAs(s2.port, "keep", "tok-fen");
+    const still = (await worldsAs(s2.port, "tok-rowan")).find((x) => x.name === "keep");
+    ok(logHas && !map.some((x) => x.name === "keep") && acc.body?.you === "none" && g === 404 && still?.loaded === false,
+      "A14 an ended timed grant is absent on every read: the unloaded world's /worlds, /access and /geom refuse the ex-member (the log still holds the grant, no expire-roles yet), and the refusal loads nothing",
+      { logHas, map: map.map((x) => x.name), access: acc.body, geom: g, loaded: still?.loaded }); }
   // A8: the same world, still not loaded — the moderator log is read with the door
   for (const [who, tok] of [["banned Moss", "tok-moss"], ["kicked Wren", "tok-wren"]]) {
     const map = await worldsAs(s2.port, tok), acc = await accessAs(s2.port, "keep", tok);
@@ -183,6 +200,10 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     ok(gN === 404 && gF === 200 && !mapN.some((x) => x.name === "keep") && mapF.some((x) => x.name === "keep") && aN.you === "none" && aF.you === "enter",
       "A10 a native session narrowed to water is no one at another world's door over HTTP (/geom 404, not on /worlds, /access none); the same account unnarrowed reads it",
       { geom: [gN, gF], map: [mapN.map((x) => x.name), mapF.map((x) => x.name)], access: [aN, aF] }); }
+  // A14, the join: the first join loads the world; the door reads Fen's ended grant as absent BEFORE any sweep (4010)
+  { const logHas = !fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes("expire-roles");
+    const f = await sock(s2.port); const jf = await f.join("keep", "Fen", { agentToken: "tok-fen" });
+    ok(logHas && !jf.snapshot && f.closed === 4010 && /isn't open to you/.test(jf.errors.join(" ")), "A14 …and the join that loads the world is refused at the door (4010), the grant unswept until then", { logHas, join: jf.errors, closed: f.closed }); f.close(); }
   try { s2.proc.kill(); } catch {} }
 { // A11 (review of PR #260, server.ts:742): an operator (WORLD_ADMIN) has a NARROW, RECORDED repair capability through the
   // authority: Fen, an operator not listed in the members-only world, gets in (the bypass) but an ordinary write is still the
@@ -206,7 +227,34 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   ok(!!jf.snapshot && !plain.ok && plain.refused?.code === "rights" && unban?.reply?.ok && list?.reply?.ok && wide?.reply?.refused?.code === "rights" && !!jr.snapshot && notOp?.reply?.refused?.code === "rights" && mossGeom === 200 && !!act && !!rec,
     "A11 an operator repairs through the authority, narrowly and on the record: ordinary write refused, operator-repair unbans and lists (act / mod record marked operator), another component refused, a non-operator refused",
     { join: jf.errors, plain: plain.refused, unban: unban?.reply, list: list?.reply, wide: wide?.reply?.refused, notOp: notOp?.reply?.refused, mossGeom, act: !!act, rec: !!rec });
+  // A12 (security review 10-18 H1): a GLOBAL ban binds to the account now. Rowan is present: removed, and refused on reconnect;
+  // Moss is absent: the directory knows the account wearing that name, and the join is refused; the record names the account
+  const modMsgs = () => fen.msgs.filter((m) => m.type === "mod" || m.type === "error").map((m) => m.text ?? m.error);
+  const k0 = fen.msgs.length; fen.raw({ type: "global-ban", id: "Rowan", reason: "A12" }); await waitFor(() => row.closed != null, 3000);
+  const row2 = await sock(s3.port); const jr2 = await row2.join("keep", "Rowan", { agentToken: "tok-rowan" });
+  fen.raw({ type: "global-ban", id: "Moss", reason: "A12" }); await waitFor(() => fen.msgs.length > k0 + 1, 2000);
+  const moss = await sock(s3.port); const jm = await moss.join("keep", "Moss", { agentToken: "tok-moss" });
+  fen.raw({ type: "global-ban", id: "Nobody-Here-At-All" }); await waitFor(() => modMsgs().some((t) => /nothing a ban could bind to/.test(t)), 2000);
+  const bans = JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"));
+  const recR = Object.values(bans).find((b) => b.account === "agent:token:rowan"), recM = Object.values(bans).find((b) => b.account === "agent:token:moss");
+  ok(row.closed === 4006 && !jr2.snapshot && row2.closed === 4006 && /banned from these worlds/.test(jr2.errors.join(" ")) && !jm.snapshot && moss.closed === 4006 && /these worlds/.test(jm.errors.join(" "))
+    && !!recR && recR.name === "Rowan" && !!recM && Object.values(bans).every((b) => b.account || b.addr) && modMsgs().some((t) => /nothing a ban could bind to/.test(t)),
+    "A12 a global ban binds now: the present target is removed (4006) and refused on reconnect, the absent target's join is refused, each record names the account (never a bare name), and a name nothing wears is refused",
+    { rowClosed: row.closed, reconnect: [jr2.errors, row2.closed], moss: [jm.errors, moss.closed], bans, said: modMsgs().slice(-3) });
+  const k1 = fen.msgs.length; fen.raw({ type: "global-unban", id: "Rowan" }); fen.raw({ type: "global-unban", id: "agent:token:moss" }); await waitFor(() => fen.msgs.length >= k1 + 2, 2000);
+  const row3 = await sock(s3.port); const jr3 = await row3.join("keep", "Rowan", { agentToken: "tok-rowan" }); const moss2 = await sock(s3.port); const jm2 = await moss2.join("keep", "Moss", { agentToken: "tok-moss" });
+  ok(!!jr3.snapshot && !!jm2.snapshot && Object.keys(JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"))).length === 0, "A12 global-unban by name or by account lifts it: both join again, the list is empty", [jr3.errors, jm2.errors]);
+  row2.close(); row3.close(); moss.close(); moss2.close();
   fen.close(); row.close(); try { s3.proc.kill(); } catch {} await sleep(300); }
+// ---- A13 (security review 10-18 H2): the client's address, from a trusted proxy only (pure) ----
+{ const { clientAddress } = await import("../../server/peer.ts");
+  const hdr = (h) => ({ headers: { get: (k) => h[k.toLowerCase()] ?? null } });
+  const trusted = new Set(["127.0.0.1", "10.0.0.9"]);
+  const fromProxy = clientAddress(hdr({ "x-real-ip": "203.0.113.7" }), "127.0.0.1", trusted), fromProxy2 = clientAddress(hdr({ "x-forwarded-for": "203.0.113.8, 10.0.0.9" }), "10.0.0.9", trusted);
+  const direct = clientAddress(hdr({ "x-real-ip": "203.0.113.7" }), "198.51.100.4", trusted), framed = clientAddress(hdr({ "x-forwarded-for": "203.0.113.8" }), "198.51.100.4", trusted);
+  const bare = clientAddress(hdr({}), "198.51.100.4", trusted), none = clientAddress(hdr({ "x-real-ip": "1.2.3.4" }), null, trusted);
+  ok(fromProxy === "203.0.113.7" && fromProxy2 === "203.0.113.8" && direct === "198.51.100.4" && framed === "198.51.100.4" && bare === "198.51.100.4" && none === "?",
+    "A13 X-Real-IP / X-Forwarded-For are honoured only from a trusted proxy (loopback or TRUSTED_PROXIES); from any other peer the socket address stands, so a direct guest can neither pick nor frame an address", { fromProxy, fromProxy2, direct, framed, bare, none }); }
 { // A9 (final review M1): a members-only door is not opened by default-role / role-defs powers handed to everyone
   const { entryFor } = await import(path.join(ENGINE, "server/access.ts"));
   const base = { access: { join: "listed" } };

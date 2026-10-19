@@ -10,6 +10,7 @@
 // both one-way: this module never imports server.ts.
 
 import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, appendFileSync } from "node:fs";
+import { addressOf } from "./peer.ts";   // the client's address, from a trusted proxy only (security review 10-18 H2)
 import { sfuDiag } from "./sfuadapter.ts";
 import { join, normalize, dirname, basename } from "node:path";
 import { hexOfLibRel } from "../shared/eido.js";
@@ -460,7 +461,7 @@ const ROUTES: Route[] = [
       // event" — here inverted, the cookie is, and the WS rides it.)
       const session = sessionFromCookie(req.headers.get("cookie"));
       // the connection's address, HASHED (never kept raw): what a guest's ban names, since a guest has no account
-      const ip = req.headers.get("x-real-ip") ?? srv.requestIP(req)?.address ?? "?";
+      const ip = addressOf(req, srv);
       const addr = new Bun.CryptoHasher("sha256").update(`eidoverse-addr:${ip}`).digest("hex").slice(0, 24);
       if (srv.upgrade(req, { data: { session, addr } })) return undefined as unknown as Response;
       return new Response("expected websocket", { status: 400 });
@@ -595,7 +596,7 @@ const ROUTES: Route[] = [
       // ?scale= checks it as a thing placed at that scale (0.05–20, to 2 places)
       const scale = checkScale(url.searchParams.get("scale") ?? 1);
       // public, so its new work is gated per address and its queue is capped (buildcheck-queue.ts; review r3 F1)
-      const ip = req.headers.get("x-real-ip") ?? srv?.requestIP?.(req)?.address ?? "?";
+      const ip = addressOf(req, srv);
       try { return j({ lib, ...(await checkFile(file, scale, undefined, { address: ip }) as object) }); }
       catch (err) {
         if (err instanceof CheckRefused)
@@ -727,7 +728,7 @@ const ROUTES: Route[] = [
       if (!t) return new Response("this world has no terrain (it is flat)", { status: 404 });
       if (url.searchParams.get("format") === "json") return Response.json({ ...heightRange(t as Record<string, unknown>), world: name });
       // bounded work on the serving thread, gated BEFORE the work (server/heightmap.ts serveHeightmapExport)
-      const ip = req.headers.get("x-real-ip") ?? srv?.requestIP?.(req)?.address ?? "?";
+      const ip = addressOf(req, srv);
       const out = serveHeightmapExport(t as Record<string, unknown>, Number(url.searchParams.get("res") ?? 257), name, ip);
       if (!out.ok) return new Response(out.error, { status: out.status, headers: { "retry-after": String(out.retryAfter) } });
       const { png, meta } = out;
@@ -910,7 +911,7 @@ const ROUTES: Route[] = [
           if (!big) {
             // the address HASHED, like everywhere else this server keeps one (security pass 3, M3): enough to tell one
             // visitor's lines from another's, never the address itself; and the beacon can't write its own ts/addr/ip
-            const ip = req.headers.get("x-real-ip") ?? srv.requestIP(req)?.address ?? "?";
+            const ip = addressOf(req, srv);
             const addr = new Bun.CryptoHasher("sha256").update(`eidoverse-perflog:${ip}`).digest("hex").slice(0, 24);
             const { ts: _t, ip: _i, addr: _a, ...line } = JSON.parse(body) ?? {};
             appendFileSync(dest, JSON.stringify({ ts: Date.now(), addr, ...line }) + "\n");
@@ -937,7 +938,7 @@ const ROUTES: Route[] = [
         if (!ok) return new Response("sign in or send the authority key as a Bearer header", { status: 401 });
       }
       // a forced rebuild skips the freshness check, so a POST loop could keep the one serial pump busy and starve uploads
-      const ip = req.headers.get("x-real-ip") ?? srv?.requestIP?.(req)?.address ?? "?";
+      const ip = addressOf(req, srv);
       const w = rebuildWin.get(ip) ?? { t: 0, n: 0 };
       if (Date.now() - w.t > 60_000) { w.t = Date.now(); w.n = 0; }
       w.n++; rebuildWin.set(ip, w);

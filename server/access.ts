@@ -130,9 +130,11 @@ export function entryFor(door: Door, who: Who, mode: EntryMode, { now = Date.now
   const eff = actorId ? effectiveOf(door.wc, actorId, { anon: !account }) : null;
   // the bypass is for people this world LISTS (an explicit role row): a power handed to everyone through default-role or
   // role-defs must not open a members-only door (final review M1, 10-18)
-  const listed = !!actorId && listedIn(door.wc, actorId);
+  // an ended timed grant is absent at `now` (security review 10-18 M6): the door reads it as not listed, loaded or not, before the
+  // authority's sweep writes its end (expire-roles) — so an unloaded world's HTTP reads and a join don't honour it indefinitely
+  const listed = !!actorId && listedIn(door.wc, actorId, now);
   const bypass = isOperator(account) || (listed && (eff?.role === "owner" || MOD_POWERS.some((p: string) => eff?.permissions?.includes(p))));
-  const e = entryOf(door.wc, { actor: actorId ?? undefined, anon: !account, bypass, trustedRenderer: !!who.trustedRenderer }, door.name);
+  const e = entryOf(door.wc, { actor: actorId ?? undefined, anon: !account, bypass, trustedRenderer: !!who.trustedRenderer }, door.name, now);
   if (e.may === "none" || (mode === "embody" && e.may === "watch")) return { code: ACCESS_CLOSE, reason: "no-access", why: e.why ?? `"${door.name}" isn't open to you` };
   if (bypass) return null;
   const acc = door.wc.access && typeof door.wc.access === "object" ? door.wc.access : null;

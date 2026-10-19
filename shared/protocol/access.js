@@ -30,10 +30,13 @@ export const ACCESS_WARN_MS = 5 * 60_000;   // a timed grant's holder is told th
 const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
 const accessOf = (wc) => (isObj(wc?.access) ? wc.access : null);
 
-/** Is `actor` LISTED here: a live roles:<actor> whose role isn't `none` (a demotion keeps nobody in). */
-export function listedIn(wc, actor) {
+/** Is `actor` LISTED here: a live roles:<actor> whose role isn't `none` (a demotion keeps nobody in) and whose `until`, if any,
+ *  hasn't passed at `now` (security review 10-18 M6: an ended grant is absent on every READ — the door, the map, the HTTP reads
+ *  of an unloaded world — before the authority's sweep writes its end). `now` null: no clock, until is not judged. */
+export function listedIn(wc, actor, now = null) {
   const r = actor ? wc?.[`roles:${actor}`] : null;
-  return isObj(r) && typeof r.role === "string" && r.role !== "none";
+  if (!(isObj(r) && typeof r.role === "string" && r.role !== "none")) return false;
+  return !(now != null && Number.isSafeInteger(r.until) && r.until <= now);
 }
 
 /** The world's door for everyone it doesn't list: open | visitors | signed-in | watch | members. */
@@ -50,13 +53,13 @@ export function doorOf(wc) {
  *  in words for a refusal. `who`: {actor?, anon? (no account), bypass? (an owner, a holder of a moderation power, an
  *  operator: they always get in), trustedRenderer? (the renderers' credential: may watch any world, never embody)}.
  *  Bans, kicks, account age and capacity are the server's (they need its moderator log, its clock and who is here). */
-export function entryOf(wc, who = {}, worldName = "this world") {
+export function entryOf(wc, who = {}, worldName = "this world", now = null) {
   if (who.bypass) return { may: "embody" };
   const a = accessOf(wc);
   const join = a?.join ?? "anyone";
   const w = `"${worldName}"`;
   const why = join === "signed-in" && who.anon ? `${w} is for signed-in people`
-    : join === "listed" && !listedIn(wc, who.actor) ? `${w} isn't open to you` : null;
+    : join === "listed" && !listedIn(wc, who.actor, now) ? `${w} isn't open to you` : null;
   if (!why) return { may: "embody" };
   if (a?.watch === "anyone" || who.trustedRenderer) return { may: "watch", why: a?.watch === "anyone" ? `${why} — you may watch (spectate)` : why };
   return { may: "none", why };

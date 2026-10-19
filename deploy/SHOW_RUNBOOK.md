@@ -13,6 +13,7 @@ JOIN_TOKEN=<door-key> RECORD_FRAMES=1 UPLOAD_CAP_MB=30 PORT=8940 \
 | Env | Meaning | Show value |
 |---|---|---|
 | `JOIN_TOKEN` | Door key, checked at join + upload. **Empty = OPEN** (boot log shouts). | set it |
+| `TRUSTED_PROXIES` | Comma-separated peer addresses whose `X-Real-IP` / `X-Forwarded-For` the server believes (server/peer.ts). Loopback is always trusted; from any other peer the socket address is used — so a guest reaching the port directly can't pick or frame an address (every guest sanction and limiter keys on it). | unset (nginx is on loopback) |
 | `RECORD_FRAMES` | `1` = append stage frames + roster deltas to `worlds/<w>/frames-<ts>.jsonl`. Clients see a ⏺ notice at join. | `1` |
 | `UPLOAD_CAP_MB` | Per-upload size cap (default 20). Orrery's `EIDOVERSE_MAX_MB` and nginx `client_max_body_size` must move with it. | 30 |
 | `EIDOVERSE_DIR` | eidoverse-video checkout (asset library). | box path |
