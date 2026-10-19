@@ -29,6 +29,7 @@
 // builtin, and one such call (String#indexOf on crafted text, BigInt toString, an out-of-memory inside Array#fill) once
 // held the authority's thread for 1–13 s (review, 2026-10-06). The host side stays on the authority's thread, so an activation is
 // still one synchronous step. runScript (in-process) is for auditors and tools, which may take their time.
+import { fileURLToPath } from "node:url";
 import { jcs, isEntityId, isComponent } from "./fold.js";
 import { LIMITS, isParamName, API } from "./scriptrules.js";
 import { materialize } from "./componentspec.js";
@@ -290,7 +291,7 @@ function spawnChild() {
   if (Bun.spawnSync(["mkfifo", "-m", "600", inP, outP]).exitCode !== 0) { fsm.rmSync(dir, { recursive: true, force: true }); return null; }
   const rfd = fsm.openSync(outP, fsm.constants.O_RDONLY | fsm.constants.O_NONBLOCK); // the child's "w" open then succeeds
   const wfd = fsm.openSync(inP, fsm.constants.O_RDWR | fsm.constants.O_NONBLOCK);    // O_RDWR: never blocks, never EPIPE
-  const proc = Bun.spawn([process.execPath, new URL("./sandbox-child.js", import.meta.url).pathname, inP, outP],
+  const proc = Bun.spawn([process.execPath, fileURLToPath(new URL("./sandbox-child.js", import.meta.url)), inP, outP],
     { stdio: ["ignore", "ignore", "ignore"], env: { ...env(), EIDO_SANDBOX_CHILD: "1", TZ: "UTC" } });
   proc.unref?.(); spawned++;
   return { proc, rfd, wfd, dir, pend: "", ready: false, buf: Buffer.alloc(1 << 16), dec: new TextDecoder() };

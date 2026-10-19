@@ -3,11 +3,12 @@
 // there. Each fixture is the two-storey test building with one thing broken
 // (tools/two-storey-fixture.ts), so every warning is checked against a cause
 // it should name — and the good building against no warnings at all.
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-const STUB = new URL("./core-stub.mjs", import.meta.url).pathname;
+const STUB = fileURLToPath(new URL("./core-stub.mjs", import.meta.url));
 plugin({ name: "core-stub", setup(b) { b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB })); } });
 const { THREE } = await import(STUB);
 const C = await import("../client/lib/colliders.js");

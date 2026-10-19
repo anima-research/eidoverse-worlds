@@ -11,6 +11,7 @@
 //   C   the engine catalogue's shape (an off-centre GLB box, measured surfaces) places things where they rest
 //   X   the compatibility projection: the v1 verbs it sends, folded by the client's own fold, reproduce it
 // @ts-nocheck
+import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import { scratch } from "./common.ts";
 import { request, isBanned, worldOf, creatorOf, liftWorld, maintain, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore, fixtureIds } from "../../shared/protocol/authority.js";
@@ -1290,7 +1291,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
 // LG1 (a grep-pin, as nonumber-check is): past the door nothing reads the old spelling. The authority's state readers name
 // socket children; only authority/sockets.js (the translator and the load's lift) reads a stored `sockets` map, a
 // parent {to, socket} or a home's socket
-{ const dir = new URL("../../shared/protocol/", import.meta.url).pathname;
+{ const dir = fileURLToPath(new URL("../../shared/protocol/", import.meta.url));
   const files = ["authority.js", ...fs.readdirSync(dir + "authority").filter((f) => f.endsWith(".js") && f !== "sockets.js").map((f) => `authority/${f}`)];
   const OLD = /\bc\??\.sockets\b|\bparent\??\.socket\b|\bhome\??\.parent\??\.socket\b|\.sockets\?\.\[|modelOf\([^)]*\)\??\.sockets\b|\bm\??\.sockets\b/;
   const hits = files.flatMap((f) => fs.readFileSync(dir + f, "utf8").split("\n").map((l, i) => [f, i + 1, l.replace(/^\s*\/\/.*$/, "").replace(/\s\/\/ .*$/, "")]).filter(([, , l]) => OLD.test(l)));
@@ -1300,7 +1301,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
 // socketMapIn builds FROM the children until the Parts UI (12b); a blueprint's own records keep their spelling (11/12);
 // hierarchy.js socketOf/localOf read a record in the old spelling (a v1 fold's: the M checks draw v1 by it; a blueprint's
 // parts); grab.js's home shape check accepts the old field (the door lifts it first)
-{ const root = new URL("../../", import.meta.url).pathname;
+{ const root = fileURLToPath(new URL("../../", import.meta.url));
   const walk = (d) => fs.readdirSync(root + d, { withFileTypes: true }).flatMap((x) => x.isDirectory() ? (x.name === "node_modules" || x.name === "vendor" ? [] : walk(`${d}/${x.name}`)) : /\.(js|mjs|ts)$/.test(x.name) ? [`${d}/${x.name}`] : []);
   const files = [...walk("shared"), ...walk("client/lib"), ...walk("mcpl")].filter((f) => f !== "shared/protocol/authority/sockets.js");
   const OLD = /\b(c|comp|m)\??\.sockets\b|\.sockets\?\.\[|modelOf\([^)]*\)\??\.sockets\b|\b(parent|rel)\??\.socket\b|\bhome\??\.parent\??\.socket\b/;

@@ -12,8 +12,9 @@
 // — that a handover snapshot passed through the door actually lands in
 // whichever engine answers.
 
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const STUB = new URL('./core-stub.mjs', import.meta.url).pathname;
+const STUB = fileURLToPath(new URL('./core-stub.mjs', import.meta.url));
 plugin({
   name: 'core-stub',
   setup(build) {

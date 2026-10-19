@@ -12,8 +12,9 @@
 // MOTORED joints — muscle tone, the active-ragdoll lever (a small
 // stiffness decaying to zero as the body goes limp).
 
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
-const STUB = new URL("./core-stub.mjs", import.meta.url).pathname;
+const STUB = fileURLToPath(new URL("./core-stub.mjs", import.meta.url));
 plugin({ name: "core-stub", setup(b) { b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB })); } });
 
 import RAPIER from "@dimforge/rapier3d-compat";

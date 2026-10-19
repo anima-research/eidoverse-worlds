@@ -7,8 +7,9 @@
 // and structure_ui follows 'selection', not the retired 'sg:selected' (the mutation: emit
 // 'sg:selected' alone and the building must NOT change).
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/selection-test.ts
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'selection-test-stubs', setup(b) {
   for (const m of ['core', 'editwrites', 'ui'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./selection-test-stub.mjs') }));

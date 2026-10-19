@@ -6,8 +6,9 @@
 // viewport rule. Every other neighbour is still tools/actionbar-stub.mjs.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/actionbar-restore-test.ts
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: 'actionbar-restore-stubs',
   setup(b) {

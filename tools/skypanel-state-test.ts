@@ -7,8 +7,9 @@
 // probe can't reach cheaply are cheap: a log with no clouds on the detailed sky, a real clock with no tz or a tz that
 // doesn't resolve, and a new log landing on top of your unsaved preview.
 
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
-const stub = new URL("./skypanel-stub.mjs", import.meta.url).pathname;
+const stub = fileURLToPath(new URL("./skypanel-stub.mjs", import.meta.url));
 plugin({
   name: "skypanel-stubs",
   setup(b) {

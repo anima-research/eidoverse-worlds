@@ -13,6 +13,7 @@
 // generators: the first reports on someone else's server, the second leaves
 // artifacts that look like real failures. Everything below exists to make the
 // suite's green mean "the code under test did this."
+import { fileURLToPath } from "node:url";
 import { mkdtempSync, writeFileSync, existsSync, rmSync, statSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -44,7 +45,7 @@ foundWorlds(worldsDir, ["keep"], "agent:token:roamer");
 // rest of this run's scratch and dies with it.
 const statePath = join(worldsDir, "state.json");
 // Repository state must be untouched by a run. Snapshot before, compare after.
-const REPO_STATE = new URL("../mcpl/state.json", import.meta.url).pathname;
+const REPO_STATE = fileURLToPath(new URL("../mcpl/state.json", import.meta.url));
 const repoStateBefore = existsSync(REPO_STATE)
   ? { exists: true, mtimeMs: statSync(REPO_STATE).mtimeMs, size: statSync(REPO_STATE).size }
   : { exists: false, mtimeMs: 0, size: 0 };

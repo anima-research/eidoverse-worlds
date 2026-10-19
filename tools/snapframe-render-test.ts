@@ -16,6 +16,7 @@
 // camera's frame. The framing checks below pin that with the camera's real
 // 55° vertical FOV.
 
+import { fileURLToPath } from "node:url";
 import { mock } from "bun:test";
 import * as THREE from "three";
 
@@ -29,7 +30,7 @@ const near = (a: THREE.Vector3, b: THREE.Vector3, eps = 1e-9) => a.distanceTo(b)
 const fmt = (v: THREE.Vector3) => `[${v.toArray().map((n) => n.toFixed(3)).join(", ")}]`;
 
 const VFOV = 55;   // client/lib/core.js's PerspectiveCamera
-const lib = (p: string) => new URL(`../client/lib/${p}`, import.meta.url).pathname;
+const lib = (p: string) => fileURLToPath(new URL(`../client/lib/${p}`, import.meta.url));
 
 // ---- stubs at the browser boundary ------------------------------------------
 const shots: { eye: THREE.Vector3; at: THREE.Vector3 }[] = [];

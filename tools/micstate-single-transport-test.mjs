@@ -14,19 +14,20 @@
 //   3. MESH RESIDUE REGRESSION NET: micstate must not import voice.js at all.
 //      A revert that re-introduces the delegation would silently resurrect a
 //      dead module path; this fails loud instead.
+import { fileURLToPath } from "node:url";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { mock } from "bun:test";
 import { readFileSync } from "node:fs";
 GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
 
-mock.module(new URL("../client/lib/core.js", import.meta.url).pathname, () => ({
+mock.module(fileURLToPath(new URL("../client/lib/core.js", import.meta.url)), () => ({
   report: () => {}, bus: { on() {}, emit(ev, v) { emitted.push([ev, v]); } },
 }));
-mock.module(new URL("../client/lib/net.js", import.meta.url).pathname, () => ({ sendTyping: () => {} }));
+mock.module(fileURLToPath(new URL("../client/lib/net.js", import.meta.url)), () => ({ sendTyping: () => {} }));
 // the hint is ui.js's (lazy-imported by micstate): capture it rather than pull the UI in
 const hints = [];
-mock.module(new URL("../client/lib/ui.js", import.meta.url).pathname, () => ({ flashHint: (msg) => hints.push(msg) }));
-mock.module(new URL("../client/lib/audioctx.js", import.meta.url).pathname, () => ({
+mock.module(fileURLToPath(new URL("../client/lib/ui.js", import.meta.url)), () => ({ flashHint: (msg) => hints.push(msg) }));
+mock.module(fileURLToPath(new URL("../client/lib/audioctx.js", import.meta.url)), () => ({
   audioContext: () => null,
 }));
 

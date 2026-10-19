@@ -11,8 +11,9 @@
 //   standUp() not calling seatHook() while mounted   → "mounted: stand tile dismounts through the seat hook" goes red
 //   standUp() clearing posture without myState.seat  → "stand from a chair clears the seat" goes red
 //   updateMe's seatedClip losing the chair branch    → "a chair sit renders the sitchair clip" goes red
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: 'posture-tiles-stubs',
   setup(b) {

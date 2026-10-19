@@ -39,6 +39,7 @@ jobs:
         run: |
           bun install --frozen-lockfile
           (cd client && bun install --frozen-lockfile)
+          (cd mcpl && bun install --frozen-lockfile)
           bunx playwright install chromium
       - name: asset library (pinned in run.ts)
         shell: bash

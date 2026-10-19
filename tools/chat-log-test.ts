@@ -11,8 +11,9 @@
 // as its own row, and `t0` may reorder display only inside the spoken
 // protocol's bounded window.
 
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: "chat-stubs",
   setup(b) {

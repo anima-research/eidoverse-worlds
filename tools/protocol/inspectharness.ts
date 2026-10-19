@@ -14,12 +14,13 @@
 // client/lib/loadwork.js (reached through realize/structure.js) starts a frame-gap watch on requestAnimationFrame at import:
 // headless, the clock never answers (a timer-backed shim would re-arm forever and hold the process open).
 // @ts-nocheck
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
 import path from "node:path";
 import { scratchWorld } from "./scratchworld.ts";
 import { viewState } from "../../shared/protocol/view.js";
 
-const ROOT = path.resolve(new URL("../../", import.meta.url).pathname);
+const ROOT = path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
 
 export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
   globalThis.requestAnimationFrame ??= () => 0;

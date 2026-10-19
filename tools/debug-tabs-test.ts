@@ -6,8 +6,9 @@
 // the shipped one — including the viewport auto-restore, which never goes through show().
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/debug-tabs-test.ts
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'debug-stubs', setup(b) {
   for (const m of ['core', 'base', 'xrpanels', 'gputime', 'perf', 'render', 'perfscope', 'colliders', 'ragdoll', 'ammodoll', 'avatar', 'ui'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./debug-stub.mjs') }));

@@ -27,13 +27,14 @@
 //      becomes 127.0.0.1, and an IPv4 bind is left as it is.
 //
 //   bun tools/mkconfig-test.ts   (E and F parse with Bun.YAML, Bun 1.2.21 or later)
+import { fileURLToPath } from "node:url";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { ok ? pass++ : fail++; console.log(`${ok ? '  ok' : 'FAIL'}  ${name}${ok || !detail ? '' : ` — ${detail}`}`); };
-const SCRIPT = new URL('../deploy/projector/mkconfig.sh', import.meta.url).pathname;
+const SCRIPT = fileURLToPath(new URL('../deploy/projector/mkconfig.sh', import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'mkconfig-'));
 let n = 0;
 

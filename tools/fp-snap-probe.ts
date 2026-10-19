@@ -32,6 +32,7 @@
 // verbs ≤12/4s per client, mount is self-rank for args.id === self,
 // /snap?world&follow&view needs a c.renderer client in-world.
 
+import { fileURLToPath } from "node:url";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import sharp from "sharp";
@@ -40,7 +41,7 @@ const PORT = Number(process.env.PORT ?? 8987);
 const BASE = `http://127.0.0.1:${PORT}`;
 const WORLD = process.env.WORLD ?? "fp75";
 const RECEIPTS = process.env.RECEIPTS ?? `/tmp/fp75-receipts-${PORT}`;
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const EIDOVERSE_DIR = process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video");
 mkdirSync(RECEIPTS, { recursive: true });
 

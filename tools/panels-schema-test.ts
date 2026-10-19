@@ -8,8 +8,9 @@
 // Each block names the product line that would silence it:
 //   hitRegion returning the unsnapped slider value   → "slider hit snaps to step" goes red
 //   check region payload no longer !value            → "check region payload is the flipped value" goes red
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: 'panels-stubs',
   setup(b) { b.onResolve({ filter: /^\.\/windows\.js$/ }, () => ({ path: here('./chat-frames-stub.mjs') })); },

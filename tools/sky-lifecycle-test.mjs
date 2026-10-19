@@ -20,6 +20,7 @@
 // sky-xr-livehold-probe); anything visual. Those are the fakes' contracts, stated beside each fake.
 //
 //   bun tools/sky-lifecycle-test.mjs
+import { fileURLToPath } from "node:url";
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { mock } from 'bun:test';
 GlobalRegistrator.register({ url: 'http://localhost/?world=t&name=p' });
@@ -34,7 +35,7 @@ let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { ok ? pass++ : fail++; console.log(`  ${ok ? '\x1b[32m✓' : '\x1b[31m✗'}\x1b[0m ${n}${ok ? '' : `  ${typeof d === 'string' ? d : JSON.stringify(d)}`}`); };
 
 const THREE = await import('three');
-const lib = (f) => new URL(`../client/lib/${f}`, import.meta.url).pathname;
+const lib = (f) => fileURLToPath(new URL(`../client/lib/${f}`, import.meta.url));
 
 // ---- the bus, tee, the scene -------------------------------------------------------------------------------------
 const handlers = new Map();

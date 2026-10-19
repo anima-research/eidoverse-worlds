@@ -14,11 +14,12 @@
 // arms and it locks the thing in both. Only the refusal CODE differs, and no baseline predicate reads a code: they
 // ask whether the attack was accepted (`ok`) or refused at all; the `now` predicates ask for `locked`. One case
 // changed meaning on purpose: attack H1c (motion on a lock) is a guard now, since v1's matrix keeps motion open.
+import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export const ENGINE = path.resolve(new URL("../../", import.meta.url).pathname) + "/";
+export const ENGINE = path.resolve(fileURLToPath(new URL("../../", import.meta.url))) + "/";
 export const LAB = process.env.PROTOCOL_LAB ? path.resolve(process.env.PROTOCOL_LAB) + "/" : null;
 
 /** A fresh scratch directory for one suite run (worlds/, store/ and probe files live here, never in the repo). */

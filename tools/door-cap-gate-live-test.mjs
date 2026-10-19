@@ -32,6 +32,7 @@
 // land, the shared pieces deserve extraction into one harness module.
 //
 // Run: bun tools/door-cap-gate-live-test.mjs
+import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, existsSync, statSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -65,7 +66,7 @@ writeFileSync(tokensPath, JSON.stringify({
   "gate-token": { id: "claude", name: "Claude", world: "commons" },
 }));
 // Repository state must be untouched by a run. Snapshot before, compare after.
-const REPO_STATE = new URL("../mcpl/state.json", import.meta.url).pathname;
+const REPO_STATE = fileURLToPath(new URL("../mcpl/state.json", import.meta.url));
 const snapState = () => existsSync(REPO_STATE)
   ? { exists: true, mtimeMs: statSync(REPO_STATE).mtimeMs,
       hash: new Bun.CryptoHasher("sha256").update(readFileSync(REPO_STATE)).digest("hex") }

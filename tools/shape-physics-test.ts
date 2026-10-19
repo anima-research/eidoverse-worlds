@@ -3,6 +3,7 @@
 // pure reader that carries it. Written red first, against the tree before the change (wt/w2-attach, 90725c3e).
 //   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/shape-physics-test.ts
 // @ts-nocheck
+import { fileURLToPath } from "node:url";
 import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from 'node:fs';
 import { scratchWorld } from './protocol/scratchworld.ts';
@@ -18,7 +19,7 @@ const check = (name: string, ok: boolean, detail: any = '') => { if (ok) pass++;
 const code = (r: any) => r?.refused?.code ?? (r?.ok ? 'ok' : 'error');
 const near = (a: number[], b: number[], e = 1e-9) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < e);
 const tryRow = async (name: string, f: () => any) => { try { await f(); } catch (e) { check(`${name} (threw)`, false, String(e?.stack ?? e).slice(0, 300)); } };
-const ENGINE = new URL('..', import.meta.url).pathname;
+const ENGINE = fileURLToPath(new URL('..', import.meta.url));
 const read = (p: string) => fs.readFileSync(ENGINE + p, 'utf8');
 // the authority is authority.js and its leaves under authority/ (refactor split, 2026-10-17): a source check reads them all
 const readAuthority = () => ['shared/protocol/authority.js', ...fs.readdirSync(ENGINE + 'shared/protocol/authority').filter((f) => f.endsWith('.js')).sort().map((f) => 'shared/protocol/authority/' + f)].map(read).join('\n');

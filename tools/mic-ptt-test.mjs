@@ -9,6 +9,7 @@
 // indicator ever disagree, believe neither and go listen.
 //
 // Run: bun tools/mic-ptt-test.mjs
+import { fileURLToPath } from "node:url";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { mock } from "bun:test";
 GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
@@ -18,7 +19,7 @@ GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
 // noop stub would pass a broken subscription silently — the exact class of
 // blindness these files keep writing warnings about.
 let typed = 0;
-mock.module(new URL('../client/lib/net.js', import.meta.url).pathname, () => ({
+mock.module(fileURLToPath(new URL('../client/lib/net.js', import.meta.url)), () => ({
   sendTyping: () => { typed++; },
 }));
 // Full enough for the gate GRAPH to build (micstate-exec-test's stub lacks
@@ -28,7 +29,7 @@ mock.module(new URL('../client/lib/net.js', import.meta.url).pathname, () => ({
 // The analyser reports a level WE set, so the level side of the machine can
 // be driven: `room` is the RMS the "microphone" hears right now.
 let room = 0;
-mock.module(new URL('../client/lib/audioctx.js', import.meta.url).pathname, () => ({
+mock.module(fileURLToPath(new URL('../client/lib/audioctx.js', import.meta.url)), () => ({
   audioContext: () => ({
     currentTime: 0, sampleRate: 48000, state: 'running',
     createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData(buf) { buf.fill(room); }, connect() {}, disconnect() {} }),

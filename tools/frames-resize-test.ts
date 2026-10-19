@@ -12,8 +12,9 @@
 // still work AFTER a drag that ended the wrong way", which is exactly the
 // case a happy-path test cannot see.
 
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: "frames-stubs",
   setup(b) {

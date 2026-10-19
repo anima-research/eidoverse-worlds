@@ -5,11 +5,12 @@
 // hex. NOTE: most of those modules are shared runtime modules (forecast, captions, blueprint, components…), so the stamp
 // moves whenever they change, not only when the old fold does; the importer is temporary (README.md), so this stays.
 // the same scheme as EIDOSIM_BUILD.
+import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import path from "node:path";
 import { sha256 } from "../../../shared/protocol/hash.js";
 
-const ROOT = path.resolve(new URL("../../../", import.meta.url).pathname);
+const ROOT = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
 /** The importer's fold.js and its import closure, repo-relative, sorted. */
 export function v1FoldFiles(entry = "tools/protocol/import-v1/fold.js"): string[] {
   const seen = new Set<string>(); const stack = [entry];

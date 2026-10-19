@@ -8,8 +8,9 @@
 // Each block names the product line that would silence it:
 //   inline() writing a run through innerHTML     → "an HTML tag in a message is literal text" goes red
 //   the `recent` cap (12) removed                → "recent tail never exceeds 12" goes red
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: 'chat-stubs',
   setup(b) {

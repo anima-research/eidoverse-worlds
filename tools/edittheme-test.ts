@@ -13,10 +13,11 @@
 //   D. The quad's texture is sRGB (xrpanels makePanel) — measured on the real module, not grepped.
 //   E. No pictograph in edit chrome's own sources (tool rail, build bar, tree toggles).
 //   F. Text colours on their surfaces meet 4.5:1.
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
 import { readFileSync } from "node:fs";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-const here = (p: string) => new URL(p, import.meta.url).pathname;
+const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 plugin({
   name: "edittheme-stubs",
   setup(b) {

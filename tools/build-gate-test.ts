@@ -3,8 +3,9 @@
 // dock wrench advertises was, until this suite, enforced by reading only.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/build-gate-test.ts
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'build-gate-stubs', setup(b) {
   for (const m of ['core', 'base', 'assets', 'lights', 'world', 'colliders', 'terrain', 'net', 'controller', 'ui', 'scenegraph', 'windows', 'socketedit', 'xrask'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./build-gate-stub.mjs') }));

@@ -14,8 +14,9 @@
 // (noteWorn accepting `{name}`, or setMe emitting the name); the five BODIES list checks turn green then.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/settings-panels-test.ts
+import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'settings-stubs', setup(b) {
   for (const m of ['core', 'base', 'governor', 'lightrig', 'materials', 'xrpanels', 'net', 'catalog', 'avatar', 'controller', 'capnotice', 'assets', 'mictoggle'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./settings-panels-stub.mjs') }));

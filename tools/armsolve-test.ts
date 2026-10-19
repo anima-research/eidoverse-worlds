@@ -6,8 +6,9 @@
 // the twist is continuous across the forearm's real range, ~100° pronation to ~190° supination (no forearm flip);
 // and a lost grip holds 0.5 s then relaxes to the clip instead of snapping.
 // Recipe: `bun tools/armsolve-test.ts`
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
-const here = (p: string) => new URL(p, import.meta.url).pathname;
+const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 plugin({
   name: "armsolve-stubs",
   setup(b) {

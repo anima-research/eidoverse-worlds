@@ -6,6 +6,7 @@
 // are independent (the desktop key and a VR button — releasing one keeps the other's hold); the level ramps from where
 // it is, reaching 1 and 0 in REVEAL_EASE_MS; the action is registered where every binding list reads (actions.js) with
 // its key; and N is bound NOWHERE else in the client (the reason it was chosen), nor are the VR reveal's buttons.
+import { fileURLToPath } from "node:url";
 import { readdirSync, readFileSync } from 'node:fs';
 
 let pass = 0, fail = 0;
@@ -61,7 +62,7 @@ check('…findable by "names"', A.list('names').some((x) => x.action.id === 'key
 
 // N is bound nowhere else in the client
 const files = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? (e.name === 'node_modules' || e.name === 'vendor' ? [] : files(`${d}/${e.name}`)) : e.name.endsWith('.js') ? [`${d}/${e.name}`] : []);
-const root = new URL('../client', import.meta.url).pathname;
+const root = fileURLToPath(new URL('../client', import.meta.url));
 const others = files(root).filter((f) => !f.endsWith('/namereveal.js') && /['"]KeyN['"]|key === ['"][nN]['"]/.test(readFileSync(f, 'utf8')));
 check('N is bound nowhere else in the client', others.length === 0, others.join(', '));
 // the VR buttons (owner, 10-02): B/Y follows VRChat's convention (the menu: the panels' quick hide); no controller

@@ -6,6 +6,7 @@
 // so liftWorld treats them as old, which is exactly what a log written before the audit looks like.
 //   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/shape-repair-test.ts
 // @ts-nocheck
+import { fileURLToPath } from "node:url";
 import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from 'node:fs';
 import { scratchWorld } from './protocol/scratchworld.ts';
@@ -22,7 +23,7 @@ import { translate } from './protocol/import-v1/translate-v1.js';
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail: any = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail !== '' ? `  — ${JSON.stringify(detail).slice(0, 400)}` : ''}`); };
 const tryRow = async (name: string, f: () => any) => { try { await f(); } catch (e) { check(`${name} (threw)`, false, String(e?.stack ?? e).slice(0, 400)); } };
-const ENGINE = new URL('..', import.meta.url).pathname;
+const ENGINE = fileURLToPath(new URL('..', import.meta.url));
 const read = (p: string) => fs.readFileSync(ENGINE + p, 'utf8');
 const KEY = 'ed25519:NP1SCq4fthEWnhu_stdrB1gT8wu06eXvKTemf02lqSw';
 const ANY = Object.freeze({ get: (n) => LAB_CATALOGUE.get(n) ?? (typeof n === 'string' && n ? { label: n, surfaces: [] } : undefined), list: (q) => LAB_CATALOGUE.list(q) });

@@ -12,8 +12,9 @@
 // The persisted-layout purge runs at module scope, so localStorage is seeded BEFORE the import; every
 // assertion about it is therefore a statement about what the import did.
 
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: "frames-layout-stubs",
   setup(b) {
