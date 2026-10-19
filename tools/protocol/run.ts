@@ -92,6 +92,8 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["identity", "identity-check.ts", 1], // who a joiner is: C1-C3, H1, H3-H5 (security review 10-06), one identity per account
   ["fork-reset", "fork-reset-check.ts", 1],
   ["reset-race", "reset-race-check.ts", 1], // review 10-14 C1: a request awaiting warm() across a reset refuses instead of writing the old log's line into the new file // world fork (a new world naming its source) and reset (archived, re-founded by its owners)
+  ["txn", "txn-check.ts", 1],           // reviewer items 1–2 (10-18): every request ends committed | rolled-back | ambiguous (persist before publish, publish in a finally, ambiguous never ok); one immutable request capability rechecked at both await→commit seams (liveness, identity, operator, the door, role)
+  ["txn-mutants", "txn-check.ts --mutants", 1], // …and each of its rows turns red under the mutation it exists to catch (a scratch copy of the tree per mutant; the control stays green)
   ["scripts", "scripts-check.ts", 1],   // research 41: scripts in QuickJS on sponsor rights; use → script; a timer through a real server
   ["grab", "grab-check.ts", 1],         // grabbable (research grab 10-06): the gate, release modes, the hold record, use while held
   ["shove", "shove-check.ts", 1],       // body shove at the authority: punt {contact: true}'s own gate (a body against it, at a walk's speed, away from the body, at rest)
@@ -143,7 +145,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
 
 // ---- lanes ----
 // CORE runs first, in this order, and a failure there stops the gate
-const CORE = ["kernel", "gov-reserved", "nov1", "vocab", "authority", "access", "identity", "scars", "reset-race"];
+const CORE = ["kernel", "gov-reserved", "nov1", "vocab", "authority", "access", "identity", "scars", "reset-race", "txn", "txn-mutants"];
 // every suite that launches a Chromium (directly, through playwright, or through tools/harness.ts scratchBench). The
 // gate checks this list against the files themselves (browserMarkers), so a new browser suite can't hide in MAIN.
 // refusedjoin (scratchBench) and client-tools (run-client.ts runs every tools/*-test file, browser tests among them, those one
@@ -168,7 +170,7 @@ const EXPECT: Record<string, number> = {
   "editcommit": 0.8, "hierarchy-commit": 0.6, "verbclasses": 0.0, "authority-layers": 0.0, "authority": 9.0,
   "ids": 1.4, "scars": 1.0, "r8": 0.9, "r9": 1.5, "r10": 1.7, "r11": 0.6, "names": 2.1, "parity": 5.4,
   "directory": 13, "keyhints": 0.0, "client": 60, "refusedjoin": 126, "server": 40, "identity": 42,
-  "fork-reset": 6.0, "reset-race": 0.4, "scripts": 48, "grab": 3.8, "shove": 2.0, "shove-walker": 0.1,
+  "fork-reset": 6.0, "reset-race": 0.4, "txn": 0.8, "txn-mutants": 11, "scripts": 48, "grab": 3.8, "shove": 2.0, "shove-walker": 0.1,
   "agentshove": 165, "hands": 1.2, "reset": 1.7, "settle": 5.4, "disabled": 1.2, "histdiff": 0.3, "reachgate": 22,
   "consent": 0.0, "history-rows": 0.6, "scale": 125, "roles": 3.1, "access": 8.3, "batch2": 1.9,
   "describe-particles": 1.1, "client-b2": 19, "build": 1.5, "counter": 2.2, "build-client": 8.1, "shiplist": 1.7,
