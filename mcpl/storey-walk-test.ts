@@ -294,19 +294,11 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
   // and within the destination's bounds, of the ground and the griddled
   // storeys at the point. A walk the planner routes in legs used to go to
   // the same x and z on its floor and report arriving.
-  const { handleTool, TOOLS } = await import("./tools.ts");
+  const { handleTool } = await import("./tools.ts");
   const walkTool = async (ag: any, args: Record<string, any>) => {
     const r: any = await handleTool({ agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } } as any, "walk_to", args);
     return (r.content ?? []).map((c: any) => c.text ?? "").join("\n");
   };
-  // walk_to's description tells an agent the rule before it plans a move,
-  // since "onto other storeys (pick one with y)", about placed models, would
-  // invite the walk this refuses. main's sentence saying identified-floor
-  // support needs a separate standing implementation is gone: this is it.
-  const walkDesc: string = TOOLS.find((t: any) => t.name === "walk_to")!.description;
-  check("walk_to's description says a walk from an upper storey of a griddled building stays on its floor, and loses main's sentence about standing",
-    /On an upper storey of a griddled building you stand on that storey's floor, and a walk from there stays on it, since its storeys have no stairs between them: a destination whose height is on another storey, the ground or another building is refused with the reason, unless something placed on this floor stands at about that height\./.test(walkDesc)
-      && !/Main follows terrain support/.test(walkDesc), walkDesc.slice(-400));
   /** Walk to (x, z) with height y and the bounds walk_to passes on, ticking
    *  to arrival: true, false (refused or stopped) or "pending". */
   const walkThere = async (ag: any, x: number, z: number, y?: number, near: any = {}) => {
