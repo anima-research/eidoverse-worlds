@@ -5,7 +5,9 @@ name: protocol-gate
 on:
   pull_request:
   push:
-    branches: [main]
+    # main, plus the protocol PR's own branch: a fork's Actions run on a push to the fork (the receipt for PR #260 comes
+    # from there, since a pull_request from a fork may not run upstream without a maintainer's approval)
+    branches: [main, protocol-v4]
   workflow_dispatch:
 permissions:
   contents: read
