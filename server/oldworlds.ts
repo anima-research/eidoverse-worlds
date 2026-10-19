@@ -107,7 +107,7 @@ export function bootNotice(dir: string): string {
          `    ${o.command}`,
          `  ${APPROVAL}`,
          `    ${o.approve}`,
-         `  A translation names no founder: nothing can yet bind a key to the old world's owner (v1 logs record accounts, not keys), so the world's top governance tier (tier 0) stays empty, the operator's countersignature is the only signature, and the record says no owner was attested.`,
+         `  A translation names no founder: nothing can yet bind a key to the old world's owner (an old-format log records accounts, not keys), so the world's top governance tier (tier 0) stays empty, the operator's countersignature is the only signature, and the record says no owner was attested.`,
          `  ${KEPT_IN_PLACE}`].join("\n")
       : [`[boot] old-format world "${o.name}" (${at}) is NOT being served.`,
          `  It was saved before this server's protocol names changed (2026-10-07), so it can't be translated as it stands. Re-translate it from its original old log (the directory its first-protocol log.jsonl is in) into a new world. First the dry run:`,
