@@ -1909,6 +1909,75 @@ export class WorldAgent {
     return best;
   }
 
+  /** The floors a floor walk tells apart at (x, z): the ground (entity
+   *  null), which takes the terrain and every floor within a step of it, as
+   *  storeyUnder does for standing, and each griddled storey with a floor at
+   *  the point, at any height. Where the walk's own floor, `own`, lies within
+   *  a step of the terrain either way, as at a deck's low end, the ground
+   *  there is that floor: a floor walk crosses it at the floor's height, and
+   *  the feet stand on the terrain once it ends (storeyUnder). */
+  private floorsAt(x: number, z: number, own: { entity: string; level: number }): { entity: string | null; level: number; height: number }[] {
+    type Floor = { entity: string | null; level: number; height: number };
+    const terrain = this.heightAt(x, z), nowMs = this.serverNow();
+    const floors: Floor[] = [{ entity: null, level: -1, height: terrain }];
+    for (const e of this.entities.values()) {
+      const data = (e.comp ?? {}).structure;
+      if (!data) continue;
+      try {
+        const plan = this.planOf(data);
+        const fx = this.eff(e.id, nowMs);
+        if (!fx.ok) continue;
+        const sc = fx.scale > 0 ? fx.scale : 1;
+        const [lx, , lz] = localizePoint({ pos: fx.pos, yaw: fx.yaw, scale: sc }, x, 0, z);
+        plan.levels.forEach((lv: any, i: number) => {
+          if (!(lv.base > 0) || !floorAtLocal(plan, lv, lx, lz)) return;
+          const height = fx.pos[1] + lv.y * sc;
+          if (height - terrain > NAV_STEP) floors.push({ entity: e.id, level: i, height });
+          else if (own.entity === e.id && own.level === i && terrain - height <= NAV_STEP) floors[0] = { entity: e.id, level: i, height };
+        });
+      } catch { /* a malformed house costs only itself, as in storeyUnder */ }
+    }
+    return floors;
+  }
+
+  /** Of the floors a floor walk tells apart at (x, z) (floorsAt), the one a
+   *  destination's height means, by walk_to's rule for a height, the
+   *  navgrid's (mcpl/navgrid.ts, route): the one nearest y, no more than
+   *  `above` (NAV_STEP unless given) above it and, with `below`, no more than
+   *  that below it; null when none is. Ties go to the walk's own floor, then
+   *  to the higher. With `body`, y is a body's root and the floor is the one
+   *  it is on: the highest that fits, not the nearest, since a body lies up to
+   *  RAGDOLL_ROOT_DROP above its root, and none stands with a floor less than
+   *  that above its feet. Surfaces placed there are the navgrid's to read
+   *  (placedNear). */
+  private floorMeant(x: number, z: number, y: number, near: { above?: number; below?: number },
+    own: { entity: string; level: number }, body = false): { entity: string | null; level: number; height: number } | null {
+    type Floor = { entity: string | null; level: number; height: number };
+    const floors = this.floorsAt(x, z, own);
+    const fits = (h: number) => h <= y + (near.above ?? NAV_STEP) && (near.below == null || h >= y - near.below);
+    const isOwn = (f: Floor) => f.entity === own.entity && f.level === own.level;
+    let best: Floor | null = null;
+    for (const f of floors) {
+      if (!fits(f.height)) continue;
+      const d = body ? -f.height : Math.abs(f.height - y), bd = !best ? Infinity : body ? -best.height : Math.abs(best.height - y);
+      if (!best || d < bd - 1e-6 || (Math.abs(d - bd) <= 1e-6 && (isOwn(f) && !isOwn(best) || isOwn(f) === isOwn(best) && f.height > best.height))) best = f;
+    }
+    return best;
+  }
+
+  /** Whether something placed on a floor walk's own floor stands at about
+   *  height y at (x, z): the top of a collider over the point within the
+   *  destination's bounds (`above` and `below`, a step each unless given),
+   *  no lower than the floor, as the walk's own navgrid probe stands
+   *  (onOrAboveFloor), and under `ceiling`, the next floor above it there,
+   *  on which anything higher rests. */
+  private placedNear(x: number, z: number, y: number, near: { above?: number; below?: number }, floor: number, ceiling = Infinity): boolean {
+    const probe = navProbe((px, pz) => this.heightAt(px, pz));
+    if (!probe) return false;
+    const top = inWorld(this.world, () => probe.surfaceUnder(x, z, Math.min(y + (near.above ?? NAV_STEP), ceiling - 0.02)));
+    return top > this.heightAt(x, z) + 1e-6 && top >= y - (near.below ?? NAV_STEP) && top >= floor - 0.02;
+  }
+
   /** The height the feet belong at: an upper storey's floor under them
    *  (storeyUnder), else the terrain. Every standing body's ground goes
    *  through here: the idle tick's, a stand-up's, and a flight's at its
@@ -3158,7 +3227,7 @@ export class WorldAgent {
    *  exactly, as a named room's is). `near.inside`: only spots in a region.
    *  `receipt`: this request's own refusal (the plan may wait for geometry). */
   walkTo(x: number, z: number, run = false, timeoutMs = 90_000, tolerance = ARRIVE, y?: number,
-    near: Pick<NavTarget, "reach" | "above" | "below" | "inside"> = {}, receipt?: { refusal: string | null }): Promise<boolean> {
+    near: Pick<NavTarget, "reach" | "above" | "below" | "inside"> & { bodyAt?: { x: number; z: number } } = {}, receipt?: { refusal: string | null }): Promise<boolean> {
     if (![x, z, tolerance].every(Number.isFinite) || tolerance < 0 || tolerance > 0.4 || (y != null && !Number.isFinite(y))) {
       // Not a walk request at all: the walk under way, if any, goes on.
       this.walkRefusal = WALK_ARGS_REASON;
@@ -3200,7 +3269,7 @@ export class WorldAgent {
   private walkTicket = 0;
 
   private walkNow(x: number, z: number, run: boolean, timeoutMs: number, tolerance: number, y: number | undefined,
-    near: Pick<NavTarget, "reach" | "above" | "below" | "inside">): Promise<boolean> {
+    near: Pick<NavTarget, "reach" | "above" | "below" | "inside"> & { bodyAt?: { x: number; z: number } }): Promise<boolean> {
     // Plan before touching the body, from the ground under it: a refused walk
     // leaves it seated, pinned, dragged, posed or tumbling as it was. The
     // walk's floor, its grid's start and where it stands up are all found
@@ -3210,6 +3279,35 @@ export class WorldAgent {
     const support = this.walkSupport(feetY);
     const plan = this.planWalk({ x, z }, support);
     if ("refusal" in plan) { this.walkRefusal = plan.refusal; return Promise.resolve(false); }
+    // A walk from a floor stays on it: the router plans it on that floor
+    // alone, and a griddled building's storeys have no stairs between
+    // them or to the ground. So a destination whose height means another
+    // of the floors there (floorMeant: walk_to's own rule for a height,
+    // with the destination's bounds), another storey, another building's
+    // or the ground, is refused here, once the router has planned the
+    // walk and before the navgrid routes it or its legs are walked (the
+    // planner's legs never read y), rather than walked to at the same x
+    // and z on this floor. Unless something placed on this floor, under
+    // the next floor above, stands at about that height there
+    // (placedNear): then the walk goes, and the navgrid, when it routes
+    // the walk, reads the height against what is placed. A named
+    // destination's height and bounds are the world's: a place, a seat, a
+    // room, a thing's entrance, a person, whose floor is the one their
+    // body is on where they are, not where the walk stops short of them.
+    if (support.kind === "floor" && y != null) {
+      const at = near.bodyAt ?? { x, z };
+      const meant = this.floorMeant(at.x, at.z, y, near, support, near.bodyAt != null);
+      const ceiling = Math.min(Infinity, ...this.floorsAt(at.x, at.z, support).filter((f) => f.height > support.height + 0.02).map((f) => f.height));
+      if ((!meant || meant.entity !== support.entity || meant.level !== support.level) && !this.placedNear(at.x, at.z, y, near, support.height, ceiling)) {
+        const whose = meant ? `whose floor is at ${meant.height.toFixed(2)}m` : "";
+        const where = !meant ? "on no floor here" : meant.entity === null ? "at ground level"
+          : meant.entity === support.entity ? `on another storey of this building, ${whose}` : `on a storey of another building, ${whose}`;
+        // a person's height is their root, not a height anyone gave or sees
+        const what = near.bodyAt ? "the destination" : `the destination (height ${y.toFixed(2)}m)`;
+        this.walkRefusal = `${what} is ${where}, not on the floor you stand on (${support.height.toFixed(2)}m). A walk from a floor stays on it, since a griddled building's storeys have no stairs between them or to the ground; pick a destination on this floor, or give coordinates without y, which stay on it`;
+        return Promise.resolve(false);
+      }
+    }
     // Through placed models: a walk the structure planner leaves as one
     // straight leg is routed against the colliders the feet will meet —
     // round the furniture, through the door, up the stair (mcpl/navgrid.ts).
@@ -3236,7 +3334,15 @@ export class WorldAgent {
       }
       const nav = inWorld(this.world, () => {
         const fy = standOn(feet, surface) ?? feetY;
-        return grid.route({ x: this.pos.x, y: fy, z: this.pos.z }, { x, z, y, ...near });
+        const from = { x: this.pos.x, y: fy, z: this.pos.z };
+        const first = grid.route(from, { x, z, y, ...near });
+        // A person's bound reaches the surface a body lies on (destination()),
+        // which no route may reach, such as a top bunk: then the place to
+        // stand nearest them within a step, as for someone standing there,
+        // the floor beside it.
+        if (!("refusal" in first) || !near.bodyAt) return first;
+        const withinStep = grid.route(from, { x, z, y, ...near, above: undefined });
+        return "refusal" in withinStep ? first : withinStep;
       });
       if ("refusal" in nav) { this.walkRefusal = nav.refusal; return Promise.resolve(false); }
       // griddled structures keep their walls out of the headless colliders,
@@ -3351,8 +3457,20 @@ export class WorldAgent {
       if (!ci(p.id, q)) continue;
       const xyz = posePosition(p.pose);
       if (!xyz) return { refusal: `${p.id}'s position is not known yet` };
-      const [x, y, z] = xyz, d = Math.hypot(me.x - x, me.z - z), back = d > 0.01 ? Math.min(0.9, d) / d : 0;
-      return { x: x + (me.x - x) * back, y, z: z + (me.z - z) * back, reach: 0.6, label: p.id };
+      const [x, root, z] = xyz, d = Math.hypot(me.x - x, me.z - z), back = d > 0.01 ? Math.min(0.9, d) / d : 0;
+      // Presence carries the root, not how a body came to be there: one
+      // standing, or held by a canned slump, has its root on its floor; one a
+      // sim laid down, under clip "ragdoll" or a physics pose held under
+      // another, has it about RAGDOLL_ROOT_DROP below the surface it lies on.
+      // So their floor may be up to that drop above the root: the navgrid
+      // takes the place to stand nearest the root within it (the floor they
+      // lie on, or the floor beside the bed they lie on; where no route
+      // reaches it, walkNow routes again within a step), and a floor walk's
+      // check the floor their body is on where they are (bodyAt). Without the
+      // bound, a walk to someone lying on this floor reads as one to a floor
+      // beneath.
+      return { x: x + (me.x - x) * back, y: root, z: z + (me.z - z) * back, reach: 0.6, label: p.id,
+        above: RAGDOLL_ROOT_DROP + 0.05, bodyAt: { x, z } };
     }
     const slash = q.indexOf("/");
     const ents = [...this.entities.values()].filter((e) => isFiniteVec3(e.pos));
