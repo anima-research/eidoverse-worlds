@@ -15,6 +15,9 @@ export const REFUSAL_CODES = Object.freeze({
   "custody":        { meaning: "this server can't sign for the world", when: "a write to a world whose genesis names another sequencer key" },
   "unreadable":     { meaning: "the log folds to a status the authority won't write to", when: "a write while the fold says no-world/unknown-version" },
   "repair-needed":  { meaning: "the world's stored values are in an old spelling no reader serves; the maintenance command must run first", when: "any write (not a read, not leave) to a world needing lift-sockets, a grabbable rename or repair-shapes (authority maintenanceNeeds); the text names `bun tools/protocol/world.ts repair <name>`" },
+  // ---- the transaction (PROTOCOL §7: every request ends committed, rolled-back or ambiguous) ----
+  "ambiguous":      { meaning: "the request's result is unknown: some or all of it may be written; never ok, never a plain failure", when: "a durable write threw (its line may be on disk; the log is wedged until reopened), or the request was cut off after part of it was written; the reply's `from` is the first seq whose state history must settle (storage.js txnOutcome)" },
+  "server-error":   { meaning: "the server failed handling the request and nothing it asked for was written", when: "a throw before any line of the request reached the log, including a write refused because the log was already wedged (rolled back)" },
   "unknown-verb":   { meaning: "no such request", when: "a verb the authority doesn't have (help lists them)" },
   "removed":        { meaning: "the protocol had that request and removed it", when: "a request named in verbspec.js REMOVED_VERBS (whisper, removed 2026-10-18: speech is public and arrival-only)" },
   "banned":         { meaning: "the actor is banned from this world", when: "any request but help/leave from a banned identity" },

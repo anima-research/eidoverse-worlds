@@ -17,6 +17,7 @@ import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
+import { txnOutcome, txnRefusal } from "../shared/protocol/authority/storage.js";
 import { clientCutOf, spokenOf } from "../shared/protocol/replica.js";
 import { viewState } from "../shared/protocol/view.js";
 import { holdWire } from "../shared/grab.js";
@@ -149,36 +150,67 @@ export class WorldLog {
    *  the authority can measure it; the authority call itself is synchronous. */
   /** `still` (optional): the asker's capability, rechecked after the await and immediately before the synchronous authority
    *  call (a connection that closed, was taken over or left while its request waited must not write: review of PR #260,
-   *  requestwire.ts:135). It returns null while the asker may still act, else the refusal's words; nothing is written then. */
+   *  requestwire.ts:135). It returns null while the asker may still act, else the refusal's words; nothing is written then.
+   *  requestwire.ts passes server/reqcap.ts recheck(cap) here: the request's one immutable capability, re-validated (liveness,
+   *  identity, operator, the door, the role) at this seam, the last await before the commit.
+   *  Never throws: every request ends in a reply carrying its transaction outcome (requestSync). */
   async request(actor: string, verb: string, args: Record<string, unknown> = {}, still?: () => string | null) {
-    await warm(modelsIn(args));
-    const gone = still?.();
-    if (gone) return { ok: false, refused: { code: "superseded", reason: gone, fix: "reconnect, then send it again from the connection that is in the world now" } };
+    let gone: string | null | undefined;
+    try { await warm(modelsIn(args)); gone = still?.(); }
+    catch (err) { console.error(`[world:${this.name}] ${verb.slice(0, 32)} by ${actor}: failed before the authority saw it`, err); return txnRefusal({ outcome: "rolled-back" }); }
+    if (gone) return { ok: false, outcome: "rolled-back", refused: { code: "superseded", reason: gone, fix: "reconnect, then send it again from the connection that is in the world now" } };
     return this.requestSync(actor, verb, args);
   }
+  /** One request through the authority, as a transaction (PROTOCOL §7; storage.js txnOutcome): the reply carries
+   *  `outcome` — committed (ok), rolled-back (a refusal, or a throw before any of it was written) or ambiguous (a durable
+   *  write threw, or it was cut off part-way; never ok, code `ambiguous`, `from` = the first seq whose state is unknown).
+   *  Persist before publish: lines reach entries only after the disk took them (storage.js append), and whatever reached
+   *  entries is published here in a finally, whether the authority returned or threw (a durable line is never left
+   *  unpublished: every client's chain would be behind the server's). Never throws. */
   requestSync(actor: string, verb: string, args: Record<string, unknown> = {}) {
-    if (this.retired) return WorldLog.RESET;
+    if (this.retired) return { ...WorldLog.RESET, outcome: "rolled-back" };
     this.stats.requests++;
-    const from = this.live.entries.length; const held = this.holdsKey();
-    const t0 = performance.now(); const r = authorityRequest(this.live, actor, verb, args); if (r && typeof r === "object") authorityTime.set(r, performance.now() - t0);
-    if (this.live.entries.length > from) this.afterWrite(from);
-    if (this.holdsKey() !== held) this.host?.broadcast({ type: "holds", world: this.name, holds: this.holds() });
-    this.forwardInbox();
+    const live = this.live;
+    const from = live.entries.length; const held = this.holdsKey(); const wedgedBefore = !!live.wedged?.log;
+    const t0 = performance.now(); let r: Any = null; let threw: unknown = null;
+    try { r = authorityRequest(live, actor, verb, args); }
+    catch (err) { threw = err ?? new Error("the authority threw"); }
+    finally { this.publish(from, held); }
+    const o = txnOutcome(live, from, { threw: threw !== null, refused: !!r && typeof r === "object" && r.ok === false, wedgedBefore });
+    if (threw !== null) {
+      console.error(`[world:${this.name}] ${verb.slice(0, 32)} by ${actor} threw in the authority (${o.outcome}${o.outcome === "ambiguous" ? ` from seq ${o.from}` : ""}):`, threw);
+      if (o.outcome === "ambiguous") this.host?.debug("ambiguous", { verb: verb.slice(0, 32), from: o.from, wedged: !!o.wedged, line: `a ${verb.slice(0, 32)} ended ambiguous at seq ${o.from}${o.wedged ? ": storage failed mid-write; writes are refused until the world is reopened" : ""}` });
+      r = txnRefusal(o);
+    } else if (r && typeof r === "object") { r.outcome = o.outcome; }
+    if (r && typeof r === "object") authorityTime.set(r, performance.now() - t0);
     return r;
+  }
+  /** After a request (returned or thrown): publish what reached the log, the holds if they changed, the inbox. A publish
+   *  that fails is logged, never turned into the request's outcome (its lines are durable whatever a socket did). */
+  private publish(from: number, held: string) {
+    try { if (this.live.entries.length > from) this.afterWrite(from); } catch (err) { console.error(`[world:${this.name}] publishing seq ${from}… failed`, err); }
+    try { if (this.holdsKey() !== held) this.host?.broadcast({ type: "holds", world: this.name, holds: this.holds() }); this.forwardInbox(); }
+    catch (err) { console.error(`[world:${this.name}] holds/inbox after a request failed`, err); }
   }
   /** A server operator's recorded repair (authority.js operatorRepair: @world's roles/access/default-role/role-defs, unban, repair-shapes;
    *  recorded as the operator's act with operator: true). Only server/requestwire.ts's operator-repair reaches it, behind
    *  isOperator. Synchronous, like requestSync: there is no await between the check and the write. */
   operatorRepair(actor: string, verb: string, args: Record<string, unknown> = {}) {
-    if (this.retired) return WorldLog.RESET;
-    const from = this.live.entries.length;
+    if (this.retired) return { ...WorldLog.RESET, outcome: "rolled-back" };
+    const live = this.live;
+    const from = live.entries.length; const held = this.holdsKey(); const wedgedBefore = !!live.wedged?.log;
+    let r: Any = null; let threw: unknown = null;
     // the shape repair (reviewer item 9): its pre-repair log is kept beside the world for a rollback (server/repairfiles.ts;
     // `bun tools/protocol/world.ts repair <name> --rollback`, with the server stopped), as the CLI keeps it
-    const backup = (verb === "repair" || verb === "repair-shapes") && args.dryRun !== true ? backupBeforeRepair(this.dir, { by: actor }) : null;
-    const r = authorityOperatorRepair(this.live, actor, verb, args);
-    if (backup) { if (this.live.entries.length > from) sealBackup(backup); else dropBackup(backup); }
-    if (this.live.entries.length > from) this.afterWrite(from);
-    this.forwardInbox();
+    try {
+      const backup = (verb === "repair" || verb === "repair-shapes") && args.dryRun !== true ? backupBeforeRepair(this.dir, { by: actor }) : null;
+      try { r = authorityOperatorRepair(live, actor, verb, args); }
+      finally { if (backup) { if (live.entries.length > from) sealBackup(backup); else dropBackup(backup); } }
+    } catch (err) { threw = err ?? new Error("the repair threw"); }
+    finally { this.publish(from, held); }   // the same transaction as requestSync: what reached the log is published
+    const o = txnOutcome(live, from, { threw: threw !== null, refused: !!r && typeof r === "object" && r.ok === false, wedgedBefore });
+    if (threw !== null) { console.error(`[world:${this.name}] operator repair ${verb.slice(0, 32)} threw (${o.outcome}):`, threw); return txnRefusal(o); }
+    if (r && typeof r === "object") r.outcome = o.outcome;
     return r;
   }
   /** The relay's per-packet question for a reach descriptor aimed at another body (authority.js reachAdmits): presence only,

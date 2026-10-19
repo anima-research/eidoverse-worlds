@@ -19,11 +19,22 @@ export function readLogBytes(logPath: string): Buffer {
   return b.subarray(0, keep);
 }
 
-/** Append one line and fsync before returning: the caller broadcasts only after this. */
+/** Write all of `buf` to `fd`: writeSync may take fewer bytes than it was given (a full disk, a signal, a pipe), and a short
+ *  write treated as whole is a torn line in memory. It loops until every byte is taken; a write that takes nothing throws. */
+export function writeAll(fd: number, buf: Uint8Array) {
+  let off = 0;
+  while (off < buf.length) {
+    const n = fs.writeSync(fd, buf, off, buf.length - off);
+    if (!(n > 0)) throw new Error(`short write: ${off} of ${buf.length} bytes taken, then none (disk full?)`);
+    off += n;
+  }
+}
+/** Append one line and fsync before returning: the caller broadcasts only after this. Any throw from here leaves the line's
+ *  disk state unknown (open, write, sync and close are not one step): the authority wedges the file and calls it ambiguous. */
 export function appendDurable(logPath: string, line: string) {
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
   const fd = fs.openSync(logPath, "a");
-  try { fs.writeSync(fd, line + "\n"); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  try { writeAll(fd, Buffer.from(line + "\n", "utf8")); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
 }
 
 /** Store blob text `s` under its hash `h` at `file`: atomically, and replacing a copy that doesn't verify. */
@@ -32,6 +43,6 @@ export function putBlobFile(file: string, s: string, h: string) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   const fd = fs.openSync(tmp, "w");
-  try { fs.writeSync(fd, s); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  try { writeAll(fd, Buffer.from(s, "utf8")); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
   fs.renameSync(tmp, file);
 }

@@ -882,6 +882,22 @@ that fails may have left part of a line behind, so the authority then refuses ev
 file until the world is reopened from what the disk holds (the reader cuts a torn last line): it never
 chains a new entry onto one the disk may not have.
 
+**Every request ends in one of three outcomes**, named in its reply (`outcome`), and the authority persists
+before it publishes:
+- `committed`: the reply is ok, and every line the request wrote is durable and published.
+- `rolled-back`: none of what it asked for was written (a refusal, or a failure before any of its lines reached
+  the log). The authority's own lines (a refused write's attempt record, rests that were due) may still be
+  written; they are published like any line and are not the asker's.
+- `ambiguous`: the asker can treat it as neither. A durable write failed (its line may or may not be on disk;
+  the log is then refused writes until reopened), or the request was cut off after part of it was written. The
+  reply is refused with code `ambiguous` and names `from`: lines before it stand and are published; from it on,
+  the history says what holds. An ambiguous request is never reported as ok, nor as a plain failure.
+
+A request's lines are written one at a time, in order, each durable before the next, so a request that ends
+ambiguous leaves a prefix of its lines, never a gap. An act whose change was not written is an act with no
+result: readers already tolerate one (an act carries no ops), and undo finds nothing of it to take back.
+Every line that reached the log is published, whatever became of the request that wrote it.
+
 **The authority's consequences are follow-ups** (one rule, review r10): what the authority writes because of
 an asker's write is never written as the asker's own. A consequence that must be atomic with the asker's
 change rides in it, marked; one that may stand alone is the system's own act, caused by the asker's.

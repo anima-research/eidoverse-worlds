@@ -63,10 +63,12 @@ export function worldOf(io) {
   // A failed write may have left part of a line on disk (open, write and sync are not one step), so the file's state is
   // unknown: the world refuses every later write (fail closed) until it is reopened from what the disk actually holds.
   // Each file is wedged on its own: a failed moderator-log write stops moderator-log writes, a failed log write stops log writes.
-  w.wedged = {};
+  // wedgedAt: the log seq whose line's disk state is unknown (the one being written when the write threw), for the
+  // transaction outcome (txnOutcome below: the reply names it as `from`).
+  w.wedged = {}; w.wedgedAt = null;
   const durably = (what, write) => {
     if (w.wedged[what]) throw new Error(`storage: ${name}'s ${what} is not written: an earlier write failed (${w.wedged[what]}), so what is on disk is unknown; reopen the world from disk`);
-    try { write(); } catch (x) { w.wedged[what] = String(x?.message ?? x); throw x; } };
+    try { write(); } catch (x) { w.wedged[what] = String(x?.message ?? x); if (what === "log") w.wedgedAt = entries.length; throw x; } };
   w.appendMod = (e) => { const r = { ts: Math.floor(w.now()), ...e }; durably("moderator log", () => io.appendMod?.(r)); w.mod.push(r); };
   let cache = null; // the folded state is a view, rebuilt when the log grows (callers never mutate it)
   // incremental when the new lines are plain entries this server wrote (state/act/sim/say): clone + apply their ops, which
@@ -125,6 +127,34 @@ export function worldOf(io) {
     w.exists = true; return seq;
   };
   return w;
+}
+// The transaction outcome (PROTOCOL §7, "Every request ends in one of three outcomes"; reviewer item 1, 10-18). A request
+// ends in exactly one of:
+//   {outcome: "committed", from, to}       it was answered ok and every line it asked for is durable and in entries
+//                                          (to = the last seq + 1; a read writes nothing, from = to)
+//   {outcome: "rolled-back"}               none of what it asked for reached disk or entries: a refusal, or a throw before
+//                                          any line of it was written. The authority's own lines (a refused write's
+//                                          attempt record, rests that were due) may still be written; they are published
+//                                          like any line and are not the asker's.
+//   {outcome: "ambiguous", from, wedged}   the asker can't treat it as either: a durable write threw (its bytes may be on
+//                                          disk: open, write, sync and close are not one step; the file is wedged, B1), or
+//                                          the request was cut off after part of it was written. Lines below `from` stand
+//                                          (they were durable and are published); from `from` on, history says what holds.
+// An ambiguous request is never reported as ok, nor as a plain failure. `wedgedBefore`: whether the log was already
+// wedged when the request began (then its own throw is the wedge's refusal, before any write: rolled back).
+export function txnOutcome(w, from, { threw = false, refused = false, wedgedBefore = false } = {}) {
+  const grew = w.entries.length > from;
+  if (!threw) return refused ? { outcome: "rolled-back" } : { outcome: "committed", from, to: w.entries.length };
+  if (w.wedged.log && !wedgedBefore) return { outcome: "ambiguous", from: w.wedgedAt ?? w.entries.length, wedged: true };
+  if (grew) return { outcome: "ambiguous", from: w.entries.length, wedged: !!w.wedged.log };
+  return { outcome: "rolled-back" };
+}
+/** The reply a request gets when it did not end committed or refused (txnOutcome): never ok, always a registered code. */
+export function txnRefusal(o) {
+  if (o.outcome === "ambiguous") return { ok: false, outcome: "ambiguous", from: o.from, refused: o.wedged
+    ? { code: "ambiguous", reason: `the write's result is unknown: storage failed while writing it, so whether line ${o.from} is on disk isn't known; this world refuses writes until it is reopened from disk`, fix: `reload once the world is reopened; history from seq ${o.from} says what stands` }
+    : { code: "ambiguous", reason: `the request was cut off after part of it was written: lines before ${o.from} stand, the rest was not written`, fix: `history from seq ${o.from} says what stands; send what is missing again` } };
+  return { ok: false, outcome: "rolled-back", refused: { code: "server-error", reason: "the server failed while handling the request; nothing it asked for was written", fix: "send it again; if it keeps failing, the server's log says why" } };
 }
 // READBACK (verbclasses.js; engine-scars 4/6c, R 10-17 02:45): the act fields the authority reads back for meaning (an
 // undo's chain, a use's capability, a script's sponsor, a sculpt's brush, the request that named an engine build…). §12
