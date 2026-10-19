@@ -777,18 +777,22 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
     const a4 = await connectHost("nofound-token", RESUME);
     await sleep(1200);
     check("…and is remembered: the next plain reconnect starts there (commons)", (await where(a4)) === "world:commons", String(await where(a4)));
-    const t4 = txt(await a4.request("tools/call", { name: "travel", arguments: { world: "annex" } }));
-    check("back to annex", /Arrived in "annex"/.test(t4), t4);
+    // (ported: the world it leaves is `keep`, the one the roamer agent owns, and its owner closes it with this
+    // protocol's ordinary request on @world, as THE WORLD DECIDES above does; upstream used annex and world_access)
+    const t4 = txt(await a4.request("tools/call", { name: "travel", arguments: { world: "keep" } }));
+    check("on to keep", /Arrived in "keep"/.test(t4), t4);
     a4.ws.close(); await sleep(600);
     // the world it left no longer lets it in → home, not a refusal
-    const owner = await connectHost("roamer-token", "&world=annex");
+    const owner = await connectHost("roamer-token", "&world=keep");
     await sleep(1200);
-    check("the owner closes annex", /members only/.test(txt(await owner.request("tools/call", { name: "world_access", arguments: { action: "mode", mode: "members" } }))));
+    const closedKeep = await owner.request("tools/call", { name: "act", arguments: { verb: "set", args: { id: "@world", component: "access", value: { join: "listed" } } } });
+    check("the owner closes keep (set @world.access {join: listed})", !closedKeep.result?.isError, txt(closedKeep));
     const a5 = await connectHost("nofound-token", RESUME);
     await sleep(1200);
     check("an agent whose last world is now closed to it wakes up at home", (await where(a5)) === "world:commons", String(await where(a5)));
     a5.ws.close();
-    check("the owner reopens annex", /open/.test(txt(await owner.request("tools/call", { name: "world_access", arguments: { action: "mode", mode: "open" } }))));
+    const reopenedKeep = await owner.request("tools/call", { name: "act", arguments: { verb: "delete", args: { id: "@world", component: "access" } } });
+    check("the owner reopens keep", !reopenedKeep.result?.isError, txt(reopenedKeep));
     owner.ws.close(); await sleep(600);
     // an operator who changes the agent's HOME has said where it lives now
     const a6 = await connectHost("nofound-token");
@@ -797,11 +801,13 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
     check("annex once more", /Arrived in "annex"/.test(t6), t6);
     a6.ws.close(); await sleep(600);
     const reg = JSON.parse(readFileSync(tokensPath, "utf8"));
-    reg["nofound-token"].world = "free-place";
+    // (ported: the new home is `keep`, a world that exists; joining never founds one here, and upstream's free-place
+    // must stay unfounded for THE WORLD DECIDES above)
+    reg["nofound-token"].world = "keep";
     writeFileSync(tokensPath, JSON.stringify(reg));
     const a7 = await connectHost("nofound-token", RESUME);
     await sleep(1200);
-    check("after its home claim changes, it starts at the new home, not the old memory", (await where(a7)) === "world:free-place", String(await where(a7)));
+    check("after its home claim changes, it starts at the new home, not the old memory", (await where(a7)) === "world:keep", String(await where(a7)));
     a7.ws.close();
     reg["nofound-token"].world = "commons";
     writeFileSync(tokensPath, JSON.stringify(reg));

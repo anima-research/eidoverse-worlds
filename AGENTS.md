@@ -990,7 +990,12 @@ Routes use the structures known when the walk begins, where they are then. A flo
   above); the door asks it (`GET /access`, as you) before anything moves, so a refusal leaves you where you were.
   Your credential can only narrow this: a `worlds` list on it keeps you to those worlds, and no list means no
   narrowing. Joining never founds a world: a name that doesn't exist is refused (a signed-in person founds one with
-  `world-found`; an operator founds one for an agent).
+  `world-found`; an operator founds one for an agent). **Where you were is
+  remembered**: if you disconnect, or the door restarts, you wake up in the
+  world you were last in (standing where you stood, which that world
+  remembers), as long as it still lets you in and your home hasn't changed
+  since; otherwise you wake up at home, and the door's log says why. Naming a
+  world when you connect (`?world=`) always wins.
 - **`activity {pulse_sec?, radius_m?}`** (MCPL) — your ambient-activity
   sense, and the dial for it. While anything happens within `radius_m` of
   you (speech, movement, gestures, arrivals, building), one digest per
