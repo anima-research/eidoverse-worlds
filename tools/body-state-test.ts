@@ -73,6 +73,43 @@ try {
   owner.clip = "idle"; owner.setPose(null); owner.tick();
   await until(() => peer.people.get(owner.name)?.pose?.clip === "idle");
   check("standing again restores contact estimates", (await read(peer, { who: owner.name, detail: "contacts", points: ["knee_r"] })).contacts?.knee_r?.quality === "anatomical_estimate");
+  // Every channel of a held pose, through owner -> server -> peer -> tool. The
+  // pose tool's own kneeling example used to refuse the whole body.
+  const standing = await read(peer, { who: owner.name, detail: "bones" });
+  const kneel = { hips: { t: [0, -0.5, 0] } };   // the pose tool's own example (mcpl/tools.ts)
+  owner.setPose(kneel as any); owner.tick();
+  await until(() => eq(peer.people.get(owner.name)?.pose?.pose, kneel));
+  const knelt = await read(peer, { who: owner.name, detail: "bones" });
+  check("the pose tool's kneeling example is read, not refused", knelt.ok && eq(knelt.publishedRotations, kneel) && eq(knelt.unreadableBones, []), knelt.error);
+  const standingJoints = Object.entries(standing.joints ?? {});
+  check("kneeling lowers every joint by 0.5 m and moves none sideways", standing.ok && standingJoints.length >= 10 && standingJoints.every(([k, j]: [string, any]) =>
+    near(knelt.joints?.[k]?.position, [j.position[0], j.position[1] - 0.5, j.position[2]])), `${standingJoints.length} joints read standing`);
+  // Every bone is read as the renderer reads it (a rotation of no length is
+  // the bone's rest, a scale at or below 0 collapses or mirrors it); a bone
+  // with nothing usable in it costs only itself, and every reply names it.
+  const turned = [0, 0, 0.2, Math.sqrt(0.96)];
+  const mixed = { leftUpperArm: turned, rightUpperArm: { q: [0, 0] }, spine: [0, 0, 0, 0], leftLowerArm: { s: [1, 0, 1] }, rightLowerArm: { q: turned, s: [1, -1, 1] } };
+  owner.setPose(mixed as any); owner.tick();
+  await until(() => eq(peer.people.get(owner.name)?.pose?.pose, mixed));
+  const partial = await read(peer, { who: owner.name, detail: "bones" });
+  check("a bone with nothing usable is named, and the rest of the pose is read", partial.ok
+    && eq(partial.unreadableBones, ["rightUpperArm"]) && near(partial.joints?.leftUpperArm?.rotation, turned)
+    && near(partial.joints?.rightLowerArm?.rotation, turned) && near(partial.joints?.spine?.rotation, [0, 0, 0, 1]),
+    JSON.stringify({ ok: partial.ok, error: partial.error, unreadable: partial.unreadableBones }));
+  const brief = await read(peer, { who: owner.name });
+  check("...and the summary names it too", eq(brief.unreadableBones, ["rightUpperArm"])
+    && brief.summary.includes("1 unreadable: rightUpperArm"), brief.summary);
+  // A bone the stand-in lacks and a name every object has (constructor) are
+  // named in the bones detail's unmappedBones, and the rest of the pose is read.
+  const odd = { leftUpperArm: turned, tailTip: turned, constructor: turned };
+  owner.setPose(odd as any); owner.tick();
+  await until(() => eq(peer.people.get(owner.name)?.pose?.pose, odd));
+  const unmapped = await read(peer, { who: owner.name, detail: "bones" });
+  check("a bone the stand-in lacks and an inherited name are named in unmappedBones, and the rest of the pose is read", unmapped.ok
+    && eq([...(unmapped.unmappedBones ?? [])].sort(), ["constructor", "tailTip"]) && near(unmapped.joints?.leftUpperArm?.rotation, turned),
+    JSON.stringify({ ok: unmapped.ok, error: unmapped.error, unmapped: unmapped.unmappedBones }));
+  owner.setPose(null); owner.tick();
+  await until(() => !peer.people.get(owner.name)?.pose?.pose);
   for (const clip of ["swim", "tread"]) {
     owner.clip = clip; owner.tick();
     await until(() => peer.people.get(owner.name)?.pose?.clip === clip);
@@ -86,6 +123,20 @@ try {
   const stand = await read(peer, { who: owner.name, detail: "bones" });
   check("...and treading moves the feet off where standing puts them", tread.joints?.rightLowerLeg && stand.joints?.rightLowerLeg
     && Math.hypot(...tread.joints.rightFoot.position.map((v: number, i: number) => v - stand.joints.rightFoot.position[i])) > 0.05, JSON.stringify([tread.joints?.rightFoot?.position, stand.joints?.rightFoot?.position]));
+  // A swimmer's held pose wins the bones it names, as the browser lays the
+  // stroke under the held pose (avatar.js _swimLayer); the stroke still moves
+  // the bones the pose leaves.
+  const heldArm = { leftUpperArm: turned };
+  owner.clip = "tread"; owner.setPose(heldArm as any); owner.tick();
+  await until(() => peer.people.get(owner.name)?.pose?.clip === "tread" && eq(peer.people.get(owner.name)?.pose?.pose, heldArm));
+  const posedSwimmer = await read(peer, { who: owner.name, detail: "bones" });
+  check("a treading body's held pose wins the bone it names, and the stroke still moves the others", posedSwimmer.ok
+    && near(posedSwimmer.joints?.leftUpperArm?.rotation, turned)
+    && !!posedSwimmer.joints?.rightUpperArm?.rotation && !!stand.joints?.rightUpperArm?.rotation
+    && !near(posedSwimmer.joints.rightUpperArm.rotation, stand.joints.rightUpperArm.rotation),
+    JSON.stringify([posedSwimmer.joints?.leftUpperArm?.rotation, posedSwimmer.joints?.rightUpperArm?.rotation, stand.joints?.rightUpperArm?.rotation]));
+  owner.clip = "idle"; owner.setPose(null); owner.tick();
+  await until(() => peer.people.get(owner.name)?.pose?.clip === "idle" && !peer.people.get(owner.name)?.pose?.pose);
   peer.clip = "sit"; peer.tick();
   await until(() => owner.people.get(peer.name)?.pose?.clip === "sit");
   owner.reaches.set("rightHand", { t: { who: peer.name, point: "knee_r" } });

@@ -29,7 +29,7 @@ import { actorName } from "../shared/protocol/names.js";
 import { refusalText, warningText, touchWords } from "../shared/protocol/refusal.js";
 import { readdirSync } from "node:fs";
 import sharp from "sharp";
-import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose } from "../shared/humanoid.js";
+import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose, puppetPose } from "../shared/humanoid.js";
 import { rigBonesFor } from "./rigbones.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { inspectSchema, editOps, describeSchema } from "../shared/editschema.js";
@@ -577,7 +577,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // to: [x, y, z] (y picks the floor there, #236) or [x, z] (no y: the walk's own storey, else the lowest floor), or a
       // NAME: a named place (#239: "thing/place", a place's name or label, a thing's entrance), a thing, a person
       let x: number, z: number, y: number | undefined, what = "", label: string | null = null;
-      let near: { reach?: number; above?: number; below?: number; inside?: (x: number, z: number) => boolean } = {};
+      let near: { reach?: number; above?: number; below?: number; inside?: (x: number, z: number) => boolean; bodyAt?: { x: number; z: number } } = {};
       let orBeside: Destination | undefined;   // a thing on another's top: the spot beside what holds it up (review r6 L1)
       const tolerance = a.tolerance ?? 0.01;
       if (typeof a.to === "string") {
@@ -586,7 +586,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         // a named place (it carries its own floor and reach), a thing (its entrance, else up to it and beside it), a
         // person (stopping short): destination() alone; only a place in the older upstream shape is read here besides
         const d = ag.destination(q);
-        if (!("refusal" in d)) { ({ x, z } = d); y = d.y; near = { reach: d.reach, above: d.above, below: d.below, inside: d.inside }; label = d.label; orBeside = d.orBeside; }
+        if (!("refusal" in d)) { ({ x, z } = d); y = d.y; near = { reach: d.reach, above: d.above, below: d.below, inside: d.inside, bodyAt: d.bodyAt }; label = d.label; orBeside = d.orBeside; }
         else {
           const r = legacyPlace(ag, q);
           if (!r) return { content: [{ type: "text", text: `move: ${d.refusal}` }], isError: true };
@@ -746,7 +746,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   pose: async (ag, a, ctx, name) => {
       // the presets: clear (the old clear_pose), posture (the old posture tool), wings (fold_wings / unfold_wings)
       if (a.clear === true) {
-        if (a.target) { const t0 = Date.now(); ag.puppet(String(a.target), { pose: {} });
+        if (a.target) { const t0 = Date.now(); ag.puppet(String(a.target), puppetPose(null));
           const no = await presenceRefusal(ag, t0);
           if (no) return { content: [{ type: "text", text: `anim {stop} refused (consent class: pose): ${no}` }], isError: true };
           return text(`released ${a.target}'s pose`); }
@@ -817,7 +817,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // a browser applies when it is posed.
       if (target) {
         const t0 = Date.now();
-        ag.puppet(target, { pose: replace ? mergePose(null, v.pose) ?? {} : v.pose, merge: !replace });
+        ag.puppet(target, puppetPose(v.pose, replace));
         const no = await presenceRefusal(ag, t0);   // consent class pose and range, at the server (F2)
         if (no) return { content: [{ type: "text", text: `anim refused (consent class: pose): ${no}` }], isError: true };
         return text(`asked ${target} to ${replace ? "hold a pose (replacing theirs)" : "pose"} ${what}`

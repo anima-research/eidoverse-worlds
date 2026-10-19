@@ -118,18 +118,43 @@ Examples:
 
 ## What the readings mean
 
-- `publishedRotations` preserves the sparse normalized-bone quaternions
-  received or held by the body. `overrides.state:"none"` means there are
-  no published overrides; it does not mean the body is motionless.
+- `publishedRotations` preserves the sparse held pose as the body
+  published it: per bone a quaternion, or `{q, t, s}`.
+  `overrides.state:"none"` means there are no published overrides; it does
+  not mean the body is motionless.
+- Each published bone is read as the renderer reads it (`poseChannels` in
+  `shared/humanoid.js`, which both use): a rotation of no length is the
+  bone's rest, and a scale at or below 0 collapses or mirrors what hangs
+  from the bone, as drawn. `unmappedBones` names published bones this rig's
+  humanoid skeleton lacks, and `unreadableBones` names published bones with
+  nothing usable in their value. Either costs only that bone: the rest of
+  the pose is still evaluated. Every reply that reads a body carries
+  `unreadableBones` (null when the pose can't be read at all), and the
+  summary names them. A refused argument, a body that isn't present, or
+  one that left, or became another body or avatar, while its skeleton
+  loaded gets an error reply without it. A body whose posture isn't
+  evaluated, such as one whose clip changed while its skeleton loaded,
+  gets an error reply that still reads its published pose, and carries it.
 - Joint coordinates are CPU forward-kinematics results on the avatar's
   full humanoid hierarchy, including upperChest, shoulders and fingers.
   Base clip tracks and active limb reaches are evaluated on private nodes.
-  Published head pitch and bone overrides are composed over the clip. Clip
+  Published head pitch (not on a limp body) and bone overrides are composed
+  over the clip in the renderer's order. A rotation replaces the bone's, and
+  a translation on hips moves the body (kneeling lowers every joint); limb
+  reaches are solved on that skeleton. Then a translation on any other bone
+  adds to its offset from its parent, and a scale acts in the bone's own
+  rest axes on everything hanging from it, as the renderer lays them after
+  its reach solve: a scaled arm's hand is drawn where the scale puts it,
+  not where the reach aimed it. A limp (ragdoll) body draws neither, nor a
+  head pitch. Clip
   crossfades, gestures, gaze, wing/springbone motion and rendering
   interpolation are not reproduced, so this is not final-frame pixel parity.
 - Contact positions/normals are labeled `anatomical_estimate`. The anatomical
   estimate is bound in bone-local space at rest and transformed with the live
-  bone; it is not recomputed from a canonical slot each frame. Mesh raycasting
+  bone (a normal through its inverse transpose); it is not recomputed from a
+  canonical slot each frame. On a bone that a scale with a 0 in it has
+  collapsed, a contact sits where the collapse draws it and faces as it
+  would unscaled. Mesh raycasting
   remains browser-specific. Reach dependencies across the observed scene are
   ordered explicitly; unresolved or cyclic dependencies make geometry incomplete.
 - `reaches` carries the owner's held relations and arrival attestations;

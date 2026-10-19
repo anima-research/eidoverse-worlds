@@ -951,6 +951,10 @@ dropped packet without a visible stall" (`remotes.js:16-18`).
 `clockOffset = clockOffset * 0.92 + sample * 0.08`.
 Lesson: server-to-local offset must be low-passed or the render cursor jitters
 with every frame's network noise.
+(The clock is now `client/lib/serverclock.js`: round trips, the smallest
+winning, slewed rather than stepped on screen; before the first round trip, the
+one-way samples keep the least-delayed one (`shared/clockoffset.js`, from #201),
+so a frame handled late can't drag it seconds early.)
 
 **A stale avatar load finished into the scene as an undisposable ghost**
 `client/lib/remotes.js:34-41`, `:52-57`
@@ -1525,6 +1529,10 @@ serverNow() is smoothed from frame stamps and falls back to local time before th
 first frame arrives."
 Lesson: anything phase-locked to a log timestamp must read the smoothed server
 clock, never `Date.now()`.
+(That clock, `serverNow()`, is now measured by round trips
+(`client/lib/serverclock.js`); before the first, a join that asks for the clock
+message (`clock: true`, #201) takes the server's time from it before any frame,
+and one-way samples keep the least-delayed one (`shared/clockoffset.js`).)
 
 **Colliders re-index at a walk, not at frame rate**
 `client/lib/motion.js:126-129`

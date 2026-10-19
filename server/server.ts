@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { TRUST_NAMES } from "./config.ts";
 // how often a person may change the name they show (moderation: a name is how people recognise who did what)
 const RENAME_COOLDOWN_MS = Math.max(0, Number(process.env.RENAME_COOLDOWN_DAYS ?? 7)) * 86400000;
-import { PORT, HOST, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
+import { PORT, HOST, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED, SNAP_TIMEOUT_MS } from "./config.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { addrSanctionsFor, saveAddrSanctions } from "./moderation.ts";
 import { entryFor, doorOfWorld, whoOf, settleAccess, sweepAccess, setLoadedWorlds, NOT_YET_CLOSE, type Expel } from "./access.ts";
@@ -302,6 +302,7 @@ const clients = new Map<unknown, Client>();
 snapshots.setClients(() => clients.values());   // roaming renderers are found across worlds
 // …and sent only where they will be let in (a roamer with the renderers' credential goes anywhere — access.ts)
 snapshots.setAdmission((w, c) => entryFor(doorOfWorld(w), whoOf(c), "watch") === null);
+snapshots.setFrameTimeout(SNAP_TIMEOUT_MS);   // config.ts SNAP_TIMEOUT_SEC
 // #57 B2: transport-epoch source. Global (not per-world) so a generation number
 // never collides across worlds or after a world reload; never persisted — an
 // epoch outliving the process would defeat its purpose.
@@ -834,6 +835,16 @@ function buildSnapshot(w: World, c: Client) {
 const server = Bun.serve({
   port: PORT,
   hostname: HOST,
+  // Bun closes a connection after 10s with no bytes moving (its default
+  // idleTimeout) — and that includes a response mid-stream. Over a relayed or
+  // transcontinental link a big download (a VRM, an unoptimized library glb)
+  // routinely stalls longer than that, so the transfer was cut short and the
+  // client saw a truncated body. 255s is Bun's maximum: a stalled transfer
+  // rides it out, and an HTTP connection that stays silent is still closed
+  // after 255s (by this same timer; TCP alone would take far longer to
+  // notice). A WebSocket has its own idle timer, websocket.idleTimeout, which
+  // the websocket block below leaves at Bun's default of 120s.
+  idleTimeout: 255,
   async fetch(req, srv) {
     // The whole HTTP surface is routes.ts's table (§15, 7c) — one row per
     // endpoint, first match wins, in exactly the order the if-chain had.
@@ -992,6 +1003,16 @@ const server = Bun.serve({
           // speech is arrival-only (R 10-18): this connection hears says after the cut it is about to adopt, and reads back
           // none at or below it (history, the authority's history) unless it is an admin's (world.ts sayFloor)
           c.arrivedSeq = w.log.head;
+          // The server's clock, just before the snapshot, for a join that asks
+          // (`clock: true`): the world's authority clock, the one frames and
+          // clock replies carry (spec/PHYSICS.md §5.1). A browser seeks shared
+          // sounds in it, and an agent evaluates motion in it (serverNow in
+          // client/lib/serverclock.js and mcpl/agent.ts); both learn it from a
+          // message's `t`, until a browser's first round trip lands. The snapshot's own transfer time would
+          // bias the first sample, so a small message carries it first. A join
+          // that doesn't ask gets the messages it always did, so a client that
+          // takes the first message after a join as the snapshot still works.
+          if (msg.clock === true) ws.send(JSON.stringify({ type: "clock", t: authorityNow(w) }));
           ws.send(JSON.stringify(buildSnapshot(w, c)));
           sendGeomFollowup(w, c);
           if (w.log) { c.ghostHidden = w.isGhost(c); }   // a ghost arrives unseen (PLAN 10-06); the sweep shows them when it ends

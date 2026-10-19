@@ -6,17 +6,21 @@
 // Two estimates, best first:
 //   a round trip   clock {t0} → {t0, t}: offset = t − (t0 + t1) / 2, the sample with the smallest round trip of the last
 //                  few wins (NTP's minimum filter: queuing only ever adds delay). noteRoundTrip.
-//   a frame's t    one-way, so late by the delay plus up to a frame's batching; used only until a round trip lands.
+//   a message's t  one-way (the clock message the server sends just before a join's snapshot, each frame), so late by
+//                  its delay; kept by shared/clockoffset.js's rule (the least-delayed sample wins, so a message handled
+//                  late moves it by no more than that rule's leak) and used only until a round trip lands.
 // Its own module (it was remotes.js's) so a small realizer (sounds.js) can read it without pulling the body code in.
-let clockOffset = null;       // from frames (one-way)
+import { foldOffset } from '../../shared/clockoffset.js';
+let oneWay = null;            // from one-way samples: shared/clockoffset.js foldOffset's { offset, at, stream }
 let rtt = [];                 // [{rtt, offset}] most recent round trips
 const RTT_KEEP = 8;
 const STEP_SLACK_MS = 50;     // drift between asks a sample may show and still be the same clock (0.6 ms/s over 80 s)
 export const localNow = () => performance.timeOrigin + performance.now();
-export function noteServerTime(t) {
+/** One one-way sample. `at` is the performance.now() when `t`'s message event ran, for a message that waited to be
+ *  handled (the early socket's drain, net.js connect()); otherwise now. */
+export function noteServerTime(t, at = performance.now()) {
   if (typeof t !== 'number' || !Number.isFinite(t)) return;
-  const sample = t - localNow();
-  clockOffset = clockOffset === null ? sample : clockOffset * 0.92 + sample * 0.08;
+  oneWay = foldOffset(oneWay, t - performance.timeOrigin - at, at);
   noteServerFloor(t);
 }
 /** One round trip: t0 when the ask left (localNow), t the authority's clock in the answer, t1 when it came back. */
@@ -31,7 +35,7 @@ export function noteRoundTrip(t0, t, t1) {
   rtt.push(s);
   if (rtt.length > RTT_KEEP) rtt.shift();
 }
-const bestOffset = () => (rtt.length ? rtt.reduce((a, b) => (b.rtt < a.rtt ? b : a)).offset : clockOffset ?? 0);
+const bestOffset = () => (rtt.length ? rtt.reduce((a, b) => (b.rtt < a.rtt ? b : a)).offset : oneWay?.offset ?? 0);
 // The offset the screen uses slews toward the best estimate (5% of elapsed time, so a 100 ms correction takes 2 s) instead
 // of stepping to each new minimum-RTT sample: a step moved every flight by the delta in one frame (STRIKES PH-S2 'display
 // clock jumps', R's 'steppy'). A correction over SLEW_SNAP_MS is a real resync and is taken at once.

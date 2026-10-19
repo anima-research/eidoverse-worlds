@@ -34,7 +34,8 @@ review.
   lowercase word of its own choosing such as `"agent"` or `"ai"`: PROTOCOL §6a; optional,
   relayed as sent, never set from the credential or the client, never
   logged; absent is undeclared, and no word is assumed), `renderer` (invisible
-  volunteer that answers `capture` requests). Aux surfaces imply spectator.
+  volunteer that answers `capture` requests), `clock` (send the server's time
+  just before the snapshot; see `clock` in §4). Aux surfaces imply spectator.
 - Rate caps: **60 msgs/s** per connection (`MSG_RATE`): past it, a
   `request` is answered refused `rate` (never run) and anything else is
   dropped; past twice the cap, requests are dropped too. The authority's
@@ -82,7 +83,7 @@ Every message belongs to exactly one plane:
 
 | type | plane | who may send | shape (essentials) | notes |
 |---|---|---|---|---|
-| `join` | — | anyone admitted | `{world, id?, token?, avatar?, surface?, spectate?, declares?, renderer?, roam?, agentToken?, replica, session?}` | travel = leave A, join B on the same socket. Verified sessions: `id` ignored, login name wins. An embodied (`world` surface) join must say `replica: true` — it folds the log itself — or it is refused. `session`: the page's own id (8–64 of `A-Za-z0-9_-`), relayed as its presence `session` (§4). `roam` (with `renderer`): a roaming renderer the screenshot broker may send to any world (`renderer-travel`); `token` = `RENDERER_TOKEN` with `renderer` lets it watch any world, closed ones included. The door's refusals: 4005 (a bad link, no such world, a client that doesn't fold the log; 4005 "full" is transient), 4006 (moderation), 4010 (this world isn't open to you, `@world.access`), 4011 (nothing to watch yet: redial). Answers `snapshot` (§4). |
+| `join` | — | anyone admitted | `{world, id?, token?, avatar?, surface?, spectate?, declares?, renderer?, roam?, agentToken?, replica, session?, clock?}` | travel = leave A, join B on the same socket. Verified sessions: `id` ignored, login name wins. An embodied (`world` surface) join must say `replica: true` — it folds the log itself — or it is refused. `session`: the page's own id (8–64 of `A-Za-z0-9_-`), relayed as its presence `session` (§4). `clock: true`: the server's time comes just before the snapshot (`clock {t}`, §4). `roam` (with `renderer`): a roaming renderer the screenshot broker may send to any world (`renderer-travel`); `token` = `RENDERER_TOKEN` with `renderer` lets it watch any world, closed ones included. The door's refusals: 4005 (a bad link, no such world, a client that doesn't fold the log; 4005 "full" is transient), 4006 (moderation), 4010 (this world isn't open to you, `@world.access`), 4011 (nothing to watch yet: redial). Answers `snapshot` (§4). |
 | `history` | read | anyone incl. spectators | `{before?, after?, limit?≤300, verbs?, reqId?}` | pages the chat newest-first; answers `history`. Arrival-only: only lines said since this connection arrived, unless it is an admin's (the world's owner, an operator), who pages the master log. |
 | `debug` | read | anyone incl. spectators | `{limit?, kinds?}` or `{behavior}` or `{behaviors:true}` | the flight recorder (every refusal) + script status; answers `debug`. |
 | `pose` | presence | embodied | `{pose}` | latest-wins into the world's dirty map; fanned out in stage `frame`s at ~15Hz. Bag fields incl. the C18 `xr` tracked-body contract: **docs/pose-wire.md**. Non-finite / malformed samples are refused at the source (`server/posecheck.ts`, 09-06). |
@@ -143,6 +144,12 @@ Every message belongs to exactly one plane:
   and `restore`.
 - `clock` — `{t0, t}`: the answer to a client's `clock {t0}` (`t0` echoed, `t`
   the authority clock): a round-trip clock sample (`client/lib/serverclock.js`).
+  `{t}` alone (no `t0`): the authority clock sent just before each `snapshot`
+  to a join that asks (`clock: true`), a join's or a travel's, so the client
+  has a one-way sample of the server's clock before anything needs it, in an
+  idle world too and before its first round trip. A client that asks finds the
+  snapshot by its type, not by its place among a join's messages. A join that
+  doesn't ask gets no `clock`, and its messages are as they were.
 - `arrive` / `leave` — embodied presence transitions. `arrive` carries `{id, avatar, declares?, session, actorId?, guest?}`:
   `declares` only when the participant declared one (§6a). `session` (also on
   each `present` record) is opaque presence metadata: the joining page's own
