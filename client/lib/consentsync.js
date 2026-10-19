@@ -8,7 +8,16 @@
 export const RETRY_MS = 5000;
 export function makeConsentSync({ table, send, toast, on, later = (fn) => setTimeout(fn, RETRY_MS), enabled = () => true }) {
   let failing = false, retryArmed = false;
-  async function sync() {
+  // ONE sync in flight: changes made while it runs collapse into a single follow-up that reads the latest table. Each
+  // sync is the preset plus a set per departing cell, so a burst of changes each sending the whole table passed the
+  // server's per-connection message cap (10-19), which refused some sets: the authority kept a table the switches didn't show.
+  let running = null, again = false;
+  function sync() {
+    if (running) { again = true; return running; }
+    running = (async () => { try { do { again = false; await syncOnce(); } while (again); } finally { running = null; } })();
+    return running;
+  }
+  async function syncOnce() {
     if (!enabled()) return;
     const { preset, sets } = table();
     const asks = [[`preset ${preset}`, { preset }], ...sets.map((set) => [`${set.class}${set.tier === 'friends' ? ' (friends)' : ''}: ${set.mode}`, { set }])];

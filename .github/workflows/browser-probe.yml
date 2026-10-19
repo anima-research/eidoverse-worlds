@@ -6,9 +6,12 @@ on:
     branches: [browser-probe]
 env:
   PROBE_SUITE: refusedjoin-check.ts
-  PROBE_CHROME_ARGS: ""
 jobs:
   probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        chrome_args: ["", "--use-mock-keychain"]   # 10-19: does a fresh HOME (as run.ts gives each suite) hang Chrome on macOS without a mock keychain?
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -28,15 +31,16 @@ jobs:
         shell: bash
         env:
           EIDOVERSE_DIR: ${{ runner.temp }}/eidoverse-video
-          EIDO_CHROME_ARGS: ${{ env.PROBE_CHROME_ARGS }}
+          EIDO_CHROME_ARGS: ${{ matrix.chrome_args }}
         run: |
           mkdir -p /tmp/g; export TMPDIR=/tmp/g PROTOCOL_KEEP=1
           export CHROME=$(bun -e 'const { chromium } = await import("playwright"); console.log(chromium.executablePath())')
+          export HOME=$(mktemp -d /tmp/g/home-XXXX)   # what run.ts gives each suite
           bun tools/protocol/$PROBE_SUITE
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: probe-scratch
+          name: probe-scratch-${{ strategy.job-index }}
           path: |
             /tmp/g/**/*.log
             /tmp/g/**/*.jsonl

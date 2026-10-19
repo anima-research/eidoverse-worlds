@@ -68,6 +68,18 @@ const run = async (reply: (n: number) => any) => {
   check('landed: the pending timer retry does nothing new', await (async () => { const n = t.sent.length; await t.tick(); return t.sent.length === n; })());
   check('the next failure is heard again', await (async () => { down = true; await t.fire('hydrated'); return t.toasts.length === 2; })());
 }
+{ // a burst of changes is ONE follow-up sync, not one whole-table sync per change (10-19: each sync is the preset plus a set
+  // per departing cell, so three quick changes sent ~3× the table and the page passed the server's per-connection
+  // message cap — the cap refused some sets and the authority kept a table the switches didn't show)
+  let cell = 0; const sent: any[] = []; let release: Function = () => {};
+  const gate = new Promise((r) => { release = r; });
+  const s = makeConsentSync({ table: () => ({ preset: 'normal', sets: [{ class: 'shove', tier: 'everyone', mode: cell >= 3 ? 'allow' : 'deny' }] }),
+    send: async (v: string, a: any) => { sent.push(a); await gate; return { ok: true }; }, toast: () => {}, on: () => {}, later: () => {} });
+  const first = s.sync(); cell = 1; const p2 = s.sync(); cell = 2; const p3 = s.sync(); cell = 3; const p4 = s.sync();
+  release(); await Promise.all([first, p2, p3, p4]); await new Promise((r) => setTimeout(r, 5));
+  check('a burst of four changes sends the table twice (now, then once with the latest), not four times', sent.length === 4, `${sent.length} sent`);
+  check('…and the last table sent is the latest', sent[sent.length - 1]?.set?.mode === 'allow', JSON.stringify(sent[sent.length - 1]));
+}
 { // spectators and renderers have no body: nothing sent
   const sent: any[] = [];
   const s = makeConsentSync({ table: () => ({ preset: 'normal', sets: [{ class: 'shove', tier: 'everyone', mode: 'allow' }] }), send: async (v: string, a: any) => { sent.push(a); return { ok: true }; }, toast: () => {}, on: () => {}, later: () => {}, enabled: () => false });
