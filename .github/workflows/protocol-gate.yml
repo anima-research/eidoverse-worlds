@@ -89,5 +89,5 @@ jobs:
           name: gate-scratch-${{ matrix.os }}
           path: |
             /tmp/g/eido-gate-*/**/*.log
-            /tmp/g/eido-gate-*/**/failure.jsonl
+            /tmp/g/eido-gate-*/**/*.jsonl
           if-no-files-found: ignore

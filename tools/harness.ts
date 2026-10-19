@@ -232,7 +232,9 @@ export async function scratchBench(name: string, opts: ScratchOptions & { headed
   const cspViolations: string[] = [];
   cws.addEventListener("message", (ev) => {
     const m = JSON.parse(String(ev.data));
-    if (["Runtime.consoleAPICalled", "Runtime.exceptionThrown", "Log.entryAdded", "Network.loadingFailed"].includes(m.method)) record("browser.events.jsonl", m);
+    if (["Runtime.consoleAPICalled", "Runtime.exceptionThrown", "Log.entryAdded", "Network.loadingFailed",
+      // what can stall a navigation: a dialog (alert, beforeunload), a crashed renderer, the navigations themselves
+      "Page.javascriptDialogOpening", "Inspector.targetCrashed", "Page.frameRequestedNavigation", "Page.frameStartedNavigating", "Page.frameNavigated", "Page.loadEventFired"].includes(m.method)) record("browser.events.jsonl", m);
     if (m.method === "Log.entryAdded" && /Content Security Policy/i.test(String(m.params?.entry?.text ?? ""))) cspViolations.push(String(m.params.entry.text).slice(0, 300));
   });
   const cdp = cdpOn(cws);

@@ -24,6 +24,7 @@ const UNRELATED = [
   ["tools/protocol/authority-check.ts", new RegExp(`"V${N} a component set`), "a check id in the V series (V1, V2, …)"],
   ["tools/protocol/roles-check.ts", new RegExp(`\\["V${N}"\\]|id: "V${N}"`), "a check id in the V series (V1, V2, …)"],
   [".github/workflows/protocol-gate.yml", new RegExp(`^\\s*(- )?uses: [\\w-]+/[\\w-]+@v\\d+\\s*$`), "a GitHub action's own release tag (actions/checkout@v + its major), not the protocol"],
+  [".github/workflows/browser-probe.yml", new RegExp(`^\\s*(- )?uses: [\\w-]+/[\\w-]+@v\\d+\\s*$`), "a GitHub action's own release tag (actions/checkout@v + its major), not the protocol"],
   [".github/workflows/protocol-gate.yml", new RegExp(`^\\s*branches: \\[main, protocol-v${N}\\]`), "the PR's branch name on the fork (a git ref chosen before the names pass)"]];
 const EXEMPT = [["tools/protocol/import-v1/", "the old-world importer names the protocols it translates between"],
   ["spec/history/", "upstream's earlier protocol texts, verbatim"]];

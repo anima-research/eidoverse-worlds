@@ -1,0 +1,43 @@
+# Manual, fast loop for a browser-lane failure on one OS: one suite, its scratch kept and uploaded.
+name: browser-probe
+# Runs on a push to the branch `browser-probe`; set what to probe here.
+on:
+  push:
+    branches: [browser-probe]
+env:
+  PROBE_SUITE: refusedjoin-check.ts
+  PROBE_CHROME_ARGS: ""
+jobs:
+  probe:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: 1.3.14 }
+      - name: install
+        shell: bash
+        run: |
+          bun install --frozen-lockfile
+          (cd client && bun install --frozen-lockfile)
+          bun node_modules/playwright/cli.js install chromium
+          pin=$(grep -oE 'LIBRARY_PIN = "[0-9a-f]{40}"' tools/protocol/run.ts | grep -oE '[0-9a-f]{40}')
+          git clone -q --filter=blob:none https://github.com/SkyeShark/eidoverse-video.git "$RUNNER_TEMP/eidoverse-video"
+          git -C "$RUNNER_TEMP/eidoverse-video" checkout -q "$pin"
+      - name: probe
+        shell: bash
+        env:
+          EIDOVERSE_DIR: ${{ runner.temp }}/eidoverse-video
+          EIDO_CHROME_ARGS: ${{ env.PROBE_CHROME_ARGS }}
+        run: |
+          mkdir -p /tmp/g; export TMPDIR=/tmp/g PROTOCOL_KEEP=1
+          export CHROME=$(bun -e 'const { chromium } = await import("playwright"); console.log(chromium.executablePath())')
+          bun tools/protocol/$PROBE_SUITE
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-scratch
+          path: |
+            /tmp/g/**/*.log
+            /tmp/g/**/*.jsonl
+          if-no-files-found: warn
