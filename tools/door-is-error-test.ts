@@ -125,7 +125,10 @@ const flownByTicks = async (act: () => Promise<any>) => {
     t = Math.round((t + 0.1) * 10) / 10;
   }
   ag.flightAwait = realAwait;
-  return { waits, answer: await answer };
+  // An act still unanswered once the ticking stops fails its check now, rather than waiting out the hour-long stand-in.
+  const settled = answered ? answer
+    : Promise.race([answer, new Promise((res) => setTimeout(() => res({ rejected: `no answer after ${t} s of flight` }), 1000))]);
+  return { waits, answer: await settled };
 };
 /** The wait outlasts the flight time its leg took, even were the tick that flew it 50% late, as a loaded host's timer can run. */
 const inside = (w: { ms: number; took: number }[], i: number) => w.length > i && w[i].took >= 0 && w[i].ms > w[i].took * 1000 * 1.5;
@@ -147,6 +150,28 @@ await flyingAt(45);
 flown = await flownByTicks(() => call('land_at', { x: 20, z: 0 }));
 check('a landing from 45 m flown by the tick comes down by its flare', ok(flown.answer) && / — landed at \(.*\), [0-9.]+m from \(20\.0, 0\.0\)$/.test(said(flown.answer)), said(flown.answer));
 check('...inside the flare\'s wait, with ticks 50% late', inside(flown.waits, 1), JSON.stringify(flown.waits));
+// A short climb leans on the 8 s beside: the lift's easing in, which the rate leaves out, is a fair share of it.
+await flyingAt(10);
+flown = await flownByTicks(() => call('climb_to', { altitude: 15 }));
+check('a 5 m climb flown by the tick gets there, inside its wait with ticks 50% late', ok(flown.answer) && /^at 15\.0m/.test(said(flown.answer)) && inside(flown.waits, 0),
+  `${said(flown.answer)}; ${JSON.stringify(flown.waits)}`);
+// A landing straight after take-off flares while the launch still lifts the body, which its height alone doesn't
+// show, so the flare's wait never drops below the 60 s it always had. That covers this with ticks a third late.
+await relaunch();
+flown = await flownByTicks(() => call('land_at', { x: ag.flight.pos.x, z: ag.flight.pos.z }));
+check('a landing straight after take-off comes down by its flare, inside the flare\'s wait with ticks a third late',
+  ok(flown.answer) && / — landed at /.test(said(flown.answer)) && flown.waits.length > 1 && flown.waits[1].took >= 0 && flown.waits[1].ms > flown.waits[1].took * 1000 * 4 / 3,
+  `${said(flown.answer)}; ${JSON.stringify(flown.waits)}`);
+// Over ground below 0, the flare comes down farther than the body's height says.
+{
+  const realHeight = ag.heightAt;
+  ag.heightAt = () => -20;
+  await flyingAt(25);
+  flown = await flownByTicks(() => call('land_at', { x: 20, z: 0 }));
+  ag.heightAt = realHeight;
+  check('a landing from 25 m over ground at -20 m comes down by its flare, inside the flare\'s wait with ticks 50% late',
+    ok(flown.answer) && / — landed at /.test(said(flown.answer)) && inside(flown.waits, 1), `${said(flown.answer)}; ${JSON.stringify(flown.waits)}`);
+}
 await relaunch();
 // The integrator's part of a climb, as the tick does it: it reaches the target and clears it.
 const climbs = (altitude: number) => midway(ag, call('climb_to', { altitude }), () => {
@@ -159,6 +184,23 @@ check('a climb asked above the ceiling stops there and is failed, naming the cei
   failed(r) && new RegExp(`^at ${ceiling.toFixed(1)}m, the ceiling here, short of the ${(ceiling + 50).toFixed(1)}m you asked for`).test(said(r)), said(r));
 r = await climbs(ceiling - 1);
 check('a climb that gets there is done, at the height asked', ok(r) && new RegExp(`^at ${(ceiling - 1).toFixed(1)}m.*stamina spent`).test(said(r)), said(r));
+// A wait answered before its time clears its timer, so an answered act holds nothing open. The flight waits'
+// timers are the ones of 8 s and more; the test's own polling waits are a few milliseconds.
+{
+  const realSet = globalThis.setTimeout, realClear = globalThis.clearTimeout;
+  const flightTimers = new Set<unknown>();
+  globalThis.setTimeout = ((fn: (...a: unknown[]) => void, ms?: number, ...rest: unknown[]) => {
+    const h = realSet(() => { flightTimers.delete(h); fn(...rest); }, ms);
+    if ((ms ?? 0) >= 8_000) flightTimers.add(h);
+    return h;
+  }) as typeof setTimeout;
+  globalThis.clearTimeout = ((h: any) => { flightTimers.delete(h); realClear(h); }) as typeof clearTimeout;
+  ag.flight.pos.y = 10;
+  r = await climbs(20);
+  globalThis.setTimeout = realSet; globalThis.clearTimeout = realClear;
+  check('a climb answered before its wait ends clears the wait\'s timer', ok(r) && flightTimers.size === 0, `${said(r)}; ${flightTimers.size} flight timer(s) still set`);
+  ag.flight.pos.y = ceiling - 1; // where the climb above left the body, which the winded climb below starts from
+}
 // The pool pays for half a metre of the one asked for: the body climbs that far and no farther.
 ag.flight.stamina = 0.5;
 r = await climbs(ceiling);
@@ -383,6 +425,19 @@ for (const [tool, a, words] of [
     waited ? said(answer) : 'the act registered no flight wait');
   ag.flightWaiters.splice(0); // a wait the down didn't answer would answer for the next call
 }
+// A world that withdraws flight mid-climb downs the body, and that answers the climb at once, as a down does.
+await relaunch(); ag.flight.stamina = 1e6;
+{
+  const waiting = call('climb_to', { altitude: 40 });
+  for (let i = 0; i < 400 && !ag.flightWaiters.length; i++) await new Promise((res) => setTimeout(res, 5));
+  const waited = ag.flightWaiters.length > 0;
+  ag.acceptEffectiveRights({ role: 'builder', fly: false }, 'world');
+  const answer = await Promise.race([waiting, new Promise((res) => setTimeout(() => res({ rejected: 'still waiting 1 s after the withdrawal' }), 1000))]);
+  ag.myRights = { role: 'builder', fly: true };
+  check('a world withdrawing flight mid-climb answers the climb at once, as cut', waited && failed(answer) && /^cut mid-climb at /.test(said(answer)),
+    waited ? said(answer) : 'the act registered no flight wait');
+  ag.flightWaiters.splice(0); // a wait the withdrawal didn't answer would answer for the next call
+}
 await relaunch();
 r = await call('rehearse_down', {});
 r = await call('rehearse_recover', {});
@@ -576,6 +631,14 @@ console.error = realConsoleError;
 ag.verb = realVerb;
 check('a handler that throws an Error with no message is failed, saying the error gave no reason',
   failed(r) && said(r) === 'say failed, and its error gave no reason (TypeError)', said(r));
+// A throw of something other than an Error, with nothing to say, answers the same way, with no kind to name.
+ag.verb = () => { throw ''; };
+console.error = (...a: unknown[]) => { logged.push(a.map(String).join(' ')); };
+r = await call('say', { text: 'hello' });
+console.error = realConsoleError;
+ag.verb = realVerb;
+check('a handler that throws an empty string is failed, saying the error gave no reason, with no kind',
+  failed(r) && said(r) === 'say failed, and its error gave no reason', said(r));
 // What the world's HTTP side answers, stood in for.
 const realFetch = globalThis.fetch;
 const serve = (handler: (url: string) => Response) => { globalThis.fetch = (async (u: any) => handler(String(u))) as any; };
