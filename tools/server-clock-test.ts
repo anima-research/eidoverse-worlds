@@ -464,7 +464,7 @@ console.log("\n— the browser takes the clock as its server clock —\n");
     // it would stand at 5.275.
     const drawn = await remotesMod.ensureRemote("drawn", null);
     drawn.avatar = { root: new stubs.THREE.Object3D(), pitch: 0,
-      update() {}, setLimp() {}, setClip() {}, setPose() {}, clearPose() {}, playEmote() {} };
+      update() {}, setLimp() {}, setClip() {}, setPose() {}, clearPose() {}, playOnce() {} };
     const x = heldStill(() => {
       const renderPoint = remotesMod.serverNow() - 110;
       remotesMod.pushPose("drawn", { p: [0, 0, 0], yaw: 0 }, renderPoint - 2_000);
