@@ -695,7 +695,7 @@ const cases: Case[] = [
       const r = ES.addOps({ id: "d", model: "book", pos: [0, 0, 0] }, "d", "Oscillate");
       return { words: ES.ADD_WORDS?.Oscillate ?? null, old: "Bob" in (ES.ADD_WORDS ?? {}), ops: JSON.stringify(r?.ops ?? null), errors: r?.errors ?? null }; },
     good: (o) => Array.isArray(o.words) && ["bob", "float", "hover"].every((w) => o.words.includes(w)) && !o.old && /"type":"oscillate"/.test(o.ops) && !/"type":"bob"/.test(o.ops) && !(o.errors ?? []).length },
-  { id: "OS6", what: "…the translator (@14) writes a v1 motion of type bob as oscillate (whole and a node's); its DROPPED table says so", async run() {
+  { id: "OS6", what: "…the translator (since @14) writes a v1 motion of type bob as oscillate (whole and a node's); its DROPPED table says so", async run() {
       const TV: any = await import(TREE + "tools/protocol/import-v1/translate-v1.js");
       const v1 = [{ seq: 0, ts: 1, actor: "world", verb: "grant", args: { id: "antra", role: "owner", gen: true } },
         { seq: 1, ts: 2, actor: "antra", verb: "spawn", args: { id: "drone", lib: "store/0123456789abcdef.glb", pos: [0, 1, 0] } },
@@ -703,7 +703,7 @@ const cases: Case[] = [
         { seq: 3, ts: 4, actor: "antra", verb: "comp", args: { id: "drone", type: "motion:Rotor", data: { type: "bob", amp: 0.1 } } }];
       const r = TV.translate(v1, {}); const e = r.final.translated.drone ?? {};
       return { t: TV.TRANSLATOR, s: TV.TRANSLATOR_SIM, whole: e.motion?.type ?? null, part: Object.entries(e).filter(([k]) => k.startsWith("motion:")).map(([, v]: any) => v.type), dropped: TV.DROPPED?.["motion.type"] ?? null, div: r.divergences?.length ?? 0 }; },
-    good: (o) => /@14$/.test(o.t) && /@14$/.test(o.s) && o.whole === "oscillate" && JSON.stringify(o.part) === '["oscillate"]' && /oscillate/.test(o.dropped ?? "") },
+    good: (o) => /@1[4-9]$/.test(o.t) && /@1[4-9]$/.test(o.s) && o.whole === "oscillate" && JSON.stringify(o.part) === '["oscillate"]' && /oscillate/.test(o.dropped ?? "") },
   { id: "OS7", what: "…the docs say oscillate and never bob as a motion type (AGENTS.md, PROTOCOL.md, PHYSICS.md, DESIGN.md, the agent); the version history and the registry changelog record the rename", run() {
       const files = ["AGENTS.md", "spec/PROTOCOL.md", "spec/PHYSICS.md", "DESIGN.md", "mcpl/agent.ts"]; const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history"));
       const motionBob = /pendulum[^\n]{0,40}\bbob\b|\bbob\b[^\n]{0,40}\bpath\b|type: ?['"]bob['"]/;
