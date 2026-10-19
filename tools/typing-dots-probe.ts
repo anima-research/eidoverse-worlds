@@ -81,7 +81,8 @@ const child = (name: string, args: string[], env: Record<string, string>) => {
 process.on("exit", () => { for (const { p } of kids) { try { p.kill("SIGKILL"); } catch { /* gone */ } } });
 class StaleListener extends Error {}
 const awaitExit = (p: ChildProcess, ms = 5000) => new Promise<void>((resolve) => {
-  if (p.exitCode !== null) return resolve();
+  // A child that a signal ended has no exitCode, only a signalCode, and its exit event has already fired.
+  if (p.exitCode !== null || p.signalCode !== null) return resolve();
   const t = setTimeout(() => { try { p.kill("SIGKILL"); } catch { /* gone */ } }, ms);
   p.once("exit", () => { clearTimeout(t); resolve(); });
   try { p.kill("SIGTERM"); } catch { clearTimeout(t); resolve(); }
