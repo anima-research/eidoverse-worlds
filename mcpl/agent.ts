@@ -2618,11 +2618,11 @@ export class WorldAgent {
   /** The vigil posture, mirrored for anything that renders this body. */
   wingsFolded = false;
   private flightWaiters: Array<{ done: (r: string) => void; test: (s: any) => string | null }> = [];
-  /** Counts of the calls that set the flight's course (glide_to, climb_to, land_at's flare and take_off's fresh
-   *  flight), and of those that set its climb (climb_to and take_off). A call's own answer ends the flight or stops its
-   *  climb only while no later call has taken it over: the stdio door runs calls as they come, and a call whose host
-   *  has stopped waiting for it goes on beside the host's next one. The flight's own object can't tell, since every
-   *  tick replaces it. */
+  /** Counts of the calls that set the flight's course (glide_to, a landing's glide among them, climb_to and take_off's
+   *  fresh flight), and of those that set or end its climb (climb_to, land_at and take_off). A call's own answer ends
+   *  the flight or stops its climb only while no later call has taken it over: the stdio door runs calls as they come,
+   *  and a call whose host has stopped waiting for it goes on beside the host's next one. The flight's own object
+   *  can't tell, since every tick replaces it. */
   private flightCourse = 0;
   private climbCourse = 0;
 
@@ -3008,11 +3008,13 @@ export class WorldAgent {
     if (arrived === "arrived" && this.flight && this.flight.phase === "PILOT") {
       this.flight.holdAt = { x, z };
     }
-    const here = `(${this.flight.pos.x.toFixed(1)}, ${this.flight.pos.z.toFixed(1)})`;
-    if (arrived === "arrived") return done(`arrived at ${here}, ${this.flight.pos.y.toFixed(1)}m up — holding over it`);
+    // Where the body is now: a later landing can have ended the flight by the time this glide's wait answers.
+    const p = this.flight?.pos ?? this.pos;
+    const here = `(${p.x.toFixed(1)}, ${p.z.toFixed(1)})`;
+    if (arrived === "arrived") return done(`arrived at ${here}, ${p.y.toFixed(1)}m up — holding over it`);
     if (arrived === "touched down") return done(`touched down at ${here}, at the target`);
     if (arrived === "landed") {
-      const short = Math.hypot(x - this.flight.pos.x, z - this.flight.pos.z);
+      const short = Math.hypot(x - p.x, z - p.z);
       return refused(`landed short at ${here} — ${short.toFixed(1)}m short. `
         + `From ${f.pos.y.toFixed(1)}m best glide reaches ${reach.toFixed(0)}m; you needed ${need.toFixed(0)}m.`);
     }
@@ -3116,6 +3118,9 @@ export class WorldAgent {
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
       return refused("already on the ground");
     }
+    // A landing takes over a climb still under way: it clears the climb's height, which would otherwise go on lifting
+    // the body through the landing, and takes its count, so that climb's answer says it was taken over.
+    this.flight.climbTo = null; this.climbCourse++;
     const took: { course?: number } = {};
     const glide = await this.glideTo(x, z, took);
     const f = this.flight;
@@ -3132,12 +3137,12 @@ export class WorldAgent {
     // than dropping. This is the one place a landing animation is correct --
     // T4 forbids it only for a body that never chose to land.
     f.phase = "PILOT"; f.pitch = 0.2;
-    const course = ++this.flightCourse;
     // The flare comes down at the polar's sink: stepPilot takes its pitch from the stick, which the door doesn't
     // give, so the airspeed settles at the minimum-sink speed, about 0.46 m/s of sink with the default polar.
     // Its wait is sized for a flare from the ceiling down to the ground under the body as it begins, since a low
-    // flare can still be rising on take-off's launch, and is never shorter than the 60 s it always had, which
-    // covers a flare that begins over high ground and circles over lower, or one the launch holds at the ceiling.
+    // flare can still be rising on take-off's launch, and is never shorter than the 60 s it always had, so a flare
+    // that begins over high ground and comes down on lower, or one the launch holds at the ceiling, gets at least the
+    // wait main gave it. A flare that begins well above where its circle comes down can still outlast it.
     const fall = Math.max(0, this.flightCfg.bounds.ceiling - this.heightAt(f.pos.x, f.pos.z));
     const flare = await this.flightAwait((s) => isDown(s.phase) ? "cut"
       : (s.phase === "LANDED" || s.phase === "GROUND") ? "down" : null,
@@ -3149,8 +3154,11 @@ export class WorldAgent {
       return refused(`${glide.text} — cut during the flare, down at ${fell}`);
     }
     // A later call that set the flight's course has the flight now, so this landing leaves it to that call, whether
-    // its wait heard the body come down or ran out: ending the flight would pull the body out of that call's.
-    if (this.flightCourse !== course) return refused(`${glide.text} — a later call took over the flight during the flare`);
+    // its wait heard the body come down or ran out: ending the flight would pull the body out of that call's. The
+    // landing's course is its glide's, since the flare follows it.
+    if (took.course !== undefined && this.flightCourse !== took.course) {
+      return refused(`${glide.text} — a later call took over the flight during the flare`);
+    }
     this.flightEnd();
     const at = `(${this.pos.x.toFixed(1)}, ${this.pos.z.toFixed(1)})`;
     // The flare's own timeout: the body didn't come down, and flightEnd set it down.

@@ -411,91 +411,135 @@ await relaunch();
 ag.glideTo = async () => arrived;
 // The flare flies the body to (7, 3) before its wait runs out, so the answer says where it was set down, not where the
 // flare began.
-ag.flightAwait = async () => { ag.flight.pos.x = ag.pos.x = 7; ag.flight.pos.z = ag.pos.z = 3; return 'timed out aloft'; };
+ag.flightAwait = async () => { ag.flight.pos.x = ag.pos.x = 7; ag.flight.pos.z = ag.pos.z = 3; ag.flight.pos.y = ag.pos.y = 20; return 'timed out aloft'; };
 r = await call('land_at', { x: 5, z: 5 });
 ag.glideTo = realGlide; ag.flightAwait = realAwait;
-check('a landing whose flare timed out is failed, and the body is set down where the flare had it, saying where',
-  failed(r) && said(r).endsWith(' — the flare timed out aloft, so the body was set down at (7.0, 3.0)') && ag.flight === null,
-  `${said(r)}; flight ${ag.flight === null ? 'ended' : ag.flight?.phase}`);
+check('a landing whose flare timed out is failed, and the body is set down from 20 m where the flare had it, saying where',
+  failed(r) && said(r).endsWith(' — the flare timed out aloft, so the body was set down at (7.0, 3.0)') && ag.flight === null && ag.pos.y < 20,
+  `${said(r)}; flight ${ag.flight === null ? 'ended' : ag.flight?.phase}; y ${ag.pos.y}`);
 // A later call that sets the flight's course takes it over, so a landing whose flare then ends, whether its wait hears
 // the body come down or runs out, leaves the flight to that call: on the stdio door, a host that stopped waiting for
 // the landing can send its next call while the flare still waits. A take-off's fresh flight takes it over too.
+/** Hold the next flight wait open, whichever act asks for it first, and give later ones the real wait; `end` answers
+ *  it. Later calls then wait for real, so a held act that starts late still meets this hold rather than a real wait. */
+const holdNextWait = () => {
+  const h = { held: false, end: (_v: string) => {} };
+  ag.flightAwait = (test: (s: any) => string | null, ms?: number) => {
+    if (h.held) return realAwait.call(ag, test, ms);
+    h.held = true;
+    return new Promise<string>((res) => { h.end = res; });
+  };
+  return h;
+};
+const waitFor = async (cond: () => boolean, ms = 10_000) => {
+  for (let t = 0; t < ms && !cond(); t += 5) await new Promise((res) => setTimeout(res, 5));
+  return cond();
+};
+/** A landing's glide that answers at once, counting the course as the real glide does. */
+const glidesThere = async (_x: number, _z: number, took?: { course?: number }) => { if (took) took.course = ++ag.flightCourse; return arrived; };
 /** Start the later call, and give back how to settle what it leaves waiting once its check is done. */
 const laterCalls: Record<string, () => Promise<() => Promise<void>>> = {
   climb_to: async () => {
     const p = call('climb_to', { altitude: 30 });
-    for (let i = 0; i < 400 && !ag.flightWaiters.length; i++) await new Promise((res) => setTimeout(res, 5));
+    await waitFor(() => ag.flightWaiters.length > 0);
     return async () => { if (ag.flight) { ag.flight.climbTo = null; ag.flightSettle(); } await p; };
   },
   glide_to: async () => {
     const p = call('glide_to', { x: 40, z: 0 });
-    for (let i = 0; i < 400 && !ag.flightWaiters.length; i++) await new Promise((res) => setTimeout(res, 5));
+    await waitFor(() => ag.flightWaiters.length > 0);
     return async () => { if (ag.flight) { ag.flight.pos.x = 40; ag.flight.pos.z = 0; ag.flightSettle(); } await p; };
   },
   take_off: async () => { await call('take_off'); return async () => {}; },
 };
 for (const [end, later] of [['timed out aloft', 'climb_to'], ['down', 'glide_to'], ['timed out aloft', 'take_off']] as const) {
   await relaunch(); ag.flight.stamina = 1e6;
-  ag.glideTo = async () => arrived;
-  let endFlare = (_v: string) => {};
-  ag.flightAwait = () => new Promise<string>((res) => { endFlare = res; });
+  ag.glideTo = glidesThere;
+  const hold = holdNextWait();
   const landing = call('land_at', { x: 5, z: 5 });
-  for (let i = 0; i < 400 && ag.flight?.pitch !== 0.2; i++) await new Promise((res) => setTimeout(res, 5));
-  ag.glideTo = realGlide; ag.flightAwait = realAwait;
+  const flaring = await waitFor(() => hold.held);
+  ag.glideTo = realGlide;
   const settleLater = await laterCalls[later]();
   const flight = ag.flight;
-  endFlare(end);
+  hold.end(end);
   r = await landing;
+  ag.flightAwait = realAwait;
   check(`a landing whose flare ${end === 'down' ? 'hears the body come down' : 'times out'} after a later ${later} took the flight is failed, and leaves the flight to it`,
-    failed(r) && said(r).endsWith(' — a later call took over the flight during the flare') && flight != null && ag.flight === flight,
-    `${said(r)}; ${ag.flight === flight ? 'same flight' : 'flight ended or replaced'}`);
+    flaring && failed(r) && said(r).endsWith(' — a later call took over the flight during the flare') && flight != null && ag.flight === flight,
+    `${flaring ? '' : 'the landing never reached its flare; '}${said(r)}; ${ag.flight === flight ? 'same flight' : 'flight ended or replaced'}`);
   await settleLater();
 }
 // A later climb_to, or a take-off's fresh flight, takes a climb over, so an earlier climb whose wait then ends, whether
-// it runs out or hears a climb get there, leaves the climb alone and says it was taken over. A glide doesn't take a
-// climb over: the two can fly together.
-for (const [end, later] of [['timed out aloft', 'climb_to'], ['there', 'climb_to'], ['timed out aloft', 'take_off'], ['there', 'glide_to']] as const) {
+// it runs out, hears a climb get there or comes down, leaves the climb alone and says it was taken over. A glide
+// doesn't take a climb over: the two can fly together.
+for (const [end, later] of [['timed out aloft', 'climb_to'], ['there', 'climb_to'], ['landed', 'climb_to'], ['timed out aloft', 'take_off'], ['there', 'glide_to']] as const) {
   await relaunch(); ag.flight.stamina = 1e6;
-  let endFirst = (_v: string) => {};
-  ag.flightAwait = () => new Promise<string>((res) => { endFirst = res; });
+  const hold = holdNextWait();
   const first = call('climb_to', { altitude: 20 });
-  for (let i = 0; i < 400 && ag.flight?.climbTo !== 20; i++) await new Promise((res) => setTimeout(res, 5));
-  ag.flightAwait = realAwait;
+  const waiting = await waitFor(() => hold.held);
   const settleLater = await laterCalls[later]();
   const flight = ag.flight, climbTo = ag.flight?.climbTo;
-  endFirst(end);
+  hold.end(end);
   r = await first;
+  ag.flightAwait = realAwait;
   if (later === 'glide_to') {
     check('a climb whose wait hears it get there while a later glide_to flies is done, since a glide doesn\'t take a climb over',
-      ok(r) && /^at [0-9.]+m — /.test(said(r)), said(r));
+      waiting && ok(r) && /^at [0-9.]+m — /.test(said(r)), said(r));
   } else {
-    check(`a climb whose wait ${end === 'there' ? 'hears a climb get there' : 'runs out'} after a later ${later} is failed as taken over, and leaves the flight's climb alone`,
-      failed(r) && /^taken over at [0-9.]+m by a later call$/.test(said(r)) && ag.flight === flight && ag.flight?.climbTo === climbTo,
+    check(`a climb whose wait ${end === 'there' ? 'hears a climb get there' : end === 'landed' ? 'comes down' : 'runs out'} after a later ${later} is failed as taken over, and leaves the flight's climb alone`,
+      waiting && failed(r) && /^taken over at [0-9.]+m by a later call$/.test(said(r)) && ag.flight === flight && ag.flight?.climbTo === climbTo,
       `${said(r)}; climbTo ${ag.flight?.climbTo}, was ${climbTo}`);
   }
   await settleLater();
+}
+// A landing takes over a climb still waiting: it clears the climb's height at once, so the climb lifts the body no
+// further, and the climb's answer says it was taken over.
+{
+  await relaunch(); ag.flight.stamina = 1e6;
+  const climbHold = holdNextWait();
+  const climbing = call('climb_to', { altitude: 30 });
+  const waiting = await waitFor(() => climbHold.held);
+  ag.glideTo = glidesThere;
+  const flareHold = holdNextWait();
+  const landing = call('land_at', { x: 5, z: 5 });
+  const flaring = await waitFor(() => flareHold.held);
+  const cleared = ag.flight?.climbTo == null;
+  climbHold.end('there');
+  r = await climbing;
+  flareHold.end('down');
+  const landed = await landing;
+  ag.glideTo = realGlide; ag.flightAwait = realAwait;
+  check('a landing takes over a climb still waiting: it clears the climb\'s height, and the climb is failed as taken over',
+    waiting && flaring && cleared && failed(r) && /^taken over at [0-9.]+m by a later call$/.test(said(r)) && ok(landed),
+    `cleared ${cleared}; ${said(r)}; landing: ${said(landed)}`);
 }
 // A later call that sets the course while a landing still glides takes the flight over too, so the landing leaves it
 // to that call and makes no flare.
 {
   await relaunch(); ag.flight.stamina = 1e6;
-  let endGlide = (_v: string) => {}, gliding = false;
-  ag.flightAwait = () => new Promise<string>((res) => { endGlide = res; gliding = true; });
+  const hold = holdNextWait();
   const landing = call('land_at', { x: 80, z: 0 });
-  for (let i = 0; i < 400 && !gliding; i++) await new Promise((res) => setTimeout(res, 5));
-  ag.flightAwait = realAwait;
+  const gliding = await waitFor(() => hold.held);
   const settleLater = await laterCalls.climb_to();
   const flight = ag.flight;
-  endGlide('arrived');
+  hold.end('arrived');
   const answer: any = await Promise.race([landing, new Promise((res) => setTimeout(() => res({ rejected: 'still waiting 1 s after its glide ended' }), 1000))]);
+  ag.flightAwait = realAwait;
   check('a landing whose glide a later climb_to took over is failed, leaves the flight to it, and makes no flare',
-    failed(answer) && said(answer).endsWith(' — a later call took over the flight during the glide') && ag.flight === flight && ag.flight?.climbTo === 30
+    gliding && failed(answer) && said(answer).endsWith(' — a later call took over the flight during the glide') && ag.flight === flight && ag.flight?.climbTo === 30
       && ag.flightWaiters.length === 1, `${said(answer)}; climbTo ${ag.flight?.climbTo}; ${ag.flightWaiters.length} waiter(s)`);
   await settleLater();
   // A flare the check didn't expect would still be waiting: answer it, so its timer doesn't hold the run.
   for (const w of ag.flightWaiters.splice(0)) w.done('timed out aloft');
   await landing;
 }
+// A glide whose flight a later landing has ended by the time its wait answers says where the body is, rather than
+// throwing on the flight that's gone.
+await relaunch();
+ag.flightAwait = async () => { ag.flight = null; return 'timed out aloft'; };
+r = await call('glide_to', { x: 40, z: 0 });
+ag.flightAwait = realAwait;
+check('a glide whose flight has ended by the time its wait answers is failed, saying where the body is',
+  failed(r) && /^timed out aloft at \([-0-9.]+, [-0-9.]+\)$/.test(said(r)), said(r));
 // The flare's wait is sized from the ground under the body as it begins, and is never shorter than 60 s: a flare
 // that begins over high ground, here 55 m, and comes down on lower, 40 m, gets the 60 s.
 {
