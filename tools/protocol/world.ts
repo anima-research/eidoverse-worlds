@@ -215,7 +215,7 @@ function translateInPlace(name: string, founderKey: string | undefined, approval
  *  (renames: the same files), everything the translation made is removed, the identities it minted are forgotten (those still
  *  exactly as it wrote them), and the manifest itself goes last. A made file the server has written to since (world.jsonl grew,
  *  bans were filed) is refused unless --discard-changes: that history has nowhere to go. Stop the server first: one still
- *  serving the world holds it in memory and would write the v4 files back. */
+ *  serving the world holds it in memory and would write the translated files back. */
 function rollback(name: string) {
   const D = path.join(WORLDS_DIR, name), mf = path.join(D, MANIFEST);
   if (!fs.existsSync(mf)) die(`"${name}" holds no ${MANIFEST}: it wasn't translated in place by this tool (or the manifest is gone), so there is nothing here to roll back. Nothing was changed.`
@@ -231,7 +231,7 @@ function rollback(name: string) {
   const origNow = sourceChanged(path.join(D, ORIGINAL.log), m.source);
   if (origNow) die(`can't roll back "${name}": ${ORIGINAL.log} no longer holds the bytes that were translated (${m.source.size} bytes then, ${origNow.size} now): it was written to, and the original is lost. Nothing was changed.`);
   const changed = Object.entries<string | null>(m.made).filter(([f, h]) => h && fs.existsSync(path.join(D, f)) && sha(path.join(D, f)) !== h).map(([f]) => f);
-  if (changed.length && !discard) die(`can't roll back "${name}" without losing history: ${changed.join(", ")} changed since the translation made ${changed.length === 1 ? "it" : "them"} (the server has written to the v4 world: acts, places, bans). `
+  if (changed.length && !discard) die(`can't roll back "${name}" without losing history: ${changed.join(", ")} changed since the translation made ${changed.length === 1 ? "it" : "them"} (the server has written to the translated world: acts, places, bans). `
     + `Rolling back deletes that; if that is what you want, say so: rollback ${name} --discard-changes. Nothing was changed.`);
   const did: string[] = [];
   for (const f of Object.keys(m.made)) if (f !== MANIFEST && fs.existsSync(path.join(D, f))) { fs.rmSync(path.join(D, f)); did.push(`removed ${f}${changed.includes(f) ? " (its changes since the translation discarded)" : ""}`); }

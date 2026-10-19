@@ -228,9 +228,9 @@ export function deferredFeatures(oldEntries) {
 export function deferredRefusal(uses, world = "this world") {
   if (!uses.length) return null;
   const kinds = [...new Set(uses.map((u) => u.feature))];
-  return `can't translate ${world}: it uses ${uses.length} thing(s) this protocol (v4) does not carry yet — ${kinds.join(", ")} — and translating would drop them silently. `
+  return `can't translate ${world}: it uses ${uses.length} thing(s) this protocol does not carry yet — ${kinds.join(", ")} — and translating would drop them silently. `
     + `Nothing was written. Where:\n` + uses.map((u) => `  seq ${u.seq}: ${u.feature} (\`${u.component}\` component) on "${u.id}", set by ${u.actor}${u.ts ? ` at ${new Date(u.ts).toISOString()}` : ""}`).join("\n")
-    + `\nThese came from main's merges (${[...new Set(uses.map((u) => DEFERRED[u.component].since))].join("; ")}) and are deferred in v4. Either wait for the protocol to carry them, or remove them from the old world first (the old server's \`comp\` with data null) and translate again.`;
+    + `\nThese came from main's merges (${[...new Set(uses.map((u) => DEFERRED[u.component].since))].join("; ")}) and are deferred in this protocol. Either wait for the protocol to carry them, or remove them from the old world first (the old server's \`comp\` with data null) and translate again.`;
 }
 
 // v1's mount, read the way the renderer realizes it (shared/hierarchy.js localOf, written independently here): a

@@ -43,11 +43,11 @@
 //   IP25 a rollback that would lose history (the server wrote to world.jsonl since) refuses unless --discard-changes; a
 //        directory with no manifest refuses with that reason
 //   —— item 7: truthful refusals ——
-//   IP26 a world using features v4 doesn't carry yet (a water volume, air boxes, a climb route, a vehicle, a collision
+//   IP26 a world using features this protocol doesn't carry yet (a water volume, air boxes, a climb route, a vehicle, a collision
 //        toggle) is REFUSED, naming each feature and where it was used (seq, entity, actor); the dry run lists them under
 //        `deferred`, and an approval of that report can't override the refusal; nothing is written. The world's water
 //        level (water on @world) is not a volume and does not refuse (control)
-//   IP27 a client that doesn't fold the log: a native (Unreal) session is told the Unreal client hasn't been ported to v4
+//   IP27 a client that doesn't fold the log: a native (Unreal) session is told the Unreal client hasn't been ported to this protocol
 //        yet; anyone else is told to reload or update (the wire carries the latter; the native text is the pure switch)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/inplace-check.ts
 // @ts-nocheck
@@ -144,8 +144,8 @@ const srv1 = await boot("boot1");
   for (let i = 0; i < 80 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50); ws.close();
   const err = msgs.find((m) => m.type === "error")?.error ?? "";
   ok(err === noFoldRefusal("current", false) && /reload the page/.test(err) && !/Unreal/.test(err), "IP27 a joiner with no replica and no native session is told, on the wire, to reload the page or update the agent (the non-native text)", err); }
-ok(/Unreal client hasn't been ported to it yet/.test(noFoldRefusal("current", true)) && /current protocol \(v4\)/.test(noFoldRefusal("current", true)) && /Nothing is wrong with your sign-in/.test(noFoldRefusal("current", true)) && !/reload the page/.test(noFoldRefusal("current", true)),
-  "IP27 a native (Unreal) session gets the truthful text: the Unreal client hasn't been ported to v4 yet, nothing is wrong with it or the world", noFoldRefusal("current", true));
+ok(/Unreal client hasn't been ported to it yet/.test(noFoldRefusal("current", true)) && /a world of the current protocol, and/.test(noFoldRefusal("current", true)) && /Nothing is wrong with your sign-in/.test(noFoldRefusal("current", true)) && !/reload the page/.test(noFoldRefusal("current", true)),
+  "IP27 a native (Unreal) session gets the truthful text: the Unreal client hasn't been ported to this protocol yet, nothing is wrong with it or the world", noFoldRefusal("current", true));
 
 // ================= IP19–IP21: the dry run and the approval it binds =================
 { const d = oldWorld("careful"); const fp = fingerprint(d);
@@ -204,7 +204,7 @@ const actsOf = (d: string) => readLog(fs.readFileSync(path.join(d, "world.jsonl"
   ok((eidoBefore === null) === !fs.existsSync(path.join(OPT, "eido-index.json")) || fs.readFileSync(path.join(OPT, "eido-index.json"), "utf8") === eidoBefore, "IP24 the content-address index is left as it was (no model bytes on this host, so it never changed)");
   const again = xlate([name]);
   ok(again.code === 0 && isWorldDir(d), "IP24 …and it translates again after the rollback", again.out.slice(-300));
-  // IP25: the server has written to the v4 world since
+  // IP25: the server has written to the translated world since
   fs.appendFileSync(path.join(d, "world.jsonl"), "\n");
   const r2 = tool(["rollback", name]); const keep = fingerprint(d);
   ok(r2.code !== 0 && /without losing history: world\.jsonl changed since/.test(r2.out) && /--discard-changes/.test(r2.out) && same(fingerprint(d), keep) && isWorldDir(d), "IP25 a rollback that would lose history refuses, names the file, and offers --discard-changes; nothing changed", r2.out.slice(-500));
@@ -213,7 +213,7 @@ const actsOf = (d: string) => readLog(fs.readFileSync(path.join(d, "world.jsonl"
   const r4 = tool(["rollback", name]);
   ok(r4.code !== 0 && /holds no translation\.json/.test(r4.out) && /Nothing was changed/.test(r4.out) && same(fingerprint(d), fp), "IP25 a directory with no manifest refuses with that reason", r4.out.slice(-300)); }
 
-// ================= IP26: features v4 doesn't carry yet refuse, truthfully =================
+// ================= IP26: features this protocol doesn't carry yet refuse, truthfully =================
 { const uses = [
     { actor: "Ann", verb: "comp", args: { id: "table_1", type: "water", data: { center: [0, -2, 0], size: [10, 4, 10] } } },
     { actor: "Ann", verb: "comp", args: { id: "table_1", type: "air", data: { boxes: [{ center: [0, 0, 0], size: [2, 2, 2] }] } } },
@@ -228,8 +228,8 @@ const actsOf = (d: string) => readLog(fs.readFileSync(path.join(d, "world.jsonl"
   ok(dr.code !== 0 && !!h && rep && same(rep.deferred?.map((u: any) => [u.feature, u.id, u.seq, u.actor]), want) && typeof rep.refused === "string",
     "IP26 the dry run lists the five deferred uses (feature, entity, seq, actor) — and not the world's water level — and says the translation is refused (exit 1)", { code: dr.code, deferred: rep?.deferred });
   const text = rep?.refused ?? "";
-  ok(/can't translate "sunk": it uses 5 thing\(s\) this protocol \(v4\) does not carry yet/.test(text) && /water volume, air box \(dry interior\), climb route, vehicle, collision on\/off toggle/.test(text) && /would drop them silently/.test(text) && /Nothing was written/.test(text)
-    && want.every(([f, id, seq, who]) => text.includes(`seq ${seq}: ${f} (`) && text.includes(`on "${id}", set by ${who}`)) && /deferred in v4/.test(text) && /remove them from the old world first/.test(text),
+  ok(/can't translate "sunk": it uses 5 thing\(s\) this protocol does not carry yet/.test(text) && /water volume, air box \(dry interior\), climb route, vehicle, collision on\/off toggle/.test(text) && /would drop them silently/.test(text) && /Nothing was written/.test(text)
+    && want.every(([f, id, seq, who]) => text.includes(`seq ${seq}: ${f} (`) && text.includes(`on "${id}", set by ${who}`)) && /deferred in this protocol/.test(text) && /remove them from the old world first/.test(text),
     "IP26 the refusal names each feature, the component, the entity, the actor and the seq, says they came from main's merges and are deferred, and what to do", text);
   const forced = tool(["translate", "sunk", "--no-founder-key", "--approved", h!]);
   ok(forced.code !== 0 && /can't translate "sunk"/.test(forced.out) && /can't override this/.test(forced.out) && same(fingerprint(d), fp) && !temps().length && !isWorldDir(d) && fs.readFileSync(dirf, "utf8") === dirBefore,

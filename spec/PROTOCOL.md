@@ -893,7 +893,7 @@ Only what the asker could have written themselves, on what they are writing anyw
 | a deletion's set-down of unparented things resting on what it removes | the asker's change | the asker | no rights, locks or keys (shape checks) | `followUps` |
 | occupants set down or dropped when a host's geometry changes | its own act `resettle {hosts, occupants, asked}` (`riders` in entries before 10-17), caused by the asker's act, and its change | `system` | the system's capability, scoped to those occupants | the actor |
 | settle, return-lost, return-held, restamp-engine, lift-sockets, repair-shapes, expire-roles | their own act and change | `system` | the system's capability | the actor |
-| components and fields renamed before release (§4), at every load | its own act `rename-components {renamed, why, failed?}` and its change | `system` | the system's capability, per thing | the actor |
+| components and fields renamed before release (§4), by the explicit `repair` command (never at load) | its own act `rename-components {renamed, why, failed?}` and its change | `system` | the system's capability, per thing | the actor |
 | a physics rest | its own change, caused by the launch | `sim` | the rest capability | the actor |
 | stamps on what the asker is writing (a physics shape, a home, a media or model hash; a home for a reset's target) | the asker's change | the asker | the asker's rights (a target they may not edit refuses the write) | no: they are the asker's |
 

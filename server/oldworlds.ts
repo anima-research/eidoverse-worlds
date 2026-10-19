@@ -38,7 +38,7 @@ export type OldWorld = {
  *  (an old page, an old agent build) is told to reload or update. */
 export function noFoldRefusal(world: string, native: boolean): string {
   return native
-    ? `"${world}" is a world of the current protocol (v4), and the Unreal client hasn't been ported to it yet: it doesn't fold the world's log, so it can't join. Nothing is wrong with your sign-in or with the world; a browser client can join it now, and the Unreal client will when its port lands.`
+    ? `"${world}" is a world of the current protocol, and the Unreal client hasn't been ported to it yet: it doesn't fold the world's log, so it can't join. Nothing is wrong with your sign-in or with the world; a browser client can join it now, and the Unreal client will when its port lands.`
     : `"${world}" needs a client that folds its log, and this one doesn't — reload the page for the current client, or update the agent`;
 }
 

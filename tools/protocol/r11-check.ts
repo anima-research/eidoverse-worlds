@@ -33,12 +33,12 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["an unfriend re-checks only the unfriender", "shared/protocol/authority/bodyconsent.js", ", ...(ex ? revokeAfter(w, ex, beforeEx) : [])]", "]", ["C6"]],
   ["the door doesn't take the words", "shared/protocol/verbspec.js", "unfriend: { type: \"any\"", "unfriendX: { type: \"any\"", ["C2", "C3"]],
   ["the verb reads a removal as a read", "shared/protocol/authority/bodyconsent.js", "\"delegate\", \"unfriend\", \"undelegate\"].some", "\"delegate\"].some", ["C1", "C2"]],
-  ["§7 forgets rename-components", "spec/PROTOCOL.md", "\n| components and fields renamed before release (§4), at every load | its own act `rename-components {renamed, why, failed?}` and its change | `system` | the system's capability, per thing | the actor |", "", ["X1"]],
-  ["§4 forgets the rename", "spec/PROTOCOL.md", "**A pure rename runs at every load.**", "**A pure rename runs.**", ["X1"]],
+  ["§7 forgets rename-components", "spec/PROTOCOL.md", "\n| components and fields renamed before release (§4), by the explicit `repair` command (never at load) | its own act `rename-components {renamed, why, failed?}` and its change | `system` | the system's capability, per thing | the actor |", "", ["X1"]],
+  ["§4 forgets the rename", "spec/PROTOCOL.md", "**A pure rename is the command's second step, idempotent.**", "**A pure rename runs.**", ["X1"]],
   ["a seated declaration says nothing", "mcpl/tools.ts", "and grants nothing${seated}`); }", "and grants nothing`); }", ["B1"]],
   ["a declaration dropped", "mcpl/ping-wire.ts", "const d = typeof declares === \"string\" && declares ? { declares } : {};", "const d = {};", ["B2"]],
   ["a stored null renamed to anim: null", "shared/protocol/shaperepair.js", "else if (p === null) renamed.push({ field: \"pose\", to: null });", "", ["R1"]],
-  ["renames all or nothing", "shared/protocol/authority/scriptrun.js", "if (kept.length) { const ids = [...new Set(kept.map((o) => o.id))], comps", "if (kept.length && !failed.length) { const ids = [...new Set(kept.map((o) => o.id))], comps", ["R2"]],
+  ["renames all or nothing", "shared/protocol/authority/scriptrun.js", "if (kept.length && !dryRun) { const ids = [...new Set(kept.map((o) => o.id))], comps", "if (kept.length && !dryRun && !rename.failed.length) { const ids = [...new Set(kept.map((o) => o.id))], comps", ["R2"]],
   ["the consent code's old words", "shared/protocol/refusalcodes.js", "(touch, pose, shove, displace…)", "(touch, pose, shove, move…)", ["D1"]],
   ["move's old name order", "AGENTS.md", "a thing by id (its entrance, else beside it), a place's name or label, a thing's label or handle,", "a thing (id, label or handle: its entrance, else beside it), a place's name or label,", ["D2"]],
   ["attach takes pose again", "mcpl/tools.ts", ", action: { type: \"string\" } }, required: [\"to\"] } },", ", action: { type: \"string\" }, pose: { type: \"string\" } }, required: [\"to\"] } },", ["D3"]],
@@ -173,10 +173,10 @@ const cases: Case[] = [
         doc: /unfriend/.test(doc) && /undelegate/.test(doc), ag: /`consent \{unfriend\}`/.test(ag) && /`\{undelegate\}`/.test(ag), tl: /friend, unfriend, delegate, undelegate/.test(tl) }; },
     good: (o) => o.s5 && o.doc && o.ag && o.tl },
   // ---------------- X: the spec says it ----------------
-  { id: "X1", what: "(stern M2) §7's table of the authority's consequences lists rename-components ({renamed, why}: the system's act and change); §4 says a pure rename is not marker-gated: every load renames what it finds and writes nothing when there's nothing", run() {
+  { id: "X1", what: "(stern M2) §7's table of the authority's consequences lists rename-components ({renamed, why}: the system's act and change); §4 says a pure rename is not marker-gated: the explicit repair command renames what it finds (a load never writes) and writes nothing when there's nothing", run() {
       const md = PROTO(); const s7 = section(md, /\n## 7\. /); const s4 = section(md, /\n## 4\. /);
-      return { s7: /\| [^\n]*`rename-components \{renamed, why, failed\?\}`[^\n]*\| `system` \|/.test(s7),
-        s4: /\*\*A pure rename runs at every load\.\*\*/.test(s4) && /`RENAMED_COMPONENTS`/.test(s4) && /`RENAMED_FIELDS`/.test(s4) && /not marker-gated/.test(s4) && /writes nothing\s+when there is nothing to rename/.test(s4) && /admitted per thing/.test(s4) }; },
+      return { s7: /\| [^\n]*explicit `repair` command \(never at load\)[^\n]*`rename-components \{renamed, why, failed\?\}`[^\n]*\| `system` \|/.test(s7),
+        s4: /\*\*A pure rename is the command's second step, idempotent\.\*\*/.test(s4) && !/at every load/.test(s7) && /`RENAMED_COMPONENTS`/.test(s4) && /`RENAMED_FIELDS`/.test(s4) && /not marker-gated/.test(s4) && /writes nothing\s+when there is nothing to rename/.test(s4) && /admitted per thing/.test(s4) }; },
     good: (o) => o.s7 && o.s4 },
   // ---------------- B: the agent's body ----------------
   { id: "B1", what: "(stern L1) on a seat, anim {bodyMode: stand} never takes you off it (body-mode grants nothing): the reply says you're still attached and to detach; the tool's text says the same", async run() {
