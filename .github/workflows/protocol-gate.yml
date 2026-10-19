@@ -52,6 +52,10 @@ jobs:
           (cd mcpl && bun install --frozen-lockfile)
           # the project's own playwright, so the browser revision is the one run.ts's import of it looks for
           bun node_modules/playwright/cli.js install chromium
+      - name: let Chromium use its sandbox (Ubuntu 24.04 restricts unprivileged user namespaces)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: asset library (pinned in run.ts)
         shell: bash
         run: |

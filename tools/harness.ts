@@ -218,7 +218,10 @@ export async function scratchBench(name: string, opts: ScratchOptions & { headed
     } catch { /* not listening yet */ }
     if (!target) await sleep(150);
   }
-  if (!target) await die(2, `no owned page target on :${DEBUG_PORT}`);
+  if (!target) {
+    let err = ""; try { err = readFileSync(join(SCRATCH, "browser.stderr.log"), "utf8").trim().split("\n").slice(-8).join(" | "); } catch {}
+    await die(2, `no owned page target on :${DEBUG_PORT}${err ? ` (browser said: ${err.slice(0, 900)})` : " (browser printed nothing)"}`);
+  }
   const cws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((res, rej) => { cws.onopen = res as any; cws.onerror = rej as any; });
   // Every page this bench drives runs under the server's Content-Security-Policy (server/csp.ts). A violation is the
