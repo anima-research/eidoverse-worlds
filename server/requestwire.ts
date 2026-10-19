@@ -19,9 +19,11 @@ import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, fileAddrSanction, lift
 import { directoryFor, foldName } from "./directory.ts";
 import { WORLDS_DIR } from "./config.ts";
 import { isBanned } from "../shared/protocol/authority.js";
+import { txnRefusal } from "../shared/protocol/authority/storage.js";
 import { WIRE_READS, PERSON_ACTS } from "../shared/protocol/verbclasses.js";
 import { readMeter, authorityTime } from "./readmeter.ts";
 import { isOperator } from "./operators.ts";
+import { capture, recheck, type ReqCap } from "./reqcap.ts";
 
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string, until?: number | null) => void; sweep?: (w: World) => void };
 type Any = any;
@@ -96,11 +98,15 @@ export function guestSanctionByAddress(w: World, actor: string, by: string, verb
 }
 export const actorOf = (c: Client) => { if (!c.actorId) throw new Error(`request from ${c.id} with no directory id (join didn't resolve one)`); return c.actorId; };
 
-/** Run fn after this client's earlier requests (their warm-ups are async); never let a throw break the queue. */
-function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>) {
+/** Run fn after this client's earlier requests (their warm-ups are async); never let a throw break the queue. A throw that
+ *  escapes before the request was answered is answered with the request's own id (`unanswered`), never an id-less error:
+ *  a client never leaves a request pending. WorldLog.request never throws (its outcome rides its reply), so such a throw
+ *  happened before the authority was reached: nothing was written (rolled back, code server-error). */
+function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>, unanswered?: (r: Any) => void) {
   const tail = (c.verbQueue ?? Promise.resolve()).then(fn).catch((err) => {
     console.error(`[ws] request from ${c.id} failed server-side:`, err);
-    try { ws.send(JSON.stringify({ type: "error", error: "that request failed server-side — it has been logged" })); } catch { /* gone */ }
+    try { if (unanswered) unanswered(txnRefusal({ outcome: "rolled-back" }));
+      else ws.send(JSON.stringify({ type: "error", error: "that request failed server-side — it has been logged" })); } catch { /* gone */ }
   });
   c.verbQueue = tail;
   void tail.then(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
@@ -115,7 +121,9 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const rid = msg.id ?? null;
     const args = msg.args && typeof msg.args === "object" && !Array.isArray(msg.args) ? msg.args : {};
     const verb = String(msg.verb ?? "");
-    const reply = (r: Any) => ws.send(JSON.stringify({ type: "reply", id: rid, verb, ok: r.ok === true, reply: r }));
+    // the envelope carries the transaction outcome too (PROTOCOL §7: committed | rolled-back | ambiguous; ok only when committed)
+    let answered = false;
+    const reply = (r: Any) => { answered = true; ws.send(JSON.stringify({ type: "reply", id: rid, verb, ok: r.ok === true, ...(typeof r?.outcome === "string" ? { outcome: r.outcome } : {}), reply: r })); };
     if (c.spectator && !READS.has(verb)) { reply({ ok: false, refused: { code: "spectator", reason: "spectators may read, not write", fix: "join embodied" } }); return; }
     const metered = READS.has(verb) || args.dry === true;
     // reads are counted as they arrive (a burst is counted before any of it runs); time is checked when each request is
@@ -128,18 +136,19 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     // a caption carries the connection's leg generation, stamped here (never the client's word): a captioner that was
     // taken over (a newer leg of the same identity) can't write over its successor (shared/captions.js captionRefusal)
     if (verb === "caption") args.gen = c.legGen ?? 0;
-    // the connection's capability as it was when the request arrived: still in this world, not taken over (superseded),
-    // not closed (close takes it out of w.clients but leaves c.world set), the same accepted leg (gen). Checked before the
-    // queue runs it AND again after the await, immediately before the authority writes (review of PR #260, requestwire.ts:135)
-    const gen = c.gen;
-    const still = () => c.world === w && !c.superseded && w.clients.has(c) && c.gen === gen ? null
-      : "this connection left the world, was closed or was taken over by a newer one while the request waited; nothing was written";
+    // the request's ONE capability (server/reqcap.ts), frozen as the connection was when the request arrived: identity,
+    // account, spectator, operator, the door's decision, role, leg. Rechecked when the queue reaches it (seam 1) and again
+    // after warm(), immediately before the authority writes (seam 2, worldlog.ts request); the authority is given
+    // cap.actorId, never the connection's actorId read after an await (reviewer item 2; review of PR #260, requestwire.ts:135)
+    let cap: ReqCap;
+    try { cap = capture(c, w); } catch (err) { console.error(`[ws] request from ${c.id}:`, err); reply({ ok: false, outcome: "rolled-back", refused: { code: "identity", reason: "this connection has no identity here", fix: "join the world first" } }); return; }
+    const still = () => recheck(cap);
     inOrder(c, ws, async () => {
-      if (still()) return;
+      { const gone = still(); if (gone) { reply({ ok: false, outcome: "rolled-back", refused: { code: "superseded", reason: gone, fix: "reconnect, then send it again from the connection that is in the world now" } }); return; } }
       { const no = (metered ? reads.check(c, Date.now(), { timeOnly: true }) : null) ?? busy.check(c, Date.now()); if (no) { metered_no(no); return; } }
       const spent = busy.record(c, Date.now());
       const wasBanned = (verb === "ban" || verb === "unban") && typeof args.who === "string" ? isBanned(w.log.live, String(args.who)) : false;
-      const r = await w.log.request(actorOf(c), verb, args, still);
+      const r = await w.log.request(cap.actorId, verb, args, still);
       const ms = (r && typeof r === "object" && authorityTime.get(r)) || 0; if (mark) mark.ms = ms; spent.ms = ms;
       reply(r);
       // the flight recorder hears every refusal (world_debug, /debug): the authority logs refused WRITES as attempt acts, but
@@ -160,8 +169,8 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
           : verb === "ghost" && args.who ? { type: "moderated", verb: "ghost", by: c.id, you: true, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) } : null;
         if (notice) for (const t of w.clients) if (t.actorId === who) { try { t.ws.send(JSON.stringify(notice)); } catch { /* gone */ } } }
       // a guest's mute or ghost also names their address here, and its lift lifts that (R 10-07)
-      if (r?.ok && ["mute", "unmute", "ghost", "unghost"].includes(verb) && typeof args.who === "string" && args.who !== actorOf(c))
-        guestSanctionByAddress(w, actorOf(c), c.id, verb, String(args.who), typeof args.reason === "string" ? args.reason : undefined);
+      if (r?.ok && ["mute", "unmute", "ghost", "unghost"].includes(verb) && typeof args.who === "string" && args.who !== cap.actorId)
+        guestSanctionByAddress(w, cap.actorId, c.id, verb, String(args.who), typeof args.reason === "string" ? args.reason : undefined);
       if (r?.ok && (verb === "ban" || verb === "kick" || verb === "unban" || verb === "mute" || verb === "unmute") && typeof args.who === "string") {
         const who = String(args.who);
         const happened = verb === "kick" || verb === "mute" || verb === "unmute" ? [...w.clients].some((t) => t.actorId === who && !t.spectator) : wasBanned !== isBanned(w.log.live, who);
@@ -190,7 +199,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
           expel(w, t, `you were ${verb === "ban" ? "banned from" : "removed from"} "${w.name}"${args.reason ? ` — ${String(args.reason)}` : ""}${back}`, r.until ?? null);
         }
       }
-    });
+    }, (r) => { if (!answered) reply(r); });
   },
   // operator-repair {id, verb, args} → {type: "reply", id, verb, ok, operator: true, reply}: a WORLD_ADMIN account mends the
   // world it is in, through the authority (review of PR #260, server.ts:742: an operator entered every world but could repair
@@ -202,17 +211,21 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const w = c.world; if (!w) return;
     const rid = msg.id ?? null; const verb = String(msg.verb ?? "");
     const args = msg.args && typeof msg.args === "object" && !Array.isArray(msg.args) ? msg.args : {};
-    const reply = (r: Any) => ws.send(JSON.stringify({ type: "reply", id: rid, verb, ok: r.ok === true, operator: true, reply: r }));
+    let answered = false;
+    const reply = (r: Any) => { answered = true; ws.send(JSON.stringify({ type: "reply", id: rid, verb, ok: r.ok === true, operator: true, ...(typeof r?.outcome === "string" ? { outcome: r.outcome } : {}), reply: r })); };
     if (!isOperator(c.account)) { reply({ ok: false, refused: { code: "rights", reason: "operator-repair needs a server operator's account (WORLD_ADMIN)", fix: "repair through the world's own roles: ask an owner" } }); return; }
     if (!c.actorId) { reply({ ok: false, refused: { code: "identity", reason: "this connection has no identity here", fix: "join the world first" } }); return; }
-    const gen = c.gen;
+    // the same one capability as request (server/reqcap.ts), and it must still be an operator's when the queue reaches it:
+    // recheck covers isOperator(account) as captured; the only await before the synchronous repair is the queue itself
+    const cap = capture(c, w);
     inOrder(c, ws, async () => {
-      if (!(c.world === w && !c.superseded && w.clients.has(c) && c.gen === gen)) return;   // the same capability recheck as request
-      const r = w.log.operatorRepair(actorOf(c), verb, args);
+      const gone = recheck(cap) ?? (cap.operator ? null : "operator-repair needs a server operator's account (WORLD_ADMIN)");
+      if (gone) { reply({ ok: false, outcome: "rolled-back", refused: { code: "superseded", reason: gone, fix: "reconnect, then send it again" } }); return; }
+      const r = w.log.operatorRepair(cap.actorId, verb, args);
       console.log(`[world:${w.name}] operator repair by ${c.account} (${c.id}): ${verb.slice(0, 32)} ${String((args as Any).component ?? (args as Any).who ?? "").slice(0, 64)} → ${r?.ok ? "ok" : r?.refused?.code}`);
       reply(r);
       if (r?.ok) sweep?.(w);   // an unban or a role change applies now (the sanctions sweep; the role change re-sends rights itself)
-    });
+    }, (r) => { if (!answered) reply(r); });
   },
   // Copy the world you're standing in to a new name: a new world (its own identity) whose founding act names this one,
   // holding a copy of its current state. Owner-only (it copies everything here; the owner's call).
