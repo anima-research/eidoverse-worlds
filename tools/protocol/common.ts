@@ -43,3 +43,12 @@ export function labAt(commit: string, files: string[], tag: string) {
 
 // an OPTIONAL line (the gate counts and lists these: an optional extension that did not run, never a skip of the gate)
 export const controlNote = () => (LAB ? `control arm: lab ${LAB}` : "OPTIONAL control-arm: not run (set PROTOCOL_LAB=<protocol lab checkout> to run the pre-fix control arm)");
+
+/** Copy a source dir into a scratch tree without its node_modules (thousands of files: minutes per copy on Windows),
+ *  then link each copied dir's own node_modules back to the original, so packages resolve exactly as in the real tree.
+ *  "junction" lets Windows link a directory without admin rights; POSIX ignores the type. */
+export function copyTree(src: string, dst: string) {
+  fs.cpSync(src, dst, { recursive: true, filter: (p) => !p.split(/[\\/]/).includes("node_modules") });
+  const nm = path.join(src, "node_modules");
+  if (fs.existsSync(nm) && !fs.existsSync(path.join(dst, "node_modules"))) fs.symlinkSync(nm, path.join(dst, "node_modules"), "junction");
+}

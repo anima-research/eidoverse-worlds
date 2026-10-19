@@ -36,7 +36,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch } from "./common.ts";
+import { ENGINE, scratch, copyTree } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 
@@ -157,7 +157,7 @@ async function runSelf(tree: string, only: string[] | null) {
 }
 // a mutant tree: shared/, server/, spec/, docs/, mcpl/ (without node_modules), client/lib and AGENTS.md copied; the rest linked back
 function copyTree(tag: string) { const d = scratch(tag);
-  for (const k of ["shared", "server", "spec", "docs"]) fs.cpSync(path.join(ENGINE, k), path.join(d, k), { recursive: true });
+  for (const k of ["shared", "server", "spec", "docs"]) copyTree(path.join(ENGINE, k), path.join(d, k));
   fs.cpSync(path.join(ENGINE, "mcpl"), path.join(d, "mcpl"), { recursive: true, filter: (src) => !src.includes(`${path.sep}node_modules`) });
   try { fs.symlinkSync(path.join(ENGINE, "mcpl", "node_modules"), path.join(d, "mcpl", "node_modules")); } catch { /* none */ }
   fs.mkdirSync(path.join(d, "client"), { recursive: true });

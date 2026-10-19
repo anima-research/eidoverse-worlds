@@ -14,7 +14,7 @@
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch } from "./common.ts";
+import { ENGINE, scratch, copyTree } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 
@@ -75,7 +75,7 @@ if (argv.includes("--mutants")) {
   let wrongs = 0;
   for (const [name, file, find, repl, want] of MUTANTS) {
     const d = scratch("dpmut");
-    for (const sub of ["shared", "server", "tools", "defs", "client/lib", "spec", "AGENTS.md"]) if (fs.existsSync(path.join(ENGINE, sub))) fs.cpSync(path.join(ENGINE, sub), path.join(d, sub), { recursive: true });   // spec + AGENTS: P8 reads them
+    for (const sub of ["shared", "server", "tools", "defs", "client/lib", "spec", "AGENTS.md"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));   // spec + AGENTS: P8 reads them
     fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
     const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
     if (src.split(find).length !== 2) { wrongs++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file}`); continue; }

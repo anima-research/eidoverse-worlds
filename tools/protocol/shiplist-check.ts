@@ -21,7 +21,7 @@
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch } from "./common.ts";
+import { ENGINE, scratch, copyTree } from "./common.ts";
 import { recordComponents } from "../../shared/protocol/view.js";
 
 const argv = process.argv.slice(2);
@@ -76,7 +76,7 @@ async function runSelf(tree: string, only: string[] | null) {
 const SUBS = ["shared", "server", "tools", "defs", "client/lib"];
 function copyTree(tag: string) {
   const d = scratch(tag);
-  for (const sub of SUBS) if (fs.existsSync(path.join(ENGINE, sub))) fs.cpSync(path.join(ENGINE, sub), path.join(d, sub), { recursive: true });
+  for (const sub of SUBS) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml", "AGENTS.md"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
   fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   return d;

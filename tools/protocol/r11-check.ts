@@ -18,7 +18,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch } from "./common.ts";
+import { ENGINE, scratch, copyTree } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 
@@ -58,7 +58,7 @@ function copyTree(tag: string) { const d = scratch(tag);
   fs.mkdirSync(path.join(d, "client"), { recursive: true });
   for (const k of fs.readdirSync(path.join(ENGINE, "client"))) if (k !== "lib") fs.symlinkSync(path.join(ENGINE, "client", k), path.join(d, "client", k));
   fs.cpSync(path.join(ENGINE, "client", "lib"), path.join(d, "client", "lib"), { recursive: true });
-  for (const k of ["spec", "docs", "AGENTS.md"]) fs.cpSync(path.join(ENGINE, k), path.join(d, k), { recursive: true });
+  for (const k of ["spec", "docs", "AGENTS.md"]) copyTree(path.join(ENGINE, k), path.join(d, k));
   for (const k of fs.readdirSync(ENGINE)) if (!["shared", "mcpl", "client", ".git"].includes(k) && !fs.existsSync(path.join(d, k))) try { fs.symlinkSync(path.join(ENGINE, k), path.join(d, k)); } catch { /* best effort */ }
   return d; }
 if (argv.includes("--mutants")) {
