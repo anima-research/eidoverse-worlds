@@ -358,7 +358,9 @@ try {
     check(name, after.length === 0, after.length ? `at ${after.map((f) => `${f.t - from} ms (${waitedIn(f.t)} ms of it a stall)`).join(", ")} after it` : "");
   };
   quiet("after the host's stop, the world sends no typing frame later than 500 ms on, less the stall it waited in", stopAt, otherAt);
-  const elsewhere = frames.filter((f) => f.t > otherAt && f.t < ctlAt);
+  // Every frame read from the other channel's start on counts, the same millisecond's included: a door that took
+  // the start would signal at once, and its frame is read within a few milliseconds of the send.
+  const elsewhere = frames.filter((f) => f.t >= otherAt && f.t < ctlAt);
   check("a start for another channel sends no typing frame for this world", ctlAt - otherAt >= 1000 && elsewhere.length === 0,
     `${elsewhere.length} frames in the ${ctlAt - otherAt} ms before this world's next start was sent`);
   check("…and a start for this world then draws the dots", ctl !== null, ctl === null ? "" : `drawn ${Math.round(ctl.t - ctlAt)} ms after it`);
