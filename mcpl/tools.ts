@@ -547,7 +547,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // and holds them in memory, so a restart drops them.
       const away = ag.joined && to !== ag.name && !ag.people.has(to)
         ? `; they aren't here, so the world holds it for when they next arrive, unless it restarts first. It keeps each person's latest 20 by default, so an older one can be dropped` : "";
-      return text(`whispered to ${to}${away}${sent.length < said.length ? ` — only the first ${[...sent].length} characters were sent; whisper the rest in another call` : ""}`);
+      // The cut comes before the note on holding it, which ends on the whispers the world drops.
+      return text(`whispered to ${to}${sent.length < said.length ? ` — only the first ${[...sent].length} characters were sent; whisper the rest in another call` : ""}${away}`);
 
   },
   pose: async (ag, a, ctx, name) => {

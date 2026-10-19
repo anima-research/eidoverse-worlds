@@ -661,6 +661,9 @@ ag.joined = true;
 r = await call('whisper', { to: 'away-now', text: 'hi' });
 check('a whisper to someone not here says the world holds it for them, and how many it keeps',
   ok(r) && said(r) === "whispered to away-now; they aren't here, so the world holds it for when they next arrive, unless it restarts first. It keeps each person's latest 20 by default, so an older one can be dropped", said(r));
+r = await call('whisper', { to: 'away-now', text: 'w'.repeat(4001) });
+check('...and one both cut and held says the cut first',
+  ok(r) && said(r) === "whispered to away-now — only the first 4000 characters were sent; whisper the rest in another call; they aren't here, so the world holds it for when they next arrive, unless it restarts first. It keeps each person's latest 20 by default, so an older one can be dropped", said(r));
 ag.people.set('someone', { id: 'someone', avatar: 'a.vrm', pose: null, agent: false, observedAt: null });
 r = await call('whisper', { to: 'someone', text: 'hi' });
 check('...and one to someone here says nothing of holding it', ok(r) && said(r) === 'whispered to someone', said(r));
