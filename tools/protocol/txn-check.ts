@@ -24,11 +24,12 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["unknown called failure: a throw from a durable write reported rolled-back", "shared/protocol/authority/storage.js", "  if (w.wedged.log && !wedgedBefore) return { outcome: \"ambiguous\"", "  if (false) return { outcome: \"ambiguous\"", ["T2"]],
   ["persist before publish: entries before the disk", "shared/protocol/authority/storage.js", "    durably(\"log\", () => io.writeLine(line));   // on disk first; only then the live chain and fold see it\n    entries.push(posAt(parsed, seq));", "    entries.push(posAt(parsed, seq)); durably(\"log\", () => io.writeLine(line));", ["T3c", "T3d"]],
   ["the door decided at join only: recheck without it", "server/reqcap.ts", "  if (door) return", "  if (false) return", ["T4", "T5"]],
-  ["recheck without the role", "server/reqcap.ts", "  if (w.log.roleOf(cap.actorId) !== cap.role) return", "  if (false) return", ["T4b"]],
+  ["recheck without the role", "server/reqcap.ts", "  if (role && w.log.roleOf(cap.actorId) !== cap.role) return", "  if (false) return", ["T4b"]],
   ["identity read after the await: recheck without it", "server/reqcap.ts", "  if (c.actorId !== cap.actorId ||", "  if (false &&", ["T6", "T6b"]],
   ["an await in the authority's commit", "shared/protocol/authority/writes.js", "// A write: build ops against the folded state", "async function __m() { await 0; }\n// A write: build ops against the folded state", ["T7"]],
   ["short writes: writeSync's count ignored", "server/durable.ts", "    const n = fs.writeSync(fd, buf, off, buf.length - off);", "    fs.writeSync(fd, buf, off, buf.length - off); const n = buf.length - off;", ["T8", "T8b"]],
-  ["operator status checked before the queue only: operator-repair rechecks liveness only", "server/requestwire.ts", "      const gone = recheck(cap) ?? (cap.operator ? null : \"operator-repair needs a server operator's account (WORLD_ADMIN)\");", "      const gone = c.world === w && !c.superseded && w.clients.has(c) ? null : \"gone\";", ["T9"]],
+  ["operator status checked before the queue only: operator-repair rechecks liveness only", "server/requestwire.ts", "      const gone = recheck(cap, Date.now(), { role: false }) ?? (cap.operator ? null : \"operator-repair needs a server operator's account (WORLD_ADMIN)\");", "      const gone = c.world === w && !c.superseded && w.clients.has(c) ? null : \"gone\";", ["T9"]],
+  ["a false refusal: operator-repair compares the world role", "server/requestwire.ts", "recheck(cap, Date.now(), { role: false })", "recheck(cap, Date.now())", ["T9c"]],
   ["a false refusal: the account compared un-normalised (undefined vs null)", "server/reqcap.ts", "(c.account ?? null) !== cap.account", "c.account !== cap.account", ["T10"]],
   ["CONTROL (no-op: must stay green)", "server/reqcap.ts", "// the door: the same decision", "// the door:  the same decision", []],
 ];
@@ -110,18 +111,24 @@ const said = (W_, text) => W_.w.log.live.entries.some((e) => e?.kind === "say" &
 const described = (W_, label) => Object.values(W_.w.log.live.state().entities).some((e) => e.c?.description === label);
 
 // ---------------- T1 ----------------
-{ const X = world("t1"); const t = tab(X, X.owner, { account: "local:olive" }); const n0 = X.w.log.live.entries.length;
+{ const X = world("t1"); const t = tab(X, X.owner, { account: "local:olive" });
+  send(t, "create", { components: { description: "whole" } }); await until(() => t.replies.length);   // a whole act first: undo's target after the reopen
+  const n0 = X.w.log.live.entries.length; const logs0 = t.logs.length;
   const restore = fault("t1", 2, "before");
-  send(t, "create", { components: { description: "half" } }); await until(() => t.replies.length); restore();
-  const r = t.replies[0];
-  const actPublished = t.logs.some((m) => m.from === n0 && m.entries.length === 1 && m.entries[0].kind === "act");
+  send(t, "create", { components: { description: "half" } }); await until(() => t.replies.length > 1); restore();
+  const r = t.replies[1];
+  const actPublished = t.logs.slice(logs0).some((m) => m.from === n0 && m.entries.length === 1 && m.entries[0].kind === "act");
   ok(r?.ok === false && r?.outcome === "ambiguous" && r?.reply?.refused?.code === "ambiguous" && r?.reply?.from === n0 + 1 && actPublished
     && lines("t1").length === n0 + 1 && X.w.log.live.entries.length === n0 + 1,
     "T1 the 2nd line's write throws: ambiguous (never ok), from = that line; the act (1st line) is durable and published", { r, logs: t.logs.map((m) => [m.from, m.entries.length]), disk: lines("t1").length, n0 });
   // what stands after a reopen: the act without its change folds (an act carries no ops), and undo finds nothing of it
   const re = openLive(path.join(W, "t1"), "t1-reopened");
-  ok(re.state().status === "ok" && re.entries.length === n0 + 1 && re.entries[n0].kind === "act" && !Object.values(re.state().entities).some((e) => e.c?.description === "half"),
-    "T1b reopened: the orphan act folds, nothing it asked for exists", { status: re.state().status, n: re.entries.length }); }
+  const { request: authorityRequest } = await import("../../shared/protocol/authority.js");
+  const whole = (st) => Object.values(st.entities).some((e) => e.c?.description === "whole");
+  const stood = whole(re.state()) && re.state().status === "ok" && re.entries.length === n0 + 1 && re.entries[n0].kind === "act" && !Object.values(re.state().entities).some((e) => e.c?.description === "half");
+  const undo = authorityRequest(re, X.owner, "undo", {});
+  ok(stood && undo?.ok === true && !whole(re.state()),
+    "T1b reopened: the orphan act folds, nothing it asked for exists, and undo passes over it to the last act with a result (PROTOCOL §7)", { status: re.state().status, n: re.entries.length, undo }); }
 
 // ---------------- T2 ----------------
 { const X = world("t2"); const t = tab(X, X.owner, { account: "local:olive" }); const other = tab(X, idOf("local:bea", "bea"), { account: "local:bea" }); const n0 = X.w.log.live.entries.length;
@@ -220,7 +227,16 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   ok(rep?.ok === false && rep?.reply?.refused?.code === "superseded" && !X.w.log.live.state().entities["@world"]?.c?.[`roles:${bea}`],
     "T9 operator status revoked while the repair waited: refused, nothing written", rep);
   send(t, "set", { id: "@world", component: `roles:${bea}`, value: { role: "owner" } }, "operator-repair"); await until(() => t.replies.filter((m) => m.operator).length > 1);
-  ok(t.replies.filter((m) => m.operator)[1]?.ok === true && t.replies.filter((m) => m.operator)[1]?.outcome === "committed", "T9b (control) an operator's repair commits", t.replies.filter((m) => m.operator)[1]); }
+  ok(t.replies.filter((m) => m.operator)[1]?.ok === true && t.replies.filter((m) => m.operator)[1]?.outcome === "committed", "T9b (control) an operator's repair commits", t.replies.filter((m) => m.operator)[1]);
+  // an operator's right is the account's, never the world's role: a second repair queued behind one that changed the
+  // operator's own role is not refused for it
+  const k0 = t.replies.filter((m) => m.operator).length; const fen = idOf("local:fen", "fen");
+  X.g.hold(); const e1 = X.g.entered; send(t, "say", { text: "ahead-again" }); await until(() => X.g.entered > e1);
+  send(t, "set", { id: "@world", component: `roles:${opie}`, value: { role: "moderator" } }, "operator-repair");
+  send(t, "set", { id: "@world", component: `roles:${fen}`, value: { role: "builder" } }, "operator-repair");
+  X.g.release(); await until(() => t.replies.filter((m) => m.operator).length >= k0 + 2);
+  const two = t.replies.filter((m) => m.operator).slice(k0);
+  ok(two.length === 2 && two.every((m) => m.ok === true && m.outcome === "committed"), "T9c an operator's repairs queued behind one that changed their own role both commit (no role compare for repairs)", two); }
 
 // ---------------- T10 ----------------
 { const X = world("t10"); const guest = directoryFor(W).resolve({ sub: null, name: "guest" }); const t = tab(X, guest, { account: undefined }); t.c.anonymous = true;

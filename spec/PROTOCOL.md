@@ -895,7 +895,7 @@ before it publishes:
 
 A request's lines are written one at a time, in order, each durable before the next, so a request that ends
 ambiguous leaves a prefix of its lines, never a gap. An act whose change was not written is an act with no
-result: readers already tolerate one (an act carries no ops), and undo finds nothing of it to take back.
+result: readers already tolerate one (an act carries no ops), and undo passes over it.
 Every line that reached the log is published, whatever became of the request that wrote it.
 
 **The authority's consequences are follow-ups** (one rule, review r10): what the authority writes because of

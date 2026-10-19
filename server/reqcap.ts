@@ -26,8 +26,10 @@ export function capture(c: Client, w: World): ReqCap {
   });
 }
 
-/** null = the request may still proceed under `cap`; else the refusal's words (nothing is written). */
-export function recheck(cap: ReqCap, now = Date.now()): string | null {
+/** null = the request may still proceed under `cap`; else the refusal's words (nothing is written). `role: false` for an
+ *  operator's repair, whose right is the account's and never the world's role (the role compare would refuse an operator's
+ *  second queued repair after its first changed their own role). */
+export function recheck(cap: ReqCap, now = Date.now(), { role = true } = {}): string | null {
   const { c, w } = cap;
   // liveness: still in this world, not taken over, not closed (close takes it out of w.clients but leaves c.world set), the same leg
   if (!(c.world === w && !c.superseded && w.clients.has(c) && (c.gen ?? null) === cap.gen))
@@ -42,6 +44,6 @@ export function recheck(cap: ReqCap, now = Date.now()): string | null {
     cap.spectator ? "watch" : "embody", { now });
   if (door) return `this world's door no longer lets this connection in (${door.reason}): ${door.why}; nothing was written`;
   // the role it was admitted under: a change mid-request refuses (the asker chose under the old one)
-  if (w.log.roleOf(cap.actorId) !== cap.role) return "your role here changed while the request waited; nothing was written — send it again if you still mean it";
+  if (role && w.log.roleOf(cap.actorId) !== cap.role) return "your role here changed while the request waited; nothing was written — send it again if you still mean it";
   return null;
 }

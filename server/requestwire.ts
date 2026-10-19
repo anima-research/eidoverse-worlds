@@ -219,7 +219,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     // recheck covers isOperator(account) as captured; the only await before the synchronous repair is the queue itself
     const cap = capture(c, w);
     inOrder(c, ws, async () => {
-      const gone = recheck(cap) ?? (cap.operator ? null : "operator-repair needs a server operator's account (WORLD_ADMIN)");
+      const gone = recheck(cap, Date.now(), { role: false }) ?? (cap.operator ? null : "operator-repair needs a server operator's account (WORLD_ADMIN)");
       if (gone) { reply({ ok: false, outcome: "rolled-back", refused: { code: "superseded", reason: gone, fix: "reconnect, then send it again" } }); return; }
       const r = w.log.operatorRepair(cap.actorId, verb, args);
       console.log(`[world:${w.name}] operator repair by ${c.account} (${c.id}): ${verb.slice(0, 32)} ${String((args as Any).component ?? (args as Any).who ?? "").slice(0, 64)} → ${r?.ok ? "ok" : r?.refused?.code}`);
