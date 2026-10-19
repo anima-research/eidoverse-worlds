@@ -51,8 +51,8 @@ try{
  check(around.arrived&&!around.points.some((p,i)=>i>0&&crossesWall(around.points[i-1],p)),"and the walk keeps clear of that wall");
 
  // A floor walk keeps the floor that admitted its route through its last
- // tick. Main's body stands on terrain only, so this body is given the floor
- // support the storey-standing work (#200) supplies, by position.
+ // tick. This body is given its floor support by position, so the walk's
+ // lifecycle is tested apart from the standing that selects it.
  const d=make();d.pos={x:.5,y:3.1,z:.5};
  d.entities.set("owner",ent("owner",{levels:[{y:0,tiles:[],walls:[]},{y:3,tiles:[[0,0],[1,0],[2,0]],walls:[]}]}));
  d.entities.set("higher",ent("higher",{levels:[{y:0,tiles:[],walls:[]},{y:3.2,tiles:[[1,0],[2,0]],walls:[]}]}));

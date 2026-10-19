@@ -348,11 +348,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // `to` names the destination (a place, a thing, a person); x/z/y are
       // coordinates. A named place carries its own floor and reach.
       let x = Number(a.x), z = Number(a.z), y = a.y != null ? Number(a.y) : undefined, label: string | null = null;
-      let near: { reach?: number; above?: number; below?: number; inside?: (x: number, z: number) => boolean } = {};
+      let near: { reach?: number; above?: number; below?: number; inside?: (x: number, z: number) => boolean; bodyAt?: { x: number; z: number } } = {};
       if (typeof a.to === "string") {
         const d = ag.destination(a.to);
         if ("refusal" in d) return text(d.refusal);
-        ({ x, z } = d); y = d.y; near = { reach: d.reach, above: d.above, below: d.below, inside: d.inside }; label = d.label;
+        ({ x, z } = d); y = d.y; near = { reach: d.reach, above: d.above, below: d.below, inside: d.inside, bodyAt: d.bodyAt }; label = d.label;
       }
       const tolerance = a.tolerance ?? 0.01;
       if (![x, z, tolerance].every(Number.isFinite) || tolerance < 0 || tolerance > 0.4)
