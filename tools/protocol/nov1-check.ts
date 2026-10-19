@@ -69,12 +69,12 @@ const IMPORTS = [
 const offences = [];
 const unrelated = (rel, line) => UNRELATED.some(([f, re]) => (rel === f || rel.startsWith(f)) && re.test(line));
 const scan = (p, { runtime }) => {
-  const rel = path.relative(ROOT, p);
+  const rel = path.relative(ROOT, p).split(path.sep).join("/");
   fs.readFileSync(p, "utf8").split("\n").forEach((line, i) => {
     const at = `${rel}:${i + 1}`;
     if (runtime) {
       for (const re of IMPORTS) for (const m of line.matchAll(re)) {
-        const to = m[1].startsWith("/") ? m[1].slice(1) : path.relative(ROOT, path.resolve(path.dirname(p), m[1]));
+        const to = m[1].startsWith("/") ? m[1].slice(1) : path.relative(ROOT, path.resolve(path.dirname(p), m[1])).split(path.sep).join("/");
         if (to.startsWith("tools/protocol/import-v1")) offences.push(`${at}  loads the old-world importer (${to}): only tools may`);
         if (GONE.some((g) => to === g || to.startsWith(g + "/"))) offences.push(`${at}  imports a deleted v1 module (${to})`);
       }

@@ -219,11 +219,11 @@ function manifest() {
 }
 const DOC = ENGINE + "docs/GATE-MANIFEST.md", BEGIN = "<!-- BEGIN GENERATED: bun tools/protocol/run.ts --manifest -->", END = "<!-- END GENERATED -->";
 function manifestDrift(): string | null {
-  if (!fs.existsSync(DOC)) return `${path.relative(ENGINE, DOC)} is missing`;
+  if (!fs.existsSync(DOC)) return `${path.relative(ENGINE, DOC).split(path.sep).join("/")} is missing`;
   const t = fs.readFileSync(DOC, "utf8"), a = t.indexOf(BEGIN), b = t.indexOf(END);
-  if (a < 0 || b < a) return `${path.relative(ENGINE, DOC)} has no generated block (${BEGIN} … ${END})`;
+  if (a < 0 || b < a) return `${path.relative(ENGINE, DOC).split(path.sep).join("/")} has no generated block (${BEGIN} … ${END})`;
   return t.slice(a + BEGIN.length, b).replace(/\r\n/g, "\n").trim() === manifest().trim() ? null   // a Windows checkout may carry CRLF
-     : `${path.relative(ENGINE, DOC)}'s suite table is not what --manifest prints (regenerate it: bun tools/protocol/run.ts --manifest)`;
+     : `${path.relative(ENGINE, DOC).split(path.sep).join("/")}'s suite table is not what --manifest prints (regenerate it: bun tools/protocol/run.ts --manifest)`;
 }
 
 const argv = process.argv.slice(2);
@@ -242,8 +242,8 @@ for (const n of CORE) if (!SUITES.some(([s]) => s === n)) problems.push(`CORE na
 for (const n of BROWSER) if (!SUITES.some(([s]) => s === n)) problems.push(`BROWSER names "${n}", which is not a suite`);
 for (const [name, file] of SUITES) {
   const f = suitePath(file);
-  if (!fs.existsSync(f)) { problems.push(`${name}: ${path.relative(ENGINE, f)} does not exist`); continue; }
-  if (laneOf(name) !== "browser") for (const d of localImports(f)) if (BROWSER_MARK.test(fs.readFileSync(d, "utf8"))) { problems.push(`${name} launches a Chromium (${path.relative(ENGINE, d)}) but is not in the BROWSER lane`); break; }
+  if (!fs.existsSync(f)) { problems.push(`${name}: ${path.relative(ENGINE, f).split(path.sep).join("/")} does not exist`); continue; }
+  if (laneOf(name) !== "browser") for (const d of localImports(f)) if (BROWSER_MARK.test(fs.readFileSync(d, "utf8"))) { problems.push(`${name} launches a Chromium (${path.relative(ENGINE, d).split(path.sep).join("/")}) but is not in the BROWSER lane`); break; }
 }
 if (!partial) { const d = manifestDrift(); if (d) problems.push(d); }
 for (const dir of ["", "client/", "mcpl/"]) if (!fs.existsSync(ENGINE + dir + "node_modules")) problems.push(`${dir || "./"}node_modules is missing: run \`bun install --frozen-lockfile\` in ${dir || "the checkout root"}`);

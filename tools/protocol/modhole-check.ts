@@ -42,7 +42,7 @@ const ALLOWED: [string, RegExp, string][] = [
 ];
 const found: string[] = [];
 for (const f of files) for (const { n, l, t } of code(f)) for (const r of LOADS) if (r.test(l)) {
-  const rel = path.relative(CLIENT, f);
+  const rel = path.relative(CLIENT, f).split(path.sep).join("/");
   if (!ALLOWED.some(([af, ar]) => af === rel && ar.test(l))) found.push(`${rel}:${n}: ${t.slice(0, 160)}`);
   break;
 }
@@ -50,13 +50,13 @@ ok(found.length === 0, "MH1 every place the client turns data into running code 
 for (const [af, ar] of ALLOWED) ok(code(path.join(CLIENT, af)).some(({ l }) => ar.test(l)), `MH1 (the list is current) ${af} still has ${ar}`);
 
 // ---- MH2 ----
-const runners = files.filter((f) => code(f).some(({ l }) => /\brunSource\b/.test(l))).map((f) => path.relative(CLIENT, f));
+const runners = files.filter((f) => code(f).some(({ l }) => /\brunSource\b/.test(l))).map((f) => path.relative(CLIENT, f).split(path.sep).join("/"));
 ok(runners.length === 1 && runners[0] === "lib/mods.js", "MH2 the mod runner is reached only from mods.js", runners);
 
 // ---- MH3 ----
 const netSrc = code(path.join(CLIENT, "lib/net.js")).map(({ l }) => l).join("\n");
 ok(!/mods\.js|modsApi|EW\.mods|ew-mods/.test(netSrc), "MH3 the client's message handling (net.js) never reaches the mod store or runner");
-const handlers = files.filter((f) => /bus\.on\(\s*['"](?:mod|mods|offer|script)[\w-]*['"]/.test(fs.readFileSync(f, "utf8"))).map((f) => path.relative(CLIENT, f));
+const handlers = files.filter((f) => /bus\.on\(\s*['"](?:mod|mods|offer|script)[\w-]*['"]/.test(fs.readFileSync(f, "utf8"))).map((f) => path.relative(CLIENT, f).split(path.sep).join("/"));
 ok(handlers.length === 0, "MH3 …and no module listens for a 'mod…'/'offer…' message from the wire", handlers);
 
 // ---- MH4 ----

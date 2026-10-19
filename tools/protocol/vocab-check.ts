@@ -45,7 +45,7 @@ const EXEMPT: [string, RegExp, string][] = [
 const offences: string[] = [];
 const exempt = (rel: string, line: string) => EXEMPT.some(([f, re]) => (rel === f || rel.startsWith(f)) && re.test(line));
 const scan = (p: string) => {
-  const rel = path.relative(ROOT, p);
+  const rel = path.relative(ROOT, p).split(path.sep).join("/");
   if (rel === "tools/protocol/vocab-check.ts") return;
   fs.readFileSync(p, "utf8").split("\n").forEach((line, i) => {
     if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;   // a comment may name the old spelling to say it is gone
@@ -95,7 +95,7 @@ const riderWalk = (dir: string) => {
     if (SKIP_DIR.has(name)) continue;
     const p = path.join(dir, name);
     if (fs.statSync(p).isDirectory()) { riderWalk(p); continue; }
-    if (EXT.test(name) || /\.html$/.test(name)) riderScan(path.relative(ROOT, p), fs.readFileSync(p, "utf8"));
+    if (EXT.test(name) || /\.html$/.test(name)) riderScan(path.relative(ROOT, p).split(path.sep).join("/"), fs.readFileSync(p, "utf8"));
   }
 };
 for (const d of [...RUNTIME, ...DEPLOYED]) riderWalk(path.join(ROOT, d));
@@ -124,7 +124,7 @@ const oscWalk = (dir: string) => {
     if (SKIP_DIR.has(name)) continue;
     const p = path.join(dir, name);
     if (fs.statSync(p).isDirectory()) { oscWalk(p); continue; }
-    if (EXT.test(name) || /\.html$/.test(name)) oscScan(path.relative(ROOT, p), fs.readFileSync(p, "utf8"), OSC_CODE);
+    if (EXT.test(name) || /\.html$/.test(name)) oscScan(path.relative(ROOT, p).split(path.sep).join("/"), fs.readFileSync(p, "utf8"), OSC_CODE);
   }
 };
 for (const d of [...RUNTIME, ...DEPLOYED]) oscWalk(path.join(ROOT, d));

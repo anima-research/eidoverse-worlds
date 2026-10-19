@@ -100,7 +100,7 @@ export function bootNotice(dir: string): string {
   const old = oldWorldsIn(dir);
   if (!old.length) return "";
   const blocks = old.map((o) => {
-    const at = path.relative(dir, o.file);
+    const at = path.relative(dir, o.file).split(path.sep).join("/");
     return o.kind === "translatable"
       ? [`[boot] old-format world "${o.name}" (${at}) is NOT being served.`,
          `  It was saved by an older version of Eidoverse (a log.jsonl of the first protocol). Translate it once, in place. First the dry run:`,

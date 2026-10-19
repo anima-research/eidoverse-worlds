@@ -45,8 +45,8 @@ function verdict(F: any, entries: any[]) {
 /** Run a vectors dir: {ran: [{name, old, new}], why?}. old-fold.js is the OLD reader's snapshot (beside old-hash.js). */
 async function runVectors(dir: string) {
   const d = path.join(T, VECTORS, dir); const f = path.join(d, "vectors.json");
-  if (!fs.existsSync(f)) return { ran: null, why: `${path.relative(T, f)} is missing` };
-  if (!fs.existsSync(path.join(d, "old-fold.js"))) return { ran: null, why: `${path.relative(T, d)}/old-fold.js (the old reader's snapshot) is missing` };
+  if (!fs.existsSync(f)) return { ran: null, why: `${path.relative(T, f).split(path.sep).join("/")} is missing` };
+  if (!fs.existsSync(path.join(d, "old-fold.js"))) return { ran: null, why: `${path.relative(T, d).split(path.sep).join("/")}/old-fold.js (the old reader's snapshot) is missing` };
   const spec = JSON.parse(fs.readFileSync(f, "utf8")); const OLD = await import(path.join(d, "old-fold.js") + `?t=${Date.now()}`);
   const ran = (spec.vectors ?? []).map((v: any) => ({ name: v.name, old: verdict(OLD, v.entries), new: verdict(FOLD, v.entries) }));
   return { ran, why: null };
