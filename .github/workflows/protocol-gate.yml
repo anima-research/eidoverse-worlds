@@ -62,13 +62,18 @@ jobs:
         shell: bash
         env:
           EIDOVERSE_DIR: ${{ runner.temp }}/eidoverse-video
-          # one known temp dir, so a failed suite's retained scratch (server and browser logs) can be uploaded
-          TMPDIR: ${{ runner.temp }}/gate-tmp
-          TEMP: ${{ runner.temp }}/gate-tmp
-          TMP: ${{ runner.temp }}/gate-tmp
           PROTOCOL_KEEP: "1"   # keep each suite's scratch so a failure's logs can be uploaded
+          # extra flags for the harness's headless Chrome, CI only:
+          #  Linux: Ubuntu 23.10+ disables the user namespaces Chrome's sandbox needs ("No usable sandbox!";
+          #         playwright launches without it there for the same reason)
+          #  macOS: the runner VM has no GPU; navigating to the client hung (10-19), so render in software
+          EIDO_CHROME_ARGS: ${{ runner.os == 'Linux' && '--no-sandbox' || runner.os == 'macOS' && '--use-angle=swiftshader --enable-unsafe-swiftshader' || '' }}
         run: |
-          mkdir -p "$RUNNER_TEMP/gate-tmp"
+          # one known temp dir under /tmp so failed suites' scratch can be uploaded. With $RUNNER_TEMP/gate-tmp here,
+          # browser-check (playwright) closed at launch on Linux, and passed with the default /tmp (10-19). Not the
+          # socket-path limit: a CI-length path passes on Burrow. Cause unknown; /tmp/g is nearest the known-good setup.
+          # Not on Windows: TEMP/TMP pointed elsewhere hung gov-reserved for 300 s with no output (cause unknown).
+          if [ "$RUNNER_OS" != "Windows" ]; then mkdir -p /tmp/g; export TMPDIR=/tmp/g; fi
           bun tools/protocol/run.ts --receipt "gate-receipt-${{ matrix.os }}.json"
       - name: receipt
         if: always()
@@ -83,6 +88,6 @@ jobs:
         with:
           name: gate-scratch-${{ matrix.os }}
           path: |
-            ${{ runner.temp }}/gate-tmp/eido-gate-*/**/*.log
-            ${{ runner.temp }}/gate-tmp/eido-gate-*/**/failure.jsonl
+            /tmp/g/eido-gate-*/**/*.log
+            /tmp/g/eido-gate-*/**/failure.jsonl
           if-no-files-found: ignore
