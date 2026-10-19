@@ -12,8 +12,8 @@
 // line per 10s, whether or not it claims to be a renderer; client-supplied ids
 // are logged escaped (no forged log lines); out-of-range / junk values for
 // SNAP_TIMEOUT_SEC fall back to 12 with a warning; and on a second sequencer
-// with SNAP_TIMEOUT_SEC=20, a frame that takes ~13s still answers 200 — past
-// Bun's 10s default idle timeout. The broker allows one snap per renderer per
+// with SNAP_TIMEOUT_SEC=20, a frame that takes ~13s still answers 200, past
+// the default 12s window. The broker allows one snap per renderer per
 // 2s, so the cases are spaced by that; the 13s case runs alongside the rest,
 // and the whole file takes ~20s. Other waits are on events (the join snapshot,
 // a log line, the renderer's own receipt of the snap), not fixed sleeps.
@@ -95,7 +95,7 @@ const procs = [A.proc, C.proc];
 process.on("exit", () => procs.forEach((p) => p.kill()));
 if (!(await waitUp(A.port)) || !(await waitUp(C.port))) { console.error("FATAL: scratch sequencer never came up (bun install in the repo root?)"); process.exit(2); }
 
-// past Bun's 10s default: started first, checked last
+// past the default 12s window: started first, checked last
 const cBody = await join_(C.port, { id: "target" });
 const cRenderer = await fakeRenderer(C.port, "renderer-slow");
 cRenderer.reply = (id) => setTimeout(() => cRenderer.ws.send(JSON.stringify({ type: "snap-result", id, dataUrl: PNG })), 13_000);
@@ -222,7 +222,7 @@ check("a huge id is bounded in the log", fresh.some((l) => l.includes("xxxx")) &
 
 console.log("long window (SNAP_TIMEOUT_SEC=20, frame at ~13s)");
 const long = await longSnap;
-check("a 13s frame answers 200, past Bun's 10s default", long.status === 200 && long.body.equals(bytesOf(PNG)),
+check("a 13s frame answers 200 under SNAP_TIMEOUT_SEC=20, past the default 12s window", long.status === 200 && long.body.equals(bytesOf(PNG)),
   `${long.status} after ${long.ms}ms${"err" in long ? ` ${long.err}` : ""}`);
 check("…after ~13s, not cut short", long.ms >= 12_500, `${long.ms}ms`);
 [cBody, cRenderer.ws].forEach((w) => w.close());
