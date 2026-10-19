@@ -25,7 +25,8 @@ jobs:
           fetch-depth: 0   # diffcheck compares the range against main's merge-base
       - name: fetch main for the range check
         shell: bash
-        run: git fetch --no-tags origin main:refs/remotes/origin/main || true
+        # the PR's base is anima-research's main; a fork's own main can be months stale (10-19: Aug 3)
+        run: git fetch --no-tags https://github.com/anima-research/eidoverse-worlds.git main:refs/remotes/anima/main
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
