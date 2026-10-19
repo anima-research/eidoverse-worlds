@@ -7,12 +7,15 @@
 // controller saw only terrain and dropped the body through every floor to the
 // ground. (The agent side holds the same way: mcpl/agent.ts, the join hold.)
 //
-// So for a while after a restore, the body's height is held while any placed
-// model near it is still on its way. Bounded: a model that never loads (a
-// missing file) can't hold a body in the air for ever.
+// So after a restore, the body's height is held while any placed model near
+// it is still on its way — however long that takes: a slow connection or a
+// busy machine can take well over 20s to bring a building in, and a hold that
+// gave up first dropped the body anyway. A model whose load FAILED is not
+// waited on, and a long safety bound means nothing can hold a body for ever.
 
 import { state } from './state.js';
 import { colliders } from './colliders.js';
+import { modelLoadFailed } from './realize/models.js';
 
 /** How near a placed thing has to be to matter (m, across the ground). */
 const NEAR = 16;
@@ -22,13 +25,14 @@ let until = 0, armed = 0;
  *  clock starts at the first frame the body is actually stepped — a page can
  *  take a long while to load the avatar after the restore lands, and a hold
  *  that had run out by then held nothing. */
-export function holdHeightUntilSolid(ms = 20_000) { armed = ms; until = 0; }
+export function holdHeightUntilSolid(ms = 120_000) { armed = ms; until = 0; }
 
 /** Is a solid placed thing near (x, z) still on its way — known to the world,
- *  not yet fitted? Lights and `collide: "none"` never will be. */
-export function solidArriving(x, z, entities = state.st?.entities ?? {}, fitted = colliders) {
+ *  not yet fitted, its load not failed? Lights and `collide: "none"` never
+ *  will be solid. */
+export function solidArriving(x, z, entities = state.st?.entities ?? {}, fitted = colliders, failed = modelLoadFailed) {
   for (const [id, e] of Object.entries(entities)) {
-    if (!e || !e.lib || e.lib === '(light)' || e.collide === 'none') continue;
+    if (!e || !e.lib || e.lib === '(light)' || e.collide === 'none' || failed(id)) continue;
     const p = e.pos;
     if (!Array.isArray(p) || Math.hypot(p[0] - x, p[2] - z) > NEAR + 8 * (e.scale || 1)) continue;
     if (!fitted.has(id)) return true;
