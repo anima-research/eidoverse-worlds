@@ -104,9 +104,10 @@ let hbLast = Date.now();
 const hb: Array<[number, number]> = [];
 const heartbeat = setInterval(() => { const now = Date.now(); if (now - hbLast > 100) hb.push([now, now - hbLast - 100]); hbLast = now; }, 100);
 // The stall a stamp at `b` was read in. A frame that arrives while this side is stalled is read when the stall
-// ends, in the same backlog as the late tick that ends it, within a few milliseconds of it (Bun 1.4.3 read 94
-// held frames from 0.3 ms before that tick to 2.3 ms after it, stalled by a busy loop or by SIGSTOP): so the
-// tick ran within 20 ms of `b`. A stall that ended earlier delayed nothing, so it isn't allowed.
+// ends, in the same backlog as the late tick that ends it, within a few milliseconds of it (with Bun 1.4.3 on
+// Linux, stalled for about a second by a busy loop or by SIGSTOP, each held frame was read between 0.6 ms before
+// that tick and 6.8 ms after it): so the tick ran within 20 ms of `b`. A stall that ended earlier delayed
+// nothing, so it isn't allowed.
 const waitedIn = (b: number) => Math.max(0, ...hb.filter(([end]) => Math.abs(b - end) <= 20).map(([, excess]) => excess));
 let browser: { close(): Promise<void> } | null = null;
 try {
@@ -341,9 +342,11 @@ try {
     turnFrames.length > 0 && sayEntry !== null && steps.every((s) => s.step - s.stall < 4000),
     sayEntry === null ? "the world logged no speech" : `${turnFrames.length} frames; the start to the first ${steps[0]?.step} ms, the last to the speech ${steps.at(-1)?.step} ms; the longest step less its stall ${slowest.step - slowest.stall} ms (${slowest.step} ms, ${slowest.stall} ms of it a stall)`);
   // By order and by this side's own send times: a frame that came after the speech's log entry, and before the
-  // host's next start was even sent, can only be the relay's. A stall makes a frame look later, never sooner, so
-  // at most it moves one past the next start's send; a relay that went on signals within 2.5 s of the speech
-  // (starts don't reset its phase), over 4 s before the next start.
+  // host's next start was even sent, can only be the relay's. A stall makes a frame look later, never sooner,
+  // and only a frame held in the same stall as the next start's send can be stamped after that send. A relay
+  // that went on signals within 2.5 s of the speech (starts don't reset its phase), over 4 s before the next
+  // start less any stall that delayed the speech, so only stalls of over 4 s in all could hide its first frame.
+  // The run prints the gap and this side's longest stall.
   const nextAfterSay = starts.find((s) => s > sayAt) ?? null;
   const relayed = sayEntry === null || nextAfterSay === null ? null : frames.filter((f) => f.seq > sayEntry!.seq && f.t < nextAfterSay);
   check("the speech ends the door's relay: no typing frame comes after the world logs it and before the host's next start is sent",
