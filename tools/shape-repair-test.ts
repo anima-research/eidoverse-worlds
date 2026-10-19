@@ -306,4 +306,12 @@ await tryRow('RP17', () => {
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);
+// RP18 (r14 H1, 10-18): maintain's lift-sockets and rename-components catches swallow REFUSALS only; a durable-write throw (the
+// file wedged, EIO) must propagate, so the caller (world.ts repair, the translation) reports ambiguous instead of "repaired"
+await tryRow('RP18', () => {
+  const w = legacyWorld({ coatrack: { model: 'crate', sockets: { peg: { pos: [0, 1.5, 0] } } } });
+  w.wedged.log = '(test) EIO: disk gone';   // storage.js durably: every later write throws an Error, not a Refusal
+  let threw: any = null, r: any = null; try { r = maintain(w, { by: 'olive' }); } catch (x) { threw = x; }
+  check('RP18 a durable-write throw inside lift-sockets propagates out of maintain (not swallowed into steps.lift.failed as code "error")', !!threw && /earlier write failed|EIO/.test(String(threw?.message)) && r === null, [String(threw?.message).slice(0, 200), r?.steps?.lift]);
+});
 process.exit(fail ? 1 : 0);

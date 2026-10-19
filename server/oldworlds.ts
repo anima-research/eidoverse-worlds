@@ -109,7 +109,7 @@ export function bootNotice(dir: string): string {
          `    ${o.command}`,
          `  ${APPROVAL}`,
          `    ${o.approve}`,
-         `  The founder makes that key on their own machine and you check it with \`${TOOL} owner-key <key> <signature>\`; --no-founder-key instead leaves the world's top governance tier empty for ever.`,
+         `  The founder makes that key on their own machine and you check it with \`${TOOL} owner-key <key> <signature>\`; --no-founder-key instead leaves the world's top governance tier empty for ever (then no owner can sign the approval: the translation also needs --operator-only-no-owner, and records that no owner approved).`,
          `  ${KEPT_IN_PLACE}`].join("\n")
       : [`[boot] old-format world "${o.name}" (${at}) is NOT being served.`,
          `  It was saved before this server's protocol names changed (2026-10-07), so it can't be translated as it stands. Re-translate it from its original old log (the directory its first-protocol log.jsonl is in) into a new world. First the dry run:`,

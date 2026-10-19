@@ -142,18 +142,23 @@ export function worldOf(io) {
 //                                          (they were durable and are published); from `from` on, history says what holds.
 // An ambiguous request is never reported as ok, nor as a plain failure. `wedgedBefore`: whether the log was already
 // wedged when the request began (then its own throw is the wedge's refusal, before any write: rolled back).
+// `wedgedBefore`: either file already wedged when the request began (then its own throw is the wedge's refusal, before any write:
+// rolled back). The MODERATOR log counts too (review r14 M2, 10-18): a ban, mute or kick writes world.mod.jsonl only, so a throw
+// from that durable write is as ambiguous as one from the world log's (its bytes may be on disk; the file is wedged).
+export const anyWedged = (w) => !!(w.wedged?.log || w.wedged?.["moderator log"]);
 export function txnOutcome(w, from, { threw = false, refused = false, wedgedBefore = false } = {}) {
   const grew = w.entries.length > from;
   if (!threw) return refused ? { outcome: "rolled-back" } : { outcome: "committed", from, to: w.entries.length };
-  if (w.wedged.log && !wedgedBefore) return { outcome: "ambiguous", from: w.wedgedAt ?? w.entries.length, wedged: true };
-  if (grew) return { outcome: "ambiguous", from: w.entries.length, wedged: !!w.wedged.log };
+  if (anyWedged(w) && !wedgedBefore) return { outcome: "ambiguous", from: w.wedgedAt ?? w.entries.length, wedged: true, ...(w.wedged.log ? {} : { file: "moderator log" }) };
+  if (grew) return { outcome: "ambiguous", from: w.entries.length, wedged: anyWedged(w) };
   return { outcome: "rolled-back" };
 }
 /** The reply a request gets when it did not end committed or refused (txnOutcome): never ok, always a registered code.
  *  A reply names its outcome as `txn` (never `outcome`: the body verbs' replies already say asked | allowed there). */
 export function txnRefusal(o) {
   if (o.outcome === "ambiguous") return { ok: false, txn: "ambiguous", from: o.from, refused: o.wedged
-    ? { code: "ambiguous", reason: `the write's result is unknown: storage failed while writing it, so whether line ${o.from} is on disk isn't known; this world refuses writes until it is reopened from disk`, fix: `reload once the world is reopened; history from seq ${o.from} says what stands` }
+    ? (o.file === "moderator log" ? { code: "ambiguous", reason: `the write's result is unknown: storage failed while writing the moderator log, so whether the record is on disk isn't known; this world refuses moderation writes until it is reopened from disk`, fix: `reload once the world is reopened; the moderator log says what stands` }
+      : { code: "ambiguous", reason: `the write's result is unknown: storage failed while writing it, so whether line ${o.from} is on disk isn't known; this world refuses writes until it is reopened from disk`, fix: `reload once the world is reopened; history from seq ${o.from} says what stands` })
     : { code: "ambiguous", reason: `the request was cut off after part of it was written: lines before ${o.from} stand, the rest was not written`, fix: `history from seq ${o.from} says what stands; send what is missing again` } };
   return { ok: false, txn: "rolled-back", refused: { code: "server-error", reason: "the server failed while handling the request; nothing it asked for was written", fix: "send it again; if it keeps failing, the server's log says why" } };
 }

@@ -12,7 +12,8 @@ registry. It is stored as written, but the engine doesn't know it and no rule re
 definition in `shared/protocol/componentspec.js`; `schema` returns it, and the Inspector shows it on the card):
 - **trial**: admitted and written, but its shape may still change during the alpha (about a year). When it changes we
   translate or repair stored values where we can. Every registered name that isn't reserved is trial at v1.
-- **trial-kernel** (reviewer item 5, 10-18): the kernel's status. `transform` and `parent` carry it in the registry, and
+- **trial-kernel** (reviewer item 5, 10-18): the kernel's status. `transform`, `parent`, `model`, `roles` and `access` carry it in the
+  registry (roles with the ladder's grammar from roles.js, access with the four doors from access.js), and
   shared/protocol/kernelspec.js extends it below the registry to the log envelope and its kinds, the fold's operations and
   batch body, the identity grammar and the version (PROTOCOL §1–§3, §13). The shapes are pinned in `spec/kernel-pin.json`;
   tools/protocol/kernel-check.ts (the gate's core lane) is red the moment the code differs from the pin, and
@@ -22,6 +23,9 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
   `spec/kernel-vectors/<dir>/vectors.json`, entries the OLD reader — snapshotted from git into `old-fold.js` at re-pin time —
   refuses and the NEW reader folds clean; the gate runs them). The pin records the companions and the check verifies them
   at every run, so none can be dropped after the fact. Not an acknowledgement rung: `--ack` alone never re-pins the kernel.
+  A **scope extension** (a registered name entering the kernel with the shape the registry pin already holds, as model, roles
+  and access did on 10-18) changes what no stored byte means: it re-pins on `--ack` alone, no translator or vectors, and the
+  pin records the names (kernel-check K12 proves a shape change can't ride in on it).
 - **reserved**: the name is held (nobody else may take it) but every write is refused, with one refusal for all reserved
   names (code `reserved`; the definition's `instead` says what to use meanwhile). Today: `physics-joint` (the
   constraint between two bodies; renamed from `joint` 10-16, nothing stored it), `joint` (a skeleton node: Maya, glTF,

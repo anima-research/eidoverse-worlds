@@ -32,10 +32,14 @@ report before anything moves):
    — and the operator runs `translate <world> --founder-key <KEY> --approved <hash> --approve-sig <signature>`. The
    report is recomputed from `log.jsonl` as it stands: a different hash (the log grew, the tool or the key changed) is
    refused with both hashes named, and so is a signature that doesn't verify over the approval text (the same ed25519
-   scheme as `owner-key`). With `--no-founder-key`, `--approved <hash>` alone: the operator's typed hash is recorded as
-   the operator's act, and the act says in words that it is no owner's signature (the line is sealed by the host's
-   custody like every line). Either way the approval is in the new world's log, the system's `translation-approved` act
-   right after `repair-shapes`: `{report, approval}`. A refused report can't be approved.
+   scheme as `owner-key`). The tool then **countersigns** with this host's custody operator key (`.custody.json`
+   `operator`, never the sequencer key) over the same text, and the writer checks both signatures itself before the log
+   is written (`approvalProblem`): either missing, not verifying, or over another hash or world refuses by name.
+   With `--no-founder-key` there is **no owner who can sign**, so `--approved <hash>` alone is REFUSED; add
+   `--operator-only-no-owner` to translate on the operator's countersignature alone, knowingly — the act records in words
+   that no owner approved. Either way the approval is in the new world's log, the system's `translation-approved` act
+   right after `repair-shapes`: `{report, approval: {over, owner: {key, sig} | null, operator: {key, sig}, noOwner?}}`.
+   A refused report can't be approved.
 
 The world keeps its name, so links to it keep working (the Commons is cut over with `translate commons --founder-key <KEY> --approved … --approve-sig …`). It
 is translated into a temporary sibling directory (`.translating-<world>-…`, never served) and verified there first: the
@@ -108,4 +112,5 @@ keys are a separate list (§7, "two owner lists, never confused"). Neither R's k
    roles; line 0 of `world.jsonl` shows `owners: [[<KEY>], [<operator>]]`.
 
 `--no-founder-key` translates with tier 0 empty, knowingly (a test world, or a world whose founder can't be reached and
-doesn't want to be its top key). The command refuses to guess between the two.
+doesn't want to be its top key). The command refuses to guess between the two. Such a world has no owner who can sign its
+translation's approval, so it also needs `--operator-only-no-owner` (the act records that no owner approved).

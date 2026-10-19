@@ -1389,6 +1389,19 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   ok(again && /earlier write failed/.test(String(again?.message)) && w.entries.length === 0 && lines.length === 0, "ST2 after a failed write the log takes no more lines (its state on disk is unknown) until the world is reopened", [String(again?.message), w.entries.length, lines.length]);
   failing = true; let mthrew: any = null; try { w.appendMod({ actor: "olive", verb: "warn", who: "bob" }); } catch (x) { mthrew = x; }
   ok(mthrew && w.mod.length === 0, "ST3 a moderator-log write that throws never reaches the live moderation list", [String(mthrew?.message), w.mod.length]); }
+// ST4 (r14 M2, 10-18): the transaction outcome reads the MODERATOR log's wedge too: a ban/mute/kick writes world.mod.jsonl only, so a
+// throw from that durable write is ambiguous (its bytes may be on disk), never "rolled-back"
+{ const { txnOutcome, txnRefusal } = await import("../../shared/protocol/authority/storage.js");
+  let failing = false; const lines: string[] = [];
+  const w = worldOf({ name: "st4", entries: [], custody: custodyAt(root + "keys/custody.json"), getBlob: () => { throw new Error("no blobs"); }, putBlob: () => "sha256:" + "0".repeat(64), now: () => T,
+    writeLine: (l: string) => { lines.push(l); }, appendMod: () => { if (failing) throw new Error("EIO: disk gone"); } });
+  request(w, "olive", "create-world", { title: "st4" }); const from = w.entries.length;
+  failing = true; let threw: any = null; try { w.appendMod({ actor: "olive", verb: "ban", who: "bob" }); } catch (x) { threw = x; }
+  const o = txnOutcome(w, from, { threw: true, refused: false, wedgedBefore: false }); const r = txnRefusal(o);
+  ok(!!threw && o.outcome === "ambiguous" && o.wedged === true && o.file === "moderator log" && r.ok === false && r.txn === "ambiguous" && r.refused.code === "ambiguous" && /moderator log/.test(r.refused.reason),
+    "ST4 a moderator-log write that throws makes the request AMBIGUOUS (txnOutcome reads the mod log's wedge; the refusal names the moderator log), never rolled-back", [o, r.refused]);
+  const o2 = txnOutcome(w, w.entries.length, { threw: true, refused: false, wedgedBefore: true });
+  ok(o2.outcome === "rolled-back", "ST4 …and a throw on a world already wedged (its refusal before any write) is rolled back", o2); }
 
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -30,7 +30,7 @@ export const COMPONENTS = {
   // optionally, as model-hash (below), never instead. A content address stored before 10-17 (eido:sha256/<64 hex>: translate-v1
   // @8–@11, and this branch's door for a day) still loads where this host's index knows it, and the load repair writes its path
   // back (shaperepair.js); one no file here names reads as "thing"
-  model:     { on: "thing", type: "string", help: "which model it shows: its library path (eidoverse/assets/models/…glb, store/<hash>.glb; a name from find {kind: 'model'} gives one), stored as written. The server stamps model-hash beside it when it knows the file's bytes. An older eido:sha256/<64 hex> address still loads where this host can find its bytes" },
+  model:     { status: "trial-kernel", on: "thing", type: "string", help: "which model it shows: its library path (eidoverse/assets/models/…glb, store/<hash>.glb; a name from find {kind: 'model'} gives one), stored as written. The server stamps model-hash beside it when it knows the file's bytes. An older eido:sha256/<64 hex> address still loads where this host can find its bytes" },
   // the bytes a model's path named when it was written: Godot's ext_resource {path, uid}, an npm lock's {resolved, integrity},
   // a web page's <script src integrity>. Optional (a host that can't hash, or hasn't yet, writes none; nothing breaks without
   // it), never the reference: readers load the path. Stamped by the authority from what its catalogue measured off the request
@@ -454,13 +454,13 @@ export const COMPONENTS = {
   // research roles 10-06 (shared/protocol/roles.js): ranked membership (visitor 0, builder 100, moderator 200, owner 255,
   // custom roles between) and a closed list of permissions. Banned and ghost are states in the moderator log, never roles.
   // no `sub` (shape audit 10-16): an account subject is person data, never a value (PROTOCOL §9.2); the translator strips it
-  roles:     { on: "world", keyed: true, key: "instance", fields: { role: "string", can: "object", note: "string", until: "int" },
+  roles:     { status: "trial-kernel", on: "world", keyed: true, key: "instance", fields: { role: "string", can: "object", note: "string", until: "int" },
     absentMeans: { until: "the grant has no end: it stands until someone with the right changes or removes it (every role written before 10-17)" }, help: "on @world, keyed by identity: {role: visitor|builder|moderator|owner|<a custom role>, can?: {<permission>: true|false} (exceptions on top of the role), note? (≤ 80), until? (epoch ms: when the grant ends; the authority ends it then, warning the holder 5 min before; never on owner)}. A grantRoles holder may give roles ranked below their own, with only permissions they hold" },
   // guests isn't written down: absent means visitor whatever the role (roles.js guestRoleOf), and a written visitor is
   // refused above a default role of none (guests never above role). Pinned as a known gap (pretrans D7)
   "default-role": { on: "world", fields: { role: "string", can: "object", guests: "string" }, help: "on @world (owner): the role of anyone without roles:<id> (absent = visitor): any role but owner; can? {<permission>: true|false} on top of that role for everyone who holds it this way (not guests); guests (people without an account) get guests (default visitor), never above role" },
   "role-defs": { on: "world", help: "on @world (owner): {<role id>: {name, rank (custom: 1–254, unique), can: {<permission>: true|false}, note?}}. Built-ins visitor, builder, moderator may be renamed and their permissions edited (rank fixed); owner holds every permission and isn't listed. Permissions: build, editOthers, editWorld, generate, fly, scripts, pauseScripts, mute, kick, ban, grantRoles" },
-  access:    { on: "world", fields: { join: "string", watch: "string", max: "int", soft: "int", minAccountDays: "int" }, enums: { join: ["anyone", "signed-in", "listed"], watch: ["anyone"] },
+  access:    { status: "trial-kernel", on: "world", fields: { join: "string", watch: "string", max: "int", soft: "int", minAccountDays: "int" }, enums: { join: ["anyone", "signed-in", "listed"], watch: ["anyone"] },
     absentMeans: { watch: "watching follows join: whoever join turns away can't watch either, and a world that admits only people listed is invisible to everyone else (what every access before 10-17 meant)" }, ranges: { max: { min: 1, max: 200 }, soft: { min: 1, max: 200 }, minAccountDays: { min: 0, max: 365 } }, help: "on @world (owner): who may come in {join: anyone|signed-in|listed (only people with a roles:<id> other than none; a listed-only world is invisible to everyone else), watch? (anyone: whoever join turns away may still watch, with no body), max? (1–200 at once), soft? (≤ max: the recommended capacity), minAccountDays? (0–365: a person's account must be at least this many days old; a guest is then refused, an enrolled agent is exempt; 0 or absent = off)}; moderators and owners always get in" },
   about:     { on: "world", fields: { name: "string", text: "string" }, ranges: { name: { maxLen: 80 }, text: { maxLen: 2000 } }, docs: { name: "the world's name, ≤ 80 characters", text: "its blurb, ≤ 2000 characters" }, help: "on @world: the world's name (≤ 80) and blurb (≤ 2000)" },
   // the component ladder's second rung (docs/COMPONENT-LADDER.md; R 10-12): the drafts this world's owner trusts here.
@@ -583,7 +583,7 @@ COMPONENTS["avatar-deny"] = { status: "reserved", on: "world", instead: "nothing
 
 export const STATUSES = {
   trial: "admitted, but its shape may still change during the alpha (about a year); stored values are translated or repaired where they can be",
-  "trial-kernel": "the kernel (the log envelope and kinds, the fold's operations, the identity grammar, the version, transform, parent): it may still change during the alpha, but never by a re-pin with an acknowledgement alone: the same change must carry a translator, a changelog line and vectors an old reader refuses and a new one folds (shared/protocol/kernelspec.js; tools/protocol/kernel-check.ts)",
+  "trial-kernel": "the kernel (the log envelope and kinds, the fold's operations, the identity grammar, the version, and the five components every reader rests on: transform, parent, model, roles, access, with the roles and door grammar): it may still change during the alpha, but never by a re-pin with an acknowledgement alone: the same change must carry a translator, a changelog line and vectors an old reader refuses and a new one folds (shared/protocol/kernelspec.js; tools/protocol/kernel-check.ts)",
   reserved: "the name is held for a shape that isn't settled: every write of it is refused",
   stable: "promised: its meaning never changes; it only grows by additions",
 };

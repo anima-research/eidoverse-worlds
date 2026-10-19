@@ -309,9 +309,13 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   agrees on before a component is read: the log envelope and its kinds (§1),
   the fold's four operations and the batch body (§3), the identity grammar
   (§3.1), the version (`{dialect, v}`, the minors, genesis's fields, §13), and
-  the two components every placement rests on, `transform` and `parent`
-  (§9.3). Like trial they may still change during the alpha, but never by an
-  acknowledgement alone. Their shapes are pinned in `spec/kernel-pin.json`
+  the five components every reader rests on: `transform` and `parent` (§9.3),
+  `model` (what a thing shows), `roles` with the ladder's grammar (the ranks,
+  the built-in roles, the closed permission list, a custom role's id, the
+  reserved ids; §7) and `access` with its four doors (§7). Nothing is `stable`
+  during the alpha, by design: the kernel is the part that is hardest to
+  change, not a part that cannot. Like trial they may still change during the
+  alpha, but never by an acknowledgement alone. Their shapes are pinned in `spec/kernel-pin.json`
   (shared/protocol/kernelspec.js), and the gate's core lane
   (tools/protocol/kernel-check.ts) is red the moment the code's kernel differs
   from the pin. A re-pin is refused unless the **same change** carries (a) a
@@ -319,14 +323,24 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `REGISTRY-CHANGELOG.md` line prefixed `kernel:`, and (c) vectors under
   `spec/kernel-vectors/` that the old reader (snapshotted from git at re-pin
   time) refuses and the new reader folds clean; the pin records the three and
-  the gate verifies them at every run, so none can be dropped afterwards.
+  the gate verifies them at every run, so none can be dropped afterwards. One
+  exception, named: a **scope extension** — a registered name entering the
+  kernel with exactly the shape `spec/registry-pin.json` already pinned for it
+  (as `model`, `roles` and `access` did on 2026-10-18) — changes what no stored
+  byte means, so no translator and no vectors can exist for it; it re-pins on
+  the changelog line alone, the pin records the names, and from then on their
+  shapes are the kernel's.
 - **A load never writes to the log; stored values are rewritten only by one
   explicit maintenance command.** Three rewrites exist, each the system's own
   recorded act: `lift-sockets` (a world stored before sockets were entities:
   its `sockets` maps and body blocks become socket children with stations),
   `rename-components` (names and fields renamed before release, below) and
   `repair-shapes` (the shape audit's one-way repair, below). None runs at load
-  or on read. A stored world keeps its old values as they are; the load says
+  or on read. One write does happen when a server OPENS a world, and it is
+  not a shape rewrite: holds left from before a restart are set down
+  (`return-held`, the system's act; `settleOrphans`), presence repair for
+  bodies that are no longer here — the same act a leave writes, never a
+  stored value changed. A stored world keeps its old values as they are; the load says
   which steps it needs, naming the command, and **fails closed** where
   today's readers don't serve the old shape: a world needing `lift-sockets`
   (no reader serves an un-lifted seat), a grabbable rename (`shared/grab.js`
@@ -1409,15 +1423,21 @@ DROPPED table (what every translation drops or renames by design), and
 report's sha256. The translation itself takes `--approved <that hash>`: the
 report is recomputed from the old log as it stands and must hash to it (else
 refused, both hashes named: the log, the tool or the key changed since the
-owner read it), and with a founder key the founder's ed25519 signature over
-`eidoverse-approve-translation:<world>:<hash>` must verify (`--approve-sig`;
-the same key and scheme as the `owner-key` ceremony). Without a founder key
-the operator's typed hash is recorded as the operator's act, which the act
-says is no owner's signature. The approval rides in the new log as the
+owner read it), and is **countersigned**: two ed25519 signatures over the
+same text, `eidoverse-approve-translation:<world>:<hash>` — the **owner's**
+(the founder key, `--approve-sig`, made on the founder's machine; the same
+key and scheme as the `owner-key` ceremony) and the **operator's** (the host's
+custody operator key, never its sequencer key; whoever runs the tool on the
+host is the operator, and the tool signs). The writer checks both itself
+(`approvalProblem`) before the log is written: either missing, not verifying,
+or over another hash or world is refused by name. A world with no founder key
+has no owner who can sign, so the translation is **refused** unless the
+operator says `--operator-only-no-owner`, knowingly; the act then records in
+words that no owner approved. The approval rides in the new log as the
 system's `translation-approved` act right after `repair-shapes`
-(`body {report, approval: {by: "founder", key, sig, over} | {by: "operator",
-key, note}}`): provenance a reader checks against `log.original.jsonl`. The
-fold never reads it (§1).
+(`body {report, approval: {over, owner: {key, sig} | null, operator: {key,
+sig}, noOwner?}}`): provenance a reader checks against `log.original.jsonl`.
+The fold never reads it (§1).
 
 A world that uses a **deferred feature** — a water volume, an air box, a
 climb route, a vehicle, a collision toggle (`water`/`air`/`traversal`/

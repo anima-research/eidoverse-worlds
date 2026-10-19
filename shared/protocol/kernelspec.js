@@ -9,6 +9,10 @@
 //   version    {dialect, v} and the minors this reader knows (§13; genesis's fields)
 //   transform  the one placement component (§9.3: glTF's rule)
 //   parent     the one attachment component (§9.3)
+//   model      what a thing shows (its library path; §9.3) — reviewer item 5 (10-18): "envelope/fold/identity/version/transform/parent/model/roles/access"
+//   roles      who may do what (§7): the component, AND the ladder's grammar (roles.js: the ranks, the built-in roles, the closed
+//              permission list, a custom role's id grammar, the reserved ids)
+//   access     who may come in (§7, access.js): the component, AND the four doors
 // Each has status `trial-kernel`: like trial it may still change during the alpha, but a change is never a re-pin with an
 // acknowledgement. spec/kernel-pin.json holds the pin; tools/protocol/kernel-check.ts (the gate's CORE lane) is red the moment
 // the code's kernel differs from the pin, and `kernel-check.ts --pin` re-pins ONLY when the same change brings its three
@@ -21,10 +25,14 @@
 // Pure: this module knows no files; the check does the reading and writing.
 import { ENVELOPE, KINDS, IDENT, ENTITY, COMP, OP_FIELDS, BATCH_FIELDS, GENESIS_FIELDS, DIALECT, VERSION, MINORS } from "./fold.js";
 import { COMPONENTS, pinOf } from "./componentspec.js";
+import { RANK, BUILTIN_IDS, PERMISSION_NAMES, CUSTOM_ID, RESERVED_IDS, LOCK_LEVELS } from "./roles.js";
+import { DOORS } from "./access.js";
 
 export const TRIAL_KERNEL = "trial-kernel";
 /** The component names that belong to the kernel (their registry status is trial-kernel). */
-export const KERNEL_COMPONENTS = Object.freeze(["transform", "parent"]);
+export const KERNEL_COMPONENTS = Object.freeze(["transform", "parent", "model", "roles", "access"]);
+/** The kernel's shapes that aren't components: the pin's other keys. */
+export const KERNEL_SHAPES = Object.freeze(["envelope", "fold", "identity", "version"]);
 
 /** The kernel's checkable shape, as the pin stores it. Deterministic (sorted where the source is a set). */
 export function kernelPinOf() {
@@ -37,6 +45,12 @@ export function kernelPinOf() {
     version: { status: TRIAL_KERNEL, dialect: DIALECT, v: VERSION, minors: [...MINORS].sort((a, b) => a - b), genesis: [...GENESIS_FIELDS].sort() },
     transform: comp("transform"),
     parent: comp("parent"),
+    model: comp("model"),
+    // roles: the component's pin plus the ladder every reader of roles:<id> agrees on (a rank renamed, a permission dropped, a
+    // reserved id freed: each changes what a stored grant means)
+    roles: { ...comp("roles"), grammar: { rank: { ...RANK }, builtin: [...BUILTIN_IDS], permissions: [...PERMISSION_NAMES], customId: CUSTOM_ID.source, reserved: [...RESERVED_IDS].sort(), lockLevels: [...LOCK_LEVELS] } },
+    // access: the component's pin (join's enum, watch) plus the four doors an owner picks between
+    access: { ...comp("access"), grammar: { doors: Object.keys(DOORS).sort() } },
   };
 }
 
@@ -69,6 +83,19 @@ export function kernelVerdict(pin, now = kernelPinOf(), companions = null, date 
   const c = companions ?? {}; const missing = [];
   const ack = typeof c.ack === "string" ? c.ack.trim() : "";
   if (!ack) missing.push(`a changelog line: --ack "<why>" (written to spec/REGISTRY-CHANGELOG.md as "kernel: <why>")`);
+  // A SCOPE EXTENSION (reviewer item 5, 10-18: model, roles and access joined transform and parent): the whole diff is kernel
+  // component(s) entering the pin, each with the shape the registry ALREADY pinned (the caller checks that against
+  // spec/registry-pin.json and names them in companions.scope). No stored byte changes meaning, so no translator and no
+  // vectors could exist for it (the old reader folds the same log the same way); a changelog line is still required, and the
+  // pin records the extension so K3 verifies the names stay in the kernel. Anything else in the diff (a shape change, a kernel
+  // shape, a name leaving) is a kernel change and needs all three.
+  const entering = diff.map((d) => /^([a-z][a-z0-9-]*): absent → /.exec(d)?.[1] ?? null);
+  const scope = Array.isArray(c.scope?.names) ? c.scope.names : null;
+  if (scope && diff.length && entering.every((n) => n && KERNEL_COMPONENTS.includes(n) && scope.includes(n)) && scope.every((n) => entering.includes(n)) && c.scope.registryPinned === true) {
+    if (missing.length) return { ok: false, diff, why: `the kernel's scope grew (${scope.join(", ")} entered it, ${TRIAL_KERNEL}): no stored byte changes meaning, so no translator or vectors are asked, but the change still needs its changelog line:\n  - ${missing.join("\n  - ")}\nchanged:\n  ${diff.join("\n  ")}` };
+    const changelog = `- ${date}: kernel: ${ack}\n${diff.map((d) => `  - ${d.replace(/ → .*$/, " → (the registry's pinned shape, now the kernel's)")}`).join("\n")}\n`;
+    return { ok: true, diff, changelog, scopeOnly: true, companions: { changelog: `${date}: kernel: ${ack}`, scope: { names: [...scope].sort() }, translator: pin.companions?.translator ?? null, vectors: pin.companions?.vectors ?? null } };
+  }
   const tFrom = translatorN(c.translator?.from), tTo = translatorN(c.translator?.to);
   if (!(tFrom !== null && tTo !== null && tTo > tFrom) && !(typeof c.translator?.step === "string" && c.translator.step))
     missing.push(`a translator change: translate-v1's TRANSLATOR moved @N → @N+1 (is ${c.translator?.to ?? "unknown"}, pinned ${c.translator?.from ?? "unknown"}), or --translator <a new translate step under tools/protocol/>`);

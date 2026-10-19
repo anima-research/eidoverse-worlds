@@ -277,4 +277,25 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     w.broadcast({ type: "world-reset", world: w.name, by: c.id });
   },
 };
+/** A write from a surface that isn't the `request` message (server.ts voice-moderate: the voice control's mute/unmute).
+ *  Review r14 M1 (10-18): it called w.log.request with the connection's actorId read at send time, outside the queue, the meters
+ *  and the capability. Now the same path as `request`: ONE capability captured now (server/reqcap.ts), the same per-connection
+ *  queue (inOrder), the busy meter, recheck when the queue reaches it (seam 1) and again before the write (seam 2, the `still`
+ *  WorldLog.request calls); the authority is given cap.actorId. Resolves to the reply; never throws (a throw before the
+ *  authority is a rolled-back server-error, as for `request`). */
+export function requestAs(c: Client, ws: Ctx["ws"], w: World, verb: string, args: Any): Promise<Any> {
+  return new Promise((resolve) => {
+    let cap: ReqCap;
+    try { cap = capture(c, w); } catch (err) { console.error(`[ws] ${verb} from ${c.id}:`, err); resolve({ ok: false, txn: "rolled-back", refused: { code: "identity", reason: "this connection has no identity here", fix: "join the world first" } }); return; }
+    inOrder(c, ws, async () => {
+      { const gone = recheck(cap); if (gone) { resolve({ ok: false, txn: "rolled-back", refused: { code: "superseded", reason: gone, fix: "reconnect, then send it again from the connection that is in the world now" } }); return; } }
+      { const no = busy.check(c, Date.now()); if (no) { resolve({ ok: false, txn: "rolled-back", refused: no }); return; } }
+      const spent = busy.record(c, Date.now());
+      const r = await w.log.request(cap.actorId, verb, args, () => recheck(cap));
+      spent.ms = (r && typeof r === "object" && authorityTime.get(r)) || 0;
+      resolve(r);
+    }, (r) => resolve(r));
+  });
+}
+
 export const requestHandler = (type: unknown) => (typeof type === "string" && Object.hasOwn(REQUEST_MESSAGES, type) ? REQUEST_MESSAGES[type] : undefined);

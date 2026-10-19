@@ -321,7 +321,8 @@ export function maintain(w, { by = null, operator = false, dryRun = false } = {}
         const plan = admit(w, st, { actor: "system", cap: { kind: "system", ids, comps }, lifting: true }, ops);
         if (!dryRun) changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "lift-sockets", body: { id: h, made, moved, ...(author ? { capability: { author } } : {}), ...prov } }));
         lift.made.push({ host: h, made, moved });
-      } catch (x) { lift.failed.push({ host: h, code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) }); } }
+      } catch (x) { if (!(x instanceof Refusal)) throw x;   // r14 H1 (10-18): a durable-write throw is the caller's ambiguous outcome, never a "refused" host
+        lift.failed.push({ host: h, code: x.code, reason: String(x.reason ?? "").slice(0, 300) }); } }
     steps.lift = lift;
     // 2. rename-components: one system act, admitted PER THING (review r11 L3)
     const rename = { renamed: [], failed: [] };
@@ -336,7 +337,8 @@ export function maintain(w, { by = null, operator = false, dryRun = false } = {}
         if (kept.length && !dryRun) { const ids = [...new Set(kept.map((o) => o.id))], comps = [...new Set(kept.map((o) => o.comp))];
           const plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids, comps }, lifting: true }, kept.map(({ renamed: _r, ...o }) => o));
           changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "rename-components", body: { renamed: rename.renamed, ...(rename.failed.length ? { failed: rename.failed } : {}), ...prov, why: "component names renamed before release (protocol minor 0): the value kept, under its new name" } })); } } }
-    catch (x) { rename.failed.push({ id: null, code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) }); }
+    catch (x) { if (!(x instanceof Refusal)) throw x;   // r14 H1: as above (repairShapesStep already rethrows)
+      rename.failed.push({ id: null, code: x.code, reason: String(x.reason ?? "").slice(0, 300) }); }
     steps.rename = rename;
     // 3. repair-shapes: once per world (the act is the marker)
     const repair = repairShapesStep(w, prov, dryRun); steps.repair = repair;

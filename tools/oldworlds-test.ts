@@ -103,10 +103,10 @@ ok(oldWorldAt(W, "garden") === null && oldWorldAt(W, "oldtown-2") === null && ol
   const d = Bun.spawnSync(argv, { cwd: ROOT, env: { ...process.env, ...env, OPT_DIR: OPT, TRUST_NAMES: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   const dout = d.stdout.toString() + d.stderr.toString(); const hash = /^report-hash ([0-9a-f]{64})$/m.exec(dout)?.[1];
   ok(d.exitCode === 0 && !!hash && JSON.stringify(fs.readdirSync(path.join(W, "oldtown")).sort()) === JSON.stringify(before) && !isWorldDir(path.join(W, "oldtown")), "O5 the first command (the dry run) prints the report hash and writes nothing", { code: d.exitCode, hash, out: dout.slice(-300) });
-  const argv2 = ((ot?.approve ?? "x=y bun").replace(/--founder-key <[^>]+> --approved <[^>]+> --approve-sig <[^>]+>$/, `--no-founder-key --approved ${hash}`)).split(" "); argv2.shift();
+  const argv2 = ((ot?.approve ?? "x=y bun").replace(/--founder-key <[^>]+> --approved <[^>]+> --approve-sig <[^>]+>$/, `--no-founder-key --approved ${hash} --operator-only-no-owner`)).split(" "); argv2.shift();
   const r = Bun.spawnSync(argv2, { cwd: ROOT, env: { ...process.env, ...env, OPT_DIR: OPT, TRUST_NAMES: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   const out = r.stdout.toString() + r.stderr.toString();
-  ok(r.exitCode === 0 && /0 divergences/.test(out) && /approved by the operator/.test(out), "O5 the second, run as printed (--no-founder-key and the dry run's hash for the test), translates", out.slice(-600));
+  ok(r.exitCode === 0 && /0 divergences/.test(out) && /approved by the operator/.test(out), "O5 the second, run as printed (--no-founder-key --operator-only-no-owner and the dry run's hash for the test), translates", out.slice(-600));
   ok(isWorldDir(path.join(W, "oldtown")) && !fs.existsSync(oldLog), "O5 …in place: oldtown itself is now a current world");
   ok(Buffer.compare(oldBytes, fs.readFileSync(path.join(W, "oldtown", "log.original.jsonl"))) === 0, "O5 …and the original log is kept beside it as log.original.jsonl, its bytes unchanged");
   ok(oldWorldAt(W, "oldtown") === null && oldWorldsIn(W).map((o) => o.name).join() === "prenamed", "O5 …and it is no longer an old world (only prenamed is left)", oldWorldsIn(W).map((o) => o.name)); }

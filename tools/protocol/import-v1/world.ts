@@ -21,13 +21,46 @@ import { contentAddressOf, recordEido, storeNameMatches } from "../../../server/
 
 type Any = any;
 
-/** The owner's approval of a translation, bound to the dry-run report's hash (review of PR #260, Mica, item 6). `founder`: the
- *  founder signed `approvalText(world, report)` with their own governance key (the ceremony's key, import-v1/README.md), checked
- *  by world.ts before anything is written. `operator`: no founder key (tier 0 empty): the operator running the tool read the
- *  report and typed its hash back; recorded as the operator's act (the line is sealed and signed by the host's custody like
- *  every line, but no owner signature exists — said plainly in the act). */
-export type Approval = { report: string; by: "founder"; key: string; sig: string } | { report: string; by: "operator"; key: string };
+/** The approval of a translation, bound to the dry-run report's hash (review of PR #260, Mica, item 6: "owner/operator
+ *  countersign"). TWO signatures over the same text, approvalText(world, report): the OWNER's (the founder's own governance
+ *  key, the ceremony's: import-v1/README.md) and the OPERATOR's (the host's custody operator key, server/custody.ts
+ *  signOperator: the countersignature). Both are checked by world.ts before anything is written and AGAIN here, before the log
+ *  is written (approvalProblem): a translation with either missing, not verifying, or over another hash is refused. A world
+ *  with no founder key (tier 0 empty) has no owner who can sign: by default that is refused; `owner: null` is admitted only
+ *  when `noOwner` carries NO_OWNER verbatim (the CLI's --operator-only-no-owner), and the act records that no owner approved. */
+export type Sig = { key: string; sig: string };
+export type Approval = { report: string; owner: Sig | null; operator: Sig; noOwner?: string };
 export const approvalText = (world: string, report: string) => `eidoverse-approve-translation:${world}:${report}`;
+export const NO_OWNER = "no owner approved this translation: the world has no founder key (tier 0 empty), so no owner's signature exists; the operator ran it with --operator-only-no-owner, and the operator's countersignature is the only signature";
+const ed25519Pub = (key: string) => crypto.createPublicKey({ key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(key.slice(8), "base64url")]), format: "der", type: "spki" });
+/** Does `sig` (base64 or base64url) verify over `msg` for the governance key `key`? */
+export const verifySig = (key: string, msg: string, sig: string) => { try { return !!key && !!sig && crypto.verify(null, Buffer.from(msg), ed25519Pub(key), Buffer.from(String(sig).replace(/-/g, "+").replace(/_/g, "/"), "base64")); } catch { return false; } };
+const b64url = (sig: string) => sig.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+/** Why this approval can't stand for world `world`, or null when both signatures verify over approvalText(world, report)
+ *  (or the owner's absence is declared with NO_OWNER). The one rule for the CLI and the writer. */
+export function approvalProblem(world: string, a: Approval | null | undefined): string | null {
+  if (!a || typeof a !== "object" || !/^[0-9a-f]{64}$/.test(String(a.report ?? ""))) return "the approval names no report hash (64 hex, as --dry-run prints it)";
+  const text = approvalText(world, a.report);
+  if (!a.operator?.key || !a.operator?.sig) return `no operator countersignature: the host's custody operator key must sign "${text}" too (world.ts signs it from .custody.json)`;
+  if (!keyOk(a.operator.key)) return `the operator's key ${a.operator.key} is not a governance key (ed25519:<base64url of 32 bytes>)`;
+  if (!verifySig(a.operator.key, text, a.operator.sig)) return `the operator's countersignature doesn't verify for ${a.operator.key} over "${text}": not this host's countersignature of this report`;
+  if (a.owner) {
+    if (!a.owner.key || !a.owner.sig) return `the owner's approval names ${a.owner.key ? "no signature" : "no key"}`;
+    if (!keyOk(a.owner.key)) return `the owner's key ${a.owner.key} is not a governance key (ed25519:<base64url of 32 bytes>)`;
+    if (!verifySig(a.owner.key, text, a.owner.sig)) return `the owner's approval signature doesn't verify for ${a.owner.key} over "${text}": not this founder's approval of this report`;
+    return null;
+  }
+  if (a.noOwner !== NO_OWNER) return `no owner's signature: a translation needs the owner's signature AND the operator's countersignature over the same report; a world with no founder key translates only with --operator-only-no-owner, which records that no owner approved`;
+  return null;
+}
+/** The approval as the CLI builds it: the owner's signature (checked), the operator's countersignature (made here, from the
+ *  host's custody), or, with no founder key and the flag, the operator alone with NO_OWNER recorded. */
+export function makeApproval(world: string, report: string, { founderKey, ownerSig, operator, operatorOnlyNoOwner = false }: { founderKey?: string; ownerSig?: string; operator: { key: string; sign: (msg: string) => string }; operatorOnlyNoOwner?: boolean }): Approval {
+  const text = approvalText(world, report);
+  const op = { key: operator.key, sig: operator.sign(text) };
+  if (founderKey) return { report, owner: { key: founderKey, sig: b64url(ownerSig ?? "") }, operator: op };
+  return { report, owner: null, operator: op, ...(operatorOnlyNoOwner ? { noOwner: NO_OWNER } : {}) };
+}
 
 /** The dry-run report: everything the translation would do that an owner should see before it does, and nothing that varies
  *  between runs (no minted identities, no nonce, no signatures), so its hash is the same for the same old log, the same tool
@@ -115,10 +148,13 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // the owner's approval, bound to the dry-run report's hash, rides in the world's own log right after the system's
   // repair-shapes act (index 2): provenance a reader can check against `reportV1World` of log.original.jsonl. The fold never
   // reads acts (PROTOCOL §1), so this changes no state; a translation nothing approved carries none (the pure callers: sweep, oracle)
-  if (approval) { const at = r.out.findIndex((e: Any) => e.kind === "act" && e.verb === "repair-shapes") + 1;
+  if (approval) { const world = name ?? path.basename(destDir); const bad = approvalProblem(world, approval);
+    if (bad) throw new Error(`the approval is refused: ${bad}. Nothing written`);
+    if (approval.owner && founderKey && approval.owner.key !== founderKey) throw new Error(`the approval is refused: the owner's key ${approval.owner.key} is not the founder key ${founderKey} the world is founded with. Nothing written`);
+    const at = r.out.findIndex((e: Any) => e.kind === "act" && e.verb === "repair-shapes") + 1;
     r.out.splice(at || 3, 0, { world: r.out[1].world, kind: "act", actor: "system", verb: "translation-approved", ts: r.out[1].ts ?? 0,
-      body: { report: approval.report, approval: approval.by === "founder" ? { by: "founder", key: approval.key, sig: approval.sig, over: approvalText(name ?? path.basename(destDir), approval.report) }
-        : { by: "operator", key: approval.key, note: "no founder key: the operator running the tool read the dry-run report and typed its hash back; this act is sealed by the host's custody like every line, and is not an owner's signature" } } }); }
+      body: { report: approval.report, approval: { over: approvalText(world, approval.report), owner: approval.owner ? { key: approval.owner.key, sig: approval.owner.sig } : null, operator: { key: approval.operator.key, sig: approval.operator.sig },
+        ...(approval.owner ? {} : { noOwner: NO_OWNER }) } } }); }
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
   const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
   // the strict reader must accept every line, and fold to the translator's own final state, before the file exists

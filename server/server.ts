@@ -28,7 +28,7 @@ import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wir
 import { isWorldSaved } from "./worldlog.ts";
 import { oldWorldAt, bootNotice, noFoldRefusal } from "./oldworlds.ts";
 import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
-import { requestHandler, actorOf as actorIdOf, gagged, guestSanctionByAddress } from "./requestwire.ts";
+import { requestHandler, actorOf as actorIdOf, gagged, guestSanctionByAddress, requestAs } from "./requestwire.ts";
 import { withoutOnceAnim } from "../shared/onceanim.js";
 import { directoryFor, foldName } from "./directory.ts";
 // The HTTP surface — one route table, /upload behind it in upload.ts (§15,
@@ -1182,7 +1182,8 @@ const server = Bun.serve({
           // the voice control's unmute lifts a VOICE mute: one that also covers chat is lifted where its whole record is
           // (Moderation › Bans, /unmute), not ended quietly from a voice button (review 10-07)
           if (!muted && w.log.mutedHere(target, "chat")) { ws.send(JSON.stringify({ type: "error", error: "that mute covers chat too: lift it in Moderation › Bans (or /unmute)" })); return; }
-          void w.log.request(actorIdOf(c), muted ? "mute" : "unmute", muted ? { who: target, minutes, channels: ["voice"], ...(typeof msg.reason === "string" ? { reason: msg.reason } : {}) } : { who: target })
+          // through the request path (review r14 M1, 10-18): one capability, the connection's queue, the meters, both recheck seams
+          void requestAs(c, ws, w, muted ? "mute" : "unmute", muted ? { who: target, minutes, channels: ["voice"], ...(typeof msg.reason === "string" ? { reason: msg.reason } : {}) } : { who: target })
             .then((r: any) => {
               if (!r?.ok) { ws.send(JSON.stringify({ type: "error", error: r?.refused?.reason ?? "that mute was refused" })); return; }
               sanctionSweep(w);

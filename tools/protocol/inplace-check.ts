@@ -36,7 +36,10 @@
 //   IP22 with a founder key, the founder's ed25519 signature over the approval text must verify (a wrong one refuses);
 //        the good one translates, and the world's log carries the system's translation-approved act: the report hash, the
 //        key and the signature, after repair-shapes
-//   IP23 with no founder key, the operator's typed hash is recorded as the operator's act, and said to be no owner's signature
+//   IP23 with no founder key and --operator-only-no-owner, the act records owner: null, the operator's countersignature, and that no owner approved
+//   IP28 with no founder key and no flag: REFUSED (no owner can sign); the flag with a founder key: refused
+//   IP29 the writer's own check (approvalProblem): missing/wrong operator countersignature, owner over another hash, absent owner without the flag → refused by name
+//   IP30 (r14 M3) a world.mod.jsonl the server made after the translation blocks rollback without --discard-changes, is removed with it, and the world translates again
 //   IP24 `rollback <world>` restores the WHOLE operational set: the renamed originals back (same bytes, inode, mtime), the
 //        made files (world.jsonl, poses.json, world.mod.jsonl, translation.json) removed, the minted identities forgotten: the
 //        world directory and the shared directory are byte-identical to before the translation, and it translates again
@@ -59,7 +62,9 @@ import { emptyState as v1Empty, foldEntry as v1Fold } from "./import-v1/fold.js"
 import { oldWorldAt, oldWorldsIn, bootNotice } from "../../server/oldworlds.ts";
 import { isWorldDir, isPreNamesDir } from "../../server/livehost.ts";
 import { noFoldRefusal } from "../../server/oldworlds.ts";
-import { approvalText } from "./import-v1/world.ts";
+import { approvalText, approvalProblem, makeApproval, translateV1World, NO_OWNER } from "./import-v1/world.ts";
+const operatorPub = () => JSON.parse(fs.readFileSync(path.join(W, ".custody.json"), "utf8")).operator?.pub as string;
+const verifies = (key: string, msg: string, sig: string) => { try { return crypto.verify(null, Buffer.from(msg), crypto.createPublicKey({ key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(key.slice(8), "base64url")]), format: "der", type: "spki" }), Buffer.from(sig, "base64url")); } catch { return false; } };
 import { readLog } from "../../shared/protocol/fold.js";
 
 const root = scratch("inplace");
@@ -73,7 +78,7 @@ const tool = (args: string[], env: Record<string, string> = {}) => { const r = B
 /** The dry run's report hash for a world (review of PR #260 item 6: a translation needs the owner's approval bound to it). */
 const dryHash = (words: string[], env: Record<string, string> = {}) => { const r = tool(["translate", ...words, "--dry-run", "--no-founder-key"], env); return /^report-hash ([0-9a-f]{64})$/m.exec(r.out)?.[1] ?? "no-hash"; };
 /** `translate <words…> --no-founder-key`, approved: the dry run first, its hash typed back (the operator's act). */
-const xlate = (words: string[], env: Record<string, string> = {}) => tool(["translate", ...words, "--no-founder-key", "--approved", dryHash(words, env)], env);
+const xlate = (words: string[], env: Record<string, string> = {}) => tool(["translate", ...words, "--no-founder-key", "--operator-only-no-owner", "--approved", dryHash(words, env)], env);
 const MANIFEST = "translation.json";
 const dirf = path.join(W, ".directory.json");   // the shared identity directory
 
@@ -161,11 +166,11 @@ ok(/Unreal client hasn't been ported to it yet/.test(noFoldRefusal("current", tr
   fs.appendFileSync(path.join(d, "log.jsonl"), JSON.stringify({ seq: L.length, ts: T0 + 100000, actor: "Bob", verb: "say", args: { text: "after the dry run" } }) + "\n");
   fs.rmSync(path.join(d, "snapshot.json"));   // (the snapshot is of the shorter log; not what this row is about)
   const fp2 = fingerprint(d);
-  const stale = tool(["translate", "careful", "--no-founder-key", "--approved", ha!]);
+  const stale = tool(["translate", "careful", "--no-founder-key", "--operator-only-no-owner", "--approved", ha!]);
   const now = dryHash(["careful"]);
   ok(stale.code !== 0 && /is not the one that was approved/.test(stale.out) && stale.out.includes(`approved ${ha}`) && stale.out.includes(`hashes to ${now}`) && now !== ha && /Nothing was changed/.test(stale.out) && same(fingerprint(d), fp2) && !temps().length && !isWorldDir(d),
     "IP21 an approval of a report the world has since outgrown is refused, both hashes named, nothing moved", { code: stale.code, out: stale.out.slice(-700) });
-  const good = tool(["translate", "careful", "--no-founder-key", "--approved", now]);
+  const good = tool(["translate", "careful", "--no-founder-key", "--operator-only-no-owner", "--approved", now]);
   ok(good.code === 0 && isWorldDir(d), "IP21 …and approving the report as it stands now translates", good.out.slice(-300)); }
 
 // ================= IP22–IP23: who approved, recorded =================
@@ -182,11 +187,41 @@ const actsOf = (d: string) => readLog(fs.readFileSync(path.join(d, "world.jsonl"
     "IP22 with a founder key the report hash includes it; a signature over another report, or none, refuses and moves nothing", { bad: bad.out.slice(-400), none: none.out.slice(-300) });
   const good = tool(["translate", "founded", "--founder-key", KEY, "--approved", h, "--approve-sig", sign(approvalText("founded", h))]);
   const acts = isWorldDir(d) ? actsOf(d) : []; const ap = acts.find(([v]) => v === "translation-approved")?.[1];
-  const sig = ap?.approval?.sig ?? ""; const verified = (() => { try { return crypto.verify(null, Buffer.from(approvalText("founded", h)), publicKey, Buffer.from(sig, "base64url")); } catch { return false; } })();
+  const sig = ap?.approval?.owner?.sig ?? ""; const verified = (() => { try { return crypto.verify(null, Buffer.from(approvalText("founded", h)), publicKey, Buffer.from(sig, "base64url")); } catch { return false; } })();
+  const opOk = ap?.approval?.operator?.key === operatorPub() && verifies(ap?.approval?.operator?.key ?? "", approvalText("founded", h), ap?.approval?.operator?.sig ?? "");
   const g0 = readLog(fs.readFileSync(path.join(d, "world.jsonl"), "utf8"))[0];
-  ok(good.code === 0 && /approved by the founder/.test(good.out) && /signature verified/.test(good.out) && ap?.report === h && ap?.approval?.by === "founder" && ap?.approval?.key === KEY && verified && ap?.approval?.over === approvalText("founded", h)
+  ok(good.code === 0 && /approved by the owner/.test(good.out) && /countersigned by the operator/.test(good.out) && ap?.report === h && ap?.approval?.owner?.key === KEY && verified && opOk && ap?.approval?.noOwner === undefined && ap?.approval?.over === approvalText("founded", h)
     && acts.map(([v]) => v).slice(0, 3).join(",") === "translated,repair-shapes,translation-approved" && JSON.stringify(g0.body?.owners?.[0]) === JSON.stringify([KEY]),
-    "IP22 the founder's good signature translates; the log carries the system's translation-approved act after repair-shapes: the report hash, by founder, the key (tier 0 of genesis), a signature that verifies over the approval text", { out: good.out.slice(-300), acts: acts.map(([v]) => v), ap }); }
+    "IP22 the founder's good signature translates; the log carries the system's translation-approved act after repair-shapes: the report hash, the OWNER's key (tier 0 of genesis) and signature, and the OPERATOR's countersignature (this host's custody operator key), both verifying over the same approval text", { out: good.out.slice(-300), acts: acts.map(([v]) => v), ap });
+  // r14 / Mica item 6 (10-18): the operator-only path is refused for a founded world, and --operator-only-no-owner can't be used with a founder key
+  oldWorld("founded2"); oldWorld("founded3");
+  const nf = tool(["translate", "founded2", "--no-founder-key", "--approved", dryHash(["founded2"])]);   // a second old world with no key: refused without the flag
+  ok(nf.code !== 0 && /no owner can sign this approval/.test(nf.out) && /--operator-only-no-owner/.test(nf.out) && /Nothing was changed/.test(nf.out) && !isWorldDir(path.join(W, "founded2")) && !temps().length,
+    "IP28 with no founder key and no --operator-only-no-owner the translation is REFUSED: no owner can sign, and it says so and how to proceed knowingly; nothing moved", nf.out.slice(-500));
+  const wrongFlag = tool(["translate", "founded3", "--founder-key", KEY, "--approved", "0".repeat(64), "--approve-sig", "x", "--operator-only-no-owner"]);
+  ok(wrongFlag.code !== 0 && !isWorldDir(path.join(W, "founded3")), "IP28 --operator-only-no-owner with a founder key is refused too (the founder must sign)", wrongFlag.out.slice(-300)); }
+// ================= IP29: the writer checks the countersignature itself (red first: each case refused before the log is written) =================
+{ const src = oldWorld("sig-src"); const dst = path.join(W, "sig-dst"); const h = "a".repeat(64); const text = approvalText("sig-dst", h);
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519"); const KEY = "ed25519:" + (publicKey.export({ format: "jwk" }) as any).x;
+  const op = crypto.generateKeyPairSync("ed25519"); const OP = "ed25519:" + (op.publicKey.export({ format: "jwk" }) as any).x;
+  const sign = (k: crypto.KeyObject, m: string) => crypto.sign(null, Buffer.from(m), k).toString("base64url");
+  const good = { report: h, owner: { key: KEY, sig: sign(privateKey, text) }, operator: { key: OP, sig: sign(op.privateKey, text) } };
+  const cases: [string, any, RegExp][] = [
+    ["no operator countersignature", { ...good, operator: { key: OP, sig: "" } }, /no operator countersignature/],
+    ["operator signed another hash", { ...good, operator: { key: OP, sig: sign(op.privateKey, approvalText("sig-dst", "b".repeat(64))) } }, /operator's countersignature doesn't verify/],
+    ["owner signed another hash", { ...good, owner: { key: KEY, sig: sign(privateKey, approvalText("sig-dst", "b".repeat(64))) } }, /owner's approval signature doesn't verify/],
+    ["owner signed another world's text", { ...good, owner: { key: KEY, sig: sign(privateKey, approvalText("other", h)) } }, /owner's approval signature doesn't verify/],
+    ["no owner and no --operator-only-no-owner", { ...good, owner: null }, /no owner's signature.*--operator-only-no-owner/],
+    ["no owner, the flag's text altered", { ...good, owner: null, noOwner: NO_OWNER + " " }, /no owner's signature/],
+  ];
+  const got = cases.map(([name, a, re]) => ({ name, why: approvalProblem("sig-dst", a), re: re.test(approvalProblem("sig-dst", a) ?? "") }));
+  ok(got.every((g) => g.re) && approvalProblem("sig-dst", good) === null && approvalProblem("sig-dst", { ...good, owner: null, noOwner: NO_OWNER }) === null,
+    "IP29 approvalProblem (the one rule for the CLI and the writer): a missing or wrong operator countersignature, an owner signature over another hash or world, and an absent owner without the flag's exact text are each refused by name; both good forms pass", got);
+  let threw: any = null; try { translateV1World(src, dst, { name: "sig-dst", approval: cases[1][1] }); } catch (x) { threw = x; }
+  ok(threw && /approval is refused: the operator's countersignature doesn't verify/.test(String(threw.message)) && !fs.existsSync(dst), "IP29 translateV1World itself refuses a bad countersignature before writing anything (the writer doesn't trust the CLI's check)", String(threw?.message).slice(0, 300));
+  const mk = makeApproval("sig-dst", h, { founderKey: KEY, ownerSig: sign(privateKey, text).replace(/-/g, "+").replace(/_/g, "/") + "=", operator: { key: OP, sign: (m) => sign(op.privateKey, m) } });
+  ok(approvalProblem("sig-dst", mk) === null && mk.owner?.sig === sign(privateKey, text) && verifies(OP, text, mk.operator.sig), "IP29 makeApproval: the owner's base64 signature is stored base64url, the operator signs the same text", mk); }
+
 
 // ================= IP24–IP25: rollback restores the whole operational set =================
 { const name = "undo"; const d = oldWorld(name, { extra: [{ actor: "Ann", verb: "ban", args: { id: "Troll", reason: "spam" } }] });   // a ban → world.mod.jsonl is made too
@@ -212,6 +247,18 @@ const actsOf = (d: string) => readLog(fs.readFileSync(path.join(d, "world.jsonl"
   ok(r3.code === 0 && same(fingerprint(d), fp) && /changes since the translation discarded/.test(r3.out), "IP25 --discard-changes rolls back anyway, saying what was discarded; the directory is byte-identical to the original again", r3.out.slice(-400));
   const r4 = tool(["rollback", name]);
   ok(r4.code !== 0 && /holds no translation\.json/.test(r4.out) && /Nothing was changed/.test(r4.out) && same(fingerprint(d), fp), "IP25 a directory with no manifest refuses with that reason", r4.out.slice(-300)); }
+// ================= IP30 (r14 M3): a file the server made AFTER the translation (its first ban → world.mod.jsonl) is history too =================
+{ const name = "modlater"; const d = oldWorld(name); const fp = fingerprint(d); const r = xlate([name]);
+  ok(r.code === 0 && isWorldDir(d) && !fs.existsSync(path.join(d, "world.mod.jsonl")), "IP30 setup: translated in place, no moderator log yet (this old world had no bans)", r.out.slice(-200));
+  fs.writeFileSync(path.join(d, "world.mod.jsonl"), JSON.stringify({ ts: 1, actor: "u-x", verb: "ban", who: "u-y" }) + "\n");   // what the server's first ban writes
+  const r2 = tool(["rollback", name]); const keep = fingerprint(d);
+  ok(r2.code !== 0 && /without losing history: world\.mod\.jsonl was made since the translation/.test(r2.out) && /bans, mutes, kicks were filed/.test(r2.out) && /--discard-changes/.test(r2.out) && same(fingerprint(d), keep) && isWorldDir(d),
+    "IP30 rollback refuses: the moderator log the server made since is named as history with nowhere to go; nothing changed", r2.out.slice(-500));
+  const r3 = tool(["rollback", name, "--discard-changes"]);
+  ok(r3.code === 0 && same(fingerprint(d), fp) && !fs.existsSync(path.join(d, "world.mod.jsonl")) && /removed world\.mod\.jsonl \(made by the server since the translation; discarded\)/.test(r3.out),
+    "IP30 --discard-changes removes it too and says so; the directory is byte-identical to the original", { out: r3.out.slice(-300), keys: Object.keys(fingerprint(d)) });
+  const again = xlate([name]);
+  ok(again.code === 0 && isWorldDir(d), "IP30 …and the world translates again after (world.mod.jsonl no longer blocks the swap's names)", again.out.slice(-300)); }
 
 // ================= IP26: features this protocol doesn't carry yet refuse, truthfully =================
 { const uses = [
@@ -231,10 +278,10 @@ const actsOf = (d: string) => readLog(fs.readFileSync(path.join(d, "world.jsonl"
   ok(/can't translate "sunk": it uses 5 thing\(s\) this protocol does not carry yet/.test(text) && /water volume, air box \(dry interior\), climb route, vehicle, collision on\/off toggle/.test(text) && /would drop them silently/.test(text) && /Nothing was written/.test(text)
     && want.every(([f, id, seq, who]) => text.includes(`seq ${seq}: ${f} (`) && text.includes(`on "${id}", set by ${who}`)) && /deferred in this protocol/.test(text) && /remove them from the old world first/.test(text),
     "IP26 the refusal names each feature, the component, the entity, the actor and the seq, says they came from main's merges and are deferred, and what to do", text);
-  const forced = tool(["translate", "sunk", "--no-founder-key", "--approved", h!]);
+  const forced = tool(["translate", "sunk", "--no-founder-key", "--operator-only-no-owner", "--approved", h!]);
   ok(forced.code !== 0 && /can't translate "sunk"/.test(forced.out) && /can't override this/.test(forced.out) && same(fingerprint(d), fp) && !temps().length && !isWorldDir(d) && fs.readFileSync(dirf, "utf8") === dirBefore,
     "IP26 approving the refused report doesn't override it: refused again, nothing written, no identities added", forced.out.slice(-400));
-  const named = oldWorld("sunk-src", { extra: uses.slice(0, 1) }); const two = tool(["translate", "sunk-src", "sunk-new", "--no-founder-key", "--approved", dryHash(["sunk-src", "sunk-new"])]);
+  const named = oldWorld("sunk-src", { extra: uses.slice(0, 1) }); const two = tool(["translate", "sunk-src", "sunk-new", "--no-founder-key", "--operator-only-no-owner", "--approved", dryHash(["sunk-src", "sunk-new"])]);
   ok(two.code !== 0 && /can't translate "sunk-new"|can't translate "sunk-src"/.test(two.out) && /water volume/.test(two.out) && !fs.existsSync(path.join(W, "sunk-new")) && same(fingerprint(named), fingerprint(named)),
     "IP26 the two-name form refuses the same way, and makes no new directory", two.out.slice(-300)); }
 
@@ -251,8 +298,9 @@ ok(!temps().length && same(Object.keys(after).sort(), ["log.original.jsonl", "po
 ok(/snapshot\.json agrees/.test(r1.out) && /mtime unchanged: true/.test(r1.out) && /keeps its name/.test(r1.out), "IP1 it says the snapshot oracle agreed, and that the original is kept with its mtime unchanged", r1.out.slice(-800));
 
 { const ap = actsOf(porch).find(([v]) => v === "translation-approved")?.[1];
-  ok(ap && /^[0-9a-f]{64}$/.test(ap.report) && ap.approval?.by === "operator" && /^ed25519:/.test(ap.approval?.key ?? "") && /not an owner's signature/.test(ap.approval?.note ?? "") && !ap.approval?.sig,
-    "IP23 with no founder key the act records the operator's approval (the custody operator key) and says plainly it is no owner's signature", ap); }
+  ok(ap && /^[0-9a-f]{64}$/.test(ap.report) && ap.approval?.owner === null && ap.approval?.operator?.key === operatorPub() && verifies(ap.approval?.operator?.key ?? "", approvalText("porch", ap.report), ap.approval?.operator?.sig ?? "")
+    && ap.approval?.noOwner === NO_OWNER && /no owner approved/.test(ap.approval?.noOwner) && /approved by the operator alone/.test(r1.out) && /NO OWNER approved/.test(r1.out),
+    "IP23 with no founder key and --operator-only-no-owner the act records owner: null, the operator's countersignature (the custody operator key, verifying over the approval text) and, in words, that no owner approved; the CLI says the same", ap); }
 
 // ================= IP12: the oracle re-runs on the kept originals =================
 { const fp = fingerprint(porch);
@@ -352,7 +400,7 @@ for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); 
 { const name = "stillwriting"; const d = oldWorld(name); fs.rmSync(path.join(d, "snapshot.json"));   // no oracle (it would refuse on a growing log for its own reason)
   const logf = path.join(d, "log.jsonl"); let n = 0;
   const writer = setInterval(() => { try { fs.appendFileSync(logf, JSON.stringify({ seq: 100 + n, ts: T0 + 100000 + n, actor: "Bob", verb: "say", args: { text: `late ${n}` } }) + "\n"); n++; } catch { /* gone */ } }, 2);
-  const proc = Bun.spawn(["bun", "tools/protocol/world.ts", "translate", name, "--no-founder-key", "--approved", dryHash([name])], { cwd: ENGINE, stdout: "pipe", stderr: "pipe",
+  const proc = Bun.spawn(["bun", "tools/protocol/world.ts", "translate", name, "--no-founder-key", "--operator-only-no-owner", "--approved", dryHash([name])], { cwd: ENGINE, stdout: "pipe", stderr: "pipe",
     env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, OPT_DIR: OPT, PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   const code = await proc.exited; clearInterval(writer);
   const out = (await new Response(proc.stdout).text()) + (await new Response(proc.stderr).text());

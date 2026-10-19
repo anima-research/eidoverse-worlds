@@ -24,6 +24,13 @@ export function custodyAt(file: string) {
     /** The operator's GOVERNANCE key (tier 1 of the custodial default, §2.4): never the same key as the sequencer, so a
      *  stolen writing key isn't also the only override (round-2 review R4). */
     operator(): string { if (!c.operator) { c.operator = mk(); save(); } return c.operator.pub; },
+    /** The OPERATOR's signature over msg (base64url Ed25519 by the operator key above, never the sequencer's): the host's
+     *  COUNTERSIGNATURE on a translation approval (tools/protocol/world.ts approvalFor; PROTOCOL §14). */
+    signOperator(msg: string): string {
+      if (!c.operator) { c.operator = mk(); save(); }
+      const key = crypto.createPrivateKey({ key: Buffer.from(c.operator.priv, "base64"), format: "der", type: "pkcs8" });
+      return crypto.sign(null, Buffer.from(msg, "utf8"), key).toString("base64url");
+    },
     keyOf(who: string, make = false): string | null { if (!c.holders[who] && make) { c.holders[who] = mk(); save(); } return c.holders[who]?.pub ?? null; },
     /** §2.4 chain point: base64url Ed25519 over msg ("eidoverse-head:<world id>:<seq>:<head hex>") by the sequencer key. */
     sign(msg: string): string {
