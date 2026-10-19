@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        chrome_args: ["", "--use-mock-keychain"]   # 10-19: does a fresh HOME (as run.ts gives each suite) hang Chrome on macOS without a mock keychain?
+        chrome_args: [""]   # the harness now passes --use-mock-keychain itself on macOS (10-19)
     runs-on: macos-latest
     timeout-minutes: 20
     steps:

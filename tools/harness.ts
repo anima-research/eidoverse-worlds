@@ -203,7 +203,10 @@ export async function scratchBench(name: string, opts: ScratchOptions & { headed
   const DEBUG_PORT = freePort(PORT + 1000);
   const pageURL = `${run.BASE}/health?bench=${NONCE}`;
   const browser = track(Bun.spawn([
-    CHROME, ...(opts.headed ? [] : ["--headless=new"]), ...(process.env.EIDO_CHROME_ARGS ?? "").split(/\s+/).filter(Boolean),   // CI-only extra flags (see the workflow)
+    CHROME, ...(opts.headed ? [] : ["--headless=new"]),
+    // macOS: run.ts gives each suite a fresh HOME, and Chrome then waits on a new login keychain forever (proven 10-19: the
+    // same suite in CI failed with a fresh HOME and passed with this flag; it is what playwright passes too)
+    ...(process.platform === "darwin" ? ["--use-mock-keychain"] : []), ...(process.env.EIDO_CHROME_ARGS ?? "").split(/\s+/).filter(Boolean),   // CI-only extra flags (see the workflow)
     `--remote-debugging-port=${DEBUG_PORT}`, `--user-data-dir=${join(SCRATCH, "profile")}`,
     "--no-first-run", "--no-default-browser-check", "--disable-extensions",
     "--disable-background-networking", "--disable-sync", "--mute-audio",
