@@ -10,7 +10,7 @@
 import { makeSection, flashHint } from './ui.js';
 import { RENDER_SCALES, getRenderScale, setRenderScale,
   PARTICLE_TIERS, getParticleTier, setParticleTier,
-  AVATAR_DETAILS, getAvatarDetail, setAvatarDetail } from './governor.js';
+  AVATAR_DETAILS, getAvatarDetail, setAvatarDetail, getFullDetail, setFullDetail } from './governor.js';
 import { shadowsOn, setShadows, shadowRes, setShadowRes, SHADOW_RES } from './lightrig.js';
 import { backendName, PREF_MSAA, PREF_BACKEND, PREF_HEADSET_SEEN, WEBGPU_XR, WEBGPU_POSSIBLE, headsetSeenRecently } from './core.js';
 import { CONFIG, bus } from './base.js';
@@ -71,6 +71,7 @@ function videoFields() {
       actions: String(v) === String(cur) ? [] : [{ k, label: 'use' }] })) });
   const msaaOn = (CONFIG.params.get('msaa') ?? lsGet(PREF_MSAA)) !== '0';
   return [
+    { t: 'check', k: 'fulldetail', label: 'keep full detail', value: getFullDetail() },
     pick('scale', RENDER_SCALES, getRenderScale(), 'render scale'),
     { t: 'check', k: 'shadows', label: 'shadows', value: shadowsOn() },
     ...(shadowsOn() ? [pick('shadowres', SHADOW_RES, shadowRes(), 'shadow resolution')] : []),
@@ -81,7 +82,8 @@ function videoFields() {
   ];
 }
 function videoDispatch(k, v) {
-  if (k === 'scale') setRenderScale(v);
+  if (k === 'fulldetail') setFullDetail(!!v);
+  else if (k === 'scale') setRenderScale(v);
   else if (k === 'shadows') setShadows(!!v);
   else if (k === 'shadowres') setShadowRes(+v);
   else if (k === 'particles') setParticleTier(v);
@@ -134,6 +136,10 @@ export function initVideoPanel() {
     // gray out force-WebGPU when the machine has no WebGPU at all
     if (!WEBGPU_POSSIBLE) { const o = rrow.querySelector('select option[value=webgpu]'); if (o) { o.disabled = true; o.text = 'force WebGPU (unavailable)'; } }
     body.appendChild(rrow);
+
+    body.appendChild(checkRow('keep full detail',
+      'Never lower quality to keep the frame rate up — no thinned grass, dimmed lights, lost shadows or lower resolution. Ticking it gives back anything already lowered. Your own dials below still apply.',
+      getFullDetail(), (on) => { setFullDetail(on); flashHint(on ? 'keeping full detail' : 'auto quality: may lower detail when the frame rate sags'); }));
 
     body.appendChild(selectRow('render scale',
       'Resolution the world is drawn at, as a share of your screen. The single biggest lever on a pixel-bound machine. auto lets the engine step it down when the frame rate sags and back up when it recovers; a pinned value is yours and the engine leaves it alone.',

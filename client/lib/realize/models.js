@@ -558,6 +558,12 @@ function emitCompBag(id) {
 function onComp(id, type) {
   syncComps(id);
   const data = comps.get(id)?.[type] ?? null;
+  if (type === 'collision') {
+    const obj=entities.get(id),ent=state.st.entities[id];
+    if (collisionOwnedElsewhere(ent,obj?.userData.mountedTo)) removeCollider(id);
+    // the same rules as promotion: lod tiers own no collider, and the entity's scale picks the shape
+    else if(obj && !isPlaceholder(obj) && obj.userData.tier !== 'lod') fitCollider(id,obj,{collide:ent?.collide,scale:ent?.scale || 1,localFrame:true});
+  }
   if (type === 'motion' && data == null) restAtBase(id);
   // a sockets change re-seats everything riding this carrier — a mount that
   // landed BEFORE its socket was authored glued to the origin, and the

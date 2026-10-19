@@ -12,19 +12,23 @@
 // otherwise buy interpolation nobody can see. We keep the server clock anyway — it
 // costs two numbers and it is what makes timestamps in chat honest.
 import { bus } from './base.js';
+import { foldOffset } from '../../shared/clockoffset.js';
 
 export const remotes = new Map(); // id -> LiteRow
 
-// Server-to-local clock offset, smoothed. Copied from remotes.js rather than imported
-// because importing it would pull the engine in — the one duplication in this file,
-// and it is eight lines of arithmetic with no dependencies of its own.
-let clockOffset = null;
-export function noteServerTime(t) {
+// Server-to-local clock offset, as remotes.js keeps it. Its rule is
+// shared/clockoffset.js, which has no dependencies; remotes.js itself isn't
+// imported, since that would pull the engine in. These few lines are the one
+// duplication in this file.
+let clock = null;
+// `at` is the performance.now() when `t`'s message event ran, for a message
+// that waited to be handled (the early socket's drain, net.js connect());
+// otherwise now.
+export function noteServerTime(t, at = performance.now()) {
   if (typeof t !== 'number') return;
-  const sample = t - performance.timeOrigin - performance.now();
-  clockOffset = clockOffset === null ? sample : clockOffset * 0.92 + sample * 0.08;
+  clock = foldOffset(clock, t - performance.timeOrigin - at, at);
 }
-export const serverNow = () => performance.timeOrigin + performance.now() + (clockOffset ?? 0);
+export const serverNow = () => performance.timeOrigin + performance.now() + (clock?.offset ?? 0);
 
 /** Async to match remotes.js, whose caller does `.then(...)` on the arrival path —
  *  the signature is part of the interface even though nothing here awaits. */

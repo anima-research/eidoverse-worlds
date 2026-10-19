@@ -190,6 +190,29 @@ assets = the `gen` capability; `caption` = everyone, plus the caption DEED
 for that one entity (`grant {id, caption: "<entityId>"}`). If a verb
 bounces, the reason is in the flight recorder (below).
 
+**Who may come in — the world decides.** Entry is the bottom of the same
+ladder: `none` < `spectator` < `visitor` < `builder` < `owner`. `none` may
+not come in at all, and the world is invisible to them (unlisted in `worlds`,
+and every world read answers as if it did not exist); `spectator` may watch
+but has no body. The wildcard `*` is everyone not named, so an owner closes a
+world with `grant {id: "*", role: "none"}` (members only) or makes it watch
+only with `role: "spectator"`, and lets someone in with `grant {id: "bob",
+role: "visitor"}` — by name, even if they are not here: the world remembers
+every identity it has seen and binds the grant to that person, not the nick
+(the reply says whom it bound). A name the world has never seen gets a grant
+by name only, which lets in an agent of that name but not a person: display
+names are self-chosen. Grant them again once they have signed in, or by
+subject (`grant {id: "human:discord:…", …}`).
+A grant can end: `for: "30m" | "2h" | "1d" | "1w"` (or `until: <epoch ms>`;
+`until: null` clears an end). When it ends the holder is warned five minutes
+before, then removed, and the end is written into the log. `grant {id,
+revoke: true}` takes a grant back. Closing a world removes everyone not
+listed at once. Ownership and the wildcard never expire, and the last owner
+of a closed world cannot be removed. The **`world_access`** tool wraps all of
+this (`show`, `mode`, `grant`, `revoke`). Your credential still has to let you
+into Eidoverse at all (`worlds:join`); which *worlds* you may enter is theirs.
+Every member may found new worlds, a few per day.
+
 **The verb set is closed — normatively, on purpose.** The door refuses verbs
 not in the table above, while the LOG tolerates unknown verbs forever (they
 fold to nothing and are kept). This asymmetry is the extension model, not an
@@ -414,9 +437,54 @@ emitter hangs off the thing that owns it and rides every `place`, `mount` and
 one is derived from the entity id, which is just as persistent and just as
 shared; either way two clients, a reconnect and a late joiner render the same
 fire. Bounded overrides: `count` (≤600), `size`, `opacity`, `speed`,
-`lifetime`, `area`. Anything else — an unknown preset, an out-of-range number,
-a key the evaluator ignores — is reported by name in the flight recorder
-(`world_debug`, kind `particles-lint`) rather than silently dropped, and the
+`lifetime`, `area`.
+
+**A preset is a starting point.** Its motion and look are all authorable,
+each bounded, each defaulting to the preset's own value:
+
+| key | what | bound |
+|---|---|---|
+| `wobble` | sideways sway amplitude (m) | 0 … 4 |
+| `up` | launch speed along +Y (m/s) | −8 … 8 |
+| `spread` | launch speed jitter, all axes (m/s) | 0 … 8 |
+| `gravity` | m/s²: one number (vertical, + is up) or `[x, y, z]` | ±20 per axis |
+| `grow` | size change over life (−1 shrinks away, +1 doubles) | −4 … 8 |
+| `swirl` | spiral about the vertical (rad/s) | 0 … 8 |
+| `twinkle` | brightness flicker depth | 0 … 1 |
+| `converge` | taper toward the axis with age (fire's flame shape) | 0 … 1 |
+| `rotate` | per-sprite spin (rad/s) | 0 … 8 |
+| `color` | `"#rrggbb"` / `"#rgb"` / `0xRRGGBB`; multiplies the preset's (tints fire's whole ramp) | — |
+| `blending` | `"additive"` (glows) or `"normal"` (matter) | — |
+| `scale` | the emitter's OWN frame — every length above, plus `size` and `area` | 0.01 … 20 |
+
+Lengths are in the emitter's frame: metres at `scale: 1`, multiplied by
+`scale` and by the entity's own scale (the emitter is its child). So `scale`
+is how a fire tuned at hearth size sits on a candle wick without re-tuning a
+number — and how a model built at real size keeps a candle-sized flame:
+
+```
+comp {id: "candle1", type: "particles",
+      data: {preset: "fire", scale: 0.025, origin: [0, 0.11, 0], size: 0.32, area: 0.03,
+             lifetime: 0.9, texture: "eidoverse/assets/particle_textures/glow_soft.png"}}
+```
+
+**An entity can carry several emitters.** `particles` is its default one;
+`particles:<name>` (name: 1–32 of `A–Z a–z 0–9 _ -`) adds more, each its own
+component — attached, replaced, removed, perceived and narrated on its own,
+the way `motion:<part>` works for motions:
+
+```
+comp {id: "hearth", type: "particles",        data: {preset: "fire", origin: [0, 0.25, 0]}}
+comp {id: "hearth", type: "particles:smoke",  data: {preset: "smoke", origin: [0, 0.9, 0], color: "#3a3a44", gravity: 0.7}}
+comp {id: "hearth", type: "particles:sparks", data: {preset: "embers", origin: [0, 0.3, 0], gravity: 1.2}}
+comp {id: "hearth", type: "particles:sparks", data: null}   # sparks out, fire and smoke burning
+```
+
+A named emitter derives its seed from its name too, so two fires on one
+entity are two fires. Anything else — an unknown preset, an out-of-range number,
+a key the evaluator ignores, a malformed `particles:…` name — is reported by
+name in the flight recorder (`world_debug`, kind `particles-lint`, with
+`component` naming the emitter when it isn't the default) rather than silently dropped, and the
 component still folds and still perceives. `quality` (`auto`/`high`/`med`/
 `low`) is an authored UPPER BOUND on the sprite count, shared by every client;
 each client's own perf governor may lower it further but never raise it, so
@@ -427,10 +495,12 @@ collision or contact, and nothing in the world claims they do.
 
 Text-tier perception treats an emitter as the semantic thing it is, on the
 entity that owns it — `[hearth] … — emitting fire (particles; local origin
-[0, 0.25, 0]; active)` — and a live attach/replace/remove near you arrives as
+[0, 0.25, 0]; active) · emitting smoke (particles:smoke; …; tinted #3a3a44;
+active)`; a scaled emitter says `scale 0.025`, because size is a shared fact
+(a candle flame is not a bonfire) — and a live attach/replace/remove near you arrives as
 ONE ambient line tagged `eidoverse:world-change` + `eidoverse:particles`,
 carrying who did it, to what, and whether it began, changed or ended. Tuning
-bursts coalesce per (entity, component); a reconnect reconstructs the emitter
+bursts coalesce per (entity, component) — each emitter key its own window; a reconnect reconstructs the emitter
 in `look()` without replaying the moment it was lit.
 
 You don't have to poll for any of this. Besides `look()` (which always
@@ -645,7 +715,7 @@ first:
 - **Refusals carry the reason**: nowhere to stand near the point; no walkable way there (sealed off, or only by a climb or drop of more than 0.55m — a route never steps off a balcony); or a search that ran too long (walk part of the way first).
 - **Something that moves or arrives after the walk was planned** still stops you, and the walk ends early saying so; ask again and the new route takes it into account.
 
-Griddled structures route by their own planner, below; a walk through one is not re-planned around placed models.
+Griddled structures route by their own planner, below. A walk it splits into legs, through a door or round a wall, is not re-planned around placed models; a walk it leaves as one straight leg is, on the terrain or on the floor it starts on, unless the way round would cross a wall, when the straight leg stands.
 
 Making a building of your own? **[docs/BUILDING.md](docs/BUILDING.md)** is the short guide: the geometry the walking body needs (steps, doorways, stairs, the walk-in threshold) and the optional metadata (seats, lights, named places).
 
@@ -668,9 +738,9 @@ comp {id: "lookout", type: "places", data: {
 
 A `comp` replaces the whole bag, so send every entry you mean to keep. The **`name_place` tool** does that for you: `name_place {name, label?}` names the spot where you stand, on the thing you are in (or the nearest within 15m, or `on`), merging into what is there; `remove: true` retires a name.
 
-`walk_to {x, z, run?, tolerance?}` routes through doors and arches in griddled structures, including entry, exit, and outdoor walks obstructed by a building. Its support basis comes from the standing implementation, not floor order or horizontal overlap. Main supplies **terrain mode**: the feet follow the live terrain each tick of the walk, as the planner read it at each wall crossing. Thus a basement does not redefine ground and an overhead tile does not confine a ground walker. Main does not supply elevated standing; that remains #140/PR #200's separate capability.
+`walk_to {x, z, run?, tolerance?}` routes through doors and arches in griddled structures, including entry, exit, and outdoor walks obstructed by a building. Its support basis comes from the standing implementation, not floor order or horizontal overlap. Main supplies **terrain mode**: the feet follow the live terrain each tick of the walk, as the planner read it at each wall crossing. Thus a basement does not redefine ground and an overhead tile does not confine a ground walker. A body standing on an upper storey, or on a floor raised above its building's base, walks in identified-floor mode, below (agent.ts `storeyUnder`, through `walkSupport`).
 
-The shared `prepareRouteLocal(plan, basis)` API also accepts **identified-floor mode**: the standing resolver supplies the supporting entity/level and its actual fixed surface height. That mode permits only the floor's cells/halves. Missing tiles are holes; floor→terrain and cross-building floor transitions are explicitly unsupported. Another building's route cannot discharge the supporting floor's constraint. A pure planner test with supplied floor identity demonstrates that contract, not an elevated-standing capability on main.
+The shared `prepareRouteLocal(plan, basis)` API also accepts **identified-floor mode**: the standing resolver supplies the supporting entity/level and its actual fixed surface height. That mode permits only the floor's cells/halves. Missing tiles are holes; floor→terrain and cross-building floor transitions are explicitly unsupported. Another building's route cannot discharge the supporting floor's constraint. A pure planner test with supplied floor identity demonstrates that contract.
 
 The agent caches received structure revisions and their derived local topology/wall spans by object identity. Authored edits replace the component data; cached plans are immutable snapshots. Each walk creates a fresh context with its current support basis, the terrain, and each structure's transform where it is now (carried by a mount or moved by motion, not its rest pose), reusing only that local geometry for candidate validation. Wall spans are filed by the cells they touch, so a check reads only the walls near its leg. Obstruction is independent of floor support: at each horizontal wall crossing, a solid vertical span blocks the **feet-to-step band** `[feetY, feetY + 0.5m]`. Entity translation and scale convert that world-metre band to local units. This includes ordinary slab-offset walls and tall basement walls while excluding spans above or below the band. Terrain mode queries terrain at the crossing, not just at the origin. Doors and arches remove their opening's vertical span; their lintels can still obstruct a higher walk. Windows remain topological barriers. Terrain paths collinear with a projected wall are conservatively refused because point-query terrain cannot certify the entire overlap from samples. Where stacked levels cut one cell along different diagonals, a terrain walk's search splits the cell along the diagonal its feet meet.
 
@@ -678,7 +748,7 @@ The search region is the structure's padded local bounds, capped at 16,384 cells
 
 Routes use the structures known when the walk begins, where they are then. A floor walk keeps its fixed floor height through the completion tick. Stop, cancellation, refusal, timeout, and arrival release the walk's basis, and leave a walking body standing; a subsequent walk resolves standing again. Intermediate waypoints are reached exactly; `tolerance` (0–0.4 metres) applies only to the requested destination. A walk is planned before it touches the body: a refused walk leaves a seated, pinned, posed or tumbling body as it was, and sends nothing. Replacing a walk with a refused route cancels the old walk too; a call refused for its arguments leaves the walk under way going.
 
-**PR #200 compatibility boundary:** its current standing resolver treats a floor above a basement as elevated support, so the combined implementation explicitly refuses an exit that would change to terrain. Main's actual terrain-supported case exits correctly. PR #200 also does not hold a sole raised floor up; the combined product follows the terrain mode it actually supplies. These are limitations of that separate standing policy, not evidence of successful elevated exits.
+**Standing (agent.ts `storeyUnder`):** the feet stand on a level that rests above its building's base, where its floor is more than a body's step (`NAV_STEP`, 0.55 m) above the terrain under them, with the feet no more than a route step (0.5 m) below it and less than a storey's height (the grid's `wallH`, 2.8 m by default) above it, on a tile and, on a cut cell, on its floored half. So a body standing on something placed upstairs, a table or a landing, is on that storey; where two storeys' ranges meet, the higher floor wins. A ground floor at the base, a basement and a low porch are the terrain's, so a body there walks on the terrain, in and out; so is a deck, for standing, where the ground under it rises within a step of it. A walk from a floor stays on it, its feet no lower than the floor and on what's placed above it. A walk from a table upstairs that the structure planner routes in legs keeps the feet on the table to its edge, then brings them down to the floor, a drop of up to the table's height; one the navgrid routes is refused where the table stands more than a step above the floor, since the grid takes no drop of more than a step, as on the ground. A walk the navgrid routes along a stage stays on its top. A destination off the floor is refused, as identified-floor mode says. So is one whose height means another of the floors there (agent.ts `floorMeant`): another storey of the building, another building's storey, or the ground, which takes every floor within a step of the terrain, as standing does. The floor a height means is `walk_to`'s own rule for `y`, the navgrid's: the floor nearest it, no more than a step (`NAV_STEP`) above it, or within the destination's own bounds (`above`, `below`: a room's floor is exact, a seat's is no higher than its seat). Where the walk's own floor comes within a step of the terrain either way, as at a deck's low end, the ground there is that floor. The check comes once the router has planned the walk, before the navgrid routes it or its legs are walked, whatever gives the height: coordinates with `y`, a named place, a seat, a room, a thing's entrance, or a person. Where something placed on this floor stands at about that height there (`placedNear`: its top within the destination's bounds, a step each way unless given, no lower than this floor and under the next floor above it there), the walk goes, and the navgrid, when it routes the walk, reads the height against what is placed. Something placed on another floor is no reason to go. A walk that leaves out `y` isn't checked, and stays on the body's own storey. A walk from the ground isn't checked either: one to a room upstairs still ends on the ground floor below it, as on `main`. A person's height is read from presence, which carries their root. One standing, or held by a canned slump, has its root on its floor; one a sim laid down, under clip `ragdoll` or a physics pose held under another, has it about `RAGDOLL_ROOT_DROP` below the surface it lies on. So their floor is no more than that drop (and 0.05 m) above the root. For the check it is the highest griddled floor within that at their own spot, wherever the walk stops short of them: the one their body is on, since no body stands with a floor less than that above its feet. The navgrid, which reads every surface, takes the place to stand nearest the root within it: the floor they lie on, the floor beside a bed less than 1.4 m high that they lie on, or, where they lie on a surface more than 1.4 m above the next one down, that surface. Where no route reaches it, as on a top bunk, `walkNow` routes the walk again within a step of the root, as for someone standing there: it ends on the floor beside the bunk, and a walk from the ground to someone lying on a floor above that no route reaches ends on the ground below them. Where they lie on a surface less than 1.4 m above another, such as a low deck, the navgrid takes the surface below, unless the walk is a floor walk on that deck, whose grid stands nowhere lower than its floor. A walk the navgrid routes, one the structure planner leaves as a single leg, stands on that floor (`walkProbeGround`), all of it, at its height, where the ground beneath is no more than a step above it, and on what's placed there and beside it at or above the floor's height (`onOrAboveFloor`), since the feet go no lower than the floor to the walk's end, but not on the ground beside the floor, on another building's floor, or on anything placed lower than the floor. So it crosses a deck's low end at the deck's height, and the feet stand on the terrain there once it ends, and where the ground rises more than a step above a floor it doesn't cross it. A walk the planner routes in more than one leg, or keeps because the grid's route would cross a wall, follows `main`'s floor route, which crosses every floored cell at the floor's height. A slumped or tumbling body's floor is found from its feet (`feetY`), RAGDOLL_ROOT_DROP above its root, or at the root for a canned slump (`rootCanned`: held by a knockdown before any sim has run, or with no sim to run), wherever it is asked: for a walk, a stand-up, a takeoff, a flight's end, a spot it names by x and z, the tick's ground, and the room `look` says it is in. A flight under way and a tumble's physics read the terrain alone, since griddled floors aren't headless colliders.
 
 ## Debugging — what the world will tell you
 
@@ -713,20 +783,28 @@ Routes use the structures known when the walk begins, where they are then. A flo
   This is where your print-debugging goes; logs cost nothing and never
   touch the world log.
 - **`catch_up` / `look`** — chat and presence context you slept through.
-- **`worlds`** — the map: every world this door fronts, who is embodied in
-  each (people and agents by the ids `look` uses; spectators appear as
-  nothing), which one you are in, and — where the door knows your
-  credential's join policy — which others you may travel to. Read-only;
-  asking never founds a world. Same data at `GET /worlds`.
+- **`worlds`** — the map: every world this door fronts **that you may
+  see**, who is embodied in each (people and agents by the ids `look` uses;
+  spectators appear as nothing), which one you are in, which are members-only
+  or watch-only, and which others you may travel to. Read-only; asking never founds a world.
+  Same data at `GET /worlds` (send `Authorization: Bearer <your token>` to
+  see the private worlds you belong to).
 - **`travel {world}`** — move to another world on this door **without
   reconnecting**: identity, avatar and `activity` settings come with you;
   held pose, posture and your chat cursor are world-local and do not. Your
   host is told (`channels/changed`: the old world channel retired, the new
   one added) before the body moves, and a host that declines keeps you where
-  you are. Gated by your credential's join policy — an aid1 token with a
-  `worlds` claim (`["*"]` = any existing world) or a legacy token's `worlds`
-  list; no list means no travel. Founding a world that does not exist yet
-  needs the separate `create` claim.
+  you are. **Each world decides who may come in** (its owners' grants, see
+  *Who may come in* above); the door asks it before anything moves, so a
+  refusal leaves you where you were. Your credential can only narrow this: a
+  `worlds` list on it keeps you to those worlds, and no list means no
+  narrowing. Travelling to a name that does not exist yet founds a new world
+  there; every member may found a few per day (a credential with
+  `create: false` may not). **Where you were is remembered**: if you
+  disconnect, or the door restarts, you wake up in the world you were last
+  in, standing where you stood, as long as that world still lets you in.
+  Otherwise you wake up at home. Naming a world when you connect
+  (`?world=`) always wins.
 - **`activity {pulse_sec?, radius_m?}`** (MCPL) — your ambient-activity
   sense, and the dial for it. While anything happens within `radius_m` of
   you (speech, movement, gestures, arrivals, building), one digest per

@@ -23,7 +23,7 @@
 
 import { readdirSync } from "node:fs";
 import sharp from "sharp";
-import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose } from "../shared/humanoid.js";
+import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose, puppetPose } from "../shared/humanoid.js";
 import { rigBonesFor } from "./rigbones.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { normalizeSnapFrame } from "../shared/snapframe.js";
@@ -74,7 +74,7 @@ export const REHEARSAL_TOOLS = new Set(["rehearse_down", "rehearse_recover"]);
 export const TOOLS = [
   { name: "body_state", description: "Perceive your body or another present participant (who; omitted or 'self' means you). Default summary reports posture, wings, position, held poses/reaches and freshness. detail:'bones' adds published quaternions and derived world joint positions; 'contacts' adds named world-space contact points, outward normals, self-relative positions and ready-to-use reach targets; 'all' includes both. Optional window_ms (0–5000) measures reconstructed joint motion and endpoint residuals over a short window; a snapshot alone does not measure stability. Optional points filters contacts, e.g. ['chest_front','hand_l','hand_r']. Geometry evaluates the shared VRMA posture clips, published bone rotations and dependent limb reaches. Missing clips or unresolved/cyclic reach dependencies return incomplete geometry. Contacts are bone-bound anatomical estimates; full renderer blending, emotes and springbones are not reproduced. Reading never moves or touches anyone. Use returned reachTarget with reach to track a named point; use selfPosition to plan offsets around your own body.", inputSchema: { type: "object", properties: { who: { type: "string" }, detail: { type: "string", enum: ["summary", "bones", "contacts", "all"] }, points: { type: "array", items: { type: "string" }, maxItems: Object.keys(CONTACT_POINTS).length }, window_ms: { type: "integer", minimum: 0, maximum: 5000 } } } },
   { name: "look", description: "Text-tier perception: where you are, who's present and what they're doing, every placed thing with distance/bearing, and chat since you last looked.", inputSchema: { type: "object", properties: {} } },
-  { name: "snapshot", description: "A rendered image from the world (spectator browser on a GPU host). Slower than look — use when spatial/visual detail matters. view: 'first' (default) is your avatar's eyes — you are not in frame; 'third' is an over-the-shoulder chase view — your body and what's ahead of it; 'selfie' faces you from in front — your avatar, framed. Optional framing: pitch (first only) tilts your gaze in degrees, + up / − down (default ≈ −4; try −60 to see what's at your feet); dist and height (third/selfie) set the camera's flat distance from you and its height above your feet in metres (defaults third 3.4/2.1, selfie 2.6/1.6).", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] }, pitch: { type: "number", minimum: -85, maximum: 85 }, dist: { type: "number", minimum: 0.5, maximum: 30 }, height: { type: "number", minimum: 0, maximum: 30 } } } },
+  { name: "snapshot", description: "A rendered image from the world (spectator browser on a GPU host). Slower than look — use when spatial/visual detail matters. view: 'first' (default) is your avatar's eyes — you are not in frame; 'third' is an over-the-shoulder chase view — your body and what's ahead of it; 'selfie' faces you from in front — your avatar, framed. Optional framing: pitch (first only) tilts your gaze in degrees, + up / − down (default ≈ −4; try −60 to see what's at your feet); dist and height (third/selfie) set the camera's flat distance from you and its height above your feet in metres (defaults third 3.4/2.1, selfie 2.6/1.6). renderer: 'auto' (default) prefers a native Unreal renderer serving this world, else a browser one; 'browser' or 'unreal' asks for that one only.", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] }, renderer: { type: "string", enum: ["auto", "browser", "unreal"] }, pitch: { type: "number", minimum: -85, maximum: 85 }, dist: { type: "number", minimum: 0.5, maximum: 30 }, height: { type: "number", minimum: 0, maximum: 30 } } } },
   { name: "walk_to", description: "Walk (or run) to a named place, a thing, a person, or world coordinates. Griddled structures route through walkable openings; sealed, oversized, or conflicting local routes return a reason without walking through walls. This is horizontal centerline routing with a 0.5m feet-to-step obstruction band, not full-body clearance or general mesh navigation. Placed models are solid, as they are to people: you stand on their floors, climb their stairs and are stopped by their walls and furniture — and walk_to routes through them: round furniture, through doorways, up and down stairs, onto other storeys (pick one with y). A destination with nowhere to stand, or no way there, is refused with the reason; a walk something unexpected stops ends early and says where. Main follows terrain support; identified-floor support requires the separate standing implementation. Default arrival tolerance is 0.01m, so short positioning moves are honored. Optional tolerance (0–0.4 metres) changes how close to the requested point counts as arrived. This is destination accuracy, not distance from another body.", inputSchema: { type: "object", properties: { to: { type: "string", description: "a named destination instead of coordinates: \"thing/place\" (e.g. \"lookout/balcony\"), a place's name or label alone (\"reading room\" — the nearest one), a thing alone (its entrance), or a person. look lists each thing's places." }, x: { type: "number" }, z: { type: "number" }, y: { type: "number", description: "which floor at the destination: the walkable surface nearest this height, no more than a step (0.55m) above it — 0 for a ground floor, an upper storey's floor height for that storey. Omit for your own storey if the destination has one, else its lowest floor (the ground floor of another building, the ground under a balcony)." }, run: { type: "boolean" }, tolerance: { type: "number", minimum: 0, maximum: 0.4 } } } },
   { name: "name_place", description: "Give a spot a name, so you and everyone else can walk_to it by name. Names where you stand (or x/z, with y optional: the floor there nearest your height), on the thing you are in or the nearest placed thing (or `on`), in that thing's own frame — it moves with it. Written to the thing's `places` component (builder rights; answers once the world accepts or refuses it): a name can be added, re-pointed or retired any time, and covers places the model itself declares. remove: true retires a name.", inputSchema: { type: "object", properties: { name: { type: "string" }, label: { type: "string", description: "how it reads, e.g. \"the window seat\"" }, on: { type: "string", description: "the thing's id; default: the thing you are in, else the nearest within 15m" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, remove: { type: "boolean" } }, required: ["name"] } },
   { name: "check_model", description: "What a model is like to walk into, measured with the walking body's own rules before or after it is placed: whether it is walk-in at all, its floors and how much of each can be reached from outside, why any part can't (a passage narrower than a body, a rise too high to step, a climb an overhanging floor blocks, no way in), the render budget — and suggested rooms, doors and stairs, ready to name as places. Advisory: nothing is refused. Pass the id of a placed thing (checked as placed: at its scale, with its collide), or a library/store path (what an upload returns; checked at its own size, or at scale). The first check of a model at a scale takes a few seconds.", inputSchema: { type: "object", properties: { id: { type: "string" }, lib: { type: "string" }, scale: { type: "number", description: "with lib: check it as if placed at this scale (0.05–20)" } } } },
@@ -121,8 +121,8 @@ export const TOOLS = [
   // worlds is a product decision nobody has made, so the honest move is to
   // stop promising it rather than to implement it by inference. Identity,
   // avatar and the activity dial ARE carried, and are named because they are.
-  { name: "worlds", description: "Which worlds this door fronts, and who is embodied in each — the map for `travel`. Marks the world you are in now and, where the door knows your join policy, which others you may travel to. Founding a world that is not listed needs create authority. People and agents are listed by the same ids you see in `look`; spectators appear as nothing, as in-world.", inputSchema: { type: "object", properties: {} } },
-  { name: "travel", description: "Walk to another world this door fronts, keeping your identity, avatar and attention settings — no reconnect. Subject to your credential's join policy; founding a world that does not exist yet needs separate create authority. Your held pose and posture do NOT survive the move (they are world-local, like a disconnect), and your chat cursor resets to the new world.", inputSchema: { type: "object", properties: { world: { type: "string", description: "world name, e.g. \"commons\"" } }, required: ["world"] } },
+  { name: "worlds", description: "Which worlds this door fronts that you may see, and who is embodied in each — the map for `travel`. Marks the world you are in now, which worlds are members-only or watch-only, and which you may travel to: each world's owners decide who comes in. Travelling to a name that isn't listed founds a new world (a few per day). People and agents are listed by the same ids you see in `look`; spectators appear as nothing, as in-world.", inputSchema: { type: "object", properties: {} } },
+  { name: "travel", description: "Walk to another world this door fronts, keeping your identity, avatar and attention settings — no reconnect. The world you name decides whether you may come in (its owners' grants), and a credential limited to certain worlds keeps you to them; a refusal leaves you where you are. Naming a world that does not exist yet founds it (a few per day). Your held pose and posture do NOT survive the move (they are world-local, like a disconnect), and your chat cursor resets to the new world.", inputSchema: { type: "object", properties: { world: { type: "string", description: "world name, e.g. \"commons\"" } }, required: ["world"] } },
   { name: "world_verb", description: "Raw world-log verb. The verb set is CLOSED by design — say, use, punt, force, mount, dismount, spawn, place, remove, light, comp, motion, behavior, asset, terrain, grass, sky, weather, epoch (owner only: enters or upgrades the world's deterministic-sim epoch), grant, kick, ban, unban, caption (one line of what a screen said; needs the per-screen caption deed) — and the world refuses others; extend STATE with comp types you invent, EVENTS with use actions, SEMANTICS with behavior scripts, never by hoping a new verb exists. This is also the authoring surface for components: comp {id, type, data|null} attaches data to an entity (sockets, reactions, or anything you invent); motion {id, type: pendulum|spin|orbit|bob|path, …} sets it moving; see AGENTS.md in the eidoverse-worlds repo for the full vocabulary.", inputSchema: { type: "object", properties: { verb: { type: "string" }, args: { type: "object" } }, required: ["verb", "args"] } },
   { name: "measure", description: "Geometry as data: bounding box, up-facing flat zones (seat/table/deck candidates), and named parts of a placed thing (id) or a library model (lib). Flat-zone coords are the MODEL's local frame — the same frame sockets use, so a zone's center IS a socket pos: comp {id, type:'sockets', data:{seat:{pos:[cx,y,cz], yaw}}}. Use this to find where a body can sit before declaring the seat; verify by mounting it yourself and taking a selfie snapshot. Raw GLB bytes are at GET <sequencer>/library/<lib> if you want to process the mesh locally.", inputSchema: { type: "object", properties: { id: { type: "string" }, lib: { type: "string" } } } },
   { name: "world_history", description: "Pull raw entries from the world log — the append-only record every world IS. Filter by verbs (e.g. ['use','motion'] to trace an interaction, ['comp'] to see how something was built), page backwards with before. Every entry has {seq, ts, actor, verb, args}; reaction-authored entries carry {cause, by}. This is the debugging primitive: the log is the world, so reading it is reading the world's source.", inputSchema: { type: "object", properties: { verbs: { type: "array", items: { type: "string" } }, before: { type: "number" }, after: { type: "number" }, limit: { type: "number" } } } },
@@ -131,6 +131,7 @@ export const TOOLS = [
   { name: "ban", description: "MODERATION: ban a participant — disconnects them now and refuses their joins (including spectating) until unban. Default is THIS world only (needs owner rights here). global:true bans them from every world on this server (needs WORLD_ADMIN). Give a reason — it is shown to them and kept in the record.", inputSchema: { type: "object", properties: { id: { type: "string" }, reason: { type: "string" }, global: { type: "boolean" } }, required: ["id"] } },
   { name: "unban", description: "MODERATION: lift a ban — this world's by default, the server-wide list with global:true.", inputSchema: { type: "object", properties: { id: { type: "string" }, global: { type: "boolean" } }, required: ["id"] } },
   { name: "list_bans", description: "Who is banned from this world (anyone may ask), or from the whole server with global:true (operator only).", inputSchema: { type: "object", properties: { global: { type: "boolean" } } } },
+  { name: "world_access", description: "WHO MAY COME INTO this world, and until when. The world decides this itself (not your credential). action 'show' (anyone here): the door, and everyone named. Owners change it — action 'mode' with mode: members (invisible to everyone not listed), watch (anyone may watch, only those listed may come in), visitors, or open; action 'grant' with id (a name, even of someone who is not here right now) and role: owner|builder|visitor|spectator|none, optionally for: '30m' | '2h' | '1d' | '1w' to make it end; action 'revoke' with id. Ending access is enforced by the world: the holder is warned five minutes before, then removed.", inputSchema: { type: "object", properties: { action: { type: "string", enum: ["show", "mode", "grant", "revoke"] }, mode: { type: "string", enum: ["members", "watch", "visitors", "open"] }, id: { type: "string" }, role: { type: "string", enum: ["owner", "builder", "visitor", "spectator", "none"] }, for: { type: "string" } }, required: ["action"] } },
 ];
 
 import { readdirSync } from "node:fs";
@@ -207,7 +208,7 @@ export function toolList({ travel = false }: { travel?: boolean } = {}) {
     && (REHEARSAL_ENABLED || !REHEARSAL_TOOLS.has(t.name)));
 }
 
-export async function snapshotTool(ag: ToolAgent, view = "first", frame: { dist?: unknown; height?: unknown; pitch?: unknown } = {}) {
+export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "auto", frame: { dist?: unknown; height?: unknown; pitch?: unknown } = {}) {
   try {
     const norm = normalizeSnapFrame(frame);
     const extra = Object.entries(norm).map(([k, v]) => `&${k}=${v}`).join("");
@@ -218,11 +219,16 @@ export async function snapshotTool(ag: ToolAgent, view = "first", frame: { dist?
     const note = !ignored.length ? null
       : posed ? "pitch applies only to view first; ignored"
       : `${ignored.join(" and ")} ${ignored.length > 1 ? "apply" : "applies"} only to views third and selfie; ignored`;
-    const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}${extra}`);
+    // as this identity: a members-only world's snap answers only its members
+    const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}&renderer=${encodeURIComponent(renderer)}${extra}`,
+      ag.agentToken ? { headers: { authorization: `Bearer ${ag.agentToken}` } } : undefined);
     if (!r.ok) return fail(`snapshot: no picture was taken; the world server answered "${(await r.text()).slice(0, 200)}" (${r.status}), so try again in a while`);
     const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
+    const label = r.headers.get("x-eidoverse-scene") === "world-projection"
+      ? "Unreal server-world projection: models, structures, terrain and avatars; unsupported components and effects may be absent. This is a donor-rendered image, not authoritative state."
+      : "Unreal underwater prototype view: local terrain/habitats and networked avatars; persistent world buildings are not mirrored.";
     const image = { type: "image", data: b64, mimeType: "image/png" };
-    return { content: note ? [image, { type: "text", text: note }] : [image] };
+    return { content: [...(r.headers.get("x-eidoverse-renderer") === "unreal" ? [{ type: "text", text: label }] : []), image, ...(note ? [{ type: "text", text: note }] : [])] };
   } catch (e) {
     return fail(`snapshot failed: no picture arrived from the world server (${(e as Error).message}); try again in a moment`);
   }
@@ -300,7 +306,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
     const result = await ag.bodyState(a.who == null ? ag.name : String(a.who), a.detail ?? "summary", a.points, a.window_ms ?? 0);
     return (result.ok ? text : fail)(JSON.stringify(result, null, 2));
   },
-  snapshot: async (ag, a, ctx, name) => { return await snapshotTool(ag, typeof a.view === "string" ? a.view : "first", { dist: a.dist, height: a.height, pitch: a.pitch }); },
+  snapshot: async (ag, a, ctx, name) => { return await snapshotTool(ag, typeof a.view === "string" ? a.view : "first", typeof a.renderer === "string" ? a.renderer : "auto", { dist: a.dist, height: a.height, pitch: a.pitch }); },
   set_avatar: async (ag, a, ctx, name) => {
       const roster = (await (await fetch(`${ag.httpBase}/avatars`)).json()) as { name: string; path: string }[];
       const want = String(a.avatar ?? "").trim();
@@ -393,11 +399,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // `to` names the destination (a place, a thing, a person); x/z/y are
       // coordinates. A named place carries its own floor and reach.
       let x = Number(a.x), z = Number(a.z), y = a.y != null ? Number(a.y) : undefined, label: string | null = null;
-      let near: { reach?: number; above?: number; below?: number; inside?: (x: number, z: number) => boolean } = {};
+      let near: { reach?: number; above?: number; below?: number; inside?: (x: number, z: number) => boolean; bodyAt?: { x: number; z: number } } = {};
       if (typeof a.to === "string") {
         const d = ag.destination(a.to);
         if ("refusal" in d) return fail(d.refusal);
-        ({ x, z } = d); y = d.y; near = { reach: d.reach, above: d.above, below: d.below, inside: d.inside }; label = d.label;
+        ({ x, z } = d); y = d.y; near = { reach: d.reach, above: d.above, below: d.below, inside: d.inside, bodyAt: d.bodyAt }; label = d.label;
       }
       const tolerance = a.tolerance ?? 0.01;
       if (![x, z, tolerance].every(Number.isFinite) || tolerance < 0 || tolerance > 0.4)
@@ -574,7 +580,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // Otherwise merge over what is already held — mergePose, the same rule
       // a browser applies when it is posed.
       if (target) {
-        ag.puppet(target, { pose: replace ? mergePose(null, v.pose) ?? {} : v.pose, merge: !replace });
+        ag.puppet(target, puppetPose(v.pose, replace));
         return text(`asked ${target} to ${replace ? "hold a pose (replacing theirs)" : "pose"} ${what}`
           + `${note ? ` — ${note}` : ""}. They decide whether to take it.`);
       }
@@ -593,7 +599,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         const to = String(a.target).trim();
         const away = absent(ag, to, "so there's no pose of theirs to release");
         if (away) return away;
-        ag.puppet(to, { pose: {} });
+        ag.puppet(to, puppetPose(null));
         return text(`asked ${to} to release their pose. They decide whether to.`);
       }
       ag.setPose(null);
@@ -804,10 +810,14 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // here so an agent learns "may I?" from the map rather than from a
       // refused travel.
       let r: Response;
-      try { r = await fetch(`${ag.httpBase}/worlds`, { signal: AbortSignal.timeout(4_000) }); }
+      // AS THIS IDENTITY: the map is per caller — a members-only world is
+      // invisible to everyone it does not list, so an anonymous ask would
+      // hide the private worlds this agent belongs to.
+      const headers: Record<string, string> = ag.agentToken ? { authorization: `Bearer ${ag.agentToken}` } : {};
+      try { r = await fetch(`${ag.httpBase}/worlds`, { headers, signal: AbortSignal.timeout(4_000) }); }
       catch (e) { return fail(`worlds: the world server didn't answer (${(e as Error).message}), so the list isn't known; try again in a moment`); }
       if (!r.ok) return fail(`worlds: the world server answered ${r.status}, so the list isn't known; try again in a moment`);
-      const body = (await r.json()) as { worlds?: { name: string; loaded?: boolean; people?: string[]; agents?: string[] }[] };
+      const body = (await r.json()) as { worlds?: { name: string; loaded?: boolean; access?: string; you?: string; people?: string[]; agents?: string[] }[] };
       const list = Array.isArray(body.worlds) ? body.worlds : [];
       if (!list.some((w) => w.name === ag.world)) list.push({ name: ag.world, loaded: true, people: [], agents: [] });
       list.sort((x, y) => (x.name === ag.world ? -1 : y.name === ag.world ? 1 : x.name.localeCompare(y.name)));
@@ -816,11 +826,15 @@ export const HANDLERS: Record<string, ToolHandler> = {
         const here = w.name === ag.world;
         const who = [...(w.people ?? []), ...(w.agents ?? []).map((p) => `${p} (agent)`)];
         const occupancy = who.length ? who.join(", ") : (w.loaded ? "empty" : "empty, not loaded");
-        const may = here ? "you are here" : pol ? (pol.canJoin(w.name) ? "may travel" : "not in your join policy") : "";
-        return `- ${w.name}${here ? " ←" : ""}: ${occupancy}${may ? ` — ${may}` : ""}`;
+        const door = w.access === "members" ? "members only" : w.access === "watch" ? "watch only" : "";
+        const may = here ? "you are here"
+          : pol && !pol.canJoin(w.name) ? "outside the worlds your credential is limited to"
+            : w.you === "watch" ? "you may watch, not travel in"
+              : pol ? "may travel" : "";
+        return `- ${w.name}${here ? " ←" : ""}${door ? ` (${door})` : ""}: ${occupancy}${may ? ` — ${may}` : ""}`;
       });
       const foot = pol
-        ? (pol.canFound ? "You hold create authority: `travel` to an unlisted name founds it." : "Founding an unlisted world needs create authority you do not hold.")
+        ? (pol.canFound ? "`travel` to a name that isn't listed founds a new world there (you can found a few each day)." : "Your credential doesn't let you found new worlds.")
         : ctx.travel ? "" : "This door fronts a single world; there is no travel from here.";
       return text(`Worlds on this door (${list.length}):\n${lines.join("\n")}${foot ? `\n${foot}` : ""}`);
   },
@@ -855,7 +869,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // What the world server did, as far as the door can see it: no answer,
       // an answer that isn't geometry, or its own error.
       let r: Response;
-      try { r = await fetch(`${base}/geom?${q}`); } catch (e) { return fail(`measure: the world server didn't answer (${String(e)}), so nothing was measured; try again in a moment`); }
+      // as this identity: a members-only world's geometry answers only its members
+      try { r = await fetch(`${base}/geom?${q}`, ag.agentToken ? { headers: { authorization: `Bearer ${ag.agentToken}` } } : undefined); } catch (e) { return fail(`measure: the world server didn't answer (${String(e)}), so nothing was measured; try again in a moment`); }
       let d: any;
       try { d = await r.json(); } catch { return fail(`measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); }
       if (d.error) return fail(`measure: the world server answered "${d.error}" (${r.status}), so nothing was measured`);
@@ -931,6 +946,47 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const answer = await ag.modOutcome(t0);
       if (answer == null || answer.startsWith("refused: ")) return fail(answer ?? "no reply from the world (timeout)");
       return text(answer);
+
+  },
+  world_access: async (ag, a, ctx, name) => {
+      // Every change is the `grant` verb underneath (the wildcard's rung for
+      // a mode), so an agent that owns a world administers it exactly like a
+      // human. The answer is the world's own: its refusal, or the door as it
+      // now stands (asked right after the change, so it reflects it).
+      const action = String(a.action ?? "show");
+      const t0 = Date.now();
+      if (action === "mode") {
+        const rung = ({ members: "none", watch: "spectator", visitors: "visitor", open: "builder" } as Record<string, string>)[String(a.mode ?? "")];
+        if (!rung) return { content: [{ type: "text", text: "world_access mode wants mode: members, watch, visitors or open" }], isError: true };
+        ag.verb("grant", { id: "*", role: rung });
+      } else if (action === "grant") {
+        const id = String(a.id ?? "").trim();
+        if (!id || !a.role) return { content: [{ type: "text", text: "world_access grant wants id and role (owner|builder|visitor|spectator|none), and optionally for: '2h'" }], isError: true };
+        ag.verb("grant", { id, role: String(a.role), ...(a.for ? { for: String(a.for) } : {}) });
+      } else if (action === "revoke") {
+        const id = String(a.id ?? "").trim();
+        if (!id) return { content: [{ type: "text", text: "world_access revoke wants the id of whoever to revoke" }], isError: true };
+        ag.verb("grant", { id, revoke: true });
+      } else if (action !== "show") {
+        return { content: [{ type: "text", text: "world_access action is one of show, mode, grant, revoke" }], isError: true };
+      }
+      ag.sendMod("world-access");
+      // Wait for THE LISTING (or a refusal): a change is also echoed as a
+      // `mod` line ("…bound to <subject>"), which must not be mistaken for it.
+      // The echo arrives first; the listing reports the binding too.
+      // The change's own echo (whom a grant was bound to — the one way an
+      // agent owner can check a name-based grant reached the right person) is
+      // returned WITH the listing, not dropped (Greptile #258).
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline) {
+        if (ag.lastRefusal && ag.lastRefusal.ts >= t0) return text(`refused: ${ag.lastRefusal.text}`);
+        if (ag.lastMod && ag.lastMod.ts >= t0 && ag.lastMod.text.startsWith("who can come into")) {
+          const echo = ag.recentMods.filter((m) => m.ts >= t0 && !m.text.startsWith("who can come into")).map((m) => m.text);
+          return text([...echo, ag.lastMod.text].join("\n"));
+        }
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return text("no reply from the world (timeout)");
 
   },
 };

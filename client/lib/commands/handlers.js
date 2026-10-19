@@ -73,22 +73,48 @@ register('role', (arg) => {
 });
 
 register('grant', (arg) => {
-  // /grant <name> owner|builder|visitor [+gen|-gen] [+fly|-fly]
+  // /grant <name> owner|builder|visitor|spectator|none [+gen|-gen] [+fly|-fly] [for 2h|forever]
   // server enforces owner-only. `fly` is orthogonal to the ladder like gen,
   // and default-off everywhere -- including open worlds, and including for
   // owners. Somebody says so, in the log, or nobody flies.
+  // `for <duration>` ends the grant (30m, 2h, 1d, 1w); `forever` clears an end.
+  const usage = 'usage: /grant <name> owner|builder|visitor|spectator|none [+gen|-gen] [+fly|-fly] [for 2h|forever]';
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const id = parts[0];
-  const role = parts.find((p) => ['owner', 'builder', 'visitor'].includes(p.toLowerCase()))?.toLowerCase();
+  const role = parts.slice(1).find((p) => ['owner', 'builder', 'visitor', 'spectator', 'none'].includes(p.toLowerCase()))?.toLowerCase();
   const genFlag = parts.find((p) => p === '+gen' || p === '-gen');
   const flyFlag = parts.find((p) => p === '+fly' || p === '-fly');
-  if (!id || (!role && !genFlag && !flyFlag)) {
-    return logChat('*', 'usage: /grant <name> owner|builder|visitor [+gen|-gen] [+fly|-fly]');
-  }
+  const forAt = parts.findIndex((p, i) => i > 0 && p.toLowerCase() === 'for');
+  const dur = forAt > 0 ? parts.slice(forAt + 1, forAt + 3).join(' ').match(/^\d+\s*[a-z]+/i)?.[0] : undefined;
+  const forever = parts.some((p, i) => i > 0 && /^(forever|permanent|permanently)$/i.test(p));
+  if (forAt > 0 && !dur) return logChat('*', 'for wants a duration: 30m, 2h, 1d or 1w');
+  if (!id || (!role && !genFlag && !flyFlag && !dur && !forever)) return logChat('*', usage);
   sendVerb('grant', { id, ...(role ? { role } : {}),
                       ...(genFlag ? { gen: genFlag === '+gen' } : {}),
-                      ...(flyFlag ? { fly: flyFlag === '+fly' } : {}) });
+                      ...(flyFlag ? { fly: flyFlag === '+fly' } : {}),
+                      ...(dur ? { for: dur } : forever ? { until: null } : {}) });
 });
+
+// /revoke <name> — take back someone's grant: they get this world's default
+// again (in a members-only world, that means they may not come in).
+register('revoke', (arg) => {
+  const id = (arg || '').trim();
+  if (!id) return logChat('*', 'usage: /revoke <name>');
+  sendVerb('grant', { id, revoke: true });
+});
+
+// /access [members|watch|visitors|open] — who may come into this world.
+// No argument: show it (and who is listed). Owner-only to change; the
+// server enforces. Same verb underneath: the wildcard's rung.
+register('access', (arg) => {
+  const a = (arg || '').trim().toLowerCase();
+  if (!a) return sendMod('world-access');
+  const rung = { members: 'none', private: 'none', closed: 'none', watch: 'spectator', spectators: 'spectator',
+                 visitors: 'visitor', visitor: 'visitor', open: 'builder', builders: 'builder' }[a];
+  if (!rung) return logChat('*', 'usage: /access members|watch|visitors|open — or /access to see who can come in');
+  sendVerb('grant', { id: '*', role: rung });
+});
+register('members', () => sendMod('world-access'));
 
 // /kick /ban <name> [reason…] — owner-only, the server enforces (and
 // narrates the act into chat via the log entry it broadcasts back).

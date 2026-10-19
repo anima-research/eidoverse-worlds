@@ -1,0 +1,88 @@
+name: Greptile label
+
+# Greptile reviews only pull requests labelled `greptile` (.greptile/config.json).
+# Every 30 minutes this job adds the label to each open, non-draft pull
+# request with more than 400 additions plus deletions that carries neither
+# `greptile` nor `no-greptile`, so a smaller one gets a Greptile review only
+# if someone adds the label by hand. Greptile's reference lists a pull
+# request being given a trigger label among the openings it reviews, and a
+# label added after a pull request opened starts its review then: within
+# about half an hour of a pull request opening, passing 400 lines or being
+# marked ready, and later when GitHub's scheduler is busy.
+#
+# Each run lists every open pull request, up to the list call's 500, so the
+# next run catches up on one that was missed or delayed. A draft past the
+# line is labelled once it's marked ready. The label is only ever added: a
+# pull request that later shrinks keeps it, and removing it from one past the
+# line doesn't skip the review, since the next run adds it back.
+# `no-greptile` is the way to skip a review.
+#
+# A schedule rather than pull_request_target, which GitHub's default event
+# policy for public repositories blocks once it's enforced, from November 2,
+# 2026. A scheduled run uses this file as the default branch has it, reads
+# pull request numbers, line counts, draft flags and labels through the API,
+# and checks nothing out. GitHub disables a public repository's scheduled
+# workflows after 60 days without activity (enable this one again from the
+# Actions tab), and sends a scheduled workflow's notifications to whoever last
+# changed its cron line. workflow_dispatch runs it on demand.
+on:
+  schedule:
+    # Away from the start of the hour, which GitHub names as a time of high
+    # load that can delay a scheduled run.
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+
+jobs:
+  label:
+    name: Label pull requests for Greptile
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Label open pull requests of more than 400 changed lines
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        # Each jq runs in an assignment, so a failure stops the step. Label
+        # names compare case-insensitively, as Greptile's own filters do. jq
+        # reads a missing count as null, and null plus a number as that
+        # number, so a candidate whose counts aren't both numbers is named and
+        # fails the step rather than passing unlabelled. A label that fails for
+        # one pull request doesn't stop the others.
+        run: |
+          prs=$(gh pr list --repo "$REPO" --state open --limit 500 \
+            --json number,additions,deletions,isDraft,labels)
+          open=$(jq length <<< "$prs")
+          echo "Open pull requests: $open."
+          candidates=$(jq '[.[] | select(.isDraft | not)
+            | select(any(.labels[]; (.name | ascii_downcase) == "greptile" or (.name | ascii_downcase) == "no-greptile") | not)]' <<< "$prs")
+          uncounted=$(jq -r '[.[] | select((.additions | type) != "number" or (.deletions | type) != "number")
+            | "#\(.number)"] | join(" ")' <<< "$candidates")
+          todo=$(jq -r '.[]
+            | select((.additions | type) == "number" and (.deletions | type) == "number")
+            | select(.additions + .deletions > 400)
+            | "\(.number) \(.additions + .deletions)"' <<< "$candidates")
+          labelled=0
+          failed=""
+          while read -r number changed; do
+            [ -n "$number" ] || continue
+            if gh api --method POST "repos/$REPO/issues/$number/labels" -f 'labels[]=greptile' > /dev/null; then
+              echo "Labelled #$number greptile: $changed changed lines."
+              labelled=$((labelled + 1))
+            else
+              echo "Labelling #$number failed: GitHub's answer is above."
+              failed="$failed #$number"
+            fi
+          done <<< "$todo"
+          echo "Labelled $labelled."
+          if [ -n "$uncounted" ]; then
+            echo "::error::GitHub gave no line counts for these, so they weren't labelled: $uncounted. To have Greptile review one, add the greptile label to it by hand, or add no-greptile to skip its review; either ends this failure for it."
+          fi
+          if [ -n "$failed" ]; then
+            echo "::error::Labelling failed for these:$failed. GitHub's answer for each is above its 'Labelling #N failed' line, and every later run tries again. To have Greptile review one now, add the greptile label to it by hand, creating the label from the repository's Labels page if it isn't there, or add no-greptile to skip its review; either ends this failure for it."
+          fi
+          if [ -n "$uncounted$failed" ]; then
+            exit 1
+          fi

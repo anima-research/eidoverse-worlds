@@ -21,12 +21,13 @@ import { report, bus, tee, teeNow, CONFIG } from './base.js';
 import { loadEidoModule, primeFiles, listLibrary, fetchBytes } from './assets.js';
 import { markPhase } from './boot.js';
 import { bandCuts, bandedBakeRender, bakeGeneration } from './sky_baked.js';
+import { bakedDomeObject } from './sky_baked.js';
 import { BAKE_INTERCEPT, attachBakedDome, detachBakedDome, updateBakedDome, bakedActive, requestBake, holdLiveDomes, releaseLiveDomes, liveDomesHeld, takeHeldDomes,
   envTexture, adoptEnvironment, whenBakeReady, bakedRefreshing } from './sky_baked.js';
 import { beginWork } from './loadwork.js';
 import { makeSwapChain, SHOWN_UNKNOWN } from './sky_swapchain.js';
 import { serializeBakes as serializeBakesWith, BAKE_GUARD, BAKE_AFTER, BAKE_HELD } from './sky_bakelock.js';
-import { showInterimSky, updateInterimSky, hideInterimSky, interimSkyShown } from './sky_interim.js';
+import { showInterimSky, interimSkyObject, updateInterimSky, hideInterimSky, interimSkyShown } from './sky_interim.js';
 import { busy as loadingBusy } from './framebudget.js';
 import { bootDone } from './boot.js';
 import { setDayness, releaseForeignLights } from './lightrig.js';
@@ -36,6 +37,7 @@ import { WEATHERS, effectiveSky, hoursAt } from '../../shared/forecast.js';
 // around its own async build; anything another subsystem marks as its own is
 // off limits, whenever it appeared.
 import { claimUnowned, releaseHook } from './autohooks.js';
+import { rainSurfaceAt } from './terrain.js';
 
 // The environment exists from the first frame — BLACK, contributing nothing —
 // so every material's lighting graph is born with its env branch in place.
@@ -69,6 +71,15 @@ export const skyImpl = () => impl;
 /** §22m diag: the sky-owned scene roots, for cost-attribution phases that
  *  hide the sky's DRAW without touching its state. Read-only. */
 export const skyOwnedObjects = () => skyOwned ?? [];
+/** Under the world's water (watervolumes.js): the sky draws unfogged, so it is hidden while the camera is below the
+ *  surface and the scene background paints the far water instead. Each object goes back to the visibility it had. */
+const hiddenForWater = new Map();
+export function hideSkyForWater(hide) {
+  // every unfogged sky object: the basic SkyMesh, the eidoverse sky's domes, the baked dome (the default tiers) and the
+  // interim gradient shown while a sky builds
+  if (hide) { for (const o of [skyMesh, ...(skyOwned ?? []), bakedDomeObject(), interimSkyObject()]) if (o && !hiddenForWater.has(o)) { hiddenForWater.set(o, o.visible); o.visible = false; } }
+  else { for (const [o, v] of hiddenForWater) o.visible = v; hiddenForWater.clear(); }
+}
 /** 0 at night → 1 at noon. Lamps and other night-aware things read this. */
 export let dayness = 1;
 
@@ -403,6 +414,9 @@ export const skyPreviewing = () => previewing;
 // 'sky-busy' comes from the sky's own arrival (a stand-in gradient, a tier swap compiling): loading too. Harmless unheard.
 let arriving = false;
 bus.on('sky-busy', (b) => { arriving = !!b; bus.emit('sky-state'); });
+// Terrain rebuilt or reshaped, water level changed: the weather's splash ground is a bake of
+// rainSurfaceAt around the camera, so it re-reads it (over a few frames; the old one shows meanwhile).
+bus.on('ground-changed', () => { skyApi?.invalidateGround?.(); });
 // A render only reads as 'loading…' once it has run past LOAD_SHOW_MS: a rated sky, a real clock or a forecast re-render
 // every second and finish in a frame, and flashing the line at 1 Hz re-rasterised the whole World panel in VR
 // (review 3, M3 / U1). Real builds and swaps take seconds, so they still show.
@@ -1003,6 +1017,9 @@ async function buildSky(a, world, wantAudio) {
       weather: WEATHERS.includes(w0) ? w0 : 'clear',
       sun, hemi,
       audio: wantAudio,
+      // the rain's splashes ring out on the ground under them — terrain, water, nothing past the edge —
+      // not on the library's default flat y=0 (a library older than this option ignores it)
+      groundHeightAt: rainSurfaceAt,
     });
     phase('makeSky');
     claimSkyAdditions(ownership);

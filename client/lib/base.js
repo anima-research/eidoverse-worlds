@@ -41,6 +41,8 @@ export const CONFIG = {
   world: params.get('world') || 'commons',
   spectate: params.has('spectate'),
   renderer: params.has('renderer'),
+  // a roaming renderer: the server may send it to any world a snapshot is asked of (server/snapshots.ts)
+  roam: params.has('renderer') && params.has('roam'),
   follow: params.get('follow'),
   // Door key: ?key=… once, remembered for this origin thereafter.
   token: params.get('key') || store?.getItem('ew-key') || '',
