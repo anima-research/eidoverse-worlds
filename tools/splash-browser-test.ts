@@ -42,15 +42,21 @@ try {
   // let the sheet's pipeline compile and draw a few frames
   await until(() => evalJson(`(async () => { const { scene } = await import('/lib/core.js'); return !!scene.getObjectByName('water'); })()`).catch(() => false), 'water mesh in the scene');
   await sleep(3000);
-  // stand the viewer in the pond, a few metres from where the water will be thrown, and let the camera follow
-  await evalJson(`(() => { EW.myState.pos.set(1.5, -1.2, 1.5); return true; })()`);
-  await sleep(4000);
+  // stand the viewer in the pond, a few metres from where the water will be thrown — once its body is here (a
+  // spawn arriving later would put it back on the shore) — and wait until the splashes system has it in the water
+  await until(() => evalJson(`!!EW.me()?.root`).catch(() => false), 'the viewer\'s body');
+  await until(async () => {
+    await evalJson(`(() => { EW.myState.pos.set(1.5, -1.2, 1.5); return true; })()`);
+    await sleep(1500);
+    return (await evalJson(`EW.waterFx()`)).bodies >= 1;
+  }, 'the viewer standing in the pond');
   const spot = await evalJson(`(async () => { const w = await import('/lib/water.js'); return w.surfaceHeightAt(5, -4); })()`);
   check('the pond has a surface where we will splash', typeof spot === 'number', `${spot}`);
   await evalJson(`(async () => { await import('/lib/splashes.js'); return true; })()`);
-  const thrown = await evalJson(`EW.splash(5, -4, 1)`);
-  const fx = await evalJson(`EW.waterFx()`);
-  check(`a full splash throws drops and rings the water (${fx.drops} drops, ${fx.ripples} rings)`, thrown === true && fx.drops > 40 && fx.ripples >= 1, JSON.stringify(fx));
+  const before = (await evalJson(`EW.waterFx()`)).made;
+  // (rings are counted as MADE: on a software renderer one frame can outlast a ring's 3.5 s)
+  const [thrown, fx] = await evalJson(`[EW.splash(5, -4, 1), EW.waterFx()]`);
+  check(`a full splash throws drops and rings the water (${fx.drops} drops, ${fx.made - before} rings)`, thrown === true && fx.drops > 40 && fx.made > before, JSON.stringify(fx));
   for (let i = 0; i < 6; i++) await evalJson(`EW.ripple(${3 + i * 0.8}, -2, 0.7)`);
   await sleep(120);
   if (shotAt) {

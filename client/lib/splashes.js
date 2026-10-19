@@ -15,7 +15,7 @@ import { remotes } from './remotes.js';
 import { getMe } from './mybody.js';
 import { onWorldChange } from './state.js';
 import { makeSplashTracker } from './splashlogic.js';
-import { addRipple, liveRipples } from './ripples.js';
+import { addRipple, liveRipples, ripplesMade } from './ripples.js';
 
 const PARTS = ['hips', 'leftHand', 'rightHand', 'leftFoot', 'rightFoot'];
 const MAX_DROPS = 400;
@@ -133,6 +133,6 @@ export function updateSplashes(dt) {
 }
 
 /** Probes / the console: what is in the air and on the water. */
-export const splashDebug = () => ({ drops: drops.length, ripples: liveRipples(), bodies: tracker.size, recent: recent.slice() });
+export const splashDebug = () => ({ drops: drops.length, ripples: liveRipples(), made: ripplesMade(), bodies: tracker.size, recent: recent.slice() });
 
 onWorldChange((ev) => { if (ev.type === 'reset') drops.length = 0; });

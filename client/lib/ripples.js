@@ -24,7 +24,7 @@ export const RIPPLE = {
 const slots = Array.from({ length: MAX_RIPPLES }, () => new THREE.Vector4(0, 0, -1e6, 0));
 const ripplesU = uniformArray(slots);
 export const rippleTime = uniform(0);
-let next = 0, t0 = performance.now();
+let next = 0, t0 = performance.now(), added = 0;
 
 /** This page's ripple clock, seconds. */
 export const rippleNow = () => (performance.now() - t0) / 1000;
@@ -32,12 +32,15 @@ export const rippleNow = () => (performance.now() - t0) / 1000;
 export function addRipple(x, z, strength) {
   const v = slots[next];
   v.set(x, z, rippleNow(), Math.max(0, Math.min(1, strength)));
+  added++;
   next = (next + 1) % MAX_RIPPLES;   // (the uniform array re-reads these vectors every render)
 }
 /** Advance the shader's clock (once a frame). */
 export function tickRipples() { rippleTime.value = rippleNow(); }
 /** How many rings are live now (probes). */
 export const liveRipples = () => { const t = rippleNow(); return slots.filter((v) => v.w > 0 && t - v.z < RIPPLE.LIFE).length; };
+/** How many rings this page has made, ever (probes: a count that a slow frame cannot age away). */
+export const ripplesMade = () => added;
 /** Forget every ring (a world change). */
 export function clearRipples() { for (const v of slots) v.set(0, 0, -1e6, 0); }
 
