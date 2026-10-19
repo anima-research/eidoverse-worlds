@@ -313,6 +313,8 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const VOLE = jv.snapshot?.you ?? "Vole";   // the display id the server gave this connection (an aid1 agent's may differ from its name)
     // RS9 (review 10-07): the ghost (Vole) reads no chat through the history message, and its presence messages
     // (an anim) reach nobody; a visitor can't read the ban list; a guest's kick holds against a fresh guest connection
+    // a line said AFTER the ghost arrived: arrival-only would let a non-ghost read it back, so only the ghost rule hides it
+    await own.req("say", { text: "said while vole is a ghost" }); await sleep(200);
     const k3 = vy.msgs.length; vy.raw({ type: "history", reqId: "h1" }); await sleep(400);
     const hist = vy.msgs.slice(k3).find((m) => m.type === "history");
     const k4 = mo.msgs.length; vy.raw({ type: "anim", dur: 1, tracks: { head: [{ t: 0, q: [0, 0, 0, 1] }] } }); await sleep(400);
