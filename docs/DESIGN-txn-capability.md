@@ -26,9 +26,9 @@ Rights *inside* the authority are therefore never stale: they are read in the sa
 | X2 | `worldlog.ts:166-167` | `afterWrite` is not in `finally`: when the authority throws mid-commit, lines already appended (X1's act, or sim lines from `settleSim`/`returnDue` at `authority.js:145`) are durable + live on the server but **never published**; every client's chain is now behind the server's and the next broadcast's `from` skips them. (`tickScripts`/`settle` :234/:251 do use `finally`.) |
 | X3 | `storage.js:65`, `durable.ts:26`, `requestwire.ts:102-103` | An fsync/close throw after `writeSync` is **ambiguous** (bytes may be on disk). It is reported as a generic failure with no request id. On reopen the line may be found and folded: the asker was told "failed", the world says "happened". Not fail-closed in the stated sense (unknown ≠ failure). |
 | X4 | `durable.ts:26` | `fs.writeSync` return value ignored: a short write is treated as a full write (torn line in `entries`, trimmed only at next reopen). |
-| V5 | `requestwire.ts:142,163-164` | `actorOf(c)` is read **after** both awaits, from the mutable `c.actorId` (reset at `server.ts:414`, reassigned at :563 on a re-join over the same socket). `gen` catches a *completed* re-join; a re-join in flight yields `undefined` → throw → X3's path. The identity should be captured once. |
-| V6 | `requestwire.ts:119`, `:206-210` | `c.spectator`, `c.account`/`isOperator` are checked before the queue only; the post-await recheck (:210) doesn't repeat them. |
-| V7 | `requestwire.ts:135` vs `server/access.ts:109-140` | Door entry (members mode, `nativeWorld` narrowing, account age, global bans) is decided at join only; a later `@world.access` change is enforced by `sweepAccess` (1 s cadence). A queued request from a now-unentitled connection can commit in that window: the authority checks role, not the door. |
+| X5 | `requestwire.ts:142,163-164` | `actorOf(c)` is read **after** both awaits, from the mutable `c.actorId` (reset at `server.ts:414`, reassigned at :563 on a re-join over the same socket). `gen` catches a *completed* re-join; a re-join in flight yields `undefined` → throw → X3's path. The identity should be captured once. |
+| X6 | `requestwire.ts:119`, `:206-210` | `c.spectator`, `c.account`/`isOperator` are checked before the queue only; the post-await recheck (:210) doesn't repeat them. |
+| X7 | `requestwire.ts:135` vs `server/access.ts:109-140` | Door entry (members mode, `nativeWorld` narrowing, account age, global bans) is decided at join only; a later `@world.access` change is enforced by `sweepAccess` (1 s cadence). A queued request from a now-unentitled connection can commit in that window: the authority checks role, not the door. |
 
 ## 3. Design (smallest honest change)
 
@@ -44,10 +44,10 @@ export function recheck(cap: ReqCap, now = Date.now()): string | null   // null 
 - liveness (today's `still`): `cap.c.world===cap.w && !cap.c.superseded && cap.w.clients.has(cap.c) && cap.c.gen===cap.gen`;
 - identity: `cap.c.actorId===cap.actorId && cap.c.account===cap.account && cap.c.spectator===cap.spectator`;
 - operator (for operator-repair): `isOperator(cap.account)===cap.operator`;
-- door: `entryFor(doorOf(cap.w), {account, actorId, addr, nativeWorld}, cap.spectator?"watch":"embody", {now}) === null` — the same decision the join made (V7), now re-asked with the captured who;
+- door: `entryFor(doorOf(cap.w), {account, actorId, addr, nativeWorld}, cap.spectator?"watch":"embody", {now}) === null` — the same decision the join made (X7), now re-asked with the captured who;
 - `cap.w.log.roleOf(cap.actorId) === cap.role` (a role change mid-request is a refusal, code `superseded`, not a silent commit under the new role: the asker was admitted under the old role; refusing is the conservative choice).
 
-`captureCap` happens once at `requestwire.ts:134` (replacing `gen`/`still`) and once at :208. The authority then receives `cap.actorId` (never `actorOf(c)` again: fixes V5). Seams rechecked: (1) `requestwire.ts:138` (after await #1), (2) `worldlog.ts:158` (after await #2, before `requestSync`) — `request()` keeps its `still?: () => string|null` signature and is passed `() => recheck(cap)`. There are no other awaits between admission and `w.append`; `ctx.js:5` documents that invariant and the test row T7 pins it.
+`captureCap` happens once at `requestwire.ts:134` (replacing `gen`/`still`) and once at :208. The authority then receives `cap.actorId` (never `actorOf(c)` again: fixes X5). Seams rechecked: (1) `requestwire.ts:138` (after await #1), (2) `worldlog.ts:158` (after await #2, before `requestSync`) — `request()` keeps its `still?: () => string|null` signature and is passed `() => recheck(cap)`. There are no other awaits between admission and `w.append`; `ctx.js:5` documents that invariant and the test row T7 pins it.
 
 ### 3b. Transaction outcome — in `storage.js` + `worldlog.ts`
 
