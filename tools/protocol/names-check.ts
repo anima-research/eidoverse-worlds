@@ -686,7 +686,7 @@ const cases: Case[] = [
       const base = { pos: [1, 2, 3], yaw: 0 }, m = (type: string) => ({ type, axis: [0, 0, 1], amp: 0.5, period: 2, phase: 0.3, t0: 1000 });
       const now = ME.evalWholeMotion(base, m("oscillate"), 1700), old = ME.evalWholeMotion(base, m("bob"), 1700);
       const sch = ES.inspectSchema({ id: "d", model: "book", pos: [0, 0, 0], motion: m("bob") }, "d");
-      const groups = JSON.stringify(sch); 
+      const groups = JSON.stringify(sch);
       return { now: now.ok && now.pos, old: old.ok && old.pos, cyc: [SS.cycleOf(m("oscillate"), 1700), SS.cycleOf(m("bob"), 1700)].map((c: any) => JSON.stringify(c)), ch: [ES.motionChannels(m("oscillate")), ES.motionChannels(m("bob"))].map((c: any) => [...c.t].join() + "|" + [...c.r].join()),
         card: /"Oscillate"/.test(groups), typeRow: /"t":"enum","k":"type","label":"type","value":"oscillate"/.test(groups) && !/"value":"bob"/.test(groups), bobCard: /"Bob"/.test(groups), read: NM.motionType ? [NM.motionType({ type: "bob" }), NM.motionType({ type: "spin" }), NM.motionType(null)] : null }; },
     good: (o) => Array.isArray(o.now) && JSON.stringify(o.now) === JSON.stringify(o.old) && Math.abs(o.now[2] - 3) > 0.01 && o.cyc[0] === o.cyc[1] && o.ch[0] === o.ch[1] && o.ch[0] === "z|" && o.card && o.typeRow && !o.bobCard && JSON.stringify(o.read) === '["oscillate","spin",null]' },

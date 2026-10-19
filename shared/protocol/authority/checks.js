@@ -90,7 +90,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
   if (comp === "sockets" && obj) for (const [slot, sk] of Object.entries(v)) if (sk?.body && typeof sk.body === "object") whoOk(sk.body.who, `${at}.${slot}.body`);
   if (comp === "station" && obj) whoOk(v.who, at);
   if (comp === "transform") { if (!obj || !nums(v.pos, 3) || !nums(v.q, 4, 1.0001) || !nums(v.scale, 3, 1e3) || Object.keys(v).some((k) => !["pos", "q", "scale"].includes(k)))
-    refuse("shape", `${at} must be {pos: [x,y,z], q: [x,y,z,w], scale: [x,y,z]}, finite and within bounds`, "pos within ±100 km, q a rotation, scale within ±1000"); 
+    refuse("shape", `${at} must be {pos: [x,y,z], q: [x,y,z,w], scale: [x,y,z]}, finite and within bounds`, "pos within ±100 km, q a rotation, scale within ±1000");
     // a rotation is a unit quaternion (the renderer normalizes; the authority's own maths uses q as written), and a scale of
     // 0 makes every child's transform divide by zero (review T0e)
     if (Math.hypot(...v.q) < 1e-6) refuse("shape", `${at}.q is all zeros, which isn't a rotation`, "no rotation is [0, 0, 0, 1]");

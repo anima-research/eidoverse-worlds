@@ -219,10 +219,10 @@ export const WIDGETS = {
       row.update = (nf) => { setLabel(nf); put(s, nf.value, ro.icons); full(); };
     },
     legacy(f, P) { const { g, C, font, vx, rowH, y } = P;
-      font(15); g.fillStyle = C.text; g.fillText(String(f.value ?? '').slice(0, 30), vx, y + rowH * 0.6); 
+      font(15); g.fillStyle = C.text; g.fillText(String(f.value ?? '').slice(0, 30), vx, y + rowH * 0.6);
     },
     edit(f, P) { const { g, X, W, mid, font, text } = P;
-      font(); text(g, String(f.value ?? ''), X, mid, T.text, W); 
+      font(); text(g, String(f.value ?? ''), X, mid, T.text, W);
     },
   },
   log: {
@@ -288,10 +288,10 @@ export const WIDGETS = {
       }
     },
     legacy(f, P) { const { vx, y, paintStepper } = P;
-      paintStepper(f, +(f.value ?? 0), vx, y, f.k, null, f.dp); 
+      paintStepper(f, +(f.value ?? 0), vx, y, f.k, null, f.dp);
     },
     edit(f, P) { const { X, W, y, stepper } = P;
-      stepper(f, +(f.value ?? 0), X, y, Math.min(W, 240), f.k, null); 
+      stepper(f, +(f.value ?? 0), X, y, Math.min(W, 240), f.k, null);
     },
   },
   range: {
@@ -516,7 +516,7 @@ export const WIDGETS = {
       row.update = (nf) => { setLabel(nf); base = nf.value ?? ''; if (document.activeElement !== inp) inp.value = base; };
     },
     legacy(f, P) { const { g, C, font, vx, rowH, y } = P;
-      font(15); g.fillStyle = C.label; g.fillText(String(f.value ?? '—').slice(0, 26), vx, y + rowH * 0.6); 
+      font(15); g.fillStyle = C.label; g.fillText(String(f.value ?? '—').slice(0, 26), vx, y + rowH * 0.6);
     },
     edit(f, P) { const { g, X, W, mid, y, font, text, field } = P;
       // display-only in a headset (no keyboard): a sunken field showing the value, or the placeholder
@@ -559,7 +559,7 @@ export const WIDGETS = {
       font(13); g.fillStyle = C.label; g.fillText(String(f.value ?? '—').replace(/\s+/g, ' ').slice(0, 34), vx, y + rowH * 0.6); // display-only: no keyboard in a headset
     },
     edit(f, P) { const { g, X, W, mid, font, text } = P;
-      font(); text(g, String(f.value ?? '—').replace(/\s+/g, ' '), X, mid, T.dim, W); 
+      font(); text(g, String(f.value ?? '—').replace(/\s+/g, ' '), X, mid, T.dim, W);
     },
   },
   ref: {

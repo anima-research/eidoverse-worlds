@@ -514,4 +514,3 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
   return { out, stats, final: { v1: physical(v1, sim, recorded, project(v1, null, who, ns, addr), dynamic), translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
 }
-

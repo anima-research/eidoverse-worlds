@@ -258,4 +258,3 @@ export function openPose(base, o, f, pivot = [0, 0, 0], scale = [1, 1, 1]) {
   const shift = qApply(q0, [pv[0] - rp[0], pv[1] - rp[1], pv[2] - rp[2]]);
   return { pos: base.pos.map((v, i) => v + shift[i]), q: qMul(q0, q) };
 }
-

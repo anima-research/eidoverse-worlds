@@ -205,4 +205,3 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // content it approves; the maintenance acts (lift-sockets by: "translate") come at the tail, derived from that approved content
   return { source, planned, identities: Object.keys(planned).length, renamedBlobs, addressed: [...addressed.keys()], stats: r.stats, entries: live.entries.length, worldId: back.worldId, digest: digest(live.state()), maintenance, poses, ...(sim ? { sim } : {}) };
 }
-
