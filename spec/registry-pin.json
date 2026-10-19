@@ -37,7 +37,7 @@
   "on": "thing"
  },
  "model": {
-  "status": "trial",
+  "status": "trial-kernel",
   "type": "string",
   "on": "thing"
  },
@@ -1580,7 +1580,7 @@
   "on": "world"
  },
  "roles": {
-  "status": "trial",
+  "status": "trial-kernel",
   "fields": {
    "role": "string",
    "can": "object",
@@ -1607,7 +1607,7 @@
   "on": "world"
  },
  "access": {
-  "status": "trial",
+  "status": "trial-kernel",
   "fields": {
    "join": "string",
    "watch": "string",

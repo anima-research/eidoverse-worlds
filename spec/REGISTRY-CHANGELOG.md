@@ -202,3 +202,11 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
 - 2026-10-18: kernel (reviewer item 5, 10-18): transform and parent are the kernel's, status trial-kernel: a change to either is refused by the gate unless the same change carries a translator, a changelog line and old-reader/new-reader vectors (shared/protocol/kernelspec.js, tools/protocol/kernel-check.ts, spec/kernel-pin.json)
   - transform: status trial → trial-kernel
   - parent: status trial → trial-kernel
+- 2026-10-19: kernel scope (reviewer item 5, 10-18): model, roles and access are the kernel's, status trial-kernel: a change to any of them is refused by the gate unless the same change carries a translator, a changelog line and old-reader/new-reader vectors (shared/protocol/kernelspec.js, tools/protocol/kernel-check.ts, spec/kernel-pin.json)
+  - model: status trial → trial-kernel
+  - roles: status trial → trial-kernel
+  - access: status trial → trial-kernel
+- 2026-10-19: kernel: scope extension (reviewer item 5, 10-18): model, roles (with the ladder's grammar) and access (with the four doors) entered the kernel with the shapes the registry pinned; no stored byte changes meaning, so no translator or vectors; from now on a change to any of them is a kernel change
+  - model: absent → (the registry's pinned shape, now the kernel's)
+  - roles: absent → (the registry's pinned shape, now the kernel's)
+  - access: absent → (the registry's pinned shape, now the kernel's)

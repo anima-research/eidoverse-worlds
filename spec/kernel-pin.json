@@ -1,7 +1,18 @@
 {
  "status": "trial-kernel",
- "translator": "eidoverse/translate-v1@14",
- "companions": null,
+ "translator": "eidoverse/translate-v1@15",
+ "companions": {
+  "changelog": "2026-10-19: kernel: scope extension (reviewer item 5, 10-18): model, roles (with the ladder's grammar) and access (with the four doors) entered the kernel with the shapes the registry pinned; no stored byte changes meaning, so no translator or vectors; from now on a change to any of them is a kernel change",
+  "scope": {
+   "names": [
+    "access",
+    "model",
+    "roles"
+   ]
+  },
+  "translator": null,
+  "vectors": null
+ },
  "kernel": {
   "envelope": {
    "status": "trial-kernel",
@@ -124,6 +135,113 @@
     "to"
    ],
    "on": "thing"
+  },
+  "model": {
+   "status": "trial-kernel",
+   "type": "string",
+   "on": "thing"
+  },
+  "roles": {
+   "status": "trial-kernel",
+   "fields": {
+    "role": "string",
+    "can": "object",
+    "note": "string",
+    "until": "int"
+   },
+   "absentMeans": {
+    "until": "the grant has no end: it stands until someone with the right changes or removes it (every role written before 10-17)"
+   },
+   "keyed": true,
+   "on": "world",
+   "grammar": {
+    "rank": {
+     "none": -1,
+     "visitor": 0,
+     "builder": 100,
+     "moderator": 200,
+     "owner": 255
+    },
+    "builtin": [
+     "visitor",
+     "builder",
+     "moderator",
+     "owner"
+    ],
+    "permissions": [
+     "build",
+     "editOthers",
+     "editWorld",
+     "generate",
+     "fly",
+     "scripts",
+     "pauseScripts",
+     "mute",
+     "kick",
+     "ban",
+     "grantRoles"
+    ],
+    "customId": "^[a-z][a-z0-9-]{0,23}$",
+    "reserved": [
+     "banned",
+     "everyone",
+     "ghost",
+     "guest",
+     "none",
+     "owner"
+    ],
+    "lockLevels": [
+     "builder",
+     "moderator",
+     "owner"
+    ]
+   }
+  },
+  "access": {
+   "status": "trial-kernel",
+   "fields": {
+    "join": "string",
+    "watch": "string",
+    "max": "int",
+    "soft": "int",
+    "minAccountDays": "int"
+   },
+   "enums": {
+    "join": [
+     "anyone",
+     "signed-in",
+     "listed"
+    ],
+    "watch": [
+     "anyone"
+    ]
+   },
+   "ranges": {
+    "max": {
+     "min": 1,
+     "max": 200
+    },
+    "soft": {
+     "min": 1,
+     "max": 200
+    },
+    "minAccountDays": {
+     "min": 0,
+     "max": 365
+    }
+   },
+   "absentMeans": {
+    "watch": "watching follows join: whoever join turns away can't watch either, and a world that admits only people listed is invisible to everyone else (what every access before 10-17 meant)"
+   },
+   "on": "world",
+   "grammar": {
+    "doors": [
+     "members",
+     "open",
+     "visitors",
+     "watch"
+    ]
+   }
   }
  }
 }
