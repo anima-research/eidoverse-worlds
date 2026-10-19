@@ -287,7 +287,7 @@ if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
 // The browser pages load the asset library (Skye's toolkit modules, sky, avatars): a separate public repo, pinned here.
 // Declared like Chrome: required for the browser lane, never fetched silently, never read from a guessed path.
 const LIBRARY_REPO = "https://github.com/SkyeShark/eidoverse-video.git";
-const LIBRARY_PIN = "e9f80d02529176a87f292fb0e3aeafad3a9ba09f";
+const LIBRARY_PIN = "9acc1528b2febac11338107645ef500a95985ca5";   // the library's PUBLIC head (10-19: e9f80d02 was a local snapshot, unfetchable by CI)
 let LIBRARY: string | null = null, LIBRARY_HEAD: string | null = null;
 if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
   const want = process.env.EIDOVERSE_DIR;
