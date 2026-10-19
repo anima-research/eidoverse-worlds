@@ -1306,7 +1306,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const files = [...walk("shared"), ...walk("client/lib"), ...walk("mcpl")].filter((f) => f !== "shared/protocol/authority/sockets.js");
   const OLD = /\b(c|comp|m)\??\.sockets\b|\.sockets\?\.\[|modelOf\([^)]*\)\??\.sockets\b|\b(parent|rel)\??\.socket\b|\bhome\??\.parent\??\.socket\b/;
   const ON_PURPOSE = [["shared/editschema.js", /withSocketMap|ent\.comp\?\.sockets\)|c\.sockets\b/], ["shared/blueprint.js", /rel\.socket/], ["shared/hierarchy.js", /rel\??\.socket/], ["shared/grab.js", /h\.parent\.socket/]];
-  const hits = files.flatMap((f) => fs.readFileSync(root + f, "utf8").split("\n").map((l, i) => [f, i + 1, l.replace(/^\s*(\/\/|\*|\/\*\*).*$/, "").replace(/\s\/\/ .*$/, "")])
+  const hits = files.flatMap((f) => fs.readFileSync(root + f, "utf8").split(/\r?\n/).map((l, i) => [f, i + 1, l.replace(/^\s*(\/\/|\*|\/\*\*).*$/, "").replace(/\s\/\/ .*$/, "")])
     .filter(([, , l]) => OLD.test(l) && !ON_PURPOSE.some(([pf, re]) => pf === f && re.test(l))));
   ok(files.length > 100 && !hits.length, `LG1b no reader of the old spelling in shared/, client/lib or mcpl but the named ones (${files.length} files)`, hits.map(([f, n, l]) => `${f}:${n}: ${String(l).trim().slice(0, 100)}`)); }
 

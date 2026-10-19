@@ -20,6 +20,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
+      - name: check out bytes as committed (no CRLF conversion on Windows)
+        shell: bash
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # diffcheck compares the range against main's merge-base
