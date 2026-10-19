@@ -172,6 +172,9 @@ console.log('VIDEO — renderer select persists PREF_BACKEND and needs a reload'
   const scaleList = f.find((x: any) => x.label === 'render scale');
   check('the quad\'s scale list marks the current value active', scaleList?.rows.find((r: any) => r.active)?.id === '0.85', JSON.stringify(scaleList?.rows.map((r: any) => [r.id, r.active])));
   check('the quad\'s msaa check reads the pref', f.find((x: any) => x.k === 'msaa')?.value === false);
+  quad.dispatch('fulldetail', true);
+  check('quad dispatch(fulldetail) reaches setFullDetail', since(c2, 'setFullDetail')[0]?.[1] === true);
+  check('…and the quad\'s full-detail check reads it back', quad.fields().find((x: any) => x.k === 'fulldetail')?.value === true);
 }
 
 // ============================================================ profile: presence

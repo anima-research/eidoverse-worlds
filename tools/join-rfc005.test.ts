@@ -96,10 +96,22 @@ const world = spawnChild([process.execPath, "server/server.ts"], {
 // interrupted (the pre-fix failure was a kill-timing flake for exactly that
 // reason: the check only bit when the race landed).
 writeFileSync(`${statePath}.tmp`, "");
-const mcpl = spawnChild([process.execPath, "mcpl/net-server.ts"], {
+const doorEnv = {
   MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,
   MCPL_TOKENS: tokensPath, MCPL_STATE: statePath, MCPL_INSTANCE_NONCE: NONCE,
-});
+};
+let mcpl = spawnChild([process.execPath, "mcpl/net-server.ts"], doorEnv);
+/** Restart ONLY the door — same port, same state file, same nonce — and wait
+ *  until the new process proves it is ours. (§4l: what a door restart keeps.) */
+async function restartDoor() {
+  try { mcpl.kill(); } catch { /* already gone */ }
+  await Promise.race([(mcpl as unknown as { exited: Promise<unknown> }).exited, sleep(5000)]);
+  mcpl = spawnChild([process.execPath, "mcpl/net-server.ts"], doorEnv);
+  await waitFor("restarted door /healthz echoes our nonce", async () => {
+    const r = await fetch(`http://127.0.0.1:${MPORT}/healthz`);
+    return r.ok && (await r.text()).trim() === `ok ${NONCE}`;
+  });
+}
 // Last-resort net: if anything between here and the try throws, or the process
 // dies by signal, the children still go. process.exit does NOT run finally
 // blocks, so this cannot be left to the one at the bottom.
@@ -257,8 +269,14 @@ console.log(osOwnership
 check("stale state tmp from a previous incarnation swept at boot", !existsSync(`${statePath}.tmp`));
 
 /** Minimal MCPL 0.5 host: initialize, grant, then request/notification I/O. */
+/** Every connection here starts at the credential's HOME unless it names a
+ *  world: an agent with no world asked for now RESUMES where it last was
+ *  (§4l), and these sections are about what happens from home. RESUME (the
+ *  marker) dials with no world at all, which is what §4l tests. */
+const RESUME = "__resume";
+const startAt = (query: string) => query === RESUME ? "" : /[?&]world=/.test(query) ? query : `${query}&world=commons`;
 async function connectHost(token: string, query = "", mode: "accept" | "decline" | "mute" | "error" = "accept") {
-  const ws = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=${token}${query}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=${token}${startAt(query)}`);
   let nextId = 10;
   const pending = new Map<number, (m: any) => void>();
   const inbound: any[] = [];
@@ -308,7 +326,7 @@ async function connectHost(token: string, query = "", mode: "accept" | "decline"
  *  lane" was advertised and never once exercised, which is exactly how it
  *  shipped always-denied. */
 async function connectPlain(token: string) {
-  const ws = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=${token}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=${token}${startAt("")}`);
   let nextId = 10;
   const pending = new Map<number, (m: any) => void>();
   const inbound: any[] = [];
@@ -737,6 +755,81 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
     free.ws.close(); owner.ws.close();
   }
 
+  // ── 4l. AN AGENT RESUMES WHERE IT WAS ─────────────────────────────────────
+  // A reconnect with no world asked for lands where the agent last was, not
+  // at its home — unless that world no longer lets it in, or its home claim
+  // changed since. An explicit ?world= always wins.
+  {
+    const where = async (h: any) => (await h.request("channels/list", {})).result?.channels?.[0]?.id;
+    const a1 = await connectHost("nofound-token");           // home commons, worlds ["*"]
+    await sleep(1200);
+    const t1 = txt(await a1.request("tools/call", { name: "travel", arguments: { world: "annex" } }));
+    check("an agent travels to annex", /Arrived in "annex"/.test(t1), t1);
+    a1.ws.close(); await sleep(600);
+    const a2 = await connectHost("nofound-token", RESUME);
+    await sleep(1200);
+    check("reconnecting with no world asked for resumes in annex", (await where(a2)) === "world:annex", String(await where(a2)));
+    a2.ws.close(); await sleep(600);
+    const a3 = await connectHost("nofound-token", "&world=commons");
+    await sleep(1200);
+    check("an explicit ?world= still wins", (await where(a3)) === "world:commons", String(await where(a3)));
+    a3.ws.close(); await sleep(600);
+    const a4 = await connectHost("nofound-token", RESUME);
+    await sleep(1200);
+    check("…and is remembered: the next plain reconnect starts there (commons)", (await where(a4)) === "world:commons", String(await where(a4)));
+    const t4 = txt(await a4.request("tools/call", { name: "travel", arguments: { world: "annex" } }));
+    check("back to annex", /Arrived in "annex"/.test(t4), t4);
+    a4.ws.close(); await sleep(600);
+    // the world it left no longer lets it in → home, not a refusal
+    const owner = await connectHost("roamer-token", "&world=annex");
+    await sleep(1200);
+    check("the owner closes annex", /members only/.test(txt(await owner.request("tools/call", { name: "world_access", arguments: { action: "mode", mode: "members" } }))));
+    const a5 = await connectHost("nofound-token", RESUME);
+    await sleep(1200);
+    check("an agent whose last world is now closed to it wakes up at home", (await where(a5)) === "world:commons", String(await where(a5)));
+    a5.ws.close();
+    check("the owner reopens annex", /open/.test(txt(await owner.request("tools/call", { name: "world_access", arguments: { action: "mode", mode: "open" } }))));
+    owner.ws.close(); await sleep(600);
+    // an operator who changes the agent's HOME has said where it lives now
+    const a6 = await connectHost("nofound-token");
+    await sleep(1200);
+    const t6 = txt(await a6.request("tools/call", { name: "travel", arguments: { world: "annex" } }));
+    check("annex once more", /Arrived in "annex"/.test(t6), t6);
+    a6.ws.close(); await sleep(600);
+    const reg = JSON.parse(readFileSync(tokensPath, "utf8"));
+    reg["nofound-token"].world = "free-place";
+    writeFileSync(tokensPath, JSON.stringify(reg));
+    const a7 = await connectHost("nofound-token", RESUME);
+    await sleep(1200);
+    check("after its home claim changes, it starts at the new home, not the old memory", (await where(a7)) === "world:free-place", String(await where(a7)));
+    a7.ws.close();
+    reg["nofound-token"].world = "commons";
+    writeFileSync(tokensPath, JSON.stringify(reg));
+    await sleep(300);
+    // the trip HOME stays allowed after a resume: roamer2 is limited to
+    // ["annex"] with home commons, and its home must not be read from where it
+    // resumed (Greptile #261)
+    const b1 = await connectHost("roamer2-token");
+    await sleep(1200);
+    const tb1 = txt(await b1.request("tools/call", { name: "travel", arguments: { world: "annex" } }));
+    check("roamer2 (limited to annex) travels to annex", /Arrived in "annex"/.test(tb1), tb1);
+    b1.ws.close(); await sleep(600);
+    const b2 = await connectHost("roamer2-token", RESUME);
+    await sleep(1200);
+    check("roamer2 resumes in annex", (await where(b2)) === "world:annex", String(await where(b2)));
+    const homeTrip = txt(await b2.request("tools/call", { name: "travel", arguments: { world: "commons" } }));
+    check("…and may still travel home (its credential's home, not where it resumed)", /Arrived in "commons"/.test(homeTrip), homeTrip);
+    const backTrip = txt(await b2.request("tools/call", { name: "travel", arguments: { world: "annex" } }));
+    check("…and back to annex", /Arrived in "annex"/.test(backTrip), backTrip);
+    b2.ws.close(); await sleep(600);
+    // a DOOR RESTART: the memory is on disk, so it outlives the process
+    await restartDoor();
+    const b3 = await connectHost("roamer2-token", RESUME);
+    await sleep(1200);
+    check("after the door itself restarts, roamer2 resumes in annex", (await where(b3)) === "world:annex", String(await where(b3)));
+    b3.ws.close(); await sleep(600);
+  }
+
   // ── 4j. THE FIX FOR #1 MUST NOT WIDEN MCPL AUTHORITY ─────────────────────
   // Relaxing the capability gate for plain-MCP hosts is only safe if an MCPL
   // host that DECLARES mcpl but is denied channels.lifecycle is still refused.
@@ -865,6 +958,17 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   // the opposite of the old post-detach outcome, and the better one
   await sleep(500);
   check("…and the host's connection to the door was not torn down", victim.ws.readyState === WebSocket.OPEN, `readyState=${victim.ws.readyState}`);
+  // a reconnect while the world server is DOWN must not move the memory: the
+  // resume check cannot run and nothing joins, so where the agent was is kept
+  // for when the server is back (Greptile #261)
+  {
+    const before = JSON.parse(readFileSync(statePath, "utf8")).__world?.roamer2?.world;
+    const c5 = await Promise.race([connectHost("roamer2-token", RESUME), sleep(8000).then(() => null)]);
+    await sleep(3000);
+    const after = JSON.parse(readFileSync(statePath, "utf8")).__world?.roamer2?.world;
+    check("a reconnect while the world server is down keeps where the agent was", before === "annex" && after === "annex", `${before} → ${after}`);
+    try { (c5 as any)?.ws?.close(); } catch { /* gone */ }
+  }
 } finally {
   // Verified termination: kill(), then AWAIT the exit. `kill()` alone returns
   // immediately, so the old teardown could return while children still held

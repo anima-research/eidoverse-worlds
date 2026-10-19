@@ -4749,10 +4749,17 @@ export class WorldAgent {
       const held = (p.pose as { pose?: Record<string, unknown> | null }).pose;
       const posed = held ? `, holding a pose (${Object.keys(held).length} bones)` : "";
       const winged = foldedIn(p.pose) === true ? ", wings folded" : "";
-      const moded = ((m) => (m && m !== "stand" ? `, ${m === "sit" ? "sitting" : m === "lie" ? "lying down" : m === "swim" ? "swimming" : m === "fly" ? "flying" : "falling"}` : ""))(readBodyMode(p.pose));
+      const mode = readBodyMode(p.pose);
+      const moded = ((m) => (m && m !== "stand" ? `, ${m === "sit" ? "sitting" : m === "lie" ? "lying down" : m === "swim" ? "swimming" : m === "fly" ? "flying" : "falling"}` : ""))(mode);
       const occ = this.mounts.get(p.id);
       const occupying = occ ? ` — on ${this.socketName(occ.to)}${this.seatSuffix(p.id, occ)}` : "";
-      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${moded}${winged}${occupying}${voiceNote(p.pose)}`);
+      // Their heading is on the wire (pose.yaw, world yaw like our own): say it, or an agent can't tell which side of
+      // someone it will see (upstream #225). An occupant's body follows the socket, so their root yaw isn't where they
+      // face; a body knocked over (the ragdoll) or lying down keeps its standing yaw (the anim changes, not the heading).
+      // For those, say nothing rather than something false.
+      const lying = p.pose.clip === "ragdoll" || mode === "lie";
+      const facing = !occ && !lying && Number.isFinite(p.pose.yaw) ? `, facing ${this.bearing(Math.sin(p.pose.yaw), Math.cos(p.pose.yaw))}` : "";
+      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${facing}${posed}${moded}${winged}${occupying}${voiceNote(p.pose)}`);
     }
 
     // a socket is part of its host (a seat, a hook): listed under the host, never as a thing of its own
