@@ -219,7 +219,8 @@ export async function scratchBench(name: string, opts: ScratchOptions & { headed
     if (!target) await sleep(150);
   }
   if (!target) {
-    let err = ""; try { err = readFileSync(join(SCRATCH, "browser.stderr.log"), "utf8").trim().split("\n").slice(-8).join(" | "); } catch {}
+    // the first lines say why a browser died; a crash's stack frames and registers don't
+    let err = ""; try { err = readFileSync(join(SCRATCH, "browser.stderr.log"), "utf8").trim().split("\n").filter((l) => !/^\s*(#\d+ 0x|r\d+:|[a-z]{2,3}: )/.test(l)).slice(0, 8).join(" | "); } catch {}
     await die(2, `no owned page target on :${DEBUG_PORT}${err ? ` (browser said: ${err.slice(0, 900)})` : " (browser printed nothing)"}`);
   }
   const cws = new WebSocket(target.webSocketDebuggerUrl);

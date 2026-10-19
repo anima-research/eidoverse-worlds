@@ -52,10 +52,6 @@ jobs:
           (cd mcpl && bun install --frozen-lockfile)
           # the project's own playwright, so the browser revision is the one run.ts's import of it looks for
           bun node_modules/playwright/cli.js install chromium
-      - name: let Chromium use its sandbox (Ubuntu 24.04 restricts unprivileged user namespaces)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: asset library (pinned in run.ts)
         shell: bash
         run: |
@@ -70,6 +66,7 @@ jobs:
           TMPDIR: ${{ runner.temp }}/gate-tmp
           TEMP: ${{ runner.temp }}/gate-tmp
           TMP: ${{ runner.temp }}/gate-tmp
+          PROTOCOL_KEEP: "1"   # keep each suite's scratch so a failure's logs can be uploaded
         run: |
           mkdir -p "$RUNNER_TEMP/gate-tmp"
           bun tools/protocol/run.ts --receipt "gate-receipt-${{ matrix.os }}.json"
@@ -86,6 +83,6 @@ jobs:
         with:
           name: gate-scratch-${{ matrix.os }}
           path: |
-            ${{ runner.temp }}/gate-tmp/ew-*/*.log
-            ${{ runner.temp }}/gate-tmp/ew-*/*.jsonl
+            ${{ runner.temp }}/gate-tmp/eido-gate-*/**/*.log
+            ${{ runner.temp }}/gate-tmp/eido-gate-*/**/failure.jsonl
           if-no-files-found: ignore
