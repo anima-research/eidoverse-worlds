@@ -242,8 +242,19 @@ try {
   check("...and once, from the first blow's slump, when a second blow lands while it waits", twice.begins === 1 && !!slump && eq(twice.pose, slump),
     `${twice.begins} begin(s), ${JSON.stringify(twice.pose)?.slice(0, 80)}`);
   kneeler.setPose(null);
-  kneeler.pos.y = 0.5;     // standing on something above the terrain
+  // standing on something above the terrain: a plinth half a metre up, a collider the feet stand on, so no tick lowers
+  // the body toward the terrain while the blow is on its way (a bare y of 0.5 over nothing falls)
+  const { boxMesh } = await import("./two-storey-fixture.ts");
+  const { registerMeshSupport, removeSupport } = await import("../mcpl/physics.ts");
+  const { x: kx, z: kz } = kneeler.pos;
+  const { pos: bp, idx: bi } = boxMesh([[kx - 1, 0, kz - 1, kx + 1, 0.5, kz + 1]]);
+  const plinth = `${kneeler.world}/plinth`;
+  check("setup: the plinth is a collider", await registerMeshSupport("other-body-pose-test", plinth, { positions: new Float32Array(bp), indices: new Uint32Array(bi) }, { position: [0, 0, 0], yaw: 0, scale: 1 }));
+  kneeler.pos.y = 0.5;
+  await sleep(300);   // a few of the body's ticks: on nothing, it would be falling by now
+  check("setup: the kneeler stands on the plinth", Math.abs(kneeler.pos.y - 0.5) < 1e-6, String(kneeler.pos.y));
   const raised = await knock();
+  await removeSupport("other-body-pose-test", plinth);
   check("...and from the height it stood at, not the terrain under it",
     begun.at(-1)?.rootY === 0.5 && Math.abs(raised - standing - 0.5) < 1e-6, `rootY ${begun.at(-1)?.rootY}, rest hips y ${raised}`);
 } catch (e) {
