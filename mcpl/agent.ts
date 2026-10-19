@@ -1194,9 +1194,9 @@ export class WorldAgent {
     const mount = this.mounts.get(observation.who);
     if (!mount || !observation.pose) return observation;
     const effective = this.eff(observation.who, this.serverNow());
-    // Standing is getting off the seat (setPosture), the one way out a reader has.
+    // Standing is getting off the seat (setPosture), the one way out a reader has, once joined.
     if (!effective.ok) return { ...observation, error: observation.self
-      ? `nothing of your body was read, since your seat can't be placed: ${effective.why}; posture {kind: "stand"} gets you off it`
+      ? `nothing of your body was read, since your seat can't be placed: ${effective.why}; posture {kind: "stand"} gets you off it${this.joined ? "" : " once this body has rejoined the world"}`
       : `nothing of ${observation.who}'s body was read, since their seat can't be placed: ${effective.why}` };
     const socket = mount.slot ? this.entities.get(mount.to)?.comp?.sockets?.[mount.slot] : null;
     const clip = socket?.pose ?? "sitchair";
@@ -3927,7 +3927,8 @@ export class WorldAgent {
     const path = self ? this.avatar : (person!.avatar || WorldAgent.DEFAULT_BODY);
     const body = this.reachBodySync(path);
     if (body === undefined) return undefined;
-    if (!body) return { err: `${self ? "your" : `${t.who}'s`} avatar's model couldn't be loaded on this door, so it can't check this reach` };
+    // null: its model, or this door's skeleton solver, didn't load (ReachBody.create)
+    if (!body) return { err: `${self ? "your" : `${t.who}'s`} body couldn't be set up on this door (its model, or the door's skeleton solver, didn't load), so it can't check this reach` };
     // A limp body draws no raw layer, so its contacts have none either.
     if (self) body.poseAt([this.pos.x, this.pos.y, this.pos.z], this.yaw, this.heldPose ?? null, 1, this.clip !== "ragdoll");
     else {
@@ -3952,7 +3953,7 @@ export class WorldAgent {
       const solved = reading.reachEvaluation?.[limb];
       // cyclic-reach is body_state's code for the loop (docs/body-state.md); the reply says it in words.
       if (!solved?.ok) return { state: "err", err: solved?.why === "cyclic-reach"
-        ? "it depends on a loop of reaches (hands reaching for hands that reach back), so it can't be solved until a limb in the loop lets go"
+        ? "it depends on a loop of reaches (limbs reaching for limbs that reach back), so it can't be solved until a limb in the loop lets go"
         : solved?.why ?? reading.error ?? "body pose could not be evaluated" };
       const dist = solved.target && solved.shoulder ? Math.hypot(...solved.target.map((v: number, i: number) => v - solved.shoulder[i])) : null;
       return { state: "ok", reached: solved.reached, gap: solved.gap, bound: solved.bound,
@@ -3963,7 +3964,7 @@ export class WorldAgent {
     if ("err" in tp) return { state: "err", err: tp.err };
     const own = this.reachBodySync(this.avatar);
     if (own === undefined) return { state: "pending" };
-    if (!own) return { state: "err", err: "this body's own skeleton could not be read, so there is no local verdict" };
+    if (!own) return { state: "err", err: "your body couldn't be set up on this door (its model, or the door's skeleton solver, didn't load), so it can't check this reach" };
     own.poseAt([this.pos.x, this.pos.y, this.pos.z], this.yaw, this.heldPose ?? null);
     const s = own.solve(limb, tp, { palm: entry.palm !== false });
     if (!s.ok) return { state: "err", err: s.why };

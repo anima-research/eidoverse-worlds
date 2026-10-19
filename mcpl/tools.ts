@@ -228,8 +228,8 @@ export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "au
       const said = (await r.text()).slice(0, 200).replace(/\s+/g, " ").trim();
       const remedy = r.status === 429 ? "try again in a few seconds"
         // an Unreal-only request summons no roaming renderer; the others can
-        : r.status === 503 && renderer === "unreal" ? `ask for renderer "auto" or "browser" instead, since the world can send a browser renderer for those`
-        : r.status === 404 ? "calling again works only once that changes"
+        : r.status === 503 && renderer === "unreal" ? `try again in a while, or ask for renderer "auto" or "browser", since the world can send a browser renderer for those`
+        : r.status === 404 ? "calling again works only once what it says has changed"
         : r.status < 500 ? "calling again with the same arguments won't change that"
         : "try again in a while";
       return { content: [{ type: "text", text: `snapshot: no picture was taken; the world server answered ${r.status}${said ? ` (${said})` : ""}, so ${remedy}` }] };
@@ -553,7 +553,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       }
       let target: Record<string, unknown>;
       if (hasName) {
-        if (a.point == null) return text(`reaching for someone needs point too, the contact point on them, so nothing was reached: reach {who: ${shown(String(a.who))}, point: "shoulder_l"}; the points are ${Object.keys(CONTACT_POINTS).join(", ")}`);
+        if (a.point == null) return text(`reaching for someone needs point too, the contact point on them, so nothing was reached: reach {who: ${JSON.stringify(String(a.who))}, point: "shoulder_l"}; the points are ${Object.keys(CONTACT_POINTS).join(", ")}`);
         const pt = canonicalPoint(String(a.point));
         if (!pt) return text(`there's no contact point called ${shown(a.point)}, so nothing was reached; the points are ${Object.keys(CONTACT_POINTS).join(", ")}`);
         target = { who: String(a.who ?? ag.name), point: pt, ...(typeof a.standoff === "number" ? { standoff: a.standoff } : {}) };
