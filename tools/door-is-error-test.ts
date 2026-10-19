@@ -21,6 +21,7 @@ if (process.env.DOOR_IS_ERROR_CHILD === 'switched-off') {
   console.log(JSON.stringify({
     whisper: await answer('whisper', { to: 'someone', text: 'hello' }),
     rehearse: await answer('rehearse_down', {}),
+    rehearseRecover: await answer('rehearse_recover', {}),
   }));
   process.exit(0);
 }
@@ -147,6 +148,11 @@ await relaunch(); ag.flight.stamina = 1e6; ag.flight.pos.y = 2;
 r = await midway(ag, call('climb_to', { altitude: 10 }), () => { ag.flight.phase = 'LANDED'; ag.flight.pos.y = 1; });
 check('a climb that comes down on the ground below its target is failed, saying so',
   failed(r) && /^came down on the ground at 1\.0m, below the 10\.0m you asked for$/.test(said(r)), said(r));
+// A winded climb's reach is short of the height asked, and a touchdown there is judged against what was asked.
+await relaunch(); ag.flight.stamina = 0.5; ag.flight.pos.y = 2;
+r = await midway(ag, call('climb_to', { altitude: 10 }), () => { ag.flight.phase = 'LANDED'; ag.flight.pos.y = 2.5; });
+check('a winded climb that comes down where its pool ran out is failed, as below the height asked',
+  failed(r) && /^came down on the ground at 2\.5m, below the 10\.0m you asked for$/.test(said(r)), said(r));
 // The window is the tick's 0.4 m: just inside it is the height asked, just outside it isn't.
 for (const [y, done] of [[5.39, true], [5.41, false]] as const) {
   await relaunch(); ag.flight.stamina = 1e6; ag.flight.pos.y = 30;
@@ -154,6 +160,11 @@ for (const [y, done] of [[5.39, true], [5.41, false]] as const) {
   check(`a descent that comes down ${(y - 5).toFixed(2)} m above its target is ${done ? 'done' : 'failed as above it'}`,
     done ? ok(r) && /, the height you asked for/.test(said(r)) : failed(r) && /, above the 5\.0m you asked for$/.test(said(r)), said(r));
 }
+// The tick clears a climb that reaches its height; a landing in that same tick is still read as a landing.
+await relaunch(); ag.flight.stamina = 1e6; ag.flight.pos.y = 30;
+r = await midway(ag, call('climb_to', { altitude: 5 }), () => { ag.flight.phase = 'LANDED'; ag.flight.pos.y = 5.1; ag.flight.climbTo = null; });
+check('a descent that lands as the tick clears its climb is read as landed, not as there',
+  ok(r) && said(r) === 'came down on the ground at 5.1m, the height you asked for — take_off to fly again', said(r));
 // The tick ends a climb met on the ground where the body stands, without lifting it to the climb's height.
 await relaunch();
 {
@@ -179,6 +190,17 @@ for (const [phase, tool, a, words] of [
   r = await call(tool, a);
   check(`${tool} while ${phase.toLowerCase()} is failed, and leaves the body down`, failed(r) && words.test(said(r)) && ag.flight?.phase === phase, `${said(r)}; ${ag.flight?.phase}`);
 }
+// No grant to fly is refused by every flight verb, not only take_off.
+await relaunch();
+ag.myRights = { role: 'builder', fly: false };
+for (const [tool, a] of [['glide_to', { x: 10, z: 0 }], ['climb_to', { altitude: 20 }], ['land_at', { x: 5, z: 5 }]] as const) {
+  r = await call(tool, a);
+  check(`${tool} with no grant to fly is failed`, failed(r) && /^you cannot fly here — /.test(said(r)), said(r));
+}
+ag.myRights = { role: 'builder', fly: true };
+ag.flight = null;
+r = await call('climb_to', { altitude: 20 });
+check('climb_to on the ground is failed', failed(r) && said(r) === 'you are on the ground — take_off first', said(r));
 // A limp fall whose recovery began in the air flies on by itself once it's done.
 await relaunch(); ag.flight.phase = 'LEAF'; ag.flight.recoverAt = ag.flight.t ?? 0;
 r = await call('take_off');
@@ -195,6 +217,10 @@ for (const [tool, a, words] of [
   ['climb_to', { altitude: false }, /^climb_to needs `altitude`/],
   ['land_at', { x: ' ', z: 4 }, /^land_at needs `x` and `z`/],
   ['land_at', { x: 4, z: [] }, /^land_at needs `x` and `z`/],
+  // A number that isn't finite is no coordinate either, and glide_to reads z on its own.
+  ['climb_to', { altitude: Infinity }, /^climb_to needs `altitude`/],
+  ['land_at', { x: NaN, z: 4 }, /^land_at needs `x` and `z`/],
+  ['glide_to', { x: 3, z: 'north' }, /^glide_to needs `x` and `z`/],
 ] as const) {
   r = await call(tool, a);
   check(`${tool} ${JSON.stringify(a)} is failed before flying`, failed(r) && words.test(said(r)), said(r));
@@ -225,6 +251,16 @@ r = await glides(4, 0, 'RAGDOLL');
 check('a glide cut on the ground is failed as a cut', failed(r) && /^cut mid-glide — you are on the ground at /.test(said(r)), said(r));
 r = await glides(4, 0, 'RECOVER');
 check('a glide whose body sits up after a cut midway is failed as a cut', failed(r) && /^cut mid-glide — you are on the ground at /.test(said(r)), said(r));
+// Its own success: an arrival in the air, which leaves the body holding over the point.
+await relaunch();
+ag.flight.pos.x = ag.flight.pos.z = 0;
+r = await midway(ag, call('glide_to', { x: 10, z: 0 }), () => { ag.flight.pos.x = 9.5; ag.flight.pos.z = 0.5; });
+check('a glide that arrives in the air is done, holding over the point',
+  ok(r) && /^arrived at \(9\.5, 0\.5\), [0-9.]+m up — holding over it$/.test(said(r)) && ag.flight?.holdAt?.x === 10 && ag.flight?.holdAt?.z === 0,
+  `${said(r)}; holdAt ${JSON.stringify(ag.flight?.holdAt)}`);
+// A cut at the target is a cut, not an arrival.
+r = await glides(10, 0, 'LEAF');
+check('a glide cut at its target is failed as a cut', failed(r) && /^cut mid-glide — you are falling at \(10\.0, 0\.0\)/.test(said(r)), said(r));
 // land_at is done only when its glide arrived and its flare came down.
 const realGlide = ag.glideTo.bind(ag);
 const arrived = { ok: true, text: 'arrived at (5.0, 5.0), 9.0m up — holding over it' };
@@ -292,6 +328,22 @@ r = await call('rehearse_recover', {});
 check('rehearse_recover of a body down on the ground is done', ok(r) && said(r) === 'recovering' && ag.flight?.phase === 'RECOVER', `${said(r)}; ${ag.flight?.phase}`);
 r = await call('rehearse_recover', {});
 check('a second recovery while the body sits up is done, as already recovering', ok(r) && said(r) === 'already recovering', said(r));
+// A fold before a down: recovery opens the flight's wings and leaves the folded posture set, which take_off reads.
+// An unfold that finds the wings open is done, and clears the posture, or take_off would refuse wings unfold can't open.
+await relaunch(); ag.flight.phase = 'GROUND'; ag.flight.wings = 'OPEN'; ag.wingsFolded = true;
+r = await call('unfold_wings');
+check('an unfold that finds the flight\'s wings open is done, and clears the folded posture',
+  ok(r) && /already open$/.test(said(r)) && ag.wingsFolded === false, `${said(r)}; wingsFolded ${ag.wingsFolded}`);
+r = await call('take_off');
+check('...so take_off then flies', ok(r) && /^took off/.test(said(r)), said(r));
+// The other way round: a fold that finds the flight's wings folded is done, and sets the posture to match.
+// (The posture is cleared first, so a failure above doesn't stop this relaunch.)
+ag.wingsFolded = false;
+await relaunch(); ag.flight.phase = 'GROUND'; ag.flight.wings = 'FOLDED';
+r = await call('fold_wings');
+check('a fold that finds the flight\'s wings folded, with the rig known, is done, and sets the folded posture',
+  ok(r) && /already folded$/.test(said(r)) && ag.wingsFolded === true, `${said(r)}; wingsFolded ${ag.wingsFolded}`);
+ag.wingsFolded = false; ag.flight = null;
 
 console.log('\nBONES NOT KNOWN');
 const unread: any = new WorldAgent({ name: 'unread', world: 'is-error-bench' });
@@ -331,6 +383,8 @@ r = await call('spawn', {});
 check('spawn with no model is failed', failed(r) && /^spawn needs lib \(a model's path\) or query/.test(said(r)), said(r));
 r = await call('place', { id: 'nothing-here', x: 0, z: 0 });
 check('place of an unknown entity is failed', failed(r) && /knows of no entity "nothing-here"/.test(said(r)), said(r));
+r = await call('place', { x: 0, z: 0 });
+check('place with no id is failed', failed(r) && /^place needs id, the entity to move, so nothing was placed/.test(said(r)), said(r));
 r = await call('posture', { kind: 'cartwheel' });
 check('an unknown posture is failed, with the kinds', failed(r) && /posture kinds/.test(said(r)), said(r));
 r = await call('emote', { name: 'juggle' });
@@ -363,10 +417,16 @@ r = await call('kick', {});
 check('kick with no id is failed', failed(r) && /kick needs an id/.test(said(r)), said(r));
 r = await call('clear_reach', { limb: 'tail' });
 check('clear_reach of an unknown limb is failed', failed(r) && /^unknown limb "tail"/.test(said(r)), said(r));
+ag.reaches.set('rightHand', { t: { p: [1, 1, 1] } });
 r = await call('clear_reach', { limb: ['rightHand'] });
-check('clear_reach with a limb that is not a name is failed, releasing nothing', failed(r) && /^clear_reach's `limb`/.test(said(r)), said(r));
+check('clear_reach with a limb that is not a name is failed, releasing nothing', failed(r) && /^clear_reach's `limb`/.test(said(r)) && ag.reaches.has('rightHand'),
+  `${said(r)}; reaches ${[...ag.reaches.keys()]}`);
 r = await call('clear_reach', { limb: 'leftHand' });
 check('clear_reach of a limb that was not reaching changes nothing, and is done', ok(r) && /wasn't reaching for anything$/.test(said(r)), said(r));
+r = await call('clear_reach', {});
+check('a bare clear_reach releases every reach, and is done', ok(r) && said(r) === 'let go — all reaches released' && ag.reaches.size === 0, said(r));
+r = await call('clear_reach', {});
+check('...and with nothing reaching it changes nothing, and is done', ok(r) && said(r) === "you weren't reaching for anything", said(r));
 r = await call('body_state', { who: 'nobody-here' });
 check('body_state of someone not here is failed', failed(r), said(r).slice(0, 200));
 r = await call('pose', { bones: { leftUpperArm: [0, 0, 1] } });
@@ -402,6 +462,28 @@ check('releasing someone else\'s pose with the link down is failed, saying the b
 // With the link down, whether someone is here isn't known, so the answer is the link's.
 r = await call('clear_pose', { target: 'nobody-here' });
 check('releasing the pose of someone not here, with the link down, is failed, saying the body is reconnecting', failed(r) && reconnecting(r), said(r));
+// Joined, with the socket closed under it, nothing can go out either.
+const realWs = ag.ws;
+ag.joined = true;
+ag.ws = { readyState: 3, send: () => { throw new Error('sent on a closed socket'); } };
+for (const [tool, a] of [
+  ['whisper', { to: 'someone', text: 'hello' }],
+  ['animate', { dur: 1, tracks: { leftUpperArm: [{ t: 0, q: [0, 0, 0, 1] }, { t: 0.5, q: [0, 0, -0.7, 0.7] }] } }],
+  ['ragdoll', { target: 'someone' }],
+] as const) {
+  r = await call(tool, a);
+  check(`${tool} while joined with the socket closed is failed, saying the body is reconnecting`, failed(r) && reconnecting(r), said(r));
+}
+// With the socket open, each goes out on it.
+const out: any[] = [];
+ag.ws = { readyState: 1, send: (s: string) => { out.push(JSON.parse(s)); } };
+r = await call('whisper', { to: 'someone', text: 'hello' });
+check('a whisper with the socket open is sent', ok(r) && out.some((f) => f.type === 'whisper' && f.to === 'someone' && f.text === 'hello'), `${said(r)}; ${JSON.stringify(out)}`);
+r = await call('animate', { dur: 1, tracks: { leftUpperArm: [{ t: 0, q: [0, 0, 0, 1] }, { t: 0.5, q: [0, 0, -0.7, 0.7] }] } });
+check('...and your own animation', ok(r) && out.some((f) => f.type === 'anim' && f.dur === 1), `${said(r)}; ${JSON.stringify(out)}`);
+r = await call('ragdoll', { target: 'someone' });
+check('...and a request to someone here', ok(r) && out.some((f) => f.type === 'puppet' && f.target === 'someone'), `${said(r)}; ${JSON.stringify(out)}`);
+ag.joined = false; ag.ws = realWs;
 const logged: string[] = [];
 const realConsoleError = console.error;
 console.error = (...a: unknown[]) => { logged.push(a.map(String).join(' ')); };
@@ -409,6 +491,14 @@ r = await call('say', { text: 'hello' });
 console.error = realConsoleError;
 check('a say with the link down, which verb() refuses, is failed in the result', failed(r) && /^this body is reconnecting to the world, so nothing was sent/.test(said(r)), said(r));
 check('...and the throw is in the operator\'s log, naming the tool', logged.some((l) => l.startsWith('[door] say threw:')), logged.join(' | '));
+// A throw that isn't an Error is answered the same way, in its own words.
+const realVerb = ag.verb;
+ag.verb = () => { throw 'the world socket is busy'; };
+console.error = (...a: unknown[]) => { logged.push(a.map(String).join(' ')); };
+r = await call('say', { text: 'hello' });
+console.error = realConsoleError;
+ag.verb = realVerb;
+check('a handler that throws something other than an Error is failed with what it threw', failed(r) && said(r) === 'the world socket is busy', said(r));
 // What the world's HTTP side answers, stood in for.
 const realFetch = globalThis.fetch;
 const serve = (handler: (url: string) => Response) => { globalThis.fetch = (async (u: any) => handler(String(u))) as any; };
@@ -442,6 +532,14 @@ check('a preview refused at one place and busy at the other names both, and may 
 serve(() => new Response('slow down', { status: 429 }));
 r = await call('library_preview', { name: 'heron' });
 check('...and one answered 429 may work on another call', failed(r) && /\(it answered 429\); calling again may work$/.test(said(r)), said(r));
+// A failure that may pass on another call, then one that won't: calling again may still work.
+serve((url) => new Response(/\/thumb\//.test(url) ? 'busy' : 'forbidden', { status: /\/thumb\//.test(url) ? 503 : 403 }));
+r = await call('library_preview', { name: 'heron' });
+check('a preview busy at its first place and refused at the second may still work on another call',
+  failed(r) && said(r) === 'couldn\'t get a preview of "heron" from the world\'s server (it answered 503; it answered 403); calling again may work', said(r));
+serve(() => new Response('timed out', { status: 408 }));
+r = await call('library_preview', { name: 'heron' });
+check('...and one answered 408 may work on another call', failed(r) && /\(it answered 408\); calling again may work$/.test(said(r)), said(r));
 globalThis.fetch = (async () => { throw new Error(''); }) as any;
 r = await call('library_preview', { name: 'heron' });
 check('a fetch that fails with no message still counts as not reached', failed(r) && /^couldn't get a preview of "heron" .*\(the request failed\); calling again may work$/.test(said(r)), said(r));
@@ -466,6 +564,31 @@ check('a snapshot with no view available is failed', failed(r) && /^snapshot: no
 unreachable();
 r = await call('snapshot', {});
 check('a snapshot that cannot reach the world is failed', failed(r) && /^snapshot failed: no picture arrived from the world server \(connect ECONNREFUSED\)/.test(said(r)), said(r));
+// check_model, measure and worlds, when the world server fails them.
+unreachable();
+r = await call('check_model', { lib: 'models/stone.glb' });
+check('a check_model that can\'t reach the check is failed', failed(r) && /^the check could not be reached: connect ECONNREFUSED/.test(said(r)), said(r));
+serve(() => new Response(JSON.stringify({ error: 'not a GLB' }), { status: 200 }));
+r = await call('check_model', { lib: 'models/stone.glb' });
+check('a check_model the world answers with an error is failed', failed(r) && said(r) === "couldn't check models/stone.glb: not a GLB", said(r));
+unreachable();
+r = await call('measure', { lib: 'models/stone.glb' });
+check('a measure that can\'t reach the world server is failed', failed(r) && /^measure: the world server didn't answer /.test(said(r)), said(r));
+serve(() => new Response('<html>bad gateway</html>', { status: 502 }));
+r = await call('measure', { lib: 'models/stone.glb' });
+check('a measure answered with something that isn\'t geometry is failed', failed(r) && /^measure: the world server answered 502 with something that isn't geometry/.test(said(r)), said(r));
+serve(() => new Response(JSON.stringify({ error: 'no such model' }), { status: 404 }));
+r = await call('measure', { lib: 'models/stone.glb' });
+check('a measure the world answers with an error is failed', failed(r) && said(r) === 'measure: the world server answered "no such model" (404), so nothing was measured', said(r));
+serve(() => new Response(JSON.stringify({ lib: 'models/stone.glb' }), { status: 200 }));
+r = await call('measure', { lib: 'models/stone.glb' });
+check('a measure whose answer holds no geometry is failed', failed(r) && /^no geometry available for that/.test(said(r)), said(r));
+unreachable();
+r = await call('worlds', {});
+check('a worlds list that can\'t reach the world server is failed', failed(r) && /^worlds: the world server didn't answer /.test(said(r)), said(r));
+serve(() => new Response('busy', { status: 503 }));
+r = await call('worlds', {});
+check('a worlds list the world server answers 503 is failed', failed(r) && /^worlds: the world server answered 503/.test(said(r)), said(r));
 globalThis.fetch = realFetch;
 // From here the world takes every verb, and the test keeps what was sent.
 const sent: [string, unknown][] = [];
@@ -492,24 +615,24 @@ r = await call('whisper', { to: 'someone', text: '  as written  ' });
 check('a whisper\'s text keeps its own spaces', ok(r) && whispers.at(-1)?.[1] === '  as written  ', JSON.stringify(whispers.at(-1)));
 r = await call('whisper', { to: 'someone', text: 'w'.repeat(4001) });
 check('a whisper over 4000 characters sends the first 4000, and says so',
-  ok(r) && said(r) === 'whispered to someone — only the first 4000 characters were sent' && whispers.at(-1)?.[1].length === 4000, said(r));
+  ok(r) && said(r) === 'whispered to someone — only the first 4000 characters were sent; whisper the rest in another call' && whispers.at(-1)?.[1].length === 4000, said(r));
 r = await call('whisper', { to: 'someone', text: 'w'.repeat(4000) });
 check('...and one of exactly 4000 says nothing of a cut', ok(r) && said(r) === 'whispered to someone', said(r));
 r = await call('say', { text: 's'.repeat(4001) });
 check('a say over 4000 characters sends the first 4000, and says so',
-  ok(r) && said(r) === 'said — only its first 4000 characters were sent' && says.at(-1)?.length === 4000, said(r));
+  ok(r) && said(r) === 'said — only its first 4000 characters were sent; say the rest in another call' && says.at(-1)?.length === 4000, said(r));
 r = await call('say', { text: 's'.repeat(4000) });
 check('...and one of exactly 4000 is just said', ok(r) && said(r) === 'said', said(r));
 // A cut never ends in half of a character: here the 4000th unit is the first half of an emoji.
 r = await call('say', { text: 's'.repeat(3999) + '😀' + 's' });
 check('a say whose cut would split a character sends what comes before it, and says how much',
-  ok(r) && said(r) === 'said — only its first 3999 characters were sent' && says.at(-1) === 's'.repeat(3999), said(r));
+  ok(r) && said(r) === 'said — only its first 3999 characters were sent; say the rest in another call' && says.at(-1) === 's'.repeat(3999), said(r));
 r = await call('whisper', { to: 'someone', text: 'w'.repeat(3999) + '😀' });
 check('...as does a whisper', ok(r) && whispers.at(-1)?.[1] === 'w'.repeat(3999), said(r));
 r = await call('say', { text: '😀'.repeat(2001) });
-check('a cut is counted in characters: 2000 emoji, not their 4000 units', ok(r) && said(r) === 'said — only its first 2000 characters were sent' && says.at(-1) === '😀'.repeat(2000), said(r));
+check('a cut is counted in characters: 2000 emoji, not their 4000 units', ok(r) && said(r) === 'said — only its first 2000 characters were sent; say the rest in another call' && says.at(-1) === '😀'.repeat(2000), said(r));
 r = await call('whisper', { to: 'someone', text: '😀'.repeat(2001) });
-check('...for a whisper too', ok(r) && said(r) === 'whispered to someone — only the first 2000 characters were sent', said(r));
+check('...for a whisper too', ok(r) && said(r) === 'whispered to someone — only the first 2000 characters were sent; whisper the rest in another call', said(r));
 r = await call('whisper', { to: '  someone ', text: 'hi' });
 check('a whisper\'s name goes trimmed, since the world matches it exactly', ok(r) && whispers.at(-1)?.[0] === 'someone' && said(r) === 'whispered to someone', `${said(r)}; ${JSON.stringify(whispers.at(-1))}`);
 r = await call('whisper', { to: 1.5, text: 'hi' });
@@ -521,9 +644,12 @@ check('a whisper whose text is a number past the safe integers is failed, and se
 r = await call('whisper', { to: 2 ** 60, text: 'hi' });
 check('a whisper to a number past the safe integers is failed, and sends nothing',
   failed(r) && said(r) === "whisper's `to` is a number too large to read exactly, so send it as a string" && whispers.length === sentWhispers, said(r));
+r = await call('whisper', { to: 'someone', text: -(2 ** 60) });
+check('...as is one whose text is a negative number past them', failed(r) && said(r) === "whisper's `text` is a number too large to read exactly, so send it as a string" && whispers.length === sentWhispers, said(r));
 ag.joined = true;
 r = await call('whisper', { to: 'away-now', text: 'hi' });
-check('a whisper to someone not here says the world holds it for them', ok(r) && said(r) === "whispered to away-now; they aren't here, so the world holds it for when they next arrive", said(r));
+check('a whisper to someone not here says the world holds it for them, and how many it keeps',
+  ok(r) && said(r) === "whispered to away-now; they aren't here, so the world holds it for when they next arrive. It keeps each person's latest 20 by default, so an older one can be dropped", said(r));
 ag.people.set('someone', { id: 'someone', avatar: 'a.vrm', pose: null, agent: false, observedAt: null });
 r = await call('whisper', { to: 'someone', text: 'hi' });
 check('...and one to someone here says nothing of holding it', ok(r) && said(r) === 'whispered to someone', said(r));
@@ -596,6 +722,9 @@ check('a ban sent with no echo yet is not failed', ok(r) && /no echo from the wo
 ag.sendMod = () => {};
 r = await call('list_bans', {});
 check('a ban list that never arrives is failed', failed(r) && /no reply from the world/.test(said(r)), said(r));
+ag.modOutcome = async () => 'refused: only a world owner can list bans';
+r = await call('list_bans', {});
+check('a ban list the world refused is failed, with its words', failed(r) && said(r) === 'refused: only a world owner can list bans', said(r));
 // world_access: its own refusals, the world's refusal and a show with no listing are failed. A change with no
 // listing yet was still sent, as a ban with no echo yet is, so it isn't.
 for (const [a, words] of [
@@ -607,16 +736,36 @@ for (const [a, words] of [
   r = await call('world_access', a);
   check(`world_access ${JSON.stringify(a)} is failed, with its words`, failed(r) && words.test(said(r)), said(r));
 }
-ag.recentMods = [];
+// Each world_access check starts with no refusal or mod line left from the one before, since a reply stamped in
+// the same millisecond as the call counts for it.
+const freshReplies = () => { ag.lastRefusal = null; ag.lastMod = null; ag.recentMods = []; };
+freshReplies();
 ag.sendMod = () => { ag.lastRefusal = { ts: Date.now(), text: 'only an owner may change who comes in' }; };
 r = await call('world_access', { action: 'grant', id: 'someone', role: 'visitor' });
 check('a world_access change the world refused is failed, with its words', failed(r) && said(r) === 'refused: only an owner may change who comes in', said(r));
+freshReplies();
 ag.sendMod = () => { ag.lastMod = { ts: Date.now(), text: 'who can come into is-error-bench: its members' }; };
 r = await call('world_access', { action: 'show' });
 check('a world_access listing is done', ok(r) && said(r) === 'who can come into is-error-bench: its members', said(r));
+// A change's echo, whom a grant was bound to, comes back with the listing, and without it.
+const ECHO = 'someone is bound to aid:someone-1';
+freshReplies();
+ag.sendMod = () => {
+  const at = Date.now();
+  ag.recentMods.push({ ts: at, text: ECHO });
+  ag.lastMod = { ts: at, text: 'who can come into is-error-bench: its members, and someone as a visitor' };
+  ag.recentMods.push(ag.lastMod);
+};
+r = await call('world_access', { action: 'grant', id: 'someone', role: 'visitor' });
+check('a world_access change answers with its echo and the listing',
+  ok(r) && said(r) === `${ECHO}\nwho can come into is-error-bench: its members, and someone as a visitor`, said(r));
+freshReplies();
+ag.sendMod = () => { ag.lastMod = { ts: Date.now(), text: ECHO }; ag.recentMods.push(ag.lastMod); };
+r = await call('world_access', { action: 'grant', id: 'someone', role: 'visitor' });
+check('a world_access change whose echo came and listing didn\'t is not failed, and gives the echo with the sentence',
+  ok(r) && said(r) === `${ECHO}\nsent the change, but the world's listing didn't come within 2 s; world_access show tells where the door stands`, said(r));
 ag.sendMod = () => {};
-ag.lastRefusal = null;
-ag.lastMod = null;
+freshReplies();
 r = await call('world_access', { action: 'show' });
 check('a world_access show with no listing is failed', failed(r) && said(r) === 'no reply from the world (timeout)', said(r));
 r = await call('world_access', { action: 'revoke', id: 'someone' });
@@ -640,6 +789,22 @@ ag.lastRefusal = null;
 r = await call('name_place', { name: 'lookout', on: 'stone' });
 check('a name sent and not refused within the wait is done, and says it is unconfirmed',
   ok(r) && /^sent "lookout" to \[stone\], but the world has not confirmed it yet/.test(said(r)), said(r));
+// The world's answer: its echo of the component confirms the name, and its refusal fails it.
+const sendsOnly = ag.verb;
+ag.verb = (verb: string, args: any) => { sent.push([verb, args]); if (verb === 'comp') ag.entities.get(args.id).comp = { places: args.data }; };
+r = await call('name_place', { name: 'lookout', on: 'stone' });
+check('a name the world echoes back is done', ok(r) && /^named this spot "lookout" on \[stone\]/.test(said(r)), said(r));
+ag.verb = (verb: string, args: any) => { sent.push([verb, args]); if (verb === 'comp') ag.lastRefusal = { ts: Date.now(), text: 'that thing is locked' }; };
+r = await call('name_place', { name: 'gate', on: 'stone' });
+check('a name the world refuses is failed, with its words', failed(r) && said(r) === 'not named — the world refused: that thing is locked', said(r));
+ag.lastRefusal = null;
+ag.verb = sendsOnly;
+// A name that would take the component past the world's 8KB is refused before anything is sent.
+ag.entities.get('stone').comp = { places: Object.fromEntries(Array.from({ length: 120 }, (_, i) => [`spot${i}`, { at: [0, 0, 0], label: 'x'.repeat(60) }])) };
+const sentBeforeBig = sent.length;
+r = await call('name_place', { name: 'tower', on: 'stone' });
+check('a name that would take the places component past 8KB is failed, and sends nothing',
+  failed(r) && /^\[stone\]'s places would exceed the 8KB component limit/.test(said(r)) && sent.length === sentBeforeBig, said(r));
 ag.eff = realEff;
 ag.entities.delete('stone');
 
@@ -651,6 +816,7 @@ let off: any = {};
 try { off = JSON.parse(child.stdout.toString().trim().split('\n').pop() ?? '{}'); } catch { /* checked below */ }
 check('a whisper while whispers are off is failed', off.whisper?.failed === true && off.whisper.text === "whispers are turned off on this door, so nothing was sent, and calling again won't change that", JSON.stringify(off.whisper) + child.stderr.toString().slice(0, 300));
 check('a rehearsal tool while rehearsal is off is failed', off.rehearse?.failed === true && off.rehearse.text === 'there\'s no tool named "rehearse_down" on this door, so nothing ran; your tool list has the ones it serves', JSON.stringify(off.rehearse));
+check('...and so is the other one', off.rehearseRecover?.failed === true && off.rehearseRecover.text === 'there\'s no tool named "rehearse_recover" on this door, so nothing ran; your tool list has the ones it serves', JSON.stringify(off.rehearseRecover));
 
 console.log('\nWALK');
 const walker: any = {

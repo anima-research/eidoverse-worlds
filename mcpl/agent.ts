@@ -2914,7 +2914,11 @@ export class WorldAgent {
       // so the sentence around the reason doesn't add the state.
       if (ref) {
         const text = `wings stay as they are — ${ref.reason}`;
-        return before === (fold ? "FOLDED" : "OPEN") ? done(text) : refused(text);
+        if (before !== (fold ? "FOLDED" : "OPEN")) return refused(text);
+        // The wings are as asked, so the posture says so too. A fold before a down keeps wingsFolded set
+        // while recovery opens the flight's wings, and take_off reads wingsFolded.
+        this.wingsFolded = fold;
+        return done(text);
       }
     } else if (this.wingsFolded === fold) {
       return done(fold ? `wings are already folded`
@@ -3030,8 +3034,9 @@ export class WorldAgent {
     const climbed = Math.abs(reach - from);
     const got = await this.flightAwait((st) => {
       if (isDown(st.phase)) return "cut";
-      // A descent that meets the ground ends there, at its target's height (within the tick's 0.4 m) or not.
-      if (st.phase === "LANDED" || st.phase === "GROUND") return Math.abs(st.pos.y - reach) < 0.4 ? "touched down" : "landed";
+      // A climb that meets the ground ends there, at the height asked (within the tick's 0.4 m) or not. Asked,
+      // not `reach`: a winded or ceiling-capped climb's reach is short of what was asked.
+      if (st.phase === "LANDED" || st.phase === "GROUND") return Math.abs(st.pos.y - alt) < 0.4 ? "touched down" : "landed";
       if (st.climbTo == null) return "there";
       return null;
     }, Math.min(120_000, (climbed / climbRate) * 1000 + 8000));
@@ -3047,7 +3052,7 @@ export class WorldAgent {
     if (got === "landed") {
       if (this.flight) this.flight.climbTo = null;
       const y = this.flight?.pos.y ?? 0;
-      return refused(`came down on the ground at ${y.toFixed(1)}m, ${y > reach ? "above" : "below"} the ${reach.toFixed(1)}m you asked for`);
+      return refused(`came down on the ground at ${y.toFixed(1)}m, ${y > alt ? "above" : "below"} the ${alt.toFixed(1)}m you asked for`);
     }
     // The wait's own timeout is the other answer that isn't "there": the climb
     // didn't finish, so it isn't reported as reaching the target. It stops
