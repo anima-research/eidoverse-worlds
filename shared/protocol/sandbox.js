@@ -283,7 +283,11 @@ const env = () => globalThis.process?.env ?? {};
 let fsm = null, osm = null, pathm = null; // node:fs etc., loaded only where isolation runs (never in a browser)
 try { if (globalThis.process?.versions) { fsm = await import("node:fs"); osm = await import("node:os"); pathm = await import("node:path"); } } catch { /* no isolation here */ }
 const canIsolate = () => !!(Q && fsm && typeof Bun !== "undefined" && !env().EIDO_SANDBOX_CHILD && env().EIDO_SANDBOX !== "inprocess" && fifoOk());
-let FIFO = null; const fifoOk = () => (FIFO ??= (() => { try { return Bun.spawnSync(["mkfifo", "--help"]).exitCode !== null; } catch { return false; } })());
+// Windows: never. Git for Windows ships an `mkfifo` that succeeds, but what it makes is an MSYS emulation the OS's own file
+// calls can't open (ENOENT on the child's pipe, every install crashed: CI 10-19). There scripts run in-process — fuel and the
+// wall clock still bind script code, but a native builtin can hold the thread past the deadline (isolation's one extra
+// guarantee). Real isolation there needs Windows named pipes: post-ship.
+let FIFO = null; const fifoOk = () => (FIFO ??= globalThis.process?.platform !== "win32" && (() => { try { return Bun.spawnSync(["mkfifo", "--help"]).exitCode !== null; } catch { return false; } })());
 const pool = []; let kills = 0, spawned = 0;
 const SLEEP = new Int32Array(new SharedArrayBuffer(4)); const nap = (ms) => Atomics.wait(SLEEP, 0, 0, ms);
 function spawnChild() {
