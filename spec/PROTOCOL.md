@@ -1404,40 +1404,48 @@ argument will be short.
   inherited thing from one born in the fork. Merging a fork back into its
   parent is RESERVED with governance (the draft rule is on the wishlist).
 - **Whose key is tier 0.** A world's founder holds tier 0 with a key made on
-  their own machine (the authority's `create-world {ownerKey}`; a translated
-  world's `--founder-key`). A host's custody keys (sequencer, operator) are
-  never the founder's. A world founded without one has an empty tier 0 for
-  ever, and its operator key (tier 1) is its top governance key.
+  their own machine (the authority's `create-world {ownerKey}`). A host's
+  custody keys (sequencer, operator) are never the founder's. A world founded
+  without one has an empty tier 0, and its operator key (tier 1) is its top
+  governance key. A **translated** world's tier 0 is always empty (§14):
+  nothing can yet bind a key to the old world's owner, so a translation names
+  no founder. The reserved governance draft must allow ONE attested fill of a
+  translated world's empty tier 0 later, once something (a home-node
+  attestation) can vouch that a key belongs to the old world's owner.
 
 ## 14. Worlds from the first protocol
 
 The first protocol (an untyped verb log) is retired. An old world's log can
 be translated once, one way, into a world of this protocol, in two steps.
-`bun tools/protocol/world.ts translate <world> --dry-run --founder-key <key>`
-(or `--no-founder-key`, to leave tier 0 empty for ever, §13) writes nothing
-and prints the **dry-run report** — the old log's size and sha256, the
-translator and fold build, the founder key, the counts (entries, changes,
-guards that become locks, models without bytes here), the translator's
-DROPPED table (what every translation drops or renames by design), and
-`deferred`: every use of a feature this protocol does not carry yet — and the
-report's sha256. The translation itself takes `--approved <that hash>`: the
-report is recomputed from the old log as it stands and must hash to it (else
-refused, both hashes named: the log, the tool or the key changed since the
-owner read it), and is **countersigned**: two ed25519 signatures over the
-same text, `eidoverse-approve-translation:<world>:<hash>` — the **owner's**
-(the founder key, `--approve-sig`, made on the founder's machine; the same
-key and scheme as the `owner-key` ceremony) and the **operator's** (the host's
-custody operator key, never its sequencer key; whoever runs the tool on the
-host is the operator, and the tool signs). The writer checks both itself
-(`approvalProblem`) before the log is written: either missing, not verifying,
-or over another hash or world is refused by name. A world with no founder key
-has no owner who can sign, so the translation is **refused** unless the
-operator says `--operator-only-no-owner`, knowingly; the act then records in
-words that no owner approved. The approval rides in the new log as the
-system's `translation-approved` act right after `repair-shapes`
-(`body {report, approval: {over, owner: {key, sig} | null, operator: {key,
-sig}, noOwner?}}`): provenance a reader checks against `log.original.jsonl`.
-The fold never reads it (§1).
+`bun tools/protocol/world.ts translate <world> --dry-run --no-founder-key`
+writes nothing and prints the **dry-run report** — the old log's size and
+sha256, the translator and fold build, `founderKey: null`, the counts
+(entries, changes, guards that become locks, models without bytes here), the
+translator's DROPPED table (what every translation drops or renames by
+design), and `deferred`: every use of a feature this protocol does not carry
+yet — and the report's sha256. The translation itself takes `--approved <that
+hash>`: the report is recomputed from the old log as it stands and must hash
+to it (else refused, both hashes named: the log or the tool changed since it
+was read).
+
+**A translation names no founder and carries no owner's signature.** First-
+protocol logs record accounts, never keys, so nothing can yet bind a key to
+the old world's owner; a key handed to the tool would be the operator's
+choice, recorded as the owner's approval and installed as tier 0. So
+`--founder-key` and `--approve-sig` are refused before anything is written,
+the new world's tier 0 is empty (§13), and the approval is the **operator's**
+countersignature alone: an ed25519 signature by the host's custody operator
+key (never its sequencer key; whoever runs the tool on the host is the
+operator, and the tool signs) over `eidoverse-approve-translation:<world>:<hash>`,
+given only when the operator says `--operator-only-no-owner`, knowingly. The
+writer checks it itself (`approvalProblem`) before the log is written: a
+countersignature missing, not verifying, or over another hash or world, an
+approval carrying an owner's signature, or a founder key is refused by name.
+The approval rides in the new log as the system's `translation-approved` act
+right after `repair-shapes` (`body {report, approval: {over, owner: null,
+operator: {key, sig}, noOwner}}`, `noOwner` saying in words that no owner was
+attested): provenance a reader checks against `log.original.jsonl`. The fold
+never reads it (§1).
 
 A world that uses a **deferred feature** — a water volume, an air box, a
 climb route, a vehicle, a collision toggle (`water`/`air`/`traversal`/

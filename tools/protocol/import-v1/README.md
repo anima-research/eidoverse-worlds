@@ -14,34 +14,35 @@ it and nothing at runtime can load it; `tools/protocol/nov1-check.ts` (in `bun r
 | `eidosim-v1.js` | the first eidosim (dialect 3), kept here so the translator, the sweep and the directory check can read what a physics-era v1 log's punts did; nothing at runtime loads it (the server runs `eidosim@1.0.0`) |
 | `eidosim-v1-test.ts` | its covenant tests (self-agreement, schedule independence, quantization), run on the copy kept here |
 | `build.ts` | the old fold's build hash, stamped into a translated world's `translated` act |
-| `world.ts` | `reportV1World(src, {founderKey, name})`: the dry-run report and its hash (nothing written). `translateV1World(src, dest, {founderKey, name, approval})`: reads `src/log.jsonl` (never writes it), refuses a log using a `DEFERRED` feature, translates, re-reads the result with the strict reader (and, for a physics-era log, the authority's own sim layer, which re-checks every rest), maps every old name to a door identity, then writes `dest/world.jsonl` |
+| `world.ts` | `reportV1World(src, {name})`: the dry-run report and its hash (nothing written). `translateV1World(src, dest, {name, approval})`: refuses a founder key (a translation names none), reads `src/log.jsonl` (never writes it), refuses a log using a `DEFERRED` feature, translates, re-reads the result with the strict reader (and, for a physics-era log, the authority's own sim layer, which re-checks every rest), maps every old name to a door identity, then writes `dest/world.jsonl` |
 | `snapshot-oracle.ts` | the translator against the OLD ENGINE (suite `oracle`): every old world whose `snapshot.json` is a complete fold of its log (seq and bytes match) is translated for real, and its fold (and the server's lifted load) compared with the snapshot, through the translator's mapping and also field by field off the snapshot. Incomplete snapshots are skipped, never compared. Given a world translated in place, it reads the kept originals (`log.original.jsonl`, `snapshot.original.json`). `OPT_DIR=<serving checkout>/assets/opt` gives store models their real addresses |
 
-The operator runs it, in place, in two steps (review of PR #260, item 6: the owner's approval is bound to the exact dry-run
-report before anything moves):
+The operator runs it, in place, in two steps (review of PR #260, item 6: the approval is bound to the exact dry-run
+report before anything moves). **A translation names no founder and carries no owner's signature** (#260 rereview,
+blocker 1): v1 logs record accounts, never keys, so nothing can yet bind a key to the old world's owner, and a key handed
+to the tool would be the operator's choice, recorded as "the owner approved" and installed as tier 0. `--founder-key` and
+`--approve-sig` are refused before anything is written. Until something can attest that a key is the v1 owner's (a
+home-node attestation, later), the one path is `--no-founder-key --operator-only-no-owner`: tier 0 stays empty, and the
+record says no owner was attested.
 
-1. **The dry run.** `WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <world> --dry-run --founder-key <ed25519:…>`
-   (or `--no-founder-key`, which leaves the world's top governance tier empty for ever; see the ceremony below). It writes
+1. **The dry run.** `WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <world> --dry-run --no-founder-key`. It writes
    nothing and prints the report (`reportV1World` in `world.ts` here): the old log's size and sha256, the translator and
-   fold build, the founder key, the counts, the `DROPPED` table (what every translation drops or renames by design, from
+   fold build, `founderKey: null`, the counts, the `DROPPED` table (what every translation drops or renames by design, from
    `translate-v1.js`), `deferred` (uses of features v4 doesn't carry yet: `DEFERRED` — water volumes, air boxes, climb
    routes, vehicles, collision toggles; any means the translation is refused, naming each use) and `report-hash <sha256>`.
-   Nothing in it varies between runs, so the same log, tool and key always hash the same.
-2. **The translation, bound to that hash.** With a founder key, the founder signs the approval on their own machine —
-   `printf '%s' 'eidoverse-approve-translation:<world>:<hash>' > msg.txt; openssl pkeyutl -sign -inkey eidoverse-owner.pem -rawin -in msg.txt | base64 | tr -d '\n'`
-   — and the operator runs `translate <world> --founder-key <KEY> --approved <hash> --approve-sig <signature>`. The
-   report is recomputed from `log.jsonl` as it stands: a different hash (the log grew, the tool or the key changed) is
-   refused with both hashes named, and so is a signature that doesn't verify over the approval text (the same ed25519
-   scheme as `owner-key`). The tool then **countersigns** with this host's custody operator key (`.custody.json`
-   `operator`, never the sequencer key) over the same text, and the writer checks both signatures itself before the log
-   is written (`approvalProblem`): either missing, not verifying, or over another hash or world refuses by name.
-   With `--no-founder-key` there is **no owner who can sign**, so `--approved <hash>` alone is REFUSED; add
-   `--operator-only-no-owner` to translate on the operator's countersignature alone, knowingly — the act records in words
-   that no owner approved. Either way the approval is in the new world's log, the system's `translation-approved` act
-   right after `repair-shapes`: `{report, approval: {over, owner: {key, sig} | null, operator: {key, sig}, noOwner?}}`.
-   A refused report can't be approved.
+   Nothing in it varies between runs, so the same log and tool always hash the same.
+2. **The translation, bound to that hash.** `translate <world> --no-founder-key --approved <hash> --operator-only-no-owner`.
+   The report is recomputed from `log.jsonl` as it stands: a different hash (the log grew, the tool changed) is refused with
+   both hashes named. Without `--operator-only-no-owner` it is REFUSED: no owner can sign, and the operator says so,
+   knowingly. The tool **countersigns** with this host's custody operator key (`.custody.json` `operator`, never the
+   sequencer key) over `eidoverse-approve-translation:<world>:<hash>`, and the writer checks it itself before the log is
+   written (`approvalProblem`): a countersignature missing, not verifying, or over another hash or world, an approval
+   carrying an owner's signature, or a founder key handed to `translateV1World` refuses by name. The approval is in the new
+   world's log, the system's `translation-approved` act right after `repair-shapes`:
+   `{report, approval: {over, owner: null, operator: {key, sig}, noOwner}}`, `noOwner` saying in words that no owner was
+   attested. A refused report can't be approved.
 
-The world keeps its name, so links to it keep working (the Commons is cut over with `translate commons --founder-key <KEY> --approved … --approve-sig …`). It
+The world keeps its name, so links to it keep working (the Commons is cut over with `translate commons --no-founder-key --approved … --operator-only-no-owner`). It
 is translated into a temporary sibling directory (`.translating-<world>-…`, never served) and verified there first: the
 importer's own checks (0 divergences, projection equality, strict read-back), the result opened as the server opens it
 (same digest), and, when the directory holds the old server's `snapshot.json`, `snapshot-oracle.ts`'s agreement with it
@@ -70,8 +71,8 @@ byte-identical to before the translation (inplace-check IP24 proves it file by f
 made file the server has written to since (the v4 world's acts, places, bans) refuses the rollback unless
 `--discard-changes`. The content-address index (`OPT_DIR/eido-index.json`) is a cache of library bytes, not world state,
 and is left. A directory translated before 2026-10-18 has no manifest: `rollback` says so and what to rename by hand. At boot the server prints, for
-each old world, the exact in-place command, with `WORLDS_DIR` filled in and a
-placeholder for the founder key (`server/oldworlds.ts` `bootNotice`). A visitor is told in plain words that the world
+each old world, the exact in-place commands, with `WORLDS_DIR` filled in and a
+placeholder for the report hash (`server/oldworlds.ts` `bootNotice`). A visitor is told in plain words that the world
 needs a one-time conversion by whoever runs the server and that nothing is lost (`visitorText`; the browser keeps that
 sentence on its splash, suite `refusedjoin`). The sweep
 (`tools/protocol/sweep.ts`, in `test:protocol`) translates every old world log it can find and requires zero divergences.
@@ -80,23 +81,33 @@ sentence on its splash, suite `refusedjoin`). The sweep
 follow-up change, about a month after that cutover, deletes this directory, the sweep's v1 half and the v1 fixtures in
 `spec/fixtures/`.
 
-## The Commons ceremony (governance keys, PROTOCOL §13)
+## The Commons and governance keys (PROTOCOL §13)
 
-A translated world's genesis names its governance keys, and genesis never changes. Under the governance draft's add-key rule (GOV-5; reserved in §13, kept on the wishlist) a
-lower tier can never add a key to a higher one, so **tier 0 must be the founder's key at translation, or it stays empty
-for ever**. The public Commons was founded by **antra**; its owners (antra, fable, janus, mica, from the v1 log's grants)
-and builder (Digi_Rat) come across as `roles:<id>` either way, because roles are rights inside the world and governance
-keys are a separate list (§7, "two owner lists, never confused"). Neither R's key nor Burrow's goes in tier 0.
+A translated world's genesis names its governance keys, and genesis never changes. **A translated world's tier 0 stays
+empty**: nothing can yet bind a key to the v1 owner (above), so the translation names no founder, and the host's operator
+key is tier 1. Governance is reserved (§13); the reserved draft must allow ONE attested fill of a translated world's empty
+tier 0 later, once something (a home-node attestation) can vouch that a key belongs to the world's v1 owner. The public
+Commons was founded by **antra**; its owners (antra, fable, janus, mica, from the v1 log's grants) and builder (Digi_Rat)
+come across as `roles:<id>`, because roles are rights inside the world and governance keys are a separate list (§7, "two
+owner lists, never confused"). Neither R's key nor Burrow's goes in tier 0.
 
-1. **The founder makes a key on her own machine.** The private half never leaves it. With OpenSSL (any recent
+Before the cut-over, **back up the host's custody** (`keys/custody.json` under the worlds directory) off this machine: it
+holds the sequencer and operator keys. Lose it and the Commons can never sign another head; the only way on is a fork.
+
+### A founder's own key, for a world FOUNDED new
+
+Founding a brand-new world is a different path: there is no prior owner to bind, and the founder brings their own key,
+which `create-world {ownerKey}` puts in tier 0 (without one, tier 0 is empty). The key is made, and proven, like this:
+
+1. **The founder makes a key on their own machine.** The private half never leaves it. With OpenSSL (any recent
    version):
 
        openssl genpkey -algorithm ed25519 -out eidoverse-owner.pem
        printf 'ed25519:%s\n' "$(openssl pkey -in eidoverse-owner.pem -pubout -outform DER | tail -c 32 | base64 | tr '+/' '-_' | tr -d '=')"
 
-   Keep `eidoverse-owner.pem` offline and backed up: it is the only thing that can reclaim, rewind or re-key the
-   Commons from the top.
-2. **She proves it's hers, and that the text is spelled right**, by signing the ceremony text with it and sending the
+   Keep `eidoverse-owner.pem` offline and backed up: it is the only thing that can reclaim, rewind or re-key the world
+   from the top.
+2. **They prove it's theirs, and that the text is spelled right**, by signing the key text with it and sending the
    public key and the signature (both are safe to share):
 
        KEY=ed25519:…   # the line printed above
@@ -105,12 +116,3 @@ keys are a separate list (§7, "two owner lists, never confused"). Neither R's k
 
 3. **The operator checks it** (nothing is written): `bun tools/protocol/world.ts owner-key <KEY> <signature>`. It says
    `ok` only when the signature verifies over `eidoverse-owner-key:<KEY>`.
-4. **Back up the host's custody** (`keys/custody.json` under the worlds directory) off this machine first: it holds the
-   sequencer and operator keys. Lose it and the Commons can never sign another head; the only way on is a fork.
-5. **Translate** with her key in tier 0 and the host's operator key in tier 1:
-   `bun tools/protocol/world.ts translate commons --founder-key <KEY>`. `info commons` afterwards shows the
-   roles; line 0 of `world.jsonl` shows `owners: [[<KEY>], [<operator>]]`.
-
-`--no-founder-key` translates with tier 0 empty, knowingly (a test world, or a world whose founder can't be reached and
-doesn't want to be its top key). The command refuses to guess between the two. Such a world has no owner who can sign its
-translation's approval, so it also needs `--operator-only-no-owner` (the act records that no owner approved).
