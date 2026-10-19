@@ -121,9 +121,10 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const rid = msg.id ?? null;
     const args = msg.args && typeof msg.args === "object" && !Array.isArray(msg.args) ? msg.args : {};
     const verb = String(msg.verb ?? "");
-    // the envelope carries the transaction outcome too (PROTOCOL §7: committed | rolled-back | ambiguous; ok only when committed)
+    // the envelope carries the transaction outcome too, as `txn` (PROTOCOL §7: committed | rolled-back | ambiguous; ok only
+    // when committed). Never `outcome`: the body verbs' replies already use that word for asked | allowed
     let answered = false;
-    const reply = (r: Any) => { answered = true; ws.send(JSON.stringify({ type: "reply", id: rid, verb, ok: r.ok === true, ...(typeof r?.outcome === "string" ? { outcome: r.outcome } : {}), reply: r })); };
+    const reply = (r: Any) => { answered = true; ws.send(JSON.stringify({ type: "reply", id: rid, verb, ok: r.ok === true, ...(typeof r?.txn === "string" ? { txn: r.txn } : {}), reply: r })); };
     if (c.spectator && !READS.has(verb)) { reply({ ok: false, refused: { code: "spectator", reason: "spectators may read, not write", fix: "join embodied" } }); return; }
     const metered = READS.has(verb) || args.dry === true;
     // reads are counted as they arrive (a burst is counted before any of it runs); time is checked when each request is
@@ -141,10 +142,10 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     // after warm(), immediately before the authority writes (seam 2, worldlog.ts request); the authority is given
     // cap.actorId, never the connection's actorId read after an await (reviewer item 2; review of PR #260, requestwire.ts:135)
     let cap: ReqCap;
-    try { cap = capture(c, w); } catch (err) { console.error(`[ws] request from ${c.id}:`, err); reply({ ok: false, outcome: "rolled-back", refused: { code: "identity", reason: "this connection has no identity here", fix: "join the world first" } }); return; }
+    try { cap = capture(c, w); } catch (err) { console.error(`[ws] request from ${c.id}:`, err); reply({ ok: false, txn: "rolled-back", refused: { code: "identity", reason: "this connection has no identity here", fix: "join the world first" } }); return; }
     const still = () => recheck(cap);
     inOrder(c, ws, async () => {
-      { const gone = still(); if (gone) { reply({ ok: false, outcome: "rolled-back", refused: { code: "superseded", reason: gone, fix: "reconnect, then send it again from the connection that is in the world now" } }); return; } }
+      { const gone = still(); if (gone) { reply({ ok: false, txn: "rolled-back", refused: { code: "superseded", reason: gone, fix: "reconnect, then send it again from the connection that is in the world now" } }); return; } }
       { const no = (metered ? reads.check(c, Date.now(), { timeOnly: true }) : null) ?? busy.check(c, Date.now()); if (no) { metered_no(no); return; } }
       const spent = busy.record(c, Date.now());
       const wasBanned = (verb === "ban" || verb === "unban") && typeof args.who === "string" ? isBanned(w.log.live, String(args.who)) : false;
@@ -212,7 +213,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const rid = msg.id ?? null; const verb = String(msg.verb ?? "");
     const args = msg.args && typeof msg.args === "object" && !Array.isArray(msg.args) ? msg.args : {};
     let answered = false;
-    const reply = (r: Any) => { answered = true; ws.send(JSON.stringify({ type: "reply", id: rid, verb, ok: r.ok === true, operator: true, ...(typeof r?.outcome === "string" ? { outcome: r.outcome } : {}), reply: r })); };
+    const reply = (r: Any) => { answered = true; ws.send(JSON.stringify({ type: "reply", id: rid, verb, ok: r.ok === true, operator: true, ...(typeof r?.txn === "string" ? { txn: r.txn } : {}), reply: r })); };
     if (!isOperator(c.account)) { reply({ ok: false, refused: { code: "rights", reason: "operator-repair needs a server operator's account (WORLD_ADMIN)", fix: "repair through the world's own roles: ask an owner" } }); return; }
     if (!c.actorId) { reply({ ok: false, refused: { code: "identity", reason: "this connection has no identity here", fix: "join the world first" } }); return; }
     // the same one capability as request (server/reqcap.ts), and it must still be an operator's when the queue reaches it:
@@ -220,7 +221,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const cap = capture(c, w);
     inOrder(c, ws, async () => {
       const gone = recheck(cap, Date.now(), { role: false }) ?? (cap.operator ? null : "operator-repair needs a server operator's account (WORLD_ADMIN)");
-      if (gone) { reply({ ok: false, outcome: "rolled-back", refused: { code: "superseded", reason: gone, fix: "reconnect, then send it again" } }); return; }
+      if (gone) { reply({ ok: false, txn: "rolled-back", refused: { code: "superseded", reason: gone, fix: "reconnect, then send it again" } }); return; }
       const r = w.log.operatorRepair(cap.actorId, verb, args);
       console.log(`[world:${w.name}] operator repair by ${c.account} (${c.id}): ${verb.slice(0, 32)} ${String((args as Any).component ?? (args as Any).who ?? "").slice(0, 64)} → ${r?.ok ? "ok" : r?.refused?.code}`);
       reply(r);

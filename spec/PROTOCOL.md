@@ -882,7 +882,7 @@ that fails may have left part of a line behind, so the authority then refuses ev
 file until the world is reopened from what the disk holds (the reader cuts a torn last line): it never
 chains a new entry onto one the disk may not have.
 
-**Every request ends in one of three outcomes**, named in its reply (`outcome`), and the authority persists
+**Every request ends in one of three outcomes**, named in its reply (`txn`), and the authority persists
 before it publishes:
 - `committed`: the reply is ok, and every line the request wrote is durable and published.
 - `rolled-back`: none of what it asked for was written (a refusal, or a failure before any of its lines reached

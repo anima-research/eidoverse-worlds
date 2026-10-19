@@ -118,7 +118,7 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   send(t, "create", { components: { description: "half" } }); await until(() => t.replies.length > 1); restore();
   const r = t.replies[1];
   const actPublished = t.logs.slice(logs0).some((m) => m.from === n0 && m.entries.length === 1 && m.entries[0].kind === "act");
-  ok(r?.ok === false && r?.outcome === "ambiguous" && r?.reply?.refused?.code === "ambiguous" && r?.reply?.from === n0 + 1 && actPublished
+  ok(r?.ok === false && r?.txn === "ambiguous" && r?.reply?.refused?.code === "ambiguous" && r?.reply?.from === n0 + 1 && actPublished
     && lines("t1").length === n0 + 1 && X.w.log.live.entries.length === n0 + 1,
     "T1 the 2nd line's write throws: ambiguous (never ok), from = that line; the act (1st line) is durable and published", { r, logs: t.logs.map((m) => [m.from, m.entries.length]), disk: lines("t1").length, n0 });
   // what stands after a reopen: the act without its change folds (an act carries no ops), and undo finds nothing of it
@@ -136,7 +136,7 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   send(t, "say", { text: "maybe" }); await until(() => t.replies.length); restore();
   const r = t.replies[0];
   const anyOk = [...t.replies, ...other.replies].some((m) => m.ok === true);
-  ok(r?.ok === false && r?.outcome === "ambiguous" && r?.reply?.refused?.code === "ambiguous" && r?.reply?.from === n0 && !!X.w.log.live.wedged?.log && !anyOk
+  ok(r?.ok === false && r?.txn === "ambiguous" && r?.reply?.refused?.code === "ambiguous" && r?.reply?.from === n0 && !!X.w.log.live.wedged?.log && !anyOk
     && X.w.log.live.entries.length === n0 && !t.logs.length && !other.logs.length,
     "T2 fsync throws after the bytes were written: ambiguous, wedged, no one told ok, nothing published", { r, wedged: X.w.log.live.wedged, n: X.w.log.live.entries.length });
   const re = openLive(path.join(W, "t2"), "t2-reopened");
@@ -144,21 +144,21 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
     "T2b reopen finds the line the asker was told is unknown (so 'failed' would have been a lie)", { n: re.entries.length });
   send(t, "say", { text: "after" }); await until(() => t.replies.length > 1);
   const r2 = t.replies[1];
-  ok(r2?.ok === false && r2?.outcome === "rolled-back" && r2?.reply?.refused?.code === "server-error" && lines("t2").length === n0 + 1,
+  ok(r2?.ok === false && r2?.txn === "rolled-back" && r2?.reply?.refused?.code === "server-error" && lines("t2").length === n0 + 1,
     "T2c the wedged log refuses the next write before any byte: rolled back, server-error, the file unchanged", r2); }
 
 // ---------------- T3 ----------------
 { const X = world("t3"); const t = tab(X, X.owner, { account: "local:olive" }); const n0 = X.w.log.live.entries.length;
   send(t, "inspect", { id: "nothing-here" }); await until(() => t.replies.length);
   const r = t.replies[0];
-  ok(r?.ok === false && r?.outcome === "rolled-back" && r?.reply?.refused && X.w.log.live.entries.length === n0 && !t.logs.length,
+  ok(r?.ok === false && r?.txn === "rolled-back" && r?.reply?.refused && X.w.log.live.entries.length === n0 && !t.logs.length,
     "T3 a refusal: rolled back, nothing appended, nothing published", r);
   send(t, "say", { text: "ok" }); await until(() => t.replies.length > 1);
-  ok(t.replies[1]?.ok === true && t.replies[1]?.outcome === "committed" && t.replies[1]?.reply?.outcome === "committed" && t.replies[1]?.reply?.seq === n0,
+  ok(t.replies[1]?.ok === true && t.replies[1]?.txn === "committed" && t.replies[1]?.reply?.txn === "committed" && t.replies[1]?.reply?.seq === n0,
     "T3b a write that lands: committed (envelope and reply), ok", t.replies[1]);
   const n1 = X.w.log.live.entries.length; const restore = fault("t3", 1, "before");
   send(t, "say", { text: "lost" }); await until(() => t.replies.length > 2); restore();
-  ok(t.replies[2]?.outcome === "ambiguous" && X.w.log.live.entries.length === n1 && !said(X, "lost") && t.logs.length === 1,
+  ok(t.replies[2]?.txn === "ambiguous" && X.w.log.live.entries.length === n1 && !said(X, "lost") && t.logs.length === 1,
     "T3c a line whose write threw never reaches memory or anyone (persist before publish)", { r: t.replies[2], logs: t.logs.length }); }
 
 // ---------------- T4 ----------------
@@ -167,7 +167,7 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   ok(ownerDo(X, "ban", { who: vic, reason: "test" })?.ok === true, "(T4 setup) the owner bans the asker while its request waits");
   X.g.release(); await until(() => t.replies.length);
   const r = t.replies[0];
-  ok(r?.reply?.refused?.code === "superseded" && /door/.test(r?.reply?.refused?.reason ?? "") && r?.outcome === "rolled-back" && !said(X, "from-the-banned"),
+  ok(r?.reply?.refused?.code === "superseded" && /door/.test(r?.reply?.refused?.reason ?? "") && r?.txn === "rolled-back" && !said(X, "from-the-banned"),
     "T4 banned while the request waited: refused at the seam by the door (superseded), nothing written", r);
   // re-roled while waiting: a visitor made a builder mid-request is refused (admitted under the old role), never silently promoted
   const bea = idOf("local:bea", "bea"); const b = tab(X, bea, { account: "local:bea" });
@@ -227,7 +227,7 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   ok(rep?.ok === false && rep?.reply?.refused?.code === "superseded" && !X.w.log.live.state().entities["@world"]?.c?.[`roles:${bea}`],
     "T9 operator status revoked while the repair waited: refused, nothing written", rep);
   send(t, "set", { id: "@world", component: `roles:${bea}`, value: { role: "owner" } }, "operator-repair"); await until(() => t.replies.filter((m) => m.operator).length > 1);
-  ok(t.replies.filter((m) => m.operator)[1]?.ok === true && t.replies.filter((m) => m.operator)[1]?.outcome === "committed", "T9b (control) an operator's repair commits", t.replies.filter((m) => m.operator)[1]);
+  ok(t.replies.filter((m) => m.operator)[1]?.ok === true && t.replies.filter((m) => m.operator)[1]?.txn === "committed", "T9b (control) an operator's repair commits", t.replies.filter((m) => m.operator)[1]);
   // an operator's right is the account's, never the world's role: a second repair queued behind one that changed the
   // operator's own role is not refused for it
   const k0 = t.replies.filter((m) => m.operator).length; const fen = idOf("local:fen", "fen");
@@ -236,14 +236,14 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   send(t, "set", { id: "@world", component: `roles:${fen}`, value: { role: "builder" } }, "operator-repair");
   X.g.release(); await until(() => t.replies.filter((m) => m.operator).length >= k0 + 2);
   const two = t.replies.filter((m) => m.operator).slice(k0);
-  ok(two.length === 2 && two.every((m) => m.ok === true && m.outcome === "committed"), "T9c an operator's repairs queued behind one that changed their own role both commit (no role compare for repairs)", two); }
+  ok(two.length === 2 && two.every((m) => m.ok === true && m.txn === "committed"), "T9c an operator's repairs queued behind one that changed their own role both commit (no role compare for repairs)", two); }
 
 // ---------------- T10 ----------------
 { const X = world("t10"); const guest = directoryFor(W).resolve({ sub: null, name: "guest" }); const t = tab(X, guest, { account: undefined }); t.c.anonymous = true;
   // reads and writes alike (a guest may say 20 in 10 s: 15 says, 85 reads), each through both recheck seams
   for (let i = 0; i < 100; i++) if (i % 7 === 6 && i < 105) send(t, "say", { text: `n${i}` }); else send(t, "inspect", { id: "@world" });
   await until(() => t.replies.length === 100);
-  const bad = t.replies.filter((m) => !(m.ok === true && m.outcome === "committed"));
+  const bad = t.replies.filter((m) => !(m.ok === true && m.txn === "committed"));
   ok(t.replies.length === 100 && !bad.length && said(X, "n97") && t.replies.filter((m) => m.verb === "say").length === 14, "T10 100 serial requests from an unchanged guest connection: all committed, no false refusal", { n: t.replies.length, bad: bad.slice(0, 2) }); }
 
 ok(!publishedNotOnDisk.length, "T3d every line any client was sent was on disk when it was sent", publishedNotOnDisk);

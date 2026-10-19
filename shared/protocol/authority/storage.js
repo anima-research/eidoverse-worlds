@@ -149,12 +149,13 @@ export function txnOutcome(w, from, { threw = false, refused = false, wedgedBefo
   if (grew) return { outcome: "ambiguous", from: w.entries.length, wedged: !!w.wedged.log };
   return { outcome: "rolled-back" };
 }
-/** The reply a request gets when it did not end committed or refused (txnOutcome): never ok, always a registered code. */
+/** The reply a request gets when it did not end committed or refused (txnOutcome): never ok, always a registered code.
+ *  A reply names its outcome as `txn` (never `outcome`: the body verbs' replies already say asked | allowed there). */
 export function txnRefusal(o) {
-  if (o.outcome === "ambiguous") return { ok: false, outcome: "ambiguous", from: o.from, refused: o.wedged
+  if (o.outcome === "ambiguous") return { ok: false, txn: "ambiguous", from: o.from, refused: o.wedged
     ? { code: "ambiguous", reason: `the write's result is unknown: storage failed while writing it, so whether line ${o.from} is on disk isn't known; this world refuses writes until it is reopened from disk`, fix: `reload once the world is reopened; history from seq ${o.from} says what stands` }
     : { code: "ambiguous", reason: `the request was cut off after part of it was written: lines before ${o.from} stand, the rest was not written`, fix: `history from seq ${o.from} says what stands; send what is missing again` } };
-  return { ok: false, outcome: "rolled-back", refused: { code: "server-error", reason: "the server failed while handling the request; nothing it asked for was written", fix: "send it again; if it keeps failing, the server's log says why" } };
+  return { ok: false, txn: "rolled-back", refused: { code: "server-error", reason: "the server failed while handling the request; nothing it asked for was written", fix: "send it again; if it keeps failing, the server's log says why" } };
 }
 // READBACK (verbclasses.js; engine-scars 4/6c, R 10-17 02:45): the act fields the authority reads back for meaning (an
 // undo's chain, a use's capability, a script's sponsor, a sculpt's brush, the request that named an engine build…). §12
