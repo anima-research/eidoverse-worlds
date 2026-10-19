@@ -21,6 +21,7 @@
 //   PROTOCOL_KEEP=1                         keep the gate's temp dir to read
 //   PROTOCOL_TIMEOUT_SCALE=<factor>         multiply every suite's timeout (a very slow host: 2)
 //   PROTOCOL_HEADLESS_LOCK=<file> PROTOCOL_PERF_GUARD=<script>   run browser suites under a host's flock + perf guard
+import { killSuite, suiteMembers } from "./procgroup.ts";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -32,6 +33,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["kernel", "kernel-check.ts", 1],     // reviewer item 5 (10-18): the kernel (envelope, kinds, ops, identity grammar, version, transform, parent) is trial-kernel: a change is red unless the same change carries a translator, a changelog line and old-red/new-green vectors (spec/kernel-pin.json)
   ["gov-reserved", "gov-reserved-check.ts", 1], // reviewer item 8 (10-18): governance is RESERVED; the server refuses to serve a log holding a `sequencer` entry, truthfully
   ["diffcheck", "diffcheck.ts", 1],        // review #260 rereview (10-19) blocker 3: the range is clean under `git diff --check`; two documented exemptions only
+  ["procgroup", "procgroup-check.ts", 1],  // review #260 rereview (10-19) blocker 2: the gate finds and kills a suite's processes on Linux, macOS and Windows
   ["nov1", "nov1-check.ts", 1],         // R 10-06 "no more v1 anywhere": no runtime file loads the old-world importer or speaks v1
   ["vocab", "vocab-check.ts", 1],       // R 10-14 one vocabulary: a record is read in the protocol's names (model, flat components), never lib / comp
   ["nonumber", "nonumber-check.ts", 1], // R 10-07 "a version number isn't a name": the protocol's number lives only in genesis {dialect, v}
@@ -147,7 +149,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
 
 // ---- lanes ----
 // CORE runs first, in this order, and a failure there stops the gate
-const CORE = ["kernel", "gov-reserved", "diffcheck", "nov1", "vocab", "authority", "access", "identity", "scars", "reset-race", "txn", "txn-mutants"];
+const CORE = ["kernel", "gov-reserved", "diffcheck", "procgroup", "nov1", "vocab", "authority", "access", "identity", "scars", "reset-race", "txn", "txn-mutants"];
 // every suite that launches a Chromium (directly, through playwright, or through tools/harness.ts scratchBench). The
 // gate checks this list against the files themselves (browserMarkers), so a new browser suite can't hide in MAIN.
 // refusedjoin (scratchBench) and client-tools (run-client.ts runs every tools/*-test file, browser tests among them, those one
@@ -254,8 +256,10 @@ const runtime = (label: string, found: string | null, want: string | undefined, 
   console.log(`  ${label.padEnd(9)} ${found.padEnd(11)} declared ${want}${ok ? (exact ? "" : `  (note: not the tested ${w.join(".")}; ${rule === "major" ? "same major" : "same or newer major"}: accepted)`) : "  MISMATCH"}${extra ? `  ${extra}` : ""}`);
   if (!ok) problems.push(`${label} ${found} does not match the declared ${want} (${rule === "major" ? "major must match" : `major must be >= ${w[0]}`})`);
 };
-const which = (cmd: string) => { if (cmd.includes("/")) return fs.existsSync(cmd) ? cmd : null;
-  for (const d of (process.env.PATH ?? "").split(":")) { const p = path.join(d || ".", cmd); try { fs.accessSync(p, fs.constants.X_OK); return p; } catch {} } return null; };
+// PATH's separator and Windows' executable extensions (PATHEXT) differ by OS
+const EXTS = process.platform === "win32" ? ["", ...(process.env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";").map((e) => e.toLowerCase())] : [""];
+const which = (cmd: string) => { if (cmd.includes("/") || cmd.includes("\\")) return fs.existsSync(cmd) ? cmd : null;
+  for (const d of (process.env.PATH ?? process.env.Path ?? "").split(path.delimiter)) for (const x of EXTS) { const p = path.join(d || ".", cmd + x); try { fs.accessSync(p, process.platform === "win32" ? fs.constants.F_OK : fs.constants.X_OK); return p; } catch {} } return null; };
 console.log("runtimes (package.json engines):");
 runtime("bun", Bun.version, ENGINES.bun, "major", process.execPath);
 let PY: string | null = null;
@@ -301,15 +305,15 @@ if (problems.length) {
 // ---- running a suite: its own process group, timeout, HOME/TMPDIR/scratch; the group killed when it ends ----
 const GATE_TMP = fs.mkdtempSync(path.join(os.tmpdir(), "eido-gate-"));
 let current: { pid: number } | null = null;
-const killGroup = (pid: number, sig: NodeJS.Signals) => { try { process.kill(-pid, sig); } catch { /* gone */ } };
-const groupMembers = (pgid: number) => fs.readdirSync("/proc").filter((p) => /^\d+$/.test(p)).filter((p) => { try {
-  const s = fs.readFileSync(`/proc/${p}/stat`, "utf8"); const f = s.slice(s.lastIndexOf(")") + 2).split(" "); return f[0] !== "Z" && Number(f[2]) === pgid; } catch { return false; } }).length;
+// Linux, macOS and Windows alike (tools/protocol/procgroup.ts): a POSIX process group, or the process tree on Windows
+const killGroup = (pid: number, sig: NodeJS.Signals) => killSuite(pid, sig);
+const groupMembers = (pgid: number) => suiteMembers(pgid).length;
 const cleanup = () => { if (current) killGroup(current.pid, "SIGKILL"); if (!process.env.PROTOCOL_KEEP) fs.rmSync(GATE_TMP, { recursive: true, force: true }); };
 process.on("exit", cleanup);
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { console.log(`\nprotocol gate: ${sig}: killing the running suite's process group`); cleanup(); process.exit(130); });
 
 const OPT_TRACKED = (spawnSync("git", ["-C", ENGINE, "ls-files", "-z", "assets/opt"], { encoding: "utf8" }).stdout ?? "").split("\0").filter(Boolean).map((f) => f.slice("assets/opt/".length));
-const PATH = `${path.dirname(process.execPath)}:${process.env.PATH ?? "/usr/bin:/bin"}`;   // a nested `bun` is this bun
+const PATH = `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH ?? process.env.Path ?? "/usr/bin:/bin"}`;   // a nested `bun` is this bun
 async function run(name: string, file: string): Promise<{ code: number | null; signal: string | null; out: string; timedOut: boolean; leftovers: number }> {
   const dir = fs.mkdtempSync(path.join(GATE_TMP, `${name}-`));
   for (const d of ["home", "library", "opt", "worlds", "patched"]) fs.mkdirSync(path.join(dir, d));
