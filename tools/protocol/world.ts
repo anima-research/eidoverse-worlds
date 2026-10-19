@@ -319,10 +319,10 @@ if (cmd === "found") {
   if (isWorldSaved(src)) die(fs.existsSync(path.join(WORLDS_DIR, src, ORIGINAL.log))
     ? `"${src}" is already translated: it's a world in this protocol, and its original old log is kept beside it as ${ORIGINAL.log}. Nothing was changed.`
     : `"${src}" is already a world in this protocol: there's nothing to translate. Nothing was changed.`);
-  // PROTOCOL §13 GOV-5: nobody can add a key to an empty tier 0 later, so the founder's key goes in now or never
+  // the governance draft's GOV-5 (reserved in §13; on the wishlist): nobody can add a key to an empty tier 0 later, so the founder's key goes in now or never
   const founderKey = flag("founder-key");
   if (!founderKey && !rest.includes("--no-founder-key")) die("translate needs the founder's own governance key for tier 0: --founder-key <ed25519:…> (made on their machine and checked with owner-key; import-v1/README.md, \"The Commons ceremony\"). "
-    + "--no-founder-key founds it with tier 0 empty, which can never be filled later (§13 GOV-5)");
+    + "--no-founder-key founds it with tier 0 empty, which the governance draft (reserved, §13) never lets anyone fill later");
   const srcDir = path.join(WORLDS_DIR, src);
   if (!fs.existsSync(path.join(srcDir, "log.jsonl"))) die(`"${src}" holds no old log (${path.join(srcDir, "log.jsonl")}): there's nothing to translate here. Nothing was changed.`);
   if (rest.includes("--dry-run")) { dryRun(srcDir, dest ?? src, founderKey); process.exit(0); }

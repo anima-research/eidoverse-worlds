@@ -78,7 +78,7 @@ follow-up change, about a month after that cutover, deletes this directory, the 
 
 ## The Commons ceremony (governance keys, PROTOCOL §13)
 
-A translated world's genesis names its governance keys, and genesis never changes. Under §13's add-key rule (GOV-5) a
+A translated world's genesis names its governance keys, and genesis never changes. Under the governance draft's add-key rule (GOV-5; reserved in §13, kept on the wishlist) a
 lower tier can never add a key to a higher one, so **tier 0 must be the founder's key at translation, or it stays empty
 for ever**. The public Commons was founded by **antra**; its owners (antra, fable, janus, mica, from the v1 log's grants)
 and builder (Digi_Rat) come across as `roles:<id>` either way, because roles are rights inside the world and governance

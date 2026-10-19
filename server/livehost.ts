@@ -52,6 +52,10 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   const logPath = path.join(dir, "world.jsonl");
   const blobDir = path.join(dir, "blobs");
   const entries: Any[] = readLog(readLogBytes(logPath)).map(posAt);
+  // governance is RESERVED (§13): this server neither writes nor validates `sequencer` entries, and one may have moved the
+  // writer role somewhere it can't check, so it refuses to serve the world rather than fold past the entry and write on
+  { const g = entries.findIndex((e) => isE(e) && e.kind === "sequencer");
+    if (g >= 0) throw new Error(`"${name}" can't be served: its log holds a governance (sequencer) entry at seq ${g}, and governance is reserved in this server (PROTOCOL §13): it can't check who that entry made the writer, so it won't write after it. Nothing was changed.`); }
   const blobPath = (h: string) => path.join(blobDir, `${String(h).replace(/[^a-z0-9]/g, "-")}.json`);
   const getBlob = (h: string) => {
     if (!/^sha256:[0-9a-f]{64}$/.test(String(h))) throw new Error(`not a blob name: ${h}`);

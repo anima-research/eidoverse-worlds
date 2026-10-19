@@ -128,9 +128,10 @@ const py = (args: string[], cwd = path.join(T, "spec/conformance")) => Bun.spawn
 await C("G1", "gov.py: a lower tier can't add or promote keys into a higher tier (test_gov.py, with the reviewer's escalation as GV1)", () => {
   const r = py(["test_gov.py"]); const out = r.stdout.toString() + r.stderr.toString(); return [r.exitCode === 0, out.split("\n").filter((l) => /FAIL|passed|Error/.test(l))]; });
 await C("G2", "the suite runs the governance tests (compare.ts lists test_gov.py)", () => /"test_gov\.py"/.test(read("tools/protocol/compare.ts")));
-await C("G3", "§13 writes the governance body down: {key?, owners?, fork?, sigs}, the signed message, and the add-key rule", () => {
+await C("G3", "§13 marks governance RESERVED (review #260 item 8): the server never writes a `sequencer` entry and refuses a log holding one; the draft rules (GOV-1..5, the signed message) live on the wishlist and in gov.py, not in the spec", () => {
   const g = SPEC.slice(SPEC.indexOf("## 13."), SPEC.indexOf("## 14."));
-  const need = ["`sigs`", "eidoverse-gov:", "GOV-5", "adding", "empty tier"]; return [need.every((n) => g.includes(n)), need.filter((n) => !g.includes(n))]; });
+  const need = ["Governance is RESERVED", "refuses to serve a log that holds one", "conformance/gov.py", "not normative"]; const gone = ["eidoverse-gov:", "GOV-3"];
+  return [need.every((n) => g.includes(n)) && gone.every((n) => !g.includes(n)), { missing: need.filter((n) => !g.includes(n)), stillThere: gone.filter((n) => g.includes(n)) }]; });
 
 // ---- K: the Commons' keys and owners (H4) ----
 const TV1 = await imp("tools/protocol/import-v1/translate-v1.js");
@@ -427,8 +428,8 @@ await C("R6", "a blueprint's inside links become the copy's own ids (parts' keys
   const c = W.call("create", { from: h, id: "copy" }); const st = W.state().entities; const kids = Object.keys(st).filter((k) => st[k].c.parent?.to === "copy");
   const l2 = kids.find((k) => st[k].c["look-at"]), s2 = kids.find((k) => !st[k].c["look-at"]);
   return [p.ok && c.ok && !!l2 && st[l2].c["look-at"].target === s2 && s2 !== "switch", [why(p), why(c), l2 && st[l2].c["look-at"]]]; });
-await C("R7", "the spec scopes ids to their world and writes the merge duplicate-id rule down", () => {
-  const need = ["(world id, entity id)", "fork-copy", "rename map", "typed reference"]; return [need.every((n) => SPEC.includes(n)), need.filter((n) => !SPEC.includes(n))]; });
+await C("R7", "the spec scopes ids to their world and says fork-copy; merging a fork back is RESERVED with governance (its draft rule is on the wishlist)", () => {
+  const need = ["(world id, entity id)", "fork-copy", "Merging a fork back into its\n  parent is RESERVED"]; return [need.every((n) => SPEC.includes(n)), need.filter((n) => !SPEC.includes(n))]; });
 
 // ---- P: privacy (M3) ----
 const actsBy = (W: any, who: string, verb?: string) => W.entries().filter((e: any) => e.actor === who && e.kind === "act" && (!verb || e.verb === verb));

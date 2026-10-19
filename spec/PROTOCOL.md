@@ -937,8 +937,8 @@ longer be in the world, with close code 4010, and a client doesn't redial it.
 Joining never founds a world. (The first protocol's sequencer wrote the same
 doors as rungs below visitor, `none` and `spectator`, and `*` for everyone
 not named; §14 translates them to `access`.) **Two
-owner lists, never confused:** governance keys in genesis (§13) decide who
-may sign handoffs; roles decide rights inside the world.
+owner lists, never confused:** governance keys in genesis (§13) are reserved for
+governance (who may move the writer role, once it exists); roles decide rights inside the world.
 
 **Locks.** `lock {rank}` on an entity (a write of `true` is stored as `{rank: 'builder'}`) binds everyone, its locker and owners
 included: no write may change it or anything attached to it — no component
@@ -1312,7 +1312,7 @@ argument will be short.
   `commit`.
 - **Chain points.** Any entry may carry `head` (hex) and `sig`: base64url
   Ed25519 over UTF-8 `"eidoverse-head:<world id>:<seq>:<head hex>"`, by
-  the sequencer key named in genesis (or the latest handoff). The authority signs
+  the sequencer key named in genesis (handoffs are reserved, §13). The authority signs
   at least every write it commits. A client SHOULD remember the last `(seq,
   head)` it saw for each world and check that the log extends it on its next
   visit: that is what catches a sequencer rewriting its own history. Two
@@ -1349,67 +1349,26 @@ argument will be short.
 - **Keys** are `ed25519:<base64url of 32 bytes>`. Registration refuses a key
   that is small-order in any sign-bit encoding or has y ≥ p; verification
   is cofactorless with canonical S and R (the `ed25519/` vectors).
-- **Governance** (`kind: "sequencer"`) moves the writer role, signed by the
-  outgoing sequencer or by a quorum of an owner tier. A higher tier may
-  **reclaim** a world from the head onward, or **rewind** a lower-ranked
-  branch (kept as a record, never folded) while that branch is shorter than
-  `rewind_window` change entries (default 1000); beyond that a rewind needs
-  every tier-0 key. An empty tier can never act. Moving a world and forking
-  it are different: a fork is a new genesis naming its parent. Nothing is
-  atomic across worlds.
-- **The governance body** is `{key?, owners?, fork?, sigs}`, exactly those
-  fields, at least one of `key`, `owners`, `fork`:
-  - `key`: the new sequencer key; `owners`: the new tiers, whole (same shape
-    as genesis: distinct registrable keys); `fork {seq, head}`: rewind to just
-    after `seq` (`seq` < this entry's seq), whose head is `head`.
-  - `sigs`: a non-empty list of distinct `{key, v}`; `v` is base64url Ed25519
-    over UTF-8 `"eidoverse-gov:<world id>:<seq>:" + JCS(body without sigs)`
-    (**GOV-1**). Only signatures that verify count.
-  - **GOV-2, rank.** An entry's rank is the highest tier (smallest number)
-    whose quorum signed it. A body that is only `key`, signed by the outgoing
-    sequencer, is a **handoff** of rank *none*, below every tier.
-  - **GOV-3, quorum.** Tier t acts when at least `quorum[t]` of its keys
-    signed (genesis `quorum`; absent: 1 for a one-key tier, else a strict
-    majority). **An empty tier never acts**, whatever its quorum computes to
-    (`all([])` is true in most languages: a reader must say so explicitly).
-    When `owners` changes the number of tiers, quorum reverts to the default.
-  - **GOV-4, removing.** Removing a tier-t key, or demoting it to a lower
-    tier, needs rank t or higher.
-  - **GOV-5, adding.** Adding a key to tier t, or promoting one into it,
-    needs rank t or higher. So a tier can never fill a tier above itself, and
-    **an empty tier can never be filled**: whoever should hold tier 0 must be
-    named in genesis. (Without this rule a tier-1 key adds two tier-0 keys,
-    and those two remove the original one.)
-  - A `fork` needs a rank higher than every branch it orphans, and every
-    tier-0 key once the orphaned branch holds `rewind_window` change entries
-    or more; a `key` without a handoff is a **reclaim** and needs a rank
-    higher than the current branch's.
-
-  The fold never reads `sequencer` entries, so these rules decide who may
-  write, never what a world is. The reference reader for them is
-  `conformance/gov.py` (with `conformance/test_gov.py`); the reference
-  authority does not yet write or validate them.
-- **Forks and merges.** A fork's genesis carries `parent {world, seq,
-  head}`: the world it was copied from, the seq it was copied at and that
-  seq's chain head. The acts that copy the parent's state are verb
-  `fork-copy`, so a reader tells an inherited thing from one born in the
-  fork. A merge of fork F into its parent P, with base B = F's
-  `genesis.parent`, decides each of F's entity ids x (this is the rule; the
-  reference implementation doesn't merge yet):
-  1. x was live in P folded to B's seq **and** in F it was created by a
-     `fork-copy` act (never deleted and re-created): the same thing. Merge it
-     per component against its value at the base.
-  2. Otherwise, if P has ever had x (live or deleted): a collision. Mint a
-     fresh id in P, and rewrite every **typed reference** to x in the merged
-     changes (ids-as-keys such as `roles:<identity>` are people, never
-     renamed).
-  3. Otherwise x is new to P and keeps its id.
-
-  A value that names x without a typed reference (a namespaced component's
-  data) is not rewritten; the merge act lists each one as a warning. The
-  merge act records its **rename map** `{x: y}`, so provenance and outside
-  links can follow. An id chosen to collide is simply renamed: a fork can
-  never overwrite a thing in its parent.
+- **Governance is RESERVED.** Handoff, quorum, reclaim and rewind are designed
+  but not part of this protocol yet; the full draft rules (GOV-1 to GOV-5, the
+  rewind window, the merge rule) are kept on the project wishlist until a
+  server implements them. What is fixed now: the entry kind `sequencer` and the
+  genesis fields `owners`, `sequencer`, `quorum?` and `rewind_window?` are
+  reserved names with today's shapes (`owners` are rank tiers of keys, tier 0
+  highest; the rest a reader carries and does not interpret). The fold never
+  reads a `sequencer` entry. **The reference server never writes one and
+  refuses to serve a log that holds one**: such an entry may have moved the
+  writer role somewhere the server cannot check, so it says so ("governance is
+  reserved in this server … Nothing was changed") instead of writing after it.
+  `conformance/gov.py` is the reference reader for the draft rules, kept so the
+  draft stays testable; it is not normative. Moving a world and forking it are
+  different: a fork is a new genesis naming its parent. Nothing is atomic
+  across worlds.
+- **Forks.** A fork's genesis carries `parent {world, seq, head}`: the world it
+  was copied from, the seq it was copied at and that seq's chain head. The acts
+  that copy the parent's state are verb `fork-copy`, so a reader tells an
+  inherited thing from one born in the fork. Merging a fork back into its
+  parent is RESERVED with governance (the draft rule is on the wishlist).
 - **Whose key is tier 0.** A world's founder holds tier 0 with a key made on
   their own machine (the authority's `create-world {ownerKey}`; a translated
   world's `--founder-key`). A host's custody keys (sequencer, operator) are

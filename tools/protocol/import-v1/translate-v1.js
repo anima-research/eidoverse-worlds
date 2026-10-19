@@ -167,7 +167,7 @@ const b64url = (bytes) => { let s = ""; for (const x of bytes) s += String.fromC
 // never the sequencer's, and a nonce that makes two translations of one log two worlds. Without them (the pure tests)
 // the nonce is derived from the source and one fixed key stands in for both.
 // The founder's own key (review 10-07 H4, R's ruling): tier 0 is the world's founder, from a key made on their own machine;
-// the operator (custody) stays tier 1. Under §13's add-key rule (GOV-5) an empty tier 0 can never be filled later, so a
+// the operator (custody) stays tier 1. Under the governance draft's add-key rule (GOV-5; reserved in §13) an empty tier 0 can never be filled later, so a
 // translation that leaves it empty does so knowingly (tools/protocol/world.ts translate --no-founder-key).
 export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY, operator = key, nonce, founder } = {}) {
   if (!nonce) { const h = sha256(oldEntries.map((e) => JSON.stringify(e)).join("\n")); nonce = b64url(Uint8Array.from(h.slice(0, 32).match(/../g), (x) => parseInt(x, 16))); }
