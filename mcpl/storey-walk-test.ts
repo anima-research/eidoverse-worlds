@@ -14,7 +14,7 @@
  * height.
  */
 import { WorldAgent } from "./agent.ts";
-import { planStructure } from "../shared/structure.js";
+import { describeHere, planStructure } from "../shared/structure.js";
 import { NAV_STEP } from "./navgrid.ts";
 
 let failures = 0;
@@ -618,6 +618,205 @@ console.log("\nwhat is placed on an upper storey is walked round, as it is on th
   ag.setPosture("idle");
   check("a body laid down on a bed upstairs stands up on the bed", Math.abs(ag.pos.y - (upperY + 0.6)) < 1e-6, `${ag.pos.y}, bed ${upperY + 0.6}`);
   await removeSupport("storey-walk-test", bed);
+}
+
+console.log("\nGreptile's review of October 19: a floor walk's lowest ground, the storey's height, a laid body's feet\n");
+{
+  // A floor walk's feet go no lower than its floor's height, so its grid
+  // stands nowhere lower (onOrAboveFloor). On a one-row deck with a chest
+  // across it, each walk round the chest below is refused, where the grid
+  // used to route it with the feet held at the deck's height over the air.
+  const { boxMesh } = await import("../tools/two-storey-fixture.ts");
+  const { registerMeshSupport, removeSupport } = await import("./physics.ts");
+  const deckOf = (n: number) => ({ levels: [{ y: 3, tiles: Array.from({ length: n }, (_, i) => [i, 0]), walls: [], apertures: [] }] });
+  const ROW = deckOf(4);
+  const deckY = planStructure(ROW).levels[0].y;
+  const walkPast = async (name: string, house: any, parts: [string, number[][]][], toX: number) => {
+    const ag = agentIn(deckY, { house });
+    ag.heightAt = () => 0;
+    let fitted = true;
+    for (const [part, boxes] of parts) {
+      const { pos, idx } = boxMesh(boxes as any);
+      fitted = (await registerMeshSupport("storey-walk-test", `${ag.world}/${name}-${part}`, { positions: new Float32Array(pos), indices: new Uint32Array(idx) }, { position: [0, 0, 0], yaw: 0, scale: 1 })) && fitted;
+    }
+    check(`setup: the ${name}'s pieces are colliders`, fitted);
+    ag.pos = { x: 0.5, y: deckY, z: 0.5 };
+    ag.joined = true;
+    const walk = ag.walkTo(toX, 0.5, false, 30_000, 0.05);
+    const ys: number[] = [];
+    for (let i = 0; i < 2000 && ag.target; i++) { ag.tick(); ys.push(ag.pos.y); }
+    const walked = await Promise.race([walk, Bun.sleep(300).then(() => "pending")]);
+    for (const [part] of parts) await removeSupport("storey-walk-test", `${ag.world}/${name}-${part}`);
+    ag.joined = false;
+    return { walked, refusal: ag.walkRefusal ?? "", ys, end: { ...ag.pos } };
+  };
+  const chest: [string, number[][]] = ["chest", [[1.7, deckY, 0, 2.3, deckY + 1, 0.8]]];
+  // Greptile's case: stairs of placed slabs, 0.3 m a tread, beside the deck
+  // lead down to within a step of the drop walkProbeGround answers off it;
+  // the walk went down one stair, across the open air at that drop and up
+  // the other.
+  const stairs = (x0: number, x1: number) => [[x0, deckY - 0.35, 1.0, x1, deckY - 0.3, 1.6],
+    [x0, deckY - 0.65, 1.6, x1, deckY - 0.6, 2.2], [x0, deckY - 0.95, 2.2, x1, deckY - 0.9, 2.8]];
+  const down = await walkPast("stairs down", ROW, [chest, ["stairs-a", stairs(0.2, 1.4)], ["stairs-b", stairs(2.6, 3.8)]], 3.5);
+  check("a floor walk doesn't go down placed stairs beside its deck and across the air below: the walk round the chest is refused",
+    down.walked === false && /no walkable way/.test(down.refusal), `${String(down.walked)} ${down.refusal}`);
+  // a platform a step below the deck, beside it the whole way round the
+  // chest: within a step, but the feet would be held 0.3 m above it
+  const platform = await walkPast("platform", ROW, [chest, ["platform", [[0.2, deckY - 0.35, 1.0, 3.8, deckY - 0.3, 2.0]]]], 3.5);
+  check("…nor onto a placed platform a step below the deck to get round it: that walk is refused too",
+    platform.walked === false && /no walkable way/.test(platform.refusal), `${String(platform.walked)} ${platform.refusal}`);
+}
+{
+  // A storey holds the feet from a route step below its floor to just under
+  // its height above it (the grid's wallH, 2.8 m by default): feet on
+  // something placed on the floor are on the storey. At 0.53 m above it they
+  // used to be the terrain's.
+  const support = (y: number) => agentIn(y).walkSupport();
+  const on = support(upperY + 0.53);
+  check("feet on a top 0.53 m above the upper floor are on the upper storey", on.kind === "floor" && Math.abs(on.height - upperY) < 1e-9, JSON.stringify(on));
+  const tall = support(upperY + 2.7);
+  check("…and so are feet 2.7 m above it, inside its 2.8 m", tall.kind === "floor" && Math.abs(tall.height - upperY) < 1e-9, JSON.stringify(tall));
+  const roof = support(upperY + 2.8);
+  check("…but feet a storey's height above it aren't", roof.kind === "terrain", JSON.stringify(roof));
+  // The height is the structure's own wallH, in the building's frame.
+  const HIGH = { ...HOUSE, wallH: 4 };
+  const highUp = planStructure(HIGH).levels[1].y;
+  const high = agentIn(highUp + 3.5, { house: HIGH }).walkSupport();
+  check("with a wallH of 4 m, feet 3.5 m above the upper floor are on its storey", high.kind === "floor" && Math.abs(high.height - highUp) < 1e-9, JSON.stringify(high));
+  const big = agentIn(upperY + 2.5, { scale: 2 }).walkSupport();
+  check("in a building at scale 2, feet 5 m above the upper floor, 2.5 m in its frame, are on its storey",
+    big.kind === "floor" && Math.abs(big.height - 2 * upperY) < 1e-9, JSON.stringify(big));
+  const bigRoof = agentIn(upperY + 2.9, { scale: 2 }).walkSupport();
+  check("…but feet 5.8 m above it, 2.9 m in its frame, aren't", bigRoof.kind === "terrain", JSON.stringify(bigRoof));
+  // Where two storeys' ranges meet, the higher floor wins.
+  const TALL = { levels: [{ y: 0, tiles, walls: shell, apertures: [] }, { y: 3, tiles, walls: shell, apertures: [] }, { y: 6, tiles, walls: shell, apertures: [] }] };
+  const tallPlan = planStructure(TALL), mid = tallPlan.levels[1].y, top = tallPlan.levels[2].y;
+  const near = agentIn(top - 0.3, { house: TALL }).walkSupport();
+  check("feet a route step under the top floor, inside the middle storey's height too, are on the top storey: the higher floor wins",
+    near.kind === "floor" && Math.abs(near.height - top) < 1e-9, `${JSON.stringify(near)} (middle ${mid}, top ${top})`);
+  const inMid = agentIn(mid + 2.0, { house: TALL }).walkSupport();
+  check("…and feet 2 m above the middle floor, more than a route step under the top one, are on the middle storey",
+    inMid.kind === "floor" && Math.abs(inMid.height - mid) < 1e-9, JSON.stringify(inMid));
+}
+{
+  // A body a sim lays on a table upstairs stands up on the table and walks
+  // on across the upper floor, its feet on the table to its edge, then
+  // down to the floor.
+  const { boxMesh } = await import("../tools/two-storey-fixture.ts");
+  const { registerMeshSupport, removeSupport } = await import("./physics.ts");
+  const OPEN = { levels: [{ y: 0, tiles, walls: shell, apertures: [] }, { y: 3, tiles, walls: shell, apertures: [] }] };
+  const up = planStructure(OPEN).levels[1].y;
+  const ag = agentIn(up, { house: OPEN });
+  const { pos, idx } = boxMesh([[1.5, up, 0.5, 2.5, up + 0.75, 1.5]]);
+  const table = `${ag.world}/upstairs-table`;
+  const fitted = await registerMeshSupport("storey-walk-test", table, { positions: new Float32Array(pos), indices: new Uint32Array(idx) }, { position: [0, 0, 0], yaw: 0, scale: 1 });
+  check("setup: the table upstairs is a collider", fitted);
+  ag.pos = { x: 2.0, y: up + 0.75 - 0.7, z: 1.0 };   // as a sim lays a body on the table
+  ag.clip = "ragdoll"; ag.heldPose = { hips: [0, 0, 0, 1] }; ag.heldPoseAuthored = false;
+  ag.setPose(null);
+  check("a body laid on a table 0.75 m above the upper floor stands up on the table", Math.abs(ag.pos.y - (up + 0.75)) < 1e-6, String(ag.pos.y));
+  ag.joined = true;
+  // a walk the structure planner routes in legs, through the cells' centres
+  const walk = ag.walkTo(3.5, 1.5, false, 30_000, 0.05);
+  const ys: number[] = [], overTable: number[] = [];
+  for (let i = 0; i < 3000 && ag.target; i++) {
+    ag.tick(); ys.push(ag.pos.y);
+    if (ag.pos.x > 1.55 && ag.pos.x < 2.45 && ag.pos.z > 0.55 && ag.pos.z < 1.45) overTable.push(ag.pos.y);
+  }
+  const arrived = await Promise.race([walk, Bun.sleep(300).then(() => "pending")]);
+  check("…and walks on from it across the upper floor, its feet on the table's top while over it, never below the floor, ending on it",
+    arrived === true && overTable.length > 0 && overTable.every((y) => Math.abs(y - (up + 0.75)) < 0.02)
+      && ys.every((y) => y >= up - 1e-6) && Math.abs(ag.pos.y - up) < 1e-6,
+    `${String(arrived)} ${ag.walkRefusal ?? ""} over the table ${overTable.map((y) => y.toFixed(3)).join(" ")}; lowest ${ys.length ? Math.min(...ys) : NaN}, end ${ag.pos.y}`);
+  await removeSupport("storey-walk-test", table);
+  ag.joined = false;
+  // What's placed above the floor stays standable for a floor walk's grid
+  // (onOrAboveFloor), where the feet stand: a body stood up on a stage 0.75 m
+  // tall upstairs walks along it on its top. The walk runs along row 0's
+  // cell centres, so the planner leaves it one leg, which the grid routes.
+  const onStage = agentIn(up, { house: OPEN });
+  const stageBox = boxMesh([[0.8, up, 0.1, 3.2, up + 0.75, 0.9]]);
+  const stage = `${onStage.world}/upstairs-stage`;
+  check("setup: the stage upstairs is a collider", await registerMeshSupport("storey-walk-test", stage,
+    { positions: new Float32Array(stageBox.pos), indices: new Uint32Array(stageBox.idx) }, { position: [0, 0, 0], yaw: 0, scale: 1 }));
+  onStage.pos = { x: 1.2, y: up + 0.75 - 0.7, z: 0.5 };
+  onStage.clip = "ragdoll"; onStage.heldPose = { hips: [0, 0, 0, 1] }; onStage.heldPoseAuthored = false;
+  onStage.setPose(null);
+  onStage.joined = true;
+  const along = onStage.walkTo(2.8, 0.5, false, 30_000, 0.05);
+  const alongLegs = [onStage.target, ...onStage.legs].filter(Boolean).length;
+  const sy: number[] = [];
+  for (let i = 0; i < 3000 && onStage.target; i++) { onStage.tick(); sy.push(onStage.pos.y); }
+  const alongDone = await Promise.race([along, Bun.sleep(300).then(() => "pending")]);
+  check("a body standing on a stage upstairs walks along its top in one leg, its feet on it all the way",
+    alongDone === true && alongLegs === 1 && sy.length > 0 && sy.every((y) => Math.abs(y - (up + 0.75)) < 0.02),
+    `${String(alongDone)} ${onStage.walkRefusal ?? ""} legs ${alongLegs}, lowest ${sy.length ? Math.min(...sy) : NaN}, stage ${up + 0.75}`);
+  await removeSupport("storey-walk-test", stage);
+  onStage.joined = false;
+}
+{
+  // A laid body's floor is found from its feet, RAGDOLL_ROOT_DROP above its
+  // root, for a takeoff, a spot it names, and the tick: from the root it was
+  // the terrain's.
+  const { devFlightProvider } = await import("../shared/flightcap.js");
+  const WINGED = ["Hip", "Spine02", "Head", "L_Wing_Upper", "L_Wing_Upper_1", "R_Wing_Upper", "R_Wing_Upper_1", "L_Wing_Lower", "R_Wing_Lower"];
+  const flier = (laid: boolean) => {
+    const ag = agentIn(upperY);
+    ag.avatar = "winged.vrm";
+    ag.bodyBoneNames = WINGED; ag.bodyBonesFor = ag.avatar;
+    ag.flightCap = devFlightProvider({ allow: [ag.name], bones: WINGED });
+    if (laid) { ag.clip = "ragdoll"; ag.heldPose = { hips: [0, 0, 0, 1] }; ag.heldPoseAuthored = false; ag.pos.y = upperY - 0.7; }
+    return ag;
+  };
+  const standing = flier(false), laid = flier(true);
+  const saidStanding = await standing.takeOff(), saidLaid = await laid.takeOff();
+  check("a body laid down upstairs takes off from the upper floor, as a standing one does",
+    /took off/.test(saidLaid) && Math.abs(laid.flight?.pos?.y - standing.flight?.pos?.y) < 1e-9,
+    `laid "${saidLaid}" at ${laid.flight?.pos?.y}, standing "${saidStanding}" at ${standing.flight?.pos?.y}`);
+  standing.flight = null; laid.flight = null;
+
+  // a flight that ends with the body laid down upstairs, as a flight's
+  // ragdoll leaves it, puts its feet on the upper floor
+  const lander = agentIn(upperY);
+  lander.clip = "ragdoll"; lander.heldPose = { hips: [0, 0, 0, 1] }; lander.heldPoseAuthored = false; lander.pos.y = upperY - 0.7;
+  lander.flightEnd();
+  check("a flight that ends with the body laid down upstairs stands it on the upper floor", Math.abs(lander.pos.y - upperY) < 1e-9, String(lander.pos.y));
+
+  const namer = agentIn(upperY);
+  namer.clip = "ragdoll"; namer.heldPose = { hips: [0, 0, 0, 1] }; namer.heldPoseAuthored = false; namer.pos.y = upperY - 0.7;
+  const sent: any[] = [];
+  namer.joined = true;
+  namer.ws = { readyState: 1, send: (raw: string) => {
+    const m = JSON.parse(raw);
+    sent.push(m);
+    if (m.verb === "comp") namer.entities.get(m.args.id).comp.places = m.args.data;   // the world's echo
+  } };
+  const said = await namer.namePlaceNow("sill", { at: { x: 1.5, z: 0.5 } });
+  const at = sent.find((m) => m.verb === "comp")?.args?.data?.sill?.at;
+  check("a body laid down upstairs names a spot by x/z on the upper floor", Array.isArray(at) && Math.abs(at[1] - upperY) < 1e-3, `${said} ${JSON.stringify(at)}`);
+  namer.joined = false;
+
+  // the tick holds a body lying in a physics pose under another clip to the
+  // storey under its feet, not the ground under its root
+  const held = agentIn(upperY);
+  held.clip = "idle"; held.heldPose = { hips: [0, 0, 0, 1] }; held.heldPoseAuthored = false; held.pos.y = upperY - 0.7;
+  held.joined = true;
+  const ys: number[] = [];
+  for (let i = 0; i < 30; i++) { held.tick(); ys.push(held.pos.y); }
+  // the tick stands a held physics pose's feet on its ground, as it does on
+  // the terrain, here the upper floor
+  check("the tick keeps a body lying upstairs in a physics pose under another clip on its storey, standing it on the upper floor",
+    ys.every((y) => y >= upperY - 0.7 - 1e-6) && Math.abs(ys.at(-1)! - upperY) < 1e-6, `${ys.slice(0, 3).join(" ")} … ${ys.at(-1)}, root laid at ${upperY - 0.7}`);
+  held.joined = false;
+
+  // what a body laid down upstairs is told: the upper floor's room, found
+  // from its feet, not the ground floor's under its root
+  const upstairsRoom = describeHere(plan, 0.5, 0.5, upperY)!, groundRoom = describeHere(plan, 0.5, 0.5, 0.1)!;
+  check("setup: the kitchen upstairs and the room below are described apart", !!upstairsRoom && !!groundRoom && upstairsRoom !== groundRoom, `${upstairsRoom} | ${groundRoom}`);
+  const lying = agentIn(upperY);
+  lying.clip = "ragdoll"; lying.heldPose = { hips: [0, 0, 0, 1] }; lying.heldPoseAuthored = false; lying.pos.y = upperY - 0.7;
+  const told = String(lying.look()).split("\n").find((l: string) => l.includes("(inside [house]")) ?? "";
+  check("a body laid down upstairs is told the upper floor's room, as a standing one is", told.startsWith(upstairsRoom), told);
 }
 console.log(failures ? `\n${failures} failed` : "\nall passed");
 process.exit(failures ? 1 : 0);

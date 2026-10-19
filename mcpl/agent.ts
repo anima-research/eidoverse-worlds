@@ -18,7 +18,7 @@ import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_
   APPROACH_DWELL_MS, APPROACH_STILL_MPS, APPROACH_MAX_WAIT_MS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
 import { HeadlessBody, ReachBody, setHeightField, setWaterField, registerSupport, registerSupportGrid, registerMeshSupport, removeSupport, standOn, collidersReady, navProbe, collidersGeneration, inWorld } from "./physics.ts";
-import { makeNavGrid, NAV_SUBSTEP, NAV_NUDGE, NAV_STEP, type NavTarget } from "./navgrid.ts";
+import { makeNavGrid, NAV_SUBSTEP, NAV_NUDGE, NAV_STEP, type NavProbe, type NavTarget } from "./navgrid.ts";
 import { placesOf, inRegion, names, destinationOf, toLocal, type Place, type Destination, type PlaceHolder } from "./places.ts";
 import { collisionTriangles } from "../server/geometry.ts";
 // FLIGHT. The same deterministic integrator the browser bench and the capture
@@ -258,6 +258,27 @@ function floorAtLocal(plan: any, lv: any, lx: number, lz: number): boolean {
   if (!lv.level.tiles.has(cellKey(cx, cz))) return false;
   const node = nodeAtPoint(lv.level, plan.grid, lx, lz);
   return !node.includes(":") || halfFloored(lv.level, cx, cz, node.split(":")[1]);
+}
+
+/** A floor walk's navgrid probe, standing nowhere lower than the walk's
+ *  floor. The walk's feet go no lower than that floor's height to its end:
+ *  its ground is the floor's height (walkHeightAt), and stepFeet stands them
+ *  on what's placed above it, never below. So a column whose ground is
+ *  lower is no ground at all. Without that, placed tops a step apart could
+ *  lead the grid down beside the floor, to the drop walkProbeGround answers
+ *  off it or onto a platform below, and route the walk across them with the
+ *  feet held at the floor's height, over the air. At or above the floor the
+ *  grid stands where the feet do, on what's placed there. `GROUNDED` is
+ *  stepFeet's own nearness: feet that near a surface stand on it. */
+function onOrAboveFloor(probe: NavProbe, floor: number): NavProbe {
+  const GROUNDED = 0.02;
+  return {
+    surfaceUnder: probe.surfaceUnder,
+    stand: (x, y, z) => {
+      const s = probe.stand(x, y, z);
+      return s.ground >= floor - GROUNDED ? s : { ground: -Infinity, push: s.push };
+    },
+  };
 }
 
 /** How far a body standing in a wall looks for a clear point to step out
@@ -1838,8 +1859,9 @@ export class WorldAgent {
    *  support and its routes know such a floor is there (ew#140). A storey
    *  counts when it rests above its building's base, its floor is more than
    *  the walk grid's step (NAV_STEP, 0.55 m) above the terrain under the
-   *  point and within a route step (ROUTE_STEP_METRES, 0.5 m) of `yHint`, the
-   *  feet's height, in either direction, and it has a
+   *  point, `yHint`, the feet's height, is no more than a route step
+   *  (ROUTE_STEP_METRES, 0.5 m) below it and less than its storey's height
+   *  (the grid's wallH, the router's floor-to-floor) above it, and it has a
    *  tile under the point and, on a cell a diagonal cuts, a floor on the half
    *  the point falls in: the other half is a hole. A level resting on the
    *  base or below it, such as a ground floor at the base or a basement, is
@@ -1853,9 +1875,14 @@ export class WorldAgent {
    *  the terrain's, for standing, where the ground comes within a step of it:
    *  a floor walk on the deck still crosses that part at the deck's height
    *  (walkProbeGround), and the feet stand on the terrain there once the walk
-   *  ends, as on a porch. `yHint` only picks which
-   *  real floor qualifies and never becomes the height, so a body far above
-   *  the house is not on its top storey. Each building is placed where it
+   *  ends, as on a porch. Feet anywhere in the storey count, on something
+   *  placed on its floor too (a table, a bed, a landing), so a body standing
+   *  up on a table upstairs walks on from that floor. Where two storeys'
+   *  ranges meet, feet within a route step below the upper floor and still
+   *  under the lower storey's height, the highest floor wins: feet stepping
+   *  up onto it are on it. `yHint` only picks which real floor qualifies and
+   *  never becomes the height, so a body far above the house is not on its
+   *  top storey. Each building is placed where it
    *  is now (eff), as walkStructures places it, and one that can't be read
    *  costs only itself. */
   private storeyUnder(x: number, z: number, yHint = this.pos.y): { entity: string; level: number; height: number } | null {
@@ -1873,7 +1900,7 @@ export class WorldAgent {
         const [lx, ly, lz] = localizePoint({ pos: fx.pos, yaw: fx.yaw, scale: sc }, x, yHint, z);
         for (let i = 0; i < plan.levels.length; i++) {
           const lv: any = plan.levels[i];
-          if (!(lv.base > 0) || Math.abs(lv.y - ly) > ROUTE_STEP_METRES / sc || !floorAtLocal(plan, lv, lx, lz)) continue;
+          if (!(lv.base > 0) || lv.y - ly > ROUTE_STEP_METRES / sc || ly - lv.y >= plan.grid.wallH || !floorAtLocal(plan, lv, lx, lz)) continue;
           const height = fx.pos[1] + lv.y * sc;
           if (height - terrain > NAV_STEP && (!best || height > best.height)) best = { entity: e.id, level: i, height };
         }
@@ -2194,7 +2221,7 @@ export class WorldAgent {
         let sp = this.target.run ? RUN : WALK;
         let swimming = false;
         if (this.water) {
-          const ground = admittedHeight ?? ((x: number, z: number) => this.groundAt(x, z));
+          const ground = admittedHeight ?? this.standingGround();
           const st = waterStance(this.water.level, ground(this.pos.x, this.pos.z), this.stature());
           swimming = st.swimming;
           sp = swimming ? (this.target.run ? SWIM_RUN : SWIM_SPEED) : sp * st.speedFactor!;
@@ -2209,7 +2236,7 @@ export class WorldAgent {
     // A tumbling, lying, dragged, nailed or FLYING body owns its own y — the
     // ground is for FEET, and none of those states is standing on them.
     const feetFree = !this.draggedBy && this.pins.size === 0 && this.clip !== "ragdoll" && !this.flight;
-    const ground = admittedHeight ?? ((x: number, z: number) => this.groundAt(x, z));
+    const ground = admittedHeight ?? this.standingGround();
     const target = this.target;
     const bodyYBeforeFeet = this.pos.y; // entering water starts from the body, not a support snap
     const supportHeld = feetFree && ((collidersReady() && this.mounts.has(this.name)) || this.feetSettling);
@@ -2297,7 +2324,7 @@ export class WorldAgent {
     if (!this.pushable || this.draggedBy) return;
     // knocked over standing, the root is at the feet's height until something
     // lifts or lowers it; a body already down keeps the reading its root has
-    if (!(this.clip === "ragdoll" || (this.heldPose != null && !this.heldPoseAuthored))) this.cannedY = this.pos.y;
+    if (!this.isSlumped()) this.cannedY = this.pos.y;
     if (this.target) { this.walkDone?.(false); this.walkDone = null; this.target = null; this.legs = []; this.walkHeightAt = null; }
     this.speed = 0;
     // Down NOW, not when the physics finishes loading. tumble() awaits the
@@ -2529,12 +2556,12 @@ export class WorldAgent {
     return this.bodyBoneNames;
   }
 
-  private flightBegin() {
+  private flightBegin(feetY = this.pos.y) {
     this.flightCfg ??= flightConfig();
     this.stop();                       // a body that takes off is done walking
     this.flight = flightState({
       phase: "GROUND",
-      pos: { x: this.pos.x, y: this.groundAt(this.pos.x, this.pos.z), z: this.pos.z },
+      pos: { x: this.pos.x, y: this.groundAt(this.pos.x, this.pos.z, feetY), z: this.pos.z },
       // ...in the INTEGRATOR's convention. Seeding it with a world yaw started
       // every flight a quarter-turn off its own heading.
       yaw: intYaw(this.yaw),
@@ -2678,12 +2705,15 @@ export class WorldAgent {
     // the new launch, so take_off "worked" and the next verb found her back on
     // the ground with the stamina already spent. A launch is a fresh flight
     // from wherever the body actually is.
-    if (!this.flight || this.flight.phase !== "GROUND") this.flightBegin();
+    // The floor it takes off from is found from its feet, read before the
+    // slump that puts them RAGDOLL_ROOT_DROP above the root is cleared.
+    const feetY = this.feetY(this.isSlumped());
+    if (!this.flight || this.flight.phase !== "GROUND") this.flightBegin(feetY);
     // ...and the ragdoll, if one is still running, no longer owns her.
     this.body?.stop(); this.stopSim();
     this.heldPose = null; this.heldPoseAuthored = false;
     this.flight = flightTakeOff(this.flightCfg, this.flight,
-      { groundY: this.groundAt(this.pos.x, this.pos.z) });
+      { groundY: this.groundAt(this.pos.x, this.pos.z, feetY) });
     const ev = this.flight.events.find((e: any) => e.kind === "takeoff.refused");
     if (ev) { return `still standing — ${ev.reason}`; }
     return `took off — ${this.flight.pos.y.toFixed(1)}m, stamina ${this.flight.stamina.toFixed(0)}/100`;
@@ -2887,7 +2917,9 @@ export class WorldAgent {
   /** Hand the body back to ordinary locomotion. */
   flightEnd() {
     this.flight = null;
-    this.pos.y = this.groundAt(this.pos.x, this.pos.z);
+    // The floor it comes down on is found from its feet: a body a flight's
+    // ragdoll laid down has them RAGDOLL_ROOT_DROP above its root.
+    this.pos.y = this.groundAt(this.pos.x, this.pos.z, this.feetY(this.isSlumped()));
     this.speed = 0; this.clip = "idle";
   }
 
@@ -2959,15 +2991,16 @@ export class WorldAgent {
   /** The ground a walk's navgrid probe stands on: the terrain, or on a floor
    *  walk the walk's own floor, at its height, wherever that level has floor
    *  and the ground there is no more than a step (NAV_STEP) above it, with
-   *  everywhere else a drop the grid won't take. A floor walk holds the feet
-   *  at its floor's height to its end, so its grid must not step off onto the
-   *  terrain or onto another floor, however close below they are. On its own
-   *  floor it goes where the floor route goes, over ground that comes within
-   *  a step of the floor too; where the ground rises more than a step above
-   *  the floor, the floor is buried and no walk crosses it at its height. The
-   *  grid also stands on what's placed there, as it does on the ground
+   *  everywhere else a drop the grid won't take. A floor walk's feet go no
+   *  lower than its floor's height to its end, so its grid must not step off
+   *  onto the terrain or onto another floor, however close below they are.
+   *  On its own floor it goes where the floor route goes, over ground that
+   *  comes within a step of the floor too; where the ground rises more than a
+   *  step above the floor, the floor is buried and no walk crosses it at its
+   *  height. The grid also stands on what's placed there, as it does on the ground
    *  (navProbe takes placed models' tops over this surface), beside the floor
-   *  too: a placed top within a step of the floor is a step it can take. */
+   *  too: a placed top within a step above the floor is a step it can take,
+   *  and one lower than the floor is not (onOrAboveFloor). */
   private walkProbeGround(support: WalkSupport): (x: number, z: number) => number {
     if (support.kind !== "floor") return (x, z) => this.heightAt(x, z);
     const drop = support.height - 2 * NAV_STEP;
@@ -3172,7 +3205,7 @@ export class WorldAgent {
     // leaves it seated, pinned, dragged, posed or tumbling as it was. The
     // walk's floor, its grid's start and where it stands up are all found
     // from the feet, as when it stands up (setPosture, feetGround).
-    const slumped = this.clip === "ragdoll" || (this.heldPose != null && !this.heldPoseAuthored);
+    const slumped = this.isSlumped();
     const feetY = this.feetY(slumped);
     const support = this.walkSupport(feetY);
     const plan = this.planWalk({ x, z }, support);
@@ -3183,10 +3216,12 @@ export class WorldAgent {
     let legs = plan.legs, snapped = false, routed = false;
     // A floor walk's probe stands on that storey, which the colliders don't
     // hold, so placed models on it are routed round as they are on the
-    // ground (walkProbeGround). Its grid is the walk's own: the cached one
-    // answers for the terrain.
+    // ground (walkProbeGround), and nowhere lower than that floor
+    // (onOrAboveFloor). Its grid is the walk's own: the cached one answers
+    // for the terrain.
     const surface = this.walkProbeGround(support);
-    const probe = plan.legs.length === 1 ? navProbe(surface) : null;
+    const raw = plan.legs.length === 1 ? navProbe(surface) : null;
+    const probe = raw && support.kind === "floor" ? onOrAboveFloor(raw, support.height) : raw;
     if (probe) {
       // plan from the floor under the feet: a tumbling body's root is not
       // where its feet will be
@@ -3370,10 +3405,11 @@ export class WorldAgent {
     let w: number[];
     if (opts.at) {
       const { x, z } = opts.at;
-      // the floor there nearest the body's height: a placed model's, a
+      // the floor there nearest the feet's height: a placed model's, a
       // griddled storey's, or the terrain
-      const ground = (wx: number, wz: number) => this.groundAt(wx, wz, this.pos.y);
-      const y = opts.at.y ?? inWorld(this.world, () => standOn({ x, y: this.pos.y, z }, ground)) ?? ground(x, z);
+      const feetY = this.feetY(this.isSlumped());
+      const ground = (wx: number, wz: number) => this.groundAt(wx, wz, feetY);
+      const y = opts.at.y ?? inWorld(this.world, () => standOn({ x, y: feetY, z }, ground)) ?? ground(x, z);
       w = [x, y, z];
     } else w = [this.pos.x, this.pos.y, this.pos.z];
     const now = Date.now();
@@ -3454,6 +3490,21 @@ export class WorldAgent {
         if (this.pos.y <= ground) { this.pos.y = ground; this.vy = 0; this.grounded = true; }
       } else { this.pos.y = ground; this.vy = 0; this.grounded = true; }
     }
+  }
+
+  /** Whether the body lies as a sim lays one: the ragdoll clip, or a held
+   *  pose it didn't author, a physics pose kept under another clip. */
+  private isSlumped(): boolean {
+    return this.clip === "ragdoll" || (this.heldPose != null && !this.heldPoseAuthored);
+  }
+
+  /** The ground the tick holds a body's feet to when nothing else does:
+   *  groundAt from the feet (feetY), so a body holding a physics pose under
+   *  another clip, its root RAGDOLL_ROOT_DROP under its feet, keeps the
+   *  storey it lies on. */
+  private standingGround(): (x: number, z: number) => number {
+    const feetY = this.feetY(this.isSlumped());
+    return (x, z) => this.groundAt(x, z, feetY);
   }
 
   /** The height of the feet, for finding the floor a body stands on: its y,
@@ -4114,11 +4165,14 @@ export class WorldAgent {
     // this runs in a headless agent with no scene and no triangles, which is
     // the entire point of keeping the planner pure.
     if (meKnown) {
+      // The storey is found from the feet: a laid body's root lies
+      // RAGDOLL_ROOT_DROP under them (feetY), below its own floor.
+      const feet = selfEff?.ok ? me.y : this.feetY(this.isSlumped());
       for (const e of this.entities.values()) {
         const data = (e.comp ?? {}).structure;
         if (!data) continue;
         try {
-          const [lx, ly, lz] = localizePoint(e, me.x, me.y, me.z);
+          const [lx, ly, lz] = localizePoint(e, me.x, feet, me.z);
           const here = describeHere(this.planOf(data), lx, lz, ly);
           if (here) { L.push(`${here} (inside [${e.id}]; sides are the building's own compass.)`); break; }
         } catch { /* one malformed house must not cost the whole percept */ }
