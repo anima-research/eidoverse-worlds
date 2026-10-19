@@ -2859,10 +2859,10 @@ export class WorldAgent {
     this.heldPose = null; this.heldPoseAuthored = false;
     this.flight = flightTakeOff(this.flightCfg, this.flight,
       { groundY: this.groundAt(this.pos.x, this.pos.z, feetY) });
-    // A fresh flight takes over from any landing or climb still waiting on the one before.
-    this.flightCourse++; this.climbCourse++;
     const ev = this.flight.events.find((e: any) => e.kind === "takeoff.refused");
     if (ev) { return refused(`still standing — ${ev.reason}`); }
+    // A fresh flight in the air takes over from any landing or climb still waiting on the one before.
+    this.flightCourse++; this.climbCourse++;
     return done(`took off — ${this.flight.pos.y.toFixed(1)}m, stamina ${this.flight.stamina.toFixed(0)}/100`);
   }
 
@@ -2956,8 +2956,9 @@ export class WorldAgent {
   }
 
   /** glide_to (spec §1). Free, and lands SHORT honestly if the polar runs out. `took`, when given, is told the course
-   *  count this glide set, for land_at to tell whether a later call has taken the flight over during its glide. */
-  async glideTo(x: number, z: number, took?: { course?: number }): Promise<ActResult> {
+   *  count this glide set, for land_at to tell whether a later call has taken the flight over during its glide; with
+   *  `takeClimb`, the glide also takes over a climb still under way, as a landing does, in the same step. */
+  async glideTo(x: number, z: number, took?: { course?: number; takeClimb?: boolean }): Promise<ActResult> {
     await this.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
@@ -2972,6 +2973,10 @@ export class WorldAgent {
     f.phase = "PILOT"; f.mode = "live"; f.holdAt = null;
     this.flightCourse++;
     if (took) took.course = this.flightCourse;
+    // A landing's glide takes over a climb still under way: it clears the climb's height, which would otherwise go on
+    // lifting the body through the landing, and takes its count, so that climb's answer says it was taken over. It
+    // does so here, with the course, so no call can come between the two.
+    if (took?.takeClimb) { f.climbTo = null; this.climbCourse++; }
     f.airspeed = bestGlide(this.flightCfg).speed;
     f.yaw = Math.atan2(z - f.pos.z, x - f.pos.x);   // integrator convention
     // ARRIVAL IS A MOMENT, AND IT HAS TO BE CAUGHT. Traced over a 148m glide:
@@ -3118,19 +3123,18 @@ export class WorldAgent {
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
       return refused("already on the ground");
     }
-    // A landing takes over a climb still under way: it clears the climb's height, which would otherwise go on lifting
-    // the body through the landing, and takes its count, so that climb's answer says it was taken over.
-    this.flight.climbTo = null; this.climbCourse++;
-    const took: { course?: number } = {};
+    const took: { course?: number; takeClimb?: boolean } = { takeClimb: true };
     const glide = await this.glideTo(x, z, took);
     const f = this.flight;
     // A cut mid-glide is a fall, with no flare to make; the glide says so. The
     // body keeps its flight state, which its recovery reads. A body already
     // down is refused by glideTo, and that refusal is the answer too.
     if (!f || isDown(f.phase)) return refused(glide.text);
+    // A glide that set no course was refused before it flew, and its refusal is the landing's answer.
+    if (took.course === undefined) return refused(glide.text);
     // A later call that set the flight's course during the glide has the flight, so the landing leaves it to that
     // call, with no flare.
-    if (took.course !== undefined && this.flightCourse !== took.course) {
+    if (this.flightCourse !== took.course) {
       return refused(`${glide.text} — a later call took over the flight during the glide`);
     }
     // A deliberate landing IS a flare: descend the remaining altitude rather
@@ -3140,7 +3144,7 @@ export class WorldAgent {
     // The flare comes down at the polar's sink: stepPilot takes its pitch from the stick, which the door doesn't
     // give, so the airspeed settles at the minimum-sink speed, about 0.46 m/s of sink with the default polar.
     // Its wait is sized for a flare from the ceiling down to the ground under the body as it begins, since a low
-    // flare can still be rising on take-off's launch, and is never shorter than the 60 s it always had, so a flare
+    // flare can still be rising on take-off's launch, and is never shorter than the 60 s main's flare had, so a flare
     // that begins over high ground and comes down on lower, or one the launch holds at the ceiling, gets at least the
     // wait main gave it. A flare that begins well above where its circle comes down can still outlast it.
     const fall = Math.max(0, this.flightCfg.bounds.ceiling - this.heightAt(f.pos.x, f.pos.z));
@@ -3156,7 +3160,7 @@ export class WorldAgent {
     // A later call that set the flight's course has the flight now, so this landing leaves it to that call, whether
     // its wait heard the body come down or ran out: ending the flight would pull the body out of that call's. The
     // landing's course is its glide's, since the flare follows it.
-    if (took.course !== undefined && this.flightCourse !== took.course) {
+    if (this.flightCourse !== took.course) {
       return refused(`${glide.text} — a later call took over the flight during the flare`);
     }
     this.flightEnd();
