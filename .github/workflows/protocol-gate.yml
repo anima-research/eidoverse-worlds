@@ -39,6 +39,12 @@ jobs:
         run: |
           bun install --frozen-lockfile
           (cd client && bun install --frozen-lockfile)
+          # mcpl/package.json takes two sibling repos by path (file:../../…); clone them where it looks, pinned.
+          # The gate only reads net-server.ts as text, but bun install must still resolve them.
+          git clone -q https://github.com/anima-research/agent-framework.git ../agent-framework
+          git -C ../agent-framework checkout -q 2f05c28e1923b7d07c6c6322b871303bd0d2d8d5
+          git clone -q https://github.com/anima-research/mcpl-core-ts.git ../mcpl-core-ts
+          git -C ../mcpl-core-ts checkout -q e17f773a9247c41d5c872d760aac7f243748d134
           (cd mcpl && bun install --frozen-lockfile)
           bunx playwright install chromium
       - name: asset library (pinned in run.ts)
