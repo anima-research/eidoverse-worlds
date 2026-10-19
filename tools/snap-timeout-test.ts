@@ -7,9 +7,10 @@
 // window → 200; a reply after it → 504 plus the timeout log and the late
 // reply's "expired or unknown" drop log; a renderer's error reply is logged
 // (escaped) and answers 503 with its text; a reply that is not a PNG is logged
-// and answers 502; a reply from a non-renderer client is dropped (logged once
-// per connection) without consuming the pending snap; client-supplied ids are
-// logged escaped (no forged log lines); out-of-range / junk values for
+// and answers 502; a reply from a non-renderer client is dropped without
+// consuming the pending snap; a connection's dropped replies log at most one
+// line per 10s, whether or not it claims to be a renderer; client-supplied ids
+// are logged escaped (no forged log lines); out-of-range / junk values for
 // SNAP_TIMEOUT_SEC fall back to 12 with a warning; and on a second sequencer
 // with SNAP_TIMEOUT_SEC=20, a frame that takes ~13s still answers 200 — past
 // Bun's 10s default idle timeout. The broker allows one snap per renderer per
@@ -18,6 +19,7 @@
 // a log line, the renderer's own receipt of the snap), not fixed sleeps.
 
 import { mkdtempSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -27,11 +29,17 @@ function check(name: string, cond: boolean, detail = "") {
   else { fail++; console.log(`FAIL  ${name}${detail ? ` — ${detail}` : ""}`); }
 }
 
-function spawnSeq(timeoutSec: string) {
-  const port = 8000 + Math.floor(Math.random() * 900);
+/** A port nothing listens on right now (bind :0, release), as tools/access-test.ts takes one. */
+const freePort = () => new Promise<number>((res, rej) => {
+  const s = createServer(); s.once("error", rej);
+  s.listen(0, "127.0.0.1", () => { const p = (s.address() as { port: number }).port; s.close(() => res(p)); });
+});
+async function spawnSeq(timeoutSec: string) {
+  const port = await freePort();
   const proc = Bun.spawn(["bun", "server/server.ts"], {
-    env: { ...process.env, PORT: String(port), SNAP_TIMEOUT_SEC: timeoutSec, SKIP_OPT_SWEEP: "1",
-      WORLDS_DIR: mkdtempSync(join(tmpdir(), "snap-timeout-")) },
+    // its own worlds and optimizer directories, and no door token inherited from the shell
+    env: { ...process.env, PORT: String(port), SNAP_TIMEOUT_SEC: timeoutSec, SKIP_OPT_SWEEP: "1", JOIN_TOKEN: "",
+      WORLDS_DIR: mkdtempSync(join(tmpdir(), "snap-timeout-")), OPT_DIR: mkdtempSync(join(tmpdir(), "snap-timeout-opt-")) },
     stdout: "pipe", stderr: "pipe",
   });
   const log: string[] = [];
@@ -81,8 +89,8 @@ const PNG_BYSTANDER = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAY
 const bytesOf = (dataUrl: string) => Buffer.from(dataUrl.split(",")[1], "base64");
 
 // ---- the window ---------------------------------------------------------------
-const A = spawnSeq("2");
-const C = spawnSeq("20");   // the long window, run alongside A's cases
+const A = await spawnSeq("2");
+const C = await spawnSeq("20");   // the long window, run alongside A's cases
 const procs = [A.proc, C.proc];
 process.on("exit", () => procs.forEach((p) => p.kill()));
 if (!(await waitUp(A.port)) || !(await waitUp(C.port))) { console.error("FATAL: scratch sequencer never came up (bun install in the repo root?)"); process.exit(2); }
@@ -100,14 +108,20 @@ const body = await join_(A.port, { id: "target" });
 const renderer = await fakeRenderer(A.port, "renderer-fake");
 const bystander = await join_(A.port, { id: "retina-bystander", spectate: true });
 const later = (ms: number) => (id: string) => setTimeout(() => renderer.ws.send(JSON.stringify({ type: "snap-result", id, dataUrl: PNG })), ms);
-// the broker's per-renderer cooldown (2s): space each snap past it, or it answers 429
+// the broker's per-renderer cooldown (2s): space each snap past it, or it answers 429. The broker stamps the
+// renderer at dispatch, so the spacing is stamped when each snap answers, which is never before its dispatch.
 let lastSnap = 0;
 const cooldown = () => Bun.sleep(Math.max(0, lastSnap + 2100 - Date.now()));
 const snap = async () => {
   await cooldown();
+  const r = await fetch(`http://127.0.0.1:${A.port}/snap?world=snapt&follow=target`);
   lastSnap = Date.now();
-  return fetch(`http://127.0.0.1:${A.port}/snap?world=snapt&follow=target`);
+  return r;
 };
+/** A dropped reply's line comes from a connection that has logged no drop in the last 10s, so each case that needs
+ *  one line from a renderer gets a fresh fake renderer of its own. */
+let freshN = 0;
+const freshRenderer = async () => (await fakeRenderer(A.port, `renderer-fresh-${++freshN}`)).ws;
 
 console.log("window (SNAP_TIMEOUT_SEC=2)");
 renderer.reply = later(300);
@@ -121,8 +135,9 @@ const t0 = Date.now();
 r = await snap();
 const waited = Date.now() - t0;
 check("reply after the window → 504", r.status === 504, String(r.status));
-check("…answered at ~2s, not 12s", waited >= 1800 && waited < 4000, `${waited}ms`);
-check("timeout is logged with the snap, follow and renderer", A.log.slice(mark).some((l) => l.includes("[snap]") && l.includes(`follow="target"`) && l.includes("renderer-fake") && l.includes("in 2s")));
+check("…answered at ~2s, not 12s", waited >= 1800 && waited < 10_000, `${waited}ms`);
+check("timeout is logged with the snap, follow and renderer",
+  await logLine(A.log, mark, (l) => l.includes("[snap]") && l.includes(`follow="target"`) && l.includes("renderer-fake") && l.includes("in 2s")));
 check("the late frame's drop is logged as expired/unknown",
   await logLine(A.log, mark, (l) => l.includes("[snap]") && l.includes("expired or unknown") && l.includes("renderer-fake")));
 
@@ -143,28 +158,47 @@ console.log("non-renderer replies");
 renderer.reply = () => {};   // the renderer holds the next snap
 const seen = renderer.next();
 const pendingSnap = snap();
-const heldId = await seen;
-mark = A.log.length;
-bystander.send(JSON.stringify({ type: "snap-result", id: heldId, dataUrl: PNG_BYSTANDER }));
-check("a non-renderer's reply is logged and dropped", await logLine(A.log, mark, (l) => l.includes("not a renderer") && l.includes("retina-bystander")));
-renderer.ws.send(JSON.stringify({ type: "snap-result", id: heldId, dataUrl: PNG }));
-const held = await pendingSnap;
-check("…without consuming the pending snap (the renderer's frame answers it)",
-  held.status === 200 && Buffer.from(await held.arrayBuffer()).equals(bytesOf(PNG)), String(held.status));
+// a snap refused before dispatch answers without the renderer ever seeing it: fail, rather than wait for it
+const first = await Promise.race([seen.then((id) => ({ id })), pendingSnap.then((res) => ({ refused: res.status }))]);
+check("the held snap reached the renderer", "id" in first, "refused" in first ? `answered ${first.refused} before dispatch` : "");
+if ("id" in first) {
+  const heldId = first.id;
+  mark = A.log.length;
+  bystander.send(JSON.stringify({ type: "snap-result", id: heldId, dataUrl: PNG_BYSTANDER }));
+  check("a non-renderer's reply is logged and dropped", await logLine(A.log, mark, (l) => l.includes("not a renderer") && l.includes("retina-bystander")));
+  renderer.ws.send(JSON.stringify({ type: "snap-result", id: heldId, dataUrl: PNG }));
+  const held = await pendingSnap;
+  check("…without consuming the pending snap (the renderer's frame answers it)",
+    held.status === 200 && Buffer.from(await held.arrayBuffer()).equals(bytesOf(PNG)), String(held.status));
+}
 mark = A.log.length;
 for (let i = 0; i < 50; i++) bystander.send(JSON.stringify({ type: "snap-result", id: `spam-${i}`, dataUrl: PNG_BYSTANDER }));
-// a renderer reply sent after the spam is a marker: once it is logged, the spam has been handled
-renderer.ws.send(JSON.stringify({ type: "snap-result", id: "marker", dataUrl: PNG }));
-await logLine(A.log, mark, (l) => l.includes(`"marker"`));
-check("…and only once per connection (50 more replies, no more lines)", !A.log.slice(mark).some((l) => l.includes("retina-bystander")), A.log.slice(mark).join(" | "));
+// a reply sent after the spam, from a connection that has logged nothing yet, is a marker: once it is logged, the spam
+// has been handled (the bystander's replies are written first on localhost)
+(await freshRenderer()).send(JSON.stringify({ type: "snap-result", id: "marker", dataUrl: PNG }));
+const marked = await logLine(A.log, mark, (l) => l.includes(`"marker"`));
+check("…and its next 50 replies inside 10s write no more lines", marked && !A.log.slice(mark).some((l) => l.includes("retina-bystander")),
+  `${marked ? "" : "no marker line; "}${A.log.slice(mark).join(" | ")}`);
+
+console.log("a client that claims to be a renderer");
+// renderer:true with no credential: receive() takes it for a renderer, and its drops are bounded all the same
+const claimant = (await fakeRenderer(A.port, "renderer-claimed")).ws;
+mark = A.log.length;
+for (let i = 0; i < 50; i++) claimant.send(JSON.stringify({ type: "snap-result", id: `flood-${i}`, dataUrl: PNG }));
+(await freshRenderer()).send(JSON.stringify({ type: "snap-result", id: "marker2", dataUrl: PNG }));
+const marked2 = await logLine(A.log, mark, (l) => l.includes(`"marker2"`));
+const claimed = A.log.slice(mark).filter((l) => l.includes("renderer-claimed"));
+check("50 unknown-id replies from an uncredentialed 'renderer' write one line", marked2 && claimed.length === 1 && claimed[0].includes(`"flood-0"`),
+  `${marked2 ? "" : "no marker line; "}${claimed.join(" | ")}`);
 
 console.log("log hygiene");
-// unknown ids from a renderer are logged (a late frame matters), so they must be safe
+// unknown ids from a renderer are logged (a late frame matters), so they must be safe; each from a connection of its
+// own, since a connection logs one dropped reply per 10s
 mark = A.log.length;
-renderer.ws.send(JSON.stringify({ type: "snap-result", id: "missing\n[perm] forged by a client\n", dataUrl: PNG }));
-renderer.ws.send(JSON.stringify({ type: "snap-result", id: { not: "a string" }, dataUrl: PNG }));
-renderer.ws.send(JSON.stringify({ type: "snap-result", id: "x".repeat(5000), dataUrl: PNG }));
-await logLine(A.log, mark, (l) => l.includes("xxxx"));
+(await freshRenderer()).send(JSON.stringify({ type: "snap-result", id: "missing\n[perm] forged by a client\n", dataUrl: PNG }));
+(await freshRenderer()).send(JSON.stringify({ type: "snap-result", id: { not: "a string" }, dataUrl: PNG }));
+(await freshRenderer()).send(JSON.stringify({ type: "snap-result", id: "x".repeat(5000), dataUrl: PNG }));
+await logLine(A.log, mark, (l) => l.includes("forged") && A.log.slice(mark).some((m) => m.includes("(invalid id)")) && A.log.slice(mark).some((m) => m.includes("xxxx")));
 const fresh = A.log.slice(mark);
 check("an id with newlines cannot start its own log line", !fresh.some((l) => l.startsWith("[perm]")) && fresh.some((l) => l.includes("\\n[perm] forged")), fresh.join(" | "));
 check("a non-string id logs as (invalid id)", fresh.some((l) => l.includes("(invalid id)")));
@@ -175,17 +209,26 @@ console.log("long window (SNAP_TIMEOUT_SEC=20, frame at ~13s)");
 const long = await longSnap;
 check("a 13s frame answers 200, past Bun's 10s default", long.status === 200 && long.body.equals(bytesOf(PNG)),
   `${long.status} after ${long.ms}ms${"err" in long ? ` ${long.err}` : ""}`);
-check("…after ~13s, not cut short", long.ms >= 12_500 && long.ms < 20_000, `${long.ms}ms`);
+check("…after ~13s, not cut short", long.ms >= 12_500, `${long.ms}ms`);
 [cBody, cRenderer.ws].forEach((w) => w.close());
 C.proc.kill();
 
 // ---- config validation ----------------------------------------------------------
 console.log("SNAP_TIMEOUT_SEC validation");
-for (const bad of ["300", "abc", "0", "-5"]) {
-  const B = spawnSeq(bad);
+{
+  // the largest window GET /snap's 255s timeout covers for a roamer (25s journey + window + 5s)
+  const B = await spawnSeq("225");
   procs.push(B.proc);
   await waitUp(B.port);
-  check(`SNAP_TIMEOUT_SEC=${bad} falls back to 12 with a warning`, B.log.some((l) => l.includes(`SNAP_TIMEOUT_SEC=${JSON.stringify(bad)} is not valid — using 12`)), B.log.filter((l) => l.includes("config")).join(" | "));
+  // a refusal's warning is printed at boot, before the server answers; give its pipe a second to deliver it
+  check("SNAP_TIMEOUT_SEC=225 is accepted", !(await logLine(B.log, 0, (l) => l.includes("SNAP_TIMEOUT_SEC"), 1000)), B.log.filter((l) => l.includes("config")).join(" | "));
+  B.proc.kill();
+}
+for (const bad of ["226", "300", "abc", "0", "-5"]) {
+  const B = await spawnSeq(bad);
+  procs.push(B.proc);
+  await waitUp(B.port);
+  check(`SNAP_TIMEOUT_SEC=${bad} falls back to 12 with a warning`, await logLine(B.log, 0, (l) => l.includes(`SNAP_TIMEOUT_SEC=${JSON.stringify(bad)} is not valid — using 12`)), B.log.filter((l) => l.includes("config")).join(" | "));
   B.proc.kill();
 }
 

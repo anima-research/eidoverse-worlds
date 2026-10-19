@@ -165,3 +165,40 @@ test("rotation: a parked roamer goes before one an agent is using; pre-warm neve
   expect(inUse.messages.at(-1)).toEqual({ type: "renderer-travel", world: "fresh2" });
   await Bun.sleep(450);
 });
+test("maxWaitMs: a roamer's journey, then the larger of its arrival window and the frame window", () => {
+  const { broker } = roamSetup();   // travelMs 400, arrivalTimeoutMs 400, timeoutMs 200
+  expect(broker.maxWaitMs).toBe(400 + 400);
+  broker.setFrameTimeout(900);      // a frame window past the arrival window
+  expect(broker.maxWaitMs).toBe(400 + 900);
+});
+test("a summoned roamer gets the frame window when it is longer than the arrival window", async () => {
+  const { broker, worldOf, join, leave } = roamSetup();
+  broker.setFrameTimeout(2000);     // arrivalTimeoutMs is 400
+  const lobby = worldOf("commons"), build = worldOf("my-build");
+  const roamer = join(lobby, "roam", { renderer: true, roam: true, spectator: true });
+  join(build, "agent");
+  const result = broker.request(build, "agent", "third");
+  await Bun.sleep(20);
+  expect(roamer.messages.at(-1)).toEqual({ type: "renderer-travel", world: "my-build" });
+  leave(roamer.c); const arrived = join(build, "roam", { renderer: true, roam: true, spectator: true });
+  await Bun.sleep(40);
+  const snap = arrived.messages.find((m) => m.type === "snap"); expect(snap).toBeDefined();
+  await Bun.sleep(1000);             // past the arrival window, inside the frame window
+  broker.receive(arrived.c, { id: snap.id, dataUrl: png });
+  expect(await result).toMatchObject({ ok: true });
+});
+test("a connection's dropped replies log one line per dropLogMs, the rest counted into its next line", () => {
+  let time = 0; const lines: string[] = [];
+  const { broker, worldOf, join } = roamSetup({ now: () => time, log: (l: string) => lines.push(l), dropLogMs: 10_000 });
+  const w = worldOf("w");
+  const claimant = join(w, "claimant", { renderer: true, spectator: true });   // the renderer flag, claimed with no credential
+  const other = join(w, "other", { spectator: true });                         // no renderer flag at all
+  for (let i = 0; i < 5; i++) broker.receive(claimant.c, { id: `x${i}`, dataUrl: png });
+  expect(lines).toHaveLength(1); expect(lines[0]).toContain('"x0"');
+  broker.receive(other.c, { id: "y0", dataUrl: png });   // each connection is bounded on its own
+  expect(lines).toHaveLength(2); expect(lines[1]).toContain("not a renderer");
+  time = 9_999; broker.receive(claimant.c, { id: "x5", dataUrl: png });
+  expect(lines).toHaveLength(2);
+  time = 10_000; broker.receive(claimant.c, { id: "x6", dataUrl: png });
+  expect(lines).toHaveLength(3); expect(lines[2]).toContain('"x6"'); expect(lines[2]).toContain("and 5 more");
+});

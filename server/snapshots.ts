@@ -50,14 +50,24 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
   travelMs = 25_000, arrivalTimeoutMs = 40_000, pollMs = 200, recentMs = 5 * 60_000,
   allClients = (() => []) as () => Iterable<Client>,
   admits = (() => true) as (world: World, c: Client) => boolean,
-  log = (line: string) => console.log(line) } = {}) {
+  log = (line: string) => console.log(line), dropLogMs = 10_000 } = {}) {
   const pending = new Map<string, Pending>();
   // A failed snapshot used to leave no server-side trace: a frame arriving after the timeout, or from a client that
   // was not the renderer asked, looked the same as no reply at all. Every failure after dispatch logs one [snap] line.
   // Ids and error text are client text: bound and escape them, or a peer could print its own "log lines".
   const quote = (v: unknown, n: number = LIMITS.ID_LEN) => typeof v === "string" ? JSON.stringify(v.slice(0, n)) : "(invalid id)";
   const who = (c: Client) => quote(c.id);
-  const notRenderer = new WeakSet<Client>();   // told once per connection; the rest drop unlogged
+  // A reply receive() drops costs its sender nothing, and any joined client can send one: the renderer and capture
+  // flags are the client's own claims (join's `renderer`, capture-capabilities), so every drop below is reachable
+  // from any connection. Each connection logs a drop at most once per dropLogMs and counts the rest into its next
+  // line, so no client can write the log at its message rate, and a real renderer's occasional late frame still logs.
+  const dropLogged = new WeakMap<Client, { at: number; unlogged: number }>();
+  function logDrop(c: Client, line: string) {
+    const t = now(), d = dropLogged.get(c);
+    if (d && t - d.at < dropLogMs) { d.unlogged++; return; }
+    log(d?.unlogged ? `${line} (and ${d.unlogged} more from this connection dropped unlogged since its last line)` : line);
+    dropLogged.set(c, { at: t, unlogged: 0 });
+  }
   const last = new WeakMap<Client, number>();
   const travelling = new Map<string, { at: number; arrived: Promise<boolean> }>();   // world name → a summons in flight
   const asked = new Map<string, number>();   // world name → when a snapshot was last asked there (roamer rotation)
@@ -170,20 +180,14 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     });
   }
   function receive(c: Client, msg: { id?: unknown; dataUrl?: unknown; error?: unknown }) {
-    // Renderer first: any joined client can send snap-result, and a log line per message would let it write the
-    // server log at the message rate. A non-renderer is told about once per connection; the rest drop.
-    if (!(c.renderer || c.capture)) {
-      if (!notRenderer.has(c)) {
-        notRenderer.add(c);
-        log(`[snap] ${quote(msg.id)}: reply from ${who(c)}, which is not a renderer — dropped (further replies from this connection drop unlogged)`);
-      }
-      return;
-    }
+    // Every drop goes through logDrop (above). The 503 and 502 lines below need the pending snap's own renderer, so
+    // there is at most one of them per dispatched snap.
+    if (!(c.renderer || c.capture)) return logDrop(c, `[snap] ${quote(msg.id)}: reply from ${who(c)}, which is not a renderer — dropped`);
     const p = typeof msg.id === "string" ? pending.get(msg.id) : undefined;
-    if (!p) return log(`[snap] ${quote(msg.id)}: reply from ${who(c)} for an expired or unknown snap — dropped`);
+    if (!p) return logDrop(c, `[snap] ${quote(msg.id)}: reply from ${who(c)} for an expired or unknown snap — dropped`);
     const stale = p.renderer !== c ? `it was sent to ${who(p.renderer)}` : p.gen !== c.gen ? "its session changed"
       : !active(c, p.world) ? `it is no longer in "${p.world.name}"` : !active(p.target, p.world) ? "the followed body left" : "";
-    if (stale) return log(`[snap] ${quote(msg.id)}: reply from ${who(c)} dropped — ${stale}`);
+    if (stale) return logDrop(c, `[snap] ${quote(msg.id)}: reply from ${who(c)} dropped — ${stale}`);
     // a renderer's own refusal (still loading the world, the body not in its scene) reaches the asker in its words,
     // as a retryable 503 — never a generic "invalid image"
     if (typeof msg.error === "string" && msg.error.trim()) {

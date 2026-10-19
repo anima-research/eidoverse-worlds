@@ -674,7 +674,9 @@ const ROUTES: Route[] = [
       // connection to Bun: give this request its own timeout a little past the
       // broker's longest wait (a roamer's journey plus its frame), rather than
       // leaning on the server-wide idleTimeout — Bun's default is 10s, shorter
-      // than the default 12s window. 255s is Bun's ceiling.
+      // than the default 12s window. Capped at 255s, the largest idleTimeout
+      // Bun.serve accepts; config.ts keeps SNAP_TIMEOUT_SEC low enough (225)
+      // that the cap never cuts the broker's longest wait.
       srv.timeout?.(req, Math.min(255, Math.ceil(snapshots.maxWaitMs / 1000) + 5));
       const w = worlds.get(url.searchParams.get("world") ?? "commons");
       const follow = url.searchParams.get("follow") ?? "";
