@@ -176,13 +176,13 @@ const b64url = (bytes) => { let s = ""; for (const x of bytes) s += String.fromC
 // A real authority passes its own keys and a random nonce (round-2 review R4): the operator's governance key in tier 1,
 // never the sequencer's, and a nonce that makes two translations of one log two worlds. Without them (the pure tests)
 // the nonce is derived from the source and one fixed key stands in for both.
-// The founder's own key (review 10-07 H4, R's ruling): tier 0 is the world's founder, from a key made on their own machine;
-// the operator (custody) stays tier 1. Under the governance draft's add-key rule (GOV-5; reserved in §13) an empty tier 0 can never be filled later, so a
-// translation that leaves it empty does so knowingly (tools/protocol/world.ts translate --no-founder-key).
-export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY, operator = key, nonce, founder } = {}) {
+// Tier 0 of a translated world is EMPTY (#260 rereview, blocker 1): v1 logs record accounts, never keys, so nothing can yet
+// bind a key to the old world's owner, and a translation names no founder. The operator (custody) is tier 1. The reserved
+// governance draft (§13) must allow ONE attested fill of a translated world's empty tier 0 later, once something (a home-node
+// attestation) can vouch that a key is the v1 owner's. A world FOUNDED new (create-world ownerKey) is a different path.
+export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY, operator = key, nonce } = {}) {
   if (!nonce) { const h = sha256(oldEntries.map((e) => JSON.stringify(e)).join("\n")); nonce = b64url(Uint8Array.from(h.slice(0, 32).match(/../g), (x) => parseInt(x, 16))); }
-  if (founder !== undefined && (founder === key || founder === operator)) throw new Error("the founder's key must be their own: not this server's sequencer or operator key");
-  return { dialect: DIALECT, v: VERSION, minor: 0, nonce, owners: [founder ? [founder] : [], [operator]], sequencer: key };
+  return { dialect: DIALECT, v: VERSION, minor: 0, nonce, owners: [[], [operator]], sequencer: key };
 }
 export { enc, encName, dec };
 const yawQ = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
@@ -418,6 +418,7 @@ export const changeBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => (
 export { unNegZero };
 
 export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace, content } = {}) {
+  if (founder !== undefined) throw new Error("a translation names no founder: nothing can yet bind a key to the old world's owner (v1 logs record accounts, not keys); tier 0 stays empty");
   const ns = namespace === undefined ? NAMESPACE : namespaceOf(namespace);
   const seenModels = new Map();   // path → its hash (or null): each path hashed once, and counted
   const addr = content ? (p) => { if (!seenModels.has(p)) seenModels.set(p, content(p) ?? null); return seenModels.get(p); } : null;
@@ -433,7 +434,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     if (e.kind === "genesis") world = worldIdOf(e); if (e.kind === "change") applyInPlace(v4, opsOf(e), seq); return seq; };
   const genesis = oldEntries[0]?.verb === "genesis" ? oldEntries[0].args : { v: 1, dialect: "eidoverse-log", implicit: true };
   const t0 = Number.isInteger(oldEntries[0]?.ts) ? { ts: oldEntries[0].ts } : {};
-  push({ kind: "genesis", actor: "system", verb: "genesis", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}), ...(founder ? { founder } : {}) }) });
+  push({ kind: "genesis", actor: "system", verb: "genesis", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}) }) });
   const physics = hasEpoch(oldEntries);
   push({ kind: "act", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero({ ...genesis, translator: physics ? TRANSLATOR_SIM : TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }) } });
   // the translation writes the repaired spelling, so its log carries the load's once-per-world marker from the start: the

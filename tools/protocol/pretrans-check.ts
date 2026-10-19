@@ -8,7 +8,8 @@
 //   C   a refusal or help text cites a section PROTOCOL.md has, under the name it has there (M5)
 //   A   the agent's words match the log's: translated acts are `imported` (M5)
 //   G   governance: a lower tier can never add keys above itself (H4); gov.py runs here
-//   K   the Commons' translation carries its owners, and its tier 0 is the founder's own key (H4)
+//   K   the Commons' translation carries its owners; its tier 0 is EMPTY (#260 rereview blocker 1: no key can be bound to the
+//       v1 owner); a world FOUNDED new takes its founder's own key (H4)
 //   N   names: bare names belong to the registry; anyone else's carry a namespace; a registered alias works (H1, M7)
 //   D   defaults: every parameter is written into the stored value at create/add time (H2); meanings are pinned
 //   I   ids: minted ids are ≥ 128 random bits, everywhere (H5)
@@ -136,7 +137,7 @@ await C("G3", "§13 marks governance RESERVED (review #260 item 8): the server n
 // ---- K: the Commons' keys and owners (H4) ----
 const TV1 = await imp("tools/protocol/import-v1/translate-v1.js");
 const KEYS = await imp("shared/protocol/fold.js");
-const FOUNDER_KP = require("node:crypto").generateKeyPairSync("ed25519");   // the founder's key: the private half signs the translation's approval (K3)
+const FOUNDER_KP = require("node:crypto").generateKeyPairSync("ed25519");   // a founder's own key: create-world takes it (K5); a translation refuses it (K1, K3)
 const FOUNDER = "ed25519:" + Buffer.from(FOUNDER_KP.publicKey.export({ format: "der", type: "spki" })).subarray(12).toString("base64url");
 const v1commons = () => [{ seq: 0, ts: 1, actor: "world", verb: "grant", args: { id: "antra", role: "owner", gen: true } },
   { seq: 1, ts: 2, actor: "antra", verb: "grant", args: { id: "Digi_Rat", role: "builder" } },
@@ -144,24 +145,26 @@ const v1commons = () => [{ seq: 0, ts: 1, actor: "world", verb: "grant", args: {
   { seq: 3, ts: 4, actor: "antra", verb: "grant", args: { id: "janus", role: "owner", sub: "human:discord:1" } },
   { seq: 4, ts: 5, actor: "antra", verb: "grant", args: { id: "mica", role: "owner" } },
   { seq: 5, ts: 6, actor: "antra", verb: "spawn", args: { id: "rock_1", lib: "store/0123456789abcdef.glb", pos: [0, 0, 0] } }];
-await C("K1", "a translation with the founder's key puts it in tier 0 and the operator's in tier 1", () => {
-  const r = TV1.translate(v1commons(), { founder: FOUNDER, operator: TV1.LAB_DOOR_KEY });
-  const g = r.out[0].body; return [JSON.stringify(g.owners) === JSON.stringify([[FOUNDER], [TV1.LAB_DOOR_KEY]]) && KEYS.checkGenesis(g) === null, g.owners]; });
+await C("K1", "a translation's genesis has tier 0 EMPTY and the operator's key in tier 1; translate() refuses a founder key (#260 rereview blocker 1: nothing can bind a key to the v1 owner)", () => {
+  const r = TV1.translate(v1commons(), { operator: TV1.LAB_DOOR_KEY });
+  let threw = ""; try { TV1.translate(v1commons(), { founder: FOUNDER }); } catch (x) { threw = String((x as Error).message); }
+  const g = r.out[0].body; return [JSON.stringify(g.owners) === JSON.stringify([[], [TV1.LAB_DOOR_KEY]]) && KEYS.checkGenesis(g) === null && /names no founder/.test(threw), { owners: g.owners, threw }]; });
 await C("K2", "the Commons' roles come across: antra, fable, janus, mica owners; Digi_Rat builder", () => {
-  const r = TV1.translate(v1commons(), { founder: FOUNDER }); const w = r.final.translated["@world"];
+  const r = TV1.translate(v1commons()); const w = r.final.translated["@world"];
   const role = (n: string) => w[`roles:${TV1.enc(n)}`]?.role;
   return [["antra", "fable", "janus", "mica"].every((n) => role(n) === "owner") && role("Digi_Rat") === "builder", Object.keys(w).filter((k) => k.startsWith("roles:"))]; });
-await C("K3", "the translate command refuses to found a world without the founder's key (or an explicit --no-founder-key)", () => {
+await C("K3", "the translate command refuses --founder-key (no key can be bound to the v1 owner) and translates only knowingly, --no-founder-key --operator-only-no-owner, with tier 0 empty", () => {
   const W = scratch("ktr"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
   fs.writeFileSync(path.join(W, "old", "log.jsonl"), v1commons().map((e) => JSON.stringify(e)).join("\n") + "\n");
   const run = (...extra: string[]) => Bun.spawnSync(["bun", path.join(T, "tools/protocol/world.ts"), "translate", "old", ...extra], { cwd: T, env: { ...process.env, WORLDS_DIR: W, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
-  // review of PR #260 item 6: a translation is bound to the owner's approval of its dry-run report, so the founder's run is three steps
-  const bare = run("new1"); const dry = run("new2", "--dry-run", "--founder-key", FOUNDER); const hash = /^report-hash ([0-9a-f]{64})$/m.exec(dry.stdout.toString())?.[1] ?? "no-hash";
-  const sig = require("node:crypto").sign(null, Buffer.from(`eidoverse-approve-translation:new2:${hash}`), FOUNDER_KP.privateKey).toString("base64");
-  const withKey = run("new2", "--founder-key", FOUNDER, "--approved", hash, "--approve-sig", sig);
+  // review of PR #260 item 6 and its rereview blocker 1: the dry run, then the operator's countersignature alone, bound to its hash
+  const bare = run("new1"); const keyed = run("new2", "--dry-run", "--founder-key", FOUNDER);
+  const dry = run("new2", "--dry-run", "--no-founder-key"); const hash = /^report-hash ([0-9a-f]{64})$/m.exec(dry.stdout.toString())?.[1] ?? "no-hash";
+  const noKey = run("new2", "--no-founder-key", "--approved", hash, "--operator-only-no-owner");
   const g = fs.existsSync(path.join(W, "new2", "world.jsonl")) ? JSON.parse(fs.readFileSync(path.join(W, "new2", "world.jsonl"), "utf8").split("\n")[0]).body : null;
-  return [bare.exitCode !== 0 && !fs.existsSync(path.join(W, "new1", "world.jsonl")) && withKey.exitCode === 0 && g?.owners?.[0]?.[0] === FOUNDER,
-    { bare: bare.exitCode, bareSaid: bare.stderr.toString().slice(0, 200), withKey: withKey.exitCode, said: withKey.stderr.toString().slice(0, 300), owners: g?.owners }]; });
+  return [bare.exitCode !== 0 && !fs.existsSync(path.join(W, "new1", "world.jsonl")) && keyed.exitCode !== 0 && /nothing can yet bind a key to the old world's owner/.test(keyed.stderr.toString())
+    && noKey.exitCode === 0 && Array.isArray(g?.owners?.[0]) && g.owners[0].length === 0,
+    { bare: bare.exitCode, bareSaid: bare.stderr.toString().slice(0, 200), keyed: keyed.stderr.toString().slice(0, 300), noKey: noKey.exitCode, said: noKey.stderr.toString().slice(0, 300), owners: g?.owners }]; });
 await C("K4", "the founder proves the key is theirs before it's baked in: world.ts owner-key checks a signature over the ceremony text", () => {
   const kp = require("node:crypto").generateKeyPairSync("ed25519");
   const pub = "ed25519:" + Buffer.from(kp.publicKey.export({ format: "der", type: "spki" })).subarray(12).toString("base64url");
@@ -177,11 +180,11 @@ await C("K5", "create-world takes the founder's own key for tier 0 (ownerKey); w
   const r3 = D.request(w3, "kay", "create-world", { title: "c", ownerKey: "ed25519:AAAA" });
   return [r1.ok && JSON.stringify(w1.entries[0].body.owners[0]) === JSON.stringify([FOUNDER]) && r2.ok && w2.entries[0].body.owners[0].length === 0 && /tier 0/.test(JSON.stringify(r2))
     && !r3.ok && r3.refused.code === "shape", [w1.entries[0]?.body?.owners, r2, r3.refused]]; });
-await C("K6", "the import README documents the Commons ceremony: key made on the founder's machine, checked, then translated", () => {
-  const t = read("tools/protocol/import-v1/README.md"); const need = ["owner-key", "--founder-key", "openssl", "custody.json", "antra"]; return [need.every((n) => t.includes(n)), need.filter((n) => !t.includes(n))]; });
+await C("K6", "the import README documents the Commons translation (no founder key, tier 0 empty, no owner attested) and the founder's own key for a world founded new", () => {
+  const t = read("tools/protocol/import-v1/README.md"); const need = ["owner-key", "openssl", "custody.json", "antra", "--no-founder-key --operator-only-no-owner", "tier 0 stays empty", "no owner was attested", "ownerKey"]; return [need.every((n) => t.includes(n)), need.filter((n) => !t.includes(n))]; });
 
 await C("K7", "no account subject is written (PROTOCOL §9.2): without a mapper the translation's roles:janus has no sub and the imported grant act's args don't either; the door refuses roles {sub}", () => {
-  const r = TV1.translate(v1commons(), { founder: FOUNDER }); const w = r.final.translated["@world"];
+  const r = TV1.translate(v1commons()); const w = r.final.translated["@world"];
   const acts = r.out.filter((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "grant");
   const W = world(); const sub = W.call("set", { id: "@world", component: "roles:vic", value: { role: "visitor", sub: "human:discord:9" } });
   return [w[`roles:${TV1.enc("janus")}`]?.role === "owner" && !("sub" in w[`roles:${TV1.enc("janus")}`]) && acts.length >= 4 && !JSON.stringify(acts).includes("human:discord") && !sub.ok && sub.refused.code === "schema"

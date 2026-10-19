@@ -22,9 +22,9 @@ export type OldWorld = {
   file: string;
   /** a world name that is free in this directory (nothing on disk under it): a pre-names world's re-translation goes there */
   suggestedName: string;
-  /** the operator's first command (the dry run: the report and its hash, nothing written), WORLDS_DIR filled in, the founder's key a placeholder */
+  /** the operator's first command (the dry run: the report and its hash, nothing written), WORLDS_DIR filled in */
   command: string;
-  /** the second: the translation, bound to the approved report hash (and the founder's signature of it) */
+  /** the second: the translation, bound to the approved report hash, on the operator's countersignature alone (no owner can be attested) */
   approve: string;
   /** pre-names only: refounding it empty under the suggested name, when its original log is gone */
   refound?: string;
@@ -44,10 +44,8 @@ export function noFoldRefusal(world: string, native: boolean): string {
 
 const NAME = /^[a-z0-9_-]{1,64}$/i;
 const TOOL = "bun tools/protocol/world.ts";
-export const FOUNDER_KEY_PLACEHOLDER = "<the founder's ed25519 key>";
 export const HASH_PLACEHOLDER = "<the report hash the dry run printed>";
-export const SIG_PLACEHOLDER = "<the founder's signature of it>";
-const APPROVAL = "The dry run writes nothing: it prints what the translation would do (what is dropped by design, what it would refuse) and the report's hash. The founder reads it and signs the approval on their own machine; then translate it, bound to that hash:";
+const APPROVAL = "The dry run writes nothing: it prints what the translation would do (what is dropped by design, what it would refuse) and the report's hash. Read it; then translate it, bound to that hash:";
 const KEPT_IN_PLACE = "It keeps its name, so links to it keep working; the original log is kept untouched beside it as log.original.jsonl.";
 const KEPT = "the original log is kept untouched; translate into a new name, then point links at it (or rename the directories)";
 
@@ -80,15 +78,15 @@ export function oldWorldAt(dir: string, name: string): OldWorld | null {
   if (isPreNamesDir(d)) {   // checked first: such a log may be named log.jsonl too (an older file name)
     const file = fs.readdirSync(d).filter((f) => f.endsWith(".jsonl")).sort((a, b) => (a === "world.jsonl" ? -1 : b === "world.jsonl" ? 1 : a.localeCompare(b)))[0]!;
     return { name, kind: "pre-names", file: path.join(d, file), suggestedName,
-      command: `${head} translate <its-original-old-world> ${suggestedName} --dry-run --founder-key ${FOUNDER_KEY_PLACEHOLDER}`,
-      approve: `${head} translate <its-original-old-world> ${suggestedName} --founder-key ${FOUNDER_KEY_PLACEHOLDER} --approved ${HASH_PLACEHOLDER} --approve-sig ${SIG_PLACEHOLDER}`,
+      command: `${head} translate <its-original-old-world> ${suggestedName} --dry-run --no-founder-key`,
+      approve: `${head} translate <its-original-old-world> ${suggestedName} --no-founder-key --approved ${HASH_PLACEHOLDER} --operator-only-no-owner`,
       refound: `${head} found ${suggestedName} --owner <your id>`, visitor: visitorText(name, "pre-names") };
   }
   const file = path.join(d, "log.jsonl");
   if (!fs.existsSync(file)) return null;
   return { name, kind: "translatable", file, suggestedName,
-    command: `${head} translate ${name} --dry-run --founder-key ${FOUNDER_KEY_PLACEHOLDER}`,
-    approve: `${head} translate ${name} --founder-key ${FOUNDER_KEY_PLACEHOLDER} --approved ${HASH_PLACEHOLDER} --approve-sig ${SIG_PLACEHOLDER}`, visitor: visitorText(name, "translatable") };
+    command: `${head} translate ${name} --dry-run --no-founder-key`,
+    approve: `${head} translate ${name} --no-founder-key --approved ${HASH_PLACEHOLDER} --operator-only-no-owner`, visitor: visitorText(name, "translatable") };
 }
 
 /** Every old world in `dir`, by name. */
@@ -109,7 +107,7 @@ export function bootNotice(dir: string): string {
          `    ${o.command}`,
          `  ${APPROVAL}`,
          `    ${o.approve}`,
-         `  The founder makes that key on their own machine and you check it with \`${TOOL} owner-key <key> <signature>\`; --no-founder-key instead leaves the world's top governance tier empty for ever (then no owner can sign the approval: the translation also needs --operator-only-no-owner, and records that no owner approved).`,
+         `  A translation names no founder: nothing can yet bind a key to the old world's owner (an old-format log records accounts, not keys), so the world's top governance tier (tier 0) stays empty, the operator's countersignature is the only signature, and the record says no owner was attested.`,
          `  ${KEPT_IN_PLACE}`].join("\n")
       : [`[boot] old-format world "${o.name}" (${at}) is NOT being served.`,
          `  It was saved before this server's protocol names changed (2026-10-07), so it can't be translated as it stands. Re-translate it from its original old log (the directory its first-protocol log.jsonl is in) into a new world. First the dry run:`,

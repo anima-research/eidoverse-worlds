@@ -398,7 +398,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   fs.mkdirSync(path.join(W4, "oldtown"), { recursive: true });
   fs.writeFileSync(path.join(W4, "oldtown", "log.jsonl"), L.map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n");
   const v1log = path.join(W4, "oldtown", "log.jsonl"); const before = fs.readFileSync(v1log);
-  // the owner's approval is bound to the dry run's report hash (review of PR #260 item 6): the dry run first, nothing written
+  // the approval is bound to the dry run's report hash (review of PR #260 item 6): the dry run first, nothing written
   const dry = tool(["translate", "oldtown", "oldtown-new", "--dry-run", "--no-founder-key"]); const hash = /^report-hash ([0-9a-f]{64})$/m.exec(dry.out)?.[1] ?? "no-hash";
   ok(dry.code === 0 && hash !== "no-hash" && !fs.existsSync(path.join(W4, "oldtown-new")), "S6 the dry run prints the report hash and writes nothing", dry.out.slice(-300));
   const tr = tool(["translate", "oldtown", "oldtown-new", "--no-founder-key", "--approved", hash, "--operator-only-no-owner"]);   // a test world: tier 0 left empty, knowingly (§13); no owner can sign, said so (§14)
@@ -559,7 +559,7 @@ srv.proc.kill();
   const N0 = readLog(fs.readFileSync(path.join(w, "world.jsonl"))).filter((e) => e.kind === "say").length;
   const srvA = await startServer(ENGINE, W4, OPT, "sh");
   { const boot = fs.readFileSync(srvA.log, "utf8");   // the boot sweep TELLS the operator about the old worlds left on disk by S6 (owner 10-15)
-    ok(boot.includes(`[boot] old-format world "oldtown" (oldtown/log.jsonl) is NOT being served.`) && boot.includes(`WORLDS_DIR=${W4} bun tools/protocol/world.ts translate oldtown --founder-key <the founder's ed25519 key>`)
+    ok(boot.includes(`[boot] old-format world "oldtown" (oldtown/log.jsonl) is NOT being served.`) && boot.includes(`WORLDS_DIR=${W4} bun tools/protocol/world.ts translate oldtown --no-founder-key --approved <the report hash the dry run printed> --operator-only-no-owner`)
       && boot.includes(`[boot] old-format world "prenamed" (prenamed/world.jsonl) is NOT being served.`) && /\[boot\] 2 world\(s\) need translating — see above/.test(boot) && !/"hollow"/.test(boot),
       "SH0 at boot the operator is told, per old world, that it isn't served and the exact command (this WORLDS_DIR), and how many", boot.split("\n").filter((l) => /old-format|need translating|translate /.test(l))); }
   const t = await client(srvA.port, "garden", "Ann", REPLICA);

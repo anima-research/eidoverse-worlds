@@ -757,8 +757,10 @@ ripple every resident's reconnect.
 
 **Old worlds.** A world written in the retired first protocol is
 translated once, by an operator, in place:
-`WORLDS_DIR=… bun tools/protocol/world.ts translate <world> --founder-key <key>`
-(or `--no-founder-key`). The world keeps its name, so links to it keep working;
+`WORLDS_DIR=… bun tools/protocol/world.ts translate <world> --dry-run --no-founder-key`,
+then `translate <world> --no-founder-key --approved <hash> --operator-only-no-owner`
+(a translation names no founder: nothing can yet bind a key to the old
+world's owner, so tier 0 stays empty; spec/PROTOCOL.md §14). The world keeps its name, so links to it keep working;
 the old log stays beside it as `log.original.jsonl` (and `snapshot.json` as
 `snapshot.original.json`), renamed, never written. It is translated into a
 temporary directory and checked first (0 divergences, the result opened as the
