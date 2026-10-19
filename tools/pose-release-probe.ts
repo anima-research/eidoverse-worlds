@@ -4,7 +4,8 @@
 //
 // Needs a Chromium that tools/probe-harness.mjs can find. How long a run takes depends on the machine. Each page's
 // load and join may wait up to three minutes, poser's page up to 90 s more to see held's avatar, and each of a step's
-// four waits up to 30 s, so a run in which every wait runs out takes about twenty minutes.
+// four waits up to 30 s, so the waits come to about twenty minutes at most. A setup wait that runs out fails setup's
+// check, and the run then skips every step.
 //
 // A scratch world this run owns (tools/probe-harness.mjs ownedWorld, proved by its nonce) serves a fixture body
 // from a scratch library (tools/body-fixture.ts). Two people join it in the full client: "poser" and "held", and
