@@ -3046,8 +3046,9 @@ export class WorldAgent {
     // The wait is for the distance either way: a lower target is a descent. A climb rises at its lift less the
     // polar's sink. stepPilot takes its pitch from the stick, which the door doesn't give, so the airspeed settles
     // at the polar's minimum-sink speed, and the wait is sized from the rise there: about 1.5 m/s with the default
-    // polar, where the lift alone is 2 m/s. A descent goes down faster than its lift alone, which sizes its wait.
-    const climbed = Math.abs(reach - from);
+    // polar, where the lift alone is 2 m/s. A descent goes down faster than its lift alone, which sizes its wait,
+    // from the ceiling down, since take-off's launch can still be carrying the body above where the descent began.
+    const leg = reach > from ? reach - from : cfg.bounds.ceiling - reach;
     const rate = reach > from ? climbRate - cfg.polar.sinkAtMinSink : climbRate;
     const got = await this.flightAwait((st) => {
       if (isDown(st.phase)) return "cut";
@@ -3056,7 +3057,7 @@ export class WorldAgent {
       if (st.phase === "LANDED" || st.phase === "GROUND") return Math.abs(st.pos.y - alt) < 0.4 ? "touched down" : "landed";
       if (st.climbTo == null) return "there";
       return null;
-    }, legWaitMs(climbed / rate));
+    }, legWaitMs(leg / rate));
     if (got === "cut") {
       // A cut body keeps no climb, so it doesn't resume one when it recovers.
       if (this.flight) this.flight.climbTo = null;
@@ -3110,12 +3111,11 @@ export class WorldAgent {
     f.phase = "PILOT"; f.pitch = 0.2;
     // The flare comes down at the polar's sink: stepPilot takes its pitch from the stick, which the door doesn't
     // give, so the airspeed settles at the minimum-sink speed, about 0.46 m/s of sink with the default polar.
-    // So the wait is sized from the height left above the ground under the body, and is never shorter than the
-    // 60 s it always had: a low flare can still be rising on take-off's launch, or circle over lower ground.
-    const above = Math.max(0, f.pos.y - this.heightAt(f.pos.x, f.pos.z));
+    // Its wait is sized for a flare from the ceiling down to the ground under the body, since a low flare can still
+    // be rising on take-off's launch, or circle over lower ground, which the body's own height doesn't show.
+    const fall = Math.max(0, this.flightCfg.bounds.ceiling - this.heightAt(f.pos.x, f.pos.z));
     const flare = await this.flightAwait((s) => isDown(s.phase) ? "cut"
-      : (s.phase === "LANDED" || s.phase === "GROUND") ? "down" : null,
-      Math.max(60_000, legWaitMs(above / this.flightCfg.polar.sinkAtMinSink)));
+      : (s.phase === "LANDED" || s.phase === "GROUND") ? "down" : null, legWaitMs(fall / this.flightCfg.polar.sinkAtMinSink));
     // How the flare ended is read after it, so a cut during it is a fall too,
     // and the cut body keeps its flight state for its recovery.
     if (flare === "cut") {

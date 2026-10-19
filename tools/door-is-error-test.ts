@@ -155,22 +155,32 @@ await flyingAt(10);
 flown = await flownByTicks(() => call('climb_to', { altitude: 15 }));
 check('a 5 m climb flown by the tick gets there, inside its wait with ticks 50% late', ok(flown.answer) && /^at 15\.0m/.test(said(flown.answer)) && inside(flown.waits, 0),
   `${said(flown.answer)}; ${JSON.stringify(flown.waits)}`);
-// A landing straight after take-off flares while the launch still lifts the body, which its height alone doesn't
-// show, so the flare's wait never drops below the 60 s it always had. That covers this with ticks a third late.
+// Straight after take-off, the launch still lifts the body, which its height doesn't show: a landing then flares
+// from well above where it began, and a descent first rises. Their waits are sized from the ceiling down.
 await relaunch();
 flown = await flownByTicks(() => call('land_at', { x: ag.flight.pos.x, z: ag.flight.pos.z }));
-check('a landing straight after take-off comes down by its flare, inside the flare\'s wait with ticks a third late',
-  ok(flown.answer) && / — landed at /.test(said(flown.answer)) && flown.waits.length > 1 && flown.waits[1].took >= 0 && flown.waits[1].ms > flown.waits[1].took * 1000 * 4 / 3,
+check('a landing straight after take-off comes down by its flare, inside the flare\'s wait with ticks 50% late',
+  ok(flown.answer) && / — landed at /.test(said(flown.answer)) && inside(flown.waits, 1), `${said(flown.answer)}; ${JSON.stringify(flown.waits)}`);
+await relaunch();
+flown = await flownByTicks(() => call('climb_to', { altitude: 0.3 }));
+check('a descent straight after take-off gets there, inside its wait with ticks 50% late', ok(flown.answer) && /^at 0\.3m/.test(said(flown.answer)) && inside(flown.waits, 0),
   `${said(flown.answer)}; ${JSON.stringify(flown.waits)}`);
-// Over ground below 0, the flare comes down farther than the body's height says.
+// Over ground far below 0, the flare comes down farther than the ceiling's height says.
 {
   const realHeight = ag.heightAt;
-  ag.heightAt = () => -20;
+  ag.heightAt = () => -100;
   await flyingAt(25);
   flown = await flownByTicks(() => call('land_at', { x: 20, z: 0 }));
   ag.heightAt = realHeight;
-  check('a landing from 25 m over ground at -20 m comes down by its flare, inside the flare\'s wait with ticks 50% late',
+  check('a landing from 25 m over ground at -100 m comes down by its flare, inside the flare\'s wait with ticks 50% late',
     ok(flown.answer) && / — landed at /.test(said(flown.answer)) && inside(flown.waits, 1), `${said(flown.answer)}; ${JSON.stringify(flown.waits)}`);
+}
+// A wait whose time runs out answers "timed out aloft" and leaves no waiter behind.
+{
+  const before = ag.flightWaiters.length;
+  const answer = await Promise.race([realAwait.call(ag, () => null, 30), new Promise((res) => setTimeout(() => res('no answer 1 s after its 30 ms'), 1000))]);
+  check('a flight wait that runs out its time answers "timed out aloft", and leaves no waiter', answer === 'timed out aloft' && ag.flightWaiters.length === before,
+    `${answer}; waiters ${before} then ${ag.flightWaiters.length}`);
 }
 await relaunch();
 // The integrator's part of a climb, as the tick does it: it reaches the target and clears it.
