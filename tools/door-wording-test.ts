@@ -7,9 +7,28 @@ import { rawShapeError } from "../mcpl/shape.ts";
 import { shown } from "../shared/shown.js";
 import { VERB_NEEDS } from "../server/rights.ts";
 import { WorldAgent } from "../mcpl/agent.ts";
+import { BodyStateReader } from "../mcpl/body-state.ts";
+import { CONTACT_POINTS } from "../shared/contact.js";
+import { fixture, postureFixture } from "./body-fixture.ts";
 
 const { check, tally } = mkCheck();
 const said = (r: any) => String(r?.content?.[0]?.text ?? "");
+
+// Bodies for body_state: the fixture rig, one without a left forearm, and
+// one with no humanoid skeleton at all.
+const glb = (g: any) => {
+  let json = JSON.stringify(g);
+  json += " ".repeat((4 - Buffer.byteLength(json) % 4) % 4);
+  const b = Buffer.alloc(20 + Buffer.byteLength(json));
+  b.writeUInt32LE(0x46546c67, 0); b.writeUInt32LE(2, 4); b.writeUInt32LE(b.length, 8);
+  b.writeUInt32LE(b.length - 20, 12); b.writeUInt32LE(0x4e4f534a, 16); b.write(json, 20);
+  return b;
+};
+const rigJson = () => JSON.parse(fixture().subarray(20).toString());
+const oneArmed = rigJson(); delete oneArmed.extensions.VRMC_vrm.humanoid.humanBones.leftLowerArm;
+const flat = rigJson(); delete flat.extensions; delete flat.extensionsUsed;
+const library = new Map<string, Uint8Array>([["body.vrm", fixture()], ["one-armed.vrm", glb(oneArmed)],
+  ["flat.vrm", glb(flat)], ["idle.vrma", postureFixture("idle")]]);
 
 // A stand-in world server: just the routes these tools read.
 let roster: { name: string; path: string }[] = [{ name: "aria", path: "avatars/aria.vrm" }, { name: "bo", path: "avatars/bo.vrm" }];
@@ -17,13 +36,30 @@ const world = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
   const u = new URL(req.url);
   if (u.pathname === "/avatars") return Response.json(roster);
   if (u.pathname === "/library-models") return Response.json([]);
-  if (u.pathname === "/snap") return new Response('no renderer is currently serving world "w"', { status: 503 });
+  if (u.pathname === "/snap") {
+    // the broker's answers (server/snapshots.ts), by the renderer asked for and the body followed
+    const renderer = u.searchParams.get("renderer"), follow = u.searchParams.get("follow");
+    const [said, status] = renderer === "unreal" ? ['no unreal renderer is currently serving world "w"', 503]
+      : renderer !== "auto" && renderer !== "browser" ? ["renderer must be auto, unreal, or browser", 400]
+      : follow === "gone" ? ['"gone" is not present in "w"', 404]
+      : follow === "busy" ? ["renderers busy; retry in a few seconds", 429]
+      : follow === "slow" ? ["renderer timed out", 504]
+      : follow === "proxied" ? ["<html>\n  <h1>502 Bad Gateway</h1>\n</html>", 502]   // a proxy in front of the server
+      : ['no renderer is currently serving world "w"', 503];
+    return new Response(said as string, { status: status as number });
+  }
   if (u.pathname === "/worlds") return new Response("broken", { status: 500 });
   if (u.pathname === "/geom") return u.searchParams.get("id") === "err"
-    ? Response.json({ error: "no geometry for that id" }, { status: 404 })
+    ? Response.json({ error: 'no entity "err" in w' }, { status: 404 })
     : new Response("not json");
+  if (u.pathname === "/animations") return Response.json([{ name: "idle", path: "idle.vrma" }]);
+  if (u.pathname.startsWith("/library/")) {
+    const bytes = library.get(decodeURIComponent(u.pathname.slice("/library/".length)));
+    return bytes ? new Response(bytes) : new Response("no", { status: 404 });
+  }
   return new Response("no", { status: 404 });
 } });
+const worldBase = `http://127.0.0.1:${world.port}`;
 const gone = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("") });
 const goneBase = `http://127.0.0.1:${gone.port}`;
 gone.stop(true);
@@ -87,16 +123,34 @@ try {
   check("travel on a single-world door says the door fronts one world, which its operator chooses",
     single.isError === true && said(single) === "travel isn't available on this door: it fronts a single world, so you stayed where you are; its operator chooses that world (WORLD_NAME)", said(single));
   const snap = said(await snapshotTool(agent));
-  check("a snapshot the server refused quotes its answer and status",
-    snap === `snapshot: no picture was taken; the world server answered "no renderer is currently serving world "w"" (503), so try again in a while`, snap);
+  check("a snapshot the server refused gives its status and its answer, with no quotes nested in ours",
+    snap === `snapshot: no picture was taken; the world server answered 503 (no renderer is currently serving world "w"), so try again in a while`, snap);
+  const unrealOnly = said(await snapshotTool(agent, "first", "unreal"));
+  check("...an Unreal-only one with none there says auto or browser can get one",
+    unrealOnly === `snapshot: no picture was taken; the world server answered 503 (no unreal renderer is currently serving world "w"), so ask for renderer "auto" or "browser" instead, since the world can send a browser renderer for those`, unrealOnly);
+  const badRenderer = said(await snapshotTool(agent, "first", "Unreal"));
+  check("...a renderer the server refuses says the same arguments won't change that",
+    badRenderer === "snapshot: no picture was taken; the world server answered 400 (renderer must be auto, unreal, or browser), so calling again with the same arguments won't change that", badRenderer);
+  const away = said(await snapshotTool({ ...agent, name: "gone" }));
+  check("...a body that isn't in the world says calling again works once that changes",
+    away === `snapshot: no picture was taken; the world server answered 404 ("gone" is not present in "w"), so calling again works only once that changes`, away);
+  const busy = said(await snapshotTool({ ...agent, name: "busy" }));
+  check("...busy renderers say a few seconds",
+    busy === "snapshot: no picture was taken; the world server answered 429 (renderers busy; retry in a few seconds), so try again in a few seconds", busy);
+  const slow = said(await snapshotTool({ ...agent, name: "slow" }));
+  check("...a renderer that timed out says a while",
+    slow === "snapshot: no picture was taken; the world server answered 504 (renderer timed out), so try again in a while", slow);
+  const proxied = said(await snapshotTool({ ...agent, name: "proxied" }));
+  check("...and an answer over several lines reads as one",
+    proxied === "snapshot: no picture was taken; the world server answered 502 (<html> <h1>502 Bad Gateway</h1> </html>), so try again in a while", proxied);
   const worldsDown = said(await call("worlds"));
   check("worlds names the server's status", /^worlds: the world server answered 500, so the list isn't known/.test(worldsDown), worldsDown);
   const notGeometry = said(await call("measure", { id: "x" }));
   check("measure says the server's answer wasn't geometry, with its status",
     notGeometry === "measure: the world server answered 200 with something that isn't geometry, so nothing was measured", notGeometry);
   const geomError = said(await call("measure", { id: "err" }));
-  check("measure quotes the server's error and status",
-    geomError === `measure: the world server answered "no geometry for that id" (404), so nothing was measured`, geomError);
+  check("measure gives the server's status and its error, with no quotes nested in ours",
+    geomError === `measure: the world server answered 404 (no entity "err" in w), so nothing was measured`, geomError);
   agent.httpBase = goneBase;
   check("a snapshot from a server that's gone says no picture arrived",
     /^snapshot failed: no picture arrived from the world server \(.+\); try again/.test(said(await snapshotTool(agent))));
@@ -145,6 +199,145 @@ try {
      console.log(r.content[0].text);`], { env: { ...process.env, EIDO_WHISPERS_ENABLED: "0" } });
   check("whispers turned off say so, and that calling again won't help",
     off.stdout.toString().trim() === "whispers are turned off on this door, so nothing was sent, and calling again won't change that", off.stdout.toString() + off.stderr.toString());
+
+  console.log("\nBODY_STATE");
+  const reader = new BodyStateReader(worldBase);
+  const standing = (extra: Record<string, unknown> = {}) => ({ p: [0, 0, 0], yaw: 0, speed: 0, clip: "idle", ...extra });
+  const seen = (who: string, avatar: string, pose: unknown, extra: Record<string, unknown> = {}): any =>
+    ({ who, avatar, generation: 1, self: false, connected: true, receivedAt: Date.now(), source: "unknown", pose, ...extra });
+  const scene = (...bodies: any[]) => (id: string) => bodies.find((b) => b.who === id) ?? null;
+  const ask = async (who: string, detail: unknown, observe: (id: string) => any, points?: unknown, windowMs: unknown = 0, r = reader): Promise<any> =>
+    r.readWindow(who, detail as string, points, windowMs, observe);
+  const probe = scene(seen("probe", "body.vrm", standing()));
+  check("window_ms out of range shows what was sent",
+    (await ask("probe", "summary", probe, undefined, "1000")).error === `window_ms must be a whole number of milliseconds from 0 to 5000, so nothing was read; you sent "1000"`);
+  const detailRefusal = `detail must be summary, bones, contacts or all, so nothing was read; you sent "everything"`;
+  check("a detail it doesn't know shows what was sent, read once", (await ask("probe", "everything", probe)).error === detailRefusal);
+  check("...and over a window", (await ask("probe", "everything", probe, undefined, 100)).error === detailRefusal);
+  const pointsRefusal = "points must be a list of contact point names, as availablePoints has them, so nothing was read; ";
+  const n = Object.keys(CONTACT_POINTS).length;
+  check("points that aren't a list say what came", (await ask("probe", "contacts", probe, "hand_l")).error === pointsRefusal + 'you sent "hand_l"');
+  const misnamed = await ask("probe", "contacts", probe, ["hand_l", "elbow_x"]);
+  check("points names the entry that isn't a contact point, beside the names there are",
+    misnamed.error === pointsRefusal + '"elbow_x" isn\'t one' && misnamed.availablePoints?.length === n, misnamed.error);
+  check("...and a list longer than there are points says so",
+    (await ask("probe", "contacts", probe, Array(n + 1).fill("hand_l"))).error === pointsRefusal + `it can name at most ${n}, and you sent ${n + 1}`);
+  check("someone who isn't here is named, with where to look",
+    (await ask("ghost", "summary", probe)).error === `nobody called "ghost" is here, so nothing was read; look lists who is present, and leaving who out reads your own body`);
+  check("a body with no presence sample yet says calling again can work",
+    (await ask("probe", "summary", scene(seen("probe", "body.vrm", null)))).error === "no presence sample has arrived for this body yet, so nothing of it was read; calling again in a moment can work");
+  check("a position that isn't finite says it's their client's to mend",
+    (await ask("probe", "summary", scene(seen("probe", "body.vrm", standing({ p: [NaN, 0, 0] }))))).error
+      === "this body's published position or facing isn't a finite number, so nothing of it was read; it's in what its client publishes, so nothing you send changes it");
+  check("...and so does a pose that isn't a map of bones, on someone else's body",
+    (await ask("probe", "bones", scene(seen("probe", "body.vrm", standing({ pose: "kneel" }))))).error
+      === "this body's published pose isn't a map of bones, so nothing of it was read; it's in what its client publishes, so nothing you send changes it");
+  check("...but on your own body a position isn't sent anyone's way",
+    (await ask("probe", "summary", scene(seen("probe", "body.vrm", standing({ p: [NaN, 0, 0] }), { self: true })))).error
+      === "your published position or facing isn't a finite number, so nothing of your body was read");
+  const kneeling = await ask("probe", "contacts", scene(seen("probe", "body.vrm", standing({ clip: "kneel" }))));
+  check("a posture it doesn't evaluate is named, beside the ones it does",
+    /^probe's joints and contacts weren't read: the posture "kneel" isn't one body_state evaluates \(it evaluates idle, .*sitchair, swim, tread, and ragdoll with published bones\)$/.test(kneeling.error)
+      && kneeling.geometry?.reason === "posture_not_evaluated", kneeling.error);
+  const downloadFailed = `the avatar's model couldn't be downloaded (the world server answered 404 for "missing.vrm")`;
+  const missing = await ask("probe", "contacts", scene(seen("probe", "missing.vrm", standing())));
+  check("a model that won't download says so, not that the posture isn't evaluated",
+    missing.error === `probe's joints and contacts weren't read: ${downloadFailed}` && missing.detail === downloadFailed
+      && missing.geometry?.reason === "posture_not_evaluated" && missing.posture === "idle", missing.error);
+  const limpMissing = await ask("probe", "contacts", scene(seen("probe", "missing.vrm", standing({ clip: "ragdoll", pose: { hips: [0, 0, 0, 1] } }))));
+  check("...and a limp body's says it too, as an error",
+    limpMissing.error === `probe's joints and contacts weren't read: ${downloadFailed}` && limpMissing.geometry?.error === downloadFailed, JSON.stringify(limpMissing.error ?? null));
+  const noHumanoid = await ask("probe", "contacts", scene(seen("probe", "flat.vrm", standing(), { self: true })));
+  check("a model with no humanoid skeleton says calling again won't change that, of your own body",
+    noHumanoid.error === "your joints and contacts weren't read: the avatar's model has no humanoid skeleton, so calling again won't change that", noHumanoid.error);
+  check("a body whose avatar the world hasn't named says so",
+    (await ask("probe", "contacts", scene(seen("probe", "", standing())))).error === "probe's joints and contacts weren't read: the world hasn't said which avatar this body wears");
+  let turning = seen("turning", "body.vrm", standing());
+  // read() takes its first observation before its first await, and its skeleton loads after this line runs
+  const turned = new BodyStateReader(worldBase).read("turning", "contacts", undefined, (id: string) => id === "turning" ? turning : null);
+  turning = { ...turning, pose: standing({ clip: "sit" }) };
+  const turnedError = (await turned).error;
+  check("a posture that changed while the skeleton loaded says calling again can get them",
+    turnedError === `turning's joints and contacts weren't read: the posture changed from "idle" to "sit" while the skeleton loaded, so calling again can get them`, turnedError);
+  const windowed: any = new BodyStateReader(worldBase);
+  let pacer = seen("pacer", "body.vrm", standing());
+  const oneRead = windowed.read.bind(windowed);
+  let reads = 0;
+  windowed.read = async (...args: any[]) => { const r = await oneRead(...args); if (++reads === 1) pacer = { ...pacer, generation: 2 }; return r; };
+  const cut = await windowed.readWindow("pacer", "summary", undefined, 300, (id: string) => id === "pacer" ? pacer : null);
+  check("a body that changed during the window says how far the measurement got",
+    cut.error === "the body changed during the window (a new avatar or model, or a rejoin), so the measurement stopped after 1 sample; reading again measures it as it is now", cut.error);
+  const reacher = (who: string, reach: unknown, extra: Record<string, unknown> = {}) => seen(who, "body.vrm", standing({ reach }), extra);
+  const facing = (who: string, avatar: string, extra: Record<string, unknown> = {}) => seen(who, avatar, standing({ p: [0, 0, 0.5], yaw: Math.PI, ...extra }));
+  const towardAbsent = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } } })));
+  check("a reach toward a body this door has no reading of says later reads check it",
+    towardAbsent.reachEvaluation?.rightHand?.why === "b's body has no current, evaluated reading on this door, so this reach can't be checked now; later reads check it again", JSON.stringify(towardAbsent.reachEvaluation));
+  check("...and the reading points to reachEvaluation",
+    towardAbsent.error === "some of a's held reaches couldn't be evaluated, so the joints and contacts here are incomplete; reachEvaluation says why for each limb", towardAbsent.error);
+  const towardForearm = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: "b", point: "forearm_l" } } }), facing("b", "one-armed.vrm")));
+  check("a point the target's rig lacks says this reach can't be solved, and where the points are",
+    towardForearm.reachEvaluation?.rightHand?.why === `b's rig lacks the bones forearm_l sits on, so this reach can't be solved; body_state {who: "b", detail: "contacts"} shows the points it has`, JSON.stringify(towardForearm.reachEvaluation));
+  const inFrame = await ask("a", "all", scene(reacher("a", { rightHand: { t: { p: [0, 1, 0.3], space: "b" } } }, { self: true }),
+    seen("b", "body.vrm", standing(), { receivedAt: Date.now() - 10_000 })));
+  check("a point in a stale body's frame says later reads place it",
+    inFrame.reachEvaluation?.rightHand?.why === "b's body has no current reading on this door, so a point in their frame can't be placed now; later reads place it again", JSON.stringify(inFrame.reachEvaluation));
+  check("...and reading your own body says clear_reach releases one",
+    inFrame.error === "some of your held reaches couldn't be evaluated, so the joints and contacts here are incomplete; reachEvaluation says why for each limb, and clear_reach releases one", inFrame.error);
+  const chainless = await ask("c", "all", scene(seen("c", "one-armed.vrm", standing({ reach: { leftHand: { t: { p: [0.3, 1.2, 0.3] } } } }))));
+  check("a limb the rig can't move says another limb may",
+    /^this body's rig has no measurable leftHand chain \(.+\), so the solver can't move this limb; another limb may have one$/.test(chainless.reachEvaluation?.leftHand?.why ?? ""), JSON.stringify(chainless.reachEvaluation));
+  const loop = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: "b", point: "hand_l" } } }),
+    facing("b", "body.vrm", { reach: { leftHand: { t: { who: "a", point: "hand_r" } } } })));
+  check("a loop of reaches keeps its code in body_state", loop.reachEvaluation?.rightHand?.why === "cyclic-reach", JSON.stringify(loop.reachEvaluation));
+  const rider: any = new WorldAgent({ name: "rider", world: "w" });
+  rider.selfObservedAt = Date.now();
+  rider.mounts.set("rider", { to: "nowhere", slot: "seat" });
+  const unseated = await rider.bodyState("rider");
+  check("your seat that can't be placed says standing gets you off it",
+    unseated.error === `nothing of your body was read, since your seat can't be placed: unknown id (not a thing, and not mounted); posture {kind: "stand"} gets you off it`, unseated.error);
+  rider.people.set("perch", { id: "perch", avatar: "body.vrm", pose: standing(), agent: false, observedAt: Date.now(), bodyGeneration: 1 });
+  rider.mounts.set("perch", { to: "nowhere", slot: "seat" });
+  const perched = await rider.bodyState("perch");
+  check("...and someone else's says only that nothing was read",
+    perched.error === "nothing of perch's body was read, since their seat can't be placed: unknown id (not a thing, and not mounted)", perched.error);
+  rider.close();
+
+  console.log("\nREACH");
+  check("reach with no target shows the forms",
+    said(await call("reach", {})) === "reach needs a target, so nothing was reached: point for a contact point on your own body, who and point for one on someone else's, or x, y and z as numbers for a point (space 'world' by default, 'self' for your own frame, or a participant id for theirs)");
+  const halfPoint = said(await call("reach", { x: "1", y: 2 }));
+  check("...and a point it couldn't use shows what came", /, or x, y and z as numbers for a point .*; you sent x "1", y 2, z nothing$/.test(halfPoint), halfPoint);
+  const pointless = said(await call("reach", { who: "bo" }));
+  check("reaching for someone without a point shows the call",
+    /^reaching for someone needs point too, the contact point on them, so nothing was reached: reach \{who: "bo", point: "shoulder_l"\}; the points are hand_l, /.test(pointless), pointless);
+  const elbow = said(await call("reach", { point: "elbow_x" }));
+  check("a contact point that isn't one is named, with the ones there are",
+    /^there's no contact point called "elbow_x", so nothing was reached; the points are hand_l, /.test(elbow), elbow);
+  const hand: any = new WorldAgent({ name: "hand", world: "w" });
+  hand.reachBodies.set(hand.avatar, null);   // its own model didn't load
+  check("an unknown limb is named, with the ones there are",
+    (await hand.reach("tentacle", { p: [0, 1, 0] })).text === `there's no limb called "tentacle", so nothing was reached; limb takes leftHand, rightHand, leftFoot or rightFoot`);
+  check("...and clear_reach says nothing was released",
+    hand.releaseReach("tentacle") === `there's no limb called "tentacle", so nothing was released; limb takes leftHand, rightHand, leftFoot or rightFoot`);
+  const unusable = (await hand.reach("rightHand", { who: "", point: "x" })).text;
+  check("a target reach can't use says nothing was reached, and shows both forms",
+    /^reach couldn't use that target, so nothing was reached: pass \{who, point\}/.test(unusable), unusable);
+  const own = (await hand.reach("rightHand", { who: "hand", point: "head_top" })).text;
+  check("a reach this door can't check says whose model didn't load: your own",
+    own === "right hand reaching toward your head_top — streamed, but unverified: your avatar's model couldn't be loaded on this door, so it can't check this reach", own);
+  hand.people.set("bo", { id: "bo", avatar: "bo.vrm", pose: standing({ p: [0, 0, 0.5] }) });
+  hand.reachBodies.set("bo.vrm", null);
+  const theirs = (await hand.reach("leftHand", { who: "bo", point: "shoulder_l" })).text;
+  check("...or someone else's",
+    theirs === "left hand reaching toward bo's shoulder_l — streamed, but unverified: bo's avatar's model couldn't be loaded on this door, so it can't check this reach", theirs);
+  const looped = { t: { who: "bo", point: "hand_l" } };
+  hand.joined = true;
+  hand.reachReading = { reaches: { rightHand: looped }, reachEvaluation: { rightHand: { ok: false, why: "cyclic-reach", reached: false } } };
+  const verdict = hand.solveReachEntry("rightHand", looped);
+  check("a loop of reaches is said in words in reach's reply",
+    verdict.err === "it depends on a loop of reaches (hands reaching for hands that reach back), so it can't be solved until a limb in the loop lets go", JSON.stringify(verdict));
+  hand.joined = false;
+  hand.close();
 
   console.log("\nTHE BODY");
   const bodies: any[] = [];

@@ -222,7 +222,18 @@ export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "au
     // as this identity: a members-only world's snap answers only its members
     const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}&renderer=${encodeURIComponent(renderer)}${extra}`,
       ag.agentToken ? { headers: { authorization: `Bearer ${ag.agentToken}` } } : undefined);
-    if (!r.ok) return { content: [{ type: "text", text: `snapshot: no picture was taken; the world server answered "${(await r.text()).slice(0, 200)}" (${r.status}), so try again in a while` }] };
+    if (!r.ok) {
+      // The server's text in parentheses, where its own quoted names can't
+      // nest in ours; the remedy is the status's (server/snapshots.ts).
+      const said = (await r.text()).slice(0, 200).replace(/\s+/g, " ").trim();
+      const remedy = r.status === 429 ? "try again in a few seconds"
+        // an Unreal-only request summons no roaming renderer; the others can
+        : r.status === 503 && renderer === "unreal" ? `ask for renderer "auto" or "browser" instead, since the world can send a browser renderer for those`
+        : r.status === 404 ? "calling again works only once that changes"
+        : r.status < 500 ? "calling again with the same arguments won't change that"
+        : "try again in a while";
+      return { content: [{ type: "text", text: `snapshot: no picture was taken; the world server answered ${r.status}${said ? ` (${said})` : ""}, so ${remedy}` }] };
+    }
     const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
     const label = r.headers.get("x-eidoverse-scene") === "world-projection"
       ? "Unreal server-world projection: models, structures, terrain and avatars; unsupported components and effects may be absent. This is a donor-rendered image, not authoritative state."
@@ -536,13 +547,15 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const hasName = a.who != null || a.point != null;
       const hasXYZ = typeof a.x === "number" && typeof a.y === "number" && typeof a.z === "number";
       if (!hasName && !hasXYZ) {
-        return text("reach needs a target: either `point` (a contact point on a body; add `who` for someone else's) or `x`,`y`,`z` (with optional `space`: 'world' default, 'self', or a participant id).");
+        // a point given as strings, or short a coordinate, isn't a target either: say what came
+        const sent = [a.x, a.y, a.z].some((v) => v !== undefined) ? `; you sent x ${shown(a.x)}, y ${shown(a.y)}, z ${shown(a.z)}` : "";
+        return text(`reach needs a target, so nothing was reached: point for a contact point on your own body, who and point for one on someone else's, or x, y and z as numbers for a point (space 'world' by default, 'self' for your own frame, or a participant id for theirs)${sent}`);
       }
       let target: Record<string, unknown>;
       if (hasName) {
-        if (a.point == null) return text("reaching for someone needs `point` too — which contact point on them: " + Object.keys(CONTACT_POINTS).join(", "));
+        if (a.point == null) return text(`reaching for someone needs point too, the contact point on them, so nothing was reached: reach {who: ${shown(String(a.who))}, point: "shoulder_l"}; the points are ${Object.keys(CONTACT_POINTS).join(", ")}`);
         const pt = canonicalPoint(String(a.point));
-        if (!pt) return text(`unknown contact point "${a.point}" — one of: ${Object.keys(CONTACT_POINTS).join(", ")}`);
+        if (!pt) return text(`there's no contact point called ${shown(a.point)}, so nothing was reached; the points are ${Object.keys(CONTACT_POINTS).join(", ")}`);
         target = { who: String(a.who ?? ag.name), point: pt, ...(typeof a.standoff === "number" ? { standoff: a.standoff } : {}) };
       } else {
         target = { p: [a.x, a.y, a.z], ...(typeof a.space === "string" ? { space: a.space } : {}) };
@@ -785,7 +798,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       try { r = await fetch(`${base}/geom?${q}`, ag.agentToken ? { headers: { authorization: `Bearer ${ag.agentToken}` } } : undefined); } catch (e) { return text(`measure: the world server didn't answer (${String(e)}), so nothing was measured; try again in a moment`); }
       let d: any;
       try { d = await r.json(); } catch { return text(`measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); }
-      if (d.error) return text(`measure: the world server answered "${d.error}" (${r.status}), so nothing was measured`);
+      if (d.error) return text(`measure: the world server answered ${r.status} (${d.error}), so nothing was measured`);
       const g = d.geometry ?? d;
       if (!g?.bbox) return text("no geometry available for that (parsing offline, or a light)");
       const L: string[] = [];

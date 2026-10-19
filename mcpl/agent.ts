@@ -44,6 +44,10 @@ const worldYaw = (y: number) => Math.PI / 2 - y;
 const intYaw = (y: number) => Math.PI / 2 - y;
 import { canonicalLimb, normalizeReachTarget, normalizeReachBag, describeTarget, diffReach,
   TOUCH_GAP, sameReach } from "../shared/reachwire.js";
+import { shown } from "../shared/shown.js";
+/** reach and clear_reach refuse a limb in the same words. */
+const unknownLimb = (raw: unknown, done: string) =>
+  `there's no limb called ${shown(raw)}, so nothing was ${done}; limb takes leftHand, rightHand, leftFoot or rightFoot`;
 import { decideSupportClass, CERT_MAX_WORLD } from "../client/lib/supportclass.js";
 import { isFiniteVec3 } from "./shape.ts";
 // The same pure sky fold + weather derivation the browser client and the
@@ -1190,7 +1194,10 @@ export class WorldAgent {
     const mount = this.mounts.get(observation.who);
     if (!mount || !observation.pose) return observation;
     const effective = this.eff(observation.who, this.serverNow());
-    if (!effective.ok) return { ...observation, error: `body mount cannot be composed: ${effective.why}` };
+    // Standing is getting off the seat (setPosture), the one way out a reader has.
+    if (!effective.ok) return { ...observation, error: observation.self
+      ? `nothing of your body was read, since your seat can't be placed: ${effective.why}; posture {kind: "stand"} gets you off it`
+      : `nothing of ${observation.who}'s body was read, since their seat can't be placed: ${effective.why}` };
     const socket = mount.slot ? this.entities.get(mount.to)?.comp?.sockets?.[mount.slot] : null;
     const clip = socket?.pose ?? "sitchair";
     return { ...observation, frame: { source: "mount", to: mount.to, seat: effective.seat ?? null },
@@ -3920,7 +3927,7 @@ export class WorldAgent {
     const path = self ? this.avatar : (person!.avatar || WorldAgent.DEFAULT_BODY);
     const body = this.reachBodySync(path);
     if (body === undefined) return undefined;
-    if (!body) return { err: `${t.who}'s skeleton could not be read` };
+    if (!body) return { err: `${self ? "your" : `${t.who}'s`} avatar's model couldn't be loaded on this door, so it can't check this reach` };
     // A limp body draws no raw layer, so its contacts have none either.
     if (self) body.poseAt([this.pos.x, this.pos.y, this.pos.z], this.yaw, this.heldPose ?? null, 1, this.clip !== "ragdoll");
     else {
@@ -3943,7 +3950,10 @@ export class WorldAgent {
       const reading = this.reachReading;
       if (!reading || !sameReach(reading.reaches?.[limb], entry)) return { state: "pending" };
       const solved = reading.reachEvaluation?.[limb];
-      if (!solved?.ok) return { state: "err", err: solved?.why ?? reading.error ?? "body pose could not be evaluated" };
+      // cyclic-reach is body_state's code for the loop (docs/body-state.md); the reply says it in words.
+      if (!solved?.ok) return { state: "err", err: solved?.why === "cyclic-reach"
+        ? "it depends on a loop of reaches (hands reaching for hands that reach back), so it can't be solved until a limb in the loop lets go"
+        : solved?.why ?? reading.error ?? "body pose could not be evaluated" };
       const dist = solved.target && solved.shoulder ? Math.hypot(...solved.target.map((v: number, i: number) => v - solved.shoulder[i])) : null;
       return { state: "ok", reached: solved.reached, gap: solved.gap, bound: solved.bound,
         dist, arm: reading.body?.armLength(limb) ?? null, palmResidual: solved.palmResidual };
@@ -3968,10 +3978,10 @@ export class WorldAgent {
    *  either way; the reply says what the arm actually achieves. */
   async reach(limbRaw: string | undefined, targetRaw: unknown, opts: { palm?: boolean } = {}): Promise<{ ok: boolean; text: string }> {
     const limb = canonicalLimb(limbRaw ?? "rightHand");
-    if (!limb) return { ok: false, text: `unknown limb "${limbRaw}" — leftHand, rightHand, leftFoot or rightFoot` };
+    if (!limb) return { ok: false, text: unknownLimb(limbRaw, "reached") };
     const t = normalizeReachTarget(targetRaw);
     if (!t) {
-      return { ok: false, text: "unusable target — pass {who, point} for a named contact point on a body, or {x, y, z} with optional space ('world' by default, 'self' for your own frame, or a participant id for theirs)" };
+      return { ok: false, text: "reach couldn't use that target, so nothing was reached: pass {who, point} for a named contact point on a body (who a participant id from look), or {x, y, z} with an optional space ('world' by default, 'self' for your own frame, or a participant id for theirs)" };
     }
     // load the skeletons this reach needs BEFORE solving, so the reply is a
     // real verdict rather than a shrug
@@ -4015,7 +4025,7 @@ export class WorldAgent {
       return n ? "let go — all reaches released" : "you weren't reaching for anything";
     }
     const limb = canonicalLimb(limbRaw);
-    if (!limb) return `unknown limb "${limbRaw}" — leftHand, rightHand, leftFoot or rightFoot`;
+    if (!limb) return unknownLimb(limbRaw, "released");
     return this.reaches.delete(limb)
       ? `${WorldAgent.LIMB_WORD[limb]} released`
       : `your ${WorldAgent.LIMB_WORD[limb]} wasn't reaching for anything`;

@@ -135,7 +135,7 @@ async function viaTool(args: Record<string, unknown>) {
   const before = asked.length;
   const r = await rpc("tools/call", { name: "snapshot", arguments: args });
   const note = r.result?.content?.find((c: any) => c.type === "text")?.text as string | undefined;
-  if (note?.includes("(429)")) check(BUSY, false, note);
+  if (/answered 429\b/.test(note ?? "")) check(BUSY, false, note);
   return { img: r.result?.content?.[0]?.type === "image", note, got: asked.length > before ? asked.at(-1) : undefined };
 }
 let t = await viaTool({});
