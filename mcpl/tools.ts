@@ -249,8 +249,9 @@ const act = (r: ActResult) => (r.ok ? text(r.text) : fail(r.text));
 /** A text argument as sent: a number goes as its digits, as it always has, and anything else that isn't
  *  a string reads as none. */
 const textArg = (v: unknown) => typeof v === "string" ? v : typeof v === "number" ? String(v) : null;
-/** The most speech the door sends in one call, as it always has: 4000 UTF-16 units. The world cuts a whisper at its
- *  own EW_WHISPER_LEN, 4000 unless its operator sets another. A cut never ends in half of a surrogate pair. */
+/** The most speech say and whisper send in one call, as they always have: 4000 UTF-16 units (world_verb's raw say
+ *  doesn't come through here). The world cuts a whisper at its own EW_WHISPER_LEN, 4000 unless its operator sets
+ *  another. A cut never ends in half of a surrogate pair. */
 const SPEECH_MAX = 4000;
 const cutSpeech = (t: string) => {
   if (t.length <= SPEECH_MAX) return t;
@@ -542,9 +543,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
       }
       const sent = cutSpeech(said);
       ag.whisper(to, sent);
-      // The world holds at most EW_WHISPER_HOLD (20 by default) for each person away, dropping the oldest past that.
+      // The world holds at most EW_WHISPER_HOLD (20 by default) for each person away, dropping the oldest past that,
+      // and holds them in memory, so a restart drops them.
       const away = ag.joined && to !== ag.name && !ag.people.has(to)
-        ? `; they aren't here, so the world holds it for when they next arrive. It keeps each person's latest 20 by default, so an older one can be dropped` : "";
+        ? `; they aren't here, so the world holds it for when they next arrive, unless it restarts first. It keeps each person's latest 20 by default, so an older one can be dropped` : "";
       return text(`whispered to ${to}${away}${sent.length < said.length ? ` — only the first ${[...sent].length} characters were sent; whisper the rest in another call` : ""}`);
 
   },
@@ -976,7 +978,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       ag.sendMod("world-access");
       // Wait for THE LISTING (or a refusal): a change is also echoed as a
       // `mod` line ("…bound to <subject>"), which must not be mistaken for it.
-      // The echo arrives first; the listing reports the binding too.
+      // The echo arrives first. The listing says whether each entry is bound, and to what kind of principal, but
+      // not to whom.
       // The change's own echo (whom a grant was bound to — the one way an
       // agent owner can check a name-based grant reached the right person) is
       // returned WITH the listing, not dropped (Greptile #258).

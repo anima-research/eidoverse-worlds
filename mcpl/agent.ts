@@ -2889,7 +2889,12 @@ export class WorldAgent {
     const bones = this.bodyBoneNames;
     if (bones == null && fold) {
       // Wings already folded are what a fold asks for, bones known or not.
-      if (this.flight ? this.flight.wings === "FOLDED" : this.wingsFolded) return done(`wings are already folded`);
+      if (this.flight ? this.flight.wings === "FOLDED" : this.wingsFolded) {
+        // As below: wings found as asked leave the posture so too, and the answer says when that changed it.
+        const changed = !this.wingsFolded;
+        this.wingsFolded = true;
+        return done(changed ? `wings are already folded; the posture now shows them folded` : `wings are already folded`);
+      }
       return refused(`wings unchanged — ${BONES_NOT_KNOWN}; calling again reads the model again`);
     }
     const body = inspectBody(bones ?? []);
@@ -2915,10 +2920,11 @@ export class WorldAgent {
       if (ref) {
         const text = `wings stay as they are — ${ref.reason}`;
         if (before !== (fold ? "FOLDED" : "OPEN")) return refused(text);
-        // The wings are as asked, so the posture says so too. A fold before a down keeps wingsFolded set
-        // while recovery opens the flight's wings, and take_off reads wingsFolded.
+        // The wings are as asked, so the posture says so too, and the answer says when that changed it. A fold
+        // before a down keeps wingsFolded set while recovery opens the flight's wings, and take_off reads wingsFolded.
+        const changed = this.wingsFolded !== fold;
         this.wingsFolded = fold;
-        return done(text);
+        return done(changed ? `${text}; ${fold ? "the posture now shows them folded" : "the folded-wing posture is released"}` : text);
       }
     } else if (this.wingsFolded === fold) {
       return done(fold ? `wings are already folded`

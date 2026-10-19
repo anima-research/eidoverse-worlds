@@ -153,6 +153,16 @@ await relaunch(); ag.flight.stamina = 0.5; ag.flight.pos.y = 2;
 r = await midway(ag, call('climb_to', { altitude: 10 }), () => { ag.flight.phase = 'LANDED'; ag.flight.pos.y = 2.5; });
 check('a winded climb that comes down where its pool ran out is failed, as below the height asked',
   failed(r) && /^came down on the ground at 2\.5m, below the 10\.0m you asked for$/.test(said(r)), said(r));
+// Between its reach and the height asked, it's below what was asked, though above its reach.
+await relaunch(); ag.flight.stamina = 0.5; ag.flight.pos.y = 2;
+r = await midway(ag, call('climb_to', { altitude: 10 }), () => { ag.flight.phase = 'LANDED'; ag.flight.pos.y = 5; });
+check('a winded climb that comes down between its reach and the height asked is failed, as below the height asked',
+  failed(r) && /^came down on the ground at 5\.0m, below the 10\.0m you asked for$/.test(said(r)), said(r));
+// A climb asked above the ceiling that comes down at the ceiling didn't reach the height asked either.
+await relaunch(); ag.flight.stamina = 1e6; ag.flight.pos.y = 2;
+r = await midway(ag, call('climb_to', { altitude: ceiling + 50 }), () => { ag.flight.phase = 'LANDED'; ag.flight.pos.y = ceiling; });
+check('a climb asked above the ceiling that comes down at the ceiling is failed, as below the height asked',
+  failed(r) && new RegExp(`^came down on the ground at ${ceiling.toFixed(1)}m, below the ${(ceiling + 50).toFixed(1)}m you asked for$`).test(said(r)), said(r));
 // The window is the tick's 0.4 m: just inside it is the height asked, just outside it isn't.
 for (const [y, done] of [[5.39, true], [5.41, false]] as const) {
   await relaunch(); ag.flight.stamina = 1e6; ag.flight.pos.y = 30;
@@ -163,7 +173,7 @@ for (const [y, done] of [[5.39, true], [5.41, false]] as const) {
 // The tick clears a climb that reaches its height; a landing in that same tick is still read as a landing.
 await relaunch(); ag.flight.stamina = 1e6; ag.flight.pos.y = 30;
 r = await midway(ag, call('climb_to', { altitude: 5 }), () => { ag.flight.phase = 'LANDED'; ag.flight.pos.y = 5.1; ag.flight.climbTo = null; });
-check('a descent that lands as the tick clears its climb is read as landed, not as there',
+check('a descent that comes down at its height as the tick clears its climb is read as touched down, not as there',
   ok(r) && said(r) === 'came down on the ground at 5.1m, the height you asked for — take_off to fly again', said(r));
 // The tick ends a climb met on the ground where the body stands, without lifting it to the climb's height.
 await relaunch();
@@ -332,8 +342,8 @@ check('a second recovery while the body sits up is done, as already recovering',
 // An unfold that finds the wings open is done, and clears the posture, or take_off would refuse wings unfold can't open.
 await relaunch(); ag.flight.phase = 'GROUND'; ag.flight.wings = 'OPEN'; ag.wingsFolded = true;
 r = await call('unfold_wings');
-check('an unfold that finds the flight\'s wings open is done, and clears the folded posture',
-  ok(r) && /already open$/.test(said(r)) && ag.wingsFolded === false, `${said(r)}; wingsFolded ${ag.wingsFolded}`);
+check('an unfold that finds the flight\'s wings open is done, and clears the folded posture, saying so',
+  ok(r) && said(r) === 'wings stay as they are — already open; the folded-wing posture is released' && ag.wingsFolded === false, `${said(r)}; wingsFolded ${ag.wingsFolded}`);
 r = await call('take_off');
 check('...so take_off then flies', ok(r) && /^took off/.test(said(r)), said(r));
 // The other way round: a fold that finds the flight's wings folded is done, and sets the posture to match.
@@ -342,7 +352,7 @@ ag.wingsFolded = false;
 await relaunch(); ag.flight.phase = 'GROUND'; ag.flight.wings = 'FOLDED';
 r = await call('fold_wings');
 check('a fold that finds the flight\'s wings folded, with the rig known, is done, and sets the folded posture',
-  ok(r) && /already folded$/.test(said(r)) && ag.wingsFolded === true, `${said(r)}; wingsFolded ${ag.wingsFolded}`);
+  ok(r) && said(r) === 'wings stay as they are — already folded; the posture now shows them folded' && ag.wingsFolded === true, `${said(r)}; wingsFolded ${ag.wingsFolded}`);
 ag.wingsFolded = false; ag.flight = null;
 
 console.log('\nBONES NOT KNOWN');
@@ -369,8 +379,9 @@ r = await callU('fold_wings');
 check('a fold in the air while the bones are unknown is failed', failed(r) && /^wings unchanged — /.test(said(r)), said(r));
 unread.flight = { wings: 'FOLDED', phase: 'PILOT' };
 r = await callU('fold_wings');
-check('a fold in the air of wings the flight holds folded, while the bones are unknown, is done', ok(r) && said(r) === 'wings are already folded', said(r));
-unread.flight = null;
+check('a fold in the air of wings the flight holds folded, while the bones are unknown, is done, and the posture follows, saying so',
+  ok(r) && said(r) === 'wings are already folded; the posture now shows them folded' && unread.wingsFolded === true, `${said(r)}; wingsFolded ${unread.wingsFolded}`);
+unread.flight = null; unread.wingsFolded = false;
 const wingless: any = new WorldAgent({ name: 'wingless', world: 'is-error-bench' });
 wingless.bodyBoneNames = ['Hip', 'Spine02', 'Head'];
 wingless.loadBodyBones = async () => wingless.bodyBoneNames;
@@ -649,7 +660,7 @@ check('...as is one whose text is a negative number past them', failed(r) && sai
 ag.joined = true;
 r = await call('whisper', { to: 'away-now', text: 'hi' });
 check('a whisper to someone not here says the world holds it for them, and how many it keeps',
-  ok(r) && said(r) === "whispered to away-now; they aren't here, so the world holds it for when they next arrive. It keeps each person's latest 20 by default, so an older one can be dropped", said(r));
+  ok(r) && said(r) === "whispered to away-now; they aren't here, so the world holds it for when they next arrive, unless it restarts first. It keeps each person's latest 20 by default, so an older one can be dropped", said(r));
 ag.people.set('someone', { id: 'someone', avatar: 'a.vrm', pose: null, agent: false, observedAt: null });
 r = await call('whisper', { to: 'someone', text: 'hi' });
 check('...and one to someone here says nothing of holding it', ok(r) && said(r) === 'whispered to someone', said(r));
@@ -749,7 +760,10 @@ r = await call('world_access', { action: 'show' });
 check('a world_access listing is done', ok(r) && said(r) === 'who can come into is-error-bench: its members', said(r));
 // A change's echo, whom a grant was bound to, comes back with the listing, and without it.
 const ECHO = 'someone is bound to aid:someone-1';
+// An echo from before the call is another call's, and stays out of this one's answer.
+const EARLIER = { ts: Date.now() - 5000, text: 'someone-else is bound to aid:someone-else-1' };
 freshReplies();
+ag.recentMods.push(EARLIER);
 ag.sendMod = () => {
   const at = Date.now();
   ag.recentMods.push({ ts: at, text: ECHO });
@@ -760,6 +774,7 @@ r = await call('world_access', { action: 'grant', id: 'someone', role: 'visitor'
 check('a world_access change answers with its echo and the listing',
   ok(r) && said(r) === `${ECHO}\nwho can come into is-error-bench: its members, and someone as a visitor`, said(r));
 freshReplies();
+ag.recentMods.push(EARLIER);
 ag.sendMod = () => { ag.lastMod = { ts: Date.now(), text: ECHO }; ag.recentMods.push(ag.lastMod); };
 r = await call('world_access', { action: 'grant', id: 'someone', role: 'visitor' });
 check('a world_access change whose echo came and listing didn\'t is not failed, and gives the echo with the sentence',
