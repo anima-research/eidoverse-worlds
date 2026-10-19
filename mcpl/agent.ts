@@ -1688,7 +1688,10 @@ export class WorldAgent {
     const now = this.entities.get(id);
     switch (what) {
       case "born":
-        if (live) this.noteBuild(actor, now?.pos);
+        // a thing made already burning (a child that carries its own emitter: one lit on its own, or the translator's
+        // particles:<name>) is lit in that instant, and narrates as lighting it, as a particles set would; otherwise a build
+        if (live && now?.particles != null) { const fx = this.eff(id, this.serverNow()); if (fx.ok) this.noteEmitter(actor, id, null, now.particles, fx.pos, ts); else { this.noteEffGap(id, fx.why); this.noteBuild(actor, now?.pos); } }
+        else if (live) this.noteBuild(actor, now?.pos);
         this.trackSupport(this.syncSupport(id));   // a placed thing is a thing bodies can rest on (#17)
         if (this.mounts.has(id)) this.dropSupport(id);   // …unless it rides a parent (it collides as the parent)
         break;
@@ -1697,7 +1700,9 @@ export class WorldAgent {
         this.trackSupport(this.syncSupport(id));   // support follows the thing it belongs to
         break;
       case "gone":
-        if (live) this.noteBuild(actor, was?.pos);
+        // …and removing a burning thing puts its emitter out
+        if (live && was?.particles != null) this.noteEmitter(actor, id, was.particles, null, was?.pos, ts);
+        else if (live) this.noteBuild(actor, was?.pos);
         this.dropSupport(id);
         break;
       case "parent":

@@ -173,42 +173,49 @@ const SMOKE = { effect: "smoke", at: [0, 0.25, 0] };
   check("other component types narrate nothing (scope fence)", events.length === 0);
 }
 
-// ---------------------------------------------------------------- C: several emitters per entity
+// ---------------------------------------------------------------- C: several emitters, a scaled one
+// Upstream #256 gave a v1 thing several emitters (`particles:<name>`). Here a thing carries one `particles`: emitters
+// that burn together are one effect document's emitters, and one lit and put out on its own is a child thing with its
+// own `particles` (the translator writes particles:<name> that way). Each reads and narrates on its own terms.
 {
-  // `particles:<name>` — a hearth's fire, smoke and sparks are three emitters,
-  // each read and narrated on its own terms.
-  const { ag, A, events, spawn } = rig();
-  const compK = (id: string, type: string, data: unknown, live = true, ts = T0) =>
-    A.applyEntry({ verb: "comp", args: { id, type, data }, ts, seq: 5, actor: "antra" }, live);
-  spawn("hearth", [2, 0, 0]);
-  compK("hearth", "particles", FIRE, false);
-  compK("hearth", "particles:smoke", { ...SMOKE, origin: [0, 0.8, 0], color: "#555566" }, false);
-  compK("hearth", "particles:candle", { preset: "fire", origin: [0.4, 0.9, 0], scale: 0.025 }, false);
+  const { ag, events, spawn, comp, door } = await rig();
+  await spawn("hearth", [2, 0, 0]);
+  await comp("hearth", FIRE, false);
+  const child = async (id: string, value: unknown, live = true) => {
+    const r = await door.act("create", { id, components: { transform: { pos: [0, 0, 0] }, parent: { to: "hearth" }, label: id.split("-")[1], particles: value } }, { who: "antra", at: T0, live });
+    if (!r.ok) throw new Error(`create ${id} refused: ${JSON.stringify(r.refused)}`);
+  };
+  await child("hearth-candle", { effect: "fire", at: [0.4, 0.9, 0], scale: 0.025 }, false);
   const out = ag.look();
-  const line = out.split("\n").find((l) => l.includes("[hearth]")) ?? "";
-  check("look() names every emitter the entity carries, default first",
-    /emitting fire \(particles;[^)]*\)[^\n]*emitting smoke \(particles:smoke;/.test(line), line);
-  check("...a scaled one says how small", line.includes("(particles:candle;") && line.includes("scale 0.025"));
-  check("...a tinted one names its colour", line.includes("tinted #555566"));
-  check("...and none leaks into `components:`", !/components:[^\n]*particles/.test(line));
+  // a thing's handle may be short ([hearth-]); the child is found by the label it was given
+  const line = (name: string) => out.split("\n").find((l) => name === "hearth" ? l.includes("[hearth] ") : l.includes(`"${name}"`)) ?? "";
+  check("look() reads the hearth's own emitter and its child's, each on its own thing",
+    /emitting fire \(particles;/.test(line("hearth")) && /emitting fire \(particles;[^)]*scale 0\.025/.test(line("candle")) && line("candle").includes("mounted on hearth"), `${line("hearth")} | ${line("candle")}`);
+  check("...a scaled one says how small, and one at its own size claims no scale",
+    line("candle").includes("scale 0.025") && !line("hearth").includes("scale"));
 
-  compK("hearth", "particles:sparks", { preset: "sparks" });
-  check("lighting a named emitter is heard once, under its own name",
-    events.length === 1 && events[0].text.includes("lights sparks") && events[0].text.endsWith("(particles:sparks)"),
-    events.map((e) => e.text).join(" | "));
-  compK("hearth", "particles", { ...FIRE, size: 0.6 });
-  check("...while a change to ANOTHER emitter on the same entity is its own news, not folded into the first",
-    events.length === 2 && events[1].text.includes("retunes the fire") && events[1].text.endsWith("(particles)"));
-  compK("hearth", "particles:sparks", { preset: "sparks", count: 30 });
-  check("a burst on one emitter folds inside its own window", events.length === 2);
+  await child("hearth-sparks", { effect: "sparks" });
+  check("lighting a child's emitter is heard once, under its own thing",
+    events.length === 1 && events[0].text.includes("lights sparks on [hearth-sparks]"), events.map((e) => e.text).join(" | "));
+  await comp("hearth", { ...FIRE, params: { ...FIRE.params, size: 0.6 } });
+  check("...while a change to the hearth's own emitter is its own news, not folded into the child's",
+    events.length === 2 && events[1].text.includes("retunes the fire on [hearth]"), events.map((e) => e.text).join(" | "));
+  await comp("hearth-sparks", { effect: "sparks", params: { count: 30 } });
+  check("a burst on one emitter folds inside its own window", events.length === 2, events.map((e) => e.text).join(" | "));
   await sleep(WINDOW + 80);
   check("...and closes with one net line for that emitter",
-    events.length === 3 && events[2].text.includes("retunes the sparks") && events[2].text.endsWith("(particles:sparks)"),
-    events.map((e) => e.text).join(" | "));
+    events.length === 3 && events[2].text.includes("retunes the sparks on [hearth-sparks]"), events.map((e) => e.text).join(" | "));
 
-  compK("hearth", "particles:two words", { preset: "fire" });
-  check("a malformed emitter key is an ordinary component: no event, read as a component",
-    events.length === 3 && ag.look().includes("components: particles:two words"));
+  await sleep(WINDOW + 80);   // past the window the net line reopened, so the ending speaks at once
+  const gone = await door.act("delete", { id: "hearth-sparks" }, { who: "antra", at: T0, live: true });
+  check("removing the child puts its emitter out, heard once under its own thing, the hearth still burning",
+    gone.ok && events.length === 4 && events[3].text.includes("puts out the sparks on [hearth-sparks]") && /\[hearth\] [^\n]*emitting fire/.test(ag.look()),
+    JSON.stringify(gone.refused ?? events.map((e) => e.text)));
+
+  // the first protocol's keyed spelling is not this protocol's: refused, saying how to write it
+  const keyed = await door.act("set", { id: "hearth", component: "particles:smoke", value: { effect: "smoke" } }, { who: "antra", at: T0, live: false });
+  check("particles:<name> is refused (particles isn't keyed), naming the spelling it takes",
+    !keyed.ok && keyed.refused?.code === "shape" && /isn't keyed; write 'particles'/.test(keyed.refused.reason), JSON.stringify(keyed.refused));
   await sleep(WINDOW + 80);
 }
 
