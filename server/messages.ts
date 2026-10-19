@@ -25,6 +25,8 @@ import { worlds, forkWorld, type World, type Client } from "./world.ts";
 import { snapshots } from "./snapshots.ts";
 import { renderScene } from "./render-scene.ts";
 import { globalBans, saveGlobalBans } from "./moderation.ts";
+import { foundingRefusal, noteFounding, whoOf, principalOf, searchDirectory } from "./access.ts";
+import { wildcardRoleIn, entryRestrictedIn } from "../shared/rightsfold.js";
 
 // ---- whispers: held-in-memory machinery (moved with its only writers) ------
 // join's held-whisper delivery imports these back — one-way, like
@@ -522,11 +524,20 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       return;
     }
     const to = String(msg.to ?? "").slice(0, LIMITS.ID_LEN);
+    // A copy is a new world: it counts against the same daily founding cap
+    // as stepping into a fresh name (access.ts). Its roles — the member list
+    // of a closed world included — ride the copied log.
+    const capWhy = foundingRefusal(whoOf(c));
+    if (capWhy) {
+      ws.send(JSON.stringify({ type: "error", error: capWhy }));
+      return;
+    }
     const r = forkWorld(c.world, to);
     if (!r.ok) {
       ws.send(JSON.stringify({ type: "error", error: r.err }));
       return;
     }
+    noteFounding(whoOf(c));
     console.log(`[world:${c.world.name}] copied → "${to}" by ${c.id}`);
     ws.send(JSON.stringify({ type: "world-forked", from: c.world.name, to }));
   },
@@ -554,15 +565,107 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // Who owned it, before the log goes: a reset world must not become a
     // land-rush — the same owners hold the fresh one. (An ADMIN resetting
     // an OPEN world leaves it open: no owners existed, none are minted.)
-    const owners = Object.entries(w.state.roles ?? {})
-      .filter(([id, r2]) => id !== "*" && r2.role === "owner")
-      .map(([id]) => id);
+    const now2 = Date.now();
+    const roles = Object.entries(w.state.roles ?? {}) as [string, { role: string; sub?: string; gen?: boolean; fly?: boolean; until?: number }][];
+    const owners = roles.filter(([id, r2]) => id !== "*" && r2.role === "owner");
+    // …and a world that is CLOSED stays closed, with its members: erasing the
+    // content must not be the thing that opens a members-only world to
+    // everyone (the wildcard and the member list are the door, not content).
+    const closed = entryRestrictedIn(w.state as any);
+    const keep = closed
+      ? roles.filter(([id, r2]) => id === "*" || (r2.role !== "owner" && !(typeof r2.until === "number" && r2.until <= now2)))
+      : [];
     const arch = w.reset();
-    for (const id of owners) {
-      w.commit("world", "grant", { id, role: "owner", gen: true });
+    for (const [id, r2] of owners) {
+      w.commit("world", "grant", { id, role: "owner", gen: true, ...(r2.sub ? { sub: r2.sub } : {}) });
+    }
+    for (const [id, r2] of keep) {
+      w.commit("world", "grant", { id, role: r2.role, ...(r2.gen ? { gen: true } : {}), ...(r2.fly ? { fly: true } : {}),
+        ...(r2.sub ? { sub: r2.sub } : {}), ...(typeof r2.until === "number" ? { until: r2.until } : {}) });
     }
     console.log(`[world:${w.name}] ERASED to zero by ${c.id} — history archived in ${arch}`);
     w.broadcast({ type: "world-reset", world: w.name, by: c.id });
+  },
+  "access-state": ({ c, ws }) => {
+    // The owner panel's data (client/lib/accesspanel.js): the same facts as
+    // the `world-access` listing, as structure. Anyone present may read it —
+    // roles are log entries, readable by everyone who may be here. Durable
+    // subjects are NOT sent: the panel edits by the record's name, and the
+    // directory search (owner-only, below) is where a subject is picked.
+    if (!c.world) return;
+    const w = c.world;
+    const now2 = Date.now();
+    const roles = (w.state.roles ?? {}) as Record<string, { role: string; gen?: boolean; fly?: boolean; until?: number; sub?: string }>;
+    const owned = Object.entries(roles).some(([k, r]) => k !== "*" && r?.role === "owner");
+    const mine = rightsOf(w.state, c.id, c.sub);
+    const mayEdit = ROLE_RANK[mine.role] >= 2 || isAdminId(c.id, c.sub);
+    const live = Object.entries(roles).filter(([k, r]) => k !== "*" && r && !(typeof r.until === "number" && r.until <= now2));
+    const presentNames = new Set([...w.clients].filter((o) => !o.spectator && !o.superseded).map((o) => o.id));
+    // An editor's panel edits a member BY SUBJECT when the record has one —
+    // the record's key is a display name, and a display name can look like
+    // something else (Greptile #258). Subjects go to editors only.
+    const members = live.map(([id, r]) => ({
+      id, ...(mayEdit && r.sub ? { sub: r.sub } : {}), role: r.role, ...(r.gen ? { gen: true } : {}), ...(r.fly ? { fly: true } : {}),
+      ...(typeof r.until === "number" ? { until: r.until } : {}),
+      kind: r.sub ? (principalOf(r.sub)?.kind ?? (r.sub.startsWith("agent:") ? "agent" : "human")) : "name",
+      here: presentNames.has(id) || (r.sub ? [...w.clients].some((o) => o.sub === r.sub && !o.spectator) : false),
+    }));
+    // who is standing here without being listed — what "keep everyone who is
+    // here" adds before closing a world
+    const listed = (o: { id: string; sub?: string }) => live.some(([k, r]) => k === o.id || (r.sub && r.sub === o.sub));
+    const here = [...w.clients]
+      .filter((o) => !o.spectator && !o.superseded && o !== c && !listed(o))
+      .map((o) => ({ id: o.id, ...(mayEdit && o.sub ? { sub: o.sub } : {}), kind: o.agent ? "agent" : "human", verified: Boolean(o.sub || o.nameReserved) }));
+    ws.send(JSON.stringify({ type: "access-state", world: w.name, owned, door: owned ? wildcardRoleIn(w.state as any) : "builder",
+      mayEdit, you: { role: mine.role, ...(mine.until ? { until: mine.until } : {}) }, members, here, now: now2 }));
+  },
+  "access-directory": ({ c, ws }, msg) => {
+    // The "add someone" search: identities this instance has seen, by name.
+    // OWNERS ONLY (of the world they stand in) — it is a roster of who has
+    // signed in, which is not every visitor's business — and it carries the
+    // durable subject, so the owner's pick binds to exactly that person.
+    if (!c.world) return;
+    const mine = rightsOf(c.world.state, c.id, c.sub);
+    if (ROLE_RANK[mine.role] < 2 && !isAdminId(c.id, c.sub)) {
+      ws.send(JSON.stringify({ type: "access-directory", q: String(msg.q ?? ""), results: [], error: "only this world's owners can search for people to add" }));
+      return;
+    }
+    const q = String(msg.q ?? "").slice(0, 64);
+    ws.send(JSON.stringify({ type: "access-directory", q, results: searchDirectory(q) }));
+  },
+  "world-access": ({ c, ws }, msg) => {
+    // Who may come into the world you are standing in, and until when.
+    // Anyone present may read it — roles are log entries, and the log is
+    // readable by everyone who may be here. (Non-members never get this far:
+    // they are not here.) A `mod` reply, so browser chat and agents both
+    // already know how to show it.
+    if (!c.world) return;
+    const w = c.world;
+    const now2 = Date.now();
+    const door = wildcardRoleIn(w.state as any);
+    const MODE: Record<string, string> = {
+      none: "members only — invisible to everyone not listed",
+      spectator: "watch only — anyone may watch, only those listed may come in",
+      visitor: "open — anyone may come in as a visitor",
+      builder: "open — anyone may come in and build",
+    };
+    const mode = Object.keys(w.state.roles ?? {}).some((k) => k !== "*" && (w.state.roles as any)[k]?.role === "owner")
+      ? (MODE[door] ?? `everyone else: ${door}`)
+      : "open — this world has no owner, so anyone may come in and build";
+    const left = (until: number) => {
+      const ms = until - now2;
+      if (ms < 3_600_000) return `${Math.max(1, Math.round(ms / 60_000))} min left`;
+      if (ms < 2 * 86_400_000) return `${Math.round(ms / 3_600_000)} h left`;
+      return `until ${new Date(until).toISOString().slice(0, 10)}`;
+    };
+    const rows = Object.entries(w.state.roles ?? {})
+      .filter(([id, r]) => id !== "*" && r && !(typeof r.until === "number" && r.until <= now2))
+      .sort(([, a], [, b]) => (ROLE_RANK[b.role] ?? 0) - (ROLE_RANK[a.role] ?? 0))
+      .map(([id, r]) => {
+        const kind = r.sub ? principalOf(r.sub)?.kind : undefined;
+        return `${id} — ${r.role}${r.gen && r.role !== "owner" ? " +gen" : ""}${r.fly ? " +fly" : ""}${typeof r.until === "number" ? ` (${left(r.until)})` : ""}${r.sub ? (kind ? ` · ${kind}` : "") : " · by name only"}`;
+      });
+    ws.send(JSON.stringify({ type: "mod", text: `who can come into "${w.name}": ${mode}\n${rows.length ? rows.join("\n") : "nobody is listed by name"}` }));
   },
   "world-bans": ({ c, ws, now, expel }, msg) => {
     // Who is banned from the world you are standing in. Available to

@@ -4,7 +4,7 @@
 import { createHash } from "node:crypto";
 import { planStructure } from "../shared/structure.js";
 import { terrainParams, makeHeightField } from "../shared/terrainmath.js";
-import { shapedHeightAt, waterParams as levelParams, shapeReady, shapeParams } from "../shared/terrainshape.js";
+import { waterParams as levelParams, shapeReady, shapeParams } from "../shared/terrainshape.js";
 import { analyzeWater } from "../shared/waterkind.js";
 import "./heightmap.ts";   // registers the heightmap grid loader the shaped terrain reads
 import { effectiveWorldTransform } from "../mcpl/effective.ts";
@@ -13,7 +13,7 @@ import { effectiveSky, effectiveClock } from "../shared/forecast.js";
 import { projectFlora } from "./render-flora.ts";
 import { advanceSim, simSnapshot, tickOf } from "../shared/sim.js";
 import { waterParams, vector, MAX_AIR } from "../shared/water.js";
-import { normalizeParticles } from "../shared/particles.js";
+import { normalizeParticles, emittersIn } from "../shared/particles.js";
 import { normalizePicture } from "../shared/picture.js";
 import { normalizeSound } from "../shared/sound.js";
 import type { Client, World } from "./world.ts";
@@ -51,7 +51,9 @@ export function projectEnvironment(state: any) {
   const p = terrainParams(state.terrain ?? { size: 200, amplitude: 0 });
   if (!(p.size > 0 && p.size <= 10000)) throw Error("terrain size unsupported");
   // The shaped ground (placed features, heightmaps) over the base law — what the browser and agents stand on.
-  const n = Math.min(128,Math.max(64,Math.round(Number(state.terrain?.segments)||64))), height = shapedHeightAt(makeHeightField(p), state.terrain ?? {}), heights: number[] = [];
+  // makeHeightField already applies terrainParams' shape: shaping it again doubled every feature (a −4 m pit
+  // projected at −8 m), so native clients got different ground and water than browsers.
+  const n = Math.min(128,Math.max(64,Math.round(Number(state.terrain?.segments)||64))), height = makeHeightField(p), heights: number[] = [];
   for (let z = 0; z <= n; z++) for (let x = 0; x <= n; x++)
     heights.push(height((x / n - .5) * p.size, (z / n - .5) * p.size));
   const tint=state.terrain?.color??state.terrain?.layers?.[0]?.color??0x70815a;
@@ -72,6 +74,15 @@ export function projectComponentData(comp: any, entityId = "") {
   // Presentation components, normalized by the same shared laws the browser uses
   // (a bag that does not normalize renders nothing there either).
   if (comp?.particles) { const r = normalizeParticles(comp.particles, { entityId }); if (r.ok) data.particles = r.emitter; }
+  // Named emitters (`particles:<name>`), by name — the same normalization, so
+  // a native renderer builds exactly what the browser does (incl. `scale`).
+  const named: Record<string, unknown> = {};
+  for (const [k, v] of emittersIn(comp)) {
+    if (k === "particles") continue;
+    const r = normalizeParticles(v, { entityId, key: k });
+    if (r.ok) named[k.slice(10)] = r.emitter;
+  }
+  if (Object.keys(named).length) data.emitters = Object.fromEntries(Object.entries(named).slice(0, 32));
   if (comp?.picture) { const r = normalizePicture(comp.picture); if (r.ok) data.picture = r.picture; }
   if (comp?.sound) { const r = normalizeSound(comp.sound); if (r.ok) data.sound = r.sound; }
   // Named-part motions (motion.js): every motion:<part> key, plus motion with a part.

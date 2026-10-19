@@ -29,7 +29,7 @@ plugin({ name: 'sound-guard-stubs', setup(b) {
   // exactly as the real panels do), and a three-line stub for the audio ones
   for (const m of ['core', 'base', 'world', 'net'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./guard-label-stub.mjs') }));
-  for (const m of ['inspect', 'ui', 'audioctx', 'audiounlock', 'voiceconsent'])
+  for (const m of ['inspect', 'ui', 'audioctx', 'audiounlock', 'voiceconsent', 'remotes'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./sound-guard-stub.mjs') }));
 } });
 

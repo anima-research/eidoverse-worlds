@@ -11,7 +11,7 @@ import { LADDER } from "./config.ts";
 import { summarizeGlb } from "./geometry.ts";
 // Likewise for the `particles` component: one validator, so the flight
 // recorder's opinion about an emitter is the renderer's own opinion.
-import { normalizeParticles } from "../shared/particles.js";
+import { normalizeParticles, emitterKeyProblem } from "../shared/particles.js";
 import type { LogEntry, WorldState } from "../shared/fold.js";
 
 /** What the linters need from a world: folded state to read, the flight
@@ -39,19 +39,53 @@ export const MOTION_TYPES: Record<string, Set<string>> = {
   path: new Set(["type", "points", "speed", "duration", "loop", "face", "t0", "part", "cause", "by"]),
 };
 
+/** The disk path, relative to each rung, that /library/<encoded> serves, or
+ *  null when the request must be refused. `encoded` is the still-encoded
+ *  remainder of URL.pathname: the /library route passes its own, and
+ *  libraryPath() passes the one the client's URL would carry, so the route
+ *  and every resolver read a name the same way. A file whose name has a
+ *  space ("Frosted Glass Window Seat.glb" → %20) or an accent lives on disk
+ *  under its decoded name, so each run of escapes in the path is decoded on
+ *  its own, with three guards:
+ *  - a raw path that already names an entry on ANY rung of the ladder wins
+ *    (a model literally called "box%41.glb" must not turn into "boxA.glb");
+ *  - a run that's malformed, or decodes to a NUL, keeps its own characters,
+ *    and a bare "%", which a URL leaves as it is, stays, so the rest of the
+ *    name still decodes: "50% off.glb" arrives as "50%%20off.glb" and loads;
+ *  - a ".." segment after decoding is refused outright. This, not the
+ *    normalize()+startsWith(base) check in onLadder() and the route, is what
+ *    stops "..%2f": that check is a string prefix, so "..%2flibrary-backup%2fx"
+ *    would pass it and reach a SIBLING directory whose name starts with the
+ *    base's.
+ *  So a literal %xx name loads as itself when nothing else in it is encoded.
+ *  A name with both a space and a literal "%41" decodes whole, "A" included:
+ *  its request encodes the space and leaves the "%41", and nothing tells
+ *  that "%41" from one a client encoded. */
+export function libraryRel(encoded: string): string | null {
+  let rel = encoded;
+  if (rel.includes("%") && !LADDER.some(base => entryAt(join(base, rel)) !== null)) {
+    rel = rel.replace(/(?:%[0-9A-Fa-f]{2})+/g, (run) => {
+      try { const d = decodeURIComponent(run); return d.includes("\0") ? run : d; } catch { return run; }
+    });
+  }
+  return rel.split(/[\/\\]/).includes("..") ? null : rel;
+}
+
 /** The /library path a lib names, as the asset route will look it up, or
  *  null when it names none with that extension. Mirrors the client's
  *  /library/<lib> URL: percent-encoding of spaces/Unicode, and query and
- *  fragment removed. The route uses URL.pathname verbatim (it does not decode
- *  it back to a disk filename). A parent-traversal segment is refused; a name
+ *  fragment removed; then libraryRel() decodes it back to the disk name
+ *  exactly as the route does. A parent-traversal segment is refused; a name
  *  that merely contains two dots, such as robot..v2.glb, is served and kept. */
 export function libraryPath(lib: unknown, extension: RegExp): string | null {
   if (typeof lib !== "string") return null;
   if (lib.split(/[?#]/, 1)[0].includes("\0")) return null;
   const pathname = new URL("/library/" + lib, "http://library.invalid").pathname;
   if (!pathname.startsWith("/library/")) return null;
-  const rel = normalize(pathname.slice("/library/".length)).replace(/^\/+/, "");
-  return rel.split("/").includes("..") || !extension.test(rel) ? null : rel;
+  const encoded = normalize(pathname.slice("/library/".length)).replace(/^\/+/, "");
+  if (encoded.split("/").includes("..")) return null;
+  const rel = libraryRel(encoded);
+  return rel === null || !extension.test(rel) ? null : rel;
 }
 
 const MODEL = /\.(glb|vrm)$/i;
@@ -193,14 +227,20 @@ export function lintParticles(w: LintHost, entry: LogEntry): void {
   try {
     const a = entry.args as Record<string, unknown>;
     const id = String(a.id ?? "");
+    const key = typeof a.type === "string" ? a.type : "particles";
+    // which emitter, when it isn't the default one — a hearth with three
+    // emitters needs the lint to say WHICH bag was clamped
+    const which = key === "particles" ? {} : { component: key };
+    const bad = emitterKeyProblem(key);
+    if (bad) { w.debug("particles-lint", { entity: id, by: entry.actor, ...which, why: bad }); return; }
     if (a.data == null) return;                      // put out — nothing to lint
-    const r = normalizeParticles(a.data, { entityId: id });
+    const r = normalizeParticles(a.data, { entityId: id, key });
     if (!r.ok) {
-      w.debug("particles-lint", { entity: id, by: entry.actor, why: r.why });
+      w.debug("particles-lint", { entity: id, by: entry.actor, ...which, why: r.why });
       return;
     }
     if (r.notes.length) {
-      w.debug("particles-lint", { entity: id, by: entry.actor, why: r.notes.join(" · ") });
+      w.debug("particles-lint", { entity: id, by: entry.actor, ...which, why: r.notes.join(" · ") });
     }
   } catch { /* lint must never hurt anything */ }
 }

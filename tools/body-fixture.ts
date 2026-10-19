@@ -1,9 +1,21 @@
-// Self-contained normalized humanoid GLB for product-path tests.
-export function fixture(scale = 1, vrm0 = false) {
+// Self-contained normalized humanoid GLB for product-path tests. `turn`
+// gives named bones a rest rotation (their world rotation, [x,y,z,w]), as
+// real rigs have; every joint stays where it is.
+export function fixture(scale = 1, vrm0 = false, turn: Record<string, number[]> = {}) {
   const nodes: any[] = [{ name: "root", scale: [scale, scale, scale], children: [1] }];
   const bones: any = {};
+  const world: Record<string, number[]> = {};
+  const mul = (a: number[], b: number[]) => [
+    a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+    a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]];
+  const inv = (q: number[]) => [-q[0], -q[1], -q[2], q[3]];
+  const rot = (q: number[], v: number[]) => mul(mul(q, [...v, 0]), inv(q)).slice(0, 3);
   const add = (name: string, parent: string | null, p: number[]) => {
-    const i = nodes.length; bones[name] = { node: i }; nodes.push({ name, translation: p, children: [] });
+    const up = parent ? world[parent] : [0, 0, 0, 1];
+    world[name] = turn[name] ?? [0, 0, 0, 1];
+    const r = mul(inv(up), world[name]), still = Math.abs(r[3]) > 1 - 1e-12;
+    const i = nodes.length; bones[name] = { node: i };
+    nodes.push({ name, translation: parent && up[3] !== 1 ? rot(inv(up), p) : p, ...(still ? {} : { rotation: r }), children: [] });
     if (parent) nodes[bones[parent].node].children.push(i);
   };
   add("hips", null, [0, 1, 0]); add("spine", "hips", [0, .2, 0]);
@@ -19,8 +31,12 @@ export function fixture(scale = 1, vrm0 = false) {
     add(side + "LowerLeg", side + "UpperLeg", [0, -.4, 0]);
     add(side + "Foot", side + "LowerLeg", [0, -.4, .1]);
   }
-  const extensions = vrm0 ? { VRM: { humanoid: { humanBones: Object.entries(bones).map(([bone, v]: any) => ({ bone, node: v.node })) } } } : { VRMC_vrm: { humanoid: { humanBones: bones } } };
-  let json = JSON.stringify({ asset: { version: "2.0" }, nodes, extensions });
+  // A scene, specVersion, meta and extensionsUsed make it a VRM three-vrm will load, as the client does;
+  // the skin makes its bones Bones there, as a real body's are.
+  const extensions = vrm0
+    ? { VRM: { meta: { title: "fixture" }, humanoid: { humanBones: Object.entries(bones).map(([bone, v]: any) => ({ bone, node: v.node })) } } }
+    : { VRMC_vrm: { specVersion: "1.0", meta: { name: "fixture", authors: ["eidoverse"], licenseUrl: "https://vrm.dev/licenses/1.0/" }, humanoid: { humanBones: bones } } };
+  let json = JSON.stringify({ asset: { version: "2.0" }, scene: 0, scenes: [{ nodes: [0] }], nodes, skins: [{ joints: Object.values(bones).map((v: any) => v.node) }], extensionsUsed: [vrm0 ? "VRM" : "VRMC_vrm"], extensions });
   json += " ".repeat((4 - Buffer.byteLength(json) % 4) % 4);
   const b = Buffer.alloc(20 + Buffer.byteLength(json));
   b.writeUInt32LE(0x46546c67, 0); b.writeUInt32LE(2, 4); b.writeUInt32LE(b.length, 8);

@@ -35,10 +35,11 @@ try {
   }
   for (const name of ["space model.glb", "café.glb"]) {
     writeFileSync(join(ladder[2], name), "literal filename");
-    check("literal URL-encodable disk name is not falsely resolved: " + name, resolveLibFile(name) === null);
+    check("a literal disk name with a space or accent resolves, as the route decodes it: " + name,
+      resolveLibFile(name) === join(ladder[2], name));
     const encoded = new URL("/library/" + name, "http://library.invalid").pathname.slice("/library/".length);
     writeFileSync(join(ladder[2], encoded), "served filename");
-    check("the encoded pathname resolves exactly as the asset route: " + name,
+    check("a disk name that is the encoded form wins over decoding, as in the route: " + name,
       resolveLibFile(name) === join(ladder[2], encoded));
     check("already-encoded input is not encoded twice: " + encoded,
       resolveLibFile(encoded) === join(ladder[2], encoded));
@@ -46,6 +47,12 @@ try {
   check("URL-normalized traversal out of /library is refused", resolveLibFile("%2e%2e/shared.glb") === null);
   check("a path that leaves /library is refused", resolveLibFile("../x/secret.glb") === null
     && libraryPath("../x/secret.glb", /\.glb$/i) === null && libraryPath("a/../../x.glb", /\.glb$/i) === null);
+  // A sibling whose name starts with the library's passes onLadder's string-
+  // prefix check, so only libraryRel's refusal of a decoded ".." stops this.
+  mkdirSync(join(root, "library-backup"));
+  writeFileSync(join(root, "library-backup", "secret.glb"), "sibling");
+  check("a decoded .. can't reach a sibling directory named like the library",
+    resolveLibFile("..%2flibrary-backup%2fsecret.glb") === null);
   writeFileSync(join(ladder[2], "robot..v2.glb"), "two dots, no traversal");
   check("a name with two dots is a name, served and resolved", resolveLibFile("robot..v2.glb") === join(ladder[2], "robot..v2.glb"));
   mkdirSync(join(ladder[2], "folder.glb"));

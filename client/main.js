@@ -1,6 +1,6 @@
 import { setTraversalObjects } from './lib/traversal.js';
 import { updateVehicle, piloting } from './lib/vehicles.js';
-import { updateWater, setWaterObjects, setWaterClock, environmentSettings, waterDebug, applyEnvLight } from './lib/watervolumes.js';
+import { updateWater, updateWaterView, setWaterObjects, setWaterClock, environmentSettings, waterDebug, applyEnvLight } from './lib/watervolumes.js';
 // eidoverse-worlds browser client.
 //
 // Two planes: the world log (verbs, ordered, replayed on join) and presence
@@ -16,7 +16,7 @@ import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
 import { CONFIG, bus, report, tee, colorFor } from './lib/base.js';
 import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, EMOTE_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
-import { setSkyArgsSource, entities, buildsPending, avatarMounts, roleOf, worldHasOwner, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
+import { setSkyArgsSource, entities, buildsPending, anyBuildsPending, avatarMounts, roleOf, worldHasOwner, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
 import { presence } from './lib/presence.js';
 import { initWorldQuad } from './lib/worldquad.js';
 import { foldParity } from './lib/parity.js';
@@ -43,13 +43,13 @@ import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js'
 // this is the real, body-building implementation of that interface.
 import * as participants from './lib/remotes.js';
 import { setWaveClock } from './lib/water.js';
-import { snapshot } from './lib/net_snap.js';
+import { snapshot, setSnapReadiness } from './lib/net_snap.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
   net, connect, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendWhisper, sendTyping,
   setPoseOverride, sendPuppet, sendAnim,
 } from './lib/net.js';
-import { mergePose } from '../shared/humanoid.js';
+import { poseCommands } from './lib/posecommands.js';
 import { updateBuild, toggleEditMode, isEditing } from './lib/build.js';
 import { initPalette } from './lib/palette.js';
 import { setRightsSink } from './lib/state.js';
@@ -138,6 +138,15 @@ const isViewer = CONFIG.spectate || CONFIG.renderer;
 
 setSkyArgsSource(skyArgs);
 setResidencyFocus(() => myState?.pos ?? null);   // the body anchors residency too (§13.3)
+// a renderer takes a snapshot only once the world is realized around the body it follows (net_snap.js settle): the
+// body in the scene, the world's builds done, no model loading or standing in. (Shaders still warming do not block:
+// the renderer compiles any it meets — a stall, never a missing object.)
+setSnapReadiness(async (follow) => {
+  const r = residencyDebug(), warm = warmStats();
+  const body = !!remotes.get(follow)?.avatar, builds = anyBuildsPending();
+  return { ready: body && !builds && !r.loading && !r.standins, body, builds, models: r.real,
+    loading: r.loading + r.standins, compiling: warm.pending + (warm.running ? 1 : 0) };
+});
 // The realizers project folded state into the scene. Wired before connect()
 // so the hydrated event of the very first snapshot finds them listening;
 // causes.js takes the fold-inert live verbs off the 'live-entry' bus.
@@ -614,6 +623,7 @@ registerSystem('debug', (dt, t, now) => updateDebug(now));       // F3 wireframe
 registerSystem('send-pose', (dt, t, now) => sendPose(now));
 // XR: read hands → fill intent (updateMe already moved the body) → rig follows
 registerSystem('xr', (dt) => updateXR(dt));
+registerSystem('water-view', () => updateWaterView());   // after the camera's last move this frame (movement, XR): the level's fog and background
 registerSystem('xrvignette', (dt) => tickXRVignette(dt));   // comfort tunnel, on the XR camera (Settings › VR)
 registerSystem('pixel-ratio', () => applyPendingPixelRatio());   // a resize clears the canvas: before the draw, never after
 registerSystem('render', renderWorld);
@@ -855,20 +865,9 @@ setWaveClock(() => participants.serverNow());
 const EW = globalThis.EW = {
   me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus,
   skyArgs, sendVerb, setPosable, get posable() { return posable(); },
-  // POSING from the console — the same verbs an agent's tools have. A value
-  // per bone is [x,y,z,w] or {q, t, s} (shared/humanoid.js poseChannels).
-  //   EW.pose({ leftUpperArm: [...] })          only these bones, over what you hold; null releases one
-  //   EW.pose({ ... }, { replace: true })       the WHOLE pose: every bone not named goes back to normal
-  //   EW.pose({ ... }, { target: 'mythos' })    ask someone else (their client decides)
-  //   EW.clearPose()  /  EW.clearPose('mythos')
-  //   EW.animate(anim, { replace, target })     one-off animation; merge plays over your pose and any
-  //                                             other animation, replace ends them first
-  pose: (bones, { replace = false, target = null } = {}) => {
-    if (target) return sendPuppet(target, { pose: bones, merge: !replace });
-    myState.pose = mergePose(replace ? null : myState.pose, bones);
-    return myState.pose;
-  },
-  clearPose: (target = null) => { if (target) sendPuppet(target, { pose: {} }); else myState.pose = null; },
+  // POSING from the console — the same verbs an agent's tools have:
+  // EW.pose, EW.clearPose and EW.animate (client/lib/posecommands.js says how).
+  ...poseCommands({ state: myState, sendPuppet, play: (a) => { getMe()?.playAnimation(a); sendAnim(a); } }),
   // TERRAIN (owner): EW.terrain(patch) edits the world's CURRENT terrain bag rather than replacing it, so
   //   EW.terrain({ features: [{ type: 'hill', x: 30, z: -20, radius: 18, height: 9 }] })
   // keeps the seed, size and tint. Feature types (shared/terrainshape.js): hill {x,z,radius,height} (negative
@@ -884,13 +883,6 @@ const EW = globalThis.EW = {
   // the ground as walking reads it, and whether a heightmap terrain is still waiting on its image
   groundAt: (x, z) => heightAt(x, z), get hasTerrain() { return hasTerrain(); },
   get terrainPending() { return terrainPending(); },
-  animate: (data, { replace = data?.replace === true, target = null } = {}) => {   // replace may ride in the data too
-    const a = { ...data, replace: !!replace };
-    if (target) return sendPuppet(target, { anim: a });
-    if (replace) myState.pose = null;
-    getMe()?.playAnimation(a);
-    sendAnim(a);
-  },
   setPushable, get pushable() { return pushable(); }, dragState,
   // reach: aim a hand at a world point, or at anything that moves. Pass a
   // function and it re-solves every frame; `EW.reach('leftHand', () =>

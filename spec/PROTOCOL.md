@@ -46,8 +46,8 @@ Folding produces, at minimum:
                            "comp": { "<type>": <opaque data> }?,      // §4
                            "parent": { "to", "slot"?, "offset"?, "yaw"? }? } },
   "mounts": { "<body-id>": { "to", "slot"?, "offset"?, "yaw"? } }?,   // §5
-  "roles":  { "<id>": { "role": "owner|builder|visitor", "gen"?: true,
-                         "sub"?: "durable id" } },                    // §7
+  "roles":  { "<id>": { "role": "owner|builder|visitor|spectator|none", "gen"?: true,
+                         "sub"?: "durable id", "until"?: <epoch ms> } },  // §7
   "behaviors": { "<id>": { "src", "attach"?, "caps"?, "knobs"?,
                             "author", "ts", "state"? } }?             // §8
 }
@@ -188,14 +188,26 @@ A held private `whisper` delivered on rejoin carries `replay: true`. A live whis
 
 ## 7. Authority
 
-Rights ladder per world: `visitor` (say, use, mount **yourself**) <
+Rights ladder per world: `none` (may not enter) < `spectator` (may watch,
+no body) < `visitor` (say, use, mount **yourself**) <
 `builder` (+ spawn/place/remove/light/comp/motion/behavior/cargo-mount) <
-`owner` (+ terrain/grass/sky/weather/grant). `gen` is an orthogonal spend
+`owner` (+ terrain/grass/sky/weather/grant). Ranks: none −2, spectator −1,
+visitor 0, builder 1, owner 2. `gen` is an orthogonal spend
 capability (introducing new assets). A world with no owner is open
 (everyone builds); the first embodied joiner of a brand-new world becomes
 its owner. Grants are log entries like everything else. A grant carrying a
 `sub` is worn only by that durable identity; a display name is a nameplate,
-not a deed.
+not a deed. The wildcard `*` is everyone not named; in an owned world with
+no `*` record it reads as `builder`.
+
+Entry is the same ladder: a door MUST refuse an embodied join below
+`visitor` and any join below `spectator`. A grant MAY carry `until` (epoch
+ms): a reader evaluating rights at time `t` treats a record with
+`until <= t` as absent. The fold records `until` and never reads a clock;
+records for `owner` and for `*` never carry one (a fold drops it). `grant
+{id, revoke: true, sub?}` removes the record for `id` and every record
+carrying `sub`; a sequencer settles an expiry by writing such a revoke
+(with `expired: true`) once `until` passes.
 
 ## 8. Runtime scripts
 
