@@ -55,7 +55,7 @@ const M: Mutant[] = [
   { id: "M4", what: "speech privacy: everyone reads the master log's say bodies, not only admins (the floor is null for all)", file: "server/world.ts",
     find: "  sayFloorFor(c: Client): number | null {\n    if (this.isAdmin(c)) return null;", repl: "  sayFloorFor(c: Client): number | null {\n    if (true) return null;", suite: "identity", rows: ["RS10"], expect: 42 },
   { id: "M5", what: "the kernel's scope shrinks (access leaves it): the pin and the code disagree, the registry's five aren't the kernel's", file: "shared/protocol/kernelspec.js",
-    find: 'export const KERNEL_COMPONENTS = Object.freeze(["transform", "parent", "model", "roles", "access"]);', repl: 'export const KERNEL_COMPONENTS = Object.freeze(["transform", "parent", "model", "roles"]);', suite: "kernel", rows: ["K1", "K2"], expect: 1 },
+    find: 'export const KERNEL_COMPONENTS = Object.freeze(["transform", "parent", "model", "roles", "access"]);', repl: 'export const KERNEL_COMPONENTS = Object.freeze(["transform", "parent", "model", "roles"]);', suite: "kernel", rows: ["K1", "K3"], expect: 1 },
   { id: "M6a", what: "the approval isn't bound to the report: a hash that doesn't match the report as it stands is accepted", file: "tools/protocol/world.ts",
     find: "  if (hash !== approved) die(`the dry-run report of", repl: "  if (false) die(`the dry-run report of", suite: "inplace", rows: ["IP21"], expect: 20 },
   { id: "M6b", what: "the countersignature isn't checked by the writer (a bad operator or owner signature writes the log)", file: "tools/protocol/import-v1/world.ts",
@@ -63,7 +63,7 @@ const M: Mutant[] = [
   { id: "M6c", what: "no founder key = no owner, but the translation proceeds without --operator-only-no-owner", file: "tools/protocol/world.ts",
     find: "    if (!noOwner) die(`\"${name}\" has no founder key (tier 0 empty), so no owner can sign this approval", repl: "    if (false) die(`\"${name}\" has no founder key (tier 0 empty), so no owner can sign this approval", suite: "inplace", rows: ["IP28"], expect: 20 },
   { id: "M7", what: "a deferred feature (water, air, traversal, vehicle, collision) is dropped quietly instead of refusing the translation", file: "tools/protocol/import-v1/world.ts",
-    find: "    if (uses.length) throw new Error(deferredRefusal(uses,", repl: "    if (false) throw new Error(deferredRefusal(uses,", suite: "inplace", rows: ["IP26"], expect: 20 },
+    find: '    refused: deferred.length ? deferredRefusal(deferred, `"${world}"`) : null,', repl: "    refused: null,", suite: "inplace", rows: ["IP26"], expect: 20 },
   { id: "M8", what: "governance not marked reserved: a log holding a sequencer entry is served", file: "server/livehost.ts",
     find: '    if (g >= 0) throw new Error(`"${name}" can\'t be served: its log holds a governance (sequencer) entry', repl: '    if (false) throw new Error(`"${name}" can\'t be served: its log holds a governance (sequencer) entry', suite: "gov-reserved", rows: ["G2"], expect: 1 },
   { id: "M9", what: "a world needing maintenance is written to anyway (the repair-needed refusal gone)", file: "shared/protocol/authority.js",
@@ -98,7 +98,7 @@ function copyTree(tag: string) {
   return d;
 }
 // the red rows of a run: `FAIL <id> …` (most suites), `FAIL <id>` from settle's console.log("FAIL", name), `✗ <id> …` (the tools/ tests)
-const redRows = (out: string) => [...new Set([...out.matchAll(/^\s*(?:FAIL|✗)\s+(\S+)/gm)].map((m) => m[1].replace(/[:,]$/, "")))];
+const redRows = (out: string) => [...new Set([...out.replace(/\x1b\[[0-9;]*m/g, "").matchAll(/^\s*(?:FAIL|✗)\s+(\S+)/gm)].map((m) => m[1].replace(/[:,]$/, "")))];   // colours stripped (the tools/ tests paint ✗)
 
 let bad = 0; const table: string[] = [];
 console.log(`[blockers-mutants] ${todo.length} mutant(s): each applied to a scratch copy of the tree, then its one suite run`);
@@ -107,14 +107,14 @@ for (const m of todo) {
   const src = fs.readFileSync(path.join(ENGINE, m.file), "utf8");
   if (src.split(m.find).length !== 2) { bad++; console.log(`FAIL ${m.id} '${m.what}': its find text occurs ${src.split(m.find).length - 1}× in ${m.file} (must be exactly once: the fix moved?)`); table.push(`| ${m.id} | ${m.file} | (find text not found once) | ${m.suite} | FAIL |`); continue; }
   const d = copyTree(`bm-${m.id.toLowerCase()}`);
-  const f = path.join(d, m.file); fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(m.find, m.repl));
+  const f = path.join(d, m.file); fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(m.find, m.repl)); fs.mkdirSync(path.join(d, ".scratch"), { recursive: true });
   const r = Bun.spawnSync(["bun", path.join(d, SUITE_FILE[m.suite])], { cwd: d, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", PROTOCOL_SCRATCH: path.join(d, ".scratch") }, timeout: Math.max(180, m.expect * 6) * 1000 });
   const out = r.stdout.toString() + r.stderr.toString(); const red = redRows(out);
   const good = m.rows.length ? r.exitCode !== 0 && m.rows.every((x) => red.includes(x)) : r.exitCode === 0 && !red.length;
   if (!good) bad++;
   const s = ((performance.now() - t0) / 1000).toFixed(1);
   console.log(`${good ? "ok  " : "FAIL"} ${m.id} '${m.what}' → ${m.suite}: exit ${r.exitCode}, red ${red.join(",") || "(none)"} (want ${m.rows.join(",") || "green"}) ${s}s`);
-  if (!good && r.exitCode !== 0 && !red.length) console.log(out.split("\n").filter((l) => /error|Error|threw/i.test(l)).slice(0, 6).map((l) => `      ${l.slice(0, 220)}`).join("\n"));
+  if (!good) console.log(out.split("\n").filter(Boolean).slice(-12).map((l) => `      ${l.slice(0, 240)}`).join("\n"));   // the suite's tail, so a wrong mutant says why
   table.push(`| ${m.id} | ${m.file} — ${m.what} | ${m.suite} | ${m.rows.join(", ") || "(control)"} | ${good ? (m.rows.length ? `red: ${red.filter((x) => m.rows.includes(x)).join(", ")}` : "green") : `WRONG (exit ${r.exitCode}, red ${red.join(",") || "none"})`} |`);
   fs.rmSync(d, { recursive: true, force: true });
 }

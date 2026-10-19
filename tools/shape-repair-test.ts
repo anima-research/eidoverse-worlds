@@ -310,8 +310,10 @@ console.log(`\n${pass} passed, ${fail} failed`);
 // file wedged, EIO) must propagate, so the caller (world.ts repair, the translation) reports ambiguous instead of "repaired"
 await tryRow('RP18', () => {
   const w = legacyWorld({ coatrack: { model: 'crate', sockets: { peg: { pos: [0, 1.5, 0] } } } });
-  w.wedged.log = '(test) EIO: disk gone';   // storage.js durably: every later write throws an Error, not a Refusal
+  // the lift-sockets act's durable write throws (as a full disk would); every other write is fine, so a swallowed throw would let
+  // maintain run on to repair-shapes and return "ok" with the host merely listed as failed
+  const real = w.append.bind(w); w.append = (e: any, ...more: any[]) => { if (e.kind === 'act' && e.verb === 'lift-sockets') throw new Error('EIO: disk gone'); return real(e, ...more); };
   let threw: any = null, r: any = null; try { r = maintain(w, { by: 'olive' }); } catch (x) { threw = x; }
-  check('RP18 a durable-write throw inside lift-sockets propagates out of maintain (not swallowed into steps.lift.failed as code "error")', !!threw && /earlier write failed|EIO/.test(String(threw?.message)) && r === null, [String(threw?.message).slice(0, 200), r?.steps?.lift]);
+  check('RP18 a durable-write throw inside lift-sockets propagates out of maintain (not swallowed into steps.lift.failed as code "error" while the rest runs on)', !!threw && /EIO/.test(String(threw?.message)) && r === null, [String(threw?.message).slice(0, 200), r?.steps?.lift]);
 });
 process.exit(fail ? 1 : 0);
