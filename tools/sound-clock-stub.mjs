@@ -2,7 +2,7 @@
 // guard-label stub (main's) does not cover. Unlike sound-guard-stub, this one
 // BUILDS a graph: the playhead test needs a real applyFrom → seekTo pass, so
 // the audio context is a connectable fake, and the clock is a dial the test
-// turns — `serverNow` here stands in for remotes.js's smoothed server clock.
+// turns — `serverNow` here stands in for remotes.js's estimated server clock.
 export const editors = [];
 export const registerEditor = (fn) => { editors.push(fn); };
 export const toast = () => {};
@@ -21,7 +21,7 @@ export const audioContext = () => ({
   listener: { positionX: param(), positionY: param(), positionZ: param(), forwardX: param(), forwardY: param(), forwardZ: param(), upX: param(), upY: param(), upZ: param() },
 });
 
-/** The dial. The test sets `clock.server` to whatever the smoothed server
+/** The dial. The test sets `clock.server` to whatever the estimated server
  *  clock should read; Date.now() stays the machine's own, deliberately
  *  skewed from it. */
 export const clock = { server: 0 };

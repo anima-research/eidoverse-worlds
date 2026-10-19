@@ -17,6 +17,7 @@ import { applyWingFoldPresence } from '../../shared/wingpresence.js';
 import { poseChannels } from '../../shared/humanoid.js';
 import { applyPresenceWire, applyVoiceWire, applyBodyWire } from '../../shared/presencewire.js';
 import { applyRemoteXR, resetFingers } from './xrbody.js';
+import { foldOffset } from '../../shared/clockoffset.js';
 
 export const remotes = new Map(); // id -> RemoteBody
 
@@ -28,18 +29,26 @@ const loadBody = (id, path) => CONFIG.params.has('capsule') ? Promise.reject(new
 const INTERP_MS = 110;
 const BUF_MAX = 12;
 
-// Server-to-local clock offset, smoothed. The `clock` message ahead of each
-// snapshot carries the server's `t`, and so does every frame.
-let clockOffset = null;
+// Server-to-local clock offset, kept by shared/clockoffset.js's rule: the
+// least-delayed sample wins, so a message handled late moves it by no more
+// than that rule's leak. The
+// `clock` message ahead of each snapshot of a join that asks carries the
+// server's `t`, and so does every frame.
+let clock = null;
 // `at` is the performance.now() when `t`'s message event ran, for a message
 // that waited to be handled (the early socket's drain, net.js connect());
 // otherwise now.
 export function noteServerTime(t, at = performance.now()) {
   if (typeof t !== 'number') return;
-  const sample = t - performance.timeOrigin - at;
-  clockOffset = clockOffset === null ? sample : clockOffset * 0.92 + sample * 0.08;
+  clock = foldOffset(clock, t - performance.timeOrigin - at, at);
 }
-export const serverNow = () => performance.timeOrigin + performance.now() + (clockOffset ?? 0);
+export const serverNow = () => performance.timeOrigin + performance.now() + (clock?.offset ?? 0);
+/** The server's clock as the frames arrive, about one mean delay behind it
+ *  (serverNow() is the least delay behind): the time remote bodies are
+ *  interpolated at and a pose without a `t` is stamped with, so INTERP_MS
+ *  stays a buffer behind the frames as they come (shared/clockoffset.js, the
+ *  stream offset). */
+export const streamNow = () => performance.timeOrigin + performance.now() + (clock?.stream ?? 0);
 
 /** Per-identity generation counter (#95): every AUTHORITATIVE (re)creation
  *  of an id bumps it, and async continuations validate record identity
@@ -202,7 +211,7 @@ export function dropRemote(id, expected) {
 export function pushPose(id, pose, t) {
   const r = remotes.get(id);
   if (!r || !pose) return;
-  const stamp = typeof t === 'number' ? t : serverNow();
+  const stamp = typeof t === 'number' ? t : streamNow();
   const last = r.buf[r.buf.length - 1];
   if (last && stamp <= last.t) return;    // out of order — drop
   r.buf.push({ t: stamp, ...pose });
@@ -375,7 +384,7 @@ export const draggedLocal = new Set();
 
 const _eye = new THREE.Vector3();
 export function updateRemotes(dt, now = performance.now()) {
-  const renderAt = serverNow() - INTERP_MS;
+  const renderAt = streamNow() - INTERP_MS;
   // animation LOD by distance from the camera's WORLD position (in XR camera.position is the head's offset inside the
   // rig: remotes near the world origin animated at full rate, the ones beside you at a quarter; review 10a M4)
   const eye = camera.getWorldPosition(_eye);

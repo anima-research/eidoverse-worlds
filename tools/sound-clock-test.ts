@@ -5,7 +5,7 @@
 //
 // #192's clock note says every client seeks to the same playhead from `t0`.
 // It did — against Date.now(), while motion (Hesperus finding #4, #192's own
-// tickMotion) runs on the smoothed server offset from remotes.js. Two listeners
+// tickMotion) runs on the estimated server offset from remotes.js. Two listeners
 // whose clocks disagree by Δ heard the same radio Δ apart, and an author whose
 // clock was off shifted everyone by their own skew (I.M., instruments findings,
 // 2026-09-23). This loads the real sounds.js under stubs, skews Date.now()

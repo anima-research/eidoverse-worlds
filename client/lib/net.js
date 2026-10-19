@@ -539,9 +539,10 @@ function noteStalePresence(id) {
 async function handle(msg, at) {
   switch (msg.type) {
     // The server's time, sent just before each snapshot to a join that asks
-    // (sendJoin's and the boot script's do), so every sound the snapshot
-    // carries is seeked, and every stamp the editor makes, in server time
-    // (remotes.js serverNow).
+    // (sendJoin's and the boot script's do): a sample for serverNow()'s
+    // estimate (remotes.js), taken before the snapshot's sounds are seeked
+    // or the editor stamps anything. How closely that estimate follows the
+    // server's clock is shared/clockoffset.js's to say.
     case 'clock': noteServerTime(msg.t, at); break;
     case 'snapshot': return onSnapshot(msg);
 

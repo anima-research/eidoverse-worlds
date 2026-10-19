@@ -7,6 +7,7 @@
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegexFor } from "./mention.ts";
 import { mergePose } from "../shared/humanoid.js";
+import { foldOffset } from "../shared/clockoffset.js";
 import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, shapeReady, waterParams, waterStance, SWIM_SPEED, SWIM_RUN } from "../shared/terrainshape.js";
 import { bodyHeightFor } from "./rigbones.ts";
 import { surfaceOffset, waveClock } from "../shared/waves.js";
@@ -681,24 +682,31 @@ export class WorldAgent {
     console.error(`[agent ${this.name}] malformed ${verb} entry — position kept: ${JSON.stringify(args)?.slice(0, 160)}`);
   }
 
-  /** Server-to-local clock offset, smoothed — the headless serverNow()
-   *  (mirrors client/lib/remotes.js: same source, same 0.92/0.08 EMA).
+  /** Server-to-local clock offset — the headless serverNow(), kept as
+   *  client/lib/remotes.js keeps it: the same samples, by the same rule
+   *  (shared/clockoffset.js: the least-delayed sample wins, so a late frame
+   *  moves it by no more than the leak), on the same kind of clock: this
+   *  process's monotonic one (localNow), which a step of the host's wall
+   *  clock can't move.
    *  Motion is a function of SEQUENCER time; evaluating it on a skewed host
    *  clock makes this body report a different pendulum phase than every
    *  browser looking at the same swing, while both run the same closed form
    *  (#92 review, B1). Fed from the clock message the server sends just
    *  before each snapshot to a join that asks, as this agent's joins do, and
    *  from the embodied plane's frame stamps. */
-  private clockOffset: number | null = null;
+  private clock: { offset: number; at: number } | null = null;
+  /** This process's own clock in epoch ms, monotonic: performance.now() from
+   *  its origin, as a browser's serverNow() reads its own. */
+  localNow(): number { return performance.timeOrigin + performance.now(); }
   noteServerTime(t: unknown) {
     if (typeof t !== "number" || !Number.isFinite(t)) return;
-    const sample = t - Date.now();
-    this.clockOffset = this.clockOffset === null ? sample : this.clockOffset * 0.92 + sample * 0.08;
+    const now = this.localNow();
+    this.clock = foldOffset(this.clock, t - now, now);
   }
   /** Epoch ms on the sequencer's clock, best estimate. Before the first
    *  clock message or frame lands this is local time — the browser's exact
    *  fallback. */
-  serverNow(): number { return Date.now() + (this.clockOffset ?? 0); }
+  serverNow(): number { return this.localNow() + (this.clock?.offset ?? 0); }
 
   /** A composition gap is a perception limit, not a world error: say so a
    *  few times (the noteMalformed bound), then stay quiet. Callers that hit
@@ -1056,7 +1064,7 @@ export class WorldAgent {
           case "frame":
             // batched embodied plane: latest pose per id, one message per tick.
             // The frame's server stamp also feeds the clock estimate — the
-            // same source the browser smooths into serverNow() (#92, B1).
+            // same samples the browser folds into serverNow() (#92, B1).
             this.noteServerTime((msg as { t?: unknown }).t);
             for (const [id, pose] of Object.entries(msg.poses as Record<string, Pose>)) {
               if (id !== this.name) this.notePose(id, pose);
