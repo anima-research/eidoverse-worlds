@@ -804,6 +804,12 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const vt = s.call("vic", "scripts", { id: "bell1", script: "bell", test: { on: "use" } });
       return { d: d.script?.status, would: d.script?.would?.[0]?.value?.rung, says: t.test?.says?.[0], vt: code(vt), wrote: s.entries().length - n0 }; },
     good: (o) => o.d === "would-run" && o.would === 1 && o.says === "the bell tolls for bob (1)" && o.vt === "rights" && o.wrote === 0 },
+  { id: "U2b", what: "a dry run is charged to whoever asks for it (review of #260, protocol core I57): a test event's own `by` changes what the script hears, not whose dry-run allowance it spends", run(s) { cast(s);
+      bell(s, "bob"); const rs: string[] = [];
+      for (let i = 0; i < 12; i++) { const t = s.call("bob", "scripts", { id: "bell1", script: "bell", test: { on: "use", by: `guest${i}` } }); rs.push(`${t.test?.status} ${t.test?.code ?? ""}`.trim()); }
+      const heard = s.call("ann", "scripts", { id: "bell1", script: "bell", test: { on: "use", by: "vic" } });
+      return { rs, ann: heard.test?.status, says: heard.test?.says?.[0] }; },
+    good: (o) => o.rs.slice(0, 10).every((x: string) => x === "would-run") && o.rs.slice(10).every((x: string) => x === "refused rate") && o.ann === "would-run" && o.says === "the bell tolls for vic (1)" },
   // ---------------- E: events ----------------
   { id: "E1", what: "say events: a script that lists `say` hears a visitor's say (and never its own)", run(s) { cast(s);
       s.call("bob", "create", { id: "parrot", model: "crate", place: { at: [0, 0] } });

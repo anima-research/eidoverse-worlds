@@ -63,7 +63,7 @@ const sourceWhy = (blob, unreadable, src) => `${unreadable ? `its source ${src} 
 // activation logs NOTHING (its reason goes to the script's console ring and the status view).
 function activate(w, id, name, ev) {
   const st = w.state(), key = `script:${name}`, v = st.entities[id]?.c[key], cfg = scriptsCfg(st);
-  const { cause, dry, ...event } = ev;
+  const { cause, dry, requester, ...event } = ev;   // requester: who asked for a dry run (the event's `by` may be one it simulates)
   const rt = dry ? { console: [] } : rtOf(w, id, name);
   const out = (status, extra = {}) => { if (!dry) { const { logs, ...line } = extra; logRt(w, rt, { on: ev.on, status, ...line, ...(logs ? { logs } : {}) }); rt.status = status; }
     return { script: key, id, status, ...extra }; };
@@ -89,7 +89,7 @@ function activate(w, id, name, ev) {
   { const why = overBudget(B, cfg, key, sp.sponsor, 1); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
   const here = presentOf(w), me = worldT(st, id)?.pos ?? [0, 0, 0];
   if (dutyLeft(w.worldId) <= 0) return out("refused", { code: "busy", why: `the authority's scripts have used their share of the last second (${DUTY.maxMs} ms for every world here, ${Math.round(DUTY.maxMs * DUTY.worldShare)} for one); it runs again when there's time`, sponsor: sp.sponsor });
-  if (dry) { const now0 = w.now(), who = ev.by ?? "?"; const D0 = ((w.presence.dryRuns ??= {})[who] ??= []).filter((t) => now0 - t < DRY.ms); w.presence.dryRuns[who] = D0;
+  if (dry) { const now0 = w.now(), who = requester ?? "?"; const D0 = ((w.presence.dryRuns ??= {})[who] ??= []).filter((t) => now0 - t < DRY.ms); w.presence.dryRuns[who] = D0;
     if (D0.length >= DRY.n) return out("refused", { code: "rate", why: `${said(who)} has asked for ${D0.length} dry runs in the last minute; at most ${DRY.n}` });
     D0.push(now0); w.presenceDirty = true; }
   const t0 = performance.now();
@@ -545,7 +545,7 @@ const SCRIPT_VERBS = {
       if (!a.test || typeof a.test !== "object" || typeof a.test.on !== "string") refuse("shape", "test is an event {on: 'use'|'tick'|'wake'|'say'|'enter'|'leave'|'changed:<comp>', …}", "e.g. scripts {id: 'bell1', script: 'bell', test: {on: 'use', action: 'ring'}}");
       if (!st.entities[a.id]?.c[`script:${a.script}`]) refuse("not-found", `${a.id} has no script:${a.script}`, "scripts lists them");
       const { cause: _c, dry: _d, ...ev } = a.test; // a test event is the event's own fields; never a cause (depth) of its own
-      return { ok: true, dry: true, test: activate(w, a.id, a.script, { by: actor, ...ev, dry: true }) }; }
+      return { ok: true, dry: true, test: activate(w, a.id, a.script, { by: actor, ...ev, dry: true, requester: actor }) }; }
     return { ok: true, ...scriptsOf(w, st, a.id) }; },
 };
 export { SCRIPT_VERBS, activate, drainAll, drainHeld, drainScripts, heldEvent };
