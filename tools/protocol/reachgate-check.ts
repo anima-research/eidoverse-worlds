@@ -226,6 +226,13 @@ let tierNobody, perPerson, paused;
   skew += 9 * 60000; ok(!!shoulder(rae, "Zed")?.reach, "RG15d still held 9 min on: relays");
   skew += 60000 + 1000; const out = shoulder(rae, "Zed");
   ok(out && !out.reach, "RG15d past 10 min the grant has lapsed even though the hand never let go: stripped (ask again)", out); }
+// RG16: a cached reach grant ends no later than the timed allowance it came from
+{ const uma = person("Uma", "h", [-10, 0, -10]), val = person("Val", "j", [-10.6, 0, -10]);
+  ok(req(uma, "consent", { allow: val.actorId, class: "touch", for: 60000 })?.ok === true, "(RG16 setup) Uma allows Val touch for a minute");
+  const asked = req(val, "reach", { who: uma.actorId, point: "shoulder_l" });   // the reach verb delivers and caches the relay's grant
+  ok(asked?.ok === true && !!shoulder(val, "Uma")?.reach, "RG16 within the minute Val's reach is delivered and the hand relays", asked);
+  skew += 61000; const out = shoulder(val, "Uma");
+  ok(out && !out.reach, "RG16 past the minute it is stripped: the grant ended with the allowance", out); }
 live.now = wall;
 
 let skipped = null; const SKIP = Symbol("skip");

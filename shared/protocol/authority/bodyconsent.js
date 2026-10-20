@@ -101,7 +101,9 @@ function deliver(w, from, to, kind, cls, extra, consent) {
   if (cls === "pose") { b.pose = extra.spec ?? {}; b.poseBy = from; }
   if (cls === "displace") b.draggedBy = from;
   if (cls === "shove") b.tumble = { by: from, ts: w.now() };
-  if (cls === "touch" || cls === "intimate") (P.reaches ??= {})[from] = { to, cls, point: extra.spec?.point ?? null, until: w.now() + C.REACH_GRANT_MS };
+  // a grant the relay caches ends no later than the timed allowance it came from (reachAdmits takes the cached grant first)
+  if (cls === "touch" || cls === "intimate") { const o = C.tableOf(P, to).overrides[from]?.[cls]; const cap = o?.mode === "allow" && o.until !== undefined ? o.until : Infinity;
+    (P.reaches ??= {})[from] = { to, cls, point: extra.spec?.point ?? null, until: Math.min(w.now() + C.REACH_GRANT_MS, cap) }; }
   inboxPush(P, to, { type: "body", from, kind, cls, consent, ...(extra.spec ? { spec: extra.spec } : {}) }); w.presenceDirty = true;
 }
 // After any change to `to`'s table: whatever someone is doing to them that the table now says nobody to ends NOW, and the
