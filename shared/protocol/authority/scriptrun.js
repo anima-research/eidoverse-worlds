@@ -50,6 +50,8 @@ const anonEvent = ({ by: _by, ...rest }) => rest;
 const overBudget = (B, cfg, key, sponsor, cost) => (B.mine >= cfg.rate ? `${key} logged ${B.mine} activations in the last minute; the rate is ${cfg.rate}`
   : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget}, which the world's owner sets in @world.script-settings.budget`
   : B.bySponsor + cost > B.share ? `${said(sponsor)}'s scripts wrote ${B.bySponsor} entries in the last hour; each of the ${B.sponsors} sponsors here gets ${B.share} of the world's ${cfg.budget}` : null);
+// A script whose value stands but whom no write in the log answers for (its install act purged, say): it doesn't run
+const UNSPONSORED = "nobody in this world's log answers for it (its install isn't there, as when it was purged), so it doesn't run; set it again to install it, or an owner may adopt it (adopt {id, script})";
 // Why a script is paused for failing, with the last failure, since a deterministic one fails the same way when retried
 const pausedWhy = (rt) => `paused after ${rt.fails} failed activations in a row${rt.lastFail ? ` (the last: ${rt.lastFail.code}: ${rt.lastFail.why})` : ""}; ` +
   "fix what failed, then set the script again; setting the same value only retries, which helps if the cause has passed";
@@ -68,7 +70,7 @@ function activate(w, id, name, ev) {
   if (!v || typeof v !== "object" || v === PURGED) return out("not-installed");
   if (v.paused === true) { const pb = pausedBy(w, id, key); return out("paused", { why: pb ? `paused by ${said(pb.by)} at seq ${pb.at}` : "paused: true" }); }
   if (cfg.run === false) return out("stopped", { why: "@world.script-settings.run is false (the owner's kill permission)" });
-  const sp = sponsorOf(w, id, key); if (!sp) return out("not-installed");
+  const sp = sponsorOf(w, id, key); if (!sp) return out("not-installed", { why: UNSPONSORED });
   if (isBanned(w, sp.sponsor)) return out("suspended", { why: `suspended: sponsor ${said(sp.sponsor)} is banned (moderator log); nothing ran` });
   const ver = lastTouch(w, id, key)?.seq; if (!dry && rt.ver !== ver) { rt.ver = ver; rt.fails = 0; rt.lastFail = null; } // a re-set (a fix) clears the failure count
   if (!dry && (rt.fails ?? 0) >= cfg.fails) return out("paused", { why: pausedWhy(rt) });
@@ -448,6 +450,7 @@ function scriptStatus(w, st, id, name, v) {
   let src = null, unreadable = false; try { src = w.getBlob(v.src); } catch (e) { unreadable = e?.code !== "ENOENT"; }
   const base = { id, script: key, src: v.src, sponsor: sp?.sponsor ?? null, sponsorAt: sp?.sponsorAt ?? null, on: v.on ?? [], ...(v.every ? { every: v.every, always: !!v.always } : {}), scope: v.scope,
     ...(src?.text && SR.looksMinified(src.text) ? { note: "the source looks minified: hard to review" } : {}), last: rt?.console?.slice(-3) ?? [] };
+  if (!sp) return { ...base, status: "not-installed", why: UNSPONSORED };
   if (sp && isBanned(w, sp.sponsor)) return { ...base, status: "suspended", why: `sponsor ${said(sp.sponsor)} is banned` };
   if (v.paused === true) { const pb = pausedBy(w, id, key);
     return { ...base, status: "paused", why: pb ? `paused by ${said(pb.by)} at seq ${pb.at}` : "paused: true", ...(pb ? { pausedBy: pb.by, pausedAt: pb.at, pausedTs: pb.ts } : {}),

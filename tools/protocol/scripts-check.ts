@@ -882,6 +882,14 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const again = install(s, "bob", "qa", "p", onUse(`world.say("a2");`), { scope: { ids: "self", comps: [] }, on: ["use"] }).r;
       return { first: st(s, first), other: st(s, other), again: again?.ok ? "ok" : again?.refused?.code }; },
     good: (o) => o.other === "ok" && o.again === "too-many" },
+  { id: "Q2", what: "a script whose value stands but whose install act was purged says why it doesn't run in the status view (its activation gives the same why)", run(s) { cast(s);
+      s.call("bob", "create", { id: "qc", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "qc", "p", onUse(`world.say("c");`), { scope: { ids: "self", comps: [] }, on: ["use"] });
+      const act = s.entries().findLastIndex((e: any) => e?.kind === "act" && e.verb === "set" && JSON.stringify(e.body ?? {}).includes('"script:p"'));
+      s.w().append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: act }] } });
+      const v = s.call("olive", "scripts", { id: "qc" }); const view = (v?.scripts ?? []).find((x: any) => x.script === "script:p");
+      return { act, view: view?.status, why: view?.why ?? null }; },
+    good: (o) => o.act > 0 && o.view === "not-installed" && /answers for it/.test(o.why ?? "") },
   // ---------------- M: v1 parity: the v1 SDK's three examples (sdk/examples), ported to this API ----------------
   { id: "M1", what: "v1 parity: bellkeeper (use → a pendulum motion + say), greeter (enter → say, a count), lighthouse (a timer that speaks only if someone's here), ported", run(s) { cast(s);
       if (!D.presenceEvent) return { absent: true };
