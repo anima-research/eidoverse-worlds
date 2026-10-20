@@ -1,7 +1,7 @@
 // Real HTTP + WS integration. All state belongs to a fresh scratch directory.
 import { strict as assert } from "node:assert";
-import { generateKeyPairSync, createPublicKey, sign } from "node:crypto";
-import { mkdtempSync, mkdirSync, existsSync, statSync } from "node:fs";
+import { generateKeyPairSync, createPublicKey, sign, randomBytes } from "node:crypto";
+import { mkdtempSync, mkdirSync, existsSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 const scratch=mkdtempSync(join(tmpdir(),"ew-native-login-"));
@@ -12,6 +12,10 @@ try { const probe=Bun.listen({hostname:"127.0.0.1",port,socket:{data(){}}}); pro
 catch { throw Error("Scratch test port is occupied; refusing to run"); }
 const pair=generateKeyPairSync("ed25519"), pub=createPublicKey(pair.privateKey).export({format:"der",type:"spki"}) as Buffer;
 const issuer=`ed25519:${pub.subarray(pub.length-32).toString("base64url")}`;
+// a native session paired before native sessions became ordinary ones, as the server restores it: nativeWorld "water", no native mark
+const legacySid=randomBytes(32).toString("hex"), legacy=`ew_sess=${legacySid}`;
+writeFileSync(join(scratch,"sessions.json"),JSON.stringify({[legacySid]:{sub:"human:discord:legacy",name:"Legacy Native",
+ scopes:["worlds:join","worlds:spectate"],exp:Date.now()+600_000,nativeWorld:"water"}}),{mode:0o600});
 const server=Bun.spawn([process.execPath,"server/server.ts"],{env:{...process.env,
   HOST:"127.0.0.1",PORT:String(port),JOIN_TOKEN:"native-test-door",WORLDS_DIR:join(scratch,"worlds"),
   OPT_DIR:join(scratch,"opt"),RELAY_STATE_DIR:join(scratch,"opt"),SKIP_OPT_SWEEP:"1",RECORD_FRAMES:"0",
@@ -56,12 +60,16 @@ try{
   const c=await connect(w,native);const snap=c.messages.find(m=>m.type==="snapshot");
   assert.ok(snap,`joined ${w}`);assert.equal(snap.world,w);assert.equal(snap.you,"Native Fixture");c.ws.close();
  }
- // and it never approves another native pairing
+ // the session paired before native sessions became ordinary ones joins another world, and the HTTP door answers it as it answers the browser's session
+ const lc=await connect("commons",legacy);assert.ok(lc.messages.some(m=>m.type==="snapshot"),"legacy session joined commons");lc.ws.close();
+ const door=async(c:string)=>(await(await fetch(origin+"/access?world=commons",{headers:{cookie:c}})).json()).you;
+ assert.equal(await door(legacy),"enter","legacy session's HTTP door for commons");assert.equal(await door(browser),"enter");
+ // and the native session never approves another native pairing
  const relay=await(await post("/native/start",{})).json();
  assert.equal((await post("/native/approve",{user_code:relay.user_code},{cookie:native,origin})).status,403);
  assert.equal((await post("/logout",{},{cookie:native})).status,200);
  assert.equal((await fetch(origin+"/whoami",{headers:{cookie:native}})).status,401);
  assert.equal((await fetch(origin+"/whoami",{headers:{cookie:browser}})).status,200);
  assert.equal(statSync(join(scratch,"sessions.json")).mode&0o777,0o600);
- console.log("NATIVE_LOGIN_WIRE_PASS: browser auth, approval, independent session, replay refusal, verified joins in three worlds, no re-delegation, logout isolation, private scratch persistence");
+ console.log("NATIVE_LOGIN_WIRE_PASS: browser auth, approval, independent session, replay refusal, verified joins in three worlds, a session paired before native sessions became ordinary ones on both doors, no re-delegation, logout isolation, private scratch persistence");
 }finally{for(const ws of sockets)ws.close();server.kill();await server.exited;}
