@@ -6,7 +6,7 @@ import { CTX } from "./ctx.js";
 import { refuse } from "./refuse.js";
 import { isE, opsQuiet } from "./storage.js";
 import { SOCKETS_PER_HOST, isSocketC } from "./sockets.js";
-import { entryBy } from "./rights.js";
+import { RESERVED, entryBy } from "./rights.js";
 
 // How much a world holds (review 10-06 S0-2, security pass 2; ONE budget since R 10-15 22:48): at most
 // @world.capacity.entities entities, every one but @world, sockets included (a socket is a child entity); and the world's
@@ -22,12 +22,22 @@ const capacityOf = (st) => { const ok = (x) => Number.isInteger(x) && x >= 0;
   // read through the registry's one versioned-name reader (§4); with no capacity@n registered it is plain `capacity`
   const { name, value: v } = resolveVersioned(st.entities["@world"]?.c, "capacity"); const D = CAPACITY;
   return { ...Object.fromEntries(Object.keys(D).map((k) => [k, ok(v?.[k]) ? v[k] : D[k]])), name }; };   // name: the registry key the world is read under, for refusals to cite
-// how many entities a guest's rights made still stand (a log view, kept incrementally like everIds)
+// Whose rights made a thing count in the guests' pool: an identity the directory calls anonymous, or one it doesn't know
+// at all. The directory writes every account and imported identity (a translated world's are written with it) and never
+// an anonymous one, which lives only in the process that minted it. So after a restart an earlier guest is an id nobody
+// here knows, and what it made still counts. The rule rests on every other actor having a directory entry here: a
+// creator from before the directory, or from a world made on another server, counts too (said apart in the refusal).
+// The authority's own identities and an unknown author (a purged cause: null) are nobody's guest; with no directory,
+// nobody is. → "anon" | "unknown" | null
+const guestKind = (w, id) => { if (typeof id !== "string" || !w.kindOf || RESERVED.has(id)) return null; const k = w.kindOf(id);
+  return k === "anon" ? "anon" : k == null ? "unknown" : null; };
+// how many entities in the guests' pool still stand, and how many of those an unknown creator made (a log view, kept
+// incrementally like everIds)
 function guestMade(w, st) {
-  const G = (w.__guests ??= { n: 0, ids: new Set() });
-  for (; G.n < w.entries.length; G.n++) { const e = w.entries[G.n]; if (!isE(e) || e.kind !== "change") continue; let by = null;
-    for (const o of opsQuiet(e)) { if (o.verb === "create") { by ??= entryBy(w, e).rights; if (CTX.isAnon(by)) G.ids.add(o.id); } else if (o.verb === "delete" && o.comp === undefined) G.ids.delete(o.id); } }
-  let n = 0; for (const id of G.ids) if (st.entities[id]) n++; return n;
+  const G = (w.__guests ??= { n: 0, ids: new Map() });
+  for (; G.n < w.entries.length; G.n++) { const e = w.entries[G.n]; if (!isE(e) || e.kind !== "change") continue; let kind;
+    for (const o of opsQuiet(e)) { if (o.verb === "create") { kind ??= guestKind(w, entryBy(w, e).rights); if (kind) G.ids.set(o.id, kind); } else if (o.verb === "delete" && o.comp === undefined) G.ids.delete(o.id); } }
+  let n = 0, unknown = 0; for (const [id, k] of G.ids) if (st.entities[id]) { n++; if (k === "unknown") unknown++; } return { n, unknown };
 }
 const entityCount = (st) => Object.keys(st.entities).length - (st.entities["@world"] ? 1 : 0);
 function capacityCheck(w, st, s, who, norm) {
@@ -48,7 +58,8 @@ function capacityCheck(w, st, s, who, norm) {
   if (!made) return;
   const holder = who.cap?.kind === "reaction" ? who.cap.author : who.cap?.kind === "script" ? who.cap.sponsor : who.actor;
   if (!CTX.isAnon(holder)) return;
-  const g = guestMade(w, st);
-  if (g + made > cap.guestEntities) refuse("full", `account-less people (guests) together have ${g} entities standing here, and this world lets them have ${cap.guestEntities} (@world.${cap.name}.guestEntities), all of them together`, `sign in to build more, or ask the world's owner to raise it: set {id: '@world', component: '${cap.name}', value: {guestEntities: <n>}, merge: true} (at most ${CAPACITY_CEILING.guestEntities} on this server)`, { limit: cap.guestEntities, entities: g });
+  const { n: g, unknown } = guestMade(w, st);
+  const whose = unknown ? `things by account-less people (guests), and ${unknown} by creators this server doesn't know (a guest from before a restart, or someone from before its directory or another server), together make ${g}` : `account-less people (guests) together have ${g} entities standing here`;
+  if (g + made > cap.guestEntities) refuse("full", `${whose}, and this world lets them have ${cap.guestEntities} (@world.${cap.name}.guestEntities), all of them together`, `sign in to build more, or ask the world's owner to raise it: set {id: '@world', component: '${cap.name}', value: {guestEntities: <n>}, merge: true} (at most ${CAPACITY_CEILING.guestEntities} on this server)`, { limit: cap.guestEntities, entities: g });
 }
 export { capacityCheck };

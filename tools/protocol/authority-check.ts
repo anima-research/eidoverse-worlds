@@ -1252,6 +1252,17 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(code(glast) === "full" && /@world\.capacity\.guestEntities/.test(glast?.refused?.reason ?? "") && gn === 24 && room === 6 && gFill.ok && code(gThing) === "full", "SR2b account-less people together have at most capacity.guestEntities entities standing, sockets and things in one pool, across hosts (each a fresh identity)", { gn, room, glast: glast?.refused, gFill: gFill.refused, gThing: gThing.refused });
   const acct = R("ann", "create", { id: "acct-s", components: { parent: { to: "gh0" }, socket: { name: "a" } } });
   ok(acct.ok, "SR2b …an account still adds one", acct.refused);
+  // …and a restart doesn't empty the pool: a guest's id lives only in the process that minted it (the directory never writes
+  // one), so after a restart the earlier guests are ids nobody knows, and what they made still counts
+  { const Wr = () => openWorld(root, "guestrestart"); let gone = new Set<string>();
+    const Rr = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); const w = Wr(); w.kindOf = (id) => (gone.has(id) ? null : id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
+    Rr("ann", "create-world", { title: "guestrestart" }); Rr("ann", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
+    Rr("ann", "set", { id: "@world", component: "capacity", value: { guestEntities: 3 } });
+    const before = ["g1", "g2", "g3"].map((g, i) => Rr(g, "create", { id: `gr-${i}`, model: "crate", components: { transform: { pos: [i * 2, 0, 0] } } }));
+    gone = new Set(["g1", "g2", "g3"]);   // the restart: those three guests' ids are now unknown here
+    const after = Rr("g4", "create", { id: "gr-4", model: "crate", components: { transform: { pos: [0, 0, 6] } } });
+    const acct2 = Rr("ann", "create", { id: "gr-a", model: "crate", components: { transform: { pos: [2, 0, 6] } } });
+    ok(before.every((x) => x.ok) && code(after) === "full" && /3 by creators this server doesn't know/.test(after.refused?.reason ?? "") && acct2.ok, "SR2c after a restart, what earlier guests made still counts against the guests' pool (their ids are unknown here now), and the refusal says so; an account still adds one", { before: before.map((x) => x.ok ?? x.refused), after: after.ok ?? after.refused, acct: acct2.ok ?? acct2.refused }); }
   // the world's own budget: a socket meets it like a thing, and deleting frees room
   const have = nEnt(); R("ann", "set", { id: "@world", component: "capacity", value: { entities: have + 2 } });
   R("ann", "create", { id: "w-host", model: "crate", components: { transform: { pos: [0, 0, -5] } } });
