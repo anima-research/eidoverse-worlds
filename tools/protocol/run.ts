@@ -31,7 +31,8 @@ import { ENGINE, controlNote } from "./common.ts";
 
 type Lane = "core" | "main" | "browser";
 const SUITES: [string, string, number][] = [ // name, file, tail lines to show
-  ["kernel", "kernel-check.ts", 1],     // reviewer item 5 (10-18): the kernel (envelope, kinds, ops, identity grammar, version, transform, parent) is trial-kernel: a change is red unless the same change carries a translator, a changelog line and old-red/new-green vectors (spec/kernel-pin.json)
+  ["kernel", "kernel-check.ts", 1],
+  ["normative", "normative-check.ts", 1], // spec/NORMATIVE.md is the closed set, and its consent/roles tables equal the reference (10-20, nissa-seru)     // reviewer item 5 (10-18): the kernel (envelope, kinds, ops, identity grammar, version, transform, parent) is trial-kernel: a change is red unless the same change carries a translator, a changelog line and old-red/new-green vectors (spec/kernel-pin.json)
   ["gov-reserved", "gov-reserved-check.ts", 1], // reviewer item 8 (10-18): governance is RESERVED; the server refuses to serve a log holding a `sequencer` entry, truthfully
   ["diffcheck", "diffcheck.ts", 1],        // review #260 rereview (10-19) blocker 3: the range is clean under `git diff --check`; two documented exemptions only
   ["procgroup", "procgroup-check.ts", 1],  // review #260 rereview (10-19) blocker 2: the gate finds and kills a suite's processes on Linux, macOS and Windows
@@ -155,7 +156,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
 
 // ---- lanes ----
 // CORE runs first, in this order, and a failure there stops the gate
-const CORE = ["kernel", "gov-reserved", "diffcheck", "procgroup", "nov1", "vocab", "authority", "access", "identity", "scars", "reset-race", "txn", "txn-mutants"];
+const CORE = ["kernel", "normative", "gov-reserved", "diffcheck", "procgroup", "nov1", "vocab", "authority", "access", "identity", "scars", "reset-race", "txn", "txn-mutants"];
 // every suite that launches a Chromium (directly, through playwright, or through tools/harness.ts scratchBench). The
 // gate checks this list against the files themselves (browserMarkers), so a new browser suite can't hide in MAIN.
 // refusedjoin (scratchBench) and client-tools (run-client.ts runs every tools/*-test file, browser tests among them, those one
@@ -187,7 +188,7 @@ const EXPECT: Record<string, number> = {
   "shiplist-probe": 197, "agenttools": 20, "presence": 10, "modhole": 0.1, "xss-probe": 15, "pretrans": 2.8,
   "soundclock": 0.2, "eidomodel": 0.7, "party-probe": 486, "colour-picker": 8.1, "alias": 0.4, "navgrid": 64,
   "navgrid-edge": 0.6, "places": 130, "places-scale": 6.3, "storey-walk": 1.5, "shape-attach": 0.7, "shape-physics": 0.7,
-  "shape-repair": 0.4, "buildcheck": 18, "buildcheck-queue": 7.4, "buildcheck-route": 22, "client-tools": 202, "door-is-error": 280, "history-request": 0.3, "wing-fold-presence": 0.3, "skystamp": 0.5
+  "shape-repair": 0.4, "buildcheck": 18, "buildcheck-queue": 7.4, "buildcheck-route": 22, "client-tools": 202, "door-is-error": 280, "history-request": 0.3, "wing-fold-presence": 0.3, "skystamp": 0.5, "normative": 0.2
 };
 // PROTOCOL_TIMEOUT_SCALE=<factor> stretches (or, to test the kill, shrinks) every timeout; the manifest shows factor 1
 const TIMEOUT_SCALE = Number(process.env.PROTOCOL_TIMEOUT_SCALE ?? 1) > 0 ? Number(process.env.PROTOCOL_TIMEOUT_SCALE ?? 1) : 1;

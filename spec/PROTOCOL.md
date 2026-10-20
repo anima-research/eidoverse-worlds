@@ -7,6 +7,9 @@ attribution. The reference implementation in this repository is separately
 licensed (AGPL); *the contract is free*. SMTP being free is what made the
 mail ecosystem exist.
 
+Which files are the contract, and the status of each choice it makes (decided, trial, open), is in
+`spec/NORMATIVE.md`. Code this document names is informative: a place to look, never the contract.
+
 Status: normative for logs whose genesis says `dialect: "eidoverse-log", v: 4,
 minor: 0` (the version history is at the end).
 **Alpha.** This whole protocol is in a trial period of about a year from v1.
