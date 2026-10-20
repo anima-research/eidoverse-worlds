@@ -844,6 +844,15 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
       return { rs: ["pad1", "pad2", "pad3"].map((id) => st(s, s.call("vic", "use", { id, action: "go" }))) }; },
     good: (o) => JSON.stringify(o.rs) === '["ran","ran","refused consent"]' },
+  { id: "C3b", what: "§3d M4: a pose a sponsor-wide allowance let in stands when the person changes some other part of their table", run(s) { cast(s);
+      s.call("bob", "create", { id: "pad1", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "pad1", "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });
+      s.call("bob", "set", { id: "pad1", component: "reactions", value: { go: { kind: "script", script: "p" } } });
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
+      const r = st(s, s.call("vic", "use", { id: "pad1", action: "go" })); const posed = !!s.w().presence.bodies.vic?.pose;
+      s.call("vic", "consent", { set: { class: "touch", tier: "everyone", mode: "deny" } });
+      return { r, posed, after: !!s.w().presence.bodies.vic?.pose }; },
+    good: (o) => o.r === "ran" && o.posed && o.after },
   // ---------------- M: v1 parity: the v1 SDK's three examples (sdk/examples), ported to this API ----------------
   { id: "M1", what: "v1 parity: bellkeeper (use → a pendulum motion + say), greeter (enter → say, a count), lighthouse (a timer that speaks only if someone's here), ported", run(s) { cast(s);
       if (!D.presenceEvent) return { absent: true };

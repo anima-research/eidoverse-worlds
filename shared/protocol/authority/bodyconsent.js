@@ -40,8 +40,7 @@ function bodyGate(w, from, to, kind, extra = {}) {
   if (from === to) return { ok: true, consent: "self", deliver: () => deliver(w, from, to, kind, cls, extra, "self") };
   const result = (verdict, r) => { ringPush(P, { ts: now, from, to, cls, verdict }); w.presenceDirty = true; return r; };
   if (P.throttle?.[`${from}:${cls}`] > now) return result("refused", { ok: false, code: "cool-down", class: cls, reason: `${from} is on a cool-down for ${cls} after repeated refusals (moderator log)`, fix: "ask people first; this lifts by itself" });
-  let d = C.decide(P, from, to, cls, now);
-  if (isScriptActor(from) && extra.sponsor && !C.tableOf(P, to).overrides[from]?.[cls] && C.tableOf(P, to).overrides[`scripts-by:${extra.sponsor}`]?.[cls]) d = C.decide(P, `scripts-by:${extra.sponsor}`, to, cls, now);
+  const d = decideAs(P, from, extra.sponsor, to, cls, now);
   if (d.mode === "deny") { noteRefusal(w, from, to, cls, now); ringPush(P, { ts: now, from, to, cls, verdict: "refused", why: d.why }); w.presenceDirty = true;
     return { ok: false, code: "consent", class: cls, reason: C.refusalWords(to, cls), fix: C.REFUSAL_FIX }; }   // the why is the target's (ring) only
   if (d.mode === "ask") {
@@ -95,16 +94,23 @@ export function reachLetGo(w, from, aimed) {
   delete P.reaches[from]; w.presenceDirty = true; return true;
 }
 const forgetReaches = (P, who) => { for (const [k, r] of Object.entries(P.reaches ?? {})) if (k === who || r?.to === who) delete P.reaches[k]; };
+/** what `to`'s table says to `from` for `cls`: a behaviour with no entry of its own is answered by its sponsor's scripts-by: entry,
+ *  when the table has one. Admission and revocation both ask here, so they agree on what stands. */
+function decideAs(P, from, sponsor, to, cls, now) {
+  const o = C.tableOf(P, to).overrides;
+  return isScriptActor(from) && sponsor && !o[from]?.[cls] && o[`scripts-by:${sponsor}`]?.[cls] ? C.decide(P, `scripts-by:${sponsor}`, to, cls, now) : C.decide(P, from, to, cls, now);
+}
 /** each grant resting on `to`: what `to`'s table says to its class now (revokeAfter compares before and after a change) */
-const reachModes = (P, to, now) => Object.fromEntries(Object.entries(P.reaches ?? {}).filter(([, r]) => r?.to === to).map(([k, r]) => [k, C.decide(P, k, to, r.cls, now).mode]));
+const reachModes = (P, to, now) => Object.fromEntries(Object.entries(P.reaches ?? {}).filter(([, r]) => r?.to === to).map(([k, r]) => [k, decideAs(P, k, r.sponsor, to, r.cls, now).mode]));
 function deliver(w, from, to, kind, cls, extra, consent) {
   const P = w.presence, b = P.bodies[to];
-  if (cls === "pose") { b.pose = extra.spec ?? {}; b.poseBy = from; }
-  if (cls === "displace") b.draggedBy = from;
+  const sponsor = extra.sponsor ? { sponsor: extra.sponsor } : {};
+  if (cls === "pose") { b.pose = extra.spec ?? {}; b.poseBy = from; if (extra.sponsor) b.poseSponsor = extra.sponsor; else delete b.poseSponsor; }
+  if (cls === "displace") { b.draggedBy = from; if (extra.sponsor) b.dragSponsor = extra.sponsor; else delete b.dragSponsor; }
   if (cls === "shove") b.tumble = { by: from, ts: w.now() };
   // a grant the relay caches ends no later than the timed allowance it came from (reachAdmits takes the cached grant first)
   if (cls === "touch" || cls === "intimate") { const o = C.tableOf(P, to).overrides[from]?.[cls]; const cap = o?.mode === "allow" && o.until !== undefined ? o.until : Infinity;
-    (P.reaches ??= {})[from] = { to, cls, point: extra.spec?.point ?? null, until: Math.min(w.now() + C.REACH_GRANT_MS, cap) }; }
+    (P.reaches ??= {})[from] = { to, cls, point: extra.spec?.point ?? null, until: Math.min(w.now() + C.REACH_GRANT_MS, cap), ...sponsor }; }
   inboxPush(P, to, { type: "body", from, kind, cls, consent, ...(extra.spec ? { spec: extra.spec } : {}) }); w.presenceDirty = true;
 }
 // After any change to `to`'s table: whatever someone is doing to them that the table now says nobody to ends NOW, and the
@@ -112,10 +118,10 @@ function deliver(w, from, to, kind, cls, extra, consent) {
 // it. A touch is held to more (r2 holes F3 (c)): its cell moving to anything but allow is a change of mind, and ends it
 // (`before`: reachModes before the change, so a change to some other class leaves a yes standing).
 function revokeAfter(w, to, before = {}) { const P = w.presence, b = P.bodies[to], now = w.now(); if (!b) return [];
-  const ended = []; const end = (actor, cls, clear) => { if (C.decide(P, actor, to, cls, now).mode !== "deny") return; clear(); ended.push({ actor, class: cls }); inboxPush(P, actor, { type: "body-revoked", by: to, class: cls }); };
-  if (b.poseBy) end(b.poseBy, "pose", () => { delete b.pose; delete b.poseBy; });
-  if (b.draggedBy) end(b.draggedBy, "displace", () => { delete b.draggedBy; });
-  for (const [actor, r] of Object.entries(P.reaches ?? {})) if (r?.to === to) { const m = C.decide(P, actor, to, r.cls, now).mode;
+  const ended = []; const end = (actor, sponsor, cls, clear) => { if (decideAs(P, actor, sponsor, to, cls, now).mode !== "deny") return; clear(); ended.push({ actor, class: cls }); inboxPush(P, actor, { type: "body-revoked", by: to, class: cls }); };
+  if (b.poseBy) end(b.poseBy, b.poseSponsor, "pose", () => { delete b.pose; delete b.poseBy; delete b.poseSponsor; });
+  if (b.draggedBy) end(b.draggedBy, b.dragSponsor, "displace", () => { delete b.draggedBy; delete b.dragSponsor; });
+  for (const [actor, r] of Object.entries(P.reaches ?? {})) if (r?.to === to) { const m = decideAs(P, actor, r.sponsor, to, r.cls, now).mode;
     if (m === "deny" || (m !== "allow" && m !== before[actor])) { delete P.reaches[actor]; ended.push({ actor, class: r.cls }); inboxPush(P, actor, { type: "body-revoked", by: to, class: r.cls }); } }
   w.presenceDirty = true; return ended; }
 const shieldOf = (P, who) => { const t = C.tableOf(P, who); return { preset: t.preset, everyone: Object.fromEntries(C.ENFORCED.map((c) => [c, t.everyone[c]])), ...(t.paused ? { paused: true } : {}) }; };
