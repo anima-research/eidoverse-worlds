@@ -544,6 +544,20 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const swp = (() => { const e = w2.state().entities.sw; if (!e) return null; const s = w2.state(); const g = s.entities.gate.c.transform; return [g.pos[0] + e.c.transform.pos[0], g.pos[2] + e.c.transform.pos[2]]; })();
   ok(sw.ok && swp && Math.abs(swp[0] - (gt[0] + 5)) < 0.05, "C12 hang from an off-origin frame: the seat hangs under the beam's middle, not the frame's origin", { swp, beamMid: gt[0] + 5, r: sw.refused }); }
 
+// ---- SKY (review of #260): a merge that sets the sky's hours or rate restarts its clock at the merge ----
+{ const { ratedHoursAt } = await import("../../shared/forecast.js");
+  let now = T + 9000; const w = openLive(root + "skymerge/", "skymerge", { kindOf: LABKIND, now: () => now });
+  request(w, "ann", "create-world", { title: "skymerge" });
+  const sky = () => w.state().entities["@world"].c.sky; const at = () => Math.round(ratedHoursAt(sky(), now) * 1000) / 1000;
+  const s0 = request(w, "ann", "set", { id: "@world", component: "sky", value: { hours: 6, rate: 24 } });
+  now += 1800e3; const half = at();   // half an hour at 24 world hours an hour: 18
+  const m1 = request(w, "ann", "set", { id: "@world", component: "sky", value: { hours: 9 }, merge: true }); const afterHours = at();
+  now += 900e3; const later = at();   // a quarter hour more: 15
+  const m2 = request(w, "ann", "set", { id: "@world", component: "sky", value: { rate: 0 }, merge: true }); const afterRate = at();
+  now += 3600e3; const stood = at();
+  ok(s0.ok && m1.ok && m2.ok && half === 18 && afterHours === 9 && later === 15 && afterRate === 15 && stood === 15,
+    "SKY1 a merged sky hour holds from the merge (9 then, 15 a quarter hour on at 24×), and a merged rate keeps the hour it shows (15, standing still at rate 0)", { half, afterHours, later, afterRate, stood, sky: sky() }); }
+
 // ---- V: what changed, said in the protocol's terms (slice 3c: the renderer reacts to these, not to v1 verbs) ----
 { const { viewState } = await import("../../shared/protocol/view.js"); const { diffView } = await import("../../shared/protocol/viewdiff.js");
   let now = T + 9500; const w = openLive(root + "vdiff/", "vdiff", { kindOf: LABKIND, now: () => now });

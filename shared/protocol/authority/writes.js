@@ -27,6 +27,7 @@ import { isLookAt } from "./checks.js";
 import { Admitted, admit, rateCheck } from "./gate.js";
 import { applyResettle, clearRefsTo, lastTouch, planResettle, resettleEntries, stampMedia, stampModelHash, stampShapes, stripDry, touched, warnOrNot, warnings } from "./followups.js";
 import { renameFields } from "../shaperepair.js";
+import { ratedHoursAt } from "../../forecast.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const guess = (...a) => UP.guess(...a);
@@ -289,6 +290,11 @@ function buildSet(ctx, a) {
   if (!CTX.forking) for (const f of defOf(a.component)?.stamped ?? []) { const path = f.split("."); let x = a.value;
     for (const k of path) x = x && typeof x === "object" && !Array.isArray(x) ? x[k] : undefined;
     if (x !== undefined) refuse("stamped", `${a.id}.${a.component}.${f} is stamped by the authority, never written`, a.component === "sky" ? "leave it out: the sky act stamps ts and a forecast's epoch, the weather act an override (sky {…} / weather {weather})" : "leave it out"); }
+  // a merge that sets the sky's hours or rate restarts its clock now (ts is the instant hours held, so a kept ts would
+  // count the time since again): hours as written, or, with only the rate, the hour the old clock shows now (review of #260)
+  if (a.component === "sky" && a.merge && v && typeof v === "object" && a.value && typeof a.value === "object" && (Object.hasOwn(a.value, "hours") || Object.hasOwn(a.value, "rate"))) {
+    const old = e.c.sky && typeof e.c.sky === "object" ? e.c.sky : null; const { ts, ...rest } = v;
+    v = Object.hasOwn(a.value, "hours") || !old ? rest : { ...rest, hours: Math.round(ratedHoursAt(old, ctx.w.now()) * 1e6) / 1e6 }; }
   v = resolve(ctx, a.id, a.component, v);
   ctx.refs.add(a.id);
   return [setOp(a.id, a.component, v)];
