@@ -138,6 +138,14 @@ const attacks = [
       const E = s.world().entries; const act = [...E].reverse().find((e) => e?.kind === "act" && e.verb === "use" && e.actor === "vic");
       return { setUp, evolve, tag, author: String(act?.body?.capability?.author ?? null) }; },
     baseBad: () => true, nowGood: (o) => ok(o.setUp) && ok(o.evolve) && ok(o.tag) && o.author === "bob" },
+  // PROTOCOL §7a, "Revoke and the past": taking a permission away stops future acts, an undo through a handler included
+  { id: "L7b", what: "undoing your own use through a handler whose who no longer admits you is refused", run(s) { cast(s);
+      s.call("bob", "create", { id: "lever", model: "crate", place: { at: [-3, 3] } });
+      s.call("bob", "set", { id: "lever", component: "reactions", value: { yank: { kind: "set", component: "label", value: "yanked", who: "visitor" } } });
+      const use = s.call("vic", "use", { id: "lever", action: "yank" });
+      const raise = s.call("bob", "set", { id: "lever", component: "reactions", value: { yank: { kind: "set", component: "label", value: "yanked", who: "builder" } } });
+      return { use, raise, attack: s.call("vic", "undo", {}) }; },
+    baseBad: () => true, nowGood: (o) => ok(o.use) && ok(o.raise) && refused(o.attack) },
 ];
 
 // A world whose log names no owner (an import, a hand-edited log): nobody is above visitor, whatever roles say.

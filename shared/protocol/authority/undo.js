@@ -11,7 +11,7 @@ import { refuse, said } from "./refuse.js";
 import { readback, FOLLOW_UP, clone, createOps, delOp, followUpsOf, isE, opsQuiet, scratch, setOp, versionOf, versionSeq } from "./storage.js";
 import { obbs, satDepth, worldT } from "./math.js";
 import { isLegacyParent, isSocketC, socketsOf } from "./sockets.js";
-import { RESERVED, may, rankOf, roleOf } from "./rights.js";
+import { RESERVED, may, rankOf, roleOf, whoRank } from "./rights.js";
 import { reactionCap } from "./use.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
@@ -253,7 +253,9 @@ function buildUndo(ctx, a, w) {
   // a door through its handler, so they may close it again by undo), asked for again NOW: no handler, no undo
   const ureq = bodyOf(target.seq)?.request;
   const ucap = bodyOf(target.seq)?.capability;
-  if (target.verb === "use" && target.actor === ctx.actor && ucap?.reaction && ureq?.id && ctx.st.entities[ureq.id]?.c.reactions?.[ucap.reaction]) {
+  // …and only while the handler's who still admits them, as a use is judged (a raised who stops future acts, undo included)
+  const uh = ureq?.id ? ctx.st.entities[ureq.id]?.c.reactions?.[ucap?.reaction] : undefined;
+  if (target.verb === "use" && target.actor === ctx.actor && ucap?.reaction && uh && (!uh.who || rankOf(ctx.st, ctx.actor) >= whoRank(ctx.st, uh.who))) {
     const comps = [...new Set(groups.flat().map((o) => o.comp).filter(Boolean))];
     if (groups.flat().every((o) => o.id === ureq.id && o.comp !== undefined)) { reactionCap(ctx, ureq.id, comps[0], ucap.reaction); ctx.cap.comps = comps;
       ctx.actExtra = { undoes: target.seq, capability: ctx.actExtra.capability }; } }
