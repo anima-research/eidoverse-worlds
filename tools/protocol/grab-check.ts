@@ -668,6 +668,20 @@ const cases: Case[] = [
     good: (o) => o.g[0] === "locked" && /^owners only \(it was locked by .*olive.*\) can unlock it first/.test(o.g[1] ?? "") && !/builder/.test(o.g[1] ?? "")
       && o.p[0] === "locked" && /^owners only \(it was locked by .*olive.*\) can unlock it first/.test(o.p[1] ?? "")
       && o.v[0] === "locked" && /^builders and up \(it was locked by .*bob.*\) can unlock it first/.test(o.v[1] ?? "") },
+  { id: "U11", what: "a thing that goes home keeps its size: an explicit home.scale is the scale it goes home at, and without one its size in the world is kept (homeScale), not its local scale copied into another frame", run(s) { cast(s);
+      // an explicit home.scale
+      s.call("olive", "create", { id: "book", model: "book", components: { grabbable: { who: "inhabitant", release: "return" } }, place: { at: [0.3, 0] } });
+      s.call("olive", "set", { id: "book", component: "home", value: { pos: [0.3, 0, 0], q: [0, 0, 0, 1], scale: [2, 2, 2] } });
+      s.call("vic", "move", { to: [0.3, 0, 0.6] }); const g1 = s.call("vic", "grab", { id: "book" }); const p1 = s.call("vic", "put", { id: "book" });
+      const sc1 = s.w().state().entities.book?.c.transform?.scale;
+      // no home.scale: it hangs under a thing at twice the size (local 1, world 2), and goes home to the world root
+      s.call("olive", "create", { id: "big", model: "crate", components: { transform: { pos: [3, 0, 0], q: [0, 0, 0, 1], scale: [2, 2, 2] } } });
+      s.call("olive", "create", { id: "cup", model: "book", components: { parent: { to: "big" }, transform: { pos: [0, 0.5, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, grabbable: { who: "inhabitant", release: "return", range: 5 } } });
+      s.call("olive", "set", { id: "cup", component: "home", value: { pos: [3, 0, 2], q: [0, 0, 0, 1] } });
+      s.call("vic", "move", { to: [3, 0, 0.6] }); const g2 = s.call("vic", "grab", { id: "cup" }); const p2 = s.call("vic", "put", { id: "cup" });
+      const c2 = s.w().state().entities.cup?.c;
+      return { g1: show(g1), p1: show(p1), sc1, g2: show(g2), p2: show(p2), parent2: c2?.parent ?? null, sc2: c2?.transform?.scale }; },
+    good: (o) => o.g1 === "ok" && o.p1 === "ok" && JSON.stringify(o.sc1) === "[2,2,2]" && o.g2 === "ok" && o.p2 === "ok" && o.parent2 === null && JSON.stringify(o.sc2) === "[2,2,2]" },
   { id: "U5", what: "the presence tier: a pose carries use {id, hand} while a holder presses (every receiver draws the thing's fx); a malformed use costs only that field", run(s) {
       const a = PC.sanePose({ p: [0, 0, 0], use: { id: "hose", hand: "left" } }); const b = PC.sanePose({ p: [0, 0, 0], use: { id: "hose", n: 3 } }); const c = PC.sanePose({ p: [0, 0, 0], use: "hose" });
       return { a: a?.use ?? null, b: b ? ("use" in b ? b.use : "dropped") : null, c: c ? ("use" in c ? c.use : "dropped") : null }; },

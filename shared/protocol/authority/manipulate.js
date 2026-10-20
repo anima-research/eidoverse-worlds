@@ -131,12 +131,13 @@ function snapTarget(st, id, g, p, w = null) {
   return out;
 }
 // Home (research §3): where a returning thing goes. A system act (actor system, verb return-home) whose cause is the
-// release, then its change entry: the home transform (and the parent it had), with its scale kept. Refused (a lock, a home
-// parent that's gone) means it stays where it is.
+// release, then its change entry: the home transform (and the parent it had), at its home scale (homeScale: home.scale when
+// it has one, else its size in the world kept in the home parent's frame). Refused (a lock, a home parent that's gone) means
+// it stays where it is.
 function returnPlan(w, st, id, g) {
   const e = st.entities[id]; const hp = g.home.parent;
   if (hp && !st.entities[hp.to]) return { plan: null, why: `its home parent ${hp.to} is gone` };
-  const ops = [...(hp ? [setOp(id, "parent", { ...hp })] : e.c.parent ? [delOp(id, "parent")] : []), setOp(id, "transform", { pos: g.home.pos.slice(), q: g.home.q.slice(), scale: (e.c.transform?.scale ?? [1, 1, 1]).slice() })];
+  const ops = [...(hp ? [setOp(id, "parent", { ...hp })] : e.c.parent ? [delOp(id, "parent")] : []), setOp(id, "transform", { pos: g.home.pos.slice(), q: g.home.q.slice(), scale: homeScale(st, id, g.home) })];
   try { return { plan: admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform", "parent"] } }, ops) }; }
   catch (x) { if (!(x instanceof Refusal)) throw x; return { plan: null, why: x.reason }; }
 }
