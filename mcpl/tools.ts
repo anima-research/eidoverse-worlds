@@ -267,6 +267,8 @@ export async function screenshotTool(ag: ToolAgent, view = "first", at?: string,
       : `${ignored.join(" and ")} ${ignored.length > 1 ? "apply" : "applies"} only to views third and selfie; ignored`;
     // as this identity (readHeaders): a world that admits only people listed answers its own people only
     const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}&renderer=${encodeURIComponent(renderer)}${extra}${at ? `&at=${encodeURIComponent(at)}` : ""}`, { headers: ag.readHeaders });
+    // a 401 or 403 is who this body is, which calling again doesn't change: say who can
+    if (r.status === 401 || r.status === 403) return fail(`screenshot: no picture was taken; this world shows its state only to the people it lets in, and it didn't take this body's read key (${r.status}). Calling again won't change that: the world's owners decide who comes in, and the host's operator issues this body's key`);
     if (!r.ok) return fail(`screenshot: no picture was taken; the world server answered "${(await r.text()).slice(0, 200)}" (${r.status}), so try again in a while`);
     const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
     const label = r.headers.get("x-eidoverse-scene") === "world-projection"
@@ -482,7 +484,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
     const out = self ? { ...result, flight: ag.flightStatus() } : result;
     return { content: [{ type: "text", text: JSON.stringify(out, null, 2) }], ...(result.ok ? {} : { isError: true }) };
   },
-  screenshot: async (ag, a, ctx, name) => { return await screenshotTool(ag, typeof a.view === "string" ? a.view : "first", typeof a.at === "string" && a.at ? a.at : undefined,
+  screenshot: async (ag, a, ctx, name) => {
+    // at takes what look prints, a handle or a label, as the other tools do: the renderer wants the full id
+    let at = typeof a.at === "string" && a.at ? a.at : undefined;
+    if (at) { const t = ag.thingRef(at); if ("refusal" in t) return fail(`screenshot: ${t.refusal}`); if ("id" in t) at = t.id; }
+    return await screenshotTool(ag, typeof a.view === "string" ? a.view : "first", at,
     typeof a.renderer === "string" ? a.renderer : "auto", { dist: a.dist, height: a.height, pitch: a.pitch }); },
   set_avatar: async (ag, a, ctx, name) => {
       const roster = (await (await fetch(`${ag.httpBase}/avatars`)).json()) as { name: string; path: string }[];
@@ -645,9 +651,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
         // FLIGHT (upstream's flight arc, merged 2026-09-02; behind the world's `fly` grant). The integrator is the agent's
         // (shared/flight.js); this is only its door: take off if on the ground, climb if asked, glide if sent somewhere.
         const L: string[] = [];
+        // the arguments are checked before the launch, so a refusal moves nothing
+        if (a.altitude != null && notANumber(a.altitude)) return fail("move {mode: \"fly\"}: altitude is a number of metres");
         if (!airborne(ag)) { const r = await ag.takeOff(); L.push(r.text); if (!r.ok || !airborne(ag)) return fail(L.join("\n")); }
         if (a.altitude != null) {
-          if (notANumber(a.altitude)) return fail("move {mode: \"fly\"}: altitude is a number of metres");
           const r = await ag.climbTo(Number(a.altitude)); L.push(r.text);
           if (!r.ok) return fail([...L, ag.flightStatus()].join("\n"));
         }
@@ -1000,17 +1007,21 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (a.from == null && bodiless && comps?.light && !a.place && !comps?.transform) {
         // the old light tool's default: just in front of you, at about eye height (or exactly at)
         const pt = Array.isArray(a.at) ? a.at.map(Number) : null;
-        if (pt && ((pt.length !== 2 && pt.length !== 3) || !pt.every(Number.isFinite))) return { content: [{ type: "text", text: "create: at is a point [x, z] or [x, y, z]" }], isError: true };
+        if (pt && ((pt.length !== 2 && pt.length !== 3) || !pt.every(Number.isFinite))) return { content: [{ type: "text", text: "create: at is a point [x, z] or [x, y, z], or {pos: [x, y, z], yaw}" }], isError: true };
         const x = pt ? pt[0] : ahead[0], z = pt ? (pt.length === 3 ? pt[2] : pt[1]) : ahead[1];
         const y = pt && pt.length === 3 ? pt[1] : ag.heightAt(x, z) + 1.6;
-        args.components = { ...comps, light: { color: 0xffd9a0, intensity: 16, range: 10, ...comps.light }, transform: { pos: [x, y, z] } }; delete args.at;
+        args.components = { ...comps, light: { color: 0xffd9a0, intensity: 16, range: 10, ...comps.light }, transform: { pos: [x, y, z] } };
+        // at's object form ({pos, yaw}) goes on to the authority, which lays it over this transform and checks its shape
+        // (it was read only as an array, then deleted, and the light went ahead of you at eye height)
+        if (pt) delete args.at;
       } else if (a.from == null && Array.isArray(a.at)) {
         // at without from: a point. On the ground ([x, z]) it is place {at} — the authority seats a model's bottom; a
         // bodiless thing, or an exact [x, y, z], goes straight into its transform
         const pt = a.at.map(Number);
         if ((pt.length !== 2 && pt.length !== 3) || !pt.every(Number.isFinite)) return { content: [{ type: "text", text: "create: at is a point [x, z] or [x, y, z] (or, with from, the authority's {pos, yaw})" }], isError: true };
         delete args.at;
-        if (pt.length === 3 || bodiless) args.components = { ...(comps ?? {}), transform: { pos: pt.length === 3 ? pt : [pt[0], ag.heightAt(pt[0], pt[1]), pt[1]] } };
+        // at sets the position only: a rotation or scale given in components.transform stays
+        if (pt.length === 3 || bodiless) args.components = { ...(comps ?? {}), transform: { ...(comps?.transform ?? {}), pos: pt.length === 3 ? pt : [pt[0], ag.heightAt(pt[0], pt[1]), pt[1]] } };
         else args.place = { ...(a.place && typeof a.place === "object" ? a.place : {}), at: pt };
       } else if (!somewhere && a.from == null) {
         if (bodiless) args.components = { ...(comps ?? {}), transform: { pos: [ahead[0], ag.heightAt(ahead[0], ahead[1]), ahead[1]] } };
@@ -1125,11 +1136,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!q) return fail("measure wants {id} (a placed thing) or {lib} (a library model)");
       // What the world server did, as far as the door can see it: no answer,
       // an answer that isn't geometry, or its own error.
-      let r: Response;
-      // as this identity: a members-only world's geometry answers only its members
-      try { r = await fetch(`${base}/geom?${q}`, ag.agentToken ? { headers: { authorization: `Bearer ${ag.agentToken}` } } : undefined); } catch (e) { return fail(`measure: the world server didn't answer (${String(e)}), so nothing was measured; try again in a moment`); }
+      // as this identity (readHeaders): a members-only world's geometry answers only its members. One request
       let d: any;
-      try { const r = await fetch(`${base}/geom?${q}`, { headers: ag.readHeaders }); if (r.status === 401) return fail("measure: the world's state needs a read key and this body's key wasn't taken, so nothing was measured");
+      try { const r = await fetch(`${base}/geom?${q}`, { headers: ag.readHeaders });
+        // who this body is, which calling again doesn't change: say who can
+        if (r.status === 401 || r.status === 403) return fail(`measure: nothing was measured; this world shows its state only to the people it lets in, and it didn't take this body's read key (${r.status}). Calling again won't change that: the world's owners decide who comes in, and the host's operator issues this body's key`);
         try { d = await r.json(); } catch { return fail(`measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); } }
       catch (e) { return fail(`measure: the world server didn't answer (${String((e as Error)?.message ?? e)}), so nothing was measured; try again in a moment`); }
       if (d.error) return fail(`measure: the world server answered "${d.error}", so nothing was measured`);
@@ -1137,7 +1148,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!g?.bbox) return fail("no geometry available for that (parsing offline, or a light)");
       const L: string[] = [];
       const s = g.bbox.size;
-      L.push(`${a.id ? `[${ag.refName(String(d.id))}] ${d.model ?? ""}` : d.model} — ${s[0]}×${s[1]}×${s[2]}m, ${g.tris} tris${g.sampled ? " (sampled)" : ""}`);
+      // /geom?lib= answers {lib, ...summary}, with no model
+      L.push(`${a.id ? `[${ag.refName(String(d.id))}] ${d.model ?? ""}` : d.model ?? d.lib} — ${s[0]}×${s[1]}×${s[2]}m, ${g.tris} tris${g.sampled ? " (sampled)" : ""}`);
       if (a.id) L.push(`placed at (${d.pos.map((n: number) => n.toFixed(2)).join(", ")}) yaw ${d.yaw.toFixed(2)}${d.scale !== 1 ? ` scale ${d.scale}` : ""}${d.parent ? ` — mounted on ${d.parent.to}` : ""}`);
       if (g.topSurfaces?.length) {
         L.push(`flat zones (local frame, biggest first) — a center is a socket pos verbatim:`);
@@ -1168,7 +1180,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // the FOLDED record, not the perception view (which thins a light to
       // its position): the schema wants every field the fold keeps
       const rec = ag.foldRecord(id) as any;
-      if (!rec) return text(`inspect: no placed thing "${id}" here (ids are in look() and hierarchy)`);
+      // a call that did nothing answers failed (as #269 has it)
+      if (!rec) return fail(`inspect: no placed thing "${id}" here (ids are in look() and hierarchy)`);
       const world = foldWorld(ag);
       const schema = inspectSchema(rec, id, { world, box: rec.model ? await ag.modelBox(String(rec.model)) : null });
       if (a.json) return text(JSON.stringify(schema));
@@ -1176,7 +1189,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const head = `[${ag.handle(id)}] ${kindOf(rec) === "model" ? modelWord(rec.model) : kindOf(rec)}${rec?.label ? ` "${rec.label}"` : ""} — id ${id} (minted, never renamed: its label is its name)`
         + `\nparent: ${rec.parent ? `${ag.socketName(rec.parent.to)} — its Transform below is LOCAL to ${rec.parent.to}` : "none (a root: its Transform is the world's)"}`
         + `\nchildren: ${kids.length ? kids.join(", ") : "none"}`
-        + (() => { const h = String((rec as any)?.["copy-of"]?.hash ?? "").replace(/^sha256:/, ""); if (!h) return ""; const b = ag.worldBlueprints()[h]; return `\nblueprint: a copy of \"${b?.name ?? "?"}\" (${h.slice(0, 12)})`; })();
+        // a copy's parts carry copy-of {from: sha256:<hash>, key} (blueprints.js), not a hash field
+        + (() => { const h = String((rec as any)?.["copy-of"]?.from ?? "").replace(/^sha256:/, ""); if (!h) return ""; const b = ag.worldBlueprints()[h]; return `\nblueprint: a copy of \"${b?.name ?? "?"}\" (${h.slice(0, 12)})`; })();
       // where each component's value came from (the authority's touched; the Inspector's card tooltips say the same words)
       let prov = "";
       { const r = await ag.request("inspect", { id }).catch(() => null);
@@ -1188,7 +1202,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       { const t = namedThings(ag, a, ["id"]); if ("err" in t) return t.err; a = t.args; }
       const id = String(a.id ?? "");
       const rec = id === WORLD_ID ? null : ag.foldRecord(id) as any;
-      if (!rec && id !== WORLD_ID) return text(`edit: no placed thing "${id}" here`);
+      if (!rec && id !== WORLD_ID) return fail(`edit: no placed thing "${id}" here, so nothing was sent (ids are in look() and hierarchy)`);
       const { ops, errors, asks } = id === WORLD_ID
         ? { ...worldEditOps(ag.worldFold(), (a.set ?? {}) as Record<string, unknown>, { now: Date.now() }), asks: undefined }
         : editOps(rec, id, (a.set ?? {}) as Record<string, unknown>, { world: foldWorld(ag), box: rec.model ? await ag.modelBox(String(rec.model)) : null });   // pivot.centre / pivot.base snap to it, as a person's do
@@ -1258,7 +1272,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const hashes = Object.keys(lib);
       const want = String(a.hash ?? "").trim().toLowerCase();
       const pick = want ? hashes.filter((h) => h.startsWith(want)) : hashes;
-      if (want && pick.length !== 1) return text(pick.length ? `blueprints: "${want}" matches ${pick.length} (${pick.map((h) => h.slice(0, 12)).join(", ")}) — give more of the hash` : `blueprints: none here starts "${want}"`);
+      if (want && pick.length !== 1) return fail(pick.length ? `blueprints: "${want}" matches ${pick.length} (${pick.map((h) => h.slice(0, 12)).join(", ")}) — give more of the hash` : `blueprints: none here starts "${want}"`);
       if (!hashes.length) return text("This world has no blueprints yet. Publish one: act {verb: \"publish\", args: {from: <thing id>, name}} — the thing and everything under it, as one record.");
       return text(pick.map((h) => { const c = copies[h] ?? [];
         return `[${h.slice(0, 12)}] "${lib[h]?.name ?? "?"}" · ${(lib[h] as any)?.parts ?? "?"} part(s)${c.length ? ` · ${c.length} cop${c.length === 1 ? "y" : "ies"}: ${c.slice(0, 8).join(", ")}${c.length > 8 ? ", …" : ""}` : " · no copies placed"}`; }).join("\n")
@@ -1267,7 +1281,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   world_history: async (ag, a, ctx, name) => {
       // the world's log is read through the authority (its history request: verbs, before and after reach it)
-      if (typeof a.before === "number" && typeof a.after === "number") return text("world_history pages one way: before or after, not both");
+      if (typeof a.before === "number" && typeof a.after === "number") return fail("world_history pages one way: before or after, not both, so nothing was read");
       const h = await ag.request("history", { limit: Math.min(200, Math.max(1, Number(a.limit ?? 30))),
         ...(Array.isArray(a.verbs) && a.verbs.length ? { verbs: a.verbs.map(String) } : {}),
         ...(typeof a.before === "number" ? { before: Math.floor(a.before) } : {}), ...(typeof a.after === "number" ? { after: Math.floor(a.after) } : {}) });
@@ -1298,7 +1312,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   },
   whois: async (ag, a, ctx, name) => {
       const q = String(a.name ?? "").trim();
-      if (!q) return text("whois needs a name");
+      if (!q) return fail('whois needs a name, so nothing was looked up: whois {name: "<a name>"}');
       const w: any = await ag.request("whois", { name: q });
       if (!w?.ok) return refusedBy(w, "whois");
       if (!w.people?.length) return text(w.note ?? `nobody called "${q}" here`);

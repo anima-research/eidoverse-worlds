@@ -979,7 +979,7 @@ r = await call('measure', { lib: 'models/stone.glb' });
 check('a measure answered with something that isn\'t geometry is failed', failed(r) && /^measure: the world server answered 502 with something that isn't geometry/.test(said(r)), said(r));
 serve(() => new Response('needs a key', { status: 401 }));
 r = await call('measure', { lib: 'models/stone.glb' });
-check('a measure the world\'s read key refuses is failed', failed(r) && /^measure: the world's state needs a read key/.test(said(r)), said(r));
+check('a measure the world\'s read key refuses is failed', failed(r) && /^measure: nothing was measured; this world shows its state only to the people it lets in, and it didn't take this body's read key \(401\)\. Calling again won't change that/.test(said(r)), said(r));
 serve(() => new Response(JSON.stringify({ error: 'no such model' }), { status: 404 }));
 r = await call('measure', { lib: 'models/stone.glb' });
 check('a measure the world answers with an error is failed', failed(r) && said(r) === 'measure: the world server answered "no such model", so nothing was measured', said(r));
