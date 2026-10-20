@@ -116,7 +116,7 @@ function settleSim(w) {
 // per world object and spec (a heartbeat doesn't re-read the log), except while a hold is what blocks it.
 const restampTried = new WeakMap();
 function restampEngine(w) {
-  const st = w.state(); const spec = st.entities["@world"]?.c["physics-engine"]; const known = spec && ENGINES[spec.engine];
+  const st = w.state(); const spec = st.entities["@world"]?.c["physics-engine"]; const known = spec && Object.hasOwn(ENGINES, spec.engine) && ENGINES[spec.engine];
   if (!known || carried(spec)) return;
   const key = JSON.stringify(spec); if (restampTried.get(w) === key) return;
   if (w.custody?.()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer) return;   // a server that can't sign for the world doesn't write to it
@@ -170,7 +170,7 @@ function buildEpoch(ctx, v, a) {
   if (v === null) return [...ops, delOp("@world", "physics-engine")];
   if (!v || typeof v.engine !== "string") refuse("shape", "sim needs {engine, tickMs?}", `engines this server carries: ${Object.keys(ENGINES).join(", ")}`);
   unknownKeys("@world.physics-engine", v, Object.keys(COMPONENTS["physics-engine"].fields), "physics-engine"); // the authority builds the value from these keys: a typo would vanish silently
-  const known = ENGINES[v.engine];
+  const known = Object.hasOwn(ENGINES, v.engine) ? ENGINES[v.engine] : undefined;   // an engine of its own, never an inherited name (toString): review of #260
   const spec = { engine: v.engine, build: v.build ?? known?.build ?? null, tickMs: Number.isInteger(v.tickMs) ? v.tickMs : COMPONENTS["physics-engine"].defaults.tickMs };   // the registry's default (shape audit 10-16)
   if (!known) refuse("unknown-engine", `this server doesn't carry '${v.engine}'`, `it carries: ${Object.keys(ENGINES).join(", ")}`, { didYouMean: guess(v.engine, Object.keys(ENGINES)) });
   // the engine never starts an epoch outside its tick range, so a throw would be logged and then fly nowhere, forever
