@@ -16,7 +16,7 @@ import { geomOf, boxOfM, geomE, meshShape } from "./catalogue.js";
 import { delOp, followUp, followUpsOf, isE, lockedC, opsQuiet, qr3, scratch, setOp } from "./storage.js";
 import { aabb, ancestors, descendants, localFrom, qYaw, satCost, satDepth, worldT } from "./math.js";
 import { familyOf, groundOf, groundReady, near, spatial, spend, supportBelow, supportUnder } from "./spatial.js";
-import { backward } from "./rights.js";
+import { backward, entryBy } from "./rights.js";
 import { admit } from "./gate.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
@@ -209,7 +209,9 @@ function lastTouch(w, id, comp, { editsOnly = false, authored = false } = {}) {
       if (o.verb === "create" || o.comp === comp || (o.verb === "delete" && o.comp === undefined)) {
         // a follow-up set put a value back (an undo's restore, review r10 M2): it also steps over the follow-up delete it reverses
         if (fu?.has(k)) { if (o.verb === "set") { restored = true; continue; } if (o.verb === "delete" && restored) { restored = false; continue; } return null; }
-        return { seq: i, actor: e.actor }; } } }
+        // authored: whose rights wrote it (a handler's author, a script's sponsor), not who invoked it: a handler that writes
+        // its own thing's reactions installs its author's handler, never the invoker's (null when a purge erased whose)
+        return { seq: i, actor: authored ? entryBy(w, e).rights : e.actor }; } } }
   return null;
 }
 // who last changed each component, within a horizon of this thing's own recent entries (R 10-04: "only the most recent

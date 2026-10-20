@@ -128,6 +128,16 @@ const attacks = [
       const down = s.call("olive", "delete", { id: "@world", component: "roles:olive" });
       return { add, down, bobOwns: s.call("bob", "set", { id: "@world", component: "about", value: { name: "bob's now" } }) }; },
     baseBad: () => true, nowGood: (o) => ok(o.add) && ok(o.down) && ok(o.bobOwns), guard: true },
+  // §7a: a use spends the rights of whoever set the handler. A handler that writes its own thing's reactions installs bob's
+  // handler, not the invoker's, so a later use of the installed one still spends bob's rights.
+  { id: "L7a", what: "a reaction written by a reaction keeps its author: the owner's use doesn't make the owner its author", run(s) { cast(s);
+      s.call("bob", "create", { id: "box", model: "crate", place: { at: [3, 3] } });
+      const setUp = s.call("bob", "set", { id: "box", component: "reactions", value: { evolve: { kind: "set", component: "reactions", value: { tag: { kind: "set", component: "label", value: "tagged" } } } } });
+      const evolve = s.call("olive", "use", { id: "box", action: "evolve" });
+      const tag = s.call("vic", "use", { id: "box", action: "tag" });
+      const E = s.world().entries; const act = [...E].reverse().find((e) => e?.kind === "act" && e.verb === "use" && e.actor === "vic");
+      return { setUp, evolve, tag, author: String(act?.body?.capability?.author ?? null) }; },
+    baseBad: () => true, nowGood: (o) => ok(o.setUp) && ok(o.evolve) && ok(o.tag) && o.author === "bob" },
 ];
 
 // A world whose log names no owner (an import, a hand-edited log): nobody is above visitor, whatever roles say.
