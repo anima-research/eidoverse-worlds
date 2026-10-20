@@ -541,13 +541,14 @@ const cases: Case[] = [
       const r = s.call("vic", "say", { text: "hello" }); const t0 = s.now();
       return { code: code(r), reason: r?.refused?.reason, mins: r?.refused?.until ? Math.round((r.refused.until - t0) / MIN) : null }; },
     good: (o) => o.code === "muted" && /\(spam\)/.test(o.reason ?? "") && !/loud/.test(o.reason ?? "") && o.mins === 5 },
-  { id: "V16", what: "lifting a sanction that isn't in force (never made, or already ended) is refused as nothing and logs no record", run(s) { cast(s);
+  { id: "V16", what: "lifting a sanction that isn't in force (never made, or already ended) answers ok with recorded: false and a note, changes nothing and logs no record (server-check CM4's rule)", run(s) { cast(s);
       const n = () => s.call("olive", "modlog", {})?.records?.length ?? null;
+      const lift = (verb: string) => { const r = s.call("mo", verb, { who: "vic" }); return r?.ok ? (r.recorded === false && /nothing to lift/.test(r.note ?? "") ? "unchanged" : "lifted") : code(r); };
       const before = n();
-      const r = { unban: code(s.call("mo", "unban", { who: "vic" })), unmute: code(s.call("mo", "unmute", { who: "vic" })), unghost: code(s.call("mo", "unghost", { who: "vic" })) };
+      const r = { unban: lift("unban"), unmute: lift("unmute"), unghost: lift("unghost") };
       s.call("mo", "mute", { who: "vic", minutes: 5 }); s.advance(6 * MIN);
-      return { ...r, ended: code(s.call("mo", "unmute", { who: "vic" })), before, after: n() }; },
-    good: (o) => o.unban === "nothing" && o.unmute === "nothing" && o.unghost === "nothing" && o.ended === "nothing" && typeof o.before === "number" && o.after === o.before + 1 }
+      return { ...r, ended: lift("unmute"), before, after: n() }; },
+    good: (o) => o.unban === "unchanged" && o.unmute === "unchanged" && o.unghost === "unchanged" && o.ended === "unchanged" && typeof o.before === "number" && o.after === o.before + 1 }
 ];
 
 // ---------------- run ----------------

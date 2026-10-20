@@ -200,10 +200,9 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const k = own.msgs.length;
     fern.raw({ type: "voice-moderate", id: "Wren", muted: true }); vis.raw({ type: "voice-moderate", id: "Wren", muted: true }); await sleep(300);
     const byOthers = own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
-    // the control mutes and then lifts: a lift with no mute in force is refused (nothing), so it would broadcast nothing
-    own.raw({ type: "voice-moderate", id: "Wren", muted: true }); await sleep(300); own.raw({ type: "voice-moderate", id: "Wren", muted: false }); await sleep(300);
+    own.raw({ type: "voice-moderate", id: "Wren", muted: false }); await sleep(300);
     const all = own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
-    ok(jf.snapshot?.yourRights?.role === "none" && jv.snapshot?.yourRights?.role === "visitor" && byOthers.length === 0 && all.length === 2,
+    ok(jf.snapshot?.yourRights?.role === "none" && jv.snapshot?.yourRights?.role === "visitor" && byOthers.length === 0 && all.length === 1,
       "voice-moderate (mute for everyone) is the owner's alone: a 'none' stranger and a visitor are refused, the owner isn't", [jf.snapshot?.yourRights?.role, jv.snapshot?.yourRights?.role, all]);
     await own.req("set", { id: "@world", component: "default-role", value: { role: "builder" } });
     fern.close(); vis.close(); }

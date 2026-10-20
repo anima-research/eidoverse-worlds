@@ -42,14 +42,15 @@ function personLift(w, actor, a, verb, recs, { strict, power = verb }) {
   if (!may(st, actor, power) && roleOf(st, actor) !== "owner") refuse("rights", `lifting a ${verb} needs ${power}; you are ${roleOf(st, actor)}`, "ask a moderator or an owner", { needs: power });
   if (a.who === actor) refuse("rank", `you can't lift a ${verb} on yourself`, "ask someone ranked above whoever made it");   // review 10-07
   // a lift ends every record of its kind in force, so it must be allowed over each one (stacked sanctions: review 10-07);
-  // with none in force (never made, or already ended) there is nothing to lift, and nothing is logged
+  // with none in force (never made, or already ended) it answers ok and changes nothing: no record is logged, and nobody is
+  // told (server-check CM4: "a second unban changes nothing, and tells nobody anything"). Returns whether any was in force
   const inForce = Array.isArray(recs) ? recs : recs ? [recs] : [];
-  if (!inForce.length) refuse("nothing", `${said(a.who)} has no ${verb === "ban" ? "ban or kick" : verb} in force here`, "modlog shows the sanctions in force; one that has ended needs no lifting");
   for (const rec of inForce) {
   if (roleOf(st, actor) === "owner" || rec.actor === actor) continue;
   const mine = rankOf(st, actor), theirs = rankOf(st, rec.actor);
   if (strict ? mine <= theirs : mine < theirs) refuse("rank", `${said(rec.actor)} (${roleOf(st, rec.actor)}) made this ${verb}; only they, an owner${strict ? ", or someone who outranks them" : ", or someone at their rank or above"} may lift it`, `ask ${said(rec.actor)} or an owner`, { by: rec.actor });
   }
+  return inForce.length > 0;
 }
 const MOD_VERBS = {
   // moderation (§2.1): a separate log, enforced by the authority; never a world entry. Research roles §5–6: every act on a
@@ -63,7 +64,7 @@ const MOD_VERBS = {
     if (!Array.isArray(ch) || !ch.length || ch.some((c) => c !== "voice" && c !== "chat") || new Set(ch).size !== ch.length) refuse("shape", "mute.channels is ['voice'], ['chat'] or both", "leave it out for both");
     const until = minutesUntil(w, actor, a.minutes, { cap: R.MUTE_MAX_MIN, what: "a mute", required: true });
     w.appendMod({ actor, verb: "mute", who: a.who, channels: ch, until, ...reasonOf(a) }); return { ok: true, muted: a.who, channels: ch, until, ...t, logged: "moderator log" }; },
-  unmute: (w, actor, a) => { personLift(w, actor, a, "mute", inForceOf(w, a.who, "mute"), { strict: true });
+  unmute: (w, actor, a) => { if (!personLift(w, actor, a, "mute", inForceOf(w, a.who, "mute"), { strict: true })) return { ok: true, unmuted: a.who, recorded: false, note: `${said(a.who)} has no mute in force here: there was nothing to lift` };
     w.appendMod({ actor, verb: "unmute", who: a.who }); return { ok: true, unmuted: a.who }; },
   // a kick removes a live session now (the authority's server does the removing on this reply); they may come back after
   // `minutes` (default 10, at most 60: VRChat's kick is a one-hour bar)
@@ -80,7 +81,7 @@ const MOD_VERBS = {
   unban: (w, actor, a) => { if (!isIdentity(a.who)) refuse("shape", "unban {who}", "");
     // an operator's recorded repair lifts any ban or kick here, their own included (authority.js operatorRepair), and says so
     const op = !!CTX.operator && CTX.operator === actor;
-    if (!op) personLift(w, actor, a, "ban", [...inForceOf(w, a.who, "ban"), ...inForceOf(w, a.who, "kick")], { strict: true });
+    if (!op && !personLift(w, actor, a, "ban", [...inForceOf(w, a.who, "ban"), ...inForceOf(w, a.who, "kick")], { strict: true })) return { ok: true, unbanned: a.who, recorded: false, note: `${said(a.who)} has no ban or kick in force here: there was nothing to lift` };
     w.appendMod({ actor, verb: "unban", who: a.who, ...(op ? { operator: true } : {}) }); return { ok: true, unbanned: a.who, ...(op ? { operator: true } : {}) }; },
   // ghost (PLAN 10-06): `ghost {on}` with no who is the mode you choose (presence: never logged; spectate);
   // `ghost {who, minutes?, reason}` is a sanction (kick holders, on a rank below; capped like a mute below owner)
@@ -94,7 +95,7 @@ const MOD_VERBS = {
     const until = a.minutes === undefined && owner ? undefined : minutesUntil(w, actor, a.minutes, { cap: R.MUTE_MAX_MIN, what: "a ghost sanction", required: true });
     w.appendMod({ actor, verb: "ghost", who: a.who, ...(until !== undefined ? { until } : {}), ...reasonOf(a) }); return { ok: true, ghosted: a.who, until: until ?? null, ...t, logged: "moderator log" }; },
   unghost: (w, actor, a) => {
-    personLift(w, actor, a, "ghost", inForceOf(w, a.who, "ghost"), { strict: false, power: "kick" });
+    if (!personLift(w, actor, a, "ghost", inForceOf(w, a.who, "ghost"), { strict: false, power: "kick" })) return { ok: true, unghosted: a.who, recorded: false, note: `${said(a.who)} has no ghost in force here: there was nothing to lift` };
     w.appendMod({ actor, verb: "unghost", who: a.who }); return { ok: true, unghosted: a.who }; },
   // the moderation log (research: read by anyone holding a moderation power): newest first, merged with role changes
   // from the world log (roles:* writes, read-only) and the authority's automatic cool-downs
