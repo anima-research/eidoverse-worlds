@@ -16,7 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { custodyFileIn } from "./keyfiles.ts";
-import { readLog, fold, opsOf, applyInPlace, jcs, sha256, Malformed, DIALECT, VERSION } from "../shared/protocol/fold.js";
+import { readLog, fold, opsOf, applyInPlace, purgesIn, jcs, sha256, Malformed, DIALECT, VERSION } from "../shared/protocol/fold.js";
 import { worldOf, posAt } from "../shared/protocol/authority.js";
 import { simFolder, carried, digestOf } from "../shared/protocol/simlayer.js";
 import { readLogBytes, appendDurable, putBlobFile } from "./durable.ts";
@@ -107,7 +107,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   })();
   // the cut carries the engine and what's lifted/launched, not the fold: the layer's engine view needs the state AT the
   // cut (second review 10-11 S1-1: without it the first edit after a reopen removed the thing from the engine)
-  const sim = simFolder(entries, { models: opts.simModels ?? {}, ...(ckpt ? { from: { ...ckpt.cut, st: fold(entries, { until: ckpt.seq }) } } : {}) });
+  let sim = simFolder(entries, { models: opts.simModels ?? {}, purged: purgesIn(entries), ...(ckpt ? { from: { ...ckpt.cut, st: fold(entries, { until: ckpt.seq }) } } : {}) });
   const index = (seq: number, e: Any) => { if (!isE(e) || e.kind !== "change") return;
     for (const id of new Set(opsQuiet(e).map((o: Any) => o.id))) { let a = touching.get(id as string); if (!a) touching.set(id as string, (a = [])); a.push(seq); } };
   const bad = new Set(st.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed")).map(([q]: Any) => q));
@@ -129,7 +129,12 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     if (x.kind === "purge") for (const e of entries) if (isE(e) && e.kind === "sim" && e.verb === "checkpoint" && typeof e.body?.state === "string") {   // the purged bytes may sit in a cut: gone (§12)
       try { fs.unlinkSync(blobPath(e.body.state)); } catch { /* already gone */ } }
     index(seq, x);
-    if (st.status === "ok") sim.feed(seq);
+    // a purge is retroactive, so the engine's world is rebuilt from the whole log with it, as a fresh reader would fold it
+    // (the sim fold reads a purged physical value as no body); a checkpoint can't stand in, since it may hold the purged bytes
+    if (x.kind === "purge") { const bad = new Set(st.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed")).map(([q]: Any) => q));
+      sim = simFolder(entries, { models: opts.simModels ?? {}, purged: purgesIn(entries) });
+      if (st.status === "ok") for (let s = 0; s < entries.length; s++) if (isE(entries[s]) && !bad.has(s)) sim.feed(s); }
+    else if (st.status === "ok") sim.feed(seq);
     opts.onAppend?.(seq, x);
     return seq;
   };

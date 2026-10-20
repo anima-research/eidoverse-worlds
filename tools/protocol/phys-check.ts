@@ -5,7 +5,7 @@ import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writer
 import fs from "node:fs";
 import { request, settle, forkCopy } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
-import { fold, readLog } from "../../shared/protocol/fold.js";
+import { fold, readLog, PURGED } from "../../shared/protocol/fold.js";
 import { simFold, restsOf, ENGINES, EIDOSIM_BUILD } from "../../shared/protocol/simlayer.js";
 import { ENGINE, scratch } from "./common.ts";
 import { worldT } from "../../shared/protocol/authority/math.js";
@@ -511,6 +511,15 @@ function playground(name) {
   const on = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
   const lift = log(W).find((e: any) => e?.kind === "sim" && e.verb === "lift" && e.body?.id === "ball");
   ok(g.ok && on.ok && lift?.actor === "sam", "U5b the lift an engine's start logs names the holder, not whoever started the engine", { g: g.ok ?? g.refused, on: on.ok, actor: lift?.actor }); }
+
+// review of #260: the purges a replay applies are exactly the fold's (a purge line the fold refuses, here for a ts that steps
+// back, purges nothing in either)
+{ const W = playground("purge-bad-ts"); const t = openWorld(root, W).state().entities["crate-1"].c.transform;
+  call(W, "rowan", "set", { id: "crate-1", component: "transform", value: { ...t, pos: [3, 0, 0] } });
+  const L = log(W); const seq = L.findLastIndex((e: any) => e?.kind === "change" && e.verb === "set" && e.body?.id === "crate-1");
+  const last = L[L.length - 1]; const bad = copyOf([...L, { ...last, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq }] }, ts: last.ts - 1, cause: undefined }]);
+  const blind = fold(bad), v = simFold(bad, last.ts + 1000);
+  ok(blind.entities["crate-1"].c.transform !== PURGED && !!v.sim?.statics?.["crate-1"], "U6 a purge line the fold refuses (its ts steps back) purges nothing on replay either", { foldPurged: blind.entities["crate-1"].c.transform === PURGED, collider: !!v.sim?.statics?.["crate-1"] }); }
 
 console.log(`${passes} passed, ${fails} failed`);
 fs.rmSync(root, { recursive: true, force: true });

@@ -13,7 +13,7 @@
 // carried at runtime (R 2026-10-09: "stomp the existing eidosim engine"); the old-world importer keeps its own copy, to
 // say where old punts came to rest, and writes those rests as plain changes.
 import { sha256 } from "./hash.js";
-import { fold, opsOf, applyOps, applyInPlace, emptyState, Malformed, PURGED } from "./fold.js";
+import { fold, opsOf, applyOps, applyInPlace, emptyState, Malformed, PURGED, purgesIn } from "./fold.js";
 import { MODELS } from "./labmodels.js";
 import * as eidosim from "../sim.js";
 import { isBoxShape, shapeError } from "./shapes.js";
@@ -80,8 +80,10 @@ function fixedSet(st) {
 }
 // switched off (componentspec disabled), itself or anything it hangs under: no body, no collider
 export function offChain(st, id) { for (let k = id, n = 0; k && n < 33; k = st.entities[k]?.c.parent?.to, n++) if (st.entities[k]?.c.disabled === true) return k; return null; }
+// a purged physical value is no body: the strict fold holds PURGED there, and this layer follows it (review of #260)
+const purgedPhysical = (c) => [...PHYSICAL].some((k) => c[k] === PURGED);
 function engineEntity(st, id, models = MODELS, fixed = null) {
-  const e = st.entities[id]; if (!e || !(models[e.c.model] || engineBox(e.c.physics) || sphereShape(e.c.physics)) || e.c.physics?.kind === "none") return null;
+  const e = st.entities[id]; if (!e || purgedPhysical(e.c) || !(models[e.c.model] || engineBox(e.c.physics) || sphereShape(e.c.physics)) || e.c.physics?.kind === "none") return null;
   if (offChain(st, id)) return null;
   const t = worldPose(st, id);
   const sh = e.c.physics?.shape;   // a tagged shape rides along (eidosim reads a sphere from it)
@@ -110,7 +112,7 @@ const isEntry = (e) => e && !(e instanceof Malformed) && typeof e === "object";
 export function simFold(entries, now, opts = {}) {
   const blind = fold(entries); // the strict fold decides which entries count; this layer replays the same ones
   const bad = new Set(blind.diagnostics.filter(([, c]) => c.startsWith("malformed")).map(([q]) => q));
-  const f = simFolder(entries, opts);
+  const f = simFolder(entries, { ...opts, purged: purgesIn(entries) });   // a purge is retroactive (L1): the replay writes PURGED where the fold does
   if (blind.status === "ok") for (let s = 0; s < entries.length; s++) if (isEntry(entries[s]) && !bad.has(s)) f.feed(s);
   return f.view(now);
 }
@@ -124,7 +126,9 @@ export function simFold(entries, now, opts = {}) {
 // opts.from: start from a cut instead of the empty world ({st, clock, spec, foreign, sim, launched}, simCutOf's shape):
 // a joining client can't refold the whole log, so it adopts the authority's sim where the authority's clock stood, then feeds
 // every later entry (their ts are never earlier than that clock). Advancement is schedule-independent, so this is exact.
-export function simFolder(entries, { models = MODELS, from = null } = {}) {
+// opts.purged: the log's purges (purgesIn), so a replay writes PURGED where the strict fold does; a live host that sees a new purge
+// builds a fresh folder with them (a purge is retroactive), rather than feeding it.
+export function simFolder(entries, { models = MODELS, from = null, purged = null } = {}) {
   const st = from?.st ?? emptyState(); let clock = from?.clock ?? 0;
   const out = { st, spec: from?.spec ?? null, foreign: from?.foreign ?? false, sim: from?.sim ?? null, launched: from?.launched ?? {}, lifted: new Set(from?.lifted ?? []), rested: [], checks: { agree: 0, disagree: [] }, restTicks: {} };
   const E = () => eidosim;
@@ -179,7 +183,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
           if (b && !b.resting && !cut) disagree({ seq, id: o.id, why: `touches a body in flight (launch ${l.seq}); only its rest may (L6, 33 F1)` });
           else if (PHYSICAL.has(o.comp) && !(e.cause > l.seq)) disagree({ seq, id: o.id, why: `changes a body in flight, but its cause (${e.cause}) is not after the launch (${l.seq})` }); }
       }
-      applyInPlace(st, ops, seq);
+      applyInPlace(st, ops, seq, purged, e.verb === "batch");
       const spec = st.entities["@world"]?.c["physics-engine"] ?? null;
       if (JSON.stringify(spec) !== wasSpec) { // an epoch boundary. The authority makes it a real cut: nothing in flight (P6).
         out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null; out.rev++;   // a lift outlives an epoch (authority orphanLifts says the same); the view keeps it out

@@ -13,8 +13,8 @@ import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writer
 import fs from "node:fs";
 import { scratch } from "./common.ts";
 import { request } from "../../shared/protocol/authority.js";
-import { readLog, fold, opsOf } from "../../shared/protocol/fold.js";
-import { simFold, restsOf } from "../../shared/protocol/simlayer.js";
+import { readLog, fold, opsOf, PURGED } from "../../shared/protocol/fold.js";
+import { simFold, restsOf, digestOf } from "../../shared/protocol/simlayer.js";
 import { makeReplica } from "../../shared/protocol/replica.js";
 import { openLive } from "../../server/livehost.ts";
 import { clientCutOf } from "../../shared/protocol/replica.js";
@@ -241,6 +241,22 @@ function playground(clock = "pinned") {
   cl.simAt?.(y.at() + 60000); // a client whose clock runs a minute fast
   const f4 = y.L().length; y.call("rowan", "throw", { id: "ball", v: [0, 2, 2] }); y.call("rowan", "wait", {}, 6000); cl.ingest(y.L().slice(f4), f4);
   ok(cl.sim?.checks?.agree === 1 && !cl.sim.checks.disagree.length, "F9 a client with a fast clock still agrees (presentation never advances the canonical fold)", cl.sim.checks);
+}
+
+// ---- U: a purge (review of #260): the live engine's world follows the strict fold, and a fresh replay agrees with it ----
+{
+  const { call, w, L } = playground();
+  call("rowan", "create", { id: "crate-p", model: "crate", place: { at: [2, 0] } });
+  const t = w.state().entities["crate-p"].c.transform;
+  const set = call("rowan", "set", { id: "crate-p", component: "transform", value: { ...t, pos: [3, 0, 0] } });
+  const seq = L().findLastIndex((e) => e?.kind === "change" && e.verb === "set" && e.body?.id === "crate-p" && e.body?.comp === "transform");
+  const inBefore = !!w.sim().sim?.statics?.["crate-p"];
+  w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq }] } });
+  const live = w.sim(), fresh = simFold(L(), w.now(), { models: {} });   // the live host's catalogue: none
+  const purged = w.state().entities["crate-p"].c.transform === PURGED;
+  ok(set.ok && inBefore && purged && !live.sim?.statics?.["crate-p"] && !fresh.sim?.statics?.["crate-p"],
+    "U1 a purged transform is no collider, in the live host's engine as in a fresh replay of the log", { set: set.ok, inBefore, purged, live: !!live.sim?.statics?.["crate-p"], fresh: !!fresh.sim?.statics?.["crate-p"] });
+  ok(digestOf(live.sim) === digestOf(fresh.sim), "U2 …and the two engines' digests agree after the purge", { live: digestOf(live.sim), fresh: digestOf(fresh.sim) });
 }
 
 console.log(`\n${fail ? `FAIL ${fail}` : "ok"}: ${pass} passed${fail ? `, ${fail} failed` : ""}`);

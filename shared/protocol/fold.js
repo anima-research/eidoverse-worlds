@@ -272,26 +272,14 @@ export function emptyState() {
 // the whole log still apply: a purged value is absent at every point in time).
 export function fold(entries, { until = Infinity } = {}) {
   const st = emptyState(); const d = (seq, code, detail = "") => st.diagnostics.push([seq, code, detail]);
-  const ok = entries.map((e, seq) => {
-    if (e instanceof Malformed) { d(seq, "malformed:" + e.code, e.detail); return null; }
-    try { checkEntry(e, seq); return e; } catch (x) { if (x instanceof Malformed) { d(seq, "malformed:" + x.code, x.detail); return null; } throw x; }
-  });
+  const ok = checkedEntries(entries, d);
   const g = ok[0];
   if (!g || g.kind !== "genesis") { d(0, "no-genesis", g ? `entry 0 kind=${g.kind}` : "entry 0 missing or malformed"); return { ...st, status: "no-world", entities: null }; }
   if (g.body.dialect !== DIALECT || g.body.v !== VERSION) { d(0, "unknown-version", JSON.stringify(g.body.dialect === DIALECT ? g.body.v : g.body.dialect) ?? "missing"); return { ...st, status: "unknown-version", entities: null, v: g.body.v }; }
   try { if (checkGenesis(g.body) === "unknown-minor") { d(0, "unknown-minor", JSON.stringify(g.body.minor)); return { ...st, status: "unknown-version", entities: null, v: g.body.v }; } }
   catch (x) { if (!(x instanceof Malformed)) throw x; d(0, "malformed:" + x.code, x.detail); return { ...st, status: "no-world", entities: null }; }
   st.worldId = worldIdOf(g);
-  for (let seq = 1; seq < ok.length; seq++) { const e = ok[seq]; if (!e) continue;
-    if (e.kind === "genesis") { d(seq, "malformed:genesis-not-first"); ok[seq] = null; continue; }
-    if (e.world !== st.worldId) d(seq, "world-mismatch", String(e.world)); }
-  // §2.1: ts is an integer (ms) ≥ 0, required on every entry after genesis, never decreasing. A missing, fractional
-  // or decreasing ts makes that entry malformed (it shapes nothing and does not move the clock on).
-  let lastTs = null;
-  for (let seq = 1; seq < ok.length; seq++) { const e = ok[seq]; if (!e) continue; const t = e.ts;
-    if (!(Number.isInteger(t) && t >= 0)) { d(seq, "malformed:ts", JSON.stringify(t) ?? "missing"); ok[seq] = null; continue; }
-    if (lastTs !== null && t < lastTs) { d(seq, "malformed:ts-decreasing", `${t} < ${lastTs}`); ok[seq] = null; continue; }
-    lastTs = t; }
+  settledEntries(ok, st.worldId, d);
   const purged = purgesOf(ok, d);
   for (let seq = 1; seq < ok.length && seq <= until; seq++) {
     const e = ok[seq]; if (!e || e.kind !== "change") continue;
@@ -306,6 +294,28 @@ function governanceTarget(e, op) {
   if (!e || e.kind !== "change" || !e.body || typeof e.body !== "object") return false;
   const o = e.verb === "batch" ? (Array.isArray(e.body.ops) && Number.isInteger(op) ? e.body.ops[op] : null) : op === undefined ? { verb: e.verb, ...e.body } : null;
   return !!o && typeof o === "object" && o.verb === "set" && typeof o.comp === "string" && o.comp.startsWith("roles:");
+}
+// The entries the fold reads, in two steps either side of its genesis checks (so its diagnostics keep their order): each line
+// checked alone, then, after genesis, a later genesis and a bad ts nulled. purgesIn reads a log through the same two, so the
+// purges a replay applies are exactly the fold's.
+function checkedEntries(entries, d) {
+  return entries.map((e, seq) => {
+    if (e instanceof Malformed) { d(seq, "malformed:" + e.code, e.detail); return null; }
+    try { checkEntry(e, seq); return e; } catch (x) { if (x instanceof Malformed) { d(seq, "malformed:" + x.code, x.detail); return null; } throw x; }
+  });
+}
+function settledEntries(ok, worldId, d) {
+  for (let seq = 1; seq < ok.length; seq++) { const e = ok[seq]; if (!e) continue;
+    if (e.kind === "genesis") { d(seq, "malformed:genesis-not-first"); ok[seq] = null; continue; }
+    if (e.world !== worldId) d(seq, "world-mismatch", String(e.world)); }
+  // §2.1: ts is an integer (ms) ≥ 0, required on every entry after genesis, never decreasing. A missing, fractional
+  // or decreasing ts makes that entry malformed (it shapes nothing and does not move the clock on).
+  let lastTs = null;
+  for (let seq = 1; seq < ok.length; seq++) { const e = ok[seq]; if (!e) continue; const t = e.ts;
+    if (!(Number.isInteger(t) && t >= 0)) { d(seq, "malformed:ts", JSON.stringify(t) ?? "missing"); ok[seq] = null; continue; }
+    if (lastTs !== null && t < lastTs) { d(seq, "malformed:ts-decreasing", `${t} < ${lastTs}`); ok[seq] = null; continue; }
+    lastTs = t; }
+  return ok;
 }
 function purgesOf(ok, d) {
   const out = new Map();
@@ -362,8 +372,16 @@ export function applyCow(s, ops, seq = Infinity) {
     applyInPlace(s, [o], seq); }
   return s;
 }
-export function applyInPlace(s, ops, seq = Infinity) {
+// purged (optional): the log's purges, as purgesIn gives them, and batch: whether the entry is a batch (a purge names a batch's
+// op by index): a reader replaying a log a purge has touched writes PURGED where the strict fold does
+export function applyInPlace(s, ops, seq = Infinity, purged = null, batch = false) {
   const d = (q, code, detail = "") => s.diagnostics.push([q, code, detail]);
-  for (const o of ops) applyOp(s, seq, shapeOne(o.verb, o, true, "system"), undefined, d);
+  ops.forEach((o, i) => applyOp(s, seq, shapeOne(o.verb, o, true, "system"), purged?.get(`${seq}:${batch ? i : "-"}`), d));
   return s;
+}
+/** every purge in a log, as the strict fold reads them: `${seq}:${op index, or - for a whole entry}` → the purge's seq */
+export function purgesIn(entries) {
+  const none = () => {}; const ok = checkedEntries(entries, none); const g = ok[0];
+  if (!g || g.kind !== "genesis") return new Map();   // the fold reads no world here, so nothing is replayed either
+  return purgesOf(settledEntries(ok, worldIdOf(g), none), none);
 }
