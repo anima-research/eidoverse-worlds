@@ -1181,6 +1181,11 @@ const server = Bun.serve({
             // hand the fresh leg a deleted send path.
             const cred = mintSfuCredential(c.world.name, c.id, c.gen!, mediaGen);
             registerSfuSender(c.world.name, c.id, (payload) => ws.send(JSON.stringify(payload)));
+            // the mint retired the old leg, and a retirement unmutes and undeafens the id at the SFU (sfuadapter.ts
+            // revokeSfuLeg): forget what this connection last applied, so the sweep puts a sanction in force back now
+            // rather than reading its cached flag as still applied (review of #260, server I11)
+            c.sfuMuted = undefined; c.sfuDeaf = undefined;
+            if (c.world.log) sanctionSweep(c.world);
             const transition = JSON.stringify({ type: "surface-transition",
               id: c.id, surface: "voice-relay", gen: mediaGen, retired: null });
             for (const t of c.world.clients) if (t !== c) t.ws.send(transition);
