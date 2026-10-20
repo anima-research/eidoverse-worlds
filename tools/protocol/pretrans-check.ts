@@ -189,6 +189,75 @@ await C("K7", "no account subject is written (PROTOCOL §9.2): without a mapper 
   const W = world(); const sub = W.call("set", { id: "@world", component: "roles:vic", value: { role: "visitor", sub: "human:discord:9" } });
   return [w[`roles:${TV1.enc("janus")}`]?.role === "owner" && !("sub" in w[`roles:${TV1.enc("janus")}`]) && acts.length >= 4 && !JSON.stringify(acts).includes("human:discord") && !sub.ok && sub.refused.code === "schema"
     && /@1[4-9]$/.test(TV1.TRANSLATOR) && /@1[4-9]$/.test(TV1.TRANSLATOR_SIM), [w[`roles:${TV1.enc("janus")}`], acts.map((a: any) => a.body.args), sub.refused, TV1.TRANSLATOR]]; });
+await C("K8", "no account subject is written wherever it sits (PROTOCOL §9.2): a v1 placer's sub and a behaviour binding's bySub reach neither an imported act nor @world's state, with a mapper or without one; with a mapper, the placer and the binding are the same identity as the person's grant; a sub or *Sub that isn't an account (a comp's own data) is kept as it was, and the mapper is never asked about it", () => {
+  // the two places main's server stamped an account below the top level (server/verbs.ts at 306a00b0): a spawn's or light's
+  // placer {id, sub}, and a behaviour binding's bySub (which the v1 fold keeps as the binding's authorSub). janus's grant
+  // carries the same account (v1commons), so a mapper must land all three on one identity
+  const SRC = "sha256:" + "c".repeat(64), SIGN = { title: "The Inn", sub: "rooms upstairs", menuSub: "soup today" };
+  const log = [...v1commons(),
+    { seq: 6, ts: 7, actor: "janus", verb: "spawn", args: { id: "lamp_2", lib: "store/0123456789abcdef.glb", pos: [1, 0, 0], placer: { id: "janus", sub: "human:discord:1" } } },
+    { seq: 7, ts: 8, actor: "janus", verb: "behavior", args: { id: "bell", src: SRC, bySub: "human:discord:1" } },
+    // v1's comp folded its data blindly: a sign's subtitle under `sub` is data, not an account (Nigel-2405's case)
+    { seq: 8, ts: 9, actor: "antra", verb: "comp", args: { id: "rock_1", type: "sign", data: SIGN } }];
+  // a mapper keyed by the account when one is given, else by the name: an identity reached through an account, not a name,
+  // which is what joins a person's acts to their grant on a server where names don't (TRUST_NAMES, an agent's token name)
+  const idOf = (k: string) => "u-" + [...require("node:crypto").createHash("sha256").update(k).digest("hex").slice(0, 20)].map((c) => "abcdefghijklmnop"[parseInt(c, 16)]).join("");
+  const asked: string[] = [];
+  const who = (name: string, { sub }: { sub?: string } = {}) => { asked.push(name, sub ?? ""); return idOf(sub ?? `name:${name}`); };
+  const plain = TV1.translate(log), mapped = TV1.translate(log, { who });
+  const sign = (r: any) => [act(r, "comp", "rock_1")?.data, Object.values(r.final.translated[TV1.enc("rock_1")] ?? {}).find((v: any) => v?.title === SIGN.title)];
+  const signKept = (r: any) => sign(r).every((v: any) => JSON.stringify(v) === JSON.stringify(SIGN));
+  const leaked = (r: any) => JSON.stringify(r.out).includes("human:discord");
+  const act = (r: any, verb: string, id: string) => r.out.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === verb && e.body.args?.id === id)?.body.args;
+  const binding = (r: any) => Object.values(r.final.translated["@world"] ?? {}).find((v: any) => v?.src === SRC) as any;
+  const janus = idOf("human:discord:1");
+  const mp = act(mapped, "spawn", "lamp_2")?.placer, pp = act(plain, "spawn", "lamp_2")?.placer, mb = binding(mapped), pb = binding(plain);
+  return [!leaked(plain) && !leaked(mapped) && plain.stats.divergences === 0 && mapped.stats.divergences === 0
+    && pp?.id === "janus" && !("sub" in pp) && !("bySub" in (act(plain, "behavior", "bell") ?? { bySub: 1 })) && pb && !("authorSub" in pb)
+    && act(mapped, "grant", "janus")?.sub === janus && mp?.sub === janus && act(mapped, "behavior", "bell")?.bySub === janus
+    && mb?.author === janus && !("authorSub" in mb) && mapped.final.translated["@world"][`roles:${janus}`]?.role === "owner"
+    && TV1.accountIn(plain.out) === null && TV1.accountIn(mapped.out) === null && TV1.accountIn(log.map((e) => ({ kind: "act", verb: "imported", body: { verb: e.verb, args: e.args } })))?.path === "body.args.sub"
+    && signKept(plain) && signKept(mapped) && !asked.some((s) => [SIGN.sub, SIGN.menuSub].includes(s)),
+    { plain: { leaked: leaked(plain), placer: pp, binding: pb, sign: sign(plain) }, mapped: { leaked: leaked(mapped), placer: mp, binding: mb, grant: act(mapped, "grant", "janus"), janus, sign: sign(mapped) }, asked, accountIn: typeof TV1.accountIn }]; });
+await C("K9", "K8 through the writer with the real identity mapper (translateV1World): the written log carries no account, the one person the log knows by an account is one identity holding it (their grant's role, their placer, their binding's author), the sign's sub is kept, and no identity is minted from it", async () => {
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
+  const W = scratch("k9"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
+  const SRC = "sha256:" + "d".repeat(64), SIGN = { title: "The Inn", sub: "rooms upstairs", menuSub: "soup today" };
+  fs.writeFileSync(path.join(src, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "world", verb: "grant", args: { id: "Ann", role: "owner", gen: true, sub: "human:discord:42" } },
+    { seq: 2, ts: 3, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1], placer: { id: "Ann", sub: "human:discord:42" } } },
+    { seq: 3, ts: 4, actor: "Ann", verb: "behavior", args: { id: "bell", src: SRC, bySub: "human:discord:42" } },
+    { seq: 4, ts: 5, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "sign", data: SIGN } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const r = translateV1World(src, path.join(W, "new"));
+  const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
+  const ann = Object.entries<any>(r.planned).filter(([, e]) => (e.subs ?? []).includes("human:discord:42")).map(([id]) => id);
+  const minted = Object.values<any>(r.planned).filter((e) => (e.subs ?? []).some((s: string) => [SIGN.sub, SIGN.menuSub].includes(s)));
+  const args = (verb: string) => lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === verb)?.body?.args;
+  const st = FOLD.fold(FOLD.readLog(text)); const w = st.entities?.["@world"]?.c ?? {};
+  const binding: any = Object.values(w).find((v: any) => v?.src === SRC);
+  const signed = Object.values<any>(st.entities?.[TV1.enc("lamp_1")]?.c ?? {}).find((v: any) => v?.title === SIGN.title);
+  return [!/human:discord/.test(text) && ann.length === 1 && w[`roles:${ann[0]}`]?.role === "owner" && args("spawn")?.placer?.sub === ann[0] && args("behavior")?.bySub === ann[0]
+    && binding?.author === ann[0] && JSON.stringify(args("comp")?.data) === JSON.stringify(SIGN) && JSON.stringify(signed) === JSON.stringify(SIGN) && !minted.length,
+    { ann, planned: r.planned, placer: args("spawn")?.placer, bySub: args("behavior")?.bySub, binding, sign: [args("comp")?.data, signed], leaked: /human:discord/.test(text) }]; });
+await C("K10", "an account in a value that nothing beside it names is resolved by the account alone (translateV1World's mapper): a sign of antra's naming someone else's account moves neither antra's later acts nor antra's role to that person, and the other person's identity takes no name from antra", async () => {
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
+  const W = scratch("k10"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
+  fs.writeFileSync(path.join(src, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    // antra is known by name only (no account in this log), so nothing but her name joins her acts and her role
+    { seq: 1, ts: 2, actor: "world", verb: "grant", args: { id: "antra", role: "owner", gen: true } },
+    { seq: 2, ts: 3, actor: "antra", verb: "spawn", args: { id: "board_1", lib: "a.glb", pos: [0, 0, 0] } },
+    // a guestbook line: whose account it holds isn't the writer's, and nothing beside it says whose
+    { seq: 3, ts: 4, actor: "antra", verb: "comp", args: { id: "board_1", type: "guestbook", data: { line: "thanks for visiting", ownerSub: "human:discord:9" } } },
+    { seq: 4, ts: 5, actor: "antra", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const r = translateV1World(src, path.join(W, "new"));
+  const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
+  const idHolding = (s: string) => Object.entries<any>(r.planned).filter(([, e]) => (e.subs ?? []).includes(s)).map(([id]) => id);
+  const antra = Object.entries<any>(r.planned).filter(([, e]) => e.name === "antra").map(([id]) => id), other = idHolding("human:discord:9");
+  const after = lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "spawn" && e.body.args?.id === "lamp_1");
+  const w = FOLD.fold(FOLD.readLog(text)).entities?.["@world"]?.c ?? {};
+  return [antra.length === 1 && other.length === 1 && antra[0] !== other[0] && after?.actor === antra[0] && w[`roles:${antra[0]}`]?.role === "owner" && !w[`roles:${other[0]}`]
+    && !/human:discord/.test(text),
+    { antra, other, after: after?.actor, planned: r.planned, roles: Object.keys(w).filter((k) => k.startsWith("roles:")) }]; });
 
 // ---- N: names (H1, M7) ----
 const mk = (W: any, id = "box") => { const r = W.call("create", { id, model: "crate" }); if (!r.ok) throw new Error(why(r)); return id; };

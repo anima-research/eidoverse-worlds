@@ -334,7 +334,7 @@ cases.push(
       const md = PROTO(); const s7 = section(md, /\n## 7\. /); const s4 = section(md, /\n## 4\. /);
       return { gate: /except that the\s+authority's own follow-ups inside a write pass it without the asker's rights, locks, keys or in-flight\s+check/.test(s7),
         table: /\| a deletion's reference clears[^\n]*`followUps` \|/.test(s7) && /\| a deletion's set-down[^\n]*`followUps` \|/.test(s7) && /\| occupants set down or dropped[^\n]*`resettle \{hosts, occupants, asked\}`[^\n]*\| `system` \|/.test(s7) && /\| stamps on what the asker is writing[^\n]*\| the asker \|/.test(s7),
-        del: /The change entry names them \(`followUps`, §3\)/.test(s4) && /set\s+down onto what is below, as a follow-up/.test(s4) && /translate-v1@1[45]`, §14\)/.test(s4) }; },
+        del: /The change entry names them \(`followUps`, §3\)/.test(s4) && /set\s+down onto what is below, as a follow-up/.test(s4) && /translate-v1@1[4-9]`, §14\)/.test(s4) }; },
     good: (o) => o.gate && o.table && o.del },
   { id: "X3", what: "(scars M2, M5) Body ownership: arrival is presence (the world's log records nothing about a body; the hash reaches the moderator log only when someone acts); B2 runs in admit on every op, follow-ups and system writes included, references nulled at read time; B5 doesn't end on leaving; `arrive` stays reserved", run() {
       const md = PROTO(); const b = md.slice(md.indexOf("### Body ownership"), md.indexOf("\n## 8. "));

@@ -14,7 +14,7 @@ import { openLive } from "../../../server/livehost.ts";
 import { ENGINE_CATALOGUE } from "../../../server/modelcatalogue.ts";
 import { readLog, fold, digest, keyOk } from "../../../shared/protocol/fold.js";
 import { simFold } from "../../../shared/protocol/simlayer.js";
-import { translate, TRANSLATOR, DROPPED, deferredFeatures, deferredRefusal } from "./translate-v1.js";
+import { translate, TRANSLATOR, DROPPED, deferredFeatures, deferredRefusal, accountIn, isAccount } from "./translate-v1.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { v1FoldBuild } from "./build.ts";
 import { contentAddressOf, recordEido, storeNameMatches } from "../../../server/eidoindex.ts";
@@ -117,7 +117,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // (world.ts): a failed translation leaves no identities behind.
   const dir = directoryFor(path.dirname(destDir)); const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
   const agents = agentTokens().names;
-  const isAcct = (k: string) => /^(human|agent|aid1):/.test(k);
+  const isAcct = (k: string) => isAccount(k);   // the translator's own account shape (translate-v1 @16)
   const who = (name: string, { sub }: { sub?: string } = {}) => {
     // no account in the log: an agent's reserved name is its account; on a TRUST_NAMES (private) server a bare name is
     // local:<name>, as a join there is; anywhere else it's an imported identity an operator binds (directory.bind)
@@ -156,6 +156,9 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   const back = fold(readLog(text));
   const malformed = back.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed"));
   if (back.status !== "ok" || malformed.length) throw new Error(`the translated log doesn't read back clean (${back.status}, ${malformed.length} malformed: ${JSON.stringify(malformed.slice(0, 3))}): nothing written`);
+  // and it carries no account subject anywhere (PROTOCOL §9.2; translate-v1 @16): the translator drops or maps every one whose
+  // shape it knows, and a log that still holds one, from a shape it missed, is refused here rather than written for good
+  { const acct = accountIn(readLog(text)); if (acct) throw new Error(`the translated log would carry an account subject at seq ${acct.seq}: ${acct.path} (PROTOCOL §9.2: no account subjects in values): nothing written`); }
   // a physics-era world (translate-v1@11): her sim's outcomes are plain logged writes, so nothing in the text may ask a
   // reader to fly an engine (no launch, no digest), and the live host's sim layer (livehost.ts: no catalogue of its own)
   // must read the whole history without one disagreement
