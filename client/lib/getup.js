@@ -14,15 +14,16 @@
 import { THREE } from './core.js';
 import { surfaceUnder } from './colliders.js';
 import { heightAt } from './terrain.js';
+// How far a lying body's root can sit below the floor it lies on, where a
+// remembered lying body stands up (shared with the server's settledPose),
+// whether a measured floor is still under the body (shared with net.js), and
+// where one stands up with no avatar to measure (localbody.js getUp).
+import { ROOT_BELOW_FLOOR, standingYFromLyingRoot, floorStillUnder, standingYWithoutAvatar } from '../../shared/presencewire.js';
+export { standingYFromLyingRoot, floorStillUnder, standingYWithoutAvatar };
 
 const _hips = new THREE.Vector3();
 /** Hips a little above the floor they lie on; the probe starts just above them. */
 const ABOVE_HIPS = 0.1;
-/** How far a lying body's root can sit below the floor it lies on, for a body
- *  at scale 1 — its hips-height less the little the hips lie above the floor.
- *  Rigs range ~0.55 to ~1.1; it grows with the body's scale. Used only when
- *  the rig can't say where its hips are, or a record lacks its floor. */
-const ROOT_BELOW_FLOOR = 1.1;
 
 /** The floor height a lying body stands up onto, at its root's x/z. */
 export function floorUnderLyingBody(me, terrainAt = heightAt) {
@@ -34,14 +35,3 @@ export function floorUnderLyingBody(me, terrainAt = heightAt) {
 }
 
 const bodyScale = (s) => (Number.isFinite(s) && s > 0 ? s : 1);
-
-/** A remembered lying body (a rejoin mid-heap) → the height to wake at.
- *  The floor it lay on, when it was recorded (presence `floor`, which the
- *  server's settledPose already stands the body on for current records).
- *  Otherwise — a record from before `floor` existed — its root plus how far
- *  a root can lie below its floor, for a body of this size (`scale`, the
- *  presence body scale): at or above that floor, to settle down onto. */
-export function standingYFromLyingRoot(rootY, { floor, scale } = {}) {
-  if (Number.isFinite(floor)) return floor;
-  return rootY + ROOT_BELOW_FLOOR * bodyScale(scale);
-}

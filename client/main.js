@@ -362,9 +362,11 @@ wireNet({
     { const m = readBodyMode(r); if (m === 'sit' || m === 'lie') setPosture(m); }   // the body-mode survives a rejoin (an older sample: read off its clip)
     // an enacted pose is authored content: wake holding it, like the spot you stood on. A remembered ragdoll
     // frame (pre-sanitizer entries) is wreckage: wake standing instead.
-    // A legacy record (before settledPose stood lying bodies on their floor):
-    // its root lies below the floor the body lay on — wake on that floor, not
-    // at height 0 (getup.js). Current records arrive standing on it already.
+    // A record from before the server's sanitizer still says ragdoll: its root
+    // lies below the floor the body lay on, so it wakes on that floor if the
+    // record carries it, else at its root raised by how far a root lies below
+    // its floor at its scale (shared/presencewire.js), not at height 0.
+    // Current records arrive standing (server.ts settledPose).
     if (r.clip === 'ragdoll') { myState.pos.y = standingYFromLyingRoot(fin(r.p[1]), { floor: r.floor, scale: r.scale }); return; }
     if (r.pose) myState.pose = r.pose;
     setFolded(foldedIn(r) === true);   // the named pose wings-folded (or an older record's wingsFolded)

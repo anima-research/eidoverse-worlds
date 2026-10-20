@@ -33,8 +33,8 @@ import { pushable, bodyTable, onConsentChange, noteHeld, forget, landed, useWorl
 import { makeConsentSync } from './consentsync.js';
 import { bodyActAsPuppet, refusedNotice } from './bodyact.js';
 import { clearMyReach } from './reachnet.js';
-import { getMe } from './mybody.js';
-import { floorUnderLyingBody } from '../getup.js';
+import { getMe, myBodyPrefs } from './mybody.js';
+import { floorUnderLyingBody, standingYWithoutAvatar } from '../getup.js';
 
 let logChat = () => {};
 
@@ -82,8 +82,15 @@ export function getUp() {
   // resume from where the body ended up, on the floor it lay on (getup.js) —
   // not at height 0, which put the feet inside a stair landing or under an
   // upper floor
-  myState.pos.copy(me.root.position);
-  myState.pos.y = me ? floorUnderLyingBody(me) : (myState.floor ?? 0);
+  if (me) {
+    myState.pos.copy(me.root.position);
+    myState.pos.y = floorUnderLyingBody(me);
+  } else {
+    // no avatar to measure (it went before the body got up): the floor it
+    // measured, if its streamed root is still where it lay, else that root
+    // raised by the reach for the size chosen for this body — never height 0
+    myState.pos.y = standingYWithoutAvatar(myState.floor, myState.pos, myBodyPrefs().scale);
+  }
   myState.floor = undefined;
 }
 // ---------------------------------------------------------------- mounted
@@ -333,7 +340,10 @@ export function stepRagdoll(dt) {
     myState.pos.copy(me.root.position);          // streamed root tracks the sim
     if (ragdoll.done) {
       myState.pose = ragdoll.finalPose; ragdoll = null;
-      myState.floor = floorUnderLyingBody(me);   // where it lies — rides presence (net.js) for a rejoin
+      // where it lies, and where its root was when measured — rides presence
+      // (net.js) for a rejoin while the body is still there (getup.js
+      // floorStillUnder): a drag, a shove or an unpin moves it off that floor
+      myState.floor = { y: floorUnderLyingBody(me), root: me.root.position.toArray() };
     }
   }
   // the camera lives in updateMe, which is skipped while limp: drive it here too

@@ -13,7 +13,7 @@ import { pending, P } from './render/scheduler.js';
 // chat lines (fold-inert) go over the bus as 'live-entry' (realize/livechat.js listens; emitted, not imported, to
 // stay out of the net → chat → net cycle)
 import { wingFoldPresence } from '../../shared/wingpresence.js';
-import { presenceWire, voiceWire, bodyWire } from '../../shared/presencewire.js';
+import { presenceWire, voiceWire, bodyWire, floorStillUnder } from '../../shared/presencewire.js';
 import { serverNow, localNow, noteRoundTrip, clockRtt, noteServerFloor, onClockDoubt } from './serverclock.js';
 import { presence } from './ui/presence.js';
 import { logChat, noteTyping, noteHistoryContext, resyncChatAfter, moderatorHeader } from './ui/chat.js';
@@ -376,8 +376,10 @@ export function sendPose(now) {
   if (s.useHeld) pose.use = s.useHeld;   // what I press while holding a thing (receivers draw its fx); a use that changes the world is a request
   // full-body orientation and locomotion (docs/reference/UNDERWATER-PRESENCE.md): presence only, never authority
   // lying limp: the floor under the body, so the server remembers it standing THERE
-  // (server.ts settledPose) — its root, which presence carries, lies below that floor
-  if (s.clip === 'ragdoll' && Number.isFinite(s.floor)) pose.floor = s.floor;
+  // (server.ts settledPose) — its root, which presence carries, lies below that floor.
+  // Only while the body is still where it measured it (shared/presencewire.js floorStillUnder).
+  const floor = s.clip === 'ragdoll' ? floorStillUnder(s.floor, s.pos) : undefined;
+  if (floor !== undefined) pose.floor = floor;
   if (s.q) pose.q = s.q;
   if (s.locomotion) pose.locomotion = s.locomotion;
   if (s.climb) pose.climb = s.climb;   // on a climb route: {host, progress} (shared/climb.js), resolved by each receiver through the host

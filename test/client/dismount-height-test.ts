@@ -41,8 +41,8 @@ const STUBS: Record<string, string> = {
   consent: `export const posable = () => false; export const pushable = () => false; export const bodyTable = () => ({}); export const onConsentChange = () => {}; export const noteHeld = () => {}; export const forget = () => {}; export const landed = () => {}; export const useWorld = () => {}; export const takeNotice = () => null;`,
   consentsync: `export const makeConsentSync = () => ({});`,
   reachnet: `export const clearMyReach = () => {};`,
-  mybody: `export let me = null; export const getMe = () => globalThis.__dm.me ?? null;`,
-  getup: `export const floorUnderLyingBody = () => 0;`,
+  mybody: `export let me = null; export const getMe = () => globalThis.__dm.me ?? null; export const myBodyPrefs = () => ({});`,
+  getup: `export const floorUnderLyingBody = () => 0; export const standingYWithoutAvatar = () => 0;`,
 };
 plugin({
   name: 'dismount-stubs',
