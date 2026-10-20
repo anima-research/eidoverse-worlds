@@ -459,6 +459,11 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- K: the client's own fold (shared/protocol/replica.js): adopt a cut, ingest the authority's entries; the state equals the
 // server's after every request, and the VIEW the renderer draws is recomputed from it (slice 3c: no v1 verbs) ----
+// review of #260: the view diff compares a timestamp exactly, and tells an absent world key from an empty one
+{ const { diffView } = await import("../../shared/protocol/viewdiff.js");
+  const t0 = 1800000000000, thing = (ts) => ({ entities: { s1: { model: "crate", pos: [0, 0, 0], sound: { clip: "bell", at: ts } } } });
+  const restart = diffView(thing(t0), thing(t0 + 500)), grass = diffView({ entities: {} }, { entities: {}, grass: {} });
+  ok(restart.things.some((x) => x.id === "s1" && x.comp === "sound") && grass.world.includes("grass"), "VD1 a sound restamped 500 ms later is a change, and grass going from absent to {} (the default lawn) is one", { restart, grass }); }
 { const { viewState } = await import("../../shared/protocol/view.js"); const { diffView } = await import("../../shared/protocol/viewdiff.js");
   let now = T + 12000; const w = openLive(root + "client/", "client", { kindOf: LABKIND, now: () => now });
   const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };

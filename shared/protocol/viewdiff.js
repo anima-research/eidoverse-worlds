@@ -12,7 +12,9 @@
 
 const EPS = 1e-9;
 export function near(a, b) {
-  if (typeof a === "number" && typeof b === "number") return a === b || Math.abs(a - b) <= EPS * Math.max(1, Math.abs(a), Math.abs(b));
+  // a whole number is a count, an id's seq or a timestamp, compared exactly (a ms stamp near 1.7e12 is 1.7 s wide at a relative
+  // 1e-9); the tolerance is for float noise in poses and scales
+  if (typeof a === "number" && typeof b === "number") return a === b || (!(Number.isInteger(a) && Number.isInteger(b)) && Math.abs(a - b) <= EPS * Math.max(1, Math.abs(a), Math.abs(b)));
   if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => near(x, b[i]));
   if (a && b && typeof a === "object" && typeof b === "object") {
     const ka = Object.keys(a).filter((k) => a[k] !== undefined), kb = Object.keys(b).filter((k) => b[k] !== undefined);
@@ -50,7 +52,8 @@ export function diffView(prev, next) {
     if (NOT_WORLD.has(k)) continue;
     const empty = (v) => v == null || (Array.isArray(v) && !v.length) || (typeof v === "object" && !Array.isArray(v) && !Object.keys(v).length);
     const a = prev?.[k], b = next?.[k];
-    if (!(empty(a) && empty(b)) && !near(a, b)) {
+    // absent (or null) and empty are alike only when both are absent or both empty: {} can mean something (grass {} is the default lawn)
+    if (!(empty(a) && empty(b) && (a == null) === (b == null)) && !near(a, b)) {
       world.push(k);
       if (MAPS.has(k)) ids[k] = [...new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})])].filter((x) => !near(a?.[x], b?.[x]));
     }
