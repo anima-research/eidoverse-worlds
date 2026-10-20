@@ -235,6 +235,27 @@ try {
     await evalJson(`(() => { document.querySelector('.sp-ctx .sp-ctx-item').click(); return true; })()`);
     check("Q5 Allow answers the ask: Wren hears body-reply ok (consent {answer, yes: true} landed) and the pose was delivered", await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 5000) { if (wren.msgs.some((m) => m.type === "body-inbox" && m.messages?.some((x: any) => x.type === "body-reply" && x.ask === askId && x.ok === true && x.applied === true))) return true; await sleep(50); } return false; })(), wren.msgs.filter((m) => m.type === "body-inbox"));
     check("Q6 …and the mark is gone", marked && await waitFor(`!document.querySelector('.who-row[data-name="Wren"] .who-ask')`, 3000));
+    // review of #260 (client I16): a row answers the ask it SHOWED. Kit's ask A is on the open menu; A is answered elsewhere
+    // (yes, as the XR ask panel would: a no would cool Kit's asks down), then Kit asks again (B). Pressing the row that
+    // showed A must answer nothing, not allow B. Kit is a second guest: the authority takes at most 2 asks a minute from one.
+    { const kit = guest("Kit"); const { snap: ks } = await kit.join(); const kitActor = ks?.cut?.you;
+      await waitFor(`import('/lib/net.js').then((m) => m.identities.get('Kit') === ${JSON.stringify(kitActor)})`, 5000);
+      let kq = 0; const kreq = async (verb: string, args: any) => { const id = `k${++kq}`; kit.send({ type: "request", id, verb, args }); const t0 = Date.now(); while (Date.now() - t0 < 5000) { const r = kit.msgs.find((m) => m.type === "reply" && m.id === id); if (r) return r; await sleep(50); } return null; };
+      await kreq("move", { to: [mine[0] - 1, mine[1], mine[2]] });
+      const ra = await kreq("body", { to: victim, kind: "pose", spec: { head: [0, 0, 0, 1] } }); const askA = ra?.reply?.ask;
+      await waitFor(`import('/lib/people.js').then((m) => m.consentInbox.asks().some((k) => k.id === ${JSON.stringify(askA)}))`, 5000);
+      await evalJson(`import('/lib/people.js').then((m) => { m.menuAt('Kit', 180, 120); window.__allowA = [...document.querySelectorAll('.sp-ctx .sp-ctx-item')].find((b) => b.textContent.startsWith('Allow')); return !!window.__allowA; })`);
+      const ansA = await evalJson(`Promise.all([import('/lib/people.js'), import('/lib/net.js')]).then(([p, n]) => p.consentInbox.answer(${JSON.stringify(askA)}, true, n.sendRequest))`);
+      await waitFor(`import('/lib/people.js').then((m) => !m.consentInbox.asks().length)`, 3000); await sleep(300);
+      const rb = await kreq("body", { to: victim, kind: "pose", spec: { head: [0, 0, 0, 1] } }); const askB = rb?.reply?.ask;
+      await waitFor(`import('/lib/people.js').then((m) => m.consentInbox.asks().some((k) => k.id === ${JSON.stringify(askB)}))`, 5000);
+      await evalJson(`(() => { window.__allowA?.click(); return true; })()`); await sleep(800);
+      const bAnswered = kit.msgs.some((m) => m.type === "body-inbox" && m.messages?.some((x: any) => x.type === "body-reply" && x.ask === askB));
+      const bPending = await evalJson(`import('/lib/people.js').then((m) => m.consentInbox.asks().some((k) => k.id === ${JSON.stringify(askB)}))`);
+      check("Q6b the Allow row answers the ask it showed: with that ask gone and a newer one pending, pressing it answers nothing (the newer ask is still pending, unanswered)",
+        typeof askA === "string" && typeof askB === "string" && askA !== askB && !bAnswered && bPending === true, { askA, ansA, askB, rb: rb?.reply, bAnswered, bPending });
+      await evalJson(`Promise.all([import('/lib/people.js'), import('/lib/net.js')]).then(([p, n]) => p.consentInbox.answer(${JSON.stringify(askB)}, true, n.sendRequest)).then(() => true)`);
+      kit.ws.close(); }
     // a second ask, answered Never: no to this one, and a standing deny for Wren's pose at the authority (consent {deny, class})
     await evalJson(`(() => { window.__creq = []; const s = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (m.type === 'request' && m.verb === 'consent') __creq.push(m.args); } catch {} return s.call(this, d); }; return true; })()`);
     const r2 = await wreq("body", { to: victim, kind: "pose", spec: { head: [0, 0, 0, 1] } }); const ask2 = r2?.reply?.ask;

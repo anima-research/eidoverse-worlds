@@ -87,8 +87,9 @@ async function run(verb, args, what) {
   if (r?.ok) deps.toast(`${what}: done`, 'info'); else deps.toast(`${what}: ${r?.refused?.reason ?? 'refused'}`, 'warn', 8000);
   return r;
 }
-/** Do a menu item. Acts with choices open the form on `surface` ('card' | 'sheet' | {strip: host}). */
-export function act(item, display, surface = 'card') {
+/** Do a menu item. Acts with choices open the form on `surface` ('card' | 'sheet' | {strip: host}). An ask's rows carry
+ *  the id of the ask they showed (`ask`), and answer that one. */
+export function act(item, display, surface = 'card', ask = null) {
   const them = personOf(display);
   switch (item) {
     case 'mention': return deps.mentionPerson(display);
@@ -97,7 +98,7 @@ export function act(item, display, surface = 'card') {
     case 'unghost': return run('unghost', { who: them.id }, `bring ${display} back`);
     case 'role': return roleMenu(display, surface);
     case 'consent': return consentMenu(display, surface);
-    case 'ask-allow': case 'ask-no': case 'ask-never': return answerAsk(item, display);
+    case 'ask-allow': case 'ask-no': case 'ask-never': return answerAsk(item, display, ask);
     default: if (VERB[item]) return openForm(item, display, surface);
   }
 }
@@ -107,7 +108,7 @@ export function act(item, display, surface = 'card') {
 export function menuAt(display, x, y) {
   const items = menuFor(display);
   contextMenu(x, y, items.map((it) => ({ k: it.id, label: it.label, ...(it.dim ? { title: it.label } : {}), ...(it.danger || ['kick', 'ban', 'ghost'].includes(it.id) ? { danger: true } : {}) })),
-    (k) => { if (k !== 'rank-line') act(k, display, 'card'); });
+    (k) => { if (k !== 'rank-line') act(k, display, 'card', items.find((it) => it.id === k)?.ask); });
   const m = document.querySelector('.sp-ctx'); m?.setAttribute('data-person', display);
   for (const b of m?.querySelectorAll('.sp-ctx-item') ?? []) if (b.textContent.startsWith("they're")) { b.classList.add('dim'); b.disabled = true; }
   const head = document.createElement('div'); head.className = 'sp-ctx-head'; head.textContent = display; m?.prepend(head);
@@ -121,7 +122,7 @@ export function sheetFor(display) {
   for (const it of items) {
     if (it.dim) { const p = document.createElement('p'); p.className = 'pm-dim'; p.textContent = it.label; sh.body.append(p); continue; }
     const b = document.createElement('button'); b.type = 'button'; b.className = `pm-row${it.danger || ['kick', 'ban', 'ghost'].includes(it.id) ? ' danger' : ''}`; b.textContent = it.label; b.dataset.act = it.id;
-    b.onclick = () => { if (!sh.armed) return; if (!VERB[it.id] && it.id !== 'role' && it.id !== 'consent') closeSheet(); act(it.id, display, 'sheet'); };
+    b.onclick = () => { if (!sh.armed) return; if (!VERB[it.id] && it.id !== 'role' && it.id !== 'consent') closeSheet(); act(it.id, display, 'sheet', it.ask); };
     sh.body.append(b);
   }
   // the press that opened the sheet is still down: lifting it must not "click" the row that slid under the finger
@@ -137,7 +138,7 @@ export function stripFor(display, host) {
   for (const it of menuFor(display)) {
     if (it.dim) { const p = document.createElement('div'); p.className = 'pm-dim'; p.textContent = it.label; host.append(p); continue; }
     const b = document.createElement('button'); b.type = 'button'; b.className = `pm-row${it.danger || ['kick', 'ban', 'ghost'].includes(it.id) ? ' danger' : ''}`; b.textContent = it.label; b.dataset.act = it.id;
-    b.onclick = (e) => { e.stopPropagation(); act(it.id, display, { strip: host }); };
+    b.onclick = (e) => { e.stopPropagation(); act(it.id, display, { strip: host }, it.ask); };
     host.append(b);
   }
   return host;
@@ -175,9 +176,11 @@ function roleMenu(display, surface) {
 /** Allow (this once) / Not now / Never. Never also files a standing `deny` for that person and class at the authority
  *  (consent {deny, class}: PROTOCOL L6's per-person override, presence-only — it lasts this stay, like the authority's
  *  table itself; my table (consent.js) has no per-person cell to persist it in). */
-async function answerAsk(item, display) {
-  const them = personOf(display); const k = them.id ? consentInbox.askFrom(them.id) : null;
-  if (!k) { deps.toast(`${display}'s ask is gone (answered, or past its 20 s)`, 'info'); bus.emit('roster'); return null; }
+// The row answers the ask it showed, by its id (consent {answer: <id>}): never "whatever this person asks now", which
+// could be a newer, different ask the person never saw (review of #260, client I16). If that one is gone, nothing is sent.
+async function answerAsk(item, display, askId) {
+  const them = personOf(display); const k = askId ? consentInbox.asks().find((x) => x.id === askId) ?? null : null;
+  if (!k) { deps.toast(`the ask from ${display} you were answering is gone (answered, or past its 20 s); nothing was sent`, 'info'); bus.emit('roster'); return null; }
   const yes = item === 'ask-allow'; const words = askWords(k);
   const r = await consentInbox.answer(k.id, yes, sendRequest);
   if (!r?.ok) { deps.toast(`answering ${display}: ${r?.refused?.reason ?? 'refused'}`, 'warn', 8000); return r; }
