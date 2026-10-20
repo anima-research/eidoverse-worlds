@@ -96,20 +96,27 @@ export function setConsent(P, actor, a, now) {
   const lists = a.unfriend !== undefined || a.undelegate !== undefined;
   if (!self && lists) return { ok: false, code: "consent", reason: `only ${target} may change who ${target}'s friends and delegates are` };
   if (!self && (opening || !(t.delegates ?? []).includes(actor))) return { ok: false, code: "consent", reason: opening ? `only ${target} may open ${target}'s consent` : `${target} hasn't named you a delegate` };
-  if (a.preset !== undefined) { if (typeof a.preset !== "string" || !Object.hasOwn(PRESETS, a.preset)) return { ok: false, code: "shape", reason: `no preset '${a.preset}'`, fix: Object.keys(PRESETS).join(", ") }; t.preset = a.preset; t.cells = bag(); }
-  if (set) { const { class: c, tier, mode } = set;
-    if (!CLASSES.includes(c) || !MODES.includes(mode) || !TIERS.includes(tier)) return { ok: false, code: "shape", reason: "set {class, tier: everyone|friends, mode: allow|ask|deny}" };
-    ((t.cells ??= bag())[tier] ??= bag())[c] = mode; }
-  if (a.allow !== undefined || a.deny !== undefined) { const who = a.allow ?? a.deny; const cls = a.class !== undefined ? [classOf(a.class)] : CLASSES;
+  // every argument is checked before any is applied: a refused change changes nothing
+  if (a.preset !== undefined && (typeof a.preset !== "string" || !Object.hasOwn(PRESETS, a.preset))) return { ok: false, code: "shape", reason: `no preset '${a.preset}'`, fix: Object.keys(PRESETS).join(", ") };
+  if (set && (!CLASSES.includes(set.class) || !MODES.includes(set.mode) || !TIERS.includes(set.tier))) return { ok: false, code: "shape", reason: "set {class, tier: everyone|friends, mode: allow|ask|deny}" };
+  const who = a.allow ?? a.deny; const cls = a.class !== undefined ? [classOf(a.class)] : CLASSES;
+  if (a.allow !== undefined || a.deny !== undefined) {
     if (!isWho(who)) return { ok: false, code: "shape", reason: "allow/deny: an identity" };
     if (!cls.every((c) => CLASSES.includes(c))) return { ok: false, code: "shape", reason: `class: one of ${CLASSES.join(", ")}` };
-    const until = a.allow !== undefined ? now + Math.min(a.for ?? 3600000, MAX_ALLOW_MS) : undefined;
-    for (const c of cls) ((t.over ??= bag())[who] ??= bag())[c] = { mode: a.allow !== undefined ? "allow" : "deny", ...(until ? { until } : {}) }; }
-  if (a.pause !== undefined) t.paused = !!a.pause;
+    // an allowance lasts the for it names: a positive number of ms (an allow for 0 expired at once; none means an hour)
+    if (a.allow !== undefined && a.for != null && !(typeof a.for === "number" && a.for > 0)) return { ok: false, code: "shape", reason: `for: how long it lasts, in ms (a positive number), got ${JSON.stringify(a.for)}`, fix: `e.g. for: 600000 (ten minutes); at most ${MAX_ALLOW_MS}` }; }
+  // pause is true or false; any other value is refused
+  if (a.pause !== undefined && typeof a.pause !== "boolean") return { ok: false, code: "shape", reason: `pause is true or false, got ${JSON.stringify(a.pause)}` };
   if (a.friend !== undefined && !isWho(a.friend)) return { ok: false, code: "shape", reason: "friend: an identity" };
   if (a.delegate !== undefined && !isWho(a.delegate)) return { ok: false, code: "shape", reason: "delegate: an identity" };
   if (a.unfriend !== undefined && !isWho(a.unfriend)) return { ok: false, code: "shape", reason: "unfriend: an identity" };
   if (a.undelegate !== undefined && !isWho(a.undelegate)) return { ok: false, code: "shape", reason: "undelegate: an identity" };
+  if (a.preset !== undefined) { t.preset = a.preset; t.cells = bag(); }
+  if (set) ((t.cells ??= bag())[set.tier] ??= bag())[set.class] = set.mode;
+  if (a.allow !== undefined || a.deny !== undefined) {
+    const until = a.allow !== undefined ? now + Math.min(a.for ?? 3600000, MAX_ALLOW_MS) : undefined;
+    for (const c of cls) ((t.over ??= bag())[who] ??= bag())[c] = { mode: a.allow !== undefined ? "allow" : "deny", ...(until !== undefined ? { until } : {}) }; }
+  if (a.pause !== undefined) t.paused = a.pause;
   if (a.friend !== undefined) t.friends = [...new Set([...(t.friends ?? []), a.friend])];
   if (a.delegate !== undefined) t.delegates = [...new Set([...(t.delegates ?? []), a.delegate])];
   // removing: a friend off your list ends the mutual tier at once (isFriend reads both lists on every decision; the caller's
