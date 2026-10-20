@@ -16,7 +16,7 @@ import { WORLDS_DIR } from "./config.ts";
 // Keyed by ACCOUNT (security review 10-06 H4/L4): a display name is typed, not proven, so banning a name hit every
 // namesake and missed the person the moment they picked another. A guest has no account: their ban names their
 // connection's address (hashed, never stored raw) and expires (ADDR_BAN_MS) — an address is shared and reassigned.
-export type BanRec = { by: string; ts: number; reason?: string; name?: string; account?: string; addr?: string; until?: number; world?: string };
+export type BanRec = { by: string; ts: number; reason?: string; name?: string; account?: string; addr?: string; until?: number; world?: string; legacySub?: boolean };
 export const ADDR_BAN_MS = 24 * 3600 * 1000;
 export const BANS_FILE = join(WORLDS_DIR, ".bans.json");
 export const globalBans: Record<string, BanRec> = {};
@@ -25,12 +25,28 @@ export function saveGlobalBans() {
     atomicWrite(BANS_FILE, JSON.stringify(globalBans, null, 2), { mode: 0o600 });
   } catch (e) { console.log(`[mod] global ban save failed: ${e}`); }
 }
+/** The ban list as stored, made current. A record from before accounts carried the principal's bare `sub`: a signed-in
+ *  person's account is that sub still, but an aid1 agent's is now `aid1:<iss>:<sub>`, so such a record is kept with
+ *  `legacySub` and matches the aid1 account whose sub it names (review of #260, server I16). A name-keyed record with
+ *  neither can't be honoured safely (it would hit namesakes) and is dropped, said once. */
+export function restoreBans(raw: Record<string, BanRec>): Record<string, BanRec> {
+  const out: Record<string, BanRec> = {}; const dropped: string[] = [];
+  for (const [k, b] of Object.entries(raw ?? {})) {
+    if (!b || typeof b.by !== "string") continue;
+    const sub = (b as any).sub;
+    if (b.account || b.addr) out[k] = b;
+    else if (typeof sub === "string" && sub) { const { sub: _s, ...rest } = b as any; out[k] = { ...rest, account: sub, legacySub: true }; }
+    else dropped.push(b.name ?? k);
+  }
+  if (dropped.length) console.log(`[mod] ${dropped.length} name-only global ban(s) from before accounts dropped (they would hit namesakes): ${dropped.join(", ")}`);
+  return out;
+}
 try {
   if (existsSync(BANS_FILE)) {
     const raw = JSON.parse(readFileSync(BANS_FILE, "utf8")) as Record<string, BanRec>;
     // a name-keyed record from before accounts can't be honoured safely (it would hit namesakes): kept only if it
     // carried the account it was made against
-    for (const [k, b] of Object.entries(raw)) if (b && typeof b.by === "string" && (b.account || (b as any).sub || b.addr)) globalBans[k] = { ...b, account: b.account ?? (b as any).sub };
+    Object.assign(globalBans, restoreBans(raw));
     if (Object.keys(globalBans).length) console.log(`[mod] ${Object.keys(globalBans).length} global ban(s) loaded`);
   }
 } catch (e) { console.log(`[mod] global ban restore failed (starting empty): ${e}`); }
@@ -41,6 +57,7 @@ export function findBan(map: Record<string, BanRec> | undefined, account: string
   for (const b of Object.values(map)) {
     if (b.world && b.world !== world) continue;   // a guest's ban in one world (the door's world ban can't name a guest)
     if (account && b.account === account) return b;
+    if (account && b.legacySub && b.account && account.startsWith("aid1:") && account.endsWith(`:${b.account}`)) return b;
     if (!account && addr && b.addr === addr && (b.until ?? 0) > now) return b;
   }
   return null;

@@ -23,6 +23,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { ENGINE, scratch } from "./common.ts";
 
 const root = scratch("access");
@@ -250,11 +251,42 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
 { const { clientAddress } = await import("../../server/peer.ts");
   const hdr = (h) => ({ headers: { get: (k) => h[k.toLowerCase()] ?? null } });
   const trusted = new Set(["127.0.0.1", "10.0.0.9"]);
-  const fromProxy = clientAddress(hdr({ "x-real-ip": "203.0.113.7" }), "127.0.0.1", trusted), fromProxy2 = clientAddress(hdr({ "x-forwarded-for": "203.0.113.8, 10.0.0.9" }), "10.0.0.9", trusted);
+  const fromProxy = clientAddress(hdr({ "x-real-ip": "203.0.113.7" }), "127.0.0.1", trusted), fromProxy2 = clientAddress(hdr({ "x-forwarded-for": "203.0.113.8, 10.0.0.9" }), "10.0.0.9", trusted, "x-forwarded-for");
   const direct = clientAddress(hdr({ "x-real-ip": "203.0.113.7" }), "198.51.100.4", trusted), framed = clientAddress(hdr({ "x-forwarded-for": "203.0.113.8" }), "198.51.100.4", trusted);
   const bare = clientAddress(hdr({}), "198.51.100.4", trusted), none = clientAddress(hdr({ "x-real-ip": "1.2.3.4" }), null, trusted);
   ok(fromProxy === "203.0.113.7" && fromProxy2 === "203.0.113.8" && direct === "198.51.100.4" && framed === "198.51.100.4" && bare === "198.51.100.4" && none === "?",
-    "A13 X-Real-IP / X-Forwarded-For are honoured only from a trusted proxy (loopback or TRUSTED_PROXIES); from any other peer the socket address stands, so a direct guest can neither pick nor frame an address", { fromProxy, fromProxy2, direct, framed, bare, none }); }
+    "A13 X-Real-IP / X-Forwarded-For are honoured only from a trusted proxy (loopback or TRUSTED_PROXIES); from any other peer the socket address stands, so a direct guest can neither pick nor frame an address", { fromProxy, fromProxy2, direct, framed, bare, none });
+  // review of #260, server I128: the proxy writes the address into ONE header, and the other arrives as the client sent it
+  const xff = (h, p) => clientAddress(hdr(h), p, trusted, "x-forwarded-for");
+  const forged = xff({ "x-forwarded-for": "198.51.100.66, 203.0.113.8" }, "10.0.0.9");
+  const chained = xff({ "x-forwarded-for": "198.51.100.66, 203.0.113.8, 127.0.0.1" }, "10.0.0.9");
+  const realThrough = xff({ "x-real-ip": "198.51.100.66", "x-forwarded-for": "203.0.113.8" }, "10.0.0.9");
+  const xffThrough = clientAddress(hdr({ "x-forwarded-for": "198.51.100.66" }), "127.0.0.1", trusted, "x-real-ip");
+  ok(forged === "203.0.113.8" && chained === "203.0.113.8" && realThrough === "203.0.113.8" && xffThrough === "127.0.0.1",
+    "A13b only the header the proxy writes is read: behind an X-Forwarded-For proxy, a client's own X-Real-IP or left-hand hop is never taken; behind an X-Real-IP proxy, a client's X-Forwarded-For isn't either", { forged, chained, realThrough, xffThrough }); }
+// ---- A13c (review of #260, server I16): a global ban made before accounts, on an aid1 agent's bare sub, still holds (pure) ----
+{ const { restoreBans, findBan } = await import("../../server/moderation.ts");
+  const was = { "old-agent": { by: "op", ts: 1, sub: "agent-7f3a" }, "old-person": { by: "op", ts: 1, sub: "discord|123" }, "namesake": { by: "op", ts: 1, name: "bob" } };
+  const R = restoreBans ? restoreBans(was) : Object.fromEntries(Object.entries(was).filter(([, b]) => b.sub).map(([k, b]) => [k, { ...b, account: b.sub }]));
+  const agent = findBan(R, "aid1:https://id.example.org:agent-7f3a"), person = findBan(R, "discord|123");
+  const other = findBan(R, "aid1:https://id.example.org:agent-7f3a-2"), human = findBan(R, "human:agent-7f3a");
+  ok(!!agent && !!person && !other && !human && !R.namesake, "A13c a ban from before accounts holds against the aid1 agent whose sub it named and the person whose account is that sub, and against no one else", { agent: !!agent, person: !!person, other: !!other, human: !!human, keys: Object.keys(R) }); }
+// ---- A13d (review of #260, server I5): two worlds opening the same keys file keep each other's keys ----
+{ const { custodyAt } = await import("../../server/custody.ts");
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "custody-")), "keys", "custody.json");
+  const one = custodyAt(f), two = custodyAt(f);   // as livehost does, once per world, before either has minted
+  const a = one.keyOf("u-aaaaaaaaaaaaaaaaaaaa", true), b = two.keyOf("u-bbbbbbbbbbbbbbbbbbbb", true), s1 = one.sequencer(), s2 = two.sequencer();
+  const disk = JSON.parse(fs.readFileSync(f, "utf8"));
+  ok(disk.holders?.["u-aaaaaaaaaaaaaaaaaaaa"]?.pub === a && disk.holders?.["u-bbbbbbbbbbbbbbbbbbbb"]?.pub === b && s1 === s2 && disk.sequencer?.pub === s1,
+    "A13d two handles on one keys file: both holders' keys are on disk and both sign with the one sequencer key", { a, b, s1, s2, holders: Object.keys(disk.holders ?? {}), seq: disk.sequencer?.pub });
+  // …and a key another process wrote behind an open handle is taken, never minted over (the CLI founds while the server runs)
+  const g = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "custody-")), "keys", "custody.json");
+  const h = custodyAt(g); fs.mkdirSync(path.dirname(g), { recursive: true });
+  const other = { pub: "ed25519:written-by-another-process", priv: "" };
+  fs.writeFileSync(g, JSON.stringify({ holders: { "u-cccccccccccccccccccc": other }, operator: other }));
+  const op = h.operator(), held = h.keyOf("u-cccccccccccccccccccc", true), after = JSON.parse(fs.readFileSync(g, "utf8"));
+  ok(op === other.pub && held === other.pub && after.operator?.pub === other.pub && after.holders?.["u-cccccccccccccccccccc"]?.pub === other.pub,
+    "A13d …a key another process wrote after the handle opened is taken, not minted over", { op, held, after }); }
 { // A9 (final review M1): a members-only door is not opened by default-role / role-defs powers handed to everyone
   const { entryFor } = await import(path.join(ENGINE, "server/access.ts"));
   const base = { access: { join: "listed" } };
