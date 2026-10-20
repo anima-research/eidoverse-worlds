@@ -282,6 +282,23 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const up = s.call("bob", "update", { copy: "b", to: v2 });
       return { a: show(a), b: show(b), keys, up: show(up), label: s.w().state().entities[partOf("b", "bulb")]?.c.label ?? null, kids: Object.keys(s.w().state().entities).filter((k) => s.w().state().entities[k].c.parent?.to === "b").length }; },
     good: (o) => o.up === "ok" && JSON.stringify(o.keys) === '["bulb","lamp"]' && o.label === "brighter" && o.kids === 1 },
+  { id: "U6", what: "update's conflicts refusal names no dry run (a dry update takes the same refusal) and lists each conflict with yours and theirs", run(s) { cast(s);
+      s.call("bob", "create", { id: "lamp", model: "crate", components: { transform: T0([0, 0, 0]) } });
+      s.call("bob", "create", { id: "bulb", model: "book", components: { transform: T0([0, 0.6, 0]), parent: { to: "lamp" } } });
+      const v1 = s.call("bob", "publish", { from: "lamp", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
+      for (const [id, x] of [["a", 5], ["b", 9]] as const) s.call("bob", "create", { id, from: v1, at: { pos: [x, 0, 5] } });
+      const E = () => s.w().state().entities;
+      const partOf = (copy: string, key: string) => Object.keys(E()).find((k) => E()[k].c["copy-of"]?.key === key && E()[k].c.parent?.to === copy);
+      s.call("bob", "set", { id: partOf("a", "bulb"), component: "label", value: "upstream" });
+      const v2 = s.call("bob", "publish", { from: "a", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
+      s.call("bob", "set", { id: partOf("b", "bulb"), component: "label", value: "mine" });
+      const up = s.call("bob", "update", { copy: "b", to: v2 }), dry = s.call("bob", "update", { copy: "b", to: v2, dry: true });
+      // …and a resolve that leaves a conflict out names no dry run either: with two conflicts, resolve one
+      s.call("bob", "set", { id: partOf("a", "bulb"), component: "transform", value: T0([0, 0.9, 0]) }); const v3 = s.call("bob", "publish", { from: "a", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
+      s.call("bob", "set", { id: partOf("b", "bulb"), component: "transform", value: T0([0, 0.3, 0]) });
+      const two = s.call("bob", "update", { copy: "b", to: v3 }); const k0 = two.refused?.conflicts?.find((c: any) => c.component === "label"); const part = s.call("bob", "update", { copy: "b", to: v3, resolve: k0 ? { [`${k0.id}.label`]: "yours" } : {} });
+      return { code: up.refused?.code, fix: up.refused?.fix ?? null, n: up.refused?.conflicts?.length ?? null, dry: dry.refused?.code ?? (dry.ok ? "ok" : null), n2: two.refused?.conflicts?.length ?? null, part: part.refused ?? (part.ok ? "ok" : null) }; },
+    good: (o) => o.code === "conflicts" && !/dry/.test(o.fix ?? "") && o.n === 1 && o.dry === "conflicts" && o.n2 === 2 && /leaves out/.test(o.part?.reason ?? "") && !/dry/.test(o.part?.fix ?? "") },
   { id: "U5", what: "publish {from: [one id]} is publish {from: that id}: the same root key and the same parts, descendants included", run(s) { cast(s);
       s.call("bob", "create", { id: "lamp", model: "crate", components: { transform: T0([0, 0, 0]) } });
       s.call("bob", "create", { id: "bulb", model: "book", components: { transform: T0([0, 0.6, 0]), parent: { to: "lamp" } } });

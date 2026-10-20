@@ -153,7 +153,7 @@ function buildUpdate(ctx, a, w) {
       } else conflicts.push({ id, component: comp, yours: m, theirs: t });
     }
   }
-  if (conflicts.length && !a.resolve) refuse("conflicts", `${conflicts.length} part(s) changed both here and upstream`, "re-send with resolve: {\"<id>.<component>.<field>\": \"yours\"|\"theirs\"} for a field, or {\"<id>.<component>\": …} for a whole value; or dry: true to see the merge", { conflicts });
+  if (conflicts.length && !a.resolve) refuse("conflicts", `${conflicts.length} part(s) changed both here and upstream`, "re-send with resolve: {\"<id>.<component>.<field>\": \"yours\"|\"theirs\"} for a field, or {\"<id>.<component>\": …} for a whole value; conflicts lists each one with yours and theirs", { conflicts });
   // a resolve names every one of these conflicts, each "yours" or "theirs": a key that matches none, another word, or a
   // conflict left out would otherwise silently mean yours, so each is refused instead (null reads as no resolve)
   if (a.resolve != null) { const keys = new Set(conflicts.flatMap((c) => (c.fields ? c.fields.map((f) => `${c.id}.${c.component}.${f}`) : [`${c.id}.${c.component}`])));
@@ -163,7 +163,7 @@ function buildUpdate(ctx, a, w) {
     if (bad.length) refuse("shape", `resolve names ${bad.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(", ")}, which ${bad.length === 1 ? "isn't" : "aren't"} one of this update's conflicts with "yours" or "theirs"`,
       keys.size ? `this update's conflict keys: ${[...keys].join(", ")}` : "this update has no conflicts: leave resolve out", { conflicts });
     const missing = [...keys].filter((k) => !Object.hasOwn(res, k));
-    if (missing.length) refuse("shape", `resolve leaves out ${missing.join(", ")}: once you resolve, name every conflict`, `add each as "yours" or "theirs", or dry: true to see the merge`, { conflicts }); }
+    if (missing.length) refuse("shape", `resolve leaves out ${missing.join(", ")}: once you resolve, name every conflict`, `add each as "yours" or "theirs"; conflicts lists each one with yours and theirs`, { conflicts }); }
   for (const c of conflicts) { const id = c.id; for (const f of c.fields ?? [null]) { const choice = a.resolve?.[f ? `${id}.${c.component}.${f}` : `${id}.${c.component}`] ?? "yours";
       if (choice === "theirs") { const cur = ops.findLast((o) => o.id === id && o.comp === c.component)?.value ?? clone(ctx.st.entities[id].c[c.component]);
         const v = f ? { ...cur, [f]: c.theirs[f] } : c.theirs; ops.push(setOp(id, c.component, v)); } } }
