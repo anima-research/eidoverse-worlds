@@ -133,10 +133,18 @@ function stampShapes(ctx, ops) {
     if (ph === undefined || ph === null) { if (!simOn || !want) continue; next = { kind: moves(id) ? "kinematic" : "static", shape: want }; }
     else if (typeof ph !== "object" || Array.isArray(ph)) continue; // valueCheck refuses it
     else if (ph.kind === "static" && moves(id) && !ops.some((o) => o.verb === "set" && o.comp === "physics" && o.id === id)) next = { ...ph, kind: "kinematic", ...(want ? { shape: want } : {}) };   // it started moving
-    else { if (JSON.stringify(ph.shape ?? null) === JSON.stringify(want)) continue;
+    else {
+      // a model this server can't measure right now (not in its catalogue, or named but unmeasured) keeps the shape stamped
+      // before, even through a whole-value write of physics: only a changed model or mesh, or a body that's gone, takes it
+      // away (the never-stamped branch above skips such a thing too)
+      const kept = !want && typeof e.c.model === "string" && !ops.some((o) => o.id === id && (o.comp === "model" || o.comp === "mesh")) ? ctx.st.entities[id]?.c.physics?.shape : undefined;
+      if (kept !== undefined) { if (JSON.stringify(ph.shape ?? null) === JSON.stringify(kept)) continue; next = { ...ph, shape: kept };
+        if (ops.some((o) => o.verb === "set" && o.comp === "physics" && o.id === id && o.value?.shape !== undefined))
+          ctx.notes.push({ id, component: "physics", field: "shape", why: "stamped by the authority: a shape is its measurement of the model (Covenant III), never the asker's" }); }
+      else { if (JSON.stringify(ph.shape ?? null) === JSON.stringify(want)) continue;
       next = { ...ph }; if (want) next.shape = want; else delete next.shape;
       if (ph.shape !== undefined && ops.some((o) => o.verb === "set" && o.comp === "physics" && o.id === id && o.value?.shape !== undefined))
-        ctx.notes.push({ id, component: "physics", field: "shape", why: "stamped by the authority: a shape is its measurement of the model (Covenant III), never the asker's" }); }
+        ctx.notes.push({ id, component: "physics", field: "shape", why: "stamped by the authority: a shape is its measurement of the model (Covenant III), never the asker's" }); } }
     // every physics set for it in the batch gets the measured value: the last is the one the fold keeps, and an earlier one
     // replaced alone left a later set's shape (the asker's) standing
     let found = false; out.forEach((o, k) => { if (o.verb === "set" && o.comp === "physics" && o.id === id) { out[k] = setOp(id, "physics", next); found = true; } });

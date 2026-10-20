@@ -575,6 +575,18 @@ function playground(name) {
   const r = call(W, "rowan", "batch", { ops: [{ verb: "set", args: { id: "crate-1", component: "physics", value: { kind: "dynamic", who: "builder" } } },
     { verb: "set", args: { id: "crate-1", component: "physics", value: { kind: "dynamic", who: "builder", shape: fake } } }] });
   ok(r?.ok && want && JSON.stringify(e()?.shape) === JSON.stringify(want), "S9 the second of two physics sets in one batch can't put the asker's shape in place of the measured one", { r: r?.ok ?? r, want, got: e()?.shape }); }
+
+// review of #260: a stamped shape stays while the model can't be measured right now; a changed model still takes it away
+{ const W = playground("shape-unmeasured");
+  const w = openWorld(root, W); const before = w.state().entities["crate-1"]?.c.physics?.shape;
+  const cat = w.catalogue; w.catalogue = { get: (n: string) => (n === "crate" ? undefined : cat?.get?.(n)), list: (q: string) => cat?.list?.(q) ?? [] };
+  const m = request(w, "rowan", "set", { id: "crate-1", component: "physics", value: { who: "visitor" }, merge: true });   // the merge the review traced
+  const keptM = w.state().entities["crate-1"]?.c.physics?.shape;
+  const r = request(w, "rowan", "set", { id: "crate-1", component: "physics", value: { kind: "dynamic", who: "builder" } });   // a whole value, without shape
+  const kept = w.state().entities["crate-1"]?.c.physics?.shape; w.catalogue = cat;
+  ok(!!before && m.ok && r.ok && JSON.stringify(keptM) === JSON.stringify(before) && JSON.stringify(kept) === JSON.stringify(before) && !JSON.stringify([m.notes, r.notes]).includes("its body is gone"),
+    "U10 a stamped shape stays while the catalogue can't measure the model right now (a merge or a whole value), and no 'body is gone' note", { before, keptM, kept, notes: [m.notes, r.notes] }); }
+
 console.log(`${passes} passed, ${fails} failed`);
 fs.rmSync(root, { recursive: true, force: true });
 process.exit(fails ? 1 : 0);
