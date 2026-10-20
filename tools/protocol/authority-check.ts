@@ -52,6 +52,11 @@ ok(encName("0abc") !== encName("n0abc"), "N1 encName('0abc') and encName('n0abc'
 ok(encName("n0abc") === "n0abc" && encName("0abc").startsWith("x--"), "N2 a valid component name is kept; an invalid one is always escaped", [encName("n0abc"), encName("0abc")]);
 for (const s of ["Hesperus", "anon-3", "x--41", "h--zz", "é☃", "0abc", "a".repeat(64), "a".repeat(65), "Marigold Thorne", "__proto__"])
   ok(dec(enc(s)) === s || (enc(s).startsWith("h--") && dec(enc(s)) === null), `N3 dec(enc(${JSON.stringify(s).slice(0, 20)})) gives it back (or says it was hashed)`, [enc(s), dec(enc(s))]);
+// N3b: an id the view can't decode (h--, a hash) is what the reader holds and sends back: encoding it again must give it
+// unchanged, or a thing with a long imported name can't be addressed from what the view shows
+{ const long = "Ω".repeat(40), id = enc(long);
+  ok(id.startsWith("h--") && enc(id) === id && encName(encName("Ω".repeat(40))) === encName("Ω".repeat(40)) && enc("h--zz") !== "h--zz" && enc("h--" + "a".repeat(60)) !== "h--" + "a".repeat(60),
+    "N3b enc keeps a hashed id (h-- and 61 hex) as it is; other h--/x-- spellings are still escaped", [id, enc(id)]); }
 { const seen = new Map(); let clash = null;
   for (let i = 0; i < 3000 && !clash; i++) { const s = (i % 3 ? String.fromCharCode(48 + (i % 75)) : "x--") + i.toString(36) + (i % 7 ? "" : "Z");
     for (const f of [enc, encName]) { const k = `${f.name}:${f(s)}`; if (seen.has(k) && seen.get(k) !== s) clash = [s, seen.get(k), f(s)]; seen.set(k, s); } }

@@ -5,12 +5,14 @@
 //   enc(s)     an identity / entity id / key: [a-z0-9-]{1,64}. A name the grammar already accepts, and that doesn't
 //              start with an escape prefix, is kept as it is. Anything else becomes "x--" + hex(utf8) or, when that
 //              would pass 64 characters, "h--" + the first 61 hex of its sha256 (not invertible: decode says so).
+//              An id already in that hashed form is kept as it is: it's what readers hold and send back.
 //   encName(s) a component name: [a-z][a-z0-9-]* (+ domain/version/key per §2.3). A name the grammar accepts is
-//              kept; anything else is ALWAYS escaped the same way (x--/h--, which start with a letter).
+//              kept; anything else is escaped the same way (x--/h--, which start with a letter), except the hashed form.
 //   dec(s)     the inverse of enc for x-- names; null for an h-- name (a hash can't be read back).
 //
-// Injective: a kept name never starts with x-- or h--; an escaped one always does, and x-- names are distinct hex;
-// h-- names collide only if sha256 does.
+// Injective: a kept name never starts with x--, and starts with h-- only in the hashed form; an escaped one always
+// starts with one or the other, and x-- names are distinct hex; h-- names collide only if sha256 does, and a literal
+// name in the hashed form collides only with the name whose sha256 it prefixes.
 //
 // The engine fix (research 35, "a real enc collision"): the lab's encName escaped a name like "0abc" (valid as an
 // identity, not as a component, which must start with a letter) by prefixing "n", giving "n0abc" — which is also
@@ -21,17 +23,20 @@ import { sha256, utf8Hex } from "./hash.js";
 import { isComponent } from "./fold.js";
 
 const ESC = /^[xh]--/;
+// a hashed id is the one spelling the view can't decode (dec gives null), so readers hold it and send it back as it is:
+// enc keeps it. A name of that exact form is a sha256 prefix of something else, which nobody can choose
+const HASHED = /^h--[0-9a-f]{61}$/;
 const escape = (s) => { const hex = utf8Hex(s); return hex.length + 3 <= 64 ? `x--${hex}` : `h--${sha256(s).slice(0, 61)}`; };
 
 /** @param {unknown} s @returns {string} */
 export function enc(s) {
   s = String(s);
-  return /^[a-z0-9-]{1,64}$/.test(s) && !ESC.test(s) ? s : escape(s);
+  return HASHED.test(s) || (/^[a-z0-9-]{1,64}$/.test(s) && !ESC.test(s)) ? s : escape(s);
 }
 /** @param {unknown} s @returns {string} */
 export function encName(s) {
   s = String(s);
-  return isComponent(s) && !ESC.test(s) ? s : escape(s);
+  return HASHED.test(s) || (isComponent(s) && !ESC.test(s)) ? s : escape(s);
 }
 /** The local tag of the component that moves one node of a thing's model: motion:<partSlot(node)> {node, …}. A node's name
  *  comes from a model file and is DATA (any characters: tripo_part_3, "Seat Plank", 座席); the key needs a §2.3 tag
