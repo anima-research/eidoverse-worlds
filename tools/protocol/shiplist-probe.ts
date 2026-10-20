@@ -39,6 +39,9 @@ const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail
 const entries = () => readLog(fs.readFileSync(path.join(worldsDir, WORLD, "world.jsonl")));
 const disk = () => fold(entries());
 const waitFor = async (expr: string, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await evalJson(expr)) return true; } catch { /* busy */ } await sleep(100); } return false; };
+// a model's entity slot is null until its GLB lands; on a software renderer that can take far longer than 8 s, and a stage
+// that read on past a timed-out wait died later as "Cannot read properties of null" (Nissa, #260). Wait long, then fail BY NAME.
+const needModel = async (expr: string, what: string) => { if (!(await waitFor(expr, 45000))) throw new Error(`setup: ${what} never loaded in 45 s (its GLB never landed: a slow renderer?)`); };
 const waitDisk = async (pred: () => boolean, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (pred()) return true; await sleep(100); } return false; };
 const key = (code: string) => evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', key: '${code}', bubbles: true })), dispatchEvent(new KeyboardEvent('keyup', { code: '${code}', key: '${code}', bubbles: true })), true`);
 const page = (js: string) => evalJson(`(async () => { ${js} })()`);
@@ -64,7 +67,7 @@ try {
   await stage("D", async () => {
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'gate', model: '${CRATE}', components: { label: 'Gate', pivot: { pos: [-0.5, 0, 0] }, openable: { open: false, locked: false, angle: ${Math.PI / 2}, time: 1.2 }, reactions: { open: { kind: 'toggle', unless: 'locked' } }, transform: { pos: [${at[0]}, ${me[1]}, ${at[1]}], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });`);
   check("(setup) a gate beside me (openable + its open action)", made?.ok, made);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('gate') && !!m.entities.get('gate').userData.base)`);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('gate') && !!m.entities.get('gate').userData.base)`, 'gate and gate');
   check("D1 the hint bar offers it: E open “Gate”", await waitFor(`/E\\s*open\\s*“Gate”/.test(${hint})`, 6000), await evalJson(hint));
   const q0 = await evalJson(`import('/lib/world.js').then((m) => m.entities.get('gate').quaternion.toArray())`);
   const uses0 = entries().filter((e: any) => e.kind === "act" && e.verb === "use").length;
@@ -154,7 +157,7 @@ try {
   await stage("VP", async () => {
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'anchor', model: '${CRATE}', components: { label: 'Anchor', grabbable: { enabled: false }, transform: { pos: [${at[0]}, 0, ${at[1]} + 1.5] } } });`);
   check("(setup) a crate that can't be picked up, beside me", made?.ok, made);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('anchor'))`);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('anchor'))`, 'anchor');
   await page(`const c = await import('/lib/core.js'); Object.defineProperty(c.renderer.xr, 'isPresenting', { get: () => true, configurable: true }); return true;`);
   const grab = `const m = await import('/lib/thingphysics.js'); const r = await m.physicsApi.grab('anchor'); return { ok: !!r?.ok, code: r?.refused?.code ?? null };`;
   const n0 = await evalJson(`__phys.length`);
@@ -172,7 +175,7 @@ try {
   check("VP4 on the desk, a refusal raises no headset card (the chat line says it there)", g2 && !g2.ok && (await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState() === null)`)));
   // VP5 (review round 3): two things whose names differ only by a digit are two refusals, both said
   for (const n of ["Crate 2", "Crate 3"]) await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${n.replace(" ", "-").toLowerCase()}', model: '${CRATE}', components: { label: '${n}', grabbable: { enabled: false }, transform: { pos: [${at[0]} - 2, 0, ${at[1]} + ${n.endsWith("2") ? 3 : 5}] } } });`);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('crate-2') && !!m.entities.get('crate-3'))`);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('crate-2') && !!m.entities.get('crate-3'))`, 'crate-2 and crate-3');
   const n5 = await evalJson(`__phys.length`);
   await page(`const m = await import('/lib/thingphysics.js'); await m.physicsApi.grab('crate-2'); await m.physicsApi.grab('crate-3'); return true;`);
   check("VP5 'Crate 2' then 'Crate 3' refused: both said (the repeat check keeps two things two)", (await evalJson(`__phys.length`)) - n5 === 2, await evalJson(`__phys.slice(${n5})`));
@@ -246,7 +249,7 @@ try {
   const here = await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return [c.myState.pos.x + d.x / h, c.myState.pos.z + d.z / h];`);
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'cuball', model: '${CRATE}', components: { label: 'Clicker', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [${here[0]}, 0, ${here[1]}], scale: 0.3 } } });`);
   check("(setup) a small crate I may pick up, within reach", made?.ok, made);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('cuball'))`);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('cuball'))`, 'cuball');
   await sleep(600);
   // where it is on screen, and a real press there (down and up on the canvas, no travel)
   const click = (button: number, dx = 0) => page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE;
@@ -310,7 +313,7 @@ try {
   const here = await page(`const c = await import('/lib/controller.js'); return [c.myState.pos.x, c.myState.pos.z, c.myState.yaw];`);
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'hpball', model: 'props/ball.glb', components: { label: 'Big ball', grabbable: {}, physics: { kind: 'dynamic' }, collider: { shape: 'sphere' }, transform: { pos: [${here[0]} + Math.sin(${here[2]}) * 1.0, 0.35, ${here[1]} + Math.cos(${here[2]}) * 1.0] } } });`);
   check("(setup) a 0.7 m ball in front of me (its origin is its centre)", made?.ok, made);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('hpball'))`); await sleep(1200);   // loaded, not just reserved (a model's slot is null until its GLB lands)
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('hpball'))`, 'hpball'); await sleep(1200);   // loaded, not just reserved (a model's slot is null until its GLB lands)
   const r = await page(`const t = await import('/lib/thingphysics.js'), c = await import('/lib/controller.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE; const o = w.entities.get('hpball'), v = new T.Vector3();
     const where = () => { o.updateWorldMatrix(true, false); o.getWorldPosition(v); const me = c.myState.pos; return { flat: +Math.hypot(v.x - me.x, v.z - me.z).toFixed(3), y: +v.y.toFixed(3), me: [+me.x.toFixed(3), +me.z.toFixed(3)] }; };
     const g = await t.physicsApi.grab('hpball'); await new Promise((z) => setTimeout(z, 1500)); const held = where();
@@ -325,7 +328,7 @@ try {
   const here = await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return [c.myState.pos.x + d.x / h * 0.7, c.myState.pos.z + d.z / h * 0.7];`);
   const htMade = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'htcrate', model: '${CRATE}', components: { label: 'Turn crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [${here[0]}, 0, ${here[1]}], scale: 0.25 } } });`);
   check("(setup) a crate 0.7 m in front of me", htMade?.ok, htMade);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('htcrate'))`); await sleep(1200);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('htcrate'))`, 'htcrate'); await sleep(1200);
   const r = await page(`const t = await import('/lib/thingphysics.js'), c = await import('/lib/controller.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE;
     const yawOf = (o) => { o.updateWorldMatrix(true, false); const f = new T.Vector3(0, 0, 1).applyQuaternion(o.getWorldQuaternion(new T.Quaternion())); return Math.atan2(f.x, f.z); };
     const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a)); const o = w.entities.get('htcrate'), me = t.myAvatar?.()?.root ?? null; if (!o) return { noCrate: true, has: w.entities.has('htcrate') };
@@ -340,7 +343,7 @@ try {
   await stage("HD", async () => {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'hdsign', components: { label: 'Hide sign', transform: { pos: [${me[0]} + 2, 1.2, ${me[1]} + 2] }, text: { text: 'HIDE ME', size: 0.2, width: 2 } } });`);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('hdsign'))`); await sleep(800);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('hdsign'))`, 'hdsign'); await sleep(800);
   const r = await page(`const b = await import('/lib/build.js'), sg = await import('/lib/scenegraph.js'), base = await import('/lib/base.js'), w = await import('/lib/world.js');
     b.setEditMode(true); await new Promise((z) => setTimeout(z, 500)); sg.sceneSelect('hdsign'); await new Promise((z) => setTimeout(z, 700));
     base.bus.emit('edit-righttab', 'attributes'); await new Promise((z) => setTimeout(z, 600));
@@ -363,7 +366,7 @@ try {
   const at = await page(`const c = await import('/lib/core.js'), co = await import('/lib/controller.js'); const d = c.camera.getWorldDirection(new c.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1;
     const f = [d.x / h, d.z / h], r = [-d.z / h, d.x / h], p = co.myState.pos; return { a: [p.x + f[0] * 4 - r[0] * 0.8, p.z + f[1] * 4 - r[1] * 0.8], b: [p.x + f[0] * 4 + r[0] * 0.8, p.z + f[1] * 4 + r[1] * 0.8] };`);
   for (const [id, xz] of [["sba", at.a], ["sbb", at.b]]) await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${id}', model: '${CRATE}', components: { label: '${id}', transform: { pos: [${xz[0]}, 0, ${xz[1]}], scale: 0.25 } } });`);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('sba') && !!m.entities.get('sbb'))`); await sleep(1000);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('sba') && !!m.entities.get('sbb'))`, 'sba and sbb'); await sleep(1000);
   await page(`(await import('/lib/build.js')).setEditMode(true); return true;`); await sleep(1500);
   const scr = (id) => page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('${id}'); o.updateWorldMatrix(true, true);
     const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera); const r = c.canvas.getBoundingClientRect(); return [r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height];`);
@@ -392,7 +395,7 @@ try {
     const f = [d.x / h, d.z / h], r = [-d.z / h, d.x / h], p = co.myState.pos; return { me: [p.x, p.z], crate: [p.x + f[0] * 4, p.z + f[1] * 4], floorPt: [p.x + f[0] * 4 + r[0] * 2, p.z + f[1] * 4 + r[1] * 2] };`);
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'slfloor', model: '${CRATE}', components: { label: 'Floor slab', 'hesperus/layer': 'environment', transform: { pos: [${at.floorPt[0]}, -0.09, ${at.floorPt[1]}], scale: [1.2, 0.05, 1.2] } } });   // a 35 m slab lost the bench's GPU context; size defaults are layers-test's
     return await m.sendRequest('create', { id: 'slcrate', model: '${CRATE}', components: { label: 'Layer crate', transform: { pos: [${at.crate[0]}, 0, ${at.crate[1]}], scale: 0.25 } } });`);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('slfloor') && !!m.entities.get('slcrate'))`); await sleep(1000);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('slfloor') && !!m.entities.get('slcrate'))`, 'slfloor and slcrate'); await sleep(1000);
   await page(`(await import('/lib/build.js')).setEditMode(true); return true;`); await sleep(1500);   // as SB: placed from the play camera, then edit mode
   // find, on screen, a pixel whose NEAREST thing is the crate and one whose nearest is the floor (whatever the camera does)
   const find = (id) => page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE; const rc = new T.Raycaster(), r = c.canvas.getBoundingClientRect();
@@ -423,7 +426,7 @@ try {
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'syorb', model: '${CRATE}', components: { label: 'Orbiter', transform: { pos: [${at[0]}, 0, ${at[1]}], scale: 0.2 } } });
     await m.sendRequest('set', { id: 'syorb', component: 'motion', value: { type: 'orbit', radius: 1.2, degPerSec: 120, center: [${at[0]}, 0, ${at[1]}] } });
     return await m.sendRequest('create', { id: 'syb', model: '${CRATE}', components: { label: 'Still box', transform: { pos: [${at[0]} + 2, 0, ${at[1]}], scale: 0.25 } } });`);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('syorb') && !!m.entities.get('syb'))`); await sleep(1000);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('syorb') && !!m.entities.get('syb'))`, 'syorb and syb'); await sleep(1000);
   const r = await page(`const b = await import('/lib/build.js'), sg = await import('/lib/scenegraph.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE, n = await import('/lib/net.js');
     const wait = (ms) => new Promise((z) => setTimeout(z, ms));
     b.setEditMode(true); await wait(800);
@@ -452,7 +455,7 @@ try {
   await page(`const m = await import('/lib/net.js');
     await m.sendRequest('create', { id: 'sthigh', components: { label: 'High sign', transform: { pos: [${me[0]} + 0.8, 3, ${me[1]}] }, text: { text: 'UP HERE', size: 0.2 }, sockets: { seat: { pos: [0, 0, 0], body: {} } } } });
     return await m.sendRequest('create', { id: 'stlow', model: '${CRATE}', components: { label: 'Low seat', transform: { pos: [${me[0]} - 2.2, 0, ${me[1]}], scale: 0.2 }, sockets: { seat: { pos: [0, 2.2, 0], body: {} } } } });`);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('sthigh') && !!m.entities.get('stlow'))`); await sleep(1200);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('sthigh') && !!m.entities.get('stlow'))`, 'sthigh and stlow'); await sleep(1200);
   const r = await page(`const lb = await import('/lib/localbody.js'), w = await import('/lib/world.js'); const did = lb.trySitOn(); await new Promise((z) => setTimeout(z, 1500));
     const on = w.avatarMounts?.get?.((await import('/lib/base.js')).CONFIG.name) ?? null;
     const host = on ? (w.parentIdOf?.(on.to) ?? on.to) : null;   // sockets are child entities (10-14): the mount names the seat, the seat's parent is the thing
@@ -466,7 +469,7 @@ try {
   await stage("NL", async () => {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'nlbox', model: '${CRATE}', components: { label: 'Name box', transform: { pos: [${me[0]} + 2.5, 0, ${me[1]} - 2], scale: 0.3 } } });`);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('nlbox'))`); await sleep(600);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('nlbox'))`, 'nlbox'); await sleep(600);
   await page(`(await import('/lib/build.js')).setEditMode(true); await new Promise((z) => setTimeout(z, 500)); (await import('/lib/scenegraph.js')).sceneSelect('nlbox'); return true;`);
   const insp = `document.querySelector('[data-frame="inspector"]')`;
   await waitFor(`${insp}.querySelector('.sp-row.sp-title input')?.value === 'Name box'`);
@@ -504,7 +507,7 @@ try {
   const far = await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return { at: [c.myState.pos.x + d.x / h * 5, c.myState.pos.z + d.z / h * 5], me: [c.myState.pos.x, c.myState.pos.z] };`);
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'wgcrate', model: '${CRATE}', components: { label: 'Far crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [${far.at[0]}, 0, ${far.at[1]}], scale: 0.3 } } });`);
   check("(setup) a small crate 5 m ahead, out of reach", made?.ok, made);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('wgcrate'))`); await sleep(800);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('wgcrate'))`, 'wgcrate'); await sleep(800);
   const cl = await page(`const c = await import('/lib/core.js'), cu = await import('/lib/clickuse.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('wgcrate'); o.updateWorldMatrix(true, true);
     const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera), r = c.canvas.getBoundingClientRect(); let x = r.left + (p.x + 1) / 2 * r.width, y = r.top + (1 - p.y) / 2 * r.height, found = cu.thingAt(x, y) === 'wgcrate';
     for (let k = 1; k <= 12 && !found; k++) for (const [ax, ay] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) { const xx = x + ax * k * 4, yy = y + ay * k * 4; if (cu.thingAt(xx, yy) === 'wgcrate') { x = xx; y = yy; found = true; break; } }
@@ -573,7 +576,7 @@ try {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z, c.myState.yaw])`);
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'acbox', model: '${CRATE}', components: { label: 'Aimed', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [${me[0]} + 0.9, 0, ${me[1]}], scale: 0.3 } } });`);
   check("(setup) a small crate beside me", made?.ok, made);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('acbox'))`); await sleep(800);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('acbox'))`, 'acbox'); await sleep(800);
   await page(`const t = await import('/lib/thingphysics.js'); await t.physicsApi.grab('acbox'); return true;`); await sleep(1000);
   // the pixel where a ground point shows: project it, then a real click there
   const clickGround = (wx: number, wz: number) => page(`const c = await import('/lib/core.js'), T = c.THREE; const p = new T.Vector3(${wx}, 0, ${wz}).project(c.camera), r = c.canvas.getBoundingClientRect(), x = r.left + (p.x + 1) / 2 * r.width, y = r.top + (1 - p.y) / 2 * r.height;
@@ -616,7 +619,7 @@ try {
   const pm = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   // one crate per arm (a thrown one lands out of reach); a gentle throw straight ahead at 2 m/s
   const mk = async (id: string) => { const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${id}', model: '${CRATE}', components: { label: 'Predicted', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [${pm[0] + 0.7}, 0, ${pm[1] + 0.3}], scale: 0.3 } } });`);
-    check(`(setup) a crate for the throw (${id})`, made?.ok, made); await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('${id}'))`); await sleep(800); };
+    check(`(setup) a crate for the throw (${id})`, made?.ok, made); await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('${id}'))`, '${id}'); await sleep(800); };
   // one throw, sampled every frame for 1.2 s: when the drawn crate first leaves the hand (> 5 cm), and the largest one-frame move
   const arm = async (predictOn: boolean, id: string) => { await mk(id); return page(`const t = await import('/lib/thingphysics.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE;
     const r = await t.physicsApi.grab('${id}'); if (!r?.ok) return { grab: r }; await new Promise((res) => setTimeout(res, 900));
@@ -661,7 +664,7 @@ try {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   const mk = await page(`const m = await import('/lib/net.js'); const a = await m.sendRequest('create', { id: 'rbtgt', model: '${CRATE}', components: { label: 'Reset target', transform: { pos: [${me[0]} + 2, 0, ${me[1]} - 2], scale: 0.3 } } });
     const b = await m.sendRequest('create', { id: 'rbbtn', model: '${CRATE}', components: { label: 'Reset button', transform: { pos: [${me[0]} + 0.8, 0, ${me[1]}], scale: 0.3 } } }); return [a.ok, b.ok];`);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('rbtgt') && !!m.entities.get('rbbtn'))`); await sleep(600);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('rbtgt') && !!m.entities.get('rbbtn'))`, 'rbtgt and rbbtn'); await sleep(600);
   const made = await page(`const e = await import('/lib/editwrites.js'); return await e.makeResetButton('rbbtn', ['rbtgt']);`);
   await sleep(800);
   const moved = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('set', { id: 'rbtgt', component: 'transform', value: { pos: [${me[0]} + 5, 0, ${me[1]} + 5], q: [0, 0, 0, 1], scale: [0.3, 0.3, 0.3] } });`);
@@ -675,7 +678,7 @@ try {
   await stage("GE", async () => {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'getool', model: '${CRATE}', components: { label: 'Grip tool', grabbable: {}, transform: { pos: [${me[0]} + 0.9, 0, ${me[1]}], scale: 0.25 } } });`);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('getool'))`); await sleep(700);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('getool'))`, 'getool'); await sleep(700);
   const opened = await page(`(await import('/lib/build.js')).setEditMode(true); await new Promise((z) => setTimeout(z, 400)); (await import('/lib/gripedit.js')).openGripEditor('getool');
     const p = globalThis.__gripeditTest(); const add = [...p.panel.querySelectorAll('button')].find((b) => b.textContent === '+ grip'); add.click(); await new Promise((z) => setTimeout(z, 1500));
     const w = await import('/lib/world.js'); return { grips: Object.keys(w.bagOf('getool')?.grabbable?.grips ?? {}), start: w.bagOf('getool')?.grabbable?.grips?.grip1?.pos ?? null, ed: globalThis.__gripedit(), gizmo: globalThis.__gizmo?.().attached ?? null };`);
@@ -700,7 +703,7 @@ try {
   await stage("NH", async () => {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'nhball', model: '${CRATE}', components: { grabbable: {}, transform: { pos: [${me[0]} + 0.7, 0, ${me[1]}], scale: 0.2 } } });`);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('nhball'))`); await sleep(500);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('nhball'))`, 'nhball'); await sleep(500);
   const r = await page(`const n = await import('/lib/net.js'), t = await import('/lib/thingphysics.js'); const gone = await n.sendRequest('leave', {});
     const cu = await import('/lib/clickuse.js'); const o = cu.offersOf('nhball'); const g = await o[0]?.run(); await new Promise((z) => setTimeout(z, 600));
     const back = await t.physicsApi.put('nhball'); return { first: o[0]?.label, left: gone?.ok ?? gone?.refused?.code, grab: g?.ok ?? g?.refused?.code, put: back?.ok ?? back?.refused?.code };`);
@@ -711,7 +714,7 @@ try {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'pobase', model: '${CRATE}', components: { label: 'Base', grabbable: {}, transform: { pos: [${me[0]} + 0.9, 0, ${me[1]}], scale: 0.4 } } });
     return await m.sendRequest('create', { id: 'potop', model: '${CRATE}', components: { label: 'Small', grabbable: {}, transform: { pos: [${me[0]} - 0.8, 0, ${me[1]}], scale: 0.15 } } });`);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('pobase') && !!m.entities.get('potop'))`); await sleep(700);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('pobase') && !!m.entities.get('potop'))`, 'pobase and potop'); await sleep(700);
   const r = await page(`const t = await import('/lib/thingphysics.js'), cu = await import('/lib/clickuse.js'), w = await import('/lib/world.js'), { THREE: T } = await import('/lib/core.js');
     const g = await t.physicsApi.grab('potop'); await new Promise((z) => setTimeout(z, 800));
     const b = new T.Box3().setFromObject(w.entities.get('pobase')); const side = [b.max.x, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2];   // a click on its side
@@ -742,7 +745,7 @@ try {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'atbox', model: '${CRATE}', components: { label: 'Attr box', transform: { pos: [${me[0]} + 3, 0, ${me[1]} + 3], scale: 0.3 } } });
     return await m.sendRequest('set', { id: 'atbox', component: 'motion', value: { type: 'spin', axis: [0, 1, 0], degPerSec: 30 } });`);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('atbox'))`); await sleep(600);
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('atbox'))`, 'atbox'); await sleep(600);
   const r = await page(`(await import('/lib/build.js')).setEditMode(true); await new Promise((z) => setTimeout(z, 500)); (await import('/lib/scenegraph.js')).sceneSelect('atbox'); await new Promise((z) => setTimeout(z, 900));
     const insp = document.querySelector('[data-frame="inspector"]'); const labels = [...insp.querySelectorAll('.sp-label')].map((l) => l.textContent.trim());
     const eye = [...insp.querySelectorAll('.sp-bar button')].find((b) => /YOUR view/.test(b.title)); const hasEyeIcon = !!eye?.querySelector('svg');
@@ -762,7 +765,7 @@ try {
   await stage("MT", async () => {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); for (const [id, dx] of [['mta', 2], ['mtb', 3.2]]) await m.sendRequest('create', { id, model: '${CRATE}', components: { transform: { pos: [${me[0]} + dx, 0, ${me[1]} - 3], scale: 0.3 } } }); return true;`);
-  await waitFor(`import('/lib/world.js').then((m) => m.entities.get('mta') && m.entities.get('mtb'))`); await sleep(1500);
+  await needModel(`import('/lib/world.js').then((m) => m.entities.get('mta') && m.entities.get('mtb'))`, 'mta and mtb'); await sleep(1500);
   const look = (id) => `(() => { const w = globalThis.__mtw; let c = null, r = null, shared = null; w.entities.get('${id}').traverse((o) => { if (o.isMesh && c === null) { const mm = Array.isArray(o.material) ? o.material[0] : o.material; c = mm.color?.getHexString?.() ?? null; r = mm.roughness ?? null; shared = mm; } }); return { c, r, mat: shared }; })()`;
   const r = await page(`globalThis.__mtw = await import('/lib/world.js'); const n = await import('/lib/net.js');
     const before = ${look('mta')}; const set = await n.sendRequest('set', { id: 'mta', component: 'hesperus/material', value: { color: 0xff2200, roughness: 0.15 } });
