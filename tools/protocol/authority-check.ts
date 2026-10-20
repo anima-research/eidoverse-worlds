@@ -156,7 +156,11 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     call("bob", "create", { id: "hatch", model: "door", components: { openable: { open: false } } });
     const u1 = call("vic", "use", { id: "hatch", action: "open" }), o1 = W().state().entities.hatch.c.openable.open;
     const u2 = call("vic", "use", { id: "hatch" }), o2 = W().state().entities.hatch.c.openable.open;
-    ok(u1.ok && o1 === true && u2.ok && o2 === false, "P37b an openable thing with no reactions opens and shuts on its own 'open' (the implicit toggle), with or without the action named", { u1: code(u1), o1, u2: code(u2), o2 }); }
+    ok(u1.ok && o1 === true && u2.ok && o2 === false, "P37b an openable thing with no reactions opens and shuts on its own 'open' (the implicit toggle), with or without the action named", { u1: code(u1), o1, u2: code(u2), o2 });
+    // review of #260: a reaction that toggles another field of openable (its lock) leaves the implicit open in place
+    call("bob", "create", { id: "hatch2", model: "door", components: { openable: { open: false, locked: false }, reactions: { latch: { kind: "toggle", component: "openable", field: "locked" } } } });
+    const u3 = call("vic", "use", { id: "hatch2", action: "open" }), o3 = W().state().entities.hatch2.c.openable.open;
+    ok(u3.ok && o3 === true, "P37c a toggle of openable.locked alone doesn't take away the implicit open", { u3: code(u3) ?? u3.ok, o3 }); }
   { // §5: a held thing keeps its logged parent, but holding suspends parent constraints until it settles
     const hc = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "held"), actor, verb, args); };
     hc("olive", "create-world", { title: "held" }); hc("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });

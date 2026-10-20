@@ -534,7 +534,13 @@ const cases: Case[] = [
       const d = set(s, "olive", "default-role", { role: "none", can: { build: true, editWorld: true } });
       const r = s.call("mo", "delete", { id: "@world", component: "roles:vic" });
       return { d: show(d), r: show(r), vic: eff(s, "vic")?.permissions }; },
-    good: (o) => o.d === "ok" && o.r === "ok" && o.vic?.length === 0 }
+    good: (o) => o.d === "ok" && o.r === "ok" && o.vic?.length === 0 },
+  { id: "V15", what: "a chat refusal gives the chat mute's own end and reason, not a longer voice-only mute's", run(s) { cast(s);
+      s.call("mo", "mute", { who: "vic", minutes: 60, channels: ["voice"], reason: "loud" });
+      s.call("mo", "mute", { who: "vic", minutes: 5, channels: ["chat"], reason: "spam" });
+      const r = s.call("vic", "say", { text: "hello" }); const t0 = s.now();
+      return { code: code(r), reason: r?.refused?.reason, mins: r?.refused?.until ? Math.round((r.refused.until - t0) / MIN) : null }; },
+    good: (o) => o.code === "muted" && /\(spam\)/.test(o.reason ?? "") && !/loud/.test(o.reason ?? "") && o.mins === 5 }
 ];
 
 // ---------------- run ----------------

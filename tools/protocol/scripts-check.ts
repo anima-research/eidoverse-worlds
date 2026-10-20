@@ -853,6 +853,27 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("vic", "consent", { set: { class: "touch", tier: "everyone", mode: "deny" } });
       return { r, posed, after: !!s.w().presence.bodies.vic?.pose }; },
     good: (o) => o.r === "ran" && o.posed && o.after },
+  { id: "C4", what: "an expired allowance for one behaviour no longer masks its sponsor's: the sponsor-wide allowance applies once it has run out", run(s) { cast(s);
+      s.call("bob", "create", { id: "pad1", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "pad1", "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });
+      s.call("bob", "set", { id: "pad1", component: "reactions", value: { go: { kind: "script", script: "p" } } });
+      s.call("vic", "move", { to: [0, 0, 1] });
+      s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
+      const one = s.call("vic", "consent", { allow: "script:pad1", class: "pose", for: 60000 });
+      const during = st(s, s.call("vic", "use", { id: "pad1", action: "go" }));
+      s.advance(5 * 60000);
+      return { one: one?.ok, during, after: st(s, s.call("vic", "use", { id: "pad1", action: "go" })) }; },
+    good: (o) => o.one === true && o.during === "ran" && o.after === "ran" },
+  { id: "Q1", what: "reinstalling a script whose value was purged counts against the world's script limit, as a new one does", run(s) { cast(s);
+      s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 1 } });
+      for (const id of ["qa", "qb"]) s.call("bob", "create", { id, model: "crate", place: { at: [0, 0] } });
+      const first = install(s, "bob", "qa", "p", onUse(`world.say("a");`), { scope: { ids: "self", comps: [] }, on: ["use"] }).r;
+      const at = s.entries().findLastIndex((e: any) => e?.kind === "change" && JSON.stringify(e.body ?? {}).includes('"script:p"'));
+      s.w().append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: at }] } });
+      const other = install(s, "bob", "qb", "p", onUse(`world.say("b");`), { scope: { ids: "self", comps: [] }, on: ["use"] }).r;
+      const again = install(s, "bob", "qa", "p", onUse(`world.say("a2");`), { scope: { ids: "self", comps: [] }, on: ["use"] }).r;
+      return { first: st(s, first), other: st(s, other), again: again?.ok ? "ok" : again?.refused?.code }; },
+    good: (o) => o.other === "ok" && o.again === "too-many" },
   // ---------------- M: v1 parity: the v1 SDK's three examples (sdk/examples), ported to this API ----------------
   { id: "M1", what: "v1 parity: bellkeeper (use → a pendulum motion + say), greeter (enter → say, a count), lighthouse (a timer that speaks only if someone's here), ported", run(s) { cast(s);
       if (!D.presenceEvent) return { absent: true };

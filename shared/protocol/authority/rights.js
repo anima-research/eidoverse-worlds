@@ -55,9 +55,11 @@ export function inForceOf(w, who, kind, recs = recsOf(w, who)) {
 }
 const banFrom = (w, who, recs) => strongest(inForceOf(w, who, "ban", recs));
 const kickFrom = (w, who, recs) => strongest(inForceOf(w, who, "kick", recs));
-const muteFrom = (w, who, channel, recs) => { const a = inForceOf(w, who, "mute", recs); if (!a.length) return null;
-  const channels = [...new Set(a.flatMap((m) => m.channels ?? ["voice", "chat"]))];   // the union: a voice-only mute never narrows a both-channel one
-  if (channel && !channels.includes(channel)) return null;
+const muteFrom = (w, who, channel, recs) => { const all = inForceOf(w, who, "mute", recs); if (!all.length) return null;
+  const channels = [...new Set(all.flatMap((m) => m.channels ?? ["voice", "chat"]))];   // the union: a voice-only mute never narrows a both-channel one
+  // asked about one channel, the record, its end and its reason are the mutes that cover it, never a voice-only one for chat
+  // (a caller that passes a channel reads only presence, until and reason; one that reads channels passes none, so a is all)
+  const a = channel ? all.filter((m) => (m.channels ?? ["voice", "chat"]).includes(channel)) : all; if (!a.length) return null;
   const top = strongest(a); return { ...top, channels, until: a.some((m) => m.until === undefined) ? undefined : Math.max(...a.map((m) => m.until)) }; };
 const ghostFrom = (w, who, recs) => strongest(inForceOf(w, who, "ghost", recs)) ?? (w.presence?.ghosts?.[who] ? { verb: "ghost", who, chosen: true, ts: w.presence.ghosts[who].ts } : null);
 /** The ban in force on `who` (the strongest record), or null. */

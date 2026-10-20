@@ -94,11 +94,11 @@ export function reachLetGo(w, from, aimed) {
   delete P.reaches[from]; w.presenceDirty = true; return true;
 }
 const forgetReaches = (P, who) => { for (const [k, r] of Object.entries(P.reaches ?? {})) if (k === who || r?.to === who) delete P.reaches[k]; };
-/** what `to`'s table says to `from` for `cls`: a behaviour with no entry of its own is answered by its sponsor's scripts-by: entry,
- *  when the table has one. Admission and revocation both ask here, so they agree on what stands. */
+/** what `to`'s table says to `from` for `cls`: a behaviour with no entry of its own in force (none, or one that has run out) is
+ *  answered by its sponsor's scripts-by: entry, when the table has one. Admission and revocation both ask here, so they agree on what stands. */
 function decideAs(P, from, sponsor, to, cls, now) {
-  const o = C.tableOf(P, to).overrides;
-  return isScriptActor(from) && sponsor && !o[from]?.[cls] && o[`scripts-by:${sponsor}`]?.[cls] ? C.decide(P, `scripts-by:${sponsor}`, to, cls, now) : C.decide(P, from, to, cls, now);
+  const o = C.tableOf(P, to).overrides; const own = o[from]?.[cls];
+  return isScriptActor(from) && sponsor && !(own && (own.until === undefined || own.until > now)) && o[`scripts-by:${sponsor}`]?.[cls] ? C.decide(P, `scripts-by:${sponsor}`, to, cls, now) : C.decide(P, from, to, cls, now);
 }
 /** each grant resting on `to`: what `to`'s table says to its class now (revokeAfter compares before and after a change) */
 const reachModes = (P, to, now) => Object.fromEntries(Object.entries(P.reaches ?? {}).filter(([, r]) => r?.to === to).map(([k, r]) => [k, decideAs(P, k, r.sponsor, to, r.cls, now).mode]));

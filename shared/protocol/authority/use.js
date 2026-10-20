@@ -161,7 +161,8 @@ const bodySockets = (st, id) => { const e = st.entities[id]; const host = isSock
 // an openable thing with nothing that opens it offers 'open' on its own: the implicit toggle of openable.open (R 10-11
 // 23:17: the gym door had only `openable`; clicking it did nothing, and inspect said "nothing here opens it")
 const IMPLICIT_OPEN = Object.freeze({ kind: "toggle", component: "openable", field: "open" });
-function implicitOpens(e) { return !!(e?.c.openable && typeof e.c.openable === "object") && !Object.values(e.c.reactions ?? {}).some((h) => h?.kind === "toggle" && (h.component ?? "openable") === "openable"); }
+// only a toggle of openable.open itself (toggleOf's own default) stands in for the implicit open: one of its lock doesn't
+function implicitOpens(e) { return !!(e?.c.openable && typeof e.c.openable === "object") && !Object.values(e.c.reactions ?? {}).some((h) => { if (h?.kind !== "toggle") return false; const t = toggleOf(h); return t.comp === "openable" && t.field === "open"; }); }
 function handlerOf(e, action) { return e?.c.reactions?.[action] ?? (action === "open" && implicitOpens(e) ? IMPLICIT_OPEN : undefined); }
 function actionsOf(st, id) {
   const e = st.entities[id];
