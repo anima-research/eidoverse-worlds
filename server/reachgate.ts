@@ -69,9 +69,11 @@ function touched(c: Client, pose: any, t: any): Hit[] | null {
 /** Takes out of `pose.reach` (in place) every limb aimed at a body that hasn't consented to it. Then tells the authority
  *  which bodies a relayed limb rests on: a yes to an ask is one touch, and ends on the first packet without its hand
  *  (an absent reach is "nobody is reaching", reachwire.js). */
-export function gateReach(c: Client, pose: Record<string, unknown>): void {
+/** `quiet`: the server re-holding a standing pose to the tables (after a request), not a packet the reacher sent: a limb that
+ *  no longer may rest is taken out without a refusal said or an attempt recorded, and no grant is let go here. */
+export function gateReach(c: Client, pose: Record<string, unknown>, { quiet = false } = {}): void {
   const log = c.world?.log, aimed = new Set<string>();
-  const letGo = () => { if (log && c.actorId) log.reachLetGo(c.actorId, aimed); };
+  const letGo = () => { if (log && c.actorId && !quiet) log.reachLetGo(c.actorId, aimed); };
   const bag = pose.reach as Record<string, any> | null | undefined;
   if (bag == null) return letGo();
   if (typeof bag !== "object" || Array.isArray(bag)) { delete pose.reach; return letGo(); }
@@ -83,7 +85,7 @@ export function gateReach(c: Client, pose: Record<string, unknown>): void {
     if (!hits) { delete bag[limb]; continue; }
     let admitted = true;
     for (const h of hits) {
-      const v = log && c.actorId && h.tc.actorId ? log.reachAdmits(c.actorId, h.tc.actorId, h.cls, { point: h.point, limb }) : { ok: false };
+      const v = log && c.actorId && h.tc.actorId ? log.reachAdmits(c.actorId, h.tc.actorId, h.cls, { point: h.point, limb, quiet }) : { ok: false };
       if (!v.ok) { delete bag[limb]; admitted = false; break; }
     }
     if (admitted) for (const h of hits) if (h.tc.actorId) aimed.add(h.tc.actorId);

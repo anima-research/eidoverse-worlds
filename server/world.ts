@@ -15,6 +15,7 @@ import { WorldLog, isWorldSaved, resetWorld } from "./worldlog.ts";
 import { WorldScripts, type ScriptHost } from "./scripts.ts";
 import type { HnSession } from "./auth.ts";
 import { isOperator } from "./operators.ts";
+import { gateReach } from "./reachgate.ts";
 
 // The settle rule — what a pose looks like TO SOMEONE ELSE — is pinned to
 // server.ts by source-text gates (§15.1: settled-pose-test regexes the file
@@ -162,6 +163,14 @@ export class World {
         for (const c of this.clients) if (c.actorId === actor && !c.spectator && (c.surface ?? "world") === "world") { try { c.ws.send(d); n++; } catch { /* gone */ } }
         return n > 0; },
       sayFloor: (actor: string) => this.sayFloor(actor),
+      regateReaches: () => {
+        for (const c of this.clients) {
+          if (!c.lastPose?.reach) continue;
+          const p = structuredClone(c.lastPose) as Record<string, unknown>; gateReach(c, p, { quiet: true });
+          if (JSON.stringify(p.reach ?? null) === JSON.stringify(c.lastPose.reach)) continue;
+          c.lastPose = p as Client["lastPose"]; this.dirty.set(c.id, p);   // the next frame carries the pose without the hand
+        }
+      },
     };
   }
 

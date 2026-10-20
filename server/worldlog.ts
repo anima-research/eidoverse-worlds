@@ -64,6 +64,9 @@ export type LogHost = {
   /** speech is arrival-only (R 10-18): the seq at or below which this identity may not read a say back (null = an admin:
    *  no floor). The World answers from its connections (world.ts sayFloor); the authority's history reads it. */
   sayFloor?(actor: string): number | null;
+  /** after a request: every standing pose that carries a reach is held to the tables as they are now, so a hand a consent
+   *  no longer allows leaves at once, whether the touch was allowed by the table or granted by an ask */
+  regateReaches?(): void;
 };
 
 export class WorldLog {
@@ -191,6 +194,9 @@ export class WorldLog {
     try { if (this.live.entries.length > from) this.afterWrite(from); } catch (err) { console.error(`[world:${this.name}] publishing seq ${from}… failed`, err); }
     try { if (this.holdsKey() !== held) this.host?.broadcast({ type: "holds", world: this.name, holds: this.holds() }); this.forwardInbox(); }
     catch (err) { console.error(`[world:${this.name}] holds/inbox after a request failed`, err); }
+    // a request may have closed someone's table (consent, a friend removed, a pause): what rests on them is held to it now,
+    // not at the reacher's next packet (review of #260, server I1)
+    try { this.host?.regateReaches?.(); } catch (err) { console.error(`[world:${this.name}] re-gating reaches after a request failed`, err); }
   }
   /** A server operator's recorded repair (authority.js operatorRepair: @world's roles/access/default-role/role-defs, unban, repair-shapes;
    *  recorded as the operator's act with operator: true). Only server/requestwire.ts's operator-repair reaches it, behind
@@ -215,7 +221,7 @@ export class WorldLog {
   }
   /** The relay's per-packet question for a reach descriptor aimed at another body (authority.js reachAdmits): presence only,
    *  never a request (nothing appended, no ask made). A refusal it noted goes straight to the reacher's socket. */
-  reachAdmits(from: string, to: string, cls: string, extra: { point?: string | null; limb?: string } = {}) {
+  reachAdmits(from: string, to: string, cls: string, extra: { point?: string | null; limb?: string; quiet?: boolean } = {}) {
     if (this.retired) return { ok: false, code: "reset", reason: "this world was reset", noted: false };
     const r = reachAdmits(this.live, from, to, cls, extra);
     if (r.noted) this.forwardInbox();

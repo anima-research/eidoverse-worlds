@@ -84,7 +84,13 @@ const head0 = w.log.head;
   ok(out?.reach?.rightHand?.t?.point === "hand_r", "RG4 a standing allow: Sly's hand on Vic's hand relays", out);
   const out2 = reachTo(sly, { who: "Vic", point: "chest_front" });
   ok(out2 && !out2.reach, "RG4 …an allow for touch is not one for intimate", out2);
-  req(vic, "consent", { deny: sly.actorId, class: "touch" }); }
+  // RG25 (review of #260, server I1): a touch the table allowed (no ask, so no grant and no body-revoked) leaves Sly's
+  // standing pose the moment Vic's table closes, and the server's re-hold isn't told to Sly as an attempt of his
+  reachTo(sly, { who: "Vic", point: "hand_r" });
+  const ks = sly.got.length;
+  req(vic, "consent", { deny: sly.actorId, class: "touch" });
+  ok(!sly.lastPose?.reach && w.dirty.has(sly.id) && !w.dirty.get(sly.id)?.reach, "RG25 a table-allowed touch leaves the standing pose and the next frame when the table closes", { last: sly.lastPose?.reach, dirty: w.dirty.get(sly.id)?.reach });
+  ok(refusals(sly, ks).length === 0, "RG25 …without a refusal said to Sly for a packet he didn't send", sly.got.slice(ks)); }
 
 // RG5
 { const out = reachTo(sly, { who: "Sly", point: "chest_front" });
@@ -134,8 +140,13 @@ ok(w.log.head === head0, "RG10 nothing about a reach is appended to the log", w.
   ok(ans?.ok && ans.yes, "(RG9 setup) Vic says yes", ans);
   const out = reachTo(tom, { who: "Vic", point: "upper_back" });
   ok(out?.reach?.rightHand?.t?.point === "upper_back", "RG9 a touch the authority's reach verb admitted (asked, yes) relays", out);
+  const k = tom.got.length;   // from before the change: the revocation is what Tom hears, whenever it reaches him
   req(vic, "consent", { set: { class: "touch", tier: "everyone", mode: "deny" } });
-  const k = tom.got.length;
+  // review of #260, server I1: the hand already resting on her leaves at once, from the pose joiners are handed and the
+  // next frame, without Tom sending another packet (a client that just stops sending kept it drawn)
+  ok(!tom.lastPose?.reach && w.dirty.has(tom.id) && !w.dirty.get(tom.id)?.reach, "RG24 …and the hand Tom already holds there leaves his standing pose and the next frame at once", { last: tom.lastPose?.reach, dirty: w.dirty.get(tom.id)?.reach });
+  const heard = tom.got.slice(k).filter((m) => m.type === "body-inbox").flatMap((m) => m.messages);
+  ok(heard.filter((m) => m.type === "body-revoked").length === 1 && heard.filter((m) => m.type === "reach-refused").length === 0, "RG24 …and Tom hears the revocation once, and no refusal for a packet he didn't send", heard);
   const out2 = reachTo(tom, { who: "Vic", point: "upper_back" });
   ok(out2 && !out2.reach, "RG9 …and Vic closing touch to nobody ends it at the relay too", out2);
   ok(refusals(tom, k).length + tom.got.slice(k).filter((m) => m.type === "body-inbox").flatMap((m) => m.messages).filter((m) => m.type === "body-revoked").length >= 1, "RG9 …and Tom hears it", tom.got.slice(k)); }

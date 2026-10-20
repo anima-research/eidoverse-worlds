@@ -63,7 +63,7 @@ function bodyGate(w, from, to, kind, extra = {}) {
 // `to`'s table says allow (a standing allow included), or when the `reach` verb already admitted this touch (an ask
 // answered yes: P.reaches, which revokeAfter clears when the table closes). A refusal is said to the reacher in the body
 // inbox, and to the target's attempt ring, once per (from, to, cls) per C.REACH_NOTE_MS; `noted` says whether it was now.
-export function reachAdmits(w, from, to, cls, { point = null, limb = null } = {}) {
+export function reachAdmits(w, from, to, cls, { point = null, limb = null, quiet = false } = {}) {
   const P = w.presence, now = w.now();
   if (from === to) return { ok: true, consent: "self" };
   if (!C.ENFORCED.includes(cls) || (cls !== "touch" && cls !== "intimate")) return { ok: false, code: "shape", class: cls, reason: `a reach is touch or intimate, not '${cls}'` };
@@ -79,7 +79,7 @@ export function reachAdmits(w, from, to, cls, { point = null, limb = null } = {}
       : { code: "consent", reason: C.refusalWords(to, cls), fix: C.REFUSAL_FIX, why: d.why }; }
   const key = `${from}>${to}:${cls}`, notes = (P.reachNotes ??= {});
   for (const [k, t] of Object.entries(notes)) if (now - t >= C.REACH_NOTE_MS) delete notes[k];
-  const noted = !(notes[key] > now - C.REACH_NOTE_MS);
+  const noted = !quiet && !(notes[key] > now - C.REACH_NOTE_MS);   // quiet: the server re-holding a standing pose, not an attempt
   const { why: cause, ...told } = r; r = told;
   if (noted) { notes[key] = now; ringPush(P, { ts: now, from, to, cls, verdict: "refused (reach not relayed)", ...(cause ? { why: cause } : {}) });
     inboxPush(P, from, { type: "reach-refused", to, class: cls, ...(point ? { point } : {}), ...(typeof limb === "string" ? { limb } : {}), why: r.reason, fix: r.fix, code: r.code }); w.presenceDirty = true; }
