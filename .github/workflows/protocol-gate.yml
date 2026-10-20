@@ -11,6 +11,11 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+# a newer push to the same branch replaces an older run still going: a receipt is for the exact head, so an older head's
+# run is spent runner time (10-20: the reviewers' fix-commit pushes queued 37 runs and the newest head waited behind them)
+concurrency:
+  group: protocol-gate-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   gate:
     strategy:
