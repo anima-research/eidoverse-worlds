@@ -1235,6 +1235,19 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 // SR2 (review 10-12 S1-2, re-cut by R 10-15 22:48): a socket is an entity, so it meets the one entity budget like any
 // other: capacity.entities for the world, capacity.guestEntities for all account-less people together (a guest is a fresh
 // identity per connection), and at most SOCKETS_PER_HOST on one host. Only a write that adds is refused (full).
+// review of #260: the byte limits count the UTF-8 bytes the log stores, not JavaScript's UTF-16 string length, so a value
+// whose characters take two bytes each meets the same cap as ASCII
+{ const W = () => openWorld(root, "utf8cap"); const R = (actor, verb, args) => { T += 20000; process.env.PROTOCOL_NOW = String(T); const w = W(); w.kindOf = (id) => (id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
+  R("ann", "create-world", { title: "utf8cap" }); R("ann", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
+  R("ann", "create", { id: "u1", model: "crate" });
+  const big = R("ann", "set", { id: "u1", component: "t/note", value: "é".repeat(40000) });   // 40 000 characters, 80 000 bytes: over the 64 KiB value cap
+  const ascii = R("ann", "set", { id: "u1", component: "t/note", value: "e".repeat(40000) });   // the same length in ASCII fits
+  // a set's act carries the request and its change the value, so 9 000 two-byte characters write about 36 000 bytes: over a
+  // guest's 32 KiB a window, where the same length in ASCII (about 18 000) fits
+  const guest = R("g1", "set", { id: "u1", component: "t/note", value: "é".repeat(9000) });
+  const gAscii = R("g2", "set", { id: "u1", component: "t/note", value: "e".repeat(9000) });
+  ok(code(big) === "too-big" && /80\d{3} bytes/.test(big.refused?.reason ?? "") && ascii.ok && code(guest) === "rate" && gAscii.ok,
+    "UB1 a value's 64 KiB and a guest's 32 KiB a window are counted in UTF-8 bytes: two-byte characters reach them at half the length ASCII does", { big: big.refused ?? big.ok, ascii: ascii.ok ?? ascii.refused, guest: guest.refused ?? guest.ok, gAscii: gAscii.ok ?? gAscii.refused }); }
 // review of #260: the index audit expects a switched-off thing to be out of the index, as buildIx leaves it
 { const R = (actor, verb, args) => { T += 1000; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "ixoff"), actor, verb, args); };
   R("ann", "create-world", { title: "ixoff" }); R("ann", "create", { id: "box1", model: "crate" }); const off = R("ann", "set", { id: "box1", component: "disabled", value: true });

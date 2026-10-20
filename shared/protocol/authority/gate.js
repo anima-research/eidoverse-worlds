@@ -4,7 +4,7 @@
 // authority.js's "L7: the one gate" section unchanged; its value checks are authority/checks.js, capacity
 // authority/capacity.js). occupyRights (occupants.js's) and serverWritten (the write path's) are above it, reached through UP.
 import { DEFAULT_WHO, grabOf } from "../../grab.js";
-import { cowState, applyCow, checkIJSON, isEntityId, isComponent, jcs, PURGED } from "../fold.js";
+import { cowState, applyCow, checkIJSON, isEntityId, isComponent, jcs, utf8Len, PURGED } from "../fold.js";
 import { PERSON_ID } from "../ids.js";
 import { COMPONENTS, defOf, baseOf, statusOf, canonicalName } from "../componentspec.js";
 import * as R from "../roles.js";
@@ -57,7 +57,7 @@ function spokenOf(a, now) {
 }
 const RATE = { n: 60, says: 20, ms: 10000, bytes: 256 * 1024, anonBytes: 32 * 1024 };
 const SAY_MAX = 8192;
-const bytesOf = (e) => e.bytes ?? JSON.stringify(e).length;
+const bytesOf = (e) => e.bytes ?? utf8Len(JSON.stringify(e));   // UTF-8 bytes, as the log stores it (storage: bytes)
 // FOLLOW_UP / followUp (the authority's own follow-up ops inside a person's write): authority/storage.js
 class Admitted { constructor(who, ops, after, notes = [], vacate = [], followUps = []) { this.who = who; this.ops = ops; this.after = after; this.notes = notes; this.vacate = vacate; this.followUps = followUps; Object.freeze(this); } }
 // L7 rate, per actor, over EVERYTHING the actor makes the log hold (acts and says), by the authority's clock. One function:
@@ -110,7 +110,7 @@ function admit(w, st, who, ops) {
     if (op.verb === "set" && op.comp === "parent" && op.value && typeof op.value === "object" && !Array.isArray(op.value) && "order" in op.value) { const { order: _o, ...rest } = op.value; op.value = rest; }
     const at = `${op.id}${op.comp !== undefined ? "." + op.comp : ""}`;
     if ("value" in op) { try { checkIJSON(op.value); } catch (x) { refuse("shape", `${at}: the value isn't I-JSON (${x.code} ${x.detail})`, "finite numbers, integers within 2^53, no -0"); }
-      if (jcs(op.value).length > 65536) refuse("too-big", `${at} is ${jcs(op.value).length} bytes; the authority keeps values under 64 KiB`, "put big data in a blob and store its hash"); }
+      const vb = utf8Len(jcs(op.value)); if (vb > 65536) refuse("too-big", `${at} is ${vb} bytes; the authority keeps values under 64 KiB`, "put big data in a blob and store its hash"); }
     const e = s.entities[op.id];
     if (verb === "create") { if (e) refuse("exists", `'${op.id}' already exists`, "choose another id, or leave id out and the authority mints one");
       if (PERSON_ID.test(op.id)) refuse("shape", `'${op.id}' is shaped like a person's identity (u- + 20 letters): a thing can't wear one, or a reference to it could mean either`, "choose another id, or leave id out and the authority mints one");

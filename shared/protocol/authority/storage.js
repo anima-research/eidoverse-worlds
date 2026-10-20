@@ -3,7 +3,7 @@
 // rotation a log takes; scratch is the preview the index files). Two lines ride along from elsewhere because this is where
 // they are read: VOLATILE (the spatial section's "indexed whole" mark, which scratch propagates) and opsQuiet (the rights
 // section's quiet opsOf, which worldOf's presence fold uses).
-import { readLog, fold, opsOf, followUpsOf, applyInPlace, cloneState, cowState, applyCow, checkEntry, jcs, sha256, worldIdOf, Malformed, PURGED } from "../fold.js";
+import { readLog, fold, opsOf, followUpsOf, applyInPlace, cloneState, cowState, applyCow, checkEntry, jcs, sha256, utf8Len, worldIdOf, Malformed, PURGED } from "../fold.js";
 import { sha256Bytes, hexBytes } from "../hash.js";
 import * as R from "../roles.js";
 import { simFold } from "../simlayer.js";
@@ -128,7 +128,7 @@ export function worldOf(io) {
     w.fits(e); const { line, parsed, bad } = render(e, entries.length, true); const seq = entries.length;
     if (bad) throw new Error(`authority bug: would write a malformed entry (${bad.code} ${bad.detail})`); // e.g. the chain fields tipped it over a cap
     durably("log", () => io.writeLine(line));   // on disk first; only then the live chain and fold see it
-    entries.push(posAt(parsed, seq)); Object.defineProperty(parsed, "bytes", { value: line.length, enumerable: false });
+    entries.push(posAt(parsed, seq)); Object.defineProperty(parsed, "bytes", { value: utf8Len(line), enumerable: false });
     if (e.kind === "genesis") w.worldId = worldIdOf(parsed);
     w.exists = true; return seq;
   };

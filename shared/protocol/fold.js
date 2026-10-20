@@ -152,6 +152,17 @@ export function jcs(v) {
   if (Array.isArray(v)) return "[" + v.map(jcs).join(",") + "]";
   return "{" + Object.keys(v).sort().map((k) => JSON.stringify(k) + ":" + jcs(v[k])).join(",") + "}";
 }
+/** A string's length in UTF-8 bytes, what a log line, a blob or the wire holds (a JavaScript string's length counts UTF-16
+ *  units: a two-byte character is one of them, a four-byte one two). A lone surrogate counts the three bytes of the U+FFFD
+ *  an encoder writes for it. Every byte limit counts this. */
+export function utf8Len(s) {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i);
+    if (c < 0x80) n += 1; else if (c < 0x800) n += 2;
+    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length && (s.charCodeAt(i + 1) & 0xfc00) === 0xdc00) { n += 4; i++; }
+    else n += 3; }
+  return n;
+}
 export { sha256 };
 export const worldIdOf = (genesis) => "sha256:" + sha256(jcs(genesis));
 export const PURGED = Object.freeze({ purged: true });

@@ -632,6 +632,12 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       T += 100; process.env.PROTOCOL_NOW = String(T); const enter = D.presenceEvent(w, "enter", "vic").map((x: any) => `${x.status}${x.code ? ` ${x.code}` : ""}`);
       return { req: code(req), ticks, enter, written: w.entries.slice(n0).map((x: any) => `${x.kind}:${x.verb}:${x.actor}`) }; },
     good: (o) => o.req === "record-altered" && o.ticks.length >= 2 && o.ticks.every((t: string) => t === "refused record-altered") && JSON.stringify(o.enter) === '["refused record-altered"]' && o.written.length === 0 },
+  { id: "B27", what: "knobs' 4 KiB is counted in UTF-8 bytes: 3 000 two-byte characters (about 6 000 bytes) are refused too-big where 3 000 ASCII fit", run(s) { cast(s);
+      s.call("olive", "create", { id: "kb", model: "crate", place: { at: [0, 0] } }); const t = `world.on("use", () => {});\n`;
+      const wide = install(s, "olive", "kb", "w", t, { scope: { ids: "self", comps: ["t/n"] }, on: ["use"], knobs: { note: "é".repeat(3000) } }).r;
+      const ascii = install(s, "olive", "kb", "a", t, { scope: { ids: "self", comps: ["t/n"] }, on: ["use"], knobs: { note: "e".repeat(3000) } }).r;
+      return { wide: code(wide) ?? show(wide), why: wide?.refused?.reason ?? null, ascii: show(ascii) }; },
+    good: (o) => o.wide === "too-big" && /knobs is 6\d{3} bytes/.test(o.why ?? "") && o.ascii === "ok" },
   // ---------------- R: runaway work ----------------
   ...[["R1", "while (true) {}", "fuel"], ["R2", "function f() { return f(); } f();", "stack"], ["R3", `let s = "x"; for (;;) s += s;`, "memory"],
       ["R4", `for (let i = 0; i < 1000; i++) world.get("self");`, "calls"], ["R5", `for (let i = 0; i < 40; i++) world.set("self", "t/n", i);`, "too-big"], ["R6", "this is not javascript", "syntax"]].map(([id, body, want]) => ({
