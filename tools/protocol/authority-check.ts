@@ -1425,6 +1425,18 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const o = txnOutcome(w, from, { threw: true, refused: false, wedgedBefore: before });
   ok(o.outcome === "ambiguous" && o.wedged === true && o.file === undefined, "ST5 a world-log failure while only the moderator log was wedged is ambiguous, and names the world log", { o, threw: String(threw) }); }
 
+// RF1: a reactions key that is itself "*" is a key, not a second wildcard: refsOf names both handlers' targets and ends
+{ const { refsOf } = await import("../../shared/protocol/componentspec.js"); let refs: any = null, threw: any = null;
+  try { refs = refsOf("reactions", { "*": { kind: "set", targets: ["lamp"] }, ring: { kind: "set", targets: ["bell"] } }); } catch (x) { threw = String(x).slice(0, 80); }
+  ok(!threw && JSON.stringify(refs?.map((r: any) => r.id).sort()) === '["bell","lamp"]', "RF1 refsOf reads a handler keyed \"*\" as that key, and ends", { refs, threw }); }
+// RF2: …reached from requests: a handler keyed "*", set by request, that resets a ball, then the ball's delete, whose follow-ups read
+// every reference to it
+{ const name = "rf2";
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  call("olive", "create-world", { title: "rf2" }); call("olive", "create", { id: "box", model: "crate", place: { at: [1, 1] } }); call("olive", "create", { id: "ball", model: "crate", place: { at: [2, 2] } });
+  const set = call("olive", "set", { id: "box", component: "reactions", value: { "*": { kind: "reset", targets: ["ball"] } } }); let del: any = null, threw: any = null;
+  try { del = call("olive", "delete", { id: "ball" }); } catch (x) { threw = String(x).slice(0, 80); }
+  ok(set.ok && !threw && del?.ok, "RF2 deleting a thing a handler keyed \"*\" names is answered", { set: set.ok, del: del?.ok ?? del, threw }); }
 // SP1: a thing so far out that its cells aren't safe integers goes on the big list, not into a loop that can't advance
 // (x++ at 2^53 stays put), nor under a key that collides (cellKey covers ±1e6 cells)
 { const { cellsOf } = await import("../../shared/protocol/authority/spatial.js");

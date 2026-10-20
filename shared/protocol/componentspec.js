@@ -647,10 +647,12 @@ export function refFields(comp) {
 const isThingRef = (x) => typeof x === "string" && x !== "" && !x.startsWith("@") && !PERSON_SHAPE.test(x);
 const getAt = (v, path) => path.reduce((o, k) => (o && typeof o === "object" && !Array.isArray(o) ? o[k] : undefined), v);
 // a refPaths entry may hold a '*' segment (reactions "*.targets": every action's targets): the concrete paths it names in v
-function expandPath(v, path) {
-  const i = path.indexOf("*"); if (i < 0) return [path];
+// each "*" is expanded once, at its own position, left to right: a key that is itself "*" stands for that key, never for
+// another wildcard (searching the expanded path for "*" again found that key and recursed on it forever)
+function expandPath(v, path, from = 0) {
+  const i = path.indexOf("*", from); if (i < 0) return [path];
   const o = getAt(v, path.slice(0, i)); if (!o || typeof o !== "object" || Array.isArray(o)) return [];
-  return Object.keys(o).flatMap((k) => expandPath(v, [...path.slice(0, i), k, ...path.slice(i + 1)]));
+  return Object.keys(o).flatMap((k) => expandPath(v, [...path.slice(0, i), k, ...path.slice(i + 1)], i + 1));
 }
 const concrete = (comp, v) => refFields(comp).flatMap(({ path, type }) => expandPath(v, path).map((p) => ({ path: p, type })));
 /** Every THING an entity's component value refers to: [{path: "story.marks[1]", id}]. People and @words aren't things. */
