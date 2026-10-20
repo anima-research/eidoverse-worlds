@@ -84,7 +84,7 @@ export function standingYFromLyingRoot(rootY, { floor, scale } = {}) {
 // A settled body doesn't move: once its doll is done nothing steps its root (client/lib/localbody.js stepRagdoll). A
 // drag, a shove that starts it tumbling again or an unpin does move it, and the floor measured before is then the
 // one under where it was, not where it is. So the floor is the body's only while its root is where it measured it:
-// the millimetre is chosen so that any real move drops the floor while the same numbers copied back keep it.
+// a move of more than a millimetre drops the floor, while the same numbers copied back keep it.
 const FLOOR_MOVE = 0.001;
 
 /** The floor a settled body measured (client/lib/localbody.js stepRagdoll: `{ y, root }`) while its root is still

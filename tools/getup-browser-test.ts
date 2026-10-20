@@ -245,15 +245,26 @@ try {
     globalThis.__warns = [];
     const warn = console.warn.bind(console);
     console.warn = (...a) => { globalThis.__warns.push(a.map(String).join(' ')); warn(...a); };
-    (await import('/lib/arrivalhold.js')).holdHeightUntilSolid(3000);
+    (await import('/lib/arrivalhold.js')).holdHeightUntilSolid(10_000);
+    globalThis.__armedAt = performance.now();
   })()`);
-  await simWait(0.5);                                    // well inside the 3 s bound (simulated time runs no faster than the wall's)
-  const inBound = await body();
-  await simWait(4.0);
-  const gaveUp = await body();
+  // the hold's bound runs on the page's clock: sample it inside the bound by
+  // that clock, and past it by that clock, whatever the frame rate
+  const sampled = () => evalJson(`(async () => {
+    const { myState } = await import('/lib/controller.js');
+    return { y: myState.pos.y, elapsed: performance.now() - globalThis.__armedAt };
+  })()`);
+  await simWait(0.3);
+  const inBound = await sampled();
+  // past the bound: the hold says when it gives up (its clock starts at the
+  // first frame it steps, a little after it was armed), then the body falls
+  await waitFor(async () => (await evalJson(`globalThis.__warns.some((w) => w.startsWith('[arrivalhold] gave up'))`)) === true, 60_000);
+  await simWait(1.5);                                    // long enough to fall from the upper floor
+  const gaveUp = await sampled();
   const warns: string[] = await evalJson(`globalThis.__warns.filter((w) => w.startsWith('[arrivalhold] gave up'))`);
   check('a hold that runs out of its bound lets go while the house is still on its way, and says so once, naming it',
-    Math.abs(inBound.y - UPPER) < 0.06 && gaveUp.y < UPPER - 1 && warns.length === 1 && warns[0].includes('after 3s') && warns[0].includes('house'),
+    inBound.elapsed < 10_000 && Math.abs(inBound.y - UPPER) < 0.06 && gaveUp.y < UPPER - 1
+      && warns.length === 1 && warns[0].includes('after 10s') && warns[0].includes('house'),
     `inside the bound ${JSON.stringify(inBound)}; after it ${JSON.stringify(gaveUp)}; warnings ${JSON.stringify(warns)}`);
   letModelsThrough();
 } catch (e) {

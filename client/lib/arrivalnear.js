@@ -8,8 +8,9 @@ export const NEAR = 16;
 /** A tracked model's arrival: is more of it still coming here? A load in
  *  flight is, a retry included, and so is a realized model whose promote tail,
  *  which fits its collider, is still queued. A stand-in (a bare reservation,
- *  null, or a placeholder) is while the realizer will load it: within its
- *  residency radius, and not waiting out a failed load's back-off. A model
+ *  null, or a placeholder) is while the realizer will or may load it: as
+ *  models.js modelArriving says, within its residency radius or of a size the
+ *  geom has yet to give, and not waiting out a failed load's back-off. A model
  *  realized and fitted has arrived, collider or not (decorative, a structure's
  *  walls, mounted cargo, a reduced tier): nothing more of it is coming. So has
  *  an id the realizer holds nothing for (undefined).

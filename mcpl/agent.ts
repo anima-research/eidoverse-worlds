@@ -2200,6 +2200,8 @@ export class WorldAgent {
         // immortal (#61): rememberPose kept it, restore re-armed it, forever.
         ...(this.heldPose && (this.heldPoseAuthored || this.clip === "ragdoll") ? { pose: this.heldPose } : {}),
         ...(this.pins.size ? { pins: [...this.pins].map(([j, at]) => ({ j, at })) } : {}),
+        // knocked down but not yet lowered to a doll's root: it lies where it stood
+        ...(this.clip === "ragdoll" && this.lyingFrom != null && this.pos.y === this.lyingFrom ? { floor: this.pos.y } : {}),
         ...(this.pendingEmote ? { emote: this.pendingEmote } : {}),
         ...(this.reaches.size ? { reach: Object.fromEntries(this.reaches) } : {}),
       },
@@ -2226,6 +2228,7 @@ export class WorldAgent {
     // knocked over is a fact about the blow, not about our readiness to
     // simulate it; the canned slump holds the shape until the sim produces a
     // real pose, exactly as it does when there is no sim at all.
+    if (this.clip !== "ragdoll") this.lyingFrom = this.pos.y;   // where it stood when it went down
     this.clip = "ragdoll";
     this.heldPose ??= DOWNED_POSE;
     this.reaches.clear();   // a knocked-over body's reach is gone — the arms are the ragdoll's now
@@ -2252,6 +2255,13 @@ export class WorldAgent {
    *  that takes authority over the body bumps this, and any suspended act
    *  that finds it changed abandons itself. */
   private bodyEpoch = 0;
+  /** The height this body stood at when it was knocked down. A knockdown
+   *  reports "ragdoll" at once, standing where it was, and only a sim step or
+   *  a dragger's sample moves pos down to a doll's root. While pos is still
+   *  at that height, the pose carries it as `floor`, so the server stands the
+   *  body there rather than raising a root that was never lowered
+   *  (server.ts settledPose). */
+  private lyingFrom: number | null = null;
 
   private async tumble(lean: number[] | null) {
     const epoch = ++this.bodyEpoch;

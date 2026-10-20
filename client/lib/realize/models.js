@@ -64,8 +64,15 @@ export const modelArriving = (id) => {
   });
 };
 /** A placed model's footprint on the ground, from the geom the server sent for
- *  its lib; unbounded until it has (arrivalnear.js footprintOf). */
-export const modelFootprint = (id, ent) => footprintOf(ent, ent?.lib ? libGeom.get(ent.lib) : null);
+ *  its lib; unbounded until it has (arrivalnear.js footprintOf), and unbounded
+ *  for a model with a whole-body motion, which may have carried it anywhere
+ *  from its folded `pos`. Read from the fold, which holds the motion before
+ *  the model has loaded. */
+export const modelFootprint = (id, ent) => {
+  const m = ent?.comp?.motion;
+  if (m && !m.part) return { x: NaN, z: NaN, r: Infinity };
+  return footprintOf(ent, ent?.lib ? libGeom.get(ent.lib) : null);
+};
 let nextGen = 1;
 
 const _v = new THREE.Vector3();
