@@ -24,7 +24,7 @@
 import { bodyOf } from "../shared/components.js";
 import { kindOf } from "../shared/protocol/kind.js";
 import { describeBody, socketRole } from "../shared/sockbody.js";
-import { dec as decName } from "../shared/protocol/names.js";
+import { dec as decName, enc as encId } from "../shared/protocol/names.js";
 import { actorName } from "../shared/protocol/names.js";
 import { refusalText, warningText, touchWords } from "../shared/protocol/refusal.js";
 import { readdirSync } from "node:fs";
@@ -1210,6 +1210,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const id = String(a.id ?? "");
       const rec = id === WORLD_ID ? null : ag.foldRecord(id) as any;
       if (!rec && id !== WORLD_ID) return fail(`edit: no placed thing "${id}" here, so nothing was sent (ids are in look() and hierarchy)`);
+      // what the plan reads, taken before it awaits the model's box: the write is pinned to it (expect, §3a), so a change
+      // that lands meanwhile is refused as changed, not overwritten (a person's edit pins the same way)
+      const wireId = id === WORLD_ID ? id : encId(id);   // the authority's own id, as the ops carry it (requests.js)
+      const base = ag.componentsOf(wireId);
       const { ops, errors, asks } = id === WORLD_ID
         ? { ...worldEditOps(ag.worldFold(), (a.set ?? {}) as Record<string, unknown>, { now: Date.now() }), asks: undefined }
         : editOps(rec, id, (a.set ?? {}) as Record<string, unknown>, { world: foldWorld(ag), box: rec.model ? await ag.modelBox(String(rec.model)) : null });   // pivot.centre / pivot.base snap to it, as a person's do
@@ -1222,7 +1226,9 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!ops.length) return { content: [{ type: "text", text: L.length ? L.join("\n") : "edit: nothing to change" }], isError: errors.length > 0 };
       // ONE request for the whole edit (a batch when it took several ops): one act, one undo — what a person's edit sends
       const req: any = OP.batch(ops);
-      const r: any = await ag.sendOps(ops, { ...(a.dry ? { dry: true } : {}), ...(a.throughLock ? { throughLock: true } : {}) });
+      const pins = [...new Set(ops.filter((o: any) => o.verb === "set" && o.args?.id === wireId).map((o: any) => String(o.args.component)))]
+        .map((k) => base && k in base ? { id: wireId, component: k, value: base[k] } : { id: wireId, component: k });
+      const r: any = await ag.sendOps(ops, { ...(a.dry ? { dry: true } : {}), ...(a.throughLock ? { throughLock: true } : {}), ...(pins.length ? { expect: pins } : {}) });
       L.push(`${a.dry ? "would send" : "sent"} ${req.verb} ${JSON.stringify(req.args)}`);
       if (r && !r.ok) L.push(refusalText("edit", r));   // the words a person sees (shared/protocol/refusal.js)
       else if (r) {

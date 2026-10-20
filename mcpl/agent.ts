@@ -1715,6 +1715,13 @@ export class WorldAgent {
     const m = this.mounts.get(id);
     return m ? { ...e, parent: m } : { ...e };
   }
+  /** A thing's components as this body's replica folds them now (a copy), or null: what a write planned from them pins
+   *  with expect, as a person's edit does (client/lib/editwrites.js compsOf). id and the component
+   *  names are the authority's own, as requests.js encodes them. */
+  componentsOf(id: string): Record<string, unknown> | null {
+    const c = this.replica?.st?.entities?.[id]?.c;
+    return c ? structuredClone({ ...c }) : null;
+  }
 
   private reconcileFromFold() {
     const seen = new Set<string>();
@@ -4718,8 +4725,9 @@ export class WorldAgent {
     return r ? { r, fresh: false } : null;
   }
   /** A gesture's ops (shared/protocol/requests.js) as ONE request — one act, the authority's answer — sent after the previous one
-   *  was answered (its log arrived first), so a follow-up plans against that write. `extra` rides the request
-   *  (dry, expect, throughLock). The same requests a person's edit sends: one vocabulary, both audiences. */
+   *  was answered (its log arrived first). Ops planned before that wait don't see what landed meanwhile, so a caller that
+   *  planned from the replica pins what it read with `expect` (componentsOf), and a change since is refused, not overwritten
+   *  `extra` rides the request (dry, expect, throughLock). The same requests a person's edit sends: one vocabulary, both audiences. */
   async sendOps(ops: any[], extra: Record<string, unknown> = {}): Promise<any> {
     const req: any = OP.batch(ops);
     if (!req) return { ok: true, noop: true };

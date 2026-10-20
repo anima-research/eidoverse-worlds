@@ -97,4 +97,16 @@ for (const dur of [2, undefined]) {
   ok(senderFacet("agent") === "chat:from-agent" && senderFacet("Agent") === null && senderFacet(null) === null, "senderFacet reads the word \"agent\" itself, nothing near it");
   ok(JSON.stringify(MCPL_ADVERTISEMENT).includes("chat:from-agent"), "the advertisement lists chat:from-agent among the core tags it emits"); }
 
+// edit pins what its plan read, taken before the plan awaits anything, so a change that lands
+// meanwhile is refused as changed instead of overwritten
+{ let comps: any = { label: "old" }; const sent: any[] = [];
+  const ag: any = { thingRef: () => ({ id: "lamp-1" }), foldRecord: () => ({ id: "lamp-1", model: "lamp.glb", label: comps.label }), foldedIds: () => ["lamp-1"],
+    componentsOf: (id: string) => id === "lamp-1" ? structuredClone(comps) : null, entities: new Map(), st: { entities: {} }, mounts: new Map(),
+    // the model's box is awaited while planning: someone else's label lands then
+    modelBox: async () => { comps = { label: "someone else's" }; return null; }, worldFold: () => ({}), handle: (x: string) => x,
+    sendOps: async (ops: any[], extra: any) => { sent.push({ ops, extra }); return { ok: true }; } };
+  const out: any = await handleTool({ agent: ag } as any, "edit", { id: "lamp-1", set: { "flags.label": "new" } });
+  const pin = sent[0]?.extra?.expect;
+  ok(JSON.stringify(pin) === JSON.stringify([{ id: "lamp-1", component: "label", value: "old" }]), "edit's write is pinned to the label it read", { pin, out: out.content?.[0]?.text }); }
+
 console.log(`door-unit-test: ${fails ? `${fails} failed` : "all ok"}`); process.exit(fails ? 1 : 0);
