@@ -88,7 +88,8 @@ const operatorRepairs = (who, op) => !!CTX.operator && CTX.operator === who.acto
 function admit(w, st, who, ops) {
   const { actor, cap } = who;
   if (!cap || cap.kind === "reaction" || cap.kind === "handle") rateCheck(w, actor);
-  const lifted = who.lifting ? { ops, notes: [] } : liftOps(st, ops, w.everIds()); ops = lifted.ops;
+  // preLifted: commit() lifted them already (so its reference clearing saw the lift's deletes), and passes the lift's notes
+  const lifted = who.lifting ? { ops, notes: [] } : who.preLifted ? { ops, notes: who.preLifted } : liftOps(st, ops, w.everIds()); ops = lifted.ops;
   if (!ops.length) refuse("nothing", "that changes nothing", "");
   const role = roleOf(st, actor);
   const keysMade = new Set(); // keyed components this very write brings into being (their creator is the asker)

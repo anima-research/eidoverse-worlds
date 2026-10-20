@@ -822,6 +822,12 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     const del = R("ann", "delete", { id: seat }); const again = R("ann", "set", { id: "chair2", component: "model", value: "chair" });
     const back = Object.values(openWorld(root, "sockets").state().entities).some((e) => e.c.parent?.to === "chair2" && e.c.socket);
     ok(!!seat && del.ok && again.ok && !back, "SK7 a chair's seat someone deleted isn't made again by the next write of its model (review of #260)", { seat, del: del.ok ?? del.refused, again: again.ok ?? again.refused, back }); }
+  // review of #260: a socket the old spelling's write takes away has the references to it cleared, as a delete's are
+  { const S = () => openWorld(root, "sockets").state(); const pannier = Object.keys(S().entities).find((k) => S().entities[k].c.parent?.to === "horse" && S().entities[k].c.socket?.name === "pannier");
+    const eye = R("ann", "create", { id: "eye", model: "crate", components: { "look-at": { target: pannier } } });
+    const drop = R("ann", "set", { id: "horse", component: "sockets", value: { saddle: { pos: [0, 1.2, 0], body: { action: "ride", pose: "sit", exit: [0.8, 0, 0] } } } });
+    const la = S().entities.eye?.c["look-at"];
+    ok(!!pannier && eye.ok && drop.ok && !S().entities[pannier] && !(la && la.target === pannier), "SK8 a socket an old-spelling sockets write takes away leaves no reference to it behind (look-at cleared)", { pannier, eye: eye.ok ?? eye.refused, drop: drop.ok ?? drop.refused, gone: !S().entities[pannier], la }); }
   const bad = (v) => R("ann", "set", { id: "horse", component: "sockets", value: v }).refused?.code;
   ok(bad({ s: { pos: [0, 1, 0], pose: "sit" } }) === "schema", "SK4 a socket's pose lives in body (an unknown socket key is refused, with a did-you-mean)");
   ok(bad({ s: { pos: [0, 1, 0], body: { action: "Ride Now" } } }) === "shape", "SK4 body.action is a lower-case verb");
