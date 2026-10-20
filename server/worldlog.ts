@@ -543,11 +543,12 @@ export function resetWorld(log: WorldLog): string {
     if (!r0.ok) throw new Error(`founding again refused: ${r0.refused?.reason}`);
     for (const o of owners.slice(1)) { const r = authorityRequest(w, owners[0], "set", { id: "@world", component: `roles:${o}`, value: { role: "owner" } });
       if (!r.ok) throw new Error(`restoring owner ${o} refused: ${r.refused?.reason}`); }
-    // a world that admits only people LISTED stays closed, with them (upstream #258): erasing the content must not be what
-    // opens a members-only world to everyone. Its door (access, default-role) and every live role come back; a timed
-    // grant keeps its end, one already past is left behind.
+    // a world with a door stays behind it (upstream #258): erasing the content must not be what opens a members-only or a
+    // signed-in-only world to everyone, or drops its watch rule, age or size limit (review of #260, server I7: only
+    // "listed" was kept). Its door (access, default-role) and every live role come back; a timed grant keeps its end, one
+    // already past is left behind.
     const wc = st.entities["@world"]?.c ?? {};
-    if ((wc.access as Any)?.join === "listed") {
+    if (wc.access != null) {
       const now = Date.now();
       const keep: [string, Any][] = Object.entries<Any>(wc).filter(([k, v]) => (k === "access" || k === "default-role" || k === "role-defs"
         || (k.startsWith("roles:") && v?.role !== "owner")) && !(Number.isSafeInteger(v?.until) && v.until <= now));

@@ -144,7 +144,19 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   const ops = log.filter((e) => e.kind === "change").flatMap((e) => (Array.isArray(e.body?.ops) ? e.body.ops : [e.body]));   // a batch, or one op
   const access = ops.find((o) => o.id === "@world" && o.comp === "access")?.value;
   const rowan = ops.find((o) => o.id === "@world" && o.comp === `roles:${ids.Rowan}`)?.value;
-  ok(access?.join === "listed" && rowan?.role === "visitor", "A7 a reset keeps a members-only world's door and its members", [access, rowan, ops.length, own.closed, own.msgs.slice(k0).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]); }
+  ok(access?.join === "listed" && rowan?.role === "visitor", "A7 a reset keeps a members-only world's door and its members", [access, rowan, ops.length, own.closed, own.msgs.slice(k0).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
+  // A7b (review of #260, server I7): a signed-in-only door is kept too (only "listed" was, so the reset opened it to guests)
+  const set = await own.req("set", { id: "@world", component: "access", value: { join: "signed-in" } });
+  const k1 = own.msgs.length; own.raw({ type: "world-reset", name: "keep" });
+  await waitFor(() => own.closed != null || own.msgs.slice(k1).some((m) => m.type === "world-reset" || m.type === "error"), 6000);
+  await sleep(400);
+  const log2 = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const ops2 = log2.filter((e) => e.kind === "change").flatMap((e) => (Array.isArray(e.body?.ops) ? e.body.ops : [e.body]));
+  const access2 = ops2.find((o) => o.id === "@world" && o.comp === "access")?.value;
+  ok(set?.ok && access2?.join === "signed-in", "A7b a reset keeps a signed-in-only world's door", [set?.ok, set?.refused, access2, own.msgs.slice(k1).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
+  // the rest of this suite reads "keep" as members-only: its door goes back as A7 left it
+  const back = await own.req("set", { id: "@world", component: "access", value: access });
+  ok(back?.ok, "(A7b) keep's members-only door is put back for what follows", back?.refused); }
 
 // ---- A8 (setup, loaded): Moss and Wren are listed; Moss is banned, Wren kicked for 30 min; the loaded door refuses both ----
 const geomAs = async (port, world, bearer) => (await fetch(`http://127.0.0.1:${port}/geom?world=${world}`, { headers: { authorization: `Bearer ${bearer}` } })).status;
