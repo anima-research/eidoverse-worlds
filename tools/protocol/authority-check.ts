@@ -1190,6 +1190,13 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 // SR2 (review 10-12 S1-2, re-cut by R 10-15 22:48): a socket is an entity, so it meets the one entity budget like any
 // other: capacity.entities for the world, capacity.guestEntities for all account-less people together (a guest is a fresh
 // identity per connection), and at most SOCKETS_PER_HOST on one host. Only a write that adds is refused (full).
+// review of #260: following the full refusal's fix raises the one limit and keeps the others
+{ const W = () => openWorld(root, "capfix"); const R = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); return request(W(), actor, verb, args); };
+  R("ann", "create-world", { title: "capfix" }); R("ann", "set", { id: "@world", component: "capacity", value: { entities: 2, guestEntities: 7 } });
+  R("ann", "create", { id: "c1", model: "crate" }); R("ann", "create", { id: "c2", model: "crate" }); const full = R("ann", "create", { id: "c3", model: "crate" });
+  const m = /set (\{.*\})/.exec(full.refused?.fix ?? ""); const args = m ? Function(`return (${m[1].replace("<n>", "5")})`)() : null;
+  const raised = args ? R("ann", "set", args) : null; const cap = W().state().entities["@world"].c.capacity;
+  ok(full.refused?.code === "full" && raised?.ok && cap?.entities === 5 && cap?.guestEntities === 7, "SR0 the full refusal's fix, followed as written, raises entities and keeps guestEntities", { fix: full.refused?.fix, raised: raised?.ok ?? raised?.refused, cap }); }
 { const W = () => openWorld(root, "sockcap"); const R = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); const w = W(); w.kindOf = (id) => (id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
   const nSock = () => Object.values(W().state().entities).filter((e) => e.c.socket).length;
   const nEnt = () => Object.keys(W().state().entities).length - 1;

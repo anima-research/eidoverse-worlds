@@ -40,7 +40,7 @@ function capacityCheck(w, st, s, who, norm) {
   if (!made && !joined.size) return;
   const cap = capacityOf(s);
   if (made) { const before = entityCount(st), after = entityCount(s);
-    if (after > before && after > cap.entities) refuse("full", `this world holds ${before} entities and its limit is ${cap.entities} (@world.${cap.name}.entities): ${after - before} more won't fit (every entity counts, sockets too)`, `delete something first; the world's owner may raise it: set {id: '@world', component: '${cap.name}', value: {entities: <n>}} (at most ${CAPACITY_CEILING.entities} on this server)`, { limit: cap.entities, entities: before }); }
+    if (after > before && after > cap.entities) refuse("full", `this world holds ${before} entities and its limit is ${cap.entities} (@world.${cap.name}.entities): ${after - before} more won't fit (every entity counts, sockets too)`, `delete something first; the world's owner may raise it: set {id: '@world', component: '${cap.name}', value: {entities: <n>}, merge: true} (at most ${CAPACITY_CEILING.entities} on this server)`, { limit: cap.entities, entities: before }); }
   if (joined.size) { const per = new Map([...joined].map((h) => [h, [0, 0]]));
     for (const e of Object.values(s.entities)) { const h = isSocketC(e.c) ? e.c.parent?.to : null; if (per.has(h)) per.get(h)[1]++; }
     for (const e of Object.values(st.entities)) { const h = isSocketC(e.c) ? e.c.parent?.to : null; if (per.has(h)) per.get(h)[0]++; }
@@ -49,6 +49,6 @@ function capacityCheck(w, st, s, who, norm) {
   const holder = who.cap?.kind === "reaction" ? who.cap.author : who.cap?.kind === "script" ? who.cap.sponsor : who.actor;
   if (!CTX.isAnon(holder)) return;
   const g = guestMade(w, st);
-  if (g + made > cap.guestEntities) refuse("full", `account-less people (guests) together have ${g} entities standing here, and this world lets them have ${cap.guestEntities} (@world.${cap.name}.guestEntities), all of them together`, `sign in to build more, or ask the world's owner to raise it: set {id: '@world', component: '${cap.name}', value: {guestEntities: <n>}} (at most ${CAPACITY_CEILING.guestEntities} on this server)`, { limit: cap.guestEntities, entities: g });
+  if (g + made > cap.guestEntities) refuse("full", `account-less people (guests) together have ${g} entities standing here, and this world lets them have ${cap.guestEntities} (@world.${cap.name}.guestEntities), all of them together`, `sign in to build more, or ask the world's owner to raise it: set {id: '@world', component: '${cap.name}', value: {guestEntities: <n>}, merge: true} (at most ${CAPACITY_CEILING.guestEntities} on this server)`, { limit: cap.guestEntities, entities: g });
 }
 export { capacityCheck };
