@@ -133,7 +133,9 @@ function buildUpdate(ctx, a, w) {
     const id = idOf(key), mineE = ctx.st.entities[id];
     if (!B[key]) { const c = clone(T[key]); c["copy-of"] = { from: a.to, key };   // its parent is already in ids (inIds)
       made.push(...createOps(id, c)); continue; }   // made first: an existing part may be reparented onto a new one
-    if (!T[key]) { if (mineE && Object.keys(B[key]).every((k) => skipComp.has(k) || eq(B[key][k], mineE.c[k]))) ops.push(delOp(id)); else if (mineE) orphaned.push(id); continue; }
+    // a part the newer version drops goes only if this copy left it as it came: each component it came with unchanged, and
+    // none added since
+    if (!T[key]) { if (mineE && Object.keys(B[key]).every((k) => skipComp.has(k) || eq(B[key][k], mineE.c[k])) && Object.keys(mineE.c).every((k) => skipComp.has(k) || Object.hasOwn(B[key], k))) ops.push(delOp(id)); else if (mineE) orphaned.push(id); continue; }
     if (!mineE) { kept.push({ id, why: "you deleted it in this copy" }); continue; }
     for (const comp of new Set([...Object.keys(B[key]), ...Object.keys(T[key])])) {
       if (unmerged.has(comp) || (key === base.root && (comp === "transform" || comp === "parent"))) continue;

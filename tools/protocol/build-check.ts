@@ -282,6 +282,19 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const up = s.call("bob", "update", { copy: "b", to: v2 });
       return { a: show(a), b: show(b), keys, up: show(up), label: s.w().state().entities[partOf("b", "bulb")]?.c.label ?? null, kids: Object.keys(s.w().state().entities).filter((k) => s.w().state().entities[k].c.parent?.to === "b").length }; },
     good: (o) => o.up === "ok" && JSON.stringify(o.keys) === '["bulb","lamp"]' && o.label === "brighter" && o.kids === 1 },
+  { id: "U3", what: "a part the newer version drops is deleted only if this copy left it as it came: a component this copy added keeps it", run(s) { cast(s);
+      s.call("bob", "create", { id: "lamp", model: "crate", components: { transform: T0([0, 0, 0]) } });
+      s.call("bob", "create", { id: "bulb", model: "book", components: { transform: T0([0, 0.6, 0]), parent: { to: "lamp" } } });
+      const v1 = s.call("bob", "publish", { from: "lamp", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
+      for (const [id, x] of [["a", 5], ["b", 9]] as const) s.call("bob", "create", { id, from: v1, at: { pos: [x, 0, 5] } });
+      const E = () => s.w().state().entities;
+      const partOf = (copy: string, key: string) => Object.keys(E()).find((k) => E()[k].c["copy-of"]?.key === key && E()[k].c.parent?.to === copy);
+      const del = s.call("bob", "delete", { id: partOf("a", "bulb") });
+      const v2 = s.call("bob", "publish", { from: "a", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
+      const bb = partOf("b", "bulb"); const add = s.call("bob", "set", { id: bb, component: "label", value: "mine" });
+      const up = s.call("bob", "update", { copy: "b", to: v2 });
+      return { del: show(del), add: show(add), up: show(up), kept: !!E()[bb], label: E()[bb]?.c.label ?? null }; },
+    good: (o) => o.del === "ok" && o.add === "ok" && o.up === "ok" && o.kept && o.label === "mine" },
 ];
 
 let pass = 0, fail = 0;
