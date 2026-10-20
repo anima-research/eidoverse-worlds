@@ -333,7 +333,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const animSeen = mo.msgs.slice(k4).some((m) => m.type === "anim" && m.id === VOLE);
     const gv = await sock(S4.port); const jg = await gv.join("heath", "visitor-x");   // a guest (no account on this server)
     const kb = gv.msgs.length; gv.raw({ type: "world-bans" }); await sleep(300);
-    const visBans = gv.msgs.slice(kb).find((m) => m.type === "mod")?.text ?? "";
+    const visBans = gv.msgs.slice(kb).find((m) => m.type === "error")?.error ?? "";   // a refusal, not a mod result (review of #260, server I33)
     const kk = await own.req("kick", { who: you(jg), minutes: 0.5 }); await sleep(300);
     const g2 = await sock(S4.port); const jg2 = await g2.join("heath", "visitor-y");
     ok(hist && (hist.entries ?? []).length === 0 && !animSeen && /moderation power/.test(visBans) && kk.ok && !jg2.snapshot,

@@ -69,6 +69,15 @@ export type LogHost = {
   regateReaches?(): void;
 };
 
+/** What a person can do about a recheck's refusal (review of #260, server I23): reconnecting and sending again helps only
+ *  when the connection changed under the request; when the door, the role or operator status changed, sending again from
+ *  a new connection meets the same answer. */
+export function recheckFix(reason: string): string {
+  if (/door no longer lets|operator status changed|needs a server operator/.test(reason)) return "sending it again won't change this: what this account may do here changed";
+  if (/role here changed/.test(reason)) return "send it again if you still mean it, under your role as it is now";
+  return "reconnect, then send it again from the connection that is in the world now";
+}
+
 export class WorldLog {
   name: string;
   live: Any;
@@ -161,7 +170,7 @@ export class WorldLog {
     let gone: string | null | undefined;
     try { await warm(modelsIn(args)); gone = still?.(); }
     catch (err) { console.error(`[world:${this.name}] ${verb.slice(0, 32)} by ${actor}: failed before the authority saw it`, err); return txnRefusal({ outcome: "rolled-back" }); }
-    if (gone) return { ok: false, txn: "rolled-back", refused: { code: "superseded", reason: gone, fix: "reconnect, then send it again from the connection that is in the world now" } };
+    if (gone) return { ok: false, txn: "rolled-back", refused: { code: "superseded", reason: gone, fix: recheckFix(gone) } };
     return this.requestSync(actor, verb, args);
   }
   /** One request through the authority, as a transaction (PROTOCOL §7; storage.js txnOutcome): the reply carries
@@ -210,8 +219,11 @@ export class WorldLog {
     // `bun tools/protocol/world.ts repair <name> --rollback`, with the server stopped), as the CLI keeps it
     try {
       const backup = (verb === "repair" || verb === "repair-shapes") && args.dryRun !== true ? backupBeforeRepair(this.dir, { by: actor }) : null;
-      try { r = authorityOperatorRepair(live, actor, verb, args); }
-      finally { if (backup) { if (live.entries.length > from) sealBackup(backup); else dropBackup(backup); } }
+      // a throw from a durable write is ambiguous (durable.ts: the line may be on disk while the count didn't move), so a
+      // throw keeps the backup; only a repair that returned having written nothing drops it (review of #260, server I24)
+      let threwHere = true;
+      try { r = authorityOperatorRepair(live, actor, verb, args); threwHere = false; }
+      finally { if (backup) { if (threwHere || live.entries.length > from) sealBackup(backup); else dropBackup(backup); } }
     } catch (err) { threw = err ?? new Error("the repair threw"); }
     finally { this.publish(from, held); }   // the same transaction as requestSync: what reached the log is published
     const o = txnOutcome(live, from, { threw: threw !== null, refused: !!r && typeof r === "object" && r.ok === false, wedgedBefore });
@@ -559,8 +571,11 @@ export function resetWorld(log: WorldLog): string {
   } catch (e) { fs.rmSync(fresh, { recursive: true, force: true }); throw e; }
   const arch = path.join(dir, `reset-${new Date().toISOString().replace(/[:.]/g, "-")}`);
   fs.mkdirSync(arch, { recursive: true });
-  for (const f of ["world.jsonl", "poses.json"]) if (fs.existsSync(path.join(dir, f))) fs.renameSync(path.join(dir, f), path.join(arch, f));
-  fs.renameSync(path.join(fresh, "world.jsonl"), path.join(dir, "world.jsonl"));
+  // from the first rename on, a failure has changed something: it says where the old log went (review of #260, server I19)
+  try {
+    for (const f of ["world.jsonl", "poses.json"]) if (fs.existsSync(path.join(dir, f))) fs.renameSync(path.join(dir, f), path.join(arch, f));
+    fs.renameSync(path.join(fresh, "world.jsonl"), path.join(dir, "world.jsonl"));
+  } catch (e: Any) { const err: Any = new Error(String(e?.message ?? e)); err.movedTo = arch; err.freshAt = fresh; throw err; }
   fs.rmSync(fresh, { recursive: true, force: true });
   return arch;
 }

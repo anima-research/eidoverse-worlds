@@ -382,9 +382,9 @@ if (cmd === "found") {
     const n0 = w.entries.length; let r: any;
     try { r = maintain(w, { by }); }
     catch (e) {   // r14 H1 (10-18): a throw from a durable write is AMBIGUOUS (the line's disk state is unknown), never "repaired" and never silently dropped
-      if (w.entries.length > n0) sealBackup(backup); else dropBackup(backup);
+      sealBackup(backup);   // whatever the count says, the line's disk state is unknown: the backup stays (review of #260, server I24)
       die(`repair of ${name} ended AMBIGUOUS: ${(e as Error).message}\n${w.wedged?.log ? `storage failed while writing line ${w.wedgedAt ?? w.entries.length}: whether it is on disk is unknown; the world refuses writes until it is reopened from disk. ` : ""}`
-        + `${w.entries.length > n0 ? `${w.entries.length - n0} line(s) of the repair reached the log before it; the pre-repair log is kept at ${backup} (repair ${name} --rollback puts it back)` : "nothing of the repair reached the log (no backup kept)"}`); }
+        + `${w.entries.length > n0 ? `${w.entries.length - n0} line(s) of the repair reached the log before it; the pre-repair log is kept at ${backup} (repair ${name} --rollback puts it back)` : `no line of the repair is known to have reached the log, but the one being written may have; the pre-repair log is kept at ${backup} (repair ${name} --rollback puts it back)`}`); }
     if (r.refused) { dropBackup(backup); die(`repair refused: ${r.refused.code}: ${r.refused.reason}`); }
     if (w.entries.length === n0) { dropBackup(backup); console.log(`${name} needs nothing: already lifted, renamed and marked; nothing written (no backup kept)`); say(r); process.exit(0); }
     const m = sealBackup(backup);

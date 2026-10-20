@@ -414,7 +414,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // the moderation record is read by people holding a moderation power (research roles §7; review 10-07: anyone
     // here could read every ban and its reason), and by the authority's clock (a ban that ended isn't listed)
     if (c.world.log) { const e = c.actorId ? c.world.log.rightsOf(c.actorId) : null;
-      if (!e || !(e.role === "owner" || ["mute", "kick", "ban", "pauseScripts"].some((k) => e.permissions.includes(k)))) { ws.send(JSON.stringify({ type: "mod", text: "the ban list is for people who hold a moderation power here" })); return; } }
+      if (!e || !(e.role === "owner" || ["mute", "kick", "ban", "pauseScripts"].some((k) => e.permissions.includes(k)))) { ws.send(JSON.stringify({ type: "error", error: "the ban list is for people who hold a moderation power here" })); return; } }
     const S = c.world.log!.sanctions();
     const dir = directoryFor(WORLDS_DIR);
     const list = Object.entries(S).filter(([, x]) => (x as any).ban).map(([, x]) => (x as any).ban).map((m) =>

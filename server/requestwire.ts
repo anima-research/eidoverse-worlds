@@ -12,7 +12,7 @@
 //
 // Requests from one client run in order: an async warm-up (measuring a model) never lets a later request overtake an
 // earlier one.
-import { forkWorld, foundOwnedWorld } from "./worldlog.ts";
+import { forkWorld, foundOwnedWorld, recheckFix } from "./worldlog.ts";
 import { worldExists } from "./world.ts";
 import type { Client, World } from "./world.ts";
 import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, fileAddrSanction, liftAddrSanction } from "./moderation.ts";
@@ -145,7 +145,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     try { cap = capture(c, w); } catch (err) { console.error(`[ws] request from ${c.id}:`, err); reply({ ok: false, txn: "rolled-back", refused: { code: "identity", reason: "this connection has no identity here", fix: "join the world first" } }); return; }
     const still = () => recheck(cap);
     inOrder(c, ws, async () => {
-      { const gone = still(); if (gone) { reply({ ok: false, txn: "rolled-back", refused: { code: "superseded", reason: gone, fix: "reconnect, then send it again from the connection that is in the world now" } }); return; } }
+      { const gone = still(); if (gone) { reply({ ok: false, txn: "rolled-back", refused: { code: "superseded", reason: gone, fix: recheckFix(gone) } }); return; } }
       { const no = (metered ? reads.check(c, Date.now(), { timeOnly: true }) : null) ?? busy.check(c, Date.now()); if (no) { metered_no(no); return; } }
       const spent = busy.record(c, Date.now());
       const wasBanned = (verb === "ban" || verb === "unban") && typeof args.who === "string" ? isBanned(w.log.live, String(args.who)) : false;
@@ -220,8 +220,9 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     // recheck covers isOperator(account) as captured; the only await before the synchronous repair is the queue itself
     const cap = capture(c, w);
     inOrder(c, ws, async () => {
-      const gone = recheck(cap, Date.now(), { role: false }) ?? (cap.operator ? null : "operator-repair needs a server operator's account (WORLD_ADMIN)");
-      if (gone) { reply({ ok: false, txn: "rolled-back", refused: { code: "superseded", reason: gone, fix: "reconnect, then send it again" } }); return; }
+      if (!cap.operator) { reply({ ok: false, txn: "rolled-back", refused: { code: "rights", reason: "operator repair is for this server's operator", fix: "ask whoever runs this server" } }); return; }
+      const gone = recheck(cap, Date.now(), { role: false });
+      if (gone) { reply({ ok: false, txn: "rolled-back", refused: { code: "superseded", reason: gone, fix: recheckFix(gone) } }); return; }
       const r = w.log.operatorRepair(cap.actorId, verb, args);
       console.log(`[world:${w.name}] operator repair by ${c.account} (${c.id}): ${verb.slice(0, 32)} ${String((args as Any).component ?? (args as Any).who ?? "").slice(0, 64)} → ${r?.ok ? "ok" : r?.refused?.code}`);
       reply(r);
@@ -272,7 +273,9 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     // the world from under the people who made it (review 10-06; research: delete/reset is never a switch)
     if (w.log.seniorOwner() !== actorOf(c)) return err("erasing a world is for its most senior owner (its founder) — ask them");
     if (String(msg.name ?? "") !== w.name) return err(`confirmation mismatch — reset must name "${w.name}"`);
-    let arch: string; try { arch = w.resetWorld(); } catch (e: Any) { return err(`the reset failed and nothing changed: ${String(e?.message ?? e)}`); }
+    let arch: string; try { arch = w.resetWorld(); } catch (e: Any) {
+      if (e?.movedTo) console.error(`[world:${w.name}] reset failed partway: old log in ${e.movedTo}, new one in ${e.freshAt}:`, e);
+      return err(e?.movedTo ? "the reset failed partway: the world's old log was moved aside, and the server's operator can put it back (its server log says where)" : `the reset failed and nothing changed: ${String(e?.message ?? e)}`); }
     console.log(`[world:${w.name}] ERASED to zero by ${c.id} — history archived in ${arch}`);
     w.broadcast({ type: "world-reset", world: w.name, by: c.id });
   },
@@ -288,7 +291,7 @@ export function requestAs(c: Client, ws: Ctx["ws"], w: World, verb: string, args
     let cap: ReqCap;
     try { cap = capture(c, w); } catch (err) { console.error(`[ws] ${verb} from ${c.id}:`, err); resolve({ ok: false, txn: "rolled-back", refused: { code: "identity", reason: "this connection has no identity here", fix: "join the world first" } }); return; }
     inOrder(c, ws, async () => {
-      { const gone = recheck(cap); if (gone) { resolve({ ok: false, txn: "rolled-back", refused: { code: "superseded", reason: gone, fix: "reconnect, then send it again from the connection that is in the world now" } }); return; } }
+      { const gone = recheck(cap); if (gone) { resolve({ ok: false, txn: "rolled-back", refused: { code: "superseded", reason: gone, fix: recheckFix(gone) } }); return; } }
       { const no = busy.check(c, Date.now()); if (no) { resolve({ ok: false, txn: "rolled-back", refused: no }); return; } }
       const spent = busy.record(c, Date.now());
       const r = await w.log.request(cap.actorId, verb, args, () => recheck(cap));
