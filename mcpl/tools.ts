@@ -520,7 +520,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const pick: any = fits.find((x: any) => !taken.has(x.id)) ?? null;
       if (!pick) {
         const why = !all.length ? "declares no seat" : !fits.length ? `has no ${a.action != null ? `'${a.action}' ` : ""}seat${a.socket != null ? ` called "${a.socket}"` : ""}` : "has every such seat taken";
-        return { content: [{ type: "text", text: `attach: ${on} ${why} (its seats: ${all.map((x: any) => `${x.slot} (${x.body.action})`).join(", ") || "none"})${all.length ? "" : ` — a builder can add one: edit {"sockets.seat|pos|1": 0.5}`}` }], isError: true };
+        // the remedy is a whole call, id and set
+        return { content: [{ type: "text", text: `attach: ${on} ${why} (its seats: ${all.map((x: any) => `${x.slot} (${x.body.action})`).join(", ") || "none"})${all.length ? "" : ` — a builder can add one: edit {id: "${ag.handle(on)}", set: {"sockets.seat|pos|1": 0.5}} (a new socket is a seat)`}` }], isError: true };
       }
       const { id: sid, slot, body } = pick;
       if (mine && mine.to !== sid) {
@@ -529,7 +530,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       { const r = await ag.request("use", { id: sid, action: body.action });
         if (!r?.ok) return { content: [{ type: "text", text: `attach: the authority refused (${r?.refused?.code}): ${r?.refused?.reason ?? ""}${r?.refused?.fix ? ` — ${r.refused.fix}` : ""}` }], isError: true }; }
       ag.setOccupant({ to: sid });   // (no pose menu: a station's poses are reserved in the alpha, review r11 claims R4)
-      return text(`you ${body.action} on ${on} — ${describeBody(slot, body)}`);
+      return text(`you ${body.action} on ${on} — ${describeBody(slot, body, { door: true })}`);
   },
   detach: async (ag, a) => {
       const mine = ag.myOccupancy;
@@ -1428,6 +1429,10 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
       const note = poseReport(v);
       return playing("live", "hold", `holding the frame at ${at ?? "the last key"}${at != null ? " s" : ""} of ${v.accepted.length} bone(s)${note ? `. ${note}` : ""}`);
     }
+    // a new tracks loop on your body replaces the one in its layer: the earlier loop stops on every renderer before the new
+    // one is sent, so "replaced" is what they show (the merge left both running). Only a loop animate
+    // will play ends it: one it refuses (no usable track, no dur) leaves the earlier loop playing
+    if (!a.target && mode === "loop" && ag.anims.some((x: any) => x.kind === "track") && validateTracks(a.tracks).accepted.length && Number(a.dur) > 0 && Number.isFinite(Number(a.dur))) ag.endTrackLoop("replaced");
     const r: any = await LEGACY.animate(ag, { tracks: a.tracks, dur: a.dur, loop: mode === "loop", ...(a.replace != null ? { replace: a.replace } : {}), ...(a.target ? { target: a.target } : {}) }, ctx, "animate");
     if (!r.isError && !a.target && mode === "loop") ag.animBegan({ name: "live", mode: "loop", kind: "track" });
     if (!r.isError) r.content[0] = { ...r.content[0], text: `${JSON.stringify({ playing: "live", mode })} — ${r.content[0].text}` };

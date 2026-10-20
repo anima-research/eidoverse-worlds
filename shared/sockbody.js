@@ -425,8 +425,10 @@ export function socketMapIn(entities, host) {
   return Object.keys(out).length ? out : null;
 }
 
-/** One line saying what a body does at a socket, for anyone reading it as text (the agent process's look, the sit reply). */
-export function describeBody(slot, b) {
+/** One line saying what a body does at a socket, for anyone reading it as text (the agent process's look, the sit reply).
+ *  door: the agents' door reads it, so the way off is the door's own (detach, or a move; detach {escape: true} past a
+ *  seat that holds you), not a person's controls (it named X, get up and jump, which no agent has). */
+export function describeBody(slot, b, { door = false } = {}) {
   if (!b) return `${slot}: an attach point (things only)`;
   const pose = typeof b.pose === 'string' ? `holds ${b.pose}`
     : Array.isArray(b.pose?.clips) ? `blends ${b.pose.clips.map((r) => r[1]).join('/')} by ${[].concat(b.pose.by).join('+')}`
@@ -437,7 +439,8 @@ export function describeBody(slot, b) {
   if (b.input.move === 'drive') bits.push('drives it (movement is throttle/steer)'); else if (b.input.move === 'walk') bits.push('movement shapes your pose');
   if (b.input.look === 'locked') bits.push('view locked forward'); else if (b.look.limited) bits.push(`head turns ${b.look.yaw[0]}…${b.look.yaw[1]}°`);
   if (b.enter || b.approach) bits.push(`gets on${b.approach ? ' from its approach point' : ''}${b.enter ? ` with ${b.enter}` : ''}`);
-  bits.push(b.leaveBy === 'script' ? 'lets you go when the world does (hold X to get up anyway)' : b.leaveBy === 'menu' ? 'get up explicitly to leave' : b.leaveBy === 'jump' ? 'jump or get up to leave' : 'walk or get up to leave');
+  if (door) bits.push(b.leaveBy === 'script' ? 'lets you go when the world does (detach {escape: true} gets you up anyway)' : 'detach, or a move, gets you off');
+  else bits.push(b.leaveBy === 'script' ? 'lets you go when the world does (hold X to get up anyway)' : b.leaveBy === 'menu' ? 'get up explicitly to leave' : b.leaveBy === 'jump' ? 'jump or get up to leave' : 'walk or get up to leave');
   if (b.fromSeat) bits.push('you can move here from another seat');
   if (b.who) bits.push(`${b.who}s only`);
   return `${slot}: ${b.action} (${bits.join('; ')})`;

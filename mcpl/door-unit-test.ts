@@ -66,4 +66,26 @@ for (const why of ["superseded by a newer walk or a stop", "no route: the way th
   const out: any = await handleTool({ agent: ag } as any, "anim", { tracks: { hips: [{ t: 0, q: [0, 0, 0, 1] }], notABone: [{ t: 0, q: [0, 0, 0, 1] }] }, mode: "hold" });
   ok(!out.isError && /notABone/.test(out.content[0].text), "a held frame names the bone it left out", out.content[0].text); }
 
+// a new tracks loop stops the earlier one before it's sent; a loop animate refuses leaves it playing
+for (const dur of [2, undefined]) {
+  const calls: string[] = [];
+  const ag: any = { anims: [{ name: "live", kind: "track" }], endTrackLoop: (why: string) => calls.push(`end:${why}`), animate: () => calls.push("animate"),
+    animBegan: () => calls.push("began") };
+  await handleTool({ agent: ag } as any, "anim", { tracks: { hips: [{ t: 0, q: [0, 0, 0, 1] }, { t: 1, q: [0, 0, 0, 1] }] }, mode: "loop", dur });
+  ok(dur ? calls.join(",") === "end:replaced,animate,began" : !calls.includes("end:replaced"),
+    dur ? "a new loop ends the earlier one first, then plays" : "a loop refused for want of dur leaves the earlier one playing", calls);
+}
+
+// attach on a thing with no seat teaches a whole edit call, id and set
+{ const ag: any = { socketRec: () => null, thingRef: () => ({ id: "crate-0a1b2c3d" }), foldRecord: () => ({}), socketsOf: () => [], mounts: new Map(),
+    myOccupancy: null, name: "me", handle: (id: string) => id.slice(0, 10) };
+  const out: any = await handleTool({ agent: ag } as any, "attach", { to: "crate" });
+  ok(out.isError && out.content[0].text.includes(`edit {id: "crate-0a1b", set: {"sockets.seat|pos|1": 0.5}}`), "attach's no-seat refusal gives the whole edit call", out.content[0].text); }
+
+// the door's seat lines name the door's way off, not a person's X, get up or jump
+{ const { describeBody, bodyOf } = await import("../shared/sockbody.js");
+  const script = describeBody("seat", bodyOf({ leaveBy: "script" }), { door: true }), any = describeBody("seat", bodyOf({}), { door: true });
+  ok(/detach \{escape: true\}/.test(script) && !/hold X|get up|jump/.test(script + any) && /detach, or a move/.test(any), "the door's seat lines say detach", [script, any]);
+  ok(/hold X/.test(describeBody("seat", bodyOf({ leaveBy: "script" }))), "a person's still says hold X (the control)"); }
+
 console.log(`door-unit-test: ${fails ? `${fails} failed` : "all ok"}`); process.exit(fails ? 1 : 0);
