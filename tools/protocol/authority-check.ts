@@ -1409,13 +1409,13 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const changes = openWorld(root, name).entries.slice(n0).filter((e) => e.kind === "change").length;
   ok(changes === 0, "BT3 neither refused batch wrote a change", changes); }
 
-// ---- RA (review of #260, spec I1): a log changed outside the purge rule refuses writes, but not the operator's or a read ----
+// ---- RA (review of #260): a log changed outside the purge rule refuses writes, but not the operator's or a read ----
 { const name = "altered"; const file = `${root}worlds/${name}.jsonl`;
   const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
   const opr = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return operatorRepair(openWorld(root, name), actor, verb, args); };
   call("olive", "create-world", { title: "altered" }); call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "owner" } });
   call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "visitor" } });
-  // strip the demotion's value to a commit, with no purge: as a copy of the log changed by hand would hold it
+  // strip the roles: value to a commit, with no purge: as a copy of the log changed by hand would hold it
   const lines = fs.readFileSync(file, "utf8").split("\n"); const k = lines.findLastIndex((l) => l.includes('"roles:bob"') && l.includes('"kind":"change"'));
   const e = JSON.parse(lines[k]); const { value, salt, ...rest } = e.body; e.body = { ...rest, commit: "0".repeat(64) }; lines[k] = JSON.stringify(e); fs.writeFileSync(file, lines.join("\n"));
   const w = openWorld(root, name); const role = w.state().entities["@world"].c["roles:bob"];
@@ -1423,7 +1423,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const write = call("olive", "create", { model: "crate" }), read = call("olive", "look", {});
   const op = opr("opal", "set", { id: "@world", component: "access", value: { join: "anyone" } });
   ok(role === PURGED && before === PURGED && code(write) === "record-altered" && (write.refused?.seqs ?? []).includes(k) && /line \d+/.test(write.refused?.reason ?? "") && read.ok && op.ok,
-    "RA1 a demotion stripped by hand reads as unknown, not owner; writes are refused record-altered naming the line, reads work, and the operator's own repair goes through", { role, before, write: write.refused, read: read.ok, op: op.ok ?? op.refused, k }); }
+    "RA1 a value stripped to its commit with no purge reads as unknown; writes are refused record-altered naming the line, reads work, and the operator's own repair goes through", { role, before, write: write.refused, read: read.ok, op: op.ok ?? op.refused, k }); }
 // ---- OP: a server operator's recorded repair (review of PR #260, server.ts:742: WORLD_ADMIN entered but could mend nothing).
 // operatorRepair is NARROW (@world's roles/access/default-role/role-defs, unban) and RECORDED (the operator's act, body
 // operator: true; the moderator-log record likewise); the operator's ordinary requests stay what their role here allows.

@@ -468,7 +468,7 @@ function playground(name) {
   ok(restamps(W7c).length === 1 && specOf(W7c).build === EIDOSIM_BUILD, "R7c a build named before a later stamped set doesn't count: restamped", specOf(W7c));
 }
 
-// review of #260 (Jerome-2708 on ew260-proto-r1 I120): an engine name that is an inherited property of the engine table
+// review of #260: an engine name that is an inherited property of the engine table
 // (toString) is no engine this server carries, so it's refused, never written with build null
 { const W = fresh("unknown-inherited-engine"); call(W, "rowan", "create-world", { title: W });
   const r = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "toString" } });

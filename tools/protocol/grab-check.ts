@@ -526,7 +526,7 @@ const cases: Case[] = [
       const n1 = s.entries().length; D.settleOrphans?.(w2, ["ann"]);
       return { acts, again: s.entries().length - n1, kept: !!w2.presence.holds.kept, ball: tf(s, "ball").pos, carrier: carrier(s) }; },
     good: (o) => JSON.stringify(o.acts.sort()) === JSON.stringify(["system:return-held:ball:lift", "system:return-home:torch:lift"]) && o.again === 0 && o.kept && JSON.stringify(o.ball) === "[0,0,0]" && !o.carrier.disagree },
-  // ---------------- RA: a log changed outside the purge rule (review of #260, spec I1): the system's own sweeps still run, but
+  // ---------------- RA: a log changed outside the purge rule (review of #260): the system's own sweeps still run, but
   // a thing whose value the record lost is skipped, never moved from a place or scale derived from nothing ----------------
   { id: "RA2", what: "a stripped transform: returnAfter's sweep leaves the thing where the record lost it", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "visitor", returnAfter: 30 } }, place: { at: [0, 0] } });
