@@ -50,7 +50,8 @@ function bodyGate(w, from, to, kind, extra = {}) {
     if (Object.values(P.asks ?? {}).some((k) => k.from === from && k.to === to)) return result("refused", { ok: false, code: "pending", class: cls, reason: `you already have an ask waiting with ${to}`, fix: "one at a time" });
     for (const [k, t] of Object.entries(P.asked ?? {})) if (now - t.ts >= 60000) delete P.asked[k];   // only ever grew (review 10-14 C2)
     if (Object.values(P.asked ?? {}).filter((t) => t.from === from && now - t.ts < 60000).length >= 2) return result("refused", { ok: false, code: "rate", class: cls, reason: "at most 2 asks a minute", fix: "" });
-    const id = `ask-${now}-${Object.keys(P.asks ?? {}).length}`; (P.asks ??= {})[id] = { id, from, to, kind, cls, spec: extra.spec ?? null, why: extra.why ?? null, expires: now + C.ASK_MS };
+    // a counter that only grows: the live count shrinks as asks are answered or lapse, so it could name a live ask again
+    const id = `ask-${now}-${P.askSeq = (P.askSeq ?? 0) + 1}`; (P.asks ??= {})[id] = { id, from, to, kind, cls, spec: extra.spec ?? null, why: extra.why ?? null, expires: now + C.ASK_MS };
     (P.asked ??= {})[id] = { from, ts: now };
     inboxPush(P, to, { type: "body-ask", ask: { id, from, kind, cls, summary: `${from} asks to ${kind}${extra.spec?.point ? ` (${extra.spec.point})` : ""}`, why: extra.why ?? null, expires: now + C.ASK_MS } });
     return result("asked", { ok: true, asked: true, ask: id }); }

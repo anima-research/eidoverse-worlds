@@ -233,6 +233,17 @@ let tierNobody, perPerson, paused;
   ok(asked?.ok === true && !!shoulder(val, "Uma")?.reach, "RG16 within the minute Val's reach is delivered and the hand relays", asked);
   skew += 61000; const out = shoulder(val, "Uma");
   ok(out && !out.reach, "RG16 past the minute it is stripped: the grant ended with the allowance", out); }
+// RG17: an ask's id names it alone, even when another ask made in the same millisecond was answered first
+{ const wes = person("Wes", "k", [-12, 0, -12]), xa = person("Xa", "l", [-12.6, 0, -12]), yo = person("Yo", "m", [-11.4, 0, -12]), zu = person("Zu", "n", [-12, 0, -11.4]);
+  req(wes, "consent", { set: { class: "touch", tier: "everyone", mode: "ask" } });
+  const t = live.now(); live.now = () => t;
+  const a1 = req(xa, "reach", { who: wes.actorId, point: "shoulder_l" }), a2 = req(yo, "reach", { who: wes.actorId, point: "shoulder_l" });
+  req(wes, "consent", { answer: a1?.ask, yes: false });
+  const a3 = req(zu, "reach", { who: wes.actorId, point: "shoulder_l" });
+  const waiting = (req(wes, "consent", {})?.asks ?? []).map((k) => k.from);
+  live.now = () => wall() + skew;
+  ok(a2?.outcome === "asked" && a3?.outcome === "asked" && a2.ask !== a3.ask && waiting.includes(yo.actorId) && waiting.includes(zu.actorId),
+    "RG17 a new ask doesn't take the id of one still waiting", { a2: a2?.ask, a3: a3?.ask, waiting }); }
 live.now = wall;
 
 let skipped = null; const SKIP = Symbol("skip");
