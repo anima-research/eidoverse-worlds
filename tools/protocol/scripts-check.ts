@@ -844,6 +844,14 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
       return { rs: ["pad1", "pad2", "pad3"].map((id) => st(s, s.call("vic", "use", { id, action: "go" }))) }; },
     good: (o) => JSON.stringify(o.rs) === '["ran","ran","refused consent"]' },
+  { id: "B20b", what: "a script that throws a falsy value (0, \"\", null, undefined, false) fails, and the writes it made first are not kept", run(s) { cast(s);
+      s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
+      const vals = ["0", '""', "null", "undefined", "false"];
+      vals.forEach((x, i) => install(s, "bob", "box", `f${i}`, onUse(`world.set("self", "t/n", ${i + 1}); throw ${x};`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] }));
+      s.call("bob", "set", { id: "box", component: "reactions", value: Object.fromEntries(vals.map((_, i) => [`f${i}`, { kind: "script", script: `f${i}` }])) });
+      const out = vals.map((_, i) => { const r = s.call("vic", "use", { id: "box", action: `f${i}` }); return { st: r.script?.status ?? st(s, r), n: comp(s, "box", "t/n") ?? null }; });
+      return { out }; },
+    good: (o) => o.out.every((x: any) => x.st !== "ran" && x.n === null) },
   { id: "C3b", what: "§3d M4: a pose a sponsor-wide allowance let in stands when the person changes some other part of their table", run(s) { cast(s);
       s.call("bob", "create", { id: "pad1", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "pad1", "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });

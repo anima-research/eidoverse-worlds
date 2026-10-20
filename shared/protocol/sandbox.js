@@ -225,14 +225,14 @@ export function vmRun(text, input, event, L, call, clock = () => performance.now
     ctx.setProp(ctx.global, "__host", fn); fn.dispose();
     const inp = ctx.newString(JSON.stringify(input)); ctx.setProp(ctx.global, "__in", inp); inp.dispose();
     const evalStep = (code, file) => { const r = ctx.evalCode(code, file);
-      if (r.error) { const e = ctx.dump(r.error); r.error.dispose(); return { e }; } const v = ctx.dump(r.value); r.value.dispose(); return { v }; };
-    let r = evalStep(PRELUDE, "prelude.js"); if (r.e) return { fuel, fail: { code: "sandbox", why: `the prelude failed: ${errMsg(r.e)}` } };
+      if (r.error) { const e = ctx.dump(r.error); r.error.dispose(); return { failed: true, e }; } const v = ctx.dump(r.value); r.value.dispose(); return { v }; };   // failed, not e: a script may throw 0, "", null or undefined
+    let r = evalStep(PRELUDE, "prelude.js"); if (r.failed) return { fuel, fail: { code: "sandbox", why: `the prelude failed: ${errMsg(r.e)}` } };
     fuel = 0; vstop = null; deadline = clock() + L.wallMs;
     r = evalStep(text, "eval.js");
-    if (!r.e) r = evalStep(`__deliver(${JSON.stringify(JSON.stringify(event))})`, "deliver.js");
+    if (!r.failed) r = evalStep(`__deliver(${JSON.stringify(JSON.stringify(event))})`, "deliver.js");
     if (clock() > deadline) vstop ??= { code: "time", why: `ran past ${L.wallMs} ms of wall-clock time in one activation; do less in each one, or split the work across activations` };
     if (vstop) return { fuel, fail: vstop };
-    if (r.e) { const m = errMsg(r.e);
+    if (r.failed) { const m = errMsg(r.e);
       const code = /out of memory|string too long|Array too long|invalid array length/i.test(m) ? "memory" : /stack overflow|Maximum call stack/i.test(m) ? "stack" : errName(r.e) === "SyntaxError" ? "syntax" : "thrown";
       return { fuel, fail: { code, why: `${m.slice(0, 300)}${firstLine(r.e)}` } }; }
     return { fuel, ran: r.v };
