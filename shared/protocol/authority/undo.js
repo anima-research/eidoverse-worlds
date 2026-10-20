@@ -157,7 +157,9 @@ function buildUndo(ctx, a, w) {
       if (ob.c.transform === PURGED) { skipped.push({ id, component: "transform", why: "its old value was purged" }); continue; }
       if (now.entities[id]) groups.push([setOp(id, "parent", ob.c.parent), ...(ob.c.transform ? [setOp(id, "transform", ob.c.transform)] : [])]);
       ctx.refs.add(id); continue; }
-    const by = touchedBy(id, whole ? undefined : comp) ?? (comp === "sockets" && !whole ? socketWorkBy(id) : null);
+    // a host's seats are its socket children: work by others on them since stops undoing its `sockets` and its creation alike
+    // (undoing the create would delete a socket someone made on it since)
+    const by = touchedBy(id, whole ? undefined : comp) ?? ((comp === "sockets" && !whole) || o.verb === "create" ? socketWorkBy(id) : null);
     if (by) { skipped.push({ id, component: comp, why: `${said(by)} changed it since`, by }); continue; }
     // undoing a create: what others hung on it since is THEIR work. It stays, let go where it is (round-1 F3), never
     // deleted with it and never left pointing at a thing that's gone

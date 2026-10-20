@@ -1420,6 +1420,15 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const o = txnOutcome(w, from, { threw: true, refused: false, wedgedBefore: before });
   ok(o.outcome === "ambiguous" && o.wedged === true && o.file === undefined, "ST5 a world-log failure while only the moderator log was wedged is ambiguous, and names the world log", { o, threw: String(threw) }); }
 
+// SRU3: undoing a host's creation leaves a socket someone else made under it since: their work, so the undo skips
+{ const name = "sru3";
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  call("olive", "create-world", { title: "sru3" });
+  for (const who of ["ann", "bob"]) call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role: "builder" } });
+  const mk = call("ann", "create", { id: "shelf", model: "crate", place: { at: [2, 2] } });
+  const hook = call("bob", "create", { id: "bobhook", components: { parent: { to: "shelf" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } });
+  const u = call("ann", "undo", {}); const st = openWorld(root, name).state();
+  ok(mk.ok && hook.ok && !!st.entities.bobhook && !!st.entities.shelf, "SRU3 undoing ann's shelf leaves bob's socket on it, and the shelf with it", { mk: mk.ok, hook, u, shelf: !!st.entities.shelf, bobhook: !!st.entities.bobhook }); }
 // F1: a founding the authority refuses leaves no world behind: the name can still be founded, and its founder owns it
 { const name = "refused-founding";
   const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
