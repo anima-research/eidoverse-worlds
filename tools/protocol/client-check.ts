@@ -862,6 +862,16 @@ try {
         const hs = (b) => [...b.querySelectorAll(':scope > .rp-part')].filter((d) => !d.hidden).map((d) => d.querySelector('.rp-h')?.textContent ?? '(untitled)');
         const out = { people: hs(P), worldParts: [...W.querySelectorAll(':scope > .rp-part')].filter((d) => !d.hidden).length, worldTotal: W.querySelectorAll(':scope > .rp-part').length, peopleFilled: [...P.querySelectorAll('.rp-box')].every((b) => b.childElementCount > 0) }; P.remove(); W.remove(); return out;`);
       check("WS4 World Settings: People & roles shows Roles + Who may come in, both filled; World hides 'Carried over' on a fresh world", JSON.stringify(r?.people) === '["Roles","Who may come in"]' && r?.peopleFilled && r?.worldParts === 1 && r?.worldTotal === 2, r); }
+    // A1 (recut A, #260 21:51Z): the authority decides an act on a body for every kind of body, so what arrives APPLIES — a
+    // browser body doesn't decide again. Today the client refused a shove the authority had allowed (it read only the
+    // everyone row, so a friend's allowed shove never landed). With my pushable switch off locally, an arriving shove
+    // still knocks me over; then I get up.
+    { const r = await page(`const C = await import('/lib/consent.js'), L = await import('/lib/localbody.js'), { bus } = await import('/lib/base.js');
+        const was = C.pushable(); C.setPushable(false);
+        bus.emit('puppet', { by: 'pal', ragdoll: { lean: [2, 0, 0] } });
+        await new Promise((ok) => setTimeout(ok, 600)); const down = L.isDowned();
+        L.getUp(); C.setPushable(was); await new Promise((ok) => setTimeout(ok, 400)); return { down, upAfter: !L.isDowned() };`);
+      check("A1 an act the authority delivered applies to my browser body: a shove lands though my local switch is off (one decider)", r?.down === true, r); }
     // CB1 World Settings › Places: empty Bounds fields write NO bounds (they read as 0 and saved a zero box that refused every move, audit 10-09)
     // RK1 (review 10-14 K3): picking a role from the Roles panel keeps the person's exceptions — the set merges when the entry exists
     { const grant = await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder', can: { pauseScripts: true } } })).ok;`);

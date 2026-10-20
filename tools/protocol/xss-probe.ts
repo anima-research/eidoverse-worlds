@@ -95,10 +95,12 @@ try {
       check(`${name}: the hint shows the name as text`, fired && await evalJson(`${hint}.includes(${JSON.stringify(SVG)})`), await evalJson(`document.getElementById('hintbar')?.innerHTML`));
       check(`${name}: …and nothing ran`, await evalJson(clean), await evalJson(`window.__xss`));
     }
-    // a refused drag (the victim switched pushable off): a toast
+    // Until 10-20 the client refused a drag itself and toasted "<by> tried to drag you"; the authority is now the one decider
+    // (#260 recut A1), so with my switch off an arriving grab raises no client refusal at all (S1/S2 already pin the names
+    // the remaining hints show as text).
     await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable?.(false), true)).catch(() => true)`);
-    await emit("bodydrag", { by: SVG, grab: { joint: "hips" } });
-    check("S5 a refused drag toasts the name as text", await waitFor(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes(${JSON.stringify(SVG + " tried to drag you")}))`, 3000));
+    await emit("bodydrag", { by: SVG, grab: { joint: "hips" } }); await sleep(800);
+    check("S5 no client-side refusal toast: the authority decided before it arrived", !(await evalJson(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('tried to drag you'))`)) && await evalJson(clean));
     await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable?.(true), true)).catch(() => true)`);
     // the chat log (a whisper line too, until whisper was removed, R 10-18)
     await evalJson(`import('/lib/chat.js').then((m) => (m.logChat(${JSON.stringify(SVG)}, 'hello ' + ${JSON.stringify(SVG)}), true))`);

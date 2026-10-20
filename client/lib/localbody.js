@@ -554,19 +554,12 @@ export function initLocalBody({ logChat: logChatFn }) {
   bus.on('puppet', ({ by, pose, merge, anim, ragdoll: rag }) => {
     // A ragdoll request runs the sim on MY body — I own it, so I simulate and
     // stream. That is the sync guarantee: the requester never simulates me.
+    // The authority already decided (server/messages.ts puppet: bodyRefusal for shove and pose) — what arrives applies.
     if (rag) {
-      if (!pushable()) {
-        toast(`${by} tried to knock you over — /pushable on to allow`, 'warn', 6000);
-        return;
-      }
       // rag is true (undirected — old wire, old clients) or {lean:[x,y,z]} m/s
       const l = Array.isArray(rag?.lean) && rag.lean.length === 3 && rag.lean.every(Number.isFinite)
         ? _shove.set(rag.lean[0], rag.lean[1], rag.lean[2]) : null;
       applyShove(l, by);
-      return;
-    }
-    if (!posable()) {
-      toast(`${by} tried to pose you — enable it in settings to allow`, 'warn', 6000);
       return;
     }
     // merge: only the bones they sent (null releases one); otherwise their
