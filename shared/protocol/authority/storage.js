@@ -121,6 +121,10 @@ export function worldOf(io) {
     throw new Error(`authority bug: would write a malformed entry (${bad.code} ${bad.detail})`); } };
   w.append = (e, token) => {
     if (e.kind === "change" && token !== CHANGE) throw new Error("authority bug: a change entry must come from changeEntry (§7: one gate)");
+    // §2.4: an authority that doesn't hold the key genesis names would sign lines its own verifier calls forged. Every path
+    // that writes comes here (requests, refusals the authority logs, timers, settles), so this is where it stops
+    if (e.kind !== "genesis" && io.custody?.sign && entries.length && io.custody.sequencer() !== entries[0]?.body?.sequencer)
+      refuse("custody", "this server doesn't hold the key that signs this world's log, so it can't write to it", "only this server's operator can fix this, by restoring the world's signing key or handing the world over to this server; asking again won't change it, and reads still work");
     w.fits(e); const { line, parsed, bad } = render(e, entries.length, true); const seq = entries.length;
     if (bad) throw new Error(`authority bug: would write a malformed entry (${bad.code} ${bad.detail})`); // e.g. the chain fields tipped it over a cap
     durably("log", () => io.writeLine(line));   // on disk first; only then the live chain and fold see it
@@ -146,6 +150,8 @@ export function worldOf(io) {
 // which files were already wedged. A throw that wedged no new file is the old wedge's refusal, before any write: rolled
 // back; one that wedged a file not wedged before is ambiguous, whichever file was wedged first. The MODERATOR log counts too (review r14 M2, 10-18): a ban, mute or kick writes world.mod.jsonl only, so a throw
 // from that durable write is as ambiguous as one from the world log's (its bytes may be on disk; the file is wedged).
+/** whether this authority may write this world: it holds the sequencer key genesis names (or can't sign at all) */
+export const holdsCustody = (w) => !w.custody?.()?.sign || w.custody().sequencer() === w.entries[0]?.body?.sequencer;
 export const anyWedged = (w) => !!(w.wedged?.log || w.wedged?.["moderator log"]);
 export const wedgedOf = (w) => ({ log: !!w.wedged?.log, mod: !!w.wedged?.["moderator log"] });
 export function txnOutcome(w, from, { threw = false, refused = false, wedgedBefore = { log: false, mod: false } } = {}) {

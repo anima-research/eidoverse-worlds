@@ -67,7 +67,18 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const other: any = openLive(path.join(tmp, "worlds", "k"), "k", { now: () => (T += 100), custodyFile: path.join(tmp, "other-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const wr = request(other, me, "set", { id: "@world", component: "about", value: { name: "x", text: "" } });
   ok(!wr.ok && wr.refused?.code === "custody", "K2 an authority that doesn't hold the world's sequencer key refuses to write (it would sign lines the verifier calls forged)", wr.refused);
-  ok(request(other, me, "look", {}).ok, "K3 …but reads still work"); }
+  ok(request(other, me, "look", {}).ok, "K3 …but reads still work");
+  // K4: nothing it does appends a line: not an unknown verb's logged refusal, nor a read's, nor anything after them
+  const n0 = other.entries.length; const uv = request(other, me, "frobnicate", {}); const rd = request(other, me, "look", { id: "nothing-here" });
+  ok(other.entries.length === n0, "K4 an authority without the world's key appends nothing for an unknown verb or a refused read", { appended: other.entries.length - n0, uv: uv?.refused?.code, rd: rd?.refused?.code });
+  // K4b: …and its role sweep, which no request starts, ends quietly rather than throwing: a timed grant has run out, and a
+  // throw there would stop the server's sweep before the worlds after this one
+  const lee = d.resolve({ sub: "human:discord:556", name: "Lee" });
+  const g5 = request(w, me, "set", { id: "@world", component: `roles:${lee}`, value: { role: "builder", until: T + 1000 } }); T += 5000;
+  const other2: any = openLive(path.join(tmp, "worlds", "k"), "k", { now: () => (T += 100), custodyFile: path.join(tmp, "other-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
+  const { expireRoles: expireW } = await import("../../shared/protocol/authority.js"); const n5 = other2.entries.length; let threw: any = null, e5: any;
+  try { e5 = expireW(other2); } catch (x: any) { threw = String(x?.refused?.code ?? x?.code ?? x?.message ?? x); }
+  ok(g5.ok && !threw && other2.entries.length === n5, "K4b its role sweep, with a timed grant run out, returns without appending or throwing", { g5: g5.ok ? "ok" : g5.refused, threw, e5 }); }
 { const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "tw"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
   fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },

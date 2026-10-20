@@ -13,7 +13,7 @@ import { livePoses, digestOf, simCutOf } from "../simlayer.js";
 import { RENAMED_COMPONENTS, renameOps, shapeRepairOps, shapesMarked, SHAPES_VERSION } from "../shaperepair.js";
 import { CTX, UP } from "./ctx.js";
 import { Refusal, refuse, said } from "./refuse.js";
-import { readback, delOp, isE, opsQuiet, setOp, versionSeq } from "./storage.js";
+import { readback, delOp, holdsCustody, isE, opsQuiet, setOp, versionSeq } from "./storage.js";
 import { worldT } from "./math.js";
 import { legacyHosts, liftHostOps, storedLegacyHosts } from "./sockets.js";
 import { creatorOf, isBanned, isScriptActor, lastSetterOf, may, roleOf } from "./rights.js";
@@ -149,7 +149,8 @@ function withAuthority(w, fn) {
  * first (the fallback for a host without a heartbeat) and finds nothing left to do. Returns how many entries it wrote.
  */
 export function settle(w, { maxTicks = 8 } = {}) {
-  if (!w.exists || w.state().status !== "ok") return 0;
+  // without the world's key nothing can be logged (storage's append refuses), so the heartbeat doesn't start what it can't write
+  if (!w.exists || w.state().status !== "ok" || !holdsCustody(w)) return 0;
   return withAuthority(w, () => {
     const clock = w.now; const t0 = clock(); const cap = w.simCapTs?.(maxTicks); const t = cap !== null && cap !== undefined && cap < t0 ? cap : t0;
     w.now = () => t;   // one clock for the pass, as a request has (physlive Q1): a rest's digest and its ts agree
@@ -205,7 +206,7 @@ export function tick(w) {
  *  audit all see when someone's access ended). The host calls it about once a second; between `until` and that write the
  *  grant still stands. → the identities whose grant ended. */
 export function expireRoles(w) {
-  if (!w.exists || w.state().status !== "ok") return [];
+  if (!w.exists || w.state().status !== "ok" || !holdsCustody(w)) return [];
   return withAuthority(w, () => {
     const now = w.now(), wc = w.state().entities["@world"]?.c ?? {};
     const ids = Object.keys(wc).filter((k) => k.startsWith("roles:") && Number.isSafeInteger(wc[k]?.until) && wc[k].until <= now).map((k) => k.slice(6));
