@@ -90,7 +90,8 @@ const EMITTER_NAME = new RegExp(`^[A-Za-z0-9_-]{1,${EMITTER_NAME_MAX}}$`);
 /** Is this component key an emitter? `particles` (the entity's default
  *  emitter) or `particles:<name>` with a well-formed name. A malformed
  *  `particles:…` key is NOT an emitter — it folds like any invented component
- *  and the server lint says why it isn't burning (`emitterKeyProblem`). */
+ *  and the server lint says why it isn't burning (`emitterKeyProblem`). The door
+ *  refuses one longer than 32 characters instead (server/verbs.ts vComp). */
 export function isParticlesKey(type) {
   return type === 'particles'
     || (typeof type === 'string' && type.startsWith('particles:') && EMITTER_NAME.test(type.slice(10)));

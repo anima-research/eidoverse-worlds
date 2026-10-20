@@ -170,7 +170,7 @@ check("a malformed name is not, and the lint can say why",
 check("an emitter name is at most 22 characters, so the whole key fits the 32-character component type",
   isParticlesKey(`particles:${"n".repeat(22)}`) && !isParticlesKey(`particles:${"n".repeat(23)}`)
   && emitterKeyProblem(`particles:${"n".repeat(23)}`)!.includes("1–22"));
-check("`__proto__` is just a name (every host keys emitters by Map, never by plain object)",
+check("`__proto__` is just a name (`particles:__proto__` is an emitter key, and emittersIn lists it)",
   isParticlesKey("particles:__proto__")
   && JSON.stringify(emittersIn(JSON.parse('{"particles:__proto__":{"preset":"fire"}}')).map(([k]) => k)) === '["particles:__proto__"]');
 check("ordinary components are none of its business",
