@@ -580,6 +580,16 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(viewOf("box", { model: "x.glb", transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [3, 3, 3] } }).scale3 === undefined, "S3b a uniform one carries no scale3");
   const eff = effectiveWorldTransform("bench", { entity: (id: string) => (id === "bench" ? rec : undefined), mount: () => undefined } as any, 0);
   ok(eff.ok === true, "S3c the agent's pose reader (mcpl/effective) resolves it: no 'non-finite folded transform'", eff);
+  // what an imported world's translation carried (imported:<name>) fills only a name the record doesn't already hold:
+  // the active component, the derived pose fields and the parent read as they are; a name nothing else holds still shows
+  const imp = viewOf("lamp", { model: "x.glb", transform: { pos: [1, 0, 2], q: [0, 0, 0, 1], scale: [1, 1, 1] }, light: { color: "#fff", intensity: 2 },
+    "imported:light": { flicker: true }, "imported:pos": [9, 9, 9], "imported:yaw": 1, "imported:scale": 7, "imported:parent": { to: "x" }, "imported:sway": { amp: 1 } });
+  ok(JSON.stringify(imp.light) === JSON.stringify({ color: "#fff", intensity: 2 }) && JSON.stringify(imp.pos) === "[1,0,2]" && imp.yaw === 0 && imp.scale === 1 && imp.parent === undefined && imp.sway?.amp === 1,
+    "S3d an imported: value never overwrites the active component or a derived field; one nothing holds still shows", imp);
+  const { viewState } = await import("../../shared/protocol/view.js");
+  const ws = viewState({ entities: { "@world": { c: { sky: { preset: "dusk" }, "imported:sky": { stars: 3 }, "imported:entities": { x: 1 }, "imported:fog": { d: 1 } } } } });
+  ok(JSON.stringify(ws.sky) === JSON.stringify({ preset: "dusk" }) && JSON.stringify(ws.entities) === "{}" && ws.fog?.d === 1,
+    "S3e …nor, on the world, its active sky or the view's own entities; one nothing holds still shows", { sky: ws.sky, entities: ws.entities, fog: ws.fog });
 }
 
 // ---- P: the pivot component (research 52: Roblox's PivotOffset; where it turns and scales from, never moves it) ----

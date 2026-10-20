@@ -80,10 +80,13 @@ export function viewOf(id, c) {
   const p = parentOf(c);
   if (p) rec.parent = { ...p, offset: t.pos.slice(), q: t.q.slice() };
   for (const [k, v] of Object.entries(c)) {
-    if (k === "transform" || k === "parent") continue;
-    if (k.startsWith(IMP)) { rec[idOut(k.slice(IMP.length))] = clone(v); continue; }
+    if (k === "transform" || k === "parent" || k.startsWith(IMP)) continue;
     rec[idOut(k)] = clone(v);
   }
+  // what an imported world's translation carried (imported:<name>) shows under its name only where nothing else does: the
+  // active component (translation splits a component's unknown fields off into imported:<it>), the derived pose fields and
+  // the parent stay as they are
+  for (const [k, v] of Object.entries(c)) if (k.startsWith(IMP)) { const n = idOut(k.slice(IMP.length)); if (!(n in rec) && !DERIVED.has(n) && n !== "parent") rec[n] = clone(v); }
   return rec;
 }
 
@@ -101,8 +104,10 @@ export function viewState(folded, { recentChat = [], chatTotal = 0 } = {}) {
         else if (k.startsWith("roles:")) st.roles[idOut(k.slice(6))] = clone(v);
         else if (k.startsWith(IMP_BANS)) st.bans[idOut(k.slice(IMP_BANS.length))] = clone(v);
         else if (k.startsWith("assets:")) st.assets.push(v && typeof v === "object" && Object.keys(v).length ? clone(v) : idOut(k.slice("assets:".length)));
-        else if (k.startsWith(IMP)) st[idOut(k.slice(IMP.length))] = clone(v);
       }
+      // what translation carried (imported:<name>) fills only a slot nothing else holds, as on a thing (viewOf): never
+      // the world's active sky, terrain, grass or water, nor the view's own fields (entities, roles, bans, assets, chat)
+      for (const [k, v] of Object.entries(c)) if (k.startsWith(IMP)) { const n = idOut(k.slice(IMP.length)); if (st[n] == null) st[n] = clone(v); }
       continue;
     }
     st.entities[idOut(id)] = { ...viewOf(id, c), born: folded.entities[id].born };
