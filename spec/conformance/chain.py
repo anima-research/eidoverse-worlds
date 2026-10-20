@@ -13,7 +13,7 @@
 Usage: python3 chain.py verify LOG.jsonl
 """
 import base64, hashlib, json, os, sys
-from reader import parse_ijson, jcs, Malformed
+from reader import parse_ijson, jcs, Malformed, Reader
 
 ZERO = bytes(32)
 
@@ -94,9 +94,28 @@ def verify(data):
             except Exception:
                 return {"status": "broken", "at": seq, "detail": "bad signature"}
             last = seq
+    # PROTOCOL 12: a purge is the one rule that changes the record, and a purged line verifies by design (its skeleton
+    # is unchanged). So a set value or an act/say/sim body stripped to its commit must be a purge's work: one that no purge
+    # the fold accepts names (none does, or only a refused one, as any aimed at a roles: value) was changed outside it
+    altered = unpurged_stubs(data, entries)
+    if altered:
+        return {"status": "broken", "at": altered[0], "detail": "stripped to its commit, but no purge names it (changed outside the purge rule)"}
     return {"status": "ok" if last is not None else "unchained", "last_signed": last,
             "unsigned_tail": len(entries) - 1 - (last if last is not None else -1), "head": head.hex(),
             "world": world_id}
+
+
+def unpurged_stubs(data, entries):
+    """The seqs holding a value or body stripped to its commit that no purge the fold accepts names, in order."""
+    rd = Reader(); rd.read(data)
+    if rd.status != "ok":
+        return []
+    out = {s for s, c, _ in rd.diag if c == "commit-unpurged"}
+    for seq, e in enumerate(entries):
+        b = e.get("body")
+        if e.get("kind") in ("act", "say", "sim") and isinstance(b, dict) and list(b) == ["commit"] and (seq, None) not in rd.purges:
+            out.add(seq)
+    return sorted(out)
 
 
 def seal(entries, priv, every=1):

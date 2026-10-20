@@ -387,6 +387,8 @@ class Reader:
 
         # -- purge first (L1 Purge: "applied before anything else") --
         purged = self.collect_purges(entries)
+        self.unnamed_stubs(entries, purged)
+        self.purges, self.entries = purged, entries   # for chain.verify: which stubs a purge the fold accepts names
 
         # -- fold change entries in seq order --
         self.world = {"@world": {}}       # GUESS-07: @world live from genesis
@@ -471,6 +473,29 @@ class Reader:
                 purged[(s, k)] = pseq
                 self.d(pseq, "purge", "seq %d%s" % (s, "" if k is None else " op %d" % k))
         return purged
+
+    def unnamed_stubs(self, entries, purged):
+        """PROTOCOL 12: a purge is the one rule that changes the record. A set whose value is stripped to its
+        commit (`commit`, no `value`) is a purge's work; one that no purge the fold accepts names (none does, or
+        only a refused one, as any aimed at a roles: value) was changed outside that rule. It folds as
+        absent(purged), unknown as every purged value is (PROTOCOL 1), never as the value before it, and is
+        diagnosed `commit-unpurged`. The line still shapes, so the code has no `malformed:` prefix."""
+        for seq, e in enumerate(entries):
+            if e is None or e.get("kind") != "change":
+                continue
+            try:
+                self.shape_ops(seq, e, {})      # an entry that shapes nothing is diagnosed by the fold, not here
+            except Malformed:
+                continue
+            batch = e["verb"] == "batch"
+            ops = e["body"]["ops"] if batch else [e["body"]] if e["verb"] == "set" else []
+            for i, op in enumerate(ops):
+                if (batch and op.get("verb") != "set") or "value" in op or "commit" not in op:
+                    continue
+                k = (seq, i if batch else None)
+                if k not in purged:
+                    purged[k] = 0
+                    self.d(seq, "commit-unpurged", "%s.%s" % (op.get("id"), op.get("comp")))
 
     @staticmethod
     def governance_target(e, k):

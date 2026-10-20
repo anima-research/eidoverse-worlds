@@ -99,4 +99,20 @@ check("5e a say purge is a valid purge target, not a diagnostic", rd.status == "
 t2 = copy.deepcopy(es); t2[6]["body"]["text"] = "forged"
 check("5f an altered say is detected", chain.verify(dump(t2))["status"] == "broken", "")
 
+# --- stripping outside the purge rule (PROTOCOL 12: a purge is the one rule that changes the record) ---
+def strip_unnamed(make):
+    t = copy.deepcopy(es); make(t)
+    for e in t: e.pop("head", None); e.pop("sig", None)
+    return chain.verify(dump(chain.seal(t, priv, 2)))   # re-sealed: the heads hold, so only the purge rule can catch it
+r = strip_unnamed(lambda t: chain.purge_line(t[3]))
+check("4k a value stripped to its commit with no purge naming it is detected, though every head verifies", r["status"] == "broken" and r["at"] == 3 and "purge" in r["detail"], r)
+r = strip_unnamed(lambda t: chain.purge_line(t[6]))
+check("4l a say body stripped to its commit with no purge naming it is detected", r["status"] == "broken" and r["at"] == 6, r)
+def roles_stripped(t):
+    t.append({"world": t[1]["world"], "kind": "change", "ts": 2, "actor": "system", "cause": 1, "verb": "set", "body": {"id": "@world", "comp": "roles:u-bbbbbbbbbbbbbbbbbbbb", "value": {"role": "visitor"}}})
+    chain.purge_line(t[-1])
+    t.append({"world": t[1]["world"], "kind": "purge", "ts": 3, "actor": "system", "verb": "purge", "body": {"values": [{"seq": len(t) - 1}]}})
+r = strip_unnamed(roles_stripped)
+check("4m a roles: value stripped, named only by a purge the fold refuses, is detected", r["status"] == "broken" and r["at"] == len(es), r)
+
 print("%d/%d passed" % (passed, passed + failed))
