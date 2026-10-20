@@ -37,6 +37,7 @@ function person(id, key, at) {
   const c = { id, actorId: A(key), world: w, ws: null, lastPose: null, spectator: false, surface: "world", avatar: "", got: [] };
   c.ws = { send: (d) => c.got.push(JSON.parse(d)) };
   w.clients.add(c); people[id] = c;
+  w.log.requestSync(c.actorId, "consent", { switch: "ask" });   // recut A2: the gate's mechanics run against "ask", set explicitly (the default is accept)
   const mv = w.log.requestSync(c.actorId, "move", { to: at }); if (!mv?.ok) console.log("  (debug) move", id, JSON.stringify(mv));   // the authority's body (the reach verb needs one)
   pose(c, { p: at, yaw: 0 });
   return c;
@@ -51,8 +52,9 @@ const tom = person("Tom", "t", [-0.6, 0, 0]);
 const ann = person("Ann", "a", [5, 0, 0]), bob = person("Bob", "b", [5.6, 0, 0]);
 const head0 = w.log.head;
 
-// RG1
-{ const k = sly.got.length, kv = vic.got.length;
+// RG1 (recut A2: one switch per body — the gate's mechanics are tested with Vic's switch set, never by leaning on a default)
+{ const sw = req(vic, "consent", { switch: "refuse" }); ok(sw?.ok, "(RG1 setup) Vic sets her body to refuse", sw);
+  const k = sly.got.length, kv = vic.got.length;
   const out = reachTo(sly, { who: "Vic", point: "chest_front" });
   ok(out && !out.reach, "RG1 a stranger's hand on Vic's chest_front is stripped from the relayed packet", out);
   ok(out && Array.isArray(out.p) && out.p[0] === 0.6 && sly.lastPose && !sly.lastPose.reach, "RG1 …the rest of the pose still relays, and what joiners are handed is stripped too", { out, last: sly.lastPose });
@@ -64,10 +66,10 @@ const head0 = w.log.head;
   ok(!vic.got.slice(kv).some((m) => m.type === "body-inbox" && m.messages.some((x) => x.type === "body")), "RG10 Vic is never told she was touched", vic.got.slice(kv)); }
 
 // RG2
-{ const k = sly.got.length;
+{ req(vic, "consent", { switch: "ask" }); const k = sly.got.length;
   const out = reachTo(sly, { who: "Vic", point: "shoulder_l" });
   const r = refusals(sly, k);
-  ok(out && !out.reach, "RG2 a stranger's hand on Vic's shoulder (Normal: touch ask) is stripped", out);
+  ok(out && !out.reach, "RG2 a stranger's hand on Vic's shoulder (Vic: ask) is stripped", out);
   ok(r.length === 1 && r[0].class === "touch" && /reach/.test(r[0].fix ?? ""), "RG2 …and Sly is told to ask through the reach request", r); }
 
 // RG3

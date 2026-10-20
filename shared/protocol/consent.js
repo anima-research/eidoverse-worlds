@@ -70,8 +70,19 @@ export function tableOf(P, who) { const t = P.consent?.[who]; const pre = PRESET
     paused: !!t?.paused, friendsList: t?.friends ?? [], delegates: t?.delegates ?? [], overrides: t?.over ?? {} }; }
 export const isFriend = (P, a, b) => (P.consent?.[a]?.friends ?? []).includes(b) && (P.consent?.[b]?.friends ?? []).includes(a);
 // What `to`'s table says about `from` doing class `cls` now: { mode: allow | ask | deny, why }
-export function decide(P, from, to, cls, now) {
+// The one switch (recut A2, R 10-20): accept | ask | refuse, and what each means as a decision.
+export const SWITCHES = ["accept", "ask", "refuse"];
+export const DEFAULT_SWITCH = "accept";   // permissive; a world's body-default changes it for people who haven't chosen
+const SWITCH_MODE = { accept: "allow", ask: "ask", refuse: "deny" };
+export function decide(P, from, to, cls, now, worldDefault) {
   const t = tableOf(P, to); cls = classOf(cls);
+  const sw = P.consent?.[to]?.switch; worldDefault ??= P.bodyDefault;   // the authority keeps P.bodyDefault = @world.body-default
+  if (sw !== undefined || worldDefault !== undefined || !P.consent?.[to]?.preset && !P.consent?.[to]?.cells) {
+    const o = t.overrides[from]?.[cls];
+    if (o && (o.until === undefined || o.until > now)) return o.mode === "deny" ? { mode: "deny", why: `${to} said no to ${cls} from ${from}` } : { mode: "allow", why: `${to} allowed ${cls} from ${from}` };
+    const which = sw ?? (SWITCHES.includes(worldDefault) ? worldDefault : DEFAULT_SWITCH);
+    return { mode: SWITCH_MODE[which], why: sw !== undefined ? `${to}'s body is set to ${sw}` : `this world's default for bodies is ${which}` };
+  }
   if (t.paused) return { mode: "deny", why: `${to} has paused (every class is deny, friends included)` };
   const o = t.overrides[from]?.[cls];
   if (o && (o.until === undefined || o.until > now)) return o.mode === "deny" ? { mode: "deny", why: `${to} said no to ${cls} from ${from}` } : { mode: "allow", why: `${to} allowed ${cls} from ${from}`, standing: "allow" };
@@ -96,6 +107,8 @@ export function setConsent(P, actor, a, now) {
   const lists = a.unfriend !== undefined || a.undelegate !== undefined;
   if (!self && lists) return { ok: false, code: "consent", reason: `only ${target} may change who ${target}'s friends and delegates are` };
   if (!self && (opening || !(t.delegates ?? []).includes(actor))) return { ok: false, code: "consent", reason: opening ? `only ${target} may open ${target}'s consent` : `${target} hasn't named you a delegate` };
+  if (a.switch !== undefined && !SWITCHES.includes(a.switch)) return { ok: false, code: "shape", reason: `switch: one of ${SWITCHES.join(", ")}, got ${JSON.stringify(a.switch)}` };
+  if (a.switch !== undefined && !self) return { ok: false, code: "consent", reason: `only ${target} may set ${target}'s body switch` };
   // every argument is checked before any is applied: a refused change changes nothing
   if (a.preset !== undefined && (typeof a.preset !== "string" || !Object.hasOwn(PRESETS, a.preset))) return { ok: false, code: "shape", reason: `no preset '${a.preset}'`, fix: Object.keys(PRESETS).join(", ") };
   if (set && (!CLASSES.includes(set.class) || !MODES.includes(set.mode) || !TIERS.includes(set.tier))) return { ok: false, code: "shape", reason: "set {class, tier: everyone|friends, mode: allow|ask|deny}" };
@@ -111,6 +124,7 @@ export function setConsent(P, actor, a, now) {
   if (a.delegate !== undefined && !isWho(a.delegate)) return { ok: false, code: "shape", reason: "delegate: an identity" };
   if (a.unfriend !== undefined && !isWho(a.unfriend)) return { ok: false, code: "shape", reason: "unfriend: an identity" };
   if (a.undelegate !== undefined && !isWho(a.undelegate)) return { ok: false, code: "shape", reason: "undelegate: an identity" };
+  if (a.switch !== undefined) t.switch = a.switch;
   if (a.preset !== undefined) { t.preset = a.preset; t.cells = bag(); }
   if (set) ((t.cells ??= bag())[set.tier] ??= bag())[set.class] = set.mode;
   if (a.allow !== undefined || a.deny !== undefined) {

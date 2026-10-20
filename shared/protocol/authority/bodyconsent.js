@@ -33,7 +33,7 @@ function noteRefusal(w, from, to, cls, now) { const P = w.presence; (P.refusals 
   if (mine.length >= 5 && new Set(mine.map((r) => r.to)).size >= 3 && !(P.throttle?.[`${from}:${cls}`] > now)) {
     (P.throttle ??= {})[`${from}:${cls}`] = now + 600000; w.appendMod({ actor: "system", verb: "auto-cooldown", who: from, class: cls, minutes: 10, why: `${mine.length} refusals of ${cls} from ${new Set(mine.map((r) => r.to)).size} people in 5 min` }); } }
 // The gate for every act on another body. extra: { cls?, spec?, why?, script?, sponsor? }.
-function bodyGate(w, from, to, kind, extra = {}) {
+function bodyGate(w, from, to, kind, extra = {}) { syncDefault(w);
   const P = w.presence, now = w.now(); to = bodyRef(to); const cls = extra.cls ?? C.KIND_CLASS[kind];
   if (!cls) return { ok: false, code: "shape", reason: `no body kind '${kind}'`, fix: Object.keys(C.KIND_CLASS).join(", ") };
   if (!P.bodies[to]) return { ok: false, code: "not-here", reason: `${to} isn't here` };
@@ -63,7 +63,7 @@ function bodyGate(w, from, to, kind, extra = {}) {
 // `to`'s table says allow (a standing allow included), or when the `reach` verb already admitted this touch (an ask
 // answered yes: P.reaches, which revokeAfter clears when the table closes). A refusal is said to the reacher in the body
 // inbox, and to the target's attempt ring, once per (from, to, cls) per C.REACH_NOTE_MS; `noted` says whether it was now.
-export function reachAdmits(w, from, to, cls, { point = null, limb = null, quiet = false } = {}) {
+export function reachAdmits(w, from, to, cls, { point = null, limb = null, quiet = false } = {}) { syncDefault(w);
   const P = w.presence, now = w.now();
   if (from === to) return { ok: true, consent: "self" };
   if (!C.ENFORCED.includes(cls) || (cls !== "touch" && cls !== "intimate")) return { ok: false, code: "shape", class: cls, reason: `a reach is touch or intimate, not '${cls}'` };
@@ -117,7 +117,9 @@ function deliver(w, from, to, kind, cls, extra, consent) {
 // actor hears body-revoked once (42 §4.6). A pose or drag granted by an ask outlives a later 'ask' cell; only 'deny' ends
 // it. A touch is held to more (r2 holes F3 (c)): its cell moving to anything but allow is a change of mind, and ends it
 // (`before`: reachModes before the change, so a change to some other class leaves a yes standing).
-function revokeAfter(w, to, before = {}) { const P = w.presence, b = P.bodies[to], now = w.now(); if (!b) return [];
+// The world's body-default (accept | ask | refuse), read where a decision is made: absent or unknown = accept.
+function syncDefault(w) { const v = w.state?.()?.entities?.["@world"]?.c?.["body-default"]; if (C.SWITCHES.includes(v)) w.presence.bodyDefault = v; else delete w.presence.bodyDefault; }
+function revokeAfter(w, to, before = {}) { syncDefault(w); const P = w.presence, b = P.bodies[to], now = w.now(); if (!b) return [];
   const ended = []; const end = (actor, sponsor, cls, clear) => { if (decideAs(P, actor, sponsor, to, cls, now).mode !== "deny") return; clear(); ended.push({ actor, class: cls }); inboxPush(P, actor, { type: "body-revoked", by: to, class: cls }); };
   if (b.poseBy) end(b.poseBy, b.poseSponsor, "pose", () => { delete b.pose; delete b.poseBy; delete b.poseSponsor; });
   if (b.draggedBy) end(b.draggedBy, b.dragSponsor, "displace", () => { delete b.draggedBy; delete b.dragSponsor; });
@@ -134,7 +136,7 @@ const BODY_VERBS = {
         deliver(w, k.from, actor, k.kind, k.cls, { spec: k.spec }, "asked"); ringPush(P, { ts: now, from: k.from, to: actor, cls: k.cls, verdict: "allowed (asked)" }); inboxPush(P, k.from, { type: "body-reply", ask: k.id, ok: true, applied: true }); }
       else { coolDown(P, k, now); ringPush(P, { ts: now, from: k.from, to: actor, cls: k.cls, verdict: "refused (asked)" }); inboxPush(P, k.from, { type: "body-reply", ask: k.id, ok: false, why: C.refusalWords(actor, k.cls) }); }
       w.presenceDirty = true; return { ok: true, answered: a.answer, yes: a.yes === true }; }
-    const changing = ["preset", "set", "allow", "deny", "pause", "friend", "delegate", "unfriend", "undelegate"].some((k) => a[k] !== undefined);
+    const changing = ["switch", "preset", "set", "allow", "deny", "pause", "friend", "delegate", "unfriend", "undelegate"].some((k) => a[k] !== undefined);
     if (changing) { const before = reachModes(P, typeof a.of === "string" ? a.of : actor, now); const exw = typeof a.unfriend === "string" ? a.unfriend : typeof a.friend === "string" ? a.friend : null; const ex = exw && exw !== actor ? exw : null; const beforeEx = ex ? reachModes(P, ex, now) : null; const r = C.setConsent(P, actor, a, now); if (!r.ok) refuse(r.code, r.reason, r.fix ?? "a delegate you named may close your table; only you may open it (§5)");
       // friendship is mutual, so an unfriend changes the ex-friend's effective table too: re-check grants on THEIR body (r12 M1)
       const ended = [...revokeAfter(w, r.target, before), ...(ex ? revokeAfter(w, ex, beforeEx) : [])]; w.presenceDirty = true; return { ok: true, recorded: false, of: r.target, ...(ended.length ? { ended } : {}), table: C.tableOf(P, r.target) }; }
