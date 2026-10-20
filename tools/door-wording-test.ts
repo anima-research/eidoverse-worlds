@@ -290,19 +290,27 @@ try {
   check("a model file the parser can't read says so, with what the parser said",
     unparsed.error === "probe's joints and contacts weren't read: the avatar's model file couldn't be read as a model (not a GLB), so calling again won't change that", unparsed.error);
   const strolling = await ask("probe", "contacts", scene(seen("probe", "body.vrm", standing({ clip: "walk" }))));
-  check("a posture whose clip can't be fetched gives the clip library's own words",
-    strolling.error === "probe's joints and contacts weren't read: posture clip walk: HTTP 404", strolling.error);
+  check("a posture whose clip can't be loaded says which, with the clip library's own words",
+    strolling.error === "probe's joints and contacts weren't read: the walk animation couldn't be loaded (posture clip walk: HTTP 404)", strolling.error);
+  let stroller = seen("stroller", "body.vrm", standing({ clip: "walk" }));
+  // read() takes its first observation before its first await, so this posture changes while the skeleton loads
+  const strolled = new BodyStateReader(worldBase).read("stroller", "contacts", undefined, (id: string) => id === "stroller" ? stroller : null);
+  stroller = { ...stroller, pose: standing() };
+  const restood = await strolled;
+  check("...and one whose posture changed while that clip failed to load says to read again",
+    restood.error === "body changed or left while its skeleton loaded; read again", restood.error);
   // a download that fails partway, after the server has answered
   const realFetch = globalThis.fetch;
+  let sent = 0;   // the body's first bytes arrive, then the stream fails
   globalThis.fetch = (async (url: any, init?: any) => String(url).includes("/library/body.vrm")
-    ? new Response(new ReadableStream({ start(c) { c.error(new Error("the connection dropped")); } }))
+    ? new Response(new ReadableStream({ pull(c) { if (sent++) c.error(new Error("the connection dropped")); else c.enqueue(new Uint8Array(16)); } }))
     : realFetch(url, init)) as typeof fetch;
   const cutShort = await ask("probe", "contacts", probe, undefined, 0, new BodyStateReader(worldBase)).finally(() => { globalThis.fetch = realFetch; });
   check("a model whose download fails partway says the download failed, and why",
     /^probe's joints and contacts weren't read: the avatar's model couldn't be downloaded \(.*the connection dropped.*\)$/.test(cutShort.error ?? ""), cutShort.error);
   const twoOnOne = await ask("probe", "bones", scene(seen("probe", "shared-neck.vrm", standing())));
   const near = (a: number[] | undefined, b: number[] | undefined) => !!a && !!b && a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
-  check("a model with two bones on one node keeps both, where that node is",
+  check("a model with two bones on one node keeps both, at one place",
     ["neck", "head"].every((n) => Object.hasOwn(twoOnOne.joints ?? {}, n)) && near(twoOnOne.joints?.neck?.position, twoOnOne.joints?.head?.position),
     JSON.stringify({ neck: twoOnOne.joints?.neck?.position, head: twoOnOne.joints?.head?.position }));
   const armless = await ask("probe", "contacts", scene(seen("probe", "one-armed.vrm", standing())));
@@ -402,8 +410,8 @@ try {
     arrived2.reachEvaluation?.leftHand?.why === "c's body can't be read here now (it changed while its skeleton loaded), so this reach can't be checked; later reads check it again", JSON.stringify(arrived2.reachEvaluation));
   // read() takes every body's first observation before its first await, so these change while the skeletons load
   const moving = new Map<string, any>([["a", reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } }, leftHand: { t: { who: "d", point: "shoulder_l" } },
-      rightFoot: { t: { who: "i", point: "shoulder_l" } } })],
-    ["b", facing("b", "body.vrm")], ["d", facing("d", "body.vrm")], ["i", facing("i", "flat.vrm")]]);
+      rightFoot: { t: { who: "i", point: "shoulder_l" } }, leftFoot: { t: { who: "n", point: "shoulder_l" } } })],
+    ["b", facing("b", "body.vrm")], ["d", facing("d", "body.vrm")], ["i", facing("i", "flat.vrm")], ["n", facing("n", "body.vrm", { clip: "walk" })]]);
   const whileLoading = new BodyStateReader(worldBase).read("a", "all", undefined, (id: string) => moving.get(id) ?? null);
   moving.delete("b"); moving.set("d", { ...moving.get("d"), generation: 2 }); moving.delete("i");
   const changing = await whileLoading;
@@ -413,6 +421,8 @@ try {
     changing.reachEvaluation?.leftHand?.why === "d's body can't be read here now (it changed while its skeleton loaded), so this reach can't be checked; later reads check it again", JSON.stringify(changing.reachEvaluation));
   check("...and toward one whose load failed, and that left, says it left rather than what its model's load said",
     changing.reachEvaluation?.rightFoot?.why === "i's body can't be read here now (it left), so this reach can't be checked; later reads check it again", JSON.stringify(changing.reachEvaluation?.rightFoot));
+  check("...while one whose clip couldn't be loaded, and that stayed as it was, gives the clip's reason",
+    changing.reachEvaluation?.leftFoot?.why === "n's body can't be read here, so this reach can't be checked: the walk animation couldn't be loaded (posture clip walk: HTTP 404)", JSON.stringify(changing.reachEvaluation?.leftFoot));
   // ...and the rest of what can change then: the model, the clip, a posture body_state doesn't evaluate, and a body whose load failed
   const shifting = new Map<string, any>([["a", reacher("a", { rightHand: { t: { who: "e", point: "shoulder_l" } }, leftHand: { t: { who: "f", point: "shoulder_l" } },
       rightFoot: { t: { who: "g", point: "shoulder_l" } }, leftFoot: { t: { who: "h", point: "shoulder_l" } } })],
@@ -430,14 +440,17 @@ try {
     shifted.reachEvaluation?.leftFoot?.why === changedWhy("h"), JSON.stringify(shifted.reachEvaluation?.leftFoot));
   // a failed load's cause gives way to a change in the model alone, the generation alone, or the clip alone
   const refailing = new Map<string, any>([["a", reacher("a", { rightHand: { t: { who: "j", point: "shoulder_l" } }, leftHand: { t: { who: "k", point: "shoulder_l" } },
-      rightFoot: { t: { who: "l", point: "shoulder_l" } } })],
-    ["j", facing("j", "flat.vrm")], ["k", facing("k", "flat.vrm")], ["l", facing("l", "body.vrm", { clip: "walk" })]]);
+      rightFoot: { t: { who: "l", point: "shoulder_l" } }, leftFoot: { t: { who: "m", point: "shoulder_l" } } })],
+    ["j", facing("j", "flat.vrm")], ["k", facing("k", "flat.vrm")], ["l", facing("l", "body.vrm", { clip: "walk" })], ["m", facing("m", "body.vrm", { clip: "walk" })]]);
   const whileRefailing = new BodyStateReader(worldBase).read("a", "all", undefined, (id: string) => refailing.get(id) ?? null);
   refailing.set("j", facing("j", "body.vrm")); refailing.set("k", { ...facing("k", "flat.vrm"), generation: 2 }); refailing.set("l", facing("l", "body.vrm"));
+  refailing.set("m", facing("m", "body.vrm", { clip: "kneel" }));
   const refailed = await whileRefailing;
   check("...as one whose model changed after its load failed", refailed.reachEvaluation?.rightHand?.why === changedWhy("j"), JSON.stringify(refailed.reachEvaluation?.rightHand));
   check("...or whose generation did", refailed.reachEvaluation?.leftHand?.why === changedWhy("k"), JSON.stringify(refailed.reachEvaluation?.leftHand));
-  check("...or whose clip did, after its clip couldn't be fetched", refailed.reachEvaluation?.rightFoot?.why === changedWhy("l"), JSON.stringify(refailed.reachEvaluation?.rightFoot));
+  check("...or whose clip did, after its clip couldn't be loaded", refailed.reachEvaluation?.rightFoot?.why === changedWhy("l"), JSON.stringify(refailed.reachEvaluation?.rightFoot));
+  check("...but one that moved to a posture body_state doesn't evaluate names that posture",
+    refailed.reachEvaluation?.leftFoot?.why === `m's body can't be read here now (its posture "kneel" isn't one body_state evaluates), so this reach can't be checked; later reads check it again`, JSON.stringify(refailed.reachEvaluation?.leftFoot));
   const longId = "p".repeat(64);
   const towardLong = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: longId, point: "forearm_l" } } }), facing(longId, "one-armed.vrm")));
   check("a copyable body_state call keeps a long participant id whole",

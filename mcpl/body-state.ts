@@ -288,7 +288,10 @@ export class BodyStateReader {
       let animation = null;
       if (o.pose?.clip !== "ragdoll") {
         // a swimmer is the idle clip under the procedural stroke (shared/swimpose.js), as the browser draws it
-        animation = await this.clips.load(SWIM_CLIPS.includes(o.pose?.clip) ? "idle" : o.pose?.clip ?? "idle");
+        const slot = SWIM_CLIPS.includes(o.pose?.clip) ? "idle" : o.pose?.clip ?? "idle";
+        // The clip library's own words go in parentheses, after which clip it was.
+        animation = await this.clips.load(slot)
+          .catch((e) => { throw new Error(`the ${slot} animation couldn't be loaded (${e instanceof Error ? e.message : String(e)})`); });
       }
       loaded.set(o.who, { observation: o, body, animation, clip: o.pose?.clip ?? "idle", rigKey: rig });
     };
@@ -309,9 +312,10 @@ export class BodyStateReader {
       await Promise.all(Array.from({ length: Math.min(4, deps.size) }, async () => {
         for (let next = pendingBodies.next(); !next.done; next = pendingBodies.next()) {
           const o = next.value;
-          // A posture whose clip can't load is passed over here, with the posture's reason. A limp
-          // body loads no clip, and a body with no sample has no posture yet, so each loads and is
-          // judged after the loads, when its bones or its first sample may have come.
+          // A posture body_state doesn't evaluate has no clip to load, so it's passed over here, with
+          // the posture's reason. A limp body loads no clip, and a body with no sample has no posture
+          // yet, so each loads and is judged after the loads, when its bones or its first sample may
+          // have come.
           if (o.who !== who && o.pose && o.pose.clip !== "ragdoll" && postureUnavailable(o)) { skipped.set(o.who, passedOver(o)); continue; }
           // Bound parallel VRM downloads even when a relation spans a crowd.
           try { await loadBody(o); } catch (e) {
@@ -333,7 +337,9 @@ export class BodyStateReader {
       for (const [id, { observation: was, cause }] of failed) {
         const o = observe(id);
         if (!o) skipped.set(id, "it left");
-        else if (o.generation !== was.generation || o.avatar !== was.avatar || o.pose?.clip !== was.pose?.clip) skipped.set(id, "it changed while its skeleton loaded");
+        else if (o.generation !== was.generation || o.avatar !== was.avatar) skipped.set(id, "it changed while its skeleton loaded");
+        // A new posture body_state doesn't evaluate is named, as for a loaded body.
+        else if (o.pose?.clip !== was.pose?.clip) skipped.set(id, postureUnavailable(o) ? passedOver(o) : "it changed while its skeleton loaded");
         else unloaded.set(id, cause);
       }
       for (const [id, item] of loaded) {
@@ -443,14 +449,14 @@ export class BodyStateReader {
     } catch (e) {
       // Keep the exact published data useful even when the avatar cannot load.
       const latest = observe(who);
-      if (!latest || latest.generation !== initial.generation || latest.avatar !== initial.avatar) {
+      // A load's cause stands only for the body it was loading: its clip as well as its model.
+      if (!latest || latest.generation !== initial.generation || latest.avatar !== initial.avatar || latest.pose?.clip !== initial.pose?.clip) {
         return { ok: false, who, error: "body changed or left while its skeleton loaded; read again" };
       }
       out = base(latest);
       // The load's own cause, not a posture's. The throws above are written
       // to read as a clause after this colon, a model file the parser can't
-      // read among them; the posture clips' own (mcpl/pose-clips.ts) come as
-      // they are thrown.
+      // read and a posture's clip that can't be loaded among them.
       const cause = e instanceof Error ? e.message : String(e);
       const error = `${whose(latest)} joints and contacts weren't read: ${cause}`;
       if (latest.pose?.clip !== "ragdoll") return { ...missingPosture(out, latest, error), detail: cause };
