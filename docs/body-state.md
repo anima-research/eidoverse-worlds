@@ -105,9 +105,10 @@ released limb's current pose. A cycle cannot indefinitely prevent cleanup.
 These commands clear **your outgoing reaches**. Your own knockdown also
 clears your outgoing reaches. Walking, changing posture or falling does not
 revoke somebody else's incoming tracking relation; moving out of reach can
-make contact fail while the relation remains. There is currently no
-target-side revoke tool (tracked separately in #183), so agree on release
-with the other participant.
+make contact fail while the relation remains. The target ends an incoming
+reach by closing their consent to it: `consent {deny: <who>}`,
+or `consent {pause: true}` for everyone. The reach ends then, and its reacher
+hears `body-revoked`.
 
 Examples:
 
