@@ -1123,7 +1123,10 @@ export class WorldAgent {
             // server that never sends this leaves myRights null, which the
             // provider reads as no.
             if (msg.yourRights) this.acceptEffectiveRights(msg.yourRights, "world");
-            this.entities.clear(); this.people.clear(); this.mounts.clear();
+            // a seat rides a body's pose (notePose), so the bodies' seats come back with their next poses
+            this.entities.clear(); this.people.clear(); this.mounts.clear(); this.bodySeats.clear();
+            // who holds what as of this cut: the holds broadcast comes only when they change, so a join reads them here
+            { const h = (msg as any).cut?.holds; this.holdsNow = h && typeof h === "object" ? h : {}; }
             this.bodyReader?.forget();
             this.selfBodyGeneration = ++this.bodyGenerationCounter;
             this.selfObservedAt = Date.now();
@@ -1166,6 +1169,7 @@ export class WorldAgent {
             void this.supportReady(10_000).then(() => { this.feetSettling = false; });
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             this.joined = true; this.redial.reset();
+            if (this.walkGate?.mode === "tracked") this.syncWalkGate(this.walkGate);   // a walk carried across the rejoin
             // my consent table, as a person's client sends it on every arrival (consentsync.js): the server's default preset by
             // name; absent, the server already holds me at that default and refuses in my name (parity sweep 10-14)
             this.request("consent", { preset: DEFAULT_PRESET }).catch(() => { /* the server's default stands */ });
@@ -1604,6 +1608,7 @@ export class WorldAgent {
    *  as having walked away — one exit, one line. */
   private noteLeave(id: string) {
     this.people.delete(id);
+    if (this.bodySeats.delete(id)) this.mounts.delete(id);   // a departed body rides nothing
     this.bodyReader?.forget(id);
     this.lastNear.delete(id);
     this.nearArmed.delete(id);
@@ -2466,8 +2471,10 @@ export class WorldAgent {
   modeTracker = bodyModeTracker();
   get bodyMode() { return this.modeTracker.declared ?? "stand"; }
   set bodyMode(m: string | null) { this.modeTracker.declare(m === "stand" ? null : m); }
+  /** A flight that has come down on its own stays LANDED until something ends it, so only its other phases fly. */
+  private airborne() { return !!this.flight && this.flight.phase !== "GROUND" && this.flight.phase !== "LANDED"; }
   /** The mode this body publishes now: a declaration, else the mover's (fly, swim, stand); on a station, sit. */
-  bodyModeNow() { const m = this.modeTracker.step({ flying: !!this.flight && this.clip !== "ragdoll", swimming: this.clip === "swim" || this.clip === "tread" }); return m === "stand" && this.myOccupancy ? "sit" : m; }
+  bodyModeNow() { const m = this.modeTracker.step({ flying: this.airborne() && this.clip !== "ragdoll", swimming: this.clip === "swim" || this.clip === "tread" }); return m === "stand" && this.myOccupancy ? "sit" : m; }
   /** The clip a sit at rest plays: the last sitting anim's (sitchair keeps the chair's height), else sit. */
   private sitRest = "sit";
   /** A body-mode's own resting anim (R 10-17 16:26): stand → idle, sit → the sit loop, lie → lie, swim → tread, fly →
@@ -2513,8 +2520,11 @@ export class WorldAgent {
     const kinds = new Set(hit.map((a) => a.kind));
     if (which == null || kinds.has("live")) { if (this.heldPose && (which == null || this.heldPoseAuthored)) this.setPose(null); }
     if ((which == null || kinds.has("track")) && this.joined && this.ws?.readyState === 1) this.ws.send(JSON.stringify({ type: "anim", stop: true }));
+    // folding the wings open waits for the bones: a walk (it bumps bodyEpoch) or an anim begun meanwhile keeps its clip
+    const epoch = this.bodyEpoch, before = new Set(this.anims);
     if ((which == null || kinds.has("pose")) && this.wingsFolded) await this.foldWings(false);
-    if (which == null || kinds.has("clip")) {
+    const newer = this.bodyEpoch !== epoch || this.anims.some((a) => !before.has(a));
+    if ((which == null || kinds.has("clip")) && !newer) {
       if (this.clip === "ragdoll") this.setPose(null);   // a slump ends in the rest too (setPose stands it, and stops its sim)
       const rest = this.restClip(this.bodyModeNow()); if (rest) { this.stop(); this.clip = rest; }
     }
@@ -3911,15 +3921,22 @@ export class WorldAgent {
     const gate: WalkGate = { mode: asks ? "sync" : "open", permit: null, busy: false };
     this.walkGate = gate;
     this.walkPlan = { x, z, run, timeoutMs, tolerance, y, near, passable: passIds, replanned };
-    if (asks) void this.trackHere().then((t) => {
+    if (asks) this.syncWalkGate(gate);
+    return new Promise((resolve) => {
+      this.walkDone = resolve;
+      setTimeout(() => { if (this.walkDone === resolve) this.abandonWalk(); }, timeoutMs);
+    });
+  }
+
+  /** Ask the authority where this body stands, and open the walk's gate on its answer: a walk's start, and a rejoin
+   *  (the authority's track of this body ended with the old connection, so a tracked gate has no permit left). */
+  private syncWalkGate(gate: WalkGate) {
+    gate.mode = "sync"; gate.permit = null;
+    void this.trackHere().then((t) => {
       if (this.walkGate !== gate) return;
       if ("open" in t) { gate.mode = "open"; return; }
       if (!t.ok) { this.refuseWalk(t.refused); return; }
       gate.mode = "tracked"; gate.permit = this.trackAt;
-    });
-    return new Promise((resolve) => {
-      this.walkDone = resolve;
-      setTimeout(() => { if (this.walkDone === resolve) this.abandonWalk(); }, timeoutMs);
     });
   }
 
@@ -4498,6 +4515,7 @@ export class WorldAgent {
     try {
       if (hold && far) { g.retrackAt = Date.now(); const m = await this.request("move", { to: here });
         if (this.walkGate === g && m?.ok) { this.trackAt = Array.isArray(m.at) ? m.at : here; g.permit = this.trackAt; } }
+      if (this.walkGate !== g) return;   // the walk ended during the re-track: no punt for a walk that's gone
       r = await this.request("punt", { id, v, contact: true });
     } finally { if (hold) g.hold = Math.max(0, (g.hold ?? 1) - 1); }
     if (!r?.ok) { this.shover.refused(id, Date.now(), r?.refused?.code); if (r?.refused?.code === "unknown-arg") this.shoveOff = true; }
