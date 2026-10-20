@@ -50,6 +50,10 @@ export function socketRules(s, ids) {
   return null;
 }
 
+// what a toggle reaction toggles, and whether an openable thing answers 'open' itself: here, beside the station rules, and read by use.js
+export const toggleOf = (h) => { const comp = h.component ?? "openable"; return { comp, field: h.field ?? (comp === "openable" ? "open" : undefined) }; };   // toggling an openable opens/closes it, named or not (10-07 merge)
+// only a toggle of openable.open itself (toggleOf's own default) stands in for the implicit open: one of its lock doesn't
+export function implicitOpens(e) { return !!(e?.c.openable && typeof e.c.openable === "object") && !Object.values(e.c.reactions ?? {}).some((h) => { if (h?.kind !== "toggle") return false; const { comp: target, field } = toggleOf(h); return target === "openable" && field === "open"; }); }
 /** One action namespace per thing (shape audit 10-16, R's call 3): what `use {id, action}` names must mean one thing. A
  *  reaction key, or a name grabbable.use fires, never equals a station action of the thing's own sockets (several of its
  *  sockets may share one: a sofa's seats all sit). Over the state a write leaves; the hosts the write touches, directly or
@@ -59,13 +63,16 @@ export function actionRules(s, ids) {
   for (const id of ids) { const e = s.entities[id]; if (!e) continue; if (isSocketC(e.c) && e.c.parent?.to) hosts.add(e.c.parent.to); else hosts.add(id); }
   let kids = null;   // the children index, built once and only if a touched host could clash
   for (const h of hosts) { const c = s.entities[h]?.c; if (!c) continue;
-    if (!bag(c.reactions) && !bag(c.grabbable)) continue;
+    if (!bag(c.reactions) && !bag(c.grabbable) && !bag(c.openable)) continue;
     if (!kids) { kids = new Map(); for (const [k, e] of Object.entries(s.entities)) { const to = e.c.parent?.to; if (to && isSocketC(e.c) && bag(e.c.station)) { let a = kids.get(to); if (!a) kids.set(to, (a = [])); a.push(k); } } }
     const seats = new Map();
     for (const k of kids.get(h) ?? []) seats.set(s.entities[k].c.station.action ?? "sit", k);
     if (!seats.size) continue;
     for (const act of bag(c.reactions) ? Object.keys(c.reactions) : []) if (seats.has(act))
       return { code: "action-taken", reason: `${h}: '${act}' is both a reaction and what its socket ${seats.get(act)}'s station does: use {id, action: '${act}'} would mean two things`, fix: `name the reaction something else, or give the station another action`, taken: seats.get(act) };
+    // an openable host that answers 'open' itself (implicitOpens), so a station can't take that name either
+    if (seats.has("open") && implicitOpens(s.entities[h]))
+      return { code: "action-taken", reason: `${h} is openable, so 'open' opens and shuts it, and its socket ${seats.get("open")}'s station does 'open' too: use {id, action: 'open'} would mean two things`, fix: "give the station another action", taken: seats.get("open") };
     const u = bag(c.grabbable) ? c.grabbable.use : undefined;
     for (const act of typeof u === "string" ? [u] : bag(u) ? [u.down, u.up].filter((x) => typeof x === "string") : []) if (seats.has(act))
       return { code: "action-taken", reason: `${h}.grabbable.use names '${act}', which is what its socket ${seats.get(act)}'s station does: use while held fires a reaction`, fix: `name a reaction of ${h} (its reactions keys), not a station's action`, taken: seats.get(act) }; }
@@ -74,10 +81,10 @@ export function actionRules(s, ids) {
 
 /** A host's sockets, in its children's order: [{id, name, sock, host}]. A socket switched off on its own is a closed seat:
  *  not listed. */
-export function socketsOf(st, host) {
+export function socketsOf(st, host, { off = false } = {}) {   // off: switched-off ones too (they're still its sockets to delete or undo)
   if (!st.entities[host]) return [];
   const out = [];
-  for (const k of kidsMap(st).get(host) ?? []) { const c = st.entities[k]?.c; if (isSocketC(c) && c.disabled !== true) out.push({ id: k, name: c.socket.name, sock: c.socket, station: bag(c.station) ? c.station : null, host }); }
+  for (const k of kidsMap(st).get(host) ?? []) { const c = st.entities[k]?.c; if (isSocketC(c) && (off || c.disabled !== true)) out.push({ id: k, name: c.socket.name, sock: c.socket, station: bag(c.station) ? c.station : null, host }); }
   return out;
 }
 /** Every socket in the world, as socketsOf lists them. */
@@ -229,7 +236,8 @@ export function liftOps(st, ops, ever = new Set()) {
   }
   // a catalogue model that declares seats: they are made as children ("the log holds every number"), once
   for (const h of models) { const e = s.entities[h]; const ms = modelOf(e?.c.model)?.sockets;
-    if (!bag(ms) || bag(e.c.sockets) || kidsOf(h).some((k) => isSocketC(s.entities[k].c))) continue;
+    // never one of its seats made before: a seat someone deleted stays deleted, as the load-time lift (modelSeatsDue) reads it
+    if (!bag(ms) || bag(e.c.sockets) || kidsOf(h).some((k) => isSocketC(s.entities[k].c)) || Object.keys(ms).some((n) => ever.has(socketId(h, n)))) continue;
     L.stored(true); const made = liftHost(h, ms, { stored: false }); L.stored(false); notes.push({ legacy: "model sockets", id: h, wrote: made, why: `its model declares ${Object.keys(made).join(", ")}: made as socket children` }); }
   return { ops: out, notes };
 }

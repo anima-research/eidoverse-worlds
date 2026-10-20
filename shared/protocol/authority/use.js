@@ -12,7 +12,7 @@ import { UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
 import { delOp, isE, lockedC, setOp } from "./storage.js";
 import { aabb, ancestors, qrot, worldT } from "./math.js";
-import { isSocketC, socketsOf } from "./sockets.js";
+import { implicitOpens, isSocketC, socketsOf, toggleOf } from "./sockets.js";
 import { rankOf, whoRank } from "./rights.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
@@ -155,7 +155,6 @@ function buildUse(ctx, a) {
 const objOf = (v) => (v && typeof v === "object" && !Array.isArray(v) && v !== PURGED ? v : {});
 // toggle's defaults: an openable's `open` (component `openable`, field `open`); a named component with no field toggles
 // the whole value (a plain boolean component). `unless` names a field of the same component that, when true, bars it.
-const toggleOf = (h) => { const comp = h.component ?? "openable"; return { comp, field: h.field ?? (comp === "openable" ? "open" : undefined) }; };   // toggling an openable opens/closes it, named or not (10-07 merge)
 const barredBy = (e, h) => !!h?.unless && objOf(e.c[toggleOf(h).comp])[h.unless] === true;
 // the sockets a person can attach to: a host's (socketsOf), or a socket's own when it is the one asked
 const bodySockets = (st, id) => { const e = st.entities[id]; const host = isSocketC(e?.c) ? e.c.parent?.to : id;
@@ -163,8 +162,6 @@ const bodySockets = (st, id) => { const e = st.entities[id]; const host = isSock
 // an openable thing with nothing that opens it offers 'open' on its own: the implicit toggle of openable.open (R 10-11
 // 23:17: the gym door had only `openable`; clicking it did nothing, and inspect said "nothing here opens it")
 const IMPLICIT_OPEN = Object.freeze({ kind: "toggle", component: "openable", field: "open" });
-// only a toggle of openable.open itself (toggleOf's own default) stands in for the implicit open: one of its lock doesn't
-function implicitOpens(e) { return !!(e?.c.openable && typeof e.c.openable === "object") && !Object.values(e.c.reactions ?? {}).some((h) => { if (h?.kind !== "toggle") return false; const { comp: target, field } = toggleOf(h); return target === "openable" && field === "open"; }); }
 function handlerOf(e, action) { return e?.c.reactions?.[action] ?? (action === "open" && implicitOpens(e) ? IMPLICIT_OPEN : undefined); }
 function actionsOf(st, id) {
   const e = st.entities[id];

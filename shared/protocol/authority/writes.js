@@ -289,7 +289,7 @@ function buildDelete(ctx, a) {
       return [delOp(a.id, "parent"), setOp(a.id, "transform", { ...wt, pos: wt.pos.map(r3) })];
     }
     // the old spelling's `delete sockets` still means "its sockets" (the door deletes its socket children)
-    if (!(a.component in e.c) && !(a.component === "sockets" && socketsOf(ctx.st, a.id).some((x) => x.id))) refuse("not-found", `${a.id} has no ${a.component}`, `it has: ${Object.keys(e.c).join(", ")}`);
+    if (!(a.component in e.c) && !(a.component === "sockets" && socketsOf(ctx.st, a.id, { off: true }).some((x) => x.id))) refuse("not-found", `${a.id} has no ${a.component}`, `it has: ${Object.keys(e.c).join(", ")}`);
     ctx.refs.add(a.id);
     return [delOp(a.id, a.component)];
   }

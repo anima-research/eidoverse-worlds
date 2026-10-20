@@ -171,7 +171,7 @@ function buildUndo(ctx, a, w) {
     else { const old = before(id)?.c[comp];
       if (old === PURGED) { skipped.push({ id, component: comp, why: "its old value was purged" }); continue; }
       // (sockets: a host's socket children stand for the map it held before the cut; their delete is translated at the door)
-      if (old === undefined) { if (now.entities[id] && (comp in now.entities[id].c || (comp === "sockets" && socketsOf(now, id).some((x) => x.id)))) groups.push([delOp(id, comp)]); }
+      if (old === undefined) { if (now.entities[id] && (comp in now.entities[id].c || (comp === "sockets" && socketsOf(now, id, { off: true }).some((x) => x.id)))) groups.push([delOp(id, comp)]); }
       else if (now.entities[id]) {
         if (!refRestore(o)) groups.push([setOp(id, comp, old)]);
         // a follow-up restore names what this undo brings back; a reference to anything else gone since stays cleared (holes r10 L1:

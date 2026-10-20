@@ -808,6 +808,20 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   { const seen = R("bob", "inspect", { id: "throne" }); ok(!(seen.canDo ?? []).includes("sit") && (seen.notForYou ?? []).some((x) => x.action === "sit"), "SK3b …and inspect doesn't offer the builder that seat: it's under notForYou (review of #260)", { canDo: seen.canDo, notForYou: seen.notForYou }); }
   R("ann", "create", { id: "bench", model: "crate", components: { sockets: { a: { pos: [-0.3, 0.5, 0], body: { who: "owner" } }, b: { pos: [0.3, 0.5, 0], body: {} } } } });
   { const seen = R("bob", "inspect", { id: "bench" }); ok((seen.canDo ?? []).includes("sit") && !(seen.notForYou ?? []).some((x) => x.action === "sit"), "SK3c …but a bench with an owner's seat and an open one offers the builder 'sit', as use would seat them on the open one", { canDo: seen.canDo, notForYou: seen.notForYou }); }
+  // review of #260: a host whose sockets are all switched off still has them, to delete
+  { R("ann", "create", { id: "stool", model: "crate" }); const mk = R("ann", "create", { id: "stool-seat", components: { parent: { to: "stool" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "top" } } });
+    const off = R("ann", "set", { id: "stool-seat", component: "disabled", value: true }); const del = R("ann", "delete", { id: "stool", component: "sockets" });
+    ok(mk.ok && off.ok && del.ok && !openWorld(root, "sockets").state().entities["stool-seat"], "SK5 delete sockets on a host whose only socket is switched off deletes it, not 'has no sockets'", { mk: mk.ok ?? mk.refused, off: off.ok, del: del.ok ?? del.refused }); }
+  { R("ann", "create", { id: "cab", model: "crate", components: { openable: { open: false } } });
+    const st = R("ann", "create", { id: "cab-seat", components: { parent: { to: "cab" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "in" }, station: { action: "open" } } });
+    ok(st.refused?.code === "action-taken", "SK6 a station named 'open' on an openable host is refused: 'open' is the host's own (review of #260)", st.refused ?? st.ok);
+    R("ann", "create", { id: "gate", model: "crate", components: { openable: { open: false }, reactions: { swing: { kind: "toggle", component: "openable", field: "open" } } } });
+    const st2 = R("ann", "create", { id: "gate-seat", components: { parent: { to: "gate" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "in" }, station: { action: "open" } } });
+    ok(st2.ok, "SK6b …but where the host's opening is named something else (swing), 'open' is free for the station", st2.refused ?? st2.ok); }
+  { R("ann", "create", { id: "chair2", model: "chair" }); const seat = Object.keys(openWorld(root, "sockets").state().entities).find((k) => openWorld(root, "sockets").state().entities[k].c.parent?.to === "chair2");
+    const del = R("ann", "delete", { id: seat }); const again = R("ann", "set", { id: "chair2", component: "model", value: "chair" });
+    const back = Object.values(openWorld(root, "sockets").state().entities).some((e) => e.c.parent?.to === "chair2" && e.c.socket);
+    ok(!!seat && del.ok && again.ok && !back, "SK7 a chair's seat someone deleted isn't made again by the next write of its model (review of #260)", { seat, del: del.ok ?? del.refused, again: again.ok ?? again.refused, back }); }
   const bad = (v) => R("ann", "set", { id: "horse", component: "sockets", value: v }).refused?.code;
   ok(bad({ s: { pos: [0, 1, 0], pose: "sit" } }) === "schema", "SK4 a socket's pose lives in body (an unknown socket key is refused, with a did-you-mean)");
   ok(bad({ s: { pos: [0, 1, 0], body: { action: "Ride Now" } } }) === "shape", "SK4 body.action is a lower-case verb");
