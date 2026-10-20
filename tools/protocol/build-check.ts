@@ -295,6 +295,21 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const up = s.call("bob", "update", { copy: "b", to: v2 });
       return { del: show(del), add: show(add), up: show(up), kept: !!E()[bb], label: E()[bb]?.c.label ?? null }; },
     good: (o) => o.del === "ok" && o.add === "ok" && o.up === "ok" && o.kept && o.label === "mine" },
+  { id: "U4", what: "a resolve that names no conflict, a word other than yours/theirs, or leaves a conflict out is refused rather than silently meaning yours (null is no resolve)", run(s) { cast(s);
+      s.call("bob", "create", { id: "lamp", model: "crate", components: { transform: T0([0, 0, 0]), pivot: { pos: [0, 0, 0] } } });
+      const v1 = s.call("bob", "publish", { from: "lamp", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
+      for (const [id, x] of [["a", 5], ["b", 9]] as const) s.call("bob", "create", { id, from: v1, at: { pos: [x, 0, 5] } });
+      s.call("bob", "set", { id: "a", component: "pivot", value: { pos: [0, 1, 0] }, merge: true });
+      const v2 = s.call("bob", "publish", { from: "a", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
+      s.call("bob", "set", { id: "b", component: "pivot", value: { pos: [0, 2, 0] }, merge: true });
+      const plain = s.call("bob", "update", { copy: "b", to: v2 });
+      const stray = s.call("bob", "update", { copy: "b", to: v2, resolve: { "b.pivot.axis": "theirs" } });
+      const word = s.call("bob", "update", { copy: "b", to: v2, resolve: { "b.pivot.pos": "mine" } });
+      const none = s.call("bob", "update", { copy: "b", to: v2, resolve: null, dry: true });
+      const left = s.call("bob", "update", { copy: "b", to: v2, resolve: {} });
+      const good = s.call("bob", "update", { copy: "b", to: v2, resolve: { "b.pivot.pos": "theirs" } });
+      return { plain: plain?.refused?.code ?? show(plain), stray: stray?.refused?.code ?? show(stray), word: word?.refused?.code ?? show(word), none: none?.refused?.code ?? show(none), left: left?.refused?.code ?? show(left), good: show(good), i: JSON.stringify(s.w().state().entities.b?.c.pivot?.pos) }; },
+    good: (o) => o.plain === "conflicts" && o.stray === "shape" && o.word === "shape" && o.none === "conflicts" && o.left === "shape" && o.good === "ok" && o.i === "[0,1,0]" },
 ];
 
 let pass = 0, fail = 0;
