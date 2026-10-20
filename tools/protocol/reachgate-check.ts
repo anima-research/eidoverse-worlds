@@ -232,6 +232,18 @@ let tierNobody, perPerson, paused;
   ok(att.some((a) => /paused/.test(a.why ?? "")) && att.some((a) => /said no/.test(a.why ?? "")) && att.some((a) => /everyone is deny/.test(a.why ?? "")),
     "RL2 Mo's own attempt ring still records the real cause of each", att.map((a) => a.why)); }
 
+// RG23 (review of #260, server I6): pulling a nail (unpin) and a drag's stream are held to the target's displace consent
+// like the grab is; the agent runtime applies an unpin on the word that the server checked it
+{ req(vic, "consent", { set: { class: "displace", tier: "everyone", mode: "deny" } });
+  const drag = (m) => MESSAGES["bodydrag"]({ c: sly, ws: sly.ws, now: Date.now(), expel: () => {} }, { type: "bodydrag", target: "Vic", ...m });
+  const kv = vic.got.length, ks = sly.got.length;
+  drag({ unpin: { joint: "hand_l" } }); drag({ pose: { p: [0, 1, 0] } });
+  const reached = vic.got.slice(kv).filter((m) => m.type === "bodydrag");
+  ok(reached.length === 0, "RG23 with Vic's displace at deny, Sly's unpin and drag samples never reach her", reached);
+  ok(sly.got.slice(ks).some((m) => m.type === "error"), "RG23 …and Sly is told the unpin was refused", sly.got.slice(ks));
+  drag({ end: true });
+  ok(vic.got.slice(kv).some((m) => m.type === "bodydrag" && m.end != null), "RG23 …an end still goes through", vic.got.slice(kv)); }
+
 // ---- (the clock moves on from here: asks are at most 2 a minute) ----
 // RL3: an ask answered no and an ask nobody answered read the same to the asker, and the same as a refusal
 { req(mo, "consent", { set: { class: "intimate", tier: "everyone", mode: "ask" } });
