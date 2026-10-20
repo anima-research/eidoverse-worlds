@@ -207,7 +207,7 @@ export function followUpsOf(e) {
   return new Set(Array.isArray(f) ? f.filter(Number.isInteger) : []);
 }
 export function shapeOne(verb, b, inner, where) {
-  const allowed = OP_FIELDS[verb]; if (!allowed) bad("verb", `${where} ${JSON.stringify(verb)}`);
+  const allowed = Object.hasOwn(OP_FIELDS, verb) ? OP_FIELDS[verb] : null; if (!allowed) bad("verb", `${where} ${JSON.stringify(verb)}`);   // never an inherited name (`constructor`): review of #260, I118
   const extra = Object.keys(b).filter((k) => !(inner && k === "verb") && !allowed.includes(k));
   if (extra.length) bad("op-field", `${where} ${extra.sort().join(",")}`);
   if (!isEntityId(b.id)) bad("entity-id", `${where} ${JSON.stringify(b.id)}`);
@@ -325,7 +325,8 @@ function purgesOf(ok, d) {
   });
   return out;
 }
-const clone = (v) => (v === null || typeof v !== "object" ? v : JSON.parse(JSON.stringify(v)));
+// PURGED is kept as itself: wireState and the digest tell a purged value from a value by identity (review of #260, I117)
+const clone = (v) => (v === null || typeof v !== "object" || v === PURGED ? v : JSON.parse(JSON.stringify(v)));
 function applyOp(st, seq, op, purgedBy, d) {
   const w = st.entities, { verb, id, comp } = op;
   if (purgedBy !== undefined && verb !== "set") d(seq, "purge-target-not-a-value", id);

@@ -5,7 +5,8 @@
 // @ts-nocheck — lab code, kept as written
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
-import { readLog, fold, digest, worldIdOf, parseLine } from "../../shared/protocol/fold.js";
+import { readLog, fold, digest, worldIdOf, parseLine, cloneState, PURGED } from "../../shared/protocol/fold.js";
+import { carried } from "../../shared/protocol/simlayer.js";
 import { ENGINE, LAB, scratch, controlNote } from "./common.ts";
 import * as AU from "../../shared/protocol/authority.js";
 
@@ -167,6 +168,18 @@ const probes = [
       AU.maintain(w); const s1 = now(text + lines.map((l) => l + "\n").join("")); return { s0, s1, s: s1 }; },
     nowGood: (r) => r.s0.status === "ok" && !!r.s0.entities.chair.c.sockets && r.s1.status === "ok" && !r.s1.entities.chair.c.sockets && Object.values(r.s1.entities).some((e) => e.c.socket?.name === "seat" && e.c.parent?.to === "chair")
       && r.s1.entities[r.s1.entities.cat.c.parent?.to]?.c.socket?.name === "seat" && !("socket" in r.s1.entities.cat.c.parent) },
+  // review of #260 (ew260-proto-r1 I117, I118, I120): regression guards for the fold's copy, its op table and the engine check
+  { id: "R117", src: "ew260 I117", what: "cloneState keeps a purged value the PURGED sentinel (wireState and the digest read it by identity)",
+    base: () => ({ ok: true, v: "(no cloneState in the baseline)" }), held: true,
+    now: () => { const s = now(logOf(st("create", { id: "a" }), st("set", { id: "a", comp: "x", value: 1 }))); s.entities.a.c.x = PURGED; return cloneState(s); },
+    nowGood: (s) => s.entities.a.c.x === PURGED },
+  { id: "R118", src: "ew260 I118", what: "a change whose verb is `constructor` (an inherited name of the op table) is diagnosed, not thrown",
+    base: () => ({ ok: true, v: "(the baseline has no op table)" }), held: true,
+    now: () => now(logOf(st("constructor", { id: "a" }))), nowGood: (s) => s.status === "ok" && codes(s).includes("2:malformed:verb") },
+  { id: "R120", src: "ew260 I120", what: "an engine this build doesn't have, with no build named, isn't carried",
+    base: () => ({ ok: true, v: "(the baseline has no engines)" }), held: true,
+    now: () => ({ unknown: carried({ engine: "no-such-engine" }), toString: carried({ engine: "toString" }) }),
+    nowGood: (r) => r.unknown === false && r.toString === false },
 ];
 
 let bad = 0;

@@ -30,7 +30,7 @@ export const TICK_MS = eidosim.TICK_MS;
 // a sim state advanced by its engine (readers that hold a clone: the replica, the client's flights)
 export const advanceSim = (sim, tick) => eidosim.advanceSim(sim, tick);
 export const tickOf = (sim, ts) => eidosim.tickOf(sim, ts);
-export const carried = (spec) => !!spec && ENGINES[spec.engine]?.build === spec.build;
+export const carried = (spec) => !!spec && Object.hasOwn(ENGINES, spec.engine) && ENGINES[spec.engine].build === spec.build;   // an engine this build has (review of #260, I120: unknown with no build compared undefined === undefined)
 
 // P7: what releases a body (or reseats a collider) is WHICH COMPONENT changed, never which verb carried it.
 const PHYSICAL = new Set(["transform", "parent", "model", "mesh", "physics", "disabled"]);
