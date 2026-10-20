@@ -810,6 +810,12 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const heard = s.call("ann", "scripts", { id: "bell1", script: "bell", test: { on: "use", by: "vic" } });
       return { rs, ann: heard.test?.status, says: heard.test?.says?.[0] }; },
     good: (o) => o.rs.slice(0, 10).every((x: string) => x === "would-run") && o.rs.slice(10).every((x: string) => x === "refused rate") && o.ann === "would-run" && o.says === "the bell tolls for vic (1)" },
+  { id: "U2c", what: "a sandbox that's here but whose runtime didn't load: each script's status says unavailable, as the sandbox line does (review of #260, protocol core I59)",
+    opts: { scripts: SB?.SANDBOX ? { ...SB.SANDBOX, available: () => "its runtime didn't load (a test's stand-in)" } : null }, run(s) { cast(s);
+      if (!SB?.SANDBOX) return { absent: true };
+      bell(s, "bob"); const v = s.call("olive", "scripts", {}); const one = v.scripts?.find((x: any) => x.id === "bell1");
+      return { status: one?.status, why: one?.why, sandbox: v.sandbox }; },
+    good: (o) => o.status === "unavailable" && /runtime didn't load/.test(o.why ?? "") && /^unavailable: /.test(o.sandbox ?? "") },
   // ---------------- E: events ----------------
   { id: "E1", what: "say events: a script that lists `say` hears a visitor's say (and never its own)", run(s) { cast(s);
       s.call("bob", "create", { id: "parrot", model: "crate", place: { at: [0, 0] } });
