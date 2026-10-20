@@ -48,8 +48,15 @@ const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq
 const ANON_EVENTS = new Set(["enter", "leave"]), GRIP_EVENTS = new Set(["grab", "release"]);
 const anonEvent = ({ by: _by, ...rest }) => rest;
 const overBudget = (B, cfg, key, sponsor, cost) => (B.mine >= cfg.rate ? `${key} logged ${B.mine} activations in the last minute; the rate is ${cfg.rate}`
-  : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget} (@world.script-settings.budget)`
+  : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget}, which the world's owner sets in @world.script-settings.budget`
   : B.bySponsor + cost > B.share ? `${said(sponsor)}'s scripts wrote ${B.bySponsor} entries in the last hour; each of the ${B.sponsors} sponsors here gets ${B.share} of the world's ${cfg.budget}` : null);
+// Why a script is paused for failing, with the last failure, since a deterministic one fails the same way when retried
+const pausedWhy = (rt) => `paused after ${rt.fails} failed activations in a row${rt.lastFail ? ` (the last: ${rt.lastFail.code}: ${rt.lastFail.why})` : ""}; ` +
+  "fix what failed, then set the script again; setting the same value only retries, which helps if the cause has passed";
+// Why a script's source can't run: not stored here (a host's missing file, or no blob), unreadable (it fails its name's
+// hash, or won't parse), or not a script's source. Each is fixed the same way.
+const sourceWhy = (blob, unreadable, src) => `${unreadable ? `its source ${src} couldn't be read here` : !blob ? `its source ${src} isn't stored here`
+  : `its source ${src} isn't ${SR.LANG} source`}; upload the source again (upload {text}) and set the reply's src in the script`;
 // One activation. ev = {on, by?, seq?, cause?, dry?, …the event's own fields}. Returns what happened; a refused or failed
 // activation logs NOTHING (its reason goes to the script's console ring and the status view).
 function activate(w, id, name, ev) {
@@ -63,14 +70,14 @@ function activate(w, id, name, ev) {
   if (cfg.run === false) return out("stopped", { why: "@world.script-settings.run is false (the owner's kill permission)" });
   const sp = sponsorOf(w, id, key); if (!sp) return out("not-installed");
   if (isBanned(w, sp.sponsor)) return out("suspended", { why: `suspended: sponsor ${said(sp.sponsor)} is banned (moderator log); nothing ran` });
-  const ver = lastTouch(w, id, key)?.seq; if (!dry && rt.ver !== ver) { rt.ver = ver; rt.fails = 0; } // a re-set (a fix) clears the failure count
-  if (!dry && (rt.fails ?? 0) >= cfg.fails) return out("paused", { why: `paused after ${rt.fails} failed activations in a row; set it again (a fix, or the same value) to retry` });
+  const ver = lastTouch(w, id, key)?.seq; if (!dry && rt.ver !== ver) { rt.ver = ver; rt.fails = 0; rt.lastFail = null; } // a re-set (a fix) clears the failure count
+  if (!dry && (rt.fails ?? 0) >= cfg.fails) return out("paused", { why: pausedWhy(rt) });
   const depth = 1 + (cause !== undefined ? scriptDepth(w, cause) : 0);
   if (depth > cfg.depth) return out("refused", { code: "depth", why: `cascade depth ${depth} > ${cfg.depth}` });
   if (!w.scripts) return out("unavailable", { why: "this server has no script sandbox" });
-  let blob = null; try { blob = w.getBlob(v.src); } catch { /* below */ }
-  const fail = (code, why, logs) => { if (!dry && code !== "unavailable") rt.fails = (rt.fails ?? 0) + 1; return out(code === "unavailable" ? "unavailable" : "failed", { code, why, ...(logs?.length ? { logs } : {}), ...(dry ? {} : { fails: rt.fails }) }); };
-  if (!blob || blob.lang !== SR.LANG || typeof blob.text !== "string") return fail("source", `${id}.${key}.src: no ${SR.LANG} source ${v.src} here`);
+  let blob = null, unreadable = false; try { blob = w.getBlob(v.src); } catch (e) { unreadable = e?.code !== "ENOENT"; }
+  const fail = (code, why, logs) => { if (!dry && code !== "unavailable") { rt.fails = (rt.fails ?? 0) + 1; rt.lastFail = { code, why }; } return out(code === "unavailable" ? "unavailable" : "failed", { code, why, ...(logs?.length ? { logs } : {}), ...(dry ? {} : { fails: rt.fails }) }); };
+  if (!blob || blob.lang !== SR.LANG || typeof blob.text !== "string") return fail("source", sourceWhy(blob, unreadable, v.src));
   const actSeq = w.entries.length, seed = SR.seedOf(w.worldId, actSeq, `${id}/${key}`), now = w.nextTs(); // the clock is frozen at the act's own ts
   if (!dry) { const why = overCpu(w, now, id, key, sp.sponsor, cfg); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
   const B = budgetOf(w, st, now, id, key, sp.sponsor, cfg); // spent already: refused before it costs the authority a run
@@ -438,7 +445,7 @@ function drainScripts(w) {
 // A view, never logged.
 function scriptStatus(w, st, id, name, v) {
   const key = `script:${name}`, sp = sponsorOf(w, id, key), rt = w.presence.scripts?.[rtKey(id, name)], cfg = scriptsCfg(st);
-  let src = null; try { src = w.getBlob(v.src); } catch { /* missing: said below */ }
+  let src = null, unreadable = false; try { src = w.getBlob(v.src); } catch (e) { unreadable = e?.code !== "ENOENT"; }
   const base = { id, script: key, src: v.src, sponsor: sp?.sponsor ?? null, sponsorAt: sp?.sponsorAt ?? null, on: v.on ?? [], ...(v.every ? { every: v.every, always: !!v.always } : {}), scope: v.scope,
     ...(src?.text && SR.looksMinified(src.text) ? { note: "the source looks minified: hard to review" } : {}), last: rt?.console?.slice(-3) ?? [] };
   if (sp && isBanned(w, sp.sponsor)) return { ...base, status: "suspended", why: `sponsor ${said(sp.sponsor)} is banned` };
@@ -446,9 +453,9 @@ function scriptStatus(w, st, id, name, v) {
     return { ...base, status: "paused", why: pb ? `paused by ${said(pb.by)} at seq ${pb.at}` : "paused: true", ...(pb ? { pausedBy: pb.by, pausedAt: pb.at, pausedTs: pb.ts } : {}),
       resume: `set {id: '${id}', component: '${key}', value: {paused: false}, merge: true}` }; }
   if (cfg.run === false) return { ...base, status: "stopped", why: "@world.script-settings.run is false" };
-  if (!src) return { ...base, status: "failed", why: `its source ${v.src} isn't here` };
+  if (!src) return { ...base, status: "failed", why: sourceWhy(src, unreadable, v.src) };
   if (!w.scripts) return { ...base, status: "unavailable", why: "this server has no script sandbox" };
-  if (rt?.fails >= cfg.fails && rt.ver === lastTouch(w, id, key)?.seq) return { ...base, status: "paused", why: `${rt.fails} failed activations in a row; set it again to retry` };
+  if (rt?.fails >= cfg.fails && rt.ver === lastTouch(w, id, key)?.seq) return { ...base, status: "paused", why: pausedWhy(rt) };
   const role = roleOf(st, sp?.sponsor); const lost = [];
   for (const x of scopeIds(st, id, v.scope?.ids)) for (const c of v.scope?.comps ?? []) { if (sp?.sponsor && lacks(w, st, sp.sponsor, { verb: "set", id: x, comp: sampleOf(c) }, null, { viaCap: true })) lost.push(`${x}.${c}`); }
   if (lost.length) { const since = lastSetterOf(w, "@world", `roles:${sp.sponsor}`);
