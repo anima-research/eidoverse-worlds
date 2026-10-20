@@ -48,6 +48,7 @@ import { loadavg, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import { launchBrowser } from "./probe-harness.mjs";
+import { foundWorlds } from "./harness.ts";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -108,7 +109,10 @@ const waitFor = async (what: string, probe: () => Promise<boolean>, ms = 30000) 
 // which can reserve the agent's name for a token this run doesn't have (server/auth.ts), and keeps its relay's
 // incarnation in the checkout's assets/opt (server/server.ts). The asset library stays this machine's: EIDOVERSE_DIR,
 // which the README sets for a world to find it, passes through, as in tools/harness.ts.
-const world = child("world", ["server/server.ts"], { PORT: String(WPORT), WORLDS_DIR: scratch, OPT_DIR: join(scratch, "opt"),
+// The world is founded before it's served: a server never founds one on join (tools/harness.ts foundWorlds). On this
+// private bench a typed name is its account (TRUST_NAMES), so the page's viewer is the world's owner.
+foundWorlds(scratch, ["commons"], "viewer");
+const world = child("world", ["server/server.ts"], { PORT: String(WPORT), WORLDS_DIR: scratch, OPT_DIR: join(scratch, "opt"), TRUST_NAMES: "1",
   AGENT_TOKENS_PATH: tokensPath, SKIP_OPT_SWEEP: "1", WORLD_INSTANCE_NONCE: NONCE,
   ...(process.env.EIDOVERSE_DIR ? { EIDOVERSE_DIR: process.env.EIDOVERSE_DIR } : {}) });
 const door = child("door", ["mcpl/net-server.ts"], { MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,
@@ -125,6 +129,7 @@ const heartbeat = setInterval(() => { const now = Date.now(); if (now - hbLast >
 // nothing, so it isn't allowed.
 const waitedIn = (b: number) => Math.max(0, ...hb.filter(([end]) => Math.abs(b - end) <= 20).map(([, excess]) => excess));
 let browser: { close(): Promise<void> } | null = null;
+const pageLoads: string[] = [], pageSaid: string[] = [], pageBeforeLoad: string[] = [];
 try {
   const launched = await launchBrowser();
   browser = launched.browser;
@@ -148,6 +153,20 @@ try {
   const errs: string[] = [];
   pg.on("pageerror", (e: Error) => errs.push(e.message));
   pg.on("dialog", (d: any) => d.dismiss().catch(() => {}));
+  // Each load of the page, and the last of what it said, for a run that ends early.
+  const said = (line: string) => { pageSaid.push(`${new Date().toISOString().slice(11, 23)}Z ${line.slice(0, 300)}`); if (pageSaid.length > 60) pageSaid.shift(); };
+  pg.on("framenavigated", (f: any) => {
+    if (f !== pg.mainFrame()) return;
+    pageLoads.push(`${new Date().toISOString().slice(11, 19)}Z ${f.url()}`);
+    if (pageLoads.length > 1) { said(`(the page loaded again: ${f.url()})`); pageBeforeLoad.push(...pageSaid); }
+  });
+  // what the page says, less three's and the VRM loader's repeated deprecation notes
+  pg.on("console", (m: any) => { const t = m.text(); if (!/^THREE\.TSL: |^createVRMAnimationClip: /.test(t)) said(t); });
+  pg.on("pageerror", (e: Error) => said(`(error) ${e.message}`));
+  // The sky's "off" tier, a setting a person can choose. On a software renderer the default tier's bake held this
+  // page for 204 s and then lost its GPU context, which reloads the page (client/lib/gpulost.js); the dots don't
+  // depend on the sky.
+  await pg.addInitScript(() => { try { localStorage.setItem("ew-cloud-quality", "off"); } catch { /* opaque origin */ } });
   await pg.goto(`${origin}/?world=commons&name=viewer`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await pg.waitForFunction(() => document.getElementById("splash")?.classList.contains("gone") && !!(globalThis as any).EW?.me?.(),
     null, { timeout: 120000 });
@@ -159,6 +178,7 @@ try {
   const frames: Seen[] = [];
   let sayEntry = null as Seen | null;   // set by the watcher's handler, so not narrowed to null here
   let seen = 0;
+  const names: Record<string, string> = {};
   const watcher = new WebSocket(`ws://127.0.0.1:${WPORT}/ws`);
   await new Promise<void>((res, rej) => {
     const t = setTimeout(() => rej(new Error("watcher join timeout")), 10000);
@@ -167,9 +187,15 @@ try {
       let m: any; try { m = JSON.parse(String(ev.data)); } catch { return; }
       if (m.type === "snapshot") { clearTimeout(t); res(); }
       if (m.type === "typing" && m.id === "claude") frames.push({ t: at, seq });
-      if (m.type === "log" && m.entry?.verb === "say" && m.entry?.actor === "claude") sayEntry ??= { t: at, seq };
+      // a say is a log entry of kind "say" by an opaque actor, whose name the snapshot's cut and each log message carry
+      if (m.type === "snapshot" && m.cut?.names) Object.assign(names, m.cut.names);
+      if (m.type === "log") {
+        if (m.names) Object.assign(names, m.names);
+        if ((m.entries ?? []).some((e: any) => e?.kind === "say" && /^claude$/i.test(String(names[e.actor] ?? e.actor)))) sayEntry ??= { t: at, seq };
+      }
     };
-    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", world: "commons", id: "watcher", avatar: "a.vrm" }));
+    // replica: a world speaks only to clients that fold its log
+    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", world: "commons", id: "watcher", avatar: "a.vrm", replica: true }));
   });
 
   // The host: an MCPL client on the door, as the agent `claude`.
@@ -190,7 +216,7 @@ try {
   const typing = (op: "start" | "stop", channelId = "world:commons") => rpc({ jsonrpc: "2.0", method: "channels/typing", params: { channelId, op } });
   const say = (text: string) => rpc({ jsonrpc: "2.0", id: nextId++, method: "channels/publish",
     params: { channelId: "world:commons", content: [{ type: "text", text }] } });
-  const walk = (x: number) => { const id = nextId++; rpc({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "walk_to", arguments: { x, z: 0 } } }); return id; };
+  const walk = (x: number) => { const id = nextId++; rpc({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "move", arguments: { to: [x, 0] } } }); return id; };
   // Each start this side sends for this world, by its clock, read once it's sent; nextStart() resolves on the
   // next one.
   const starts: number[] = [];
@@ -288,11 +314,15 @@ try {
   // so the bubble is still up for about 15 s after the host's next start opens a window under it.
   const SAY = "Here now. I came over to see the frame you were building by the water, and to ask whether the beams on the east side are meant to meet the deck or to stop just short of it, as the drawing seems to show. If they stop short, I'd like to know how wide the gap is meant to be, and whether the rail along the edge runs on past it or ends at the last post. I can hold the far end while you measure, if that helps, and then we can walk the rest of the frame together.";
   if (2500 + SAY.length * 45 < 22000) throw new Error(`the speech is too short for a 22 s bubble: ${SAY.length} characters`);
+  // A founded world's bounds are x and z -20…20 (shared/protocol/authority/verbs.js, create-world), so the turn's 30 m
+  // walk runs from x = -15 to x = 15, and the agent goes to its start first.
+  const toStart = walk(-15);
+  await waitFor("the walk to the turn's start", async () => responses.has(toStart), 60000);
   const T0 = Date.now();
   sendStart();
   const refresher = setInterval(sendStart, 7000);
   await sleep(9000);
-  const walkId = walk(30);   // a walk the door answers on arrival, about 19 s on
+  const walkId = walk(15);   // a walk the door answers on arrival, about 19 s on
   await sleep(15000);
   const walkPending15 = !responses.has(walkId);
   // The door reads a request only once it has answered the one before (mcpl/net-server.ts), so a speech sent during
@@ -420,7 +450,7 @@ try {
   check("after the bubble, the turn goes on and the dots are drawn again before the host's stop", !!backUp && backAt !== null && backAt < stopAt,
     `bubble last seen at ${lastBubble === null ? "-" : Math.round(lastBubble - T0)} ms, drawn again at ${backAt === null ? "-" : Math.round(backAt - T0)} ms, stop at ${stopAt - T0} ms`);
   const arrived = /^arrived at \((-?\d+(?:\.\d+)?), (-?\d+(?:\.\d+)?)\)/.exec(walkReply?.result?.content?.[0]?.text ?? "");
-  check("the turn's walk arrived within 0.5 m of where it was sent, x = 30", !!arrived && !walkReply.result.isError && Math.hypot(Number(arrived[1]) - 30, Number(arrived[2])) <= 0.5,
+  check("the turn's walk arrived within 0.5 m of where it was sent, x = 15", !!arrived && !walkReply.result.isError && Math.hypot(Number(arrived[1]) - 15, Number(arrived[2])) <= 0.5,
     JSON.stringify(walkReply ?? null).slice(0, 160));
   check("the host's walk back is still under way when it disconnects", backPending, JSON.stringify(responses.get(backWalk) ?? null).slice(0, 160));
 
@@ -432,6 +462,9 @@ try {
 } catch (e) {
   fail++;
   console.log(`FATAL ${(e as Error).message}\n${(e as Error).stack}`);
+  console.log(`--- the page loaded ${pageLoads.length} time(s):\n${pageLoads.join("\n")}`);
+  if (pageBeforeLoad.length) console.log(`--- what it said up to its next load:\n${pageBeforeLoad.join("\n")}`);
+  console.log(`--- what it said last:\n${pageSaid.join("\n")}`);
 } finally {
   clearInterval(heartbeat);
   await browser?.close().catch(() => {});
