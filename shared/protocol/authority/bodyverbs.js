@@ -202,6 +202,9 @@ const EMBODIED_VERBS = {
     // home: the holder's act, then the authority's return (its own act, caused by the release)
     if (g?.release === "return" && g.home) {
       const ret = returnPlan(w, st, a.id, g);
+      // the return is the authority's act, but the put is the holder's settlement: what binds their plain put (the thing's
+      // own lock) binds this one too, so the same ops are admitted as the holder's first
+      if (ret.plan) admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ret.plan.ops);
       if (ret.plan) { rateCheck(w, actor); const act = w.append(actOf(w, actor, "put", a, { ...facts(), release: "return" }));
         const back = returnHome(w, a.id, ret.plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "return", seq: act });
         return { ok: true, act, seq: back.seq, settled: { id: a.id, home: g.home }, handled: h.handled, release: "return", notes: [{ id: a.id, why: "its grabbable.release is return: it went home" }] }; }

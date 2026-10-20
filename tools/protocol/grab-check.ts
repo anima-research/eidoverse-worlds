@@ -645,6 +645,18 @@ const cases: Case[] = [
       const l = s.call("olive", "set", { id: "sign", component: "label", value: "go" });
       return { r: show(r), h: show(h), g: show(g), l: show(l), held: s.w().presence.holds?.flag ?? null, pos: s.w().state().entities.flag?.c.transform?.pos, how: s.w().state().entities.flag?.c["t/how"] ?? null }; },
     good: (o) => o.r === "ok" && o.h === "ok" && o.g === "ok" && o.l === "ok" && o.held === null && JSON.stringify(o.pos) === "[4,0,4]" && o.how === "edited" },
+  { id: "U9", what: "a returning thing's own lock binds its put as it binds a plain one: locked while held, the put is refused, it doesn't go home, and the hand keeps it", run(s) { cast(s);
+      s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "visitor", release: "return" } }, place: { at: [0.3, 0] } });
+      s.call("vic", "move", { to: [0.3, 0, 0.6] }); const g = s.call("vic", "grab", { id: "torch" });
+      const lock = s.call("olive", "set", { id: "torch", component: "lock", value: { rank: "owner" } });
+      const n0 = s.entries().length; const p = s.call("vic", "put", { id: "torch" });
+      const home = s.entries().slice(n0).some((e: any) => e.kind === "act" && e.verb === "return-home");
+      // …as a plain put of a thing locked while held is (the control)
+      s.call("olive", "create", { id: "book2", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [-0.3, 0] } });
+      s.call("vic", "grab", { id: "book2", hand: "left" }); s.call("olive", "set", { id: "book2", component: "lock", value: { rank: "owner" } });
+      const plain = s.call("vic", "put", { id: "book2" });
+      return { g: show(g), lock: show(lock), p: code(p) ?? show(p), home, held: s.w().presence.holds?.torch?.by ?? null, plain: code(plain) ?? show(plain) }; },
+    good: (o) => o.g === "ok" && o.lock === "ok" && o.p === "locked" && !o.home && o.held === "vic" && o.plain === "locked" },
   { id: "U5", what: "the presence tier: a pose carries use {id, hand} while a holder presses (every receiver draws the thing's fx); a malformed use costs only that field", run(s) {
       const a = PC.sanePose({ p: [0, 0, 0], use: { id: "hose", hand: "left" } }); const b = PC.sanePose({ p: [0, 0, 0], use: { id: "hose", n: 3 } }); const c = PC.sanePose({ p: [0, 0, 0], use: "hose" });
       return { a: a?.use ?? null, b: b ? ("use" in b ? b.use : "dropped") : null, c: c ? ("use" in c ? c.use : "dropped") : null }; },
