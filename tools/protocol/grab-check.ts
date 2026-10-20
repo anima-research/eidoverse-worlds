@@ -566,6 +566,25 @@ const cases: Case[] = [
       const sact = s.entries().filter((e: any) => e.kind === "act" && e.actor === "script:ball").at(-1);
       return { how: comp(s, "board", "t/how"), cause: s.entries()[sact?.cause]?.verb, bad: code(bad) }; },
     good: (o) => o.how === "throw" && o.cause === "throw" && o.bad === "shape" },
+  { id: "U6", what: "a refused throw leaves the hold where it was: its release point isn't written before the throw is admitted", run(s) { cast(s, true);
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); const g = s.call("vic", "grab", { id: "ball" });
+      const lock = s.call("olive", "set", { id: "ball", component: "lock", value: { rank: "owner" } });
+      const before = JSON.stringify(s.w().presence.holds?.ball?.pose?.pos ?? null);
+      const t = s.call("vic", "throw", { id: "ball", v: [0, 2, 2], pos: [0.3, 1.2, 0.9] });
+      return { g: show(g), lock: show(lock), t: code(t) ?? show(t), before, after: JSON.stringify(s.w().presence.holds?.ball?.pose?.pos ?? null) }; },
+    good: (o) => o.g === "ok" && o.lock === "ok" && o.t === "locked" && o.before !== "null" && o.after === o.before },
+  { id: "U7", what: "a return its plan refuses (here, its home parent now rides inside it: a loop) is told to the operator once per thing and release, not at every request", run(s) { cast(s);
+      s.call("olive", "create", { id: "tbl", model: "crate", place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "visitor", returnAfter: 30 } }, place: { at: [1, 0] } });
+      const hs = s.call("olive", "set", { id: "ball", component: "home", value: { pos: [0, 0.6, 0], q: [0, 0, 0, 1], parent: { to: "tbl" } } });
+      s.call("vic", "move", { to: [1, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("vic", "move", { to: [0, 0, 3] }, 1000);
+      s.call("vic", "put", { id: "ball" }); const loop = s.call("olive", "set", { id: "tbl", component: "parent", value: { to: "ball" } });
+      const warns: string[] = []; const ow = console.warn; console.warn = (...a: any[]) => { warns.push(a.join(" ")); };
+      try { s.advance(40000); for (let i = 0; i < 4; i++) { s.call("vic", "look", {}); s.advance(5000); } } finally { console.warn = ow; }
+      const mine = warns.filter((w) => /ball is due to go home/.test(w));
+      return { hs: show(hs), loop: show(loop), n: mine.length, line: mine[0] ?? null }; },
+    good: (o) => o.hs === "ok" && o.loop === "ok" && o.n === 1 && /refused/.test(o.line ?? "") },
   { id: "U5", what: "the presence tier: a pose carries use {id, hand} while a holder presses (every receiver draws the thing's fx); a malformed use costs only that field", run(s) {
       const a = PC.sanePose({ p: [0, 0, 0], use: { id: "hose", hand: "left" } }); const b = PC.sanePose({ p: [0, 0, 0], use: { id: "hose", n: 3 } }); const c = PC.sanePose({ p: [0, 0, 0], use: "hose" });
       return { a: a?.use ?? null, b: b ? ("use" in b ? b.use : "dropped") : null, c: c ? ("use" in c ? c.use : "dropped") : null }; },

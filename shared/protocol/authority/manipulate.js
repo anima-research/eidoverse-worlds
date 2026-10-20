@@ -160,13 +160,18 @@ const sameHome = (st, id, home) => { const e = st.entities[id]; const t = e?.c.t
 // moved it, the authority sends it home: the same kind of lazy write as a rest. Once: the return is the last thing that
 // moved it, and a return isn't a release.
 function returnDue(w) {
-  const st = w.state(); const now = w.now(); let sf = null;
+  const st = w.state(); const now = w.now(); let sf = null; let warned = w.returnWarned;
+  if (warned) for (const id of warned.keys()) if (!st.entities[id]) warned.delete(id);   // forget things that are gone
   for (const [id, e] of Object.entries(st.entities)) {
     const v = e.c.grabbable; if (!v || typeof v !== "object" || !(v.returnAfter > 0)) continue;
     const g = grabOf(e.c); if (!g?.home || w.presence.holds[id]) continue;
     if (st.entities["@world"]?.c["physics-engine"]) { sf ??= w.sim(); if (sf.launched[id]) continue; }   // in flight, or its rest isn't logged yet
     const r = lastRelease(w, id); if (!r || now - r.ts < g.returnAfter * 1000 || sameHome(st, id, g.home)) continue;
-    const { plan } = returnPlan(w, w.state(), id, g); if (plan) returnHome(w, id, plan, r.release);
+    const { plan, why } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, r.release); warned?.delete(id); continue; }
+    // refused (as when its home parent now sits inside it): it stays, and is tried again at every request, so the operator is told
+    // once per thing and release, with the reason
+    if ((warned ??= (w.returnWarned ??= new Map())).get(id) !== r.seq) { warned.set(id, r.seq);
+      console.warn(`[authority] ${id} is due to go home (let go at seq ${r.release}) but its return is refused: ${why}; it stays where it is`); }
   }
 }
 // A home is stamped when a grabbable that returns is written without one (its transform and parent then), and an edit
@@ -257,13 +262,15 @@ function launch(w, actor, a, verb, g = null) {
   else h.pose.q = heldQ(w, h);   // let go as it was carried: turned with the body since it was taken (R 10-17 20:54)
   // the rotation is now as of this facing (a refused launch leaves a hold that a later put must not turn twice)
   { const f = facingOf(w, actor); if (f !== null) h.facing = f; else delete h.facing; }
-  if (a.pos !== undefined) h.pose.pos = releasePos(me, a.pos);
+  // the release point is judged before it is written: a refused launch leaves the hold where every client draws it
+  const relPos = a.pos !== undefined ? releasePos(me, a.pos) : h.pose.pos;
   // L7 (33 F3): a launch writes no state now, but it decides a write (its rest). Admit the write it releases, as put
   // does: your role and its locks NOW, rate. The plan is a check only; the rest will be the engine's value.
   { const st = w.state(); const t = worldT(st, a.id);
-    admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: h.pose.pos.map(r3), q: t.q, scale: t.scale })]); }
+    admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: relPos.map(r3), q: t.q, scale: t.scale })]); }
   // one function with the predicting client (launchplan.js): the body it folds is this body, bit for bit
-  const L = planLaunch({ id: a.id, p: h.pose.pos, q: h.pose.q, v: a.v, ...(a.w !== undefined ? { w: a.w } : {}) }, g, ENGINES[spec.engine].maxSpeed, verb); const { v, notes } = L;
+  const L = planLaunch({ id: a.id, p: relPos, q: h.pose.q, v: a.v, ...(a.w !== undefined ? { w: a.w } : {}) }, g, ENGINES[spec.engine].maxSpeed, verb); const { v, notes } = L;
+  h.pose.pos = relPos;   // admitted and planned: the hold now releases from here
   const act = w.append(actOf(w, actor, verb, a, { handled: h.handled }));
   const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: L.p, yaw: qYaw(h.pose.q), ...(ENGINES[spec.engine].rotates ? { q: L.q } : {}), v, ...(a.w !== undefined ? { w: L.w } : {}), handled: h.handled } });
   // R 10-10 evening: what rests on it (a tray's load, or a stack settled onto it) flies too, from where the hand has it,

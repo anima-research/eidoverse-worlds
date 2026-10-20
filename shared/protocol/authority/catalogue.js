@@ -34,7 +34,9 @@ const STRUCT_MAX = 512; const STRUCTGEO = new WeakMap();
 function structGeom(v) {
   if (!v || typeof v !== "object" || Array.isArray(v) || v === PURGED) return undefined;
   if (STRUCTGEO.has(v)) return STRUCTGEO.get(v);
-  let boxes = []; try { boxes = collisionBoxes(v); } catch { boxes = []; }
+  // a building whose boxes can't be derived has no solid geometry here (walked and placed through), so the operator is told,
+  // once per structure value (the result is cached per value just below)
+  let boxes = []; try { boxes = collisionBoxes(v); } catch (e) { boxes = []; console.warn(`[authority] a structure's collision boxes couldn't be derived, so nothing in it is solid here: ${String(e?.message ?? e).slice(0, 200)}`); }
   const ok = (b) => [b.x0, b.y0, b.z0, b.x1, b.y1, b.z1].every(Number.isFinite);
   const lohi = (b) => [[Math.min(b.x0, b.x1), Math.min(b.y0, b.y1), Math.min(b.z0, b.z1)], [Math.max(b.x0, b.x1), Math.max(b.y0, b.y1), Math.max(b.z0, b.z1)]];
   const walls = boxes.filter((b) => ok(b) && b.kind !== "floor").map(lohi);
