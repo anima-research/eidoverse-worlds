@@ -327,6 +327,9 @@ async function presenceRefusal(ag: ToolAgent, t0: number, ms = 700): Promise<str
   while (Date.now() < end) { const r = ag.lastRefusal; if (r && r.ts >= t0) return r.text; await new Promise((res) => setTimeout(res, 25)); }
   return null;
 }
+// a script activation's statuses that mean it ran (or, dry, would run): authority/scriptrun.js activate's out(); anything else
+// (refused, failed, unavailable, paused, stopped, suspended, not-installed) means it didn't
+const SCRIPT_RAN = new Set(["ran", "nothing", "would-run"]);
 const refusedBy = (r: any, what: string) => ({ content: [{ type: "text", text: refusalText(what, r) }], isError: true });
 // R 10-17 (ID HARDENING (5)): every tool argument that names a thing takes its id, its label or a unique id prefix (4+,
 // git-style; look prints each thing's short handle). A label two things share is refused with the candidates — never
@@ -1080,7 +1083,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const named = namedThings(ag, args, THING_KEYS.filter((k) => k !== "to" && k !== "target")); if ("err" in named) return named.err;
       const r = await ag.request(verb, named.args);
       const reply = r ?? { ok: false };
-      return { content: [{ type: "text", text: JSON.stringify(reply, null, 1) }], ...(reply.ok ? {} : { isError: true }) };
+      // a use's own act can stand (ok) while the script it set off didn't run: refused, failed, unavailable, paused… The
+      // reply says which; the tool marks it an error too, so a script that never ran doesn't read as success
+      const scriptFell = reply.ok && reply.script && typeof reply.script === "object" && !SCRIPT_RAN.has(reply.script.status);
+      return { content: [{ type: "text", text: JSON.stringify(reply, null, 1) }], ...(reply.ok && !scriptFell ? {} : { isError: true }) };
   },
   travel: async (ag, a, ctx, name) => {
       // Travel is SESSION machinery — channel epochs, join gates, the
