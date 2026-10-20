@@ -67,11 +67,16 @@ function commit(w, actor, verb, args, build) {
   if (ops.some((o) => o.verb === "delete" && o.comp === undefined)) { const after = scratch(st, ops); const gone = new Set(ops.filter((o) => o.verb === "delete" && o.comp === undefined && !after.entities[o.id]).map((o) => o.id));
     if (gone.size) ops.push(...clearRefsTo({ ...ctx, st: after }, gone)); }
   const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops); ctx.notes.push(...plan.notes);
-  if (args.dry) return { ok: true, dry: true, would: plan.ops, notes: ctx.notes, ...warnOrNot(warnings(plan.after, [...ctx.refs])) };
   // the write's consequences (occupants re-dropped off a host whose shape changed) are planned and admitted HERE, against the
   // state the write leaves, before anything is appended: a refusal refuses the whole request, never half of it (review of
-  // PR #260, followups.js:58: a throw after the commit left a saved edit nobody was sent)
+  // PR #260, followups.js:58: a throw after the commit left a saved edit nobody was sent). A dry run plans them too, and says
+  // what the write would do besides its own ops: who it would stand up, what it would re-drop, and what it would wake
   const settle = planResettle(w, actor, plan.ops, st, plan.after);
+  if (args.dry) { const woke = (ctx.launches ?? []).filter((b) => plan.after.entities[b.id]).map((b) => b.id);
+    return { ok: true, dry: true, would: plan.ops, notes: [...ctx.notes, ...(settle?.note ? [settle.note] : [])],
+      ...(plan.vacate.length ? { vacates: plan.vacate.map((u) => ({ who: u.who, socket: u.socket })) } : {}),
+      ...(settle?.occupants?.length ? { resettles: settle.occupants } : {}), ...(woke.length ? { wakes: woke } : {}),
+      ...warnOrNot(warnings(plan.after, [...ctx.refs])) }; }
   const actE = actOf(w, actor, verb, sent, CTX.operator && CTX.operator === actor && !ctx.cap ? { ...(ctx.actExtra ?? {}), operator: true } : ctx.actExtra);   // an operator's repair says so, in the act
   const changeE = changeShape(plan, w.entries.length, w);
   // what a delete woke (buildDelete: things resting on what it removed as well as on their parent) falls from rest after the

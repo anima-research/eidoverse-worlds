@@ -249,6 +249,13 @@ const cases: Case[] = [
       const m = inbox.find((x: any) => x.type === "vacated") ?? null;
       return { sit: show(sit), occ, pres, mv: show(mv), notes: JSON.stringify(mv.notes ?? []), m, types: inbox.map((x: any) => x.type) }; },
     good: (o) => o.sit === "ok" && !!o.occ && o.pres.includes("occupants") && !o.pres.includes("seats") && o.mv === "ok" && !!o.m && o.m.socket === o.occ && typeof o.m.why === "string" && Array.isArray(o.m.at) && !("seat" in o.m) && !o.types.includes("unseated") && /"vacated":true/.test(o.notes) && /"socket":/.test(o.notes) && !/unseated|"seat":/.test(o.notes) },
+  { id: "O1b", what: "…a dry run of that move says who it would stand up (vacates), and changes nothing: vic stays seated", run(s) {
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "visitor" } });
+      s.call("olive", "create", { id: "chair", model: "chair", components: { sockets: { a: { pos: [0, 0.45, 0], body: { action: "sit" } } } }, place: { at: [4, 0] } });
+      s.call("vic", "move", { to: [4, 0, -0.6] }); const sit = s.call("vic", "use", { id: "chair", action: "sit" }); const occ = s.w().presence.occupants?.vic?.to ?? null;
+      const dry = s.call("olive", "set", { id: "chair", component: "transform", value: { pos: [6, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, dry: true });
+      return { sit: show(sit), occ, dry: show(dry), vacates: dry?.vacates ?? null, still: s.w().presence.occupants?.vic?.to ?? null }; },
+    good: (o) => o.sit === "ok" && !!o.occ && /^ok|dry/.test(o.dry) && JSON.stringify(o.vacates) === JSON.stringify([{ who: "vic", socket: o.occ }]) && o.still === o.occ },
   { id: "O2", what: "…a presence file written before (`seats`) is read as `occupants` and only the new key is kept", run() {
       const w = D.worldOf({ name: "o2", entries: [], getBlob: () => null, putBlob: () => "", now: () => T, writeLine: () => {}, presence: { bodies: {}, holds: {}, seats: { vic: { to: "s1", since: 3 } } }, savePresence: () => {}, scripts: null });
       return { keys: Object.keys(w.presence), occ: w.presence.occupants?.vic?.to ?? null }; },
