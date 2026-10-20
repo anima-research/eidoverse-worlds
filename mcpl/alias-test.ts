@@ -47,7 +47,8 @@ for (const [old, now] of Object.entries(TOOL_ALIASES)) {
   const out: any = await handleTool(ctx, "spawn", { query: "lamp" }); HANDLERS.create = real;
   ok(out.isError && !ran && /nothing ran/.test(out.content[0].text) && !/this ran/.test(out.content[0].text), "a refused alias says nothing ran, and runs nothing", out); }
 // every tool main served is served, aliased, folded or named as removed (world_access and whisper had fallen through)
-const MAIN_TOOLS = "body_state look snapshot walk_to name_place check_model take_off climb_to glide_to land_at rehearse_down rehearse_recover fold_wings unfold_wings flight_status face stop say catch_up activity whisper pose clear_pose emote reach clear_reach posture ragdoll animate set_avatar library_sheet library_preview list_library spawn place light remove worlds travel world_verb measure world_history world_debug kick ban unban list_bans world_access".split(" ");
+// (main's v1 verb tool is an alias, so the alias loop above already drives it)
+const MAIN_TOOLS = "body_state look snapshot walk_to name_place check_model take_off climb_to glide_to land_at rehearse_down rehearse_recover fold_wings unfold_wings flight_status face stop say catch_up activity whisper pose clear_pose emote reach clear_reach posture ragdoll animate set_avatar library_sheet library_preview list_library spawn place light remove worlds travel measure world_history world_debug kick ban unban list_bans world_access".split(" ");
 const lost = MAIN_TOOLS.filter((n) => !HANDLERS[n] && !TOOL_ALIASES[n] && !TOOL_FOLDS[n] && !TOOL_REMOVED[n]);
 ok(lost.length === 0, "every tool main served is served, aliased, folded or named as removed", lost);
 for (const [n, says] of [["world_access", /^world_access folded into a general tool: .*@world.* — nothing ran$/], ["whisper", /^whisper was removed: world chat has no private channel .* — nothing ran$/]] as const) {

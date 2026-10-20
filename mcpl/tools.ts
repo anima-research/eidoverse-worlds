@@ -1158,8 +1158,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!g?.bbox) return fail("no geometry available for that (parsing offline, or a light)");
       const L: string[] = [];
       const s = g.bbox.size;
-      // /geom?lib= answers {lib, ...summary}, with no model
-      L.push(`${a.id ? `[${ag.refName(String(d.id))}] ${d.model ?? ""}` : d.model ?? d.lib} — ${s[0]}×${s[1]}×${s[2]}m, ${g.tris} tris${g.sampled ? " (sampled)" : ""}`);
+      // /geom?lib= answers with no model, so a library model is named by the path asked for
+      L.push(`${a.id ? `[${ag.refName(String(d.id))}] ${d.model ?? ""}` : d.model ?? a.lib} — ${s[0]}×${s[1]}×${s[2]}m, ${g.tris} tris${g.sampled ? " (sampled)" : ""}`);
       if (a.id) L.push(`placed at (${d.pos.map((n: number) => n.toFixed(2)).join(", ")}) yaw ${d.yaw.toFixed(2)}${d.scale !== 1 ? ` scale ${d.scale}` : ""}${d.parent ? ` — mounted on ${d.parent.to}` : ""}`);
       if (g.topSurfaces?.length) {
         L.push(`flat zones (local frame, biggest first) — a center is a socket pos verbatim:`);
