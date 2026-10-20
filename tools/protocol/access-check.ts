@@ -20,6 +20,12 @@
 //       from any other peer the socket's own address is used (a guest can't pick or frame an address)
 //   A14 (10-18 M6) a timed grant whose until has passed is ABSENT on every read, loaded or not: an unloaded world's /access and
 //       /worlds refuse the ex-member before any sweep, and so does the join, while the log still holds the grant
+//   A15 (DESIGN-world-access.md, review 10-17) what a join proves is that join's own credential: a credentialed socket's re-join
+//       under a member's name is refused, with its own token it is still itself, and it files no identity under a typed name
+//   A16 (review 10-17) the review's second bypass, a name lookup that revoked another record, can't arise: a role is addressed
+//       only by the actor's id. Pinned: a role under a bare name is refused, and deleting one member's role leaves a co-owner
+//       an owner and the door closed
+//   A17 (review 10-17) a revoke takes effect: accepted, the member is removed now (4010), can't rejoin, and the log holds it
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -313,5 +319,59 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const m = entryFor({ name: "m1", wc: mem, label: "members" }, { account: "acct-m", actorId: "u-member0000000000000000", addr: "1.2.3.5" }, "embody");
   ok(m === null, "A9 a LISTED moderator still gets in", m);
 }
+// ---- A15–A17 (docs/DESIGN-world-access.md, "Review (independent, 2026-10-17)"): the three bypasses that review reproduced,
+// once tools/access-test.ts §5b, on this protocol. A world of their own (door) and an open one (yard), on a fresh server.
+{ ok(tool(["found", "door", "--owner", "Ann"]).code === 0 && tool(["found", "yard", "--owner", "Ann"]).code === 0, "(A15 setup) found door and yard, Ann owns both");
+  const s4 = await start();
+  const ann = await sock(s4.port); const ja = await ann.join("door", "Ann");
+  const who: Record<string, string> = {};
+  for (const [name, tok] of [["Rowan", "tok-rowan"], ["Moss", "tok-moss"], ["Wren", "tok-wren"], ["Fen", "tok-fen"]] as const) {
+    const s = await sock(s4.port); const j = await s.join("door", name, { agentToken: tok }); who[name] = you(j); s.close(); }
+  { const s = await sock(s4.port); const j = await s.join("door", "Pip"); who.Pip = you(j); s.close(); }   // a typed-name account here (TRUST_NAMES)
+  await sleep(150);
+  const set = [["Pip", "visitor"], ["Rowan", "visitor"], ["Wren", "visitor"], ["Fen", "owner"]];
+  const listed = [];
+  for (const [w, role] of set) listed.push((await ann.req("set", { id: "@world", component: `roles:${who[w]}`, value: { role } })).ok);
+  const closed = await ann.req("set", { id: "@world", component: "access", value: { join: "listed" } });
+  ok(ja.snapshot?.yourRights?.role === "owner" && new Set(Object.values(who)).size === 5 && listed.every(Boolean) && closed.ok,
+    "(A15 setup) door: Ann owns it; Pip, Rowan and Wren are visitors, Fen a co-owner, and only the listed come in", { who, listed, closed: closed.refused });
+  // A15: what a join proves is this join's own credential; a re-join on the same socket carries nothing over. Moss (enrolled,
+  // not listed) joins yard with his token, then re-joins door on that socket as a listed member
+  const x = await sock(s4.port); const jx = await x.join("yard", "Moss", { agentToken: "tok-moss" });
+  const asRowan = await x.join("door", "Rowan");
+  const y = await sock(s4.port); await y.join("yard", "Moss", { agentToken: "tok-moss" }); const ownTok = await y.join("door", "Rowan", { agentToken: "tok-moss" });
+  const v = await sock(s4.port); await v.join("yard", "Moss", { agentToken: "tok-moss" }); const asPip = await v.join("door", "Pip");
+  const q = await sock(s4.port); await q.join("yard", "Moss", { agentToken: "tok-moss" }); const asQ = await q.join("yard", "Quentin");
+  const fresh = await sock(s4.port); const jq = await fresh.join("yard", "Quentin");
+  ok(you(jx) === who.Moss && !asRowan.snapshot && x.closed != null && !ownTok.snapshot && y.closed === 4010 && !asPip.snapshot && /already joined as someone else/.test(asPip.errors.join(" "))
+    && !asQ.snapshot && /already joined as someone else/.test(asQ.errors.join(" ")) && !!jq.snapshot && you(jq) !== who.Moss,
+    "A15 a credentialed socket's re-join carries nothing over: as a member's typed name it is refused (the reserved name, or 'already joined as someone else' for Pip); with its own token it is still Moss, refused as a stranger (4010); and it files no identity under a name it types (a fresh Quentin isn't Moss)",
+    { asRowan: [asRowan.errors, x.closed], ownTok: [ownTok.errors, y.closed, you(ownTok)], asPip: [asPip.errors, v.closed, you(asPip)], asQ: [asQ.errors, q.closed], fresh: you(jq) });
+  [x, y, v, q, fresh].forEach((s) => s.close());
+  // A16: a role is keyed by the actor's opaque id, so no request under a name reaches another record. A role under the bare
+  // name 'fen' is refused and its delete finds nothing; deleting Wren's role touches Wren's only: co-owner Fen still enters as
+  // owner, and door stays closed
+  const byName = await ann.req("set", { id: "@world", component: "roles:fen", value: { role: "builder" } });
+  const delName = await ann.req("delete", { id: "@world", component: "roles:fen" });
+  const delWren = await ann.req("delete", { id: "@world", component: `roles:${who.Wren}` });
+  const f = await sock(s4.port); const jf = await f.join("door", "Fen", { agentToken: "tok-fen" });
+  const wren = await accessAs(s4.port, "door", "tok-wren"), stranger = await accessAs(s4.port, "door", "tok-ivy"), anonMap = (await worldsAs(s4.port)).some((w) => w.name === "door");
+  ok(!byName.ok && byName.refused?.code === "shape" && !delName.ok && delWren.ok && jf.snapshot?.yourRights?.role === "owner" && wren.body?.you === "none" && stranger.body?.you === "none" && !anonMap,
+    "A16 a revoke touches only its own record: a role under a bare name is refused and its delete finds nothing; deleting Wren's role leaves co-owner Fen an owner, and the door stays closed",
+    { byName: byName.refused, delName: delName.refused, delWren: delWren.refused, fen: [jf.errors, jf.snapshot?.yourRights?.role], wren: wren.body, stranger: stranger.body, anonMap });
+  f.close();
+  // A17: a revoke takes effect: Rowan is present; deleting roles:<Rowan> is accepted, removes him now (4010), /access says
+  // none, his rejoin is refused, and the log holds the delete
+  const r = await sock(s4.port); const jr = await r.join("door", "Rowan", { agentToken: "tok-rowan" });
+  const del = await ann.req("delete", { id: "@world", component: `roles:${who.Rowan}` });
+  const out = await waitFor(() => r.closed != null, 4000);
+  const acc = await accessAs(s4.port, "door", "tok-rowan");
+  const back = await sock(s4.port); const jb = await back.join("door", "Rowan", { agentToken: "tok-rowan" });
+  const logged = fs.readFileSync(path.join(W, "door", "world.jsonl"), "utf8").split("\n").filter(Boolean)
+    .some((l) => l.includes(`roles:${who.Rowan}`) && l.includes('"delete"'));
+  ok(!!jr.snapshot && del.ok && out && r.closed === 4010 && acc.body?.you === "none" && !jb.snapshot && back.closed === 4010 && logged,
+    "A17 a revoke takes effect: deleting a present member's role is accepted, removes them now (4010), /access says none, the rejoin is refused, and the log holds the delete",
+    { joined: !!jr.snapshot, del: del.refused, closed: r.closed, acc: acc.body, back: [jb.errors, back.closed], logged });
+  r.close(); back.close(); ann.close(); try { s4.proc.kill(); } catch {} await sleep(300); }
 console.log(`[access-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

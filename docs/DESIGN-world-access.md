@@ -267,13 +267,15 @@ stays down instead of reconnecting.
 
 ## Review (independent, 2026-10-17)
 
-An adversarial review reproduced three bypasses in the first cut, all fixed
-with regression cases in `tools/access-test.ts` §5b:
+An adversarial review reproduced three bypasses in the first cut, all fixed:
 
-- credentials carried across re-joins on one socket;
+- credentials carried across re-joins on one socket (regression case:
+  `tools/protocol/access-check.ts` A15);
 - a directory lookup returning another record's sub, which let a revoke
-  delete an owner and open a closed world;
-- a revoke that was accepted but did nothing.
+  delete an owner and open a closed world. This can't arise now that a
+  role is addressed only by the actor's identity (`roles:<id>`), which
+  access-check A16 pins;
+- a revoke that was accepted but did nothing (regression case: A17).
 
 Also adopted: name-keyed records don't admit people to closed worlds, the
 granter sees the binding, scripts can't grant in closed worlds, outcome-based
