@@ -228,6 +228,35 @@ function manifestDrift(): string | null {
 }
 
 const argv = process.argv.slice(2);
+// mcpl's package.json takes two sibling repos by path (file:../../<dir>, i.e. beside this checkout). The gate owns that
+// closure (Mica, #260 r3): ONE place pins them; --siblings fetches them there; the preflight refuses a missing or
+// wrong-commit sibling rather than testing whatever happens to sit next to the repo.
+// build: whether the gate's suites import it (its package main is dist/, which only `tsc` makes). agent-framework is only
+// resolved by bun install, never imported by a gate suite, so it isn't built.
+const SIBLINGS: [dir: string, url: string, commit: string, build: boolean][] = [
+  ["agent-framework", "https://github.com/anima-research/agent-framework.git", "2f05c28e1923b7d07c6c6322b871303bd0d2d8d5", false],
+  ["mcpl-core-ts", "https://github.com/anima-research/mcpl-core-ts.git", "e17f773a9247c41d5c872d760aac7f243748d134", true],
+];
+const siblingAt = (dir: string) => path.resolve(ENGINE, "..", dir);
+const siblingHead = (dir: string) => { const r = spawnSync("git", ["-C", siblingAt(dir), "rev-parse", "HEAD"], { encoding: "utf8" }); return r.status === 0 ? r.stdout.trim() : null; };
+if (argv.includes("--siblings")) {
+  for (const [dir, url, commit, build] of SIBLINGS) {
+    const at = siblingAt(dir);
+    if (!fs.existsSync(at)) { const c = spawnSync("git", ["clone", "-q", url, at], { stdio: "inherit" }); if (c.status !== 0) { console.error(`--siblings: cloning ${url} failed`); process.exit(1); } }
+    if (siblingHead(dir) !== commit) {
+      spawnSync("git", ["-C", at, "fetch", "-q", "origin", commit], { stdio: "inherit" });
+      const c = spawnSync("git", ["-C", at, "checkout", "-q", commit], { stdio: "inherit" });
+      if (c.status !== 0) { console.error(`--siblings: ${dir} could not check out ${commit}`); process.exit(1); }
+    }
+    if (build && !fs.existsSync(path.join(at, "dist"))) for (const step of [["install"], ["run", "build"]]) {
+      const c = spawnSync(process.execPath, step, { cwd: at, stdio: "inherit" });
+      if (c.status !== 0) { console.error(`--siblings: \`bun ${step.join(" ")}\` failed in ${dir}`); process.exit(1); }
+    }
+    console.log(`  ${dir.padEnd(16)} ${commit.slice(0, 12)}${build ? " built" : ""}  ${at}`);
+  }
+  const m = spawnSync(process.execPath, ["install", "--frozen-lockfile"], { cwd: path.join(ENGINE, "mcpl"), stdio: "inherit" });
+  process.exit(m.status ?? 1);
+}
 if (argv.includes("--manifest")) { console.log(manifest()); process.exit(0); }
 if (argv.includes("--check-manifest")) { const d = manifestDrift(); console.log(d ?? "manifest: docs/GATE-MANIFEST.md matches run.ts"); process.exit(d ? 1 : 0); }
 const laneArg = argv.includes("--lane") ? argv[argv.indexOf("--lane") + 1] : null;
@@ -247,6 +276,9 @@ for (const [name, file] of SUITES) {
   if (laneOf(name) !== "browser") for (const d of localImports(f)) if (BROWSER_MARK.test(fs.readFileSync(d, "utf8"))) { problems.push(`${name} launches a Chromium (${path.relative(ENGINE, d).split(path.sep).join("/")}) but is not in the BROWSER lane`); break; }
 }
 if (!partial) { const d = manifestDrift(); if (d) problems.push(d); }
+for (const [dir, , commit] of SIBLINGS) { const h = siblingHead(dir);
+  if (h === commit && SIBLINGS.find(([d]) => d === dir)![3] && !fs.existsSync(path.join(siblingAt(dir), "dist"))) problems.push(`mcpl's sibling ${dir} is unbuilt (no dist/): run \`bun tools/protocol/run.ts --siblings\``);
+  if (h !== commit) problems.push(`mcpl's sibling ${dir} ${h ? `is at ${h.slice(0, 12)}, not the pinned ${commit.slice(0, 12)}` : `is missing at ${siblingAt(dir)}`}: run \`bun tools/protocol/run.ts --siblings\`, which also installs mcpl/`); }
 for (const dir of ["", "client/", "mcpl/"]) if (!fs.existsSync(ENGINE + dir + "node_modules")) problems.push(`${dir || "./"}node_modules is missing: run \`bun install --frozen-lockfile\` in ${dir || "the checkout root"}`);
 
 console.log(`protocol gate @ ${ENGINE}`);
