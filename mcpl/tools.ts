@@ -1508,6 +1508,13 @@ export const TOOL_FOLDS: Record<string, string> = {
   light: 'create {components: {light: {…}}, at?} (edit {id, set: {"light.intensity": …}} updates one)', remove: 'act {verb: "delete", args: {id}}',
   blueprint_place: 'create {from: "sha256:<hash>", at?}', kick: 'act {verb: "kick", args: {who, minutes?, reason?}}', ban: 'act {verb: "ban", args: {who, days?, reason?, global?}}',
   unban: 'act {verb: "unban", args: {who, global?}}', list_bans: 'act {verb: "bans", args: {global?}}',
+  // main's world_access left without a pointer
+  world_access: 'the world\'s own components on @world: worlds shows each door; owners change it with act {verb: "set", args: {id: "@world", component: "access" | "roles:<id>", value}}',
+};
+/** Main's tools that left with what they did, and why: refused with a pointer, never "no such tool" (#260 r3 I3; whisper
+ *  fell through to a did-you-mean of whois). */
+export const TOOL_REMOVED: Record<string, string> = {
+  whisper: "world chat has no private channel (the maintainers' speech ruling: speech is logged, whisper stays disabled); say speaks aloud to everyone here",
 };
 /** An alias carries the OLD argument shape too (review 10-15 #5: walk_to {x, z} reached move, which takes {to}, and got a shape
  *  error — the alias ran the right tool with the wrong words). Each translates the old schema to the new one, or says what to
@@ -1559,6 +1566,7 @@ export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, a
   const r = resolveTool(name);
   if (!r && TOOL_FOLDS[name]) return { content: [{ type: "text", text: `${name} folded into a general tool: ${TOOL_FOLDS[name]} — nothing ran` }], isError: true };
   // the same words for a tool this server doesn't serve, hidden or never there (#247), with the nearest name when one is close
+  if (!r && TOOL_REMOVED[name]) return { content: [{ type: "text", text: `${name} was removed: ${TOOL_REMOVED[name]} — nothing ran` }], isError: true };
   if (!r) { const near = nearestTool(name); return { content: [{ type: "text", text: `there's no tool named "${name}" on this server, so nothing ran${near && near[1] <= 4 ? ` (did you mean ${near[0]}?)` : ""}; your tool list has the ones it serves` }], isError: true }; }
   // a refused translation ran nothing, so its note says what the old name is now, not that it ran
   if (r.note && TOOL_ALIAS_ARGS[name]) { const t = TOOL_ALIAS_ARGS[name](a ?? {}); if ("refuse" in t) return { content: [{ type: "text", text: `(${name} is now called ${r.name}; nothing ran)\n${t.refuse}` }], isError: true }; a = t; }
