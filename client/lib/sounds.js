@@ -47,7 +47,11 @@
 //      can't go past full scale.
 //   9. Where the bytes come from (shared/mediasrc.js): a store file always; a trusted host's link always; any other
 //      link ONLY if this viewer turned on "allow untrusted links" (mediaprefs.js). Otherwise no element is made and
-//      nothing is fetched. A link is fetched with no referrer. A link whose host sends no CORS headers can't go
+//      nothing is fetched. A link is fetched with no Referer: an <audio> element takes no referrerPolicy of its
+//      own, so the page's (index.html's <meta name="referrer">) is what keeps it. A sound through Web Audio, like a
+//      picture, is a CORS request (crossOrigin), and a CORS request names the page's origin (its server, never the
+//      world's name) in its Origin header, and every link is tried that way first, so its host sees that Origin even
+//      when the sound then plays plain (a plain element alone sends neither). A link whose host sends no CORS headers can't go
 //      through Web Audio (it'd be silence); it plays from a plain element instead, its volume set by the same
 //      distance curve (no HRTF panning, no limiter: said once in the console).
 //  10. Mute for me (mediaprefs.js): a muted thing's sound is gain 0, never logged.
@@ -98,7 +102,6 @@ const _me = new THREE.Vector3();
 function buildGraph(id, sound, { plain = false } = {}) {
   const el = new Audio();
   el.preload = 'auto';
-  el.referrerPolicy = 'no-referrer';              // a link's host learns nothing about the world it's played in
   if (!plain) el.crossOrigin = 'anonymous';
   el.loop = sound.loop;
   el.playbackRate = sound.pitch ?? 1;

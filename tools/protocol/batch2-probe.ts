@@ -43,9 +43,11 @@ const page = (js: string) => evalJson(`(async () => { ${js} })()`);
 const req = (verb: string, args: any) => page(`const m = await import('/lib/net.js'); return await m.sendRequest('${verb}', ${JSON.stringify(args)});`);
 
 // every https request the page makes: caught before it leaves (CDP Fetch), recorded, failed
-const outside: string[] = [];
+const outside: string[] = [], sentWith: { u: string; r: string | null; origin: string | null }[] = [];   // each outside request, with the Referer and Origin it carried (null: none)
 cws.addEventListener("message", (ev) => { const m = JSON.parse(String(ev.data));
-  if (m.method === "Fetch.requestPaused") { outside.push(m.params.request.url); cdp.send("Fetch.failRequest", { requestId: m.params.requestId, errorReason: "BlockedByClient" }).catch(() => {}); } });
+  if (m.method === "Fetch.requestPaused") { outside.push(m.params.request.url);
+    const hs = m.params.request.headers ?? {}; const hv = (name: string) => { const k = Object.keys(hs).find((h) => h.toLowerCase() === name); return k ? hs[k] : null; };
+    sentWith.push({ u: m.params.request.url, r: hv("referer"), origin: hv("origin") }); cdp.send("Fetch.failRequest", { requestId: m.params.requestId, errorReason: "BlockedByClient" }).catch(() => {}); } });
 await cdp.send("Fetch.enable", { patterns: [{ urlPattern: "https://*" }] });
 const UNTRUSTED = "untrusted-b2probe.example.net", TRUSTED = "b2probe.vrcdn.live";
 const sawHost = (h: string) => outside.some((u) => { try { return new URL(u).hostname === h; } catch { return false; } });
@@ -80,6 +82,9 @@ try {
   await page(`(await import('/lib/mediaprefs.js')).setAllowUntrusted(true); return true;`);
   for (let i = 0; i < 50 && !sawHost(UNTRUSTED); i++) await sleep(100);
   check("PRIV4 the viewer opts in (Settings › 🛡 safety): now the same links are requested (the gate, removed live, is seen)", sawHost(UNTRUSTED), outside.filter((u) => u.includes(UNTRUSTED)));
+  { const sent = sentWith.filter(({ u }) => u.includes(UNTRUSTED) || u.includes(TRUSTED));   // Origin is recorded, not judged: a CORS fetch names the page's origin (sounds.js §9)
+    check("PRIV4b …and no link, a sound's or a picture's, is sent with a Referer (sounds.js §9; a CORS fetch's Origin, the page's origin, is recorded beside it)",
+      sent.some(({ u }) => u.endsWith(".mp3")) && sent.every(({ r }) => r === null), sent); }
   await page(`(await import('/lib/mediaprefs.js')).setAllowUntrusted(false); return true;`);
   check("PRIV5 …and opting out again tears the link's audio down", await waitFor(`import('/lib/sounds.js').then((s) => !s._playing.has('linkradio') && s._blocked.get('linkradio') === 'untrusted')`));
   await evalJson(`(() => { document.querySelector('#sec-safety-tab')?.click(); return true; })()`);
