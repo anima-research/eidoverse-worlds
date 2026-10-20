@@ -155,6 +155,7 @@ if (argv.includes("--control")) {
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const tryImport = async (p: string) => { try { return await import(p); } catch (e) { if (!argv.includes("--expect-absent")) throw e; return null; } };
 const D = await import(TREE + "shared/protocol/authority.js");
+const SD = await import(TREE + "shared/protocol/authority/scripts.js");   // the duty log and constants (I7 calibrates from them)
 D.fixtureIds?.(true);   // the fixtures below seed the ids they read (R 10-17: a writer never chooses one; ids-check covers the refusal)
 const F = await import(TREE + "shared/protocol/fold.js");
 const STOR = await import(TREE + "shared/protocol/authority/storage.js");   // CHANGE: B25 stores an old spelling as an old log holds it
@@ -732,14 +733,21 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s2.call("olive", "create", { id: "cup", model: "crate", place: { at: [0, 0] } });
       install(s2, "olive", "cup", "go", onUse(`world.set("self", "t/n", 1);`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s2.call("olive", "set", { id: "cup", component: "reactions", value: { go: { kind: "script", script: "go" } } });
+      // calibrated, not guessed (Mica r3 on 0ff8bcad: on a fast host 30 fixed-size activations never filled a world's
+      // share, {"ranA":30,"busyA":0}, so the row couldn't tell fair from unfair). World A's own storm runs once with the
+      // duty wide open; the median activation cost HERE sizes the budget so A's share holds about four, on any host.
+      D.setScriptDuty({ maxMs: 1e9 }); s.call("vic", "say", { text: "grind" });
+      const costs = SD.dutyLog.map((d: any) => d.ms).sort((x: number, y: number) => x - y);
+      if (costs.length < 20) return { calibration: `only ${costs.length} of 30 activations measured` };
+      const cost = costs[costs.length >> 1], maxMs = (4 * cost) / SD.DUTY.worldShare;
       s.advance(61000); Bun.sleepSync(1100);
-      D.setScriptDuty({ maxMs: DUTY0.maxMs });
+      D.setScriptDuty({ maxMs });
       s.call("vic", "say", { text: "grind" });
       const A = s.call("olive", "scripts", {}).scripts.map((x: any) => x.last.at(-1)?.status);
       const B = st(s2, s2.call("olive", "use", { id: "cup", action: "go" }));
       D.setScriptDuty({ maxMs: 1e9 });
-      return { ranA: A.filter((x: string) => x === "nothing").length, busyA: A.filter((x: string) => x === "refused").length, B }; },
-    good: (o) => o.ranA >= 1 && o.busyA >= 1 && o.B === "ran" },
+      return { cost: +cost.toFixed(2), maxMs: +maxMs.toFixed(1), ranA: A.filter((x: string) => x === "nothing").length, busyA: A.filter((x: string) => x === "refused").length, B }; },
+    good: (o) => o.ranA >= 1 && o.ranA <= 12 && o.busyA >= 18 && o.B === "ran" },
   { id: "I8", what: "a process the host never got round to running (stopped here: SIGSTOP, as an overloaded machine would starve it) is still stopped at the deadline, but it reads 'the host was too busy' (unavailable) and isn't the script's failure", run(s) { cast(s);
       if (!SB?.isolationStats) return { absent: true };
       warmUp();
