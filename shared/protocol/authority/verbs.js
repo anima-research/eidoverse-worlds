@@ -1,13 +1,13 @@
 // shared/protocol/authority/verbs.js — the verb table's own bodies, in the groups authority.js spreads into VERBS in
 // their table order: FOUNDING_VERBS (create-world), SCHEMA_VERBS (schema), WRITE_VERBS (create, set, delete, place,
 // turn, publish, update), SAY_VERBS (say, undo, caption), BATCH_VERBS (sky, weather, sculpt, batch, fork-copy), and
-// buildBatch (refactor split, 2026-10-17; moved from authority.js's VERBS table unchanged). Nothing here needs UP.
+// buildBatch (refactor split, 2026-10-17; moved from authority.js's VERBS table unchanged). Only schema's did-you-mean reads UP (its guess).
 import { cowState, applyCow, DIALECT, VERSION, keyOk } from "../fold.js";
-import { COMPONENTS, STATUSES } from "../componentspec.js";
+import { COMPONENTS, STATUSES, defOf } from "../componentspec.js";
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../../captions.js";
 import { effectFor, ESSENTIAL_NAMES } from "../../particle_effects.js";
 import { SHAPES_VERSION } from "../shaperepair.js";
-import { CTX } from "./ctx.js";
+import { CTX, UP } from "./ctx.js";
 import { validate } from "../verbspec.js";
 import { Refusal, refuse } from "./refuse.js";
 import { VOLATILE, delOp, nonce16, setOp } from "./storage.js";
@@ -57,7 +57,11 @@ const SCHEMA_VERBS = {
   // an agent can write one without a second question; effect {name} returns a whole document
   // every definition carries its status (trial | reserved | stable); statuses says what each means
   // and server: this server's policy numbers (PROTOCOL §9.2): the default an absent field means today, and the ceiling an owner may set
-  schema(w, actor, a) { return { ok: true, components: a.component ? { [a.component]: COMPONENTS[a.component] } : COMPONENTS, statuses: STATUSES,
+  // one component is read through the registry's resolver (componentspec defOf): a keyed name or an alias answers its
+  // definition, and a name the registry doesn't have is refused, never answered ok with nothing
+  schema(w, actor, a) { const one = a.component ? defOf(String(a.component)) : undefined;
+    if (a.component && !one) refuse("not-found", `no component called '${a.component}'`, "schema {} lists every component", { didYouMean: UP.guess(String(a.component), Object.keys(COMPONENTS)) });
+    return { ok: true, components: a.component ? { [a.component]: one } : COMPONENTS, statuses: STATUSES,
     server: { defaults: { capacity: { ...CAPACITY }, "script-settings": scriptDefaults() }, ceilings: { capacity: { ...CAPACITY_CEILING }, "script-settings": scriptCeiling() } },
     ...(a.component === "particles" ? { effects: Object.fromEntries(ESSENTIAL_NAMES.map((k) => { const d = effectFor(k); return [k, { reads: d.reads, params: Object.fromEntries(Object.entries(d.params ?? {}).map(([n, p]) => [n, { type: p.type, ...(p.min !== undefined ? { min: p.min } : {}), ...(p.max !== undefined ? { max: p.max } : {}), ...(p.values ? { values: p.values } : {}), ...(p.help ? { help: p.help } : {}) }])) }]; })) } : {}) }; },
 };

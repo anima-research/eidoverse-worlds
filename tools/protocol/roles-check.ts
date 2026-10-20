@@ -520,6 +520,21 @@ const cases: Case[] = [
       const r = s.call("olive", "set", { id: "@world", component: "roles:bob", value: { can: { generate: true, fly: null } }, merge: true });
       const v = s.w().state().entities["@world"].c["roles:bob"]; return { r: show(r), can: v?.can, note: v?.note, sw: eff(s, "bob")?.permissions }; },
     good: (o) => o.r === "ok" && JSON.stringify(o.can) === '{"generate":true}' && o.note === "keep me" && !o.sw?.includes("fly") && o.sw?.includes("generate") }
+,
+  // review of #260: the guests' ceiling holds for the fallback too, and a role entry's delete counts the default role's own `can`
+  { id: "V12", what: "with no guests field and a default role of none, a guest is none: the visitor fallback is under the ceiling too", run() {
+      return { g: RL.guestRoleOf ? RL.guestRoleOf({ "default-role": { role: "none" } }) : "no roles.js", plain: RL.guestRoleOf?.({}) }; },
+    good: (o) => o.g === "none" && o.plain === "visitor" },
+  { id: "V13", what: "deleting a person's role entry gives them the default role's `can` too, so a grantor who lacks one of those is refused", run(s) { cast(s);
+      const d = set(s, "olive", "default-role", { role: "visitor", can: { build: true, editWorld: true } });   // editWorld needs build
+      const r = s.call("mo", "delete", { id: "@world", component: "roles:vic" });
+      return { d: show(d), r: code(r) ?? show(r), vic: eff(s, "vic")?.permissions }; },
+    good: (o) => o.d === "ok" && o.r === "rights" && !o.vic?.includes("editWorld") },
+  { id: "V14", what: "…but with a default role of none, the default role's `can` gives nothing, so the same delete stands", run(s) { cast(s);
+      const d = set(s, "olive", "default-role", { role: "none", can: { build: true, editWorld: true } });
+      const r = s.call("mo", "delete", { id: "@world", component: "roles:vic" });
+      return { d: show(d), r: show(r), vic: eff(s, "vic")?.permissions }; },
+    good: (o) => o.d === "ok" && o.r === "ok" && o.vic?.length === 0 }
 ];
 
 // ---------------- run ----------------

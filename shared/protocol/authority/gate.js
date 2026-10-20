@@ -358,8 +358,9 @@ function grantCheck(w, st, s, actor, op, at) {
   const wc1 = { ...(wcOf(s) ?? {}) }; if (op.verb === "delete") delete wc1[op.comp]; else wc1[op.comp] = op.value;
   const after = R.roleIdOf(wc1, target, { anon, owners: true }); const def = R.roleDef(wc1, after);
   if ((def?.rank ?? RANK.none) >= me.rank) refuse("rank", `${after} stands at or above you (${me.name}); you can only give roles ranked below yours`, "ask an owner", { needs: "rank" });
-  const extra = op.verb === "set" ? Object.entries(op.value?.can ?? {}).filter(([, x]) => x === true).map(([k]) => k) : [];
-  const give = [...R.PERMISSION_NAMES.filter((k) => def?.can?.[k]), ...extra];
+  // what the person holds afterwards, as effectiveOf reads it (the role's, the default role's own `can` for someone with no
+  // entry, their own `can`, closed over): a grantor gives only what they hold themselves
+  const give = R.effectiveOf(wc1, target, { anon, owners: true }).permissions;
   const missing = give.find((k) => !me.can[k]);
   if (missing) refuse("rights", `giving ${missing} needs you to hold ${missing} yourself; you don't`, "you can only give permissions you hold (ask an owner)", { needs: missing });
 }

@@ -131,11 +131,14 @@ export function roleIdOf(wc, id, { anon = false, owners = null } = {}) {
   return !hasOwner && rankOfRole(wc, r) > RANK.visitor ? "visitor" : r;
 }
 /** What a guest (no account) is here: default-role.guests when the world defines it, never owner, and (GUESTS_AT_MOST_DEFAULT)
- *  never above the default role; else visitor. */
+ *  never above the default role; else visitor, or the default role where that is below visitor (none). */
 export function guestRoleOf(wc) {
   const dr = isObj(wc?.["default-role"]) ? wc["default-role"] : null; const g = dr?.guests;
-  if (typeof g !== "string" || g === "owner" || !roleDef(wc, g)) return "visitor";
-  if (GUESTS_AT_MOST_DEFAULT && rankOfRole(wc, g) > rankOfRole(wc, dr?.role ?? "visitor")) return "visitor";
+  // the ceiling holds for the fallback too: with a default role of none, a guest is none, never the visitor above it
+  const above = (r) => GUESTS_AT_MOST_DEFAULT && rankOfRole(wc, r) > rankOfRole(wc, dr?.role ?? "visitor");
+  const fallback = above("visitor") ? dr.role : "visitor";
+  if (typeof g !== "string" || g === "owner" || !roleDef(wc, g)) return fallback;
+  if (above(g)) return fallback;
   return g;
 }
 

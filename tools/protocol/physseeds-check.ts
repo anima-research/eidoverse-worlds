@@ -206,5 +206,10 @@ if (!only || only.some((x) => x.startsWith("SV"))) {
   ok("RS3", CS2.COMPONENTS?.grabbable?.defaults?.steal === true && typeof CS2.COMPONENTS?.grabbable?.defaults?.steal === "boolean", "grabbable.steal is the holder's switch, a boolean defaulting to true (the latest grab wins); 'ask' is reserved", CS2.COMPONENTS?.grabbable?.defaults?.steal);
 }
 
+// review of #260: a shape's type is read as an own name of the grammar, and only as a string
+{ const thrown = (s) => { try { return err(s); } catch (x) { return `THREW ${x?.constructor?.name}`; } };
+  const a = thrown({ type: "constructor" }), b = thrown({ type: ["box"], half: [1, 1, 1] });
+  ok("SG9", typeof a === "string" && !a.startsWith("THREW") && typeof b === "string" && !b.startsWith("THREW"), "a shape type that is an inherited name (constructor) or not a string (['box']) is no shape type: refused in words, never thrown and never read as box", { a, b }); }
+
 console.log(`\nphysseeds: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

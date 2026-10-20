@@ -33,7 +33,7 @@ export const isBoxShape = (s) => Array.isArray(s) && s.length === 2 && vec3(s[0]
 export function shapeError(s) {
   if (Array.isArray(s)) return isBoxShape(s) ? null : "a bare shape is a box [[minX, minY, minZ], [maxX, maxY, maxZ]]: two finite points, min ≤ max on every axis";
   if (!s || typeof s !== "object") return `a shape is a box [[min], [max]] or a tagged object {type: ${SHAPE_TYPES.join("|")}, …}`;
-  const keys = KEYS[s.type];
+  const keys = typeof s.type === "string" && Object.hasOwn(KEYS, s.type) ? KEYS[s.type] : null;   // an own name, and text: never an inherited one (constructor) or one an array coerces to
   if (!keys) return `no shape type ${JSON.stringify(s.type)} (types: ${SHAPE_TYPES.join(", ")})`;
   for (const k of Object.keys(s)) if (k !== "type" && k !== "pos" && k !== "q" && !keys.includes(k)) return `a ${s.type} takes ${keys.join(", ")} (and pos?, q?), not '${k}'`;
   for (const k of keys) if (s[k] === undefined) return `a ${s.type} needs ${k}`;

@@ -444,6 +444,12 @@ const cases: Case[] = [
         { verb: "set", args: { id: "kiosk", component: "look-at", value: { target: "lamp" } } }] });
       return { names, play: !!rx.play, says: sayLines(s, "kiosk"), vis: sayLines(s, "kiosk", "vic") }; },
     good: (o) => o.names.length === 5 && o.play && o.says?.length === 5 && /^story «Kiosk»/.test(o.says[0]) && /^a sign reading «MAP»/.test(o.says[1]) && /^a picture: «a map»/.test(o.says[2]) && /^a sound, playing \(loops; heard within 12 m\): «a hum»/.test(o.says[3]) && /^turns to face/.test(o.says[4]) && JSON.stringify(o.vis) === JSON.stringify(o.says) },
+  // review of #260: schema {component} reads the registry through its one resolver, so a keyed name or an alias answers
+  // its definition, and a name the registry doesn't have is refused rather than answered ok with nothing
+  { id: "A9", what: "schema of a keyed component (light:desk) gives light's definition; an unknown name is refused, with a did-you-mean", run(s) { cast(s);
+      const keyed = s.call("olive", "schema", { component: "light:desk" }), typo = s.call("olive", "schema", { component: "lihgt" });
+      return { keyedOk: keyed?.ok, has: !!keyed?.components?.["light:desk"]?.fields, typo: typo?.ok === true ? "ok" : typo?.refused?.code, mean: typo?.refused?.didYouMean }; },
+    good: (o) => o.keyedOk === true && o.has && o.typo === "not-found" && JSON.stringify(o.mean ?? "").includes("light") }
 ];
 
 // ---------------- run ----------------
