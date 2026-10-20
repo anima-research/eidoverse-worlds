@@ -8,7 +8,8 @@
 //
 // A test whose stub or import graph broke dies before its first check and says nothing a person reads (six "stub missing
 // export X" commits on 10-12 alone; settings-panels-test was dead for a day). Bun fails the import loudly, so loading each
-// file is the whole stub-contract test. Exit 1 on any dead-at-import file (and, in the full mode, on any red one).
+// file is the whole stub-contract test. Exit 1 on any dead-at-import file (and, in the full mode, on any red or timed-out one:
+// a hang is usually a broken feature, #260 review I65; a file that is merely long belongs in the SLOW table).
 // Every run lists the files no other runner reaches (tools/protocol/run.ts, package.json scripts): this one is theirs.
 // gate: launches a browser — even --import-only RUNS each file (up to 15 s), and some tools/*-test files start a headless
 // Chromium at their top level. So the files that launch one (the file or a local module it imports calls scratchBench,
@@ -143,4 +144,4 @@ const left = [...untracked()].filter((p) => !before.has(p));
 if (left.length) console.log(`\n  left in the tree by this run (a killed test's debris; check, then delete): ${left.length}\n    ${left.slice(0, 20).join("\n    ")}${left.length > 20 ? "\n    …" : ""}`);
 const unRun = unreached.filter((p) => todo.some((f) => rel(f) === p));
 console.log(`\n${unreached.length} of ${files.length} files are reached by no runner but this one${only.length ? ` (${unRun.length} in this run)` : ""}; --unreached lists them`);
-process.exit(by("dead").length || (!importOnly && by("red").length) ? 1 : 0);
+process.exit(by("dead").length || (!importOnly && (by("red").length || by("timeout").length)) ? 1 : 0);
