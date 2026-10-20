@@ -1420,6 +1420,13 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const o = txnOutcome(w, from, { threw: true, refused: false, wedgedBefore: before });
   ok(o.outcome === "ambiguous" && o.wedged === true && o.file === undefined, "ST5 a world-log failure while only the moderator log was wedged is ambiguous, and names the world log", { o, threw: String(threw) }); }
 
+// SP1: a thing so far out that its cells aren't safe integers goes on the big list, not into a loop that can't advance
+// (x++ at 2^53 stays put), nor under a key that collides (cellKey covers ±1e6 cells)
+{ const { cellsOf } = await import("../../shared/protocol/authority/spatial.js");
+  const far = cellsOf({ q: { min: [1e17, 0, 0], max: [1e17 + 64, 0, 1] } }), out = cellsOf({ q: { min: [4e7, 0, 0], max: [4e7 + 1, 0, 1] } }), here = cellsOf({ q: { min: [0, 0, 0], max: [1, 0, 1] } });
+  const { near } = await import("../../shared/protocol/authority/spatial.js");
+  const st = { entities: Object.create(null) } as any; const found = near(st, [1e17, 0, 0], [1e17 + 64, 1, 1]);
+  ok(far === null && out === null && Array.isArray(here) && here.length > 0 && Array.isArray(found), "SP1 cells past the grid's safe range file the thing as big, and a query out there ends; ordinary ones still get cells", { far, out, here, found }); }
 // G1: a guess's work doesn't grow with how long the unknown name is. 2,000 ids against an 80,000-character name took
 // over 15 s (15.6 s in our run) when the whole name was compared; the 2 s bound is a wide margin either side (it reads the clock)
 { const { UP } = await import("../../shared/protocol/authority/ctx.js");

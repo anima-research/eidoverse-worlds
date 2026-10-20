@@ -50,10 +50,13 @@ function geoOf(st, id) {
 }
 const cellOf = (v) => Math.floor(v / CELL);
 const cellKey = (i, k) => (i + 1e6) * 2e6 + (k + 1e6);
+// a cell cellKey can name: within ±1e6, so keys don't collide and x++ advances (past 2^53 it doesn't). A thing with a cell
+// outside goes on the big list, and a query that reaches outside reads every filed thing
+const inGrid = (c) => Number.isInteger(c) && Math.abs(c) < 1e6;
 // the grid cells a record is filed under (null: a huge thing, on the `big` list)
 const cellsOf = (g) => { if (g.cells !== undefined) return g.cells;
   const x0 = cellOf(g.q.min[0]), x1 = cellOf(g.q.max[0]), z0 = cellOf(g.q.min[2]), z1 = cellOf(g.q.max[2]);
-  if ((x1 - x0 + 1) * (z1 - z0 + 1) > BIG || !Number.isFinite(x0 + x1 + z0 + z1)) return (g.cells = null);
+  if (![x0, x1, z0, z1].every(inGrid) || (x1 - x0 + 1) * (z1 - z0 + 1) > BIG) return (g.cells = null);
   const out = []; for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) out.push(cellKey(x, z)); return (g.cells = out); };
 // The index a state's queries use. Kept incrementally: a state that shares nearly every entity with the one indexed last
 // (the next state of the same world: a write, or a preview of one) is derived from it, re-filing only the things that
@@ -127,7 +130,7 @@ function near(st, min, max) {
   const x0 = cellOf(min[0]), x1 = cellOf(max[0]), z0 = cellOf(min[2]), z1 = cellOf(max[2]);
   // what's filed in those cells (and the huge things), once each, in key order: memoized per cell range (a search asks
   // the same few ranges thousands of times)
-  const wide = !((x1 - x0 + 1) * (z1 - z0 + 1) <= ix.grid.size); const k0 = wide ? 0 : cellKey(x0, z0), k1 = wide ? -1 : cellKey(x1, z1);
+  const wide = ![x0, x1, z0, z1].every(inGrid) || !((x1 - x0 + 1) * (z1 - z0 + 1) <= ix.grid.size); const k0 = wide ? 0 : cellKey(x0, z0), k1 = wide ? -1 : cellKey(x1, z1);
   let m1 = ix.memo.get(k0); if (!m1) { if (ix.memo.size > 4096) ix.memo.clear(); ix.memo.set(k0, (m1 = new Map())); }
   let cand = m1.get(k1);
   if (!cand) { const seen = new Set(); cand = [];
