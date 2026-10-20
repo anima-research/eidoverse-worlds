@@ -56,6 +56,8 @@ function openCustody(file: string) {
 
 /** A world's moderator log (§2.1: never in the world log): read it, and append one record per line. */
 export function modLogAt(file: string) {
-  const mod = fs.existsSync(file) ? readLogBytes(file).toString("utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
-  return { mod, appendMod: (r: object) => { appendDurable(file, JSON.stringify(r)); } };
+  // read as a reader; the first append repairs a torn tail first, as the log's writer (review of #260, server I127)
+  const mod = fs.existsSync(file) ? readLogBytes(file, { cut: false }).toString("utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+  let repaired = false;
+  return { mod, appendMod: (r: object) => { if (!repaired) { readLogBytes(file); repaired = true; } appendDurable(file, JSON.stringify(r)); } };
 }

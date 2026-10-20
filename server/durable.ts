@@ -8,12 +8,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { sha256 } from "../shared/protocol/hash.js";
 
-/** The log's bytes, with a torn tail (no final newline) cut off the file first. */
-export function readLogBytes(logPath: string): Buffer {
+/** The log's bytes, with a torn tail (no final newline) cut off the file first. `cut: false` is a reader's: it leaves the
+ *  file alone and only leaves the tail out, since a line without its newline may be one a writer is appending now (review
+ *  of #260, server I127: a reader that cut it made the writer's line land broken). Only the log's writer cuts. */
+export function readLogBytes(logPath: string, { cut = true } = {}): Buffer {
   if (!fs.existsSync(logPath)) return Buffer.alloc(0);
   const b = fs.readFileSync(logPath);
   if (b.length === 0 || b[b.length - 1] === 0x0a) return b;
   const keep = b.lastIndexOf(0x0a) + 1;
+  if (!cut) return b.subarray(0, keep);
   console.warn(`[log] ${logPath}: cut a torn last line (${b.length - keep} bytes, no newline) left by an interrupted write`);
   fs.truncateSync(logPath, keep);
   return b.subarray(0, keep);
@@ -33,8 +36,17 @@ export function writeAll(fd: number, buf: Uint8Array) {
  *  disk state unknown (open, write, sync and close are not one step): the authority wedges the file and calls it ambiguous. */
 export function appendDurable(logPath: string, line: string) {
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  const fresh = !fs.existsSync(logPath);
   const fd = fs.openSync(logPath, "a");
   try { writeAll(fd, Buffer.from(line + "\n", "utf8")); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  if (fresh) syncDir(path.dirname(logPath));   // a file's first line is durable only once its name is (review of #260, server I17)
+}
+/** fsync a directory, so a file just created or renamed into it survives a crash (POSIX: the entry lives in the directory,
+ *  not the file). Windows can't open a directory for this, and NTFS journals names itself: skipped there. */
+function syncDir(dir: string) {
+  if (process.platform === "win32") return;
+  const fd = fs.openSync(dir, "r");
+  try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
 }
 
 /** Store blob text `s` under its hash `h` at `file`: atomically, and replacing a copy that doesn't verify. */
@@ -45,4 +57,5 @@ export function putBlobFile(file: string, s: string, h: string) {
   const fd = fs.openSync(tmp, "w");
   try { writeAll(fd, Buffer.from(s, "utf8")); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
   fs.renameSync(tmp, file);
+  syncDir(path.dirname(file));
 }
