@@ -412,6 +412,14 @@ const cases: Case[] = [
         now: bans.now?.map((x: any) => [x.who, Object.keys(x).filter((k) => ["ban", "mute", "kick"].includes(k))]).sort() }; },
     good: (o) => o.w0 === "rights" && o.w1 === "ok" && (o.w2 === "missing-arg" || o.w2 === "shape") && o.first === "ban" && o.verbs?.includes("warn") && o.verbs?.includes("role") && o.bob === "rights"
       && JSON.stringify(o.now) === JSON.stringify([["ann", ["mute"]], ["vic", ["ban"]]]) },
+  { id: "M9b", what: "modlog's pages lose nothing where many records share one time: five role changes in one batch, paged three at a time, all arrive, once each", run(s) { cast(s);
+      const b = s.call("olive", "batch", { ops: ["p1", "p2", "p3", "p4", "p5"].map((who) => ({ verb: "set", args: { id: "@world", component: `roles:${who}`, value: { role: "inhabitant" } } })) });
+      const seen: string[] = []; let before: any = undefined, pages = 0;
+      for (; pages < 10; pages++) { const r = s.call("olive", "modlog", { limit: 3, ...(before !== undefined ? { before } : {}) });
+        for (const x of r.records ?? []) if (x.verb === "role" && /^p\d$/.test(x.who)) seen.push(x.who);
+        if (r.next === undefined) break; before = r.next; }
+      return { b: show(b), seen: seen.slice().sort(), dupes: seen.length - new Set(seen).size, pages }; },
+    good: (o) => o.b === "ok" && JSON.stringify(o.seen) === '["p1","p2","p3","p4","p5"]' && o.dupes === 0 },
   { id: "M10", what: "a guest's rank comes from the guests role: a moderator may act on a guest builder; a builder default doesn't make guests outrank anyone", run(s) { cast(s);
       set(s, "olive", "default-role", { role: "builder", guests: "builder" });
       return { mute: show(s.call("mo", "mute", { who: "guest-9", minutes: 5 })), rank: eff(s, "guest-9")?.rank, bob: code(s.call("bob", "kick", { who: "guest-9" })) }; },
