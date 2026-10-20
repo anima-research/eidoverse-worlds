@@ -28,9 +28,10 @@ export const use = (id, action = null, args = null) => ({ verb: "use", args: { i
  *  (R 10-17: writers never choose ids): pass null, or a placeholder ('$lamp') when the same request (a batch) refers to it
  *  or the reply's ids map should say what it became. */
 export function create(id, { model = null, transform = {}, components = {}, from = null } = {}) {
-  const comps = {}; for (const [k, v] of Object.entries(components)) comps[encName(k)] = v;
+  // a transform passed among the components joins the transform argument, so what is written is still whole
+  const comps = {}; let t = transform; for (const [k, v] of Object.entries(components)) { if (encName(k) === "transform" && v && typeof v === "object") t = { ...t, ...v }; else comps[encName(k)] = v; }
   return { verb: "create", args: { ...(id == null ? {} : { id: E(id) }), ...(model ? { model } : {}), ...(from ? { from } : {}),
-    components: { transform: { pos: finite3(transform.pos) ? [...transform.pos] : [0, 0, 0], q: qNorm(transform.q) ?? [0, 0, 0, 1], scale: scale3(transform.scale) ?? [1, 1, 1] }, ...comps } } };
+    components: { ...comps, transform: { pos: finite3(t.pos) ? [...t.pos] : [0, 0, 0], q: qNorm(t.q) ?? [0, 0, 0, 1], scale: scale3(t.scale) ?? [1, 1, 1] } } } };
 }
 
 /** The whole transform after a pose edit, from what the view shows (`ent`: {pos, q, yaw, scale, scale3}). `patch`:

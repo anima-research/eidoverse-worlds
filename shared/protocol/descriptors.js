@@ -36,12 +36,12 @@ import { COMPONENTS, materialize } from './componentspec.js';
 export const AXES = Object.freeze({ x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] });
 /** A unit-axis vector's letter (x, -z), a letter as itself, anything else null. */
 export function axisLetter(a) {
-  if (typeof a === 'string') return AXES[a.toLowerCase()] ? a.toLowerCase() : null;
+  if (typeof a === 'string') return Object.hasOwn(AXES, a.toLowerCase()) ? a.toLowerCase() : null;
   if (Array.isArray(a) && a.length === 3) for (const [k, v] of Object.entries(AXES)) if (v.every((c, i) => c === a[i])) return k;
   return null;
 }
 /** A letter's vector; a vector as itself; anything else null. */
-export const axisVector = (a) => (typeof a === 'string' ? AXES[a.toLowerCase()] ?? null : Array.isArray(a) && a.length === 3 ? a : null);
+export const axisVector = (a) => (typeof a === 'string' ? (Object.hasOwn(AXES, a.toLowerCase()) ? AXES[a.toLowerCase()] : null) : Array.isArray(a) && a.length === 3 ? a : null);
 /** The editor's rate (°/s) of a motion bag: degPerSec, else 360 / period (seconds a turn), else an old rpm × 6. */
 export const rateOf = (m) => (Number.isFinite(m?.degPerSec) ? m.degPerSec : Number.isFinite(m?.period) && m.period > 0 ? 360 / m.period : Number.isFinite(m?.rpm) ? m.rpm * 6 : undefined);
 

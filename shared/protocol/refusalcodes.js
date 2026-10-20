@@ -149,6 +149,6 @@ export const NOT_REFUSALS = Object.freeze([]);
 /** Codes renamed before release (protocol minor 0, R 10-17: no body plan in a name). A log written before the rename may
  *  carry the old word in a refused act; the fold never judges a code, so it reads either, and a reader that branches on
  *  one maps it through here. The authority never refuses with an old word. */
-export const RENAMED_CODES = Object.freeze({ "hands-full": "hold-limit", "underfoot": "beneath", "no-body": "not-pushable" });
+export const RENAMED_CODES = Object.freeze({ "hands-full": "hold-limit", "underfoot": "beneath", "no-body": "not-pushable", "no-such": "not-found" });
 export const canonicalCode = (c) => (typeof c === "string" && Object.hasOwn(RENAMED_CODES, c) ? RENAMED_CODES[c] : c);
 export const isRefusalCode = (c) => typeof c === "string" && Object.hasOwn(REFUSAL_CODES, c);

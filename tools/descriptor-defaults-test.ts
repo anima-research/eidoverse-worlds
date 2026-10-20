@@ -7,7 +7,7 @@
 // against the registry's 2.4 / 0.08 / 0.9; the inspector's pendulum period def 3.5 and damp def 0; its orbit radius def 1
 // against 3; the Add Pendulum and Add Reactions seeds writing period 3.5; and Transform.scale (the record's uniform 1 against
 // the registry's [1, 1, 1], a vocabulary, now translated). Mutation: a registry pendulum period of 2.9 → 2 red.
-import { DESCRIPTORS, editorDefault, materializedOf, toWire, axisLetter } from "../shared/protocol/descriptors.js";
+import { DESCRIPTORS, editorDefault, materializedOf, toWire, axisLetter, axisVector } from "../shared/protocol/descriptors.js";
 import { COMPONENTS, materialize } from "../shared/protocol/componentspec.js";
 import { RECORDS, LIGHT_DEFAULTS } from "../shared/components.js";
 import { inspectSchema, fieldAt, addOps } from "../shared/editschema.js";
@@ -83,6 +83,7 @@ console.log("\nthe other restated defaults:");
 console.log("\nthe translation itself:");
 {
   check("axis: letter → vector → letter", same(toWire("Pendulum", "axis", "x"), [1, 0, 0]) && axisLetter([0, -1, 0]) === "-y" && axisLetter("Z") === "z" && axisLetter([0.5, 0, 0]) === null);
+  check("axis: an inherited name (constructor, toString) is no axis", axisLetter("constructor") === null && axisLetter("toString") === null && axisVector("constructor") === null && axisVector("__proto__") === null);
   check("the registry's pendulum axis reads as x, spin's and oscillate's as y, openable's hinge as y", editorDefault("Pendulum", "axis") === "x" && editorDefault("Spin", "axis") === "y" && editorDefault("Oscillate", "axis") === "y" && editorDefault("Openable", "axis") === "y");
   check("rate: the registry's degPerSec reads as the editor's rate; a period reads as 360/period; an rpm as ×6", editorDefault("Spin", "degPerSec") === 36 && DESCRIPTORS.Spin.fields.find((f) => f.k === "degPerSec")!.wire!.from(undefined, { period: 10 }) === 36 && DESCRIPTORS.Orbit.fields.find((f) => f.k === "degPerSec")!.wire!.from(undefined, { rpm: 2 }) === 12);
   check("light: daytime dim reads as burns-at-noon off; on writes daytime: full (the address is light.daytime, R 10-17: was light.noon) (shape audit 10-16: was day: false)", editorDefault("Light", "daytime") === false && toWire("Light", "daytime", true) === "full" && toWire("Light", "daytime", false) === "dim");

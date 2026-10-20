@@ -7,6 +7,8 @@ import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writer
 import fs from "node:fs";
 import { readLog, fold, digest, worldIdOf, parseLine, cloneState, PURGED } from "../../shared/protocol/fold.js";
 import { carried } from "../../shared/protocol/simlayer.js";
+import { elide } from "../../shared/protocol/scriptrules.js";
+import { create as createRequest } from "../../shared/protocol/requests.js";
 import { ENGINE, LAB, scratch, controlNote } from "./common.ts";
 import * as AU from "../../shared/protocol/authority.js";
 
@@ -180,6 +182,17 @@ const probes = [
     base: () => ({ ok: true, v: "(the baseline has no engines)" }), held: true,
     now: () => ({ unknown: carried({ engine: "no-such-engine" }), toString: carried({ engine: "toString" }) }),
     nowGood: (r) => r.unknown === false && r.toString === false },
+  // review of #260: a script's no-op elision meets a set with no value (the fold's own no-op, noop:set-no-value)
+  { id: "R173", src: "review of #260", what: "elide passes a set without value on to the gate instead of throwing on jcs(undefined)",
+    base: () => ({ ok: true, v: "(the baseline has no elision)" }), held: true,
+    now: () => { const s = now(logOf(st("create", { id: "a" }), st("set", { id: "a", comp: "x", value: 1 })));
+      try { return { ops: elide(s, [{ verb: "set", id: "a", comp: "x" }]).length }; } catch (e) { return { threw: String(e) }; } },
+    nowGood: (r) => r.ops === 1 },
+  // review of #260: requests.js promises a transform is always written whole
+  { id: "R228", src: "review of #260", what: "a create whose transform comes among its components still writes the whole transform",
+    base: () => ({ ok: true, v: "(the baseline has no request builders)" }), held: true,
+    now: () => createRequest(null, { components: { transform: { pos: [1, 2, 3] } } }).args.components.transform,
+    nowGood: (t) => JSON.stringify(t) === JSON.stringify({ pos: [1, 2, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] }) },
 ];
 
 let bad = 0;

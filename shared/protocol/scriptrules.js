@@ -64,7 +64,7 @@ export const seedOf = (worldId, actSeq, key) => sha256(`${worldId}|${actSeq}|${k
 export function elide(st, ops) {
   const s = cowState(st); const out = [];
   for (const o of ops) { const e = s.entities[o.id];
-    if (o.verb === "set" && e && o.comp in e.c && jcs(e.c[o.comp]) === jcs(o.value)) continue;
+    if (o.verb === "set" && "value" in o && e && o.comp in e.c && jcs(e.c[o.comp]) === jcs(o.value)) continue;   // a set without value is the fold's no-op, judged by the gate, never compared
     if (o.verb === "delete" && (!e || (o.comp !== undefined && !(o.comp in e.c)))) continue;
     out.push(o); try { applyCow(s, [o]); } catch { /* the gate names the shape problem */ } }
   return out;

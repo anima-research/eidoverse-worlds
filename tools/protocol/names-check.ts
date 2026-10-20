@@ -278,9 +278,9 @@ const cases: Case[] = [
       return { has: ["hold-limit", "beneath", "not-pushable"].every((c) => RC.isRefusalCode(c)), old: ["hands-full", "underfoot", "no-body"].filter((c) => RC.isRefusalCode(c)),
         gives: ["hold-limit", "beneath", "not-pushable"].every((c) => src.includes(`refuse("${c}"`)), givesOld: ["hands-full", "underfoot", "no-body"].filter((c) => src.includes(`refuse("${c}"`)) }; },
     good: (o) => o.has && !o.old.length && o.gives && !o.givesOld.length },
-  { id: "N3", what: "…a reader maps an older log's word through RENAMED_CODES / canonicalCode", run() {
-      return { map: RC.RENAMED_CODES ?? null, c: ["hands-full", "underfoot", "no-body", "rights"].map((x) => RC.canonicalCode?.(x) ?? null) }; },
-    good: (o) => JSON.stringify(o.c) === '["hold-limit","beneath","not-pushable","rights"]' },
+  { id: "N3", what: "…a reader maps an older log's word through RENAMED_CODES / canonicalCode (no-such merged into not-found, 10-17)", run() {
+      return { map: RC.RENAMED_CODES ?? null, c: ["hands-full", "underfoot", "no-body", "no-such", "rights"].map((x) => RC.canonicalCode?.(x) ?? null) }; },
+    good: (o) => JSON.stringify(o.c) === '["hold-limit","beneath","not-pushable","not-found","rights"]' },
   { id: "G1", what: "(guard) the fold reads a log whose refused act carries an old code: status ok, the act kept as written", run(s) {
       s.call("olive", "create-world", { title: s.name }); const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world;
       fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), JSON.stringify({ world: wid, kind: "act", actor: "olive", verb: "grab", body: { args: ["id"], refused: { code: "hands-full" } }, ts: L.at(-1).ts + 1 }) + "\n");
