@@ -277,6 +277,13 @@ const cases: Case[] = [
       const moon = new Uint8Array(fs.readFileSync(path.resolve(ENGINE, "tools/protocol/fixtures/dims-1024x512.jpg")).buffer.slice(0));
       return { png: UP.imageDims(png, "png"), moon: UP.imageDims(moon, "jpg"), cap: UP.MAX_IMAGE_PX }; },
     good: (o) => !o.none && JSON.stringify(o.png) === "[9000,10]" && JSON.stringify(o.moon) === "[1024,512]" && o.cap === 8192 },
+  { id: "P6b", what: "upload (review of #260, server I90): a JPEG padded with fill bytes before its size is still measured, and an image whose size can't be read is refused, not let through", async run() {
+      const UP = await import(TREE + "server/upload.ts").catch(none); if (!UP.imageSizeRefusal) return { none: true };
+      const moon = new Uint8Array(fs.readFileSync(path.resolve(ENGINE, "tools/protocol/fixtures/dims-1024x512.jpg")).buffer.slice(0));
+      const padded = new Uint8Array(moon.length + 3); padded.set(moon.subarray(0, 2), 0); padded.set([0xff, 0xff, 0xff], 2); padded.set(moon.subarray(2), 5);
+      const blind = new Uint8Array(64); blind.set([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10], 0);   // a JPEG header with no SOF in reach
+      return { padded: UP.imageDims(padded, "jpg"), blind: UP.imageSizeRefusal(blind, "jpg")?.status ?? null, moon: UP.imageSizeRefusal(moon, "jpg") }; },
+    good: (o) => !o.none && JSON.stringify(o.padded) === "[1024,512]" && o.blind === 415 && o.moon === null },
 
   // ---------------- S: sound ----------------
   { id: "S1", what: "sound src: an http link and an IP address refused; a trusted host's link admitted and said to reach everyone; another host's admitted and said to reach only viewers who opted in", run(s) { cast(s);
