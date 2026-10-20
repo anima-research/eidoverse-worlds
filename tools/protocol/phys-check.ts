@@ -495,6 +495,23 @@ function playground(name) {
   const after = view(W).sim?.statics?.["crate-1"]?.dyn;
   ok(par.ok && lk.ok && del.ok && !before && after === true, "U4 deleting the locked thing on a dynamic one makes that one knockable again", { par: par.ok ?? par.refused, lk: lk.ok ?? lk.refused, del: del.ok || del.refused, before, after }); }
 
+// review of #260: a thing already in a hand when physics starts stays in the hand, out of the engine's world, on replay too
+{ const W = fresh("held-at-start"); call(W, "rowan", "create-world", { title: W });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+  call(W, "rowan", "move", { to: [0, 0, -0.5] }); const g = call(W, "rowan", "grab", { id: "ball" });
+  const on = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
+  const v = view(W);
+  ok(g.ok && on.ok && v.lifted.has("ball") && !v.sim?.bodies.ball && !v.sim?.statics?.ball,
+    "U5 a thing held when physics starts is out of the engine's world (logged as lifted), not seated where it was picked up", { g: g.ok, on: on.ok, lifted: [...v.lifted], body: !!v.sim?.bodies.ball, st: !!v.sim?.statics?.ball });
+  const put = call(W, "rowan", "put", { id: "ball", pos: [0, 0, 0.5] }); const v2 = view(W);
+  ok(put.ok && !v2.lifted.has("ball") && !!(v2.sim?.bodies.ball || v2.sim?.statics?.ball), "U5 …and put down, it's back in the engine's world", { put: put.ok, lifted: [...v2.lifted] }); }
+{ const W = fresh("held-by-other"); call(W, "rowan", "create-world", { title: W });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+  call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = call(W, "sam", "grab", { id: "ball" });
+  const on = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
+  const lift = log(W).find((e: any) => e?.kind === "sim" && e.verb === "lift" && e.body?.id === "ball");
+  ok(g.ok && on.ok && lift?.actor === "sam", "U5b the lift an engine's start logs names the holder, not whoever started the engine", { g: g.ok ?? g.refused, on: on.ok, actor: lift?.actor }); }
+
 console.log(`${passes} passed, ${fails} failed`);
 fs.rmSync(root, { recursive: true, force: true });
 process.exit(fails ? 1 : 0);

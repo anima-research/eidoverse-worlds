@@ -77,7 +77,10 @@ function commit(w, actor, verb, args, build) {
   // what a delete woke (buildDelete: things resting on what it removed as well as on their parent) falls from rest after the
   // change, caused by the act; only things the write leaves standing (a later batch op may have removed one)
   const wakes = (ctx.launches ?? []).filter((b) => plan.after.entities[b.id]).map((b) => ({ kind: "sim", actor, cause: w.entries.length, verb: "launch", body: b }));
-  w.fits(actE, changeE, ...resettleEntries(w, settle, w.entries.length), ...wakes); // every line fits, or none is written
+  // what an engine's start finds in a hand (buildEpoch): lifted out of its world, caused by the act. Each names its holder as
+  // actor, as a grab's own lift does, since orphanLifts reads the holder from it
+  const lifts = (ctx.lifts ?? []).filter((id) => plan.after.entities[id] && w.presence.holds?.[id]).map((id) => ({ kind: "sim", actor: w.presence.holds[id].by, cause: w.entries.length, verb: "lift", body: { id } }));
+  w.fits(actE, changeE, ...resettleEntries(w, settle, w.entries.length), ...wakes, ...lifts); // every line fits, or none is written
   // the budget counts THIS write too, not only what came before it (review 10-14 C0: a 300 KiB batch in an empty window passed a 256 KiB cap)
   if (!ctx.cap || ctx.cap.kind === "reaction" || ctx.cap.kind === "handle") rateCheck(w, actor, "act", JSON.stringify(actE).length + JSON.stringify(changeE).length);
   const act = w.append(actE);
@@ -85,6 +88,7 @@ function commit(w, actor, verb, args, build) {
   const after = w.state();
   applyResettle(w, settle, act, ctx.notes);
   for (const e of wakes) w.append({ ...e, cause: act });
+  for (const e of lifts) w.append({ ...e, cause: act });
   // an edit that moves, re-parents or removes a thing in someone's hand takes it out of the hand: it is where the edit
   // put it now. (R, 10-10: moved a held barrel in edit mode; her client let go, the authority didn't, and every throw
   // after was refused from a hand the two no longer agreed on.)

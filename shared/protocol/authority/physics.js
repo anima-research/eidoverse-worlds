@@ -179,6 +179,10 @@ function buildEpoch(ctx, v, a) {
     refuse("bounds", `tickMs is ${JSON.stringify(v.tickMs)}; the engine steps at a whole number of ms from ${TICK_MS.min} to ${TICK_MS.max}`, `leave it out for ${COMPONENTS["physics-engine"].defaults.tickMs} (30 steps a second), or e.g. tickMs: 16`);
   if (v.build === undefined) ctx.notes.push({ component: "physics-engine", field: "build", kept: spec.build, why: "stamped: determinism belongs to one exact build, so the epoch names it" });
   if (!carried(spec)) ctx.notes.push({ component: "physics-engine", why: "that build isn't carried here: nothing will be thrown in this world until a server that carries it runs it" });
+  // what is in a hand as the engine starts stays out of its world. A grab without a carried engine logged no lift, and holds are
+  // presence, which no reader replays: so the epoch write logs one lift per such thing (commit appends them after the change),
+  // and every reader folds the same engine world from the log alone. Older logs without these stay as they are.
+  else ctx.lifts = Object.keys(ctx.w.presence.holds ?? {}).filter((id) => ctx.st.entities[id] && !sf.lifted.has(id)).sort();
   ctx.refs.add("@world");
   return [...ops, setOp("@world", "physics-engine", spec)];
 }
