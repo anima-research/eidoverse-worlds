@@ -71,7 +71,7 @@ r = await bare.takeOff();
 check('an empty list read from the model is kept, and still refused for its skeleton',
   Array.isArray(bare.bodyBoneNames) && bare.bodyBoneNames.length === 0 && /hip|spine|head/i.test(text(r)), text(r));
 r = await bare.foldWings(true);
-check('fold_wings on a body read as empty says it has no wings', r === 'this body has no animatable wings to fold', text(r));
+check('fold_wings on a body read as empty says it has no wings', text(r) === 'this body has no animatable wings to fold', text(r));
 
 console.log('\nA FOLDED BODY CAN ALWAYS UNFOLD');
 const vigil: any = new WorldAgent({ name: 'vigil', world: 'bone-bench' });
