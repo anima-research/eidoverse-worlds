@@ -43,7 +43,6 @@ export function aid1JoinIdentity(tok: string): { slug: string; payload: Aid1Payl
 // for every world the account may join; the mark only stops it approving another native pairing. Sessions issued
 // before 2026-10-17 carry `nativeWorld` instead, which means the same thing now.
 export type HnSession = { sub: string; name: string; scopes: string[]; claims?: Record<string, unknown>; exp: number; native?: true; nativeWorld?: string };
-export const isNativeSession = (s: HnSession) => s.native === true || s.nativeWorld !== undefined;
 export const hnSessions = new Map<string, HnSession>();
 export const hnJti = new JtiCache();
 export function sessionFromCookie(cookie: string | null): HnSession | null {
