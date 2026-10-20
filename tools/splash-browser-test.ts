@@ -1,5 +1,6 @@
 // splashes and ripples in a real browser: the water's ripple shader compiles and draws, a splash throws drops
-// that come back down, rings live and fade, and a body standing in the water rings it by itself.
+// that come back down, rings live and fade, a body standing in the water rings it by itself, and a world change
+// leaves nothing behind.
 //   bun tools/splash-browser-test.ts [--headed] [--shot out.png]
 import { writeFileSync } from 'node:fs';
 import { scratchBench, mkCheck, sleep } from './harness.ts';
@@ -74,6 +75,20 @@ try {
   console.log(`  body splashes: ${JSON.stringify(settled.recent)}`);
   console.log(`  viewer at ${JSON.stringify(await evalJson(`EW.myState.pos.toArray().map((v) => +v.toFixed(2))`))}`);
   check('no shader, pipeline or splash errors', errors.length === 0, errors.slice(0, 3).join(' | '));
+  // a world change with water in the air: travel resets the world, and here no new one arrives, so there is no water
+  // to land the drops on. Nothing may stay drawn, and the bodies the water knew are forgotten.
+  await evalJson(`EW.splash(5, -4, 1)`);
+  // (once a frame has drawn them: a reset before that would leave nothing drawn whatever the code did)
+  await until(() => evalJson(`(async () => { const { scene } = await import('/lib/core.js'); return (scene.getObjectByName('splash-drops')?.count ?? 0) > 0; })()`).catch(() => false), 'the drops drawn');
+  // read just before and just after the reset in one task, so no frame runs between: what is cleared, the reset clears
+  const [held, left] = await evalJson(`(async () => {
+    const { scene } = await import('/lib/core.js'), { reset } = await import('/lib/state.js');
+    const read = () => ({ ...EW.waterFx(), recent: undefined, drawn: scene.getObjectByName('splash-drops')?.count ?? null });
+    const held = read(); reset(); return [held, read()];
+  })()`);
+  check('a world reset leaves no drops drawn, no rings live and no bodies tracked',
+    held.drawn > 0 && held.ripples > 0 && held.bodies >= 1
+      && left.drops === 0 && left.drawn === 0 && left.ripples === 0 && left.bodies === 0, JSON.stringify({ before: held, after: left }));
 } catch (e) {
   process.exitCode = 1; throw e;
 } finally {

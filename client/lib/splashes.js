@@ -123,7 +123,8 @@ function sample(av) {
 
 /** Once a frame, after every body has moved (main.js registers it after 'remotes'). */
 export function updateSplashes(dt) {
-  if (waterLevel() == null) { if (drops.length) stepDrops(dt); return; }
+  // no water: no body is in it. Forget them all, so a pose from before is never read against one after it returns.
+  if (waterLevel() == null) { tracker.update([], dt); if (drops.length) stepDrops(dt); return; }
   const bodies = [];
   const me = getMe();
   if (me?.root) bodies.push(sample(me));
@@ -135,4 +136,11 @@ export function updateSplashes(dt) {
 /** Probes / the console: what is in the air and on the water. */
 export const splashDebug = () => ({ drops: drops.length, ripples: liveRipples(), made: ripplesMade(), bodies: tracker.size, recent: recent.slice() });
 
-onWorldChange((ev) => { if (ev.type === 'reset') drops.length = 0; });
+// A world change takes the drops with it, drawn ones included (with no water, stepDrops never runs to recount the
+// mesh), and the bodies' last poses: a body arriving near where it was is not a fall from there.
+onWorldChange((ev) => {
+  if (ev.type !== 'reset') return;
+  drops.length = 0;
+  if (mesh) mesh.count = 0;
+  tracker.update([], 0);
+});
