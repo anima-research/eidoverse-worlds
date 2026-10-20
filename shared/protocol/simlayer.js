@@ -314,6 +314,14 @@ export function livePoses(sf) {
   for (const [id, b] of Object.entries(sf.sim.bodies)) if (!b.resting && sf.launched[id]) out[id] = { pos: b.p.map(r3), v: b.v.map(r2) };
   return out;
 }
+/** Where the engine has each body it owns (launched, its rest not logged yet): {pos, v} while it flies, {pos, resting: true} once
+ *  it has stopped but its rest isn't on the record yet (a launch's rests are logged together). livePoses stays the flying ones. */
+export function enginePoses(sf) {
+  const out = {};
+  if (!sf.sim) return out;
+  for (const [id, b] of Object.entries(sf.sim.bodies)) if (sf.launched[id]) out[id] = b.resting ? { pos: b.p.map(r3), resting: true } : { pos: b.p.map(r3), v: b.v.map(r2) };
+  return out;
+}
 /** The sim's cut for a joiner (the authority's side of simFolder's opts.from), as plain JSON: where the engine stands at the
  *  view's clock, what is in flight, and the launch entries those flights came from (so a later rest's cause resolves). */
 export function simCutOf(sf, entries) {

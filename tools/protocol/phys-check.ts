@@ -557,6 +557,17 @@ function playground(name) {
   const ms = call(W, "rowan", "measure", { id: "table-1" }); const top0 = ms.surfaces?.[0];
   ok(ms.ok && JSON.stringify(top0?.size) === "[1.2,0.8]" && Array.isArray(top0?.xAxis), "U8 …and measure gives that top's own size, 1.2 × 0.8 m, with its axis, not the box of its corners", top0); }
 
+// review of #260: a body at rest whose rest isn't logged yet is read where the engine has it, and said to be so
+{ const W = playground("rest-unlogged");
+  call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [0, 2, 3] }); at(300);
+  const w = openWorld(root, W); const real = w.sim;
+  // as the engine stands while a launch's rests coalesce: this body has stopped, its rest not logged yet
+  w.sim = () => { const sf = real(); const b = sf.sim?.bodies.ball; if (b) { b.resting = true; b.v = [0, 0, 0]; } return sf; };
+  const eng = w.sim().sim?.bodies.ball?.p; const seen = request(w, "rowan", "look", {}).things?.find((x: any) => x.id === "ball");
+  const rec = worldT(w.state(), "ball").pos;
+  ok(!!eng && Math.hypot(eng[0] - rec[0], eng[2] - rec[2]) > 0.05 && seen && Math.hypot(seen.at[0] - eng[0], seen.at[2] - eng[2]) < 0.02 && !seen.moving && /not yet/.test(JSON.stringify(seen)),
+    "U9 look reads a body at rest but not yet logged where the engine has it, says so, and doesn't call it moving", { eng, rec, seen }); }
+
 console.log(`${passes} passed, ${fails} failed`);
 fs.rmSync(root, { recursive: true, force: true });
 process.exit(fails ? 1 : 0);

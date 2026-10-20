@@ -10,7 +10,7 @@ import { verbHelp, VERBSPEC } from "../verbspec.js";
 import { graphemes } from "../../text.js";
 import { saysOf } from "../../says.js";
 import { readOut } from "../../a11y.js";
-import { livePoses } from "../simlayer.js";
+import { enginePoses } from "../simlayer.js";
 import { r3 } from "../round.js";
 import { CTX, UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
@@ -240,7 +240,9 @@ function describe(st, id, live = {}, holds = {}, { full = false } = {}) {
   const ax = readOut(e.c, { name, heldBy: holds[id] ? said(holds[id].by) : null, sockets: socketsOf(st, id) });
   const desc = ax.description == null ? null : full || graphemes(ax.description) <= 200 ? ax.description : `${[...ax.description].slice(0, 200).join("")}… (inspect for all)`;
   return { id, name, ...(desc ? { description: desc } : {}), ...(ax.can.length ? { can: ax.can } : {}), ...(ax.state.length ? { state: ax.state } : {}), at: t.pos.map((n) => Math.round(n * 100) / 100),
-    ...(live[id] ? { moving: live[id] } : {}), ...(holds[id] ? { heldBy: holds[id].by, heldAt: holds[id].pose.pos.map((n) => Math.round(n * 100) / 100), ...(holds[id].hand ? { heldIn: holds[id].hand } : {}) } : {}),
+    ...(live[id] && !live[id].resting ? { moving: live[id] } : {}),
+    // stopped, its rest not logged yet: where the engine has it, said so (the record still has where it was thrown from)
+    ...(live[id]?.resting ? { at: live[id].pos.map((n) => Math.round(n * 100) / 100), atRest: "where it came to rest; not yet on the record" } : {}), ...(holds[id] ? { heldBy: holds[id].by, heldAt: holds[id].pose.pos.map((n) => Math.round(n * 100) / 100), ...(holds[id].hand ? { heldIn: holds[id].hand } : {}) } : {}),
     ...(g ? { grab: describeGrab(g, typeof name === "string" ? name : id) } : {}),
     ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...socketsLine(st, id), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(lockedC(e.c) ? { lock: e.c.lock === true ? true : { rank: lockLevel(e.c.lock) } } : {}), ...(e.c.openable && typeof e.c.openable === "object" ? { openable: e.c.openable } : {}),
     ...sayOf(st, e.c) };
@@ -270,7 +272,7 @@ const READ_VERBS = {
   look(w, actor, a) {
     const st = w.state(); const ids = Object.keys(st.entities).filter((k) => k !== "@world" && !st.entities[k].c.parent);
     const lim = a.limit ?? 40;
-    const live = livePoses(w.sim());
+    const live = enginePoses(w.sim());
     // the tree in the same order as ever, through the index's children map; only what's shown is described (review 10-06:
     // a child scan per node and a description of every thing made look O(N²) on a big world)
     // a socket is listed with its host (describe's sockets), not as a thing; what sits in it shows at its place
@@ -292,7 +294,7 @@ const READ_VERBS = {
     const st = w.state(); const e = st.entities[a.id];
     if (!e) return { ok: false, refused: { code: "not-found", reason: `no '${a.id}'`, didYouMean: guess(String(a.id), Object.keys(st.entities)) } };
     const piv = e.c.motion?.type === "pendulum" ? pivotOf(st, a.id) : undefined;
-    return { ok: true, ...describe(st, a.id, livePoses(w.sim()), w.presence.holds, { full: true }), born: e.born, components: e.c, versions: Object.fromEntries(Object.keys(e.c).map((k) => [k, versionOf(w, lastTouch(w, a.id, k)?.seq)])), touched: touchedOf(w, a.id, Object.keys(e.c)), world: worldT(st, a.id),
+    return { ok: true, ...describe(st, a.id, enginePoses(w.sim()), w.presence.holds, { full: true }), born: e.born, components: e.c, versions: Object.fromEntries(Object.keys(e.c).map((k) => [k, versionOf(w, lastTouch(w, a.id, k)?.seq)])), touched: touchedOf(w, a.id, Object.keys(e.c)), world: worldT(st, a.id),
       derived: { madeBy: madeBy(w, a.id), ...(piv !== undefined ? { pivot: piv } : {}), ...(modelOf(e.c.model)?.credits ? { asset: modelOf(e.c.model).credits } : {}) },
       children: Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === a.id), ...offersFor(st, a.id, actor), yourRole: roleOf(st, actor) };
   },
