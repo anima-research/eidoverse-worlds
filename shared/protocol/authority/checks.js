@@ -45,7 +45,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
   if (!carry && (comp === "light" || comp === "model" || comp === "mesh")) { const c = s.entities[id]?.c ?? {};
     for (const has of ["model", "light", "mesh"]) if (has !== comp && c[has] !== undefined) refuse("one-place", ONE_PLACE.reason(id, has, comp), ONE_PLACE.fix(id, has, comp)); }
   if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !CTX.knownId(comp.slice(6))))
-    refuse("shape", `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name`, "who {name} finds a person's identity; then set roles:<identity>", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
+    refuse("shape", !isIdentity(comp.slice(6)) ? `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name` : `roles:${comp.slice(6)} is an identity this server doesn't know`, "who {name} finds a person's identity; then set roles:<identity>", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
   const nums = (a, n, lim = 1e5) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === "number" && Math.abs(x) <= lim);
   // H5: everyone-is-owner would let any stranger remove the real owners: the default role is any role but owner (R 10-06;
   // research §4); `none` (legacy: below visitor) is still read and written, as existing worlds carry it
@@ -63,8 +63,8 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
     // open), and a new end is in the future, at most a year out
     if (v.until !== undefined) {
       if (v.role === "owner") refuse("shape", `${at}: ownership never expires`, "give a timed grant a role below owner, or leave until out");
-      if (!Number.isSafeInteger(v.until)) refuse("shape", `${at}.until is a time in epoch milliseconds`, "until: Date.now() + 2 * 3600000 for two hours from now");
-      if (!carry && now != null && (v.until <= now || v.until > now + 366 * 86400000)) refuse("bounds", `${at}.until must be in the future and at most a year away (it is ${v.until <= now ? "already past" : "more than a year out"})`, "until: Date.now() + <duration in ms>; to end a grant now, delete roles:<id>");
+      if (!Number.isSafeInteger(v.until)) refuse("shape", `${at}.until is a time in epoch milliseconds`, now != null ? `until: ${now + 7200000} ends it two hours from now (it is ${now} here now)` : "until is the time it ends, in epoch milliseconds");
+      if (!carry && now != null && (v.until <= now || v.until > now + 366 * 86400000)) refuse("bounds", `${at}.until must be in the future and at most a year away (it is ${v.until <= now ? "already past" : "more than a year out"})`, `it is ${now} here now: until is that plus the grant's length in ms; to end a grant now, delete roles:<id>`);
     }
     if (v.note !== undefined && !(typeof v.note === "string" && v.note.length <= 80)) refuse("shape", `${at}.note is up to 80 characters`, "");
     if (v.can !== undefined) { const bad = R.checkCan(v.can, at); if (bad) refuse(bad.code, bad.reason, bad.fix, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);

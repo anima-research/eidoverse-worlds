@@ -49,9 +49,9 @@ export function hygiene(text) {
   if (/[\uD800-\uDFFF]/.test(text.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, ""))) return { code: "source", reason: "the source has a lone surrogate (it isn't valid UTF-8)" };
   const lines = text.split("\n");
   for (let i = 0; i < lines.length; i++) {
-    const b = lines[i].search(BIDI); if (b >= 0) return { code: "trojan-source", reason: `line ${i + 1}, column ${b + 1}: a Unicode bidi control (U+${lines[i].charCodeAt(b).toString(16).toUpperCase().padStart(4, "0")}) can make code read differently from how it runs` };
-    const z = lines[i].search(ZW); if (z >= 0) return { code: "trojan-source", reason: `line ${i + 1}, column ${z + 1}: an invisible character (U+${lines[i].charCodeAt(z).toString(16).toUpperCase().padStart(4, "0")})` };
-    if (lines[i].length > 1000) return { code: "long-line", reason: `line ${i + 1} is ${lines[i].length} columns; code past column 1000 is off every reviewer's screen` };
+    const b = lines[i].search(BIDI); if (b >= 0) return { code: "trojan-source", reason: `line ${i + 1}, column ${b + 1}: a Unicode bidi control (U+${lines[i].charCodeAt(b).toString(16).toUpperCase().padStart(4, "0")}) can make code read differently from how it runs`, fix: "remove it; text that needs a direction mark can write it as a \\u escape in a string" };
+    const z = lines[i].search(ZW); if (z >= 0) return { code: "trojan-source", reason: `line ${i + 1}, column ${z + 1}: an invisible character (U+${lines[i].charCodeAt(z).toString(16).toUpperCase().padStart(4, "0")})`, fix: "remove it; a string that needs it can write it as a \\u escape" };
+    if (lines[i].length > 1000) return { code: "long-line", reason: `line ${i + 1} is ${lines[i].length} columns; code past column 1000 is off every reviewer's screen`, fix: `break line ${i + 1} into lines of at most 1000 columns` };
   }
   return null;
 }

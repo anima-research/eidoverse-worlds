@@ -1,9 +1,8 @@
 // shared/protocol/authority/rights.js — rights, and the views over the log that say who did what and who is sanctioned
 // (refactor C11, 2026-10-12; moved from authority.js's "rights", "views over the log" and "sanctions" sections unchanged).
-// A leaf over storage (isE, opsQuiet) and the ladder in roles.js; a refusal's words come through refuse.js's said.
+// A leaf over storage (isE, opsQuiet) and the ladder in roles.js.
 import * as R from "../roles.js";
 import { CTX } from "./ctx.js";
-import { said } from "./refuse.js";
 import { followUpsOf, isE, opsQuiet, readback } from "./storage.js";
 // The ladder, the closed permission list and the effective set live in shared/protocol/roles.js (the Sanctioned Society: ranked
 // membership only; banned and ghost are states outside it). Every rank comparison in the authority goes through rankOf /

@@ -59,9 +59,9 @@ export function entryOf(wc, who = {}, worldName = "this world", now = null) {
   const join = a?.join ?? "anyone";
   const w = `"${worldName}"`;
   const why = join === "signed-in" && who.anon ? `${w} is for signed-in people`
-    : join === "listed" && !listedIn(wc, who.actor, now) ? `${w} isn't open to you` : null;
+    : join === "listed" && !listedIn(wc, who.actor, now) ? `${w} isn't open to you; its owners decide who may come in, and asking again won't change that` : null;
   if (!why) return { may: "embody" };
-  if (a?.watch === "anyone" || who.trustedRenderer) return { may: "watch", why: a?.watch === "anyone" ? `${why} — you may watch (spectate)` : why };
+  if (a?.watch === "anyone" || who.trustedRenderer) return { may: "watch", why: a?.watch === "anyone" ? `${why}; you may watch (spectate)` : why };
   return { may: "none", why };
 }
 

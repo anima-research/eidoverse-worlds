@@ -27,7 +27,7 @@ for (;;) {
   const line = readLine(); if (line === null) process.exit(0);
   let job; try { job = JSON.parse(line); } catch { process.exit(1); }
   write({ go: true }); // "I got it and I'm running": a process the host never scheduled never says this (sandbox.js killAt)
-  const call = (q) => { if (q.length > job.max) return JSON.stringify({ err: "that call is too big to pass to the world", name: "WorldError" });
+  const call = (q) => { if (q.length > job.max) return JSON.stringify({ err: `that call is ${q.length} characters, more than the ${job.max} a call can pass to the world; send less in one call, such as a smaller value or fewer ops`, name: "WorldError" });
     write({ h: q }); const r = readLine(); if (r === null) process.exit(0); return r; };
   write({ done: vmRun(job.text, job.input, job.event, job.limits, call) });
 }

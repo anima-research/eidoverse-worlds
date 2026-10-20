@@ -37,7 +37,7 @@ import { isEido, modelWord } from "../eido.js";
 
 let Q = null, unavailable = null;
 try { const mod = await import("quickjs-emscripten"); Q = await mod.getQuickJS(); }
-catch (e) { unavailable = String(e?.message ?? e).slice(0, 200); }
+catch (e) { unavailable = String(e?.message ?? e).slice(0, 200); console.error(`[sandbox] quickjs-emscripten didn't load, so no script runs here: ${unavailable}`); }
 /** Is the sandbox here? (The authority says "unavailable" for every activation when it isn't.) */
 export const sandboxAvailable = () => (Q ? true : unavailable);
 
@@ -154,7 +154,7 @@ export function makeHost(x) {
   const wantId = (id, what) => { if (!isEntityId(id)) throw new HostError(`${what}: '${id}' isn't an entity id`); return id; };
   const wantComp = (c, what) => { if (!isComponent(c)) throw new HostError(`${what}: '${c}' isn't a component name`); return c; };
   const read = () => { if (++calls > L.calls) { stop = { code: "calls", why: `more than ${L.calls} reads in one activation` }; throw new HostError(stop.why); } };
-  const write = () => { if (ops.length >= L.ops) { stop = { code: "too-big", why: `more than ${L.ops} writes in one activation (41 §3.10)` }; throw new HostError(stop.why); } };
+  const write = () => { if (ops.length >= L.ops) { stop = { code: "too-big", why: `more than ${L.ops} writes in one activation; split the work across activations, or write less in each` }; throw new HostError(stop.why); } };
   const copy = (v) => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
   const host = (q) => {
     const [verb, ...a] = q;
@@ -214,12 +214,12 @@ export function makeHost(x) {
  * @returns {{fuel: number, ran?: number, fail?: {code: string, why: string}}}
  */
 export function vmRun(text, input, event, L, call, clock = () => performance.now()) {
-  if (!Q) return { fuel: 0, fail: { code: "unavailable", why: `the script sandbox isn't available on this server (${unavailable})` } };
+  if (!Q) return { fuel: 0, fail: { code: "unavailable", why: "this server has no script sandbox, so no script runs here; its operator can install one, and asking again won't change it until then" } };
   let rt = null, ctx = null, fuel = 0, deadline = Infinity, vstop = null;
   try {
     rt = Q.newRuntime(); rt.setMemoryLimit(L.memory); rt.setMaxStackSize(L.stack);
     rt.setInterruptHandler(() => { fuel++; if (fuel > L.fuel) { vstop ??= { code: "fuel", why: `out of fuel (${L.fuel} interrupt ticks): a loop that never ends, or too much work for one activation` }; return true; }
-      if (clock() > deadline) { vstop ??= { code: "time", why: `over the ${L.wallMs} ms wall-clock backstop` }; return true; } return false; });
+      if (clock() > deadline) { vstop ??= { code: "time", why: `ran past ${L.wallMs} ms of wall-clock time in one activation; do less in each one, or split the work across activations` }; return true; } return false; });
     ctx = rt.newContext();
     const fn = ctx.newFunction("__host", (h) => ctx.newString(call(ctx.getString(h))));
     ctx.setProp(ctx.global, "__host", fn); fn.dispose();
@@ -230,7 +230,7 @@ export function vmRun(text, input, event, L, call, clock = () => performance.now
     fuel = 0; vstop = null; deadline = clock() + L.wallMs;
     r = evalStep(text, "eval.js");
     if (!r.e) r = evalStep(`__deliver(${JSON.stringify(JSON.stringify(event))})`, "deliver.js");
-    if (clock() > deadline) vstop ??= { code: "time", why: `over the ${L.wallMs} ms wall-clock backstop` };
+    if (clock() > deadline) vstop ??= { code: "time", why: `ran past ${L.wallMs} ms of wall-clock time in one activation; do less in each one, or split the work across activations` };
     if (vstop) return { fuel, fail: vstop };
     if (r.e) { const m = errMsg(r.e);
       const code = /out of memory|string too long|Array too long|invalid array length/i.test(m) ? "memory" : /stack overflow|Maximum call stack/i.test(m) ? "stack" : errName(r.e) === "SyntaxError" ? "syntax" : "thrown";

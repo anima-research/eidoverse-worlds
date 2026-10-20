@@ -485,7 +485,7 @@ const SCRIPT_VERBS = {
     { const now = w.now(), U = ((w.presence.uploads ??= {})[actor] ??= []).filter((t) => now - t < 60000); w.presence.uploads[actor] = U; // presence: never logged
       if (U.length >= SR.LIMITS.uploads) refuse("rate", `${said(actor)} has uploaded ${U.length} sources in the last minute; at most ${SR.LIMITS.uploads}`, "slow down");
       U.push(now); w.presenceDirty = true; }
-    const dirty = SR.hygiene(a.text); if (dirty) refuse(dirty.code, dirty.reason, "refused: reviewers must see what runs");
+    const dirty = SR.hygiene(a.text); if (dirty) refuse(dirty.code, dirty.reason, dirty.fix ?? "refused: reviewers must see what runs");
     const syn = w.scripts?.checkSyntax?.(a.text); if (syn) refuse("syntax", syn.why, "docs/SCRIPTS.md shows the API");
     if (a.dry) return { ok: true, dry: true, note: "it parses and is clean; nothing stored" };
     return { ok: true, src: w.putBlob({ lang: SR.LANG, api: SR.API, text: a.text }), next: "set {id, component: 'script:<name>', value: {src, scope: {ids: 'self', comps: [...]}, on: ['use']}}" };

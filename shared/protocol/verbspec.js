@@ -35,7 +35,7 @@ export const VERBSPEC = {
   },
   // round-2 R10: a typo'd undo argument used to undo your latest act silently (undo {acts: 9}); now it's refused
   undo: { doc: "take back an act: your latest (bare), one by its act number, or one you tagged with label. You may undo your own acts, a builder's or visitor's if you're a builder, anyone's if you're an owner; never someone above you",
-    args: { act: { type: "int", doc: "the act's number (history and inspect show them); someone else's needs the rank to revert it" }, label: { type: "string", doc: "the label you gave a batch or set" },
+    args: { act: { type: "int", doc: "the act's number (history and inspect show them); someone else's needs the rank to revert it" }, label: { type: "string", doc: "the label you gave a batch" },
       actor: { type: "string", doc: "owners: roll back everything this person did since `since` (their identity; history shows it)" }, since: { type: "any", doc: "with actor: a version {seq, head} (history gives them)" },
       confirm: { type: "bool", doc: "with actor: needed to roll back more than 20 acts" }, dry: { type: "bool" } },
     example: { act: 42 } },
@@ -127,7 +127,7 @@ export const VERBSPEC = {
   batch: { doc: "several writes as ONE act (one undo): ops [{verb, args}…] of create, set, delete, place, turn", args: { ops: { type: "any", doc: "[{verb, args}, …]" }, label: { type: "any", doc: "a name undo {label} can find it by" }, dry: { type: "bool" } }, required: ["ops"] },
   "fork-copy": { doc: "a fork's copy of its parent's state (the server's own, while forking; never a person's request)", args: { ops: { type: "any" } } },
   use: { doc: "do something to a thing (inspect shows what it offers you). While you hold it, use {id} with no action fires its grabbable.use (its down; args {phase: 'up'} its up)", args: { id: ref("the thing"), action: { type: "string" }, args: { type: "object" }, dry: { type: "bool", doc: "preview only: what it would write (a script runs dry); nothing is logged" } }, required: ["id"],
-    example: { id: "swing-1", action: "push", args: { impulse: [0, 0, 1.5] } } },
+    example: { id: "door-1", action: "open" } },
 };
 // Request words held for a shape that isn't built (PROTOCOL §7a: the avatar guard rails). The authority refuses each by name
 // (`reserved`), never as an unknown verb, so nobody ships a client that sends one with a guessed shape.
@@ -164,7 +164,7 @@ export function validate(verb, a) {
   const T = Object.hasOwn(VERBSPEC, verb) ? VERBSPEC[verb] : null; if (!T) return null;
   const ex = (k) => T.args[k]?.example ?? T.example;
   for (const k of Object.keys(a)) if (!(k in T.args)) return { code: "unknown-arg", reason: `${verb} has no argument '${k}'`, fix: `${verb} takes: ${Object.keys(T.args).join(", ")}`, example: ex(k) };
-  for (const k of T.required ?? []) if (a[k] === undefined) return { code: "missing-arg", reason: `${verb} needs '${k}'`, fix: T.doc, example: T.example };
+  for (const k of T.required ?? []) if (a[k] === undefined) return { code: "missing-arg", reason: `${verb} needs '${k}'`, fix: T.args[k]?.doc ? `${k}: ${T.args[k].doc}` : T.doc, example: T.example };
   if (T.oneOf) { const m = T.oneOf.filter((k) => a[k] !== undefined);
     if (m.length !== 1) return { code: "shape", reason: m.length ? `say one of ${m.join(" / ")}, not several` : `${verb} needs one of: ${T.oneOf.join(", ")}`, fix: T.oneOf.map((k) => `${k}: ${T.args[k].doc}`).join("; "), example: T.args[m[0] ?? "on"].example };
     for (const [k, s] of Object.entries(T.args)) if (a[k] !== undefined && s.modes && !s.modes.includes(m[0])) return { code: "doesnt-apply", reason: `'${k}' doesn't apply with '${m[0]}' (it applies with ${s.modes.join(", ")})`, fix: `remove '${k}'${k === "facing" && ["beside", "against"].includes(m[0]) ? `: ${m[0]} sets the facing itself` : ""}`, example: T.args[m[0]].example }; }
