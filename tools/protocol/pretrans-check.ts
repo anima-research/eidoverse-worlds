@@ -197,7 +197,7 @@ await C("K8", "no account subject is written wherever it sits (PROTOCOL §9.2): 
   const log = [...v1commons(),
     { seq: 6, ts: 7, actor: "janus", verb: "spawn", args: { id: "lamp_2", lib: "store/0123456789abcdef.glb", pos: [1, 0, 0], placer: { id: "janus", sub: "human:discord:1" } } },
     { seq: 7, ts: 8, actor: "janus", verb: "behavior", args: { id: "bell", src: SRC, bySub: "human:discord:1" } },
-    // v1's comp folded its data blindly: a sign's subtitle under `sub` is data, not an account (Nigel-2405's case)
+    // v1's comp folded its data blindly: a sign's subtitle under `sub` is data, not an account
     { seq: 8, ts: 9, actor: "antra", verb: "comp", args: { id: "rock_1", type: "sign", data: SIGN } }];
   // a mapper keyed by the account when one is given, else by the name: an identity reached through an account, not a name,
   // which is what joins a person's acts to their grant on a server where names don't (TRUST_NAMES, an agent's token name)

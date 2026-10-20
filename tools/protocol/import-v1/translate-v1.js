@@ -102,7 +102,7 @@ function newReactions(rx) {
 }
 
 export const TRANSLATOR = "eidoverse/translate-v1@16";
-// @16 (review of #260, import-v1 I12): no account subject is written wherever it sits. A property named `sub` or ending in
+// @16 (review of #260): no account subject is written wherever it sits. A property named `sub` or ending in
 // `Sub` whose string has an account's shape is one, at any depth (withoutAccounts, below): in an imported act's args it
 // becomes the person's id when a mapper is given and is dropped when none is; in a value it is always dropped. Any other
 // string under such a name is ordinary data and stays as it was (a v1 `comp` folded its data blindly). A binding's author is
