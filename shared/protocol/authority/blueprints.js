@@ -233,6 +233,8 @@ const thingSaid = (st, id) => { const l = st?.entities?.[id]?.c?.label; return t
 // R 10-07: a thing reads like an accessibility tree (PROTOCOL §4): its name, its description (alt text; a look clips it,
 // inspect has it whole), then what it can do and its state, generated from its components by shared/a11y.js, the reading
 // mcpl's look and the inspector share
+// a surface's size as a placement reads it: a turned top's own rectangle (with its x axis on the ground), else its box
+const surfaceSize = (s) => (s.rect ? { size: [r3(2 * s.rect.hx), r3(2 * s.rect.hz)], xAxis: s.rect.u.map(r3) } : { size: [r3(s.max[0] - s.min[0]), r3(s.max[1] - s.min[1])] });
 function describe(st, id, live = {}, holds = {}, { full = false } = {}) {
   const e = st.entities[id]; const t = worldT(st, id); const g = grabOf(e.c); const name = e.c.label ?? modelOf(e.c.model)?.label ?? e.c.model ?? id;
   const ax = readOut(e.c, { name, heldBy: holds[id] ? said(holds[id].by) : null, sockets: socketsOf(st, id) });
@@ -298,7 +300,7 @@ const READ_VERBS = {
     const st = w.state(); const b = aabb(st, a.id); if (!b) return { ok: false, refused: { code: "no-model", reason: `${a.id} has no model or mesh to measure` } };
     const t = worldT(st, a.id);
     return { ok: true, id: a.id, bounds: { min: b.min.map(r3), max: b.max.map(r3) }, size: b.max.map((v, i) => r3(v - b.min[i])),
-      front: qrot(t.q, [0, 0, 1]).map(r3), surfaces: surfacesOf(st, a.id).map((s) => ({ level: s.level, y: r3(s.y), size: [r3(s.max[0] - s.min[0]), r3(s.max[1] - s.min[1])] })) };
+      front: qrot(t.q, [0, 0, 1]).map(r3), surfaces: surfacesOf(st, a.id).map((s) => ({ level: s.level, y: r3(s.y), ...surfaceSize(s) })) };
   },
   find(w, actor, a) {
     const q = (a.query ?? "").toLowerCase();

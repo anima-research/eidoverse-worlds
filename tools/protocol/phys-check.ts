@@ -553,7 +553,9 @@ function playground(name) {
   // asked to place the 0.6 m crate 0.35 m to the side (toward a corner of the box), it is put wholly on the top or refused
   const put = call(W, "rowan", "place", { id: "crate-1", on: "table-1", offset: [0.35, 0] }); const p = worldT(openWorld(root, W).state(), "crate-1").pos;
   const corners = [[-0.3, -0.3], [-0.3, 0.3], [0.3, -0.3], [0.3, 0.3]].map(([dx, dz]) => [p[0] + dx, p[2] + dz]);
-  ok(!put.ok || corners.every(([x, z]) => inTop(x, z)), "U8 …and a place on it puts the crate wholly on its top", { put: put.ok ?? put.refused, p }); }
+  ok(!put.ok || corners.every(([x, z]) => inTop(x, z)), "U8 …and a place on it puts the crate wholly on its top", { put: put.ok ?? put.refused, p });
+  const ms = call(W, "rowan", "measure", { id: "table-1" }); const top0 = ms.surfaces?.[0];
+  ok(ms.ok && JSON.stringify(top0?.size) === "[1.2,0.8]" && Array.isArray(top0?.xAxis), "U8 …and measure gives that top's own size, 1.2 × 0.8 m, with its axis, not the box of its corners", top0); }
 
 console.log(`${passes} passed, ${fails} failed`);
 fs.rmSync(root, { recursive: true, force: true });
