@@ -274,7 +274,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const bare = clientAddress(hdr({}), "198.51.100.4", trusted), none = clientAddress(hdr({ "x-real-ip": "1.2.3.4" }), null, trusted);
   ok(fromProxy === "203.0.113.7" && fromProxy2 === "203.0.113.8" && direct === "198.51.100.4" && framed === "198.51.100.4" && bare === "198.51.100.4" && none === "?",
     "A13 X-Real-IP / X-Forwarded-For are honoured only from a trusted proxy (loopback or TRUSTED_PROXIES); from any other peer the socket address stands, so a direct guest can neither pick nor frame an address", { fromProxy, fromProxy2, direct, framed, bare, none });
-  // review of #260, server I128: the proxy writes the address into ONE header, and the other arrives as the client sent it
+  // review of #260: the proxy writes the address into ONE header, and the other arrives as the client sent it
   const xff = (h, p) => clientAddress(hdr(h), p, trusted, "x-forwarded-for");
   const forged = xff({ "x-forwarded-for": "198.51.100.66, 203.0.113.8" }, "10.0.0.9");
   const chained = xff({ "x-forwarded-for": "198.51.100.66, 203.0.113.8, 127.0.0.1" }, "10.0.0.9");
@@ -282,7 +282,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const xffThrough = clientAddress(hdr({ "x-forwarded-for": "198.51.100.66" }), "127.0.0.1", trusted, "x-real-ip");
   ok(forged === "203.0.113.8" && chained === "203.0.113.8" && realThrough === "203.0.113.8" && xffThrough === "127.0.0.1",
     "A13b only the header the proxy writes is read: behind an X-Forwarded-For proxy, a client's own X-Real-IP or left-hand hop is never taken; behind an X-Real-IP proxy, a client's X-Forwarded-For isn't either", { forged, chained, realThrough, xffThrough }); }
-// ---- A13c (review of #260, server I16): a global ban made before accounts, on an aid1 agent's bare sub, still holds (pure) ----
+// ---- A13c (review of #260): a global ban made before accounts, on an aid1 agent's bare sub, still holds (pure) ----
 { const { restoreBans, findBan } = await import("../../server/moderation.ts");
   const was = { "old-agent": { by: "op", ts: 1, sub: "agent-7f3a" }, "old-person": { by: "op", ts: 1, sub: "discord|123" }, "namesake": { by: "op", ts: 1, name: "bob" } };
   const R = restoreBans ? restoreBans(was) : Object.fromEntries(Object.entries(was).filter(([, b]) => b.sub).map(([k, b]) => [k, { ...b, account: b.sub }]));

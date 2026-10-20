@@ -277,7 +277,7 @@ const cases: Case[] = [
       const moon = new Uint8Array(fs.readFileSync(path.resolve(ENGINE, "tools/protocol/fixtures/dims-1024x512.jpg")).buffer.slice(0));
       return { png: UP.imageDims(png, "png"), moon: UP.imageDims(moon, "jpg"), cap: UP.MAX_IMAGE_PX }; },
     good: (o) => !o.none && JSON.stringify(o.png) === "[9000,10]" && JSON.stringify(o.moon) === "[1024,512]" && o.cap === 8192 },
-  { id: "P6b", what: "upload (review of #260, server I90): a JPEG padded with fill bytes before its size is still measured, and an image whose size can't be read is refused, not let through", async run() {
+  { id: "P6b", what: "upload (review of #260): a JPEG padded with fill bytes before its size is still measured, and an image whose size can't be read is refused", async run() {
       const UP = await import(TREE + "server/upload.ts").catch(none); if (!UP.imageSizeRefusal) return { none: true };
       const moon = new Uint8Array(fs.readFileSync(path.resolve(ENGINE, "tools/protocol/fixtures/dims-1024x512.jpg")).buffer.slice(0));
       const padded = new Uint8Array(moon.length + 3); padded.set(moon.subarray(0, 2), 0); padded.set([0xff, 0xff, 0xff], 2); padded.set(moon.subarray(2), 5);

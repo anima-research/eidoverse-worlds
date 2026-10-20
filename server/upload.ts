@@ -436,8 +436,8 @@ export function sniffImage(b: Uint8Array): "png" | "jpg" | "webp" | null {
  *  allow-list admits. `null` for anything else: the name is not evidence. */
 /** An image's pixel size from its header (PNG IHDR, JPEG SOFn, WebP VP8/VP8L/VP8X), or null when it can't be read. */
 export const MAX_IMAGE_PX = 8192;
-/** Why an upload's image is refused for its size: past MAX_IMAGE_PX on a side, or a size its header doesn't give (a bomb
- *  needs only an unreadable header to pass a check that lets "unknown" through, so unknown is refused too). */
+/** Why an upload's image is refused for its size: past MAX_IMAGE_PX on a side, or a size its header doesn't give: the cap
+ *  holds only if every image's size is known. */
 export function imageSizeRefusal(b: Uint8Array, kind: "png" | "jpg" | "webp"): { status: number; why: string } | null {
   const dims = imageDims(b, kind);
   if (!dims) return { status: 415, why: `this ${kind === "jpg" ? "JPEG" : kind.toUpperCase()}'s header doesn't say its pixel size, so it can't be checked against the ${MAX_IMAGE_PX}-px cap; save it again from an image editor and upload that` };

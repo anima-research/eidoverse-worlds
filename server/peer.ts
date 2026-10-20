@@ -10,8 +10,7 @@ export const TRUSTED_PROXIES: ReadonlySet<string> = new Set([...LOOPBACK, ...Str
 export const isTrustedProxy = (peer: string | null | undefined, trusted: ReadonlySet<string> = TRUSTED_PROXIES) => !!peer && trusted.has(peer);
 /** Which header the trusted proxy writes the client's address into: X-Real-IP (deploy/nginx-show.conf, the README's setup,
  *  the default) or X-Forwarded-For (PROXY_ADDRESS_HEADER=x-forwarded-for). Only that one is read, because a proxy passes the
- *  other through as the client sent it (review of #260, server I128: with both read, a client's own X-Real-IP was believed
- *  behind a proxy that writes only X-Forwarded-For). */
+ *  other through as the client sent it (review of #260). */
 export const PROXY_ADDRESS_HEADER: "x-real-ip" | "x-forwarded-for" = String(process.env.PROXY_ADDRESS_HEADER ?? "").toLowerCase() === "x-forwarded-for" ? "x-forwarded-for" : "x-real-ip";
 /** The address a request comes from: the one the trusted proxy wrote (PROXY_ADDRESS_HEADER) when the socket peer is a trusted
  *  proxy, else the socket peer itself; "?" when neither is known. Pure given its inputs. */

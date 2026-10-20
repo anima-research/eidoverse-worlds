@@ -27,7 +27,7 @@ export function saveGlobalBans() {
 }
 /** The ban list as stored, made current. A record from before accounts carried the principal's bare `sub`: a signed-in
  *  person's account is that sub still, but an aid1 agent's is now `aid1:<iss>:<sub>`, so such a record is kept with
- *  `legacySub` and matches the aid1 account whose sub it names (review of #260, server I16). A name-keyed record with
+ *  `legacySub` and matches the aid1 account whose sub it names (review of #260). A name-keyed record with
  *  neither can't be honoured safely (it would hit namesakes) and is dropped, said once. */
 export function restoreBans(raw: Record<string, BanRec>): Record<string, BanRec> {
   const out: Record<string, BanRec> = {}; const dropped: string[] = [];

@@ -132,7 +132,7 @@ export class World {
   modStateKey?: string;   // the last mod-state (muted badges) the sweep sent
   sfuMutedIds?: Set<string>;   // display ids the sweep has muted at the SFU (released when that connection is gone)
   sfuDeafIds?: Set<string>;    // display ids the sweep has deafened at the SFU (ghosts; released likewise)
-  /** Hold every standing pose that carries a reach to the tables as they are now (review of #260, server I1): after each
+  /** Hold every standing pose that carries a reach to the tables as they are now (review of #260): after each
    *  request, and on the sanctions tick, since a timed allow can end with no request at all. Quiet: no attempt recorded,
    *  nothing said to a reacher for a packet they didn't send. */
   regateReaches(): void {

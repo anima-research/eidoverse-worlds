@@ -215,7 +215,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // a grab takes someone's body (move, L6): their consent and reach, at the server; the stream and release that follow
     // only ever go to a body that accepted the grab (its client answers with end otherwise)
     if (msg.grab != null) { const why = bodyRefusal(c, tc, "displace", "drag"); if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; } }
-    // what follows a grab is held to the same table (review of #260, server I6): pulling a nail (unpin) takes the body as a
+    // what follows a grab is held to the same table (review of #260): pulling a nail (unpin) takes the body as a
     // grab does, so it needs displace allowed or a drag this person granted; and once displace is deny, nothing more of a
     // drag reaches them ("only deny ends it": a grant by an ask outlives a later ask cell). An end always goes through.
     else if (msg.end == null && !(c.actorId && c.actorId === tc.actorId)) {

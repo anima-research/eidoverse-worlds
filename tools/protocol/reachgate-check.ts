@@ -84,7 +84,7 @@ const head0 = w.log.head;
   ok(out?.reach?.rightHand?.t?.point === "hand_r", "RG4 a standing allow: Sly's hand on Vic's hand relays", out);
   const out2 = reachTo(sly, { who: "Vic", point: "chest_front" });
   ok(out2 && !out2.reach, "RG4 …an allow for touch is not one for intimate", out2);
-  // RG25 (review of #260, server I1): a touch the table allowed (no ask, so no grant and no body-revoked) leaves Sly's
+  // RG25 (review of #260): a touch the table allowed (no ask, so no grant and no body-revoked) leaves Sly's
   // standing pose the moment Vic's table closes, and the server's re-hold isn't told to Sly as an attempt of his
   reachTo(sly, { who: "Vic", point: "hand_r" });
   const ks = sly.got.length;
@@ -116,14 +116,14 @@ const head0 = w.log.head;
 { const out = reachTo(sly, { who: "Nobody", point: "chest_front" });
   ok(out && !out.reach, "RG8 a hand toward someone who isn't here is stripped", out); }
 
-// RG21 (review of #260, server I8): a point in one body's frame is drawn where it lands in the world (reachnet.js resolves it
-// in their frame), so a point given in Vic's frame that rests inside Tom is held to Tom's table, not waved through as Vic's
+// RG21 (review of #260): a point in one body's frame is drawn where it lands in the world (reachnet.js resolves it
+// in their frame), so a point given in Vic's frame that rests inside Tom is held to Tom's table
 { const out = reachTo(sly, { p: [-0.62, 1.2, 0.05], space: "Vic" });   // Vic stands at the origin, yaw 0: that is Tom's middle
   ok(out && !out.reach, "RG21 a point in Vic's frame that lands inside Tom is stripped", out);
   const out2 = reachTo(sly, { p: [0, 1.2, 2], space: "Vic" });
   ok(out2?.reach?.rightHand?.t?.space === "Vic", "RG21 …one in Vic's frame in open air still relays", out2); }
 
-// RG22 (review of #260, server I9): receivers turn a body by its pose's q when it has one (remotes.js), so the gate does too.
+// RG22 (review of #260): receivers turn a body by its pose's q when it has one (remotes.js), so the gate does too.
 // Sly at x 0.6, turned half round by q while yaw stays 0: her own +x is the world's -x, so [0.62, 1.2, 0.05] is Vic's middle
 { const out = reachTo(sly, { p: [0.62, 1.2, 0.05], space: "self" }, { q: [0, 1, 0, 0] });
   ok(out && !out.reach, "RG22 a point in Sly's own frame, turned by q, that lands inside Vic is stripped", out);
@@ -142,8 +142,8 @@ ok(w.log.head === head0, "RG10 nothing about a reach is appended to the log", w.
   ok(out?.reach?.rightHand?.t?.point === "upper_back", "RG9 a touch the authority's reach verb admitted (asked, yes) relays", out);
   const k = tom.got.length;   // from before the change: the revocation is what Tom hears, whenever it reaches him
   req(vic, "consent", { set: { class: "touch", tier: "everyone", mode: "deny" } });
-  // review of #260, server I1: the hand already resting on her leaves at once, from the pose joiners are handed and the
-  // next frame, without Tom sending another packet (a client that just stops sending kept it drawn)
+  // review of #260: the hand already resting on her leaves at once, from the pose joiners are handed and the
+  // next frame, without Tom sending another packet
   ok(!tom.lastPose?.reach && w.dirty.has(tom.id) && !w.dirty.get(tom.id)?.reach, "RG24 …and the hand Tom already holds there leaves his standing pose and the next frame at once", { last: tom.lastPose?.reach, dirty: w.dirty.get(tom.id)?.reach });
   const heard = tom.got.slice(k).filter((m) => m.type === "body-inbox").flatMap((m) => m.messages);
   ok(heard.filter((m) => m.type === "body-revoked").length === 1 && heard.filter((m) => m.type === "reach-refused").length === 0, "RG24 …and Tom hears the revocation once, and no refusal for a packet he didn't send", heard);
@@ -232,7 +232,7 @@ let tierNobody, perPerson, paused;
   ok(att.some((a) => /paused/.test(a.why ?? "")) && att.some((a) => /said no/.test(a.why ?? "")) && att.some((a) => /everyone is deny/.test(a.why ?? "")),
     "RL2 Mo's own attempt ring still records the real cause of each", att.map((a) => a.why)); }
 
-// RG23 (review of #260, server I6): pulling a nail (unpin) and a drag's stream are held to the target's displace consent
+// RG23 (review of #260): pulling a nail (unpin) and a drag's stream are held to the target's displace consent
 // like the grab is; the agent runtime applies an unpin on the word that the server checked it
 { req(vic, "consent", { set: { class: "displace", tier: "everyone", mode: "deny" } });
   const drag = (m) => MESSAGES["bodydrag"]({ c: sly, ws: sly.ws, now: Date.now(), expel: () => {} }, { type: "bodydrag", target: "Vic", ...m });

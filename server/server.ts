@@ -796,7 +796,7 @@ export function sanctionSweep(w: World) {
   if (w.modStateKey !== key) { w.modStateKey = key; w.broadcast({ type: "mod-state", muted }); }
 }
 registerSystem({ name: "sanctions", everyMs: 2000, fn: () => { for (const w of worlds.values()) { try { sanctionSweep(w); } catch (err) { console.error(`[world:${w.name}] sanction sweep`, err); }
-  try { w.regateReaches(); } catch (err) { console.error(`[world:${w.name}] re-gating reaches`, err); } } } });   // a timed allow ends with no request (review of #260, server I1)
+  try { w.regateReaches(); } catch (err) { console.error(`[world:${w.name}] re-gating reaches`, err); } } } });   // a timed allow ends with no request (review of #260)
 
 function buildSnapshot(w: World, c: Client) {
     // snapshot = the authority's cut of the world (the joiner folds it, then the log stream) + who's present now
@@ -1203,9 +1203,9 @@ const server = Bun.serve({
             // hand the fresh leg a deleted send path.
             const cred = mintSfuCredential(c.world.name, c.id, c.gen!, mediaGen);
             registerSfuSender(c.world.name, c.id, (payload) => ws.send(JSON.stringify(payload)));
-            // the mint retired the old leg, and a retirement unmutes and undeafens the id at the SFU (sfuadapter.ts
-            // revokeSfuLeg): forget what this connection last applied, so the sweep puts a sanction in force back now
-            // rather than reading its cached flag as still applied (review of #260, server I11)
+            // the mint retired the old leg, and a retirement resets the id's mute at the SFU (sfuadapter.ts revokeSfuLeg):
+            // forget what this connection last applied, its mute and deafness both, so the sweep applies the sanctions in
+            // force to the new leg (review of #260)
             c.sfuMuted = undefined; c.sfuDeaf = undefined;
             if (c.world.log) sanctionSweep(c.world);
             const transition = JSON.stringify({ type: "surface-transition",

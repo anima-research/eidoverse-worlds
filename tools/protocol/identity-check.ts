@@ -243,8 +243,8 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const diag2 = await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json();
     ok(jm2.snapshot?.yourRights?.muted?.channels?.includes("voice") && !(diag1.moderatorMuted ?? []).includes("Moss") && (diag2.moderatorMuted ?? []).includes("Moss"),
       "RS2 a voice mute survives a reconnect: released from the display id while they're gone, re-applied the moment they join, and the person is told", [jm2.snapshot?.yourRights, diag1.moderatorMuted, diag2.moderatorMuted]);
-    // …and asking for a fresh relay leg doesn't lift it (review of #260, server I11: the mint retires the old leg, which
-    // unmutes the id at the SFU, and the sweep, whose cached flag still said "muted", never put it back)
+    // …and asking for a fresh relay leg keeps it (review of #260): the mint resets the id's mute at the SFU, and the
+    // sweep applies the sanctions in force to the new leg
     m2.raw({ type: "relay-cred" }); await sleep(2600);   // past a sweep tick (2 s): the sweep alone must not be what's missing
     const gotCred = m2.msgs.some((m) => m.type === "relay-cred");
     const diag3 = await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json();

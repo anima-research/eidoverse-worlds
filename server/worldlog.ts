@@ -210,7 +210,7 @@ export class WorldLog {
     try { if (this.holdsKey() !== held) this.host?.broadcast({ type: "holds", world: this.name, holds: this.holds() }); this.forwardInbox(); }
     catch (err) { console.error(`[world:${this.name}] holds/inbox after a request failed`, err); }
     // a request may have closed someone's table (consent, a friend removed, a pause): what rests on them is held to it now,
-    // not at the reacher's next packet (review of #260, server I1)
+    // not at the reacher's next packet (review of #260)
     try { this.host?.regateReaches?.(); } catch (err) { console.error(`[world:${this.name}] re-gating reaches after a request failed`, err); }
   }
   /** A server operator's recorded repair (authority.js operatorRepair: @world's roles/access/default-role/role-defs, unban, repair-shapes;
