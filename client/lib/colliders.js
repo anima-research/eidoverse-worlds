@@ -893,7 +893,8 @@ export function surfaceUnder(x, z, terrainAt, maxY = Infinity, skipId = null) {
       _local.set(x - obj.position.x, 0, z - obj.position.z)
         .applyAxisAngle(UP, -obj.rotation.y).divideScalar(s);
       const fromY = (Math.min(maxY, obj.position.y + box.max.y * s) - obj.position.y) / s;
-      // a hair above maxY so a surface AT maxY is found: a WORLD centimetre
+      // a hair above maxY so a surface AT maxY is found (one whose stored
+      // height rounds just above maxY counts as above it): a WORLD centimetre
       // (the ray runs in the thing's own frame — at 20× scale, 0.01 there is
       // 20cm here, and could start above a whole stack of layers)
       _ray.origin.set(_local.x, fromY + 0.01 / Math.abs(s), _local.z);
