@@ -533,7 +533,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     const typed = c.id;
     if (!c.spectator) {
       const dir = directoryFor(WORLDS_DIR);
-      const taken = (n: string) => [...w.clients].some((o) => o !== c && !o.spectator && foldName(o.id) === foldName(n) && o.account !== c.account)
+      const taken = (n: string) => [...w.clients].some((o) => o !== c && !o.spectator && foldName(o.id) === foldName(n) && (!c.account || o.account !== c.account))   // two guests are never one account (review of #260, server I10)
         || (!!c.anonymous && dir.claimedName(n))
         || (!!c.account && dir.claimedByOther(n, c.account));   // H2 (pass 3): nor an account under another account's name, here or not
       if (taken(c.id)) {
@@ -554,7 +554,12 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // A world's actor is an OPAQUE id from the authority's directory (server/directory.ts, never logged), reached only
     // through an account; one per account across the authority's worlds; anonymous ids live in memory only (M2). Typing someone's name
     // never yields their id, so it never yields their role.
-    c.actorId = directoryFor(WORLDS_DIR).resolve({ sub: c.account ?? null, name: c.id });
+    // a spectator skips the name checks above (it shows no name), so it mustn't record one either: its account keeps the
+    // name it has, and a first sight takes the typed name only if no other account wears it (review of #260, server I42)
+    { const dir = directoryFor(WORLDS_DIR);
+      const kept = c.spectator && c.account ? dir.idOfSub(c.account) : null;
+      c.actorId = kept ?? dir.resolve({ sub: c.account ?? null,
+        name: c.spectator && c.account && dir.claimedByOther(c.id, c.account) ? `${c.id}-${c.account.replace(/[^a-z0-9]/gi, "").slice(-4) || "2"}`.slice(0, LIMITS.ID_LEN) : c.id }); }
     if (c.renamed && c.actorId) directoryFor(WORLDS_DIR).markRenamed(c.actorId);
     // ENTRY — checked once identity is SETTLED (account, actor id, reserved names all resolved above), before the body
     // enters. One decision, server/access.ts entryFor, the same one every other door asks (a listing, an HTTP read, the
@@ -692,7 +697,15 @@ function installJoin(c: Client, w: World) {
           // its credential is bound to the retired primaryGen, and the
           // successor mints fresh (#104 amendment 1 — takeover→rotate;
           // measured target: old leg's packets refused ≤2s)
-          if ((c.surface ?? "world") === "world" && !other.spectator) retireRelayLeg(w, c.id);
+          // the leg is the PREDECESSOR's, under its own id: a successor that arrived under a new name has none yet
+          // (review of #260, server I12)
+          if ((c.surface ?? "world") === "world" && !other.spectator) retireRelayLeg(w, other.id);
+          // …and under a new name, the old name's avatar leaves everyone's view: the superseded close says nothing, and
+          // the successor arrives under its own name (review of #260, server I47)
+          if ((c.surface ?? "world") === "world" && !other.spectator && other.id !== c.id) {
+            w.dirty.delete(other.id);
+            if (!other.ghostHidden) { w.broadcast({ type: "leave", id: other.id }); w.scripts.onPresence("leave", other.id, other.actorId); }
+          }
         }
       }
     }
@@ -744,6 +757,11 @@ function rightsFor(w: World, c: Client) {
  *   - ghost: a ghost's body leaves everyone else's view (leave), and comes back (arrive) when the ghost ends;
  *   - rights: the person is told their own state again (your-rights carries ghost and muted);
  *   - the muted badges every client draws (mod-state: identity → until), when the set changes. */
+/** who is muted here now, by identity → until (the people list's muted glyph) */
+function mutedIn(S: Record<string, unknown>): Record<string, number> {
+  const muted: Record<string, number> = {}; for (const [id, x] of Object.entries(S)) if ((x as any).mute) muted[id] = (x as any).mute.until ?? 0;
+  return muted;
+}
 export function sanctionSweep(w: World) {
   if (!w.log) return;
   const S = w.log.sanctions();   // one pass over the moderator log per world per sweep (review 10-07: it was one per client)
@@ -773,7 +791,7 @@ export function sanctionSweep(w: World) {
   const deaf = new Set([...w.clients].filter((c) => c.sfuDeaf).map((c) => c.id));
   for (const id of [...(w.sfuDeafIds ?? [])]) if (!deaf.has(id)) { try { setSfuDeafened(w.name, id, false); } catch { /* relay gone */ } }
   w.sfuDeafIds = deaf;
-  const muted: Record<string, number> = {}; for (const [id, x] of Object.entries(S)) if ((x as any).mute) muted[id] = (x as any).mute.until ?? 0;
+  const muted = mutedIn(S);
   const key = JSON.stringify(muted);
   if (w.modStateKey !== key) { w.modStateKey = key; w.broadcast({ type: "mod-state", muted }); }
 }
@@ -1014,6 +1032,9 @@ const server = Bun.serve({
           // takes the first message after a join as the snapshot still works.
           if (msg.clock === true) ws.send(JSON.stringify({ type: "clock", t: authorityNow(w) }));
           ws.send(JSON.stringify(buildSnapshot(w, c)));
+          // the badges already in force: mod-state is broadcast only when the set changes, so a joiner is told it now
+          // (review of #260, server I48)
+          if (w.log) ws.send(JSON.stringify({ type: "mod-state", muted: mutedIn(w.log.sanctions()) }));
           sendGeomFollowup(w, c);
           if (w.log) { c.ghostHidden = w.isGhost(c); }   // a ghost arrives unseen (PLAN 10-06); the sweep shows them when it ends
           if (!c.spectator && !c.ghostHidden) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, ...(c.declares ? { declares: c.declares } : {}), session: presenceSession(c), ...(c.actorId ? { actorId: c.actorId } : {}), ...(w.log && c.anonymous ? { guest: true } : {}) }, c);
