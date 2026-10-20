@@ -21,7 +21,7 @@ import path from "node:path";
 import { scratch, copyTree } from "./common.ts";
 // [name, file, find, replace, rows it must turn red]: the mutation each row exists to catch
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["unpublished lines: publish only when the authority returned (no finally)", "server/worldlog.ts", "    finally { this.publish(from, held); }\n    const o = txnOutcome(live, from, { threw: threw !== null, refused: !!r && typeof r === \"object\" && r.ok === false, wedgedBefore });\n    if (threw !== null) {\n      console.error(", "    if (threw === null) this.publish(from, held);\n    const o = txnOutcome(live, from, { threw: threw !== null, refused: !!r && typeof r === \"object\" && r.ok === false, wedgedBefore });\n    if (threw !== null) {\n      console.error(", ["T1"]],
+  ["unpublished lines: publish only when the authority returned (no finally)", "server/worldlog.ts", "    finally { this.publish(from, held); }\n    const o = txnOutcome(live, from, { threw: threw !== null, error: threw, refused: !!r && typeof r === \"object\" && r.ok === false, wedgedBefore });\n    if (threw !== null) {\n      console.error(", "    if (threw === null) this.publish(from, held);\n    const o = txnOutcome(live, from, { threw: threw !== null, error: threw, refused: !!r && typeof r === \"object\" && r.ok === false, wedgedBefore });\n    if (threw !== null) {\n      console.error(", ["T1"]],
   ["unknown called failure: a throw from a durable write reported rolled-back", "shared/protocol/authority/storage.js", "  if (newLog || newMod) return { outcome: \"ambiguous\"", "  if (false) return { outcome: \"ambiguous\"", ["T2"]],
   ["persist before publish: entries before the disk", "shared/protocol/authority/storage.js", "    durably(\"log\", () => io.writeLine(line));   // on disk first; only then the live chain and fold see it\n    entries.push(posAt(parsed, seq));", "    entries.push(posAt(parsed, seq)); durably(\"log\", () => io.writeLine(line));", ["T3c", "T3d"]],
   ["the door decided at join only: recheck without it", "server/reqcap.ts", "  if (door) return", "  if (false) return", ["T4", "T5"]],
@@ -146,7 +146,12 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   send(t, "say", { text: "after" }); await until(() => t.replies.length > 1);
   const r2 = t.replies[1];
   ok(r2?.ok === false && r2?.txn === "rolled-back" && r2?.reply?.refused?.code === "server-error" && lines("t2").length === n0 + 1,
-    "T2c the wedged log refuses the next write before any byte: rolled back, server-error, the file unchanged", r2); }
+    "T2c the wedged log refuses the next write before any byte: rolled back, server-error, the file unchanged", r2);
+  // what each reply tells its reader to do: only whoever runs the server can reopen the world, and asking again changes nothing
+  // until then; neither points at a log the reader can't open, nor says to send it again
+  const fx = (m) => `${m?.reply?.refused?.reason ?? ""} | ${m?.reply?.refused?.fix ?? ""}`;
+  ok([r, r2].every((m) => /whoever runs (the|this) server/.test(fx(m)) && /won't change|until (then|it is reopened)/.test(fx(m)) && !/send it again|server's log/.test(fx(m))) && /refuses writes/.test(fx(r2)),
+    "T2d the ambiguous reply and the wedged log's next refusal say only whoever runs the server can reopen the world, and asking again changes nothing until then", { r: fx(r), r2: fx(r2) }); }
 
 // ---------------- T3 ----------------
 { const X = world("t3"); const t = tab(X, X.owner, { account: "local:olive" }); const n0 = X.w.log.live.entries.length;

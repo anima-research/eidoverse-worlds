@@ -67,7 +67,8 @@ export function worldOf(io) {
   // transaction outcome (txnOutcome below: the reply names it as `from`).
   w.wedged = {}; w.wedgedAt = null;
   const durably = (what, write) => {
-    if (w.wedged[what]) throw new Error(`storage: ${name}'s ${what} is not written: an earlier write failed (${w.wedged[what]}), so what is on disk is unknown; reopen the world from disk`);
+    // the wedge's own refusal says which file it is (`wedged`), so the reply can tell it from any other throw (txnOutcome)
+    if (w.wedged[what]) throw Object.assign(new Error(`storage: ${name}'s ${what} is not written: an earlier write failed (${w.wedged[what]}), so what is on disk is unknown; reopen the world from disk`), { wedged: what });
     try { write(); } catch (x) { w.wedged[what] = String(x?.message ?? x); if (what === "log") w.wedgedAt = entries.length; throw x; } };
   w.appendMod = (e) => { const r = { ts: Math.floor(w.now()), ...e }; durably("moderator log", () => io.appendMod?.(r)); w.mod.push(r); };
   let cache = null; // the folded state is a view, rebuilt when the log grows (callers never mutate it)
@@ -154,22 +155,28 @@ export function worldOf(io) {
 export const holdsCustody = (w) => !w.custody?.()?.sign || w.custody().sequencer() === w.entries[0]?.body?.sequencer;
 export const anyWedged = (w) => !!(w.wedged?.log || w.wedged?.["moderator log"]);
 export const wedgedOf = (w) => ({ log: !!w.wedged?.log, mod: !!w.wedged?.["moderator log"] });
-export function txnOutcome(w, from, { threw = false, refused = false, wedgedBefore = { log: false, mod: false } } = {}) {
+export function txnOutcome(w, from, { threw = false, error = null, refused = false, wedgedBefore = { log: false, mod: false } } = {}) {
   const grew = w.entries.length > from;
   if (!threw) return refused ? { outcome: "rolled-back" } : { outcome: "committed", from, to: w.entries.length };
   const now = wedgedOf(w), newLog = now.log && !wedgedBefore.log, newMod = now.mod && !wedgedBefore.mod;
   if (newLog || newMod) return { outcome: "ambiguous", from: newLog ? w.wedgedAt ?? w.entries.length : w.entries.length, wedged: true, ...(newLog ? {} : { file: "moderator log" }) };
   if (grew) return { outcome: "ambiguous", from: w.entries.length, wedged: anyWedged(w) };
-  return { outcome: "rolled-back" };
+  // wedged: the throw was the old wedge's own refusal (durably), naming its file; any other throw is a plain failure
+  const wedge = error && typeof error === "object" ? error.wedged : undefined;
+  return { outcome: "rolled-back", ...(wedge ? { wedged: true, ...(wedge === "log" ? {} : { file: wedge }) } : {}) };
 }
+const REOPEN_FIX = "only whoever runs this server can reopen it from disk, and asking again won't change that until they do";
 /** The reply a request gets when it did not end committed or refused (txnOutcome): never ok, always a registered code.
  *  A reply names its outcome as `txn` (never `outcome`: the body verbs' replies already say asked | allowed there). */
 export function txnRefusal(o) {
   if (o.outcome === "ambiguous") return { ok: false, txn: "ambiguous", from: o.from, refused: o.wedged
-    ? (o.file === "moderator log" ? { code: "ambiguous", reason: `the write's result is unknown: storage failed while writing the moderator log, so whether the record is on disk isn't known; this world refuses moderation writes until it is reopened from disk`, fix: `reload once the world is reopened; the moderator log says what stands` }
-      : { code: "ambiguous", reason: `the write's result is unknown: storage failed while writing it, so whether line ${o.from} is on disk isn't known; this world refuses writes until it is reopened from disk`, fix: `reload once the world is reopened; history from seq ${o.from} says what stands` })
+    ? (o.file === "moderator log" ? { code: "ambiguous", reason: `the write's result is unknown: storage failed while writing the moderator log, so whether the record is on disk isn't known; this world refuses moderation writes until it is reopened from disk`, fix: `only whoever runs this server can reopen it from disk, and asking again won't change that until they do; once it is reopened, the moderator log says what stands` }
+      : { code: "ambiguous", reason: `the write's result is unknown: storage failed while writing it, so whether line ${o.from} is on disk isn't known; this world refuses writes until it is reopened from disk`, fix: `only whoever runs this server can reopen it from disk, and asking again won't change that until they do; once it is reopened, history from seq ${o.from} says what stands` })
     : { code: "ambiguous", reason: `the request was cut off after part of it was written: lines before ${o.from} stand, the rest was not written`, fix: `history from seq ${o.from} says what stands; send what is missing again` } };
-  return { ok: false, txn: "rolled-back", refused: { code: "server-error", reason: "the server failed while handling the request; nothing it asked for was written", fix: "send it again; if it keeps failing, the server's log says why" } };
+  // an earlier write wedged a file (its disk state unknown): this one was refused before any byte, and every write after it will
+  // be too, until whoever runs the server reopens the world. Sending it again can't help, so the reply doesn't say to
+  if (o.wedged) return { ok: false, txn: "rolled-back", refused: { code: "server-error", reason: `nothing it asked for was written: an earlier write to this world's ${o.file ?? "log"} failed, so what is on disk is unknown, and the world refuses ${o.file ? "moderation writes" : "writes"} until it is reopened from disk (reads still work)`, fix: REOPEN_FIX } };
+  return { ok: false, txn: "rolled-back", refused: { code: "server-error", reason: "the server failed while handling the request; nothing it asked for was written", fix: "send it again; if it keeps failing, whoever runs this server can find why in its log" } };
 }
 // READBACK (verbclasses.js; engine-scars 4/6c, R 10-17 02:45): the act fields the authority reads back for meaning (an
 // undo's chain, a use's capability, a script's sponsor, a sculpt's brush, the request that named an engine build…). §12

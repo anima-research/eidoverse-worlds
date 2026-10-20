@@ -1519,7 +1519,15 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   ok(!!threw && o.outcome === "ambiguous" && o.wedged === true && o.file === "moderator log" && r.ok === false && r.txn === "ambiguous" && r.refused.code === "ambiguous" && /moderator log/.test(r.refused.reason),
     "ST4 a moderator-log write that throws makes the request AMBIGUOUS (txnOutcome reads the mod log's wedge; the refusal names the moderator log), never rolled-back", [o, r.refused]);
   const o2 = txnOutcome(w, w.entries.length, { threw: true, refused: false, wedgedBefore: { log: false, mod: true } });
-  ok(o2.outcome === "rolled-back", "ST4 …and a throw on a world already wedged (its refusal before any write) is rolled back", o2); }
+  ok(o2.outcome === "rolled-back", "ST4 …and a throw on a world already wedged (its refusal before any write) is rolled back", o2);
+  // …and only the wedge's own refusal is answered as the wedge: another throw on the same world (a bug elsewhere) is a plain
+  // failure, so its reply doesn't say the world refuses writes, nor that asking again won't help
+  let again: any = null; try { w.appendMod({ actor: "olive", verb: "ban", who: "bob" }); } catch (x) { again = x; }
+  const oW = txnOutcome(w, w.entries.length, { threw: true, error: again, refused: false, wedgedBefore: { log: false, mod: true } }), rW = txnRefusal(oW);
+  const oX = txnOutcome(w, w.entries.length, { threw: true, error: new Error("a handler's bug"), refused: false, wedgedBefore: { log: false, mod: true } }), rX = txnRefusal(oX);
+  ok(again?.wedged === "moderator log" && oW.wedged === true && oW.file === "moderator log" && /moderation writes/.test(rW.refused.reason) && /whoever runs this server/.test(rW.refused.fix)
+    && !oX.wedged && /send it again/.test(rX.refused.fix) && !/refuses/.test(rX.refused.reason),
+    "ST4b the moderator log's wedge refusal is answered as the wedge (who can reopen it); another throw while it is wedged is a plain failure", { oW, w: rW.refused, oX, x: rX.refused }); }
 // ST5: which file was wedged matters: with the moderator log wedged before the request, a world-log write that throws in it
 // is ambiguous, not the old wedge's rolled-back refusal
 { const { txnOutcome, wedgedOf } = await import("../../shared/protocol/authority/storage.js");
