@@ -105,6 +105,11 @@ function boxesForM(st, models = MODELS) {
 }
 const opsSafe = (e) => { try { return opsOf(e); } catch (x) { if (x instanceof Malformed) return []; throw x; } };
 const isEntry = (e) => e && !(e instanceof Malformed) && typeof e === "object";
+// A sim (or act) entry's body as a replay may read it, or null when a purge took it whole (§12): the purge names it, or the
+// body on disk is already its {commit} stub. Null is unknown, as in the authority's readback: never a value to compare with.
+const isCommitStub = (b) => !!b && typeof b === "object" && !Array.isArray(b) && Object.keys(b).length > 0 && Object.keys(b).every((k) => k === "commit" || k === "salt");
+const bodyIn = (entries, purged, seq) => { const e = entries[seq]; if (!isEntry(e) || !e.body || typeof e.body !== "object") return null;
+  return purged?.has(`${seq}:-`) || isCommitStub(e.body) ? null : e.body; };
 
 // Fold the whole log: the blind state, plus the sim epoch's live bodies and what came to rest (not yet logged).
 // (Engine, slice 2: this is now simFolder fed every valid entry, then viewed at `now` — the same code the server runs
@@ -154,17 +159,20 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
     }
   };
   const disagree = (x) => out.checks.disagree.push(x);
+  const unknownFlights = new Set(); let unknownHold = false;   // purged launches whose rest isn't logged yet; a purged lift or catch this epoch
   // a thing in someone's hand is nowhere in the engine's world: no rebuild (terrain, epoch, relock) may seat it (review 64d26822 #3)
   const engineView = (s) => { const v = engineViewM(s, models); for (const id of out.lifted) delete v.entities[id]; return v; }, boxesFor = (s) => boxesForM(s, models);
   const feed = (seq) => {
     const e = entries[seq];
     if (typeof e.ts === "number" && e.ts > clock) clock = e.ts;
     if (out.sim) advance(clock);
-    if (e.kind === "sim" && e.verb === "digest" && out.sim) { const mine = digestOf(out.sim); if (mine !== e.body.digest) disagree({ seq, logged: e.body.digest, mine }); return; }
+    if (e.kind === "sim" && e.verb === "digest" && out.sim) { const b = bodyIn(entries, purged, seq); if (!b || unknownFlights.size || unknownHold) return;   // purged, or the engine's world unknown here: nothing to compare
+      const mine = digestOf(out.sim); if (mine !== b.digest) disagree({ seq, logged: b.digest, mine }); return; }
     if (e.kind === "change") {
       const ops = opsSafe(e);
       const causeE = entries[e.cause];
-      const isRest = isEntry(causeE) && causeE.kind === "sim";
+      const isRest = isEntry(causeE) && causeE.kind === "sim" && !!bodyIn(entries, purged, e.cause);   // a purged launch's rest can't be checked: unknown
+      unknownFlights.delete(e.cause);   // its rest is on the record: the engines agree again from here
       const wasSpec = JSON.stringify(st.entities["@world"]?.c["physics-engine"] ?? null);
       if (out.sim && isRest) { // L3: a rest. Its cause must be a launch, the body's CURRENT one, and the value must be the engine's
         const ids = [...new Set(ops.map((o) => o.id))];
@@ -186,7 +194,7 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
       applyInPlace(st, ops, seq, purged, e.verb === "batch");
       const spec = st.entities["@world"]?.c["physics-engine"] ?? null;
       if (JSON.stringify(spec) !== wasSpec) { // an epoch boundary. The authority makes it a real cut: nothing in flight (P6).
-        out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null; out.rev++;   // a lift outlives an epoch (authority orphanLifts says the same); the view keeps it out
+        out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null; out.rev++; unknownFlights.clear(); unknownHold = false;   // a cut: nothing in flight   // a lift outlives an epoch (authority orphanLifts says the same); the view keeps it out
         if (spec && !out.foreign) {
           out.sim = eidosim.emptySim();
           SE(out.sim, { seq, ts: clock, actor: "system", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, engineView(st));
@@ -234,7 +242,9 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
         for (const id of Object.keys(out.sim.statics ?? {})) if (!!out.sim.statics[id].dyn !== (view.entities[id]?.kind === "dynamic"))
           SE(out.sim, { seq, ts: clock, actor: e.actor, verb: view.entities[id] ? "place" : "remove", args: { id } }, view); }
     } else if (e.kind === "sim" && out.sim) {
-      const a = e.body;
+      // purged whole: the engine can't fly or lift what it can't read, so until that flight's rest (a lift or catch: until the next
+      // cut) the engine that read it and this one may differ, and a digest logged meanwhile is unknown here, as readback reads it
+      const a = bodyIn(entries, purged, seq); if (!a) { if (e.verb === "launch") unknownFlights.add(seq); else if (e.verb === "lift" || e.verb === "catch") unknownHold = true; return; }
       if (e.verb === "launch" && st.entities[a.id] && Array.isArray(a.p) && Array.isArray(a.v)) {
         out.lifted.delete(a.id);   // thrown or dropped: out of the hand, into the engine (before the view, which hides lifted things)
         const view = engineView(st); const base = view.entities[a.id]; if (!base) return;
@@ -282,15 +292,15 @@ const outside = (B, p) => p[0] < B.min[0] || p[0] > B.max[0] || p[2] < B.min[2] 
 const boundsIn = (st) => { const B = st.entities["@world"]?.c.bounds; const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   return B && v3(B.min) && v3(B.max) ? B : null; };
 export function restsOf(entries) {
-  const out = [];
+  const out = []; const purged = purgesIn(entries);
   entries.forEach((e, seq) => {
     if (!isEntry(e) || e.kind !== "change") return; const c = entries[e.cause];
-    if (!isEntry(c) || c.kind !== "sim" || c.verb !== "launch") return;
+    if (!isEntry(c) || c.kind !== "sim" || c.verb !== "launch") return; const cb = bodyIn(entries, purged, e.cause);
     // PHYSICS §1: a launch's rest covers every body its flight set moving: each transform is one
     const ops = opsSafe(e).filter((o) => o.comp === "transform" && typeof o.id === "string");
-    for (const op of ops.length ? ops : [{ id: c.body.id }]) {
-      const after = entries.slice(seq + 1).find((x) => isEntry(x) && x.kind === "act" && x.actor === "system" && x.body?.rest === seq && (x.body?.id ?? c.body.id) === op.id);
-      out.push({ seq, id: op.id, cause: e.cause, at: op.value?.pos, handled: c.body.handled ?? [c.actor],
+    for (const op of ops.length ? ops : cb ? [{ id: cb.id }] : []) {
+      const after = entries.slice(seq + 1).find((x) => isEntry(x) && x.kind === "act" && x.actor === "system" && x.body?.rest === seq && (x.body?.id ?? cb?.id) === op.id);
+      out.push({ seq, id: op.id, cause: e.cause, at: op.value?.pos, handled: cb?.handled ?? [c.actor],
         ...(after?.verb === "return-lost" ? { lost: true } : {}), ...(after?.verb === "settle" ? { onto: after.body.onto } : {}) });
     }
   });

@@ -521,6 +521,24 @@ function playground(name) {
   const blind = fold(bad), v = simFold(bad, last.ts + 1000);
   ok(blind.entities["crate-1"].c.transform !== PURGED && !!v.sim?.statics?.["crate-1"], "U6 a purge line the fold refuses (its ts steps back) purges nothing on replay either", { foldPurged: blind.entities["crate-1"].c.transform === PURGED, collider: !!v.sim?.statics?.["crate-1"] }); }
 
+// review of #260: a sim body a purge took whole is unknown to a replay, never a disagreement or a crash (the authority's
+// readback reads it so too)
+{ const W = playground("purge-sim");
+  call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [0, 2, 3] }); call(W, "rowan", "wait", {}, 6000);
+  const L = log(W); const last = L[L.length - 1];
+  const dg = L.findLastIndex((e: any) => e?.kind === "sim" && e.verb === "digest"), ln = L.findLastIndex((e: any) => e?.kind === "sim" && e.verb === "launch");
+  // as a purged log stands on disk: each body the purge took is its {commit} stub (§12)
+  const stub = { commit: "0".repeat(64) };
+  const P = copyOf([...L.map((e: any, i: number) => (i === dg || i === ln ? { ...e, body: stub } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: dg }, { seq: ln }] }, ts: last.ts + 100 }]);
+  let v: any, rs: any, err = null; try { v = simFold(P, last.ts + 1000); rs = restsOf(P); } catch (x: any) { err = String(x?.message).slice(0, 120); }
+  ok(dg > 0 && ln > 0 && fold(P).status === "ok" && !err && v.checks.disagree.length === 0, "U7 a purged digest and launch read as unknown on replay: no disagreement, no crash", { dg, ln, status: fold(P).status, err, disagree: v?.checks?.disagree?.slice(0, 2), rests: rs?.length }); }
+{ const W = playground("purge-launch-only");
+  call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [0, 2, 3] }); call(W, "rowan", "wait", {}, 6000);
+  const L = log(W); const last = L[L.length - 1]; const ln = L.findLastIndex((e: any) => e?.kind === "sim" && e.verb === "launch");
+  const P = copyOf([...L.map((e: any, i: number) => (i === ln ? { ...e, body: { commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: ln }] }, ts: last.ts + 100 }]);
+  const v = simFold(P, last.ts + 1000); const digests = P.filter((e: any) => e?.kind === "sim" && e.verb === "digest").length;
+  ok(ln > 0 && digests > 0 && v.checks.disagree.length === 0, "U7b a purged launch makes the digests logged during its flight unknown, not disagreements", { ln, digests, disagree: v.checks.disagree.slice(0, 2) }); }
+
 console.log(`${passes} passed, ${fails} failed`);
 fs.rmSync(root, { recursive: true, force: true });
 process.exit(fails ? 1 : 0);
