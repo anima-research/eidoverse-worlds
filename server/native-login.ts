@@ -92,7 +92,7 @@ export function createNativeLogin(o: Options) {
       const sid = o.issue({ sub: s.sub, name: s.name, scopes: s.scopes.filter(v => v === "worlds:join" || v === "worlds:spectate"),
         claims: s.claims, exp, native: true });
       const seconds = Math.max(1, Math.floor((exp - t) / 1000));
-      // world_scope "*" for native clients from before 2026-10-17, which read a missing scope as one world
+      // world_scope "*" for native clients from before native sessions became ordinary ones, which read a missing scope as one world
       return json(200, { name: s.name, expires_in: seconds, world_scope: "*" }, {
         "set-cookie": `ew_sess=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${seconds}${o.origin.startsWith("https:") ? "; Secure" : ""}`,
       });
