@@ -6,7 +6,10 @@
 // authority's time they took. Past either, the read is refused (code rate) before it reaches the authority.
 // n: what an editor's own panels ask in a burst (each change re-reads the inspector and the history) stays far inside it;
 // ms is what protects the thread
-export const READ = { n: 300, ms: 1500, window: 10_000 };
+// EIDO_METER_SCALE (operator, default 1) multiplies the TIME limits only, for a host that is simply slower per request
+// (Windows CI: the same requests measured 3,076 ms where the cap is 3,000 — 10-19). Counts never scale.
+export const METER_SCALE = Math.max(1, Number(globalThis.process?.env?.EIDO_METER_SCALE ?? 1) || 1);
+export const READ = { n: 300, ms: 1500 * METER_SCALE, window: 10_000 };
 
 /** The authority's own time for one request's reply (server/worldlog.ts requestSync sets it; never sent to anyone). */
 export const authorityTime = new WeakMap<object, number>();

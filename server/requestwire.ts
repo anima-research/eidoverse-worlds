@@ -21,7 +21,7 @@ import { WORLDS_DIR } from "./config.ts";
 import { isBanned } from "../shared/protocol/authority.js";
 import { txnRefusal } from "../shared/protocol/authority/storage.js";
 import { WIRE_READS, PERSON_ACTS } from "../shared/protocol/verbclasses.js";
-import { readMeter, authorityTime } from "./readmeter.ts";
+import { METER_SCALE, readMeter, authorityTime } from "./readmeter.ts";
 import { isOperator } from "./operators.ts";
 import { capture, recheck, type ReqCap } from "./reqcap.ts";
 
@@ -55,7 +55,7 @@ const reads = readMeter(); // per connection: reads and dry runs, by count and a
 // …and every request by authority time: a refused step or write is cheap now, but nothing else bounds how much of the shared
 // thread one connection's stream of them takes (a guest is a fresh identity per connection, so the authority's per-identity
 // rate doesn't either). 3 s of 10 is far past any person's or agent's real use.
-const busy = readMeter({ n: Infinity, ms: 3000, window: 10_000 });
+const busy = readMeter({ n: Infinity, ms: 3000 * METER_SCALE, window: 10_000 });
 const refusalTimes = new WeakMap<Client, number[]>();
 /** At most 20 refusal lines per connection per 10 s reach the flight recorder (the rest are the same story). */
 function recordRefusal(c: Client): boolean {

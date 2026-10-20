@@ -67,6 +67,7 @@ jobs:
           #  Linux: Ubuntu 23.10+ disables the user namespaces Chrome's sandbox needs ("No usable sandbox!";
           #         playwright launches without it there for the same reason)
           #  macOS: the runner VM has no GPU; navigating to the client hung (10-19), so render in software
+          EIDO_METER_SCALE: ${{ runner.os == 'Windows' && '3' || '1' }}   # the hosted Windows VM is ~3x slower per request (access A8/A14 hit the 3000 ms cap)
           EIDO_CHROME_ARGS: ${{ runner.os == 'Linux' && '--no-sandbox' || runner.os == 'macOS' && '--use-angle=swiftshader --enable-unsafe-swiftshader' || '' }}
         run: |
           # one known temp dir under /tmp so failed suites' scratch can be uploaded. With $RUNNER_TEMP/gate-tmp here,
