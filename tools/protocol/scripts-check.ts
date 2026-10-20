@@ -1047,6 +1047,38 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const v = s.call("olive", "scripts", {}); return { set: show(set), imported: v.imported, use: code(use), fix: use.refused?.fix }; },
     good: (o) => o.set === "ok" && o.imported?.[0]?.status === "needs-reinstall" && /re-install it as script:<name>/i.test(o.imported?.[0]?.why) && o.imported?.[0]?.attach === "bell1"
       && o.use === "no-runtime" && /re-install it as script:greeter/.test(o.fix) },
+  // ---------------- Q: a stored rotation is a unit quaternion, whoever writes it (review of #260) ----------------
+  { id: "UQ1", what: "a script's set of a transform with a scaled q stores the unit rotation, and the auditor's re-run agrees with the log", run(s) { cast(s);
+      s.call("bob", "create", { id: "vane", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "vane", "turn", onUse(`world.set("self", "transform", { pos: [0, 0, 0], q: [0, 0, 0.5, 0.5], scale: [1, 1, 1] });`), { scope: { ids: "self", comps: ["transform"] }, on: ["use"] });
+      s.call("bob", "set", { id: "vane", component: "reactions", value: { turn: { kind: "script", script: "turn" } } });
+      const u = useSteady(s, "vic", { id: "vane", action: "turn" }); const q = comp(s, "vane", "transform")?.q;
+      const A = AU ? AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript }) : null;
+      return { u: show(u), q, len: q ? Math.hypot(...q) : null, flags: A?.flags.length, reran: A?.reran }; },
+    good: (o) => o.u === "ok" && Math.abs(o.len - 1) < 1e-12 && Math.abs(o.q[2] - Math.SQRT1_2) < 1e-12 && o.flags === 0 && o.reran >= 1 },
+  { id: "UQ2", what: "a reaction's set of a transform with a scaled q stores the unit rotation", run(s) { cast(s);
+      s.call("bob", "create", { id: "door", model: "crate", place: { at: [0, 0] }, components: { reactions: { swing: { kind: "set", component: "transform", value: { pos: [0, 0, 0], q: [0, 0, 0.5, 0.5], scale: [1, 1, 1] } } } } });
+      const u = s.call("vic", "use", { id: "door", action: "swing" }); const q = comp(s, "door", "transform")?.q;
+      return { u: show(u), q, len: q ? Math.hypot(...q) : null }; },
+    good: (o) => o.u === "ok" && Math.abs(o.len - 1) < 1e-12 && Math.abs(o.q[2] - Math.SQRT1_2) < 1e-12 },
+  { id: "UQ3", what: "a put with a scaled q stores the unit rotation", run(s) { cast(s);
+      s.call("bob", "create", { id: "cup", model: "crate", components: { grabbable: { who: "inhabitant" } }, place: { at: [0, 0] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "cup" });
+      const p = s.call("vic", "put", { id: "cup", q: [0, 0.5, 0, 0.5] }); const q = comp(s, "cup", "transform")?.q;
+      return { p: show(p), q, len: q ? Math.hypot(...q) : null }; },
+    good: (o) => o.p === "ok" && Math.abs(o.len - 1) < 1e-12 && Math.abs(o.q[1] - Math.SQRT1_2) < 1e-12 },
+  { id: "UQ4", what: "a return home and a reaction's reset, from a home whose q is only near a rotation, store the unit rotation", run(s) { cast(s);
+      const hq = [0, 0.7072, 0, 0.7072];   // within the home check's 1e-3 of unit, not on it
+      s.call("bob", "create", { id: "key", model: "crate", components: { grabbable: { who: "inhabitant", returnAfter: 5 } }, place: { at: [0, 0] } });
+      s.call("bob", "set", { id: "key", component: "home", value: { pos: [0, 0, 0], q: hq } });   // set outright, as a builder may
+      s.call("bob", "create", { id: "box", model: "crate", components: { home: { pos: [3, 0, 0], q: hq } }, place: { at: [3, 0] } });
+      s.call("bob", "set", { id: "box", component: "transform", value: { pos: [4, 0, 2], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
+      s.call("bob", "set", { id: "box", component: "reactions", value: { tidy: { kind: "reset", targets: ["box"] } } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "key" }); s.call("vic", "move", { to: [0, 0, 2] }, 1000); s.call("vic", "put", { id: "key" });
+      s.advance(10000); s.call("vic", "look", {}); const kq = comp(s, "key", "transform")?.q;
+      const r = s.call("vic", "use", { id: "box", action: "tidy" }); const bq = comp(s, "box", "transform")?.q;
+      return { kq, bq, r: show(r), kl: kq ? Math.hypot(...kq) : null, bl: bq ? Math.hypot(...bq) : null }; },
+    good: (o) => o.r === "ok" && Math.abs(o.kl - 1) < 1e-12 && Math.abs(o.bl - 1) < 1e-12 && Math.abs(o.kq[1] - Math.SQRT1_2) < 1e-9 && Math.abs(o.bq[1] - Math.SQRT1_2) < 1e-9 },
   // ---------------- H: hygiene and syntax ----------------
   { id: "H1", what: "41 #16 Trojan Source at upload: U+202E inside a comment; code at column 4,000; a BOM; a zero-width space", run(s) { cast(s);
       const up = (t: string) => code(s.call("bob", "upload", { text: t }));

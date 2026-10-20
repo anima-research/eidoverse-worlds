@@ -4,7 +4,7 @@
 // unchanged). The gate is above it, reached through UP.
 import { MOVER, bodyBox } from "../../mover.js";
 import { grabOf, homeOf, wantsHome, fitsSocket, socketRadius, pickGrip } from "../../grab.js";
-import { COMPONENTS } from "../componentspec.js";
+import { COMPONENTS, unitTransform } from "../componentspec.js";
 import { ENGINES, carried, lostPlace, offChain } from "../simlayer.js";
 import { planLaunch } from "../launchplan.js";
 import { REACH, SHOVE } from "../physconst.js";
@@ -136,7 +136,7 @@ function snapTarget(st, id, g, p, w = null) {
 function returnPlan(w, st, id, g) {
   const e = st.entities[id]; const hp = g.home.parent;
   if (hp && !st.entities[hp.to]) return { plan: null, why: `its home parent ${hp.to} is gone` };
-  const ops = [...(hp ? [setOp(id, "parent", { ...hp })] : e.c.parent ? [delOp(id, "parent")] : []), setOp(id, "transform", { pos: g.home.pos.slice(), q: g.home.q.slice(), scale: (e.c.transform?.scale ?? [1, 1, 1]).slice() })];
+  const ops = [...(hp ? [setOp(id, "parent", { ...hp })] : e.c.parent ? [delOp(id, "parent")] : []), setOp(id, "transform", unitTransform({ pos: g.home.pos.slice(), q: g.home.q.slice(), scale: (e.c.transform?.scale ?? [1, 1, 1]).slice() }))];
   try { return { plan: admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform", "parent"] } }, ops) }; }
   catch (x) { if (!(x instanceof Refusal)) throw x; return { plan: null, why: x.reason }; }
 }
