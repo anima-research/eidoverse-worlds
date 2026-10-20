@@ -271,7 +271,8 @@ function buildSet(ctx, a) {
   if (a.id === "@world" && a.component === "physics-engine") return buildEpoch(ctx, v, a);
   // a field the authority stamps (componentspec `stamped`: the sky's ts, override, a forecast's epoch) is never taken from a
   // writer (shape audit 10-16): the act that owns it stamps it (sky, weather)
-  for (const f of defOf(a.component)?.stamped ?? []) { const path = f.split("."); let x = a.value;
+  // …except a fork's own copy (CTX.forking), which carries the value its source's act stamped (review of #260, server I36)
+  if (!CTX.forking) for (const f of defOf(a.component)?.stamped ?? []) { const path = f.split("."); let x = a.value;
     for (const k of path) x = x && typeof x === "object" && !Array.isArray(x) ? x[k] : undefined;
     if (x !== undefined) refuse("stamped", `${a.id}.${a.component}.${f} is stamped by the authority, never written`, a.component === "sky" ? "leave it out: the sky act stamps ts and a forecast's epoch, the weather act an override (sky {…} / weather {weather})" : "leave it out"); }
   v = resolve(ctx, a.id, a.component, v);

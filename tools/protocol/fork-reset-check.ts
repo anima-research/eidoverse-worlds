@@ -61,6 +61,7 @@ for (const r of [
   await ann.req("set", { id: "lamp1", component: "lock", value: true }),
   await ann.req("create", { id: "chair1", model: MODEL, components: { sockets: { seat: { pos: [0, 0.45, 0], body: { action: "sit" } } } } }),
   await ann.req("say", { text: "a private chat line from before the copy" }),
+  await ann.req("sky", { hours: 18, rate: 1 }),   // the act stamps sky.ts, which a writer may never set (review of #260, server I36)
 ]) ok(r.ok, "(setup) the source world takes it", r.refused);
 // a scripted bell: scripts travel with a fork (their source blobs too) and keep working there
 { const up = await ann.req("upload", { text: 'world.on("use", () => { world.set("self", "t/bell", { rung: (world.get("self", "t/bell")?.rung ?? 0) + 1 }); });' });
@@ -88,6 +89,7 @@ ok(fk?.type === "world-forked" && fk.to === "copy", "FK3 the owner copies it", f
   ok(JSON.stringify(Object.keys(a).sort()) === JSON.stringify(Object.keys(b).sort()) && ["table1", "lamp1", "chair1"].every((id) => canon(a[id]) === canon(b[id])),
     "FK5 every thing is copied component for component (the parent, the locked child, the spot light, the sockets)", [Object.keys(b)]);
   ok(b["@world"][`roles:${bobId}`]?.role === "builder" && b["@world"]["default-role"]?.role === "visitor", "FK5 roles and the default role travel", b["@world"]);
+  ok(Number.isFinite(b["@world"].sky?.ts) && canon(a["@world"].sky) === canon(b["@world"].sky), "FK5b a sky an act stamped travels as it stands, its stamped ts with it", [a["@world"].sky, b["@world"].sky]);
   // FK12 (training consent's per-person keys staying out of a fork) went with training-consent itself (R 10-16 14:16)
   ok(!logOf("copy").some((e) => e.kind === "say"), "FK6 chat does not travel (the source's log stays the record)");
   // review 10-07 H5: the fork's genesis names its parent {world, seq, head} (part of its id: the merge base), and the acts
