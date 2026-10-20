@@ -40,7 +40,7 @@ Consent is presence: never logged, never a grant, never a property of what kind 
 | Enforced today | `touch`, `intimate`, `pose`, `shove`, `displace`. `near`, `follow`, `voice` are shown, not enforced | trial · lead (what the reference can enforce) |
 | Tiers | `everyone`, `friends` (mutual: each named the other) | decided · author (10-13: no circles) |
 | Cells | `allow` · `ask` · `deny` | decided · author (10-17) |
-| Per-person extras | allow or deny one identity, for one class or all; beats the tiers. An allow lasts an hour unless it names `for`, at most **30 days**; a deny has no end | decided · author (10-13 v1); durations trial · lead |
+| Per-person extras | allow or deny one identity, for one class or all; beats the tiers. Either stands **until you revoke it**; an allow may instead name `for` (any length) | decided · author (10-13 v1; until-revoked 10-20) |
 | Pause | closes your whole table at once; you or a delegate may pause, only you resume | trial · lead |
 | Default | the `normal` preset, for every body | decided · author |
 | Presets | `normal`, `open`, `friends-only`, `performer` (opt-in). Table below | trial · lead (values) |

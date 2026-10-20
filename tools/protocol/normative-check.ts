@@ -47,12 +47,12 @@ const n3 = [
   ["ask timeout", C.ASK_MS === 20_000 && /\*\*20 s\*\*/.test(consent)],
   ["cool-down after a no", C.COOL_MS === 600_000 && /\*\*10 min\*\*, doubling/.test(consent)],
   ["a yes held", C.REACH_GRANT_MS === 600_000 && /held at most \*\*10 min\*\*/.test(consent)],
-  ["longest allow", C.MAX_ALLOW_MS === 30 * 24 * 3_600_000 && /at most \*\*30 days\*\*/.test(consent)],
+  ["allow until revoked", !("MAX_ALLOW_MS" in C) && /stands \*\*until you revoke it\*\*/.test(consent)],
   ["intimate points", [...C.INTIMATE_POINTS].every((p) => (consent.match(/^\| Intimate points \|([^|]*)/m)?.[1] ?? "").includes("`" + p + "`")) && (consent.match(/^\| Intimate points \|([^|;]*)/m)?.[1].match(/`[a-z_]+`/g) ?? []).length === C.INTIMATE_POINTS.size],
   ["refusal words", C.refusalWords("<name>", "<class>") === "<name> isn't taking <class> right now" && consent.includes("`\"<name> isn't taking <class> right now\"`")],
 ] as const;
 const bad3 = n3.filter(([, ok]) => !ok).map(([k]) => k);
-check("N3", "the consent prose's values equal consent.js (classes, enforced, default, 20 s, 10 min ×2, 10 min yes, 30 days, intimate points, the refusal)", !bad3.length, bad3.join(", "));
+check("N3", "the consent prose's values equal consent.js (classes, enforced, default, 20 s, 10 min ×2, 10 min yes, until revoked, intimate points, the refusal)", !bad3.length, bad3.join(", "));
 
 // N4
 const roles = section("### World roles");

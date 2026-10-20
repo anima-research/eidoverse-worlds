@@ -26,4 +26,12 @@ ok(decide(P, "u-bbbbbbbbbbbbbbbbbbbb", "u-alice", "touch", now) .mode === "deny"
   const before = JSON.stringify(setConsent(Q, A, {}, now) && Q.consent?.[A]);
   const r = setConsent(Q, A, { pause: true, allow: B, class: "touch", friend: "not an identity" }, now);
   ok(r.ok === false && JSON.stringify(Q.consent?.[A]) === before, "C8 a refused change leaves the table as it was", { r, table: Q.consent?.[A] }); }
+{ const Q: any = {}; const A = "u-aaaaaaaaaaaaaaaaaaaa", B = "u-bbbbbbbbbbbbbbbbbbbb", year = 365 * 24 * 3600000;
+  // C9 (R 10-20): an allow with no `for` stands until you revoke it, like a deny; a `for` of any length is honoured as named
+  setConsent(Q, A, { allow: B, class: "touch" }, now); const o = Q.consent?.[A]?.over?.[B]?.touch;
+  ok(o?.mode === "allow" && o.until === undefined, "C9 an allow with no `for` has no end (until you revoke it)", o);
+  setConsent(Q, A, { allow: B, class: "pose", for: year }, now); const p = Q.consent?.[A]?.over?.[B]?.pose;
+  ok(p?.until === now + year, "C9b an allow for a year lasts a year (no hidden cap)", p);
+  setConsent(Q, A, { deny: B, class: "touch" }, now); const d = Q.consent?.[A]?.over?.[B]?.touch;
+  ok(d?.mode === "deny" && d.until === undefined, "C9c revoking (deny) replaces the standing allow at once", d); }
 console.log(`[consent-check] ${fails ? fails + " failed" : "all pass"}`); process.exit(fails ? 1 : 0);

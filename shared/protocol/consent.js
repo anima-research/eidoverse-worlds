@@ -35,7 +35,7 @@ export const PRESETS = {
   performer: { everyone: { near: "allow", follow: "ask", touch: "allow", intimate: "deny", pose: "allow", shove: "allow", displace: "ask", voice: "allow" }, friends: NORMAL_FRIENDS },
 };
 export const DEFAULT_PRESET = "normal"; // for every new body: never a property of what kind of participant it is (42 §4.3)
-export const ASK_MS = 20000, COOL_MS = 600000, MAX_ALLOW_MS = 30 * 24 * 3600000;
+export const ASK_MS = 20000, COOL_MS = 600000;
 // a reach descriptor the relay strips (server/reachgate.ts → authority.js reachAdmits) is said to the reacher once per
 // (reacher, target, class) per this long: a stream of frames is one attempt, never one message a frame
 export const REACH_NOTE_MS = 15000;
@@ -103,8 +103,8 @@ export function setConsent(P, actor, a, now) {
   if (a.allow !== undefined || a.deny !== undefined) {
     if (!isWho(who)) return { ok: false, code: "shape", reason: "allow/deny: an identity" };
     if (!cls.every((c) => CLASSES.includes(c))) return { ok: false, code: "shape", reason: `class: one of ${CLASSES.join(", ")}` };
-    // an allowance lasts the for it names: a positive number of ms (an allow for 0 expired at once; none means an hour)
-    if (a.allow !== undefined && a.for != null && !(typeof a.for === "number" && a.for > 0)) return { ok: false, code: "shape", reason: `for: how long it lasts, in ms (a positive number), got ${JSON.stringify(a.for)}`, fix: `e.g. for: 600000 (ten minutes); at most ${MAX_ALLOW_MS}` }; }
+    // an allowance lasts the for it names: a positive number of ms. With no for it stands until you revoke it, as a deny does (R 10-20)
+    if (a.allow !== undefined && a.for != null && !(typeof a.for === "number" && a.for > 0)) return { ok: false, code: "shape", reason: `for: how long it lasts, in ms (a positive number), got ${JSON.stringify(a.for)}`, fix: "e.g. for: 600000 (ten minutes); leave for out to allow until you revoke it" }; }
   // pause is true or false; any other value is refused
   if (a.pause !== undefined && typeof a.pause !== "boolean") return { ok: false, code: "shape", reason: `pause is true or false, got ${JSON.stringify(a.pause)}` };
   if (a.friend !== undefined && !isWho(a.friend)) return { ok: false, code: "shape", reason: "friend: an identity" };
@@ -114,7 +114,7 @@ export function setConsent(P, actor, a, now) {
   if (a.preset !== undefined) { t.preset = a.preset; t.cells = bag(); }
   if (set) ((t.cells ??= bag())[set.tier] ??= bag())[set.class] = set.mode;
   if (a.allow !== undefined || a.deny !== undefined) {
-    const until = a.allow !== undefined ? now + Math.min(a.for ?? 3600000, MAX_ALLOW_MS) : undefined;
+    const until = a.allow !== undefined && a.for != null ? now + a.for : undefined;
     for (const c of cls) ((t.over ??= bag())[who] ??= bag())[c] = { mode: a.allow !== undefined ? "allow" : "deny", ...(until !== undefined ? { until } : {}) }; }
   if (a.pause !== undefined) t.paused = a.pause;
   if (a.friend !== undefined) t.friends = [...new Set([...(t.friends ?? []), a.friend])];
