@@ -282,6 +282,13 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const up = s.call("bob", "update", { copy: "b", to: v2 });
       return { a: show(a), b: show(b), keys, up: show(up), label: s.w().state().entities[partOf("b", "bulb")]?.c.label ?? null, kids: Object.keys(s.w().state().entities).filter((k) => s.w().state().entities[k].c.parent?.to === "b").length }; },
     good: (o) => o.up === "ok" && JSON.stringify(o.keys) === '["bulb","lamp"]' && o.label === "brighter" && o.kids === 1 },
+  { id: "U5", what: "publish {from: [one id]} is publish {from: that id}: the same root key and the same parts, descendants included", run(s) { cast(s);
+      s.call("bob", "create", { id: "lamp", model: "crate", components: { transform: T0([0, 0, 0]) } });
+      s.call("bob", "create", { id: "bulb", model: "book", components: { transform: T0([0, 0.6, 0]), parent: { to: "lamp" } } });
+      const rec = (r: any) => { const h = r.notes?.find((n: any) => n.record)?.record; return h ? s.w().getBlob(h) : r; };
+      const one = rec(s.call("bob", "publish", { from: "lamp", name: "lamp" })), list = rec(s.call("bob", "publish", { from: ["lamp"], name: "lamp" }));
+      return { root: [one.root, list.root], parts: [one.parts?.map((p: any) => p.key).sort(), list.parts?.map((p: any) => p.key).sort()] }; },
+    good: (o) => typeof o.root[0] === "string" && o.root[0] === o.root[1] && JSON.stringify(o.parts[0]) === JSON.stringify(o.parts[1]) && o.parts[0]?.length === 2 },
   { id: "U3", what: "a part the newer version drops is deleted only if this copy left it as it came: a component this copy added keeps it", run(s) { cast(s);
       s.call("bob", "create", { id: "lamp", model: "crate", components: { transform: T0([0, 0, 0]) } });
       s.call("bob", "create", { id: "bulb", model: "book", components: { transform: T0([0, 0.6, 0]), parent: { to: "lamp" } } });

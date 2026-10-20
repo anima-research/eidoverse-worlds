@@ -60,13 +60,14 @@ function buildPublish(ctx, a, w) {
   const roots = Array.isArray(a.from) ? a.from : [a.from];
   for (const r of roots) if (!ctx.st.entities[r]) refuse("not-found", `no '${r}'`, "look lists what's here", { didYouMean: guess(r, Object.keys(ctx.st.entities)) });
   if (roots.length > 1) return publishGroup(ctx, a, w, roots);
-  const ids = [a.from, ...descendants(ctx.st, a.from)];
-  const keyOf = partKeys(ctx.st, ids, ctx.st.entities[a.from].c["copy-of"]?.from);
+  const from = roots[0];   // a one-element list is that one root
+  const ids = [from, ...descendants(ctx.st, from)];
+  const keyOf = partKeys(ctx.st, ids, ctx.st.entities[from].c["copy-of"]?.from);
   const parts = publishLinks(ctx, a, new Set(ids), keyOf, (fix) => ids.map((id) => { const c = clone(ctx.st.entities[id].c); delete c["copy-of"];
-    if (id === a.from) { delete c.parent; c.transform = { ...c.transform, pos: [0, 0, 0] }; }
+    if (id === from) { delete c.parent; c.transform = { ...c.transform, pos: [0, 0, 0] }; }
     else if (c.parent) c.parent = { ...c.parent, to: keyOf(c.parent.to) };
     return { key: keyOf(id), components: fix(id, c) }; }));
-  const record = { name: a.name ?? a.from, root: keyOf(a.from), parts, by: ctx.actor };
+  const record = { name: a.name ?? from, root: keyOf(from), parts, by: ctx.actor };
   const hash = w.putBlob(record);
   ctx.notes.push({ record: hash, parts: parts.length });
   ctx.refs.add("@world");
