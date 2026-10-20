@@ -1,20 +1,13 @@
 // bun mcpl/door-unit-test.ts — door tools' own logic against a stand-in body (no world): anim's held frame, a ragdoll
 // asked of someone else, move's fallback after a stopped walk
-import { handleTool, frameOf } from "./tools.ts";
+import { handleTool } from "./tools.ts";
 let fails = 0;
 const ok = (c: boolean, what: string, got?: unknown) => { if (!c) { fails++; console.log(`  FAIL ${what}`, got ?? ""); } else console.log(`  ok   ${what}`); };
-const near = (a: number[], b: number[]) => a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-6);
 
-// a hold between two keys shows the frame the client plays there, slerped, not the earlier key
-const s = Math.SQRT1_2, tracks = { hips: [{ t: 0, q: [0, 0, 0, 1] }, { t: 1, q: [0, s, 0, s] }] };   // 0° → 90° about y
-const q45 = [0, Math.sin(Math.PI / 8), 0, Math.cos(Math.PI / 8)];
-ok(near(frameOf(tracks, 0.5).hips, q45), "at 0.5 s, halfway between 0° and 90° holds 45°", frameOf(tracks, 0.5).hips);
-ok(near(frameOf(tracks, 0).hips, [0, 0, 0, 1]) && near(frameOf(tracks, 1).hips, [0, s, 0, s]), "on a key, that key");
-ok(near(frameOf(tracks, 7).hips, [0, s, 0, s]) && near(frameOf(tracks, null).hips, [0, s, 0, s]), "past the last key, or with no at, the last key");
-ok(near(frameOf({ hips: [{ t: 1, q: [0, s, 0, s] }, { t: 2, q: [0, 0, 0, 1] }] }, 0.2).hips, [0, s, 0, s]), "before the first key, the first key");
-ok(near(frameOf({ hips: [{ t: 1, q: [0, s, 0, s] }, { t: 0, q: [0, 0, 0, 1] }] }, 0.5).hips, q45), "keys out of order are sorted first");
-// the shorter way round, as the client's slerp takes it: q and -q are one rotation
-ok(near(frameOf({ hips: [{ t: 0, q: [0, 0, 0, 1] }, { t: 1, q: [0, -s, 0, -s] }] }, 0.5).hips, q45), "q and -q slerp the short way");
+// a hold between two keys holds each bone's key at or before it, and the reply says that's what it holds
+{ const ag: any = { anims: [], setPose: () => {}, animBegan: () => {}, animEnded: () => {} };
+  const out: any = await handleTool({ agent: ag } as any, "anim", { tracks: { hips: [{ t: 0, q: [0, 0, 0, 1] }, { t: 1, q: [0, Math.SQRT1_2, 0, Math.SQRT1_2] }] }, mode: "hold", at: 0.5 });
+  ok(!out.isError && /each bone's key at or before 0\.5 s \(else its first\), not a blend between keys/.test(out.content[0].text), "a held frame between keys says it holds the key at or before it", out.content[0].text); }
 
 // a ragdoll asked of someone else leaves your own anims playing, whether they say yes or no
 for (const refused of [true, false]) {

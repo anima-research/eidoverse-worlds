@@ -1364,25 +1364,10 @@ const ANIM_BODY: Record<string, "stand" | "sit" | "lie"> = { sit: "sit", sitchai
 function animFrom(_ag: any, _name: string): "avatar" | "world" | "builtin" { return "builtin"; }
 const MODES = ["once", "loop", "hold"];
 const playing = (name: string, mode: string, extra = "", from?: string) => text(`${JSON.stringify({ playing: name, mode, ...(from ? { from } : {}) })}${extra ? ` — ${extra}` : ""}`);
-/** The frame of live tracks at `at` seconds (default the last key). */
-// the frame the tracks show at `at`, sampled as the client plays them (avatar.js _sampleTrack): before the first key its
-// value, after the last the last's, between two keys the rotation slerped between them (it took the earlier key)
-function slerpQ(a: number[], b: number[], f: number): number[] {
-  let c = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]; let bb = b;
-  if (c < 0) { c = -c; bb = b.map((x) => -x); }
-  const norm = (q: number[]) => { const n = Math.hypot(...q); return n > 1e-12 ? q.map((x) => x / n) : [0, 0, 0, 1]; };
-  if (c > 0.9995) return norm(a.map((x, i) => x + (bb[i] - x) * f));
-  const th = Math.acos(c), s = Math.sin(th), wa = Math.sin((1 - f) * th) / s, wb = Math.sin(f * th) / s;
-  return a.map((x, i) => x * wa + bb[i] * wb);
-}
-export function frameOf(tracks: Record<string, { t: number; q: number[] }[]>, at: number | null) {
+/** The frame of live tracks at `at` seconds (default the last key): each bone's last key at or before it. */
+function frameOf(tracks: Record<string, { t: number; q: number[] }[]>, at: number | null) {
   const out: Record<string, number[]> = {};
-  for (const [bone, keys] of Object.entries(tracks)) { const ks = [...keys].sort((x, y) => x.t - y.t); if (!ks.length) continue;
-    const last = ks[ks.length - 1];
-    if (at == null || at >= last.t) { out[bone] = last.q; continue; }
-    if (at <= ks[0].t) { out[bone] = ks[0].q; continue; }
-    const i = ks.findIndex((k) => k.t >= at); const p = ks[i - 1], n = ks[i];
-    out[bone] = n.t === at ? n.q : slerpQ(p.q, n.q, (at - p.t) / Math.max(1e-4, n.t - p.t)); }
+  for (const [bone, keys] of Object.entries(tracks)) { const ks = [...keys].sort((x, y) => x.t - y.t); const pick = at == null ? ks.at(-1) : ks.filter((k) => k.t <= at).at(-1) ?? ks[0]; if (pick) out[bone] = pick.q; }
   return out;
 }
 HANDLERS.anim = async (ag, a, ctx, name) => {
@@ -1436,7 +1421,8 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
       ag.setPose(frameOf(v.tracks, at), !!a.hold); ag.animBegan({ name: "live", mode: "hold", kind: "live" });
       // what validation left out or corrected is said, as animate says it
       const note = poseReport(v);
-      return playing("live", "hold", `holding the frame at ${at ?? "the last key"}${at != null ? " s" : ""} of ${v.accepted.length} bone(s)${note ? `. ${note}` : ""}`);
+      // between two keys a bone holds the earlier one, not the frame a loop would show there, so the reply says so
+      return playing("live", "hold", `holding ${at == null ? "the last key" : `each bone's key at or before ${at} s (else its first), not a blend between keys,`} of ${v.accepted.length} bone(s)${note ? `. ${note}` : ""}`);
     }
     // a new tracks loop on your body replaces the one in its layer: the earlier loop stops on every renderer before the new
     // one is sent, so "replaced" is what they show (the merge left both running). Only a loop animate
@@ -1522,12 +1508,6 @@ export const TOOL_FOLDS: Record<string, string> = {
   light: 'create {components: {light: {…}}, at?} (edit {id, set: {"light.intensity": …}} updates one)', remove: 'act {verb: "delete", args: {id}}',
   blueprint_place: 'create {from: "sha256:<hash>", at?}', kick: 'act {verb: "kick", args: {who, minutes?, reason?}}', ban: 'act {verb: "ban", args: {who, days?, reason?, global?}}',
   unban: 'act {verb: "unban", args: {who, global?}}', list_bans: 'act {verb: "bans", args: {global?}}',
-  // main's world_access left without a pointer
-  world_access: 'the world\'s own components on @world: worlds shows each door; owners change it with act {verb: "set", args: {id: "@world", component: "access" | "roles:<id>", value}}',
-};
-/** Main's tools that left with what they did, and why (whisper fell through to a did-you-mean of whois). */
-export const TOOL_REMOVED: Record<string, string> = {
-  whisper: "world chat has no private channel since R 10-18; say speaks aloud to everyone here",
 };
 /** An alias carries the OLD argument shape too (review 10-15 #5: walk_to {x, z} reached move, which takes {to}, and got a shape
  *  error — the alias ran the right tool with the wrong words). Each translates the old schema to the new one, or says what to
@@ -1552,8 +1532,6 @@ export const TOOL_ALIAS_ARGS: Record<string, (a: Record<string, any>) => Record<
   animate: (a) => a.name != null ? { name: a.name, ...(a.looped === true || a.loop === true ? { mode: "loop" } : {}) }
     : { tracks: a.tracks, dur: a.dur, mode: a.looped === true || a.loop === true ? "loop" : "once", ...(a.replace != null ? { replace: a.replace } : {}), ...(a.target != null ? { target: a.target } : {}) },
   posture: (a) => { const k = String(a.kind ?? a.posture ?? ""); return ["sit", "sitchair", "lie", "stand"].includes(k) ? { name: k, mode: "loop" } : { refuse: "posture is sit, sitchair, lie or stand — anim {name} plays it now" }; },
-  // emote's gestures played once: without a mode, anim plays dance as its own loop
-  emote: (a) => a.name != null && a.mode == null ? { ...a, mode: "once" } : a,
   world_verb: (a) => a,   // TOOL_ALIAS_ARGS: act takes the same {verb, args}
   spawn: (a) => {
     if (!a.lib) return { refuse: a.query ? `spawn {query} has no one-step form now: library {query: ${JSON.stringify(a.query)}} finds the model, then create {model}` : "spawn needs lib (a library path); it is create {model} now" };
@@ -1579,7 +1557,6 @@ const edits = (x: string, y: string) => { const d: number[][] = Array.from({ len
 export const nearestTool = (name: string) => Object.keys(HANDLERS).map((n) => [n, edits(name, n)] as const).sort((p, q) => p[1] - q[1])[0];
 export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, any>) {
   const r = resolveTool(name);
-  if (!r && TOOL_REMOVED[name]) return { content: [{ type: "text", text: `${name} was removed: ${TOOL_REMOVED[name]} — nothing ran` }], isError: true };
   if (!r && TOOL_FOLDS[name]) return { content: [{ type: "text", text: `${name} folded into a general tool: ${TOOL_FOLDS[name]} — nothing ran` }], isError: true };
   // the same words for a tool this server doesn't serve, hidden or never there (#247), with the nearest name when one is close
   if (!r) { const near = nearestTool(name); return { content: [{ type: "text", text: `there's no tool named "${name}" on this server, so nothing ran${near && near[1] <= 4 ? ` (did you mean ${near[0]}?)` : ""}; your tool list has the ones it serves` }], isError: true }; }

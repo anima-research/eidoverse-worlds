@@ -8,10 +8,10 @@ ok(resolveTool("teleport") === null, "a name that never existed resolves to noth
 ok(nearestTool("screenshoot")?.[0] === "screenshot", "the nearest declared tool for a typo", nearestTool("screenshoot"));
 // the old ARGUMENT shapes translate too (an alias that ran the right tool with the wrong words was a shape error, 10-15)
 import { TOOL_ALIAS_ARGS } from "./tools.ts";
-// every alias translates its old shape (emote's {name} too: its gestures played once)
-for (const old of Object.keys(TOOL_ALIASES)) ok(typeof TOOL_ALIAS_ARGS[old] === "function", `${old} has an argument translation`);
-ok(JSON.stringify(TOOL_ALIAS_ARGS.emote({ name: "dance" })) === JSON.stringify({ name: "dance", mode: "once" }), "emote {name: dance} → anim {name: dance, mode: once}: a gesture, not a loop");
-ok(JSON.stringify(TOOL_ALIAS_ARGS.emote({ name: "dance", mode: "loop" })) === JSON.stringify({ name: "dance", mode: "loop" }), "emote with a mode keeps it");
+// every alias translates its old shape, but one: the action bar's old tool took {name}, which anim takes as it is (R 10-17 16:26)
+const passThrough = Object.keys(TOOL_ALIASES).filter((old) => TOOL_ALIAS_ARGS[old] === undefined);
+for (const old of Object.keys(TOOL_ALIASES)) if (!passThrough.includes(old)) ok(typeof TOOL_ALIAS_ARGS[old] === "function", `${old} has an argument translation`);
+ok(passThrough.length === 1 && TOOL_ALIASES[passThrough[0]] === "anim", "one alias passes its {name} through to anim, untranslated", passThrough);
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, y: null, z: 2 })) === JSON.stringify({ to: [1, 2] }), "walk_to {x, y: null, z} → move {to: [x, z]}: a null y is no y, not the floor at 0");
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, z: 2, run: true, tolerance: 0.2 })) === JSON.stringify({ to: [1, 2], run: true, tolerance: 0.2 }), "walk_to {x, z, run, tolerance} → move {to: [x, z], run, tolerance}");
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, z: 2 })) === JSON.stringify({ to: [1, 2] }), "walk_to {x, z} alone → move {to}");
@@ -32,7 +32,7 @@ ok(JSON.stringify(TOOL_ALIAS_ARGS.spawn({ lib: "a.glb" })) === JSON.stringify({ 
   ok(/library \{query/.test(t) && /then create \{model\}/.test(t), "spawn {query} refuses and teaches library {query} then create", t); }
 ok(TOOL_ALIAS_ARGS.snapshot({ view: "third" }).view === "third" && TOOL_ALIAS_ARGS.world_verb({ verb: "say", args: { text: "hi" } }).verb === "say", "snapshot and world_verb keep their shapes");
 // through the dispatcher: each alias runs its new tool with the translated words, and says so
-import { handleTool, HANDLERS, TOOL_FOLDS, TOOL_REMOVED } from "./tools.ts";
+import { handleTool, HANDLERS, TOOL_FOLDS } from "./tools.ts";
 const ctx: any = { agent: {} };
 for (const [old, now] of Object.entries(TOOL_ALIASES)) {
   const real = HANDLERS[now]; let got: any = null;
@@ -40,17 +40,15 @@ for (const [old, now] of Object.entries(TOOL_ALIASES)) {
   const args = old === "walk_to" ? { x: 1, z: 2 } : old === "spawn" ? { lib: "a.glb" } : old === "posture" ? { kind: "sit" } : { name: "wave" };
   const out: any = await handleTool(ctx, old, args);
   HANDLERS[now] = real;
-  ok(!out.isError && got !== null && JSON.stringify(got) === JSON.stringify(TOOL_ALIAS_ARGS[old](args)) && out.content[0].text === `(${old} is now called ${now}; this ran ${now})\nran`,
+  ok(!out.isError && got !== null && JSON.stringify(got) === JSON.stringify(TOOL_ALIAS_ARGS[old] ? TOOL_ALIAS_ARGS[old](args) : args) && out.content[0].text === `(${old} is now called ${now}; this ran ${now})\nran`,
     `${old} reaches ${now} through the dispatcher with its translated words`, { got, out }); }
 // a refused translation ran nothing, and its note says so
 { const real = HANDLERS.create; let ran = false; HANDLERS.create = (async () => { ran = true; return { content: [] }; }) as any;
   const out: any = await handleTool(ctx, "spawn", { query: "lamp" }); HANDLERS.create = real;
   ok(out.isError && !ran && /nothing ran/.test(out.content[0].text) && !/this ran/.test(out.content[0].text), "a refused alias says nothing ran, and runs nothing", out); }
-// every tool main served is served, aliased, folded or named as removed (world_access and whisper had fallen through)
-// (main's v1 verb tool is an alias, so the alias loop above already drives it)
-const MAIN_TOOLS = "body_state look snapshot walk_to name_place check_model take_off climb_to glide_to land_at rehearse_down rehearse_recover fold_wings unfold_wings flight_status face stop say catch_up activity whisper pose clear_pose emote reach clear_reach posture ragdoll animate set_avatar library_sheet library_preview list_library spawn place light remove worlds travel measure world_history world_debug kick ban unban list_bans world_access".split(" ");
-const lost = MAIN_TOOLS.filter((n) => !HANDLERS[n] && !TOOL_ALIASES[n] && !TOOL_FOLDS[n] && !TOOL_REMOVED[n]);
-ok(lost.length === 0, "every tool main served is served, aliased, folded or named as removed", lost);
-for (const [n, says] of [["world_access", /^world_access folded into a general tool: .*@world.* — nothing ran$/], ["whisper", /^whisper was removed: world chat has no private channel .* — nothing ran$/]] as const) {
-  const out: any = await handleTool(ctx, n, {}); ok(out.isError && says.test(out.content[0].text) && !/did you mean/.test(out.content[0].text), `${n} says where it went, not a did-you-mean`, out); }
+// every tool main served is served, aliased or folded, but the two this branch removes outright (no tools here: door-is-error-test)
+// (main's v1 verb tool and the action bar's old tool are aliases, so the alias loop above already drives them)
+const MAIN_TOOLS = "body_state look snapshot walk_to name_place check_model take_off climb_to glide_to land_at rehearse_down rehearse_recover fold_wings unfold_wings flight_status face stop say catch_up activity pose clear_pose reach clear_reach posture ragdoll animate set_avatar library_sheet library_preview list_library spawn place light remove worlds travel measure world_history world_debug kick ban unban list_bans".split(" ");
+const lost = MAIN_TOOLS.filter((n) => !HANDLERS[n] && !TOOL_ALIASES[n] && !TOOL_FOLDS[n]);
+ok(lost.length === 0, "every tool main served is served, aliased or folded", lost);
 console.log(`alias-test: ${fails ? `${fails} failed` : "all ok"}`); process.exit(fails ? 1 : 0);

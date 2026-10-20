@@ -1054,17 +1054,16 @@ check('naming a place on an unknown thing is failed', failed(r) && /no thing cal
 
 console.log('\nFOLDED AND REMOVED TOOLS');
 // Main's tools that this protocol folds into general tools are refused with the call that does it now, and nothing
-// runs; world_access, folded into @world's own components, says so, and whisper says it was removed with world chat's
-// private channel (both had fallen through to the unknown-tool reply, whisper's naming whois).
+// runs; its whisper and world_access are no tools here.
 for (const name of ['take_off', 'climb_to', 'glide_to', 'land_at', 'fold_wings', 'unfold_wings', 'rehearse_down', 'rehearse_recover',
   'clear_reach', 'clear_pose', 'ragdoll', 'library_preview', 'library_sheet', 'remove', 'kick', 'list_bans']) {
   r = await door(name, {});
   check(`${name} is refused as folded, and nothing runs`, failed(r) && new RegExp(`^${name} folded into a general tool: .* — nothing ran$`).test(said(r)), said(r));
 }
-r = await door('world_access', {});
-check('world_access is refused as folded, and nothing runs', failed(r) && /^world_access folded into a general tool: .* — nothing ran$/.test(said(r)), said(r));
-r = await door('whisper', {});
-check('whisper is refused as removed, saying why, and nothing runs', failed(r) && /^whisper was removed: world chat has no private channel .* — nothing ran$/.test(said(r)) && !/whois/.test(said(r)), said(r));
+for (const name of ['whisper', 'world_access']) {
+  r = await door(name, {});
+  check(`${name} is no tool here`, failed(r) && new RegExp(`^there's no tool named "${name}" on this server, so nothing ran`).test(said(r)), said(r));
+}
 
 console.log('\nWALK');
 const walker: any = {
