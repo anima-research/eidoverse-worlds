@@ -351,21 +351,28 @@ export function fitCollider(id, obj, { collide, scale = 1, lib = null, localFram
  *  concern; headless registers their floor decks as thin slabs instead, so a
  *  settling body finds support without the pavilion sealing into a block.
  *  `min`/`max` are the entity's LOCAL frame, like fitCollider's box. */
+/** A data fitter's scale: one number, or a stretched thing's [x, y, z] (shared/scale3.js); null when not a scale. */
+const scaleVec = (scale) => {
+  const s = Array.isArray(scale) ? scale : [scale, scale, scale];
+  return s.length === 3 && s.every((v) => Number.isFinite(v) && v > 0) ? new THREE.Vector3(s[0], s[1], s[2]) : null;
+};
+
 export function fitSupportBox(id, min, max, { position, yaw = 0, scale = 1 } = {}) {
   const box = new THREE.Box3(
     new THREE.Vector3(min[0], min[1], min[2]),
     new THREE.Vector3(max[0], max[1], max[2]),
   );
-  if (box.isEmpty()) return;
+  const sv = scaleVec(scale);
+  if (box.isEmpty() || !sv) return;
   const obj = {
     position: new THREE.Vector3(position[0], position[1], position[2]),
     rotation: { y: yaw },
-    scale: new THREE.Vector3(scale, scale, scale),
+    scale: sv,
   };
   const entry = { obj, box, pref: 'box', exact: null, interior: false, cells: [] };
   // same rule decide() applies to non-exact entries: tall small-footprint
   // things collide as a slim centre pillar, not their canopy extents
-  entry.pillar = (box.max.y - box.min.y) * scale > 2.4;
+  entry.pillar = (box.max.y - box.min.y) * sv.y > 2.4;
   colliders.set(id, entry);
   bucketAdd(id, entry);
 }
@@ -382,7 +389,7 @@ export function fitSupportBox(id, min, max, { position, yaw = 0, scale = 1 } = {
 export function fitSupportGrid(id, topGrid, { position, yaw = 0, scale = 1 } = {}) {
   if (!validTopGrid(topGrid)) return false;
   if (![position].every((v) => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite))
-      || !Number.isFinite(yaw) || !Number.isFinite(scale) || !(scale > 0)) return false;
+      || !Number.isFinite(yaw) || !scaleVec(scale)) return false;
   const [minX, minZ] = topGrid.minXZ, [w, d] = topGrid.sizeXZ;
   let lo = Infinity, hi = -Infinity;
   for (const c of topGrid.cells) if (c !== null) { if (c < lo) lo = c; if (c > hi) hi = c; }
@@ -393,7 +400,7 @@ export function fitSupportGrid(id, topGrid, { position, yaw = 0, scale = 1 } = {
   const obj = {
     position: new THREE.Vector3(position[0], position[1], position[2]),
     rotation: { y: yaw },
-    scale: new THREE.Vector3(scale, scale, scale),
+    scale: scaleVec(scale),
   };
   const entry = { obj, box, pref: 'box', exact: null, interior: false, pillar: false, cells: [],
     grid: { n: topGrid.n, minX, minZ, w, d, tops: topGrid.cells } };

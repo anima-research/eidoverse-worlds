@@ -160,16 +160,20 @@ const holders = new Map<string, Set<string>>();
 /** Register a placed entity's support geometry (a local-frame box + world
  *  transform) so settling bodies rest on it. `holder` is the claiming agent;
  *  the box survives until every holder has removed it. */
+/** A stretched thing's per-axis scale, beside the one number decide() reads (shared/scale3.js); absent is uniform. */
+const finite3 = (v: unknown) => v == null || (Array.isArray(v) && v.length === 3 && v.every(Number.isFinite));
+const perAxis = (x: { scale?: number; scale3?: number[] }) => x.scale3 ?? x.scale ?? 1;
+
 export async function registerSupport(
   holder: string, id: string, min: number[], max: number[],
-  xform: { position: number[]; yaw?: number; scale?: number },
+  xform: { position: number[]; yaw?: number; scale?: number; scale3?: number[] },
 ) {
   // Last line of defense (#88): this runs detached (`void registerSupport`),
   // so a throw here is an unhandled rejection that takes the WHOLE DOOR
   // down — every agent in the process, not the one with the bad entity.
   // A box or transform that is not finite geometry abstains instead.
   if (![min, max, xform?.position].every(isFiniteVec3)
-      || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1)) {
+      || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1) || !finite3(xform.scale3)) {
     console.error(`[physics] support ${id} abstained — non-finite geometry/transform`);
     return;
   }
@@ -178,7 +182,7 @@ export async function registerSupport(
   (holders.get(id) ?? holders.set(id, new Set()).get(id)!).add(holder);
   // re-fit unconditionally: a place moves the box, and the newest claimant's
   // transform is the freshest reading of where the thing actually is
-  m.colliders.fitSupportBox(id, min, max, xform);
+  m.colliders.fitSupportBox(id, min, max, { ...xform, scale: perAxis(xform) });
   generation++;
   scopeEntry(m, id);
 }
@@ -196,16 +200,16 @@ export const supportHolders = (): Record<string, string[]> =>
  *  ABSTAIN — registering the box top instead is the bug this exists to fix. */
 export async function registerSupportGrid(
   holder: string, id: string, topGrid: unknown,
-  xform: { position: number[]; yaw?: number; scale?: number },
+  xform: { position: number[]; yaw?: number; scale?: number; scale3?: number[] },
 ): Promise<boolean> {
   if (!isFiniteVec3(xform?.position)
-      || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1)) {
+      || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1) || !finite3(xform.scale3)) {
     console.error(`[physics] grid support ${id} abstained — non-finite transform`);
     return false;
   }
   const m = await loadSim();
   if (!m) return false;
-  if (!m.colliders.fitSupportGrid(id, topGrid, xform)) return false;
+  if (!m.colliders.fitSupportGrid(id, topGrid, { ...xform, scale: perAxis(xform) })) return false;
   generation++;
   scopeEntry(m, id);
   (holders.get(id) ?? holders.set(id, new Set()).get(id)!).add(holder);
@@ -226,10 +230,10 @@ const meshGeometries = new WeakMap<object, any>();
  *  Same holder discipline and lifetime as registerSupport. */
 export async function registerMeshSupport(
   holder: string, id: string, mesh: { positions: Float32Array; indices: Uint32Array },
-  xform: { position: number[]; yaw?: number; scale?: number; collide?: string; model?: string },
+  xform: { position: number[]; yaw?: number; scale?: number; scale3?: number[]; collide?: string; model?: string },
 ): Promise<boolean> {
   if (!isFiniteVec3(xform?.position)
-      || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1)) {
+      || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1) || !finite3(xform.scale3)) {
     console.error(`[physics] mesh support ${id} abstained — non-finite transform`);
     return false;
   }
@@ -248,7 +252,7 @@ export async function registerMeshSupport(
   root.add(new THREE.Mesh(geom));
   root.position.set(xform.position[0], xform.position[1], xform.position[2]);
   root.rotation.y = xform.yaw ?? 0;
-  root.scale.setScalar(s);
+  if (xform.scale3) root.scale.set(xform.scale3[0], xform.scale3[1], xform.scale3[2]); else root.scale.setScalar(s);   // stretched per axis, as applyScale does
   root.updateMatrixWorld(true);
   // Never throws (#88): a model the fit chokes on (degenerate triangles, a
   // BVH build failure) abstains, and the caller falls back to its summary.

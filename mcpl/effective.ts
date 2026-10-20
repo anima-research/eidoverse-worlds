@@ -20,7 +20,7 @@ import { seatGateCore, applySeatCorrection } from "../client/lib/seatcore.js";
 
 export type EffectiveView = {
   /** The folded entity, or undefined when `id` is not a thing (a body, or unknown). */
-  entity(id: string): { pos: number[]; yaw?: number; scale?: number; comp?: Record<string, any> } | undefined;
+  entity(id: string): { pos: number[]; yaw?: number; scale?: number; scale3?: number[]; q?: number[]; comp?: Record<string, any> } | undefined;
   /** The live mount record for `id` (thing OR body), or undefined when unmounted. A body's seat is a socket entity
    *  ({to: <socket id>}: PLAN-sockets-entities); a thing's mount is its fold parent (offset/q local to it). */
   mount(id: string): { to: string; offset?: number[]; yaw?: number; q?: number[] } | undefined;
@@ -38,6 +38,8 @@ export type EffectiveView = {
 export type Effective =
   | { ok: true; pos: [number, number, number]; yaw: number;
       quat: [number, number, number, number]; scale: number;
+      /** the per-axis scale a stretched link carries (a uniform one: three of `scale`) */
+      scale3: [number, number, number];
       /** the motion type of the nearest moving link, or null when the chain stands still */
       moving: string | null;
       /** for seated BODIES only (#101): whether the profile correction is in
@@ -48,6 +50,11 @@ export type Effective =
 
 const fin3 = (v: unknown): v is [number, number, number] =>
   Array.isArray(v) && v.length === 3 && v.every(Number.isFinite);
+const fin4 = (v: unknown): v is [number, number, number, number] =>
+  Array.isArray(v) && v.length === 4 && v.every(Number.isFinite);
+/** A record's per-axis scale (scale3), else three of its one-number scale. */
+const scale3Of = (e: { scale?: number; scale3?: number[] }, s: number): [number, number, number] =>
+  fin3(e.scale3) ? [e.scale3[0], e.scale3[1], e.scale3[2]] : [s, s, s];
 
 /** Default local offset when the mount gives none: the parent's origin — for a body on a socket, the socket itself
  *  (the browser: world.js mountTransform reads the socket's own frame; realize/models.js execMount [0,0,0]). */
@@ -102,7 +109,7 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
     // child world = parent world ∘ (scaled local offset, then local yaw) —
     // socket coords are model-frame, so the parent's world scale applies to
     // them (world.js runs the offset through matrixWorld for the same reason)
-    const local: [number, number, number] = [rawOff[0] * parent.scale, rawOff[1] * parent.scale, rawOff[2] * parent.scale];
+    const local: [number, number, number] = [rawOff[0] * parent.scale3[0], rawOff[1] * parent.scale3[1], rawOff[2] * parent.scale3[2]];
     const d = qApply(parent.quat, local);
     let pos: [number, number, number] = [parent.pos[0] + d[0], parent.pos[1] + d[1], parent.pos[2] + d[2]];
     // The profile correction (#101), bodies only: contact plane onto the
@@ -130,7 +137,10 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
     const quat = qMul(parent.quat, rawQ ?? qAxisAngle([0, 1, 0], rawYaw)) as [number, number, number, number];
     const yaw = yawOfQuat(quat);
     if (!fin3(pos) || !Number.isFinite(yaw)) return { ok: false, why: "composed transform is non-finite", link: id };
-    return { ok: true, pos, yaw, quat, scale: parent.scale * ownScale, moving: parent.moving, ...(seat ? { seat } : {}) };
+    const own3 = e ? scale3Of(e, ownScale) : [1, 1, 1];
+    const scale3: [number, number, number] = [parent.scale3[0] * own3[0], parent.scale3[1] * own3[1], parent.scale3[2] * own3[2]];
+    if (!fin3(scale3)) return { ok: false, why: "non-finite scale", link: id };
+    return { ok: true, pos, yaw, quat, scale: parent.scale * ownScale, scale3, moving: parent.moving, ...(seat ? { seat } : {}) };
   }
 
   // ---- unmounted: the folded base, plus the thing's own whole-entity motion --
@@ -139,6 +149,8 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
   const yaw0 = e.yaw ?? 0;
   const scale = e.scale ?? 1;
   if (!Number.isFinite(yaw0) || !Number.isFinite(scale)) return { ok: false, why: "non-finite folded transform", link: id };
+  const scale3 = scale3Of(e, scale);
+  if (!fin3(scale3)) return { ok: false, why: "non-finite folded transform", link: id };
 
   const motion = e?.motion;
   if (motion && motion.type != null) {
@@ -149,13 +161,15 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
     // stand still) — report the chain as still in that case
     const rootMoved = typeof motion.part !== "string";
     return { ok: true, pos: r.pos as [number, number, number], yaw: r.yaw,
-      quat: r.quat as [number, number, number, number], scale,
+      quat: r.quat as [number, number, number, number], scale, scale3,
       moving: rootMoved ? String(motion.type) : null };
   }
 
-  // A live pose (a vehicle lease) may carry a full orientation: honour it so occupants compose with the pitch too.
-  const q0 = Array.isArray(e.livePose?.q) && e.livePose.q.length === 4 && e.livePose.q.every(Number.isFinite)
-    ? e.livePose.q as [number, number, number, number] : qAxisAngle([0, 1, 0], yaw0) as [number, number, number, number];
-  return { ok: true, pos: [e.pos[0], e.pos[1], e.pos[2]], yaw: e.livePose ? yawOfQuat(q0) : yaw0,
-    quat: q0, scale, moving: e.livePose ? "leased" : null };
+  // A live pose (a vehicle lease) may carry a full orientation, and so may the stored transform (a pitched or rolled
+  // root, its q): honour either, so occupants and sockets compose with the tilt too. Else the heading alone.
+  const leased = fin4(e.livePose?.q) ? e.livePose.q as [number, number, number, number] : null;
+  const stored = fin4(e.q) ? [e.q[0], e.q[1], e.q[2], e.q[3]] as [number, number, number, number] : null;
+  const q0 = leased ?? stored ?? qAxisAngle([0, 1, 0], yaw0) as [number, number, number, number];
+  return { ok: true, pos: [e.pos[0], e.pos[1], e.pos[2]], yaw: leased || stored ? yawOfQuat(q0) : yaw0,
+    quat: q0, scale, scale3, moving: e.livePose ? "leased" : null };
 }

@@ -221,6 +221,8 @@ function trimMeshCache(key: string, m: CollisionMesh) {
 type Pose = PublicPose;
 type Kind = ReturnType<typeof kindOf>;
 type Entity = { id: string; model: string; kind: Kind; pos: number[]; yaw: number; actor: string; scale?: number;
+  /** a stretched thing's per-axis scale, and a tilted one's whole rotation (the fold keeps both beside scale and yaw) */
+  scale3?: number[]; q?: number[];
   /** the spawn's collider override ("exact" | "box"); the browser's decide() reads it, and so does ours */
   collide?: string;
   /** component bag (sockets, reactions, motion, …) — what a thing can DO;
@@ -565,7 +567,7 @@ export class WorldAgent {
       if (!m || typeof m !== "object") continue;
       const ts = Date.now(); let text: string | null = null;
       if (m.type === "body-ask" && m.ask) { const a = m.ask; const left = typeof a.expires === "number" ? Math.max(1, Math.round((a.expires - ts) / 1000)) : 20;
-        text = `${a.summary ?? `${a.from} asks to ${a.kind}`}${a.why ? ` — "${a.why}"` : ""} (consent class ${KIND_CLASS[a.kind] ?? a.kind}; about ${left} s to answer, silence is no): act {verb: "consent", args: {answer: ${JSON.stringify(a.id)}, yes: true}} allows it this once, yes: false refuses`; }
+        text = `${a.summary ?? `${a.from} asks to ${a.kind}`}${a.why ? ` — "${a.why}"` : ""} (consent class ${a.cls ?? KIND_CLASS[a.kind] ?? a.kind}; about ${left} s to answer, silence is no): act {verb: "consent", args: {answer: ${JSON.stringify(a.id)}, yes: true}} allows it this once, yes: false refuses`; }
       else if (m.type === "body-reply") text = m.ok ? `your ask ${m.ask} was allowed${m.applied ? " and done" : ""}` : `your ask ${m.ask} was refused: ${m.why ?? "no"}`;
       else if (m.type === "body") text = `${m.from} ${m.kind === "touch" ? "touched" : m.kind === "shove" ? "knocked over" : m.kind === "drag" || m.kind === "carry" ? "moved" : m.kind === "occupy" ? "placed" : "posed"} you${m.spec?.point ? ` (${m.spec.point})` : ""} (consent: ${m.consent})`;
       else if (m.type === "vacated") {   // review r9 M3: an edit by someone else moved the seat I sat on, and the authority let me go
@@ -1813,7 +1815,8 @@ export class WorldAgent {
           if (fx.ok) this.noteEmitter(actor, id, was?.particles ?? null, now?.particles ?? null, fx.pos, ts);
           else this.noteEffGap(id, fx.why);
         }
-        if (comp === "motion" || comp?.startsWith("motion:")) this.trackSupport(this.syncSupport(id));
+        // a motion moves its support, and a collider override changes the policy its walking collider was fitted with
+        if (comp === "motion" || comp?.startsWith("motion:") || comp === "collider") this.trackSupport(this.syncSupport(id));
         break;
     }
   }
@@ -2354,6 +2357,8 @@ export class WorldAgent {
     // replay folds a mount right behind the spawn that triggered this fetch
     if (this.hasActiveMotion(e) || this.mounts.has(id)) { this.dropSupport(id); return; }
     const s = e.scale ?? 1;
+    // a stretched thing's per-axis scale (scale3), beside the one number decide() reads, as the browser's applyScale
+    const s3 = Array.isArray(e.scale3) && e.scale3.length === 3 && e.scale3.every(Number.isFinite) ? e.scale3 as number[] : [s, s, s];
     // A transform that cannot be a place in the world registers NOTHING —
     // and abstains BEFORE the drop, leaving whatever support already stands.
     // This is the layer that turned one malformed packet into everyone's
@@ -2368,7 +2373,7 @@ export class WorldAgent {
       return;
     }
     this.dropSupport(id);
-    const xform = { position: e.pos, yaw: e.yaw ?? 0, scale: s };
+    const xform = { position: e.pos, yaw: e.yaw ?? 0, scale: s, ...(Array.isArray(e.scale3) ? { scale3: s3 } : {}) };
     // lying down (a tumbling engine's rest, or a hand's tilt): its box turned into the frame of its own yaw, and no
     // decks or grid (those are measured upright); read by its yaw alone it was a phantom deck where it no longer stands
     const lying = Array.isArray(e.q) && e.q.length === 4 && g?.bbox?.min ? lyingFrame(e.q, g.bbox.min, g.bbox.max) : null;
@@ -2403,12 +2408,12 @@ export class WorldAgent {
       this.supportIds.delete(id);
     }
     if (!g) return;
-    const [w, h, d] = [g.bbox.size[0] * s, g.bbox.size[1] * s, g.bbox.size[2] * s];
+    const [w, h, d] = [g.bbox.size[0] * s3[0], g.bbox.size[1] * s3[1], g.bbox.size[2] * s3[2]];
     const ids: string[] = [];
     const roomScale = w * d >= 16 && h >= 2.2;         // decide()'s own gate, from the bbox alone
     const decks = roomScale
       ? (g.topSurfaces ?? [])
-          .filter((t: any) => t.area * s * s >= 1 && fillOf(t) >= DECK_FILL)
+          .filter((t: any) => t.area * s3[0] * s3[2] >= 1 && fillOf(t) >= DECK_FILL)
           .slice(0, 6)
       : [];
     if (roomScale && decks.length) {
@@ -2427,19 +2432,19 @@ export class WorldAgent {
       // the same shared classifier the browser's decide() runs; a summary
       // without `lie` (older server) cannot accuse anyone, so honest small
       // boxes keep today's behavior either way.
-      const cls = decideSupportClass({ w, d, h, lie: Number.isFinite(g.lie) ? g.lie * s : 0 });
+      const cls = decideSupportClass({ w, d, h, lie: Number.isFinite(g.lie) ? g.lie * s3[1] : 0 });
       if (cls.uneven) {
         // the certification is a MODEL-frame bound; this spawn's scale must
         // not stretch it past the agreed world bound (#94 review B1) — a
         // grid certified to 3cm serves a ×1.25 spawn (3.75cm) but not a ×2
-        const stretched = Number.isFinite(g.topGrid?.certSpread) && g.topGrid.certSpread * s > CERT_MAX_WORLD;
+        const stretched = Number.isFinite(g.topGrid?.certSpread) && g.topGrid.certSpread * s3[1] > CERT_MAX_WORLD;
         const fit = !stretched && await registerSupportGrid(this.supportHolder, bid, g.topGrid, xform);
         if (fit) ids.push(bid);
         // refused grid (absent/malformed/oversized/over-stretched): a
         // DECLARED abstention — the body finds terrain, which is at worst
         // the browser's under-the-rubble disagreement, never a floating
         // false floor
-        else this.noteSupportSeam(id, `uneven top (lie ${(g.lie * s).toFixed(2)}m) without a usable grid${stretched ? ` (certification stretched past ${CERT_MAX_WORLD}m at ×${s})` : ""} — abstaining, no box`);
+        else this.noteSupportSeam(id, `uneven top (lie ${(g.lie * s3[1]).toFixed(2)}m) without a usable grid${stretched ? ` (certification stretched past ${CERT_MAX_WORLD}m at ×${s3[1]} high)` : ""} — abstaining, no box`);
       } else {
         void registerSupport(this.supportHolder, bid, g.bbox.min, g.bbox.max, xform);
         ids.push(bid);
@@ -4112,8 +4117,11 @@ export class WorldAgent {
 
   /** A thing with no entrance or door, as a walk aims at it: up to it and beside it, on this body's side — THING_STANDOFF
    *  out from the nearest point of its footprint (its origin where the footprint isn't known, THING_STOP short of it). */
-  private besideThing(x: Entity, now = Date.now(), depth = 0): Destination {
-    const me = this.pos, box = footprint(this.replica?.st, x.id), at = this.worldPosOf(x, now);
+  private besideThing(x: Entity, now = Date.now(), depth = 0): Destination | { refusal: string } {
+    const me = this.pos, box = footprint(this.replica?.st, x.id), w = this.worldPointOf(x.id, now);
+    // where it stands: its effective point, else the middle of its footprint; never its saved pos, a child's offset
+    const at = "pos" in w ? w.pos : box ? [(box.min[0] + box.max[0]) / 2, box.min[1], (box.min[2] + box.max[2]) / 2] : null;
+    if (!at) return { refusal: `can't tell where [${this.refName(x.id)}] stands now — ${"why" in w ? w.why : "no frame"}` };
     let px = at[0], pz = at[2], off = THING_STOP;
     if (box) {
       const nx = Math.min(box.max[0], Math.max(box.min[0], me.x)), nz = Math.min(box.max[2], Math.max(box.min[2], me.z));
@@ -4124,7 +4132,7 @@ export class WorldAgent {
     // a thing standing on another (a cup on a table): the spot beside it may be on that other's top, where a walk can't
     // climb — then the spot beside what holds it up, on ITS floor, is walked to instead (review r6 L1)
     const under = box && depth < 4 ? this.supportOf(x.id, box) : null;
-    if (under) dest.orBeside = { ...this.besideThing(under, now, depth + 1), label: dest.label };
+    if (under) { const ob = this.besideThing(under, now, depth + 1); if (!("refusal" in ob)) dest.orBeside = { ...ob, label: dest.label }; }
     return dest;
   }
 
@@ -4143,11 +4151,11 @@ export class WorldAgent {
     return best;
   }
 
-  /** Where a thing stands in the world now: its effective transform (a child's parent chain, any motion), its saved `pos`
-   *  only where that can't be worked out — for a child, `pos` is its offset from its parent (review r6 L2). */
-  private worldPosOf(x: Entity, now = Date.now()): number[] {
-    const f = this.eff(x.id, now);
-    return f.ok ? f.pos : x.pos;
+  /** Where a thing stands in the world now: its effective transform (a child's parent chain, any motion), or why that
+   *  can't be worked out. Never its saved `pos` in its place: for a child, that is its offset from its parent. */
+  worldPointOf(id: string, now = Date.now()): { pos: [number, number, number] } | { why: string } {
+    const f = this.eff(id, now);
+    return f.ok ? { pos: f.pos } : { why: f.why };
   }
 
   /** name_place edits, one at a time: each starts from the state the last
@@ -4527,7 +4535,7 @@ export class WorldAgent {
    *  walk up against it (a shorter stretch) instead of stopping, and hold the walk until the shove has moved it. */
   private walkUpTo(g: WalkGate, from: number[], T: { x: number; z: number }, ref: any): boolean {
     const id = ref?.blocker, st = this.replica?.st;
-    if (typeof id !== "string" || !st || !this.replica?.sim?.sim || (g.shoves ?? 0) >= SHOVE_TRIES || !shoveable(st, id)) return false;
+    if (typeof id !== "string" || !st || !this.replica?.sim?.sim || (g.shoves ?? 0) >= SHOVE_TRIES || !this.mayShove(id)) return false;   // its rank and who holds what, as mayShove reads them
     const obb = obbOf(st, id); if (!obb) return false; const thing = { obb, box: aabbOfObb(obb) };
     const cap = BODY_CAP, dx = T.x - from[0], dz = T.z - from[2], d = Math.hypot(dx, dz); if (d < 1e-6) return false;
     let s = 0; const STEP = 0.05;
@@ -4634,7 +4642,10 @@ export class WorldAgent {
   private dropReachesAt(actor: string, limb?: string, cls?: string): string[] {
     const name = this.nameOfActor(actor), out: string[] = [];
     for (const [l, e] of [...this.reaches]) {
-      const hit = limb !== undefined ? l === limb : !!name && (e.t?.who === name || e.t?.space === name) && (!cls || WorldAgent.reachClass(e.t, name) === cls);
+      // a limb's refusal is that reach's only while the reach still aims at the refuser's body (or at a point, which the relay
+      // judges by where it lands): a newer reach on the same hand toward someone else stays
+      const atThem = !!name && (e.t?.who === name || e.t?.space === name), atBody = e.t?.who != null || e.t?.space != null;
+      const hit = limb !== undefined ? l === limb && (atThem || !atBody) : atThem && (!cls || WorldAgent.reachClass(e.t, name!) === cls);
       if (hit) { this.reaches.delete(l); out.push(WorldAgent.LIMB_WORD[l] ?? l); } }
     return out;
   }
@@ -4649,7 +4660,7 @@ export class WorldAgent {
    *  said within REACH_NOTE_MS (the relay won't say it again that soon, so silence then is not a yes). */
   private async reachRefusalFor(limb: string, actor: string, cls: string, since: number) {
     for (let i = 0; i < 16 && this.joined && !this.closed; i++) {
-      const r = this.reachRefusals.find((x) => x.ts >= since && x.to === actor && (x.limb ?? limb) === limb);
+      const r = this.reachRefusals.find((x) => x.ts >= since && x.to === actor && (x.limb ?? limb) === limb && x.cls === cls);   // the class too, as the stale lookup below
       if (r) return { r, fresh: true };
       await new Promise((res) => setTimeout(res, 50));
     }
