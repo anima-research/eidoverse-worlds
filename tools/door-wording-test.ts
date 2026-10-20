@@ -138,8 +138,8 @@ try {
   check("a snapshot the server refused gives its status and its answer, with no quotes nested in ours",
     snap === `snapshot: no picture was taken; the world server answered 503 (no renderer is currently serving world "w"), so try again in a while`, snap);
   const unrealOnly = said(await snapshotTool(agent, "first", "unreal"));
-  check("...an Unreal-only one with none there says to try again, or that auto or browser can get one",
-    unrealOnly === `snapshot: no picture was taken; the world server answered 503 (no unreal renderer is currently serving world "w"), so try again in a while, or ask for renderer "auto" or "browser", since for those the world also tries to summon a roaming browser renderer`, unrealOnly);
+  check("...an Unreal-only one with none there says to try again, or that browser can get one",
+    unrealOnly === `snapshot: no picture was taken; the world server answered 503 (no unreal renderer is currently serving world "w"), so try again in a while, or ask for renderer "browser"`, unrealOnly);
   const unrealAway = said(await snapshotTool({ ...agent, name: "gone" }, "first", "unreal"));
   check("...but an Unreal-only one refused for another reason gets that reason's remedy",
     unrealAway === `snapshot: no picture was taken; the world server answered 404 ("gone" is not present in "w"), so calling again works only once what it says has changed`, unrealAway);
@@ -290,10 +290,21 @@ try {
   check("a model file the parser can't read says so, with what the parser said",
     unparsed.error === "probe's joints and contacts weren't read: the avatar's model file couldn't be read as a model (not a GLB), so calling again won't change that", unparsed.error);
   const strolling = await ask("probe", "contacts", scene(seen("probe", "body.vrm", standing({ clip: "walk" }))));
-  check("a posture whose animation can't be downloaded says so",
-    strolling.error === "probe's joints and contacts weren't read: the walk posture's animation couldn't be downloaded (the world server answered 404)", strolling.error);
+  check("a posture whose clip can't be fetched gives the clip library's own words",
+    strolling.error === "probe's joints and contacts weren't read: posture clip walk: HTTP 404", strolling.error);
+  // a download that fails partway, after the server has answered
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: any, init?: any) => String(url).includes("/library/body.vrm")
+    ? new Response(new ReadableStream({ start(c) { c.error(new Error("the connection dropped")); } }))
+    : realFetch(url, init)) as typeof fetch;
+  const cutShort = await ask("probe", "contacts", probe, undefined, 0, new BodyStateReader(worldBase)).finally(() => { globalThis.fetch = realFetch; });
+  check("a model whose download fails partway says the download failed, and why",
+    /^probe's joints and contacts weren't read: the avatar's model couldn't be downloaded \(.*the connection dropped.*\)$/.test(cutShort.error ?? ""), cutShort.error);
   const twoOnOne = await ask("probe", "bones", scene(seen("probe", "shared-neck.vrm", standing())));
-  check("a model with two bones on one node keeps both", ["neck", "head"].every((n) => Object.hasOwn(twoOnOne.joints ?? {}, n)), Object.keys(twoOnOne.joints ?? {}).join(", "));
+  const near = (a: number[] | undefined, b: number[] | undefined) => !!a && !!b && a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
+  check("a model with two bones on one node keeps both, where that node is",
+    ["neck", "head"].every((n) => Object.hasOwn(twoOnOne.joints ?? {}, n)) && near(twoOnOne.joints?.neck?.position, twoOnOne.joints?.head?.position),
+    JSON.stringify({ neck: twoOnOne.joints?.neck?.position, head: twoOnOne.joints?.head?.position }));
   const armless = await ask("probe", "contacts", scene(seen("probe", "one-armed.vrm", standing())));
   check("a contact point the rig can't place says why it can't",
     armless.contacts?.forearm_l?.reason === "this rig can't place it: it lacks the point's bone, or its bones don't form a body frame to place it in", JSON.stringify(armless.contacts?.forearm_l));
@@ -417,6 +428,16 @@ try {
     shifted.reachEvaluation?.rightFoot?.why === `g's body can't be read here now (its posture "kneel" isn't one body_state evaluates), so this reach can't be checked; later reads check it again`, JSON.stringify(shifted.reachEvaluation?.rightFoot));
   check("...and one whose load failed, and that changed, says it changed rather than what its old model said",
     shifted.reachEvaluation?.leftFoot?.why === changedWhy("h"), JSON.stringify(shifted.reachEvaluation?.leftFoot));
+  // a failed load's cause gives way to a change in the model alone, the generation alone, or the clip alone
+  const refailing = new Map<string, any>([["a", reacher("a", { rightHand: { t: { who: "j", point: "shoulder_l" } }, leftHand: { t: { who: "k", point: "shoulder_l" } },
+      rightFoot: { t: { who: "l", point: "shoulder_l" } } })],
+    ["j", facing("j", "flat.vrm")], ["k", facing("k", "flat.vrm")], ["l", facing("l", "body.vrm", { clip: "walk" })]]);
+  const whileRefailing = new BodyStateReader(worldBase).read("a", "all", undefined, (id: string) => refailing.get(id) ?? null);
+  refailing.set("j", facing("j", "body.vrm")); refailing.set("k", { ...facing("k", "flat.vrm"), generation: 2 }); refailing.set("l", facing("l", "body.vrm"));
+  const refailed = await whileRefailing;
+  check("...as one whose model changed after its load failed", refailed.reachEvaluation?.rightHand?.why === changedWhy("j"), JSON.stringify(refailed.reachEvaluation?.rightHand));
+  check("...or whose generation did", refailed.reachEvaluation?.leftHand?.why === changedWhy("k"), JSON.stringify(refailed.reachEvaluation?.leftHand));
+  check("...or whose clip did, after its clip couldn't be fetched", refailed.reachEvaluation?.rightFoot?.why === changedWhy("l"), JSON.stringify(refailed.reachEvaluation?.rightFoot));
   const longId = "p".repeat(64);
   const towardLong = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: longId, point: "forearm_l" } } }), facing(longId, "one-armed.vrm")));
   check("a copyable body_state call keeps a long participant id whole",

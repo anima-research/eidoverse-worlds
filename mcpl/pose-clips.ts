@@ -15,10 +15,8 @@ export class PoseClips {
     const path = (await this.roster).get(file) ?? `eidoverse/assets/animations/${file}.vrma`;
     if (!this.clips.has(path)) {
       const pending = (async () => {
-        // Written as a clause, for body_state's failed load to give after its colon.
-        const r = await fetch(`${this.base}/library/${path}`, { signal: AbortSignal.timeout(10_000) })
-          .catch((e) => { throw new Error(`the ${slot} posture's animation couldn't be downloaded (${e instanceof Error ? e.message : String(e)})`); });
-        if (!r.ok) throw new Error(`the ${slot} posture's animation couldn't be downloaded (the world server answered ${r.status})`);
+        const r = await fetch(`${this.base}/library/${path}`, { signal: AbortSignal.timeout(10_000) });
+        if (!r.ok) throw new Error(`posture clip ${slot}: HTTP ${r.status}`);
         return parsePoseAnimation(await r.arrayBuffer());
       })();
       this.clips.set(path, pending);

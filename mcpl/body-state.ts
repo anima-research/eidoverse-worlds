@@ -167,10 +167,12 @@ export class BodyStateReader {
     if (old?.key === key) return old.load;
     const entry = { key, load: (async () => {
       if (!o.avatar) throw new Error("the world hasn't said which avatar this body wears");
-      const r = await fetch(`${this.httpBase}/library/${o.avatar}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) })
-        .catch((e) => { throw new Error(`the avatar's model couldn't be downloaded (${e instanceof Error ? e.message : String(e)})`); });
-      if (!r.ok) throw new Error(`the avatar's model couldn't be downloaded (the world server answered ${r.status} for ${shown(o.avatar)})`);
-      const bytes = new Uint8Array(await r.arrayBuffer());
+      // The download is the request, its status and its body, under one sentence.
+      const bytes = await (async () => {
+        const r = await fetch(`${this.httpBase}/library/${o.avatar}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
+        if (!r.ok) throw new Error(`the world server answered ${r.status} for ${shown(o.avatar)}`);
+        return new Uint8Array(await r.arrayBuffer());
+      })().catch((e) => { throw new Error(`the avatar's model couldn't be downloaded (${e instanceof Error ? e.message : String(e)})`); });
       try { return parseRig(bytes); } catch (e) {
         if (e instanceof RigRefusal) throw e;
         throw new Error(`the avatar's model file couldn't be read as a model (${e instanceof Error ? e.message : String(e)}), so calling again won't change that`);
@@ -331,7 +333,7 @@ export class BodyStateReader {
       for (const [id, { observation: was, cause }] of failed) {
         const o = observe(id);
         if (!o) skipped.set(id, "it left");
-        else if (o.generation !== was.generation || o.avatar !== was.avatar) skipped.set(id, "it changed while its skeleton loaded");
+        else if (o.generation !== was.generation || o.avatar !== was.avatar || o.pose?.clip !== was.pose?.clip) skipped.set(id, "it changed while its skeleton loaded");
         else unloaded.set(id, cause);
       }
       for (const [id, item] of loaded) {
@@ -447,7 +449,8 @@ export class BodyStateReader {
       out = base(latest);
       // The load's own cause, not a posture's. The throws above are written
       // to read as a clause after this colon, a model file the parser can't
-      // read and a posture's animation that can't be downloaded among them.
+      // read among them; the posture clips' own (mcpl/pose-clips.ts) come as
+      // they are thrown.
       const cause = e instanceof Error ? e.message : String(e);
       const error = `${whose(latest)} joints and contacts weren't read: ${cause}`;
       if (latest.pose?.clip !== "ragdoll") return { ...missingPosture(out, latest, error), detail: cause };
