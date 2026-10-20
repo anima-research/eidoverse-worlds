@@ -89,7 +89,9 @@ const { HANDLERS, TOOLS, TOOL_ALIASES, toolList, handleTool: handleToolDoor } = 
     // server's default preset by NAME, never a literal), carries no private "pushable" flag, and can address someone through say.
     const agentSrc = fs.readFileSync(path.join(ENGINE, "mcpl/agent.ts"), "utf8"), toolsSrc = fs.readFileSync(path.join(ENGINE, "mcpl/tools.ts"), "utf8");
     ok(!/\bpushable\b/.test(agentSrc), "AT7a agent.ts has no `pushable` flag: the authority's consent table is the one answer to a shove");
-    ok(/this\.request\("consent", \{ preset: DEFAULT_PRESET \}\)/.test(agentSrc) && /import \{[^}]*\bDEFAULT_PRESET\b[^}]*\} from "\.\.\/shared\/protocol\/consent\.js"/.test(agentSrc), "AT7b agent.ts sends consent {preset: DEFAULT_PRESET} (the server's name for it) after joining");
+    // It pins the default's NAME in the table the agent starts with and sends on its first arrival. It doesn't pin a reset
+    // on rejoin: a rejoin resends the agent's own table, the preset and cells it chose, as a person's client does.
+    ok(/consentTable[^=\n]*= \{ preset: DEFAULT_PRESET, sets: \[\] \}/.test(agentSrc) && /this\.request\("consent", args\)/.test(agentSrc) && /import \{[^}]*\bDEFAULT_PRESET\b[^}]*\} from "\.\.\/shared\/protocol\/consent\.js"/.test(agentSrc), "AT7b agent.ts sends consent {preset: DEFAULT_PRESET} (the server's name for it) after joining");
     const sayTool = toolsSrc.slice(toolsSrc.indexOf('name: "say"'), toolsSrc.indexOf('name: "say"') + 1200);
     ok(/\bto: \{ type: "string"/.test(sayTool) && /say\(text: string, extra\?: \{[^}]*\bto\?: string/.test(agentSrc), "AT7c say takes `to` on both the tool's schema and ag.say (the client sends it; the authority logs it)");
   }
@@ -188,7 +190,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   // a body moved without walking (a flight, a seat, a drag): the authority's track is stale; the next walk re-arrives it
   ag.pos.x = 10; ag.pos.z = -9;
   const stale = await call("move", { to: [10, -8] });
-  ok(!stale.isError && /re-arrived/.test(T(stale)) && Math.abs(ag.pos.z + 8) < 0.05, "AT1d after a move that wasn't a walk, the next walk re-arrives the authority's body there (a teleport, said) and walks on", T(stale));
+  ok(!stale.isError && /placed you here directly/.test(T(stale)) && Math.abs(ag.pos.z + 8) < 0.05, "AT1d after a move that wasn't a walk, the next walk re-arrives the authority's body there (a teleport, said) and walks on", T(stale));
   // a visitor in a world with a spawn arrives at the spawn, as a person does
   ok((await ann.req("set", { id: "@world", component: "spawn", value: { pos: [-8, 0, -8], radius: 2 } })).ok, "(AT1e setup) Ann gives the yard a spawn at (-8, -8)");
   const vee = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Vee", world: "yard", avatar: "" });
