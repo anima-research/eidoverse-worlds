@@ -491,6 +491,8 @@ const cases: Case[] = [
   { id: "M1", what: "(R 15:32) each built-in anim's own mode: wave/cheer/clap/point/salute/flail/talk once; dance, sit, sitchair, lie, stand loop; wings-folded (a one-frame pose) holds; a name the body doesn't know plays once", async run() {
       const { ag, call } = await animAgent();
       const out: any = {}; for (const n of ["wave", "cheer", "clap", "point", "salute", "flail", "talk", "dance", "sit", "sitchair", "lie", "stand", "juggle-overhand"]) out[n] = played(await call("anim", { name: n }))?.mode ?? null;
+      // a body whose wings can fold, its bones read: a fold that didn't happen isn't playing
+      ag.bodyBoneNames = ["Hip", "Spine02", "Head", "L_Wing_Upper", "L_Wing_Upper_1", "R_Wing_Upper", "R_Wing_Upper_1", "L_Wing_Lower", "R_Wing_Lower"]; ag.loadBodyBones = async () => ag.bodyBoneNames;
       out["wings-folded"] = played(await call("anim", { name: "wings-folded" }))?.mode ?? null;
       return out; },
     good: (o) => ["wave", "cheer", "clap", "point", "salute", "flail", "talk", "juggle-overhand"].every((n) => o[n] === "once") && ["dance", "sit", "sitchair", "lie", "stand"].every((n) => o[n] === "loop") && o["wings-folded"] === "hold" },
@@ -502,10 +504,11 @@ const cases: Case[] = [
       return { a: a?.mode, b: b?.mode, c: c?.mode, hold: ag.animHold, t: pk?.clipTime, rate: pk?.clipRate, clip: pk?.clip }; },
     good: (o) => o.a === "loop" && o.b === "once" && o.c === "hold" && o.hold === 0.5 && o.t === 0.5 && o.rate === 0 && o.clip === "sit" },
   { id: "M3", what: "…the reply states {playing, mode}: a name, or \"live\" for joints (a held frame: hold) and tracks (once, or loop)", async run() {
-      const { call } = await animAgent();
+      const { ag, call } = await animAgent(); ag.joined = true;   // live tracks go out on the socket: a body not joined sends none
       const n = played(await call("anim", { name: "dance" })), j = played(await call("anim", { joints: { head: [0, 0.1, 0, 0.995] } }));
       const tr = { head: [{ t: 0, q: [0, 0, 0, 1] }, { t: 0.5, q: [0, 0.1, 0, 0.995] }] };
       const t1 = played(await call("anim", { tracks: tr, dur: 1 })), t2 = played(await call("anim", { tracks: tr, dur: 1, mode: "loop" }));
+      ag.joined = false;
       return { n, j, t1, t2 }; },
     good: (o) => o.n?.playing === "dance" && o.n?.mode === "loop" && JSON.stringify(o.j) === '{"playing":"live","mode":"hold"}' && JSON.stringify(o.t1) === '{"playing":"live","mode":"once"}' && JSON.stringify(o.t2) === '{"playing":"live","mode":"loop"}' },
   { id: "M4", what: "…a loop or hold that ends tells the agent stopped {name, why}: another anim, a move, anim {stop}, being knocked over; a once anim ends silently", async run() {
@@ -562,7 +565,7 @@ const cases: Case[] = [
       const r = [BM.bodyModeOf({ flying: true, chosen: "sit" }), BM.bodyModeOf({ swimming: true }), BM.bodyModeOf({ falling: true }), BM.bodyModeOf({ chosen: "lie" })];
       const { call: c2, sent } = await animAgent2(ag); const d = await c2("anim", { bodyMode: "fly" }); ag.clip = "walk"; ag.joined = true; ag.tick(); ag.joined = false;
       const pk = sent.filter((m: any) => m.type === "pose").at(-1)?.pose ?? null;
-      ag.myRights = { role: "visitor", fly: false }; const t = String(await ag.takeOff());
+      ag.myRights = { role: "visitor", fly: false }; const t = (await ag.takeOff()).text;
       const md = readText("spec/PROTOCOL.md");
       return { r, declared: pk?.bodyMode ?? null, clip: pk?.clip ?? null, t: t.slice(0, 120), flying: !!ag.flight, spec: /self-declared\s+description/.test(md) && /MUST\s+NOT\s+grant or relax/.test(md.slice(md.indexOf("pose.bodyMode"), md.indexOf("pose.bodyMode") + 1600)) }; },
     good: (o) => JSON.stringify(o.r) === '["fly","swim","fall","lie"]' && o.declared === "fly" && o.clip === "walk" && !o.flying && /cannot fly|not granted|no wings/.test(o.t) && o.spec },

@@ -1145,10 +1145,11 @@ console.log("\nGreptile's review of October 19: a floor walk's lowest ground, th
     return ag;
   };
   const standing = flier(false), laid = flier(true);
+  // takeOff answers { ok, text }.
   const saidStanding = await standing.takeOff(), saidLaid = await laid.takeOff();
   check("a body laid down upstairs takes off from the upper floor, as a standing one does",
-    /took off/.test(saidLaid) && Math.abs(laid.flight?.pos?.y - standing.flight?.pos?.y) < 1e-9,
-    `laid "${saidLaid}" at ${laid.flight?.pos?.y}, standing "${saidStanding}" at ${standing.flight?.pos?.y}`);
+    saidLaid.ok && /took off/.test(saidLaid.text) && Math.abs(laid.flight?.pos?.y - standing.flight?.pos?.y) < 1e-9,
+    `laid "${saidLaid.text}" at ${laid.flight?.pos?.y}, standing "${saidStanding.text}" at ${standing.flight?.pos?.y}`);
   standing.flight = null; laid.flight = null;
 
   // a flight that ends with the body laid down upstairs, as a flight's

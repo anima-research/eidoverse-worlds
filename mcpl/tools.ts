@@ -43,9 +43,10 @@ const foldWorld = (ag: any): Record<string, any> => {
   for (const id of ag.foldedIds()) { const r = ag.foldRecord(id); if (r) out[id] = r; }
   return out;
 };
-import { type WorldAgent, WALK_ARGS_REASON } from "./agent.ts";
+import { type ActResult, type WorldAgent, WALK_ARGS_REASON } from "./agent.ts";
 import type { Destination } from "./places.ts";
 import { normalizeSnapFrame } from "../shared/snapframe.js";
+import { shown } from "../shared/shown.js";
 
 /** The slice of WorldAgent the tools touch — typed loosely on purpose: the
  *  agent's surface is the contract, not this file's re-declaration of it. */
@@ -266,7 +267,7 @@ export async function screenshotTool(ag: ToolAgent, view = "first", at?: string,
       : `${ignored.join(" and ")} ${ignored.length > 1 ? "apply" : "applies"} only to views third and selfie; ignored`;
     // as this identity (readHeaders): a world that admits only people listed answers its own people only
     const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}&renderer=${encodeURIComponent(renderer)}${extra}${at ? `&at=${encodeURIComponent(at)}` : ""}`, { headers: ag.readHeaders });
-    if (!r.ok) return { content: [{ type: "text", text: `screenshot: no picture was taken; the world server answered "${(await r.text()).slice(0, 200)}" (${r.status}), so try again in a while` }] };
+    if (!r.ok) return fail(`screenshot: no picture was taken; the world server answered "${(await r.text()).slice(0, 200)}" (${r.status}), so try again in a while`);
     const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
     const label = r.headers.get("x-eidoverse-scene") === "world-projection"
       ? "Unreal server-world projection: models, structures, terrain and avatars; unsupported components and effects may be absent. This is a donor-rendered image, not authoritative state."
@@ -274,7 +275,7 @@ export async function screenshotTool(ag: ToolAgent, view = "first", at?: string,
     const image = { type: "image", data: b64, mimeType: "image/png" };
     return { content: [...(r.headers.get("x-eidoverse-renderer") === "unreal" ? [{ type: "text", text: label }] : []), image, ...(note ? [{ type: "text", text: note }] : [])] };
   } catch (e) {
-    return { content: [{ type: "text", text: `screenshot failed: no picture arrived from the world server (${(e as Error).message}); try again in a moment` }] };
+    return fail(`screenshot failed: no picture arrived from the world server (${(e as Error).message}); try again in a moment`);
   }
 }
 
@@ -286,6 +287,22 @@ export async function screenshotTool(ag: ToolAgent, view = "first", at?: string,
 // "Unknown tool" a caller meets at runtime.
 
 const text = (t: string) => ({ content: [{ type: "text", text: t }] });
+/** A call that didn't do what it was asked: a host shows the result as failed. */
+const fail = (t: string) => ({ content: [{ type: "text", text: t }], isError: true });
+/** An act's answer, failed when the call didn't do what it asked. */
+const act = (r: ActResult) => (r.ok ? text(r.text) : fail(r.text));
+/** The most speech say sends in one call, as it always has: 4000 UTF-16 units. A cut never ends in half of a
+ *  surrogate pair. */
+const SPEECH_MAX = 4000;
+const cutSpeech = (t: string) => {
+  if (t.length <= SPEECH_MAX) return t;
+  const end = /[\uD800-\uDBFF]/.test(t[SPEECH_MAX - 1]!) ? SPEECH_MAX - 1 : SPEECH_MAX;
+  return t.slice(0, end);
+};
+/** An altitude the call can't fly to: not a number. A number flies, and so does a string that reads as one, as
+ *  `Number()` always took "5"; a boolean, a blank, a list or an object doesn't. */
+const notANumber = (v: unknown) => typeof v === "number" ? !Number.isFinite(v)
+  : typeof v !== "string" || v.trim() === "" || !Number.isFinite(Number(v));
 /** The authority's refusal as a tool error: the code, why, and what to do instead. */
 // the same words a person in edit mode sees for the same refusal (shared/protocol/refusal.js)
 /** One line of a world's history, as an agent reads it: who did what, with what arguments. An entry imported from an
@@ -321,8 +338,9 @@ function namedThings(ag: any, a: Record<string, any>, keys: string[] = THING_KEY
     if ("id" in r) out[k] = r.id; }
   return { args: out };
 }
-/** Is this body in the air? (the flight integrator's phases; GROUND/LANDED are feet on the ground) */
-const airborne = (ag: ToolAgent) => !!ag.flight && ag.flight.phase !== "GROUND" && ag.flight.phase !== "LANDED";
+/** Is this body in the air? (the flight integrator's phases; GROUND/LANDED are feet on the ground, and so are RAGDOLL and
+ *  RECOVER, a body down on the ground after a cut, which a fly-mode move launches afresh, as the agent's down refusals say) */
+const airborne = (ag: ToolAgent) => !!ag.flight && !["GROUND", "LANDED", "RAGDOLL", "RECOVER"].includes(ag.flight.phase);
 /** A name move {to} takes that destination() doesn't: a place in the older upstream shape (`places:<name>` on @world or
  *  a thing's `places` entry given as a bare [x, y, z] / {pos}, world coordinates). Things, labels, people and places in the
  *  current shape are destination()'s alone (review r5 F3: one resolver, so a person never captures a walk here and of
@@ -339,15 +357,15 @@ function legacyPlace(ag: ToolAgent, name: string): { x: number; z: number; what:
 /** measure {check: true}: #241's check_model, a mode of measure (it reads a model's geometry as data; check_model is an alias). */
 const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>) => {
   const e = a.id ? ag.entities.get(String(a.id)) : null;
-  if (a.id && !e) return text(`no thing called "${a.id}" here`);
+  if (a.id && !e) return fail(`no thing called "${a.id}" here`);
   const lib = String(e?.model ?? a.lib ?? "");
-  if (!lib) return text("measure {check: true} needs the id of a placed model, or a library path");
+  if (!lib) return fail("measure {check: true} needs the id of a placed model, or a library path");
   let r: any;
   // a placed thing is checked as placed: at its scale (the body is not scaled)
   const scale = e ? (e.scale && e.scale > 0 ? e.scale : 1) : (typeof a.scale === "number" && a.scale > 0 ? a.scale : 1);
   try { r = await (await fetch(`${ag.httpBase}/check?lib=${encodeURIComponent(lib)}${scale !== 1 ? `&scale=${scale}` : ""}`)).json(); }
-  catch (err) { return text(`the check could not be reached: ${String((err as Error)?.message ?? err)}`); }
-  if (r.error) return text(`couldn't check ${lib}: ${r.error}`);
+  catch (err) { return fail(`the check could not be reached: ${String((err as Error)?.message ?? err)}`); }
+  if (r.error) return fail(`couldn't check ${lib}: ${r.error}`);
   return text(describeCheck(`${e ? `[${ag.refName(e.id)}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`, r, e ? ag.placesOn(e).length : 0, e?.id, e?.collide));
 };
 
@@ -364,7 +382,7 @@ type ToolHandler = (ag: WorldAgent, a: Record<string, any>, ctx: ToolCtx, name: 
 // Returns {who} or {err: <tool result>}; `verb` only shapes the words (a kick needs them here).
 async function resolveWho(ag: any, raw: unknown, verb: string): Promise<{ who: string } | { err: any }> {
   const id = String(raw ?? "").trim();
-  if (!id) return { err: text(`${verb} needs who — their name or identity (u-…)`) };
+  if (!id) return { err: fail(`${verb} needs who — their name or identity (u-…)`) };
   let who = /^u-[a-z2-7]{20}$/.test(id) ? id : ag.actorIds.get(id) ?? null;
   if (!who) {
     const w: any = await ag.request("whois", { name: id });
@@ -383,8 +401,7 @@ const BODY_VERBS: Record<string, ToolHandler> = {
     const x = to[0], z = to.length === 3 ? to[2] : to[1];
     if (![x, z].every(Number.isFinite)) return { content: [{ type: "text", text: "land needs to: [x, z] (or [x, y, z]) — where to come down" }], isError: true };
     if (!airborne(ag)) return { content: [{ type: "text", text: `land: ${ag.flight ? "already on the ground" : "you are on the ground"} — move {mode: "fly"} gets you up` }], isError: true };
-    const r = await ag.landAt(x, z);
-    return /landed at/.test(r) ? text(r) : { content: [{ type: "text", text: r }], isError: true };
+    return act(await ag.landAt(x, z));
   },
   shove: async (ag, a, ctx, name) => {
       if (!a.target) return { content: [{ type: "text", text: "shove needs a `target` — the body that falls simulates it" }], isError: true };
@@ -413,12 +430,14 @@ const BODY_VERBS: Record<string, ToolHandler> = {
       // Moderation deserves a real answer, not fire-and-forget: wait for
       // the world's echo (success) or refusal and hand THAT back.
       const id = String(a.who ?? "").trim();
-      if (!id) return text(`${name} needs who — their name or identity (u-…)`);
+      if (!id) return fail(`${name} needs who — their name or identity (u-…)`);
       const reason = a.reason != null ? String(a.reason) : undefined;
       const t0 = Date.now();
       if (a.global && name !== "kick") {
         ag.sendMod(name === "ban" ? "global-ban" : "global-unban", { id, ...(reason ? { reason } : {}) });
         const answer = await ag.modOutcome(t0);
+        // A refusal is the world's no; no echo yet is sent, not refused.
+        if (answer?.startsWith("refused: ")) return fail(answer);
         return text(answer ?? `sent ${name} ${id} (global) — no echo yet; check look()`);
       }
       const rw = await resolveWho(ag, a.who, name); if ("err" in rw) return rw.err; const who = rw.who;
@@ -431,7 +450,8 @@ const BODY_VERBS: Record<string, ToolHandler> = {
         const t0 = Date.now();
         ag.sendMod("global-bans");
         const answer = await ag.modOutcome(t0);
-        return text(answer ?? "no reply from the world (timeout)");
+        if (answer == null || answer.startsWith("refused: ")) return fail(answer ?? "no reply from the world (timeout)");
+        return text(answer);
       }
       // this world: the authority's `bans` (what the Moderation panel reads): bans, removals, mutes and ghosts in force.
       // The legacy world-bans message listed bans only, so a mute in force read "nobody is banned" (audit 10-07)
@@ -469,7 +489,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const want = String(a.avatar ?? "").trim();
       if (!want) return text(`bodies on the roster: ${roster.map((r) => r.name).join(", ")}`);
       const path = want.includes("/") ? want : roster.find((r) => r.name === want)?.path;
-      if (!path) return text(`no body named "${want}" is on the roster, so you're still wearing your current body. ${roster.length ? `The roster has: ${roster.map((r) => r.name).join(", ")}.` : "The roster is empty."} A path with a slash names a library model instead.`);
+      if (!path) return fail(`no body named "${want}" is on the roster, so you're still wearing your current body. ${roster.length ? `The roster has: ${roster.map((r) => r.name).join(", ")}.` : "The roster is empty."} A path with a slash names a library model instead.`);
       ag.setAvatar(path);
       ctx.rememberAvatar?.(path);   // the choice outlives this session
       return text(`you are now wearing ${want.includes("/") ? path.split("/").pop() : want}`);
@@ -526,13 +546,28 @@ export const HANDLERS: Record<string, ToolHandler> = {
         if (!want.includes("/") && !/\.(glb|jpg)$/i.test(want)) tries.push(`${ag.httpBase}/thumb/${encodeURIComponent(want)}.png`);
         const stem = (want.includes("/") ? want : `eidoverse/assets/models/${want}`).replace(/(_preview\.jpg|\.jpg|\.glb)$/i, "");
         tries.push(`${ag.httpBase}/library/${stem}_preview.jpg`);
+        // Only a 404 is the sequencer's answer that a candidate has no preview.
+        // A fetch that throws, any other status that isn't ok, or a body that
+        // can't be read never got that answer, so "no preview" is said only
+        // when every candidate answered 404. Calling again may work after a
+        // failed fetch, a 408, a 429, a 5xx or a preview that couldn't be read,
+        // at any candidate. Each reason is named once, so two candidates that
+        // failed alike read as one.
+        const whys: string[] = [];
+        let retry = false;
+        const miss = (reason: string, mayRetry: boolean) => { if (!whys.includes(reason)) whys.push(reason); retry ||= mayRetry; };
         for (const url of tries) {
-          try {
-            const r = await fetch(url);
-            if (r.ok) return { content: [{ type: "image", data: Buffer.from(await r.arrayBuffer()).toString("base64"), mimeType: r.headers.get("content-type")?.split(";")[0] ?? "image/jpeg" }] };
-          } catch { /* next */ }
+          let r: Response;
+          try { r = await fetch(url); } catch (e) { miss((e as Error).message || "the request failed", true); continue; }
+          if (r.status === 404) continue;
+          if (!r.ok) { miss(`it answered ${r.status}`, r.status >= 500 || r.status === 408 || r.status === 429); continue; }
+          let data: string;
+          try { data = Buffer.from(await r.arrayBuffer()).toString("base64"); }
+          catch (e) { miss(`a preview it sent couldn't be read: ${(e as Error).message || "no reason given"}`, true); continue; }
+          return { content: [{ type: "image", data, mimeType: r.headers.get("content-type")?.split(";")[0] ?? "image/jpeg" }] };
         }
-        return text(`no preview for "${want}" — avatar portraits appear once a body has been worn; library models ship _preview.jpg files`);
+        if (whys.length) return fail(`couldn't get a preview of "${want}" from the world's server (${whys.join("; ")})${retry ? "; calling again may work" : "; calling again won't change that"}`);
+        return fail(`no preview for "${want}" — avatar portraits appear once a body has been worn; library models ship _preview.jpg files`);
       }
       if (a.kind !== "models" && a.kind !== "avatars") return { content: [{ type: "text", text: "library takes one of: query (search the model library), kind: \"models\" | \"avatars\" (+ page: a contact sheet), preview: <a roster name or model path>" }], isError: true };
       const kind = a.kind === "models" ? "models" : "avatars";
@@ -552,9 +587,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
       }
       const pages = Math.max(1, Math.ceil(items.length / SHEET.perPage));
       const slice = items.slice((page - 1) * SHEET.perPage, page * SHEET.perPage);
-      if (!slice.length) return text(items.length
-        ? `no page ${page}: there are ${items.length} ${kind} on ${pages} page${pages === 1 ? "" : "s"}, so pass a page from 1 to ${pages}`
-        : `there are no ${kind} to show yet`);
+      // A page past the end asked for something that isn't there. An empty
+      // roster or library is an answer: the lookup ran and found none.
+      if (!slice.length) return items.length
+        ? fail(`no page ${page}: there are ${items.length} ${kind} on ${pages} page${pages === 1 ? "" : "s"}, so pass a page from 1 to ${pages}`)
+        : text(`there are no ${kind} to show yet`);
       const tiles = await Promise.all(slice.map(async (it) => {
         if (!it.url) return { name: it.name, data: null, mime: "", h: it.h };
         try {
@@ -607,9 +644,16 @@ export const HANDLERS: Record<string, ToolHandler> = {
         // FLIGHT (upstream's flight arc, merged 2026-09-02; behind the world's `fly` grant). The integrator is the agent's
         // (shared/flight.js); this is only its door: take off if on the ground, climb if asked, glide if sent somewhere.
         const L: string[] = [];
-        if (!airborne(ag)) { L.push(await ag.takeOff()); if (!airborne(ag)) return { content: [{ type: "text", text: L.join("\n") }], isError: true }; }
-        if (a.altitude != null) { const alt = Number(a.altitude); if (!Number.isFinite(alt)) return { content: [{ type: "text", text: "move {mode: \"fly\"}: altitude is a number of metres" }], isError: true }; L.push(await ag.climbTo(alt)); }
-        if (Number.isFinite(x) && Number.isFinite(z)) L.push(await ag.glideTo(x, z) + what);
+        if (!airborne(ag)) { const r = await ag.takeOff(); L.push(r.text); if (!r.ok || !airborne(ag)) return fail(L.join("\n")); }
+        if (a.altitude != null) {
+          if (notANumber(a.altitude)) return fail("move {mode: \"fly\"}: altitude is a number of metres");
+          const r = await ag.climbTo(Number(a.altitude)); L.push(r.text);
+          if (!r.ok) return fail([...L, ag.flightStatus()].join("\n"));
+        }
+        if (Number.isFinite(x) && Number.isFinite(z)) {
+          const r = await ag.glideTo(x, z); L.push(r.text + what);
+          if (!r.ok) return fail([...L, ag.flightStatus()].join("\n"));
+        }
         L.push(ag.flightStatus());
         return text(L.join("\n"));
       }
@@ -644,7 +688,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // E1: the authority walks this body too; a stretch it refused (a wall, out of bounds) stopped it, and says why
       const no = ag.lastWalkRefusal;
       if (!arrived && no) return { content: [{ type: "text", text: `${refusalText("move", { refused: no })}\nyou stopped at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}), ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m short${note}${what}` }], isError: true };
-      if (!arrived) return text(ag.walkStopReason ?? ag.walkStall ?? "walk interrupted or timed out");   // main #241: the stride's own stop reason first
+      if (!arrived) return fail(ag.walkStopReason ?? ag.walkStall ?? "walk interrupted or timed out");   // main #241: the stride's own stop reason first
       // which floor it chose, when the y asked for wasn't one (#236 y, owner 22:40)
       const floorNote = y != null && Math.abs(ag.pos.y - y) > 0.1 ? `; no floor at ${y.toFixed(2)} m there — you're on the floor at ${ag.pos.y.toFixed(2)} m` : "";
       // which named room you're in now (#239)
@@ -665,16 +709,16 @@ export const HANDLERS: Record<string, ToolHandler> = {
         return { content: [{ type: "text", text: "name_place's y, when given, must be a finite height in metres" }], isError: true };
       const at = given ? { x: a.x as number, z: a.z as number, y: a.y as number | undefined } : undefined;
       let on = a.on; if (typeof on === "string" && on.trim()) { const t = ag.thingRef(on); if ("refusal" in t) return { content: [{ type: "text", text: `name_place: ${t.refusal}` }], isError: true }; if ("id" in t) on = t.id; }
-      return text(await ag.namePlace(String(a.name ?? ""), { on, label: a.label, remove: a.remove === true, at }));
+      return act(await ag.namePlace(String(a.name ?? ""), { on, label: a.label, remove: a.remove === true, at }));
   },
   face: async (ag, a, ctx, name) => {
       if (a.target) {
         let tid = String(a.target); if (!ag.people.has(tid)) { const t = ag.thingRef(tid); if ("refusal" in t) return { content: [{ type: "text", text: `face: ${t.refusal}` }], isError: true }; if ("id" in t) tid = t.id; }
         const p = ag.people.get(tid)?.pose?.p ?? ag.entities.get(tid)?.pos;
-        if (!p) return text(`nothing here is called "${a.target}", so you didn't turn; look lists who and what is around you`);
+        if (!p) return fail(`nothing here is called "${a.target}", so you didn't turn; look lists who and what is around you`);
         ag.face(p[0], p[2]);
       } else if (a.x != null && a.z != null) ag.face(Number(a.x), Number(a.z));
-      else return text('face needs x and z, or a target, so you didn\'t turn: face {x: 4, z: -2} or face {target: "<an id from look>"}');
+      else return fail('face needs x and z, or a target, so you didn\'t turn: face {x: 4, z: -2} or face {target: "<an id from look>"}');
       return text("facing");
 
   },
@@ -736,11 +780,12 @@ export const HANDLERS: Record<string, ToolHandler> = {
         ? { spoken: true as const, utt: a.utt, ...(typeof a.t0 === "number" ? { t0: a.t0 } : {}), ...(typeof a.to === "string" && a.to ? { to: a.to } : {}) }
         : (typeof a.to === "string" && a.to ? { to: a.to } : undefined);
       // the authority answers a say: a refused one (the rate limit, a ban) comes back as an error in its own words, not "said"
-      const r: any = await ag.say(String(a.text).slice(0, 4000), extra);
+      const sent = cutSpeech(a.text);
+      const r: any = await ag.say(sent, extra);
       // no answer isn't a refusal: it may have landed. Say so, so a retry doesn't say it twice
       if (r && r.ok === false && r.refused?.code === "timeout") return { content: [{ type: "text", text: "say: the world didn't confirm it in time — it may still have landed; look (or catch_up) before saying it again" }], isError: true };
       if (r && r.ok === false) return refusedBy(r, "say");
-      return text("said");
+      return text(sent.length < a.text.length ? `said — only its first ${[...sent].length} characters were sent; say the rest in another call` : "said");
 
   },
   pose: async (ag, a, ctx, name) => {
@@ -749,7 +794,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         if (a.target) { const t0 = Date.now(); ag.puppet(String(a.target), puppetPose(null));
           const no = await presenceRefusal(ag, t0);
           if (no) return { content: [{ type: "text", text: `anim {stop} refused (consent class: pose): ${no}` }], isError: true };
-          return text(`released ${a.target}'s pose`); }
+          return text(`asked ${a.target} to release their pose. They decide whether to.`); }
         ag.setPose(null);
         return text("released pose");
       }
@@ -776,13 +821,13 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (a.name != null) {
         if (a.bones != null) return { content: [{ type: "text", text: "pose: a name OR bones, not both" }], isError: true };
         const n = String(a.name);
-        if (n === WINGS_FOLDED) return text(await ag.foldWings(true));
+        if (n === WINGS_FOLDED) return act(await ag.foldWings(true));
         return text(`no pose named "${n}" on this body — it holds what it held (its default). Known by name: ${WINGS_FOLDED}. Or pose inline with bones.`);
       }
       if (a.wings != null) {
         const w = String(a.wings);
         if (w !== "fold" && w !== "open") return { content: [{ type: "text", text: `pose: wings is "fold" or "open"` }], isError: true };
-        return text(await ag.foldWings(w === "fold"));
+        return act(await ag.foldWings(w === "fold"));
       }
       // Validate and SAY what happened. A pose is authored blind — the only
       // other feedback is a snapshot through a GPU host — so a bone name that
@@ -795,7 +840,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const avatar = target ? ag.people.get(target)?.avatar : ag.avatar;
       const rig = avatar ? await rigBonesFor(ag.httpBase, avatar) : null;
       if (a.bones == null) {
-        if (!rig) return text(`can't read ${target ? `${target}'s` : "your"} rig to list its bones. Humanoid names always work: ${HUMANOID_BONES.join(", ")}.`);
+        if (!rig) return fail(`can't read ${target ? `${target}'s` : "your"} rig to list its bones. Humanoid names always work: ${HUMANOID_BONES.join(", ")}.`);
         const humanoid = Object.entries(rig.humanoidOf).map(([raw, vrm]) => vrm === raw ? vrm : `${vrm} (${raw})`);
         const other = rig.bones.filter((b) => !rig.humanoidOf[b] && !rig.aboveHips.includes(b));
         return text(`${target ? `${target}'s` : "your"} rig — humanoid bones (by VRM name): ${humanoid.join(", ")}.`
@@ -806,7 +851,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const note = poseReport(v);
       const replace = !!a.replace;
       if (!v.accepted.length && !(v.released.length && !replace)) {
-        return text(`no pose set — nothing usable in \`bones\`.${note ? ` ${note}.` : ""}`
+        return fail(`no pose set — nothing usable in \`bones\`.${note ? ` ${note}.` : ""}`
           + " Want a sparse map of bone name to [x,y,z,w] or {q, t, s}, e.g."
           + ' {"leftUpperArm": [0, 0, -0.9, 0.44], "hips": {"t": [0, -0.4, 0]}}. anim {joints: {}} lists your rig\'s.');
       }
@@ -834,19 +879,22 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   reach: async (ag, a, ctx, name) => {
-      if (a.release === true) return text(ag.releaseReach(typeof a.limb === "string" ? a.limb : null));   // the old clear_reach
+      if (a.release === true) {   // the old clear_reach
+        if (a.limb != null && typeof a.limb !== "string") return fail("reach {release}'s `limb`, when given, is one limb's name, such as rightHand; leave it out to release every reach");
+        return act(ag.releaseReach(a.limb ?? null));
+      }
       // Two target grammars, checked here so the refusal can TEACH: the
       // named-point form (who/point) and the bare-point form (x,y,z/space).
       const hasName = a.who != null || a.point != null;
       const hasXYZ = typeof a.x === "number" && typeof a.y === "number" && typeof a.z === "number";
       if (!hasName && !hasXYZ) {
-        return text("reach needs a target: either `point` (a contact point on a body; add `who` for someone else's) or `x`,`y`,`z` (with optional `space`: 'world' default, 'self', or a participant id).");
+        return fail("reach needs a target: either `point` (a contact point on a body; add `who` for someone else's) or `x`,`y`,`z` (with optional `space`: 'world' default, 'self', or a participant id).");
       }
       let target: Record<string, unknown>;
       if (hasName) {
-        if (a.point == null) return text("reaching for someone needs `point` too — which contact point on them: " + Object.keys(CONTACT_POINTS).join(", "));
+        if (a.point == null) return fail("reaching for someone needs `point` too — which contact point on them: " + Object.keys(CONTACT_POINTS).join(", "));
         const pt = canonicalPoint(String(a.point));
-        if (!pt) return text(`unknown contact point "${a.point}" — one of: ${Object.keys(CONTACT_POINTS).join(", ")}`);
+        if (!pt) return fail(`unknown contact point "${a.point}" — one of: ${Object.keys(CONTACT_POINTS).join(", ")}`);
         target = { who: String(a.who ?? ag.name), point: pt, ...(typeof a.standoff === "number" ? { standoff: a.standoff } : {}) };
       } else {
         target = { p: [a.x, a.y, a.z], ...(typeof a.space === "string" ? { space: a.space } : {}) };
@@ -875,12 +923,12 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const v = validateTracks(a.tracks);
       const note = poseReport(v);
       if (!v.accepted.length) {
-        return text(`nothing played — no usable tracks.${note ? ` ${note}.` : ""}`
+        return fail(`nothing played — no usable tracks.${note ? ` ${note}.` : ""}`
           + ' Want bone -> keyframes, e.g. {"leftUpperArm": [{"t": 0, "q": [0,0,0,1]},'
           + ' {"t": 0.5, "q": [0,0,-0.7,0.7]}]}.');
       }
       const dur = Number(a.dur);
-      if (!Number.isFinite(dur) || dur <= 0) return text(`animate needs dur, the length in seconds and more than 0, so nothing played; you sent ${shown(a.dur)}`);
+      if (!Number.isFinite(dur) || dur <= 0) return fail(`animate needs dur, the length in seconds and more than 0, so nothing played; you sent ${shown(a.dur)}`);
       const span = tracksSpan(v.tracks);
       const cut = span > dur ? ` — note dur ${dur}s cuts keyframes that run to ${span}s` : "";
       const spec = { dur, loop: looped, tracks: v.tracks, replace: !!a.replace };
@@ -1073,19 +1121,19 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const q = a.id
         ? `world=${encodeURIComponent(ag.world)}&id=${encodeURIComponent(String(a.id))}`
         : a.lib ? `lib=${encodeURIComponent(String(a.lib))}` : null;
-      if (!q) return text("measure wants {id} (a placed thing) or {lib} (a library model)");
+      if (!q) return fail("measure wants {id} (a placed thing) or {lib} (a library model)");
       // What the world server did, as far as the door can see it: no answer,
       // an answer that isn't geometry, or its own error.
       let r: Response;
       // as this identity: a members-only world's geometry answers only its members
-      try { r = await fetch(`${base}/geom?${q}`, ag.agentToken ? { headers: { authorization: `Bearer ${ag.agentToken}` } } : undefined); } catch (e) { return text(`measure: the world server didn't answer (${String(e)}), so nothing was measured; try again in a moment`); }
+      try { r = await fetch(`${base}/geom?${q}`, ag.agentToken ? { headers: { authorization: `Bearer ${ag.agentToken}` } } : undefined); } catch (e) { return fail(`measure: the world server didn't answer (${String(e)}), so nothing was measured; try again in a moment`); }
       let d: any;
-      try { const r = await fetch(`${base}/geom?${q}`, { headers: ag.readHeaders }); if (r.status === 401) return text("measure: the world's state needs a read key and this body's key wasn't taken, so nothing was measured");
-        try { d = await r.json(); } catch { return text(`measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); } }
-      catch (e) { return text(`measure: the world server didn't answer (${String((e as Error)?.message ?? e)}), so nothing was measured; try again in a moment`); }
-      if (d.error) return text(`measure: the world server answered "${d.error}", so nothing was measured`);
+      try { const r = await fetch(`${base}/geom?${q}`, { headers: ag.readHeaders }); if (r.status === 401) return fail("measure: the world's state needs a read key and this body's key wasn't taken, so nothing was measured");
+        try { d = await r.json(); } catch { return fail(`measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); } }
+      catch (e) { return fail(`measure: the world server didn't answer (${String((e as Error)?.message ?? e)}), so nothing was measured; try again in a moment`); }
+      if (d.error) return fail(`measure: the world server answered "${d.error}", so nothing was measured`);
       const g = d.geometry ?? d;
-      if (!g?.bbox) return text("no geometry available for that (parsing offline, or a light)");
+      if (!g?.bbox) return fail("no geometry available for that (parsing offline, or a light)");
       const L: string[] = [];
       const s = g.bbox.size;
       L.push(`${a.id ? `[${ag.refName(String(d.id))}] ${d.model ?? ""}` : d.model} — ${s[0]}×${s[1]}×${s[2]}m, ${g.tris} tris${g.sampled ? " (sampled)" : ""}`);
@@ -1316,7 +1364,7 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
   if (a.stop != null && a.stop !== false) {
     if (a.target) return LEGACY.pose(ag, { clear: true, target: a.target }, ctx, "pose");
     const which = a.stop === true ? null : String(a.stop);
-    if (which === WINGS_FOLDED && ag.wingsFolded && !ag.anims.some((x: any) => x.name === WINGS_FOLDED)) return text(await ag.foldWings(false));
+    if (which === WINGS_FOLDED && ag.wingsFolded && !ag.anims.some((x: any) => x.name === WINGS_FOLDED)) return act(await ag.foldWings(false));
     const stopped: string[] = await ag.stopAnims(which);
     const left = ag.anims.map((x: any) => x.name);
     if (which != null && !stopped.length) return text(`not playing "${which}" — nothing stopped (playing: ${left.join(", ") || "nothing"})`);
@@ -1352,7 +1400,7 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
     if (isReservedAnimName(n)) return { content: [{ type: "text", text: `anim: "${n}" is reserved — it names every ad-libbed anim (joints, tracks), so no anim can be called it; stop: "${n}" stops those` }], isError: true };
     if (a.target) return { content: [{ type: "text", text: "anim {name} plays on your own body; to animate someone else, send joints or tracks (they decide)" }], isError: true };
     const from = animFrom(ag, n);
-    if (ANIM_POSES.has(n)) { const t = await ag.foldWings(true); if (ag.wingsFolded) ag.animBegan({ name: n, mode: "hold", kind: "pose" }); return playing(n, "hold", t, from); }
+    if (ANIM_POSES.has(n)) { const t = await ag.foldWings(true); if (!t.ok) return fail(t.text); if (ag.wingsFolded) ag.animBegan({ name: n, mode: "hold", kind: "pose" }); return playing(n, "hold", t.text, from); }
     const mode = (mode0 ?? ANIM_MODES[n] ?? "once") as "once" | "loop" | "hold";
     // once overlays what is held and returns to it (R 15:34: sit + wave is still sitting): the held anim goes on, unstopped
     if (mode === "once") { ag.playOnce(n); return playing(n, "once", `everyone sees it${ag.anim ? `, over ${ag.anim.name}, which goes on` : ""}`, from); }
@@ -1473,7 +1521,18 @@ export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, a
   // the same words for a tool this server doesn't serve, hidden or never there (#247), with the nearest name when one is close
   if (!r) { const near = nearestTool(name); return { content: [{ type: "text", text: `there's no tool named "${name}" on this server, so nothing ran${near && near[1] <= 4 ? ` (did you mean ${near[0]}?)` : ""}; your tool list has the ones it serves` }], isError: true }; }
   if (r.note && TOOL_ALIAS_ARGS[name]) { const t = TOOL_ALIAS_ARGS[name](a ?? {}); if ("refuse" in t) return { content: [{ type: "text", text: `${r.note}\n${t.refuse}` }], isError: true }; a = t; }
-  const out = await HANDLERS[r.name](ctx.agent, a, ctx, r.name);
+  // A tool's failure belongs in its result, where the model reads it: a
+  // handler that throws, such as verb()'s refusal while the link is down,
+  // answers as a failed call rather than as a protocol error.
+  let out: Record<string, unknown>;
+  try { out = await HANDLERS[r.name](ctx.agent, a, ctx, r.name); }
+  catch (e) {
+    // The host no longer sees the throw, so the operator's log does.
+    console.error(`[door] ${r.name} threw:`, e);
+    // A throw with nothing to say, such as an Error with no message, still tells the model the call failed.
+    const why = e instanceof Error ? e.message : String(e);
+    out = fail(why || `${r.name} failed, and its error gave no reason${e instanceof Error ? ` (${e.name})` : ""}`);
+  }
   if (r.note && Array.isArray((out as any)?.content) && (out as any).content[0]?.type === "text") (out as any).content[0] = { ...(out as any).content[0], text: `${r.note}\n${(out as any).content[0].text}` };
   return out;
 }
