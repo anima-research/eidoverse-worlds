@@ -54,5 +54,9 @@ const button = (W, targets, extra = {}) => call(W, "rowan", "set", { id: "btn", 
   call(W, "rowan", "set", { id: "b", component: "home", value: { pos: [3, 0, 0], q: [0, 0, 0, 1] } });
   const r = call(W, "vic", "use", { id: "btn", action: "reset" }); const b = st(W).entities.b.c;
   ok(r.ok && !b.parent && JSON.stringify(b.transform.scale) === "[0.25,0.25,0.25]" && JSON.stringify(b.transform.pos) === "[3,0,0]", "RS9 a thing settled onto another (parented at a local scale of 1) goes home unparented at its size in the world, not 4x", { r: code(r), why: r.refused?.reason, b: b.transform, parent: b.parent }); }
+// review of #260: pressed when every target is skipped, it doesn't say everything is home
+{ const W = "allskip"; mk(W); button(W, ["b"]); call(W, "rowan", "set", { id: "b", component: "transform", value: { pos: [9, 0, 9] } }); call(W, "rowan", "set", { id: "b", component: "lock", value: true });
+  const r = call(W, "vic", "use", { id: "btn", action: "reset" }); const why = String(r.refused?.reason);
+  ok(code(r) === "nothing-to-reset" && !/already home/.test(why) && /b \(it is locked\)/.test(why) && !!r.refused?.fix, "RS10 every target skipped: says nothing was reset and why, not that everything is home, with a fix", { r: code(r), why, fix: r.refused?.fix }); }
 console.log(`[reset-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -87,7 +87,7 @@ function buildUse(ctx, a) {
   if (h?.kind === "script") return { script: h.script, action }; // VERBS.use logs the visitor's act, then activates it
   if (h?.kind === "reset") {
     reactionCap(ctx, a.id, "transform", action); ctx.refs.add(a.id);
-    const ops = [], sent = [], skipped = [];
+    const ops = [], sent = [], skipped = []; let atHome = 0;
     for (const t of h.targets) { const te = ctx.st.entities[t];
       if (!te) { skipped.push({ id: t, why: "it isn't here any more" }); continue; }
       const home = te.c.home;
@@ -96,13 +96,15 @@ function buildUse(ctx, a) {
       const hp = home.parent; if (hp && !ctx.st.entities[hp.to]) { skipped.push({ id: t, why: `its home parent ${hp.to} is gone` }); continue; }
       // a launched thing is the engine's until it rests (no write may touch it: inFlight in admit); for now a reset skips it and says so
       { const sf = ctx.w.sim(), b = sf.sim?.bodies[t]; if (sf.launched[t] && b && !b.resting) { skipped.push({ id: t, why: "it is in flight; press again once it lands" }); continue; } }
-      if (sameHome(ctx.st, t, home) && !ctx.w.presence.holds[t] && vec3s(te.c.transform?.scale).every((x, i) => Math.abs(x - homeScale(ctx.st, t, home)[i]) < 1e-4)) continue;   // home already (and its size), in no hand
+      if (sameHome(ctx.st, t, home) && !ctx.w.presence.holds[t] && vec3s(te.c.transform?.scale).every((x, i) => Math.abs(x - homeScale(ctx.st, t, home)[i]) < 1e-4)) { atHome++; continue; }   // home already (and its size), in no hand
       ops.push(...(hp ? [setOp(t, "parent", { ...hp })] : te.c.parent ? [delOp(t, "parent")] : []),
         setOp(t, "transform", { pos: home.pos.slice(), q: (home.q ?? [0, 0, 0, 1]).slice(), scale: homeScale(ctx.st, t, home) }));
       sent.push(t); ctx.refs.add(t); }
     ctx.cap = { ...ctx.cap, ids: [a.id, ...sent], comps: ["transform", "parent"] };
     if (skipped.length) ctx.notes.push(...skipped.map((x) => ({ ...x, reset: "skipped" })));
-    if (!ops.length) refuse("nothing-to-reset", `everything is already home${skipped.length ? `; skipped: ${skipped.map((x) => `${x.id} (${x.why})`).join(", ")}` : ""}`, "");
+    if (!ops.length) { const list = skipped.map((x) => `${x.id} (${x.why})`).join(", ");
+      if (!skipped.length) refuse("nothing-to-reset", "everything is already home", "");
+      refuse("nothing-to-reset", `nothing was reset: skipped ${list}${atHome ? `; the rest ${atHome === 1 ? "is" : "are"} already home` : ""}`, "each skip says why; press again once that has changed"); }
     return ops;
   }
   if (h?.kind === "impulse") {
@@ -171,7 +173,11 @@ function actionsOf(st, id) {
 function offersFor(st, id, actor) {
   const e = st.entities[id]; const can = [], notForYou = [];
   for (const act of actionsOf(st, id)) { const h = handlerOf(e, act);
-    if (h?.who && rankOf(st, actor) < whoRank(st, h.who)) notForYou.push({ action: act, why: `needs ${h.who}` });
+    // a seat's action is its stations', which buildUse admits through any one that seats you: offered unless none would
+    const socks = h ? [] : bodySockets(st, id).filter((x) => x.body.action === act);
+    const may = (who) => !who || rankOf(st, actor) >= whoRank(st, who);
+    const who = h ? h.who : socks.length && !socks.some((x) => may(x.body.who)) ? socks[0].body.who : undefined;
+    if (who && !may(who)) notForYou.push({ action: act, why: `needs ${who}` });
     else if (h?.kind === "toggle" && barredBy(e, h)) notForYou.push({ action: act, why: `it is ${h.unless}` });
     else can.push(act); }
   return { canDo: can, ...(notForYou.length ? { notForYou } : {}) };
@@ -192,7 +198,7 @@ const USE_VERBS = {
     if (holding) {
       const g = grabOf(w.state().entities[a.id]?.c); const phase = a.args?.phase === "up" ? "up" : "down";
       held = { held: true, hand: (lateUp ? P[a.id].hand : hold.hand) ?? "right", phase };
-      if (phase === "down") P[a.id] = { by: actor, hand: held.hand }; else delete P[a.id]; w.presenceDirty = true;
+      if (!a.dry) { if (phase === "down") P[a.id] = { by: actor, hand: held.hand }; else delete P[a.id]; w.presenceDirty = true; }   // a dry use presses nothing
       if (a.action === undefined && g?.use) { const action = phase === "up" ? g.use.up : g.use.down;
         if (!action) return { ok: true, recorded: false, held, note: `${a.id} does nothing on use ${phase} (its grabbable.use names no ${phase})` };
         a = { ...a, action }; }
@@ -201,8 +207,8 @@ const USE_VERBS = {
     if (probe.presence) {
       // a seat is presence (nothing recorded), but the authority keeps who sits where: a thing someone sits on, or anything
       // carrying it, isn't punted, pushed, grabbed or thrown out from under them (occupant)
-      if (probe.attach?.to) setOccupant(w, actor, probe.attach.to, probe.near);
-      return { ok: true, recorded: false, ...(probe.attach ? { attach: probe.attach } : {}), note: probe.note };   // attach: where your frames now say you are
+      if (probe.attach?.to && !a.dry) setOccupant(w, actor, probe.attach.to, probe.near);   // a dry use seats no one
+      return { ok: true, recorded: false, ...(a.dry ? { dry: true } : {}), ...(probe.attach ? { attach: probe.attach } : {}), note: probe.note };   // attach: where your frames now say you are
     }
     if (probe.script) { // L7 (41 §3.6): the visitor's use is ITS act, on its own rate; the behaviour runs with its sponsor's rights
       const key = `script:${probe.script}`; const v = w.state().entities[a.id].c[key];

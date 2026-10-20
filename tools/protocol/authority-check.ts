@@ -786,6 +786,10 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   R("ann", "create-world", { title: "sockets" });
   R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   R("ann", "create", { id: "chair1", model: "chair" });
+  // review of #260: a dry use is a preview: it seats no one and presses nothing
+  { const before = JSON.stringify(openWorld(root, "sockets").presence.occupants ?? {});
+    const dry = R("bob", "use", { id: "chair1", action: "sit", dry: true }), after = JSON.stringify(openWorld(root, "sockets").presence.occupants ?? {});
+    ok(dry.ok && after === before, "SK0 a dry sit seats no one: the occupants are as they were", { dry: dry.ok ?? dry.refused, before, after }); }
   const sit = R("bob", "use", { id: "chair1", action: "sit" });
   ok(sit.ok && sit.recorded === false && sit.attach?.host === "chair1" && openWorld(root, "sockets").state().entities[sit.attach.to]?.c.socket?.name === "seat" && sit.attach.socket === "seat" && sit.attach.pose === "sitchair", "SK1 a chair's model socket: use {sit} attaches you (presence), at its seat child (made when the chair was), in its pose", sit);
   ok(R("ann", "create", { id: "horse", model: "crate", components: { sockets: { saddle: { pos: [0, 1.2, 0], body: { action: "ride", pose: "sit", exit: [0.8, 0, 0] } }, pannier: { pos: [0.4, 0.8, 0] } } } }).ok, "SK2 sockets with and without a body are taken");
@@ -796,6 +800,9 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(ride.ok && ride.attach?.socket === "saddle" && ride.attach.pose === "sit", "SK2 use {ride} attaches you at the saddle", ride);
   R("ann", "create", { id: "throne", model: "crate", components: { sockets: { seat: { pos: [0, 0.5, 0], body: { who: "owner" } } } } });
   ok(R("bob", "use", { id: "throne", action: "sit" }).refused?.code === "rights" && R("ann", "use", { id: "throne", action: "sit" }).ok, "SK3 body.who: a builder may not sit on the owner's throne; the owner may");
+  { const seen = R("bob", "inspect", { id: "throne" }); ok(!(seen.canDo ?? []).includes("sit") && (seen.notForYou ?? []).some((x) => x.action === "sit"), "SK3b …and inspect doesn't offer the builder that seat: it's under notForYou (review of #260)", { canDo: seen.canDo, notForYou: seen.notForYou }); }
+  R("ann", "create", { id: "bench", model: "crate", components: { sockets: { a: { pos: [-0.3, 0.5, 0], body: { who: "owner" } }, b: { pos: [0.3, 0.5, 0], body: {} } } } });
+  { const seen = R("bob", "inspect", { id: "bench" }); ok((seen.canDo ?? []).includes("sit") && !(seen.notForYou ?? []).some((x) => x.action === "sit"), "SK3c …but a bench with an owner's seat and an open one offers the builder 'sit', as use would seat them on the open one", { canDo: seen.canDo, notForYou: seen.notForYou }); }
   const bad = (v) => R("ann", "set", { id: "horse", component: "sockets", value: v }).refused?.code;
   ok(bad({ s: { pos: [0, 1, 0], pose: "sit" } }) === "schema", "SK4 a socket's pose lives in body (an unknown socket key is refused, with a did-you-mean)");
   ok(bad({ s: { pos: [0, 1, 0], body: { action: "Ride Now" } } }) === "shape", "SK4 body.action is a lower-case verb");
