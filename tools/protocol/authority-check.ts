@@ -25,6 +25,7 @@ import { simFold, digestOf, restsOf } from "../../shared/protocol/simlayer.js";
 import { MODELS } from "../../shared/protocol/labmodels.js";
 import { enc, encName, dec } from "../../shared/protocol/names.js";
 import { refusalText, lockVerb, lockQuestion, lockChoices } from "../../shared/protocol/refusal.js";
+import { VERBSPEC } from "../../shared/protocol/verbspec.js";
 import { custodyAt } from "../../server/custody.ts";
 import { translate, TRANSLATOR } from "./import-v1/translate-v1.js";
 import { openWorld } from "../../server/filehost.ts";
@@ -1446,7 +1447,24 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const r2 = call("olive", "batch", { ops: [{ verb: "set", args: { id: "lamp", component: "description", value: "ok" } }, { verb: "create", args: { model: "crate", place: { on: "lamp", oops: 1 } } }] });
   ok(!r2.ok && code(r2) === "unknown-arg" && r2.refused?.op === 1 && ents().lamp?.c?.description === "a lamp", "BT2 a nested create.place is checked too, and an earlier valid op isn't written", [r2.refused ?? r2, ents().lamp?.c?.description]);
   const changes = openWorld(root, name).entries.slice(n0).filter((e) => e.kind === "change").length;
-  ok(changes === 0, "BT3 neither refused batch wrote a change", changes); }
+  ok(changes === 0, "BT3 neither refused batch wrote a change", changes);
+  // the verbs batch's help names are the verbs it takes (review of #260): help listed turn, which the batch refused
+  const q = () => ents().lamp?.c?.transform?.q;
+  const q0 = JSON.stringify(q()), n1 = openWorld(root, name).entries.length;
+  const tr = call("olive", "batch", { ops: [{ verb: "turn", args: { id: "lamp", axis: "y", deg: 90 } }, { verb: "set", args: { id: "lamp", component: "description", value: "turned" } }], label: "spin" });
+  const acts = openWorld(root, name).entries.slice(n1).filter((e) => e.kind === "change").length;
+  const turned = JSON.stringify(q()) !== q0 && Math.abs(Math.abs(q()?.[1] ?? 0) - Math.SQRT1_2) < 1e-6;
+  const un = call("olive", "undo", { label: "spin" });
+  ok(tr.ok && turned && acts === 1 && un.ok && JSON.stringify(q()) === q0 && ents().lamp?.c?.description === "a lamp",
+    "BT4 a batch takes turn: the turn and a set are one act, and one undo takes both back", { tr: tr.refused ?? tr.ok, q: q(), acts, un: un.refused ?? un.ok });
+  // each verb the help names, with args it accepts alone, dry: a verb named here without args below fails the row too
+  const ARGS = { create: { model: "crate" }, set: { id: "lamp", component: "description", value: "x" }, delete: { id: "shade" }, place: { id: "shade", on: "lamp" },
+    turn: { id: "lamp", axis: "y", deg: 10 }, sky: { hours: 7 }, weather: { hours: 7 } };
+  const named = (VERBSPEC.batch.doc.match(/ of ([a-z-]+(?:, [a-z-]+)*)$/)?.[1] ?? "").split(", ").filter(Boolean);
+  const alone = Object.fromEntries(named.map((v) => [v, ARGS[v] ? call("olive", v, { ...ARGS[v], dry: true }) : null]));
+  const inBatch = Object.fromEntries(named.map((v) => [v, ARGS[v] ? call("olive", "batch", { ops: [{ verb: v, args: ARGS[v] }], dry: true }) : null]));
+  const turnedAway = named.filter((v) => !alone[v]?.ok || !inBatch[v]?.ok);
+  ok(named.length >= 5 && !turnedAway.length, "BT5 every verb batch's help names goes in a batch, dry, as it goes alone", { named, turnedAway: turnedAway.map((v) => [v, alone[v]?.refused ?? alone[v]?.ok, inBatch[v]?.refused ?? inBatch[v]?.ok]) }); }
 
 // ---- RA (review of #260): a log changed outside the purge rule refuses writes, but not the operator's or a read ----
 { const name = "altered"; const file = `${root}worlds/${name}.jsonl`;

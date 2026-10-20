@@ -9,7 +9,7 @@ import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../../caption
 import { effectFor, ESSENTIAL_NAMES } from "../../particle_effects.js";
 import { SHAPES_VERSION } from "../shaperepair.js";
 import { CTX, UP } from "./ctx.js";
-import { validate } from "../verbspec.js";
+import { BATCH_OPS, validate } from "../verbspec.js";
 import { Refusal, refuse } from "./refuse.js";
 import { VOLATILE, delOp, nonce16, setOp } from "./storage.js";
 import { SPATIAL, clockMs, spend } from "./spatial.js";
@@ -140,9 +140,9 @@ function buildBatch(ctx, a, w) { {
       (a.ops ?? []).forEach((o, i) => {
         if (clockMs() > CTX.work.until) spend(Infinity, `a batch of ${a.ops.length} ops`, "split it into smaller batches");   // the clock backstop
         // sky/weather are sets on @world.sky with the old merge meaning, so they batch like any set (one act, one undo)
-        const B = { create: buildCreate, set: buildSet, delete: buildDelete, place: buildPlace,
+        const B = { create: buildCreate, set: buildSet, delete: buildDelete, place: buildPlace, turn: buildTurn,
           sky: (c, x) => buildSky(c, x, w), weather: (c, x) => buildWeather(c, x, w) }[o.verb];
-        if (!B) refuse("shape", `batch op ${i}: '${o.verb}' can't go in a batch`, "batch takes create, set, delete, place, sky, weather");
+        if (!B) refuse("shape", `batch op ${i}: '${o.verb}' can't go in a batch`, `batch takes ${BATCH_OPS.join(", ")}`);
         const sub = { ...ctx, st, launches: undefined };
         let ops; try { ops = B(sub, o.args ?? {}); } catch (e) { if (e instanceof Refusal) { e.op = i; } throw e; }
         if (!work) { work = cowState(ctx.st); VOLATILE.add(work.entities); }

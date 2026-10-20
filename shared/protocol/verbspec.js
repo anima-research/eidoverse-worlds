@@ -8,6 +8,9 @@ const xz = { type: "xz", doc: "[x, z] in metres (ground position; y comes from w
 const ref = (doc) => ({ type: "id", doc });
 const target = (doc) => ({ type: "id|xz", doc });
 export const PLACE_MODES = ["on", "beside", "hang", "against", "near", "at"];
+// the verbs a batch takes as its children: batch's help and the batch's own refusal both name them from here, and
+// authority/verbs.js buildBatch has a builder for each (authority-check BT5 runs every one)
+export const BATCH_OPS = ["create", "set", "delete", "place", "turn", "sky", "weather"];
 export const VERBSPEC = {
   place: {
     doc: "put a thing somewhere by saying where it goes relative to other things; the authority solves the numbers",
@@ -121,7 +124,7 @@ export const VERBSPEC = {
   weather: { doc: "a weather change, merged onto the standing sky (keepSky: false starts fresh)", args: skyArgs() },
   sculpt: { doc: "one brush stroke on a terrain grid", args: { on: ref("the ground entity"), brush: { type: "any", doc: "a brush (raise, lower, smooth, flatten…)" }, path: { type: "any", doc: "[[x, z], …] (1–256 points)" },
       radius: { type: "any", doc: "metres (≤ 64)" }, strength: { type: "any", doc: "whole mm (> 0) for an additive brush" }, dry: { type: "bool" } }, required: ["on", "brush"] },
-  batch: { doc: "several writes as ONE act (one undo): ops [{verb, args}…] of create, set, delete, place, turn", args: { ops: { type: "any", doc: "[{verb, args}, …]" }, label: { type: "any", doc: "a name undo {label} can find it by" }, dry: { type: "bool" } }, required: ["ops"] },
+  batch: { doc: `several writes as ONE act (one undo): ops [{verb, args}…] of ${BATCH_OPS.join(", ")}`, args: { ops: { type: "any", doc: "[{verb, args}, …]" }, label: { type: "any", doc: "a name undo {label} can find it by" }, dry: { type: "bool" } }, required: ["ops"] },
   "fork-copy": { doc: "a fork's copy of its parent's state (the server's own, while forking; never a person's request)", args: { ops: { type: "any" } } },
   use: { doc: "do something to a thing (inspect shows what it offers you). While you hold it, use {id} with no action fires its grabbable.use (its down; args {phase: 'up'} its up)", args: { id: ref("the thing"), action: { type: "string" }, args: { type: "object" }, dry: { type: "bool", doc: "preview only: what it would write (a script runs dry); nothing is logged" } }, required: ["id"],
     example: { id: "door-1", action: "open" } },
