@@ -40,8 +40,13 @@ export function agentOnDoor(agent: any, tag = "agent", { owner = "olive", start 
   A.replica = makeReplica();
   let joined = false;
   /** the agent takes the door's current state as its next view */
+  // the first view is a cut (as a join is); after that the agent INGESTS the door's new log entries, as it does live, so
+  // what only the log carries (who wrote the sky, at which seq: #260 I286) reaches it the real way
+  let head = -1;
   const sync = async (live: boolean, who: string | null = null, ts: number | null = null) => {
-    A.replica.adopt({ state: wireState(w.state()), head: -1 });
+    const E = w.entries;
+    if (!joined) { A.replica.adopt({ state: wireState(w.state()), head: E.length - 1 }); head = E.length - 1; }
+    else { const r = A.replica.ingest(JSON.parse(JSON.stringify(E.slice(head + 1))), head + 1); head = E.length - 1; if (r.sky) A.skyStamp = r.sky; if (r.resync) A.replica.adopt({ state: wireState(w.state()), head }); }
     await A.applyView(joined ? live : false, who, ts ?? T);
     joined = true;
   };

@@ -1316,6 +1316,7 @@ export class WorldAgent {
               hear(this.st, { actor: e.actor, text: x.text, ts: e.ts, seq: e.seq });   // the chat window
               this.hearSay(e, true);
             }
+            if (r.sky) this.skyStamp = r.sky;   // who set the sky, and where in the log (I286): the value itself doesn't say
             if (r.changed) await this.applyView(true, r.actor ?? null, r.ts ?? null);
             break;
           }
@@ -1935,6 +1936,7 @@ export class WorldAgent {
    *  after a join initializes SILENTLY — arrival narration is look()'s job;
    *  this only speaks when something CHANGES while the body is present.
    *  `nowMs` is injectable for tests. */
+  private skyStamp: { seq: number; by: string } | null = null;
   checkSky(nowMs = Date.now()) {
     if (!this.skyState) return;
     const eff = effectiveSky(this.skyState, nowMs, this.skyCursor);
@@ -1953,8 +1955,8 @@ export class WorldAgent {
       this.lastSkyKey = key;
       if (eff.weather) {
         const why = eff.source === "forecast"
-          ? ` (forecast — policy sky seq ${eff.seq ?? "?"} by ${eff.by ?? "?"})`
-          : eff.source === "manual" ? ` (${eff.by ?? "someone"} overrode the forecast — holds until the next scheduled change)` : "";
+          ? ` (forecast — policy sky seq ${eff.seq ?? this.skyStamp?.seq ?? "?"} by ${eff.by ?? this.skyStamp?.by ?? "?"})`
+          : eff.source === "manual" ? ` (${eff.by ?? this.skyStamp?.by ?? "someone"} overrode the forecast — holds until the next scheduled change)` : "";
         this.onEvent?.({ ts: nowMs, kind: "weather", who: "world", text: `world weather: ${eff.weather}${why}` });
       }
     }

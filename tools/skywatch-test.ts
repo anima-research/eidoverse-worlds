@@ -59,7 +59,7 @@ async function rig(args: any, who = "antra") {
   ag.checkSky(seg0.endMs + 1000);
   check("segment boundary emits exactly one event", events.length === 1);
   check("boundary event carries provenance (the sky's log position, and who set it)",
-    /forecast/.test(events[0]?.text) && /seq \d+/.test(events[0]?.text) && /antra/.test(events[0]?.text),
+    /forecast/.test(events[0]?.text) && /seq \d+/.test(events[0]?.text) && /olive/.test(events[0]?.text)   /* the actor the door wrote (its owner: agent-scratch acts as olive; the rig's who is display only) */,
     events[0]?.text);
   ag.checkSky(seg0.endMs + 2000);
   ag.checkSky(seg0.endMs + 3000);
@@ -107,7 +107,7 @@ async function rig(args: any, who = "antra") {
   const before = events.length;
   ag.checkSky(tO + 1000);
   check("override landing emits with the actor's name",
-    events.length === before + 1 && /storm/.test(events.at(-1)?.text) && /digi/.test(events.at(-1)?.text),
+    events.length === before + 1 && /storm/.test(events.at(-1)?.text) && /olive/.test(events.at(-1)?.text)   /* the logged actor, as above */,
     events.at(-1)?.text);
   ag.checkSky(tO + 2000);
   check("override event is deduped", events.length === before + 1);

@@ -116,7 +116,7 @@ export function makeReplica({ freeze = true } = {}) {
   v.ingest = (entries, from, names) => {
     learn(names);
     if (!v.active) return { changed: false, says: [], resync: false };
-    const says = []; let changed = false, ts = null, actor = null;
+    const says = []; let changed = false, ts = null, actor = null, lastAct = null, sky = null;
     for (let i = 0; i < (entries?.length ?? 0); i++) {
       const seq = from + i; const e = entries[i];
       if (seq <= v.head) continue;                                   // already folded (a re-delivery)
@@ -127,6 +127,8 @@ export function makeReplica({ freeze = true } = {}) {
         try {
           const ops = opsOf(e);
           if (freeze) for (const o of ops) { const ent = typeof o?.id === "string" ? v.st.entities[o.id] : undefined; if (ent && Object.isFrozen(ent.c)) v.st.entities[o.id] = thawed(ent); }
+          // the sky's provenance (#260 I286): a stored sky carries no seq/by (the log does), so the entry that wrote it names them
+          if (ops.some(({ id, comp } = {}) => id === "@world" && comp === "sky"))   /* an op's comp field, not a record's bag */ sky = { seq, by: lastAct ?? v.nameOf(e.actor) };
           try { applyInPlace(v.st, ops, seq); changed = true; }
           finally { for (const o of ops) if (typeof o?.id === "string") { if (freeze) freezeRecord(v.st.entities[o.id]); reindex(o.id); } }
         } catch (x) { if (!(x instanceof Malformed)) throw x; ok = false; }
@@ -134,11 +136,11 @@ export function makeReplica({ freeze = true } = {}) {
       // (only launches are kept: a later rest names its launch as its cause; nothing else is read back)
       if (ok && folder) { const rev = v.sim?.rev; E[seq] = e; folder.feed(seq); if (!(e.kind === "sim" && e.verb === "launch")) delete E[seq]; if (v.sim?.rev !== rev) v.simVersion++; }   // the engine moved: the screen re-copies; a say or a label didn't: it keeps its copy
       if (e?.kind === "say" && typeof e.body?.text === "string") says.push({ seq, ts: e.ts, actor: v.nameOf(e.actor), by: String(e.actor), text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: v.nameOf(e.body.to) } : {}), ...spokenOf(e.body) });
-      if (e?.kind === "act" && actor === null) actor = v.nameOf(e.actor);
+      if (e?.kind === "act") { lastAct = v.nameOf(e.actor); if (actor === null) actor = lastAct; }
       if (Number.isInteger(e?.ts)) ts = e.ts;
       v.head = seq; v.stats.ingested++;
     }
-    return { changed, says, resync: false, ts, actor };
+    return { changed, says, resync: false, ts, actor, ...(sky ? { sky } : {}) };
   };
   return v;
 }
