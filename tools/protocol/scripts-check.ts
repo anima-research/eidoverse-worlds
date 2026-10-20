@@ -305,6 +305,33 @@ const cases: Case[] = [
       const hours = [0, 0]; for (const e of s.entries()) if (isScriptActor(e.actor) && e.ts > t0) hours[Math.min(1, Math.floor((e.ts - t0) / 3600000))]++;
       return { hours, why: [...why].sort() }; },
     good: (o) => o.hours.every((n: number) => n > 50 && n <= 60) && o.why.includes("world") },
+  { id: "B6d", what: "an owner's budget above this server's ceiling is capped, and the world's budget refusal says so with both numbers", run(s) { cast(s);
+      if (!D.tick) return { absent: true };
+      // the owner sets 60 under the server's ceiling; then the operator lowers the ceiling to 30 (a write above it is refused)
+      const set = s.call("olive", "set", { id: "@world", component: "script-settings", value: { budget: 60 } });
+      const was = D.setScriptConfig({ budget: 30 });
+      try {
+        s.call("olive", "create", { id: "heart2", model: "bell", place: { at: [0, 0] } });
+        const BEAT = (c: string) => `world.on("tick", () => world.set("self", "${c}", { n: (world.get("self", "${c}")?.n ?? 0) + 1 }));\n`;
+        install(s, "olive", "heart2", "beat", BEAT("t/beat"), { scope: { ids: "self", comps: ["t/beat"] }, every: 30, always: true });
+        install(s, "olive", "heart2", "beat2", BEAT("t/beat2"), { scope: { ids: "self", comps: ["t/beat2"] }, every: 30, always: true });
+        let why = null; for (let i = 0; i < 120 && !why; i++) { s.advance(30000); for (const r of s.tick() ?? []) if (r.code === "budget" && /world's scripts/.test(r.why)) why = r.why; }
+        return { set: set?.ok === true, why };
+      } finally { D.setScriptConfig(was); } },
+    good: (o) => o.set && /budget is 30/.test(o.why ?? "") && /asks 60/.test(o.why ?? "") && /caps it/.test(o.why ?? "") },
+  { id: "B6e", what: "…with no owner value, a ceiling lowered below the server's default is the plain budget, and the refusal names no owner's value", run(s) { cast(s);
+      if (!D.tick) return { absent: true };
+      const set = { ok: true };   // the owner sets nothing: the default (600) stands, then the operator lowers the ceiling to 30
+      const was = D.setScriptConfig({ budget: 30 });
+      try {
+        s.call("olive", "create", { id: "heart3", model: "bell", place: { at: [0, 0] } });
+        const BEAT = (c: string) => `world.on("tick", () => world.set("self", "${c}", { n: (world.get("self", "${c}")?.n ?? 0) + 1 }));\n`;
+        install(s, "olive", "heart3", "beat", BEAT("t/beat"), { scope: { ids: "self", comps: ["t/beat"] }, every: 30, always: true });
+        install(s, "olive", "heart3", "beat2", BEAT("t/beat2"), { scope: { ids: "self", comps: ["t/beat2"] }, every: 30, always: true });
+        let why = null; for (let i = 0; i < 120 && !why; i++) { s.advance(30000); for (const r of s.tick() ?? []) if (r.code === "budget" && /world's scripts/.test(r.why)) why = r.why; }
+        return { set: set?.ok === true, why };
+      } finally { D.setScriptConfig(was); } },
+    good: (o) => o.set && /budget is 30/.test(o.why ?? "") && !/asks/.test(o.why ?? "") },
   { id: "B6b", what: "§3d M3: each sponsor gets a fair share of the world's hour: bob's chatty timer can't starve olive's script", run(s) { cast(s);
       if (!D.tick) return { absent: true };
       s.call("olive", "set", { id: "@world", component: "script-settings", value: { budget: 40 } });

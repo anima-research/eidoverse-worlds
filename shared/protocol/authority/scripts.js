@@ -42,7 +42,9 @@ export const scriptCeiling = () => ({ max: 64, budget: SCRIPTS.budget, cpu: SCRI
 export function setScriptConfig(over = {}) { const was = { ...SCRIPTS }; Object.assign(SCRIPTS, over); return was; }
 const scriptsCfg = (st) => { const c = st.entities["@world"]?.c["script-settings"]; const own = c && typeof c === "object" && !Array.isArray(c) && c !== PURGED ? c : {};
   const out = { ...SCRIPTS }; for (const k of OWNER_SCRIPT_FIELDS) if (own[k] !== undefined) out[k] = own[k];
-  for (const [k, top] of Object.entries(scriptCeiling())) if (Number.isFinite(out[k])) out[k] = Math.min(out[k], top);
+  // a value above this server's ceiling is lowered to it; when it was the owner's, `capped` keeps what they asked for, so a
+  // refusal can say so (a server default above a lowered ceiling is just lowered: the owner wrote nothing)
+  for (const [k, top] of Object.entries(scriptCeiling())) if (Number.isFinite(out[k]) && out[k] > top) { if (own[k] !== undefined) (out.capped ??= {})[k] = out[k]; out[k] = top; }
   return out; };
 // the registry's lists (componentspec script.itemEnums), read here, never restated
 const BODY_EFFECTS = COMPONENTS.script.itemEnums["scope.bodies"];

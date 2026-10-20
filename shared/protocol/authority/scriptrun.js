@@ -48,7 +48,7 @@ const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq
 const ANON_EVENTS = new Set(["enter", "leave"]), GRIP_EVENTS = new Set(["grab", "release"]);
 const anonEvent = ({ by: _by, ...rest }) => rest;
 const overBudget = (B, cfg, key, sponsor, cost) => (B.mine >= cfg.rate ? `${key} logged ${B.mine} activations in the last minute; the rate is ${cfg.rate}`
-  : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget}, which the world's owner sets in @world.script-settings.budget`
+  : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget}, ${cfg.capped?.budget !== undefined ? `this server's ceiling: the owner's @world.script-settings.budget asks ${cfg.capped.budget}, and this server caps it` : "which the world's owner sets in @world.script-settings.budget"}`
   : B.bySponsor + cost > B.share ? `${said(sponsor)}'s scripts wrote ${B.bySponsor} entries in the last hour; each of the ${B.sponsors} sponsors here gets ${B.share} of the world's ${cfg.budget}` : null);
 // A script whose value stands but whom no write in the log answers for (its install act purged, say): it doesn't run
 const UNSPONSORED = "nobody in this world's log answers for it (its install isn't there, as when it was purged), so it doesn't run; set it again to install it, or an owner may adopt it (adopt {id, script})";
