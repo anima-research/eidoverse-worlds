@@ -70,6 +70,9 @@ function activate(w, id, name, ev) {
   if (!v || typeof v !== "object" || v === PURGED) return out("not-installed");
   if (v.paused === true) { const pb = pausedBy(w, id, key); return out("paused", { why: pb ? `paused by ${said(pb.by)} at seq ${pb.at}` : "paused: true" }); }
   if (cfg.run === false) return out("stopped", { why: "@world.script-settings.run is false (the owner's kill permission)" });
+  // an activation the host sets off (a timer, an arrival, a grab) is a write too, so it meets the gate every request's write
+  // does (writeBlock): not on an altered log, nor before the maintenance command, whose repair would reread what it wrote as old
+  if (!dry) { const b = writeBlock(w); if (b) return out("refused", { code: b.code, why: b.reason, fix: b.fix }); }
   const sp = sponsorOf(w, id, key); if (!sp) return out("not-installed", { why: UNSPONSORED });
   if (isBanned(w, sp.sponsor)) return out("suspended", { why: `suspended: sponsor ${said(sp.sponsor)} is banned (moderator log); nothing ran` });
   const ver = lastTouch(w, id, key)?.seq; if (!dry && rt.ver !== ver) { rt.ver = ver; rt.fails = 0; rt.lastFail = null; } // a re-set (a fix) clears the failure count
@@ -279,6 +282,18 @@ export function settleOrphans(w, present = []) {
 // the command (authority.js request). Never a silent wrong behaviour; never a write the operator didn't ask for.
 const needsCache = new WeakMap();
 const SERVED_RENAMES = (op) => !(op.comp === "grabbable" || op.comp.startsWith("grabbable:"));   // what no reader serves in the old spelling
+/** Why the record itself stops a write now, or null: its log was changed outside the purge rule (§12: a value stripped to its
+ *  commit that no purge names reads as unknown; nobody builds on that record until the operator restores it), or its old
+ *  shapes wait for the maintenance command (lead's ruling 10-18: a load never writes; a world whose old shapes no reader serves
+ *  refuses every write until the command runs). Reads work either way. One function, so a request (authority.js) and a script
+ *  the host sets off (activate) meet the same gates. → {code, reason, fix, extra?} */
+export function writeBlock(w) {
+  const alt = w.state().diagnostics.filter(([, c]) => c === "commit-unpurged");
+  if (alt.length) return { code: "record-altered", reason: `this world's log was changed outside its purge rule: ${alt.map(([q, , x]) => `line ${q} (${x})`).join(", ")} holds a value stripped to its commit that no purge names, so it reads as unknown, and the authority won't write on top of it`, fix: "only this server's operator can fix this, by restoring the log from a backup; asking again won't change it, and reads still work", extra: { seqs: alt.map(([q]) => q) } };
+  const n = maintenanceNeeds(w);
+  if (n.blocking.length) return { code: "repair-needed", reason: `this world needs maintenance before it can be written: ${n.blocking.join(", ")} (its values are stored in an old spelling no reader here serves)`, fix: n.fix };
+  return null;
+}
 /** What maintenance a world needs: {steps: ["lift-sockets", "rename-components", "repair-shapes"] (those needed, in order),
  *  blocking: the subset whose old shape no reader serves, lift: [hosts], rename: [ops], repair: bool, fix}. Cached per log
  *  length (a needed step is only ever removed by the command, which appends). */

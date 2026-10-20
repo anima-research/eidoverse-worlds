@@ -61,7 +61,7 @@ import { actIndexOf, buildSculpt, buildSky, buildUndo, buildWeather } from "./au
 export { actIndexFresh, actIndexOf, entityBefore } from "./authority/undo.js";
 import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, installCheck, logRt, overCpu, particlesCheck, pauseOnly, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptCeiling, scriptDefaults, scriptDepth, scriptMemo, scriptRights, scriptsCfg, sponsorOf, uploadEffect } from "./authority/scripts.js";
 export { DUTY, scriptCeiling, scriptDefaults, setScriptConfig, setScriptDuty, unpaused } from "./authority/scripts.js";
-import { SCRIPT_VERBS, activate, drainHeld, drainScripts, heldEvent, maintain, maintenanceNeeds } from "./authority/scriptrun.js";
+import { SCRIPT_VERBS, activate, drainHeld, drainScripts, heldEvent, maintain, maintenanceNeeds, writeBlock } from "./authority/scriptrun.js";
 export { ORPHANS, expireRoles, liftWorld, maintain, maintenanceNeeds, presenceEvent, repairShapes, scriptsView, settle, settleOrphans, tick } from "./authority/scriptrun.js";
 import { clearOccupant, leftOccupied, occupiedRefuse, occupantOf, occupyRights, setOccupant, occupantOn, vacateAt, vacateWhy, vacatesFor } from "./authority/occupants.js";
 import { arrivalBox, body, buildEpoch, dist, gripPoint, gripOf, lawOf, pathBlocked, restampEngine, settleSim, shearFree, sizeOf, solidAt } from "./authority/physics.js";
@@ -123,14 +123,9 @@ export function request(w, actor, verb, args = {}) {
     if (h && w.exists && w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer && !READ_ONLY.has(verb))
       refuse("custody", "this server doesn't hold the key that signs this world's log, so it can't write to it", "only this server's operator can fix this, by restoring the world's signing key or handing the world over to this server; asking again won't change it, and reads still work");
     if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log can't be read here ('${w.state().status}': ${w.state().status === "unknown-version" ? "it's written in a protocol version this server doesn't read" : "its first entry isn't a genesis this server can read"}), and the authority won't act on a log it can't read`, "only this server's operator can fix this, by repairing the log or serving it with a server that reads its version; asking again won't change it until then");
-    // §12: a value stripped to its commit with no purge naming it (the fold's commit-unpurged) was changed outside the one rule
-    // that changes the record. It reads as unknown; nobody builds on that record until the operator restores it, and reads work
-    if (h && w.exists && !READ_ONLY.has(verb) && verb !== "leave" && CTX.operator !== actor) { const alt = w.state().diagnostics.filter(([, c]) => c === "commit-unpurged");
-      if (alt.length) refuse("record-altered", `this world's log was changed outside its purge rule: ${alt.map(([q, , x]) => `line ${q} (${x})`).join(", ")} holds a value stripped to its commit that no purge names, so it reads as unknown, and the authority won't write on top of it`, "only this server's operator can fix this, by restoring the log from a backup; asking again won't change it, and reads still work", { seqs: alt.map(([q]) => q) }); }
-    // lead's ruling 10-18: a load never writes; a world whose old shapes no reader serves (an un-lifted seat, a grabbable's
-    // old pose, the shape audit's values) loads and refuses every WRITE until the maintenance command runs (maintenanceNeeds)
-    if (h && w.exists && !READ_ONLY.has(verb) && verb !== "leave" && CTX.operator !== actor) { const n = maintenanceNeeds(w);
-      if (n.blocking.length) refuse("repair-needed", `this world needs maintenance before it can be written: ${n.blocking.join(", ")} (its values are stored in an old spelling no reader here serves)`, n.fix); }
+    // writes the record itself stops (writeBlock: an altered log, a world waiting for its maintenance command): every write
+    // but `leave` and the operator's own, and the scripts the host sets off meet the same gate (scriptrun activate)
+    if (h && w.exists && !READ_ONLY.has(verb) && verb !== "leave" && CTX.operator !== actor) { const b = writeBlock(w); if (b) refuse(b.code, b.reason, b.fix, b.extra); }
     if (!h && Object.hasOwn(REMOVED_VERBS, verb)) refuse("removed", `'${verb}' was removed: ${REMOVED_VERBS[verb].why}`, REMOVED_VERBS[verb].fix);
     if (!h && Object.hasOwn(RESERVED_VERBS, verb)) refuse("reserved", `'${verb}' is a reserved request: ${RESERVED_VERBS[verb].why}`, "help lists every verb");
     if (!h) refuse("unknown-verb", `there is no '${verb}'`, "help lists every verb", { didYouMean: guess(verb, Object.keys(VERBS)) });

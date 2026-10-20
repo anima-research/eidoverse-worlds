@@ -157,6 +157,7 @@ const tryImport = async (p: string) => { try { return await import(p); } catch (
 const D = await import(TREE + "shared/protocol/authority.js");
 D.fixtureIds?.(true);   // the fixtures below seed the ids they read (R 10-17: a writer never chooses one; ids-check covers the refusal)
 const F = await import(TREE + "shared/protocol/fold.js");
+const STOR = await import(TREE + "shared/protocol/authority/storage.js");   // CHANGE: B25 stores an old spelling as an old log holds it
 const SB = await tryImport(TREE + "shared/protocol/sandbox.js");
 const AU = await tryImport(TREE + "shared/protocol/scriptaudit.js");
 const ONLY = opt("only")?.split(",") ?? null;
@@ -594,6 +595,41 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const direct = s.call("gus", "set", { id: "gbox", component: "label", value: "x" }); const r = s.call("vic", "use", { id: "gbox", action: "go" });
       return { direct: code(direct), r: st(s, r), status: s.call("olive", "scripts", { id: "gbox" }).scripts?.[0]?.status }; },
     good: (o) => o.direct === "rights" && o.r === "refused rights" && o.status === "dormant" },
+  { id: "B25", what: "a world whose stored values wait for the maintenance command refuses every write until it runs: a timer's and an arrival's activations too, not only requests", run(s) { cast(s);
+      if (!D.tick || !D.presenceEvent) return { absent: true };
+      const BEAT = `world.on("tick", () => world.set("self", "t/n", { n: (world.get("self", "t/n")?.n ?? 0) + 1 }));\nworld.on("enter", () => world.set("self", "t/n", { n: (world.get("self", "t/n")?.n ?? 0) + 1 }));\n`;
+      s.call("olive", "create", { id: "clock", model: "crate", place: { at: [0, 0] } });
+      install(s, "olive", "clock", "beat", BEAT, { scope: { ids: "self", comps: ["t/n"] }, every: 5, always: true, on: ["enter"] });
+      // a value stored in an old spelling no reader serves (a grabbable's pose: grab.js reads anim), as an old log holds it
+      s.call("olive", "create", { id: "cup", model: "crate", place: { at: [2, 0] } });
+      const w = s.w(); T += 100; process.env.PROTOCOL_NOW = String(T);
+      const a = w.append({ kind: "act", actor: "olive", verb: "set", body: { request: { id: "cup", component: "grabbable" } } });
+      w.append({ kind: "change", actor: "olive", cause: a, verb: "set", body: { id: "cup", comp: "grabbable", value: { pose: "pistol" } } }, STOR.CHANGE);
+      const blocking = D.maintenanceNeeds(w).blocking;
+      const req = s.call("olive", "set", { id: "clock", component: "label", value: "x" }), n0 = s.entries().length;   // (its refusal is on the record)
+      const ticks: string[] = []; for (let i = 0; i < 3; i++) { s.advance(5000); for (const x of s.tick() ?? []) ticks.push(`${x.status}${x.code ? ` ${x.code}` : ""}`); }
+      T += 100; process.env.PROTOCOL_NOW = String(T); const enter = D.presenceEvent(s.w(), "enter", "vic").map((x: any) => `${x.status}${x.code ? ` ${x.code}` : ""}`);
+      const written = s.entries().slice(n0).map((e: any) => `${e.kind}:${e.verb}:${e.actor}`), n = comp(s, "clock", "t/n") ?? null;
+      D.maintain(s.w(), { by: "olive" }); const after: string[] = [];   // once the command has run, the timer writes again
+      for (let i = 0; i < 2; i++) { s.advance(5000); for (const x of s.tick() ?? []) after.push(x.status); }
+      return { blocking, req: code(req), ticks, enter, written, n, after, nAfter: comp(s, "clock", "t/n")?.n ?? null }; },
+    good: (o) => o.blocking.includes("rename-components") && o.req === "repair-needed" && o.ticks.length >= 2 && o.ticks.every((t: string) => t === "refused repair-needed")
+      && JSON.stringify(o.enter) === '["refused repair-needed"]' && o.written.length === 0 && o.n === null && o.after.includes("ran") && o.nAfter >= 1 },
+  { id: "B26", what: "…and a log changed outside the purge rule (record-altered) stops them the same way: a timer's and an arrival's activations write nothing", run(s) { cast(s);
+      if (!D.tick || !D.presenceEvent) return { absent: true };
+      const BEAT = `world.on("tick", () => world.set("self", "t/n", { n: (world.get("self", "t/n")?.n ?? 0) + 1 }));\nworld.on("enter", () => world.set("self", "t/n", { n: (world.get("self", "t/n")?.n ?? 0) + 1 }));\n`;
+      s.call("olive", "create", { id: "clock", model: "crate", place: { at: [0, 0] } });
+      install(s, "olive", "clock", "beat", BEAT, { scope: { ids: "self", comps: ["t/n"] }, every: 5, always: true, on: ["enter"] });
+      s.call("olive", "create", { id: "cup", model: "crate", place: { at: [2, 0] } }); s.call("olive", "set", { id: "cup", component: "label", value: "cup" });
+      // strip the label's value to a commit, with no purge: as a copy of the log changed by hand would hold it
+      const lines = fs.readFileSync(s.logPath, "utf8").split("\n"); const k = lines.findLastIndex((l) => l.includes('"label"') && l.includes('"kind":"change"'));
+      const e = JSON.parse(lines[k]); const { value: _v, salt: _s, ...rest } = e.body; e.body = { ...rest, commit: "0".repeat(64) }; lines[k] = JSON.stringify(e); fs.writeFileSync(s.logPath, lines.join("\n"));
+      const w = openWorld(s.name); const req = (() => { T += 100; process.env.PROTOCOL_NOW = String(T); return D.request(w, "olive", "set", { id: "clock", component: "label", value: "x" }); })();
+      const n0 = w.entries.length, ticks: string[] = [];
+      for (let i = 0; i < 3; i++) { T += 5000; process.env.PROTOCOL_NOW = String(T); for (const x of D.tick(w) ?? []) ticks.push(`${x.status}${x.code ? ` ${x.code}` : ""}`); }
+      T += 100; process.env.PROTOCOL_NOW = String(T); const enter = D.presenceEvent(w, "enter", "vic").map((x: any) => `${x.status}${x.code ? ` ${x.code}` : ""}`);
+      return { req: code(req), ticks, enter, written: w.entries.slice(n0).map((x: any) => `${x.kind}:${x.verb}:${x.actor}`) }; },
+    good: (o) => o.req === "record-altered" && o.ticks.length >= 2 && o.ticks.every((t: string) => t === "refused record-altered") && JSON.stringify(o.enter) === '["refused record-altered"]' && o.written.length === 0 },
   // ---------------- R: runaway work ----------------
   ...[["R1", "while (true) {}", "fuel"], ["R2", "function f() { return f(); } f();", "stack"], ["R3", `let s = "x"; for (;;) s += s;`, "memory"],
       ["R4", `for (let i = 0; i < 1000; i++) world.get("self");`, "calls"], ["R5", `for (let i = 0; i < 40; i++) world.set("self", "t/n", i);`, "too-big"], ["R6", "this is not javascript", "syntax"]].map(([id, body, want]) => ({

@@ -144,7 +144,7 @@ export const REFUSAL_CODES = Object.freeze({
 export const REFUSAL_SOURCES = Object.freeze(["shared/protocol/verbspec.js", "shared/protocol/roles.js", "shared/protocol/consent.js", "shared/protocol/scriptrules.js", "shared/sockbody.js", "shared/grab.js"]);
 /** The refuse(<expression>) sites in authority.js, by the expression they pass: each forwards a code one of the sources
  *  above (or the authority's own refusals) produced, so the static scan covers what they can carry. A new one is reviewed. */
-export const DYNAMIC_REFUSALS = Object.freeze(["code", "bad.code", "e.code", "dirty.code", "r.code", "g.code"]);
+export const DYNAMIC_REFUSALS = Object.freeze(["code", "bad.code", "e.code", "dirty.code", "r.code", "g.code", "b.code"]);   // b.code: writeBlock's (scriptrun.js), whose codes are literals there
 /** `code:` literals in the scanned files that aren't refusal codes (none today; a status code that isn't a refusal goes here). */
 export const NOT_REFUSALS = Object.freeze([]);
 /** Codes renamed before release (protocol minor 0, R 10-17: no body plan in a name). A log written before the rename may
