@@ -1408,5 +1408,11 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const o2 = txnOutcome(w, w.entries.length, { threw: true, refused: false, wedgedBefore: true });
   ok(o2.outcome === "rolled-back", "ST4 …and a throw on a world already wedged (its refusal before any write) is rolled back", o2); }
 
+// F1: a founding the authority refuses leaves no world behind: the name can still be founded, and its founder owns it
+{ const name = "refused-founding";
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const bad = call("olive", "create-world", { title: "x".repeat(5000) });
+  const again = call("olive", "create-world", { title: "second try" });
+  ok(bad?.ok === false && again?.ok === true && again.you === "owner", "F1 a refused founding leaves nothing: the next founding of that name succeeds", { bad, again }); }
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
