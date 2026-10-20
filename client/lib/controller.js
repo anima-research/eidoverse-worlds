@@ -257,7 +257,7 @@ export const myState = {
   q: undefined,
   locomotion: undefined,
   seat: null,        // { id, chair } while seated on something
-  floor: undefined,  // while lying limp: the floor the body lies on (getup.js) — presence, so a rejoin stands there
+  floor: undefined,  // while lying settled: { y, root } — the floor the body lies on and where its root was (getup.js) — presence, so a rejoin stands there
 };
 
 export const keys = new Set();

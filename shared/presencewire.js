@@ -65,3 +65,39 @@ export function applyBodyWire(target, sample) {
   target.scale = s; target.plateY = y;
   return did;
 }
+
+// A body lying limp has its root a hips-height BELOW the floor it lies on: while it lies in a heap the root follows
+// the hips that much lower (client/lib/bodyengine.js _followRoot). Where such a body stands up again, rejoining or
+// remembered by the server (server/server.ts settledPose): on the floor it measured under its hips (presence
+// `floor`, client/lib/getup.js), or, with none, at its root raised by how far a root can lie below its floor for a
+// body of its size (presence `scale`) — at or just above that floor, to settle down onto. Rigs lie from about
+// 0.55 m to 1.1 m below at scale 1, so the reach takes the deepest. The reach has one limit: unless the body is pinned or
+// floating, the root never rises above where its tumble began (_followRoot keeps the lower of the two), so a body knocked UP onto a higher floor
+// lies further below it, and without a measured floor it wakes below that floor. The measured floor reads the hips
+// and has no such limit.
+export const ROOT_BELOW_FLOOR = 1.1;
+export function standingYFromLyingRoot(rootY, { floor, scale } = {}) {
+  if (typeof floor === 'number' && Number.isFinite(floor)) return floor;
+  return rootY + ROOT_BELOW_FLOOR * (typeof scale === 'number' && Number.isFinite(scale) && scale > 0 ? scale : 1);
+}
+
+// A settled body doesn't move: once its doll is done nothing steps its root (client/lib/localbody.js stepRagdoll). A
+// drag, a shove that starts it tumbling again or an unpin does move it, and the floor measured before is then the
+// one under where it was, not where it is. So the floor is the body's only while its root is where it measured it:
+// a move of more than a millimetre drops the floor, while the same numbers copied back keep it.
+const FLOOR_MOVE = 0.001;
+
+/** The floor a settled body measured (client/lib/localbody.js stepRagdoll: `{ y, root }`) while its root is still
+ *  where it was measured, else undefined until it settles again and measures afresh. Presence carries `floor` only
+ *  then (client/lib/net.js): a stale floor would stand a rejoin on the storey the body was moved off. */
+export function floorStillUnder(floor, root) {
+  if (!floor || typeof floor.y !== 'number' || !Number.isFinite(floor.y) || !Array.isArray(floor.root)) return undefined;
+  const [x, y, z] = floor.root;
+  return Math.hypot(root.x - x, root.y - y, root.z - z) <= FLOOR_MOVE ? floor.y : undefined;
+}
+
+/** Where a body that lay limp stands up with no avatar to measure it (client/lib/localbody.js getUp): on the floor
+ *  it measured while it is still where it measured it, else at its root raised by the reach for its size. */
+export function standingYWithoutAvatar(floor, root, scale) {
+  return floorStillUnder(floor, root) ?? standingYFromLyingRoot(root.y, { scale });
+}

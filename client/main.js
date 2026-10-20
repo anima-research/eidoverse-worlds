@@ -417,9 +417,11 @@ wireNet({
     // you stood on. It rides the next presence packet, so everyone sees it.
     // EXCEPT a remembered ragdoll frame (pre-sanitizer entries): that is
     // wreckage, not authorship — wake standing instead of hung mid-tumble.
-    // A legacy record (before settledPose stood lying bodies on their floor):
-    // its root lies below the floor the body lay on — wake on that floor, not
-    // at height 0 (getup.js). Current records arrive standing on it already.
+    // A record from before the server's sanitizer still says ragdoll: its root
+    // lies below the floor the body lay on, so it wakes on that floor if the
+    // record carries it, else at its root raised by how far a root lies below
+    // its floor at its scale (shared/presencewire.js), not at height 0.
+    // Current records arrive standing (server.ts settledPose).
     if (r.clip === 'ragdoll') { myState.pos.y = standingYFromLyingRoot(fin(r.p[1]), { floor: r.floor, scale: r.scale }); return; }
     if (r.pose) myState.pose = r.pose;
     setFolded(r.wingsFolded === true);

@@ -33,6 +33,7 @@ import { entities, entityMeta, comps, avatarMounts, findPart, editHolds } from '
 import { state, onWorldChange } from '../state.js';
 import { schedule, cancelOwner } from '../scheduler.js';
 import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere } from './models_field.js';
+import { stillArriving, footprintOf } from '../arrivalnear.js';   // the arrival hold's rules (arrivalhold.js)
 
 /** The verbs this realizer owns — the whole flat entity-id namespace. */
 // IMPORT then re-export: a bare `export ... from` creates no local binding, and this
@@ -45,9 +46,33 @@ export { PORTED };
  *  it has handled. gen guards a load completion against acting for a
  *  reservation that was retired and re-created while its bytes flew. */
 const tracked = new Map();
-/** Has this entity's model failed to load (and is waiting out its back-off)?
- *  A thing that failed won't be solid soon — arrivalhold.js stops waiting on it. */
-export const modelLoadFailed = (id) => Boolean(tracked.get(id)?.failedAt);
+/** How long a failed load waits before the residency sweep tries it again (ms, on Date.now()). */
+const RETRY_AFTER_MS = 30_000;
+/** Is this entity's model still on its way here (arrivalnear.js stillArriving)?
+ *  arrivalhold.js holds a restored body's height while one near it is. A
+ *  stand-in counts only while the sweep will or may load it: within its
+ *  residency radius, or of a size the geom has yet to give, and not while a
+ *  failed load backs off (residencySweep). */
+export const modelArriving = (id) => {
+  const t = tracked.get(id), ent = state.st?.entities?.[id];
+  return stillArriving(t, entities.get(id), {
+    tailPending: promoteTail.has(id),
+    // until the geom side-channel lands, a size it may still give (and with it a
+    // wider radius) is unknown: such a stand-in may yet load
+    resident: !!ent && ((!geomLanded && !libGeom.get(ent.lib)?.bbox) || entDist(ent) < residencyRadius(ent)),
+    backingOff: !!t?.failedAt && Date.now() - t.failedAt <= RETRY_AFTER_MS,
+  });
+};
+/** A placed model's footprint on the ground, from the geom the server sent for
+ *  its lib; unbounded until it has (arrivalnear.js footprintOf), and unbounded
+ *  for a model with a whole-body motion, which may have carried it anywhere
+ *  from its folded `pos`. Read from the fold, which holds the motion before
+ *  the model has loaded. */
+export const modelFootprint = (id, ent) => {
+  const m = ent?.comp?.motion;
+  if (m && !m.part) return { x: NaN, z: NaN, r: Infinity };
+  return footprintOf(ent, ent?.lib ? libGeom.get(ent.lib) : null);
+};
 let nextGen = 1;
 
 const _v = new THREE.Vector3();
@@ -64,6 +89,10 @@ const _v = new THREE.Vector3();
 // check honestly silent about them.
 
 const libGeom = new Map();   // lib -> {bbox} — fed by the 'geom' message
+// has a geom message landed in this page? After one, a lib it didn't size won't
+// be sized (the server couldn't summarize it). Kept for the page's life: a world
+// switch without a reload starts with it set.
+let geomLanded = false;
 let _phGeo = null;
 let _phMat = null;
 
@@ -824,7 +853,7 @@ export function residencySweep() {
     // (§16.2.C). The invariant: within its radius an entity eventually
     // loads; beyond it, it never fetches a byte.
     } else if ((obj === null || isPlaceholder(obj)) && d < R && !t.loading
-      && (!t.failedAt || now - t.failedAt > 30000)) {
+      && (!t.failedAt || now - t.failedAt > RETRY_AFTER_MS)) {
       resStats.promotes++;
       t.gen = nextGen++;                 // stale in-flight completions no-op
       scheduleLoad(id, ent, t.gen);
@@ -942,6 +971,7 @@ export function initModelsRealizer() {
   // still-bare reservation to a sized stand-in the moment sizes are known
   bus.on('lib-geom', (geom) => {
     for (const [lib, g] of Object.entries(geom ?? {})) libGeom.set(lib, g);
+    geomLanded = true;
     for (const id of tracked.keys()) maybePlaceholder(id);
   });
   // a REFUSED `light` verb never folds, but the editor already previewed it —

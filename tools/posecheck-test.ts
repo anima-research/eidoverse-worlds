@@ -43,4 +43,14 @@ ok(sanePose({ ...good, pins: wide }) === null, "a container wider than MAX_KEYS 
   const f = sanePose({ ...good, scale: 1.5, plateY: 0.3 })!;
   ok(f?.scale === 1.5 && f?.plateY === 0.3, "in-range scale/plateY relay as sent");
 }
-console.log("posecheck: 26 ok");
+// the floor a lying body measured (client/lib/getup.js, #263): kept if finite, 0 included; anything else dropped,
+// with the rest of the pose kept
+{
+  for (const bad of [null, "1.8", { y: 1.8 }, NaN, Infinity]) {
+    const out = sanePose({ ...good, clip: "ragdoll", floor: bad });
+    ok(out && !("floor" in out) && out.clip === "ragdoll", `a floor of ${typeof bad === "object" ? JSON.stringify(bad) : String(bad)} is dropped, the pose kept`);
+  }
+  ok(sanePose({ ...good, clip: "ragdoll", floor: 0 })?.floor === 0, "a floor at height 0 is kept");
+  ok(sanePose({ ...good, clip: "ragdoll", floor: 3.3 })?.floor === 3.3, "a finite floor relays as sent");
+}
+console.log("posecheck: 33 ok");
