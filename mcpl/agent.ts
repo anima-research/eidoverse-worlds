@@ -5,7 +5,7 @@
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
 import { bodyOf } from "../shared/components.js";
-import { DEFAULT_PRESET, KIND_CLASS, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/protocol/consent.js";
+import { CLASSES, DEFAULT_PRESET, KIND_CLASS, REACH_NOTE_MS, TIERS, namedPointClass, pointClass, setConsent, tableOf } from "../shared/protocol/consent.js";
 import { kindOf } from "../shared/protocol/kind.js";
 import { describeBody, mayLeave, resolveSeat, socketsUnder, vacatedFromMine, vacatedAt } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
@@ -389,6 +389,13 @@ export function voiceNote(pose: unknown): string {
   else if (v.mic === false) parts.push("mic off");
   if (v.xr) parts.push("in VR");
   return parts.length ? `; ${parts.join("; ")}` : "";
+}
+
+/** The table an agent chose (the preset it last sent, then each cell it set since) as every cell's mode, worked out by
+ *  the authority's own rule (setConsent, tableOf) on a scratch plane, so legacy names read as the server reads them. */
+export function consentCells(t: { preset: string; sets: Record<string, unknown>[] }): { class: string; tier: string; mode: string }[] {
+  const P: any = {}; setConsent(P, "me", { preset: t.preset }, 0); for (const set of t.sets) setConsent(P, "me", { set }, 0);
+  const tb: any = tableOf(P, "me"); return TIERS.flatMap((tier: string) => CLASSES.map((c: string) => ({ class: c, tier, mode: tb[tier][c] })));
 }
 
 export class WorldAgent {
@@ -1173,11 +1180,14 @@ export class WorldAgent {
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             this.joined = true; this.redial.reset();
             if (this.walkGate?.mode === "tracked") this.syncWalkGate(this.walkGate);   // a walk carried across the rejoin
-            // my consent table, as a person's client sends it on every arrival (consentsync.js): the preset I last chose (the
-            // server's default until I choose one), then each cell I set since, in order on this one socket
-            { const { preset, sets } = this.consentTable;
-              void (async () => { for (const args of [{ preset }, ...sets.map((set) => ({ set }))]) {
-                const r = await this.request("consent", args).catch(() => null); if (!r?.ok) break; } })(); }
+            // my consent table, as a person's client sends it on every arrival (consentsync.js): what the authority holds for
+            // me is read, and each cell that differs from the table I chose is set, in order on this one socket. Never the
+            // preset itself, which empties my cells: set cell by cell, each goes straight from what the authority held to
+            // what I chose (review of #260)
+            { const want = consentCells(this.consentTable);
+              void (async () => { const held = await this.request("consent", {}).catch(() => null); if (!held?.ok || !held.table) return;
+                for (const set of want.filter((c) => held.table[c.tier]?.[c.class] !== c.mode)) {
+                  const r = await this.request("consent", { set }).catch(() => null); if (!r?.ok) break; } })(); }
             this.seatCache.init().catch(() => { /* declared-approximate until it lands */ });
             if (!this.ticker) this.ticker = setInterval(() => this.tick(), TICK_MS);
             clearTimeout(timeout);

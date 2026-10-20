@@ -89,9 +89,12 @@ const { HANDLERS, TOOLS, TOOL_ALIASES, toolList, handleTool: handleToolDoor } = 
     // server's default preset by NAME, never a literal), carries no private "pushable" flag, and can address someone through say.
     const agentSrc = fs.readFileSync(path.join(ENGINE, "mcpl/agent.ts"), "utf8"), toolsSrc = fs.readFileSync(path.join(ENGINE, "mcpl/tools.ts"), "utf8");
     ok(!/\bpushable\b/.test(agentSrc), "AT7a agent.ts has no `pushable` flag: the authority's consent table is the one answer to a shove");
-    // It pins the default's NAME in the table the agent starts with and sends on its first arrival. It doesn't pin a reset
-    // on rejoin: a rejoin resends the agent's own table, the preset and cells it chose, as a person's client does.
-    ok(/consentTable[^=\n]*= \{ preset: DEFAULT_PRESET, sets: \[\] \}/.test(agentSrc) && /this\.request\("consent", args\)/.test(agentSrc) && /import \{[^}]*\bDEFAULT_PRESET\b[^}]*\} from "\.\.\/shared\/protocol\/consent\.js"/.test(agentSrc), "AT7b agent.ts sends consent {preset: DEFAULT_PRESET} (the server's name for it) after joining");
+    // It pins the default's NAME in the table the agent starts with. Every arrival sends that table as a person's client
+    // does: it reads what the authority holds and sets each cell that differs, never a preset, which empties the cells
+    // (review of #260). The arrival is the block under its comment, up to the seat cache, with comment lines left out.
+    const at = agentSrc.indexOf("my consent table, as a person's client sends it"), end = agentSrc.indexOf("this.seatCache.init", at);
+    const arrival = at < 0 || end < 0 ? "" : agentSrc.slice(agentSrc.lastIndexOf("\n", at) + 1, end).split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+    ok(/consentTable[^=\n]*= \{ preset: DEFAULT_PRESET, sets: \[\] \}/.test(agentSrc) && /this\.request\("consent", \{\}\)/.test(arrival) && /this\.request\("consent", \{ set \}\)/.test(arrival) && !/\bpreset\b/.test(arrival) && /import \{[^}]*\bDEFAULT_PRESET\b[^}]*\} from "\.\.\/shared\/protocol\/consent\.js"/.test(agentSrc), "AT7b agent.ts's table starts at DEFAULT_PRESET (the server's name for it); an arrival reads the authority's table and sets the cells that differ, never sending a preset");
     const sayTool = toolsSrc.slice(toolsSrc.indexOf('name: "say"'), toolsSrc.indexOf('name: "say"') + 1200);
     ok(/\bto: \{ type: "string"/.test(sayTool) && /say\(text: string, extra\?: \{[^}]*\bto\?: string/.test(agentSrc), "AT7c say takes `to` on both the tool's schema and ag.say (the client sends it; the authority logs it)");
   }

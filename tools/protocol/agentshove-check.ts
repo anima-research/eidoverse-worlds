@@ -219,6 +219,20 @@ try {
     ok(planned, "(AS10 setup) the walk planned straight through it (30 kg: its shove would move it)", { target: ag.target });
     ok(/^arrived/.test(t) && /jam wouldn't move for your shove/.test(t), "AS10 a light crate backed against locked posts: the walk presses it, it doesn't budge, the walk re-plans round it and arrives", t);
     ok(off > 1.2, "AS10 …round its end (the body left the straight line by more than half its length)", { off }); }
+  // AS15 (review of #260): a rejoin resends the agent's consent table without a preset. A preset
+  // empties the agent's cells, so a cell it closed would stand open until its set landed. The rejoin reads what the
+  // authority holds and sets only what differs; the closed cell is closed throughout and after
+  { const closed = await ag.request("consent", { set: { class: "touch", tier: "everyone", mode: "deny" } });
+    const sent: any[] = []; const orig = ag.request.bind(ag);
+    ag.request = (verb: string, args: any) => { if (verb === "consent") sent.push(args); return orig(verb, args); };
+    ag.ws?.close();
+    for (let i = 0; i < 100 && ag.joined; i++) await sleep(50);
+    for (let i = 0; i < 300 && !ag.joined; i++) await sleep(50);
+    for (let i = 0; i < 40 && !sent.length; i++) await sleep(50); await sleep(500);
+    const after = await orig("consent", {});
+    ag.request = orig;
+    ok(closed?.ok && ag.joined && sent.length > 0 && sent.every((a) => a.preset === undefined) && after?.table?.everyone?.touch === "deny",
+      "AS15 a rejoin resends the agent's consent table with no preset (which would empty its cells first): what it closed stays closed", { closed, joined: ag.joined, sent, touch: after?.table?.everyone?.touch }); }
   // AS11 (pure: a body that never joins) — a stall blames only a thing the stride presses INTO
   { const stallAgainst = (at) => {
       const b = new WorldAgent({ url: "ws://127.0.0.1:1/ws", name: "Bea", world: "w", avatar: "" });
