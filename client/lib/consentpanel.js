@@ -6,6 +6,11 @@
 // contract as the video and audio sections (index.html owns it).
 import { makeSection, flashHint } from './ui.js';
 import { CLASSES, TIERS, MODES, CLASS_WORDS, PRESET_NAMES, cell, setCell, applyPreset, onConsentChange } from './consent.js';
+import { ENFORCED } from '../../shared/protocol/consent.js';
+
+// what the server refuses on my behalf: only the classes it enforces (PROTOCOL.md: near, follow and voice "are in the
+// table and the settings, but nothing enforces them yet"), so the heading promises no more than that, and those rows say so
+const NOT_YET = CLASSES.filter((c) => !ENFORCED.includes(c));
 
 const TIER_WORDS = { everyone: 'everyone', friends: 'friends (both named each other)' };
 function selectRow(label, hint, options, value, onChange) {
@@ -32,7 +37,7 @@ export function initConsentPanel() {
     if (body.dataset.init) return;
     body.dataset.init = '1';
     body.dataset.panel = 'consent';
-    body.appendChild(heading('who may do what to my body — the server refuses before anything reaches me; my own client has the last word'));
+    body.appendChild(heading(`who may do what to my body — for ${ENFORCED.join(', ')} the server refuses before anything reaches me; ${NOT_YET.join(', ')} are kept in my table, but nothing enforces them yet; my own client has the last word`));
     body.appendChild(selectRow('preset', 'the server\'s presets; each fills every row below', [['', '—'], ...PRESET_NAMES.map((p) => [p, p])], '', (v, sel) => {
       if (v && applyPreset(v)) flashHint(`body consent: ${v}`);
       sel.value = '';
@@ -41,7 +46,10 @@ export function initConsentPanel() {
     for (const tier of TIERS) {
       body.appendChild(heading(TIER_WORDS[tier]));
       for (const cls of CLASSES) {
-        const row = selectRow(CLASS_WORDS[cls] ?? cls, `${cls} — ${tier}`, MODES.map((m) => [m, m]), cell(tier, cls), (v) => { setCell(tier, cls, v); });
+        const later = NOT_YET.includes(cls);
+        const hint = `${cls} — ${tier}${later ? ': kept in your table, but the server doesn\'t refuse it yet' : ''}${cls === 'voice' ? '; hearing voices at all is the 🎧 toggle (Settings ▸ audio, hear voices), which stops them on this client' : ''}`;
+        const row = selectRow(`${CLASS_WORDS[cls] ?? cls}${later ? ' (not enforced yet)' : ''}`, hint, MODES.map((m) => [m, m]), cell(tier, cls), (v) => { setCell(tier, cls, v); });
+        if (later) row.dataset.enforced = 'not-yet';
         const sel = row.querySelector('select'); sel.dataset.tier = tier; sel.dataset.class = cls;
         selects.push(sel); body.appendChild(row);
       }

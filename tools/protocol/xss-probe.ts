@@ -203,6 +203,12 @@ try {
     check("K7 a preset resets every cell at the authority too", await evalJson(`import('/lib/consent.js').then((m) => m.applyPreset('normal'))`) === true && await waitFor(`${full}.then((t) => t && t.friends.touch === 'allow' && t.everyone.near === 'ask' && t.everyone.shove === 'deny')`, 5000), await evalJson(full));
     await evalJson(`(async () => { (await import('/lib/windows.js')).getFrame('settings')?.show(); document.getElementById('sec-body-tab')?.click(); return true; })()`);   // a section paints when opened
     check("K8 Settings has a body section with one select per cell, reading the table", await evalJson(`(() => { const sels = document.querySelectorAll('#sec-body select[data-tier]'); return sels.length === 16 && [...sels].every((s) => s.value === 'allow' || s.value === 'ask' || s.value === 'deny'); })()`), await evalJson(`document.querySelectorAll('#sec-body select[data-tier]').length`));
+    // review of #260: the panel promises refusal only for what the server enforces (PROTOCOL.md: near, follow
+    // and voice "are in the table and the settings, but nothing enforces them yet"), and those rows say so
+    const body = await evalJson(`(() => { const sec = document.querySelector('#sec-body'); const later = [...sec.querySelectorAll('.row[data-enforced="not-yet"] select')].map((s) => s.dataset.tier + '|' + s.dataset.class).sort();
+      return { later, head: sec.textContent.slice(0, 300) }; })()`);
+    check("K8b the body section promises the server's refusal only for the classes it enforces: near, follow and voice are marked not enforced yet, in both tiers",
+      JSON.stringify(body?.later) === JSON.stringify(["everyone|follow", "everyone|near", "everyone|voice", "friends|follow", "friends|near", "friends|voice"]) && /near, follow, voice are kept in my table, but nothing enforces them yet/.test(body?.head ?? ""), body);
     await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable(true), true))`);
   });
 
