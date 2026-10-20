@@ -52,6 +52,10 @@ const PRELUDE = String.raw`"use strict";
   // another machine would disagree. Local-time methods ARE the UTC ones; a date-time string with no zone is read as UTC.
   const hostOffset = P.getTimezoneOffset;
   for (const k of ["FullYear", "Month", "Date", "Day", "Hours", "Minutes", "Seconds", "Milliseconds"]) { P["get" + k] = P["getUTC" + k]; if (k !== "Day") P["set" + k] = P["setUTC" + k]; }
+  // Annex B's two-digit-year pair are local-time methods too
+  if (P.getYear) P.getYear = function getYear() { return this.getUTCFullYear() - 1900; };
+  if (P.setYear) P.setYear = function setYear(y) { const n = Number(y); if (Number.isNaN(n)) return this.setTime(NaN); const i = Math.trunc(n);
+    return this.setUTCFullYear(i >= 0 && i <= 99 ? 1900 + i : n); };
   P.getTimezoneOffset = function getTimezoneOffset() { return 0; };
   const iso = (d) => (Number.isNaN(d.getTime()) ? "Invalid Date" : d.toISOString());
   P.toString = P.toLocaleString = function toString() { return iso(this); };

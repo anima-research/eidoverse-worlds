@@ -879,6 +879,12 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const out = vals.map((_, i) => { const r = s.call("vic", "use", { id: "box", action: `f${i}` }); return { st: r.script?.status ?? st(s, r), n: comp(s, "box", "t/n") ?? null }; });
       return { out }; },
     good: (o) => o.out.every((x: any) => x.st !== "ran" && x.n === null) },
+  { id: "B20c", what: "getYear and setYear are UTC too, like every other local-time method: an activation reads the same year on any host's time zone", run(s) { cast(s);
+      s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "box", "yr", onUse(`const d = new Date(Date.UTC(2025, 11, 31, 23, 30)); const y = d.getYear(); d.setYear(99); world.set("self", "t/n", { y, set: d.toISOString() });`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
+      s.call("bob", "set", { id: "box", component: "reactions", value: { yr: { kind: "script", script: "yr" } } });
+      const r = s.call("vic", "use", { id: "box", action: "yr" }); return { st: r.script?.status ?? st(s, r), n: comp(s, "box", "t/n") ?? null, tz: process.env.TZ ?? null }; },
+    good: (o) => o.st === "ran" && o.n?.y === 125 && o.n?.set === "1999-12-31T23:30:00.000Z" },
   { id: "C3b", what: "§3d M4: a pose a sponsor-wide allowance let in stands when the person changes some other part of their table", run(s) { cast(s);
       s.call("bob", "create", { id: "pad1", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "pad1", "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });
