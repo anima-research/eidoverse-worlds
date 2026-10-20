@@ -34,7 +34,11 @@ export const carried = (spec) => !!spec && Object.hasOwn(ENGINES, spec.engine) &
 
 // P7: what releases a body (or reseats a collider) is WHICH COMPONENT changed, never which verb carried it.
 const PHYSICAL = new Set(["transform", "parent", "model", "mesh", "physics", "disabled"]);
-const RELEASES = new Set(["transform", "parent", "disabled"]);   // the writes that end a hold (authority commit()); keep the two in step   // disabled: switching off takes the body (and its subtree) out, on puts it back
+// the writes that end a hold, as the authority's commit() reads them (writes.js): a transform, a parent or a whole delete of the
+// thing, or switching it off (disabled set true; setting it false ends nothing). Switching off or deleting a thing also ends the
+// holds of whatever hangs under it. Keep these two in step with commit()
+const ends = (o) => (o.verb === "delete" ? o.comp === undefined || o.comp === "transform" || o.comp === "parent" : o.comp === "transform" || o.comp === "parent" || (o.comp === "disabled" && o.value === true));
+const endsUnder = (o) => (o.verb === "delete" && o.comp === undefined) || (o.verb === "set" && o.comp === "disabled" && o.value === true);
 
 const yawOf = (q) => (Array.isArray(q) ? 2 * Math.atan2(q[1], q[3]) : 0);
 // A thing's world pose, composed down its parent chain. The protocol's rule is glTF's (PROTOCOL §9.3): local = T · R · S,
@@ -185,6 +189,12 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         }
         return;
       }
+      // a hold ends on the record whatever the engine is doing (physics off included): the hand lets go of the thing, and of
+      // what hangs under a thing switched off or deleted (the authority's commit() lets those go too)
+      for (const o of ops) if (o.id !== "@world") {
+        if (out.lifted.has(o.id) && ends(o)) out.lifted.delete(o.id);
+        if (endsUnder(o)) for (const k of [...out.lifted]) if (isUnder(st, k, o.id) || !st.entities[k]) out.lifted.delete(k);
+      }
       if (!out.sim) return;
       let relock = false;
       for (const o of ops) { // P7, keyed by component
@@ -194,11 +204,11 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         const shape = engineBox(st.entities[o.id]?.c.physics), model = libOf(st.entities[o.id]);
         if (shape && out.sim.boxes && typeof model === "string") out.sim.boxes[model] ??= shape;
         const whole = o.verb === "create" || (o.verb === "delete" && o.comp === undefined);
-        if (o.comp === "lock" || o.comp === "parent") relock = true;
+        if (o.comp === "lock" || o.comp === "parent" || whole) relock = true;   // a thing made or deleted changes what's under a lock
         if (!whole && !PHYSICAL.has(o.comp)) continue;
         // a write that ends a hold (the authority's commit(): transform, parent, disabled, or the whole thing) puts it back in the
         // world; any other physical write to a held thing (its physics, its model) leaves it in the hand (review 64d26822 #1–#2)
-        if (out.lifted.has(o.id)) { if (whole || (RELEASES.has(o.comp) && !(o.comp === "disabled" && !(o.verb === "set" && o.value === true)))) out.lifted.delete(o.id); else continue; }
+        if (out.lifted.has(o.id)) continue;   // still in the hand: a hold's end was read above
         const ids = [o.id, ...Object.keys(st.entities).filter((k) => isUnder(st, k, o.id))];
         const view = engineView(st);   // one view per op (review 10-14 C4: it was rebuilt per affected id — 51 views for a shelf of 50)
         for (const id of ids) {

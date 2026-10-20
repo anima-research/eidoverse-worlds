@@ -473,6 +473,28 @@ function playground(name) {
   const r = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "toString" } });
   ok(!r.ok && r.refused?.code === "unknown-engine" && !fold(log(W)).entities["@world"].c["physics-engine"], "U1 an inherited name of the engine table is refused as an unknown engine", r.refused ?? r); }
 
+// review of #260: the hand's lift marker ends with every hold, physics on or off, and a delete re-reads what may be knocked
+{ const W = playground("lift-off"); const g = call(W, "rowan", "grab", { id: "ball" });
+  const off = call(W, "rowan", "delete", { id: "@world", component: "physics-engine" });
+  const put = call(W, "rowan", "put", { id: "ball", pos: [0, 0, 0.5] });
+  const on = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
+  const v = view(W);
+  ok(g.ok && off.ok && put.ok && on.ok && !v.lifted.has("ball") && !!(v.sim?.bodies.ball || v.sim?.statics?.ball),
+    "U2 a thing put down while physics is off is back in the engine's world when physics returns", { g: g.ok, off: off.ok ?? off.refused, put: put.ok ?? put.refused, on: on.ok, lifted: [...v.lifted], body: !!v.sim?.bodies.ball, st: !!v.sim?.statics?.ball }); }
+{ const W = playground("lift-under"); call(W, "rowan", "create", { id: "tray", model: "crate", place: { at: [0, 0] } });
+  const par = call(W, "rowan", "set", { id: "ball", component: "parent", value: { to: "tray" } });
+  const g = call(W, "rowan", "grab", { id: "ball" });
+  const d1 = call(W, "rowan", "set", { id: "tray", component: "disabled", value: true }), d0 = call(W, "rowan", "set", { id: "tray", component: "disabled", value: false });
+  const v = view(W);
+  ok(par.ok && g.ok && d1.ok && d0.ok && !v.lifted.has("ball") && !!(v.sim?.bodies.ball || v.sim?.statics?.ball),
+    "U3 switching off what a held thing hangs under ends its hold in the engine too: switched back on, the thing is there", { par: par.ok ?? par.refused, g: g.ok ?? g.refused, d1: d1.ok, d0: d0.ok, lifted: [...v.lifted], body: !!v.sim?.bodies.ball, st: !!v.sim?.statics?.ball }); }
+{ const W = playground("lock-gone"); call(W, "rowan", "create", { id: "pin", model: "ball", place: { at: [2, 1] } });
+  const par = call(W, "rowan", "set", { id: "pin", component: "parent", value: { to: "crate-1" } }), lk = call(W, "rowan", "set", { id: "pin", component: "lock", value: true });
+  const before = view(W).sim?.statics?.["crate-1"]?.dyn;
+  const del = call(W, "rowan", "delete", { id: "pin", throughLock: true });
+  const after = view(W).sim?.statics?.["crate-1"]?.dyn;
+  ok(par.ok && lk.ok && del.ok && !before && after === true, "U4 deleting the locked thing on a dynamic one makes that one knockable again", { par: par.ok ?? par.refused, lk: lk.ok ?? lk.refused, del: del.ok || del.refused, before, after }); }
+
 console.log(`${passes} passed, ${fails} failed`);
 fs.rmSync(root, { recursive: true, force: true });
 process.exit(fails ? 1 : 0);

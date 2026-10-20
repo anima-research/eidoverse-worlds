@@ -387,7 +387,7 @@ function orphanLifts(w) {
     if (e.kind === "sim" && (e.verb === "lift" || e.verb === "catch") && readback(w, seq)?.id) lifted.set(readback(w, seq).id, { seq, by: e.actor });   // READBACK: a purged lift names nothing to return
     else if (e.kind === "sim" && e.verb === "launch") lifted.delete(readback(w, seq)?.id);
     else if (e.kind === "change") for (const o of opsQuiet(e)) {
-      // the same lifecycle as the engine's (simlayer RELEASES): what ends a hold is a write that moves it, re-parents it,
+      // the same lifecycle as the engine's (simlayer ends()): what ends a hold is a write that moves it, re-parents it,
       // switches it off or removes it; an engine change or an edit to its physics or model leaves it in the hand
       // (review of 64d26822: the two disagreed, and a held thing came back into the engine as a ghost collider)
       if (o.verb === "create" || (o.verb === "delete" && o.comp === undefined) || ["transform", "parent"].includes(o.comp) || (o.comp === "disabled" && o.verb === "set" && o.value === true)) lifted.delete(o.id); }

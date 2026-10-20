@@ -91,7 +91,7 @@ function commit(w, actor, verb, args, build) {
   { let let_go = false;
     for (const o of plan.ops) { const h = w.presence.holds?.[o.id]; if (!h) continue;
       // switching it off takes it out of the hand too (review 5d5eef5c #5): an off thing can't be thrown, so it's set down where
-      // the record has it. Keep this set in step with simlayer's RELEASES.
+      // the record has it. Keep this rule in step with simlayer's ends() and endsUnder().
       if (o.verb === "delete" ? (o.comp === undefined || o.comp === "transform" || o.comp === "parent") : (o.comp === "transform" || o.comp === "parent" || (o.comp === "disabled" && o.value === true))) {
         delete w.presence.holds[o.id]; let_go = true; heldEvent(w, "release", o.id, { by: h.by, how: "edited", seq: act }); ctx.notes.push({ id: o.id, tookFromHand: h.by, why: "an edit moved it, so it left the hand that held it" }); } }
     // …and switching off (or removing) a thing lets go of whatever is held UNDER it (attack-editor S2-1: a held child of a
