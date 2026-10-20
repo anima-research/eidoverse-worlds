@@ -235,6 +235,14 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const dup = NS.planNewScript({ id: "gate", name: "chime", text: "x", trigger: "use" }, s.w().state().entities.gate.c);
       return { action: plan.action, inst: show(inst), kept: r?.use?.kind ?? null, chime: show(chime), ran: chime.script?.status ?? null, bad: bad.errors, dup: dup.errors }; },
     good: (o) => o.action === "chime" && o.inst === "ok" && o.kept === "toggle" && o.chime === "ok" && o.bad?.length === 1 && o.dup?.length === 1 },
+  { id: "K2b", what: "…and when the script's name is already one of its actions, the new script takes a free one: neither existing reaction is replaced (review of #260)", run(s) { cast(s);
+      if (!NS) return { planner: "absent" };
+      s.call("olive", "create", { id: "gate2", model: "crate", components: { transform: T0([2, 0, 0]), openable: { open: false }, reactions: { use: { kind: "toggle", component: "openable" }, chime: { kind: "toggle", component: "openable" } } } });
+      const plan = NS.planNewScript({ id: "gate2", name: "chime", text: NS.TEMPLATES.use, trigger: "use", comps: ["t/counter"], say: true }, s.w().state().entities.gate2.c);
+      const up = s.call("olive", "upload", plan.upload.args); const inst = s.call("olive", "batch", { ops: plan.install(up.src) });
+      const r = s.w().state().entities.gate2.c.reactions;
+      return { action: plan.action, inst: show(inst), use: r?.use?.kind ?? null, chime: r?.chime?.kind ?? null, mine: r?.[plan.action] ?? null }; },
+    good: (o) => o.action === "chime-2" && o.inst === "ok" && o.use === "toggle" && o.chime === "toggle" && o.mine?.kind === "script" && o.mine?.script === "chime" },
   { id: "U1", what: "update {copy, to} carries a reparent: a part moved under another part upstream lands under it here (not 3 m off, under its old parent)", run(s) { cast(s);
       s.call("bob", "create", { id: "lamp", model: "crate", components: { transform: T0([0, 0, 0]) } });
       s.call("bob", "create", { id: "shade", model: "book", components: { transform: T0([3, 0, 0]), parent: { to: "lamp" } } });
