@@ -12,8 +12,12 @@ not move, pose or touch anyone. Omit `who` (or use `"self"`) for yourself.
 {"detail":"all","window_ms":1000}
 ```
 
-The default is a short summary: position, facing direction, posture, wing
-state, held bone overrides, active reaches and observation age. `bones`
+The default is a short summary: position, facing direction, body-mode and
+the clip it plays, wing state, held bone overrides, active reaches and
+observation age. In the structured reply these are `bodyMode` (`stand`,
+`sit`, `lie`, `swim`, `fly`, `fall`) and `clip` (the clip itself, such as
+`sitchair`); they replace the earlier `posture` field, which held the clip,
+so a reader of `posture` now reads `clip`. `bones`
 adds exact published rotations and named joint positions. `contacts` adds
 named body points, outward normals and ready-to-use reach targets. `all`
 includes both. `points` limits contact output; omit it to discover all the
@@ -27,7 +31,7 @@ when present; `clipTimeSlot` associates that phase with the right slot, includin
 a mount-owned chair clip, and `clipRate` preserves pause/rate. Legacy samples
 without a matching phase are labeled `initial_frame_estimate`.
 Missing clips, missing rigs and unknown postures return incomplete geometry
-and preserve the public root, posture and rotations; rest coordinates are
+and preserve the public root, body-mode, clip and rotations; rest coordinates are
 not silently offered as current contact targets.
 
 `reach` uses this same evaluated body scene. A named target on another
