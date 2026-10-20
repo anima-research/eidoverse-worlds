@@ -33,7 +33,7 @@ import {
   type ChannelsPublishResult,
 } from "@animalabs/mcpl-core";
 import {
-  CHAT, EIDO, CAP, tags, capabilityMatches, MCPL_ADVERTISEMENT, FEATURE_SETS,
+  CHAT, EIDO, CAP, tags, senderFacet, capabilityMatches, MCPL_ADVERTISEMENT, FEATURE_SETS,
 } from "./declaration.ts";
 import { WorldAgent } from "./agent.ts";
 import { shown } from "../shared/shown.js";
@@ -771,25 +771,26 @@ class Session {
     if (mediaPort > 0) this.startMediaBridge(mediaPort);
 
     this.agent.onEvent = (ev) => {
-      // §16.2 sender facet: none is emitted. A participant's status is only ever
-      // its own declaration (PROTOCOL §6a rule 3), relayed by the world as sent;
-      // it rides along as metadata.declares, its word verbatim, and no tag is
-      // read from it (review r11 L2: reading "agent" alone as chat:from-agent
-      // left a participant declaring "ai" untagged, and any tag here would be
-      // this library's inference, not their word). chat:from-human likewise
-      // never comes from an absence.
+      // §16.2 sender facet: a participant's status is only ever its own
+      // declaration (PROTOCOL §6a rule 3), relayed by the world as sent; it
+      // rides along as metadata.declares, its word verbatim. A sender whose
+      // word is "agent" also carries chat:from-agent, the facet hosts' wake
+      // rules read (declaration.ts senderFacet); no other
+      // word is read as a kind (review r11 L2). chat:from-human never comes
+      // from an absence.
       const declares = this.agent.declaresOf(ev.who);
       const md = declares ? { metadata: { declares } } : {};
+      const from = senderFacet(declares);
       if (ev.kind === "say") {
         if (!this.channelOpen && !ev.mention) return; // door closed: chatter stops, knocks get through
         this.deliver(ev.text!, authorOf(ev.who), ev.mention
-          ? { tags: tags(CHAT.mention, CHAT.addressed), mentioned: true, ...md }
-          : { tags: tags(CHAT.ambient), ...md });
+          ? { tags: tags(CHAT.mention, CHAT.addressed, from), mentioned: true, ...md }
+          : { tags: tags(CHAT.ambient, from), ...md });
       } else if (ev.kind === "act") {
         // embodied transitions — a gesture, a pose struck or released, someone
         // sitting down. Ambient by nature: a closed door mutes them.
         if (this.channelOpen) this.deliver(`* ${ev.who} ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, EIDO.act), ...md });
+          { tags: tags(CHAT.ambient, EIDO.act, from), ...md });
       } else if (ev.kind === "activity") {
         // The ambient-activity pulse: at most one per window, and ONLY while
         // something is happening within this body's activity radius. Overheard,

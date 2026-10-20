@@ -9,7 +9,7 @@
 //  - pingLine:     the pending_pings queue line (plain-MCP hosts, server.ts)
 //  - pingDelivery: the channel frame (MCPL hosts, net-server.ts deliver())
 
-import { CHAT, EIDO, tags } from "./declaration.ts";
+import { CHAT, EIDO, tags, senderFacet } from "./declaration.ts";
 
 export type WirePing = {
   ts: number;
@@ -48,19 +48,20 @@ export function pingLine(p: WirePing): string {
  *   - reach / touch: a hand aimed at (or resting on) this body — directed like
  *     an approach, worded by the agent. */
 /*  `declares` (PROTOCOL §6a rule 3): the sender's own declared status, exactly as they sent it, or null (undeclared).
- *  It rides along as data, `declares: <their word>`, and nothing is read from it: no word is mapped to a kind and no
- *  tag is chosen by it (review r11 L2: "ai" was read as not-an-agent, because only "agent" was). */
+ *  It rides along as data, `declares: <their word>`. The one tag it chooses is §16.2's sender facet, chat:from-agent for
+ *  the word "agent" itself (declaration.ts senderFacet); no other word is mapped to a kind (review r11 L2). */
 export function pingDelivery(p: WirePing, declares: string | null):
   { text: string; tags: string[]; mentioned?: true; declares?: string } | null {
   const d = typeof declares === "string" && declares ? { declares } : {};
+  const from = senderFacet(declares);
   switch (p.kind) {
     case "approach":
-      return { text: `* ${p.who} walked up to you`, tags: tags(CHAT.addressed, EIDO.approach), mentioned: true, ...d };
+      return { text: `* ${p.who} walked up to you`, tags: tags(CHAT.addressed, EIDO.approach, from), mentioned: true, ...d };
     case "depart":
-      return { text: `* ${p.who} ${p.text ?? "is no longer nearby"}`, tags: tags(CHAT.ambient, EIDO.depart), ...d };
+      return { text: `* ${p.who} ${p.text ?? "is no longer nearby"}`, tags: tags(CHAT.ambient, EIDO.depart, from), ...d };
     case "reach":
     case "touch":
-      return { text: `* ${p.who} ${p.text}`, tags: tags(CHAT.addressed, p.kind === "touch" ? EIDO.touch : EIDO.reach), mentioned: true, ...d };
+      return { text: `* ${p.who} ${p.text}`, tags: tags(CHAT.addressed, p.kind === "touch" ? EIDO.touch : EIDO.reach, from), mentioned: true, ...d };
     default:
       return null;
   }

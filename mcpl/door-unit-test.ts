@@ -88,4 +88,13 @@ for (const dur of [2, undefined]) {
   ok(/detach \{escape: true\}/.test(script) && !/hold X|get up|jump/.test(script + any) && /detach, or a move/.test(any), "the door's seat lines say detach", [script, any]);
   ok(/hold X/.test(describeBody("seat", bodyOf({ leaveBy: "script" }))), "a person's still says hold X (the control)"); }
 
+// a sender who declares "agent" is tagged chat:from-agent again (hosts' wake rules read it); "ai" or no
+// word gets no facet, and the word itself still rides along as declares
+{ const { pingDelivery } = await import("./ping-wire.ts"); const { MCPL_ADVERTISEMENT, senderFacet } = await import("./declaration.ts");
+  const P = (kind: string) => ({ ts: 1, kind, who: "digi", text: "touches your head_top (left hand)" }) as any;
+  ok(["approach", "depart", "touch", "reach"].every((k) => pingDelivery(P(k), "agent")!.tags.includes("chat:from-agent")), "a declared agent's pings carry chat:from-agent");
+  ok(!JSON.stringify([pingDelivery(P("touch"), "ai"), pingDelivery(P("touch"), null)]).includes("from-agent") && pingDelivery(P("touch"), "ai")!.declares === "ai", "\"ai\" or no word: no facet, the word as sent");
+  ok(senderFacet("agent") === "chat:from-agent" && senderFacet("Agent") === null && senderFacet(null) === null, "senderFacet reads the word \"agent\" itself, nothing near it");
+  ok(JSON.stringify(MCPL_ADVERTISEMENT).includes("chat:from-agent"), "the advertisement lists chat:from-agent among the core tags it emits"); }
+
 console.log(`door-unit-test: ${fails ? `${fails} failed` : "all ok"}`); process.exit(fails ? 1 : 0);

@@ -36,12 +36,20 @@ export const CHAT = {
   fromHuman: "chat:from-human",
   fromBot: "chat:from-bot",
   fromSelf: "chat:from-self",
-  // (no chat:from-agent: a sender's declared status rides along as metadata.declares, as they sent it, and no tag is read
-  // from it — PROTOCOL §6a rule 3, review r11 L2)
+  fromAgent: "chat:from-agent",
   private: "chat:private",
   group: "chat:group",
   thread: "chat:thread",
 } as const;
+
+/** §16.2's sender facet, from the sender's own word. A sender who declares "agent" (PROTOCOL §6a: the word a door body
+ *  declares unless told otherwise) is tagged chat:from-agent, the facet hosts' wake rules read so that an agent doesn't
+ *  wake on another agent's speech; any other word, or none, gets no facet, and every declaration still rides along as
+ *  metadata.declares, verbatim. Nothing is inferred: "ai" is not read as "agent" (review r11 L2). Dropping the tag would
+ *  have changed who wakes whom for every host following the SPEC. */
+export function senderFacet(declares: string | null | undefined): string | null {
+  return declares === "agent" ? CHAT.fromAgent : null;
+}
 
 /** This producer's own namespace (§16.1: it SHOULD match the producer's declared
  *  name). The long tail of what a *world* is lives here — a world has events
@@ -164,6 +172,7 @@ const TAG_ONTOLOGY = {
   coreTags: [
     // (no chat:dm / chat:private: world chat has no private channel since whisper was removed, R 10-18)
     CHAT.addressed, CHAT.mention, CHAT.ambient,
+    CHAT.fromAgent,
   ],
   tags: {
     [EIDO.approach]: {
