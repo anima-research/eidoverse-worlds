@@ -58,12 +58,12 @@ function shoveGate(w, st, me, a, flying, actor) {
   if (vh < 1e-6 || vy < 0 || vy > SHOVE.lift * vh + 1e-9) refuse("shape", `a contact push moves it along the ground: its v rises at most ${SHOVE.lift} × its speed along the ground, and never falls`, "e.g. v: [1.5, 0.2, 0]");
   const f = me.at, b = aabb(st, a.id) ?? { min: worldT(st, a.id).pos, max: worldT(st, a.id).pos };
   if (b.max[1] <= f[1] + SHOVE.beneath) refuse("beneath", `${a.id} is beneath you; a body moves over it, it doesn't push it`, "move off it, or punt it (without contact)");
-  if (b.min[1] >= f[1] + SHOVE.above) refuse("out-of-reach", `${a.id} is above you (${r3(b.min[1] - f[1])} m up); a contact push is from a body against it`, "");
+  if (b.min[1] >= f[1] + SHOVE.above) refuse("out-of-reach", `${a.id} is above you (${r3(b.min[1] - f[1])} m up); a contact push is from a body against it`, "stand where you can reach it, or punt it (without contact)");
   // to its ORIENTED box (review 10-12 S2-2: a rotated plank's axis-aligned box reached metres past the plank)
   const ob = obbs(st, a.id); const R = ob.length ? reachTo(ob, f) : { d: 0, n: null, c: b.min.map((x, i) => (x + b.max[i]) / 2) };
   if (R.d > SHOVE.reach) refuse("out-of-reach", `${a.id} is ${r3(R.d)} m from you; a contact push comes from a body against it (${SHOVE.reach} m)`, "move up to it first");
   const dir = R.n ?? (() => { const cx = R.c[0] - f[0], cz = R.c[2] - f[2], l = Math.hypot(cx, cz); return l > 1e-6 ? [cx / l, cz / l] : null; })();
-  if (!dir || vx * dir[0] + vz * dir[1] < 0.5 * vh) refuse("wrong-way", `that doesn't push ${a.id} away from your body; a contact push sends it within 60° of straight away`, "");
+  if (!dir || vx * dir[0] + vz * dir[1] < 0.5 * vh) refuse("wrong-way", `that doesn't push ${a.id} away from your body; a contact push sends it within 60° of straight away`, `aim v away from your body, within 60° of the line from you to ${a.id}`);
   // not through a wall: the body's way to the point it touches is clear of anything solid but the thing and what rides it,
   // judged with this body's own box (its kept size, as its walk is: review r4 F7). SHOVE.reach is already the largest
   // body's radius plus the track's lag, so it stays one number.

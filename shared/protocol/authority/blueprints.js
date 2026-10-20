@@ -113,9 +113,9 @@ function partIds(st, copy, rootKey, keys) {
 // Offer a newer record to a copy: per-part, per-component, per-FIELD three-way merge (R13). base = the copy's record,
 // mine = the copy now, theirs = the new record. Recorded as plain results; never re-derived on replay.
 function buildUpdate(ctx, a, w) {
-  const root = ctx.st.entities[a.copy]; if (!root?.c["copy-of"]) refuse("not-a-copy", `${a.copy} isn't a blueprint copy`, "");
+  const root = ctx.st.entities[a.copy]; if (!root?.c["copy-of"]) refuse("not-a-copy", `${a.copy} isn't a blueprint copy`, "update offers a newer record to a copy placed from a blueprint; inspect shows a copy's copy-of");
   let base, theirs; try { base = w.getBlob(root.c["copy-of"].from); theirs = w.getBlob(a.to); } catch { refuse("not-found", "unknown record", "find {kind: 'blueprint'}"); }
-  if (!isPublished(ctx.st, a.to)) refuse("not-published", `${a.to} isn't one of this world's blueprints`, "");
+  if (!isPublished(ctx.st, a.to)) refuse("not-published", `${a.to} isn't one of this world's blueprints`, "find {kind: 'blueprint'} lists this world's blueprints");
   const have = new Map(); for (const id of [a.copy, ...descendants(ctx.st, a.copy)]) { const k = ctx.st.entities[id].c["copy-of"]?.key; if (k !== undefined && !have.has(k)) have.set(k, id); }
   const fresh = partIds(ctx.st, a.copy, base.root, theirs.parts.map((p) => p.key).filter((k) => !have.has(k)));
   const idOf = (key) => (key === base.root ? a.copy : have.get(key) ?? fresh.get(key));

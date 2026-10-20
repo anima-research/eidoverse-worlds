@@ -41,7 +41,7 @@ function pivotOf(st, id) {
 // only while the handler's author (whoever last set `reactions`) could still make that change themselves.
 function reactionCap(ctx, id, comp, action) {
   const implicit = !ctx.st.entities[id]?.c.reactions?.[action] && action === "open" && implicitOpens(ctx.st.entities[id]);
-  const lt = lastTouch(ctx.w, id, implicit ? "openable" : "reactions", { editsOnly: implicit, authored: true }); if (!lt) refuse("no-handler", `nobody set up '${action}' on ${id}`, "");
+  const lt = lastTouch(ctx.w, id, implicit ? "openable" : "reactions", { editsOnly: implicit, authored: true }); if (!lt) refuse("no-handler", `nobody set up '${action}' on ${id}`, `inspect {id: '${id}'} shows what it offers; a builder can set up '${action}' in its reactions, and asking again won't change it until then`);
   ctx.actExtra = { capability: { reaction: action, author: lt.actor, grantedAt: lt.seq } };
   ctx.cap = { kind: "reaction", ids: [id], comps: [comp], author: lt.actor, action };
 }
@@ -51,7 +51,7 @@ function buildUse(ctx, a) {
   const offers = actionsOf(ctx.st, a.id);
   // no action named (Commons audit: "doesn't 'undefined'"): the thing's one action, or say what it offers
   // "one action" means one this asker may do: an owner-only lock beside an open-to-all door isn't a choice for a visitor
-  if (a.action == null && !offers.length) refuse("no-action", `${a.id} has nothing to use: it offers no actions`, "inspect shows what a thing offers; a builder gives it reactions, or a seat (a socket with a body block)");
+  if (a.action == null && !offers.length) refuse("no-action", `${a.id} has nothing to use: it offers no actions`, "inspect shows what a thing offers; a builder gives it reactions, or a seat (a socket child carrying a station)");
   const mine = a.action == null ? offersFor(ctx.st, a.id, ctx.actor).canDo : offers;
   if (a.action == null && mine.length > 1) refuse("no-action", `${a.id} offers ${mine.length} things to do: say which`, `it offers: ${mine.join(", ")} (use {id: '${a.id}', action: '${mine[0]}'})`, { offers: mine });
   const action = a.action ?? mine[0] ?? offers[0];   // none you may do: the first, so the refusal says why

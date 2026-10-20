@@ -570,7 +570,7 @@ for (const [name, what] of Object.entries({
   "spring-joint": "a spring between two bodies",
   link: "a link a thing opens (a portal, a page)",
   tags: "labels a thing carries for search and rules",
-})) COMPONENTS[name] = { status: "reserved", instead: "nothing yet: the name is held for a shape that isn't settled", help: `reserved: ${what}. Not written yet` };
+})) COMPONENTS[name] = { status: "reserved", instead: "nothing yet: the name is held for a shape that isn't settled. A namespaced name of your own (such as example.org/<name>) is kept and shown, though nothing here acts on it", help: `reserved: ${what}. Not written yet` };
 // the avatar guard rails (PROTOCOL §7a, normative before avatar entity trees ship; R 10-17 02:45): the names are held now so
 // nobody squats them under the must-ignore escape hatch before the shapes land. A body's owner is a PERMISSION RULE
 // stamped by the authority at wear, never a component anyone writes (body ownership is a rule, not a component).

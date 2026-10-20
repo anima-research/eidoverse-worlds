@@ -256,8 +256,8 @@ function buildSet(ctx, a) {
   if (a.base === undefined && !a.merge && lt && lt.actor !== ctx.actor && a.component in e.c) ctx.notes.push({ id: a.id, component: a.component, overwrote: { by: lt.actor, seq: lt.seq }, why: "you replaced someone else's value without a base version; send base (from inspect) to be refused instead if it changed" });
   let v = a.merge ? merge7396(e.c[a.component], a.value) : a.value;
   if (a.component === "parent") {
-    if (v?.to && !ctx.st.entities[v.to]) refuse("not-found", `no thing called '${v.to}'`, "", { didYouMean: guess(v.to, Object.keys(ctx.st.entities)) });
-    if (v?.to && (v.to === a.id || ancestors(ctx.st, v.to).includes(a.id))) refuse("loop", `${a.id} can't be inside ${v.to}: that makes a loop`, "");
+    if (v?.to && !ctx.st.entities[v.to]) refuse("not-found", `no thing called '${v.to}'`, "check the id: didYouMean lists the closest, and look shows what's around you", { didYouMean: guess(v.to, Object.keys(ctx.st.entities)) });
+    if (v?.to && (v.to === a.id || ancestors(ctx.st, v.to).includes(a.id))) refuse("loop", `${a.id} can't be inside ${v.to}: that makes a loop`, `choose a parent that isn't ${a.id} or inside it`);
     const wt = worldT(ctx.st, a.id);
     const t = v?.to ? localFrom(ctx.st, v.to, wt) : wt;
     ctx.notes.push({ id: a.id, component: "transform", why: "re-expressed in its new parent's frame so it stays where it is (stamped)" });
@@ -390,9 +390,10 @@ function buildPlace(ctx, a) {
   const faceYaw = (p) => { if (!a.facing) return yaw; const tgt = Array.isArray(a.facing) ? [a.facing[0], 0, a.facing[1]] : centreOf(a.facing);
     if (!tgt) refuse("not-found", `can't face '${a.facing}': facing takes a thing's id or an [x, z] point, not a direction word`, "e.g. facing: 'door-1', or facing: [0, -5] to face north-ish (−z)", { didYouMean: guess(String(a.facing), Object.keys(st.entities)) }); const d = [tgt[0] - p[0], tgt[2] - p[2]]; return Math.atan2(d[0], d[1]) + (a.away ? Math.PI : 0); };
   if (a.on) {
-    const surfs = surfacesOf(st, a.on); if (!st.entities[a.on]) refuse("not-found", `no '${a.on}'`, "", { didYouMean: guess(a.on, Object.keys(st.entities)) });
+    const surfs = surfacesOf(st, a.on); if (!st.entities[a.on]) refuse("not-found", `no '${a.on}'`, "check the id: didYouMean lists the closest, and look shows what's around you", { didYouMean: guess(a.on, Object.keys(st.entities)) });
     if (!surfs.length) refuse("no-surface", `${a.on} has no surface to put things on`, `measure {id: '${a.on}'} shows its surfaces`);
-    const s = surfs[a.level ?? surfs.length - 1] ?? refuse("no-surface", `${a.on} has levels 0–${surfs.length - 1}`, "");
+    const s = surfs[a.level ?? surfs.length - 1] ?? refuse("no-surface", surfs.length === 1 ? `${a.on} has one level, 0` : `${a.on} has levels 0–${surfs.length - 1}`,
+      `level takes ${surfs.length === 1 ? "0" : `0–${surfs.length - 1}`} (measure {id: '${a.on}'} shows each), or leave it out for the top one`);
     const want = a.offset ? [(s.min[0] + s.max[0]) / 2 + a.offset[0], (s.min[1] + s.max[1]) / 2 + a.offset[1]] : [(s.min[0] + s.max[0]) / 2, (s.min[1] + s.max[1]) / 2];
     let best = null, lastBlock = null; const whatWas = CTX.work.what;
     for (let pass = 0; pass < 2; pass++) {

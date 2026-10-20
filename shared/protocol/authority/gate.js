@@ -188,7 +188,7 @@ function lockCheck(w, st, who, role, k, op, at) {
   const by = lastSetterOf(w, k, "lock"); const whose = by && !by.deleted ? ` (locked by ${said(by.by)} at ${by.seq})` : "";
   const lv = level === "builder" ? "" : ` at ${level} level`;
   const what = k === op.id ? `${op.id} is locked${lv}${whose}, so ${at} can't change` : `${op.id} is attached to ${k}, which is locked${lv}${whose}, so ${at} can't change`;
-  const fix = CTX.through && who.cap ? "throughLock covers your own edits, not a handler or a held thing; unlock it first"
+  const fix = CTX.through && who.cap ? `throughLock covers only your own edits, not a handler, a held thing or a script acting for you, so the lock stands for this route; someone who may unlock it can (delete {id: '${k}', component: 'lock'})`
     : below ? `only ${level === "owner" ? "an owner" : `a ${level} or above`}${by && !by.deleted ? `, or ${said(by.by)} who locked it,` : ""} may unlock it or act through it; you are ${role}`
     : mayUnlock ? `send the same request with throughLock: true, or unlock it first: delete {id: '${k}', component: 'lock'}. A lock stops accidents; any builder may lift a builder-level lock, and history shows who did`
     : `a builder or owner can unlock it (delete {id: '${k}', component: 'lock'}); you are ${role}`;
