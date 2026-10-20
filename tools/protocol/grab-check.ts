@@ -657,6 +657,17 @@ const cases: Case[] = [
       const plain = s.call("vic", "put", { id: "book2" });
       return { g: show(g), lock: show(lock), p: code(p) ?? show(p), home, held: s.w().presence.holds?.torch?.by ?? null, plain: code(plain) ?? show(plain) }; },
     good: (o) => o.g === "ok" && o.lock === "ok" && o.p === "locked" && !o.home && o.held === "vic" && o.plain === "locked" },
+  { id: "U10", what: "a grab or punt a lock stops says who may lift that lock (review of #260, protocol core I73): an owner-level lock names an owner and its locker, and a builder-level one any builder", run(s) { cast(s, true);
+      s.call("olive", "create", { id: "tome", model: "book", components: { grabbable: { who: "visitor" }, physics: { kind: "dynamic" } }, place: { at: [0.3, 0] } });
+      s.call("olive", "set", { id: "tome", component: "lock", value: { rank: "owner" } });
+      s.call("bob", "move", { to: [0.3, 0, 0.6] }); const g = s.call("bob", "grab", { id: "tome" }), p = s.call("bob", "punt", { id: "tome", power: 2 });
+      s.call("bob", "create", { id: "slate", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [-0.3, 0] } });
+      s.call("bob", "set", { id: "slate", component: "lock", value: true });
+      s.call("vic", "move", { to: [-0.3, 0, 0.6] }); const v = s.call("vic", "grab", { id: "slate" });
+      return { g: [code(g), g.refused?.fix], p: [code(p), p.refused?.fix], v: [code(v), v.refused?.fix] }; },
+    good: (o) => o.g[0] === "locked" && /^an owner, or .*olive.* who locked it, can unlock it first/.test(o.g[1] ?? "") && !/builder/.test(o.g[1] ?? "")
+      && o.p[0] === "locked" && /^an owner, or .*olive.* who locked it, can unlock it first/.test(o.p[1] ?? "")
+      && o.v[0] === "locked" && /^a builder or above, or .*bob.* who locked it, can unlock it first/.test(o.v[1] ?? "") },
   { id: "U5", what: "the presence tier: a pose carries use {id, hand} while a holder presses (every receiver draws the thing's fx); a malformed use costs only that field", run(s) {
       const a = PC.sanePose({ p: [0, 0, 0], use: { id: "hose", hand: "left" } }); const b = PC.sanePose({ p: [0, 0, 0], use: { id: "hose", n: 3 } }); const c = PC.sanePose({ p: [0, 0, 0], use: "hose" });
       return { a: a?.use ?? null, b: b ? ("use" in b ? b.use : "dropped") : null, c: c ? ("use" in c ? c.use : "dropped") : null }; },

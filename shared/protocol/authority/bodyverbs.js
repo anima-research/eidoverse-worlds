@@ -8,16 +8,20 @@ import { REACH, HAND_Y, MAX_HELD, KICK } from "../physconst.js";
 import { r3, noNeg0 } from "../round.js";
 import { UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
-import { delOp, lockedC, scratch, setOp } from "./storage.js";
+import { delOp, lockLevel, lockedC, scratch, setOp } from "./storage.js";
 import { aabb, ancestors, descendants, localFrom, qYaw, worldT } from "./math.js";
 import { familyOf, groundOf, groundReady, hitsIx, near, spatial, supportBelow, supportUnder } from "./spatial.js";
-import { may, rankOf, roleOf, whoRank } from "./rights.js";
+import { lastSetterOf, may, rankOf, roleOf, whoRank } from "./rights.js";
 import { BODY_VERBS, forgetReaches } from "./bodyconsent.js";
 import { thingSaid } from "./blueprints.js";
 import { heldEvent } from "./scriptrun.js";
 import { clearOccupant, leftOccupied, occupiedRefuse, occupantOf, vacateAt } from "./occupants.js";
 import { arrivalBox, body, dist, facingOf, gripPoint, gripOf, heldQ, pathBlocked, shearFree, sizeOf, solidAt } from "./physics.js";
 import { fliesIn, flyingWorld, gripHow, launch, recentRests, releasePos, returnHome, returnPlan, secondGrip, shaped, shoveGate, snapTarget } from "./manipulate.js";
+// who may lift the lock that stops a grab or a punt, as the gate's own lock refusals say it (gate.js lockCheck): a lock at
+// owner level is an owner's or its locker's to lift, never any builder's (review of #260, protocol core I73)
+const unlockFix = (w, st, k) => { const level = lockLevel(st.entities[k]?.c.lock), by = lastSetterOf(w, k, "lock");
+  return `${level === "owner" ? "an owner" : `a ${level} or above`}${by && !by.deleted ? `, or ${said(by.by)} who locked it,` : ""} can unlock it first: delete {id: '${k}', component: 'lock'}`; };
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const actEntry = (...a) => UP.actEntry(...a);
@@ -92,7 +96,7 @@ const EMBODIED_VERBS = {
     if (!g.enabled) refuse("not-grabbable", `${a.id} can't be picked up now (its grabbable.enabled is false)`, "a builder can turn it back on: set {id, component: 'grabbable', value: {…, enabled: true}}");
     const need = g.who; const role = roleOf(st, actor); if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may pick up ${a.id}`, `ask someone who can, or ask the owner to set ${g.source}.who: 'visitor'`);
     if (held && !g.steal && role !== "owner") refuse("held", `${said(held.by)} is holding ${a.id}, and it can't be taken from a hand (grabbable.steal is false)`, "wait till they let go (an owner may take it)");
-    for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be picked up`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
+    for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be picked up`, unlockFix(w, st, k), { lock: k });
     occupiedRefuse(w, st, a.id, actor, "picked up");
     // two things at once (R, 10-10, an avatar walking about with five crates: "maybe two, since VR players can pick up two
     // things"; a number, not a claim about hands: "avatars can have more (or none!)")
@@ -301,7 +305,7 @@ const EMBODIED_VERBS = {
     const ph = e.c.physics;
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${a.id} isn't something you can punt`, `a builder can make it so: set {id: '${a.id}', component: 'physics', value: {kind: 'dynamic'}}`);
     const need = ph.who ?? DEFAULT_WHO; if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may punt ${a.id}`, "ask the owner to set physics.who: 'visitor'");
-    for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be punted`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
+    for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be punted`, unlockFix(w, st, k), { lock: k });
     const held = w.presence.holds[a.id]; if (held) refuse("held", `${said(held.by)} is holding ${a.id}`, "grab it to take it (the latest grab wins), or wait till they let go");
     occupiedRefuse(w, st, a.id, actor, "punted");
     shaped(e, a.id, st.entities["@world"]?.c["physics-engine"] ?? null);
