@@ -22,8 +22,8 @@ export const readsDraft = (name) => READ.has(name);
 export const draftsRead = () => [...READ.values()];
 
 export const TRUSTED = 'trusted-components';
-/** Its spelling before 10-17 (R: the bare word read as trusted PEOPLE). The load repair renames a stored one
- *  (shaperepair.js renameWorld); a world not yet reloaded reads the same. */
+/** Its spelling before 10-17 (R: the bare word read as trusted PEOPLE). The maintenance command renames a stored one
+ *  (shaperepair.js, rename-components); a world it hasn't run on reads the same. */
 export const OLD_TRUSTED = 'trusted';
 export const TRUSTED_MAX = 64;
 export const UNPROVEN_HINT = "unproven: this client reads it; the engine doesn't";

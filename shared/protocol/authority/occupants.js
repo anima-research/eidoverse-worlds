@@ -75,7 +75,7 @@ function occupant(w, st, id, actor) {
 //   - a standing body never blocks an edit and is never a reason to refuse one: what you stand on carries you, as ever (the
 //     client's own walker keeps you on it). A griefer can't freeze an owner's stage by standing on it.
 // The authority's follow-ups (rest, system), a hand (handle: the hand verbs refuse `occupied` themselves, before admit), the
-// load's lift and a fork's copy vacate no one.
+// maintenance command's lift and a fork's copy vacate no one.
 const MOVES_BODIES = (comp) => comp === "transform" || comp === "parent" || baseOf(comp) === "motion";
 function vacatesFor(w, st, who, norm) {
   const cap = who.cap; if (cap && ["rest", "system", "handle"].includes(cap.kind)) return [];
@@ -111,7 +111,7 @@ function occupiedRefuse(w, st, id, actor, what) {
 // write touching a socket child (those, and any set or delete on one) meets the locks over its host's chain, the host it
 // had and the host it ends on.
 // The legacy map's lifted creates are in `norm`, so both spellings meet the same rule. A host made in this same write is
-// the asker's own. The authority's follow-ups (rest, system: the load's lift) and a hand carry no seat edits.
+// the asker's own. The authority's follow-ups (rest, system: the maintenance command's lift) and a hand carry no seat edits.
 function occupyRights(w, st, s, who, role, norm, made) {
   const cap = who.cap; if (cap && cap.kind !== "reaction" && cap.kind !== "script") return;
   const holder = cap?.kind === "reaction" ? cap.author : cap?.kind === "script" ? cap.sponsor : who.actor;
@@ -123,7 +123,7 @@ function occupyRights(w, st, s, who, role, norm, made) {
   for (const [h, op] of hosts) { if (made.has(h) || !st.entities[h]) continue;
     const at = h + "'s sockets (" + op.verb + " " + op.id + (op.comp !== undefined ? "." + op.comp : "") + ")"; const as = { verb: "set", id: h, comp: "sockets" };
     // a socket joining h (made, re-parented onto it, or a thing made one) needs h's rights; an edit of a socket already
-    // on h is judged on the socket's own rights in rights() (its creator, or the builder the load's lift names: RL4)
+    // on h is judged on the socket's own rights in rights() (its creator, or the builder the command's lift names: RL4)
     const n = joins.has(h) ? lacks(w, st, holder, as, made, { viaCap: !!cap }) : null;
     const whose = cap ? " (" + said(holder) + "'s, whose rights this write carries)" : "; you are " + role;
     if (n) refuse("rights", "a socket is part of its host, so " + op.id + " is an edit of " + at + ": that needs " + needWords(n) + whose, "ask " + h + "'s builder or an owner; a socket on a thing of your own needs nothing more", { needs: n, host: h });

@@ -51,7 +51,7 @@ const FOUNDING_VERBS = {
     w.append({ kind: "genesis", actor: "system", verb: "genesis", body: { dialect: DIALECT, v: VERSION, minor: 0, nonce: nonce16(w), owners: [a.ownerKey ? [a.ownerKey] : [], [cu.operator()]], sequencer: cu.sequencer(),
       ...(a.from?.seq !== undefined ? { parent: { world: a.from.world, seq: a.from.seq, head: a.from.head } } : {}) } });
     const plan = admit(w, w.state(), { actor, cap: { kind: "founding", ids: ["@world"], comps: ops.map((o) => o.comp) } }, ops);
-    // born in today's spelling (shapes: the shape repair's version): the load's repair never runs on this world (liftWorld)
+    // born in today's spelling (shapes: the shape repair's version): the maintenance command's repair never runs on this world (shapesMarked)
     changeEntry(w, plan, w.append(actOf(w, actor, "create-world", a, { shapes: SHAPES_VERSION })));
     // …and the marker itself is the system's repair-shapes act beside it (review r8 M3): read by verb and actor only, which
     // a purge never reaches (the founding's body holds the title, the first thing an owner might purge)

@@ -89,7 +89,7 @@ const unitQ = (q) => nums(q, 4, 1.0001) && Math.abs(Math.hypot(...q) - 1) < 1e-3
 export function gripOf(g) {
   if (!isObj(g) || !nums(g.pos, 3)) return null;
   return { pos: g.pos, q: unitQ(g.q) ? g.q : [0, 0, 0, 1], hand: HANDS.includes(g.hand) ? g.hand : 'either', role: ROLES.includes(g.role) ? g.role : 'primary',
-    grasp: GRASPS.includes(g.grasp) ? g.grasp : GRASPS.includes(g.fingers) ? g.fingers : 'fist', hold: {},   // fingers: its spelling before 10-17 (a stored grip not yet renamed at load); a grip's bone overrides are cut (shape audit 10-16)
+    grasp: GRASPS.includes(g.grasp) ? g.grasp : GRASPS.includes(g.fingers) ? g.fingers : 'fist', hold: {},   // fingers: its spelling before 10-17 (a stored grip the maintenance command hasn't renamed yet); a grip's bone overrides are cut (shape audit 10-16)
     part: typeof g.part === 'string' && g.part ? g.part : null };
 }
 

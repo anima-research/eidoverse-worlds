@@ -80,7 +80,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
     for (const [k, n] of Object.entries(top)) if (Number.isFinite(v[k]) && v[k] > n) refuse("bounds", `${at}.${k} is ${v[k]}; this server allows at most ${n}`, `set it at ${n} or below (schema reports this server's defaults and ceilings)`, { ceiling: n }); }
   if (id === "@world" && comp === "access" && obj && v.soft !== undefined && v.max !== undefined && v.soft > v.max) refuse("bounds", `${at}.soft (${v.soft}) can't be above max (${v.max})`, "soft is the recommended capacity; max is the hard one");
   // a who names a role this world has (a custom role too); a typo would open or close it to the wrong people
-  // a carried value (a fork's copy, the load's lift) keeps the who it was written with, even a role deleted since: the lift
+  // a carried value (a fork's copy, the maintenance command's lift) keeps the who it was written with, even a role deleted since: the lift
   // re-spells what the log holds and judges nothing new (review 10-12 S2-3); an unknown who reads as the strictest
   // recut item 8: a who is a role id (that rank or above), {permission} or {roles: [...]}; every role it names must be this world's
   const whoOk = (x, where) => { if (carry || x === undefined) return;
@@ -338,7 +338,7 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
   const fields = Object.keys(def.fields);
   if (!(v && typeof v === "object" && !Array.isArray(v))) refuse("shape", `${at} must be an object {${fields.join(", ")}}`, def.help);
   // shape audit 10-16: a reserved field (physics' unread properties) is refused in its own words, and a field the alpha cut
-  // (motion.amplitude, motion.part, physics.layers…) says where it went. A carried value (a fork's copy, the load's lift)
+  // (motion.amplitude, motion.part, physics.layers…) says where it went. A carried value (a fork's copy, the command's lift)
   // keeps what it was written with
   if (!carry) { const held = def.reservedFields?.find((k) => k in v);
     if (held !== undefined && name !== "grabbable" && name !== "station") refuse("reserved", def.reservedWhy?.[held] ? `${at}.${held} is reserved: not built yet (${def.reservedWhy[held]}); nothing may write it` : `${at}.${held} is a reserved field: no engine here reads it yet, so nothing may write it (the name and its meaning are held: schema {component: '${name}'})`, def.help, { status: "reserved" });

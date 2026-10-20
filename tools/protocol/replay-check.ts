@@ -31,8 +31,8 @@ const fails = [
 ].filter(Boolean);
 console.log(fails.length ? `FAIL ${fails.join("; ")}` : "replay: ok (status ok, self-agrees, 0 malformed, digest pinned)");
 
-// ---- RL: a world stored before sockets were entities, lifted at its first load (authority.js liftWorld) ----
-// Replay is untouched (the log up to its head folds byte-identically; the fold reads no socket); the LOADED world gains
+// ---- RL: a world stored before sockets were entities, lifted by the maintenance command (authority.js maintain) ----
+// Replay is untouched (the log up to its head folds byte-identically; the fold reads no socket); the REPAIRED world gains
 // one system act and change per host. Every log in spec/, plus the copies in RL_WORLDS (a scratch dir of world logs,
 // never a live world dir: copy the Commons and the gym there), is lifted in memory and checked.
 const { worldOf, posAt, liftWorld, maintain, request } = await import("../../shared/protocol/authority.js");

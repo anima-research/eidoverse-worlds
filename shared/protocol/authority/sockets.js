@@ -236,13 +236,13 @@ export function liftOps(st, ops, ever = new Set()) {
   }
   // a catalogue model that declares seats: they are made as children ("the log holds every number"), once
   for (const h of models) { const e = s.entities[h]; const ms = modelOf(e?.c.model)?.sockets;
-    // never one of its seats made before: a seat someone deleted stays deleted, as the load-time lift (modelSeatsDue) reads it
+    // never one of its seats made before: a seat someone deleted stays deleted, as the maintenance command's lift (modelSeatsDue) reads it
     if (!bag(ms) || bag(e.c.sockets) || kidsOf(h).some((k) => isSocketC(s.entities[k].c)) || Object.keys(ms).some((n) => ever.has(socketId(h, n)))) continue;
     L.stored(true); const made = liftHost(h, ms, { stored: false }); L.stored(false); notes.push({ legacy: "model sockets", id: h, wrote: made, why: `its model declares ${Object.keys(made).join(", ")}: made as socket children` }); }
   return { ops: out, notes };
 }
 
-// ---------- the old spelling, lifted at load (PLAN §3: beside settleOrphans) ----------
+// ---------- the old spelling, lifted by the maintenance command (lift-sockets; it ran at load until 10-18) ----------
 const modelSeatsDue = (st, ever, k) => { const c = st.entities[k].c; const ms = modelOf(c.model)?.sockets;
   return bag(ms) && !bag(c.sockets) && !Object.keys(ms).some((n) => ever.has(socketId(k, n))) && !Object.keys(st.entities).some((x) => st.entities[x].c.parent?.to === k && isSocketC(st.entities[x].c)); };
 /** The hosts a stored world still holds in the old spelling, in id order: one that stores a map; one a parent or a home
