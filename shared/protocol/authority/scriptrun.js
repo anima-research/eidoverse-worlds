@@ -129,7 +129,7 @@ function activate(w, id, name, ev) {
   w.pinTs = now;
   try {
     try { w.fits(actE, ...(plan ? [changeShape(plan, actSeq, w)] : []), ...res.says.map((t) => sayE(t, actSeq))); } catch (e) { if (!(e instanceof Refusal)) throw e; return mark(e.code, e.reason); }
-    act = w.append(actE); if (plan) state = changeEntry(w, plan, act);
+    act = w.append(actE); if (plan) { state = changeEntry(w, plan, act); UP.letGoEdited(w, plan, act, st, w.state(), `script:${id}`); }   // a script's move lets go as an edit's does
     for (const t of res.says) (w.sayQ ??= []).push(w.append(sayE(t, act)));
   } finally { w.pinTs = null; }
   for (const g of gates) g.deliver();
@@ -161,7 +161,7 @@ export function settle(w, { maxTicks = 8 } = {}) {
     const n0 = w.entries.length;
     CTX.work = { left: Infinity, until: Infinity, k: 0 };
     restampEngine(w); settleSim(w); returnDue(w); expireAsks(w); checkpointSim(w);
-    drainScripts(w); drainHeld(w);   // what the beat logged reaches scripts, as a request's entries do (second review S2-2)
+    drainAll(w);   // what the beat logged reaches scripts, as a request's entries do (second review S2-2)
     return w.entries.length - n0;
   });
 }
@@ -189,7 +189,7 @@ function checkpointSim(w) {
 export function tick(w) {
   if (!w.exists || w.state().status !== "ok") return [];
   return withAuthority(w, () => {
-    w.changedQ = []; w.sayQ = [];
+    w.changedQ = []; w.sayQ = []; w.heldQ = [];
     const now = w.now(), present = presentOf(w).size > 0, ran = [];
     for (const { id, name, v } of allScripts(w.state())) { if (!(typeof v.every === "number" && v.every >= 5)) continue; const rt = rtOf(w, id, name);
       if (rt.next === undefined) { rt.next = now + v.every * 1000; w.presenceDirty = true; continue; }
@@ -200,7 +200,7 @@ export function tick(w) {
       const sp = sponsorOf(w, id, `script:${name}`);
       ran.push(activate(w, id, name, { on: slept !== null ? "wake" : "tick", ...(slept !== null ? { slept } : {}), ...(sp ? { cause: sp.sponsorAt } : {}) }));
     }
-    drainScripts(w);
+    drainAll(w);   // what its scripts wrote sets off others, and a move that let go of a held thing tells that thing's
     return ran;
   });
 }
@@ -422,10 +422,10 @@ function orphanLifts(w) {
 export function presenceEvent(w, kind, who) {
   if (!w.exists || w.state().status !== "ok" || !["enter", "leave"].includes(kind) || !isIdentity(who)) return [];
   return withAuthority(w, () => {
-    w.changedQ = []; w.sayQ = []; const ran = [];
+    w.changedQ = []; w.sayQ = []; w.heldQ = []; const ran = [];
     for (const { id, name, v } of allScripts(w.state())) if (Array.isArray(v.on) && v.on.includes(kind)) { const sp = sponsorOf(w, id, `script:${name}`);
       ran.push(activate(w, id, name, { on: kind, by: who, ...(sp ? { cause: sp.sponsorAt } : {}) })); }
-    drainScripts(w);
+    drainAll(w);   // (as tick)
     return ran;
   });
 }
@@ -435,6 +435,13 @@ export function presenceEvent(w, kind, who) {
 // is logged: its act is the cause. Fields: by, id, hand, grip? (grab); by, id, how (put | drop | throw | stay | return |
 // snap), socket? and to? (release), seq (the act) when logged.
 const heldEvent = (w, kind, id, ev) => { (w.heldQ ??= []).push({ kind, id, ev }); };
+// Everything a write set off, until nothing is left: a hand event's scripts may write (changed:, say), and a changed:
+// script's move may let go of a held thing (letGoEdited), which is a hand event again. So the two queues are drained in
+// turn until neither holds anything (drainScripts loops on its own two), a few rounds at most.
+function drainAll(w) {
+  for (let k = 0; k < 8; k++) { drainHeld(w); drainScripts(w); if (!w.heldQ?.length) return; }
+  if (w.heldQ) w.heldQ.length = 0;
+}
 function drainHeld(w) {
   let guard = 0;
   while (w.heldQ?.length && guard++ < 64) { const { kind, id, ev } = w.heldQ.shift(); const st = w.state();
@@ -541,4 +548,4 @@ const SCRIPT_VERBS = {
       return { ok: true, dry: true, test: activate(w, a.id, a.script, { by: actor, ...ev, dry: true }) }; }
     return { ok: true, ...scriptsOf(w, st, a.id) }; },
 };
-export { SCRIPT_VERBS, activate, drainHeld, drainScripts, heldEvent };
+export { SCRIPT_VERBS, activate, drainAll, drainHeld, drainScripts, heldEvent };

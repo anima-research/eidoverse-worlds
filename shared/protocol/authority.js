@@ -61,7 +61,7 @@ import { actIndexOf, buildSculpt, buildSky, buildUndo, buildWeather } from "./au
 export { actIndexFresh, actIndexOf, entityBefore } from "./authority/undo.js";
 import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, installCheck, logRt, overCpu, particlesCheck, pauseOnly, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptCeiling, scriptDefaults, scriptDepth, scriptMemo, scriptRights, scriptsCfg, sponsorOf, uploadEffect } from "./authority/scripts.js";
 export { DUTY, scriptCeiling, scriptDefaults, setScriptConfig, setScriptDuty, unpaused } from "./authority/scripts.js";
-import { SCRIPT_VERBS, activate, drainHeld, drainScripts, heldEvent, maintain, maintenanceNeeds, writeBlock } from "./authority/scriptrun.js";
+import { SCRIPT_VERBS, activate, drainAll, heldEvent, maintain, maintenanceNeeds, writeBlock } from "./authority/scriptrun.js";
 export { ORPHANS, expireRoles, liftWorld, maintain, maintenanceNeeds, presenceEvent, repairShapes, scriptsView, settle, settleOrphans, tick } from "./authority/scriptrun.js";
 import { clearOccupant, leftOccupied, occupiedRefuse, occupantOf, occupyRights, setOccupant, occupantOn, vacateAt, vacateWhy, vacatesFor } from "./authority/occupants.js";
 import { arrivalBox, body, buildEpoch, dist, gripPoint, gripOf, lawOf, pathBlocked, restampEngine, settleSim, shearFree, sizeOf, solidAt } from "./authority/physics.js";
@@ -75,7 +75,7 @@ import { Admitted, REPAIR_COMP, SAY_MAX, admit, lacks, lockCheck, needWords, rat
 export { keyKind, seniorOwnerOf } from "./authority/gate.js";
 import { clearRefsTo, danglingRefs, historyDiff, holdsRefs, lastTouch, opsTouching, stampMedia, stampModelHash, stampShapes, stripDry, touched, touchedOf, warnOrNot, warnings, withoutRefs } from "./authority/followups.js";
 export { TOUCH_HORIZON } from "./authority/followups.js";
-import { actEntry, actOf, boundsOf, buildCreate, buildDelete, buildPlace, buildSet, buildTurn, changeEntry, changeShape, commit, mint, needThing, notAThing, offRefuse, outsideWorld, resolve, serverWritten } from "./authority/writes.js";
+import { actEntry, actOf, boundsOf, buildCreate, buildDelete, buildPlace, buildSet, buildTurn, changeEntry, changeShape, commit, letGoEdited, mint, needThing, notAThing, offRefuse, outsideWorld, resolve, serverWritten } from "./authority/writes.js";
 import { BATCH_VERBS, FOUNDING_VERBS, SAY_VERBS, SCHEMA_VERBS, WRITE_VERBS } from "./authority/verbs.js";
 
 
@@ -159,8 +159,9 @@ export function request(w, actor, verb, args = {}) {
     if (verb === "create" && args.place) { const b2 = validate("place", { ...args.place, id: "x" }); if (b2) { const { code, reason, fix, ...rest } = b2; refuse(code, `place: ${reason}`, fix, rest); } }
     const r = h(w, actor, args);
     if (minted && r && (r.ok || r.dry)) r.ids = minted.ids;   // each placeholder and the id it became (never logged: the act holds the ids)
-    drainHeld(w);    // grab / release (grabbable): scripts whose scope covers the thing hear who took it, how it was let go
-    drainScripts(w); // what the request's own entries trigger (changed:<comp>, say), after them, each its own activation
+    // grab / release (grabbable): scripts whose scope covers the thing hear who took it, how it was let go; then what the
+    // request's own entries trigger (changed:<comp>, say), after them, each its own activation; in turn until neither is left
+    drainAll(w);
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; }
     if (r && r.refused && !r.refused.fix) r.refused.fix = verbHelp(verb) ? `help {verb: '${verb}'} shows its arguments with examples` : "help lists every verb";
     if (r && r.refused) noteCode(r.refused.code);
@@ -370,4 +371,4 @@ export function operatorRepair(w, actor, verb, args = {}) {
   CTX.operator = actor; try { return request(w, actor, verb, args); } finally { CTX.operator = false; }
 }
 // the leaves reach the layers above them through UP (authority/ctx.js): bound here, once every module has loaded
-Object.assign(UP, { actEntry, actOf, activate, admit, body, boundsOf, changeEntry, changeShape, commit, danglingRefs, dist, enter, guess, gripPoint, historyDiff, holdsRefs, homeScale, isNum, lacks, lastTouch, lockCheck, mint, nearMiss, needThing, needWords, notAThing, offRefuse, opsTouching, outsideWorld, rateCheck, request, resolve, restampEngine, returnDue, returnHome, returnPlan, sameHome, occupantOf, occupyRights, serverWritten, setOccupant, settleSim, occupantOn, touchedOf, unknownKeys, vec3s, warnings, withoutRefs });
+Object.assign(UP, { actEntry, actOf, activate, admit, body, boundsOf, changeEntry, changeShape, commit, danglingRefs, dist, enter, guess, gripPoint, historyDiff, holdsRefs, homeScale, isNum, lacks, lastTouch, letGoEdited, lockCheck, mint, nearMiss, needThing, needWords, notAThing, offRefuse, opsTouching, outsideWorld, rateCheck, request, resolve, restampEngine, returnDue, returnHome, returnPlan, sameHome, occupantOf, occupyRights, serverWritten, setOccupant, settleSim, occupantOn, touchedOf, unknownKeys, vec3s, warnings, withoutRefs });

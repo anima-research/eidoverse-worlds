@@ -97,6 +97,15 @@ function commit(w, actor, verb, args, build) {
   applyResettle(w, settle, act, ctx.notes);
   for (const e of wakes) w.append({ ...e, cause: act });
   for (const e of lifts) w.append({ ...e, cause: act });
+  letGoEdited(w, plan, act, st, after, actor, ctx.notes);
+  return { ok: true, seq, head: w.headAt(seq), act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
+    after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
+}
+
+// What a write leaves for the people it touched, whoever wrote it (a person's commit or a script's activation): a thing it
+// moved, re-parented, switched off or removed leaves the hand that held it, and so does what hangs under a thing it switched
+// off or removed; a seat it removed or switched off lets its occupant go. notes: the writer's reply notes (a script has none).
+function letGoEdited(w, plan, act, st, after, actor, notes = []) {
   // an edit that moves, re-parents or removes a thing in someone's hand takes it out of the hand: it is where the edit
   // put it now. (R, 10-10: moved a held barrel in edit mode; her client let go, the authority didn't, and every throw
   // after was refused from a hand the two no longer agreed on.)
@@ -105,22 +114,19 @@ function commit(w, actor, verb, args, build) {
       // switching it off takes it out of the hand too (review 5d5eef5c #5): an off thing can't be thrown, so it's set down where
       // the record has it. Keep this rule in step with simlayer's ends() and endsUnder().
       if (o.verb === "delete" ? (o.comp === undefined || o.comp === "transform" || o.comp === "parent") : (o.comp === "transform" || o.comp === "parent" || (o.comp === "disabled" && o.value === true))) {
-        delete w.presence.holds[o.id]; let_go = true; heldEvent(w, "release", o.id, { by: h.by, how: "edited", seq: act }); ctx.notes.push({ id: o.id, tookFromHand: h.by, why: "an edit moved it, so it left the hand that held it" }); } }
+        delete w.presence.holds[o.id]; let_go = true; heldEvent(w, "release", o.id, { by: h.by, how: "edited", seq: act }); notes.push({ id: o.id, tookFromHand: h.by, why: "an edit moved it, so it left the hand that held it" }); } }
     // …and switching off (or removing) a thing lets go of whatever is held UNDER it (attack-editor S2-1: a held child of a
     // switched-off parent could be neither put, dropped nor thrown; only its parent's return freed the hand)
     const offed = plan.ops.filter((o) => (o.verb === "set" && o.comp === "disabled" && o.value === true) || (o.verb === "delete" && o.comp === undefined)).map((o) => o.id);
     if (offed.length) for (const [id, h] of Object.entries(w.presence.holds ?? {})) {
       if (!after.entities[id] || !ancestors(after, id).some((p) => offed.includes(p))) continue;
-      delete w.presence.holds[id]; let_go = true; heldEvent(w, "release", id, { by: h.by, how: "edited", seq: act }); ctx.notes.push({ id, tookFromHand: h.by, why: "what it hangs under was switched off, so it left the hand that held it" }); }
+      delete w.presence.holds[id]; let_go = true; heldEvent(w, "release", id, { by: h.by, how: "edited", seq: act }); notes.push({ id, tookFromHand: h.by, why: "what it hangs under was switched off, so it left the hand that held it" }); }
     if (let_go) w.savePresence(); }
   // a seat gone or switched off lets its occupant go: told in their inbox like any vacate (holes r10 L6), with where the track restarts
   for (const who of Object.keys(w.presence.occupants ?? {})) if (!occupantOf(w, after, who)) { const to = w.presence.occupants[who]?.to; const why = "the socket they occupied was switched off or removed";
-    const at = typeof to === "string" && st.entities[to] ? vacateAt(w, st, who, to) : null; clearOccupant(w, who); ctx.notes.push({ who, vacated: true, socket: to, why });
+    const at = typeof to === "string" && st.entities[to] ? vacateAt(w, st, who, to) : null; clearOccupant(w, who); notes.push({ who, vacated: true, socket: to, why });
     if (typeof to === "string") inboxPush(w.presence, who, { type: "vacated", socket: to, by: actor, why: `${to}: ${why}`, ...(at ? { at } : {}) }); }
-  return { ok: true, seq, head: w.headAt(seq), act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
-    after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
 }
-
 // a switched-off thing (componentspec disabled, itself or what it hangs under) can't be handled: it's a link in the record
 function offRefuse(st, id, what) { const k = offChain(st, id); if (k) refuse("disabled", k === id ? `${id} is switched off, so it can't be ${what}` : `${id} hangs under ${k}, which is switched off, so it can't be ${what}`, `an editor switches it back on: delete {id: '${k}', component: 'disabled'}`); }
 // a socket is part of its host, never a thing a hand or a foot moves on its own
@@ -524,4 +530,4 @@ function buildPlace(ctx, a) {
   ctx.refs.add(a.id);
   return ops;
 }
-export { actEntry, actOf, boundsOf, buildCreate, buildDelete, buildPlace, buildSet, buildTurn, changeEntry, changeShape, commit, mint, needThing, notAThing, offRefuse, outsideWorld, resolve, serverWritten };
+export { actEntry, actOf, boundsOf, buildCreate, buildDelete, buildPlace, buildSet, buildTurn, changeEntry, changeShape, commit, letGoEdited, mint, needThing, notAThing, offRefuse, outsideWorld, resolve, serverWritten };

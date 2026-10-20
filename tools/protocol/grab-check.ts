@@ -89,7 +89,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["held: true needs a hold", "protocol/authority/use.js", "if (a.args?.held === true && !holding) refuse(", "if (false) refuse(", ["U1"]],
   ["a held use's script event says held, hand, phase", "protocol/authority/use.js", ", ...(held ?? {}) };", " };", ["U2"]],
   ["grab and release are script events", "protocol/authority.js", "const SCRIPT_EVENTS = [\"use\", \"say\", \"enter\", \"leave\", \"grab\", \"release\"];", "const SCRIPT_EVENTS = [\"use\", \"say\", \"enter\", \"leave\"];", ["U3", "U4"]],
-  ["grab and release reach scripts", "protocol/authority.js", "    drainHeld(w);    // grab / release", "    // grab / release", ["U3", "U4"]],
+  ["grab and release reach scripts", "protocol/authority/scriptrun.js", "for (let k = 0; k < 8; k++) { drainHeld(w); drainScripts(w);", "for (let k = 0; k < 8; k++) { drainScripts(w);", ["U3", "U4"]],
   ["only scripts whose scope covers the thing", "protocol/authority/scriptrun.js", "if (!(Array.isArray(v.on) && v.on.includes(kind)) || !scopeIds(st, sid, v.scope?.ids).includes(id)) continue;", "if (!(Array.isArray(v.on) && v.on.includes(kind))) continue;", ["U3"]],
   ["a release says how", "protocol/authority/bodyverbs.js", "heldEvent(w, \"release\", a.id, { by: actor, how: stay ? \"stay\" : how, seq: act });", "heldEvent(w, \"release\", a.id, { by: actor, how: \"put\", seq: act });", ["U3"]],
   ["a throw's release says throw", "protocol/authority/manipulate.js", "heldEvent(w, \"release\", a.id, { by: actor, how: verb, seq: act });", "heldEvent(w, \"release\", a.id, { by: actor, how: \"drop\", seq: act });", ["U4"]],
@@ -620,6 +620,31 @@ const cases: Case[] = [
       const mine = warns.filter((w) => /ball is due to go home/.test(w));
       return { hs: show(hs), loop: show(loop), n: mine.length, line: mine[0] ?? null }; },
     good: (o) => o.hs === "ok" && o.loop === "ok" && o.n === 1 && /refused/.test(o.line ?? "") },
+  { id: "U8", what: "a script that moves a thing in someone's hand takes it out of the hand, as an edit does: the authority no longer holds what the engine let go", run(s) { cast(s);
+      s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [1, 0] } });
+      const r = install(s, "olive", "flag", "away", `world.on("grab", () => world.set("self", "transform", { pos: [4, 0, 4], q: [0, 0, 0, 1], scale: [1, 1, 1] }));\n`, { scope: { ids: "self", comps: ["transform"] }, on: ["grab"] });
+      s.call("vic", "move", { to: [0.8, 0, 0.6] }); const g = s.call("vic", "grab", { id: "flag" });
+      const moved = s.entries().some((e: any) => e.kind === "change" && e.actor === "script:flag" && e.body?.comp === "transform");
+      const drop = s.call("vic", "drop", { id: "flag", pos: [0.9, 1, 0.6] });
+      return { r: show(r), g: show(g), moved, held: s.w().presence.holds?.flag ?? null, pos: s.w().state().entities.flag?.c.transform?.pos, drop: show(drop) }; },
+    good: (o) => o.r === "ok" && o.g === "ok" && o.moved && o.held === null && JSON.stringify(o.pos) === "[4,0,4]" && /^refused /.test(o.drop) },
+  { id: "U8b", what: "…and so does a timer script's move, whose release the thing's scripts hear (how: edited), as they hear a request's", run(s) { cast(s);
+      s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [1, 0] } });
+      const r = install(s, "olive", "flag", "away", `world.on("tick", () => world.set("self", "transform", { pos: [4, 0, 4], q: [0, 0, 0, 1], scale: [1, 1, 1] }));\n`, { scope: { ids: "self", comps: ["transform"] }, every: 5, always: true });
+      const h = install(s, "olive", "flag", "hear", `world.on("release", (e) => world.set("self", "t/how", e.how));\n`, { scope: { ids: "self", comps: ["t/how"] }, on: ["release"] });
+      s.call("vic", "move", { to: [0.8, 0, 0.6] }); const g = s.call("vic", "grab", { id: "flag" });
+      const ticks: string[] = []; for (let i = 0; i < 2; i++) { s.advance(5000); for (const x of D.tick(s.w()) ?? []) ticks.push(x.status); }
+      return { r: show(r), h: show(h), g: show(g), ticks, held: s.w().presence.holds?.flag ?? null, how: s.w().state().entities.flag?.c["t/how"] ?? null }; },
+    good: (o) => o.r === "ok" && o.h === "ok" && o.g === "ok" && o.ticks.includes("ran") && o.held === null && o.how === "edited" },
+  { id: "U8c", what: "…and so does a changed: script's move during a request (set off by another thing's change), whose release the thing's scripts hear too", run(s) { cast(s);
+      s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [1, 0] } });
+      s.call("olive", "create", { id: "sign", model: "book", place: { at: [3, 3] } });
+      const r = install(s, "olive", "sign", "away", `world.on("changed:label", () => world.set("flag", "transform", { pos: [4, 0, 4], q: [0, 0, 0, 1], scale: [1, 1, 1] }));\n`, { scope: { ids: ["self", "flag"], comps: ["transform"] }, on: ["changed:label"] });
+      const h = install(s, "olive", "flag", "hear", `world.on("release", (e) => world.set("self", "t/how", e.how));\n`, { scope: { ids: "self", comps: ["t/how"] }, on: ["release"] });
+      s.call("vic", "move", { to: [0.8, 0, 0.6] }); const g = s.call("vic", "grab", { id: "flag" });
+      const l = s.call("olive", "set", { id: "sign", component: "label", value: "go" });
+      return { r: show(r), h: show(h), g: show(g), l: show(l), held: s.w().presence.holds?.flag ?? null, pos: s.w().state().entities.flag?.c.transform?.pos, how: s.w().state().entities.flag?.c["t/how"] ?? null }; },
+    good: (o) => o.r === "ok" && o.h === "ok" && o.g === "ok" && o.l === "ok" && o.held === null && JSON.stringify(o.pos) === "[4,0,4]" && o.how === "edited" },
   { id: "U5", what: "the presence tier: a pose carries use {id, hand} while a holder presses (every receiver draws the thing's fx); a malformed use costs only that field", run(s) {
       const a = PC.sanePose({ p: [0, 0, 0], use: { id: "hose", hand: "left" } }); const b = PC.sanePose({ p: [0, 0, 0], use: { id: "hose", n: 3 } }); const c = PC.sanePose({ p: [0, 0, 0], use: "hose" });
       return { a: a?.use ?? null, b: b ? ("use" in b ? b.use : "dropped") : null, c: c ? ("use" in c ? c.use : "dropped") : null }; },
