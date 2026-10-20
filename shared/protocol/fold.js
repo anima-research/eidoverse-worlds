@@ -214,6 +214,8 @@ export function shapeOne(verb, b, inner, where) {
   if ((verb === "set" || "comp" in b) && !isComponent(b.comp)) bad("comp-name", `${where} ${JSON.stringify(b.comp)}`);
   const op = { verb, id: b.id }; if (b.comp !== undefined) op.comp = b.comp;
   if (verb === "set" && "value" in b) op.value = b.value; // only an ABSENT value is "no value"; null is a value
+  // a value stripped to its commit (§12: a purge's work): marked, out of sight of JSON and spreads, for unnamedStubs and applyInPlace
+  else if (verb === "set" && "commit" in b) Object.defineProperty(op, "stripped", { value: true });
   return op;
 }
 
@@ -280,7 +282,7 @@ export function fold(entries, { until = Infinity } = {}) {
   catch (x) { if (!(x instanceof Malformed)) throw x; d(0, "malformed:" + x.code, x.detail); return { ...st, status: "no-world", entities: null }; }
   st.worldId = worldIdOf(g);
   settledEntries(ok, st.worldId, d);
-  const purged = purgesOf(ok, d);
+  const purged = unnamedStubs(ok, purgesOf(ok, d), d);
   for (let seq = 1; seq < ok.length && seq <= until; seq++) {
     const e = ok[seq]; if (!e || e.kind !== "change") continue;
     let ops; try { ops = opsOf(e); } catch (x) { if (x instanceof Malformed) { d(seq, "malformed:" + x.code, x.detail); continue; } throw x; }
@@ -316,6 +318,18 @@ function settledEntries(ok, worldId, d) {
     if (lastTs !== null && t < lastTs) { d(seq, "malformed:ts-decreasing", `${t} < ${lastTs}`); ok[seq] = null; continue; }
     lastTs = t; }
   return ok;
+}
+// §12: a set written as {commit} with no value is a purge's work. One no purge names (none does, or the purge naming it is
+// one the fold refuses, as any aimed at a roles: value) was changed outside the one rule that changes the record. It folds
+// as absent(purged), unknown as every reader takes a purged value (§1), never as the value before it, and the diagnostic
+// says so (commit-unpurged: the line still shapes, so not malformed:). The authority refuses writes while one stands.
+function unnamedStubs(ok, purged, d) {
+  ok.forEach((e, seq) => { if (!e || e.kind !== "change") return;
+    let ops; try { ops = opsOf(e); } catch (x) { if (x instanceof Malformed) return; throw x; }
+    ops.forEach((op, i) => { if (!op.stripped) return;
+      const k = `${seq}:${e.verb === "batch" ? i : "-"}`; if (purged.has(k)) return;
+      purged.set(k, 0); d(seq, "commit-unpurged", `${op.id}.${op.comp}`); }); });
+  return purged;
 }
 function purgesOf(ok, d) {
   const out = new Map();
@@ -376,12 +390,18 @@ export function applyCow(s, ops, seq = Infinity) {
 // op by index): a reader replaying a log a purge has touched writes PURGED where the strict fold does
 export function applyInPlace(s, ops, seq = Infinity, purged = null, batch = false) {
   const d = (q, code, detail = "") => s.diagnostics.push([q, code, detail]);
-  ops.forEach((o, i) => applyOp(s, seq, shapeOne(o.verb, o, true, "system"), purged?.get(`${seq}:${batch ? i : "-"}`), d));
+  // a value stripped to its commit is a purge's work, and these paths (the authority's own appends, a live replica) never
+  // carry a purge map that names it: such a line is refused whole, before any of its ops is applied (fold's unnamedStubs
+  // reads it as unknown instead, where the purges are known)
+  const shaped = ops.map((o, i) => { const op = shapeOne(o.verb, o, true, "system"), by = purged?.get(`${seq}:${batch ? i : "-"}`);
+    if ((o?.stripped || op.stripped) && by === undefined) bad("commit-unpurged", `${op.id}.${op.comp}`);
+    return [op, by]; });
+  for (const [op, by] of shaped) applyOp(s, seq, op, by, d);
   return s;
 }
 /** every purge in a log, as the strict fold reads them: `${seq}:${op index, or - for a whole entry}` → the purge's seq */
 export function purgesIn(entries) {
   const none = () => {}; const ok = checkedEntries(entries, none); const g = ok[0];
   if (!g || g.kind !== "genesis") return new Map();   // the fold reads no world here, so nothing is replayed either
-  return purgesOf(settledEntries(ok, worldIdOf(g), none), none);
+  const settled = settledEntries(ok, worldIdOf(g), none); return unnamedStubs(settled, purgesOf(settled, none), none);
 }

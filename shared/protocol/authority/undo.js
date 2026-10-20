@@ -86,7 +86,8 @@ export function entityBefore(w, id, seq, x = actIndexOf(w)) {
     ops.forEach((o, j) => { if (o.id !== id) return;
       if (o.verb === "create") { if (!ent) ent = { born: i, c: Object.create(null) }; return; }
       if (!ent) return;
-      if (o.verb === "set") { if (x.purgedOps.has(`${i}:${batch ? j : "-"}`)) ent.c[o.comp] = PURGED; else if ("value" in o) ent.c[o.comp] = clone(o.value); return; }
+      // a value stripped to its commit reads PURGED whether or not a purge names it, as the fold reads it (§12, commit-unpurged)
+      if (o.verb === "set") { if (o.stripped || x.purgedOps.has(`${i}:${batch ? j : "-"}`)) ent.c[o.comp] = PURGED; else if ("value" in o) ent.c[o.comp] = clone(o.value); return; }
       if (o.comp === undefined) { if (id !== "@world") ent = undefined; return; }
       delete ent.c[o.comp]; }); }
   return ent;

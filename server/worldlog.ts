@@ -128,6 +128,9 @@ export class WorldLog {
     catch (err) { console.error(`[world:${name}] lifting sockets`, err); }
     const st = this.live.state();
     if (st.status !== "ok") console.warn(`[world:${name}] log folds to '${st.status}': the authority will refuse writes`);
+    // §12: a value stripped to its commit that no purge names: the log was changed outside the purge rule (record-altered)
+    const altered = (st.diagnostics ?? []).filter(([, c]: Any) => c === "commit-unpurged");
+    if (altered.length) console.warn(`[world:${name}] log was changed outside its purge rule at line(s) ${altered.map(([q]: Any) => q).join(", ")} (a value stripped to its commit, no purge naming it): it reads as unknown, and the authority refuses writes until the operator restores the log from a backup`);
     this._state = this.view();
     // chat: the last 40 says, through the window's own rule; chatTotal counts every line ever said here
     const says = this.live.entries.filter((e: Any) => e && e.kind === "say");

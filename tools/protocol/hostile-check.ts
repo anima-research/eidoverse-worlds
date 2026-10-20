@@ -199,6 +199,20 @@ const probes = [
     base: () => ({ ok: true, v: "(the baseline has no timed grants)" }), held: true,
     now: () => ({ words: leftWords(1000, 61000), listed: listedIn({ "roles:u-a": { role: "builder", until: 1000 } }, "u-a", 61000) }),
     nowGood: (r) => r.words === "ended" && r.listed === false },
+  // review of #260 (spec I1): a value stripped to its commit with no purge naming it isn't a purge: it never reads as "no change"
+  { id: "RI1a", src: "ew260 spec I1", what: "a demotion stripped to its commit, with no purge, doesn't bring the old role back: the fold flags it commit-unpurged", held: true,
+    base: () => ({ ok: true, v: "(not in the baseline)" }),
+    now: () => now(logOf(st("set", { id: "@world", comp: "roles:u-bbbbbbbbbbbbbbbbbbbb", value: { role: "owner" } }), st("set", { id: "@world", comp: "roles:u-bbbbbbbbbbbbbbbbbbbb", commit: "0".repeat(64) }))),
+    nowGood: (s) => s.entities?.["@world"]?.c["roles:u-bbbbbbbbbbbbbbbbbbbb"]?.role !== "owner" && codes(s).includes("3:commit-unpurged") },
+  { id: "RI1b", src: "ew260 spec I1", what: "…nor with a purge aimed at it that the fold refuses (a roles: value is never purged)", held: true,
+    base: () => ({ ok: true, v: "(not in the baseline)" }),
+    now: () => now(logOf(st("set", { id: "@world", comp: "roles:u-bbbbbbbbbbbbbbbbbbbb", value: { role: "owner" } }), st("set", { id: "@world", comp: "roles:u-bbbbbbbbbbbbbbbbbbbb", commit: "0".repeat(64) }),
+      L({ world: WID, kind: "purge", ts: 1, actor: "system", verb: "purge", body: { values: [{ seq: 3 }] } }))),
+    nowGood: (s) => s.entities?.["@world"]?.c["roles:u-bbbbbbbbbbbbbbbbbbbb"]?.role !== "owner" && codes(s).includes("3:commit-unpurged") },
+  { id: "RI1c", src: "ew260 spec I1", what: "…while a value a valid purge names folds as absent(purged), status ok, with no such diagnostic", held: true,
+    base: () => ({ ok: true, v: "(not in the baseline)" }),
+    now: () => now(logOf(st("create", { id: "a" }), st("set", { id: "a", comp: "label", commit: "0".repeat(64) }), L({ world: WID, kind: "purge", ts: 1, actor: "system", verb: "purge", body: { values: [{ seq: 3 }] } }))),
+    nowGood: (s) => s.status === "ok" && s.entities.a.c.label === PURGED && !codes(s).some((c) => c.includes("commit-unpurged")) },
 ];
 
 let bad = 0;
