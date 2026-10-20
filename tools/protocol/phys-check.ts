@@ -568,6 +568,13 @@ function playground(name) {
   ok(!!eng && Math.hypot(eng[0] - rec[0], eng[2] - rec[2]) > 0.05 && seen && Math.hypot(seen.at[0] - eng[0], seen.at[2] - eng[2]) < 0.02 && !seen.moving && /not yet/.test(JSON.stringify(seen)),
     "U9 look reads a body at rest but not yet logged where the engine has it, says so, and doesn't call it moving", { eng, rec, seen }); }
 
+// S9: a shape is the authority's measurement whichever physics set in a batch carries the asker's: the last one, which is
+// the one the fold keeps, is stamped too
+{ const W = playground("pc-s9"); const e = () => openWorld(root, W).state().entities["crate-1"]?.c.physics;
+  const want = e()?.shape; const fake = [[-4, 0, -4], [4, 9, 4]];
+  const r = call(W, "rowan", "batch", { ops: [{ verb: "set", args: { id: "crate-1", component: "physics", value: { kind: "dynamic", who: "builder" } } },
+    { verb: "set", args: { id: "crate-1", component: "physics", value: { kind: "dynamic", who: "builder", shape: fake } } }] });
+  ok(r?.ok && want && JSON.stringify(e()?.shape) === JSON.stringify(want), "S9 the second of two physics sets in one batch can't put the asker's shape in place of the measured one", { r: r?.ok ?? r, want, got: e()?.shape }); }
 console.log(`${passes} passed, ${fails} failed`);
 fs.rmSync(root, { recursive: true, force: true });
 process.exit(fails ? 1 : 0);

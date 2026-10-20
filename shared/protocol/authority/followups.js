@@ -137,8 +137,10 @@ function stampShapes(ctx, ops) {
       next = { ...ph }; if (want) next.shape = want; else delete next.shape;
       if (ph.shape !== undefined && ops.some((o) => o.verb === "set" && o.comp === "physics" && o.id === id && o.value?.shape !== undefined))
         ctx.notes.push({ id, component: "physics", field: "shape", why: "stamped by the authority: a shape is its measurement of the model (Covenant III), never the asker's" }); }
-    const k = out.findIndex((o) => o.verb === "set" && o.comp === "physics" && o.id === id);
-    if (k >= 0) out[k] = setOp(id, "physics", next); else { out.push(setOp(id, "physics", next)); if (next.shape) stamped.push(id); else unstamped.push(id); }
+    // every physics set for it in the batch gets the measured value: the last is the one the fold keeps, and an earlier one
+    // replaced alone left a later set's shape (the asker's) standing
+    let found = false; out.forEach((o, k) => { if (o.verb === "set" && o.comp === "physics" && o.id === id) { out[k] = setOp(id, "physics", next); found = true; } });
+    if (!found) { out.push(setOp(id, "physics", next)); if (next.shape) stamped.push(id); else unstamped.push(id); }
     if (want && (e.c.mesh?.shape === "cylinder" || e.c.mesh?.shape === "capsule")) rounded.push(id);
   }
   if (stamped.length) ctx.notes.push({ component: "physics", stamped: stamped.length <= 12 ? stamped : stamped.length, why: "this world runs physics: things with a model or a mesh are colliders, with the authority's measured shape" });
