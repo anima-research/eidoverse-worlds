@@ -6,7 +6,7 @@
 // on Normal (everyone: deny) while the switch said allow.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/consent-switch-test.ts
 // Mutation (must go red): in client/lib/consentsync.js drop the `on('hydrated', …)` line, or the timer retry, or the toast.
-import { setConsent, decide } from '../shared/protocol/consent.js';
+import { setConsent, decide, tableOf, PRESETS } from '../shared/protocol/consent.js';
 import { makeConsentSync } from '../client/lib/consentsync.js';
 
 let pass = 0, fail = 0;
@@ -21,22 +21,24 @@ const C = await import('../client/lib/consent.js');
 for (const push of [false, true]) for (const pose of [false, true]) {
   C.setPushable(push); C.setPosable(pose);
   const P: any = {}; const now = 1000;
-  { const { preset, sets } = C.bodyTable(); const r0 = setConsent(P, 'me', { preset }, now); check(`preset ${preset} accepted`, r0.ok, JSON.stringify(r0));
+  { const { sets } = C.bodyTable();
     for (const set of sets) { const r = setConsent(P, 'me', { set }, now); check(`set ${set.class}=${set.mode} accepted`, r.ok, JSON.stringify(r)); } }
   const want = { shove: push ? 'allow' : 'deny', displace: push ? 'allow' : 'deny', pose: pose ? 'allow' : 'deny' };
   for (const [cls, m] of Object.entries(want)) {
     const d = decide(P, 'stranger', 'me', cls, now);
     check(`pushable=${push} posable=${pose}: a stranger's ${cls} is ${m}`, d.mode === m, `decide → ${d.mode} (${d.why})`);
   }
-  check(`pushable=${push} posable=${pose}: bodyTable is the Normal preset plus the everyone cells that depart from it`, C.bodyTable().preset === 'normal' && JSON.stringify(C.bodyTable().sets.map((x: any) => x.class).sort()) === JSON.stringify([...(push ? ['displace', 'shove'] : []), ...(pose ? ['pose'] : [])].sort()), JSON.stringify(C.bodyTable()));
+  check(`pushable=${push} posable=${pose}: bodyTable is a set for every cell (8 classes × 2 tiers) and no preset`, C.bodyTable().preset === undefined && C.bodyTable().sets.length === 16 && new Set(C.bodyTable().sets.map((x: any) => `${x.tier}|${x.class}`)).size === 16, JSON.stringify(C.bodyTable()));
 }
 
+const NORMAL = { everyone: { ...PRESETS.normal.everyone }, friends: { ...PRESETS.normal.friends } };   // what the authority holds for a table never set
 // 2. a refused sync is heard (toast) and retried: on the next hydration, and on a timer before that
 const run = async (reply: (n: number) => any) => {
   const sent: any[] = [], toasts: any[] = [], handlers: Record<string, Function[]> = {}, timers: Function[] = [];
   const s = makeConsentSync({
-    table: () => ({ preset: 'normal', sets: [{ class: 'shove', tier: 'everyone', mode: 'allow' }, { class: 'displace', tier: 'everyone', mode: 'allow' }] }),   // the preset, then two departures: three asks
-    send: async (verb: string, args: any) => { sent.push([verb, args]); return reply(sent.length); },
+    table: () => ({ sets: [{ class: 'shove', tier: 'everyone', mode: 'allow' }, { class: 'displace', tier: 'everyone', mode: 'allow' }] }),   // two cells that differ from Normal
+    // a read (consent {}) answers with the authority's table, here Normal: each sync is the read, then the two cells
+    send: async (verb: string, args: any) => { sent.push([verb, args]); const r = reply(sent.length); return r.ok && args.set === undefined ? { ...r, table: NORMAL } : r; },
     toast: (m: string, kind: string) => { toasts.push([m, kind]); },
     on: (ev: string, fn: Function) => { (handlers[ev] ??= []).push(fn); },
     later: (fn: Function) => { timers.push(fn); },
@@ -46,10 +48,10 @@ const run = async (reply: (n: number) => any) => {
   return { s, sent, toasts, handlers, timers, fire, tick };
 };
 
-{ // happy path: three sets on arrival, no toast, no timer
+{ // happy path: the read and the two cells on arrival, no toast, no timer
   const t = await run(() => ({ ok: true }));
   await t.fire('hydrated');
-  check('arrival sends the preset first, then one set per departing cell', t.sent.length === 3 && t.sent.every(([v]) => v === 'consent') && t.sent[0][1].preset === 'normal' && t.sent.slice(1).every(([, a]) => a.set.tier === 'everyone'), JSON.stringify(t.sent));
+  check('arrival reads the authority\'s table, then sends only the cells that differ from it, and no preset', t.sent.length === 3 && t.sent.every(([v, a]) => v === 'consent' && a.preset === undefined) && Object.keys(t.sent[0][1]).length === 0 && t.sent.slice(1).every(([, a]) => a.set?.tier === 'everyone'), JSON.stringify(t.sent));
   check('a sync that lands says nothing', t.toasts.length === 0 && t.timers.length === 0, JSON.stringify(t.toasts));
 }
 { // the authority refuses: heard once, retried on the timer, then on hydration; silent once it lands
@@ -60,32 +62,51 @@ const run = async (reply: (n: number) => any) => {
   check('it schedules a retry', t.timers.length === 1);
   const before = t.sent.length;
   await t.tick();
-  check('the timer resends the table', t.sent.length === before + 3, `${t.sent.length - before} sent`);
+  check('the timer tries again (the read, refused again)', t.sent.length === before + 1, `${t.sent.length - before} sent`);
   check('still failing: toast is not repeated, retry rescheduled', t.toasts.length === 1 && t.timers.length === 1, JSON.stringify(t.toasts));
   const b2 = t.sent.length; down = false;
   await t.fire('hydrated');
-  check('the next arrival resends (and this one lands)', t.sent.length === b2 + 3 && t.toasts.length === 1, `${t.sent.length - b2} sent, ${t.toasts.length} toasts`);
+  check('the next arrival resends (and this one lands: the read and the two cells)', t.sent.length === b2 + 3 && t.toasts.length === 1, `${t.sent.length - b2} sent, ${t.toasts.length} toasts`);
   check('landed: the pending timer retry does nothing new', await (async () => { const n = t.sent.length; await t.tick(); return t.sent.length === n; })());
   check('the next failure is heard again', await (async () => { down = true; await t.fire('hydrated'); return t.toasts.length === 2; })());
 }
-{ // a burst of changes is ONE follow-up sync, not one whole-table sync per change (10-19: each sync is the preset plus a set
-  // per departing cell, so three quick changes sent ~3× the table and the page passed the server's per-connection
+{ // a burst of changes is ONE follow-up sync, not one whole-table sync per change (10-19: each sync was the preset plus a
+  // set per departing cell, so three quick changes sent ~3× the table and the page passed the server's per-connection
   // message cap — the cap refused some sets and the authority kept a table the switches didn't show)
   let cell = 0; const sent: any[] = []; let release: Function = () => {};
   const gate = new Promise((r) => { release = r; });
-  const s = makeConsentSync({ table: () => ({ preset: 'normal', sets: [{ class: 'shove', tier: 'everyone', mode: cell >= 3 ? 'allow' : 'deny' }] }),
-    send: async (v: string, a: any) => { sent.push(a); await gate; return { ok: true }; }, toast: () => {}, on: () => {}, later: () => {} });
+  const s = makeConsentSync({ table: () => ({ sets: [{ class: 'shove', tier: 'everyone', mode: cell >= 3 ? 'allow' : 'deny' }] }),
+    send: async (v: string, a: any) => { sent.push(a); await gate; return { ok: true, table: NORMAL }; }, toast: () => {}, on: () => {}, later: () => {} });
   const first = s.sync(); cell = 1; const p2 = s.sync(); cell = 2; const p3 = s.sync(); cell = 3; const p4 = s.sync();
   release(); await Promise.all([first, p2, p3, p4]); await new Promise((r) => setTimeout(r, 5));
-  check('a burst of four changes sends the table twice (now, then once with the latest), not four times', sent.length === 4, `${sent.length} sent`);
+  check('a burst of four changes syncs twice (now, then once with the latest), not four times', sent.filter((a) => a.set === undefined).length === 2, `${sent.length} sent`);
   check('…and the last table sent is the latest', sent[sent.length - 1]?.set?.mode === 'allow', JSON.stringify(sent[sent.length - 1]));
 }
 { // spectators and renderers have no body: nothing sent
   const sent: any[] = [];
-  const s = makeConsentSync({ table: () => ({ preset: 'normal', sets: [{ class: 'shove', tier: 'everyone', mode: 'allow' }] }), send: async (v: string, a: any) => { sent.push(a); return { ok: true }; }, toast: () => {}, on: () => {}, later: () => {}, enabled: () => false });
+  const s = makeConsentSync({ table: () => ({ sets: [{ class: 'shove', tier: 'everyone', mode: 'allow' }] }), send: async (v: string, a: any) => { sent.push(a); return { ok: true }; }, toast: () => {}, on: () => {}, later: () => {}, enabled: () => false });
   await s.sync();
   check('a bodiless client sends no table', sent.length === 0);
 }
+
+// 2b. review of #260: no cell I narrowed is open at any moment of a sync. The authority already holds my
+// table (an earlier visit: presence is saved, and a table outlives a leave); a sync then runs request by request through
+// the authority's own setConsent, and after each one a friend's and a stranger's touch is decided: both stay deny.
+{ C.setCell('everyone', 'touch', 'deny'); C.setCell('friends', 'touch', 'deny');
+  const P: any = { consent: { me: { friends: ['pal'] }, pal: { friends: ['me'] } } }; const now = 1000; const seen: string[] = [];
+  // the authority, as the verb answers: a read (consent {}) gives the table; anything else goes through setConsent
+  // (synchronous, so each request is decided against before the next one is taken, as one connection's queue runs them)
+  const authority = (v: string, a: any) => (Object.keys(a).length === 0 ? { ok: true, table: tableOf(P, 'me') } : setConsent(P, 'me', a, now));
+  await makeConsentSync({ table: C.bodyTable, send: async (v: string, a: any) => authority(v, a), toast: () => {}, on: () => {}, later: () => {} }).sync();   // the earlier visit
+  C.setCell('everyone', 'near', 'deny');   // and one change since
+  const sent: any[] = [];
+  const s = makeConsentSync({ table: C.bodyTable, toast: () => {}, on: () => {}, later: () => {},
+    send: async (v: string, a: any) => { sent.push(a); const r = authority(v, a); seen.push(`${decide(P, 'pal', 'me', 'touch', now).mode}/${decide(P, 'stranger', 'me', 'touch', now).mode}`); return r; } });
+  await s.sync();
+  check('a sync never opens a cell I narrowed: after every request a friend\'s and a stranger\'s touch are still deny', seen.length > 0 && seen.every((x) => x === 'deny/deny'), JSON.stringify(seen));
+  check('…and it sends only what differs from what the authority holds: the read, then the one changed cell', sent.length === 2 && Object.keys(sent[0]).length === 0 && sent[1].set?.class === 'near' && sent[1].set?.mode === 'deny' && decide(P, 'stranger', 'me', 'near', now).mode === 'deny', JSON.stringify(sent));
+  C.setCell('everyone', 'near', 'ask');
+  C.setCell('everyone', 'touch', 'ask'); C.setCell('friends', 'touch', 'allow'); }
 
 // 3. the ask round-trip (10-14, R: wire `ask`): a body-inbox message holds the ask; answering sends consent {answer, yes}
 // and the ask is gone; an ask nobody answers expires locally with no send (the authority already took it as a no).

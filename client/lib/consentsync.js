@@ -1,5 +1,6 @@
-// My whole consent table (every class × everyone/friends), as the authority takes it (consent.js bodyTable: ONE preset,
-// which resets the server's cells to Normal, then one `set` per cell that departs from it, in order on one socket): the
+// My whole consent table (every class × everyone/friends), as the authority takes it (consent.js bodyTable: one `set`
+// per cell, and no preset, which would empty the server's cells first; each sync reads what the authority holds and
+// sends only the cells that differ, in order on one socket): the
 // server checks it before it forwards anyone's knock-over, pose, grab or touch, so a table that never lands leaves me on
 // Normal (everyone: deny) while my switch says allow — and the server refuses in my name. The sync is sent on
 // every arrival (a world's presence plane is its own) and every change; a refusal is said once and the table is sent
@@ -8,9 +9,8 @@
 export const RETRY_MS = 5000;
 export function makeConsentSync({ table, send, toast, on, later = (fn) => setTimeout(fn, RETRY_MS), enabled = () => true }) {
   let failing = false, retryArmed = false;
-  // ONE sync in flight: changes made while it runs collapse into a single follow-up that reads the latest table. Each
-  // sync is the preset plus a set per departing cell, so a burst of changes each sending the whole table passed the
-  // server's per-connection message cap (10-19), which refused some sets: the authority kept a table the switches didn't show.
+  // ONE sync in flight: changes made while it runs collapse into a single follow-up that reads the latest table, so a
+  // burst of changes stays under the server's per-connection message cap (10-19), which would refuse some sets.
   let running = null, again = false;
   function sync() {
     if (running) { again = true; return running; }
@@ -19,9 +19,17 @@ export function makeConsentSync({ table, send, toast, on, later = (fn) => setTim
   }
   async function syncOnce() {
     if (!enabled()) return;
-    const { preset, sets } = table();
-    const asks = [[`preset ${preset}`, { preset }], ...sets.map((set) => [`${set.class}${set.tier === 'friends' ? ' (friends)' : ''}: ${set.mode}`, { set }])];
-    const results = await Promise.all(asks.map(([what, args]) => send('consent', args).then((r) => [what, r], (e) => [what, { ok: false, refused: { reason: String(e?.message ?? e) } }])));
+    const { sets } = table();
+    // what the authority holds for me now (consent {} reads, changing nothing): only the cells that differ are sent, so a
+    // sync is as large as what changed, never all 16 at once (the per-connection message rate, 10-19)
+    const failed = (e) => ({ ok: false, refused: { reason: String(e?.message ?? e) } });
+    const read = await send('consent', {}).then((r) => r, failed);
+    let results;
+    if (!read?.ok || !read.table) results = [['your table, read back', read?.ok ? { ok: false, refused: { reason: 'the authority sent no table' } } : read]];
+    else {
+      const asks = sets.filter((set) => read.table[set.tier]?.[set.class] !== set.mode).map((set) => [`${set.class}${set.tier === 'friends' ? ' (friends)' : ''}: ${set.mode}`, { set }]);
+      results = await Promise.all(asks.map(([what, args]) => send('consent', args).then((r) => [what, r], (e) => [what, failed(e)])));
+    }
     const bad = results.find(([, r]) => !r?.ok);
     if (!bad) { failing = false; return; }
     const [what, r] = bad;

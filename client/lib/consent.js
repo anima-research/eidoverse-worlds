@@ -100,14 +100,16 @@ export function setPosable(v) { setCell('everyone', 'pose', v ? 'allow' : 'deny'
 export function pushable() { return _table.everyone.shove === 'allow'; }
 export function setPushable(v) { const m = v ? 'allow' : 'deny'; const a = put('everyone', 'shove', m), b = put('everyone', 'displace', m); if (a || b) { save(); changed(); } }
 
-// The table as the authority takes it (consent verb, shared/protocol/consent.js setConsent): ONE preset, then one
-// `set {class, tier, mode}` per cell that differs from it. The preset sent is always Normal — the server's own default,
-// so a body that never sent anything and one that sent this agree — and the sets are the person's departures from it.
-// localbody.js sends this on every arrival and whenever a cell changes.
+// The table as the authority takes it (consent verb, shared/protocol/consent.js setConsent): one `set {class, tier,
+// mode}` for EVERY cell, and no preset. A preset empties the authority's cells, so a sync sends none: set cell by cell,
+// each goes straight from what the authority held to what I chose (review of #260). With every cell set or already as
+// I chose it, the stored preset changes nothing I chose (a table that never had one reads as Normal, the server's
+// default). The sync (consentsync.js) sends the cells of it that differ from what the authority holds, on every arrival
+// and whenever a cell changes.
 export function bodyTable() {
-  const base = PRESETS[DEFAULT_PRESET], sets = [];
-  for (const tier of TIERS) for (const c of CLASSES) if (_table[tier][c] !== base[tier][c]) sets.push({ class: c, tier, mode: _table[tier][c] });
-  return { preset: DEFAULT_PRESET, sets };
+  const sets = [];
+  for (const tier of TIERS) for (const c of CLASSES) sets.push({ class: c, tier, mode: _table[tier][c] });
+  return { sets };
 }
 const listeners = new Set();
 export function onConsentChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
