@@ -169,6 +169,7 @@ const F = await import(TREE + "shared/protocol/fold.js");
 const SL = await import(TREE + "shared/protocol/simlayer.js");
 const G = await import(TREE + "shared/grab.js").catch(() => ({}));   // absent at the base commit (--control)
 const SB = await import(TREE + "shared/protocol/sandbox.js");
+const ST = await import(TREE + "shared/protocol/authority/storage.js");
 const ES = await import(TREE + "shared/editschema.js");
 const PC = await import(TREE + "server/posecheck.ts").catch(() => import(ENGINE + "server/posecheck.ts"));
 const ONLY = opt("only")?.split(",") ?? null;
@@ -217,6 +218,14 @@ function cast(s: any, sim = false) {
   if (sim) s.call("olive", "set", { id: "@world", component: "physics-engine", value: ENG });
 }
 const tail = (s: any, n: number) => s.entries().slice(-n).map((e: any) => `${e.kind}:${e.verb}`);
+// strip the last logged value of id's comp to its commit, with no purge: as a copy of the log changed by hand would hold it
+// (the commit is the value's own, so every head still verifies); the session reopens to read it. → the line's seq
+const stripLast = (s: any, id: string, comp: string) => {
+  const file = path.join(root, "worlds", `${s.name}.jsonl`); const lines = fs.readFileSync(file, "utf8").split("\n");
+  for (let k = lines.length - 1; k > 0; k--) { if (!lines[k]) continue; const e = JSON.parse(lines[k]); if (e.kind !== "change") continue;
+    const ops = e.verb === "batch" ? e.body.ops : [e.body]; const o = ops.find((x: any) => x.verb !== "delete" && x.id === id && x.comp === comp && "value" in x) ?? (e.verb === "set" && e.body.id === id && e.body.comp === comp && "value" in e.body ? e.body : null);
+    if (!o) continue; const c = ST.opCommit(o); delete o.value; delete o.salt; o.commit = c; lines[k] = JSON.stringify(e); fs.writeFileSync(file, lines.join("\n")); return k; }
+  return -1; };
 const since = (s: any, n0: number) => s.entries().slice(n0).map((e: any) => `${e.kind}:${e.verb}`);
 const carrier = (s: any) => { const v = SL.simFold(s.entries(), T + 1e9); /* the authority here folds with the lab catalogue (worldOf: no simModels), so the carrier does too */ return { agree: v.checks.agree, disagree: v.checks.disagree.length }; };
 
@@ -517,6 +526,32 @@ const cases: Case[] = [
       const n1 = s.entries().length; D.settleOrphans?.(w2, ["ann"]);
       return { acts, again: s.entries().length - n1, kept: !!w2.presence.holds.kept, ball: tf(s, "ball").pos, carrier: carrier(s) }; },
     good: (o) => JSON.stringify(o.acts.sort()) === JSON.stringify(["system:return-held:ball:lift", "system:return-home:torch:lift"]) && o.again === 0 && o.kept && JSON.stringify(o.ball) === "[0,0,0]" && !o.carrier.disagree },
+  // ---------------- RA: a log changed outside the purge rule (review of #260, spec I1): the system's own sweeps still run, but
+  // a thing whose value the record lost is skipped, never moved from a place or scale derived from nothing ----------------
+  { id: "RA2", what: "a stripped transform: returnAfter's sweep leaves the thing where the record lost it", run(s) { cast(s);
+      s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "visitor", returnAfter: 30 } }, place: { at: [0, 0] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("vic", "move", { to: [0, 0, 3] }, 1000); s.call("vic", "put", { id: "ball" });
+      const k = stripLast(s, "ball", "transform"); const w2 = s.reopen(s.w().presence);
+      s.advance(40000); const n0 = s.entries().length; D.settle?.(w2); const look = s.call("vic", "look", {});
+      return { k, lost: tf(s, "ball") === F.PURGED, after: since(s, n0), look: show(look), diag: w2.state().diagnostics.some((d: any) => d[0] === k && d[1] === "commit-unpurged") }; },
+    good: (o) => o.k > 0 && o.diag && o.lost && !o.after.includes("act:return-home") && o.look === "ok" },
+  { id: "RA3", what: "a stripped transform: settling an orphaned lift at load leaves the thing where the record lost it", run(s) { cast(s, true);
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "torch", model: "book", components: { physics: { kind: "dynamic" }, grabbable: { who: "visitor", release: "return" } }, place: { at: [0.3, 0] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("vic", "grab", { id: "torch" }); s.call("vic", "move", { to: [0, 0, 2] }, 1000);
+      const kb = stripLast(s, "ball", "transform"), kt = stripLast(s, "torch", "transform");
+      const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; T += 100; process.env.PROTOCOL_NOW = String(T);
+      D.settleOrphans?.(w2, []); const L = s.entries(); const acts = L.slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
+      return { kb, kt, acts, ball: tf(s, "ball") === F.PURGED, torch: tf(s, "torch") === F.PURGED }; },
+    good: (o) => o.kb > 0 && o.kt > 0 && !o.acts.length && o.ball && o.torch },
+  { id: "RA4", what: "a stripped transform on a parent: the engine gives its child no body (its world pose would compose from nothing)", run(s) { cast(s, true);
+      s.call("olive", "create", { id: "shelf", model: "table", place: { at: [2, 2] } });
+      s.call("olive", "create", { id: "box", model: "crate", components: { physics: { kind: "dynamic" } }, place: { at: [-2, -2] } });
+      s.call("olive", "set", { id: "box", component: "parent", value: { to: "shelf" } });
+      const before = !!SL.engineViewM(s.w().state()).entities.box;
+      const k = stripLast(s, "shelf", "transform"); const w2 = s.reopen(s.w().presence); const v = SL.engineViewM(w2.state()).entities;
+      return { k, before, shelf: !!v.shelf, box: !!v.box }; },
+    good: (o) => o.k > 0 && o.before && !o.shelf && !o.box },
   // ---------------- U: use while held, and the grab / release events (slice 5) ----------------
   { id: "U1", what: "use while held: the holder's use with no action fires grabbable.use's down, with phase up its up (each one act, the act saying held/hand/phase); held: true from someone not holding is refused", run(s) { cast(s);
       s.call("olive", "create", { id: "torch", model: "table-lamp", components: { grabbable: { who: "visitor", use: { down: "on", up: "off" } },

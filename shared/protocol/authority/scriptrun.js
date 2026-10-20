@@ -9,7 +9,7 @@ import { isIdentity, PURGED } from "../fold.js";
 import { dec } from "../names.js";
 import * as SR from "../scriptrules.js";
 import { effectFor, effectBlobName, EFFECT_KIND, ESSENTIAL_NAMES } from "../../particle_effects.js";
-import { livePoses, digestOf, simCutOf } from "../simlayer.js";
+import { livePoses, digestOf, simCutOf, lostPlace } from "../simlayer.js";
 import { RENAMED_COMPONENTS, renameOps, shapeRepairOps, shapesMarked, SHAPES_VERSION } from "../shaperepair.js";
 import { CTX, UP } from "./ctx.js";
 import { Refusal, refuse, said } from "./refuse.js";
@@ -251,7 +251,7 @@ export function settleOrphans(w, present = []) {
     const st = w.state(); if (!st.entities["@world"]?.c["physics-engine"]) return;
     let settled = 0, waiting = 0;
     for (const [id, lift] of orphanLifts(w)) {
-      if (w.presence.holds[id] || !st.entities[id]) continue;
+      if (w.presence.holds[id] || !st.entities[id] || lostPlace(st, id)) continue;   // a place the record lost stays where it is
       if (settled++ >= ORPHANS.lifts) { waiting++; continue; }
       const g = grabOf(st.entities[id].c);
       if (g?.release === "return" && g.home) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq); out.push({ id, returned: "home" }); continue; } }
@@ -286,10 +286,14 @@ const SERVED_RENAMES = (op) => !(op.comp === "grabbable" || op.comp.startsWith("
  *  commit that no purge names reads as unknown; nobody builds on that record until the operator restores it), or its old
  *  shapes wait for the maintenance command (lead's ruling 10-18: a load never writes; a world whose old shapes no reader serves
  *  refuses every write until the command runs). Reads work either way. One function, so a request (authority.js) and a script
- *  the host sets off (activate) meet the same gates. → {code, reason, fix, extra?} */
+ *  the host sets off (activate) meet the same gates. The system's own sweeps (settle's rests and returns, expireRoles,
+ *  settleOrphans) don't: what they write is derived from the clock and the engine, not anyone's act, and gating them would
+ *  keep a timed grant open past its until. Each skips a thing whose value the record lost (simlayer lostPlace; a roles: value
+ *  read as unknown has no until), and restoring the named lines keeps what they wrote valid, since a restored line has the
+ *  commit its stub kept. → {code, reason, fix, extra?} */
 export function writeBlock(w) {
   const alt = w.state().diagnostics.filter(([, c]) => c === "commit-unpurged");
-  if (alt.length) return { code: "record-altered", reason: `this world's log was changed outside its purge rule: ${alt.map(([q, , x]) => `line ${q} (${x})`).join(", ")} holds a value stripped to its commit that no purge names, so it reads as unknown, and the authority won't write on top of it`, fix: "only this server's operator can fix this, by restoring the log from a backup; asking again won't change it, and reads still work", extra: { seqs: alt.map(([q]) => q) } };
+  if (alt.length) return { code: "record-altered", reason: `this world's log was changed outside its purge rule: ${alt.map(([q, , x]) => `line ${q} (${x})`).join(", ")} holds a value stripped to its commit that no purge names, so it reads as unknown, and the authority won't write on top of it`, fix: "only this server's operator can fix this: with the world closed (the server stopped), restore each named line from a backup of the log, then reopen it (a line restored whole has the commit its stub kept, so every later line still verifies); asking again won't change it, and reads still work", extra: { seqs: alt.map(([q]) => q) } };
   const n = maintenanceNeeds(w);
   if (n.blocking.length) return { code: "repair-needed", reason: `this world needs maintenance before it can be written: ${n.blocking.join(", ")} (its values are stored in an old spelling no reader here serves)`, fix: n.fix };
   return null;

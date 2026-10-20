@@ -82,8 +82,16 @@ function fixedSet(st) {
 export function offChain(st, id) { for (let k = id, n = 0; k && n < 33; k = st.entities[k]?.c.parent?.to, n++) if (st.entities[k]?.c.disabled === true) return k; return null; }
 // a purged physical value is no body: the strict fold holds PURGED there, and this layer follows it (review of #260)
 const purgedPhysical = (c) => [...PHYSICAL].some((k) => c[k] === PURGED);
+// a place the record lost: a transform or parent purged, or stripped to its commit with no purge naming it (§12), on the
+// thing or on anything it hangs from. Its pose is unknown (§1), so nothing derives a place or a scale from it: it has no
+// body here, and the authority's sweeps (a return, an orphaned lift's settling) leave it where the record lost it
+export function lostPlace(st, id) {
+  for (let k = id, n = 0; k && n < 33; n++) { const c = st.entities[k]?.c; if (!c) return false;
+    if (c.transform === PURGED || c.parent === PURGED) return true; k = c.parent?.to; }
+  return false;
+}
 function engineEntity(st, id, models = MODELS, fixed = null) {
-  const e = st.entities[id]; if (!e || purgedPhysical(e.c) || !(models[e.c.model] || engineBox(e.c.physics) || sphereShape(e.c.physics)) || e.c.physics?.kind === "none") return null;
+  const e = st.entities[id]; if (!e || purgedPhysical(e.c) || lostPlace(st, id) || !(models[e.c.model] || engineBox(e.c.physics) || sphereShape(e.c.physics)) || e.c.physics?.kind === "none") return null;
   if (offChain(st, id)) return null;
   const t = worldPose(st, id);
   const sh = e.c.physics?.shape;   // a tagged shape rides along (eidosim reads a sphere from it)

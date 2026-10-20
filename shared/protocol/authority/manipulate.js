@@ -5,7 +5,7 @@
 import { MOVER, bodyBox } from "../../mover.js";
 import { grabOf, homeOf, wantsHome, fitsSocket, socketRadius, pickGrip } from "../../grab.js";
 import { COMPONENTS } from "../componentspec.js";
-import { ENGINES, carried, offChain } from "../simlayer.js";
+import { ENGINES, carried, lostPlace, offChain } from "../simlayer.js";
 import { planLaunch } from "../launchplan.js";
 import { REACH, SHOVE } from "../physconst.js";
 import { reachTo, massOf, shoveCap, sweptCovers } from "../../shove.js";
@@ -164,7 +164,7 @@ function returnDue(w) {
   if (warned) for (const id of warned.keys()) if (!st.entities[id]) warned.delete(id);   // forget things that are gone
   for (const [id, e] of Object.entries(st.entities)) {
     const v = e.c.grabbable; if (!v || typeof v !== "object" || !(v.returnAfter > 0)) continue;
-    const g = grabOf(e.c); if (!g?.home || w.presence.holds[id]) continue;
+    const g = grabOf(e.c); if (!g?.home || w.presence.holds[id] || lostPlace(st, id)) continue;   // where it is now is unknown: it stays
     if (st.entities["@world"]?.c["physics-engine"]) { sf ??= w.sim(); if (sf.launched[id]) continue; }   // in flight, or its rest isn't logged yet
     const r = lastRelease(w, id); if (!r || now - r.ts < g.returnAfter * 1000 || sameHome(st, id, g.home)) continue;
     const { plan, why } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, r.release); warned?.delete(id); continue; }
