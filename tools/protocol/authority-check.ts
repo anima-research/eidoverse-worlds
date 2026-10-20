@@ -1402,11 +1402,23 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
     writeLine: (l: string) => { lines.push(l); }, appendMod: () => { if (failing) throw new Error("EIO: disk gone"); } });
   request(w, "olive", "create-world", { title: "st4" }); const from = w.entries.length;
   failing = true; let threw: any = null; try { w.appendMod({ actor: "olive", verb: "ban", who: "bob" }); } catch (x) { threw = x; }
-  const o = txnOutcome(w, from, { threw: true, refused: false, wedgedBefore: false }); const r = txnRefusal(o);
+  const o = txnOutcome(w, from, { threw: true, refused: false, wedgedBefore: { log: false, mod: false } }); const r = txnRefusal(o);
   ok(!!threw && o.outcome === "ambiguous" && o.wedged === true && o.file === "moderator log" && r.ok === false && r.txn === "ambiguous" && r.refused.code === "ambiguous" && /moderator log/.test(r.refused.reason),
     "ST4 a moderator-log write that throws makes the request AMBIGUOUS (txnOutcome reads the mod log's wedge; the refusal names the moderator log), never rolled-back", [o, r.refused]);
-  const o2 = txnOutcome(w, w.entries.length, { threw: true, refused: false, wedgedBefore: true });
+  const o2 = txnOutcome(w, w.entries.length, { threw: true, refused: false, wedgedBefore: { log: false, mod: true } });
   ok(o2.outcome === "rolled-back", "ST4 …and a throw on a world already wedged (its refusal before any write) is rolled back", o2); }
+// ST5: which file was wedged matters: with the moderator log wedged before the request, a world-log write that throws in it
+// is ambiguous, not the old wedge's rolled-back refusal
+{ const { txnOutcome, wedgedOf } = await import("../../shared/protocol/authority/storage.js");
+  let modFails = false, logFails = false;
+  const w = worldOf({ name: "st5", entries: [], custody: custodyAt(root + "keys/custody.json"), getBlob: () => { throw new Error("no blobs"); }, putBlob: () => "sha256:" + "0".repeat(64), now: () => T,
+    writeLine: () => { if (logFails) throw new Error("EIO: disk gone"); }, appendMod: () => { if (modFails) throw new Error("EIO: disk gone"); } });
+  request(w, "olive", "create-world", { title: "st5" });
+  modFails = true; try { w.appendMod({ actor: "olive", verb: "ban", who: "bob" }); } catch {}
+  const before = wedgedOf(w); const from = w.entries.length;
+  logFails = true; let threw: any = null; try { request(w, "olive", "set", { id: "@world", component: "about", value: { name: "st5b", text: "" } }); } catch (x) { threw = x; }
+  const o = txnOutcome(w, from, { threw: true, refused: false, wedgedBefore: before });
+  ok(o.outcome === "ambiguous" && o.wedged === true && o.file === undefined, "ST5 a world-log failure while only the moderator log was wedged is ambiguous, and names the world log", { o, threw: String(threw) }); }
 
 // F1: a founding the authority refuses leaves no world behind: the name can still be founded, and its founder owns it
 { const name = "refused-founding";

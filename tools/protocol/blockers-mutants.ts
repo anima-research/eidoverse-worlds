@@ -47,7 +47,7 @@ const M: Mutant[] = [
     find: "      if (tops.some((s) => hitsIx(ctx.st, { min: [s.min[0], s.y - 0.01, s.min[1]], max: [s.max[0], s.y + 0.03, s.max[1]] }, k, 0))) wake.push(k); }", repl: "      if (false) wake.push(k); }", suite: "settle", rows: ["SE18"], expect: 6 },
   // ---- M1–M9: the architecture note's items (M10, the gate itself, has no code to mutate: --check-manifest is its row) ----
   { id: "M1", what: "a throw from a durable write reported rolled-back (no ambiguous outcome)", file: "shared/protocol/authority/storage.js",
-    find: '  if (anyWedged(w) && !wedgedBefore) return { outcome: "ambiguous"', repl: '  if (false) return { outcome: "ambiguous"', suite: "txn", rows: ["T2"], expect: 1 },
+    find: '  if (newLog || newMod) return { outcome: "ambiguous"', repl: '  if (false) return { outcome: "ambiguous"', suite: "txn", rows: ["T2"], expect: 1 },
   { id: "M2", what: "the identity is read after the await (the capability not rechecked at the commit seam)", file: "server/reqcap.ts",
     find: "  if (c.actorId !== cap.actorId ||", repl: "  if (false &&", suite: "txn", rows: ["T6"], expect: 1 },
   { id: "M3", what: "the operator's repair is not recorded as the operator's (no operator: true in the act)", file: "shared/protocol/authority/writes.js",
@@ -81,7 +81,7 @@ const M: Mutant[] = [
   { id: "r14-M1", what: "voice-moderate writes through w.log.request directly (no capability, no queue, no meters)", file: "server/server.ts",
     find: '          void requestAs(c, ws, w, muted ? "mute" : "unmute",', repl: '          void w.log.request(actorIdOf(c), muted ? "mute" : "unmute",', suite: "txn", rows: ["T11"], expect: 1 },
   { id: "r14-M2", what: "the transaction outcome ignores the moderator log's wedge (a ban whose mod-log write threw is rolled-back)", file: "shared/protocol/authority/storage.js",
-    find: 'export const anyWedged = (w) => !!(w.wedged?.log || w.wedged?.["moderator log"]);', repl: "export const anyWedged = (w) => !!(w.wedged?.log);", suite: "authority", rows: ["ST4"], expect: 9 },
+    find: 'export const wedgedOf = (w) => ({ log: !!w.wedged?.log, mod: !!w.wedged?.["moderator log"] });', repl: "export const wedgedOf = (w) => ({ log: !!w.wedged?.log, mod: false });", suite: "authority", rows: ["ST4"], expect: 9 },
   { id: "r14-M3", what: "rollback ignores files the server made since the translation (world.mod.jsonl is neither refused nor removed)", file: "tools/protocol/world.ts",
     find: "  const since = fs.readdirSync(D).filter((f) => !known.has(f));", repl: "  const since: string[] = [];", suite: "inplace", rows: ["IP30"], expect: 20 },
   // ---- security review (10-18) ----

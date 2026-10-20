@@ -140,16 +140,17 @@ export function worldOf(io) {
 //                                          disk: open, write, sync and close are not one step; the file is wedged, B1), or
 //                                          the request was cut off after part of it was written. Lines below `from` stand
 //                                          (they were durable and are published); from `from` on, history says what holds.
-// An ambiguous request is never reported as ok, nor as a plain failure. `wedgedBefore`: whether the log was already
-// wedged when the request began (then its own throw is the wedge's refusal, before any write: rolled back).
-// `wedgedBefore`: either file already wedged when the request began (then its own throw is the wedge's refusal, before any write:
-// rolled back). The MODERATOR log counts too (review r14 M2, 10-18): a ban, mute or kick writes world.mod.jsonl only, so a throw
+// An ambiguous request is never reported as ok, nor as a plain failure. `wedgedBefore`: wedgedOf(w) when the request began,
+// which files were already wedged. A throw that wedged no new file is the old wedge's refusal, before any write: rolled
+// back; one that wedged a file not wedged before is ambiguous, whichever file was wedged first. The MODERATOR log counts too (review r14 M2, 10-18): a ban, mute or kick writes world.mod.jsonl only, so a throw
 // from that durable write is as ambiguous as one from the world log's (its bytes may be on disk; the file is wedged).
 export const anyWedged = (w) => !!(w.wedged?.log || w.wedged?.["moderator log"]);
-export function txnOutcome(w, from, { threw = false, refused = false, wedgedBefore = false } = {}) {
+export const wedgedOf = (w) => ({ log: !!w.wedged?.log, mod: !!w.wedged?.["moderator log"] });
+export function txnOutcome(w, from, { threw = false, refused = false, wedgedBefore = { log: false, mod: false } } = {}) {
   const grew = w.entries.length > from;
   if (!threw) return refused ? { outcome: "rolled-back" } : { outcome: "committed", from, to: w.entries.length };
-  if (anyWedged(w) && !wedgedBefore) return { outcome: "ambiguous", from: w.wedgedAt ?? w.entries.length, wedged: true, ...(w.wedged.log ? {} : { file: "moderator log" }) };
+  const now = wedgedOf(w), newLog = now.log && !wedgedBefore.log, newMod = now.mod && !wedgedBefore.mod;
+  if (newLog || newMod) return { outcome: "ambiguous", from: newLog ? w.wedgedAt ?? w.entries.length : w.entries.length, wedged: true, ...(newLog ? {} : { file: "moderator log" }) };
   if (grew) return { outcome: "ambiguous", from: w.entries.length, wedged: anyWedged(w) };
   return { outcome: "rolled-back" };
 }

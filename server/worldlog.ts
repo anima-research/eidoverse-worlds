@@ -17,7 +17,7 @@ import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
-import { txnOutcome, txnRefusal, anyWedged } from "../shared/protocol/authority/storage.js";
+import { txnOutcome, txnRefusal, wedgedOf } from "../shared/protocol/authority/storage.js";
 import { clientCutOf, spokenOf } from "../shared/protocol/replica.js";
 import { viewState } from "../shared/protocol/view.js";
 import { holdWire } from "../shared/grab.js";
@@ -171,7 +171,7 @@ export class WorldLog {
     if (this.retired) return { ...WorldLog.RESET, txn: "rolled-back" };
     this.stats.requests++;
     const live = this.live;
-    const from = live.entries.length; const held = this.holdsKey(); const wedgedBefore = anyWedged(live);
+    const from = live.entries.length; const held = this.holdsKey(); const wedgedBefore = wedgedOf(live);
     const t0 = performance.now(); let r: Any = null; let threw: unknown = null;
     try { r = authorityRequest(live, actor, verb, args); }
     catch (err) { threw = err ?? new Error("the authority threw"); }
@@ -198,7 +198,7 @@ export class WorldLog {
   operatorRepair(actor: string, verb: string, args: Record<string, unknown> = {}) {
     if (this.retired) return { ...WorldLog.RESET, txn: "rolled-back" };
     const live = this.live;
-    const from = live.entries.length; const held = this.holdsKey(); const wedgedBefore = anyWedged(live);
+    const from = live.entries.length; const held = this.holdsKey(); const wedgedBefore = wedgedOf(live);
     let r: Any = null; let threw: unknown = null;
     // the shape repair (reviewer item 9): its pre-repair log is kept beside the world for a rollback (server/repairfiles.ts;
     // `bun tools/protocol/world.ts repair <name> --rollback`, with the server stopped), as the CLI keeps it
