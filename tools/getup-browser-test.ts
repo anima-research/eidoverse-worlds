@@ -56,6 +56,7 @@ const page = `${BASE}/?name=lier&world=${WORLD}`;
 // out before a reload can be expected to wake on it (a headless page renders
 // slowly, so a fixed wait isn't a receipt)
 let sentFloor: number | null = null;
+let sentBare = 0;   // lying poses sent without a floor
 let lastRestore: unknown = null;
 cws0.addEventListener('message', (ev) => {
   const m = JSON.parse(String(ev.data));
@@ -63,18 +64,27 @@ cws0.addEventListener('message', (ev) => {
     try { lastRestore = JSON.parse(m.params.response.payloadData).restore ?? null; } catch { /* not json */ }
   }
   if (m.method !== 'Network.webSocketFrameSent' || !m.params.response.payloadData.includes('"ragdoll"')) return;
-  try { const p = JSON.parse(m.params.response.payloadData).pose; if (p?.clip === 'ragdoll' && Number.isFinite(p.floor)) sentFloor = p.floor; } catch { /* not a pose */ }
+  try {
+    const p = JSON.parse(m.params.response.payloadData).pose;
+    if (p?.clip === 'ragdoll') { if (Number.isFinite(p.floor)) sentFloor = p.floor; else sentBare++; }
+  } catch { /* not a pose */ }
 });
 // a slow connection: while `slowModels`, the house's model download is held
-// back 25s — longer than any fixed hold would allow — before it is let through
+// back until the test lets it through — after it has watched the reloaded body
+// stand held without it, however long the page took to bring its avatar in
 let slowModels = false;
+let heldBack: string[] = [];
 cws0.addEventListener('message', (ev) => {
   const m = JSON.parse(String(ev.data));
   if (m.method !== 'Fetch.requestPaused') return;
-  // a request the page abandoned (a reload mid-delay) is gone by the time it's let through: fine
-  const go = () => { cdp.send('Fetch.continueRequest', { requestId: m.params.requestId }).catch(() => {}); };
-  if (slowModels) setTimeout(go, 25_000); else go();
+  if (slowModels) heldBack.push(m.params.requestId);
+  else cdp.send('Fetch.continueRequest', { requestId: m.params.requestId }).catch(() => {});
 });
+/** Let the held-back house through. A request the page abandoned (a reload
+ *  while it was held) is gone by now: fine. */
+function letModelsThrough() {
+  for (const requestId of heldBack.splice(0)) cdp.send('Fetch.continueRequest', { requestId }).catch(() => {});
+}
 await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*store/*.glb*' }] });
 async function floorSent(floor: number) {
   await until(() => sentFloor != null && Math.abs(sentFloor - floor) < 0.02, `presence carrying floor ${floor}`, 30_000);
@@ -86,10 +96,63 @@ const ready = () => evalJson(`(async () => {
   const [{ getMe }, C] = await Promise.all([import('/lib/mybody.js'), import('/lib/colliders.js')]);
   return !!getMe() && [...C.nearColliders(0, 0, 8)].some(([id]) => id === 'house');
 })()`).catch(() => false);
+/** The reloaded page's body is up and its house isn't fitted yet: only the
+ *  new page has a body and no house (the old one had the house). */
+const bodyUp = () => evalJson(`(async () => {
+  if (!globalThis.EW) return false;
+  const [{ getMe }, C] = await Promise.all([import('/lib/mybody.js'), import('/lib/colliders.js')]);
+  return !!getMe() && ![...C.nearColliders(0, 0, 8)].some(([id]) => id === 'house');
+})()`).catch(() => false);
+/** Wait until the page's frame loop has stepped `s` seconds of simulated time:
+ *  the dt its systems step by, the controller's gravity among them, however
+ *  slowly the page runs. */
+async function simWait(s: number) {
+  const t0 = await evalJson(`(async () => {
+    if (globalThis.__simT == null) {
+      globalThis.__simT = 0;
+      (await import('/lib/frame.js')).registerSystem('test-sim-clock', (dt) => { globalThis.__simT += dt; });
+    }
+    return globalThis.__simT;
+  })()`);
+  await until(async () => (await evalJson('globalThis.__simT')) >= t0 + s, `${s}s of the page's frames`, 120_000);
+}
+/** Wait up to `ms` for `f`, and say whether it came. */
+async function waitFor(f: () => any, ms: number) {
+  const start = Date.now();
+  while (!await f()) { if (Date.now() - start > ms) return false; await sleep(150); }
+  return true;
+}
 const body = () => evalJson(`(async () => {
   const [{ myState }, L] = await Promise.all([import('/lib/controller.js'), import('/lib/localbody.js')]);
-  return { y: myState.pos.y, x: myState.pos.x, z: myState.pos.z, clip: myState.clip, downed: L.isDowned(), settling: !!L.activeRagdoll(), floor: myState.floor ?? null };
+  return { y: myState.pos.y, x: myState.pos.x, z: myState.pos.z, clip: myState.clip, downed: L.isDowned(), settling: !!L.activeRagdoll(), floor: myState.floor?.y ?? null };
 })()`);
+/** A reload, watched through the arrival hold: the new page's body is up and
+ *  stepped while its house is still held back — and stays at the height it was
+ *  restored at, not dropped to the ground floor — then the house is let
+ *  through, and once it is solid the hold lets go: a body lifted off its floor
+ *  falls back onto it. */
+async function reloadThroughHold(label: string, floor: number) {
+  heldBack = [];
+  await cdp.send('Page.navigate', { url: page });
+  await until(bodyUp, `the reloaded page's body (${label}), its house held back`, 300_000);
+  await simWait(1.5);                                    // long enough to fall from any floor here, were it not held
+  const held = await body();
+  const houseStill = await bodyUp();
+  check(`(${label}: the house's download was held back while the body stood)`, heldBack.length > 0 && houseStill === true,
+    `held requests ${heldBack.length}; house still unfitted: ${houseStill}`);
+  check(`${label}: held at its restored height (${floor}m) while the house was still on its way`,
+    Math.abs(held.y - floor) < 0.06, JSON.stringify(held));
+  letModelsThrough();
+  await until(ready, `the reloaded page's house (${label})`, 300_000);
+  await simWait(1.0);
+  const woke = await body();
+  await evalJson(`(async () => { const { myState } = await import('/lib/controller.js'); myState.pos.y += 0.5; })()`);
+  await simWait(1.0);
+  const fell = await body();
+  check(`${label}: once the house is solid the hold lets go — lifted half a metre, it falls back onto ${floor}m`,
+    Math.abs(fell.y - floor) < 0.06, JSON.stringify(fell));
+  return woke;
+}
 async function standAt(x: number, y: number, z: number) {
   await evalJson(`(async () => { const { myState } = await import('/lib/controller.js'); myState.pos.set(${x}, ${y}, ${z}); })()`);
   await sleep(800);
@@ -115,6 +178,17 @@ try {
     await lieDown();
     const lying = await body();
     check(`lying ${where}, the body knows the floor it lies on`, lying.floor != null && Math.abs(lying.floor - floor) < 0.02, JSON.stringify(lying));
+    // moved off the spot where it measured that floor (as a drag, a shove or
+    // an unpin moves it), it stops sending it, and sends it again once back
+    await floorSent(floor);
+    const bare0 = sentBare;
+    await evalJson(`(async () => { (await import('/lib/controller.js')).myState.pos.x += 0.5; })()`);
+    const bareSent = await waitFor(() => sentBare > bare0, 10_000);
+    await evalJson(`(async () => { (await import('/lib/controller.js')).myState.pos.x -= 0.5; })()`);
+    sentFloor = null;
+    const floorAgain = await waitFor(() => sentFloor != null && Math.abs(sentFloor - floor) < 0.02, 10_000);
+    check(`lying ${where}, moved half a metre: its poses go out without that floor, and with it again once it is back`,
+      bareSent && floorAgain, `poses without a floor while moved: ${sentBare - bare0}; with it again once back: ${floorAgain}`);
     await evalJson(`(async () => { (await import('/lib/localbody.js')).getUp(); })()`);
     await sleep(1200);                                   // the controller runs on from there
     const stood = await body();
@@ -125,10 +199,7 @@ try {
   {
     await standAt(-2.2, UPPER + 0.05, 0);
     await sleep(800);
-    await cdp.send('Page.navigate', { url: page });
-    await until(ready, 'the reloaded page (standing)', 300_000);
-    await sleep(1500);
-    const stood = await body();
+    const stood = await reloadThroughHold('reloading while standing upstairs', UPPER);
     check('reloading while standing upstairs wakes upstairs (3.3m) — held until the house is solid, not dropped to the ground floor', Math.abs(stood.y - UPPER) < 0.06, JSON.stringify(stood));
   }
   // rejoin while lying on the stair landing: the server remembers the body
@@ -138,31 +209,53 @@ try {
   await lieDown();
   const lay = await body();
   await floorSent(LANDING);
-  await cdp.send('Page.navigate', { url: page });
-  await until(ready, 'the reloaded page', 300_000);
-  await sleep(1500);
-  const woke = await body();
+  const woke = await reloadThroughHold('reloading while lying on the stair landing', LANDING);
   check('reloading while lying on the stair landing wakes standing on it (1.8m), not inside the stair',
     !woke.downed && Math.abs(woke.y - LANDING) < 0.06, `lay with its root at ${lay.y.toFixed(2)}; restored ${JSON.stringify((lastRestore as any)?.p)}; woke ${JSON.stringify(woke)}`);
 
   // ...and the same with a 2× body, whose heap lies twice as far below the
   // floor: its root is well over a step under the dais however it falls, so
-  // only the remembered floor (presence `floor` → settledPose) can put it
-  // back on top. (At 1× a heap can lie within a step of the floor, and the
-  // controller's step-up would hide a missing floor.)
-  await evalJson(`(async () => { (await import('/lib/mybody.js')).getMe().setUserScale(2); })()`);
+  // the controller's step-up can't put it back on top. (At 1× a heap can lie
+  // within a step of the floor, and the step-up would hide a missing floor.)
+  // The remembered floor (presence `floor` → settledPose) wakes it at 1.8m;
+  // the server's fallback for a floorless record would wake it twice the
+  // reach above its root, and the held height tells the two apart.
+  // chosen as Profile › Avatar chooses it (mybody.js setMyBodyPref): saved for this body in this browser, so the
+  // reloaded page wears it again, as a real reload does
+  await evalJson(`(async () => { (await import('/lib/mybody.js')).setMyBodyPref({ scale: 2 }); })()`);
   await standAt(2.0, LANDING + 0.05, 0.8);
   await lieDown();
   const big = await body();
   check('(a 2× body lying on the dais has its root well over a step below it)', LANDING - big.y > 1.2 && big.floor != null && Math.abs(big.floor - LANDING) < 0.02,
     `root ${big.y.toFixed(2)}, ${(LANDING - big.y).toFixed(2)}m under the dais; floor ${big.floor}`);
   await floorSent(LANDING);
+  const bigWoke = await reloadThroughHold('reloading while a 2× body lies on the dais', LANDING);
+  const bigScale = await evalJson(`(async () => (await import('/lib/mybody.js')).getMe()?.userScale ?? null)()`);
+  check('reloading while a 2× body lies on the dais wakes it standing on the dais (1.8m), not inside or under it, still 2×',
+    !bigWoke.downed && Math.abs(bigWoke.y - LANDING) < 0.06 && bigScale === 2, `lay with its root at ${big.y.toFixed(2)}; woke ${JSON.stringify(bigWoke)} at scale ${bigScale}`);
+
+  // the bound: a hold that runs out lets go while the house is still on its
+  // way, and says so once, naming what it was still waiting for
+  await standAt(-2.2, UPPER + 0.05, 0);
+  await sleep(800);
+  heldBack = [];
   await cdp.send('Page.navigate', { url: page });
-  await until(ready, 'the reloaded page (2× body)', 300_000);
-  await sleep(1500);
-  const bigWoke = await body();
-  check('reloading while a 2× body lies on the dais wakes it standing on the dais (1.8m), not inside or under it',
-    !bigWoke.downed && Math.abs(bigWoke.y - LANDING) < 0.06, `lay with its root at ${big.y.toFixed(2)}; woke ${JSON.stringify(bigWoke)}`);
+  await until(bodyUp, 'the reloaded page\'s body (the bound), its house held back', 300_000);
+  await evalJson(`(async () => {
+    globalThis.__warns = [];
+    const warn = console.warn.bind(console);
+    console.warn = (...a) => { globalThis.__warns.push(a.map(String).join(' ')); warn(...a); };
+    (await import('/lib/arrivalhold.js')).holdHeightUntilSolid(3000);
+  })()`);
+  await simWait(0.5);                                    // well inside the 3 s bound (simulated time runs no faster than the wall's)
+  const inBound = await body();
+  await simWait(4.0);
+  const gaveUp = await body();
+  const warns: string[] = await evalJson(`globalThis.__warns.filter((w) => w.startsWith('[arrivalhold] gave up'))`);
+  check('a hold that runs out of its bound lets go while the house is still on its way, and says so once, naming it',
+    Math.abs(inBound.y - UPPER) < 0.06 && gaveUp.y < UPPER - 1 && warns.length === 1 && warns[0].includes('after 3s') && warns[0].includes('house'),
+    `inside the bound ${JSON.stringify(inBound)}; after it ${JSON.stringify(gaveUp)}; warnings ${JSON.stringify(warns)}`);
+  letModelsThrough();
 } catch (e) {
   process.exitCode = 1; throw e;
 } finally {
