@@ -1449,6 +1449,15 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const set = call("olive", "set", { id: "box", component: "reactions", value: { "*": { kind: "reset", targets: ["ball"] } } }); let del: any = null, threw: any = null;
   try { del = call("olive", "delete", { id: "ball" }); } catch (x) { threw = String(x).slice(0, 80); }
   ok(set.ok && !threw && del?.ok, "RF2 deleting a thing a handler keyed \"*\" names is answered", { set: set.ok, del: del?.ok ?? del, threw }); }
+// RX1: a refusal's remedy is one the asker can follow: a dynamic thing's look-at names a kind of body that may turn to
+// face something (a part's look-at is refused alike, so "put it on a part" was no remedy)
+{ const name = "rx1";
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  call("olive", "create-world", { title: "rx1" }); call("olive", "create", { id: "ball", model: "crate", components: { physics: { kind: "dynamic" } }, place: { at: [1, 1] } });
+  const look = call("olive", "set", { id: "ball", component: "look-at", value: { target: "@viewer" } });
+  const kin = call("olive", "set", { id: "ball", component: "physics", value: { kind: "kinematic" } }); const look2 = call("olive", "set", { id: "ball", component: "look-at", value: { target: "@viewer" } });
+  ok(look?.refused?.code === "conflict" && !/on a part/.test(look.refused.fix) && /kinematic/.test(look.refused.fix) && kin.ok && look2.ok,
+    "RX1 the dynamic look-at refusal names static or kinematic, and a kinematic one may look", { look: look?.refused, kin: kin.ok, look2: look2.ok ? "ok" : look2.refused }); }
 // SP1: a thing so far out that its cells aren't safe integers goes on the big list, not into a loop that can't advance
 // (x++ at 2^53 stays put), nor under a key that collides (cellKey covers ±1e6 cells)
 { const { cellsOf } = await import("../../shared/protocol/authority/spatial.js");

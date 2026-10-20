@@ -45,7 +45,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
   if (!carry && (comp === "light" || comp === "model" || comp === "mesh")) { const c = s.entities[id]?.c ?? {};
     for (const has of ["model", "light", "mesh"]) if (has !== comp && c[has] !== undefined) refuse("one-place", ONE_PLACE.reason(id, has, comp), ONE_PLACE.fix(id, has, comp)); }
   if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !CTX.knownId(comp.slice(6))))
-    refuse("shape", !isIdentity(comp.slice(6)) ? `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name` : `roles:${comp.slice(6)} is an identity this server doesn't know`, "who {name} finds a person's identity; then set roles:<identity>", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
+    refuse("shape", !isIdentity(comp.slice(6)) ? `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name` : `roles:${comp.slice(6)} is an identity this server doesn't know`, "whois {name} finds a person's identity; then set roles:<identity>", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
   const nums = (a, n, lim = 1e5) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === "number" && Math.abs(x) <= lim);
   // H5: everyone-is-owner would let any stranger remove the real owners: the default role is any role but owner (R 10-06;
   // research §4); `none` (legacy: below visitor) is still read and written, as existing worlds carry it
@@ -185,7 +185,7 @@ function mediaCheck(s, id, comp, v, at, obj) {
     const T = v.target;
     if (typeof T === "string" && T.startsWith("@") && !LOOK_WORDS.includes(T)) refuse("shape", `${at}.target '${T}' isn't one of ${LOOK_WORDS.join(", ")}`, "@viewer: each viewer's own eyes; @nearest: whoever is nearest; or a thing's id, or a person's identity (u-…)", { didYouMean: guess(T, LOOK_WORDS) });
     else if (typeof T === "string" && T.startsWith("@")) { /* @viewer, @nearest */ }
-    else if (typeof T === "string" && /^u-/.test(T)) { if (!isIdentity(T)) refuse("shape", `${at}.target '${T}' isn't an identity`, "who {name} finds a person's identity"); }
+    else if (typeof T === "string" && /^u-/.test(T)) { if (!isIdentity(T)) refuse("shape", `${at}.target '${T}' isn't an identity`, "whois {name} finds a person's identity"); }
     else if (typeof T === "string") { if (!s.entities[T] || T === "@world") refuse("not-found", `${at}.target: no thing called '${T}'`, "look lists what's here", { didYouMean: guess(T, Object.keys(s.entities).filter((k) => k !== "@world")) });
       if (T === id || ancestors(s, T).includes(id)) refuse("loop", `${id} can't turn to face ${T === id ? "itself" : `${T}, which rides it`}`, "pick a thing outside it"); }
     // radians (shape audit 10-16; PROTOCOL §9.2): the limits are [min, max] from rest
@@ -196,7 +196,7 @@ function mediaCheck(s, id, comp, v, at, obj) {
   // also turn to face something, and a dynamic thing's rotation is the sim's
   if ((isLookAt(comp) || comp === "motion" || comp.startsWith("motion:")) && obj) {
     const e = s.entities[id]; const node = nodeOf(comp, v);
-    if (isLookAt(comp) && e?.c.physics?.kind === "dynamic") refuse("conflict", `${id} is dynamic: physics turns it, so it can't also turn to face something`, "make it static (physics {kind: 'static'}), or put look-at on a part");
+    if (isLookAt(comp) && e?.c.physics?.kind === "dynamic") refuse("conflict", `${id} is dynamic: physics turns it, so it can't also turn to face something`, "make it static or kinematic (physics {kind: 'static'} or {kind: 'kinematic'}): only a dynamic body is turned by physics");
     const mine = isLookAt(comp) ? (k, x) => (k === "motion" || k.startsWith("motion:")) && ROTATING.has(x?.type) : (k) => isLookAt(k);
     if (!isLookAt(comp) && !ROTATING.has(v.type)) return;
     for (const [k, x] of Object.entries(e?.c ?? {})) if (k !== comp && mine(k, x) && nodeOf(k, x) === node)
