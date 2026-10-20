@@ -226,8 +226,12 @@ export function renameOps(st, purged = null) {
 export function shapeRepairOps(st, purged = null, { pathOf = null } = {}) {
   const ops = [];
   for (const id of Object.keys(st?.entities ?? {}).sort()) {
-    const c0 = st.entities[id].c; if (purged && Object.values(c0).some((v) => v === purged)) continue;   // a purged value is no one's to rewrite
+    // a purged value is no one's to rewrite: the repair reads the thing without its purged components, and a thing whose
+    // repair would write one of them (move data into a purged sibling) is left alone, as a half-move would lose the data
+    const all = st.entities[id].c, gone = purged ? new Set(Object.keys(all).filter((k) => all[k] === purged)) : new Set();
+    const c0 = gone.size ? Object.fromEntries(Object.entries(all).filter(([k]) => !gone.has(k))) : all;
     const { c, set, del } = id === "@world" ? repairWorld(c0) : repairComps(c0, { pathOf });
+    if ([...set, ...del].some((k) => gone.has(k))) continue;
     for (const k of del) ops.push({ verb: "delete", id, comp: k });
     for (const k of set) ops.push({ verb: "set", id, comp: k, value: c[k] }); }
   return ops;

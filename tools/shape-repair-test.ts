@@ -323,4 +323,11 @@ await tryRow('RP18', () => {
   const r = (amplitude: any) => repairMotion({ type: 'pendulum', amplitude, period: 2 });
   check('RP19 a numeric-string amplitude is kept as amp; a non-number one goes, as the old reader read none', r('0.4').amp === 0.4 && r(0.3).amp === 0.3 && r('wide').amp === undefined && r(null).amp === undefined && !('amplitude' in r('0.4')) && repairMotion({ amp: 0.2, amplitude: '0.9' }).amp === 0.2,
     [r('0.4'), r('wide'), r(null)]); }
+// RP20 (review of #260): a thing with one purged component still has its other components repaired
+{ const { shapeRepairOps } = await import('../shared/protocol/shaperepair.js'); const { PURGED } = await import('../shared/protocol/fold.js');
+  const st = { entities: { bob: { c: { label: PURGED, motion: { type: 'pendulum', amplitude: 0.3, period: 2 } } } } };
+  const ops = shapeRepairOps(st, PURGED);
+  check('RP20 a purged component is left alone, and the thing\'s other components are still repaired (its motion\'s amplitude becomes amp)', ops.some((o: any) => o.id === 'bob' && o.comp === 'motion' && o.value?.amp === 0.3) && !ops.some((o: any) => o.comp === 'label'), ops);
+  const hinge = shapeRepairOps({ entities: { door: { c: { pivot: PURGED, motion: { type: 'pendulum', pivot: [0, 1, 0], amp: 0.3, period: 2 } } } } }, PURGED);
+  check('RP21 …but a thing whose repair would move data into a purged sibling (a motion\'s pivot array, its pivot purged) is left alone', hinge.length === 0, hinge); }
 process.exit(fail ? 1 : 0);
