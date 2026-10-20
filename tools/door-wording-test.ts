@@ -339,6 +339,29 @@ try {
     { ...facing("b", "body.vrm"), receivedAt: Date.now() - 10_000 }));
   check("...toward one whose reading is stale says so",
     towardStale.reachEvaluation?.rightHand?.why === "b's body can't be read here now (its reading is stale), so this reach can't be checked; later reads check it again", JSON.stringify(towardStale.reachEvaluation));
+  const towardUnreadable = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } } }), facing("b", "body.vrm", { pose: "kneel" })));
+  check("...toward one whose published pose can't be read gives that as the reason",
+    towardUnreadable.reachEvaluation?.rightHand?.why === "b's body can't be read here, so this reach can't be checked: this body's published pose isn't a map of bones, so nothing of it was read; it's in what its client publishes, so calling again changes nothing until that client publishes a usable one", JSON.stringify(towardUnreadable.reachEvaluation));
+  const towardNowhere = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } } }), facing("b", "body.vrm", { p: [NaN, 0, 0.5] })));
+  check("...toward one whose position isn't finite gives that",
+    towardNowhere.reachEvaluation?.rightHand?.why === "b's body can't be read here, so this reach can't be checked: this body's published position or facing isn't a finite number, so nothing of it was read; it's in what its client publishes, so calling again changes nothing until that client publishes a usable one", JSON.stringify(towardNowhere.reachEvaluation));
+  const seatless = "nothing of b's body was read, since their seat can't be placed: unknown id (not a thing, and not mounted)";
+  const towardSeatless = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } } }), { ...facing("b", "body.vrm"), error: seatless }));
+  check("...toward one whose seat can't be placed gives that",
+    towardSeatless.reachEvaluation?.rightHand?.why === `b's body can't be read here, so this reach can't be checked: ${seatless}`, JSON.stringify(towardSeatless.reachEvaluation));
+  const towardSampleless = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } } }), { ...facing("b", "body.vrm"), pose: null }));
+  check("...toward one with no sample yet says so",
+    towardSampleless.reachEvaluation?.rightHand?.why === "b's body can't be read here, so this reach can't be checked: no presence sample has arrived for this body yet, so nothing of it was read; calling again in a moment can work", JSON.stringify(towardSampleless.reachEvaluation));
+  const towardUntimed = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } } }), { ...facing("b", "body.vrm"), receivedAt: null }));
+  check("...toward one whose reading this door can't time says so",
+    towardUntimed.reachEvaluation?.rightHand?.why === "b's body can't be read here, so this reach can't be checked: this door doesn't know when its reading arrived, so it can't tell whether it's current", JSON.stringify(towardUntimed.reachEvaluation));
+  // read() takes every body's first observation before its first await, so this one's first sample arrives while the skeletons load
+  const arriving = new Map<string, any>([["a", reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } } })], ["b", { ...facing("b", "body.vrm"), pose: null }]]);
+  const arrival = new BodyStateReader(worldBase).read("a", "all", undefined, (id: string) => arriving.get(id) ?? null);
+  arriving.set("b", facing("b", "body.vrm"));
+  const arrived = await arrival;
+  check("...but a target whose first sample arrives while the skeletons load is read with it",
+    arrived.reachEvaluation?.rightHand?.ok === true, JSON.stringify(arrived.reachEvaluation));
   // read() takes every body's first observation before its first await, so these change while the skeletons load
   const moving = new Map<string, any>([["a", reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } }, leftHand: { t: { who: "d", point: "shoulder_l" } } })],
     ["b", facing("b", "body.vrm")], ["d", facing("d", "body.vrm")]]);

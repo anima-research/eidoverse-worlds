@@ -298,7 +298,8 @@ export class BodyStateReader {
       await Promise.all(Array.from({ length: Math.min(4, deps.size) }, async () => {
         for (let next = pendingBodies.next(); !next.done; next = pendingBodies.next()) {
           const o = next.value;
-          if (o.who !== who && postureUnavailable(o)) { skipped.set(o.who, `its posture ${shown(o.pose?.clip ?? "unknown")} isn't one body_state evaluates`); continue; }
+          // A body with no sample yet loads anyway, since one can arrive while the skeletons load.
+          if (o.who !== who && o.pose && postureUnavailable(o)) { skipped.set(o.who, `its posture ${shown(o.pose.clip ?? "unknown")} isn't one body_state evaluates`); continue; }
           // Bound parallel VRM downloads even when a relation spans a crowd.
           try { await loadBody(o); } catch (e) {
             if (o.who === who) throw e;
@@ -316,10 +317,14 @@ export class BodyStateReader {
       if (loaded.get(who)?.clip !== latest.pose?.clip) return missingPosture(out, latest,
         `${whose(latest)} joints and contacts weren't read: the posture changed from ${shown(loaded.get(who)?.clip)} to ${shown(latest.pose?.clip)} while the skeleton loaded, so calling again can get them`);
       for (const [id, item] of loaded) {
-        const o = observe(id);
+        const o = observe(id), f = o ? freshness(o) : null;
+        // What it publishes that can't be read is its own reason, which waiting alone may not change.
+        if (o && f!.status === "unknown") {
+          unloaded.set(id, validate(o) ?? "this door doesn't know when its reading arrived, so it can't tell whether it's current"); loaded.delete(id); continue;
+        }
         const gone = !o ? "it left"
           : o.generation !== item.observation.generation || o.avatar !== item.observation.avatar || item.clip !== o.pose?.clip ? "it changed while its skeleton loaded"
-          : freshness(o).status !== "current" ? "its reading is stale"
+          : f!.status !== "current" ? "its reading is stale"
           : postureUnavailable(o) ? `its posture ${shown(o.pose?.clip ?? "unknown")} isn't one body_state evaluates` : "";
         if (gone) { skipped.set(id, gone); loaded.delete(id); continue; }
         item.observation = o;
