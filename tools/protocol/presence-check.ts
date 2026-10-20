@@ -101,20 +101,21 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
 { const vic = await sock("Vic"), sly = await sock("Sly");
   vic.at(0, 0); sly.at(1, 0); await sleep(300);
   const got = (k, t) => vic.since(k).filter((m) => m.type === t);
+  // recut A2 (R 10-20): an untouched body ACCEPTS (permissive default); the gate is exercised by Vic choosing refuse
+  const r0 = await vic.req("consent", { switch: "refuse" }); ok(r0?.ok, "(BC1 setup) Vic sets her body to refuse", r0);
   let k = vic.msgs.length, ks = sly.msgs.length;
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await sleep(300);
   ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /shove/.test(m.error) && /consent|isn't taking/.test(m.error)),
-    "BC1 a stranger's knock-over of a body that never set a table (Normal: shove nobody) is refused at the server, never forwarded", { vic: got(k, "puppet"), sly: sly.since(ks).filter((m) => m.type === "error") });
+    "BC1 a stranger's knock-over of a body set to refuse is refused at the server, never forwarded", { vic: got(k, "puppet"), sly: sly.since(ks).filter((m) => m.type === "error") });
   k = vic.msgs.length; ks = sly.msgs.length;
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, pose: { head: [0, 0, 0, 1] } }); await sleep(300);
-  ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /pose/.test(m.error)), "BC1 …and a pose likewise (pose nobody)", sly.since(ks));
+  ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /pose/.test(m.error)), "BC1 …and a pose likewise", sly.since(ks));
   k = vic.msgs.length; ks = sly.msgs.length;
   sly.send({ type: "bodydrag", target: "Vic", targetActor: vic.actor, grab: { joint: "hips" } }); await sleep(300);
-  ok(got(k, "bodydrag").length === 0, "BC1 …and a drag's grab likewise (move nobody)", got(k, "bodydrag"));
+  ok(got(k, "bodydrag").length === 0, "BC1 …and a drag's grab likewise", got(k, "bodydrag"));
   // Vic opens shove and move to everyone: now it's forwarded, within reach
-  const r1 = await vic.req("consent", { set: { class: "shove", tier: "everyone", mode: "allow" } });
-  const r2 = await vic.req("consent", { set: { class: "displace", tier: "everyone", mode: "allow" } });
-  ok(r1?.ok && r2?.ok, "(BC setup) Vic opens shove and displace to everyone through the authority's consent verb", [r1, r2]);
+  const r1 = await vic.req("consent", { switch: "accept" }), r2 = r1;
+  ok(r1?.ok, "(BC setup) Vic sets her body back to accept through the authority's consent verb", r1);
   k = vic.msgs.length;
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await sleep(300);
   ok(got(k, "puppet").length === 1, "BC2 with Vic's table saying everyone, the knock-over is forwarded", vic.since(k).map((m) => m.type));
@@ -126,7 +127,7 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await sleep(300);
   ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /away/.test(m.error)), "BC3 a knock-over from 20 m is refused (out of reach), whatever the table says", sly.since(ks));
   // ask: refused, saying how to ask
-  sly.at(1, 0); await vic.req("consent", { set: { class: "pose", tier: "everyone", mode: "ask" } }); await sleep(300);
+  sly.at(1, 0); await vic.req("consent", { switch: "ask" }); await sleep(300);
   k = vic.msgs.length; ks = sly.msgs.length;
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, pose: { head: [0, 0, 0, 1] } }); await sleep(300);
   ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /ask/.test(m.error) && /body/.test(m.error)), "BC4 'ask' is refused with how to ask (body {to, kind}), not forwarded", sly.since(ks));

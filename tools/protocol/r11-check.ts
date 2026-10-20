@@ -127,17 +127,7 @@ const cases: Case[] = [
       const a6 = s.call("mallory", "consent", { of: "alice", pause: true }); const a7 = s.call("mallory", "consent", { of: "alice", deny: "bob" });
       return { a1: show(a1), a2: show(a2), a3: show(a3), un: show(un), list, a6: show(a6), a7: show(a7), paused: tableOf(s, "alice").paused }; },
     good: (o) => o.a1 === "ok" && o.a2 === "ok" && o.a3 === "ok" && o.un === "ok" && JSON.stringify(o.list) === "[]" && /^refused consent/.test(o.a6) && /^refused consent/.test(o.a7) && o.paused === false },
-  { id: "C2", what: "(stern M1) removing a friend breaks the mutual tier at once: alice and bob named each other, bob's touch (friends: allow) is on her shoulder; alice's consent {unfriend: bob} ends it (body-revoked, `ended`) and bob is `everyone` to her again", run(s) {
-      s.call("olive", "create-world", { title: s.name });
-      s.call("alice", "move", { to: [0, 0, 0] }); s.call("bob", "move", { to: [0.5, 0, 0] });
-      s.call("alice", "consent", { friend: "bob" }); s.call("bob", "consent", { friend: "alice" });
-      const before = C.decide(s.w().presence, "bob", "alice", "touch", T).tier;
-      const r = s.call("bob", "reach", { who: "alice", point: "shoulder_l" }); const touching = !!s.w().presence.reaches?.bob;
-      const un = s.call("alice", "consent", { unfriend: "bob" });
-      const after = C.decide(s.w().presence, "bob", "alice", "touch", T);
-      return { before, r: show(r), touching, un: show(un), ended: un?.ended ?? null, still: !!s.w().presence.reaches?.bob, after: after.tier, mode: after.mode,
-        hers: tableOf(s, "alice").friendsList, his: tableOf(s, "bob").friendsList }; },
-    good: (o) => o.before === "friends" && o.r === "ok" && o.touching && o.un === "ok" && Array.isArray(o.ended) && o.ended.some((e: any) => e.actor === "bob") && !o.still && o.after === "everyone" && o.mode === "ask" && JSON.stringify(o.hers) === "[]" && JSON.stringify(o.his) === '["alice"]' },
+  // C2 RETIRED (recut A2, 10-20): it tested unfriending ending the friends tier; there is no friends tier.
   { id: "C6", what: "(r12 M1) an unfriend re-checks the EX-FRIEND's body too (friendship is mutual): bob's friends tier allows pose; alice poses bob and her touch is on his shoulder; alice's consent {unfriend: bob} ends both on bob's body (her `ended`, body-revoked in her inbox) and her next reach is an ask, not the stale yes", run(s) {
       s.call("olive", "create-world", { title: s.name });
       s.call("alice", "move", { to: [0, 0, 0] }); s.call("bob", "move", { to: [0.5, 0, 0] });

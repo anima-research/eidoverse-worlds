@@ -134,7 +134,7 @@ const cases: Case[] = [
       return { r: code(r), verb: a?.verb, body: a?.body, log: JSON.stringify(s.entries()).includes("5550100") || JSON.stringify(s.entries()).includes("555-0100"), ring: ring.at(-1)?.verb }; },
     good: (o) => o.r === "unknown-verb" && o.verb === "unknown-verb" && JSON.stringify(o.body?.args) === "[]" && o.body?.unknownArgs === 1 && !o.log && o.ring === "call-me-on-5550100" },
   { id: "L5", what: "a refused touch, body effect or consent write is never logged (presence: consent is never appended, scars r8 M3); a refused edit still is", run(s) { cast(s);
-      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] });
+      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] }); s.call("bob", "consent", { switch: "refuse" });   // recut A2: default is accept
       const n0 = s.entries().length;
       const b = s.call("vic", "body", { to: "bob", kind: "shove" });
       const r = s.call("vic", "reach", { who: "bob", point: "shoulder_l" });
