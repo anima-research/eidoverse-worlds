@@ -485,7 +485,9 @@ entity are two fires. Anything else — an unknown preset, an out-of-range numbe
 a key the evaluator ignores, a malformed `particles:…` name — is reported by
 name in the flight recorder (`world_debug`, kind `particles-lint`, with
 `component` naming the emitter when it isn't the default) rather than silently dropped, and the
-component still folds and still perceives. `quality` (`auto`/`high`/`med`/
+component still folds and still perceives. A `particles:` key longer than 32
+characters (a name over 22) is the exception: the door refuses it, since cutting
+it to fit could fold it into another emitter, and nothing is written. `quality` (`auto`/`high`/`med`/
 `low`) is an authored UPPER BOUND on the sprite count, shared by every client;
 each client's own perf governor may lower it further but never raise it, so
 **the sprite count is the one thing allowed to differ between two people
