@@ -630,9 +630,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
           ({ x, z } = r); what = ` (${r.what})`;
         }
       } else if (a.to != null || mode === "walk") {
-        const to = Array.isArray(a.to) ? a.to.map(Number) : [];
+        // a null coordinate is no value, not 0: Number(null) would pick the floor at height 0
+        const to = Array.isArray(a.to) ? a.to.map((v: unknown) => v == null ? NaN : Number(v)) : [];
         x = to[0]; z = to.length === 3 ? to[2] : to[1];
-        if (to.length === 3) y = to[1];
+        if (to.length === 3) y = a.to[1] == null ? undefined : to[1];
         if (to.length !== 2 && to.length !== 3)
           return { content: [{ type: "text", text: "move needs to: [x, y, z] (or [x, z]) of finite numbers, or a name (a named place, a thing's id or label, a person; \"?\" lists the places)" }], isError: true };
       } else { x = NaN; z = NaN; }
@@ -1468,6 +1469,12 @@ export const TOOL_FOLDS: Record<string, string> = {
   light: 'create {components: {light: {…}}, at?} (edit {id, set: {"light.intensity": …}} updates one)', remove: 'act {verb: "delete", args: {id}}',
   blueprint_place: 'create {from: "sha256:<hash>", at?}', kick: 'act {verb: "kick", args: {who, minutes?, reason?}}', ban: 'act {verb: "ban", args: {who, days?, reason?, global?}}',
   unban: 'act {verb: "unban", args: {who, global?}}', list_bans: 'act {verb: "bans", args: {global?}}',
+  // main's world_access left without a pointer
+  world_access: 'the world\'s own components on @world: worlds shows each door; owners change it with act {verb: "set", args: {id: "@world", component: "access" | "roles:<id>", value}}',
+};
+/** Main's tools that left with what they did, and why (whisper fell through to a did-you-mean of whois). */
+export const TOOL_REMOVED: Record<string, string> = {
+  whisper: "world chat has no private channel since R 10-18; say speaks aloud to everyone here",
 };
 /** An alias carries the OLD argument shape too (review 10-15 #5: walk_to {x, z} reached move, which takes {to}, and got a shape
  *  error — the alias ran the right tool with the wrong words). Each translates the old schema to the new one, or says what to
@@ -1475,7 +1482,7 @@ export const TOOL_FOLDS: Record<string, string> = {
 export const TOOL_ALIAS_ARGS: Record<string, (a: Record<string, any>) => Record<string, any> | { refuse: string }> = {
   // walk_to {to} (a named place, a thing, a person, "?": #239) passes through as move's to; {x, z} is to: [x, z], and with
   // y (#236: which floor) to: [x, y, z]. run and tolerance carry over; walk_to took nothing else
-  walk_to: (a) => ({ to: a.to !== undefined ? a.to : a.y !== undefined ? [a.x, a.y, a.z] : [a.x, a.z],
+  walk_to: (a) => ({ to: a.to !== undefined ? a.to : a.y != null ? [a.x, a.y, a.z] : [a.x, a.z],
     ...(a.run !== undefined ? { run: a.run } : {}), ...(a.tolerance !== undefined ? { tolerance: a.tolerance } : {}) }),
   snapshot: (a) => a,
   check_model: (a) => ({ ...a, check: true }),   // #241's tool, a mode of measure: the same {id | lib, scale?}
@@ -1492,6 +1499,8 @@ export const TOOL_ALIAS_ARGS: Record<string, (a: Record<string, any>) => Record<
   animate: (a) => a.name != null ? { name: a.name, ...(a.looped === true || a.loop === true ? { mode: "loop" } : {}) }
     : { tracks: a.tracks, dur: a.dur, mode: a.looped === true || a.loop === true ? "loop" : "once", ...(a.replace != null ? { replace: a.replace } : {}), ...(a.target != null ? { target: a.target } : {}) },
   posture: (a) => { const k = String(a.kind ?? a.posture ?? ""); return ["sit", "sitchair", "lie", "stand"].includes(k) ? { name: k, mode: "loop" } : { refuse: "posture is sit, sitchair, lie or stand — anim {name} plays it now" }; },
+  // emote's gestures played once: without a mode, anim plays dance as its own loop
+  emote: (a) => a.name != null && a.mode == null ? { ...a, mode: "once" } : a,
   world_verb: (a) => a,   // TOOL_ALIAS_ARGS: act takes the same {verb, args}
   spawn: (a) => {
     if (!a.lib) return { refuse: a.query ? `spawn {query} has no one-step form now: library {query: ${JSON.stringify(a.query)}} finds the model, then create {model}` : "spawn needs lib (a library path); it is create {model} now" };
@@ -1517,10 +1526,12 @@ const edits = (x: string, y: string) => { const d: number[][] = Array.from({ len
 export const nearestTool = (name: string) => Object.keys(HANDLERS).map((n) => [n, edits(name, n)] as const).sort((p, q) => p[1] - q[1])[0];
 export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, any>) {
   const r = resolveTool(name);
+  if (!r && TOOL_REMOVED[name]) return { content: [{ type: "text", text: `${name} was removed: ${TOOL_REMOVED[name]} — nothing ran` }], isError: true };
   if (!r && TOOL_FOLDS[name]) return { content: [{ type: "text", text: `${name} folded into a general tool: ${TOOL_FOLDS[name]} — nothing ran` }], isError: true };
   // the same words for a tool this server doesn't serve, hidden or never there (#247), with the nearest name when one is close
   if (!r) { const near = nearestTool(name); return { content: [{ type: "text", text: `there's no tool named "${name}" on this server, so nothing ran${near && near[1] <= 4 ? ` (did you mean ${near[0]}?)` : ""}; your tool list has the ones it serves` }], isError: true }; }
-  if (r.note && TOOL_ALIAS_ARGS[name]) { const t = TOOL_ALIAS_ARGS[name](a ?? {}); if ("refuse" in t) return { content: [{ type: "text", text: `${r.note}\n${t.refuse}` }], isError: true }; a = t; }
+  // a refused translation ran nothing, so its note says what the old name is now, not that it ran
+  if (r.note && TOOL_ALIAS_ARGS[name]) { const t = TOOL_ALIAS_ARGS[name](a ?? {}); if ("refuse" in t) return { content: [{ type: "text", text: `(${name} is now called ${r.name}; nothing ran)\n${t.refuse}` }], isError: true }; a = t; }
   // A tool's failure belongs in its result, where the model reads it: a
   // handler that throws, such as verb()'s refusal while the link is down,
   // answers as a failed call rather than as a protocol error.
