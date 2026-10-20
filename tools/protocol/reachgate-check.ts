@@ -110,6 +110,19 @@ const head0 = w.log.head;
 { const out = reachTo(sly, { who: "Nobody", point: "chest_front" });
   ok(out && !out.reach, "RG8 a hand toward someone who isn't here is stripped", out); }
 
+// RG21 (review of #260, server I8): a point in one body's frame is drawn where it lands in the world (reachnet.js resolves it
+// in their frame), so a point given in Vic's frame that rests inside Tom is held to Tom's table, not waved through as Vic's
+{ const out = reachTo(sly, { p: [-0.62, 1.2, 0.05], space: "Vic" });   // Vic stands at the origin, yaw 0: that is Tom's middle
+  ok(out && !out.reach, "RG21 a point in Vic's frame that lands inside Tom is stripped", out);
+  const out2 = reachTo(sly, { p: [0, 1.2, 2], space: "Vic" });
+  ok(out2?.reach?.rightHand?.t?.space === "Vic", "RG21 …one in Vic's frame in open air still relays", out2); }
+
+// RG22 (review of #260, server I9): receivers turn a body by its pose's q when it has one (remotes.js), so the gate does too.
+// Sly at x 0.6, turned half round by q while yaw stays 0: her own +x is the world's -x, so [0.62, 1.2, 0.05] is Vic's middle
+{ const out = reachTo(sly, { p: [0.62, 1.2, 0.05], space: "self" }, { q: [0, 1, 0, 0] });
+  ok(out && !out.reach, "RG22 a point in Sly's own frame, turned by q, that lands inside Vic is stripped", out);
+  pose(sly, { p: [0.6, 0, 0], yaw: 0 }); }
+
 // RG10 (everything above went through the relay only)
 ok(w.log.head === head0, "RG10 nothing about a reach is appended to the log", w.log.live.entries.slice(head0 + 1).map((e) => e.verb));
 
