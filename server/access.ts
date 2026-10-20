@@ -138,7 +138,9 @@ export function entryFor(door: Door, who: Who, mode: EntryMode, { now = Date.now
   if (e.may === "none" || (mode === "embody" && e.may === "watch")) return { code: ACCESS_CLOSE, reason: "no-access", why: e.why ?? `"${door.name}" isn't open to you` };
   if (bypass) return null;
   const acc = door.wc.access && typeof door.wc.access === "object" ? door.wc.access : null;
-  const age = acc ? accountAgeRefusal({ world: door.name, minDays: acc.minAccountDays, account, anonymous: !account, now }) : null;
+  // a trusted renderer has no account and never embodies: the door let it watch above, and the account-age rule is about
+  // accounts (review of #260, server I52)
+  const age = acc && !who.trustedRenderer ? accountAgeRefusal({ world: door.name, minDays: acc.minAccountDays, account, anonymous: !account, now }) : null;
   if (age && !(mode === "watch" && acc?.watch === "anyone")) return { code: ACCESS_CLOSE, reason: "age", why: age };
   // "full" is transient (someone leaves): its own close (4005 "full"), which clients wait out and try again
   if (mode === "embody" && here != null && acc && Number.isInteger(acc.max) && here >= acc.max) return { code: 4005, reason: "full", why: `"${door.name}" is full (${acc.max} at once)` };

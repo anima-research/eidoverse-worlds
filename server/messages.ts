@@ -70,6 +70,10 @@ export type MsgCtx = {
   expel: (w: World, target: Client, why: string) => void;
 };
 
+/** A page size asked for on the wire: a whole number from 1 to PAGE_MAX, else the default (NaN or 1.5 never equals a
+ *  page's length, so readHistory's ceiling would never stop it). */
+export const pageLimit = (v: unknown): number => { const n = Number(v ?? LIMITS.PAGE_DEFAULT); return Number.isInteger(n) && n >= 1 ? Math.min(LIMITS.PAGE_MAX, n) : LIMITS.PAGE_DEFAULT; };
+
 export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   "history": ({ c, ws, now, expel }, msg) => {
     // Speech is arrival-only (R 10-18): the log keeps every say, but a page holds only the lines said since this
@@ -81,7 +85,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const r = c.world.readHistory({
       before: typeof msg.before === "number" ? msg.before : Infinity,
       after: typeof msg.after === "number" ? msg.after : -Infinity,
-      limit: Math.min(LIMITS.PAGE_MAX, Math.max(1, Number(msg.limit ?? LIMITS.PAGE_DEFAULT))),
+      limit: pageLimit(msg.limit),
       verbs: Array.isArray(msg.verbs) && msg.verbs.length ? new Set(msg.verbs.map(String)) : null,
       floor: c.world.sayFloorFor(c),
     });
@@ -93,7 +97,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // spectators for the same reason history is: the log is public,
     // so the reasons things failed to reach it are public too.
     if (!c.world) return;
-    const limit = Math.min(LIMITS.PAGE_MAX, Math.max(1, Number(msg.limit ?? LIMITS.PAGE_DEFAULT)));
+    const limit = pageLimit(msg.limit);
     if (msg.script != null) {
       // one script's own log ring + status — the author's console
       const b = c.world.scripts.inspect(String(msg.script));
@@ -438,7 +442,9 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       ws.send(JSON.stringify({ type: "mod", text: list.length ? `global bans (${list.length}):\n${list.join("\n")}` : "no global bans" }));
       return;
     }
-    const id = String(msg.id ?? "").trim().slice(0, LIMITS.ID_LEN);
+    // an account selector keeps its whole length (an aid1 account carries its issuer's URL): cut to a display name's 64
+    // it named no one, and an unban couldn't find it (review of #260, server I30)
+    const raw = String(msg.id ?? "").trim(), id = /^(human|agent|aid1|local):/.test(raw) ? raw.slice(0, 512) : raw.slice(0, LIMITS.ID_LEN);
     if (!id || id === "*") {
       ws.send(JSON.stringify({ type: "error", error: `${msg.type} wants {id, reason?} — a specific participant, not everyone` }));
       return;

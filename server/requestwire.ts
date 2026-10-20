@@ -40,7 +40,7 @@ export function whois(w: World, args: Any) {
   if (!q || q.length > 128) return { ok: false, refused: { code: "shape", reason: "whois {name} (or {id: 'u-…'})", fix: "the name someone goes by here, as their nameplate shows it" } };
   const log = w.log!; const dir = directoryFor(WORLDS_DIR);
   const here = new Map<string, string>(), said = new Map<string, string>();
-  for (const c of w.clients) if (c.actorId && !c.spectator) { here.set(c.actorId, c.id); if (c.declares) said.set(c.actorId, c.declares); }
+  for (const c of w.clients) if (c.actorId && !c.spectator && !w.isGhost(c)) { here.set(c.actorId, c.id); if (c.declares) said.set(c.actorId, c.declares); }
   const known = new Set<string>([...here.keys(), ...log.knownIds()]);
   const want = foldName(q);
   if (!want && !/^u-[a-z2-7]{20}$/.test(q)) return { ok: false, refused: { code: "shape", reason: `"${q.slice(0, 40)}" has no letters or digits to look up`, fix: "the name someone goes by here, as their nameplate shows it" } };

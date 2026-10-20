@@ -771,7 +771,7 @@ const ROUTES: Route[] = [
         const door = doorFor(name);
         if (!door || !visibleTo(door, caller)) return [];
         const w = worlds.get(name);
-        const present = w ? [...w.clients].filter((c) => !c.spectator && !c.superseded) : [];
+        const present = w ? [...w.clients].filter((c) => !c.spectator && !c.superseded && !w.isGhost(c)) : [];   // a ghost is unseen
         const mine = youAt(door, caller).you === "enter" ? "enter" : "watch";
         return [{
           name,
