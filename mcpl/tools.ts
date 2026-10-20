@@ -726,7 +726,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
   face: async (ag, a, ctx, name) => {
       if (a.target) {
         let tid = String(a.target); if (!ag.people.has(tid)) { const t = ag.thingRef(tid); if ("refusal" in t) return { content: [{ type: "text", text: `face: ${t.refusal}` }], isError: true }; if ("id" in t) tid = t.id; }
-        const p = ag.people.get(tid)?.pose?.p ?? ag.entities.get(tid)?.pos;
+        // a thing's world point, as move reads it: a child's pos is local to its parent
+        const person = ag.people.get(tid)?.pose?.p;
+        let p: number[] | undefined = person;
+        if (!p && ag.entities.has(tid)) { const w = ag.worldPointOf(tid); if ("why" in w) return fail(`face: you didn't turn, since where ${a.target} is can't be worked out here: ${w.why}`); p = w.pos; }
         if (!p) return fail(`nothing here is called "${a.target}", so you didn't turn; look lists who and what is around you`);
         ag.face(p[0], p[2]);
       } else if (a.x != null && a.z != null) ag.face(Number(a.x), Number(a.z));

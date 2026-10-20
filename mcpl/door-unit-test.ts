@@ -109,4 +109,13 @@ for (const dur of [2, undefined]) {
   const pin = sent[0]?.extra?.expect;
   ok(JSON.stringify(pin) === JSON.stringify([{ id: "lamp-1", component: "label", value: "old" }]), "edit's write is pinned to the label it read", { pin, out: out.content?.[0]?.text }); }
 
+// face turns to a thing's world point, not a child's pos, which is local to its parent
+for (const where of [{ pos: [10, 0, 10] }, { why: "its parent isn't here" }] as any[]) {
+  const faced: number[][] = [];
+  const ag: any = { people: new Map(), thingRef: () => ({ id: "cup-1" }), entities: new Map([["cup-1", { id: "cup-1", pos: [0.2, 0.9, 0.1] }]]),
+    worldPointOf: () => where, face: (x: number, z: number) => faced.push([x, z]) };
+  const out: any = await handleTool({ agent: ag } as any, "face", { target: "cup" });
+  ok("pos" in where ? JSON.stringify(faced) === "[[10,10]]" && !out.isError : !faced.length && out.isError && out.content[0].text.includes(where.why),
+    "pos" in where ? "face turns to a child's world point" : "face whose thing's point can't be worked out turns nowhere and says why", { faced, out: out.content[0].text }); }
+
 console.log(`door-unit-test: ${fails ? `${fails} failed` : "all ok"}`); process.exit(fails ? 1 : 0);
