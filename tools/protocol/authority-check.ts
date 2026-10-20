@@ -1292,6 +1292,17 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
     const after = Rr("g4", "create", { id: "gr-4", model: "crate", components: { transform: { pos: [0, 0, 6] } } });
     const acct2 = Rr("ann", "create", { id: "gr-a", model: "crate", components: { transform: { pos: [2, 0, 6] } } });
     ok(before.every((x) => x.ok) && code(after) === "full" && /3 by creators this server doesn't know/.test(after.refused?.reason ?? "") && acct2.ok, "SR2c after a restart, what earlier guests made still counts against the guests' pool (their ids are unknown here now), and the refusal says so; an account still adds one", { before: before.map((x) => x.ok ?? x.refused), after: after.ok ?? after.refused, acct: acct2.ok ?? acct2.refused }); }
+  // review of #260: the guests' pool is read as the world's own cap is, on the net change: a write that deletes as many of
+  // the guests' things as it makes is never refused, and one that grows the pool past its limit is, saying by how much
+  { const Wn = () => openWorld(root, "guestnet");
+    const Rn = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); const w = Wn(); w.kindOf = (id) => (id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
+    Rn("ann", "create-world", { title: "guestnet" }); Rn("ann", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
+    Rn("ann", "set", { id: "@world", component: "capacity", value: { guestEntities: 2 } });
+    const made = ["gn-0", "gn-1"].map((id, i) => Rn("g1", "create", { id, model: "crate", components: { transform: { pos: [i * 2, 0, 0] } } }));
+    const swap = Rn("g1", "batch", { ops: [{ verb: "delete", args: { id: "gn-0" } }, { verb: "create", args: { id: "gn-2", model: "crate", components: { transform: { pos: [4, 0, 0] } } } }] });
+    const grow = Rn("g1", "batch", { ops: [{ verb: "delete", args: { id: "gn-1" } }, ...["gn-3", "gn-4"].map((id, i) => ({ verb: "create", args: { id, model: "crate", components: { transform: { pos: [6 + i * 2, 0, 0] } } } }))] });
+    ok(made.every((x) => x.ok) && swap.ok && code(grow) === "full" && /1 more won't fit/.test(grow.refused?.reason ?? "") && /delete/.test(grow.refused?.fix ?? ""),
+      "SR2d a guest's write that deletes as many of the guests' things as it makes is never refused full; one that grows the pool past its limit is, saying by how much, and its fix names a delete", { made: made.map((x) => x.ok), swap: swap.refused ?? swap.ok, grow: grow.refused }); }
   // the world's own budget: a socket meets it like a thing, and deleting frees room
   const have = nEnt(); R("ann", "set", { id: "@world", component: "capacity", value: { entities: have + 2 } });
   R("ann", "create", { id: "w-host", model: "crate", components: { transform: { pos: [0, 0, -5] } } });

@@ -31,13 +31,14 @@ const capacityOf = (st) => { const ok = (x) => Number.isInteger(x) && x >= 0;
 // nobody is. → "anon" | "unknown" | null
 const guestKind = (w, id) => { if (typeof id !== "string" || !w.kindOf || RESERVED.has(id)) return null; const k = w.kindOf(id);
   return k === "anon" ? "anon" : k == null ? "unknown" : null; };
-// how many entities in the guests' pool still stand, and how many of those an unknown creator made (a log view, kept
-// incrementally like everIds)
-function guestMade(w, st) {
+// how many entities in the guests' pool still stand in st, how many of those an unknown creator made, and how many of
+// them the write's state s no longer holds (a log view, kept incrementally like everIds)
+function guestMade(w, st, s = st) {
   const G = (w.__guests ??= { n: 0, ids: new Map() });
   for (; G.n < w.entries.length; G.n++) { const e = w.entries[G.n]; if (!isE(e) || e.kind !== "change") continue; let kind;
     for (const o of opsQuiet(e)) { if (o.verb === "create") { kind ??= guestKind(w, entryBy(w, e).rights); if (kind) G.ids.set(o.id, kind); } else if (o.verb === "delete" && o.comp === undefined) G.ids.delete(o.id); } }
-  let n = 0, unknown = 0; for (const [id, k] of G.ids) if (st.entities[id]) { n++; if (k === "unknown") unknown++; } return { n, unknown };
+  let n = 0, unknown = 0, gone = 0; for (const [id, k] of G.ids) if (st.entities[id]) { n++; if (k === "unknown") unknown++; if (!s.entities[id]) gone++; }
+  return { n, unknown, gone };
 }
 const entityCount = (st) => Object.keys(st.entities).length - (st.entities["@world"] ? 1 : 0);
 function capacityCheck(w, st, s, who, norm) {
@@ -58,8 +59,10 @@ function capacityCheck(w, st, s, who, norm) {
   if (!made) return;
   const holder = who.cap?.kind === "reaction" ? who.cap.author : who.cap?.kind === "script" ? who.cap.sponsor : who.actor;
   if (!CTX.isAnon(holder)) return;
-  const { n: g, unknown } = guestMade(w, st);
+  // as the world's own cap reads it: a write that leaves the pool no bigger is never refused (a delete in the same request
+  // makes room), and one that grows it past the limit is
+  const { n: g, unknown, gone } = guestMade(w, st, s); if (made <= gone || g - gone + made <= cap.guestEntities) return;
   const whose = unknown ? `things by account-less people (guests), and ${unknown} by creators this server doesn't know (a guest from before a restart, or someone from before its directory or another server), together make ${g}` : `account-less people (guests) together have ${g} entities standing here`;
-  if (g + made > cap.guestEntities) refuse("full", `${whose}, and this world lets them have ${cap.guestEntities} (@world.${cap.name}.guestEntities), all of them together`, `sign in to build more, or ask the world's owner to raise it: set {id: '@world', component: '${cap.name}', value: {guestEntities: <n>}, merge: true} (at most ${CAPACITY_CEILING.guestEntities} on this server)`, { limit: cap.guestEntities, entities: g });
+  refuse("full", `${whose}, and this world lets them have ${cap.guestEntities} (@world.${cap.name}.guestEntities), all of them together: ${made - gone} more won't fit`, `delete something the guests made first (a delete in the same request makes room), sign in to build more, or ask the world's owner to raise it: set {id: '@world', component: '${cap.name}', value: {guestEntities: <n>}, merge: true} (at most ${CAPACITY_CEILING.guestEntities} on this server)`, { limit: cap.guestEntities, entities: g });
 }
 export { capacityCheck };
