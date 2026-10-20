@@ -63,9 +63,10 @@ try {
   const missed = said(await call("spawn", { query: "zzz" }));
   check("a query that found nothing says so, not that none was passed",
     /^no library model matches "zzz", so nothing was spawned; list_library/.test(missed), missed);
-  const emptyLib = said(await call("spawn", { lib: "", query: "zzz" }));
-  check("an empty lib, which skips the search, says the lib named no model",
-    emptyLib === `spawn's lib was "", which names no model, so nothing was spawned; pass a model's path, or leave lib out and pass query to search the library`, emptyLib);
+  // An empty lib names no model and lets a query search (door-is-error-test); a lib such as 0 skips the search.
+  const noModel = said(await call("spawn", { lib: 0, query: "zzz" }));
+  check("a lib that names no model, such as 0, skips the search and says so",
+    noModel === `spawn's lib was 0, which names no model, so nothing was spawned; pass a model's path, or leave lib out and pass query to search the library`, noModel);
   const noId = said(await call("place", { x: 1, z: 1 }));
   check("place without an id names it and shows the call",
     noId === `place needs id, the entity to move, so nothing was placed: place {id: "lamp1", x: 3, z: -2}`, noId);
@@ -167,11 +168,13 @@ try {
   const winged = (a: any) => { a.bodyBoneNames = wingBones; a.loadBodyBones = async () => wingBones; a.myRights = { role: "builder", fly: true }; return a; };
   winged(pilot);
   pilot.wingsFolded = true;
+  // The acts answer { ok, text }; these checks read the words.
+  const folded = await pilot.takeOff();
   check("take-off with folded wings says how to open them",
-    await pilot.takeOff() === "still standing — wings folded; unfold_wings opens them");
+    !folded.ok && folded.text === "still standing — wings folded; unfold_wings opens them", JSON.stringify(folded));
   pilot.wingsFolded = false;
-  const up = await pilot.takeOff();
-  const stay = await pilot.foldWings(true);
+  const up = (await pilot.takeOff()).text;
+  const stay = (await pilot.foldWings(true)).text;
   check("a refused fold doesn't repeat the wings' state before the reason",
     /^took off/.test(up) && /^wings stay as they are — \S/.test(stay) && !/wings stay (open|limp|folded) —/.test(stay), `${up} / ${stay}`);
   const status = pilot.flightStatus();
@@ -182,7 +185,7 @@ try {
     `* ${notice?.who} ${notice?.text}` === "* owner withdrew your flight, so your next flight action will be refused until the world's owner grants it again",
     JSON.stringify(notice));
   pilot.flight = { ...pilot.flight, phase: "GROUND", wings: "LIMP" };
-  const limp = await pilot.foldWings(true);
+  const limp = (await pilot.foldWings(true)).text;
   check("a fold refused for limp wings doesn't name the state twice",
     /^wings stay as they are — /.test(limp) && !/^wings stay limp/.test(limp), limp);
   const aloft: any = winged(new WorldAgent({ name: "aloft", world: "w" }));
