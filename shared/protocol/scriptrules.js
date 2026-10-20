@@ -70,6 +70,23 @@ export function elide(st, ops) {
   return out;
 }
 
+// A motion runs on the authority's clock from t0 (componentspec motion.t0): a request's motion is stamped at the door
+// (writes.js resolve), and a script's here, at its activation's clock (`now`, the act's ts: the same on a re-run, so the
+// auditor stamps alike). A re-set of the motion a thing already runs, differing only by the missing t0, keeps that t0, so
+// elide (above) drops it as a no-op and the motion doesn't restart. Pure; the ops are copied, never changed.
+const isMotion = (c) => c === "motion" || (typeof c === "string" && c.startsWith("motion:"));
+const plain = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+export function stampMotions(st, ops, now) {
+  const s = cowState(st); const out = [];
+  for (const o of ops) { let op = o;
+    if (o.verb === "set" && isMotion(o.comp) && plain(o.value) && o.value.t0 === undefined) {
+      const cur = s.entities[o.id]?.c[o.comp]; let t0 = now;
+      if (plain(cur) && typeof cur.t0 === "number") { const { t0: was, ...rest } = cur; if (jcs(rest) === jcs(o.value)) t0 = was; }
+      op = { ...o, value: { ...o.value, t0 } }; }
+    out.push(op); try { applyCow(s, [op]); } catch { /* the gate names the shape problem */ } }
+  return out;
+}
+
 // a params key (componentspec params.keyPattern): the signal a seat pose reads is param.<this>
 export const PARAM_NAME = /^[a-z][a-zA-Z0-9_-]{0,31}$/;
 export const isParamName = (k) => typeof k === "string" && PARAM_NAME.test(k);

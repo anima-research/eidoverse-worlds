@@ -101,7 +101,7 @@ function activate(w, id, name, ev) {
     (w.presence.scriptRuns ??= []).push({ ts: now, id, key, sponsor: sp.sponsor, ms: Math.round(ms) }); w.presenceDirty = true; }
   if (!res.ok) return fail(res.code, res.why, res.logs);
   const logs = res.logs.length ? { logs: res.logs } : {};
-  const ops = SR.elide(st, res.ops);
+  const ops = SR.elide(st, SR.stampMotions(st, res.ops, now));   // a motion on the authority's clock, then the script batch's elision of no-op writes
   if (!ops.length && !res.says.length && !res.bodies.length) { if (!dry) rt.fails = 0; return out("nothing", { why: res.ran ? "nothing changed: no entry" : `it has no handler for '${ev.on}'`, ...logs }); }
   const cap = { kind: "script", key, id, sponsor: sp.sponsor, ids: scopeIds(st, id, v.scope?.ids), comps: v.scope?.comps ?? [], create: !!v.scope?.create };
   const mark = (code, why) => out("refused", { code, why, sponsor: sp.sponsor, ...logs });

@@ -638,6 +638,16 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const ascii = install(s, "olive", "kb", "a", t, { scope: { ids: "self", comps: ["t/n"] }, on: ["use"], knobs: { note: "e".repeat(3000) } }).r;
       return { wide: code(wide) ?? show(wide), why: wide?.refused?.reason ?? null, ascii: show(ascii) }; },
     good: (o) => o.wide === "too-big" && /knobs is 6\d{3} bytes/.test(o.why ?? "") && o.ascii === "ok" },
+  { id: "B28", what: "a script's motion runs on the authority's clock: it is stamped t0 at its act's time (as a request's is at the door), a re-set of the same motion keeps its t0 and logs nothing, and the auditor re-runs it to the same result", run(s) { cast(s);
+      s.call("olive", "create", { id: "fan", model: "crate", place: { at: [0, 0] } });
+      install(s, "olive", "fan", "spin", onUse(`world.set("self", "motion", { type: "spin", axis: [0, 1, 0], degPerSec: 30 });`), { scope: { ids: "self", comps: ["motion"] }, on: ["use"] });
+      s.call("olive", "set", { id: "fan", component: "reactions", value: { go: { kind: "script", script: "spin" } } });
+      const a = s.call("vic", "use", { id: "fan", action: "go" }); const m1 = comp(s, "fan", "motion");
+      const act = s.entries().filter((e: any) => e.kind === "act" && e.actor === "script:fan").at(-1);
+      const n1 = s.entries().length; const b = s.call("vic", "use", { id: "fan", action: "go" }); const m2 = comp(s, "fan", "motion");
+      const A = AU ? AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript }) : null;
+      return { a: st(s, a), b: st(s, b), t0: m1?.t0 ?? null, actTs: act?.ts ?? null, kept: m2?.t0 === m1?.t0, written: kinds(s.entries().slice(n1)), flags: A ? A.flags.length : "no auditor" }; },
+    good: (o) => o.a === "ran" && typeof o.t0 === "number" && o.t0 === o.actTs && o.b === "nothing" && o.kept && JSON.stringify(o.written) === '{"act":1}' && o.flags === 0 },
   // ---------------- R: runaway work ----------------
   ...[["R1", "while (true) {}", "fuel"], ["R2", "function f() { return f(); } f();", "stack"], ["R3", `let s = "x"; for (;;) s += s;`, "memory"],
       ["R4", `for (let i = 0; i < 1000; i++) world.get("self");`, "calls"], ["R5", `for (let i = 0; i < 40; i++) world.set("self", "t/n", i);`, "too-big"], ["R6", "this is not javascript", "syntax"]].map(([id, body, want]) => ({

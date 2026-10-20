@@ -25,7 +25,7 @@
 //             the same for every identity, so it is a mismatch to look at, not proof of a forgery).
 // Replay of the WORLD never runs code (L1); this re-run is an optional audit view.
 import { fold, opsOf, followUpsOf, jcs } from "./fold.js";
-import { elide, seedOf } from "./scriptrules.js";
+import { elide, seedOf, stampMotions } from "./scriptrules.js";
 
 const isE = (e) => e && typeof e === "object" && typeof e.kind === "string";
 const isScriptActor = (a) => typeof a === "string" && a.startsWith("script:");
@@ -110,7 +110,7 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     const res = rerun(event);
     if (!res.ok) { flags.push({ seq, check: "rerun", why: `the re-run failed: ${res.code}: ${res.why}` }); return; }
     if (jcs(readShape(res.reads)) !== jcs(readShape(b.reads))) { flags.push({ seq, check: "reads", why: "the re-run asked different presence reads than the act records", want: readShape(res.reads), got: readShape(b.reads) }); return; }
-    const want = elide(st, res.ops);
+    const want = elide(st, stampMotions(st, res.ops, a.ts));   // as the authority stamped and elided it (scriptrun)
     const outs = []; for (let i = seq + 1; i < L.length; i++) if (isE(L[i]) && L[i].cause === seq) outs.push(L[i]);
     const state = outs.find((e) => e.kind === "change");
     const got = state ? quiet(state) : [];
@@ -119,7 +119,7 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     if (sameW && sameS) { reran++; return; }
     if (whoReads(b.reads)) { skipped.push({ seq, why: "its result depends on who was near or what someone is called, which the act doesn't record (only how many): it can't be re-run to the same result" }); return; }
     if (anonWho) { const r2 = rerun({ ...event, by: ARRIVAL_STAND_IN_2 });   // does the result depend on who came? two stand-ins agree → no
-      const agree = r2.ok && jcs(readShape(r2.reads)) === jcs(readShape(res.reads)) && norm(elide(st, r2.ops)) === norm(want) && jcs(r2.says) === jcs(res.says);
+      const agree = r2.ok && jcs(readShape(r2.reads)) === jcs(readShape(res.reads)) && norm(elide(st, stampMotions(st, r2.ops, a.ts))) === norm(want) && jcs(r2.says) === jcs(res.says);
       if (!agree) { skipped.push({ seq, why: "its result depends on who arrived or left, which the act doesn't record: it can't be re-run to the same result" }); return; } }
     // an arrival's mismatch is named as one (review r10 M3): two stand-ins that agree can't prove the result is the same for
     // every identity, so it is never reported as plain `rerun` (a forgery): `rerun-anon` says it differs and the re-run can't know who came
