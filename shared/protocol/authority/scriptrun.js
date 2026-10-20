@@ -295,7 +295,11 @@ export function writeBlock(w) {
   const alt = w.state().diagnostics.filter(([, c]) => c === "commit-unpurged");
   if (alt.length) return { code: "record-altered", reason: `this world's log was changed outside its purge rule: ${alt.map(([q, , x]) => `line ${q} (${x})`).join(", ")} holds a value stripped to its commit that no purge names, so it reads as unknown, and the authority won't write on top of it`, fix: "only this server's operator can fix this: with the world closed (the server stopped), restore each named line from a backup of the log, then reopen it (a line restored whole has the commit its stub kept, so every later line still verifies); asking again won't change it, and reads still work", extra: { seqs: alt.map(([q]) => q) } };
   const n = maintenanceNeeds(w);
-  if (n.blocking.length) return { code: "repair-needed", reason: `this world needs maintenance before it can be written: ${n.blocking.join(", ")} (its values are stored in an old spelling no reader here serves)`, fix: n.fix };
+  // the reader (an agent, a person in the editor) can't run the command, so the fix says who can and that asking again
+  // won't help, in plain words a person's reader keeps (refusal.js plainRefusal drops a fix with tool syntax); the command
+  // is named for whoever runs the host, who also sees it, and its other forms, at load (maintenanceNeeds' fix)
+  if (n.blocking.length) return { code: "repair-needed", reason: `this world needs maintenance before it can be written: ${n.blocking.join(", ")} (its values are stored in an old spelling no reader here serves); reads still work`,
+    fix: `only whoever runs this server can repair it, on the host by running its maintenance command, bun tools/protocol/world.ts repair ${w.name ?? "<name>"}, or from a server operator's account with operator-repair; asking again won't change that until they do` };
   return null;
 }
 /** What maintenance a world needs: {steps: ["lift-sockets", "rename-components", "repair-shapes"] (those needed, in order),
