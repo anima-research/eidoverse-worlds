@@ -71,6 +71,15 @@ console.log("\nmoving through the water");
   check("a wader sheds rings at its legs", r.ripples.length >= 8 && r.ripples.some((p) => p[1] === 0.1) && r.ripples.some((p) => p[1] === -0.1));
 }
 {
+  // the same wader running at 5 m/s: the distance comes round every 0.09 s, but WAKE_MIN_GAP still holds
+  const at: number[] = [];
+  let t = 0;
+  const T = makeSplashTracker(surfaceAt, { ripple: () => at.push(t), splash: () => {} });
+  for (let i = 0; i < 120; i++) { t = i / 60; const x = (i * 5) / 60; T.update([body("r", [x, -0.5, 0], { leftFoot: [x, -0.45, 0.1] })], 1 / 60); }
+  const gap = Math.min(...at.slice(1).map((v, i) => v - at[i]));
+  check(`...never closer together than ${SPLASH.WAKE_MIN_GAP} s, even running (${gap.toFixed(3)} s apart at the closest)`, at.length >= 8 && gap >= SPLASH.WAKE_MIN_GAP - 1e-9);
+}
+{
   const r = run(() => [body("i", [0, -1, 0])], 60 * 10);
   const n = r.ripples.length;
   check(`a body standing in the water rings it faintly now and then (${n} in 10 s)`, n >= 3 && n <= 9 && r.ripples.every((p) => p[2] < 0.25));

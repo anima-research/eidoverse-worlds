@@ -73,7 +73,7 @@ export function makeSplashTracker(surfaceAt, emit) {
       if (speed >= SPLASH.WAKE_SPEED) {
         w.d += step;
         const gap = Math.max(SPLASH.WAKE_MIN_GAP, SPLASH.WAKE_STEP / Math.max(speed, 0.01));
-        if (w.d >= SPLASH.WAKE_STEP || clock - w.t >= gap * 2) {
+        if ((w.d >= SPLASH.WAKE_STEP || clock - w.t >= gap * 2) && clock - w.t >= SPLASH.WAKE_MIN_GAP) {
           w.d = 0; w.t = clock;
           const strength = Math.min(1, 0.3 + speed / 4);
           if (b.swimming) emit.ripple(rx, rz, strength);   // a swimmer's chest pushes the wake
