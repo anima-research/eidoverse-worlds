@@ -795,7 +795,8 @@ export function sanctionSweep(w: World) {
   const key = JSON.stringify(muted);
   if (w.modStateKey !== key) { w.modStateKey = key; w.broadcast({ type: "mod-state", muted }); }
 }
-registerSystem({ name: "sanctions", everyMs: 2000, fn: () => { for (const w of worlds.values()) { try { sanctionSweep(w); } catch (err) { console.error(`[world:${w.name}] sanction sweep`, err); } } } });
+registerSystem({ name: "sanctions", everyMs: 2000, fn: () => { for (const w of worlds.values()) { try { sanctionSweep(w); } catch (err) { console.error(`[world:${w.name}] sanction sweep`, err); }
+  try { w.regateReaches(); } catch (err) { console.error(`[world:${w.name}] re-gating reaches`, err); } } } });   // a timed allow ends with no request (review of #260, server I1)
 
 function buildSnapshot(w: World, c: Client) {
     // snapshot = the authority's cut of the world (the joiner folds it, then the log stream) + who's present now

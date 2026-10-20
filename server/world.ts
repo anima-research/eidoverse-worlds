@@ -132,6 +132,17 @@ export class World {
   modStateKey?: string;   // the last mod-state (muted badges) the sweep sent
   sfuMutedIds?: Set<string>;   // display ids the sweep has muted at the SFU (released when that connection is gone)
   sfuDeafIds?: Set<string>;    // display ids the sweep has deafened at the SFU (ghosts; released likewise)
+  /** Hold every standing pose that carries a reach to the tables as they are now (review of #260, server I1): after each
+   *  request, and on the sanctions tick, since a timed allow can end with no request at all. Quiet: no attempt recorded,
+   *  nothing said to a reacher for a packet they didn't send. */
+  regateReaches(): void {
+    for (const c of this.clients) {
+      if (!c.lastPose?.reach) continue;
+      const p = structuredClone(c.lastPose) as Record<string, unknown>; gateReach(c, p, { quiet: true });
+      if (JSON.stringify(p.reach ?? null) === JSON.stringify(c.lastPose.reach)) continue;
+      c.lastPose = p as Client["lastPose"]; this.dirty.set(c.id, p);   // the next frame carries the pose without the hand
+    }
+  }
   isGhost(c: Client): boolean { return !!(this.log && c.actorId && this.log.ghostHere(c.actorId)); }
   /** Speech is arrival-only (R 10-18): the world's log keeps every say, people receive speech only for the time they were
    *  present, and only an ADMIN reads the master log's speech back: this world's owner, or a server operator (WORLD_ADMIN). */
@@ -163,14 +174,7 @@ export class World {
         for (const c of this.clients) if (c.actorId === actor && !c.spectator && (c.surface ?? "world") === "world") { try { c.ws.send(d); n++; } catch { /* gone */ } }
         return n > 0; },
       sayFloor: (actor: string) => this.sayFloor(actor),
-      regateReaches: () => {
-        for (const c of this.clients) {
-          if (!c.lastPose?.reach) continue;
-          const p = structuredClone(c.lastPose) as Record<string, unknown>; gateReach(c, p, { quiet: true });
-          if (JSON.stringify(p.reach ?? null) === JSON.stringify(c.lastPose.reach)) continue;
-          c.lastPose = p as Client["lastPose"]; this.dirty.set(c.id, p);   // the next frame carries the pose without the hand
-        }
-      },
+      regateReaches: () => this.regateReaches(),
     };
   }
 
