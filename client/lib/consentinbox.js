@@ -8,7 +8,7 @@
 // silence as no (expireAsks) and told the asker. Replies to MY asks, acts delivered to me and revocations ride the same
 // message; they are kept in a short ring for whoever wants to show them.
 // A leaf like consent.js: nothing from lib comes in, so tools/consent-switch-test.ts can drive it with its own clock.
-import { KIND_CLASS, ASK_MS } from '../../shared/protocol/consent.js';
+import { CLASSES, KIND_CLASS, ASK_MS } from '../../shared/protocol/consent.js';
 
 const RING = 50;
 export function makeConsentInbox({ now = () => Date.now(), onChange = () => {} } = {}) {
@@ -24,7 +24,9 @@ export function makeConsentInbox({ now = () => Date.now(), onChange = () => {} }
       if (m.type === 'body-ask') {
         const a = m.ask; if (!a || typeof a.id !== 'string' || typeof a.from !== 'string') continue;
         if (pending.has(a.id)) continue;
-        const cls = KIND_CLASS[a.kind] ?? (typeof a.kind === 'string' ? a.kind : null); if (!cls) continue;
+        // the class is the authority's (bodyconsent.js): a reach to an intimate point is `intimate`, though its kind is
+        // touch, so Allow and Never are for what it actually asks; the kind's class only when the ask names none we know
+        const cls = CLASSES.includes(a.cls) ? a.cls : KIND_CLASS[a.kind] ?? (typeof a.kind === 'string' ? a.kind : null); if (!cls) continue;
         // the authority's `expires` is on ITS clock; locally the ask lives ASK_MS from when it reached me (a late
         // message overshoots by its lateness, never the other way: a row marked for an ask that is already gone is
         // the worse error, and the authority refuses the stale answer with not-found anyway)
