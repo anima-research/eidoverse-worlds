@@ -35,7 +35,7 @@ export const READBACK = Object.freeze({
   "act:script":  { fields: ["sponsor"], where: "rights.js entryBy (sponsorOf), the sponsor budget", unknown: "no sponsor: nothing runs on nobody's rights" },
   "act:sculpt":  { fields: ["request.brush", "clamped"], where: "buildUndo sculptInverse", unknown: "not exact: restore-before (refused if changed since)" },
   "act:*":       { fields: ["request.label", "request.id", "request.component", "request (a physics-engine build it typed)"], where: "undo {label}, undo's reply, restampEngine's chose()", unknown: "no label match; an unknown chooser of an engine build is the owner's: never restamped" },
-  "act:system":  { fields: ["rest", "onto"], where: "the act index (restAfter), recentRests", unknown: "no rest link; no `onto` in the view" },
+  "act:system":  { fields: ["rest", "id", "onto", "home"], where: "the act index (restAfter, per rest and body), recentRests and wait's lost notice", unknown: "no rest link; no `onto` in the view; a lost body whose return names no home reads as back where it was picked up" },
   "act:create-world": { fields: ["shapes"], where: "shaperepair shapesMarked (the once-per-world shape repair command, a founding made before the repair-shapes marker act)", unknown: "marked: a purged founding never re-runs the repair" },
   "act:translated":   { fields: ["from.translator"], where: "shaperepair shapesMarked (a translation by translate-v1@12 before the marker act)", unknown: "marked: a purged translation never re-runs the repair" },
   "sim:launch":  { fields: ["id", "handled"], where: "restampEngine's in-flight walk, recentRests", unknown: "maybe in flight: no restamp; handled falls back to the launch's actor" },

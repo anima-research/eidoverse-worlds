@@ -30,7 +30,8 @@ const withoutRefs = (...a) => UP.withoutRefs(...a);
 //   undone    act seqs some `undo` act names (body.undoes)
 //   purged    seqs whose act/say/sim BODY is purged; purgedOps `${seq}:${op|-}` → a purged set value (as the fold keys it)
 //   changes   every change seq, in order                touch     id → the change seqs that touch it, in order
-//   rests     change seqs that are rests (caused by a sim launch); restAfter: rest seq → the authority's follow-up act
+//   rests     change seqs that are rests (caused by a sim launch); restAfter: `${rest seq}:${body id}` → the authority's
+//             follow-up act for that body (a rest can carry several bodies, each with its own follow-up, as restsOf reads them)
 //   lastAct   the latest act that isn't an undo or the authority's (for "the latest change was X's")
 // A world object over a log that is re-read per request (the suites' disk worlds) rebuilds it per request, as before.
 function freshIndex() {
@@ -53,7 +54,7 @@ function indexEntry(x, E, i) {
     if (e.verb === "undo" && b && b.undoes !== undefined) x.undone.add(b.undoes);
     if (e.verb === "undo" && b && Array.isArray(b.rollback?.acts)) for (const q of b.rollback.acts) x.undone.add(q);
     if (e.verb !== "undo" && e.actor !== "system") x.lastAct = i;
-    if (e.actor === "system" && b && Number.isInteger(b.rest) && !x.restAfter.has(b.rest)) x.restAfter.set(b.rest, i); }
+    if (e.actor === "system" && b && Number.isInteger(b.rest) && typeof b.id === "string" && !x.restAfter.has(`${b.rest}:${b.id}`)) x.restAfter.set(`${b.rest}:${b.id}`, i); }
   if (e.kind === "change") { x.changes.push(i);
     // what the sim writes (a rest) is physics, never an act's undoable result: live, a rest is caused by a launch entry;
     // in an imported world (translate-v1@11) by the old punt's act, which must not make it undoable (review of b398d7e3 #2)

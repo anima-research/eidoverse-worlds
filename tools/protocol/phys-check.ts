@@ -587,6 +587,21 @@ function playground(name) {
   ok(!!before && m.ok && r.ok && JSON.stringify(keptM) === JSON.stringify(before) && JSON.stringify(kept) === JSON.stringify(before) && !JSON.stringify([m.notes, r.notes]).includes("its body is gone"),
     "U10 a stamped shape stays while the catalogue can't measure the model right now (a merge or a whole value), and no 'body is gone' note", { before, keptM, kept, notes: [m.notes, r.notes] }); }
 
+// review of #260: in one rest of several bodies, each body's follow-up is its own: a thrown crate that leaves the world
+// is lost while the crate it knocked, at rest inside, isn't; and a lost thing sent to its home is told it's home
+if (RIGID) { const W = playground("rr-group");
+  call(W, "rowan", "set", { id: "@world", component: "bounds", value: { min: [-20, 0, -20], max: [20, 30, 3] } });
+  call(W, "rowan", "set", { id: "crate-1", component: "home", value: { pos: [3, 0, -1], q: [0, 0, 0, 1] } });
+  call(W, "rowan", "create", { id: "tgt", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 2.2] } });
+  call(W, "rowan", "move", { to: [2, 0, -0.5] }); call(W, "rowan", "grab", { id: "crate-1" }); call(W, "rowan", "move", { to: [0, 0, 0.4] });
+  const t = call(W, "rowan", "throw", { id: "crate-1", v: [0, 1.5, 5] }); call(W, "rowan", "wait", {}, 20000); const r = call(W, "rowan", "wait", {});
+  const R = rests(log(W)), rt = R.find((x) => x.id === "tgt"), rc = R.find((x) => x.id === "crate-1");
+  const ct = r.cameToRest?.find((x: any) => x.id === "tgt"), cc = r.cameToRest?.find((x: any) => x.id === "crate-1");
+  ok(t.ok && rt && rc && rt.seq === rc.seq && !rt.lost && rc.lost && ct && !ct.lost && ct.on === "ground",
+    "RR1 two bodies in one rest, one lost past the world's edge: wait says only that one is lost, and the other rests where it is", { rests: R.map((x) => [x.seq, x.id, !!x.lost]), came: r.cameToRest });
+  const at = call(W, "rowan", "inspect", { id: "crate-1" }).world?.pos;
+  ok(/back at its home/.test(cc?.lost ?? "") && JSON.stringify(at) === "[3,0,-1]", "RR2 …and the lost one, sent to its home, is told it's at its home", { lost: cc?.lost, at }); }
+
 console.log(`${passes} passed, ${fails} failed`);
 fs.rmSync(root, { recursive: true, force: true });
 process.exit(fails ? 1 : 0);

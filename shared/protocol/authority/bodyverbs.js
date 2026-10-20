@@ -343,7 +343,7 @@ const EMBODIED_VERBS = {
     const sf = w.sim(); const now = w.now();
     const rests = recentRests(w, now).map((r) => {
       const par = sf.st.entities[r.id]?.c.parent?.to;
-      return { id: r.id, at: r.at.map(r3), ...(r.lost ? { lost: "landed outside the world; it's back where it was picked up" } : { on: par ?? "ground" }), secondsAgo: Math.round((now - r.when) / 1000) }; });
+      return { id: r.id, at: r.at.map(r3), ...(r.lost ? { lost: r.lost === "home" ? "landed outside the world; it's back at its home" : "landed outside the world; it's back where it was picked up" } : { on: par ?? "ground" }), secondsAgo: Math.round((now - r.when) / 1000) }; });
     const stuck = sf.rested.map((r) => ({ id: r.id, launch: r.seq, at: r.p.map(r3), why: (w.unsettled ?? []).find((u) => u.id === r.id)?.reason ?? "not yet logged" }));
     return { ok: true, inFlight: livePoses(sf), ...(rests.length ? { cameToRest: rests } : {}), ...(stuck.length ? { unsettled: stuck } : {}) };
   },

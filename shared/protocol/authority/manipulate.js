@@ -38,9 +38,9 @@ function recentRests(w, now) {
     if (!(now - when < 60000)) break;
     // PHYSICS §1: a launch's rest covers every body its flight set moving; each transform in it is one body's rest
     const c = E[e.cause]; const ops = opsQuiet(e).filter((o) => o.comp === "transform" && typeof o.id === "string" && o.value?.pos);
-    const ai = X.restAfter.get(seq); const after = ai === undefined ? null : E[ai];
-    for (const op of ops.reverse()) out.push({ seq, id: op.id, cause: e.cause, at: op.value.pos, handled: readback(w, e.cause)?.handled ?? [c.actor], when,
-      ...(after?.verb === "return-lost" ? { lost: true } : {}), ...(after?.verb === "settle" ? { onto: readback(w, ai)?.onto } : {}) }); }
+    for (const op of ops.reverse()) { const ai = X.restAfter.get(`${seq}:${op.id}`); const after = ai === undefined ? null : E[ai];
+      out.push({ seq, id: op.id, cause: e.cause, at: op.value.pos, handled: readback(w, e.cause)?.handled ?? [c.actor], when,
+        ...(after?.verb === "return-lost" ? { lost: readback(w, ai)?.home === true ? "home" : "picked-up" } : {}), ...(after?.verb === "settle" ? { onto: readback(w, ai)?.onto } : {}) }); } }
   return out.reverse();
 }
 // the punt's reach, from where the body stands: a thing low beside it, or in the air beside it (a volley)
