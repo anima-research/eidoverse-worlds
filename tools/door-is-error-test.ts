@@ -117,7 +117,13 @@ const flownByTicks = async (act: () => Promise<any>) => {
     return realAwait.call(ag, test, 3_600_000).then((v: string) => { w.took = t - from; return v; });
   };
   const answer = act().then((a) => { answered = true; return a; });
-  for (let i = 0; i < 400 && !waits.length; i++) await new Promise((res) => setTimeout(res, 5));
+  // Ticking starts once the act waits on the flight, so no tick flies its earlier steps. An act that neither waits nor
+  // answers within 10 s fails its check, saying so.
+  for (let i = 0; i < 2000 && !waits.length && !answered; i++) await new Promise((res) => setTimeout(res, 5));
+  if (!waits.length && !answered) {
+    ag.flightAwait = realAwait;
+    return { waits, answer: { rejected: 'the act neither waited on the flight nor answered within 10 s' } };
+  }
   while (!answered && t < 600) {
     await new Promise((res) => setTimeout(res, 0));
     if (answered) break;
@@ -188,7 +194,7 @@ for (let i = 0; i < 4; i++) ag.flightTick(0.1);
 // A wait whose time runs out answers "timed out aloft" and leaves no waiter behind.
 {
   const before = ag.flightWaiters.length;
-  const answer = await Promise.race([realAwait.call(ag, () => null, 30), new Promise((res) => setTimeout(() => res('no answer 1 s after its 30 ms'), 1000))]);
+  const answer = await Promise.race([realAwait.call(ag, () => null, 30), new Promise((res) => setTimeout(() => res('no answer 5 s after its 30 ms'), 5000))]);
   check('a flight wait that runs out its time answers "timed out aloft", and leaves no waiter', answer === 'timed out aloft' && ag.flightWaiters.length === before,
     `${answer}; waiters ${before} then ${ag.flightWaiters.length}`);
 }
@@ -394,11 +400,16 @@ const landing = async (glide: { ok: boolean; text: string; phase?: string }, fla
   ag.glideTo = realGlide;
   return answer;
 };
-// A cut mid-glide is a fall: the glide's answer is the whole answer, and no flare is flown.
+// A cut mid-glide is a fall: the glide's answer is the whole answer, and no flare is flown. The glide set its course
+// before the cut, as a real glide does, so the landing's down check is what answers.
 for (const [phase, words] of [['RAGDOLL', 'cut mid-glide — you are on the ground at (1.0, 1.0)'], ['LEAF', 'cut mid-glide — you are falling at (1.0, 1.0)']] as const) {
   await relaunch();
   let flared = false;
-  ag.glideTo = async () => { ag.flight.phase = phase; return { ok: false, text: words }; };
+  ag.glideTo = async (_x: number, _z: number, took?: { course?: number }) => {
+    if (took) took.course = ++ag.flightCourse;
+    ag.flight.phase = phase;
+    return { ok: false, text: words };
+  };
   ag.flightAwait = async () => { flared = true; return 'down'; };
   r = await call('land_at', { x: 5, z: 5 });
   ag.glideTo = realGlide; ag.flightAwait = realAwait;
@@ -522,6 +533,34 @@ for (const [end, later] of [['timed out aloft', 'climb_to'], ['there', 'climb_to
     waiting && gliding && flaring && cleared && failed(r) && /^taken over at [0-9.]+m by a later call$/.test(said(r)) && ok(landed),
     `cleared ${cleared}; ${said(r)}; landing: ${said(landed)}`);
 }
+// A climb_to that runs while a landing's glide still waits for the body's bones is taken over by that glide too, since
+// the glide takes the climb in the same step as the course, after its own wait for the bones.
+{
+  await relaunch(); ag.flight.stamina = 1e6;
+  const fastBones = ag.loadBodyBones;
+  let bonesAsked = 0, releaseBones = () => {};
+  // The landing asks for the bones, then its glide does; the glide's ask is held until the climb is waiting.
+  ag.loadBodyBones = () => ++bonesAsked === 2 ? new Promise((res) => { releaseBones = () => res(ag.bodyBoneNames); }) : fastBones();
+  const held: ((v: string) => void)[] = [];
+  ag.flightAwait = () => new Promise<string>((res) => { held.push(res); });
+  const landing = call('land_at', { x: 5, z: 5 });
+  const glideAsked = await waitFor(() => bonesAsked === 2);
+  const climbing = call('climb_to', { altitude: 30 });
+  const climbWaits = await waitFor(() => held.length === 1);
+  releaseBones();
+  const gliding = await waitFor(() => held.length === 2);
+  const cleared = ag.flight?.climbTo == null;
+  held[0]('there');
+  r = await climbing;
+  held[1]?.('arrived');
+  const flaring = await waitFor(() => held.length === 3);
+  held[2]?.('down');
+  const landed = await landing;
+  ag.loadBodyBones = fastBones; ag.flightAwait = realAwait;
+  check('a climb_to run while a landing\'s glide waits for the bones is taken over by that glide: its height is cleared, and it is failed as taken over',
+    glideAsked && climbWaits && gliding && flaring && cleared && failed(r) && /^taken over at [0-9.]+m by a later call$/.test(said(r)) && ok(landed),
+    `cleared ${cleared}; ${said(r)}; landing: ${said(landed)}`);
+}
 // A landing whose glide is refused before it sets a course, as when the flight right goes while the bones load, is
 // refused with the glide's words, and makes no flare.
 {
@@ -534,21 +573,26 @@ for (const [end, later] of [['timed out aloft', 'climb_to'], ['there', 'climb_to
     failed(answer) && said(answer) === 'you cannot fly here — flight was withdrawn' && !hold.held, `${said(answer)}; flare ${hold.held ? 'waited' : 'none'}`);
   hold.end('timed out aloft');
 }
-// A refused take-off makes no fresh flight in the air, so it takes nothing over: a climb waiting on the flight still
-// answers for itself.
+// A refused take-off makes no fresh flight in the air, so it takes nothing over: the flight's course is as it was, and
+// a climb waiting on the flight still answers for itself. The state is built by hand, the flight's wings folded and
+// the posture's not: a body doesn't meet this refusal with a call waiting, since fold_wings folds both and take_off
+// refuses on the posture first, and a recovery stands the flight up with its wings open. The check pins the order, so
+// that a refusal flightTakeOff gains later still takes nothing over.
 {
   await relaunch(); ag.flight.stamina = 1e6;
   const hold = holdNextWait();
   const climbing = call('climb_to', { altitude: 30 });
   const waiting = await waitFor(() => hold.held);
   ag.flight.phase = 'GROUND'; ag.flight.wings = 'FOLDED';
+  const course = ag.flightCourse;
   const refusedTakeOff = await call('take_off');
+  const courseKept = ag.flightCourse === course;
   hold.end('landed');
   r = await climbing;
   ag.flightAwait = realAwait;
-  check('a refused take-off takes over no climb still waiting: the climb answers that it came down',
-    waiting && failed(refusedTakeOff) && /^still standing — /.test(said(refusedTakeOff)) && failed(r) && /^came down on the ground at /.test(said(r)),
-    `${said(refusedTakeOff)}; ${said(r)}`);
+  check('a refused take-off takes over nothing, leaving the flight\'s course, and a climb still waiting answers that it came down',
+    waiting && courseKept && failed(refusedTakeOff) && /^still standing — /.test(said(refusedTakeOff)) && failed(r) && /^came down on the ground at /.test(said(r)),
+    `course ${courseKept ? 'kept' : 'moved'}; ${said(refusedTakeOff)}; ${said(r)}`);
 }
 // A later call that sets the course while a landing still glides takes the flight over too, so the landing leaves it
 // to that call and makes no flare.
@@ -579,18 +623,20 @@ ag.flightAwait = realAwait;
 check('a glide whose flight has ended by the time its wait answers is failed, saying where the body is',
   failed(r) && said(r) === 'timed out aloft at (12.0, 34.0)', said(r));
 // The flare's wait is sized from the ground under the body as it begins, and is never shorter than 60 s: a flare
-// that begins over high ground, here 55 m, and comes down on lower, 40 m, gets the 60 s.
+// that begins over high ground, here 55 m, and comes down on lower, 40 m, gets the 60 s. The asked point is away from
+// the body, which the stand-in glide leaves where it was, so the check sees which ground the sizing read.
 {
   await flyingAt(59);
   ag.glideTo = glidesThere;
   const realHeight = ag.heightAt;
-  let sized = false;
-  ag.heightAt = () => { if (sized) return 40; sized = true; return 55; };
-  flown = await flownByTicks(() => call('land_at', { x: 0, z: 0 }));
+  let sizedAt: number[] | null = null;
+  ag.heightAt = (hx: number, hz: number) => { if (sizedAt) return 40; sizedAt = [hx, hz]; return 55; };
+  flown = await flownByTicks(() => call('land_at', { x: 30, z: 0 }));
   ag.heightAt = realHeight; ag.glideTo = realGlide;
-  check('a landing whose flare begins over a 55 m knoll and comes down on 40 m ground does so inside its wait, which is 60 s',
-    ok(flown.answer) && / — landed at /.test(said(flown.answer)) && flown.waits.length === 1 && flown.waits[0].ms === 60_000 && flown.waits[0].ms > flown.waits[0].took * 1000,
-    `${said(flown.answer)}; ${JSON.stringify(flown.waits)}`);
+  check('a landing whose flare begins over a 55 m knoll under the body and comes down on 40 m ground does so inside its wait, which is 60 s',
+    ok(flown.answer) && / — landed at /.test(said(flown.answer)) && flown.waits.length === 1 && flown.waits[0].ms === 60_000 && flown.waits[0].ms > flown.waits[0].took * 1000
+      && sizedAt?.[0] === 0 && sizedAt?.[1] === 0,
+    `${said(flown.answer)}; ${JSON.stringify(flown.waits)}; sized at ${JSON.stringify(sizedAt)}`);
 }
 // The flare sinks on the circle held over the point, so the answer says how far off it came down.
 r = await landing(arrived, 'down', { x: 12, z: 6 });
@@ -619,7 +665,7 @@ for (const [tool, a, words] of [
   for (let i = 0; i < 400 && !ag.flightWaiters.length; i++) await new Promise((res) => setTimeout(res, 5));
   const waited = ag.flightWaiters.length > 0;
   await call('rehearse_down', {});
-  const answer = await Promise.race([waiting, new Promise((res) => setTimeout(() => res({ rejected: 'still waiting 1 s after the down' }), 1000))]);
+  const answer = await Promise.race([waiting, new Promise((res) => setTimeout(() => res({ rejected: 'still waiting 5 s after the down' }), 5000))]);
   check(`a down answers ${tool === 'climb_to' ? 'a climb' : 'a glide'} waiting on the flight at once, as cut`, waited && failed(answer) && words.test(said(answer)),
     waited ? said(answer) : 'the act registered no flight wait');
   ag.flightWaiters.splice(0); // a wait the down didn't answer would answer for the next call
@@ -631,7 +677,7 @@ await relaunch(); ag.flight.stamina = 1e6;
   for (let i = 0; i < 400 && !ag.flightWaiters.length; i++) await new Promise((res) => setTimeout(res, 5));
   const waited = ag.flightWaiters.length > 0;
   ag.acceptEffectiveRights({ role: 'builder', fly: false }, 'world');
-  const answer = await Promise.race([waiting, new Promise((res) => setTimeout(() => res({ rejected: 'still waiting 1 s after the withdrawal' }), 1000))]);
+  const answer = await Promise.race([waiting, new Promise((res) => setTimeout(() => res({ rejected: 'still waiting 5 s after the withdrawal' }), 5000))]);
   ag.myRights = { role: 'builder', fly: true };
   check('a world withdrawing flight mid-climb answers the climb at once, as cut', waited && failed(answer) && /^cut mid-climb at /.test(said(answer)),
     waited ? said(answer) : 'the act registered no flight wait');

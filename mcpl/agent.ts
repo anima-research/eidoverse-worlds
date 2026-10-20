@@ -3083,7 +3083,9 @@ export class WorldAgent {
       return refused(`taken over at ${(this.flight?.pos.y ?? this.pos.y).toFixed(1)}m by a later call`);
     }
     if (got === "cut") {
-      // A cut body keeps no climb, so it doesn't resume one when it recovers.
+      // A cut body keeps no climb, so it doesn't resume one when it recovers. The cut answers every climb on the
+      // flight in the one settle, and this runs before any call made after it can set another climb, so it needs no
+      // check of whose climb it is.
       if (this.flight) this.flight.climbTo = null;
       return refused(`cut mid-climb at ${(this.flight?.pos.y ?? 0).toFixed(1)}m`);
     }
