@@ -20,10 +20,12 @@ export function processTable(platform: NodeJS.Platform = process.platform): Row[
   }
   if (platform === "win32") {
     const r = spawnSync("powershell.exe", ["-NoProfile", "-Command",
-      "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId)\" }"], { encoding: "utf8" });
+      "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId)\" }"], { encoding: "utf8", timeout: 30_000 });
+    // bounded: the gate is sequential and waits on this, so a stalled WMI query once froze a whole CI run past its 90 min (10-19)
+    if (r.error || r.status !== 0) console.error(`[procgroup] the Windows process table didn't answer (${r.error?.message ?? `exit ${r.status}`}); killing by tree only`);
     return parseWinTable(r.stdout ?? "");
   }
-  const r = spawnSync("ps", ["-A", "-o", "pid=,pgid=,ppid=,stat="], { encoding: "utf8" });
+  const r = spawnSync("ps", ["-A", "-o", "pid=,pgid=,ppid=,stat="], { encoding: "utf8", timeout: 30_000 });
   return parsePsTable(r.stdout ?? "");
 }
 
@@ -50,5 +52,6 @@ export function suiteMembers(root: number, table: Row[] = processTable(), platfo
 export function killSuite(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform): void {
   if (platform !== "win32") { try { process.kill(-root, sig); } catch { /* gone */ } return; }
   // Windows has no signals or groups: kill the tree, children first (taskkill /T can't find orphans of a dead root)
-  for (const pid of suiteMembers(root, processTable("win32"), "win32").reverse()) spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+  const members = suiteMembers(root, processTable("win32"), "win32");
+  for (const pid of (members.length ? members : [root]).reverse()) spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", timeout: 15_000 });
 }

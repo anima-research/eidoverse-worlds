@@ -364,6 +364,7 @@ for (const name of order) {
   const [, file, tail] = SUITES.find(([n]) => n === name)!; const lane = laneOf(name);
   if (stopped) { results.push({ name, lane, status: "skip", why: stopped, ms: 0, rowSkips: [], optional: [], leftovers: 0 }); continue; }
   const t = performance.now();
+  if (process.env.CI) console.log(`-- start ${name} (${new Date().toISOString()})`);   // a hang between suites names itself (Windows CI 10-19 went silent for 80 min)
   const r = await run(name, file);
   const lines = r.out.trimEnd().split("\n");
   const fails = lines.filter((l) => /^\s*FAIL\b|✗/.test(l));   // the browser probes mark a failed check with ✗, not FAIL
