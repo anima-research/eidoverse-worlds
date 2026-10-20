@@ -72,8 +72,8 @@ try {
     rise.warnings.some((w: any) => ["rise", "sealed", "climb"].includes(w.kind)) && rise.levels.every((l: any) => l.reachable < 1), say(rise));
 
   const hut = await run("hut", [[-1.4, 0, -1.4, 1.4, 0.1, 1.4], [-1.4, 0.1, -1.4, -1.25, 2.5, 1.4], [1.25, 0.1, -1.4, 1.4, 2.5, 1.4], [-1.25, 0.1, -1.4, 1.25, 2.5, -1.25], [-1.4, 2.5, -1.4, 1.4, 2.6, 1.4]], {}, false);
-  check("a 2.8m hut: under the walk-in size — a solid box unless spawned collide: \"exact\"",
-    kinds(hut).includes("solid") && /collide: "exact"/.test(say(hut)) && hut.walkIn.roomScale === false, say(hut));
+  check("a 2.8m hut: under the walk-in size — a solid box unless it's given collider {shape: \"mesh\"}",
+    kinds(hut).includes("solid") && /collider \{shape: "mesh"\}/.test(say(hut)) && hut.walkIn.roomScale === false, say(hut));
 
   check("...and its raised floor, a solid plinth 0.8m up, is a floor — not furniture", rise.levels.some((l: any) => Math.abs(l.y - RAISED) < 0.1), JSON.stringify(rise.levels));
 

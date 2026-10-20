@@ -38,7 +38,7 @@ import { windowLimiter } from "./ratewindow.ts";
 
 /** Bump when what a check finds changes (server/buildcheck.ts, the navgrid
  *  moves it walks, the collider rules): stored reports from before are stale. */
-export const CHECK_VERSION = 3;
+export const CHECK_VERSION = 4;   // 4: the walking body is MOVER.body (radius 0.2, was 0.32)
 /** The worker and its limits; tests swap the runner for a misbehaving one. */
 export const checkConfig = {
   runner: join(ROOT, "server", "buildcheck-run.ts"),

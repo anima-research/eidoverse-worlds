@@ -22,7 +22,7 @@ export function solidsFromTriangles(soup: ArrayLike<number>, min: number[], max:
   if (!(size[1] >= SOLIDS.minHeight && Math.max(size[0], size[2]) >= SOLIDS.minSpan) || !size.every(Number.isFinite) || soup.length < 9) return null;
   for (let cell = Math.max(big / SOLIDS.cellsAcross, SOLIDS.minCell); cell <= big / 3; cell *= 1.5) {
     const r = attempt(soup, min, size, cell);
-    if (r === "too-big") return null;
+    if (r === "too-big") continue;   // the budget is per attempt: a coarser cell takes fewer samples
     if (r && r.length <= SOLIDS.maxBoxes) return r;
   }
   return null;

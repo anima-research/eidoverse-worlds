@@ -15,7 +15,9 @@ type Result = { ok: true; png: Uint8Array; engine: string; scene: string }
 type Pending = { renderer: Client; target: Client; world: World; gen?: number;
   finish: (r: Result) => void; engine: string; scene: string };
 const PREFIX = "data:image/png;base64,";
-const MAX_PNG = 4 * 1024 * 1024;
+// the PNG travels base64 inside one websocket message, and the socket closes past LIMITS.WS_MESSAGE_BYTES: the largest PNG
+// is what fits in it with room for the envelope (review of #260, server I50: 4 MiB here was 5.6 MB on the wire)
+const MAX_PNG = Math.floor((LIMITS.WS_MESSAGE_BYTES - 64 * 1024) / 4) * 3;
 
 // Validate the bounded container before returning untrusted client bytes as PNG.
 // This is not a decoder or a proof that a renderer depicted the right scene.

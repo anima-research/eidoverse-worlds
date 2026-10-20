@@ -23,7 +23,14 @@ function load(): Record<string, string> {
   try { index = m >= 0 ? JSON.parse(fs.readFileSync(INDEX, "utf8")) : {}; } catch { index = {}; }
   indexMtime = m; return index!;
 }
-const sha = (p: string) => crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+// a file's hash is remembered while its size and mtime stand (review of #260, server I82: a public lookup that missed
+// hashed a whole store blob again on every request, on the event loop)
+const hashed = new Map<string, { size: number; mtimeMs: number; hex: string }>();
+const sha = (p: string) => { const st = fs.statSync(p), h = hashed.get(p);
+  if (h && h.size === st.size && h.mtimeMs === st.mtimeMs) return h.hex;
+  const hex = crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+  if (hashed.size > 4096) hashed.clear();
+  hashed.set(p, { size: st.size, mtimeMs: st.mtimeMs, hex }); return hex; };
 const inside = (base: string, rel: string) => { const p = path.normalize(path.join(base, rel)); return p.startsWith(base + path.sep) ? p : null; };
 /** The original file a library-style path names on this host (the store's blob, or the library's own file), or null. */
 export function originalOf(rel: string): string | null {

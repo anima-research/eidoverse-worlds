@@ -254,7 +254,7 @@ const cases: Case[] = [
       const m = RM.readMeter(); const a = {}, b = {}; let t = 1000; const out: any = {};
       for (let i = 0; i < RM.READ.n; i++) { if (m.check(a, t)) return { refusedEarly: i }; m.record(a, t); }
       out.sixtyFirst = m.check(a, t)?.code ?? "ok"; out.later = m.check(a, t + 10_001)?.code ?? "ok";
-      const k = m.record(b, t); k.ms = 1600; out.slow = m.check(b, t + 1)?.code ?? "ok"; out.other = m.check({}, t)?.code ?? "ok";
+      const k = m.record(b, t); k.ms = RM.READ.ms + 100; out.slow = m.check(b, t + 1)?.code ?? "ok"; out.other = m.check({}, t)?.code ?? "ok";
       return out; },
     good: (o) => o.sixtyFirst === "rate" && o.later === "ok" && o.slow === "rate" && o.other === "ok" },
   { id: "Q5", what: "settling orphaned holds at load is bounded: 400 holders left by a crash end quickly, the first ones settled as leave settles them, the rest said to wait", run(s) { cast(s);

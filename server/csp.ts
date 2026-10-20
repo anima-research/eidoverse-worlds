@@ -24,7 +24,9 @@
 //                                   textures embedded in a GLB as blob: URLs); Orrery (conjure); a local voice bridge on
 //                                   127.0.0.1/localhost (piperbridge.js, a ws/http endpoint voice); plus CSP_CONNECT_EXTRA.
 //                                   NOT https: in general — a picture link is loaded as an <img> (img-src), a sound as
-//                                   an <audio> (media-src), so a script can't post what it reads to an arbitrary host.
+//                                   an <audio> (media-src). That keeps fetch/WebSocket to known hosts; it doesn't keep
+//                                   data in: img-src and media-src take any https host, and a URL can carry what a script
+//                                   read (review of #260, server I86). Inline scripts are hashed, so only our own run.
 //   img-src / media-src  https:     media links (shared/mediasrc.js): a store file, an allowlisted host, or — per viewer,
 //                                   opted in — any https host; the opt-in gate is the client's, not the policy's
 //   style-src   'self' 'unsafe-inline'  style attributes and runtime <style> elements throughout the UI; CSS injection
@@ -53,13 +55,16 @@ function extraConnect(): string[] {
 }
 
 /** The policy for an HTML page whose text is `html` (or none, for a page with no inline script of ours). */
-export function cspFor(html = ""): string {
+/** Pages that talk to a service of their own beyond what every page may reach: the captions page's default Portal socket
+ *  (client/captions.html's URL_), which the blanket policy refused (review of #260, server I55). */
+const PAGE_CONNECT: Record<string, string[]> = { "captions.html": ["wss://portal.animalabs.ai"] };
+export function cspFor(html = "", connect: string[] = []): string {
   const hashes = inlineScriptHashes(html);
   return [
     "default-src 'self'",
     `script-src 'self' ${hashes.join(" ")} 'unsafe-eval' 'wasm-unsafe-eval' blob:`.replace(/\s+/g, " "),
     "worker-src 'self' blob:",
-    `connect-src 'self' blob: data: ${ORRERY_ORIGIN} http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:* ${extraConnect().join(" ")}`.trim(),
+    `connect-src 'self' blob: data: ${ORRERY_ORIGIN} http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:* ${[...connect, ...extraConnect()].join(" ")}`.trim(),
     "img-src 'self' data: blob: https:",
     "media-src 'self' data: blob: https:",
     "style-src 'self' 'unsafe-inline'",
@@ -77,7 +82,7 @@ const byFile = new Map<string, { mtime: number; policy: string }>();
 export function cspForFile(path: string, mtime: number, read: () => string): string {
   const hit = byFile.get(path);
   if (hit && hit.mtime === mtime) return hit.policy;
-  const policy = cspFor(read());
+  const policy = cspFor(read(), PAGE_CONNECT[path.split(/[\\/]/).pop() ?? ""] ?? []);
   byFile.set(path, { mtime, policy });
   return policy;
 }

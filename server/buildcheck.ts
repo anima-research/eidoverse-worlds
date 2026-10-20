@@ -106,7 +106,7 @@ export async function checkModel(file: string, C: any, THREE: any, { scale = 1 }
   }
   if (!roomScale) warnings.push({ kind: "solid", message:
     `${w.toFixed(1)}×${d.toFixed(1)}m and ${h.toFixed(1)}m tall is under the walk-in size (a 16m² footprint and 2.2m height): `
-    + `the world fits it as one solid box, so nobody can go inside. If it is meant to be entered, spawn it with collide: "exact". `
+    + `the world fits it as one solid box, so nobody can go inside. If it is meant to be entered, give it collider {shape: "mesh"}, so bodies walk on its triangles. `
     + `(The rest of this report reads it as if it were.)` });
 
   // ---- fit it as a spawn would (forced exact: we read its inside either way)

@@ -134,10 +134,13 @@ export class WorldLog {
     if (this._state) this._state.chatTotal = Math.max(0, says.length - 40);
     for (const e of says.slice(-40)) this.hearSay(e);
     if (fs.existsSync(this.posesPath)) { try { this.poses = JSON.parse(fs.readFileSync(this.posesPath, "utf8")); } catch { /* corrupt = fresh */ } }
-    void warm(Object.values(st.entities ?? {}).map((e: Any) => e.c.model)); // standing models, measured for the authority
+    // standing models, measured for the authority; a request waits for them (review of #260, server I70: one decided in
+    // the first moments after a load met unsized standing models, and its outcome is logged for good)
+    this.standing = warm(Object.values(st.entities ?? {}).map((e: Any) => e.c.model)).catch(() => {});
   }
   /** what the load's socket lift couldn't do (per host), whether the world still needs the shape repair, and a rename's failure, said to the flight recorder when a world attaches */
   private liftNotes: Record<string, unknown>[] = [];
+  private standing: Promise<unknown> = Promise.resolve();
   attach(host: LogHost) { this.host = host; for (const n of this.liftNotes) host.debug(n.repair ? "repair-needed" : "custody", n); }
 
   private view(): WorldView {
@@ -168,7 +171,7 @@ export class WorldLog {
    *  Never throws: every request ends in a reply carrying its transaction outcome (requestSync). */
   async request(actor: string, verb: string, args: Record<string, unknown> = {}, still?: () => string | null) {
     let gone: string | null | undefined;
-    try { await warm(modelsIn(args)); gone = still?.(); }
+    try { await this.standing; await warm(modelsIn(args)); gone = still?.(); }
     catch (err) { console.error(`[world:${this.name}] ${verb.slice(0, 32)} by ${actor}: failed before the authority saw it`, err); return txnRefusal({ outcome: "rolled-back" }); }
     if (gone) return { ok: false, txn: "rolled-back", refused: { code: "superseded", reason: gone, fix: recheckFix(gone) } };
     return this.requestSync(actor, verb, args);

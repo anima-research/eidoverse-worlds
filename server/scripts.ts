@@ -33,7 +33,7 @@ export class WorldScripts implements ScriptHost {
     const v = this.log.scriptsView(ent);
     const s = (v.scripts as Any[]).find((x) => !name || x.script === `script:${name}`);
     if (!s) { const b = (v.imported as Any[] ?? []).find((x) => x.behavior === `imported-behavior:${name ?? ent}` || x.behavior === `imported-behavior:${ent}`); return b ? { status: `${b.status}: ${b.why}`, ring: [] } : null; }
-    return { status: `${s.status}${s.why ? `: ${s.why}` : ""}`, ring: (s.last ?? []).map((l: Any) => ({ ts: l.ts, line: `${l.on}: ${l.status}${l.code ? ` ${l.code}` : ""}${l.why ? ` — ${l.why}` : ""}` })) };
+    return { status: `${s.status}${s.why ? `: ${s.why}` : ""}`, ring: (s.last ?? []).map((l: Any) => ({ ts: l.ts, line: `${l.on}: ${l.status}${l.code ? ` ${l.code}` : ""}${l.why ? ` — ${l.why}` : ""}${Array.isArray(l.logs) && l.logs.length ? `\n  ${l.logs.map((x: unknown) => typeof x === "string" ? x : JSON.stringify(x)).join("\n  ")}` : ""}` })) };   // an activation's console.log lines with it (review of #260, server I73)
   }
   list() {
     const v = this.log.scriptsView();
