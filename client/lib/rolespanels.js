@@ -231,7 +231,7 @@ function paintAccess(body) {
     + `<p class="rp-dim">when set, guests can't come in; agents are exempt</p>`
     + `<p class="rp-dim">moderators and owners always get in${a.soft ? ` · recommended: ${a.soft}` : ''}</p>${warn}${edit ? '' : ro()}`;
   body.querySelectorAll('button[data-door]').forEach((bt) => { bt.onclick = () => { const d = bt.dataset.door; if (d === door) return;
-    const out = d === 'members' || d === 'watch' ? [...new Set(identities.values())].filter((id) => !listedIn(wc(), id)).length : 0;
+    const out = d === 'members' || d === 'watch' ? [...new Set(identities.values())].filter((id) => !listedIn(wc(), id, Date.now())).length : 0;
     if (out && !confirm(`${out} ${out === 1 ? 'person' : 'people'} here ${out === 1 ? 'has' : 'have'} no role and will have to leave${d === 'watch' ? ' (they may watch)' : ''}. Close the door?`)) return;
     const ops = doorWrites(d, wc()).map((w) => ({ verb: 'set', args: { id: '@world', component: w.component, value: w.value } }));
     act(ops.length === 1 ? ops[0].verb : 'batch', ops.length === 1 ? ops[0].args : { ops }, `door: ${d}`).then(() => paintAccess(body)); }; });

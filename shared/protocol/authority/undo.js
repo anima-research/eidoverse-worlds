@@ -278,7 +278,8 @@ function sculptInverse(w, ctx, target, res) {
   // a LATER stroke that clamped on these tiles makes the inverse inexact too (40 says "at either time"; this is a third)
   const mine = new Set(opsOf(res).map((o) => `${o.id}|${o.comp}`));
   for (const e of w.entries) if (isE(e) && e.kind === "act" && e.verb === "sculpt" && e.seq > target.seq && (readback(w, e.seq) === null || !!readback(w, e.seq).clamped)) {   // READBACK: a purged later stroke may have clamped: inexact
-    const r = w.entries.find((x) => isE(x) && x.kind === "change" && x.cause === e.seq); if (r && opsQuiet(r).some((o) => mine.has(`${o.id}|${o.comp}`))) return null; }
+    const ri = actIndexOf(w).resultOf.get(e.seq), r = ri === undefined ? undefined : w.entries[ri];   // the act index, as undo reads results: no scan
+    if (r && opsQuiet(r).some((o) => mine.has(`${o.id}|${o.comp}`))) return null; }
   for (const o of opsOf(res)) { const g = ctx.st.entities[o.id]?.c["terrain-grid"]; if (!g || !o.comp?.startsWith("terrain-tile:") || o.verb !== "set") return null;
     const zeros = () => new Array(g.tile ** 2).fill(0); const b = before.entities[o.id]?.c[o.comp]?.mm ?? zeros(), a = o.value.mm, h = ctx.st.entities[o.id]?.c[o.comp]?.mm ?? zeros();
     const lo = -(g.limits?.lower ?? Infinity), hi = g.limits?.raise ?? Infinity; const v = h.map((x, k) => x - (a[k] - b[k]));

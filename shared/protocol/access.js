@@ -93,9 +93,10 @@ export function timedGrants(wc) {
   return out.sort((a, b) => a.until - b.until);
 }
 
-/** "12 min left" / "3 h left" / "until 2026-10-20". */
+/** "12 min left" / "3 h left" / "until 2026-10-20"; "ended" once it has passed (a grant the sweep hasn't removed yet). */
 export function leftWords(until, now) {
   const ms = until - now;
+  if (ms <= 0) return "ended";
   if (ms < 3_600_000) return `${Math.max(1, Math.round(ms / 60_000))} min left`;
   if (ms < 2 * 86_400_000) return `${Math.round(ms / 3_600_000)} h left`;
   return `until ${new Date(until).toISOString().slice(0, 10)}`;

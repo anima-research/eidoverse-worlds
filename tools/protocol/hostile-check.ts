@@ -9,6 +9,7 @@ import { readLog, fold, digest, worldIdOf, parseLine, cloneState, PURGED } from 
 import { carried } from "../../shared/protocol/simlayer.js";
 import { elide } from "../../shared/protocol/scriptrules.js";
 import { create as createRequest } from "../../shared/protocol/requests.js";
+import { leftWords, listedIn } from "../../shared/protocol/access.js";
 import { ENGINE, LAB, scratch, controlNote } from "./common.ts";
 import * as AU from "../../shared/protocol/authority.js";
 
@@ -193,6 +194,11 @@ const probes = [
     base: () => ({ ok: true, v: "(the baseline has no request builders)" }), held: true,
     now: () => createRequest(null, { components: { transform: { pos: [1, 2, 3] } } }).args.components.transform,
     nowGood: (t) => JSON.stringify(t) === JSON.stringify({ pos: [1, 2, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] }) },
+  // review of #260: a timed grant past its end that the sweep hasn't removed yet is shown ended, and isn't listed at a clock
+  { id: "R194", src: "review of #260", what: "a grant past its end reads 'ended' (not '1 min left'), and listedIn with a clock doesn't list it",
+    base: () => ({ ok: true, v: "(the baseline has no timed grants)" }), held: true,
+    now: () => ({ words: leftWords(1000, 61000), listed: listedIn({ "roles:u-a": { role: "builder", until: 1000 } }, "u-a", 61000) }),
+    nowGood: (r) => r.words === "ended" && r.listed === false },
 ];
 
 let bad = 0;
