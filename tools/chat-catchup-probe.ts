@@ -1,6 +1,6 @@
 // chat-catchup-probe — what a reader can scroll back to after a long drop, in
-// the real chat client: Chromium, joined to an owned scratch world, with a raw
-// socket beside it saying what the reader misses while disconnected.
+// the real chat client: Chromium, joined to an owned scratch world, with raw
+// sockets beside it saying what the reader misses while disconnected.
 //
 //   bun tools/chat-catchup-probe.ts
 //
@@ -8,7 +8,7 @@
 //
 // The reader's socket is dropped by closing net.js's own socket from inside
 // the page, and held down by pointing each reconnect the client attempts at a
-// closed port, while the raw socket talks. Then the client reconnects on its
+// closed port, while the raw sockets talk. Then the client reconnects on its
 // own and its re-join catches up, newest first, 1,000 lines at most. Each
 // reader's world holds 200 lines before the drop:
 //  - one had scrolled back a page, and misses 1,100. A scroll-up while it's
@@ -23,18 +23,36 @@
 // The page follows each history request it sends until its answer arrives or
 // requestHistory's 8 s timer for it fires, so a wait for the log to settle
 // waits for every request to end one way or the other.
+//
+// Speech is arrival-only (R 10-18, server/messages.ts "history"): a joiner's
+// window is empty, and a page holds only what was said since its connection
+// arrived, unless it is an admin's, who reads the whole log. A re-join is a
+// new arrival, so only an admin's catch-up can reach what a drop missed: the
+// reader is each world's owner (TRUST_NAMES=1, so the name it types is the
+// founder's account). With its window empty, it joins after 160 lines and
+// hears the last 40 arrive, as many as a joiner's window held before.
+//
+// The three worlds are founded before the server starts, since a join never
+// founds one, and each raw socket joins as a replica, since a world talks only
+// to clients that fold its log. They speak through `say` requests and read
+// the lines back from the log stream's `say` entries (saysIn). The world's
+// authority takes at most 20 says in 10 s from one speaker
+// (shared/protocol/authority/gate.js RATE), so VOICES speakers take turns,
+// each kept under that, and each line waits for the world's reply to the one
+// before it, so the log holds them in order.
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { scratchSequencer, mkCheck, sleep } from "./harness.ts";
+import { scratchSequencer, mkCheck, sleep, saysIn } from "./harness.ts";
 import { launchBrowser } from "./probe-harness.mjs";
 
 const { check, tally } = mkCheck();
-const BEFORE = 200, END = "— the beginning of this world —", LOADING = "… loading earlier messages";
+const BEFORE = 200, HEARD = 40, END = "— the beginning of this world —", LOADING = "… loading earlier messages";
 const data = mkdtempSync(join(tmpdir(), "catchup-data-"));
-// MSG_RATE and VERB_RATE lifted: the raw socket says 1,100 lines in one burst
-const h = await scratchSequencer("catchup", { serverEnv: {
-  SKIP_OPT_SWEEP: "1", JOIN_TOKEN: "test-door", MSG_RATE: "100000", VERB_RATE: "100000",
+// MSG_RATE and VERB_RATE lifted: the raw sockets say 1,100 lines as fast as the authority takes them
+const WORLDS = ["catchup-page", "catchup-begin", "catchup-lost"];
+const h = await scratchSequencer("catchup", { worlds: WORLDS, owner: "reader", serverEnv: {
+  SKIP_OPT_SWEEP: "1", JOIN_TOKEN: "test-door", MSG_RATE: "100000", VERB_RATE: "100000", TRUST_NAMES: "1",
   OPT_DIR: join(data, "opt"), STORE_DIR: join(data, "store"), EIDOVERSE_DIR: join(data, "library"),
 } });
 
@@ -46,22 +64,62 @@ async function until(what: string, test: () => boolean | Promise<boolean>, timeo
   }
 }
 
-/** A raw socket in `world`, as the one who talks. */
-async function speaker(world: string) {
+/** A raw socket in `world`, joined as `id`, that sends requests and waits for each one's reply. */
+async function voice(world: string, id: string) {
   const ws = new WebSocket(h.BASE.replace("http", "ws") + "/ws");
-  const seen: any[] = [];
-  ws.onmessage = (e) => { try { seen.push(JSON.parse(String(e.data))); } catch { /* not JSON */ } };
-  await until("the speaker's socket", () => ws.readyState === 1);
-  ws.send(JSON.stringify({ type: "join", token: "test-door", world, id: "speaker" }));
-  await until("the speaker's join", () => seen.some((m) => m.type === "snapshot"));
-  const logged = (text: string) => seen.some((m) => m.type === "log" && m.entry?.verb === "say" && m.entry.args?.text === text);
+  const seen: any[] = [], said = new Set<string>(), waiting = new Map<string, (r: any) => void>(), sent: number[] = [];
+  let closed: { code: number; reason: string } | null = null, n = 0;
+  ws.onmessage = (e) => {
+    let m: any;
+    try { m = JSON.parse(String(e.data)); } catch { return; /* not JSON */ }
+    seen.push(m);
+    if (m.type === "reply" && typeof m.id === "string") { waiting.get(m.id)?.(m); waiting.delete(m.id); }
+    for (const s of saysIn([m])) said.add(s.text);
+  };
+  ws.onclose = (e) => { closed = { code: e.code, reason: e.reason }; for (const done of waiting.values()) done(null); waiting.clear(); };
+  await until(`${id}'s socket`, () => ws.readyState === 1);
+  ws.send(JSON.stringify({ type: "join", token: "test-door", world, id, replica: true }));
+  await until(`${id}'s join`, () => {
+    const refused = seen.find((m) => m.type === "error");
+    if (refused) throw new Error(`${id}'s join was refused: ${JSON.stringify(refused)}`);
+    if (closed) throw new Error(`${id}'s socket closed (${closed.code} ${closed.reason}) before its join was answered`);
+    return seen.some((m) => m.type === "snapshot");
+  });
   return {
-    ws, seen,
-    async say(from: number, to: number) {
-      for (let s = from; s <= to; s++) ws.send(JSON.stringify({ type: "verb", verb: "say", args: { text: `#${s}` } }));
-      await until(`the world to log #${to}`, () => logged(`#${to}`), 60000);
+    ws, seen, said,
+    /** One line, once the authority takes it: under its say rate this voice waits its turn, and a rate refusal is sent again. */
+    async say(text: string) {
+      for (;;) {
+        // at most 19 of this voice's says in the last 10 s, with a margin for the authority's own stamp
+        while (sent.length >= 19 && performance.now() - sent[0] < 10_200) await sleep(10_200 - (performance.now() - sent[0]));
+        while (sent.length && performance.now() - sent[0] >= 10_200) sent.shift();
+        const rid = `${id}-${++n}`;
+        const answer = new Promise<any>((done) => waiting.set(rid, done));
+        sent.push(performance.now());
+        ws.send(JSON.stringify({ type: "request", id: rid, verb: "say", args: { text } }));
+        const r = await Promise.race([answer, sleep(15_000).then(() => undefined)]);
+        if (r === undefined) throw new Error(`no reply to ${id}'s say of ${text} in 15 s`);
+        if (r === null) throw new Error(`${id}'s socket closed (${closed?.code} ${closed?.reason}) before the world answered its say of ${text}`);
+        if (r.ok) return;
+        if (r.reply?.refused?.code !== "rate") throw new Error(`the world refused ${id}'s say of ${text}: ${JSON.stringify(r.reply?.refused ?? r.reply).slice(0, 300)}`);
+        await sleep(250);
+      }
     },
-    left: (id: string) => seen.some((m) => m.type === "leave" && m.id === id),
+  };
+}
+
+const VOICES = 32;
+/** VOICES speakers in `world`, taking turns: line #s goes to voice s % VOICES, after the world has taken #s-1. */
+async function chorus(world: string) {
+  const voices = [];
+  for (let i = 1; i <= VOICES; i++) voices.push(await voice(world, `speaker-${i}`));
+  return {
+    sockets: voices.map((v) => v.ws),
+    async say(from: number, to: number) {
+      for (let s = from; s <= to; s++) await voices[s % VOICES].say(`#${s}`);
+      await until(`the world to log #${to}`, () => voices[0].said.has(`#${to}`), 30000);
+    },
+    left: (id: string) => voices[0].seen.some((m) => m.type === "leave" && m.id === id),
   };
 }
 
@@ -192,7 +250,13 @@ try {
       await page.evaluate(() => { (globalThis as any).__holdSockets = false; });
       await page.waitForFunction(async () => (await import("/lib/net.js")).net.joined === true, null, { timeout: 60000 });
     };
-    return { page, errors, lines, endMarkers, joined, hist, settle, scrollUp, scrollAll, drop, rejoin };
+    // What the page holds, for a wait that fails: the log's rows, its last three, and what the page threw.
+    const diag = () => page.evaluate(() => {
+      const el = document.getElementById("chatlog"), rows = [...(el?.children ?? [])];
+      return { chatlog: el ? (el.isConnected ? "in the page" : "not in the page") : "absent", rows: rows.length,
+        last: rows.slice(-3).map((r) => `${r.className}: ${(r.textContent ?? "").slice(0, 80)}`) };
+    }).then((d) => JSON.stringify({ ...d, errors: errors.slice(0, 3) })).catch((e) => `the page couldn't be read: ${e}`);
+    return { page, errors, lines, endMarkers, joined, hist, settle, scrollUp, scrollAll, drop, rejoin, diag };
   }
 
   const want = (n: number) => Array.from({ length: n }, (_, i) => `#${i + 1}`);
@@ -210,12 +274,14 @@ try {
   ] as const;
   for (const c of readers) {
     console.log(`a reader who had scrolled ${c.says} (${c.world})`);
-    const talk = await speaker(c.world);
-    speakers.push(talk.ws);
-    await talk.say(1, BEFORE);
+    const talk = await chorus(c.world);
+    speakers.push(...talk.sockets);
+    await talk.say(1, BEFORE - HEARD);
     const r = await reader(c.world);
     await until("the reader's join", r.joined, 60000);
-    await until(`#${BEFORE} on screen`, async () => (await r.lines()).includes(`#${BEFORE}`));
+    await talk.say(BEFORE - HEARD + 1, BEFORE);
+    await until(`#${BEFORE} on screen`, async () => (await r.lines()).includes(`#${BEFORE}`))
+      .catch(async (e) => { throw new Error(`${e.message}: ${await r.diag()}`); });
     await r.settle();
     const lowest = async () => Math.min(...(await r.lines()).map((t) => Number(t.slice(1))));
     const was = await lowest();
@@ -268,6 +334,7 @@ try {
     check("…and the walk ends once, with one end marker", (await r.endMarkers()) === 1, `${await r.endMarkers()} end markers`);
     check("the page threw nothing", r.errors.length === 0, r.errors.join("; "));
     await r.page.context().close();
+    for (const ws of talk.sockets) { try { ws.close(); } catch { /* gone */ } }
   }
   completed = true;
 } finally {
