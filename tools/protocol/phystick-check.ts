@@ -151,6 +151,9 @@ function world(name, N) {
     const b = w.simPeek().sim?.bodies?.ball;
     ok(!!lost && lost.body.home === true && k < 60, `${name} crossing the edge sends it home within 2 s (${k} ticks)`, { lost: lost?.body, k });
     ok(Math.hypot(at[0], at[1], at[2] - 2) < 1e-6 && (!b || b.resting), `${name} it is at home and the engine no longer flies it`, { at, flying: b && !b.resting });
+    // a carrier re-folding the log agrees with the rest the authority wrote where the ball crossed the edge, still flying
+    const fold = simFold(w.entries, 1e15, { models: {} });   // the catalogue openLive gave this world's engine (none)
+    ok(!fold.checks.disagree.length && fold.checks.agree >= 1, `${name} a carrier re-folding the log agrees with the lost ball's rest`, fold.checks);
   }
 }
 
