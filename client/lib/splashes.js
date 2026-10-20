@@ -34,6 +34,9 @@ function ensureMesh() {
   mesh.count = 0;
   mesh.frustumCulled = false;   // the drops move every frame; their bounds would always be stale
   mesh.renderOrder = 3;          // after the water sheet: they are seen over it
+  // the world's, not the sky's: an async sky build adopts what is added while it runs, and the next one disposes it
+  // (sky.js claimSkyAdditions), and this mesh is added at the first splash, whenever that comes
+  mesh.userData.skyExempt = true;
   scene.add(mesh);
   return mesh;
 }
