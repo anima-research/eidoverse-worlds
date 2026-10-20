@@ -246,7 +246,8 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const k2 = vic.msgs.length; const theirs = await call("anim", { ragdoll: true, target: "Vic" }); await sleep(300);
   ok(!theirs.isError && vic.msgs.slice(k2).some((m) => m.type === "puppet" && m.ragdoll === true), "AT6q anim {ragdoll: true, target} asks THEIR body to go limp (an undirected ragdoll, not a shove)", [T(theirs), vic.msgs.slice(k2).map((m) => m.type)]);
   const wings = await call("pose", { wings: "fold" });
-  ok(!wings.isError && /wings/.test(T(wings)) && /pose is now called anim/.test(T(wings)), "AT6f the old pose {wings: \"fold\"} answers as anim {name: \"wings-folded\"} (this body: none to fold, said)", T(wings));
+  // this body's bones aren't known here, so nothing folds: the door answers that as failed, in the fold's words
+  ok(wings.isError && /wings unchanged/.test(T(wings)) && /pose is now called anim/.test(T(wings)), "AT6f the old pose {wings: \"fold\"} answers as anim {name: \"wings-folded\"} (this body: nothing folded, failed, in the fold's words)", T(wings));
   const letgo = await call("reach", { release: true });
   ok(!letgo.isError && /releas|let go|weren't reaching/.test(T(letgo)), "AT6g reach {release: true} lets go (clear_reach folded; nothing held: said)", T(letgo));
   // the library
@@ -262,7 +263,8 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const none = await call("library", {});
   ok(none.isError && /query/.test(T(none)) && /preview/.test(T(none)), "AT6i …and library with nothing teaches its three forms", T(none));
   const prev = await call("library", { preview: "test/cup.glb" });
-  ok(!prev.isError && (prev.content.some((c) => c.type === "image") || /no preview/.test(T(prev))), "AT6j library {preview} is one item (library_preview folded)", T(prev));
+  // a preview the library can't give is failed, said; an image is the call done
+  ok(prev.content.some((c) => c.type === "image") ? !prev.isError : prev.isError && /no preview/.test(T(prev)), "AT6j library {preview} is one item (library_preview folded; none here: failed, said)", T(prev));
   // walking by name (socketteer's walk-by-place-name, as move {to: <name>}): a thing's id walks you up to it
   const mp = ag.foldRecord(ID.mug)?.pos;
   const byName = await call("move", { to: ag.handle(ID.mug) });   // its handle ("mug" names its copies too since AT2)   // walking: a run this long rides the authority's token bucket at its edge (walkTo pacing, not this tool's)
