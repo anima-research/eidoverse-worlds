@@ -293,7 +293,8 @@ function sculptInverse(w, ctx, target, res) {
 // component, at} (expect by version) to be refused instead of re-applied.
 function buildSculpt(ctx, a) {
   const e = needThing(ctx, a.on); const g = e.c["terrain-grid"];
-  if (!g) refuse("no-grid", `${a.on} has no terrain-grid`, "set {id, component: 'terrain-grid', value: {spacing: 0.5, tile: 32, origin: [x, z], extent: [nx, nz], limits: {raise, lower}}}");
+  // terrain-grid is a reserved name (nothing may write it), so naming a set of it as the remedy sent the reader to a refusal
+  if (!g) refuse("no-grid", `${a.on} has no terrain-grid, so there is nothing to sculpt on it`, "sculpt works on a thing that already carries a terrain-grid; terrain-grid is reserved on this server, so nobody can add one, and asking again won't change that");
   if (!TR.BRUSHES.includes(a.brush)) refuse("shape", `no brush '${a.brush}'`, TR.BRUSHES.join(", "), { didYouMean: guess(String(a.brush), TR.BRUSHES) });
   if (!Array.isArray(a.path) || !a.path.length || a.path.length > 256 || !a.path.every((p) => Array.isArray(p) && p.length === 2 && p.every(isNum))) refuse("shape", "path: [[x, z], …] (1–256 points)", "");
   if (!(a.radius > 0 && a.radius <= 64) || (TR.ADDITIVE.has(a.brush) && !(Number.isInteger(a.strength) && a.strength > 0 && a.strength <= 100000))) refuse("shape", "radius (m, ≤ 64) and strength (whole mm, > 0)", "");
