@@ -35,5 +35,5 @@ export function applyStroke(g, tiles, { brush, path, radius, strength }) {
   for (const [k, v] of next) { const gx = Math.floor(k / N[1]), gz = k % N[1]; tileOf(gx, gz)[(gx % t) * t + (gz % t)] = v; }
   return { writes, clamped };
 }
-// height (m) at a world point: the view agents read (base omitted here: the lab's base is flat 0)
+// the sculpt's own height delta (m) at a world point, without the terrain's base: not the ground height (add the base for that)
 export function heightAt(g, tiles, x, z) { const gx = Math.round((x - g.origin[0]) / g.spacing), gz = Math.round((z - g.origin[1]) / g.spacing); return sampleAt(tiles, g, gx, gz) / 1000; }

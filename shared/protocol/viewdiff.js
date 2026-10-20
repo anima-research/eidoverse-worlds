@@ -1,6 +1,6 @@
 // shared/protocol/viewdiff.js — what changed between two world views (view.js viewState), said in the protocol's terms (slice 3c).
 // The renderer's realizers and the agent's caches react to these. Pure.
-//   diffView(prev, next) → { things: [{id, what, comp?}], world: [key] }
+//   diffView(prev, next) → { things: [{id, what, comp?}], world: [key], ids: {<map key>: [changed entry]} }
 //     what: 'gone'   the thing left the world
 //           'born'   it's new, or became a different thing (another model, kind, or a field only a rebuild can show)
 //           'pose'   its own transform (pos / q / scale / scale3) moved

@@ -52,8 +52,8 @@ function freezeRecord(e) {
  *  mutated in place, only replaced). */
 const thawed = (e) => ({ born: e.born, c: Object.assign(Object.create(null), e.c) });
 
-/** `freeze`: dev-mode guard (on by default outside the browser, so every suite runs with it; client/lib/net.js
- *  turns it on for a dev host): the fold's records are frozen, so a reader that mutates one throws where it stands. */
+/** `freeze`: dev-mode guard (on by default for every caller, so every suite runs with it; client/lib/net.js
+ *  passes CONFIG.dev, so the browser has it only on a dev host): the fold's records are frozen, so a reader that mutates one throws where it stands. */
 export function makeReplica({ freeze = true } = {}) {
   const v = { active: false, st: null, head: -1, worldId: null, you: null, names: Object.create(null), stats: { ingested: 0, resyncs: 0 }, frozen: !!freeze };
   const freezeAll = () => { if (freeze && v.st) for (const id of Object.keys(v.st.entities)) freezeRecord(v.st.entities[id]); };

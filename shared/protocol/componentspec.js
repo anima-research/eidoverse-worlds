@@ -367,7 +367,9 @@ export const COMPONENTS = {
   // who may caption a screen is the screen's own captioners list (R leaned that way, 10-06, as the roles branch's CAPTION_ON_SCREENS does)
   // shape audit 10-16 (render-media-env §11): each caption write holds ITS line, once (WebVTT/TTML store a cue once); the 20-line
   // window re-logged each line up to twenty times, the very cost the caption request was made to remove. A reader wanting
-  // the last lines reads the last captions changes (the log is the transcript); mediaTime was line.t1
+  // the last lines reads the last captions changes (the log is the transcript); mediaTime was line.t1. An older value
+  // keeps its lines in `window` (with mediaTime), which captions.js still reads (normalizeCaptions): `fields` names
+  // neither, since neither is written now, and `line`'s absentMeans (pinned) is that older window
   captions:   { on: "thing", fields: { session: "string", n: "int", gen: "number", title: "string", line: "object" }, required: ["session", "n", "line"],
                 ranges: { title: { maxLen: 120 } }, units: { gen: "the leg's generation" },
                absentMeans: { line: "an older value's window [{t0, t1, text, speaker?}]: its last entry is the line on screen" },

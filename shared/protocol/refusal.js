@@ -58,7 +58,8 @@ export const lockQuestion = (verb) => `This is locked. ${verb} anyway?`;
 export function lockBody(r, id, nameOf = null) {
   const k = r?.refused?.lock; const by = r?.refused?.by;
   const who = by ? ` by ${readable(by)}` : "";
-  // the locked thing by what a person calls it (its label, or what it is: nameOf), never its id (R 10-17: ids are opaque)
+  // the locked thing by what a person calls it (its label, or what it is: nameOf), not its id (R 10-17: ids are opaque);
+  // a caller that passes no nameOf gets readable(k), which is the id
   return k && id && k !== id ? `It rides ${(nameOf && nameOf(k)) || readable(k)}, which is locked${who}.` : `Locked${who}.`;
 }
 /** The three answers, in R's order. `through` re-sends with throughLock (one act, the lock stays on); `cancel` writes

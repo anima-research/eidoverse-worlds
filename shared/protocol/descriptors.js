@@ -26,7 +26,7 @@
 // (rowOf) and claims a card's addresses from it (claims): a row no descriptor names is in no card, which
 // tools/components-inspector-test.ts reports. `extra` names the card's own derived rows (openable's `by`, text's `plate`).
 //
-// The eight fields where RECORDS states a default the registry never writes (C5's yellows) are decided here, per field,
+// The seven fields where RECORDS states a default the registry never writes (C5's yellows) are decided here, per field,
 // as `absent` on the descriptor (`absentMeans` prose: the record's `default` is a READING of absence, to become prose when
 // RECORDS is generated from this table) or as a registered default (none yet: each would be a registry change and a pin
 // regeneration, spec/fixtures/registry-pin.json D8). See DECIDED below.
@@ -57,7 +57,7 @@ const DEG = { t: 'num', step: 5, deg: true };
 const SEC = { t: 'num', step: 0.1, dp: 2, softMin: 0.05 };
 const RATE_UI = { t: 'num', step: 5, dp: 1 };
 
-/** The eight yellows (C5): where RECORDS states a default the registry never writes. Each decided as `absent` prose — the
+/** The seven yellows (C5): where RECORDS states a default the registry never writes. Each decided as `absent` prose — the
  *  record's number is what a reader DOES when the key is absent, not what the authority writes — and none registered:
  *  registering one changes what every new component carries on the wire (a pin regeneration), and no reader needs it. */
 const DECIDED = {

@@ -50,7 +50,7 @@ function planResettle(w, asker, ops, before, after0) { let after = after0; const
   const spec = after.entities["@world"]?.c["physics-engine"];
   // the ground still loading: a fall would rest on a guessed height (review r4 F2) — they are left as they are on the host
   // (its local pose kept: a rescaled host carries them with it, r5 F6), said so
-  if (!groundReady(after)) return { actor, asker, hosts, occupants: [], admitted: null, launches: [], note: { kept: occupants, why: "they were resting on a thing whose shape changed, but this world's ground is still loading: they are left as they are on it (a rescaled host carries them with it) rather than fall onto a guessed height" } };
+  if (!groundReady(after)) return { actor, asker, hosts, occupants: [], admitted: null, launches: [], note: { kept: occupants, why: "they were resting on a thing whose shape changed, but this world's ground is still loading: they are left as they are on it (a rescaled host carries them with it) rather than fall onto a guessed height. Nothing sets them down once it has loaded: a later change to the host's shape does, or moving them" } };
   if (spec && carried(spec)) {
     const flying = new Set(Object.keys(w.sim?.()?.launched ?? {}));
     const dropped = occupants.filter((k) => !flying.has(k));

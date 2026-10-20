@@ -101,9 +101,9 @@ export function massOf(st, id) {
   const sc = worldPose(st, id)?.scale ?? [1, 1, 1];
   return Math.max(1e-6, rho * v * Math.abs(sc[0] * sc[1] * sc[2]));
 }
-/** The fastest a shove may send a thing of mass m along the ground: a run's push (SHOVE.walk) passed on elastically, under
+/** The fastest a shove may send a thing of mass m along the ground: a run's push (SHOVE.run) passed on elastically, under
  *  the flat ceiling. What the authority admits; what a walker sends never exceeds it. */
-export const shoveCap = (m) => Math.min(SHOVE.maxV, SHOVE.walk * 2 * BODY_MASS / (BODY_MASS + (Number.isFinite(m) ? m : 0)));
+export const shoveCap = (m) => Math.min(SHOVE.maxV, SHOVE.run * 2 * BODY_MASS / (BODY_MASS + (Number.isFinite(m) ? m : 0)));
 /** What the walker keeps of its speed after giving a thing of mass m its push (0: a heavy thing stops you). */
 export const keptOf = (m) => Math.max(0, (BODY_MASS - m) / (BODY_MASS + m));
 
@@ -111,7 +111,7 @@ export const keptOf = (m) => Math.max(0, (BODY_MASS - m) / (BODY_MASS + m));
  *  isn't walking into it. */
 export function shoveV(vel, n, m, F = SHOVE_FEEL) {
   const along = vel[0] * n[0] + vel[1] * n[1]; if (!(along >= F.minSpeed) || along < F.headOn * Math.hypot(vel[0], vel[1])) return null;
-  const s = Math.min(shoveCap(m), Math.min(along, SHOVE.walk) * 2 * BODY_MASS / (BODY_MASS + m)), lift = Math.min(F.lift, SHOVE.lift);
+  const s = Math.min(shoveCap(m), Math.min(along, SHOVE.run) * 2 * BODY_MASS / (BODY_MASS + m)), lift = Math.min(F.lift, SHOVE.lift);
   return [noNeg0(r3(n[0] * s)), noNeg0(r3(s * lift)), noNeg0(r3(n[1] * s))];
 }
 
@@ -120,7 +120,7 @@ export function shoveV(vel, n, m, F = SHOVE_FEEL) {
  *  the thing a little further). */
 export function shoveSlide(m, u) {
   if (!Number.isFinite(m) || !(m > 0) || !Number.isFinite(u)) return 0;
-  const s = Math.min(shoveCap(m), Math.min(u, SHOVE.walk) * 2 * BODY_MASS / (BODY_MASS + m));
+  const s = Math.min(shoveCap(m), Math.min(u, SHOVE.run) * 2 * BODY_MASS / (BODY_MASS + m));
   return s * s / (2 * SHOVE.mu * G);
 }
 /** Will a body walking at u move it out of the way? Its shove must slide it at least as far as the shover needs to see a

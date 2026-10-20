@@ -2,7 +2,7 @@
 //
 // The protocol core hashes in three places: the world id (sha256 of genesis JCS), the state digest (§2.4) and blob names
 // (§2.2). A reader verifying a chain hashes once per entry (research 29): that must be a synchronous hash. Awaiting
-// WebCrypto's subtle.digest once per entry measured 30× slower than a sync pure-JS hash (334 µs vs 18.5 µs per
+// WebCrypto's subtle.digest once per entry measured about 18× slower than a sync pure-JS hash (334 µs vs 18.5 µs per
 // entry), so the browser path is the sync pure-JS sha256hex from ../sha256.js (the same function blueprint and
 // record hashes already use). Bun has a native sync hasher; the server uses it. tools/protocol/run.ts proves both agree.
 // No node: import here — the browser imports this file as-is.
