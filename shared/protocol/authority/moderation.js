@@ -41,8 +41,11 @@ function personLift(w, actor, a, verb, recs, { strict, power = verb }) {
   const st = w.state(); if (!isIdentity(a.who)) refuse("shape", `un${verb} {who}`, "");
   if (!may(st, actor, power) && roleOf(st, actor) !== "owner") refuse("rights", `lifting a ${verb} needs ${power}; you are ${roleOf(st, actor)}`, "ask a moderator or an owner", { needs: power });
   if (a.who === actor) refuse("rank", `you can't lift a ${verb} on yourself`, "ask someone ranked above whoever made it");   // review 10-07
-  // a lift ends every record of its kind in force, so it must be allowed over each one (stacked sanctions: review 10-07)
-  for (const rec of (Array.isArray(recs) ? recs : recs ? [recs] : [])) {
+  // a lift ends every record of its kind in force, so it must be allowed over each one (stacked sanctions: review 10-07);
+  // with none in force (never made, or already ended) there is nothing to lift, and nothing is logged
+  const inForce = Array.isArray(recs) ? recs : recs ? [recs] : [];
+  if (!inForce.length) refuse("nothing", `${said(a.who)} has no ${verb === "ban" ? "ban or kick" : verb} in force here`, "modlog shows the sanctions in force; one that has ended needs no lifting");
+  for (const rec of inForce) {
   if (roleOf(st, actor) === "owner" || rec.actor === actor) continue;
   const mine = rankOf(st, actor), theirs = rankOf(st, rec.actor);
   if (strict ? mine <= theirs : mine < theirs) refuse("rank", `${said(rec.actor)} (${roleOf(st, rec.actor)}) made this ${verb}; only they, an owner${strict ? ", or someone who outranks them" : ", or someone at their rank or above"} may lift it`, `ask ${said(rec.actor)} or an owner`, { by: rec.actor });
