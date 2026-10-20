@@ -232,7 +232,9 @@ try {
   await legacyVerb(a, "light", { id: "lamp", pos: [50, ry + 2, -20], intensity: 5 });
   for (let i = 0; i < 40 && !a.entities.get(sceneId(a, "lamp")); i++) await sleep(50);
   r = await tool("name_place", { name: "glow", on: "lamp" });
-  check("a light cannot carry places — refused, not saved where nothing reads it", /has no model/.test(r) && !a.entities.get(sceneId(a, "lamp"))?.places, r);
+  // a thing with no model still has a frame (its transform), so a light holds a place as a model does
+  for (let i = 0; i < 40 && !a.entities.get(sceneId(a, "lamp"))?.places?.glow; i++) await sleep(50);
+  check("a light carries places too — named in its frame, and saved", /named this spot "glow" on \[lamp\]/.test(r) && !!a.entities.get(sceneId(a, "lamp"))?.places?.glow, r);
   // two names in a row, before the first echo: both land
   const [r1, r2] = await Promise.all([
     tool("name_place", { name: "west_end", x: 45, z: -20, on: "rug" }),
@@ -269,7 +271,7 @@ try {
     const listed = await tool("move", { to: "?" });
     const lines = listed.split("\n").filter((l) => /^  \S/.test(l));
     check("move {to: \"?\"} lists at most 200, nearest first, and says how many more and how to narrow",
-      lines.length === 200 && /tower2?\/|rug\/|perch\//.test(lines[0]) && /and \d+ more/.test(listed) && /\?<text>|"\?stall/.test(listed), `${lines.length} lines; ${listed.split("\n").slice(-2).join(" | ")}`);
+      lines.length === 200 && /tower2?\/|rug\/|perch\/|lamp\//.test(lines[0]) && /and \d+ more/.test(listed) && /\?<text>|"\?stall/.test(listed), `${lines.length} lines; ${listed.split("\n").slice(-2).join(" | ")}`);
     const narrowed = await tool("move", { to: "?stall_22" });
     const nl = narrowed.split("\n").filter((l) => /^  \S/.test(l));
     check("move {to: \"?stall_22\"} lists only the places whose name holds that text",

@@ -1041,10 +1041,6 @@ r = await call('name_place', { name: '!!' });
 check('a malformed place name is failed', failed(r) && /^a place name is/.test(said(r)), said(r));
 r = await call('name_place', { name: 'lookout', on: 'nothing-here' });
 check('naming a place on an unknown thing is failed', failed(r) && /no thing called "nothing-here"/.test(said(r)), said(r));
-ag.entities.set('lamp', { id: 'lamp', pos: [0, 2, 0] });
-r = await call('name_place', { name: 'lookout', on: 'lamp' });
-check('naming a place on a thing with no model is failed', failed(r) && /has no model — places hang on placed things/.test(said(r)), said(r));
-ag.entities.delete('lamp');
 {
   ag.entities.set('stone', { id: 'stone', model: 'models/stone.glb', pos: [0, 0, 0] });
   const realEff = ag.eff, realSendOps = ag.sendOps;
