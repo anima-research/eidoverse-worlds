@@ -302,9 +302,13 @@ function expectCheck(w, list) {
       { id: x.id, component: x.component, ...(lt ? { by: lt.actor, at: lt.seq } : {}) });
   }
 }
+// a guess reads at most GUESS_MAX characters of what was asked for: no verb, id or component name is longer, and the edit
+// distance's work grows with the input times every option (a long unknown name against a world's ids took seconds)
+const GUESS_MAX = 80;
 function guess(s, opts) {
-  const d = (a, b) => { const m = Array.from({ length: a.length + 1 }, (_, i) => [i]); for (let j = 1; j <= b.length; j++) m[0][j] = j;
-    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) m[i][j] = Math.min(m[i-1][j] + 1, m[i][j-1] + 1, m[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1)); return m[a.length][b.length]; };
+  s = String(s).slice(0, GUESS_MAX);
+  const d = (a, b) => { let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) { const row = [i]; for (let j = 1; j <= b.length; j++) row[j] = Math.min(prev[j] + 1, row[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1)); prev = row; } return prev[b.length]; };
   const toks = (x) => String(x).toLowerCase().split(/[-_\s/:]+/).filter(Boolean);
   const share = (o) => { const a = toks(s), b = toks(o); return a.filter((t) => b.some((u) => u.startsWith(t) || t.startsWith(u))).length; };
   return opts.map((o) => [o, d(String(s), o) - 2 * share(o)]).sort((a, b) => a[1] - b[1]).filter(([o, n]) => n <= 3 || share(o) >= Math.max(1, toks(s).length - 1)).slice(0, 3).map(([o]) => o);

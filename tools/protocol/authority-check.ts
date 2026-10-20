@@ -1420,6 +1420,12 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const o = txnOutcome(w, from, { threw: true, refused: false, wedgedBefore: before });
   ok(o.outcome === "ambiguous" && o.wedged === true && o.file === undefined, "ST5 a world-log failure while only the moderator log was wedged is ambiguous, and names the world log", { o, threw: String(threw) }); }
 
+// G1: a guess's work doesn't grow with how long the unknown name is. 2,000 ids against an 80,000-character name took
+// over 15 s (15.6 s in our run) when the whole name was compared; the 2 s bound is a wide margin either side (it reads the clock)
+{ const { UP } = await import("../../shared/protocol/authority/ctx.js");
+  const ids = Array.from({ length: 2000 }, (_, i) => `thing-${i}`); const t0 = performance.now();
+  const near = UP.guess("x".repeat(80000), ids), ms = performance.now() - t0;
+  ok(ms < 2000 && UP.guess("thing-12x", ids).includes("thing-12"), "G1 an unknown 80,000-character name is guessed against 2,000 ids in under 2 s, and a near name still finds its match", { ms: Math.round(ms), near }); }
 // SRU3: undoing a host's creation leaves a socket someone else made under it since: their work, so the undo skips
 { const name = "sru3";
   const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
