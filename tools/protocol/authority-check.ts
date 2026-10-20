@@ -1204,6 +1204,11 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 // SR2 (review 10-12 S1-2, re-cut by R 10-15 22:48): a socket is an entity, so it meets the one entity budget like any
 // other: capacity.entities for the world, capacity.guestEntities for all account-less people together (a guest is a fresh
 // identity per connection), and at most SOCKETS_PER_HOST on one host. Only a write that adds is refused (full).
+// review of #260: the index audit expects a switched-off thing to be out of the index, as buildIx leaves it
+{ const R = (actor, verb, args) => { T += 1000; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "ixoff"), actor, verb, args); };
+  R("ann", "create-world", { title: "ixoff" }); R("ann", "create", { id: "box1", model: "crate" }); const off = R("ann", "set", { id: "box1", component: "disabled", value: true });
+  const audit = AUTH.indexAudit(openWorld(root, "ixoff"));
+  ok(off.ok && Array.isArray(audit) && audit.length === 0, "IX1 a switched-off thing isn't an index defect", audit); }
 // review of #260: following the full refusal's fix raises the one limit and keeps the others
 { const W = () => openWorld(root, "capfix"); const R = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); return request(W(), actor, verb, args); };
   R("ann", "create-world", { title: "capfix" }); R("ann", "set", { id: "@world", component: "capacity", value: { entities: 2, guestEntities: 7 } });

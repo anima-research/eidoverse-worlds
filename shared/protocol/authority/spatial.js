@@ -121,7 +121,9 @@ export function indexAudit(w) {
       order: Object.keys(st.entities).filter((id) => x.order.has(id)).sort((a, b) => x.order.get(a) - x.order.get(b)).join(), boxes: [...x.rec.entries()].map(([id, g]) => `${id}:${JSON.stringify(g.q)}`).sort().join() });
     const a = norm(ix), b = norm(fresh); for (const k of Object.keys(a)) if (a[k] !== b[k]) out.push(k);
     if (JSON.stringify([...kidsMap(st).entries()]) !== JSON.stringify([...kidsOfIx({ kids: null }, st.entities).entries()])) out.push("kids");
-    for (const id of Object.keys(st.entities)) if (JSON.stringify(ix.rec.get(id)?.box ?? null) !== JSON.stringify(aabb(st, id)) || JSON.stringify(ix.rec.get(id)?.surfs ?? []) !== JSON.stringify(aabb(st, id) ? surfacesOf(st, id) : [])) { out.push(`geometry of ${id}`); break; }
+    // a switched-off thing is out of the index (buildIx), so it's expected there with no box and no surfaces
+    for (const id of Object.keys(st.entities)) { const box = offChain(st, id) ? null : aabb(st, id);
+      if (JSON.stringify(ix.rec.get(id)?.box ?? null) !== JSON.stringify(box) || JSON.stringify(ix.rec.get(id)?.surfs ?? []) !== JSON.stringify(box ? surfacesOf(st, id) : [])) { out.push(`geometry of ${id}`); break; } }
     return out; } finally { CTX.cat = prevCat; }
 }
 // the things whose box meets [min, max] (closed: touching counts), in the state's key order
