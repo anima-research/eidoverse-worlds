@@ -1071,7 +1071,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const verb = String(a.verb ?? ""), args = (a.args && typeof a.args === "object" ? a.args : {}) as Record<string, any>;
       if (Object.hasOwn(BODY_VERBS, verb)) return BODY_VERBS[verb](ag, args, ctx, verb);   // answered by this body, or moderation by name
       if (typeof args.who === "string") { const rw = await resolveWho(ag, args.who, verb); if ("err" in rw) return rw.err; args.who = rw.who; }   // warn/mute/ghost/…: a name works here too
-      const named = namedThings(ag, args, THING_KEYS.filter((k) => k !== "to" || verb !== "move")); if ("err" in named) return named.err;   // a thing by id, label or prefix (move's to is a point)
+      // a thing by id, label or prefix. No authority verb takes a thing in to or target: move's to is a point, say's and
+      // body's name a person, update's is a blueprint's hash (verbspec.js), so a person who shares a thing's label is
+      // still the one addressed
+      const named = namedThings(ag, args, THING_KEYS.filter((k) => k !== "to" && k !== "target")); if ("err" in named) return named.err;
       const r = await ag.request(verb, named.args);
       const reply = r ?? { ok: false };
       return { content: [{ type: "text", text: JSON.stringify(reply, null, 1) }], ...(reply.ok ? {} : { isError: true }) };
@@ -1384,10 +1387,11 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
     ag.bodyMode = String(a.bodyMode);
     // alone, it rests the body in the new mode's own anim (declaring stand stands you up, R 16:26), unless a clip anim plays
     // or a walk is under way (the walk's clip is the mover's)
-    if (a.name == null && a.joints == null && a.tracks == null && !ag.target && ag.clip !== "ragdoll" && !ag.anims.some((x: any) => x.kind === "clip")) { const rest = ag.restClip(ag.bodyModeNow()); if (rest) ag.clip = rest; }
+    if (a.name == null && a.joints == null && a.tracks == null && (a.stop == null || a.stop === false) && a.ragdoll !== true && !ag.target && ag.clip !== "ragdoll" && !ag.anims.some((x: any) => x.kind === "clip")) { const rest = ag.restClip(ag.bodyModeNow()); if (rest) ag.clip = rest; }
     // on a seat (review r11 L1): body-mode grants nothing, so a declaration never moves you off it; the reply says how
     const seated = ag.myOccupancy ? `; you're still attached to ${ag.socketName?.(ag.myOccupancy.to) ?? "your seat"}, and rest in its anim — detach to get off` : "";
-    if (a.name == null && a.joints == null && a.tracks == null) return text(`${JSON.stringify({ bodyMode: String(a.bodyMode) })} — declared, for looks: it holds until a real transition (water, a take-off, a fall, a landing) or your next declaration, and grants nothing${seated}`); }
+    // with stop or ragdoll beside it, that runs too, in the mode just declared (the declaration returned first)
+    if (a.name == null && a.joints == null && a.tracks == null && (a.stop == null || a.stop === false) && a.ragdoll !== true) return text(`${JSON.stringify({ bodyMode: String(a.bodyMode) })} — declared, for looks: it holds until a real transition (water, a take-off, a fall, a landing) or your next declaration, and grants nothing${seated}`); }
   const forms = ["name", "joints", "tracks", "stop", "ragdoll"].filter((k) => a[k] != null && a[k] !== false);
   if (a.name != null && (a.joints != null || a.tracks != null)) return { content: [{ type: "text", text: "anim: a name OR live keys (joints, or tracks), not both — a named anim plays as it is; nothing was guessed and nothing played" }], isError: true };
   if (forms.length > 1) return { content: [{ type: "text", text: `anim: one of name, joints, tracks, stop or ragdoll at a time (got ${forms.join(", ")})` }], isError: true };
@@ -1420,7 +1424,9 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
       if (a.target) return { content: [{ type: "text", text: "anim {tracks, mode: hold} holds on your own body; send joints to hold a frame on someone else" }], isError: true };
       const v = validateTracks(a.tracks); if (!v.accepted.length) return LEGACY.animate(ag, { tracks: a.tracks, dur: a.dur }, ctx, "animate");
       ag.setPose(frameOf(v.tracks, at), !!a.hold); ag.animBegan({ name: "live", mode: "hold", kind: "live" });
-      return playing("live", "hold", `holding the frame at ${at ?? "the last key"}${at != null ? " s" : ""} of ${v.accepted.length} bone(s)`);
+      // what validation left out or corrected is said, as animate says it
+      const note = poseReport(v);
+      return playing("live", "hold", `holding the frame at ${at ?? "the last key"}${at != null ? " s" : ""} of ${v.accepted.length} bone(s)${note ? `. ${note}` : ""}`);
     }
     const r: any = await LEGACY.animate(ag, { tracks: a.tracks, dur: a.dur, loop: mode === "loop", ...(a.replace != null ? { replace: a.replace } : {}), ...(a.target ? { target: a.target } : {}) }, ctx, "animate");
     if (!r.isError && !a.target && mode === "loop") ag.animBegan({ name: "live", mode: "loop", kind: "track" });

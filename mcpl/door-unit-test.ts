@@ -43,4 +43,27 @@ for (const why of ["superseded by a newer walk or a stop", "no route: the way th
     stopped ? "a stopped walk isn't tried again beside what holds it up, and says it was stopped" : "a refused route is tried again beside what holds it up", { walks, text: out.content[0].text });
 }
 
+// act's say {to} and body {to} name a person, so a thing sharing their name isn't sent in their place
+{ const sent: any[] = [];
+  const ag: any = { thingRef: (v: string) => v === "Mira" ? { id: "lamp-7f3a" } : {}, request: async (verb: string, args: any) => { sent.push([verb, args]); return { ok: true }; } };
+  await handleTool({ agent: ag } as any, "act", { verb: "say", args: { text: "hi", to: "Mira" } });
+  await handleTool({ agent: ag } as any, "act", { verb: "body", args: { to: "Mira", kind: "pose" } });
+  await handleTool({ agent: ag } as any, "act", { verb: "delete", args: { id: "Mira" } });
+  ok(sent[0][1].to === "Mira" && sent[1][1].to === "Mira", "act say {to} and body {to} keep the person's name", sent);
+  ok(sent[2][1].id === "lamp-7f3a", "act delete {id} still resolves a thing's label (the control)", sent); }
+
+// anim {bodyMode} beside stop or ragdoll runs them too, after declaring the mode
+{ const calls: string[] = [];
+  const ag: any = { anims: [{ name: "dance", kind: "clip" }], clip: "dance", myOccupancy: null, target: null, heldPose: null,
+    restClip: () => "sit", bodyModeNow: () => ag.bodyMode, stopAnims: async (w: unknown) => { calls.push(`stop:${w}`); ag.anims = []; return ["dance"]; },
+    animEnded: (why: string) => calls.push(`ended:${why}`), knockDown: () => calls.push("fell") };
+  await handleTool({ agent: ag } as any, "anim", { bodyMode: "sit", stop: true });
+  await handleTool({ agent: ag } as any, "anim", { bodyMode: "sit", ragdoll: true });
+  ok(ag.bodyMode === "sit" && calls.includes("stop:null") && calls.includes("fell"), "bodyMode with stop stops, and with ragdoll falls", calls); }
+
+// a held frame says what validation left out, as animate does
+{ const ag: any = { anims: [], setPose: () => {}, animBegan: () => {}, animEnded: () => {} };
+  const out: any = await handleTool({ agent: ag } as any, "anim", { tracks: { hips: [{ t: 0, q: [0, 0, 0, 1] }], notABone: [{ t: 0, q: [0, 0, 0, 1] }] }, mode: "hold" });
+  ok(!out.isError && /notABone/.test(out.content[0].text), "a held frame names the bone it left out", out.content[0].text); }
+
 console.log(`door-unit-test: ${fails ? `${fails} failed` : "all ok"}`); process.exit(fails ? 1 : 0);
