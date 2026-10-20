@@ -241,9 +241,9 @@ try {
     await evalJson(`(() => { document.querySelector('.sp-ctx .sp-ctx-item').click(); return true; })()`);
     check("Q5 Allow answers the ask: Wren hears body-reply ok (consent {answer, yes: true} landed) and the pose was delivered", await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 5000) { if (wren.msgs.some((m) => m.type === "body-inbox" && m.messages?.some((x: any) => x.type === "body-reply" && x.ask === askId && x.ok === true && x.applied === true))) return true; await sleep(50); } return false; })(), wren.msgs.filter((m) => m.type === "body-inbox"));
     check("Q6 …and the mark is gone", marked && await waitFor(`!document.querySelector('.who-row[data-name="Wren"] .who-ask')`, 3000));
-    // review of #260 (client I16): a row answers the ask it SHOWED. Kit's ask A is on the open menu; A is answered elsewhere
+    // review of #260: a row answers the ask it SHOWED. Kit's ask A is on the open menu; A is answered elsewhere
     // (yes, as the XR ask panel would: a no would cool Kit's asks down), then Kit asks again (B). Pressing the row that
-    // showed A must answer nothing, not allow B. Kit is a second guest: the authority takes at most 2 asks a minute from one.
+    // showed A must answer nothing, and B stays pending. Kit is a second guest: the authority takes at most 2 asks a minute from one.
     { const kit = guest("Kit"); const { snap: ks } = await kit.join(); const kitActor = ks?.cut?.you;
       await waitFor(`import('/lib/net.js').then((m) => m.identities.get('Kit') === ${JSON.stringify(kitActor)})`, 5000);
       let kq = 0; const kreq = async (verb: string, args: any) => { const id = `k${++kq}`; kit.send({ type: "request", id, verb, args }); const t0 = Date.now(); while (Date.now() - t0 < 5000) { const r = kit.msgs.find((m) => m.type === "reply" && m.id === id); if (r) return r; await sleep(50); } return null; };

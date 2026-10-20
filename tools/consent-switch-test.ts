@@ -132,7 +132,7 @@ const run = async (reply: (n: number) => any) => {
   await box.answer('ask-1001-0', false, send);
   check('answering no sends consent {answer, yes: false}', sent.length === 2 && sent[1][1].yes === false && box.asks().length === 0, JSON.stringify(sent));
   // a reach to an intimate point: the authority classes it (bodyconsent.js: cls intimate for chest_front), and the
-  // inbox keeps that class, so Allow and Never are for intimate touch, not ordinary touch (review of #260, client I20)
+  // inbox keeps that class, so Allow and Never are for intimate touch, not ordinary touch (review of #260)
   box.take([{ type: 'body-ask', ask: { ...ask, id: 'ask-1001-1', kind: 'touch', cls: 'intimate', summary: 'u-wren asks to touch (chest_front)' } }]);
   check('a reach the authority classes intimate is held as intimate, not as its kind\'s touch', box.askFrom('u-wren')?.cls === 'intimate', JSON.stringify(box.asks()));
   await box.answer('ask-1001-1', false, send); sent.pop();

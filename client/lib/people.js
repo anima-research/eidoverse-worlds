@@ -177,7 +177,7 @@ function roleMenu(display, surface) {
  *  (consent {deny, class}: PROTOCOL L6's per-person override, presence-only — it lasts this stay, like the authority's
  *  table itself; my table (consent.js) has no per-person cell to persist it in). */
 // The row answers the ask it showed, by its id (consent {answer: <id>}): never "whatever this person asks now", which
-// could be a newer, different ask the person never saw (review of #260, client I16). If that one is gone, nothing is sent.
+// could be a newer, different ask the person never saw (review of #260). If that one is gone, nothing is sent.
 async function answerAsk(item, display, askId) {
   const them = personOf(display); const k = askId ? consentInbox.asks().find((x) => x.id === askId) ?? null : null;
   if (!k) { deps.toast(`the ask from ${display} you were answering is gone (answered, or past its 20 s); nothing was sent`, 'info'); bus.emit('roster'); return null; }
