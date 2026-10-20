@@ -302,7 +302,8 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
     // move takes its destination as `to`: [x, y, z], [x, z] or a name
     const to = typeof args.to === "string" ? args.to : args.y != null ? [args.x, args.y, args.z] : [args.x, args.z];
     const r: any = await handleTool({ agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } } as any, "move", { to });
-    return (r.content ?? []).map((c: any) => c.text ?? "").join("\n");
+    // the failed flag kept beside the words: a refusal that answered as a success is the class #269 fixed
+    return { said: (r.content ?? []).map((c: any) => c.text ?? "").join("\n"), failed: r.isError === true };
   };
   /** Walk to (x, z) with height y and the bounds move passes on, ticking
    *  to arrival: true, false (refused or stopped) or "pending". */
@@ -330,9 +331,9 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
     const ag = agentIn(upperY);
     setup(ag);
     ag.pins.set("hips", [0.5, upperY, 0.5]);
-    const said = await walkTool(ag, args);
+    const { said, failed } = await walkTool(ag, args);
     check(`from the upper floor, a walk to ${what} is refused, saying why, and the body stays upstairs, its pins kept`,
-      toGround.test(said) && Math.abs(ag.pos.y - upperY) < 1e-9 && !ag.target && ag.pins.has("hips"), `${said} at ${ag.pos.y}, pins ${ag.pins.size}`);
+      failed && toGround.test(said) && Math.abs(ag.pos.y - upperY) < 1e-9 && !ag.target && ag.pins.has("hips"), `${said} at ${ag.pos.y}, pins ${ag.pins.size}`);
   }
   // move's rule for a height, at its edges: the floor no more than a step
   // (NAV_STEP) above y, and no cap above a floor
@@ -344,9 +345,9 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
   }
   const TALL = { levels: [{ y: 0, tiles, walls: shell, apertures: [] }, { y: 3, tiles, walls: shell, apertures: [] }, { y: 6, tiles, walls: shell, apertures: [] }] };
   const tallPlan = planStructure(TALL), mid = tallPlan.levels[1].y, top = tallPlan.levels[2].y;
-  const upward = await walkTool(agentIn(mid, { house: TALL }), { x: 2.5, z: 1.5, y: top });
+  const { said: upward, failed: upwardFailed } = await walkTool(agentIn(mid, { house: TALL }), { x: 2.5, z: 1.5, y: top });
   check("from the middle floor, a walk to the floor above it is refused, saying it's another storey of this building and where",
-    /is on another storey of this building, whose floor is at 6\.10m, not on the floor you stand on \(3\.10m\)/.test(upward), upward);
+    upwardFailed && /is on another storey of this building, whose floor is at 6\.10m, not on the floor you stand on \(3\.10m\)/.test(upward), upward);
   for (const [what, y, refused] of [[`${(NAV_STEP - 0.02).toFixed(2)} m below the top floor, a step from it`, top - (NAV_STEP - 0.02), true], [`${(NAV_STEP + 0.05).toFixed(2)} m below the top floor`, top - (NAV_STEP + 0.05), false]] as const) {
     const w = await walkThere(agentIn(mid, { house: TALL }), 2.5, 1.5, y);
     check(`from the middle floor, a walk whose y is ${what} ${refused ? "is refused as the top floor" : "walks there on the middle floor"}`,
@@ -455,8 +456,8 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
   const acrossZ = agentIn(pairY, { house: PAIR, before: { next: { model: "deck", pos: [0, 0, 2.5], structure: PAIR } } });
   acrossZ.pos = { x: 1, y: pairY, z: 0.5 };
   acrossZ.people.set("friend", { id: "friend", pose: { p: [1, pairY, 2.6], yaw: 0, speed: 0, clip: "idle" } });
-  const saidZ = await walkTool(acrossZ, { to: "friend" });
-  check("…and through move, with the decks apart along z", /is on a storey of another building, whose floor is at 3\.10m/.test(saidZ), saidZ);
+  const { said: saidZ, failed: failedZ } = await walkTool(acrossZ, { to: "friend" });
+  check("…and through move, with the decks apart along z", failedZ && /is on a storey of another building, whose floor is at 3\.10m/.test(saidZ), saidZ);
   // someone lying limp on a deck a metre up, which the walker stands on: their
   // root is nearer the ground, but their body is on the deck
   const LOWDECK = { levels: [{ y: 0.9, tiles, walls: [], apertures: [] }] };
