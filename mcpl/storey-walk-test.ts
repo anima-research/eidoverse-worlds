@@ -16,6 +16,7 @@
 import { WorldAgent } from "./agent.ts";
 import { describeHere, planStructure } from "../shared/structure.js";
 import { NAV_STEP } from "./navgrid.ts";
+import { destinationOf } from "./places.ts";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
@@ -395,10 +396,11 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
   // a seat's height is where the hips rest, its floor no higher (above: 0):
   // a perch 2.65 m above the middle floor is the middle floor's, not the top's.
   // A places component names no seat (its kind is gone: shape audit 10-16; a
-  // seat is a model's or a socket's), so the seat's destination is the one
-  // destination() gives a seat (mcpl/places.ts): 0.05 m under the hips, no
-  // floor above that.
-  const perch = (_ag: any) => ({ x: 2.5, y: mid + 2.65 - 0.05, z: 1.5, reach: 0.6, above: 0 });
+  // seat is a model's or a socket's), so the seat's destination is built by
+  // destinationOf's seat branch (mcpl/places.ts) from a seat-kind place on an
+  // unscaled holder: 0.05 m under the hips, no floor above that.
+  const perch = (_ag: any) => destinationOf({ id: "bench", pos: [0, 0, 0], yaw: 0, scale: 1 },
+    { name: "perch", kind: "seat", at: [2.5, mid + 2.65, 1.5] } as any);
   const onTop = agentIn(top, { house: TALL }), dTop = perch(onTop);
   const fromTop = await walkThere(onTop, dTop.x, dTop.z, dTop.y, { reach: dTop.reach, above: dTop.above });
   check("a seat high above the middle floor, from the top floor: refused as the middle floor's, its bound kept",

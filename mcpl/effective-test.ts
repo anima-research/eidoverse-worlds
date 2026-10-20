@@ -42,6 +42,12 @@ console.log("unmounted");
   check("a stretched thing keeps its per-axis scale", r.ok && near3(r.scale3, [2, 3, 4]), show(r));
 }
 
+{
+  // a part-carrying motion leaves the root where it rests (parts swing, roots stand still): its whole stored rotation too
+  const r = at("a", view({ a: { pos: [0, 0, 0], yaw: 0, q: qX90, motion: { type: "pendulum", part: "door" } } }));
+  check("a moving thing keeps its stored rotation as its base", r.ok && r.quat.every((v, i) => near(v, qX90[i])), show(r));
+}
+
 console.log("mounted things");
 {
   // parent at (10,0,0) turned +90° about Y at scale 2; the child's offset (1,0,0) is model-frame: ×2 → (2,0,0), then

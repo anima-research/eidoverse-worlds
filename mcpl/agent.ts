@@ -144,7 +144,7 @@ const BONES_NOT_KNOWN = "this body's bones aren't known (its model hasn't loaded
 /** shared/flight.js's refusals (main #245) name the fix as an act — "unfold them first", "land first" — and the browser
  *  has those acts by those names; here they are other tools' presets, so the reply names the call that does it. */
 const flightFixInOurTools = (reason: string) => String(reason)
-  .replace(/unfold them first/, 'open them first (pose {wings: "open"})')
+  .replace(/unfold them first/, 'open them first (anim {stop: "wings-folded"})')
   .replace(/land first/, 'land first (act {verb: "land", args: {to}})');
 /** Quiet window for world-change narration, per (entity, component). Tuning a
  *  live emitter is a burst of `comp` entries; this is how long they fold into
@@ -569,7 +569,8 @@ export class WorldAgent {
       if (m.type === "body-ask" && m.ask) { const a = m.ask; const left = typeof a.expires === "number" ? Math.max(1, Math.round((a.expires - ts) / 1000)) : 20;
         text = `${a.summary ?? `${a.from} asks to ${a.kind}`}${a.why ? ` — "${a.why}"` : ""} (consent class ${a.cls ?? KIND_CLASS[a.kind] ?? a.kind}; about ${left} s to answer, silence is no): act {verb: "consent", args: {answer: ${JSON.stringify(a.id)}, yes: true}} allows it this once, yes: false refuses`; }
       else if (m.type === "body-reply") text = m.ok ? `your ask ${m.ask} was allowed${m.applied ? " and done" : ""}` : `your ask ${m.ask} was refused: ${m.why ?? "no"}`;
-      else if (m.type === "body") text = `${m.from} ${m.kind === "touch" ? "touched" : m.kind === "shove" ? "knocked over" : m.kind === "drag" || m.kind === "carry" ? "moved" : m.kind === "occupy" ? "placed" : "posed"} you${m.spec?.point ? ` (${m.spec.point})` : ""} (consent: ${m.consent})`;
+      // what the authority did: it let the act reach this body, and recorded it
+      else if (m.type === "body") text = `the world let ${m.from}'s ${m.kind}${m.spec?.point ? ` (${m.spec.point})` : ""} reach your body (consent: ${m.consent})`;
       else if (m.type === "vacated") {   // review r9 M3: an edit by someone else moved the seat I sat on, and the authority let me go
         if (vacatedFromMine(m, this.myOccupancy)) { const on = this.socketName(m.socket); this.setOccupant(null);
           // stand where the authority let me go (its track of my body starts again there, r9 M2)
@@ -1172,9 +1173,11 @@ export class WorldAgent {
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             this.joined = true; this.redial.reset();
             if (this.walkGate?.mode === "tracked") this.syncWalkGate(this.walkGate);   // a walk carried across the rejoin
-            // my consent table, as a person's client sends it on every arrival (consentsync.js): the server's default preset by
-            // name; absent, the server already holds me at that default and refuses in my name (parity sweep 10-14)
-            this.request("consent", { preset: DEFAULT_PRESET }).catch(() => { /* the server's default stands */ });
+            // my consent table, as a person's client sends it on every arrival (consentsync.js): the preset I last chose (the
+            // server's default until I choose one), then each cell I set since, in order on this one socket
+            { const { preset, sets } = this.consentTable;
+              void (async () => { for (const args of [{ preset }, ...sets.map((set) => ({ set }))]) {
+                const r = await this.request("consent", args).catch(() => null); if (!r?.ok) break; } })(); }
             this.seatCache.init().catch(() => { /* declared-approximate until it lands */ });
             if (!this.ticker) this.ticker = setInterval(() => this.tick(), TICK_MS);
             clearTimeout(timeout);
@@ -2544,7 +2547,16 @@ export class WorldAgent {
       else if (a.kind === "pose" && !this.wingsFolded) end("stopped");
       else if (a.kind === "live" && !this.heldPose) end(this.clip === "ragdoll" ? "knocked over" : this.target ? "moved" : "cleared");
       else if ((a.kind === "live" || a.kind === "track") && this.clip === "ragdoll") end("knocked over");
+      // a tracks loop ends on a walk, as anim's contract says of every anim: a move ends it
+      else if (a.kind === "track" && (this.target || ["walk", "run", "swim", "tread"].includes(this.clip))) this.endTrackLoop("moved");
     }
+  }
+  /** End the tracks loop alone (its layer, not a held pose or a clip), and tell the renderers so: a walk ends it, and a
+   *  new loop on this body takes its place rather than playing beside it (tools.ts's anim). */
+  endTrackLoop(why: string) {
+    const had = this.anims.some((a) => a.kind === "track");
+    this.animEnded(why, (a) => a.kind === "track");
+    if (had && this.joined && this.ws?.readyState === 1) this.ws.send(JSON.stringify({ type: "anim", stop: true }));
   }
   private tickInWorld() {
     this.watchAnim();
@@ -3144,7 +3156,7 @@ export class WorldAgent {
     // Wing posture is carried independently of an active flight state. A body
     // can fold without a propulsion grant, so the sky door checks the public
     // posture before it constructs a fresh integrator.
-    if (this.wingsFolded) return refused(`still standing — your wings are folded; open them first (pose {wings: "open"})`);   // main #245's words, our tool
+    if (this.wingsFolded) return refused(`still standing — your wings are folded; open them first (anim {stop: "wings-folded"})`);   // main #245's words, our tool
     // START FROM THE BODY, ALWAYS. A stale flight state -- LANDED after a
     // glide, or RAGDOLL after a cut -- carried the old position and phase into
     // the new launch, so take_off "worked" and the next verb found her back on
@@ -3249,7 +3261,7 @@ export class WorldAgent {
         : bones == null ? `nothing is folded — ${BONES_NOT_KNOWN}` : `wings are already open`);
     }
     this.wingsFolded = fold;
-    if (fold) return done("wings folded — the vigil posture; a fly-mode move refuses until you open them (pose {wings: \"open\"})");
+    if (fold) return done("wings folded — the vigil posture; a fly-mode move refuses until you open them (anim {stop: \"wings-folded\"})");
     if (bones == null) return done(`folded-wing posture released — ${BONES_NOT_KNOWN}`);
     if (!body.canAnimateWings) return done("folded-wing posture released — this body has no wings");
     const cap = this.flightAllowed();
@@ -3951,8 +3963,8 @@ export class WorldAgent {
    *  then its `places` component on top — which anyone with builder rank can
    *  change at any time. */
   placesOn(e: Entity): Place[] {
-    if (!e.model) return [];   // only a model has a file to declare places in, or a frame to hang them on
-    return placesOf(modelMeta.get(`${this.httpBase}|${e.model}`), recordComponents(e).places);
+    // a model's file may declare places; any thing's transform is a frame to hang named ones on (an Empty's included)
+    return placesOf(e.model ? modelMeta.get(`${this.httpBase}|${e.model}`) : undefined, recordComponents(e).places);
   }
 
   /** Where a thing's places are right now: its effective transform (mount
@@ -4186,7 +4198,7 @@ export class WorldAgent {
       w = [x, y, z];
     } else w = [this.pos.x, this.pos.y, this.pos.z];
     const now = Date.now();
-    // where the name hangs: a placed model (in its frame, so it moves with it), or @world (world coordinates: a place
+    // where the name hangs: a placed thing (in its frame, so it moves with it), or @world (world coordinates: a place
     // that belongs to no thing — on: "@world", or a spot in a room @world declares)
     let target: { id: string; h: PlaceHolder | null; had: unknown } | null = null;
     const ofEntity = (e: Entity) => ({ id: e.id, h: this.placeHolder(e, now), had: recordComponents(e).places });
@@ -4195,7 +4207,6 @@ export class WorldAgent {
       if (opts.on === WORLD_ENTITY) target = ofWorld();
       else {
         const e = [...this.entities.values()].find((x) => x.id.toLowerCase() === opts.on!.toLowerCase());
-        if (e && !e.model) return refused(`[${this.refName(e.id)}] has no model — places hang on placed things (a model) or on @world, not lights or Empties`);
         if (e) target = ofEntity(e);
       }
     } else {
@@ -4220,9 +4231,12 @@ export class WorldAgent {
     const t0 = Date.now(), id = target.id;
     const placesNow = () => id === WORLD_ENTITY ? this.replica?.st?.entities?.[WORLD_ENTITY]?.c?.places
       : (this.entities.get(id) ? recordComponents(this.entities.get(id) as Entity).places : undefined);
-    let had = target.had, cur: Record<string, unknown> = {}, r: any;
+    let had = target.had, cur: Record<string, unknown> = {}, r: any, replace = false;
     for (let attempt = 0; ; attempt++) {
       cur = (had && typeof had === "object" && !Array.isArray(had)) ? { ...(had as Record<string, unknown>) } : {};
+      // re-pointing a name the bag already holds replaces its entry: a merge would keep a room's min and max beside the
+      // new point, a shape the authority refuses
+      replace = !!opts.remove || Object.prototype.hasOwnProperty.call(cur, name);
       if (opts.remove) {
         // always a hiding entry: whether the model declares the name is not
         // known until its file has loaded, and a deleted entry would let it back
@@ -4231,20 +4245,23 @@ export class WorldAgent {
         const l = toLocal(h, w).map((v) => Math.round(v * 1000) / 1000);
         cur[name] = { at: l, ...(opts.label ? { label: opts.label.slice(0, 80) } : {}) };
       }
-      if (JSON.stringify(cur).length > 8000) return refused(`[${this.refName(target.id)}]'s places would exceed the 8KB component limit — retire some first`);
       // an ordinary set of the places component, through the authority: rights, the gate and undo apply as to any edit.
-      // Adding or re-pointing a name merges just that name (RFC 7396); retiring one replaces the bag with the name held as
-      // null, since a merge's null would delete the entry and let a name the model declares back in. That replace is
+      // Adding a name merges just that name (RFC 7396); retiring one replaces the bag with the name held as null, since a
+      // merge's null would delete the entry and let a name the model declares back in, and re-pointing one replaces the
+      // bag too (above). Its size is the authority's to judge (its gate keeps values under 64 KiB). That replace is
       // built from this replica, so it is PINNED to the bag it read (expect, §3a): if someone else wrote a name in between,
       // the authority refuses it as `changed`, and it is rebuilt from the bag as it now is (review r3 F5)
-      const op = opts.remove ? OP.set(id, "places", cur) : OP.set(id, "places", { [name]: cur[name] }, { merge: true });
-      const pin = opts.remove ? { expect: [{ id: op.args.id, component: op.args.component, ...(had !== undefined ? { value: had } : {}) }] } : {};
+      const op = replace ? OP.set(id, "places", cur) : OP.set(id, "places", { [name]: cur[name] }, { merge: true });
+      const pin = replace ? { expect: [{ id: op.args.id, component: op.args.component, ...(had !== undefined ? { value: had } : {}) }] } : {};
       r = await this.sendOps([op], pin);
-      if (!(opts.remove && r && !r.ok && r.refused?.code === "changed" && attempt < 4)) break;
+      if (!(replace && r && !r.ok && r.refused?.code === "changed" && attempt < 4)) break;
       // the other write's log reaches this replica before (or just after) the refusal: wait for the bag to move
       for (const until = Date.now() + 1000; Date.now() < until && JSON.stringify(placesNow()) === JSON.stringify(had);) await new Promise((res) => setTimeout(res, 50));
       had = placesNow();
     }
+    // no answer is not a refusal: the write may have landed
+    if (r && !r.ok && (r.refused?.code === "timeout" || r.refused?.code === "no-answer"))
+      return refused(`"${name}" was sent, but the world didn't answer, so whether it landed is unknown — look, or [${this.refName(id)}]'s places component, will show it`);
     if (r && !r.ok) return refused(`not named — the world refused: ${r.refused?.reason ?? r.refused?.code ?? JSON.stringify(r.refused ?? r)}`);
     // the authority's answer is in; wait for this body's own fold of it, so a move {to} straight after finds the name
     for (const deadline = t0 + 3000; Date.now() < deadline;) {
@@ -4422,7 +4439,7 @@ export class WorldAgent {
     }
     if (code === "too-fast" || code === "solid") {
       r = await this.request("move", { to, teleport: true });
-      if (r?.ok) { this.lastWalkNote = "the authority's track of your body was behind where you stood (a flight, a seat or a drag moved you): it re-arrived you here (a teleport, on the record)"; return take(r, to); }
+      if (r?.ok) { this.lastWalkNote = "where the world last had you was too far to walk from in one step, or behind something solid, so it placed you here directly, and its record shows the jump"; return take(r, to); }
     }
     return { ok: false, refused: r?.refused ?? { code: "no-answer", reason: "the authority didn't answer" } };
   }
@@ -4626,9 +4643,24 @@ export class WorldAgent {
     const id = `v${++this.histId}`;
     return new Promise((resolve) => {
       const t = setTimeout(() => { this.pendingRequests.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the authority did not answer within 8 s" } }); }, 8000);
-      this.pendingRequests.set(id, (m) => { clearTimeout(t); resolve(m.reply ?? { ok: false, refused: { code: "no-reply", reason: "the authority's answer had no reply" } }); });
+      this.pendingRequests.set(id, (m) => { clearTimeout(t);
+        if (verb === "consent" && m.reply?.ok) this.noteConsent(args);
+        resolve(m.reply ?? { ok: false, refused: { code: "no-reply", reason: "the authority's answer had no reply" } }); });
       this.ws!.send(JSON.stringify({ type: "request", id, verb, args }));
     });
+  }
+  /** This body's own consent table as it set it: a preset, then each cell it set since (consent.js: a preset resets every
+   *  cell to that preset's). Resent whole on every arrival, as a person's client sends its table (consentsync.js), so a
+   *  reconnect neither reopens a cell this body closed nor forgets one it opened. */
+  private consentTable: { preset: string; sets: Record<string, unknown>[] } = { preset: DEFAULT_PRESET, sets: [] };
+  private noteConsent(args: Record<string, unknown>) {
+    if (args.of !== undefined && args.of !== this.name) return;   // a delegate's closing of someone else's table
+    if (typeof args.preset === "string") this.consentTable = { preset: args.preset, sets: [] };
+    const set = args.set as Record<string, unknown> | undefined;
+    if (set && typeof set === "object") {
+      const key = (x: Record<string, unknown>) => `${x.class}|${x.tier ?? "everyone"}`;
+      this.consentTable.sets = [...this.consentTable.sets.filter((x) => key(x) !== key(set)), set];
+    }
   }
   /** present people's identities, by display name (their arrival carries it) */
   actorIds = new Map<string, string>();
@@ -4648,6 +4680,24 @@ export class WorldAgent {
       const hit = limb !== undefined ? l === limb && (atThem || !atBody) : atThem && (!cls || WorldAgent.reachClass(e.t, name!) === cls);
       if (hit) { this.reaches.delete(l); out.push(WorldAgent.LIMB_WORD[l] ?? l); } }
     return out;
+  }
+  /** The other body a world or self-frame point lands in, and its class there: server/reachgate.ts's bodiesAt, read from
+   *  the presence this body holds (each body's capsule, scaled to its size). The first found, as the relay refuses any. */
+  private bodyAtPoint(t: any): { name: string; cls: string } | null {
+    if (!Array.isArray(t?.p) || t.p.length !== 3 || !t.p.every(Number.isFinite)) return null;
+    let pt = t.p as number[];
+    if (t.space !== undefined) {   // this body's root frame → world (yaw about +y), as reachgate's frameToWorld
+      const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
+      pt = [this.pos.x + pt[0] * cy + pt[2] * sy, this.pos.y + pt[1], this.pos.z - pt[0] * sy + pt[2] * cy];
+    }
+    for (const [name, person] of this.people) {
+      const at = (person.pose as any)?.p;
+      if (name === this.name || !Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) continue;
+      const sc = clampBodyScale((person.pose as any)?.scale);
+      const cls = pointClass([0, 0, 0], [(pt[0] - at[0]) / sc, (pt[1] - at[1]) / sc, (pt[2] - at[2]) / sc]);
+      if (cls) return { name, cls };
+    }
+    return null;
   }
   /** The class the relay (server/reachgate.ts) gives a target on `name`'s body: a named point by consent.js's one table, a
    *  point in their own frame by their capsule; null for a point beside them (the relay relays it) or another kind of target. */
@@ -4926,9 +4976,11 @@ export class WorldAgent {
     const limbW = WorldAgent.LIMB_WORD[limb];
     const what = describeTarget(t, this.name);
     // a hand on another body is shown only with their consent: the relay strips it otherwise and says why (reachgate.ts)
-    const otherName = t.who !== undefined ? t.who : t.space !== undefined && t.space !== "self" ? t.space : null;
+    // a point in the world or in this body's own frame is judged by the body it lands in, as the relay judges it
+    const landed = t.who === undefined && (t.space === undefined || t.space === "self" || t.space === this.name) ? this.bodyAtPoint(t) : null;
+    const otherName = landed ? landed.name : t.who !== undefined ? t.who : t.space !== undefined && t.space !== "self" ? t.space : null;
     const otherActor = otherName && otherName !== this.name ? this.actorIds.get(otherName) : undefined;
-    const cls = otherName ? WorldAgent.reachClass(t, otherName) : null;   // null: beside them, nothing for the relay to refuse
+    const cls = landed ? landed.cls : otherName ? WorldAgent.reachClass(t, otherName) : null;   // null: beside them, nothing for the relay to refuse
     if (otherActor && this.joined && cls) {
       const refused = await this.reachRefusalFor(limb, otherActor, cls, since);
       if (refused) {
@@ -5374,7 +5426,7 @@ export class WorldAgent {
         // each socket a person can use says what the body does there (shared/sockbody.js describeBody), and who's on it;
         // an attach point says what it holds
         const on = (sid: string) => [...this.mounts.entries()].filter(([, m]) => m.to === sid).map(([rid]) => rid);
-        const lines = socks.map((x) => { const b = bodyOf(x.station); const who = on(x.id); return b ? `${describeBody(x.name, b)}${who.length ? ` — ${who.join(", ")} is on it` : ""}` : null; }).filter(Boolean);
+        const lines = socks.map((x) => { const b = bodyOf(x.station); const who = on(x.id); return b ? `${describeBody(x.name, b, { door: true })}${who.length ? ` — ${who.join(", ")} is on it` : ""}` : null; }).filter(Boolean);
         const things = socks.filter((x) => !bodyOf(x.station)).map((x) => { const held = on(x.id); return `${x.name}${held.length ? ` (holding ${held.join(", ")})` : ""}`; });
         if (lines.length) aff.push(`use it (attach {to: "${this.handle(e.id)}", socket}): ${lines.join(" · ")}`);
         if (things.length) aff.push(`attach points: ${things.join(", ")}`); }

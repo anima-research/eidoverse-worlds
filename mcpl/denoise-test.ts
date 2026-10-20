@@ -255,7 +255,9 @@ console.log("\n━━ agent: activity dial — the sense is the agent's own to t
   check("activity beyond the tuned radius → no pulse", pulses.length === 0, JSON.stringify(pulses));
   cur = agent.setActivity({ pulseSec: 0, radiusM: 50 });
   check("pulse_sec 0 turns the sense off", cur.pulseSec === 0 && cur.radiusM === 50, JSON.stringify(cur));
+  // speech nearby: what the sense always counts, so only the dial being off keeps it quiet
   (agent as any).notePose("digi", { p: [10, 0, 0], yaw: 0, speed: 1.5, clip: "walk" });
+  (agent as any).hearSay({ verb: "say", args: { text: "inside now" }, actor: "digi", ts: Date.now(), seq: 21 }, true);
   await sleep(200);
   check("off means off — activity nearby, no pulse", pulses.length === 0, String(pulses.length));
   cur = agent.setActivity({ pulseSec: 3 });
