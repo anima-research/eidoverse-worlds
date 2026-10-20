@@ -13,7 +13,7 @@ const { THREE } = await import('./core-stub.mjs');
 const { mergeGeometries } = await import('../client/node_modules/three/examples/jsm/utils/BufferGeometryUtils.js');
 const C: any = await import('../client/lib/colliders.js');
 const { AmmoRagdoll, ensureAmmo } = await import('../client/lib/ammodoll.js');
-const { floorUnderLyingBody, standingYFromLyingRoot } = await import('../client/lib/getup.js');
+const { floorUnderLyingBody, standingYFromLyingRoot, floorStillUnder, standingYWithoutAvatar } = await import('../client/lib/getup.js');
 const { makeAvatar, toppleLean } = await import('./rig-load.mjs');
 const { wingRig } = await import('./doll-fixture.mjs');
 const { mkCheck } = await import('./harness.ts');
@@ -41,7 +41,7 @@ check('wasm door opens', await ensureAmmo());
 
 /** Go limp standing at (x, y, z), let the doll settle, and answer where the
  *  body would get up — with the rig's hips readable the way a VRM's are. */
-function fallAndGetUp(x: number, y: number, z: number, withHips = true) {
+function fallAndGetUp(x: number, y: number, z: number, withHips = true, terrainAt: (x: number, z: number) => number = flat) {
   const av: any = makeAvatar(wingRig.P, { realParent: wingRig.realParent });
   av.root.position.set(x, y, z); av.root.updateMatrixWorld(true);
   const rd: any = new AmmoRagdoll(av, toppleLean(), av.restBonePositions());
@@ -53,9 +53,10 @@ function fallAndGetUp(x: number, y: number, z: number, withHips = true) {
   else av.vrm = undefined;
   const hipsRead = !!(av.vrm?.humanoid?.getRawBoneNode?.('hips') ?? av.vrm?.humanoid?.getNormalizedBoneNode?.('hips'));
   const rootY = av.root.position.y;
-  const up = floorUnderLyingBody(av, flat);
+  const up = floorUnderLyingBody(av, terrainAt);
+  const root = av.root.position.clone();
   rd.dispose?.();
-  return { rootY, up, hipsRead };
+  return { rootY, up, hipsRead, root };
 }
 
 for (const [where, x, y, z, floor] of [
@@ -82,13 +83,48 @@ for (const [where, x, y, z, floor] of [
 }
 {
   // body-relative: the same heap at twice the size lies twice as far below
-  // its floor — the fallback grows with the body, so it never wakes inside it
+  // its floor — the fallback grows with the body, so it wakes at or above it (unless a tumble carried it up onto a higher floor)
   const rootY2 = LANDING - 2 * 1.06;          // this rig's root-to-floor gap, doubled
   const wake2 = standingYFromLyingRoot(rootY2, { scale: 2 });
   check('a 2× body\'s legacy record still wakes at or above its floor', wake2 >= LANDING - 0.01, `root ${rootY2.toFixed(2)} → ${wake2.toFixed(2)}`);
   const rootYs = LANDING - 0.5 * 1.06;         // a half-size body
   const wakes = standingYFromLyingRoot(rootYs, { scale: 0.5 });
   check('...and a half-size body\'s within its (smaller) step of it', wakes >= LANDING - 0.01 && wakes - LANDING < 0.55 * 0.5 + 0.05, `root ${rootYs.toFixed(2)} → ${wakes.toFixed(2)}`);
+}
+{
+  // lying on open ground, with no placed floor under it: it gets up on the
+  // terrain there, read where the body lies (a ground that rises with x)
+  const asked: number[][] = [];
+  const slope = (x: number, z: number) => { asked.push([x, z]); return 0.02 + 0.001 * Math.abs(x); };
+  const r = fallAndGetUp(20, 0, 20, true, slope);
+  const want = 0.02 + 0.001 * Math.abs(r.root.x);
+  check('limp on open ground: it gets up on the terrain where it lies, not a fixed height', Math.abs(r.up - want) < 1e-9
+    && asked.some(([x, z]) => x === r.root.x && z === r.root.z), `root at (${r.root.x.toFixed(2)}, ${r.root.z.toFixed(2)}); gets up at ${r.up.toFixed(3)}m, the terrain there ${want.toFixed(3)}m`);
+}
+{
+  // the floor a settled body measured rides presence only while its root is
+  // still where it was measured: a settled body doesn't move, and a drag, a
+  // shove or an unpin moves it
+  const measured = { y: LANDING, root: [2.8, 0.74, -2.3] };
+  check('a settled body still where it measured its floor still lies on it', floorStillUnder(measured, { x: 2.8, y: 0.74, z: -2.3 }) === LANDING);
+  check('...moved 2mm along any axis (dragged, shoved, unpinned), that floor is no longer its own',
+    floorStillUnder(measured, { x: 2.802, y: 0.74, z: -2.3 }) === undefined
+    && floorStillUnder(measured, { x: 2.8, y: 0.742, z: -2.3 }) === undefined
+    && floorStillUnder(measured, { x: 2.8, y: 0.74, z: -2.302 }) === undefined);
+  check('...moved half a millimetre, it is still its own', floorStillUnder(measured, { x: 2.8005, y: 0.74, z: -2.3 }) === LANDING);
+  check('...moved half a metre and back by float arithmetic, it is its own again',
+    floorStillUnder(measured, { x: 2.8 + 0.5 - 0.5, y: 0.74, z: -2.3 - 0.5 + 0.5 }) === LANDING);
+  check('no floor measured, or a broken one, is none', floorStillUnder(undefined, { x: 0, y: 0, z: 0 }) === undefined
+    && floorStillUnder({ y: NaN, root: [0, 0, 0] }, { x: 0, y: 0, z: 0 }) === undefined);
+}
+{
+  // getting up with no avatar to measure (localbody.js getUp): the floor it
+  // measured while it is still there, else its root raised by its size's reach
+  const measured = { y: LANDING, root: [2.8, 0.74, -2.3] };
+  check('with no avatar, a body still where it measured its floor stands on it',
+    standingYWithoutAvatar(measured, { x: 2.8, y: 0.74, z: -2.3 }, 1) === LANDING);
+  check('...moved off it, at its root raised by the reach', standingYWithoutAvatar(measured, { x: 3.3, y: 0.74, z: -2.3 }, 1) === 0.74 + 1.1);
+  check('...a 2× body by twice the reach', standingYWithoutAvatar(undefined, { x: 3.3, y: 0.5, z: -2.3 }, 2) === 0.5 + 2.2);
 }
 console.log(`\n${tally.passed} passed, ${tally.failed} failed`);
 process.exit(tally.failed ? 1 : 0);

@@ -20,11 +20,19 @@
 
 // Mirror of server.ts's settledPose. Kept in sync by the assertions below —
 // if the server's version changes shape, these fail loudly rather than
-// silently testing a stale copy.
+// silently testing a stale copy. Where a lying body stands is the shared rule
+// both call (shared/presencewire.js), imported here, not copied.
+import { standingYFromLyingRoot, ROOT_BELOW_FLOOR } from "../shared/presencewire.js";
 function settledPose(pose: unknown): Record<string, unknown> | null {
   if (!pose) return null;
   const { emote: _emote, mic: _mic, hear: _hear, ...still } = pose as Record<string, unknown>;
-  if (still.clip === "ragdoll") { still.clip = "idle"; delete still.pose; }
+  if (still.clip === "ragdoll") {
+    still.clip = "idle"; delete still.pose;
+    const p = still.p as number[] | undefined;
+    if (Array.isArray(p) && p.length === 3)
+      still.p = [p[0], standingYFromLyingRoot(p[1], { floor: still.floor, scale: still.scale }), p[2]];
+  }
+  delete still.floor;
   return still;
 }
 
@@ -41,7 +49,24 @@ const ck = (n: string, got: unknown, want: unknown) => {
   const out = settledPose(midFall)!;
   ck("a mid-ragdoll frame never leaves as ragdoll", out.clip, "idle");
   ck("  ...and its tumble bones do not travel", out.pose, undefined);
-  ck("  ...but position survives (she is still standing there)", out.p, [1, 0.6, 2]);
+  ck("  ...but her place survives, raised from her root to at or above her floor (she stands there)", out.p, [1, 0.6 + ROOT_BELOW_FLOOR, 2]);
+}
+
+// ── a lying body stands on its floor, not at its root (#263) ──────────────────────
+// Its root lies a hips-height below the floor it lies on: remembered at the
+// root, it would wake inside a stair landing or under an upper floor.
+{
+  const onLanding = { clip: "ragdoll", p: [2.8, 0.74, -2.3], floor: 1.8 };
+  const out = settledPose(onLanding)!;
+  ck("a lying body with its floor measured stands on that floor", out.p, [2.8, 1.8, -2.3]);
+  ck("  ...and the floor itself is not remembered", "floor" in out, false);
+  const settling = { clip: "ragdoll", p: [2.8, 0.74, -2.3] };
+  ck("one still settling (no floor yet) stands at its root raised by the reach, at or above its floor",
+     settledPose(settling)!.p, [2.8, 0.74 + ROOT_BELOW_FLOOR, -2.3]);
+  const big = { clip: "ragdoll", p: [2, 0.5, 0.8], scale: 2 };
+  ck("  ...a 2× body's reach is twice as far", settledPose(big)!.p, [2, 0.5 + 2 * ROOT_BELOW_FLOOR, 0.8]);
+  const standing = { clip: "idle", p: [1, 3.3, 1], floor: 0.3 };
+  ck("a standing body keeps its place, and a stray floor is dropped", settledPose(standing), { clip: "idle", p: [1, 3.3, 1] });
 }
 
 // ── an ENACTED pose is a place, and must survive ───────────────────────────
@@ -116,6 +141,10 @@ const ck = (n: string, got: unknown, want: unknown) => {
   ck("server still defines settledPose", /function settledPose\(/.test(src), true);
   ck("the ragdoll rule is still in the real function",
      /still\.clip === "ragdoll".*still\.clip = "idle".*delete still\.pose/s.test(src), true);
+  // its statements themselves, comments between them allowed: a condition
+  // added around the call, or another guard on the position, fails this
+  ck("the real function stands a lying body by the shared rule, with its floor and scale",
+     /if \(still\.clip === "ragdoll"\) \{\s*still\.clip = "idle"; delete still\.pose;\s*(?:\/\/[^\n]*\s*)*const p = still\.p as number\[\] \| undefined;\s*if \(Array\.isArray\(p\) && p\.length === 3\)\s*still\.p = \[p\[0\], standingYFromLyingRoot\(p\[1\], \{ floor: still\.floor, scale: still\.scale \}\), p\[2\]\];\s*\}\s*delete still\.floor;\s*return still;/.test(src), true);
   ck("the real function drops mic and hear",
      /function settledPose\([^]*?const \{[^}]*\bmic: _\w+[^}]*\bhear: _\w+[^}]*\.\.\.still \}/.test(src), true);
   ck("the JOIN SNAPSHOT uses it (this is the fix; reverting it fails here)",

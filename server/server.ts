@@ -16,6 +16,7 @@ import { globalBans, findBan } from "./moderation.ts";
 import { canEnter, whoOf, foundingRefusal, noteFounding, notePrincipal, sweepAccess, worldForAccess, ACCESS_CLOSE, NOT_YET_CLOSE, type AccessWorld, type Expel } from "./access.ts";
 import { entryRestrictedIn } from "../shared/rightsfold.js";
 import { emptyState } from "../shared/fold.js";
+import { standingYFromLyingRoot } from "../shared/presencewire.js";
 import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal, guardRefusal } from "./rights.ts";
 import { resolveLibFile, lintSpawn } from "./lint.ts";
 // The authored plane's dispatch — table + shell (§15, 7b). It pulls in lint's
@@ -174,12 +175,16 @@ function settledPose(pose: unknown): Record<string, unknown> | null {
   if (still.clip === "ragdoll") {
     still.clip = "idle"; delete still.pose;
     // A lying body's root lies BELOW the floor it lies on (it follows the
-    // hips a hips-height lower). Remembered standing, it must stand on that
-    // floor — the one the client measured (presence `floor`, getup.js) —
-    // not at its root, inside a stair landing or under an upper floor.
+    // hips a hips-height lower). Remembered standing, it stands on that
+    // floor, not at its root inside a stair landing or under an upper floor:
+    // on the floor the client measured (presence `floor`, getup.js), or,
+    // from a body still tumbling, a client that sends none or an agent, at
+    // its root raised by how far a root lies below its floor at its scale
+    // (shared/presencewire.js standingYFromLyingRoot, which says where that
+    // reach falls short).
     const p = still.p as number[] | undefined;
-    if (typeof still.floor === "number" && Number.isFinite(still.floor) && Array.isArray(p) && p.length === 3)
-      still.p = [p[0], still.floor, p[2]];
+    if (Array.isArray(p) && p.length === 3)
+      still.p = [p[0], standingYFromLyingRoot(p[1], { floor: still.floor, scale: still.scale }), p[2]];
   }
   delete still.floor;
   return still;
