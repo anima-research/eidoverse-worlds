@@ -90,7 +90,7 @@ function commit(w, actor, verb, args, build) {
   const lifts = (ctx.lifts ?? []).filter((id) => plan.after.entities[id] && w.presence.holds?.[id]).map((id) => ({ kind: "sim", actor: w.presence.holds[id].by, cause: w.entries.length, verb: "lift", body: { id } }));
   w.fits(actE, changeE, ...resettleEntries(w, settle, w.entries.length), ...wakes, ...lifts); // every line fits, or none is written
   // the budget counts THIS write too, not only what came before it (review 10-14 C0: a 300 KiB batch in an empty window passed a 256 KiB cap)
-  if (!ctx.cap || ctx.cap.kind === "reaction" || ctx.cap.kind === "handle") rateCheck(w, actor, "act", JSON.stringify(actE).length + JSON.stringify(changeE).length);
+  if (!ctx.cap || ctx.cap.kind === "reaction" || ctx.cap.kind === "handle" || ctx.cap.kind === "caption") rateCheck(w, actor, "act", JSON.stringify(actE).length + JSON.stringify(changeE).length);
   const act = w.append(actE);
   const seq = changeEntry(w, plan, act);
   const after = w.state();

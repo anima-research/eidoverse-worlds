@@ -87,7 +87,7 @@ export const REPAIR_COMP = (c) => c === "access" || c === "default-role" || c ==
 const operatorRepairs = (who, op) => !!CTX.operator && CTX.operator === who.actor && !who.cap && op.id === "@world" && REPAIR_COMP(op.comp) && (op.verb === "set" || op.verb === "delete");
 function admit(w, st, who, ops) {
   const { actor, cap } = who;
-  if (!cap || cap.kind === "reaction" || cap.kind === "handle") rateCheck(w, actor);
+  if (!cap || cap.kind === "reaction" || cap.kind === "handle" || cap.kind === "caption") rateCheck(w, actor);
   // preLifted: commit() lifted them already (so its reference clearing saw the lift's deletes), and passes the lift's notes
   const lifted = who.lifting ? { ops, notes: [] } : who.preLifted ? { ops, notes: who.preLifted } : liftOps(st, ops, w.everIds()); ops = lifted.ops;
   if (!ops.length) refuse("nothing", "that changes nothing", "");
