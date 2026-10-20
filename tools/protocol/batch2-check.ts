@@ -449,7 +449,16 @@ const cases: Case[] = [
   { id: "A9", what: "schema of a keyed component (light:desk) gives light's definition; an unknown name is refused, with a did-you-mean", run(s) { cast(s);
       const keyed = s.call("olive", "schema", { component: "light:desk" }), typo = s.call("olive", "schema", { component: "lihgt" });
       return { keyedOk: keyed?.ok, has: !!keyed?.components?.["light:desk"]?.fields, typo: typo?.ok === true ? "ok" : typo?.refused?.code, mean: typo?.refused?.didYouMean }; },
-    good: (o) => o.keyedOk === true && o.has && o.typo === "not-found" && JSON.stringify(o.mean ?? "").includes("light") }
+    good: (o) => o.keyedOk === true && o.has && o.typo === "not-found" && JSON.stringify(o.mean ?? "").includes("light") },
+  // review of #260: whether a request fits is judged on the lines as append writes them, chain fields included, so a write
+  // within a head and signature of the 1 MiB cap is refused whole: never an act written and its change then thrown
+  { id: "A10", what: "the largest entry fits() accepts in a signed log is one append writes: fits judges the line with its chain fields", run(s) { cast(s);
+      const w = s.w(); const e = (n: number) => ({ kind: "act", actor: "system", verb: "probe", body: { blob: "x".repeat(n) } });
+      const fits = (n: number) => { try { w.fits(e(n)); return true; } catch { return false; } };
+      let lo = 1000000, hi = 1048576; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (fits(mid)) lo = mid; else hi = mid; }   // lo: the largest that fits
+      let wrote: string; try { w.append(e(lo)); wrote = "ok"; } catch (x: any) { wrote = String(x?.message).slice(0, 120); }
+      return { signed: !!s.entries().findLast((x: any) => x.kind === "act")?.sig, lo, wrote }; },
+    good: (o) => o.signed && o.wrote === "ok" }
 ];
 
 // ---------------- run ----------------

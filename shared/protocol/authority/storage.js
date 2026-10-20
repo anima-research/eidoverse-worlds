@@ -105,7 +105,9 @@ export function worldOf(io) {
     if (io.custody?.sign && ["act", "say", "sim"].includes(e.kind) && obj.body && typeof obj.body === "object" && !Array.isArray(obj.body) && !("salt" in obj.body))
       obj.body = { ...obj.body, salt: nonce16(w) };
     if (chained && e.kind !== "genesis" && io.custody?.sign && w.worldId) {
-      const head = chainStep(seq === 0 ? "00".repeat(32) : w.headAt(seq - 1), obj);
+      // "size": the line as it will be written, for fits(): a later entry's head can't be known before the earlier ones are
+      // written, but a head is always 64 hex and a signature always its scheme's length, so the bytes are the same
+      const head = chained === "size" ? "0".repeat(64) : chainStep(seq === 0 ? "00".repeat(32) : w.headAt(seq - 1), obj);
       obj.head = head; obj.sig = io.custody.sign(`eidoverse-head:${w.worldId}:${seq}:${head}`); }
     const line = JSON.stringify(obj);
     const [parsed] = readLog(line); let bad = parsed instanceof Malformed ? parsed : null;
@@ -114,7 +116,7 @@ export function worldOf(io) {
   };
   // Would these entries, appended in this order, all be lines a reader accepts? Checked BEFORE any is written, so a
   // request is all or nothing (an act is never left without its result, 33 C2). A size or depth cap is a refusal.
-  w.fits = (...es) => { for (const [k, e] of es.entries()) { const { bad } = render(e, entries.length + k); if (!bad) continue;
+  w.fits = (...es) => { for (const [k, e] of es.entries()) { const { bad } = render(e, entries.length + k, "size"); if (!bad) continue;   // with the chain fields append adds
     if (/^cap-/.test(bad.code)) refuse("too-big", `that would be a ${bad.code === "cap-size" ? `${bad.detail}-byte` : "too deeply nested"} ${e.kind} entry; a log line is at most 1 MiB, 64 deep (§1)`, "split it into smaller requests, or put big data in a blob and store its hash");
     throw new Error(`authority bug: would write a malformed entry (${bad.code} ${bad.detail})`); } };
   w.append = (e, token) => {
