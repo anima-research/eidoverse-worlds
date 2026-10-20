@@ -97,7 +97,7 @@ export const REFUSAL_CODES = Object.freeze({
   "too-costly":     { meaning: "more of the authority's time than one request may have", when: "a request past the work budget" },
   "busy":           { meaning: "not now", when: "an engine cut with things in flight (without force), or the scripts' share of the second is spent" },
   "budget":         { meaning: "the script budget is spent", when: "an activation past the world's, the sponsor's or the script's hourly/per-minute budget" },
-  "depth":          { meaning: "a script cascade went too deep", when: "an activation whose cause chain passes script-settings.depth" },
+  "depth":          { meaning: "a script cascade went too deep", when: "an activation whose cause chain passes this server's cascade depth (its operator sets it, not the world's owner)" },
   "ground-loading": { meaning: "the ground is still loading", when: "a write needing the heightmap before its grid is on this server" },
   "loop":           { meaning: "that would make a parent loop", when: "a parent chain that comes back to itself" },
   "deep":           { meaning: "the parent chain is 32 deep already", when: "a parent past the depth cap" },

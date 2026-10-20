@@ -568,7 +568,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const out = (tz: string) => Bun.spawnSync(["bun", f], { env: { ...process.env, TZ: tz, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } }).stdout.toString().trim();
       return { utc: out("UTC"), tokyo: out("Asia/Tokyo") }; },
     good: (o) => o.utc.startsWith("[8,0,") && o.utc === o.tokyo },
-  { id: "B23", what: "the authority's own cost is metered, written or not: a script whose runs write nothing is held to `runs` a minute (the server's configuration), and a sponsor to `cpu` ms of sandbox time (the owner tightens it in script-settings)", run(s) { cast(s);
+  { id: "B23", what: "the authority's own cost is metered, written or not: a script whose runs write nothing is held to `runs` a minute (the server's configuration, and its refusal says so), and a sponsor to `cpu` ms of sandbox time (the owner tightens it in script-settings)", run(s) { cast(s);
       s.call("bob", "create", { id: "ear", model: "crate", place: { at: [0, 0] } }); s.call("ann", "create", { id: "mill", model: "crate", place: { at: [2, 0] } });
       install(s, "bob", "ear", "idle", `world.on("say", () => {});\n`, { scope: { ids: "self", comps: ["t/n"] }, on: ["say"] });
       install(s, "ann", "mill", "grind", `world.on("say", () => { let x = 0; for (let i = 0; i < 1e5; i++) x += Math.sqrt(i); });\n`, { scope: { ids: "self", comps: ["t/n"] }, on: ["say"] });
@@ -583,6 +583,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       D.setScriptConfig(was);
       return { ear, earWhy, mill, why: last("mill")?.why, millMs: (s.w().presence.scriptRuns ?? []).filter((x: any) => x.sponsor === "ann").map((x: any) => x.ms) }; },
     good: (o) => JSON.stringify(o.ear) === '["nothing","nothing","nothing","nothing","nothing","refused","refused","refused"]' && /ran 5 times/.test(o.earWhy)
+      && /this server's limit/.test(o.earWhy) && !/script-settings/.test(o.earWhy)   // review of #260: runs is the server's, so the refusal names no owner field
       && o.mill[0] === "nothing" && o.mill.at(-1) === "refused" && /ann's scripts used \d+ ms of the authority's time/.test(o.why) },
   { id: "B24", what: "a guest sponsor's rights are a guest's: once the owner removes the role it was given, its script is dormant, even where strangers default to builder", opts: { kindOf: (id: string) => (id === "gus" ? "anon" : "human") },
     run(s) { cast(s);

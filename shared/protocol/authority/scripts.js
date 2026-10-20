@@ -208,7 +208,7 @@ const DRY = { n: 10, ms: 60000 }; // dry runs (use {dry}, scripts {test}) per pe
 // authority practice: what the authority spends, logged or not (presence, never the log): an activation that writes nothing still ran
 function overCpu(w, now, id, key, sponsor, cfg) {
   const R = (w.presence.scriptRuns ?? []).filter((r) => now - r.ts < 60000); w.presence.scriptRuns = R;
-  const runs = R.filter((r) => r.id === id && r.key === key).length; if (runs >= cfg.runs) return `${key} ran ${runs} times in the last minute; at most ${cfg.runs} (@world.script-settings.runs)`;
+  const runs = R.filter((r) => r.id === id && r.key === key).length; if (runs >= cfg.runs) return `${key} ran ${runs} times in the last minute; at most ${cfg.runs}, this server's limit (its operator sets it, not the world's owner)`;
   const ms = R.filter((r) => r.sponsor === sponsor).reduce((t, r) => t + r.ms, 0); if (ms >= cfg.cpu) return `${said(sponsor)}'s scripts used ${ms} ms of the authority's time in the last minute; at most ${cfg.cpu} (@world.script-settings.cpu)`;
   const all = R.reduce((t, r) => t + r.ms, 0); if (all >= cfg.cpu * 3) return `this world's scripts used ${all} ms of the authority's time in the last minute; at most ${cfg.cpu * 3}`;
   return null;
