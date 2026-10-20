@@ -227,8 +227,8 @@ export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "au
       // nest in ours; the remedy is the status's (server/snapshots.ts).
       const said = (await r.text()).slice(0, 200).replace(/\s+/g, " ").trim();
       const remedy = r.status === 429 ? "try again in a few seconds"
-        // an Unreal-only request summons no roaming renderer; the others can
-        : r.status === 503 && renderer === "unreal" ? `try again in a while, or ask for renderer "auto" or "browser", since the world can send a browser renderer for those`
+        // an Unreal-only request summons no roaming renderer; for the others the world tries
+        : r.status === 503 && renderer === "unreal" ? `try again in a while, or ask for renderer "auto" or "browser", since for those the world also tries to summon a roaming browser renderer`
         : r.status === 404 ? "calling again works only once what it says has changed"
         : r.status < 500 ? "calling again with the same arguments won't change that"
         : "try again in a while";

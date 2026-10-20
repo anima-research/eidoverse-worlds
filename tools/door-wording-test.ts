@@ -32,8 +32,11 @@ const oneArmed = rigJson(); delete oneArmed.extensions.VRMC_vrm.humanoid.humanBo
 const flat = rigJson(); delete flat.extensions; delete flat.extensionsUsed;
 // the root hangs under the head, so the hips' ancestors come round to them again
 const looped = rigJson(); looped.nodes[looped.extensions.VRMC_vrm.humanoid.humanBones.head.node].children.push(0);
+// the neck named on the head's own node, as some models have it
+const sharedNeck = rigJson(); sharedNeck.extensions.VRMC_vrm.humanoid.humanBones.neck.node = sharedNeck.extensions.VRMC_vrm.humanoid.humanBones.head.node;
 const library = new Map<string, Uint8Array>([["body.vrm", fixture()], ["one-armed.vrm", glb(oneArmed)],
-  ["flat.vrm", glb(flat)], ["looped.vrm", glb(looped)], ["idle.vrma", postureFixture("idle")]]);
+  ["flat.vrm", glb(flat)], ["looped.vrm", glb(looped)], ["shared-neck.vrm", glb(sharedNeck)],
+  ["broken.vrm", new TextEncoder().encode("not a model at all")], ["idle.vrma", postureFixture("idle")]]);
 
 // A stand-in world server: just the routes these tools read.
 let roster: { name: string; path: string }[] = [{ name: "aria", path: "avatars/aria.vrm" }, { name: "bo", path: "avatars/bo.vrm" }];
@@ -136,7 +139,7 @@ try {
     snap === `snapshot: no picture was taken; the world server answered 503 (no renderer is currently serving world "w"), so try again in a while`, snap);
   const unrealOnly = said(await snapshotTool(agent, "first", "unreal"));
   check("...an Unreal-only one with none there says to try again, or that auto or browser can get one",
-    unrealOnly === `snapshot: no picture was taken; the world server answered 503 (no unreal renderer is currently serving world "w"), so try again in a while, or ask for renderer "auto" or "browser", since the world can send a browser renderer for those`, unrealOnly);
+    unrealOnly === `snapshot: no picture was taken; the world server answered 503 (no unreal renderer is currently serving world "w"), so try again in a while, or ask for renderer "auto" or "browser", since for those the world also tries to summon a roaming browser renderer`, unrealOnly);
   const unrealAway = said(await snapshotTool({ ...agent, name: "gone" }, "first", "unreal"));
   check("...but an Unreal-only one refused for another reason gets that reason's remedy",
     unrealAway === `snapshot: no picture was taken; the world server answered 404 ("gone" is not present in "w"), so calling again works only once what it says has changed`, unrealAway);
@@ -223,7 +226,8 @@ try {
   const scene = (...bodies: any[]) => (id: string) => bodies.find((b) => b.who === id) ?? null;
   const ask = async (who: string, detail: unknown, observe: (id: string) => any, points?: unknown, windowMs: unknown = 0, r = reader): Promise<any> =>
     r.readWindow(who, detail as string, points, windowMs, observe);
-  const probe = scene(seen("probe", "body.vrm", standing()));
+  // a fresh observation each time it's read, so a slow run can't age it past BODY_STALE_MS
+  const probe = (id: string) => id === "probe" ? seen("probe", "body.vrm", standing()) : null;
   check("window_ms out of range shows what was sent",
     (await ask("probe", "summary", probe, undefined, "1000")).error === `window_ms must be a whole number of milliseconds from 0 to 5000, so nothing was read; you sent "1000"`);
   const detailRefusal = `detail must be summary, bones, contacts or all, so nothing was read; you sent "everything"`;
@@ -282,6 +286,17 @@ try {
   (ReachBody as any).fromSkeleton = async () => null;   // as if this door's skeleton solver hadn't loaded
   const noSolver = await ask("probe", "contacts", probe, undefined, 0, new BodyStateReader(worldBase))
     .finally(() => { (ReachBody as any).fromSkeleton = fromSkeleton; });
+  const unparsed = await ask("probe", "contacts", scene(seen("probe", "broken.vrm", standing())));
+  check("a model file the parser can't read says so, with what the parser said",
+    unparsed.error === "probe's joints and contacts weren't read: the avatar's model file couldn't be read as a model (not a GLB), so calling again won't change that", unparsed.error);
+  const strolling = await ask("probe", "contacts", scene(seen("probe", "body.vrm", standing({ clip: "walk" }))));
+  check("a posture whose animation can't be downloaded says so",
+    strolling.error === "probe's joints and contacts weren't read: the walk posture's animation couldn't be downloaded (the world server answered 404)", strolling.error);
+  const twoOnOne = await ask("probe", "bones", scene(seen("probe", "shared-neck.vrm", standing())));
+  check("a model with two bones on one node keeps both", ["neck", "head"].every((n) => Object.hasOwn(twoOnOne.joints ?? {}, n)), Object.keys(twoOnOne.joints ?? {}).join(", "));
+  const armless = await ask("probe", "contacts", scene(seen("probe", "one-armed.vrm", standing())));
+  check("a contact point the rig can't place says why it can't",
+    armless.contacts?.forearm_l?.reason === "this rig can't place it: it lacks the point's bone, or its bones don't form a body frame to place it in", JSON.stringify(armless.contacts?.forearm_l));
   check("a door whose skeleton solver didn't load says it can read no body, and who can help",
     noSolver.error === "probe's joints and contacts weren't read: this door couldn't load its skeleton solver, so it can evaluate no body, and calling again won't change that; if you need joints and contacts, ask whoever runs this door", noSolver.error);
   let turning = seen("turning", "body.vrm", standing());
@@ -316,7 +331,8 @@ try {
   const readOnce = twice.read.bind(twice);
   let strides = 0;
   twice.read = async (...args: any[]) => { const r = await readOnce(...args); if (++strides === 2) strider = { ...strider, generation: 2 }; return r; };
-  const twoCut = await twice.readWindow("strider", "summary", undefined, 1000, (id: string) => id === "strider" ? strider : null);
+  // the window stops at the third sample; its length only has to leave room for that
+  const twoCut = await twice.readWindow("strider", "summary", undefined, 5000, (id: string) => id === "strider" ? strider : null);
   check("...after two samples, in the plural",
     twoCut.error === "the body changed during the window (a new avatar or model, or a rejoin), so the measurement stopped after 2 samples; reading again measures it as it is now", twoCut.error);
   const reacher = (who: string, reach: unknown, extra: Record<string, unknown> = {}) => seen(who, "body.vrm", standing({ reach }), extra);
@@ -335,6 +351,9 @@ try {
   const towardKneeling = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } } }), facing("b", "body.vrm", { clip: "kneel" })));
   check("...and toward one in a posture body_state doesn't evaluate names the posture",
     towardKneeling.reachEvaluation?.rightHand?.why === `b's body can't be read here now (its posture "kneel" isn't one body_state evaluates), so this reach can't be checked; later reads check it again`, JSON.stringify(towardKneeling.reachEvaluation));
+  const towardLimp = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } } }), facing("b", "body.vrm", { clip: "ragdoll" })));
+  check("...and toward a limp one with no published bones says that's what it needs",
+    towardLimp.reachEvaluation?.rightHand?.why === "b's body can't be read here now (it's limp with no published bones, and body_state reads a limp body from its bones), so this reach can't be checked; later reads check it again", JSON.stringify(towardLimp.reachEvaluation));
   const towardStale = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } } }),
     { ...facing("b", "body.vrm"), receivedAt: Date.now() - 10_000 }));
   check("...toward one whose reading is stale says so",
@@ -352,9 +371,6 @@ try {
   const towardSampleless = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } } }), { ...facing("b", "body.vrm"), pose: null }));
   check("...toward one with no sample yet says so",
     towardSampleless.reachEvaluation?.rightHand?.why === "b's body can't be read here, so this reach can't be checked: no presence sample has arrived for this body yet, so nothing of it was read; calling again in a moment can work", JSON.stringify(towardSampleless.reachEvaluation));
-  const towardUntimed = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } } }), { ...facing("b", "body.vrm"), receivedAt: null }));
-  check("...toward one whose reading this door can't time says so",
-    towardUntimed.reachEvaluation?.rightHand?.why === "b's body can't be read here, so this reach can't be checked: this door doesn't know when its reading arrived, so it can't tell whether it's current", JSON.stringify(towardUntimed.reachEvaluation));
   // read() takes every body's first observation before its first await, so this one's first sample arrives while the skeletons load
   const arriving = new Map<string, any>([["a", reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } } })], ["b", { ...facing("b", "body.vrm"), pose: null }]]);
   const arrival = new BodyStateReader(worldBase).read("a", "all", undefined, (id: string) => arriving.get(id) ?? null);
@@ -362,16 +378,45 @@ try {
   const arrived = await arrival;
   check("...but a target whose first sample arrives while the skeletons load is read with it",
     arrived.reachEvaluation?.rightHand?.ok === true, JSON.stringify(arrived.reachEvaluation));
+  // ...as do a limp body's first bones, and a first sample in another posture than the idle one it loaded as
+  const arrivals = new Map<string, any>([["a", reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } }, leftHand: { t: { who: "c", point: "shoulder_l" } } })],
+    ["b", facing("b", "body.vrm", { clip: "ragdoll" })], ["c", { ...facing("c", "body.vrm"), pose: null }]]);
+  const arriving2 = new BodyStateReader(worldBase).read("a", "all", undefined, (id: string) => arrivals.get(id) ?? null);
+  arrivals.set("b", facing("b", "body.vrm", { clip: "ragdoll", pose: { hips: [0, 0, 0, 1] } }));
+  arrivals.set("c", facing("c", "body.vrm", { clip: "walk" }));
+  const arrived2 = await arriving2;
+  check("...and a limp target whose bones arrive while the skeletons load is read with them",
+    arrived2.reachEvaluation?.rightHand?.ok === true, JSON.stringify(arrived2.reachEvaluation));
+  check("...but one whose first sample comes in another posture says it changed, for later reads",
+    arrived2.reachEvaluation?.leftHand?.why === "c's body can't be read here now (it changed while its skeleton loaded), so this reach can't be checked; later reads check it again", JSON.stringify(arrived2.reachEvaluation));
   // read() takes every body's first observation before its first await, so these change while the skeletons load
-  const moving = new Map<string, any>([["a", reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } }, leftHand: { t: { who: "d", point: "shoulder_l" } } })],
-    ["b", facing("b", "body.vrm")], ["d", facing("d", "body.vrm")]]);
+  const moving = new Map<string, any>([["a", reacher("a", { rightHand: { t: { who: "b", point: "shoulder_l" } }, leftHand: { t: { who: "d", point: "shoulder_l" } },
+      rightFoot: { t: { who: "i", point: "shoulder_l" } } })],
+    ["b", facing("b", "body.vrm")], ["d", facing("d", "body.vrm")], ["i", facing("i", "flat.vrm")]]);
   const whileLoading = new BodyStateReader(worldBase).read("a", "all", undefined, (id: string) => moving.get(id) ?? null);
-  moving.delete("b"); moving.set("d", { ...moving.get("d"), generation: 2 });
+  moving.delete("b"); moving.set("d", { ...moving.get("d"), generation: 2 }); moving.delete("i");
   const changing = await whileLoading;
   check("...toward one that left while the skeletons loaded says so",
     changing.reachEvaluation?.rightHand?.why === "b's body can't be read here now (it left), so this reach can't be checked; later reads check it again", JSON.stringify(changing.reachEvaluation));
   check("...and toward one that changed while they loaded says that",
     changing.reachEvaluation?.leftHand?.why === "d's body can't be read here now (it changed while its skeleton loaded), so this reach can't be checked; later reads check it again", JSON.stringify(changing.reachEvaluation));
+  check("...and toward one whose load failed, and that left, says it left rather than what its model's load said",
+    changing.reachEvaluation?.rightFoot?.why === "i's body can't be read here now (it left), so this reach can't be checked; later reads check it again", JSON.stringify(changing.reachEvaluation?.rightFoot));
+  // ...and the rest of what can change then: the model, the clip, a posture body_state doesn't evaluate, and a body whose load failed
+  const shifting = new Map<string, any>([["a", reacher("a", { rightHand: { t: { who: "e", point: "shoulder_l" } }, leftHand: { t: { who: "f", point: "shoulder_l" } },
+      rightFoot: { t: { who: "g", point: "shoulder_l" } }, leftFoot: { t: { who: "h", point: "shoulder_l" } } })],
+    ["e", facing("e", "body.vrm")], ["f", facing("f", "body.vrm")], ["g", facing("g", "body.vrm")], ["h", facing("h", "flat.vrm")]]);
+  const whileShifting = new BodyStateReader(worldBase).read("a", "all", undefined, (id: string) => shifting.get(id) ?? null);
+  shifting.set("e", facing("e", "one-armed.vrm")); shifting.set("f", facing("f", "body.vrm", { clip: "walk" }));
+  shifting.set("g", facing("g", "body.vrm", { clip: "kneel" })); shifting.set("h", { ...facing("h", "body.vrm"), generation: 2 });
+  const shifted = await whileShifting;
+  const changedWhy = (who: string) => `${who}'s body can't be read here now (it changed while its skeleton loaded), so this reach can't be checked; later reads check it again`;
+  check("...toward one whose model changed then says it changed", shifted.reachEvaluation?.rightHand?.why === changedWhy("e"), JSON.stringify(shifted.reachEvaluation?.rightHand));
+  check("...and one whose posture did", shifted.reachEvaluation?.leftHand?.why === changedWhy("f"), JSON.stringify(shifted.reachEvaluation?.leftHand));
+  check("...but one now in a posture body_state doesn't evaluate names that posture",
+    shifted.reachEvaluation?.rightFoot?.why === `g's body can't be read here now (its posture "kneel" isn't one body_state evaluates), so this reach can't be checked; later reads check it again`, JSON.stringify(shifted.reachEvaluation?.rightFoot));
+  check("...and one whose load failed, and that changed, says it changed rather than what its old model said",
+    shifted.reachEvaluation?.leftFoot?.why === changedWhy("h"), JSON.stringify(shifted.reachEvaluation?.leftFoot));
   const longId = "p".repeat(64);
   const towardLong = await ask("a", "all", scene(reacher("a", { rightHand: { t: { who: longId, point: "forearm_l" } } }), facing(longId, "one-armed.vrm")));
   check("a copyable body_state call keeps a long participant id whole",
@@ -380,6 +425,10 @@ try {
     seen("b", "body.vrm", standing(), { receivedAt: Date.now() - 10_000 })));
   check("a point in a stale body's frame says later reads place it",
     inFrame.reachEvaluation?.rightHand?.why === "b's body has no current reading on this door, so a point in their frame can't be placed now; later reads place it again", JSON.stringify(inFrame.reachEvaluation));
+  const inUnreadFrame = await ask("a", "all", scene(reacher("a", { rightHand: { t: { p: [0, 1, 0.3], space: "b" } } }, { self: true }),
+    seen("b", "body.vrm", standing({ pose: "kneel" }))));
+  check("...but a point in the frame of one whose reading can't be read gives that reason, with no wait",
+    inUnreadFrame.reachEvaluation?.rightHand?.why === "b's body can't be read here, so a point in their frame can't be placed: this body's published pose isn't a map of bones, so nothing of it was read; it's in what its client publishes, so calling again changes nothing until that client publishes a usable one", JSON.stringify(inUnreadFrame.reachEvaluation));
   check("...and reading your own body says clear_reach releases one",
     inFrame.error === "some of your held reaches couldn't be evaluated, so the joints and contacts here are incomplete; reachEvaluation says why for each limb, and clear_reach releases one", inFrame.error);
   const chainless = await ask("c", "all", scene(seen("c", "one-armed.vrm", standing({ reach: { leftHand: { t: { p: [0.3, 1.2, 0.3] } } } }))));
