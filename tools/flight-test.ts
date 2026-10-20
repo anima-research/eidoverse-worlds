@@ -938,8 +938,11 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   //    have repeat=false, which is why this reproduced only for a person.
   const toggles = /bus\.on\('key',[\s\S]*?\n\}\);/.exec(ctl)?.[0] ?? '';
   check('the key toggles ignore autorepeat (a held F is one take-off)',
+        // the listener dispatches from the BODY_KEYS table (declared after it), so: the guard comes before the dispatch,
+        // and the table is where F lives
         /if \(e\.repeat\) return;/.test(toggles) &&
-        toggles.indexOf('e.repeat') < toggles.indexOf('KeyF'));
+        toggles.indexOf('e.repeat') < toggles.indexOf('BODY_KEYS.find') &&
+        /const BODY_KEYS = \[[\s\S]*?code: 'KeyF'/.test(ctl));
   // ...and the guard is on the LISTENER, not the emit: build.js binds R/F and
   // the arrows to nudge and raise, where holding the key is the interaction.
   check('but the key BUS still carries repeats (build.js nudges need them)',
