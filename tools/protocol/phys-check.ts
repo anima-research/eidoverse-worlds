@@ -8,7 +8,8 @@ import { openWorld } from "../../server/filehost.ts";
 import { fold, readLog, PURGED } from "../../shared/protocol/fold.js";
 import { simFold, restsOf, ENGINES, EIDOSIM_BUILD } from "../../shared/protocol/simlayer.js";
 import { ENGINE, scratch } from "./common.ts";
-import { worldT } from "../../shared/protocol/authority/math.js";
+import { worldT, yawQ, qrot } from "../../shared/protocol/authority/math.js";
+import { supportBelow } from "../../shared/protocol/authority/spatial.js";
 
 const root = scratch("phys");
 let T = 1800000000000, fails = 0, passes = 0;
@@ -538,6 +539,21 @@ function playground(name) {
   const P = copyOf([...L.map((e: any, i: number) => (i === ln ? { ...e, body: { commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: ln }] }, ts: last.ts + 100 }]);
   const v = simFold(P, last.ts + 1000); const digests = P.filter((e: any) => e?.kind === "sim" && e.verb === "digest").length;
   ok(ln > 0 && digests > 0 && v.checks.disagree.length === 0, "U7b a purged launch makes the digests logged during its flight unknown, not disagreements", { ln, digests, disagree: v.checks.disagree.slice(0, 2) }); }
+
+// review of #260: a turned table supports things over its own top, not over the box of its corners
+{ const W = playground("turned-table"); const t = openWorld(root, W).state().entities["table-1"].c.transform;   // 1.2 × 0.8 m, at (0, 4)
+  const turn = call(W, "rowan", "set", { id: "table-1", component: "transform", value: { ...t, q: yawQ(Math.PI / 4) } });
+  const st = openWorld(root, W).state(); const top = 0.75;
+  const u3 = qrot(st.entities["table-1"].c.transform.q, [1, 0, 0]), u = [u3[0], u3[2]], v = [-u[1], u[0]];   // the top's own axes on the ground
+  const inTop = (x: number, z: number, m = 0) => { const d = [x, z - 4]; return Math.abs(d[0] * u[0] + d[1] * u[1]) <= 0.6 - m + 1e-6 && Math.abs(d[0] * v[0] + d[1] * v[1]) <= 0.4 - m + 1e-6; };
+  // (0.65, 0): inside the box of its corners (half 0.707), off its top; 0.5 m along its long axis: on its top
+  const corner = supportBelow(st, 0.65, 4, 2), along = supportBelow(st, 0.5 * u[0], 4 + 0.5 * u[1], 2);
+  ok(turn.ok && !inTop(0.65, 4) && inTop(0.5 * u[0], 4 + 0.5 * u[1]) && corner.id === "ground" && along.id === "table-1" && Math.abs(along.y - top) < 1e-6,
+    "U8 a table turned 45 degrees supports at a point over its top, not at a corner of its bounding box", { turn: turn.ok ?? turn.refused, corner, along });
+  // asked to place the 0.6 m crate 0.35 m to the side (toward a corner of the box), it is put wholly on the top or refused
+  const put = call(W, "rowan", "place", { id: "crate-1", on: "table-1", offset: [0.35, 0] }); const p = worldT(openWorld(root, W).state(), "crate-1").pos;
+  const corners = [[-0.3, -0.3], [-0.3, 0.3], [0.3, -0.3], [0.3, 0.3]].map(([dx, dz]) => [p[0] + dx, p[2] + dz]);
+  ok(!put.ok || corners.every(([x, z]) => inTop(x, z)), "U8 …and a place on it puts the crate wholly on its top", { put: put.ok ?? put.refused, p }); }
 
 console.log(`${passes} passed, ${fails} failed`);
 fs.rmSync(root, { recursive: true, force: true });

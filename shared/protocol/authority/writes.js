@@ -13,7 +13,7 @@ import { CTX, UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
 import { modelOf, boxOfM, geomE } from "./catalogue.js";
 import { CHANGE, clone, createOps, delOp, followUp, lockedC, nonce16, qr3, scratch, setOp, versionSeq } from "./storage.js";
-import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, surfacesOf, worldT, yawQ } from "./math.js";
+import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, rectHolds, surfacesOf, worldT, yawQ } from "./math.js";
 import { groundReady, hitsIx, near, spatial, spend, supportBelow } from "./spatial.js";
 import { isSocketC, socketsOf } from "./sockets.js";
 import { madeBy, roleOf } from "./rights.js";
@@ -416,6 +416,7 @@ function buildPlace(ctx, a) {
         const region = near(st, [s.min[0], s.y, s.min[1]], [s.max[0], s.y + S[1], s.max[1]]); const local = region.length <= 32 ? region : null;
         const cell = (i, k) => { spend(1); const x = xs[i], z = zs[k], d = Math.hypot(x - want[0], z - want[1]), idx = i * nz + k;   // every cell visited is work
           if (best && (d > best.d || (d === best.d && idx > best.idx))) return;
+          if (s.rect && !rectHolds(s, x, z, hx, hz)) return;   // off a turned top's own rectangle, though inside the box of its corners
           spend(4); const bl = free(x, s.y, z, yaw, NONE, local); if (!bl) best = { x, z, d, idx }; else if (idx > lastIdx) { lastIdx = idx; lastBlock = bl; } };
         // the nearest any cell of a ring's side (columns i0..i1 of a row, or rows k0..k1 of a column) can be to `want`:
         // a ring's cells are never nearer than its sides' clamp, and no ring is nearer than the one inside it (each of

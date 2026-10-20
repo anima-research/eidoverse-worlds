@@ -5,7 +5,7 @@ import { offChain } from "../simlayer.js";
 import { CTX } from "./ctx.js";
 import { refuse } from "./refuse.js";
 import { LAB_CATALOGUE, geomE } from "./catalogue.js";
-import { aabb, boxToObb, obbs, overlap, satCost, satDepth, surfacesOf } from "./math.js";
+import { aabb, boxToObb, inRect, obbs, overlap, rectMeets, satCost, satDepth, surfacesOf } from "./math.js";
 import { VOLATILE } from "./storage.js";
 import { terrainParams, makeHeightField } from "../../terrainmath.js";
 import { shapeParams, shapeReady, waterParams, worldWater } from "../../terrainshape.js";
@@ -199,7 +199,7 @@ function supportBelow(st, x, z, y, ignore = new Set()) {
   for (const id of near(st, [x, -Infinity, z], [x, Infinity, z])) {
     if (ignore.has(id)) continue;
     for (const s of ix.rec.get(id).surfs)
-      if (x >= s.min[0] && x <= s.max[0] && z >= s.min[1] && z <= s.max[1] && s.y <= y + 0.02 && s.y > best.y) best = { y: s.y, id };
+      if (inRect(s, x, z) && s.y <= y + 0.02 && s.y > best.y) best = { y: s.y, id };
   }
   return best;
 }
@@ -214,7 +214,7 @@ function supportUnder(st, b, ignore) {
   let best = { y: gy, id: "ground" };
   const ix = spatial(st);
   for (const id of near(st, [b.min[0], -Infinity, b.min[2]], [b.max[0], Infinity, b.max[2]])) { if (ignore.has(id)) continue;
-    for (const s of ix.rec.get(id).surfs) if (b.max[0] > s.min[0] && b.min[0] < s.max[0] && b.max[2] > s.min[1] && b.min[2] < s.max[1] && s.y <= b.min[1] + 0.02 && s.y > best.y) best = { y: s.y, id }; }
+    for (const s of ix.rec.get(id).surfs) if (rectMeets(s, [b.min[0], b.min[2]], [b.max[0], b.max[2]]) && s.y <= b.min[1] + 0.02 && s.y > best.y) best = { y: s.y, id }; }
   return best;
 }
 

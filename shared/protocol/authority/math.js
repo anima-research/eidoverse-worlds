@@ -122,11 +122,36 @@ function surfacesOf(st, id) {
   }
   const yawOnly = t.q[0] === 0 && t.q[2] === 0;   // the common case keeps its exact arithmetic
   const yOf = (sy) => (yawOnly ? t.pos[1] + sy * t.scale[1] : at(0, sy, 0)[1]);
+  // A surface off the world's axes also carries its own rectangle on the ground, rect {c, u, hx, hz} (centre, its x axis, half
+  // extents after the inset): min/max stay the axis-aligned box of its corners, the broad phase (near(), the index), and what
+  // supports a point or a footprint is read against the rectangle (inRect, rectMeets). A tilted surface (not yaw-only) is
+  // projected onto the ground the same way, an approximation, with y its highest corner's as before.
+  const rectOf = (cs, k) => { const ex = [cs[2][0] - cs[0][0], cs[2][2] - cs[0][2]], ez = [cs[1][0] - cs[0][0], cs[1][2] - cs[0][2]];
+    const lx = Math.hypot(...ex); if (!(lx > 1e-9)) return null; const u = [ex[0] / lx, ex[1] / lx];
+    if (Math.abs(u[0]) < 1e-9 || Math.abs(u[1]) < 1e-9) return null;   // on the world's axes: the box is the rectangle
+    const hz = Math.abs(ez[0] * -u[1] + ez[1] * u[0]) / 2;
+    return { c: [(cs[0][0] + cs[3][0]) / 2, (cs[0][2] + cs[3][2]) / 2], u, hx: Math.max(0, lx / 2 - k), hz: Math.max(0, hz - k) }; };
   return (m.surfaces ?? []).map((s, i) => { const k = s.inset ?? 0;
-    if (s.x && s.z) { // a measured zone: its own rectangle, carried into the world (the axis-aligned box of its corners)
+    if (s.x && s.z) { // a measured zone: its own rectangle, carried into the world (min/max: the axis-aligned box of its corners)
       const cs = [[s.x[0], s.z[0]], [s.x[0], s.z[1]], [s.x[1], s.z[0]], [s.x[1], s.z[1]]].map(([x, z]) => at(x, s.y, z));
-      return { id, level: i, y: yawOnly ? yOf(s.y) : Math.max(...cs.map((c) => c[1])), min: [Math.min(...cs.map((c) => c[0])) + k, Math.min(...cs.map((c) => c[2])) + k], max: [Math.max(...cs.map((c) => c[0])) - k, Math.max(...cs.map((c) => c[2])) - k] };
+      const rect = rectOf(cs, k);
+      return { id, level: i, y: yawOnly ? yOf(s.y) : Math.max(...cs.map((c) => c[1])), min: [Math.min(...cs.map((c) => c[0])) + k, Math.min(...cs.map((c) => c[2])) + k], max: [Math.max(...cs.map((c) => c[0])) - k, Math.max(...cs.map((c) => c[2])) - k], ...(rect ? { rect } : {}) };
     }
-    return { id, level: i, y: yOf(s.y), min: [b.min[0] + k, b.min[2] + k], max: [b.max[0] - k, b.max[2] - k] }; });
+    const [lo, hi] = boxOfM(m); const rect = rectOf([[lo[0], lo[2]], [lo[0], hi[2]], [hi[0], lo[2]], [hi[0], hi[2]]].map(([x, z]) => at(x, s.y, z)), k);
+    return { id, level: i, y: yOf(s.y), min: [b.min[0] + k, b.min[2] + k], max: [b.max[0] - k, b.max[2] - k], ...(rect ? { rect } : {}) }; });
 }
-export { NONE, UPRIGHT, aabb, ancestors, boxToObb, crs, descendants, dot, hits, isI, localFrom, obbs, overlap, qYaw, qinv, qmul, qrot, satCost, satDepth, solids, surfacesOf, worldT, yawQ };
+/** (x, z) over surface s: its box, and its own rectangle when it has one */
+const inRect = (s, x, z) => x >= s.min[0] && x <= s.max[0] && z >= s.min[1] && z <= s.max[1]
+  && (!s.rect || ((dx, dz) => Math.abs(dx * s.rect.u[0] + dz * s.rect.u[1]) <= s.rect.hx + 1e-9 && Math.abs(-dx * s.rect.u[1] + dz * s.rect.u[0]) <= s.rect.hz + 1e-9)(x - s.rect.c[0], z - s.rect.c[1]));
+/** an axis-aligned footprint (min/max as [x, z]) overlapping surface s: the box test, and a 2D separating-axis test against its rectangle */
+function rectMeets(s, min, max) {
+  if (!(max[0] > s.min[0] && min[0] < s.max[0] && max[1] > s.min[1] && min[1] < s.max[1])) return false;
+  if (!s.rect) return true; const { c, u, hx, hz } = s.rect; const v = [-u[1], u[0]];
+  const bc = [(min[0] + max[0]) / 2 - c[0], (min[1] + max[1]) / 2 - c[1]], bh = [(max[0] - min[0]) / 2, (max[1] - min[1]) / 2];
+  const d2 = (a, b) => a[0] * b[0] + a[1] * b[1];
+  for (const ax of [u, v, [1, 0], [0, 1]]) if (Math.abs(d2(bc, ax)) >= hx * Math.abs(d2(u, ax)) + hz * Math.abs(d2(v, ax)) + bh[0] * Math.abs(ax[0]) + bh[1] * Math.abs(ax[1])) return false;
+  return true;
+}
+/** a footprint (centre x, z, half extents hx, hz on the world's axes) wholly on surface s */
+const rectHolds = (s, x, z, hx, hz) => [[-hx, -hz], [-hx, hz], [hx, -hz], [hx, hz]].every(([dx, dz]) => inRect(s, x + dx, z + dz));
+export { NONE, UPRIGHT, aabb, inRect, rectHolds, rectMeets, ancestors, boxToObb, crs, descendants, dot, hits, isI, localFrom, obbs, overlap, qYaw, qinv, qmul, qrot, satCost, satDepth, solids, surfacesOf, worldT, yawQ };
