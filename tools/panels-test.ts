@@ -164,7 +164,9 @@ console.log("\nshift = fine, ctrl = snap, soft limit bounds the drag, hard bound
   inp.value = "50"; inp.dispatchEvent(new Event("change"));
   check("typing exceeds the soft max", inp.value === "50", inp.value);
   inp.value = "-5"; inp.dispatchEvent(new Event("change"));
-  check("…but not the hard min", inp.value === "0", inp.value);
+  // typed is written AS TYPED, past either bound (panels.js sendTyped): the door's own check refuses an out-of-range edit
+  // and says why (editor-range-test), so the panel clamps nothing (#260 r3 I256)
+  check("…and past the hard min too: typed is as typed (the door refuses and says why)", inp.value === "-5", inp.value);
 }
 
 console.log("\nnav/action separation — a click that travelled fires nothing:");
