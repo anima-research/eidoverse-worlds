@@ -856,6 +856,12 @@ try {
       const peOff = await waitDisk(() => !disk().entities["@world"]?.c["physics-engine"]);
       check("CW5 World › physics on sets @world.physics-engine {engine}; off deletes it", peOn && peOff, { pe: disk().entities["@world"]?.c["physics-engine"] ?? null, refused: await evalJson(`__refused.map((x) => x.text).slice(-2)`) });
       await evalJson(`(document.getElementById('__w')?.remove(), true)`); }
+    // WS4 World Settings is four sections (R 10-20): People & roles holds Roles AND Who may come in; World holds the world
+    // rows, and the old-world part only when a translation left something (a fresh world carries nothing).
+    { const r = await page(`const m = await import('/lib/rolespanels.js'); const P = document.createElement('div'), W = document.createElement('div'); document.body.append(P, W); m._test.paintPeople(P); m._test.paintWorldAll(W);
+        const hs = (b) => [...b.querySelectorAll(':scope > .rp-part')].filter((d) => !d.hidden).map((d) => d.querySelector('.rp-h')?.textContent ?? '(untitled)');
+        const out = { people: hs(P), worldParts: [...W.querySelectorAll(':scope > .rp-part')].filter((d) => !d.hidden).length, worldTotal: W.querySelectorAll(':scope > .rp-part').length, peopleFilled: [...P.querySelectorAll('.rp-box')].every((b) => b.childElementCount > 0) }; P.remove(); W.remove(); return out;`);
+      check("WS4 World Settings: People & roles shows Roles + Who may come in, both filled; World hides 'Carried over' on a fresh world", JSON.stringify(r?.people) === '["Roles","Who may come in"]' && r?.peopleFilled && r?.worldParts === 1 && r?.worldTotal === 2, r); }
     // CB1 World Settings › Places: empty Bounds fields write NO bounds (they read as 0 and saved a zero box that refused every move, audit 10-09)
     // RK1 (review 10-14 K3): picking a role from the Roles panel keeps the person's exceptions — the set merges when the entry exists
     { const grant = await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder', can: { pauseScripts: true } } })).ok;`);

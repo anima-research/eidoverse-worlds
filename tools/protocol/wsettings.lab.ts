@@ -18,7 +18,7 @@ try {
   for (let i = 0; i < 160; i++) { if (((await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0) >= 4) break; await sleep(500); }
   for (let i = 0; i < 60; i++) { if (await evalJson(`import('/lib/net.js').then((m) => m.replicaActive())`).catch(() => false)) break; await sleep(300); }
   await sleep(4000);
-  for (const tab of ["ws-roles", "ws-access", "ws-world", "ws-card", "ws-places"]) {
+  for (const tab of ["ws-people", "ws-world", "ws-card", "ws-places"]) {
     await evalJson(`(async () => { const ui = await import('/lib/ui.js'); const f = ui.worldSettingsFrame?.() ?? null; document.getElementById('sec-${tab}-tab')?.click(); const fr = (await import('/lib/windows.js')).getFrame('world-settings'); fr?.show(); document.getElementById('sec-${tab}-tab')?.click(); return true; })()`);
     await sleep(700); await shot(tab, `[data-frame="world-settings"]`); }
   await evalJson(`(async () => { (await import('/lib/windows.js')).getFrame('world-settings')?.hide(); const fr = (await import('/lib/windows.js')).getFrame('settings'); fr?.show(); document.getElementById('sec-safety-tab')?.click(); return true; })()`);

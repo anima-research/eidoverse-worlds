@@ -423,10 +423,10 @@ const cases: Case[] = [
   { id: "P1", what: "personActions: a visitor sees only Mention (a public @name; Message opened a DM tab until whisper was removed, R 10-18), for anyone", run() { const A = RL.personActions;
       const vis = { id: "v", rank: 0, permissions: [] }; return { a: A?.(vis, { id: "b", rank: 100, role: "builder" }).map((x: any) => x.id), b: A?.(vis, { id: "n", rank: -1, role: "none" }).map((x: any) => x.id) }; },
     good: (o) => JSON.stringify(o.a) === '["mention"]' && JSON.stringify(o.b) === '["mention"]' },
-  { id: "P2", what: "personActions: a moderator acting on a builder gets warn, mute, kick, ghost, ban, role and history", run() {
+  { id: "P2", what: "personActions: a moderator acting on a builder gets warn, mute, kick, ban, role and history — no Ghost (reserved 10-20); a standing ghost can still be ended", run() {
       const mo = { id: "m", rank: 200, permissions: RL.BUILTIN?.moderator ? RL.PERMISSION_NAMES.filter((k: string) => RL.BUILTIN.moderator.can[k]) : [] };
-      return { ids: RL.personActions?.(mo, { id: "b", rank: 100, role: "builder" }).map((x: any) => x.id), muted: RL.personActions?.(mo, { id: "b", rank: 100 }, { muted: true }).map((x: any) => x.id) }; },
-    good: (o) => JSON.stringify(o.ids) === '["mention","warn","mute","kick","ghost","ban","role","history"]' && o.muted?.includes("unmute") && !o.muted?.includes("mute") },
+      return { ids: RL.personActions?.(mo, { id: "b", rank: 100, role: "builder" }).map((x: any) => x.id), muted: RL.personActions?.(mo, { id: "b", rank: 100 }, { muted: true }).map((x: any) => x.id), ghosted: RL.personActions?.(mo, { id: "b", rank: 100 }, { ghosted: true }).map((x: any) => x.id) }; },
+    good: (o) => JSON.stringify(o.ids) === '["mention","warn","mute","kick","ban","role","history"]' && o.muted?.includes("unmute") && !o.muted?.includes("mute") && o.ghosted?.includes("unghost") },
   { id: "P3", what: "personActions: a moderator acting on a moderator gets no acts, and one dim line saying rank is why", run() {
       const mo = { id: "m", rank: 200, permissions: ["mute", "kick", "ban", "grantRoles"] };
       return RL.personActions?.(mo, { id: "m2", rank: 200, role: "moderator", name: "Moderator" }); },

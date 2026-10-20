@@ -337,17 +337,28 @@ function paintOld(body) {
   body.querySelectorAll('[data-rm]').forEach((b) => { b.onclick = () => act('delete', { id: '@world', component: b.dataset.rm }, `remove ${b.dataset.rm}`, () => paintOld(body)); });
 }
 
+// A section made of parts, each painting into its own box (so a part's own repaint only touches itself). The Old-world
+// part shows only when a translation left something behind.
+function parts(...ps) { return (body) => {
+  if (body.childElementCount !== ps.length || [...body.children].some((d) => !d.classList.contains('rp-part'))) {
+    body.innerHTML = ''; for (let k = 0; k < ps.length; k++) { const d = document.createElement('div'); d.className = 'rp-part'; body.appendChild(d); } }
+  ps.forEach(([h, paint, when], k) => { const d = body.children[k]; if (when && !when()) { d.hidden = true; return; } d.hidden = false;
+    const box = d.querySelector(':scope > .rp-box') ?? (() => { if (h) d.insertAdjacentHTML('beforeend', `<h4 class="rp-h">${esc(h)}</h4>`); const b = document.createElement('div'); b.className = 'rp-box'; d.appendChild(b); return b; })();
+    paint(box); }); }; }
+const carriedOver = () => { const st = replica.st?.entities ?? {}; return Object.keys(wc()).some((k) => IMPORTED.test(k)) || Object.entries(st).some(([id, e]) => id !== '@world' && Object.keys(e.c ?? {}).some((k) => IMPORTED.test(k))); };
+const paintPeople = parts(['Roles', paintRoles], ['Who may come in', paintAccess]);
+const paintWorldAll = parts([null, paintWorld], ['Carried over from the old world', paintOld, carriedOver]);
+
 let built = false;
 export function initRolesPanels() {
   if (built) return; built = true;
   // World Settings: everyone's (read), the owner's (edit)
   worldSettingsFrame();
   setDockEntry({ id: 'world-settings', icon: 'flag', pinOnce: true }, true);
-  const ws = [makeSection('Roles', (b) => paintRoles(b), { id: 'ws-roles', host: 'world-settings' }), makeSection('Access', (b) => paintAccess(b), { id: 'ws-access', host: 'world-settings' }),
-    makeSection('World', (b) => paintWorld(b), { id: 'ws-world', host: 'world-settings' }),
-    makeSection('Card', (b) => paintCard(b), { id: 'ws-card', host: 'world-settings' }), makeSection('Places', (b) => paintPlaces(b), { id: 'ws-places', host: 'world-settings' }),
-    makeSection('Old world', (b) => paintOld(b), { id: 'ws-old', host: 'world-settings' })];
-  const PAINT = { 'ws-roles': paintRoles, 'ws-access': paintAccess, 'ws-world': paintWorld, 'ws-card': paintCard, 'ws-places': paintPlaces, 'ws-old': paintOld };
+  const ws = [makeSection('People & roles', (b) => paintPeople(b), { id: 'ws-people', host: 'world-settings' }),
+    makeSection('World', (b) => paintWorldAll(b), { id: 'ws-world', host: 'world-settings' }),
+    makeSection('Card', (b) => paintCard(b), { id: 'ws-card', host: 'world-settings' }), makeSection('Places', (b) => paintPlaces(b), { id: 'ws-places', host: 'world-settings' })];
+  const PAINT = { 'ws-people': paintPeople, 'ws-world': paintWorldAll, 'ws-card': paintCard, 'ws-places': paintPlaces };
   // a role or a setting changed (anyone's write lands in the fold): repaint what's open, unless someone is typing in it
   let t = 0; const repaint = () => { clearTimeout(t); t = setTimeout(() => {
     for (const s of ws) if (s.isOpen && !s.body.contains(document.activeElement)) PAINT[s.key]?.(s.body);
@@ -357,4 +368,4 @@ export function initRolesPanels() {
   bus.on('roster', () => { if (sections.bans?.isOpen) paintBans(sections.bans.body); });
   syncModeration();
 }
-export const _test = { paintRoles, paintAccess, paintWorld, paintPlaces, syncModeration, sections };
+export const _test = { paintRoles, paintAccess, paintWorld, paintPlaces, paintPeople, paintWorldAll, syncModeration, sections };

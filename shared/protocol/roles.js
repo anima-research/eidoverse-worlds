@@ -229,7 +229,7 @@ export function personActions(me, them, state = {}) {
     if (WARN_POWERS.some(has)) out.push({ id: "warn", label: "Warn…" });
     if (has("mute")) out.push(state.muted ? { id: "unmute", label: "Unmute" } : { id: "mute", label: "Mute…" });
     if (has("kick")) out.push({ id: "kick", label: "Kick…" });
-    if (has("kick")) out.push(state.ghosted ? { id: "unghost", label: "Bring back (end ghost)" } : { id: "ghost", label: "Ghost…" });
+    if (has("kick") && state.ghosted) out.push({ id: "unghost", label: "Bring back (end ghost)" });   // ghost is reserved (10-20): no new ghosting from the menu; a standing one can still be ended
     if (has("ban")) out.push({ id: "ban", label: "Ban…" });
     if (has("grantRoles")) out.push({ id: "role", label: "Role ▸" });
   } else if (anyMod) out.push({ id: "rank-line", dim: true, label: `they're ${article(them.name ?? them.role ?? "a member")}; you can't act on equal or higher ranks` });
