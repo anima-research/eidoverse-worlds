@@ -324,7 +324,7 @@ superset of 32).
   physics — and the `sim` entry they produce carries everything the engine
   needs. Taking a thing *out* of the engine is a `lift` or `catch`, whatever
   the cause: a grab today, a touch or push takeover later. Returning it is a
-  `launch` (a release with its state) or a settlement (§4.4). The engine MUST
+  `launch` (a release with its state) or (reserved) a settlement (§4.3). The engine MUST
   NOT depend on any presence fact that is not stamped into an entry.
 - **Continuous contact gives no unlogged impulse to the engine.** Contact
   under live simulation authority (§4.1) is presence, and enters history
@@ -347,9 +347,7 @@ updates; VRChat splits them the same way):
   the log is results, never processes; a body in the engine is a process.**
   A body has no `physics` component and the engine never sees it: a flight
   passes through a body. The body's client may `catch` (existing) or,
-  *reserved*, `deflect {id, v, w?}` (a `sim` entry: the thing leaves the body
-  with the state the client gives it, under the body's consent, like a
-  launch; refused until built). A thing under live authority that meets a
+  *reserved* (refused until built), `deflect` (a `sim` entry: the body hands a flying thing back). A thing under live authority that meets a
   body delivers a `shove` to that body's client under its consent table
   (actor: the thing's live authority, carrying the thing's `id` and `v`);
   the thing's own motion ignores the body. Carrying a person is a consent
@@ -359,53 +357,18 @@ updates; VRChat splits them the same way):
   Boneworks does it and Fusion networks it: a physics rig in the presence
   plane, per client, driven toward its tracked targets, with a force-driven
   puppet of every other body; never in the engine, never in the log.
-- **Live simulation authority** over a thing is presence: transient, cheap,
-  unlogged. *Reserved; the rules are fixed now:*
-  - **The toucher or holder simulates it.** Whoever grabs a thing, or (with
-    lower priority) touches it, simulates it locally, so hand and object are
-    in one local sim with zero latency. Everyone else draws a proxy.
-  - **Grab beats touch.** Two counters order it (Fiedler 2018): `oseq`
-    increments on each grab, `aseq` on each touch takeover and each rest; an
-    increase in `oseq` wins over an increase in `aseq`; the latest grab wins.
-    A touch takeover by impact (a hand or a body meeting a thing, Fusion's
-    `ImpactUtilities`, VRChat's collision transfer) bids `aseq` only, never
-    `oseq`: a held thing is never taken by bumping into it.
-  - **The holder's switch.** The latest grab wins because `grabbable.steal`
-    defaults to `true`; under `steal: false` a held thing's `oseq` cannot
-    advance until a `launch` or a settlement, and the second `grab` is
-    refused (`held`). *Reserved:* `steal: "ask"` (the holder's client is
-    asked, as a body act is) is a value the authority refuses until built.
-  - **Claims are ordered by admission, never by a sender's `t`** (§5.1 says
-    the same of releases): two grabs in one beat resolve in the order the
-    door admitted them. *Reserved on `@world.physics-engine`, refused until
-    read:* `claimDebounceMs` (default 200: an equal-priority `aseq` takeover
-    within it is refused, Overte's `SimulationOwner` debounce) and
-    `liveAuthorityExpiryMs` (default 5000: a live authority silent that long
-    is expired, and its thing is settled from the last accepted state or
-    released into the engine).
-  - **Two hands on one thing is one authority** (research 10-11, C: every
-    system that ships has one simulator per thing; Bonelab Fusion lets a
-    second hand act only as a force inside the holder's sim). *Reserved:*
-    `cohold` is a verb the authority refuses until built. Its rule is fixed:
-    the second person's hand is a `reach` that tracks the grip; it acts on
-    the thing only inside the holder's sim, as a puppet contact; it never
-    streams the thing's state and never advances `oseq`. A release while
-    co-held is the holder's `launch`; the rest is attributed to both.
-  - **The door is the arbiter.** It relays every claim, orders handovers
-    optimistically (a local take, corrected by the arbiter), and refuses
-    stale ones. It is *not* the edit lease, which governs history.
-  - **Velocity carries across a handover.** Letting go is a `launch`: the
-    released thing (and anything touching it that live authority had taken)
-    crosses into the engine as one committed intent and belongs to the engine
-    until it rests (§4). The thrower does not keep simulating it — live
-    authority ends at release, so a flight's outcome never depends on a
-    presence-plane fact (Covenant III).
-  - **A held object rides its holder's hand**: it travels in the holder's
-    pose as which grip and where, never as a separate stream.
-  - **Live authority may stream an object's state on a presence lane**
-    (§4.3) while it moves; rest is never a sample.
-  - Taking a resting thing into live authority is a `lift`; leaving it is a
-    `launch` or a settlement (above).
+- **Live simulation authority** over a thing is presence: transient, cheap, unlogged. What is built and binding:
+  - **The holder's switch.** `grabbable.steal` defaults to `true` (the latest grab wins); under `steal: false` the second
+    `grab` is refused (`held`) until a `launch` or a settlement.
+  - **Claims are ordered by admission**, never by a sender's `t` (§5.1 says the same of releases): two grabs in one
+    beat resolve in the order the door admitted them.
+  - **Letting go is a `launch`**: the released thing crosses into the engine as one committed intent and belongs to the
+    engine until it rests (§4); a flight's outcome never depends on a presence-plane fact (Covenant III).
+  - **A held object rides its holder's hand**: it travels in the holder's pose as which grip and where, never as a
+    separate stream. Taking a resting thing into live authority is a `lift`; leaving it is a `launch`.
+  - **Reserved names, refused until built** (their intended rules are direction, in docs/PHYSICS-DIRECTION.md): the verb
+    `cohold`, the `steal` value `"ask"`, and on `@world.physics-engine` the fields `claimDebounceMs` and
+    `liveAuthorityExpiryMs`.
 - **Write authority** is the door: it alone appends to the log, and it checks
   every claim that becomes history.
 
@@ -421,37 +384,11 @@ thrower's own view of their flight, **never a backdated sim input**: a launch
 takes effect at its own entry's tick (Covenant IV), because backdating turns
 into rollback the moment bodies collide.
 
-### 4.3. The state-sync lane (reserved)
+### 4.3. The state-sync lane and settlement (reserved)
 
-A live authority streams a thing's state as presence, separately from body
-frames and from the log: `state {s: [sample, …]}`, each sample
-
-    {id, by, aseq, oseq, t, p, q, v, w, sleep}
-
-`by` the identity simulating it; `aseq`/`oseq` the counters (§4.1); `t` the
-capture time on the authority's clock; `p` (m) and `q` (unit quaternion) its
-world pose; `v` (m/s) and `w` (rad/s) its world velocities; `sleep` whether
-its simulator has it at rest. A sample is **absolute, self-contained and
-latest-wins**: no deltas against unacknowledged state, so the lane can move
-from the WebSocket to unreliable datagrams (a WebRTC DataChannel with
-`ordered: false, maxRetransmits: 0`, or WebTransport datagrams) without
-changing meaning. Receivers MAY drive a proxy toward the samples by force
-(pushable) or kinematically; a quantization, a priority accumulator and a
-per-client byte budget are added with the lane. Rest is a reliable
-settlement (§4.4), never a sample. Today the server checks the shape
-(`shared/presencewire.js stateSampleError`) and refuses every sample as
-reserved.
-
-### 4.4. Settlement is a checked claim (design 20, P3; reserved)
-
-When a thing under live authority comes to rest (asleep about 0.5 s) or is put
-down, its authority sends one **settlement**: a resting pose. The door treats
-it as a claim, like `put`: physical checks (support, overlap) and reach
-against the holder's last presence, so a cheating client can do no more than
-a builder could. It is logged as a plain `transform` change, attributed to
-everyone who handled the thing since it last rested. Trajectories never enter
-the log. A holder who disconnects mid-motion is settled from their last
-accepted state, or released into the sim.
+The presence message `state` (a live authority streaming a thing's samples) and the settlement claim are reserved names:
+the server refuses every `state` sample, and nothing settles by claim yet. Their intended shapes are direction, not
+contract: docs/PHYSICS-DIRECTION.md.
 
 ## 5. Covenant IV — tick-indexed time
 
