@@ -896,6 +896,16 @@
    "fx"
   ]
  },
+ "body-default": {
+  "status": "trial",
+  "type": "string",
+  "on": "world"
+ },
+ "keep-owner": {
+  "status": "trial",
+  "type": "bool",
+  "on": "world"
+ },
  "physics-engine": {
   "status": "trial",
   "fields": {

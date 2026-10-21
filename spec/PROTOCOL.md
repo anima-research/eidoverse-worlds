@@ -945,7 +945,9 @@ component of an entity needs builder; changing `@world` needs owner, except
 `blueprints:*` (publishing a blueprint: build), `assets:*` (generate), the
 world's look (`about`, `sky`, `terrain*`, `water`, `grass`, `bounds`, `spawn`:
 editWorld), and `roles:*` (the grant rule). Removing the last owner is
-refused, and a world with no owner gives nobody more than visitor. A role
+refused while `@world.keep-owner` is absent or true (starter config, on); an
+owner who sets it false may leave the world ownerless on purpose. A world with
+no owner gives nobody more than visitor; its host operator can mend it. A role
 MAY carry `until` (epoch ms, the authority's clock): the grant ends then. The
 authority writes the end itself, as the system's act `expire-roles {ids}` and
 its change deleting each `roles:<id>` whose `until` has passed, within a second
