@@ -226,8 +226,8 @@ export function renameRoleWords(comp, v) {
   return { value: out, renamed };
 }
 /** The ops that rename stored components (RENAMED_COMPONENTS), fields (RENAMED_FIELDS) and role words (renameRoleWords),
- *  [{verb, id, comp, value?, renamed?}], [] when nothing needs it. A stored grant of `none` (R 10-21: gone; v1's spectator
- *  came in as one) is deleted: the person then holds what anyone without a grant holds. */
+ *  [{verb, id, comp, value?, renamed?}], [] when nothing needs it. A stored grant of `none` (R 10-21: gone; an old log's)
+ *  is deleted: the person then holds what anyone without a grant holds. */
 export function renameOps(st, purged = null) {
   const ops = [];
   for (const [id, map] of Object.entries(RENAMED_COMPONENTS)) { const c = st?.entities?.[id]?.c; if (!bag(c)) continue;

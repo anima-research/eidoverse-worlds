@@ -923,7 +923,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(S("chair", "particles", { effect: "fire", params: { texture: "../../etc/x.png" } }).refused?.code === "shape", "T1e a texture outside the particle library is refused"); }
 // CP (Commons parity audit (old world → new), 10-06): use with no action, the whole log's history paged and filtered, the spoken trio
 { const R = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "cp"), actor, verb, args); };
-  R("ann", "create-world", { title: "cp" });
+  R("ann", "create-world", { title: "cp" }); R("ann", "set", { id: "@world", component: "roles:vic", value: { role: "player" } });   // vic plays, can't build (R 10-21: newcomers build in a new world)
   R("ann", "create", { id: "rock", model: "crate" });
   const u0 = R("ann", "use", { id: "rock" });
   ok(u0.refused?.code === "no-action" && !/undefined/.test(JSON.stringify(u0)) && /nothing to use/.test(u0.refused.reason), "CP1 use with no action on a thing that offers nothing says so (not \"doesn't 'undefined'\")", u0);
@@ -978,15 +978,16 @@ const w0 = () => openWorld(root, "tier0");
 // the bag by shared/captions.js's rules; nobody forges the bag with a plain set ----
 { const cw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "captions"), actor, verb, args); };
   cw("ann", "create-world", { title: "captions" }); cw("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  cw("ann", "set", { id: "@world", component: "roles:vic", value: { role: "player" } });   // vic plays (R 10-21: a new world's newcomers build)
   cw("ann", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });
   const sess = "2026-10-07T00:00:00.000Z-abc123";
   const line = (n, extra = {}) => ({ id: "screen", session: sess, n, t0: n, t1: n + 1, text: `line ${n}`, ...extra });
   const v1r = cw("vic", "caption", line(1));
-  ok(code(v1r) === "rights", "CA1 a visitor who isn't one of the screen's captioners can't caption it", v1r.refused);
+  ok(code(v1r) === "rights", "CA1 a player who isn't one of the screen's captioners can't caption it", v1r.refused);
   ok(cw("bob", "set", { id: "screen", component: "captioners", value: { ids: ["vic"] } }).ok, "CA2 whoever may edit the screen names its captioners");
   const c1 = cw("vic", "caption", line(1, { title: "the talk" }));
   const bag = () => openWorld(root, "captions").state().entities.screen.c.captions;
-  ok(c1.ok && bag()?.line?.text === "line 1" && bag().title === "the talk" && bag().n === 1, "CA3 …and a listed captioner (a visitor) writes a line", [c1.refused, bag()]);
+  ok(c1.ok && bag()?.line?.text === "line 1" && bag().title === "the talk" && bag().n === 1, "CA3 …and a listed captioner (a player) writes a line", [c1.refused, bag()]);
   const dup = cw("vic", "caption", line(1));
   ok(code(dup) === "caption" && bag().n === 1, "CA4 a resend of a line already written is refused (that refusal is the bot's receipt), nothing written twice", dup.refused);
   ok(cw("vic", "caption", line(2)).ok && bag().line?.text !== undefined && bag().n === 2 && !("window" in bag()), "CA5 the next n is the screen's line now (each line logged once: shape audit 10-16)");
@@ -1463,7 +1464,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   // the operator as an ordinary asker: banned here, so refused; and as a visitor they could not grant ownership anyway
   const plain = call("opal", "set", { id: "@world", component: "roles:bob", value: { role: "owner" } });
   const plainUnban = call("opal", "unban", { who: "opal" });
-  ok(code(plain) === "banned" && code(plainUnban) === "banned" && wc()["roles:bob"]?.role === "visitor", "OP1 (control) the operator's ordinary requests are the world's to judge: banned here, refused", [plain.refused, plainUnban.refused]);
+  ok(code(plain) === "banned" && code(plainUnban) === "banned" && wc()["roles:bob"]?.role === "player", "OP1 (control) the operator's ordinary requests are the world's to judge: banned here, refused", [plain.refused, plainUnban.refused]);
   const grant = opr("opal", "set", { id: "@world", component: "roles:bob", value: { role: "owner" } });
   const lift = opr("opal", "unban", { who: "opal" });
   const door = opr("opal", "set", { id: "@world", component: "access", value: { join: "anyone" } });

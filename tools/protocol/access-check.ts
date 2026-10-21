@@ -84,7 +84,7 @@ for (const [name, extra] of [["Rowan", { agentToken: "tok-rowan" }], ["Pip", {}]
   const s = await sock(srv.port); const j = await s.join("keep", name, extra); ids[name] = you(j); s.close(); }
 await sleep(150);
 ok(Object.values(ids).every(Boolean), "(setup) Rowan, Pip and Moss have identities here", ids);
-ok((await own.req("set", { id: "@world", component: `roles:${ids.Rowan}`, value: { role: "visitor" } })).ok, "(setup) Rowan is listed (a visitor)");
+ok((await own.req("set", { id: "@world", component: `roles:${ids.Rowan}`, value: { role: "player" } })).ok, "(setup) Rowan is listed (a player)");
 
 // ---- A4: closing the door removes whoever isn't listed, now ----
 const bob = await sock(srv.port); const jb = await bob.join("keep", "Bob");
@@ -107,7 +107,7 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
 { const anon = await worldsAs(srv.port), stranger = await worldsAs(srv.port, "tok-moss"), member = await worldsAs(srv.port, "tok-rowan");
   const geom = await fetch(`http://127.0.0.1:${srv.port}/geom?world=keep`);
   const mine = member.find((x) => x.name === "keep");
-  ok(!anon.some((x) => x.name === "keep") && !stranger.some((x) => x.name === "keep") && geom.status === 404 && mine?.access === "members" && mine?.you === "enter",
+  ok(!anon.some((x) => x.name === "keep") && !stranger.some((x) => x.name === "keep") && geom.status === 404 && mine?.access === "invite-only" && mine?.you === "enter",
     "A3 a members-only world is on no stranger's map (/geom answers as for no world); a listed caller sees it, members, enter", [anon.map((x) => x.name), stranger.map((x) => x.name), geom.status, mine]);
   const a0 = await accessAs(srv.port, "keep"), a1 = await accessAs(srv.port, "keep", "tok-moss"), a2 = await accessAs(srv.port, "keep", "tok-rowan"), a3 = await accessAs(srv.port, "nowhere", "tok-rowan");
   ok(a0.status === 401 && a1.body?.you === "none" && a2.body?.you === "enter" && a3.body?.exists === false && a3.body?.found?.ok === false,
@@ -124,13 +124,13 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   await own.req("set", { id: "@world", component: "access", value: { join: "listed" } }); }
 
 // ---- A6: until's rules ----
-{ const past = await own.req("set", { id: "@world", component: `roles:${ids.Pip}`, value: { role: "visitor", until: Date.now() - 1000 } });
+{ const past = await own.req("set", { id: "@world", component: `roles:${ids.Pip}`, value: { role: "player", until: Date.now() - 1000 } });
   const onOwner = await own.req("set", { id: "@world", component: `roles:${ids.Pip}`, value: { role: "owner", until: Date.now() + 60_000 } });
   ok(!past.ok && past.refused?.code === "bounds" && !onOwner.ok && /ownership never expires/.test(onOwner.refused?.reason ?? ""),
     "A6 until is refused in the past, and on an owner", [past.refused, onOwner.refused]); }
 
 // ---- A5: a timed grant ----
-{ const set = await own.req("set", { id: "@world", component: `roles:${ids.Pip}`, value: { role: "visitor", until: Date.now() + 2500 } });
+{ const set = await own.req("set", { id: "@world", component: `roles:${ids.Pip}`, value: { role: "player", until: Date.now() + 2500 } });
   const p = await sock(srv.port); const jp = await p.join("keep", "Pip");
   const told = await waitFor(() => p.msgs.some((m) => m.type === "notice" && /ends in/.test(m.text)), 2000);
   const gone = await waitFor(() => p.closed != null, 6000);
@@ -150,7 +150,7 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   const ops = log.filter((e) => e.kind === "change").flatMap((e) => (Array.isArray(e.body?.ops) ? e.body.ops : [e.body]));   // a batch, or one op
   const access = ops.find((o) => o.id === "@world" && o.comp === "access")?.value;
   const rowan = ops.find((o) => o.id === "@world" && o.comp === `roles:${ids.Rowan}`)?.value;
-  ok(access?.join === "listed" && rowan?.role === "visitor", "A7 a reset keeps a members-only world's door and its members", [access, rowan, ops.length, own.closed, own.msgs.slice(k0).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
+  ok(access?.join === "listed" && rowan?.role === "player", "A7 a reset keeps a members-only world's door and its members", [access, rowan, ops.length, own.closed, own.msgs.slice(k0).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
   // A7b (review of #260, server I7): a signed-in-only door is kept too (only "listed" was, so the reset opened it to guests)
   const set = await own.req("set", { id: "@world", component: "access", value: { join: "signed-in" } });
   const k1 = own.msgs.length; own.raw({ type: "world-reset", name: "keep" });
@@ -166,8 +166,8 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
 
 // ---- A8 (setup, loaded): Moss and Wren are listed; Moss is banned, Wren kicked for 30 min; the loaded door refuses both ----
 const geomAs = async (port, world, bearer) => (await fetch(`http://127.0.0.1:${port}/geom?world=${world}`, { headers: { authorization: `Bearer ${bearer}` } })).status;
-{ const lm = await own.req("set", { id: "@world", component: `roles:${ids.Moss}`, value: { role: "visitor" } });
-  const lw = await own.req("set", { id: "@world", component: `roles:${ids.Wren}`, value: { role: "visitor" } });
+{ const lm = await own.req("set", { id: "@world", component: `roles:${ids.Moss}`, value: { role: "player" } });
+  const lw = await own.req("set", { id: "@world", component: `roles:${ids.Wren}`, value: { role: "player" } });
   const bm = await own.req("ban", { who: ids.Moss, reason: "A8" }), kw = await own.req("kick", { who: ids.Wren, minutes: 30, reason: "A8" });
   const gm = await geomAs(srv.port, "keep", "tok-moss"), gw = await geomAs(srv.port, "keep", "tok-wren"), gr = await geomAs(srv.port, "keep", "tok-rowan");
   ok(lm.ok && lw.ok && bm.ok && kw.ok && gm === 404 && gw === 404 && gr === 200, "(A8 setup) listed, then banned / kicked: the loaded world's /geom refuses both (404), a member still reads it",
@@ -175,7 +175,7 @@ const geomAs = async (port, world, bearer) => (await fetch(`http://127.0.0.1:${p
 
 // (A14 setup) Fen is listed for 2.5 s; the server is stopped BEFORE that ends, so no sweep can write the end: the log keeps the grant
 const fenUntil = Date.now() + 2500;
-{ const r = await own.req("set", { id: "@world", component: `roles:${ids.Fen}`, value: { role: "visitor", until: fenUntil } }); ok(r.ok, "(A14 setup) Fen holds a timed grant", r.refused); }
+{ const r = await own.req("set", { id: "@world", component: `roles:${ids.Fen}`, value: { role: "player", until: fenUntil } }); ok(r.ok, "(A14 setup) Fen holds a timed grant", r.refused); }
 own.close();
 try { srv.proc.kill(); } catch {}
 await sleep(300);
@@ -190,7 +190,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
 { const s2 = await start();
   const anon = await worldsAs(s2.port), member = (await worldsAs(s2.port, "tok-rowan")).find((x) => x.name === "keep");
   const a1 = await accessAs(s2.port, "keep", "tok-ivy");   // a stranger (Moss is listed by now, for A8; Fen holds A14's timed grant)
-  ok(!s2.dead && !anon.some((x) => x.name === "keep") && member?.loaded === false && member?.access === "members" && member?.you === "enter" && a1.body?.you === "none",
+  ok(!s2.dead && !anon.some((x) => x.name === "keep") && member?.loaded === false && member?.access === "invite-only" && member?.you === "enter" && a1.body?.you === "none",
     "A3 an idle world's door is read from its log (not loaded): a stranger's map lacks it; a member's shows it, members, enter", [anon.map((x) => x.name), member, a1.body]);
   // A14 (security review 10-18 M6): Fen's grant has ended but no sweep ran (the world is unloaded, the log still holds it): the reads refuse
   while (Date.now() <= fenUntil + 50) await sleep(50);
@@ -234,7 +234,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     await waitFor(() => s.msgs.some((m) => m.type === "reply" && m.id === id), 4000); return s.msgs.find((m) => m.type === "reply" && m.id === id); };
   const plain = await fen.req("set", { id: "@world", component: `roles:${fenId}`, value: { role: "owner" } });
   const unban = await repair(fen, "unban", { who: ids.Moss });
-  const list = await repair(fen, "set", { id: "@world", component: `roles:${fenId}`, value: { role: "visitor" } });
+  const list = await repair(fen, "set", { id: "@world", component: `roles:${fenId}`, value: { role: "player" } });
   const wide = await repair(fen, "set", { id: "@world", component: "about", value: { name: "x", text: "" } });
   const row = await sock(s3.port); const jr = await row.join("keep", "Rowan", { agentToken: "tok-rowan" });
   const notOp = await repair(row, "unban", { who: ids.Moss });
@@ -309,9 +309,9 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const { entryFor } = await import(path.join(ENGINE, "server/access.ts"));
   const base = { access: { join: "listed" } };
   const cases = [
-    ["default-role {can:{kick}}", { ...base, "default-role": { role: "visitor", can: { kick: true } } }],
+    ["default-role {can:{kick}}", { ...base, "default-role": { role: "player", can: { kick: true } } }],
     ["default-role {role: moderator}", { ...base, "default-role": { role: "moderator" } }],
-    ["role-defs.visitor.can.mute", { ...base, "default-role": { role: "visitor" }, "role-defs": { visitor: { can: { mute: true } } } }],
+    ["role-defs.visitor.can.mute", { ...base, "default-role": { role: "player" }, "role-defs": { visitor: { can: { mute: true } } } }],
   ];
   const got = cases.map(([n, wc]) => [n, entryFor({ name: "m1", wc, label: "members" }, { account: "acct-stranger", actorId: "u-stranger00000000000000", addr: "1.2.3.4" }, "embody")?.code ?? "admitted"]);
   ok(got.every(([, c]) => c !== "admitted"), "A9 a stranger in a members-only world stays out even when the default role (or a role-def) carries a moderation power", got);

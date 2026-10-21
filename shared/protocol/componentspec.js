@@ -455,7 +455,7 @@ export const COMPONENTS = {
   "imported-behavior": { on: "world", keyed: true, key: "instance", fields: { src: "string", attach: "ref", caps: "object", knobs: "object", author: "string", ts: "number", state: "object" }, help: "keyed by name: an imported world's old runtime-script binding, carried from translation (scripts are script:<name>)" },
   assets:    { on: "world", keyed: true, key: "instance", fields: { name: "string", path: "string" }, help: "on @world, keyed: one of the world's assets (a model added here)" },
   imported:  { keyed: true, key: "instance", help: "keyed: a field an imported world's translation had no mapping for, carried as it was" },
-  "imported-roles": { on: "world", keyed: true, key: "instance", help: "on @world, keyed by identity: a v1 grant this protocol has no rung for (spectator or none: R 10-21, nothing below player), carried as it was; the person holds the world's newcomer role" },
+  "imported-roles": { on: "world", keyed: true, key: "instance", help: "on @world, keyed by identity: an imported grant this protocol has no rung for (spectator or none: R 10-21, nothing below player), carried as it was; the person holds the world's newcomer role" },
   "imported-bans": { on: "world", keyed: true, key: "instance", help: "on @world, keyed by identity: a ban an imported world carried, as it was (live bans are the moderator log's)" },
   // research roles 10-06 (shared/protocol/roles.js): ranked membership (player 0, builder 100, moderator 200, owner 255,
   // custom roles between) and a closed list of permissions. Banned is a state in the moderator log, never a role.

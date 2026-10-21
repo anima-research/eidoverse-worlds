@@ -151,7 +151,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok(jo.snapshot?.yourRights?.role === "owner", "(H setup) Rowan owns meadow", jo.snapshot?.yourRights);
   ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "builder" } })).ok, "(H setup) meadow's default role: builder");
   const g = await sock(S3.port); const jg = await g.join("meadow", "drifter");
-  ok(jg.snapshot?.yourRights?.role === "visitor" && (await g.req("create", { id: "box1", model: "crate" })).refused?.code === "rights", "H4 a guest is never given the default role: a visitor, and refused a build", jg.snapshot?.yourRights);
+  ok(jg.snapshot?.yourRights?.role === "player" && (await g.req("create", { id: "box1", model: "crate" })).refused?.code === "rights", "H4 a guest is never given the default role: a player, and refused a build", jg.snapshot?.yourRights);
   const wren = await sock(S3.port); const jw = await wren.join("meadow", "Wren", { agentToken: "tok-wren" });
   ok(jw.snapshot?.yourRights?.role === "builder", "H4 …while a proven account does get it (builder)", jw.snapshot?.yourRights);
   // …unless the world's owner opts guests in (R 10-06: whether strangers without an account may build is the world's
@@ -202,8 +202,8 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const byOthers = own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
     own.raw({ type: "voice-moderate", id: "Wren", muted: false }); await sleep(300);
     const all = own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
-    ok(jf.snapshot?.yourRights?.role === "none" && jv.snapshot?.yourRights?.role === "visitor" && byOthers.length === 0 && all.length === 1,
-      "voice-moderate (mute for everyone) is the owner's alone: a 'none' stranger and a visitor are refused, the owner isn't", [jf.snapshot?.yourRights?.role, jv.snapshot?.yourRights?.role, all]);
+    ok(jf.snapshot?.yourRights?.role === "builder" && jv.snapshot?.yourRights?.role === "player" && byOthers.length === 0 && all.length === 1,
+      "voice-moderate (mute for everyone) is the owner's alone: a stranger (a builder, meadow's newcomer role) and a player are refused, the owner isn't", [jf.snapshot?.yourRights?.role, jv.snapshot?.yourRights?.role, all]);
     await own.req("set", { id: "@world", component: "default-role", value: { role: "builder" } });
     fern.close(); vis.close(); }
   const elsewhere = await sock(S3.port); const je = await elsewhere.join("garden", "someone-new");

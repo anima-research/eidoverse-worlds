@@ -37,7 +37,7 @@ export const BELOW = -1;
  *  door stores the new one, and the maintenance command rewrites stored ones (shaperepair renameOps). An old word can't be a
  *  custom role while it's served. */
 export const RENAMED_ROLES = Object.freeze({ visitor: "player" });
-/** A stored grant of the removed `none` (old logs: v1's spectator came in as one). Never a role: it reads as no grant, the door
+/** A stored grant of the removed `none` (an old log's). Never a role: it reads as no grant, the door
  *  refuses a new one, and the maintenance command deletes stored ones. */
 export const isLegacyNone = (v) => (typeof v === "string" ? v : v?.role) === "none";
 export const canonRole = (x) => (typeof x === "string" && Object.hasOwn(RENAMED_ROLES, x) ? RENAMED_ROLES[x] : x);
@@ -145,7 +145,7 @@ export function roleIdOf(wc, id, { anon = false, owners = null } = {}) {
   const dr = isObj(wc["default-role"]) ? wc["default-role"] : null;
   const base = roleDef(wc, dr?.role) ? canonRole(dr.role) : "player";   // a stored default of none (an old log) reads as player
   const own = isObj(wc[`roles:${id}`]) ? canonRole(wc[`roles:${id}`].role) : null;
-  // a stored grant of none (v1's spectator came in as one) is no grant: the person holds what anyone without one holds
+  // a stored grant of none (an old log's) is no grant: the person holds what anyone without one holds
   let r = own && !isLegacyNone(own) ? own : anon ? guestRoleOf(wc) : base;
   if (typeof r !== "string" || !roleDef(wc, r)) r = "player";
   const hasOwner = owners ?? Object.keys(wc).some((k) => k.startsWith("roles:") && isOwner(wc[k]));
